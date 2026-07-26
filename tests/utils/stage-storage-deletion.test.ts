@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 const {
+  clearStoreForDeletedStage,
   discardPendingStageChanges,
   snapshotPendingStageChangesForDeletion,
   restorePendingStageChanges,
@@ -48,6 +49,7 @@ const {
     transaction: vi.fn(async (_mode: string, _tables: unknown[], fn: () => Promise<void>) => fn()),
   };
   return {
+    clearStoreForDeletedStage: vi.fn(),
     discardPendingStageChanges: vi.fn(),
     snapshotPendingStageChangesForDeletion: vi.fn().mockReturnValue([]),
     restorePendingStageChanges: vi.fn(),
@@ -96,6 +98,7 @@ vi.mock('@/lib/pbl/v2/runtime/document-persistence', () => ({
   ),
 }));
 vi.mock('@/lib/store/stage', () => ({
+  clearStoreForDeletedStage,
   discardPendingStageChanges,
   snapshotPendingStageChangesForDeletion,
   restorePendingStageChanges,
@@ -108,7 +111,13 @@ import {
   type PendingChange,
   type StageStoreData,
 } from '@/lib/utils/stage-storage';
-import { isStageDeleted, markStageDeleted, unmarkStageDeleted } from '@/lib/utils/deleted-stages';
+import {
+  isStageDeleted,
+  isStageWriteStale,
+  markStageDeleted,
+  stageDeletionEpoch,
+  unmarkStageDeleted,
+} from '@/lib/utils/deleted-stages';
 import { saveCurrentScene } from '@/lib/document-store';
 import { saveChatSessions } from '@/lib/utils/chat-storage';
 import { withRuntimeStorageSharedLock } from '@/lib/utils/chat-storage-lock';
@@ -248,6 +257,122 @@ describe('saveStageDataIncremental vs deletion', () => {
   });
 });
 
+describe('deletion epochs (delete → restore straddles)', () => {
+  it('drops a round captured pre-delete even when a same-id restore lifted the deleted flag (incremental)', async () => {
+    // The core epoch invariant: a boolean tombstone cannot distinguish a
+    // pre-delete in-flight round from a post-restore edit once the restore
+    // lifts it. The epoch can — the delete bumped it, so the old capture is
+    // permanently stale and must not rebuild the restored document.
+    mutateDocument.mockImplementationOnce(
+      async (
+        id: string,
+        callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+      ) => {
+        markStageDeleted(id); // delete wins the race while the round awaits
+        unmarkStageDeleted(id); // server-copy restore lifts the deleted flag
+        return callback(undefined, fakeStore);
+      },
+    );
+    await saveStageDataIncremental(stageId, [{ kind: 'stage' }], makeData(stageId));
+    expect(fakeStore.saveDocument).not.toHaveBeenCalled();
+    expect(fakeStore.putStage).not.toHaveBeenCalled();
+  });
+
+  it('drops a pre-delete aggregate save after a same-id restore', async () => {
+    mutateDocument.mockImplementationOnce(
+      async (
+        id: string,
+        callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+      ) => {
+        markStageDeleted(id);
+        unmarkStageDeleted(id);
+        return callback(undefined, fakeStore);
+      },
+    );
+    await saveStageData(stageId, makeData(stageId));
+    expect(fakeStore.saveDocument).not.toHaveBeenCalled();
+  });
+
+  it('drops the currentScene/chats tail of a pre-delete round after a restore', async () => {
+    mutateDocument.mockImplementationOnce(
+      async (
+        id: string,
+        callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+      ) => {
+        markStageDeleted(id);
+        unmarkStageDeleted(id);
+        return callback(undefined, fakeStore);
+      },
+    );
+    const result = await saveStageDataIncremental(
+      stageId,
+      [{ kind: 'stage' }, { kind: 'currentScene' }, { kind: 'chats' }],
+      makeData(stageId),
+    );
+    expect(result).toEqual({ failedChanges: [] });
+    expect(vi.mocked(saveCurrentScene)).not.toHaveBeenCalled();
+    expect(vi.mocked(saveChatSessions)).not.toHaveBeenCalled();
+  });
+
+  it('re-checks between the two tail writes: a delete during saveCurrentScene fences the chat write', async () => {
+    // No lock spans the tail. When a batch dirties both currentScene and
+    // chats, a delete can start while the first tail write is awaiting; the
+    // chat write must re-check independently instead of riding the earlier
+    // check.
+    vi.mocked(saveCurrentScene).mockImplementationOnce(async () => {
+      markStageDeleted(stageId);
+    });
+    const result = await saveStageDataIncremental(
+      stageId,
+      [{ kind: 'currentScene' }, { kind: 'chats' }],
+      makeData(stageId),
+    );
+    expect(result).toEqual({ failedChanges: [] });
+    expect(vi.mocked(saveCurrentScene)).toHaveBeenCalledOnce();
+    expect(vi.mocked(saveChatSessions)).not.toHaveBeenCalled();
+  });
+
+  it('persists a write whose data was captured AFTER a delete → restore cycle (new epoch)', async () => {
+    // The counterpart invariant: the epoch fence must not overreach. Data
+    // captured after the restore observes the current epoch and lands.
+    markStageDeleted(stageId);
+    unmarkStageDeleted(stageId);
+    expect(stageDeletionEpoch(stageId)).toBe(1);
+    await saveStageDataIncremental(stageId, [{ kind: 'stage' }], makeData(stageId));
+    expect(fakeStore.saveDocument).toHaveBeenCalledOnce();
+  });
+
+  it('drops an explicitly stale captured epoch even while the stage is not deleted', async () => {
+    // The scheduler passes the epoch captured with its data snapshot; a
+    // mismatch alone (deleted flag already lifted) must drop the write.
+    const staleEpoch = stageDeletionEpoch(stageId);
+    markStageDeleted(stageId);
+    unmarkStageDeleted(stageId);
+    expect(isStageDeleted(stageId)).toBe(false);
+    await saveStageDataIncremental(stageId, [{ kind: 'stage' }], makeData(stageId), staleEpoch);
+    expect(mutateDocument).not.toHaveBeenCalled();
+    expect(fakeStore.saveDocument).not.toHaveBeenCalled();
+
+    await saveStageData(stageId, makeData(stageId), staleEpoch);
+    expect(fakeStore.saveDocument).not.toHaveBeenCalled();
+  });
+
+  it('never rewinds the epoch: mark → unmark → mark keeps strictly increasing', () => {
+    expect(stageDeletionEpoch(stageId)).toBe(0);
+    markStageDeleted(stageId);
+    expect(stageDeletionEpoch(stageId)).toBe(1);
+    unmarkStageDeleted(stageId);
+    expect(stageDeletionEpoch(stageId)).toBe(1);
+    expect(isStageDeleted(stageId)).toBe(false);
+    markStageDeleted(stageId);
+    expect(stageDeletionEpoch(stageId)).toBe(2);
+    expect(isStageWriteStale(stageId, 1)).toBe(true);
+    unmarkStageDeleted(stageId);
+    expect(isStageWriteStale(stageId, 1)).toBe(true);
+    expect(isStageWriteStale(stageId, 2)).toBe(false);
+  });
+});
+
 describe('saveStageData vs deletion', () => {
   it('drops the aggregate save for a deleted stage', async () => {
     markStageDeleted(stageId);
@@ -310,11 +435,31 @@ describe('deleteStageData wiring', () => {
     expect(dbMock.stages.delete).toHaveBeenCalledWith(stageId);
   });
 
-  it('lifts the tombstone when the deletion fails before the document was removed', async () => {
+  it('evicts the warm in-memory store after a successful deletion', async () => {
+    // Without the eviction, a warm store keeps rendering the deleted
+    // classroom: loadFromStorage short-circuits on it, the server-restore
+    // path never runs, and every edit is silently dropped (back-button trap).
+    await deleteStageData(stageId);
+    expect(clearStoreForDeletedStage).toHaveBeenCalledExactlyOnceWith(stageId);
+  });
+
+  it('does not evict the store when the deletion fails', async () => {
     fakeStore.deleteDocument.mockRejectedValueOnce(new Error('locked'));
     await expect(deleteStageData(stageId)).rejects.toThrow('locked');
-    // The stage still exists — later edits must persist normally again.
+    // The stage survives — the warm copy is still the live document.
+    expect(clearStoreForDeletedStage).not.toHaveBeenCalled();
+  });
+
+  it('lifts the deleted flag when the deletion fails before the document was removed, keeping the epoch bumped', async () => {
+    const epochBefore = stageDeletionEpoch(stageId);
+    fakeStore.deleteDocument.mockRejectedValueOnce(new Error('locked'));
+    await expect(deleteStageData(stageId)).rejects.toThrow('locked');
+    // The stage still exists — later edits must persist normally again…
     expect(isStageDeleted(stageId)).toBe(false);
+    // …but the epoch stays bumped: writes captured before the failed delete
+    // remain permanently stale (the restored dirt is re-queued as
+    // descriptors, so its flush re-captures under the current epoch).
+    expect(stageDeletionEpoch(stageId)).toBe(epochBefore + 1);
   });
 
   it('keeps the tombstone when the cascade fails after the document was removed', async () => {

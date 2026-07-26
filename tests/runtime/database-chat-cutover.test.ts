@@ -525,6 +525,87 @@ describe('database runtime chat integration', () => {
     ).resolves.toMatchObject([{ title: 'Original runtime chat' }]);
   });
 
+  it('lifts the deletion state when a backup import recreates a deleted stage', async () => {
+    const { importDatabase } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
+    const { isStageDeleted, markStageDeleted, stageDeletionEpoch } =
+      await import('@/lib/utils/deleted-stages');
+
+    // The stage was deleted earlier this session; the backup restores its id.
+    markStageDeleted('stage-import-revive');
+    const epochAfterDelete = stageDeletionEpoch('stage-import-revive');
+
+    await importDatabase({
+      stages: [
+        {
+          id: 'stage-import-revive',
+          name: 'Restored by import',
+          createdAt: 1_000,
+          updatedAt: 3_000,
+        },
+      ],
+    });
+
+    await expect(getDocumentStore().loadDocument('stage-import-revive')).resolves.toMatchObject({
+      stage: { name: 'Restored by import' },
+    });
+    // The deleted flag is lifted so later edits persist; the deletion epoch
+    // stays bumped so pre-delete in-flight writes remain fenced.
+    expect(isStageDeleted('stage-import-revive')).toBe(false);
+    expect(stageDeletionEpoch('stage-import-revive')).toBe(epochAfterDelete);
+  });
+
+  it('reinstates the deletion state when a failed import rolls back a restored document', async () => {
+    const backing = new BrowserRuntimeStore({ indexedDB: globalThis.indexedDB });
+    const { importDatabase } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
+    const { isStageDeleted, markStageDeleted, stageDeletionEpoch } =
+      await import('@/lib/utils/deleted-stages');
+
+    // Deleted earlier this session: no document, deletion in effect.
+    markStageDeleted('stage-import-rollback');
+    const epochAfterDelete = stageDeletionEpoch('stage-import-rollback');
+
+    const markerFailureStore = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'createSession') {
+          return async (init: Parameters<RuntimeStore['createSession']>[0]) => {
+            if (init.id.startsWith('chat-restore-marker:')) {
+              throw new Error('restore marker failed');
+            }
+            return target.createSession(init);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+
+    await expect(
+      importDatabase(
+        {
+          stages: [
+            {
+              id: 'stage-import-rollback',
+              name: 'Restored by import',
+              createdAt: 1_000,
+              updatedAt: 3_000,
+            },
+          ],
+          chatSessions: [],
+        },
+        { store: markerFailureStore, learnerKey },
+      ),
+    ).rejects.toThrow('restore marker failed');
+
+    // The rollback removed the imported document again (pre-image was absent)…
+    await expect(getDocumentStore().loadDocument('stage-import-rollback')).resolves.toBeNull();
+    // …and reinstated the deletion state the import had lifted, so an
+    // outstanding flush cannot recreate the rolled-back document.
+    expect(isStageDeleted('stage-import-rollback')).toBe(true);
+    expect(stageDeletionEpoch('stage-import-rollback')).toBeGreaterThan(epochAfterDelete);
+  });
+
   it('blocks lazy migration behind a runtime-wide clear and observes the deleted source', async () => {
     vi.stubGlobal('navigator', { locks: fairLockManager() });
     const backing = new BrowserRuntimeStore({ indexedDB: globalThis.indexedDB });

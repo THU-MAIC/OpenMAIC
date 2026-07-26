@@ -21,7 +21,7 @@ import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/doc
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
 import type { ChatStorageSnapshot } from '@/lib/utils/chat-storage';
 import type { PendingChange } from '@/lib/utils/stage-storage';
-import { isStageDeleted } from '@/lib/utils/deleted-stages';
+import { isStageDeleted, isStageWriteStale, stageDeletionEpoch } from '@/lib/utils/deleted-stages';
 
 const log = createLogger('StageStore');
 
@@ -93,12 +93,13 @@ export function markStagePersistenceDirty(changes: PendingChange[]): void {
 
 /**
  * Drop any pending persistence work for a deleted stage. Called by the stage
- * deletion path (which registers the stage's tombstone first — see
- * `lib/utils/deleted-stages.ts`) so a mutation still sitting in the debounce
- * window cannot flush after the delete and resurrect the removed document.
- * Work already outside the pending map — an in-flight flush round's snapshot
- * and the departing-stage snapshot held by `setStage` — is fenced by the
- * tombstone checks in `persistDirtySnapshot` and the storage layer instead.
+ * deletion path (which marks the deletion first, bumping the stage's deletion
+ * epoch — see `lib/utils/deleted-stages.ts`) so a mutation still sitting in
+ * the debounce window cannot flush after the delete and resurrect the removed
+ * document. Work already outside the pending map — an in-flight flush round's
+ * snapshot and the departing-stage snapshot held by `setStage` — is fenced by
+ * the deletion-epoch checks in `persistDirtySnapshot` and the storage layer
+ * instead.
  */
 export function discardPendingStageChanges(stageId: string): void {
   if (pendingStageId === stageId) resetPendingChanges();
@@ -107,8 +108,8 @@ export function discardPendingStageChanges(stageId: string): void {
 /**
  * Snapshot the logical changes a deletion is about to throw away: everything
  * still queued for the stage plus the in-flight flush round's dirt (whose
- * write the tombstone will drop). Taken by the deletion path BEFORE the
- * tombstone is registered, so a deletion that fails while the document still
+ * write the deletion fence will drop). Taken by the deletion path BEFORE the
+ * deletion is marked, so a deletion that fails while the document still
  * exists can hand the snapshot back to `restorePendingStageChanges` — without
  * it, the pre-delete edits would silently live only in memory.
  */
@@ -129,9 +130,23 @@ export function snapshotPendingStageChangesForDeletion(stageId: string): Pending
 
 /**
  * Re-mark the changes a failed deletion discarded, so they reach durability
- * again through the normal scheduler. Only meaningful after the tombstone was
- * lifted; no-ops when the store has since moved to another stage (the
+ * again through the normal scheduler. Only meaningful after the deleted flag
+ * was lifted; no-ops when the store has since moved to another stage (the
  * departing-stage snapshot owns that world).
+ *
+ * Scope: this restores the dirt captured BEFORE the deletion started (queued
+ * + in-flight). Edits attempted DURING the deletion window were refused by
+ * `markPendingChanges` while the deletion was in effect and are not part of
+ * the snapshot — they stay memory-only until the same key is edited again
+ * (deletion is driven from the home page, so such edits are not reachable in
+ * the normal flow).
+ *
+ * Epoch note: the failed delete bumped the stage's deletion epoch, so every
+ * write captured before it is permanently stale. Restoring here is still
+ * safe: this function re-queues change DESCRIPTORS — the next flush round
+ * captures a fresh snapshot of the CURRENT store state under the CURRENT
+ * epoch. It never replays the pre-delete data capture, so the restored dirt
+ * cannot be dropped as epoch-stale.
  */
 export function restorePendingStageChanges(
   stageId: string,
@@ -140,6 +155,19 @@ export function restorePendingStageChanges(
   if (changes.length === 0) return;
   if (useStageStore.getState().stage?.id !== stageId) return;
   markPendingChanges(stageId, ...changes);
+}
+
+/**
+ * Evict a deleted stage from the in-memory store. Called by the deletion path
+ * after the cascade succeeds: a warm store would otherwise keep rendering the
+ * deleted classroom from memory — `loadFromStorage` short-circuits on it, the
+ * server-restore path never runs, and every edit is silently dropped (the
+ * back-button-to-a-deleted-classroom trap). No-ops when the store has since
+ * moved to another stage.
+ */
+export function clearStoreForDeletedStage(stageId: string): void {
+  if (useStageStore.getState().stage?.id !== stageId) return;
+  useStageStore.getState().clearStore();
 }
 
 export function claimStageSceneLoadToken(): StageSceneLoadToken {
@@ -274,12 +302,16 @@ async function persistDirtySnapshot(
   stageId: string,
   dirtySnapshot: ReadonlyMap<string, PendingEntry>,
   snapshot: StagePersistenceSnapshot,
+  capturedEpoch: number,
 ): Promise<Set<string>> {
   if (!snapshot.stage) return new Set();
-  // A deleted stage's dirt is dropped, not retried: this covers snapshots that
-  // escaped `discardPendingStageChanges` because they already left the pending
-  // map (an in-flight flush round, or the departing-stage retry in setStage).
-  if (isStageDeleted(stageId)) return new Set();
+  // A stale capture is dropped, not retried: this covers snapshots that
+  // escaped `discardPendingStageChanges` because they already left the
+  // pending map (an in-flight flush round, or the departing-stage retry in
+  // setStage). `capturedEpoch` is the deletion epoch recorded when `snapshot`
+  // was taken; a deletion after that moment permanently invalidates this
+  // write, even if a same-id restore has since lifted the deleted flag.
+  if (isStageWriteStale(stageId, capturedEpoch)) return new Set();
   stageStorageModulePromise ??= import('@/lib/utils/stage-storage');
   const { saveStageDataIncremental } = await stageStorageModulePromise;
   const result = await saveStageDataIncremental(
@@ -298,6 +330,7 @@ async function persistDirtySnapshot(
         updatedAt: Date.now(),
       },
     },
+    capturedEpoch,
   );
   return new Set((result?.failedChanges ?? []).map(pendingChangeKey));
 }
@@ -331,6 +364,10 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       const departingStageId = departingState.stage.id;
       const departingDirty = new Map(pendingChanges);
       const departingSnapshot = persistenceSnapshot(departingState);
+      // The deletion epoch travels with the snapshot: a deletion during the
+      // retry window permanently invalidates both attempts, even if a
+      // same-id restore lands before the retry fires.
+      const departingEpoch = stageDeletionEpoch(departingStageId);
       /**
        * Navigation is intentionally not a durability barrier. The immutable
        * departing snapshot is attempted immediately, retried once after a
@@ -345,6 +382,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
               departingStageId,
               departingDirty,
               departingSnapshot,
+              departingEpoch,
             );
             if (lastFailedKeys.size === 0) return;
           } catch (error) {
@@ -624,23 +662,30 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       return false;
     }
 
+    // Epoch captured with the state read above: a deletion during the PBL
+    // preparation await below permanently invalidates this write.
+    const capturedEpoch = stageDeletionEpoch(stage.id);
     const pendingAtStart = new Map(pendingChanges);
     try {
       const persistedScenes = await preparePBLScenesForDocumentPersistence(stage.id, scenes);
       const { saveStageData } = await import('@/lib/utils/stage-storage');
-      const result = await saveStageData(stage.id, {
-        stage,
-        scenes: persistedScenes,
-        currentSceneId,
-        chats,
-        chatSnapshot,
-        outline: {
-          outlines,
-          generationComplete,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
+      const result = await saveStageData(
+        stage.id,
+        {
+          stage,
+          scenes: persistedScenes,
+          currentSceneId,
+          chats,
+          chatSnapshot,
+          outline: {
+            outlines,
+            generationComplete,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          },
         },
-      });
+        capturedEpoch,
+      );
 
       const failedKeys = new Set((result?.failedChanges ?? []).map(pendingChangeKey));
       if (
@@ -687,8 +732,35 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       // (e.g. navigated from generation-preview with fresh in-memory data)
       const currentState = get();
       if (currentState.stage?.id === stageId && currentState.scenes.length > 0) {
-        log.info('Stage already loaded in memory, skipping IndexedDB load:', stageId);
-        return;
+        if (!isStageDeleted(stageId)) {
+          log.info('Stage already loaded in memory, skipping IndexedDB load:', stageId);
+          return;
+        }
+        // The warm copy is a ghost of a DELETED classroom (deletion evicts
+        // the store, but a partially failed cascade — or any future caller —
+        // can leave one). Short-circuiting here would starve the restore
+        // path: the classroom loader's server-fallback gate checks
+        // `getCurrentStage()`, so a warm ghost renders a fully editable
+        // classroom whose every edit is silently dropped. Discard the ghost
+        // (without claiming a new load token — the caller's token must stay
+        // current) and fall through to a full load, which finds no local
+        // data and lets the server-restore path run and lift the deletion.
+        log.info('Warm stage is deleted; discarding ghost and reloading:', stageId);
+        resetPendingChanges();
+        set((s) => ({
+          stage: null,
+          scenes: [],
+          currentSceneId: null,
+          chats: [],
+          chatSnapshot: { sessions: [], restoreMarker: null },
+          outlines: [],
+          generationComplete: false,
+          generationEpoch: s.generationEpoch + 1,
+          generationStatus: 'idle' as const,
+          currentGeneratingOrder: -1,
+          failedOutlines: [],
+          generatingOutlines: [],
+        }));
       }
 
       const { loadStageData } = await import('@/lib/utils/stage-storage');
@@ -809,10 +881,18 @@ function startFlushRound(): FlushRound | null {
     return null;
   }
   const snapshot = persistenceSnapshot(state);
+  // Capture the deletion epoch WITH the data snapshot: the pair is what the
+  // storage layer validates immediately before each write.
+  const capturedEpoch = stageDeletionEpoch(stageId);
 
   const run = (async () => {
     try {
-      const failedKeys = await persistDirtySnapshot(stageId, dirtySnapshot, snapshot);
+      const failedKeys = await persistDirtySnapshot(
+        stageId,
+        dirtySnapshot,
+        snapshot,
+        capturedEpoch,
+      );
       if (pendingStageId === stageId) {
         for (const [key, entry] of dirtySnapshot) {
           if (!failedKeys.has(key) && pendingChanges.get(key)?.revision === entry.revision) {

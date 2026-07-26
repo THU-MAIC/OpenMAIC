@@ -249,10 +249,14 @@ export function applyClassroomStageAndScenes(
 ): void {
   // Explicit document (re)creation point: deletion only removes client-side
   // data, so revisiting the classroom URL restores the server copy under the
-  // SAME id. Lift any same-session tombstone before the store write, or every
-  // subsequent edit of the restored classroom would be silently dropped until
-  // a reload. This is a deliberate restore, not an in-flight flush — exactly
-  // the distinction `deleted-stages.ts` requires.
+  // SAME id. Lift any same-session deleted flag before the store write, or
+  // every subsequent edit of the restored classroom would be silently dropped
+  // until a reload. This is a deliberate restore, not an in-flight flush —
+  // exactly the distinction `deleted-stages.ts` requires. The deletion EPOCH
+  // stays bumped: a pre-delete flush still in flight remains permanently
+  // stale and cannot overwrite the restored document, while the
+  // `saveToStorage` below (and every later edit) captures the current epoch
+  // and persists normally.
   unmarkStageDeleted(stage.id);
   const nextScenes = [...scenes];
   useStageStore.setState((state) => ({

@@ -181,9 +181,66 @@ describe('runClassroomLoad', () => {
         'stage-revived',
         expect.arrayContaining([{ kind: 'currentScene' }]),
         expect.anything(),
+        expect.any(Number),
       );
     } finally {
       unmarkStageDeleted('stage-revived');
+      useStageStore.getState().clearStore();
+    }
+  });
+
+  it('restores a deleted classroom whose ghost is still warm in the store (back-button path)', async () => {
+    // Round-2 pinned the restore with a direct applyClassroomStageAndScenes
+    // call — the cold-store cell. The natural path is warmer: open classroom →
+    // navigate home → delete → browser Back. loadFromStorage used to
+    // short-circuit on the warm store, so the server-fallback restore (the
+    // only unmark point) never ran and the classroom rendered editable while
+    // every edit was silently dropped. This drives the REAL loadFromStorage.
+    useStageStore.getState().clearStore();
+    vi.mocked(saveStageDataIncremental).mockClear();
+    const warmStage = makeStage('stage-warm-ghost');
+    applyClassroomStageAndScenes(warmStage, [makeScene('scene-w', 'stage-warm-ghost')], {
+      persist: false,
+    });
+    // Home-page delete: deletion marked while the store stays warm (the
+    // deletion path also evicts the store; a partially failed cascade can
+    // leave the ghost, which this path must still heal).
+    markStageDeleted('stage-warm-ghost');
+    try {
+      const serverStage = makeStage('stage-warm-ghost');
+      const serverScene = makeScene('scene-server', 'stage-warm-ghost');
+      const { deps } = makeDeps({
+        classroomId: 'stage-warm-ghost',
+        loadFromStorage: (id, token) => useStageStore.getState().loadFromStorage(id, token),
+        getCurrentStage: () => useStageStore.getState().stage,
+        fetchClassroom: vi.fn().mockResolvedValue({ stage: serverStage, scenes: [serverScene] }),
+        applyFallbackScenes: vi.fn().mockImplementation(async ({ stage, scenes }) => {
+          applyClassroomStageAndScenes(stage, scenes, { persist: false });
+          return true;
+        }),
+      });
+
+      await runClassroomLoad(deps);
+
+      // The warm ghost did not starve the restore: the server fallback ran,
+      // the restored classroom is live, and the deletion was lifted.
+      expect(deps.fetchClassroom).toHaveBeenCalledExactlyOnceWith('stage-warm-ghost');
+      expect(deps.applyFallbackScenes).toHaveBeenCalledOnce();
+      expect(useStageStore.getState().stage?.id).toBe('stage-warm-ghost');
+      expect(useStageStore.getState().scenes.map((s) => s.id)).toEqual(['scene-server']);
+      expect(isStageDeleted('stage-warm-ghost')).toBe(false);
+
+      // …and edits persist again end-to-end through the scheduler.
+      useStageStore.getState().setCurrentSceneId('scene-server');
+      await flushStageSave();
+      expect(saveStageDataIncremental).toHaveBeenCalledWith(
+        'stage-warm-ghost',
+        expect.arrayContaining([{ kind: 'currentScene' }]),
+        expect.anything(),
+        expect.any(Number),
+      );
+    } finally {
+      unmarkStageDeleted('stage-warm-ghost');
       useStageStore.getState().clearStore();
     }
   });

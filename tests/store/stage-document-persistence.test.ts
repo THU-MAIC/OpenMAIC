@@ -78,6 +78,7 @@ describe('stage document persistence', () => {
     expect(saveStageDataMock).toHaveBeenCalledWith(
       'stage-1',
       expect.objectContaining({ scenes: [persistedScene] }),
+      expect.any(Number),
     );
     expect(useStageStore.getState().scenes).toEqual([inMemoryScene]);
   });

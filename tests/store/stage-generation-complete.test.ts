@@ -194,6 +194,7 @@ describe('generationComplete', () => {
           generationComplete: false,
         }),
       }),
+      expect.any(Number),
     );
   });
 

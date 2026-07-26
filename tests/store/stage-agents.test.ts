@@ -47,7 +47,11 @@ import {
   snapshotPendingStageChangesForDeletion,
   useStageStore,
 } from '@/lib/store/stage';
-import { markStageDeleted, unmarkStageDeleted } from '@/lib/utils/deleted-stages';
+import {
+  markStageDeleted,
+  stageDeletionEpoch,
+  unmarkStageDeleted,
+} from '@/lib/utils/deleted-stages';
 import { saveStageData, saveStageDataIncremental } from '@/lib/utils/stage-storage';
 import type { Stage } from '@/lib/types/stage';
 import type { GeneratedAgentConfig } from '@/lib/types/stage';
@@ -347,7 +351,7 @@ describe('setStageAgents persistence (document scheduler)', () => {
   it('does not resurrect a deleted stage through the departing-stage retry window', async () => {
     // Navigation snapshots the departing stage's dirt into local variables and
     // retries once after a delay — outside the pending map, so the deletion
-    // path's discard cannot reach it. The tombstone must stop the retry.
+    // path's discard cannot reach it. The deletion fence must stop the retry.
     vi.mocked(saveStageDataIncremental).mockRejectedValueOnce(new Error('transient'));
     useStageStore.getState().setStageAgents([makeAgentConfig('doomed')]);
 
@@ -366,6 +370,45 @@ describe('setStageAgents persistence (document scheduler)', () => {
     expect(stage1Attempts()).toHaveLength(1);
   });
 
+  it('drops the departing-stage retry even when a delete → restore lands inside the retry window (epoch fence)', async () => {
+    // The straddle a boolean tombstone cannot express: the departing snapshot
+    // was captured pre-delete; a same-id restore lifts the deleted flag before
+    // the retry fires. The snapshot's captured epoch is stale, so the retry
+    // must stay dropped — it would otherwise overwrite the restored document
+    // with pre-delete content.
+    vi.mocked(saveStageDataIncremental).mockRejectedValueOnce(new Error('transient'));
+    useStageStore.getState().setStageAgents([makeAgentConfig('doomed')]);
+
+    useStageStore.getState().setStage({ ...makeStage(), id: 'stage-2' });
+    await vi.advanceTimersByTimeAsync(0);
+    const stage1Attempts = () =>
+      vi.mocked(saveStageDataIncremental).mock.calls.filter(([id]) => id === 'stage-1');
+    expect(stage1Attempts()).toHaveLength(1);
+
+    // Delete AND restore both land inside the 100 ms retry window.
+    markStageDeleted('stage-1');
+    unmarkStageDeleted('stage-1');
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(stage1Attempts()).toHaveLength(1);
+  });
+
+  it('persists dirt captured after a delete → restore cycle under the new epoch', async () => {
+    // The fence must not overreach: an edit made after the restore observes
+    // the current epoch and reaches storage normally.
+    markStageDeleted('stage-1');
+    unmarkStageDeleted('stage-1');
+
+    useStageStore.getState().setStageAgents([makeAgentConfig('post-restore')]);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(saveStageDataIncremental).toHaveBeenCalledOnce();
+    const [stageId, , , capturedEpoch] = vi.mocked(saveStageDataIncremental).mock.calls[0];
+    expect(stageId).toBe('stage-1');
+    // The flush captured the CURRENT (post-delete) epoch, not a stale one.
+    expect(capturedEpoch).toBe(stageDeletionEpoch('stage-1'));
+  });
+
   it('restores dirt discarded by a failed deletion so the edits still reach storage', async () => {
     // The edit sits in the debounce window when the delete starts; the delete
     // snapshots + discards it, then fails before the document was removed.
@@ -378,15 +421,21 @@ describe('setStageAgents persistence (document scheduler)', () => {
     await vi.advanceTimersByTimeAsync(500);
     expect(saveStageDataIncremental).not.toHaveBeenCalled();
 
-    // Failure path: deleteStageData lifts the tombstone and restores the dirt.
+    // Failure path: deleteStageData lifts the deleted flag and restores the
+    // dirt (the deletion epoch stays bumped).
     unmarkStageDeleted('stage-1');
     restorePendingStageChanges('stage-1', discarded);
     await vi.advanceTimersByTimeAsync(500);
 
     expect(saveStageDataIncremental).toHaveBeenCalledOnce();
-    const [stageId, dirty] = vi.mocked(saveStageDataIncremental).mock.calls[0];
+    const [stageId, dirty, , capturedEpoch] = vi.mocked(saveStageDataIncremental).mock.calls[0];
     expect(stageId).toBe('stage-1');
     expect(dirty).toEqual(expect.arrayContaining([{ kind: 'stage' }]));
+    // The restored dirt was re-queued as descriptors, so its flush captured a
+    // fresh snapshot under the CURRENT (post-bump) epoch — it is not dropped
+    // as stale, and it does not replay the pre-delete capture.
+    expect(capturedEpoch).toBe(stageDeletionEpoch('stage-1'));
+    expect(stageDeletionEpoch('stage-1')).toBeGreaterThan(0);
   });
 
   it('includes the in-flight flush round dirt in the deletion snapshot', async () => {
