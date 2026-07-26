@@ -159,9 +159,14 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     // next load retries the probe.
     if (!isCurrent()) return;
     const stageForRoster = getCurrentStage();
+    // The absent-vs-empty distinction is load-bearing and deliberately NOT
+    // collapsed here: `undefined` means the document predates roster
+    // persistence (probe the mirror, possibly lifting a whole roster), while
+    // an explicit `[]` is an authoritative empty roster that must never be
+    // resurrected from the stale read-only mirror.
     const documentConfigs =
-      stageForRoster?.id === classroomId ? (stageForRoster.generatedAgentConfigs ?? []) : [];
-    let effectiveConfigs = documentConfigs;
+      stageForRoster?.id === classroomId ? stageForRoster.generatedAgentConfigs : undefined;
+    let effectiveConfigs = documentConfigs ?? [];
     if (
       stageForRoster?.id === classroomId &&
       rosterNeedsLegacyFallback(documentConfigs) &&
@@ -176,7 +181,7 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
       // storage recovers — a transient IndexedDB error must not become a
       // session-long migration skip.
       if (fallbacks !== null) {
-        const merged = mergeLegacyAgentFallbacks(documentConfigs, fallbacks);
+        const merged = mergeLegacyAgentFallbacks(documentConfigs ?? [], fallbacks);
         if (merged.changed) {
           effectiveConfigs = merged.configs;
           commitMigratedAgentConfigs(classroomId, merged.configs);
@@ -341,16 +346,28 @@ export function discardRestoredMediaTasks(tasks: Record<string, MediaTask>): voi
 }
 
 /**
- * True when the persisted roster MAY still need the legacy mirror consulted:
- * either the document carries no roster at all (it may predate roster
- * persistence on the document), or some agent is missing its voice fields —
- * which can mean the voice lives only in the mirror, but can also mean the
- * producer never bound one (server-generated rosters are voiceless by
- * design). Callers pair this check with the per-session fruitless-probe memo
- * so the second case does not re-query the mirror on every load.
+ * True when the persisted roster MAY still need the legacy mirror consulted.
+ * The absent-vs-empty distinction matters:
+ *
+ * - `undefined` (no roster field on the document) → the document may predate
+ *   roster persistence entirely; the mirror may hold the whole roster, so
+ *   probe it (the full-lift branch of `mergeLegacyAgentFallbacks`).
+ * - `[]` (an explicitly persisted empty roster) → authoritative; never probe.
+ *   No current writer produces `[]` (the roster editor enforces a non-empty
+ *   roster, and import/generation only write the field when non-empty), but
+ *   any future writer that does must not have its empty roster resurrected
+ *   from the stale read-only mirror on every load.
+ * - Non-empty with an agent missing both voice fields → the voice may live
+ *   only in the mirror, but can also mean the producer never bound one
+ *   (server-generated rosters are voiceless by design). Callers pair this
+ *   check with the per-session fruitless-probe memo so the second case does
+ *   not re-query the mirror on every load.
  */
-export function rosterNeedsLegacyFallback(configs: readonly GeneratedAgentConfig[]): boolean {
-  if (configs.length === 0) return true;
+export function rosterNeedsLegacyFallback(
+  configs: readonly GeneratedAgentConfig[] | undefined,
+): boolean {
+  if (configs === undefined) return true;
+  if (configs.length === 0) return false;
   return configs.some((config) => !config.voiceDesign && !config.voiceConfig);
 }
 
@@ -358,7 +375,10 @@ export function rosterNeedsLegacyFallback(configs: readonly GeneratedAgentConfig
  * Merge the legacy mirror's roster into the document's configs. Pure.
  *
  * - Document configs empty + mirror has agents → lift the full mirror roster
- *   (sorted by priority desc for a stable, teacher-first order).
+ *   (sorted by priority desc for a stable, teacher-first order). The caller
+ *   only routes a roster here when the document carried no roster field at
+ *   all — an explicitly persisted `[]` never reaches the merge (see
+ *   `rosterNeedsLegacyFallback`).
  * - Document configs present → only backfill missing voice fields, matched by
  *   agent id. Document fields always win; the mirror never overwrites.
  *

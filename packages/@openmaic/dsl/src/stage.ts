@@ -92,8 +92,18 @@ export interface AgentVoiceConfig {
  * The voice fields are optional and additive: documents written before they
  * existed simply lack them, and readers treat an absent voice as "no bound
  * voice" (the TTS path falls back at call time). Adding them did not change
- * the meaning of any existing field, so it is not a breaking change to the
- * serialized shape and does not bump `DSL_VERSION` (see `version.ts`).
+ * the meaning of any existing field, so within this codebase — whose
+ * structural validators tolerate unknown fields — the addition is
+ * non-breaking and does not bump `DSL_VERSION` (see `version.ts`).
+ *
+ * It is NOT transparent to schema-validating consumers, however: the
+ * generated `stage.schema.json` sets `additionalProperties: false` on every
+ * definition, so a cross-language consumer validating against a pinned copy
+ * of an older published schema artifact rejects any document that carries
+ * these fields. Under strict schema validation, additive fields ARE a
+ * breaking change — such consumers must upgrade their schema artifact in
+ * lockstep with the documents they accept. (A `DSL_VERSION` bump would not
+ * help them: an old schema rejects the new documents either way.)
  */
 export interface GeneratedAgentConfig {
   id: string;

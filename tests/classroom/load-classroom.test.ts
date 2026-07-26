@@ -37,13 +37,16 @@ vi.mock('@/lib/utils/stage-storage', () => ({
   loadStageData: vi.fn().mockResolvedValue(null),
 }));
 
-function makeStage(id: string, generatedAgentConfigs: Stage['generatedAgentConfigs'] = []): Stage {
+// Omitting `generatedAgentConfigs` models a document written before roster
+// persistence existed (field absent) — distinct from an explicit `[]`, which
+// is an authoritative empty roster.
+function makeStage(id: string, generatedAgentConfigs?: Stage['generatedAgentConfigs']): Stage {
   return {
     id,
     name: id,
     createdAt: 1,
     updatedAt: 1,
-    generatedAgentConfigs,
+    ...(generatedAgentConfigs !== undefined ? { generatedAgentConfigs } : {}),
   };
 }
 
@@ -251,6 +254,58 @@ describe('runClassroomLoad', () => {
       );
     } finally {
       unmarkStageDeleted('stage-warm-ghost');
+      useStageStore.getState().clearStore();
+    }
+  });
+
+  it('restores a deleted classroom whose warm ghost has ZERO scenes (identity, not scene count, gates the ghost handling)', async () => {
+    // The ghost handling must key on stage identity alone: a scene-less
+    // classroom (its cascade failed AFTER removing the document, so the
+    // eviction never ran) leaves a warm ghost with zero scenes. Gating the
+    // deleted-warm handling on `scenes.length > 0` would skip the discard,
+    // the cold load would find nothing and leave the ghost in the store, and
+    // the server-fallback gate (`!getCurrentStage()`) would never run — a
+    // fully editable classroom whose every edit is silently dropped.
+    useStageStore.getState().clearStore();
+    vi.mocked(saveStageDataIncremental).mockClear();
+    applyClassroomStageAndScenes(makeStage('stage-zero-ghost'), [], { persist: false });
+    // Settled-deleted world with the ghost left warm (eviction skipped by the
+    // post-removal cascade failure).
+    markStageDeleted('stage-zero-ghost');
+    try {
+      const serverStage = makeStage('stage-zero-ghost');
+      const serverScene = makeScene('scene-server', 'stage-zero-ghost');
+      const { deps } = makeDeps({
+        classroomId: 'stage-zero-ghost',
+        loadFromStorage: (id, token) => useStageStore.getState().loadFromStorage(id, token),
+        getCurrentStage: () => useStageStore.getState().stage,
+        fetchClassroom: vi.fn().mockResolvedValue({ stage: serverStage, scenes: [serverScene] }),
+        applyFallbackScenes: vi.fn().mockImplementation(async ({ stage, scenes }) => {
+          applyClassroomStageAndScenes(stage, scenes, { persist: false });
+          return true;
+        }),
+      });
+
+      await runClassroomLoad(deps);
+
+      // The zero-scene ghost was discarded and the server restore ran.
+      expect(deps.fetchClassroom).toHaveBeenCalledExactlyOnceWith('stage-zero-ghost');
+      expect(deps.applyFallbackScenes).toHaveBeenCalledOnce();
+      expect(useStageStore.getState().stage?.id).toBe('stage-zero-ghost');
+      expect(useStageStore.getState().scenes.map((s) => s.id)).toEqual(['scene-server']);
+      expect(isStageDeleted('stage-zero-ghost')).toBe(false);
+
+      // …and edits persist again end-to-end through the scheduler.
+      useStageStore.getState().setCurrentSceneId('scene-server');
+      await flushStageSave();
+      expect(saveStageDataIncremental).toHaveBeenCalledWith(
+        'stage-zero-ghost',
+        expect.arrayContaining([{ kind: 'currentScene' }]),
+        expect.anything(),
+        expect.any(Number),
+      );
+    } finally {
+      unmarkStageDeleted('stage-zero-ghost');
       useStageStore.getState().clearStore();
     }
   });
@@ -699,13 +754,33 @@ describe('runClassroomLoad', () => {
       loadLegacyAgentFallbacks: vi.fn().mockResolvedValue(fallbacks),
       applyGeneratedAgents: vi.fn().mockReturnValue(['gen-teacher', 'gen-student']),
     });
-    setStage(makeStage('stage-a', []));
+    // No roster field at all: the document predates roster persistence.
+    setStage(makeStage('stage-a'));
 
     await runClassroomLoad(deps);
 
     const lifted = [fallbacks[1], fallbacks[0]]; // priority-desc, teacher first
     expect(deps.commitMigratedAgentConfigs).toHaveBeenCalledExactlyOnceWith('stage-a', lifted);
     expect(deps.applyGeneratedAgents).toHaveBeenCalledExactlyOnceWith('stage-a', lifted);
+  });
+
+  it('treats an explicitly persisted empty roster as authoritative: stale mirror rows are not resurrected', async () => {
+    // The mirror is never cleaned except on stage deletion, so a device can
+    // hold stale rows for a stage whose document explicitly carries `[]`.
+    // Collapsing absent and empty would lift the whole stale roster back on
+    // every load (the merge reports `changed: true`, so not even the
+    // fruitless-probe memo would stop it). The explicit `[]` must win.
+    const { deps, setStage } = makeDeps({
+      loadLegacyAgentFallbacks: vi.fn().mockResolvedValue([makeAgentConfig('stale-mirror-row')]),
+      applyGeneratedAgents: vi.fn().mockReturnValue([]),
+    });
+    setStage(makeStage('stage-a', []));
+
+    await runClassroomLoad(deps);
+
+    expect(deps.loadLegacyAgentFallbacks).not.toHaveBeenCalled();
+    expect(deps.commitMigratedAgentConfigs).not.toHaveBeenCalled();
+    expect(deps.applyGeneratedAgents).toHaveBeenCalledExactlyOnceWith('stage-a', []);
   });
 
   it('remembers a fruitless mirror probe and skips it on later loads of the same classroom', async () => {
@@ -882,8 +957,12 @@ describe('runClassroomLoad', () => {
 });
 
 describe('rosterNeedsLegacyFallback', () => {
-  it('is true for an empty roster (the document may predate roster persistence)', () => {
-    expect(rosterNeedsLegacyFallback([])).toBe(true);
+  it('is true when the document carries no roster field (it may predate roster persistence)', () => {
+    expect(rosterNeedsLegacyFallback(undefined)).toBe(true);
+  });
+
+  it('is false for an explicitly persisted empty roster (authoritative; never lifted)', () => {
+    expect(rosterNeedsLegacyFallback([])).toBe(false);
   });
 
   it('is true when any agent lacks both voice fields', () => {
@@ -966,7 +1045,7 @@ describe('commitMigratedAgentConfigsToStore', () => {
     useStageStore.setState({ stage: makeStage('stage-b') });
     commitMigratedAgentConfigsToStore('stage-a', [makeAgentConfig('stale')]);
     expect(useStageStore.getState().stage?.id).toBe('stage-b');
-    expect(useStageStore.getState().stage?.generatedAgentConfigs).toEqual([]);
+    expect(useStageStore.getState().stage?.generatedAgentConfigs).toBeUndefined();
 
     useStageStore.getState().clearStore();
   });

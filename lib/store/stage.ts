@@ -799,79 +799,92 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   loadFromStorage: async (stageId: string, loadToken?: StageSceneLoadToken) => {
     try {
       const token = loadToken ?? claimStageSceneLoadToken();
-      // Skip IndexedDB load if the store already has this stage with scenes
-      // (e.g. navigated from generation-preview with fresh in-memory data)
+      // Deletion handling keys on stage IDENTITY alone, deliberately BEFORE
+      // any scene-count shortcut: a warm ghost of a deleted classroom with
+      // zero scenes (a scene-less stage whose cascade failed after removing
+      // the document, so the eviction never ran) is still a ghost. Skipping
+      // the settlement handling for it would leave the ghost in the store
+      // after the cold load finds nothing, and the classroom loader's
+      // server-fallback gate (`!getCurrentStage()`) would then never restore
+      // the route — the same silently-uneditable trap as the scened case.
       const currentState = get();
-      if (currentState.stage?.id === stageId && currentState.scenes.length > 0) {
+      if (currentState.stage?.id === stageId) {
         if (!isStageDeleted(stageId)) {
-          log.info('Stage already loaded in memory, skipping IndexedDB load:', stageId);
-          return;
-        }
-        // While the deletion cascade is still unsettled, neither branch can
-        // be taken yet: on failure the warm state (plus the pending dirt the
-        // failure path restores) is the only copy of the pre-delete edits and
-        // must be KEPT, while on success the ghost must be discarded for a
-        // cold reload. Completing the load NOW would expose the classroom
-        // inside that window — edits would be refused by markPendingChanges
-        // without being in the deletion's pre-start snapshot (silently lost
-        // if the delete then fails), and on success the settlement eviction
-        // would blank an already-completed route with nothing left to
-        // trigger a reload. So park until the outcome is known, then branch.
-        // No deadlock: this load holds no document lock while parked, and
-        // the cascade never waits on a load to settle.
-        if (isStageDeletionInFlight(stageId)) {
-          log.info('Warm stage is mid-deletion; waiting for the cascade to settle:', stageId);
-          await stageDeletionSettled(stageId);
-          // Settlement can resolve long after the user navigated elsewhere;
-          // the usual token discipline keeps this parked load from touching
-          // the store the newer navigation now owns. (The success-path
-          // eviction deliberately does NOT claim a token, so it cannot trip
-          // this guard — see clearStoreForDeletedStage.)
-          if (!isCurrentStageSceneLoadToken(token)) {
-            log.info('Newer stage load started during deletion settlement, skipping:', stageId);
+          // Skip the IndexedDB load if the store already has this stage with
+          // scenes (e.g. navigated from generation-preview with fresh
+          // in-memory data). A zero-scene warm copy is not worth keeping:
+          // fall through to the cold load, which simply re-reads the document.
+          if (currentState.scenes.length > 0) {
+            log.info('Stage already loaded in memory, skipping IndexedDB load:', stageId);
             return;
           }
-          if (!isStageDeleted(stageId)) {
-            // The deletion failed before removing the document and lifted the
-            // flag: the warm state IS the live classroom again (the failure
-            // path re-queued the discarded dirt before settling) — keep it.
-            // Mirror of the success-path identity guard below: a tokenless
-            // store writer (applyClassroomStageAndScenes via a database
-            // import) can replace the stage during the park without claiming
-            // the load token, and then there is no warm state of THIS stage
-            // left to keep — fall through to the cold load instead of
-            // reporting a classroom the store no longer holds as live.
-            if (get().stage?.id === stageId) {
-              log.info('Deletion failed; keeping warm stage state:', stageId);
+        } else {
+          // While the deletion cascade is still unsettled, neither branch can
+          // be taken yet: on failure the warm state (plus the pending dirt the
+          // failure path restores) is the only copy of the pre-delete edits and
+          // must be KEPT, while on success the ghost must be discarded for a
+          // cold reload. Completing the load NOW would expose the classroom
+          // inside that window — edits would be refused by markPendingChanges
+          // without being in the deletion's pre-start snapshot (silently lost
+          // if the delete then fails), and on success the settlement eviction
+          // would blank an already-completed route with nothing left to
+          // trigger a reload. So park until the outcome is known, then branch.
+          // No deadlock: this load holds no document lock while parked, and
+          // the cascade never waits on a load to settle.
+          if (isStageDeletionInFlight(stageId)) {
+            log.info('Warm stage is mid-deletion; waiting for the cascade to settle:', stageId);
+            await stageDeletionSettled(stageId);
+            // Settlement can resolve long after the user navigated elsewhere;
+            // the usual token discipline keeps this parked load from touching
+            // the store the newer navigation now owns. (The success-path
+            // eviction deliberately does NOT claim a token, so it cannot trip
+            // this guard — see clearStoreForDeletedStage.)
+            if (!isCurrentStageSceneLoadToken(token)) {
+              log.info('Newer stage load started during deletion settlement, skipping:', stageId);
               return;
             }
-            log.info(
-              'Deletion failed but the store no longer holds the parked stage; reloading:',
-              stageId,
-            );
+            if (!isStageDeleted(stageId)) {
+              // The deletion failed before removing the document and lifted the
+              // flag: the warm state IS the live classroom again (the failure
+              // path re-queued the discarded dirt before settling) — keep it.
+              // Mirror of the success-path identity guard below: a tokenless
+              // store writer (applyClassroomStageAndScenes via a database
+              // import) can replace the stage during the park without claiming
+              // the load token, and then there is no warm state of THIS stage
+              // left to keep — fall through to the cold load instead of
+              // reporting a classroom the store no longer holds as live.
+              if (get().stage?.id === stageId) {
+                log.info('Deletion failed; keeping warm stage state:', stageId);
+                return;
+              }
+              log.info(
+                'Deletion failed but the store no longer holds the parked stage; reloading:',
+                stageId,
+              );
+            }
+            // Deletion succeeded: the settlement eviction has cleared the warm
+            // ghost (it runs synchronously before this microtask resumes).
+            // Fall through to the settled-deleted handling below and run the
+            // full cold load so the server-restore path can recover the route.
           }
-          // Deletion succeeded: the settlement eviction has cleared the warm
-          // ghost (it runs synchronously before this microtask resumes).
-          // Fall through to the settled-deleted handling below and run the
-          // full cold load so the server-restore path can recover the route.
-        }
-        // The warm copy is a ghost of a DELETED classroom whose deletion has
-        // SETTLED with the document removed (deletion evicts the store, but a
-        // partially failed cascade — or any future caller — can leave one).
-        // Short-circuiting here would starve the restore path: the classroom
-        // loader's server-fallback gate checks `getCurrentStage()`, so a warm
-        // ghost renders a fully editable classroom whose every edit is
-        // silently dropped. Discard the ghost (without claiming a new load
-        // token — the caller's token must stay current) and fall through to a
-        // full load, which finds no local data and lets the server-restore
-        // path run and lift the deletion. (Skipped when a failed deletion
-        // lifted the flag above: the document still exists, so the cold load
-        // below simply re-reads it.)
-        if (isStageDeleted(stageId)) {
-          log.info('Warm stage is deleted; discarding ghost and reloading:', stageId);
-          if (get().stage?.id === stageId) {
-            resetPendingChanges();
-            set((s) => clearedStageState(s));
+          // The warm copy is a ghost of a DELETED classroom whose deletion has
+          // SETTLED with the document removed (deletion evicts the store, but a
+          // partially failed cascade — or any future caller — can leave one).
+          // Short-circuiting here would starve the restore path: the classroom
+          // loader's server-fallback gate checks `getCurrentStage()`, so a warm
+          // ghost renders a fully editable classroom whose every edit is
+          // silently dropped. Discard the ghost (without claiming a new load
+          // token — the caller's token must stay current) and fall through to a
+          // full load, which finds no local data and lets the server-restore
+          // path run and lift the deletion. (Skipped when a failed deletion
+          // lifted the flag above: the document still exists, so the cold load
+          // below simply re-reads it.)
+          if (isStageDeleted(stageId)) {
+            log.info('Warm stage is deleted; discarding ghost and reloading:', stageId);
+            if (get().stage?.id === stageId) {
+              resetPendingChanges();
+              set((s) => clearedStageState(s));
+            }
           }
         }
       }
