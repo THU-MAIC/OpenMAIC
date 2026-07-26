@@ -43,6 +43,20 @@ describe('configureDocumentStorage', () => {
     );
   });
 
+  it('delegates own methods with the configured store as receiver', async () => {
+    const states = new WeakMap<object, string>();
+    const injected = {
+      loadDocument() {
+        return Promise.resolve(states.get(this) ?? null);
+      },
+    } as unknown as DocumentStore<AppScene, AppStage>;
+    states.set(injected, 'receiver-ok');
+    const { configureDocumentStorage, getDocumentStore } = await import('@/lib/document-store');
+    configureDocumentStorage({ store: injected });
+
+    await expect(getDocumentStore().loadDocument('stage-1')).resolves.toBe('receiver-ok');
+  });
+
   it('resetDocumentStorageForTests clears configuration and the latched store', async () => {
     const first = stubStore();
     const second = stubStore();

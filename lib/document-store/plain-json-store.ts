@@ -1,4 +1,4 @@
-import type { DocumentStore, MaicDocument } from '@openmaic/storage';
+import type { DocumentStore } from '@openmaic/storage';
 
 import type { AppScene } from '@/lib/types/stage';
 import { omitUndefinedObjectMembers } from '@/lib/persistence/plain-json';
@@ -16,26 +16,41 @@ export function withPlainJsonDocumentWrites(
   const existing = wrappers.get(store);
   if (existing) return existing;
 
+  const methods: DocumentStore<AppScene, AppStage> = {
+    saveDocument(document) {
+      return store.saveDocument(omitUndefinedObjectMembers(document));
+    },
+    loadDocument(stageId) {
+      return store.loadDocument(stageId);
+    },
+    listDocuments() {
+      return store.listDocuments();
+    },
+    deleteDocument(stageId) {
+      return store.deleteDocument(stageId);
+    },
+    putStage(stageId, stage) {
+      return store.putStage(stageId, omitUndefinedObjectMembers(stage));
+    },
+    putScene(stageId, scene) {
+      return store.putScene(stageId, omitUndefinedObjectMembers(scene));
+    },
+    getScene(stageId, sceneId) {
+      return store.getScene(stageId, sceneId);
+    },
+    deleteScene(stageId, sceneId) {
+      return store.deleteScene(stageId, sceneId);
+    },
+  };
   const wrapper = new Proxy(store, {
     get(target, property) {
-      if (property === 'saveDocument') {
-        return (document: MaicDocument<AppScene, AppStage>) =>
-          target.saveDocument(omitUndefinedObjectMembers(document));
+      if (Object.hasOwn(methods, property)) {
+        return Reflect.get(methods, property, methods) as unknown;
       }
-      if (property === 'putStage') {
-        return (stageId: string, stage: AppStage) =>
-          target.putStage(stageId, omitUndefinedObjectMembers(stage));
-      }
-      if (property === 'putScene') {
-        return (stageId: string, scene: AppScene) =>
-          target.putScene(stageId, omitUndefinedObjectMembers(scene));
-      }
-      const value = Reflect.get(target, property, target) as unknown;
-      return typeof value === 'function' && !Object.hasOwn(target, property)
-        ? value.bind(target)
-        : value;
+      return Reflect.get(target, property, target) as unknown;
     },
   });
   wrappers.set(store, wrapper);
+  wrappers.set(wrapper, wrapper);
   return wrapper;
 }
