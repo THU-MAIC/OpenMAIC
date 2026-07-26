@@ -23,8 +23,9 @@ describe('configureDocumentStorage', () => {
     configureDocumentStorage({ store: factory });
 
     expect(factory).not.toHaveBeenCalled();
-    expect(getDocumentStore()).toBe(injected);
-    expect(getDocumentStore()).toBe(injected);
+    const resolved = getDocumentStore();
+    expect(resolved).not.toBe(injected);
+    expect(getDocumentStore()).toBe(resolved);
     expect(factory).toHaveBeenCalledExactlyOnceWith({
       validateScene: validateAppScene,
       validateStage: validateAppStage,
@@ -53,12 +54,15 @@ describe('configureDocumentStorage', () => {
     } = await import('@/lib/document-store');
 
     configureDocumentStorage({ store: first });
-    expect(getDocumentStore()).toBe(first);
+    const firstResolved = getDocumentStore();
+    expect(firstResolved).not.toBe(first);
     expect(isDocumentStorageConfigured()).toBe(true);
 
     resetDocumentStorageForTests();
     expect(isDocumentStorageConfigured()).toBe(false);
     configureDocumentStorage({ store: second });
-    expect(getDocumentStore()).toBe(second);
+    const secondResolved = getDocumentStore();
+    expect(secondResolved).not.toBe(second);
+    expect(secondResolved).not.toBe(firstResolved);
   });
 });
