@@ -13,6 +13,7 @@ import {
   type LegacyDocumentSnapshot,
   type LegacyDocumentStore,
 } from '@/lib/document-store/migration';
+import { withPlainJsonDocumentWrites } from '@/lib/document-store/plain-json-store';
 import type { AppDocument } from '@/lib/document-store/persistence-types';
 import type { AppScene } from '@/lib/types/stage';
 
@@ -187,6 +188,24 @@ describe('legacy document migration', () => {
     expect(await kv.get('editor-current-scene:stage-1', 'device')).toMatchObject({
       sceneId: 'scene-1',
     });
+    expect(await kv.get('document-migration:stage-1', 'device')).toMatchObject({
+      sourceUpdatedAt: 200,
+    });
+  });
+
+  test('verifies a migration after persistence omits optional undefined members', async () => {
+    const source = snapshot();
+    source.stage.description = undefined;
+    const kv = new MemoryKv();
+
+    const result = await accessDocument('stage-1', {
+      store: withPlainJsonDocumentWrites(store()),
+      kv,
+      legacyStore: legacy(source),
+      lockManager: lockManager(),
+    });
+
+    expect(result.document?.stage).not.toHaveProperty('description');
     expect(await kv.get('document-migration:stage-1', 'device')).toMatchObject({
       sourceUpdatedAt: 200,
     });
