@@ -280,4 +280,44 @@ describe('manifest round-trip', () => {
     expect('voiceConfig' in imported).toBe(false);
     expect('voiceDesign' in imported).toBe(false);
   });
+
+  test('malformed voice fields in a manifest are dropped without losing the agent', () => {
+    // Manifests are parsed JSON from user-supplied ZIPs: the typed shape is a
+    // claim, not a guarantee. Junk voice structures must not enter the
+    // document (and from there the registry/TTS path).
+    const junkAgent = {
+      name: 'Crafted',
+      role: 'teacher',
+      persona: 'p',
+      avatar: 'a',
+      color: '#000',
+      priority: 10,
+      voiceConfig: { providerId: { nested: true }, voiceId: 0 },
+      voiceDesign: { identity: 1, texture: null, delivery: ['x'] },
+    } as unknown as Parameters<typeof agentConfigFromManifest>[0];
+
+    const imported = agentConfigFromManifest(junkAgent, 'gen-x');
+
+    expect(imported.name).toBe('Crafted');
+    expect('voiceConfig' in imported).toBe(false);
+    expect('voiceDesign' in imported).toBe(false);
+  });
+
+  test('voice-field validation is per field: a valid design survives an invalid binding', () => {
+    const agent = {
+      name: 'Half valid',
+      role: 'student',
+      persona: 'p',
+      avatar: 'a',
+      color: '#000',
+      priority: 5,
+      voiceConfig: { providerId: 'tts', voiceId: 42 },
+      voiceDesign: { identity: 'adult', texture: 'low', delivery: 'calm' },
+    } as unknown as Parameters<typeof agentConfigFromManifest>[0];
+
+    const imported = agentConfigFromManifest(agent, 'gen-y');
+
+    expect('voiceConfig' in imported).toBe(false);
+    expect(imported.voiceDesign).toEqual({ identity: 'adult', texture: 'low', delivery: 'calm' });
+  });
 });

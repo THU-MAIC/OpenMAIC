@@ -184,10 +184,13 @@ export interface MediaFileRecord {
 /**
  * GeneratedAgent table - AI-generated agent profiles.
  *
- * LEGACY, read-only. The roster now persists on the stage document
- * (`stage.generatedAgentConfigs`); this table has no remaining writers and is
- * kept only as a lazy-migration source for classrooms whose roster (or voice
- * fields) predate the document-embedded model. Do not add new writers.
+ * LEGACY. The roster now persists on the stage document
+ * (`stage.generatedAgentConfigs`); this table is kept only as a lazy-migration
+ * source for classrooms whose roster (or voice fields) predate the
+ * document-embedded model. Production access is migration reads plus deletion
+ * hygiene: `deleteStageData` clears a deleted stage's rows (as does the
+ * deprecated `deleteStageWithRelatedData` cascade). Nothing writes new rows;
+ * do not add writers.
  */
 export interface GeneratedAgentRecord {
   id: string; // PK: agent ID (e.g. "gen-abc123")

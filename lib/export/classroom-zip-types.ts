@@ -59,11 +59,38 @@ export function manifestAgentFromConfig(config: GeneratedAgentConfig): ManifestA
 }
 
 /**
+ * Structurally validate a manifest voice binding. Manifests are parsed JSON
+ * from user-supplied ZIPs, so the typed shape is a claim, not a guarantee: a
+ * malformed binding is dropped (the agent itself survives) rather than being
+ * written into the document and reaching the registry/TTS path.
+ */
+function sanitizeManifestVoiceConfig(value: unknown): AgentVoiceConfig | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { providerId, voiceId } = value as Record<string, unknown>;
+  if (typeof providerId !== 'string' || typeof voiceId !== 'string') return undefined;
+  return { providerId, voiceId };
+}
+
+/** Same contract as {@link sanitizeManifestVoiceConfig}, for the 3-layer descriptor. */
+function sanitizeManifestVoiceDesign(value: unknown): VoiceDesign | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { identity, texture, delivery } = value as Record<string, unknown>;
+  if (typeof identity !== 'string' || typeof texture !== 'string' || typeof delivery !== 'string') {
+    return undefined;
+  }
+  return { identity, texture, delivery };
+}
+
+/**
  * Rebuild a stage roster config from a manifest agent under a freshly minted
  * id — the inverse of {@link manifestAgentFromConfig}, so an export/import
- * round trip preserves the roster (voice included) up to id renaming.
+ * round trip preserves the roster (voice included) up to id renaming. The
+ * voice fields are structurally validated on the way in; malformed ones are
+ * dropped per field.
  */
 export function agentConfigFromManifest(agent: ManifestAgent, id: string): GeneratedAgentConfig {
+  const voiceConfig = sanitizeManifestVoiceConfig(agent.voiceConfig);
+  const voiceDesign = sanitizeManifestVoiceDesign(agent.voiceDesign);
   return {
     id,
     name: agent.name,
@@ -72,8 +99,8 @@ export function agentConfigFromManifest(agent: ManifestAgent, id: string): Gener
     avatar: agent.avatar,
     color: agent.color,
     priority: agent.priority,
-    ...(agent.voiceConfig ? { voiceConfig: agent.voiceConfig } : {}),
-    ...(agent.voiceDesign ? { voiceDesign: agent.voiceDesign } : {}),
+    ...(voiceConfig ? { voiceConfig } : {}),
+    ...(voiceDesign ? { voiceDesign } : {}),
   };
 }
 

@@ -73,6 +73,21 @@ export interface RunClassroomLoadArgs<TMediaTasks = unknown> {
   log: Logger;
 }
 
+/**
+ * Stages whose legacy-mirror probe came back with nothing to merge this
+ * session. `rosterNeedsLegacyFallback` cannot distinguish "predates voice
+ * persistence" from "the producer never bound a voice" (server-generated
+ * classrooms emit voiceless rosters by design), so without this memo such
+ * classrooms would re-query the mirror on every load forever. Session-scoped
+ * on purpose: no persistent marker is introduced for a pure read optimization.
+ */
+const fruitlessLegacyProbeStageIds = new Set<string>();
+
+/** Test hook: forget which stages already had a fruitless legacy-mirror probe. */
+export function resetLegacyAgentFallbackProbes(): void {
+  fruitlessLegacyProbeStageIds.clear();
+}
+
 export async function runClassroomLoad<TMediaTasks = unknown>({
   classroomId,
   loadToken,
@@ -127,17 +142,25 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     applyRestoredMediaTasks(mediaTasks);
 
     // ── Roster hydration: the stage document is the source of truth ──
-    // The legacy IndexedDB mirror is consulted only as a one-time, read-only
-    // migration source: it backfills a roster (or its voice fields) written
-    // before the roster was persisted on the document. The merged result is
+    // The legacy IndexedDB mirror is consulted as a read-only, per-stage
+    // migration probe: it backfills a roster (or its voice fields) written
+    // before the roster was persisted on the document. A successful merge is
     // committed back onto the stage so the next flush makes it durable, after
-    // which subsequent loads find nothing to merge (idempotent).
+    // which subsequent loads find nothing to merge. A fruitless probe (no
+    // mirror rows, or nothing mergeable — e.g. server-generated rosters whose
+    // producer never bound a voice) is remembered for the session so the
+    // mirror is not re-queried on every load of a classroom that has nothing
+    // to migrate.
     if (!isCurrent()) return;
     const stageForRoster = getCurrentStage();
     const documentConfigs =
       stageForRoster?.id === classroomId ? (stageForRoster.generatedAgentConfigs ?? []) : [];
     let effectiveConfigs = documentConfigs;
-    if (stageForRoster?.id === classroomId && rosterNeedsLegacyFallback(documentConfigs)) {
+    if (
+      stageForRoster?.id === classroomId &&
+      rosterNeedsLegacyFallback(documentConfigs) &&
+      !fruitlessLegacyProbeStageIds.has(classroomId)
+    ) {
       const fallbacks = await loadLegacyAgentFallbacks(classroomId);
       // The registry is a global singleton: after any await, re-check that this
       // load is still current before letting the merged roster land anywhere.
@@ -146,6 +169,11 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
       if (merged.changed) {
         effectiveConfigs = merged.configs;
         commitMigratedAgentConfigs(classroomId, merged.configs);
+      } else {
+        // Nothing to migrate for this stage; don't probe again this session.
+        // (A successful merge is NOT memoized: if its flush fails, the next
+        // load must retry the merge until the document carries the voices.)
+        fruitlessLegacyProbeStageIds.add(classroomId);
       }
     }
 
@@ -289,10 +317,13 @@ export function discardRestoredMediaTasks(tasks: Record<string, MediaTask>): voi
 }
 
 /**
- * True when the persisted roster still needs the legacy mirror consulted:
+ * True when the persisted roster MAY still need the legacy mirror consulted:
  * either the document carries no roster at all (it may predate roster
- * persistence on the document), or some agent is missing its voice fields
- * (voice historically lived only in the mirror).
+ * persistence on the document), or some agent is missing its voice fields —
+ * which can mean the voice lives only in the mirror, but can also mean the
+ * producer never bound one (server-generated rosters are voiceless by
+ * design). Callers pair this check with the per-session fruitless-probe memo
+ * so the second case does not re-query the mirror on every load.
  */
 export function rosterNeedsLegacyFallback(configs: readonly GeneratedAgentConfig[]): boolean {
   if (configs.length === 0) return true;
@@ -338,8 +369,9 @@ export function mergeLegacyAgentFallbacks(
 
 /**
  * Read the legacy roster mirror for a stage as contract-shaped configs.
- * Read-only: the mirror table has no remaining writers and serves purely as a
- * migration source for pre-single-source classrooms.
+ * Read-only: production code only reads this table as a migration source for
+ * pre-single-source classrooms (plus deletion hygiene when a stage is
+ * removed); nothing writes new rows.
  */
 export async function loadLegacyAgentFallbacksFromDB(
   stageId: string,

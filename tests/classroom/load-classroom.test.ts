@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   applyClassroomStageAndScenes,
   commitMigratedAgentConfigsToStore,
   discardRestoredMediaTasks,
   mergeLegacyAgentFallbacks,
+  resetLegacyAgentFallbackProbes,
   rosterNeedsLegacyFallback,
   runClassroomLoad,
 } from '@/lib/classroom/load-classroom';
@@ -132,6 +133,11 @@ function makeDeps(overrides: Partial<Parameters<typeof runClassroomLoad>[0]> = {
     },
   };
 }
+
+// The fruitless-probe memo is session-scoped module state; isolate tests.
+beforeEach(() => {
+  resetLegacyAgentFallbackProbes();
+});
 
 describe('runClassroomLoad', () => {
   it('keeps the current load token valid when fallback scenes are committed', () => {
@@ -333,6 +339,62 @@ describe('runClassroomLoad', () => {
     const lifted = [fallbacks[1], fallbacks[0]]; // priority-desc, teacher first
     expect(deps.commitMigratedAgentConfigs).toHaveBeenCalledExactlyOnceWith('stage-a', lifted);
     expect(deps.applyGeneratedAgents).toHaveBeenCalledExactlyOnceWith('stage-a', lifted);
+  });
+
+  it('remembers a fruitless mirror probe and skips it on later loads of the same classroom', async () => {
+    // Server-generated classrooms have voiceless rosters by design: the probe
+    // finds nothing to merge, and without the memo it would re-query the
+    // mirror on every single load, forever.
+    const { deps, setStage } = makeDeps({
+      loadLegacyAgentFallbacks: vi.fn().mockResolvedValue([]),
+      applyGeneratedAgents: vi.fn().mockReturnValue(['agent-a']),
+    });
+    setStage(makeStage('stage-a', [makeAgentConfig('agent-a')]));
+
+    await runClassroomLoad(deps);
+    expect(deps.loadLegacyAgentFallbacks).toHaveBeenCalledTimes(1);
+
+    await runClassroomLoad(deps);
+    expect(deps.loadLegacyAgentFallbacks).toHaveBeenCalledTimes(1);
+    expect(deps.commitMigratedAgentConfigs).not.toHaveBeenCalled();
+    // The roster itself still hydrates the registry on every load.
+    expect(deps.applyGeneratedAgents).toHaveBeenCalledTimes(2);
+  });
+
+  it('scopes the fruitless-probe memo per classroom', async () => {
+    const first = makeDeps({ loadLegacyAgentFallbacks: vi.fn().mockResolvedValue([]) });
+    first.setStage(makeStage('stage-a', [makeAgentConfig('agent-a')]));
+    await runClassroomLoad(first.deps);
+    expect(first.deps.loadLegacyAgentFallbacks).toHaveBeenCalledTimes(1);
+
+    const second = makeDeps({
+      classroomId: 'stage-b',
+      loadLegacyAgentFallbacks: vi.fn().mockResolvedValue([]),
+    });
+    second.setStage(makeStage('stage-b', [makeAgentConfig('agent-b')]));
+    await runClassroomLoad(second.deps);
+    expect(second.deps.loadLegacyAgentFallbacks).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps probing until a successful merge is durably on the document (no memo on merges)', async () => {
+    // A merge that changed the roster is committed dirty; if its flush failed,
+    // the next load must probe and merge again rather than being memoized.
+    // This harness never updates the document copy, standing in for exactly
+    // that failed-flush case.
+    const voiceDesign = { identity: 'bright', texture: 'clear', delivery: 'lively' };
+    const { deps, setStage } = makeDeps({
+      loadLegacyAgentFallbacks: vi
+        .fn()
+        .mockResolvedValue([makeAgentConfig('agent-a', { voiceDesign })]),
+      applyGeneratedAgents: vi.fn().mockReturnValue(['agent-a']),
+    });
+    setStage(makeStage('stage-a', [makeAgentConfig('agent-a')]));
+
+    await runClassroomLoad(deps);
+    await runClassroomLoad(deps);
+
+    expect(deps.loadLegacyAgentFallbacks).toHaveBeenCalledTimes(2);
+    expect(deps.commitMigratedAgentConfigs).toHaveBeenCalledTimes(2);
   });
 
   it('does not commit or apply a merged roster when superseded during the mirror read', async () => {

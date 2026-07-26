@@ -1,11 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { setSelectedAgentIds, applyGeneratedAgentsToRegistry } = vi.hoisted(() => ({
-  setSelectedAgentIds: vi.fn(),
-  applyGeneratedAgentsToRegistry: vi.fn(
-    (_stageId: string, configs: ReadonlyArray<{ id: string }>) => configs.map((c) => c.id),
-  ),
-}));
+const { settingsState, setSelectedAgentIds, applyGeneratedAgentsToRegistry } = vi.hoisted(() => {
+  const setSelectedAgentIds = vi.fn();
+  return {
+    setSelectedAgentIds,
+    settingsState: {
+      agentMode: 'auto' as 'preset' | 'auto',
+      selectedAgentIds: [] as string[],
+      agentSelectionIsUserSet: false,
+      setSelectedAgentIds,
+    },
+    applyGeneratedAgentsToRegistry: vi.fn(
+      (_stageId: string, configs: ReadonlyArray<{ id: string }>) => configs.map((c) => c.id),
+    ),
+  };
+});
 
 // Stage-storage modules are imported dynamically inside the store's save/load
 // actions. Mock them so the scheduled flush doesn't try to talk to a real (or
@@ -20,11 +29,12 @@ vi.mock('@/lib/orchestration/registry/store', () => ({
 }));
 vi.mock('@/lib/store/settings', () => ({
   useSettingsStore: {
-    getState: () => ({ setSelectedAgentIds }),
+    getState: () => settingsState,
   },
 }));
 
 import { discardPendingStageChanges, useStageStore } from '@/lib/store/stage';
+import { markStageDeleted, unmarkStageDeleted } from '@/lib/utils/deleted-stages';
 import { saveStageData, saveStageDataIncremental } from '@/lib/utils/stage-storage';
 import type { Stage } from '@/lib/types/stage';
 import type { GeneratedAgentConfig } from '@/lib/types/stage';
@@ -54,6 +64,9 @@ beforeEach(() => {
   vi.useFakeTimers();
   applyGeneratedAgentsToRegistry.mockClear();
   setSelectedAgentIds.mockClear();
+  settingsState.agentMode = 'auto';
+  settingsState.selectedAgentIds = [];
+  settingsState.agentSelectionIsUserSet = false;
   useStageStore.setState({
     stage: makeStage(),
     scenes: [],
@@ -64,6 +77,10 @@ beforeEach(() => {
 afterEach(() => {
   // clearStore cancels any scheduled flush timer along with pending changes.
   useStageStore.getState().clearStore();
+  // Deletion tombstones are session-scoped module state; reset every id the
+  // tests use so one test's deletion cannot fence another's writes.
+  unmarkStageDeleted('stage-1');
+  unmarkStageDeleted('stage-2');
   vi.useRealTimers();
 });
 
@@ -108,6 +125,48 @@ describe('setStageAgents', () => {
     // effects, not persistence.
     expect(applyGeneratedAgentsToRegistry).toHaveBeenCalledExactlyOnceWith('stage-1', configs);
     expect(setSelectedAgentIds).toHaveBeenCalledExactlyOnceWith(['a1', 'a2']);
+  });
+});
+
+describe('setStageAgents selection provenance', () => {
+  it('tracks the full roster only while the selection is stage-derived (not user-set)', () => {
+    settingsState.agentSelectionIsUserSet = false;
+    settingsState.selectedAgentIds = ['a1'];
+
+    useStageStore.getState().setStageAgents([makeAgentConfig('a1'), makeAgentConfig('a2')]);
+
+    expect(setSelectedAgentIds).toHaveBeenCalledExactlyOnceWith(['a1', 'a2']);
+  });
+
+  it('narrows a user-set auto selection to the surviving roster; newcomers are not auto-selected', () => {
+    settingsState.agentSelectionIsUserSet = true;
+    settingsState.agentMode = 'auto';
+    settingsState.selectedAgentIds = ['a1', 'removed'];
+
+    useStageStore.getState().setStageAgents([makeAgentConfig('a1'), makeAgentConfig('newcomer')]);
+
+    // 'removed' left the roster (dropped); 'newcomer' joined it (NOT selected).
+    expect(setSelectedAgentIds).toHaveBeenCalledExactlyOnceWith(['a1']);
+  });
+
+  it('leaves a user-set auto selection untouched when every pick is still in the roster', () => {
+    settingsState.agentSelectionIsUserSet = true;
+    settingsState.agentMode = 'auto';
+    settingsState.selectedAgentIds = ['a1'];
+
+    useStageStore.getState().setStageAgents([makeAgentConfig('a1'), makeAgentConfig('a2')]);
+
+    expect(setSelectedAgentIds).not.toHaveBeenCalled();
+  });
+
+  it('never touches a user-set preset selection (roster edits do not concern preset agents)', () => {
+    settingsState.agentSelectionIsUserSet = true;
+    settingsState.agentMode = 'preset';
+    settingsState.selectedAgentIds = ['default-1', 'default-2'];
+
+    useStageStore.getState().setStageAgents([makeAgentConfig('a1')]);
+
+    expect(setSelectedAgentIds).not.toHaveBeenCalled();
   });
 });
 
@@ -178,6 +237,50 @@ describe('setStageAgents persistence (document scheduler)', () => {
     await vi.advanceTimersByTimeAsync(500);
 
     expect(saveStageDataIncremental).toHaveBeenCalledOnce();
+  });
+
+  it('drops a scheduled flush whose stage was deleted after the dirt was queued', async () => {
+    // The in-flight-round shape of the deletion race: the dirt is already
+    // queued (and may already be snapshotted) when the delete lands. The
+    // tombstone — not the pending-map discard — must fence the write.
+    useStageStore.getState().setStageAgents([makeAgentConfig('doomed')]);
+    markStageDeleted('stage-1');
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(saveStageDataIncremental).not.toHaveBeenCalled();
+    expect(saveStageData).not.toHaveBeenCalled();
+  });
+
+  it('refuses to queue new dirt for a stage already deleted', async () => {
+    markStageDeleted('stage-1');
+    useStageStore.getState().setStageAgents([makeAgentConfig('late-edit')]);
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(saveStageDataIncremental).not.toHaveBeenCalled();
+  });
+
+  it('does not resurrect a deleted stage through the departing-stage retry window', async () => {
+    // Navigation snapshots the departing stage's dirt into local variables and
+    // retries once after a delay — outside the pending map, so the deletion
+    // path's discard cannot reach it. The tombstone must stop the retry.
+    vi.mocked(saveStageDataIncremental).mockRejectedValueOnce(new Error('transient'));
+    useStageStore.getState().setStageAgents([makeAgentConfig('doomed')]);
+
+    useStageStore.getState().setStage({ ...makeStage(), id: 'stage-2' });
+    // Let the departing snapshot's first attempt run and fail.
+    await vi.advanceTimersByTimeAsync(0);
+    const stage1Attempts = () =>
+      vi.mocked(saveStageDataIncremental).mock.calls.filter(([id]) => id === 'stage-1');
+    expect(stage1Attempts()).toHaveLength(1);
+
+    // The stage is deleted inside the 100 ms retry window.
+    markStageDeleted('stage-1');
+    await vi.advanceTimersByTimeAsync(100);
+
+    // The retry was dropped instead of recreating the deleted document.
+    expect(stage1Attempts()).toHaveLength(1);
   });
 
   it('does NOT touch the registry on plain saveToStorage without a roster edit', async () => {

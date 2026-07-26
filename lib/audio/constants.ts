@@ -36,6 +36,7 @@ import type {
   ASRProviderId,
   ASRProviderConfig,
 } from './types';
+import { isCustomTTSProvider } from './types';
 import {
   VOXCPM_AUTO_VOICE,
   VOXCPM_AUTO_VOICE_ID,
@@ -1308,6 +1309,16 @@ export function getAllTTSProviders(
   const builtIn = Object.values(TTS_PROVIDERS);
   const custom = customProviders ? Object.values(customProviders) : [];
   return [...builtIn, ...custom];
+}
+
+/**
+ * Narrow an arbitrary string (e.g. from a persisted document or an imported
+ * manifest, where the contract keeps providerId an open string) to a known
+ * TTS provider id: a registered built-in provider or the user-defined
+ * custom-provider namespace. Anything else must be treated as "no voice".
+ */
+export function isKnownTTSProviderId(id: string): id is TTSProviderId {
+  return id in TTS_PROVIDERS || isCustomTTSProvider(id);
 }
 
 /**

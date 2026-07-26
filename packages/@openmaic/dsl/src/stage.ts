@@ -74,11 +74,12 @@ export interface VoiceDesign {
 
 /**
  * A concrete TTS voice binding for an agent. `providerId` is an open string at
- * the contract level — the set of available TTS providers is app-defined.
+ * the contract level — the set of available TTS providers is app-defined, and
+ * readers must treat an unknown provider as "no bound voice". Deliberately
+ * minimal: fields are added here only once a producer actually emits them.
  */
 export interface AgentVoiceConfig {
   providerId: string;
-  modelId?: string;
   voiceId: string;
 }
 

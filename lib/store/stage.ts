@@ -21,6 +21,7 @@ import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/doc
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
 import type { ChatStorageSnapshot } from '@/lib/utils/chat-storage';
 import type { PendingChange } from '@/lib/utils/stage-storage';
+import { isStageDeleted } from '@/lib/utils/deleted-stages';
 
 const log = createLogger('StageStore');
 
@@ -72,7 +73,7 @@ function schedulePendingSave(): void {
 }
 
 function markPendingChanges(stageId: string | undefined, ...changes: PendingChange[]): void {
-  if (!stageId) return;
+  if (!stageId || isStageDeleted(stageId)) return;
   if (pendingStageId !== stageId) resetPendingChanges(stageId);
   for (const change of changes) {
     pendingRevision += 1;
@@ -91,8 +92,12 @@ export function markStagePersistenceDirty(changes: PendingChange[]): void {
 
 /**
  * Drop any pending persistence work for a deleted stage. Called by the stage
- * deletion path so a mutation still sitting in the debounce window cannot
- * flush after the delete and resurrect the removed document.
+ * deletion path (which registers the stage's tombstone first — see
+ * `lib/utils/deleted-stages.ts`) so a mutation still sitting in the debounce
+ * window cannot flush after the delete and resurrect the removed document.
+ * Work already outside the pending map — an in-flight flush round's snapshot
+ * and the departing-stage snapshot held by `setStage` — is fenced by the
+ * tombstone checks in `persistDirtySnapshot` and the storage layer instead.
  */
 export function discardPendingStageChanges(stageId: string): void {
   if (pendingStageId === stageId) resetPendingChanges();
@@ -232,6 +237,10 @@ async function persistDirtySnapshot(
   snapshot: StagePersistenceSnapshot,
 ): Promise<Set<string>> {
   if (!snapshot.stage) return new Set();
+  // A deleted stage's dirt is dropped, not retried: this covers snapshots that
+  // escaped `discardPendingStageChanges` because they already left the pending
+  // map (an in-flight flush round, or the departing-stage retry in setStage).
+  if (isStageDeleted(stageId)) return new Set();
   stageStorageModulePromise ??= import('@/lib/utils/stage-storage');
   const { saveStageDataIncremental } = await stageStorageModulePromise;
   const result = await saveStageDataIncremental(
@@ -470,7 +479,23 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     // and selection updates below are synchronous in-memory mirrors only.
     markPendingChanges(stage.id, { kind: 'stage' });
     applyGeneratedAgentsToRegistry(stage.id, configs);
-    useSettingsStore.getState().setSelectedAgentIds(configs.map((a) => a.id));
+    // Selection mirror honors provenance (same semantics as
+    // restoreAgentSelection): a stage-derived selection tracks the roster
+    // wholesale, but a user's explicit choice is only narrowed — agents that
+    // left the roster are dropped, newcomers are never auto-selected, and
+    // `agentSelectionIsUserSet` is left untouched either way. A user-set
+    // preset selection references non-generated agents only, so a roster edit
+    // does not concern it.
+    const settings = useSettingsStore.getState();
+    if (!settings.agentSelectionIsUserSet) {
+      settings.setSelectedAgentIds(configs.map((a) => a.id));
+    } else if (settings.agentMode === 'auto') {
+      const rosterIds = new Set(configs.map((a) => a.id));
+      const retained = settings.selectedAgentIds.filter((id) => rosterIds.has(id));
+      if (retained.length !== settings.selectedAgentIds.length) {
+        settings.setSelectedAgentIds(retained);
+      }
+    }
   },
 
   setGeneratingOutlines: (generatingOutlines) => set({ generatingOutlines }),

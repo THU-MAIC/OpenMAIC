@@ -7,7 +7,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AgentConfig } from './types';
 import { getActionsForRole } from './types';
-import type { TTSProviderId } from '@/lib/audio/types';
+import { isKnownTTSProviderId } from '@/lib/audio/constants';
 import type { GeneratedAgentConfig } from '@/lib/types/stage';
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import type { Participant, ParticipantRole } from '@/lib/types/roundtable';
@@ -237,6 +237,15 @@ export const useAgentRegistry = create<AgentRegistryState>()(
       name: 'agent-registry-storage',
       version: 11, // Bumped: add voiceOverrides field to AgentConfig
       migrate: (persistedState: unknown) => persistedState,
+      // Generated agents are single-sourced on the stage document and rebuilt
+      // from it on every classroom load — keep them out of the localStorage
+      // snapshot entirely. The merge filter below stays as defense in depth
+      // for snapshots written before this partialize existed.
+      partialize: (state) => ({
+        agents: Object.fromEntries(
+          Object.entries(state.agents).filter(([, agent]) => !agent.isGenerated),
+        ),
+      }),
       // Merge persisted state with default agents
       // Default agents always use code-defined values (not cached)
       // Custom agents use persisted values
@@ -331,11 +340,16 @@ export function agentsToParticipants(
 /**
  * Replace the registry's generated agents with the given stage roster.
  *
- * Pure in-memory registry side effect: the persisted source of truth for the
+ * In-memory registry side effect: the persisted source of truth for the
  * roster is `stage.generatedAgentConfigs` on the stage document, and callers
- * persist it through the document path — this function never writes storage.
+ * persist it through the document path — the registry's own localStorage
+ * snapshot excludes generated agents (see the persist `partialize` above), so
+ * nothing written here becomes durable.
  * Clears previously loaded generated agents first (even when the new roster is
  * empty) so a prior classroom's roster cannot leak into the current one.
+ * The contract keeps `voiceConfig.providerId` an open string; a binding whose
+ * provider is not registered in this app is dropped here (the agent keeps its
+ * voiceDesign, and the TTS path falls back at call time).
  * Returns the applied agent IDs.
  */
 export function applyGeneratedAgentsToRegistry(
@@ -359,11 +373,10 @@ export function applyGeneratedAgentsToRegistry(
       boundStageId: stageId,
       createdAt: new Date(now),
       updatedAt: new Date(now),
-      ...(voiceConfig
+      ...(voiceConfig && isKnownTTSProviderId(voiceConfig.providerId)
         ? {
             voiceConfig: {
-              providerId: voiceConfig.providerId as TTSProviderId,
-              ...(voiceConfig.modelId ? { modelId: voiceConfig.modelId } : {}),
+              providerId: voiceConfig.providerId,
               voiceId: voiceConfig.voiceId,
             },
           }

@@ -1,0 +1,225 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * Deletion-vs-persistence fencing at the storage layer.
+ *
+ * The store-level tests cover snapshots that are dropped before they reach
+ * storage; these tests cover the last escape hatch: a write that already
+ * entered `saveStageData` / `saveStageDataIncremental` when the stage was
+ * deleted. Without the tombstone re-checks, `existing === undefined` after a
+ * delete routes the incremental path into a full save that rebuilds the
+ * deleted document from the in-memory snapshot.
+ */
+
+const { discardPendingStageChanges, mutateDocument, fakeStore, dbMock } = vi.hoisted(() => {
+  const fakeStore = {
+    saveDocument: vi.fn().mockResolvedValue(undefined),
+    putScene: vi.fn().mockResolvedValue(undefined),
+    putStage: vi.fn().mockResolvedValue(undefined),
+    deleteDocument: vi.fn().mockResolvedValue(undefined),
+  };
+  const generatedAgentsDelete = vi.fn().mockResolvedValue(0);
+  const scenesDelete = vi.fn().mockResolvedValue(0);
+  const dbMock = {
+    stages: { delete: vi.fn().mockResolvedValue(undefined) },
+    scenes: {
+      where: () => ({
+        equals: () => ({
+          toArray: vi.fn().mockResolvedValue([]),
+          delete: scenesDelete,
+        }),
+      }),
+    },
+    stageOutlines: { delete: vi.fn().mockResolvedValue(undefined) },
+    playbackState: { delete: vi.fn().mockResolvedValue(undefined) },
+    generatedAgents: {
+      where: () => ({
+        equals: () => ({ delete: generatedAgentsDelete }),
+      }),
+      _delete: generatedAgentsDelete,
+    },
+    transaction: vi.fn(async (_mode: string, _tables: unknown[], fn: () => Promise<void>) => fn()),
+  };
+  return {
+    discardPendingStageChanges: vi.fn(),
+    mutateDocument: vi.fn(),
+    fakeStore,
+    dbMock,
+  };
+});
+
+vi.mock('@/lib/document-store', () => ({
+  accessDocument: vi.fn(),
+  clearCurrentScene: vi.fn().mockResolvedValue(undefined),
+  getDocumentStore: vi.fn(),
+  getLegacyDocumentStore: vi.fn(),
+  loadCurrentScene: vi.fn().mockResolvedValue(null),
+  mutateDocument,
+  saveCurrentScene: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('@/lib/utils/chat-storage', () => ({
+  ChatStorageLockUnavailableError: class ChatStorageLockUnavailableError extends Error {},
+  saveChatSessions: vi.fn().mockResolvedValue(undefined),
+  loadChatSessions: vi.fn().mockResolvedValue([]),
+  deleteChatSessions: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('@/lib/utils/chat-storage-lock', () => ({
+  withRuntimeStorageSharedLock: vi.fn(async (fn: () => Promise<unknown>) => fn()),
+  withRuntimeStorageExclusiveLockUntilSettled: vi.fn(
+    async (fn: (release: (value: unknown) => void) => Promise<unknown>) => fn(() => undefined),
+  ),
+}));
+vi.mock('@/lib/utils/database', () => ({ db: dbMock }));
+vi.mock('@/lib/playback/cursor', () => ({ clearCursor: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('@/lib/quiz/persistence', () => ({ clearAllForScene: vi.fn() }));
+vi.mock('@/lib/runtime/store', () => ({
+  beginStageRuntimeDeletionSafely: vi.fn(() => ({
+    completion: Promise.resolve(),
+    settlement: Promise.resolve(),
+  })),
+}));
+vi.mock('@/lib/pbl/v2/runtime/drain', () => ({
+  clearStageDrainWatermarks: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('@/lib/pbl/v2/runtime/document-persistence', () => ({
+  preparePBLScenesForDocumentPersistence: vi.fn(
+    async (_stageId: string, scenes: unknown[]) => scenes,
+  ),
+}));
+vi.mock('@/lib/store/stage', () => ({ discardPendingStageChanges }));
+
+import {
+  deleteStageData,
+  saveStageData,
+  saveStageDataIncremental,
+  type StageStoreData,
+} from '@/lib/utils/stage-storage';
+import { isStageDeleted, markStageDeleted, unmarkStageDeleted } from '@/lib/utils/deleted-stages';
+
+let stageCounter = 0;
+let stageId: string;
+
+function makeData(id: string): StageStoreData {
+  return {
+    stage: { id, name: 'Doomed', createdAt: 1, updatedAt: 1 },
+    scenes: [],
+    currentSceneId: null,
+    chats: [],
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Fresh id per test: the tombstone set is session-scoped module state.
+  stageCounter += 1;
+  stageId = `stage-del-${stageCounter}`;
+  // Default: the document is already gone (post-delete world).
+  mutateDocument.mockImplementation(
+    async (
+      _stageId: string,
+      callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+    ) => callback(undefined, fakeStore),
+  );
+});
+
+afterEach(() => {
+  unmarkStageDeleted(stageId);
+});
+
+describe('saveStageDataIncremental vs deletion', () => {
+  it('full-saves when the destination is missing and the stage is NOT deleted (pinned)', async () => {
+    await saveStageDataIncremental(stageId, [{ kind: 'stage' }], makeData(stageId));
+    expect(fakeStore.saveDocument).toHaveBeenCalledOnce();
+  });
+
+  it('drops the write instead of rebuilding a deleted document', async () => {
+    markStageDeleted(stageId);
+    const result = await saveStageDataIncremental(stageId, [{ kind: 'stage' }], makeData(stageId));
+    expect(result).toEqual({ failedChanges: [] });
+    expect(fakeStore.saveDocument).not.toHaveBeenCalled();
+    expect(mutateDocument).not.toHaveBeenCalled();
+  });
+
+  it('re-checks the tombstone under the document lock (delete won the lock race)', async () => {
+    // The flush entered mutateDocument first; the delete completes while the
+    // flush waits for the per-stage lock. By the time the callback runs, the
+    // tombstone exists and the full-save fallback must not fire.
+    mutateDocument.mockImplementationOnce(
+      async (
+        id: string,
+        callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+      ) => {
+        markStageDeleted(id);
+        return callback(undefined, fakeStore);
+      },
+    );
+    await saveStageDataIncremental(stageId, [{ kind: 'stage' }], makeData(stageId));
+    expect(fakeStore.saveDocument).not.toHaveBeenCalled();
+    expect(fakeStore.putStage).not.toHaveBeenCalled();
+  });
+});
+
+describe('saveStageData vs deletion', () => {
+  it('drops the aggregate save for a deleted stage', async () => {
+    markStageDeleted(stageId);
+    const result = await saveStageData(stageId, makeData(stageId));
+    expect(result).toBeUndefined();
+    expect(fakeStore.saveDocument).not.toHaveBeenCalled();
+    expect(mutateDocument).not.toHaveBeenCalled();
+  });
+
+  it('re-checks the tombstone under the document lock', async () => {
+    mutateDocument.mockImplementationOnce(
+      async (
+        id: string,
+        callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+      ) => {
+        markStageDeleted(id);
+        return callback(undefined, fakeStore);
+      },
+    );
+    await saveStageData(stageId, makeData(stageId));
+    expect(fakeStore.saveDocument).not.toHaveBeenCalled();
+  });
+});
+
+describe('deleteStageData wiring', () => {
+  it('tombstones the stage BEFORE discarding pending work, then deletes', async () => {
+    discardPendingStageChanges.mockImplementationOnce((id: string) => {
+      // Ordering matters: an in-flight round survives the discard, so the
+      // tombstone must already be visible when the discard happens.
+      expect(isStageDeleted(id)).toBe(true);
+    });
+
+    await deleteStageData(stageId);
+
+    expect(discardPendingStageChanges).toHaveBeenCalledExactlyOnceWith(stageId);
+    expect(fakeStore.deleteDocument).toHaveBeenCalledExactlyOnceWith(stageId);
+    expect(isStageDeleted(stageId)).toBe(true);
+  });
+
+  it('clears the legacy roster-mirror rows for the deleted stage', async () => {
+    await deleteStageData(stageId);
+    expect(dbMock.generatedAgents._delete).toHaveBeenCalledOnce();
+  });
+
+  it('tolerates a mirror-row cleanup failure without failing the deletion', async () => {
+    dbMock.generatedAgents._delete.mockRejectedValueOnce(new Error('mirror gone wrong'));
+    await expect(deleteStageData(stageId)).resolves.toBeUndefined();
+    expect(dbMock.stages.delete).toHaveBeenCalledWith(stageId);
+  });
+
+  it('lifts the tombstone when the deletion fails before the document was removed', async () => {
+    fakeStore.deleteDocument.mockRejectedValueOnce(new Error('locked'));
+    await expect(deleteStageData(stageId)).rejects.toThrow('locked');
+    // The stage still exists — later edits must persist normally again.
+    expect(isStageDeleted(stageId)).toBe(false);
+  });
+
+  it('keeps the tombstone when the cascade fails after the document was removed', async () => {
+    dbMock.stageOutlines.delete.mockRejectedValueOnce(new Error('partial cascade'));
+    await expect(deleteStageData(stageId)).rejects.toThrow('partial cascade');
+    // The document is gone; dropping later writes is what prevents resurrection.
+    expect(isStageDeleted(stageId)).toBe(true);
+  });
+});
