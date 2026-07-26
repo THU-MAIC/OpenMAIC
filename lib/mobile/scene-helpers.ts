@@ -48,6 +48,8 @@ export interface MobileChapter {
   audioSourceField: string;
   /** All audio segments for sequential playback (primary mobile path). */
   audioSegments: MobileAudioSegment[];
+  /** Per-speech fallback when the optional narration file cannot be loaded. */
+  fallbackAudioSegments: MobileAudioSegment[];
   /** Total seconds of audio (estimated if not pre-computed). */
   durationSec: number;
 }
@@ -133,24 +135,7 @@ function extractNarrationText(scene: Scene): string {
  *
  * The mobile AudioPlayer plays these segments sequentially.
  */
-function extractAudioSegments(scene: Scene): MobileAudioSegment[] {
-  const sceneRaw = scene as unknown as Record<string, unknown>;
-
-  // Mode 1: Scene-level narration audio (single full-chapter file)
-  const narrationUrl = sceneRaw.narrationAudioUrl as string | undefined;
-  const narrationId = sceneRaw.narrationAudioId as string | undefined;
-  if (narrationUrl) {
-    return [{
-      id: `${scene.id}:narration`,
-      audioUrl: narrationUrl,
-      audioId: narrationId,
-      text: extractNarrationText(scene),
-      order: 0,
-      sourceField: 'Scene.narrationAudioUrl',
-    }];
-  }
-
-  // Mode 2: One segment per speech action (sequential playback)
+function extractSpeechAudioSegments(scene: Scene): MobileAudioSegment[] {
   const actions = scene.actions ?? [];
   const speechActions = actions.filter(
     (a) => (a as { type?: string }).type === 'speech',
@@ -169,6 +154,17 @@ function extractAudioSegments(scene: Scene): MobileAudioSegment[] {
       } satisfies MobileAudioSegment;
     })
     .filter((s) => s.audioUrl || s.audioId); // only include segments that have audio
+}
+
+function extractAudioSegments(scene: Scene): MobileAudioSegment[] {
+  const sceneRaw = scene as unknown as Record<string, unknown>;
+  const narrationUrl = sceneRaw.narrationAudioUrl as string | undefined;
+  const narrationId = sceneRaw.narrationAudioId as string | undefined;
+  if (narrationUrl) return [{
+    id: `${scene.id}:narration`, audioUrl: narrationUrl, audioId: narrationId,
+    text: extractNarrationText(scene), order: 0, sourceField: 'Scene.narrationAudioUrl',
+  }];
+  return extractSpeechAudioSegments(scene);
 }
 
 /**
@@ -231,6 +227,7 @@ export function buildChapters(scenes: Scene[]): MobileChapter[] {
     .map((s) => {
       const audio = extractAudio(s);
       const segments = extractAudioSegments(s);
+      const fallbackSegments = extractSpeechAudioSegments(s);
       return {
         sceneId: s.id,
         title: s.title || `第 ${s.order + 1} 章`,
@@ -241,6 +238,7 @@ export function buildChapters(scenes: Scene[]): MobileChapter[] {
         audioId: audio.audioId,
         audioSourceField: audio.sourceField,
         audioSegments: segments,
+        fallbackAudioSegments: fallbackSegments,
       };
     })
     .map((c) => ({

@@ -6,6 +6,8 @@ import {
   type PublishSceneAudioAssetsResult,
 } from '@/lib/audio/audio-publish';
 import { createLogger } from '@/lib/logger';
+import { externalizeCourseAssets } from '@/lib/course-assets/externalize';
+import { stripRuntimeOnly } from '@/lib/dsl-extensions/serialize';
 
 const log = createLogger('CloudSync');
 
@@ -150,8 +152,16 @@ export async function saveStageToCloud(stageId: string) {
     );
   }
 
-  // ── Phase 3: Write to cloud database with audioUrl-filled scenes ──
-  const scenesToSave = publishResult.scenes;
+  // ── Phase 3: Externalize every remaining base64 asset before the JSON write.
+  // This deep-copies first: local runtime state remains usable if a later network
+  // request fails. Signed uploads go directly to Storage, never through this POST.
+  const externalized = await externalizeCourseAssets(
+    id,
+    stage as unknown as Record<string, unknown>,
+    publishResult.scenes as unknown as Record<string, unknown>[],
+  );
+  const stageToSave = stripRuntimeOnly(externalized.stage);
+  const scenesToSave = externalized.scenes;
 
   const response = await fetch('/api/courses', {
     method: 'POST',
@@ -161,7 +171,7 @@ export async function saveStageToCloud(stageId: string) {
       title,
       topic,
       data: {
-        stage,
+        stage: stageToSave,
         scenes: scenesToSave,
         outlines,
       },
@@ -177,6 +187,10 @@ export async function saveStageToCloud(stageId: string) {
     const withSeq = scenesToSave.map((s: any, i: number) => ({ ...s, seq: s.seq ?? i }));
     await db.scenes.bulkPut(withSeq);
   }
+  // Keep the local course normalized too. Otherwise the next save would need to
+  // rediscover the same data: URIs (the content-addressed path is idempotent,
+  // but avoiding the extra upload authorization is faster and clearer).
+  await db.stages.put(stageToSave as unknown as typeof stage);
 
   return {
     id,
@@ -188,6 +202,7 @@ export async function saveStageToCloud(stageId: string) {
       failed: publishResult.failed.length,
       regenerated: publishResult.regenerated.length,
     },
+    assets: externalized.converted,
     validation: {
       totalLearnableScenes: validation.totalLearnableScenes,
       validScenes: validation.validScenes,

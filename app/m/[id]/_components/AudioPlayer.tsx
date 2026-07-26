@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MobileAudioSegment } from '@/lib/mobile/scene-helpers';
+import { audioObjectUrl } from '@/lib/audio/regenerate-speech-tts';
 
 // ─── Error classification ───────────────────────────────────────
 
@@ -50,6 +51,8 @@ interface AudioPlayerProps {
   audioSourceField?: string;
   /** Audio segments for sequential playback (primary mobile path). */
   audioSegments?: MobileAudioSegment[];
+  /** Speech-action fallback when narration audio fails to load. */
+  fallbackAudioSegments?: MobileAudioSegment[];
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
@@ -73,6 +76,7 @@ export function AudioPlayer({
   stageId,
   audioSourceField,
   audioSegments,
+  fallbackAudioSegments,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -81,21 +85,32 @@ export function AudioPlayer({
   const [error, setError] = useState<MobileAudioErrorType | null>(null);
 
   // ── Segment state ──
-  const segments = audioSegments && audioSegments.length > 0
+  const initialSegments = audioSegments && audioSegments.length > 0
     ? audioSegments
     : (audioUrl ? [{ id: 'legacy', audioUrl, audioId: undefined, text: fallbackText, order: 0, sourceField: audioSourceField ?? 'SpeechAction.audioUrl (fallback)' }] : []);
+  const [segments, setSegments] = useState(initialSegments);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
+  const [localFallbackUrl, setLocalFallbackUrl] = useState<string | null>(null);
+  const localFallbackUrlRef = useRef<string | null>(null);
   const hasUserInteractedRef = useRef(false);
 
   const currentSegment = segments[currentSegmentIndex] ?? null;
-  const currentAudioUrl = currentSegment?.audioUrl || audioUrl;
+  const currentAudioUrl = localFallbackUrl || currentSegment?.audioUrl || audioUrl;
   const totalSegments = segments.length;
 
   // Reset segment index when segments array changes (chapter switch).
   useEffect(() => {
+    setSegments(initialSegments);
     setCurrentSegmentIndex(0);
+    if (localFallbackUrlRef.current) URL.revokeObjectURL(localFallbackUrlRef.current);
+    localFallbackUrlRef.current = null;
+    setLocalFallbackUrl(null);
     hasUserInteractedRef.current = false;
-  }, [segments]);
+  }, [audioSegments, audioUrl, fallbackText, audioSourceField]);
+
+  useEffect(() => () => {
+    if (localFallbackUrlRef.current) URL.revokeObjectURL(localFallbackUrlRef.current);
+  }, []);
 
   // ─── Dev log: Audio Source diagnostics ──────────────────────
   useEffect(() => {
@@ -154,6 +169,9 @@ export function AudioPlayer({
       }));
 
       setCurrentSegmentIndex(nextIdx);
+      if (localFallbackUrlRef.current) URL.revokeObjectURL(localFallbackUrlRef.current);
+      localFallbackUrlRef.current = null;
+      setLocalFallbackUrl(null);
       // After state update, the <audio key={currentAudioUrl}> will remount.
       // If user was playing, we'll auto-play the new segment in onLoadedMetadata.
     } else {
@@ -359,7 +377,7 @@ export function AudioPlayer({
           // Delegate to segment advancer (handles both mid-chapter + final segment)
           advanceToNextSegment();
         }}
-        onError={(e) => {
+        onError={async (e) => {
           const el = e.currentTarget;
           console.warn('[MOBILE AUDIO][error]', JSON.stringify({
             sceneId: sceneId ?? '(unknown)',
@@ -372,6 +390,22 @@ export function AudioPlayer({
             currentSrc: el.currentSrc?.slice(0, 80),
             timestamp: new Date().toISOString(),
           }));
+          const localAudioId = currentSegment?.audioId;
+          if (localAudioId && !localFallbackUrl) {
+            const objectUrl = await audioObjectUrl(localAudioId);
+            if (objectUrl) {
+              localFallbackUrlRef.current = objectUrl;
+              setLocalFallbackUrl(objectUrl);
+              setError(null);
+              return;
+            }
+          }
+          if (currentSegment?.sourceField === 'Scene.narrationAudioUrl' && fallbackAudioSegments?.length) {
+            setSegments(fallbackAudioSegments);
+            setCurrentSegmentIndex(0);
+            setError(null);
+            return;
+          }
           if (!error) setError('audio-load-error');
         }}
       />

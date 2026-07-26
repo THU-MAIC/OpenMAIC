@@ -2,6 +2,7 @@
 import type { Scene } from '@/lib/types/stage';
 import { db, type AudioFileRecord } from '@/lib/utils/database';
 import { createLogger } from '@/lib/logger';
+import { uploadCourseBlob } from '@/lib/course-assets/client';
 
 const log = createLogger('AudioPublish');
 
@@ -69,52 +70,14 @@ function contentTypeForAudio(format?: string): string {
   return `audio/${normalized}`;
 }
 
-function safeFileName(audioId: string, format?: string): string {
-  const ext = normalizeAudioFormat(format);
-  const safeAudioId = audioId
-    .replace(/\s+/g, '-')
-    .replace(/[^a-zA-Z0-9._-]/g, '')
-    .toLowerCase();
-
-  return `${safeAudioId || 'audio'}.${ext}`;
-}
-
 async function uploadAudioRecordToCloud(input: {
   stageId: string;
   audioId: string;
   record: AudioFileRecord;
 }): Promise<string> {
-  const { stageId, audioId, record } = input;
+  const { stageId, record } = input;
 
-  const format = normalizeAudioFormat(record.format);
-  const fileName = safeFileName(audioId, format);
-  const contentType = record.blob.type || contentTypeForAudio(format);
-
-  const file = new File([record.blob], fileName, {
-    type: contentType,
-  });
-
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('stageId', stageId);
-  formData.append('audioId', audioId);
-
-  const response = await fetch('/api/audio-upload', {
-    method: 'POST',
-    body: formData,
-  });
-
-  const data = await response.json().catch(() => null);
-
-  if (!response.ok || !data?.url) {
-    const message =
-      data?.details ||
-      data?.error ||
-      `Audio upload failed: HTTP ${response.status}`;
-    throw new Error(message);
-  }
-
-  return data.url as string;
+  return uploadCourseBlob(stageId, 'audio', record.blob);
 }
 
 /** Upload a raw ArrayBuffer/Blob directly to Supabase Storage. */
@@ -124,33 +87,8 @@ async function uploadBlobToCloud(input: {
   data: ArrayBuffer;
   format: string;
 }): Promise<string> {
-  const { stageId, audioId, data, format } = input;
-  const fileName = safeFileName(audioId, format);
-  const contentType = contentTypeForAudio(format);
-
-  const file = new File([data], fileName, { type: contentType });
-
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('stageId', stageId);
-  formData.append('audioId', audioId);
-
-  const response = await fetch('/api/audio-upload', {
-    method: 'POST',
-    body: formData,
-  });
-
-  const resData = await response.json().catch(() => null);
-
-  if (!response.ok || !resData?.url) {
-    const message =
-      resData?.details ||
-      resData?.error ||
-      `Audio upload failed: HTTP ${response.status}`;
-    throw new Error(message);
-  }
-
-  return resData.url as string;
+  const { stageId, data, format } = input;
+  return uploadCourseBlob(stageId, 'audio', new Blob([data], { type: contentTypeForAudio(format) }));
 }
 
 /**
