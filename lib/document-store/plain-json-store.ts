@@ -5,10 +5,11 @@ import { omitUndefinedObjectMembers } from '@/lib/persistence/plain-json';
 
 import type { AppStage } from './persistence-types';
 
-const wrappers = new WeakMap<
-  DocumentStore<AppScene, AppStage>,
-  DocumentStore<AppScene, AppStage>
->();
+let wrappers = new WeakMap<DocumentStore<AppScene, AppStage>, DocumentStore<AppScene, AppStage>>();
+
+export function resetPlainJsonDocumentWritesForTests(): void {
+  wrappers = new WeakMap();
+}
 
 export function withPlainJsonDocumentWrites(
   store: DocumentStore<AppScene, AppStage>,

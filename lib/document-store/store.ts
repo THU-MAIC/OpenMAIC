@@ -6,7 +6,10 @@ import type { AppScene } from '@/lib/types/stage';
 
 import { registerDocumentStorageResetHook, resolveConfiguredDocumentStore } from './config';
 import type { AppStage } from './persistence-types';
-import { withPlainJsonDocumentWrites } from './plain-json-store';
+import {
+  resetPlainJsonDocumentWritesForTests,
+  withPlainJsonDocumentWrites,
+} from './plain-json-store';
 import { validateAppScene, validateAppStage } from './validators';
 
 export {
@@ -35,6 +38,7 @@ let defaultStore: DocumentStore<AppScene, AppStage> | undefined;
 
 registerDocumentStorageResetHook(() => {
   defaultStore = undefined;
+  resetPlainJsonDocumentWritesForTests();
 });
 
 function createBrowserStore(

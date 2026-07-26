@@ -102,4 +102,24 @@ describe('configureDocumentStorage', () => {
     expect(secondResolved).not.toBe(second);
     expect(secondResolved).not.toBe(firstResolved);
   });
+
+  it('resetDocumentStorageForTests clears wrapped store method overrides', async () => {
+    const injected = {
+      loadDocument: vi.fn().mockResolvedValue('underlying'),
+    } as unknown as DocumentStore<AppScene, AppStage>;
+    const { configureDocumentStorage, getDocumentStore, resetDocumentStorageForTests } =
+      await import('@/lib/document-store');
+
+    configureDocumentStorage({ store: injected });
+    const firstResolved = getDocumentStore();
+    vi.spyOn(firstResolved, 'loadDocument').mockResolvedValue('overridden' as never);
+    await expect(firstResolved.loadDocument('stage-1')).resolves.toBe('overridden');
+
+    resetDocumentStorageForTests();
+    configureDocumentStorage({ store: injected });
+    const secondResolved = getDocumentStore();
+
+    expect(secondResolved).not.toBe(firstResolved);
+    await expect(secondResolved.loadDocument('stage-1')).resolves.toBe('underlying');
+  });
 });
