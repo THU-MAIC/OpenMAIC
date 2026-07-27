@@ -18,6 +18,7 @@
 - `pnpm check` 与 `pnpm lint` 改为检查当前 push/PR 中新增、修改或重命名的受支持文件；CI checkout 改为完整历史，以便可靠取得 base commit。全仓历史清理另立任务，禁止用全局格式化混入功能提交。
 - 生成路由单测在认证保护上线后补齐测试专用的已授权教师 mock；生产认证并未放宽。浏览器型单测在未提供 `.env.local` 时使用 inert Supabase public URL/key。
 - Vitest 文件级并发会让旧的全局 mock/计时器型重试测试互相干扰：并发全量运行出现超时，而串行文件运行稳定。因此 `pnpm test` 固定为 `vitest run --no-file-parallelism`。
+- Playwright 的基础 `mockApi` fixture 改为 `auto: true`：它此前是惰性 fixture，未在参数中声明 `mockApi` 的测试实际上没有获得 Supabase 测试会话或 API mock，进而在“正在验证账号”状态卡住，并造成 IndexedDB 写入超时、首页/生成页元素缺失等连锁假失败。
 
 ## 验收
 
@@ -28,6 +29,7 @@
 | 变更级 Prettier 检查 | ✅ |
 | 变更级 ESLint 检查 | ✅ |
 | 全量 Vitest（串行文件） | ✅ 251 files / 2017 tests，约 150 秒 |
+| E2E fixture 自动激活 | ✅ TypeScript 通过；最终浏览器验收由 CI 的 inert Supabase 构建环境完成 |
 | 本地 Playwright 浏览器运行 | ⚠️ 未执行：本机未安装 Chromium；GitHub CI 会在运行前执行 `playwright install chromium --with-deps` |
 
 ## 回滚

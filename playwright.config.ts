@@ -15,7 +15,13 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        // Lets contributors validate with an already-installed Chrome when
+        // Playwright's managed browser is unavailable locally. CI leaves this
+        // unset and continues to use the browser it installs explicitly.
+        channel: process.env.PLAYWRIGHT_BROWSER_CHANNEL,
+      },
     },
   ],
   webServer: {

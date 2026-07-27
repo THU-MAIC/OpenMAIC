@@ -125,11 +125,31 @@ export class MockApi {
       },
     ]);
 
-    await this.page.route('https://ci.invalid.supabase.co/rest/v1/profiles?**', (route) => {
+    await this.page.route(
+      /https:\/\/ci\.invalid\.supabase\.co\/rest\/v1\/profiles(?:\?.*)?$/,
+      (route) => {
+        route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify([{ id: user.id, role: 'teacher', display_name: 'E2E User' }]),
+        });
+      },
+    );
+    // auth-js may validate/refresh a persisted session before exposing it to
+    // useAuth(). Intercept those browser-only CI calls as well so no request
+    // ever waits on the deliberately unreachable ci.invalid domain.
+    await this.page.route('https://ci.invalid.supabase.co/auth/v1/user', (route) => {
       route.fulfill({
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([{ id: user.id, role: 'teacher', display_name: 'E2E User' }]),
+        body: JSON.stringify(user),
+      });
+    });
+    await this.page.route('https://ci.invalid.supabase.co/auth/v1/token?**', (route) => {
+      route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(session),
       });
     });
   }
