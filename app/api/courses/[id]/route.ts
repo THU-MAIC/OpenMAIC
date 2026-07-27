@@ -5,7 +5,7 @@ import { getServiceSupabase, getServerSupabase } from '@/lib/supabase/server';
 //
 // Auth (2026-07-23 hardening): previously this endpoint exposed ANY
 // course to ANY signed-in user (and the prior anon wave already
-// dropped anon SELECT). Three access paths are now allowed:
+// dropped anon SELECT). Four access paths are now allowed:
 //   1. Caller's profile.role in {admin, teacher} AND course.created_by
 //      matches caller — admin/teacher looking at their own course.
 //   2. Caller is a teacher/admin (any) — they can browse the catalog
@@ -14,7 +14,11 @@ import { getServiceSupabase, getServerSupabase } from '@/lib/supabase/server';
 //      so keep the wider gate; tighten later if needed.)
 //   3. Caller is a learner AND the course has a course_assignments
 //      row pointing at a students row whose user_id matches the caller
-//      — i.e. someone assigned this course to them.
+//      – i.e. someone assigned this course to them.
+//   4. Caller is signed in and deliberately opens a `?share=1` link.
+//      RJ's product policy is internal-link sharing: a course link is
+//      sufficient for any authenticated internal learner/teacher to view
+//      it, while the plain course endpoint remains assignment/role gated.
 //
 // Anyone else gets 403, even if signed in. Without this check, any
 // authenticated user could enumerate course IDs and pull another
@@ -25,6 +29,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const isShareLink = new URL(_request.url).searchParams.get('share') === '1';
 
     // 1. Auth: must be signed in.
     const serverSupabase = await getServerSupabase();
@@ -56,9 +61,12 @@ export async function GET(
 
     const role = (profile?.role ?? 'learner') as 'admin' | 'teacher' | 'learner';
 
-    let authorized = false;
+    // A share link is intentionally read-only at the UI layer. It changes
+    // only this GET authorization decision; POST/DELETE ownership checks
+    // below remain unchanged.
+    let authorized = isShareLink;
 
-    if (role === 'admin' || role === 'teacher') {
+    if (!isShareLink && (role === 'admin' || role === 'teacher')) {
       // Author / admin path: own course OR cross-author browse (catalog).
       // If created_by is null/empty (legacy data) we still allow teacher
       // / admin to read so the wave-2 catalog doesn't break on dirty

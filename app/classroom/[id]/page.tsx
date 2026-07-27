@@ -435,7 +435,12 @@ const [saveCloudMessage, setSaveCloudMessage] = useState('');
       if (!useStageStore.getState().stage) {
         log.info('No local/server classroom data, trying cloud course:', classroomId);
         try {
-          const res = await fetch(`/api/courses/${encodeURIComponent(classroomId)}`);
+          const courseParams = new URLSearchParams();
+          if (readOnlyShare) courseParams.set('share', '1');
+          const courseQuery = courseParams.toString();
+          const res = await fetch(
+            `/api/courses/${encodeURIComponent(classroomId)}${courseQuery ? `?${courseQuery}` : ''}`,
+          );
           if (res.ok) {
             const json = await res.json();
             const courseData = json?.data?.data;
@@ -462,6 +467,10 @@ const [saveCloudMessage, setSaveCloudMessage] = useState('');
               });
               log.info('Loaded from cloud course:', classroomId);
             }
+          } else {
+            const body = await res.json().catch(() => null);
+            const message = body?.error ?? `课程加载失败（HTTP ${res.status}）`;
+            throw new Error(message);
           }
         } catch (cloudErr) {
           log.warn('Cloud course fetch failed:', cloudErr);
