@@ -153,6 +153,37 @@ describe('createPartMapper — reasoning/thinking channel', () => {
 });
 
 describe('toModelMessages', () => {
+  it('preserves assistant thinking as an AI SDK reasoning part', () => {
+    const messages: PiMessage[] = [
+      {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'keep this reasoning' },
+          { type: 'text', text: 'answer' },
+        ],
+        api: 'unknown' as never,
+        provider: 'unknown' as never,
+        model: 'test',
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: 'stop',
+        timestamp: 0,
+      },
+    ];
+
+    const result = toModelMessages(messages, { includeReasoning: true });
+    expect((result[0] as { content: unknown }).content).toEqual([
+      { type: 'reasoning', text: 'keep this reasoning' },
+      { type: 'text', text: 'answer' },
+    ]);
+  });
+
   it('converts assistant toolCall with providerMetadata to tool-call part with providerOptions', () => {
     const toolCallWithMeta: ToolCall & { providerMetadata?: ToolCallProviderMetadata } = {
       type: 'toolCall',

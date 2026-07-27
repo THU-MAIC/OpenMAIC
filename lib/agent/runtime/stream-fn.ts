@@ -235,7 +235,12 @@ async function pump(
       {
         model: opts.languageModel,
         system: context.systemPrompt,
-        messages: toModelMessages(context.messages),
+        messages: toModelMessages(context.messages, {
+          includeReasoning:
+            typeof opts.languageModel !== 'string' &&
+            opts.languageModel.provider === 'kimi.chat' &&
+            opts.languageModel.modelId === 'kimi-k3',
+        }),
         tools: toAiTools(context.tools ?? []),
         toolChoice: 'auto',
         // pi's loop owns multi-step; one LLM turn per streamFn call.
@@ -266,7 +271,10 @@ async function pump(
 }
 
 /** pi Message[] -> AI SDK ModelMessage[]. */
-export function toModelMessages(messages: PiMessage[]): ModelMessage[] {
+export function toModelMessages(
+  messages: PiMessage[],
+  options: { includeReasoning?: boolean } = {},
+): ModelMessage[] {
   const out: ModelMessage[] = [];
   for (const m of messages) {
     if (m.role === 'user') {
@@ -282,7 +290,9 @@ export function toModelMessages(messages: PiMessage[]): ModelMessage[] {
       const parts: Array<Record<string, unknown>> = [];
       for (const c of m.content) {
         if (c.type === 'text') parts.push({ type: 'text', text: c.text });
-        else if (c.type === 'toolCall') {
+        else if (c.type === 'thinking' && options.includeReasoning) {
+          parts.push({ type: 'reasoning', text: c.thinking });
+        } else if (c.type === 'toolCall') {
           const part: Record<string, unknown> = {
             type: 'tool-call',
             toolCallId: c.id,

@@ -15,6 +15,7 @@ import type {
   PBLSubmission,
   PBLUiPhase,
 } from '@/lib/pbl/v2/types';
+import { omitUndefinedObjectMembers } from '@/lib/persistence/plain-json';
 import { clone } from './clone';
 
 export interface PBLLearnerMicrotaskState {
@@ -103,7 +104,7 @@ export function extractLearnerState(project: PBLProjectV2): PBLLearnerState {
   assignOptional(state, 'pendingHandover', project.pendingHandover);
   assignOptional(state, 'pendingTaskCompletion', project.pendingTaskCompletion);
   assignOptional(state, 'runtimeResetEpoch', project.runtimeResetEpoch);
-  return state;
+  return omitUndefinedObjectMembers(state);
 }
 
 export function stripToDesignTemplate(project: PBLProjectV2): PBLProjectV2 {
