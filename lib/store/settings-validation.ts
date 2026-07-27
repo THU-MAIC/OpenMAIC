@@ -89,6 +89,7 @@ export interface LLMProviderCfgLike {
   apiKey?: string;
   isServerConfigured?: boolean;
   models: Array<{ id: string }>;
+  serverModels?: string[];
   baseUrl?: string;
   defaultBaseUrl?: string;
 }
@@ -107,7 +108,7 @@ export interface LLMProviderCfgLike {
  *
  * Always also requires ≥1 model.
  */
-export function isLLMProviderConfigured(config: any): boolean {
+export function isLLMProviderConfigured(config: LLMProviderCfgLike | null | undefined): boolean {
   if (!config) return false;
 
   const hasModels = Array.isArray(config.models) && config.models.length > 0;
