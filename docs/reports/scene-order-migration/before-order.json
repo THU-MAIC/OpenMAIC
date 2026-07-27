@@ -1,0 +1,447 @@
+{
+  "generatedAt": "2026-07-27T06:16:29.778Z",
+  "snapshots": [
+    {
+      "courseId": "1I_kD25GX1",
+      "source": "createdAt→updatedAt→id",
+      "before": [
+        {
+          "id": "-rAsAiblhi5gngL0Pldv_",
+          "order": 25,
+          "seq": null
+        },
+        {
+          "id": "2VVaiTlscjzBSKdkPq8Mv",
+          "order": 1,
+          "seq": null
+        },
+        {
+          "id": "3eyfkdxJN8sHjI1C21nm2",
+          "order": 35,
+          "seq": null
+        },
+        {
+          "id": "5UP9_CFZoV8G8TLRS-pEP",
+          "order": 17,
+          "seq": null
+        },
+        {
+          "id": "6tC1SbTNb8fx7bUyeKdL1",
+          "order": 29,
+          "seq": null
+        },
+        {
+          "id": "77AUZA9Xv5F9IgBnZg235",
+          "order": 24,
+          "seq": null
+        },
+        {
+          "id": "8NzrYXzBT5-kGMUgu08n-",
+          "order": 9,
+          "seq": null
+        },
+        {
+          "id": "8vAsiueb-gIH08zbnJgAg",
+          "order": 38,
+          "seq": null
+        },
+        {
+          "id": "9IEGRioojRqEUAiFTEPKM",
+          "order": 6,
+          "seq": null
+        },
+        {
+          "id": "A0-0jaFjDswejDaACfk6w",
+          "order": 3,
+          "seq": null
+        },
+        {
+          "id": "AZ8L3EyIdjijuwv_Gui6v",
+          "order": 41,
+          "seq": null
+        },
+        {
+          "id": "BYn53b_c1TZlQ1kEAjR_R",
+          "order": 37,
+          "seq": null
+        },
+        {
+          "id": "DNOd3tXyemZRf1Fy46YO-",
+          "order": 34,
+          "seq": null
+        },
+        {
+          "id": "EIQbGwjsbDE0nAbG3uRtZ",
+          "order": 19,
+          "seq": null
+        },
+        {
+          "id": "FW8zcnXbLFVVpXQu3tDDh",
+          "order": 12,
+          "seq": null
+        },
+        {
+          "id": "J9iM3efDXHkRyLoy2P6oy",
+          "order": 32,
+          "seq": null
+        },
+        {
+          "id": "KyNcqf50VdEh49qa9oRVF",
+          "order": 21,
+          "seq": null
+        },
+        {
+          "id": "Pg3UgeVEL_1-r4f2CeOR1",
+          "order": 23,
+          "seq": null
+        },
+        {
+          "id": "R0j0mNWvUfC65n9WfQgx6",
+          "order": 14,
+          "seq": null
+        },
+        {
+          "id": "R9foKeDnKCgzkejeQGNQW",
+          "order": 7,
+          "seq": null
+        },
+        {
+          "id": "TIt6j-JAJ6pwbUqlN81s9",
+          "order": 13,
+          "seq": null
+        },
+        {
+          "id": "WiWTtFbt1EToW_ayX-wWh",
+          "order": 30,
+          "seq": null
+        },
+        {
+          "id": "WkfJusjCyU2m03VwLPKaz",
+          "order": 2,
+          "seq": null
+        },
+        {
+          "id": "_Beka3LkbzVMpLa_FpS0C",
+          "order": 31,
+          "seq": null
+        },
+        {
+          "id": "a30jEh_G4Qfa9NoseU0xj",
+          "order": 10,
+          "seq": null
+        },
+        {
+          "id": "b0ZYgrkgbOl_Ed7EKJxss",
+          "order": 28,
+          "seq": null
+        },
+        {
+          "id": "cGbR5VsUEMSq2IwpK-5gd",
+          "order": 22,
+          "seq": null
+        },
+        {
+          "id": "f2uC_5h8tlhYjy8_twk5Y",
+          "order": 33,
+          "seq": null
+        },
+        {
+          "id": "fIcV29rI4V2joQIUieJsZ",
+          "order": 26,
+          "seq": null
+        },
+        {
+          "id": "k6uur_gXvmhDTNgIKwIOA",
+          "order": 18,
+          "seq": null
+        },
+        {
+          "id": "kxmjejLudDtyFUE4ibXH1",
+          "order": 15,
+          "seq": null
+        },
+        {
+          "id": "nY5UtQHGpTduxBhoTeZgi",
+          "order": 27,
+          "seq": null
+        },
+        {
+          "id": "nb-2cJmf0d4n6iG7TzzjQ",
+          "order": 5,
+          "seq": null
+        },
+        {
+          "id": "pCW5c8yHgotCbPA1Nc8up",
+          "order": 39,
+          "seq": null
+        },
+        {
+          "id": "pWwKo5gSvbEc89Zd2IiBv",
+          "order": 4,
+          "seq": null
+        },
+        {
+          "id": "udhvKp-hW-bmoVSCqwvee",
+          "order": 20,
+          "seq": null
+        },
+        {
+          "id": "ussSZSbsNVGuAORStRwsr",
+          "order": 16,
+          "seq": null
+        },
+        {
+          "id": "xhAJdW79qFsBtdBBwSpN6",
+          "order": 40,
+          "seq": null
+        },
+        {
+          "id": "xkhr7_X6w3kX6PVUaszYv",
+          "order": 11,
+          "seq": null
+        },
+        {
+          "id": "ygn0Ll21rPryGbF97naXv",
+          "order": 36,
+          "seq": null
+        },
+        {
+          "id": "yvR11cIiQgEPuNSHy1OiE",
+          "order": 8,
+          "seq": null
+        }
+      ],
+      "beforeHash": "c85c3b984e7a2c8b05700fe855004badc258a5a71505a997c1b3500687bf0074"
+    },
+    {
+      "courseId": "eM3w3jgmp8",
+      "source": "createdAt→updatedAt→id",
+      "before": [
+        {
+          "id": "4bwRGEWxnBzU_Cmh1FgfT",
+          "order": 6,
+          "seq": null
+        },
+        {
+          "id": "6bkdxz0aOIz3kWqKX6E6F",
+          "order": 4,
+          "seq": null
+        },
+        {
+          "id": "6d6_83AYTsW4tPeSiad7U",
+          "order": 3,
+          "seq": null
+        },
+        {
+          "id": "DFmawJ7lmmf2Rtr1ir8ox",
+          "order": 8,
+          "seq": null
+        },
+        {
+          "id": "DNRMN-omfJAQBmw8vn5tT",
+          "order": 1,
+          "seq": null
+        },
+        {
+          "id": "VcdupS-GqjS-iobSvzUva",
+          "order": 5,
+          "seq": null
+        },
+        {
+          "id": "hje-UZr9bRfC2JQBQyMjE",
+          "order": 7,
+          "seq": null
+        },
+        {
+          "id": "n6BByx_mPvQyx4UuhijW8",
+          "order": 2,
+          "seq": null
+        },
+        {
+          "id": "zMuNqdkpXEBjI_YfvwFrT",
+          "order": 9,
+          "seq": null
+        }
+      ],
+      "beforeHash": "910ee35ee32133641d7bdc503d35011314e3cc9dc90db76f9b85033f796c92e4"
+    },
+    {
+      "courseId": "HsxJTCOZuK",
+      "source": "createdAt→updatedAt→id",
+      "before": [
+        {
+          "id": "1u9tKNabXiYqw_F0F9B1t",
+          "order": 8,
+          "seq": null
+        },
+        {
+          "id": "6hGMtsLnu1i8UW688kuJD",
+          "order": 2,
+          "seq": null
+        },
+        {
+          "id": "JQ1fg6X63LTT_uXcJPZF4",
+          "order": 9,
+          "seq": null
+        },
+        {
+          "id": "KMHUCGbYP43YKGtTSYIHZ",
+          "order": 3,
+          "seq": null
+        },
+        {
+          "id": "V21SVeRx27KBomy-8a92b",
+          "order": 4,
+          "seq": null
+        },
+        {
+          "id": "XE9h6RQGN8ETtzhpvklt9",
+          "order": 6,
+          "seq": null
+        },
+        {
+          "id": "cpB5NXgYX7h49H_2QtgWq",
+          "order": 5,
+          "seq": null
+        },
+        {
+          "id": "p7bupKCDpY8YOv452i-ni",
+          "order": 7,
+          "seq": null
+        },
+        {
+          "id": "qAn6QDxTOIDhAiRUE_hmq",
+          "order": 1,
+          "seq": null
+        }
+      ],
+      "beforeHash": "a18e7c06894780149b25b2a9e75dfa3795a659d3662cf29a53a7a9c403d75970"
+    },
+    {
+      "courseId": "oiqTbzCXwy",
+      "source": "createdAt→updatedAt→id",
+      "before": [
+        {
+          "id": "FcFNHjoX4fhFQZhHobMwk",
+          "order": 0,
+          "seq": 0
+        },
+        {
+          "id": "vzPTpYeLNZtSNOb5LP6aC",
+          "order": 1,
+          "seq": 1
+        },
+        {
+          "id": "vE6lZ1ftxQJ9A4wDJtSQQ",
+          "order": 2,
+          "seq": 2
+        },
+        {
+          "id": "q_rtJdwSOdvSHUjuyF9br",
+          "order": 3,
+          "seq": 3
+        },
+        {
+          "id": "XigaWz9i2aHyLCzwHutbD",
+          "order": 4,
+          "seq": 4
+        },
+        {
+          "id": "eRTkf6NfPMdbmauH3N9Qa",
+          "order": 5,
+          "seq": 5
+        },
+        {
+          "id": "3-nO-7mD6Tg-zwXRo0H4x",
+          "order": 6,
+          "seq": 6
+        }
+      ],
+      "beforeHash": "6fc34215bd7725f1425c1762b3669fa79fe1ce049caff5d1414fda35b0e9839b"
+    },
+    {
+      "courseId": "olg4zIa45P",
+      "source": "createdAt→updatedAt→id",
+      "before": [
+        {
+          "id": "RdwxoC2g0XwQ70sN4UjQP",
+          "order": 0,
+          "seq": 0
+        },
+        {
+          "id": "EJClCQu9PX8ZVCjzwSHhh",
+          "order": 1,
+          "seq": 1
+        },
+        {
+          "id": "qIdNg-ymWiLoZ0jGo6LK7",
+          "order": 2,
+          "seq": 2
+        },
+        {
+          "id": "Fst6XP83Qa7t6yUYBRJbF",
+          "order": 3,
+          "seq": 3
+        },
+        {
+          "id": "ijnVRGXthS3bP43r3FH8W",
+          "order": 4,
+          "seq": 4
+        },
+        {
+          "id": "4_Fe9YX9AB3js03qbztJT",
+          "order": 5,
+          "seq": 5
+        }
+      ],
+      "beforeHash": "128cba442c57444e1c38a011d291a0993ed84413812fd564f8cc9df4dff6309a"
+    },
+    {
+      "courseId": "txo6PVFVnx",
+      "source": "createdAt→updatedAt→id",
+      "before": [
+        {
+          "id": "0ozecsi5a2dn-jogVCOPj",
+          "order": 3,
+          "seq": null
+        },
+        {
+          "id": "2jVxZSvUnKhsO3-cMEB_z",
+          "order": 7,
+          "seq": null
+        },
+        {
+          "id": "Y_7gjPyzjmDVklF9qJZ2e",
+          "order": 1,
+          "seq": null
+        },
+        {
+          "id": "fd7tQ9K5YC31D6m3KVyW5",
+          "order": 5,
+          "seq": null
+        },
+        {
+          "id": "kGq1QY9F1sImJ2OktZevB",
+          "order": 6,
+          "seq": null
+        },
+        {
+          "id": "qkdLGr7xXeT4XnVtymdbr",
+          "order": 2,
+          "seq": null
+        },
+        {
+          "id": "vfXzxK0Irw0xvGM26ZDfH",
+          "order": 4,
+          "seq": null
+        },
+        {
+          "id": "xCqgC3MAVsDEwh9K13aZs",
+          "order": 8,
+          "seq": null
+        }
+      ],
+      "beforeHash": "87fcba4224cd2c90928b82271aff72b6e337cb460f0ae5f33a68519d02bbf842"
+    }
+  ]
+}

@@ -52,6 +52,29 @@ node --env-file=.env.local scripts/normalize-course-scene-order.js --dry-run --r
 - `docs/reports/scene-order-migration-dry-run/after-order.json`
 - `docs/reports/scene-order-migration-dry-run/dry-run.json`
 
-## 尚未执行
+## 生产执行与验收
 
-生产写入尚未执行。执行前需人工确认 dry-run 结果；执行后必须再跑一次 dry-run，验收为：零阻断、零待更新、所有快照 hash 前后一致。
+经人工确认后，执行：
+
+```powershell
+node --env-file=.env.local scripts/normalize-course-scene-order.js --report-dir=docs/reports/scene-order-migration
+```
+
+生产结果：6 门课程全部更新成功；0 并发跳过、0 阻断异常、0 警告。
+
+随后执行第二次只读验收：
+
+```powershell
+node --env-file=.env.local scripts/normalize-course-scene-order.js --dry-run --report-dir=docs/reports/scene-order-migration-post-apply
+```
+
+验收结果：扫描 6 门，`changed = 0`、`unchanged = 6`、阻断/警告/并发跳过均为 0。每门课程的迁移后 `beforeHash` 与 `afterHash` 相等，且顺序源均为可信 `seq`。
+
+生产与验收审计产物：
+
+- `docs/reports/scene-order-migration/result.json`
+- `docs/reports/scene-order-migration/before-order.json`
+- `docs/reports/scene-order-migration/after-order.json`
+- `docs/reports/scene-order-migration-post-apply/dry-run.json`
+- `docs/reports/scene-order-migration-post-apply/before-order.json`
+- `docs/reports/scene-order-migration-post-apply/after-order.json`
