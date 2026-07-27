@@ -24,6 +24,15 @@ vi.mock('@/lib/config/feature-flags', () => ({
   resolveVocationalActive: mocks.resolveVocationalActive,
 }));
 
+vi.mock('@/lib/server/api-guard', () => ({
+  requireAuthOrTeacher: vi.fn().mockResolvedValue({
+    ok: true,
+    user: { id: 'test-teacher' },
+    role: 'teacher',
+  }),
+  rateLimitByUser: vi.fn().mockReturnValue({ ok: true, remaining: 14 }),
+}));
+
 vi.mock('@/lib/generation/generation-pipeline', () => ({
   applyOutlineFallbacks: mocks.applyOutlineFallbacks,
   generateSceneContent: mocks.generateSceneContent,

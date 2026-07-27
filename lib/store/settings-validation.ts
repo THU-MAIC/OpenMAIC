@@ -124,7 +124,7 @@ export function isLLMProviderConfigured(config: any): boolean {
     return hasModels;
   }
 
-  return !!config.apiKey && hasModels;
+  return isProviderUsable(config) && hasModels;
 }
 
 /**

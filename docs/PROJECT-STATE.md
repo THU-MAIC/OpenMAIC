@@ -217,3 +217,4 @@ Error: Initiated Worker with invalid NODE_OPTIONS env variable:
 - GitHub CI 的 E2E 必须通过 Playwright 夹具建立合成登录态并拦截 inert Supabase 测试请求；禁止在生产认证代码中添加 E2E 绕过。
 - 本地/CI 的 standalone 输出只能用 `node .next/standalone/server.js` 启动，不能用 `next start`。
 - 在全仓历史 Prettier/ESLint 债务清理前，`pnpm check` 与 `pnpm lint` 只校验本次 push/PR 的变更文件；不得以全局 `--write` 混入无关格式化改动。
+- `pnpm test` 固定使用 `vitest run --no-file-parallelism`：251 个测试文件中有重试/流式全局 mock 与计时器型旧测试，文件级并发会制造假超时；串行全量实测 2017/2017 通过（约 150 秒）。

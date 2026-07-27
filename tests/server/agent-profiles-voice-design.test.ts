@@ -15,6 +15,15 @@ vi.mock('@/lib/server/resolve-model', () => ({
   }),
 }));
 
+vi.mock('@/lib/server/api-guard', () => ({
+  requireAuthOrTeacher: vi.fn().mockResolvedValue({
+    ok: true,
+    user: { id: 'test-teacher' },
+    role: 'teacher',
+  }),
+  rateLimitByUser: vi.fn().mockReturnValue({ ok: true, remaining: 14 }),
+}));
+
 import { POST } from '@/app/api/generate/agent-profiles/route';
 
 function makeRequest(): NextRequest {

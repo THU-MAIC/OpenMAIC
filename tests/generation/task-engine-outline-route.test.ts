@@ -13,6 +13,15 @@ vi.mock('@/lib/server/resolve-model', () => ({
   resolveModelFromRequest: resolveModelFromRequestMock,
 }));
 
+vi.mock('@/lib/server/api-guard', () => ({
+  requireAuthOrTeacher: vi.fn().mockResolvedValue({
+    ok: true,
+    user: { id: 'test-teacher' },
+    role: 'teacher',
+  }),
+  rateLimitByUser: vi.fn().mockReturnValue({ ok: true, remaining: 14 }),
+}));
+
 async function readStreamBody(response: Response) {
   const reader = response.body?.getReader();
   expect(reader).toBeDefined();

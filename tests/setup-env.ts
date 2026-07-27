@@ -21,3 +21,8 @@ try {
 } catch {
   // .env.local not found, skip
 }
+
+// Browser-oriented unit tests import the Supabase client but do not contact a
+// real project. Keep them hermetic when CI has no developer .env.local.
+process.env.NEXT_PUBLIC_SUPABASE_URL ??= 'https://unit-test.invalid.supabase.co';
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??= 'unit-test-anon-key';

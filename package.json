@@ -16,7 +16,7 @@
     "check:i18n-keys": "node scripts/check-i18n-keys.mjs",
     "check": "node scripts/check-changed-format.mjs",
     "format": "prettier . --write",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "eval:pbl-v2-planner": "tsx eval/pbl-v2-planner/runner.ts",
