@@ -232,6 +232,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         name: 'DeepSeek V4 Pro',
         contextWindow: 1048576,
         outputWindow: 393216,
+        // Live-verified with enabled/disabled thinking payloads and a forced
+        // OpenAI-compatible function call against Atlas Cloud.
         capabilities: {
           streaming: true,
           tools: true,

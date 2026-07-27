@@ -33,6 +33,49 @@ vi.mock('ai', async (importOriginal) => {
 import { getModel, getModelInfo, getProvider } from '@/lib/ai/providers';
 import { getCatalogThinkingCapability } from '@/lib/ai/model-metadata';
 
+async function captureAtlasThinkingBody(thinkingConfig: Record<string, unknown>) {
+  const originalFetch = globalThis.fetch;
+  const globalRecord = globalThis as Record<string, unknown>;
+  const originalThinkingContext = globalRecord.__thinkingContext;
+  const fetchMock = vi.fn(async () =>
+    new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }),
+  );
+
+  try {
+    globalThis.fetch = fetchMock as typeof fetch;
+    globalRecord.__thinkingContext = { getStore: () => thinkingConfig };
+
+    getModel({
+      providerId: 'atlascloud',
+      modelId: 'deepseek-ai/deepseek-v4-pro',
+      apiKey: 'sk-atlas',
+    });
+
+    const lastCall = openAiMock.createOpenAI.mock.calls.at(-1);
+    const options = lastCall?.[0] as { fetch?: typeof fetch } | undefined;
+    await options?.fetch?.('https://api.atlascloud.ai/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify({
+        model: 'deepseek-ai/deepseek-v4-pro',
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    return JSON.parse(init.body as string);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalThinkingContext === undefined) {
+      delete globalRecord.__thinkingContext;
+    } else {
+      globalRecord.__thinkingContext = originalThinkingContext;
+    }
+  }
+}
+
 describe('Atlas Cloud provider', () => {
   beforeEach(() => {
     openAiMock.chat.mockClear();
@@ -99,4 +142,23 @@ describe('Atlas Cloud provider', () => {
       },
     );
   });
+
+  it.each([
+    [
+      { mode: 'enabled', effort: 'high' },
+      { thinking: { type: 'enabled' }, reasoning_effort: 'high' },
+    ],
+    [
+      { mode: 'enabled', effort: 'max' },
+      { thinking: { type: 'enabled' }, reasoning_effort: 'max' },
+    ],
+    [{ mode: 'disabled' }, { thinking: { type: 'disabled' } }],
+  ] as const)(
+    'injects the live-verified DeepSeek thinking payload %#',
+    async (config, expected) => {
+      const body = await captureAtlasThinkingBody(config);
+
+      expect(body).toMatchObject(expected);
+    },
+  );
 });
