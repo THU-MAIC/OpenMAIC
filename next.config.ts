@@ -1,5 +1,12 @@
 import type { NextConfig } from 'next';
 
+const e2eAuthAlias: Record<string, string> = {};
+if (process.env.E2E_TEST_MODE === '1') {
+  // Build-time E2E-only alias. Vercel never sets this flag, so production
+  // always resolves the normal Supabase-backed auth hook.
+  e2eAuthAlias['@/lib/auth/use-auth'] = './e2e/fixtures/browser-auth.ts';
+}
+
 const nextConfig: NextConfig = {
   output: process.env.VERCEL ? undefined : 'standalone',
   transpilePackages: ['mathml2omml', 'pptxgenjs', '@openmaic/importer'],
@@ -12,6 +19,7 @@ const nextConfig: NextConfig = {
       // Keep this relative and POSIX-style: Turbopack does not support a
       // Windows absolute alias path during local production builds.
       '@openmaic/dsl': './packages/@openmaic/dsl/dist/index.js',
+      ...e2eAuthAlias,
     },
   },
   // These agent packages do a runtime `import(specifier)` with a computed

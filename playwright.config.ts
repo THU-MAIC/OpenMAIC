@@ -27,7 +27,12 @@ export default defineConfig({
   webServer: {
     // next.config.ts uses `output: standalone` outside Vercel. `next start`
     // cannot serve that output, while the generated standalone server can.
-    command: process.env.CI ? 'pnpm build && node .next/standalone/server.js' : 'pnpm dev',
+    // Next does not copy static browser chunks into standalone output. Copy
+    // them before starting the generated server, otherwise pages hydrate with
+    // dozens of 404s and remain stuck in their loading state.
+    command: process.env.CI
+      ? 'pnpm build && cp -R .next/static .next/standalone/.next/static && node .next/standalone/server.js'
+      : 'pnpm dev',
     url: 'http://localhost:3002',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

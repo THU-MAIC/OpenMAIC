@@ -2,6 +2,7 @@ import { test, expect } from '../fixtures/base';
 import { ClassroomPage } from '../pages/classroom.page';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
 import { defaultTheme } from '../fixtures/test-data/scene-content';
+import { prepareMaicDatabase } from '../fixtures/maic-database';
 
 const TEST_STAGE_ID = 'e2e-test-stage';
 
@@ -15,10 +16,10 @@ async function seedDatabase(page: import('@playwright/test').Page) {
     localStorage.setItem('locale', 'en-US');
   }, SETTINGS_STORAGE);
 
+  await prepareMaicDatabase(page);
+
   // Navigate to home page first — this causes Dexie to open/create the DB at v8
   // with the correct schema. We wait for network idle to ensure Dexie is done.
-  await page.goto('/', { waitUntil: 'networkidle' });
-
   // Now seed data by opening the DB at its current version (no upgrade).
   // Opening without a version number returns the current version without triggering
   // onupgradeneeded, so we can safely write to the already-initialized schema.

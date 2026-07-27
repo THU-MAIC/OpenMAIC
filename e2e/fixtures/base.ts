@@ -11,9 +11,6 @@ export const test = base.extend<Fixtures>({
       const mockApi = new MockApi(page);
       // Always mock server-providers — called on every page load by root layout
       await mockApi.mockServerProviders();
-      // Classroom and generation pages correctly require a Supabase account.
-      // Keep E2E authenticated through the normal browser-client code path.
-      await mockApi.mockAuthenticatedUser();
       await use(mockApi);
     },
     { auto: true },

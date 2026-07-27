@@ -65,6 +65,9 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-role-key
       NEXT_PUBLIC_SUPABASE_URL: https://ci.invalid.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+      # Enables only the E2E build-time auth alias in next.config.ts. Vercel
+      # does not set this flag, so production authentication is unaffected.
+      E2E_TEST_MODE: '1'
     steps:
       - uses: actions/checkout@v4
 

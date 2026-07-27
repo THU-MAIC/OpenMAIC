@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import { ClassroomPage } from '../pages/classroom.page';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
 import type { QuizQuestion } from '../../lib/types/stage';
+import { prepareMaicDatabase } from '../fixtures/maic-database';
 
 const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
 
@@ -25,7 +26,7 @@ async function seedQuiz(page: Page, stageId: string, questions: QuizQuestion[]) 
   await page.addInitScript((settings) => {
     localStorage.setItem('settings-storage', settings);
   }, SETTINGS_STORAGE);
-  await page.goto('/', { waitUntil: 'networkidle' });
+  await prepareMaicDatabase(page);
   await page.evaluate(
     ({ id, qs }) => {
       return new Promise<void>((resolve, reject) => {

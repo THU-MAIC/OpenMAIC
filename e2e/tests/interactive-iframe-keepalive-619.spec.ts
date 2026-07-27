@@ -2,6 +2,7 @@ import { test, expect } from '../fixtures/base';
 import { ClassroomPage } from '../pages/classroom.page';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
 import { defaultTheme } from '../fixtures/test-data/scene-content';
+import { prepareMaicDatabase } from '../fixtures/maic-database';
 
 /**
  * E2E for #619: interactive scene iframes must NOT reload on remount.
@@ -43,7 +44,7 @@ async function seedDatabase(page: import('@playwright/test').Page) {
     localStorage.setItem('settings-storage', settings);
   }, SETTINGS_STORAGE);
 
-  await page.goto('/', { waitUntil: 'networkidle' });
+  await prepareMaicDatabase(page);
 
   await page.evaluate(
     ({ stageId, interactiveId, html, theme }) => {

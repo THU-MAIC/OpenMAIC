@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from '../fixtures/base';
 import { defaultTheme } from '../fixtures/test-data/scene-content';
+import { prepareMaicDatabase } from '../fixtures/maic-database';
 
 const TEST_STAGE_ID = 'e2e-video-thumbnail-stage';
 const VIDEO_MEDIA_REF = 'gen_vid_thumbnail';
@@ -29,8 +30,7 @@ async function seedVideoThumbnailStage({
   storedError?: string;
   extraStoredMediaRefs?: string[];
 }) {
-  await page.goto('/', { waitUntil: 'networkidle' });
-
+  await prepareMaicDatabase(page);
   await page.evaluate(
     ({
       stageId,
