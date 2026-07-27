@@ -38,7 +38,7 @@ async function captureAtlasThinkingBody(thinkingConfig: Record<string, unknown>)
   const globalRecord = globalThis as Record<string, unknown>;
   const originalThinkingContext = globalRecord.__thinkingContext;
   const fetchMock = vi.fn(
-    async () =>
+    async (_input: RequestInfo | URL, _init?: RequestInit) =>
       new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -65,8 +65,9 @@ async function captureAtlasThinkingBody(thinkingConfig: Record<string, unknown>)
       }),
     });
 
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    return JSON.parse(init.body as string);
+    const init = fetchMock.mock.calls[0]?.[1];
+    if (!init?.body) throw new Error('Atlas Cloud fetch body was not captured');
+    return JSON.parse(String(init.body));
   } finally {
     globalThis.fetch = originalFetch;
     if (originalThinkingContext === undefined) {
