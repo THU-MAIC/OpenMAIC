@@ -53,6 +53,15 @@ jobs:
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
+    # E2E mocks all Supabase-facing requests. These inert values only let
+    # Next evaluate server route modules while building the test web server;
+    # they are deliberately not production credentials.
+    env:
+      SUPABASE_URL: https://ci.invalid.supabase.co
+      SUPABASE_ANON_KEY: ci-placeholder-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-role-key
+      NEXT_PUBLIC_SUPABASE_URL: https://ci.invalid.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
     steps:
       - uses: actions/checkout@v4
 
