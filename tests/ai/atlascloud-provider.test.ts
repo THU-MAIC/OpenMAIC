@@ -37,11 +37,12 @@ async function captureAtlasThinkingBody(thinkingConfig: Record<string, unknown>)
   const originalFetch = globalThis.fetch;
   const globalRecord = globalThis as Record<string, unknown>;
   const originalThinkingContext = globalRecord.__thinkingContext;
-  const fetchMock = vi.fn(async () =>
-    new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    }),
+  const fetchMock = vi.fn(
+    async () =>
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
   );
 
   try {
