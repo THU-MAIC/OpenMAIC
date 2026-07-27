@@ -99,7 +99,7 @@ jobs:
             **运行时间**：${{ github.run_id }}
             **Commit**：${{ github.sha }}
 
-            ${{ github.event.inputs.reason && '> 触发说明：' + github.event.inputs.reason || '' }}
+            ${{ github.event.inputs.reason && format('> 触发说明：{0}', github.event.inputs.reason) || '' }}
 
             ### 改动文件
 
