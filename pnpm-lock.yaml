@@ -98,6 +98,9 @@ importers:
       '@openmaic/dsl':
         specifier: workspace:*
         version: link:packages/@openmaic/dsl
+      '@openmaic/storage':
+        specifier: workspace:*
+        version: link:packages/@openmaic/storage
       '@openmaic/importer':
         specifier: workspace:*
         version: link:packages/@openmaic/importer

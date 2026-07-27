@@ -202,3 +202,12 @@ Error: Initiated Worker with invalid NODE_OPTIONS env variable:
 - `docs/diff-from-upstream-commits.md` / `docs/diff-from-upstream-files.md`：原始 git log
 - `docs/DRY-RUN-V031-MERGE-REPORT.md`：v0.3.1 全量 merge dry-run
 - `docs/runtimestore-conflict-scan.md`：Phase 1+2 cherry-pick 实测
+
+---
+
+## 2026-07-27 B2.1 决策：DocumentStore 安全桥接
+
+- `NEXT_PUBLIC_DOCUMENT_STORE_BRIDGE` 默认 `0`；关闭时完全绕过 DocumentStore，Dexie 保持唯一课程读写源。
+- B2.1 仅在成功读取旧 Dexie 课程后后台复制；校验或 IndexedDB 失败必须降级为继续使用 Dexie，绝不阻断 UI。
+- 新 DocumentStore 数据库按 `SHA-256(auth.uid())` 前 32 个十六进制字符（128 bit）命名空间隔离；旧 Dexie 的历史设备级缓存归属不可倒推，另立项处理。
+- B2.1 后先做 B2.2 双读指纹校验，再另立 B2.3 主读写切换；本期不接 RuntimeStore/learnerKey/Supabase。

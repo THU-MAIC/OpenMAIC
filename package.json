@@ -57,6 +57,7 @@
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@napi-rs/canvas": "^0.1.88",
     "@openmaic/dsl": "workspace:*",
+    "@openmaic/storage": "workspace:*",
     "@openmaic/importer": "workspace:*",
     "@openmaic/renderer": "workspace:*",
     "@radix-ui/react-checkbox": "^1.3.3",

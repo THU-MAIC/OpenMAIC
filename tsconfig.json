@@ -20,7 +20,8 @@
     ],
     "paths": {
       "@/*": ["./*"],
-      "@openmaic/dsl": ["./packages/@openmaic/dsl/src/index.ts"]
+      "@openmaic/dsl": ["./packages/@openmaic/dsl/src/index.ts"],
+      "@openmaic/storage": ["./packages/@openmaic/storage/dist/index.d.ts"]
     }
   },
   "include": [
