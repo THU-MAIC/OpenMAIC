@@ -211,3 +211,9 @@ Error: Initiated Worker with invalid NODE_OPTIONS env variable:
 - B2.1 仅在成功读取旧 Dexie 课程后后台复制；校验或 IndexedDB 失败必须降级为继续使用 Dexie，绝不阻断 UI。
 - 新 DocumentStore 数据库按 `SHA-256(auth.uid())` 前 32 个十六进制字符（128 bit）命名空间隔离；旧 Dexie 的历史设备级缓存归属不可倒推，另立项处理。
 - B2.1 后先做 B2.2 双读指纹校验，再另立 B2.3 主读写切换；本期不接 RuntimeStore/learnerKey/Supabase。
+
+## 2026-07-27 CI 基线门禁决策
+
+- GitHub CI 的 E2E 必须通过 Playwright 夹具建立合成登录态并拦截 inert Supabase 测试请求；禁止在生产认证代码中添加 E2E 绕过。
+- 本地/CI 的 standalone 输出只能用 `node .next/standalone/server.js` 启动，不能用 `next start`。
+- 在全仓历史 Prettier/ESLint 债务清理前，`pnpm check` 与 `pnpm lint` 只校验本次 push/PR 的变更文件；不得以全局 `--write` 混入无关格式化改动。

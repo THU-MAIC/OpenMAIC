@@ -16,6 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Changed-file quality gates need the push/PR base commit locally.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
