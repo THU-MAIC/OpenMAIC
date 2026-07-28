@@ -25,6 +25,12 @@
 
 | 决策 | 日期 | 理由 | 记录位置 |
 |---|---|---|---|
+| **v0.3.1 同步走混合路线**（不全量 merge）：元素级编辑 5-commit 链定向 cherry-pick；SSRF `redirect:'manual'` 精准回捞；资料导入增强等 course-assets 收尾；架构对齐挂 Phase 4 | 2026-07-28 | 全量 merge 实测 1-1.5 周全职且强行带入 RuntimeStore 业务切流，与 B2.x 渐进策略冲突；编辑链与 fork 自研文件零业务冲突、零架构依赖 | `docs/reports/2026-07-28-merge-vs-cherry-pick-decision.md` |
+| **Phase 4 接法选型 A**：Next.js API routes 实现上游 HTTP 契约，服务端再访问 Supabase；不让浏览器直连 PostgREST 写 RuntimeStore | 2026-07-28 | append/CAS/冲突处理需事务边界；统一走 api-guard 做 Auth/角色/课程访问/审计；service_role 必须显式鉴权 | 同上 + Codex 施工边界确认 |
+| **持久化目标架构 = 部署期可替换 adapter**：上游 HttpStore 客户端 → RJ Next.js API → adapter（云上 Supabase+RLS / 私有化自托管 Postgres+企业认证）；**每部署单权威后端，不做双写** | 2026-07-28 | 私有化部署已立项（GFW 阻断事件加速）；上游 compose/reference server 可作私有化运行形态参考，但其身份授权不进生产 | `docs/handoffs/2026-07-27-gfw-block-handoff.md` |
+| **learnerKey = auth.uid() 对 access_code 无歧义**：6 位码只在已登录 Supabase Auth 后绑定 `students.user_id`；未登录持码人无 RuntimeStore 分区写权限；分享语义是"已登录学员/老师拿链接学习"，非匿名访问码学习 | 2026-07-28 | `app/api/access-code/redeem/route.ts` 明确要求 Auth 登录后绑定 | Codex 施工边界确认 |
+| **17 个未提交 course-assets 文件归属 WorkBuddy**：非 Codex B2 在制品，由 WorkBuddy 独立验证、独立 commit 后才做上游操作 | 2026-07-28 | 边界澄清，避免双线施工互相污染 | Codex 施工边界确认 |
+| **edit_elements 供应链核实**：上游真实实现为 `cc5a6ab1`（NL→EditIntent，typebox 契约 RFC 6902 test/add/replace）+ `ebb12b5f`（带校验 JSON Patch）；fork 现有 `edit_interactive_html` 是 oldText→newText 替换，**非** JSON Patch；MiniMax M2.7 的 Patch 准确率未经实测 | 2026-07-28 | 纠正"已有 4 工具 ⇒ Patch 质量已验证"的推断——只能确认 tool-calling 链路可用，不能确认 Patch 质量 | 决策文档 §3.4 |
 | **Phase 0 修开关位置**：从 `fireAndForgetAutoSave` 函数内部上移到调用点 | 2026-07-24 | saveStageToCloud 有 3 个调用点（自动 / 顺序修复回传 / 手动按钮），开关只管"自动"那条 | commit `21712c39` |
 | **Next_PUBLIC_LEGACY_AUTOSAVE 命名 + 默认开** | 2026-07-24 | 语义准确；保留 PR1 行为；设 `=0` 关闭 | commit `21712c39` |
 | **59a8bac6 SSRF 修复搁置**（v0.3.1 #930） | 2026-07-24 | modify/delete 冲突：`probe-auth.ts` 在 RJ-laixue 已删，改走 `api-guard` 路线 | Phase 0 报告 §二 |
