@@ -1614,6 +1614,7 @@
     "clearCacheButton": "Удалить все данные навсегда",
     "clearCacheSuccess": "Кэш очищен, страница скоро обновится",
     "clearCacheFailed": "Не удалось очистить кэш, попробуйте снова",
+    "persistUnavailable": "Изменения не сохраняются: приложению не удалось прочитать локальное хранилище. Обновите страницу, чтобы повторить попытку.",
     "webSearchSettings": "Веб-поиск",
     "webSearchApiKey": "API-ключ поиска",
     "webSearchApiKeyPlaceholder": "Введите API-ключ поиска",

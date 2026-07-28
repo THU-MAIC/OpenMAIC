@@ -40,6 +40,13 @@ const log = createLogger('Settings');
 /** Persisted-blob version, shared by `persist` and the pre-persist fallback. */
 const SETTINGS_PERSIST_VERSION = 4;
 
+/**
+ * Bound after the store exists; see `onWriteRefused` for why it is not inlined.
+ * The explicit annotation is what breaks the type cycle — inferring this from
+ * the store would put the store back in its own definition.
+ */
+const recovery: { rehydrate?: () => void | Promise<void> } = {};
+
 function pruneThinkingConfigs(
   thinkingConfigs: Record<string, ThinkingConfig> | undefined,
   providersConfig: ProvidersConfig | undefined,
@@ -904,9 +911,13 @@ const readPrePersistSettings = (): StorageValue<Partial<SettingsState>> | null =
     }
   }
 
-  // Stamped at the current version: this data never went through `migrate`
-  // when it was applied as initial state, and replaying the v0 → v1 ladder over
-  // it now would change what a pre-persist install restores.
+  // Stamped at the current version, which skips `migrate` entirely — not just
+  // the v0 → v1 ladder but also the unversioned normalization `migrate` runs on
+  // every path (built-in provider backfills, thinking-config pruning). That is
+  // deliberate and matches the pre-existing behaviour: this data was previously
+  // applied as *initial state*, which `migrate` never saw either. Nothing is
+  // actually lost, because `merge` runs the same normalizations — plus a few
+  // more — on every rehydrate.
   return {
     state: {
       providerId,
@@ -1906,6 +1917,13 @@ export const useSettingsStore = create<SettingsState>()(
       // that is what zustand infers as the persisted shape here.
       storage: createKVPersistStorage<Partial<SettingsState>>('account', {
         prePersistFallback: readPrePersistSettings,
+        // One recovery attempt when a write is refused because hydration never
+        // succeeded — the backend may have come back since. Routed through a
+        // variable assigned below rather than naming the store directly: a
+        // self-reference here would make the store's own type circular, and
+        // every `useSettingsStore(s => ...)` selector would silently widen to
+        // `any`.
+        onWriteRefused: () => recovery.rehydrate?.(),
       }),
       version: SETTINGS_PERSIST_VERSION,
       // Migrate persisted state
@@ -2144,3 +2162,7 @@ export const useSettingsStore = create<SettingsState>()(
     },
   ),
 );
+
+// Bound after the store exists so the `onWriteRefused` hook above stays free of
+// a self-reference (see the comment there).
+recovery.rehydrate = () => useSettingsStore.persist.rehydrate();

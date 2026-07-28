@@ -80,10 +80,11 @@ export function GeneralSettings() {
 
       toast.success(t('settings.clearCacheSuccess'));
 
-      // Reload page after a short delay
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
+      // Reload immediately. The stores are still live in memory and still
+      // hydrated, so any `set()` in the meantime — a settings dialog effect, a
+      // background reconcile — would persist the very credentials just
+      // deleted. The toast stays visible while the new document loads.
+      window.location.reload();
     } catch (error) {
       log.error('Failed to clear cache:', error);
       toast.error(t('settings.clearCacheFailed'));

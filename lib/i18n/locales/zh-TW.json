@@ -1525,6 +1525,7 @@
     "clearCacheButton": "永久刪除所有資料",
     "clearCacheSuccess": "緩存已清空，頁面即將重新整理",
     "clearCacheFailed": "清空緩存失敗，請重試",
+    "persistUnavailable": "變更未被儲存：應用程式無法讀取本機儲存空間。請重新整理頁面再試一次。",
     "webSearchSettings": "網路搜尋",
     "webSearchApiKey": "Tavily API Key",
     "webSearchApiKeyPlaceholder": "輸入你的 Tavily API Key",

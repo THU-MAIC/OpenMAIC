@@ -1614,6 +1614,7 @@
     "clearCacheButton": "Permanently Delete All Data",
     "clearCacheSuccess": "Cache cleared, page will refresh shortly",
     "clearCacheFailed": "Failed to clear cache, please try again",
+    "persistUnavailable": "Your changes aren't being saved — the app couldn't read its local storage. Reload the page to try again.",
     "webSearchSettings": "Web Search",
     "webSearchApiKey": "Search API Key",
     "webSearchApiKeyPlaceholder": "Enter your search API key",

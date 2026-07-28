@@ -1614,6 +1614,7 @@
     "clearCacheButton": "حذف جميع البيانات نهائيًا",
     "clearCacheSuccess": "تم مسح الذاكرة المؤقتة، ستتم إعادة تحميل الصفحة قريبًا",
     "clearCacheFailed": "فشل مسح الذاكرة المؤقتة، يرجى المحاولة مرة أخرى",
+    "persistUnavailable": "لا يتم حفظ تغييراتك — تعذّر على التطبيق قراءة وحدة التخزين المحلية. أعد تحميل الصفحة للمحاولة مرة أخرى.",
     "webSearchSettings": "بحث الإنترنت",
     "webSearchApiKey": "مفتاح API للبحث",
     "webSearchApiKeyPlaceholder": "أدخل مفتاح API للبحث",

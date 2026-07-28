@@ -1614,6 +1614,7 @@
     "clearCacheButton": "永久删除所有数据",
     "clearCacheSuccess": "缓存已清空，页面即将刷新",
     "clearCacheFailed": "清空缓存失败，请重试",
+    "persistUnavailable": "更改未被保存：应用无法读取本地存储。请刷新页面重试。",
     "webSearchSettings": "网络搜索",
     "webSearchApiKey": "搜索 API Key",
     "webSearchApiKeyPlaceholder": "输入你的搜索 API Key",

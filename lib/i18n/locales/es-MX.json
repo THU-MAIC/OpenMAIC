@@ -1614,6 +1614,7 @@
     "clearCacheButton": "Eliminar permanentemente todos los datos",
     "clearCacheSuccess": "Caché borrada, la página se actualizará en breve",
     "clearCacheFailed": "No se pudo borrar la caché, inténtalo de nuevo",
+    "persistUnavailable": "Tus cambios no se están guardando: la aplicación no pudo leer su almacenamiento local. Vuelve a cargar la página para intentarlo de nuevo.",
     "webSearchSettings": "Búsqueda web",
     "webSearchApiKey": "Clave API de búsqueda",
     "webSearchApiKeyPlaceholder": "Ingresa tu clave API de búsqueda",

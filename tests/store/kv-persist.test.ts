@@ -10,10 +10,14 @@
  * Most cases below are therefore *sequences*, not single calls: one adapter
  * used in order is the single arrangement that was already safe.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { BrowserKVStore, type KVScope, type KVStore } from '@openmaic/storage';
 
 import { createKVPersistStorage } from '@/lib/store/kv-persist';
+import { resetPersistHealth, subscribeToPersistUnavailable } from '@/lib/store/persist-health';
+
+/** Let the seam's detached recovery-then-notify chain run to completion. */
+const flushMicrotasks = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 /** In-memory `Storage`, isolated per test — nothing ambient is touched. */
 class MemoryStorage implements Storage {
@@ -47,6 +51,7 @@ class MemoryStorage implements Storage {
 class ControllableKV implements KVStore {
   failGet = false;
   failSet = false;
+  failRemove = false;
   private gate: { match: (key: string) => boolean; wait: Promise<void> } | null = null;
 
   constructor(private readonly inner: KVStore) {}
@@ -98,6 +103,7 @@ class ControllableKV implements KVStore {
     return this.inner.set(key, value, scope);
   }
   async remove(key: string, scope?: KVScope): Promise<void> {
+    if (this.failRemove) throw new Error('kv remove failed');
     return this.inner.remove(key, scope);
   }
   async keys(prefix?: string, scope?: KVScope): Promise<string[]> {
@@ -106,7 +112,14 @@ class ControllableKV implements KVStore {
 }
 
 const NAME = 'settings-storage';
-const MARKER = `persist-adopted:${NAME}`;
+/**
+ * Both sentinels are `device`-scoped whatever scope the store uses, and carry a
+ * reserved `__` prefix. They record what happened to *this machine's* files, so
+ * a syncing `account` backend must not carry them to a machine whose files they
+ * describe nothing about.
+ */
+const MARKER = `__persist-adopted:${NAME}`;
+const PRE_PERSIST_SENTINEL = `__pre-persist-consulted:${NAME}`;
 const isBlobKey = (key: string) => key === NAME;
 
 interface Prefs {
@@ -127,6 +140,45 @@ function harness() {
   };
 }
 
+/**
+ * Two devices sharing one `account` scope and nothing else: separate
+ * `localStorage` files, and separate `device` scopes. This is what a
+ * server-backed `account` backend looks like, and the arrangement in which
+ * device-local bookkeeping stored beside the data does damage.
+ */
+function twoDevices() {
+  const accountBacking = new MemoryStorage();
+  const makeDevice = () => {
+    const deviceBacking = new MemoryStorage();
+    const legacy = new MemoryStorage();
+    // `account` reads/writes hit the shared file; `device` stays private.
+    const kv: KVStore = {
+      get: (key, scope) =>
+        new BrowserKVStore({
+          storage: scope === 'device' ? deviceBacking : accountBacking,
+        }).get(key, scope),
+      set: (key, value, scope) =>
+        new BrowserKVStore({
+          storage: scope === 'device' ? deviceBacking : accountBacking,
+        }).set(key, value, scope),
+      remove: (key, scope) =>
+        new BrowserKVStore({
+          storage: scope === 'device' ? deviceBacking : accountBacking,
+        }).remove(key, scope),
+      keys: (prefix, scope) =>
+        new BrowserKVStore({
+          storage: scope === 'device' ? deviceBacking : accountBacking,
+        }).keys(prefix, scope),
+    };
+    return {
+      legacy,
+      kv,
+      storage: () => createKVPersistStorage<Prefs>('account', { kv, legacyStorage: legacy }),
+    };
+  };
+  return { accountBacking, deviceA: makeDevice(), deviceB: makeDevice() };
+}
+
 type PersistStorageUnderTest = ReturnType<ReturnType<typeof harness>['storage']>;
 
 function seedLegacy(legacy: Storage, state: unknown, version = 4) {
@@ -139,12 +191,19 @@ async function hydrated(storage: PersistStorageUnderTest): Promise<PersistStorag
   return storage;
 }
 
+/** Durable "your changes are not being saved" notices raised during a test. */
+let notified: string[] = [];
+
 beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
+  resetPersistHealth();
+  notified = [];
+  subscribeToPersistUnavailable((name) => notified.push(name));
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  resetPersistHealth();
 });
 
 describe('createKVPersistStorage — round trip', () => {
@@ -185,13 +244,28 @@ describe('createKVPersistStorage — scope', () => {
     expect(await h.storage('device').getItem(NAME)).toBeNull();
   });
 
-  it('keeps its adoption marker in its own scope', async () => {
+  it('keeps its sentinels in the device scope even for an account store', async () => {
     const h = harness();
     seedLegacy(h.legacy, { nickname: 'Ada' });
-    await h.storage('device').getItem(NAME);
+    await h.storage('account').getItem(NAME);
 
+    // The marker records that *this machine's* raw file was moved. Stored in
+    // `account` it would sync, and authorize deleting another machine's file.
     expect(await h.kv.get(MARKER, 'device')).toBe(true);
     expect(await h.kv.get(MARKER, 'account')).toBeNull();
+  });
+
+  it('keeps the pre-persist sentinel in the device scope too', async () => {
+    const h = harness();
+    const persist = createKVPersistStorage<Prefs>('account', {
+      kv: h.kv,
+      legacyStorage: h.legacy,
+      prePersistFallback: () => ({ state: { nickname: 'ancient' }, version: 4 }),
+    });
+    await persist.getItem(NAME);
+
+    expect(await h.kv.get(PRE_PERSIST_SENTINEL, 'device')).toBe(true);
+    expect(await h.kv.get(PRE_PERSIST_SENTINEL, 'account')).toBeNull();
   });
 });
 
@@ -212,8 +286,9 @@ describe('createKVPersistStorage — legacy localStorage adoption', () => {
     expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'Ada' }, version: 4 });
     expect(h.legacy.getItem(NAME)).toBeNull();
     // The completion marker is how a later read tells a settled migration from
-    // a KV entry of unknown provenance.
-    expect(await h.kv.get(MARKER, 'account')).toBe(true);
+    // a KV entry of unknown provenance. It is device-scoped: it describes this
+    // machine's files, not the account's data.
+    expect(await h.kv.get(MARKER, 'device')).toBe(true);
   });
 
   it('adopts into whichever scope the store declared', async () => {
@@ -533,6 +608,22 @@ describe('createKVPersistStorage — pre-persist fallback', () => {
     expect(h.legacy.getItem('llmModel')).toBe('openai:gpt-4o');
   });
 
+  it('does not claim a licence to delete raw entries it never adopted', async () => {
+    // The adoption marker means "a raw persist entry on this device was moved
+    // into KV". The fallback moves nothing of the sort, so it must not write
+    // one — otherwise a raw entry later restored by an older bundle or a
+    // rollback, holding real data nothing has read, is deleted on sight.
+    const h = harness();
+    await withFallback(h, () => fallbackValue).getItem(NAME);
+
+    expect(await h.kv.get(MARKER, 'device')).toBeNull();
+
+    seedLegacy(h.legacy, { nickname: 'restored by an older build' });
+    await withFallback(h, () => fallbackValue).getItem(NAME);
+
+    expect(h.legacy.getItem(NAME)).not.toBeNull();
+  });
+
   it('is not consulted when the KV read failed', async () => {
     const h = harness();
     const fallback = vi.fn(() => fallbackValue);
@@ -540,6 +631,258 @@ describe('createKVPersistStorage — pre-persist fallback', () => {
 
     expect(await withFallback(h, fallback).getItem(NAME)).toBeNull();
     expect(fallback).not.toHaveBeenCalled();
+  });
+});
+
+describe('createKVPersistStorage — two devices on one account scope', () => {
+  it("does not let one device's migration authorize deleting another's raw file", async () => {
+    // Device A upgrades first and migrates its raw entry into the shared
+    // `account` scope. Device B has never run the new build, so its raw file is
+    // still the only copy of *its* settings and has never been read.
+    const { deviceA, deviceB } = twoDevices();
+    seedLegacy(deviceA.legacy, { nickname: 'from A' });
+    seedLegacy(deviceB.legacy, { nickname: 'only copy on B' });
+
+    await deviceA.storage().getItem(NAME);
+    expect(deviceA.legacy.getItem(NAME)).toBeNull();
+
+    // B now loads. The account entry (A's) shadows its raw file — but A's
+    // migration marker is device-local, so B has no licence to delete.
+    expect(await deviceB.storage().getItem(NAME)).toEqual({
+      state: { nickname: 'from A' },
+      version: 4,
+    });
+    expect(deviceB.legacy.getItem(NAME)).not.toBeNull();
+  });
+
+  it('still drops a stale raw file on the device that migrated it', async () => {
+    // The device-local marker must not be so conservative that it stops the
+    // case it exists for.
+    const { deviceA } = twoDevices();
+    seedLegacy(deviceA.legacy, { nickname: 'from A' });
+    const persist = deviceA.storage();
+    await persist.getItem(NAME);
+
+    seedLegacy(deviceA.legacy, { nickname: 'stale' });
+    await persist.getItem(NAME);
+
+    expect(deviceA.legacy.getItem(NAME)).toBeNull();
+  });
+
+  it('does not republish one device’s pre-persist keys after the account entry is cleared', async () => {
+    // The chain this closes: A migrates and later clears the account entry
+    // (cache button, or a server-side wipe). B still has its pre-persist keys
+    // on disk — including credentials the user rotated years ago. Without a
+    // per-device sentinel B would read them and republish them to the account
+    // scope, syncing them back to every device.
+    const { deviceA, deviceB } = twoDevices();
+    const ancient = () => ({ state: { nickname: 'rotated-credential' }, version: 4 });
+
+    const bPersist = createKVPersistStorage<Prefs>('account', {
+      kv: deviceB.kv,
+      legacyStorage: deviceB.legacy,
+      prePersistFallback: ancient,
+    });
+    await bPersist.getItem(NAME);
+    expect(await deviceB.kv.get(NAME, 'account')).toEqual(ancient());
+
+    // The account entry is wiped from the other device.
+    await deviceA.storage().removeItem(NAME);
+    expect(await deviceB.kv.get(NAME, 'account')).toBeNull();
+
+    // B reloads. Its pre-persist keys are untouched on disk, and must stay put.
+    const fallback = vi.fn(ancient);
+    const bAfterWipe = createKVPersistStorage<Prefs>('account', {
+      kv: deviceB.kv,
+      legacyStorage: deviceB.legacy,
+      prePersistFallback: fallback,
+    });
+
+    expect(await bAfterWipe.getItem(NAME)).toBeNull();
+    expect(fallback).not.toHaveBeenCalled();
+    expect(await deviceB.kv.get(NAME, 'account')).toBeNull();
+  });
+});
+
+describe('createKVPersistStorage — writes issued during hydration', () => {
+  it('refuses a write issued while the read is still in flight', async () => {
+    // The gate has to be read when `setItem` is *called*. Checked inside the
+    // queued task instead, this write waits behind `getItem`, finds the gate
+    // opened by the very read it raced, and lands its pre-hydration snapshot
+    // on top of the stored value.
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'stored' });
+
+    const persist = h.storage();
+    const releaseRead = h.kv.stallGetAfterRead(isBlobKey);
+    const load = persist.getItem(NAME);
+
+    // zustand issues this from a `set()` that ran before hydration resolved.
+    const prematureWrite = persist.setItem(NAME, { state: { nickname: '' }, version: 4 });
+
+    releaseRead();
+    await Promise.all([load, prematureWrite]);
+
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'stored' }, version: 4 });
+  });
+
+  it('allows the write zustand issues once hydration has resolved', async () => {
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'stored' });
+    const persist = h.storage();
+
+    await persist.getItem(NAME);
+    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
+
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'edited' }, version: 4 });
+  });
+});
+
+describe('createKVPersistStorage — refused writes ask for recovery, then say so', () => {
+  it('asks the store to rehydrate on the first refusal only', async () => {
+    const h = harness();
+    h.kv.failGet = true;
+    const onWriteRefused = vi.fn();
+    const persist = createKVPersistStorage<Prefs>('account', {
+      kv: h.kv,
+      legacyStorage: h.legacy,
+      onWriteRefused,
+    });
+
+    await persist.getItem(NAME);
+    await persist.setItem(NAME, { state: { nickname: 'a' } });
+    await persist.setItem(NAME, { state: { nickname: 'b' } });
+
+    expect(onWriteRefused).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs every refusal, not just the first', async () => {
+    // A once-per-session warning hides how long changes have been going
+    // unsaved, which is the only thing the log is for here.
+    const h = harness();
+    h.kv.failGet = true;
+    const persist = h.storage();
+    await persist.getItem(NAME);
+
+    await persist.setItem(NAME, { state: { nickname: 'a' } });
+    await persist.setItem(NAME, { state: { nickname: 'b' } });
+    await persist.setItem(NAME, { state: { nickname: 'c' } });
+
+    const refusals = (console.error as unknown as Mock).mock.calls.filter((call) =>
+      String(call[0] ?? '').includes('Refusing to persist'),
+    );
+    expect(refusals).toHaveLength(3);
+  });
+
+  it('stays quiet when the recovery attempt works', async () => {
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'stored' });
+    h.kv.failGet = true;
+
+    const persist = createKVPersistStorage<Prefs>('account', {
+      kv: h.kv,
+      legacyStorage: h.legacy,
+      // A real store rehydrates; here that is the backend recovering and the
+      // adapter re-reading.
+      onWriteRefused: async () => {
+        h.kv.failGet = false;
+        await persist.getItem(NAME);
+      },
+    });
+
+    await persist.getItem(NAME);
+    await persist.setItem(NAME, { state: { nickname: 'a' } });
+    await flushMicrotasks();
+
+    expect(notified).toEqual([]);
+    // And persistence is unblocked from here on.
+    await persist.setItem(NAME, { state: { nickname: 'b' }, version: 4 });
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'b' }, version: 4 });
+  });
+
+  it('raises a durable notice when recovery does not work', async () => {
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'stored' });
+    h.kv.failGet = true;
+
+    const persist = createKVPersistStorage<Prefs>('account', {
+      kv: h.kv,
+      legacyStorage: h.legacy,
+      onWriteRefused: async () => {
+        // The backend is still down, so the retry changes nothing.
+        await persist.getItem(NAME);
+      },
+    });
+
+    await persist.getItem(NAME);
+    await persist.setItem(NAME, { state: { nickname: 'a' } });
+    await flushMicrotasks();
+
+    expect(notified).toEqual([NAME]);
+  });
+
+  it('raises the notice when the recovery attempt itself throws', async () => {
+    const h = harness();
+    h.kv.failGet = true;
+
+    const persist = createKVPersistStorage<Prefs>('account', {
+      kv: h.kv,
+      legacyStorage: h.legacy,
+      onWriteRefused: () => Promise.reject(new Error('rehydrate failed')),
+    });
+
+    await persist.getItem(NAME);
+    await persist.setItem(NAME, { state: { nickname: 'a' } });
+    await flushMicrotasks();
+
+    expect(notified).toEqual([NAME]);
+  });
+});
+
+describe('createKVPersistStorage — removeItem reports failure', () => {
+  it('propagates a backend failure instead of reporting a clear that did not happen', async () => {
+    const h = harness();
+    const persist = await hydrated(h.storage());
+    await persist.setItem(NAME, { state: { nickname: 'Ada' }, version: 4 });
+
+    h.kv.failRemove = true;
+    await expect(persist.removeItem(NAME)).rejects.toThrow('kv remove failed');
+
+    // Nothing was destroyed on the way to that failure either.
+    h.kv.failRemove = false;
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'Ada' }, version: 4 });
+  });
+
+  it('leaves the raw entry alone when the KV copy could not be removed', async () => {
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'Ada' });
+    const persist = h.storage();
+    await persist.getItem(NAME);
+    seedLegacy(h.legacy, { nickname: 'reappeared' });
+
+    h.kv.failRemove = true;
+    await expect(persist.removeItem(NAME)).rejects.toThrow();
+
+    expect(h.legacy.getItem(NAME)).not.toBeNull();
+  });
+
+  it('does not clear the pre-persist sentinel — it is monotonic', async () => {
+    const h = harness();
+    const fallback = vi.fn(() => ({ state: { nickname: 'ancient' }, version: 4 }));
+    const make = () =>
+      createKVPersistStorage<Prefs>('account', {
+        kv: h.kv,
+        legacyStorage: h.legacy,
+        prePersistFallback: fallback,
+      });
+
+    await make().getItem(NAME);
+    await make().removeItem(NAME);
+
+    expect(await h.kv.get(PRE_PERSIST_SENTINEL, 'device')).toBe(true);
+    // Clearing the entry is exactly the case the sentinel exists for.
+    expect(await make().getItem(NAME)).toBeNull();
+    expect(fallback).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -1614,6 +1614,7 @@
     "clearCacheButton": "모든 데이터 영구 삭제",
     "clearCacheSuccess": "캐시가 지워졌습니다. 잠시 후 페이지가 새로 고침됩니다",
     "clearCacheFailed": "캐시 삭제에 실패했습니다. 다시 시도해 주세요",
+    "persistUnavailable": "변경 사항이 저장되지 않고 있습니다. 앱이 로컬 저장소를 읽지 못했습니다. 페이지를 새로 고쳐 다시 시도하세요.",
     "webSearchSettings": "웹 검색",
     "webSearchApiKey": "검색 API 키",
     "webSearchApiKeyPlaceholder": "검색 API 키를 입력하세요",

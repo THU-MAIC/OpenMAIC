@@ -1614,6 +1614,7 @@
     "clearCacheButton": "すべてのデータを完全に削除",
     "clearCacheSuccess": "キャッシュをクリアしました。まもなくページが更新されます",
     "clearCacheFailed": "キャッシュのクリアに失敗しました。もう一度お試しください",
+    "persistUnavailable": "変更が保存されていません。アプリがローカルストレージを読み取れませんでした。ページを再読み込みしてください。",
     "webSearchSettings": "ウェブ検索",
     "webSearchApiKey": "検索APIキー",
     "webSearchApiKeyPlaceholder": "検索APIキーを入力",
