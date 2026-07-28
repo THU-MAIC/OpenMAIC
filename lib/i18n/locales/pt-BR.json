@@ -819,7 +819,7 @@
     "generateFailed": "Falha ao gerar a sala, tente novamente",
     "requirementPlaceholder": "Conte-me o que você quer aprender, por exemplo:\n\"Me ensine Python do zero em 30 minutos\"\n\"Explique a Transformada de Fourier no quadro\"\n\"Como jogar o jogo de tabuleiro Avalon\"",
     "requirementRequired": "Por favor, descreva os objetivos do curso",
-    "fileTooLarge": "Arquivo muito grande. Selecione um arquivo com menos de 50 MB",
+    "fileTooLarge": "Arquivo muito grande. Selecione um arquivo com menos de 49 MB",
     "unsupportedCourseMaterial": "Tipo de material não suportado. Envie PDF, DOCX, PPTX, TXT ou Markdown."
   },
   "generation": {

@@ -804,7 +804,7 @@
     "generateFailed": "生成課堂失敗，請重試",
     "requirementPlaceholder": "輸入你想學的任何內容，例如：\n「從零學 Python，30 分鐘寫出第一個程式」\n「用白板為我講解傅立葉轉換」\n「阿瓦隆桌遊怎麼玩」",
     "requirementRequired": "請輸入課程需求",
-    "fileTooLarge": "檔案過大，請選擇小於 50MB 的檔案",
+    "fileTooLarge": "檔案過大，請選擇小於 49MB 的檔案",
     "unsupportedCourseMaterial": "不支援的課程材料類型，請上傳 PDF、DOCX、PPTX、TXT 或 Markdown 檔案"
   },
   "generation": {

@@ -819,7 +819,7 @@
     "generateFailed": "生成课堂失败，请重试",
     "requirementPlaceholder": "描述你想开发的课程，AI 帮你生成完整课件。你可以这样描述：\n「新员工入职培训：公司文化、制度与工作规范，适合 3 年以内新人」\n「锐捷交换机配置实操，面向售后工程师，结合真实故障案例」\n「销售谈判技巧，上传了客户案例和话术手册，请基于资料生成」",
     "requirementRequired": "请输入课程需求",
-    "fileTooLarge": "文件过大，请选择小于 50MB 的文件",
+    "fileTooLarge": "文件过大，请选择小于 49MB 的文件",
     "unsupportedCourseMaterial": "不支持的课程材料类型，请上传 PDF、DOCX、PPTX、TXT 或 Markdown 文件"
   },
   "generation": {

@@ -37,10 +37,11 @@ import {
 import type { SettingsSection } from '@/lib/types/settings';
 import { MediaPopover } from '@/components/generation/media-popover';
 import { COURSE_MATERIAL_ACCEPT, isSupportedCourseMaterial } from '@/lib/document/mime';
+import { MATERIAL_MAX_BYTES, MATERIAL_MAX_HUMAN } from '@/lib/course-assets/shared';
 
 // ─── Constants ───────────────────────────────────────────────
-const MAX_COURSE_MATERIAL_SIZE_MB = 50;
-const MAX_COURSE_MATERIAL_SIZE_BYTES = MAX_COURSE_MATERIAL_SIZE_MB * 1024 * 1024;
+// 业务上限与服务端 / 文案保持完全一致 — 见 lib/course-assets/shared.ts
+const MAX_COURSE_MATERIAL_SIZE_BYTES = MATERIAL_MAX_BYTES;
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {

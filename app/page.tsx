@@ -38,8 +38,8 @@ import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
-import { storePdfBlob } from '@/lib/utils/image-storage';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
+import { uploadCourseMaterial } from '@/lib/course-assets/client';
 import type { UserRequirements } from '@/lib/types/generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { hasUsableLLMProvider } from '@/lib/store/settings-validation';
@@ -313,14 +313,18 @@ function HomePage() {
       let documentMimeType: string | undefined;
       let pdfProviderId: string | undefined;
       let pdfProviderConfig: { apiKey?: string; baseUrl?: string } | undefined;
+      let pdfStorageSize: number | undefined;
 
       if (form.pdfFile) {
-        pdfStorageKey = await storePdfBlob(form.pdfFile);
+        // 直传 Supabase Storage,文件不经过 Vercel Serverless Function,
+        // 解决 4.5MB 上传硬顶。先临时用一个 nanoid 占位 courseId,
+        // 等课程真正创建后路径会自动通过 upsert 关联(courseId 在 sign-upload 路由里只用作目录前缀)。
         pdfFileName = form.pdfFile.name;
         documentMimeType = normalizeDocumentMimeType({
           mimeType: form.pdfFile.type,
           fileName: form.pdfFile.name,
         });
+        pdfStorageSize = form.pdfFile.size;
 
         const settings = useSettingsStore.getState();
         pdfProviderId = settings.pdfProviderId;
@@ -330,6 +334,22 @@ function HomePage() {
             apiKey: providerCfg.apiKey,
             baseUrl: providerCfg.baseUrl,
           };
+        }
+
+        try {
+          // 上传需要 courseId,这里用一个临时 nanoid 作为目录前缀,
+          // 后续会用真实 courseId 重写路径(extract-document 路由会重新拉取)
+          const tempCourseId = `pending-${nanoid(12)}`;
+          const uploaded = await uploadCourseMaterial(tempCourseId, form.pdfFile);
+          pdfStorageKey = uploaded.path;
+        } catch (uploadErr) {
+          log.error('Course material direct upload failed:', uploadErr);
+          setError(
+            uploadErr instanceof Error
+              ? `课程材料上传失败:${uploadErr.message}`
+              : '课程材料上传失败',
+          );
+          return;
         }
       }
 

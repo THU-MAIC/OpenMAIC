@@ -27,7 +27,6 @@ import { FOREGROUND_SCENE_RETRY_OPTIONS } from './foreground-retry';
 import {
   loadImageMapping,
   loadImageMappingCompressed,
-  loadPdfBlob,
   cleanupOldImages,
   storeImages,
 } from '@/lib/utils/image-storage';
@@ -259,53 +258,39 @@ function GenerationPreviewContent() {
       // Step 0: Extract uploaded course material if needed
       if (hasPdfToAnalyze) {
         log.debug('=== Generation Preview: Extracting course material ===');
-        const pdfBlob = await loadPdfBlob(currentSession.pdfStorageKey!);
-        if (!pdfBlob) {
-          throw new Error(t('generation.courseMaterialLoadFailed'));
+        // 4.5MB 上传限制修复:文件已在选文件阶段直传到 Supabase Storage,
+        // 现在只把 storage path 传给 /api/extract-document,
+        // 服务端从 Storage 内网拉取(不受 4.5MB 限制)。
+        const storagePath = currentSession.pdfStorageKey!;
+        // 路径形如:
+        //   pending/{userId}/material/{hash}.{ext}  — 老师上传到正式创建前
+        //   courses/{courseId}/material/{hash}.{ext} — 已有 course 上下文
+        //   pbl/{projectId}/material/{hash}.{ext}    — 学生 PBL 提交
+        // 任一前缀都把对应的"id 段"作为 courseId 传给服务端做越权检查。
+        const pathMatch = storagePath.match(/^(?:courses|pending|pbl)\/([^\/]+)\/material\//);
+        if (!pathMatch) {
+          throw new Error('课程材料路径无效,请重新上传');
         }
-
-        // Ensure pdfBlob is a valid Blob with content
-        if (!(pdfBlob instanceof Blob) || pdfBlob.size === 0) {
-          log.error('Invalid course material blob:', {
-            type: typeof pdfBlob,
-            size: pdfBlob instanceof Blob ? pdfBlob.size : 'N/A',
-          });
-          throw new Error(t('generation.courseMaterialLoadFailed'));
-        }
-
-        // Wrap as a File to guarantee multipart/form-data with correct content-type
-        const pdfFile = new File([pdfBlob], currentSession.pdfFileName || 'document.pdf', {
-          type: currentSession.documentMimeType || pdfBlob.type || 'application/pdf',
-        });
-
-        const parseFormData = new FormData();
-        parseFormData.append('file', pdfFile);
-
-        if (currentSession.pdfProviderId) {
-          parseFormData.append('providerId', currentSession.pdfProviderId);
-        }
-        if (currentSession.pdfProviderConfig?.apiKey?.trim()) {
-          parseFormData.append('apiKey', currentSession.pdfProviderConfig.apiKey);
-        }
-        if (currentSession.pdfProviderConfig?.baseUrl?.trim()) {
-          parseFormData.append('baseUrl', currentSession.pdfProviderConfig.baseUrl);
-        }
+        const pathCourseId = pathMatch[1];
 
         const parseResponse = await fetch('/api/extract-document', {
           method: 'POST',
-          body: parseFormData,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            courseId: pathCourseId,
+            path: storagePath,
+            providerId: currentSession.pdfProviderId ?? undefined,
+            apiKey: currentSession.pdfProviderConfig?.apiKey?.trim() || undefined,
+            baseUrl: currentSession.pdfProviderConfig?.baseUrl?.trim() || undefined,
+          }),
           signal,
         });
 
         if (!parseResponse.ok) {
-          // Vercel/Next.js framework layer returns plain-text error bodies for
-          // 413 (Request Entity Too Large) and similar gateway-level failures,
-          // which JSON.parse() cannot handle. Inspect status first and only
-          // attempt JSON parsing when the body actually looks like JSON.
-          if (parseResponse.status === 413) {
-            throw new Error('课程材料过大（超过 4.5MB 限制），请压缩 PDF 或拆分后再上传');
-          }
           const contentType = parseResponse.headers.get('content-type') || '';
+          if (parseResponse.status === 413) {
+            throw new Error('课程材料超过 49MB 上限,请压缩或拆分后再上传');
+          }
           if (!contentType.includes('application/json')) {
             throw new Error(t('generation.courseMaterialParseFailed'));
           }
@@ -318,9 +303,8 @@ function GenerationPreviewContent() {
           throw new Error(t('generation.courseMaterialParseFailed'));
         }
 
+        // 服务端已截断到 MAX_PDF_CONTENT_CHARS,这里只保留作本地二次截断
         let pdfText = parseResult.data.text as string;
-
-        // Truncate if needed
         if (pdfText.length > MAX_PDF_CONTENT_CHARS) {
           pdfText = pdfText.substring(0, MAX_PDF_CONTENT_CHARS);
         }

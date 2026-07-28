@@ -819,7 +819,7 @@
     "generateFailed": "Failed to generate classroom, please try again",
     "requirementPlaceholder": "Tell me anything you want to learn, e.g.\n\"Teach me Python from scratch in 30 minutes\"\n\"Explain Fourier Transform on the whiteboard\"\n\"How to play the board game Avalon\"",
     "requirementRequired": "Please enter course requirements",
-    "fileTooLarge": "File too large. Please select a file smaller than 50MB",
+    "fileTooLarge": "File too large. Please select a file smaller than 49MB",
     "unsupportedCourseMaterial": "Unsupported course material type. Please upload PDF, DOCX, PPTX, TXT, or Markdown."
   },
   "generation": {
