@@ -40,6 +40,7 @@ describe('Bedrock provider defaults', () => {
       name: 'Amazon Bedrock',
       type: 'bedrock',
       requiresApiKey: false,
+      icon: '/logos/bedrock.svg',
     });
     expect(isProviderKeyRequired('bedrock')).toBe(false);
     expect(getModelInfo('bedrock', 'us.anthropic.claude-sonnet-5')).toMatchObject({

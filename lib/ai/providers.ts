@@ -384,6 +384,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     name: 'Amazon Bedrock',
     type: 'bedrock',
     requiresApiKey: false,
+    icon: '/logos/bedrock.svg',
     models: [
       {
         id: 'us.anthropic.claude-sonnet-5',
