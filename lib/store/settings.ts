@@ -8,7 +8,7 @@
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, type StorageValue } from 'zustand/middleware';
 import type { ProviderId } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { PROVIDERS } from '@/lib/ai/providers';
@@ -36,6 +36,9 @@ import {
 import { createKVPersistStorage } from '@/lib/store/kv-persist';
 
 const log = createLogger('Settings');
+
+/** Persisted-blob version, shared by `persist` and the pre-persist fallback. */
+const SETTINGS_PERSIST_VERSION = 4;
 
 function pruneThinkingConfigs(
   thinkingConfigs: Record<string, ThinkingConfig> | undefined,
@@ -834,23 +837,26 @@ function stripLegacyServerBaseUrl(state: Partial<SettingsState>): void {
   }
 }
 
-// Migrate from the pre-persist localStorage format (llmModel / providersConfig
-// / ttsModel / selectedAgentIds). These four keys predate the persist
-// middleware and are read-only inputs here — this function has never owned or
-// cleaned them, and `providersConfig` is still read independently by
-// lib/ai/providers.ts, so the KVStore cutover deliberately leaves them alone.
-//
-// The `settings-storage` probe below only guards the *initial* state. Once the
-// persisted blob has moved into the KVStore the raw key is gone, so this can
-// run again on a very old install — harmlessly, because every field it
-// produces is also in the persisted blob, and `merge` lets the persisted value
-// win.
-const migrateFromOldStorage = () => {
+/**
+ * Migrate from the pre-persist localStorage format (`llmModel` /
+ * `providersConfig` / `ttsModel` / `selectedAgentIds`) — four keys that predate
+ * the persist middleware entirely.
+ *
+ * This runs as the persist layer's last-resort source, consulted only when
+ * neither the KV scope nor the raw persist key holds anything, and its result
+ * is adopted into the KV scope like any other migration. That adoption is what
+ * makes it run once: it used to be guarded by "does the raw `settings-storage`
+ * key exist?", a probe that stops meaning anything the moment the persisted
+ * blob moves into the KVStore. An unguarded version would re-read these keys on
+ * every load and republish a long-deleted `providersConfig` — including API
+ * keys the user has since removed or rotated — into observable state.
+ *
+ * The four keys are read, never written or deleted: this migration has never
+ * owned them, and `providersConfig` is still read independently by
+ * `lib/ai/providers.ts:getProviderConfig` for custom providers.
+ */
+const readPrePersistSettings = (): StorageValue<Partial<SettingsState>> | null => {
   if (typeof window === 'undefined') return null;
-
-  // Check if new storage already exists
-  const newStorage = localStorage.getItem('settings-storage');
-  if (newStorage) return null; // Already migrated or new install
 
   // Read old localStorage keys
   const oldLlmModel = localStorage.getItem('llmModel');
@@ -898,40 +904,43 @@ const migrateFromOldStorage = () => {
     }
   }
 
+  // Stamped at the current version: this data never went through `migrate`
+  // when it was applied as initial state, and replaying the v0 → v1 ladder over
+  // it now would change what a pre-persist install restores.
   return {
-    providerId,
-    modelId,
-    thinkingConfigs: {},
-    providersConfig,
-    ttsModel,
-    selectedAgentIds,
+    state: {
+      providerId,
+      modelId,
+      thinkingConfigs: {},
+      providersConfig,
+      ttsModel,
+      selectedAgentIds,
+    },
+    version: SETTINGS_PERSIST_VERSION,
   };
 };
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set, get) => {
-      // Try to migrate from old storage
-      const migratedData = migrateFromOldStorage();
       const defaultAudioConfig = getDefaultAudioConfig();
       const defaultPDFConfig = getDefaultPDFConfig();
       const defaultImageConfig = getDefaultImageConfig();
       const defaultVideoConfig = getDefaultVideoConfig();
       const defaultWebSearchConfig = getDefaultWebSearchConfig();
 
-      const initialProvidersConfig = migratedData?.providersConfig || getDefaultProvidersConfig();
-
       return {
-        // Initial state (use migrated data if available)
-        providerId: migratedData?.providerId || 'openai',
-        modelId: migratedData?.modelId || '',
-        thinkingConfigs: pruneThinkingConfigs(
-          migratedData?.thinkingConfigs || {},
-          initialProvidersConfig,
-        ),
-        providersConfig: initialProvidersConfig,
-        ttsModel: migratedData?.ttsModel || 'openai-tts',
-        selectedAgentIds: migratedData?.selectedAgentIds || ['default-1', 'default-2', 'default-3'],
+        // Initial state is plain defaults. Every stored value — including the
+        // pre-persist keys, which `readPrePersistSettings` now feeds to the
+        // persist layer — arrives through rehydration, so nothing stored can
+        // appear in observable state before the storage layer has vouched for
+        // it.
+        providerId: 'openai' as ProviderId,
+        modelId: '',
+        thinkingConfigs: {},
+        providersConfig: getDefaultProvidersConfig(),
+        ttsModel: 'openai-tts',
+        selectedAgentIds: ['default-1', 'default-2', 'default-3'],
         agentMode: 'auto' as const,
         autoAgentCount: 3,
         agentVoiceOverrides: {},
@@ -1895,8 +1904,10 @@ export const useSettingsStore = create<SettingsState>()(
       name: 'settings-storage',
       // `Partial<SettingsState>` because `migrate` below returns a partial —
       // that is what zustand infers as the persisted shape here.
-      storage: createKVPersistStorage<Partial<SettingsState>>('account'),
-      version: 4,
+      storage: createKVPersistStorage<Partial<SettingsState>>('account', {
+        prePersistFallback: readPrePersistSettings,
+      }),
+      version: SETTINGS_PERSIST_VERSION,
       // Migrate persisted state
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Partial<SettingsState>;

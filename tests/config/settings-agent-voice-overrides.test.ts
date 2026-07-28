@@ -82,10 +82,12 @@ describe('agentVoiceOverrides', () => {
     });
 
     // The write must actually reach storage (would break if a future
-    // partialize omits the field).
-    const persisted = await readPersistedState();
-    expect(persisted.agentVoiceOverrides).toEqual({
-      'default-3': { providerId: 'qwen-tts', modelId: 'qwen3-tts-flash', voiceId: 'Cherry' },
+    // partialize omits the field). Poll on the assertion, not on a blob
+    // merely existing: hydration may already have left one there.
+    await vi.waitFor(async () => {
+      expect((await readPersistedState()).agentVoiceOverrides).toEqual({
+        'default-3': { providerId: 'qwen-tts', modelId: 'qwen3-tts-flash', voiceId: 'Cherry' },
+      });
     });
   });
 
@@ -114,7 +116,9 @@ describe('agentSelectionIsUserSet', () => {
     expect(store.getState().agentSelectionIsUserSet).toBe(false);
     store.getState().setAgentSelectionIsUserSet(true);
     expect(store.getState().agentSelectionIsUserSet).toBe(true);
-    expect((await readPersistedState()).agentSelectionIsUserSet).toBe(true);
+    await vi.waitFor(async () => {
+      expect((await readPersistedState()).agentSelectionIsUserSet).toBe(true);
+    });
     store.getState().setAgentSelectionIsUserSet(false);
     expect(store.getState().agentSelectionIsUserSet).toBe(false);
   });

@@ -76,6 +76,83 @@ describe('settings store', () => {
   });
 });
 
+/**
+ * The pre-persist keys (`llmModel` / `providersConfig` / …) used to be read
+ * synchronously in the store initializer, guarded by "does the raw
+ * `settings-storage` key exist?". Moving the blob into the KVStore removes that
+ * key, so the guard would never fire again and every load would republish
+ * whatever those keys still hold — including credentials the user deleted long
+ * ago. They now run once, through the persist layer.
+ */
+describe('settings store — pre-persist migration', () => {
+  const ANCIENT_KEY = 'sk-ancient-should-not-resurrect';
+
+  function seedPrePersistKeys() {
+    localStorageStub.setItem('llmModel', 'openai:gpt-4o');
+    localStorageStub.setItem(
+      'providersConfig',
+      JSON.stringify({ openai: { apiKey: ANCIENT_KEY } }),
+    );
+  }
+
+  it('adopts the pre-persist keys once, through hydration', async () => {
+    seedPrePersistKeys();
+
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState().modelId).toBe('gpt-4o');
+    expect(useSettingsStore.getState().providersConfig.openai?.apiKey).toBe(ANCIENT_KEY);
+    expect(await persistedIn('account', 'settings-storage')).toMatchObject({ modelId: 'gpt-4o' });
+  });
+
+  it('never puts them in observable state before hydration', async () => {
+    seedPrePersistKeys();
+
+    const { useSettingsStore } = await import('@/lib/store/settings');
+
+    // This is the first frame: a component reading providersConfig here (as the
+    // home page does to gate generation) must not see a resurrected key.
+    expect(useSettingsStore.getState().providersConfig.openai?.apiKey).toBeFalsy();
+    expect(useSettingsStore.getState().modelId).toBe('');
+  });
+
+  it('stops re-reading them once the migration has been adopted', async () => {
+    seedPrePersistKeys();
+
+    const first = await import('@/lib/store/settings');
+    await first.useSettingsStore.persist.rehydrate();
+    expect(first.useSettingsStore.getState().providersConfig.openai?.apiKey).toBe(ANCIENT_KEY);
+
+    // The user removes the key through the UI, which persists to the KV scope.
+    first.useSettingsStore.getState().setProviderConfig('openai', { apiKey: '' });
+    await vi.waitFor(async () => {
+      const state = await persistedIn('account', 'settings-storage');
+      expect((state.providersConfig as Record<string, { apiKey?: string }>).openai.apiKey).toBe('');
+    });
+
+    // Reload. The stale `providersConfig` key is still sitting in localStorage
+    // (other readers own it), and must not come back.
+    vi.resetModules();
+    const second = await import('@/lib/store/settings');
+    await second.useSettingsStore.persist.rehydrate();
+
+    expect(localStorageStub.getItem('providersConfig')).not.toBeNull();
+    expect(second.useSettingsStore.getState().providersConfig.openai?.apiKey).toBe('');
+  });
+
+  it('leaves the pre-persist keys in place for their other readers', async () => {
+    seedPrePersistKeys();
+
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    await useSettingsStore.persist.rehydrate();
+
+    // lib/ai/providers.ts still reads `providersConfig` for custom providers.
+    expect(localStorageStub.getItem('providersConfig')).not.toBeNull();
+    expect(localStorageStub.getItem('llmModel')).toBe('openai:gpt-4o');
+  });
+});
+
 describe('user profile store', () => {
   it('persists under the account scope', async () => {
     const { useUserProfileStore } = await import('@/lib/store/user-profile');

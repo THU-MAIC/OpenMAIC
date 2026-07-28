@@ -352,8 +352,12 @@ describe('settings rehydrate — built-in provider models', () => {
     expect('editInsertToolbarCollapsed' in store.getState()).toBe(false);
 
     store.getState().setSidebarCollapsed(false);
-    const persisted = await readPersistedState();
-    expect('editInsertToolbarCollapsed' in persisted).toBe(false);
+    // Hydration already left a blob in place, so poll on the assertion itself
+    // rather than on a blob merely existing — otherwise this reads the
+    // adopted blob back before the write lands.
+    await vi.waitFor(async () => {
+      expect('editInsertToolbarCollapsed' in (await readPersistedState())).toBe(false);
+    });
   });
 });
 
