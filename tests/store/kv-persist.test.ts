@@ -31,6 +31,8 @@ const flushTasks = async () => {
 
 /** In-memory `Storage`, isolated per test — nothing ambient is touched. */
 class MemoryStorage implements Storage {
+  /** Make `removeItem` throw, as a quota-locked or denied storage does. */
+  failRemove = false;
   private readonly entries = new Map<string, string>();
   get length(): number {
     return this.entries.size;
@@ -45,6 +47,7 @@ class MemoryStorage implements Storage {
     return [...this.entries.keys()][index] ?? null;
   }
   removeItem(key: string): void {
+    if (this.failRemove) throw new Error('localStorage removeItem failed');
     this.entries.delete(key);
   }
   setItem(key: string, value: string): void {
@@ -977,7 +980,11 @@ describe('createKVPersistStorage — removeItem reports failure', () => {
     expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'Ada' }, version: 4 });
   });
 
-  it('leaves the raw entry alone when the KV copy could not be removed', async () => {
+  it('never leaves an empty scope beside a live raw entry when the KV copy fails', async () => {
+    // The shape that resurrects data: KV emptied, raw entry still there, and
+    // the next hydration re-adopts what the user just deleted. Clearing the raw
+    // entry first means a KV failure leaves the KV value authoritative and the
+    // clear simply unperformed.
     const h = harness();
     seedLegacy(h.legacy, { nickname: 'Ada' });
     const persist = h.storage();
@@ -986,8 +993,45 @@ describe('createKVPersistStorage — removeItem reports failure', () => {
 
     h.kv.failRemove = true;
     await expect(persist.removeItem(NAME)).rejects.toThrow();
+    h.kv.failRemove = false;
 
-    expect(h.legacy.getItem(NAME)).not.toBeNull();
+    const emptyScope = (await h.kv.get(NAME, 'account')) === null;
+    const liveRaw = h.legacy.getItem(NAME) !== null;
+    expect(emptyScope && liveRaw).toBe(false);
+  });
+
+  it('reports a clear whose raw-entry deletion failed, and removes nothing else', async () => {
+    // Swallowing this is how "deleted" settings come back: the raw entry
+    // survives an emptied scope and the next load adopts it.
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'Ada' });
+    const persist = h.storage();
+    await persist.getItem(NAME);
+    seedLegacy(h.legacy, { nickname: 'reappeared' });
+
+    h.legacy.failRemove = true;
+    await expect(persist.removeItem(NAME)).rejects.toThrow();
+    h.legacy.failRemove = false;
+
+    // Nothing was torn down on the way to that failure.
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'Ada' }, version: 4 });
+    expect(await h.kv.get(MARKER, 'device')).toBe(true);
+  });
+
+  it('does not re-adopt after a clear that failed on the raw entry', async () => {
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'Ada' });
+    await h.storage().getItem(NAME);
+    seedLegacy(h.legacy, { nickname: 'reappeared' });
+
+    const persist = h.storage();
+    h.legacy.failRemove = true;
+    await expect(persist.removeItem(NAME)).rejects.toThrow();
+    h.legacy.failRemove = false;
+
+    // A fresh load still reads the KV value; the raw entry never becomes the
+    // source of truth by default.
+    expect(await h.storage().getItem(NAME)).toEqual({ state: { nickname: 'Ada' }, version: 4 });
   });
 
   it('does not clear the pre-persist sentinel — it is monotonic', async () => {
@@ -1486,6 +1530,75 @@ describe('createKVPersistStorage — a live store is never walked backwards', ()
 
     h.kv.failGet = true;
     expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'raw copy' }, version: 4 });
+  });
+});
+
+describe('createKVPersistStorage — an abandoned migration hands back nothing authoritative', () => {
+  it('does not let an edit built on an unadopted raw entry overwrite the account value', async () => {
+    // The migration starts — KV is empty, a raw entry is there — and the
+    // confirming re-read fails, so nothing is adopted. What comes back is still
+    // the raw envelope, and it must carry no more authority than the raw copy
+    // served after any other failed read: another device writing the account
+    // scope in the meantime must not be rolled back by an edit taken on top of
+    // it.
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'raw copy' });
+    const persist = h.storage();
+
+    // First read finds an empty scope; the re-read inside `adopt` fails.
+    let reads = 0;
+    h.kv.failGetMatching = (key) => key === NAME && ++reads === 2;
+    expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'raw copy' }, version: 4 });
+    h.kv.failGetMatching = null;
+
+    // The user edits while the store is holding that unadopted copy...
+    await persist.setItem(NAME, { state: { nickname: 'edited on the raw copy' }, version: 4 });
+    // ...and another device publishes to the account scope.
+    await h.kv.set(NAME, { state: { nickname: 'from another device' }, version: 4 }, 'account');
+
+    await persist.getItem(NAME);
+    await flushTasks();
+
+    expect(await h.kv.get(NAME, 'account')).toEqual({
+      state: { nickname: 'from another device' },
+      version: 4,
+    });
+  });
+
+  it('does not grant authority when the adoption write fails either', async () => {
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'raw copy' });
+    const persist = h.storage();
+
+    h.kv.failSetMatching = (key) => key === NAME;
+    expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'raw copy' }, version: 4 });
+    h.kv.failSetMatching = null;
+
+    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
+    await h.kv.set(NAME, { state: { nickname: 'from another device' }, version: 4 }, 'account');
+    await persist.getItem(NAME);
+    await flushTasks();
+
+    expect(await h.kv.get(NAME, 'account')).toEqual({
+      state: { nickname: 'from another device' },
+      version: 4,
+    });
+  });
+
+  it('does grant authority once the migration actually completes', async () => {
+    // The contrast: a completed adoption *is* the account value, so an edit on
+    // top of it is the newest copy and gets replayed.
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'raw copy' });
+    const persist = h.storage();
+    await persist.getItem(NAME);
+
+    h.kv.failSet = true;
+    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
+    h.kv.failSet = false;
+    await persist.getItem(NAME);
+
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'edited' }, version: 4 });
   });
 });
 

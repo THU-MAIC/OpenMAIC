@@ -114,6 +114,20 @@ class Outcome<T> {
   }
 }
 
+/**
+ * What a read hands to the store, and whether the KV scope vouched for it.
+ *
+ * `provisional` marks a value nothing authoritative confirmed — the raw entry
+ * served after a failed read, or one handed back by a migration that could not
+ * be completed. It hydrates the store, because it is the best copy available,
+ * but it earns no replay authority: an edit taken on top of it must never be
+ * written back over whatever the account scope actually holds.
+ */
+interface LoadedValue<S> {
+  value: StorageValue<S> | null;
+  provisional?: boolean;
+}
+
 type KeyPhase = 'unhydrated' | 'settled' | 'unavailable' | 'clearing';
 
 interface KeyStateHooks {
@@ -574,12 +588,31 @@ function readLegacy<S>(
   return parsed;
 }
 
+/**
+ * Drop the raw entry, tolerating failure.
+ *
+ * For adoption that is the right posture: the value is safely in KV, and a raw
+ * entry left behind is a duplicate, not a loss. The clear path uses the strict
+ * variant below instead, where the same failure means something entirely
+ * different.
+ */
 function dropLegacyEntry(storage: Storage | null, name: string): void {
   try {
     storage?.removeItem(name);
   } catch (error) {
     log.warn(`Could not drop the legacy "${name}" entry:`, error);
   }
+}
+
+/**
+ * Drop the raw entry, or say so.
+ *
+ * When the user asked for this data to be gone, a swallowed failure here is how
+ * "deleted" data comes back: the raw entry survives, and the next hydration
+ * finds an empty KV scope beside a live raw entry and dutifully re-adopts it.
+ */
+function dropLegacyEntryStrictly(storage: Storage | null, name: string): void {
+  storage?.removeItem(name);
 }
 
 /**
@@ -811,7 +844,7 @@ export function createKVPersistStorage<S>(
     value: StorageValue<S>,
     dropRaw: boolean,
     source: string,
-  ): Promise<StorageValue<S> | null> {
+  ): Promise<LoadedValue<S>> {
     // One last look before committing. Another tab may have written something
     // newer while this migration was being assembled; `KVStore` has no
     // compare-and-set, so this narrows the window rather than closing it.
@@ -820,17 +853,20 @@ export function createKVPersistStorage<S>(
       state,
       `re-read "${name}" from the KV ${scope} scope`,
     );
-    if (current === UNAVAILABLE) return value;
+    // An abandoned migration hands back the raw entry unadopted. That is the
+    // same provisional footing as a failed read: nothing has vouched for it, so
+    // it hydrates the store but earns no replay authority.
+    if (current === UNAVAILABLE) return { value, provisional: true };
     if (current !== null) {
       await dropShadowedLegacy(state, legacyStorage, name, current);
-      return concludeRead(state, name, current);
+      return { value: await concludeRead(state, name, current) };
     }
 
     const written = (await Outcome.run(() => kvStorage.setItem(name, value))).into(
       state,
       `write "${name}" to the KV ${scope} scope`,
     );
-    if (written === UNAVAILABLE) return value;
+    if (written === UNAVAILABLE) return { value, provisional: true };
 
     if (dropRaw) {
       const marked = (await writeSentinel(ADOPTED_PREFIX, name)).into(
@@ -839,12 +875,12 @@ export function createKVPersistStorage<S>(
       );
       // No durable marker means no licence to delete: leave the raw entry and
       // let the next load try the migration again.
-      if (marked === UNAVAILABLE) return value;
+      if (marked === UNAVAILABLE) return { value, provisional: true };
       dropLegacyEntry(legacyStorage, name);
     }
 
     log.info(`Migrated "${name}" from ${source} into the KV ${scope} scope`);
-    return concludeRead(state, name, value);
+    return { value: await concludeRead(state, name, value) };
   }
 
   return {
@@ -859,12 +895,7 @@ export function createKVPersistStorage<S>(
         return served.value;
       });
 
-      /**
-       * `provisional` marks a value the KV scope did not vouch for — the raw
-       * entry served after a failed read. It hydrates the store, but it is by
-       * construction the older copy, so nothing may be replayed on top of it.
-       */
-      async function load(): Promise<{ value: StorageValue<S> | null; provisional?: boolean }> {
+      async function load(): Promise<LoadedValue<S>> {
         const kvStorage = resolveKvStorage();
         if (!kvStorage) {
           // No storage during SSR is expected and silent. In a browser it is a
@@ -915,17 +946,7 @@ export function createKVPersistStorage<S>(
         const adopted = readLegacy<S>(state, legacyStorage, name);
         if (adopted === UNAVAILABLE) return { value: null };
         if (adopted !== null) {
-          return {
-            value: await adopt(
-              state,
-              kvStorage,
-              legacyStorage,
-              name,
-              adopted,
-              true,
-              'localStorage',
-            ),
-          };
+          return adopt(state, kvStorage, legacyStorage, name, adopted, true, 'localStorage');
         }
 
         // Empty KV *and* no raw entry is also exactly what another tab's
@@ -957,17 +978,15 @@ export function createKVPersistStorage<S>(
             ).into(state, `read the pre-persist source keys for "${name}"`);
             if (prePersist === UNAVAILABLE) return { value: null };
             if (prePersist !== null) {
-              return {
-                value: await adopt(
-                  state,
-                  kvStorage,
-                  legacyStorage,
-                  name,
-                  prePersist,
-                  false,
-                  'the pre-persist keys',
-                ),
-              };
+              return adopt(
+                state,
+                kvStorage,
+                legacyStorage,
+                name,
+                prePersist,
+                false,
+                'the pre-persist keys',
+              );
             }
           }
         }
@@ -1010,10 +1029,21 @@ export function createKVPersistStorage<S>(
       state.beginClear();
       return serial(name, async () => {
         const kvStorage = resolveKvStorage();
-        // KV copy first, raw entry last: the raw entry predates this seam and
-        // is the only copy nothing else can reconstruct, so it is the last
-        // thing to go. Failures propagate — a caller clearing a user's data has
-        // to be able to tell that it did not happen.
+        // Raw entry first, and every failure propagates — a caller clearing a
+        // user's data has to be able to tell that it did not happen.
+        //
+        // Order matters more than it looks. Removing the KV entry first and
+        // then failing on the raw one leaves an empty scope beside a live raw
+        // entry, which is exactly the shape the next hydration re-adopts: the
+        // "deleted" settings come straight back. Failing on the raw entry
+        // before anything else is removed leaves the KV value authoritative and
+        // the clear simply unperformed, which the caller can retry.
+        try {
+          dropLegacyEntryStrictly(resolveLegacyStorage(deps), name);
+        } catch (error) {
+          state.onFailure(`drop the legacy "${name}" entry`, error);
+          throw error;
+        }
         if (kvStorage) {
           const removed = (await Outcome.run(() => kvStorage.removeItem(name))).into(
             state,
@@ -1022,11 +1052,9 @@ export function createKVPersistStorage<S>(
           if (removed === UNAVAILABLE) {
             throw new Error(`Could not remove ${JSON.stringify(name)} from the KV ${scope} scope`);
           }
-          // Raw entry before the marker: with the raw entry already gone, a
-          // failure to clear the marker leaves a sentinel that authorizes
-          // deleting a file that no longer exists, which is inert. The other
-          // order leaves a raw entry with no marker to retire it.
-          dropLegacyEntry(resolveLegacyStorage(deps), name);
+          // The marker last: with both copies already gone, a failure to clear
+          // it leaves a sentinel authorizing the deletion of a file that no
+          // longer exists, which is inert.
           const cleared = (await clearAdoptionMarker(name)).into(
             state,
             `clear the adoption marker for "${name}"`,
@@ -1034,15 +1062,12 @@ export function createKVPersistStorage<S>(
           if (cleared === UNAVAILABLE) {
             throw new Error(`Could not clear the adoption marker for ${JSON.stringify(name)}`);
           }
-        } else {
-          if (isBrowserRuntime()) {
-            state.onFailure(
-              'reach browser storage',
-              new Error('localStorage is unavailable in this browser context'),
-            );
-            throw new Error(`Could not clear ${JSON.stringify(name)}: storage is unreachable`);
-          }
-          dropLegacyEntry(resolveLegacyStorage(deps), name);
+        } else if (isBrowserRuntime()) {
+          state.onFailure(
+            'reach browser storage',
+            new Error('localStorage is unavailable in this browser context'),
+          );
+          throw new Error(`Could not clear ${JSON.stringify(name)}: storage is unreachable`);
         }
         // The pre-persist sentinel is deliberately *not* cleared. It is
         // monotonic: its whole job is to stop the pre-persist keys, which are
