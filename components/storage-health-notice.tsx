@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { subscribeToPersistHealth } from '@/lib/store/persist-health';
+import { acknowledgePersistLoss, subscribeToPersistHealth } from '@/lib/store/persist-health';
 
 /**
  * Surfaces the persistence failures the user cannot otherwise notice.
@@ -29,8 +29,12 @@ export function StorageHealthNotice() {
           toast.error(t('settings.persistChangesLost'), {
             id: `persist-changes-lost:${name}`,
             duration: Infinity,
-            // The only way out is the user acknowledging it.
+            // The only way out is the user acknowledging it — and the
+            // acknowledgement has to reach the channel, or the same store
+            // losing changes again is swallowed as a duplicate and a later
+            // subscriber resurrects a toast that was already dealt with.
             closeButton: true,
+            onDismiss: () => acknowledgePersistLoss(name),
           });
           return;
         }

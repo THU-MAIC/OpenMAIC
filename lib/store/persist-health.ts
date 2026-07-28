@@ -108,6 +108,18 @@ export function reportPersistHealth(name: string, status: PersistHealthStatus): 
   publish({ name, status });
 }
 
+/**
+ * The user has acknowledged a lost-changes notice.
+ *
+ * Clearing the latch is what makes the notice re-armable: without it the same
+ * store losing changes a second time is swallowed as a duplicate, and any
+ * subscriber that mounts later resurrects a toast the user already dismissed.
+ */
+export function acknowledgePersistLoss(name: string): void {
+  lost.delete(name);
+  cancelPending(`${name}:lost`);
+}
+
 /** Storage is unusable for this key. */
 export function reportPersistUnavailable(name: string): void {
   reportPersistHealth(name, 'unavailable');

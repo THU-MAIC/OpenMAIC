@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import {
+  acknowledgePersistLoss,
   reportPersistHealth,
   reportPersistUnavailable,
   resetPersistHealth,
@@ -199,6 +200,64 @@ describe('persist-health — a loss is final, a fault is not', () => {
     await nextTask();
 
     expect(seen).toHaveLength(1);
+  });
+});
+
+describe('persist-health — acknowledging a loss re-arms it', () => {
+  it('reports a second loss after the first was acknowledged', async () => {
+    // Without clearing the latch, the same store losing changes again is
+    // swallowed as a duplicate and the user never hears about it.
+    const seen: PersistHealthEvent[] = [];
+    subscribeToPersistHealth((event) => seen.push(event));
+
+    reportPersistHealth('settings-storage', 'changes-lost');
+    await nextTask();
+    expect(seen).toHaveLength(1);
+
+    acknowledgePersistLoss('settings-storage');
+    reportPersistHealth('settings-storage', 'changes-lost');
+    await nextTask();
+
+    expect(seen).toHaveLength(2);
+  });
+
+  it('does not resurrect an acknowledged loss for a later subscriber', async () => {
+    reportPersistHealth('settings-storage', 'changes-lost');
+    await nextTask();
+    acknowledgePersistLoss('settings-storage');
+
+    const late: PersistHealthEvent[] = [];
+    subscribeToPersistHealth((event) => late.push(event));
+    await nextTask();
+
+    expect(late).toEqual([]);
+  });
+
+  it('drops a loss that was acknowledged before it was even delivered', async () => {
+    const seen: PersistHealthEvent[] = [];
+    subscribeToPersistHealth((event) => seen.push(event));
+
+    reportPersistHealth('settings-storage', 'changes-lost');
+    acknowledgePersistLoss('settings-storage');
+    await nextTask();
+
+    expect(seen).toEqual([]);
+  });
+
+  it('leaves an unrelated fault alone when a loss is acknowledged', async () => {
+    const seen: PersistHealthEvent[] = [];
+    subscribeToPersistHealth((event) => seen.push(event));
+
+    reportPersistUnavailable('settings-storage');
+    reportPersistHealth('settings-storage', 'changes-lost');
+    await nextTask();
+    acknowledgePersistLoss('settings-storage');
+
+    const late: PersistHealthEvent[] = [];
+    subscribeToPersistHealth((event) => late.push(event));
+    await nextTask();
+
+    expect(late).toEqual([{ name: 'settings-storage', status: 'unavailable' }]);
   });
 });
 

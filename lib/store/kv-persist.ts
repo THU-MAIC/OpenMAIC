@@ -117,8 +117,15 @@ class Outcome<T> {
 type KeyPhase = 'unhydrated' | 'settled' | 'unavailable' | 'clearing';
 
 interface KeyStateHooks {
-  /** Ask the store to rehydrate; the backend may have recovered. */
-  requestRecovery: (name: string) => void;
+  /**
+   * Ask the store to rehydrate after `delayMs`; the backend may have
+   * recovered. `done` is called once the attempt has finished, however it
+   * finished, so the machine can tell a settle caused by a recovery from one
+   * caused by ordinary use.
+   */
+  requestRecovery: (name: string, delayMs: number, done: () => void) => void;
+  /** Delay before each attempt. Its length is the cap on attempts. */
+  backoffMs: readonly number[];
 }
 
 /** A write that was refused or rejected, kept in case recovery can replay it. */
@@ -189,7 +196,9 @@ class KeyState<S> {
   #storeHoldsRealData = false;
   #refused: RefusedWrite<S> | null = null;
   #replay: StorageValue<S> | null = null;
-  #recoveryAsked = false;
+  #recoveryAttempts = 0;
+  #recoveryInFlight = false;
+  #recoveryExhausted = false;
 
   constructor(
     private readonly name: string,
@@ -198,6 +207,15 @@ class KeyState<S> {
 
   get phase(): KeyPhase {
     return this.#phase;
+  }
+
+  /**
+   * Whether the KV scope has already handed this session the authoritative
+   * value. Once it has, a later failed read must not walk the store backwards
+   * onto a shadowed raw copy.
+   */
+  get hasAuthoritativeValue(): boolean {
+    return this.#storeHoldsRealData;
   }
 
   /**
@@ -216,6 +234,11 @@ class KeyState<S> {
 
   /** A read path concluded, with every sentinel it needed durably written. */
   settle(): void {
+    if (this.#settleOutcome()) this.#rearmRecoveryIfHealthy();
+  }
+
+  /** Returns false when the key was left untouched (a clear is in progress). */
+  #settleOutcome(): boolean {
     if (this.#phase === 'clearing') {
       // A read that finishes mid-clear says nothing about the clear. Opening
       // the gate here would admit a write that then queues behind the pending
@@ -224,12 +247,10 @@ class KeyState<S> {
       // ordinary, not a corner case. Only `finishClear` opens this key.
       this.#refused = null;
       this.#replay = null;
-      return;
+      return false;
     }
 
     this.#phase = 'settled';
-    // Storage answered, so the next failure deserves its own recovery attempt.
-    this.#recoveryAsked = false;
 
     const refused = this.#refused;
     this.#refused = null;
@@ -238,7 +259,7 @@ class KeyState<S> {
       // notice. Deferred publishing means a recovery this quick usually
       // cancels the warning before anyone sees it.
       reportPersistHealth(this.name, 'recovered');
-      return;
+      return true;
     }
 
     if (refused.replayable) {
@@ -248,7 +269,7 @@ class KeyState<S> {
       this.#replay = refused.value;
       log.info(`Replaying the write that was refused for "${this.name}"`);
       reportPersistHealth(this.name, 'recovered');
-      return;
+      return true;
     }
     // Nothing safe to write back. Rehydration is about to replace whatever was
     // in memory with the stored value.
@@ -262,13 +283,16 @@ class KeyState<S> {
           `value stands`,
       );
       reportPersistHealth(this.name, 'recovered');
-      return;
+      return true;
     }
     log.error(
       `Changes to "${this.name}" made while its storage was unavailable could not be saved, and ` +
         `have been replaced by the stored value`,
     );
+    // The debt is settled, unhappily; the re-arm in `settle` then gives a
+    // future failure a fresh budget rather than an exhausted one.
     reportPersistHealth(this.name, 'changes-lost');
+    return true;
   }
 
   /** `removeItem` was called. Synchronous by design — see the table. */
@@ -283,11 +307,11 @@ class KeyState<S> {
   /** The clear completed: the key is known again, and known to be empty. */
   finishClear(): void {
     this.#phase = 'settled';
-    this.#recoveryAsked = false;
     // Belt and braces against a future path that remembers a write mid-clear:
     // nothing from before a deletion may survive it.
     this.#refused = null;
     this.#replay = null;
+    this.#rearmRecoveryIfHealthy();
     reportPersistHealth(this.name, 'recovered');
   }
 
@@ -363,6 +387,7 @@ class KeyState<S> {
     this.#replay = null;
     this.#refused = null;
     this.#storeHoldsRealData = true;
+    this.#rearmRecoveryIfHealthy();
   }
 
   /**
@@ -378,10 +403,58 @@ class KeyState<S> {
     this.#refused = { value, replayable: this.#storeHoldsRealData, origin: this.#phase };
   }
 
+  /**
+   * Schedule one rehydrate, backing off and eventually giving up.
+   *
+   * A backend that reads but cannot write — a quota-exhausted one does exactly
+   * that — turns recovery into a treadmill: the read succeeds, the key settles,
+   * the replay write fails, and that failure asks for recovery again. Without a
+   * cap that is an unbounded loop of microtasks, and the app is worse off than
+   * if nothing had been retried at all.
+   */
   #askForRecovery(): void {
-    if (this.#recoveryAsked) return;
-    this.#recoveryAsked = true;
-    this.hooks.requestRecovery(this.name);
+    if (this.#recoveryInFlight || this.#recoveryExhausted) return;
+    const { backoffMs } = this.hooks;
+    if (this.#recoveryAttempts >= backoffMs.length) {
+      this.#recoveryExhausted = true;
+      log.error(
+        `Giving up on recovering "${this.name}" after ${backoffMs.length} attempts; storage stays ` +
+          `read-only until something outside this session changes`,
+      );
+      // Whatever was owed is not going to be written. Say so rather than
+      // leaving a queue of retries the user cannot see failing.
+      if (this.#refused !== null || this.#replay !== null) {
+        reportPersistHealth(this.name, 'changes-lost');
+      }
+      return;
+    }
+    const delayMs = backoffMs[this.#recoveryAttempts++] ?? 0;
+    this.#recoveryInFlight = true;
+    this.hooks.requestRecovery(this.name, delayMs, () => this.#onRecoveryFinished());
+  }
+
+  /**
+   * One attempt has run its course. If the key is still unhealthy, spend the
+   * next slot in the budget — an attempt that fails part-way through leaves
+   * nothing else to trigger the retry, and the debt would otherwise sit there
+   * unpaid and unannounced.
+   */
+  #onRecoveryFinished(): void {
+    this.#recoveryInFlight = false;
+    const owed = this.#refused !== null || this.#replay !== null;
+    if (this.#phase === 'unavailable' || owed) this.#askForRecovery();
+  }
+
+  /**
+   * Re-arm the recovery budget, but only on real progress: nothing left owed.
+   * A settle reached *by* a recovery attempt, with a replay still queued to
+   * write, is not progress — counting it as such is exactly what makes the
+   * treadmill above unbounded, because every lap looks like a fresh start.
+   */
+  #rearmRecoveryIfHealthy(): void {
+    if (this.#refused !== null || this.#replay !== null) return;
+    this.#recoveryAttempts = 0;
+    this.#recoveryExhausted = false;
   }
 }
 
@@ -418,7 +491,20 @@ export interface KVPersistDeps<S> {
    * to unblock persistence rather than leaving the session silently read-only.
    */
   onWriteRefused?: (name: string) => void | Promise<unknown>;
+  /**
+   * Delay before each recovery attempt, in order. The array's *length* is the
+   * cap: after this many attempts the key is left read-only until something
+   * outside the session changes it, rather than retrying forever.
+   *
+   * A backend that reads but cannot write would otherwise loop: the read
+   * succeeds, the key settles, the replay write fails, and the failure asks for
+   * recovery again. Injectable so tests can drive the cap without waiting.
+   */
+  recoveryBackoffMs?: readonly number[];
 }
+
+/** Three tries, spread out enough that a transient fault has time to clear. */
+export const DEFAULT_RECOVERY_BACKOFF_MS: readonly number[] = [0, 250, 1000];
 
 /**
  * `localStorage` is absent during SSR and throws outright under some privacy
@@ -529,15 +615,19 @@ export function createKVPersistStorage<S>(
     let state = states.get(name);
     if (!state) {
       state = new KeyState<S>(name, {
+        backoffMs: deps.recoveryBackoffMs ?? DEFAULT_RECOVERY_BACKOFF_MS,
         // Deferred: recovery usually calls back into `persist.rehydrate()`,
         // and running that inside a `setItem` call would re-enter the store
         // mid-update. A recovery that throws is just a recovery that did not
         // work — the key stays unavailable and its notice stands, so there is
         // nothing to do but say what happened.
-        requestRecovery: (key) => {
-          void Promise.resolve()
-            .then(() => deps.onWriteRefused?.(key))
-            .catch((error) => log.error(`Recovery attempt for "${key}" failed:`, error));
+        requestRecovery: (key, delayMs, done) => {
+          setTimeout(() => {
+            void Promise.resolve()
+              .then(() => deps.onWriteRefused?.(key))
+              .catch((error) => log.error(`Recovery attempt for "${key}" failed:`, error))
+              .finally(done);
+          }, delayMs);
         },
       });
       states.set(name, state);
@@ -796,7 +886,20 @@ export function createKVPersistStorage<S>(
           `read "${name}" from the KV ${scope} scope`,
         );
         if (stored === UNAVAILABLE) {
-          // Serve the raw entry so the store still hydrates with the user's
+          if (state.hasAuthoritativeValue) {
+            // This session has already loaded the authoritative value, and the
+            // store is still holding it. Serving the shadowed raw copy now
+            // would walk a live store *backwards* onto an older value — and
+            // because zustand leaves state alone when a read yields nothing,
+            // returning null is precisely "keep what you have".
+            log.warn(
+              `Could not re-read "${name}" from the KV ${scope} scope; keeping the value already ` +
+                `loaded rather than falling back to the shadowed localStorage copy`,
+            );
+            return { value: null };
+          }
+          // Nothing authoritative has been seen yet, so the raw entry is the
+          // best copy available. Serve it so the store hydrates with the user's
           // data, but adopt nothing, delete nothing, and leave the key
           // unsettled so no write can persist over an original we were unable
           // to read.

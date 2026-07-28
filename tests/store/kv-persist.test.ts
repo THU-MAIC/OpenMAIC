@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { BrowserKVStore, type KVScope, type KVStore } from '@openmaic/storage';
 
-import { createKVPersistStorage } from '@/lib/store/kv-persist';
+import { createKVPersistStorage, DEFAULT_RECOVERY_BACKOFF_MS } from '@/lib/store/kv-persist';
 import {
   resetPersistHealth,
   subscribeToPersistHealth,
@@ -26,7 +26,7 @@ import {
  * notice it does or does not cancel on the next.
  */
 const flushTasks = async () => {
-  for (let i = 0; i < 3; i++) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  for (let i = 0; i < 12; i++) await new Promise<void>((resolve) => setTimeout(resolve, 0));
 };
 
 /** In-memory `Storage`, isolated per test — nothing ambient is touched. */
@@ -828,11 +828,14 @@ describe('createKVPersistStorage — refused writes ask for recovery, then say s
       kv: h.kv,
       legacyStorage: h.legacy,
       onWriteRefused,
+      // One slot, so "only once" is about the latch rather than the budget.
+      recoveryBackoffMs: [0],
     });
 
     await persist.getItem(NAME);
     await persist.setItem(NAME, { state: { nickname: 'a' } });
     await persist.setItem(NAME, { state: { nickname: 'b' } });
+    await flushTasks();
 
     expect(onWriteRefused).toHaveBeenCalledTimes(1);
   });
@@ -1429,6 +1432,63 @@ describe('createKVPersistStorage — a replay is owed until it lands', () => {
   });
 });
 
+describe('createKVPersistStorage — a live store is never walked backwards', () => {
+  it('keeps the loaded value when a later read fails, instead of serving the raw copy', async () => {
+    // The raw copy legitimately outlives the migration when its content differs
+    // from the KV value. Once this session has loaded the authoritative value,
+    // a transient read failure must not hand that older copy back to zustand
+    // and overwrite a live store with it.
+    const h = harness();
+    await h.kv.set(NAME, { state: { nickname: 'authoritative' }, version: 4 }, 'account');
+    seedLegacy(h.legacy, { nickname: 'older raw copy' });
+    const persist = h.storage();
+
+    expect(await persist.getItem(NAME)).toEqual({
+      state: { nickname: 'authoritative' },
+      version: 4,
+    });
+
+    h.kv.failGet = true;
+    // Null is precisely "keep what you have": zustand leaves state alone when a
+    // read yields nothing.
+    expect(await persist.getItem(NAME)).toBeNull();
+    expect(h.legacy.getItem(NAME)).not.toBeNull();
+  });
+
+  it('does not let an edit made in that window replay the raw copy', async () => {
+    const h = harness();
+    await h.kv.set(NAME, { state: { nickname: 'authoritative' }, version: 4 }, 'account');
+    seedLegacy(h.legacy, { nickname: 'older raw copy' });
+    const persist = h.storage();
+    await persist.getItem(NAME);
+
+    h.kv.failGet = true;
+    await persist.getItem(NAME);
+    // The store still holds the authoritative value, so this edit is built on
+    // it — never on the raw copy.
+    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
+
+    h.kv.failGet = false;
+    await persist.getItem(NAME);
+
+    expect(await h.kv.get(NAME, 'account')).toEqual({
+      state: { nickname: 'edited' },
+      version: 4,
+    });
+  });
+
+  it('still serves the raw copy when nothing authoritative has been seen', async () => {
+    // The contrasting case: with no authoritative value in hand, the raw entry
+    // is the best copy there is and hydrating from it is right.
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'raw copy' });
+    const persist = h.storage();
+
+    h.kv.failGet = true;
+    expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'raw copy' }, version: 4 });
+  });
+});
+
 describe('createKVPersistStorage — a landed write supersedes an earlier failed one', () => {
   it('does not replay a stale snapshot over a newer write that succeeded', async () => {
     // Both writes are admitted while the key is open, so both are queued. The
@@ -1498,54 +1558,124 @@ describe('createKVPersistStorage — unreachable browser storage is a failure, n
   });
 });
 
-describe('createKVPersistStorage — recovery is asked for again after it worked', () => {
-  it('re-arms the recovery latch once storage answers', async () => {
+describe('createKVPersistStorage — recovery is bounded and re-armable', () => {
+  it('stops retrying a backend that reads but cannot write', async () => {
+    // The treadmill: the recovering read succeeds, the key settles, the replay
+    // write fails, and that failure asks for recovery again. A quota-exhausted
+    // backend behaves exactly like this, and unbounded it is a loop that never
+    // lets the page settle — every lap looking like fresh progress.
+    const h = harness();
+    await h.kv.set(NAME, { state: { nickname: 'stored' }, version: 4 }, 'account');
+
+    const attempts: string[] = [];
+    const persist = createKVPersistStorage<Prefs>('account', {
+      kv: h.kv,
+      legacyStorage: h.legacy,
+      recoveryBackoffMs: [0, 0, 0],
+      onWriteRefused: async (name) => {
+        attempts.push(name);
+        await persist.getItem(NAME);
+      },
+    });
+
+    await persist.getItem(NAME);
+    // Only the blob write fails, so sentinels still land and every lap runs
+    // exactly as it would against a quota-exhausted store.
+    h.kv.failSetMatching = (key) => key === NAME;
+    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
+    for (let i = 0; i < 40; i++) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    // Exactly the budget: not "a few", and emphatically not one per lap.
+    expect(attempts).toHaveLength(3);
+    // And the user is told the edit is not coming back, rather than left with
+    // a retry loop nobody can see failing.
+    expect(health.map((event) => event.status)).toContain('changes-lost');
+  });
+
+  it('ships a schedule that actually backs off', () => {
+    // A guard on the shipped default: an all-zero schedule would leave the cap
+    // as the only thing between a flaky backend and a busy loop.
+    expect(DEFAULT_RECOVERY_BACKOFF_MS.length).toBeGreaterThan(1);
+    const delays = [...DEFAULT_RECOVERY_BACKOFF_MS];
+    expect(delays.at(-1)).toBeGreaterThan(0);
+    for (let i = 1; i < delays.length; i++) {
+      expect(delays[i]).toBeGreaterThan(delays[i - 1]);
+    }
+  });
+
+  it('re-arms the budget once storage answers', async () => {
     const h = harness();
     const asked: string[] = [];
     const persist = createKVPersistStorage<Prefs>('account', {
       kv: h.kv,
       legacyStorage: h.legacy,
       onWriteRefused: (name) => void asked.push(name),
+      recoveryBackoffMs: [0, 0],
     });
 
     h.kv.failGet = true;
     await persist.getItem(NAME);
     await persist.setItem(NAME, { state: { nickname: 'a' } });
     await flushTasks();
-    expect(asked).toHaveLength(1);
+    const spentOnFirstFault = asked.length;
+    expect(spentOnFirstFault).toBe(2);
 
-    // Storage comes back and the key settles...
+    // Storage comes back and the key settles clean...
     h.kv.failGet = false;
     await persist.getItem(NAME);
     await flushTasks();
+    expect(asked).toHaveLength(spentOnFirstFault);
 
-    // ...so a later failure gets its own recovery attempt, rather than the
-    // latch making every transition after the first an empty promise.
+    // ...so a later failure gets a fresh budget, rather than the exhausted one
+    // making every transition after the first an empty promise.
     h.kv.failGet = true;
     await persist.getItem(NAME);
     await persist.setItem(NAME, { state: { nickname: 'b' } });
     await flushTasks();
 
-    expect(asked).toHaveLength(2);
+    expect(asked.length).toBe(spentOnFirstFault + 2);
   });
 
-  it('asks only once while the failure persists', async () => {
+  it('spends the budget once, however many writes are refused', async () => {
+    // The in-flight guard is what stops each refusal queuing its own attempt.
     const h = harness();
     const asked: string[] = [];
     const persist = createKVPersistStorage<Prefs>('account', {
       kv: h.kv,
       legacyStorage: h.legacy,
       onWriteRefused: (name) => void asked.push(name),
+      recoveryBackoffMs: [0, 0, 0],
     });
 
     h.kv.failGet = true;
     await persist.getItem(NAME);
     await persist.setItem(NAME, { state: { nickname: 'a' } });
     await persist.setItem(NAME, { state: { nickname: 'b' } });
+    await persist.setItem(NAME, { state: { nickname: 'c' } });
     await persist.getItem(NAME);
     await flushTasks();
 
-    expect(asked).toHaveLength(1);
+    expect(asked).toHaveLength(3);
+  });
+
+  it('stops for good once the budget is spent', async () => {
+    const h = harness();
+    const asked: string[] = [];
+    const persist = createKVPersistStorage<Prefs>('account', {
+      kv: h.kv,
+      legacyStorage: h.legacy,
+      onWriteRefused: (name) => void asked.push(name),
+      recoveryBackoffMs: [0, 0],
+    });
+
+    h.kv.failGet = true;
+    await persist.getItem(NAME);
+    await persist.setItem(NAME, { state: { nickname: 'a' } });
+    await flushTasks();
+    await flushTasks();
+    await flushTasks();
+
+    expect(asked).toHaveLength(2);
   });
 });
 
