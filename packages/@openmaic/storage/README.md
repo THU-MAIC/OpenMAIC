@@ -89,7 +89,9 @@ semantics.
       DSL migration registry, validation gate) + browser backend
 - [x] `RuntimeStore` (sessions + append-only records, runtime version line,
       per-kind payload gate) + browser backend
-- [ ] wire the app's zustand stores + ad-hoc `localStorage` through `KVStore`
+- [x] wire the app's zustand `persist` stores through `KVStore` (settings and
+      user profile, both `account` scope, adopting their pre-cutover raw keys)
+- [ ] wire the app's remaining ad-hoc `localStorage` keys through `KVStore`
 - [x] RuntimeStore HTTP backend + reference server + HTTP contract
 - [x] RuntimeStore PostgreSQL backend
 - [x] DocumentStore HTTP backend + reference-server routes + HTTP contract

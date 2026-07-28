@@ -1,6 +1,10 @@
 /**
  * Settings Store
- * Global settings state synchronized with localStorage
+ *
+ * Global settings, persisted through the `@openmaic/storage` KVStore in the
+ * `account` scope. The bulk of this store is the user's provider/model
+ * configuration — the canonical `account`-scoped value in the storage contract,
+ * and the thing a second device should not have to be told again.
  */
 
 import { create } from 'zustand';
@@ -29,6 +33,7 @@ import {
   resolveSelectedModel,
   isLLMProviderConfigured,
 } from '@/lib/store/settings-validation';
+import { createKVPersistStorage } from '@/lib/store/kv-persist';
 
 const log = createLogger('Settings');
 
@@ -829,7 +834,17 @@ function stripLegacyServerBaseUrl(state: Partial<SettingsState>): void {
   }
 }
 
-// Migrate from old localStorage format
+// Migrate from the pre-persist localStorage format (llmModel / providersConfig
+// / ttsModel / selectedAgentIds). These four keys predate the persist
+// middleware and are read-only inputs here — this function has never owned or
+// cleaned them, and `providersConfig` is still read independently by
+// lib/ai/providers.ts, so the KVStore cutover deliberately leaves them alone.
+//
+// The `settings-storage` probe below only guards the *initial* state. Once the
+// persisted blob has moved into the KVStore the raw key is gone, so this can
+// run again on a very old install — harmlessly, because every field it
+// produces is also in the persisted blob, and `merge` lets the persisted value
+// win.
 const migrateFromOldStorage = () => {
   if (typeof window === 'undefined') return null;
 
@@ -1878,6 +1893,9 @@ export const useSettingsStore = create<SettingsState>()(
     },
     {
       name: 'settings-storage',
+      // `Partial<SettingsState>` because `migrate` below returns a partial —
+      // that is what zustand infers as the persisted shape here.
+      storage: createKVPersistStorage<Partial<SettingsState>>('account'),
       version: 4,
       // Migrate persisted state
       migrate: (persistedState: unknown, version: number) => {

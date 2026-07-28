@@ -4,9 +4,12 @@
  * code/IndexedDB on every load and must not own user picks).
  *
  * localStorage is stubbed and the store imported per-test so the persist
- * rehydration path (merge of an existing blob) is exercised for real.
+ * rehydration path (merge of an existing blob) is exercised for real. Blobs are
+ * seeded under the pre-KVStore raw key, which is what an existing install looks
+ * like, so these cases also cover the one-time adoption into the KV store.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { BrowserKVStore } from '@openmaic/storage';
 
 const storage = new Map<string, string>();
 const localStorageStub = {
@@ -28,7 +31,25 @@ async function freshStore(persistedState?: Record<string, unknown>) {
     storage.set('settings-storage', JSON.stringify({ state: persistedState, version: 4 }));
   }
   const { useSettingsStore } = await import('@/lib/store/settings');
+  // persist hydrates asynchronously now that it reads through the KVStore —
+  // await it so the assertions never race the rehydrate.
+  await useSettingsStore.persist.rehydrate();
   return useSettingsStore;
+}
+
+// The blob is written through the KVStore's `account` scope, so read it back
+// through the same primitive instead of guessing its key layout. The write is
+// async, hence the poll.
+const persistKv = new BrowserKVStore({ storage: localStorageStub as unknown as Storage });
+async function readPersistedState(): Promise<Record<string, unknown>> {
+  return await vi.waitFor(async () => {
+    const blob = await persistKv.get<{ state: Record<string, unknown> }>(
+      'settings-storage',
+      'account',
+    );
+    expect(blob).not.toBeNull();
+    return blob!.state;
+  });
 }
 
 describe('agentVoiceOverrides', () => {
@@ -61,9 +82,9 @@ describe('agentVoiceOverrides', () => {
     });
 
     // The write must actually reach storage (would break if a future
-    // partialize omits the field) — sync storage writes synchronously.
-    const blob = JSON.parse(storage.get('settings-storage')!);
-    expect(blob.state.agentVoiceOverrides).toEqual({
+    // partialize omits the field).
+    const persisted = await readPersistedState();
+    expect(persisted.agentVoiceOverrides).toEqual({
       'default-3': { providerId: 'qwen-tts', modelId: 'qwen3-tts-flash', voiceId: 'Cherry' },
     });
   });
@@ -93,7 +114,7 @@ describe('agentSelectionIsUserSet', () => {
     expect(store.getState().agentSelectionIsUserSet).toBe(false);
     store.getState().setAgentSelectionIsUserSet(true);
     expect(store.getState().agentSelectionIsUserSet).toBe(true);
-    expect(JSON.parse(storage.get('settings-storage')!).state.agentSelectionIsUserSet).toBe(true);
+    expect((await readPersistedState()).agentSelectionIsUserSet).toBe(true);
     store.getState().setAgentSelectionIsUserSet(false);
     expect(store.getState().agentSelectionIsUserSet).toBe(false);
   });

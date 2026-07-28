@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/base';
 import { GenerationPreviewPage } from '../pages/generation-preview.page';
-import { createSettingsStorage } from '../fixtures/test-data/settings';
+import { createSettingsStorage, SETTINGS_KV_KEY } from '../fixtures/test-data/settings';
 import { mockOutlines } from '../fixtures/test-data/scene-outlines';
 
 const SETTINGS_STORAGE = createSettingsStorage();
@@ -88,11 +88,16 @@ test.describe('Generation Flow', () => {
     await preview.openOutlineReview();
     await preview.enableAlwaysReview();
 
-    const persistedPreference = await page.evaluate(() => {
-      const raw = localStorage.getItem('settings-storage');
-      return raw ? JSON.parse(raw).state.reviewOutlineEnabled : undefined;
-    });
-    expect(persistedPreference).toBe(true);
+    // The persist write goes through the KVStore and is asynchronous, so poll
+    // rather than reading once straight after the toggle.
+    await expect
+      .poll(() =>
+        page.evaluate((key) => {
+          const raw = localStorage.getItem(key);
+          return raw ? JSON.parse(raw).state.reviewOutlineEnabled : undefined;
+        }, SETTINGS_KV_KEY),
+      )
+      .toBe(true);
 
     await preview.confirmOutlines();
     await preview.waitForRedirectToClassroom();

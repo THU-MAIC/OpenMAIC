@@ -1,10 +1,15 @@
 /**
  * User Profile Store
- * Persists avatar, nickname & bio to localStorage
+ *
+ * Persists avatar, nickname & bio through the `@openmaic/storage` KVStore in
+ * the `account` scope: this is the learner's own identity, exactly the data a
+ * server-backed deployment is expected to carry across their devices.
  */
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+
+import { createKVPersistStorage } from '@/lib/store/kv-persist';
 
 /** Predefined avatar options */
 export const AVATAR_OPTIONS = [
@@ -39,6 +44,7 @@ export const useUserProfileStore = create<UserProfileState>()(
     }),
     {
       name: 'user-profile-storage',
+      storage: createKVPersistStorage<UserProfileState>('account'),
     },
   ),
 );
