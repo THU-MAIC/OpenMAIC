@@ -7,9 +7,10 @@ import { supabase } from '@/lib/supabase/client';
 import type { Scene as AppScene } from '@/lib/types/stage';
 import { accountNamespace, sha256Hex } from './identity';
 import { getBridgeEntry, putBridgeEntry } from './ledger';
-import { reportBridgeDiagnostic } from './diagnostics';
+import { reportBridgeDiagnostic, reportDocumentParityDiagnostic } from './diagnostics';
 import {
   DOCUMENT_BRIDGE_VERSION,
+  DOCUMENT_PARITY_VERSION,
   type BridgeFailureCode,
   type LegacyDocumentSnapshot,
 } from './types';
@@ -21,6 +22,13 @@ let queue = Promise.resolve();
 
 export function isDocumentBridgeEnabled(): boolean {
   return process.env.NEXT_PUBLIC_DOCUMENT_STORE_BRIDGE === '1';
+}
+
+export function isDocumentParityCheckEnabled(): boolean {
+  return (
+    process.env.NEXT_PUBLIC_DOCUMENT_STORE_BRIDGE === '1' &&
+    process.env.NEXT_PUBLIC_DOCUMENT_STORE_PARITY_CHECK === '1'
+  );
 }
 
 function storeFor(namespace: string): BrowserDocumentStore<AppScene> {
@@ -49,8 +57,20 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function canonicalDocument(snapshot: LegacyDocumentSnapshot) {
+  return {
+    stage: snapshot.stage,
+    scenes: [...snapshot.scenes].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id)),
+    ...(snapshot.outlineRecord !== undefined ? { outlineRecord: snapshot.outlineRecord } : {}),
+  };
+}
+
 async function sourceHash(snapshot: LegacyDocumentSnapshot): Promise<string> {
   return sha256Hex(stableJson(snapshot));
+}
+
+async function parityHash(snapshot: LegacyDocumentSnapshot): Promise<string> {
+  return sha256Hex(stableJson(canonicalDocument(snapshot)));
 }
 
 function failureCode(error: unknown): BridgeFailureCode {
@@ -89,7 +109,89 @@ export function scheduleLegacyDocumentBridge(snapshot: LegacyDocumentSnapshot): 
   });
 }
 
-export async function bridgeLegacyDocument(snapshot: LegacyDocumentSnapshot): Promise<'migrated' | 'skipped'> {
+/**
+ * B2.2: compare the already-loaded legacy document with its isolated
+ * DocumentStore copy. This is strictly observational; callers never await it.
+ */
+export function scheduleDocumentParityCheck(snapshot: LegacyDocumentSnapshot): void {
+  if (!isDocumentParityCheckEnabled() || typeof window === 'undefined') return;
+  scheduleIdle(() => {
+    queue = queue
+      .catch(() => undefined)
+      .then(() => compareLegacyDocument(snapshot))
+      .catch((error) => log.warn('Unexpected queued parity failure:', error));
+  });
+}
+
+export async function compareLegacyDocument(
+  snapshot: LegacyDocumentSnapshot,
+): Promise<'match' | 'missing_document' | 'mismatch' | 'skipped'> {
+  if (!isDocumentParityCheckEnabled()) return 'skipped';
+  const startedAt = performance.now();
+  const courseId = snapshot.stage.id;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      reportDocumentParityDiagnostic({
+        outcome: 'identity',
+        durationMs: performance.now() - startedAt,
+        parityVersion: DOCUMENT_PARITY_VERSION,
+        courseId,
+        errorCode: 'identity',
+      });
+      return 'skipped';
+    }
+    const document = await storeFor(await accountNamespace(user.id)).loadDocument(courseId);
+    if (!document) {
+      reportDocumentParityDiagnostic({
+        outcome: 'missing_document',
+        durationMs: performance.now() - startedAt,
+        parityVersion: DOCUMENT_PARITY_VERSION,
+        courseId,
+      });
+      return 'missing_document';
+    }
+    const [legacy, stored] = await Promise.all([
+      parityHash(snapshot),
+      parityHash({
+        stage: document.stage as LegacyDocumentSnapshot['stage'],
+        scenes: document.scenes as LegacyDocumentSnapshot['scenes'],
+        ...(document.outline !== undefined
+          ? { outlineRecord: document.outline as LegacyDocumentSnapshot['outlineRecord'] }
+          : {}),
+      }),
+    ]);
+    const outcome = legacy === stored ? 'match' : 'mismatch';
+    reportDocumentParityDiagnostic({
+      outcome,
+      durationMs: performance.now() - startedAt,
+      parityVersion: DOCUMENT_PARITY_VERSION,
+      ...(outcome === 'mismatch' ? { courseId } : {}),
+    });
+    return outcome;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const errorCode = /crypto|user id|authenticated/i.test(message)
+      ? 'identity'
+      : /indexeddb|idb|transaction|database/i.test(message)
+        ? 'indexeddb'
+        : 'unknown';
+    reportDocumentParityDiagnostic({
+      outcome: errorCode === 'identity' ? 'identity' : 'read_failure',
+      durationMs: performance.now() - startedAt,
+      parityVersion: DOCUMENT_PARITY_VERSION,
+      courseId,
+      errorCode,
+    });
+    return 'skipped';
+  }
+}
+
+export async function bridgeLegacyDocument(
+  snapshot: LegacyDocumentSnapshot,
+): Promise<'migrated' | 'skipped'> {
   if (!isDocumentBridgeEnabled()) return 'skipped';
   const startedAt = performance.now();
   const courseId = snapshot.stage.id;
@@ -126,7 +228,9 @@ export async function bridgeLegacyDocument(snapshot: LegacyDocumentSnapshot): Pr
 
     const stageValidation = validateStageExtended(copied.stage);
     if (!stageValidation.valid) {
-      throw new Error(`Invalid stage: ${stageValidation.errors.map((issue) => issue.path).join(', ')}`);
+      throw new Error(
+        `Invalid stage: ${stageValidation.errors.map((issue) => issue.path).join(', ')}`,
+      );
     }
 
     const document: MaicDocument<AppScene> = {

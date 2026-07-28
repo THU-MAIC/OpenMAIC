@@ -4,7 +4,11 @@ import {
   accountNamespace,
   sha256Hex,
 } from '@/lib/document-bridge/identity';
-import { durationBucket, reportBridgeDiagnostic } from '@/lib/document-bridge/diagnostics';
+import {
+  durationBucket,
+  reportBridgeDiagnostic,
+  reportDocumentParityDiagnostic,
+} from '@/lib/document-bridge/diagnostics';
 
 describe('DocumentStore bridge identity boundary', () => {
   it('uses a deterministic 128-bit hexadecimal account namespace', async () => {
@@ -54,6 +58,36 @@ describe('DocumentStore bridge diagnostics', () => {
       durationBucket: 'lt_1s',
       courseId: 'course-1',
       errorCode: 'validation',
+    });
+  });
+
+  it('reports parity matches without course ids and mismatches with one', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response());
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('fetch', fetchMock);
+
+    reportDocumentParityDiagnostic({ outcome: 'match', durationMs: 20, parityVersion: 'b2.2' });
+    reportDocumentParityDiagnostic({
+      outcome: 'mismatch',
+      durationMs: 300,
+      parityVersion: 'b2.2',
+      courseId: 'course-2',
+    });
+    await Promise.resolve();
+
+    const matchBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(matchBody).toMatchObject({
+      event: 'document_parity',
+      outcome: 'match',
+      durationBucket: 'lt_50ms',
+    });
+    expect(matchBody).not.toHaveProperty('courseId');
+    const mismatchBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(mismatchBody).toMatchObject({
+      event: 'document_parity',
+      outcome: 'mismatch',
+      durationBucket: 'lt_1s',
+      courseId: 'course-2',
     });
   });
 });

@@ -1,4 +1,10 @@
-import type { BridgeDurationBucket, BridgeFailureCode, BridgeOutcome } from './types';
+import type {
+  BridgeDurationBucket,
+  BridgeFailureCode,
+  BridgeOutcome,
+  DocumentParityFailureCode,
+  DocumentParityOutcome,
+} from './types';
 
 export function durationBucket(durationMs: number): BridgeDurationBucket {
   if (durationMs < 50) return 'lt_50ms';
@@ -38,4 +44,27 @@ export function reportBridgeDiagnostic(payload: {
   }).catch(() => {
     // Deliberately ignored: observability is never on the user data path.
   });
+}
+
+export function reportDocumentParityDiagnostic(payload: {
+  outcome: DocumentParityOutcome;
+  durationMs: number;
+  parityVersion: string;
+  courseId?: string;
+  errorCode?: DocumentParityFailureCode;
+}): void {
+  if (typeof window === 'undefined') return;
+  void fetch('/api/client-diagnostics', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event: 'document_parity',
+      outcome: payload.outcome,
+      durationBucket: durationBucket(payload.durationMs),
+      parityVersion: payload.parityVersion,
+      ...(payload.outcome !== 'match' && payload.courseId ? { courseId: payload.courseId } : {}),
+      ...(payload.errorCode ? { errorCode: payload.errorCode } : {}),
+    }),
+    keepalive: true,
+  }).catch(() => {});
 }

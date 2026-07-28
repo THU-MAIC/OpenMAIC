@@ -452,17 +452,19 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       const outlines = outlinesRecord?.outlines || [];
       const persistedComplete = outlinesRecord?.generationComplete ?? false;
 
-      // B2.1 shadow bridge: schedule only after the legacy document has loaded
-      // successfully. It is intentionally fire-and-forget; Dexie remains the
-      // active source of truth and any bridge failure is isolated from the UI.
+      // B2.1/B2.2 background work starts only after legacy Dexie successfully
+      // loaded. Both operations are fire-and-forget; Dexie remains the active
+      // source of truth and failures are isolated from the UI.
       if (data) {
+        const documentSnapshot = {
+          stage: data.stage,
+          scenes: data.scenes,
+          ...(outlinesRecord ? { outlineRecord: outlinesRecord } : {}),
+        };
         void import('@/lib/document-bridge/bridge')
-          .then(({ scheduleLegacyDocumentBridge }) => {
-            scheduleLegacyDocumentBridge({
-              stage: data.stage,
-              scenes: data.scenes,
-              ...(outlinesRecord ? { outlineRecord: outlinesRecord } : {}),
-            });
+          .then(({ scheduleDocumentParityCheck, scheduleLegacyDocumentBridge }) => {
+            scheduleLegacyDocumentBridge(documentSnapshot);
+            scheduleDocumentParityCheck(documentSnapshot);
           })
           .catch((error) => log.warn('DocumentStore bridge module failed to load:', error));
       }
