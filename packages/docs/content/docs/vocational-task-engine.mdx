@@ -1,0 +1,69 @@
+---
+title: Vocational Task Engine
+description: Generate mixed, interactive training classrooms for procedural vocational tasks.
+---
+
+The vocational task engine is an experimental generation mode for hands-on training. It turns a real or simulated work task into a mixed classroom with briefing slides, operation practice, diagrams, and playable challenges.
+
+## Suitable tasks
+
+Use this mode for tasks with tools, equipment, materials, state changes, safety boundaries, quality checks, or GO/STOP decisions. Examples include:
+
+- Battery-pack replacement pre-work safety confirmation.
+- Distribution-cabinet pre-energization inspection.
+- IV infusion identity and drip-rate setup.
+- Welding equipment inspection before work.
+
+For theory-only topics, use the normal classroom generator. The task engine applies a suitability check and falls back to ordinary OpenMAIC scenes when procedural practice is not appropriate.
+
+## Generate a vocational classroom
+
+1. Open the classroom generator.
+2. Enter a concrete vocational task in the main input box.
+3. Enable **Experimental · Vocational Task** below the input box.
+4. Optionally enable **Local Knowledge Base** to ground the task in manuals or standards.
+5. Start generation.
+
+The vocational switch automatically enables Interactive Mode and selects the task-engine outline planner.
+
+## Generated classroom structure
+
+For suitable tasks, the planner typically produces 10–14 scenes:
+
+| Scene category | Typical count | Purpose |
+| --- | --- | --- |
+| Briefing and explanation | `2`–`4` | Task goal, risk boundary, standards, and judgment basis. |
+| Procedural practice | `5`–`7` | Step-by-step operation, inspection, measurement, and confirmation. |
+| Playable challenges | `2`–`4` | GO/STOP decisions, ordering, risk identification, and troubleshooting. |
+
+The first scene is a stable briefing slide. It introduces the task purpose, safety boundary, training stages, and completion criteria before detailed operations begin.
+
+## Procedural-skill widgets
+
+Vocational mode adds the `procedural-skill` interactive widget. A generated widget can include:
+
+- A visible task area and required tools or materials.
+- Ordered operation steps with progress tracking.
+- Measurement, judgment, or tool-use decisions.
+- Feedback for unsafe or incorrect choices.
+- Completion criteria and a full reset action.
+- Teacher guidance that highlights stable controls and updates widget state.
+
+The visual layout varies by task: inspection station, work-order desk, process board, measurement station, control panel, GO/STOP station, or troubleshooting workspace.
+
+## Isolation from normal Interactive Mode
+
+`procedural-skill` is reserved for vocational mode. If an ordinary Interactive Mode outline accidentally requests it, OpenMAIC converts the scene to a process diagram. Existing classroom generation behavior therefore remains unchanged unless the vocational switch is enabled.
+
+## Use with local knowledge
+
+For technical training, enable both **Vocational Task** and **Local Knowledge Base**. Confirmed excerpts are passed into the task outline, procedural widgets, and teacher actions so generated practice follows the uploaded material.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+| --- | --- |
+| No procedural practice scenes appear | The request may be theory-only. Describe a concrete work task with tools, decisions, and completion criteria. |
+| A normal Interactive Mode course shows a diagram instead | `procedural-skill` is intentionally gated behind the vocational switch. |
+| Generated steps conflict with a manual | Upload the manual, enable Local Knowledge Base, and confirm the relevant excerpts before generation. |
+| GLM generation is slow or empty | Scene-content generation disables GLM thinking automatically to reduce long-output timeouts. |

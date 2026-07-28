@@ -1,0 +1,62 @@
+---
+title: قاعدة المعرفة المحلية و RAG
+description: اربط إنشاء الصفوف بمواد PDF باستخدام PostgreSQL و pgvector.
+---
+
+تحلل قاعدة المعرفة المحلية ملفات PDF، وتقسم النص إلى مقتطفات قابلة للبحث، وتنشئ embeddings باستخدام BGE-M3، ثم تحفظها في PostgreSQL مع pgvector. قبل الإنشاء يمكنك مراجعة المقتطفات التي يسمح للنموذج باستخدامها.
+
+## 1. تشغيل PostgreSQL
+
+```bash
+docker compose up -d postgres
+```
+
+```bash title=".env.local"
+DATABASE_URL=postgresql://openmaic:openmaic@localhost:5433/openmaic
+KNOWLEDGE_WORKSPACE_ID=demo-default
+```
+
+يتم إنشاء الجداول وفهرس HNSW تلقائيا عند أول استخدام.
+
+## 2. تشغيل خدمة BGE-M3
+
+يجب أن توفر الخدمة واجهة `/v1/embeddings` متوافقة مع OpenAI وأن تعيد متجهات من 1024 بعدا.
+
+```bash
+vllm serve BAAI/bge-m3 \
+  --runner pooling \
+  --host 0.0.0.0 \
+  --port 8200 \
+  --max-model-len 4096
+```
+
+```bash title=".env.local"
+BGE_EMBEDDING_BASE_URL=http://localhost:8200/v1
+BGE_EMBEDDING_MODEL=BAAI/bge-m3
+# BGE_EMBEDDING_API_KEY=
+```
+
+## 3. رفع المواد
+
+افتح **Material Knowledge Base** أو انتقل إلى `/knowledge-base`. يمكن رفع ملفات PDF حتى 50 MB. تعرض القائمة الحالة وعدد الصفحات والمقتطفات ونموذج embedding.
+
+## 4. إعدادات الاسترجاع
+
+| الإعداد | الافتراضي | النطاق |
+| --- | --- | --- |
+| عدد مقتطفات Top-K | `6` | `1`–`20` |
+| الحد الأدنى للتشابه | `0%` | `0%`–`95%` |
+| حد أحرف السياق | `12,000` | `2,000`–`30,000` |
+
+## 5. إنشاء صف باستخدام RAG
+
+1. فعّل **Local Knowledge Base** في الصفحة الرئيسية.
+2. أدخل المتطلبات وابدأ الإنشاء.
+3. راجع المقتطفات ودرجات التشابه.
+4. اختر المقتطفات المناسبة ثم تابع.
+
+تستخدم المقتطفات المؤكدة فقط في المخطط والشرائح والاختبارات والعناصر التفاعلية وإجراءات المعلم و PBL.
+
+## الاستخدام مع المهام المهنية
+
+يمكن تفعيل **Vocational Task** أيضا. ينظم المحرك التدريب، بينما تضبط المواد ترتيب الخطوات وحدود السلامة ومعايير الإكمال.

@@ -1,0 +1,62 @@
+---
+title: ローカルナレッジベースと RAG
+description: PostgreSQL、pgvector、PDF 資料を使用して授業生成を根拠付けします。
+---
+
+ローカルナレッジベースは PDF を解析し、検索可能な抜粋に分割し、BGE-M3 で埋め込みを生成して pgvector 対応 PostgreSQL に保存します。生成前に、モデルが使用できる抜粋を確認できます。
+
+## 1. PostgreSQL を起動する
+
+```bash
+docker compose up -d postgres
+```
+
+```bash title=".env.local"
+DATABASE_URL=postgresql://openmaic:openmaic@localhost:5433/openmaic
+KNOWLEDGE_WORKSPACE_ID=demo-default
+```
+
+初回利用時にテーブルと HNSW インデックスが自動作成されます。
+
+## 2. BGE-M3 embedding サービスを起動する
+
+OpenAI 互換の `/v1/embeddings` API と 1024 次元ベクトルが必要です。
+
+```bash
+vllm serve BAAI/bge-m3 \
+  --runner pooling \
+  --host 0.0.0.0 \
+  --port 8200 \
+  --max-model-len 4096
+```
+
+```bash title=".env.local"
+BGE_EMBEDDING_BASE_URL=http://localhost:8200/v1
+BGE_EMBEDDING_MODEL=BAAI/bge-m3
+# BGE_EMBEDDING_API_KEY=
+```
+
+## 3. 資料を登録する
+
+ツールバーの **Material Knowledge Base**、または `/knowledge-base` を開きます。最大 50 MB の PDF をアップロードできます。状態、ページ数、抜粋数、embedding モデルが表示されます。
+
+## 4. 検索パラメータ
+
+| 設定 | デフォルト | 範囲 |
+| --- | --- | --- |
+| Top-K 抜粋数 | `6` | `1`–`20` |
+| 最小類似度 | `0%` | `0%`–`95%` |
+| コンテキスト文字数上限 | `12,000` | `2,000`–`30,000` |
+
+## 5. RAG を使って生成する
+
+1. ホームで **Local Knowledge Base** を有効にします。
+2. 要件を入力して生成を開始します。
+3. 類似度付きの候補抜粋を確認します。
+4. 関連する抜粋を選択し、続行します。
+
+確認済みの抜粋だけがアウトライン、スライド、クイズ、インタラクティブウィジェット、教師アクション、PBL に渡されます。
+
+## 職業訓練モードとの併用
+
+**Vocational Task** と同時に有効化できます。タスクエンジンが訓練構造を作り、資料が手順、安全境界、完了条件を根拠付けます。

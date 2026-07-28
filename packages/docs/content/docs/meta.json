@@ -5,6 +5,8 @@
     "configuration",
     "supported-models",
     "deployment",
-    "voxcpm"
+    "voxcpm",
+    "local-knowledge-rag",
+    "vocational-task-engine"
   ]
 }

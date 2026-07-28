@@ -1,0 +1,91 @@
+---
+title: Local Knowledge Base and RAG
+description: Ground classroom generation with PDF materials retrieved from PostgreSQL and pgvector.
+---
+
+The local knowledge base lets OpenMAIC generate classrooms from your own PDF materials. Documents are parsed, split into searchable excerpts, embedded with BGE-M3, and stored in PostgreSQL with pgvector. Before generation, you review the retrieved excerpts and choose which ones the model may use.
+
+## When to use it
+
+- Ground vocational training in manuals, standards, and operating procedures.
+- Keep component names, safety limits, and step order aligned with source material.
+- Review the exact excerpts used by a generated classroom.
+
+## 1. Start PostgreSQL with pgvector
+
+The included `docker-compose.yml` starts a compatible PostgreSQL service:
+
+```bash
+docker compose up -d postgres
+```
+
+For a locally started OpenMAIC app, configure:
+
+```bash title=".env.local"
+DATABASE_URL=postgresql://openmaic:openmaic@localhost:5433/openmaic
+KNOWLEDGE_WORKSPACE_ID=demo-default
+```
+
+The schema and HNSW vector index are initialized automatically on first use.
+
+## 2. Start a BGE-M3 embedding service
+
+The service must expose an OpenAI-compatible `/v1/embeddings` endpoint and return 1024-dimensional vectors. For example, with a GPU:
+
+```bash
+vllm serve BAAI/bge-m3 \
+  --runner pooling \
+  --host 0.0.0.0 \
+  --port 8200 \
+  --max-model-len 4096
+```
+
+Point OpenMAIC at the service:
+
+```bash title=".env.local"
+BGE_EMBEDDING_BASE_URL=http://localhost:8200/v1
+BGE_EMBEDDING_MODEL=BAAI/bge-m3
+# BGE_EMBEDDING_API_KEY=
+```
+
+## 3. Upload materials
+
+Open **Material Knowledge Base** from the generation toolbar, or visit `/knowledge-base`. Upload PDF files up to 50 MB. OpenMAIC stores the original PDF, extracted text, and vectorized excerpts.
+
+The material list shows parsing status, page count, excerpt count, and embedding model. Failed documents display an error message and can be deleted before retrying.
+
+## 4. Configure retrieval
+
+Open **Retrieval Parameters** from the knowledge base page. The available controls are:
+
+| Setting | Default | Range | Purpose |
+| --- | --- | --- | --- |
+| Top-K excerpts | `6` | `1`–`20` | Maximum number of candidate excerpts returned by vector search. |
+| Minimum similarity | `0%` | `0%`–`95%` | Excludes excerpts below the selected cosine similarity. |
+| Context character limit | `12,000` | `2,000`–`30,000` | Limits how much retrieved material enters generation prompts. |
+
+Settings are stored in the browser and applied to the next classroom generation.
+
+## 5. Generate with local knowledge
+
+1. Return to the classroom generator.
+2. Enable **Local Knowledge Base** in the toolbar.
+3. Enter the classroom requirement and start generation.
+4. Review the retrieved excerpts and their similarity scores.
+5. Keep the relevant excerpts selected, then click **Confirm and continue**.
+
+Only confirmed excerpts are injected into outline generation, slides, quizzes, interactive widgets, teacher actions, and PBL generation. After generation, the classroom evidence panel lets you inspect the saved retrieval snapshot.
+
+## Use with vocational tasks
+
+Local knowledge and **Vocational Task** mode can be enabled together. This is recommended for procedural training: the task engine defines the training structure, while retrieved manuals and standards ground operation order, tool requirements, safety boundaries, and completion criteria.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+| --- | --- |
+| `DATABASE_URL is not configured` | Add `DATABASE_URL` to `.env.local` and restart OpenMAIC. |
+| `BGE_EMBEDDING_BASE_URL is not configured` | Start the embedding service and configure its `/v1` base URL. |
+| Embedding dimension mismatch | Use BGE-M3 or another endpoint that returns exactly 1024 dimensions. |
+| No indexed knowledge materials are ready | Upload a PDF and wait until its status becomes ready. |
+| No excerpts matched | Lower the minimum similarity or upload more relevant materials. |

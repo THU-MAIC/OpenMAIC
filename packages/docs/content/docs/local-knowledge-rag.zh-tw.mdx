@@ -1,0 +1,71 @@
+---
+title: 本地知識庫與 RAG
+description: 使用 PostgreSQL、pgvector 和 PDF 材料約束課堂生成內容。
+---
+
+本地知識庫會解析 PDF、切分檢索片段、使用 BGE-M3 生成向量，並寫入帶 pgvector 的 PostgreSQL。正式生成前，你可以確認模型允許使用的片段。
+
+## 1. 啟動 PostgreSQL
+
+```bash
+docker compose up -d postgres
+```
+
+```bash title=".env.local"
+DATABASE_URL=postgresql://openmaic:openmaic@localhost:5433/openmaic
+KNOWLEDGE_WORKSPACE_ID=demo-default
+```
+
+系統會在首次使用時自動初始化資料表與 HNSW 向量索引。
+
+## 2. 啟動 BGE-M3 embedding 服務
+
+服務必須提供 OpenAI 相容的 `/v1/embeddings` 介面，並回傳 1024 維向量。
+
+```bash
+vllm serve BAAI/bge-m3 \
+  --runner pooling \
+  --host 0.0.0.0 \
+  --port 8200 \
+  --max-model-len 4096
+```
+
+```bash title=".env.local"
+BGE_EMBEDDING_BASE_URL=http://localhost:8200/v1
+BGE_EMBEDDING_MODEL=BAAI/bge-m3
+# BGE_EMBEDDING_API_KEY=
+```
+
+## 3. 上傳與檢索材料
+
+從工具列進入**材料知識庫**，或造訪 `/knowledge-base`。目前支援最大 50 MB 的 PDF。材料列表會顯示解析狀態、頁數、片段數和 embedding 模型。
+
+在**檢索參數**中可調整：
+
+| 參數 | 預設值 | 範圍 |
+| --- | --- | --- |
+| Top-K 片段數 | `6` | `1`–`20` |
+| 最低相似度 | `0%` | `0%`–`95%` |
+| 上下文字元上限 | `12,000` | `2,000`–`30,000` |
+
+## 4. 使用知識庫生成課堂
+
+1. 回到生成首頁並開啟**本地知識庫**。
+2. 輸入需求並開始生成。
+3. 檢查候選片段和相似度。
+4. 保留相關片段，按下**確認並繼續生成**。
+
+確認後的內容會注入大綱、投影片、測驗、互動元件、教師動作和 PBL。課堂完成後仍可回看檢索依據。
+
+## 與職教任務聯用
+
+可同時開啟**本地知識庫**與**職教任務**。任務引擎負責訓練結構，材料負責約束操作順序、安全邊界和完成標準。
+
+## 常見問題
+
+| 現象 | 處理方式 |
+| --- | --- |
+| 未設定 `DATABASE_URL` | 在 `.env.local` 配置資料庫並重新啟動。 |
+| 未設定 `BGE_EMBEDDING_BASE_URL` | 啟動 embedding 服務並配置 `/v1` 位址。 |
+| 向量維度錯誤 | 使用 BGE-M3，或確保服務回傳 1024 維向量。 |
+| 沒有命中片段 | 降低最低相似度，或上傳更相關材料。 |

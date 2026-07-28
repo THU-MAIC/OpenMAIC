@@ -1,0 +1,91 @@
+---
+title: 本地知识库与 RAG
+description: 使用 PostgreSQL、pgvector 和 PDF 材料约束课堂生成内容。
+---
+
+本地知识库让 OpenMAIC 根据自己的 PDF 材料生成课堂。系统会解析文档、切分检索片段、调用 BGE-M3 生成向量，并写入带 pgvector 的 PostgreSQL。正式生成前，你可以查看候选片段，只允许模型使用确认过的内容。
+
+## 适用场景
+
+- 基于手册、标准和操作规程生成职教课堂。
+- 约束部件名称、安全阈值和操作顺序。
+- 在课堂中回看实际使用过的检索依据。
+
+## 1. 启动 PostgreSQL 与 pgvector
+
+项目自带的 `docker-compose.yml` 已包含兼容的 PostgreSQL 服务：
+
+```bash
+docker compose up -d postgres
+```
+
+本地启动 OpenMAIC 时，在 `.env.local` 中配置：
+
+```bash title=".env.local"
+DATABASE_URL=postgresql://openmaic:openmaic@localhost:5433/openmaic
+KNOWLEDGE_WORKSPACE_ID=demo-default
+```
+
+首次访问知识库时，系统会自动初始化表结构和 HNSW 向量索引。
+
+## 2. 启动 BGE-M3 embedding 服务
+
+服务必须提供 OpenAI 兼容的 `/v1/embeddings` 接口，并返回 1024 维向量。例如使用 GPU 启动：
+
+```bash
+vllm serve BAAI/bge-m3 \
+  --runner pooling \
+  --host 0.0.0.0 \
+  --port 8200 \
+  --max-model-len 4096
+```
+
+在 `.env.local` 中连接该服务：
+
+```bash title=".env.local"
+BGE_EMBEDDING_BASE_URL=http://localhost:8200/v1
+BGE_EMBEDDING_MODEL=BAAI/bge-m3
+# BGE_EMBEDDING_API_KEY=
+```
+
+## 3. 上传材料
+
+从生成工具栏进入**材料知识库**，或访问 `/knowledge-base`。目前支持不超过 50 MB 的 PDF。系统会保存原始 PDF、解析文本和向量化片段。
+
+材料列表会展示解析状态、页数、片段数和 embedding 模型。失败材料会显示错误信息，可以删除后重新上传。
+
+## 4. 配置检索参数
+
+在知识库页面打开**检索参数**：
+
+| 参数 | 默认值 | 范围 | 作用 |
+| --- | --- | --- | --- |
+| Top-K 检索片段数 | `6` | `1`–`20` | 向量检索最多返回的候选片段数量。 |
+| 最低相似度 | `0%` | `0%`–`95%` | 过滤低于指定余弦相似度的片段。 |
+| 上下文字符上限 | `12,000` | `2,000`–`30,000` | 限制注入生成提示词的材料长度。 |
+
+配置保存在浏览器中，对下一次课程生成生效。
+
+## 5. 使用本地知识库生成课程
+
+1. 返回课堂生成首页。
+2. 在工具栏开启**本地知识库**。
+3. 输入课程需求并开始生成。
+4. 查看候选片段和相似度。
+5. 保留相关片段，点击**确认并继续生成**。
+
+只有确认后的片段会进入大纲、幻灯片、测验、互动组件、教师动作和 PBL 生成。课程完成后，可以在课堂依据面板中回看保存的检索快照。
+
+## 与职教任务联用
+
+可以同时开启**本地知识库**和**职教任务**。任务引擎负责课程结构，检索材料负责约束操作顺序、工具要求、安全边界和完成标准。
+
+## 常见问题
+
+| 现象 | 原因与处理 |
+| --- | --- |
+| `DATABASE_URL is not configured` | 在 `.env.local` 中配置数据库并重启。 |
+| `BGE_EMBEDDING_BASE_URL is not configured` | 启动 embedding 服务并配置 `/v1` 地址。 |
+| embedding 维度不匹配 | 使用 BGE-M3，或确保接口返回 1024 维向量。 |
+| 没有可用材料 | 上传 PDF，等待状态变为 ready。 |
+| 没有命中片段 | 降低最低相似度，或上传更相关的材料。 |
