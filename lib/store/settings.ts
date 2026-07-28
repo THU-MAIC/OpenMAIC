@@ -876,11 +876,22 @@ function stripLegacyServerBaseUrl(state: Partial<SettingsState>): void {
 const readPrePersistSettings = (): StorageValue<Partial<SettingsState>> | null => {
   if (typeof window === 'undefined') return null;
 
-  // Read old localStorage keys
-  const oldLlmModel = localStorage.getItem('llmModel');
-  const oldProvidersConfig = localStorage.getItem('providersConfig');
-  const oldTtsModel = localStorage.getItem('ttsModel');
-  const oldSelectedAgents = localStorage.getItem('selectedAgentIds');
+  // Read old localStorage keys. `localStorage` access throws outright in some
+  // privacy modes, and this runs inside the persist read path — an escaping
+  // throw there is swallowed by zustand and the store silently stops loading.
+  let oldLlmModel: string | null;
+  let oldProvidersConfig: string | null;
+  let oldTtsModel: string | null;
+  let oldSelectedAgents: string | null;
+  try {
+    oldLlmModel = localStorage.getItem('llmModel');
+    oldProvidersConfig = localStorage.getItem('providersConfig');
+    oldTtsModel = localStorage.getItem('ttsModel');
+    oldSelectedAgents = localStorage.getItem('selectedAgentIds');
+  } catch (e) {
+    log.warn('Could not read the pre-persist settings keys:', e);
+    return null;
+  }
 
   if (!oldLlmModel && !oldProvidersConfig) return null; // No old data
 
