@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { LegacyDocumentSnapshot } from '@/lib/document-bridge/types';
 
 const mocks = vi.hoisted(() => ({
   saveDocument: vi.fn(),
@@ -38,11 +39,16 @@ vi.mock('@/lib/dsl-extensions/validate', () => ({
 
 import { bridgeLegacyDocument, compareLegacyDocument } from '@/lib/document-bridge/bridge';
 
-function snapshot(id: string) {
+function snapshot(id: string): LegacyDocumentSnapshot {
   return {
-    stage: { id, name: 'Bridge test', createdAt: 1, updatedAt: 2 },
+    stage: {
+      id,
+      name: 'Bridge test',
+      createdAt: 1,
+      updatedAt: 2,
+    } as LegacyDocumentSnapshot['stage'],
     scenes: [],
-  } as never;
+  };
 }
 
 describe('DocumentStore bridge fallback guarantee', () => {

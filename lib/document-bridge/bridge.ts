@@ -18,7 +18,7 @@ import {
 const log = createLogger('DocumentBridge');
 const STALE_IN_PROGRESS_MS = 5 * 60_000;
 const documentStores = new Map<string, BrowserDocumentStore<AppScene>>();
-let queue = Promise.resolve();
+let queue: Promise<void> = Promise.resolve();
 
 export function isDocumentBridgeEnabled(): boolean {
   return process.env.NEXT_PUBLIC_DOCUMENT_STORE_BRIDGE === '1';
@@ -118,7 +118,9 @@ export function scheduleDocumentParityCheck(snapshot: LegacyDocumentSnapshot): v
   scheduleIdle(() => {
     queue = queue
       .catch(() => undefined)
-      .then(() => compareLegacyDocument(snapshot))
+      .then(async () => {
+        await compareLegacyDocument(snapshot);
+      })
       .catch((error) => log.warn('Unexpected queued parity failure:', error));
   });
 }
