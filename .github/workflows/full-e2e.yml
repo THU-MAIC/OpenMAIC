@@ -1,0 +1,50 @@
+name: Full E2E Regression
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 03:00 Asia/Shanghai (19:00 UTC on the preceding day).
+    - cron: '0 19 * * *'
+
+concurrency:
+  group: full-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  e2e-full:
+    name: Full E2E Regression
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: https://ci.invalid.supabase.co
+      SUPABASE_ANON_KEY: ci-placeholder-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-role-key
+      NEXT_PUBLIC_SUPABASE_URL: https://ci.invalid.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+      E2E_TEST_MODE: '1'
+      # A single retry helps isolate a transient browser failure without
+      # turning deterministic selector regressions into ten-minute waits.
+      PLAYWRIGHT_RETRIES: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Run full E2E regression
+        run: pnpm exec playwright test
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-full-e2e
+          path: playwright-report/
+          retention-days: 7

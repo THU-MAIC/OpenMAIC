@@ -53,8 +53,8 @@ jobs:
       - name: Unit Tests (storage)
         run: pnpm --filter @openmaic/storage test
 
-  e2e:
-    name: E2E Tests
+  e2e-smoke:
+    name: E2E Smoke Tests
     runs-on: ubuntu-latest
     # E2E mocks all Supabase-facing requests. These inert values only let
     # Next evaluate server route modules while building the test web server;
@@ -68,6 +68,8 @@ jobs:
       # Enables only the E2E build-time auth alias in next.config.ts. Vercel
       # does not set this flag, so production authentication is unaffected.
       E2E_TEST_MODE: '1'
+      # A deterministic smoke gate should report the first failure promptly.
+      PLAYWRIGHT_RETRIES: '0'
     steps:
       - uses: actions/checkout@v4
 
@@ -83,8 +85,12 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install chromium --with-deps
 
-      - name: Run e2e tests
-        run: pnpm exec playwright test
+      - name: Run E2E smoke tests
+        run: >-
+          pnpm exec playwright test
+          e2e/tests/full-happy-path.spec.ts
+          e2e/tests/home-to-generation.spec.ts
+          e2e/tests/classroom-interaction.spec.ts
 
       - uses: actions/upload-artifact@v4
         if: failure()

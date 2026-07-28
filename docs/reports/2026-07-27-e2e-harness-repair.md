@@ -32,3 +32,9 @@ E2E 在 CI 中使用 `output: standalone` 启动 Next 服务，但 standalone �
 - `interactive-iframe-keepalive-619.spec.ts`：1/1 通过。
 - `slide-content-surface-647.spec.ts`：1/1 通过。
 - `slide-scene-creation-gate.spec.ts`：1/1 通过。
+
+## CI 分层（2026-07-28）
+
+日常 `CI` 保留代码质量门禁，并将浏览器部分收敛为 5 项 smoke 用例：完整主路径、首页到生成、课堂场景切换。Smoke 不重试，失败会尽快反馈。
+
+完整 22 项浏览器回归移至 `Full E2E Regression` 工作流：可在 GitHub Actions 手动运行，且每天 03:00（Asia/Shanghai）自动运行。全量回归仅重试一次，用于排除偶发浏览器波动，不掩盖固定断言失效。
