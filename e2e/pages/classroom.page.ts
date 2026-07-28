@@ -11,8 +11,9 @@ export class ClassroomPage {
     this.sidebarScenes = page.locator('[data-testid="scene-item"]');
   }
 
-  async goto(stageId: string) {
-    await this.page.goto(`/classroom/${stageId}`);
+  async goto(stageId: string, options: { editor?: boolean } = {}) {
+    const search = options.editor ? '?editor=1' : '';
+    await this.page.goto(`/classroom/${stageId}${search}`);
   }
 
   async waitForLoaded() {

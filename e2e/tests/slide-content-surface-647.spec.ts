@@ -41,7 +41,8 @@ test.describe('Slide content surface (#647)', () => {
     await classroom.waitForLoaded();
     await expect(classroom.sidebarScenes.first()).toBeVisible({ timeout: 10_000 });
 
-    await page.getByRole('switch').click();
+    await page.goto(`${page.url()}?editor=1`);
+    await page.getByRole('switch', { name: 'Edit course' }).click();
     await expect(page.getByTestId('slide-nav-rail')).toBeVisible({ timeout: 10_000 });
 
     // --- Slide background: a PaintBucket insert item opens a solid/image popover.

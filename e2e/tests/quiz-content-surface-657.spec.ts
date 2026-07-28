@@ -91,9 +91,9 @@ test.describe('Quiz content surface (#657)', () => {
     ]);
 
     const classroom = new ClassroomPage(page);
-    await classroom.goto(STAGE);
+    await classroom.goto(STAGE, { editor: true });
     await classroom.waitForLoaded();
-    await page.getByRole('switch').click(); // enter Pro mode
+    await page.getByRole('switch', { name: 'Edit course' }).click();
 
     const surface = page.getByTestId('quiz-surface');
     await expect(surface).toBeVisible({ timeout: 10_000 });
@@ -182,7 +182,7 @@ test.describe('Quiz content surface (#657)', () => {
     );
 
     const classroom = new ClassroomPage(page);
-    await classroom.goto(STAGE);
+    await classroom.goto(STAGE, { editor: true });
     await classroom.waitForLoaded();
 
     // Pro mode has two Pro toggles (the playback header's and the edit chrome's,

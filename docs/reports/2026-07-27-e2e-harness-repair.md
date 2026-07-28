@@ -22,4 +22,13 @@ E2E 在 CI 中使用 `output: standalone` 启动 Next 服务，但 standalone �
 
 ## 未掩盖的遗留失败
 
-基础设施恢复后，部分历史 E2E 断言开始暴露真实 UI 漂移。例如 `interactive-iframe-keepalive-619.spec.ts` 仍等待当前课堂页不存在的 `role="switch"`。这类失败不应通过跳过测试或放宽超时掩盖；后续需逐项将断言更新为当前可访问 UI，并保留原业务覆盖意图。
+基础设施恢复后，5 项 Pro 编辑测试暴露出共同的旧入口假设：当前产品只在 URL 包含 `?editor=1` 时显示“Edit course”开关，旧测试直接进入普通课堂页，因此一直等待不存在的 `role="switch"`。
+
+测试现改为通过正式编辑入口进入，再显式点击“Edit course”进入编辑态。这保留了真实的播放/编辑切换覆盖，不需要跳过测试或放宽超时。
+
+定向复验：
+
+- `quiz-content-surface-657.spec.ts`：2/2 通过。
+- `interactive-iframe-keepalive-619.spec.ts`：1/1 通过。
+- `slide-content-surface-647.spec.ts`：1/1 通过。
+- `slide-scene-creation-gate.spec.ts`：1/1 通过。

@@ -162,7 +162,7 @@ test.describe('#619 interactive iframe keep-alive', () => {
     await seedDatabase(page);
 
     const classroom = new ClassroomPage(page);
-    await classroom.goto(TEST_STAGE_ID);
+    await classroom.goto(TEST_STAGE_ID, { editor: true });
     await classroom.waitForLoaded();
 
     const iframeEl = page.locator(`iframe[title="${IFRAME_TITLE}"]`);
