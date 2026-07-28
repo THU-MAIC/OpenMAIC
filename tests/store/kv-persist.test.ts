@@ -356,18 +356,36 @@ describe('createKVPersistStorage — legacy localStorage adoption', () => {
     expect(await h.storage().getItem(NAME)).toEqual({ state: { nickname: 'Ada' }, version: 4 });
   });
 
-  it('drops a stale raw entry that reappears after a completed migration', async () => {
+  it('drops a reappearing raw entry that is provably the migration’s leftover', async () => {
     const h = harness();
     seedLegacy(h.legacy, { nickname: 'Ada' });
     const persist = h.storage();
     await persist.getItem(NAME);
 
-    // An older tab (or a re-run e2e seed) writes the pre-cutover key again.
-    // The migration is on record, so this copy is known to be stale.
-    seedLegacy(h.legacy, { nickname: 'stale' });
+    // An older tab (or a re-run e2e seed) writes the pre-cutover key again with
+    // the same content. The migration is on record and the bytes match the
+    // value shadowing them, so this copy is provably a duplicate.
+    seedLegacy(h.legacy, { nickname: 'Ada' });
 
     expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'Ada' }, version: 4 });
     expect(h.legacy.getItem(NAME)).toBeNull();
+  });
+
+  it('keeps a raw entry whose content differs from the value shadowing it', async () => {
+    // A rolled-back deployment, or a tab still running the old bundle, writes
+    // the raw key again — with settings the migration never saw. The marker
+    // proves a migration happened here once; it proves nothing about *these*
+    // bytes, and they are the only copy of whatever the user did in that tab.
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'Ada' });
+    const persist = h.storage();
+    await persist.getItem(NAME);
+    expect(h.legacy.getItem(NAME)).toBeNull();
+
+    seedLegacy(h.legacy, { nickname: 'edited by the old bundle' });
+
+    expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'Ada' }, version: 4 });
+    expect(h.legacy.getItem(NAME)).not.toBeNull();
   });
 
   it('keeps a raw entry that appears with no migration on record', async () => {
@@ -718,7 +736,7 @@ describe('createKVPersistStorage — two devices on one account scope', () => {
     expect(deviceB.legacy.getItem(NAME)).not.toBeNull();
   });
 
-  it('still drops a stale raw file on the device that migrated it', async () => {
+  it('still drops a duplicate raw file on the device that migrated it', async () => {
     // The device-local marker must not be so conservative that it stops the
     // case it exists for.
     const { deviceA } = twoDevices();
@@ -726,7 +744,7 @@ describe('createKVPersistStorage — two devices on one account scope', () => {
     const persist = deviceA.storage();
     await persist.getItem(NAME);
 
-    seedLegacy(deviceA.legacy, { nickname: 'stale' });
+    seedLegacy(deviceA.legacy, { nickname: 'from A' });
     await persist.getItem(NAME);
 
     expect(deviceA.legacy.getItem(NAME)).toBeNull();
@@ -1349,6 +1367,65 @@ describe('createKVPersistStorage — a provisionally served value is not authori
     await persist.getItem(NAME);
 
     expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'edited' }, version: 4 });
+  });
+});
+
+describe('createKVPersistStorage — a replay is owed until it lands', () => {
+  it('does not drop the edit when the recovering read works but the replay write fails', async () => {
+    // Readable but not writable is a real state — a quota-exhausted backend
+    // answers reads perfectly. Retiring the snapshot on the strength of the
+    // read alone loses the edit silently: the next rehydrate serves the older
+    // stored value and nothing is owed any more.
+    const h = harness();
+    await h.kv.set(NAME, { state: { nickname: 'stored' }, version: 4 }, 'account');
+    const persist = h.storage();
+    await persist.getItem(NAME);
+
+    h.kv.failSet = true;
+    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
+
+    // Reads work again; writes still do not.
+    expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'edited' }, version: 4 });
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'stored' }, version: 4 });
+
+    // The edit is still owed, so the next recovery writes it rather than
+    // handing back the stale stored value.
+    h.kv.failSet = false;
+    expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'edited' }, version: 4 });
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'edited' }, version: 4 });
+  });
+
+  it('eventually tells the user when the replay can never land', async () => {
+    const h = harness();
+    await h.kv.set(NAME, { state: { nickname: 'stored' }, version: 4 }, 'account');
+    const persist = h.storage();
+    await persist.getItem(NAME);
+
+    h.kv.failSet = true;
+    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
+    await persist.getItem(NAME);
+    // A second recovery attempt that also cannot write.
+    await persist.getItem(NAME);
+    await flushTasks();
+
+    expect(problems()).toContain(NAME);
+  });
+
+  it('clears the debt once the replay lands', async () => {
+    const h = harness();
+    await h.kv.set(NAME, { state: { nickname: 'stored' }, version: 4 }, 'account');
+    const persist = h.storage();
+    await persist.getItem(NAME);
+
+    h.kv.failSet = true;
+    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
+    h.kv.failSet = false;
+    await persist.getItem(NAME);
+
+    // A later write wins outright; the replay is not owed a second time.
+    await persist.setItem(NAME, { state: { nickname: 'newer' }, version: 4 });
+    await persist.getItem(NAME);
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'newer' }, version: 4 });
   });
 });
 

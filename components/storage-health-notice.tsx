@@ -19,19 +19,27 @@ export function StorageHealthNotice() {
   useEffect(
     () =>
       subscribeToPersistHealth(({ name, status }) => {
-        // One sticky toast per key: these states do not resolve on their own,
-        // and repeating them per refused write would bury the app.
-        const id = `persist-health:${name}`;
+        // Two toasts per key, deliberately not one. "Storage is down" is a
+        // condition that recovery retracts; "your edits were lost" is a fact
+        // that recovery does not undo, so they cannot share an id — dismissing
+        // the first would take the second with it. Both are sticky and
+        // de-duplicated: neither resolves on its own, and repeating them per
+        // refused write would bury the app.
+        if (status === 'changes-lost') {
+          toast.error(t('settings.persistChangesLost'), {
+            id: `persist-changes-lost:${name}`,
+            duration: Infinity,
+            // The only way out is the user acknowledging it.
+            closeButton: true,
+          });
+          return;
+        }
+        const id = `persist-unavailable:${name}`;
         if (status === 'recovered') {
           toast.dismiss(id);
           return;
         }
-        toast.error(
-          status === 'changes-lost'
-            ? t('settings.persistChangesLost')
-            : t('settings.persistUnavailable'),
-          { id, duration: Infinity },
-        );
+        toast.error(t('settings.persistUnavailable'), { id, duration: Infinity });
       }),
     [t],
   );

@@ -40,6 +40,8 @@ import {
 } from '@openmaic/storage';
 import type { PersistStorage, StorageValue } from 'zustand/middleware';
 
+import isEqual from 'lodash/isEqual';
+
 import { createLogger } from '@/lib/logger';
 import { reportPersistHealth } from '@/lib/store/persist-health';
 
@@ -346,11 +348,34 @@ class KeyState<S> {
     this.#replay = null;
   }
 
-  /** The value a recovering read should return in place of what it found. */
-  takeReplay(): StorageValue<S> | null {
-    const replay = this.#replay;
+  /**
+   * The value a recovering read should write back and return in place of what
+   * it found. Left in place until {@link replayLanded} says it is durable —
+   * a read that succeeds says nothing about whether the write will, and a
+   * snapshot dropped on the strength of an attempt is a snapshot lost.
+   */
+  peekReplay(): StorageValue<S> | null {
+    return this.#replay;
+  }
+
+  /** The replay write landed; nothing is owed any more. */
+  replayLanded(): void {
     this.#replay = null;
-    return replay;
+    this.#refused = null;
+    this.#storeHoldsRealData = true;
+  }
+
+  /**
+   * The replay write did not land. The snapshot goes back to being a refused
+   * write — still the newest copy of the user's data, still owed — so the next
+   * recovery tries again and a permanent failure is eventually reported rather
+   * than passing as success.
+   */
+  replayFailed(): void {
+    const value = this.#replay;
+    this.#replay = null;
+    if (value === null) return;
+    this.#refused = { value, replayable: this.#storeHoldsRealData, origin: this.#phase };
   }
 
   #askForRecovery(): void {
@@ -603,21 +628,30 @@ export function createKVPersistStorage<S>(
     if (!(await recordPrePersistHandled(state, name))) return value;
     state.settle();
 
-    const replay = state.takeReplay();
+    const replay = state.peekReplay();
     if (replay === null) return value;
-    // A write refused while the backend was down, taken against real hydrated
-    // data. Persisted here rather than left to the store to write back: it goes
-    // through the same gate as any other write, and returning it too means the
-    // store and storage agree on the user's newest value instead of the read
-    // handing back a value it has just superseded.
+    // A write refused while the backend was down, taken against the
+    // authoritative value. Persisted here rather than left to the store to
+    // write back: it goes through the same gate as any other write, and
+    // returning it too means the store and storage agree on the user's newest
+    // value instead of the read handing back a value it has just superseded.
     if (!state.admitWrite(replay)) return value;
     const kvStorage = resolveKvStorage();
-    if (kvStorage) {
-      (await Outcome.run(() => kvStorage.setItem(name, replay))).into(
-        state,
-        `replay the refused write for "${name}" to the KV ${scope} scope`,
-      );
+    if (!kvStorage) {
+      state.replayFailed();
+      return replay;
     }
+    const written = (await Outcome.run(() => kvStorage.setItem(name, replay))).into(
+      state,
+      `replay the refused write for "${name}" to the KV ${scope} scope`,
+    );
+    if (written === UNAVAILABLE) {
+      // Readable but not writable — a quota-exhausted backend answers reads
+      // fine. The edit is still owed, so it stays owed.
+      state.replayFailed();
+      return replay;
+    }
+    state.replayLanded();
     return replay;
   }
 
@@ -634,6 +668,7 @@ export function createKVPersistStorage<S>(
     state: KeyState<S>,
     legacyStorage: Storage | null,
     name: string,
+    current: StorageValue<S>,
   ): Promise<void> {
     // Unreadable bytes are never deleted, here as anywhere else: a marker says
     // *a* migration happened, not that these particular bytes were understood.
@@ -649,6 +684,20 @@ export function createKVPersistStorage<S>(
       log.warn(
         `"${name}" exists in the KV ${scope} scope and in localStorage, but this device has no ` +
           `record of completing that migration — keeping the localStorage copy`,
+      );
+      return;
+    }
+    // The marker proves a migration happened here once. It says nothing about
+    // whether *these* bytes are its leftover: a rolled-back deployment, or a
+    // tab still running the old bundle, writes the raw key again — with newer
+    // settings than the migration ever saw. Only a raw entry equal to the value
+    // that shadows it is provably a duplicate; anything else is data, and the
+    // rule everywhere in this file is that keeping a copy beats deleting an
+    // original.
+    if (!isEqual(shadowed, current)) {
+      log.warn(
+        `"${name}" in localStorage differs from the KV ${scope} scope value that shadows it — ` +
+          `keeping it rather than assuming it is a leftover of the migration`,
       );
       return;
     }
@@ -683,7 +732,7 @@ export function createKVPersistStorage<S>(
     );
     if (current === UNAVAILABLE) return value;
     if (current !== null) {
-      await dropShadowedLegacy(state, legacyStorage, name);
+      await dropShadowedLegacy(state, legacyStorage, name, current);
       return concludeRead(state, name, current);
     }
 
@@ -756,7 +805,7 @@ export function createKVPersistStorage<S>(
         }
 
         if (stored !== null) {
-          await dropShadowedLegacy(state, legacyStorage, name);
+          await dropShadowedLegacy(state, legacyStorage, name, stored);
           return { value: await concludeRead(state, name, stored) };
         }
 
@@ -787,7 +836,7 @@ export function createKVPersistStorage<S>(
         );
         if (confirmed === UNAVAILABLE) return { value: null };
         if (confirmed !== null) {
-          await dropShadowedLegacy(state, legacyStorage, name);
+          await dropShadowedLegacy(state, legacyStorage, name, confirmed);
           return { value: await concludeRead(state, name, confirmed) };
         }
 

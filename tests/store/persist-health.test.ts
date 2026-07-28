@@ -143,6 +143,65 @@ describe('persist-health — recovery cancels a notice nobody needed', () => {
   });
 });
 
+describe('persist-health — a loss is final, a fault is not', () => {
+  it('keeps a lost-changes notice through a later failure and recovery', async () => {
+    // Recovering storage does not un-lose the edits, so the acknowledgement is
+    // still owed however many faults come and go afterwards.
+    const seen: PersistHealthEvent[] = [];
+    subscribeToPersistHealth((event) => seen.push(event));
+
+    reportPersistHealth('settings-storage', 'changes-lost');
+    await nextTask();
+    reportPersistUnavailable('settings-storage');
+    await nextTask();
+    reportPersistHealth('settings-storage', 'recovered');
+    await nextTask();
+
+    // The recovery retracts the fault and nothing else.
+    expect(seen.map((event) => event.status)).toEqual(['changes-lost', 'unavailable', 'recovered']);
+    // And a subscriber arriving now is still told about the loss.
+    const late: PersistHealthEvent[] = [];
+    subscribeToPersistHealth((event) => late.push(event));
+    await nextTask();
+    expect(late).toEqual([{ name: 'settings-storage', status: 'changes-lost' }]);
+  });
+
+  it('reports a loss and a concurrent fault as two separate notices', async () => {
+    const seen: PersistHealthEvent[] = [];
+    subscribeToPersistHealth((event) => seen.push(event));
+
+    reportPersistUnavailable('settings-storage');
+    reportPersistHealth('settings-storage', 'changes-lost');
+    await nextTask();
+
+    expect(seen.map((event) => event.status).sort()).toEqual(['changes-lost', 'unavailable']);
+  });
+
+  it('catches a late subscriber up on both lines at once', async () => {
+    reportPersistHealth('settings-storage', 'changes-lost');
+    reportPersistUnavailable('settings-storage');
+    await nextTask();
+
+    const late: PersistHealthEvent[] = [];
+    subscribeToPersistHealth((event) => late.push(event));
+    await nextTask();
+
+    expect(late.map((event) => event.status).sort()).toEqual(['changes-lost', 'unavailable']);
+  });
+
+  it('reports a loss only once however often it is raised', async () => {
+    const seen: PersistHealthEvent[] = [];
+    subscribeToPersistHealth((event) => seen.push(event));
+
+    reportPersistHealth('settings-storage', 'changes-lost');
+    await nextTask();
+    reportPersistHealth('settings-storage', 'changes-lost');
+    await nextTask();
+
+    expect(seen).toHaveLength(1);
+  });
+});
+
 describe('persist-health — repeated statuses', () => {
   it('publishes a repeated failure only once', async () => {
     const seen: PersistHealthEvent[] = [];

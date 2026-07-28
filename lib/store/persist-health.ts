@@ -25,14 +25,21 @@ export interface PersistHealthEvent {
 
 type Listener = (event: PersistHealthEvent) => void;
 
-/** A problem status is only ever `unavailable` or `changes-lost`. */
-type PersistProblem = Exclude<PersistHealthStatus, 'recovered'>;
-
 const listeners = new Set<Listener>();
-/** Current problem per key. A key with no entry is healthy. */
-const standing = new Map<string, PersistProblem>();
+/**
+ * Two independent lines per key, because the statuses answer different
+ * questions and resolve on different timescales.
+ *
+ * `unavailable` describes the state of the world right now and stops being true
+ * the moment storage works again. `changes-lost` describes something that
+ * already happened: recovering afterwards does not un-lose the edits, so it
+ * survives any number of later failures and recoveries and goes away only when
+ * the user dismisses it.
+ */
+const unavailable = new Set<string>();
+const lost = new Set<string>();
 const pending = new Map<string, ReturnType<typeof setTimeout>>();
-/** Keys whose current problem status actually reached subscribers. */
+/** Keys whose `unavailable` notice actually reached subscribers. */
 const delivered = new Set<string>();
 /** Catch-up timers for subscribers that arrived after a problem was raised. */
 const catchUps = new Map<Listener, ReturnType<typeof setTimeout>>();
@@ -47,20 +54,21 @@ const catchUps = new Map<Listener, ReturnType<typeof setTimeout>>();
  * late subscriber be caught up after its toast host has mounted.
  */
 function publish(event: PersistHealthEvent): void {
+  const slot = `${event.name}:${event.status === 'changes-lost' ? 'lost' : 'fault'}`;
   const timer = setTimeout(() => {
-    pending.delete(event.name);
+    pending.delete(slot);
     if (event.status === 'recovered') delivered.delete(event.name);
-    else delivered.add(event.name);
+    else if (event.status === 'unavailable') delivered.add(event.name);
     for (const listener of listeners) listener(event);
   }, 0);
-  pending.set(event.name, timer);
+  pending.set(slot, timer);
 }
 
-function cancelPending(name: string): void {
-  const timer = pending.get(name);
+function cancelPending(slot: string): void {
+  const timer = pending.get(slot);
   if (timer !== undefined) {
     clearTimeout(timer);
-    pending.delete(name);
+    pending.delete(slot);
   }
 }
 
@@ -73,13 +81,18 @@ function cancelPending(name: string): void {
  * being true the moment storage works again.
  */
 export function reportPersistHealth(name: string, status: PersistHealthStatus): void {
-  const current = standing.get(name);
-  if (current === status) return;
+  if (status === 'changes-lost') {
+    if (lost.has(name)) return;
+    lost.add(name);
+    publish({ name, status });
+    return;
+  }
 
   if (status === 'recovered') {
-    if (current === undefined || current === 'changes-lost') return;
-    standing.delete(name);
-    cancelPending(name);
+    // Only the transient line recovers. A standing `changes-lost` is untouched:
+    // storage working again does not bring the edits back.
+    if (!unavailable.delete(name)) return;
+    cancelPending(`${name}:fault`);
     // Only retract a notice that actually reached someone. If the warning was
     // still waiting its turn, cancelling it *is* the point of publishing on a
     // delay — announcing recovery from a problem nobody saw would put the
@@ -89,8 +102,9 @@ export function reportPersistHealth(name: string, status: PersistHealthStatus): 
     return;
   }
 
-  standing.set(name, status);
-  cancelPending(name);
+  if (unavailable.has(name)) return;
+  unavailable.add(name);
+  cancelPending(`${name}:fault`);
   publish({ name, status });
 }
 
@@ -111,15 +125,16 @@ export function reportPersistUnavailable(name: string): void {
  */
 export function subscribeToPersistHealth(listener: Listener): () => void {
   listeners.add(listener);
-  if (standing.size > 0) {
+  if (lost.size > 0 || unavailable.size > 0) {
     catchUps.set(
       listener,
       setTimeout(() => {
         catchUps.delete(listener);
         if (!listeners.has(listener)) return;
-        for (const [name, status] of standing) {
+        for (const name of lost) listener({ name, status: 'changes-lost' });
+        for (const name of unavailable) {
           delivered.add(name);
-          listener({ name, status });
+          listener({ name, status: 'unavailable' });
         }
       }, 0),
     );
@@ -140,7 +155,8 @@ export function resetPersistHealth(): void {
   for (const timer of catchUps.values()) clearTimeout(timer);
   pending.clear();
   catchUps.clear();
-  standing.clear();
+  unavailable.clear();
+  lost.clear();
   delivered.clear();
   listeners.clear();
 }
