@@ -39,9 +39,12 @@ export default function RootLayout({
         <ThemeProvider>
           <I18nProvider>
             <ServerProvidersInit />
-            <StorageHealthNotice />
             <AccessCodeGuard>{children}</AccessCodeGuard>
             <Toaster position="top-center" />
+            {/* After the Toaster: this one raises a toast on mount when
+                persistence is already broken, and a toast raised before its
+                host exists has nowhere to go. */}
+            <StorageHealthNotice />
           </I18nProvider>
         </ThemeProvider>
       </body>

@@ -14,10 +14,20 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vite
 import { BrowserKVStore, type KVScope, type KVStore } from '@openmaic/storage';
 
 import { createKVPersistStorage } from '@/lib/store/kv-persist';
-import { resetPersistHealth, subscribeToPersistUnavailable } from '@/lib/store/persist-health';
+import {
+  resetPersistHealth,
+  subscribeToPersistHealth,
+  type PersistHealthEvent,
+} from '@/lib/store/persist-health';
 
-/** Let the seam's detached recovery-then-notify chain run to completion. */
-const flushMicrotasks = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+/**
+ * Let the seam's detached recovery chain and the health channel's deferred
+ * publish both run to completion. Two turns: recovery is scheduled on one, the
+ * notice it does or does not cancel on the next.
+ */
+const flushTasks = async () => {
+  for (let i = 0; i < 3; i++) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+};
 
 /** In-memory `Storage`, isolated per test — nothing ambient is touched. */
 class MemoryStorage implements Storage {
@@ -52,6 +62,10 @@ class ControllableKV implements KVStore {
   failGet = false;
   failSet = false;
   failRemove = false;
+  /** Fail only the reads whose key matches — for per-operation fault cases. */
+  failGetMatching: ((key: string) => boolean) | null = null;
+  /** Likewise for writes, so a sentinel can fail while the blob succeeds. */
+  failSetMatching: ((key: string) => boolean) | null = null;
   private gate: { match: (key: string) => boolean; wait: Promise<void> } | null = null;
 
   constructor(private readonly inner: KVStore) {}
@@ -83,7 +97,7 @@ class ControllableKV implements KVStore {
   private readGate: { match: (key: string) => boolean; wait: Promise<void> } | null = null;
 
   async get<T>(key: string, scope?: KVScope): Promise<T | null> {
-    if (this.failGet) throw new Error('kv get failed');
+    if (this.failGet || this.failGetMatching?.(key)) throw new Error('kv get failed');
     if (this.readGate?.match(key)) {
       const { wait } = this.readGate;
       this.readGate = null;
@@ -94,7 +108,7 @@ class ControllableKV implements KVStore {
     return this.inner.get<T>(key, scope);
   }
   async set<T>(key: string, value: T, scope?: KVScope): Promise<void> {
-    if (this.failSet) throw new Error('kv set failed');
+    if (this.failSet || this.failSetMatching?.(key)) throw new Error('kv set failed');
     if (this.gate?.match(key)) {
       const { wait } = this.gate;
       this.gate = null;
@@ -191,15 +205,17 @@ async function hydrated(storage: PersistStorageUnderTest): Promise<PersistStorag
   return storage;
 }
 
-/** Durable "your changes are not being saved" notices raised during a test. */
-let notified: string[] = [];
+/** Health events raised during a test, in order. */
+let health: PersistHealthEvent[] = [];
+/** Just the ones the user would actually see as a standing problem. */
+const problems = () => health.filter((e) => e.status !== 'recovered').map((e) => e.name);
 
 beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   resetPersistHealth();
-  notified = [];
-  subscribeToPersistUnavailable((name) => notified.push(name));
+  health = [];
+  subscribeToPersistHealth((event) => health.push(event));
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -538,16 +554,47 @@ describe('createKVPersistStorage — write ordering', () => {
     });
   });
 
-  it('a failed write does not wedge the key for later writes', async () => {
+  it('a failed write closes the key rather than reporting a save that did not happen', async () => {
+    // The write's outcome goes to the machine like any other. Ignoring it left
+    // the key `settled` on the strength of a write that never landed, so the
+    // app went on believing it was saving.
+    const h = harness();
+    const persist = await hydrated(h.storage());
+
+    h.kv.failSet = true;
+    await persist.setItem(NAME, { state: { nickname: 'doomed' } });
+    await flushTasks();
+
+    expect(problems()).toEqual([NAME]);
+    h.kv.failSet = false;
+    await persist.setItem(NAME, { state: { nickname: 'Ada' }, version: 4 });
+    expect(await h.kv.get(NAME, 'account')).toBeNull();
+  });
+
+  it('reopens the key once a read confirms the backend is back', async () => {
+    const h = harness();
+    const persist = await hydrated(h.storage());
+    await persist.setItem(NAME, { state: { nickname: 'stored' }, version: 4 });
+
+    h.kv.failSet = true;
+    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
+    h.kv.failSet = false;
+    await persist.getItem(NAME);
+
+    // The refused edit was taken against real hydrated data, so it is the
+    // newest copy there is and gets replayed rather than dropped.
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'edited' }, version: 4 });
+  });
+
+  it('does not leave the queue wedged after a failed write', async () => {
     const h = harness();
     const persist = await hydrated(h.storage());
 
     h.kv.failSet = true;
     await persist.setItem(NAME, { state: { nickname: 'doomed' } });
     h.kv.failSet = false;
-    await persist.setItem(NAME, { state: { nickname: 'Ada' }, version: 4 });
-
-    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'Ada' }, version: 4 });
+    // A read still runs — the chain is intact even though the key is closed.
+    await expect(persist.getItem(NAME)).resolves.toBeNull();
   });
 });
 
@@ -792,9 +839,11 @@ describe('createKVPersistStorage — refused writes ask for recovery, then say s
 
     await persist.getItem(NAME);
     await persist.setItem(NAME, { state: { nickname: 'a' } });
-    await flushMicrotasks();
+    await flushTasks();
 
-    expect(notified).toEqual([]);
+    // The warning is published on a later task precisely so a recovery this
+    // quick can cancel it before anyone sees it.
+    expect(problems()).toEqual([]);
     // And persistence is unblocked from here on.
     await persist.setItem(NAME, { state: { nickname: 'b' }, version: 4 });
     expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'b' }, version: 4 });
@@ -816,9 +865,9 @@ describe('createKVPersistStorage — refused writes ask for recovery, then say s
 
     await persist.getItem(NAME);
     await persist.setItem(NAME, { state: { nickname: 'a' } });
-    await flushMicrotasks();
+    await flushTasks();
 
-    expect(notified).toEqual([NAME]);
+    expect(problems()).toEqual([NAME]);
   });
 
   it('raises the notice when the recovery attempt itself throws', async () => {
@@ -833,9 +882,9 @@ describe('createKVPersistStorage — refused writes ask for recovery, then say s
 
     await persist.getItem(NAME);
     await persist.setItem(NAME, { state: { nickname: 'a' } });
-    await flushMicrotasks();
+    await flushTasks();
 
-    expect(notified).toEqual([NAME]);
+    expect(problems()).toEqual([NAME]);
   });
 });
 
@@ -846,7 +895,7 @@ describe('createKVPersistStorage — removeItem reports failure', () => {
     await persist.setItem(NAME, { state: { nickname: 'Ada' }, version: 4 });
 
     h.kv.failRemove = true;
-    await expect(persist.removeItem(NAME)).rejects.toThrow('kv remove failed');
+    await expect(persist.removeItem(NAME)).rejects.toThrow(/Could not remove/);
 
     // Nothing was destroyed on the way to that failure either.
     h.kv.failRemove = false;
@@ -883,6 +932,280 @@ describe('createKVPersistStorage — removeItem reports failure', () => {
     // Clearing the entry is exactly the case the sentinel exists for.
     expect(await make().getItem(NAME)).toBeNull();
     expect(fallback).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createKVPersistStorage — clearing closes the gate synchronously', () => {
+  it('refuses a write issued while the clear is still in flight', async () => {
+    // The concurrency is real: an always-on initializer issues `set()` on every
+    // load. Admitted here, that write queues behind the delete and puts the
+    // credentials the user just cleared straight back.
+    const h = harness();
+    const persist = await hydrated(h.storage());
+    await persist.setItem(NAME, { state: { nickname: 'secret' }, version: 4 });
+
+    const releaseDelete = h.kv.stallSet(() => false);
+    releaseDelete();
+    const clearing = persist.removeItem(NAME);
+    const racingWrite = persist.setItem(NAME, { state: { nickname: 'secret' }, version: 4 });
+
+    await Promise.all([clearing, racingWrite]);
+
+    expect(await h.kv.get(NAME, 'account')).toBeNull();
+  });
+
+  it('does not replay a refused write across a clear', async () => {
+    // Replaying here would resurrect exactly what the user asked to delete.
+    const h = harness();
+    const persist = await hydrated(h.storage());
+    await persist.setItem(NAME, { state: { nickname: 'secret' }, version: 4 });
+
+    const clearing = persist.removeItem(NAME);
+    await persist.setItem(NAME, { state: { nickname: 'secret' }, version: 4 });
+    await clearing;
+
+    expect(await persist.getItem(NAME)).toBeNull();
+    expect(await h.kv.get(NAME, 'account')).toBeNull();
+  });
+
+  it('accepts writes again once the clear has completed', async () => {
+    const h = harness();
+    const persist = await hydrated(h.storage());
+    await persist.removeItem(NAME);
+
+    await persist.setItem(NAME, { state: { nickname: 'after' }, version: 4 });
+
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'after' }, version: 4 });
+  });
+});
+
+describe('createKVPersistStorage — the pre-persist sentinel is recorded by every settling path', () => {
+  const fallbackValue = { state: { nickname: 'ancient' }, version: 4 };
+
+  function withFallbackOn(h: ReturnType<typeof harness>, fallback: () => typeof fallbackValue) {
+    return createKVPersistStorage<Prefs>('account', {
+      kv: h.kv,
+      legacyStorage: h.legacy,
+      prePersistFallback: fallback,
+    });
+  }
+
+  it('records it after loading an already-populated KV entry', async () => {
+    // The path that used to record nothing. A device that only ever loaded a
+    // synced `account` entry stayed eligible to republish its own stale keys
+    // the moment that entry was cleared.
+    const h = harness();
+    await h.kv.set(NAME, { state: { nickname: 'from the account' } }, 'account');
+    const fallback = vi.fn(() => fallbackValue);
+
+    await withFallbackOn(h, fallback).getItem(NAME);
+    expect(await h.kv.get(PRE_PERSIST_SENTINEL, 'device')).toBe(true);
+
+    // The account entry is wiped elsewhere; the stale keys must stay put.
+    await h.kv.remove(NAME, 'account');
+    expect(await withFallbackOn(h, fallback).getItem(NAME)).toBeNull();
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it('records it after adopting a raw entry', async () => {
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'Ada' });
+
+    await withFallbackOn(h, () => fallbackValue).getItem(NAME);
+
+    expect(await h.kv.get(PRE_PERSIST_SENTINEL, 'device')).toBe(true);
+  });
+
+  it('records it after concluding that there is nothing anywhere', async () => {
+    const h = harness();
+    const fallback = vi.fn((): typeof fallbackValue | null => null);
+
+    await withFallbackOn(h, fallback as () => typeof fallbackValue).getItem(NAME);
+
+    expect(await h.kv.get(PRE_PERSIST_SENTINEL, 'device')).toBe(true);
+  });
+
+  it('does not settle when the sentinel cannot be recorded', async () => {
+    // A settled key promises the pre-persist keys have been dealt with. If that
+    // record did not land, the promise is not one this device can keep.
+    const h = harness();
+    await h.kv.set(NAME, { state: { nickname: 'stored' } }, 'account');
+    const persist = withFallbackOn(h, () => fallbackValue);
+
+    h.kv.failSet = true;
+    await persist.getItem(NAME);
+    h.kv.failSet = false;
+
+    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'stored' } });
+  });
+
+  it('does not settle when the sentinel read fails', async () => {
+    // "The backend could not answer" must not be read as "already recorded" —
+    // that settles the key on a promise this device has no record of keeping.
+    const h = harness();
+    await h.kv.set(NAME, { state: { nickname: 'stored' } }, 'account');
+    const persist = withFallbackOn(h, () => fallbackValue);
+
+    h.kv.failGetMatching = (key) => key.startsWith('__pre-persist-consulted:');
+    await persist.getItem(NAME);
+    h.kv.failGetMatching = null;
+
+    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'stored' } });
+    await flushTasks();
+    expect(problems()).toEqual([NAME]);
+  });
+
+  it('aborts rather than adopting when the sentinel read fails', async () => {
+    // "Could not answer" read as "never consulted" would republish the keys.
+    const h = harness();
+    const fallback = vi.fn(() => fallbackValue);
+    const persist = withFallbackOn(h, fallback);
+
+    h.kv.failGetMatching = (key) => key.startsWith('__pre-persist-consulted:');
+    expect(await persist.getItem(NAME)).toBeNull();
+
+    expect(fallback).not.toHaveBeenCalled();
+    expect(await h.kv.get(NAME, 'account')).toBeNull();
+  });
+});
+
+describe('createKVPersistStorage — adoption needs its marker to land', () => {
+  it('keeps the raw entry when the adoption marker cannot be written', async () => {
+    // The marker is the licence to delete. Without it durably recorded there is
+    // no proof for the next load, so deleting now would strand the raw copy's
+    // only reader.
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'Ada' });
+    const persist = h.storage();
+
+    h.kv.failSetMatching = (key) => key.startsWith('__persist-adopted:');
+    expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'Ada' }, version: 4 });
+
+    expect(h.legacy.getItem(NAME)).not.toBeNull();
+    expect(await h.kv.get(MARKER, 'device')).toBeNull();
+  });
+
+  it('does not settle when the adoption marker cannot be written', async () => {
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'Ada' });
+    const persist = h.storage();
+
+    h.kv.failSetMatching = (key) => key.startsWith('__persist-adopted:');
+    await persist.getItem(NAME);
+    h.kv.failSetMatching = null;
+
+    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'Ada' }, version: 4 });
+  });
+
+  it('settles into a harmless duplicate rather than an unproven delete', async () => {
+    // The blob landed and the marker did not, so later loads read the KV copy
+    // and keep the raw one. That duplicate is the deliberate resting place: the
+    // marker means "our write succeeded and this raw entry is its leftover",
+    // and writing the marker first instead would let an aborted attempt
+    // authorize deleting a raw entry some *other* writer's KV value shadows.
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'Ada' });
+
+    h.kv.failSetMatching = (key) => key.startsWith('__persist-adopted:');
+    await h.storage().getItem(NAME);
+    h.kv.failSetMatching = null;
+
+    const persist = h.storage();
+    expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'Ada' }, version: 4 });
+    expect(h.legacy.getItem(NAME)).not.toBeNull();
+    // Whichever copy is read, the data is the same, and the key is usable.
+    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'edited' }, version: 4 });
+  });
+});
+
+describe('createKVPersistStorage — adoption re-reads before committing', () => {
+  it('does not roll back a value another tab wrote while the migration ran', async () => {
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'old raw copy' });
+
+    const persist = h.storage();
+    // The other tab lands its write between this adapter's first read and its
+    // adoption write.
+    const releaseRead = h.kv.stallGetAfterRead(isBlobKey);
+    const load = persist.getItem(NAME);
+    await h.kv.set(NAME, { state: { nickname: 'newer from another tab' }, version: 4 }, 'account');
+    releaseRead();
+
+    expect(await load).toEqual({ state: { nickname: 'newer from another tab' }, version: 4 });
+    expect(await h.kv.get(NAME, 'account')).toEqual({
+      state: { nickname: 'newer from another tab' },
+      version: 4,
+    });
+  });
+
+  it('abandons the adoption when the confirming re-read fails', async () => {
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'Ada' });
+    const persist = h.storage();
+
+    let reads = 0;
+    h.kv.failGetMatching = (key) => key === NAME && ++reads > 1;
+    await persist.getItem(NAME);
+
+    // Nothing written, nothing deleted, and the key stays closed to writes.
+    expect(h.legacy.getItem(NAME)).not.toBeNull();
+    h.kv.failGetMatching = null;
+    expect(await h.kv.get(NAME, 'account')).toBeNull();
+  });
+});
+
+describe('createKVPersistStorage — a failed read never authorizes anything', () => {
+  it('keeps the shadowed raw entry when the marker read fails', async () => {
+    // "Could not answer" is not "no marker", but it is equally not "marker
+    // present": neither reading grants permission to delete.
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'Ada' });
+    const persist = h.storage();
+    await persist.getItem(NAME);
+    seedLegacy(h.legacy, { nickname: 'reappeared' });
+
+    h.kv.failGetMatching = (key) => key.startsWith('__persist-adopted:');
+    await persist.getItem(NAME);
+
+    expect(h.legacy.getItem(NAME)).not.toBeNull();
+  });
+
+  it('does not settle when the confirming re-read fails', async () => {
+    // Nothing in KV, nothing raw, and the confirmation could not be made. That
+    // is not "the store is empty" — it is "we do not know", and an unknown key
+    // must not be writable.
+    const h = harness();
+    const persist = h.storage();
+
+    let reads = 0;
+    h.kv.failGetMatching = (key) => key === NAME && ++reads > 1;
+    expect(await persist.getItem(NAME)).toBeNull();
+    h.kv.failGetMatching = null;
+
+    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
+    expect(await h.kv.get(NAME, 'account')).toBeNull();
+    await flushTasks();
+    expect(problems()).toEqual([NAME]);
+  });
+});
+
+describe('createKVPersistStorage — never deletes bytes it could not read', () => {
+  it('keeps an unparseable raw entry even with a completed migration on record', async () => {
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'Ada' });
+    const persist = h.storage();
+    await persist.getItem(NAME);
+
+    // A marker exists now, but these bytes are not ones this seam wrote and
+    // nothing here understands them.
+    h.legacy.setItem(NAME, '{not json');
+    await persist.getItem(NAME);
+
+    expect(h.legacy.getItem(NAME)).toBe('{not json');
   });
 });
 

@@ -80,10 +80,12 @@ export function GeneralSettings() {
 
       toast.success(t('settings.clearCacheSuccess'));
 
-      // Reload immediately. The stores are still live in memory and still
-      // hydrated, so any `set()` in the meantime — a settings dialog effect, a
-      // background reconcile — would persist the very credentials just
-      // deleted. The toast stays visible while the new document loads.
+      // Reload without waiting. The stores are still live in memory, so the
+      // longer this page stays up the more chances a `set()` has to persist
+      // something after the clear. The seam refuses writes for the duration of
+      // a clear, which covers writes issued while the deletes are in flight,
+      // but not ones issued after they complete — hence keeping the window
+      // short as well.
       window.location.reload();
     } catch (error) {
       log.error('Failed to clear cache:', error);

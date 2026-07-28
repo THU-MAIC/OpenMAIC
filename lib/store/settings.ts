@@ -37,7 +37,15 @@ import { createKVPersistStorage } from '@/lib/store/kv-persist';
 
 const log = createLogger('Settings');
 
-/** Persisted-blob version, shared by `persist` and the pre-persist fallback. */
+/**
+ * Persisted-blob version, shared by `persist` and the pre-persist fallback.
+ *
+ * Pinned together on purpose: the fallback stamps whatever this says, so
+ * bumping it silently changes which `migrate` steps a pre-persist install
+ * replays. Raising the version means deciding, explicitly, whether the
+ * pre-persist envelope should still claim to be current — and if not, giving it
+ * its own literal instead of following this one.
+ */
 const SETTINGS_PERSIST_VERSION = 4;
 
 /**
@@ -858,9 +866,12 @@ function stripLegacyServerBaseUrl(state: Partial<SettingsState>): void {
  * every load and republish a long-deleted `providersConfig` — including API
  * keys the user has since removed or rotated — into observable state.
  *
- * The four keys are read, never written or deleted: this migration has never
- * owned them, and `providersConfig` is still read independently by
- * `lib/ai/providers.ts:getProviderConfig` for custom providers.
+ * The four keys are read, never written or deleted. Nothing in the app writes
+ * them any more — they are a dead format — but `lib/ai/providers.ts:
+ * getProviderConfig` still *reads* `providersConfig` as a fallback for custom
+ * provider definitions, so deleting them here would break a pre-existing path
+ * on exactly the installs this migration exists for. Retiring them belongs with
+ * retiring that reader.
  */
 const readPrePersistSettings = (): StorageValue<Partial<SettingsState>> | null => {
   if (typeof window === 'undefined') return null;

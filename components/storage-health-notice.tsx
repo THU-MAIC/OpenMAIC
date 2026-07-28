@@ -3,27 +3,35 @@
 import { useEffect } from 'react';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { subscribeToPersistUnavailable } from '@/lib/store/persist-health';
+import { subscribeToPersistHealth } from '@/lib/store/persist-health';
 
 /**
- * Surfaces the one persistence failure the user cannot otherwise notice.
+ * Surfaces the persistence failures the user cannot otherwise notice.
  *
  * When the storage seam refuses to write — its key never hydrated, so writing
- * would replace stored data with defaults — the app keeps working and every
- * change is lost on reload. Renders nothing until that happens.
+ * would replace stored data with defaults — the app keeps working, the store
+ * keeps updating in memory, and every change is lost on reload. Renders nothing
+ * until that happens.
  */
 export function StorageHealthNotice() {
   const { t } = useI18n();
 
   useEffect(
     () =>
-      subscribeToPersistUnavailable(() => {
-        toast.error(t('settings.persistUnavailable'), {
-          // Sticky and de-duplicated: this state does not resolve on its own,
-          // and repeating it per refused write would bury the app.
-          id: 'persist-unavailable',
-          duration: Infinity,
-        });
+      subscribeToPersistHealth(({ name, status }) => {
+        // One sticky toast per key: these states do not resolve on their own,
+        // and repeating them per refused write would bury the app.
+        const id = `persist-health:${name}`;
+        if (status === 'recovered') {
+          toast.dismiss(id);
+          return;
+        }
+        toast.error(
+          status === 'changes-lost'
+            ? t('settings.persistChangesLost')
+            : t('settings.persistUnavailable'),
+          { id, duration: Infinity },
+        );
       }),
     [t],
   );
