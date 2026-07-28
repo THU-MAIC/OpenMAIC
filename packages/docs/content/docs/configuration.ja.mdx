@@ -37,6 +37,7 @@ OPENAI_MODELS=                  # 任意の許可モデル一覧（カンマ区�
 | `MIMO_`            | Xiaomi MiMo                                      |
 | `OLLAMA_`          | Ollama（ローカル）                               |
 | `LEMONADE_`        | Lemonade（ローカル）                             |
+| `LMSTUDIO_`        | LM Studio（ローカル） |
 
 ## Ollama によるローカルモデル
 
@@ -44,6 +45,8 @@ API key は不要です。OpenMAIC の SSRF チェックを回避できるよう
 
 ```bash
 OLLAMA_BASE_URL=http://localhost:11434/v1
+# または LM Studio
+LMSTUDIO_BASE_URL=http://localhost:1234/v1
 ```
 
 本番環境ではクライアントから渡された localhost URL はブロックされるため、必ずサーバー側で設定してください。

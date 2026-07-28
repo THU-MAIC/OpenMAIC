@@ -9,7 +9,7 @@ OpenMAIC は自分のマシンで実行できる Next.js アプリケーショ�
 
 - **Node.js** 20 以降
 - **pnpm** 10 以降（未インストールの場合は `npm install -g pnpm`）
-- 少なくとも 1 つの LLM プロバイダーの API key —— OpenAI、Anthropic、Google、DeepSeek、Zhipu、MiniMax、Qwen、Doubao、Groq、SiliconFlow、またはローカル Ollama
+- 少なくとも 1 つの LLM プロバイダーの API key —— OpenAI、Anthropic、Google、DeepSeek、Zhipu、MiniMax、Qwen、Doubao、Groq、SiliconFlow、またはローカル Ollama / LM Studio
 
 ## インストール
 
@@ -39,6 +39,8 @@ OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 # またはローカル Ollama（key は不要）
 OLLAMA_BASE_URL=http://localhost:11434/v1
+# またはローカル LM Studio（key は不要）
+LMSTUDIO_BASE_URL=http://localhost:1234/v1
 ```
 
 プロバイダー、TTS、ASR、feature flag の完全な設定一覧は[設定](./configuration.mdx)を参照してください。

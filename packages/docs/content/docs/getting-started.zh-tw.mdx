@@ -9,7 +9,7 @@ OpenMAIC 是一個 Next.js 應用程式，可以在自己的機器上執行。�
 
 - **Node.js** 20 或更高版本
 - **pnpm** 10 或更高版本（如果尚未安裝，先執行 `npm install -g pnpm`）
-- 至少一個 LLM 供應商的 API key —— OpenAI、Anthropic、Google、DeepSeek、Zhipu、MiniMax、Qwen、Doubao、Groq、SiliconFlow，或本機 Ollama
+- 至少一個 LLM 供應商的 API key —— OpenAI、Anthropic、Google、DeepSeek、Zhipu、MiniMax、Qwen、Doubao、Groq、SiliconFlow，或本機 Ollama / LM Studio
 
 ## 安裝
 
@@ -39,6 +39,8 @@ OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 # 或本機 Ollama（不需要 key）
 OLLAMA_BASE_URL=http://localhost:11434/v1
+# 或本機 LM Studio（不需要 key）
+LMSTUDIO_BASE_URL=http://localhost:1234/v1
 ```
 
 完整的 provider、TTS、ASR 和 feature flag 設定請見[設定說明](./configuration.mdx)。

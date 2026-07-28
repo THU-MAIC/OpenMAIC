@@ -37,6 +37,7 @@ OPENAI_MODELS=                  # 可选的模型白名单（逗号分隔）
 | `MIMO_`            | 小米 MiMo                            |
 | `OLLAMA_`          | Ollama（本地）                       |
 | `LEMONADE_`        | Lemonade（本地）                     |
+| `LMSTUDIO_`        | LM Studio（本地） |
 
 ## 本地模型（Ollama）
 
@@ -44,6 +45,8 @@ OPENAI_MODELS=                  # 可选的模型白名单（逗号分隔）
 
 ```bash
 OLLAMA_BASE_URL=http://localhost:11434/v1
+# 或 LM Studio
+LMSTUDIO_BASE_URL=http://localhost:1234/v1
 ```
 
 生产环境会拦截客户端传过来的 localhost URL，所以必须在服务端配置。

@@ -37,6 +37,7 @@ OPENAI_MODELS=                  # необязательный список ра
 | `MIMO_`            | Xiaomi MiMo                                          |
 | `OLLAMA_`          | Ollama (локально)                                    |
 | `LEMONADE_`        | Lemonade (локально)                                  |
+| `LMSTUDIO_`        | LM Studio (локально) |
 
 ## Локальные модели через Ollama
 
@@ -44,6 +45,8 @@ API key не нужен. Укажите base URL на сервере, чтобы
 
 ```bash
 OLLAMA_BASE_URL=http://localhost:11434/v1
+# или LM Studio
+LMSTUDIO_BASE_URL=http://localhost:1234/v1
 ```
 
 В production localhost URL, переданные клиентом, блокируются, поэтому это нужно настраивать на сервере.

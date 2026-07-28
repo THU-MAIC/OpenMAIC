@@ -37,6 +37,7 @@ OPENAI_MODELS=                  # قائمة اختيارية بالنماذج �
 | `MIMO_`            | Xiaomi MiMo                                             |
 | `OLLAMA_`          | Ollama (محلي)                                           |
 | `LEMONADE_`        | Lemonade (محلي)                                         |
+| `LMSTUDIO_`        | LM Studio (محلي) |
 
 ## النماذج المحلية عبر Ollama
 
@@ -44,6 +45,8 @@ OPENAI_MODELS=                  # قائمة اختيارية بالنماذج �
 
 ```bash
 OLLAMA_BASE_URL=http://localhost:11434/v1
+# أو LM Studio
+LMSTUDIO_BASE_URL=http://localhost:1234/v1
 ```
 
 في production يتم حظر localhost URL القادم من العميل، لذلك يجب ضبطه على الخادم.
