@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Check, FolderInput, Plus } from 'lucide-react';
 import {
   DropdownMenu,
@@ -11,14 +10,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { validateFolderName } from '@/lib/utils/folder-name-validation';
 import type { FolderRecord } from '@/lib/utils/database';
 
 /**
  * Move-course-to-folder menu. Rendered as the 📂 button on a course tile
  * (the caller positions it via the ClassroomCard overlay). Lists "Ungrouped"
- * plus every folder (the current one gets a ✓), and offers an inline "New
- * folder" entry that creates a folder and moves the course into it in one step.
+ * plus every folder (the current one gets a ✓), and a "New folder" entry that
+ * asks the caller to open a folder dialog (a Radix DropdownMenu is modal, so an
+ * inline <input> cannot keep focus there — the dialog is the focus surface).
  */
 export function MoveToFolderMenu({
   folders,
@@ -29,40 +28,13 @@ export function MoveToFolderMenu({
   folders: FolderRecord[];
   currentFolderId: string | undefined;
   onMove: (folderId: string | undefined) => void;
-  onCreateAndMove: (name: string) => void;
+  /** Request to create a new folder and move this course into it. */
+  onCreateAndMove: () => void;
 }) {
   const { t } = useI18n();
-  const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  const resetCreating = () => {
-    setCreating(false);
-    setDraft('');
-    setError(null);
-  };
-
-  const submitNew = () => {
-    const v = validateFolderName(draft);
-    if (!v.ok) {
-      setError(t('classroom.folderWidth', { width: v.width, max: 40 }));
-      return;
-    }
-    const trimmed = draft.trim();
-    if (folders.some((f) => f.name === trimmed)) {
-      setError(t('classroom.folderNameExists'));
-      return;
-    }
-    onCreateAndMove(trimmed);
-    resetCreating();
-  };
 
   return (
-    <DropdownMenu
-      onOpenChange={(open) => {
-        if (!open) resetCreating();
-      }}
-    >
+    <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -75,16 +47,18 @@ export function MoveToFolderMenu({
           <FolderInput className="size-3.5" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent
+        align="end"
+        className="w-56"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         <DropdownMenuLabel>{t('classroom.moveToFolderLabel')}</DropdownMenuLabel>
         <DropdownMenuSeparator />
 
         {/* Ungrouped */}
         <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-            onMove(undefined);
-          }}
+          onClick={() => onMove(undefined)}
           className="flex items-center justify-between"
         >
           <span>{t('classroom.ungrouped')}</span>
@@ -95,10 +69,7 @@ export function MoveToFolderMenu({
         {folders.map((f) => (
           <DropdownMenuItem
             key={f.id}
-            onClick={(e) => {
-              e.stopPropagation();
-              onMove(f.id);
-            }}
+            onClick={() => onMove(f.id)}
             className="flex items-center justify-between"
           >
             <span className="truncate">{f.name}</span>
@@ -108,37 +79,11 @@ export function MoveToFolderMenu({
 
         <DropdownMenuSeparator />
 
-        {/* Inline new-folder (create + move in one step) */}
-        {creating ? (
-          <div className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
-            <input
-              autoFocus
-              value={draft}
-              onChange={(e) => {
-                setDraft(e.target.value);
-                setError(null);
-              }}
-              onKeyDown={(e) => {
-                e.stopPropagation();
-                if (e.key === 'Enter') submitNew();
-                if (e.key === 'Escape') resetCreating();
-              }}
-              placeholder={t('classroom.folderNamePlaceholder')}
-              className="w-full rounded border border-border bg-background px-2 py-1 text-[13px] outline-none focus:ring-1 focus:ring-violet-400"
-            />
-            {error && <p className="mt-1 text-[11px] text-destructive">{error}</p>}
-          </div>
-        ) : (
-          <DropdownMenuItem
-            onClick={(e) => {
-              e.stopPropagation();
-              setCreating(true);
-            }}
-          >
-            <Plus className="size-3.5 mr-1.5" />
-            {t('classroom.newFolderInline')}
-          </DropdownMenuItem>
-        )}
+        {/* New folder — opens the folder dialog (focus-safe). */}
+        <DropdownMenuItem onClick={onCreateAndMove}>
+          <Plus className="size-3.5 mr-1.5" />
+          {t('classroom.newFolderInline')}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

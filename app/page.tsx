@@ -196,6 +196,9 @@ function HomePage() {
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<FolderRecord | null>(null);
+  // When set, the new-folder dialog is creating a folder AND moving this course
+  // into it (entered via the move-menu's "new folder" entry).
+  const [createAndMoveTarget, setCreateAndMoveTarget] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchButtonRef = useRef<HTMLButtonElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -305,6 +308,12 @@ function HomePage() {
   const handleCreateFolder = async (name: string) => {
     const folder = await createFolder(name);
     setFolders((prev) => [...prev, folder]);
+    // If this create came from the move-menu's "new folder" entry, move the
+    // requesting course into the freshly created folder.
+    if (createAndMoveTarget) {
+      await handleMoveCourse(createAndMoveTarget, folder.id);
+      setCreateAndMoveTarget(null);
+    }
   };
 
   const handleRenameFolder =
@@ -351,16 +360,13 @@ function HomePage() {
     }
   };
 
-  // Create a folder from the move-menu's inline entry and move the course in.
-  const handleCreateAndMove = (stageId: string) => async (name: string) => {
-    try {
-      const folder = await createFolder(name);
-      setFolders((prev) => [...prev, folder]);
-      await handleMoveCourse(stageId, folder.id);
-    } catch (err) {
-      log.error('Failed to create-and-move:', err);
-      toast.error(t('classroom.folderCreateFailed'));
-    }
+  // From the move-menu's "new folder" entry: remember the course, then open the
+  // folder dialog. The actual create+move happens in handleCreateFolder once the
+  // name is confirmed. (A Radix DropdownMenu is modal, so the name input cannot
+  // live inside it; the dialog is the focus surface.)
+  const handleCreateAndMove = (stageId: string) => () => {
+    setCreateAndMoveTarget(stageId);
+    setNewFolderOpen(true);
   };
 
   const deleteTargetCourseCount = useMemo(() => {
@@ -1215,7 +1221,10 @@ function HomePage() {
 
                     <NewFolderDialog
                       open={newFolderOpen}
-                      onOpenChange={setNewFolderOpen}
+                      onOpenChange={(open) => {
+                        setNewFolderOpen(open);
+                        if (!open) setCreateAndMoveTarget(null);
+                      }}
                       folders={effectiveFolders}
                       onCreate={handleCreateFolder}
                     />
