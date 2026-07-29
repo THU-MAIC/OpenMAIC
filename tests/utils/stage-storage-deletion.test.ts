@@ -39,6 +39,7 @@ const {
       }),
     },
     stageOutlines: { delete: vi.fn().mockResolvedValue(undefined) },
+    stageFolders: { delete: vi.fn().mockResolvedValue(undefined) },
     playbackState: { delete: vi.fn().mockResolvedValue(undefined) },
     generatedAgents: {
       where: () => ({
