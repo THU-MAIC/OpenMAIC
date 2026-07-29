@@ -262,7 +262,17 @@ async function runDirectorNarratorPass(args: {
    *  warns against re-describing what the prior act already covered. */
   firstEntry?: boolean;
 }): Promise<string[]> {
-  const { project, milestone, microtask, phase, thread, languageModel, signal, firstEntry } = args;
+  const {
+    project,
+    milestone,
+    microtask,
+    phase,
+    thread,
+    languageModel,
+    thinkingConfig,
+    signal,
+    firstEntry,
+  } = args;
   const system = buildNarratorSystemPrompt(project, milestone, microtask);
   const history = buildSimulatorHistory(thread, 'director');
   const greetingNudge = firstEntry
@@ -277,8 +287,6 @@ async function runDirectorNarratorPass(args: {
   const messages = [...history, { role: 'user' as const, content: nudge }];
 
   try {
-    // No thinking argument: the narrator pass has never resolved a thinking
-    // config, and this PR does not start (its `thinkingConfig` arg is unused).
     const result = await callLLM(
       {
         model: languageModel,
@@ -287,6 +295,12 @@ async function runDirectorNarratorPass(args: {
         ...(signal ? { abortSignal: signal } : {}),
       },
       'pbl-v2-simulator-narrator',
+      undefined,
+      // Same contract as every other site: the request / stage route decides.
+      // This pass used to drop the config on the floor — its callers passed one
+      // and the helper never forwarded it, so the provider silently fell back to
+      // the model default.
+      thinkingConfig,
     );
     const text = (result.text ?? '').trim();
     if (!text) return [];
