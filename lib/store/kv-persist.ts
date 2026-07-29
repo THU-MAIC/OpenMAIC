@@ -47,47 +47,6 @@ const log = createLogger('KVPersist');
 
 let defaultKv: KVStore | undefined;
 
-/**
- * Sentinels are always `device`-scoped, whatever scope the store itself uses.
- *
- * Both record a fact about *this machine's* filesystem — "the raw entry here
- * was moved into KV", "the pre-persist keys here were consulted". An `account`
- * backend syncs across devices, so a sentinel stored there would travel to a
- * machine whose local files it says nothing about, and authorize deleting them.
- */
-const SENTINEL_SCOPE: KVScope = 'device';
-
-/**
- * Sentinel keys share the KV namespace with ordinary values, so they carry a
- * `__` prefix that no store name uses. Fully qualified, these land at
- * `maic:device:<prefix><name>` in the browser backend.
- */
-const PRE_PERSIST_PREFIX = '__pre-persist-consulted:';
-
-/**
- * Records that this device has migrated a store's pre-cutover raw entry into
- * KV. Its job is to **suppress re-adoption**, and it is genuinely load-bearing:
- * the adopt branch reads it on every load.
- *
- * Adoption keeps the raw entry (see the header — deleting it cannot be done
- * safely on `localStorage`). So once KV holds the value, the raw copy is a
- * *frozen* pre-cutover shadow: writes only ever reach KV, never the raw key. If
- * the account KV is later emptied by something that is **not** a local clear —
- * a server-side wipe, an account switch, KV eviction — then a naive "KV empty +
- * raw present ⇒ adopt" would resurrect that stale shadow, refilling the wiped
- * account with ancient values and syncing them to every device. The marker
- * turns "KV empty + already migrated here" into "respect the wipe", not "adopt
- * again".
- *
- * It is **monotonic**: only ever set to `true`. Concurrent writers all write the
- * same value and it is never deleted except by a deliberate full clear, so —
- * unlike deleting the raw entry — there is no compare-and-delete race. That
- * monotonicity is exactly why it is safe where the raw delete was not. This is
- * live state with a real reader, not the delete-authorization marker removed in
- * the previous revision.
- */
-const MIGRATED_PREFIX = '__migrated:';
-
 /** What a backend operation yields when the backend could not answer. */
 const UNAVAILABLE = Symbol('kv-unavailable');
 type Unavailable = typeof UNAVAILABLE;
@@ -135,20 +94,6 @@ class Outcome<T> {
   }
 }
 
-/**
- * What a read hands to the store, and whether the KV scope vouched for it.
- *
- * `provisional` marks a value nothing authoritative confirmed — the raw entry
- * served after a failed read, or one handed back by a migration that could not
- * be completed. It hydrates the store, because it is the best copy available,
- * but it earns no replay authority: an edit taken on top of it must never be
- * written back over whatever the account scope actually holds.
- */
-interface LoadedValue<S> {
-  value: StorageValue<S> | null;
-  provisional?: boolean;
-}
-
 type KeyPhase = 'unhydrated' | 'settled' | 'unavailable' | 'clearing';
 
 interface KeyStateHooks {
@@ -168,14 +113,10 @@ interface RefusedWrite<S> {
   value: StorageValue<S>;
   /**
    * Whether replaying this is safe, which turns on one question: was the store
-   * holding the *authoritative* value when the write was taken?
-   *
-   * Only a value the KV scope actually returned counts. The raw entry served
-   * read-only after a failed read does not: a shadowed raw entry is by
-   * construction the older copy — long-term coexistence with a newer KV value
-   * is a designed state, not an anomaly — so a snapshot built on it would roll
-   * the account back if it were written. Nor do defaults, for the obvious
-   * reason. Replaying either is the very failure this seam exists to prevent.
+   * holding the *authoritative* value — one the KV scope actually returned —
+   * when the write was taken? A write taken over defaults must not be replayed:
+   * writing it back would overwrite the stored value with defaults, the very
+   * failure this seam exists to prevent.
    */
   replayable: boolean;
   /**
@@ -245,15 +186,6 @@ class KeyState<S> {
   }
 
   /**
-   * Whether the KV scope has already handed this session the authoritative
-   * value. Once it has, a later failed read must not walk the store backwards
-   * onto a shadowed raw copy.
-   */
-  get hasAuthoritativeValue(): boolean {
-    return this.#storeHoldsRealData;
-  }
-
-  /**
    * A backend operation failed. Every failure means the same thing, whichever
    * operation it was: the key's stored state is no longer something this
    * session can reason about, so it must not be written over and the user has
@@ -267,7 +199,7 @@ class KeyState<S> {
     this.#askForRecovery();
   }
 
-  /** A read path concluded, with every sentinel it needed durably written. */
+  /** A read path concluded. */
   settle(): void {
     if (this.#settleOutcome()) this.#rearmRecoveryIfHealthy();
   }
@@ -377,7 +309,7 @@ class KeyState<S> {
 
   /**
    * Record that the store now holds the authoritative persisted value rather
-   * than defaults or a shadowed copy — because the KV scope returned it.
+   * than defaults — because the KV scope returned a value.
    *
    * Latches on and never off: once a session has had the real value in hand,
    * every later snapshot is built on it. This is what decides whether a write
@@ -493,32 +425,9 @@ class KeyState<S> {
   }
 }
 
-export interface KVPersistDeps<S> {
+export interface KVPersistDeps {
   /** KV backend. Defaults to the shared browser (`localStorage`) backend. */
   kv?: KVStore;
-  /**
-   * Where zustand's default storage wrote this store before the cutover, read
-   * once to adopt an existing install. Defaults to the ambient `localStorage`;
-   * pass `null` to disable adoption (a store that never had a raw key).
-   */
-  legacyStorage?: Storage | null;
-  /**
-   * Last-resort source for a store whose data predates the persist middleware
-   * itself, consulted at most once per device: only when neither the KV scope
-   * nor the raw persist key holds anything *and* this device has no record of
-   * having consulted it before. Every path that settles a key records that, so
-   * "this device has already dealt with the pre-persist keys" holds after any
-   * successful load, not only after the fallback itself runs.
-   *
-   * The once-per-device part is not belt-and-braces. Its source keys are
-   * device-local and deliberately left in place, so without it, clearing the
-   * `account` entry — from the cache button, or a server-side wipe — would let
-   * any device re-read them and republish credentials the user had deleted.
-   *
-   * It must not delete what it reads: the caller owns those keys and may still
-   * have other readers of them.
-   */
-  prePersistFallback?: () => StorageValue<S> | null;
   /**
    * Called once per key when it needs its store to rehydrate: a write was
    * refused, or the backend failed. The store wires this to
@@ -557,96 +466,53 @@ function ambientLocalStorage(): Storage | null {
   }
 }
 
-function resolveKv<S>(deps: KVPersistDeps<S>): KVStore | null {
+function resolveKv(deps: KVPersistDeps): KVStore | null {
   if (deps.kv) return deps.kv;
   if (!ambientLocalStorage()) return null;
   return (defaultKv ??= new BrowserKVStore());
 }
 
-function resolveLegacyStorage<S>(deps: KVPersistDeps<S>): Storage | null {
-  return deps.legacyStorage !== undefined ? deps.legacyStorage : ambientLocalStorage();
-}
-
-function isStorageValue<S>(value: unknown): value is StorageValue<S> {
-  return typeof value === 'object' && value !== null && 'state' in value;
-}
-
 /**
- * Read the pre-cutover raw entry, if it is one zustand could have written.
+ * Best-effort, fire-and-forget removal of a store's pre-cutover raw
+ * `localStorage` entry (the value zustand's default storage used to write).
  *
- * Anything unreadable (not JSON, or not a `{ state }` envelope) is left exactly
- * where it is: we never adopt bytes we could not interpret.
+ * This seam **never reads** legacy keys — old data is not migrated; a user
+ * upgrading simply reconfigures once — so any leftover raw entry is pure
+ * garbage. The old `settings-storage` blob in particular holds plaintext
+ * provider API keys, so removing it is a small security win. No correctness
+ * depends on this: if it fails, the stale key is ignored forever anyway.
  */
-function readLegacy<S>(
-  state: KeyState<unknown>,
-  storage: Storage | null,
-  name: string,
-): StorageValue<S> | null | Unavailable {
-  if (!storage) return null;
-  let raw: string | null;
+export function purgeLegacyPersistKey(name: string): void {
+  const storage = ambientLocalStorage();
+  if (!storage) return;
   try {
-    raw = storage.getItem(name);
+    storage.removeItem(name);
   } catch (error) {
-    // `localStorage` throws outright in some privacy modes. That is the backend
-    // failing to answer, not the entry being absent — and reading it as absence
-    // is how a raw entry gets adopted-over while still holding data.
-    state.onFailure(`read the legacy "${name}" entry`, error);
-    return UNAVAILABLE;
+    log.warn(`Could not purge the legacy "${name}" entry:`, error);
   }
-  if (raw === null) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    log.warn(`Legacy "${name}" entry is not valid JSON; leaving it in place`);
-    return null;
-  }
-  if (!isStorageValue<S>(parsed)) {
-    log.warn(`Legacy "${name}" entry is not a persist envelope; leaving it in place`);
-    return null;
-  }
-  return parsed;
 }
 
 /**
- * Drop the raw entry, or say so.
+ * A zustand `PersistStorage` backed by `KVStore`.
  *
- * Used only by the clear path, where the user asked for this data to be gone
- * and a swallowed failure is how "deleted" data comes back: the raw entry
- * survives, and the next hydration finds an empty KV scope beside a live raw
- * entry and dutifully re-adopts it. Migration never deletes the raw entry at
- * all (see the header note on the shadow duplicate), so this is the one place
- * a raw entry is removed.
- */
-function dropLegacyEntryStrictly(storage: Storage | null, name: string): void {
-  storage?.removeItem(name);
-}
-
-/**
- * A zustand `PersistStorage` backed by `KVStore`, which adopts the store's
- * pre-cutover raw `localStorage` entry on first read.
+ * This routes a store's persistence through the KV contract and nothing more:
+ * it reads and writes the KV scope, and **never touches any legacy
+ * `localStorage` key**. There is no migration of pre-cutover data — an empty KV
+ * scope hydrates the store to its defaults (ordinary zustand behaviour), and a
+ * user upgrading reconfigures once. Automatic migration was removed after
+ * repeated review rounds found its legacy-adoption state space too large to
+ * keep correct; the reconfiguration cost is one-time and the data is
+ * reconstructable.
  *
- * Adoption is a copy: the value is written to KV and the raw entry is left in
- * place. Deleting it cannot be done safely during this transition — `localStorage`
- * has no cross-process atomic compare-and-delete (its storage mutex was dropped
- * from the spec), so a tab on an old bundle can overwrite the raw key between a
- * verify and a remove and have its newer value destroyed. So the seam does not
- * delete: once KV holds the entry it is authoritative, reads take the KV value
- * and never consume the raw one, and the raw shadow is inert — a duplicate
- * kept for a wholesale raw-cleanup at migration exit, never a source of truth.
- * Adoption is idempotent for the same reason: a second run finds the KV value
- * present and takes the read-from-KV path rather than adopting again.
- *
- * On a read the backend could not answer, the raw entry is served read-only so
- * the store still hydrates with the user's data. Hydration therefore *resolves*
- * and `hasHydrated` becomes true, which is deliberate: the store does hold real
- * data, and leaving hydration permanently pending would hang every consumer
- * that waits on it. What protects the stored value is the write gate, not the
- * hydration flag.
+ * Everything that remains is *async-storage steady state*, not migration
+ * scaffolding: the {@link KeyState} machine (hydration gate, write gate,
+ * recovery, replay), the {@link Outcome} discipline, per-key serialization, and
+ * the {@link reportPersistHealth} channel. A remote KV backend needs all of it;
+ * none of it reads a legacy key.
  */
 export function createKVPersistStorage<S>(
   scope: KVScope,
-  deps: KVPersistDeps<S> = {},
+  deps: KVPersistDeps = {},
 ): PersistStorage<S> {
   // Resolved per call rather than once: the store module is evaluated during
   // SSR as well, where there is no storage to bind to yet.
@@ -704,101 +570,25 @@ export function createKVPersistStorage<S>(
     return run;
   }
 
-  // Sentinel access deliberately bypasses the per-key chain: these keys are
-  // distinct from the store's own key, and every call site already holds the
-  // chain for that key. Both intermediate states are safe — a sentinel written
-  // with no KV entry only means a later read re-adopts, and a KV entry with no
-  // sentinel only means a raw duplicate is kept rather than deleted.
-  function readSentinel(prefix: string, name: string): Promise<Outcome<boolean>> {
-    const kv = resolveKv(deps);
-    if (!kv) return Promise.resolve(Outcome.resolved(false));
-    return Outcome.run(async () => (await kv.get<true>(prefix + name, SENTINEL_SCOPE)) !== null);
-  }
-
-  function writeSentinel(prefix: string, name: string): Promise<Outcome<void>> {
-    const kv = resolveKv(deps);
-    if (!kv) return Promise.resolve(Outcome.resolved(undefined));
-    return Outcome.run(() => kv.set(prefix + name, true, SENTINEL_SCOPE));
-  }
-
   /**
-   * Record — best effort — that this device has migrated `name`. Not routed
-   * through the state machine on purpose: a failed marker write is an
-   * acceptable degradation, not an `unavailable` condition. The KV value's
-   * presence already de-duplicates every ordinary load; the marker matters only
-   * once the account KV has been emptied externally, so resurrection needs both
-   * this write to have failed *and* a later external wipe — rare enough that
-   * escalating a false alarm here would be the worse trade.
-   */
-  async function recordMigrated(name: string): Promise<void> {
-    const kv = resolveKv(deps);
-    if (!kv) return;
-    try {
-      await kv.set(MIGRATED_PREFIX + name, true, SENTINEL_SCOPE);
-    } catch (error) {
-      log.warn(`Could not record the migrated marker for "${name}":`, error);
-    }
-  }
-
-  /**
-   * Clear the migrated marker — best effort — on a deliberate full clear, so the
-   * key returns to a genuine first-load state. With the raw entry already gone
-   * by the time this runs, a leftover marker is inert (there is nothing left to
-   * resurrect), so a failure here does not fail the clear.
-   */
-  async function clearMigratedMarker(name: string): Promise<void> {
-    const kv = resolveKv(deps);
-    if (!kv) return;
-    try {
-      await kv.remove(MIGRATED_PREFIX + name, SENTINEL_SCOPE);
-    } catch (error) {
-      log.warn(`Could not clear the migrated marker for "${name}":`, error);
-    }
-  }
-
-  /**
-   * Record, once per device, that the pre-persist keys have been dealt with.
+   * Settle a read, then replay any write the backend previously refused.
    *
-   * Written on *every* settling path, not only the one that consults them.
-   * Otherwise a device that has only ever loaded an already-populated `account`
-   * entry records nothing, and republishes its own decade-old keys the first
-   * time that entry is cleared.
-   */
-  async function recordPrePersistHandled(state: KeyState<S>, name: string): Promise<boolean> {
-    if (!deps.prePersistFallback) return true;
-    const already = (await readSentinel(PRE_PERSIST_PREFIX, name)).into(
-      state,
-      `read the pre-persist sentinel for "${name}"`,
-    );
-    if (already === UNAVAILABLE) return false;
-    if (already) return true;
-    const written = (await writeSentinel(PRE_PERSIST_PREFIX, name)).into(
-      state,
-      `record the pre-persist sentinel for "${name}"`,
-    );
-    return written !== UNAVAILABLE;
-  }
-
-  /**
-   * Conclude a read: record the pre-persist sentinel, then settle. A sentinel
-   * that did not land leaves the key *unsettled* — the read is retried on the
-   * next load rather than leaving this device holding a promise it cannot keep.
+   * Settling opens the write gate. The replay handles the steady-state recovery
+   * case: a write refused while the backend was down, taken against the
+   * authoritative value, is written back here so the store and storage agree on
+   * the user's newest value. It goes through the same gate as any other write,
+   * and is held owed until it actually lands (a read succeeding says nothing
+   * about whether the write will).
    */
   async function concludeRead(
     state: KeyState<S>,
     name: string,
     value: StorageValue<S> | null,
   ): Promise<StorageValue<S> | null> {
-    if (!(await recordPrePersistHandled(state, name))) return value;
     state.settle();
 
     const replay = state.peekReplay();
     if (replay === null) return value;
-    // A write refused while the backend was down, taken against the
-    // authoritative value. Persisted here rather than left to the store to
-    // write back: it goes through the same gate as any other write, and
-    // returning it too means the store and storage agree on the user's newest
-    // value instead of the read handing back a value it has just superseded.
     if (!state.admitWrite(replay)) return value;
     const kvStorage = resolveKvStorage();
     if (!kvStorage) {
@@ -819,74 +609,19 @@ export function createKVPersistStorage<S>(
     return replay;
   }
 
-  /**
-   * Move a value into the KV scope — a copy, not a move.
-   *
-   * The raw `localStorage` entry is deliberately **left in place**. Deleting it
-   * safely is impossible here: `localStorage` has no cross-process atomic
-   * compare-and-delete (the storage mutex was dropped from the spec), so a tab
-   * running an *old bundle* — which takes none of this seam's locks — can
-   * overwrite the raw key with newer settings in the window between "verify"
-   * and "remove", and the remove then destroys that newer value. Rather than
-   * race, the seam does not delete at all during this transition. The KV entry
-   * is authoritative — once it exists, reads take the KV value and never
-   * consume the raw one — so the shadow duplicate is inert, left for a wholesale
-   * raw-cleanup at migration exit. See the file header.
-   *
-   * `source` only labels the log line (`localStorage` vs the pre-persist keys);
-   * both callers behave identically now that nothing is deleted or marked.
-   */
-  async function adopt(
-    state: KeyState<S>,
-    kvStorage: PersistStorageLike<S>,
-    name: string,
-    value: StorageValue<S>,
-    source: string,
-  ): Promise<LoadedValue<S>> {
-    // One last look before committing. Another tab may have written something
-    // newer while this migration was being assembled; `KVStore` has no
-    // compare-and-set, so this narrows the window rather than closing it. With
-    // no delete, losing the race costs only a redundant write of equivalent
-    // data — the raw entry it would once have deleted is now always kept.
-    const current = (await Outcome.run(() => kvStorage.getItem(name))).into(
-      state,
-      `re-read "${name}" from the KV ${scope} scope`,
-    );
-    // An abandoned migration hands back the raw entry unadopted. That is the
-    // same provisional footing as a failed read: nothing has vouched for it, so
-    // it hydrates the store but earns no replay authority.
-    if (current === UNAVAILABLE) return { value, provisional: true };
-    if (current !== null) {
-      // Another tab populated KV first; serve the winner and keep the shadow.
-      return { value: await concludeRead(state, name, current) };
-    }
-
-    const written = (await Outcome.run(() => kvStorage.setItem(name, value))).into(
-      state,
-      `write "${name}" to the KV ${scope} scope`,
-    );
-    if (written === UNAVAILABLE) return { value, provisional: true };
-
-    // Remember that this device migrated this key, so a future load after the
-    // account KV is emptied externally does not resurrect the frozen raw shadow.
-    await recordMigrated(name);
-    log.info(`Migrated "${name}" from ${source} into the KV ${scope} scope`);
-    return { value: await concludeRead(state, name, value) };
-  }
-
   return {
     getItem(name) {
       const state = stateFor(name);
       return serial(name, async () => {
-        // Every exit reports what the store is about to receive, so the
-        // machine knows whether a later refused write stands on the
-        // authoritative value or on something older.
-        const served = await load();
-        if (served.value !== null && !served.provisional) state.noteRealData();
-        return served.value;
+        // A non-null value means the KV scope handed us real data, so the store
+        // holds the authoritative value — which is what lets a later refused
+        // write be replayed rather than dropped.
+        const value = await load();
+        if (value !== null) state.noteRealData();
+        return value;
       });
 
-      async function load(): Promise<LoadedValue<S>> {
+      async function load(): Promise<StorageValue<S> | null> {
         const kvStorage = resolveKvStorage();
         if (!kvStorage) {
           // No storage during SSR is expected and silent. In a browser it is a
@@ -899,103 +634,23 @@ export function createKVPersistStorage<S>(
               new Error('localStorage is unavailable in this browser context'),
             );
           }
-          return { value: null };
+          return null;
         }
-        const legacyStorage = resolveLegacyStorage(deps);
 
         const stored = (await Outcome.run(() => kvStorage.getItem(name))).into(
           state,
           `read "${name}" from the KV ${scope} scope`,
         );
-        if (stored === UNAVAILABLE) {
-          if (state.hasAuthoritativeValue) {
-            // This session has already loaded the authoritative value, and the
-            // store is still holding it. Serving the shadowed raw copy now
-            // would walk a live store *backwards* onto an older value — and
-            // because zustand leaves state alone when a read yields nothing,
-            // returning null is precisely "keep what you have".
-            log.warn(
-              `Could not re-read "${name}" from the KV ${scope} scope; keeping the value already ` +
-                `loaded rather than falling back to the shadowed localStorage copy`,
-            );
-            return { value: null };
-          }
-          // Nothing authoritative has been seen yet, so the raw entry is the
-          // best copy available. Serve it so the store hydrates with the user's
-          // data, but adopt nothing, delete nothing, and leave the key
-          // unsettled so no write can persist over an original we were unable
-          // to read.
-          const fallback = readLegacy<S>(state, legacyStorage, name);
-          return { value: fallback === UNAVAILABLE ? null : fallback, provisional: true };
-        }
+        // A failed read has already been recorded (unavailable, health signal,
+        // recovery). Leave the key unsettled — the store keeps whatever it holds
+        // and the write gate refuses writes — rather than settling defaults over
+        // a value we could not read.
+        if (stored === UNAVAILABLE) return null;
 
-        if (stored !== null) {
-          // KV is authoritative and wins the read. A raw entry may still shadow
-          // it (a completed migration's leftover, or an old bundle's newer
-          // write); either way it is left untouched — see `adopt`.
-          return { value: await concludeRead(state, name, stored) };
-        }
-
-        const adopted = readLegacy<S>(state, legacyStorage, name);
-        if (adopted === UNAVAILABLE) return { value: null };
-        if (adopted !== null) {
-          const migrated = (await readSentinel(MIGRATED_PREFIX, name)).into(
-            state,
-            `read the migrated marker for "${name}"`,
-          );
-          // A failed marker read must not be read as "not migrated" — that
-          // could resurrect a stale shadow. Fail closed: unsettled, retry next
-          // load.
-          if (migrated === UNAVAILABLE) return { value: null };
-          if (!migrated) {
-            // First migration on this device: copy the raw entry into KV and
-            // record it. The raw entry itself is left in place — see `adopt`.
-            return adopt(state, kvStorage, name, adopted, 'localStorage');
-          }
-          // Already migrated here, yet KV read came back empty. A local clear
-          // removes the raw entry too, so an empty KV beside a live raw entry
-          // means KV was emptied by something external — a server-side wipe, an
-          // account switch, eviction — and the raw entry is a frozen pre-cutover
-          // shadow, not new data. Do NOT adopt it. But the empty read may just
-          // be stale (another tab repopulated KV since), so fall through to the
-          // confirm re-read below rather than concluding the wipe outright.
-        }
-
-        // Reached with either no raw entry, or a raw entry this device has
-        // already migrated (declined above). Empty KV here is also exactly what
-        // another tab's in-flight adoption looks like — it may have written the
-        // KV entry between our two reads. Under a remote backend that is
-        // ordinary, so confirm before concluding there is nothing to load.
-        const confirmed = (await Outcome.run(() => kvStorage.getItem(name))).into(
-          state,
-          `re-read "${name}" from the KV ${scope} scope`,
-        );
-        if (confirmed === UNAVAILABLE) return { value: null };
-        if (confirmed !== null) {
-          // A concurrent write landed in the interval; KV wins, shadow kept.
-          return { value: await concludeRead(state, name, confirmed) };
-        }
-
-        if (deps.prePersistFallback) {
-          const consulted = (await readSentinel(PRE_PERSIST_PREFIX, name)).into(
-            state,
-            `read the pre-persist sentinel for "${name}"`,
-          );
-          if (consulted === UNAVAILABLE) return { value: null };
-          if (!consulted) {
-            // App-supplied and synchronous: a throw here is the app's, not the
-            // backend's, but it must not escape into zustand's silent catch.
-            const prePersist = (
-              await Outcome.run(async () => deps.prePersistFallback?.() ?? null)
-            ).into(state, `read the pre-persist source keys for "${name}"`);
-            if (prePersist === UNAVAILABLE) return { value: null };
-            if (prePersist !== null) {
-              return adopt(state, kvStorage, name, prePersist, 'the pre-persist keys');
-            }
-          }
-        }
-
-        return { value: await concludeRead(state, name, null) };
+        // KV is authoritative. `null` is a legitimate empty store (hydrate
+        // defaults); a value hydrates it. Either way the key settles, so writes
+        // are admitted — no legacy key is read, no old data is migrated.
+        return concludeRead(state, name, stored);
       }
     },
 
@@ -1033,50 +688,27 @@ export function createKVPersistStorage<S>(
       state.beginClear();
       return serial(name, async () => {
         const kvStorage = resolveKvStorage();
-        // Raw entry first, and every failure propagates — a caller clearing a
-        // user's data has to be able to tell that it did not happen.
-        //
-        // Order matters more than it looks. Removing the KV entry first and
-        // then failing on the raw one leaves an empty scope beside a live raw
-        // entry, which is exactly the shape the next hydration re-adopts: the
-        // "deleted" settings come straight back. Failing on the raw entry
-        // before anything else is removed leaves the KV value authoritative and
-        // the clear simply unperformed, which the caller can retry.
-        try {
-          dropLegacyEntryStrictly(resolveLegacyStorage(deps), name);
-        } catch (error) {
-          state.onFailure(`drop the legacy "${name}" entry`, error);
-          throw error;
-        }
-        if (kvStorage) {
-          const removed = (await Outcome.run(() => kvStorage.removeItem(name))).into(
-            state,
-            `remove "${name}" from the KV ${scope} scope`,
-          );
-          if (removed === UNAVAILABLE) {
-            throw new Error(`Could not remove ${JSON.stringify(name)} from the KV ${scope} scope`);
+        if (!kvStorage) {
+          // In a browser this is a real failure the caller must hear about; on
+          // the server there is nothing to clear.
+          if (isBrowserRuntime()) {
+            state.onFailure(
+              'reach browser storage',
+              new Error('localStorage is unavailable in this browser context'),
+            );
+            throw new Error(`Could not clear ${JSON.stringify(name)}: storage is unreachable`);
           }
-        } else if (isBrowserRuntime()) {
-          state.onFailure(
-            'reach browser storage',
-            new Error('localStorage is unavailable in this browser context'),
-          );
-          throw new Error(`Could not clear ${JSON.stringify(name)}: storage is unreachable`);
+          state.finishClear();
+          return;
         }
-        // A deliberate full clear returns this key to a genuine first-load
-        // state, so the migrated marker goes too. Best effort: the raw entry is
-        // already gone, so a leftover marker is inert.
-        await clearMigratedMarker(name);
-        // The pre-persist sentinel is deliberately *not* cleared. It is
-        // monotonic: its whole job is to stop the pre-persist keys, which are
-        // still sitting on this device, from being republished after the KV
-        // entry goes away — and clearing the entry is exactly that case. It is
-        // still *recorded* here, so a clear counts as a settling path like any
-        // other.
-        if (!(await recordPrePersistHandled(state, name))) {
-          throw new Error(
-            `Could not record the pre-persist sentinel while clearing ${JSON.stringify(name)}`,
-          );
+        // Every failure propagates — a caller clearing a user's data has to be
+        // able to tell that it did not happen.
+        const removed = (await Outcome.run(() => kvStorage.removeItem(name))).into(
+          state,
+          `remove "${name}" from the KV ${scope} scope`,
+        );
+        if (removed === UNAVAILABLE) {
+          throw new Error(`Could not remove ${JSON.stringify(name)} from the KV ${scope} scope`);
         }
         state.finishClear();
       });

@@ -38,7 +38,7 @@ test.describe('Generation Flow', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(
       ({ settings, session }) => {
-        localStorage.setItem('settings-storage', settings);
+        localStorage.setItem('maic:account:settings-storage', settings);
         sessionStorage.setItem('generationSession', session);
       },
       { settings: SETTINGS_STORAGE, session: GENERATION_SESSION },
@@ -109,7 +109,7 @@ test.describe('Generation Flow', () => {
   }) => {
     await page.addInitScript(
       ({ settings, session }) => {
-        localStorage.setItem('settings-storage', settings);
+        localStorage.setItem('maic:account:settings-storage', settings);
         sessionStorage.setItem('generationSession', session);
       },
       { settings: REVIEW_SETTINGS_STORAGE, session: GENERATION_SESSION },
@@ -131,7 +131,7 @@ test.describe('Generation Flow', () => {
 test('resumes generation from a persisted outline review session', async ({ page, mockApi }) => {
   await page.addInitScript(
     ({ settings, session }) => {
-      localStorage.setItem('settings-storage', settings);
+      localStorage.setItem('maic:account:settings-storage', settings);
       sessionStorage.setItem('generationSession', session);
     },
     { settings: SETTINGS_STORAGE, session: PERSISTED_REVIEW_SESSION },

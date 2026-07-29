@@ -8,7 +8,7 @@
  */
 
 import { create } from 'zustand';
-import { persist, type StorageValue } from 'zustand/middleware';
+import { persist } from 'zustand/middleware';
 import type { ProviderId } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { PROVIDERS } from '@/lib/ai/providers';
@@ -33,7 +33,7 @@ import {
   resolveSelectedModel,
   isLLMProviderConfigured,
 } from '@/lib/store/settings-validation';
-import { createKVPersistStorage } from '@/lib/store/kv-persist';
+import { createKVPersistStorage, purgeLegacyPersistKey } from '@/lib/store/kv-persist';
 
 const log = createLogger('Settings');
 
@@ -852,107 +852,6 @@ function stripLegacyServerBaseUrl(state: Partial<SettingsState>): void {
   }
 }
 
-/**
- * Migrate from the pre-persist localStorage format (`llmModel` /
- * `providersConfig` / `ttsModel` / `selectedAgentIds`) — four keys that predate
- * the persist middleware entirely.
- *
- * This runs as the persist layer's last-resort source, consulted only when
- * neither the KV scope nor the raw persist key holds anything, and its result
- * is adopted into the KV scope like any other migration. That adoption is what
- * makes it run once: it used to be guarded by "does the raw `settings-storage`
- * key exist?", a probe that stops meaning anything the moment the persisted
- * blob moves into the KVStore. An unguarded version would re-read these keys on
- * every load and republish a long-deleted `providersConfig` — including API
- * keys the user has since removed or rotated — into observable state.
- *
- * The four keys are read, never written or deleted. Nothing in the app writes
- * them any more — they are a dead format — but `lib/ai/providers.ts:
- * getProviderConfig` still *reads* `providersConfig` as a fallback for custom
- * provider definitions, so deleting them here would break a pre-existing path
- * on exactly the installs this migration exists for. Retiring them belongs with
- * retiring that reader.
- */
-const readPrePersistSettings = (): StorageValue<Partial<SettingsState>> | null => {
-  if (typeof window === 'undefined') return null;
-
-  // Read old localStorage keys. `localStorage` access throws outright in some
-  // privacy modes, and this runs inside the persist read path — an escaping
-  // throw there is swallowed by zustand and the store silently stops loading.
-  let oldLlmModel: string | null;
-  let oldProvidersConfig: string | null;
-  let oldTtsModel: string | null;
-  let oldSelectedAgents: string | null;
-  try {
-    oldLlmModel = localStorage.getItem('llmModel');
-    oldProvidersConfig = localStorage.getItem('providersConfig');
-    oldTtsModel = localStorage.getItem('ttsModel');
-    oldSelectedAgents = localStorage.getItem('selectedAgentIds');
-  } catch (e) {
-    log.warn('Could not read the pre-persist settings keys:', e);
-    return null;
-  }
-
-  if (!oldLlmModel && !oldProvidersConfig) return null; // No old data
-
-  // Parse model selection
-  let providerId: ProviderId = 'openai';
-  let modelId = 'gpt-5.4-mini';
-  if (oldLlmModel) {
-    const [pid, mid] = oldLlmModel.split(':');
-    if (pid && mid) {
-      providerId = pid as ProviderId;
-      modelId = mid;
-    }
-  }
-
-  // Parse providers config
-  let providersConfig = getDefaultProvidersConfig();
-  if (oldProvidersConfig) {
-    try {
-      const parsed = JSON.parse(oldProvidersConfig);
-      providersConfig = { ...providersConfig, ...parsed };
-    } catch (e) {
-      log.error('Failed to parse old providersConfig:', e);
-    }
-  }
-
-  // Parse other settings
-  let ttsModel = 'openai-tts';
-  if (oldTtsModel) ttsModel = oldTtsModel;
-
-  let selectedAgentIds = ['default-1', 'default-2', 'default-3'];
-  if (oldSelectedAgents) {
-    try {
-      const parsed = JSON.parse(oldSelectedAgents);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        selectedAgentIds = parsed;
-      }
-    } catch (e) {
-      log.error('Failed to parse old selectedAgentIds:', e);
-    }
-  }
-
-  // Stamped at the current version, which skips `migrate` entirely — not just
-  // the v0 → v1 ladder but also the unversioned normalization `migrate` runs on
-  // every path (built-in provider backfills, thinking-config pruning). That is
-  // deliberate and matches the pre-existing behaviour: this data was previously
-  // applied as *initial state*, which `migrate` never saw either. Nothing is
-  // actually lost, because `merge` runs the same normalizations — plus a few
-  // more — on every rehydrate.
-  return {
-    state: {
-      providerId,
-      modelId,
-      thinkingConfigs: {},
-      providersConfig,
-      ttsModel,
-      selectedAgentIds,
-    },
-    version: SETTINGS_PERSIST_VERSION,
-  };
-};
-
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set, get) => {
@@ -963,11 +862,9 @@ export const useSettingsStore = create<SettingsState>()(
       const defaultWebSearchConfig = getDefaultWebSearchConfig();
 
       return {
-        // Initial state is plain defaults. Every stored value — including the
-        // pre-persist keys, which `readPrePersistSettings` now feeds to the
-        // persist layer — arrives through rehydration, so nothing stored can
-        // appear in observable state before the storage layer has vouched for
-        // it.
+        // Initial state is plain defaults. This store does not migrate any
+        // pre-cutover localStorage data — everything persisted arrives through
+        // the KVStore on rehydration; an upgrading user reconfigures once.
         providerId: 'openai' as ProviderId,
         modelId: '',
         thinkingConfigs: {},
@@ -1938,7 +1835,6 @@ export const useSettingsStore = create<SettingsState>()(
       // `Partial<SettingsState>` because `migrate` below returns a partial —
       // that is what zustand infers as the persisted shape here.
       storage: createKVPersistStorage<Partial<SettingsState>>('account', {
-        prePersistFallback: readPrePersistSettings,
         // One recovery attempt when a write is refused because hydration never
         // succeeded — the backend may have come back since. Routed through a
         // variable assigned below rather than naming the store directly: a
@@ -2188,3 +2084,9 @@ export const useSettingsStore = create<SettingsState>()(
 // Bound after the store exists so the `onWriteRefused` hook above stays free of
 // a self-reference (see the comment there).
 recovery.rehydrate = () => useSettingsStore.persist.rehydrate();
+
+// Best-effort, fire-and-forget: drop the pre-cutover raw `localStorage` blob.
+// It is never read (this store does not migrate legacy data), and the old blob
+// holds plaintext provider API keys, so clearing it is a small security win. No
+// correctness depends on it.
+purgeLegacyPersistKey('settings-storage');

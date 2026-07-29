@@ -1,11 +1,16 @@
 /**
- * Which KV scope each persisted store declares.
+ * Which KV scope each persisted store declares, and that neither store migrates
+ * pre-cutover `localStorage` data.
  *
  * The scope is a contract, not a tuning knob: `device` values never leave the
  * machine under any backend, `account` values are user data a server-backed
  * deployment may sync across devices. Flipping one silently changes where a
  * user's data can travel, so it is asserted here rather than left to a reader
  * of the store file.
+ *
+ * Migration was removed entirely: an upgrading user reconfigures once. These
+ * tests pin that a leftover raw key is ignored (the store hydrates to defaults)
+ * and, for the two persist keys, best-effort purged.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BrowserKVStore } from '@openmaic/storage';
@@ -26,7 +31,7 @@ vi.stubGlobal('window', { localStorage: localStorageStub });
 
 const kv = new BrowserKVStore({ storage: localStorageStub });
 
-/** Poll the KV scope: persist writes are asynchronous now. */
+/** Poll the KV scope: persist writes are asynchronous. */
 function persistedIn(scope: 'device' | 'account', name: string) {
   return vi.waitFor(async () => {
     const blob = await kv.get<{ state: Record<string, unknown> }>(name, scope);
@@ -61,94 +66,51 @@ describe('settings store', () => {
     expect(localStorageStub.getItem('settings-storage')).toBeNull();
   });
 
-  it('adopts an existing raw blob on first load', async () => {
-    localStorageStub.setItem(
-      'settings-storage',
-      JSON.stringify({ state: { playbackSpeed: 2 }, version: 4 }),
-    );
+  it('ignores an existing raw blob and purges it, rather than migrating it', async () => {
+    localStorageStub.setItem('settings-storage', JSON.stringify({ state: { modelId: 'gpt-4o' } }));
 
     const { useSettingsStore } = await import('@/lib/store/settings');
     await useSettingsStore.persist.rehydrate();
 
-    expect(useSettingsStore.getState().playbackSpeed).toBe(2);
-    // Plan B: adoption is a copy — the raw entry is kept, KV is authoritative.
-    expect(localStorageStub.getItem('settings-storage')).not.toBeNull();
-    expect(await persistedIn('account', 'settings-storage')).toMatchObject({ playbackSpeed: 2 });
+    // The seeded value is not migrated — the store hydrates to its default.
+    expect(useSettingsStore.getState().modelId).toBe('');
+    // And the stale blob (which held plaintext API keys) is purged from
+    // localStorage rather than left forever.
+    expect(localStorageStub.getItem('settings-storage')).toBeNull();
+    // Nothing was written to the KV scope from it either.
+    expect(await kv.get('settings-storage', 'account')).toBeNull();
   });
 });
 
-/**
- * The pre-persist keys (`llmModel` / `providersConfig` / …) used to be read
- * synchronously in the store initializer, guarded by "does the raw
- * `settings-storage` key exist?". Moving the blob into the KVStore removes that
- * key, so the guard would never fire again and every load would republish
- * whatever those keys still hold — including credentials the user deleted long
- * ago. They now run once, through the persist layer.
- */
-describe('settings store — pre-persist migration', () => {
-  const ANCIENT_KEY = 'sk-ancient-should-not-resurrect';
-
-  function seedPrePersistKeys() {
+describe('settings store — no pre-persist migration', () => {
+  it('does not read the ancient llmModel / providersConfig keys into state', async () => {
+    // These keys predate the persist middleware. Migration used to fold them in;
+    // it is gone, so an upgrading user reconfigures once and the ancient
+    // (possibly rotated) credentials never re-appear.
+    const ANCIENT_KEY = 'sk-ancient-should-not-resurrect';
     localStorageStub.setItem('llmModel', 'openai:gpt-4o');
     localStorageStub.setItem(
       'providersConfig',
       JSON.stringify({ openai: { apiKey: ANCIENT_KEY } }),
     );
-  }
-
-  it('adopts the pre-persist keys once, through hydration', async () => {
-    seedPrePersistKeys();
 
     const { useSettingsStore } = await import('@/lib/store/settings');
     await useSettingsStore.persist.rehydrate();
 
-    expect(useSettingsStore.getState().modelId).toBe('gpt-4o');
-    expect(useSettingsStore.getState().providersConfig.openai?.apiKey).toBe(ANCIENT_KEY);
-    expect(await persistedIn('account', 'settings-storage')).toMatchObject({ modelId: 'gpt-4o' });
-  });
-
-  it('never puts them in observable state before hydration', async () => {
-    seedPrePersistKeys();
-
-    const { useSettingsStore } = await import('@/lib/store/settings');
-
-    // This is the first frame: a component reading providersConfig here (as the
-    // home page does to gate generation) must not see a resurrected key.
-    expect(useSettingsStore.getState().providersConfig.openai?.apiKey).toBeFalsy();
     expect(useSettingsStore.getState().modelId).toBe('');
-  });
-
-  it('stops re-reading them once the migration has been adopted', async () => {
-    seedPrePersistKeys();
-
-    const first = await import('@/lib/store/settings');
-    await first.useSettingsStore.persist.rehydrate();
-    expect(first.useSettingsStore.getState().providersConfig.openai?.apiKey).toBe(ANCIENT_KEY);
-
-    // The user removes the key through the UI, which persists to the KV scope.
-    first.useSettingsStore.getState().setProviderConfig('openai', { apiKey: '' });
-    await vi.waitFor(async () => {
-      const state = await persistedIn('account', 'settings-storage');
-      expect((state.providersConfig as Record<string, { apiKey?: string }>).openai.apiKey).toBe('');
-    });
-
-    // Reload. The stale `providersConfig` key is still sitting in localStorage
-    // (other readers own it), and must not come back.
-    vi.resetModules();
-    const second = await import('@/lib/store/settings');
-    await second.useSettingsStore.persist.rehydrate();
-
-    expect(localStorageStub.getItem('providersConfig')).not.toBeNull();
-    expect(second.useSettingsStore.getState().providersConfig.openai?.apiKey).toBe('');
+    expect(useSettingsStore.getState().providersConfig.openai?.apiKey).not.toBe(ANCIENT_KEY);
+    expect(await kv.get('settings-storage', 'account')).toBeNull();
   });
 
   it('leaves the pre-persist keys in place for their other readers', async () => {
-    seedPrePersistKeys();
+    // `lib/ai/providers.ts:getProviderConfig` still reads `providersConfig` for
+    // custom providers, so unlike the persist blob it is not purged.
+    localStorageStub.setItem('llmModel', 'openai:gpt-4o');
+    localStorageStub.setItem('providersConfig', JSON.stringify({ openai: {} }));
 
     const { useSettingsStore } = await import('@/lib/store/settings');
     await useSettingsStore.persist.rehydrate();
 
-    // lib/ai/providers.ts still reads `providersConfig` for custom providers.
     expect(localStorageStub.getItem('providersConfig')).not.toBeNull();
     expect(localStorageStub.getItem('llmModel')).toBe('openai:gpt-4o');
   });
@@ -166,7 +128,7 @@ describe('user profile store', () => {
     expect(localStorageStub.getItem('user-profile-storage')).toBeNull();
   });
 
-  it('adopts an existing raw blob on first load', async () => {
+  it('ignores an existing raw blob and purges it, rather than migrating it', async () => {
     localStorageStub.setItem(
       'user-profile-storage',
       JSON.stringify({ state: { nickname: 'Ada', bio: 'hi', avatar: '/avatars/user.png' } }),
@@ -175,9 +137,8 @@ describe('user profile store', () => {
     const { useUserProfileStore } = await import('@/lib/store/user-profile');
     await useUserProfileStore.persist.rehydrate();
 
-    expect(useUserProfileStore.getState().nickname).toBe('Ada');
-    // Plan B: adoption is a copy — the raw entry is kept, KV is authoritative.
-    expect(localStorageStub.getItem('user-profile-storage')).not.toBeNull();
-    expect(await persistedIn('account', 'user-profile-storage')).toMatchObject({ nickname: 'Ada' });
+    expect(useUserProfileStore.getState().nickname).toBe('');
+    expect(localStorageStub.getItem('user-profile-storage')).toBeNull();
+    expect(await kv.get('user-profile-storage', 'account')).toBeNull();
   });
 });

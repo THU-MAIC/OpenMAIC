@@ -183,6 +183,10 @@ vi.stubGlobal('window', { localStorage: localStorageStub });
 // it back through the same primitive rather than guessing its key layout. The
 // write is async, hence the poll.
 const persistKv = new BrowserKVStore({ storage: localStorageStub as unknown as Storage });
+// The store reads from the KVStore's `account` scope (namespaced key), and
+// does not migrate the bare `settings-storage` key. Seeding a pre-existing
+// blob therefore writes the namespaced key directly into the shared backing.
+const SETTINGS_KV_KEY = 'maic:account:settings-storage';
 async function readPersistedState(): Promise<Record<string, unknown>> {
   return await vi.waitFor(async () => {
     const blob = await persistKv.get<{ state: Record<string, unknown> }>(
@@ -246,7 +250,7 @@ describe('settings rehydrate — built-in provider models', () => {
 
   it('reorders persisted built-in models to registry order while preserving custom models', async () => {
     storage.set(
-      'settings-storage',
+      SETTINGS_KV_KEY,
       JSON.stringify({
         state: {
           providerId: 'openai',
@@ -291,7 +295,7 @@ describe('settings rehydrate — built-in provider models', () => {
 
   it('strips a legacy serverBaseUrl from persisted provider configs on rehydrate (#620)', async () => {
     storage.set(
-      'settings-storage',
+      SETTINGS_KV_KEY,
       JSON.stringify({
         state: {
           providerId: 'openai',
@@ -341,7 +345,7 @@ describe('settings rehydrate — built-in provider models', () => {
 
   it('removes the retired insert-toolbar collapse preference on rehydrate', async () => {
     storage.set(
-      'settings-storage',
+      SETTINGS_KV_KEY,
       JSON.stringify({
         state: { editInsertToolbarCollapsed: true },
         version: 4,
@@ -1639,7 +1643,7 @@ describe('settings store — outline review preference', () => {
 
   it('rehydrates older persisted settings without the outline flag to false', async () => {
     storage.set(
-      'settings-storage',
+      SETTINGS_KV_KEY,
       JSON.stringify({
         state: {
           providerId: 'openai',
@@ -1709,7 +1713,7 @@ describe('TTS provider enablement (#665)', () => {
 
   it('v3→v4 migration normalizes stale enabled flags (others ON, browser-native OFF)', async () => {
     storage.set(
-      'settings-storage',
+      SETTINGS_KV_KEY,
       JSON.stringify({
         version: 3,
         state: {

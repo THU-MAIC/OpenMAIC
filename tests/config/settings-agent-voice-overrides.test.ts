@@ -24,11 +24,17 @@ vi.stubGlobal('localStorage', localStorageStub);
 // Several init paths guard on `typeof window` before touching storage.
 vi.stubGlobal('window', { localStorage: localStorageStub });
 
+// The blob is written and read through the KVStore's `account` scope, so seed
+// and read it back through the same primitive instead of guessing its key
+// layout. There is no legacy-key migration, so a pre-existing blob has to be
+// in the KV scope to be picked up.
+const persistKv = new BrowserKVStore({ storage: localStorageStub as unknown as Storage });
+
 async function freshStore(persistedState?: Record<string, unknown>) {
   vi.resetModules();
   storage.clear();
   if (persistedState) {
-    storage.set('settings-storage', JSON.stringify({ state: persistedState, version: 4 }));
+    await persistKv.set('settings-storage', { state: persistedState, version: 4 }, 'account');
   }
   const { useSettingsStore } = await import('@/lib/store/settings');
   // persist hydrates asynchronously now that it reads through the KVStore —
@@ -36,11 +42,6 @@ async function freshStore(persistedState?: Record<string, unknown>) {
   await useSettingsStore.persist.rehydrate();
   return useSettingsStore;
 }
-
-// The blob is written through the KVStore's `account` scope, so read it back
-// through the same primitive instead of guessing its key layout. The write is
-// async, hence the poll.
-const persistKv = new BrowserKVStore({ storage: localStorageStub as unknown as Storage });
 async function readPersistedState(): Promise<Record<string, unknown>> {
   return await vi.waitFor(async () => {
     const blob = await persistKv.get<{ state: Record<string, unknown> }>(

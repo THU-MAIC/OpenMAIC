@@ -9,7 +9,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import { createKVPersistStorage } from '@/lib/store/kv-persist';
+import { createKVPersistStorage, purgeLegacyPersistKey } from '@/lib/store/kv-persist';
 
 /**
  * Bound after the store exists; see `onWriteRefused` for why it is not inlined.
@@ -66,3 +66,8 @@ export const useUserProfileStore = create<UserProfileState>()(
 // Bound after the store exists so the `onWriteRefused` hook above stays free of
 // a self-reference (see the comment there).
 recovery.rehydrate = () => useUserProfileStore.persist.rehydrate();
+
+// Best-effort, fire-and-forget: drop the pre-cutover raw `localStorage` blob.
+// It is never read (this store does not migrate legacy data), so a leftover is
+// only garbage. No correctness depends on it.
+purgeLegacyPersistKey('user-profile-storage');

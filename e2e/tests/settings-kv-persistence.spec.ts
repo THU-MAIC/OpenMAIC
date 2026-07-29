@@ -3,14 +3,10 @@ import { HomePage } from '../pages/home.page';
 import { createSettingsStorage, SETTINGS_KV_KEY } from '../fixtures/test-data/settings';
 
 /**
- * The settings store persists through the `@openmaic/storage` KVStore.
- *
- * Every other spec seeds the bare `settings-storage` key, which is what an
- * install from before the cutover looks like — so between them they cover the
- * one-time adoption well and the steady state not at all. These two cases pin
- * both ends: a store whose data is already in the KV scope must load without a
- * migration in sight, and a store still holding the raw key must end up with
- * its data moved rather than copied.
+ * The settings store persists through the `@openmaic/storage` KVStore, and does
+ * not migrate pre-cutover data. These two cases pin both facts: a store whose
+ * data is already in the KV scope loads it, and a store still holding the old
+ * raw `settings-storage` blob has it ignored and purged rather than migrated.
  *
  * The Playwright Chromium locale is en-US, so UI strings are English.
  */
@@ -53,7 +49,7 @@ test.describe('settings persistence through the KVStore', () => {
   test('loads a store already living in the KV scope, with no raw key present', async ({
     page,
   }) => {
-    // The post-migration steady state: nothing under the pre-cutover key.
+    // The steady state: the value is in the KV scope, nothing under the raw key.
     await page.addInitScript(
       ({ key, settings }) => {
         localStorage.setItem(key, settings);
@@ -73,11 +69,11 @@ test.describe('settings persistence through the KVStore', () => {
     await home.fillRequirement('Explain how photosynthesis works');
     await expect(home.enterButton).toBeEnabled();
 
-    // No migration ran, so nothing was written back under the raw key.
+    // Nothing was written under the raw key.
     expect(await page.evaluate(() => localStorage.getItem('settings-storage'))).toBeNull();
   });
 
-  test('copies a pre-cutover raw key into the KV scope on first load', async ({ page }) => {
+  test('ignores a pre-cutover raw key and purges it on first load', async ({ page }) => {
     await page.addInitScript((settings) => {
       localStorage.setItem('settings-storage', settings);
     }, SETTINGS);
@@ -86,22 +82,19 @@ test.describe('settings persistence through the KVStore', () => {
     await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto()]);
     await expect(home.textarea).toBeVisible();
 
-    const modelPill = page.locator('button[aria-label^="OpenAI / "]');
-    await expect(modelPill).toBeVisible({ timeout: 15_000 });
-
-    // A copy, not a move: the value is in the KV scope, and the raw key is
-    // deliberately left in place (deleting it cannot be done safely against a
-    // concurrent old-bundle tab during this transition).
+    // No migration: the raw blob is not read, and it is best-effort purged
+    // (it held plaintext provider API keys).
     await expect
-      .poll(
-        () =>
-          page.evaluate((key) => {
-            const raw = localStorage.getItem(key);
-            return raw ? JSON.parse(raw).state.providerId : undefined;
-          }, SETTINGS_KV_KEY),
-        { timeout: 15_000 },
-      )
-      .toBe('openai');
-    expect(await page.evaluate(() => localStorage.getItem('settings-storage'))).not.toBeNull();
+      .poll(() => page.evaluate(() => localStorage.getItem('settings-storage')), {
+        timeout: 15_000,
+      })
+      .toBeNull();
+
+    // And the seeded apiKey never reached the KV scope.
+    const leakedKey = await page.evaluate((key) => {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw)?.state?.providersConfig?.openai?.apiKey : undefined;
+    }, SETTINGS_KV_KEY);
+    expect(leakedKey).not.toBe('test-key');
   });
 });
