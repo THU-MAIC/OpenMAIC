@@ -550,18 +550,31 @@ function isStorageValue<S>(value: unknown): value is StorageValue<S> {
   return typeof value === 'object' && value !== null && 'state' in value;
 }
 
+/** The pre-cutover raw entry, kept as both its exact bytes and its parse. */
+interface LegacyEntry<S> {
+  /** The exact string read from storage, for byte-identical re-checks. */
+  raw: string;
+  value: StorageValue<S>;
+}
+
 /**
- * Read the pre-cutover raw entry, if it is one zustand could have written.
+ * Read the pre-cutover raw entry, if it is one zustand could have written,
+ * returning both the exact bytes and the parse.
+ *
+ * The bytes are kept because a later delete must prove the entry has not
+ * changed since it was read, and that proof has to be byte-exact — a
+ * re-serialized value would differ from the stored string in key order or
+ * whitespace even when semantically equal.
  *
  * Anything unreadable (not JSON, or not a `{ state }` envelope) is left exactly
  * where it is: we never delete bytes we could not interpret, and it is not ours
  * to adopt either.
  */
-function readLegacy<S>(
+function readLegacyEntry<S>(
   state: KeyState<unknown>,
   storage: Storage | null,
   name: string,
-): StorageValue<S> | null | Unavailable {
+): LegacyEntry<S> | null | Unavailable {
   if (!storage) return null;
   let raw: string | null;
   try {
@@ -585,20 +598,54 @@ function readLegacy<S>(
     log.warn(`Legacy "${name}" entry is not a persist envelope; leaving it in place`);
     return null;
   }
-  return parsed;
+  return { raw, value: parsed };
+}
+
+function readLegacy<S>(
+  state: KeyState<unknown>,
+  storage: Storage | null,
+  name: string,
+): StorageValue<S> | null | Unavailable {
+  const entry = readLegacyEntry<S>(state, storage, name);
+  if (entry === null || entry === UNAVAILABLE) return entry;
+  return entry.value;
 }
 
 /**
- * Drop the raw entry, tolerating failure.
+ * Delete the raw entry, but only if it still holds exactly the bytes we
+ * verified — atomically, without a lock.
  *
- * For adoption that is the right posture: the value is safely in KV, and a raw
- * entry left behind is a duplicate, not a loss. The clear path uses the strict
- * variant below instead, where the same failure means something entirely
- * different.
+ * The danger this closes: a delete decision is made against a raw value read
+ * before an `await` (reading the adoption marker, writing to KV), and during
+ * that `await` a tab running an *old bundle* — which knows nothing of this
+ * seam's Web Locks, so a lock could not help — overwrites the raw key with
+ * newer settings. The old, unconditional delete then removed that newer value.
+ *
+ * `localStorage` is synchronous, so the fix needs no lock: re-read, compare,
+ * and remove run as one synchronous segment with no `await` between them. The
+ * competing tab is a separate context whose writes surface here only at event-
+ * loop boundaries, so its write lands wholly before the re-read (seen, and the
+ * bytes differ → kept) or wholly after the remove — never in the middle. A
+ * changed value is newer data, not a leftover: keep it.
  */
-function dropLegacyEntry(storage: Storage | null, name: string): void {
+function deleteLegacyIfUnchanged(storage: Storage | null, name: string, expectedRaw: string): void {
+  if (!storage) return;
+  let currentRaw: string | null;
   try {
-    storage?.removeItem(name);
+    currentRaw = storage.getItem(name);
+  } catch (error) {
+    log.warn(`Could not re-read the legacy "${name}" entry before deleting it:`, error);
+    return;
+  }
+  if (currentRaw !== expectedRaw) {
+    log.warn(
+      `"${name}" in localStorage changed since it was verified — keeping it rather than deleting ` +
+        `a value another tab has since written`,
+    );
+    return;
+  }
+  try {
+    storage.removeItem(name);
   } catch (error) {
     log.warn(`Could not drop the legacy "${name}" entry:`, error);
   }
@@ -607,9 +654,12 @@ function dropLegacyEntry(storage: Storage | null, name: string): void {
 /**
  * Drop the raw entry, or say so.
  *
- * When the user asked for this data to be gone, a swallowed failure here is how
- * "deleted" data comes back: the raw entry survives, and the next hydration
- * finds an empty KV scope beside a live raw entry and dutifully re-adopts it.
+ * Used only by the clear path, where the user asked for this data to be gone
+ * and a swallowed failure is how "deleted" data comes back: the raw entry
+ * survives, and the next hydration finds an empty KV scope beside a live raw
+ * entry and dutifully re-adopts it. Migration cleanups do not use this — they
+ * delete conditionally through {@link deleteLegacyIfUnchanged}, where a raw
+ * entry left behind is a duplicate, not a loss.
  */
 function dropLegacyEntryStrictly(storage: Storage | null, name: string): void {
   storage?.removeItem(name);
@@ -796,8 +846,8 @@ export function createKVPersistStorage<S>(
     // Unreadable bytes are never deleted, here as anywhere else: a marker says
     // *a* migration happened, not that these particular bytes were understood.
     // An unreadable *storage* is likewise no basis for deleting anything.
-    const shadowed = readLegacy<S>(state, legacyStorage, name);
-    if (shadowed === null || shadowed === UNAVAILABLE) return;
+    const entry = readLegacyEntry<S>(state, legacyStorage, name);
+    if (entry === null || entry === UNAVAILABLE) return;
     const marked = (await readSentinel(ADOPTED_PREFIX, name)).into(
       state,
       `read the adoption marker for "${name}"`,
@@ -817,18 +867,27 @@ export function createKVPersistStorage<S>(
     // that shadows it is provably a duplicate; anything else is data, and the
     // rule everywhere in this file is that keeping a copy beats deleting an
     // original.
-    if (!isEqual(shadowed, current)) {
+    if (!isEqual(entry.value, current)) {
       log.warn(
         `"${name}" in localStorage differs from the KV ${scope} scope value that shadows it — ` +
           `keeping it rather than assuming it is a leftover of the migration`,
       );
       return;
     }
-    dropLegacyEntry(legacyStorage, name);
+    // The equality above was decided against bytes read *before* the marker
+    // await; a competing old-bundle tab could have overwritten them since. The
+    // delete therefore re-checks those exact bytes in one synchronous segment
+    // and skips if they changed.
+    deleteLegacyIfUnchanged(legacyStorage, name, entry.raw);
   }
 
   /**
    * Move a value into the KV scope.
+   *
+   * `expectedRaw` is the exact bytes of the raw entry this migration adopts.
+   * It is supplied only when adopting from `localStorage` (`dropRaw` true), and
+   * the cleanup deletes the raw key only if it still holds those bytes — an
+   * old-bundle tab may have overwritten them across this function's awaits.
    *
    * `dropRaw` is false for the pre-persist fallback, and with it goes the
    * adoption marker: that marker is a licence to delete a raw persist entry,
@@ -844,6 +903,7 @@ export function createKVPersistStorage<S>(
     value: StorageValue<S>,
     dropRaw: boolean,
     source: string,
+    expectedRaw?: string,
   ): Promise<LoadedValue<S>> {
     // One last look before committing. Another tab may have written something
     // newer while this migration was being assembled; `KVStore` has no
@@ -876,7 +936,12 @@ export function createKVPersistStorage<S>(
       // No durable marker means no licence to delete: leave the raw entry and
       // let the next load try the migration again.
       if (marked === UNAVAILABLE) return { value, provisional: true };
-      dropLegacyEntry(legacyStorage, name);
+      // The raw bytes were read before every await above; re-check them in one
+      // synchronous segment so an old-bundle tab that overwrote them in the
+      // meantime keeps its newer value instead of losing it to this cleanup.
+      if (expectedRaw !== undefined) {
+        deleteLegacyIfUnchanged(legacyStorage, name, expectedRaw);
+      }
     }
 
     log.info(`Migrated "${name}" from ${source} into the KV ${scope} scope`);
@@ -943,10 +1008,19 @@ export function createKVPersistStorage<S>(
           return { value: await concludeRead(state, name, stored) };
         }
 
-        const adopted = readLegacy<S>(state, legacyStorage, name);
+        const adopted = readLegacyEntry<S>(state, legacyStorage, name);
         if (adopted === UNAVAILABLE) return { value: null };
         if (adopted !== null) {
-          return adopt(state, kvStorage, legacyStorage, name, adopted, true, 'localStorage');
+          return adopt(
+            state,
+            kvStorage,
+            legacyStorage,
+            name,
+            adopted.value,
+            true,
+            'localStorage',
+            adopted.raw,
+          );
         }
 
         // Empty KV *and* no raw entry is also exactly what another tab's

@@ -82,6 +82,15 @@ class ControllableKV implements KVStore {
   failSetMatching: ((key: string) => boolean) | null = null;
   private gate: { match: (key: string) => boolean; wait: Promise<void> } | null = null;
 
+  /**
+   * Run a side effect once, inside the next get/set whose key matches. This
+   * models another tab writing while the seam is suspended at that await: the
+   * effect lands before the seam resumes, so the resumed synchronous code sees
+   * the changed world. Used to drive the exact race cosarah reproduced.
+   */
+  onceDuringGet: { match: (key: string) => boolean; run: () => void } | null = null;
+  onceDuringSet: { match: (key: string) => boolean; run: () => void } | null = null;
+
   constructor(private readonly inner: KVStore) {}
 
   /** Hold the next matching `set` until the returned function is called. */
@@ -119,7 +128,13 @@ class ControllableKV implements KVStore {
       await wait;
       return snapshot;
     }
-    return this.inner.get<T>(key, scope);
+    const result = await this.inner.get<T>(key, scope);
+    if (this.onceDuringGet?.match(key)) {
+      const { run } = this.onceDuringGet;
+      this.onceDuringGet = null;
+      run();
+    }
+    return result;
   }
   async set<T>(key: string, value: T, scope?: KVScope): Promise<void> {
     if (this.failSet || this.failSetMatching?.(key)) throw new Error('kv set failed');
@@ -128,7 +143,12 @@ class ControllableKV implements KVStore {
       this.gate = null;
       await wait;
     }
-    return this.inner.set(key, value, scope);
+    await this.inner.set(key, value, scope);
+    if (this.onceDuringSet?.match(key)) {
+      const { run } = this.onceDuringSet;
+      this.onceDuringSet = null;
+      run();
+    }
   }
   async remove(key: string, scope?: KVScope): Promise<void> {
     if (this.failRemove) throw new Error('kv remove failed');
@@ -389,6 +409,54 @@ describe('createKVPersistStorage — legacy localStorage adoption', () => {
 
     expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'Ada' }, version: 4 });
     expect(h.legacy.getItem(NAME)).not.toBeNull();
+  });
+
+  it('does not delete a raw value an old-bundle tab writes while the marker is being read', async () => {
+    // cosarah's reproduction, on the shadowed-cleanup path. The raw entry is
+    // verified equal to the KV value, then the marker read is awaited; an old
+    // bundle — which takes no lock, so a lock could not save this — overwrites
+    // the raw key with newer settings during that await. The delete must see
+    // the change and keep it, not remove it against the stale check.
+    const h = harness();
+    await h.kv.set(NAME, { state: { nickname: 'Ada' }, version: 4 }, 'account');
+    await h.kv.set(MARKER, true, 'device');
+    seedLegacy(h.legacy, { nickname: 'Ada' }); // provably a duplicate — would be dropped
+
+    // The concurrent write lands during the adoption-marker read.
+    h.kv.onceDuringGet = {
+      match: (key) => key === MARKER,
+      run: () => seedLegacy(h.legacy, { nickname: 'newer, from an old-bundle tab' }),
+    };
+
+    await h.storage().getItem(NAME);
+
+    expect(h.legacy.getItem(NAME)).toBe(
+      JSON.stringify({ state: { nickname: 'newer, from an old-bundle tab' }, version: 4 }),
+    );
+  });
+
+  it('does not delete a raw value an old-bundle tab writes during adoption cleanup', async () => {
+    // The same race on the adoption path: KV is empty, the raw entry is
+    // adopted, and across the KV write and marker write an old bundle rewrites
+    // the raw key. The cleanup deletes only if the bytes are unchanged.
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'Ada' });
+
+    // The concurrent write lands while the adoption marker is being written,
+    // after the raw entry was read but before the cleanup delete.
+    h.kv.onceDuringSet = {
+      match: (key) => key === MARKER,
+      run: () => seedLegacy(h.legacy, { nickname: 'newer, from an old-bundle tab' }),
+    };
+
+    await h.storage().getItem(NAME);
+
+    // The migration still completed into KV...
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'Ada' }, version: 4 });
+    // ...but the newer raw value the other tab wrote survives.
+    expect(h.legacy.getItem(NAME)).toBe(
+      JSON.stringify({ state: { nickname: 'newer, from an old-bundle tab' }, version: 4 }),
+    );
   });
 
   it('keeps a raw entry that appears with no migration on record', async () => {
