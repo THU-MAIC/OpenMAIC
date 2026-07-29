@@ -377,11 +377,18 @@ const eslintConfig = defineConfig([
   // than merging them, so reusing that key here would silently drop those
   // module-boundary bans. Different key, no interference.
   //
-  // Out of scope (same spirit as the boundaries above): `require('ai')`, dynamic
-  // `import('ai')`, and a namespace import (`import * as ai from 'ai'`), which
-  // `importNames` cannot see. Nothing in the tree reaches the SDK any of those
-  // ways, and the named static import is the shape a hurried call site actually
-  // reaches for.
+  // Every reachable import form is covered, verified by feeding each one to
+  // eslint rather than assumed:
+  //   - `import { streamText } from 'ai'`  → this rule
+  //   - `import * as ai from 'ai'`         → this rule too; ESLint reports a
+  //     namespace import when `importNames` is set, since the namespace would
+  //     carry the restricted name
+  //   - `require('ai')`                    → the repo-wide
+  //     `@typescript-eslint/no-require-imports` (inherited from
+  //     eslint-config-next/typescript) already forbids require() anywhere
+  //   - `await import('ai')`               → the no-restricted-syntax block below
+  // An `eslint-disable` comment defeats any of them, which is the point: the
+  // bypass has to be written down where a reviewer sees it.
   {
     files: ['**/*.{ts,tsx}'],
     ignores: [
@@ -405,6 +412,43 @@ const eslintConfig = defineConfig([
                 'Call the model through callLLM / streamLLM in @/lib/ai/llm instead of the AI SDK directly — that is where usage accounting, the LLM_THINKING_DISABLED kill switch, and per-provider thinking resolution are applied. Both wrappers pass every SDK option straight through, and take an optional per-call thinking config.',
             },
           ],
+        },
+      ],
+    },
+  },
+  // Same boundary, dynamic form: `await import('ai')` is an ImportExpression, which
+  // no-restricted-imports does not see at all. It needs no-restricted-syntax — a key
+  // five earlier blocks already configure, and flat config REPLACES rule options per
+  // key, so this block must not match their files or it would silently drop their
+  // module boundaries. Hence the directory ignores, which cost nothing in coverage:
+  // lib/choreography and lib/video-export already allowlist their import sources
+  // (importing 'ai' there is an error today, and video-export bans ImportExpression
+  // and require outright), and the two @openmaic packages are built in isolation
+  // against @openmaic/dsl with the SDK nowhere in their dependency graph.
+  {
+    files: ['**/*.{ts,tsx}'],
+    ignores: [
+      'lib/ai/llm.ts',
+      'eval/**',
+      'tests/**',
+      // Blocks above that configure no-restricted-syntax for their own boundary.
+      'lib/choreography/**',
+      'lib/video-export/**',
+      'packages/@openmaic/renderer/**',
+      'packages/@openmaic/storage/**',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "ImportExpression > Literal[value='ai']",
+          message:
+            "Call the model through callLLM / streamLLM in @/lib/ai/llm instead of importing the AI SDK dynamically. A dynamic import('ai') reaches the same generateText / streamText and skips usage accounting, the LLM_THINKING_DISABLED kill switch and per-provider thinking resolution.",
+        },
+        {
+          selector: "ImportExpression > TemplateLiteral > TemplateElement[value.cooked='ai']",
+          message:
+            'Call the model through callLLM / streamLLM in @/lib/ai/llm instead of importing the AI SDK dynamically (template-literal form of the same bypass).',
         },
       ],
     },
