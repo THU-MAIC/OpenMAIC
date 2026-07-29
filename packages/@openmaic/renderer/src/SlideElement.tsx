@@ -29,8 +29,13 @@ export interface SlideElementProps {
   elementIndex: number;
   theme?: Pick<SlideTheme, 'fontColor' | 'fontName'>;
   animate?: boolean;
-  renderImage?: (element: PPTImageElement, resolvedSrc: string) => ReactNode;
+  renderImage?: (
+    element: PPTImageElement,
+    resolvedSrc: string,
+    defaultContent: ReactNode,
+  ) => ReactNode;
   renderVideo?: (element: PPTVideoElement) => ReactNode;
+  videoInteractive?: boolean;
   onElementClick?: (element: PPTElement, event: React.MouseEvent) => void;
   /** Prefix used for the root div id — must match SpotlightOverlay's `elementIdPrefix`. */
   idPrefix?: string;
@@ -43,6 +48,7 @@ export function SlideElement({
   animate,
   renderImage,
   renderVideo,
+  videoInteractive,
   onElementClick,
   idPrefix = 'slide-element-',
 }: SlideElementProps) {
@@ -99,7 +105,11 @@ export function SlideElement({
         <BaseTableElement elementInfo={elementInfo} />
       )}
       {Component === 'video' && elementInfo.type === 'video' && (
-        <BaseVideoElement elementInfo={elementInfo} renderVideo={renderVideo} />
+        <BaseVideoElement
+          elementInfo={elementInfo}
+          renderVideo={renderVideo}
+          interactive={videoInteractive}
+        />
       )}
       {Component === 'code' && elementInfo.type === 'code' && (
         <BaseCodeElement elementInfo={elementInfo} animate={animate} />

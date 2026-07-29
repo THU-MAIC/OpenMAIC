@@ -76,6 +76,13 @@
     "videoRenderMp4": "算圖 MP4",
     "videoDownloadZip": "下載專案 ZIP",
     "videoServiceHint": "算圖 MP4 需要算圖服務。可下載 ZIP 在本機算圖。",
+    "videoBurnSubtitles": "燒錄字幕",
+    "videoBurnSubtitlesDesc": "關閉時匯出無字幕的乾淨影片，可在剪輯軟體中自行加入字幕檔。",
+    "videoDownloadSubtitles": "下載字幕 (.srt)",
+    "subtitlesCompiling": "正在產生字幕…",
+    "subtitlesSuccess": "字幕已下載",
+    "subtitlesEmpty": "沒有可產生字幕的旁白",
+    "subtitlesFailed": "字幕下載失敗",
     "noSlides": "無可匯出的幻燈片",
     "noSlidesSkipped": "本課程無幻燈片，已跳過 PPTX",
     "nothingToExport": "沒有可匯出的內容"

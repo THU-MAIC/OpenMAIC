@@ -76,6 +76,13 @@
     "videoRenderMp4": "Рендерить MP4",
     "videoDownloadZip": "Скачать ZIP проекта",
     "videoServiceHint": "Для рендеринга MP4 нужен сервис рендеринга. Скачайте ZIP для локального рендеринга.",
+    "videoBurnSubtitles": "Встроить субтитры",
+    "videoBurnSubtitlesDesc": "Выключено: экспортируйте чистое видео и добавьте файл субтитров в своём редакторе.",
+    "videoDownloadSubtitles": "Скачать субтитры (.srt)",
+    "subtitlesCompiling": "Компиляция субтитров...",
+    "subtitlesSuccess": "Субтитры скачаны",
+    "subtitlesEmpty": "Нет закадрового текста для субтитров",
+    "subtitlesFailed": "Не удалось скачать субтитры",
     "noSlides": "Нет слайдов для экспорта",
     "noSlidesSkipped": "В этом курсе нет слайдов — PPTX пропущен",
     "nothingToExport": "Нет данных для экспорта"

@@ -175,6 +175,7 @@ async function buildFreshAgentLoopStoreState(): Promise<AgentLoopStoreState> {
   return {
     stage: freshState.stage,
     scenes: freshState.scenes,
+    outlines: freshState.outlines,
     currentSceneId: freshState.currentSceneId,
     mode: freshState.mode,
     whiteboardOpen: useCanvasStore.getState().whiteboardOpen,

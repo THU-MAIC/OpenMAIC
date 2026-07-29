@@ -47,6 +47,7 @@ poll, then download. Job ids are opaque.
 | `RENDER_MAX_COMPRESSION_RATIO` | `200` | Max expanded:compressed ratio per entry (ZIP-bomb guard). |
 | `RENDER_EGRESS_LOCKDOWN` | `true` | Install the iptables egress lockdown at startup (needs root + `CAP_NET_ADMIN`); **fails closed** — the container exits if the rules can't be applied. Set `false` to run unisolated. |
 | `PRODUCER_TMP_PROJECT_DIR` | `/tmp/openmaic-renders` | Scratch dir for unzipped projects + outputs. |
+| `PRODUCER_BROWSER_GPU_MODE` | `hardware` (set in Compose) | Capture path selector. Producer's own default is `software`, which force-enables the CPU-bound `Page.captureScreenshot` fallback (~10 fps, all cores pinned). `hardware` keeps Chromium's `HeadlessExperimental.beginFrame` capture active — ~2x throughput at ~half the CPU, pixel-identical static frames. No real GPU required; falls back gracefully if absent. |
 | `PUPPETEER_EXECUTABLE_PATH` | `/usr/bin/chromium` | System Chromium (set in the image). |
 
 Client identity for the per-user guard is taken from the `x-openmaic-client`

@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/renderer",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "React component for rendering PPTist-style Slide JSON, extracted from OpenMAIC.",
   "type": "module",
   "main": "./dist/index.js",
@@ -41,7 +41,8 @@
   "scripts": {
     "clean": "rm -rf dist",
     "genfonts": "node scripts/generate-fonts-css.mjs",
-    "build": "node scripts/generate-fonts-css.mjs && rm -rf dist && rollup -c && tsc --emitDeclarationOnly --declarationDir dist",
+    "gen-katex-fonts": "node scripts/generate-katex-fonts.mjs",
+    "build": "node scripts/generate-fonts-css.mjs && node scripts/generate-katex-fonts.mjs && rm -rf dist && rollup -c && tsc --emitDeclarationOnly --declarationDir dist",
     "dev": "rollup -c -w",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

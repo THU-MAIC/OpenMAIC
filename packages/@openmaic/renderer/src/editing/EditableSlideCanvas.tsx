@@ -50,6 +50,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     slide,
     renderImage,
     renderVideo,
+    videoInteractive,
     className,
     style,
     selection,
@@ -180,6 +181,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
           scale={props.scale}
           renderImage={renderImage}
           renderVideo={renderVideo}
+          videoInteractive={videoInteractive}
         />
 
         {/* Interaction overlay: hit targets below, selection chrome above.

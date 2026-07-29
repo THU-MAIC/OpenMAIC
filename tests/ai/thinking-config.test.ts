@@ -85,6 +85,9 @@ describe('thinking config metadata', () => {
     expect(glmModels).not.toContain('glm-4.5-air');
     expect(glmModels).not.toContain('glm-4.5-airx');
     expect(glmModels).not.toContain('glm-4.5-flash');
+    expect(googleModels).toEqual(
+      expect.arrayContaining(['gemini-3.6-flash', 'gemini-3.5-flash-lite']),
+    );
     expect(googleModels).toContain('gemini-3.1-pro-preview');
     expect(googleModels).not.toContain('gemini-3-pro-preview');
     expect(deepseekModels).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash']);
@@ -167,6 +170,63 @@ describe('thinking config normalization', () => {
     });
     expect(opus48Thinking?.effortValues).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
     expect(opus47Thinking?.effortValues).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
+  });
+
+  it('models Claude 5 defaults and Fable always-on thinking', () => {
+    const fableThinking = getThinking('anthropic', 'claude-fable-5');
+    const opusThinking = getThinking('anthropic', 'claude-opus-5');
+    const sonnetThinking = getThinking('anthropic', 'claude-sonnet-5');
+
+    expect(getDefaultThinkingConfig(fableThinking)).toEqual({
+      mode: 'enabled',
+      effort: 'high',
+    });
+    expect(normalizeThinkingConfig(fableThinking, { mode: 'disabled' })).toEqual({
+      mode: 'enabled',
+      effort: 'low',
+    });
+    expect(fableThinking).toMatchObject({
+      toggleable: false,
+      budgetAdjustable: false,
+    });
+    expect(getDefaultThinkingConfig(opusThinking)).toEqual({
+      mode: 'enabled',
+      effort: 'high',
+    });
+    expect(getDefaultThinkingConfig(sonnetThinking)).toEqual({
+      mode: 'enabled',
+      effort: 'high',
+    });
+    expect(opusThinking?.effortValues).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
+    expect(sonnetThinking?.effortValues).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
+  });
+
+  it('models the latest Gemini, Kimi, and Grok reasoning controls', () => {
+    const geminiFlashThinking = getThinking('google', 'gemini-3.6-flash');
+    const geminiLiteThinking = getThinking('google', 'gemini-3.5-flash-lite');
+    const kimiThinking = getThinking('kimi', 'kimi-k3');
+    const grokThinking = getThinking('grok', 'grok-4.5');
+
+    expect(getDefaultThinkingConfig(geminiFlashThinking)).toEqual({
+      mode: 'enabled',
+      level: 'medium',
+    });
+    expect(getDefaultThinkingConfig(geminiLiteThinking)).toEqual({
+      mode: 'enabled',
+      level: 'minimal',
+    });
+    expect(getDefaultThinkingConfig(kimiThinking)).toEqual({
+      mode: 'enabled',
+      effort: 'max',
+    });
+    expect(normalizeThinkingConfig(kimiThinking, { mode: 'disabled' })).toEqual({
+      mode: 'enabled',
+      effort: 'low',
+    });
+    expect(getDefaultThinkingConfig(grokThinking)).toEqual({
+      mode: 'enabled',
+      effort: 'high',
+    });
   });
 
   it('normalizes DeepSeek V4 thinking as high/max effort levels', () => {

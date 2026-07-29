@@ -132,7 +132,7 @@ beforeEach(() => {
 
 describe('saveStageDataIncremental', () => {
   it('prepares and writes exactly one dirty scene', async () => {
-    await saveStageDataIncremental('stage-1', [{ kind: 'scene', sceneId: 'scene-2' }], data);
+    await saveStageDataIncremental('stage-1', [{ kind: 'scene', sceneId: 'scene-2' }], data, 0);
 
     expect(prepareScenes).toHaveBeenCalledWith('stage-1', [scenes[1]]);
     expect(putScene).toHaveBeenCalledOnce();
@@ -143,23 +143,28 @@ describe('saveStageDataIncremental', () => {
 
   it('normalizes an undefined scene order to its document index', async () => {
     const unorderedScenes = [scenes[0], { ...scenes[1], order: undefined }] as Scene[];
-    await saveStageDataIncremental('stage-1', [{ kind: 'scene', sceneId: 'scene-2' }], {
-      ...data,
-      scenes: unorderedScenes,
-    });
+    await saveStageDataIncremental(
+      'stage-1',
+      [{ kind: 'scene', sceneId: 'scene-2' }],
+      {
+        ...data,
+        scenes: unorderedScenes,
+      },
+      0,
+    );
 
     expect(putScene.mock.calls[0]![1]).toEqual(expect.objectContaining({ order: 1 }));
   });
 
   it('uses the aggregate save for structural changes', async () => {
-    await saveStageDataIncremental('stage-1', [{ kind: 'structure' }], data);
+    await saveStageDataIncremental('stage-1', [{ kind: 'structure' }], data, 0);
     expect(prepareScenes).toHaveBeenCalledWith('stage-1', scenes);
     expect(saveDocument).toHaveBeenCalledOnce();
     expect(putScene).not.toHaveBeenCalled();
   });
 
   it('does not enter the document store for current-scene-only changes', async () => {
-    await saveStageDataIncremental('stage-1', [{ kind: 'currentScene' }], data);
+    await saveStageDataIncremental('stage-1', [{ kind: 'currentScene' }], data, 0);
     expect(mutateDocument).not.toHaveBeenCalled();
     expect(saveCurrentScene).toHaveBeenCalledWith('stage-1', 'scene-1');
   });
@@ -168,7 +173,7 @@ describe('saveStageDataIncremental', () => {
     putScene.mockRejectedValueOnce(
       new DocumentVersionError('stage-1', 'not-current', undefined, 'legacy'),
     );
-    await saveStageDataIncremental('stage-1', [{ kind: 'scene', sceneId: 'scene-1' }], data);
+    await saveStageDataIncremental('stage-1', [{ kind: 'scene', sceneId: 'scene-1' }], data, 0);
     expect(saveDocument).toHaveBeenCalledOnce();
     expect(prepareScenes).toHaveBeenLastCalledWith('stage-1', scenes);
   });
@@ -178,6 +183,7 @@ describe('saveStageDataIncremental', () => {
       'stage-1',
       [{ kind: 'scene', sceneId: 'scene-1' }, { kind: 'stage' }],
       data,
+      0,
     );
 
     expect(saveDocument).toHaveBeenCalledOnce();
@@ -188,7 +194,9 @@ describe('saveStageDataIncremental', () => {
   it('reports an isolated chat failure without failing the document flush', async () => {
     saveChatSessions.mockRejectedValueOnce(new Error('runtime unavailable'));
 
-    await expect(saveStageDataIncremental('stage-1', [{ kind: 'chats' }], data)).resolves.toEqual({
+    await expect(
+      saveStageDataIncremental('stage-1', [{ kind: 'chats' }], data, 0),
+    ).resolves.toEqual({
       failedChanges: [{ kind: 'chats' }],
     });
   });
@@ -198,7 +206,7 @@ describe('saveStageData', () => {
   it('reports a split chat failure after the document save succeeds', async () => {
     saveChatSessions.mockRejectedValueOnce(new Error('runtime unavailable'));
 
-    await expect(saveStageData('stage-1', data)).resolves.toEqual({
+    await expect(saveStageData('stage-1', data, 0)).resolves.toEqual({
       failedChanges: [{ kind: 'chats' }],
     });
     expect(saveDocument).toHaveBeenCalledOnce();

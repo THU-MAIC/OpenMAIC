@@ -5,10 +5,10 @@ import { saveAs } from 'file-saver';
 import { toast } from 'sonner';
 import { useStageStore } from '@/lib/store/stage';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { getGeneratedAgentsByStageId } from '@/lib/utils/database';
 import {
   CLASSROOM_ZIP_FORMAT_VERSION,
   CLASSROOM_ZIP_EXTENSION,
+  manifestAgentFromConfig,
   type ClassroomManifest,
   type ManifestStage,
   type ManifestAgent,
@@ -62,8 +62,9 @@ export function useExportClassroom() {
       const freshDocument = await accessDocument(stage.id);
       const latestName = freshDocument.document?.stage.name || stage.name;
 
-      // 2. Collect agents from DB
-      const agentRecords = await getGeneratedAgentsByStageId(stage.id);
+      // 2. Collect the roster from the stage document (single source of truth;
+      // the in-memory stage already carries any lazily migrated voice fields).
+      const agentConfigs = stage.generatedAgentConfigs ?? [];
 
       // 3. Collect audio files
       const audioFiles = await collectAudioFiles(scenes);
@@ -87,35 +88,11 @@ export function useExportClassroom() {
         updatedAt: stage.updatedAt,
       };
 
-      const manifestAgents: ManifestAgent[] = agentRecords.map((a) => ({
-        name: a.name,
-        role: a.role,
-        persona: a.persona,
-        avatar: a.avatar,
-        color: a.color,
-        priority: a.priority,
-      }));
-
-      // Also include generatedAgentConfigs from stage if agents not in DB
-      if (manifestAgents.length === 0 && stage.generatedAgentConfigs?.length) {
-        for (const a of stage.generatedAgentConfigs) {
-          manifestAgents.push({
-            name: a.name,
-            role: a.role,
-            persona: a.persona,
-            avatar: a.avatar,
-            color: a.color,
-            priority: a.priority,
-          });
-        }
-      }
+      const manifestAgents: ManifestAgent[] = agentConfigs.map(manifestAgentFromConfig);
 
       // Build agent ID → index mapping for multiAgent references
       const agentIdToIndex = new Map<string, number>();
-      agentRecords.forEach((a, i) => agentIdToIndex.set(a.id, i));
-      if (stage.generatedAgentConfigs?.length && agentRecords.length === 0) {
-        stage.generatedAgentConfigs.forEach((a, i) => agentIdToIndex.set(a.id, i));
-      }
+      agentConfigs.forEach((a, i) => agentIdToIndex.set(a.id, i));
 
       const aggregateReport: InlineReport = { inlined: [], failed: [] };
       const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });

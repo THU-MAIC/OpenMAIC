@@ -39,7 +39,7 @@ import {
 } from '@/lib/document/bundle';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import { nanoid } from 'nanoid';
-import type { Stage } from '@/lib/types/stage';
+import type { GeneratedAgentConfig, Stage } from '@/lib/types/stage';
 import type {
   SceneOutline,
   PdfImage,
@@ -866,11 +866,17 @@ function GenerationPreviewContent() {
           const agentData = await agentResp.json();
           if (!agentData.success) throw new Error(agentData.error || 'Agent generation failed');
 
-          // Save to IndexedDB and registry. The agent-profile LLM has already
-          // bound each agent's voice (from availableVoices); the fallback for an
-          // invalid/unavailable voice is applied later at the live TTS call.
-          const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
-          const savedIds = await saveGeneratedAgents(stage.id, agentData.agents);
+          // Embed the roster (including its voice binding) on the stage — it
+          // persists with the stage document via saveToStorage below — and
+          // mirror it into the in-memory registry. The agent-profile LLM has
+          // already bound each agent's voice (from availableVoices); the
+          // fallback for an invalid/unavailable voice is applied later at the
+          // live TTS call.
+          const generatedConfigs = agentData.agents as GeneratedAgentConfig[];
+          stage.generatedAgentConfigs = generatedConfigs;
+          const { applyGeneratedAgentsToRegistry } =
+            await import('@/lib/orchestration/registry/store');
+          const savedIds = applyGeneratedAgentsToRegistry(stage.id, generatedConfigs);
           settings.setSelectedAgentIds(savedIds);
           // Stage-derived, not a user choice — must not carry across classrooms.
           settings.setAgentSelectionIsUserSet(false);

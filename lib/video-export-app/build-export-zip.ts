@@ -14,7 +14,7 @@
  *
  * App-side / impure: reads the store + Dexie and does IO.
  */
-import { compileVideoTimeline, emitHyperframes } from '@/lib/video-export';
+import { compileVideoTimeline, emitHyperframes, toSrt, toVtt } from '@/lib/video-export';
 import { useStageStore } from '@/lib/store';
 import { accessDocument } from '@/lib/document-store';
 import { createVideoTimelineDeps } from './timeline-deps';
@@ -50,26 +50,62 @@ export interface BuildExportZipResult {
 export class NoScenesError extends Error {}
 
 /**
- * Build the export ZIP for the current stage at the given resolution. Throws
- * {@link NoScenesError} when there's nothing to export.
+ * Shared compile prologue for both export paths: read the current stage + scenes
+ * from the store (throwing {@link NoScenesError} when empty), resolve the display
+ * name from Dexie, load the DI deps (Dexie durations + asset presence + measured
+ * geometry), and pure-compile to the {@link VideoTimeline} IR. Both the full ZIP
+ * build and the subtitles-only path go through here so their timing/assets/
+ * geometry wiring can never drift.
  */
-export async function buildExportZip(resolution: VideoResolution): Promise<BuildExportZipResult> {
+async function compileStageIr(options: { skipGeometry?: boolean } = {}): Promise<{
+  ir: ReturnType<typeof compileVideoTimeline>;
+  stageName: string;
+  scenes: ReturnType<typeof useStageStore.getState>['scenes'];
+  deps: Awaited<ReturnType<typeof createVideoTimelineDeps>>;
+}> {
   const { stage, scenes } = useStageStore.getState();
   if (!stage?.id || scenes.length === 0) {
     throw new NoScenesError('No scenes to export');
   }
 
-  const { width, height } = VIDEO_RESOLUTIONS[resolution];
-
   const latest = await accessDocument(stage.id).catch(() => undefined);
   const stageName = latest?.document?.stage.name || stage.name || 'classroom';
 
-  // 1. DI deps (Dexie durations + asset presence) → 2. pure compile to IR.
-  const deps = await createVideoTimelineDeps({ stage: { id: stage.id }, scenes });
-  const ir = compileVideoTimeline({ stage: { id: stage.id, name: stageName }, scenes }, deps);
+  const deps = await createVideoTimelineDeps({
+    stage: { id: stage.id },
+    scenes,
+    skipGeometry: options.skipGeometry,
+  });
+  const ir = compileVideoTimeline(
+    { stage: { id: stage.id, name: stageName }, scenes },
+    { timing: deps.timing, assets: deps.assets, geometry: deps.geometry },
+  );
+
+  return { ir, stageName, scenes, deps };
+}
+
+/** Options for a full export-ZIP build. */
+export interface BuildExportZipOptions {
+  resolution: VideoResolution;
+  /** Burn the subtitle overlay into the video. Default false (sidecar SRT/VTT only). */
+  burnInSubtitles?: boolean;
+}
+
+/**
+ * Build the export ZIP for the current stage at the given resolution. Throws
+ * {@link NoScenesError} when there's nothing to export.
+ */
+export async function buildExportZip(
+  options: BuildExportZipOptions,
+): Promise<BuildExportZipResult> {
+  const { resolution, burnInSubtitles = false } = options;
+  const { width, height } = VIDEO_RESOLUTIONS[resolution];
+
+  // 1. DI deps (Dexie durations + asset presence + measured geometry) → 2. pure compile.
+  const { ir, stageName, scenes, deps } = await compileStageIr();
 
   // 3. emit the Hyperframes project text.
-  const project = emitHyperframes(ir, { width, height });
+  const project = emitHyperframes(ir, { width, height, burnInSubtitles });
 
   // 4. collect asset bytes (slide snapshots + narration/media).
   const { blobs, missing } = await collectVideoAssets(ir, scenes, deps.records, {
@@ -85,4 +121,35 @@ export async function buildExportZip(resolution: VideoResolution): Promise<Build
 
 export function sanitizeFilename(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, '_') || 'classroom';
+}
+
+export interface CompiledSubtitles {
+  srt: string;
+  vtt: string;
+  stageName: string;
+  /** Number of usable cues (positive-span, non-empty). 0 → nothing to download. */
+  cueCount: number;
+}
+
+/**
+ * Compile just the subtitle track for the current stage — the same cues the
+ * export ZIP carries, without collecting asset bytes, snapshotting frames, or
+ * touching the render service. Lets the user download SRT/VTT to add captions in
+ * their own editor (the "clean video + sidecar subtitles" path, #867 item 2).
+ * Throws {@link NoScenesError} when there's nothing to export.
+ *
+ * Passes `skipGeometry` so the compile skips the off-screen content-box
+ * measurement (an off-screen render per slide) that only positions effects —
+ * subtitles need only the timeline, and audio/video *duration* probes still run
+ * so these cues match the ones the burned-in video would carry.
+ */
+export async function compileSubtitles(): Promise<CompiledSubtitles> {
+  const { ir, stageName } = await compileStageIr({ skipGeometry: true });
+
+  return {
+    srt: toSrt(ir.subtitles),
+    vtt: toVtt(ir.subtitles),
+    stageName,
+    cueCount: ir.subtitles.filter((c) => c.text.trim() && c.endMs > c.startMs).length,
+  };
 }

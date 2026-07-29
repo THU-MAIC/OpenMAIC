@@ -76,6 +76,13 @@
     "videoRenderMp4": "Render MP4",
     "videoDownloadZip": "Download project ZIP",
     "videoServiceHint": "MP4 rendering needs the render service. Download the ZIP to render locally.",
+    "videoBurnSubtitles": "Burn in subtitles",
+    "videoBurnSubtitlesDesc": "Off: export a clean video and add the subtitle file in your editor.",
+    "videoDownloadSubtitles": "Download subtitles (.srt)",
+    "subtitlesCompiling": "Compiling subtitles...",
+    "subtitlesSuccess": "Subtitles downloaded",
+    "subtitlesEmpty": "No narration to make subtitles from",
+    "subtitlesFailed": "Subtitle download failed",
     "noSlides": "No slides to export",
     "noSlidesSkipped": "No slides in this course — PPTX skipped",
     "nothingToExport": "Nothing to export"

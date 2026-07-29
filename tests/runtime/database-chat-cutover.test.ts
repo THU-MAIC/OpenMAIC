@@ -525,6 +525,87 @@ describe('database runtime chat integration', () => {
     ).resolves.toMatchObject([{ title: 'Original runtime chat' }]);
   });
 
+  it('lifts the deletion state when a backup import recreates a deleted stage', async () => {
+    const { importDatabase } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
+    const { isStageDeleted, markStageDeleted, stageDeletionEpoch } =
+      await import('@/lib/utils/deleted-stages');
+
+    // The stage was deleted earlier this session; the backup restores its id.
+    markStageDeleted('stage-import-revive');
+    const epochAfterDelete = stageDeletionEpoch('stage-import-revive');
+
+    await importDatabase({
+      stages: [
+        {
+          id: 'stage-import-revive',
+          name: 'Restored by import',
+          createdAt: 1_000,
+          updatedAt: 3_000,
+        },
+      ],
+    });
+
+    await expect(getDocumentStore().loadDocument('stage-import-revive')).resolves.toMatchObject({
+      stage: { name: 'Restored by import' },
+    });
+    // The deleted flag is lifted so later edits persist; the deletion epoch
+    // stays bumped so pre-delete in-flight writes remain fenced.
+    expect(isStageDeleted('stage-import-revive')).toBe(false);
+    expect(stageDeletionEpoch('stage-import-revive')).toBe(epochAfterDelete);
+  });
+
+  it('reinstates the deletion state when a failed import rolls back a restored document', async () => {
+    const backing = new BrowserRuntimeStore({ indexedDB: globalThis.indexedDB });
+    const { importDatabase } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
+    const { isStageDeleted, markStageDeleted, stageDeletionEpoch } =
+      await import('@/lib/utils/deleted-stages');
+
+    // Deleted earlier this session: no document, deletion in effect.
+    markStageDeleted('stage-import-rollback');
+    const epochAfterDelete = stageDeletionEpoch('stage-import-rollback');
+
+    const markerFailureStore = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'createSession') {
+          return async (init: Parameters<RuntimeStore['createSession']>[0]) => {
+            if (init.id.startsWith('chat-restore-marker:')) {
+              throw new Error('restore marker failed');
+            }
+            return target.createSession(init);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+
+    await expect(
+      importDatabase(
+        {
+          stages: [
+            {
+              id: 'stage-import-rollback',
+              name: 'Restored by import',
+              createdAt: 1_000,
+              updatedAt: 3_000,
+            },
+          ],
+          chatSessions: [],
+        },
+        { store: markerFailureStore, learnerKey },
+      ),
+    ).rejects.toThrow('restore marker failed');
+
+    // The rollback removed the imported document again (pre-image was absent)…
+    await expect(getDocumentStore().loadDocument('stage-import-rollback')).resolves.toBeNull();
+    // …and reinstated the deletion state the import had lifted, so an
+    // outstanding flush cannot recreate the rolled-back document.
+    expect(isStageDeleted('stage-import-rollback')).toBe(true);
+    expect(stageDeletionEpoch('stage-import-rollback')).toBeGreaterThan(epochAfterDelete);
+  });
+
   it('blocks lazy migration behind a runtime-wide clear and observes the deleted source', async () => {
     vi.stubGlobal('navigator', { locks: fairLockManager() });
     const backing = new BrowserRuntimeStore({ indexedDB: globalThis.indexedDB });
@@ -612,12 +693,16 @@ describe('database runtime chat integration', () => {
       return document;
     });
 
-    const staleSave = saveStageData(stage.id, {
-      stage: { ...stage, name: 'Stale save' },
-      scenes: [],
-      currentSceneId: null,
-      chats: [],
-    });
+    const staleSave = saveStageData(
+      stage.id,
+      {
+        stage: { ...stage, name: 'Stale save' },
+        scenes: [],
+        currentSceneId: null,
+        chats: [],
+      },
+      0,
+    );
     await migrationLoadStarted;
     const clearing = clearDatabase(runtimeStore);
     releaseMigrationLoad();
@@ -627,12 +712,16 @@ describe('database runtime chat integration', () => {
     await expect(documentStore.loadDocument(stage.id)).resolves.toBeNull();
 
     await expect(
-      saveStageData(stage.id, {
-        stage: { ...stage, name: 'Fresh save' },
-        scenes: [],
-        currentSceneId: null,
-        chats: [],
-      }),
+      saveStageData(
+        stage.id,
+        {
+          stage: { ...stage, name: 'Fresh save' },
+          scenes: [],
+          currentSceneId: null,
+          chats: [],
+        },
+        0,
+      ),
     ).resolves.toBeUndefined();
     await expect(documentStore.loadDocument(stage.id)).resolves.toMatchObject({
       stage: { name: 'Fresh save' },
@@ -998,17 +1087,21 @@ describe('database runtime chat integration', () => {
       return originalSave(document);
     });
 
-    const saving = saveStageData('stage-save-enrollment', {
-      stage: {
-        id: 'stage-save-enrollment',
-        name: 'Enrolled save',
-        createdAt: 1_000,
-        updatedAt: 2_000,
+    const saving = saveStageData(
+      'stage-save-enrollment',
+      {
+        stage: {
+          id: 'stage-save-enrollment',
+          name: 'Enrolled save',
+          createdAt: 1_000,
+          updatedAt: 2_000,
+        },
+        scenes: [],
+        currentSceneId: null,
+        chats: [chatSession()],
       },
-      scenes: [],
-      currentSceneId: null,
-      chats: [chatSession()],
-    });
+      0,
+    );
     await didStartDocumentWrite;
     let maintenanceStarted = false;
     const maintenance = withRuntimeStorageExclusiveLock(async () => {
@@ -1044,17 +1137,21 @@ describe('database runtime chat integration', () => {
       return originalSave(document);
     });
 
-    const saving = saveStageData('stage-epoch-order', {
-      stage: {
-        id: 'stage-epoch-order',
-        name: 'Epoch ordering',
-        createdAt: 1_000,
-        updatedAt: 2_000,
+    const saving = saveStageData(
+      'stage-epoch-order',
+      {
+        stage: {
+          id: 'stage-epoch-order',
+          name: 'Epoch ordering',
+          createdAt: 1_000,
+          updatedAt: 2_000,
+        },
+        scenes: [],
+        currentSceneId: null,
+        chats: [chatSession()],
       },
-      scenes: [],
-      currentSceneId: null,
-      chats: [chatSession()],
-    });
+      0,
+    );
     await didStartDocumentWrite;
     const boundedExclusive = withRuntimeStorageExclusiveLock as <T>(
       work: () => Promise<T>,
@@ -1427,17 +1524,21 @@ describe('database runtime chat integration', () => {
     const { loadStageData, saveStageData } = await import('@/lib/utils/stage-storage');
 
     await expect(
-      saveStageData('stage-no-chat', {
-        stage: {
-          id: 'stage-no-chat',
-          name: 'No chat stage',
-          createdAt: 1_000,
-          updatedAt: 2_000,
+      saveStageData(
+        'stage-no-chat',
+        {
+          stage: {
+            id: 'stage-no-chat',
+            name: 'No chat stage',
+            createdAt: 1_000,
+            updatedAt: 2_000,
+          },
+          scenes: [],
+          currentSceneId: null,
+          chats: [],
         },
-        scenes: [],
-        currentSceneId: null,
-        chats: [],
-      }),
+        0,
+      ),
     ).resolves.toBeUndefined();
     await expect(loadStageData('stage-no-chat')).resolves.toMatchObject({
       stage: { name: 'No chat stage' },
@@ -1548,10 +1649,14 @@ describe('database runtime chat integration', () => {
     const loaded = await loadStageData('stage-legacy-autosave');
 
     await expect(
-      saveStageData('stage-legacy-autosave', {
-        ...loaded!,
-        stage: { ...loaded!.stage, name: 'Updated stage' },
-      }),
+      saveStageData(
+        'stage-legacy-autosave',
+        {
+          ...loaded!,
+          stage: { ...loaded!.stage, name: 'Updated stage' },
+        },
+        0,
+      ),
     ).resolves.toBeUndefined();
     await expect(loadStageData('stage-legacy-autosave')).resolves.toMatchObject({
       stage: { name: 'Updated stage' },
@@ -1590,10 +1695,14 @@ describe('database runtime chat integration', () => {
     const loaded = await loadStageData('stage-legacy-edit');
 
     await expect(
-      saveStageData('stage-legacy-edit', {
-        ...loaded!,
-        chats: [{ ...loaded!.chats[0]!, title: 'Unsaved edit', updatedAt: 3_000 }],
-      }),
+      saveStageData(
+        'stage-legacy-edit',
+        {
+          ...loaded!,
+          chats: [{ ...loaded!.chats[0]!, title: 'Unsaved edit', updatedAt: 3_000 }],
+        },
+        0,
+      ),
     ).rejects.toThrow(/Web Locks/);
   });
 
@@ -1614,9 +1723,9 @@ describe('database runtime chat integration', () => {
     });
     const loaded = await loadStageData('stage-legacy-delete');
 
-    await expect(saveStageData('stage-legacy-delete', { ...loaded!, chats: [] })).rejects.toThrow(
-      /Web Locks/,
-    );
+    await expect(
+      saveStageData('stage-legacy-delete', { ...loaded!, chats: [] }, 0),
+    ).rejects.toThrow(/Web Locks/);
   });
 
   it('still fails non-empty chat document saves without Web Locks', async () => {
@@ -1625,17 +1734,21 @@ describe('database runtime chat integration', () => {
     const { saveStageData } = await import('@/lib/utils/stage-storage');
 
     await expect(
-      saveStageData('stage-with-chat', {
-        stage: {
-          id: 'stage-with-chat',
-          name: 'Chat stage',
-          createdAt: 1_000,
-          updatedAt: 2_000,
+      saveStageData(
+        'stage-with-chat',
+        {
+          stage: {
+            id: 'stage-with-chat',
+            name: 'Chat stage',
+            createdAt: 1_000,
+            updatedAt: 2_000,
+          },
+          scenes: [],
+          currentSceneId: null,
+          chats: [chatSession()],
         },
-        scenes: [],
-        currentSceneId: null,
-        chats: [chatSession()],
-      }),
+        0,
+      ),
     ).rejects.toThrow(/Web Locks/);
   });
 

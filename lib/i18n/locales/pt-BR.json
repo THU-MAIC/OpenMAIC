@@ -76,6 +76,13 @@
     "videoRenderMp4": "Renderizar MP4",
     "videoDownloadZip": "Baixar ZIP do projeto",
     "videoServiceHint": "A renderização de MP4 requer o serviço de renderização. Baixe o ZIP para renderizar localmente.",
+    "videoBurnSubtitles": "Gravar legendas no vídeo",
+    "videoBurnSubtitlesDesc": "Desligado: exporte um vídeo limpo e adicione o arquivo de legenda no seu editor.",
+    "videoDownloadSubtitles": "Baixar legendas (.srt)",
+    "subtitlesCompiling": "Compilando legendas...",
+    "subtitlesSuccess": "Legendas baixadas",
+    "subtitlesEmpty": "Nenhuma narração para gerar legendas",
+    "subtitlesFailed": "Falha ao baixar legendas",
     "noSlides": "Não há slides para exportar",
     "noSlidesSkipped": "Este curso não tem slides — PPTX ignorado",
     "nothingToExport": "Nada para exportar"

@@ -76,6 +76,13 @@
     "videoRenderMp4": "渲染 MP4",
     "videoDownloadZip": "下载项目 ZIP",
     "videoServiceHint": "渲染 MP4 需要渲染服务。可下载 ZIP 在本地渲染。",
+    "videoBurnSubtitles": "烧录字幕",
+    "videoBurnSubtitlesDesc": "关闭时导出无字幕的干净视频，可在剪辑软件中自行添加字幕文件。",
+    "videoDownloadSubtitles": "下载字幕 (.srt)",
+    "subtitlesCompiling": "正在生成字幕…",
+    "subtitlesSuccess": "字幕已下载",
+    "subtitlesEmpty": "没有可生成字幕的旁白",
+    "subtitlesFailed": "字幕下载失败",
     "noSlides": "无可导出的幻灯片",
     "noSlidesSkipped": "本课程无幻灯片，已跳过 PPTX",
     "nothingToExport": "没有可导出的内容"

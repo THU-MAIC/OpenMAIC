@@ -11,7 +11,7 @@ vi.mock('@/lib/utils/stage-storage', () => ({
   loadStageData: vi.fn().mockResolvedValue(null),
 }));
 
-import { flushStageSave, useStageStore } from '@/lib/store/stage';
+import { flushStageSave, restorePendingStageChanges, useStageStore } from '@/lib/store/stage';
 import type { ChatSession } from '@/lib/types/chat';
 import type { Scene, Stage } from '@/lib/types/stage';
 
@@ -173,6 +173,65 @@ describe('incremental stage flush', () => {
       { kind: 'scene', sceneId: 'scene-2' },
     ]);
     await staleFlush;
+  });
+
+  it('skips the chatSnapshot rebind when an in-flight round is fenced, so restored chats still reach storage', async () => {
+    // A deletion fences a debounced flush round mid-flight ('stale-dropped').
+    // Treating that as success would rebind chatSnapshot to chats that never
+    // landed; after a failed deletion restores the chat descriptor, the retry
+    // would then see its own unsaved chats as the persisted baseline and
+    // storage-level no-op skips could silently swallow them. The rebind must
+    // be skipped so the retry carries the honest pre-fence baseline.
+    const chat: ChatSession = {
+      id: 'chat-1',
+      type: 'qa',
+      title: 'Fenced chat',
+      status: 'idle',
+      messages: [],
+      config: { agentIds: [] },
+      toolCalls: [],
+      pendingToolCalls: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    let releaseFirst!: (result: 'stale-dropped') => void;
+    incrementalSave.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseFirst = resolve;
+        }),
+    );
+    useStageStore.getState().setChats([chat]);
+    const snapshotBefore = useStageStore.getState().chatSnapshot;
+
+    const fencedFlush = flushStageSave();
+    await vi.waitFor(() => expect(incrementalSave).toHaveBeenCalledOnce());
+    releaseFirst('stale-dropped');
+    await fencedFlush;
+
+    // No success bookkeeping: the baseline still records the chats as unsaved.
+    expect(useStageStore.getState().chatSnapshot).toBe(snapshotBefore);
+
+    // The deletion fails before removing the document; its failure path
+    // re-queues the discarded chat descriptor (deleteStageData's restore).
+    restorePendingStageChanges('stage-1', [{ kind: 'chats' }]);
+    incrementalSave.mockResolvedValueOnce({ failedChanges: [] });
+    await flushStageSave();
+
+    expect(incrementalSave).toHaveBeenCalledTimes(2);
+    // The restore carries the chat descriptor plus the full-aggregate re-mark
+    // (untracked aggregate-save content has no descriptor of its own).
+    expect(incrementalSave.mock.calls[1]![1]).toEqual(
+      expect.arrayContaining([{ kind: 'chats' }, { kind: 'structure' }]),
+    );
+    // The retry carried the honest baseline (the pre-fence snapshot), not the
+    // never-persisted chats…
+    expect(incrementalSave.mock.calls[1]![2]).toEqual(
+      expect.objectContaining({ chats: [chat], chatSnapshot: snapshotBefore }),
+    );
+    // …and only the verified write rebinds the snapshot.
+    expect(useStageStore.getState().chatSnapshot.sessions).toEqual([chat]);
+    expect(useStageStore.getState().chatSnapshot).not.toBe(snapshotBefore);
   });
 
   it('flushes old-document dirt when setStage switches documents', async () => {

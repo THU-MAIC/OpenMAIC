@@ -17,9 +17,17 @@
  * `@/lib/utils/database` and (for video probing) the DOM, the two concerns the
  * compiler's purity boundary keeps out.
  */
-import type { PlayVideoAction, SpeechAction, SceneCore } from '@openmaic/dsl';
-import type { AssetMeta, AssetSource, TimingProbe } from '@/lib/video-export';
-import type { Scene } from '@/lib/types/stage';
+import type {
+  PlayVideoAction,
+  SpeechAction,
+  SceneCore,
+  SpotlightAction,
+  LaserAction,
+} from '@openmaic/dsl';
+import type { AssetMeta, AssetSource, GeometryProbe, TimingProbe } from '@/lib/video-export';
+import type { Scene, SlideContent } from '@/lib/types/stage';
+import { isMediaPlaceholder } from '@/lib/store/media-generation';
+import { measureSlideElementGeometry, type MeasuredGeometry } from '@openmaic/renderer/snapshot';
 import { db, type AudioFileRecord, type MediaFileRecord } from '@/lib/utils/database';
 
 /** Loaded source records, keyed for both metadata (compiler) and byte collection. */
@@ -35,6 +43,7 @@ export interface VideoTimelineRecords {
 export interface VideoTimelineDeps {
   timing: TimingProbe;
   assets: AssetSource;
+  geometry: GeometryProbe;
   records: VideoTimelineRecords;
 }
 
@@ -50,6 +59,22 @@ function mediaPresent(record: MediaFileRecord | undefined): record is MediaFileR
 /** File-extension hint from a mime type (`video/mp4` → `mp4`), for the asset-plan naming. */
 function formatFromMime(mimeType: string | undefined): string | undefined {
   return mimeType?.split('/')[1] || undefined;
+}
+
+/**
+ * The generated-media reference a slide element points at, mirroring the live
+ * playback engine's bridge (`lib/action/engine.ts` `resolveMediaPlaceholderId`):
+ * prefer the explicit `mediaRef`, then a legacy `src` that is itself a media
+ * placeholder id. Returns undefined for elements that carry no generated media.
+ *
+ * A `play_video` action targets the slide element by its `.id`, but the media
+ * records are keyed by this ref (`gen_vid_…`), so the asset/duration lookups must
+ * bridge id → ref or every generated video misses and is dropped from the export.
+ */
+function elementMediaRef(el: { mediaRef?: unknown; src?: unknown }): string | undefined {
+  if (typeof el.mediaRef === 'string' && el.mediaRef) return el.mediaRef;
+  if (typeof el.src === 'string' && isMediaPlaceholder(el.src)) return el.src;
+  return undefined;
 }
 
 /** Per-probe timeout (ms). A blob whose metadata never loads must not wedge export. */
@@ -149,8 +174,17 @@ function probeAudioDurationMs(blob: Blob): Promise<number | null> {
 export async function createVideoTimelineDeps(input: {
   stage: { id: string };
   scenes: Scene[];
+  /**
+   * Skip the off-screen content-box geometry measurement (an off-screen React
+   * render per slide scene). Geometry only positions spotlight/laser/video
+   * effects — it never affects timing — so the subtitles-only path passes `true`
+   * to avoid that cost. Audio/video *duration* probes always run: they set the
+   * timeline (and thus cue timings), so the sidecar SRT/VTT stays in sync with
+   * the burned-in video. Defaults to false (full geometry for the ZIP/render).
+   */
+  skipGeometry?: boolean;
 }): Promise<VideoTimelineDeps> {
-  const { stage, scenes } = input;
+  const { stage, scenes, skipGeometry = false } = input;
 
   // Audio: load only the records referenced by speech actions.
   const audioIds = new Set<string>();
@@ -181,12 +215,56 @@ export async function createVideoTimelineDeps(input: {
     if (ms !== null) audioDurationMsByAudioId.set(audioId, ms);
   });
 
-  // Media: all generated media for this stage, keyed by elementId.
+  // Media: all generated media for this stage, keyed by media ref (`gen_vid_…` /
+  // `gen_img_…` — the stored `stageId:` prefix stripped), NOT the slide element
+  // id that `play_video` actions target.
   const mediaRecords = await db.mediaFiles.where('stageId').equals(stage.id).toArray();
   const mediaByElementId = new Map<string, MediaFileRecord>();
   for (const record of mediaRecords) {
     const elementId = record.id.includes(':') ? record.id.split(':').slice(1).join(':') : record.id;
     mediaByElementId.set(elementId, record);
+  }
+
+  // Bridge slide element `.id` → media ref, so a `play_video`/media lookup by the
+  // element id resolves to the record keyed by its ref. Without this every
+  // generated video misses and is silently dropped from the export (compile →
+  // present:false → no `<video>` emitted, no bytes collected). Mirrors the live
+  // engine's `resolveMediaPlaceholderId`.
+  //
+  // Scoped **by scene**, not deck-wide: element ids are only unique within a
+  // slide (e.g. `video_001` recurs across scenes), so a single flat map is
+  // last-writer-wins and would resolve an earlier scene's `play_video` to a
+  // later scene's media ref — the wrong asset and duration. Keying by scene id
+  // keeps each slide's bridge isolated.
+  const mediaRefBySceneElement = new Map<string, Map<string, string>>();
+  for (const scene of scenes) {
+    if (scene.type !== 'slide') continue;
+    const elements = (scene.content as SlideContent)?.canvas?.elements ?? [];
+    const byElement = new Map<string, string>();
+    for (const el of elements) {
+      const ref = elementMediaRef(el as { mediaRef?: unknown; src?: unknown });
+      if (ref) byElement.set((el as { id: string }).id, ref);
+    }
+    if (byElement.size > 0) mediaRefBySceneElement.set(scene.id, byElement);
+  }
+  /** Resolve a `play_video` element id to the media map's key (its ref) within a scene, or pass through. */
+  const resolveMediaKey = (elementId: string, sceneId: string): string =>
+    mediaRefBySceneElement.get(sceneId)?.get(elementId) ?? elementId;
+
+  // `timing.videoDurationMs` receives only the action (no scene), but the bridge
+  // above is now scene-scoped, so pre-resolve each `play_video`'s media ref by
+  // (scene, elementId) and key it on the action object. Action identity is
+  // stable end-to-end: the compiler's normalize pass preserves the same action
+  // references and the choreography passes them straight back to
+  // `getVideoDurationMs` — the same identity contract `resolveAvailableVideos`
+  // relies on. Falls back to the raw element id for any action not seen here.
+  const videoRefByAction = new Map<PlayVideoAction, string>();
+  for (const scene of scenes) {
+    for (const action of scene.actions ?? []) {
+      if (action.type !== 'play_video') continue;
+      const playVideo = action as PlayVideoAction;
+      videoRefByAction.set(playVideo, resolveMediaKey(playVideo.elementId, scene.id));
+    }
   }
 
   // Probe video durations up front so `videoDurationMs` can be synchronous.
@@ -214,7 +292,8 @@ export async function createVideoTimelineDeps(input: {
       return Math.round(record.duration * 1000);
     },
     videoDurationMs(action: PlayVideoAction): number | null {
-      return videoDurationMsByElementId.get(action.elementId) ?? null;
+      const key = videoRefByAction.get(action) ?? action.elementId;
+      return videoDurationMsByElementId.get(key) ?? null;
     },
   };
 
@@ -234,22 +313,67 @@ export async function createVideoTimelineDeps(input: {
         present: record.blob.size > 0 || !!record.ossKey,
       };
     },
-    media(elementId: string, _scene: SceneCore): AssetMeta | null {
-      const record = mediaByElementId.get(elementId);
+    media(elementId: string, scene: SceneCore): AssetMeta | null {
+      // `elementId` is the slide element `.id` a `play_video` targets; the media
+      // records are keyed by the element's media ref, so bridge id → ref first,
+      // scoped to this scene (element ids recur across slides).
+      const key = resolveMediaKey(elementId, scene.id);
+      const record = mediaByElementId.get(key);
       if (!record) return null;
       return {
         id: record.id,
         mimeType: record.mimeType,
         format: formatFromMime(record.mimeType),
-        durationMs: videoDurationMsByElementId.get(elementId),
+        durationMs: videoDurationMsByElementId.get(key),
         present: mediaPresent(record),
       };
+    },
+  };
+
+  // Pre-measure the rendered content-box geometry of every element a
+  // spotlight/laser/play_video targets, by scene. The compiler's GeometryProbe
+  // is synchronous, so (like durations) this async off-screen render happens up
+  // front and the probe is a table lookup. Measuring the `.element-content` box
+  // (auto-height text + 10px padding) — the same box the live overlay and the
+  // frame PNG use — aligns effects with where the element actually paints
+  // instead of its authored outer box (issue #867 item 5).
+  //
+  // Skipped for the subtitles-only path (`skipGeometry`): geometry positions
+  // effects but never touches timing, so the empty probe just degrades every
+  // effect to the authored-box calc — irrelevant when no video/frames are
+  // emitted — while saving an off-screen React render per slide.
+  const geometryBySceneElement = new Map<string, Map<string, MeasuredGeometry>>();
+  for (const scene of scenes) {
+    if (skipGeometry) break;
+    if (scene.type !== 'slide') continue;
+    const targetIds = new Set<string>();
+    for (const action of scene.actions ?? []) {
+      if (action.type === 'spotlight') targetIds.add((action as SpotlightAction).elementId);
+      else if (action.type === 'laser') targetIds.add((action as LaserAction).elementId);
+      else if (action.type === 'play_video') targetIds.add((action as PlayVideoAction).elementId);
+    }
+    if (targetIds.size === 0) continue;
+    const slide = (scene.content as SlideContent)?.canvas;
+    if (!slide) continue;
+    try {
+      const measured = await measureSlideElementGeometry(slide, [...targetIds]);
+      if (measured.size > 0) geometryBySceneElement.set(scene.id, measured);
+    } catch {
+      // A measurement failure degrades to the compiler's authored-box calc — the
+      // effect still renders, just at the pre-#867 position. Never fail export.
+    }
+  }
+
+  const geometry: GeometryProbe = {
+    contentGeometry(elementId: string, scene: SceneCore) {
+      return geometryBySceneElement.get(scene.id)?.get(elementId) ?? null;
     },
   };
 
   return {
     timing,
     assets,
+    geometry,
     records: { audioById, mediaByElementId, videoDurationMsByElementId },
   };
 }

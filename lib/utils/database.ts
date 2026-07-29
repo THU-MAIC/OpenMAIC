@@ -182,7 +182,15 @@ export interface MediaFileRecord {
 }
 
 /**
- * GeneratedAgent table - AI-generated agent profiles
+ * GeneratedAgent table - AI-generated agent profiles.
+ *
+ * LEGACY. The roster now persists on the stage document
+ * (`stage.generatedAgentConfigs`); this table is kept only as a lazy-migration
+ * source for classrooms whose roster (or voice fields) predate the
+ * document-embedded model. Production access is migration reads plus deletion
+ * hygiene: `deleteStageData` clears a deleted stage's rows (as does the
+ * deprecated `deleteStageWithRelatedData` cascade). Nothing writes new rows;
+ * do not add writers.
  */
 export interface GeneratedAgentRecord {
   id: string; // PK: agent ID (e.g. "gen-abc123")
@@ -684,17 +692,31 @@ export async function importDatabase(
           .sort((a, b) => a.order - b.order),
       };
     });
-  const importedDocuments: Array<{ id: string; preImage: AppDocument | null }> = [];
+  const importedDocuments: Array<{
+    id: string;
+    preImage: AppDocument | null;
+    wasDeleted: boolean;
+  }> = [];
   const importedCurrentScenes: Array<{ key: string; preImage: unknown | null }> = [];
   const kv = new BrowserKVStore();
+  const { isStageDeleted, markStageDeleted, unmarkStageDeleted } = await import('./deleted-stages');
 
   try {
     for (const document of documents) {
+      // Record the pre-import deletion state alongside the document pre-image:
+      // a failed import rolls the document back, so it must roll this back too.
+      const wasDeleted = isStageDeleted(document.stage.id);
       await mutateDocument(document.stage.id, async (_existing, store) => {
         const preImage = (await store.loadDocument(document.stage.id)) as AppDocument | null;
         await store.saveDocument(document);
-        importedDocuments.push({ id: document.stage.id, preImage });
+        importedDocuments.push({ id: document.stage.id, preImage, wasDeleted });
       });
+      // Explicit document (re)creation: a backup may restore a stage deleted
+      // earlier this session under the same id. Lift the deleted flag so later
+      // edits of the restored document persist instead of being dropped. (The
+      // deletion epoch stays bumped, so pre-delete in-flight writes remain
+      // fenced off the restored document.)
+      unmarkStageDeleted(document.stage.id);
     }
     for (const legacyStage of data.stages ?? []) {
       if (legacyStage.currentSceneId !== undefined) {
@@ -801,12 +823,21 @@ export async function importDatabase(
         log.error(`Failed to roll back imported current-scene key ${key}:`, rollbackError);
       }
     }
-    for (const { id, preImage } of importedDocuments.reverse()) {
+    for (const { id, preImage, wasDeleted } of importedDocuments.reverse()) {
       try {
         await mutateDocument(id, async (_document, store) => {
           if (preImage) await store.saveDocument(preImage);
           else await store.deleteDocument(id);
         });
+        // The rollback reinstated the pre-import world; reinstate the deletion
+        // state the import lifted, or the rolled-back (absent) document would
+        // stay writable and an outstanding flush could recreate it. Re-marking
+        // bumps the epoch again — consistent either way, since every pre-import
+        // capture is already stale. Deliberately skipped when the rollback
+        // write itself failed above: the imported document then still exists,
+        // and re-marking would silently drop edits to a document that is
+        // present (the exact bug the lift exists to prevent).
+        if (wasDeleted) markStageDeleted(id);
       } catch (rollbackError) {
         log.error(`Failed to roll back imported document ${id}:`, rollbackError);
       }

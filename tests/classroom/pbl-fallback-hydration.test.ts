@@ -402,6 +402,7 @@ describe('classroom server fallback PBL hydration', () => {
         scenes: [serverScene],
         currentSceneId: SCENE_ID,
       }),
+      expect.any(Number),
     );
   });
 });

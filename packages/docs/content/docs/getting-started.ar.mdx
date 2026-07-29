@@ -1,15 +1,15 @@
 ---
-title: البدء
-description: ثبّت OpenMAIC وشغّله محليا خلال خمس دقائق.
+title: البدء السريع
+description: تشغيل OpenMAIC محليًا خلال خمس دقائق.
 ---
 
-OpenMAIC هو تطبيق Next.js يمكنك تشغيله على جهازك. تحتاج إلى Node.js و pnpm ومفتاح API واحد على الأقل لموفر LLM.
+OpenMAIC هو تطبيق Next.js يمكن تشغيله على جهازك الخاص. تحتاج إلى إعداد مزود LLM واحد على الأقل: عادةً ما تتطلب المزودات السحابية مفتاح API؛ أما Ollama أو Lemonade المحليان فلا يحتاجان إلى مفتاح API.
 
-## المتطلبات
+## المتطلبات المسبقة
 
-- **Node.js** 20 أو أحدث
-- **pnpm** 10 أو أحدث (ثبّته عبر `npm install -g pnpm` عند الحاجة)
-- مفتاح API من موفر LLM واحد على الأقل — OpenAI أو Anthropic أو Google أو DeepSeek أو Zhipu أو MiniMax أو Qwen أو Doubao أو Groq أو SiliconFlow أو Ollama محلي
+- **Node.js** 20.9.0 أو أحدث
+- **pnpm** 10.28.0 (إذا لم يكن مثبتًا، نفذ `npm install -g pnpm@10.28.0`)
+- إعداد مزود LLM واحد على الأقل؛ عادةً ما تتطلب المزودات السحابية مفتاح API، أما Ollama أو Lemonade المحليان فلا يحتاجان إلى مفتاح API
 
 ## التثبيت
 
@@ -21,37 +21,37 @@ cd OpenMAIC
 pnpm install
 ```
 
-تقوم خطوة التثبيت أيضا ببناء حزمتي workspace (`mathml2omml` و `pptxgenjs`). يستغرق ذلك نحو دقيقة في أول تشغيل.
+أثناء التثبيت، سيتم بناء حزم workspace اللازمة للمشروع، وقد يستغرق التثبيت الأول بعض الوقت.
 
 ## الإعداد
 
-انسخ ملف env النموذجي واملأ موفر LLM واحدا على الأقل:
+انسخ ملف البيئة النموذجي واملأ بيانات مزود LLM واحد على الأقل:
 
 ```bash
 cp .env.example .env.local
 ```
 
-افتح `.env.local` واضبط الموفرات التي تملك مفاتيحها. مثال:
+افتح `.env.local` واملأ بيانات المزود الذي لديك مفتاح له. مثال:
 
 ```bash title=".env.local"
 OPENAI_API_KEY=sk-...
 # أو
 ANTHROPIC_API_KEY=sk-ant-...
-# أو Ollama محلي (لا يحتاج إلى key)
+# أو Ollama محلي (لا يحتاج إلى مفتاح)
 OLLAMA_BASE_URL=http://localhost:11434/v1
 ```
 
-راجع [الإعدادات](./configuration.mdx) للقائمة الكاملة من providers و TTS و ASR و feature flags.
+للحصول على إعدادات كاملة لمزودات الخدمة، وتوليد الصور/الفيديو، وتحويل النص إلى كلام (TTS)، والتعرف على الكلام (ASR)، وتحليل المستندات، والبحث عبر الإنترنت، والتحكم في الوصول، وعلامات الميزات، راجع [تعليمات الإعداد](./configuration.mdx).
 
 ## التشغيل
 
-شغّل dev server:
+شغّل خادم التطوير:
 
 ```bash
 pnpm dev
 ```
 
-افتح [http://localhost:3000](http://localhost:3000). سترى مولّد الصفوف في OpenMAIC. أدخل موضوعا أو PDF، اضغط Generate، وسيبني AI teacher صفا كاملا من عدة مشاهد.
+افتح [http://localhost:3000](http://localhost:3000)، وسترى منشئ الدروس في OpenMAIC. أدخل موضوعًا أو ارفع مواد تعليمية، ثم اضغط على "Generate". سيقوم المعلم الذكي ببناء درس كامل متعدد المشاهد. تعتمد صيغ المواد المدعومة على المحلل المختار، وتشمل عادةً PDF، ومستندات Office، وMarkdown/نص عادي، وصور، وبعض ملفات الصوت/الفيديو؛ ويعتمد ذلك على دعم المحلل.
 
 ## بناء الإنتاج
 
@@ -60,11 +60,10 @@ pnpm build
 pnpm start
 ```
 
-يمكنك أيضا النشر على Vercel أو Docker أو خادمك الخاص — راجع [النشر](./deployment.mdx).
+يمكنك أيضًا النشر على Vercel أو Docker أو على خادمك الخاص — راجع [دليل النشر](./deployment.mdx).
 
 ## الخطوات التالية
 
-- [اضبط providers و TTS و ACCESS_CODE →](./configuration.mdx)
-- [انشر على Vercel أو Docker →](./deployment.mdx)
-- [استكشف البنية وساهم على GitHub](https://github.com/THU-MAIC/OpenMAIC#-contributing)
-
+- [إعداد المزودات، TTS، و ACCESS_CODE →](./configuration.mdx)
+- [النشر على Vercel أو Docker →](./deployment.mdx)
+- للاطلاع على البنية أو المساهمة في الكود، يرجى زيارة [GitHub](https://github.com/THU-MAIC/OpenMAIC#-contributing)

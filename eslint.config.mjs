@@ -27,6 +27,7 @@ const eslintConfig = defineConfig([
     '.claude/**',
     '.superpowers/**',
     '.worktrees/**',
+    '.scratch/**',
     // Playwright e2e tests (not React code):
     'e2e/**',
     // Isolated MP4 render service: its own package, tsconfig, and Node-only

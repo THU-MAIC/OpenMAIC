@@ -3,11 +3,16 @@ services:
     build:
       context: .
       args:
-        # NEXT_PUBLIC_* values are compiled into the browser bundle. Leave both
-        # empty for today's browser-only persistence; the persistence quickstart
-        # in README supplies them on the compose command line.
+        # NEXT_PUBLIC_* values are compiled into the browser bundle. Leave them
+        # empty unless the corresponding client feature is explicitly enabled;
+        # persistence and other build-time flags can be supplied on the command line.
         - NEXT_PUBLIC_PERSISTENCE=${NEXT_PUBLIC_PERSISTENCE:-}
         - NEXT_PUBLIC_PERSISTENCE_TOKEN=${NEXT_PUBLIC_PERSISTENCE_TOKEN:-}
+        - NEXT_PUBLIC_MAIC_EDITOR_ENABLED=${NEXT_PUBLIC_MAIC_EDITOR_ENABLED:-}
+        - NEXT_PUBLIC_PI_CHAT_ENABLED=${NEXT_PUBLIC_PI_CHAT_ENABLED:-}
+        - NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=${NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI:-}
+        - NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=${NEXT_PUBLIC_ENABLE_VIDEO_EXPORT:-}
+        - NEXT_PUBLIC_ENABLE_PPTX_IMPORT=${NEXT_PUBLIC_ENABLE_PPTX_IMPORT:-}
     ports:
       - "3000:3000"
     env_file:
@@ -77,6 +82,17 @@ services:
       - NET_ADMIN
     environment:
       - PORT=9000
+      # Use Chromium's HeadlessExperimental.beginFrame capture path instead of
+      # the CPU-bound Page.captureScreenshot fallback. The default "software" GPU
+      # mode (SwiftShader) silently force-enables screenshot capture, which pegs
+      # all cores on CPU rasterization and caps throughput at ~10 fps. Selecting
+      # "hardware" keeps beginFrame active — measured ~2x capture throughput
+      # (~10 -> ~19 fps, 900-frame clip 100s -> 62s), roughly half the CPU, and
+      # pixel-identical static frames (animation frames differ only in sub-pixel
+      # edge antialiasing). No real GPU is required: the win is the faster capture
+      # API, not hardware rasterization — beginFrame falls back gracefully if the
+      # host lacks a GPU.
+      - PRODUCER_BROWSER_GPU_MODE=hardware
       # Tune for the host; each concurrent render drives a full Chromium + FFmpeg.
       - RENDER_MAX_CONCURRENCY=2
       # In this default topology the app is exposed directly and does NOT set

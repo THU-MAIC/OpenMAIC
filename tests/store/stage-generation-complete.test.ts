@@ -54,6 +54,7 @@ import {
   type StageSceneLoadToken,
 } from '@/lib/store/stage';
 import { applyHydratedClassroomFallbackScenes } from '@/lib/classroom/pbl-fallback-hydration';
+import { markStageDeleted, unmarkStageDeleted } from '@/lib/utils/deleted-stages';
 import type { Scene, Stage } from '@/lib/types/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 
@@ -194,6 +195,7 @@ describe('generationComplete', () => {
           generationComplete: false,
         }),
       }),
+      expect.any(Number),
     );
   });
 
@@ -326,6 +328,27 @@ describe('generationComplete', () => {
   // The core regression: a completed deck must not resurrect a deleted slide.
   // On reload the orphaned outline (no matching scene) must NOT become a
   // generating placeholder, and the flag must round-trip.
+  it('does not land a load for a stage deleted during hydration (lock-free mid-cascade read)', async () => {
+    // Read-side mirror of the write fence: without Web Locks, loadStageData
+    // can read the document before the deletion cascade's deleteDocument
+    // lands. Landing that read would re-materialize a ghost classroom whose
+    // edits are refused; the load must re-check the flag before set().
+    loadStageDataMock.mockResolvedValue(makeStoredLoad('stage-1', 'scene-1'));
+    hydratePBLScenesFromRuntimeMock.mockImplementationOnce(
+      async (_stageId: string, scenes: Scene[]) => {
+        markStageDeleted('stage-1');
+        return scenes;
+      },
+    );
+    try {
+      await useStageStore.getState().loadFromStorage('stage-1', claimStageSceneLoadToken());
+      expect(useStageStore.getState().stage).toBeNull();
+      expect(useStageStore.getState().scenes).toEqual([]);
+    } finally {
+      unmarkStageDeleted('stage-1');
+    }
+  });
+
   it('drops generating placeholders on load when generation already completed', async () => {
     loadStageDataMock.mockResolvedValue({
       stage: makeStage(),

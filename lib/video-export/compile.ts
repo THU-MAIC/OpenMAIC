@@ -19,7 +19,7 @@
  * Pure: no IO beyond the injected dependencies.
  */
 import type { SceneType, PlayVideoAction, Action } from '@openmaic/dsl';
-import type { AssetSource, CompileConfig, CompilerScene, TimingProbe } from './deps';
+import type { AssetSource, CompileConfig, CompilerScene, GeometryProbe, TimingProbe } from './deps';
 import {
   CANVAS,
   VIDEO_TIMELINE_COMPILER,
@@ -44,6 +44,14 @@ export interface CompileInput {
 export interface CompileDeps {
   timing: TimingProbe;
   assets: AssetSource;
+  /**
+   * Optional rendered-geometry source. When present, spotlight/laser/video
+   * placement uses each element's measured content-box geometry instead of the
+   * authored outer box, so effects align with where the element actually paints
+   * (issue #867 item 5). Omitted in pure/unit contexts — the compiler then uses
+   * the deterministic authored-box calc.
+   */
+  geometry?: GeometryProbe;
   config?: CompileConfig;
 }
 
@@ -145,7 +153,8 @@ export function compileVideoTimeline(input: CompileInput, deps: CompileDeps): Vi
   const timeline = buildTimeline(normalized.scenes, opts);
 
   // 4. geometry — resolve effect + video element placement (degrade on miss).
-  const geometry = applyGeometry(timeline.scenes, normalized.scenes);
+  //    Prefers measured content-box geometry when a GeometryProbe is supplied.
+  const geometry = applyGeometry(timeline.scenes, normalized.scenes, deps.geometry);
 
   // 5. assets — dedup + naming plan; stamp asset refs onto segments.
   const assets = planAssets(normalized.scenes, geometry.scenes, deps.assets);

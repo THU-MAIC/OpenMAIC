@@ -4,6 +4,7 @@ import isEqual from 'lodash/isEqual';
 
 import type { AppScene } from '@/lib/types/stage';
 import { createLogger } from '@/lib/logger';
+import { omitUndefinedObjectMembers } from '@/lib/persistence/plain-json';
 import { withRuntimeStorageSharedLock } from '@/lib/utils/chat-storage-lock';
 import {
   db,
@@ -75,7 +76,7 @@ let defaultKv: KVStore | undefined;
 const log = createLogger('DocumentMigration');
 
 function resolveStore(deps: DocumentMigrationDeps): DocumentStore<AppScene, AppStage> {
-  return deps.store ?? getDocumentStore();
+  return deps.store ? getDocumentStore({ store: deps.store }) : getDocumentStore();
 }
 
 function resolveKv(deps: DocumentMigrationDeps): KVStore {
@@ -178,7 +179,9 @@ function assertMigrationVerified(expected: AppDocument, actual: AppDocument): vo
     scenes: [...document.scenes].sort((a, b) => a.order - b.order),
     outline: document.outline,
   });
-  if (!isEqual(strip(actual), strip(expected))) {
+  if (
+    !isEqual(omitUndefinedObjectMembers(strip(actual)), omitUndefinedObjectMembers(strip(expected)))
+  ) {
     throw new Error(
       `Legacy migration verification failed for document ${JSON.stringify(expected.stage.id)}`,
     );

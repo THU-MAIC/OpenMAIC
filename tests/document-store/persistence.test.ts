@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'vitest';
+import type { DocumentStore } from '@openmaic/storage';
+import { describe, expect, test, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 
 import {
@@ -93,6 +94,49 @@ function pblScene(): AppScene {
 }
 
 describe('app document persistence seam', () => {
+  test('omits nested undefined PBL state before calling the configured store', async () => {
+    const saveDocument = vi.fn(async (_document: AppDocument) => undefined);
+    const store = getDocumentStore({
+      store: { saveDocument } as unknown as DocumentStore,
+    });
+    const document = {
+      stage: canonicalizeLegacyStage(stageRecord).stage,
+      scenes: [
+        {
+          ...pblScene(),
+          content: {
+            ...pblScene().content,
+            projectV2: {
+              milestones: [
+                {
+                  microtasks: [{ id: 'mt-1', internalAssessment: undefined }],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    } as unknown as AppDocument;
+
+    await store.saveDocument(document);
+
+    const persisted = saveDocument.mock.calls[0]![0] as AppDocument;
+    expect(
+      (
+        persisted.scenes[0]!.content as unknown as {
+          projectV2: { milestones: Array<{ microtasks: Array<Record<string, unknown>> }> };
+        }
+      ).projectV2.milestones[0]!.microtasks[0],
+    ).not.toHaveProperty('internalAssessment');
+    expect(
+      (
+        document.scenes[0]!.content as unknown as {
+          projectV2: { milestones: Array<{ microtasks: Array<Record<string, unknown>> }> };
+        }
+      ).projectV2.milestones[0]!.microtasks[0],
+    ).toHaveProperty('internalAssessment', undefined);
+  });
+
   test('round-trips every StageRecord field after separating playback position', async () => {
     const canonical = canonicalizeLegacyStage(stageRecord);
     const document: AppDocument = {

@@ -25,6 +25,32 @@ describe('generated JSON Schema — Stage', () => {
   it('rejects a stage missing required fields', () => {
     expect(v({ id: 's' })).toBe(false);
   });
+  it('accepts a roster with and without the optional voice fields', () => {
+    const agent = {
+      id: 'gen-1',
+      name: 'Narrator',
+      role: 'teacher',
+      persona: 'p',
+      avatar: 'a',
+      color: '#000',
+      priority: 10,
+    };
+    const voiced = {
+      ...agent,
+      id: 'gen-2',
+      voiceConfig: { providerId: 'tts', voiceId: 'v1' },
+      voiceDesign: { identity: 'adult narrator', texture: 'low', delivery: 'calm' },
+    };
+    expect(
+      v({
+        id: 's',
+        name: 'n',
+        createdAt: 1,
+        updatedAt: 2,
+        generatedAgentConfigs: [agent, voiced],
+      }),
+    ).toBe(true);
+  });
 });
 
 describe('generated JSON Schema — Action', () => {

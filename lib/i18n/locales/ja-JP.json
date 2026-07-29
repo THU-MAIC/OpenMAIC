@@ -76,6 +76,13 @@
     "videoRenderMp4": "MP4 をレンダリング",
     "videoDownloadZip": "プロジェクト ZIP をダウンロード",
     "videoServiceHint": "MP4 レンダリングにはレンダーサービスが必要です。ZIP をダウンロードしてローカルでレンダリングできます。",
+    "videoBurnSubtitles": "字幕を焼き込む",
+    "videoBurnSubtitlesDesc": "オフ：字幕なしの動画を書き出し、字幕ファイルは編集ソフトで追加します。",
+    "videoDownloadSubtitles": "字幕をダウンロード (.srt)",
+    "subtitlesCompiling": "字幕を生成中…",
+    "subtitlesSuccess": "字幕をダウンロードしました",
+    "subtitlesEmpty": "字幕にできるナレーションがありません",
+    "subtitlesFailed": "字幕のダウンロードに失敗しました",
     "noSlides": "エクスポート可能なスライドがありません",
     "noSlidesSkipped": "このコースにスライドがないため、PPTX をスキップしました",
     "nothingToExport": "エクスポートできるものがありません"

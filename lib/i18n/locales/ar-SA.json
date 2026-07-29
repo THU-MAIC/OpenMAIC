@@ -76,6 +76,13 @@
     "videoRenderMp4": "عرض MP4",
     "videoDownloadZip": "تنزيل ملف ZIP للمشروع",
     "videoServiceHint": "يتطلب عرض MP4 خدمة العرض. نزّل ملف ZIP للعرض محليًا.",
+    "videoBurnSubtitles": "دمج الترجمة في الفيديو",
+    "videoBurnSubtitlesDesc": "عند الإيقاف: صدّر فيديو نظيفًا وأضف ملف الترجمة في برنامج التحرير لديك.",
+    "videoDownloadSubtitles": "تنزيل الترجمة (.srt)",
+    "subtitlesCompiling": "جارٍ تجميع الترجمة...",
+    "subtitlesSuccess": "تم تنزيل الترجمة",
+    "subtitlesEmpty": "لا يوجد سرد لإنشاء الترجمة منه",
+    "subtitlesFailed": "فشل تنزيل الترجمة",
     "noSlides": "لا توجد شرائح للتصدير",
     "noSlidesSkipped": "لا توجد شرائح في هذه الدورة — تم تخطي PPTX",
     "nothingToExport": "لا يوجد محتوى للتصدير"

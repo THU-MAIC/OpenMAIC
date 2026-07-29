@@ -955,6 +955,48 @@ describe('PBL runtime hydration', () => {
     ).toHaveLength(1);
   });
 
+  it('skips a duplicate snapshot when optional learner-state members were omitted', async () => {
+    const store = new MemoryRuntimeStore();
+    const project = makeProject({ uiPhase: 'workspace' });
+    project.submissions.push({
+      id: 'sub-undefined-filename',
+      microtaskId: 'mt-1',
+      kind: 'text',
+      content: 'Learner answer',
+      filename: undefined,
+      createdAt: '2026-05-29T00:01:00.000Z',
+    });
+    const learnerState = extractLearnerState(project);
+
+    const firstAppend = await appendPBLRuntimeSnapshotIfChanged({
+      store,
+      stageId: STAGE_ID,
+      sceneId: SCENE_ID,
+      learnerKey: LEARNER_KEY,
+      project,
+      learnerState,
+      records: [],
+      reason: 'self_heal',
+    });
+    const session = await ensureSession(store);
+    const records = await store.listRecords(session.id, { sceneId: SCENE_ID });
+    const secondAppend = await appendPBLRuntimeSnapshotIfChanged({
+      store,
+      stageId: STAGE_ID,
+      sceneId: SCENE_ID,
+      learnerKey: LEARNER_KEY,
+      project,
+      learnerState,
+      records,
+      reason: 'self_heal',
+    });
+
+    expect(firstAppend).toBe(true);
+    expect(secondAppend).toBe(false);
+    expect(records[0]!.payload).not.toHaveProperty('learnerState.submissions.0.filename');
+    expect(project.submissions[0]).toHaveProperty('filename', undefined);
+  });
+
   it('preserves document-only transient fields on a fold-match hydration', async () => {
     const store = new MemoryRuntimeStore();
     const kv = new MemoryKVStore();

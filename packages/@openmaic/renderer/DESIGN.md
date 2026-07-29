@@ -49,9 +49,15 @@ interface SlideCanvasProps {
     zoom?:      { elementId: string; scale: number };
   };
   /** 可选：图片渲染插槽，消费者可注入 placeholder/retry 逻辑 */
-  renderImage?: (el: PPTImageElement, resolvedSrc: string) => React.ReactNode;
+  renderImage?: (
+    el: PPTImageElement,
+    resolvedSrc: string,
+    defaultContent: React.ReactNode,
+  ) => React.ReactNode;
   /** 可选：视频渲染插槽 */
   renderVideo?: (el: PPTVideoElement) => React.ReactNode;
+  /** 可选：允许视频控件或自定义视频 UI 接收指针事件 */
+  videoInteractive?: boolean;
   /** 可选：元素点击 */
   onElementClick?: (el: PPTElement, event: React.MouseEvent) => void;
   /** 透传外层 */

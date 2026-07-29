@@ -42,5 +42,4 @@ export interface AgentTurnSummary {
     reason: 'unknown_action' | 'invalid_params' | 'raw_structured_fallback';
     message: string;
   }>;
-  turnKind?: 'normal' | 'wrap_up';
 }
