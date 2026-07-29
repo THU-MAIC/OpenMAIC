@@ -71,7 +71,8 @@ describe('settings store', () => {
     await useSettingsStore.persist.rehydrate();
 
     expect(useSettingsStore.getState().playbackSpeed).toBe(2);
-    expect(localStorageStub.getItem('settings-storage')).toBeNull();
+    // Plan B: adoption is a copy — the raw entry is kept, KV is authoritative.
+    expect(localStorageStub.getItem('settings-storage')).not.toBeNull();
     expect(await persistedIn('account', 'settings-storage')).toMatchObject({ playbackSpeed: 2 });
   });
 });
@@ -175,7 +176,8 @@ describe('user profile store', () => {
     await useUserProfileStore.persist.rehydrate();
 
     expect(useUserProfileStore.getState().nickname).toBe('Ada');
-    expect(localStorageStub.getItem('user-profile-storage')).toBeNull();
+    // Plan B: adoption is a copy — the raw entry is kept, KV is authoritative.
+    expect(localStorageStub.getItem('user-profile-storage')).not.toBeNull();
     expect(await persistedIn('account', 'user-profile-storage')).toMatchObject({ nickname: 'Ada' });
   });
 });

@@ -83,12 +83,11 @@ class ControllableKV implements KVStore {
   private gate: { match: (key: string) => boolean; wait: Promise<void> } | null = null;
 
   /**
-   * Run a side effect once, inside the next get/set whose key matches. This
-   * models another tab writing while the seam is suspended at that await: the
-   * effect lands before the seam resumes, so the resumed synchronous code sees
-   * the changed world. Used to drive the exact race cosarah reproduced.
+   * Run a side effect once, inside the next set whose key matches. This models
+   * another tab writing while the seam is suspended at that await: the effect
+   * lands before the seam resumes, so the resumed code sees the changed world.
+   * Used to prove an old-bundle write during a migration is never deleted.
    */
-  onceDuringGet: { match: (key: string) => boolean; run: () => void } | null = null;
   onceDuringSet: { match: (key: string) => boolean; run: () => void } | null = null;
 
   constructor(private readonly inner: KVStore) {}
@@ -128,13 +127,7 @@ class ControllableKV implements KVStore {
       await wait;
       return snapshot;
     }
-    const result = await this.inner.get<T>(key, scope);
-    if (this.onceDuringGet?.match(key)) {
-      const { run } = this.onceDuringGet;
-      this.onceDuringGet = null;
-      run();
-    }
-    return result;
+    return this.inner.get<T>(key, scope);
   }
   async set<T>(key: string, value: T, scope?: KVScope): Promise<void> {
     if (this.failSet || this.failSetMatching?.(key)) throw new Error('kv set failed');
@@ -166,12 +159,11 @@ class ControllableKV implements KVStore {
 
 const NAME = 'settings-storage';
 /**
- * Both sentinels are `device`-scoped whatever scope the store uses, and carry a
- * reserved `__` prefix. They record what happened to *this machine's* files, so
- * a syncing `account` backend must not carry them to a machine whose files they
- * describe nothing about.
+ * The pre-persist sentinel is `device`-scoped whatever scope the store uses,
+ * and carries a reserved `__` prefix. It records what happened on *this
+ * machine*, so a syncing `account` backend must not carry it to a machine it
+ * describes nothing about.
  */
-const MARKER = `__persist-adopted:${NAME}`;
 const PRE_PERSIST_SENTINEL = `__pre-persist-consulted:${NAME}`;
 const isBlobKey = (key: string) => key === NAME;
 
@@ -299,15 +291,16 @@ describe('createKVPersistStorage — scope', () => {
     expect(await h.storage('device').getItem(NAME)).toBeNull();
   });
 
-  it('keeps its sentinels in the device scope even for an account store', async () => {
+  it('adopts by copy, leaving the raw entry in place under any scope', async () => {
     const h = harness();
     seedLegacy(h.legacy, { nickname: 'Ada' });
     await h.storage('account').getItem(NAME);
 
-    // The marker records that *this machine's* raw file was moved. Stored in
-    // `account` it would sync, and authorize deleting another machine's file.
-    expect(await h.kv.get(MARKER, 'device')).toBe(true);
-    expect(await h.kv.get(MARKER, 'account')).toBeNull();
+    // Plan B: the raw entry is never deleted during the transition, because
+    // localStorage has no cross-process atomic compare-and-delete. KV is
+    // authoritative; the raw shadow is inert.
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'Ada' }, version: 4 });
+    expect(h.legacy.getItem(NAME)).not.toBeNull();
   });
 
   it('keeps the pre-persist sentinel in the device scope too', async () => {
@@ -332,18 +325,17 @@ describe('createKVPersistStorage — legacy localStorage adoption', () => {
     expect(await h.storage().getItem(NAME)).toEqual({ state: { nickname: 'Ada' }, version: 4 });
   });
 
-  it('moves the entry into the KV scope rather than copying it', async () => {
+  it('copies the entry into the KV scope, keeping the raw entry', async () => {
     const h = harness();
     seedLegacy(h.legacy, { nickname: 'Ada' });
 
     await h.storage().getItem(NAME);
 
+    // The value is now in KV (authoritative)...
     expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'Ada' }, version: 4 });
-    expect(h.legacy.getItem(NAME)).toBeNull();
-    // The completion marker is how a later read tells a settled migration from
-    // a KV entry of unknown provenance. It is device-scoped: it describes this
-    // machine's files, not the account's data.
-    expect(await h.kv.get(MARKER, 'device')).toBe(true);
+    // ...and the raw entry is deliberately left in place — deleting it cannot
+    // be done safely against a concurrent old-bundle tab.
+    expect(h.legacy.getItem(NAME)).not.toBeNull();
   });
 
   it('adopts into whichever scope the store declared', async () => {
@@ -367,7 +359,7 @@ describe('createKVPersistStorage — legacy localStorage adoption', () => {
 
     expect(second).toEqual(first);
     expect(third).toEqual(first);
-    expect(h.legacy.getItem(NAME)).toBeNull();
+    expect(h.legacy.getItem(NAME)).not.toBeNull(); // the shadow is kept, not re-adopted
     expect(await h.kv.get(NAME, 'account')).toEqual(first);
   });
 
@@ -379,31 +371,31 @@ describe('createKVPersistStorage — legacy localStorage adoption', () => {
     expect(await h.storage().getItem(NAME)).toEqual({ state: { nickname: 'Ada' }, version: 4 });
   });
 
-  it('drops a reappearing raw entry that is provably the migration’s leftover', async () => {
+  it('keeps a reappearing raw entry — the transition never deletes', async () => {
     const h = harness();
     seedLegacy(h.legacy, { nickname: 'Ada' });
     const persist = h.storage();
     await persist.getItem(NAME);
 
-    // An older tab (or a re-run e2e seed) writes the pre-cutover key again with
-    // the same content. The migration is on record and the bytes match the
-    // value shadowing them, so this copy is provably a duplicate.
+    // An older tab (or a re-run e2e seed) writes the pre-cutover key again.
+    // Deleting even a provable duplicate cannot be done safely against a
+    // concurrent old-bundle tab, so nothing is deleted; KV stays authoritative.
     seedLegacy(h.legacy, { nickname: 'Ada' });
 
     expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'Ada' }, version: 4 });
-    expect(h.legacy.getItem(NAME)).toBeNull();
+    expect(h.legacy.getItem(NAME)).not.toBeNull();
   });
 
   it('keeps a raw entry whose content differs from the value shadowing it', async () => {
     // A rolled-back deployment, or a tab still running the old bundle, writes
-    // the raw key again — with settings the migration never saw. The marker
-    // proves a migration happened here once; it proves nothing about *these*
-    // bytes, and they are the only copy of whatever the user did in that tab.
+    // the raw key again — with settings the migration never saw. That is the
+    // only copy of whatever the user did in that tab, and it is kept: KV wins
+    // the read, the raw shadow is left untouched.
     const h = harness();
     seedLegacy(h.legacy, { nickname: 'Ada' });
     const persist = h.storage();
     await persist.getItem(NAME);
-    expect(h.legacy.getItem(NAME)).toBeNull();
+    expect(h.legacy.getItem(NAME)).not.toBeNull(); // shadow kept from the start
 
     seedLegacy(h.legacy, { nickname: 'edited by the old bundle' });
 
@@ -411,41 +403,34 @@ describe('createKVPersistStorage — legacy localStorage adoption', () => {
     expect(h.legacy.getItem(NAME)).not.toBeNull();
   });
 
-  it('does not delete a raw value an old-bundle tab writes while the marker is being read', async () => {
-    // cosarah's reproduction, on the shadowed-cleanup path. The raw entry is
-    // verified equal to the KV value, then the marker read is awaited; an old
-    // bundle — which takes no lock, so a lock could not save this — overwrites
-    // the raw key with newer settings during that await. The delete must see
-    // the change and keep it, not remove it against the stale check.
+  it('never deletes a raw value an old-bundle tab wrote after a migration (KV present)', async () => {
+    // cosarah's reproduction, now closed by construction: with a value already
+    // in KV and a shadowing raw entry, a read takes the KV path and touches the
+    // raw entry not at all. An old bundle's newer write therefore survives —
+    // there is no delete to race.
     const h = harness();
     await h.kv.set(NAME, { state: { nickname: 'Ada' }, version: 4 }, 'account');
-    await h.kv.set(MARKER, true, 'device');
-    seedLegacy(h.legacy, { nickname: 'Ada' }); // provably a duplicate — would be dropped
+    const persist = h.storage();
+    await persist.getItem(NAME);
 
-    // The concurrent write lands during the adoption-marker read.
-    h.kv.onceDuringGet = {
-      match: (key) => key === MARKER,
-      run: () => seedLegacy(h.legacy, { nickname: 'newer, from an old-bundle tab' }),
-    };
-
-    await h.storage().getItem(NAME);
+    seedLegacy(h.legacy, { nickname: 'newer, from an old-bundle tab' });
+    await persist.getItem(NAME); // KV wins the read; raw untouched
 
     expect(h.legacy.getItem(NAME)).toBe(
       JSON.stringify({ state: { nickname: 'newer, from an old-bundle tab' }, version: 4 }),
     );
   });
 
-  it('does not delete a raw value an old-bundle tab writes during adoption cleanup', async () => {
-    // The same race on the adoption path: KV is empty, the raw entry is
-    // adopted, and across the KV write and marker write an old bundle rewrites
-    // the raw key. The cleanup deletes only if the bytes are unchanged.
+  it('never deletes the raw entry on the fresh-adoption path either', async () => {
+    // The other site cosarah named: adopting from an empty KV. The adoption
+    // writes KV and returns without touching the raw entry, so an old bundle's
+    // write across the adoption survives — again, no delete to race.
     const h = harness();
     seedLegacy(h.legacy, { nickname: 'Ada' });
 
-    // The concurrent write lands while the adoption marker is being written,
-    // after the raw entry was read but before the cleanup delete.
+    // An old bundle overwrites the raw key while KV is being written.
     h.kv.onceDuringSet = {
-      match: (key) => key === MARKER,
+      match: (key) => key === NAME,
       run: () => seedLegacy(h.legacy, { nickname: 'newer, from an old-bundle tab' }),
     };
 
@@ -453,7 +438,7 @@ describe('createKVPersistStorage — legacy localStorage adoption', () => {
 
     // The migration still completed into KV...
     expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'Ada' }, version: 4 });
-    // ...but the newer raw value the other tab wrote survives.
+    // ...and the newer raw value the other tab wrote survives.
     expect(h.legacy.getItem(NAME)).toBe(
       JSON.stringify({ state: { nickname: 'newer, from an old-bundle tab' }, version: 4 }),
     );
@@ -484,7 +469,6 @@ describe('createKVPersistStorage — legacy localStorage adoption', () => {
     await persist.removeItem(NAME);
 
     expect(h.legacy.getItem(NAME)).toBeNull();
-    expect(await h.kv.get(MARKER, 'account')).toBeNull();
     expect(await persist.getItem(NAME)).toBeNull();
   });
 
@@ -524,11 +508,10 @@ describe('createKVPersistStorage — legacy localStorage adoption', () => {
 
 describe('createKVPersistStorage — a second reader mid-migration', () => {
   it('re-checks KV when its own two reads straddle another tab’s adoption', async () => {
-    // Tab A adopts in three steps: write the KV entry, write the marker, drop
-    // the raw entry. Tab B is interleaved so its KV read answers from *before*
-    // A's write while its localStorage read happens *after* A's delete — both
-    // empty, though the data never stopped existing. Without the re-check B
-    // hydrates defaults, and its first write rolls A's entry back.
+    // Tab A adopts: it writes the KV entry (and keeps the raw one). Tab B is
+    // interleaved so its KV read answers from *before* A's write — empty,
+    // though the data never stopped existing. Without the re-check B hydrates
+    // defaults, and its first write rolls A's entry back.
     const h = harness();
     seedLegacy(h.legacy, { nickname: 'Ada' });
 
@@ -542,10 +525,9 @@ describe('createKVPersistStorage — a second reader mid-migration', () => {
     // A runs to completion in that window.
     await tabA.getItem(NAME);
     expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'Ada' }, version: 4 });
-    expect(h.legacy.getItem(NAME)).toBeNull();
 
-    // B resumes holding the stale "KV is empty", and localStorage is empty by
-    // now too. Everything hinges on the re-check.
+    // B resumes holding the stale "KV is empty". Everything hinges on the
+    // re-check finding A's value.
     releaseB();
     expect(await bLoad).toEqual({ state: { nickname: 'Ada' }, version: 4 });
   });
@@ -612,7 +594,6 @@ describe('createKVPersistStorage — backend failures must not lose data', () =>
     const persist = h.storage();
     expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'Ada' }, version: 4 });
     expect(h.legacy.getItem(NAME)).not.toBeNull();
-    expect(await h.kv.get(MARKER, 'account')).toBeNull();
 
     h.kv.failSet = false;
     await persist.setItem(NAME, { state: { nickname: '' }, version: 4 });
@@ -760,15 +741,12 @@ describe('createKVPersistStorage — pre-persist fallback', () => {
     expect(h.legacy.getItem('llmModel')).toBe('openai:gpt-4o');
   });
 
-  it('does not claim a licence to delete raw entries it never adopted', async () => {
-    // The adoption marker means "a raw persist entry on this device was moved
-    // into KV". The fallback moves nothing of the sort, so it must not write
-    // one — otherwise a raw entry later restored by an older bundle or a
-    // rollback, holding real data nothing has read, is deleted on sight.
+  it('never deletes a raw entry restored after the fallback ran', async () => {
+    // A raw entry later restored by an older bundle or a rollback holds real
+    // data nothing has read. The fallback path — like every path now — leaves
+    // it in place.
     const h = harness();
     await withFallback(h, () => fallbackValue).getItem(NAME);
-
-    expect(await h.kv.get(MARKER, 'device')).toBeNull();
 
     seedLegacy(h.legacy, { nickname: 'restored by an older build' });
     await withFallback(h, () => fallbackValue).getItem(NAME);
@@ -796,10 +774,11 @@ describe('createKVPersistStorage — two devices on one account scope', () => {
     seedLegacy(deviceB.legacy, { nickname: 'only copy on B' });
 
     await deviceA.storage().getItem(NAME);
-    expect(deviceA.legacy.getItem(NAME)).toBeNull();
+    // Even the device that migrated keeps its own raw shadow now.
+    expect(deviceA.legacy.getItem(NAME)).not.toBeNull();
 
-    // B now loads. The account entry (A's) shadows its raw file — but A's
-    // migration marker is device-local, so B has no licence to delete.
+    // B now loads. The account entry (A's) shadows its raw file, and nothing
+    // deletes it: B's raw settings survive intact.
     expect(await deviceB.storage().getItem(NAME)).toEqual({
       state: { nickname: 'from A' },
       version: 4,
@@ -807,9 +786,8 @@ describe('createKVPersistStorage — two devices on one account scope', () => {
     expect(deviceB.legacy.getItem(NAME)).not.toBeNull();
   });
 
-  it('still drops a duplicate raw file on the device that migrated it', async () => {
-    // The device-local marker must not be so conservative that it stops the
-    // case it exists for.
+  it('keeps the raw shadow on the device that migrated it too', async () => {
+    // No path deletes the raw entry; the migrating device is no exception.
     const { deviceA } = twoDevices();
     seedLegacy(deviceA.legacy, { nickname: 'from A' });
     const persist = deviceA.storage();
@@ -818,7 +796,7 @@ describe('createKVPersistStorage — two devices on one account scope', () => {
     seedLegacy(deviceA.legacy, { nickname: 'from A' });
     await persist.getItem(NAME);
 
-    expect(deviceA.legacy.getItem(NAME)).toBeNull();
+    expect(deviceA.legacy.getItem(NAME)).not.toBeNull();
   });
 
   it('does not republish one device’s pre-persist keys after the account entry is cleared', async () => {
@@ -1083,7 +1061,6 @@ describe('createKVPersistStorage — removeItem reports failure', () => {
 
     // Nothing was torn down on the way to that failure.
     expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'Ada' }, version: 4 });
-    expect(await h.kv.get(MARKER, 'device')).toBe(true);
   });
 
   it('does not re-adopt after a clear that failed on the raw entry', async () => {
@@ -1286,57 +1263,6 @@ describe('createKVPersistStorage — the pre-persist sentinel is recorded by eve
 
     expect(fallback).not.toHaveBeenCalled();
     expect(await h.kv.get(NAME, 'account')).toBeNull();
-  });
-});
-
-describe('createKVPersistStorage — adoption needs its marker to land', () => {
-  it('keeps the raw entry when the adoption marker cannot be written', async () => {
-    // The marker is the licence to delete. Without it durably recorded there is
-    // no proof for the next load, so deleting now would strand the raw copy's
-    // only reader.
-    const h = harness();
-    seedLegacy(h.legacy, { nickname: 'Ada' });
-    const persist = h.storage();
-
-    h.kv.failSetMatching = (key) => key.startsWith('__persist-adopted:');
-    expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'Ada' }, version: 4 });
-
-    expect(h.legacy.getItem(NAME)).not.toBeNull();
-    expect(await h.kv.get(MARKER, 'device')).toBeNull();
-  });
-
-  it('does not settle when the adoption marker cannot be written', async () => {
-    const h = harness();
-    seedLegacy(h.legacy, { nickname: 'Ada' });
-    const persist = h.storage();
-
-    h.kv.failSetMatching = (key) => key.startsWith('__persist-adopted:');
-    await persist.getItem(NAME);
-    h.kv.failSetMatching = null;
-
-    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
-    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'Ada' }, version: 4 });
-  });
-
-  it('settles into a harmless duplicate rather than an unproven delete', async () => {
-    // The blob landed and the marker did not, so later loads read the KV copy
-    // and keep the raw one. That duplicate is the deliberate resting place: the
-    // marker means "our write succeeded and this raw entry is its leftover",
-    // and writing the marker first instead would let an aborted attempt
-    // authorize deleting a raw entry some *other* writer's KV value shadows.
-    const h = harness();
-    seedLegacy(h.legacy, { nickname: 'Ada' });
-
-    h.kv.failSetMatching = (key) => key.startsWith('__persist-adopted:');
-    await h.storage().getItem(NAME);
-    h.kv.failSetMatching = null;
-
-    const persist = h.storage();
-    expect(await persist.getItem(NAME)).toEqual({ state: { nickname: 'Ada' }, version: 4 });
-    expect(h.legacy.getItem(NAME)).not.toBeNull();
-    // Whichever copy is read, the data is the same, and the key is usable.
-    await persist.setItem(NAME, { state: { nickname: 'edited' }, version: 4 });
-    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'edited' }, version: 4 });
   });
 });
 

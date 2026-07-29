@@ -77,7 +77,7 @@ test.describe('settings persistence through the KVStore', () => {
     expect(await page.evaluate(() => localStorage.getItem('settings-storage'))).toBeNull();
   });
 
-  test('moves a pre-cutover raw key into the KV scope on first load', async ({ page }) => {
+  test('copies a pre-cutover raw key into the KV scope on first load', async ({ page }) => {
     await page.addInitScript((settings) => {
       localStorage.setItem('settings-storage', settings);
     }, SETTINGS);
@@ -89,7 +89,9 @@ test.describe('settings persistence through the KVStore', () => {
     const modelPill = page.locator('button[aria-label^="OpenAI / "]');
     await expect(modelPill).toBeVisible({ timeout: 15_000 });
 
-    // A move, not a copy: the value is in the KV scope and the raw key is gone.
+    // A copy, not a move: the value is in the KV scope, and the raw key is
+    // deliberately left in place (deleting it cannot be done safely against a
+    // concurrent old-bundle tab during this transition).
     await expect
       .poll(
         () =>
@@ -100,6 +102,6 @@ test.describe('settings persistence through the KVStore', () => {
         { timeout: 15_000 },
       )
       .toBe('openai');
-    expect(await page.evaluate(() => localStorage.getItem('settings-storage'))).toBeNull();
+    expect(await page.evaluate(() => localStorage.getItem('settings-storage'))).not.toBeNull();
   });
 });

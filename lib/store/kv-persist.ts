@@ -40,8 +40,6 @@ import {
 } from '@openmaic/storage';
 import type { PersistStorage, StorageValue } from 'zustand/middleware';
 
-import isEqual from 'lodash/isEqual';
-
 import { createLogger } from '@/lib/logger';
 import { reportPersistHealth } from '@/lib/store/persist-health';
 
@@ -61,10 +59,9 @@ const SENTINEL_SCOPE: KVScope = 'device';
 
 /**
  * Sentinel keys share the KV namespace with ordinary values, so they carry a
- * `__` prefix that no store name uses. Fully qualified, these land at
- * `maic:device:__persist-adopted:<name>` in the browser backend.
+ * `__` prefix that no store name uses. Fully qualified, this lands at
+ * `maic:device:__pre-persist-consulted:<name>` in the browser backend.
  */
-const ADOPTED_PREFIX = '__persist-adopted:';
 const PRE_PERSIST_PREFIX = '__pre-persist-consulted:';
 
 /** What a backend operation yields when the backend could not answer. */
@@ -550,31 +547,17 @@ function isStorageValue<S>(value: unknown): value is StorageValue<S> {
   return typeof value === 'object' && value !== null && 'state' in value;
 }
 
-/** The pre-cutover raw entry, kept as both its exact bytes and its parse. */
-interface LegacyEntry<S> {
-  /** The exact string read from storage, for byte-identical re-checks. */
-  raw: string;
-  value: StorageValue<S>;
-}
-
 /**
- * Read the pre-cutover raw entry, if it is one zustand could have written,
- * returning both the exact bytes and the parse.
- *
- * The bytes are kept because a later delete must prove the entry has not
- * changed since it was read, and that proof has to be byte-exact — a
- * re-serialized value would differ from the stored string in key order or
- * whitespace even when semantically equal.
+ * Read the pre-cutover raw entry, if it is one zustand could have written.
  *
  * Anything unreadable (not JSON, or not a `{ state }` envelope) is left exactly
- * where it is: we never delete bytes we could not interpret, and it is not ours
- * to adopt either.
+ * where it is: we never adopt bytes we could not interpret.
  */
-function readLegacyEntry<S>(
+function readLegacy<S>(
   state: KeyState<unknown>,
   storage: Storage | null,
   name: string,
-): LegacyEntry<S> | null | Unavailable {
+): StorageValue<S> | null | Unavailable {
   if (!storage) return null;
   let raw: string | null;
   try {
@@ -582,7 +565,7 @@ function readLegacyEntry<S>(
   } catch (error) {
     // `localStorage` throws outright in some privacy modes. That is the backend
     // failing to answer, not the entry being absent — and reading it as absence
-    // is how a raw entry gets adopted-over or deleted while still holding data.
+    // is how a raw entry gets adopted-over while still holding data.
     state.onFailure(`read the legacy "${name}" entry`, error);
     return UNAVAILABLE;
   }
@@ -598,57 +581,7 @@ function readLegacyEntry<S>(
     log.warn(`Legacy "${name}" entry is not a persist envelope; leaving it in place`);
     return null;
   }
-  return { raw, value: parsed };
-}
-
-function readLegacy<S>(
-  state: KeyState<unknown>,
-  storage: Storage | null,
-  name: string,
-): StorageValue<S> | null | Unavailable {
-  const entry = readLegacyEntry<S>(state, storage, name);
-  if (entry === null || entry === UNAVAILABLE) return entry;
-  return entry.value;
-}
-
-/**
- * Delete the raw entry, but only if it still holds exactly the bytes we
- * verified — atomically, without a lock.
- *
- * The danger this closes: a delete decision is made against a raw value read
- * before an `await` (reading the adoption marker, writing to KV), and during
- * that `await` a tab running an *old bundle* — which knows nothing of this
- * seam's Web Locks, so a lock could not help — overwrites the raw key with
- * newer settings. The old, unconditional delete then removed that newer value.
- *
- * `localStorage` is synchronous, so the fix needs no lock: re-read, compare,
- * and remove run as one synchronous segment with no `await` between them. The
- * competing tab is a separate context whose writes surface here only at event-
- * loop boundaries, so its write lands wholly before the re-read (seen, and the
- * bytes differ → kept) or wholly after the remove — never in the middle. A
- * changed value is newer data, not a leftover: keep it.
- */
-function deleteLegacyIfUnchanged(storage: Storage | null, name: string, expectedRaw: string): void {
-  if (!storage) return;
-  let currentRaw: string | null;
-  try {
-    currentRaw = storage.getItem(name);
-  } catch (error) {
-    log.warn(`Could not re-read the legacy "${name}" entry before deleting it:`, error);
-    return;
-  }
-  if (currentRaw !== expectedRaw) {
-    log.warn(
-      `"${name}" in localStorage changed since it was verified — keeping it rather than deleting ` +
-        `a value another tab has since written`,
-    );
-    return;
-  }
-  try {
-    storage.removeItem(name);
-  } catch (error) {
-    log.warn(`Could not drop the legacy "${name}" entry:`, error);
-  }
+  return parsed;
 }
 
 /**
@@ -657,9 +590,9 @@ function deleteLegacyIfUnchanged(storage: Storage | null, name: string, expected
  * Used only by the clear path, where the user asked for this data to be gone
  * and a swallowed failure is how "deleted" data comes back: the raw entry
  * survives, and the next hydration finds an empty KV scope beside a live raw
- * entry and dutifully re-adopts it. Migration cleanups do not use this — they
- * delete conditionally through {@link deleteLegacyIfUnchanged}, where a raw
- * entry left behind is a duplicate, not a loss.
+ * entry and dutifully re-adopts it. Migration never deletes the raw entry at
+ * all (see the header note on the shadow duplicate), so this is the one place
+ * a raw entry is removed.
  */
 function dropLegacyEntryStrictly(storage: Storage | null, name: string): void {
   storage?.removeItem(name);
@@ -669,11 +602,16 @@ function dropLegacyEntryStrictly(storage: Storage | null, name: string): void {
  * A zustand `PersistStorage` backed by `KVStore`, which adopts the store's
  * pre-cutover raw `localStorage` entry on first read.
  *
- * The adoption is a move, not a copy: the KV write and its device-local
- * completion marker land before the raw entry is dropped, so an interrupted
- * migration leaves the value readable from one side or the other but never from
- * neither. It is idempotent — once KV holds the entry it is authoritative, so
- * re-running can neither duplicate nor resurrect state.
+ * Adoption is a copy: the value is written to KV and the raw entry is left in
+ * place. Deleting it cannot be done safely during this transition — `localStorage`
+ * has no cross-process atomic compare-and-delete (its storage mutex was dropped
+ * from the spec), so a tab on an old bundle can overwrite the raw key between a
+ * verify and a remove and have its newer value destroyed. So the seam does not
+ * delete: once KV holds the entry it is authoritative, reads take the KV value
+ * and never consume the raw one, and the raw shadow is inert — a duplicate
+ * kept for a wholesale raw-cleanup at migration exit, never a source of truth.
+ * Adoption is idempotent for the same reason: a second run finds the KV value
+ * present and takes the read-from-KV path rather than adopting again.
  *
  * On a read the backend could not answer, the raw entry is served read-only so
  * the store still hydrates with the user's data. Hydration therefore *resolves*
@@ -759,12 +697,6 @@ export function createKVPersistStorage<S>(
     return Outcome.run(() => kv.set(prefix + name, true, SENTINEL_SCOPE));
   }
 
-  function clearAdoptionMarker(name: string): Promise<Outcome<void>> {
-    const kv = resolveKv(deps);
-    if (!kv) return Promise.resolve(Outcome.resolved(undefined));
-    return Outcome.run(() => kv.remove(ADOPTED_PREFIX + name, SENTINEL_SCOPE));
-  }
-
   /**
    * Record, once per device, that the pre-persist keys have been dealt with.
    *
@@ -829,86 +761,34 @@ export function createKVPersistStorage<S>(
   }
 
   /**
-   * Drop a raw entry shadowed by a KV entry — but only on proof that a
-   * migration completed *on this device*, and only if the bytes are ones this
-   * seam could have written.
+   * Move a value into the KV scope — a copy, not a move.
    *
-   * Without that proof the KV entry has unknown provenance, and the raw entry
-   * may be the only copy of the user's real data. Keeping a shadowed duplicate
-   * costs a few bytes; deleting the original costs the data.
-   */
-  async function dropShadowedLegacy(
-    state: KeyState<S>,
-    legacyStorage: Storage | null,
-    name: string,
-    current: StorageValue<S>,
-  ): Promise<void> {
-    // Unreadable bytes are never deleted, here as anywhere else: a marker says
-    // *a* migration happened, not that these particular bytes were understood.
-    // An unreadable *storage* is likewise no basis for deleting anything.
-    const entry = readLegacyEntry<S>(state, legacyStorage, name);
-    if (entry === null || entry === UNAVAILABLE) return;
-    const marked = (await readSentinel(ADOPTED_PREFIX, name)).into(
-      state,
-      `read the adoption marker for "${name}"`,
-    );
-    if (marked === UNAVAILABLE) return;
-    if (!marked) {
-      log.warn(
-        `"${name}" exists in the KV ${scope} scope and in localStorage, but this device has no ` +
-          `record of completing that migration — keeping the localStorage copy`,
-      );
-      return;
-    }
-    // The marker proves a migration happened here once. It says nothing about
-    // whether *these* bytes are its leftover: a rolled-back deployment, or a
-    // tab still running the old bundle, writes the raw key again — with newer
-    // settings than the migration ever saw. Only a raw entry equal to the value
-    // that shadows it is provably a duplicate; anything else is data, and the
-    // rule everywhere in this file is that keeping a copy beats deleting an
-    // original.
-    if (!isEqual(entry.value, current)) {
-      log.warn(
-        `"${name}" in localStorage differs from the KV ${scope} scope value that shadows it — ` +
-          `keeping it rather than assuming it is a leftover of the migration`,
-      );
-      return;
-    }
-    // The equality above was decided against bytes read *before* the marker
-    // await; a competing old-bundle tab could have overwritten them since. The
-    // delete therefore re-checks those exact bytes in one synchronous segment
-    // and skips if they changed.
-    deleteLegacyIfUnchanged(legacyStorage, name, entry.raw);
-  }
-
-  /**
-   * Move a value into the KV scope.
+   * The raw `localStorage` entry is deliberately **left in place**. Deleting it
+   * safely is impossible here: `localStorage` has no cross-process atomic
+   * compare-and-delete (the storage mutex was dropped from the spec), so a tab
+   * running an *old bundle* — which takes none of this seam's locks — can
+   * overwrite the raw key with newer settings in the window between "verify"
+   * and "remove", and the remove then destroys that newer value. Rather than
+   * race, the seam does not delete at all during this transition. The KV entry
+   * is authoritative — once it exists, reads take the KV value and never
+   * consume the raw one — so the shadow duplicate is inert, left for a wholesale
+   * raw-cleanup at migration exit. See the file header.
    *
-   * `expectedRaw` is the exact bytes of the raw entry this migration adopts.
-   * It is supplied only when adopting from `localStorage` (`dropRaw` true), and
-   * the cleanup deletes the raw key only if it still holds those bytes — an
-   * old-bundle tab may have overwritten them across this function's awaits.
-   *
-   * `dropRaw` is false for the pre-persist fallback, and with it goes the
-   * adoption marker: that marker is a licence to delete a raw persist entry,
-   * and the fallback has earned no such thing. Were it written here, a raw
-   * entry later restored by an older bundle or a rollback would be deleted
-   * unread. The KV entry alone is enough to stop the fallback re-running.
+   * `source` only labels the log line (`localStorage` vs the pre-persist keys);
+   * both callers behave identically now that nothing is deleted or marked.
    */
   async function adopt(
     state: KeyState<S>,
     kvStorage: PersistStorageLike<S>,
-    legacyStorage: Storage | null,
     name: string,
     value: StorageValue<S>,
-    dropRaw: boolean,
     source: string,
-    expectedRaw?: string,
   ): Promise<LoadedValue<S>> {
     // One last look before committing. Another tab may have written something
     // newer while this migration was being assembled; `KVStore` has no
-    // compare-and-set, so this narrows the window rather than closing it.
-    // Losing the race costs a redundant write of equivalent data, not a delete.
+    // compare-and-set, so this narrows the window rather than closing it. With
+    // no delete, losing the race costs only a redundant write of equivalent
+    // data — the raw entry it would once have deleted is now always kept.
     const current = (await Outcome.run(() => kvStorage.getItem(name))).into(
       state,
       `re-read "${name}" from the KV ${scope} scope`,
@@ -918,7 +798,7 @@ export function createKVPersistStorage<S>(
     // it hydrates the store but earns no replay authority.
     if (current === UNAVAILABLE) return { value, provisional: true };
     if (current !== null) {
-      await dropShadowedLegacy(state, legacyStorage, name, current);
+      // Another tab populated KV first; serve the winner and keep the shadow.
       return { value: await concludeRead(state, name, current) };
     }
 
@@ -927,22 +807,6 @@ export function createKVPersistStorage<S>(
       `write "${name}" to the KV ${scope} scope`,
     );
     if (written === UNAVAILABLE) return { value, provisional: true };
-
-    if (dropRaw) {
-      const marked = (await writeSentinel(ADOPTED_PREFIX, name)).into(
-        state,
-        `record the adoption marker for "${name}"`,
-      );
-      // No durable marker means no licence to delete: leave the raw entry and
-      // let the next load try the migration again.
-      if (marked === UNAVAILABLE) return { value, provisional: true };
-      // The raw bytes were read before every await above; re-check them in one
-      // synchronous segment so an old-bundle tab that overwrote them in the
-      // meantime keeps its newer value instead of losing it to this cleanup.
-      if (expectedRaw !== undefined) {
-        deleteLegacyIfUnchanged(legacyStorage, name, expectedRaw);
-      }
-    }
 
     log.info(`Migrated "${name}" from ${source} into the KV ${scope} scope`);
     return { value: await concludeRead(state, name, value) };
@@ -1004,23 +868,16 @@ export function createKVPersistStorage<S>(
         }
 
         if (stored !== null) {
-          await dropShadowedLegacy(state, legacyStorage, name, stored);
+          // KV is authoritative and wins the read. A raw entry may still shadow
+          // it (a completed migration's leftover, or an old bundle's newer
+          // write); either way it is left untouched — see `adopt`.
           return { value: await concludeRead(state, name, stored) };
         }
 
-        const adopted = readLegacyEntry<S>(state, legacyStorage, name);
+        const adopted = readLegacy<S>(state, legacyStorage, name);
         if (adopted === UNAVAILABLE) return { value: null };
         if (adopted !== null) {
-          return adopt(
-            state,
-            kvStorage,
-            legacyStorage,
-            name,
-            adopted.value,
-            true,
-            'localStorage',
-            adopted.raw,
-          );
+          return adopt(state, kvStorage, name, adopted, 'localStorage');
         }
 
         // Empty KV *and* no raw entry is also exactly what another tab's
@@ -1034,7 +891,7 @@ export function createKVPersistStorage<S>(
         );
         if (confirmed === UNAVAILABLE) return { value: null };
         if (confirmed !== null) {
-          await dropShadowedLegacy(state, legacyStorage, name, confirmed);
+          // Another tab's adoption landed in the interval; KV wins, shadow kept.
           return { value: await concludeRead(state, name, confirmed) };
         }
 
@@ -1052,15 +909,7 @@ export function createKVPersistStorage<S>(
             ).into(state, `read the pre-persist source keys for "${name}"`);
             if (prePersist === UNAVAILABLE) return { value: null };
             if (prePersist !== null) {
-              return adopt(
-                state,
-                kvStorage,
-                legacyStorage,
-                name,
-                prePersist,
-                false,
-                'the pre-persist keys',
-              );
+              return adopt(state, kvStorage, name, prePersist, 'the pre-persist keys');
             }
           }
         }
@@ -1125,16 +974,6 @@ export function createKVPersistStorage<S>(
           );
           if (removed === UNAVAILABLE) {
             throw new Error(`Could not remove ${JSON.stringify(name)} from the KV ${scope} scope`);
-          }
-          // The marker last: with both copies already gone, a failure to clear
-          // it leaves a sentinel authorizing the deletion of a file that no
-          // longer exists, which is inert.
-          const cleared = (await clearAdoptionMarker(name)).into(
-            state,
-            `clear the adoption marker for "${name}"`,
-          );
-          if (cleared === UNAVAILABLE) {
-            throw new Error(`Could not clear the adoption marker for ${JSON.stringify(name)}`);
           }
         } else if (isBrowserRuntime()) {
           state.onFailure(
