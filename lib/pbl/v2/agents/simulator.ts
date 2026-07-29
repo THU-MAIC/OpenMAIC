@@ -26,7 +26,7 @@
 import type { LanguageModel } from 'ai';
 
 import { createLogger } from '@/lib/logger';
-import { callLLM, resolveThinkingProviderOptions, streamLLM } from '@/lib/ai/llm';
+import { callLLM, streamLLM } from '@/lib/ai/llm';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { loadPBLV2Prompt } from '../prompts/loader';
 
@@ -504,20 +504,22 @@ export async function* runSimulatorTurn(
   // so the caller can decide retry vs surface.
   async function* streamCharacterLine(): AsyncGenerator<PBLSSEEvent, string, void> {
     let acc = '';
-    // No thinking argument: unlike the teaching turns the simulator has never
-    // force-disabled thinking, so a per-request / stage-route config keeps
-    // applying — see the caveats in `runtime-thinking.ts`.
+    // Unlike the teaching turns the simulator has never force-disabled thinking,
+    // so the incoming per-request / stage-route config is what applies — handed
+    // to the wrapper, which resolves it for native adapters exactly as the
+    // hand-rolled `resolveThinkingProviderOptions` call did AND seeds the
+    // thinking context that the OpenAI-compatible fetch wrapper reads. The
+    // hand-rolled version only ever covered the former, so a stage-route config
+    // was silently dropped on OpenAI-compatible providers.
     const stream = streamLLM(
       {
         model: languageModel,
         system,
         messages,
-        ...(thinkingConfig
-          ? { providerOptions: resolveThinkingProviderOptions(languageModel, thinkingConfig) }
-          : {}),
         ...(signal ? { abortSignal: signal } : {}),
       },
       'pbl-v2-simulator',
+      thinkingConfig,
     );
     for await (const part of stream.fullStream) {
       if (part.type === 'text-delta') {

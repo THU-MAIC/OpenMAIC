@@ -30,5 +30,26 @@ import type { ThinkingConfig } from '@/lib/types/provider';
  *     turns therefore honour a per-request / stage-route `thinkingConfig` where
  *     the teaching turns override it. That divergence is pre-existing and
  *     deliberate here; unifying it is a product decision, not a refactor.
+ *  3. On native adapters this constant is currently a no-op whenever a thinking
+ *     config does arrive: the teaching turns pass their own `providerOptions`
+ *     built from that config, and `injectProviderOptions` yields to a
+ *     caller-set `providerOptions`. So a stage route that sets
+ *     `thinking: { mode: 'enabled' }` on an OpenAI / Anthropic / Google model
+ *     gets thinking ON, policy notwithstanding; the constant governs only the
+ *     OpenAI-compatible path there (via the thinking context) plus the
+ *     no-incoming-config case. Pre-existing, and left as-is so this stays a
+ *     refactor — but the code reads more absolute than it behaves.
+ *  4. "Disabled" is resolved against each model's catalogued capability, and
+ *     for some models that resolution is not "off". Measured against the
+ *     current catalog: `claude-sonnet-5` → `thinking: disabled`,
+ *     `gemini-2.5-flash` → `thinkingBudget: 0`, `gpt-5.4` → `effort: none` —
+ *     but `gpt-5.4-pro` → `effort: medium` (its capability offers no
+ *     none/minimal/low, so `pickThinkingEffort` falls back to the default),
+ *     `gemini-2.5-pro` → `thinkingBudget: -1`, i.e. DYNAMIC thinking (its
+ *     budget range carries no `disableValue`), and `claude-fable-5` →
+ *     `thinking: adaptive, effort: low` (`toggleable: false`). Those three
+ *     currently match the model's own default, so nothing changes in practice
+ *     today — but a route pinned to one of them is not getting the policy this
+ *     constant's name promises.
  */
 export const PBL_V2_TEACHING_THINKING: ThinkingConfig = { mode: 'disabled', enabled: false };

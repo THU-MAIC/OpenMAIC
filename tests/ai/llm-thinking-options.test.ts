@@ -149,6 +149,81 @@ describe('LLM thinking provider options', () => {
     });
   });
 
+  it('records every attempt when a retry is configured, not just the accepted one', async () => {
+    // Both attempts hit the provider and were billed; the first one just failed
+    // validation. Recording on the success path only would drop it.
+    aiMock.generateText
+      .mockResolvedValueOnce({
+        text: '',
+        params: undefined,
+        totalUsage: { inputTokens: 7, outputTokens: 0 },
+      })
+      .mockResolvedValueOnce({
+        text: 'ok',
+        params: undefined,
+        totalUsage: { inputTokens: 9, outputTokens: 2 },
+      });
+
+    await callLLM(
+      {
+        model: {
+          provider: 'openai.responses',
+          modelId: 'gpt-5.6',
+        },
+        prompt: 'hi',
+      } as Parameters<typeof callLLM>[0],
+      'test',
+      { retries: 1 },
+    );
+
+    await vi.waitFor(() => {
+      expect(usageMock.recordUsage).toHaveBeenCalledTimes(2);
+    });
+    // Nested objectContaining: the recorded usage may carry normalised
+    // zero-valued fields alongside the two this test set.
+    expect(usageMock.recordUsage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        usage: expect.objectContaining({ inputTokens: 7, outputTokens: 0 }),
+      }),
+    );
+    expect(usageMock.recordUsage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        usage: expect.objectContaining({ inputTokens: 9, outputTokens: 2 }),
+      }),
+    );
+  });
+
+  it('records the last attempt even when every attempt fails validation', async () => {
+    // `Once` twice rather than a persistent implementation: beforeEach only
+    // clears calls, so a lingering mockResolvedValue would leak into later tests.
+    const failed = {
+      text: '',
+      params: undefined,
+      totalUsage: { inputTokens: 5, outputTokens: 0 },
+    };
+    aiMock.generateText.mockResolvedValueOnce(failed).mockResolvedValueOnce(failed);
+
+    await callLLM(
+      {
+        model: {
+          provider: 'openai.responses',
+          modelId: 'gpt-5.6',
+        },
+        prompt: 'hi',
+      } as Parameters<typeof callLLM>[0],
+      'test',
+      { retries: 1 },
+    );
+
+    await vi.waitFor(() => {
+      expect(usageMock.recordUsage).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // Defensive: ai@6's GenerateTextResult always carries `totalUsage`, so this
+  // shape is not one the current SDK produces — the fallback exists so a future
+  // result shape without the aggregate degrades to the final step instead of
+  // recording nothing.
   it('falls back to the single-step usage when no aggregate is reported', async () => {
     aiMock.generateText.mockResolvedValueOnce({
       text: 'ok',

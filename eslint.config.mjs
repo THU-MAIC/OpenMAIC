@@ -377,9 +377,11 @@ const eslintConfig = defineConfig([
   // than merging them, so reusing that key here would silently drop those
   // module-boundary bans. Different key, no interference.
   //
-  // Out of scope (same spirit as the boundaries above): `require('ai')` and
-  // dynamic `import('ai')`. Nothing in the tree reaches the SDK that way, and the
-  // static import is the shape a hurried call site actually reaches for.
+  // Out of scope (same spirit as the boundaries above): `require('ai')`, dynamic
+  // `import('ai')`, and a namespace import (`import * as ai from 'ai'`), which
+  // `importNames` cannot see. Nothing in the tree reaches the SDK any of those
+  // ways, and the named static import is the shape a hurried call site actually
+  // reaches for.
   {
     files: ['**/*.{ts,tsx}'],
     ignores: [
