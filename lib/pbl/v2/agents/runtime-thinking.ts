@@ -18,14 +18,23 @@ import type { ThinkingConfig } from '@/lib/types/provider';
  *
  * Two caveats a future reader should know before treating this as settled:
  *
- *  1. The original justification has expired. It read: "the instructing turn
- *     forces `begin_turn` via `tool_choice`, which several providers reject when
- *     thinking is on — DeepSeek returns 400 'Thinking mode does not support this
- *     tool_choice'". `begin_turn` no longer exists, and the instructing turn now
- *     passes `tools` + `stopWhen` and forces nothing. If no provider still
- *     rejects these calls, the policy can be dropped outright rather than
- *     applied — it is kept only because the absence of a 400 is harder to
- *     confirm than its presence.
+ *  1. The original justification is still live, but narrower than it reads. It
+ *     said: "the instructing turn forces `begin_turn` via `tool_choice`, which
+ *     several providers reject when thinking is on — DeepSeek returns 400
+ *     'Thinking mode does not support this tool_choice'". `begin_turn` is gone
+ *     and the instructing turn now passes `tools` + `stopWhen`, forcing nothing,
+ *     so it is tempting to conclude the wall is gone with it. It is not.
+ *     Probed against the live DeepSeek V4 Pro API with this turn's exact shape:
+ *       - thinking on + `tools` + `stopWhen`  → streams fine, 66 reasoning tokens
+ *       - thinking on + forced `toolChoice`   → still that exact 400
+ *     So the incompatibility is bound to a FORCED tool choice, not to tools in
+ *     general. Today's turns do not reach it, but anyone who reintroduces a
+ *     forced tool choice here will — which is a second reason to keep the policy
+ *     rather than delete it as dead weight.
+ *     Latency is the third: on the same probe the teaching-turn shape reached
+ *     its first token in 1.4 s with thinking off against 3.0 s with DeepSeek's
+ *     default thinking on. The teaching turns gain nothing from thinking, and
+ *     the instructor is the chattiest surface in the product.
  *  2. The simulator does NOT apply this policy, and did not before either. Its
  *     turns therefore honour a per-request / stage-route `thinkingConfig` where
  *     the teaching turns override it. That divergence is pre-existing and
