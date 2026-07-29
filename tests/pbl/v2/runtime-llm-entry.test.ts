@@ -2,22 +2,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MockLanguageModelV3, convertArrayToReadableStream } from 'ai/test';
 
 /**
- * #669 / #1003: the PBL v2 teaching turns must reach the model through
- * `streamLLM` with thinking force-disabled.
+ * #1003: the PBL v2 runtime reaches the model only through the shared entry
+ * point, and holds no thinking opinion of its own.
  *
- * The original test asserted the mechanism — a `withThinkingDisabled` helper
- * that seeded the thinking AsyncLocalStorage by hand. That helper is gone: the
- * agents now go through the shared entry point, which seeds the store itself.
- * So this asserts the two things the call site is actually responsible for, at
- * the provider boundary where a regression would bite:
+ * The runtime used to force thinking off on the teaching turns through a
+ * hand-rolled helper that seeded the thinking AsyncLocalStorage directly — which
+ * is also why those turns called the AI SDK directly. Both are gone: the agents
+ * call `streamLLM` / `callLLM`, and what the request / stage route asked for is
+ * what the provider sees.
  *
- *   1. the store reads a disabled config by the time the provider is invoked
- *      (the OpenAI-compatible fetch wrapper reads exactly this), and
- *   2. the turn is accounted for — going through the wrapper is what makes the
+ * Asserted at the provider boundary, where a regression would actually bite:
+ *
+ *   1. an incoming thinking config arrives intact,
+ *   2. NO config means NO config — nothing in the runtime substitutes one, which
+ *      is the property a re-added policy constant would silently break,
+ *   3. the global kill switch still applies,
+ *   4. the turn is accounted for; going through the wrapper is what makes the
  *      call visible to usage recording at all.
- *
- * Both break silently if someone drops the arguments at the call site, which is
- * how the direct-SDK drift in #1003 went unnoticed for so long.
  */
 const usageMock = vi.hoisted(() => ({
   normalizeUsage: vi.fn((usage: unknown) => usage),
@@ -33,11 +34,11 @@ vi.mock('@/lib/server/usage-storage', () => ({
 }));
 
 import { thinkingContext } from '@/lib/ai/thinking-context';
-import { PBL_V2_TEACHING_THINKING } from '@/lib/pbl/v2/agents/runtime-thinking';
 import { runTaskEvaluation } from '@/lib/pbl/v2/agents/evaluator';
 import { addSubmission } from '@/lib/pbl/v2/operations/submission';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 import type { PBLSSEEvent } from '@/lib/pbl/v2/api/sse';
+import type { ThinkingConfig } from '@/lib/types/provider';
 
 type DoStreamConfig = NonNullable<
   NonNullable<ConstructorParameters<typeof MockLanguageModelV3>[0]>['doStream']
@@ -98,9 +99,11 @@ function mkProject(): PBLProjectV2 {
   };
 }
 
+const NOT_CAPTURED = Symbol('provider was never invoked');
+
 /** Run one task evaluation against a scripted model, capturing what the
  *  provider saw in the thinking store at the moment it was invoked. */
-async function runEvaluationCapturingThinking(): Promise<{ seenThinking: unknown }> {
+async function runEvaluation(thinkingConfig?: ThinkingConfig): Promise<{ seenThinking: unknown }> {
   const project = mkProject();
   addSubmission(project, {
     microtaskId: 't1',
@@ -109,7 +112,6 @@ async function runEvaluationCapturingThinking(): Promise<{ seenThinking: unknown
     content: 'submission',
   });
 
-  const NOT_CAPTURED = Symbol('provider was never invoked');
   let seenThinking: unknown = NOT_CAPTURED;
 
   const model = new MockLanguageModelV3({
@@ -127,6 +129,7 @@ async function runEvaluationCapturingThinking(): Promise<{ seenThinking: unknown
     milestoneId: 'ms1',
     microtaskId: 't1',
     languageModel: model,
+    ...(thinkingConfig ? { thinkingConfig } : {}),
   })) {
     events.push(ev);
   }
@@ -138,28 +141,43 @@ async function runEvaluationCapturingThinking(): Promise<{ seenThinking: unknown
   return { seenThinking };
 }
 
-describe('PBL v2 teaching-turn thinking policy (#669, #1003)', () => {
+describe('PBL v2 runtime goes through the shared LLM entry point (#1003)', () => {
   beforeEach(() => {
     usageMock.normalizeUsage.mockClear();
     usageMock.recordUsage.mockClear();
+    delete process.env.LLM_THINKING_DISABLED;
   });
 
-  it('is a disabled thinking config', () => {
-    expect(PBL_V2_TEACHING_THINKING).toEqual({ mode: 'disabled', enabled: false });
+  it('passes an incoming thinking config through to the provider unchanged', async () => {
+    const thinkingConfig: ThinkingConfig = { mode: 'enabled', effort: 'low' };
+    const { seenThinking } = await runEvaluation(thinkingConfig);
+    expect(seenThinking).toEqual(thinkingConfig);
   });
 
-  it('reaches the provider as a disabled config on an evaluator turn', async () => {
-    const { seenThinking } = await runEvaluationCapturingThinking();
-    expect(seenThinking).toEqual(PBL_V2_TEACHING_THINKING);
+  it('substitutes nothing when the request carries no thinking config', async () => {
+    // The runtime holds no policy of its own. A re-added hardcoded constant
+    // would show up right here as a config the caller never asked for.
+    const { seenThinking } = await runEvaluation();
+    expect(seenThinking).toBeUndefined();
   });
 
-  it('does not leak the disabled config past the turn', async () => {
-    await runEvaluationCapturingThinking();
+  it('still honours the global kill switch when no config is supplied', async () => {
+    process.env.LLM_THINKING_DISABLED = 'true';
+    try {
+      const { seenThinking } = await runEvaluation();
+      expect(seenThinking).toEqual({ mode: 'disabled', enabled: false });
+    } finally {
+      delete process.env.LLM_THINKING_DISABLED;
+    }
+  });
+
+  it('does not leak the config past the turn', async () => {
+    await runEvaluation({ mode: 'enabled', effort: 'low' });
     expect(thinkingContext.getStore()).toBeUndefined();
   });
 
   it('accounts for the turn under its own usage source', async () => {
-    await runEvaluationCapturingThinking();
+    await runEvaluation();
     await vi.waitFor(() => {
       expect(usageMock.recordUsage).toHaveBeenCalledWith(
         expect.objectContaining({ kind: 'llm', source: 'pbl-v2-evaluator-task' }),

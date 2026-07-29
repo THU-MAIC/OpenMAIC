@@ -44,8 +44,7 @@
 import type { LanguageModel } from 'ai';
 
 import { createLogger } from '@/lib/logger';
-import { resolveThinkingProviderOptions, streamLLM } from '@/lib/ai/llm';
-import { PBL_V2_TEACHING_THINKING } from './runtime-thinking';
+import { streamLLM } from '@/lib/ai/llm';
 import { buildVisionUserContent } from '@/lib/generation/prompt-formatters';
 import type { ThinkingConfig } from '@/lib/types/provider';
 
@@ -172,13 +171,10 @@ async function* runShared(args: RunSharedArgs): AsyncGenerator<PBLSSEEvent, void
               ],
             }
           : { prompt: userPrompt }),
-        ...(thinkingConfig
-          ? { providerOptions: resolveThinkingProviderOptions(languageModel, thinkingConfig) }
-          : {}),
         ...(signal ? { abortSignal: signal } : {}),
       },
       `pbl-v2-evaluator-${kind}`,
-      PBL_V2_TEACHING_THINKING,
+      thinkingConfig,
     );
     for await (const part of result.fullStream) {
       switch (part.type) {

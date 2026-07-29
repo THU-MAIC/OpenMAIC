@@ -277,8 +277,8 @@ async function runDirectorNarratorPass(args: {
   const messages = [...history, { role: 'user' as const, content: nudge }];
 
   try {
-    // No thinking argument: the narrator pass never resolved a thinking config
-    // and still doesn't — see the caveats in `runtime-thinking.ts`.
+    // No thinking argument: the narrator pass has never resolved a thinking
+    // config, and this PR does not start (its `thinkingConfig` arg is unused).
     const result = await callLLM(
       {
         model: languageModel,
@@ -504,13 +504,12 @@ export async function* runSimulatorTurn(
   // so the caller can decide retry vs surface.
   async function* streamCharacterLine(): AsyncGenerator<PBLSSEEvent, string, void> {
     let acc = '';
-    // Unlike the teaching turns the simulator has never force-disabled thinking,
-    // so the incoming per-request / stage-route config is what applies — handed
-    // to the wrapper, which resolves it for native adapters exactly as the
-    // hand-rolled `resolveThinkingProviderOptions` call did AND seeds the
+    // The incoming per-request / stage-route config is what applies, handed to
+    // the wrapper: it resolves provider options for native adapters AND seeds the
     // thinking context that the OpenAI-compatible fetch wrapper reads. The
-    // hand-rolled version only ever covered the former, so a stage-route config
-    // was silently dropped on OpenAI-compatible providers.
+    // hand-rolled `resolveThinkingProviderOptions` call this replaced only ever
+    // covered the former, so a stage-route config was silently dropped on
+    // OpenAI-compatible providers.
     const stream = streamLLM(
       {
         model: languageModel,

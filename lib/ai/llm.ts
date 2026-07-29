@@ -212,7 +212,12 @@ function buildThinkingProviderOptions(
 }
 
 /**
- * Resolve providerOptions for direct AI SDK calls that bypass callLLM/streamLLM.
+ * Resolve providerOptions the way callLLM / streamLLM resolve them internally.
+ *
+ * There are no production callers left: every server-side call goes through the
+ * wrappers (a lint rule enforces it), and they inject provider options
+ * themselves. Kept exported because it is the only way to inspect that mapping
+ * from the outside, which the SDK-integration tests do.
  */
 export function resolveThinkingProviderOptions(
   model: LanguageModel,
