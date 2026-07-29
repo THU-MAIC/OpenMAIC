@@ -69,6 +69,7 @@ export function MoveToFolderMenu({
           aria-label={t('classroom.moveToFolder')}
           title={t('classroom.moveToFolder')}
           onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
           className="absolute top-2 right-20 size-7 inline-flex items-center justify-center rounded-full bg-black/30 hover:bg-black/50 text-white hover:text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity z-10"
         >
           <FolderInput className="size-3.5" />
@@ -80,7 +81,10 @@ export function MoveToFolderMenu({
 
         {/* Ungrouped */}
         <DropdownMenuItem
-          onClick={() => onMove(undefined)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onMove(undefined);
+          }}
           className="flex items-center justify-between"
         >
           <span>{t('classroom.ungrouped')}</span>
@@ -91,7 +95,10 @@ export function MoveToFolderMenu({
         {folders.map((f) => (
           <DropdownMenuItem
             key={f.id}
-            onClick={() => onMove(f.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onMove(f.id);
+            }}
             className="flex items-center justify-between"
           >
             <span className="truncate">{f.name}</span>
@@ -112,6 +119,7 @@ export function MoveToFolderMenu({
                 setError(null);
               }}
               onKeyDown={(e) => {
+                e.stopPropagation();
                 if (e.key === 'Enter') submitNew();
                 if (e.key === 'Escape') resetCreating();
               }}
@@ -121,7 +129,12 @@ export function MoveToFolderMenu({
             {error && <p className="mt-1 text-[11px] text-destructive">{error}</p>}
           </div>
         ) : (
-          <DropdownMenuItem onClick={() => setCreating(true)}>
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              setCreating(true);
+            }}
+          >
             <Plus className="size-3.5 mr-1.5" />
             {t('classroom.newFolderInline')}
           </DropdownMenuItem>
