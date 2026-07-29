@@ -362,6 +362,51 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // Single LLM entry point (machine-enforced): server-side model calls go through
+  // `callLLM` / `streamLLM` in lib/ai/llm.ts. That wrapper is where usage
+  // accounting (`recordUsage`), the `LLM_THINKING_DISABLED` kill switch, and
+  // per-provider thinking resolution live — a direct `generateText` / `streamText`
+  // silently opts out of all three, and the opt-out is invisible at the call site.
+  // The PBL v2 runtime drifted exactly this way (#1003): five direct calls meant
+  // zero usage records for the busiest traffic in the product, plus three
+  // different meanings for one thinking config.
+  //
+  // The rule uses the @typescript-eslint variant deliberately: the base
+  // `no-restricted-imports` is already configured for lib/choreography and
+  // lib/video-export, and flat config REPLACES a rule's options per key rather
+  // than merging them, so reusing that key here would silently drop those
+  // module-boundary bans. Different key, no interference.
+  //
+  // Out of scope (same spirit as the boundaries above): `require('ai')` and
+  // dynamic `import('ai')`. Nothing in the tree reaches the SDK that way, and the
+  // static import is the shape a hurried call site actually reaches for.
+  {
+    files: ['**/*.{ts,tsx}'],
+    ignores: [
+      // The entry point itself.
+      'lib/ai/llm.ts',
+      // Offline harnesses and a test whose subject IS the SDK: not server request
+      // paths, nothing to account for, and the integration test must be able to
+      // call the raw SDK to assert what the wrapper is built on.
+      'eval/**',
+      'tests/**',
+    ],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'ai',
+              importNames: ['generateText', 'streamText'],
+              message:
+                'Call the model through callLLM / streamLLM in @/lib/ai/llm instead of the AI SDK directly — that is where usage accounting, the LLM_THINKING_DISABLED kill switch, and per-provider thinking resolution are applied. Both wrappers pass every SDK option straight through, and take an optional per-call thinking config.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

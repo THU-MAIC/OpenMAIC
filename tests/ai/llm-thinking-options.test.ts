@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const aiMock = vi.hoisted(() => ({
-  generateText: vi.fn(async (params: unknown) => ({
-    text: 'ok',
-    params,
-    usage: undefined as unknown,
-  })),
+  // `totalUsage` is optional here so a single-step case can omit it: multi-step
+  // runs report the aggregate there and callLLM prefers it over `usage`.
+  generateText: vi.fn(
+    async (
+      params: unknown,
+    ): Promise<{ text: string; params: unknown; usage?: unknown; totalUsage?: unknown }> => ({
+      text: 'ok',
+      params,
+    }),
+  ),
   streamText: vi.fn(),
 }));
 
@@ -112,6 +117,59 @@ describe('LLM thinking provider options', () => {
           modelId: 'gpt-5.6',
           modelString: 'openai:gpt-5.6',
         }),
+      );
+    });
+  });
+
+  it('records the aggregate usage of a multi-step tool run, not the last step', async () => {
+    // `usage` on a multi-step run (`stopWhen`) is the final step alone; every
+    // earlier step's tokens live only in `totalUsage`.
+    aiMock.generateText.mockResolvedValueOnce({
+      text: 'ok',
+      params: undefined,
+      usage: { inputTokens: 3, outputTokens: 4 },
+      totalUsage: { inputTokens: 30, outputTokens: 40 },
+    });
+
+    await callLLM(
+      {
+        model: {
+          provider: 'openai.responses',
+          modelId: 'gpt-5.6',
+        },
+        prompt: 'hi',
+      } as Parameters<typeof callLLM>[0],
+      'test',
+    );
+
+    await vi.waitFor(() => {
+      expect(usageMock.recordUsage).toHaveBeenCalledWith(
+        expect.objectContaining({ usage: { inputTokens: 30, outputTokens: 40 } }),
+      );
+    });
+  });
+
+  it('falls back to the single-step usage when no aggregate is reported', async () => {
+    aiMock.generateText.mockResolvedValueOnce({
+      text: 'ok',
+      params: undefined,
+      usage: { inputTokens: 3, outputTokens: 4 },
+    });
+
+    await callLLM(
+      {
+        model: {
+          provider: 'openai.responses',
+          modelId: 'gpt-5.6',
+        },
+        prompt: 'hi',
+      } as Parameters<typeof callLLM>[0],
+      'test',
+    );
+
+    await vi.waitFor(() => {
+      expect(usageMock.recordUsage).toHaveBeenCalledWith(
+        expect.objectContaining({ usage: { inputTokens: 3, outputTokens: 4 } }),
       );
     });
   });

@@ -23,11 +23,10 @@
  * intentionally NOT here — they land in increment 4.
  */
 
-import { streamText, generateText } from 'ai';
 import type { LanguageModel } from 'ai';
 
 import { createLogger } from '@/lib/logger';
-import { resolveThinkingProviderOptions } from '@/lib/ai/llm';
+import { callLLM, resolveThinkingProviderOptions, streamLLM } from '@/lib/ai/llm';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { loadPBLV2Prompt } from '../prompts/loader';
 
@@ -278,12 +277,17 @@ async function runDirectorNarratorPass(args: {
   const messages = [...history, { role: 'user' as const, content: nudge }];
 
   try {
-    const result = await generateText({
-      model: languageModel,
-      system,
-      messages,
-      ...(signal ? { abortSignal: signal } : {}),
-    });
+    // No thinking argument: the narrator pass never resolved a thinking config
+    // and still doesn't — see the caveats in `runtime-thinking.ts`.
+    const result = await callLLM(
+      {
+        model: languageModel,
+        system,
+        messages,
+        ...(signal ? { abortSignal: signal } : {}),
+      },
+      'pbl-v2-simulator-narrator',
+    );
     const text = (result.text ?? '').trim();
     if (!text) return [];
     // Sentinel: model says nothing happened → no narration this turn.
@@ -500,15 +504,21 @@ export async function* runSimulatorTurn(
   // so the caller can decide retry vs surface.
   async function* streamCharacterLine(): AsyncGenerator<PBLSSEEvent, string, void> {
     let acc = '';
-    const stream = streamText({
-      model: languageModel,
-      system,
-      messages,
-      ...(thinkingConfig
-        ? { providerOptions: resolveThinkingProviderOptions(languageModel, thinkingConfig) }
-        : {}),
-      ...(signal ? { abortSignal: signal } : {}),
-    });
+    // No thinking argument: unlike the teaching turns the simulator has never
+    // force-disabled thinking, so a per-request / stage-route config keeps
+    // applying — see the caveats in `runtime-thinking.ts`.
+    const stream = streamLLM(
+      {
+        model: languageModel,
+        system,
+        messages,
+        ...(thinkingConfig
+          ? { providerOptions: resolveThinkingProviderOptions(languageModel, thinkingConfig) }
+          : {}),
+        ...(signal ? { abortSignal: signal } : {}),
+      },
+      'pbl-v2-simulator',
+    );
     for await (const part of stream.fullStream) {
       if (part.type === 'text-delta') {
         const delta =

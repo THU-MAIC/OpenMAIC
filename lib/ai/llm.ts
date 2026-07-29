@@ -352,7 +352,11 @@ export async function callLLM<T extends GenerateTextParams>(
         continue;
       }
 
-      recordUsageSafe(result.usage, buildUsageMeta(params, source));
+      // `usage` is the LAST step only; on a multi-step tool run (`stopWhen`)
+      // every earlier step would go unaccounted. `totalUsage` aggregates across
+      // steps and equals `usage` for a single-step call. Mirrors streamLLM,
+      // which already prefers the aggregate.
+      recordUsageSafe(result.totalUsage ?? result.usage, buildUsageMeta(params, source));
       return result;
     } catch (error) {
       lastError = error;

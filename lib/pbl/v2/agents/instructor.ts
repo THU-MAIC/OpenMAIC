@@ -11,16 +11,16 @@
  * owned by the right-side submission/evaluation flow, not by chat.
  */
 
-import { streamText, tool, stepCountIs } from 'ai';
+import { tool, stepCountIs } from 'ai';
 import type { LanguageModel } from 'ai';
 
 import { createLogger } from '@/lib/logger';
-import { resolveThinkingProviderOptions } from '@/lib/ai/llm';
+import { resolveThinkingProviderOptions, streamLLM } from '@/lib/ai/llm';
 import { loadPBLV2Prompt } from '../prompts/loader';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { tierGuidanceBlock } from './tier-guidance';
 import { compressIfNeeded } from './instructor-memory';
-import { withThinkingDisabled } from './runtime-thinking';
+import { PBL_V2_TEACHING_THINKING } from './runtime-thinking';
 
 import type {
   PBLProjectV2,
@@ -1497,8 +1497,8 @@ export async function* runInstructorTurn(
     // speaking, leaving the learner with an empty chat. The instructing path
     // exposes only the two non-advance tools (record_observation /
     // adjust_difficulty).
-    const result = withThinkingDisabled(() =>
-      streamText({
+    const result = streamLLM(
+      {
         model: languageModel,
         system: systemPrompt,
         messages: finalMessages,
@@ -1512,7 +1512,9 @@ export async function* runInstructorTurn(
           ? { providerOptions: resolveThinkingProviderOptions(languageModel, thinkingConfig) }
           : {}),
         ...(signal ? { abortSignal: signal } : {}),
-      }),
+      },
+      'pbl-v2-instructor',
+      PBL_V2_TEACHING_THINKING,
     );
 
     for await (const part of result.fullStream) {
@@ -1770,8 +1772,8 @@ async function* runSetupFollowup(args: SetupFollowupArgs): AsyncGenerator<PBLSSE
   const historyMessages = buildSetupHistoryMessages(instructorThread);
 
   try {
-    const result = withThinkingDisabled(() =>
-      streamText({
+    const result = streamLLM(
+      {
         model: languageModel,
         system: systemPrompt,
         messages: [
@@ -1785,7 +1787,9 @@ async function* runSetupFollowup(args: SetupFollowupArgs): AsyncGenerator<PBLSSE
           ? { providerOptions: resolveThinkingProviderOptions(languageModel, thinkingConfig) }
           : {}),
         ...(signal ? { abortSignal: signal } : {}),
-      }),
+      },
+      'pbl-v2-instructor-setup-followup',
+      PBL_V2_TEACHING_THINKING,
     );
 
     let rawAssistantText = '';
