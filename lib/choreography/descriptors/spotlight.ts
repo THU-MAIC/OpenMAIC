@@ -21,7 +21,7 @@ import type { AnimationDescriptor } from './types';
  * the component's own `?? 0.7` fallback is unreachable at playback. The exporter
  * must use 0.5 to match.
  *
- * Shared easing `[0.16, 1, 0.3, 1]` (the spotlight expo-out).
+ * Cutout/border easing `[0.16, 1, 0.3, 1]` (the spotlight expo-out).
  */
 export const spotlightV1: AnimationDescriptor = {
   id: 'spotlight.v1',
