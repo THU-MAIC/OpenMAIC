@@ -133,4 +133,55 @@ describe('patchHtmlForIframe', () => {
     handlers.message({ data: { foo: 1 } });
     expect(posts).toHaveLength(4);
   });
+
+  it('loads micropip before generated Python bootstrap code imports it', () => {
+    const html = `<html><head></head><body><script>
+      async function initPyodide() {
+        pyodide = await loadPyodide({
+          indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/'
+        });
+        await pyodide.runPythonAsync(\`
+          import micropip
+          await micropip.install('requests')
+        \`);
+      }
+    </script></body></html>`;
+
+    const out = patchHtmlForIframe(html);
+    const loadIndex = out.indexOf("await pyodide.loadPackage('micropip');");
+    const importIndex = out.indexOf('import micropip');
+
+    expect(loadIndex).toBeGreaterThan(-1);
+    expect(loadIndex).toBeLessThan(importIndex);
+  });
+
+  it('does not duplicate an existing micropip package load', () => {
+    const html = `<script>
+      const runtime = await loadPyodide();
+      await runtime.loadPackage(['numpy', 'micropip']);
+      await runtime.runPythonAsync('import micropip');
+    </script>`;
+
+    const out = patchHtmlForIframe(html);
+    expect(out.match(/loadPackage\s*\(\s*\[['"]?/g)).toHaveLength(1);
+    expect(out).not.toContain("await runtime.loadPackage('micropip');");
+  });
+
+  it('does not modify a chained loadPyodide expression', () => {
+    const html = `<script>
+      const runtime = await loadPyodide().then((loaded) => loaded);
+      await runtime.runPythonAsync('import micropip');
+    </script>`;
+
+    const out = patchHtmlForIframe(html);
+    expect(out).toContain('loadPyodide().then((loaded) => loaded)');
+    expect(out).not.toContain("await runtime.loadPackage('micropip');");
+  });
+
+  it('leaves non-Pyodide interactive HTML free of micropip repair code', () => {
+    const out = patchHtmlForIframe(
+      '<html><head></head><body><script>window.answer = 42;</script></body></html>',
+    );
+    expect(out).not.toContain("loadPackage('micropip')");
+  });
 });

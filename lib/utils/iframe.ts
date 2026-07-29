@@ -99,6 +99,118 @@ const ERROR_CAPTURE_SHIM = `<script data-iframe-error-shim>
 </script>`;
 
 /**
+ * Repair a common LLM-authored Pyodide bootstrap bug.
+ *
+ * `micropip` ships with the Pyodide distribution but is not loaded into the
+ * runtime by `loadPyodide()` itself. Generated widgets sometimes immediately
+ * execute `import micropip`, which aborts their whole initialization with
+ * `ModuleNotFoundError`. When that exact mismatch is present, insert the
+ * documented `loadPackage('micropip')` call after the assigned loader promise.
+ *
+ * This is intentionally narrow: unrelated HTML is untouched, already-correct
+ * widgets stay byte-for-byte stable, and pages whose loader result is not
+ * assigned are left for the runtime-error reporter instead of being guessed at.
+ */
+function patchMissingMicropipLoad(html: string): string {
+  if (!/\b(?:import\s+micropip|from\s+micropip\s+import)\b/.test(html)) return html;
+  if (/\.loadPackage\s*\(\s*(?:['"]micropip['"]|\[[^\]]*['"]micropip['"][^\]]*\])/.test(html)) {
+    return html;
+  }
+
+  const loader = /\b([A-Za-z_$][\w$]*)\s*=\s*await\s+loadPyodide\s*\(/.exec(html);
+  if (!loader || loader.index === undefined) return html;
+
+  const variable = loader[1];
+  const openParen = html.indexOf('(', loader.index);
+  if (openParen === -1) return html;
+
+  let depth = 0;
+  let quote = '';
+  let escaped = false;
+  let blockComment = false;
+  let lineComment = false;
+  let closeParen = -1;
+
+  for (let index = openParen; index < html.length; index += 1) {
+    const char = html[index];
+    const next = html[index + 1];
+
+    if (lineComment) {
+      if (char === '\n') lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (char === '*' && next === '/') {
+        blockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === quote) {
+        quote = '';
+      }
+      continue;
+    }
+    if (char === '/' && next === '/') {
+      lineComment = true;
+      index += 1;
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      blockComment = true;
+      index += 1;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === '`') {
+      quote = char;
+      continue;
+    }
+    if (char === '(') depth += 1;
+    if (char === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        closeParen = index;
+        break;
+      }
+    }
+  }
+
+  if (closeParen === -1) return html;
+
+  let insertAt = closeParen + 1;
+  let crossedLineBreak = false;
+  while (insertAt < html.length && /[ \t\r\n]/.test(html[insertAt])) {
+    if (html[insertAt] === '\n' || html[insertAt] === '\r') crossedLineBreak = true;
+    insertAt += 1;
+  }
+
+  // A property-access token means the result is still part of a chain such as
+  // `loadPyodide().then(...)`; inserting in the middle would corrupt the script.
+  if (html[insertAt] === '.' || html[insertAt] === '?' || html[insertAt] === '[') return html;
+
+  if (html[insertAt] === ';') insertAt += 1;
+  else if (
+    insertAt < html.length &&
+    !crossedLineBreak &&
+    html[insertAt] !== '}' &&
+    html[insertAt] !== '<'
+  ) {
+    return html;
+  }
+
+  const lineStart = html.lastIndexOf('\n', loader.index) + 1;
+  const indentation = html.slice(lineStart, loader.index).match(/^[ \t]*/)?.[0] ?? '';
+  const loadStatement = `\n${indentation}await ${variable}.loadPackage('micropip');`;
+
+  return html.slice(0, insertAt) + loadStatement + html.slice(insertAt);
+}
+
+/**
  * Patch embedded HTML to display correctly inside an iframe.
  *
  * Injects a runtime-error capture shim + a storage shim (so sandboxed pages that
@@ -108,6 +220,7 @@ const ERROR_CAPTURE_SHIM = `<script data-iframe-error-shim>
  * it also observes the storage shim).
  */
 export function patchHtmlForIframe(html: string): string {
+  const runtimePatchedHtml = patchMissingMicropipLoad(html);
   const iframeCss = `<style data-iframe-patch>
   html, body {
     width: 100%;
@@ -125,21 +238,29 @@ export function patchHtmlForIframe(html: string): string {
   const injection = '\n' + ERROR_CAPTURE_SHIM + '\n' + STORAGE_SHIM + '\n' + iframeCss;
 
   // Insert right after <head> or at the start of the document
-  const headIdx = html.indexOf('<head>');
+  const headIdx = runtimePatchedHtml.indexOf('<head>');
   if (headIdx !== -1) {
     const insertPos = headIdx + 6; // after <head>
-    return html.substring(0, insertPos) + injection + html.substring(insertPos);
+    return (
+      runtimePatchedHtml.substring(0, insertPos) +
+      injection +
+      runtimePatchedHtml.substring(insertPos)
+    );
   }
 
-  const headWithAttrs = html.indexOf('<head ');
+  const headWithAttrs = runtimePatchedHtml.indexOf('<head ');
   if (headWithAttrs !== -1) {
-    const closeAngle = html.indexOf('>', headWithAttrs);
+    const closeAngle = runtimePatchedHtml.indexOf('>', headWithAttrs);
     if (closeAngle !== -1) {
       const insertPos = closeAngle + 1;
-      return html.substring(0, insertPos) + injection + html.substring(insertPos);
+      return (
+        runtimePatchedHtml.substring(0, insertPos) +
+        injection +
+        runtimePatchedHtml.substring(insertPos)
+      );
     }
   }
 
   // Fallback: prepend
-  return injection + html;
+  return injection + runtimePatchedHtml;
 }
