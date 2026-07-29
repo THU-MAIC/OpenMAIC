@@ -165,6 +165,8 @@ const NAME = 'settings-storage';
  * describes nothing about.
  */
 const PRE_PERSIST_SENTINEL = `__pre-persist-consulted:${NAME}`;
+/** The monotonic "this device migrated this key" marker (suppresses re-adopt). */
+const MIGRATED_MARKER = `__migrated:${NAME}`;
 const isBlobKey = (key: string) => key === NAME;
 
 interface Prefs {
@@ -459,16 +461,29 @@ describe('createKVPersistStorage — legacy localStorage adoption', () => {
     expect(h.legacy.getItem(NAME)).not.toBeNull();
   });
 
-  it('removeItem clears both homes and the marker, so nothing can be re-adopted', async () => {
+  it('records the migrated marker on a genuine first migration', async () => {
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'Ada' });
+
+    expect(await h.storage().getItem(NAME)).toEqual({ state: { nickname: 'Ada' }, version: 4 });
+    expect(await h.kv.get(NAME, 'account')).toEqual({ state: { nickname: 'Ada' }, version: 4 });
+    // The marker is now set, so a later external KV wipe cannot resurrect the
+    // frozen raw shadow.
+    expect(await h.kv.get(MIGRATED_MARKER, 'device')).toBe(true);
+  });
+
+  it('removeItem clears both homes and the migrated marker, back to a first-load state', async () => {
     const h = harness();
     seedLegacy(h.legacy, { nickname: 'Ada' });
     const persist = h.storage();
     await persist.getItem(NAME);
+    expect(await h.kv.get(MIGRATED_MARKER, 'device')).toBe(true);
     seedLegacy(h.legacy, { nickname: 'stale' });
 
     await persist.removeItem(NAME);
 
     expect(h.legacy.getItem(NAME)).toBeNull();
+    expect(await h.kv.get(MIGRATED_MARKER, 'device')).toBeNull();
     expect(await persist.getItem(NAME)).toBeNull();
   });
 
@@ -503,6 +518,54 @@ describe('createKVPersistStorage — legacy localStorage adoption', () => {
 
     expect(await persist.getItem(NAME)).toBeNull();
     expect(legacy.getItem(NAME)).toBe(JSON.stringify({ state: { nickname: 'Ada' }, version: 4 }));
+  });
+});
+
+describe('createKVPersistStorage — an external KV wipe does not resurrect the raw shadow', () => {
+  it('does not re-adopt a frozen raw shadow after the account KV is emptied externally', async () => {
+    // The regression this guards. Steady state: the store migrated long ago, KV
+    // holds the latest edits (v2), and the raw entry is a *frozen* pre-cutover
+    // copy (v0) — writes only ever reach KV, never the raw key.
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'v0 (frozen pre-cutover)' });
+    const persist = h.storage();
+    await persist.getItem(NAME); // first migration: KV = v0, marker set
+    await persist.setItem(NAME, { state: { nickname: 'v2 (latest edit)' }, version: 4 });
+    expect(await h.kv.get(NAME, 'account')).toEqual({
+      state: { nickname: 'v2 (latest edit)' },
+      version: 4,
+    });
+
+    // An EXTERNAL wipe empties the account KV entry — a server-side wipe, an
+    // account switch, eviction. This is NOT removeItem (which would delete the
+    // raw entry too), so the frozen raw shadow survives.
+    await h.kv.remove(NAME, 'account');
+
+    // Next load must NOT resurrect the frozen v0 shadow: the store goes empty,
+    // and the wiped account stays wiped (not refilled with v0 and re-synced).
+    expect(await h.storage().getItem(NAME)).toBeNull();
+    expect(await h.kv.get(NAME, 'account')).toBeNull();
+    // The raw entry is left in place (still never deleted), but it is inert.
+    expect(h.legacy.getItem(NAME)).not.toBeNull();
+  });
+
+  it('serves a value another device wrote after the wipe, rather than the shadow', async () => {
+    // Same wipe, but another device (or tab) repopulates the account KV before
+    // this device's next load. The marker still blocks resurrecting the local
+    // shadow; the concurrent value is served instead.
+    const h = harness();
+    seedLegacy(h.legacy, { nickname: 'v0 (frozen)' });
+    const persist = h.storage();
+    await persist.getItem(NAME); // migrate + mark
+    await h.kv.remove(NAME, 'account'); // external wipe
+
+    // Another device writes a fresh value to the shared account scope.
+    await h.kv.set(NAME, { state: { nickname: 'from another device' }, version: 4 }, 'account');
+
+    expect(await h.storage().getItem(NAME)).toEqual({
+      state: { nickname: 'from another device' },
+      version: 4,
+    });
   });
 });
 
@@ -1303,19 +1366,20 @@ describe('createKVPersistStorage — adoption re-reads before committing', () =>
 });
 
 describe('createKVPersistStorage — a failed read never authorizes anything', () => {
-  it('keeps the shadowed raw entry when the marker read fails', async () => {
-    // "Could not answer" is not "no marker", but it is equally not "marker
-    // present": neither reading grants permission to delete.
+  it('does not adopt when the migrated-marker read fails', async () => {
+    // The marker read gates re-adoption. "Could not answer" must be read as
+    // neither "not migrated" (which could resurrect a stale shadow) nor
+    // "migrated". Fail closed: adopt nothing, keep the raw entry, write nothing
+    // to KV, leave the key unsettled.
     const h = harness();
     seedLegacy(h.legacy, { nickname: 'Ada' });
     const persist = h.storage();
-    await persist.getItem(NAME);
-    seedLegacy(h.legacy, { nickname: 'reappeared' });
 
-    h.kv.failGetMatching = (key) => key.startsWith('__persist-adopted:');
-    await persist.getItem(NAME);
+    h.kv.failGetMatching = (key) => key.startsWith('__migrated:');
+    expect(await persist.getItem(NAME)).toBeNull();
 
     expect(h.legacy.getItem(NAME)).not.toBeNull();
+    expect(await h.kv.get(NAME, 'account')).toBeNull();
   });
 
   it('does not settle when the confirming re-read fails', async () => {
@@ -1337,15 +1401,15 @@ describe('createKVPersistStorage — a failed read never authorizes anything', (
   });
 });
 
-describe('createKVPersistStorage — never deletes bytes it could not read', () => {
-  it('keeps an unparseable raw entry even with a completed migration on record', async () => {
+describe('createKVPersistStorage — never touches bytes it could not read', () => {
+  it('leaves an unparseable raw entry in place once KV is authoritative', async () => {
     const h = harness();
     seedLegacy(h.legacy, { nickname: 'Ada' });
     const persist = h.storage();
-    await persist.getItem(NAME);
+    await persist.getItem(NAME); // migrates: KV = Ada
 
-    // A marker exists now, but these bytes are not ones this seam wrote and
-    // nothing here understands them.
+    // The raw entry is overwritten with garbage. KV now wins every read, so the
+    // raw entry is never even parsed, let alone deleted.
     h.legacy.setItem(NAME, '{not json');
     await persist.getItem(NAME);
 

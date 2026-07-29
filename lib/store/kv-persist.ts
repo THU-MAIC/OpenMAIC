@@ -59,10 +59,34 @@ const SENTINEL_SCOPE: KVScope = 'device';
 
 /**
  * Sentinel keys share the KV namespace with ordinary values, so they carry a
- * `__` prefix that no store name uses. Fully qualified, this lands at
- * `maic:device:__pre-persist-consulted:<name>` in the browser backend.
+ * `__` prefix that no store name uses. Fully qualified, these land at
+ * `maic:device:<prefix><name>` in the browser backend.
  */
 const PRE_PERSIST_PREFIX = '__pre-persist-consulted:';
+
+/**
+ * Records that this device has migrated a store's pre-cutover raw entry into
+ * KV. Its job is to **suppress re-adoption**, and it is genuinely load-bearing:
+ * the adopt branch reads it on every load.
+ *
+ * Adoption keeps the raw entry (see the header — deleting it cannot be done
+ * safely on `localStorage`). So once KV holds the value, the raw copy is a
+ * *frozen* pre-cutover shadow: writes only ever reach KV, never the raw key. If
+ * the account KV is later emptied by something that is **not** a local clear —
+ * a server-side wipe, an account switch, KV eviction — then a naive "KV empty +
+ * raw present ⇒ adopt" would resurrect that stale shadow, refilling the wiped
+ * account with ancient values and syncing them to every device. The marker
+ * turns "KV empty + already migrated here" into "respect the wipe", not "adopt
+ * again".
+ *
+ * It is **monotonic**: only ever set to `true`. Concurrent writers all write the
+ * same value and it is never deleted except by a deliberate full clear, so —
+ * unlike deleting the raw entry — there is no compare-and-delete race. That
+ * monotonicity is exactly why it is safe where the raw delete was not. This is
+ * live state with a real reader, not the delete-authorization marker removed in
+ * the previous revision.
+ */
+const MIGRATED_PREFIX = '__migrated:';
 
 /** What a backend operation yields when the backend could not answer. */
 const UNAVAILABLE = Symbol('kv-unavailable');
@@ -698,6 +722,41 @@ export function createKVPersistStorage<S>(
   }
 
   /**
+   * Record — best effort — that this device has migrated `name`. Not routed
+   * through the state machine on purpose: a failed marker write is an
+   * acceptable degradation, not an `unavailable` condition. The KV value's
+   * presence already de-duplicates every ordinary load; the marker matters only
+   * once the account KV has been emptied externally, so resurrection needs both
+   * this write to have failed *and* a later external wipe — rare enough that
+   * escalating a false alarm here would be the worse trade.
+   */
+  async function recordMigrated(name: string): Promise<void> {
+    const kv = resolveKv(deps);
+    if (!kv) return;
+    try {
+      await kv.set(MIGRATED_PREFIX + name, true, SENTINEL_SCOPE);
+    } catch (error) {
+      log.warn(`Could not record the migrated marker for "${name}":`, error);
+    }
+  }
+
+  /**
+   * Clear the migrated marker — best effort — on a deliberate full clear, so the
+   * key returns to a genuine first-load state. With the raw entry already gone
+   * by the time this runs, a leftover marker is inert (there is nothing left to
+   * resurrect), so a failure here does not fail the clear.
+   */
+  async function clearMigratedMarker(name: string): Promise<void> {
+    const kv = resolveKv(deps);
+    if (!kv) return;
+    try {
+      await kv.remove(MIGRATED_PREFIX + name, SENTINEL_SCOPE);
+    } catch (error) {
+      log.warn(`Could not clear the migrated marker for "${name}":`, error);
+    }
+  }
+
+  /**
    * Record, once per device, that the pre-persist keys have been dealt with.
    *
    * Written on *every* settling path, not only the one that consults them.
@@ -808,6 +867,9 @@ export function createKVPersistStorage<S>(
     );
     if (written === UNAVAILABLE) return { value, provisional: true };
 
+    // Remember that this device migrated this key, so a future load after the
+    // account KV is emptied externally does not resurrect the frozen raw shadow.
+    await recordMigrated(name);
     log.info(`Migrated "${name}" from ${source} into the KV ${scope} scope`);
     return { value: await concludeRead(state, name, value) };
   }
@@ -877,21 +939,40 @@ export function createKVPersistStorage<S>(
         const adopted = readLegacy<S>(state, legacyStorage, name);
         if (adopted === UNAVAILABLE) return { value: null };
         if (adopted !== null) {
-          return adopt(state, kvStorage, name, adopted, 'localStorage');
+          const migrated = (await readSentinel(MIGRATED_PREFIX, name)).into(
+            state,
+            `read the migrated marker for "${name}"`,
+          );
+          // A failed marker read must not be read as "not migrated" — that
+          // could resurrect a stale shadow. Fail closed: unsettled, retry next
+          // load.
+          if (migrated === UNAVAILABLE) return { value: null };
+          if (!migrated) {
+            // First migration on this device: copy the raw entry into KV and
+            // record it. The raw entry itself is left in place — see `adopt`.
+            return adopt(state, kvStorage, name, adopted, 'localStorage');
+          }
+          // Already migrated here, yet KV read came back empty. A local clear
+          // removes the raw entry too, so an empty KV beside a live raw entry
+          // means KV was emptied by something external — a server-side wipe, an
+          // account switch, eviction — and the raw entry is a frozen pre-cutover
+          // shadow, not new data. Do NOT adopt it. But the empty read may just
+          // be stale (another tab repopulated KV since), so fall through to the
+          // confirm re-read below rather than concluding the wipe outright.
         }
 
-        // Empty KV *and* no raw entry is also exactly what another tab's
-        // in-flight adoption looks like from here: it has written the KV entry
-        // and removed the raw one somewhere between our two reads. Under a
-        // remote backend this is ordinary, not a rare interleaving, so confirm
-        // before concluding there is nothing to load.
+        // Reached with either no raw entry, or a raw entry this device has
+        // already migrated (declined above). Empty KV here is also exactly what
+        // another tab's in-flight adoption looks like — it may have written the
+        // KV entry between our two reads. Under a remote backend that is
+        // ordinary, so confirm before concluding there is nothing to load.
         const confirmed = (await Outcome.run(() => kvStorage.getItem(name))).into(
           state,
           `re-read "${name}" from the KV ${scope} scope`,
         );
         if (confirmed === UNAVAILABLE) return { value: null };
         if (confirmed !== null) {
-          // Another tab's adoption landed in the interval; KV wins, shadow kept.
+          // A concurrent write landed in the interval; KV wins, shadow kept.
           return { value: await concludeRead(state, name, confirmed) };
         }
 
@@ -982,6 +1063,10 @@ export function createKVPersistStorage<S>(
           );
           throw new Error(`Could not clear ${JSON.stringify(name)}: storage is unreachable`);
         }
+        // A deliberate full clear returns this key to a genuine first-load
+        // state, so the migrated marker goes too. Best effort: the raw entry is
+        // already gone, so a leftover marker is inert.
+        await clearMigratedMarker(name);
         // The pre-persist sentinel is deliberately *not* cleared. It is
         // monotonic: its whole job is to stop the pre-persist keys, which are
         // still sitting on this device, from being republished after the KV
