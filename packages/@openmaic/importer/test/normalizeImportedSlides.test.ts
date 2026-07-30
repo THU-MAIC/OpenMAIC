@@ -108,4 +108,49 @@ describe('parsedToSlides · normalize boundary', () => {
     expect(shape.type).toBe('shape');
     expect((shape as { fill?: string }).fill).toBe('');
   });
+
+  it('keeps importing when a custom shape has no generated path', async () => {
+    const json = {
+      size: { width: 960, height: 540 },
+      themeColors: [],
+      slides: [
+        {
+          fill: { type: 'color', value: '#ffffff' },
+          note: '',
+          layoutElements: [],
+          elements: [
+            {
+              type: 'shape',
+              shapType: 'custom',
+              left: 100,
+              top: 100,
+              width: 200,
+              height: 120,
+              name: 'custom shape without path',
+              order: 1,
+              rotate: 0,
+              content: '<div></div>',
+              borderWidth: 0,
+              borderColor: '#000000',
+              borderType: 'solid',
+              borderStrokeDasharray: '0',
+              vAlign: 'mid',
+              isFlipH: false,
+              isFlipV: false,
+            },
+          ],
+        },
+      ],
+    };
+
+    const slides = await parsedToSlides(json as unknown as Parameters<typeof parsedToSlides>[0]);
+
+    expect(slides).toHaveLength(1);
+    expect(slides[0].elements).toHaveLength(1);
+    expect(slides[0].elements[0]).toMatchObject({
+      type: 'shape',
+      width: 200 * (96 / 72),
+      height: 120 * (96 / 72),
+    });
+  });
 });

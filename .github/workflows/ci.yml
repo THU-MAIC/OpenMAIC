@@ -8,7 +8,10 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a main run. Each main run validates only its own push range, so
+  # a superseded run takes the range that contained a package change with it and
+  # the replacement, comparing against the cancelled tip, sees nothing.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -16,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
@@ -23,6 +28,30 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
+      - name: Package version bumps
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-package-version-bumps.mjs "$BASE_SHA"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+      # A branch creation or a force push reports an unusable `before`. Fail
+      # rather than substituting HEAD^: a force push can replace many commits at
+      # once, so the previous commit is not the range that needs checking, and
+      # publishing requires this run to be green.
+      - name: Package version bumps (main push)
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          base="$BEFORE_SHA"
+          if [ -z "$base" ] || ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
+            echo "::error::Push range base ${base:-<empty>} is unavailable, so this push cannot be checked."
+            echo "Re-run after the branch has an ordinary push range, or verify the versions by hand."
+            exit 1
+          fi
+          node scripts/check-package-version-bumps.mjs "$base"
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
 
       - run: pnpm install --frozen-lockfile
 

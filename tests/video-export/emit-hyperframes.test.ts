@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { spotlightV1 } from '@/lib/choreography';
 import { compileVideoTimeline, emitHyperframes } from '@/lib/video-export';
 import type { AssetMeta } from '@/lib/video-export';
 import {
@@ -84,6 +85,26 @@ describe('emitHyperframes', () => {
     expect(html).toContain('class="fx fx-spotlight"');
     expect(html).toContain('class="fx fx-laser"');
     expect(html).toContain('#00ff88'); // authored laser color survives into the DOM
+  });
+
+  it('matches the descriptor-authored spotlight fade easing for enter and exit', () => {
+    const dim = spotlightV1.layers.find((layer) => layer.id === 'dim');
+    const enter = dim?.tracks.find((track) => (track.phase ?? 'enter') === 'enter');
+    const exit = dim?.tracks.find((track) => track.phase === 'exit');
+
+    expect(enter?.easing).toEqual(exit?.easing);
+    if (enter?.easing?.type !== 'cubicBezier') {
+      throw new Error('spotlight.v1 dim enter track must use cubic-bezier easing');
+    }
+    const points = enter.easing.points.join(', ');
+
+    expect(html).toContain(`var EASE_SPOTLIGHT_FADE = cubicBezier(${points});`);
+    expect(html).toContain(
+      "tl.fromTo('#fx-0-1',{autoAlpha:0},{autoAlpha:1,duration:0.3,ease:EASE_SPOTLIGHT_FADE},2);",
+    );
+    expect(html).toContain(
+      "tl.to('#fx-0-1',{autoAlpha:0,duration:0.3,ease:EASE_SPOTLIGHT_FADE},4.7);",
+    );
   });
 
   it('does not burn in subtitles by default (clean video + sidecar files)', () => {
