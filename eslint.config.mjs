@@ -2,6 +2,27 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 import nextVitals from 'eslint-config-next/core-web-vitals';
 import nextTs from 'eslint-config-next/typescript';
 
+// The AI SDK must be reached only through callLLM / streamLLM in lib/ai/llm.ts
+// (#1003). Static and namespace imports are handled by
+// @typescript-eslint/no-restricted-imports further down; a DYNAMIC import is an
+// ImportExpression, which no-restricted-imports cannot see, so it needs
+// no-restricted-syntax. That key is configured per-block and flat config replaces
+// rule options rather than merging them, so the ban lives here and is spread into
+// every block that sets the key, instead of one repo-wide block that would
+// silently drop those blocks' own module boundaries.
+const AI_SDK_DYNAMIC_IMPORT_BAN = [
+  {
+    selector: "ImportExpression > Literal[value='ai']",
+    message:
+      "Call the model through callLLM / streamLLM in @/lib/ai/llm instead of importing the AI SDK dynamically. A dynamic import('ai') reaches the same generateText / streamText and skips usage accounting, the LLM_THINKING_DISABLED kill switch and per-provider thinking resolution.",
+  },
+  {
+    selector: "ImportExpression > TemplateLiteral > TemplateElement[value.cooked='ai']",
+    message:
+      'Call the model through callLLM / streamLLM in @/lib/ai/llm instead of importing the AI SDK dynamically (template-literal form of the same bypass).',
+  },
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -78,6 +99,7 @@ const eslintConfig = defineConfig([
     rules: {
       'no-restricted-syntax': [
         'error',
+        ...AI_SDK_DYNAMIC_IMPORT_BAN,
         {
           selector: 'Literal[value=/^@\\//]',
           message:
@@ -102,6 +124,7 @@ const eslintConfig = defineConfig([
     rules: {
       'no-restricted-syntax': [
         'error',
+        ...AI_SDK_DYNAMIC_IMPORT_BAN,
         {
           selector: 'Literal[value=/^@\\//]',
           message:
@@ -416,15 +439,19 @@ const eslintConfig = defineConfig([
       ],
     },
   },
-  // Same boundary, dynamic form: `await import('ai')` is an ImportExpression, which
-  // no-restricted-imports does not see at all. It needs no-restricted-syntax — a key
-  // five earlier blocks already configure, and flat config REPLACES rule options per
-  // key, so this block must not match their files or it would silently drop their
-  // module boundaries. Hence the directory ignores, which cost nothing in coverage:
-  // lib/choreography and lib/video-export already allowlist their import sources
-  // (importing 'ai' there is an error today, and video-export bans ImportExpression
-  // and require outright), and the two @openmaic packages are built in isolation
-  // against @openmaic/dsl with the SDK nowhere in their dependency graph.
+  // Same boundary, dynamic form. This block cannot match the files of the five
+  // blocks above that also set no-restricted-syntax (flat config replaces rule
+  // options per key, so it would drop their module boundaries), hence the ignores.
+  // Every ignored directory is nonetheless covered, and covered by a rule rather
+  // than by an argument:
+  //   - packages/@openmaic/renderer, packages/@openmaic/storage — the same
+  //     AI_SDK_DYNAMIC_IMPORT_BAN is spread into their own blocks above. An earlier
+  //     revision left them out on the reasoning that they are built in isolation
+  //     against @openmaic/dsl; review showed `void import('ai')` under the renderer
+  //     source path passing lint, which is exactly why that reasoning was not good
+  //     enough.
+  //   - lib/choreography, lib/video-export — their blocks ban EVERY
+  //     ImportExpression outright, which subsumes this one.
   {
     files: ['**/*.{ts,tsx}'],
     ignores: [
@@ -438,19 +465,7 @@ const eslintConfig = defineConfig([
       'packages/@openmaic/storage/**',
     ],
     rules: {
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: "ImportExpression > Literal[value='ai']",
-          message:
-            "Call the model through callLLM / streamLLM in @/lib/ai/llm instead of importing the AI SDK dynamically. A dynamic import('ai') reaches the same generateText / streamText and skips usage accounting, the LLM_THINKING_DISABLED kill switch and per-provider thinking resolution.",
-        },
-        {
-          selector: "ImportExpression > TemplateLiteral > TemplateElement[value.cooked='ai']",
-          message:
-            'Call the model through callLLM / streamLLM in @/lib/ai/llm instead of importing the AI SDK dynamically (template-literal form of the same bypass).',
-        },
-      ],
+      'no-restricted-syntax': ['error', ...AI_SDK_DYNAMIC_IMPORT_BAN],
     },
   },
 ]);
