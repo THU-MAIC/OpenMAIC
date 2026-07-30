@@ -13,8 +13,9 @@ import { ESLint } from 'eslint';
  *
  * Each hole was closed and then verified by hand, which is exactly the process
  * that produced the next hole. So the matrix lives here instead: every import
- * form × every source extension × the production paths that must be covered and
- * the paths that are deliberately exempt. A future edit that narrows `files`,
+ * form — including `require('ai')`, which an inherited repo-wide rule happens to
+ * cover — × every source extension × the production paths that must be covered
+ * and the paths that are deliberately exempt. A future edit that narrows `files`,
  * adds an `ignores` entry, or swaps the rule key fails this test rather than
  * quietly reopening the door.
  *
@@ -27,7 +28,17 @@ const BYPASS_FORMS = {
   namespace: "import * as ai from 'ai';\nexport const a = ai.generateText;\n",
   dynamic: "export async function a() {\n  return import('ai');\n}\n",
   dynamicTemplate: 'export async function a() {\n  return import(`ai`);\n}\n',
+  // Blocked by the inherited repo-wide `@typescript-eslint/no-require-imports`
+  // rather than by the guard's own rules. Pinned here anyway: if that rule is ever
+  // relaxed (allowing require in .cjs, say), this row goes red and whoever relaxes
+  // it has to add an explicit `'ai'` selector instead of silently reopening the door.
+  require: "const ai = require('ai');\nmodule.exports = ai;\n",
 } as const;
+
+/** The guard's own rules. Guarded paths assert the PROPERTY (the import is
+ *  rejected, by whichever rule); exempt paths assert specifically that these two
+ *  do not fire, since an unrelated repo-wide rule legitimately may. */
+const GUARD_RULES = ['@typescript-eslint/no-restricted-imports', 'no-restricted-syntax'];
 
 /** Production paths: an SDK import here must be an error. */
 const GUARDED_PATHS = [
@@ -77,7 +88,10 @@ describe('LLM entry-point lint guard — coverage matrix', () => {
       for (const [form, code] of Object.entries(BYPASS_FORMS)) {
         const filePath = `${base}.ts`;
         const errors = await errorsFor(filePath, code);
-        expect(errors, `${filePath} should allow the ${form} form`).toEqual([]);
+        expect(
+          errors.filter((rule) => GUARD_RULES.includes(rule)),
+          `${filePath} should not trip the LLM entry-point guard on the ${form} form`,
+        ).toEqual([]);
       }
     }
   });
