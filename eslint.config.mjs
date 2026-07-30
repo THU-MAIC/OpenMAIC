@@ -412,8 +412,14 @@ const eslintConfig = defineConfig([
   //   - `await import('ai')`               → the no-restricted-syntax block below
   // An `eslint-disable` comment defeats any of them, which is the point: the
   // bypass has to be written down where a reviewer sees it.
+  //
+  // Scope is every linted source extension, matching the module-boundary blocks
+  // above — NOT just ts/tsx. An earlier revision guarded only ts/tsx, which left
+  // `app/api/route.js` and `scripts/*.mjs` free to import the SDK; review caught
+  // it. tests/lint-llm-entry-guard.test.ts pins the whole matrix so the scope
+  // cannot quietly narrow again.
   {
-    files: ['**/*.{ts,tsx}'],
+    files: ['**/*.{ts,tsx,js,jsx,mjs,cjs}'],
     ignores: [
       // The entry point itself.
       'lib/ai/llm.ts',
@@ -453,7 +459,7 @@ const eslintConfig = defineConfig([
   //   - lib/choreography, lib/video-export — their blocks ban EVERY
   //     ImportExpression outright, which subsumes this one.
   {
-    files: ['**/*.{ts,tsx}'],
+    files: ['**/*.{ts,tsx,js,jsx,mjs,cjs}'],
     ignores: [
       'lib/ai/llm.ts',
       'eval/**',
