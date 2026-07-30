@@ -2,7 +2,7 @@
 
 import type { PPTChartElement } from '@openmaic/dsl';
 import { ElementOutline } from '../ElementOutline';
-import { Chart } from './Chart';
+import { Chart } from './LazyChart';
 
 export interface BaseChartElementProps {
   elementInfo: PPTChartElement;

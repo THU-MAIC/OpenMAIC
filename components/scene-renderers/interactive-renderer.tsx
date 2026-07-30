@@ -39,11 +39,16 @@ export function InteractiveRenderer({ content, sceneId }: InteractiveRendererPro
   // unmount. A content change re-runs this and rebuilds the iframe — the only
   // intended reload path.
   useEffect(() => {
+    // Mark active BEFORE mount: the scene whose placeholder just rendered is the
+    // one being shown, so eviction must treat it as active and never drop it.
+    // Without this, on a slow-link cap of 1 the mount runs while activeSceneId is
+    // still the PREVIOUS scene, and LRU would evict the just-mounted (new) scene
+    // instead of the one we navigated away from.
+    setActive(sceneId);
     mount(sceneId, {
       srcDoc: patchedHtml,
       src: patchedHtml ? undefined : content.url,
     });
-    setActive(sceneId);
     claim(sceneId, owner);
     return () => release(sceneId, owner);
   }, [sceneId, owner, patchedHtml, content.url, mount, setActive, claim, release]);

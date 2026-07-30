@@ -1,5 +1,30 @@
-import { beforeEach, describe, expect, test } from 'vitest';
-import { IFRAME_POOL_CAP, useInteractiveIframePool } from '@/lib/store/interactive-iframe-pool';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import {
+  IFRAME_POOL_CAP,
+  SLOW_LINK_IFRAME_POOL_CAP,
+  useInteractiveIframePool,
+} from '@/lib/store/interactive-iframe-pool';
+import { readNetworkQuality } from '@/lib/utils/network-quality';
+
+vi.mock('@/lib/utils/network-quality', () => ({
+  readNetworkQuality: vi.fn(),
+}));
+
+const mockNetwork = vi.mocked(readNetworkQuality);
+const FAST: ReturnType<typeof readNetworkQuality> = {
+  effectiveType: 'unknown',
+  saveData: false,
+  isSlow: false,
+  isDataSaver: false,
+  supported: false,
+};
+const SLOW: ReturnType<typeof readNetworkQuality> = {
+  effectiveType: '3g',
+  saveData: false,
+  isSlow: true,
+  isDataSaver: true,
+  supported: true,
+};
 
 function reset() {
   useInteractiveIframePool.getState().reset();
@@ -7,7 +32,10 @@ function reset() {
 
 const pool = () => useInteractiveIframePool.getState();
 
-beforeEach(reset);
+beforeEach(() => {
+  reset();
+  mockNetwork.mockReturnValue(FAST);
+});
 
 describe('mount', () => {
   test('creates an entry with the given content', () => {
@@ -108,6 +136,47 @@ describe('LRU eviction', () => {
     pool().mount('s3', { srcDoc: 'x3' });
     expect(pool().entries['s1']).toBeUndefined();
     expect(pool().entries['s0']).toBeDefined();
+  });
+});
+
+describe('slow-link cap (3G/4G contention guard)', () => {
+  test(`shrinks the resident pool to ${SLOW_LINK_IFRAME_POOL_CAP} on a slow/data-saver link`, () => {
+    mockNetwork.mockReturnValue(SLOW);
+    // Simulate the renderer's order (setActive BEFORE mount) as the user walks
+    // slides: only the active interactive iframe should stay resident, so its
+    // heavy CDN libraries don't compete with the previous slides' downloads.
+    pool().setActive('s0');
+    pool().mount('s0', { srcDoc: 'a' });
+    pool().setActive('s1');
+    pool().mount('s1', { srcDoc: 'b' });
+    pool().setActive('s2');
+    pool().mount('s2', { srcDoc: 'c' });
+
+    expect(Object.keys(pool().entries)).toHaveLength(SLOW_LINK_IFRAME_POOL_CAP);
+    expect(pool().entries['s2']).toBeDefined(); // newest/active kept
+    expect(pool().entries['s0']).toBeUndefined();
+    expect(pool().entries['s1']).toBeUndefined();
+  });
+
+  test('never evicts the just-navigated (active) scene on a slow link', () => {
+    mockNetwork.mockReturnValue(SLOW);
+    pool().setActive('s0');
+    pool().mount('s0', { srcDoc: 'a' });
+    pool().setActive('s1');
+    pool().mount('s1', { srcDoc: 'b' });
+    // The scene we navigated to must survive; the old one is dropped to free
+    // the pipe (its in-flight CDN download is aborted when its iframe unmounts).
+    expect(pool().entries['s1']).toBeDefined();
+    expect(pool().entries['s0']).toBeUndefined();
+  });
+
+  test('a fast link keeps the full keep-alive pool', () => {
+    mockNetwork.mockReturnValue(FAST);
+    for (let i = 0; i < IFRAME_POOL_CAP + 1; i++) {
+      pool().setActive(`s${i}`);
+      pool().mount(`s${i}`, { srcDoc: `x${i}` });
+    }
+    expect(Object.keys(pool().entries)).toHaveLength(IFRAME_POOL_CAP);
   });
 });
 

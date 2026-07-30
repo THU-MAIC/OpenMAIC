@@ -99,6 +99,42 @@ const ERROR_CAPTURE_SHIM = `<script data-iframe-error-shim>
 </script>`;
 
 /**
+ * Make KaTeX's render-blocking CDN assets non-blocking so the slide can paint
+ * immediately on weak 3G/4G.
+ *
+ * Generated interactive slides (and our own post-processor) load KaTeX via plain
+ * `<script src>` / `<link rel="stylesheet">` tags in `<head>` with no `defer` —
+ * which are PARSER/RENDER-blocking. The browser will not parse or paint the
+ * `<body>` until the ~280KB `katex.min.js` finishes downloading; on 3G that is
+ * tens of seconds of a blank iframe even though the entire slide markup is inline
+ * and could render instantly. That is the root cause of "the interactive slide
+ * stays white while the audio plays".
+ *
+ * `defer` is safe for KaTeX specifically: the auto-render call is wrapped in a
+ * `DOMContentLoaded` handler, which fires AFTER deferred scripts have executed,
+ * so `renderMathInElement` is defined by the time it runs. The math simply
+ * typesets a beat after the (now-instant) first paint. Scoped to KaTeX URLs only
+ * — we do NOT blanket-defer arbitrary scripts, because a page may call a library
+ * synchronously at parse time and deferring it would break that.
+ */
+function deferRenderBlockingKatex(html: string): string {
+  // 1) Defer KaTeX <script src> tags (skip any already async/defer/module).
+  html = html.replace(
+    /<script\b([^>]*\bsrc=["'][^"']*katex[^"']*["'][^>]*)><\/script>/gi,
+    (match, attrs: string) =>
+      /\b(defer|async)\b|type=["']module/i.test(attrs) ? match : `<script${attrs} defer></script>`,
+  );
+  // 2) Make the KaTeX stylesheet non-render-blocking (applies once loaded; a
+  //    brief unstyled-math flash is an acceptable trade for an instant paint).
+  html = html.replace(
+    /<link\b([^>]*\bhref=["'][^"']*katex[^"']*\.css[^"']*["'][^>]*)>/gi,
+    (match, attrs: string) =>
+      /\bmedia=/i.test(attrs) ? match : `<link${attrs} media="print" onload="this.media='all'">`,
+  );
+  return html;
+}
+
+/**
  * Patch embedded HTML to display correctly inside an iframe.
  *
  * Injects a runtime-error capture shim + a storage shim (so sandboxed pages that
@@ -108,6 +144,10 @@ const ERROR_CAPTURE_SHIM = `<script data-iframe-error-shim>
  * it also observes the storage shim).
  */
 export function patchHtmlForIframe(html: string): string {
+  // Unblock KaTeX's CDN assets so the slide paints instantly on weak links
+  // instead of waiting for the render-blocking library download (3G blank slide).
+  html = deferRenderBlockingKatex(html);
+
   const iframeCss = `<style data-iframe-patch>
   html, body {
     width: 100%;
