@@ -1,34 +1,46 @@
 name: Publish @openmaic packages
 
-# Publishes the @openmaic/* package family (dsl, renderer, importer) to npm.
+# Publishes the @openmaic/* package family (dsl, storage, renderer, importer) to npm.
 #
-# Scope is pinned to those three packages by name on purpose: the workspace also
+# Scope is pinned to those four packages by name on purpose: the workspace also
 # contains vendored forks (mathml2omml, pptxgenjs) whose names we do NOT own, so
-# a recursive publish must never touch them.
+# a publish must never touch them.
+#
+# THE ONLY RELEASE INPUT IS A VERSION BUMP THAT LANDED ON MAIN.
+#
+# A package's version in its manifest is the release intent, and merging that
+# bump is what releases it. Which packages go out is decided by comparing those
+# manifests against the registry, never by how the run was triggered. That keeps
+# one source of truth, puts every release through pull request review and CI,
+# and is the only shape a branch protection rule can actually guard.
+#
+# `@openmaic/<name>@<version>` tags are an OUTPUT of a release, written after a
+# package lands on the registry. They are markers, not triggers: a tag cannot
+# start a publish, because tags can be created by anyone with write access on
+# any commit, including commits that never reached main.
 #
 # Triggers:
-#   - merge a change to one of the @openmaic/* package manifests on `main`
-#     (real publish). This is the normal path for version-bump releases.
-#   - push a tag like `@openmaic/dsl@0.1.0` (real publish). NOTE: any @openmaic/*
-#     tag runs `pnpm -r publish` over all three packages — pnpm skips versions
-#     already on the registry, so in steady state this is idempotent. The tag is a
-#     release marker, not a per-package gate: an unpublished version bump for a
-#     sibling package sitting in the repo will also be published by any tag. Bump
-#     only the package(s) you intend to release in the same change.
-#   - manual run via the Actions tab (dry-run by default; uncheck to publish)
+#   - push to `main` touching one of the @openmaic/* package manifests
+#     (real publish; the normal path)
+#   - manual run via the Actions tab. Validation runs from any ref; unchecking
+#     `dry_run` performs a real publish and is therefore restricted to `main` by
+#     the `release` environment.
 #
-# Prerequisites (one-time, see issue #778):
+# REQUIRED REPOSITORY SETUP:
 #   - npm org `openmaic` created and owning the `@openmaic` scope
-#   - repo secret NPM_TOKEN: an automation/granular token with publish rights
-#     to @openmaic/*, 2FA set to "auth only" (not "auth and writes") so CI can publish
+#   - a GitHub Environment named `release` whose deployment branch rule allows
+#     ONLY `main`, holding NPM_TOKEN (an automation/granular token with publish
+#     rights to @openmaic/*, 2FA set to "auth only")
+#   - NPM_TOKEN must NOT also exist as a repository secret. A repository secret
+#     is readable by a workflow on any branch, which would let a branch-local
+#     edit of this file collect the token without the environment.
 
 on:
   push:
     branches: [main]
-    tags:
-      - "@openmaic/*@*"
     paths:
       - "packages/@openmaic/dsl/package.json"
+      - "packages/@openmaic/storage/package.json"
       - "packages/@openmaic/renderer/package.json"
       - "packages/@openmaic/importer/package.json"
   workflow_dispatch:
@@ -38,19 +50,128 @@ on:
         type: boolean
         default: true
 
+# One publication at a time for the whole repository. Keying this on the ref
+# would let two runs race for the same version, each deciding independently that
+# the version is unpublished.
 concurrency:
-  group: publish-openmaic-${{ github.ref }}
+  group: publish-openmaic
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Build, validate & publish
+  # Everything that does not need the token, so it can run from any ref and a
+  # dry run stays useful to contributors.
+  validate:
+    name: Validate release candidate
     runs-on: ubuntu-latest
+    # This job runs `pnpm install` and the package builds, which execute
+    # third-party code. It gets no write scope and no git credential.
     permissions:
       contents: read
+    # storage's PostgreSQL contract suites skip themselves without a database.
+    # Publishing storage without ever running them would ship the one backend
+    # whose behaviour only a real PostgreSQL can confirm.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: openmaic
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d openmaic"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # ci.yml is a separate workflow, so its copy of the version check cannot
+      # stop a release that reaches here with CI red, skipped, or never run.
+      # This decides, against the registry, which packages may be published, and
+      # refuses to reuse or downgrade a published version.
+      - name: Validate package versions
+        run: node scripts/check-package-version-bumps.mjs --release
+
+      - run: pnpm install --frozen-lockfile
+
+      # Build in dependency order (dsl first); storage/renderer/importer resolve
+      # @openmaic/dsl through the workspace link.
+      - name: Build @openmaic packages
+        run: >-
+          pnpm -r
+          --filter "@openmaic/dsl"
+          --filter "@openmaic/storage"
+          --filter "@openmaic/renderer"
+          --filter "@openmaic/importer"
+          run build
+
+      # Some packages generate tracked, publishable files as part of `build`
+      # (renderer's fonts.css and its KaTeX font snapshot). If the committed
+      # copies are stale, the build rewrites them here and the registry would
+      # receive content that is not in the commit being released.
+      - name: Verify the build did not rewrite tracked package files
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- packages/@openmaic; then
+            echo "::error::The build modified tracked files under packages/@openmaic."
+            echo "Regenerate them and commit the result before releasing."
+            git --no-pager diff --stat -- packages/@openmaic
+            exit 1
+          fi
+          echo "Tracked package files match the commit being released."
+
+      - name: Test & typecheck
+        env:
+          PG_CONTRACT_URL: postgresql://postgres:postgres@localhost:5432/openmaic
+          STORAGE_PG_CONTRACT_REQUIRED: "1"
+        run: |
+          pnpm --filter "@openmaic/dsl" --filter "@openmaic/storage" \
+            --filter "@openmaic/renderer" --filter "@openmaic/importer" run test
+          pnpm --filter "@openmaic/dsl" --filter "@openmaic/storage" --filter "@openmaic/renderer" run typecheck
+
+      - name: Inspect tarball contents (dry-run pack)
+        run: |
+          for pkg in dsl storage renderer importer; do
+            echo "::group::@openmaic/$pkg"
+            ( cd "packages/@openmaic/$pkg" && pnpm pack --dry-run )
+            echo "::endgroup::"
+          done
+
+      - name: Smoke-test publishable tarballs
+        run: pnpm test:package-tarballs
+
+  # The only job that can reach NPM_TOKEN. It is separate so the environment,
+  # and therefore the token, is never attached to a run that is merely
+  # validating.
+  publish:
+    name: Publish to npm
+    needs: validate
+    if: github.event_name == 'push' || inputs.dry_run == false
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      actions: read # required to read this commit's CI conclusion
       id-token: write # required for npm provenance
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The first-parent check needs real history.
+          fetch-depth: 0
+          # This job installs dependencies and builds the packages, so it
+          # executes third-party code while holding NPM_TOKEN. It must not also
+          # hold a git credential that could push repository refs; writing the
+          # release markers is a separate job that runs no package code.
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v4
 
@@ -60,45 +181,168 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
+      # The environment's branch rule is the real boundary; this is defence in
+      # depth, and it catches the case the rule cannot see. First-parent only:
+      # plain reachability would also accept every intermediate commit of every
+      # branch merged with a merge commit, including states no reviewer ever
+      # saw, such as a bad tree reverted by the next commit in the same pull
+      # request.
+      - name: Require a commit on main's first-parent history
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          # Not `| grep -qx`: grep exits at the first match, git rev-list then
+          # dies of SIGPIPE, and pipefail turns a found commit into a failure
+          # as soon as main's history outgrows the pipe buffer.
+          if [ "$(git rev-list --first-parent origin/main | grep -cx "$GITHUB_SHA" || true)" -eq 0 ]; then
+            echo "::error::Refusing to publish $GITHUB_SHA: it is not on main's first-parent history."
+            echo "Release a commit that landed on main, not one merged underneath it."
+            exit 1
+          fi
+          echo "$GITHUB_SHA is on main's first-parent history."
+
+      # Being on main is not the same as having passed the gate. ci.yml runs
+      # concurrently with this workflow on a push to main and blocks nothing, so
+      # wait for CI on this exact commit and require it to be green.
+      - name: Require a green CI run for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Identify the run by workflow file and triggering event, not by a
+          # check-run display name: names are not unique, and any other workflow
+          # or app publishing a check with the same name could otherwise stand
+          # in for a red version gate.
+          query="repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&event=push&per_page=100"
+          deadline=$((SECONDS + 1800))
+          while :; do
+            gh api "$query" > "$RUNNER_TEMP/ci-runs.json"
+            status="$(jq -r '([.workflow_runs[]] | sort_by(.run_started_at) | last // {}) | .status // "absent"' "$RUNNER_TEMP/ci-runs.json")"
+            conclusion="$(jq -r '([.workflow_runs[]] | sort_by(.run_started_at) | last // {}) | .conclusion // "none"' "$RUNNER_TEMP/ci-runs.json")"
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then
+                echo "CI succeeded for $GITHUB_SHA."
+                break
+              fi
+              echo "::error::Refusing to publish $GITHUB_SHA: CI concluded \"$conclusion\"."
+              exit 1
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::No completed CI run for $GITHUB_SHA within the wait window (status: $status)."
+              echo "Release from a commit that CI has actually validated on a push to main."
+              exit 1
+            fi
+            echo "Waiting for CI on $GITHUB_SHA (status: $status)..."
+            sleep 30
+          done
+
+      # Recomputed here rather than carried over from `validate`: this job must
+      # decide what to publish from the tree it is actually publishing.
+      - name: Plan the release
+        run: node scripts/check-package-version-bumps.mjs --release
+        env:
+          RELEASE_PLAN_PATH: ${{ runner.temp }}/release-plan.json
+
       - run: pnpm install --frozen-lockfile
 
-      # Build in dependency order (dsl first); renderer/importer resolve
-      # @openmaic/dsl through the workspace link.
       - name: Build @openmaic packages
         run: >-
           pnpm -r
           --filter "@openmaic/dsl"
+          --filter "@openmaic/storage"
           --filter "@openmaic/renderer"
           --filter "@openmaic/importer"
           run build
 
-      # Gate BEFORE any publish: a failure here aborts before a single package
-      # reaches the registry. npm versions are immutable, so this prevents a
-      # partial release (e.g. dsl published, then a sibling's test fails).
-      - name: Test & typecheck (pre-publish gate)
+      - name: Verify the build did not rewrite tracked package files
         run: |
-          pnpm --filter "@openmaic/dsl" --filter "@openmaic/importer" run test
-          pnpm --filter "@openmaic/dsl" --filter "@openmaic/renderer" run typecheck
+          set -euo pipefail
+          if ! git diff --quiet -- packages/@openmaic; then
+            echo "::error::The build modified tracked files under packages/@openmaic."
+            git --no-pager diff --stat -- packages/@openmaic
+            exit 1
+          fi
 
-      # Always review tarball contents before any publish.
-      - name: Inspect tarball contents (dry-run pack)
-        run: |
-          for pkg in dsl renderer importer; do
-            echo "::group::@openmaic/$pkg"
-            ( cd "packages/@openmaic/$pkg" && pnpm pack --dry-run )
-            echo "::endgroup::"
-          done
-
-      # Real publish. pnpm rewrites the workspace:* dep on @openmaic/dsl to the
-      # concrete published version and publishes in topological order.
+      # Publish one package at a time. A single recursive publish that dies
+      # partway leaves earlier packages on the registry with nothing recording
+      # it; per-package publishing makes an ordinary re-run pick up exactly
+      # where it stopped, because a version already on the registry is no
+      # longer in the plan.
       - name: Publish to npm
-        if: github.event_name == 'push' || inputs.dry_run == false
-        run: >-
-          pnpm -r
-          --filter "@openmaic/dsl"
-          --filter "@openmaic/renderer"
-          --filter "@openmaic/importer"
-          publish --access public --provenance --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
+          RELEASE_PLAN_PATH: ${{ runner.temp }}/release-plan.json
+        run: |
+          set -euo pipefail
+          for pkg in dsl storage renderer importer; do
+            name="@openmaic/$pkg"
+            version="$(node -p "require('./packages/@openmaic/$pkg/package.json').version")"
+            planned="$(node -e 'const plan = require(process.env.RELEASE_PLAN_PATH);
+              const [name, version] = process.argv.slice(1);
+              process.stdout.write(plan.some((e) => e.package === name && e.version === version) ? "yes" : "no");' \
+              "$name" "$version")"
+            if [ "$planned" != "yes" ]; then
+              echo "Skipping $name@$version: already on the registry."
+              continue
+            fi
+            # --ignore-scripts: every package's prepublishOnly reruns the build,
+            # which would delete and regenerate the dist that was just verified,
+            # so npm could receive bytes nothing checked.
+            ( cd "packages/@openmaic/$pkg" \
+              && pnpm publish --access public --provenance --no-git-checks --ignore-scripts )
+            echo "Published $name@$version."
+          done
+
+  # Writing the release markers is the only thing that needs a git credential,
+  # so it is the only job that holds one, and it installs nothing and builds
+  # nothing. It reconciles rather than only marking this run's publishes: a
+  # marker that failed to write previously is retried here, which the release
+  # plan alone could never do, because a version already on the registry is
+  # excluded from it.
+  #
+  # Tag pushes use GITHUB_TOKEN credentials, and GitHub does not start new
+  # workflow runs from GITHUB_TOKEN pushes.
+  mark:
+    name: Mark released versions
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to push the release marker tags
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Write missing release markers
+        env:
+          GIT_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for pkg in dsl storage renderer importer; do
+            name="@openmaic/$pkg"
+            version="$(node -p "require('./packages/@openmaic/$pkg/package.json').version")"
+            tag="$name@$version"
+            if ! npm view "$name@$version" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
+              echo "$tag is not on the registry; nothing to mark."
+              continue
+            fi
+            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              existing="$(git rev-parse "refs/tags/$tag^{commit}")"
+              if [ "$existing" = "$GIT_COMMIT" ]; then
+                echo "Release marker $tag already points at $GIT_COMMIT."
+              else
+                echo "Release marker $tag already exists at $existing; leaving it."
+              fi
+              continue
+            fi
+            if git tag "$tag" "$GIT_COMMIT" && git push origin "refs/tags/$tag"; then
+              echo "Marked $tag at $GIT_COMMIT."
+            else
+              echo "::warning::Could not write the release marker $tag; $name@$version is published."
+            fi
+          done
