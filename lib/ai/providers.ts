@@ -1530,6 +1530,25 @@ function appendChatDelta(value: unknown): string {
     .join('');
 }
 
+function openAIJsonResponseHeaders(response: Response): Headers {
+  const headers = new Headers(response.headers);
+  headers.set('content-type', 'application/json');
+  headers.delete('content-length');
+  headers.delete('content-encoding');
+  headers.delete('transfer-encoding');
+  return headers;
+}
+
+function openAIStreamErrorStatus(error: Record<string, unknown>): number {
+  const status =
+    typeof error.code === 'number'
+      ? error.code
+      : typeof error.code === 'string'
+        ? Number(error.code)
+        : NaN;
+  return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500;
+}
+
 async function fetchCustomOpenAIChat(
   input: RequestInfo | URL,
   init?: RequestInit,
@@ -1596,6 +1615,17 @@ async function fetchCustomOpenAIChat(
 
     try {
       const chunk = JSON.parse(data) as Record<string, unknown>;
+      const error =
+        chunk.error && typeof chunk.error === 'object' && !Array.isArray(chunk.error)
+          ? (chunk.error as Record<string, unknown>)
+          : undefined;
+      if (error && typeof error.message === 'string') {
+        return new Response(JSON.stringify(chunk), {
+          status: openAIStreamErrorStatus(error),
+          headers: openAIJsonResponseHeaders(response),
+        });
+      }
+
       if (typeof chunk.id === 'string') id = chunk.id;
       if (typeof chunk.created === 'number') created = chunk.created;
       if (typeof chunk.model === 'string') model = chunk.model;
@@ -1643,12 +1673,6 @@ async function fetchCustomOpenAIChat(
       .map(([, toolCall]) => toolCall);
   }
 
-  const headers = new Headers(response.headers);
-  headers.set('content-type', 'application/json');
-  headers.delete('content-length');
-  headers.delete('content-encoding');
-  headers.delete('transfer-encoding');
-
   return new Response(
     JSON.stringify({
       id: id || `chatcmpl_${Date.now()}`,
@@ -1658,7 +1682,11 @@ async function fetchCustomOpenAIChat(
       choices: [{ index: 0, message, finish_reason: finishReason }],
       ...(usage ? { usage } : {}),
     }),
-    { status: response.status, statusText: response.statusText, headers },
+    {
+      status: response.status,
+      statusText: response.statusText,
+      headers: openAIJsonResponseHeaders(response),
+    },
   );
 }
 
