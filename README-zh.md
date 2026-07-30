@@ -295,6 +295,9 @@ Alpine 和 npm 的上游软件源。
 - `ALPINE_MIRROR` 接收不带 `https://` 的 Alpine 镜像站主机名。
 - `NPM_REGISTRY` 接收完整的 npm registry URL。
 
+这些构建参数仅用于公共镜像地址。请勿在其中嵌入用户名、密码或访问令牌，因为
+Docker 可能把构建参数记录到镜像元数据或构建证明中。
+
 使用 Docker Compose：
 
 ```bash

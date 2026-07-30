@@ -296,6 +296,10 @@ registries.
 - `ALPINE_MIRROR` is an Alpine mirror hostname without `https://`.
 - `NPM_REGISTRY` is a complete npm registry URL.
 
+Use public mirror endpoints only. Do not embed usernames, passwords, or access
+tokens in these build arguments because Docker may record them in image metadata
+or build provenance.
+
 With Docker Compose:
 
 ```bash

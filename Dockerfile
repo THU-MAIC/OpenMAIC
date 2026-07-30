@@ -11,8 +11,12 @@ RUN if [ -n "$ALPINE_MIRROR" ]; then \
     fi && \
     apk add --no-cache libc6-compat
 
-RUN if [ -n "$NPM_REGISTRY" ]; then \
-      export COREPACK_NPM_REGISTRY="$NPM_REGISTRY"; \
+RUN npm_registry="$NPM_REGISTRY"; \
+    while [ "${npm_registry%/}" != "$npm_registry" ]; do \
+      npm_registry="${npm_registry%/}"; \
+    done; \
+    if [ -n "$npm_registry" ]; then \
+      export COREPACK_NPM_REGISTRY="$npm_registry"; \
     fi && \
     corepack enable && \
     corepack prepare pnpm@10.28.0 --activate
@@ -32,8 +36,12 @@ COPY packages/ ./packages/
 COPY scripts/ ./scripts/
 
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
-    if [ -n "$NPM_REGISTRY" ]; then \
-      pnpm config set registry "$NPM_REGISTRY"; \
+    npm_registry="$NPM_REGISTRY"; \
+    while [ "${npm_registry%/}" != "$npm_registry" ]; do \
+      npm_registry="${npm_registry%/}"; \
+    done; \
+    if [ -n "$npm_registry" ]; then \
+      pnpm config set registry "$npm_registry"; \
     fi && \
     pnpm install --frozen-lockfile
 
@@ -82,9 +90,13 @@ ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 
 RUN if [ -n "$ALPINE_MIRROR" ]; then \
+      cp /etc/apk/repositories /tmp/apk.repositories; \
       sed -i "s|dl-cdn.alpinelinux.org|$ALPINE_MIRROR|g" /etc/apk/repositories; \
     fi && \
-    apk add --no-cache libc6-compat cairo pango jpeg giflib librsvg
+    apk add --no-cache libc6-compat cairo pango jpeg giflib librsvg && \
+    if [ -n "$ALPINE_MIRROR" ]; then \
+      mv /tmp/apk.repositories /etc/apk/repositories; \
+    fi
 
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
