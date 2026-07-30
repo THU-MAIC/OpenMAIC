@@ -3,9 +3,9 @@
  * browser KVStore namespaces `<namespace>:<scope>:<key>`, and the store
  * declares the `account` scope.
  *
- * Specs still seed the bare `settings-storage` key — that is what an install
- * from before the KVStore cutover looks like, and the store adopts it on first
- * read — but anything reading a persisted value back has to look here.
+ * Specs seed this key to give the store a pre-existing value. The store reads
+ * only the KV scope — legacy `localStorage` keys are never read or migrated —
+ * so both seeding and reading a persisted value back go through this key.
  */
 export const SETTINGS_KV_KEY = 'maic:account:settings-storage';
 

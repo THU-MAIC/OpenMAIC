@@ -37,15 +37,7 @@ import { createKVPersistStorage, purgeLegacyPersistKey } from '@/lib/store/kv-pe
 
 const log = createLogger('Settings');
 
-/**
- * Persisted-blob version, shared by `persist` and the pre-persist fallback.
- *
- * Pinned together on purpose: the fallback stamps whatever this says, so
- * bumping it silently changes which `migrate` steps a pre-persist install
- * replays. Raising the version means deciding, explicitly, whether the
- * pre-persist envelope should still claim to be current — and if not, giving it
- * its own literal instead of following this one.
- */
+/** Persisted-blob version for zustand's `persist` `migrate` ladder. */
 const SETTINGS_PERSIST_VERSION = 4;
 
 /**

@@ -90,7 +90,10 @@ semantics.
 - [x] `RuntimeStore` (sessions + append-only records, runtime version line,
       per-kind payload gate) + browser backend
 - [x] wire the app's settings + user-profile `persist` stores through `KVStore`
-      (both `account` scope, adopting their pre-cutover raw keys)
+      (both `account` scope). No automatic migration of pre-cutover data: new
+      data persists through `KVStore`, legacy `localStorage` keys are ignored
+      (not migrated) and best-effort purged, and a user reconfigures once on
+      upgrade
 - [ ] wire the app's third `persist` store (`agent-registry-storage`), still on
       zustand's default `localStorage`
 - [ ] wire the app's remaining ad-hoc `localStorage` keys through `KVStore`

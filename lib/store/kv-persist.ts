@@ -549,8 +549,8 @@ export function createKVPersistStorage<S>(
   /**
    * One promise chain per key. `setItem` is fire-and-forget from zustand's
    * point of view, so without this two rapid writes race and the slower one can
-   * land last; the same chain also keeps adoption from interleaving with an
-   * ordinary write.
+   * land last; the same chain keeps a read, a write, and a clear for one key
+   * from interleaving.
    *
    * Each link is appended to a noop-wrapped predecessor, so a task always runs
    * regardless of how the previous one settled — one failed write must not

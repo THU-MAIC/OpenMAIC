@@ -4,9 +4,9 @@
  * code/IndexedDB on every load and must not own user picks).
  *
  * localStorage is stubbed and the store imported per-test so the persist
- * rehydration path (merge of an existing blob) is exercised for real. Blobs are
- * seeded under the pre-KVStore raw key, which is what an existing install looks
- * like, so these cases also cover the one-time adoption into the KV store.
+ * rehydration path (merge of an existing blob) is exercised for real. A
+ * pre-existing blob is seeded into the KVStore `account` scope — the store
+ * reads only the KV scope and does not migrate any legacy raw key.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BrowserKVStore } from '@openmaic/storage';
