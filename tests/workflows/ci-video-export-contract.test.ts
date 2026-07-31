@@ -83,11 +83,15 @@ function assertMainPushVersionGate(workflow: Workflow): void {
   expect(normalizeShell(mainPush.run)).toBe(EXPECTED_MAIN_PUSH_GATE);
 }
 
+const HF_E2E_DIR = '${{ runner.temp }}/openmaic-hyperframes-samples';
+
 function assertHyperframesLintContract(workflow: Workflow): void {
   const lint = step(workflow, 'e2e', 'Lint Hyperframes samples');
 
   expect(lint.if).toBeUndefined();
   expect(lint['continue-on-error']).toBeUndefined();
+  // `runner.*` is only valid in step contexts, not job-level env.
+  expect(lint.env).toMatchObject({ HF_E2E_DIR });
   expect(normalizeShell(lint.run)).toBe(EXPECTED_HYPERFRAMES_LINT);
 }
 
@@ -97,11 +101,10 @@ function assertHyperframesGateContract(workflow: Workflow): void {
 
   expect(job.if).toBeUndefined();
   expect(job['continue-on-error']).toBeUndefined();
-  expect(job.env).toMatchObject({
-    HF_E2E_DIR: '${{ runner.temp }}/openmaic-hyperframes-samples',
-  });
+  expect(job.env?.HF_E2E_DIR).toBeUndefined();
   expect(materialize.if).toBeUndefined();
   expect(materialize['continue-on-error']).toBeUndefined();
+  expect(materialize.env).toMatchObject({ HF_E2E_DIR });
   expect(materialize.run).toBe(
     'npx --yes node@22 node_modules/vitest/vitest.mjs run tests/video-export/e2e-materialize.test.ts',
   );
