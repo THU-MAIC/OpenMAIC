@@ -690,7 +690,7 @@ Optional config in `~/.openclaw/openclaw.json`:
 - **Text-to-Speech** — Multiple voice providers with customizable voices
 - **Speech Recognition** — Talk to your AI teacher using your microphone
 - **Web Search** — Agents search the web for up-to-date information during class
-- **i18n** — Interface supports 7 languages: Chinese (Simplified & Traditional), English, Japanese, Russian, Arabic, and Portuguese (Brazil)
+- **i18n** — Interface supports 11 languages: Chinese (Simplified & Traditional), English, Japanese, Korean, Russian, Arabic, Portuguese (Brazil), Spanish (Mexico), French, and Vietnamese
 - **Dark Mode** — Easy on the eyes for late-night study sessions
 
 ---
