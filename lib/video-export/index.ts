@@ -26,6 +26,7 @@ export { compileVideoTimeline, type CompileInput, type CompileDeps } from './com
 export { normalizeScenes, type NormalizeResult } from './passes/normalize';
 export { buildTimelineOptions } from './passes/probe';
 export { buildTimeline, type TimelineResult } from './passes/timeline';
+export { applyVisuals, type VisualsResult } from './passes/visuals';
 export {
   applyGeometry,
   resolveEffectGeometry,
@@ -40,7 +41,10 @@ export {
   emitHyperframes,
   assetUrl,
   ASSETS_DIR,
+  PBL_PANEL_DESIGN_BOX,
   type EmitHyperframesOptions,
   type EmittedProject,
   type EmittedFile,
+  type CoverCardLabels,
+  type VideoExportCta,
 } from './emit-hyperframes';
