@@ -2,6 +2,7 @@
 
 import { useMemo, type ReactNode } from 'react';
 import {
+  DEFAULT_SLIDE_FONT,
   ElementTypes,
   type PPTElement,
   type PPTImageElement,
@@ -21,7 +22,7 @@ import { BaseCodeElement } from './elements/code/BaseCodeElement';
 
 const DEFAULT_THEME = {
   fontColor: '#333333',
-  fontName: 'Microsoft YaHei',
+  fontName: DEFAULT_SLIDE_FONT,
 } as const;
 
 export interface SlideElementProps {

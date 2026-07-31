@@ -7,6 +7,7 @@ import { useElementFlip } from '../hooks/useElementFlip';
 import { useElementFill } from '../hooks/useElementFill';
 import { GradientDefs } from './GradientDefs';
 import { PatternDefs } from './PatternDefs';
+import { DEFAULT_SLIDE_FONT } from '@openmaic/dsl';
 
 export interface BaseShapeElementProps {
   elementInfo: PPTShapeElement;
@@ -24,7 +25,7 @@ export function BaseShapeElement({ elementInfo }: BaseShapeElementProps) {
   const text: ShapeText = elementInfo.text || {
     content: '',
     align: 'middle',
-    defaultFontName: 'Microsoft YaHei',
+    defaultFontName: DEFAULT_SLIDE_FONT,
     defaultColor: '#333333',
   };
 

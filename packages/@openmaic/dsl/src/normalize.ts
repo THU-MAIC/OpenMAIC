@@ -54,6 +54,7 @@ import type {
 } from './slides.js';
 import type { Scene, SceneType, Stage } from './stage.js';
 import { isSlideContent } from './stage.js';
+import { DEFAULT_SLIDE_FONT } from './fonts.js';
 
 /**
  * The canonical static defaults for required element fields, and the single
@@ -67,7 +68,7 @@ import { isSlideContent } from './stage.js';
  */
 export const ELEMENT_DEFAULTS = {
   text: {
-    defaultFontName: 'Microsoft YaHei',
+    defaultFontName: DEFAULT_SLIDE_FONT,
     defaultColor: '#333333',
     content: '',
   },
@@ -80,7 +81,7 @@ export const ELEMENT_DEFAULTS = {
   },
   shapeText: {
     content: '',
-    defaultFontName: 'Microsoft YaHei',
+    defaultFontName: DEFAULT_SLIDE_FONT,
     defaultColor: '#333333',
     align: 'middle',
   },

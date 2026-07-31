@@ -14,6 +14,7 @@ import { BaseVideoElement } from '../components/element/VideoElement/BaseVideoEl
 import { BaseCodeElement } from '../components/element/CodeElement/BaseCodeElement';
 import { useSceneSelector } from '@/lib/contexts/scene-context';
 import type { SceneContent } from '@/lib/types/stage';
+import { DEFAULT_SLIDE_FONT } from '@openmaic/dsl';
 
 interface ScreenElementProps {
   readonly elementInfo: PPTElement;
@@ -47,7 +48,7 @@ export function ScreenElement({ elementInfo, elementIndex, animate }: ScreenElem
       }
       return {
         fontColor: '#333333',
-        fontName: 'Microsoft YaHei',
+        fontName: DEFAULT_SLIDE_FONT,
       };
     },
   );

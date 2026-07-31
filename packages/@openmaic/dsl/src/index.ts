@@ -24,6 +24,7 @@
  * consumers inject via `Scene`'s type parameters.
  */
 export * from './slides.js';
+export * from './fonts.js';
 export * from './guards.js';
 export * from './stage.js';
 export * from './action.js';
