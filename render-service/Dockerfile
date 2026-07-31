@@ -45,7 +45,13 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --chown=render:render package.json tsconfig.json ./
 COPY --chown=render:render src ./src
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# Strip CR before chmod. .gitattributes keeps this file LF on fresh checkouts,
+# but clones made before that landed still hold a CRLF copy, and the resulting
+# `#!/bin/sh\r` shebang fails at container start with a message that blames the
+# script instead of the interpreter. Normalizing here makes the build
+# independent of how the tree was checked out.
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV PORT=9000 \
     PRODUCER_TMP_PROJECT_DIR=/tmp/openmaic-renders
