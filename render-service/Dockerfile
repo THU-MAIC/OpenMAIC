@@ -21,6 +21,7 @@ RUN apt-get update \
      iptables \
      ca-certificates \
      fonts-liberation \
+     fonts-noto-core \
      fonts-noto-color-emoji \
      fonts-noto-cjk \
   && rm -rf /var/lib/apt/lists/*
