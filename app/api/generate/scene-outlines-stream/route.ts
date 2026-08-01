@@ -36,6 +36,7 @@ import type {
 import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { isCapacityError, nextFallbackModel } from '@/lib/server/model-fallback';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 const log = createLogger('Outlines Stream');
@@ -311,6 +312,13 @@ export async function POST(req: NextRequest) {
     };
     requirementSnippet = requirements?.requirement?.substring(0, 60);
 
+    // The UI locale is the default teaching-language signal. Without it a
+    // language-neutral requirement ("ok", "go", a bare topic) leaves the model
+    // to infer the language from the reference document, so a Vietnamese
+    // teacher uploading an English PDF gets an English course. An explicit
+    // request in the requirement text still wins — see the prompt's decision
+    // rules — this only fills the gap when the requirement carries no signal.
+
     // Build user profile string for language inference context
     const userProfileText =
       requirements.userNickname || requirements.userBio
@@ -423,7 +431,19 @@ export async function POST(req: NextRequest) {
         try {
           startHeartbeat();
 
-          const streamParams = visionImages?.length
+          // `streamText` does not reject the text stream on an upstream
+          // failure — it ends the stream and reports through `onError`. A 429
+          // therefore arrives as a zero-length response rather than a throw,
+          // so the catch below never sees it and only the empty-result branch
+          // does. Capture it to tell "the model refused us" apart from "the
+          // model answered with nothing usable".
+          let streamError: unknown;
+
+          // `let`, not `const`: a quota rejection re-points this at the next
+          // model in MODEL_FALLBACKS before the next attempt. Outlines are the
+          // first step of a lecture, so one exhausted model here fails the
+          // whole generation.
+          let streamParams = visionImages?.length
             ? {
                 model: languageModel,
                 system: prompts.system,
@@ -437,6 +457,9 @@ export async function POST(req: NextRequest) {
                 // Tear down the upstream LLM request when the client disconnects,
                 // instead of letting it run to completion for a dead connection.
                 abortSignal: req.signal,
+                onError: ({ error }: { error: unknown }) => {
+                  streamError = error;
+                },
               }
             : {
                 model: languageModel,
@@ -444,7 +467,33 @@ export async function POST(req: NextRequest) {
                 prompt: prompts.user,
                 maxOutputTokens: modelInfo?.outputWindow,
                 abortSignal: req.signal,
+                onError: ({ error }: { error: unknown }) => {
+                  streamError = error;
+                },
               };
+
+          const triedModels = new Set<string>();
+
+          /**
+           * Re-point `streamParams` at the next model when `error` says the
+           * current one has no capacity. Returns whether a swap happened, so
+           * the caller can grant the new model a fresh attempt budget.
+           */
+          const swapToFallbackModel = async (error: unknown): Promise<boolean> => {
+            if (!isCapacityError(error)) return false;
+            if (triedModels.size === 0 && resolvedModelString) {
+              triedModels.add(resolvedModelString);
+            }
+            const next = await nextFallbackModel(triedModels);
+            if (!next) {
+              log.warn('Outlines: out of capacity and no fallback model left.');
+              return false;
+            }
+            log.warn(`Outlines: model out of capacity; falling back to ${next.modelString}.`);
+            streamParams = { ...streamParams, model: next.model };
+            streamError = undefined;
+            return true;
+          };
 
           let parsedOutlines: SceneOutline[] = [];
           let languageDirective: string | null = null;
@@ -553,6 +602,14 @@ export async function POST(req: NextRequest) {
                 `Outlines attempt ${attempt} diagnostics: textLen=${fullText.length}, outlines=${parsedOutlines.length}, languageDirective=${languageDirective ? 'yes' : 'no'}, preview=${JSON.stringify(fullText.slice(0, 240))}`,
               );
 
+              // The empty response was a refusal, not a bad answer: re-sending
+              // to the same model repeats it. Spend the next attempt elsewhere.
+              const swapped = await swapToFallbackModel(streamError);
+              if (swapped) {
+                attempt = 0;
+                continue;
+              }
+
               if (attempt <= MAX_STREAM_RETRIES) {
                 log.warn(
                   `Empty outlines (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}), retrying...`,
@@ -576,6 +633,13 @@ export async function POST(req: NextRequest) {
               log.warn(
                 `Outlines stream error detail (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}): ${lastError}`,
               );
+
+              // A 429 that did surface as a throw gets the same treatment as
+              // one that arrived silently through `onError`.
+              if (await swapToFallbackModel(error ?? streamError)) {
+                attempt = 0;
+                continue;
+              }
 
               if (attempt <= MAX_STREAM_RETRIES) {
                 log.warn(
