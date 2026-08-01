@@ -418,6 +418,15 @@ describe('OpenAI provider defaults', () => {
     },
   );
 
+  it('omits a zero SiliconFlow thinking budget when thinking is disabled', async () => {
+    const body = await captureInjectedRequestBody('siliconflow', 'deepseek-ai/DeepSeek-V3.2', {
+      mode: 'disabled',
+    });
+
+    expect(body).toMatchObject({ enable_thinking: false });
+    expect(body).not.toHaveProperty('thinking_budget');
+  });
+
   it('disables Lemonade thinking by default for recognized local reasoning models', async () => {
     const body = await captureInjectedRequestBody('lemonade', 'Gemma-4-26B-A4B-it-GGUF');
 
