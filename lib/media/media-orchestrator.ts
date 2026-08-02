@@ -165,7 +165,7 @@ export async function retryMediaTask(
   }
 
   store.markPendingForRetry(elementId);
-  const forkedAssetId = await generateSingleMedia(
+  await generateSingleMedia(
     {
       type: task.type,
       prompt: task.prompt,
@@ -182,7 +182,7 @@ export async function retryMediaTask(
       preserveSourceRef: shared,
     },
   );
-  if (shared && forkedAssetId) {
+  if (shared) {
     useMediaGenerationStore.setState((state) => {
       const source = state.tasks[elementId];
       if (!source) return state;
@@ -348,10 +348,14 @@ function rewriteStageAndScenes(
 
   let stageWhiteboardChanged = false;
   let matchedStageWhiteboard = false;
-  const maySearchStageWhiteboard = !options.target?.sceneId || !targetSceneChanged;
   const hasExactStageWhiteboard =
     !!options.target?.slideId &&
     !!stage.whiteboard?.some((slide) => slide.id === options.target!.slideId);
+  // A missed scene target is not permission to match a stage-whiteboard
+  // element by id alone. Targeted retries may fall through only when they name
+  // the exact stage-whiteboard slide; untargeted reconciliation still scans all.
+  const maySearchStageWhiteboard =
+    !options.target || (!targetSceneChanged && hasExactStageWhiteboard);
   const whiteboard = stage.whiteboard?.map((slide) => {
     if (!maySearchStageWhiteboard || (options.target && matchedStageWhiteboard)) return slide;
     if (hasExactStageWhiteboard && slide.id !== options.target!.slideId) return slide;
@@ -698,9 +702,33 @@ async function generateSingleMedia(
         },
       );
       for (const ref of committed) freshAllocations.delete(ref);
+      if (preserveSourceRef && !committed.has(assetId)) {
+        throw new MediaApiError(
+          'The selected media retry target no longer exists',
+          'TARGET_MISSING',
+        );
+      }
     }
 
-    // Update store with object URL
+    if (!replaceAssetId) {
+      // Close the late-scene window: a scene inserted after the first rewrite
+      // is reconciled under the same document lock. Do not re-key the task
+      // until this final rewrite succeeds: rollback must retain the placeholder
+      // task and leave no completed task capable of resurrecting removed bytes.
+      const committed = await persistDocumentMediaRef(
+        stageId,
+        req.elementId,
+        assetId,
+        posterAssetId,
+        {
+          target,
+          preserveManifestSource: preserveSourceRef,
+        },
+      );
+      for (const ref of committed) freshAllocations.delete(ref);
+    }
+
+    // Publish completion only after every document reconciliation succeeds.
     const objectUrl = URL.createObjectURL(blob);
     const posterObjectUrl = posterBlob ? URL.createObjectURL(posterBlob) : undefined;
     if (replaceAssetId) {
@@ -715,9 +743,7 @@ async function generateSingleMedia(
             [assetId]: {
               ...source,
               elementId: assetId,
-              placeholderRef: preserveSourceRef
-                ? undefined
-                : (source.placeholderRef ?? req.elementId),
+              placeholderRef: undefined,
               status: 'done',
               objectUrl,
               poster: posterObjectUrl,
@@ -732,21 +758,6 @@ async function generateSingleMedia(
       useMediaGenerationStore
         .getState()
         .rekeyDone(req.elementId, assetId, objectUrl, posterObjectUrl, posterAssetId);
-    }
-    if (!replaceAssetId) {
-      // Close the late-scene window: a scene inserted after the first rewrite
-      // but before task re-keying is reconciled under the same document lock.
-      const committed = await persistDocumentMediaRef(
-        stageId,
-        req.elementId,
-        assetId,
-        posterAssetId,
-        {
-          target,
-          preserveManifestSource: preserveSourceRef,
-        },
-      );
-      for (const ref of committed) freshAllocations.delete(ref);
     }
     return assetId;
   } catch (err) {
