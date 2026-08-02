@@ -9,11 +9,6 @@ import { cn } from '@/lib/utils';
 import { markStagePersistenceDirty, useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import {
-  DELETED_SCENE_UNDO_MS,
-  finalizeDeletedSceneReclamation,
-  useDeletedSceneRecycle,
-} from '@/lib/edit/deleted-scene-recycle';
 import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
 import { createBlankSlideScene, duplicateSlideScene } from '@/lib/edit/slide-defaults';
 import { SCENE_CREATION_ENABLED } from '@/lib/edit/scene-creation-enabled';
@@ -25,6 +20,7 @@ import { InsertionZone } from './InsertionZone';
 const RAIL_COLLAPSED_PX = 56;
 const RAIL_MIN_PX = 180;
 const RAIL_MAX_PX = 360;
+const DELETED_SCENE_UNDO_MS = 5000;
 
 /**
  * Pro mode slide-navigation left rail (Studio Editor aesthetic).
@@ -278,7 +274,6 @@ export function SlideNavRail() {
       const manifestEntries = Object.fromEntries(
         Object.entries(stage.videoManifest ?? {}).filter(([ref]) => sourceRefs.has(ref)),
       );
-      useDeletedSceneRecycle.getState().capture(source, index, [...sourceRefs], manifestEntries);
       deleteScene(sceneId);
       toast(t('edit.nav.deleted'), {
         description: source.title,
@@ -286,26 +281,19 @@ export function SlideNavRail() {
         action: {
           label: t('edit.nav.undo'),
           onClick: () => {
-            const entry = useDeletedSceneRecycle.getState().consume();
-            if (!entry) return;
             // Stage-scope guard: if the user has navigated to a
-            // different stage while the toast was up, the recycle
-            // entry belongs to the previous stage and `insertSceneAfter`
-            // would reject it on stage-id mismatch (silently losing the
-            // deleted scene). Drop the undo when stages don't match
-            // rather than blasting the entry into the wrong deck.
+            // different stage while the toast was up, the deleted scene
+            // belongs to the previous stage. Drop the undo rather than
+            // inserting it into the wrong deck.
             const currentStage = useStageStore.getState().stage;
-            if (!currentStage || currentStage.id !== entry.stageId) {
-              void finalizeDeletedSceneReclamation(entry);
-              return;
-            }
-            if (Object.keys(entry.manifestEntries).length > 0) {
+            if (!currentStage || currentStage.id !== source.stageId) return;
+            if (Object.keys(manifestEntries).length > 0) {
               useStageStore.setState({
                 stage: {
                   ...currentStage,
                   videoManifest: {
                     ...currentStage.videoManifest,
-                    ...entry.manifestEntries,
+                    ...manifestEntries,
                   },
                 },
               });
@@ -318,19 +306,17 @@ export function SlideNavRail() {
             // and inserting after `live[0]` would land the entry at
             // position 1 instead of 0. setScenes-with-rebalance
             // preserves the original "first slide" semantics.
-            if (entry.index === 0 || live.length === 0) {
-              useStageStore.getState().setScenes([entry.scene, ...live]);
-              useStageStore.getState().setCurrentSceneId(entry.scene.id);
+            if (index === 0 || live.length === 0) {
+              useStageStore.getState().setScenes([source, ...live]);
+              useStageStore.getState().setCurrentSceneId(source.id);
               return;
             }
-            const anchorIndex = Math.min(entry.index - 1, live.length - 1);
+            const anchorIndex = Math.min(index - 1, live.length - 1);
             const anchor = live[anchorIndex];
-            useStageStore.getState().insertSceneAfter(anchor.id, entry.scene);
-            useStageStore.getState().setCurrentSceneId(entry.scene.id);
+            useStageStore.getState().insertSceneAfter(anchor.id, source);
+            useStageStore.getState().setCurrentSceneId(source.id);
           },
         },
-        onDismiss: () => useDeletedSceneRecycle.getState().expire(),
-        onAutoClose: () => useDeletedSceneRecycle.getState().expire(),
       });
     },
     [deleteScene, scenes, slideCount, stage, totalScenes, t],

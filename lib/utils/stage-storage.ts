@@ -575,7 +575,6 @@ async function performStageDeletion(stageId: string): Promise<void> {
             const assetPlan = buildStageAssetReclamationPlan(
               stageId,
               assetInventory.refs,
-              null,
               assetInventory.mediaRows,
               assetInventory.audioRows,
             );

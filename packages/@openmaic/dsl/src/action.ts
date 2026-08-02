@@ -53,6 +53,8 @@ export interface SpeechAction extends ActionBase {
    * steps.
    */
   audioId?: AssetRef;
+  /** Prevent legacy derived-id fallback after an edit invalidates old narration. */
+  audioInvalidated?: boolean;
   /**
    * Deprecated: A transitional server-provided playback URL. Use `audioId` instead. Removed
    * together with the byte-ingestion step of #1007 part 2, which rewrites speech references to

@@ -1,20 +1,37 @@
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StageAssetDocument } from '@/lib/media/collect-stage-asset-refs';
 
 const mocks = vi.hoisted(() => ({
   removeAsset: vi.fn(),
-  mediaBulkDelete: vi.fn(),
-  audioBulkDelete: vi.fn(),
+  mediaRows: [] as Array<{ id: string; stageId: string }>,
+  audioRows: [] as Array<{ id: string; stageId?: string }>,
 }));
 
 vi.mock('@/lib/media/asset-pool', () => ({
   removeAsset: mocks.removeAsset,
 }));
 
+function indexedRows<T extends { id: string; stageId?: string }>(rows: T[]) {
+  return {
+    where: (field: keyof T) => ({
+      equals: (value: unknown) => ({
+        toArray: async () => rows.filter((row) => row[field] === value),
+      }),
+    }),
+    bulkDelete: async (ids: string[]) => {
+      const doomed = new Set(ids);
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        if (doomed.has(rows[index].id)) rows.splice(index, 1);
+      }
+    },
+  };
+}
+
 vi.mock('@/lib/utils/database', () => ({
   db: {
-    mediaFiles: { bulkDelete: mocks.mediaBulkDelete },
-    audioFiles: { bulkDelete: mocks.audioBulkDelete },
+    mediaFiles: indexedRows(mocks.mediaRows),
+    audioFiles: indexedRows(mocks.audioRows),
   },
 }));
 
@@ -22,8 +39,8 @@ import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
 import {
   buildStageAssetReclamationPlan,
   executeStageAssetReclamation,
+  loadStageAssetInventory,
 } from '@/lib/media/reclaim-stage-assets';
-import { expectDocumentAssetOwnership } from './assert-stage-asset-ownership';
 
 const stageId = 'stage-matrix';
 
@@ -75,12 +92,6 @@ function matrixDocument(): StageAssetDocument {
               mediaRef: 'video-media-exclusive',
               poster: 'poster-exclusive',
             },
-            {
-              id: 'video-shared',
-              type: 'video',
-              src: 'ast_shared_ref',
-              mediaRef: 'ast_shared_ref',
-            },
             { id: 'foreign-image', type: 'image', src: 'foreign-course-ref' },
           ]),
         },
@@ -91,21 +102,8 @@ function matrixDocument(): StageAssetDocument {
         ],
         actions: [
           { id: 'speech-owned', type: 'speech', text: 'Owned', audioId: 'audio-exclusive' },
-          { id: 'speech-legacy', type: 'speech', text: 'Legacy', audioId: 'legacy-audio' },
+          { id: 'speech-legacy', type: 'speech', text: 'Legacy', audioId: 'tts_s1_action_1' },
         ],
-      },
-      {
-        id: 'scene-shared',
-        stageId,
-        type: 'slide',
-        title: 'Shared',
-        order: 2,
-        content: {
-          type: 'slide',
-          canvas: slide('slide-shared', [
-            { id: 'image-shared', type: 'image', src: 'ast_shared_ref' },
-          ]),
-        },
       },
     ],
   } as unknown as StageAssetDocument;
@@ -118,43 +116,32 @@ const mediaRefs = [
   'video-src-exclusive',
   'video-media-exclusive',
   'poster-exclusive',
-  'ast_shared_ref',
   'manifest-only',
   'media-orphan',
   'background-exclusive-ref',
 ];
-const mediaRows = mediaRefs.map((ref) => ({ id: `${stageId}:${ref}`, stageId }));
-const audioRows = [
-  { id: 'audio-exclusive', stageId },
-  { id: 'audio-orphan', stageId },
-];
-
-function refsFor(document: StageAssetDocument) {
-  return collectStageAssetRefs(document, { mediaRows, audioRows });
-}
-
-function withoutExclusiveScene(document: StageAssetDocument): StageAssetDocument {
-  return { ...document, scenes: document.scenes.filter((scene) => scene.id !== 'scene-exclusive') };
-}
-
-function withoutSpeechCues(document: StageAssetDocument): StageAssetDocument {
-  return {
-    ...document,
-    scenes: document.scenes.map((scene) =>
-      scene.id === 'scene-exclusive' ? { ...scene, actions: [] } : scene,
-    ),
-  };
-}
 
 describe('stage asset reference and reclamation matrix', () => {
   beforeEach(() => {
     mocks.removeAsset.mockReset().mockResolvedValue(undefined);
-    mocks.mediaBulkDelete.mockReset().mockResolvedValue(undefined);
-    mocks.audioBulkDelete.mockReset().mockResolvedValue(undefined);
+    mocks.mediaRows.splice(
+      0,
+      mocks.mediaRows.length,
+      ...mediaRefs.map((ref) => ({ id: `${stageId}:${ref}`, stageId })),
+      { id: 'other-stage:foreign-course-ref', stageId: 'other-stage' },
+    );
+    mocks.audioRows.splice(
+      0,
+      mocks.audioRows.length,
+      { id: 'audio-exclusive', stageId },
+      { id: 'audio-orphan', stageId },
+      { id: 'tts_s1_action_1' },
+      { id: 'other-audio', stageId: 'other-stage' },
+    );
   });
 
-  it('enumerates every reference category, including both whiteboard locations and orphans', () => {
-    const refs = refsFor(matrixDocument());
+  it('enumerates every document reference category', () => {
+    const refs = collectStageAssetRefs(matrixDocument(), { mediaRows: [], audioRows: [] });
 
     expect(refs.imageSrc).toEqual(
       new Set([
@@ -162,122 +149,83 @@ describe('stage asset reference and reclamation matrix', () => {
         'image-exclusive-ref',
         'foreign-course-ref',
         'scene-whiteboard-ref',
-        'ast_shared_ref',
       ]),
     );
-    expect(refs.videoSrc).toEqual(new Set(['video-src-exclusive', 'ast_shared_ref']));
-    expect(refs.videoMediaRef).toEqual(new Set(['video-media-exclusive', 'ast_shared_ref']));
+    expect(refs.videoSrc).toEqual(new Set(['video-src-exclusive']));
+    expect(refs.videoMediaRef).toEqual(new Set(['video-media-exclusive']));
     expect(refs.poster).toEqual(new Set(['poster-exclusive']));
     expect(refs.backgroundImage).toEqual(new Set(['background-exclusive-ref']));
     expect(refs.stageWhiteboard).toEqual(new Set(['stage-whiteboard-ref']));
     expect(refs.sceneWhiteboard).toEqual(new Set(['scene-whiteboard-ref']));
-    expect(refs.speechAudioId).toEqual(new Set(['audio-exclusive', 'legacy-audio']));
+    expect(refs.speechAudioId).toEqual(new Set(['audio-exclusive', 'tts_s1_action_1']));
     expect(refs.videoManifestKey).toEqual(new Set(['video-media-exclusive', 'manifest-only']));
-    expect(refs.mediaOrphans).toEqual(new Set(['media-orphan']));
-    expect(refs.audioOrphans).toEqual(new Set(['audio-orphan']));
-    expect(refs.referenceCounts.get('ast_shared_ref')).toBe(2);
   });
 
-  it.each([
-    ['deleteStageData', null],
-    ['deleteStageWithRelatedData', null],
-    ['deleteScene', withoutExclusiveScene(matrixDocument())],
-    ['deleteSpeechCue', withoutSpeechCues(matrixDocument())],
-  ] as const)('builds the pool and Dexie reclamation plan for %s', (entryPoint, afterDocument) => {
-    const document = matrixDocument();
-    const before = refsFor(document);
-    const after = afterDocument ? refsFor(afterDocument) : null;
-    const plan = buildStageAssetReclamationPlan(stageId, before, after, mediaRows, audioRows);
+  it('builds a whole-stage plan from honestly stage-filtered rows', async () => {
+    const inventory = await loadStageAssetInventory(matrixDocument());
+    const plan = buildStageAssetReclamationPlan(
+      stageId,
+      inventory.refs,
+      inventory.mediaRows,
+      inventory.audioRows,
+    );
 
-    if (entryPoint === 'deleteStageData' || entryPoint === 'deleteStageWithRelatedData') {
-      expect(new Set(plan.poolRefs)).toEqual(
-        new Set([...mediaRefs, 'audio-exclusive', 'audio-orphan']),
-      );
-      expect(new Set(plan.mediaRowIds)).toEqual(new Set(mediaRows.map((row) => row.id)));
-      expect(new Set(plan.audioRowIds)).toEqual(new Set(['audio-exclusive', 'audio-orphan']));
-      expect(plan.poolRefs).not.toContain('foreign-course-ref');
-      expect(plan.poolRefs).not.toContain('legacy-audio');
-      return;
-    }
-
-    if (entryPoint === 'deleteScene') {
-      expect(new Set(plan.poolRefs)).toEqual(
-        new Set([
-          'image-exclusive-ref',
-          'video-src-exclusive',
-          'video-media-exclusive',
-          'poster-exclusive',
-          'scene-whiteboard-ref',
-          'audio-exclusive',
-          'background-exclusive-ref',
-        ]),
-      );
-      expect(plan.poolRefs).not.toContain('ast_shared_ref');
-      expect(plan.poolRefs).not.toContain('stage-whiteboard-ref');
-      expect(plan.poolRefs).not.toContain('media-orphan');
-      return;
-    }
-
-    expect(plan.poolRefs).toEqual(['audio-exclusive']);
-    expect(plan.mediaRowIds).toEqual([]);
-    expect(plan.audioRowIds).toEqual(['audio-exclusive']);
+    expect(new Set(plan.poolRefs)).toEqual(
+      new Set([...mediaRefs, 'audio-exclusive', 'audio-orphan']),
+    );
+    expect(new Set(plan.mediaRowIds)).toEqual(new Set(mediaRefs.map((ref) => `${stageId}:${ref}`)));
+    expect(new Set(plan.audioRowIds)).toEqual(new Set(['audio-exclusive', 'audio-orphan']));
+    expect(plan.poolRefs).not.toContain('foreign-course-ref');
+    expect(plan.poolRefs).not.toContain('tts_s1_action_1');
   });
 
-  it('continues after one pool removal fails and still deletes every compatibility row', async () => {
-    const before = refsFor(matrixDocument());
-    const plan = buildStageAssetReclamationPlan(stageId, before, null, mediaRows, audioRows);
+  it('stage deletion reclaims matched rows while stage-less legacy rows survive', async () => {
+    const inventory = await loadStageAssetInventory(matrixDocument());
+    const plan = buildStageAssetReclamationPlan(
+      stageId,
+      inventory.refs,
+      inventory.mediaRows,
+      inventory.audioRows,
+    );
+
+    await executeStageAssetReclamation(plan, null);
+
+    expect(mocks.removeAsset).toHaveBeenCalledTimes(plan.poolRefs.length);
+    expect(mocks.mediaRows).toEqual([
+      { id: 'other-stage:foreign-course-ref', stageId: 'other-stage' },
+    ]);
+    expect(mocks.audioRows).toEqual([
+      { id: 'tts_s1_action_1' },
+      { id: 'other-audio', stageId: 'other-stage' },
+    ]);
+  });
+
+  it('continues row cleanup after one pool removal fails', async () => {
+    const inventory = await loadStageAssetInventory(matrixDocument());
+    const plan = buildStageAssetReclamationPlan(
+      stageId,
+      inventory.refs,
+      inventory.mediaRows,
+      inventory.audioRows,
+    );
     mocks.removeAsset.mockRejectedValueOnce(new Error('broken entry'));
 
     await executeStageAssetReclamation(plan, null);
 
     expect(mocks.removeAsset).toHaveBeenCalledTimes(plan.poolRefs.length);
-    expect(mocks.mediaBulkDelete).toHaveBeenCalledExactlyOnceWith([...plan.mediaRowIds]);
-    expect(mocks.audioBulkDelete).toHaveBeenCalledExactlyOnceWith([...plan.audioRowIds]);
+    expect(mocks.mediaRows.every((row) => row.stageId !== stageId)).toBe(true);
+    expect(mocks.audioRows.every((row) => row.stageId !== stageId)).toBe(true);
   });
 
-  it('drops restored refs from a stale plan at execution time', async () => {
-    const before = refsFor(matrixDocument());
-    const afterDelete = refsFor(withoutExclusiveScene(matrixDocument()));
-    const plan = buildStageAssetReclamationPlan(stageId, before, afterDelete, mediaRows, audioRows);
-
-    const executed = await executeStageAssetReclamation(plan, matrixDocument());
-
-    expect(executed).toEqual({ stageId, poolRefs: [], mediaRowIds: [], audioRowIds: [] });
-    expect(mocks.removeAsset).not.toHaveBeenCalled();
-    expect(mocks.mediaBulkDelete).not.toHaveBeenCalled();
-    expect(mocks.audioBulkDelete).not.toHaveBeenCalled();
-  });
-
-  it('reconciles the surviving document against both stores after reclamation', async () => {
-    const document = matrixDocument();
-    const afterDocument = withoutExclusiveScene(document);
-    const poolEntries = new Set([...mediaRefs, 'audio-exclusive', 'audio-orphan']);
-    const mediaRowIds = new Set(mediaRows.map((row) => row.id));
-    const audioRowIds = new Set(audioRows.map((row) => row.id));
-    mocks.removeAsset.mockImplementation(async (ref: string) => {
-      poolEntries.delete(ref);
-    });
-    mocks.mediaBulkDelete.mockImplementation(async (ids: string[]) => {
-      for (const id of ids) mediaRowIds.delete(id);
-    });
-    mocks.audioBulkDelete.mockImplementation(async (ids: string[]) => {
-      for (const id of ids) audioRowIds.delete(id);
-    });
-    const plan = buildStageAssetReclamationPlan(
-      stageId,
-      refsFor(document),
-      refsFor(afterDocument),
-      mediaRows,
-      audioRows,
+  it.each([
+    ['canvas element deletion', 'lib/hooks/use-canvas-operations.ts'],
+    ['slide-surface element deletion', 'components/edit/surfaces/slide/use-slide-surface.ts'],
+    ['speech-cue deletion and audio supersession', 'components/edit/ActionsBar/ActionsBar.tsx'],
+    ['scene deletion and undo', 'components/edit/SlideNavRail/SlideNavRail.tsx'],
+  ])('%s cannot remove pool or Dexie assets', (_entryPoint, file) => {
+    const source = readFileSync(file, 'utf8');
+    expect(source).not.toMatch(
+      /(?:reclaim-stage-assets|removeAsset|\.audioFiles\.(?:delete|bulkDelete))/,
     );
-
-    await executeStageAssetReclamation(plan, afterDocument);
-
-    await expectDocumentAssetOwnership({
-      document: afterDocument,
-      mediaRowIds,
-      audioRowIds,
-      poolHas: async (ref) => poolEntries.has(ref),
-    });
   });
 });

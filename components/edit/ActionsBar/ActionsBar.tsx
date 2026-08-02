@@ -76,9 +76,7 @@ import type { PickerType } from './picker-options';
 import {
   audioExists,
   audioObjectUrl,
-  discardSpeechAudio,
   regenerateSpeechAudio,
-  removeSupersededSpeechAudio,
   resolveLegacySpeechAudioId,
   resolveSpeechAudioId,
 } from '@/lib/audio/regenerate-speech-tts';
@@ -255,6 +253,7 @@ type TtsStatus = 'none' | 'ready' | 'generating' | 'error';
 function SpeechTtsBar({
   actionId,
   audioId,
+  audioInvalidated,
   sceneOrder,
   language,
   text,
@@ -265,6 +264,7 @@ function SpeechTtsBar({
 }: {
   actionId: string;
   audioId?: string;
+  audioInvalidated?: boolean;
   sceneOrder: number;
   language?: string;
   text: string;
@@ -321,7 +321,7 @@ function SpeechTtsBar({
         // the deterministic key only to preserve pre-allocation Dexie rows.
         const legacyId = lookupId
           ? undefined
-          : await resolveLegacySpeechAudioId(sceneOrder, { id: actionId });
+          : await resolveLegacySpeechAudioId(sceneOrder, { id: actionId, audioInvalidated });
         const candidateId = lookupId ?? legacyId;
         const has = candidateId ? await audioExists(candidateId) : false;
         if (alive) {
@@ -343,7 +343,7 @@ function SpeechTtsBar({
     return () => {
       alive = false;
     };
-  }, [lookupId, actionId, sceneOrder, audioUrl, refreshKey, regenerating]);
+  }, [lookupId, actionId, sceneOrder, audioUrl, audioInvalidated, refreshKey, regenerating]);
 
   useEffect(() => () => stopPreview(), [stopPreview]);
 
@@ -373,7 +373,6 @@ function SpeechTtsBar({
       if (id) {
         setReadAudioId(id);
         await onGenerated(id);
-        await removeSupersededSpeechAudio(previousAudioId, id);
         setStatus('ready');
       } else {
         setStatus('none');
@@ -435,6 +434,7 @@ function SpeechClip({
   index,
   actionId,
   audioId,
+  audioInvalidated,
   sceneOrder,
   language,
   autoFocus,
@@ -457,6 +457,7 @@ function SpeechClip({
   index: number;
   actionId: string;
   audioId?: string;
+  audioInvalidated?: boolean;
   sceneOrder: number;
   language?: string;
   autoFocus: boolean;
@@ -554,6 +555,7 @@ function SpeechClip({
         <SpeechTtsBar
           actionId={actionId}
           audioId={audioId}
+          audioInvalidated={audioInvalidated}
           sceneOrder={sceneOrder}
           language={language}
           text={val}
@@ -1045,7 +1047,6 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
           if (id) {
             commit((cur) => setAudioIdById(cur, liveAction.id!, id));
             await flushStageSave();
-            await removeSupersededSpeechAudio(previousAudioId, id);
           }
         } catch {
           /* skip a failed line, keep going */
@@ -1326,6 +1327,9 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                               index={si}
                               actionId={key}
                               audioId={(action as { audioId?: string }).audioId}
+                              audioInvalidated={
+                                (action as { audioInvalidated?: boolean }).audioInvalidated
+                              }
                               sceneOrder={sceneOrder}
                               language={language}
                               ttsActive={ttsActive}
@@ -1335,37 +1339,17 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                               autoFocus={key === focusId}
                               onFocused={() => setFocusId(null)}
                               onCommit={(text) => {
-                                // Editing the text invalidates any cached audio
-                                // (the blob is keyed by order+id, not text), so
-                                // drop the stamped fields and delete the blob —
-                                // the line then reads as un-voiced until regen.
-                                const prevAudioId = (action as { audioId?: string }).audioId;
+                                // Editing invalidates the document reference but leaves the old
+                                // pool entry for the document-truth sweep introduced in part 3.
                                 commit((cur) => setSpeechTextClearAudioById(cur, key, text));
-                                // Re-check status only AFTER the blob is gone, so
-                                // the status row can't race the async delete and
-                                // briefly still read "voiced".
-                                void flushStageSave()
-                                  .then(() =>
-                                    discardSpeechAudio(sceneOrder, {
-                                      id: key,
-                                      audioId: prevAudioId,
-                                    }),
-                                  )
-                                  .finally(() => setTtsRefresh((n) => n + 1));
+                                setTtsRefresh((n) => n + 1);
                               }}
                               onGenerated={async (assetId) => {
                                 commit((cur) => setAudioIdById(cur, key, assetId));
                                 await flushStageSave();
                               }}
                               onDelete={() => {
-                                const previousAudioId = (action as { audioId?: string }).audioId;
                                 commit((cur) => removeById(cur, key));
-                                void flushStageSave().then(() =>
-                                  discardSpeechAudio(sceneOrder, {
-                                    id: key,
-                                    audioId: previousAudioId,
-                                  }),
-                                );
                               }}
                               onMoveLeft={() => commit((cur) => moveByIdDir(cur, key, -1))}
                               onMoveRight={() => commit((cur) => moveByIdDir(cur, key, 1))}

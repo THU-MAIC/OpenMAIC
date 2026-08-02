@@ -181,6 +181,10 @@ adding a caller-configurable allocation path.
       metadata into response content types
 - [ ] asset manifest: the one enumeration of "which `AssetId`s does this course
       reference?" the export paths converge on (#1007)
+- [ ] document-truth mark-and-sweep with the part 3 Dexie convergence work.
+      Until then, orphaned pool entries left by edits and partial deletions are
+      bounded transitional garbage. Stage deletion is the only reclamation
+      entry point; do not reintroduce inline reclamation.
 
 ## License
 

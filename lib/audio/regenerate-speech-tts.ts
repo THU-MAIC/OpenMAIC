@@ -9,7 +9,6 @@ import { db } from '@/lib/utils/database';
 import { useSettingsStore } from '@/lib/store/settings';
 import { generateAndStoreTTS } from '@/lib/hooks/use-scene-generator';
 import { useStageStore } from '@/lib/store/stage';
-import { reclaimUnreferencedStageAssetsForStage } from '@/lib/media/reclaim-stage-assets';
 
 /** Legacy deterministic Dexie key used before pool allocation. */
 export function speechAudioId(sceneOrder: number, actionId: string): string {
@@ -30,9 +29,9 @@ export function resolveSpeechAudioId(
 /** Locate a pre-allocation Dexie row for a legacy action with no audioId. */
 export async function resolveLegacySpeechAudioId(
   sceneOrder: number,
-  action: { id?: string; audioId?: string },
+  action: { id?: string; audioId?: string; audioInvalidated?: boolean },
 ): Promise<string | undefined> {
-  if (action.audioId || !action.id) return undefined;
+  if (action.audioId || action.audioInvalidated || !action.id) return undefined;
   const legacyId = speechAudioId(sceneOrder, action.id);
   return (await db.audioFiles.get(legacyId)) ? legacyId : undefined;
 }
@@ -63,42 +62,6 @@ export async function audioExistsBulk(audioIds: string[]): Promise<Set<string>> 
 export async function audioObjectUrl(audioId: string): Promise<string | null> {
   const rec = await db.audioFiles.get(audioId);
   return rec ? URL.createObjectURL(rec.blob) : null;
-}
-
-/**
- * Discard the cached audio for a speech line (both its stamped audioId, if any,
- * and the canonical derived key). Called when the user edits a line's text: the
- * stamped allocated id is independent of the text, and a legacy derived row is
- * too, so without this the stale blob could keep replaying for the new wording.
- * After this the line reads as "not voiced" and must be regenerated.
- */
-export async function discardSpeechAudio(
-  sceneOrder: number,
-  action: { id?: string; audioId?: string },
-): Promise<void> {
-  if (!action.id) return;
-  const ids = new Set([speechAudioId(sceneOrder, action.id)]);
-  if (action.audioId) ids.add(action.audioId);
-  const stageId = useStageStore.getState().stage?.id;
-  if (stageId) {
-    await reclaimUnreferencedStageAssetsForStage(stageId, [...ids]);
-  } else {
-    await db.audioFiles.bulkDelete([...ids]);
-  }
-}
-
-/** Remove a previously committed allocated id after its replacement is stamped. */
-export async function removeSupersededSpeechAudio(
-  previousAudioId: string | undefined,
-  currentAudioId: string,
-): Promise<void> {
-  if (!previousAudioId || previousAudioId === currentAudioId) return;
-  const stageId = useStageStore.getState().stage?.id;
-  if (stageId) {
-    await reclaimUnreferencedStageAssetsForStage(stageId, [previousAudioId]);
-  } else {
-    await db.audioFiles.delete(previousAudioId);
-  }
 }
 
 /**

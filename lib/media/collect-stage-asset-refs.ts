@@ -1,4 +1,4 @@
-import type { PPTElement, Slide } from '@openmaic/dsl';
+import type { Slide } from '@openmaic/dsl';
 import type { Scene, Stage } from '@/lib/types/stage';
 
 export interface StageAssetDocument {
@@ -52,22 +52,6 @@ function addValue(target: Set<string>, value: string | undefined): value is stri
 function mediaRefFromRow(stageId: string, rowId: string): string {
   const prefix = `${stageId}:`;
   return rowId.startsWith(prefix) ? rowId.slice(prefix.length) : rowId;
-}
-
-/** Asset candidates owned by a set of slide elements before they are removed. */
-export function collectElementAssetRefs(elements: readonly PPTElement[]): string[] {
-  const refs = new Set<string>();
-  for (const element of elements) {
-    if (element.type === 'image') {
-      if (element.src) refs.add(element.src);
-      continue;
-    }
-    if (element.type !== 'video') continue;
-    if (element.src) refs.add(element.src);
-    if (element.mediaRef) refs.add(element.mediaRef);
-    if (element.poster) refs.add(element.poster);
-  }
-  return [...refs];
 }
 
 /**
@@ -192,7 +176,7 @@ export function collectStageAssetRefs(
   );
   const audioRow = new Set(
     audioRows
-      .filter((row) => !stageId || row.stageId === undefined || row.stageId === stageId)
+      .filter((row) => (stageId ? row.stageId === stageId : row.stageId !== undefined))
       .map((row) => row.id),
   );
   const documentRefs = new Set([...referenced, ...videoManifestKey]);

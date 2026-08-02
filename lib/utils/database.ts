@@ -896,7 +896,6 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
         const assetPlan = buildStageAssetReclamationPlan(
           stageId,
           inventory.refs,
-          null,
           inventory.mediaRows,
           inventory.audioRows,
         );

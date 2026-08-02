@@ -32,9 +32,6 @@ import { ElementAlignCommands, ElementOrderCommands } from '@/lib/types/edit';
 import { getElementListRange } from '@/lib/utils/element';
 import { useOrderElement } from './use-order-element';
 import { nanoid } from 'nanoid';
-import { collectElementAssetRefs } from '@/lib/media/collect-stage-asset-refs';
-import { reclaimUnreferencedStageAssetsForStage } from '@/lib/media/reclaim-stage-assets';
-import { flushStageSave, useStageStore } from '@/lib/store/stage';
 
 type PPTElementKey = keyof PPTElement;
 
@@ -117,15 +114,6 @@ export function useCanvasOperations() {
 
     updateSlide({ elements: newElementList });
     addHistorySnapshot();
-    const candidates = collectElementAssetRefs(
-      currentSlide.elements.filter((element) => !newElementList.includes(element)),
-    );
-    const stageId = useStageStore.getState().stage?.id;
-    if (stageId && candidates.length > 0) {
-      void flushStageSave()
-        .then(() => reclaimUnreferencedStageAssetsForStage(stageId, candidates))
-        .catch(() => undefined);
-    }
   };
 
   // Delete all elements on the page (regardless of selection)
@@ -134,13 +122,6 @@ export function useCanvasOperations() {
     setActiveElementIdList([]);
     updateSlide({ elements: [] });
     addHistorySnapshot();
-    const candidates = collectElementAssetRefs(currentSlide.elements);
-    const stageId = useStageStore.getState().stage?.id;
-    if (stageId && candidates.length > 0) {
-      void flushStageSave()
-        .then(() => reclaimUnreferencedStageAssetsForStage(stageId, candidates))
-        .catch(() => undefined);
-    }
   };
 
   /**

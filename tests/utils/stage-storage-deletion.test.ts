@@ -52,8 +52,12 @@ const {
     stageOutlines: { delete: vi.fn().mockResolvedValue(undefined) },
     playbackState: { delete: vi.fn().mockResolvedValue(undefined) },
     mediaFiles: {
-      where: () => ({
-        equals: () => ({ toArray: mediaToArray, delete: mediaDelete }),
+      where: (field: string) => ({
+        equals: (value: unknown) => ({
+          toArray: async () =>
+            (await mediaToArray()).filter((row: Record<string, unknown>) => row[field] === value),
+          delete: mediaDelete,
+        }),
       }),
       bulkDelete: mediaBulkDelete,
       _toArray: mediaToArray,
@@ -61,8 +65,12 @@ const {
       _bulkDelete: mediaBulkDelete,
     },
     audioFiles: {
-      where: () => ({
-        equals: () => ({ toArray: audioToArray, delete: audioWhereDelete }),
+      where: (field: string) => ({
+        equals: (value: unknown) => ({
+          toArray: async () =>
+            (await audioToArray()).filter((row: Record<string, unknown>) => row[field] === value),
+          delete: audioWhereDelete,
+        }),
       }),
       bulkGet: audioBulkGet,
       bulkDelete: audioBulkDelete,
@@ -628,8 +636,9 @@ describe('deleteStageData wiring', () => {
         stageId,
       })),
     );
-    dbMock.audioFiles._bulkGet.mockResolvedValueOnce([
-      { id: 'ast_audio', blob: new Blob(['audio']) },
+    dbMock.audioFiles._toArray.mockResolvedValueOnce([
+      { id: 'ast_audio', stageId, blob: new Blob(['audio']) },
+      { id: 'tts_s1_speech-1', blob: new Blob(['legacy']) },
     ]);
     assetRefExists.mockResolvedValue(true);
 
@@ -647,6 +656,9 @@ describe('deleteStageData wiring', () => {
     );
     expect(dbMock.mediaFiles._delete).not.toHaveBeenCalled();
     expect(dbMock.audioFiles._bulkDelete).toHaveBeenCalledExactlyOnceWith(['ast_audio']);
+    expect(dbMock.audioFiles._bulkDelete).not.toHaveBeenCalledWith(
+      expect.arrayContaining(['tts_s1_speech-1']),
+    );
   });
 
   it('tolerates a mirror-row cleanup failure without failing the deletion', async () => {
