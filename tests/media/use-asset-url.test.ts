@@ -179,6 +179,7 @@ describe('asset URL ownership', () => {
     ]);
 
     publish('asset-a', 'blob:a-new');
+    expect(publications[0]).not.toBe(publications[1]);
     expect(publications.at(-1)).toEqual({
       'asset-a': { status: 'resolved', url: 'blob:a-new' },
       'asset-b': { status: 'resolved', url: 'blob:b' },

@@ -1,10 +1,18 @@
 import { createElement } from 'react';
+import type { ComponentProps, ComponentType, ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PPTImageElement, PPTVideoElement, Slide } from '@openmaic/dsl';
-import { resolveImageSrc } from '@/components/slide-renderer/components/element/ImageElement/useResolvedImageSrc';
+import {
+  resolveImageSrc,
+  useResolvedImageSrc,
+} from '@/components/slide-renderer/components/element/ImageElement/useResolvedImageSrc';
+import { BaseVideoElement } from '@/components/slide-renderer/components/element/VideoElement/BaseVideoElement';
+import { VideoElement } from '@/components/slide-renderer/components/element/VideoElement';
 import { resolveSlideMediaState } from '@/components/slide-renderer/use-resolved-slide';
 import { useResolvedVideoMedia } from '@/components/slide-renderer/components/element/VideoElement/useResolvedVideoMedia';
+import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
+import { SceneProvider } from '@/lib/contexts/scene-context';
 import { resolvePptxMediaBinding } from '@/lib/export/use-export-pptx';
 import {
   MISSING_ASSET_LEASE,
@@ -15,6 +23,8 @@ import {
 } from '@/lib/media/resolve-media-ref';
 import type { AssetUrlLeaseState } from '@/lib/media/use-asset-url';
 import type { MediaTask } from '@/lib/store/media-generation';
+import { useMediaGenerationStore } from '@/lib/store/media-generation';
+import { useSettingsStore } from '@/lib/store/settings';
 import { resolveThumbnailMediaValue } from '@/lib/utils/stage-storage';
 import { resolveVideoExportMediaBinding } from '@/lib/video-export-app/collect';
 
@@ -25,6 +35,10 @@ const posterLease = { status: 'resolved', url: 'blob:poster' } satisfies AssetUr
 const hookLeases = vi.hoisted(() => ({
   current: {} as Record<string, AssetUrlLeaseState>,
 }));
+const componentStores = vi.hoisted(() => ({
+  media: { tasks: {} as Record<string, MediaTask> },
+  settings: { imageGenerationEnabled: false, videoGenerationEnabled: false },
+}));
 
 vi.mock('@/lib/media/use-asset-url', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/media/use-asset-url')>();
@@ -34,6 +48,39 @@ vi.mock('@/lib/media/use-asset-url', async (importOriginal) => {
       ref ? (hookLeases.current[ref] ?? { status: 'missing' }) : { status: 'pending' },
   };
 });
+
+vi.mock('@/lib/hooks/use-i18n', () => ({
+  useI18n: () => ({ t: (key: string) => key }),
+}));
+
+vi.mock('@/lib/store/media-generation', () => {
+  const useMediaGenerationStore = Object.assign(
+    (selector: (state: typeof componentStores.media) => unknown) => selector(componentStores.media),
+    {
+      getState: () => componentStores.media,
+      setState: (state: Partial<typeof componentStores.media>) =>
+        Object.assign(componentStores.media, state),
+    },
+  );
+  return { useMediaGenerationStore };
+});
+
+vi.mock('@/lib/store/settings', () => {
+  const useSettingsStore = Object.assign(
+    (selector: (state: typeof componentStores.settings) => unknown) =>
+      selector(componentStores.settings),
+    {
+      getState: () => componentStores.settings,
+      setState: (state: Partial<typeof componentStores.settings>) =>
+        Object.assign(componentStores.settings, state),
+    },
+  );
+  return { useSettingsStore };
+});
+
+const SceneProviderWithOptionalChildren = SceneProvider as ComponentType<
+  Omit<ComponentProps<typeof SceneProvider>, 'children'> & { children?: ReactNode }
+>;
 
 type Presentation = 'concrete' | 'empty' | 'skeleton' | 'disabled';
 
@@ -176,6 +223,31 @@ function slideWith(element: PPTImageElement | PPTVideoElement): Slide {
   } as Slide;
 }
 
+function renderInMediaScene(
+  element: PPTImageElement | PPTVideoElement,
+  child: ReturnType<typeof createElement>,
+): string {
+  const sceneData = { type: 'slide' as const, canvas: slideWith(element) };
+  return renderToStaticMarkup(
+    createElement(
+      MediaStageProvider,
+      { value: stageId },
+      createElement(
+        SceneProviderWithOptionalChildren,
+        {
+          controller: {
+            sceneId: 'scene-1',
+            sceneType: 'slide',
+            getSnapshot: () => sceneData,
+            updateSceneData: () => undefined,
+          },
+        },
+        child,
+      ),
+    ),
+  );
+}
+
 /**
  * Vitest runs this project in plain Node, so this matrix cannot assert DOM media
  * attributes or browser playback. It executes each distinct production binding
@@ -272,7 +344,84 @@ const componentSurfaces: readonly {
 ];
 
 describe('real media consumer matrix', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    useMediaGenerationStore.setState({ tasks: {} });
+    useSettingsStore.setState({ imageGenerationEnabled: false, videoGenerationEnabled: false });
+    vi.unstubAllGlobals();
+  });
+
+  it('useResolvedImageSrc prefers element-keyed fork progress over the shared source task', () => {
+    const ref = 'ast_shared_image';
+    const element = imageElement(ref);
+    const source = fullTask(ref, task('done', { objectUrl: 'blob:shared-image' }), 'image');
+    const targeted = fullTask(ref, task('pending'), 'image');
+    if (!source || !targeted) throw new Error('Expected media tasks');
+    useSettingsStore.setState({ imageGenerationEnabled: true });
+    useMediaGenerationStore.setState({
+      tasks: {
+        [ref]: source,
+        [element.id]: { ...targeted, elementId: element.id },
+      },
+    });
+
+    function ImageBindingProbe() {
+      const binding = useResolvedImageSrc(element);
+      return createElement('div', {
+        'data-resolution': binding.resolution.kind,
+        'data-src': binding.resolvedSrc,
+      });
+    }
+
+    const markup = renderToStaticMarkup(
+      createElement(MediaStageProvider, { value: stageId }, createElement(ImageBindingProbe)),
+    );
+    expect(markup).toContain('data-resolution="pending"');
+    expect(markup).not.toContain('blob:shared-image');
+  });
+
+  it('BaseVideoElement prefers element-keyed fork progress over the shared source task', () => {
+    const ref = 'ast_shared_base_video';
+    const element = videoElement(ref);
+    const source = fullTask(ref, task('done', { objectUrl: 'blob:shared-base-video' }), 'video');
+    const targeted = fullTask(ref, task('pending'), 'video');
+    if (!source || !targeted) throw new Error('Expected media tasks');
+    useSettingsStore.setState({ videoGenerationEnabled: true });
+    useMediaGenerationStore.setState({
+      tasks: {
+        [ref]: source,
+        [element.id]: { ...targeted, elementId: element.id },
+      },
+    });
+
+    const markup = renderInMediaScene(
+      element,
+      createElement(BaseVideoElement, { elementInfo: element }),
+    );
+    expect(markup).toContain('vid-pulse-ring');
+    expect(markup).not.toContain('blob:shared-base-video');
+  });
+
+  it('VideoElement prefers element-keyed fork progress over the shared source task', () => {
+    const ref = 'ast_shared_editor_video';
+    const element = videoElement(ref);
+    const source = fullTask(ref, task('done', { objectUrl: 'blob:shared-editor-video' }), 'video');
+    const targeted = fullTask(ref, task('pending'), 'video');
+    if (!source || !targeted) throw new Error('Expected media tasks');
+    useSettingsStore.setState({ videoGenerationEnabled: true });
+    useMediaGenerationStore.setState({
+      tasks: {
+        [ref]: source,
+        [element.id]: { ...targeted, elementId: element.id },
+      },
+    });
+
+    const markup = renderInMediaScene(
+      element,
+      createElement(VideoElement, { elementInfo: element }),
+    );
+    expect(markup).toContain('animate-pulse');
+    expect(markup).not.toContain('blob:shared-editor-video');
+  });
 
   for (const surface of componentSurfaces) {
     it.each(cases)(`${surface.name}: $name`, (entry) => {

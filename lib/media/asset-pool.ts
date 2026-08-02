@@ -62,10 +62,17 @@ export function clearAssetPool(): Promise<void> {
     try {
       if (current) await current.close();
       await deleteAssetPoolDatabase();
-    } finally {
-      // Closing is irreversible for this store instance. Even a blocked or
-      // failed deletion must let the next operation construct a live store.
-      if (pool === current) pool = undefined;
+    } catch (error) {
+      // A blocked delete stays pending until every other connection closes.
+      // Keep the closed singleton installed so writes fail loudly instead of
+      // opening a connection that queues indefinitely behind that delete.
+      if (!(error instanceof AssetPoolDeletionDeferredError) && pool === current) {
+        pool = undefined;
+      }
+      throw error;
+    }
+    if (pool === current) {
+      pool = undefined;
     }
   })().finally(() => {
     clearing = undefined;

@@ -27,7 +27,7 @@ describe('getAssetPool', () => {
     await first.close();
   });
 
-  it('reopens a fresh store after database deletion is deferred', async () => {
+  it('fails loudly while deletion is deferred, then reopens after a successful retry', async () => {
     const indexedDB = new IDBFactory();
     vi.stubGlobal('indexedDB', indexedDB);
     vi.resetModules();
@@ -42,8 +42,16 @@ describe('getAssetPool', () => {
     });
 
     await expect(clearAssetPool()).rejects.toBeInstanceOf(AssetPoolDeletionDeferredError);
+    const blockedPut = Promise.race([
+      putAsset(new Blob(['blocked'], { type: 'text/plain' })),
+      new Promise<string>((_resolve, reject) => {
+        setTimeout(() => reject(new Error('putAsset hung behind the pending delete.')), 100);
+      }),
+    ]);
+    await expect(blockedPut).rejects.toThrow('BrowserAssetStore is closed.');
     blocker.close();
 
+    await expect(clearAssetPool()).resolves.toBeUndefined();
     const fresh = getAssetPool();
     expect(fresh).not.toBe(first);
     await expect(putAsset(new Blob(['new'], { type: 'text/plain' }))).resolves.toMatch(/^ast_/);

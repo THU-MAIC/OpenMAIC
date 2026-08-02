@@ -19,6 +19,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { clearDatabase } from '@/lib/utils/database';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore } from '@/lib/store/user-profile';
+import { AssetPoolDeletionDeferredError } from '@/lib/media/asset-pool';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 
@@ -89,7 +90,11 @@ export function GeneralSettings() {
       window.location.reload();
     } catch (error) {
       log.error('Failed to clear cache:', error);
-      toast.error(t('settings.clearCacheFailed'));
+      toast.error(
+        error instanceof AssetPoolDeletionDeferredError
+          ? 'Close other app tabs and retry.'
+          : t('settings.clearCacheFailed'),
+      );
       setClearing(false);
     }
   }, [isConfirmValid, t]);

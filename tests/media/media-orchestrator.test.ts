@@ -4,6 +4,7 @@ import type { Slide } from '@openmaic/dsl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MediaTask } from '@/lib/store/media-generation';
 import type { Scene, Stage } from '@/lib/types/stage';
+import type { MediaFileRecord } from '@/lib/utils/database';
 
 const mocks = vi.hoisted(() => ({
   settings: vi.fn(),
@@ -727,6 +728,75 @@ describe('media orchestrator asset write paths', () => {
     await assertOwnership();
   });
 
+  it('removes a failed fork from both key spaces before publishing its successful retry', async () => {
+    const sharedAssetId = await pool.put(new Blob(['original-bytes'], { type: 'image/png' }));
+    mocks.document = documentWithMedia(sharedAssetId, 'image');
+    const copy = structuredClone(mocks.document.scenes[0]);
+    copy.id = 'scene-copy';
+    copy.order = 2;
+    copy.content.canvas.id = 'slide-copy';
+    copy.content.canvas.elements[0].id = 'image-copy';
+    mocks.document.scenes.push(copy);
+    mocks.stageState = {
+      stage: structuredClone(mocks.document.stage),
+      scenes: structuredClone(mocks.document.scenes),
+    };
+    mocks.mediaRows.set(`${stageId}:${sharedAssetId}`, {
+      id: `${stageId}:${sharedAssetId}`,
+      blob: new Blob(['original-bytes'], { type: 'image/png' }),
+    });
+    useMediaGenerationStore.setState({ tasks: { [sharedAssetId]: doneTask(sharedAssetId) } });
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: false,
+          error: 'fork generation failed',
+          errorCode: 'UPSTREAM_TIMEOUT',
+        }),
+        { headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    const target = {
+      elementId: 'image-copy',
+      sceneId: 'scene-copy',
+      slideId: 'slide-copy',
+    };
+    await retryMediaTask(sharedAssetId, target);
+
+    expect(mocks.mediaRows.get(`${stageId}:image-copy`)).toMatchObject({
+      error: 'fork generation failed',
+    });
+    expect(useMediaGenerationStore.getState().tasks['image-copy']?.status).toBe('failed');
+
+    serveImage('recovered-fork');
+    await retryMediaTask(sharedAssetId, target);
+
+    const recoveredRef = mocks.document.scenes[1].content.canvas.elements[0].src;
+    expect(recoveredRef).toMatch(/^ast_/);
+    expect(mocks.mediaRows.has(`${stageId}:image-copy`)).toBe(false);
+    expect(useMediaGenerationStore.getState().tasks['image-copy']).toBeUndefined();
+    expect(useMediaGenerationStore.getState().tasks[recoveredRef]).toMatchObject({
+      elementId: recoveredRef,
+      status: 'done',
+    });
+
+    const restored = buildRestoredMediaTasks(stageId, [
+      ...mocks.mediaRows.values(),
+    ] as unknown as MediaFileRecord[]);
+    expect(restored['image-copy']).toBeUndefined();
+    expect(restored[recoveredRef]?.status).toBe('done');
+    const reloaded = resolveSlideMediaState(
+      mocks.document.scenes[1].content.canvas as unknown as Slide,
+      stageId,
+      restored,
+    );
+    expect(reloaded.byElementId['image-copy']).toMatchObject({
+      task: { elementId: recoveredRef, status: 'done' },
+      resolution: { kind: 'url' },
+    });
+  });
+
   it('scopes a shared retry to the scene and slide when element ids recur', async () => {
     const sharedAssetId = await pool.put(new Blob(['original-bytes'], { type: 'image/png' }));
     mocks.document = documentWithMedia(sharedAssetId, 'image');
@@ -1028,6 +1098,39 @@ describe('media orchestrator asset write paths', () => {
     expect(committedRef).toMatch(/^ast_/);
     expect(await resolvedText(committedRef)).toBe('committed-before-reconciliation-failure');
     await assertOwnership();
+  });
+
+  it('protects document-committed refs when active-stage reconciliation throws', async () => {
+    mocks.document = documentWithMedia(placeholder, 'image');
+    mocks.stageState = {
+      stage: structuredClone(mocks.document.stage),
+      scenes: structuredClone(mocks.document.scenes),
+    };
+    mocks.stageSetState.mockImplementationOnce(() => {
+      throw new Error('active-stage reconciliation failed');
+    });
+    serveImage('committed-before-active-stage-failure');
+
+    await generateMediaForOutlines(
+      [
+        {
+          id: 'outline-1',
+          type: 'slide',
+          title: 'Scene',
+          description: 'Scene',
+          keyPoints: ['image'],
+          order: 1,
+          mediaGenerations: [{ type: 'image', prompt: 'A new image', elementId: placeholder }],
+        },
+      ],
+      stageId,
+    );
+
+    const committedRef = mocks.document.scenes[0].content.canvas.elements[0].src;
+    expect(mocks.stageSetState).toHaveBeenCalledOnce();
+    expect(committedRef).toMatch(/^ast_/);
+    expect(await resolvedText(committedRef)).toBe('committed-before-active-stage-failure');
+    expect(mocks.mediaRows.has(`${stageId}:${committedRef}`)).toBe(true);
   });
 
   it('rollback layer 5: final rewrite failure leaves no task that can resurrect removed bytes', async () => {
