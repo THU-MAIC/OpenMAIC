@@ -26,4 +26,27 @@ describe('getAssetPool', () => {
     expect((await indexedDB.databases()).map((entry) => entry.name)).toContain('maic-asset-pool');
     await first.close();
   });
+
+  it('reopens a fresh store after database deletion is deferred', async () => {
+    const indexedDB = new IDBFactory();
+    vi.stubGlobal('indexedDB', indexedDB);
+    vi.resetModules();
+    const { AssetPoolDeletionDeferredError, clearAssetPool, getAssetPool, putAsset } =
+      await import('@/lib/media/asset-pool');
+    const first = getAssetPool();
+    await first.put(new Blob(['old'], { type: 'text/plain' }));
+    const blocker = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('maic-asset-pool');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+
+    await expect(clearAssetPool()).rejects.toBeInstanceOf(AssetPoolDeletionDeferredError);
+    blocker.close();
+
+    const fresh = getAssetPool();
+    expect(fresh).not.toBe(first);
+    await expect(putAsset(new Blob(['new'], { type: 'text/plain' }))).resolves.toMatch(/^ast_/);
+    await fresh.close();
+  });
 });

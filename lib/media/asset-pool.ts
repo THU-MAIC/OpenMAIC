@@ -6,6 +6,14 @@ const ASSET_POOL_DATABASE_NAME = 'maic-asset-pool';
 let pool: BrowserAssetStore | undefined;
 let clearing: Promise<void> | undefined;
 
+export class AssetPoolDeletionDeferredError extends Error {
+  override readonly name = 'AssetPoolDeletionDeferredError';
+
+  constructor() {
+    super('Asset pool deletion is deferred until other database connections close.');
+  }
+}
+
 // Replacement notifications originate here, so registration must not depend
 // on a renderer importing the React lease module first.
 observeAssetReplacements(async (ref, current) => {
@@ -42,7 +50,7 @@ function deleteAssetPoolDatabase(): Promise<void> {
     const request = indexedDB.deleteDatabase(ASSET_POOL_DATABASE_NAME);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error ?? new Error('Failed to delete the asset pool.'));
-    request.onblocked = () => reject(new Error('Asset pool deletion was blocked.'));
+    request.onblocked = () => reject(new AssetPoolDeletionDeferredError());
   });
 }
 
@@ -51,9 +59,14 @@ export function clearAssetPool(): Promise<void> {
   if (clearing) return clearing;
   const current = pool;
   clearing = (async () => {
-    if (current) await current.close();
-    await deleteAssetPoolDatabase();
-    if (pool === current) pool = undefined;
+    try {
+      if (current) await current.close();
+      await deleteAssetPoolDatabase();
+    } finally {
+      // Closing is irreversible for this store instance. Even a blocked or
+      // failed deletion must let the next operation construct a live store.
+      if (pool === current) pool = undefined;
+    }
   })().finally(() => {
     clearing = undefined;
   });
