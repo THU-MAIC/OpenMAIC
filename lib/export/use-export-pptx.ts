@@ -23,11 +23,12 @@ import { inlineHtmlAssets, createAssetFetcher } from './inline-assets';
 import type { FetchAsset } from './inline-assets';
 import { createProxiedFetch } from './proxied-fetch';
 import { db, mediaFileKey } from '@/lib/utils/database';
-import { withAssetUrl } from '@/lib/media/use-asset-url';
+import { withAssetUrl, type AssetUrlLeaseState } from '@/lib/media/use-asset-url';
 import {
   MISSING_ASSET_LEASE,
   renderableMediaUrl,
   resolveMediaRef,
+  type MediaTaskState,
 } from '@/lib/media/resolve-media-ref';
 
 const log = createLogger('ExportPPTX');
@@ -385,7 +386,17 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-function exportMediaResolution(ref: string | undefined, stageId?: string) {
+export function resolvePptxMediaBinding(
+  ref: string | undefined,
+  task: MediaTaskState | undefined,
+  lease: AssetUrlLeaseState = MISSING_ASSET_LEASE,
+  mediaGenerationDisabled = false,
+) {
+  const resolution = resolveMediaRef(ref, task, lease, mediaGenerationDisabled);
+  return { resolution, src: renderableMediaUrl(resolution) ?? '' };
+}
+
+export function exportMediaResolution(ref: string | undefined, stageId?: string) {
   const tasks = useMediaGenerationStore.getState().tasks;
   const task = ref
     ? (tasks[ref] ??
@@ -395,7 +406,7 @@ function exportMediaResolution(ref: string | undefined, stageId?: string) {
       ))
     : undefined;
   const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
-  return resolveMediaRef(ref, effectiveTask, MISSING_ASSET_LEASE);
+  return resolvePptxMediaBinding(ref, effectiveTask).resolution;
 }
 
 /** Resolve generated/allocated media without preventing the legacy source fetch fallback. */

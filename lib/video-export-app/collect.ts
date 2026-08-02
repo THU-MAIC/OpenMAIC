@@ -28,11 +28,12 @@ import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import type { MediaFileRecord } from '@/lib/utils/database';
 import type { VideoTimelineRecords } from './timeline-deps';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
-import { withAssetUrl } from '@/lib/media/use-asset-url';
+import { withAssetUrl, type AssetUrlLeaseState } from '@/lib/media/use-asset-url';
 import {
   MISSING_ASSET_LEASE,
   renderableMediaUrl,
   resolveMediaRef,
+  type MediaTaskState,
 } from '@/lib/media/resolve-media-ref';
 
 export interface CollectOptions {
@@ -147,6 +148,16 @@ function mediaRefFromRecordId(recordId: string): string {
   return recordId.includes(':') ? recordId.split(':').slice(1).join(':') : recordId;
 }
 
+export function resolveVideoExportMediaBinding(
+  ref: string | undefined,
+  task: MediaTaskState | undefined,
+  lease: AssetUrlLeaseState = MISSING_ASSET_LEASE,
+  mediaGenerationDisabled = false,
+) {
+  const resolution = resolveMediaRef(ref, task, lease, mediaGenerationDisabled);
+  return { resolution, src: renderableMediaUrl(resolution) ?? '' };
+}
+
 async function resolveMediaBytesWithFallback(
   assetId: string,
   record: MediaFileRecord | undefined,
@@ -164,27 +175,26 @@ async function resolveMediaBytesWithFallback(
   const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
   const stored = await resolveBytes(usableRecord?.blob, usableRecord?.ossKey);
   if (stored) {
-    const state = resolveMediaRef(ref, effectiveTask, {
+    const state = resolveVideoExportMediaBinding(ref, effectiveTask, {
       status: 'resolved',
       url: 'dexie:media',
-    });
+    }).resolution;
     if (state.kind === 'url') return stored;
   }
 
   try {
     return await withAssetUrl(ref, async (url) => {
-      const state = resolveMediaRef(
+      const binding = resolveVideoExportMediaBinding(
         ref,
         effectiveTask,
         url ? { status: 'resolved', url } : MISSING_ASSET_LEASE,
       );
-      const resolved = renderableMediaUrl(state);
+      const resolved = binding.src;
       return resolved ? resolveBytes(undefined, resolved) : null;
     });
   } catch {
     // IndexedDB/pool resolution is optional; preserve the original fetch path.
-    const state = resolveMediaRef(ref, effectiveTask, MISSING_ASSET_LEASE);
-    const resolved = renderableMediaUrl(state);
+    const resolved = resolveVideoExportMediaBinding(ref, effectiveTask).src;
     return resolved ? resolveBytes(undefined, resolved) : null;
   }
 }

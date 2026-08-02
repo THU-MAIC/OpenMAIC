@@ -501,7 +501,7 @@ describe('media orchestrator asset write paths', () => {
     });
   });
 
-  it('leaves the document and Dexie untouched when pool allocation fails', async () => {
+  it('rollback layer 1: leaves the document and Dexie untouched when pool allocation fails', async () => {
     mocks.document = documentWithMedia(placeholder, 'image');
     const before = structuredClone(mocks.document);
     serveImage();
@@ -529,7 +529,7 @@ describe('media orchestrator asset write paths', () => {
     expect(useMediaGenerationStore.getState().tasks[placeholder]?.status).toBe('failed');
   });
 
-  it('rolls back every fresh pool allocation when generation fails before document commit', async () => {
+  it('rollback layer 2: removes every fresh allocation when compatibility persistence fails', async () => {
     mocks.document = documentWithMedia(placeholder, 'video');
     serveVideo('uncommitted-video');
     const put = vi.spyOn(pool, 'put');
@@ -557,6 +557,36 @@ describe('media orchestrator asset write paths', () => {
     for (const ref of allocated) expect(await pool.resolve(ref)).toBeNull();
     expect(mocks.mediaRows.size).toBe(0);
     expect(mocks.document.scenes[0].content.canvas.elements[0].src).toBe(placeholder);
+  });
+
+  it('rollback layer 3: removes pool and compatibility writes when document commit fails', async () => {
+    mocks.document = documentWithMedia(placeholder, 'image');
+    const before = structuredClone(mocks.document);
+    serveImage('uncommitted-image');
+    const put = vi.spyOn(pool, 'put');
+    mocks.beforeDocumentWork.mockImplementationOnce(() => {
+      throw new Error('document write failed');
+    });
+
+    await generateMediaForOutlines(
+      [
+        {
+          id: 'outline-1',
+          type: 'slide',
+          title: 'Scene',
+          description: 'Scene',
+          keyPoints: ['image'],
+          order: 1,
+          mediaGenerations: [{ type: 'image', prompt: 'A new image', elementId: placeholder }],
+        },
+      ],
+      stageId,
+    );
+
+    const [allocated] = await Promise.all(put.mock.results.map((result) => result.value));
+    expect(await pool.resolve(allocated)).toBeNull();
+    expect(mocks.mediaRows.has(`${stageId}:${allocated}`)).toBe(false);
+    expect(mocks.document).toEqual(before);
   });
 
   it('replaces allocated media bytes without changing the document reference', async () => {
@@ -842,7 +872,7 @@ describe('media orchestrator asset write paths', () => {
     await assertOwnership();
   });
 
-  it('keeps first-commit bytes when the second reconciliation fails', async () => {
+  it('rollback layer 4: protects first-commit bytes when later reconciliation fails', async () => {
     mocks.document = documentWithMedia(placeholder, 'image');
     serveImage('committed-before-reconciliation-failure');
     let documentWrites = 0;
