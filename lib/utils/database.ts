@@ -901,7 +901,7 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
           inventory.audioRows,
         );
         await store.deleteDocument(stageId);
-        await executeStageAssetReclamation(assetPlan);
+        await executeStageAssetReclamation(assetPlan, null);
         await db.transaction(
           'rw',
           [

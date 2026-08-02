@@ -1356,6 +1356,32 @@ describe('database runtime chat integration', () => {
     ).toBe(false);
   });
 
+  it('deletes stage-owned media rows when the document has no asset references', async () => {
+    const { db, deleteStageWithRelatedData } = await import('@/lib/utils/database');
+    const stageId = 'stage-delete-media-row';
+    await db.stages.put({
+      id: stageId,
+      name: 'Media row only',
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    });
+    await db.mediaFiles.put({
+      id: `${stageId}:ast_orphan`,
+      stageId,
+      type: 'image',
+      blob: new Blob(['image']),
+      mimeType: 'image/png',
+      size: 5,
+      prompt: '',
+      params: '{}',
+      createdAt: 1_000,
+    });
+
+    await deleteStageWithRelatedData(stageId);
+
+    await expect(db.mediaFiles.where('stageId').equals(stageId).count()).resolves.toBe(0);
+  });
+
   it('keeps the maintenance lock until a timed-out stage cascade actually settles', async () => {
     vi.stubGlobal('navigator', { locks: fairLockManager() });
     stubMemoryLocalStorage();
