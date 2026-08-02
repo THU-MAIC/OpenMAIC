@@ -1,11 +1,11 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Play } from 'lucide-react';
-import type { Slide, PPTVideoElement } from '@openmaic/dsl';
-import { isMediaPlaceholder } from '@/lib/store/media-generation';
+import type { Slide, PPTImageElement, PPTVideoElement } from '@openmaic/dsl';
 import { SlideCanvas } from '@openmaic/renderer';
-import { useResolvedSlide } from './use-resolved-slide';
+import { useResolvedSlideMedia, type ResolvedSlideMediaEntry } from './use-resolved-slide';
+import { useI18n } from '@/lib/hooks/use-i18n';
 
 interface SlideThumbnailProps {
   /** Slide data */
@@ -36,11 +36,33 @@ interface SlideThumbnailProps {
  * renders for a real (resolved, non-placeholder) src so unresolved media falls
  * through to the badge-only frame instead of an empty `<video>`.
  */
-function renderThumbnailVideo(element: PPTVideoElement) {
-  const src = element.src && !isMediaPlaceholder(element.src) ? element.src : undefined;
+function renderThumbnailVideo(
+  element: PPTVideoElement,
+  media: ResolvedSlideMediaEntry | undefined,
+  disabledMessage: string,
+) {
+  const nonRenderable =
+    media?.resolution.kind === 'pending' || media?.resolution.kind === 'placeholder';
+  const failed = media?.resolution.kind === 'failed';
+  const disabled = media?.resolution.kind === 'disabled';
+  const src = nonRenderable || failed || disabled ? undefined : element.src;
   return (
     <>
-      {src ? (
+      {nonRenderable ? (
+        <div
+          className="h-full w-full animate-pulse rounded bg-black/10"
+          data-media-state="pending"
+        />
+      ) : disabled ? (
+        <div
+          className="flex h-full w-full items-center justify-center rounded bg-gray-50 px-2 text-center text-[10px] font-medium text-gray-500"
+          data-media-state="disabled"
+        >
+          {disabledMessage}
+        </div>
+      ) : failed ? (
+        <div className="h-full w-full rounded bg-red-50" data-media-state="failed" />
+      ) : src ? (
         <video
           className="w-full h-full"
           style={{ objectFit: 'contain' }}
@@ -65,6 +87,32 @@ function renderThumbnailVideo(element: PPTVideoElement) {
   );
 }
 
+function renderThumbnailImage(
+  _element: PPTImageElement,
+  _src: string,
+  defaultContent: ReactNode,
+  media: ResolvedSlideMediaEntry | undefined,
+  disabledMessage: string,
+) {
+  if (media?.resolution.kind === 'pending' || media?.resolution.kind === 'placeholder') {
+    return <div className="h-full w-full animate-pulse bg-black/10" data-media-state="pending" />;
+  }
+  if (media?.resolution.kind === 'failed') {
+    return <div className="h-full w-full bg-red-50" data-media-state="failed" />;
+  }
+  if (media?.resolution.kind === 'disabled') {
+    return (
+      <div
+        className="flex h-full w-full items-center justify-center bg-gray-50 px-2 text-center text-[10px] font-medium text-gray-500"
+        data-media-state="disabled"
+      >
+        {disabledMessage}
+      </div>
+    );
+  }
+  return defaultContent;
+}
+
 /**
  * Read-only slide thumbnail rendered via the extracted `@openmaic/renderer`
  * package (`SlideCanvas`) instead of the in-app `ThumbnailSlide`/element
@@ -86,7 +134,8 @@ export function SlideThumbnail({
   viewportRatio,
   visible = true,
 }: SlideThumbnailProps) {
-  const resolvedSlide = useResolvedSlide(slide);
+  const { t } = useI18n();
+  const resolved = useResolvedSlideMedia(slide);
   const autoSize = size === undefined;
 
   const containerClass = autoSize
@@ -109,9 +158,24 @@ export function SlideThumbnail({
   return (
     <div className={containerClass} style={containerStyle}>
       <SlideCanvas
-        slide={resolvedSlide}
+        slide={resolved.slide}
         chrome={false}
-        renderVideo={renderThumbnailVideo}
+        renderImage={(element, src, defaultContent) =>
+          renderThumbnailImage(
+            element,
+            src,
+            defaultContent,
+            resolved.byElementId[element.id],
+            t('settings.mediaGenerationDisabled'),
+          )
+        }
+        renderVideo={(element) =>
+          renderThumbnailVideo(
+            element,
+            resolved.byElementId[element.id],
+            t('settings.mediaGenerationDisabled'),
+          )
+        }
         videoInteractive={false}
       />
     </div>

@@ -319,13 +319,23 @@ export async function createVideoTimelineDeps(input: {
       // scoped to this scene (element ids recur across slides).
       const key = resolveMediaKey(elementId, scene.id);
       const record = mediaByElementId.get(key);
-      if (!record) return null;
+      const hasExplicitRef = mediaRefBySceneElement.get(scene.id)?.has(elementId) ?? false;
+      if (!record) {
+        if (!hasExplicitRef) return null;
+        return {
+          id: key,
+          format: key.match(/\.([a-zA-Z0-9]+)(?:[?#]|$)/)?.[1],
+          // Collection still has the pre-resolution browser fetch path. Plan
+          // the asset so that path gets a chance before declaring it missing.
+          present: true,
+        };
+      }
       return {
         id: record.id,
         mimeType: record.mimeType,
         format: formatFromMime(record.mimeType),
         durationMs: videoDurationMsByElementId.get(key),
-        present: mediaPresent(record),
+        present: mediaPresent(record) || hasExplicitRef,
       };
     },
   };

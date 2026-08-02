@@ -22,6 +22,13 @@ import { createLogger } from '@/lib/logger';
 import { inlineHtmlAssets, createAssetFetcher } from './inline-assets';
 import type { FetchAsset } from './inline-assets';
 import { createProxiedFetch } from './proxied-fetch';
+import { db, mediaFileKey } from '@/lib/utils/database';
+import { withAssetUrl } from '@/lib/media/use-asset-url';
+import {
+  MISSING_ASSET_LEASE,
+  renderableMediaUrl,
+  resolveMediaRef,
+} from '@/lib/media/resolve-media-ref';
 
 const log = createLogger('ExportPPTX');
 
@@ -360,6 +367,74 @@ function buildSpeakerNotes(scene: Scene): string {
   return parts.join('\n');
 }
 
+async function fetchBlob(url: string): Promise<Blob | null> {
+  try {
+    const response = await fetch(url);
+    return response.ok ? await response.blob() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+function exportMediaResolution(ref: string | undefined, stageId?: string) {
+  const tasks = useMediaGenerationStore.getState().tasks;
+  const task = ref
+    ? (tasks[ref] ??
+      Object.values(tasks).find(
+        (candidate) =>
+          candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
+      ))
+    : undefined;
+  const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
+  return resolveMediaRef(ref, effectiveTask, MISSING_ASSET_LEASE);
+}
+
+/** Resolve generated/allocated media without preventing the legacy source fetch fallback. */
+async function resolveStoredMediaBlob(ref: string, stageId?: string): Promise<Blob | null> {
+  const tasks = useMediaGenerationStore.getState().tasks;
+  const task =
+    tasks[ref] ??
+    Object.values(tasks).find(
+      (candidate) =>
+        candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
+    );
+  const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
+  if (stageId) {
+    const record = await db.mediaFiles.get(mediaFileKey(stageId, ref)).catch(() => undefined);
+    if (record && !record.error && record.blob.size > 0) {
+      const state = resolveMediaRef(ref, effectiveTask, {
+        status: 'resolved',
+        url: 'dexie:media',
+      });
+      if (state.kind === 'url') return record.blob;
+    }
+  }
+  try {
+    return await withAssetUrl(ref, async (url) => {
+      const state = resolveMediaRef(
+        ref,
+        effectiveTask,
+        url ? { status: 'resolved', url } : MISSING_ASSET_LEASE,
+      );
+      const resolved = renderableMediaUrl(state);
+      return resolved ? fetchBlob(resolved) : null;
+    });
+  } catch {
+    const state = resolveMediaRef(ref, effectiveTask, MISSING_ASSET_LEASE);
+    const resolved = renderableMediaUrl(state);
+    return resolved ? fetchBlob(resolved) : null;
+  }
+}
+
 // Exported for the round-trip integration test harness — the test wires its
 // own slides + ratios in and inspects the resulting PPTX bytes via JSZip.
 // The hook below is still the only intended runtime caller.
@@ -370,6 +445,7 @@ export async function buildPptxBlob(
   viewportSize: number,
   ratioPx2Inch: number,
   ratioPx2Pt: number,
+  stageId?: string,
 ): Promise<Blob> {
   const pptx = new pptxgen();
 
@@ -472,15 +548,12 @@ export async function buildPptxBlob(
       // ── IMAGE ──
       else if (el.type === 'image') {
         // Resolve placeholder src → actual image data
-        let resolvedSrc = el.src;
+        let resolvedSrc = renderableMediaUrl(exportMediaResolution(el.src, stageId));
         if (isMediaPlaceholder(el.src)) {
-          const task = useMediaGenerationStore.getState().tasks[el.src];
-          if (task?.status === 'done' && task.objectUrl) {
-            resolvedSrc = task.objectUrl;
-          } else {
-            continue; // Media not ready, skip
-          }
+          const stored = await resolveStoredMediaBlob(el.src, stageId);
+          if (stored) resolvedSrc = await blobToDataUrl(stored);
         }
+        if (!resolvedSrc) continue;
 
         // Fetch and convert to base64 for embedding in PPTX
         // (blob: URLs and remote URLs won't work in offline PPTX)
@@ -493,13 +566,7 @@ export async function buildPptxBlob(
               );
               continue;
             }
-            const blob = await resp.blob();
-            resolvedSrc = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result as string);
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
-            });
+            resolvedSrc = await blobToDataUrl(await resp.blob());
           } catch {
             log.warn('Failed to convert image to base64, skipping element');
             continue;
@@ -962,18 +1029,15 @@ export async function buildPptxBlob(
       // ── VIDEO / AUDIO ──
       else if (el.type === 'video' || el.type === 'audio') {
         // Resolve generated video mediaRef or legacy placeholder src → blob URL.
-        let resolvedSrc = el.src;
+        let resolvedSrc = renderableMediaUrl(exportMediaResolution(el.src, stageId));
         const mediaRef = el.type === 'video' ? el.mediaRef : undefined;
         const mediaLookupKey =
           mediaRef ||
           (typeof el.src === 'string' && isMediaPlaceholder(el.src) ? el.src : undefined);
         if (mediaLookupKey) {
-          const task = useMediaGenerationStore.getState().tasks[mediaLookupKey];
-          if (task?.status === 'done' && task.objectUrl) {
-            resolvedSrc = task.objectUrl;
-          } else if (!resolvedSrc || isMediaPlaceholder(resolvedSrc)) {
-            continue; // Media not ready, skip
-          }
+          const stored = await resolveStoredMediaBlob(mediaLookupKey, stageId);
+          if (stored) resolvedSrc = await blobToDataUrl(stored);
+          else resolvedSrc = renderableMediaUrl(exportMediaResolution(mediaLookupKey, stageId));
         }
 
         if (!resolvedSrc) continue;
@@ -981,20 +1045,15 @@ export async function buildPptxBlob(
         // Fetch blob and convert to base64 for embedding in PPTX
         // (blob: URLs and remote URLs won't work in offline PPTX)
         try {
-          const resp = await fetch(resolvedSrc);
-          if (!resp.ok) {
-            log.warn(
-              `Failed to fetch media (HTTP ${resp.status}), skipping element: ${resolvedSrc}`,
-            );
-            continue;
-          }
-          const blob = await resp.blob();
-          const base64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
+          const base64 = isBase64Image(resolvedSrc)
+            ? resolvedSrc
+            : await (async () => {
+                const resp = await fetch(resolvedSrc);
+                if (!resp.ok) {
+                  throw new Error(`Failed to fetch media (HTTP ${resp.status}): ${resolvedSrc}`);
+                }
+                return blobToDataUrl(await resp.blob());
+              })();
 
           const mediaOptions: pptxgen.MediaProps = {
             x: el.left / ratioPx2Inch,
@@ -1017,23 +1076,24 @@ export async function buildPptxBlob(
 
             // 1. Try poster from element or media generation store
             let posterUrl = 'poster' in el && el.poster ? el.poster : undefined;
+            let posterBlob = posterUrl ? await resolveStoredMediaBlob(posterUrl, stageId) : null;
+            if (posterUrl && !posterBlob) {
+              posterUrl = renderableMediaUrl(exportMediaResolution(posterUrl, stageId));
+            }
             if (!posterUrl && mediaLookupKey) {
               const task = useMediaGenerationStore.getState().tasks[mediaLookupKey];
               if (task?.poster) posterUrl = task.poster;
             }
-            if (posterUrl) {
+            if (posterBlob) {
+              coverBase64 = await blobToDataUrl(posterBlob);
+            } else if (posterUrl) {
               try {
                 const posterResp = await fetch(posterUrl);
                 if (!posterResp.ok) {
                   log.warn(`Failed to fetch poster (HTTP ${posterResp.status}), skipping`);
                 } else {
-                  const posterBlob = await posterResp.blob();
-                  coverBase64 = await new Promise<string>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result as string);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(posterBlob);
-                  });
+                  posterBlob = await posterResp.blob();
+                  coverBase64 = await blobToDataUrl(posterBlob);
                 }
               } catch {
                 // Poster fetch failed, fall through to video frame capture
@@ -1224,6 +1284,7 @@ export function useExportPPTX() {
         viewportSize,
         ratioPx2Inch,
         ratioPx2Pt,
+        stage?.id,
       );
       saveAs(blob, `${fileName}.pptx`);
       toast.success(t('export.exportSuccess'));
@@ -1256,7 +1317,15 @@ export function useExportPPTX() {
         fileName,
         fetcher: sharedFetcher,
         getPptxBlob: () =>
-          buildPptxBlob(slides, slideScenes, viewportRatio, viewportSize, ratioPx2Inch, ratioPx2Pt),
+          buildPptxBlob(
+            slides,
+            slideScenes,
+            viewportRatio,
+            viewportSize,
+            ratioPx2Inch,
+            ratioPx2Pt,
+            stage?.id,
+          ),
       });
 
       if (result.empty) {

@@ -4,23 +4,24 @@ import { useRef, useEffect } from 'react';
 import { useAnimate } from 'motion/react';
 import type { PPTVideoElement } from '@openmaic/dsl';
 import { useCanvasStore } from '@/lib/store/canvas';
-import { useMediaGenerationStore, isMediaPlaceholder } from '@/lib/store/media-generation';
-import { useSettingsStore } from '@/lib/store/settings';
+import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
 import { retryMediaTask } from '@/lib/media/media-orchestrator';
+import {
+  isConcreteMediaAddress,
+  renderableMediaUrl,
+  useResolvedMediaRef,
+} from '@/lib/media/resolve-media-ref';
 import { getVideoMediaRefForElement } from '@/lib/media/video-manifest';
 import { RotateCcw, Film, ShieldAlert, VideoOff } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
+import { useSettingsStore } from '@/lib/store/settings';
 
 const log = createLogger('BaseVideoElement');
 
 export interface BaseVideoElementProps {
   elementInfo: PPTVideoElement;
-}
-
-function isLegacySequentialVideoRef(value: string | undefined): boolean {
-  return !!value && /^gen_vid_\d+$/i.test(value);
 }
 
 /**
@@ -37,35 +38,33 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
 
   // Only subscribe to media store when inside a classroom (stageId provided via context).
   const stageId = useMediaStageId();
-  const mediaRef = getVideoMediaRefForElement(elementInfo);
-  const concreteSrc =
-    elementInfo.src && !isMediaPlaceholder(elementInfo.src) ? elementInfo.src : undefined;
-  const isPlaceholder = !!mediaRef;
+  const mediaGenerationDisabled = useSettingsStore((state) => !state.videoGenerationEnabled);
+  const mediaRef =
+    getVideoMediaRefForElement(elementInfo) ??
+    (elementInfo.src && !isConcreteMediaAddress(elementInfo.src) ? elementInfo.src : undefined);
   const task = useMediaGenerationStore((s) => {
     if (!mediaRef) return undefined;
     const t = s.tasks[mediaRef];
     if (t && t.stageId !== stageId) return undefined;
     if (t) return t;
-
-    const sameStageVideoTasks = Object.values(s.tasks).filter(
-      (candidate) =>
-        candidate.type === 'video' && candidate.stageId === stageId && candidate.status === 'done',
+    return Object.values(s.tasks).find(
+      (candidate) => candidate.stageId === stageId && candidate.placeholderRef === mediaRef,
     );
-    if (isLegacySequentialVideoRef(mediaRef) && sameStageVideoTasks.length === 1) {
-      return sameStageVideoTasks[0];
-    }
-
-    return undefined;
   });
-  const videoGenerationEnabled = useSettingsStore((s) => s.videoGenerationEnabled);
-  const resolvedSrc = task?.status === 'done' && task.objectUrl ? task.objectUrl : concreteSrc;
-  const showDisabled = isPlaceholder && !concreteSrc && !task && !videoGenerationEnabled;
-  const showSkeleton =
-    isPlaceholder &&
-    !concreteSrc &&
-    !showDisabled &&
-    (!task || task.status === 'pending' || task.status === 'generating');
-  const showError = isPlaceholder && !concreteSrc && task?.status === 'failed';
+  const resolution = useResolvedMediaRef(
+    mediaRef ?? elementInfo.src,
+    task,
+    mediaGenerationDisabled,
+  );
+  const posterResolution = useResolvedMediaRef(
+    elementInfo.poster,
+    task?.poster ? { ...task, objectUrl: task.poster } : undefined,
+  );
+  const resolvedSrc = renderableMediaUrl(resolution);
+  const resolvedPoster = renderableMediaUrl(posterResolution);
+  const showSkeleton = resolution.kind === 'pending' || resolution.kind === 'placeholder';
+  const showDisabled = resolution.kind === 'disabled';
+  const showError = resolution.kind === 'failed';
   const isReady = !!resolvedSrc;
 
   // Ensure video is paused on mount — prevents browser autoplay from user gesture context
@@ -127,14 +126,7 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
         className="w-full h-full"
         style={{ transform: `rotate(${elementInfo.rotate}deg)` }}
       >
-        {showDisabled ? (
-          <div className="w-full h-full bg-gray-50 dark:bg-gray-900/30 flex items-center justify-center rounded">
-            <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 dark:text-gray-400">
-              <VideoOff className="w-3 h-3 shrink-0" />
-              <span>{t('settings.mediaGenerationDisabled')}</span>
-            </div>
-          </div>
-        ) : showSkeleton ? (
+        {showSkeleton ? (
           <div className="w-full h-full bg-gradient-to-br from-indigo-50 via-violet-50/60 to-blue-50 dark:from-indigo-950/40 dark:via-violet-950/30 dark:to-blue-950/20 flex items-center justify-center rounded">
             <style>{`
               @keyframes vid-pulse-ring { 0%, 100% { opacity: 0.15; transform: scale(0.85); } 50% { opacity: 0.35; transform: scale(1.1); } }
@@ -152,6 +144,16 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
               />
             </div>
           </div>
+        ) : showDisabled ? (
+          <div
+            className="w-full h-full bg-gray-50 dark:bg-gray-900/20 flex items-center justify-center rounded"
+            data-media-state="disabled"
+          >
+            <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 dark:text-gray-400">
+              <VideoOff className="w-3 h-3 shrink-0" />
+              <span>{t('settings.mediaGenerationDisabled')}</span>
+            </div>
+          </div>
         ) : showError ? (
           <div className="w-full h-full bg-red-50 dark:bg-red-900/20 flex flex-col items-center justify-center gap-1.5 rounded">
             {task?.errorCode === 'CONTENT_SENSITIVE' ? (
@@ -159,16 +161,11 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
                 <ShieldAlert className="w-3 h-3 shrink-0" />
                 <span>{t('settings.mediaContentSensitive')}</span>
               </div>
-            ) : task?.errorCode === 'GENERATION_DISABLED' ? (
-              <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 dark:text-gray-400">
-                <VideoOff className="w-3 h-3 shrink-0" />
-                <span>{t('settings.mediaGenerationDisabled')}</span>
-              </div>
-            ) : (
+            ) : resolution.retryable ? (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (mediaRef) retryMediaTask(mediaRef);
+                  if (mediaRef) retryMediaTask(mediaRef, { elementId: elementInfo.id });
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
                 className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/40 rounded hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"
@@ -176,7 +173,7 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
                 <RotateCcw className="w-3 h-3" />
                 {t('settings.mediaRetry')}
               </button>
-            )}
+            ) : null}
           </div>
         ) : isReady && resolvedSrc ? (
           <video
@@ -184,7 +181,7 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
             className="w-full h-full"
             style={{ objectFit: 'contain' }}
             src={resolvedSrc}
-            poster={task?.poster || elementInfo.poster}
+            poster={resolvedPoster ?? undefined}
             preload="metadata"
             controls
             onEnded={handleEnded}

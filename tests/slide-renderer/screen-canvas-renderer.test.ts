@@ -101,7 +101,7 @@ describe('PlaybackScreenCanvas', () => {
     expect(html).toContain('id="screen-element-title-1"');
   });
 
-  it('keeps generated-image status UI in renderer playback mode', () => {
+  it('renders an untracked generated placeholder as pending in renderer playback mode', () => {
     process.env[flag] = 'true';
     const imageContent: SlideContent = {
       ...content,
@@ -139,7 +139,8 @@ describe('PlaybackScreenCanvas', () => {
       ),
     );
 
-    expect(html).toContain('data-media-state="disabled"');
+    expect(html).toContain('data-media-state="pending"');
+    expect(html).not.toContain('src="gen_img_1"');
   });
 
   it('renders a completed generated image with the renderer default image treatment', () => {
@@ -200,21 +201,10 @@ describe('PlaybackScreenCanvas', () => {
   });
 
   it('classifies generated-image pending, failed, and retryable states', () => {
-    const pendingTask = {
-      elementId: 'gen_img_1',
-      type: 'image' as const,
-      status: 'pending' as const,
-      prompt: '',
-      params: {},
-      retryCount: 0,
-      stageId: 'stage-1',
-    };
-
-    expect(getPlaybackImageState(true, pendingTask, true)).toBe('pending');
-    expect(
-      getPlaybackImageState(true, { ...pendingTask, status: 'failed', error: 'failed' }, true),
-    ).toBe('failed');
-    expect(getPlaybackImageState(true, undefined, false)).toBe('disabled');
-    expect(getPlaybackImageState(false, undefined, false)).toBe('ready');
+    expect(getPlaybackImageState({ kind: 'pending' })).toBe('pending');
+    expect(getPlaybackImageState({ kind: 'placeholder' })).toBe('pending');
+    expect(getPlaybackImageState({ kind: 'failed', retryable: true })).toBe('failed');
+    expect(getPlaybackImageState({ kind: 'raw', value: 'logo.png' })).toBe('ready');
+    expect(getPlaybackImageState({ kind: 'url', url: 'blob:image' })).toBe('ready');
   });
 });

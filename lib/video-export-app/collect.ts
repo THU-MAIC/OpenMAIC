@@ -27,6 +27,13 @@ import type { Scene, SlideContent } from '@/lib/types/stage';
 import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import type { MediaFileRecord } from '@/lib/utils/database';
 import type { VideoTimelineRecords } from './timeline-deps';
+import { useMediaGenerationStore } from '@/lib/store/media-generation';
+import { withAssetUrl } from '@/lib/media/use-asset-url';
+import {
+  MISSING_ASSET_LEASE,
+  renderableMediaUrl,
+  resolveMediaRef,
+} from '@/lib/media/resolve-media-ref';
 
 export interface CollectOptions {
   /** Slide-snapshot render width in px (frame height follows the slide ratio). Default 1920. */
@@ -136,6 +143,52 @@ async function resolveBytes(
   }
 }
 
+function mediaRefFromRecordId(recordId: string): string {
+  return recordId.includes(':') ? recordId.split(':').slice(1).join(':') : recordId;
+}
+
+async function resolveMediaBytesWithFallback(
+  assetId: string,
+  record: MediaFileRecord | undefined,
+  stageId?: string,
+): Promise<Blob | null> {
+  const usableRecord = record && !record.error ? record : undefined;
+  const ref = record ? mediaRefFromRecordId(record.id) : assetId;
+  const tasks = useMediaGenerationStore.getState().tasks;
+  const task =
+    tasks[ref] ??
+    Object.values(tasks).find(
+      (candidate) =>
+        candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
+    );
+  const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
+  const stored = await resolveBytes(usableRecord?.blob, usableRecord?.ossKey);
+  if (stored) {
+    const state = resolveMediaRef(ref, effectiveTask, {
+      status: 'resolved',
+      url: 'dexie:media',
+    });
+    if (state.kind === 'url') return stored;
+  }
+
+  try {
+    return await withAssetUrl(ref, async (url) => {
+      const state = resolveMediaRef(
+        ref,
+        effectiveTask,
+        url ? { status: 'resolved', url } : MISSING_ASSET_LEASE,
+      );
+      const resolved = renderableMediaUrl(state);
+      return resolved ? resolveBytes(undefined, resolved) : null;
+    });
+  } catch {
+    // IndexedDB/pool resolution is optional; preserve the original fetch path.
+    const state = resolveMediaRef(ref, effectiveTask, MISSING_ASSET_LEASE);
+    const resolved = renderableMediaUrl(state);
+    return resolved ? resolveBytes(undefined, resolved) : null;
+  }
+}
+
 /** The generated-media ref an element points at, when it is an unresolved placeholder. */
 function snapshotMediaRef(element: SnapshotMediaElement): string | undefined {
   if (element.type === 'image' && element.src && isMediaPlaceholder(element.src))
@@ -161,42 +214,73 @@ function snapshotMediaRef(element: SnapshotMediaElement): string | undefined {
 async function resolveGeneratedMedia(
   source: Slide,
   mediaByElementId: Map<string, MediaFileRecord>,
+  stageId?: string,
 ): Promise<{ slide: Slide; revoke: () => void }> {
   const slide = structuredClone(source);
   const objectUrls: string[] = [];
 
   for (const element of slide.elements as SnapshotMediaElement[]) {
+    let resolvedPoster = false;
+    if (element.type === 'video' && element.poster && isMediaPlaceholder(element.poster)) {
+      const posterRecord = mediaByElementId.get(element.poster);
+      const posterBytes = await resolveMediaBytesWithFallback(
+        element.poster,
+        posterRecord,
+        stageId,
+      );
+      if (posterBytes) {
+        const poster = URL.createObjectURL(
+          blobWithType(posterBytes, posterRecord?.mimeType || posterBytes.type || 'image/jpeg'),
+        );
+        objectUrls.push(poster);
+        element.poster = poster;
+        resolvedPoster = true;
+      } else if (!renderableMediaUrl(resolveMediaRef(element.poster, undefined))) {
+        element.poster = undefined;
+      }
+    }
     const ref = snapshotMediaRef(element);
     if (!ref) continue;
     const record = mediaByElementId.get(ref);
-    const bytes = record && !record.error ? await resolveBytes(record.blob, record.ossKey) : null;
-    if (!record || !bytes) {
-      if (element.type === 'image') element.src = '';
+    const bytes = await resolveMediaBytesWithFallback(ref, record, stageId);
+    if (!bytes) {
+      const tasks = useMediaGenerationStore.getState().tasks;
+      const task =
+        tasks[ref] ??
+        Object.values(tasks).find(
+          (candidate) =>
+            candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
+        );
+      const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
+      if (!renderableMediaUrl(resolveMediaRef(ref, effectiveTask))) element.src = '';
       continue;
     }
-    if (element.type === 'image' && record.type === 'image') {
-      const url = URL.createObjectURL(blobWithType(bytes, record.mimeType));
+    if (element.type === 'image' && (!record || record.type === 'image')) {
+      const url = URL.createObjectURL(
+        blobWithType(bytes, record?.mimeType || bytes.type || 'image/png'),
+      );
       objectUrls.push(url);
       element.src = url;
-    } else if (element.type === 'video' && record.type === 'video') {
-      const url = URL.createObjectURL(blobWithType(bytes, record.mimeType));
+    } else if (element.type === 'video' && (!record || record.type === 'video')) {
+      const mimeType = record?.mimeType || bytes.type || 'video/mp4';
+      const url = URL.createObjectURL(blobWithType(bytes, mimeType));
       objectUrls.push(url);
       element.src = url;
-      const posterBytes = await resolveBytes(record.poster, record.posterOssKey);
+      const posterBytes = resolvedPoster
+        ? null
+        : await resolveBytes(record?.poster, record?.posterOssKey);
       if (posterBytes) {
         const poster = URL.createObjectURL(blobWithType(posterBytes, 'image/jpeg'));
         objectUrls.push(poster);
         element.poster = poster;
-      } else {
+      } else if (!resolvedPoster) {
         // No stored poster (generated videos usually have none) — decode the
         // video's first frame so the base snapshot shows it instead of blank
         // where the clip sits outside its play window. The frame is a data URL
         // (no object-URL lifecycle to revoke).
-        const firstFrame = await decodeFirstFramePosterUrl(blobWithType(bytes, record.mimeType));
+        const firstFrame = await decodeFirstFramePosterUrl(blobWithType(bytes, mimeType));
         if (firstFrame) element.poster = firstFrame;
       }
-    } else if (element.type === 'image') {
-      element.src = '';
     }
   }
 
@@ -208,8 +292,9 @@ async function renderFrame(
   slide: Slide,
   mediaByElementId: Map<string, MediaFileRecord>,
   width: number,
+  stageId?: string,
 ): Promise<Blob> {
-  const { slide: resolved, revoke } = await resolveGeneratedMedia(slide, mediaByElementId);
+  const { slide: resolved, revoke } = await resolveGeneratedMedia(slide, mediaByElementId, stageId);
   try {
     const output = await slideToPng(resolved, {
       width,
@@ -258,7 +343,10 @@ export async function collectVideoAssets(
         const scene = sceneId ? sceneById.get(sceneId) : undefined;
         if (scene && scene.content.type === 'slide') {
           const slide = (scene.content as SlideContent).canvas;
-          blobs.set(entry.path, await renderFrame(slide, records.mediaByElementId, width));
+          blobs.set(
+            entry.path,
+            await renderFrame(slide, records.mediaByElementId, width, scene.stageId),
+          );
         } else {
           missing.push(entry.path);
         }
@@ -269,7 +357,11 @@ export async function collectVideoAssets(
         else missing.push(entry.path);
       } else if (entry.kind === 'video' || entry.kind === 'image') {
         const record = mediaById.get(entry.assetId);
-        const bytes = await resolveBytes(record?.blob, record?.ossKey);
+        const bytes = await resolveMediaBytesWithFallback(
+          entry.assetId,
+          record,
+          record?.stageId ?? scenes[0]?.stageId,
+        );
         if (bytes) blobs.set(entry.path, bytes);
         else missing.push(entry.path);
       } else if (entry.kind === 'poster') {
