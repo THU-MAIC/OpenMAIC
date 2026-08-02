@@ -303,6 +303,7 @@ export function buildRestoredMediaTasks(
     if (rec.error) {
       restored[elementId] = {
         elementId,
+        placeholderRef: rec.placeholderRef,
         type: rec.type,
         status: 'failed',
         prompt: rec.prompt,
@@ -318,6 +319,7 @@ export function buildRestoredMediaTasks(
     const blob = rec.blob.type ? rec.blob : new Blob([rec.blob], { type: rec.mimeType });
     restored[elementId] = {
       elementId,
+      placeholderRef: rec.placeholderRef,
       type: rec.type,
       status: 'done',
       prompt: rec.prompt,

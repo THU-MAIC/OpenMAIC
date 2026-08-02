@@ -1,0 +1,227 @@
+import type { PPTElement, Slide } from '@openmaic/dsl';
+import type { Scene, Stage } from '@/lib/types/stage';
+
+export interface StageAssetDocument {
+  readonly stage: Stage;
+  readonly scenes: readonly Scene[];
+}
+
+export interface StageMediaRow {
+  readonly id: string;
+  readonly stageId: string;
+}
+
+export interface StageAudioRow {
+  readonly id: string;
+  /** Missing on rows written before the per-stage audio index existed. */
+  readonly stageId?: string;
+}
+
+export interface StageAssetRefs {
+  readonly imageSrc: ReadonlySet<string>;
+  readonly videoSrc: ReadonlySet<string>;
+  readonly videoMediaRef: ReadonlySet<string>;
+  readonly poster: ReadonlySet<string>;
+  readonly backgroundImage: ReadonlySet<string>;
+  readonly stageWhiteboard: ReadonlySet<string>;
+  readonly sceneWhiteboard: ReadonlySet<string>;
+  readonly speechAudioId: ReadonlySet<string>;
+  readonly videoManifestKey: ReadonlySet<string>;
+  readonly mediaRow: ReadonlySet<string>;
+  readonly audioRow: ReadonlySet<string>;
+  readonly mediaOrphans: ReadonlySet<string>;
+  readonly audioOrphans: ReadonlySet<string>;
+  /** Refs held by renderable elements or speech cues (manifest metadata excluded). */
+  readonly referenced: ReadonlySet<string>;
+  /** Every document ref, including video-manifest metadata. */
+  readonly document: ReadonlySet<string>;
+  /** Document refs plus stage-owned Dexie-only orphan rows. */
+  readonly all: ReadonlySet<string>;
+  /** Refs with a stage-owned compatibility row and therefore safe to remove from the pool. */
+  readonly poolOwned: ReadonlySet<string>;
+  /** Logical owners per ref; video src+mediaRef on one element count once. */
+  readonly referenceCounts: ReadonlyMap<string, number>;
+}
+
+function addValue(target: Set<string>, value: string | undefined): value is string {
+  if (!value) return false;
+  target.add(value);
+  return true;
+}
+
+function mediaRefFromRow(stageId: string, rowId: string): string {
+  const prefix = `${stageId}:`;
+  return rowId.startsWith(prefix) ? rowId.slice(prefix.length) : rowId;
+}
+
+/** Asset candidates owned by a set of slide elements before they are removed. */
+export function collectElementAssetRefs(elements: readonly PPTElement[]): string[] {
+  const refs = new Set<string>();
+  for (const element of elements) {
+    if (element.type === 'image') {
+      if (element.src) refs.add(element.src);
+      continue;
+    }
+    if (element.type !== 'video') continue;
+    if (element.src) refs.add(element.src);
+    if (element.mediaRef) refs.add(element.mediaRef);
+    if (element.poster) refs.add(element.poster);
+  }
+  return [...refs];
+}
+
+/**
+ * Enumerate the complete stage asset reference space without performing I/O.
+ *
+ * Categories intentionally overlap: a whiteboard image belongs to both
+ * `imageSrc` and its whiteboard category. `referenceCounts` counts the logical
+ * owning element/action only once, which is what duplication-safe replacement
+ * needs when a video repeats the same ref in both `src` and `mediaRef`.
+ */
+export function collectStageAssetRefs(
+  document: StageAssetDocument | null,
+  {
+    mediaRows,
+    audioRows,
+  }: {
+    readonly mediaRows: readonly StageMediaRow[];
+    readonly audioRows: readonly StageAudioRow[];
+  },
+): StageAssetRefs {
+  const imageSrc = new Set<string>();
+  const videoSrc = new Set<string>();
+  const videoMediaRef = new Set<string>();
+  const poster = new Set<string>();
+  const backgroundImage = new Set<string>();
+  const stageWhiteboard = new Set<string>();
+  const sceneWhiteboard = new Set<string>();
+  const speechAudioId = new Set<string>();
+  const videoManifestKey = new Set<string>();
+  const referenced = new Set<string>();
+  const ownerKeysByRef = new Map<string, Set<string>>();
+
+  const own = (ref: string | undefined, ownerKey: string) => {
+    if (!ref) return;
+    referenced.add(ref);
+    let owners = ownerKeysByRef.get(ref);
+    if (!owners) {
+      owners = new Set<string>();
+      ownerKeysByRef.set(ref, owners);
+    }
+    owners.add(ownerKey);
+  };
+
+  const visitSlide = (
+    slide: Pick<Slide, 'id' | 'elements' | 'background'>,
+    scope: 'scene' | 'stage-whiteboard' | 'scene-whiteboard',
+    scopeId: string,
+  ) => {
+    const backgroundRef =
+      slide.background?.type === 'image' ? slide.background.image?.src : undefined;
+    if (addValue(backgroundImage, backgroundRef)) {
+      own(backgroundRef, `${scope}:${scopeId}:background`);
+      if (scope === 'stage-whiteboard') stageWhiteboard.add(backgroundRef);
+      if (scope === 'scene-whiteboard') sceneWhiteboard.add(backgroundRef);
+    }
+    for (let index = 0; index < slide.elements.length; index += 1) {
+      const element = slide.elements[index];
+      if (element.type !== 'image' && element.type !== 'video') continue;
+      const ownerKey = `${scope}:${scopeId}:${element.id || index}`;
+      const whiteboardCategory =
+        scope === 'stage-whiteboard'
+          ? stageWhiteboard
+          : scope === 'scene-whiteboard'
+            ? sceneWhiteboard
+            : undefined;
+
+      if (element.type === 'image') {
+        if (addValue(imageSrc, element.src)) {
+          own(element.src, ownerKey);
+          whiteboardCategory?.add(element.src);
+        }
+        continue;
+      }
+
+      if (addValue(videoSrc, element.src)) {
+        own(element.src, ownerKey);
+        whiteboardCategory?.add(element.src);
+      }
+      if (addValue(videoMediaRef, element.mediaRef)) {
+        own(element.mediaRef, ownerKey);
+        whiteboardCategory?.add(element.mediaRef);
+      }
+      if (addValue(poster, element.poster)) {
+        own(element.poster, `${ownerKey}:poster`);
+        whiteboardCategory?.add(element.poster);
+      }
+    }
+  };
+
+  if (document) {
+    for (let index = 0; index < (document.stage.whiteboard ?? []).length; index += 1) {
+      const slide = document.stage.whiteboard![index];
+      visitSlide(slide, 'stage-whiteboard', slide.id || String(index));
+    }
+
+    for (const scene of document.scenes) {
+      if (scene.content.type === 'slide') {
+        visitSlide(scene.content.canvas, 'scene', scene.id);
+      }
+      for (let index = 0; index < (scene.whiteboards ?? []).length; index += 1) {
+        const slide = scene.whiteboards![index];
+        visitSlide(slide, 'scene-whiteboard', `${scene.id}:${slide.id || index}`);
+      }
+      for (let index = 0; index < (scene.actions ?? []).length; index += 1) {
+        const action = scene.actions![index];
+        if (action.type !== 'speech' || !action.audioId) continue;
+        speechAudioId.add(action.audioId);
+        own(action.audioId, `speech:${scene.id}:${action.id || index}`);
+      }
+    }
+
+    for (const ref of Object.keys(document.stage.videoManifest ?? {})) {
+      videoManifestKey.add(ref);
+    }
+  }
+
+  const stageId = document?.stage.id;
+  const mediaRow = new Set(
+    mediaRows
+      .filter((row) => !stageId || row.stageId === stageId)
+      .map((row) => mediaRefFromRow(row.stageId, row.id)),
+  );
+  const audioRow = new Set(
+    audioRows
+      .filter((row) => !stageId || row.stageId === undefined || row.stageId === stageId)
+      .map((row) => row.id),
+  );
+  const documentRefs = new Set([...referenced, ...videoManifestKey]);
+  const mediaOrphans = new Set([...mediaRow].filter((ref) => !documentRefs.has(ref)));
+  const audioOrphans = new Set([...audioRow].filter((ref) => !documentRefs.has(ref)));
+  const all = new Set([...documentRefs, ...mediaRow, ...audioRow]);
+  const poolOwned = new Set([...mediaRow, ...audioRow]);
+  const referenceCounts = new Map(
+    [...ownerKeysByRef].map(([ref, owners]) => [ref, owners.size] as const),
+  );
+
+  return {
+    imageSrc,
+    videoSrc,
+    videoMediaRef,
+    poster,
+    backgroundImage,
+    stageWhiteboard,
+    sceneWhiteboard,
+    speechAudioId,
+    videoManifestKey,
+    mediaRow,
+    audioRow,
+    mediaOrphans,
+    audioOrphans,
+    referenced,
+    document: documentRefs,
+    all,
+    poolOwned,
+    referenceCounts,
+  };
+}

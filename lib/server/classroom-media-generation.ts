@@ -15,7 +15,6 @@ import { generateTTS } from '@/lib/audio/tts-providers';
 import { DEFAULT_TTS_VOICES, DEFAULT_TTS_MODELS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
-import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import {
   getServerImageProviders,
   getServerVideoProviders,
@@ -192,7 +191,7 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
         el.type === 'video' &&
         typeof el.mediaRef === 'string' &&
         mediaMap[el.mediaRef] &&
-        (!el.src || isMediaPlaceholder(el.src))
+        (!el.src || /^gen_vid_[\w-]+$/i.test(el.src))
       ) {
         el.src = mediaMap[el.mediaRef];
         continue;
@@ -200,7 +199,7 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
       if (
         (el.type === 'image' || el.type === 'video') &&
         typeof el.src === 'string' &&
-        isMediaPlaceholder(el.src) &&
+        /^gen_(img|vid)_[\w-]+$/i.test(el.src) &&
         mediaMap[el.src]
       ) {
         el.src = mediaMap[el.src];
@@ -259,7 +258,8 @@ export async function generateTTSForClassroom(
     for (const action of scene.actions) {
       if (action.type !== 'speech' || !(action as SpeechAction).text) continue;
       const speechAction = action as SpeechAction;
-      // Include scene order in audioId to prevent collision across scenes
+      // Server transport keeps derived ids and audioUrl playback priority;
+      // browser generation allocates pool ids. Unifying them is Part 2 step (c).
       const audioId = `tts_s${sceneOrder}_${action.id}`;
 
       try {
