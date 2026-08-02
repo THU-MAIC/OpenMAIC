@@ -10,6 +10,8 @@ import { useResolvedImageSrc } from './useResolvedImageSrc';
 import { retryMediaTask } from '@/lib/media/media-orchestrator';
 import { RotateCcw, Paintbrush, ShieldAlert, ImageOff } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useSceneData } from '@/lib/contexts/scene-context';
+import type { SlideContent } from '@/lib/types/stage';
 
 export interface BaseImageElementProps {
   elementInfo: PPTImageElement;
@@ -20,6 +22,7 @@ export interface BaseImageElementProps {
  */
 export function BaseImageElement({ elementInfo }: BaseImageElementProps) {
   const { t } = useI18n();
+  const { sceneId, sceneData } = useSceneData<SlideContent>();
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
   const { flipStyle } = useElementFlip(elementInfo.flipH, elementInfo.flipV);
   const { clipShape, imgPosition } = useClipImage(elementInfo);
@@ -96,7 +99,11 @@ export function BaseImageElement({ elementInfo }: BaseImageElementProps) {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      retryMediaTask(elementInfo.src, { elementId: elementInfo.id });
+                      retryMediaTask(elementInfo.src, {
+                        elementId: elementInfo.id,
+                        sceneId,
+                        slideId: sceneData.canvas.id,
+                      });
                     }}
                     onPointerDown={(e) => e.stopPropagation()}
                     className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/40 rounded hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"

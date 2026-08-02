@@ -700,6 +700,35 @@ describe('media orchestrator asset write paths', () => {
     await assertOwnership();
   });
 
+  it('refuses to fork a shared ref without the owning slide instance', async () => {
+    const sharedAssetId = await pool.put(new Blob(['original-bytes'], { type: 'image/png' }));
+    mocks.document = documentWithMedia(sharedAssetId, 'image');
+    const copy = structuredClone(mocks.document.scenes[0]);
+    copy.id = 'scene-copy';
+    copy.order = 2;
+    copy.content.canvas.id = 'slide-copy';
+    mocks.document.scenes.push(copy);
+    mocks.stageState = {
+      stage: structuredClone(mocks.document.stage),
+      scenes: structuredClone(mocks.document.scenes),
+    };
+    mocks.mediaRows.set(`${stageId}:${sharedAssetId}`, {
+      id: `${stageId}:${sharedAssetId}`,
+      blob: new Blob(['original-bytes'], { type: 'image/png' }),
+    });
+    useMediaGenerationStore.setState({ tasks: { [sharedAssetId]: failedTask(sharedAssetId) } });
+
+    await retryMediaTask(sharedAssetId, {
+      elementId: mocks.document.scenes[0].content.canvas.elements[0].id,
+      sceneId: mocks.document.scenes[0].id,
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.document.scenes[0].content.canvas.elements[0].src).toBe(sharedAssetId);
+    expect(mocks.document.scenes[1].content.canvas.elements[0].src).toBe(sharedAssetId);
+    await assertOwnership();
+  });
+
   it('keeps first-commit bytes when the second reconciliation fails', async () => {
     mocks.document = documentWithMedia(placeholder, 'image');
     serveImage('committed-before-reconciliation-failure');

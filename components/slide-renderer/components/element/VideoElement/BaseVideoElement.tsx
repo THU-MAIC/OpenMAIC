@@ -17,6 +17,8 @@ import { RotateCcw, Film, ShieldAlert, VideoOff } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
 import { useSettingsStore } from '@/lib/store/settings';
+import { useSceneData } from '@/lib/contexts/scene-context';
+import type { SlideContent } from '@/lib/types/stage';
 
 const log = createLogger('BaseVideoElement');
 
@@ -31,6 +33,7 @@ export interface BaseVideoElementProps {
  */
 export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
   const { t } = useI18n();
+  const { sceneId, sceneData } = useSceneData<SlideContent>();
   const videoRef = useRef<HTMLVideoElement>(null);
   const playingVideoElementId = useCanvasStore.use.playingVideoElementId();
   const prevPlayingRef = useRef('');
@@ -165,7 +168,13 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (mediaRef) retryMediaTask(mediaRef, { elementId: elementInfo.id });
+                  if (mediaRef) {
+                    retryMediaTask(mediaRef, {
+                      elementId: elementInfo.id,
+                      sceneId,
+                      slideId: sceneData.canvas.id,
+                    });
+                  }
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
                 className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/40 rounded hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"

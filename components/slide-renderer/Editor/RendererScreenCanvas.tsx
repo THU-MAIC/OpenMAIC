@@ -6,7 +6,7 @@ import { SlideCanvas, type SlideEffects } from '@openmaic/renderer';
 import type { PPTImageElement, PPTVideoElement } from '@openmaic/dsl';
 import { Film, ImageOff, Paintbrush, RotateCcw, ShieldAlert, VideoOff } from 'lucide-react';
 import { useCanvasStore } from '@/lib/store';
-import { useSceneSelector } from '@/lib/contexts/scene-context';
+import { useSceneData, useSceneSelector } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
 import { useResolvedSlideMedia, type ResolvedSlideMediaEntry } from '../use-resolved-slide';
 import { retryMediaTask } from '@/lib/media/media-orchestrator';
@@ -19,9 +19,13 @@ const log = createLogger('RendererScreenCanvas');
 function PlaybackVideoContent({
   element,
   media,
+  sceneId,
+  slideId,
 }: {
   readonly element: PPTVideoElement;
   readonly media: ResolvedSlideMediaEntry | undefined;
+  readonly sceneId: string;
+  readonly slideId: string;
 }) {
   const { t } = useI18n();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -110,7 +114,9 @@ function PlaybackVideoContent({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (mediaRef) retryMediaTask(mediaRef, { elementId: element.id });
+              if (mediaRef) {
+                retryMediaTask(mediaRef, { elementId: element.id, sceneId, slideId });
+              }
             }}
             onPointerDown={(e) => e.stopPropagation()}
             className="flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-[10px] font-medium text-red-600 transition-colors hover:bg-red-200 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60"
@@ -170,10 +176,14 @@ function PlaybackImageContent({
   element,
   defaultContent,
   media,
+  sceneId,
+  slideId,
 }: {
   readonly element: PPTImageElement;
   readonly defaultContent: ReactNode;
   readonly media: ResolvedSlideMediaEntry | undefined;
+  readonly sceneId: string;
+  readonly slideId: string;
 }) {
   const { t } = useI18n();
   const task = media?.task;
@@ -225,7 +235,9 @@ function PlaybackImageContent({
           <button
             onClick={(event) => {
               event.stopPropagation();
-              if (media?.ref) retryMediaTask(media.ref, { elementId: element.id });
+              if (media?.ref) {
+                retryMediaTask(media.ref, { elementId: element.id, sceneId, slideId });
+              }
             }}
             onPointerDown={(event) => event.stopPropagation()}
             className="flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-[10px] font-medium text-red-600 transition-colors hover:bg-red-200 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60"
@@ -242,6 +254,7 @@ function PlaybackImageContent({
 }
 
 export function RendererScreenCanvas() {
+  const { sceneId } = useSceneData<SlideContent>();
   const slide = useSceneSelector<SlideContent, SlideContent['canvas']>((content) => content.canvas);
   const resolved = useResolvedSlideMedia(slide);
 
@@ -310,10 +323,17 @@ export function RendererScreenCanvas() {
           element={element}
           defaultContent={defaultContent}
           media={resolved.byElementId[element.id]}
+          sceneId={sceneId}
+          slideId={slide.id}
         />
       )}
       renderVideo={(element) => (
-        <PlaybackVideoContent element={element} media={resolved.byElementId[element.id]} />
+        <PlaybackVideoContent
+          element={element}
+          media={resolved.byElementId[element.id]}
+          sceneId={sceneId}
+          slideId={slide.id}
+        />
       )}
       videoInteractive
       chrome

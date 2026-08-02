@@ -139,8 +139,8 @@ export async function retryMediaTask(
         sceneId: target.sceneId ?? stageState.currentSceneId ?? undefined,
       }
     : undefined;
-  if (shared && (!scopedTarget || !scopedTarget.sceneId)) {
-    log.warn(`Cannot retry shared media ${elementId} without a target element`);
+  if (shared && (!scopedTarget?.sceneId || !scopedTarget.slideId)) {
+    log.warn(`Cannot retry shared media ${elementId} without a scene-and-slide target`);
     return;
   }
 
