@@ -11,6 +11,14 @@ import { db, type AudioFileRecord, type MediaFileRecord } from '@/lib/utils/data
 
 const log = createLogger('StageAssetReclamation');
 
+/**
+ * Transitional reclamation policy until document-truth mark-and-sweep lands:
+ * stage deletion is the only deletion-triggered reclamation entry point.
+ * Generation, TTS, and import transactions may still remove their own fresh
+ * allocations while rolling back an uncommitted write. Other edits and partial
+ * deletions deliberately leave bounded transitional garbage in the asset pool.
+ */
+
 export interface StageAssetInventory {
   readonly refs: StageAssetRefs;
   readonly mediaRows: readonly MediaFileRecord[];
