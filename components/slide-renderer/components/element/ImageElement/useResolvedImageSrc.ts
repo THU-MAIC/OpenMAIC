@@ -86,6 +86,8 @@ export function useResolvedImageSrc(elementInfo: PPTImageElement): ResolvedImage
   const mediaGenerationDisabled = useSettingsStore((state) => !state.imageGenerationEnabled);
   const task = useMediaGenerationStore((s) => {
     if (!stageId || isConcreteMediaAddress(elementInfo.src)) return undefined;
+    const targeted = s.tasks[elementInfo.id];
+    if (targeted?.stageId === stageId) return targeted;
     const direct = s.tasks[elementInfo.src];
     if (direct?.stageId === stageId) return direct;
     return Object.values(s.tasks).find(

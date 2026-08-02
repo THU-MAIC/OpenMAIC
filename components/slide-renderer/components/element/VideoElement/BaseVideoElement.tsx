@@ -41,6 +41,8 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
   const mediaRef = videoMediaRefForResolution(elementInfo);
   const task = useMediaGenerationStore((s) => {
     if (!mediaRef) return undefined;
+    const targeted = s.tasks[elementInfo.id];
+    if (targeted?.stageId === stageId) return targeted;
     const t = s.tasks[mediaRef];
     if (t && t.stageId !== stageId) return undefined;
     if (t) return t;

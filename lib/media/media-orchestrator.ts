@@ -164,12 +164,36 @@ export async function retryMediaTask(
     }
   }
 
-  store.markPendingForRetry(elementId);
+  const progressKey = shared ? scopedTarget!.elementId : elementId;
+  if (shared) {
+    useMediaGenerationStore.setState((state) => {
+      const previousFork = state.tasks[progressKey];
+      return {
+        tasks: {
+          ...state.tasks,
+          [progressKey]: {
+            ...task,
+            elementId: progressKey,
+            placeholderRef: undefined,
+            status: 'pending',
+            objectUrl: undefined,
+            poster: undefined,
+            posterAssetId: undefined,
+            error: undefined,
+            errorCode: undefined,
+            retryCount: (previousFork?.retryCount ?? task.retryCount) + 1,
+          },
+        },
+      };
+    });
+  } else {
+    store.markPendingForRetry(elementId);
+  }
   await generateSingleMedia(
     {
       type: task.type,
       prompt: task.prompt,
-      elementId: task.elementId,
+      elementId: progressKey,
       aspectRatio: task.params.aspectRatio as MediaGenerationRequest['aspectRatio'],
       style: task.params.style,
     },
@@ -179,24 +203,9 @@ export async function retryMediaTask(
       replaceAssetId,
       replacePosterAssetIds: posterAssetIds,
       target: shared ? scopedTarget : undefined,
-      preserveSourceRef: shared,
+      sourceRef: shared ? elementId : undefined,
     },
   );
-  if (shared) {
-    useMediaGenerationStore.setState((state) => {
-      const source = state.tasks[elementId];
-      if (!source) return state;
-      return {
-        tasks: {
-          ...state.tasks,
-          [elementId]: {
-            ...task,
-            retryCount: source.retryCount,
-          },
-        },
-      };
-    });
-  }
 }
 
 /** Build a retry target without assuming the active scene owns a slide canvas. */
@@ -564,20 +573,18 @@ async function generateSingleMedia(
       readonly sceneId?: string;
       readonly slideId?: string;
     };
-    readonly preserveSourceRef?: boolean;
+    readonly sourceRef?: string;
   } = {},
 ): Promise<string | undefined> {
-  const {
-    replaceAssetId,
-    replacePosterAssetIds = [],
-    target,
-    preserveSourceRef = false,
-  } = replacement;
+  const { replaceAssetId, replacePosterAssetIds = [], target, sourceRef } = replacement;
   const store = useMediaGenerationStore.getState();
   store.markGenerating(req.elementId);
   const placeholderRef =
-    store.getTask(req.elementId)?.placeholderRef ??
-    (isGeneratedMediaPlaceholder(req.elementId) ? req.elementId : undefined);
+    sourceRef === undefined
+      ? (store.getTask(req.elementId)?.placeholderRef ??
+        (isGeneratedMediaPlaceholder(req.elementId) ? req.elementId : undefined))
+      : undefined;
+  const documentRef = sourceRef ?? req.elementId;
   let poolReplacementCommitted = false;
   const freshAllocations = new Set<string>();
 
@@ -656,7 +663,7 @@ async function generateSingleMedia(
         poster: posterBlob,
         prompt: req.prompt,
         params,
-        placeholderRef: preserveSourceRef ? undefined : placeholderRef,
+        placeholderRef,
         createdAt,
       });
 
@@ -693,16 +700,16 @@ async function generateSingleMedia(
     if (!replaceAssetId || posterAssetId) {
       const committed = await persistDocumentMediaRef(
         stageId,
-        req.elementId,
+        documentRef,
         assetId,
         posterAssetId,
         {
           target,
-          preserveManifestSource: preserveSourceRef,
+          preserveManifestSource: sourceRef !== undefined,
         },
       );
       for (const ref of committed) freshAllocations.delete(ref);
-      if (preserveSourceRef && !committed.has(assetId)) {
+      if (sourceRef !== undefined && !committed.has(assetId)) {
         throw new MediaApiError(
           'The selected media retry target no longer exists',
           'TARGET_MISSING',
@@ -710,19 +717,19 @@ async function generateSingleMedia(
       }
     }
 
-    if (!replaceAssetId) {
+    if (!replaceAssetId && sourceRef === undefined) {
       // Close the late-scene window: a scene inserted after the first rewrite
       // is reconciled under the same document lock. Do not re-key the task
       // until this final rewrite succeeds: rollback must retain the placeholder
       // task and leave no completed task capable of resurrecting removed bytes.
       const committed = await persistDocumentMediaRef(
         stageId,
-        req.elementId,
+        documentRef,
         assetId,
         posterAssetId,
         {
           target,
-          preserveManifestSource: preserveSourceRef,
+          preserveManifestSource: false,
         },
       );
       for (const ref of committed) freshAllocations.delete(ref);
@@ -733,25 +740,25 @@ async function generateSingleMedia(
     const posterObjectUrl = posterBlob ? URL.createObjectURL(posterBlob) : undefined;
     if (replaceAssetId) {
       useMediaGenerationStore.getState().markDone(assetId, objectUrl, posterObjectUrl);
-    } else if (preserveSourceRef) {
+    } else if (sourceRef !== undefined) {
       useMediaGenerationStore.setState((state) => {
-        const source = state.tasks[req.elementId];
-        if (!source) return state;
+        const progress = state.tasks[req.elementId];
+        if (!progress) return state;
+        const tasks = { ...state.tasks };
+        delete tasks[req.elementId];
+        tasks[assetId] = {
+          ...progress,
+          elementId: assetId,
+          placeholderRef: undefined,
+          status: 'done',
+          objectUrl,
+          poster: posterObjectUrl,
+          posterAssetId,
+          error: undefined,
+          errorCode: undefined,
+        };
         return {
-          tasks: {
-            ...state.tasks,
-            [assetId]: {
-              ...source,
-              elementId: assetId,
-              placeholderRef: undefined,
-              status: 'done',
-              objectUrl,
-              poster: posterObjectUrl,
-              posterAssetId,
-              error: undefined,
-              errorCode: undefined,
-            },
-          },
+          tasks,
         };
       });
     } else {

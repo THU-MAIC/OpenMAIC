@@ -1,5 +1,6 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { BrowserAssetStore } from '@openmaic/storage';
+import type { Slide } from '@openmaic/dsl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MediaTask } from '@/lib/store/media-generation';
 import type { Scene, Stage } from '@/lib/types/stage';
@@ -76,6 +77,7 @@ import {
 import { buildRestoredMediaTasks } from '@/lib/classroom/load-classroom';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { markStageDeleted, unmarkStageDeleted } from '@/lib/utils/deleted-stages';
+import { resolveSlideMediaState } from '@/components/slide-renderer/use-resolved-slide';
 import { expectDocumentAssetOwnership } from './assert-stage-asset-ownership';
 
 const stageId = 'stage-write-path';
@@ -687,6 +689,10 @@ describe('media orchestrator asset write paths', () => {
     useMediaGenerationStore.setState({
       tasks: { [sharedAssetId]: failedTask(sharedAssetId) },
     });
+    const sourceStatuses: Array<MediaTask['status'] | undefined> = [];
+    const unsubscribe = useMediaGenerationStore.subscribe((state) => {
+      sourceStatuses.push(state.tasks[sharedAssetId]?.status);
+    });
     serveImage('copy-bytes');
 
     mocks.mediaRows.set(`${stageId}:${sharedAssetId}`, {
@@ -698,6 +704,7 @@ describe('media orchestrator asset write paths', () => {
       sceneId: 'scene-copy',
       slideId: 'slide-copy',
     });
+    unsubscribe();
 
     const [originalScene, copiedScene] = mocks.document.scenes;
     const originalRef = originalScene.content.canvas.elements[0].src;
@@ -712,8 +719,11 @@ describe('media orchestrator asset write paths', () => {
     expect(useMediaGenerationStore.getState().tasks[sharedAssetId]).toMatchObject({
       status: 'failed',
       error: 'retry me',
-      retryCount: 1,
+      retryCount: 0,
     });
+    expect(sourceStatuses.length).toBeGreaterThan(0);
+    expect(sourceStatuses.every((status) => status === 'failed')).toBe(true);
+    expect(mocks.beforeDocumentWork).toHaveBeenCalledTimes(1);
     await assertOwnership();
   });
 
@@ -748,9 +758,83 @@ describe('media orchestrator asset write paths', () => {
     expect(useMediaGenerationStore.getState().tasks[sharedAssetId]).toMatchObject({
       status: 'done',
       objectUrl: 'blob:source',
-      retryCount: 1,
+      retryCount: 0,
     });
     await assertOwnership();
+  });
+
+  it('keeps sharers on source bytes while a targeted fork is generating', async () => {
+    const sharedAssetId = await pool.put(new Blob(['original-bytes'], { type: 'image/png' }));
+    mocks.document = documentWithMedia(sharedAssetId, 'image');
+    const copy = structuredClone(mocks.document.scenes[0]);
+    copy.id = 'scene-copy';
+    copy.order = 2;
+    copy.content.canvas.id = 'slide-copy';
+    copy.content.canvas.elements[0].id = 'image-copy';
+    mocks.document.scenes.push(copy);
+    mocks.stageState = {
+      stage: structuredClone(mocks.document.stage),
+      scenes: structuredClone(mocks.document.scenes),
+    };
+    useMediaGenerationStore.setState({ tasks: { [sharedAssetId]: doneTask(sharedAssetId) } });
+    let finishGeneration!: (response: Response) => void;
+    const generation = new Promise<Response>((resolve) => {
+      finishGeneration = resolve;
+    });
+    fetchMock.mockImplementation(async (input: string) => {
+      if (input === '/api/generate/image') return generation;
+      if (input === '/api/proxy-media') {
+        return new Response(new Blob(['fork-bytes'], { type: 'image/png' }), { status: 200 });
+      }
+      throw new Error(`Unexpected fetch: ${input}`);
+    });
+
+    const retrying = retryMediaTask(sharedAssetId, {
+      elementId: 'image-copy',
+      sceneId: 'scene-copy',
+      slideId: 'slide-copy',
+    });
+    await vi.waitFor(() => {
+      expect(useMediaGenerationStore.getState().tasks['image-copy']?.status).toBe('generating');
+    });
+
+    const tasks = useMediaGenerationStore.getState().tasks;
+    const source = resolveSlideMediaState(
+      mocks.document.scenes[0].content.canvas as unknown as Slide,
+      stageId,
+      tasks,
+      { assetUrls: { [sharedAssetId]: 'blob:source-pool' } },
+    );
+    const target = resolveSlideMediaState(
+      mocks.document.scenes[1].content.canvas as unknown as Slide,
+      stageId,
+      tasks,
+      { assetUrls: { [sharedAssetId]: 'blob:source-pool' } },
+    );
+    expect(tasks[sharedAssetId]).toMatchObject({ status: 'done', objectUrl: 'blob:source' });
+    expect(source.byElementId['image-1'].resolution).toEqual({
+      kind: 'url',
+      url: 'blob:source-pool',
+    });
+    expect(source.slide.elements[0]).toMatchObject({ src: 'blob:source-pool' });
+    expect(target.byElementId['image-copy'].resolution).toEqual({ kind: 'pending' });
+    expect(target.slide.elements[0]).toMatchObject({ src: '' });
+
+    finishGeneration(
+      new Response(
+        JSON.stringify({
+          success: true,
+          result: { url: 'https://media.test/image', width: 1024, height: 576 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    await retrying;
+    expect(useMediaGenerationStore.getState().tasks[sharedAssetId]).toMatchObject({
+      status: 'done',
+      objectUrl: 'blob:source',
+      retryCount: 0,
+    });
   });
 
   it('forks a shared ref owned by a scene whiteboard despite the scene slide id', async () => {
@@ -873,8 +957,11 @@ describe('media orchestrator asset write paths', () => {
     });
 
     expect(stage.whiteboard[0].elements[0].src).toBe(sharedAssetId);
-    expect(Object.keys(useMediaGenerationStore.getState().tasks)).toEqual([sharedAssetId]);
     expect(useMediaGenerationStore.getState().tasks[sharedAssetId]?.status).toBe('failed');
+    expect(useMediaGenerationStore.getState().tasks['stage-whiteboard-image']).toMatchObject({
+      status: 'failed',
+      errorCode: 'TARGET_MISSING',
+    });
   });
 
   it('builds a safe retry target for a non-slide scene', () => {
@@ -995,7 +1082,7 @@ describe('media orchestrator asset write paths', () => {
     expect(restoredElement.src).toBe(placeholder);
   });
 
-  it('restores a shared source task after a forked retry fails', async () => {
+  it('marks the targeted fork failed without mutating its shared source task', async () => {
     const sharedAssetId = await pool.put(new Blob(['original-bytes'], { type: 'image/png' }));
     mocks.document = documentWithMedia(sharedAssetId, 'image');
     const copy = structuredClone(mocks.document.scenes[0]);
@@ -1009,6 +1096,10 @@ describe('media orchestrator asset write paths', () => {
       scenes: structuredClone(mocks.document.scenes),
     };
     useMediaGenerationStore.setState({ tasks: { [sharedAssetId]: doneTask(sharedAssetId) } });
+    const sourceStatuses: Array<MediaTask['status'] | undefined> = [];
+    const unsubscribe = useMediaGenerationStore.subscribe((state) => {
+      sourceStatuses.push(state.tasks[sharedAssetId]?.status);
+    });
     fetchMock.mockRejectedValue(new Error('fork generation failed'));
 
     await retryMediaTask(sharedAssetId, {
@@ -1016,14 +1107,33 @@ describe('media orchestrator asset write paths', () => {
       sceneId: 'scene-copy',
       slideId: 'slide-copy',
     });
+    unsubscribe();
 
     expect(useMediaGenerationStore.getState().tasks).toEqual({
       [sharedAssetId]: expect.objectContaining({
         elementId: sharedAssetId,
         status: 'done',
         objectUrl: 'blob:source',
+        retryCount: 0,
+      }),
+      'image-copy': expect.objectContaining({
+        elementId: 'image-copy',
+        status: 'failed',
+        error: 'fork generation failed',
         retryCount: 1,
       }),
+    });
+    expect(sourceStatuses.length).toBeGreaterThan(0);
+    expect(sourceStatuses.every((status) => status === 'done')).toBe(true);
+    const failedTarget = resolveSlideMediaState(
+      mocks.document.scenes[1].content.canvas as unknown as Slide,
+      stageId,
+      useMediaGenerationStore.getState().tasks,
+      { assetUrls: { [sharedAssetId]: 'blob:source-pool' } },
+    );
+    expect(failedTarget.byElementId['image-copy']).toMatchObject({
+      task: { elementId: 'image-copy', status: 'failed', error: 'fork generation failed' },
+      resolution: { kind: 'url', url: 'blob:source-pool', retryable: true },
     });
     expect(mocks.document.scenes[0].content.canvas.elements[0].src).toBe(sharedAssetId);
     expect(mocks.document.scenes[1].content.canvas.elements[0].src).toBe(sharedAssetId);

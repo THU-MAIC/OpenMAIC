@@ -30,6 +30,8 @@ export function VideoElement({ elementInfo, selectElement }: VideoElementProps) 
   const mediaRef = videoMediaRefForResolution(elementInfo);
   const task = useMediaGenerationStore((state) => {
     if (!stageId || !mediaRef) return undefined;
+    const targeted = state.tasks[elementInfo.id];
+    if (targeted?.stageId === stageId) return targeted;
     const direct = state.tasks[mediaRef];
     if (direct?.stageId === stageId) return direct;
     return Object.values(state.tasks).find(

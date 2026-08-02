@@ -44,8 +44,11 @@ function taskForRef(
   tasks: Record<string, MediaTask>,
   ref: string | undefined,
   stageId: string | undefined,
+  targetElementId?: string,
 ): MediaTask | undefined {
   if (!ref || !stageId || isConcreteMediaAddress(ref)) return undefined;
+  const targeted = targetElementId ? tasks[targetElementId] : undefined;
+  if (targeted?.stageId === stageId) return targeted;
   const direct = tasks[ref];
   if (direct?.stageId === stageId) return direct;
   return Object.values(tasks).find(
@@ -105,7 +108,7 @@ export function resolveSlideMediaState(
     if (element.type !== 'image' && element.type !== 'video') return element;
 
     const taskKey = mediaTaskKeyFor(element);
-    const task = taskForRef(tasks, taskKey, stageId);
+    const task = taskForRef(tasks, taskKey, stageId, element.id);
     const ref = element.type === 'video' ? (taskKey ?? element.src) : element.src;
     const resolution = resolveMediaRef(
       ref,
@@ -170,7 +173,7 @@ export function useResolvedSlideMedia(slide: Slide): ResolvedSlideMedia {
     return slide.elements
       .map((element) => {
         const key = mediaTaskKeyFor(element);
-        const task = taskForRef(state.tasks, key, stageId);
+        const task = taskForRef(state.tasks, key, stageId, element.id);
         if (!task) return `${key ?? ''}|`;
         return `${key}|${task.status}|${task.objectUrl ?? ''}|${task.poster ?? ''}|${task.errorCode ?? ''}|`;
       })
