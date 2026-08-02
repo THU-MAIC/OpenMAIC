@@ -136,6 +136,8 @@ Choosing the number is a [semver](https://semver.org/) judgement, and it is your
 - **minor** — new behaviour that existing consumers can ignore
 - **major** — anything an existing consumer must react to
 
+For packages below `1.0.0`, a **minor** bump signals a breaking change and a **patch** bump signals a compatible change, following common 0.x semver practice; the **major** rule applies from `1.0.0`.
+
 Be deliberate with `@openmaic/dsl`. It is the contract the other packages and downstream deployments validate against, so a change that narrows what an existing document may contain is a breaking change even when the diff looks small.
 
 You never publish anything yourself. Once your PR is merged, a version that is not yet on the registry is released automatically, and a `@openmaic/<name>@<version>` tag is written afterwards to record it. That tag is a marker, not a trigger: pushing one does not release anything.

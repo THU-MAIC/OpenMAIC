@@ -26,6 +26,67 @@ const bytes = (s: string): Uint8Array => new TextEncoder().encode(s);
 // are UTF-8 either way, so `bytes(s)` stays the source of truth for comparison.
 const blob = (s: string, type = 'text/plain'): Blob => new Blob([s], { type });
 
+// These are the base32 renderings of six fixed 16-byte inputs.
+const SCRIPTED_ASSET_IDS = [
+  'ast_00000000000000000000000000',
+  'ast_040g2081040g2081040g208104',
+  'ast_081040g2081040g2081040g208',
+  'ast_0c1g60r30c1g60r30c1g60r30c',
+  'ast_0g2081040g2081040g2081040g',
+  'ast_0m2ga1850m2ga1850m2ga1850m',
+].map(toAssetId);
+
+interface ScriptedAllocator {
+  ids: readonly AssetId[];
+  factory: () => AssetId;
+  draws: () => number;
+}
+
+function scriptedAllocator(count: number): ScriptedAllocator {
+  const ids = SCRIPTED_ASSET_IDS.slice(0, count);
+  if (ids.length !== count) throw new Error('Not enough scripted asset ids.');
+
+  let draws = 0;
+  return {
+    ids,
+    factory: () => {
+      const id = ids[draws];
+      draws += 1;
+      if (id === undefined) throw new Error('Scripted asset id allocator exhausted.');
+      return id;
+    },
+    draws: () => draws,
+  };
+}
+
+async function runHistory(
+  makeStore: AssetStoreContractFactories['makeStore'],
+  withAllocator: AssetStoreContractFactories['withAllocator'],
+  history: readonly string[],
+  inspect?: (
+    store: StorageProvider,
+    ids: readonly AssetRef[],
+    allocator: ScriptedAllocator,
+  ) => Promise<void>,
+): Promise<AssetRef[]> {
+  const allocator = scriptedAllocator(history.length);
+  return withAllocator(allocator.factory, async () => {
+    const store = makeStore();
+    const ids: AssetRef[] = [];
+    for (const [ordinal, content] of history.entries()) {
+      const id = await store.put(blob(content));
+      expect(id).toBe(allocator.ids[ordinal]);
+      ids.push(id);
+      expect(allocator.draws()).toBe(ids.length);
+    }
+
+    expect(ids).toEqual(allocator.ids);
+    expect(allocator.draws()).toBe(ids.length);
+    await inspect?.(store, ids, allocator);
+    return ids;
+  });
+}
+
 function base32(digest: Uint8Array, alphabet: string): string {
   let encoded = '';
   let accumulator = 0;
@@ -256,51 +317,26 @@ export function runAssetStoreContract(
     });
 
     describe('allocation independence', () => {
-      const pairedScriptedIds = [
-        'ast_00000000000000000000000000',
-        'ast_040g2081040g2081040g208104',
-        'ast_081040g2081040g2081040g208',
-      ].map(toAssetId);
-
-      const runPairedHistory = async (history: readonly string[]): Promise<AssetRef[]> => {
-        let allocatorCalls = 0;
-        const allocator = (): AssetId => {
-          const id = pairedScriptedIds[allocatorCalls];
-          allocatorCalls += 1;
-          if (id === undefined) throw new Error('Scripted asset id allocator exhausted.');
-          return id;
-        };
-
-        return withAllocator(allocator, async () => {
-          // Each history gets a fresh store but the same ordinal-by-ordinal
-          // allocator script, making prior byte existence the only difference.
-          const s = makeStore();
-          const returnedIds: AssetRef[] = [];
-          for (const content of history) {
-            const ordinal = returnedIds.length;
-            const id = await s.put(blob(content));
-            expect(id).toBe(pairedScriptedIds[ordinal]);
-            returnedIds.push(id);
-            expect(allocatorCalls).toBe(returnedIds.length);
-          }
-          return returnedIds;
-        });
-      };
-
       test('ordinal 2 is byte-identical for duplicate and fresh puts', async () => {
-        const duplicateAtTwo = await runPairedHistory(['allocation A', 'allocation A']);
-        const freshAtTwo = await runPairedHistory(['allocation A', 'allocation B']);
+        const duplicateAtTwo = await runHistory(makeStore, withAllocator, [
+          'allocation A',
+          'allocation A',
+        ]);
+        const freshAtTwo = await runHistory(makeStore, withAllocator, [
+          'allocation A',
+          'allocation B',
+        ]);
 
         expect(duplicateAtTwo[1]).toBe(freshAtTwo[1]);
       });
 
       test('ordinal 3 is byte-identical for duplicate and fresh puts', async () => {
-        const duplicateAtThree = await runPairedHistory([
+        const duplicateAtThree = await runHistory(makeStore, withAllocator, [
           'allocation A',
           'allocation B',
           'allocation A',
         ]);
-        const freshAtThree = await runPairedHistory([
+        const freshAtThree = await runHistory(makeStore, withAllocator, [
           'allocation A',
           'allocation B',
           'allocation C',
@@ -310,55 +346,29 @@ export function runAssetStoreContract(
       });
 
       test('every put returns exactly one allocator output regardless of prior existence', async () => {
-        // These are the base32 renderings of six fixed 16-byte inputs.
-        const scriptedIds = [
-          'ast_00000000000000000000000000',
-          'ast_040g2081040g2081040g208104',
-          'ast_081040g2081040g2081040g208',
-          'ast_0c1g60r30c1g60r30c1g60r30c',
-          'ast_0g2081040g2081040g2081040g',
-          'ast_0m2ga1850m2ga1850m2ga1850m',
-        ].map(toAssetId);
-        let allocatorCalls = 0;
-        const allocator = (): AssetId => {
-          const id = scriptedIds[allocatorCalls];
-          allocatorCalls += 1;
-          if (id === undefined) throw new Error('Scripted asset id allocator exhausted.');
-          return id;
-        };
-        await withAllocator(allocator, async () => {
-          // Use the same construction callback as every other contract test.
-          // Instrumentation wraps the backend's production allocation source;
-          // it does not construct a second, test-only store shape.
-          const s = makeStore();
-          const returnedIds: AssetRef[] = [];
-          const put = async (content: string): Promise<void> => {
-            const expectedId = scriptedIds[returnedIds.length];
-            returnedIds.push(await s.put(blob(content)));
-            expect(returnedIds.at(-1)).toBe(expectedId);
-            expect(allocatorCalls).toBe(returnedIds.length);
-          };
-
-          await put('allocation A'); // fresh A
-          await put('allocation A'); // duplicate A
-          await put('allocation B'); // fresh B
-          await put('allocation B'); // duplicate B
-          await put('allocation A'); // duplicate A
-          await put('allocation C'); // fresh C
-
-          expect(returnedIds).toEqual(scriptedIds.slice(0, returnedIds.length));
-          expect(allocatorCalls).toBe(returnedIds.length);
-
-          if (typeof (s as Partial<ReplaceCapableStore>).replace === 'function') {
-            const callsBeforeReplace = allocatorCalls;
-            await (s as ReplaceCapableStore).replace(
-              returnedIds[0] as AssetId,
-              blob('allocation replacement'),
-            );
-            expect(allocatorCalls).toBe(callsBeforeReplace);
-            expect(await bytesAt(s, returnedIds[0])).toEqual(bytes('allocation replacement'));
-          }
-        });
+        await runHistory(
+          makeStore,
+          withAllocator,
+          [
+            'allocation A', // fresh A
+            'allocation A', // duplicate A
+            'allocation B', // fresh B
+            'allocation B', // duplicate B
+            'allocation A', // duplicate A
+            'allocation C', // fresh C
+          ],
+          async (store, ids, allocator) => {
+            if (typeof (store as Partial<ReplaceCapableStore>).replace === 'function') {
+              const drawsBeforeReplace = allocator.draws();
+              await (store as ReplaceCapableStore).replace(
+                ids[0] as AssetId,
+                blob('allocation replacement'),
+              );
+              expect(allocator.draws()).toBe(drawsBeforeReplace);
+              expect(await bytesAt(store, ids[0])).toEqual(bytes('allocation replacement'));
+            }
+          },
+        );
       });
     });
 
