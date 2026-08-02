@@ -1,6 +1,7 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { BrowserAssetStore } from '@openmaic/storage';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearAssetPool, putAsset, replaceAsset } from '@/lib/media/asset-pool';
 import { assetRefExists, trackAssetUrl, withAssetUrl } from '@/lib/media/use-asset-url';
 
 describe('asset URL ownership', () => {
@@ -88,6 +89,37 @@ describe('asset URL ownership', () => {
     expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
 
     await pool.close();
+  });
+
+  it('publishes same-id replacement bytes to an active lease', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory());
+    const ref = await putAsset(new Blob(['old'], { type: 'text/plain' }));
+    const urls: string[] = [];
+    let resolveFirst!: () => void;
+    let resolveSecond!: () => void;
+    const first = new Promise<void>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const second = new Promise<void>((resolve) => {
+      resolveSecond = resolve;
+    });
+    const cleanup = trackAssetUrl(ref, (url) => {
+      if (!url) return;
+      urls.push(url);
+      if (urls.length === 1) resolveFirst();
+      if (urls.length === 2) resolveSecond();
+    });
+
+    await first;
+    await replaceAsset(ref, new Blob(['new'], { type: 'text/plain' }));
+    await second;
+
+    expect(urls).toEqual(['blob:test-1', 'blob:test-2']);
+    await expect(Promise.all(created.map((blob) => blob.text()))).resolves.toEqual(['old', 'new']);
+
+    cleanup();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await clearAssetPool();
   });
 
   it('waits for an in-flight final release before reacquiring the ref', async () => {

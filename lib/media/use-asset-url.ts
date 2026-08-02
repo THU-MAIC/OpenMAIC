@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { BrowserAssetStore } from '@openmaic/storage';
 import { getAssetPool } from './asset-pool';
+import { observeAssetReplacements, type AssetReplacementPool } from './asset-replacement-events';
 
 const EMPTY_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({});
 const EMPTY_ASSET_LEASES: Readonly<Record<string, AssetUrlLeaseState>> = Object.freeze({});
@@ -18,8 +19,15 @@ interface OwnedResolution {
   resolution: Promise<string | null>;
 }
 
+interface AssetUrlTracker {
+  active: boolean;
+  observed?: Promise<string | null>;
+  readonly onResolved: (url: string | null) => void;
+}
+
 const ownedResolutions = new WeakMap<object, Map<string, OwnedResolution>>();
 const pendingReleases = new WeakMap<object, Map<string, Promise<void>>>();
+const activeTrackers = new WeakMap<object, Map<string, Set<AssetUrlTracker>>>();
 
 function acquireAssetUrl(
   ref: string,
@@ -79,6 +87,58 @@ function acquireAssetUrl(
   };
 }
 
+function observeTracker(
+  ref: string,
+  pool: AssetPoolView,
+  owned: OwnedResolution,
+  tracker: AssetUrlTracker,
+): void {
+  const resolution = owned.resolution;
+  if (tracker.observed === resolution) return;
+  tracker.observed = resolution;
+  void resolution.then(
+    (url) => {
+      if (
+        tracker.active &&
+        tracker.observed === resolution &&
+        ownedResolutions.get(pool)?.get(ref) === owned &&
+        owned.resolution === resolution
+      ) {
+        tracker.onResolved(url);
+      }
+    },
+    () => {
+      if (
+        tracker.active &&
+        tracker.observed === resolution &&
+        ownedResolutions.get(pool)?.get(ref) === owned &&
+        owned.resolution === resolution
+      ) {
+        tracker.onResolved(null);
+      }
+    },
+  );
+}
+
+/** Re-resolve a same-id replacement and publish it to every mounted lease. */
+export async function invalidateAssetUrlLeaseCache(
+  ref: string,
+  pool: AssetReplacementPool = getAssetPool(),
+): Promise<void> {
+  const owned = ownedResolutions.get(pool)?.get(ref);
+  if (!owned || owned.owners === 0) return;
+  owned.resolution = pool.resolve(ref);
+  for (const tracker of activeTrackers.get(pool)?.get(ref) ?? []) {
+    observeTracker(ref, pool, owned, tracker);
+  }
+  await owned.resolution.then(
+    () => undefined,
+    () => undefined,
+  );
+}
+
+observeAssetReplacements(invalidateAssetUrlLeaseCache);
+
 /** Run work while holding one shared, scoped URL lease. */
 export async function withAssetUrl<T>(
   ref: string,
@@ -121,20 +181,28 @@ export function trackAssetUrl(
   pool: AssetPoolView = getAssetPool(),
 ): () => void {
   const lease = acquireAssetUrl(ref, pool);
-  let active = true;
-  void lease.resolution.then(
-    (url) => {
-      if (active) onResolved(url);
-    },
-    () => {
-      if (active) onResolved(null);
-    },
-  );
+  const owned = ownedResolutions.get(pool)?.get(ref);
+  if (!owned) throw new Error('Asset URL lease ownership was not initialized.');
+  let trackersByRef = activeTrackers.get(pool);
+  if (!trackersByRef) {
+    trackersByRef = new Map();
+    activeTrackers.set(pool, trackersByRef);
+  }
+  let trackers = trackersByRef.get(ref);
+  if (!trackers) {
+    trackers = new Set();
+    trackersByRef.set(ref, trackers);
+  }
+  const tracker: AssetUrlTracker = { active: true, onResolved };
+  trackers.add(tracker);
+  observeTracker(ref, pool, owned, tracker);
   let cleaned = false;
   return () => {
     if (cleaned) return;
     cleaned = true;
-    active = false;
+    tracker.active = false;
+    trackers?.delete(tracker);
+    if (trackers?.size === 0) trackersByRef?.delete(ref);
     // BrowserAssetStore URLs are immutable Blob snapshots pinned until
     // release. App-level ownership prevents one renderer surface from revoking
     // a snapshot while another surface still uses the shared singleton URL.

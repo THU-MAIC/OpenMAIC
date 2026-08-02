@@ -1785,6 +1785,7 @@ describe('database runtime chat integration', () => {
       dbName: 'clear-without-web-locks',
     });
     const { clearDatabase, db } = await import('@/lib/utils/database');
+    const { putAsset } = await import('@/lib/media/asset-pool');
     const { getDocumentStore } = await import('@/lib/document-store');
     await db.stages.put({
       id: 'stage-clear-no-lock',
@@ -1812,6 +1813,8 @@ describe('database runtime chat integration', () => {
     });
     localStorage.setItem('maic:device:document-migration:stage-clear-document', '{}');
     localStorage.setItem('maic:device:editor-current-scene:stage-clear-document', '{}');
+    await putAsset(new Blob(['private generated media'], { type: 'text/plain' }));
+    expect((await indexedDB.databases()).map((entry) => entry.name)).toContain('maic-asset-pool');
 
     await expect(clearDatabase(runtimeStore)).resolves.toBeUndefined();
     await expect(runtimeStore.listSessions('stage-clear-no-lock', learnerKey)).resolves.toEqual([]);
@@ -1822,6 +1825,9 @@ describe('database runtime chat integration', () => {
     expect(
       localStorage.getItem('maic:device:editor-current-scene:stage-clear-document'),
     ).toBeNull();
+    expect((await indexedDB.databases()).map((entry) => entry.name)).not.toContain(
+      'maic-asset-pool',
+    );
   });
 
   it('round-trips versioned document backups including outline envelopes', async () => {
