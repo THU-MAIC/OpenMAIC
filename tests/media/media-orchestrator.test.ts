@@ -989,7 +989,10 @@ describe('media orchestrator asset write paths', () => {
     );
     expect(reconciled.scene.content.type).toBe('slide');
     if (reconciled.scene.content.type !== 'slide') throw new Error('Expected a slide scene');
-    expect(reconciled.scene.content.canvas.elements[0].src).toBe(placeholder);
+    const restoredElement = reconciled.scene.content.canvas.elements[0];
+    expect(restoredElement.type).toBe('image');
+    if (restoredElement.type !== 'image') throw new Error('Expected an image element');
+    expect(restoredElement.src).toBe(placeholder);
   });
 
   it('restores a shared source task after a forked retry fails', async () => {
