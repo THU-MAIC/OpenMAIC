@@ -14,7 +14,11 @@ import { createLogger } from '@/lib/logger';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useSceneData } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
-import { useResolvedVideoMedia, videoMediaRefForResolution } from './useResolvedVideoMedia';
+import {
+  selectVideoMediaTaskForElement,
+  useResolvedVideoMedia,
+  videoMediaRefForResolution,
+} from './useResolvedVideoMedia';
 
 const log = createLogger('BaseVideoElement');
 
@@ -39,17 +43,9 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
   const stageId = useMediaStageId();
   const mediaGenerationDisabled = useSettingsStore((state) => !state.videoGenerationEnabled);
   const mediaRef = videoMediaRefForResolution(elementInfo);
-  const task = useMediaGenerationStore((s) => {
-    if (!mediaRef) return undefined;
-    const targeted = s.tasks[elementInfo.id];
-    if (targeted?.stageId === stageId) return targeted;
-    const t = s.tasks[mediaRef];
-    if (t && t.stageId !== stageId) return undefined;
-    if (t) return t;
-    return Object.values(s.tasks).find(
-      (candidate) => candidate.stageId === stageId && candidate.placeholderRef === mediaRef,
-    );
-  });
+  const task = useMediaGenerationStore((state) =>
+    selectVideoMediaTaskForElement(state.tasks, elementInfo, stageId),
+  );
   const { resolution, resolvedSrc, resolvedPoster } = useResolvedVideoMedia(
     elementInfo,
     task,
