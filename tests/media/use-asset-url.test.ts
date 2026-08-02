@@ -2,7 +2,14 @@ import { IDBFactory } from 'fake-indexeddb';
 import { BrowserAssetStore } from '@openmaic/storage';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAssetPool, putAsset, replaceAsset } from '@/lib/media/asset-pool';
-import { assetRefExists, trackAssetUrl, withAssetUrl } from '@/lib/media/use-asset-url';
+import { resolveMediaRef } from '@/lib/media/resolve-media-ref';
+import {
+  assetRefExists,
+  createAssetUrlLeaseBatchPublisher,
+  invalidateAssetUrlLeaseCache,
+  trackAssetUrl,
+  withAssetUrl,
+} from '@/lib/media/use-asset-url';
 
 describe('asset URL ownership', () => {
   let created: Blob[];
@@ -153,5 +160,138 @@ describe('asset URL ownership', () => {
     await expect(second).resolves.toBe('blob:second');
     expect(pool.resolve).toHaveBeenCalledTimes(2);
     expect(pool.release).toHaveBeenCalledTimes(2);
+  });
+
+  it('publishes a complete initial batch and every later replacement snapshot', () => {
+    const publications: Array<Readonly<Record<string, unknown>>> = [];
+    const publish = createAssetUrlLeaseBatchPublisher(['asset-a', 'asset-b'], (leases) => {
+      publications.push(leases);
+    });
+
+    publish('asset-a', 'blob:a-old');
+    expect(publications).toEqual([]);
+    publish('asset-b', 'blob:b');
+    expect(publications).toEqual([
+      {
+        'asset-a': { status: 'resolved', url: 'blob:a-old' },
+        'asset-b': { status: 'resolved', url: 'blob:b' },
+      },
+    ]);
+
+    publish('asset-a', 'blob:a-new');
+    expect(publications.at(-1)).toEqual({
+      'asset-a': { status: 'resolved', url: 'blob:a-new' },
+      'asset-b': { status: 'resolved', url: 'blob:b' },
+    });
+    expect(
+      resolveMediaRef(
+        'asset-a',
+        { status: 'done', objectUrl: 'blob:task-new', retryCount: 1 },
+        publications.at(-1)?.['asset-a'] as {
+          status: 'resolved';
+          url: string;
+        },
+      ),
+    ).toEqual({ kind: 'url', url: 'blob:a-new' });
+  });
+
+  it('does not let an early replacement complete a batch before every ref resolves', () => {
+    const publications: Array<Readonly<Record<string, unknown>>> = [];
+    const publish = createAssetUrlLeaseBatchPublisher(['asset-a', 'asset-b'], (leases) => {
+      publications.push(leases);
+    });
+
+    publish('asset-a', 'blob:a-old');
+    publish('asset-a', 'blob:a-new');
+    expect(publications).toEqual([]);
+    publish('asset-b', 'blob:b');
+
+    expect(publications).toEqual([
+      {
+        'asset-a': { status: 'resolved', url: 'blob:a-new' },
+        'asset-b': { status: 'resolved', url: 'blob:b' },
+      },
+    ]);
+  });
+
+  it('serializes replacement refresh behind an unmount release before a new mount resolves', async () => {
+    let finishRelease!: () => void;
+    let releaseStarted!: () => void;
+    const releasing = new Promise<void>((resolve) => {
+      finishRelease = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      releaseStarted = resolve;
+    });
+    const events: string[] = [];
+    const pool = {
+      resolve: vi
+        .fn<() => Promise<string | null>>()
+        .mockImplementationOnce(async () => {
+          events.push('resolve-old');
+          return 'blob:old';
+        })
+        .mockImplementation(async () => {
+          events.push('resolve-new');
+          return 'blob:new';
+        }),
+      release: vi.fn(async () => {
+        events.push('release-start');
+        releaseStarted();
+        await releasing;
+        events.push('release-finish');
+      }),
+    };
+
+    let cleanupOld!: () => void;
+    await new Promise<string | null>((resolve) => {
+      cleanupOld = trackAssetUrl('asset', resolve, pool);
+    });
+    cleanupOld();
+    await started;
+
+    const mountedUrls: Array<string | null> = [];
+    const cleanupNew = trackAssetUrl('asset', (url) => mountedUrls.push(url), pool);
+    const invalidation = invalidateAssetUrlLeaseCache('asset', pool);
+    await Promise.resolve();
+    expect(pool.resolve).toHaveBeenCalledTimes(1);
+
+    finishRelease();
+    await invalidation;
+    await vi.waitFor(() => expect(mountedUrls).toEqual(['blob:new']));
+    expect(events.indexOf('release-finish')).toBeLessThan(events.indexOf('resolve-new'));
+
+    cleanupNew();
+    await vi.waitFor(() => expect(pool.release).toHaveBeenCalledTimes(2));
+  });
+
+  it('evicts a rejected replacement refresh so a later acquirer can recover', async () => {
+    const pool = {
+      resolve: vi
+        .fn<() => Promise<string | null>>()
+        .mockResolvedValueOnce('blob:old')
+        .mockRejectedValueOnce(new Error('transient resolve failure'))
+        .mockResolvedValueOnce('blob:recovered'),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const updates: Array<string | null> = [];
+    let cleanup!: () => void;
+    await new Promise<void>((resolve) => {
+      cleanup = trackAssetUrl(
+        'asset',
+        (url) => {
+          updates.push(url);
+          resolve();
+        },
+        pool,
+      );
+    });
+
+    await invalidateAssetUrlLeaseCache('asset', pool);
+    await vi.waitFor(() => expect(updates).toEqual(['blob:old', null]));
+    await expect(withAssetUrl('asset', (url) => url, pool)).resolves.toBe('blob:recovered');
+    expect(pool.resolve).toHaveBeenCalledTimes(3);
+
+    cleanup();
   });
 });

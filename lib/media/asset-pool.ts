@@ -1,10 +1,17 @@
 import { BrowserAssetStore, toAssetId } from '@openmaic/storage';
 import type { AssetMeta } from '@openmaic/dsl';
-import { notifyAssetReplaced } from './asset-replacement-events';
+import { notifyAssetReplaced, observeAssetReplacements } from './asset-replacement-events';
 
 const ASSET_POOL_DATABASE_NAME = 'maic-asset-pool';
 let pool: BrowserAssetStore | undefined;
 let clearing: Promise<void> | undefined;
+
+// Replacement notifications originate here, so registration must not depend
+// on a renderer importing the React lease module first.
+observeAssetReplacements(async (ref, current) => {
+  const { invalidateAssetUrlLeaseCache } = await import('./use-asset-url');
+  await invalidateAssetUrlLeaseCache(ref, current);
+});
 
 /** Lazy browser-wide asset pool. Construction is forbidden during SSR. */
 export function getAssetPool(): BrowserAssetStore {

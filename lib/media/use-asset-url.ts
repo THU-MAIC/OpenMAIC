@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { BrowserAssetStore } from '@openmaic/storage';
 import { getAssetPool } from './asset-pool';
-import { observeAssetReplacements, type AssetReplacementPool } from './asset-replacement-events';
+import type { AssetReplacementPool } from './asset-replacement-events';
 
 const EMPTY_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({});
 const EMPTY_ASSET_LEASES: Readonly<Record<string, AssetUrlLeaseState>> = Object.freeze({});
@@ -29,6 +29,13 @@ const ownedResolutions = new WeakMap<object, Map<string, OwnedResolution>>();
 const pendingReleases = new WeakMap<object, Map<string, Promise<void>>>();
 const activeTrackers = new WeakMap<object, Map<string, Set<AssetUrlTracker>>>();
 
+function resolveAfterPendingRelease(ref: string, pool: AssetPoolView): Promise<string | null> {
+  const pendingRelease = pendingReleases.get(pool)?.get(ref);
+  return pendingRelease
+    ? pendingRelease.catch(() => undefined).then(() => pool.resolve(ref))
+    : pool.resolve(ref);
+}
+
 function acquireAssetUrl(
   ref: string,
   pool: AssetPoolView = getAssetPool(),
@@ -40,12 +47,9 @@ function acquireAssetUrl(
   }
   let owned = byRef.get(ref);
   if (!owned) {
-    const pendingRelease = pendingReleases.get(pool)?.get(ref);
     owned = {
       owners: 0,
-      resolution: pendingRelease
-        ? pendingRelease.catch(() => undefined).then(() => pool.resolve(ref))
-        : pool.resolve(ref),
+      resolution: resolveAfterPendingRelease(ref, pool),
     };
     byRef.set(ref, owned);
   }
@@ -127,17 +131,22 @@ export async function invalidateAssetUrlLeaseCache(
 ): Promise<void> {
   const owned = ownedResolutions.get(pool)?.get(ref);
   if (!owned || owned.owners === 0) return;
-  owned.resolution = pool.resolve(ref);
+  const resolution = resolveAfterPendingRelease(ref, pool);
+  owned.resolution = resolution;
   for (const tracker of activeTrackers.get(pool)?.get(ref) ?? []) {
     observeTracker(ref, pool, owned, tracker);
   }
-  await owned.resolution.then(
+  await resolution.then(
     () => undefined,
-    () => undefined,
+    () => {
+      // Do not retain a rejected refresh for later acquirers. Mounted trackers
+      // still receive the miss, while the next lease gets an independent retry.
+      if (ownedResolutions.get(pool)?.get(ref) === owned && owned.resolution === resolution) {
+        ownedResolutions.get(pool)?.delete(ref);
+      }
+    },
   );
 }
-
-observeAssetReplacements(invalidateAssetUrlLeaseCache);
 
 /** Run work while holding one shared, scoped URL lease. */
 export async function withAssetUrl<T>(
@@ -258,6 +267,30 @@ export function useAssetUrls(refs: readonly string[]): Readonly<Record<string, s
   return Object.keys(urls).length === 0 ? EMPTY_ASSET_URLS : urls;
 }
 
+/** Collect a batch's first result per ref, then publish every later refresh. */
+export function createAssetUrlLeaseBatchPublisher(
+  refs: readonly string[],
+  publish: (leases: Readonly<Record<string, AssetUrlLeaseState>>) => void,
+): (ref: string, url: string | null) => void {
+  const uniqueRefs = [...new Set(refs)];
+  const leases: Record<string, AssetUrlLeaseState> = Object.fromEntries(
+    uniqueRefs.map((ref) => [ref, { status: 'pending' } satisfies AssetUrlLeaseState]),
+  );
+  const resolvedRefs = new Set<string>();
+  let initialPublished = false;
+
+  return (ref, url) => {
+    if (!Object.hasOwn(leases, ref)) return;
+    leases[ref] = url ? { status: 'resolved', url } : { status: 'missing' };
+    resolvedRefs.add(ref);
+    if (!initialPublished) {
+      if (resolvedRefs.size !== uniqueRefs.length) return;
+      initialPublished = true;
+    }
+    publish({ ...leases });
+  };
+}
+
 /** Batch hook preserving pending/resolved/missing for the media state machine. */
 export function useAssetUrlLeases(
   refs: readonly string[],
@@ -278,38 +311,26 @@ export function useAssetUrlLeases(
       return;
     }
     let active = true;
-    let remaining = currentRefs.length;
-    const leases: Record<string, AssetUrlLeaseState> = Object.fromEntries(
-      currentRefs.map((ref) => [ref, { status: 'pending' } satisfies AssetUrlLeaseState]),
-    );
-    const cleanups = currentRefs.map((ref) =>
-      trackAssetUrl(
-        ref,
-        (url) => {
-          leases[ref] = url ? { status: 'resolved', url } : { status: 'missing' };
-          remaining -= 1;
-          if (active && remaining === 0) {
-            setResolved((current) => {
-              const previous = current?.signature === signature ? current.leases : undefined;
-              if (previous) {
-                const keys = Object.keys(leases);
-                if (
-                  keys.length === Object.keys(previous).length &&
-                  keys.every((key) => JSON.stringify(previous[key]) === JSON.stringify(leases[key]))
-                ) {
-                  return current;
-                }
-              }
-              return {
-                signature,
-                leases,
-              };
-            });
+    const publish = createAssetUrlLeaseBatchPublisher(currentRefs, (leases) => {
+      if (!active) return;
+      setResolved((current) => {
+        const previous = current?.signature === signature ? current.leases : undefined;
+        if (previous) {
+          const keys = Object.keys(leases);
+          if (
+            keys.length === Object.keys(previous).length &&
+            keys.every((key) => JSON.stringify(previous[key]) === JSON.stringify(leases[key]))
+          ) {
+            return current;
           }
-        },
-        pool,
-      ),
-    );
+        }
+        return {
+          signature,
+          leases: { ...leases },
+        };
+      });
+    });
+    const cleanups = currentRefs.map((ref) => trackAssetUrl(ref, (url) => publish(ref, url), pool));
     return () => {
       active = false;
       for (const cleanup of cleanups) cleanup();
