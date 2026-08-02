@@ -13,6 +13,7 @@ import {
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { useMediaGenerationStore, type MediaTask } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
+import { resolveMediaTaskForElement } from '@/lib/media/media-task-resolution';
 
 export interface ResolvedImageSrc {
   /**
@@ -84,16 +85,9 @@ export function resolveImageSrc(
 export function useResolvedImageSrc(elementInfo: PPTImageElement): ResolvedImageSrc {
   const stageId = useMediaStageId();
   const mediaGenerationDisabled = useSettingsStore((state) => !state.imageGenerationEnabled);
-  const task = useMediaGenerationStore((s) => {
-    if (!stageId || isConcreteMediaAddress(elementInfo.src)) return undefined;
-    const targeted = s.tasks[elementInfo.id];
-    if (targeted?.stageId === stageId) return targeted;
-    const direct = s.tasks[elementInfo.src];
-    if (direct?.stageId === stageId) return direct;
-    return Object.values(s.tasks).find(
-      (candidate) => candidate.stageId === stageId && candidate.placeholderRef === elementInfo.src,
-    );
-  });
+  const task = useMediaGenerationStore((state) =>
+    resolveMediaTaskForElement(state.tasks, elementInfo, stageId),
+  );
   const resolution = useResolvedMediaRef(elementInfo.src, task, mediaGenerationDisabled);
   return {
     resolvedSrc: renderableMediaUrl(resolution) ?? '',

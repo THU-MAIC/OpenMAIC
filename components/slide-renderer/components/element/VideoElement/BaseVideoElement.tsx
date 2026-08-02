@@ -14,11 +14,8 @@ import { createLogger } from '@/lib/logger';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useSceneData } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
-import {
-  selectVideoMediaTaskForElement,
-  useResolvedVideoMedia,
-  videoMediaRefForResolution,
-} from './useResolvedVideoMedia';
+import { resolveMediaTaskForElement } from '@/lib/media/media-task-resolution';
+import { useResolvedVideoMedia, videoMediaRefForResolution } from './useResolvedVideoMedia';
 
 const log = createLogger('BaseVideoElement');
 
@@ -44,7 +41,7 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
   const mediaGenerationDisabled = useSettingsStore((state) => !state.videoGenerationEnabled);
   const mediaRef = videoMediaRefForResolution(elementInfo);
   const task = useMediaGenerationStore((state) =>
-    selectVideoMediaTaskForElement(state.tasks, elementInfo, stageId),
+    resolveMediaTaskForElement(state.tasks, elementInfo, stageId),
   );
   const { resolution, resolvedSrc, resolvedPoster } = useResolvedVideoMedia(
     elementInfo,

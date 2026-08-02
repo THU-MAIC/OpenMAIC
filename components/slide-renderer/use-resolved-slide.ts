@@ -1,10 +1,9 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { PPTElement, Slide } from '@openmaic/dsl';
+import type { Slide } from '@openmaic/dsl';
 import type { MediaTask } from '@/lib/store/media-generation';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
-import { getVideoMediaRefForElement } from '@/lib/media/video-manifest';
 import { useAssetUrlLeases, type AssetUrlLeaseState } from '@/lib/media/use-asset-url';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -15,6 +14,10 @@ import {
   resolveMediaRef,
   type MediaResolution,
 } from '@/lib/media/resolve-media-ref';
+import {
+  mediaTaskRefForElement,
+  resolveMediaTaskForElement,
+} from '@/lib/media/media-task-resolution';
 
 export interface ResolvedSlideMediaEntry {
   readonly ref: string | undefined;
@@ -27,17 +30,6 @@ export interface ResolvedSlideMedia {
   readonly slide: Slide;
   readonly byElementId: Readonly<Record<string, ResolvedSlideMediaEntry>>;
   readonly backgroundResolution?: MediaResolution;
-}
-
-function mediaTaskKeyFor(el: PPTElement): string | undefined {
-  if (el.type === 'video') {
-    return (
-      getVideoMediaRefForElement(el) ??
-      (el.src && !isConcreteMediaAddress(el.src) ? el.src : undefined)
-    );
-  }
-  if (el.type === 'image' && el.src && !isConcreteMediaAddress(el.src)) return el.src;
-  return undefined;
 }
 
 function taskForRef(
@@ -107,8 +99,8 @@ export function resolveSlideMediaState(
   const elements = slide.elements.map((element) => {
     if (element.type !== 'image' && element.type !== 'video') return element;
 
-    const taskKey = mediaTaskKeyFor(element);
-    const task = taskForRef(tasks, taskKey, stageId, element.id);
+    const taskKey = mediaTaskRefForElement(element);
+    const task = resolveMediaTaskForElement(tasks, element, stageId);
     const ref = element.type === 'video' ? (taskKey ?? element.src) : element.src;
     const sourceRef =
       element.type === 'video' && isConcreteMediaAddress(element.src) ? element.src : ref;
@@ -174,8 +166,8 @@ export function useResolvedSlideMedia(slide: Slide): ResolvedSlideMedia {
     if (!stageId) return '';
     return slide.elements
       .map((element) => {
-        const key = mediaTaskKeyFor(element);
-        const task = taskForRef(state.tasks, key, stageId, element.id);
+        const key = mediaTaskRefForElement(element);
+        const task = resolveMediaTaskForElement(state.tasks, element, stageId);
         if (!task) return `${key ?? ''}|`;
         return `${key}|${task.status}|${task.objectUrl ?? ''}|${task.poster ?? ''}|${task.errorCode ?? ''}|`;
       })
@@ -196,7 +188,7 @@ export function useResolvedSlideMedia(slide: Slide): ResolvedSlideMedia {
     const values: string[] = [];
     for (const element of slide.elements) {
       if (element.type === 'image' || element.type === 'video') {
-        const source = mediaTaskKeyFor(element) ?? element.src;
+        const source = mediaTaskRefForElement(element) ?? element.src;
         if (source && !isConcreteMediaAddress(source)) values.push(source);
       }
       if (element.type === 'video' && element.poster && !isConcreteMediaAddress(element.poster)) {

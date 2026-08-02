@@ -11,6 +11,7 @@ import { useSceneData } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
 import { mediaRetryTarget, retryMediaTask } from '@/lib/media/media-orchestrator';
 import { useResolvedVideoMedia, videoMediaRefForResolution } from './useResolvedVideoMedia';
+import { resolveMediaTaskForElement } from '@/lib/media/media-task-resolution';
 
 export interface VideoElementProps {
   elementInfo: PPTVideoElement;
@@ -28,16 +29,9 @@ export function VideoElement({ elementInfo, selectElement }: VideoElementProps) 
   const stageId = useMediaStageId();
   const mediaGenerationDisabled = useSettingsStore((state) => !state.videoGenerationEnabled);
   const mediaRef = videoMediaRefForResolution(elementInfo);
-  const task = useMediaGenerationStore((state) => {
-    if (!stageId || !mediaRef) return undefined;
-    const targeted = state.tasks[elementInfo.id];
-    if (targeted?.stageId === stageId) return targeted;
-    const direct = state.tasks[mediaRef];
-    if (direct?.stageId === stageId) return direct;
-    return Object.values(state.tasks).find(
-      (candidate) => candidate.stageId === stageId && candidate.placeholderRef === mediaRef,
-    );
-  });
+  const task = useMediaGenerationStore((state) =>
+    resolveMediaTaskForElement(state.tasks, elementInfo, stageId),
+  );
   const { resolution, resolvedSrc, resolvedPoster } = useResolvedVideoMedia(
     elementInfo,
     task,

@@ -238,4 +238,132 @@ describe('stage thumbnail allocated assets', () => {
       mediaRef: 'gen_vid_1',
     });
   });
+
+  it('does not hydrate either of two unmatched legacy videos from one stored row', async () => {
+    const first = {
+      id: 'video-1',
+      type: 'video',
+      src: 'gen_vid_1',
+      mediaRef: 'gen_vid_1',
+      left: 0,
+      top: 0,
+      width: 100,
+      height: 56,
+      rotate: 0,
+    };
+    mocks.accessDocument.mockResolvedValueOnce({
+      document: {
+        scenes: [
+          {
+            id: 'scene-1',
+            stageId: 'stage-1',
+            type: 'slide',
+            title: 'Slide',
+            order: 1,
+            content: {
+              type: 'slide',
+              canvas: {
+                id: 'slide-1',
+                viewportSize: 1000,
+                viewportRatio: 0.5625,
+                elements: [
+                  first,
+                  { ...first, id: 'video-2', src: 'gen_vid_2', mediaRef: 'gen_vid_2' },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    });
+    mocks.mediaToArray.mockResolvedValueOnce([
+      {
+        id: 'stage-1:gen_vid_unique_legacy',
+        stageId: 'stage-1',
+        type: 'video',
+        blob: new Blob(['video'], { type: 'video/mp4' }),
+        mimeType: 'video/mp4',
+        size: 5,
+        prompt: 'Thumbnail',
+        params: '{}',
+        createdAt: 1,
+      },
+    ]);
+
+    const slides = await getFirstSlideByStages(['stage-1']);
+
+    expect(slides['stage-1'].elements).toMatchObject([
+      { src: '', mediaRef: 'gen_vid_1' },
+      { src: '', mediaRef: 'gen_vid_2' },
+    ]);
+  });
+
+  it('keeps an exact legacy video failure authoritative over another stored row', async () => {
+    mocks.accessDocument.mockResolvedValueOnce({
+      document: {
+        scenes: [
+          {
+            id: 'scene-1',
+            stageId: 'stage-1',
+            type: 'slide',
+            title: 'Slide',
+            order: 1,
+            content: {
+              type: 'slide',
+              canvas: {
+                id: 'slide-1',
+                viewportSize: 1000,
+                viewportRatio: 0.5625,
+                elements: [
+                  {
+                    id: 'video-1',
+                    type: 'video',
+                    src: 'gen_vid_1',
+                    mediaRef: 'gen_vid_1',
+                    left: 0,
+                    top: 0,
+                    width: 100,
+                    height: 56,
+                    rotate: 0,
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    });
+    mocks.mediaToArray.mockResolvedValueOnce([
+      {
+        id: 'stage-1:gen_vid_1',
+        stageId: 'stage-1',
+        type: 'video',
+        blob: new Blob([], { type: 'video/mp4' }),
+        mimeType: 'video/mp4',
+        size: 0,
+        prompt: 'Thumbnail',
+        params: '{}',
+        error: 'Generation failed',
+        createdAt: 1,
+      },
+      {
+        id: 'stage-1:gen_vid_other_success',
+        stageId: 'stage-1',
+        type: 'video',
+        blob: new Blob(['video'], { type: 'video/mp4' }),
+        mimeType: 'video/mp4',
+        size: 5,
+        prompt: 'Thumbnail',
+        params: '{}',
+        createdAt: 2,
+      },
+    ]);
+
+    const slides = await getFirstSlideByStages(['stage-1']);
+
+    expect(slides['stage-1'].elements[0]).toMatchObject({
+      src: '',
+      mediaRef: 'gen_vid_1',
+    });
+  });
 });

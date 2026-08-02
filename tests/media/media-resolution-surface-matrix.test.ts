@@ -423,6 +423,36 @@ describe('real media consumer matrix', () => {
     expect(markup).not.toContain('blob:shared-editor-video');
   });
 
+  it('recovered legacy video tasks bind identically in playback and edit mode', () => {
+    const element = videoElement('gen_vid_1');
+    const recovered = fullTask(
+      'gen_vid_unique_legacy',
+      task('done', { objectUrl: 'blob:recovered-video' }),
+      'video',
+    );
+    if (!recovered) throw new Error('Expected recovered video task');
+    useSettingsStore.setState({ videoGenerationEnabled: true });
+    useMediaGenerationStore.setState({
+      tasks: {
+        gen_vid_unique_legacy: { ...recovered, placeholderRef: 'gen_vid_1' },
+      },
+    });
+
+    const playback = renderInMediaScene(
+      element,
+      createElement(BaseVideoElement, { elementInfo: element }),
+    );
+    const editor = renderInMediaScene(
+      element,
+      createElement(VideoElement, { elementInfo: element }),
+    );
+
+    expect(playback).toContain('src="blob:recovered-video"');
+    expect(editor).toContain('src="blob:recovered-video"');
+    expect(playback).not.toContain('vid-pulse-ring');
+    expect(editor).not.toContain('animate-pulse');
+  });
+
   for (const surface of componentSurfaces) {
     it.each(cases)(`${surface.name}: $name`, (entry) => {
       const binding = surface.run(entry);

@@ -60,6 +60,12 @@ import {
   executeStageAssetReclamation,
   loadStageAssetInventory,
 } from '@/lib/media/reclaim-stage-assets';
+import {
+  collectDocumentMediaElements,
+  resolveMediaTaskForElement,
+  withDocumentLegacyVideoRecovery,
+  type MediaTaskLookupEntry,
+} from '@/lib/media/media-task-resolution';
 
 const log = createLogger('StageStorage');
 
@@ -751,10 +757,6 @@ function isResolvableThumbnailMediaRef(value: unknown): value is string {
   return typeof value === 'string' && !!value && !isConcreteMediaAddress(value);
 }
 
-function isLegacySequentialVideoRef(value: unknown): value is string {
-  return typeof value === 'string' && /^gen_vid_\d+$/i.test(value);
-}
-
 function getThumbnailMediaRef(element: ThumbnailMediaElement): string | undefined {
   if (element.type === 'image' && isResolvableThumbnailMediaRef(element.src)) {
     return element.src;
@@ -846,33 +848,47 @@ export async function getFirstSlideByStages(
           if (mediaElements.length > 0) {
             const settings = useSettingsStore.getState();
             const mediaRecords = await db.mediaFiles.where('stageId').equals(stageId).toArray();
-            const videoRecords = mediaRecords.filter(
-              (record) => !record.error && record.type === 'video',
-            );
             const mediaMap = new Map(
               mediaRecords.map((record) => [getMediaRecordElementId(record.id), record] as const),
+            );
+            type ThumbnailTaskEntry = MediaTaskLookupEntry & {
+              readonly record: (typeof mediaRecords)[number];
+            };
+            const taskEntries = Object.fromEntries(
+              mediaRecords.map((record) => [
+                getMediaRecordElementId(record.id),
+                {
+                  stageId: record.stageId,
+                  type: record.type,
+                  status: record.error ? 'failed' : 'done',
+                  placeholderRef: record.placeholderRef,
+                  record,
+                } satisfies ThumbnailTaskEntry,
+              ]),
+            );
+            const documentTasks = withDocumentLegacyVideoRecovery(
+              taskEntries,
+              collectDocumentMediaElements(document?.stage, document?.scenes ?? []),
+              stageId,
             );
 
             for (const el of mediaElements as ThumbnailMediaElement[]) {
               const mediaRef = getThumbnailMediaRef(el);
-              const exactRecord = mediaRef ? mediaMap.get(mediaRef) : undefined;
-              const usableExactRecord = exactRecord && !exactRecord.error ? exactRecord : undefined;
               if (!mediaRef) continue;
-              const legacyRecord =
-                !exactRecord &&
-                el.type === 'video' &&
-                isLegacySequentialVideoRef(mediaRef) &&
-                videoRecords.length === 1
-                  ? videoRecords[0]
-                  : undefined;
-              const task = exactRecord?.error
+              const selected = resolveMediaTaskForElement(
+                documentTasks,
+                el as import('@openmaic/dsl').PPTElement,
+                stageId,
+              );
+              const selectedRecord = selected?.record;
+              const task = selectedRecord?.error
                 ? ({
                     status: 'failed',
-                    errorCode: exactRecord.errorCode,
+                    errorCode: selectedRecord.errorCode,
                     retryCount: 0,
                   } satisfies MediaTaskState)
                 : undefined;
-              const record = usableExactRecord ?? legacyRecord;
+              const record = selectedRecord && !selectedRecord.error ? selectedRecord : undefined;
 
               if (el.type === 'image') {
                 el.src =

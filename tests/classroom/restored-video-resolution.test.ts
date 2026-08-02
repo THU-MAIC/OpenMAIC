@@ -1,22 +1,21 @@
 import type { PPTVideoElement } from '@openmaic/dsl';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildRestoredMediaTasks } from '@/lib/classroom/load-classroom';
-import {
-  selectVideoMediaTaskForElement,
-  videoMediaRefForResolution,
-} from '@/components/slide-renderer/components/element/VideoElement/useResolvedVideoMedia';
+import { videoMediaRefForResolution } from '@/components/slide-renderer/components/element/VideoElement/useResolvedVideoMedia';
 import { renderableMediaUrl, resolveMediaRef } from '@/lib/media/resolve-media-ref';
 import type { MediaFileRecord } from '@/lib/utils/database';
+import { resolveMediaTaskForElement } from '@/lib/media/media-task-resolution';
+import { resolveSlideMediaState } from '@/components/slide-renderer/use-resolved-slide';
 
 const stageId = 'restored-video-stage';
 const legacyRef = 'gen_vid_1';
 
-function videoElement(): PPTVideoElement {
+function videoElement(ref = legacyRef, id = 'video-element'): PPTVideoElement {
   return {
-    id: 'video-element',
+    id,
     type: 'video',
-    src: legacyRef,
-    mediaRef: legacyRef,
+    src: ref,
+    mediaRef: ref,
     left: 0,
     top: 0,
     width: 100,
@@ -42,10 +41,13 @@ function videoRecord(ref: string, error?: string): MediaFileRecord {
   };
 }
 
-function resolveRestoredVideo(records: readonly MediaFileRecord[]) {
-  const element = videoElement();
-  const tasks = buildRestoredMediaTasks(stageId, records);
-  const task = selectVideoMediaTaskForElement(tasks, element, stageId);
+function resolveRestoredVideo(
+  records: readonly MediaFileRecord[],
+  elements: readonly PPTVideoElement[] = [videoElement()],
+) {
+  const element = elements[0];
+  const tasks = buildRestoredMediaTasks(stageId, records, elements);
+  const task = resolveMediaTaskForElement(tasks, element, stageId);
   const resolution = resolveMediaRef(videoMediaRefForResolution(element), task);
   return { task, resolution, src: renderableMediaUrl(resolution) };
 }
@@ -59,35 +61,65 @@ describe('restored classroom video resolution', () => {
     const result = resolveRestoredVideo([videoRecord('gen_vid_unique_legacy')]);
 
     expect(result.task?.elementId).toBe('gen_vid_unique_legacy');
+    expect(result.task?.placeholderRef).toBe(legacyRef);
     expect(result.resolution).toEqual({ kind: 'url', url: 'blob:stored-video' });
     expect(result.src).toBe('blob:stored-video');
+
+    const resolvedSlide = resolveSlideMediaState(
+      {
+        id: 'slide-1',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        theme: {
+          fontName: 'Arial',
+          fontColor: '#111111',
+          backgroundColor: '#ffffff',
+          themeColors: ['#111111'],
+        },
+        elements: [videoElement()],
+      },
+      stageId,
+      buildRestoredMediaTasks(stageId, [videoRecord('gen_vid_unique_legacy')], [videoElement()]),
+    );
+    expect(resolvedSlide.byElementId['video-element']).toMatchObject({
+      task: { elementId: 'gen_vid_unique_legacy', placeholderRef: legacyRef },
+      resolution: { kind: 'url', url: 'blob:stored-video' },
+    });
   });
 
-  it('does not guess between multiple stored videos', () => {
-    vi.spyOn(URL, 'createObjectURL')
-      .mockReturnValueOnce('blob:first-video')
-      .mockReturnValueOnce('blob:second-video');
+  it('does not map one stored row to two unmatched legacy elements', () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:stored-video');
+    const elements = [videoElement('gen_vid_1', 'video-1'), videoElement('gen_vid_2', 'video-2')];
+    const tasks = buildRestoredMediaTasks(
+      stageId,
+      [videoRecord('gen_vid_unique_legacy')],
+      elements,
+    );
 
-    const result = resolveRestoredVideo([
-      videoRecord('gen_vid_first_legacy'),
-      videoRecord('gen_vid_second_legacy'),
-    ]);
-
-    expect(result.task).toBeUndefined();
-    expect(result.resolution).toEqual({ kind: 'placeholder' });
-    expect(result.src).toBeUndefined();
+    for (const element of elements) {
+      const task = resolveMediaTaskForElement(tasks, element, stageId);
+      const resolution = resolveMediaRef(videoMediaRefForResolution(element), task);
+      expect(task).toBeUndefined();
+      expect(resolution).toEqual({ kind: 'placeholder' });
+      expect(renderableMediaUrl(resolution)).toBeUndefined();
+    }
   });
 
   it('does not fall back when the exact legacy ref failed', () => {
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:other-video');
 
-    const result = resolveRestoredVideo([
+    const records = [
       videoRecord(legacyRef, 'Generation failed'),
       videoRecord('gen_vid_other_success'),
-    ]);
+    ];
+    const result = resolveRestoredVideo(records);
 
     expect(result.task).toMatchObject({ elementId: legacyRef, status: 'failed' });
     expect(result.resolution).toEqual({ kind: 'failed', retryable: true });
     expect(result.src).toBeUndefined();
+    expect(
+      buildRestoredMediaTasks(stageId, records, [videoElement()])['gen_vid_other_success']
+        .placeholderRef,
+    ).toBeUndefined();
   });
 });
