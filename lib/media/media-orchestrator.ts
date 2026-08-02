@@ -153,19 +153,11 @@ export async function retryMediaTask(
       ? await replaceablePosterRefs(task.stageId, currentPosterRefs(task.stageId, replaceAssetId))
       : [];
 
-  if (!replaceAssetId) {
-    // Only legacy/failure placeholders are disposable. A shared allocated ref
-    // can still own real bytes for another live element, so never remove that
-    // compatibility row merely because this retry forks to a new identity.
-    const failureRefs = new Set([elementId, target?.elementId].filter(Boolean) as string[]);
-    for (const ref of failureRefs) {
-      const key = mediaFileKey(task.stageId, ref);
-      const row = await db.mediaFiles.get(key).catch(() => undefined);
-      if (row && (row.error || row.blob.size === 0)) {
-        await db.mediaFiles.delete(key).catch(() => {});
-      }
-    }
-  }
+  // Only legacy/failure placeholders are disposable. Keep them durable while
+  // the retry is in flight, then remove them after a successful allocation.
+  const failureRefs = !replaceAssetId
+    ? new Set([elementId, target?.elementId].filter(Boolean) as string[])
+    : undefined;
 
   const progressKey = shared ? scopedTarget!.elementId : elementId;
   if (shared) {
@@ -192,7 +184,7 @@ export async function retryMediaTask(
   } else {
     store.markPendingForRetry(elementId);
   }
-  await generateSingleMedia(
+  const generatedAssetId = await generateSingleMedia(
     {
       type: task.type,
       prompt: task.prompt,
@@ -209,6 +201,15 @@ export async function retryMediaTask(
       sourceRef: shared ? elementId : undefined,
     },
   );
+  if (generatedAssetId && failureRefs) {
+    for (const ref of failureRefs) {
+      const key = mediaFileKey(task.stageId, ref);
+      const row = await db.mediaFiles.get(key).catch(() => undefined);
+      if (row && (row.error || row.blob.size === 0)) {
+        await db.mediaFiles.delete(key).catch(() => {});
+      }
+    }
+  }
 }
 
 /** Build a retry target without assuming the active scene owns a slide canvas. */

@@ -728,7 +728,7 @@ describe('media orchestrator asset write paths', () => {
     await assertOwnership();
   });
 
-  it('removes a failed fork from both key spaces before publishing its successful retry', async () => {
+  it('removes a failed fork from both key spaces after its retry succeeds', async () => {
     const sharedAssetId = await pool.put(new Blob(['original-bytes'], { type: 'image/png' }));
     mocks.document = documentWithMedia(sharedAssetId, 'image');
     const copy = structuredClone(mocks.document.scenes[0]);
@@ -794,6 +794,69 @@ describe('media orchestrator asset write paths', () => {
     expect(reloaded.byElementId['image-copy']).toMatchObject({
       task: { elementId: recoveredRef, status: 'done' },
       resolution: { kind: 'url' },
+    });
+  });
+
+  it('restores a fork failure after its retry fails without an error code', async () => {
+    const sharedAssetId = await pool.put(new Blob(['original-bytes'], { type: 'image/png' }));
+    mocks.document = documentWithMedia(sharedAssetId, 'image');
+    const copy = structuredClone(mocks.document.scenes[0]);
+    copy.id = 'scene-copy';
+    copy.order = 2;
+    copy.content.canvas.id = 'slide-copy';
+    copy.content.canvas.elements[0].id = 'image-copy';
+    mocks.document.scenes.push(copy);
+    mocks.stageState = {
+      stage: structuredClone(mocks.document.stage),
+      scenes: structuredClone(mocks.document.scenes),
+    };
+    mocks.mediaRows.set(`${stageId}:${sharedAssetId}`, {
+      id: `${stageId}:${sharedAssetId}`,
+      blob: new Blob(['original-bytes'], { type: 'image/png' }),
+    });
+    useMediaGenerationStore.setState({ tasks: { [sharedAssetId]: doneTask(sharedAssetId) } });
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: false,
+          error: 'fork generation failed',
+          errorCode: 'UPSTREAM_TIMEOUT',
+        }),
+        { headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    const target = {
+      elementId: 'image-copy',
+      sceneId: 'scene-copy',
+      slideId: 'slide-copy',
+    };
+    await retryMediaTask(sharedAssetId, target);
+    expect(mocks.mediaRows.get(`${stageId}:image-copy`)).toMatchObject({
+      error: 'fork generation failed',
+      errorCode: 'UPSTREAM_TIMEOUT',
+    });
+
+    fetchMock.mockRejectedValueOnce(new Error('unstructured retry failure'));
+    await retryMediaTask(sharedAssetId, target);
+
+    const restored = buildRestoredMediaTasks(stageId, [
+      ...mocks.mediaRows.values(),
+    ] as unknown as MediaFileRecord[]);
+    expect(restored['image-copy']).toMatchObject({
+      status: 'failed',
+      error: 'fork generation failed',
+      errorCode: 'UPSTREAM_TIMEOUT',
+    });
+    const reloaded = resolveSlideMediaState(
+      mocks.document.scenes[1].content.canvas as unknown as Slide,
+      stageId,
+      restored,
+      { assetUrls: { [sharedAssetId]: 'blob:source-pool' } },
+    );
+    expect(reloaded.byElementId['image-copy']).toMatchObject({
+      task: { elementId: 'image-copy', status: 'failed', error: 'fork generation failed' },
+      resolution: { kind: 'url', url: 'blob:source-pool', retryable: true },
     });
   });
 
