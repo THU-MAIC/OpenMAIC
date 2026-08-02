@@ -751,6 +751,10 @@ function isResolvableThumbnailMediaRef(value: unknown): value is string {
   return typeof value === 'string' && !!value && !isConcreteMediaAddress(value);
 }
 
+function isLegacySequentialVideoRef(value: unknown): value is string {
+  return typeof value === 'string' && /^gen_vid_\d+$/i.test(value);
+}
+
 function getThumbnailMediaRef(element: ThumbnailMediaElement): string | undefined {
   if (element.type === 'image' && isResolvableThumbnailMediaRef(element.src)) {
     return element.src;
@@ -842,6 +846,9 @@ export async function getFirstSlideByStages(
           if (mediaElements.length > 0) {
             const settings = useSettingsStore.getState();
             const mediaRecords = await db.mediaFiles.where('stageId').equals(stageId).toArray();
+            const videoRecords = mediaRecords.filter(
+              (record) => !record.error && record.type === 'video',
+            );
             const mediaMap = new Map(
               mediaRecords.map((record) => [getMediaRecordElementId(record.id), record] as const),
             );
@@ -851,6 +858,13 @@ export async function getFirstSlideByStages(
               const exactRecord = mediaRef ? mediaMap.get(mediaRef) : undefined;
               const usableExactRecord = exactRecord && !exactRecord.error ? exactRecord : undefined;
               if (!mediaRef) continue;
+              const legacyRecord =
+                !exactRecord &&
+                el.type === 'video' &&
+                isLegacySequentialVideoRef(mediaRef) &&
+                videoRecords.length === 1
+                  ? videoRecords[0]
+                  : undefined;
               const task = exactRecord?.error
                 ? ({
                     status: 'failed',
@@ -858,7 +872,7 @@ export async function getFirstSlideByStages(
                     retryCount: 0,
                   } satisfies MediaTaskState)
                 : undefined;
-              const record = usableExactRecord;
+              const record = usableExactRecord ?? legacyRecord;
 
               if (el.type === 'image') {
                 el.src =

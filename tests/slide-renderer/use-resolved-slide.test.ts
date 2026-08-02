@@ -231,6 +231,31 @@ describe('resolveSlideMedia', () => {
     });
   });
 
+  it('preserves a hydrated video URL when an opaque mediaRef has no stage context', () => {
+    const baseVideo = slide.elements[0] as PPTVideoElement;
+    const hydratedSlide: Slide = {
+      ...slide,
+      elements: [
+        {
+          ...baseVideo,
+          src: 'blob:thumbnail-video',
+          mediaRef: 'gen_vid_1',
+        },
+      ],
+    };
+
+    const resolved = resolveSlideMediaState(hydratedSlide, undefined, {});
+
+    expect(resolved.slide.elements[0]).toMatchObject({
+      src: 'blob:thumbnail-video',
+      mediaRef: 'gen_vid_1',
+    });
+    expect(resolved.byElementId['video-1']).toMatchObject({
+      ref: 'gen_vid_1',
+      resolution: { kind: 'raw', value: 'blob:thumbnail-video' },
+    });
+  });
+
   it('hides an allocated ref when pool resolution misses', () => {
     const baseVideo = slide.elements[0] as PPTVideoElement;
     const allocatedSlide: Slide = {

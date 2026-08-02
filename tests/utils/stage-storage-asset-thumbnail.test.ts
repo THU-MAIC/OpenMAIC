@@ -179,4 +179,63 @@ describe('stage thumbnail allocated assets', () => {
     const posterBlob = vi.mocked(URL.createObjectURL).mock.calls[1][0] as Blob;
     expect(await posterBlob.text()).toBe('poster');
   });
+
+  it('hydrates a legacy sequential video ref from the sole successful stage video row', async () => {
+    mocks.accessDocument.mockResolvedValueOnce({
+      document: {
+        scenes: [
+          {
+            id: 'scene-1',
+            stageId: 'stage-1',
+            type: 'slide',
+            title: 'Slide',
+            order: 1,
+            content: {
+              type: 'slide',
+              canvas: {
+                id: 'slide-1',
+                viewportSize: 1000,
+                viewportRatio: 0.5625,
+                elements: [
+                  {
+                    id: 'video-1',
+                    type: 'video',
+                    src: 'gen_vid_1',
+                    mediaRef: 'gen_vid_1',
+                    left: 0,
+                    top: 0,
+                    width: 100,
+                    height: 56,
+                    rotate: 0,
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    });
+    mocks.mediaToArray.mockResolvedValueOnce([
+      {
+        id: 'stage-1:gen_vid_unique_legacy',
+        stageId: 'stage-1',
+        type: 'video',
+        blob: new Blob(['video'], { type: 'video/mp4' }),
+        mimeType: 'video/mp4',
+        size: 5,
+        poster: new Blob(['poster'], { type: 'image/png' }),
+        prompt: 'Thumbnail',
+        params: '{}',
+        createdAt: 1,
+      },
+    ]);
+
+    const slides = await getFirstSlideByStages(['stage-1']);
+
+    expect(slides['stage-1'].elements[0]).toMatchObject({
+      src: 'blob:thumbnail-asset',
+      poster: 'blob:thumbnail-asset',
+      mediaRef: 'gen_vid_1',
+    });
+  });
 });

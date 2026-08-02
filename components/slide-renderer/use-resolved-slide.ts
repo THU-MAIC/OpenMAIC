@@ -110,10 +110,12 @@ export function resolveSlideMediaState(
     const taskKey = mediaTaskKeyFor(element);
     const task = taskForRef(tasks, taskKey, stageId, element.id);
     const ref = element.type === 'video' ? (taskKey ?? element.src) : element.src;
+    const sourceRef =
+      element.type === 'video' && isConcreteMediaAddress(element.src) ? element.src : ref;
     const resolution = resolveMediaRef(
-      ref,
-      task,
-      leaseFor(ref, options.assetLeases, options.assetUrls),
+      sourceRef,
+      sourceRef === ref ? task : undefined,
+      leaseFor(sourceRef, options.assetLeases, options.assetUrls),
       element.type === 'image' ? options.imageGenerationDisabled : options.videoGenerationDisabled,
     );
 
