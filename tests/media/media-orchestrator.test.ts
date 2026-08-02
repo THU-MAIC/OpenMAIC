@@ -69,6 +69,7 @@ vi.mock('@/lib/store/stage', () => ({
 
 import {
   generateMediaForOutlines,
+  mediaRetryTarget,
   reconcileCompletedMediaForScene,
   retryMediaTask,
 } from '@/lib/media/media-orchestrator';
@@ -168,6 +169,15 @@ function failedTask(ref: string, type: 'image' | 'video' = 'image'): MediaTask {
     retryCount: 0,
     stageId,
     error: 'retry me',
+  };
+}
+
+function doneTask(ref: string, type: 'image' | 'video' = 'image'): MediaTask {
+  return {
+    ...failedTask(ref, type),
+    status: 'done',
+    objectUrl: 'blob:source',
+    error: undefined,
   };
 }
 
@@ -666,6 +676,11 @@ describe('media orchestrator asset write paths', () => {
     expect(await resolvedText(copiedRef)).toBe('copy-bytes');
     expect(mocks.mediaRows.has(`${stageId}:${sharedAssetId}`)).toBe(true);
     expect(useMediaGenerationStore.getState().tasks[copiedRef]?.placeholderRef).toBeUndefined();
+    expect(useMediaGenerationStore.getState().tasks[sharedAssetId]).toMatchObject({
+      status: 'failed',
+      error: 'retry me',
+      retryCount: 1,
+    });
     await assertOwnership();
   });
 
@@ -686,7 +701,7 @@ describe('media orchestrator asset write paths', () => {
       id: `${stageId}:${sharedAssetId}`,
       blob: new Blob(['original-bytes'], { type: 'image/png' }),
     });
-    useMediaGenerationStore.setState({ tasks: { [sharedAssetId]: failedTask(sharedAssetId) } });
+    useMediaGenerationStore.setState({ tasks: { [sharedAssetId]: doneTask(sharedAssetId) } });
     serveImage('scoped-copy');
 
     await retryMediaTask(sharedAssetId, {
@@ -697,7 +712,105 @@ describe('media orchestrator asset write paths', () => {
 
     expect(mocks.document.scenes[0].content.canvas.elements[0].src).toBe(sharedAssetId);
     expect(mocks.document.scenes[1].content.canvas.elements[0].src).not.toBe(sharedAssetId);
+    expect(useMediaGenerationStore.getState().tasks[sharedAssetId]).toMatchObject({
+      status: 'done',
+      objectUrl: 'blob:source',
+      retryCount: 1,
+    });
     await assertOwnership();
+  });
+
+  it('forks a shared ref owned by a scene whiteboard despite the scene slide id', async () => {
+    const sharedAssetId = await pool.put(new Blob(['original-bytes'], { type: 'image/png' }));
+    mocks.document = documentWithMedia(sharedAssetId, 'image');
+    const scene = mocks.document.scenes[0] as (typeof mocks.document.scenes)[number] & {
+      whiteboards: Array<(typeof mocks.document.scenes)[number]['content']['canvas']>;
+    };
+    scene.whiteboards = [
+      {
+        ...structuredClone(mocks.document.scenes[0].content.canvas),
+        id: 'scene-whiteboard',
+        elements: [
+          {
+            ...structuredClone(mocks.document.scenes[0].content.canvas.elements[0]),
+            id: 'whiteboard-image',
+            type: 'image',
+            src: sharedAssetId,
+          },
+        ],
+      },
+    ];
+    mocks.stageState = {
+      stage: structuredClone(mocks.document.stage),
+      scenes: structuredClone(mocks.document.scenes),
+    };
+    mocks.mediaRows.set(`${stageId}:${sharedAssetId}`, {
+      id: `${stageId}:${sharedAssetId}`,
+      blob: new Blob(['original-bytes'], { type: 'image/png' }),
+    });
+    useMediaGenerationStore.setState({ tasks: { [sharedAssetId]: failedTask(sharedAssetId) } });
+    serveImage('whiteboard-copy');
+
+    await retryMediaTask(sharedAssetId, {
+      elementId: 'whiteboard-image',
+      sceneId: 'scene-1',
+      slideId: 'slide-1',
+    });
+
+    expect(mocks.document.scenes[0].content.canvas.elements[0].src).toBe(sharedAssetId);
+    const savedScene = mocks.document.scenes[0] as typeof scene;
+    expect(savedScene.whiteboards[0].elements[0].src).not.toBe(sharedAssetId);
+    expect(useMediaGenerationStore.getState().tasks[sharedAssetId]?.status).toBe('failed');
+  });
+
+  it('forks a shared ref owned by the stage whiteboard from a scene context', async () => {
+    const sharedAssetId = await pool.put(new Blob(['original-bytes'], { type: 'image/png' }));
+    mocks.document = documentWithMedia(sharedAssetId, 'image');
+    const stage = mocks.document.stage as typeof mocks.document.stage & {
+      whiteboard: Array<(typeof mocks.document.scenes)[number]['content']['canvas']>;
+    };
+    stage.whiteboard = [
+      {
+        ...structuredClone(mocks.document.scenes[0].content.canvas),
+        id: 'stage-whiteboard',
+        elements: [
+          {
+            ...structuredClone(mocks.document.scenes[0].content.canvas.elements[0]),
+            id: 'stage-whiteboard-image',
+            type: 'image',
+            src: sharedAssetId,
+          },
+        ],
+      },
+    ];
+    mocks.stageState = {
+      stage: structuredClone(mocks.document.stage),
+      scenes: structuredClone(mocks.document.scenes),
+    };
+    mocks.mediaRows.set(`${stageId}:${sharedAssetId}`, {
+      id: `${stageId}:${sharedAssetId}`,
+      blob: new Blob(['original-bytes'], { type: 'image/png' }),
+    });
+    useMediaGenerationStore.setState({ tasks: { [sharedAssetId]: failedTask(sharedAssetId) } });
+    serveImage('stage-whiteboard-copy');
+
+    await retryMediaTask(sharedAssetId, {
+      elementId: 'stage-whiteboard-image',
+      sceneId: 'scene-1',
+      slideId: 'slide-1',
+    });
+
+    expect(mocks.document.scenes[0].content.canvas.elements[0].src).toBe(sharedAssetId);
+    const savedStage = mocks.document.stage as typeof stage;
+    expect(savedStage.whiteboard[0].elements[0].src).not.toBe(sharedAssetId);
+    expect(useMediaGenerationStore.getState().tasks[sharedAssetId]?.status).toBe('failed');
+  });
+
+  it('builds a safe retry target for a non-slide scene', () => {
+    expect(mediaRetryTarget('image-1', 'scene-1', { type: 'text', markdown: 'Notes' })).toEqual({
+      elementId: 'image-1',
+      sceneId: 'scene-1',
+    });
   });
 
   it('refuses to fork a shared ref without the owning slide instance', async () => {

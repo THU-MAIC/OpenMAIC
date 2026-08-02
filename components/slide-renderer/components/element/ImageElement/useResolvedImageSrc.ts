@@ -5,12 +5,12 @@ import { useMediaStageId } from '@/lib/contexts/media-stage-context';
 import {
   MISSING_ASSET_LEASE,
   isConcreteMediaAddress,
-  isGeneratedMediaPlaceholder,
   renderableMediaUrl,
   resolveMediaRef,
   useResolvedMediaRef,
   type MediaResolution,
 } from '@/lib/media/resolve-media-ref';
+import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { useMediaGenerationStore, type MediaTask } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
 

@@ -16,7 +16,8 @@ import { rewriteAudioRefsToIds } from '@/lib/export/classroom-zip-utils';
 import { createLogger } from '@/lib/logger';
 import { canonicalizeLegacyScene, mutateDocument, type AppDocument } from '@/lib/document-store';
 import { putAsset, removeAsset } from '@/lib/media/asset-pool';
-import { isConcreteMediaAddress, isGeneratedMediaPlaceholder } from '@/lib/media/resolve-media-ref';
+import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
+import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import type JSZip from 'jszip';
 import type { Slide } from '@openmaic/dsl';
 import type { Stage } from '@/lib/types/stage';
@@ -84,8 +85,23 @@ export function rewriteImportedSlideMediaRefs(
   slide: Slide,
   mappings: ImportedMediaMappings,
 ): Slide {
+  const background =
+    slide.background?.type === 'image' && slide.background.image
+      ? {
+          ...slide.background,
+          image: {
+            ...slide.background.image,
+            src:
+              rewriteImportedMediaRef(
+                slide.background.image.src,
+                mappings.refToNewId[slide.background.image.src],
+              ) ?? '',
+          },
+        }
+      : slide.background;
   return {
     ...slide,
+    background,
     elements: slide.elements.map((element) => {
       if (element.type === 'image') {
         const src = rewriteImportedMediaRef(element.src, mappings.refToNewId[element.src]) ?? '';

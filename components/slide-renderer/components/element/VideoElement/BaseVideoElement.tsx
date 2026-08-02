@@ -6,9 +6,10 @@ import type { PPTVideoElement } from '@openmaic/dsl';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
-import { retryMediaTask } from '@/lib/media/media-orchestrator';
+import { mediaRetryTarget, retryMediaTask } from '@/lib/media/media-orchestrator';
 import {
   isConcreteMediaAddress,
+  mediaResolutionCanRetry,
   renderableMediaUrl,
   useResolvedMediaRef,
 } from '@/lib/media/resolve-media-ref';
@@ -68,6 +69,7 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
   const showSkeleton = resolution.kind === 'pending' || resolution.kind === 'placeholder';
   const showDisabled = resolution.kind === 'disabled';
   const showError = resolution.kind === 'failed';
+  const canRetry = mediaResolutionCanRetry(resolution);
   const isReady = !!resolvedSrc;
 
   // Ensure video is paused on mount — prevents browser autoplay from user gesture context
@@ -126,7 +128,7 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
     >
       <div
         ref={scope}
-        className="w-full h-full"
+        className="relative w-full h-full"
         style={{ transform: `rotate(${elementInfo.rotate}deg)` }}
       >
         {showSkeleton ? (
@@ -164,16 +166,12 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
                 <ShieldAlert className="w-3 h-3 shrink-0" />
                 <span>{t('settings.mediaContentSensitive')}</span>
               </div>
-            ) : resolution.retryable ? (
+            ) : canRetry ? (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   if (mediaRef) {
-                    retryMediaTask(mediaRef, {
-                      elementId: elementInfo.id,
-                      sceneId,
-                      slideId: sceneData.canvas.id,
-                    });
+                    retryMediaTask(mediaRef, mediaRetryTarget(elementInfo.id, sceneId, sceneData));
                   }
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
@@ -210,6 +208,21 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
             </svg>
           </div>
         )}
+        {canRetry && resolution.kind !== 'failed' ? (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              if (mediaRef) {
+                retryMediaTask(mediaRef, mediaRetryTarget(elementInfo.id, sceneId, sceneData));
+              }
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            className="absolute right-1 top-1 flex items-center gap-1 rounded bg-red-100/95 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm dark:bg-red-900/80 dark:text-red-300"
+          >
+            <RotateCcw className="h-3 w-3" />
+            {t('settings.mediaRetry')}
+          </button>
+        ) : null}
       </div>
     </div>
   );

@@ -365,6 +365,51 @@ describe('browser scene generation retry wrappers', () => {
     expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
   });
 
+  it('waits for parallel TTS workers before rolling back an abandoned scene', async () => {
+    const { generateTTSForScene } = await import('@/lib/hooks/use-scene-generator');
+    mocks.settingsState.mockReturnValue({
+      ...mocks.settingsState(),
+      parallelSceneConcurrency: 2,
+    });
+    const abort = Object.assign(new Error('Aborted'), { name: 'AbortError' });
+    let releaseSibling!: () => void;
+    const siblingMayFinish = new Promise<void>((resolve) => {
+      releaseSibling = resolve;
+    });
+    mockFetch.mockRejectedValueOnce(abort).mockImplementationOnce(async () => {
+      await siblingMayFinish;
+      return jsonResponse(200, {
+        success: true,
+        base64: btoa('late-audio'),
+        format: 'wav',
+      });
+    });
+    mocks.poolPut.mockResolvedValueOnce('ast_late_audio');
+    const scene = {
+      id: 'scene-1',
+      stageId: 'stage-1',
+      type: 'slide',
+      title: 'Scene',
+      order: 1,
+      content: { type: 'slide', canvas: { id: 'slide-1', elements: [] } },
+      actions: [
+        { id: 'speech-1', type: 'speech', text: 'Aborted line' },
+        { id: 'speech-2', type: 'speech', text: 'Late line' },
+      ],
+    } as unknown as Parameters<typeof generateTTSForScene>[0];
+
+    const generating = generateTTSForScene(scene, 'English', undefined, retryOptions);
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    expect(mocks.poolRemove).not.toHaveBeenCalled();
+
+    releaseSibling();
+    await expect(generating).rejects.toBe(abort);
+
+    expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_late_audio');
+    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('ast_late_audio');
+    expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
+  });
+
   it('replaces allocated audio under the stable id and refreshes its compatibility row', async () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
     mockFetch.mockResolvedValue(

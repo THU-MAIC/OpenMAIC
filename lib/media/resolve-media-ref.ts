@@ -2,6 +2,7 @@
 
 import type { MediaTask } from '@/lib/store/media-generation';
 import { useAssetUrlLease, type AssetUrlLeaseState } from './use-asset-url';
+import { isGeneratedMediaPlaceholder } from './media-ref';
 
 export type MediaResolution =
   | { readonly kind: 'url'; readonly url: string; readonly retryable?: boolean }
@@ -19,17 +20,14 @@ export type MediaTaskState = Pick<MediaTask, 'status' | 'objectUrl' | 'errorCode
 
 export const MISSING_ASSET_LEASE: AssetUrlLeaseState = Object.freeze({ status: 'missing' });
 
-export function isGeneratedMediaPlaceholder(value: string | undefined): boolean {
-  return !!value && /^gen_(img|vid)_[\w-]+$/i.test(value);
-}
-
 export function isConcreteMediaAddress(value: string | undefined): boolean {
-  if (!value || /\s/.test(value)) return false;
-  if (/^(https?:|data:|blob:|\/|\.\.?\/)/i.test(value)) return true;
+  const candidate = value?.trimStart();
+  if (!candidate || /\s/.test(candidate)) return false;
+  if (/^(https?:|data:|blob:|\/|\.\.?\/)/i.test(candidate)) return true;
   // User-inserted browser-relative media is concrete too. Keep this narrow
   // enough that allocated ids and other opaque document refs do not become a
   // network request merely because their pool entry is missing.
-  return /^(?:[^:?#]+\/)?[^/:?#]+\.[a-z0-9]{1,12}(?:[?#].*)?$/i.test(value);
+  return /^(?:[^:?#]+\/)?[^/:?#]+\.[a-z0-9]{1,12}(?:[?#].*)?$/i.test(candidate);
 }
 
 function isRetryableFailure(task: MediaTaskState): boolean {
@@ -95,5 +93,9 @@ export function useResolvedMediaRef(
 export function renderableMediaUrl(state: MediaResolution): string | undefined {
   const candidate =
     state.kind === 'url' ? state.url : state.kind === 'raw' ? state.value : undefined;
-  return isConcreteMediaAddress(candidate) ? candidate : undefined;
+  return isConcreteMediaAddress(candidate) ? candidate?.trimStart() : undefined;
+}
+
+export function mediaResolutionCanRetry(state: MediaResolution | undefined): boolean {
+  return !!state && 'retryable' in state && state.retryable === true;
 }

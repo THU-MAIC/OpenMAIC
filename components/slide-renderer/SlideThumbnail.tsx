@@ -1,11 +1,13 @@
 'use client';
 
 import type { CSSProperties, ReactNode } from 'react';
-import { Play } from 'lucide-react';
+import { Play, RotateCcw } from 'lucide-react';
 import type { Slide, PPTImageElement, PPTVideoElement } from '@openmaic/dsl';
 import { SlideCanvas } from '@openmaic/renderer';
 import { useResolvedSlideMedia, type ResolvedSlideMediaEntry } from './use-resolved-slide';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { retryMediaTask } from '@/lib/media/media-orchestrator';
+import { mediaResolutionCanRetry } from '@/lib/media/resolve-media-ref';
 
 interface SlideThumbnailProps {
   /** Slide data */
@@ -23,6 +25,8 @@ interface SlideThumbnailProps {
   readonly viewportRatio: number;
   /** Whether visible (for lazy loading optimization) */
   readonly visible?: boolean;
+  /** Owning scene used to scope a shared-ref retry. */
+  readonly sceneId?: string;
 }
 
 /**
@@ -40,6 +44,8 @@ function renderThumbnailVideo(
   element: PPTVideoElement,
   media: ResolvedSlideMediaEntry | undefined,
   disabledMessage: string,
+  retryLabel: string,
+  onRetry: () => void,
 ) {
   const nonRenderable =
     media?.resolution.kind === 'pending' || media?.resolution.kind === 'placeholder';
@@ -75,6 +81,19 @@ function renderThumbnailVideo(
       ) : (
         <div className="w-full h-full bg-black/10 rounded" />
       )}
+      {mediaResolutionCanRetry(media?.resolution) ? (
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            onRetry();
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          className="pointer-events-auto absolute right-1 top-1 z-10 flex items-center gap-1 rounded bg-red-100/95 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm"
+        >
+          <RotateCcw className="h-3 w-3" />
+          {retryLabel}
+        </button>
+      ) : null}
       <div
         className="absolute inset-0 flex items-center justify-center pointer-events-none"
         data-testid="thumbnail-video-indicator"
@@ -93,12 +112,30 @@ function renderThumbnailImage(
   defaultContent: ReactNode,
   media: ResolvedSlideMediaEntry | undefined,
   disabledMessage: string,
+  retryLabel: string,
+  onRetry: () => void,
 ) {
   if (media?.resolution.kind === 'pending' || media?.resolution.kind === 'placeholder') {
     return <div className="h-full w-full animate-pulse bg-black/10" data-media-state="pending" />;
   }
   if (media?.resolution.kind === 'failed') {
-    return <div className="h-full w-full bg-red-50" data-media-state="failed" />;
+    return (
+      <div className="relative h-full w-full bg-red-50" data-media-state="failed">
+        {mediaResolutionCanRetry(media.resolution) ? (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onRetry();
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            className="pointer-events-auto absolute right-1 top-1 z-10 flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm"
+          >
+            <RotateCcw className="h-3 w-3" />
+            {retryLabel}
+          </button>
+        ) : null}
+      </div>
+    );
   }
   if (media?.resolution.kind === 'disabled') {
     return (
@@ -110,7 +147,24 @@ function renderThumbnailImage(
       </div>
     );
   }
-  return defaultContent;
+  return (
+    <>
+      {defaultContent}
+      {mediaResolutionCanRetry(media?.resolution) ? (
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            onRetry();
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          className="pointer-events-auto absolute right-1 top-1 z-10 flex items-center gap-1 rounded bg-red-100/95 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm"
+        >
+          <RotateCcw className="h-3 w-3" />
+          {retryLabel}
+        </button>
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -133,6 +187,7 @@ export function SlideThumbnail({
   size,
   viewportRatio,
   visible = true,
+  sceneId,
 }: SlideThumbnailProps) {
   const { t } = useI18n();
   const resolved = useResolvedSlideMedia(slide);
@@ -167,6 +222,13 @@ export function SlideThumbnail({
             defaultContent,
             resolved.byElementId[element.id],
             t('settings.mediaGenerationDisabled'),
+            t('settings.mediaRetry'),
+            () => {
+              const media = resolved.byElementId[element.id];
+              if (media?.ref) {
+                retryMediaTask(media.ref, { elementId: element.id, sceneId, slideId: slide.id });
+              }
+            },
           )
         }
         renderVideo={(element) =>
@@ -174,6 +236,13 @@ export function SlideThumbnail({
             element,
             resolved.byElementId[element.id],
             t('settings.mediaGenerationDisabled'),
+            t('settings.mediaRetry'),
+            () => {
+              const media = resolved.byElementId[element.id];
+              if (media?.ref) {
+                retryMediaTask(media.ref, { elementId: element.id, sceneId, slideId: slide.id });
+              }
+            },
           )
         }
         videoInteractive={false}

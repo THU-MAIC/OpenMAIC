@@ -323,6 +323,38 @@ describe('classroom import media allocation', () => {
     });
   });
 
+  it.each([
+    [
+      'mapped',
+      'source-background',
+      { 'source-background': 'ast_new_background' },
+      'ast_new_background',
+    ],
+    ['generated', 'gen_img_background', {}, 'gen_img_background'],
+    ['concrete', 'https://example.test/background.png', {}, 'https://example.test/background.png'],
+    ['unmapped opaque', 'foreign-background', {}, ''],
+  ])(
+    'rewrites a %s slide background through the import boundary',
+    (_case, src, mapping, expected) => {
+      const rewritten = rewriteImportedSlideMediaRefs(
+        {
+          id: 'slide-background',
+          viewportSize: 1000,
+          viewportRatio: 0.5625,
+          background: { type: 'image', image: { src } },
+          elements: [],
+        } as unknown as Slide,
+        {
+          refToNewId: mapping,
+          posterRefToNewId: {},
+          posterByMediaRef: {},
+        },
+      );
+
+      expect(rewritten.background).toMatchObject({ type: 'image', image: { src: expected } });
+    },
+  );
+
   it('allocates audio only after confirming the ZIP entry and stamps stage ownership', async () => {
     const zip = new JSZip();
     const missingPath = 'audio/missing.mp3';

@@ -1,7 +1,8 @@
 import { expect } from 'vitest';
 import type { StageAssetDocument } from '@/lib/media/collect-stage-asset-refs';
 import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
-import { isConcreteMediaAddress, isGeneratedMediaPlaceholder } from '@/lib/media/resolve-media-ref';
+import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
+import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 
 export interface AssetOwnershipSnapshot {
   readonly document: StageAssetDocument;

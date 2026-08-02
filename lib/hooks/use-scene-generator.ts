@@ -25,7 +25,7 @@ import {
   reconcileCompletedMediaForScene,
 } from '@/lib/media/media-orchestrator';
 import { putAsset, removeAsset, replaceAsset } from '@/lib/media/asset-pool';
-import { lazyBoundedMap, mapWithConcurrency } from '@/lib/utils/concurrency';
+import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
 import {
   isAbortError,
@@ -459,7 +459,13 @@ export async function generateTTSForScene(
   );
   try {
     if (ttsConcurrency > 1 && speechActions.length > 1) {
-      await mapWithConcurrency(speechActions, ttsConcurrency, generateOne);
+      const settled = await Promise.allSettled(
+        lazyBoundedMap(speechActions, ttsConcurrency, generateOne),
+      );
+      const rejected = settled.find(
+        (result): result is PromiseRejectedResult => result.status === 'rejected',
+      );
+      if (rejected) throw rejected.reason;
     } else {
       for (const action of speechActions) {
         await generateOne(action);

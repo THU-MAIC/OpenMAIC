@@ -33,6 +33,7 @@ import type { ImageProviderId } from '@/lib/media/types';
 import type { VideoProviderId } from '@/lib/media/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 
 const log = createLogger('ClassroomMedia');
@@ -191,7 +192,7 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
         el.type === 'video' &&
         typeof el.mediaRef === 'string' &&
         mediaMap[el.mediaRef] &&
-        (!el.src || /^gen_vid_[\w-]+$/i.test(el.src))
+        (!el.src || isGeneratedMediaPlaceholder(el.src))
       ) {
         el.src = mediaMap[el.mediaRef];
         continue;
@@ -199,7 +200,7 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
       if (
         (el.type === 'image' || el.type === 'video') &&
         typeof el.src === 'string' &&
-        /^gen_(img|vid)_[\w-]+$/i.test(el.src) &&
+        isGeneratedMediaPlaceholder(el.src) &&
         mediaMap[el.src]
       ) {
         el.src = mediaMap[el.src];

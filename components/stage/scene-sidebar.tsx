@@ -204,6 +204,7 @@ export function SceneSidebar({
                     {isSlide && slideContent ? (
                       <SlideThumbnail
                         slide={slideContent.canvas}
+                        sceneId={scene.id}
                         viewportSize={viewportSize}
                         viewportRatio={viewportRatio}
                         size={Math.max(100, sidebarWidth - 28)}

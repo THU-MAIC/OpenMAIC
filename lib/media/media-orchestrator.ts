@@ -21,6 +21,7 @@ import { createLogger } from '@/lib/logger';
 import { isStageWriteStale, stageDeletionEpoch } from '@/lib/utils/deleted-stages';
 import type { MediaTask } from '@/lib/store/media-generation';
 import { collectStageAssetRefs } from './collect-stage-asset-refs';
+import { isGeneratedMediaPlaceholder } from './media-ref';
 
 const log = createLogger('MediaOrchestrator');
 
@@ -109,7 +110,7 @@ export async function retryMediaTask(
 ): Promise<void> {
   const store = useMediaGenerationStore.getState();
   const task = store.getTask(elementId);
-  if (!task || task.status !== 'failed') return;
+  if (!task || (task.status !== 'failed' && task.status !== 'done')) return;
 
   // Check if the corresponding generation type is still enabled in global settings
   const settings = useSettingsStore.getState();
@@ -164,7 +165,7 @@ export async function retryMediaTask(
   }
 
   store.markPendingForRetry(elementId);
-  await generateSingleMedia(
+  const forkedAssetId = await generateSingleMedia(
     {
       type: task.type,
       prompt: task.prompt,
@@ -181,6 +182,34 @@ export async function retryMediaTask(
       preserveSourceRef: shared,
     },
   );
+  if (shared && forkedAssetId) {
+    useMediaGenerationStore.setState((state) => {
+      const source = state.tasks[elementId];
+      if (!source) return state;
+      return {
+        tasks: {
+          ...state.tasks,
+          [elementId]: {
+            ...task,
+            retryCount: source.retryCount,
+          },
+        },
+      };
+    });
+  }
+}
+
+/** Build a retry target without assuming the active scene owns a slide canvas. */
+export function mediaRetryTarget(
+  elementId: string,
+  sceneId: string | undefined,
+  sceneData: unknown,
+): { elementId: string; sceneId?: string; slideId?: string } {
+  const slideId =
+    sceneData && typeof sceneData === 'object' && 'canvas' in sceneData
+      ? (sceneData as { canvas?: { id?: string } }).canvas?.id
+      : undefined;
+  return { elementId, ...(sceneId ? { sceneId } : {}), ...(slideId ? { slideId } : {}) };
 }
 
 // ==================== Internal ====================
@@ -190,9 +219,8 @@ function rewriteSlideMediaRefs<T extends Slide | Whiteboard>(
   oldRef: string,
   assetId: string,
   posterAssetId?: string,
-  target?: { readonly elementId: string; readonly slideId?: string },
+  target?: { readonly elementId: string },
 ): { slide: T; changed: boolean } {
-  if (target?.slideId && slide.id !== target.slideId) return { slide, changed: false };
   let changed = false;
   const elements = slide.elements.map((element): PPTElement => {
     if (target && element.id !== target.elementId) return element;
@@ -265,19 +293,25 @@ function rewriteStageAndScenes(
   } = {},
 ): { stage: Stage; scenes: Scene[]; changed: boolean } {
   let changed = false;
+  let targetSceneChanged = false;
   const rewrittenScenes = scenes.map((scene): Scene => {
     if (options.target?.sceneId && scene.id !== options.target.sceneId) return scene;
     let nextScene = scene;
-    if (scene.content.type === 'slide') {
+    let matchedTarget = false;
+    const contentIsTargetSlide =
+      scene.content.type === 'slide' &&
+      (!options.target?.slideId || scene.content.canvas.id === options.target.slideId);
+    if (scene.content.type === 'slide' && contentIsTargetSlide) {
       const rewritten = rewriteSlideMediaRefs(
         scene.content.canvas,
         oldRef,
         assetId,
         posterAssetId,
-        options.target,
+        options.target ? { elementId: options.target.elementId } : undefined,
       );
       if (rewritten.changed) {
         changed = true;
+        matchedTarget = true;
         const { type: _type, content: _content, ...core } = nextScene;
         void _type;
         void _content;
@@ -286,15 +320,21 @@ function rewriteStageAndScenes(
     }
     if (scene.whiteboards) {
       let sceneWhiteboardsChanged = false;
+      const hasExactWhiteboard =
+        !!options.target?.slideId &&
+        scene.whiteboards.some((slide) => slide.id === options.target!.slideId);
       const whiteboards = scene.whiteboards.map((slide) => {
+        if (options.target && matchedTarget) return slide;
+        if (hasExactWhiteboard && slide.id !== options.target!.slideId) return slide;
         const rewritten = rewriteSlideMediaRefs(
           slide,
           oldRef,
           assetId,
           posterAssetId,
-          options.target,
+          options.target ? { elementId: options.target.elementId } : undefined,
         );
         sceneWhiteboardsChanged ||= rewritten.changed;
+        matchedTarget ||= rewritten.changed;
         return rewritten.slide;
       });
       if (sceneWhiteboardsChanged) {
@@ -302,14 +342,28 @@ function rewriteStageAndScenes(
         nextScene = { ...nextScene, whiteboards } as Scene;
       }
     }
+    targetSceneChanged ||= matchedTarget;
     return nextScene;
   });
 
   let stageWhiteboardChanged = false;
+  let matchedStageWhiteboard = false;
+  const maySearchStageWhiteboard = !options.target?.sceneId || !targetSceneChanged;
+  const hasExactStageWhiteboard =
+    !!options.target?.slideId &&
+    !!stage.whiteboard?.some((slide) => slide.id === options.target!.slideId);
   const whiteboard = stage.whiteboard?.map((slide) => {
-    if (options.target?.sceneId) return slide;
-    const rewritten = rewriteSlideMediaRefs(slide, oldRef, assetId, posterAssetId, options.target);
+    if (!maySearchStageWhiteboard || (options.target && matchedStageWhiteboard)) return slide;
+    if (hasExactStageWhiteboard && slide.id !== options.target!.slideId) return slide;
+    const rewritten = rewriteSlideMediaRefs(
+      slide,
+      oldRef,
+      assetId,
+      posterAssetId,
+      options.target ? { elementId: options.target.elementId } : undefined,
+    );
     stageWhiteboardChanged ||= rewritten.changed;
+    matchedStageWhiteboard ||= rewritten.changed;
     changed ||= rewritten.changed;
     return rewritten.slide;
   });
@@ -364,10 +418,6 @@ function rewriteDocumentMediaRef(
     : document;
 }
 
-function isGeneratedPlaceholderRef(value: string | undefined): value is string {
-  return !!value && /^gen_(img|vid)_[\w-]+$/i.test(value);
-}
-
 /**
  * Reconcile media that completed before its generated scene was inserted.
  * Re-keyed tasks retain the placeholder they replaced, so insertion can make
@@ -384,7 +434,7 @@ export function reconcileCompletedMediaForScene(
     if (
       task.stageId !== stage.id ||
       task.status !== 'done' ||
-      !isGeneratedPlaceholderRef(task.placeholderRef)
+      !isGeneratedMediaPlaceholder(task.placeholderRef)
     ) {
       continue;
     }
@@ -512,7 +562,7 @@ async function generateSingleMedia(
     };
     readonly preserveSourceRef?: boolean;
   } = {},
-): Promise<void> {
+): Promise<string | undefined> {
   const {
     replaceAssetId,
     replacePosterAssetIds = [],
@@ -523,7 +573,7 @@ async function generateSingleMedia(
   store.markGenerating(req.elementId);
   const placeholderRef =
     store.getTask(req.elementId)?.placeholderRef ??
-    (isGeneratedPlaceholderRef(req.elementId) ? req.elementId : undefined);
+    (isGeneratedMediaPlaceholder(req.elementId) ? req.elementId : undefined);
   let poolReplacementCommitted = false;
   const freshAllocations = new Set<string>();
 
@@ -698,6 +748,7 @@ async function generateSingleMedia(
       );
       for (const ref of committed) freshAllocations.delete(ref);
     }
+    return assetId;
   } catch (err) {
     // A document commit can succeed before a later reconciliation fails. Treat
     // those refs as committed even if the failure interrupted the return path.

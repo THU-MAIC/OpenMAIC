@@ -469,18 +469,25 @@ export async function buildPptxBlob(
     if (slide.background) {
       const bg = slide.background;
       if (bg.type === 'image' && bg.image) {
-        if (isSVGImage(bg.image.src)) {
+        let resolvedSrc = renderableMediaUrl(exportMediaResolution(bg.image.src, stageId));
+        if (!resolvedSrc) {
+          const stored = await resolveStoredMediaBlob(bg.image.src, stageId);
+          if (stored) resolvedSrc = await blobToDataUrl(stored);
+        }
+        if (!resolvedSrc) {
+          // Missing generated backgrounds stay empty instead of leaking an opaque ref to pptxgen.
+        } else if (isSVGImage(resolvedSrc)) {
           pptxSlide.addImage({
-            data: bg.image.src,
+            data: resolvedSrc,
             x: 0,
             y: 0,
             w: viewportSize / ratioPx2Inch,
             h: (viewportSize * viewportRatio) / ratioPx2Inch,
           });
-        } else if (isBase64Image(bg.image.src)) {
-          pptxSlide.background = { data: bg.image.src };
+        } else if (isBase64Image(resolvedSrc)) {
+          pptxSlide.background = { data: resolvedSrc };
         } else {
-          pptxSlide.background = { path: bg.image.src };
+          pptxSlide.background = { path: resolvedSrc };
         }
       } else if (bg.type === 'solid' && bg.color) {
         const c = formatColor(bg.color);

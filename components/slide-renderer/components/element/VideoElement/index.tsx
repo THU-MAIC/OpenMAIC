@@ -6,12 +6,16 @@ import { useMediaStageId } from '@/lib/contexts/media-stage-context';
 import { getVideoMediaRefForElement } from '@/lib/media/video-manifest';
 import {
   isConcreteMediaAddress,
+  mediaResolutionCanRetry,
   renderableMediaUrl,
   useResolvedMediaRef,
 } from '@/lib/media/resolve-media-ref';
 import { useSettingsStore } from '@/lib/store/settings';
-import { VideoOff } from 'lucide-react';
+import { RotateCcw, VideoOff } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useSceneData } from '@/lib/contexts/scene-context';
+import type { SlideContent } from '@/lib/types/stage';
+import { mediaRetryTarget, retryMediaTask } from '@/lib/media/media-orchestrator';
 
 export interface VideoElementProps {
   elementInfo: PPTVideoElement;
@@ -25,6 +29,7 @@ export interface VideoElementProps {
  */
 export function VideoElement({ elementInfo, selectElement }: VideoElementProps) {
   const { t } = useI18n();
+  const { sceneId, sceneData } = useSceneData<SlideContent>();
   const stageId = useMediaStageId();
   const mediaGenerationDisabled = useSettingsStore((state) => !state.videoGenerationEnabled);
   const mediaRef =
@@ -49,6 +54,8 @@ export function VideoElement({ elementInfo, selectElement }: VideoElementProps) 
   );
   const resolvedSrc = renderableMediaUrl(resolution);
   const resolvedPoster = renderableMediaUrl(posterResolution);
+  const canRetry = mediaResolutionCanRetry(resolution);
+  const retryRef = mediaRef ?? elementInfo.src;
 
   const handleSelectElement = (e: React.MouseEvent | React.TouchEvent) => {
     if (elementInfo.lock) return;
@@ -86,7 +93,21 @@ export function VideoElement({ elementInfo, selectElement }: VideoElementProps) 
               <span>{t('settings.mediaGenerationDisabled')}</span>
             </div>
           ) : resolution.kind === 'failed' ? (
-            <div className="w-full h-full rounded bg-red-50 dark:bg-red-900/20" />
+            <div className="flex h-full w-full items-center justify-center rounded bg-red-50 dark:bg-red-900/20">
+              {canRetry && retryRef ? (
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    retryMediaTask(retryRef, mediaRetryTarget(elementInfo.id, sceneId, sceneData));
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  className="flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-[10px] font-medium text-red-600"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  {t('settings.mediaRetry')}
+                </button>
+              ) : null}
+            </div>
           ) : resolvedPoster ? (
             <img
               className="w-full h-full"
@@ -106,6 +127,20 @@ export function VideoElement({ elementInfo, selectElement }: VideoElementProps) 
           ) : (
             <div className="w-full h-full bg-black/10 rounded" />
           )}
+
+          {canRetry && retryRef && resolution.kind !== 'failed' ? (
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                retryMediaTask(retryRef, mediaRetryTarget(elementInfo.id, sceneId, sceneData));
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+              className="absolute right-1 top-1 z-10 flex items-center gap-1 rounded bg-red-100/95 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm"
+            >
+              <RotateCcw className="h-3 w-3" />
+              {t('settings.mediaRetry')}
+            </button>
+          ) : null}
 
           {/* Play icon overlay */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

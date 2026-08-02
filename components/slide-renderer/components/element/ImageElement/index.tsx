@@ -12,8 +12,12 @@ import { useFilter } from './useFilter';
 import { ImageOutline } from './ImageOutline';
 import { ImageClipHandler } from './ImageClipHandler';
 import { useResolvedImageSrc } from './useResolvedImageSrc';
-import { ImageOff } from 'lucide-react';
+import { ImageOff, RotateCcw } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useSceneData } from '@/lib/contexts/scene-context';
+import type { SlideContent } from '@/lib/types/stage';
+import { mediaRetryTarget, retryMediaTask } from '@/lib/media/media-orchestrator';
+import { mediaResolutionCanRetry } from '@/lib/media/resolve-media-ref';
 
 export interface ImageElementProps {
   elementInfo: PPTImageElement;
@@ -25,6 +29,7 @@ export interface ImageElementProps {
  */
 export function ImageElement({ elementInfo, selectElement }: ImageElementProps) {
   const { t } = useI18n();
+  const { sceneId, sceneData } = useSceneData<SlideContent>();
   const clipingImageElementId = useCanvasStore.use.clipingImageElementId();
   const setClipingImageElementId = useCanvasStore.use.setClipingImageElementId();
   const { updateElement } = useCanvasOperations();
@@ -40,6 +45,7 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
   // has always done this; the interactive variant previously rendered the raw
   // placeholder string, surfacing a broken-image icon in Pro mode).
   const { resolvedSrc, resolution } = useResolvedImageSrc(elementInfo);
+  const canRetry = mediaResolutionCanRetry(resolution);
 
   const isCliping = clipingImageElementId === elementInfo.id;
 
@@ -152,7 +158,27 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
                   <span>{t('settings.mediaGenerationDisabled')}</span>
                 </div>
               ) : resolution.kind === 'failed' ? (
-                <div className="h-full w-full bg-red-50" data-media-state="failed" />
+                <div
+                  className="flex h-full w-full items-center justify-center bg-red-50"
+                  data-media-state="failed"
+                >
+                  {canRetry ? (
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        retryMediaTask(
+                          elementInfo.src,
+                          mediaRetryTarget(elementInfo.id, sceneId, sceneData),
+                        );
+                      }}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      className="flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-[10px] font-medium text-red-600"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      {t('settings.mediaRetry')}
+                    </button>
+                  ) : null}
+                </div>
               ) : resolvedSrc ? (
                 <img
                   src={resolvedSrc}
@@ -180,6 +206,19 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
             </div>
           </div>
         )}
+        {canRetry && resolution.kind !== 'failed' ? (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              retryMediaTask(elementInfo.src, mediaRetryTarget(elementInfo.id, sceneId, sceneData));
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            className="absolute right-1 top-1 flex items-center gap-1 rounded bg-red-100/95 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm"
+          >
+            <RotateCcw className="h-3 w-3" />
+            {t('settings.mediaRetry')}
+          </button>
+        ) : null}
       </div>
     </div>
   );

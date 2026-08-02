@@ -179,6 +179,31 @@ describe('resolveSlideMedia', () => {
     });
   });
 
+  it('resolves an allocated background through the same lease boundary', () => {
+    const backgroundSlide: Slide = {
+      ...slide,
+      background: { type: 'image', image: { src: 'ast_background', size: 'cover' } },
+    };
+
+    const resolved = resolveSlideMediaState(
+      backgroundSlide,
+      'stage-1',
+      {},
+      {
+        assetUrls: { ast_background: 'blob:pool-background' },
+      },
+    );
+
+    expect(resolved.slide.background).toEqual({
+      type: 'image',
+      image: { src: 'blob:pool-background', size: 'cover' },
+    });
+    expect(resolved.backgroundResolution).toEqual({
+      kind: 'url',
+      url: 'blob:pool-background',
+    });
+  });
+
   it('resolves an allocated poster even when the video source is already a direct URL', () => {
     const baseVideo = slide.elements[0] as PPTVideoElement;
     const directVideo: Slide = {

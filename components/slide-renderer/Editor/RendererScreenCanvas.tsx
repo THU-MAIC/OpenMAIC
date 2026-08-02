@@ -12,7 +12,7 @@ import { useResolvedSlideMedia, type ResolvedSlideMediaEntry } from '../use-reso
 import { retryMediaTask } from '@/lib/media/media-orchestrator';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
-import type { MediaResolution } from '@/lib/media/resolve-media-ref';
+import { mediaResolutionCanRetry, type MediaResolution } from '@/lib/media/resolve-media-ref';
 
 const log = createLogger('RendererScreenCanvas');
 
@@ -41,6 +41,7 @@ function PlaybackVideoContent({
     media?.resolution.kind === 'pending' || media?.resolution.kind === 'placeholder';
   const showDisabled = media?.resolution.kind === 'disabled';
   const showError = media?.resolution.kind === 'failed';
+  const canRetry = mediaResolutionCanRetry(media?.resolution);
 
   useEffect(() => {
     videoRef.current?.pause();
@@ -110,7 +111,7 @@ function PlaybackVideoContent({
             <ShieldAlert className="h-3 w-3 shrink-0" />
             <span>{t('settings.mediaContentSensitive')}</span>
           </div>
-        ) : media.resolution.retryable ? (
+        ) : canRetry ? (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -131,7 +132,7 @@ function PlaybackVideoContent({
 
   if (resolvedSrc) {
     return (
-      <div ref={scope} className="h-full w-full">
+      <div ref={scope} className="relative h-full w-full">
         <video
           ref={videoRef}
           className="h-full w-full"
@@ -142,6 +143,21 @@ function PlaybackVideoContent({
           controls
           onEnded={handleEnded}
         />
+        {canRetry ? (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              if (mediaRef) {
+                retryMediaTask(mediaRef, { elementId: element.id, sceneId, slideId });
+              }
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            className="absolute right-1 top-1 flex items-center gap-1 rounded bg-red-100/95 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm dark:bg-red-900/80 dark:text-red-300"
+          >
+            <RotateCcw className="h-3 w-3" />
+            {t('settings.mediaRetry')}
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -188,6 +204,7 @@ function PlaybackImageContent({
   const { t } = useI18n();
   const task = media?.task;
   const state = getPlaybackImageState(media?.resolution ?? { kind: 'placeholder' });
+  const canRetry = mediaResolutionCanRetry(media?.resolution);
 
   if (state === 'pending') {
     return (
@@ -231,7 +248,7 @@ function PlaybackImageContent({
             <ShieldAlert className="h-3 w-3 shrink-0" />
             <span>{t('settings.mediaContentSensitive')}</span>
           </div>
-        ) : media.resolution.retryable ? (
+        ) : canRetry ? (
           <button
             onClick={(event) => {
               event.stopPropagation();
@@ -250,7 +267,26 @@ function PlaybackImageContent({
     );
   }
 
-  return defaultContent;
+  return (
+    <>
+      {defaultContent}
+      {canRetry ? (
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            if (media?.ref) {
+              retryMediaTask(media.ref, { elementId: element.id, sceneId, slideId });
+            }
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          className="absolute right-1 top-1 flex items-center gap-1 rounded bg-red-100/95 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm dark:bg-red-900/80 dark:text-red-300"
+        >
+          <RotateCcw className="h-3 w-3" />
+          {t('settings.mediaRetry')}
+        </button>
+      ) : null}
+    </>
+  );
 }
 
 export function RendererScreenCanvas() {

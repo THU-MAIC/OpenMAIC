@@ -7,6 +7,7 @@
 
 import { nanoid } from 'nanoid';
 import katex from 'katex';
+import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import type {
@@ -296,15 +297,6 @@ function isImageIdReference(value: string): boolean {
 }
 
 /**
- * Check if a string looks like a generated image/video ID (e.g., "gen_img_1", "gen_img_xK8f2mQ")
- * These are placeholders for AI-generated media, not PDF-extracted images.
- */
-function isGeneratedImageId(value: string): boolean {
-  if (!value) return false;
-  return /^gen_(img|vid)_[\w-]+$/i.test(value);
-}
-
-/**
  * Resolve image ID references in src field to actual base64 URLs
  *
  * AI generates: { type: "image", src: "img_1", ... }
@@ -341,7 +333,7 @@ function resolveImageIds(
         }
 
         // Generated image reference — keep as placeholder for async backfill
-        if (isGeneratedImageId(src)) {
+        if (isGeneratedMediaPlaceholder(src)) {
           if (generatedMediaMapping && generatedMediaMapping[src]) {
             log.debug(`Resolved generated image ID "${src}" to URL`);
             return { ...el, src: generatedMediaMapping[src] };
@@ -359,7 +351,7 @@ function resolveImageIds(
           return null;
         }
         const src = el.src as string;
-        if (isGeneratedImageId(src)) {
+        if (isGeneratedMediaPlaceholder(src)) {
           if (generatedMediaMapping && generatedMediaMapping[src]) {
             log.debug(`Resolved generated video ID "${src}" to URL`);
             return { ...el, src: generatedMediaMapping[src] };
@@ -393,7 +385,7 @@ function normalizeGeneratedVideoRefs(
       const videoEl = { ...el } as Record<string, unknown>;
       const mediaRef = typeof videoEl.mediaRef === 'string' ? videoEl.mediaRef : undefined;
       const src = typeof videoEl.src === 'string' ? videoEl.src : undefined;
-      const hasGeneratedSrc = !!src && isGeneratedImageId(src);
+      const hasGeneratedSrc = isGeneratedMediaPlaceholder(src);
       const hasDirectSrc = !!src && !hasGeneratedSrc;
 
       if (hasDirectSrc) {

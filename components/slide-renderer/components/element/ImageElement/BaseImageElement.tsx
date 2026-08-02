@@ -7,11 +7,12 @@ import { useClipImage } from './useClipImage';
 import { useFilter } from './useFilter';
 import { ImageOutline } from './ImageOutline';
 import { useResolvedImageSrc } from './useResolvedImageSrc';
-import { retryMediaTask } from '@/lib/media/media-orchestrator';
+import { mediaRetryTarget, retryMediaTask } from '@/lib/media/media-orchestrator';
 import { RotateCcw, Paintbrush, ShieldAlert, ImageOff } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSceneData } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
+import { mediaResolutionCanRetry } from '@/lib/media/resolve-media-ref';
 
 export interface BaseImageElementProps {
   elementInfo: PPTImageElement;
@@ -35,6 +36,7 @@ export function BaseImageElement({ elementInfo }: BaseImageElementProps) {
   const showSkeleton = resolution.kind === 'pending' || resolution.kind === 'placeholder';
   const showDisabled = resolution.kind === 'disabled';
   const showError = resolution.kind === 'failed';
+  const canRetry = mediaResolutionCanRetry(resolution);
 
   return (
     <div
@@ -95,15 +97,14 @@ export function BaseImageElement({ elementInfo }: BaseImageElementProps) {
                     <ShieldAlert className="w-3 h-3 shrink-0" />
                     <span>{t('settings.mediaContentSensitive')}</span>
                   </div>
-                ) : resolution.retryable ? (
+                ) : canRetry ? (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      retryMediaTask(elementInfo.src, {
-                        elementId: elementInfo.id,
-                        sceneId,
-                        slideId: sceneData.canvas.id,
-                      });
+                      retryMediaTask(
+                        elementInfo.src,
+                        mediaRetryTarget(elementInfo.id, sceneId, sceneData),
+                      );
                     }}
                     onPointerDown={(e) => e.stopPropagation()}
                     className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/40 rounded hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"
@@ -136,6 +137,22 @@ export function BaseImageElement({ elementInfo }: BaseImageElementProps) {
                   />
                 )}
               </>
+            ) : null}
+            {canRetry && resolution.kind !== 'failed' ? (
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  retryMediaTask(
+                    elementInfo.src,
+                    mediaRetryTarget(elementInfo.id, sceneId, sceneData),
+                  );
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+                className="absolute right-1 top-1 flex items-center gap-1 rounded bg-red-100/95 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm dark:bg-red-900/80 dark:text-red-300"
+              >
+                <RotateCcw className="h-3 w-3" />
+                {t('settings.mediaRetry')}
+              </button>
             ) : null}
           </div>
         </div>

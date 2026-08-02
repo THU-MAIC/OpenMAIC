@@ -139,6 +139,35 @@ describe('PPTX media fallback chains', () => {
     expect(mocks.mediaGet).toHaveBeenCalledWith('stage-1:ast_poster');
   });
 
+  it('embeds an allocated slide background from its Dexie row', async () => {
+    mocks.mediaGet.mockImplementation(async (key: string) =>
+      key === 'stage-1:ast_background'
+        ? {
+            id: key,
+            stageId: 'stage-1',
+            type: 'image',
+            blob: new Blob([PNG_BYTES], { type: 'image/png' }),
+            mimeType: 'image/png',
+            size: PNG_BYTES.byteLength,
+            prompt: 'Background',
+            params: '{}',
+            createdAt: 1,
+          }
+        : undefined,
+    );
+    const slide = {
+      ...baseSlide({}),
+      background: { type: 'image', image: { src: 'ast_background', size: 'cover' } },
+      elements: [],
+    } as Slide;
+
+    const blob = await buildPptxBlob([slide], [sceneFor(slide)], 0.5625, 1000, 100, 1, 'stage-1');
+    const media = await pptxMediaBytes(blob);
+
+    expect(media.some((bytes) => Buffer.from(bytes).equals(Buffer.from(PNG_BYTES)))).toBe(true);
+    expect(mocks.mediaGet).toHaveBeenCalledWith('stage-1:ast_background');
+  });
+
   it('falls back to the original image fetch when task, Dexie, and pool all miss', async () => {
     const fetchSpy = vi.fn(async (url: string) => {
       if (url === 'logo.png') {

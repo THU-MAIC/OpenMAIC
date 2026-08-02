@@ -26,6 +26,7 @@ export interface ResolvedSlideMediaEntry {
 export interface ResolvedSlideMedia {
   readonly slide: Slide;
   readonly byElementId: Readonly<Record<string, ResolvedSlideMediaEntry>>;
+  readonly backgroundResolution?: MediaResolution;
 }
 
 function mediaTaskKeyFor(el: PPTElement): string | undefined {
@@ -76,6 +77,30 @@ export function resolveSlideMediaState(
   } = {},
 ): ResolvedSlideMedia {
   const byElementId: Record<string, ResolvedSlideMediaEntry> = {};
+  const backgroundRef =
+    slide.background?.type === 'image' ? slide.background.image?.src : undefined;
+  const backgroundTask = taskForRef(tasks, backgroundRef, stageId);
+  const backgroundResolution = backgroundRef
+    ? resolveMediaRef(
+        backgroundRef,
+        backgroundTask,
+        leaseFor(backgroundRef, options.assetLeases, options.assetUrls),
+        options.imageGenerationDisabled,
+      )
+    : undefined;
+  const backgroundSrc = backgroundResolution
+    ? (renderableMediaUrl(backgroundResolution) ?? '')
+    : undefined;
+  const background =
+    slide.background?.type === 'image' &&
+    slide.background.image &&
+    backgroundSrc !== undefined &&
+    backgroundSrc !== slide.background.image.src
+      ? {
+          ...slide.background,
+          image: { ...slide.background.image, src: backgroundSrc },
+        }
+      : slide.background;
   const elements = slide.elements.map((element) => {
     if (element.type !== 'image' && element.type !== 'video') return element;
 
@@ -112,10 +137,13 @@ export function resolveSlideMediaState(
   });
 
   return {
-    slide: elements.every((element, index) => element === slide.elements[index])
-      ? slide
-      : { ...slide, elements },
+    slide:
+      background === slide.background &&
+      elements.every((element, index) => element === slide.elements[index])
+        ? slide
+        : { ...slide, background, elements },
     byElementId,
+    backgroundResolution,
   };
 }
 
@@ -146,6 +174,15 @@ export function useResolvedSlideMedia(slide: Slide): ResolvedSlideMedia {
         if (!task) return `${key ?? ''}|`;
         return `${key}|${task.status}|${task.objectUrl ?? ''}|${task.poster ?? ''}|${task.errorCode ?? ''}|`;
       })
+      .concat(
+        slide.background?.type === 'image'
+          ? (() => {
+              const ref = slide.background.image?.src;
+              const task = taskForRef(state.tasks, ref, stageId);
+              return `${ref ?? ''}|${task?.status ?? ''}|${task?.objectUrl ?? ''}|${task?.errorCode ?? ''}|`;
+            })()
+          : '',
+      )
       .join('');
   });
 
@@ -161,6 +198,9 @@ export function useResolvedSlideMedia(slide: Slide): ResolvedSlideMedia {
         values.push(element.poster);
       }
     }
+    const backgroundRef =
+      slide.background?.type === 'image' ? slide.background.image?.src : undefined;
+    if (backgroundRef && !isConcreteMediaAddress(backgroundRef)) values.push(backgroundRef);
     return values;
   }, [slide, stageId]);
   const assetLeases = useAssetUrlLeases(refs);

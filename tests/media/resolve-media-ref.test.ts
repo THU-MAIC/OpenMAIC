@@ -163,6 +163,13 @@ describe('resolveMediaRef truth table', () => {
     expect(renderableMediaUrl(resolution)).toMatch(/^(?:blob:|https:)/);
   });
 
+  it.each(['  https://example.test/image.png', '\tdata:image/png;base64,AAAA'])(
+    'trims leading whitespace from a concrete address before binding src',
+    (ref) => {
+      expect(renderableMediaUrl(resolveMediaRef(ref, undefined, missing))).toBe(ref.trimStart());
+    },
+  );
+
   it.each([
     { kind: 'url', url: 'ast_accidental' } as const,
     { kind: 'raw', value: 'opaque_accidental' } as const,
