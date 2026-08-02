@@ -1,4 +1,14 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  flushStageSave: vi.fn(),
+  reclaimForStage: vi.fn(),
+}));
+
+vi.mock('@/lib/store/stage', () => ({ flushStageSave: mocks.flushStageSave }));
+vi.mock('@/lib/media/reclaim-stage-assets', () => ({
+  reclaimUnreferencedStageAssetsForStage: mocks.reclaimForStage,
+}));
 import { useDeletedSceneRecycle } from '@/lib/edit/deleted-scene-recycle';
 import type { Scene } from '@/lib/types/stage';
 
@@ -29,6 +39,13 @@ function makeScene(id: string, stageId = 'stage-1'): Scene {
 
 afterEach(() => {
   useDeletedSceneRecycle.getState().clear();
+  vi.useRealTimers();
+});
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  mocks.flushStageSave.mockReset().mockResolvedValue(undefined);
+  mocks.reclaimForStage.mockReset().mockResolvedValue(undefined);
 });
 
 describe('useDeletedSceneRecycle', () => {
@@ -67,5 +84,38 @@ describe('useDeletedSceneRecycle', () => {
     useDeletedSceneRecycle.getState().capture(makeScene('a'), 0);
     useDeletedSceneRecycle.getState().clear();
     expect(useDeletedSceneRecycle.getState().pending).toBeNull();
+  });
+
+  it.each([
+    ['before persistence flush', 0],
+    ['after persistence flush', 600],
+  ])('undo %s keeps the deleted scene assets intact', async (_name, elapsed) => {
+    const assets = new Set(['ast_scene_image']);
+    mocks.reclaimForStage.mockImplementation(async (_stageId: string, refs: string[]) => {
+      for (const ref of refs) assets.delete(ref);
+    });
+    useDeletedSceneRecycle.getState().capture(makeScene('a'), 0, ['ast_scene_image']);
+
+    await vi.advanceTimersByTimeAsync(elapsed);
+    if (elapsed > 0) await mocks.flushStageSave();
+    expect(useDeletedSceneRecycle.getState().consume()?.scene.id).toBe('a');
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(assets).toEqual(new Set(['ast_scene_image']));
+    expect(mocks.reclaimForStage).not.toHaveBeenCalled();
+  });
+
+  it('reclaims deleted-scene assets only after the undo window expires', async () => {
+    const assets = new Set(['ast_scene_image']);
+    mocks.reclaimForStage.mockImplementation(async (_stageId: string, refs: string[]) => {
+      for (const ref of refs) assets.delete(ref);
+    });
+    useDeletedSceneRecycle.getState().capture(makeScene('a'), 0, ['ast_scene_image']);
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.waitFor(() => expect(mocks.reclaimForStage).toHaveBeenCalledOnce());
+
+    expect(mocks.flushStageSave).toHaveBeenCalledBefore(mocks.reclaimForStage);
+    expect(assets.size).toBe(0);
   });
 });

@@ -6,10 +6,15 @@ import { AnimatePresence, Reorder, motion, useReducedMotion } from 'motion/react
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { useStageStore } from '@/lib/store';
+import { markStagePersistenceDirty, useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { useDeletedSceneRecycle } from '@/lib/edit/deleted-scene-recycle';
+import {
+  DELETED_SCENE_UNDO_MS,
+  finalizeDeletedSceneReclamation,
+  useDeletedSceneRecycle,
+} from '@/lib/edit/deleted-scene-recycle';
+import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
 import { createBlankSlideScene, duplicateSlideScene } from '@/lib/edit/slide-defaults';
 import { SCENE_CREATION_ENABLED } from '@/lib/edit/scene-creation-enabled';
 import { CHROME_DURATION_MS, CHROME_EASE, CHROME_EASE_CSS } from '@/lib/edit/transitions';
@@ -261,16 +266,23 @@ export function SlideNavRail() {
   const handleDelete = useCallback(
     (sceneId: string) => {
       const source = scenes.find((s) => s.id === sceneId);
-      if (!source) return;
+      if (!source || !stage) return;
       // Hold deck-empty guard at the rail layer; the store doesn't enforce.
       if (source.type === 'slide' && slideCount <= 1) return;
       if (totalScenes <= 1) return;
       const index = scenes.findIndex((s) => s.id === sceneId);
-      useDeletedSceneRecycle.getState().capture(source, index);
+      const sourceRefs = collectStageAssetRefs(
+        { stage: { ...stage, videoManifest: undefined }, scenes: [source] },
+        { mediaRows: [], audioRows: [] },
+      ).referenced;
+      const manifestEntries = Object.fromEntries(
+        Object.entries(stage.videoManifest ?? {}).filter(([ref]) => sourceRefs.has(ref)),
+      );
+      useDeletedSceneRecycle.getState().capture(source, index, [...sourceRefs], manifestEntries);
       deleteScene(sceneId);
       toast(t('edit.nav.deleted'), {
         description: source.title,
-        duration: 5000,
+        duration: DELETED_SCENE_UNDO_MS,
         action: {
           label: t('edit.nav.undo'),
           onClick: () => {
@@ -283,7 +295,22 @@ export function SlideNavRail() {
             // deleted scene). Drop the undo when stages don't match
             // rather than blasting the entry into the wrong deck.
             const currentStage = useStageStore.getState().stage;
-            if (!currentStage || currentStage.id !== entry.stageId) return;
+            if (!currentStage || currentStage.id !== entry.stageId) {
+              void finalizeDeletedSceneReclamation(entry);
+              return;
+            }
+            if (Object.keys(entry.manifestEntries).length > 0) {
+              useStageStore.setState({
+                stage: {
+                  ...currentStage,
+                  videoManifest: {
+                    ...currentStage.videoManifest,
+                    ...entry.manifestEntries,
+                  },
+                },
+              });
+              markStagePersistenceDirty([{ kind: 'stage' }]);
+            }
             const live = useStageStore.getState().scenes;
             // Prepend path — `insertSceneAfter` requires an anchor, but
             // restoring index 0 (the previously-first slide) has no
@@ -302,11 +329,11 @@ export function SlideNavRail() {
             useStageStore.getState().setCurrentSceneId(entry.scene.id);
           },
         },
-        onDismiss: () => useDeletedSceneRecycle.getState().clear(),
-        onAutoClose: () => useDeletedSceneRecycle.getState().clear(),
+        onDismiss: () => useDeletedSceneRecycle.getState().expire(),
+        onAutoClose: () => useDeletedSceneRecycle.getState().expire(),
       });
     },
-    [deleteScene, scenes, slideCount, totalScenes, t],
+    [deleteScene, scenes, slideCount, stage, totalScenes, t],
   );
 
   const canDeleteAny = totalScenes > 1;

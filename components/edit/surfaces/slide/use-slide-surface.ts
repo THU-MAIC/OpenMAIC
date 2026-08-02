@@ -10,13 +10,15 @@ import { createElementId } from '@/lib/edit/element-id';
 import { createDefaultImageElement, createDefaultSlide } from '@/lib/edit/slide-edit-elements';
 import { defaultRichTextAttrs } from '@/lib/prosemirror/utils';
 import { useCanvasStore } from '@/lib/store/canvas';
-import { useStageStore } from '@/lib/store/stage';
+import { flushStageSave, useStageStore } from '@/lib/store/stage';
 import type { SlideContent } from '@/lib/types/stage';
 import type { PPTElement, PPTImageElement, SlideBackground } from '@openmaic/dsl';
 import { ImagePicker } from './ImagePicker';
 import { BackgroundControl } from './BackgroundControl';
 import { useSlideEditSession } from './slide-edit-session';
 import { resolveEditingElementId, resolveSelectedElement } from './editing-state';
+import { collectElementAssetRefs } from '@/lib/media/collect-stage-asset-refs';
+import { reclaimUnreferencedStageAssetsForStage } from '@/lib/media/reclaim-stage-assets';
 
 export interface SlideSelection {
   readonly activeElementIds: readonly string[];
@@ -118,8 +120,19 @@ export function insertImageElement(src: string): void {
 
 /** Delete a slide element and clear the canvas selection. */
 export function deleteSlideElement(elementId: string): void {
-  useSlideEditSession.getState().applyOp({ type: 'element.delete', elementId });
+  const session = useSlideEditSession.getState();
+  const deleted = session.history?.present.canvas.elements.find(
+    (element) => element.id === elementId,
+  );
+  const stageId = useStageStore.getState().stage?.id;
+  const candidates = deleted ? collectElementAssetRefs([deleted]) : [];
+  session.applyOp({ type: 'element.delete', elementId });
   useCanvasStore.getState().setActiveElementIdList([]);
+  if (stageId && candidates.length > 0) {
+    void flushStageSave()
+      .then(() => reclaimUnreferencedStageAssetsForStage(stageId, candidates))
+      .catch(() => undefined);
+  }
 }
 
 /**

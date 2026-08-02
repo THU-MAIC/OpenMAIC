@@ -1,30 +1,40 @@
 /**
  * Per-speech managed-TTS helpers for the timeline editor.
  *
- * Audio is keyed and produced exactly like the generation pipeline: the cache
- * key is `tts_s<sceneOrder>_<actionId>` (see use-scene-generator /
- * classroom-media-generation) and synthesis delegates to `generateAndStoreTTS`,
- * so the request/store contract and key scheme stay single-sourced.
+ * New audio receives an allocated pool identity from `generateAndStoreTTS`.
+ * The old `tts_s<sceneOrder>_<actionId>` shape remains only as a compatibility
+ * read/delete key for documents and Dexie rows created before allocation.
  */
 import { db } from '@/lib/utils/database';
 import { useSettingsStore } from '@/lib/store/settings';
 import { generateAndStoreTTS } from '@/lib/hooks/use-scene-generator';
+import { useStageStore } from '@/lib/store/stage';
+import { reclaimUnreferencedStageAssetsForStage } from '@/lib/media/reclaim-stage-assets';
 
-/** Canonical audio cache key — matches the generation pipeline. */
+/** Legacy deterministic Dexie key used before pool allocation. */
 export function speechAudioId(sceneOrder: number, actionId: string): string {
   return `tts_s${sceneOrder}_${actionId}`;
 }
 
 /**
- * The audio key for a speech action: its stamped `audioId` (set by the pipeline
- * or a prior regen) if present, else the canonical derived key. Single source
- * of truth for "what blob belongs to this speech line".
+ * Return only the identity stamped on the action. Allocated ids cannot be
+ * reconstructed: no audioId means no current audio reference.
  */
 export function resolveSpeechAudioId(
+  _sceneOrder: number,
+  action: { id?: string; audioId?: string },
+): string | undefined {
+  return action.audioId;
+}
+
+/** Locate a pre-allocation Dexie row for a legacy action with no audioId. */
+export async function resolveLegacySpeechAudioId(
   sceneOrder: number,
   action: { id?: string; audioId?: string },
-): string {
-  return action.audioId || speechAudioId(sceneOrder, action.id ?? '');
+): Promise<string | undefined> {
+  if (action.audioId || !action.id) return undefined;
+  const legacyId = speechAudioId(sceneOrder, action.id);
+  return (await db.audioFiles.get(legacyId)) ? legacyId : undefined;
 }
 
 /** Managed (server) TTS is on — browser-native TTS has no cached file to manage. */
@@ -58,9 +68,9 @@ export async function audioObjectUrl(audioId: string): Promise<string | null> {
 /**
  * Discard the cached audio for a speech line (both its stamped audioId, if any,
  * and the canonical derived key). Called when the user edits a line's text: the
- * cache key is derived from sceneOrder+actionId (not the text), so without this
- * the stale blob would keep replaying for the new wording. After this the line
- * reads as "not voiced" and must be regenerated.
+ * stamped allocated id is independent of the text, and a legacy derived row is
+ * too, so without this the stale blob could keep replaying for the new wording.
+ * After this the line reads as "not voiced" and must be regenerated.
  */
 export async function discardSpeechAudio(
   sceneOrder: number,
@@ -69,24 +79,42 @@ export async function discardSpeechAudio(
   if (!action.id) return;
   const ids = new Set([speechAudioId(sceneOrder, action.id)]);
   if (action.audioId) ids.add(action.audioId);
-  await db.audioFiles.bulkDelete([...ids]);
+  const stageId = useStageStore.getState().stage?.id;
+  if (stageId) {
+    await reclaimUnreferencedStageAssetsForStage(stageId, [...ids]);
+  } else {
+    await db.audioFiles.bulkDelete([...ids]);
+  }
+}
+
+/** Remove a previously committed allocated id after its replacement is stamped. */
+export async function removeSupersededSpeechAudio(
+  previousAudioId: string | undefined,
+  currentAudioId: string,
+): Promise<void> {
+  if (!previousAudioId || previousAudioId === currentAudioId) return;
+  const stageId = useStageStore.getState().stage?.id;
+  if (stageId) {
+    await reclaimUnreferencedStageAssetsForStage(stageId, [previousAudioId]);
+  } else {
+    await db.audioFiles.delete(previousAudioId);
+  }
 }
 
 /**
- * (Re)generate TTS for one speech line and cache it under the canonical key.
- * Returns the audioId on success, or null when TTS isn't applicable. Throws if
- * synthesis fails. Delegates to the pipeline's `generateAndStoreTTS`.
+ * (Re)generate TTS for one speech line under a fresh allocated asset id.
+ * Returns that id on success, or null when TTS isn't applicable.
  */
 export async function regenerateSpeechAudio(
   sceneOrder: number,
-  action: { id?: string; text?: string },
+  action: { id?: string; text?: string; audioId?: string },
   language?: string,
   signal?: AbortSignal,
 ): Promise<string | null> {
   if (!isManagedTtsActive()) return null;
   const text = action.text?.trim();
   if (!text || !action.id) return null;
-  const audioId = speechAudioId(sceneOrder, action.id);
-  await generateAndStoreTTS(audioId, text, language, signal);
-  return audioId;
+  const requestId = `tts_request_s${sceneOrder}_${action.id}`;
+  const stageId = useStageStore.getState().stage?.id;
+  return generateAndStoreTTS(requestId, text, language, signal, undefined, undefined, stageId);
 }

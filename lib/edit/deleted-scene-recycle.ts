@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 import type { Scene } from '@/lib/types/stage';
+import type { Stage } from '@/lib/types/stage';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('DeletedSceneRecycle');
+export const DELETED_SCENE_UNDO_MS = 5000;
 
 /**
  * Single-slot recycle bin for the Pro mode slide-nav rail's toast-undo.
@@ -15,27 +20,84 @@ import type { Scene } from '@/lib/types/stage';
  * the snapshot, not the restoration logic.
  */
 
-interface RecycleEntry {
+export interface RecycleEntry {
   readonly scene: Scene;
   readonly index: number;
   /** Cleared if the auto-dismiss timer has already fired. */
   readonly stageId: string;
+  readonly assetRefs: readonly string[];
+  readonly manifestEntries: NonNullable<Stage['videoManifest']>;
 }
 
 interface DeletedSceneRecycleState {
   pending: RecycleEntry | null;
-  capture: (scene: Scene, index: number) => void;
+  capture: (
+    scene: Scene,
+    index: number,
+    assetRefs?: readonly string[],
+    manifestEntries?: NonNullable<Stage['videoManifest']>,
+  ) => void;
   consume: () => RecycleEntry | null;
+  expire: () => RecycleEntry | null;
   clear: () => void;
+}
+
+let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+
+function cancelExpiry(): void {
+  if (expiryTimer) clearTimeout(expiryTimer);
+  expiryTimer = null;
+}
+
+export async function finalizeDeletedSceneReclamation(entry: RecycleEntry): Promise<void> {
+  const [{ flushStageSave }, { reclaimUnreferencedStageAssetsForStage }] = await Promise.all([
+    import('@/lib/store/stage'),
+    import('@/lib/media/reclaim-stage-assets'),
+  ]);
+  await flushStageSave();
+  await reclaimUnreferencedStageAssetsForStage(entry.stageId, entry.assetRefs);
+}
+
+function finalize(entry: RecycleEntry): void {
+  void finalizeDeletedSceneReclamation(entry).catch((error) => {
+    log.warn(`Failed to reclaim assets for expired scene ${entry.scene.id}:`, error);
+  });
 }
 
 export const useDeletedSceneRecycle = create<DeletedSceneRecycleState>()((set, get) => ({
   pending: null,
-  capture: (scene, index) => set({ pending: { scene, index, stageId: scene.stageId } }),
+  capture: (scene, index, assetRefs = [], manifestEntries = {}) => {
+    const previous = get().pending;
+    cancelExpiry();
+    if (previous) finalize(previous);
+    const entry = { scene, index, stageId: scene.stageId, assetRefs, manifestEntries };
+    set({ pending: entry });
+    expiryTimer = setTimeout(() => {
+      expiryTimer = null;
+      if (get().pending !== entry) return;
+      set({ pending: null });
+      finalize(entry);
+    }, DELETED_SCENE_UNDO_MS);
+  },
   consume: () => {
     const entry = get().pending;
-    if (entry) set({ pending: null });
+    if (entry) {
+      cancelExpiry();
+      set({ pending: null });
+    }
     return entry;
   },
-  clear: () => set({ pending: null }),
+  expire: () => {
+    const entry = get().pending;
+    if (entry) {
+      cancelExpiry();
+      set({ pending: null });
+      finalize(entry);
+    }
+    return entry;
+  },
+  clear: () => {
+    cancelExpiry();
+    set({ pending: null });
+  },
 }));

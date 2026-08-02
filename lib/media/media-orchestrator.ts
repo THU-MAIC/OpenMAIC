@@ -8,10 +8,19 @@
 
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
+import { markStagePersistenceDirty, useStageStore } from '@/lib/store/stage';
 import { db, mediaFileKey } from '@/lib/utils/database';
+import { accessDocument, mutateDocument, type AppDocument } from '@/lib/document-store';
 import type { SceneOutline } from '@/lib/types/generation';
+import { makeScene, type Scene, type Stage, type Whiteboard } from '@/lib/types/stage';
 import type { MediaGenerationRequest } from '@/lib/media/types';
+import type { AssetMeta, PPTElement, Slide } from '@openmaic/dsl';
+import { putAsset, removeAsset, replaceAsset } from '@/lib/media/asset-pool';
+import { assetRefExists } from '@/lib/media/use-asset-url';
 import { createLogger } from '@/lib/logger';
+import { isStageWriteStale, stageDeletionEpoch } from '@/lib/utils/deleted-stages';
+import type { MediaTask } from '@/lib/store/media-generation';
+import { collectStageAssetRefs } from './collect-stage-asset-refs';
 
 const log = createLogger('MediaOrchestrator');
 
@@ -35,6 +44,16 @@ export async function generateMediaForOutlines(
 ): Promise<void> {
   const settings = useSettingsStore.getState();
   const store = useMediaGenerationStore.getState();
+  let currentDocument: AppDocument | null = null;
+  try {
+    currentDocument = (await accessDocument(stageId)).document;
+  } catch (error) {
+    // Resume filtering is an optimization. If document truth is temporarily
+    // unreadable, fall back to the original task-only skip logic and generate
+    // the batch instead of silently dropping it.
+    log.warn(`Could not read document ${stageId} while resuming media generation:`, error);
+  }
+  const currentRefs = collectStageAssetRefs(currentDocument, { mediaRows: [], audioRows: [] });
 
   // Collect all media requests
   const allRequests: MediaGenerationRequest[] = [];
@@ -44,9 +63,21 @@ export async function generateMediaForOutlines(
       // Filter by enabled flags
       if (mg.type === 'image' && !settings.imageGenerationEnabled) continue;
       if (mg.type === 'video' && !settings.videoGenerationEnabled) continue;
-      // Skip already completed or permanently failed (restored from DB)
-      const existing = store.getTask(mg.elementId);
+      // A restored success task is keyed by its allocated id, so match its
+      // persisted placeholder as well as the direct task key.
+      const existing =
+        store.getTask(mg.elementId) ??
+        Object.values(store.tasks).find(
+          (task) => task.stageId === stageId && task.placeholderRef === mg.elementId,
+        );
       if (existing?.status === 'done' || existing?.status === 'failed') continue;
+      const owningSceneExists =
+        currentDocument?.scenes.some(
+          (scene) => scene.outlineId === outline.id || scene.order === outline.order,
+        ) ?? false;
+      // A generated scene that no longer references the placeholder has already
+      // been reconciled. A not-yet-generated scene still needs its media work.
+      if (owningSceneExists && !currentRefs.referenced.has(mg.elementId)) continue;
       allRequests.push(mg);
     }
   }
@@ -66,7 +97,16 @@ export async function generateMediaForOutlines(
 /**
  * Retry a single failed media task.
  */
-export async function retryMediaTask(elementId: string): Promise<void> {
+export async function retryMediaTask(
+  elementId: string,
+  target:
+    | {
+        readonly elementId: string;
+        readonly sceneId?: string;
+        readonly slideId?: string;
+      }
+    | undefined = undefined,
+): Promise<void> {
   const store = useMediaGenerationStore.getState();
   const task = store.getTask(elementId);
   if (!task || task.status !== 'failed') return;
@@ -82,9 +122,46 @@ export async function retryMediaTask(elementId: string): Promise<void> {
     return;
   }
 
-  // Remove persisted failure record from DB so a fresh result can be written
-  const dbKey = mediaFileKey(task.stageId, elementId);
-  await db.mediaFiles.delete(dbKey).catch(() => {});
+  const stageState = useStageStore.getState();
+  const stageDocument =
+    stageState.stage?.id === task.stageId
+      ? { stage: stageState.stage, scenes: stageState.scenes }
+      : undefined;
+  const referenceCount = stageDocument
+    ? (collectStageAssetRefs(stageDocument, { mediaRows: [], audioRows: [] }).referenceCounts.get(
+        elementId,
+      ) ?? 0)
+    : 0;
+  const shared = referenceCount > 1;
+  const scopedTarget = target
+    ? {
+        ...target,
+        sceneId: target.sceneId ?? stageState.currentSceneId ?? undefined,
+      }
+    : undefined;
+  if (shared && (!scopedTarget || !scopedTarget.sceneId)) {
+    log.warn(`Cannot retry shared media ${elementId} without a target element`);
+    return;
+  }
+
+  // Asset refs are opaque. A uniquely-owned allocated ref keeps its identity;
+  // a duplicated ref gets a fresh allocation for the selected element only.
+  const replaceAssetId = !shared && (await assetRefExists(elementId)) ? elementId : undefined;
+  const posterAssetIds =
+    replaceAssetId && task.type === 'video'
+      ? await replaceablePosterRefs(task.stageId, currentPosterRefs(task.stageId, replaceAssetId))
+      : [];
+
+  if (!replaceAssetId) {
+    // Only legacy/failure placeholders are disposable. A shared allocated ref
+    // can still own real bytes for another live element, so never remove that
+    // compatibility row merely because this retry forks to a new identity.
+    const key = mediaFileKey(task.stageId, elementId);
+    const row = await db.mediaFiles.get(key).catch(() => undefined);
+    if (row && (row.error || row.blob.size === 0)) {
+      await db.mediaFiles.delete(key).catch(() => {});
+    }
+  }
 
   store.markPendingForRetry(elementId);
   await generateSingleMedia(
@@ -96,33 +173,377 @@ export async function retryMediaTask(elementId: string): Promise<void> {
       style: task.params.style,
     },
     task.stageId,
+    undefined,
+    {
+      replaceAssetId,
+      replacePosterAssetIds: posterAssetIds,
+      target: shared ? scopedTarget : undefined,
+      preserveSourceRef: shared,
+    },
   );
 }
 
 // ==================== Internal ====================
 
+function rewriteSlideMediaRefs<T extends Slide | Whiteboard>(
+  slide: T,
+  oldRef: string,
+  assetId: string,
+  posterAssetId?: string,
+  target?: { readonly elementId: string; readonly slideId?: string },
+): { slide: T; changed: boolean } {
+  if (target?.slideId && slide.id !== target.slideId) return { slide, changed: false };
+  let changed = false;
+  const elements = slide.elements.map((element): PPTElement => {
+    if (target && element.id !== target.elementId) return element;
+    if (element.type === 'image' && element.src === oldRef) {
+      changed = true;
+      return { ...element, src: assetId };
+    }
+    if (element.type === 'video') {
+      const srcMatches = element.src === oldRef;
+      const mediaRefMatches = element.mediaRef === oldRef;
+      if (srcMatches || mediaRefMatches) {
+        changed = true;
+        return {
+          ...element,
+          ...(srcMatches ? { src: assetId } : {}),
+          ...(mediaRefMatches ? { mediaRef: assetId } : {}),
+          ...(posterAssetId ? { poster: posterAssetId } : {}),
+        };
+      }
+    }
+    return element;
+  });
+  return changed ? { slide: { ...slide, elements } as T, changed } : { slide, changed };
+}
+
+function posterRefsInSlide(slide: Slide | Whiteboard, mediaRef: string): string[] {
+  return slide.elements.flatMap((element) => {
+    if (
+      element.type !== 'video' ||
+      (element.src !== mediaRef && element.mediaRef !== mediaRef) ||
+      !element.poster
+    ) {
+      return [];
+    }
+    return [element.poster];
+  });
+}
+
+function currentPosterRefs(stageId: string, mediaRef: string): string[] {
+  const state = useStageStore.getState();
+  if (state.stage?.id !== stageId) return [];
+  const refs = new Set<string>();
+  for (const scene of state.scenes) {
+    if (scene.content.type === 'slide') {
+      for (const ref of posterRefsInSlide(scene.content.canvas, mediaRef)) refs.add(ref);
+    }
+    for (const whiteboard of scene.whiteboards ?? []) {
+      for (const ref of posterRefsInSlide(whiteboard, mediaRef)) refs.add(ref);
+    }
+  }
+  for (const slide of state.stage.whiteboard ?? []) {
+    for (const ref of posterRefsInSlide(slide, mediaRef)) refs.add(ref);
+  }
+  return [...refs];
+}
+
+function rewriteStageAndScenes(
+  stage: Stage,
+  scenes: Scene[],
+  oldRef: string,
+  assetId: string,
+  posterAssetId?: string,
+  options: {
+    readonly target?: {
+      readonly elementId: string;
+      readonly sceneId?: string;
+      readonly slideId?: string;
+    };
+    readonly preserveManifestSource?: boolean;
+  } = {},
+): { stage: Stage; scenes: Scene[]; changed: boolean } {
+  let changed = false;
+  const rewrittenScenes = scenes.map((scene): Scene => {
+    if (options.target?.sceneId && scene.id !== options.target.sceneId) return scene;
+    let nextScene = scene;
+    if (scene.content.type === 'slide') {
+      const rewritten = rewriteSlideMediaRefs(
+        scene.content.canvas,
+        oldRef,
+        assetId,
+        posterAssetId,
+        options.target,
+      );
+      if (rewritten.changed) {
+        changed = true;
+        const { type: _type, content: _content, ...core } = nextScene;
+        void _type;
+        void _content;
+        nextScene = makeScene(core, { ...scene.content, canvas: rewritten.slide });
+      }
+    }
+    if (scene.whiteboards) {
+      let sceneWhiteboardsChanged = false;
+      const whiteboards = scene.whiteboards.map((slide) => {
+        const rewritten = rewriteSlideMediaRefs(
+          slide,
+          oldRef,
+          assetId,
+          posterAssetId,
+          options.target,
+        );
+        sceneWhiteboardsChanged ||= rewritten.changed;
+        return rewritten.slide;
+      });
+      if (sceneWhiteboardsChanged) {
+        changed = true;
+        nextScene = { ...nextScene, whiteboards } as Scene;
+      }
+    }
+    return nextScene;
+  });
+
+  let stageWhiteboardChanged = false;
+  const whiteboard = stage.whiteboard?.map((slide) => {
+    if (options.target?.sceneId) return slide;
+    const rewritten = rewriteSlideMediaRefs(slide, oldRef, assetId, posterAssetId, options.target);
+    stageWhiteboardChanged ||= rewritten.changed;
+    changed ||= rewritten.changed;
+    return rewritten.slide;
+  });
+
+  let videoManifest = stage.videoManifest;
+  const manifestEntry = videoManifest?.[oldRef];
+  if (manifestEntry && videoManifest && (!options.target || changed)) {
+    if (options.preserveManifestSource) {
+      videoManifest = { ...videoManifest, [assetId]: manifestEntry };
+    } else {
+      const { [oldRef]: _oldEntry, ...remaining } = videoManifest;
+      void _oldEntry;
+      videoManifest = { ...remaining, [assetId]: manifestEntry };
+    }
+    changed = true;
+  }
+
+  const stageChanged = stageWhiteboardChanged || videoManifest !== stage.videoManifest;
+  return {
+    stage: stageChanged
+      ? { ...stage, ...(whiteboard ? { whiteboard } : {}), videoManifest }
+      : stage,
+    scenes: rewrittenScenes,
+    changed,
+  };
+}
+
+function rewriteDocumentMediaRef(
+  document: AppDocument,
+  oldRef: string,
+  assetId: string,
+  posterAssetId?: string,
+  options: {
+    readonly target?: {
+      readonly elementId: string;
+      readonly sceneId?: string;
+      readonly slideId?: string;
+    };
+    readonly preserveManifestSource?: boolean;
+  } = {},
+): AppDocument {
+  const rewritten = rewriteStageAndScenes(
+    document.stage,
+    document.scenes,
+    oldRef,
+    assetId,
+    posterAssetId,
+    options,
+  );
+  return rewritten.changed
+    ? { ...document, stage: rewritten.stage, scenes: rewritten.scenes }
+    : document;
+}
+
+function isGeneratedPlaceholderRef(value: string | undefined): value is string {
+  return !!value && /^gen_(img|vid)_[\w-]+$/i.test(value);
+}
+
+/**
+ * Reconcile media that completed before its generated scene was inserted.
+ * Re-keyed tasks retain the placeholder they replaced, so insertion can make
+ * the scene and video manifest point at the already-durable allocated ids.
+ */
+export function reconcileCompletedMediaForScene(
+  scene: Scene,
+  stage: Stage,
+  tasks: Record<string, MediaTask> = useMediaGenerationStore.getState().tasks,
+): { scene: Scene; stage: Stage } {
+  let nextScene = scene;
+  let nextStage = stage;
+  for (const task of Object.values(tasks)) {
+    if (
+      task.stageId !== stage.id ||
+      task.status !== 'done' ||
+      !isGeneratedPlaceholderRef(task.placeholderRef)
+    ) {
+      continue;
+    }
+    const rewritten = rewriteStageAndScenes(
+      nextStage,
+      [nextScene],
+      task.placeholderRef,
+      task.elementId,
+      task.posterAssetId,
+    );
+    nextStage = rewritten.stage;
+    nextScene = rewritten.scenes[0];
+  }
+  return { scene: nextScene, stage: nextStage };
+}
+
+async function persistDocumentMediaRef(
+  stageId: string,
+  oldRef: string,
+  assetId: string,
+  posterAssetId?: string,
+  options: {
+    readonly target?: {
+      readonly elementId: string;
+      readonly sceneId?: string;
+      readonly slideId?: string;
+    };
+    readonly preserveManifestSource?: boolean;
+  } = {},
+): Promise<ReadonlySet<string>> {
+  const capturedEpoch = stageDeletionEpoch(stageId);
+  const committed = new Set<string>();
+  await mutateDocument(stageId, async (document, store) => {
+    if (!document) throw new Error(`Cannot rewrite media in missing document ${stageId}`);
+    const rewritten = rewriteDocumentMediaRef(document, oldRef, assetId, posterAssetId, options);
+    if (isStageWriteStale(stageId, capturedEpoch)) return;
+    if (rewritten !== document) await store.saveDocument(rewritten);
+    const refs = collectStageAssetRefs(rewritten, { mediaRows: [], audioRows: [] }).document;
+    if (refs.has(assetId)) committed.add(assetId);
+    if (posterAssetId && refs.has(posterAssetId)) committed.add(posterAssetId);
+  });
+
+  if (isStageWriteStale(stageId, capturedEpoch)) return committed;
+
+  // The document store is authoritative, but the active editor has a separate
+  // in-memory aggregate. Mirror the committed rewrite and queue it as dirty so
+  // an older debounced snapshot cannot later restore the placeholder.
+  const state = useStageStore.getState();
+  if (state.stage?.id !== stageId) return committed;
+  const rewritten = rewriteStageAndScenes(
+    state.stage,
+    state.scenes,
+    oldRef,
+    assetId,
+    posterAssetId,
+    options,
+  );
+  if (!rewritten.changed) return committed;
+  useStageStore.setState({ stage: rewritten.stage, scenes: rewritten.scenes });
+  markStagePersistenceDirty([
+    { kind: 'stage' },
+    ...rewritten.scenes
+      .filter((scene, index) => scene !== state.scenes[index])
+      .map((scene) => ({ kind: 'scene' as const, sceneId: scene.id })),
+  ]);
+  return committed;
+}
+
+interface GeneratedMediaDetails {
+  width?: number;
+  height?: number;
+  duration?: number;
+}
+
+async function replaceablePosterRefs(stageId: string, refs: string[]): Promise<string[]> {
+  if (refs.length === 0) return [];
+  const state = useStageStore.getState();
+  const counts =
+    state.stage?.id === stageId
+      ? collectStageAssetRefs(
+          { stage: state.stage, scenes: state.scenes },
+          { mediaRows: [], audioRows: [] },
+        ).referenceCounts
+      : new Map<string, number>();
+  if (refs.some((ref) => (counts.get(ref) ?? 0) > 1)) return [];
+  const found = await Promise.all(refs.map((ref) => assetRefExists(ref)));
+  return found.every(Boolean) ? refs : [];
+}
+
+function generationMeta(
+  req: MediaGenerationRequest,
+  contentType: string,
+  details: GeneratedMediaDetails,
+): AssetMeta {
+  const settings = useSettingsStore.getState();
+  const providerId = req.type === 'image' ? settings.imageProviderId : settings.videoProviderId;
+  const modelId = req.type === 'image' ? settings.imageModelId : settings.videoModelId;
+  return {
+    contentType,
+    mediaType: req.type,
+    prompt: req.prompt,
+    params: {
+      aspectRatio: req.aspectRatio,
+      style: req.style,
+    },
+    ...(details.width !== undefined && details.height !== undefined
+      ? { dimensions: { width: details.width, height: details.height } }
+      : {}),
+    ...(details.duration !== undefined ? { duration: details.duration } : {}),
+    provider: { id: providerId, model: modelId },
+  };
+}
+
 async function generateSingleMedia(
   req: MediaGenerationRequest,
   stageId: string,
   abortSignal?: AbortSignal,
+  replacement: {
+    readonly replaceAssetId?: string;
+    readonly replacePosterAssetIds?: readonly string[];
+    readonly target?: {
+      readonly elementId: string;
+      readonly sceneId?: string;
+      readonly slideId?: string;
+    };
+    readonly preserveSourceRef?: boolean;
+  } = {},
 ): Promise<void> {
+  const {
+    replaceAssetId,
+    replacePosterAssetIds = [],
+    target,
+    preserveSourceRef = false,
+  } = replacement;
   const store = useMediaGenerationStore.getState();
   store.markGenerating(req.elementId);
+  const placeholderRef =
+    store.getTask(req.elementId)?.placeholderRef ??
+    (isGeneratedPlaceholderRef(req.elementId) ? req.elementId : undefined);
+  let poolReplacementCommitted = false;
+  const freshAllocations = new Set<string>();
 
   try {
     let resultUrl: string;
     let posterUrl: string | undefined;
     let mimeType: string;
+    let details: GeneratedMediaDetails;
 
     if (req.type === 'image') {
       const result = await callImageApi(req, abortSignal);
       resultUrl = result.url;
       mimeType = 'image/png';
+      details = { width: result.width, height: result.height };
     } else {
       const result = await callVideoApi(req, abortSignal);
       resultUrl = result.url;
       posterUrl = result.poster;
       mimeType = 'video/mp4';
+      details = { width: result.width, height: result.height, duration: result.duration };
     }
 
     if (abortSignal?.aborted) return;
@@ -131,54 +552,198 @@ async function generateSingleMedia(
     const blob = await fetchAsBlob(resultUrl);
     const posterBlob = posterUrl ? await fetchAsBlob(posterUrl).catch(() => undefined) : undefined;
 
-    // Store in IndexedDB
-    await db.mediaFiles.put({
-      id: mediaFileKey(stageId, req.elementId),
-      stageId,
-      type: req.type,
-      blob,
-      mimeType,
-      size: blob.size,
-      poster: posterBlob,
-      prompt: req.prompt,
-      params: JSON.stringify({
-        aspectRatio: req.aspectRatio,
-        style: req.style,
-      }),
-      createdAt: Date.now(),
+    const contentType = blob.type || mimeType;
+    const meta = generationMeta(req, contentType, details);
+
+    // Crash-safety invariant: pool bytes first, the Part 2 compatibility
+    // double-write second, and the document rewrite last. A failed step leaves
+    // the document on its old reference, never pointing at missing bytes.
+    const assetId = replaceAssetId ?? (await putAsset(blob, meta));
+    if (!replaceAssetId) freshAllocations.add(assetId);
+    if (replaceAssetId) {
+      await replaceAsset(replaceAssetId, blob, meta);
+      poolReplacementCommitted = true;
+    }
+    const posterMeta: AssetMeta | undefined = posterBlob
+      ? {
+          ...meta,
+          contentType: posterBlob.type || 'image/jpeg',
+          mediaType: 'video-poster',
+          parentRef: assetId,
+        }
+      : undefined;
+    let posterAssetId: string | undefined;
+    if (posterBlob && posterMeta) {
+      if (replaceAssetId && replacePosterAssetIds.length > 0) {
+        await Promise.all(
+          replacePosterAssetIds.map((ref) => replaceAsset(ref, posterBlob, posterMeta)),
+        );
+      } else {
+        posterAssetId = await putAsset(posterBlob, posterMeta);
+        freshAllocations.add(posterAssetId);
+      }
+    }
+
+    // Dexie remains a deliberate double-write until Part 3 converges the three
+    // export paths, thumbnail restoration, and import/export onto the pool.
+    const createdAt = Date.now();
+    const params = JSON.stringify({
+      aspectRatio: req.aspectRatio,
+      style: req.style,
     });
+    try {
+      await db.mediaFiles.put({
+        id: mediaFileKey(stageId, assetId),
+        stageId,
+        type: req.type,
+        blob,
+        mimeType: contentType,
+        size: blob.size,
+        poster: posterBlob,
+        prompt: req.prompt,
+        params,
+        placeholderRef: preserveSourceRef ? undefined : placeholderRef,
+        createdAt,
+      });
+
+      // Posters are independently allocated assets. Keep a compatibility row
+      // under each poster's own id as well as the legacy copy on the video row.
+      if (posterBlob) {
+        const posterIds = posterAssetId ? [posterAssetId] : replacePosterAssetIds;
+        await Promise.all(
+          posterIds.map((posterId) =>
+            db.mediaFiles.put({
+              id: mediaFileKey(stageId, posterId),
+              stageId,
+              type: 'image',
+              blob: posterBlob,
+              mimeType: posterBlob.type || 'image/jpeg',
+              size: posterBlob.size,
+              prompt: req.prompt,
+              params,
+              createdAt,
+            }),
+          ),
+        );
+      }
+    } catch (error) {
+      if (replaceAssetId && poolReplacementCommitted) {
+        throw new MediaApiError(
+          `Asset pool replacement succeeded but the compatibility media store lagged: ${error instanceof Error ? error.message : String(error)}`,
+          'MEDIA_COMPATIBILITY_STORE_LAGGED',
+        );
+      }
+      throw error;
+    }
+
+    if (!replaceAssetId || posterAssetId) {
+      const committed = await persistDocumentMediaRef(
+        stageId,
+        req.elementId,
+        assetId,
+        posterAssetId,
+        {
+          target,
+          preserveManifestSource: preserveSourceRef,
+        },
+      );
+      for (const ref of committed) freshAllocations.delete(ref);
+    }
 
     // Update store with object URL
     const objectUrl = URL.createObjectURL(blob);
     const posterObjectUrl = posterBlob ? URL.createObjectURL(posterBlob) : undefined;
-    useMediaGenerationStore.getState().markDone(req.elementId, objectUrl, posterObjectUrl);
+    if (replaceAssetId) {
+      useMediaGenerationStore.getState().markDone(assetId, objectUrl, posterObjectUrl);
+    } else if (preserveSourceRef) {
+      useMediaGenerationStore.setState((state) => {
+        const source = state.tasks[req.elementId];
+        if (!source) return state;
+        return {
+          tasks: {
+            ...state.tasks,
+            [assetId]: {
+              ...source,
+              elementId: assetId,
+              placeholderRef: preserveSourceRef
+                ? undefined
+                : (source.placeholderRef ?? req.elementId),
+              status: 'done',
+              objectUrl,
+              poster: posterObjectUrl,
+              posterAssetId,
+              error: undefined,
+              errorCode: undefined,
+            },
+          },
+        };
+      });
+    } else {
+      useMediaGenerationStore
+        .getState()
+        .rekeyDone(req.elementId, assetId, objectUrl, posterObjectUrl, posterAssetId);
+    }
+    if (!replaceAssetId) {
+      // Close the late-scene window: a scene inserted after the first rewrite
+      // but before task re-keying is reconciled under the same document lock.
+      const committed = await persistDocumentMediaRef(
+        stageId,
+        req.elementId,
+        assetId,
+        posterAssetId,
+        {
+          target,
+          preserveManifestSource: preserveSourceRef,
+        },
+      );
+      for (const ref of committed) freshAllocations.delete(ref);
+    }
   } catch (err) {
+    // A document commit can succeed before a later reconciliation fails. Treat
+    // those refs as committed even if the failure interrupted the return path.
+    const latest = await accessDocument(stageId).catch(() => undefined);
+    const protectedRefs = latest?.document
+      ? collectStageAssetRefs(latest.document, { mediaRows: [], audioRows: [] }).document
+      : new Set<string>();
+    for (const ref of freshAllocations) {
+      if (protectedRefs.has(ref)) continue;
+      await removeAsset(ref).catch(() => undefined);
+      await db.mediaFiles.delete(mediaFileKey(stageId, ref)).catch(() => undefined);
+    }
     if (abortSignal?.aborted) return;
     const message = err instanceof Error ? err.message : String(err);
     const errorCode = err instanceof MediaApiError ? err.errorCode : undefined;
     log.error(`Failed ${req.elementId}:`, message);
-    useMediaGenerationStore.getState().markFailed(req.elementId, message, errorCode);
+    const failedRef = replaceAssetId ?? req.elementId;
+    useMediaGenerationStore.getState().markFailed(failedRef, message, errorCode);
 
-    // Persist non-retryable failures to IndexedDB so they survive page refresh
-    if (errorCode) {
-      await db.mediaFiles
-        .put({
-          id: mediaFileKey(stageId, req.elementId),
-          stageId,
-          type: req.type,
-          blob: new Blob(), // empty placeholder
-          mimeType: req.type === 'image' ? 'image/png' : 'video/mp4',
-          size: 0,
-          prompt: req.prompt,
-          params: JSON.stringify({
-            aspectRatio: req.aspectRatio,
-            style: req.style,
-          }),
-          error: message,
-          errorCode,
-          createdAt: Date.now(),
-        })
-        .catch(() => {}); // best-effort
+    // Never overwrite a usable same-id compatibility row with an empty failure
+    // marker. The live task still carries the retryable error while last-good
+    // bytes remain available through Dexie/the pool.
+    if (errorCode || replaceAssetId) {
+      const key = mediaFileKey(stageId, failedRef);
+      const existing = await db.mediaFiles.get(key).catch(() => undefined);
+      if (!existing || existing.error || existing.blob.size === 0) {
+        await db.mediaFiles
+          .put({
+            id: key,
+            stageId,
+            type: req.type,
+            blob: new Blob(), // empty placeholder
+            mimeType: req.type === 'image' ? 'image/png' : 'video/mp4',
+            size: 0,
+            prompt: req.prompt,
+            params: JSON.stringify({
+              aspectRatio: req.aspectRatio,
+              style: req.style,
+            }),
+            error: message,
+            errorCode,
+            placeholderRef,
+            createdAt: Date.now(),
+          })
+          .catch(() => {}); // best-effort
+      }
     }
   }
 }
@@ -186,7 +751,7 @@ async function generateSingleMedia(
 async function callImageApi(
   req: MediaGenerationRequest,
   abortSignal?: AbortSignal,
-): Promise<{ url: string }> {
+): Promise<{ url: string; width?: number; height?: number }> {
   const settings = useSettingsStore.getState();
   const providerConfig = settings.imageProvidersConfig?.[settings.imageProviderId];
 
@@ -220,13 +785,19 @@ async function callImageApi(
   const url =
     data.result?.url || (data.result?.base64 ? `data:image/png;base64,${data.result.base64}` : '');
   if (!url) throw new Error('No image URL in response');
-  return { url };
+  return { url, width: data.result?.width, height: data.result?.height };
 }
 
 async function callVideoApi(
   req: MediaGenerationRequest,
   abortSignal?: AbortSignal,
-): Promise<{ url: string; poster?: string }> {
+): Promise<{
+  url: string;
+  poster?: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+}> {
   const settings = useSettingsStore.getState();
   const providerConfig = settings.videoProvidersConfig?.[settings.videoProviderId];
 
@@ -257,7 +828,13 @@ async function callVideoApi(
 
   const url = data.result?.url;
   if (!url) throw new Error('No video URL in response');
-  return { url, poster: data.result?.poster };
+  return {
+    url,
+    poster: data.result?.poster,
+    width: data.result?.width,
+    height: data.result?.height,
+    duration: data.result?.duration,
+  };
 }
 
 async function fetchAsBlob(url: string): Promise<Blob> {

@@ -40,7 +40,7 @@ import {
 import { motion, useReducedMotion } from 'motion/react';
 import { cn } from '@/lib/utils/cn';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { useStageStore } from '@/lib/store/stage';
+import { flushStageSave, useStageStore } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
@@ -78,8 +78,9 @@ import {
   audioObjectUrl,
   discardSpeechAudio,
   regenerateSpeechAudio,
+  removeSupersededSpeechAudio,
+  resolveLegacySpeechAudioId,
   resolveSpeechAudioId,
-  speechAudioId,
 } from '@/lib/audio/regenerate-speech-tts';
 
 const EMPTY: Action[] = [];
@@ -270,7 +271,7 @@ function SpeechTtsBar({
   audioUrl?: string;
   refreshKey?: number;
   regenerating?: boolean;
-  onGenerated: () => void;
+  onGenerated: (audioId: string) => Promise<void>;
 }) {
   const { t } = useI18n();
   const [status, setStatus] = useState<TtsStatus>('none');
@@ -291,9 +292,13 @@ function SpeechTtsBar({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objUrlRef = useRef<string | null>(null);
 
-  // The audio's real key: the action's stamped audioId, else the canonical
-  // derived key (resolveSpeechAudioId is the single source of truth).
   const lookupId = resolveSpeechAudioId(sceneOrder, { id: actionId, audioId });
+  const [readAudioId, setReadAudioId] = useState<string | undefined>(lookupId);
+  const [seededLookupId, setSeededLookupId] = useState(lookupId);
+  if (lookupId !== seededLookupId) {
+    setSeededLookupId(lookupId);
+    setReadAudioId(lookupId);
+  }
 
   const stopPreview = useCallback(() => {
     audioRef.current?.pause();
@@ -312,8 +317,17 @@ function SpeechTtsBar({
           if (alive) setStatus('ready');
           return;
         }
-        const has = await audioExists(lookupId);
-        if (alive) setStatus((s) => (s === 'generating' ? s : has ? 'ready' : 'none'));
+        // A missing stamped id means "not generated" for new documents. Probe
+        // the deterministic key only to preserve pre-allocation Dexie rows.
+        const legacyId = lookupId
+          ? undefined
+          : await resolveLegacySpeechAudioId(sceneOrder, { id: actionId });
+        const candidateId = lookupId ?? legacyId;
+        const has = candidateId ? await audioExists(candidateId) : false;
+        if (alive) {
+          setReadAudioId(has ? candidateId : undefined);
+          setStatus((s) => (s === 'generating' ? s : has ? 'ready' : 'none'));
+        }
       } catch {
         /* IndexedDB read failed — leave status as-is (as before this change) */
       } finally {
@@ -329,15 +343,15 @@ function SpeechTtsBar({
     return () => {
       alive = false;
     };
-  }, [lookupId, audioUrl, refreshKey, regenerating]);
+  }, [lookupId, actionId, sceneOrder, audioUrl, refreshKey, regenerating]);
 
   useEffect(() => () => stopPreview(), [stopPreview]);
 
   const preview = async () => {
     stopPreview();
     let src = audioUrl ?? null;
-    if (!src) {
-      src = await audioObjectUrl(lookupId);
+    if (!src && readAudioId) {
+      src = await audioObjectUrl(readAudioId);
       objUrlRef.current = src;
     }
     if (!src) return;
@@ -350,9 +364,16 @@ function SpeechTtsBar({
   const regenerate = async () => {
     setStatus('generating');
     try {
-      const id = await regenerateSpeechAudio(sceneOrder, { id: actionId, text }, language);
+      const previousAudioId = audioId;
+      const id = await regenerateSpeechAudio(
+        sceneOrder,
+        { id: actionId, text, audioId: previousAudioId },
+        language,
+      );
       if (id) {
-        onGenerated();
+        setReadAudioId(id);
+        await onGenerated(id);
+        await removeSupersededSpeechAudio(previousAudioId, id);
         setStatus('ready');
       } else {
         setStatus('none');
@@ -444,7 +465,7 @@ function SpeechClip({
   ttsRefresh?: number;
   regenerating?: boolean;
   onCommit: (text: string) => void;
-  onGenerated: () => void;
+  onGenerated: (audioId: string) => Promise<void>;
   onDelete: () => void;
   onMoveLeft: () => void;
   onMoveRight: () => void;
@@ -1003,32 +1024,32 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     // Light up every queued line's status row up front (they're all about to be
     // synthesized), cleared together in the finally once the batch settles.
     setRegeneratingIds(new Set(speeches.map((a) => a.id).filter(Boolean) as string[]));
-    // Stamp audioId only for lines that actually synthesized — a skipped/failed
-    // line must not get an id pointing at a blob that was never written.
-    const okIds = new Set<string>();
     try {
-      for (const a of speeches) {
-        if (!a.id) continue;
+      for (const queued of speeches) {
+        if (!queued.id) continue;
         try {
+          const liveAction = latest()?.actions?.find(
+            (action) => action.type === 'speech' && action.id === queued.id,
+          );
+          if (!liveAction || liveAction.type !== 'speech') continue;
+          const previousAudioId = liveAction.audioId;
           const id = await regenerateSpeechAudio(
-            order,
-            { id: a.id, text: (a as { text?: string }).text ?? '' },
+            latest()?.order ?? order,
+            {
+              id: liveAction.id,
+              text: liveAction.text,
+              audioId: previousAudioId,
+            },
             language,
           );
-          if (id) okIds.add(a.id);
+          if (id) {
+            commit((cur) => setAudioIdById(cur, liveAction.id!, id));
+            await flushStageSave();
+            await removeSupersededSpeechAudio(previousAudioId, id);
+          }
         } catch {
           /* skip a failed line, keep going */
         }
-      }
-      if (okIds.size > 0) {
-        commit((cur) => {
-          let next = cur;
-          for (const a of cur) {
-            if (a.type === 'speech' && a.id && okIds.has(a.id))
-              next = setAudioIdById(next, a.id, speechAudioId(order, a.id));
-          }
-          return next;
-        });
       }
     } finally {
       setRegenAll(false);
@@ -1323,17 +1344,29 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                                 // Re-check status only AFTER the blob is gone, so
                                 // the status row can't race the async delete and
                                 // briefly still read "voiced".
-                                void discardSpeechAudio(sceneOrder, {
-                                  id: key,
-                                  audioId: prevAudioId,
-                                }).finally(() => setTtsRefresh((n) => n + 1));
+                                void flushStageSave()
+                                  .then(() =>
+                                    discardSpeechAudio(sceneOrder, {
+                                      id: key,
+                                      audioId: prevAudioId,
+                                    }),
+                                  )
+                                  .finally(() => setTtsRefresh((n) => n + 1));
                               }}
-                              onGenerated={() =>
-                                commit((cur) =>
-                                  setAudioIdById(cur, key, speechAudioId(sceneOrder, key)),
-                                )
-                              }
-                              onDelete={() => commit((cur) => removeById(cur, key))}
+                              onGenerated={async (assetId) => {
+                                commit((cur) => setAudioIdById(cur, key, assetId));
+                                await flushStageSave();
+                              }}
+                              onDelete={() => {
+                                const previousAudioId = (action as { audioId?: string }).audioId;
+                                commit((cur) => removeById(cur, key));
+                                void flushStageSave().then(() =>
+                                  discardSpeechAudio(sceneOrder, {
+                                    id: key,
+                                    audioId: previousAudioId,
+                                  }),
+                                );
+                              }}
                               onMoveLeft={() => commit((cur) => moveByIdDir(cur, key, -1))}
                               onMoveRight={() => commit((cur) => moveByIdDir(cur, key, 1))}
                               canMoveLeft={index > 0}
