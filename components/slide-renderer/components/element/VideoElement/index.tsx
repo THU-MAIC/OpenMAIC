@@ -3,19 +3,14 @@
 import type { PPTVideoElement } from '@openmaic/dsl';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
-import { getVideoMediaRefForElement } from '@/lib/media/video-manifest';
-import {
-  isConcreteMediaAddress,
-  mediaResolutionCanRetry,
-  renderableMediaUrl,
-  useResolvedMediaRef,
-} from '@/lib/media/resolve-media-ref';
+import { mediaResolutionCanRetry } from '@/lib/media/resolve-media-ref';
 import { useSettingsStore } from '@/lib/store/settings';
 import { RotateCcw, VideoOff } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSceneData } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
 import { mediaRetryTarget, retryMediaTask } from '@/lib/media/media-orchestrator';
+import { useResolvedVideoMedia, videoMediaRefForResolution } from './useResolvedVideoMedia';
 
 export interface VideoElementProps {
   elementInfo: PPTVideoElement;
@@ -32,9 +27,7 @@ export function VideoElement({ elementInfo, selectElement }: VideoElementProps) 
   const { sceneId, sceneData } = useSceneData<SlideContent>();
   const stageId = useMediaStageId();
   const mediaGenerationDisabled = useSettingsStore((state) => !state.videoGenerationEnabled);
-  const mediaRef =
-    getVideoMediaRefForElement(elementInfo) ??
-    (elementInfo.src && !isConcreteMediaAddress(elementInfo.src) ? elementInfo.src : undefined);
+  const mediaRef = videoMediaRefForResolution(elementInfo);
   const task = useMediaGenerationStore((state) => {
     if (!stageId || !mediaRef) return undefined;
     const direct = state.tasks[mediaRef];
@@ -43,17 +36,11 @@ export function VideoElement({ elementInfo, selectElement }: VideoElementProps) 
       (candidate) => candidate.stageId === stageId && candidate.placeholderRef === mediaRef,
     );
   });
-  const resolution = useResolvedMediaRef(
-    mediaRef ?? elementInfo.src,
+  const { resolution, resolvedSrc, resolvedPoster } = useResolvedVideoMedia(
+    elementInfo,
     task,
     mediaGenerationDisabled,
   );
-  const posterResolution = useResolvedMediaRef(
-    elementInfo.poster,
-    task?.poster ? { ...task, objectUrl: task.poster } : undefined,
-  );
-  const resolvedSrc = renderableMediaUrl(resolution);
-  const resolvedPoster = renderableMediaUrl(posterResolution);
   const canRetry = mediaResolutionCanRetry(resolution);
   const retryRef = mediaRef ?? elementInfo.src;
 

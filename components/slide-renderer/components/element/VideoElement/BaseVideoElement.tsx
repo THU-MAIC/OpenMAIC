@@ -7,19 +7,14 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
 import { mediaRetryTarget, retryMediaTask } from '@/lib/media/media-orchestrator';
-import {
-  isConcreteMediaAddress,
-  mediaResolutionCanRetry,
-  renderableMediaUrl,
-  useResolvedMediaRef,
-} from '@/lib/media/resolve-media-ref';
-import { getVideoMediaRefForElement } from '@/lib/media/video-manifest';
+import { mediaResolutionCanRetry } from '@/lib/media/resolve-media-ref';
 import { RotateCcw, Film, ShieldAlert, VideoOff } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useSceneData } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
+import { useResolvedVideoMedia, videoMediaRefForResolution } from './useResolvedVideoMedia';
 
 const log = createLogger('BaseVideoElement');
 
@@ -43,9 +38,7 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
   // Only subscribe to media store when inside a classroom (stageId provided via context).
   const stageId = useMediaStageId();
   const mediaGenerationDisabled = useSettingsStore((state) => !state.videoGenerationEnabled);
-  const mediaRef =
-    getVideoMediaRefForElement(elementInfo) ??
-    (elementInfo.src && !isConcreteMediaAddress(elementInfo.src) ? elementInfo.src : undefined);
+  const mediaRef = videoMediaRefForResolution(elementInfo);
   const task = useMediaGenerationStore((s) => {
     if (!mediaRef) return undefined;
     const t = s.tasks[mediaRef];
@@ -55,17 +48,11 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
       (candidate) => candidate.stageId === stageId && candidate.placeholderRef === mediaRef,
     );
   });
-  const resolution = useResolvedMediaRef(
-    mediaRef ?? elementInfo.src,
+  const { resolution, resolvedSrc, resolvedPoster } = useResolvedVideoMedia(
+    elementInfo,
     task,
     mediaGenerationDisabled,
   );
-  const posterResolution = useResolvedMediaRef(
-    elementInfo.poster,
-    task?.poster ? { ...task, objectUrl: task.poster } : undefined,
-  );
-  const resolvedSrc = renderableMediaUrl(resolution);
-  const resolvedPoster = renderableMediaUrl(posterResolution);
   const showSkeleton = resolution.kind === 'pending' || resolution.kind === 'placeholder';
   const showDisabled = resolution.kind === 'disabled';
   const showError = resolution.kind === 'failed';

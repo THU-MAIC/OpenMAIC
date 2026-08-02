@@ -192,7 +192,7 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
         el.type === 'video' &&
         typeof el.mediaRef === 'string' &&
         mediaMap[el.mediaRef] &&
-        (!el.src || isGeneratedMediaPlaceholder(el.src))
+        (!el.src || /^gen_vid_[\w-]+$/i.test(el.src))
       ) {
         el.src = mediaMap[el.mediaRef];
         continue;

@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { StageAssetDocument } from '@/lib/media/collect-stage-asset-refs';
+import type {
+  StageAssetDocument,
+  StageAudioRow,
+  StageMediaRow,
+} from '@/lib/media/collect-stage-asset-refs';
 
 const mocks = vi.hoisted(() => ({
   removeAsset: vi.fn(),
@@ -179,6 +183,29 @@ describe('stage asset reference and reclamation matrix', () => {
     expect(plan.poolRefs).not.toContain('tts_s1_action_1');
   });
 
+  it('filters unscoped and foreign legacy rows inside both pure functions', () => {
+    const mediaRows = [
+      { id: `${stageId}:image-exclusive-ref`, stageId },
+      { id: 'other-stage:foreign-course-ref', stageId: 'other-stage' },
+      { id: 'foreign-course-ref' } as unknown as StageMediaRow,
+    ];
+    const audioRows: StageAudioRow[] = [
+      { id: 'audio-exclusive', stageId },
+      { id: 'tts_s1_action_1' },
+      { id: 'audio-exclusive', stageId: 'other-stage' },
+    ];
+
+    const refs = collectStageAssetRefs(matrixDocument(), { mediaRows, audioRows });
+    expect(refs.mediaRow).toEqual(new Set(['image-exclusive-ref']));
+    expect(refs.audioRow).toEqual(new Set(['audio-exclusive']));
+    expect(refs.poolOwned).not.toContain('foreign-course-ref');
+    expect(refs.poolOwned).not.toContain('tts_s1_action_1');
+
+    const plan = buildStageAssetReclamationPlan(stageId, refs, mediaRows, audioRows);
+    expect(plan.mediaRowIds).toEqual([`${stageId}:image-exclusive-ref`]);
+    expect(plan.audioRowIds).toEqual(['audio-exclusive']);
+  });
+
   it('stage deletion reclaims matched rows while stage-less legacy rows survive', async () => {
     const inventory = await loadStageAssetInventory(matrixDocument());
     const plan = buildStageAssetReclamationPlan(
@@ -225,7 +252,7 @@ describe('stage asset reference and reclamation matrix', () => {
   ])('%s cannot remove pool or Dexie assets', (_entryPoint, file) => {
     const source = readFileSync(file, 'utf8');
     expect(source).not.toMatch(
-      /(?:reclaim-stage-assets|removeAsset|\.audioFiles\.(?:delete|bulkDelete))/,
+      /(?:reclaim-stage-assets|removeAsset|\.(?:audioFiles|mediaFiles)\.(?:delete|bulkDelete))/,
     );
   });
 });

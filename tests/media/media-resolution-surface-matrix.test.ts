@@ -1,7 +1,10 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PPTImageElement, PPTVideoElement, Slide } from '@openmaic/dsl';
 import { resolveImageSrc } from '@/components/slide-renderer/components/element/ImageElement/useResolvedImageSrc';
 import { resolveSlideMediaState } from '@/components/slide-renderer/use-resolved-slide';
+import { useResolvedVideoMedia } from '@/components/slide-renderer/components/element/VideoElement/useResolvedVideoMedia';
 import { resolvePptxMediaBinding } from '@/lib/export/use-export-pptx';
 import {
   MISSING_ASSET_LEASE,
@@ -16,6 +19,21 @@ import { resolveThumbnailMediaValue } from '@/lib/utils/stage-storage';
 import { resolveVideoExportMediaBinding } from '@/lib/video-export-app/collect';
 
 const stageId = 'stage-matrix';
+const posterRef = 'ast_video_poster';
+const posterLease = { status: 'resolved', url: 'blob:poster' } satisfies AssetUrlLeaseState;
+
+const hookLeases = vi.hoisted(() => ({
+  current: {} as Record<string, AssetUrlLeaseState>,
+}));
+
+vi.mock('@/lib/media/use-asset-url', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/media/use-asset-url')>();
+  return {
+    ...actual,
+    useAssetUrlLease: (ref: string | undefined) =>
+      ref ? (hookLeases.current[ref] ?? { status: 'missing' }) : { status: 'pending' },
+  };
+});
 
 type Presentation = 'concrete' | 'empty' | 'skeleton' | 'disabled';
 
@@ -144,6 +162,7 @@ function videoElement(ref: string): PPTVideoElement {
     height: 56,
     rotate: 0,
     autoplay: false,
+    poster: posterRef,
   };
 }
 
@@ -158,14 +177,24 @@ function slideWith(element: PPTImageElement | PPTVideoElement): Slide {
 }
 
 /**
- * Vitest runs this project in plain Node, so mounting the six React consumers
- * would not exercise browser src binding. Each named entry therefore executes
- * the pure seam its component feeds directly into src. Renderer DOM structure
- * remains covered by the focused component tests.
+ * Vitest runs this project in plain Node, so this matrix cannot assert DOM media
+ * attributes or browser playback. It executes each distinct production binding
+ * seam once: the shared image resolver, the direct video components' media-ref
+ * glue plus the useResolvedMediaRef state machine and renderable URL boundary,
+ * and the resolved-slide path shared by thumbnail and renderer consumers.
+ * Focused component tests remain responsible for renderer DOM structure.
  */
-const componentSurfaces = [
+const componentSurfaces: readonly {
+  readonly name: string;
+  readonly resolvesPoster?: boolean;
+  readonly run: (entry: ResolutionCase) => {
+    readonly src: string;
+    readonly resolution: MediaResolution;
+    readonly poster?: string;
+  };
+}[] = [
   {
-    name: 'BaseImageElement',
+    name: 'shared image-element binding (base and editor)',
     run: (entry: ResolutionCase) => {
       const binding = resolveImageSrc(
         imageElement(entry.ref),
@@ -178,41 +207,69 @@ const componentSurfaces = [
     },
   },
   {
-    name: 'ImageElement editor variant',
+    name: 'direct video-element binding (base and editor)',
+    resolvesPoster: true,
     run: (entry: ResolutionCase) => {
-      const binding = resolveImageSrc(
-        imageElement(entry.ref),
-        stageId,
-        fullTask(entry.ref, entry.task, 'image'),
-        entry.lease?.status === 'resolved' ? entry.lease.url : undefined,
-        entry.disabled,
-      );
-      return { src: binding.resolvedSrc, resolution: binding.resolution };
-    },
-  },
-  ...['BaseVideoElement', 'VideoElement index', 'SlideThumbnail', 'RendererScreenCanvas'].map(
-    (name) => ({
-      name,
-      run: (entry: ResolutionCase) => {
-        const element = videoElement(entry.ref);
-        const mediaTask = fullTask(entry.ref, entry.task, 'video');
-        const binding = resolveSlideMediaState(
-          slideWith(element),
-          stageId,
-          mediaTask ? { [entry.ref]: mediaTask } : {},
-          {
-            assetLeases: { [entry.ref]: entry.lease ?? MISSING_ASSET_LEASE },
-            videoGenerationDisabled: entry.disabled,
-          },
+      const element = videoElement(entry.ref);
+      hookLeases.current = {
+        [entry.ref]: entry.lease ?? MISSING_ASSET_LEASE,
+        [posterRef]: posterLease,
+      };
+      function DirectVideoBindingProbe() {
+        const binding = useResolvedVideoMedia(
+          element,
+          fullTask(entry.ref, entry.task, 'video'),
+          entry.disabled ?? false,
         );
-        return {
-          src: (binding.slide.elements[0] as PPTVideoElement).src ?? '',
-          resolution: binding.byElementId['video-1'].resolution,
-        };
-      },
-    }),
-  ),
-] as const;
+        const payload = Buffer.from(
+          JSON.stringify({
+            src: binding.resolvedSrc ?? '',
+            resolution: binding.resolution,
+            poster: binding.resolvedPoster,
+          } satisfies {
+            src: string;
+            resolution: MediaResolution;
+            poster?: string;
+          }),
+        ).toString('base64url');
+        return createElement('div', { 'data-binding': payload });
+      }
+      const markup = renderToStaticMarkup(createElement(DirectVideoBindingProbe));
+      const encoded = /data-binding="([^"]+)"/.exec(markup)?.[1];
+      if (!encoded) throw new Error('Direct video binding did not render');
+      return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as {
+        src: string;
+        resolution: MediaResolution;
+        poster?: string;
+      };
+    },
+  },
+  {
+    name: 'resolved-slide video binding (thumbnail and renderer)',
+    resolvesPoster: true,
+    run: (entry: ResolutionCase) => {
+      const element = videoElement(entry.ref);
+      const mediaTask = fullTask(entry.ref, entry.task, 'video');
+      const binding = resolveSlideMediaState(
+        slideWith(element),
+        stageId,
+        mediaTask ? { [entry.ref]: mediaTask } : {},
+        {
+          assetLeases: {
+            [entry.ref]: entry.lease ?? MISSING_ASSET_LEASE,
+            [posterRef]: posterLease,
+          },
+          videoGenerationDisabled: entry.disabled,
+        },
+      );
+      return {
+        src: (binding.slide.elements[0] as PPTVideoElement).src ?? '',
+        resolution: binding.byElementId['video-1'].resolution,
+        poster: (binding.slide.elements[0] as PPTVideoElement).poster,
+      };
+    },
+  },
+];
 
 describe('real media consumer matrix', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -221,6 +278,7 @@ describe('real media consumer matrix', () => {
     it.each(cases)(`${surface.name}: $name`, (entry) => {
       const binding = surface.run(entry);
       expectSafeBinding(binding.src, binding.resolution, entry.expected, entry.retryable);
+      if (surface.resolvesPoster) expect(binding.poster).toBe('blob:poster');
     });
   }
 
