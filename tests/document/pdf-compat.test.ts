@@ -40,7 +40,6 @@ describe('PDF compatibility adapter', () => {
           page: 1,
           type: 'title',
           content: 'Safety Checklist',
-          level: 2,
           position: { x: 0, y: 0, width: 100, height: 20 },
         },
       ],
@@ -90,7 +89,7 @@ describe('PDF compatibility adapter', () => {
         text: 'Safety Checklist',
         pageNumber: 1,
         bbox: { x: 0, y: 0, width: 100, height: 20 },
-        metadata: { layoutType: 'title', headingLevel: 2 },
+        metadata: { layoutType: 'title' },
       },
     ]);
     expect(artifact.assets).toEqual([

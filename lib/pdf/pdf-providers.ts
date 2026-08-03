@@ -500,7 +500,7 @@ async function mapWithConcurrency<T, R>(
  * (markdown `![](url)`), NOT a dedicated field. We download+inline them to
  * base64 and strip the remote URLs from the emitted text (they expire).
  */
-export async function aliDocMindLayoutsToParsedPdf(
+async function aliDocMindLayoutsToParsedPdf(
   result: { data: Record<string, unknown>; pageCountEstimate?: number; jobId?: string },
   fileName: string,
 ): Promise<ParsedPdfContent> {
@@ -510,7 +510,6 @@ export async function aliDocMindLayoutsToParsedPdf(
     type?: string;
     subType?: string;
     pageNum?: number;
-    level?: number;
     llmResult?: string;
     layoutConf?: number;
   }>;
@@ -518,14 +517,6 @@ export async function aliDocMindLayoutsToParsedPdf(
   const textParts: string[] = [];
   const layout: NonNullable<ParsedPdfContent['layout']> = [];
   const imageRefs: Array<{ url: string; pageNumber: number }> = [];
-  // AliDocMind's Doc-JSON hierarchy uses zero-based levels (the documented
-  // root example is level 0). Some endpoints/versions already return one-based
-  // layout levels, so only shift when this response actually contains level 0.
-  const headingLevelOffset = layouts.some(
-    (item) => item.type === 'title' && Number.isFinite(item.level) && item.level === 0,
-  )
-    ? 1
-    : 0;
   let maxPage = 0;
 
   for (const l of layouts) {
@@ -564,9 +555,6 @@ export async function aliDocMindLayoutsToParsedPdf(
           page: pageNum,
           type: mappedType,
           content: isTable ? (l.llmResult ?? '') : (l.text ?? l.markdownContent ?? ''),
-          ...(mappedType === 'title' && Number.isFinite(l.level)
-            ? { level: Math.max(1, Math.trunc(l.level as number) + headingLevelOffset) }
-            : {}),
         });
       }
     }

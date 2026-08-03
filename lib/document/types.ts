@@ -108,25 +108,6 @@ export interface DocumentDiagnostic {
   metadata?: Record<string, unknown>;
 }
 
-export type DocumentOutlineSource = 'provider' | 'heading' | 'toc' | 'heuristic' | 'logical';
-
-export interface DocumentOutlineNode {
-  id: string;
-  title: string;
-  level: number;
-  order: number;
-  parentId?: string;
-  blockIds: string[];
-  assetIds?: string[];
-  pageStart?: number;
-  pageEnd?: number;
-  startOffset?: number;
-  endOffset?: number;
-  confidence: number;
-  source: DocumentOutlineSource;
-  metadata?: Record<string, unknown>;
-}
-
 export type DocumentTransformStatus = 'applied' | 'skipped' | 'partial' | 'failed';
 
 export interface DocumentTransformRecord {
@@ -153,7 +134,6 @@ export interface DocumentArtifact {
     providerId?: string;
     processingTime?: number;
   };
-  outline?: DocumentOutlineNode[];
   blocks: DocumentBlock[];
   assets: DocumentAsset[];
   citations?: DocumentCitation[];

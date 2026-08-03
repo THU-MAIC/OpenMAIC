@@ -20,17 +20,6 @@ describe('document normalization transform', () => {
       ],
       assets: [],
       citations: [{ id: 'citation-b', blockId: 'b' }],
-      outline: [
-        {
-          id: 'outline',
-          title: 'Notes',
-          level: 1,
-          order: 1,
-          blockIds: ['a', 'b'],
-          confidence: 1,
-          source: 'provider',
-        },
-      ],
     };
 
     const output = await normalizeDocumentTransform.apply(input, context);
@@ -47,32 +36,24 @@ describe('document normalization transform', () => {
       { id: 'formula', type: 'formula', text: '', html: undefined },
     ]);
     expect(output.artifact.citations?.[0].blockId).toBe('a');
-    expect(output.artifact.outline?.[0].blockIds).toEqual(['a']);
     expect(output.diagnostics?.[0].metadata).toEqual({
       removedEmptyBlocks: 1,
       mergedBlockCount: 1,
     });
   });
 
-  it('does not merge blocks across pages or structured headings', async () => {
+  it('does not merge blocks across pages', async () => {
     const input: DocumentArtifact = {
       metadata: {},
       blocks: [
         { id: 'p1', type: 'text', text: 'Page one', pageNumber: 1 },
         { id: 'p2', type: 'text', text: 'Page two', pageNumber: 2 },
-        {
-          id: 'heading',
-          type: 'text',
-          text: 'Heading',
-          pageNumber: 2,
-          metadata: { headingLevel: 1 },
-        },
       ],
       assets: [],
     };
 
     const output = await normalizeDocumentTransform.apply(input, context);
-    expect(output.artifact.blocks.map((block) => block.id)).toEqual(['p1', 'p2', 'heading']);
+    expect(output.artifact.blocks.map((block) => block.id)).toEqual(['p1', 'p2']);
   });
 
   it('preserves indentation and whitespace-significant Markdown', async () => {
@@ -116,91 +97,22 @@ describe('document normalization transform', () => {
     ]);
   });
 
-  it('drops stale outline offsets when their source block is merged into a survivor', async () => {
-    const input: DocumentArtifact = {
-      metadata: {},
-      blocks: [
-        { id: 'a', type: 'text', text: 'Prefix' },
-        { id: 'b', type: 'text', text: 'Target section' },
-      ],
-      assets: [],
-      outline: [
-        {
-          id: 'target',
-          title: 'Target',
-          level: 1,
-          order: 1,
-          blockIds: ['b'],
-          startOffset: 0,
-          endOffset: 6,
-          confidence: 1,
-          source: 'provider',
-        },
-      ],
-    };
-
-    const output = await normalizeDocumentTransform.apply(input, context);
-
-    expect(output.artifact.outline?.[0]).toMatchObject({
-      blockIds: ['a'],
-      startOffset: undefined,
-      endOffset: undefined,
-    });
-  });
-
-  it('removes citations and outline references to discarded empty blocks', async () => {
+  it('removes citations to discarded empty blocks', async () => {
     const input: DocumentArtifact = {
       metadata: {},
       blocks: [
         { id: 'empty', type: 'text', text: '   ' },
-        { id: 'keep', type: 'text', text: 'Keep this content', metadata: { headingLevel: 1 } },
+        { id: 'keep', type: 'text', text: 'Keep this content' },
       ],
       assets: [],
       citations: [
         { id: 'empty-citation', blockId: 'empty' },
         { id: 'keep-citation', blockId: 'keep' },
       ],
-      outline: [
-        {
-          id: 'mixed',
-          title: 'Mixed',
-          level: 1,
-          order: 1,
-          blockIds: ['empty', 'keep'],
-          startOffset: 0,
-          endOffset: 10,
-          confidence: 1,
-          source: 'provider',
-        },
-        {
-          id: 'empty-only',
-          title: 'Empty',
-          level: 2,
-          order: 2,
-          parentId: 'mixed',
-          blockIds: ['empty'],
-          confidence: 1,
-          source: 'provider',
-        },
-      ],
     };
 
     const output = await normalizeDocumentTransform.apply(input, context);
 
     expect(output.artifact.citations).toEqual([{ id: 'keep-citation', blockId: 'keep' }]);
-    expect(output.artifact.outline).toEqual([
-      {
-        id: 'mixed',
-        title: 'Mixed',
-        level: 1,
-        order: 1,
-        blockIds: ['keep'],
-        startOffset: undefined,
-        endOffset: undefined,
-        confidence: 1,
-        source: 'provider',
-        parentId: undefined,
-      },
-    ]);
   });
 });

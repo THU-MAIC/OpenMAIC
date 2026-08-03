@@ -38,9 +38,7 @@ function canMergeTextBlocks(previous: DocumentBlock, current: DocumentBlock): bo
     typeof previous.text === 'string' &&
     typeof current.text === 'string' &&
     typeof previous.html !== 'string' &&
-    typeof current.html !== 'string' &&
-    typeof previous.metadata?.headingLevel !== 'number' &&
-    typeof current.metadata?.headingLevel !== 'number'
+    typeof current.html !== 'string'
   );
 }
 
@@ -57,31 +55,6 @@ function remapArtifactReferences(
         ? (blockIdMap.get(citation.blockId) ?? citation.blockId)
         : undefined,
     }));
-  artifact.outline = artifact.outline
-    ?.map((node) => {
-      const referencesChanged = node.blockIds.some(
-        (blockId) => blockIdMap.has(blockId) || removedBlockIds.has(blockId),
-      );
-      return {
-        ...node,
-        blockIds: Array.from(
-          new Set(
-            node.blockIds
-              .filter((blockId) => !removedBlockIds.has(blockId))
-              .map((blockId) => blockIdMap.get(blockId) ?? blockId),
-          ),
-        ),
-        startOffset: referencesChanged ? undefined : node.startOffset,
-        endOffset: referencesChanged ? undefined : node.endOffset,
-      };
-    })
-    .filter((node) => node.blockIds.length > 0);
-
-  const survivingOutlineIds = new Set(artifact.outline?.map((node) => node.id));
-  artifact.outline = artifact.outline?.map((node) => ({
-    ...node,
-    parentId: node.parentId && survivingOutlineIds.has(node.parentId) ? node.parentId : undefined,
-  }));
 }
 
 export const normalizeDocumentTransform: DocumentTransform = {

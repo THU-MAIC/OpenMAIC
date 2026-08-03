@@ -1,13 +1,11 @@
 import { normalizeDocumentTransform } from './normalize';
 import { removeDocumentNoiseTransform } from './noise-removal';
 import { DocumentTransformRegistry } from './registry';
-import { detectDocumentStructureTransform } from './structure';
 
 export { normalizeDocumentText, normalizeDocumentTransform } from './normalize';
 export { removeDocumentNoiseTransform } from './noise-removal';
 export { transformDocument } from './pipeline';
 export { DocumentTransformRegistry } from './registry';
-export { detectDocumentStructureTransform } from './structure';
 export type {
   DocumentTransform,
   DocumentTransformCapabilities,
@@ -22,7 +20,6 @@ export type {
 export const DEFAULT_DOCUMENT_TRANSFORMS = [
   normalizeDocumentTransform,
   removeDocumentNoiseTransform,
-  detectDocumentStructureTransform,
 ] as const;
 
 export function createDefaultDocumentTransformRegistry(): DocumentTransformRegistry {

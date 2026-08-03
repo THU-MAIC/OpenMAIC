@@ -8,12 +8,6 @@ export function cloneDocumentArtifact(artifact: DocumentArtifact): DocumentArtif
   return {
     ...artifact,
     metadata: { ...artifact.metadata },
-    outline: artifact.outline?.map((node) => ({
-      ...node,
-      blockIds: [...node.blockIds],
-      assetIds: node.assetIds ? [...node.assetIds] : undefined,
-      metadata: node.metadata ? cloneRecord(node.metadata) : undefined,
-    })),
     blocks: artifact.blocks.map((block) => ({
       ...block,
       bbox: block.bbox ? { ...block.bbox } : undefined,

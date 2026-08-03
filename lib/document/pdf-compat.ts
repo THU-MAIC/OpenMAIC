@@ -96,10 +96,7 @@ export function parsedPdfToDocumentArtifact(
       text: layout.content,
       pageNumber: layout.page,
       bbox: positionToBbox(layout.position),
-      metadata: {
-        layoutType: layout.type,
-        ...(typeof layout.level === 'number' ? { headingLevel: layout.level } : {}),
-      },
+      metadata: { layoutType: layout.type },
     });
   });
 
@@ -174,9 +171,6 @@ export function documentArtifactToParsedPdfContent(artifact: DocumentArtifact): 
       page: block.pageNumber ?? 0,
       type: pdfLayoutType(block.metadata?.layoutType),
       content: block.text ?? '',
-      ...(typeof block.metadata?.headingLevel === 'number'
-        ? { level: block.metadata.headingLevel }
-        : {}),
       position: bboxToPosition(block.bbox),
     }));
 

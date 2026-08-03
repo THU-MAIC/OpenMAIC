@@ -38,24 +38,12 @@ describe('document noise-removal transform', () => {
         { id: 'header-citation', blockId: 'header_1' },
         { id: 'body-citation', blockId: 'body_1' },
       ],
-      outline: [
-        {
-          id: 'node',
-          title: 'Content',
-          level: 1,
-          order: 1,
-          blockIds: ['header_1', 'body_1'],
-          confidence: 1,
-          source: 'provider',
-        },
-      ],
     };
 
     const output = await removeDocumentNoiseTransform.apply(input, context);
 
     expect(output.artifact.blocks.map((block) => block.id)).toEqual(['body_1', 'body_2', 'body_3']);
     expect(output.artifact.citations).toEqual([{ id: 'body-citation', blockId: 'body_1' }]);
-    expect(output.artifact.outline?.[0].blockIds).toEqual(['body_1']);
     expect(output.diagnostics?.[0].metadata?.removedBlockIds).toHaveLength(6);
   });
 

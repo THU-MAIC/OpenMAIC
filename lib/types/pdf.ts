@@ -32,8 +32,6 @@ export interface ParsedPdfContent {
     page: number;
     type: 'title' | 'text' | 'image' | 'table' | 'formula';
     content: string;
-    /** Provider-supplied heading depth, when available. */
-    level?: number;
     position?: { x: number; y: number; width: number; height: number };
   }>;
 

@@ -68,17 +68,6 @@ function cleanReferences(artifact: DocumentArtifact, removedBlockIds: ReadonlySe
   artifact.citations = artifact.citations?.filter(
     (citation) => !citation.blockId || !removedBlockIds.has(citation.blockId),
   );
-  artifact.outline = artifact.outline
-    ?.map((node) => ({
-      ...node,
-      blockIds: node.blockIds.filter((blockId) => !removedBlockIds.has(blockId)),
-    }))
-    .filter((node) => node.blockIds.length > 0);
-  const survivingOutlineIds = new Set(artifact.outline?.map((node) => node.id));
-  artifact.outline = artifact.outline?.map((node) => ({
-    ...node,
-    parentId: node.parentId && survivingOutlineIds.has(node.parentId) ? node.parentId : undefined,
-  }));
 }
 
 export const removeDocumentNoiseTransform: DocumentTransform = {

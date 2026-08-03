@@ -5,7 +5,6 @@ export type DocumentTransformPurpose = 'course-generation' | 'question-bank' | '
 export interface DocumentTransformContext {
   purpose: DocumentTransformPurpose;
   requirement?: string;
-  selectedOutlineNodeIds?: string[];
   budget: {
     maxTextChars: number;
     maxVisionImages: number;
