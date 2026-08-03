@@ -58,6 +58,11 @@
 }
 
 :root {
+  /* Inter is loaded from @fontsource in app/layout.tsx, which declares one
+     @font-face per unicode subset. Previously this came from next/font wrapping
+     a single latin-only file, which left Cyrillic and Vietnamese text to OS
+     fallback fonts. */
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);

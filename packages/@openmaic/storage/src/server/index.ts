@@ -1,7 +1,9 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import {
   isChatMessageSkeleton,
+  isIsoTimestamp,
   isQuizAttemptSkeleton,
+  isRuntimeSessionStatus,
   needsRuntimeMigration,
   RUNTIME_DSL_VERSION,
   runtimeDslVersionOf,
@@ -16,10 +18,25 @@ import type {
 } from '@openmaic/dsl';
 import { assertJsonValue } from '../runtime/json-value.js';
 import type {
+  RuntimeAppendOptions,
   RuntimePayloadValidator,
   RuntimeSessionInit,
   RuntimeStore,
+  RuntimeTailOptions,
 } from '../runtime/types.js';
+import { RuntimeAppendConflictError } from '../runtime/types.js';
+import type { Scene, Stage } from '@openmaic/dsl';
+import type { DocumentStore, SceneLike } from '../document/types.js';
+import { createDocumentHttpHandler, type DocumentHttpHandlerOptions } from './document.js';
+import { assertMaxBodyBytes, DEFAULT_MAX_BODY_BYTES, readJsonObject } from './read-json.js';
+
+export {
+  createDocumentHttpHandler,
+  type DocumentHttpAuthenticate,
+  type DocumentHttpAuthorize,
+  type DocumentHttpHandlerOptions,
+  type DocumentHttpPrincipal,
+} from './document.js';
 
 export interface RuntimeHttpPrincipal {
   learnerKey?: string;
@@ -48,6 +65,8 @@ export interface RuntimeHttpHandlerOptions {
    * pass the same table configured on the injected store.
    */
   payloadValidators?: Record<string, RuntimePayloadValidator>;
+  /** Maximum JSON request-body size in bytes. Defaults to 32 MiB. */
+  maxBodyBytes?: number;
 }
 
 interface ErrorBody {
@@ -79,30 +98,19 @@ function sendNoContent(res: ServerResponse): void {
   res.end();
 }
 
-async function readJson<T>(req: IncomingMessage): Promise<T> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-  }
-  if (chunks.length === 0) {
-    throw validationFailure('request body must be a JSON object');
-  }
-  let body: unknown;
-  try {
-    body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
-  } catch (error) {
-    throw validationFailure(error instanceof Error ? error.message : String(error));
-  }
-  if (!isObject(body)) throw validationFailure('request body must be a JSON object');
-  return body as T;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function validationFailure(message: string, details?: unknown): RuntimeHttpError {
   return new RuntimeHttpError(400, 'VALIDATION_FAILED', message, details);
+}
+
+function payloadTooLarge(message: string): RuntimeHttpError {
+  return new RuntimeHttpError(413, 'PAYLOAD_TOO_LARGE', message);
+}
+
+function readJson<T>(req: IncomingMessage, maxBodyBytes: number): Promise<T> {
+  return readJsonObject(req, maxBodyBytes, {
+    invalid: validationFailure,
+    payloadTooLarge,
+  });
 }
 
 function validationError(result: ValidationResult, label: string): void {
@@ -262,6 +270,7 @@ async function rethrowClassifiedSessionWriteFailure(
   sessionId: string,
   error: unknown,
 ): Promise<never> {
+  if (error instanceof RuntimeAppendConflictError) throw error;
   let current: RuntimeSession | undefined;
   try {
     current = await existingSessionOwnedByPrincipal(store, principal, sessionId);
@@ -329,6 +338,22 @@ function parsePath(req: IncomingMessage): { parts: string[]; url: URL } {
 }
 
 function mappedError(error: unknown): { status: number; body: ErrorBody } {
+  if (error instanceof RuntimeAppendConflictError) {
+    return {
+      status: 409,
+      body: {
+        error: {
+          code: 'RUNTIME_APPEND_CONFLICT',
+          message: error.message,
+          details: {
+            sessionId: error.sessionId,
+            expectedLastSeq: error.expectedLastSeq,
+            actualLastSeq: error.actualLastSeq,
+          },
+        },
+      },
+    };
+  }
   if (error instanceof RuntimeHttpError && error.status < 500) {
     return {
       status: error.status,
@@ -384,7 +409,10 @@ async function route(
   }
 
   if (method === 'POST' && parts.length === 2 && parts[1] === 'sessions') {
-    const init = await readJson<RuntimeSessionInit & { runtimeDslVersion?: unknown }>(req);
+    const init = await readJson<RuntimeSessionInit & { runtimeDslVersion?: unknown }>(
+      req,
+      options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+    );
     assertAddressableSegment(init.id);
     assertAddressableSegment(init.stageId);
     assertAddressableSegment(init.learnerKey, 'learnerKey');
@@ -433,14 +461,18 @@ async function route(
       return;
     }
     if (method === 'PATCH' && parts.length === 4 && parts[3] === 'status') {
-      const body = await readJson<{ status: RuntimeSessionStatus; updatedAt: string }>(req);
+      const body = await readJson<
+        { status: RuntimeSessionStatus; updatedAt: string } & RuntimeTailOptions
+      >(req, options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES);
       const session = await writableSession(store, principal, sessionId);
       validationError(
         validateRuntimeSession({ ...session, status: body.status, updatedAt: body.updatedAt }),
         `@openmaic/storage: invalid runtime session ${JSON.stringify(sessionId)}`,
       );
       try {
-        await store.setSessionStatus(sessionId, body.status, body.updatedAt);
+        await store.setSessionStatus(sessionId, body.status, body.updatedAt, {
+          ...(body.expectedLastSeq === undefined ? {} : { expectedLastSeq: body.expectedLastSeq }),
+        });
       } catch (error) {
         await rethrowClassifiedSessionWriteFailure(store, principal, sessionId, error);
       }
@@ -465,11 +497,30 @@ async function route(
       return;
     }
     if (method === 'POST' && parts.length === 4 && parts[3] === 'records') {
-      const init = await readJson<RuntimeRecordInit & { seq?: unknown }>(req);
+      const body = await readJson<RuntimeRecordInit & RuntimeAppendOptions & { seq?: unknown }>(
+        req,
+        options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+      );
+      const { expectedLastSeq, sessionTransition, ...init } = body;
       if (init.sessionId !== sessionId) {
         throw validationFailure(
           'invalid runtime record: body sessionId does not match the request path',
         );
+      }
+      // Classify a malformed transition here: the store's own throw would
+      // surface as a 500, but a bad request body is the client's error.
+      if (sessionTransition !== undefined) {
+        if (
+          typeof sessionTransition !== 'object' ||
+          sessionTransition === null ||
+          !isRuntimeSessionStatus((sessionTransition as { status?: unknown }).status) ||
+          typeof (sessionTransition as { updatedAt?: unknown }).updatedAt !== 'string' ||
+          !isIsoTimestamp((sessionTransition as { updatedAt: string }).updatedAt)
+        ) {
+          throw validationFailure(
+            'invalid runtime record: sessionTransition requires a valid session status and an ISO updatedAt string',
+          );
+        }
       }
       validationError(
         validateRuntimeRecord({ ...init, seq: 0 }),
@@ -494,7 +545,14 @@ async function route(
         );
       }
       try {
-        sendJson(res, 201, await store.appendRecord(init));
+        sendJson(
+          res,
+          201,
+          await store.appendRecord(init, {
+            ...(expectedLastSeq === undefined ? {} : { expectedLastSeq }),
+            ...(sessionTransition === undefined ? {} : { sessionTransition }),
+          }),
+        );
       } catch (error) {
         await rethrowClassifiedSessionWriteFailure(store, principal, sessionId, error);
       }
@@ -537,7 +595,10 @@ async function route(
   }
 
   if (method === 'POST' && parts.length === 3 && parts[1] === 'learners' && parts[2] === 'merge') {
-    const body = await readJson<{ fromLearnerKey?: unknown; toLearnerKey?: unknown }>(req);
+    const body = await readJson<{ fromLearnerKey?: unknown; toLearnerKey?: unknown }>(
+      req,
+      options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+    );
     if (
       typeof body.fromLearnerKey !== 'string' ||
       body.fromLearnerKey === '' ||
@@ -606,17 +667,62 @@ export function createRuntimeHttpHandler(
   if (typeof options?.authenticate !== 'function') {
     throw new Error('@openmaic/storage: createRuntimeHttpHandler requires authenticate');
   }
+  assertMaxBodyBytes(options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES);
   return (req, res) => {
     void route(req, res, store, options).catch((error: unknown) => {
       if (res.headersSent) {
         res.destroy(error instanceof Error ? error : undefined);
         return;
       }
-      if (!(error instanceof RuntimeHttpError) || error.status >= 500) {
+      if (
+        (!(error instanceof RuntimeHttpError) || error.status >= 500) &&
+        !(error instanceof RuntimeAppendConflictError)
+      ) {
         console.error('@openmaic/storage: Runtime HTTP handler internal error', error);
       }
       const mapped = mappedError(error);
       sendJson(res, mapped.status, mapped.body);
     });
+  };
+}
+
+export interface StorageHttpHandlerOptions
+  extends
+    RuntimeHttpHandlerOptions,
+    Pick<DocumentHttpHandlerOptions, 'authorizeDocuments' | 'validateScene' | 'validateStage'> {}
+
+/**
+ * Compose the runtime and author-document contracts into one request handler.
+ * Existing runtime routing is delegated unchanged; `/documents` is dispatched
+ * to the document handler and shares the same authentication hook.
+ */
+export function createStorageHttpHandler<
+  TScene extends SceneLike = Scene,
+  TStage extends Stage = Stage,
+>(
+  runtimeStore: RuntimeStore,
+  documentStore: DocumentStore<TScene, TStage>,
+  options: StorageHttpHandlerOptions,
+): RequestListener {
+  const runtime = createRuntimeHttpHandler(runtimeStore, options);
+  const documents = createDocumentHttpHandler(documentStore, {
+    authenticate: options.authenticate,
+    ...(options.authorizeDocuments === undefined
+      ? {}
+      : { authorizeDocuments: options.authorizeDocuments }),
+    ...(options.validateScene === undefined ? {} : { validateScene: options.validateScene }),
+    ...(options.validateStage === undefined ? {} : { validateStage: options.validateStage }),
+    ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes }),
+  });
+  return (req, res) => {
+    let pathname: string;
+    try {
+      pathname = new URL(req.url ?? '/', 'http://storage.invalid').pathname;
+    } catch {
+      runtime(req, res);
+      return;
+    }
+    if (pathname === '/documents' || pathname.startsWith('/documents/')) documents(req, res);
+    else runtime(req, res);
   };
 }

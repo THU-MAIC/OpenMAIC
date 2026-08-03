@@ -15,8 +15,13 @@ export interface SlideContextValue {
   scale?: number;
   background?: SlideBackground;
   effects?: SlideEffects;
-  renderImage?: (element: PPTImageElement, resolvedSrc: string) => ReactNode;
+  renderImage?: (
+    element: PPTImageElement,
+    resolvedSrc: string,
+    defaultContent: ReactNode,
+  ) => ReactNode;
   renderVideo?: (element: PPTVideoElement) => ReactNode;
+  videoInteractive?: boolean;
   onElementClick?: (element: PPTElement, event: React.MouseEvent) => void;
 }
 

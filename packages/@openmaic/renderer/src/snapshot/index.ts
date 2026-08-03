@@ -4,17 +4,24 @@
  * Off-screen Slide → PNG renderer.
  *
  * Mounts the given `Slide` into an off-screen container at its native pixel
- * size, waits for fonts + images to settle, then snapshots the DOM via
- * `html2canvas-pro`. Returns the rendered output as a Blob (default) or a
- * `data:image/png;base64,...` string.
+ * size, waits for fonts + images to settle, then rasterizes the DOM. Returns the
+ * rendered output as a Blob (default) or a `data:image/png;base64,...` string.
  *
- * Why html2canvas-pro and not html-to-image: the latter uses an SVG
- * `<foreignObject>` + Image decode path. Fonts inside the foreignObject
- * load asynchronously and the snapshot fires before woff2 decode finishes,
- * so text is laid out in the fallback font (visible as different word-wrap
- * positions vs the on-screen canvas). html2canvas-pro walks the DOM and
- * draws to a canvas directly, inheriting the parent document's font
- * registry, so text wraps identically.
+ * Rasterization is native-paint-first: `html-to-image` serializes the slide into
+ * an SVG `<foreignObject>` that the **same Chrome engine painting the live
+ * classroom** rasterizes — so formulas (KaTeX HTML), CSS `filter`, soft-edge
+ * `mask`, and mixed CJK/Latin text come out exactly as the classroom shows them.
+ * html2canvas-pro, by contrast, re-implements layout/paint and so re-rasterizes
+ * KaTeX's vlist/frac-line/delimiter internals, drops CSS filter/mask, and can't
+ * draw `<video>` — all sources of the exported-vs-live drift.
+ *
+ * The one thing a foreignObject SVG can't do is reach the document's font
+ * registry, so web fonts must be inlined as data URLs first (`getFontEmbedCSS`).
+ * This is the historical reason html-to-image was avoided (fonts loaded async →
+ * fallback-font wrapping); embedding up front removes it. If the embed still
+ * misses the KaTeX faces, or a cross-origin image taints the canvas, we fall back
+ * to html2canvas-pro (baking filter/mask into pixels and neutralizing its KaTeX
+ * text-rendering override) rather than ship broken output.
  *
  * Use cases: visual regression baselines (compare with the source PPT's
  * own PNG export), user-triggered "export slide as image", CI snapshot
@@ -25,8 +32,12 @@ import { createElement } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import html2canvas from 'html2canvas-pro';
+import { getFontEmbedCSS, toBlob, toPng } from 'html-to-image';
 import { SlideCanvas } from '../SlideCanvas';
 import type { Slide } from '@openmaic/dsl';
+import { KATEX_FONT_EMBED_CSS } from './katex-fonts-embed';
+
+export { measureSlideElementGeometry, type MeasuredGeometry, type MeasureOptions } from './measure';
 
 export interface SlideToPngOptions {
   /**
@@ -169,31 +180,20 @@ export async function slideToPng(
     // attribute and renders nothing for an undecoded source), so a video that
     // shows fine on the live canvas comes out白板 in the PNG. Convert every
     // <video> in the throwaway off-screen tree into an <img> of its poster
-    // (or current decoded frame) BEFORE the snapshot so html2canvas captures
-    // the same preview frame the canvas shows.
+    // (or current decoded frame) BEFORE the snapshot. The native-paint path can
+    // render a poster'd <video>, but a posterless one still needs the decoded
+    // frame, so we do this for both capture paths.
     await Promise.all(
       Array.from(container.querySelectorAll('video')).map((video) => replaceVideoWithFrame(video)),
     );
 
-    // html2canvas-pro doesn't implement CSS `filter` functions (brightness /
-    // contrast / saturate / opacity etc.), so PowerPoint picture corrections —
-    // washout via <a:lum bright/contrast> and transparency via <a:alphaModFix>
-    // — show on the live canvas but vanish from the exported PNG (the image
-    // comes out fully saturated/opaque). Bake each filtered <img> into its
-    // pixels with a Canvas2D pass (ctx.filter, which Chrome does support)
-    // BEFORE the snapshot so html2canvas captures the corrected bitmap.
-    await Promise.all(
-      Array.from(container.querySelectorAll('img')).map((img) => bakeImageFilter(img)),
-    );
-
-    // html2canvas-pro also ignores CSS masks, so the soft-edge feather
-    // (a:softEdge) set by BaseImageElement vanishes from the PNG. Bake the same
-    // feather (two destination-in alpha gradients) into the pixels.
-    await Promise.all(
-      Array.from(container.querySelectorAll<HTMLImageElement>('img[data-soft-edge]')).map((img) =>
-        bakeImageSoftEdge(img),
-      ),
-    );
+    // Let any font-triggered relayout settle before capture. KaTeX formulas
+    // re-run their shrink-to-fit measurement once the KaTeX_Size faces finish
+    // loading (BaseLatexElement); that's a React state update, so give it two
+    // frames to commit before we read the DOM — otherwise a cold export can
+    // capture the stale fallback-metric scale (misaligned large braces).
+    await nextFrame();
+    await nextFrame();
 
     if (process.env.NODE_ENV !== 'production') {
       // eslint-disable-next-line no-console
@@ -204,10 +204,68 @@ export async function slideToPng(
       });
     }
 
-    // Target the inner SlideCanvas root so html2canvas-pro's bounding-box
-    // calculation matches the slide exactly (otherwise the outer container's
-    // padding/margin assumptions can leave white edges).
+    // Target the inner SlideCanvas root so the capture's bounding box matches the
+    // slide exactly (otherwise the outer container's padding/margin assumptions
+    // can leave white edges).
     const target = (container.firstElementChild as HTMLElement | null) ?? container;
+
+    // PRIMARY: native paint via `html-to-image` (foreignObject → the same Chrome
+    // engine that paints the live classroom rasterizes the same DOM). Reproduces
+    // formulas, CSS filter, soft-edge masks, and mixed CJK/Latin text as the
+    // classroom shows them — no per-feature bakes.
+    //
+    // A foreignObject SVG can't reach the document font registry, so fonts must
+    // be inlined as data URLs first. KaTeX math faces are prepended from the
+    // bundled woff2 ({@link KATEX_FONT_EMBED_CSS}) — NOT left to `getFontEmbedCSS`,
+    // which reads `cssRules` and silently drops a cross-origin KaTeX stylesheet,
+    // collapsing large braces to a fallback glyph. `getFontEmbedCSS` still runs
+    // for brand/CJK web fonts. As a belt-and-braces guard we verify every KaTeX
+    // face the formula actually references is present in the combined CSS, and
+    // fall back to html2canvas rather than ship broken glyphs if any is missing.
+    try {
+      const fontEmbedCSS = KATEX_FONT_EMBED_CSS + '\n' + (await getFontEmbedCSS(target));
+      const missing = missingKatexFaces(target, fontEmbedCSS);
+      if (missing.length > 0) {
+        throw new Error(
+          `KaTeX font faces not embedded (${missing.join(', ')}); using html2canvas fallback`,
+        );
+      }
+      const nativeOpts = {
+        width,
+        height,
+        pixelRatio,
+        backgroundColor,
+        fontEmbedCSS,
+        cacheBust: false,
+      };
+      if (format === 'blob') {
+        const blob = await toBlob(target, nativeOpts);
+        if (!blob) throw new Error('html-to-image toBlob returned null');
+        return blob;
+      }
+      return await toPng(target, nativeOpts);
+    } catch (nativeErr) {
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.debug(
+          '[slideToPng] native paint unavailable, falling back to html2canvas:',
+          nativeErr,
+        );
+      }
+    }
+
+    // FALLBACK: html2canvas-pro. Reached only when native paint fails (e.g. a
+    // cross-origin image taints the foreignObject canvas). It can't render CSS
+    // `filter` (PPT lum/alphaModFix washout) or the soft-edge `mask`
+    // (a:softEdge), so bake both into pixels first with a Canvas2D pass.
+    await Promise.all(
+      Array.from(container.querySelectorAll('img')).map((img) => bakeImageFilter(img)),
+    );
+    await Promise.all(
+      Array.from(container.querySelectorAll<HTMLImageElement>('img[data-soft-edge]')).map((img) =>
+        bakeImageSoftEdge(img),
+      ),
+    );
 
     const canvas = await html2canvas(target, {
       backgroundColor,
@@ -223,7 +281,9 @@ export async function slideToPng(
       // html2canvas-pro's CJK text measurement can mis-position full-width
       // punctuation (e.g. `（`/`）` get pushed past the cell boundary and
       // appear clipped). Force neutral kerning + feature settings on the
-      // cloned tree so each glyph advances at its natural width.
+      // cloned tree so each glyph advances at its natural width — but restore
+      // native rendering for KaTeX, whose glyph metrics the override would
+      // reshape (misaligned braces/subscripts).
       onclone: (clonedDoc) => {
         const style = clonedDoc.createElement('style');
         style.textContent = `
@@ -235,6 +295,11 @@ export async function slideToPng(
             font-feature-settings: normal !important;
             font-variant-east-asian: normal !important;
             text-rendering: geometricPrecision !important;
+          }
+          .slide-renderer-prose .katex,
+          .slide-renderer-prose .katex * {
+            font-kerning: auto !important;
+            text-rendering: auto !important;
           }
         `;
         clonedDoc.head.appendChild(style);
@@ -268,6 +333,26 @@ export async function slideToPng(
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+/**
+ * KaTeX faces (`KaTeX_Main`, `KaTeX_Size4`, …) actually referenced by the
+ * formulas in `root` that are NOT declared in `fontEmbedCSS`. A non-empty result
+ * means the native-paint capture would render those glyphs in a fallback font
+ * (e.g. a large brace collapsing to a small `{`), so the caller falls back to
+ * html2canvas. Reads each `.katex` descendant's computed `font-family` — the
+ * families the browser resolved for the glyphs actually on screen — rather than
+ * assuming the full set, so an all-embedded formula never triggers a fallback.
+ */
+function missingKatexFaces(root: HTMLElement, fontEmbedCSS: string): string[] {
+  const used = new Set<string>();
+  root.querySelectorAll<HTMLElement>('.katex, .katex *').forEach((el) => {
+    for (const part of getComputedStyle(el).fontFamily.split(',')) {
+      const name = part.trim().replace(/^["']|["']$/g, '');
+      if (name.startsWith('KaTeX_')) used.add(name);
+    }
+  });
+  return [...used].filter((face) => !fontEmbedCSS.includes(face));
 }
 
 /**

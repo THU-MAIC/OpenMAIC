@@ -90,6 +90,15 @@ export async function recordUsage(
   input: UsageRecordInput,
   opts: RecordOptions = {},
 ): Promise<void> {
+  // A test run must never append to the app's real usage log. Any test that
+  // exercises callLLM / streamLLM reaches this through `recordUsageSafe` without
+  // asking for it, and used to write rows into the live `data/usage/` file —
+  // `minimax-auth-test`, `serialization-test` and friends were sitting in there
+  // next to production traffic, corrupting any real usage analysis. Tests that
+  // mean to exercise storage pass an explicit `baseDir` (or mock this module),
+  // so both of those keep working.
+  if (!opts.baseDir && (process.env.VITEST || process.env.NODE_ENV === 'test')) return;
+
   try {
     const kind: UsageKind = input.kind ?? 'llm';
     const usage = input.usage ?? ZERO_USAGE;

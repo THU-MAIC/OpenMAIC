@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // to talk to a real (or jsdom) IndexedDB in the test environment.
 vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageData: vi.fn().mockResolvedValue(undefined),
+  saveStageDataIncremental: vi.fn().mockResolvedValue(undefined),
   loadStageData: vi.fn().mockResolvedValue(null),
 }));
 vi.mock('@/lib/utils/database', () => ({

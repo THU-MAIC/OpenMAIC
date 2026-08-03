@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, type RefObject } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, type RefObject } from 'react';
 
 export interface ViewportStyles {
   width: number;
@@ -20,6 +20,8 @@ export interface UseViewportSizeOptions {
   viewportRatio?: number;
   /** Percent of the container the viewport should occupy, default 100 */
   canvasPercentage?: number;
+  /** Called whenever the computed fit scale changes. */
+  onScaleChange?: (scale: number) => void;
 }
 
 /**
@@ -32,11 +34,36 @@ export function useViewportSize(
   canvasRef: RefObject<HTMLElement | null>,
   options: UseViewportSizeOptions = {},
 ): UseViewportSizeResult {
-  const { viewportSize = 1000, viewportRatio = 0.5625, canvasPercentage = 100 } = options;
+  const {
+    viewportSize = 1000,
+    viewportRatio = 0.5625,
+    canvasPercentage = 100,
+    onScaleChange,
+  } = options;
 
   const [viewportLeft, setViewportLeft] = useState(0);
   const [viewportTop, setViewportTop] = useState(0);
   const [fitScale, setFitScale] = useState(1);
+  const lastReportedScaleRef = useRef<number | undefined>(undefined);
+  const wasReportingScaleRef = useRef(false);
+
+  const updateFitScale = useCallback(
+    (nextScale: number) => {
+      if (Object.is(lastReportedScaleRef.current, nextScale)) return;
+      lastReportedScaleRef.current = nextScale;
+      setFitScale(nextScale);
+      onScaleChange?.(nextScale);
+    },
+    [onScaleChange],
+  );
+
+  useEffect(() => {
+    const isReportingScale = onScaleChange !== undefined;
+    if (isReportingScale && !wasReportingScaleRef.current) {
+      lastReportedScaleRef.current = undefined;
+    }
+    wasReportingScaleRef.current = isReportingScale;
+  }, [onScaleChange]);
 
   const computeFit = useCallback(() => {
     if (!canvasRef.current) return;
@@ -45,16 +72,18 @@ export function useViewportSize(
 
     if (canvasHeight / canvasWidth > viewportRatio) {
       const viewportActualWidth = canvasWidth * (canvasPercentage / 100);
-      setFitScale(viewportActualWidth / viewportSize);
+      const nextScale = viewportActualWidth / viewportSize;
+      updateFitScale(nextScale);
       setViewportLeft((canvasWidth - viewportActualWidth) / 2);
       setViewportTop((canvasHeight - viewportActualWidth * viewportRatio) / 2);
     } else {
       const viewportActualHeight = canvasHeight * (canvasPercentage / 100);
-      setFitScale(viewportActualHeight / (viewportSize * viewportRatio));
+      const nextScale = viewportActualHeight / (viewportSize * viewportRatio);
+      updateFitScale(nextScale);
       setViewportLeft((canvasWidth - viewportActualHeight / viewportRatio) / 2);
       setViewportTop((canvasHeight - viewportActualHeight) / 2);
     }
-  }, [canvasRef, canvasPercentage, viewportRatio, viewportSize]);
+  }, [canvasRef, canvasPercentage, updateFitScale, viewportRatio, viewportSize]);
 
   useEffect(() => {
     computeFit();

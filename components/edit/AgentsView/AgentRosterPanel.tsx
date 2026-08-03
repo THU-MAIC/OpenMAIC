@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { Camera, ChevronDown, ChevronUp, Redo2, Undo2, UserMinus, UserPlus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/lib/hooks/use-i18n';
 import type { GeneratedAgentConfig } from '@/lib/types/stage';
 import { useAgentRoster } from './useAgentRoster';
 import { AvatarPicker } from './AvatarPicker';
@@ -97,6 +98,7 @@ interface PersonaEditorProps {
 }
 
 function PersonaEditor({ agentId, value, borderColor, onUpdate }: PersonaEditorProps) {
+  const { t } = useI18n();
   const [prevValue, setPrevValue] = useState(value);
   const [draft, setDraft] = useState(value);
   const [focused, setFocused] = useState(false);
@@ -124,7 +126,7 @@ function PersonaEditor({ agentId, value, borderColor, onUpdate }: PersonaEditorP
   return (
     <div className="flex flex-col gap-1.5">
       <span style={{ fontSize: 11.5, fontWeight: 600, color: '#52525b', letterSpacing: '.01em' }}>
-        人设描述
+        {t('edit.roster.personaLabel')}
       </span>
       <textarea
         data-persona={agentId}
@@ -134,7 +136,7 @@ function PersonaEditor({ agentId, value, borderColor, onUpdate }: PersonaEditorP
         onBlur={handleBlur}
         rows={4}
         maxLength={PERSONA_MAX}
-        placeholder="描述角色的性格、教学风格与任务…"
+        placeholder={t('edit.roster.personaPlaceholder')}
         className="resize-none rounded-[10px] bg-white px-3 py-2.5 outline-none focus:ring-1"
         style={{
           border: `1px solid ${borderColor}`,
@@ -161,8 +163,9 @@ interface TeacherCardProps {
 }
 
 function TeacherCard({ agent, open, onToggle, onUpdate }: TeacherCardProps) {
+  const { t } = useI18n();
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
-  const personaPreview = agent.persona?.slice(0, 40) || '暂无人设';
+  const personaPreview = agent.persona?.slice(0, 40) || t('edit.roster.noPersona');
 
   return (
     <div
@@ -199,11 +202,10 @@ function TeacherCard({ agent, open, onToggle, onUpdate }: TeacherCardProps) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <EditableName
-              value={agent.name || '未命名'}
+              value={agent.name || t('edit.roster.unnamed')}
               onCommit={(name) => onUpdate(agent.id, { name })}
               className="text-[13.5px] font-semibold text-[#27272a]"
             />
-            {/* 主讲 badge */}
             <span
               className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5"
               style={{
@@ -214,7 +216,8 @@ function TeacherCard({ agent, open, onToggle, onUpdate }: TeacherCardProps) {
                 color: '#5b1fa8',
               }}
             >
-              👑 主讲
+              <span aria-hidden="true">👑</span>
+              {t('edit.roster.teacherBadge')}
             </span>
           </div>
           <p
@@ -287,9 +290,10 @@ function ClassmateCard({
   onMoveUp,
   onMoveDown,
 }: ClassmateCardProps) {
+  const { t } = useI18n();
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const ringColor = agent.color || '#a1a1aa';
-  const personaPreview = agent.persona?.slice(0, 35) || '暂无人设';
+  const personaPreview = agent.persona?.slice(0, 35) || t('edit.roster.noPersona');
 
   return (
     <div
@@ -327,7 +331,7 @@ function ClassmateCard({
 
         <div className="min-w-0 flex-1">
           <EditableName
-            value={agent.name || '未命名'}
+            value={agent.name || t('edit.roster.unnamed')}
             onCommit={(name) => onUpdate(agent.id, { name })}
             className="block truncate text-[13.5px] font-semibold text-[#27272a]"
           />
@@ -344,7 +348,7 @@ function ClassmateCard({
         <div className="flex flex-col gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
-            aria-label="上移"
+            aria-label={t('edit.roster.moveUp')}
             disabled={isFirst}
             onClick={onMoveUp}
             className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-25"
@@ -353,7 +357,7 @@ function ClassmateCard({
           </button>
           <button
             type="button"
-            aria-label="下移"
+            aria-label={t('edit.roster.moveDown')}
             disabled={isLast}
             onClick={onMoveDown}
             className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-25"
@@ -409,7 +413,7 @@ function ClassmateCard({
               style={{ fontSize: 11.5, color: '#71717a' }}
             >
               <UserMinus style={{ width: 13, height: 13 }} />
-              移出课堂
+              {t('edit.roster.removeFromClass')}
             </button>
           </div>
         </div>
@@ -421,6 +425,7 @@ function ClassmateCard({
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
 export function AgentRosterPanel() {
+  const { t } = useI18n();
   const { roster, selectedId, select, add, update, remove, reorder, history } = useAgentRoster();
 
   const teachers = roster.filter((a) => a.role === 'teacher');
@@ -453,17 +458,19 @@ export function AgentRosterPanel() {
         className="flex shrink-0 items-baseline gap-1.5 px-4 pb-1.5"
         style={{ paddingTop: 14, paddingBottom: 6 }}
       >
-        <span style={{ fontSize: 13, fontWeight: 600, color: '#3f3f46' }}>课堂阵容</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#3f3f46' }}>
+          {t('edit.roster.title')}
+        </span>
         <span style={{ fontSize: 11, color: '#a1a1aa', fontFamily: 'monospace' }}>
-          {roster.length} 位
+          {t('edit.roster.count', { count: roster.length })}
         </span>
         <span className="flex-1" />
-        <span style={{ fontSize: 11, color: '#a1a1aa' }}>点击一位展开编辑</span>
+        <span style={{ fontSize: 11, color: '#a1a1aa' }}>{t('edit.roster.editHint')}</span>
         {/* Undo/redo */}
         <button
           type="button"
-          title="撤销"
-          aria-label="撤销"
+          title={t('edit.undo')}
+          aria-label={t('edit.undo')}
           disabled={!history.canUndo}
           onClick={history.undo}
           className="ml-1 grid size-5 place-items-center rounded text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 disabled:pointer-events-none disabled:opacity-30"
@@ -472,8 +479,8 @@ export function AgentRosterPanel() {
         </button>
         <button
           type="button"
-          title="重做"
-          aria-label="重做"
+          title={t('edit.redo')}
+          aria-label={t('edit.redo')}
           disabled={!history.canRedo}
           onClick={history.redo}
           className="grid size-5 place-items-center rounded text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 disabled:pointer-events-none disabled:opacity-30"
@@ -507,7 +514,7 @@ export function AgentRosterPanel() {
                 whiteSpace: 'nowrap',
               }}
             >
-              AI 同学 · {classmates.length}
+              {t('edit.roster.aiClassmates', { count: classmates.length })}
             </span>
             <div className="flex-1 border-t" style={{ borderColor: '#f1f1f3' }} />
           </div>
@@ -554,7 +561,7 @@ export function AgentRosterPanel() {
           }}
         >
           <UserPlus style={{ width: 15, height: 15 }} />
-          添加角色
+          {t('edit.roster.addRole')}
         </button>
       </div>
     </div>

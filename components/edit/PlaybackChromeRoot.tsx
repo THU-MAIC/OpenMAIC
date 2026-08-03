@@ -32,6 +32,7 @@ import {
   readActionResumeState,
   saveActionResumePosition,
 } from '@/lib/playback/action-resume';
+import { loadCursor, saveCursor, type PlaybackCursor } from '@/lib/playback/cursor';
 import { ActionEngine } from '@/lib/action/engine';
 import { createAudioPlayer } from '@/lib/utils/audio-player';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
@@ -39,7 +40,6 @@ import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
 import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
 import { cn } from '@/lib/utils';
-// Playback state persistence removed — refresh always starts from the beginning
 import { ChatArea, type ChatAreaRef } from '@/components/chat/chat-area';
 import type { SessionCleanupPayload } from '@/components/chat/use-chat-sessions';
 import { agentsToParticipants, useAgentRegistry } from '@/lib/orchestration/registry/store';
@@ -220,6 +220,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const activeSceneIdRef = useRef<string | null>(currentSceneId);
     const discussionAbortRef = useRef<AbortController | null>(null);
     const presentationIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const cursorSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const pendingCursorRef = useRef<{ stageId: string; cursor: PlaybackCursor } | null>(null);
     const stageRef = useRef<HTMLDivElement>(null);
     // Guard to prevent double flash when manual stop triggers onDiscussionEnd
     const manualStopRef = useRef(false);
@@ -228,6 +230,29 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       currentPlaybackActionIndexRef.current = actionIndex;
       setCurrentPlaybackActionIndex(actionIndex);
     }, []);
+
+    const persistCursorSafely = useCallback(
+      ({ stageId, cursor }: { stageId: string; cursor: PlaybackCursor }) => {
+        void saveCursor(stageId, cursor).catch((error) => {
+          console.warn(`Failed to save playback cursor for stage ${stageId}:`, error);
+        });
+      },
+      [],
+    );
+
+    const scheduleCursorSave = useCallback(
+      (stageId: string, cursor: PlaybackCursor) => {
+        pendingCursorRef.current = { stageId, cursor };
+        if (cursorSaveTimerRef.current) clearTimeout(cursorSaveTimerRef.current);
+        cursorSaveTimerRef.current = setTimeout(() => {
+          cursorSaveTimerRef.current = null;
+          const pending = pendingCursorRef.current;
+          pendingCursorRef.current = null;
+          if (pending) persistCursorSafely(pending);
+        }, 1000);
+      },
+      [persistCursorSafely],
+    );
 
     const actionResumeStorageKey = useMemo(
       () => getActionResumeStorageKey(stage?.id ?? currentScene?.stageId),
@@ -403,9 +428,16 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         const sceneId = engine.getCurrentSceneId();
         if (!sceneId || !chatAreaRef.current) return;
 
-        // startLecture is async — re-check the engine is still idle afterwards so
-        // we never override a live session the user started during the await.
+        // startLecture is async — re-check the engine is still idle AND still
+        // the installed engine afterwards. A scene switch during the await
+        // stops the captured engine (leaving it idle, so the mode check alone
+        // passes) and installs a new one; resuming the orphan would emit
+        // progress snapshots for the old scene over the new scene's cursor.
         const sessionId = await chatAreaRef.current.startLecture(sceneId);
+        if (engineRef.current !== engine) {
+          await chatAreaRef.current.endSession(sessionId);
+          return;
+        }
         if (engine.getMode() !== 'idle') {
           // The engine left idle during the async startLecture (e.g. a new live
           // session began) — tear down the lecture session we just
@@ -562,7 +594,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         // Stop any in-flight discussion TTS audio on scene switch
         discussionTTS.cleanup();
 
-        const savedResumeCursor =
+        const sessionResumeCursor =
           currentScene && typeof window !== 'undefined'
             ? getActionResumeRestoreCursor(
                 readActionResumeState(window.sessionStorage, actionResumeStorageKey),
@@ -570,13 +602,32 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 currentScene.actions ?? [],
               )
             : { actionIndex: 0, position: null };
-        const savedResumeAction = currentScene?.actions?.[savedResumeCursor.actionIndex];
+        let savedResumeActionIndex = sessionResumeCursor.actionIndex;
+        const playbackStageId = stage?.id ?? currentScene?.stageId;
+        if (currentScene && playbackStageId && !sessionResumeCursor.position) {
+          try {
+            const cursor = await loadCursor(playbackStageId);
+            if (
+              cursor?.sceneId === currentScene.id &&
+              currentScene.actions?.[cursor.actionIndex] &&
+              canJumpWithinReconstructablePrefix(currentScene.actions, 0, cursor.actionIndex)
+            ) {
+              savedResumeActionIndex = cursor.actionIndex;
+            }
+          } catch (error) {
+            console.warn(`Failed to load playback cursor for stage ${playbackStageId}:`, error);
+          }
+        }
+
+        if (cancelled) return;
+
+        const savedResumeAction = currentScene?.actions?.[savedResumeActionIndex];
 
         // Reset all roundtable/live state so scenes are fully isolated. Use the
         // saved action cursor immediately so mount/refresh cannot persist the
         // default first-speech cursor before the async engine jump finishes.
         resetSceneState({
-          actionIndex: savedResumeCursor.actionIndex,
+          actionIndex: savedResumeActionIndex,
           lectureSpeech:
             savedResumeAction?.type === 'speech' ? (savedResumeAction as SpeechAction).text : null,
         });
@@ -627,8 +678,19 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             setEngineMode(mode);
           },
           onProgress: (snapshot) => {
+            // Identity guard: a superseded engine (scene switch during an
+            // async resume) must not publish its old scene's position over
+            // the installed engine's cursor.
+            if (engineRef.current !== null && engineRef.current !== engine) return;
             updateCurrentPlaybackActionIndex(snapshot.actionIndex);
             saveSceneResumePosition(snapshot.sceneId, snapshot.actionIndex);
+            if (playbackStageId && snapshot.sceneId) {
+              scheduleCursorSave(playbackStageId, {
+                sceneId: snapshot.sceneId,
+                actionIndex: snapshot.actionIndex,
+                updatedAt: new Date().toISOString(),
+              });
+            }
           },
           onSceneChange: (_sceneId) => {
             // Scene change handled by engine
@@ -791,14 +853,13 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           })();
         } else {
           // Load saved playback state and restore position (but never auto-play).
-          const savedPosition = savedResumeCursor.position;
-          if (savedPosition && engine.canJumpToAction(savedPosition.actionIndex)) {
+          if (savedResumeActionIndex > 0 && engine.canJumpToAction(savedResumeActionIndex)) {
             void engine
-              .jumpToAction(savedPosition.actionIndex, { autoplay: false })
+              .jumpToAction(savedResumeActionIndex, { autoplay: false })
               .then((restored) => {
                 if (!restored || engineRef.current !== engine) return;
-                updateCurrentPlaybackActionIndex(savedPosition.actionIndex);
-                const action = currentScene.actions?.[savedPosition.actionIndex];
+                updateCurrentPlaybackActionIndex(savedResumeActionIndex);
+                const action = currentScene.actions?.[savedResumeActionIndex];
                 if (action?.type === 'speech') {
                   setLectureSpeech(action.text);
                 }
@@ -819,6 +880,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       const audioPlayer = audioPlayerRef.current;
       const chatArea = chatAreaRef.current;
       return () => {
+        if (cursorSaveTimerRef.current) clearTimeout(cursorSaveTimerRef.current);
+        cursorSaveTimerRef.current = null;
+        const pendingCursor = pendingCursorRef.current;
+        pendingCursorRef.current = null;
+        if (pendingCursor) persistCursorSafely(pendingCursor);
         saveSceneResumePosition(activeSceneIdRef.current, currentPlaybackActionIndexRef.current);
         if (engineRef.current) {
           engineRef.current.stop();

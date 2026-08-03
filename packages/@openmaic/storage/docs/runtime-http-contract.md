@@ -8,10 +8,10 @@ This contract exposes the complete `RuntimeStore` interface over JSON HTTP. All 
 | --- | --- | --- | --- |
 | `POST` | `/runtime/sessions` | Create a session from a `RuntimeSessionInit`. The server stamps `runtimeDslVersion`; a client-submitted value is ignored. | `201` with the full `RuntimeSession` |
 | `GET` | `/runtime/sessions/{sessionId}` | Get one session. | `200` with the `RuntimeSession`, or `404` if absent |
-| `PATCH` | `/runtime/sessions/{sessionId}/status` | Set status from `{ "status", "updatedAt" }`. | `204` |
+| `PATCH` | `/runtime/sessions/{sessionId}/status` | Set status from `{ "status", "updatedAt", "expectedLastSeq"? }`. `expectedLastSeq` is a non-negative integer or `null`. | `204` |
 | `DELETE` | `/runtime/sessions/{sessionId}` | Delete a session and all of its records. | `204` |
 | `GET` | `/runtime/stages/{stageId}/learners/{learnerKey}/sessions` | List a partition's sessions, ordered by the instant represented by `createdAt`, then by `id` for deterministic ties. | `200` with `RuntimeSession[]` |
-| `POST` | `/runtime/sessions/{sessionId}/records` | Append a `RuntimeRecordInit`; body `sessionId` must match the path. | `201` with the full `RuntimeRecord` |
+| `POST` | `/runtime/sessions/{sessionId}/records` | Append a `RuntimeRecordInit` plus optional top-level `expectedLastSeq` and `sessionTransition`; body `sessionId` must match the path. | `201` with the full `RuntimeRecord` |
 | `GET` | `/runtime/sessions/{sessionId}/records` | List records ordered by `seq`. Optional `?sceneId={sceneId}` returns only records anchored to that scene and excludes unanchored records. | `200` with `RuntimeRecord[]` |
 | `POST` | `/runtime/learners/merge` | Atomically re-key all sessions across all stages from `{ "fromLearnerKey", "toLearnerKey" }`. | `200` with `{ "moved": number }` |
 | `DELETE` | `/runtime/stages/{stageId}/learners/{learnerKey}` | Delete one learner's sessions and records on one stage. | `204` |
@@ -26,9 +26,31 @@ This contract exposes the complete `RuntimeStore` interface over JSON HTTP. All 
 
 Likewise, `runtimeDslVersion` is server-assigned when a session is created. If the request body includes `runtimeDslVersion`, that value is ignored; the store's assigned value is authoritative.
 
+## Compare guards and session transitions
+
+`expectedLastSeq` is an optional compare-and-swap guard shared by status updates and record appends. A non-negative integer means the caller observed that sequence at the record tail; `null` means the caller observed no records. Omission means no precondition. The server compares the value with the actual tail inside the same transaction as the write. A mismatch commits neither the status update nor the append and returns `409 RUNTIME_APPEND_CONFLICT` with the expected and actual tails in `error.details`.
+
+An append may also include a top-level `sessionTransition` object with `{ "status", "updatedAt" }`. The server validates and commits the completed parent session in the same transaction as the record. A tail conflict or validation failure persists neither change. For example:
+
+```json
+{
+  "id": "record-1",
+  "sessionId": "session-1",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "payload": null,
+  "expectedLastSeq": null,
+  "sessionTransition": {
+    "status": "completed",
+    "updatedAt": "2026-01-01T00:00:01.000Z"
+  }
+}
+```
+
 ## Payload domain
 
 HTTP implementations carry record payloads through JSON and therefore MUST accept only plain JSON values that survive serialization without changing meaning. They MUST fail loud before sending values such as `Map`, `Set`, `Date`, non-finite numbers, negative zero, nested `undefined`, `bigint`, sparse arrays, symbol-keyed properties, non-enumerable properties, arrays with non-index own properties, strings containing U+0000, class instances, and circular references. U+2028 and U+2029 are valid JSON string contents and MUST be accepted. This is intentionally narrower than `BrowserRuntimeStore`, whose structured-clone persistence can preserve values such as `Map`, `Set`, and `Date` that JSON cannot.
+
+The reference handler streams request bodies into a bounded buffer. `maxBodyBytes` configures the bound on the runtime, composed-storage, and reference-server factories; it defaults to 32 MiB. A body that crosses the bound is rejected immediately with `413 PAYLOAD_TOO_LARGE`.
 
 ## learnerKey security model
 
@@ -55,10 +77,12 @@ Every non-2xx response has this machine-readable JSON shape:
 | Condition | HTTP status | Error code | Client behavior |
 | --- | --- | --- | --- |
 | Malformed JSON, an invalid envelope or payload, invalid learner keys, a body/path mismatch, or append to a non-active session | `400` | `VALIDATION_FAILED` | Throw `HttpRuntimeStoreError` (an `Error`) with the server message |
+| Request body exceeds `maxBodyBytes` | `413` | `PAYLOAD_TOO_LARGE` | Throw `HttpRuntimeStoreError` |
 | Session does not exist | `404` | `SESSION_NOT_FOUND` | `getSession` returns `undefined`; operations that require the session throw `HttpRuntimeStoreError` with the browser store's `no session` semantics |
 | Route does not exist | `404` | `ROUTE_NOT_FOUND` | Throw `HttpRuntimeStoreError` |
 | A stored session has a future runtime DSL version | `409` | `FUTURE_VERSION` | Throw `HttpRuntimeStoreError` with the browser store's fail-loud `newer than this client's` semantics |
 | Session id already exists | `409` | `SESSION_ALREADY_EXISTS` | Throw `HttpRuntimeStoreError` with the browser store's `already exists` semantics |
+| `expectedLastSeq` does not match the current record tail | `409` | `RUNTIME_APPEND_CONFLICT` | Reconstitute and throw `RuntimeAppendConflictError` with `sessionId`, `expectedLastSeq`, and `actualLastSeq` from `error.details` |
 | Unexpected server failure | `500` | `INTERNAL_ERROR` | Throw `HttpRuntimeStoreError` |
 
 The client MUST use the machine-readable code, not status alone, when an operation has special behavior. In particular, only `SESSION_NOT_FOUND` is translated to `undefined` by `getSession`. Sessions returned by reads MUST be forward-migrated through the client's `migrateRuntime` before they are returned, because the server may lag the client schema version. Corrupt sessions remain fail-loud on direct reads and are omitted from partition listings, matching `BrowserRuntimeStore`.

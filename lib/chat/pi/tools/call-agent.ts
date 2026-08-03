@@ -14,6 +14,8 @@ import {
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestration/types';
 import type { ThinkingConfig } from '@/lib/types/provider';
+import type { DirectorSceneEvidenceMetadata } from './read-scene';
+import type { DirectorWebEvidenceMetadata } from './web-search';
 import type { ParsedAction, StatelessChatRequest } from '@/lib/types/chat';
 import {
   buildChildPrompt,
@@ -32,15 +34,14 @@ const CallAgentParams = Type.Object({
   instruction: Type.String({
     description: 'Specific instruction and context for the selected agent response.',
   }),
-  turnKind: Type.Optional(
-    Type.Union([Type.Literal('normal'), Type.Literal('wrap_up')], {
-      description:
-        'Use "wrap_up" only for one final teacher summary before cue_user or close_session. Normal discussion turns should omit this or use "normal".',
-    }),
-  ),
 });
 
 type CallAgentParams = Static<typeof CallAgentParams>;
+
+type RuntimeEvidenceAttachment<TMetadata> = {
+  content: string;
+  metadata: TMetadata;
+};
 
 type ChildActionTool = ReturnType<typeof buildChildActionTools>[number];
 type ChildMessageEvent = {
@@ -515,13 +516,13 @@ export function buildCallAgentTool(opts: {
   getWhiteboardLedger: () => WhiteboardActionRecord[];
   maxActionsPerAgent: number;
   enableWhiteboardTools: boolean;
-  isTeacherWrapUpUsed?: () => boolean;
-  onTeacherWrapUpDone?: () => void;
   isUserCued?: () => boolean;
   isSessionClosed?: () => boolean;
+  takeSceneEvidence?: () => RuntimeEvidenceAttachment<DirectorSceneEvidenceMetadata[]> | undefined;
+  takeWebEvidence?: () => RuntimeEvidenceAttachment<DirectorWebEvidenceMetadata> | undefined;
 }): AgentTool<typeof CallAgentParams> {
   // Loop-guard (model-agnostic): an empty/errored child turn used to bypass onAgentDone,
-  // so getNormalTurnCount never advanced and the maxAgentTurns guard was defeated — a model
+  // so the completed-turn count never advanced and the maxAgentTurns guard was defeated — a model
   // that returns empty completions (e.g. reasoning eats the output budget) could then trigger
   // unbounded call_agent retries. Track attempts + consecutive empties and stop deterministically.
   const MAX_CONSECUTIVE_EMPTY_TURNS = 2;
@@ -532,7 +533,7 @@ export function buildCallAgentTool(opts: {
   return {
     name: 'call_agent',
     label: 'Call classroom agent',
-    description: `Ask one classroom agent to produce the next in-class response. Use this before giving your final director decision. Hard limit: at most ${opts.maxAgentTurns} normal classroom agent turns in this server-side loop. A single final teacher wrap-up may use turnKind="wrap_up" before cue_user or close_session.`,
+    description: `Ask one classroom agent to produce the next in-class response. Use this before giving your final director decision. Hard limit: at most ${opts.maxAgentTurns} classroom agent turns in this server-side loop. Once the limit is reached, finish with cue_user or close_session.`,
     parameters: CallAgentParams,
     executionMode: 'sequential',
     execute: async (_toolCallId: string, params: CallAgentParams, signal?: AbortSignal) => {
@@ -592,48 +593,18 @@ export function buildCallAgentTool(opts: {
         };
       }
 
-      const isTeacherWrapUpTurn = params.turnKind === 'wrap_up';
-      if (isTeacherWrapUpTurn && agent.role !== 'teacher') {
+      if (opts.getAgentTurnCount() >= opts.maxAgentTurns) {
         return {
           content: [
             {
               type: 'text',
-              text: 'Wrap-up turns are reserved for the teacher. Call a teacher with turnKind="wrap_up", or use a normal turn.',
-            },
-          ],
-          details: {
-            skipped: true,
-            reason: 'wrap_up_requires_teacher',
-            requestedAgentId: agent.id,
-          },
-        };
-      }
-
-      if (isTeacherWrapUpTurn && opts.isTeacherWrapUpUsed?.()) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'The teacher wrap-up turn has already been used. Finish with cue_user or close_session.',
-            },
-          ],
-          details: { skipped: true, reason: 'teacher_wrap_up_already_used' },
-        };
-      }
-
-      if (opts.getAgentTurnCount() >= opts.maxAgentTurns && !isTeacherWrapUpTurn) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Normal agent turn limit (${opts.maxAgentTurns}) reached. Finish the director loop, or call the teacher once with turnKind="wrap_up" for a final summary before cue_user or close_session.`,
+              text: `Agent turn limit (${opts.maxAgentTurns}) reached. Finish the director loop with cue_user or close_session.`,
             },
           ],
           details: {
             skipped: true,
             reason: 'agent_turn_limit',
             maxAgentTurns: opts.maxAgentTurns,
-            wrapUpAvailable: !opts.isTeacherWrapUpUsed?.(),
           },
         };
       }
@@ -649,6 +620,12 @@ export function buildCallAgentTool(opts: {
           details: { skipped: true, reason: 'consecutive_empty_turns', consecutiveEmptyTurns },
         };
       }
+
+      // Evidence is request-scoped and belongs to exactly one valid child delegation.
+      // Take it before starting/building the child so any downstream failure cannot
+      // leak the packet to a later agent.
+      const sceneEvidence = opts.takeSceneEvidence?.();
+      const webEvidence = opts.takeWebEvidence?.();
 
       const childAbort = new AbortController();
       const abortChild = () => childAbort.abort();
@@ -698,7 +675,6 @@ export function buildCallAgentTool(opts: {
         },
         maxActionsPerAgent: opts.maxActionsPerAgent,
         enableWhiteboardTools: opts.enableWhiteboardTools,
-        turnKind: isTeacherWrapUpTurn ? 'wrap_up' : 'normal',
         whiteboardState,
       });
       const childToolsByName = new Map(childTools.map((tool) => [tool.name, tool]));
@@ -744,7 +720,12 @@ export function buildCallAgentTool(opts: {
 
       let childErrored = false;
       try {
-        await child.prompt(buildChildTurnPrompt(params.instruction, agent.role));
+        await child.prompt(
+          buildChildTurnPrompt(params.instruction, agent.role, {
+            scene: sceneEvidence?.content,
+            web: webEvidence?.content,
+          }),
+        );
         await child.waitForIdle();
       } catch (error) {
         // Propagate genuine aborts; otherwise treat a failed child run as an empty turn
@@ -804,11 +785,7 @@ export function buildCallAgentTool(opts: {
         actionCount,
         whiteboardActions,
         actionWarnings,
-        turnKind: isTeacherWrapUpTurn ? 'wrap_up' : 'normal',
       });
-      if (isTeacherWrapUpTurn) {
-        opts.onTeacherWrapUpDone?.();
-      }
 
       return {
         content: [
@@ -822,7 +799,8 @@ export function buildCallAgentTool(opts: {
           agentName: agent.name,
           text: finalText,
           actionWarnings,
-          turnKind: isTeacherWrapUpTurn ? 'wrap_up' : 'normal',
+          ...(sceneEvidence ? { sceneEvidence: sceneEvidence.metadata } : {}),
+          ...(webEvidence ? { webEvidence: webEvidence.metadata } : {}),
         },
       };
     },

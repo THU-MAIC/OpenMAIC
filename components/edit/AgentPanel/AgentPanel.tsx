@@ -375,7 +375,7 @@ export function AgentPanel({
         </span>
         <Sparkles className="size-4 text-[#5b1fa8]/80 dark:text-violet-300/80" />
         <span className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#5b1fa8]/70 [writing-mode:vertical-rl] dark:text-violet-300/70">
-          Edit with AI
+          {t('edit.agent.title')}
         </span>
       </aside>
     );
@@ -403,7 +403,7 @@ export function AgentPanel({
       <header className="flex h-10 shrink-0 items-center gap-2 border-b border-gray-100 px-4 pl-5 dark:border-gray-800">
         <Sparkles className="size-3.5 text-[#5b1fa8] dark:text-violet-300" />
         <span className="text-[13px] font-semibold text-[#5b1fa8] dark:text-violet-300">
-          Edit with AI
+          {t('edit.agent.title')}
         </span>
         <Popover onOpenChange={(open) => open && void refreshSessions()}>
           <PopoverTrigger asChild>

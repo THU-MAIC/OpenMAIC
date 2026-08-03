@@ -1,12 +1,11 @@
 'use client';
 
-import { useMemo } from 'react';
+import type { CSSProperties } from 'react';
 import { Play } from 'lucide-react';
-import type { Slide, PPTElement, PPTVideoElement } from '@openmaic/dsl';
-import { isMediaPlaceholder, useMediaGenerationStore } from '@/lib/store/media-generation';
-import { useMediaStageId } from '@/lib/contexts/media-stage-context';
-import { getVideoMediaRefForElement } from '@/lib/media/video-manifest';
+import type { Slide, PPTVideoElement } from '@openmaic/dsl';
+import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import { SlideCanvas } from '@openmaic/renderer';
+import { useResolvedSlide } from './use-resolved-slide';
 
 interface SlideThumbnailProps {
   /** Slide data */
@@ -24,84 +23,6 @@ interface SlideThumbnailProps {
   readonly viewportRatio: number;
   /** Whether visible (for lazy loading optimization) */
   readonly visible?: boolean;
-}
-
-/**
- * Media-generation task key for an element, matching what the full-size canvas
- * subscribes to: images are keyed by their `gen_img_*` placeholder src
- * (`useResolvedImageSrc`); videos are keyed by `mediaRef ?? gen_vid_* src`
- * (`getVideoMediaRefForElement`, as in `BaseVideoElement`) — a mediaRef-keyed
- * video may carry no placeholder src at all.
- */
-function mediaTaskKeyFor(el: PPTElement): string | undefined {
-  if (el.type === 'video') return getVideoMediaRefForElement(el);
-  if (el.type === 'image' && el.src && isMediaPlaceholder(el.src)) return el.src;
-  return undefined;
-}
-
-/**
- * Resolve a slide's generated-media refs against the media-generation store so
- * the thumbnail stays in sync as generation (and retries) complete.
- *
- * `@openmaic/renderer` is a pure package: it renders `element.src` as-is and knows
- * nothing about this app's async media generation. The store never mutates the
- * slide's elements (it keeps the `gen_*`/`mediaRef` key and tracks the
- * generated `objectUrl` in a task), so a static render would show the raw
- * placeholder forever — broken on first paint, and crucially NOT updating when
- * a retry finally succeeds. We bridge that here, reactively:
- *
- * - Done task → swap `src` to the generated `objectUrl` (and video `poster`).
- * - Pending/failed with a placeholder src → blank the `src` so the package
- *   renders nothing instead of a broken `<img>`/`<video>` for the raw ref.
- *   (A mediaRef-keyed video whose src is a real URL keeps it.)
- * - No stage context (e.g. home recent-course cards) → render raw, matching
- *   the legacy thumbnail's "skip the store off-classroom" behavior.
- */
-function useResolvedSlide(slide: Slide): Slide {
-  const stageId = useMediaStageId();
-
-  // Subscribe via a primitive signature of just the resolutions THIS slide
-  // cares about (task key → done objectUrl), not the whole tasks map. Strings
-  // compare by value, so unrelated task churn (other slides' media
-  // generating/retrying) doesn't re-render this thumbnail, and the memo below
-  // re-runs only when one of our own refs actually resolves.
-  const signature = useMediaGenerationStore((s) => {
-    if (!stageId) return '';
-    let sig = '';
-    for (const el of slide.elements) {
-      const key = mediaTaskKeyFor(el);
-      if (!key) continue;
-      const task = s.tasks[key];
-      const url =
-        task && task.stageId === stageId && task.status === 'done' && task.objectUrl
-          ? task.objectUrl
-          : '';
-      sig += `${key}|${url}|`;
-    }
-    return sig;
-  });
-
-  return useMemo(() => {
-    if (!stageId || !signature) return slide;
-    const { tasks } = useMediaGenerationStore.getState();
-    const elements = slide.elements.map((el) => {
-      const key = mediaTaskKeyFor(el);
-      if (!key) return el;
-      const task = tasks[key];
-      if (task && task.stageId === stageId && task.status === 'done' && task.objectUrl) {
-        return el.type === 'video'
-          ? { ...el, src: task.objectUrl, poster: task.poster ?? el.poster }
-          : { ...el, src: task.objectUrl };
-      }
-      // Unresolved: blank a placeholder src so the renderer paints nothing
-      // rather than a broken-media icon. A real (non-placeholder) src — e.g. a
-      // mediaRef-keyed video that already carries a playable URL — is kept.
-      if ((el.type === 'image' || el.type === 'video') && el.src && isMediaPlaceholder(el.src))
-        return { ...el, src: '' };
-      return el;
-    });
-    return { ...slide, elements };
-  }, [slide, stageId, signature]);
 }
 
 /**
@@ -171,7 +92,7 @@ export function SlideThumbnail({
   const containerClass = autoSize
     ? 'thumbnail-slide relative bg-white overflow-hidden select-none pointer-events-none w-full h-full'
     : 'thumbnail-slide relative bg-white overflow-hidden select-none pointer-events-none';
-  const containerStyle: React.CSSProperties | undefined = autoSize
+  const containerStyle: CSSProperties | undefined = autoSize
     ? undefined
     : { width: `${size}px`, height: `${size * viewportRatio}px` };
 
@@ -187,7 +108,12 @@ export function SlideThumbnail({
 
   return (
     <div className={containerClass} style={containerStyle}>
-      <SlideCanvas slide={resolvedSlide} chrome={false} renderVideo={renderThumbnailVideo} />
+      <SlideCanvas
+        slide={resolvedSlide}
+        chrome={false}
+        renderVideo={renderThumbnailVideo}
+        videoInteractive={false}
+      />
     </div>
   );
 }

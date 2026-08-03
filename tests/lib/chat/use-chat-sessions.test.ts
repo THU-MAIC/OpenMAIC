@@ -263,7 +263,6 @@ describe('withPiInclassWhiteboardTools', () => {
   it('enables Pi whiteboard tools on the inclass request config without dropping fields', () => {
     const request = {
       messages: [],
-      storeState: {},
       config: {
         agentIds: ['default-1'],
         sessionType: 'qa',
@@ -339,7 +338,7 @@ describe('runPiSingleRequest', () => {
             storeState: {},
             config: { agentIds: ['teacher-1'] },
             apiKey: '',
-          } as unknown as ChatRequestTemplate,
+          } as unknown as Parameters<typeof runPiSingleRequest>[1],
           new AbortController(),
           'qa',
           () => ({ onEvent: vi.fn(), onIterationEnd: vi.fn() }),
@@ -396,7 +395,7 @@ describe('runPiSingleRequest', () => {
           storeState: {},
           config: { agentIds: ['teacher-1'] },
           apiKey: '',
-        } as unknown as ChatRequestTemplate,
+        } as unknown as Parameters<typeof runPiSingleRequest>[1],
         new AbortController(),
         'qa',
         () => ({ onEvent: vi.fn(), onIterationEnd }),

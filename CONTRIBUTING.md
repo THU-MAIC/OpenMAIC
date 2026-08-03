@@ -118,6 +118,30 @@ fix(whiteboard): prevent canvas from resetting on window resize
 docs: add CONTRIBUTING.md
 ```
 
+## Changing a Published Package
+
+Four packages under `packages/@openmaic/` are published to npm: `dsl`, `storage`, `renderer`, and `importer`. Anything that ships inside one of those tarballs is under version control in the literal sense — the version number on npm has to keep meaning "this exact source".
+
+**If your PR changes a publishable file in one of those packages, bump that package's `version` in its `package.json` in the same PR.** CI enforces this, and without the bump you will see:
+
+```
+<package>: publishable package inputs changed but version did not increase
+```
+
+What counts as publishable: everything under the package directory except files that never reach the tarball, such as `docs/`, `test/`, and `vitest.config.ts`. Editing only those needs no bump. The exact set lives in `scripts/check-package-version-bumps.mjs`.
+
+Choosing the number is a [semver](https://semver.org/) judgement, and it is yours to make rather than something CI can infer:
+
+- **patch** — a fix that changes no documented behaviour
+- **minor** — new behaviour that existing consumers can ignore
+- **major** — anything an existing consumer must react to
+
+For packages below `1.0.0`, a **minor** bump signals a breaking change and a **patch** bump signals a compatible change, following common 0.x semver practice; the **major** rule applies from `1.0.0`.
+
+Be deliberate with `@openmaic/dsl`. It is the contract the other packages and downstream deployments validate against, so a change that narrows what an existing document may contain is a breaking change even when the diff looks small.
+
+You never publish anything yourself. Once your PR is merged, a version that is not yet on the registry is released automatically, and a `@openmaic/<name>@<version>` tag is written afterwards to record it. That tag is a marker, not a trigger: pushing one does not release anything.
+
 ## AI-Assisted PRs 🤖
 
 PRs built with AI tools (Codex, Claude, Cursor, etc.) are welcome! We just ask for transparency and self-review:

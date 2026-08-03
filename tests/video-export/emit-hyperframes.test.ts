@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { spotlightV1 } from '@/lib/choreography';
 import { compileVideoTimeline, emitHyperframes } from '@/lib/video-export';
 import type { AssetMeta } from '@/lib/video-export';
 import {
@@ -86,6 +87,62 @@ describe('emitHyperframes', () => {
     expect(html).toContain('#00ff88'); // authored laser color survives into the DOM
   });
 
+  it('matches the descriptor-authored spotlight fade easing for enter and exit', () => {
+    const dim = spotlightV1.layers.find((layer) => layer.id === 'dim');
+    const enter = dim?.tracks.find((track) => (track.phase ?? 'enter') === 'enter');
+    const exit = dim?.tracks.find((track) => track.phase === 'exit');
+
+    expect(enter?.easing).toEqual(exit?.easing);
+    if (enter?.easing?.type !== 'cubicBezier') {
+      throw new Error('spotlight.v1 dim enter track must use cubic-bezier easing');
+    }
+    const points = enter.easing.points.join(', ');
+
+    expect(html).toContain(`var EASE_SPOTLIGHT_FADE = cubicBezier(${points});`);
+    expect(html).toContain(
+      "tl.fromTo('#fx-0-1',{autoAlpha:0},{autoAlpha:1,duration:0.3,ease:EASE_SPOTLIGHT_FADE},2);",
+    );
+    expect(html).toContain(
+      "tl.to('#fx-0-1',{autoAlpha:0,duration:0.3,ease:EASE_SPOTLIGHT_FADE},4.7);",
+    );
+  });
+
+  it('does not burn in subtitles by default (clean video + sidecar files)', () => {
+    // Burn-in is opt-in (#867 item 2): no caption overlay in the composition,
+    // but the sidecar subtitle files are still written.
+    expect(html).not.toContain('id="subtitles"');
+    expect(html).not.toContain('id="subtitle-cue-0"');
+    expect(project.files.some((f) => f.path === 'subtitles.srt')).toBe(true);
+    expect(project.files.some((f) => f.path === 'subtitles.vtt')).toBe(true);
+  });
+
+  it('burns in a subtitle overlay when burnInSubtitles is enabled', () => {
+    const burned = emitHyperframes(ir, {
+      width: 1920,
+      height: 1080,
+      burnInSubtitles: true,
+    }).files.find((f) => f.path === 'index.html')!.content;
+    // A caption container plus one cue div per non-empty speech action.
+    expect(burned).toContain('id="subtitles"');
+    expect(burned).toContain('id="subtitle-cue-0"');
+    // Cues start hidden (display:none, out of layout) and are toggled by the
+    // paused timeline — see the multi-cue positioning test below for why
+    // display (not visibility) matters. The reveal `tl.set` switches them to
+    // -webkit-box so the 2-line clamp stays in force while visible; the inline
+    // style must NOT also declare a second `display` (it would override the
+    // `none` and show every cue at t=0).
+    expect(burned).toMatch(/id="subtitle-cue-0"[^>]*display:none/);
+    expect(burned).toMatch(/-webkit-line-clamp:2/);
+    // Exactly one `display:` in the cue's inline style, and it is `none`.
+    const cue0Style = burned.match(/id="subtitle-cue-0" style="([^"]*)"/)![1];
+    expect(cue0Style.match(/display:/g)).toHaveLength(1);
+    expect(cue0Style).toContain('display:none');
+    expect(burned).toMatch(/tl\.set\('#subtitle-cue-0',\{display:'-webkit-box'\},[\d.]+\);/);
+    expect(burned).toMatch(/tl\.set\('#subtitle-cue-0',\{display:'none'\},[\d.]+\);/);
+    // Narration text is rendered into the caption.
+    expect(burned).toContain('Welcome to the lesson');
+  });
+
   it('references vendored GSAP, never a CDN', () => {
     expect(html).toContain('<script src="assets/vendor/gsap.min.js"></script>');
     expect(project.gsapVendorPath).toBe('assets/vendor/gsap.min.js');
@@ -93,6 +150,57 @@ describe('emitHyperframes', () => {
 
   it('matches the HTML snapshot', () => {
     expect(html).toMatchSnapshot();
+  });
+});
+
+describe('emitHyperframes multi-cue subtitle positioning (regression)', () => {
+  // A scene with several narration cues; the earlier cut left inactive cues in
+  // layout (visibility:hidden + inline-block), so the band grew multiple rows
+  // tall and the active cue drifted up into the slide/title area.
+  const ir = compileVideoTimeline(
+    {
+      stage: { id: 'stage', name: 'Multi Cue' },
+      scenes: [
+        slide(
+          'intro',
+          [
+            speech('sp1', 'First caption line', { audioId: 'a1' }),
+            speech('sp2', 'Second caption line', { audioId: 'a2' }),
+            speech('sp3', 'Third caption line', { audioId: 'a3' }),
+          ],
+          { title: 'Intro', elements: [] },
+        ),
+      ],
+    },
+    {
+      timing: stubProbe({ sp1: 2000, sp2: 2000, sp3: 2000 }, {}),
+      assets: stubAssets({ sp1: audioMeta('a1'), sp2: audioMeta('a2'), sp3: audioMeta('a3') }, {}),
+    },
+  );
+  const html = emitHyperframes(ir, { width: 1920, height: 1080, burnInSubtitles: true }).files.find(
+    (f) => f.path === 'index.html',
+  )!.content;
+
+  it('stacks every cue in one grid cell so the active cue never shifts', () => {
+    // All cues share grid-area 1/1 — one slot, not one row each.
+    const cueCount = (html.match(/id="subtitle-cue-\d+"/g) ?? []).length;
+    expect(cueCount).toBe(3);
+    expect(html.match(/grid-area:1\/1/g)?.length).toBe(3);
+    expect(html).toContain('id="subtitles" style="position:absolute');
+    // The container is a grid so the single occupied cell owns the whole band.
+    expect(html).toMatch(/id="subtitles"[^>]*display:grid/);
+  });
+
+  it('removes inactive cues from layout (display:none, never visibility:hidden)', () => {
+    // Every cue starts display:none; toggled cues use display, not visibility —
+    // a visibility-hidden cue would keep its box and push the active one out of slot.
+    for (let i = 0; i < 3; i++) {
+      expect(html).toMatch(new RegExp(`id="subtitle-cue-${i}"[^>]*display:none`));
+      expect(html).toContain(`tl.set('#subtitle-cue-${i}',{display:'-webkit-box'}`);
+      expect(html).toContain(`tl.set('#subtitle-cue-${i}',{display:'none'}`);
+    }
+    expect(html).not.toContain('visibility:hidden');
+    expect(html).not.toContain("visibility:'hidden'");
   });
 });
 

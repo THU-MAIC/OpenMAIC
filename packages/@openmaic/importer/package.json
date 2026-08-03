@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/importer",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "A javascript tool for parsing .pptx file",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -46,7 +46,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@openmaic/dsl": "workspace:*",
+    "@openmaic/dsl": "workspace:^",
     "@xmldom/xmldom": "^0.9.9",
     "jpegxr": "^0.3.0",
     "jszip": "^3.10.1",

@@ -82,8 +82,13 @@ export interface EditableSlideCanvasProps {
   onElementsChange?: (intents: EditIntent[]) => void;
 
   /** Host-injected media render slots (v1 behaviour preserved). */
-  renderImage?: (element: PPTImageElement, resolvedSrc: string) => ReactNode;
+  renderImage?: (
+    element: PPTImageElement,
+    resolvedSrc: string,
+    defaultContent: ReactNode,
+  ) => ReactNode;
   renderVideo?: (element: PPTVideoElement) => ReactNode;
+  videoInteractive?: boolean;
 
   /** Editor affordances (no-ops until Part A). */
   snapping?: boolean | SnappingOptions;

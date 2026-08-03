@@ -16,7 +16,7 @@ const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
 test.describe('Slide content surface (#647)', () => {
   test.beforeEach(async ({ page, mockApi }) => {
     await page.addInitScript((settings) => {
-      localStorage.setItem('settings-storage', settings);
+      localStorage.setItem('maic:account:settings-storage', settings);
     }, SETTINGS_STORAGE);
     await mockApi.setupGenerationMocks();
   });

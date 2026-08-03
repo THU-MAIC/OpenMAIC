@@ -16,6 +16,7 @@ export interface PercentageGeometry {
 export function getElementPercentageGeometry(
   element: PPTElement,
   viewportSize: number = 1000,
+  viewportRatio: number = 0.5625,
 ): PercentageGeometry | null {
   if (
     !('left' in element) ||
@@ -29,9 +30,9 @@ export function getElementPercentageGeometry(
   const { left, top, width, height } = element;
 
   const x = (left / viewportSize) * 100;
-  const y = (top / (viewportSize * 0.5625)) * 100;
+  const y = (top / (viewportSize * viewportRatio)) * 100;
   const w = (width / viewportSize) * 100;
-  const h = (height / (viewportSize * 0.5625)) * 100;
+  const h = (height / (viewportSize * viewportRatio)) * 100;
 
   const centerX = x + w / 2;
   const centerY = y + h / 2;
@@ -43,10 +44,11 @@ export function findElementGeometry(
   elements: PPTElement[],
   elementId: string,
   viewportSize: number = 1000,
+  viewportRatio: number = 0.5625,
 ): PercentageGeometry | null {
   const element = elements.find((el) => el.id === elementId);
   if (!element) return null;
-  return getElementPercentageGeometry(element, viewportSize);
+  return getElementPercentageGeometry(element, viewportSize, viewportRatio);
 }
 
 export function findNearestCorner(geometry: PercentageGeometry): {

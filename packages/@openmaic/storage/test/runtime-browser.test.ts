@@ -136,6 +136,47 @@ describe('BrowserRuntimeStore injected payload validators', () => {
   });
 });
 
+describe('BrowserRuntimeStore atomic append transition', () => {
+  test('an invalid parent transition aborts both the record and session write', async () => {
+    const store = new BrowserRuntimeStore({ indexedDB: new IDBFactory() });
+    await store.createSession(makeSession());
+
+    await expect(
+      store.appendRecord(makeRecordInit('sess-1'), {
+        sessionTransition: { status: 'completed', updatedAt: 'not-iso' },
+      }),
+    ).rejects.toThrow(/updatedAt/);
+
+    expect(await store.listRecords('sess-1')).toEqual([]);
+    expect(await store.getSession('sess-1')).toMatchObject({
+      status: 'active',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+  });
+
+  test('a stale append precondition aborts its requested parent transition', async () => {
+    const store = new BrowserRuntimeStore({ indexedDB: new IDBFactory() });
+    await store.createSession(makeSession());
+    const existing = await store.appendRecord(makeRecordInit('sess-1'));
+
+    await expect(
+      store.appendRecord(makeRecordInit('sess-1'), {
+        expectedLastSeq: null,
+        sessionTransition: {
+          status: 'completed',
+          updatedAt: '2026-01-01T00:01:00.000Z',
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'RuntimeAppendConflictError' });
+
+    expect(await store.listRecords('sess-1')).toEqual([existing]);
+    expect(await store.getSession('sess-1')).toMatchObject({
+      status: 'active',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+  });
+});
+
 describe('BrowserRuntimeStore corrupt rows', () => {
   test('a raw row missing its runtime stamp fails loud on read', async () => {
     const idb = new IDBFactory();

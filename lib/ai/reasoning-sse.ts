@@ -1,3 +1,5 @@
+import type { LanguageModelMiddleware } from 'ai';
+
 /**
  * Reasoning-channel normalization for OpenAI-compatible providers.
  *
@@ -21,6 +23,85 @@
 
 interface ChatChunkLike {
   choices?: { delta?: Record<string, unknown>; finish_reason?: string | null }[];
+}
+
+const KIMI_REASONING_MARKER = '\u0000openmaic:kimi-reasoning:';
+
+function encodeKimiReasoning(text: string): string {
+  return `${KIMI_REASONING_MARKER}${text.length}:${text}`;
+}
+
+function extractKimiReasoning(content: string): { content: string; reasoning?: string } {
+  let remaining = content;
+  let reasoning = '';
+
+  for (;;) {
+    const markerIndex = remaining.indexOf(KIMI_REASONING_MARKER);
+    if (markerIndex < 0) break;
+
+    const lengthStart = markerIndex + KIMI_REASONING_MARKER.length;
+    const separatorIndex = remaining.indexOf(':', lengthStart);
+    if (separatorIndex < 0) break;
+
+    const lengthText = remaining.slice(lengthStart, separatorIndex);
+    if (!/^\d+$/.test(lengthText)) break;
+
+    const reasoningLength = Number(lengthText);
+    const reasoningStart = separatorIndex + 1;
+    const reasoningEnd = reasoningStart + reasoningLength;
+    if (reasoningEnd > remaining.length) break;
+
+    reasoning += remaining.slice(reasoningStart, reasoningEnd);
+    remaining = remaining.slice(0, markerIndex) + remaining.slice(reasoningEnd);
+  }
+
+  return reasoning ? { content: remaining, reasoning } : { content };
+}
+
+/**
+ * The OpenAI chat adapter drops standardized reasoning prompt parts. Encode
+ * them as private text markers until the request reaches our fetch wrapper,
+ * where they are restored to Kimi's `reasoning_content` field.
+ */
+export function createKimiReasoningPreservationMiddleware(): LanguageModelMiddleware {
+  return {
+    specificationVersion: 'v3',
+    transformParams: async ({ params }) => ({
+      ...params,
+      prompt: params.prompt.map((message) =>
+        message.role !== 'assistant'
+          ? message
+          : {
+              ...message,
+              content: message.content.map((part) =>
+                part.type === 'reasoning'
+                  ? { type: 'text' as const, text: encodeKimiReasoning(part.text) }
+                  : part,
+              ),
+            },
+      ),
+    }),
+  };
+}
+
+/** Restore private Kimi reasoning markers after OpenAI chat serialization. */
+export function restoreKimiReasoningInRequestBody(body: unknown): void {
+  if (!body || typeof body !== 'object') return;
+  const messages = (body as { messages?: unknown }).messages;
+  if (!Array.isArray(messages)) return;
+
+  for (const message of messages) {
+    if (!message || typeof message !== 'object') continue;
+    const record = message as Record<string, unknown>;
+    if (record.role !== 'assistant' || typeof record.content !== 'string') continue;
+
+    const restored = extractKimiReasoning(record.content);
+    if (!restored.reasoning) continue;
+
+    record.reasoning_content = restored.reasoning;
+    record.content =
+      restored.content === '' && Array.isArray(record.tool_calls) ? null : restored.content;
+  }
 }
 
 /**
@@ -115,5 +196,42 @@ export function wrapResponseWithReasoning(response: Response): Response {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,
+  });
+}
+
+/** Recover non-streaming `message.reasoning_content` for the same middleware. */
+export async function wrapJsonResponseWithReasoning(response: Response): Promise<Response> {
+  let body: unknown;
+  try {
+    body = await response.clone().json();
+  } catch {
+    return response;
+  }
+
+  if (!body || typeof body !== 'object') return response;
+  const choices = (body as { choices?: unknown }).choices;
+  if (!Array.isArray(choices)) return response;
+
+  let changed = false;
+  for (const choice of choices) {
+    if (!choice || typeof choice !== 'object') continue;
+    const message = (choice as { message?: unknown }).message;
+    if (!message || typeof message !== 'object') continue;
+    const record = message as Record<string, unknown>;
+    if (typeof record.reasoning_content !== 'string' || record.reasoning_content === '') continue;
+
+    const content = typeof record.content === 'string' ? record.content : '';
+    record.content = `<think>${record.reasoning_content}</think>${content}`;
+    delete record.reasoning_content;
+    changed = true;
+  }
+
+  if (!changed) return response;
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  return new Response(JSON.stringify(body), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
   });
 }
