@@ -62,6 +62,7 @@ import { ModelEditDialog } from './model-edit-dialog';
 import { AddProviderDialog, type NewProviderData } from './add-provider-dialog';
 import { AddAudioProviderDialog, type NewAudioProviderData } from './add-audio-provider-dialog';
 import { isCustomTTSProvider, isCustomASRProvider } from '@/lib/audio/types';
+import { resolveASRProviderName, resolveTTSProviderName } from '@/lib/audio/provider-display';
 import type { SettingsSection, EditingModel } from '@/lib/types/settings';
 
 // ─── Provider List Column (reusable) ───
@@ -133,24 +134,14 @@ function ProviderListColumn<T extends string>({
 }
 
 // ─── Helper: get TTS/ASR provider display name ───
+// The id→i18n-key tables live in lib/audio/provider-display so the generation
+// toolbar resolves provider names the same way this dialog does.
 function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => string): string {
   if (isCustomTTSProvider(providerId)) {
     const cfg = useSettingsStore.getState().ttsProvidersConfig[providerId];
     return cfg?.customName || providerId;
   }
-  const names: Record<string, string> = {
-    'openai-tts': t('settings.providerOpenAITTS'),
-    'azure-tts': t('settings.providerAzureTTS'),
-    'glm-tts': t('settings.providerGLMTTS'),
-    'qwen-tts': t('settings.providerQwenTTS'),
-    'voxcpm-tts': t('settings.providerVoxCPMTTS'),
-    'doubao-tts': t('settings.providerDoubaoTTS'),
-    'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
-    'minimax-tts': t('settings.providerMiniMaxTTS'),
-    'lemonade-tts': t('settings.providerLemonadeTTS'),
-    'browser-native-tts': t('settings.providerBrowserNativeTTS'),
-  };
-  return names[providerId] || providerId;
+  return resolveTTSProviderName(providerId, t);
 }
 
 function getASRProviderName(providerId: ASRProviderId, t: (key: string) => string): string {
@@ -158,14 +149,7 @@ function getASRProviderName(providerId: ASRProviderId, t: (key: string) => strin
     const cfg = useSettingsStore.getState().asrProvidersConfig[providerId];
     return cfg?.customName || providerId;
   }
-  const names: Record<string, string> = {
-    'openai-whisper': t('settings.providerOpenAIWhisper'),
-    'browser-native': t('settings.providerBrowserNative'),
-    'qwen-asr': t('settings.providerQwenASR'),
-    'azure-asr': t('settings.providerAzureASR'),
-    'lemonade-asr': t('settings.providerLemonadeASR'),
-  };
-  return names[providerId] || providerId;
+  return resolveASRProviderName(providerId, t);
 }
 
 // ─── Image/Video provider name helpers ───
