@@ -11,8 +11,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page, type Request } from '@playwright/test';
-import { compileVideoTimeline, emitHyperframes, PBL_PANEL_DESIGN_BOX } from '@/lib/video-export';
+import { compileVideoTimeline, emitHyperframes } from '@/lib/video-export';
 import type { CompilerScene, VideoExportCta } from '@/lib/video-export';
+import { PBL_PANEL_DESIGN_BOX } from '@/lib/video-export/emit-hyperframes';
 import {
   getVideoExportCoverLabels,
   resolveVideoExportCta,

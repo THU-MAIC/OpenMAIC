@@ -105,9 +105,7 @@ function assertHyperframesGateContract(workflow: Workflow): void {
   expect(materialize.if).toBeUndefined();
   expect(materialize['continue-on-error']).toBeUndefined();
   expect(materialize.env).toMatchObject({ HF_E2E_DIR });
-  expect(materialize.run).toBe(
-    'npx --yes node@22 node_modules/vitest/vitest.mjs run tests/video-export/e2e-materialize.test.ts',
-  );
+  expect(materialize.run).toBe('pnpm exec vitest run tests/video-export/e2e-materialize.test.ts');
   assertHyperframesLintContract(workflow);
 }
 

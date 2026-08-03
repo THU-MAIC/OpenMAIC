@@ -191,7 +191,7 @@ jobs:
 
       # runner.* is only valid in step contexts (not job-level env).
       - name: Materialize Hyperframes lint samples
-        run: npx --yes node@22 node_modules/vitest/vitest.mjs run tests/video-export/e2e-materialize.test.ts
+        run: pnpm exec vitest run tests/video-export/e2e-materialize.test.ts
         env:
           HF_E2E_DIR: ${{ runner.temp }}/openmaic-hyperframes-samples
 

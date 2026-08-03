@@ -41,7 +41,6 @@ export {
   emitHyperframes,
   assetUrl,
   ASSETS_DIR,
-  PBL_PANEL_DESIGN_BOX,
   type EmitHyperframesOptions,
   type EmittedProject,
   type EmittedFile,
