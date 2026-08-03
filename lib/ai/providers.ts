@@ -1548,7 +1548,7 @@ function getCompatThinkingBodyParams(
         if (mode === 'disabled') body.enable_thinking = false;
         if (mode === 'enabled') body.enable_thinking = true;
       }
-      if (budget !== undefined) body.thinking_budget = budget;
+      if (budget !== undefined && budget > 0) body.thinking_budget = budget;
       return Object.keys(body).length > 0 ? body : undefined;
     }
 
