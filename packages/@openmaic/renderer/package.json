@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/renderer",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "React component for rendering PPTist-style Slide JSON, extracted from OpenMAIC.",
   "type": "module",
   "main": "./dist/index.js",
@@ -82,7 +82,7 @@
     }
   },
   "dependencies": {
-    "@openmaic/dsl": "workspace:*",
+    "@openmaic/dsl": "workspace:^",
     "clsx": "^2.1.1",
     "html-to-image": "^1.11.13",
     "html2canvas-pro": "^2.0.4",

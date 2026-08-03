@@ -19,9 +19,43 @@
  * {@link DSL_VERSION_KEY} envelope field to read the current version and stamp
  * the new one. Which aggregate carries that field is decided when a normalized
  * store first consumes this pipeline.
+ *
+ * ---
+ *
+ * RELEASE RULE, ENFORCED: changing {@link DSL_VERSION} or
+ * {@link RUNTIME_DSL_VERSION} requires **an increase of this package's npm
+ * version that the dependents' caret range will NOT admit**.
+ * `scripts/check-package-version-bumps.mjs` fails the merge if it does not.
+ *
+ * `@openmaic/storage`, `@openmaic/renderer` and `@openmaic/importer` depend on
+ * this package as `workspace:^`, published as a caret. Anything that caret
+ * admits reaches them with no release of their own, so the required increase is
+ * exactly the one it does not admit:
+ *
+ * - while this package is `0.x`, `^0.5.1` admits `0.5.x`, so a **MINOR**;
+ * - once it reaches `1.0.0`, `^1.4.2` admits minors as well, so a **MAJOR**.
+ *
+ * The rule is stated as "escapes the caret" rather than as a fixed level
+ * because the level changes at the 1.0 boundary — a rule that said MINOR would
+ * quietly stop being sufficient exactly when this package matured.
+ *
+ * Independence from the npm version, described above, is about which way the
+ * two numbers may move *apart*: a package release may leave the format alone.
+ * The reverse is constrained, for the reason just given.
+ *
+ * Shipping a format change inside the caret would deliver it silently. The same
+ * published `storage` version, resolved against two different admitted dsl
+ * versions, would write and then refuse to read the same rows — storage
+ * compares these constants by value and rejects anything stamped newer than it
+ * knows.
  */
 
-/** Current version of the serialized slide contract. */
+/**
+ * Current version of the serialized slide contract.
+ *
+ * Changing it requires a package version increase that the dependents' caret
+ * does not admit; see the module docstring.
+ */
 export const DSL_VERSION = '0.1.0' as const;
 
 export type DslVersion = typeof DSL_VERSION;
@@ -175,6 +209,9 @@ export const DSL_MIGRATIONS: readonly DslMigration[] = [
  * not legacy data — it is a misrouted legacy document or an unstamped producer
  * write, and fails loud (see {@link noRuntimeEpochError}) rather than being
  * lifted. {@link RUNTIME_DSL_MIGRATIONS} accordingly ships empty.
+ *
+ * Like {@link DSL_VERSION}, changing this requires a package version increase
+ * that the dependents' caret does not admit; see the module docstring for why.
  */
 export const RUNTIME_DSL_VERSION = '0.1.0' as const;
 

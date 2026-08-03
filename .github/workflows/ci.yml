@@ -64,7 +64,42 @@ jobs:
         env:
           BEFORE_SHA: ${{ github.event.before }}
 
+      # The tarball smoke test proves this about the bytes that would actually
+      # be published, but it installs four package tarballs, so it runs only on
+      # the release path. This is the cheap source-level form, here so that a
+      # pull request restoring `workspace:*` fails at review time rather than at
+      # release time, after a version number has already been spent.
+      - name: Internal dependency ranges
+        run: node scripts/check-internal-dependency-ranges.mjs
+
       - run: pnpm install --frozen-lockfile
+
+      # `postinstall` builds all four @openmaic packages, and some of them
+      # generate tracked, publishable files (renderer's fonts.css and its KaTeX
+      # font snapshot). The publish workflow refuses to release when the build
+      # rewrites one; catching it here means a stale generated file is a pull
+      # request failure instead of a release failure.
+      #
+      # Against GITHUB_SHA, not the index or HEAD: a bare `git diff` misses
+      # staged changes, while install code can create a commit and move HEAD.
+      # This check exists precisely because code ran before it, so its reference
+      # point must be something that code cannot move. Disabling replacement
+      # objects also prevents a local replace ref from redirecting the commit.
+      - name: Verify the install did not rewrite tracked package files
+        run: |
+          set -euo pipefail
+          actual_head="$(git --no-replace-objects rev-parse HEAD)"
+          if [ "$actual_head" != "$GITHUB_SHA" ]; then
+            echo "::error::HEAD moved from $GITHUB_SHA to $actual_head during installation."
+            exit 1
+          fi
+          if ! git --no-replace-objects diff --quiet "$GITHUB_SHA" -- packages/@openmaic; then
+            echo "::error::Installing rewrote tracked files under packages/@openmaic."
+            echo "Regenerate them and commit the result."
+            git --no-replace-objects --no-pager diff --stat "$GITHUB_SHA" -- packages/@openmaic
+            exit 1
+          fi
+          echo "Tracked package files match the commit under test."
 
       - name: Prettier
         run: pnpm check

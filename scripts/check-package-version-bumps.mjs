@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { OPENMAIC_PACKAGES, assertPackageListIsComplete } from './openmaic-packages.mjs';
 
 const REGISTRY = 'https://registry.npmjs.org';
 
@@ -27,10 +28,7 @@ const commonIgnoredInputs = {
 // version bumps, or externalising the bundled dependencies. Both are decisions
 // about how the packages are built rather than about this check. Diff mode is a
 // merge-time guard against the common case, not a proof of byte equality.
-const ignoredPackageInputs = {
-  dsl: commonIgnoredInputs,
-  storage: commonIgnoredInputs,
-  renderer: commonIgnoredInputs,
+const ignoredInputOverrides = {
   importer: {
     // These are local tooling, demo assets, or the legacy reference
     // implementation. The importer build and package files exclude all of them.
@@ -47,6 +45,12 @@ const ignoredPackageInputs = {
     directories: [...commonIgnoredInputs.directories, 'scripts/', 'src1/'],
   },
 };
+
+// Built from the shared package list rather than spelled out again, so a new
+// package cannot be silently exempt from this gate by being absent here.
+const ignoredPackageInputs = Object.fromEntries(
+  OPENMAIC_PACKAGES.map((name) => [name, ignoredInputOverrides[name] ?? commonIgnoredInputs]),
+);
 
 const usage = [
   'Usage:',
@@ -86,6 +90,26 @@ function resolveCommit(ref) {
     return git(['rev-parse', '--verify', `${ref}^{commit}`], { quiet: true });
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * The commit `base` and HEAD diverged from — what `base...HEAD` compares
+ * against. Falls back to `base` itself if there is no common ancestor, which
+ * only happens for unrelated histories.
+ *
+ * NOTE: in both CI invocations this currently returns `base` unchanged.
+ * `actions/checkout@v4` on a `pull_request` event checks out the merge ref, so
+ * `merge-base(base.sha, HEAD)` is `base.sha`; on a push to main the before-SHA
+ * is already an ancestor of HEAD. It is used anyway because it is the correct
+ * reference for a "did THIS branch change it" question, and because the local
+ * invocations that people actually run by hand are not on a merge ref.
+ */
+function mergeBaseWithHead(base) {
+  try {
+    return git(['merge-base', base, 'HEAD'], { quiet: true });
+  } catch {
+    return base;
   }
 }
 
@@ -185,6 +209,227 @@ function failIfAny(failures, headline) {
 }
 
 /**
+ * Where the serialized-format constants live, newest first.
+ *
+ * A list rather than one path so that moving the constants stays LANDABLE
+ * without ever letting the rule stop comparing. Failing closed on a missing
+ * file is right, but on its own it makes a rename impossible to merge: the new
+ * path does not exist at the base revision either, so the check would refuse
+ * both before and after. Resolving each revision against the first candidate
+ * that exists there means a rename lands by PREPENDING the new path here, in
+ * the same change, and the comparison still happens across it.
+ *
+ * Retired paths stay until the base branch no longer reaches a revision that
+ * used them.
+ */
+const DSL_VERSION_SOURCES = ['packages/@openmaic/dsl/src/version.ts'];
+
+/**
+ * The two SERIALIZED-FORMAT versions the dsl owns. They are deliberately
+ * decoupled from the npm version (see the module docstring in version.ts), and
+ * storage compares them by value across the package boundary, refusing to read
+ * a document or session written at a version it does not know.
+ */
+const DSL_FORMAT_CONSTANTS = ['DSL_VERSION', 'RUNTIME_DSL_VERSION'];
+
+function readFormatConstants(contents, source) {
+  const found = {};
+  for (const name of DSL_FORMAT_CONSTANTS) {
+    // Anchored to the start of a line (allowing only indentation) so that a
+    // commented-out `// export const DSL_VERSION = '0.1.0'` cannot be read as
+    // the live value. `export const <name> =` also keeps the longer identifiers
+    // that merely contain these names (RUNTIME_DSL_VERSION_KEY,
+    // INITIAL_DSL_VERSION, UNVERSIONED_DSL_VERSION) from matching.
+    const pattern = new RegExp(`^[ \\t]*export const ${name}\\s*=\\s*'([^']*)'`, 'gm');
+    const matches = [...contents.matchAll(pattern)];
+    if (matches.length === 0) {
+      throw new Error(
+        `${source} no longer declares ${name} as a top-level string literal; this check ` +
+          'cannot read it, and must not guess. Update the gate together with the change.',
+      );
+    }
+    if (matches.length > 1) {
+      throw new Error(
+        `${source} declares ${name} ${matches.length} times; this check cannot tell which ` +
+          'one is authoritative.',
+      );
+    }
+    found[name] = matches[0][1];
+  }
+  return found;
+}
+
+/**
+ * The lowest version that `^before` does NOT admit — the smallest increase that
+ * actually stops an already-published dependent from resolving it.
+ *
+ *   ^1.4.2  admits >=1.4.2 <2.0.0   so the escape is a MAJOR: 2.0.0
+ *   ^0.5.1  admits >=0.5.1 <0.6.0   so the escape is a MINOR: 0.6.0
+ *   ^0.0.3  admits only 0.0.3       so the escape is a PATCH: 0.0.4
+ *
+ * Expressing the rule this way rather than naming a fixed level keeps it
+ * correct across the 1.0 boundary: once dsl is 1.x a caret admits minors, so
+ * "minor" would stop being enough exactly when it started to matter.
+ */
+function caretEscapeVersion(version) {
+  const [major, minor, patch] = version.parts;
+  if (major > 0) return { raw: `${major + 1}.0.0`, level: 'MAJOR' };
+  if (minor > 0) return { raw: `0.${minor + 1}.0`, level: 'MINOR' };
+  return { raw: `0.0.${patch + 1}`, level: 'PATCH' };
+}
+
+/**
+ * A change to a serialized-format version requires a dsl package version
+ * increase that the dependents' caret range will NOT admit.
+ *
+ * The dependents declare `@openmaic/dsl` as `workspace:^`, published as a
+ * caret. That range is what stops a consumer installing two copies of the dsl,
+ * but it also means any version the caret admits reaches them without a release
+ * of their own — so an admitted bump is free to change what they can read.
+ *
+ * Without this rule: dsl ships 0.5.1 moving DSL_VERSION '0.1.0' -> '0.2.0' with
+ * a migration, which version.ts explicitly calls legitimate. Installation A
+ * resolves 0.5.1, and the very same published storage version stamps
+ * `dslVersion: '0.2.0'` into `document_stages`. Installation B, lockfile-pinned
+ * to dsl 0.5.0, reads that row and hard-fails as "newer than this client".
+ * Two installs of one published storage version, silently data-incompatible.
+ *
+ * The required increase is therefore whatever escapes the caret — a minor while
+ * dsl is 0.x, a major once it reaches 1.0.0 — so a dependent only ever picks up
+ * a new serialized format through a deliberate release of its own. The old
+ * exact pin was holding this invariant by accident; making the range useful
+ * means stating it out loud.
+ *
+ * FAILS CLOSED. If the constants cannot be located at either revision while dsl
+ * changed at all, this reports an error rather than passing. Renaming or
+ * splitting that file is exactly the case where the rule would otherwise stop
+ * comparing and a format change could ride out inside the caret.
+ */
+function checkDslFormatVersionRule(baseTip, mergeBase, failures) {
+  const manifest = `${packageDirectory('dsl')}/package.json`;
+  const beforeManifest = gitFileAt(mergeBase, manifest);
+  const afterManifest = gitFileAt('HEAD', manifest);
+  // dsl did not exist at the merge base, or has been removed: there is no
+  // package for the rule to constrain, and the ordinary checks cover both.
+  if (beforeManifest === undefined || afterManifest === undefined) return;
+
+  /**
+   * Every candidate that exists at `ref` AND declares the constants.
+   *
+   * All of them, not the first: during a half-finished rename both files can
+   * exist, the new one still carrying the old values while the old one — which
+   * is what is actually exported — carries the new. Taking the first match
+   * would compare the wrong file and pass. Ambiguity is an error.
+   */
+  const locate = (ref) => {
+    const found = [];
+    const unreadable = [];
+    for (const path of DSL_VERSION_SOURCES) {
+      const contents = gitFileAt(ref, path);
+      if (contents === undefined) continue;
+      try {
+        found.push({ path, constants: readFormatConstants(contents, `${path} at ${ref}`) });
+      } catch (error) {
+        unreadable.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    return { found, unreadable };
+  };
+
+  const before = locate(mergeBase);
+  const after = locate('HEAD');
+  for (const side of [before, after]) {
+    if (side.found.length > 1) {
+      failures.push(
+        `dsl: ${side.found.map((entry) => entry.path).join(' and ')} both declare the ` +
+          'serialized-format constants, so this check cannot tell which one is authoritative. ' +
+          'Finish the move and drop the retired file, or narrow DSL_VERSION_SOURCES.',
+      );
+      return;
+    }
+  }
+  if (before.found.length === 0 || after.found.length === 0) {
+    // Nothing about dsl moved, so nothing can have moved the format either.
+    if (!publishableInputsChanged('dsl', mergeBase)) return;
+    const side = before.found.length === 0 ? before : after;
+    const missingAt = before.found.length === 0 ? mergeBase : 'HEAD';
+    failures.push(
+      [
+        `dsl: none of ${DSL_VERSION_SOURCES.join(', ')} declares the serialized-format `,
+        `constants at ${missingAt}, so the rule cannot be evaluated for a change that does `,
+        'touch dsl. This check must not pass by default. If the constants moved, prepend ',
+        'their new path to DSL_VERSION_SOURCES in scripts/check-package-version-bumps.mjs ',
+        'in the same change; the old path stays listed so the comparison still works ',
+        `across the move.${side.unreadable.length > 0 ? ` (${side.unreadable.join('; ')})` : ''}`,
+      ].join(''),
+    );
+    return;
+  }
+
+  const beforeConstants = before.found[0].constants;
+  const afterConstants = after.found[0].constants;
+  const moved = DSL_FORMAT_CONSTANTS.filter(
+    (name) => beforeConstants[name] !== afterConstants[name],
+  );
+  if (moved.length === 0) return;
+
+  let beforePackage;
+  let afterPackage;
+  try {
+    beforePackage = readVersion(beforeManifest, `${manifest} at ${mergeBase}`);
+    afterPackage = readVersion(afterManifest, `${manifest} at HEAD`);
+  } catch (error) {
+    failures.push(error instanceof Error ? error.message : String(error));
+    return;
+  }
+
+  // The caret to escape is the one that ALREADY-PUBLISHED dependents carry, so
+  // it comes from the highest dsl version reachable on the base branch, not
+  // from the merge base. An ordinary minor landing on main while this branch is
+  // open moves that reference: with merge base 0.5.1, base tip 0.6.0 and HEAD
+  // 0.6.1, escaping `^0.5.1` needs only 0.6.0 — but dependents released against
+  // 0.6.0 publish `^0.6.0`, which admits 0.6.1, and the new format reaches them
+  // anyway. 0.6.1 is also the minimum the ordinary version check allows, so
+  // that is the default outcome rather than an unlucky one.
+  //
+  // `moved` still comes from the merge base: whether THIS branch changed the
+  // format is a question about the branch, not about the base branch.
+  const baseTipManifest = baseTip === mergeBase ? beforeManifest : gitFileAt(baseTip, manifest);
+  let reference = beforePackage;
+  if (baseTipManifest !== undefined) {
+    try {
+      const tipPackage = readVersion(baseTipManifest, `${manifest} at ${baseTip}`);
+      if (compareVersions(tipPackage, reference) > 0) reference = tipPackage;
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+      return;
+    }
+  }
+
+  const escape = caretEscapeVersion(reference);
+  if (compareVersions(afterPackage, parseVersion(escape.raw)) >= 0) {
+    console.log(
+      `dsl: ${moved.join(', ')} changed and the package version escaped the dependents ` +
+        `caret range (${beforePackage.raw} -> ${afterPackage.raw}, highest on the base ` +
+        `branch ${reference.raw}, needed >= ${escape.raw}).`,
+    );
+    return;
+  }
+
+  failures.push(
+    `dsl: ${moved
+      .map((name) => `${name} ${beforeConstants[name]} -> ${afterConstants[name]}`)
+      .join(', ')}, but the package version only moved ${beforePackage.raw} -> ` +
+      `${afterPackage.raw}. A serialized-format change needs an increase that the dependents ` +
+      `caret range will NOT admit: here at least ${escape.raw} (a ${escape.level}), because ` +
+      `the highest dsl on the base branch is ${reference.raw}, dependents released against it ` +
+      `declare \`^${reference.raw}\`, and that admits everything below ${escape.raw}. Anything ` +
+      'it admits hands the new format to already-published dependents, so two installs of the ' +
+      'same dependent version could write and then refuse to read data written by the other.',
+  );
+}
+
+/**
  * Diff mode: every publishable change between `base` and HEAD must carry a
  * version increase.
  *
@@ -199,7 +444,9 @@ function runDiffMode(base) {
     process.exit(2);
   }
 
-  const failures = [];
+  // The package list this whole gate iterates. A package missing from it is
+  // exempt from every check below, so validate it before trusting any of them.
+  const failures = [...assertPackageListIsComplete()];
   for (const name of Object.keys(ignoredPackageInputs)) {
     if (!publishableInputsChanged(name, base)) continue;
 
@@ -234,6 +481,20 @@ function runDiffMode(base) {
       console.log(`${name}: ${before.raw} -> ${after.raw}`);
     }
   }
+
+  // Both references, because the rule asks two different questions. "Did THIS
+  // branch move a format constant" is about the branch, so it is answered
+  // against the merge base — the base tip may already carry someone else's
+  // format change, and comparing against it reports the difference backwards.
+  // "Which caret must the bump escape" is about what already-published
+  // dependents carry, so it is answered against the highest dsl version on the
+  // base branch.
+  //
+  // Neither is applied to the version comparison above. That one asks "does
+  // this version beat what is already on the base branch", where the tip alone
+  // is right — the merge base there would let a branch reuse a version another
+  // branch published in the meantime.
+  checkDslFormatVersionRule(base, mergeBaseWithHead(base), failures);
 
   failIfAny(
     failures,
@@ -326,7 +587,9 @@ function registryVersions(name) {
  * published and tagged individually so a partial failure stays retryable.
  */
 function runReleaseMode() {
-  const failures = [];
+  // Also here, not only in diff mode: this is the gate that decides what gets
+  // published, so it must not iterate a list it has not checked.
+  const failures = [...assertPackageListIsComplete()];
   const releases = [];
 
   for (const name of Object.keys(ignoredPackageInputs)) {
