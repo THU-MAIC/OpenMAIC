@@ -442,7 +442,7 @@ importers:
   packages/@openmaic/importer:
     dependencies:
       '@openmaic/dsl':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../dsl
       '@xmldom/xmldom':
         specifier: ^0.9.9
@@ -539,7 +539,7 @@ importers:
   packages/@openmaic/renderer:
     dependencies:
       '@openmaic/dsl':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../dsl
       clsx:
         specifier: ^2.1.1
@@ -627,7 +627,7 @@ importers:
   packages/@openmaic/storage:
     dependencies:
       '@openmaic/dsl':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../dsl
     devDependencies:
       '@electric-sql/pglite':

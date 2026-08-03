@@ -13,9 +13,39 @@ const schemas = {
   SerializedScene: generateSchema('SerializedScene'),
 } as const;
 
+type GeneratedSchema = {
+  definitions: Record<
+    string,
+    {
+      type?: string;
+      properties?: Record<string, Record<string, unknown>>;
+    }
+  >;
+};
+
 function validator(root: keyof typeof schemas) {
   return new Ajv({ allErrors: true, strict: false }).compile(schemas[root]);
 }
+
+describe('generated JSON Schema — asset references', () => {
+  it.each(Object.entries(schemas))('%s defines AssetRef as a string', (_root, schema) => {
+    expect((schema as GeneratedSchema).definitions.AssetRef).toMatchObject({ type: 'string' });
+  });
+
+  it.each(Object.entries(schemas))('%s emits only boolean deprecated keywords', (root, schema) => {
+    for (const [definitionName, definition] of Object.entries(
+      (schema as GeneratedSchema).definitions,
+    )) {
+      for (const [propertyName, property] of Object.entries(definition.properties ?? {})) {
+        if (!Object.prototype.hasOwnProperty.call(property, 'deprecated')) continue;
+        const path = `${root}.definitions.${definitionName}.properties.${propertyName}.deprecated`;
+        expect(typeof property.deprecated, `${path} = ${JSON.stringify(property.deprecated)}`).toBe(
+          'boolean',
+        );
+      }
+    }
+  });
+});
 
 describe('generated JSON Schema — Stage', () => {
   const v = validator('Stage');

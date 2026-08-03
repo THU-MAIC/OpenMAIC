@@ -40,6 +40,11 @@ export function blobForObjectUrl(url: string): Blob | undefined {
   return objectUrls.get(url);
 }
 
+/** Test-only: number of currently live object URLs in the polyfill registry. */
+export function objectUrlCount(): number {
+  return objectUrls.size;
+}
+
 // Reset the object-URL registry between tests so nothing bleeds across cases
 // (the override is a global; without this the map grows for the whole run).
 beforeEach(() => {
