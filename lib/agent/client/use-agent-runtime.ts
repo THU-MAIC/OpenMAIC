@@ -22,7 +22,7 @@ import {
   type ThreadMessageLike,
 } from '@assistant-ui/react';
 import type { AgentEvent } from '@earendil-works/pi-agent-core';
-import { useStageStore } from '@/lib/store/stage';
+import { flushStageSave, useStageStore } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import type { SceneContextMap } from '@/app/api/agent/edit/route';
@@ -356,132 +356,136 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
     return { role: 'assistant', id, content: parts as ThreadMessageLike['content'], status };
   }, []);
 
-  const handleEvent = useCallback((event: AgentEvent, refresh: () => void, assistantId: string) => {
-    switch (event.type) {
-      case 'message_start': {
-        const msg = (event as { message?: { role?: string } }).message;
-        if (msg?.role === 'assistant') {
-          turnsRef.current.push([]); // a new assistant turn begins
-          refresh();
-        }
-        break;
-      }
-      case 'message_update':
-      case 'message_end': {
-        const msg = (
-          event as {
-            message?: { role?: string; content?: PiAssistantContent[]; errorMessage?: string };
+  const handleEvent = useCallback(
+    async (event: AgentEvent, refresh: () => void, assistantId: string) => {
+      switch (event.type) {
+        case 'message_start': {
+          const msg = (event as { message?: { role?: string } }).message;
+          if (msg?.role === 'assistant') {
+            turnsRef.current.push([]); // a new assistant turn begins
+            refresh();
           }
-        ).message;
-        if (msg?.role !== 'assistant') break;
-        if (msg.errorMessage) errorRef.current = msg.errorMessage;
-        if (Array.isArray(msg.content)) {
-          if (turnsRef.current.length === 0) turnsRef.current.push([]);
-          // Replace the CURRENT turn's content wholesale (pi re-emits the full
-          // accumulated turn on each update) — order within the turn is kept.
-          turnsRef.current[turnsRef.current.length - 1] = toPiParts(msg.content);
+          break;
         }
-        // Per-block reasoning timing for the thinking panels' durations. Compute
-        // over the SAME merged view the UI renders so block ordinals align: each
-        // reasoning block ends (freezes) once a later part follows it; the last
-        // one stays open and ticks live until something follows or the run ends.
-        const merged = mergeAssistantParts({
-          turns: turnsRef.current,
-          toolResults: toolResultsRef.current,
-          error: errorRef.current,
-        });
-        const nowTs = Date.now();
-        let ord = 0;
-        for (let i = 0; i < merged.length; i++) {
-          if (merged[i].type === 'reasoning') {
-            useThinkingTimers
-              .getState()
-              .observe(`${assistantId}:${ord}`, { end: i < merged.length - 1, now: nowTs });
-            ord++;
+        case 'message_update':
+        case 'message_end': {
+          const msg = (
+            event as {
+              message?: { role?: string; content?: PiAssistantContent[]; errorMessage?: string };
+            }
+          ).message;
+          if (msg?.role !== 'assistant') break;
+          if (msg.errorMessage) errorRef.current = msg.errorMessage;
+          if (Array.isArray(msg.content)) {
+            if (turnsRef.current.length === 0) turnsRef.current.push([]);
+            // Replace the CURRENT turn's content wholesale (pi re-emits the full
+            // accumulated turn on each update) — order within the turn is kept.
+            turnsRef.current[turnsRef.current.length - 1] = toPiParts(msg.content);
           }
-        }
-        refresh();
-        break;
-      }
-      case 'tool_execution_end': {
-        const e = event as {
-          toolCallId: string;
-          toolName?: string;
-          result?: { details?: unknown };
-          isError?: boolean;
-        };
-        toolResultsRef.current.set(e.toolCallId, { result: e.result, isError: !!e.isError });
-
-        // Per-element edits: apply validated EditIntents through the slide
-        // session (one undo). Separate from wholesale regenerate / html patch.
-        // Apply-time revalidation may still refuse (stale ids / lock / no session);
-        // rewrite the stored tool result so the card shows Not applied, not Applied.
-        if (e.toolName === 'edit_elements' && !e.isError) {
-          const editDetails = (e.result?.details ?? {}) as EditElementsApplyDetails;
-          if (hasEditElementsIntents(editDetails)) {
-            const applied = applyEditElementsIntents(
-              editDetails.sceneId,
-              editDetails.intents,
-              editDetails.targetElementTypes,
-              editDetails.targetElementFingerprints,
-              editDetails.inventoryFingerprint,
-            );
-            if (!applied.ok) {
-              toolResultsRef.current.set(e.toolCallId, {
-                result: {
-                  content: [
-                    {
-                      type: 'text',
-                      text: `Could not apply the edit: ${applied.reason}. Nothing was changed.`,
-                    },
-                  ],
-                  details: {
-                    sceneId: editDetails.sceneId,
-                    intents: null,
-                    updateCount: 0,
-                    refuseReason: applied.reason,
-                  },
-                },
-                isError: true,
-              });
-              // Visible correction after wrap-up may still claim success (server
-              // only saw "proposed"); also feeds next-turn history via toHistory.
-              editApplyOutcomeRef.current.failed = true;
-            } else {
-              editApplyOutcomeRef.current.applied = true;
+          // Per-block reasoning timing for the thinking panels' durations. Compute
+          // over the SAME merged view the UI renders so block ordinals align: each
+          // reasoning block ends (freezes) once a later part follows it; the last
+          // one stays open and ticks live until something follows or the run ends.
+          const merged = mergeAssistantParts({
+            turns: turnsRef.current,
+            toolResults: toolResultsRef.current,
+            error: errorRef.current,
+          });
+          const nowTs = Date.now();
+          let ord = 0;
+          for (let i = 0; i < merged.length; i++) {
+            if (merged[i].type === 'reasoning') {
+              useThinkingTimers
+                .getState()
+                .observe(`${assistantId}:${ord}`, { end: i < merged.length - 1, now: nowTs });
+              ord++;
             }
           }
           refresh();
           break;
         }
+        case 'tool_execution_end': {
+          const e = event as {
+            toolCallId: string;
+            toolName?: string;
+            result?: { details?: unknown };
+            isError?: boolean;
+          };
+          toolResultsRef.current.set(e.toolCallId, { result: e.result, isError: !!e.isError });
 
-        const details = (e.result?.details ?? {}) as RegenerateDetails;
-        // Decide what to apply: regenerate_scene applies content (+actions) and
-        // snapshots the pre-state for restore; regenerate_scene_actions applies
-        // actions only. Empty actions are never applied (would wipe narration).
-        const scene = details.sceneId
-          ? useStageStore.getState().getSceneById(details.sceneId)
-          : null;
-        const { snapshot, patch } = planRegenerateApply(details, scene, e.toolName);
-        // Capture the applied patch as the snapshot's `redo` so an undo can be
-        // resumed (the Restore button toggles undo ↔ resume).
-        if (snapshot)
-          useRegenSnapshots
-            .getState()
-            .setSnapshot(e.toolCallId, patch ? { ...snapshot, redo: patch } : snapshot);
-        if (patch && details.sceneId) {
-          // Apply to the stage store and keep the OPEN slide edit session in
-          // lockstep — else the canvas keeps rendering its stale history.present
-          // and the next edit clobbers the regen.
-          applyScenePatchInSync(details.sceneId, patch);
+          // Per-element edits: apply validated EditIntents through the slide
+          // session (one undo). Separate from wholesale regenerate / html patch.
+          // Apply-time revalidation may still refuse (stale ids / lock / no session);
+          // rewrite the stored tool result so the card shows Not applied, not Applied.
+          if (e.toolName === 'edit_elements' && !e.isError) {
+            const editDetails = (e.result?.details ?? {}) as EditElementsApplyDetails;
+            if (hasEditElementsIntents(editDetails)) {
+              const applied = applyEditElementsIntents(
+                editDetails.sceneId,
+                editDetails.intents,
+                editDetails.targetElementTypes,
+                editDetails.targetElementFingerprints,
+                editDetails.inventoryFingerprint,
+              );
+              if (!applied.ok) {
+                toolResultsRef.current.set(e.toolCallId, {
+                  result: {
+                    content: [
+                      {
+                        type: 'text',
+                        text: `Could not apply the edit: ${applied.reason}. Nothing was changed.`,
+                      },
+                    ],
+                    details: {
+                      sceneId: editDetails.sceneId,
+                      intents: null,
+                      updateCount: 0,
+                      refuseReason: applied.reason,
+                    },
+                  },
+                  isError: true,
+                });
+                // Visible correction after wrap-up may still claim success (server
+                // only saw "proposed"); also feeds next-turn history via toHistory.
+                editApplyOutcomeRef.current.failed = true;
+              } else {
+                await flushStageSave();
+                editApplyOutcomeRef.current.applied = true;
+              }
+            }
+            refresh();
+            break;
+          }
+
+          const details = (e.result?.details ?? {}) as RegenerateDetails;
+          // Decide what to apply: regenerate_scene applies content (+actions) and
+          // snapshots the pre-state for restore; regenerate_scene_actions applies
+          // actions only. Empty actions are never applied (would wipe narration).
+          const scene = details.sceneId
+            ? useStageStore.getState().getSceneById(details.sceneId)
+            : null;
+          const { snapshot, patch } = planRegenerateApply(details, scene, e.toolName);
+          // Capture the applied patch as the snapshot's `redo` so an undo can be
+          // resumed (the Restore button toggles undo ↔ resume).
+          if (snapshot)
+            useRegenSnapshots
+              .getState()
+              .setSnapshot(e.toolCallId, patch ? { ...snapshot, redo: patch } : snapshot);
+          if (patch && details.sceneId) {
+            // Apply to the stage store and keep the OPEN slide edit session in
+            // lockstep — else the canvas keeps rendering its stale history.present
+            // and the next edit clobbers the regen.
+            await applyScenePatchInSync(details.sceneId, patch);
+          }
+          refresh();
+          break;
         }
-        refresh();
-        break;
+        default:
+          break;
       }
-      default:
-        break;
-    }
-  }, []);
+    },
+    [],
+  );
 
   const onNew = useCallback(
     async (message: AppendMessage) => {
@@ -604,7 +608,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
             }
             // Skip late events from a superseded run (don't apply stale tool
             // results to the stage or rewrite the new run's message).
-            if (isCurrent()) handleEvent(event, refresh, assistantId);
+            if (isCurrent()) await handleEvent(event, refresh, assistantId);
           }
         }
       } catch (err) {

@@ -76,6 +76,13 @@
     "videoRenderMp4": "MP4 렌더링",
     "videoDownloadZip": "프로젝트 ZIP 다운로드",
     "videoServiceHint": "MP4 렌더링에는 렌더 서비스가 필요합니다. ZIP을 다운로드하여 로컬에서 렌더링하세요.",
+    "videoBurnSubtitles": "자막 굽기",
+    "videoBurnSubtitlesDesc": "끄면 자막 없는 깨끗한 영상을 내보내고, 자막 파일은 편집 프로그램에서 추가합니다.",
+    "videoDownloadSubtitles": "자막 다운로드 (.srt)",
+    "subtitlesCompiling": "자막 생성 중…",
+    "subtitlesSuccess": "자막을 다운로드했습니다",
+    "subtitlesEmpty": "자막으로 만들 내레이션이 없습니다",
+    "subtitlesFailed": "자막 다운로드 실패",
     "noSlides": "내보낼 슬라이드가 없습니다",
     "noSlidesSkipped": "이 코스에 슬라이드가 없어 PPTX를 건너뛰었습니다",
     "nothingToExport": "내보낼 항목이 없습니다"
@@ -326,7 +333,8 @@
         "lead": "이 인터랙티브 페이지의 버그(예: 눌러도 반응 없는 버튼)를 설명해 주세요. 해당 부분만 수정하고 나머지는 그대로 둡니다.",
         "placeholder": "이 인터랙티브 페이지의 버그를 설명하세요…"
       },
-      "thinking": "생각 중…"
+      "thinking": "생각 중…",
+      "title": "AI로 편집"
     },
     "timeline": {
       "title": "내레이션 스크립트",
@@ -468,6 +476,21 @@
       "notApplied": "미적용",
       "applyFailed": "편집기에서 요소 편집을 적용하지 못했습니다. 변경된 내용이 없습니다.",
       "applyPartiallyFailed": "하나 이상의 요소 편집을 적용하지 못했습니다. 다른 편집은 적용되었을 수 있습니다."
+    },
+    "roster": {
+      "title": "수업 구성원",
+      "count": "{{count}}명",
+      "editHint": "구성원을 클릭해 편집",
+      "personaLabel": "페르소나",
+      "personaPlaceholder": "역할의 성격, 수업 스타일, 과제를 설명하세요…",
+      "noPersona": "페르소나 없음",
+      "unnamed": "제목 없음",
+      "teacherBadge": "주강사",
+      "moveUp": "위로 이동",
+      "moveDown": "아래로 이동",
+      "removeFromClass": "수업에서 제거",
+      "aiClassmates": "AI 반 친구 · {{count}}",
+      "addRole": "역할 추가"
     }
   },
   "classroomComplete": {
@@ -1607,6 +1630,8 @@
     "clearCacheButton": "모든 데이터 영구 삭제",
     "clearCacheSuccess": "캐시가 지워졌습니다. 잠시 후 페이지가 새로 고침됩니다",
     "clearCacheFailed": "캐시 삭제에 실패했습니다. 다시 시도해 주세요",
+    "persistUnavailable": "변경 사항이 저장되지 않고 있습니다. 앱이 저장된 데이터에 접근할 수 없습니다. 새로 고쳐도 해결되지 않으면 설정에서 로컬 캐시를 삭제하세요.",
+    "persistChangesLost": "저장소가 복구되었지만 사용할 수 없는 동안 변경한 내용은 저장되지 못하고 마지막으로 저장된 버전으로 대체되었습니다.",
     "webSearchSettings": "웹 검색",
     "webSearchApiKey": "검색 API 키",
     "webSearchApiKeyPlaceholder": "검색 API 키를 입력하세요",

@@ -6,47 +6,52 @@
  * Instructor starts with a more accurate proficiency tier than the
  * Planner-time static signals alone could produce.
  *
- * Quiz results live in the browser's `localStorage`, written by
- * `lib/quiz/persistence.ts` when the learner submits a quiz. That
- * persistence layer is purely client-side, so the snapshot is built
+ * Quiz results live in the learner-partitioned RuntimeStore. The snapshot is built
  * on the client (in `hero.tsx` right before the GREETING request
  * fires) and **piggybacked** on the existing `/api/pbl/v2/open-task`
  * POST body as `priorQuizResults?: PriorQuizResult[]`. This avoids
  * introducing a new endpoint just for recalibration.
  *
  * Two pure helpers live here:
- *   - `buildQuizSnapshot(scenes)` — client-side, reads localStorage
+ *   - `buildQuizSnapshot(scenes)` — client-side, reads RuntimeStore
  *      for each prior quiz scene and returns the aggregated
- *      `PriorQuizResult[]`. Safe to call in SSR (returns []).
+ *      `PriorQuizResult[]`.
  *   - `applyQuizSignalsToProject(project, results)` — server-side,
  *      folds the snapshot into `project.proficiencyAssessment`. Used
  *      by the `/api/pbl/v2/open-task` route handler.
  */
 
-import { readSubmittedState } from '@/lib/quiz/persistence';
+import { loadQuizAttemptState, type QuizAttemptState } from '@/lib/quiz/runtime';
 import type { Scene } from '@/lib/types/stage';
+import { createLogger } from '@/lib/logger';
 import { applyQuizSnapshot, ensureAssessment } from './proficiency';
 import { appendProficiencyUpdatedRuntimeEvent } from './runtime-events';
 import type { PBLProjectV2, PriorQuizResult } from '../types';
 
+const log = createLogger('PBLQuizSnapshot');
+
 /** Build a `PriorQuizResult[]` from the scenes preceding the PBL
- *  scene. Reads `localStorage` via the quiz persistence module.
+ *  scene. Reads the current learner's RuntimeStore partition.
  *
- *  - SSR-safe: returns `[]` when `localStorage` is unavailable
- *    (`readSubmittedState` is internally SSR-guarded).
  *  - Only scenes the learner has actually submitted contribute;
- *    drafts (`kind === 'answering'`) and never-opened quizzes do
+ *    drafts/submissions without review and never-opened quizzes do
  *    not move the signal.
  *  - Short-answer questions without `hasAnswer` are counted as
  *    `unscoredCount` rather than wrong — the engine excludes them
  *    from the accuracy denominator. */
-export function buildQuizSnapshot(scenesBeforePbl: Scene[]): PriorQuizResult[] {
+export async function buildQuizSnapshot(scenesBeforePbl: Scene[]): Promise<PriorQuizResult[]> {
   const out: PriorQuizResult[] = [];
   for (const scene of scenesBeforePbl) {
-    if (scene.type !== 'quiz' || scene.content.type !== 'quiz') continue;
-    const state = readSubmittedState(scene.id);
-    if (!state || state.kind !== 'reviewing') continue;
-    // `reviewing` means the learner has submitted AND seen the
+    if (scene.type !== 'quiz' || scene.content.type !== 'quiz' || !scene.stageId) continue;
+    let state: QuizAttemptState | undefined;
+    try {
+      ({ state } = await loadQuizAttemptState({ stageId: scene.stageId, sceneId: scene.id }));
+    } catch (error) {
+      log.warn(`Failed to load quiz snapshot for scene ${scene.id}:`, error);
+      continue;
+    }
+    if (state?.phase !== 'reviewed') continue;
+    // `reviewed` means the learner has submitted AND seen the
     // graded results — that's the only case where we have a
     // trustworthy correctness signal.
     const questions = scene.content.questions ?? [];
@@ -55,7 +60,7 @@ export function buildQuizSnapshot(scenesBeforePbl: Scene[]): PriorQuizResult[] {
     let correct = 0;
     let incorrect = 0;
     let unscored = 0;
-    for (const r of state.results) {
+    for (const r of state.results ?? []) {
       // `correct === null` for short-answer / non-auto-gradable
       // questions: count as unscored, do not penalise.
       if (r.correct === null) {

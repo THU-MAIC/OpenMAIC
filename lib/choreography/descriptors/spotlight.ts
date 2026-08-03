@@ -21,7 +21,7 @@ import type { AnimationDescriptor } from './types';
  * the component's own `?? 0.7` fallback is unreachable at playback. The exporter
  * must use 0.5 to match.
  *
- * Shared easing `[0.16, 1, 0.3, 1]` (the spotlight expo-out).
+ * Cutout/border easing `[0.16, 1, 0.3, 1]` (the spotlight expo-out).
  */
 export const spotlightV1: AnimationDescriptor = {
   id: 'spotlight.v1',
@@ -147,13 +147,28 @@ export const spotlightV1: AnimationDescriptor = {
       staticProps: { x: 0, y: 0, width: 100, height: 100, fill: 'rgba(0,0,0,{dimness})' },
       // The whole effect is wrapped in a motion.div that fades opacity 0→1 on
       // enter and →0 on exit. The source sets no explicit transition, so Motion
-      // applies its default tween (300ms) — pinned here explicitly so a
-      // non-Motion consumer (the exporter) reproduces the fade instead of
-      // popping the spotlight on/off. This layer carries the canonical wrapper
-      // fade; the border layer inherits its opacity so both fade out together.
+      // applies its default 300ms tween with [0.25, 0.1, 0.35, 1] easing. Both
+      // values are pinned here so consumers reproduce that implicit source
+      // transition instead of selecting a different engine default. This layer
+      // carries the canonical wrapper fade; the border layer inherits its
+      // opacity so both fade out together.
       tracks: [
-        { property: 'opacity', from: 0, to: 1, durationMs: 300, phase: 'enter' },
-        { property: 'opacity', from: 1, to: 0, durationMs: 300, phase: 'exit' },
+        {
+          property: 'opacity',
+          from: 0,
+          to: 1,
+          durationMs: 300,
+          easing: { type: 'cubicBezier', points: [0.25, 0.1, 0.35, 1] },
+          phase: 'enter',
+        },
+        {
+          property: 'opacity',
+          from: 1,
+          to: 0,
+          durationMs: 300,
+          easing: { type: 'cubicBezier', points: [0.25, 0.1, 0.35, 1] },
+          phase: 'exit',
+        },
       ],
     },
   ],

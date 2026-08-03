@@ -76,6 +76,13 @@
     "videoRenderMp4": "MP4 をレンダリング",
     "videoDownloadZip": "プロジェクト ZIP をダウンロード",
     "videoServiceHint": "MP4 レンダリングにはレンダーサービスが必要です。ZIP をダウンロードしてローカルでレンダリングできます。",
+    "videoBurnSubtitles": "字幕を焼き込む",
+    "videoBurnSubtitlesDesc": "オフ：字幕なしの動画を書き出し、字幕ファイルは編集ソフトで追加します。",
+    "videoDownloadSubtitles": "字幕をダウンロード (.srt)",
+    "subtitlesCompiling": "字幕を生成中…",
+    "subtitlesSuccess": "字幕をダウンロードしました",
+    "subtitlesEmpty": "字幕にできるナレーションがありません",
+    "subtitlesFailed": "字幕のダウンロードに失敗しました",
     "noSlides": "エクスポート可能なスライドがありません",
     "noSlidesSkipped": "このコースにスライドがないため、PPTX をスキップしました",
     "nothingToExport": "エクスポートできるものがありません"
@@ -375,7 +382,8 @@
         "lead": "このインタラクティブページの不具合（例：押しても反応しないボタン）を教えてください。その箇所だけを修正し、ほかはそのまま残します。",
         "placeholder": "このインタラクティブページの不具合を入力…"
       },
-      "thinking": "考え中…"
+      "thinking": "考え中…",
+      "title": "AIで編集"
     },
     "timeline": {
       "title": "ナレーション台本",
@@ -468,6 +476,21 @@
       "notApplied": "未適用",
       "applyFailed": "エディターで要素の編集を適用できませんでした。変更はありません。",
       "applyPartiallyFailed": "一部の要素編集を適用できませんでした。ほかの編集は適用されている可能性があります。"
+    },
+    "roster": {
+      "title": "クラス編成",
+      "count": "{{count}}人",
+      "editHint": "メンバーをクリックして編集",
+      "personaLabel": "ペルソナ",
+      "personaPlaceholder": "役割の性格、指導スタイル、タスクを説明…",
+      "noPersona": "ペルソナ未設定",
+      "unnamed": "無題",
+      "teacherBadge": "主担当",
+      "moveUp": "上へ移動",
+      "moveDown": "下へ移動",
+      "removeFromClass": "クラスから削除",
+      "aiClassmates": "AIクラスメイト · {{count}}",
+      "addRole": "役割を追加"
     }
   },
   "classroomComplete": {
@@ -1607,6 +1630,8 @@
     "clearCacheButton": "すべてのデータを完全に削除",
     "clearCacheSuccess": "キャッシュをクリアしました。まもなくページが更新されます",
     "clearCacheFailed": "キャッシュのクリアに失敗しました。もう一度お試しください",
+    "persistUnavailable": "変更が保存されていません。アプリが保存済みデータにアクセスできません。再読み込みしても解決しない場合は、設定からローカルキャッシュを削除してください。",
+    "persistChangesLost": "ストレージは復旧しましたが、利用できなかった間の変更は保存できず、最後に保存された内容に戻りました。",
     "webSearchSettings": "ウェブ検索",
     "webSearchApiKey": "検索APIキー",
     "webSearchApiKeyPlaceholder": "検索APIキーを入力",

@@ -5,6 +5,7 @@ import {
   Archive,
   Download,
   FileDown,
+  Film,
   Loader2,
   Monitor,
   Moon,
@@ -22,7 +23,7 @@ import { useExportClassroom } from '@/lib/export/use-export-classroom';
 import { isVideoExportEnabled } from '@/lib/config/feature-flags';
 import { useVideoRenderStore } from '@/lib/store/video-render';
 import { CircularProgress } from '@/components/ui/circular-progress';
-import { VideoExportMenu } from './video-export-menu';
+import { VideoExportDialog } from './video-export-dialog';
 import { LanguageSwitcher } from '../language-switcher';
 import { SettingsDialog } from '../settings';
 import {
@@ -69,6 +70,7 @@ export function HeaderControls({
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [videoDialogOpen, setVideoDialogOpen] = useState(false);
 
   // Export plumbing — uses the stage / media task stores to check
   // readiness, then hands off to the export hooks. Available in both
@@ -324,12 +326,31 @@ export function HeaderControls({
                 </div>
               </div>
             </button>
-            {videoExportEnabled && <VideoExportMenu onClose={() => setExportMenuOpen(false)} />}
+            {videoExportEnabled && (
+              <button
+                onClick={() => {
+                  setExportMenuOpen(false);
+                  setVideoDialogOpen(true);
+                }}
+                className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5 border-t border-gray-200 dark:border-gray-700"
+              >
+                <Film className="w-4 h-4 text-gray-400 shrink-0" />
+                <div>
+                  <div>{t('export.video')}</div>
+                  <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                    {t('export.videoDesc')}
+                  </div>
+                </div>
+              </button>
+            )}
           </div>
         )}
       </div>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {videoExportEnabled && (
+        <VideoExportDialog open={videoDialogOpen} onOpenChange={setVideoDialogOpen} />
+      )}
     </div>
   );
 }

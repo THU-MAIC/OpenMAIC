@@ -23,11 +23,10 @@
  * intentionally NOT here — they land in increment 4.
  */
 
-import { streamText, generateText } from 'ai';
 import type { LanguageModel } from 'ai';
 
 import { createLogger } from '@/lib/logger';
-import { resolveThinkingProviderOptions } from '@/lib/ai/llm';
+import { callLLM, streamLLM } from '@/lib/ai/llm';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { loadPBLV2Prompt } from '../prompts/loader';
 
@@ -263,7 +262,17 @@ async function runDirectorNarratorPass(args: {
    *  warns against re-describing what the prior act already covered. */
   firstEntry?: boolean;
 }): Promise<string[]> {
-  const { project, milestone, microtask, phase, thread, languageModel, signal, firstEntry } = args;
+  const {
+    project,
+    milestone,
+    microtask,
+    phase,
+    thread,
+    languageModel,
+    thinkingConfig,
+    signal,
+    firstEntry,
+  } = args;
   const system = buildNarratorSystemPrompt(project, milestone, microtask);
   const history = buildSimulatorHistory(thread, 'director');
   const greetingNudge = firstEntry
@@ -278,12 +287,21 @@ async function runDirectorNarratorPass(args: {
   const messages = [...history, { role: 'user' as const, content: nudge }];
 
   try {
-    const result = await generateText({
-      model: languageModel,
-      system,
-      messages,
-      ...(signal ? { abortSignal: signal } : {}),
-    });
+    const result = await callLLM(
+      {
+        model: languageModel,
+        system,
+        messages,
+        ...(signal ? { abortSignal: signal } : {}),
+      },
+      'pbl-v2-simulator-narrator',
+      undefined,
+      // Same contract as every other site: the request / stage route decides.
+      // This pass used to drop the config on the floor — its callers passed one
+      // and the helper never forwarded it, so the provider silently fell back to
+      // the model default.
+      thinkingConfig,
+    );
     const text = (result.text ?? '').trim();
     if (!text) return [];
     // Sentinel: model says nothing happened → no narration this turn.
@@ -500,15 +518,22 @@ export async function* runSimulatorTurn(
   // so the caller can decide retry vs surface.
   async function* streamCharacterLine(): AsyncGenerator<PBLSSEEvent, string, void> {
     let acc = '';
-    const stream = streamText({
-      model: languageModel,
-      system,
-      messages,
-      ...(thinkingConfig
-        ? { providerOptions: resolveThinkingProviderOptions(languageModel, thinkingConfig) }
-        : {}),
-      ...(signal ? { abortSignal: signal } : {}),
-    });
+    // The incoming per-request / stage-route config is what applies, handed to
+    // the wrapper: it resolves provider options for native adapters AND seeds the
+    // thinking context that the OpenAI-compatible fetch wrapper reads. The
+    // hand-rolled `resolveThinkingProviderOptions` call this replaced only ever
+    // covered the former, so a stage-route config was silently dropped on
+    // OpenAI-compatible providers.
+    const stream = streamLLM(
+      {
+        model: languageModel,
+        system,
+        messages,
+        ...(signal ? { abortSignal: signal } : {}),
+      },
+      'pbl-v2-simulator',
+      thinkingConfig,
+    );
     for await (const part of stream.fullStream) {
       if (part.type === 'text-delta') {
         const delta =

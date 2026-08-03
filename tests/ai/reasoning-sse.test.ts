@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { createReasoningContentRewriter, wrapResponseWithReasoning } from '@/lib/ai/reasoning-sse';
+import {
+  createKimiReasoningPreservationMiddleware,
+  createReasoningContentRewriter,
+  restoreKimiReasoningInRequestBody,
+  wrapJsonResponseWithReasoning,
+  wrapResponseWithReasoning,
+} from '@/lib/ai/reasoning-sse';
 
 // Build a streaming Response from SSE text, optionally split into arbitrary
 // byte-fragments to exercise the line buffer crossing chunk boundaries.
@@ -144,5 +150,75 @@ describe('wrapResponseWithReasoning', () => {
   it('returns the response unchanged when it has no body', () => {
     const res = new Response(null, { status: 204 });
     expect(wrapResponseWithReasoning(res)).toBe(res);
+  });
+});
+
+describe('Kimi reasoning preservation', () => {
+  it('round-trips reasoning prompt parts through OpenAI-compatible serialization markers', async () => {
+    const middleware = createKimiReasoningPreservationMiddleware();
+    const params = await middleware.transformParams!({
+      type: 'stream',
+      model: {} as never,
+      params: {
+        prompt: [
+          {
+            role: 'assistant',
+            content: [
+              { type: 'reasoning', text: 'tool rationale' },
+              {
+                type: 'tool-call',
+                toolCallId: 'call-1',
+                toolName: 'lookup',
+                input: {},
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const marked = (params.prompt[0] as { content: Array<{ text?: string }> }).content[0].text;
+    const body = {
+      messages: [
+        {
+          role: 'assistant',
+          content: marked,
+          tool_calls: [{ id: 'call-1' }],
+        },
+      ],
+    };
+
+    restoreKimiReasoningInRequestBody(body);
+
+    expect(body.messages[0]).toMatchObject({
+      content: null,
+      reasoning_content: 'tool rationale',
+    });
+  });
+
+  it('recovers reasoning_content from non-streaming responses', async () => {
+    const response = await wrapJsonResponseWithReasoning(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: null,
+                reasoning_content: 'tool rationale',
+                tool_calls: [{ id: 'call-1' }],
+              },
+            },
+          ],
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    const body = await response.json();
+    expect(body.choices[0].message).toMatchObject({
+      content: '<think>tool rationale</think>',
+      tool_calls: [{ id: 'call-1' }],
+    });
+    expect(body.choices[0].message).not.toHaveProperty('reasoning_content');
   });
 });

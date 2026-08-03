@@ -1,4 +1,4 @@
-import { DEFAULT_KV_SCOPE, type KVScope, type KVStore } from './types.js';
+import { assertKVScope, DEFAULT_KV_SCOPE, type KVScope, type LocalKVStore } from './types.js';
 
 export interface BrowserKVStoreOptions {
   /**
@@ -21,7 +21,11 @@ export interface BrowserKVStoreOptions {
  * backend like this one — hence the scope is part of the primitive, not the
  * backend choice.
  */
-export class BrowserKVStore implements KVStore {
+export class BrowserKVStore implements LocalKVStore {
+  /** Brand: every value stays on the machine, so this may back another store's `device` scope. */
+  readonly isLocalKVStore = true as const;
+  /** And therefore its own `device` scope never leaves the device. */
+  readonly servesDeviceScopeLocally = true as const;
   private readonly storage: Storage;
   private readonly namespace: string;
 
@@ -31,10 +35,17 @@ export class BrowserKVStore implements KVStore {
   }
 
   private prefix(scope: KVScope): string {
-    return `${this.namespace}:${scope}:`;
+    // Fail closed rather than folding an unknown scope into a new key prefix,
+    // where it would silently create a third, invisible namespace.
+    return `${this.namespace}:${assertKVScope(scope)}:`;
   }
 
   private storageKey(key: string, scope: KVScope): string {
+    // No key validation: the primitive's key domain is a truly opaque, unbounded
+    // string. `Storage` accepts any string key, and a rule here would be a
+    // transport concern reaching back into the primitive — making a key the
+    // browser can perfectly well store unreadable. Only the scope (a fixed
+    // two-value axis) is narrowed.
     return this.prefix(scope) + key;
   }
 
@@ -45,15 +56,30 @@ export class BrowserKVStore implements KVStore {
   }
 
   async set<T>(key: string, value: T, scope: KVScope = DEFAULT_KV_SCOPE): Promise<void> {
-    const json = JSON.stringify(value);
-    // `JSON.stringify` yields `undefined` for values JSON can't represent
-    // (`undefined`, a function, a symbol). Storing that coerces to the literal
-    // string "undefined", which then throws on read — so treat it as a removal
-    // rather than writing an unreadable entry.
-    if (json === undefined) {
+    // Scope and key first, before anything can run caller code. `JSON.stringify`
+    // invokes `toJSON` and getters, so validating after it would let a value
+    // observe (and react to) a write that is about to be rejected anyway.
+    const storageKey = this.storageKey(key, scope);
+    // A value with no JSON representation at all is a removal — storing it would
+    // coerce to the literal string "undefined" and throw on the next read. Decided
+    // by inspecting the value, exactly as the HTTP backend decides it: a
+    // `JSON.stringify` probe would also catch `{ toJSON: () => undefined }`, which
+    // the HTTP backend rejects, and the two backends must not disagree about
+    // whether a write was a delete.
+    if (value === undefined || typeof value === 'function' || typeof value === 'symbol') {
       return this.remove(key, scope);
     }
-    this.storage.setItem(this.storageKey(key, scope), json);
+    const json = JSON.stringify(value);
+    if (json === undefined) {
+      // Reachable only via a `toJSON` that returns undefined. Refusing keeps this
+      // backend's answer the same as the HTTP one, where the JSON gate rejects
+      // any value defining `toJSON`.
+      throw new Error(
+        `@openmaic/storage: kv value for key ${JSON.stringify(key)} serialized to undefined ` +
+          `(a toJSON returning undefined cannot be stored)`,
+      );
+    }
+    this.storage.setItem(storageKey, json);
   }
 
   async remove(key: string, scope: KVScope = DEFAULT_KV_SCOPE): Promise<void> {

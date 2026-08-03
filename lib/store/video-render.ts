@@ -54,6 +54,8 @@ export interface RenderOptions {
   resolution?: VideoResolution;
   fps?: VideoFps;
   quality?: VideoQuality;
+  /** Burn subtitles into the MP4. Default false (sidecar SRT/VTT only). */
+  burnInSubtitles?: boolean;
 }
 
 /** Fully-resolved render options (the store always holds concrete values). */
@@ -63,6 +65,7 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   resolution: '1080p',
   fps: 30,
   quality: 'standard',
+  burnInSubtitles: false,
 };
 
 interface JobStatusResponse {
@@ -118,7 +121,7 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
     // Guard against a duplicate submit — the whole reason state lives here.
     if (inFlight(get().status)) return;
 
-    const { resolution, fps, quality } = get().options;
+    const { resolution, fps, quality, burnInSubtitles } = get().options;
 
     set({ status: 'compiling', percent: 0, etaMs: null, filename: null, error: null });
     const toastId = toast.loading(t('export.videoCompiling'));
@@ -128,7 +131,7 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
     let missingCount = 0;
     let errorCount = 0;
     try {
-      const built = await buildExportZip(resolution);
+      const built = await buildExportZip({ resolution, burnInSubtitles });
       ({ zipBlob, stageName, missingCount, errorCount } = built);
     } catch (error) {
       if (error instanceof NoScenesError) {

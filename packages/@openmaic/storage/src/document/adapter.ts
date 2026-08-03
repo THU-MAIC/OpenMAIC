@@ -12,7 +12,7 @@ import type { Stage } from '@openmaic/dsl';
 import type { MaicDocument, SceneLike } from './types.js';
 
 /** The stage (root) row: stage metadata plus the document's version stamp. */
-export type StageRow = Stage & { [DSL_VERSION_KEY]: string };
+export type StageRow<TStage extends Stage = Stage> = TStage & { [DSL_VERSION_KEY]: string };
 
 /** The outline row: one opaque snapshot per stage, stored only when present. */
 export interface OutlineRow {
@@ -21,8 +21,8 @@ export interface OutlineRow {
 }
 
 /** The normalized rows a document splits into. */
-export interface DocumentRows<TScene extends SceneLike> {
-  stageRow: StageRow;
+export interface DocumentRows<TScene extends SceneLike, TStage extends Stage = Stage> {
+  stageRow: StageRow<TStage>;
   sceneRows: TScene[];
   /** Present only when the document carries an outline. */
   outlineRow?: OutlineRow;
@@ -34,11 +34,11 @@ export interface DocumentRows<TScene extends SceneLike> {
  * emitted only when the document actually carries an outline — a document with
  * no outline produces no outline row (and the backend removes any stale one).
  */
-export function splitDocument<TScene extends SceneLike>(
-  doc: MaicDocument<TScene>,
-): DocumentRows<TScene> {
-  const stageRow: StageRow = { ...doc.stage, [DSL_VERSION_KEY]: DSL_VERSION };
-  const rows: DocumentRows<TScene> = { stageRow, sceneRows: doc.scenes };
+export function splitDocument<TScene extends SceneLike, TStage extends Stage = Stage>(
+  doc: MaicDocument<TScene, TStage>,
+): DocumentRows<TScene, TStage> {
+  const stageRow: StageRow<TStage> = { ...doc.stage, [DSL_VERSION_KEY]: DSL_VERSION };
+  const rows: DocumentRows<TScene, TStage> = { stageRow, sceneRows: doc.scenes };
   if (doc.outline !== undefined) {
     rows.outlineRow = { stageId: doc.stage.id, outline: doc.outline };
   }
@@ -52,14 +52,17 @@ export function splitDocument<TScene extends SceneLike>(
  * reads it), and the outline is attached only when a row exists. This is the
  * pre-migration document; the backend runs `migrate()` on the result.
  */
-export function reassembleDocument<TScene extends SceneLike>(
-  stageRow: StageRow,
+export function reassembleDocument<TScene extends SceneLike, TStage extends Stage = Stage>(
+  stageRow: StageRow<TStage>,
   sceneRows: TScene[],
   outlineRow?: OutlineRow,
-): MaicDocument<TScene> {
-  const { [DSL_VERSION_KEY]: dslVersion, ...stage } = stageRow;
+): MaicDocument<TScene, TStage> {
+  const { [DSL_VERSION_KEY]: dslVersion, ...stageFields } = stageRow;
+  // StageRow adds exactly the version stamp; removing it restores TStage. TS
+  // cannot prove that inverse for an arbitrary generic intersection.
+  const stage = stageFields as unknown as TStage;
   const scenes = [...sceneRows].sort((a, b) => a.order - b.order);
-  const doc: MaicDocument<TScene> = { stage, scenes, dslVersion };
+  const doc: MaicDocument<TScene, TStage> = { stage, scenes, dslVersion };
   if (outlineRow) doc.outline = outlineRow.outline;
   return doc;
 }

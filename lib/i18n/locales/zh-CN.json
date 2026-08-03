@@ -76,6 +76,13 @@
     "videoRenderMp4": "渲染 MP4",
     "videoDownloadZip": "下载项目 ZIP",
     "videoServiceHint": "渲染 MP4 需要渲染服务。可下载 ZIP 在本地渲染。",
+    "videoBurnSubtitles": "烧录字幕",
+    "videoBurnSubtitlesDesc": "关闭时导出无字幕的干净视频，可在剪辑软件中自行添加字幕文件。",
+    "videoDownloadSubtitles": "下载字幕 (.srt)",
+    "subtitlesCompiling": "正在生成字幕…",
+    "subtitlesSuccess": "字幕已下载",
+    "subtitlesEmpty": "没有可生成字幕的旁白",
+    "subtitlesFailed": "字幕下载失败",
     "noSlides": "无可导出的幻灯片",
     "noSlidesSkipped": "本课程无幻灯片，已跳过 PPTX",
     "nothingToExport": "没有可导出的内容"
@@ -375,7 +382,8 @@
       "sessionEmpty": "暂无历史对话",
       "thinking": "思考中…",
       "reasoning": "思考过程",
-      "thought": "已思考"
+      "thought": "已思考",
+      "title": "用 AI 编辑"
     },
     "timeline": {
       "title": "讲解脚本",
@@ -468,6 +476,21 @@
       "notApplied": "未应用",
       "applyFailed": "编辑器无法应用元素修改，未更改任何内容。",
       "applyPartiallyFailed": "编辑器未能应用一项或多项元素修改，其他修改可能已应用。"
+    },
+    "roster": {
+      "title": "课堂阵容",
+      "count": "{{count}} 位",
+      "editHint": "点击一位展开编辑",
+      "personaLabel": "人设描述",
+      "personaPlaceholder": "描述角色的性格、教学风格与任务…",
+      "noPersona": "暂无人设",
+      "unnamed": "未命名",
+      "teacherBadge": "主讲",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "removeFromClass": "移出课堂",
+      "aiClassmates": "AI 同学 · {{count}}",
+      "addRole": "添加角色"
     }
   },
   "classroomComplete": {
@@ -1607,6 +1630,8 @@
     "clearCacheButton": "永久删除所有数据",
     "clearCacheSuccess": "缓存已清空，页面即将刷新",
     "clearCacheFailed": "清空缓存失败，请重试",
+    "persistUnavailable": "更改未被保存：应用无法访问已存储的数据。如果刷新后仍未恢复，请在设置中清除本地缓存。",
+    "persistChangesLost": "存储已恢复，但在其不可用期间所做的更改未能保存，已被上次保存的版本覆盖。",
     "webSearchSettings": "网络搜索",
     "webSearchApiKey": "搜索 API Key",
     "webSearchApiKeyPlaceholder": "输入你的搜索 API Key",

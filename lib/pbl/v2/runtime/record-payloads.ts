@@ -12,6 +12,7 @@ import type {
 } from '@/lib/pbl/v2/types';
 import type { PBLLearnerState } from './learner-state';
 import { clone } from './clone';
+import { omitUndefinedObjectMembers } from '@/lib/persistence/plain-json';
 
 export const PBL_RUNTIME_PAYLOAD_VERSION = 1;
 
@@ -133,13 +134,14 @@ export function enrichPBLRuntimeEvent(
   const withAttachment = (
     attachment: PBLRuntimeAttachment | null,
     attachmentMissingReason?: string,
-  ): PBLRuntimeEventRecordPayload => ({
-    kind: 'pbl_runtime_event',
-    payloadVersion: PBL_RUNTIME_PAYLOAD_VERSION,
-    event: clone(event),
-    attachment: clone(attachment),
-    attachmentMissingReason,
-  });
+  ): PBLRuntimeEventRecordPayload =>
+    omitUndefinedObjectMembers({
+      kind: 'pbl_runtime_event',
+      payloadVersion: PBL_RUNTIME_PAYLOAD_VERSION,
+      event: clone(event),
+      attachment: clone(attachment),
+      attachmentMissingReason,
+    });
 
   switch (event.kind) {
     case 'message_created': {
@@ -201,11 +203,11 @@ export function enrichPBLRuntimeEvent(
 export function pblEngagementRecordPayload(
   event: PBLEngagementEvent,
 ): PBLEngagementEventRecordPayload {
-  return {
+  return omitUndefinedObjectMembers({
     kind: 'pbl_engagement_event',
     payloadVersion: PBL_RUNTIME_PAYLOAD_VERSION,
     event: clone(event),
-  };
+  });
 }
 
 export function pblSnapshotRecordPayload(args: {
@@ -214,12 +216,12 @@ export function pblSnapshotRecordPayload(args: {
   anchor: PBLSnapshotRecordPayload['anchor'];
   reason: PBLSnapshotRecordPayload['reason'];
 }): PBLSnapshotRecordPayload {
-  return {
+  return omitUndefinedObjectMembers({
     kind: 'pbl_snapshot',
     payloadVersion: PBL_RUNTIME_PAYLOAD_VERSION,
     epoch: args.epoch,
     learnerState: clone(args.learnerState),
     anchor: { ...args.anchor },
     reason: args.reason,
-  };
+  });
 }

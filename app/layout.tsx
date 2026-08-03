@@ -10,6 +10,7 @@ import { ThemeProvider } from '@/lib/hooks/use-theme';
 import { I18nProvider } from '@/lib/hooks/use-i18n';
 import { Toaster } from '@/components/ui/sonner';
 import { ServerProvidersInit } from '@/components/server-providers-init';
+import { StorageHealthNotice } from '@/components/storage-health-notice';
 import { AccessCodeGuard } from '@/components/access-code-guard';
 
 const inter = localFont({
@@ -40,6 +41,10 @@ export default function RootLayout({
             <ServerProvidersInit />
             <AccessCodeGuard>{children}</AccessCodeGuard>
             <Toaster position="top-center" />
+            {/* After the Toaster: this one raises a toast on mount when
+                persistence is already broken, and a toast raised before its
+                host exists has nowhere to go. */}
+            <StorageHealthNotice />
           </I18nProvider>
         </ThemeProvider>
       </body>

@@ -161,6 +161,19 @@ describe('scene-type action stripping', () => {
   });
 });
 
+describe('whiteboard close contract', () => {
+  test('keeps the shared action description consistent with role prompts', () => {
+    const out = buildStructuredPrompt(baseAgent, slideState);
+
+    expect(out).not.toContain('Always close after you finish drawing');
+    expect(out).toContain('Do not close merely because your own drawing is complete');
+    expect(out).toContain('a later classroom agent still needs the board');
+    expect(out).toContain('Close only when explicitly requested');
+    expect(out).toContain('Do NOT call `wb_close` at the end of a drawing turn');
+    expect(out).toContain('Only close when returning to the slide canvas');
+  });
+});
+
 describe('optional sections toggle on / off correctly', () => {
   test('peer context appears when other agents have spoken this round', () => {
     const out = buildStructuredPrompt(baseAgent, slideState, undefined, undefined, undefined, [

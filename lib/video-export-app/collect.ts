@@ -53,6 +53,66 @@ function blobWithType(blob: Blob, mimeType: string): Blob {
   return blob.type ? blob : new Blob([blob], { type: mimeType });
 }
 
+/** Per-decode timeout (ms) so a video whose metadata/frame never loads can't wedge export. */
+const FIRST_FRAME_TIMEOUT_MS = 8000;
+
+/**
+ * Decode a video blob's first frame to a PNG object URL, for use as a poster.
+ *
+ * Generated videos often carry no poster (a provider-optional field), so the
+ * base-frame snapshot — which can't draw a `<video>` — would show blank where
+ * the clip sits outside its play window. Seeking to frame ~0 and drawing it to
+ * a canvas gives the same "paused on the first frame" look most players show.
+ * Returns null (caller leaves poster unset) on decode failure, a CORS-tainted
+ * frame, or timeout — never throws, so one bad video can't fail the export.
+ */
+function decodeFirstFramePosterUrl(blob: Blob): Promise<string | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const video = document.createElement('video');
+    video.preload = 'auto';
+    video.muted = true;
+    video.playsInline = true;
+    let settled = false;
+    const done = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      URL.revokeObjectURL(url);
+      video.removeAttribute('src');
+      resolve(value);
+    };
+    const timer = setTimeout(() => done(null), FIRST_FRAME_TIMEOUT_MS);
+    const capture = () => {
+      try {
+        if (video.videoWidth === 0 || video.videoHeight === 0) return done(null);
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return done(null);
+        ctx.drawImage(video, 0, 0);
+        done(canvas.toDataURL('image/png'));
+      } catch {
+        // CORS-tainted frame or draw failure.
+        done(null);
+      }
+    };
+    video.onloadeddata = () => {
+      // Nudge off frame 0 so decoders that hold a black pre-roll frame yield a
+      // real image; `seeked` then fires with the frame painted.
+      if (video.readyState >= 2 && video.currentTime === 0 && video.duration > 0) {
+        video.currentTime = Math.min(0.1, video.duration / 2);
+      } else {
+        capture();
+      }
+    };
+    video.onseeked = capture;
+    video.onerror = () => done(null);
+    video.src = url;
+  });
+}
+
 /**
  * Resolve the bytes for one asset, preferring the local Dexie blob and falling
  * back to the record's CDN URL (`ossKey`) so a live-mode classroom whose local
@@ -127,6 +187,13 @@ async function resolveGeneratedMedia(
         const poster = URL.createObjectURL(blobWithType(posterBytes, 'image/jpeg'));
         objectUrls.push(poster);
         element.poster = poster;
+      } else {
+        // No stored poster (generated videos usually have none) — decode the
+        // video's first frame so the base snapshot shows it instead of blank
+        // where the clip sits outside its play window. The frame is a data URL
+        // (no object-URL lifecycle to revoke).
+        const firstFrame = await decodeFirstFramePosterUrl(blobWithType(bytes, record.mimeType));
+        if (firstFrame) element.poster = firstFrame;
       }
     } else if (element.type === 'image') {
       element.src = '';

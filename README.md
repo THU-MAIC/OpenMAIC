@@ -39,6 +39,7 @@
 
 ## 🗞️ News
 
+- **2026-07-21** — [v0.3.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.1) One-click MP4 video export; server-backed runtime storage with a Postgres reference server; direct slide manipulation in the editor (drag, resize, rotate, multi-select); smarter "Edit with AI" (validated JSON Patch edits, multi-session history); expanded Document Parsing (multi-format upload, audio/video extraction, AliDocMind, MinerU); new providers (Azure OpenAI, SearXNG, ComfyUI) and the GPT-5.6 model family; action-level playback navigation; SSRF hardening. See [changelog](CHANGELOG.md).
 - **2026-06-28** — [v0.3.0 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.0) Project-Based Learning (PBL) v2 with classroom UI; "Edit with AI" Pro-mode editor agent; the `@openmaic/*` SDK family (DSL/renderer/importer) published to npm; optional per-stage model routing; new models (GLM-5.2, Kimi K2.7 Code, Qwen3.7 Plus/Max); a vocational-learning task engine; Korean (ko-KR) locale; and relicensing from AGPL-3.0 to MIT. See [changelog](CHANGELOG.md).
 - **2026-06-02** — [v0.2.2 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.2) MAIC Editor (v0) Pro Mode for editing generated slides; editable outline before generation; offline-ready classroom export; new search providers (Brave/Baidu/Bocha/MiniMax) and Azure STT; new models (Claude Opus 4.8, MiniMax M3, Gemini 3.5 Flash); Traditional Chinese (zh-TW) and Brazilian Portuguese (pt-BR) locales. See [changelog](CHANGELOG.md).
 - **2026-04-26** — [v0.2.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.1) Integrated [VoxCPM2](https://github.com/OpenBMB/VoxCPM) TTS with voice cloning and on-the-fly auto-generated voices; added per-model thinking config; added end-of-course completion page with persistent quiz state; added latest released models including DeepSeek-V4 / GPT-5.5 / GPT-Image-2 / Xiaomi MiMo / Hy3. See [changelog](CHANGELOG.md).
@@ -247,6 +248,68 @@ cp .env.example .env.local
 # Edit .env.local with your API keys, then:
 docker compose up --build
 ```
+
+### Server-backed persistence (PostgreSQL)
+
+The `server-persistence` profile runs exactly two containers: the OpenMAIC app
+and PostgreSQL. The persistence HTTP server is embedded in the app at
+`/api/persistence`; there is no standalone persistence service.
+
+```bash
+cp .env.example .env.local
+printf '\nDATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic\nPERSISTENCE_DEV_TOKEN=openmaic-local-dev\n' >> .env.local
+NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docker compose --profile server-persistence up --build
+```
+
+Add your provider API keys to `.env.local` as usual. Runtime sessions and course
+documents become server-backed; device-scoped KV data (including the anonymous
+device learner key and playback position) remains in the browser. Existing
+browser course data is copied into the configured server store lazily, one
+course at a time when it is first accessed, using the same verified migration
+path as browser persistence.
+
+`NEXT_PUBLIC_PERSISTENCE` is a **build-time switch** compiled into the browser
+bundle. A build with it enabled must be deployed with a working runtime
+`DATABASE_URL` and `PERSISTENCE_DEV_TOKEN`, while
+`NEXT_PUBLIC_PERSISTENCE_TOKEN` must match that server token at build time.
+Otherwise the browser selects HTTP persistence but the embedded endpoint
+returns configuration/authentication/initialization errors; the home page shows
+a persistence-unavailable toast and keeps the prior course list instead of
+misleadingly displaying an empty library.
+
+`PERSISTENCE_DEV_TOKEN` and `NEXT_PUBLIC_PERSISTENCE_TOKEN` are **not a
+secret in any meaningful sense**: the `NEXT_PUBLIC_` token is compiled into
+the public JavaScript bundle, fully visible to every visitor, and therefore
+provides **no confidentiality and no user isolation whatsoever** — anyone who
+can load the page can extract it and read or write **every** learner partition
+and **all** documents by choosing an `x-learner-key`. Its only purpose is to
+keep unrelated network scanners out of an endpoint on a trusted network. This
+is suitable only for localhost or trusted-network, single-user deployments. Before production,
+replace
+[`lib/persistence/server-auth.ts`](lib/persistence/server-auth.ts) with real
+session verification that derives the learner partition from server-controlled
+identity, and change the document/merge/admin authorization policies as
+appropriate.
+
+`PERSISTENCE_POSTGRES_PASSWORD` initializes the PostgreSQL role only when the
+data directory is empty; changing it later does not rotate an existing
+`openmaic-postgres` volume. For a disposable local database, run
+`docker compose --profile server-persistence down -v`, set the new password and
+matching `DATABASE_URL`, then start the profile again. To preserve data, connect
+as an administrator and run `ALTER ROLE openmaic WITH PASSWORD 'new-password';`,
+then update `DATABASE_URL`.
+
+Compose cannot attach `depends_on` to `openmaic` only when this optional profile
+is active without also affecting the default deployment. Startup therefore
+relies on the embedded route's retry-on-next-request behavior while PostgreSQL
+becomes healthy.
+
+The embedded endpoint implements the package's
+[RuntimeStore HTTP contract](packages/@openmaic/storage/docs/runtime-http-contract.md)
+and
+[DocumentStore HTTP contract](packages/@openmaic/storage/docs/document-http-contract.md).
+Leave `NEXT_PUBLIC_PERSISTENCE` unset to retain the existing browser-only
+behavior.
 
 ### Optional: MP4 Video Export (Render Service)
 

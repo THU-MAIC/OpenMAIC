@@ -28,7 +28,14 @@ import type {
   RuntimeSession,
   RuntimeSessionStatus,
 } from '@openmaic/dsl';
-import type { RuntimePayloadValidator, RuntimeSessionInit, RuntimeStore } from './types.js';
+import type {
+  RuntimeAppendOptions,
+  RuntimePayloadValidator,
+  RuntimeSessionInit,
+  RuntimeStore,
+  RuntimeTailOptions,
+} from './types.js';
+import { RuntimeAppendConflictError } from './types.js';
 import { assertJsonValue, isLosslessJsonString } from './json-value.js';
 
 export interface QueryResult<TRow extends Record<string, unknown> = Record<string, unknown>> {
@@ -362,7 +369,16 @@ export class PgRuntimeStore implements RuntimeStore {
     sessionId: string,
     status: RuntimeSessionStatus,
     updatedAt: string,
+    options: RuntimeTailOptions = {},
   ): Promise<void> {
+    const expectedLastSeq = options.expectedLastSeq;
+    if (
+      expectedLastSeq !== undefined &&
+      expectedLastSeq !== null &&
+      (!Number.isSafeInteger(expectedLastSeq) || expectedLastSeq < 0)
+    ) {
+      throw new Error('@openmaic/storage: expectedLastSeq must be null or a non-negative integer');
+    }
     if (!isPgQueryableKey(sessionId)) {
       throw new Error(`@openmaic/storage: no session ${JSON.stringify(sessionId)}`);
     }
@@ -372,6 +388,19 @@ export class PgRuntimeStore implements RuntimeStore {
       if (isFutureRuntimeVersioned(row)) throw futureSessionError(sessionId, row);
       const updated: RuntimeSession = { ...migrateSession(row), status, updatedAt };
       assertValid(validateRuntimeSession(updated), `runtime session ${JSON.stringify(sessionId)}`);
+      if (expectedLastSeq !== undefined) {
+        const last = await queryable.query<LastSeqRow>(
+          `SELECT COALESCE(MAX(seq), -1)::text AS last_seq
+             FROM runtime_records
+            WHERE session_id = $1`,
+          [sessionId],
+        );
+        const rawLastSeq = Number(last.rows[0]?.last_seq ?? -1);
+        const actualLastSeq = rawLastSeq < 0 ? null : rawLastSeq;
+        if (expectedLastSeq !== actualLastSeq) {
+          throw new RuntimeAppendConflictError(sessionId, expectedLastSeq, actualLastSeq);
+        }
+      }
       await this.persistSession(queryable, updated);
     });
   }
@@ -383,12 +412,21 @@ export class PgRuntimeStore implements RuntimeStore {
 
   async appendRecord<TPayload extends RuntimePayload>(
     init: RuntimeRecordInit<TPayload>,
+    options: RuntimeAppendOptions = {},
   ): Promise<RuntimeRecord<TPayload>> {
     assertValid(
       validateRuntimeRecord({ ...init, seq: 0 }),
       `runtime record ${JSON.stringify(init.id)}`,
     );
     assertJsonValue(init.payload, `runtime record ${JSON.stringify(init.id)} payload`);
+    const expectedLastSeq = options.expectedLastSeq;
+    if (
+      expectedLastSeq !== undefined &&
+      expectedLastSeq !== null &&
+      (!Number.isSafeInteger(expectedLastSeq) || expectedLastSeq < 0)
+    ) {
+      throw new Error('@openmaic/storage: expectedLastSeq must be null or a non-negative integer');
+    }
     if (!isPgQueryableKey(init.sessionId)) {
       // A text column can never hold such a key, so no session can exist.
       throw new Error(`@openmaic/storage: no session ${JSON.stringify(init.sessionId)}`);
@@ -430,9 +468,24 @@ export class PgRuntimeStore implements RuntimeStore {
               WHERE session_id = $1`,
             [init.sessionId],
           );
-          const seq = Number(last.rows[0]?.last_seq ?? -1) + 1;
+          const rawLastSeq = Number(last.rows[0]?.last_seq ?? -1);
+          const actualLastSeq = rawLastSeq < 0 ? null : rawLastSeq;
+          if (expectedLastSeq !== undefined && expectedLastSeq !== actualLastSeq) {
+            throw new RuntimeAppendConflictError(init.sessionId, expectedLastSeq, actualLastSeq);
+          }
+          const seq = rawLastSeq + 1;
           const record: RuntimeRecord<TPayload> = { ...init, seq };
           assertValid(validateRuntimeRecord(record), `runtime record ${JSON.stringify(init.id)}`);
+          const transition = options.sessionTransition;
+          const updatedSession: RuntimeSession | undefined = transition
+            ? { ...session, status: transition.status, updatedAt: transition.updatedAt }
+            : undefined;
+          if (updatedSession) {
+            assertValid(
+              validateRuntimeSession(updatedSession),
+              `runtime session ${JSON.stringify(init.sessionId)}`,
+            );
+          }
           // Only the DSL-declared optional anchors get omitted-value treatment;
           // any other undefined member still fails the JSON gate loud.
           const jsonRecord = { ...record } as Record<string, unknown>;
@@ -453,6 +506,7 @@ export class PgRuntimeStore implements RuntimeStore {
               encodeJson(record, `runtime record ${JSON.stringify(record.id)}`),
             ],
           );
+          if (updatedSession) await this.persistSession(queryable, updatedSession);
           return record;
         });
       } catch (error) {

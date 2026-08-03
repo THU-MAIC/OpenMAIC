@@ -6,6 +6,7 @@ export interface LaserEffectOptions {
 
 export interface SpotlightEffectOptions {
   elementId: string;
+  dimness?: number;
 }
 
 export interface HighlightEffectOptions {
@@ -25,5 +26,6 @@ export interface SlideEffects {
   laser?: LaserEffectOptions;
   spotlight?: SpotlightEffectOptions;
   highlight?: HighlightEffectOptions;
+  highlights?: HighlightEffectOptions[];
   zoom?: ZoomEffectOptions;
 }

@@ -218,7 +218,7 @@ describe('OpenAI provider defaults', () => {
     ).toBe('https://example.openai.azure.com/openai');
   });
 
-  it('includes latest official GLM and Kimi coding models', () => {
+  it('includes latest official GLM and Kimi models', () => {
     expect(getModelInfo('glm', 'glm-5.2')).toMatchObject({
       id: 'glm-5.2',
       name: 'GLM-5.2',
@@ -246,6 +246,17 @@ describe('OpenAI provider defaults', () => {
       name: 'Kimi K2.7 Code HighSpeed',
       contextWindow: 256000,
       outputWindow: 32768,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+      },
+    });
+    expect(getModelInfo('kimi', 'kimi-k3')).toMatchObject({
+      id: 'kimi-k3',
+      name: 'Kimi K3',
+      contextWindow: 1048576,
+      outputWindow: 131072,
       capabilities: {
         streaming: true,
         tools: true,
@@ -301,7 +312,28 @@ describe('OpenAI provider defaults', () => {
     });
   });
 
+  it('includes latest official Grok models with explicit output limits', () => {
+    expect(getModelInfo('grok', 'grok-4.5')).toMatchObject({
+      id: 'grok-4.5',
+      contextWindow: 500000,
+      outputWindow: 500000,
+    });
+    expect(getModelInfo('grok', 'grok-4.3')).toMatchObject({
+      id: 'grok-4.3',
+      contextWindow: 1000000,
+      outputWindow: 30000,
+    });
+    expect(getModelInfo('grok', 'grok-build-0.1')).toMatchObject({
+      id: 'grok-build-0.1',
+      contextWindow: 256000,
+      outputWindow: 256000,
+    });
+  });
+
   it.each([
+    ['kimi', 'kimi-k3', { mode: 'enabled', effort: 'high' }, { reasoning_effort: 'high' }],
+    ['grok', 'grok-4.5', { mode: 'enabled', effort: 'medium' }, { reasoning_effort: 'medium' }],
+    ['grok', 'grok-4.3', { mode: 'disabled', effort: 'none' }, { reasoning_effort: 'none' }],
     ['kimi', 'kimi-k2.6', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],
     ['glm', 'glm-5.1', { mode: 'enabled' }, { thinking: { type: 'enabled' } }],
     [

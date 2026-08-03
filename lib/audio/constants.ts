@@ -36,6 +36,7 @@ import type {
   ASRProviderId,
   ASRProviderConfig,
 } from './types';
+import { isCustomTTSProvider } from './types';
 import {
   VOXCPM_AUTO_VOICE,
   VOXCPM_AUTO_VOICE_ID,
@@ -1311,13 +1312,25 @@ export function getAllTTSProviders(
 }
 
 /**
+ * Narrow an arbitrary string (e.g. from a persisted document or an imported
+ * manifest, where the contract keeps providerId an open string) to a known
+ * TTS provider id: a registered built-in provider or the user-defined
+ * custom-provider namespace. Anything else must be treated as "no voice".
+ */
+export function isKnownTTSProviderId(id: string): id is TTSProviderId {
+  // Object.hasOwn, not `in`: prototype-chain keys ('toString', 'constructor',
+  // …) must not pass a whitelist built from an object literal.
+  return Object.hasOwn(TTS_PROVIDERS, id) || isCustomTTSProvider(id);
+}
+
+/**
  * Get TTS provider by ID (checks built-in first, then custom)
  */
 export function getTTSProvider(
   providerId: TTSProviderId,
   customProviders?: Record<string, TTSProviderConfig>,
 ): TTSProviderConfig | undefined {
-  if (providerId in TTS_PROVIDERS) {
+  if (Object.hasOwn(TTS_PROVIDERS, providerId)) {
     return TTS_PROVIDERS[providerId as BuiltInTTSProviderId];
   }
   return customProviders?.[providerId];
@@ -1351,7 +1364,7 @@ export function getASRProvider(
   providerId: ASRProviderId,
   customProviders?: Record<string, ASRProviderConfig>,
 ): ASRProviderConfig | undefined {
-  if (providerId in ASR_PROVIDERS) {
+  if (Object.hasOwn(ASR_PROVIDERS, providerId)) {
     return ASR_PROVIDERS[providerId as BuiltInASRProviderId];
   }
   return customProviders?.[providerId];
