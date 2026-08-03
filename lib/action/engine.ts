@@ -95,6 +95,7 @@ function getLikelyLatexMath(content: string): string | null {
 
   const delimitedLatex = getDelimitedLatex(trimmed);
   if (delimitedLatex !== null) return delimitedLatex;
+  if (/^[A-Za-z]:\\/.test(trimmed)) return null;
   if (COMMON_LATEX_COMMAND.test(trimmed) || /[_^]\{/.test(trimmed)) return trimmed;
 
   const commands = trimmed.match(/\\[A-Za-z]+/g) ?? [];

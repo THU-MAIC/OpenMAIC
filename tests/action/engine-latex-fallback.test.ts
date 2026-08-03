@@ -167,7 +167,7 @@ describe('ActionEngine wb_draw_text LaTeX fallback', () => {
     },
   );
 
-  test.each([String.raw`C:\temp`, String.raw`D:\path\to\file`])(
+  test.each([String.raw`C:\temp`, String.raw`C:\alpha`, String.raw`D:\path\to\file`])(
     'keeps a Windows path as text: %s',
     async (path) => {
       await drawText(path);
