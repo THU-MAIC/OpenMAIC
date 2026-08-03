@@ -7,16 +7,17 @@
  * keeps rendering its stale `history.present` and the next edit clobbers the
  * applied change.
  */
-import { useStageStore } from '@/lib/store/stage';
+import { flushStageSave, useStageStore } from '@/lib/store/stage';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
 import type { ScenePatch, SlideContent } from '@/lib/types/stage';
 
 /** Apply a scene patch to the stage store and keep the OPEN slide edit session
  *  in lockstep (else the canvas renders stale history and clobbers the change). */
-export function applyScenePatchInSync(sceneId: string, patch: ScenePatch): void {
+export async function applyScenePatchInSync(sceneId: string, patch: ScenePatch): Promise<void> {
   useStageStore.getState().updateScene(sceneId, patch);
   const es = useSlideEditSession.getState();
   if (patch.content && es.sceneId === sceneId) {
     es.seed(sceneId, patch.content as SlideContent);
   }
+  await flushStageSave();
 }

@@ -7,7 +7,7 @@
 
 import { NextRequest } from 'next/server';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
-import { isPiChatEnabled } from '@/lib/config/feature-flags';
+import { isPiChatEnabled, isPiWebSearchEnabled } from '@/lib/config/feature-flags';
 import { createLogger } from '@/lib/logger';
 import {
   getPiMaxActionsPerAgent,
@@ -152,11 +152,13 @@ export async function POST(req: NextRequest) {
           languageModel,
           thinkingConfig,
           maxOutputTokens: modelInfo?.outputWindow,
+          contextWindow: modelInfo?.contextWindow,
           abortSignal: abortController.signal,
           signal,
           maxAgentTurns,
           maxActionsPerAgent,
           enableWhiteboardTools,
+          enableWebSearch: isPiWebSearchEnabled(),
         });
 
         if (signal.aborted) {

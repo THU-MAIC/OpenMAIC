@@ -1,7 +1,7 @@
 {
   "name": "@openmaic/storage",
-  "version": "0.0.1",
-  "description": "The MAIC pluggable persistence layer: KV / asset primitives with swappable backends (browser default, HTTP later), depending only on @openmaic/dsl.",
+  "version": "0.2.1",
+  "description": "The MAIC pluggable persistence layer: document / runtime / KV / asset primitives with browser and HTTP backends, depending only on @openmaic/dsl.",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -10,6 +10,34 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./runtime/http": {
+      "types": "./dist/runtime/http.d.ts",
+      "import": "./dist/runtime/http.js"
+    },
+    "./document/http": {
+      "types": "./dist/document/http.d.ts",
+      "import": "./dist/document/http.js"
+    },
+    "./kv/http": {
+      "types": "./dist/kv/http.d.ts",
+      "import": "./dist/kv/http.js"
+    },
+    "./document/pg": {
+      "types": "./dist/document/pg.d.ts",
+      "import": "./dist/document/pg.js"
+    },
+    "./runtime/pg": {
+      "types": "./dist/runtime/pg.d.ts",
+      "import": "./dist/runtime/pg.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./server/reference": {
+      "types": "./dist/server/reference.d.ts",
+      "import": "./dist/server/reference.js"
     }
   },
   "files": [
@@ -22,7 +50,7 @@
     "clean": "rm -rf dist",
     "build": "rm -rf dist && tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "pnpm run build"
@@ -45,10 +73,13 @@
     "access": "public"
   },
   "dependencies": {
-    "@openmaic/dsl": "workspace:*"
+    "@openmaic/dsl": "workspace:^"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.3.14",
+    "@types/pg": "^8.15.5",
     "fake-indexeddb": "^6.0.0",
+    "pg": "^8.16.3",
     "typescript": "^5",
     "vitest": "^4.1.8"
   }

@@ -13,6 +13,7 @@ import {
   type AfterToolCallContext,
   type AfterToolCallResult,
   type AgentMessage,
+  type AgentOptions,
   type AgentTool,
   type StreamFn,
 } from '@earendil-works/pi-agent-core';
@@ -45,6 +46,10 @@ export interface BuildAgentOptions {
   allowedToolNames?: ReadonlySet<string>;
   /** Prior conversation turns to seed the agent with, so it has multi-turn memory. */
   history?: AgentMessage[];
+  /** Optional Pi context transform, used by the Director's native compaction path. */
+  transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+  /** Optional Pi message conversion, required when a context transform emits custom roles. */
+  convertToLlm?: AgentOptions['convertToLlm'];
   /** Optional request-scoped hook composed with the shared quota hook. */
   afterToolCall?: (
     context: AfterToolCallContext,
@@ -56,6 +61,8 @@ export function buildAgent(opts: BuildAgentOptions): Agent {
   const quotaHook = makeQuotaHook({ remaining: () => Number.MAX_SAFE_INTEGER });
   return new Agent({
     streamFn: opts.streamFn,
+    transformContext: opts.transformContext,
+    convertToLlm: opts.convertToLlm,
     toolExecution: 'sequential',
     initialState: {
       systemPrompt: opts.systemPrompt,

@@ -7,12 +7,16 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const updateScene = vi.fn();
+const { flushStageSave, updateScene } = vi.hoisted(() => ({
+  updateScene: vi.fn(),
+  flushStageSave: vi.fn().mockResolvedValue(undefined),
+}));
 const seed = vi.fn();
 let sessionSceneId: string | null = null;
 
 vi.mock('@/lib/store/stage', () => ({
   useStageStore: { getState: () => ({ updateScene }) },
+  flushStageSave,
 }));
 
 vi.mock('@/components/edit/surfaces/slide/slide-edit-session', () => ({
@@ -32,6 +36,7 @@ describe('applyScenePatchInSync', () => {
   beforeEach(() => {
     updateScene.mockClear();
     seed.mockClear();
+    flushStageSave.mockClear();
     sessionSceneId = null;
   });
 
@@ -39,6 +44,7 @@ describe('applyScenePatchInSync', () => {
     const patch = { actions: [{ type: 'speech', id: 'a' }] } as unknown as Partial<Scene>;
     applyScenePatchInSync('s1', patch);
     expect(updateScene).toHaveBeenCalledWith('s1', patch);
+    expect(flushStageSave).toHaveBeenCalledOnce();
   });
 
   it('reseeds the edit session when its sceneId matches the patched scene', () => {

@@ -1,15 +1,15 @@
 ---
-title: Getting Started
-description: Install OpenMAIC and run it locally in five minutes.
+title: Getting started
+description: Run OpenMAIC locally in five minutes.
 ---
 
-OpenMAIC is a Next.js application you can run on your own machine. You need Node.js, pnpm, and at least one LLM API key.
+OpenMAIC is a Next.js application that runs on your own machine. You need to configure at least one LLM provider: cloud providers usually require an API key, while local Ollama or Lemonade does not.
 
 ## Prerequisites
 
-- **Node.js** 20 or later
-- **pnpm** 10 or later (install with `npm install -g pnpm` if needed)
-- An API key from at least one LLM provider — OpenAI, Anthropic, Google, DeepSeek, Zhipu, MiniMax, Qwen, Doubao, Groq, SiliconFlow, or Ollama (local)
+- **Node.js** 20.9.0 or later
+- **pnpm** 10.28.0 (if needed, run `npm install -g pnpm@10.28.0`)
+- At least one LLM provider; cloud providers usually require an API key, while local Ollama or Lemonade does not
 
 ## Install
 
@@ -21,61 +21,37 @@ cd OpenMAIC
 pnpm install
 ```
 
-The install step also builds the two workspace packages (`mathml2omml` and `pptxgenjs`). This takes a minute on first run.
+Installation builds the workspace packages required by the project, so the first install may take some time.
 
 ## Configure
 
-Copy the sample env file and fill in at least one LLM provider:
+Copy the example environment file and configure at least one LLM provider:
 
 ```bash
 cp .env.example .env.local
 ```
 
-Open `.env.local` and set whichever providers you have keys for. For example:
+Open `.env.local` and enter credentials for a provider you use. For example:
 
 ```bash title=".env.local"
 OPENAI_API_KEY=sk-...
 # or
 ANTHROPIC_API_KEY=sk-ant-...
-# or local Ollama (no key needed)
+# or local Ollama (no key required)
 OLLAMA_BASE_URL=http://localhost:11434/v1
 ```
 
-See [Configuration](./configuration.mdx) for the full list of providers, TTS, ASR, and feature flags.
+See [Configuration](./configuration.mdx) for complete provider, image/video generation, TTS, ASR, document parsing, web search, access control, and feature flag configuration.
 
 ## Run
 
-Start the dev server:
+Start the development server:
 
 ```bash
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). You should see the OpenMAIC classroom generator. Drop a topic or PDF, click Generate, and watch an AI teacher build a full multi-scene classroom.
-
-## Troubleshooting
-
-### Dev server crashes when generating large content
-
-If the dev server dies while generating a large classroom (for example from a long multi-chapter outline) with an error like:
-
-```
-Jest worker encountered 2 child process exceptions, exceeding retry limit
-```
-
-this is a dev-only Next.js limitation, not a bug in OpenMAIC's runtime. In dev mode, Next forks an internal worker process for App Router dynamic routes (such as `/classroom/[id]`); when a large generation holds a big in-memory object as that worker is forked, the worker can be OOM-killed and take the dev server down with it. The "Jest worker" name is just Next's internal process pool and is unrelated to testing.
-
-Raise the dev heap limit, sized to your machine's RAM (don't over-set it past available memory or you trade a V8 OOM for a system-level one):
-
-```bash
-# macOS / Linux
-NODE_OPTIONS=--max-old-space-size=4096 pnpm dev
-
-# Windows (PowerShell)
-$env:NODE_OPTIONS="--max-old-space-size=4096"; pnpm dev
-```
-
-Production builds are unaffected — they are prebuilt and never fork this worker.
+Open [http://localhost:3000](http://localhost:3000). You should see the OpenMAIC classroom generator. Enter a topic or upload learning material, then click Generate; the AI teachers will build a complete, multi-scene classroom. Supported material formats depend on the selected parser and typically include PDF, Office documents, Markdown/plain text, images, and some audio/video formats. Consult the parser's supported formats for the exact range.
 
 ## Build for production
 
@@ -84,11 +60,10 @@ pnpm build
 pnpm start
 ```
 
-Or deploy to Vercel, Docker, or your own server — see [Deployment](./deployment.mdx).
+Or deploy to Vercel, Docker, or your own server—see the [Deployment guide](./deployment.mdx).
 
 ## Next steps
 
 - [Configure providers, TTS, and ACCESS_CODE →](./configuration.mdx)
 - [Deploy to Vercel or Docker →](./deployment.mdx)
-- Explore the [architecture and contribute on GitHub](https://github.com/THU-MAIC/OpenMAIC#-contributing)
-
+- For architecture details or contribution guidance, visit [GitHub](https://github.com/THU-MAIC/OpenMAIC#-contributing)

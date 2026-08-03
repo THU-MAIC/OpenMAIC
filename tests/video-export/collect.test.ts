@@ -99,6 +99,57 @@ function stubObjectUrls() {
   });
 }
 
+/**
+ * Stub the first-frame decode path (`document.createElement('video'|'canvas')`)
+ * used by `decodeFirstFramePosterUrl`. The fake <video> drives its load→seek
+ * callbacks on the next microtask; the fake <canvas> yields `dataUrl` from
+ * `toDataURL`, or — when `dataUrl` is null — throws to simulate a decode/CORS
+ * failure so the caller's null-path is exercised. `URL.createObjectURL` (via
+ * stubObjectUrls) then turns a produced data URL into a `blob:mock/*` poster.
+ */
+function stubFirstFrameDecode(dataUrl: string | null) {
+  vi.stubGlobal('document', {
+    createElement: (tag: string) => {
+      if (tag === 'video') {
+        const v: Record<string, unknown> = {
+          preload: '',
+          muted: false,
+          playsInline: false,
+          videoWidth: 640,
+          videoHeight: 360,
+          readyState: 2,
+          currentTime: 0,
+          duration: 4,
+          onloadeddata: null,
+          onseeked: null,
+          onerror: null,
+          removeAttribute: () => {},
+        };
+        Object.defineProperty(v, 'src', {
+          set() {
+            queueMicrotask(() => {
+              (v.onloadeddata as (() => void) | null)?.();
+              // Setting currentTime (the nudge) triggers a seek in a real video.
+              queueMicrotask(() => (v.onseeked as (() => void) | null)?.());
+            });
+          },
+        });
+        return v as unknown as HTMLElement;
+      }
+      // canvas
+      return {
+        width: 0,
+        height: 0,
+        getContext: () => ({ drawImage: () => {} }),
+        toDataURL: () => {
+          if (dataUrl === null) throw new Error('tainted');
+          return dataUrl;
+        },
+      } as unknown as HTMLElement;
+    },
+  });
+}
+
 describe('collectVideoAssets — ossKey fallback for evicted blobs', () => {
   it('uses the local audio blob when it has bytes (no fetch)', async () => {
     const fetchSpy = vi.fn();
@@ -247,6 +298,45 @@ describe('collectVideoAssets — frame base restores evicted generated media', (
     expect(capturedSlides[0].elements[0].src).toMatch(/^blob:mock\//);
     expect(capturedSlides[0].elements[0].poster).toMatch(/^blob:mock\//);
     expect(revoked).toHaveLength(2); // video + poster objectURLs both released
+  });
+
+  it('decodes a first-frame poster when a generated video has no stored poster', async () => {
+    stubObjectUrls();
+    stubFirstFrameDecode('data:image/png;base64,FIRSTFRAME');
+    // A present video with bytes but NO poster / posterOssKey.
+    const rec = videoRecord({
+      id: 'stage:gen_vid_1',
+      blob: new Blob(['video-bytes'], { type: 'video/mp4' }),
+    });
+
+    await collectVideoAssets(
+      irWith([frameEntry]),
+      [slideScene({ type: 'video', mediaRef: 'gen_vid_1' })],
+      records({ mediaByElementId: new Map([['gen_vid_1', rec]]) }),
+    );
+
+    // The snapshotted slide got a poster (the decoded first frame), not blank.
+    expect(capturedSlides[0].elements[0].src).toMatch(/^blob:mock\//);
+    expect(capturedSlides[0].elements[0].poster).toBe('data:image/png;base64,FIRSTFRAME');
+  });
+
+  it('leaves the video posterless (no throw) when first-frame decode fails', async () => {
+    stubObjectUrls();
+    stubFirstFrameDecode(null); // decode error / CORS-tainted → null
+    const rec = videoRecord({
+      id: 'stage:gen_vid_1',
+      blob: new Blob(['video-bytes'], { type: 'video/mp4' }),
+    });
+
+    const { blobs } = await collectVideoAssets(
+      irWith([frameEntry]),
+      [slideScene({ type: 'video', mediaRef: 'gen_vid_1' })],
+      records({ mediaByElementId: new Map([['gen_vid_1', rec]]) }),
+    );
+
+    expect(capturedSlides[0].elements[0].src).toMatch(/^blob:mock\//);
+    expect(capturedSlides[0].elements[0].poster).toBeUndefined();
+    expect(blobs.has('frames/s1.png')).toBe(true); // frame still rendered
   });
 
   it('clears an image whose blob is evicted and has no ossKey', async () => {

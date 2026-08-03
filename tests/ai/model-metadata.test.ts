@@ -10,6 +10,7 @@ const MODELS_WITHOUT_CONFIGURABLE_THINKING = new Set<string>([
   'grok:grok-4.20',
   'grok:grok-4-1-fast-non-reasoning',
   'grok:grok-code-fast-1',
+  'atlascloud:qwen/qwen3.5-flash',
   'ollama:llama3.3',
   'ollama:gemma3',
   'ollama:deepseek-r1',

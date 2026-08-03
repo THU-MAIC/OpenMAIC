@@ -20,8 +20,10 @@ import { useStageStore } from '@/lib/store';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
 import { useExportClassroom } from '@/lib/export/use-export-classroom';
-import { useExportVideo, VIDEO_RESOLUTIONS } from '@/lib/video-export-app/use-export-video';
 import { isVideoExportEnabled } from '@/lib/config/feature-flags';
+import { useVideoRenderStore } from '@/lib/store/video-render';
+import { CircularProgress } from '@/components/ui/circular-progress';
+import { VideoExportDialog } from './video-export-dialog';
 import { LanguageSwitcher } from '../language-switcher';
 import { SettingsDialog } from '../settings';
 import {
@@ -68,6 +70,7 @@ export function HeaderControls({
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [videoDialogOpen, setVideoDialogOpen] = useState(false);
 
   // Export plumbing — uses the stage / media task stores to check
   // readiness, then hands off to the export hooks. Available in both
@@ -80,8 +83,13 @@ export function HeaderControls({
   const mediaTasks = useMediaGenerationStore((s) => s.tasks);
   const { exporting: isExporting, exportPPTX, exportResourcePack } = useExportPPTX();
   const { exporting: isExportingZip, exportClassroomZip } = useExportClassroom();
-  const { exporting: isExportingVideo, exportVideo } = useExportVideo();
   const videoExportEnabled = isVideoExportEnabled();
+  // Video render lives in a global store so its progress ring stays on the
+  // export button even after the menu closes / scenes switch mid-render.
+  const videoRendering = useVideoRenderStore(
+    (s) => s.status === 'compiling' || s.status === 'rendering',
+  );
+  const videoRenderPercent = useVideoRenderStore((s) => s.percent);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
 
@@ -245,28 +253,32 @@ export function HeaderControls({
       <div className="relative" ref={exportRef}>
         <button
           onClick={() => {
-            if (canExport && !isExporting && !isExportingZip && !isExportingVideo) {
+            if (canExport && !isExporting && !isExportingZip) {
               setExportMenuOpen(!exportMenuOpen);
             }
           }}
-          disabled={!canExport || isExporting || isExportingZip || isExportingVideo}
+          disabled={!canExport || isExporting || isExportingZip}
           title={
             canExport
-              ? isExporting || isExportingZip || isExportingVideo
+              ? isExporting || isExportingZip
                 ? t('export.exporting')
                 : t('export.pptx')
               : t('share.notReady')
           }
           className={cn(
             'shrink-0 p-2 rounded-full transition-all',
-            canExport && !isExporting && !isExportingZip && !isExportingVideo
+            canExport && !isExporting && !isExportingZip
               ? 'text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm'
               : 'text-gray-300 dark:text-gray-600 cursor-not-allowed opacity-50',
           )}
           aria-label={t('export.pptx')}
         >
-          {isExporting || isExportingZip || isExportingVideo ? (
+          {isExporting || isExportingZip ? (
             <Loader2 className="w-4 h-4 animate-spin" />
+          ) : videoRendering ? (
+            // Persistent ring: video render runs in the background; keep it
+            // visible on the button whether or not the menu is open.
+            <CircularProgress value={videoRenderPercent} size={20} className="text-primary" />
           ) : (
             <Download className="w-4 h-4" />
           )}
@@ -315,41 +327,30 @@ export function HeaderControls({
               </div>
             </button>
             {videoExportEnabled && (
-              <>
-                <div className="border-t border-gray-200 dark:border-gray-700" />
-                <div className="px-4 pt-2.5 pb-1 flex items-center gap-2.5 text-sm">
-                  <Film className="w-4 h-4 text-gray-400 shrink-0" />
-                  <div>
-                    <div>{t('export.video')}</div>
-                    <div className="text-[11px] text-gray-400 dark:text-gray-500">
-                      {t('export.videoDesc')}
-                    </div>
+              <button
+                onClick={() => {
+                  setExportMenuOpen(false);
+                  setVideoDialogOpen(true);
+                }}
+                className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5 border-t border-gray-200 dark:border-gray-700"
+              >
+                <Film className="w-4 h-4 text-gray-400 shrink-0" />
+                <div>
+                  <div>{t('export.video')}</div>
+                  <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                    {t('export.videoDesc')}
                   </div>
                 </div>
-                <div className="px-4 pb-2.5 flex gap-1.5">
-                  {(Object.keys(VIDEO_RESOLUTIONS) as (keyof typeof VIDEO_RESOLUTIONS)[]).map(
-                    (res) => (
-                      <button
-                        key={res}
-                        onClick={() => {
-                          setExportMenuOpen(false);
-                          exportVideo(res);
-                        }}
-                        disabled={isExportingVideo}
-                        className="flex-1 px-2 py-1.5 text-xs rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                      >
-                        {res === '4k' ? '4K' : res}
-                      </button>
-                    ),
-                  )}
-                </div>
-              </>
+              </button>
             )}
           </div>
         )}
       </div>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {videoExportEnabled && (
+        <VideoExportDialog open={videoDialogOpen} onOpenChange={setVideoDialogOpen} />
+      )}
     </div>
   );
 }

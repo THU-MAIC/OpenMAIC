@@ -275,14 +275,13 @@ export function buildChildActionTools(opts: {
   onActionDone: (record?: WhiteboardActionRecord) => void;
   maxActionsPerAgent: number;
   enableWhiteboardTools: boolean;
-  turnKind?: 'normal' | 'wrap_up';
   whiteboardState?: PiWhiteboardRuntimeState;
 }): AgentTool[] {
   const currentScene = opts.body.storeState.currentSceneId
     ? opts.body.storeState.scenes.find((scene) => scene.id === opts.body.storeState.currentSceneId)
     : undefined;
   const slideOnlyPiActions = currentScene?.type === 'slide' ? ['play_video'] : [];
-  const allowWhiteboardMutations = opts.enableWhiteboardTools && opts.turnKind !== 'wrap_up';
+  const allowWhiteboardMutations = opts.enableWhiteboardTools;
   const piActionAllowlist = allowWhiteboardMutations
     ? [
         'spotlight',

@@ -61,6 +61,28 @@
     "videoSuccess": "Projeto de vídeo exportado",
     "videoFailed": "Falha na exportação do vídeo",
     "videoWarnings": "{{assets}} recurso(s) ausente(s) e {{diagnostics}} problema(s) no relatório de exportação.",
+    "videoMp4Success": "Vídeo renderizado",
+    "videoServiceUnavailable": "Serviço de renderização não configurado — o ZIP do projeto foi baixado para renderização local.",
+    "videoResolution": "Resolução",
+    "videoFps": "Taxa de quadros",
+    "videoQuality": "Qualidade",
+    "videoQuality_draft": "Rascunho",
+    "videoQuality_standard": "Padrão",
+    "videoQuality_high": "Alta",
+    "videoProgress": "{{percent}}%",
+    "videoProgressWithEta": "{{percent}}% · ~{{remaining}} restante(s)",
+    "videoEtaMinSec": "{{min}} min {{sec}} s",
+    "videoEtaSec": "{{sec}} s",
+    "videoRenderMp4": "Renderizar MP4",
+    "videoDownloadZip": "Baixar ZIP do projeto",
+    "videoServiceHint": "A renderização de MP4 requer o serviço de renderização. Baixe o ZIP para renderizar localmente.",
+    "videoBurnSubtitles": "Gravar legendas no vídeo",
+    "videoBurnSubtitlesDesc": "Desligado: exporte um vídeo limpo e adicione o arquivo de legenda no seu editor.",
+    "videoDownloadSubtitles": "Baixar legendas (.srt)",
+    "subtitlesCompiling": "Compilando legendas...",
+    "subtitlesSuccess": "Legendas baixadas",
+    "subtitlesEmpty": "Nenhuma narração para gerar legendas",
+    "subtitlesFailed": "Falha ao baixar legendas",
     "noSlides": "Não há slides para exportar",
     "noSlidesSkipped": "Este curso não tem slides — PPTX ignorado",
     "nothingToExport": "Nada para exportar"
@@ -345,7 +367,8 @@
         "lead": "Descreva um bug nesta página interativa — por exemplo, um botão que não faz nada — e eu corrijo apenas isso, mantendo o resto.",
         "placeholder": "Descreva o bug desta página interativa…"
       },
-      "thinking": "Pensando…"
+      "thinking": "Pensando…",
+      "title": "Editar com IA"
     },
     "timeline": {
       "title": "Roteiro de narração",
@@ -438,6 +461,21 @@
       "notApplied": "Não aplicado",
       "applyFailed": "O editor não conseguiu aplicar a edição do elemento. Nada foi alterado.",
       "applyPartiallyFailed": "O editor não conseguiu aplicar uma ou mais edições de elementos. Outras edições podem ter sido aplicadas."
+    },
+    "roster": {
+      "title": "Elenco da sala",
+      "count": "{{count}} integrantes",
+      "editHint": "Clique em um integrante para editar",
+      "personaLabel": "Persona",
+      "personaPlaceholder": "Descreva a personalidade, o estilo de ensino e as tarefas do papel...",
+      "noPersona": "Nenhuma persona ainda",
+      "unnamed": "Sem título",
+      "teacherBadge": "Principal",
+      "moveUp": "Mover para cima",
+      "moveDown": "Mover para baixo",
+      "removeFromClass": "Remover da sala",
+      "aiClassmates": "Colegas de IA · {{count}}",
+      "addRole": "Adicionar papel"
     }
   },
   "stage": {
@@ -1592,6 +1630,8 @@
     "clearCacheButton": "Excluir Permanentemente Todos os Dados",
     "clearCacheSuccess": "Cache limpo. A página será atualizada em instantes",
     "clearCacheFailed": "Falha ao limpar o cache, tente novamente",
+    "persistUnavailable": "Suas alterações não estão sendo salvas porque o aplicativo não consegue acessar os dados armazenados. Se recarregar não resolver, limpe o cache local nas Configurações.",
+    "persistChangesLost": "O armazenamento voltou a funcionar, mas as alterações feitas enquanto ele estava indisponível não puderam ser salvas e foram substituídas pela última versão salva.",
     "webSearchSettings": "Busca na Web",
     "webSearchApiKey": "Chave de API de Busca",
     "webSearchApiKeyPlaceholder": "Digite sua chave de API de busca",

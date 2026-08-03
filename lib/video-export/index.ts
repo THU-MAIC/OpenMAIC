@@ -26,10 +26,16 @@ export { compileVideoTimeline, type CompileInput, type CompileDeps } from './com
 export { normalizeScenes, type NormalizeResult } from './passes/normalize';
 export { buildTimelineOptions } from './passes/probe';
 export { buildTimeline, type TimelineResult } from './passes/timeline';
-export { applyGeometry, resolveEffectGeometry, type GeometryResult } from './passes/geometry';
+export {
+  applyGeometry,
+  resolveEffectGeometry,
+  resolveVideoPlacement,
+  type GeometryResult,
+} from './passes/geometry';
 export { planAssets, sanitizeFilenamePart, type AssetsResult } from './passes/assets';
 export { emitManifest, emitManifestJson } from './passes/emit';
 export { toSrt, toVtt, usableCues } from './subtitles';
+export { splitCue, splitCues, splitCueText, textUnits } from './split-cue';
 export {
   emitHyperframes,
   assetUrl,

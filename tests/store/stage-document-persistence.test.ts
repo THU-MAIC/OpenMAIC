@@ -11,11 +11,14 @@ vi.mock('@/lib/pbl/v2/runtime/document-persistence', () => ({
 
 vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageData: (...args: unknown[]) => saveStageDataMock(...args),
+  saveStageDataIncremental: vi.fn().mockResolvedValue(undefined),
   loadStageData: vi.fn().mockResolvedValue(null),
 }));
 
-import { useStageStore } from '@/lib/store/stage';
+import { flushStageSave, useStageStore } from '@/lib/store/stage';
+import { saveStageDataIncremental } from '@/lib/utils/stage-storage';
 import { makeScene, type Scene, type Stage } from '@/lib/types/stage';
+import type { ChatSession } from '@/lib/types/chat';
 
 function makeStage(): Stage {
   return {
@@ -77,6 +80,7 @@ describe('stage document persistence', () => {
     expect(saveStageDataMock).toHaveBeenCalledWith(
       'stage-1',
       expect.objectContaining({ scenes: [persistedScene] }),
+      expect.any(Number),
     );
     expect(useStageStore.getState().scenes).toEqual([inMemoryScene]);
   });
@@ -90,5 +94,44 @@ describe('stage document persistence', () => {
 
     expect(saved).toBe(false);
     expect(saveStageDataMock).not.toHaveBeenCalled();
+  });
+
+  it('treats a fence-dropped save as not durable: false, no chatSnapshot rebind, pending kept', async () => {
+    // An epoch-stale drop is indistinguishable from success only if the
+    // storage layer hides it; with the explicit 'stale-dropped' status the
+    // store must skip every piece of success bookkeeping.
+    const scene = makeSlideScene('in-memory');
+    const chat: ChatSession = {
+      id: 'chat-1',
+      type: 'qa',
+      title: 'Chat',
+      status: 'completed',
+      messages: [],
+      config: { agentIds: [] },
+      toolCalls: [],
+      pendingToolCalls: [],
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    };
+    useStageStore.setState({ scenes: [scene], chats: [chat] });
+    // A queued edit a successful save would have cleared.
+    useStageStore.getState().setCurrentSceneId(scene.id);
+    const snapshotBefore = useStageStore.getState().chatSnapshot;
+    prepareScenesMock.mockResolvedValueOnce([scene]);
+    saveStageDataMock.mockResolvedValueOnce('stale-dropped');
+
+    const saved = await useStageStore.getState().saveToStorage();
+
+    expect(saved).toBe(false);
+    // The chatSnapshot must not rebind to a snapshot that never landed…
+    expect(useStageStore.getState().chatSnapshot).toBe(snapshotBefore);
+    // …and the queued dirt must survive: the next flush still carries it.
+    await flushStageSave();
+    expect(saveStageDataIncremental).toHaveBeenCalledWith(
+      'stage-1',
+      expect.arrayContaining([{ kind: 'currentScene' }]),
+      expect.anything(),
+      expect.any(Number),
+    );
   });
 });

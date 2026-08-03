@@ -1,50 +1,55 @@
 import { describe, expect, test } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
-import { DSL_VERSION, DSL_VERSION_KEY, validateScene } from '@openmaic/dsl';
-import { BrowserDocumentStore, type MaicDocument } from '../src/index.js';
+import { DSL_VERSION, DSL_VERSION_KEY, validateScene, validateStage } from '@openmaic/dsl';
+import {
+  BrowserDocumentStore,
+  DocumentNotFoundError,
+  DocumentVersionError,
+  type MaicDocument,
+} from '../src/index.js';
 import { runDocumentStoreContract, makeDocument, slideScene } from './document-contract.js';
 
-// Each store gets its own in-memory IndexedDB factory so contract cases stay
-// isolated without leaning on an ambient global.
-function makeStore(): BrowserDocumentStore {
-  return new BrowserDocumentStore({ indexedDB: new IDBFactory() });
+// Open the raw DB the store uses and overwrite the stage row's version stamp,
+// simulating a document written by an older client.
+async function reStampStage(
+  idb: IDBFactory,
+  dbName: string,
+  stageId: string,
+  version: string | undefined,
+): Promise<void> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const req = idb.open(dbName);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('stages', 'readwrite');
+    const store = tx.objectStore('stages');
+    const get = store.get(stageId);
+    get.onsuccess = () => {
+      const row = get.result as Record<string, unknown>;
+      if (version === undefined) delete row[DSL_VERSION_KEY];
+      else row[DSL_VERSION_KEY] = version;
+      store.put(row);
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
 }
 
-runDocumentStoreContract('BrowserDocumentStore', makeStore);
+let contractDb = 0;
+runDocumentStoreContract('BrowserDocumentStore', () => {
+  const idb = new IDBFactory();
+  const dbName = `maic-documents-contract-${contractDb++}`;
+  return {
+    store: new BrowserDocumentStore({ indexedDB: idb, dbName }),
+    seedStoredVersion: (stageId, version) => reStampStage(idb, dbName, stageId, version),
+  };
+});
 
-// --- backend-specific: migrate-on-read needs to seed a raw row at an old
-// version, which the public API (which always stamps the current version) can't
-// express. ---
+// --- backend-specific migrate-on-read and raw IndexedDB behavior. ---
 describe('BrowserDocumentStore migrate-on-read', () => {
-  // Open the raw DB the store uses and overwrite the stage row's version stamp,
-  // simulating a document written by an older client.
-  async function reStampStage(
-    idb: IDBFactory,
-    dbName: string,
-    stageId: string,
-    version: string | undefined,
-  ): Promise<void> {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = idb.open(dbName);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction('stages', 'readwrite');
-      const store = tx.objectStore('stages');
-      const get = store.get(stageId);
-      get.onsuccess = () => {
-        const row = get.result as Record<string, unknown>;
-        if (version === undefined) delete row[DSL_VERSION_KEY];
-        else row[DSL_VERSION_KEY] = version;
-        store.put(row);
-      };
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    db.close();
-  }
-
   test('stamps a legacy (unversioned) document forward on load', async () => {
     const idb = new IDBFactory();
     const dbName = 'maic-documents-legacy';
@@ -102,13 +107,25 @@ describe('BrowserDocumentStore migrate-on-read', () => {
     // stamping the whole document current off one incremental write would
     // corrupt them — reject and require a full load + save first.
     await reStampStage(idb, dbName, 'stage-1', undefined);
-    await expect(store.putScene('stage-1', slideScene('stage-1', 'new', 2))).rejects.toThrow();
+    const staleFailure = store.putScene('stage-1', slideScene('stage-1', 'new', 2));
+    await expect(staleFailure).rejects.toBeInstanceOf(DocumentVersionError);
+    await expect(staleFailure).rejects.toMatchObject({
+      stageId: 'stage-1',
+      kind: 'not-current',
+      storedVersion: undefined,
+    });
     // rejected write left nothing behind (a legacy doc still migrates on read)
     expect(await store.getScene('stage-1', 'new')).toBeNull();
 
     // Future stored document: an old client must not downgrade it.
     await reStampStage(idb, dbName, 'stage-1', '99.0.0');
-    await expect(store.putScene('stage-1', slideScene('stage-1', 'new2', 3))).rejects.toThrow();
+    const futureFailure = store.putScene('stage-1', slideScene('stage-1', 'new2', 3));
+    await expect(futureFailure).rejects.toBeInstanceOf(DocumentVersionError);
+    await expect(futureFailure).rejects.toMatchObject({
+      stageId: 'stage-1',
+      kind: 'not-current',
+      storedVersion: '99.0.0',
+    });
     expect(await store.getScene('stage-1', 'new2')).toBeNull();
   });
 
@@ -124,7 +141,7 @@ describe('BrowserDocumentStore migrate-on-read', () => {
     // stored document — the store checks the stored row inside the write tx.
     const fresh = makeDocument();
     fresh.stage.name = 'Old Client Overwrite';
-    await expect(store.saveDocument(fresh)).rejects.toThrow();
+    await expect(store.saveDocument(fresh)).rejects.toBeInstanceOf(DocumentVersionError);
 
     const loaded = await store.loadDocument('stage-1');
     expect(loaded!.dslVersion).toBe('99.0.0');
@@ -140,7 +157,9 @@ describe('BrowserDocumentStore migrate-on-read', () => {
     // Future stored document: an old client must not mutate newer-versioned data
     // (mirrors the putScene guard — deleting a scene is an incremental mutation).
     await reStampStage(idb, dbName, 'stage-1', '99.0.0');
-    await expect(store.deleteScene('stage-1', 'scene-a')).rejects.toThrow();
+    await expect(store.deleteScene('stage-1', 'scene-a')).rejects.toBeInstanceOf(
+      DocumentVersionError,
+    );
     expect((await store.loadDocument('stage-1'))!.scenes.map((s) => s.id)).toEqual([
       'scene-a',
       'scene-b',
@@ -148,7 +167,29 @@ describe('BrowserDocumentStore migrate-on-read', () => {
 
     // Stale stored document must be normalized (load + save) before incremental ops.
     await reStampStage(idb, dbName, 'stage-1', undefined);
-    await expect(store.deleteScene('stage-1', 'scene-a')).rejects.toThrow();
+    await expect(store.deleteScene('stage-1', 'scene-a')).rejects.toBeInstanceOf(
+      DocumentVersionError,
+    );
+  });
+
+  test('missing incremental-write parents use DocumentNotFoundError', async () => {
+    const store = new BrowserDocumentStore({
+      indexedDB: new IDBFactory(),
+      dbName: 'maic-documents-missing-parent-error',
+    });
+
+    const putStageFailure = store.putStage('ghost', {
+      id: 'ghost',
+      name: 'Ghost',
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    await expect(putStageFailure).rejects.toBeInstanceOf(DocumentNotFoundError);
+    await expect(putStageFailure).rejects.toMatchObject({ stageId: 'ghost' });
+
+    await expect(store.putScene('ghost', slideScene('ghost', 'scene', 0))).rejects.toBeInstanceOf(
+      DocumentNotFoundError,
+    );
   });
 
   test('fails loud on a malformed stored version stamp', async () => {
@@ -164,22 +205,6 @@ describe('BrowserDocumentStore migrate-on-read', () => {
     // saveDocument reads the stored stamp inside its future-overwrite guard, so a
     // corrupt stored stamp also fails loud (recoverable via deleteDocument).
     await expect(store.saveDocument(makeDocument())).rejects.toThrow();
-  });
-
-  test('listDocuments tolerates a malformed version stamp', async () => {
-    const idb = new IDBFactory();
-    const dbName = 'maic-documents-list-malformed';
-    const store = new BrowserDocumentStore({ indexedDB: idb, dbName });
-    await store.saveDocument(makeDocument());
-    await reStampStage(idb, dbName, 'stage-1', 'not-a-version');
-
-    // listDocuments returns only version-independent summary fields and never
-    // migrates or reads content, so a corrupt stamp does not break the whole list
-    // (one bad row must not make the picker unusable) — content reads still fail loud.
-    const list = await store.listDocuments();
-    expect(list.map((d) => d.id)).toEqual(['stage-1']);
-    expect(list[0]).toMatchObject({ name: 'Intro Course', sceneCount: 2 });
-    await expect(store.loadDocument('stage-1')).rejects.toThrow();
   });
 });
 
@@ -409,5 +434,54 @@ describe('BrowserDocumentStore with an app-widened scene union', () => {
 
     const got = await store.getScene('stage-1', 'p1');
     expect(Object.keys(got!.content.cfg)).toEqual(['b', 'a']);
+  });
+});
+
+describe('BrowserDocumentStore with an app-widened stage', () => {
+  interface AppStage {
+    id: string;
+    name: string;
+    createdAt: number;
+    updatedAt: number;
+    appMetadata: { owner: string };
+  }
+
+  test('preserves extension fields and exposes them to the injected validator', async () => {
+    const seen: unknown[] = [];
+    const store = new BrowserDocumentStore<ReturnType<typeof slideScene>, AppStage>({
+      indexedDB: new IDBFactory(),
+      validateStage: (stage) => {
+        seen.push(stage);
+        const base = validateStage(stage);
+        if (!base.valid) return base;
+        const candidate = stage as Partial<AppStage>;
+        return typeof candidate.appMetadata?.owner === 'string'
+          ? { valid: true }
+          : {
+              valid: false,
+              errors: [{ path: '/appMetadata/owner', message: 'expected string owner' }],
+            };
+      },
+    });
+    const stage: AppStage = {
+      id: 'stage-wide',
+      name: 'Wide',
+      createdAt: 1,
+      updatedAt: 2,
+      appMetadata: { owner: 'app' },
+    };
+    await store.saveDocument({
+      stage,
+      scenes: [slideScene('stage-wide', 'scene-1', 0)],
+    });
+
+    const loaded = await store.loadDocument('stage-wide');
+    expect(loaded!.stage).toEqual(stage);
+    expect(seen).toContainEqual(stage);
+
+    const renamed = { ...stage, name: 'Renamed', appMetadata: { owner: 'editor' } };
+    await store.putStage('stage-wide', renamed);
+    expect((await store.loadDocument('stage-wide'))!.stage).toEqual(renamed);
+    expect(seen).toContainEqual(renamed);
   });
 });

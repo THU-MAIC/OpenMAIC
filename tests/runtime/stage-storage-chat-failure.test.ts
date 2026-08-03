@@ -4,6 +4,26 @@ const { loadChatSessions } = vi.hoisted(() => ({
   loadChatSessions: vi.fn().mockRejectedValue(new Error('runtime unavailable')),
 }));
 
+vi.mock('@/lib/document-store', () => ({
+  accessDocument: vi.fn().mockResolvedValue({
+    document: {
+      stage: { id: 'stage-1', name: 'Persisted stage', createdAt: 1_000, updatedAt: 2_000 },
+      scenes: [
+        {
+          id: 'scene-1',
+          stageId: 'stage-1',
+          type: 'slide',
+          title: 'Persisted scene',
+          order: 0,
+          content: { type: 'slide', canvas: {} },
+        },
+      ],
+    },
+    readOnlyLegacy: false,
+  }),
+  loadCurrentScene: vi.fn().mockResolvedValue({ sceneId: 'deleted-scene' }),
+}));
+
 vi.mock('@/lib/utils/database', () => ({
   db: {
     stages: {
@@ -36,9 +56,6 @@ vi.mock('@/lib/utils/chat-storage', () => ({
   loadChatSessions,
   deleteChatSessions: vi.fn(),
 }));
-vi.mock('@/lib/utils/playback-storage', () => ({
-  clearPlaybackState: vi.fn(),
-}));
 vi.mock('@/lib/quiz/persistence', () => ({
   clearAllForScene: vi.fn(),
 }));
@@ -52,7 +69,7 @@ vi.mock('@/lib/pbl/v2/runtime/drain', () => ({
 import { loadStageData } from '@/lib/utils/stage-storage';
 
 describe('loadStageData chat failure isolation', () => {
-  it('keeps persisted stage and scene data available when chat storage fails', async () => {
+  it('keeps document data and falls back from a stale persisted cursor', async () => {
     await expect(loadStageData('stage-1')).resolves.toMatchObject({
       stage: { id: 'stage-1', name: 'Persisted stage' },
       scenes: [{ id: 'scene-1', type: 'slide', title: 'Persisted scene' }],

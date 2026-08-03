@@ -24,6 +24,7 @@ import type {
   SceneType,
   PPTElement,
 } from '@openmaic/dsl';
+import type { PercentageGeometry } from './ir';
 
 /**
  * The compiler's scene input — the structural slice it reads. Deliberately
@@ -89,6 +90,31 @@ export interface AssetSource {
   audio(action: SpeechAction): AssetMeta | null;
   /** Media asset (image/video) for an element on a scene, or null when none. */
   media(elementId: string, scene: SceneCore): AssetMeta | null;
+}
+
+/**
+ * Geometry source — resolves a slide element's **rendered** percentage geometry
+ * (0–100 space) so spotlight/laser/video placement matches where the element
+ * actually paints, not just its authored box.
+ *
+ * The pure geometry helper ({@link findElementGeometry}) reads the element's
+ * authored `left/top/width/height` against a fixed 1000×562.5 base. That is the
+ * element's **outer box**, but the live overlays (and the slide-snapshot frame)
+ * measure the element's `.element-content` box — which differs for auto-sized
+ * text (horizontal text has `height:auto`) and its 10px content padding. So a
+ * spotlight placed on the authored box sits offset from the rendered text
+ * (issue #867 item 5). When the app can measure the real content box (an
+ * off-screen render), it supplies this probe; the geometry pass prefers it and
+ * falls back to the pure authored-box calc on a miss. Tests omit it entirely —
+ * the compiler stays pure and deterministic without it.
+ */
+export interface GeometryProbe {
+  /**
+   * The rendered content-box geometry (0–100) for an element on a scene, or
+   * null when it could not be measured (element absent / not a slide) — the
+   * caller then falls back to the authored-box calc.
+   */
+  contentGeometry(elementId: string, scene: SceneCore): PercentageGeometry | null;
 }
 
 /** Compiler configuration — the determinism inputs recorded into the IR's `config`. */

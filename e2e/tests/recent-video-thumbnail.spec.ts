@@ -47,10 +47,7 @@ async function seedVideoThumbnailStage({
 
         request.onsuccess = (event) => {
           const db = (event.target as IDBOpenDBRequest).result;
-          const tx = db.transaction(
-            ['stages', 'scenes', 'stageOutlines', 'mediaFiles'],
-            'readwrite',
-          );
+          const tx = db.transaction(['mediaFiles'], 'readwrite');
           const now = Date.now();
           const videoBytes = new Uint8Array([
             0, 0, 0, 24, 102, 116, 121, 112, 109, 112, 52, 50, 0, 0, 0, 0, 109, 112, 52, 50, 105,
@@ -78,17 +75,7 @@ async function seedVideoThumbnailStage({
             });
           };
 
-          tx.objectStore('stages').put({
-            id: stageId,
-            name: courseName,
-            description: '',
-            language: 'en-US',
-            style: 'professional',
-            createdAt: now,
-            updatedAt: now,
-          });
-
-          tx.objectStore('scenes').put({
+          const documentScene = {
             id: 'scene-video-thumbnail',
             stageId,
             type: 'slide',
@@ -120,14 +107,7 @@ async function seedVideoThumbnailStage({
             },
             createdAt: now,
             updatedAt: now,
-          });
-
-          tx.objectStore('stageOutlines').put({
-            stageId,
-            outlines: [],
-            createdAt: now,
-            updatedAt: now,
-          });
+          };
 
           putVideoRecord(storedMediaRef, storedError);
           for (const mediaRef of extraStoredMediaRefs) {
@@ -136,7 +116,44 @@ async function seedVideoThumbnailStage({
 
           tx.oncomplete = () => {
             db.close();
-            resolve();
+            const documentRequest = indexedDB.open('maic-documents', 1);
+            documentRequest.onupgradeneeded = () => {
+              const documentDb = documentRequest.result;
+              documentDb.createObjectStore('stages', { keyPath: 'id' });
+              const scenes = documentDb.createObjectStore('scenes', {
+                keyPath: ['stageId', 'id'],
+              });
+              scenes.createIndex('by-stage', 'stageId');
+              documentDb.createObjectStore('outlines', { keyPath: 'stageId' });
+            };
+            documentRequest.onsuccess = () => {
+              const documentDb = documentRequest.result;
+              const documentTx = documentDb.transaction(
+                ['stages', 'scenes', 'outlines'],
+                'readwrite',
+              );
+              documentTx.objectStore('stages').put({
+                id: stageId,
+                name: courseName,
+                description: '',
+                language: 'en-US',
+                style: 'professional',
+                createdAt: now,
+                updatedAt: now,
+                dslVersion: '0.1.0',
+              });
+              documentTx.objectStore('scenes').put(documentScene);
+              documentTx.objectStore('outlines').put({
+                stageId,
+                outline: { outlines: [], createdAt: now, updatedAt: now },
+              });
+              documentTx.oncomplete = () => {
+                documentDb.close();
+                resolve();
+              };
+              documentTx.onerror = () => reject(documentTx.error);
+            };
+            documentRequest.onerror = () => reject(documentRequest.error);
           };
           tx.onerror = () => reject(tx.error);
         };

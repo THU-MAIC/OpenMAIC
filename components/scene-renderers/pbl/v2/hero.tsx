@@ -32,7 +32,11 @@ import { useStageStore } from '@/lib/store/stage';
 import { buildQuizSnapshot } from '@/lib/pbl/v2/operations/quiz-snapshot';
 import { hasStartedProject, resetProjectProgress } from '@/lib/pbl/v2/operations/progress';
 import { transitionProjectUiPhase } from '@/lib/pbl/v2/operations/runtime-events';
-import { prepareWorkspaceLaunchProject } from '@/lib/pbl/v2/operations/workspace-launch';
+import {
+  invalidatePendingWorkspaceLaunch,
+  isCurrentWorkspaceLaunch,
+  prepareCurrentWorkspaceLaunchProject,
+} from '@/lib/pbl/v2/operations/workspace-launch';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   AlertDialog,
@@ -99,24 +103,43 @@ export function PBLV2Hero({
     [project.milestones],
   );
 
-  const handleStart = () => {
+  const [launching, setLaunching] = useState(false);
+  const launchEpochRef = useRef(0);
+  const currentSceneIdRef = useRef(sceneId);
+  const currentProjectRef = useRef(project);
+  currentSceneIdRef.current = sceneId;
+  currentProjectRef.current = project;
+  useEffect(() => {
+    invalidatePendingWorkspaceLaunch(launchEpochRef, setLaunching);
+    return () => {
+      launchEpochRef.current += 1;
+    };
+  }, [sceneId]);
+
+  const handleStart = async () => {
     // Build a snapshot of the learner's prior-quiz results from
-    // localStorage so the server can fold quiz-accuracy into the
+    // RuntimeStore so the server can fold quiz-accuracy into the
     // proficiency assessment before the Instructor's GREETING fires
     // from the Workspace chat.
     // Scenes from the same classroom that come BEFORE this PBL
     // contribute; anything after (or this scene itself) is ignored.
     //
-    // Reading localStorage here (not at module top) means the
-    // snapshot reflects the latest submitted state, not whatever
-    // was cached at mount.
+    const epoch = ++launchEpochRef.current;
+    const launchSceneId = sceneId;
+    setLaunching(true);
     const allScenes = useStageStore.getState().scenes;
     const selfIdx = allScenes.findIndex((s) => s.id === sceneId);
     const priorScenes = selfIdx >= 0 ? allScenes.slice(0, selfIdx) : [];
-    const priorQuizResults = buildQuizSnapshot(priorScenes);
-    const ready = prepareWorkspaceLaunchProject(project, priorQuizResults);
-    if (onLaunchReady) onLaunchReady(ready);
-    else onProjectChange(ready);
+    try {
+      const priorQuizResults = await buildQuizSnapshot(priorScenes);
+      if (!isCurrentWorkspaceLaunch(epoch, launchEpochRef, launchSceneId, currentSceneIdRef))
+        return;
+      const ready = prepareCurrentWorkspaceLaunchProject(currentProjectRef, priorQuizResults);
+      if (onLaunchReady) onLaunchReady(ready);
+      else onProjectChange(ready);
+    } finally {
+      if (epoch === launchEpochRef.current) setLaunching(false);
+    }
   };
 
   // Resume an already-started project: no GREETING (that would duplicate
@@ -347,7 +370,11 @@ export function PBLV2Hero({
                 </AlertDialog>
               </div>
             ) : (
-              <button onClick={handleStart} className={LAUNCH_BUTTON_CLASS}>
+              <button
+                onClick={() => void handleStart()}
+                disabled={launching}
+                className={LAUNCH_BUTTON_CLASS}
+              >
                 <span className="absolute inset-y-0 -left-1/3 w-1/3 bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-[420%]" />
                 {t('pbl.v2.hero.startProject')}
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />

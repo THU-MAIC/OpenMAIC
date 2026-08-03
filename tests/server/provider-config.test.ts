@@ -8,6 +8,7 @@ let yamlOverride: string | null = null;
 const ENV_PREFIXES_TO_CLEAR = [
   'OPENAI',
   'AZURE_OPENAI',
+  'ATLASCLOUD',
   'ANTHROPIC',
   'GOOGLE',
   'DEEPSEEK',
@@ -271,6 +272,22 @@ providers:
       const providers = getServerProviders();
 
       expect(providers.azure.models).toEqual(['course-gpt-4o', 'course-gpt-5']);
+    });
+
+    it('maps Atlas Cloud env vars to the built-in OpenAI-compatible provider', async () => {
+      vi.stubEnv('ATLASCLOUD_API_KEY', 'sk-atlas');
+      vi.stubEnv('ATLASCLOUD_BASE_URL', 'https://api.atlascloud.ai/v1');
+      vi.stubEnv('ATLASCLOUD_MODELS', 'qwen/qwen3.5-flash,deepseek-ai/deepseek-v4-pro');
+      const { getServerProviders, resolveBaseUrl } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.atlascloud.models).toEqual([
+        'qwen/qwen3.5-flash',
+        'deepseek-ai/deepseek-v4-pro',
+      ]);
+      expect(resolveBaseUrl('atlascloud')).toBe('https://api.atlascloud.ai/v1');
+      expect((providers.atlascloud as Record<string, unknown>).apiKey).toBeUndefined();
+      expect((providers.atlascloud as Record<string, unknown>).baseUrl).toBeUndefined();
     });
 
     it('maps Tencent Hunyuan and Xiaomi MiMo env prefixes to provider IDs', async () => {

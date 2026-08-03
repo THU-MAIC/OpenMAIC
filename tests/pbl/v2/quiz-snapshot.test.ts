@@ -1,7 +1,7 @@
 /**
  * Tests for the pre-PBL quiz snapshot helpers.
  *
- * Covers both `buildQuizSnapshot` (client-side, reads localStorage)
+ * Covers both `buildQuizSnapshot` (client-side, reads RuntimeStore)
  * and `applyQuizSignalsToProject` (server-side, mutates the project's
  * proficiency assessment). The robustness matrix is the focus —
  * non-quiz scenes, unsubmitted quizzes, all-short-answer quizzes,
@@ -16,21 +16,14 @@ import { emptyAssessment } from '@/lib/pbl/v2/operations/proficiency';
 import type { PBLProjectV2, PriorQuizResult } from '@/lib/pbl/v2/types';
 import type { Scene } from '@/lib/types/stage';
 
-// `lib/quiz/persistence` reads from localStorage. We mock it for
-// these tests rather than driving the global object — keeps tests
-// node-only.
-vi.mock('@/lib/quiz/persistence', () => ({
-  readSubmittedState: vi.fn(),
-  draftKey: (id: string) => 'quizDraft:' + id,
-  DRAFT_KEY_PREFIX: 'quizDraft:',
-  ANSWERS_KEY_PREFIX: 'quizAnswers:',
-  RESULTS_KEY_PREFIX: 'quizResults:',
+vi.mock('@/lib/quiz/runtime', () => ({
+  loadQuizAttemptState: vi.fn(),
 }));
 
-import { readSubmittedState } from '@/lib/quiz/persistence';
+import { loadQuizAttemptState } from '@/lib/quiz/runtime';
 
 beforeEach(() => {
-  vi.mocked(readSubmittedState).mockReset();
+  vi.mocked(loadQuizAttemptState).mockReset();
 });
 
 afterEach(() => {
@@ -94,32 +87,46 @@ function mkProject(overrides: Partial<PBLProjectV2> = {}): PBLProjectV2 {
 }
 
 describe('buildQuizSnapshot', () => {
-  it('returns [] when there are no quiz scenes', () => {
-    expect(buildQuizSnapshot([mkSlideScene('s1'), mkSlideScene('s2')])).toEqual([]);
+  it('returns [] when there are no quiz scenes', async () => {
+    await expect(buildQuizSnapshot([mkSlideScene('s1'), mkSlideScene('s2')])).resolves.toEqual([]);
   });
 
-  it('skips quizzes the learner has not submitted', () => {
-    vi.mocked(readSubmittedState).mockImplementation((id) =>
-      id === 'q1' ? { kind: 'answering', answers: {} } : null,
-    );
-    expect(buildQuizSnapshot([mkQuizScene('q1', 3)])).toEqual([]);
+  it('skips legacy quiz scenes that do not have a stage id', async () => {
+    const { stageId: _stageId, ...legacy } = mkQuizScene('legacy', 1);
+
+    await expect(buildQuizSnapshot([legacy as Scene])).resolves.toEqual([]);
+    expect(loadQuizAttemptState).not.toHaveBeenCalled();
   });
 
-  it('counts correct / incorrect / unscored properly', () => {
-    vi.mocked(readSubmittedState).mockImplementation((id) =>
-      id === 'q1'
-        ? {
-            kind: 'reviewing',
-            answers: {},
-            results: [
-              { questionId: 'q0', correct: true, status: 'correct', earned: 1 },
-              { questionId: 'q1', correct: false, status: 'incorrect', earned: 0 },
-              { questionId: 'q2', correct: null, status: 'incorrect', earned: 0 },
-            ],
-          }
-        : null,
-    );
-    const r = buildQuizSnapshot([mkQuizScene('q1', 3)]);
+  it('skips quizzes the learner has not been reviewed', async () => {
+    vi.mocked(loadQuizAttemptState).mockResolvedValue({
+      attemptId: 'attempt-1',
+      state: {
+        sessionId: 'attempt-1',
+        status: 'active',
+        phase: 'submitted',
+        answers: {},
+      },
+    });
+    await expect(buildQuizSnapshot([mkQuizScene('q1', 3)])).resolves.toEqual([]);
+  });
+
+  it('counts correct / incorrect / unscored properly', async () => {
+    vi.mocked(loadQuizAttemptState).mockResolvedValue({
+      attemptId: 'attempt-1',
+      state: {
+        sessionId: 'attempt-1',
+        status: 'completed',
+        phase: 'reviewed',
+        answers: {},
+        results: [
+          { questionId: 'q0', correct: true, status: 'correct', earned: 1 },
+          { questionId: 'q1', correct: false, status: 'incorrect', earned: 0 },
+          { questionId: 'q2', correct: null, status: 'incorrect', earned: 0 },
+        ],
+      },
+    });
+    const r = await buildQuizSnapshot([mkQuizScene('q1', 3)]);
     expect(r).toHaveLength(1);
     expect(r[0]).toMatchObject({
       sceneId: 'q1',
@@ -130,45 +137,55 @@ describe('buildQuizSnapshot', () => {
     });
   });
 
-  it('marks accuracy null when every question is unscored', () => {
-    vi.mocked(readSubmittedState).mockImplementation((id) =>
-      id === 'q1'
-        ? {
-            kind: 'reviewing',
-            answers: {},
-            results: [
-              { questionId: 'q0', correct: null, status: 'incorrect', earned: 0 },
-              { questionId: 'q1', correct: null, status: 'incorrect', earned: 0 },
-            ],
-          }
-        : null,
-    );
-    const r = buildQuizSnapshot([mkQuizScene('q1', 2)]);
+  it('marks accuracy null when every question is unscored', async () => {
+    vi.mocked(loadQuizAttemptState).mockResolvedValue({
+      attemptId: 'attempt-1',
+      state: {
+        sessionId: 'attempt-1',
+        status: 'completed',
+        phase: 'reviewed',
+        answers: {},
+        results: [
+          { questionId: 'q0', correct: null, status: 'incorrect', earned: 0 },
+          { questionId: 'q1', correct: null, status: 'incorrect', earned: 0 },
+        ],
+      },
+    });
+    const r = await buildQuizSnapshot([mkQuizScene('q1', 2)]);
     expect(r[0].accuracy).toBeNull();
   });
 
-  it('aggregates across multiple quiz scenes', () => {
-    vi.mocked(readSubmittedState).mockImplementation((id) => {
-      if (id === 'q1') {
-        return {
-          kind: 'reviewing',
+  it('aggregates across multiple quiz scenes in scene order', async () => {
+    vi.mocked(loadQuizAttemptState).mockImplementation(async ({ sceneId }) => {
+      const correct = sceneId === 'q1';
+      return {
+        attemptId: `attempt-${sceneId}`,
+        state: {
+          sessionId: `attempt-${sceneId}`,
+          status: 'completed',
+          phase: 'reviewed',
           answers: {},
-          results: [{ questionId: 'q0', correct: true, status: 'correct', earned: 1 }],
-        };
-      }
-      if (id === 'q2') {
-        return {
-          kind: 'reviewing',
-          answers: {},
-          results: [{ questionId: 'q0', correct: false, status: 'incorrect', earned: 0 }],
-        };
-      }
-      return null;
+          results: [
+            {
+              questionId: 'q0',
+              correct,
+              status: correct ? 'correct' : 'incorrect',
+              earned: correct ? 1 : 0,
+            },
+          ],
+        },
+      };
     });
-    const r = buildQuizSnapshot([mkQuizScene('q1', 1), mkQuizScene('q2', 1)]);
+    const r = await buildQuizSnapshot([mkQuizScene('q1', 1), mkQuizScene('q2', 1)]);
     expect(r).toHaveLength(2);
     expect(r[0].accuracy).toBe(1);
     expect(r[1].accuracy).toBe(0);
+  });
+
+  it('skips one unavailable RuntimeStore snapshot without blocking launch', async () => {
+    vi.mocked(loadQuizAttemptState).mockRejectedValueOnce(new Error('indexedDB unavailable'));
+
+    await expect(buildQuizSnapshot([mkQuizScene('q1', 1)])).resolves.toEqual([]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { RuntimeStore } from '@openmaic/storage';
+import { BrowserRuntimeStore, type RuntimeStore } from '@openmaic/storage';
 
 import { deleteStageRuntimeSafely } from '@/lib/runtime/store';
 
@@ -20,17 +20,29 @@ describe('deleteStageRuntimeSafely', () => {
     vi.stubGlobal('indexedDB', {
       databases: vi.fn().mockResolvedValue([{ name: 'some-other-db', version: 1 }]),
     });
-    const deleteStageRuntime = vi.fn().mockResolvedValue(undefined);
+    const deleteStageRuntime = vi
+      .spyOn(BrowserRuntimeStore.prototype, 'deleteStageRuntime')
+      .mockResolvedValue(undefined);
 
-    await expect(
-      deleteStageRuntimeSafely('stage-42', stubStore(deleteStageRuntime)),
-    ).resolves.toBeUndefined();
+    await expect(deleteStageRuntimeSafely('stage-42')).resolves.toBeUndefined();
     expect(deleteStageRuntime).not.toHaveBeenCalled();
   });
 
   it('cascades when the probe reports the runtime DB exists', async () => {
+    const databases = vi.fn().mockResolvedValue([{ name: 'maic-runtime', version: 1 }]);
+    vi.stubGlobal('indexedDB', { databases });
+    const deleteStageRuntime = vi
+      .spyOn(BrowserRuntimeStore.prototype, 'deleteStageRuntime')
+      .mockResolvedValue(undefined);
+
+    await deleteStageRuntimeSafely('stage-42');
+    expect(databases).toHaveBeenCalledOnce();
+    expect(deleteStageRuntime).toHaveBeenCalledExactlyOnceWith('stage-42');
+  });
+
+  it('bypasses the local DB probe for an explicitly injected store', async () => {
     vi.stubGlobal('indexedDB', {
-      databases: vi.fn().mockResolvedValue([{ name: 'maic-runtime', version: 1 }]),
+      databases: vi.fn().mockResolvedValue([]),
     });
     const deleteStageRuntime = vi.fn().mockResolvedValue(undefined);
 
@@ -42,9 +54,11 @@ describe('deleteStageRuntimeSafely', () => {
     // Older Firefox: indexedDB exists but has no databases(). Skipping here
     // would strand real cleanup, so the bounded cascade proceeds.
     vi.stubGlobal('indexedDB', {});
-    const deleteStageRuntime = vi.fn().mockResolvedValue(undefined);
+    const deleteStageRuntime = vi
+      .spyOn(BrowserRuntimeStore.prototype, 'deleteStageRuntime')
+      .mockResolvedValue(undefined);
 
-    await deleteStageRuntimeSafely('stage-42', stubStore(deleteStageRuntime));
+    await deleteStageRuntimeSafely('stage-42');
     expect(deleteStageRuntime).toHaveBeenCalledExactlyOnceWith('stage-42');
   });
 

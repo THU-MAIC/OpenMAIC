@@ -5,10 +5,16 @@ import { nanoid } from 'nanoid';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { db, mediaFileKey } from '@/lib/utils/database';
-import type { AudioFileRecord, MediaFileRecord, GeneratedAgentRecord } from '@/lib/utils/database';
-import type { ClassroomManifest, ManifestScene } from '@/lib/export/classroom-zip-types';
+import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
+import type { GeneratedAgentConfig } from '@/lib/types/stage';
+import {
+  agentConfigFromManifest,
+  type ClassroomManifest,
+  type ManifestScene,
+} from '@/lib/export/classroom-zip-types';
 import { rewriteAudioRefsToIds } from '@/lib/export/classroom-zip-utils';
 import { createLogger } from '@/lib/logger';
+import { canonicalizeLegacyScene, mutateDocument, type AppDocument } from '@/lib/document-store';
 
 const log = createLogger('ImportClassroom');
 
@@ -42,6 +48,8 @@ export function useImportClassroom(onSuccess?: () => void) {
       setPhase('parsing');
       const toastId = toast.loading(t('import.parsing'));
 
+      let importedStageId: string | undefined;
+      const importedAudioIds: string[] = [];
       try {
         // 0. Size check — warn for files over 200MB
         const MAX_SAFE_SIZE = 200 * 1024 * 1024;
@@ -79,6 +87,7 @@ export function useImportClassroom(onSuccess?: () => void) {
 
         // 3. Generate new IDs
         const newStageId = nanoid();
+        importedStageId = newStageId;
         const now = Date.now();
 
         // Agent ID mapping: index → new ID
@@ -131,6 +140,7 @@ export function useImportClassroom(onSuccess?: () => void) {
             createdAt: now,
           };
           await db.audioFiles.put(record);
+          importedAudioIds.push(newId);
         }
 
         // Write generated media files one at a time
@@ -166,71 +176,62 @@ export function useImportClassroom(onSuccess?: () => void) {
         setPhase('writingCourse');
         toast.loading(t('import.writingCourse'), { id: toastId });
 
-        // Write stage
-        await db.stages.put({
-          id: newStageId,
-          name: manifest.stage.name || 'Imported Classroom',
-          description: manifest.stage.description,
-          languageDirective: manifest.stage.language,
-          style: manifest.stage.style,
-          createdAt: manifest.stage.createdAt || now,
-          updatedAt: now,
-          agentIds: newAgentIds.length > 0 ? newAgentIds : undefined,
-        });
+        // Rebuild the roster as stage-embedded configs: the stage document is
+        // the single source of truth for generated agents (voice included), so
+        // an import round-trips the roster without any side-table writes.
+        const importedAgentConfigs: GeneratedAgentConfig[] = (manifest.agents ?? []).map((a, i) =>
+          agentConfigFromManifest(a, newAgentIds[i]),
+        );
 
-        // Write agents
-        if (manifest.agents?.length) {
-          const agentRecords: GeneratedAgentRecord[] = manifest.agents.map((a, i) => ({
-            id: newAgentIds[i],
-            stageId: newStageId,
-            name: a.name,
-            role: a.role,
-            persona: a.persona,
-            avatar: a.avatar,
-            color: a.color,
-            priority: a.priority,
-            createdAt: now,
-          }));
-          await db.generatedAgents.bulkPut(agentRecords);
-        }
-
-        // Write scenes with rewritten references
-        const sceneRecords = manifest.scenes.map((mScene: ManifestScene, index: number) => {
-          const newSceneId = nanoid();
-
-          const actions = mScene.actions
-            ? rewriteAudioRefsToIds(mScene.actions, audioRefToNewId, {
-                agentIds: newAgentIds,
-                fallbackDiscussionAgentIndex,
-              })
-            : undefined;
-
-          let multiAgent = undefined;
-          if (mScene.multiAgent?.enabled) {
-            multiAgent = {
-              enabled: true,
-              agentIds: (mScene.multiAgent.agentIndices ?? [])
-                .map((idx) => newAgentIds[idx])
-                .filter(Boolean),
-              directorPrompt: mScene.multiAgent.directorPrompt,
-            };
-          }
-
-          return {
-            id: newSceneId,
-            stageId: newStageId,
-            type: mScene.type,
-            title: mScene.title,
-            order: mScene.order ?? index,
-            content: mScene.content,
-            actions,
-            whiteboard: mScene.whiteboards,
-            multiAgent,
-            createdAt: now,
+        const document: AppDocument = {
+          stage: {
+            id: newStageId,
+            name: manifest.stage.name || 'Imported Classroom',
+            description: manifest.stage.description,
+            languageDirective: manifest.stage.language,
+            style: manifest.stage.style,
+            createdAt: manifest.stage.createdAt || now,
             updatedAt: now,
-          };
-        });
-        await db.scenes.bulkPut(sceneRecords);
+            agentIds: newAgentIds.length > 0 ? newAgentIds : undefined,
+            ...(importedAgentConfigs.length > 0
+              ? { generatedAgentConfigs: importedAgentConfigs }
+              : {}),
+          },
+          scenes: manifest.scenes.map((mScene: ManifestScene, index: number) => {
+            const newSceneId = nanoid();
+            const actions = mScene.actions
+              ? rewriteAudioRefsToIds(mScene.actions, audioRefToNewId, {
+                  agentIds: newAgentIds,
+                  fallbackDiscussionAgentIndex,
+                })
+              : undefined;
+            const multiAgent = mScene.multiAgent?.enabled
+              ? {
+                  enabled: true,
+                  agentIds: (mScene.multiAgent.agentIndices ?? [])
+                    .map((idx) => newAgentIds[idx])
+                    .filter(Boolean),
+                  directorPrompt: mScene.multiAgent.directorPrompt,
+                }
+              : undefined;
+
+            return canonicalizeLegacyScene({
+              id: newSceneId,
+              stageId: newStageId,
+              title: mScene.title,
+              order: mScene.order ?? index,
+              content: mScene.content,
+              actions,
+              whiteboards: mScene.whiteboards,
+              multiAgent,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }),
+        };
+
+        // The document is the commit point: one aggregate write under its per-stage lock.
+        await mutateDocument(newStageId, async (_existing, store) => store.saveDocument(document));
 
         // 6. Done
         setPhase('done');
@@ -238,6 +239,29 @@ export function useImportClassroom(onSuccess?: () => void) {
         onSuccess?.();
       } catch (error) {
         log.error('Classroom ZIP import failed:', error);
+        // Media files are a separate legacy domain and cannot join the document transaction.
+        // Compensate every row this import could have created, logging individual failures.
+        const cleanup = async (label: string, operation: () => Promise<unknown>) => {
+          try {
+            await operation();
+          } catch (cleanupError) {
+            log.error(`Failed to undo imported ${label}:`, cleanupError);
+          }
+        };
+        if (importedStageId) {
+          const stageId = importedStageId;
+          await cleanup('document', async () => {
+            await mutateDocument(stageId, async (_document, store) =>
+              store.deleteDocument(stageId),
+            );
+          });
+          await cleanup('generated media', () =>
+            db.mediaFiles.where('stageId').equals(stageId).delete(),
+          );
+        }
+        if (importedAudioIds.length > 0) {
+          await cleanup('audio files', () => db.audioFiles.bulkDelete(importedAudioIds));
+        }
         const isQuotaError = error instanceof DOMException && error.name === 'QuotaExceededError';
         toast.error(isQuotaError ? t('import.error.storageFull') : t('import.error.invalidZip'), {
           id: toastId,

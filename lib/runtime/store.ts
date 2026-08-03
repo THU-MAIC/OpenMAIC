@@ -1,13 +1,24 @@
+import '@/lib/persistence/bootstrap';
+
 /**
  * Lazy app-wide RuntimeStore singleton (#869). One `maic-runtime` IndexedDB
  * per origin, shared by every runtime kind (pbl, chat, quizAttempt, playback)
- * as they migrate onto the runtime layer. PBL events and chat sessions use it
- * today; the stage-deletion cascade clears every kind together.
+ * as they migrate onto the runtime layer. PBL events, chat sessions, and quiz
+ * attempts use it today; the stage-deletion cascade clears every kind together.
  *
  * Client-only: the store lazily opens IndexedDB. Server code must not import
  * this module without injecting its own `RuntimeStore`.
  */
 import { BrowserRuntimeStore, type RuntimeStore } from '@openmaic/storage';
+
+import { registerRuntimeStorageResetHook, resolveConfiguredRuntimeStore } from './config';
+
+export {
+  configureRuntimeStorage,
+  isRuntimeStorageConfigured,
+  resetRuntimeStorageForTests,
+} from './config';
+export type { RuntimeStorageOptions } from './config';
 
 // BrowserRuntimeStore's default dbName; passed explicitly below so the probe
 // in deleteStageRuntimeSafely and the store itself can never drift apart.
@@ -15,8 +26,21 @@ const RUNTIME_DB_NAME = 'maic-runtime';
 
 let store: RuntimeStore | undefined;
 
+registerRuntimeStorageResetHook(() => {
+  store = undefined;
+});
+let usesDefaultBrowserStore = false;
+
+function createRuntimeStore(): RuntimeStore {
+  const configured = resolveConfiguredRuntimeStore();
+  usesDefaultBrowserStore = configured === undefined;
+  return configured ?? new BrowserRuntimeStore({ dbName: RUNTIME_DB_NAME });
+}
+
 export function getRuntimeStore(): RuntimeStore {
-  return (store ??= new BrowserRuntimeStore({ dbName: RUNTIME_DB_NAME }));
+  // `??=` assigns only after resolution succeeds: if a configured factory
+  // throws, the next call retries it rather than caching the failure.
+  return (store ??= createRuntimeStore());
 }
 
 /** How long the deletion cascade may run before the caller moves on. */
@@ -83,8 +107,14 @@ export function beginStageRuntimeDeletionSafely(
   // Probe + cascade share the same underlying work: a hanging databases()
   // probe is just as important to retain behind maintenance as a hanging delete.
   const work = (async () => {
-    if (!(await runtimeDbExists())) return;
-    await (runtimeStore ?? getRuntimeStore()).deleteStageRuntime(stageId);
+    if (runtimeStore) {
+      await runtimeStore.deleteStageRuntime(stageId);
+      return;
+    }
+
+    const resolvedStore = getRuntimeStore();
+    if (usesDefaultBrowserStore && !(await runtimeDbExists())) return;
+    await resolvedStore.deleteStageRuntime(stageId);
   })();
   let reported = false;
   const report = (error: unknown): void => {

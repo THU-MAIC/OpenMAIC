@@ -290,7 +290,7 @@ describe('Pi chat cue_user tool', () => {
     });
   });
 
-  it('does not allow a normal call_agent after the normal agent turn budget is reached', async () => {
+  it('does not allow any call_agent after the agent turn budget is reached', async () => {
     const tool = buildCallAgentTool({
       body: {
         messages: [],
@@ -330,84 +330,21 @@ describe('Pi chat cue_user tool', () => {
       getWhiteboardLedger: () => [],
       maxActionsPerAgent: 1,
       enableWhiteboardTools: false,
-      isTeacherWrapUpUsed: () => false,
     });
+
+    expect(
+      (tool.parameters as { properties?: Record<string, unknown> }).properties,
+    ).not.toHaveProperty('turnKind');
 
     const result = await tool.execute('call-1', {
       agentId: 'teacher-1',
-      instruction: 'Keep explaining.',
+      instruction: 'Give a final summary.',
     });
 
     expect(result.details).toEqual({
       skipped: true,
       reason: 'agent_turn_limit',
       maxAgentTurns: 1,
-      wrapUpAvailable: true,
-    });
-  });
-
-  it('reserves wrap-up turns for the teacher and only once', async () => {
-    const makeTool = (opts: { role: string; wrapUpUsed: boolean }) =>
-      buildCallAgentTool({
-        body: {
-          messages: [],
-          storeState: {
-            stage: { id: 'stage-1', name: 'Stage' },
-            scenes: [],
-            currentSceneId: null,
-            whiteboardOpen: false,
-          },
-          config: { agentIds: ['agent-1'] },
-          apiKey: '',
-        } as never,
-        agentConfigs: [
-          {
-            id: 'agent-1',
-            name: 'Agent',
-            role: opts.role,
-            persona: 'Speak briefly.',
-            avatar: '',
-            color: '#3366ff',
-            allowedActions: [],
-            priority: 10,
-            createdAt: new Date('2026-01-01T00:00:00Z'),
-            updatedAt: new Date('2026-01-01T00:00:00Z'),
-            isDefault: true,
-          },
-        ],
-        send: async () => {},
-        languageModel: {} as never,
-        onAgentDone: () => {},
-        onActionDone: () => {},
-        thinkingConfig: { mode: 'disabled', enabled: false },
-        abortSignal: new AbortController().signal,
-        maxAgentTurns: 1,
-        getAgentTurnCount: () => 1,
-        getAgentResponses: () => [],
-        getWhiteboardLedger: () => [],
-        maxActionsPerAgent: 1,
-        enableWhiteboardTools: false,
-        isTeacherWrapUpUsed: () => opts.wrapUpUsed,
-      });
-
-    await expect(
-      makeTool({ role: 'student', wrapUpUsed: false }).execute('call-1', {
-        agentId: 'agent-1',
-        instruction: 'Wrap up.',
-        turnKind: 'wrap_up',
-      }),
-    ).resolves.toMatchObject({
-      details: { skipped: true, reason: 'wrap_up_requires_teacher' },
-    });
-
-    await expect(
-      makeTool({ role: 'teacher', wrapUpUsed: true }).execute('call-2', {
-        agentId: 'agent-1',
-        instruction: 'Wrap up again.',
-        turnKind: 'wrap_up',
-      }),
-    ).resolves.toMatchObject({
-      details: { skipped: true, reason: 'teacher_wrap_up_already_used' },
     });
   });
 });

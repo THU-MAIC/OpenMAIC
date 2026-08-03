@@ -11,7 +11,7 @@ const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
 async function seedDatabase(page: import('@playwright/test').Page) {
   // Inject settings before navigating so it's available immediately on load
   await page.addInitScript((settings) => {
-    localStorage.setItem('settings-storage', settings);
+    localStorage.setItem('maic:account:settings-storage', settings);
     localStorage.setItem('locale', 'en-US');
   }, SETTINGS_STORAGE);
 

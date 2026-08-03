@@ -8,6 +8,7 @@
 export type BuiltInProviderId =
   | 'openai'
   | 'azure'
+  | 'atlascloud'
   | 'anthropic'
   | 'google'
   | 'deepseek'
