@@ -1250,6 +1250,22 @@ export const ASR_PROVIDERS: Record<BuiltInASRProviderId, ASRProviderConfig> = {
     supportedFormats: ['webm'], // MediaRecorder format
   },
 
+  'funasr-asr': {
+    id: 'funasr-asr',
+    name: 'FunASR',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://localhost:8000/v1',
+    icon: '/logos/funasr.png',
+    models: [
+      { id: 'sensevoice', name: 'SenseVoiceSmall' },
+      { id: 'paraformer', name: 'Paraformer' },
+      { id: 'fun-asr-nano', name: 'Fun-ASR-Nano' },
+    ],
+    defaultModelId: 'sensevoice',
+    supportedLanguages: ['auto', 'zh', 'en', 'ja', 'ko', 'yue'],
+    supportedFormats: ['wav'],
+  },
+
   'lemonade-asr': {
     id: 'lemonade-asr',
     name: 'Lemonade ASR',

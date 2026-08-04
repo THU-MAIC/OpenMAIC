@@ -1689,6 +1689,15 @@ describe('TTS provider enablement (#665)', () => {
     expect(store.getState().ttsEnabled).toBe(false);
   });
 
+  it('initializes the keyless FunASR provider on a fresh install', async () => {
+    const store = await getStore();
+    expect(store.getState().asrProvidersConfig['funasr-asr']).toEqual({
+      apiKey: '',
+      baseUrl: '',
+      enabled: false,
+    });
+  });
+
   it('first server-sync auto-enables TTS when a server provider exists', async () => {
     mockServerResponse({ tts: { 'openai-tts': {} } });
     const store = await getStore();

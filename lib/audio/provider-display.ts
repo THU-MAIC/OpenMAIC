@@ -18,6 +18,7 @@ const ASR_PROVIDER_NAME_KEYS: Record<string, string> = {
   'browser-native': 'settings.providerBrowserNative',
   'qwen-asr': 'settings.providerQwenASR',
   'azure-asr': 'settings.providerAzureASR',
+  'funasr-asr': 'settings.providerFunASRASR',
   'lemonade-asr': 'settings.providerLemonadeASR',
 };
 
