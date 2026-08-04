@@ -52,6 +52,7 @@ interface ServerConfig {
 const LLM_ENV_MAP: Record<string, string> = {
   OPENAI: 'openai',
   AZURE_OPENAI: 'azure',
+  ATLASCLOUD: 'atlascloud',
   ANTHROPIC: 'anthropic',
   GOOGLE: 'google',
   DEEPSEEK: 'deepseek',
@@ -69,6 +70,7 @@ const LLM_ENV_MAP: Record<string, string> = {
   MIMO: 'xiaomi',
   OLLAMA: 'ollama',
   LEMONADE: 'lemonade',
+  BEDROCK: 'bedrock',
 };
 
 const TTS_ENV_MAP: Record<string, string> = {
@@ -277,6 +279,7 @@ function collectDisabledTTS(
 const DEFAULT_FILENAME = 'server-providers.yml';
 const OPENAI_IMAGE_PROVIDER_ID = 'openai-image';
 const ALIDOCMIND_PROVIDER_ID = 'alidocmind';
+const BEDROCK_PROVIDER_ID = 'bedrock';
 
 /** Cache keyed by YAML filename (empty string = default file). */
 const _configs: Map<string, ServerConfig> = new Map();
@@ -359,6 +362,48 @@ function applyOpenAIImageFallback(
   return imageConfig;
 }
 
+function splitModels(models: string | undefined): string[] | undefined {
+  const parsed = models
+    ?.split(',')
+    .map((model) => model.trim())
+    .filter(Boolean);
+  return parsed && parsed.length > 0 ? parsed : undefined;
+}
+
+function applyBedrockProviderConfig(
+  providers: Record<string, ServerProviderEntry>,
+  yamlProviders: Record<string, Partial<ServerProviderEntry>> | undefined,
+): Record<string, ServerProviderEntry> {
+  const yamlBedrock = yamlProviders?.[BEDROCK_PROVIDER_ID];
+  const envApiKey = process.env.BEDROCK_API_KEY || undefined;
+  const envBaseUrl = process.env.BEDROCK_BASE_URL || undefined;
+  const envRegion = process.env.BEDROCK_REGION?.trim() || undefined;
+  const envModels = splitModels(process.env.BEDROCK_MODELS);
+  const hasExplicitBedrockEnv =
+    !!envRegion ||
+    !!envModels ||
+    !!envApiKey ||
+    !!envBaseUrl ||
+    !!process.env.AWS_BEARER_TOKEN_BEDROCK;
+  const hasYamlBedrock = Object.prototype.hasOwnProperty.call(
+    yamlProviders ?? {},
+    BEDROCK_PROVIDER_ID,
+  );
+
+  if (!providers[BEDROCK_PROVIDER_ID] && !hasExplicitBedrockEnv && !hasYamlBedrock) {
+    return providers;
+  }
+
+  providers[BEDROCK_PROVIDER_ID] = {
+    apiKey: envApiKey || yamlBedrock?.apiKey || providers[BEDROCK_PROVIDER_ID]?.apiKey || '',
+    baseUrl: envBaseUrl || yamlBedrock?.baseUrl || providers[BEDROCK_PROVIDER_ID]?.baseUrl,
+    models: envModels || yamlBedrock?.models || providers[BEDROCK_PROVIDER_ID]?.models,
+    proxy: yamlBedrock?.proxy || providers[BEDROCK_PROVIDER_ID]?.proxy,
+  };
+
+  return providers;
+}
+
 function buildConfig(yamlData: YamlData): ServerConfig {
   const image = applyOpenAIImageFallback(
     loadEnvSection(IMAGE_ENV_MAP, yamlData.image, {
@@ -366,11 +411,15 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     }),
     yamlData.image,
   );
+  const providers = applyBedrockProviderConfig(
+    loadEnvSection(LLM_ENV_MAP, yamlData.providers, {
+      keylessProviders: new Set(['ollama', 'lemonade', BEDROCK_PROVIDER_ID]),
+    }),
+    yamlData.providers,
+  );
 
   return {
-    providers: loadEnvSection(LLM_ENV_MAP, yamlData.providers, {
-      keylessProviders: new Set(['ollama', 'lemonade']),
-    }),
+    providers,
     tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts, {
       keylessProviders: new Set(['voxcpm-tts', 'lemonade-tts']),
     }),

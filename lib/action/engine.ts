@@ -67,6 +67,48 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const COMMON_LATEX_COMMAND =
+  /\\(?:alpha|beta|cdot|delta|dfrac|frac|gamma|infty|int|lambda|left|lim|mu|neq|omega|pi|pm|prod|rightarrow|right|sigma|sqrt|sum|text|tfrac|theta|times)\b/;
+
+function getDelimitedLatex(content: string): string | null {
+  const trimmed = content.trim();
+
+  if (trimmed.length > 4 && trimmed.startsWith('$$') && trimmed.endsWith('$$')) {
+    return trimmed.slice(2, -2).trim();
+  }
+  if (
+    trimmed.length > 2 &&
+    trimmed.startsWith('$') &&
+    trimmed.endsWith('$') &&
+    !trimmed.startsWith('$$') &&
+    !trimmed.endsWith('$$')
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+
+  return null;
+}
+
+function getLikelyLatexMath(content: string): string | null {
+  const trimmed = content.trim();
+  if (!trimmed || trimmed.startsWith('<')) return null;
+
+  const delimitedLatex = getDelimitedLatex(trimmed);
+  if (delimitedLatex !== null) return delimitedLatex;
+  if (/^[A-Za-z]:\\/.test(trimmed)) return null;
+  if (COMMON_LATEX_COMMAND.test(trimmed) || /[_^]\{/.test(trimmed)) return trimmed;
+
+  const commands = trimmed.match(/\\[A-Za-z]+/g) ?? [];
+  if (commands.length === 0) return null;
+  if (commands.length === 1) {
+    return /\\[A-Za-z]+\s*\{[^{}]*\}/.test(trimmed) ? trimmed : null;
+  }
+  if (!/[=+\-*/^_{}]/.test(trimmed)) return null;
+
+  const commandCharacters = commands.reduce((total, command) => total + command.length, 0);
+  return commandCharacters / trimmed.length >= 0.15 ? trimmed : null;
+}
+
 /** Convert raw code string to CodeLine array with unique IDs */
 function codeToLines(code: string): CodeLine[] {
   return code.split('\n').map((content, i) => ({
@@ -405,12 +447,25 @@ export class ActionEngine {
     action: WbDrawTextAction,
     options: ActionExecutionOptions = {},
   ): Promise<void> {
+    let htmlContent = action.content ?? '';
+    if (!htmlContent) return; // nothing to draw
+
+    const latex = getLikelyLatexMath(htmlContent);
+    if (latex !== null) {
+      return this.executeWbDrawLatex(
+        {
+          ...action,
+          type: 'wb_draw_latex',
+          latex,
+        },
+        options,
+      );
+    }
+
     const wb = this.stageAPI.whiteboard.get();
     if (!wb.success || !wb.data) return;
 
     const fontSize = action.fontSize ?? 18;
-    let htmlContent = action.content ?? '';
-    if (!htmlContent) return; // nothing to draw
     if (!htmlContent.startsWith('<')) {
       htmlContent = `<p style="font-size: ${fontSize}px;">${htmlContent}</p>`;
     }

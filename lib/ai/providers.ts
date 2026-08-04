@@ -4,6 +4,7 @@
  * Supports multiple AI providers through Vercel AI SDK:
  * - OpenAI (native)
  * - Anthropic Claude (native)
+ * - Amazon Bedrock (native)
  * - Google Gemini (native)
  * - MiniMax (Anthropic-compatible, recommended by official)
  * - OpenAI-compatible providers (DeepSeek, Qwen, Kimi, GLM, SiliconFlow, Doubao, Tencent, Xiaomi, Lemonade, etc.)
@@ -28,6 +29,7 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAzure } from '@ai-sdk/azure';
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { wrapLanguageModel, extractReasoningMiddleware } from 'ai';
 import {
@@ -222,6 +224,42 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     models: [],
   },
 
+  atlascloud: {
+    id: 'atlascloud',
+    name: 'Atlas Cloud',
+    type: 'openai',
+    defaultBaseUrl: 'https://api.atlascloud.ai/v1',
+    supportsModelDiscovery: true,
+    requiresApiKey: true,
+    models: [
+      {
+        id: 'qwen/qwen3.5-flash',
+        name: 'Qwen3.5 Flash',
+        contextWindow: 1000000,
+        outputWindow: 67072,
+        capabilities: { streaming: true, tools: false, vision: false },
+      },
+      {
+        id: 'deepseek-ai/deepseek-v4-pro',
+        name: 'DeepSeek V4 Pro',
+        contextWindow: 1048576,
+        outputWindow: 393216,
+        // Live-verified with enabled/disabled thinking payloads and a forced
+        // OpenAI-compatible function call against Atlas Cloud.
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+    ],
+  },
+
   anthropic: {
     id: 'anthropic',
     name: 'Claude',
@@ -373,6 +411,71 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
             defaultEnabled: false,
           },
         },
+      },
+    ],
+  },
+
+  bedrock: {
+    id: 'bedrock',
+    name: 'Amazon Bedrock',
+    type: 'bedrock',
+    requiresApiKey: false,
+    icon: '/logos/bedrock.svg',
+    models: [
+      {
+        id: 'us.anthropic.claude-sonnet-5',
+        name: 'Claude Sonnet 5 (Bedrock)',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'us.anthropic.claude-opus-4-8',
+        name: 'Claude Opus 4.8 (Bedrock)',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'us.anthropic.claude-opus-4-7',
+        name: 'Claude Opus 4.7 (Bedrock)',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'us.anthropic.claude-sonnet-4-6',
+        name: 'Claude Sonnet 4.6 (Bedrock)',
+        contextWindow: 1000000,
+        outputWindow: 64000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'us.amazon.nova-pro-v1:0',
+        name: 'Amazon Nova Pro',
+        contextWindow: 300000,
+        outputWindow: 10000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'us.amazon.nova-lite-v1:0',
+        name: 'Amazon Nova Lite',
+        contextWindow: 300000,
+        outputWindow: 10000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'us.amazon.nova-micro-v1:0',
+        name: 'Amazon Nova Micro',
+        contextWindow: 128000,
+        outputWindow: 10000,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'us.meta.llama3-3-70b-instruct-v1:0',
+        name: 'Llama 3.3 70B Instruct (Bedrock)',
+        contextWindow: 128000,
+        capabilities: { streaming: true, tools: true, vision: false },
       },
     ],
   },
@@ -1638,6 +1741,46 @@ function normalizeMiniMaxAnthropicBaseUrl(
   return `${trimmed}/anthropic/v1`;
 }
 
+function resolveBedrockRegion(): string {
+  return (
+    process.env.BEDROCK_REGION?.trim() ||
+    process.env.AWS_REGION?.trim() ||
+    process.env.AWS_DEFAULT_REGION?.trim() ||
+    'us-east-1'
+  );
+}
+
+interface BedrockCredentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+  expiration?: Date;
+}
+
+type BedrockCredentialProvider = () => Promise<BedrockCredentials>;
+
+let bedrockCredentialProviderPromise: Promise<BedrockCredentialProvider> | undefined;
+
+function getBedrockCredentialProvider(): Promise<BedrockCredentialProvider> {
+  bedrockCredentialProviderPromise ??= import('@aws-sdk/credential-providers').then(
+    ({ fromNodeProviderChain }) => fromNodeProviderChain(),
+  );
+  return bedrockCredentialProviderPromise;
+}
+
+function createBedrockCredentialProvider(): BedrockCredentialProvider {
+  return async () => {
+    const credentialProvider = await getBedrockCredentialProvider();
+    const credentials = await credentialProvider();
+    return {
+      accessKeyId: credentials.accessKeyId,
+      secretAccessKey: credentials.secretAccessKey,
+      sessionToken: credentials.sessionToken,
+      expiration: credentials.expiration,
+    };
+  };
+}
+
 function shouldUseOpenAIResponsesApi(providerId: ProviderId, modelId: string): boolean {
   if (providerId !== 'openai') return false;
 
@@ -1663,6 +1806,12 @@ export function getModel(config: ModelConfig): ModelWithInfo {
   let providerType = config.providerType;
   const provider = getProviderConfig(config.providerId);
   const requiresApiKey = provider?.requiresApiKey ?? true;
+
+  if (provider && providerType && providerType !== provider.type) {
+    throw new Error(
+      `Provider type mismatch for ${config.providerId}: expected ${provider.type}, received ${providerType}.`,
+    );
+  }
 
   if (!providerType) {
     if (provider) {
@@ -1877,6 +2026,17 @@ export function getModel(config: ModelConfig): ModelWithInfo {
 
       const anthropic = createAnthropic(anthropicOptions);
       model = anthropic.chat(config.modelId);
+      break;
+    }
+
+    case 'bedrock': {
+      const bedrock = createAmazonBedrock({
+        apiKey: effectiveApiKey || undefined,
+        region: resolveBedrockRegion(),
+        baseURL: effectiveBaseUrl,
+        credentialProvider: createBedrockCredentialProvider(),
+      });
+      model = bedrock(config.modelId);
       break;
     }
 
