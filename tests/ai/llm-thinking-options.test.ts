@@ -121,6 +121,35 @@ describe('LLM thinking provider options', () => {
     });
   });
 
+  it('attributes Amazon Bedrock SDK usage to the Bedrock provider', async () => {
+    aiMock.generateText.mockResolvedValueOnce({
+      text: 'ok',
+      params: undefined,
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    await callLLM(
+      {
+        model: {
+          provider: 'amazon-bedrock',
+          modelId: 'us.anthropic.claude-sonnet-5',
+        },
+        prompt: 'hi',
+      } as Parameters<typeof callLLM>[0],
+      'test',
+    );
+
+    await vi.waitFor(() => {
+      expect(usageMock.recordUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerId: 'bedrock',
+          modelId: 'us.anthropic.claude-sonnet-5',
+          modelString: 'bedrock:us.anthropic.claude-sonnet-5',
+        }),
+      );
+    });
+  });
+
   it('records the aggregate usage of a multi-step tool run, not the last step', async () => {
     // `usage` on a multi-step run (`stopWhen`) is the final step alone; every
     // earlier step's tokens live only in `totalUsage`.

@@ -10,6 +10,7 @@ export type BuiltInProviderId =
   | 'azure'
   | 'atlascloud'
   | 'anthropic'
+  | 'bedrock'
   | 'google'
   | 'deepseek'
   | 'qwen'
@@ -34,7 +35,7 @@ export type ProviderId = BuiltInProviderId | `custom-${string}`;
 /**
  * Provider API types
  */
-export type ProviderType = 'openai' | 'azure' | 'anthropic' | 'google';
+export type ProviderType = 'openai' | 'azure' | 'anthropic' | 'bedrock' | 'google';
 
 export type ThinkingControlType =
   | 'none'

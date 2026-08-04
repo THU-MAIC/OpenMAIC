@@ -1073,6 +1073,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "通義千問",
       "kimi": "Kimi",
@@ -1096,7 +1097,8 @@
       "openai": "OpenAI 協定",
       "azure": "Azure OpenAI",
       "anthropic": "Claude 協定",
-      "google": "Gemini 協定"
+      "google": "Gemini 協定",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "個模型",
     "modelSingular": "個模型",
