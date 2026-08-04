@@ -63,6 +63,7 @@ import {
 import {
   collectDocumentMediaElements,
   resolveMediaTaskForElement,
+  resolveVideoMediaForElement,
   withDocumentLegacyVideoRecovery,
   type MediaTaskLookupEntry,
 } from '@/lib/media/media-task-resolution';
@@ -745,6 +746,7 @@ export async function listStages(): Promise<StageListItem[]> {
 }
 
 type ThumbnailMediaElement = {
+  id: string;
   type: string;
   src?: string;
   mediaRef?: string;
@@ -760,10 +762,6 @@ function isResolvableThumbnailMediaRef(value: unknown): value is string {
 function getThumbnailMediaRef(element: ThumbnailMediaElement): string | undefined {
   if (element.type === 'image' && isResolvableThumbnailMediaRef(element.src)) {
     return element.src;
-  }
-  if (element.type === 'video') {
-    if (isResolvableThumbnailMediaRef(element.mediaRef)) return element.mediaRef;
-    if (isResolvableThumbnailMediaRef(element.src)) return element.src;
   }
   return undefined;
 }
@@ -783,6 +781,9 @@ export async function resolveThumbnailMediaValue(
   mimeType: string,
   mediaGenerationDisabled = false,
 ): Promise<string | undefined> {
+  if (isConcreteMediaAddress(ref)) {
+    return renderableMediaUrl(resolveMediaRef(ref, undefined, MISSING_ASSET_LEASE));
+  }
   let blob = storedBlob && storedBlob.size > 0 ? blobWithType(storedBlob, mimeType) : undefined;
   if (!blob) {
     try {
@@ -842,8 +843,8 @@ export async function getFirstSlideByStages(
         if (firstSlide && firstSlide.content.type === 'slide') {
           const slide = structuredClone(firstSlide.content.canvas);
 
-          const mediaElements = slide.elements.filter((el) =>
-            getThumbnailMediaRef(el as ThumbnailMediaElement),
+          const mediaElements = slide.elements.filter(
+            (el) => el.type === 'video' || !!getThumbnailMediaRef(el as ThumbnailMediaElement),
           );
           if (mediaElements.length > 0) {
             const settings = useSettingsStore.getState();
@@ -862,6 +863,7 @@ export async function getFirstSlideByStages(
                   type: record.type,
                   status: record.error ? 'failed' : 'done',
                   placeholderRef: record.placeholderRef,
+                  poster: record.poster ? `${record.id}:poster` : undefined,
                   record,
                 } satisfies ThumbnailTaskEntry,
               ]),
@@ -873,13 +875,24 @@ export async function getFirstSlideByStages(
             );
 
             for (const el of mediaElements as ThumbnailMediaElement[]) {
-              const mediaRef = getThumbnailMediaRef(el);
+              const videoBinding =
+                el.type === 'video'
+                  ? resolveVideoMediaForElement(
+                      documentTasks,
+                      el as import('@openmaic/dsl').PPTVideoElement,
+                      stageId,
+                    )
+                  : undefined;
+              const mediaRef = videoBinding?.sourceRef ?? getThumbnailMediaRef(el);
               if (!mediaRef) continue;
-              const selected = resolveMediaTaskForElement(
-                documentTasks,
-                el as import('@openmaic/dsl').PPTElement,
-                stageId,
-              );
+              const selected =
+                el.type === 'video'
+                  ? videoBinding?.task
+                  : resolveMediaTaskForElement(
+                      documentTasks,
+                      el as import('@openmaic/dsl').PPTElement,
+                      stageId,
+                    );
               const selectedRecord = selected?.record;
               const task = selectedRecord?.error
                 ? ({
@@ -908,9 +921,10 @@ export async function getFirstSlideByStages(
                     record?.mimeType || 'video/mp4',
                     !settings.videoGenerationEnabled,
                   )) ?? '';
+                const posterRef = videoBinding?.posterRef;
                 const posterRecord =
-                  el.poster && isResolvableThumbnailMediaRef(el.poster)
-                    ? mediaMap.get(el.poster)
+                  posterRef && isResolvableThumbnailMediaRef(posterRef)
+                    ? mediaMap.get(posterRef)
                     : undefined;
                 const posterBlob =
                   posterRecord && !posterRecord.error && posterRecord.type === 'image'
@@ -918,7 +932,7 @@ export async function getFirstSlideByStages(
                     : record?.poster
                       ? blobWithType(record.poster, 'image/jpeg')
                       : undefined;
-                if (el.poster && isResolvableThumbnailMediaRef(el.poster)) {
+                if (posterRef) {
                   const posterTask = posterRecord?.error
                     ? ({
                         status: 'failed',
@@ -927,7 +941,7 @@ export async function getFirstSlideByStages(
                       } satisfies MediaTaskState)
                     : undefined;
                   el.poster = await resolveThumbnailMediaValue(
-                    el.poster,
+                    posterRef,
                     posterTask,
                     posterBlob,
                     posterRecord?.mimeType || 'image/jpeg',

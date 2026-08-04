@@ -14,8 +14,7 @@ import { createLogger } from '@/lib/logger';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useSceneData } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
-import { resolveMediaTaskForElement } from '@/lib/media/media-task-resolution';
-import { useResolvedVideoMedia, videoMediaRefForResolution } from './useResolvedVideoMedia';
+import { useResolvedVideoMedia } from './useResolvedVideoMedia';
 
 const log = createLogger('BaseVideoElement');
 
@@ -39,13 +38,11 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
   // Only subscribe to media store when inside a classroom (stageId provided via context).
   const stageId = useMediaStageId();
   const mediaGenerationDisabled = useSettingsStore((state) => !state.videoGenerationEnabled);
-  const mediaRef = videoMediaRefForResolution(elementInfo);
-  const task = useMediaGenerationStore((state) =>
-    resolveMediaTaskForElement(state.tasks, elementInfo, stageId),
-  );
-  const { resolution, resolvedSrc, resolvedPoster } = useResolvedVideoMedia(
+  const tasks = useMediaGenerationStore((state) => state.tasks);
+  const { mediaRef, task, resolution, resolvedSrc, resolvedPoster } = useResolvedVideoMedia(
     elementInfo,
-    task,
+    tasks,
+    stageId,
     mediaGenerationDisabled,
   );
   const showSkeleton = resolution.kind === 'pending' || resolution.kind === 'placeholder';

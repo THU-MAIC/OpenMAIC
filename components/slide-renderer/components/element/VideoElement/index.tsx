@@ -10,8 +10,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSceneData } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
 import { mediaRetryTarget, retryMediaTask } from '@/lib/media/media-orchestrator';
-import { useResolvedVideoMedia, videoMediaRefForResolution } from './useResolvedVideoMedia';
-import { resolveMediaTaskForElement } from '@/lib/media/media-task-resolution';
+import { useResolvedVideoMedia } from './useResolvedVideoMedia';
 
 export interface VideoElementProps {
   elementInfo: PPTVideoElement;
@@ -28,17 +27,15 @@ export function VideoElement({ elementInfo, selectElement }: VideoElementProps) 
   const { sceneId, sceneData } = useSceneData<SlideContent>();
   const stageId = useMediaStageId();
   const mediaGenerationDisabled = useSettingsStore((state) => !state.videoGenerationEnabled);
-  const mediaRef = videoMediaRefForResolution(elementInfo);
-  const task = useMediaGenerationStore((state) =>
-    resolveMediaTaskForElement(state.tasks, elementInfo, stageId),
-  );
-  const { resolution, resolvedSrc, resolvedPoster } = useResolvedVideoMedia(
+  const tasks = useMediaGenerationStore((state) => state.tasks);
+  const { mediaRef, resolution, resolvedSrc, resolvedPoster } = useResolvedVideoMedia(
     elementInfo,
-    task,
+    tasks,
+    stageId,
     mediaGenerationDisabled,
   );
   const canRetry = mediaResolutionCanRetry(resolution);
-  const retryRef = mediaRef ?? elementInfo.src;
+  const retryRef = mediaRef;
 
   const handleSelectElement = (e: React.MouseEvent | React.TouchEvent) => {
     if (elementInfo.lock) return;

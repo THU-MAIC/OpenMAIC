@@ -18,6 +18,8 @@ import {
   MISSING_ASSET_LEASE,
   isConcreteMediaAddress,
   mediaResolutionCanRetry,
+  renderableMediaUrl,
+  resolveMediaRef,
   type MediaResolution,
   type MediaTaskState,
 } from '@/lib/media/resolve-media-ref';
@@ -27,6 +29,8 @@ import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { resolveThumbnailMediaValue } from '@/lib/utils/stage-storage';
 import { resolveVideoExportMediaBinding } from '@/lib/video-export-app/collect';
+import { resolveActionVideoMedia } from '@/lib/action/engine';
+import type { StageStore } from '@/lib/api/stage-api';
 
 const stageId = 'stage-matrix';
 const posterRef = 'ast_video_poster';
@@ -223,6 +227,28 @@ function slideWith(element: PPTImageElement | PPTVideoElement): Slide {
   } as Slide;
 }
 
+function stageStoreWith(element: PPTVideoElement): StageStore {
+  return {
+    getState: () => ({
+      stage: { id: stageId },
+      currentSceneId: 'scene-1',
+      mode: 'edit',
+      scenes: [
+        {
+          id: 'scene-1',
+          type: 'slide',
+          order: 0,
+          title: 'Slide',
+          content: { type: 'slide', canvas: slideWith(element) },
+          actions: [],
+        },
+      ],
+    }),
+    setState: () => undefined,
+    subscribe: () => () => undefined,
+  } as unknown as StageStore;
+}
+
 function renderInMediaScene(
   element: PPTImageElement | PPTVideoElement,
   child: ReturnType<typeof createElement>,
@@ -290,7 +316,8 @@ const componentSurfaces: readonly {
       function DirectVideoBindingProbe() {
         const binding = useResolvedVideoMedia(
           element,
-          fullTask(entry.ref, entry.task, 'video'),
+          entry.task ? { [entry.ref]: fullTask(entry.ref, entry.task, 'video')! } : {},
+          stageId,
           entry.disabled ?? false,
         );
         const payload = Buffer.from(
@@ -341,6 +368,26 @@ const componentSurfaces: readonly {
       };
     },
   },
+  {
+    name: 'action play_video binding',
+    run: (entry: ResolutionCase) => {
+      const element = videoElement(entry.ref);
+      const mediaTask = fullTask(entry.ref, entry.task, 'video');
+      const binding = resolveActionVideoMedia(
+        stageStoreWith(element),
+        mediaTask ? { [entry.ref]: mediaTask } : {},
+        element.id,
+      );
+      if (!binding) throw new Error('Action video binding did not resolve');
+      const resolution = resolveMediaRef(
+        binding.sourceRef,
+        binding.task,
+        entry.lease ?? MISSING_ASSET_LEASE,
+        entry.disabled,
+      );
+      return { src: renderableMediaUrl(resolution) ?? '', resolution };
+    },
+  },
 ];
 
 describe('real media consumer matrix', () => {
@@ -348,6 +395,24 @@ describe('real media consumer matrix', () => {
     useMediaGenerationStore.setState({ tasks: {} });
     useSettingsStore.setState({ imageGenerationEnabled: false, videoGenerationEnabled: false });
     vi.unstubAllGlobals();
+  });
+
+  it('prefers a playable concrete src over an untracked opaque mediaRef', () => {
+    const reviewerRepro = { src: 'https://cdn.example/direct.mp4', mediaRef: 'ast_opaque' };
+    const element = { ...videoElement(reviewerRepro.src), ...reviewerRepro };
+
+    function DirectVideoBindingProbe() {
+      const binding = useResolvedVideoMedia(element, {}, stageId, false);
+      return createElement('div', {
+        'data-resolution': binding.resolution.kind,
+        'data-src': binding.resolvedSrc,
+      });
+    }
+
+    const markup = renderToStaticMarkup(createElement(DirectVideoBindingProbe));
+    expect(markup).toContain('data-resolution="raw"');
+    expect(markup).toContain('data-src="https://cdn.example/direct.mp4"');
+    expect(markup).not.toContain('placeholder');
   });
 
   it('useResolvedImageSrc prefers element-keyed fork progress over the shared source task', () => {

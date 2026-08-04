@@ -1,4 +1,4 @@
-import type { PPTElement, Slide } from '@openmaic/dsl';
+import type { PPTElement, PPTVideoElement, Slide } from '@openmaic/dsl';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { getVideoMediaRefForElement } from '@/lib/media/video-manifest';
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
@@ -8,9 +8,41 @@ export interface MediaTaskLookupEntry {
   readonly type: 'image' | 'video';
   readonly status: 'pending' | 'generating' | 'done' | 'failed';
   readonly placeholderRef?: string;
+  readonly objectUrl?: string;
+  readonly poster?: string;
+}
+
+export interface VideoMediaTaskResolution<T extends MediaTaskLookupEntry> {
+  /** Concrete src wins; otherwise this is mediaRef or the legacy opaque src. */
+  readonly sourceRef: string | undefined;
+  /** Opaque identity retained for retry and diagnostics, even when src is concrete. */
+  readonly mediaRef: string | undefined;
+  /** Task that governs this element's source, suppressed when concrete src wins. */
+  readonly task: T | undefined;
+  /** Explicit element poster wins, then the generated task poster. */
+  readonly posterRef: string | undefined;
+  /** Task-shaped binding for a generated poster's last-known bytes. */
+  readonly posterTask: (T & { readonly objectUrl: string }) | undefined;
 }
 
 type MediaTaskMatch<T extends MediaTaskLookupEntry> = readonly [key: string, task: T];
+
+/** Shared lookup for non-element media such as slide backgrounds. */
+export function resolveMediaTaskForRef<T extends MediaTaskLookupEntry>(
+  tasks: Readonly<Record<string, T>>,
+  ref: string | undefined,
+  stageId: string | undefined,
+  targetElementId?: string,
+): T | undefined {
+  if (!ref || !stageId || isConcreteMediaAddress(ref)) return undefined;
+  const targeted = targetElementId ? tasks[targetElementId] : undefined;
+  if (targeted?.stageId === stageId) return targeted;
+  const direct = tasks[ref];
+  if (direct?.stageId === stageId) return direct;
+  return Object.values(tasks).find(
+    (candidate) => candidate.stageId === stageId && candidate.placeholderRef === ref,
+  );
+}
 
 export function mediaTaskRefForElement(element: PPTElement): string | undefined {
   if (element.type === 'video') {
@@ -51,6 +83,30 @@ export function resolveMediaTaskForElement<T extends MediaTaskLookupEntry>(
   stageId: string | undefined,
 ): T | undefined {
   return matchMediaTaskForElement(tasks, element, stageId)?.[1];
+}
+
+/**
+ * Resolve the complete media binding for one video element.
+ *
+ * This is the single owner of source precedence, logical-reference selection,
+ * element-aware task lookup, and poster selection for video consumers.
+ */
+export function resolveVideoMediaForElement<T extends MediaTaskLookupEntry>(
+  tasks: Readonly<Record<string, T>>,
+  element: PPTVideoElement,
+  stageId: string | undefined,
+): VideoMediaTaskResolution<T> {
+  const mediaRef = mediaTaskRefForElement(element);
+  const concreteSrc = element.src && isConcreteMediaAddress(element.src) ? element.src : undefined;
+  const sourceRef = concreteSrc ?? mediaRef ?? element.src;
+  const task = concreteSrc ? undefined : resolveMediaTaskForElement(tasks, element, stageId);
+  const posterRef = element.poster ?? task?.poster;
+  const posterTask =
+    element.poster && task?.poster
+      ? ({ ...task, objectUrl: task.poster } as T & { readonly objectUrl: string })
+      : undefined;
+
+  return { sourceRef, mediaRef, task, posterRef, posterTask };
 }
 
 function isLegacySequentialVideoElement(element: PPTElement): boolean {

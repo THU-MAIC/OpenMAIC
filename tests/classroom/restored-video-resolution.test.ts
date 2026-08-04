@@ -1,11 +1,11 @@
 import type { PPTVideoElement } from '@openmaic/dsl';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildRestoredMediaTasks } from '@/lib/classroom/load-classroom';
-import { videoMediaRefForResolution } from '@/components/slide-renderer/components/element/VideoElement/useResolvedVideoMedia';
 import { renderableMediaUrl, resolveMediaRef } from '@/lib/media/resolve-media-ref';
 import type { MediaFileRecord } from '@/lib/utils/database';
 import {
   resolveMediaTaskForElement,
+  resolveVideoMediaForElement,
   withDocumentLegacyVideoRecovery,
   type MediaTaskLookupEntry,
 } from '@/lib/media/media-task-resolution';
@@ -58,8 +58,9 @@ function resolveRestoredVideo(
 ) {
   const element = elements[0];
   const tasks = buildRestoredMediaTasks(stageId, records, elements);
-  const task = resolveMediaTaskForElement(tasks, element, stageId);
-  const resolution = resolveMediaRef(videoMediaRefForResolution(element), task);
+  const binding = resolveVideoMediaForElement(tasks, element, stageId);
+  const task = binding.task;
+  const resolution = resolveMediaRef(binding.sourceRef, task);
   return { task, resolution, src: renderableMediaUrl(resolution) };
 }
 
@@ -108,8 +109,9 @@ describe('restored classroom video resolution', () => {
     );
 
     for (const element of elements) {
-      const task = resolveMediaTaskForElement(tasks, element, stageId);
-      const resolution = resolveMediaRef(videoMediaRefForResolution(element), task);
+      const binding = resolveVideoMediaForElement(tasks, element, stageId);
+      const task = binding.task;
+      const resolution = resolveMediaRef(binding.sourceRef, task);
       expect(task).toBeUndefined();
       expect(resolution).toEqual({ kind: 'placeholder' });
       expect(renderableMediaUrl(resolution)).toBeUndefined();
