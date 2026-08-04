@@ -10,6 +10,8 @@ export interface MediaTaskLookupEntry {
   readonly placeholderRef?: string;
 }
 
+type MediaTaskMatch<T extends MediaTaskLookupEntry> = readonly [key: string, task: T];
+
 export function mediaTaskRefForElement(element: PPTElement): string | undefined {
   if (element.type === 'video') {
     return (
@@ -23,24 +25,32 @@ export function mediaTaskRefForElement(element: PPTElement): string | undefined 
   return undefined;
 }
 
+function matchMediaTaskForElement<T extends MediaTaskLookupEntry>(
+  tasks: Readonly<Record<string, T>>,
+  element: PPTElement,
+  stageId: string | undefined,
+): MediaTaskMatch<T> | undefined {
+  const ref = mediaTaskRefForElement(element);
+  if (!ref || !stageId) return undefined;
+
+  const targeted = tasks[element.id];
+  if (targeted?.stageId === stageId) return [element.id, targeted];
+
+  const exact = tasks[ref];
+  if (exact) return exact.stageId === stageId ? [ref, exact] : undefined;
+
+  return Object.entries(tasks).find(
+    ([, candidate]) => candidate.stageId === stageId && candidate.placeholderRef === ref,
+  );
+}
+
 /** Shared task lookup used by direct elements and resolved-slide consumers. */
 export function resolveMediaTaskForElement<T extends MediaTaskLookupEntry>(
   tasks: Readonly<Record<string, T>>,
   element: PPTElement,
   stageId: string | undefined,
 ): T | undefined {
-  const ref = mediaTaskRefForElement(element);
-  if (!ref || !stageId) return undefined;
-
-  const targeted = tasks[element.id];
-  if (targeted?.stageId === stageId) return targeted;
-
-  const exact = tasks[ref];
-  if (exact) return exact.stageId === stageId ? exact : undefined;
-
-  return Object.values(tasks).find(
-    (candidate) => candidate.stageId === stageId && candidate.placeholderRef === ref,
-  );
+  return matchMediaTaskForElement(tasks, element, stageId)?.[1];
 }
 
 function isLegacySequentialVideoElement(element: PPTElement): boolean {
@@ -66,31 +76,43 @@ export function collectDocumentMediaElements(
 /**
  * Seal the legacy singleton recovery once for the complete document.
  *
- * A completed row is rebound only when the document has one unmatched legacy
- * video element and the stage has one completed video row. Exact failures are
- * matches, so they remain authoritative and never enter the recovery set.
+ * First claim every task selected by normal lookup. Recovery then pairs the
+ * sole unmatched legacy video with the sole unclaimed completed video task.
+ * Exact failures are normal matches, so they remain authoritative.
  */
 export function withDocumentLegacyVideoRecovery<T extends MediaTaskLookupEntry>(
   tasks: Readonly<Record<string, T>>,
   documentElements: readonly PPTElement[],
   stageId: string,
 ): Record<string, T> {
-  const unmatchedLegacyVideos = documentElements.filter(
-    (element) =>
-      isLegacySequentialVideoElement(element) &&
-      !resolveMediaTaskForElement(tasks, element, stageId),
+  const videoElements = documentElements.filter((element) => element.type === 'video');
+  const matchedElements = new Set<PPTElement>();
+  const consumedTaskKeys = new Set<string>();
+
+  for (const element of videoElements) {
+    const match = matchMediaTaskForElement(tasks, element, stageId);
+    if (!match) continue;
+    matchedElements.add(element);
+    consumedTaskKeys.add(match[0]);
+  }
+
+  const candidates = Object.entries(tasks).filter(
+    ([taskKey, candidate]) =>
+      candidate.stageId === stageId &&
+      candidate.type === 'video' &&
+      candidate.status === 'done' &&
+      !consumedTaskKeys.has(taskKey),
   );
-  const completedVideos = Object.entries(tasks).filter(
-    ([, candidate]) =>
-      candidate.stageId === stageId && candidate.type === 'video' && candidate.status === 'done',
+  const unmatchedLegacyVideos = videoElements.filter(
+    (element) => isLegacySequentialVideoElement(element) && !matchedElements.has(element),
   );
 
-  if (unmatchedLegacyVideos.length !== 1 || completedVideos.length !== 1) {
+  if (unmatchedLegacyVideos.length !== 1 || candidates.length !== 1) {
     return { ...tasks };
   }
 
   const ref = mediaTaskRefForElement(unmatchedLegacyVideos[0]);
-  const [taskKey, task] = completedVideos[0];
+  const [taskKey, task] = candidates[0];
   if (!ref) return { ...tasks };
 
   return {
