@@ -41,12 +41,10 @@
  * persist).
  */
 
-import { streamText } from 'ai';
 import type { LanguageModel } from 'ai';
 
 import { createLogger } from '@/lib/logger';
-import { resolveThinkingProviderOptions } from '@/lib/ai/llm';
-import { withThinkingDisabled } from './runtime-thinking';
+import { streamLLM } from '@/lib/ai/llm';
 import { buildVisionUserContent } from '@/lib/generation/prompt-formatters';
 import type { ThinkingConfig } from '@/lib/types/provider';
 
@@ -154,8 +152,8 @@ async function* runShared(args: RunSharedArgs): AsyncGenerator<PBLSSEEvent, void
   const isMilestone = kind === 'milestone';
   let lastSanitizedLength = 0;
   try {
-    const result = withThinkingDisabled(() =>
-      streamText({
+    const result = streamLLM(
+      {
         model: languageModel,
         system: systemPrompt,
         // Image submission on a vision-capable model → send the picture as a
@@ -173,11 +171,10 @@ async function* runShared(args: RunSharedArgs): AsyncGenerator<PBLSSEEvent, void
               ],
             }
           : { prompt: userPrompt }),
-        ...(thinkingConfig
-          ? { providerOptions: resolveThinkingProviderOptions(languageModel, thinkingConfig) }
-          : {}),
         ...(signal ? { abortSignal: signal } : {}),
-      }),
+      },
+      `pbl-v2-evaluator-${kind}`,
+      thinkingConfig,
     );
     for await (const part of result.fullStream) {
       switch (part.type) {

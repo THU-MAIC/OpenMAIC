@@ -2,13 +2,27 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Integration branches are listed here as well as below: a pull_request run
+    # only ever proves one part merged into the branch, so without a push
+    # trigger the accumulated state of the branch that eventually reaches main
+    # is never built on its own.
+    branches: [main, integration/kv-asset-server-backend]
   pull_request:
-    branches: [main, feat/maic-editor-v0, feat/maic-editor-v1, runtime-server-backend]
+    branches:
+      [
+        main,
+        feat/maic-editor-v0,
+        feat/maic-editor-v1,
+        runtime-server-backend,
+        integration/kv-asset-server-backend,
+      ]
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a main run. Each main run validates only its own push range, so
+  # a superseded run takes the range that contained a package change with it and
+  # the replacement, comparing against the cancelled tip, sees nothing.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -16,6 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
@@ -24,7 +40,66 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Package version bumps
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-package-version-bumps.mjs "$BASE_SHA"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+      # A branch creation or a force push reports an unusable `before`. Fail
+      # rather than substituting HEAD^: a force push can replace many commits at
+      # once, so the previous commit is not the range that needs checking, and
+      # publishing requires this run to be green.
+      - name: Package version bumps (main push)
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          base="$BEFORE_SHA"
+          if [ -z "$base" ] || ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
+            echo "::error::Push range base ${base:-<empty>} is unavailable, so this push cannot be checked."
+            echo "Re-run after the branch has an ordinary push range, or verify the versions by hand."
+            exit 1
+          fi
+          node scripts/check-package-version-bumps.mjs "$base"
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+
+      # The tarball smoke test proves this about the bytes that would actually
+      # be published, but it installs four package tarballs, so it runs only on
+      # the release path. This is the cheap source-level form, here so that a
+      # pull request restoring `workspace:*` fails at review time rather than at
+      # release time, after a version number has already been spent.
+      - name: Internal dependency ranges
+        run: node scripts/check-internal-dependency-ranges.mjs
+
       - run: pnpm install --frozen-lockfile
+
+      # `postinstall` builds all four @openmaic packages, and some of them
+      # generate tracked, publishable files (renderer's fonts.css and its KaTeX
+      # font snapshot). The publish workflow refuses to release when the build
+      # rewrites one; catching it here means a stale generated file is a pull
+      # request failure instead of a release failure.
+      #
+      # Against GITHUB_SHA, not the index or HEAD: a bare `git diff` misses
+      # staged changes, while install code can create a commit and move HEAD.
+      # This check exists precisely because code ran before it, so its reference
+      # point must be something that code cannot move. Disabling replacement
+      # objects also prevents a local replace ref from redirecting the commit.
+      - name: Verify the install did not rewrite tracked package files
+        run: |
+          set -euo pipefail
+          actual_head="$(git --no-replace-objects rev-parse HEAD)"
+          if [ "$actual_head" != "$GITHUB_SHA" ]; then
+            echo "::error::HEAD moved from $GITHUB_SHA to $actual_head during installation."
+            exit 1
+          fi
+          if ! git --no-replace-objects diff --quiet "$GITHUB_SHA" -- packages/@openmaic; then
+            echo "::error::Installing rewrote tracked files under packages/@openmaic."
+            echo "Regenerate them and commit the result."
+            git --no-replace-objects --no-pager diff --stat "$GITHUB_SHA" -- packages/@openmaic
+            exit 1
+          fi
+          echo "Tracked package files match the commit under test."
 
       - name: Prettier
         run: pnpm check
@@ -46,6 +121,12 @@ jobs:
 
       - name: Unit Tests (dsl)
         run: pnpm --filter @openmaic/dsl test
+
+      # Covers the package's own test tree, which the root tsc reaches only by an
+      # incidental glob. The device-scope guard is written as `@ts-expect-error`
+      # probes in those tests, and a probe nothing type-checks proves nothing.
+      - name: TypeScript (storage, incl. tests)
+        run: pnpm --filter @openmaic/storage run typecheck
 
       - name: Unit Tests (storage)
         run: pnpm --filter @openmaic/storage test

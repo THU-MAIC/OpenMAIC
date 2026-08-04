@@ -71,15 +71,16 @@ function cubicBezier(x1, y1, x2, y2) {
   }
   return function (p) { return p <= 0 ? 0 : p >= 1 ? 1 : sampleY(solveX(p)); };
 }
+var EASE_SPOTLIGHT_FADE = cubicBezier(0.25, 0.1, 0.35, 1);
 var EASE_OUT_EXPO = cubicBezier(0.16, 1, 0.3, 1);
 var EASE_LASER = cubicBezier(0.22, 1, 0.36, 1);
 var EASE_IN = cubicBezier(0.4, 0, 1, 1);
 var EASE_OUT = cubicBezier(0, 0, 0.58, 1);
 var tl = gsap.timeline({ paused: true });
-tl.fromTo('#fx-0-1',{autoAlpha:0},{autoAlpha:1,duration:0.3,ease:'none'},2);
+tl.fromTo('#fx-0-1',{autoAlpha:0},{autoAlpha:1,duration:0.3,ease:EASE_SPOTLIGHT_FADE},2);
 tl.fromTo('#fx-0-1-cut',{attr:{x:17,y:16.8889,width:66,height:65.7778,rx:4}},{attr:{x:24.6,y:24.2889,width:50.8,height:50.9778,rx:1},duration:0.6,ease:EASE_OUT_EXPO},2);
 tl.fromTo('#fx-0-1-border',{attr:{x:21,y:20.8889,width:58,height:57.7778,rx:2},opacity:0},{attr:{x:24.6,y:24.2889,width:50.8,height:50.9778,rx:1},opacity:1,duration:0.5,ease:EASE_OUT_EXPO},2.05);
-tl.to('#fx-0-1',{autoAlpha:0,duration:0.3,ease:'none'},4.7);
+tl.to('#fx-0-1',{autoAlpha:0,duration:0.3,ease:EASE_SPOTLIGHT_FADE},4.7);
 tl.set('#fx-0-1',{autoAlpha:0},5);
 tl.fromTo('#fx-0-2',{autoAlpha:0},{autoAlpha:1,duration:0.15,ease:'none'},2);
 tl.fromTo('#fx-0-2',{x:-1056,y:-591.6},{x:0,y:0,duration:0.5,ease:EASE_LASER},2);

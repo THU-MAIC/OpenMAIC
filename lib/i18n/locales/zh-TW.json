@@ -382,7 +382,8 @@
       "sessionEmpty": "暫無歷史對話",
       "thinking": "思考中…",
       "reasoning": "思考過程",
-      "thought": "已思考"
+      "thought": "已思考",
+      "title": "用 AI 編輯"
     },
     "timeline": {
       "title": "講解腳本",
@@ -475,6 +476,21 @@
       "notApplied": "未套用",
       "applyFailed": "編輯器無法套用元素修改，未變更任何內容。",
       "applyPartiallyFailed": "編輯器未能套用一項或多項元素修改，其他修改可能已套用。"
+    },
+    "roster": {
+      "title": "課堂陣容",
+      "count": "{{count}} 位",
+      "editHint": "點擊一位展開編輯",
+      "personaLabel": "人設描述",
+      "personaPlaceholder": "描述角色的性格、教學風格與任務…",
+      "noPersona": "暫無人設",
+      "unnamed": "未命名",
+      "teacherBadge": "主講",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "removeFromClass": "移出課堂",
+      "aiClassmates": "AI 同學 · {{count}}",
+      "addRole": "新增角色"
     }
   },
   "whiteboard": {
@@ -1527,6 +1543,8 @@
     "clearCacheButton": "永久刪除所有資料",
     "clearCacheSuccess": "緩存已清空，頁面即將重新整理",
     "clearCacheFailed": "清空緩存失敗，請重試",
+    "persistUnavailable": "變更未被儲存：應用程式無法存取已儲存的資料。若重新整理後仍未恢復，請至設定中清除本機快取。",
+    "persistChangesLost": "儲存已恢復，但在無法使用期間所做的變更未能儲存，已被上次儲存的版本覆蓋。",
     "webSearchSettings": "網路搜尋",
     "webSearchApiKey": "Tavily API Key",
     "webSearchApiKeyPlaceholder": "輸入你的 Tavily API Key",

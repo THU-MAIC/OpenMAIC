@@ -17,10 +17,34 @@ import {
 import { Loader2, Trash2, AlertTriangle } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { clearDatabase } from '@/lib/utils/database';
+import { useSettingsStore } from '@/lib/store/settings';
+import { useUserProfileStore } from '@/lib/store/user-profile';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('GeneralSettings');
+
+/**
+ * The shape of a zustand `persist` API this file needs. Declared structurally
+ * so one helper covers both stores without importing either state type.
+ */
+interface PersistApi {
+  getOptions: () => {
+    name?: string;
+    storage?: { removeItem: (name: string) => unknown };
+  };
+}
+
+/**
+ * Clear a store that persists through the KVStore.
+ *
+ * Not `persist.clearStorage()`: that discards the promise our KV-backed storage
+ * returns, and clearing has to be awaited before the reload below.
+ */
+async function clearPersistedStore(persistApi: PersistApi, fallbackName: string): Promise<void> {
+  const { storage, name } = persistApi.getOptions();
+  await storage?.removeItem(name ?? fallbackName);
+}
 
 export function GeneralSettings() {
   const { t } = useI18n();
@@ -43,13 +67,26 @@ export function GeneralSettings() {
       localStorage.clear();
       // 3. Clear sessionStorage
       sessionStorage.clear();
+      // 4. Clear the stores that persist through the KVStore. The blanket
+      // clear above only reaches them because the KV browser backend happens
+      // to sit on localStorage; under a server-backed `account` scope it would
+      // report success and the data would come straight back on reload. The
+      // remaining ad-hoc localStorage keys still rely on that blanket clear —
+      // they lose the dependency as they move to the KVStore.
+      await Promise.all([
+        clearPersistedStore(useSettingsStore.persist, 'settings-storage'),
+        clearPersistedStore(useUserProfileStore.persist, 'user-profile-storage'),
+      ]);
 
       toast.success(t('settings.clearCacheSuccess'));
 
-      // Reload page after a short delay
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
+      // Reload without waiting. The stores are still live in memory, so the
+      // longer this page stays up the more chances a `set()` has to persist
+      // something after the clear. The seam refuses writes for the duration of
+      // a clear, which covers writes issued while the deletes are in flight,
+      // but not ones issued after they complete — hence keeping the window
+      // short as well.
+      window.location.reload();
     } catch (error) {
       log.error('Failed to clear cache:', error);
       toast.error(t('settings.clearCacheFailed'));

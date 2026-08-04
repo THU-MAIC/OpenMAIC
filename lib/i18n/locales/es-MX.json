@@ -382,7 +382,8 @@
       "sessionEmpty": "No hay conversaciones anteriores",
       "thinking": "Pensando…",
       "reasoning": "Razonamiento",
-      "thought": "Pensó durante"
+      "thought": "Pensó durante",
+      "title": "Editar con IA"
     },
     "timeline": {
       "title": "Guion de narración",
@@ -475,6 +476,21 @@
       "notApplied": "Sin aplicar",
       "applyFailed": "El editor no pudo aplicar la edición del elemento. No se cambió nada.",
       "applyPartiallyFailed": "El editor no pudo aplicar una o más ediciones de elementos. Es posible que otras ediciones sí se hayan aplicado."
+    },
+    "roster": {
+      "title": "Elenco del aula",
+      "count": "{{count}} integrantes",
+      "editHint": "Haz clic en un integrante para editar",
+      "personaLabel": "Persona",
+      "personaPlaceholder": "Describe la personalidad, el estilo de enseñanza y las tareas del rol...",
+      "noPersona": "Sin persona todavía",
+      "unnamed": "Sin título",
+      "teacherBadge": "Principal",
+      "moveUp": "Mover arriba",
+      "moveDown": "Mover abajo",
+      "removeFromClass": "Quitar del aula",
+      "aiClassmates": "Compañeros de IA · {{count}}",
+      "addRole": "Agregar rol"
     }
   },
   "classroomComplete": {
@@ -1616,6 +1632,8 @@
     "clearCacheButton": "Eliminar permanentemente todos los datos",
     "clearCacheSuccess": "Caché borrada, la página se actualizará en breve",
     "clearCacheFailed": "No se pudo borrar la caché, inténtalo de nuevo",
+    "persistUnavailable": "Tus cambios no se están guardando porque la aplicación no puede acceder a sus datos almacenados. Si recargar no ayuda, borra la caché local en Configuración.",
+    "persistChangesLost": "El almacenamiento vuelve a funcionar, pero los cambios que hiciste mientras no estaba disponible no se pudieron guardar y se reemplazaron por la última versión guardada.",
     "webSearchSettings": "Búsqueda web",
     "webSearchApiKey": "Clave API de búsqueda",
     "webSearchApiKeyPlaceholder": "Ingresa tu clave API de búsqueda",

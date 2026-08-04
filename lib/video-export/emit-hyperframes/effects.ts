@@ -28,6 +28,8 @@ export interface EmittedEffect {
 
 /** Named easing identifiers defined in the composition's inline script (see `EASE_DEFS`). */
 const EASE = {
+  /** spotlight wrapper fade — cubic-bezier(0.25, 0.1, 0.35, 1). */
+  spotlightFade: 'EASE_SPOTLIGHT_FADE',
   /** spotlight cutout/border — cubic-bezier(0.16, 1, 0.3, 1). */
   outExpo: 'EASE_OUT_EXPO',
   /** laser enter travel — cubic-bezier(0.22, 1, 0.36, 1). */
@@ -67,6 +69,7 @@ function cubicBezier(x1, y1, x2, y2) {
   }
   return function (p) { return p <= 0 ? 0 : p >= 1 ? 1 : sampleY(solveX(p)); };
 }
+var EASE_SPOTLIGHT_FADE = cubicBezier(0.25, 0.1, 0.35, 1);
 var EASE_OUT_EXPO = cubicBezier(0.16, 1, 0.3, 1);
 var EASE_LASER = cubicBezier(0.22, 1, 0.36, 1);
 var EASE_IN = cubicBezier(0.4, 0, 1, 1);
@@ -107,10 +110,10 @@ function emitSpotlight(seg: EffectSegment, g: PercentageGeometry, id: string): E
   const cutTo = `{x:${n(g.x - 0.4)},y:${n(g.y - 0.6)},width:${n(g.w + 0.8)},height:${n(g.h + 1.2)},rx:1}`;
   const end = sec(seg.startMs + seg.durationMs);
   const statements = [
-    `tl.fromTo('#${id}',{autoAlpha:0},{autoAlpha:1,duration:0.3,ease:'none'},${n(start)});`,
+    `tl.fromTo('#${id}',{autoAlpha:0},{autoAlpha:1,duration:0.3,ease:${EASE.spotlightFade}},${n(start)});`,
     `tl.fromTo('${cut}',{attr:{x:${n(g.x - 8)},y:${n(g.y - 8)},width:${n(g.w + 16)},height:${n(g.h + 16)},rx:4}},{attr:${cutTo},duration:0.6,ease:${EASE.outExpo}},${n(start)});`,
     `tl.fromTo('${border}',{attr:{x:${n(g.x - 4)},y:${n(g.y - 4)},width:${n(g.w + 8)},height:${n(g.h + 8)},rx:2},opacity:0},{attr:${cutTo},opacity:1,duration:0.5,ease:${EASE.outExpo}},${n(start + 0.05)});`,
-    `tl.to('#${id}',{autoAlpha:0,duration:0.3,ease:'none'},${n(exit)});`,
+    `tl.to('#${id}',{autoAlpha:0,duration:0.3,ease:${EASE.spotlightFade}},${n(exit)});`,
     // Hard kill at the boundary: a non-linear seek landing after the fade must
     // find the overlay hidden, not in a stale mid-fade state.
     `tl.set('#${id}',{autoAlpha:0},${n(end)});`,

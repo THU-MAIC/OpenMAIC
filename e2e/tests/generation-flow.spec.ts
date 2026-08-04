@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/base';
 import { GenerationPreviewPage } from '../pages/generation-preview.page';
-import { createSettingsStorage } from '../fixtures/test-data/settings';
+import { createSettingsStorage, SETTINGS_KV_KEY } from '../fixtures/test-data/settings';
 import { mockOutlines } from '../fixtures/test-data/scene-outlines';
 
 const SETTINGS_STORAGE = createSettingsStorage();
@@ -38,7 +38,7 @@ test.describe('Generation Flow', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(
       ({ settings, session }) => {
-        localStorage.setItem('settings-storage', settings);
+        localStorage.setItem('maic:account:settings-storage', settings);
         sessionStorage.setItem('generationSession', session);
       },
       { settings: SETTINGS_STORAGE, session: GENERATION_SESSION },
@@ -88,11 +88,16 @@ test.describe('Generation Flow', () => {
     await preview.openOutlineReview();
     await preview.enableAlwaysReview();
 
-    const persistedPreference = await page.evaluate(() => {
-      const raw = localStorage.getItem('settings-storage');
-      return raw ? JSON.parse(raw).state.reviewOutlineEnabled : undefined;
-    });
-    expect(persistedPreference).toBe(true);
+    // The persist write goes through the KVStore and is asynchronous, so poll
+    // rather than reading once straight after the toggle.
+    await expect
+      .poll(() =>
+        page.evaluate((key) => {
+          const raw = localStorage.getItem(key);
+          return raw ? JSON.parse(raw).state.reviewOutlineEnabled : undefined;
+        }, SETTINGS_KV_KEY),
+      )
+      .toBe(true);
 
     await preview.confirmOutlines();
     await preview.waitForRedirectToClassroom();
@@ -104,7 +109,7 @@ test.describe('Generation Flow', () => {
   }) => {
     await page.addInitScript(
       ({ settings, session }) => {
-        localStorage.setItem('settings-storage', settings);
+        localStorage.setItem('maic:account:settings-storage', settings);
         sessionStorage.setItem('generationSession', session);
       },
       { settings: REVIEW_SETTINGS_STORAGE, session: GENERATION_SESSION },
@@ -126,7 +131,7 @@ test.describe('Generation Flow', () => {
 test('resumes generation from a persisted outline review session', async ({ page, mockApi }) => {
   await page.addInitScript(
     ({ settings, session }) => {
-      localStorage.setItem('settings-storage', settings);
+      localStorage.setItem('maic:account:settings-storage', settings);
       sessionStorage.setItem('generationSession', session);
     },
     { settings: SETTINGS_STORAGE, session: PERSISTED_REVIEW_SESSION },

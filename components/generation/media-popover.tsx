@@ -24,6 +24,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { resolveASRProviderName } from '@/lib/audio/provider-display';
 import { useSettingsStore } from '@/lib/store/settings';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
@@ -191,7 +192,9 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
       if (!cfgOk(asrProvidersConfig, p.id, p.requiresApiKey)) continue;
       groups.push({
         groupId: p.id,
-        groupName: p.name,
+        // `p.name` is the registry label, which is Chinese for several
+        // providers; resolve it the way the settings dialog does.
+        groupName: resolveASRProviderName(p.id, t, p.name),
         groupIcon: p.icon,
         available: true,
         items: getASRSupportedLanguages(p.id).map((l) => ({
@@ -216,7 +219,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     }
 
     return groups;
-  }, [asrProvidersConfig, cfgOk]);
+  }, [asrProvidersConfig, cfgOk, t]);
 
   // Auto-select first enabled tab on open
   const handleOpenChange = (isOpen: boolean) => {

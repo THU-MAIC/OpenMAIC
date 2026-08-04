@@ -11,6 +11,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import {
   accessDocument,
+  migrateDocumentForVerification,
   type LegacyDocumentSnapshot,
   type LegacyDocumentStore,
 } from '@/lib/document-store/migration';
@@ -157,6 +158,34 @@ function store(idb = new IDBFactory()): DocumentStore<AppScene> {
 }
 
 describe('legacy document migration', () => {
+  test('keeps the opaque outline outside the migration verification baseline', () => {
+    const outline = {
+      outlines: [],
+      generationComplete: true,
+      createdAt: 100,
+      updatedAt: 200,
+    };
+    const document: AppDocument = {
+      dslVersion: DSL_VERSION,
+      stage: { id: 'stage-1', name: 'Legacy', createdAt: 100, updatedAt: 200 },
+      scenes: [],
+      outline,
+    };
+    const migrateDsl = vi.fn((value: unknown) => {
+      const candidate = value as AppDocument;
+      return 'outline' in candidate
+        ? { ...candidate, stage: { ...candidate.stage, name: 'Corrupted' } }
+        : candidate;
+    });
+
+    const migrated = migrateDocumentForVerification(document, migrateDsl);
+
+    expect(migrateDsl).toHaveBeenCalledOnce();
+    expect(migrateDsl.mock.calls[0]![0]).not.toHaveProperty('outline');
+    expect(migrated).toEqual(document);
+    expect(migrated.outline).toBe(outline);
+  });
+
   test('returns null when neither store has a document', async () => {
     await expect(
       accessDocument('missing', {
@@ -189,6 +218,70 @@ describe('legacy document migration', () => {
     expect(await kv.get('editor-current-scene:stage-1', 'device')).toMatchObject({
       sceneId: 'scene-1',
     });
+    expect(await kv.get('document-migration:stage-1', 'device')).toMatchObject({
+      sourceUpdatedAt: 200,
+    });
+  });
+
+  test('uses the injected DSL migration to verify a fresh destination', async () => {
+    const migrateDsl = vi.fn((value: unknown) => ({
+      ...(value as AppDocument),
+      dslVersion: DSL_VERSION,
+    }));
+
+    await expect(
+      accessDocument('stage-1', {
+        store: store(),
+        kv: new MemoryKv(),
+        legacyStore: legacy(snapshot()),
+        lockManager: lockManager(),
+        migrateDsl,
+      }),
+    ).resolves.toMatchObject({
+      document: { dslVersion: DSL_VERSION, stage: { id: 'stage-1' } },
+      readOnlyLegacy: false,
+    });
+
+    expect(migrateDsl).toHaveBeenCalledOnce();
+    expect(migrateDsl.mock.calls[0]![0]).toMatchObject({ stage: { id: 'stage-1' } });
+  });
+
+  test('uses the injected DSL migration to verify an existing destination', async () => {
+    const documentStore = store();
+    const kv = new MemoryKv();
+    const destination: AppDocument = {
+      dslVersion: DSL_VERSION,
+      stage: { id: 'stage-1', name: 'Migrated', createdAt: 100, updatedAt: 200 },
+      scenes: [],
+      outline: {
+        outlines: [],
+        generationComplete: true,
+        createdAt: 100,
+        updatedAt: 200,
+      },
+    };
+    await documentStore.saveDocument(destination);
+    const migrateDsl = vi.fn((value: unknown) => {
+      const candidate = value as AppDocument;
+      return {
+        ...candidate,
+        dslVersion: DSL_VERSION,
+        stage: { ...candidate.stage, name: 'Migrated' },
+        scenes: [],
+      };
+    });
+
+    await expect(
+      accessDocument('stage-1', {
+        store: documentStore,
+        kv,
+        legacyStore: legacy(snapshot()),
+        lockManager: lockManager(),
+        migrateDsl,
+      }),
+    ).resolves.toMatchObject({ document: destination, readOnlyLegacy: false });
+
+    expect(migrateDsl).toHaveBeenCalledOnce();
     expect(await kv.get('document-migration:stage-1', 'device')).toMatchObject({
       sourceUpdatedAt: 200,
     });
