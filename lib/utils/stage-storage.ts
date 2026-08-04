@@ -64,7 +64,6 @@ import {
   collectDocumentMediaElements,
   resolveMediaTaskForElement,
   resolveVideoMediaForElement,
-  withDocumentLegacyVideoRecovery,
   type MediaTaskLookupEntry,
 } from '@/lib/media/media-task-resolution';
 
@@ -868,19 +867,19 @@ export async function getFirstSlideByStages(
                 } satisfies ThumbnailTaskEntry,
               ]),
             );
-            const documentTasks = withDocumentLegacyVideoRecovery(
-              taskEntries,
-              collectDocumentMediaElements(document?.stage, document?.scenes ?? []),
-              stageId,
+            const documentElements = collectDocumentMediaElements(
+              document?.stage,
+              document?.scenes ?? [],
             );
 
             for (const el of mediaElements as ThumbnailMediaElement[]) {
               const videoBinding =
                 el.type === 'video'
                   ? resolveVideoMediaForElement(
-                      documentTasks,
+                      taskEntries,
                       el as import('@openmaic/dsl').PPTVideoElement,
                       stageId,
+                      documentElements,
                     )
                   : undefined;
               const mediaRef = videoBinding?.sourceRef ?? getThumbnailMediaRef(el);
@@ -889,7 +888,7 @@ export async function getFirstSlideByStages(
                 el.type === 'video'
                   ? videoBinding?.task
                   : resolveMediaTaskForElement(
-                      documentTasks,
+                      taskEntries,
                       el as import('@openmaic/dsl').PPTElement,
                       stageId,
                     );

@@ -99,6 +99,19 @@ describe('restored classroom video resolution', () => {
     });
   });
 
+  it('applies document-scoped legacy recovery through the unified video resolver', () => {
+    const element = videoElement();
+    const uniqueTask = lookupTask('done');
+    const binding = resolveVideoMediaForElement(
+      { gen_vid_unique_legacy: uniqueTask },
+      element,
+      stageId,
+      [element],
+    );
+
+    expect(binding.task).toMatchObject({ status: 'done', placeholderRef: legacyRef });
+  });
+
   it('does not map one stored row to two unmatched legacy elements', () => {
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:stored-video');
     const elements = [videoElement('gen_vid_1', 'video-1'), videoElement('gen_vid_2', 'video-2')];

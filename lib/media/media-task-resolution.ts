@@ -95,11 +95,18 @@ export function resolveVideoMediaForElement<T extends MediaTaskLookupEntry>(
   tasks: Readonly<Record<string, T>>,
   element: PPTVideoElement,
   stageId: string | undefined,
+  documentElements?: readonly PPTElement[],
 ): VideoMediaTaskResolution<T> {
+  const effectiveTasks =
+    stageId && documentElements
+      ? withDocumentLegacyVideoRecovery(tasks, documentElements, stageId)
+      : tasks;
   const mediaRef = mediaTaskRefForElement(element);
   const concreteSrc = element.src && isConcreteMediaAddress(element.src) ? element.src : undefined;
   const sourceRef = concreteSrc ?? mediaRef ?? element.src;
-  const task = concreteSrc ? undefined : resolveMediaTaskForElement(tasks, element, stageId);
+  const task = concreteSrc
+    ? undefined
+    : resolveMediaTaskForElement(effectiveTasks, element, stageId);
   const posterRef = element.poster ?? task?.poster;
   const posterTask =
     element.poster && task?.poster
