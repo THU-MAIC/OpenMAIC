@@ -168,6 +168,56 @@ describe('PPTX media fallback chains', () => {
     expect(mocks.mediaGet).toHaveBeenCalledWith('stage-1:ast_background');
   });
 
+  it('prefers replaced pool bytes over a stale compatibility row', async () => {
+    const staleBytes = new TextEncoder().encode('dexie-old');
+    mocks.mediaGet.mockResolvedValue({
+      id: 'stage-1:ast_retried_background',
+      stageId: 'stage-1',
+      type: 'image',
+      blob: new Blob([staleBytes], { type: 'image/png' }),
+      mimeType: 'image/png',
+      size: staleBytes.byteLength,
+      prompt: 'Background',
+      params: '{}',
+      createdAt: 1,
+    });
+    mocks.poolResolve.mockResolvedValue('https://pool.test/retried-background');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(new Blob([PNG_BYTES], { type: 'image/png' }))),
+    );
+    useMediaGenerationStore.setState({
+      tasks: {
+        ast_retried_background: {
+          elementId: 'ast_retried_background',
+          type: 'image',
+          status: 'failed',
+          prompt: 'Background',
+          params: {},
+          error: 'Compatibility write failed',
+          errorCode: 'MEDIA_COMPATIBILITY_STORE_LAGGED',
+          retryCount: 1,
+          stageId: 'stage-1',
+        },
+      },
+    });
+    const slide = {
+      ...baseSlide({}),
+      background: {
+        type: 'image',
+        image: { src: 'ast_retried_background', size: 'cover' },
+      },
+      elements: [],
+    } as Slide;
+
+    const blob = await buildPptxBlob([slide], [sceneFor(slide)], 0.5625, 1000, 100, 1, 'stage-1');
+    const media = await pptxMediaBytes(blob);
+
+    expect(mocks.poolResolve).toHaveBeenCalledWith('ast_retried_background');
+    expect(media.some((bytes) => Buffer.from(bytes).equals(Buffer.from(PNG_BYTES)))).toBe(true);
+    expect(media.some((bytes) => Buffer.from(bytes).equals(Buffer.from(staleBytes)))).toBe(false);
+  });
+
   it('falls back to the original image fetch when task, Dexie, and pool all miss', async () => {
     const fetchSpy = vi.fn(async (url: string) => {
       if (url === 'logo.png') {

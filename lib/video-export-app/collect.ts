@@ -31,6 +31,7 @@ import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { withAssetUrl, type AssetUrlLeaseState } from '@/lib/media/use-asset-url';
 import {
   MISSING_ASSET_LEASE,
+  isConcreteMediaAddress,
   renderableMediaUrl,
   resolveMediaRef,
   type MediaTaskState,
@@ -173,6 +174,21 @@ async function resolveMediaBytesWithFallback(
         candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
     );
   const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
+  if (!isConcreteMediaAddress(ref)) {
+    try {
+      const pooled = await withAssetUrl(ref, async (url) => {
+        if (!url) return null;
+        const binding = resolveVideoExportMediaBinding(ref, effectiveTask, {
+          status: 'resolved',
+          url,
+        });
+        return binding.src ? resolveBytes(undefined, binding.src) : null;
+      });
+      if (pooled) return pooled;
+    } catch {
+      // The compatibility record remains the fallback when pool access fails.
+    }
+  }
   const stored = await resolveBytes(usableRecord?.blob, usableRecord?.ossKey);
   if (stored) {
     const state = resolveVideoExportMediaBinding(ref, effectiveTask, {
@@ -182,21 +198,8 @@ async function resolveMediaBytesWithFallback(
     if (state.kind === 'url') return stored;
   }
 
-  try {
-    return await withAssetUrl(ref, async (url) => {
-      const binding = resolveVideoExportMediaBinding(
-        ref,
-        effectiveTask,
-        url ? { status: 'resolved', url } : MISSING_ASSET_LEASE,
-      );
-      const resolved = binding.src;
-      return resolved ? resolveBytes(undefined, resolved) : null;
-    });
-  } catch {
-    // IndexedDB/pool resolution is optional; preserve the original fetch path.
-    const resolved = resolveVideoExportMediaBinding(ref, effectiveTask).src;
-    return resolved ? resolveBytes(undefined, resolved) : null;
-  }
+  const resolved = resolveVideoExportMediaBinding(ref, effectiveTask).src;
+  return resolved ? resolveBytes(undefined, resolved) : null;
 }
 
 /** The generated-media ref an element points at, when it is an unresolved placeholder. */

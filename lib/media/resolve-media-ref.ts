@@ -27,7 +27,11 @@ export function isConcreteMediaAddress(value: string | undefined): boolean {
   // User-inserted browser-relative media is concrete too. Keep this narrow
   // enough that allocated ids and other opaque document refs do not become a
   // network request merely because their pool entry is missing.
-  return /^(?:[^:?#]+\/)?[^/:?#]+\.[a-z0-9]{1,12}(?:[?#].*)?$/i.test(candidate);
+  return (
+    /^(?:[^:?#]+\/)+[^?#]*(?:[?#].*)?$/.test(candidate) ||
+    /^[^:?#]+[?#].*$/.test(candidate) ||
+    /^(?:[^:?#]+\/)?[^/:?#]+\.[a-z0-9]{1,12}(?:[?#].*)?$/i.test(candidate)
+  );
 }
 
 function isRetryableFailure(task: MediaTaskState): boolean {

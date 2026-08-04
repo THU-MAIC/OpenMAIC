@@ -298,6 +298,40 @@ describe('collectVideoAssets — ossKey fallback for evicted blobs', () => {
     expect(await blobs.get('media/pool.png')?.text()).toBe('pool-image');
     expect(missing).toHaveLength(0);
   });
+
+  it('prefers replaced pool bytes over a stale compatibility row', async () => {
+    mediaOwnerMocks.withAssetUrl.mockImplementationOnce(async (_ref, fn) =>
+      fn('https://pool.test/replaced-image'),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(new Blob(['pool-new'], { type: 'image/png' }))),
+    );
+    const rec = imageRecord({
+      id: 'stage:ast_retried_image',
+      blob: new Blob(['dexie-old'], { type: 'image/png' }),
+    });
+
+    const { blobs, missing } = await collectVideoAssets(
+      irWith([
+        {
+          assetId: 'stage:ast_retried_image',
+          kind: 'image',
+          path: 'media/retried.png',
+          present: true,
+        },
+      ]),
+      [],
+      records({ mediaByElementId: new Map([['ast_retried_image', rec]]) }),
+    );
+
+    expect(mediaOwnerMocks.withAssetUrl).toHaveBeenCalledWith(
+      'ast_retried_image',
+      expect.any(Function),
+    );
+    expect(await blobs.get('media/retried.png')?.text()).toBe('pool-new');
+    expect(missing).toHaveLength(0);
+  });
 });
 
 describe('collectVideoAssets — frame base restores evicted generated media', () => {

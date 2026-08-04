@@ -783,18 +783,17 @@ export async function resolveThumbnailMediaValue(
   if (isConcreteMediaAddress(ref)) {
     return renderableMediaUrl(resolveMediaRef(ref, undefined, MISSING_ASSET_LEASE));
   }
-  let blob = storedBlob && storedBlob.size > 0 ? blobWithType(storedBlob, mimeType) : undefined;
-  if (!blob) {
-    try {
-      blob = await withAssetUrl(ref, async (url) => {
-        if (!url) return undefined;
-        const response = await fetch(url);
-        return response.ok ? response.blob() : undefined;
-      });
-    } catch {
-      // Pool access is optional for the home-page compatibility thumbnail.
-    }
+  let blob: Blob | undefined;
+  try {
+    blob = await withAssetUrl(ref, async (url) => {
+      if (!url) return undefined;
+      const response = await fetch(url);
+      return response.ok ? response.blob() : undefined;
+    });
+  } catch {
+    // Pool access is optional for the home-page compatibility thumbnail.
   }
+  blob ??= storedBlob && storedBlob.size > 0 ? blobWithType(storedBlob, mimeType) : undefined;
   if (blob) {
     const url = URL.createObjectURL(blobWithType(blob, mimeType));
     return renderableMediaUrl(

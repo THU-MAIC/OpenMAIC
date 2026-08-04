@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   accessDocument: vi.fn(),
   mediaToArray: vi.fn(),
+  withAssetUrl: vi.fn(async (_ref: string, fn: (url: string | null) => unknown) => fn(null)),
 }));
 
 vi.mock('@/lib/document-store', () => ({
@@ -20,6 +21,9 @@ vi.mock('@/lib/utils/database', () => ({
       where: () => ({ equals: () => ({ toArray: mocks.mediaToArray }) }),
     },
   },
+}));
+vi.mock('@/lib/media/use-asset-url', () => ({
+  withAssetUrl: mocks.withAssetUrl,
 }));
 vi.mock('@/lib/utils/chat-storage', () => ({
   ChatStorageLockUnavailableError: class extends Error {},
@@ -96,6 +100,7 @@ describe('stage thumbnail allocated assets', () => {
         createdAt: 1,
       },
     ]);
+    mocks.withAssetUrl.mockReset().mockImplementation(async (_ref, fn) => fn(null));
   });
 
   it('resolves an allocated ref through its same-key Dexie compatibility row', async () => {
@@ -105,6 +110,22 @@ describe('stage thumbnail allocated assets', () => {
     expect(slides['stage-1'].elements[0]).toMatchObject({
       src: 'blob:thumbnail-asset',
     });
+  });
+
+  it('prefers replaced pool bytes over a stale compatibility row', async () => {
+    mocks.withAssetUrl.mockImplementationOnce(async (_ref, fn) =>
+      fn('https://pool.test/replaced-thumbnail'),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(new Blob(['pool-new'], { type: 'image/png' }))),
+    );
+
+    const slides = await getFirstSlideByStages(['stage-1']);
+
+    expect(slides['stage-1'].elements[0]).toMatchObject({ src: 'blob:thumbnail-asset' });
+    const hydrated = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
+    expect(await hydrated.text()).toBe('pool-new');
   });
 
   it('hydrates an allocated poster from the poster own compatibility row after reload', async () => {

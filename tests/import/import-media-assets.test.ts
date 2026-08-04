@@ -284,6 +284,39 @@ describe('classroom import media allocation', () => {
     });
   });
 
+  it.each(['media/123', 'api/media?id=1', '/path/to/resource', 'path?query=val'])(
+    'preserves the extensionless relative media address %s',
+    (address) => {
+      const rewritten = rewriteImportedSlideMediaRefs(
+        {
+          id: 'slide-relative-refs',
+          viewportSize: 1000,
+          viewportRatio: 0.5625,
+          background: { type: 'image', image: { src: address } },
+          elements: [
+            { id: 'image', type: 'image', src: address },
+            {
+              id: 'video',
+              type: 'video',
+              src: address,
+              mediaRef: address,
+              poster: address,
+            },
+          ],
+        } as unknown as Slide,
+        { refToNewId: {}, posterRefToNewId: {}, posterByMediaRef: {} },
+      );
+
+      expect(rewritten.background).toMatchObject({ type: 'image', image: { src: address } });
+      expect(rewritten.elements[0]).toMatchObject({ src: address });
+      expect(rewritten.elements[1]).toMatchObject({
+        src: address,
+        mediaRef: address,
+        poster: address,
+      });
+    },
+  );
+
   it('falls back to the general ref mapping for an independently indexed poster', () => {
     const rewritten = rewriteImportedSlideMediaRefs(
       {

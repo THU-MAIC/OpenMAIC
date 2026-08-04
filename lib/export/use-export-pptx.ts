@@ -26,6 +26,7 @@ import { db, mediaFileKey } from '@/lib/utils/database';
 import { withAssetUrl, type AssetUrlLeaseState } from '@/lib/media/use-asset-url';
 import {
   MISSING_ASSET_LEASE,
+  isConcreteMediaAddress,
   renderableMediaUrl,
   resolveMediaRef,
   type MediaTaskState,
@@ -419,6 +420,19 @@ async function resolveStoredMediaBlob(ref: string, stageId?: string): Promise<Bl
         candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
     );
   const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
+  if (!isConcreteMediaAddress(ref)) {
+    try {
+      const pooled = await withAssetUrl(ref, async (url) => {
+        if (!url) return null;
+        const state = resolveMediaRef(ref, effectiveTask, { status: 'resolved', url });
+        const resolved = renderableMediaUrl(state);
+        return resolved ? fetchBlob(resolved) : null;
+      });
+      if (pooled) return pooled;
+    } catch {
+      // The compatibility row remains the fallback when pool access fails.
+    }
+  }
   if (stageId) {
     const record = await db.mediaFiles.get(mediaFileKey(stageId, ref)).catch(() => undefined);
     if (record && !record.error && record.blob.size > 0) {
@@ -429,21 +443,9 @@ async function resolveStoredMediaBlob(ref: string, stageId?: string): Promise<Bl
       if (state.kind === 'url') return record.blob;
     }
   }
-  try {
-    return await withAssetUrl(ref, async (url) => {
-      const state = resolveMediaRef(
-        ref,
-        effectiveTask,
-        url ? { status: 'resolved', url } : MISSING_ASSET_LEASE,
-      );
-      const resolved = renderableMediaUrl(state);
-      return resolved ? fetchBlob(resolved) : null;
-    });
-  } catch {
-    const state = resolveMediaRef(ref, effectiveTask, MISSING_ASSET_LEASE);
-    const resolved = renderableMediaUrl(state);
-    return resolved ? fetchBlob(resolved) : null;
-  }
+  const state = resolveMediaRef(ref, effectiveTask, MISSING_ASSET_LEASE);
+  const resolved = renderableMediaUrl(state);
+  return resolved ? fetchBlob(resolved) : null;
 }
 
 // Exported for the round-trip integration test harness — the test wires its
