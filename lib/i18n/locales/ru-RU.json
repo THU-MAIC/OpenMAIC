@@ -1088,6 +1088,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "Qwen",
       "kimi": "Kimi",
@@ -1111,7 +1112,8 @@
       "openai": "Протокол OpenAI",
       "azure": "Azure OpenAI",
       "anthropic": "Протокол Claude",
-      "google": "Протокол Gemini"
+      "google": "Протокол Gemini",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "моделей",
     "modelSingular": "модель",

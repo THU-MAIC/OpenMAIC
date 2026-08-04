@@ -26,6 +26,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'MIMO',
   'HY3',
   'OLLAMA',
+  'BEDROCK',
   'TTS_OPENAI',
   'TTS_AZURE',
   'TTS_GLM',
@@ -66,6 +67,8 @@ function clearProviderEnv() {
   delete process.env.ALIDOCMIND_ACCESS_KEY_ID;
   delete process.env.ALIDOCMIND_ACCESS_KEY_SECRET;
   delete process.env.ALIDOCMIND_BASE_URL;
+  delete process.env.BEDROCK_REGION;
+  delete process.env.AWS_BEARER_TOKEN_BEDROCK;
 }
 
 vi.mock('fs', async (importOriginal) => {
@@ -321,6 +324,45 @@ providers:
       const providers = getServerProviders();
 
       expect(providers.openai).toBeUndefined();
+    });
+
+    it('includes Bedrock from env without an API key', async () => {
+      vi.stubEnv('BEDROCK_REGION', 'us-east-1');
+      vi.stubEnv('BEDROCK_MODELS', ' us.anthropic.claude-sonnet-5 , us.anthropic.claude-opus-4-8 ');
+      const { getServerProviders, resolveApiKey, resolveBaseUrl } =
+        await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.bedrock).toEqual({
+        models: ['us.anthropic.claude-sonnet-5', 'us.anthropic.claude-opus-4-8'],
+      });
+      expect(resolveApiKey('bedrock')).toBe('');
+      expect(resolveBaseUrl('bedrock')).toBeUndefined();
+    });
+
+    it('does not enable Bedrock for whitespace-only region and models', async () => {
+      vi.stubEnv('BEDROCK_REGION', '   ');
+      vi.stubEnv('BEDROCK_MODELS', ' , ');
+      const { getServerProviders } = await import('@/lib/server/provider-config');
+
+      expect(getServerProviders().bedrock).toBeUndefined();
+    });
+
+    it('includes Bedrock from YAML with only models configured', async () => {
+      yamlOverride = `
+providers:
+  bedrock:
+    models:
+      - us.anthropic.claude-sonnet-5
+      - us.anthropic.claude-opus-4-8
+`;
+      const { getServerProviders } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.bedrock.models).toEqual([
+        'us.anthropic.claude-sonnet-5',
+        'us.anthropic.claude-opus-4-8',
+      ]);
     });
   });
 

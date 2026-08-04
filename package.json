@@ -29,6 +29,7 @@
     "eval:orchestration:answer-content": "tsx eval/orchestration/answer-content-runner.ts"
   },
   "dependencies": {
+    "@ai-sdk/amazon-bedrock": "^4.0.103",
     "@ai-sdk/anthropic": "^3.0.71",
     "@ai-sdk/azure": "^3.0.88",
     "@ai-sdk/google": "^3.0.64",
@@ -41,6 +42,7 @@
     "@assistant-ui/react": "^0.14.18",
     "@assistant-ui/react-markdown": "^0.14.1",
     "@assistant-ui/react-streamdown": "^0.3.3",
+    "@aws-sdk/credential-providers": "^3.1045.0",
     "@base-ui/react": "^1.1.0",
     "@copilotkit/backend": "^0.37.0",
     "@copilotkit/runtime": "^1.51.2",

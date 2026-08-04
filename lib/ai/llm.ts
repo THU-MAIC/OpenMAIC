@@ -120,6 +120,7 @@ function normalizeProviderId(
 ): string | undefined {
   if (!provider) return undefined;
   if (provider === 'anthropic.messages' && modelId?.startsWith('MiniMax-')) return 'minimax';
+  if (provider === 'amazon-bedrock') return 'bedrock';
   if (provider in PROVIDERS) return provider;
   const prefix = provider.split('.')[0];
   return prefix in PROVIDERS ? prefix : undefined;
