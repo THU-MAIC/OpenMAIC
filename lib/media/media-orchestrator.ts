@@ -157,8 +157,8 @@ export async function retryMediaTask(
     : false;
   const activeDocumentCount = activePersistedRefs?.referenceCounts.get(elementId) ?? 0;
   const exclusive = activeDocumentCount === 1 && !referencedByAnotherDocument;
-  const replaceAssetId = allocated && !target && exclusive ? elementId : undefined;
-  const targetedFork = !!target || (allocated && !replaceAssetId);
+  const replaceAssetId = allocated && exclusive ? elementId : undefined;
+  const targetedFork = allocated ? !replaceAssetId : !!target;
   if (targetedFork && (!scopedTarget?.sceneId || !scopedTarget.slideId)) {
     log.warn(`Cannot fork media ${elementId} without a scene-and-slide target`);
     return;

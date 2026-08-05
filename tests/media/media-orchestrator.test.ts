@@ -614,16 +614,21 @@ describe('media orchestrator asset write paths', () => {
     expect(mocks.document).toEqual(before);
   });
 
-  it('replaces allocated media bytes without changing the document reference', async () => {
+  it('replaces exclusively owned media bytes for a production-shaped targeted retry', async () => {
     const assetId = await pool.put(new Blob(['image-old'], { type: 'image/png' }));
     mocks.document = documentWithMedia(assetId, 'image');
     const before = structuredClone(mocks.document);
+    const put = vi.spyOn(pool, 'put');
     const replace = vi.spyOn(pool, 'replace');
     const release = vi.spyOn(pool, 'release');
     serveImage('image-replaced');
     useMediaGenerationStore.setState({ tasks: { [assetId]: failedTask(assetId) } });
 
-    await retryMediaTask(assetId);
+    await retryMediaTask(assetId, {
+      elementId: 'image-1',
+      sceneId: 'scene-1',
+      slideId: 'slide-1',
+    });
 
     expect(replace).toHaveBeenCalledWith(
       assetId,
@@ -633,6 +638,7 @@ describe('media orchestrator asset write paths', () => {
         dimensions: { width: 1024, height: 576 },
       }),
     );
+    expect(put).not.toHaveBeenCalled();
     expect(release).toHaveBeenCalledWith(assetId);
     expect(await resolvedText(assetId)).toBe('image-replaced');
     expect(mocks.document).toEqual(before);
@@ -640,6 +646,7 @@ describe('media orchestrator asset write paths', () => {
     expect(mocks.mediaPut).toHaveBeenCalledWith(
       expect.objectContaining({ id: `${stageId}:${assetId}` }),
     );
+    expect(await mocks.mediaRows.get(`${stageId}:${assetId}`)?.blob.text()).toBe('image-replaced');
     expect(useMediaGenerationStore.getState().tasks[assetId]?.status).toBe('done');
     expect(mocks.listDocuments).toHaveBeenCalledTimes(1);
     expect(mocks.loadDocument).toHaveBeenCalledWith(stageId);
@@ -657,6 +664,10 @@ describe('media orchestrator asset write paths', () => {
     other.stage.id = 'stage-other';
     other.scenes[0].stageId = 'stage-other';
     mocks.otherDocuments.set('stage-other', other);
+    mocks.mediaRows.set(`${stageId}:${assetId}`, {
+      id: `${stageId}:${assetId}`,
+      blob: new Blob(['shared-original'], { type: 'image/png' }),
+    });
     useMediaGenerationStore.setState({ tasks: { [assetId]: failedTask(assetId) } });
     const replace = vi.spyOn(pool, 'replace');
     serveImage('retried-target');
@@ -673,6 +684,8 @@ describe('media orchestrator asset write paths', () => {
     expect(other.scenes[0].content.canvas.elements[0].src).toBe(assetId);
     expect(await resolvedText(assetId)).toBe('shared-original');
     expect(await resolvedText(retriedRef)).toBe('retried-target');
+    expect(await mocks.mediaRows.get(`${stageId}:${assetId}`)?.blob.text()).toBe('shared-original');
+    expect(mocks.mediaDelete).not.toHaveBeenCalledWith(`${stageId}:${assetId}`);
     expect(replace).not.toHaveBeenCalled();
   });
 
@@ -717,7 +730,11 @@ describe('media orchestrator asset write paths', () => {
       tasks: { [assetId]: failedTask(assetId, 'video') },
     });
 
-    await retryMediaTask(assetId);
+    await retryMediaTask(assetId, {
+      elementId: 'video-1',
+      sceneId: 'scene-1',
+      slideId: 'slide-1',
+    });
 
     expect(await resolvedText(assetId)).toBe('video-replaced');
     expect(await resolvedText(posterAssetId)).toBe('poster-new');
@@ -740,7 +757,11 @@ describe('media orchestrator asset write paths', () => {
       error: 'legacy failure',
     });
 
-    await retryMediaTask(placeholder);
+    await retryMediaTask(placeholder, {
+      elementId: 'image-1',
+      sceneId: 'scene-1',
+      slideId: 'slide-1',
+    });
 
     const assetId = mocks.document.scenes[0].content.canvas.elements[0].src as string;
     expect(assetId).toMatch(/^ast_/);
@@ -1425,7 +1446,12 @@ describe('media orchestrator asset write paths', () => {
       createdAt: 1,
     });
 
-    await retryMediaTask(assetId);
+    const target = {
+      elementId: 'image-1',
+      sceneId: 'scene-1',
+      slideId: 'slide-1',
+    };
+    await retryMediaTask(assetId, target);
 
     expect(await resolvedText(assetId)).toBe('pool-new-dexie-missed');
     expect(useMediaGenerationStore.getState().tasks[assetId]).toMatchObject({
@@ -1438,7 +1464,7 @@ describe('media orchestrator asset write paths', () => {
     );
 
     serveImage('stores-converged');
-    await retryMediaTask(assetId);
+    await retryMediaTask(assetId, target);
     expect(await resolvedText(assetId)).toBe('stores-converged');
     expect(useMediaGenerationStore.getState().tasks[assetId]?.status).toBe('done');
     expect(mocks.mediaPut).toHaveBeenLastCalledWith(
