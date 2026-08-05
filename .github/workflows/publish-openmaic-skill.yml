@@ -73,6 +73,7 @@ jobs:
         run: |
           : > "$NPM_CONFIG_USERCONFIG"
           npm install --global --ignore-scripts clawhub@0.23.3
+          echo "CLAWHUB_PACKAGE_JSON=$(npm root --global)/clawhub/package.json" >> "$GITHUB_ENV"
 
       - name: Configure ClawHub registry
         run: |
@@ -96,20 +97,67 @@ jobs:
         run: |
           set -euo pipefail
           source_commit="$(git rev-parse HEAD)"
-          version_args=()
-          if [[ -n "$PUBLISH_VERSION" ]]; then
-            version_args=(--version "$PUBLISH_VERSION")
-          fi
-          clawhub skill publish skills/openmaic \
-            --slug openmaic \
-            --name OpenMAIC \
-            --owner wyuc \
-            "${version_args[@]}" \
-            --dry-run \
-            --json \
-            --source-repo "$SOURCE_REPO" \
-            --source-commit "$source_commit" \
+          publish_args=(
+            skills/openmaic
+            --slug openmaic
+            --name OpenMAIC
+            --owner wyuc
+            --source-repo "$SOURCE_REPO"
+            --source-commit "$source_commit"
             --source-path skills/openmaic
+          )
+          if [[ -n "$PUBLISH_VERSION" ]]; then
+            preflight_file="$RUNNER_TEMP/clawhub-version-preflight.json"
+            clawhub skill publish "${publish_args[@]}" --dry-run --json | tee "$preflight_file"
+            if ! decision="$(PREFLIGHT_FILE="$preflight_file" node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          import { createRequire } from "node:module";
+
+          const require = createRequire(process.env.CLAWHUB_PACKAGE_JSON);
+          const semver = require("semver");
+          const desired = process.env.PUBLISH_VERSION;
+          const preflight = JSON.parse(readFileSync(process.env.PREFLIGHT_FILE, "utf8"));
+
+          if (!semver.valid(desired)) {
+            console.error("::error::Requested version is not valid semver.");
+            process.exit(1);
+          }
+          if (
+            typeof preflight.status !== "string" ||
+            typeof preflight.version !== "string" ||
+            typeof preflight.fingerprint !== "string" ||
+            preflight.fingerprint.length === 0
+          ) {
+            console.error("::error::ClawHub returned incomplete version metadata.");
+            process.exit(1);
+          }
+          if (preflight.status === "unchanged" && preflight.version === desired) {
+            console.log("noop");
+            process.exit(0);
+          }
+          if (preflight.latestVersion !== null && preflight.latestVersion !== undefined) {
+            const latest = semver.valid(preflight.latestVersion);
+            if (!latest) {
+              console.error("::error::ClawHub returned an invalid latest version.");
+              process.exit(1);
+            }
+            if (!semver.gt(desired, latest)) {
+              console.error(`::error::Requested version must be greater than ${latest}.`);
+              process.exit(1);
+            }
+          }
+          console.log("continue");
+          NODE
+            )"; then
+              exit 1
+            fi
+            if [[ "$decision" == "noop" ]]; then
+              echo "::notice::The requested version already has identical content."
+              exit 0
+            fi
+            publish_args+=(--version "$PUBLISH_VERSION")
+          fi
+          clawhub skill publish "${publish_args[@]}" --dry-run --json
 
   publish:
     name: Publish to ClawHub
@@ -142,6 +190,7 @@ jobs:
         run: |
           : > "$NPM_CONFIG_USERCONFIG"
           npm install --global --ignore-scripts clawhub@0.23.3
+          echo "CLAWHUB_PACKAGE_JSON=$(npm root --global)/clawhub/package.json" >> "$GITHUB_ENV"
 
       - name: Verify ClawHub token is configured
         env:
@@ -162,11 +211,15 @@ jobs:
           from pathlib import Path
 
           path = Path(os.environ["RUNNER_TEMP"]) / "clawhub-config.json"
-          path.write_text(
-              json.dumps({"registry": "https://clawhub.ai", "token": os.environ["CLAWHUB_TOKEN"]}, indent=2) + "\n",
-              encoding="utf-8",
-          )
-          path.chmod(0o600)
+          flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+          fd = os.open(path, flags, 0o600)
+          with os.fdopen(fd, "w", encoding="utf-8") as config:
+              json.dump(
+                  {"registry": "https://clawhub.ai", "token": os.environ["CLAWHUB_TOKEN"]},
+                  config,
+                  indent=2,
+              )
+              config.write("\n")
           PY
           echo "CLAWHUB_CONFIG_PATH=$RUNNER_TEMP/clawhub-config.json" >> "$GITHUB_ENV"
 
@@ -181,22 +234,78 @@ jobs:
           set -euo pipefail
           source_commit="$(git rev-parse HEAD)"
           git fetch --no-tags origin main
+          if ! git cat-file -e "HEAD^{tree}:skills/openmaic" 2>/dev/null; then
+            echo "::notice::Skipping $source_commit because skills/openmaic was deleted."
+            exit 0
+          fi
+          if ! git cat-file -e "origin/main^{tree}:skills/openmaic" 2>/dev/null; then
+            echo "::notice::Skipping $source_commit because skills/openmaic was removed from main."
+            exit 0
+          fi
           source_tree="$(git rev-parse HEAD:skills/openmaic)"
           main_tree="$(git rev-parse origin/main:skills/openmaic)"
           if [[ "$source_tree" != "$main_tree" ]]; then
             echo "::notice::Skipping $source_commit because skills/openmaic changed on main."
             exit 0
           fi
-          version_args=()
-          if [[ -n "$PUBLISH_VERSION" ]]; then
-            version_args=(--version "$PUBLISH_VERSION")
-          fi
-          clawhub skill publish skills/openmaic \
-            --slug openmaic \
-            --name OpenMAIC \
-            --owner wyuc \
-            "${version_args[@]}" \
-            --json \
-            --source-repo "$SOURCE_REPO" \
-            --source-commit "$source_commit" \
+          publish_args=(
+            skills/openmaic
+            --slug openmaic
+            --name OpenMAIC
+            --owner wyuc
+            --source-repo "$SOURCE_REPO"
+            --source-commit "$source_commit"
             --source-path skills/openmaic
+          )
+          if [[ -n "$PUBLISH_VERSION" ]]; then
+            preflight_file="$RUNNER_TEMP/clawhub-version-preflight.json"
+            clawhub skill publish "${publish_args[@]}" --dry-run --json | tee "$preflight_file"
+            if ! decision="$(PREFLIGHT_FILE="$preflight_file" node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          import { createRequire } from "node:module";
+
+          const require = createRequire(process.env.CLAWHUB_PACKAGE_JSON);
+          const semver = require("semver");
+          const desired = process.env.PUBLISH_VERSION;
+          const preflight = JSON.parse(readFileSync(process.env.PREFLIGHT_FILE, "utf8"));
+
+          if (!semver.valid(desired)) {
+            console.error("::error::Requested version is not valid semver.");
+            process.exit(1);
+          }
+          if (
+            typeof preflight.status !== "string" ||
+            typeof preflight.version !== "string" ||
+            typeof preflight.fingerprint !== "string" ||
+            preflight.fingerprint.length === 0
+          ) {
+            console.error("::error::ClawHub returned incomplete version metadata.");
+            process.exit(1);
+          }
+          if (preflight.status === "unchanged" && preflight.version === desired) {
+            console.log("noop");
+            process.exit(0);
+          }
+          if (preflight.latestVersion !== null && preflight.latestVersion !== undefined) {
+            const latest = semver.valid(preflight.latestVersion);
+            if (!latest) {
+              console.error("::error::ClawHub returned an invalid latest version.");
+              process.exit(1);
+            }
+            if (!semver.gt(desired, latest)) {
+              console.error(`::error::Requested version must be greater than ${latest}.`);
+              process.exit(1);
+            }
+          }
+          console.log("continue");
+          NODE
+            )"; then
+              exit 1
+            fi
+            if [[ "$decision" == "noop" ]]; then
+              echo "::notice::The requested version already has identical content."
+              exit 0
+            fi
+            publish_args+=(--version "$PUBLISH_VERSION")
+          fi
+          clawhub skill publish "${publish_args[@]}" --json
