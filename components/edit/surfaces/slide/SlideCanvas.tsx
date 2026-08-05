@@ -1,20 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import {
-  EditableSlideCanvas,
-  type EditIntent,
-  type Selection,
-  type TextAutoSizeIntent,
-  type TextContentChange,
-  type TextEditorController,
-  type TextFormatState,
+import { useCallback, useEffect, useMemo } from 'react';
+import type {
+  EditIntent,
+  Selection,
+  TextAutoSizeIntent,
+  TextContentChange,
 } from '@openmaic/renderer/editing';
+import { EditableSlideCanvasWithUI } from '@openmaic/renderer/editing-ui';
 import Canvas from '@/components/slide-renderer/Editor/Canvas';
 import { SpotlightOverlay } from '@/components/slide-renderer/Editor/SpotlightOverlay';
 import { LaserPointerOverlay } from '@/components/slide-renderer/Editor/LaserPointerOverlay';
+import { FONTS } from '@/configs/font';
 import { SceneProvider } from '@/lib/contexts/scene-context';
 import { isEditorRendererEnabled } from '@/lib/config/feature-flags';
+import { useI18n } from '@/lib/hooks/use-i18n';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useResolvedSlide } from '@/components/slide-renderer/use-resolved-slide';
 import {
@@ -34,14 +34,10 @@ import { useSlideEditSession } from './slide-edit-session';
 import { useRendererCanvasShortcuts } from './use-renderer-canvas-shortcuts';
 import { EDITABLE_ELEMENT_ID_PREFIX } from './renderer-element-dom';
 import { resolveEditingElementId } from './editing-state';
-import {
-  commitRendererTextAutoSize,
-  commitRendererTextChange,
-  connectRendererTextController,
-  mapRendererTextFormatState,
-} from './renderer-text-editing';
+import { commitRendererTextAutoSize, commitRendererTextChange } from './renderer-text-editing';
 
 function RendererEditorCanvas() {
+  const { locale, t } = useI18n();
   const content = useResolvedSlideContent();
   const resolvedSlide = useResolvedSlide(content.canvas);
   const activeElementIds = useCanvasStore.use.activeElementIdList();
@@ -51,9 +47,15 @@ function RendererEditorCanvas() {
   const editingElementId = useCanvasStore.use.editingElementId();
   const setActiveElementIdList = useCanvasStore.use.setActiveElementIdList();
   const setEditingElementId = useCanvasStore.use.setEditingElementId();
-  const setRichtextAttrs = useCanvasStore.use.setRichtextAttrs();
   const setDisableHotkeysState = useCanvasStore.use.setDisableHotkeysState();
-  const detachTextControllerRef = useRef<(() => void) | null>(null);
+  const toolbarFonts = useMemo(
+    () =>
+      FONTS.map((font) => ({
+        value: font.value,
+        label: font.labelKey ? t(font.labelKey) : font.label,
+      })),
+    [t],
+  );
   const activeEditingElementId = useMemo(
     () => resolveEditingElementId(activeElementIds, content.canvas.elements, editingElementId),
     [activeElementIds, content.canvas.elements, editingElementId],
@@ -94,28 +96,11 @@ function RendererEditorCanvas() {
     (intent: TextAutoSizeIntent) => commitRendererTextAutoSize(content, intent),
     [content],
   );
-  const handleTextFormatChange = useCallback(
-    (_elementId: string, state: TextFormatState) => {
-      setRichtextAttrs(mapRendererTextFormatState(state));
-    },
-    [setRichtextAttrs],
-  );
-  const handleTextEditorChange = useCallback((controller: TextEditorController | null) => {
-    detachTextControllerRef.current?.();
-    detachTextControllerRef.current = controller ? connectRendererTextController(controller) : null;
-  }, []);
   const handleTextFocusChange = useCallback(
     (focused: boolean) => setDisableHotkeysState(focused),
     [setDisableHotkeysState],
   );
-  useEffect(
-    () => () => {
-      detachTextControllerRef.current?.();
-      detachTextControllerRef.current = null;
-      setDisableHotkeysState(false);
-    },
-    [setDisableHotkeysState],
-  );
+  useEffect(() => () => setDisableHotkeysState(false), [setDisableHotkeysState]);
 
   const commands = useMemo(
     () =>
@@ -140,7 +125,7 @@ function RendererEditorCanvas() {
       commands={commands}
       onSelectionChange={handleSelectionChange}
     >
-      <EditableSlideCanvas
+      <EditableSlideCanvasWithUI
         slide={resolvedSlide}
         elementIdPrefix={EDITABLE_ELEMENT_ID_PREFIX}
         hiddenElementIds={hiddenElementIds}
@@ -150,9 +135,11 @@ function RendererEditorCanvas() {
         onElementsChange={handleElementsChange}
         onTextContentChange={handleTextContentChange}
         onTextAutoSize={handleTextAutoSize}
-        onTextFormatChange={handleTextFormatChange}
-        onTextEditorChange={handleTextEditorChange}
         onTextFocusChange={handleTextFocusChange}
+        textToolbar={{
+          locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US',
+          fonts: toolbarFonts,
+        }}
       />
     </RendererCanvasContextMenu>
   );
@@ -213,7 +200,7 @@ export function SlideCanvas() {
         <SpotlightOverlay domIdPrefix={EDITABLE_ELEMENT_ID_PREFIX} />
         <LaserPointerOverlay domIdPrefix={EDITABLE_ELEMENT_ID_PREFIX} />
       </SceneProvider>
-      <AnchoredTextBar editingElementId={editingElementId} />
+      {!useRendererEditor && <AnchoredTextBar editingElementId={editingElementId} />}
       <AnchoredElementBar element={nonTextElement} />
       {/* Canvas-side element picker for the timeline's element-bound cues. */}
       <ElementPickLayer />

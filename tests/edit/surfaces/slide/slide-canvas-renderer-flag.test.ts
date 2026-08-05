@@ -1,14 +1,8 @@
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-  EditIntent,
-  Selection,
-  SnappingOptions,
-  TextContentChange,
-  TextEditorController,
-  TextFormatState,
-} from '@openmaic/renderer/editing';
+import type { EditableSlideCanvasWithUIProps } from '@openmaic/renderer/editing-ui';
+import { FONTS } from '@/configs/font';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
 
@@ -23,20 +17,7 @@ let hiddenElementIds: string[] = [];
 let editingElementId = '';
 let spotlightPrefix: string | undefined;
 let laserPrefix: string | undefined;
-let lastRendererProps:
-  | {
-      selection?: Selection;
-      elementIdPrefix?: string;
-      hiddenElementIds?: readonly string[];
-      snapping?: boolean | SnappingOptions;
-      onSelectionChange?: (next: Selection) => void;
-      onElementsChange?: (intents: EditIntent[]) => void;
-      onTextContentChange?: (change: TextContentChange) => void;
-      onTextFormatChange?: (elementId: string, state: TextFormatState) => void;
-      onTextEditorChange?: (controller: TextEditorController | null) => void;
-      onTextFocusChange?: (focused: boolean) => void;
-    }
-  | undefined;
+let lastRendererProps: EditableSlideCanvasWithUIProps | undefined;
 
 vi.mock('@/components/slide-renderer/Editor/Canvas', () => ({
   default: () => createElement('div', { 'data-testid': 'legacy-editor-canvas' }),
@@ -71,6 +52,13 @@ vi.mock('@/components/edit/surfaces/slide/ElementPickLayer', () => ({
 vi.mock('@/lib/contexts/scene-context', () => ({
   SceneProvider: ({ children }: { children: ReactNode }) =>
     createElement('div', { 'data-testid': 'scene-provider' }, children),
+}));
+
+vi.mock('@/lib/hooks/use-i18n', () => ({
+  useI18n: () => ({
+    locale: 'zh-CN',
+    t: (key: string) => `translated:${key}`,
+  }),
 }));
 
 vi.mock('@/lib/store/canvas', () => ({
@@ -126,31 +114,16 @@ vi.mock('@/components/edit/surfaces/slide/use-slide-surface', () => ({
   useResolvedSlideContent: () => slideContent,
 }));
 
-vi.mock('@openmaic/renderer/editing', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@openmaic/renderer/editing')>();
-  return {
-    ...actual,
-    EditableSlideCanvas: (props: {
-      selection?: Selection;
-      elementIdPrefix?: string;
-      hiddenElementIds?: readonly string[];
-      snapping?: boolean | SnappingOptions;
-      onSelectionChange?: (next: Selection) => void;
-      onElementsChange?: (intents: EditIntent[]) => void;
-      onTextContentChange?: (change: TextContentChange) => void;
-      onTextFormatChange?: (elementId: string, state: TextFormatState) => void;
-      onTextEditorChange?: (controller: TextEditorController | null) => void;
-      onTextFocusChange?: (focused: boolean) => void;
-    }) => {
-      lastRendererProps = props;
-      return createElement('button', {
-        type: 'button',
-        'data-testid': 'renderer-editor-canvas',
-        'data-selection': props.selection?.elementIds.join(',') ?? '',
-      });
-    },
-  };
-});
+vi.mock('@openmaic/renderer/editing-ui', () => ({
+  EditableSlideCanvasWithUI: (props: EditableSlideCanvasWithUIProps) => {
+    lastRendererProps = props;
+    return createElement('button', {
+      type: 'button',
+      'data-testid': 'renderer-editing-ui',
+      'data-selection': props.selection?.elementIds.join(',') ?? '',
+    });
+  },
+}));
 
 const flag = 'NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED';
 const slideContent: SlideContent = {
@@ -214,10 +187,11 @@ describe('slide editor canvas renderer flag', () => {
     const html = renderToStaticMarkup(createElement(SlideCanvas));
 
     expect(html).toContain('data-testid="legacy-editor-canvas"');
-    expect(html).not.toContain('data-testid="renderer-editor-canvas"');
+    expect(html).toContain('data-testid="anchored-text-bar"');
+    expect(html).not.toContain('data-testid="renderer-editing-ui"');
   });
 
-  it('uses EditableSlideCanvas and bridges selection plus intents when the flag is enabled', async () => {
+  it('uses renderer editing-ui without the app text bar when the flag is enabled', async () => {
     process.env[flag] = 'true';
     activeElementIds = ['title-1'];
     editingElementId = 'title-1';
@@ -236,13 +210,13 @@ describe('slide editor canvas renderer flag', () => {
       { type: 'element.update', id: 'title-1', props: { top: 64 } },
     ]);
 
-    expect(html).toContain('data-testid="renderer-editor-canvas"');
+    expect(html).toContain('data-testid="renderer-editing-ui"');
     expect(html).toContain('data-renderer-canvas-context-menu=""');
     expect(html).toContain('data-selection="title-1"');
     expect(html).not.toContain('data-testid="legacy-editor-canvas"');
     expect(html).toContain('data-testid="spotlight-overlay"');
     expect(html).toContain('data-testid="laser-overlay"');
-    expect(html).toContain('data-testid="anchored-text-bar"');
+    expect(html).not.toContain('data-testid="anchored-text-bar"');
     expect(html).toContain('data-testid="anchored-element-bar"');
     expect(html).toContain('data-testid="element-pick-layer"');
     expect(lastRendererProps?.selection).toEqual({
@@ -255,6 +229,13 @@ describe('slide editor canvas renderer flag', () => {
     expect(spotlightPrefix).toBe(lastRendererProps?.elementIdPrefix);
     expect(laserPrefix).toBe(lastRendererProps?.elementIdPrefix);
     expect(lastRendererProps?.snapping).toBe(true);
+    expect(lastRendererProps?.textToolbar).toEqual({
+      locale: 'zh-CN',
+      fonts: FONTS.map((font) => ({
+        value: font.value,
+        label: font.labelKey ? `translated:${font.labelKey}` : font.label,
+      })),
+    });
     expect(mockSetActiveElementIdList).toHaveBeenCalledWith(['title-1']);
     expect(mockSetEditingElementId).toHaveBeenCalledWith('title-1');
     expect(mockApplyOp).not.toHaveBeenCalled();
@@ -266,7 +247,7 @@ describe('slide editor canvas renderer flag', () => {
     expect(mockCommitContent.mock.calls[0][1]).toBe(true);
   });
 
-  it('bridges renderer text format, focus and history callbacks', async () => {
+  it('bridges renderer text content, auto-size and focus callbacks', async () => {
     process.env[flag] = 'true';
     activeElementIds = ['title-1'];
     editingElementId = 'title-1';
@@ -274,25 +255,6 @@ describe('slide editor canvas renderer flag', () => {
     const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
 
     renderToStaticMarkup(createElement(SlideCanvas));
-    const format = {
-      bold: true,
-      em: false,
-      underline: false,
-      strikethrough: false,
-      superscript: false,
-      subscript: false,
-      code: false,
-      color: '#111111',
-      backcolor: '',
-      fontsize: '24px',
-      fontname: 'Arial',
-      link: '',
-      align: 'left',
-      bulletList: false,
-      orderedList: false,
-      blockquote: false,
-    } satisfies TextFormatState;
-    lastRendererProps?.onTextFormatChange?.('title-1', format);
     lastRendererProps?.onTextFocusChange?.(true);
     lastRendererProps?.onTextContentChange?.({
       intent: {
@@ -303,10 +265,31 @@ describe('slide editor canvas renderer flag', () => {
       },
       history: 'neutral',
     });
+    lastRendererProps?.onTextAutoSize?.({
+      type: 'element.update',
+      id: 'title-1',
+      props: { height: 72 },
+    });
 
-    expect(mockSetRichtextAttrs).toHaveBeenCalledWith(format);
     expect(mockSetDisableHotkeysState).toHaveBeenCalledWith(true);
-    expect(mockCommitContent).toHaveBeenCalledWith(expect.any(Object), false);
+    expect(mockCommitContent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        canvas: expect.objectContaining({
+          elements: [expect.objectContaining({ content: '<p>Edited</p>' })],
+        }),
+      }),
+      false,
+    );
+    expect(mockCommitContent).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        canvas: expect.objectContaining({
+          elements: [expect.objectContaining({ height: 72 })],
+        }),
+      }),
+      false,
+    );
   });
 
   it('does not commit empty or ineffective renderer intent batches', async () => {
