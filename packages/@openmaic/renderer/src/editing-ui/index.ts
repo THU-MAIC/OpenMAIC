@@ -8,6 +8,7 @@ export {
   TEXT_TOOLBAR_FONT_SIZE_MAX,
   TEXT_TOOLBAR_FONT_SIZE_MIN,
 } from './text/FontSizeControl';
+export { DefaultColorPicker, normalizeToolbarColor } from './text/DefaultColorPicker';
 export { TextFormatToolbar } from './text/TextFormatToolbar';
 export type {
   EditableSlideCanvasWithUIProps,

@@ -102,4 +102,91 @@ export const EDITING_UI_STYLES = `
   text-align: center;
   width: 44px;
 }
+
+.maic-editing-ui-color-control {
+  flex: 0 0 auto;
+  position: relative;
+}
+
+.maic-editing-ui-color-button-preview,
+.maic-editing-ui-color-picker-preview span {
+  border: 1px solid var(--maic-editing-ui-border);
+  border-radius: 3px;
+  display: block;
+  height: 18px;
+  width: 18px;
+}
+
+.maic-editing-ui-color-popover {
+  background: var(--maic-editing-ui-bg);
+  border: 1px solid var(--maic-editing-ui-border);
+  border-radius: var(--maic-editing-ui-radius);
+  box-shadow: var(--maic-editing-ui-shadow);
+  min-width: 208px;
+  padding: 10px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: calc(var(--maic-editing-ui-z-index) + 1);
+}
+
+.maic-editing-ui-color-picker {
+  display: grid;
+  gap: 10px;
+}
+
+.maic-editing-ui-color-picker-preview {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+}
+
+.maic-editing-ui-color-swatches {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(8, 1fr);
+}
+
+.maic-editing-ui-color-swatch {
+  aspect-ratio: 1;
+  border: 1px solid var(--maic-editing-ui-border);
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 18px;
+  padding: 0;
+}
+
+.maic-editing-ui-color-swatch:focus-visible,
+.maic-editing-ui-color-native-input:focus-visible,
+.maic-editing-ui-color-hex-input:focus-visible {
+  outline: 2px solid var(--maic-editing-ui-active-fg);
+  outline-offset: 1px;
+}
+
+.maic-editing-ui-color-input-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.maic-editing-ui-color-native-input {
+  border: 1px solid var(--maic-editing-ui-border);
+  border-radius: 4px;
+  cursor: pointer;
+  height: 32px;
+  padding: 2px;
+  width: 38px;
+}
+
+.maic-editing-ui-color-hex-input {
+  background: var(--maic-editing-ui-bg);
+  border: 1px solid var(--maic-editing-ui-border);
+  border-radius: 4px;
+  color: var(--maic-editing-ui-fg);
+  flex: 1;
+  font: inherit;
+  height: 32px;
+  min-width: 0;
+  padding: 0 8px;
+}
 `;

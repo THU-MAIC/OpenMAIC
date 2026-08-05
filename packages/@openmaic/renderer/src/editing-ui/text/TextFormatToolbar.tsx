@@ -12,9 +12,11 @@ import {
   Trash2,
   Underline,
 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { DEFAULT_TEXT_TOOLBAR_FONTS, resolveTextToolbarLabels } from '../labels';
 import type { TextFormatToolbarProps, TextToolbarFont } from '../types';
+import { DefaultColorPicker } from './DefaultColorPicker';
 import { FontSizeControl } from './FontSizeControl';
 
 export function TextFormatToolbar({
@@ -28,6 +30,7 @@ export function TextFormatToolbar({
   locale,
   labels: labelOverrides,
   placement,
+  renderColorPicker,
 }: TextFormatToolbarProps) {
   const labels = resolveTextToolbarLabels(locale, labelOverrides);
   const hasCurrentFont = fonts.some((font) => font.value === format.fontname);
@@ -38,6 +41,27 @@ export function TextFormatToolbar({
     .filter(Boolean)
     .join(' ');
   const preventFocusLoss = (event: MouseEvent<HTMLButtonElement>) => event.preventDefault();
+  const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
+  const colorControlRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isColorPickerOpen) return;
+
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      if (colorControlRef.current && !colorControlRef.current.contains(event.target as Node)) {
+        setIsColorPickerOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown);
+    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown);
+  }, [isColorPickerOpen]);
+
+  const dispatchColorChange = (color: string) => onCommand({ command: 'forecolor', value: color });
+  const dispatchColorCommit = (color: string) => {
+    dispatchColorChange(color);
+    setIsColorPickerOpen(false);
+  };
 
   return (
     <div className={classes} role="toolbar" aria-label={labels.toolbar} data-placement={placement}>
@@ -56,6 +80,42 @@ export function TextFormatToolbar({
         </select>
       </div>
       <FontSizeControl value={format.fontsize} labels={labels} onCommand={onCommand} />
+      <div className="maic-editing-ui-color-control" ref={colorControlRef}>
+        <button
+          type="button"
+          className="maic-editing-ui-icon-button maic-editing-ui-color-button"
+          aria-label={labels.color}
+          aria-expanded={isColorPickerOpen}
+          aria-haspopup="dialog"
+          onMouseDown={preventFocusLoss}
+          onClick={() => setIsColorPickerOpen((open) => !open)}
+        >
+          <span
+            className="maic-editing-ui-color-button-preview"
+            aria-hidden="true"
+            style={{ backgroundColor: format.color || '#000000' }}
+          />
+        </button>
+        {isColorPickerOpen ? (
+          <div className="maic-editing-ui-color-popover" role="dialog" aria-label={labels.color}>
+            {renderColorPicker ? (
+              renderColorPicker({
+                value: format.color,
+                labels,
+                onChange: dispatchColorChange,
+                onCommit: dispatchColorCommit,
+              })
+            ) : (
+              <DefaultColorPicker
+                value={format.color}
+                labels={labels}
+                onChange={dispatchColorChange}
+                onCommit={dispatchColorCommit}
+              />
+            )}
+          </div>
+        ) : null}
+      </div>
       <div className="maic-editing-ui-group">
         <button
           type="button"
