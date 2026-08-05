@@ -46,6 +46,7 @@ function RendererEditorCanvas() {
   const handleElementsChange = useCallback(
     (intents: EditIntent[]) => {
       const next = applyRendererEditIntents(content, intents);
+      if (next === content) return;
       useSlideEditSession.getState().commitContent(next, true);
     },
     [content],

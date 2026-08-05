@@ -1,0 +1,217 @@
+import { createElement, type ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { EditIntent, Selection } from '@openmaic/renderer/editing';
+import type { SceneDataController } from '@/lib/contexts/scene-context';
+import type { SlideContent } from '@/lib/types/stage';
+
+const mockSetActiveElementIdList = vi.fn();
+const mockApplyOp = vi.fn();
+const mockCommitContent = vi.fn();
+let activeElementIds: string[] = [];
+let lastRendererProps:
+  | {
+      selection?: Selection;
+      onSelectionChange?: (next: Selection) => void;
+      onElementsChange?: (intents: EditIntent[]) => void;
+    }
+  | undefined;
+
+vi.mock('@/components/slide-renderer/Editor/Canvas', () => ({
+  default: () => createElement('div', { 'data-testid': 'legacy-editor-canvas' }),
+}));
+
+vi.mock('@/components/slide-renderer/Editor/SpotlightOverlay', () => ({
+  SpotlightOverlay: () => createElement('div', { 'data-testid': 'spotlight-overlay' }),
+}));
+
+vi.mock('@/components/slide-renderer/Editor/LaserPointerOverlay', () => ({
+  LaserPointerOverlay: () => createElement('div', { 'data-testid': 'laser-overlay' }),
+}));
+
+vi.mock('@/components/edit/surfaces/slide/AnchoredTextBar', () => ({
+  AnchoredTextBar: () => createElement('div', { 'data-testid': 'anchored-text-bar' }),
+}));
+
+vi.mock('@/components/edit/surfaces/slide/AnchoredElementBar', () => ({
+  AnchoredElementBar: () => createElement('div', { 'data-testid': 'anchored-element-bar' }),
+}));
+
+vi.mock('@/components/edit/surfaces/slide/ElementPickLayer', () => ({
+  ElementPickLayer: () => createElement('div', { 'data-testid': 'element-pick-layer' }),
+}));
+
+vi.mock('@/lib/contexts/scene-context', () => ({
+  SceneProvider: ({ children }: { children: ReactNode }) =>
+    createElement('div', { 'data-testid': 'scene-provider' }, children),
+}));
+
+vi.mock('@/lib/store/canvas', () => ({
+  useCanvasStore: {
+    use: {
+      activeElementIdList: () => activeElementIds,
+      setActiveElementIdList: () => mockSetActiveElementIdList,
+    },
+    getState: () => ({
+      creatingElement: null,
+      setCreatingElement: vi.fn(),
+      setActiveElementIdList: mockSetActiveElementIdList,
+    }),
+  },
+}));
+
+vi.mock('@/components/edit/surfaces/slide/slide-edit-session', () => ({
+  useSlideEditSession: {
+    getState: () => ({
+      applyOp: mockApplyOp,
+      commitContent: mockCommitContent,
+    }),
+  },
+}));
+
+vi.mock('@/components/edit/surfaces/slide/use-slide-surface', () => ({
+  useEditingTextElementId: () => '',
+  useSelectedNonTextElement: () => null,
+  useSlideCanvasController: () => ({
+    controller: {
+      sceneId: 'scene-1',
+      sceneType: 'slide',
+      getSnapshot: () => slideContent,
+      updateSceneData: vi.fn(),
+    } satisfies SceneDataController<SlideContent>,
+    gestureProps: {
+      onPointerDownCapture: vi.fn(),
+      onPointerUpCapture: vi.fn(),
+      onPointerCancelCapture: vi.fn(),
+    },
+  }),
+  useSyncEditingElementId: vi.fn(),
+  useResolvedSlideContent: () => slideContent,
+}));
+
+vi.mock('@openmaic/renderer/editing', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@openmaic/renderer/editing')>();
+  return {
+    ...actual,
+    EditableSlideCanvas: (props: {
+      selection?: Selection;
+      onSelectionChange?: (next: Selection) => void;
+      onElementsChange?: (intents: EditIntent[]) => void;
+    }) => {
+      lastRendererProps = props;
+      return createElement('button', {
+        type: 'button',
+        'data-testid': 'renderer-editor-canvas',
+        'data-selection': props.selection?.elementIds.join(',') ?? '',
+      });
+    },
+  };
+});
+
+const flag = 'NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED';
+const slideContent: SlideContent = {
+  type: 'slide',
+  canvas: {
+    id: 'slide-1',
+    viewportSize: 1000,
+    viewportRatio: 0.5625,
+    background: { type: 'solid', color: '#ffffff' },
+    theme: {
+      fontName: 'Arial',
+      fontColor: '#111111',
+      backgroundColor: '#ffffff',
+      themeColors: ['#111111'],
+    },
+    elements: [
+      {
+        id: 'title-1',
+        type: 'text',
+        left: 24,
+        top: 32,
+        width: 120,
+        height: 48,
+        rotate: 0,
+        content: '<p>Hello</p>',
+        defaultFontName: 'Arial',
+        defaultColor: '#111111',
+      },
+    ],
+  },
+};
+
+describe('slide editor canvas renderer flag', () => {
+  let original: string | undefined;
+
+  beforeEach(() => {
+    original = process.env[flag];
+    mockSetActiveElementIdList.mockClear();
+    mockApplyOp.mockClear();
+    mockCommitContent.mockClear();
+    activeElementIds = [];
+    lastRendererProps = undefined;
+  });
+
+  afterEach(() => {
+    if (original === undefined) delete process.env[flag];
+    else process.env[flag] = original;
+  });
+
+  it('uses the legacy editor canvas when the renderer editor flag is unset', async () => {
+    delete process.env[flag];
+    const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
+
+    const html = renderToStaticMarkup(createElement(SlideCanvas));
+
+    expect(html).toContain('data-testid="legacy-editor-canvas"');
+    expect(html).not.toContain('data-testid="renderer-editor-canvas"');
+  });
+
+  it('uses EditableSlideCanvas and bridges selection plus intents when the flag is enabled', async () => {
+    process.env[flag] = 'true';
+    activeElementIds = ['title-1'];
+    vi.resetModules();
+    const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
+
+    const html = renderToStaticMarkup(createElement(SlideCanvas));
+    lastRendererProps?.onSelectionChange?.({ elementIds: ['title-1'], primaryId: 'title-1' });
+    lastRendererProps?.onElementsChange?.([
+      { type: 'element.update', id: 'title-1', props: { left: 48 } },
+      { type: 'element.update', id: 'title-1', props: { top: 64 } },
+    ]);
+
+    expect(html).toContain('data-testid="renderer-editor-canvas"');
+    expect(html).toContain('data-selection="title-1"');
+    expect(html).not.toContain('data-testid="legacy-editor-canvas"');
+    expect(html).toContain('data-testid="spotlight-overlay"');
+    expect(html).toContain('data-testid="laser-overlay"');
+    expect(html).toContain('data-testid="anchored-text-bar"');
+    expect(html).toContain('data-testid="anchored-element-bar"');
+    expect(html).toContain('data-testid="element-pick-layer"');
+    expect(lastRendererProps?.selection).toEqual({
+      elementIds: ['title-1'],
+      primaryId: 'title-1',
+    });
+    expect(mockSetActiveElementIdList).toHaveBeenCalledWith(['title-1']);
+    expect(mockApplyOp).not.toHaveBeenCalled();
+    expect(mockCommitContent).toHaveBeenCalledTimes(1);
+    expect(mockCommitContent.mock.calls[0][0].canvas.elements[0]).toMatchObject({
+      left: 48,
+      top: 64,
+    });
+    expect(mockCommitContent.mock.calls[0][1]).toBe(true);
+  });
+
+  it('does not commit empty or ineffective renderer intent batches', async () => {
+    process.env[flag] = 'true';
+    vi.resetModules();
+    const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
+
+    renderToStaticMarkup(createElement(SlideCanvas));
+    lastRendererProps?.onElementsChange?.([]);
+    lastRendererProps?.onElementsChange?.([
+      { type: 'element.update', id: 'missing', props: { left: 48 } },
+    ]);
+
+    expect(mockCommitContent).not.toHaveBeenCalled();
+  });
+});
