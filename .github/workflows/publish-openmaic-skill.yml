@@ -123,18 +123,22 @@ jobs:
           const preflight = JSON.parse(readFileSync(process.env.PREFLIGHT_FILE, "utf8"));
 
           function canonicalVersion(value) {
-            const normalized = semver.valid(value);
             const parsed = semver.parse(value);
-            if (!normalized || !parsed) return null;
+            if (!parsed) return null;
             const build = parsed.build.length > 0 ? `+${parsed.build.join(".")}` : "";
-            return `${normalized}${build}`;
+            return { full: `${parsed.version}${build}`, hasBuild: parsed.build.length > 0 };
           }
 
-          const canonical = canonicalVersion(desired);
-          if (!canonical) {
+          const desiredVersion = canonicalVersion(desired);
+          if (!desiredVersion) {
             console.error("::error::Requested version is not valid semver.");
             process.exit(1);
           }
+          if (desiredVersion.hasBuild) {
+            console.error("::error::Requested version must not include build metadata.");
+            process.exit(1);
+          }
+          const canonical = desiredVersion.full;
           if (
             typeof preflight.status !== "string" ||
             typeof preflight.version !== "string" ||
@@ -149,7 +153,7 @@ jobs:
             console.error("::error::ClawHub returned an invalid preflight version.");
             process.exit(1);
           }
-          if (preflight.status === "unchanged" && preflightVersion === canonical) {
+          if (preflight.status === "unchanged" && preflightVersion.full === canonical) {
             console.log(`noop\t${canonical}`);
             process.exit(0);
           }
@@ -159,11 +163,8 @@ jobs:
               console.error("::error::ClawHub returned an invalid latest version.");
               process.exit(1);
             }
-            const precedence = semver.compare(canonical, latest);
-            if (precedence < 0 || (precedence === 0 && canonical === latest)) {
-              console.error(
-                `::error::Requested version must be newer than or a distinct build of ${latest}.`,
-              );
+            if (!semver.gt(canonical, latest.full)) {
+              console.error(`::error::Requested version must be greater than ${latest.full}.`);
               process.exit(1);
             }
           }
@@ -314,18 +315,22 @@ jobs:
           const preflight = JSON.parse(readFileSync(process.env.PREFLIGHT_FILE, "utf8"));
 
           function canonicalVersion(value) {
-            const normalized = semver.valid(value);
             const parsed = semver.parse(value);
-            if (!normalized || !parsed) return null;
+            if (!parsed) return null;
             const build = parsed.build.length > 0 ? `+${parsed.build.join(".")}` : "";
-            return `${normalized}${build}`;
+            return { full: `${parsed.version}${build}`, hasBuild: parsed.build.length > 0 };
           }
 
-          const canonical = canonicalVersion(desired);
-          if (!canonical) {
+          const desiredVersion = canonicalVersion(desired);
+          if (!desiredVersion) {
             console.error("::error::Requested version is not valid semver.");
             process.exit(1);
           }
+          if (desiredVersion.hasBuild) {
+            console.error("::error::Requested version must not include build metadata.");
+            process.exit(1);
+          }
+          const canonical = desiredVersion.full;
           if (
             typeof preflight.status !== "string" ||
             typeof preflight.version !== "string" ||
@@ -340,7 +345,7 @@ jobs:
             console.error("::error::ClawHub returned an invalid preflight version.");
             process.exit(1);
           }
-          if (preflight.status === "unchanged" && preflightVersion === canonical) {
+          if (preflight.status === "unchanged" && preflightVersion.full === canonical) {
             console.log(`noop\t${canonical}`);
             process.exit(0);
           }
@@ -350,11 +355,8 @@ jobs:
               console.error("::error::ClawHub returned an invalid latest version.");
               process.exit(1);
             }
-            const precedence = semver.compare(canonical, latest);
-            if (precedence < 0 || (precedence === 0 && canonical === latest)) {
-              console.error(
-                `::error::Requested version must be newer than or a distinct build of ${latest}.`,
-              );
+            if (!semver.gt(canonical, latest.full)) {
+              console.error(`::error::Requested version must be greater than ${latest.full}.`);
               process.exit(1);
             }
           }
