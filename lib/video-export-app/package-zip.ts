@@ -50,7 +50,7 @@ export async function packageVideoZip(
   const JSZip = (await import('jszip')).default;
   const zip = new JSZip();
 
-  // Emitted text files (index.html, manifest, subtitles, README) at the root.
+  // Emitted project-relative text files (including nested license files).
   for (const file of project.files) {
     zip.file(file.path, file.content);
   }

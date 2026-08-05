@@ -104,9 +104,14 @@ ASR_QWEN_BASE_URL=         # optional override
 ASR_AZURE_API_KEY=
 ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
 
+# FunASR (local, no key required)
+ASR_FUNASR_BASE_URL=http://localhost:8000/v1
+
 # Lemonade ASR (local, no key required)
 ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
+
+Start the OpenAI-compatible FunASR service with `funasr-server --device cuda`. It accepts WAV uploads at `/v1/audio/transcriptions` and provides SenseVoiceSmall, Paraformer, and Fun-ASR-Nano through the model selector.
 
 Browser-native ASR requires no server configuration.
 

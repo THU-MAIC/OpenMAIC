@@ -99,6 +99,7 @@ const ASR_ENV_MAP: Record<string, string> = {
   ASR_OPENAI: 'openai-whisper',
   ASR_QWEN: 'qwen-asr',
   ASR_AZURE: 'azure-asr',
+  ASR_FUNASR: 'funasr-asr',
   ASR_LEMONADE: 'lemonade-asr',
 };
 
@@ -424,7 +425,7 @@ function buildConfig(yamlData: YamlData): ServerConfig {
       keylessProviders: new Set(['voxcpm-tts', 'lemonade-tts']),
     }),
     asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr, {
-      keylessProviders: new Set(['lemonade-asr']),
+      keylessProviders: new Set(['funasr-asr', 'lemonade-asr']),
     }),
     pdf: applyAliDocMindFallback(
       loadEnvSection(PDF_ENV_MAP, yamlData.pdf, {

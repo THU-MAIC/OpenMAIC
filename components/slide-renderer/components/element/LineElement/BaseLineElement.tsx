@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState, useEffect } from 'react';
+import { useMemo, useRef, useState, useEffect, useId } from 'react';
 import type { PPTLineElement } from '@openmaic/dsl';
 import { getLineElementPath } from '@/lib/utils/element';
 import { useElementShadow } from '../hooks/useElementShadow';
@@ -22,6 +22,7 @@ export function BaseLineElement({ elementInfo, animate }: BaseLineElementProps) 
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
   const pathRef = useRef<SVGPathElement>(null);
   const [drawComplete, setDrawComplete] = useState(!animate);
+  const markerId = `${elementInfo.id}-${useId().replaceAll(':', '')}`;
 
   const svgWidth = useMemo(() => {
     const width = Math.abs(elementInfo.start[0] - elementInfo.end[0]);
@@ -104,7 +105,7 @@ export function BaseLineElement({ elementInfo, animate }: BaseLineElementProps) 
           <defs>
             {elementInfo.points[0] && (
               <LinePointMarker
-                id={elementInfo.id}
+                id={markerId}
                 position="start"
                 type={elementInfo.points[0]}
                 color={elementInfo.color}
@@ -113,7 +114,7 @@ export function BaseLineElement({ elementInfo, animate }: BaseLineElementProps) 
             )}
             {elementInfo.points[1] && (
               <LinePointMarker
-                id={elementInfo.id}
+                id={markerId}
                 position="end"
                 type={elementInfo.points[1]}
                 color={elementInfo.color}
@@ -130,12 +131,12 @@ export function BaseLineElement({ elementInfo, animate }: BaseLineElementProps) 
             fill="none"
             markerStart={
               drawComplete && elementInfo.points[0]
-                ? `url(#${elementInfo.id}-${elementInfo.points[0]}-start)`
+                ? `url(#${markerId}-${elementInfo.points[0]}-start)`
                 : ''
             }
             markerEnd={
               drawComplete && elementInfo.points[1]
-                ? `url(#${elementInfo.id}-${elementInfo.points[1]}-end)`
+                ? `url(#${markerId}-${elementInfo.points[1]}-end)`
                 : ''
             }
           />

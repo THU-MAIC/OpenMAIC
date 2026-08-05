@@ -21,6 +21,16 @@
 # explicitly with RENDER_EGRESS_LOCKDOWN=false.
 set -eu
 
+# `setpriv` changes uid/gid but deliberately preserves the root process's
+# environment. Reset HOME before dropping privileges so producer font caches do
+# not resolve to /root/.cache and fail with EACCES under the `render` user.
+export HOME="${RENDER_HOME:-/app}"
+export XDG_CACHE_HOME="$HOME/.cache"
+mkdir -p "$XDG_CACHE_HOME"
+if [ "$(id -u)" = "0" ]; then
+  chown -R render:render "$XDG_CACHE_HOME"
+fi
+
 lockdown() {
   # ESTABLISHED,RELATED lets the Hono API respond to the app's inbound requests;
   # loopback lets the producer's file server + Chromium talk locally. Everything

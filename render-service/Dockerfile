@@ -1,26 +1,28 @@
-# Isolated render service: Node 22 + system Chromium + FFmpeg.
+# Isolated render service: Node 22 + Chromium headless shell + FFmpeg.
 #
 # Debian (bookworm-slim), NOT Alpine: @hyperframes/producer drives Chromium via
 # puppeteer, and Chromium + its shared libraries are far simpler to provision on
-# glibc/Debian than on musl/Alpine. We install the distro Chromium and point
-# puppeteer at it (PUPPETEER_EXECUTABLE_PATH) so no second browser is downloaded.
+# glibc/Debian than on musl/Alpine. Producer's beginFrame capture requires the
+# old headless shell binary; regular Chromium exposes the resolver path but then
+# rejects HeadlessExperimental.beginFrame and silently falls back to screenshots.
 FROM node:22-bookworm-slim AS base
 
 ENV PUPPETEER_SKIP_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-headless-shell \
     NODE_ENV=production
 
-# chromium + ffmpeg + the fonts/libs a headless Chrome needs to render text and
-# composite frames. iptables lets the entrypoint lock down egress (block the
-# untrusted Chromium from reaching the app); ca-certificates covers TLS for any
-# asset the composition might still reference before lockdown.
+# chromium-headless-shell + ffmpeg + the fonts/libs a headless Chrome needs to
+# render text and composite frames. iptables lets the entrypoint lock down egress
+# (block the untrusted Chromium from reaching the app); ca-certificates covers
+# TLS for any asset the composition might still reference before lockdown.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-     chromium \
+     chromium-headless-shell \
      ffmpeg \
      iptables \
      ca-certificates \
      fonts-liberation \
+     fonts-noto-core \
      fonts-noto-color-emoji \
      fonts-noto-cjk \
   && rm -rf /var/lib/apt/lists/*
@@ -38,7 +40,7 @@ FROM base AS runner
 # Non-root: Chromium must run with --no-sandbox in a container, so drop privileges.
 RUN groupadd --system --gid 1001 render \
   && useradd --system --uid 1001 --gid render --home-dir /app render \
-  && mkdir -p /tmp/openmaic-renders \
+  && mkdir -p /tmp/openmaic-renders /app/.cache \
   && chown -R render:render /app /tmp/openmaic-renders
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -54,7 +56,12 @@ RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
     && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV PORT=9000 \
-    PRODUCER_TMP_PROJECT_DIR=/tmp/openmaic-renders
+    PRODUCER_TMP_PROJECT_DIR=/tmp/openmaic-renders \
+    HOME=/app \
+    XDG_CACHE_HOME=/app/.cache \
+    PRODUCER_BROWSER_GPU_MODE=hardware \
+    PRODUCER_HEADLESS_SHELL_PATH=/usr/bin/chromium-headless-shell \
+    RENDER_REQUIRE_BEGINFRAME=false
 
 # NOTE: we intentionally do NOT set `USER render` here. The container starts as
 # root so the entrypoint can install the iptables egress lockdown (needs

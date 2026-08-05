@@ -36,6 +36,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'TTS_MINIMAX',
   'ASR_OPENAI',
   'ASR_QWEN',
+  'ASR_FUNASR',
   'PDF_UNPDF',
   'PDF_MINERU',
   'PDF_MINERU_CLOUD',
@@ -593,6 +594,29 @@ pdf:
       const { isServerTTSProviderDisabled } = await import('@/lib/server/provider-config');
       expect(isServerTTSProviderDisabled('openai-tts')).toBe(true);
       expect(isServerTTSProviderDisabled('qwen-tts')).toBe(false);
+    });
+  });
+
+  describe('FunASR server configuration', () => {
+    it('activates the keyless provider from an env base URL', async () => {
+      vi.stubEnv('ASR_FUNASR_BASE_URL', 'http://localhost:8000/v1');
+      const { getServerASRProviders, resolveASRApiKey, resolveASRBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(getServerASRProviders()['funasr-asr']).toEqual({});
+      expect(resolveASRApiKey('funasr-asr')).toBe('');
+      expect(resolveASRBaseUrl('funasr-asr')).toBe('http://localhost:8000/v1');
+    });
+
+    it('activates the keyless provider from YAML and keeps server config authoritative', async () => {
+      yamlOverride = 'asr:\n  funasr-asr:\n    baseUrl: http://funasr.internal:8000/v1\n';
+      const { getServerASRProviders, resolveASRBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(getServerASRProviders()['funasr-asr']).toEqual({});
+      expect(resolveASRBaseUrl('funasr-asr', 'https://client.example.com/v1')).toBe(
+        'http://funasr.internal:8000/v1',
+      );
     });
   });
 

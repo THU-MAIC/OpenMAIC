@@ -6,32 +6,53 @@
  * the current message window and mutable chat metadata.
  */
 
-import type { ChatMessageSkeleton, RuntimeRecord, RuntimeSession } from '@openmaic/dsl';
+import type { RuntimeSession } from '@openmaic/dsl';
 import type { KVStore, RuntimeStore } from '@openmaic/storage';
-import type { UIMessage } from 'ai';
+import { HttpRuntimeStoreError } from '@openmaic/storage/runtime/http';
 import { isEqual } from 'lodash';
 import { nanoid } from 'nanoid';
 
 import { getLearnerKey } from '@/lib/runtime/learner-key';
 import { getRuntimeStore } from '@/lib/runtime/store';
-import type { ChatMessageMetadata, ChatSession, SessionStatus } from '@/lib/types/chat';
-import { db, type ChatSessionRecord } from './database';
+import type { ChatSession } from '@/lib/types/chat';
+import { db } from './database';
+import {
+  buildChatRecordInit,
+  chatRuntimeCandidates,
+  chatRuntimeIdentity,
+  foldRecords,
+  fromLegacyRecords,
+  generationRuntimeSessionId,
+  iso,
+  newestRuntimeCandidate,
+  normalizeSession,
+  planChatSync,
+  type ChatMessagePayload,
+  type FoldedChat,
+  type ChatRuntimeCandidate,
+  type ChatRuntimeView,
+  type ChatSessionStatePayload,
+  type LegacyChatConversion,
+  type SkippedLegacyChatRow,
+} from './chat-storage-core';
 import {
   chatStoragePartitionLockName,
   withChatStorageExclusiveLock,
   withChatStorageSharedLock,
 } from './chat-storage-lock';
 
-const MAX_MESSAGES_PER_SESSION = 200;
-const MAX_RUNTIME_RECORDS_PER_CHAT_SESSION = 256;
-const CHAT_PAYLOAD_VERSION = 1;
-const RUNTIME_GENERATION_SEPARATOR = ':generation:';
 const RESTORE_MARKER_PREFIX = 'chat-restore-marker:';
 const DELETION_MARKER_PREFIX = 'chat-deletion:';
 const CHAT_DELETION_KIND = 'chat-deletion';
+const MAX_CHAT_SYNC_ATTEMPTS = 8;
+const MAX_CHAT_PLAN_STEPS_PER_ATTEMPT = 8;
+const MAX_CHAT_RETRY_DELAY_MS = 500;
+
+const defaultChatSyncSleep: ChatSyncSleep = (milliseconds) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 interface LegacyChatStore {
-  load(stageId: string): Promise<ChatSession[]>;
+  load(stageId: string): Promise<unknown>;
   clear(stageId: string): Promise<void>;
 }
 
@@ -42,7 +63,11 @@ export interface ChatStorageOptions {
   legacyStore?: LegacyChatStore;
   globalLockHeld?: boolean;
   snapshot?: ChatStorageSnapshot;
+  /** Override retry delays in tests or non-browser runtimes. */
+  sleep?: ChatSyncSleep;
 }
+
+export type ChatSyncSleep = (milliseconds: number) => Promise<void>;
 
 interface ChatStorageRestoreOptions extends ChatStorageOptions {
   rollbackLegacyRows?: () => Promise<void>;
@@ -60,45 +85,7 @@ export interface ChatStorageSnapshot {
   restoreMarker?: string | null;
 }
 
-interface ChatMessagePayload extends ChatMessageSkeleton {
-  kind: 'chat_message';
-  payloadVersion: typeof CHAT_PAYLOAD_VERSION;
-  message: UIMessage<ChatMessageMetadata>;
-  sessionUpdatedAt: number;
-}
-
-interface ChatSessionStatePayload extends ChatMessageSkeleton {
-  kind: 'chat_session_state';
-  payloadVersion: typeof CHAT_PAYLOAD_VERSION;
-  chatSessionId: string;
-  type: ChatSession['type'];
-  title: string;
-  status: SessionStatus;
-  config: ChatSession['config'];
-  toolCalls: ChatSession['toolCalls'];
-  messageIds: string[];
-  createdAt: number;
-  updatedAt: number;
-  sceneId?: string;
-  lastActionIndex?: number;
-}
-
-interface FoldedChat {
-  session?: ChatSession;
-  messages: Map<string, ChatMessagePayload>;
-  state?: ChatSessionStatePayload;
-}
-
-interface ChatRuntimeView {
-  runtimeSession: RuntimeSession;
-  records: RuntimeRecord[];
-  folded: FoldedChat;
-}
-
-interface ChatRuntimeCandidate extends ChatRuntimeView {
-  baseRuntimeId: string;
-  generation: number;
-}
+export * from './chat-storage-core';
 
 const dexieLegacyStore: LegacyChatStore = {
   async load(stageId) {
@@ -107,7 +94,7 @@ const dexieLegacyStore: LegacyChatStore = {
       staged.length > 0
         ? staged
         : await db.chatSessions.where('stageId').equals(stageId).sortBy('createdAt');
-    return records.map(fromLegacyRecord);
+    return records;
   },
   async clear(stageId) {
     await db.transaction('rw', [db.chatSessions, db.chatRestoreStaging], async () => {
@@ -124,6 +111,10 @@ const dexieLegacyStore: LegacyChatStore = {
 const storeQueues = new WeakMap<RuntimeStore, Map<string, Promise<void>>>();
 const observedChatSessionIds = new WeakMap<RuntimeStore, Map<string, Set<string>>>();
 const observedChatSessions = new WeakMap<RuntimeStore, Map<string, Map<string, ChatSession>>>();
+const skippedLegacyRowsByPartition = new WeakMap<
+  RuntimeStore,
+  Map<string, readonly SkippedLegacyChatRow[]>
+>();
 
 export class ChatStorageLockUnavailableError extends Error {}
 export class ChatStorageSnapshotInvalidatedByRestoreError extends Error {}
@@ -160,6 +151,30 @@ function rememberObservedSessions(
     key,
     new Map(sessions.map((session) => [session.id, structuredClone(normalizeSession(session))])),
   );
+}
+
+function skippedLegacyRows(
+  store: RuntimeStore,
+  key: string,
+): readonly SkippedLegacyChatRow[] | undefined {
+  return skippedLegacyRowsByPartition.get(store)?.get(key);
+}
+
+function rememberSkippedLegacyRows(
+  store: RuntimeStore,
+  key: string,
+  rows: readonly SkippedLegacyChatRow[],
+): void {
+  const partitions = skippedLegacyRowsByPartition.get(store);
+  if (rows.length === 0) {
+    partitions?.delete(key);
+    return;
+  }
+  if (partitions) {
+    partitions.set(key, rows);
+    return;
+  }
+  skippedLegacyRowsByPartition.set(store, new Map([[key, rows]]));
 }
 
 function matchesObservedSessions(
@@ -260,52 +275,16 @@ async function context(options: ChatStorageOptions): Promise<{
   learnerKey: string;
   legacyStore: LegacyChatStore;
   requiresCrossRealmLock: boolean;
+  sleep: ChatSyncSleep;
 }> {
   const legacyStore = options.legacyStore ?? dexieLegacyStore;
   return {
     store: options.store ?? getRuntimeStore(),
     learnerKey: options.learnerKey ?? (await getLearnerKey(options.kv)),
     legacyStore,
+    sleep: options.sleep ?? defaultChatSyncSleep,
     requiresCrossRealmLock: legacyStore === dexieLegacyStore,
   };
-}
-
-function fromLegacyRecord(record: ChatSessionRecord): ChatSession {
-  return {
-    id: record.id,
-    type: record.type,
-    title: record.title,
-    status: record.status,
-    messages: record.messages as UIMessage<ChatMessageMetadata>[],
-    config: record.config,
-    toolCalls: record.toolCalls,
-    pendingToolCalls: record.pendingToolCalls,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-    sceneId: record.sceneId,
-    lastActionIndex: record.lastActionIndex,
-  };
-}
-
-function normalizeSession(session: ChatSession): ChatSession {
-  return {
-    ...session,
-    status: session.status === 'active' ? 'interrupted' : session.status,
-    messages: session.messages.slice(-MAX_MESSAGES_PER_SESSION),
-    pendingToolCalls: [],
-  };
-}
-
-function runtimeSessionId(stageId: string, learnerKey: string, chatSessionId: string): string {
-  return `chat:${encodeURIComponent(stageId)}:${encodeURIComponent(learnerKey)}:${encodeURIComponent(chatSessionId)}`;
-}
-
-function generationRuntimeSessionId(
-  baseRuntimeId: string,
-  generation: number,
-  writerToken?: string,
-): string {
-  return `${baseRuntimeId}${RUNTIME_GENERATION_SEPARATOR}${generation}${writerToken ? `:${writerToken}` : ''}`;
 }
 
 function restoreMarkerPrefix(stageId: string): string {
@@ -440,178 +419,6 @@ async function finalizeRestoreMarker(store: RuntimeStore, marker: RuntimeSession
   }
 }
 
-function chatRuntimeIdentity(
-  runtimeId: string,
-  stageId: string,
-  chatSessionId: string,
-): { baseRuntimeId: string; generation: number } | undefined {
-  const markerIndex = runtimeId.lastIndexOf(RUNTIME_GENERATION_SEPARATOR);
-  let baseRuntimeId = runtimeId;
-  let generation = 0;
-  if (markerIndex >= 0) {
-    baseRuntimeId = runtimeId.slice(0, markerIndex);
-    const rawIdentity = runtimeId.slice(markerIndex + RUNTIME_GENERATION_SEPARATOR.length);
-    const [rawGeneration, writerToken, ...extra] = rawIdentity.split(':');
-    if (!/^[1-9]\d*$/.test(rawGeneration)) return undefined;
-    if (extra.length > 0 || (writerToken !== undefined && !/^[\w-]+$/.test(writerToken))) {
-      return undefined;
-    }
-    generation = Number(rawGeneration);
-    if (!Number.isSafeInteger(generation)) return undefined;
-  }
-  if (
-    !baseRuntimeId.startsWith(`chat:${encodeURIComponent(stageId)}:`) ||
-    !baseRuntimeId.endsWith(`:${encodeURIComponent(chatSessionId)}`)
-  ) {
-    return undefined;
-  }
-  return { baseRuntimeId, generation };
-}
-
-function iso(epochMs: number): string {
-  return new Date(epochMs).toISOString();
-}
-
-function messageContent(message: UIMessage<ChatMessageMetadata>): string {
-  return message.parts
-    .filter(
-      (part): part is Extract<(typeof message.parts)[number], { type: 'text' }> =>
-        part.type === 'text',
-    )
-    .map((part) => part.text)
-    .join('');
-}
-
-function messagePayload(
-  message: UIMessage<ChatMessageMetadata>,
-  sessionUpdatedAt: number,
-): ChatMessagePayload {
-  return {
-    kind: 'chat_message',
-    payloadVersion: CHAT_PAYLOAD_VERSION,
-    role: message.role,
-    content: messageContent(message),
-    message,
-    sessionUpdatedAt,
-  };
-}
-
-function statePayload(session: ChatSession): ChatSessionStatePayload {
-  return {
-    kind: 'chat_session_state',
-    payloadVersion: CHAT_PAYLOAD_VERSION,
-    role: 'system',
-    content: session.title,
-    chatSessionId: session.id,
-    type: session.type,
-    title: session.title,
-    status: session.status,
-    config: session.config,
-    toolCalls: session.toolCalls,
-    messageIds: session.messages.map((message) => message.id),
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    ...(session.sceneId === undefined ? {} : { sceneId: session.sceneId }),
-    ...(session.lastActionIndex === undefined ? {} : { lastActionIndex: session.lastActionIndex }),
-  };
-}
-
-function isMessagePayload(payload: unknown): payload is ChatMessagePayload {
-  const candidate = payload as Partial<ChatMessagePayload> | null;
-  return (
-    candidate?.kind === 'chat_message' &&
-    candidate.payloadVersion === CHAT_PAYLOAD_VERSION &&
-    typeof candidate.message?.id === 'string' &&
-    (candidate.message.role === 'user' ||
-      candidate.message.role === 'assistant' ||
-      candidate.message.role === 'system') &&
-    Array.isArray(candidate.message.parts) &&
-    typeof candidate.sessionUpdatedAt === 'number' &&
-    Number.isFinite(candidate.sessionUpdatedAt)
-  );
-}
-
-function isStatePayload(payload: unknown): payload is ChatSessionStatePayload {
-  const candidate = payload as Partial<ChatSessionStatePayload> | null;
-  return (
-    candidate?.kind === 'chat_session_state' &&
-    candidate.payloadVersion === CHAT_PAYLOAD_VERSION &&
-    typeof candidate.chatSessionId === 'string' &&
-    (candidate.type === 'qa' || candidate.type === 'discussion' || candidate.type === 'lecture') &&
-    typeof candidate.title === 'string' &&
-    (candidate.status === 'idle' ||
-      candidate.status === 'active' ||
-      candidate.status === 'interrupted' ||
-      candidate.status === 'completed' ||
-      candidate.status === 'error') &&
-    typeof candidate.config === 'object' &&
-    candidate.config !== null &&
-    Array.isArray(candidate.toolCalls) &&
-    Array.isArray(candidate.messageIds) &&
-    candidate.messageIds.every((id) => typeof id === 'string') &&
-    typeof candidate.createdAt === 'number' &&
-    Number.isFinite(candidate.createdAt) &&
-    typeof candidate.updatedAt === 'number' &&
-    Number.isFinite(candidate.updatedAt) &&
-    (candidate.sceneId === undefined || typeof candidate.sceneId === 'string') &&
-    (candidate.lastActionIndex === undefined ||
-      (typeof candidate.lastActionIndex === 'number' && Number.isFinite(candidate.lastActionIndex)))
-  );
-}
-
-function foldRecords(records: RuntimeRecord[]): FoldedChat {
-  const messages = new Map<string, ChatMessagePayload>();
-  const messageSeqs = new Map<string, number>();
-  let state: ChatSessionStatePayload | undefined;
-  let stateSeq = -1;
-  for (const record of records) {
-    if (isMessagePayload(record.payload)) {
-      const id = record.payload.message.id;
-      const current = messages.get(id);
-      if (
-        !current ||
-        record.payload.sessionUpdatedAt > current.sessionUpdatedAt ||
-        (record.payload.sessionUpdatedAt === current.sessionUpdatedAt &&
-          record.seq > (messageSeqs.get(id) ?? -1))
-      ) {
-        messages.set(id, record.payload);
-        messageSeqs.set(id, record.seq);
-      }
-    }
-    if (
-      isStatePayload(record.payload) &&
-      (!state ||
-        record.payload.updatedAt > state.updatedAt ||
-        (record.payload.updatedAt === state.updatedAt && record.seq > stateSeq))
-    ) {
-      state = record.payload;
-      stateSeq = record.seq;
-    }
-  }
-  if (!state) return { messages };
-  return {
-    messages,
-    state,
-    session: {
-      id: state.chatSessionId,
-      type: state.type,
-      title: state.title,
-      status: state.status,
-      messages: state.messageIds.flatMap((id) => {
-        const payload = messages.get(id);
-        return payload ? [payload.message] : [];
-      }),
-      config: state.config,
-      toolCalls: state.toolCalls,
-      pendingToolCalls: [],
-      createdAt: state.createdAt,
-      updatedAt: state.updatedAt,
-      sceneId: state.sceneId,
-      lastActionIndex: state.lastActionIndex,
-    },
-  };
-}
-
 function matchesChatPartition(
   session: RuntimeSession,
   id: string,
@@ -681,25 +488,6 @@ async function ensureDeletionMarker(
   }
 }
 
-function changesForSession(
-  normalized: ChatSession,
-  folded: FoldedChat,
-): {
-  nextState: ChatSessionStatePayload;
-  changedMessages: UIMessage<ChatMessageMetadata>[];
-  stateChanged: boolean;
-} {
-  const nextState = statePayload(normalized);
-  return {
-    nextState,
-    changedMessages: normalized.messages.filter((message) => {
-      const current = folded.messages.get(message.id);
-      return !current || !isEqual(current.message, message);
-    }),
-    stateChanged: !folded.state || !isEqual(folded.state, nextState),
-  };
-}
-
 async function runtimeViews(
   store: RuntimeStore,
   stageId: string,
@@ -716,44 +504,6 @@ async function runtimeViews(
   );
 }
 
-function chatRuntimeCandidates(
-  views: ChatRuntimeView[],
-  stageId: string,
-  chatSessionId: string,
-): ChatRuntimeCandidate[] {
-  return views.flatMap((view) => {
-    const identity = chatRuntimeIdentity(view.runtimeSession.id, stageId, chatSessionId);
-    return identity ? [{ ...view, ...identity }] : [];
-  });
-}
-
-function newestRuntimeCandidate(
-  candidates: ChatRuntimeCandidate[],
-): ChatRuntimeCandidate | undefined {
-  return [...candidates].sort((left, right) => {
-    const leftUpdatedAt = left.folded.state?.updatedAt ?? Number.NEGATIVE_INFINITY;
-    const rightUpdatedAt = right.folded.state?.updatedAt ?? Number.NEGATIVE_INFINITY;
-    if (leftUpdatedAt !== rightUpdatedAt) return rightUpdatedAt - leftUpdatedAt;
-    if (left.generation !== right.generation) return right.generation - left.generation;
-    return right.runtimeSession.id.localeCompare(left.runtimeSession.id);
-  })[0];
-}
-
-function highestGeneration(
-  candidates: ChatRuntimeCandidate[],
-  baseRuntimeId: string,
-): ChatRuntimeCandidate | undefined {
-  return candidates
-    .filter((candidate) => candidate.baseRuntimeId === baseRuntimeId)
-    .sort((left, right) => {
-      if (left.generation !== right.generation) return right.generation - left.generation;
-      const leftUpdatedAt = left.folded.state?.updatedAt ?? Number.NEGATIVE_INFINITY;
-      const rightUpdatedAt = right.folded.state?.updatedAt ?? Number.NEGATIVE_INFINITY;
-      if (leftUpdatedAt !== rightUpdatedAt) return rightUpdatedAt - leftUpdatedAt;
-      return right.runtimeSession.id.localeCompare(left.runtimeSession.id);
-    })[0];
-}
-
 async function appendPayload(
   store: RuntimeStore,
   runtimeId: string,
@@ -761,17 +511,56 @@ async function appendPayload(
   session: ChatSession,
   suffix: string,
 ): Promise<void> {
-  const actionIndex = session.lastActionIndex;
-  await store.appendRecord({
-    id: `${runtimeId}:${suffix}:${session.updatedAt}`,
-    sessionId: runtimeId,
-    createdAt: iso(session.updatedAt),
-    sceneId: session.sceneId,
-    ...(Number.isInteger(actionIndex) && actionIndex !== undefined && actionIndex >= 0
-      ? { actionIndex }
-      : {}),
-    payload,
-  });
+  await store.appendRecord(buildChatRecordInit(runtimeId, payload, session, suffix));
+}
+
+function isInactiveSessionAppendError(error: HttpRuntimeStoreError): boolean {
+  if (error.code !== 'VALIDATION_FAILED') {
+    return false;
+  }
+  return (
+    (error.message.includes('cannot append to session ') &&
+      error.message.includes('records may only be appended to an active session')) ||
+    (error.message.includes(' is no longer active; ') &&
+      error.message.includes('its current status is'))
+  );
+}
+
+function isDeterministicChatSyncFailure(error: unknown): error is HttpRuntimeStoreError {
+  return (
+    error instanceof HttpRuntimeStoreError &&
+    !isInactiveSessionAppendError(error) &&
+    (error.status === 400 ||
+      error.status === 401 ||
+      error.status === 403 ||
+      error.status === 413 ||
+      error.code === 'VALIDATION_FAILED' ||
+      (error.status === 409 && error.code === 'FUTURE_VERSION'))
+  );
+}
+
+function normalizeLegacyConversion(records: unknown): LegacyChatConversion {
+  return fromLegacyRecords(records);
+}
+
+function legacyRowLabels(rows: readonly SkippedLegacyChatRow[]): string {
+  return rows
+    .map((row) => (row.id === undefined ? `index ${row.index}` : JSON.stringify(row.id)))
+    .join(', ');
+}
+
+function warnSkippedLegacyRows(stageId: string, rows: readonly SkippedLegacyChatRow[]): void {
+  if (rows.length === 0) return;
+  console.warn(
+    `Skipped malformed legacy chat rows for stage ${JSON.stringify(stageId)}; retaining the legacy source: ${legacyRowLabels(rows)}`,
+  );
+}
+
+function chatSyncValidationError(sessionId: string, error: HttpRuntimeStoreError): Error {
+  return new Error(
+    `Chat sync rejected for session ${JSON.stringify(sessionId)}: ${error.code} (HTTP ${error.status}): ${error.message}`,
+    { cause: error },
+  );
 }
 
 async function completeRuntimeCandidate(
@@ -843,237 +632,212 @@ async function syncOne(
   existingViews: ChatRuntimeView[],
   isolatedWrites: boolean,
   observed: ChatSession | undefined,
+  sleep: ChatSyncSleep,
 ): Promise<string> {
   let desired = normalizeSession(session);
   let views = existingViews;
   let retryError: unknown;
+  let backoffBeforeAttempt = false;
+  let refreshBeforeAttempt = false;
 
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    const candidates = chatRuntimeCandidates(views, stageId, desired.id);
-    const source = newestRuntimeCandidate(candidates);
-    if (source?.folded.session && source.folded.session.updatedAt > desired.updatedAt) {
-      const localEditAdvanced =
-        observed !== undefined &&
-        desired.updatedAt > observed.updatedAt &&
-        !isEqual(desired, observed);
-      desired = localEditAdvanced
-        ? { ...desired, updatedAt: source.folded.session.updatedAt + 1 }
-        : source.folded.session;
+  retryLoop: for (let attempt = 0; attempt < MAX_CHAT_SYNC_ATTEMPTS; attempt += 1) {
+    if (backoffBeforeAttempt) {
+      await sleep(Math.min(100 * 2 ** Math.max(0, attempt - 1), MAX_CHAT_RETRY_DELAY_MS));
+      backoffBeforeAttempt = false;
     }
+    if (refreshBeforeAttempt) {
+      views = await runtimeViews(store, stageId, learnerKey);
+      refreshBeforeAttempt = false;
+    }
+    let reconcileSource = true;
+    for (let planStep = 0; planStep < MAX_CHAT_PLAN_STEPS_PER_ATTEMPT; planStep += 1) {
+      const candidates = chatRuntimeCandidates(views, stageId, desired.id);
+      const source = newestRuntimeCandidate(candidates);
+      if (
+        reconcileSource &&
+        source?.folded.session &&
+        source.folded.session.updatedAt > desired.updatedAt
+      ) {
+        const localEditAdvanced =
+          observed !== undefined &&
+          desired.updatedAt > observed.updatedAt &&
+          !isEqual(desired, observed);
+        desired = localEditAdvanced
+          ? { ...desired, updatedAt: source.folded.session.updatedAt + 1 }
+          : source.folded.session;
+      }
 
-    const baseRuntimeId =
-      source?.baseRuntimeId ?? runtimeSessionId(stageId, learnerKey, desired.id);
-    let destination = highestGeneration(candidates, baseRuntimeId);
-    if (isolatedWrites) {
-      // A unique generation is safe across realms without a shared mutex:
-      // every writer stores at most the normalized 200 messages plus state.
-      const folded = destination?.folded ?? { messages: new Map<string, ChatMessagePayload>() };
-      const changes = changesForSession(desired, folded);
-      const appendCount = changes.changedMessages.length + (changes.stateChanged ? 1 : 0);
-      if (destination && appendCount === 0) {
-        const destinationId = destination.runtimeSession.id;
-        if (desired.status === 'completed' && destination.runtimeSession.status !== 'completed') {
-          if (!(await completeRuntimeCandidate(store, destination, desired))) {
-            views = await runtimeViews(store, stageId, learnerKey);
-            continue;
-          }
+      const plan = planChatSync({ session: desired, stageId, learnerKey, isolatedWrites }, views);
+
+      if (plan.kind === 'create-session') {
+        const runtimeSession = await createOrGetRuntimeSession(store, plan.init);
+        const records = await store.listRecords(runtimeSession.id);
+        views = [
+          ...views.filter((view) => view.runtimeSession.id !== runtimeSession.id),
+          { runtimeSession, records, folded: foldRecords(records) },
+        ];
+        // The original single-pass branch did not re-resolve a raced session's
+        // logical source after createOrGet; preserve that conflict behavior.
+        reconcileSource = false;
+        continue;
+      }
+
+      if (plan.kind === 'reuse-isolated') {
+        const destinationId = plan.destination.runtimeSession.id;
+        if (
+          plan.completeDestination &&
+          !(await completeRuntimeCandidate(store, plan.destination, desired))
+        ) {
+          views = await runtimeViews(store, stageId, learnerKey);
+          continue retryLoop;
         }
-        const retired = candidates.filter(
-          (candidate) => candidate.runtimeSession.id !== destinationId,
-        );
         const completed = await Promise.all(
-          retired.map((candidate) => completeRuntimeCandidate(store, candidate, desired)),
+          plan.retired.map((candidate) => completeRuntimeCandidate(store, candidate, desired)),
         );
         if (completed.some((candidate) => !candidate)) {
           views = await runtimeViews(store, stageId, learnerKey);
-          continue;
+          continue retryLoop;
         }
         await retireRuntimeCandidates(
           store,
           stageId,
           learnerKey,
-          retired.map((candidate) => candidate.runtimeSession.id),
+          plan.retired.map((candidate) => candidate.runtimeSession.id),
           desired,
           destinationId,
         );
         return destinationId;
       }
 
-      const generation = Math.max(0, ...candidates.map((candidate) => candidate.generation)) + 1;
-      const runtimeId = generationRuntimeSessionId(baseRuntimeId, generation, nanoid());
-      try {
-        await Promise.all(
-          candidates.map((candidate) => completeRuntimeCandidate(store, candidate, desired)),
-        );
-        let runtimeSession = await createOrGetRuntimeSession(store, {
-          id: runtimeId,
-          kind: 'chat',
-          stageId,
-          learnerKey,
-          status: 'active',
-          createdAt: iso(desired.createdAt),
-          updatedAt: iso(desired.updatedAt),
-        });
-        for (const message of desired.messages) {
-          await appendPayload(
-            store,
-            runtimeId,
-            messagePayload(message, desired.updatedAt),
-            desired,
-            `message:${encodeURIComponent(message.id)}`,
-          );
-        }
-        await appendPayload(store, runtimeId, statePayload(desired), desired, 'state');
-        if (desired.status === 'completed') {
-          await store.setSessionStatus(runtimeId, 'completed', iso(desired.updatedAt));
-          runtimeSession = { ...runtimeSession, status: 'completed' };
-        }
-        await retireRuntimeCandidates(
-          store,
-          stageId,
-          learnerKey,
-          candidates.map((candidate) => candidate.runtimeSession.id),
-          desired,
-          runtimeId,
-        );
-        return runtimeSession.id;
-      } catch (error) {
-        retryError = error;
+      if (plan.kind === 'replace-isolated') {
+        // A unique generation is safe across realms without a shared mutex:
+        // every writer stores at most the normalized 200 messages plus state.
+        const runtimeId = generationRuntimeSessionId(plan.baseRuntimeId, plan.generation, nanoid());
         try {
-          await store.deleteSession(runtimeId);
-          views = await runtimeViews(store, stageId, learnerKey);
-        } catch {
-          throw error;
-        }
-        continue;
-      }
-    }
-    if (!destination) {
-      const runtimeSession = await createOrGetRuntimeSession(store, {
-        id: baseRuntimeId,
-        kind: 'chat',
-        stageId,
-        learnerKey,
-        status: 'active',
-        createdAt: iso(desired.createdAt),
-        updatedAt: iso(desired.updatedAt),
-      });
-      const records = await store.listRecords(runtimeSession.id);
-      destination = {
-        runtimeSession,
-        records,
-        folded: foldRecords(records),
-        baseRuntimeId,
-        generation: 0,
-      };
-    }
-
-    const changes = changesForSession(desired, destination.folded);
-    const appendCount = changes.changedMessages.length + (changes.stateChanged ? 1 : 0);
-    // Updating a message and its session state takes multiple RuntimeStore
-    // appends. Publish that snapshot through a fresh generation so a failure
-    // cannot make only the new message visible through the previous state.
-    if (
-      destination.folded.state &&
-      changes.changedMessages.length > 0 &&
-      destination.runtimeSession.status !== 'completed'
-    ) {
-      if (!(await completeRuntimeCandidate(store, destination, desired))) {
-        views = await runtimeViews(store, stageId, learnerKey);
-        continue;
-      }
-      views = await runtimeViews(store, stageId, learnerKey);
-      continue;
-    }
-    const needsRollover =
-      destination.records.length > MAX_RUNTIME_RECORDS_PER_CHAT_SESSION ||
-      (appendCount > 0 &&
-        destination.records.length + appendCount > MAX_RUNTIME_RECORDS_PER_CHAT_SESSION);
-    if (
-      destination.runtimeSession.status === 'completed' &&
-      (appendCount > 0 || destination.records.length > MAX_RUNTIME_RECORDS_PER_CHAT_SESSION)
-    ) {
-      await createOrGetRuntimeSession(store, {
-        id: generationRuntimeSessionId(baseRuntimeId, destination.generation + 1),
-        kind: 'chat',
-        stageId,
-        learnerKey,
-        status: 'active',
-        createdAt: iso(desired.createdAt),
-        updatedAt: iso(desired.updatedAt),
-      });
-      views = await runtimeViews(store, stageId, learnerKey);
-      continue;
-    }
-    if (needsRollover) {
-      await completeRuntimeCandidate(store, destination, desired);
-      views = await runtimeViews(store, stageId, learnerKey);
-      continue;
-    }
-
-    let { runtimeSession } = destination;
-    const runtimeId = runtimeSession.id;
-    try {
-      if (appendCount > 0 && runtimeSession.status !== 'active') {
-        await store.setSessionStatus(runtimeId, 'active', iso(desired.updatedAt));
-        runtimeSession = { ...runtimeSession, status: 'active' };
-      }
-      for (const message of changes.changedMessages) {
-        await appendPayload(
-          store,
-          runtimeId,
-          messagePayload(message, desired.updatedAt),
-          desired,
-          `message:${encodeURIComponent(message.id)}`,
-        );
-      }
-      if (changes.stateChanged) {
-        await appendPayload(store, runtimeId, changes.nextState, desired, 'state');
-      }
-
-      const desiredStatus = desired.status === 'completed' ? 'completed' : 'active';
-      if (
-        runtimeSession.status !== desiredStatus &&
-        !(runtimeSession.status === 'completed' && appendCount === 0)
-      ) {
-        await store.setSessionStatus(runtimeId, desiredStatus, iso(desired.updatedAt));
-      }
-      return runtimeId;
-    } catch (error) {
-      retryError = error;
-      let latest: RuntimeSession | undefined;
-      try {
-        latest = await store.getSession(runtimeId);
-      } catch {
-        throw error;
-      }
-      if (latest && !matchesChatPartition(latest, runtimeId, stageId, learnerKey)) {
-        throw error;
-      }
-      if (latest?.status === 'active') {
-        // A generation without a committed state is not externally visible.
-        // Remove its partial records before retrying instead of exposing them
-        // through a later state append or retaining an orphaned session.
-        if (!destination.folded.state) {
-          let latestFolded: FoldedChat;
-          try {
-            latestFolded = foldRecords(await store.listRecords(runtimeId));
-          } catch {
-            throw error;
+          await Promise.all(
+            plan.candidates.map((candidate) => completeRuntimeCandidate(store, candidate, desired)),
+          );
+          let runtimeSession = await createOrGetRuntimeSession(store, {
+            id: runtimeId,
+            kind: 'chat',
+            stageId,
+            learnerKey,
+            status: 'active',
+            createdAt: iso(desired.createdAt),
+            updatedAt: iso(desired.updatedAt),
+          });
+          for (const append of plan.appends) {
+            await appendPayload(store, runtimeId, append.payload, desired, append.suffix);
           }
-          if (latestFolded.state) throw error;
+          if (plan.finalStatus) {
+            await store.setSessionStatus(runtimeId, plan.finalStatus, iso(desired.updatedAt));
+            runtimeSession = { ...runtimeSession, status: plan.finalStatus };
+          }
+          await retireRuntimeCandidates(
+            store,
+            stageId,
+            learnerKey,
+            plan.candidates.map((candidate) => candidate.runtimeSession.id),
+            desired,
+            runtimeId,
+          );
+          return runtimeSession.id;
+        } catch (error) {
+          retryError = error;
           try {
             await store.deleteSession(runtimeId);
             views = await runtimeViews(store, stageId, learnerKey);
-            continue;
           } catch {
             throw error;
           }
+          if (isDeterministicChatSyncFailure(error)) {
+            throw chatSyncValidationError(desired.id, error);
+          }
+          backoffBeforeAttempt = true;
+          continue retryLoop;
         }
-        throw error;
       }
-      views = await runtimeViews(store, stageId, learnerKey);
+
+      if (plan.kind === 'complete-and-refresh') {
+        await completeRuntimeCandidate(store, plan.destination, desired);
+        views = await runtimeViews(store, stageId, learnerKey);
+        continue retryLoop;
+      }
+
+      if (plan.kind === 'start-generation') {
+        await createOrGetRuntimeSession(store, plan.init);
+        views = await runtimeViews(store, stageId, learnerKey);
+        continue retryLoop;
+      }
+
+      const destination = plan.destination;
+      const runtimeId = destination.runtimeSession.id;
+      try {
+        if (plan.preStatus) {
+          await store.setSessionStatus(runtimeId, plan.preStatus, iso(desired.updatedAt));
+        }
+        for (const append of plan.appends) {
+          await appendPayload(store, runtimeId, append.payload, desired, append.suffix);
+        }
+        if (plan.finalStatus) {
+          await store.setSessionStatus(runtimeId, plan.finalStatus, iso(desired.updatedAt));
+        }
+        return runtimeId;
+      } catch (error) {
+        retryError = error;
+        const deterministic = isDeterministicChatSyncFailure(error);
+        let latest: RuntimeSession | undefined;
+        try {
+          latest = await store.getSession(runtimeId);
+        } catch {
+          throw error;
+        }
+        if (latest && !matchesChatPartition(latest, runtimeId, stageId, learnerKey)) {
+          throw error;
+        }
+        if (latest?.status === 'active') {
+          // A generation without a committed state is not externally visible.
+          // Remove its partial records before retrying instead of exposing them
+          // through a later state append or retaining an orphaned session.
+          if (!destination.folded.state) {
+            let latestFolded: FoldedChat;
+            try {
+              latestFolded = foldRecords(await store.listRecords(runtimeId));
+            } catch {
+              throw error;
+            }
+            if (latestFolded.state) {
+              if (deterministic) throw chatSyncValidationError(desired.id, error);
+              views = await runtimeViews(store, stageId, learnerKey);
+              backoffBeforeAttempt = true;
+              continue retryLoop;
+            }
+            try {
+              await store.deleteSession(runtimeId);
+            } catch {
+              throw error;
+            }
+            if (deterministic) throw chatSyncValidationError(desired.id, error);
+            views = await runtimeViews(store, stageId, learnerKey);
+            backoffBeforeAttempt = true;
+            continue retryLoop;
+          }
+          if (deterministic) throw chatSyncValidationError(desired.id, error);
+          views = await runtimeViews(store, stageId, learnerKey);
+          backoffBeforeAttempt = true;
+          continue retryLoop;
+        }
+        if (deterministic) throw chatSyncValidationError(desired.id, error);
+        views = await runtimeViews(store, stageId, learnerKey);
+        backoffBeforeAttempt = true;
+        continue retryLoop;
+      }
     }
+    retryError ??= new Error(
+      `Exceeded chat sync plan-step limit for ${JSON.stringify(desired.id)}`,
+    );
+    backoffBeforeAttempt = true;
+    refreshBeforeAttempt = true;
   }
   if (!isolatedWrites) {
     // A failed locked write may exhaust its retries immediately after
@@ -1106,6 +870,7 @@ async function syncSessions(
   knownSessionIds: ReadonlySet<string> = new Set(),
   observed: ReadonlyMap<string, ChatSession> = new Map(),
   existingViews?: ChatRuntimeView[],
+  sleep: ChatSyncSleep = defaultChatSyncSleep,
 ): Promise<ChatSession[]> {
   const existing = existingViews ?? (await runtimeViews(store, stageId, learnerKey));
   const desiredRuntimeIds = new Map<string, string>();
@@ -1121,6 +886,7 @@ async function syncSessions(
         existing,
         isolatedWrites,
         observed.get(session.id),
+        sleep,
       ),
     );
   }
@@ -1287,9 +1053,13 @@ export async function saveChatSessions(
         ) {
           // The caller loaded no authoritative runtime snapshot. Once storage
           // recovers, preserve any still-staged legacy rows while merging the
-          // caller's new chats; clearing legacy below is safe only after both
-          // sets have reached RuntimeStore.
-          const recoveredLegacy = (await resolved.legacyStore.load(stageId)).map(normalizeSession);
+          // caller's new chats. The per-partition clear guard below separately
+          // protects a legacy source whose last load skipped malformed rows.
+          const recoveredConversion = normalizeLegacyConversion(
+            await resolved.legacyStore.load(stageId),
+          );
+          rememberSkippedLegacyRows(resolved.store, queueKey, recoveredConversion.skippedRows);
+          const recoveredLegacy = recoveredConversion.sessions;
           if (recoveredLegacy.length > 0) {
             const recoveredById = new Map(recoveredLegacy.map((session) => [session.id, session]));
             for (const session of nextSessions) recoveredById.set(session.id, session);
@@ -1354,6 +1124,7 @@ export async function saveChatSessions(
           knownSessionIds,
           priorObservedSessions,
           beforeSave,
+          resolved.sleep,
         );
         // Keep the tombstone authoritative until the deliberately reused chat
         // id has been durably synced. If marker cleanup fails, this save fails
@@ -1370,7 +1141,12 @@ export async function saveChatSessions(
         // Keep conflict observations aligned with the state the caller really
         // saw, even when this save silently preserved a newer cross-tab value.
         rememberObservedSessions(resolved.store, queueKey, nextSessions);
-        await resolved.legacyStore.clear(stageId);
+        const unsafeToClear = skippedLegacyRows(resolved.store, queueKey);
+        if (unsafeToClear) {
+          warnSkippedLegacyRows(stageId, unsafeToClear);
+        } else {
+          await resolved.legacyStore.clear(stageId);
+        }
       },
       options.globalLockHeld,
     );
@@ -1410,7 +1186,16 @@ export async function loadChatSessions(
         // Read legacy rows only after entering the same partition queue/lock as
         // saves. Otherwise a delayed migration can replay a snapshot captured
         // before a concurrent save cleared it and resurrect deleted chats.
-        legacy = (await resolved.legacyStore.load(stageId)).map(normalizeSession);
+        const rawLegacy = await resolved.legacyStore.load(stageId);
+        const conversion = normalizeLegacyConversion(rawLegacy);
+        legacy = conversion.sessions;
+        if (options.observe !== false) {
+          rememberSkippedLegacyRows(resolved.store, queueKey, conversion.skippedRows);
+        }
+        // Rows the stricter serializer refuses stay in the legacy source (clear
+        // is blocked on both load and save paths by the per-partition guard)
+        // and are excluded from the snapshot until the shape is supported.
+        warnSkippedLegacyRows(stageId, conversion.skippedRows);
         let beforeLoad = await runtimeViews(resolved.store, stageId, resolved.learnerKey);
         let restoreMarker = currentRestoreMarker(beforeLoad, stageId) ?? null;
         readRestoreMarker = restoreMarker;
@@ -1451,6 +1236,7 @@ export async function loadChatSessions(
           undefined,
           undefined,
           beforeLoad,
+          resolved.sleep,
         );
         runtimeReadSucceeded = true;
         if (options.observe !== false) {
@@ -1461,7 +1247,7 @@ export async function loadChatSessions(
           );
           rememberObservedSessions(resolved.store, queueKey, migrated);
         }
-        await resolved.legacyStore.clear(stageId);
+        if (conversion.skippedRows.length === 0) await resolved.legacyStore.clear(stageId);
         reportSnapshot(options, migrated, restoreMarker);
         return migrated;
       },
@@ -1472,7 +1258,10 @@ export async function loadChatSessions(
       // table, but a read-only legacy snapshot keeps pre-cutover history
       // visible. Strict callers such as backup export still fail loud.
       if (options.fallbackToLegacyOnError === false) throw error;
-      const readOnlyLegacy = (await resolved.legacyStore.load(stageId)).map(normalizeSession);
+      const conversion = normalizeLegacyConversion(await resolved.legacyStore.load(stageId));
+      const readOnlyLegacy = conversion.sessions;
+      rememberSkippedLegacyRows(resolved.store, queueKey, conversion.skippedRows);
+      warnSkippedLegacyRows(stageId, conversion.skippedRows);
       if (readOnlyLegacy.length === 0) throw error;
       if (options.observe !== false) {
         rememberObservedIds(
@@ -1570,6 +1359,23 @@ export async function restoreChatSessionsFromBackup(
       );
     }
     await restoreLegacyRows();
+    const restoredByStage = new Map<string, ChatSession[]>();
+    const invalidRestoreRows: string[] = [];
+    for (const stageId of orderedStageIds) {
+      const conversion = normalizeLegacyConversion(await resolved.legacyStore.load(stageId));
+      restoredByStage.set(stageId, conversion.sessions);
+      if (conversion.skippedRows.length > 0) {
+        invalidRestoreRows.push(
+          `${JSON.stringify(stageId)}: ${legacyRowLabels(conversion.skippedRows)}`,
+        );
+      }
+    }
+    if (invalidRestoreRows.length > 0) {
+      await options.rollbackLegacyRows?.();
+      throw new Error(
+        `Cannot restore malformed legacy chat rows (${invalidRestoreRows.join('; ')})`,
+      );
+    }
     const restoreMarkers: RuntimeSession[] = [];
     try {
       for (const stageId of orderedStageIds) {
@@ -1600,7 +1406,7 @@ export async function restoreChatSessionsFromBackup(
       const marker = restoreMarkers.find((candidate) => candidate.stageId === stageId)!;
       await finalizeRestoreMarker(resolved.store, marker);
       const beforeMigration = await runtimeViews(resolved.store, stageId, resolved.learnerKey);
-      const restored = (await resolved.legacyStore.load(stageId)).map(normalizeSession);
+      const restored = restoredByStage.get(stageId)!;
       await syncSessions(
         resolved.store,
         stageId,
@@ -1611,6 +1417,7 @@ export async function restoreChatSessionsFromBackup(
         undefined,
         undefined,
         beforeMigration,
+        resolved.sleep,
       );
       await resolved.legacyStore.clear(stageId);
     }
