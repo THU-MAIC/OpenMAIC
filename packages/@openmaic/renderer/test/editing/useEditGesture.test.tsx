@@ -261,4 +261,32 @@ describe('useEditGesture — locked element (defense-in-depth)', () => {
 
     expect(onElementsChange).toHaveBeenCalledTimes(1);
   });
+
+  it('reports a sub-threshold primary click but not a drag', () => {
+    const slide = makeSlide();
+    const onElementClick = vi.fn();
+    const onElementsChange = vi.fn();
+    const { container } = render(
+      <Harness
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={onElementsChange}
+        onElementClick={onElementClick}
+        targetEl={slide.elements[0]}
+      />,
+    );
+    const hit = container.querySelector('[data-testid="hit"]') as HTMLElement;
+
+    fireEvent.pointerDown(hit, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(hit, { pointerId: 1, clientX: 11, clientY: 10 });
+    expect(onElementClick).toHaveBeenCalledWith(slide.elements[0]);
+
+    onElementClick.mockClear();
+    fireEvent.pointerDown(hit, { pointerId: 2, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(hit, { pointerId: 2, clientX: 30, clientY: 20 });
+    expect(onElementClick).not.toHaveBeenCalled();
+    expect(onElementsChange).toHaveBeenCalledTimes(1);
+  });
 });

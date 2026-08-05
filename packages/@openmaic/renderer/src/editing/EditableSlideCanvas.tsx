@@ -76,6 +76,19 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
 
   const activeSelection = selection ?? EMPTY_SELECTION;
   const interactive = Boolean(onElementsChange || onSelectionChange);
+  const textEditingEnabled = Boolean(onTextContentChange);
+
+  const handleTextClick = useCallback(
+    (element: PPTElement) => {
+      if (!textEditingEnabled || element.type !== 'text' || element.lock) return;
+      onSelectionChange?.({
+        elementIds: [element.id],
+        primaryId: element.id,
+        editingId: element.id,
+      });
+    },
+    [onSelectionChange, textEditingEnabled],
+  );
 
   // Overlay wrapper is `inset: 0` of the same padding-free inner box that
   // SlideCanvas fills, so its container size — and therefore the fit-computed
@@ -102,6 +115,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     snapping,
     onSelectionChange,
     onElementsChange,
+    onElementClick: textEditingEnabled ? handleTextClick : undefined,
   });
   const onElementPointerDownRef = useRef(onElementPointerDown);
   useEffect(() => {
@@ -193,10 +207,22 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     const hidden = new Set(hiddenElementIds);
     return displayElements.filter((element) => !hidden.has(element.id));
   }, [displayElements, hiddenElementIds]);
+  const activeEditingTextId = elements.find(
+    (element) =>
+      element.id === activeSelection.editingId && element.type === 'text' && !element.lock,
+  )?.id;
   const activeGuides = resizeDrag?.guides ?? dragGuides;
   // Touch suppression belongs to mutation gestures: select-only hosts keep
   // native touch panning, while tap-select still receives pointer events.
   const editingTouchAction = onElementsChange ? 'none' : undefined;
+  const exitTextEditing = useCallback(() => {
+    if (!activeEditingTextId) return;
+    onSelectionChange?.({
+      elementIds: activeSelection.elementIds,
+      primaryId: activeSelection.primaryId,
+      groupId: activeSelection.groupId,
+    });
+  }, [activeEditingTextId, activeSelection, onSelectionChange]);
   const renderText = useCallback(
     (element: PPTTextElement, defaultContent: ReactNode) => {
       if (activeSelection.editingId !== element.id || element.lock) return defaultContent;
@@ -211,6 +237,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
           onFormatChange={onTextFormatChange}
           onControllerChange={onTextEditorChange}
           onFocusChange={onTextFocusChange}
+          onEscape={exitTextEditing}
         />
       );
     },
@@ -220,7 +247,24 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
       onTextEditorChange,
       onTextFocusChange,
       onTextFormatChange,
+      exitTextEditing,
     ],
+  );
+  const handleCanvasPointerDownCapture = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!activeEditingTextId || event.button !== 0) return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          '.ProseMirror, [data-element-id], [data-hit-kind], [data-resize-handle], [data-rotate-handle], [data-line-handle]',
+        )
+      ) {
+        return;
+      }
+      onSelectionChange?.(EMPTY_SELECTION);
+    },
+    [activeEditingTextId, onSelectionChange],
   );
 
   return (
@@ -234,7 +278,12 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     // padding-free so that SlideCanvas (normal flow) and the overlay (`inset: 0`)
     // always measure the same box — otherwise consumer padding would diverge
     // their box models and misalign the overlay from the rendered elements.
-    <div className={className} style={{ width: '100%', height: '100%', ...style }}>
+    <div
+      data-editable-slide-canvas=""
+      className={className}
+      onPointerDownCapture={handleCanvasPointerDownCapture}
+      style={{ width: '100%', height: '100%', ...style }}
+    >
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>
         {/* Pass `props.scale` (possibly undefined) THROUGH so SlideCanvas
             auto-fits with the same `fitScale` the overlay reads above. */}
@@ -280,7 +329,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
               style={{
                 position: 'absolute',
                 inset: 0,
-                pointerEvents: 'auto',
+                pointerEvents: activeEditingTextId ? 'none' : 'auto',
                 touchAction: editingTouchAction,
               }}
             />

@@ -23,6 +23,7 @@ export interface UseEditGestureArgs {
   snapping?: boolean | SnappingOptions;
   onSelectionChange?: (next: Selection) => void;
   onElementsChange?: (intents: EditIntent[]) => void;
+  onElementClick?: (element: PPTElement) => void;
 }
 
 export interface UseEditGestureResult {
@@ -70,7 +71,8 @@ interface Working {
  * Pure gesture glue: no store, no `@/` imports.
  */
 export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
-  const { slide, scale, selection, snapping, onSelectionChange, onElementsChange } = args;
+  const { slide, scale, selection, snapping, onSelectionChange, onElementsChange, onElementClick } =
+    args;
 
   const [working, setWorking] = useState<Working | null>(null);
 
@@ -126,6 +128,7 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
 
     const startX = e.clientX;
     const startY = e.clientY;
+    const selectionModifier = isSelectionModifier(e);
     // Base snapshots captured at pointer-down. `selectedElements` is the rigid
     // set the drag translates; `others` are the snap candidates (everything
     // NOT being dragged). Locked elements never move: even when selected they
@@ -298,6 +301,7 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
           : moveIntent(updates[0].id, updates[0].props);
         onElementsChange([intent]);
       }
+      if (!movedPast && !selectionModifier) onElementClick?.(el);
 
       setWorking(null);
     };

@@ -51,6 +51,10 @@ function ElementInteractionTarget({
   onElementPointerDown,
   onSelectionChange,
 }: ElementInteractionTargetProps) {
+  if (element.type === 'text' && !element.lock && selection.editingId === element.id) {
+    return null;
+  }
+
   if (element.type === 'line') {
     if (!interactive && !isSelected) return null;
 

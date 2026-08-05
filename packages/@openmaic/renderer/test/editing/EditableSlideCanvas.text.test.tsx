@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Slide } from '@openmaic/dsl';
 import { EditableSlideCanvas } from '../../src/editing/EditableSlideCanvas';
@@ -40,6 +40,7 @@ describe('EditableSlideCanvas text rendering', () => {
         hiddenElementIds={['hidden-text']}
         onSelectionChange={vi.fn()}
         onElementsChange={vi.fn()}
+        onTextContentChange={vi.fn()}
         onTextEditorChange={onTextEditorChange}
       />,
     );
@@ -69,5 +70,84 @@ describe('EditableSlideCanvas text rendering', () => {
     );
 
     expect(container.querySelector('[data-renderer-text-editor]')).toBeNull();
+  });
+
+  it('enters text editing on a click but keeps a drag as a move gesture', () => {
+    const onSelectionChange = vi.fn();
+    const onElementsChange = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSelectionChange}
+        onElementsChange={onElementsChange}
+        onTextContentChange={vi.fn()}
+      />,
+    );
+    const hit = container.querySelector('[data-element-id="text-1"]') as HTMLElement;
+
+    fireEvent.pointerDown(hit, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(hit, { pointerId: 1, clientX: 10, clientY: 10 });
+    expect(onSelectionChange).toHaveBeenLastCalledWith({
+      elementIds: ['text-1'],
+      primaryId: 'text-1',
+      editingId: 'text-1',
+    });
+
+    onSelectionChange.mockClear();
+    fireEvent.pointerDown(hit, { pointerId: 2, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(hit, { pointerId: 2, clientX: 30, clientY: 20 });
+    expect(onElementsChange).toHaveBeenCalledWith([
+      expect.objectContaining({ type: 'element.update', id: 'text-1' }),
+    ]);
+    expect(onSelectionChange).not.toHaveBeenCalledWith(
+      expect.objectContaining({ editingId: 'text-1' }),
+    );
+  });
+
+  it('exposes the active ProseMirror pointer path and exits editing on Escape', () => {
+    const onSelectionChange = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: ['text-1'], primaryId: 'text-1', editingId: 'text-1' }}
+        onSelectionChange={onSelectionChange}
+        onElementsChange={vi.fn()}
+        onTextContentChange={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('[data-element-id="text-1"]')).toBeNull();
+    expect(
+      (container.querySelector('[data-marquee-surface]') as HTMLElement).style.pointerEvents,
+    ).toBe('none');
+
+    fireEvent.keyDown(container.querySelector('.ProseMirror') as HTMLElement, { key: 'Escape' });
+    expect(onSelectionChange).toHaveBeenLastCalledWith({
+      elementIds: ['text-1'],
+      primaryId: 'text-1',
+    });
+  });
+
+  it('clears editing selection when the blank canvas is pressed', () => {
+    const onSelectionChange = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: ['text-1'], primaryId: 'text-1', editingId: 'text-1' }}
+        onSelectionChange={onSelectionChange}
+        onElementsChange={vi.fn()}
+        onTextContentChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.pointerDown(container.querySelector('[data-editable-slide-canvas]') as HTMLElement, {
+      button: 0,
+      pointerId: 1,
+    });
+    expect(onSelectionChange).toHaveBeenLastCalledWith({ elementIds: [] });
   });
 });
