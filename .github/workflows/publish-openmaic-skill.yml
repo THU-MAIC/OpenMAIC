@@ -277,26 +277,36 @@ jobs:
         run: |
           set -euo pipefail
           source_commit="$(git rev-parse HEAD)"
+          handle_divergence() {
+            reason="$1"
+            case "$EVENT_NAME" in
+              workflow_dispatch)
+                echo "::error::Refusing manual publish because $reason."
+                exit 1
+                ;;
+              push)
+                echo "::notice::Skipping $source_commit because $reason."
+                exit 0
+                ;;
+              *)
+                echo "::error::Unexpected publish event: $EVENT_NAME."
+                exit 1
+                ;;
+            esac
+          }
           if ! git rev-parse --verify --quiet "refs/remotes/origin/main^{commit}" >/dev/null; then
             echo "::error::Unable to resolve the checked-out origin/main commit."
             exit 1
           fi
           if ! git cat-file -e "HEAD^{tree}:skills/openmaic" 2>/dev/null; then
-            echo "::notice::Skipping $source_commit because skills/openmaic was deleted."
-            exit 0
+            handle_divergence "skills/openmaic was deleted"
           fi
           if ! git cat-file -e "origin/main^{tree}:skills/openmaic" 2>/dev/null; then
-            echo "::notice::Skipping $source_commit because skills/openmaic was removed from main."
-            exit 0
+            handle_divergence "skills/openmaic was removed from main"
           fi
           source_tree="$(git rev-parse HEAD:skills/openmaic)"
           main_tree="$(git rev-parse origin/main:skills/openmaic)"
           if [[ "$source_tree" != "$main_tree" ]]; then
-            if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-              echo "::error::Refusing manual publish because skills/openmaic changed on main."
-              exit 1
-            fi
-            echo "::notice::Skipping $source_commit because skills/openmaic changed on main."
-            exit 0
+            handle_divergence "skills/openmaic changed on main"
           fi
           bash .github/scripts/publish-openmaic-skill.sh

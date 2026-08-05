@@ -197,30 +197,15 @@ describe('check-clawhub-version', () => {
     expect(publishJob).toContain('refs/remotes/origin/main^{commit}');
     expect(publishJob).toContain('HEAD^{tree}:skills/openmaic');
     expect(publishJob).toContain('origin/main^{tree}:skills/openmaic');
-    expect(publishJob).toContain(
-      `if ! git cat-file -e "HEAD^{tree}:skills/openmaic" 2>/dev/null; then
-            echo "::notice::Skipping $source_commit because skills/openmaic was deleted."
-            exit 0
-          fi`,
-    );
-    expect(publishJob).toContain(
-      `if ! git cat-file -e "origin/main^{tree}:skills/openmaic" 2>/dev/null; then
-            echo "::notice::Skipping $source_commit because skills/openmaic was removed from main."
-            exit 0
-          fi`,
-    );
     expect(publishJob).toContain('if [[ "$source_tree" != "$main_tree" ]]');
     expect(publishJob).toContain('EVENT_NAME: ${{ github.event_name }}');
-    expect(publishJob).toContain(
-      `if [[ "$source_tree" != "$main_tree" ]]; then
-            if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-              echo "::error::Refusing manual publish because skills/openmaic changed on main."
-              exit 1
-            fi
-            echo "::notice::Skipping $source_commit because skills/openmaic changed on main."
-            exit 0
-          fi`,
+    expect(publishJob).toMatch(
+      /handle_divergence\(\) \{[\s\S]*?workflow_dispatch\)[\s\S]*?::error::Refusing manual publish because \$reason\.[\s\S]*?exit 1[\s\S]*?push\)[\s\S]*?::notice::Skipping \$source_commit because \$reason\.[\s\S]*?exit 0[\s\S]*?Unexpected publish event:[\s\S]*?exit 1[\s\S]*?\n\s+\}/,
     );
+    expect(publishJob.match(/handle_divergence "/g)).toHaveLength(3);
+    expect(publishJob).toContain('handle_divergence "skills/openmaic was deleted"');
+    expect(publishJob).toContain('handle_divergence "skills/openmaic was removed from main"');
+    expect(publishJob).toContain('handle_divergence "skills/openmaic changed on main"');
   });
 
   it('lets Node drain output without immediate process exits', () => {
