@@ -19,4 +19,13 @@ describe('renderer ProseMirror schema', () => {
     expect(output).toContain('href="https://maic.chat"');
     expect(output).toContain('text-align: center');
   });
+
+  it('preserves paragraph typography that affects line box geometry', () => {
+    const output = serializeTextDocument(
+      createTextDocument('<p style="font-size: 14px; line-height: 1.2">Text</p>'),
+    );
+
+    expect(output).toMatch(/<p style="[^"]*font-size: 14px/);
+    expect(output).toMatch(/<p style="[^"]*line-height: 1.2/);
+  });
 });

@@ -1,21 +1,28 @@
+import { Pipette } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import type { ChangeEvent, KeyboardEvent, MouseEvent, PointerEvent } from 'react';
+import { HexColorPicker } from 'react-colorful';
 import type { TextToolbarColorPickerProps } from '../types';
 
-interface ToolbarColorSwatch {
-  readonly value: string;
+const COMMON_COLOR_SWATCHES = [
+  '#000000',
+  '#525252',
+  '#a3a3a3',
+  '#ffffff',
+  '#ef4444',
+  '#f97316',
+  '#eab308',
+  '#22c55e',
+  '#3b82f6',
+  '#8b5cf6',
+] as const;
+
+interface EyeDropperInstance {
+  open(): Promise<{ sRGBHex: string }>;
 }
 
-const COMMON_COLOR_SWATCHES: readonly ToolbarColorSwatch[] = [
-  { value: '#000000' },
-  { value: '#ef4444' },
-  { value: '#f97316' },
-  { value: '#eab308' },
-  { value: '#22c55e' },
-  { value: '#3b82f6' },
-  { value: '#a855f7' },
-  { value: '#ffffff' },
-];
+interface EyeDropperConstructor {
+  new (): EyeDropperInstance;
+}
 
 export function normalizeToolbarColor(value: string): string | null {
   const input = value.trim().toLowerCase();
@@ -30,11 +37,7 @@ export function normalizeToolbarColor(value: string): string | null {
   return null;
 }
 
-function getDraftValue(value: string): string {
-  return normalizeToolbarColor(value) ?? value.trim().toLowerCase();
-}
-
-function getPreviewColor(value: string): string {
+function getPickerColor(value: string): string {
   return normalizeToolbarColor(value) ?? '#000000';
 }
 
@@ -44,147 +47,81 @@ export function DefaultColorPicker({
   onChange,
   onCommit,
 }: TextToolbarColorPickerProps) {
-  const [draft, setDraft] = useState(() => getDraftValue(value));
-  const incomingValue = getDraftValue(value);
-  const openingColor = getPreviewColor(value);
-  const openingColorRef = useRef(openingColor);
-  const previewColorRef = useRef(openingColor);
-  const lastCommittedColorRef = useRef<string | null>(null);
-  const pendingSwatchClickRef = useRef(false);
-  const pendingNativeInteractionRef = useRef(false);
-  const nativeInputRef = useRef<HTMLInputElement>(null);
-
-  const clearNativeInteraction = () => {
-    pendingNativeInteractionRef.current = false;
-  };
+  const incomingColor = getPickerColor(value);
+  const [color, setColor] = useState(incomingColor);
+  const isDragging = useRef(false);
 
   useEffect(() => {
-    setDraft(incomingValue);
-  }, [incomingValue]);
-
-  useEffect(() => {
-    const nativeInput = nativeInputRef.current;
-    if (!nativeInput) return clearNativeInteraction;
-    nativeInput.addEventListener('cancel', clearNativeInteraction);
-    return () => {
-      nativeInput.removeEventListener('cancel', clearNativeInteraction);
-      clearNativeInteraction();
+    const stopDragging = () => {
+      isDragging.current = false;
     };
+    const channels = ['mouseup', 'touchend', 'pointerup', 'pointercancel'] as const;
+    channels.forEach((eventName) => window.addEventListener(eventName, stopDragging));
+    return () => channels.forEach((eventName) => window.removeEventListener(eventName, stopDragging));
   }, []);
 
-  const commitColor = (color: string) => {
-    if (lastCommittedColorRef.current === color) return;
-    lastCommittedColorRef.current = color;
-    onCommit(color);
+  useEffect(() => {
+    if (!isDragging.current) setColor(incomingColor);
+  }, [incomingColor]);
+
+  const handleChange = (nextColor: string) => {
+    isDragging.current = true;
+    setColor(nextColor);
+    onChange(nextColor);
   };
 
-  const previewColor = (color: string) => {
-    if (previewColorRef.current !== color) lastCommittedColorRef.current = null;
-    previewColorRef.current = color;
-    onChange(color);
+  const handleCommit = (nextColor: string) => {
+    setColor(nextColor);
+    onCommit(nextColor);
   };
 
-  const commitDraft = () => {
-    const normalized = normalizeToolbarColor(draft);
-    if (!normalized) return;
-    setDraft(normalized);
-    commitColor(normalized);
-  };
-
-  const handleTextChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const nextDraft = event.target.value;
-    setDraft(nextDraft);
-    const normalized = normalizeToolbarColor(nextDraft);
-    if (normalized) previewColor(normalized);
-  };
-
-  const handleTextKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      commitDraft();
+  const EyeDropper = (globalThis as unknown as { EyeDropper?: EyeDropperConstructor }).EyeDropper;
+  const sampleScreen = async () => {
+    if (!EyeDropper) return;
+    try {
+      const result = await new EyeDropper().open();
+      handleCommit(result.sRGBHex);
+    } catch {
+      // Dismissing the system picker should leave the current color unchanged.
     }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      const openingColor = openingColorRef.current;
-      setDraft(openingColor);
-      if (previewColorRef.current !== openingColor) previewColor(openingColor);
-    }
-  };
-
-  const handleTextBlur = () => {
-    if (pendingSwatchClickRef.current) {
-      pendingSwatchClickRef.current = false;
-      return;
-    }
-    if (pendingNativeInteractionRef.current) return;
-    commitDraft();
-  };
-
-  const handleSwatchMouseDown = (event: MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    pendingSwatchClickRef.current = true;
-  };
-
-  const selectSwatch = (color: string) => {
-    pendingSwatchClickRef.current = false;
-    setDraft(color);
-    previewColor(color);
-    commitColor(color);
-  };
-
-  const handleNativeColorChange = (event: ChangeEvent<HTMLInputElement>) => {
-    pendingNativeInteractionRef.current = false;
-    const normalized = normalizeToolbarColor(event.target.value);
-    if (!normalized) return;
-    setDraft(normalized);
-    previewColor(normalized);
-    commitColor(normalized);
-  };
-
-  const handleNativePointerDown = (_event: PointerEvent<HTMLInputElement>) => {
-    pendingNativeInteractionRef.current = true;
   };
 
   return (
     <div className="maic-editing-ui-color-picker">
-      <div className="maic-editing-ui-color-picker-preview" aria-hidden="true">
-        <span style={{ backgroundColor: getPreviewColor(draft) }} />
+      <HexColorPicker color={color} onChange={handleChange} />
+      <div className="maic-editing-ui-color-current-row">
+        <div className="maic-editing-ui-color-current-value">
+          <span
+            className="maic-editing-ui-color-current-swatch"
+            aria-hidden="true"
+            style={{ backgroundColor: color }}
+          />
+          <span className="maic-editing-ui-color-current-hex">{color}</span>
+        </div>
+        {EyeDropper ? (
+          <button
+            type="button"
+            className="maic-editing-ui-color-eyedropper"
+            aria-label={labels.color}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={sampleScreen}
+          >
+            <Pipette aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
       <div className="maic-editing-ui-color-swatches" role="group" aria-label={labels.color}>
         {COMMON_COLOR_SWATCHES.map((swatch) => (
           <button
-            key={swatch.value}
+            key={swatch}
             type="button"
             className="maic-editing-ui-color-swatch"
-            aria-label={`${labels.color} ${swatch.value}`}
-            title={`${labels.color} ${swatch.value}`}
-            style={{ backgroundColor: swatch.value }}
-            onMouseDown={handleSwatchMouseDown}
-            onClick={() => selectSwatch(swatch.value)}
+            aria-label={swatch}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => handleCommit(swatch)}
+            style={{ backgroundColor: swatch }}
           />
         ))}
-      </div>
-      <div className="maic-editing-ui-color-input-row">
-        <input
-          type="color"
-          className="maic-editing-ui-color-native-input"
-          aria-label={labels.color}
-          value={getPreviewColor(draft)}
-          ref={nativeInputRef}
-          onPointerDown={handleNativePointerDown}
-          onChange={handleNativeColorChange}
-          onBlur={clearNativeInteraction}
-        />
-        <input
-          type="text"
-          className="maic-editing-ui-color-hex-input"
-          aria-label={labels.colorHex}
-          value={draft}
-          onChange={handleTextChange}
-          onBlur={handleTextBlur}
-          onKeyDown={handleTextKeyDown}
-          spellCheck={false}
-        />
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render } from '@testing-library/react';
+import { EditorView } from 'prosemirror-view';
 import { describe, expect, it, vi } from 'vitest';
 import type { Slide } from '@openmaic/dsl';
 import { EditableSlideCanvas } from '../../src/editing/EditableSlideCanvas';
@@ -25,6 +26,7 @@ const slide = {
   viewportRatio: 0.5625,
   elements: [
     textElement,
+    { ...textElement, id: 'text-2', top: 140 },
     { ...textElement, id: 'locked-text', lock: true },
     { ...textElement, id: 'hidden-text' },
   ],
@@ -67,6 +69,25 @@ describe('EditableSlideCanvas text rendering', () => {
         hiddenElementIds={hiddenElementIds}
         onSelectionChange={vi.fn()}
         onElementsChange={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('[data-renderer-text-editor]')).toBeNull();
+  });
+
+  it('does not mount an editor for a multi-selection with an editing id', () => {
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{
+          elementIds: ['text-1', 'locked-text'],
+          primaryId: 'text-1',
+          editingId: 'text-1',
+        }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+        onTextContentChange={vi.fn()}
       />,
     );
 
@@ -118,6 +139,51 @@ describe('EditableSlideCanvas text rendering', () => {
     );
   });
 
+  it('places the text caret at the clicked position when entering edit mode', () => {
+    const posAtCoords = vi
+      .spyOn(EditorView.prototype, 'posAtCoords')
+      .mockReturnValue({ pos: 4, inside: 1 });
+    const onSelectionChange = vi.fn();
+    const controllerRef: { current: TextEditorController | null } = { current: null };
+    const { container, rerender } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSelectionChange}
+        onElementsChange={vi.fn()}
+        onTextContentChange={vi.fn()}
+        onTextEditorChange={(next) => {
+          controllerRef.current = next;
+        }}
+      />,
+    );
+    const body = container.querySelector('[data-select-element-id="text-1"]') as HTMLElement;
+
+    fireEvent.pointerDown(body, { pointerId: 1, clientX: 180, clientY: 55 });
+    fireEvent.pointerUp(body, { pointerId: 1, clientX: 180, clientY: 55 });
+    rerender(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: ['text-1'], primaryId: 'text-1', editingId: 'text-1' }}
+        onSelectionChange={onSelectionChange}
+        onElementsChange={vi.fn()}
+        onTextContentChange={vi.fn()}
+        onTextEditorChange={(next) => {
+          controllerRef.current = next;
+        }}
+      />,
+    );
+
+    expect(posAtCoords).toHaveBeenCalledWith({ left: 180, top: 55 });
+    const controller = controllerRef.current;
+    if (controller === null)
+      throw new Error('Expected the text editor controller to be registered');
+    act(() => controller.execute({ command: 'insert', value: 'X' }));
+    expect(controller.getHTML()).toContain('HelXlo');
+  });
+
   it('exposes the active ProseMirror pointer path and exits editing on Escape', () => {
     const onSelectionChange = vi.fn();
     const { container } = render(
@@ -144,7 +210,7 @@ describe('EditableSlideCanvas text rendering', () => {
     });
   });
 
-  it('suspends element move hit targets while ProseMirror is editing', () => {
+  it('keeps other elements selectable while ProseMirror is editing', () => {
     const { container } = render(
       <EditableSlideCanvas
         slide={slide}
@@ -159,10 +225,35 @@ describe('EditableSlideCanvas text rendering', () => {
     const editor = container.querySelector('[data-renderer-text-editor]') as HTMLElement;
     expect(editor.style.cursor).toBe('text');
     expect(editor.style.userSelect).toBe('text');
-    expect(container.querySelector('[data-select-element-id]')).toBeNull();
+    expect(container.querySelector('[data-select-element-id="text-1"]')).toBeNull();
+    expect(container.querySelector('[data-select-element-id="text-2"]')).not.toBeNull();
     expect(container.querySelectorAll('[data-element-id]')).toHaveLength(1);
     expect(container.querySelector('[data-element-id="text-1"]')).not.toBeNull();
-    expect(container.querySelector('[data-hit-kind="blocker"]')).toBeNull();
+    expect(container.querySelector('[data-hit-kind="blocker"]')).not.toBeNull();
+  });
+
+  it('switches to another text element in one click while editing', () => {
+    const onSelectionChange = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: ['text-1'], primaryId: 'text-1', editingId: 'text-1' }}
+        onSelectionChange={onSelectionChange}
+        onElementsChange={vi.fn()}
+        onTextContentChange={vi.fn()}
+      />,
+    );
+    const other = container.querySelector('[data-select-element-id="text-2"]') as HTMLElement;
+
+    fireEvent.pointerDown(other, { pointerId: 1, clientX: 10, clientY: 150 });
+    fireEvent.pointerUp(other, { pointerId: 1, clientX: 10, clientY: 150 });
+
+    expect(onSelectionChange).toHaveBeenLastCalledWith({
+      elementIds: ['text-2'],
+      primaryId: 'text-2',
+      editingId: 'text-2',
+    });
   });
 
   it('clears editing selection when the blank canvas is pressed', () => {
@@ -185,10 +276,11 @@ describe('EditableSlideCanvas text rendering', () => {
     expect(onSelectionChange).toHaveBeenLastCalledWith({ elementIds: [] });
   });
 
-  it('flushes and deletes semantically empty text before leaving edit mode', () => {
+  it('deletes semantically empty text without recording an intermediate empty-content edit', () => {
     let controller: TextEditorController | null = null;
     const onElementsChange = vi.fn();
     const onSelectionChange = vi.fn();
+    const onTextContentChange = vi.fn();
     const { container } = render(
       <EditableSlideCanvas
         slide={slide}
@@ -196,7 +288,7 @@ describe('EditableSlideCanvas text rendering', () => {
         selection={{ elementIds: ['text-1'], primaryId: 'text-1', editingId: 'text-1' }}
         onSelectionChange={onSelectionChange}
         onElementsChange={onElementsChange}
-        onTextContentChange={vi.fn()}
+        onTextContentChange={onTextContentChange}
         onTextEditorChange={(next) => {
           controller = next;
         }}
@@ -209,9 +301,7 @@ describe('EditableSlideCanvas text rendering', () => {
     expect(onElementsChange).toHaveBeenLastCalledWith([
       { type: 'element.delete', ids: ['text-1'] },
     ]);
-    expect(onSelectionChange).toHaveBeenLastCalledWith({
-      elementIds: ['text-1'],
-      primaryId: 'text-1',
-    });
+    expect(onTextContentChange).not.toHaveBeenCalled();
+    expect(onSelectionChange).toHaveBeenLastCalledWith({ elementIds: [] });
   });
 });

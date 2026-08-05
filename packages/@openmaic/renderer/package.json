@@ -103,6 +103,7 @@
     "prosemirror-schema-list": "^1.5.1",
     "prosemirror-state": "^1.4.4",
     "prosemirror-view": "^1.41.5",
+    "react-colorful": "^5.7.0",
     "tailwind-merge": "^3.4.0",
     "tinycolor2": "^1.6.0"
   },

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createRef } from 'react';
 import { act, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TextAutoSize } from '../../../src/editing/text/TextAutoSize';
@@ -23,10 +24,12 @@ function reportSize(width: number, height: number) {
 describe('TextAutoSize', () => {
   beforeEach(() => vi.stubGlobal('ResizeObserver', ResizeObserverMock));
 
-  it('emits horizontal height once and flushes a cached resize measurement', () => {
+  it('preserves the initial height until editable content changes', () => {
     const onAutoSize = vi.fn();
+    const controller = createRef<{ notifyContentChange(): void }>();
     const { rerender } = render(
       <TextAutoSize
+        ref={controller}
         elementId="text-1"
         vertical={false}
         width={200}
@@ -39,6 +42,9 @@ describe('TextAutoSize', () => {
     );
 
     reportSize(180, 50);
+    expect(onAutoSize).not.toHaveBeenCalled();
+
+    act(() => controller.current?.notifyContentChange());
     reportSize(180, 50);
     expect(onAutoSize).toHaveBeenCalledTimes(1);
     expect(onAutoSize).toHaveBeenLastCalledWith({
@@ -49,6 +55,7 @@ describe('TextAutoSize', () => {
 
     rerender(
       <TextAutoSize
+        ref={controller}
         elementId="text-1"
         vertical={false}
         width={200}
@@ -64,6 +71,7 @@ describe('TextAutoSize', () => {
 
     rerender(
       <TextAutoSize
+        ref={controller}
         elementId="text-1"
         vertical={false}
         width={200}
@@ -83,8 +91,10 @@ describe('TextAutoSize', () => {
 
   it('emits width for vertical text', () => {
     const onAutoSize = vi.fn();
+    const controller = createRef<{ notifyContentChange(): void }>();
     render(
       <TextAutoSize
+        ref={controller}
         elementId="text-1"
         vertical
         width={80}
@@ -96,6 +106,10 @@ describe('TextAutoSize', () => {
       </TextAutoSize>,
     );
 
+    reportSize(90, 180);
+    expect(onAutoSize).not.toHaveBeenCalled();
+
+    act(() => controller.current?.notifyContentChange());
     reportSize(90, 180);
     expect(onAutoSize).toHaveBeenCalledWith({
       type: 'element.update',

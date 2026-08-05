@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { EditorState } from 'prosemirror-state';
+import { EditorState, TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { executeTextCommands } from './commandExecutor';
 import { getTextFormatState } from './formatState';
@@ -16,7 +16,9 @@ export interface RendererTextEditorProps {
   defaultColor: string;
   defaultFontName: string;
   autoFocus?: boolean;
+  initialFocusPoint?: { left: number; top: number };
   onContentChange?: (change: TextContentChange) => void;
+  onLayoutChange?: () => void;
   onFormatChange?: (elementId: string, state: TextFormatState) => void;
   onControllerChange?: (controller: TextEditorController | null) => void;
   onFocusChange?: (focused: boolean) => void;
@@ -31,7 +33,9 @@ export function RendererTextEditor({
   defaultColor,
   defaultFontName,
   autoFocus = false,
+  initialFocusPoint,
   onContentChange,
+  onLayoutChange,
   onFormatChange,
   onControllerChange,
   onFocusChange,
@@ -40,8 +44,11 @@ export function RendererTextEditor({
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const valueRef = useRef(value);
+  const lastEmittedRef = useRef('');
+  const initialFocusPointRef = useRef(initialFocusPoint);
   const callbacksRef = useRef({
     onContentChange,
+    onLayoutChange,
     onFormatChange,
     onControllerChange,
     onFocusChange,
@@ -51,8 +58,10 @@ export function RendererTextEditor({
 
   useLayoutEffect(() => {
     valueRef.current = value;
+    initialFocusPointRef.current = initialFocusPoint;
     callbacksRef.current = {
       onContentChange,
+      onLayoutChange,
       onFormatChange,
       onControllerChange,
       onFocusChange,
@@ -62,7 +71,9 @@ export function RendererTextEditor({
   }, [
     defaultColor,
     defaultFontName,
+    initialFocusPoint,
     onContentChange,
+    onLayoutChange,
     onControllerChange,
     onEscape,
     onFocusChange,
@@ -77,7 +88,7 @@ export function RendererTextEditor({
     let timer: ReturnType<typeof setTimeout> | null = null;
     let pendingHistory: HistoryMode = 'record';
     let nextTransactionHistory: HistoryMode = 'record';
-    let lastEmitted = valueRef.current.replace(/ style=""/g, '');
+    let dirty = false;
 
     const pushFormatState = (view: EditorView) => {
       callbacksRef.current.onFormatChange?.(
@@ -89,16 +100,28 @@ export function RendererTextEditor({
     const flush = () => {
       if (timer) clearTimeout(timer);
       timer = null;
+      if (!dirty) return;
       const view = viewRef.current;
       if (!view) return;
       const content = serializeTextDocument(view.state.doc);
       const normalized = content.replace(/ style=""/g, '');
-      if (normalized === lastEmitted) return;
-      lastEmitted = normalized;
+      dirty = false;
+      if (normalized === lastEmittedRef.current) return;
+      lastEmittedRef.current = normalized;
       callbacksRef.current.onContentChange?.({
         intent: { type: 'text.updateContent', id: elementId, content, target: 'text' },
         history: pendingHistory,
       });
+      pendingHistory = 'record';
+      // Let the host commit the text before ResizeObserver normalizes the
+      // element. That keeps the content and its auto-size in one undo frame.
+      callbacksRef.current.onLayoutChange?.();
+    };
+
+    const discard = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      dirty = false;
       pendingHistory = 'record';
     };
 
@@ -117,6 +140,7 @@ export function RendererTextEditor({
         currentView.updateState(nextState);
         if (shouldPushAttrs(transaction)) pushFormatState(currentView);
         if (transaction.docChanged) {
+          dirty = true;
           const history = nextTransactionHistory;
           nextTransactionHistory = 'record';
           schedule(history);
@@ -140,7 +164,6 @@ export function RendererTextEditor({
           }
           if (event.key === 'Escape') {
             event.preventDefault();
-            flush();
             callbacksRef.current.onEscape?.();
             return true;
           }
@@ -149,15 +172,21 @@ export function RendererTextEditor({
       },
     });
     viewRef.current = view;
+    lastEmittedRef.current = serializeTextDocument(view.state.doc).replace(/ style=""/g, '');
 
     const controller: TextEditorController = {
       elementId,
       focus: () => view.focus(),
       flush,
+      discard,
       execute: (command) => {
         nextTransactionHistory = 'record';
         executeTextCommands(view, command);
-        view.focus();
+        // Toolbar form controls (font/color/size) must keep their native focus
+        // while commands operate on ProseMirror's retained selection.
+        if (document.activeElement === document.body || view.dom.contains(document.activeElement)) {
+          view.focus();
+        }
         pushFormatState(view);
       },
       getHTML: () => serializeTextDocument(view.state.doc),
@@ -165,10 +194,20 @@ export function RendererTextEditor({
 
     callbacksRef.current.onControllerChange?.(controller);
     pushFormatState(view);
-    if (autoFocus) view.focus();
+    if (autoFocus) {
+      const focusPoint = initialFocusPointRef.current;
+      const position = focusPoint ? view.posAtCoords(focusPoint) : null;
+      if (position) {
+        view.dispatch(
+          view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(position.pos))),
+        );
+      }
+      view.focus();
+    }
 
     return () => {
       flush();
+      callbacksRef.current.onFocusChange?.(false);
       callbacksRef.current.onControllerChange?.(null);
       viewRef.current = null;
       view.destroy();
@@ -181,13 +220,13 @@ export function RendererTextEditor({
     const current = serializeTextDocument(view.state.doc).replace(/ style=""/g, '');
     const incoming = value.replace(/ style=""/g, '');
     if (current === incoming) return;
-    view.updateState(
-      EditorState.create({
-        doc: createTextDocument(value),
-        schema: textSchema,
-        plugins: view.state.plugins,
-      }),
-    );
+    const nextState = EditorState.create({
+      doc: createTextDocument(value),
+      schema: textSchema,
+      plugins: view.state.plugins,
+    });
+    view.updateState(nextState);
+    lastEmittedRef.current = serializeTextDocument(nextState.doc).replace(/ style=""/g, '');
   }, [value]);
 
   return (

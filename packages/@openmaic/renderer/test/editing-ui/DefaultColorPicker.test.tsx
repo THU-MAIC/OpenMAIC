@@ -41,26 +41,7 @@ describe('normalizeToolbarColor', () => {
 });
 
 describe('DefaultColorPicker', () => {
-  it('commits a valid hex draft on Enter', () => {
-    const onChange = vi.fn();
-    const onCommit = vi.fn();
-    render(
-      <DefaultColorPicker
-        value="#112233"
-        labels={labels}
-        onChange={onChange}
-        onCommit={onCommit}
-      />,
-    );
-
-    const input = screen.getByRole('textbox', { name: labels.colorHex });
-    fireEvent.change(input, { target: { value: '#ff0000' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    expect(onCommit).toHaveBeenCalledWith('#ff0000');
-  });
-
-  it('previews and commits a native color change once when followed by blur', () => {
+  it('matches the legacy editor picker controls and common-color palette', () => {
     const onChange = vi.fn();
     const onCommit = vi.fn();
     const { container } = render(
@@ -72,18 +53,16 @@ describe('DefaultColorPicker', () => {
       />,
     );
 
-    const input = container.querySelector<HTMLInputElement>('input[type="color"]');
-    if (!input) throw new Error('Native color input not found');
-    fireEvent.change(input, { target: { value: '#ff0000' } });
-    fireEvent.blur(input);
-
-    expect(onChange).toHaveBeenLastCalledWith('#ff0000');
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onCommit).toHaveBeenCalledWith('#ff0000');
-    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('.react-colorful')).not.toBeNull();
+    expect(container.querySelector('.react-colorful__saturation')).not.toBeNull();
+    expect(container.querySelector('.react-colorful__hue')).not.toBeNull();
+    expect(container.querySelector('input')).toBeNull();
+    expect(screen.getAllByRole('button')).toHaveLength(10);
+    expect(screen.getByRole('button', { name: '#525252' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: '#8b5cf6' })).not.toBeNull();
   });
 
-  it('does not call either callback for invalid hex input', () => {
+  it('commits legacy common-color swatches immediately', () => {
     const onChange = vi.fn();
     const onCommit = vi.fn();
     render(
@@ -95,81 +74,31 @@ describe('DefaultColorPicker', () => {
       />,
     );
 
-    const input = screen.getByRole('textbox', { name: labels.colorHex });
-    fireEvent.change(input, { target: { value: 'red' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-    fireEvent.blur(input);
-
+    fireEvent.click(screen.getByRole('button', { name: '#ef4444' }));
     expect(onChange).not.toHaveBeenCalled();
-    expect(onCommit).not.toHaveBeenCalled();
+    expect(onCommit).toHaveBeenCalledWith('#ef4444');
   });
 
-  it('restores the normalized opening color after a controlled preview update on Escape', () => {
-    const onChange = vi.fn();
-    const onCommit = vi.fn();
-    const englishLabels = resolveTextToolbarLabels('en-US');
-
-    function ControlledPicker() {
-      const [value, setValue] = useState('#ABC');
-      return (
-        <DefaultColorPicker
-          value={value}
-          labels={englishLabels}
-          onChange={(color) => {
-            onChange(color);
-            setValue(color);
-          }}
-          onCommit={onCommit}
-        />
-      );
-    }
-
-    render(<ControlledPicker />);
-
-    const input = screen.getByRole('textbox', { name: 'Color hex' });
-    fireEvent.change(input, { target: { value: '#ff0000' } });
-    fireEvent.keyDown(input, { key: 'Escape' });
-
-    expect((input as HTMLInputElement).value).toBe('#aabbcc');
-    expect(onChange).toHaveBeenLastCalledWith('#aabbcc');
-    expect(onCommit).not.toHaveBeenCalled();
-  });
-
-  it('commits swatches immediately and restores the incoming value on Escape', () => {
-    const onChange = vi.fn();
-    const onCommit = vi.fn();
-    render(
+  it('synchronizes the displayed hex value from controlled color changes', () => {
+    const { rerender } = render(
       <DefaultColorPicker
         value="#112233"
         labels={labels}
-        onChange={onChange}
-        onCommit={onCommit}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: `${labels.color} #ef4444` }));
-    expect(onChange).toHaveBeenCalledWith('#ef4444');
-    expect(onCommit).toHaveBeenCalledWith('#ef4444');
-
-    const input = screen.getByRole('textbox', { name: labels.colorHex });
-    fireEvent.change(input, { target: { value: '#00ff00' } });
-    fireEvent.keyDown(input, { key: 'Escape' });
-    expect((input as HTMLInputElement).value).toBe('#112233');
-  });
-
-  it('uses localized and overridden color labels for swatch names', () => {
-    const overriddenLabels = resolveTextToolbarLabels('zh-CN', { color: '自定义颜色' });
-    render(
-      <DefaultColorPicker
-        value="#112233"
-        labels={overriddenLabels}
         onChange={vi.fn()}
         onCommit={vi.fn()}
       />,
     );
 
-    const swatch = screen.getByRole('button', { name: '自定义颜色 #ef4444' });
-    expect(swatch.getAttribute('title')).toBe('自定义颜色 #ef4444');
+    expect(screen.getByText('#112233')).not.toBeNull();
+    rerender(
+      <DefaultColorPicker
+        value="#abcdef"
+        labels={labels}
+        onChange={vi.fn()}
+        onCommit={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('#abcdef')).not.toBeNull();
   });
 
   it('passes the current value and callbacks to a custom toolbar renderer', () => {
@@ -205,7 +134,20 @@ describe('DefaultColorPicker', () => {
 });
 
 describe('TextFormatToolbar color popover', () => {
-  it('commits a swatch after the focused hex input receives its mouse down, blur, and click events', () => {
+  it('renders the color picker outside the scrollable toolbar', () => {
+    render(
+      <TextFormatToolbar elementId="text-1" format={format} locale="zh-CN" onCommand={vi.fn()} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '文字颜色' }));
+
+    const toolbar = screen.getByRole('toolbar');
+    const popover = screen.getByRole('dialog', { name: '文字颜色' });
+    expect(toolbar.contains(popover)).toBe(false);
+    expect(popover.parentElement).toBe(document.body);
+  });
+
+  it('commits a swatch once and closes the popover', () => {
     const onCommand = vi.fn();
 
     function ControlledToolbar() {
@@ -231,67 +173,16 @@ describe('TextFormatToolbar color popover', () => {
     render(<ControlledToolbar />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Text color' }));
-    const input = screen.getByRole('textbox', { name: 'Color hex' });
-    const swatch = screen.getByRole('button', { name: 'Text color #ef4444' });
-    input.focus();
-    expect(document.activeElement).toBe(input);
+    const swatch = screen.getByRole('button', { name: '#ef4444' });
 
     const mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
     swatch.dispatchEvent(mouseDown);
     expect(mouseDown.defaultPrevented).toBe(true);
-    fireEvent.blur(input);
     fireEvent.click(swatch);
 
     expect(onCommand).toHaveBeenNthCalledWith(1, { command: 'forecolor', value: '#ef4444' });
-    expect(onCommand).toHaveBeenNthCalledWith(2, { command: 'forecolor', value: '#ef4444' });
-    expect(screen.queryByRole('textbox', { name: 'Color hex' })).toBeNull();
-  });
-
-  it('waits for a native color commit after the focused hex input blurs during pointer down', () => {
-    const onCommand = vi.fn();
-
-    function ControlledToolbar() {
-      const [controlledFormat, setControlledFormat] = useState(format);
-      return (
-        <TextFormatToolbar
-          elementId="text-1"
-          format={controlledFormat}
-          locale="en-US"
-          onCommand={(command) => {
-            onCommand(command);
-            if (command.command === 'forecolor') {
-              setControlledFormat((current) => ({
-                ...current,
-                color: command.value ?? current.color,
-              }));
-            }
-          }}
-        />
-      );
-    }
-
-    const { container } = render(<ControlledToolbar />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Text color' }));
-    const hexInput = screen.getByRole('textbox', { name: 'Color hex' });
-    const nativeInput = container.querySelector<HTMLInputElement>('input[type="color"]');
-    if (!nativeInput) throw new Error('Native color input not found');
-    hexInput.focus();
-
-    const pointerDown = new Event('pointerdown', { bubbles: true, cancelable: true });
-    nativeInput.dispatchEvent(pointerDown);
-    expect(pointerDown.defaultPrevented).toBe(false);
-    fireEvent.blur(hexInput);
-
-    expect(screen.getByRole('textbox', { name: 'Color hex' })).not.toBeNull();
-    expect(onCommand).not.toHaveBeenCalled();
-
-    fireEvent.change(nativeInput, { target: { value: '#ff0000' } });
-
-    expect(onCommand).toHaveBeenNthCalledWith(1, { command: 'forecolor', value: '#ff0000' });
-    expect(onCommand).toHaveBeenNthCalledWith(2, { command: 'forecolor', value: '#ff0000' });
-    expect(onCommand).toHaveBeenCalledTimes(2);
-    expect(screen.queryByRole('textbox', { name: 'Color hex' })).toBeNull();
+    expect(onCommand).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog', { name: 'Text color' })).toBeNull();
   });
 
   it('prevents selection loss, dispatches preview changes, and closes on outside pointer events', () => {
@@ -306,15 +197,15 @@ describe('TextFormatToolbar color popover', () => {
     expect(pointerDown.defaultPrevented).toBe(true);
 
     fireEvent.click(button);
-    expect(screen.getByRole('textbox', { name: labels.colorHex })).not.toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '文字颜色 #3b82f6' }));
+    expect(screen.getByRole('dialog', { name: labels.color })).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '#3b82f6' }));
     expect(onCommand).toHaveBeenNthCalledWith(1, { command: 'forecolor', value: '#3b82f6' });
-    expect(onCommand).toHaveBeenNthCalledWith(2, { command: 'forecolor', value: '#3b82f6' });
-    expect(screen.queryByRole('textbox', { name: labels.colorHex })).toBeNull();
+    expect(onCommand).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog', { name: labels.color })).toBeNull();
 
     fireEvent.click(button);
-    expect(screen.getByRole('textbox', { name: labels.colorHex })).not.toBeNull();
+    expect(screen.getByRole('dialog', { name: labels.color })).not.toBeNull();
     fireEvent.pointerDown(document.body);
-    expect(screen.queryByRole('textbox', { name: labels.colorHex })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: labels.color })).toBeNull();
   });
 });

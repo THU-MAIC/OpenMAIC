@@ -142,6 +142,7 @@ function createController(
         history: 'record',
       });
     },
+    discard: vi.fn(),
     flush: vi.fn(),
     focus: vi.fn(),
     getHTML: () => `<p>${elementId}</p>`,

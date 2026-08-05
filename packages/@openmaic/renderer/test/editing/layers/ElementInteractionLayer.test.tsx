@@ -94,12 +94,20 @@ describe('ElementInteractionLayer context target ids', () => {
     expect(container.querySelector('[data-element-id="a"]')).toBeNull();
   });
 
-  it('keeps only the active text border interactive while editing', () => {
+  it('keeps an outer move border for active text editing without exposing an overlapping underlay', () => {
     const other = { ...element, id: 'b' } as PPTElement;
+    const underlay = {
+      ...element,
+      id: 'underlay',
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 200,
+    } as PPTElement;
     const { container } = render(
       <ElementInteractionLayer
-        elements={[element, other]}
-        sourceElements={[element, other]}
+        elements={[underlay, element, other]}
+        sourceElements={[underlay, element, other]}
         selection={{ elementIds: ['a'], primaryId: 'a', editingId: 'a' }}
         interactive
         movable
@@ -112,9 +120,13 @@ describe('ElementInteractionLayer context target ids', () => {
       />,
     );
 
-    expect(container.querySelector('[data-select-element-id]')).toBeNull();
+    expect(container.querySelector('[data-select-element-id="a"]')).toBeNull();
+    expect(container.querySelector('[data-select-element-id="underlay"]')).toBeNull();
+    expect(container.querySelector('[data-select-element-id="b"]')).not.toBeNull();
     expect(container.querySelectorAll('[data-element-id]')).toHaveLength(1);
     expect(container.querySelector('[data-element-id="a"]')).not.toBeNull();
+    expect(container.querySelector('[data-element-id="b"]')).toBeNull();
+    expect(container.querySelectorAll('[data-move-border="a"]')).toHaveLength(4);
   });
 
   it('marks locked box blockers with their element id', () => {

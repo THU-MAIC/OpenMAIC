@@ -111,6 +111,12 @@ const paragraph: NodeSpec = {
     textIndent: {
       default: 0,
     },
+    fontsize: {
+      default: '',
+    },
+    lineHeight: {
+      default: '',
+    },
   },
   content: 'inline*',
   group: 'block',
@@ -118,7 +124,7 @@ const paragraph: NodeSpec = {
     {
       tag: 'p',
       getAttrs: (dom) => {
-        const { textAlign, textIndent } = (dom as HTMLElement).style;
+        const { textAlign, textIndent, fontSize, lineHeight } = (dom as HTMLElement).style;
 
         let align = (dom as HTMLElement).getAttribute('align') || textAlign || '';
         align = /(left|right|center|justify)/.test(align) ? align : '';
@@ -135,7 +141,13 @@ const paragraph: NodeSpec = {
 
         const indent = +((dom as HTMLElement).getAttribute('data-indent') || 0);
 
-        return { align, indent, textIndent: textIndentLevel };
+        return {
+          align,
+          indent,
+          textIndent: textIndentLevel,
+          fontsize: fontSize,
+          lineHeight,
+        };
       },
     },
     {
@@ -148,10 +160,12 @@ const paragraph: NodeSpec = {
     },
   ],
   toDOM: (node: Node) => {
-    const { align, indent, textIndent } = node.attrs;
+    const { align, indent, textIndent, fontsize, lineHeight } = node.attrs;
     let style = '';
     if (align && align !== 'left') style += `text-align: ${align};`;
     if (textIndent) style += `text-indent: ${textIndent}em;`;
+    if (fontsize) style += `font-size: ${fontsize};`;
+    if (lineHeight) style += `line-height: ${lineHeight};`;
 
     const attr: Attr = { style };
     if (indent) attr['data-indent'] = indent;

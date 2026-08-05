@@ -23,7 +23,7 @@ export interface ElementInteractionTargetProps {
   canvasScale: number;
   editingTouchAction: CSSProperties['touchAction'];
   onElementPointerDown: (element: PPTElement, event: ReactPointerEvent) => void;
-  onElementClick?: (element: PPTElement) => void;
+  onElementClick?: (element: PPTElement, event: ReactPointerEvent) => void;
   onSelectionChange?: (next: Selection) => void;
 }
 
@@ -50,6 +50,34 @@ export function areElementInteractionTargetPropsEqual(
 
 const BODY_CLICK_THRESHOLD_PX = 2;
 const MOVE_BORDER_WIDTH_PX = 10;
+const EDITING_MOVE_BORDER_OUTSET_PX = 8;
+
+function isCoveredByEditingText(
+  element: PPTElement,
+  sourceElements: PPTElement[],
+  editingId: string | undefined,
+): boolean {
+  if (!editingId || element.id === editingId || element.type === 'line') return false;
+
+  const editingIndex = sourceElements.findIndex((candidate) => candidate.id === editingId);
+  const elementIndex = sourceElements.findIndex((candidate) => candidate.id === element.id);
+  const editingElement = sourceElements[editingIndex];
+  if (
+    editingIndex < 0 ||
+    elementIndex < 0 ||
+    elementIndex > editingIndex ||
+    editingElement?.type !== 'text'
+  ) {
+    return false;
+  }
+
+  return (
+    element.left < editingElement.left + editingElement.width &&
+    element.left + element.width > editingElement.left &&
+    element.top < editingElement.top + editingElement.height &&
+    element.top + element.height > editingElement.top
+  );
+}
 
 function ElementInteractionTarget({
   element,
@@ -72,7 +100,8 @@ function ElementInteractionTarget({
     clientY: number;
     modifier: boolean;
   } | null>(null);
-  const editingActive = Boolean(selection.editingId);
+  const isEditingElement = selection.editingId === element.id;
+  const isCoveredUnderlay = isCoveredByEditingText(element, sourceElements, selection.editingId);
 
   const selectElement = (event: ReactPointerEvent) => {
     event.stopPropagation();
@@ -103,12 +132,13 @@ function ElementInteractionTarget({
     bodyPressRef.current = null;
     if (!press || press.pointerId !== event.pointerId || press.modifier) return;
     const moved = Math.hypot(event.clientX - press.clientX, event.clientY - press.clientY);
-    if (moved <= BODY_CLICK_THRESHOLD_PX) onElementClick?.(element);
+    if (moved <= BODY_CLICK_THRESHOLD_PX) onElementClick?.(element, event);
   };
+
+  if (isCoveredUnderlay) return null;
 
   if (element.type === 'line') {
     if (!interactive && !isSelected) return null;
-    if (editingActive) return null;
 
     const path = getLineElementPath(element);
     const spanWidth = Math.abs(element.start[0] - element.end[0]);
@@ -190,7 +220,6 @@ function ElementInteractionTarget({
   } satisfies CSSProperties;
 
   if (element.lock) {
-    if (editingActive) return null;
     return (
       <div
         data-hit-kind="blocker"
@@ -207,7 +236,7 @@ function ElementInteractionTarget({
 
   return (
     <Fragment>
-      {!editingActive && (
+      {!isEditingElement && (
         <div
           data-select-element-id={element.id}
           data-context-element-id={element.id}
@@ -235,23 +264,77 @@ function ElementInteractionTarget({
           }}
         >
           <svg
-            width={screenWidth}
-            height={screenHeight}
+            width={isEditingElement ? screenWidth + EDITING_MOVE_BORDER_OUTSET_PX * 2 : screenWidth}
+            height={
+              isEditingElement ? screenHeight + EDITING_MOVE_BORDER_OUTSET_PX * 2 : screenHeight
+            }
             overflow="visible"
-            style={{ display: 'block', overflow: 'visible', pointerEvents: 'none' }}
+            style={{
+              display: 'block',
+              left: isEditingElement ? -EDITING_MOVE_BORDER_OUTSET_PX : undefined,
+              overflow: 'visible',
+              pointerEvents: 'none',
+              position: isEditingElement ? 'absolute' : undefined,
+              top: isEditingElement ? -EDITING_MOVE_BORDER_OUTSET_PX : undefined,
+            }}
           >
-            <rect
-              data-move-border={element.id}
-              x={0}
-              y={0}
-              width={screenWidth}
-              height={screenHeight}
-              fill="none"
-              stroke="transparent"
-              strokeWidth={MOVE_BORDER_WIDTH_PX}
-              pointerEvents="stroke"
-              style={{ cursor: 'move', touchAction: editingTouchAction }}
-            />
+            {isEditingElement ? (
+              <>
+                <rect
+                  data-move-border={element.id}
+                  x={0}
+                  y={0}
+                  width={screenWidth + EDITING_MOVE_BORDER_OUTSET_PX * 2}
+                  height={EDITING_MOVE_BORDER_OUTSET_PX}
+                  fill="transparent"
+                  pointerEvents="all"
+                  style={{ cursor: 'move', touchAction: editingTouchAction }}
+                />
+                <rect
+                  data-move-border={element.id}
+                  x={0}
+                  y={screenHeight + EDITING_MOVE_BORDER_OUTSET_PX}
+                  width={screenWidth + EDITING_MOVE_BORDER_OUTSET_PX * 2}
+                  height={EDITING_MOVE_BORDER_OUTSET_PX}
+                  fill="transparent"
+                  pointerEvents="all"
+                  style={{ cursor: 'move', touchAction: editingTouchAction }}
+                />
+                <rect
+                  data-move-border={element.id}
+                  x={0}
+                  y={EDITING_MOVE_BORDER_OUTSET_PX}
+                  width={EDITING_MOVE_BORDER_OUTSET_PX}
+                  height={screenHeight}
+                  fill="transparent"
+                  pointerEvents="all"
+                  style={{ cursor: 'move', touchAction: editingTouchAction }}
+                />
+                <rect
+                  data-move-border={element.id}
+                  x={screenWidth + EDITING_MOVE_BORDER_OUTSET_PX}
+                  y={EDITING_MOVE_BORDER_OUTSET_PX}
+                  width={EDITING_MOVE_BORDER_OUTSET_PX}
+                  height={screenHeight}
+                  fill="transparent"
+                  pointerEvents="all"
+                  style={{ cursor: 'move', touchAction: editingTouchAction }}
+                />
+              </>
+            ) : (
+              <rect
+                data-move-border={element.id}
+                x={0}
+                y={0}
+                width={screenWidth}
+                height={screenHeight}
+                fill="none"
+                stroke="transparent"
+                strokeWidth={MOVE_BORDER_WIDTH_PX}
+                pointerEvents="stroke"
+                style={{ cursor: 'move', touchAction: editingTouchAction }}
+              />
+            )}
           </svg>
         </div>
       )}
@@ -275,7 +358,7 @@ interface ElementInteractionLayerProps {
   canvasScale: number;
   editingTouchAction: CSSProperties['touchAction'];
   onElementPointerDown: (element: PPTElement, event: ReactPointerEvent) => void;
-  onElementClick?: (element: PPTElement) => void;
+  onElementClick?: (element: PPTElement, event: ReactPointerEvent) => void;
   onSelectionChange?: (next: Selection) => void;
 }
 

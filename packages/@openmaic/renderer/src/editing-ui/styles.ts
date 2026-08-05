@@ -1,16 +1,7 @@
 export const EDITING_UI_STYLES = `
 .maic-editing-ui-root {
-  --maic-editing-ui-bg: #ffffff;
-  --maic-editing-ui-fg: #27272a;
-  --maic-editing-ui-muted: #71717a;
-  --maic-editing-ui-active-bg: #ede9fe;
-  --maic-editing-ui-active-fg: #6d28d9;
-  --maic-editing-ui-border: #e4e4e7;
-  --maic-editing-ui-shadow: 0 8px 24px rgb(0 0 0 / 14%);
-  --maic-editing-ui-radius: 8px;
-  --maic-editing-ui-z-index: 80;
   box-sizing: border-box;
-  color: var(--maic-editing-ui-fg);
+  color: var(--maic-editing-ui-fg, #27272a);
   font-family: inherit;
   letter-spacing: 0;
 }
@@ -23,10 +14,13 @@ export const EDITING_UI_STYLES = `
 
 .maic-editing-ui-text-toolbar {
   align-items: center;
-  background: var(--maic-editing-ui-bg);
-  border: 1px solid var(--maic-editing-ui-border);
-  border-radius: var(--maic-editing-ui-radius);
-  box-shadow: var(--maic-editing-ui-shadow);
+  background: var(--maic-editing-ui-bg, #ffffff);
+  border: 1px solid var(--maic-editing-ui-border, #e4e4e7);
+  border-radius: var(--maic-editing-ui-radius, 6px);
+  box-shadow: var(
+    --maic-editing-ui-shadow,
+    0 4px 6px -1px rgb(0 0 0 / 10%), 0 2px 4px -2px rgb(0 0 0 / 10%)
+  );
   display: flex;
   flex-wrap: nowrap;
   gap: 4px;
@@ -35,7 +29,7 @@ export const EDITING_UI_STYLES = `
   padding: 4px;
   position: relative;
   width: max-content;
-  z-index: var(--maic-editing-ui-z-index);
+  z-index: var(--maic-editing-ui-z-index, 80);
 }
 
 .maic-editing-ui-group {
@@ -45,17 +39,19 @@ export const EDITING_UI_STYLES = `
   gap: 2px;
 }
 
-.maic-editing-ui-group + .maic-editing-ui-group {
-  border-left: 1px solid var(--maic-editing-ui-border);
-  padding-left: 4px;
+.maic-editing-ui-divider {
+  background: var(--maic-editing-ui-border, #e4e4e7);
+  flex: 0 0 1px;
+  height: 20px;
+  width: 1px;
 }
 
 .maic-editing-ui-icon-button {
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 4px;
-  color: var(--maic-editing-ui-fg);
+  border-radius: 6px;
+  color: #52525b;
   cursor: pointer;
   display: inline-flex;
   flex: 0 0 32px;
@@ -65,42 +61,88 @@ export const EDITING_UI_STYLES = `
   width: 32px;
 }
 
+.maic-editing-ui-icon-button svg {
+  height: 16px;
+  width: 16px;
+}
+
 .maic-editing-ui-icon-button:hover {
-  background: color-mix(in srgb, var(--maic-editing-ui-border) 50%, transparent);
+  background: #f4f4f5;
+  color: #18181b;
 }
 
 .maic-editing-ui-icon-button[aria-pressed='true'] {
-  background: var(--maic-editing-ui-active-bg);
-  color: var(--maic-editing-ui-active-fg);
+  background: var(--maic-editing-ui-active-bg, #ede9fe);
+  color: var(--maic-editing-ui-active-fg, #6d28d9);
 }
 
 .maic-editing-ui-icon-button:focus-visible,
 .maic-editing-ui-select:focus-visible,
 .maic-editing-ui-font-size-input:focus-visible {
-  outline: 2px solid var(--maic-editing-ui-active-fg);
+  outline: 2px solid var(--maic-editing-ui-active-fg, #6d28d9);
   outline-offset: 1px;
 }
 
 .maic-editing-ui-select,
 .maic-editing-ui-font-size-input {
-  background: var(--maic-editing-ui-bg);
-  border: 1px solid var(--maic-editing-ui-border);
-  border-radius: 4px;
-  color: var(--maic-editing-ui-fg);
+  background: var(--maic-editing-ui-bg, #ffffff);
+  border: 0;
+  border-radius: 6px;
+  color: var(--maic-editing-ui-fg, #27272a);
   font: inherit;
   height: 32px;
   letter-spacing: 0;
 }
 
 .maic-editing-ui-select {
-  max-width: 160px;
-  min-width: 112px;
+  font-size: 12px;
+  font-weight: 400;
+  max-width: 128px;
+  min-width: 128px;
   padding: 0 6px;
 }
 
+.maic-editing-ui-font-size-stepper {
+  align-items: center;
+  background: #f4f4f5;
+  border-radius: 6px;
+  display: flex;
+  height: 32px;
+  padding: 2px;
+}
+
+.maic-editing-ui-step-button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: #52525b;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 28px;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  width: 28px;
+}
+
+.maic-editing-ui-step-button:hover {
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+  color: #18181b;
+}
+
+.maic-editing-ui-step-button svg {
+  height: 14px;
+  width: 14px;
+}
+
 .maic-editing-ui-font-size-input {
+  font-size: 12px;
+  font-weight: 600;
+  height: 28px;
   text-align: center;
-  width: 44px;
+  width: 36px;
 }
 
 .maic-editing-ui-color-control {
@@ -110,83 +152,157 @@ export const EDITING_UI_STYLES = `
 
 .maic-editing-ui-color-button-preview,
 .maic-editing-ui-color-picker-preview span {
-  border: 1px solid var(--maic-editing-ui-border);
+  border: 1px solid var(--maic-editing-ui-border, #e4e4e7);
   border-radius: 3px;
   display: block;
-  height: 18px;
-  width: 18px;
+  height: 16px;
+  width: 16px;
+}
+
+.maic-editing-ui-delete-button:hover {
+  background: #fff1f2;
+  color: #e11d48;
+}
+
+.maic-editing-ui-delete-button {
+  color: #71717a;
 }
 
 .maic-editing-ui-color-popover {
-  background: var(--maic-editing-ui-bg);
-  border: 1px solid var(--maic-editing-ui-border);
-  border-radius: var(--maic-editing-ui-radius);
-  box-shadow: var(--maic-editing-ui-shadow);
-  min-width: 208px;
-  padding: 10px;
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: calc(var(--maic-editing-ui-z-index) + 1);
+  background: var(--maic-editing-ui-bg, #ffffff);
+  border: 1px solid var(--maic-editing-ui-border, #e4e4e7);
+  border-radius: var(--maic-editing-ui-radius, 6px);
+  box-shadow: var(
+    --maic-editing-ui-shadow,
+    0 4px 6px -1px rgb(0 0 0 / 10%), 0 2px 4px -2px rgb(0 0 0 / 10%)
+  );
+  box-sizing: border-box;
+  padding: 12px;
+  width: 248px;
+}
+
+.maic-editing-ui-color-popover-overlay {
+  left: 0;
+  position: fixed;
+  top: 0;
+  z-index: calc(var(--maic-editing-ui-z-index, 80) + 1);
 }
 
 .maic-editing-ui-color-picker {
-  display: grid;
-  gap: 10px;
-}
-
-.maic-editing-ui-color-picker-preview {
-  align-items: center;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  width: 224px;
 }
 
-.maic-editing-ui-color-swatches {
-  display: grid;
-  gap: 6px;
-  grid-template-columns: repeat(8, 1fr);
+.maic-editing-ui-color-picker .react-colorful {
+  height: auto;
+  width: 100%;
 }
 
-.maic-editing-ui-color-swatch {
-  aspect-ratio: 1;
-  border: 1px solid var(--maic-editing-ui-border);
-  border-radius: 4px;
-  cursor: pointer;
-  min-width: 18px;
-  padding: 0;
+.maic-editing-ui-color-picker .react-colorful__saturation {
+  border-bottom: 0;
+  border-radius: 6px;
+  height: 128px;
 }
 
-.maic-editing-ui-color-swatch:focus-visible,
-.maic-editing-ui-color-native-input:focus-visible,
-.maic-editing-ui-color-hex-input:focus-visible {
-  outline: 2px solid var(--maic-editing-ui-active-fg);
-  outline-offset: 1px;
+.maic-editing-ui-color-picker .react-colorful__hue {
+  border-radius: 999px;
+  height: 10px;
+  margin-top: 10px;
 }
 
-.maic-editing-ui-color-input-row {
+.maic-editing-ui-color-picker .react-colorful__pointer {
+  border-width: 2px;
+  height: 14px;
+  width: 14px;
+}
+
+.maic-editing-ui-color-current-row {
   align-items: center;
   display: flex;
   gap: 8px;
+  justify-content: space-between;
 }
 
-.maic-editing-ui-color-native-input {
-  border: 1px solid var(--maic-editing-ui-border);
-  border-radius: 4px;
-  cursor: pointer;
-  height: 32px;
-  padding: 2px;
-  width: 38px;
-}
-
-.maic-editing-ui-color-hex-input {
-  background: var(--maic-editing-ui-bg);
-  border: 1px solid var(--maic-editing-ui-border);
-  border-radius: 4px;
-  color: var(--maic-editing-ui-fg);
-  flex: 1;
-  font: inherit;
-  height: 32px;
+.maic-editing-ui-color-current-value {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  gap: 8px;
   min-width: 0;
-  padding: 0 8px;
+}
+
+.maic-editing-ui-color-current-swatch {
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 15%);
+  flex: 0 0 20px;
+  height: 20px;
+  width: 20px;
+}
+
+.maic-editing-ui-color-current-hex {
+  color: #71717a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.maic-editing-ui-color-eyedropper {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: #71717a;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 28px;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  width: 28px;
+}
+
+.maic-editing-ui-color-eyedropper:hover {
+  background: #f4f4f5;
+  color: #3f3f46;
+}
+
+.maic-editing-ui-color-eyedropper svg {
+  height: 14px;
+  width: 14px;
+}
+
+.maic-editing-ui-color-swatches {
+  border-top: 1px solid #f4f4f5;
+  display: flex;
+  gap: 4px;
+  padding-top: 12px;
+}
+
+.maic-editing-ui-color-swatch {
+  border: 0;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 10%);
+  cursor: pointer;
+  flex: 0 0 18px;
+  height: 18px;
+  padding: 0;
+  transition: transform 150ms ease;
+  width: 18px;
+}
+
+.maic-editing-ui-color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.maic-editing-ui-color-swatch:focus-visible,
+.maic-editing-ui-color-eyedropper:focus-visible {
+  outline: 2px solid var(--maic-editing-ui-active-fg, #6d28d9);
+  outline-offset: 1px;
 }
 `;

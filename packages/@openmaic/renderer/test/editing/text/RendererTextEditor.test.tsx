@@ -15,13 +15,14 @@ describe('RendererTextEditor', () => {
     vi.useRealTimers();
   });
 
-  it('publishes a controller, format state and debounced content intents', () => {
+  it('publishes a controller, format state, then content before requesting layout', () => {
     let controller: TextEditorController | null = null;
     const onControllerChange = vi.fn((next: TextEditorController | null) => {
       controller = next;
     });
     const onFormatChange = vi.fn<(id: string, state: TextFormatState) => void>();
     const onContentChange = vi.fn<(change: TextContentChange) => void>();
+    const onLayoutChange = vi.fn();
 
     render(
       <RendererTextEditor
@@ -32,6 +33,7 @@ describe('RendererTextEditor', () => {
         onControllerChange={onControllerChange}
         onFormatChange={onFormatChange}
         onContentChange={onContentChange}
+        onLayoutChange={onLayoutChange}
       />,
     );
 
@@ -42,6 +44,7 @@ describe('RendererTextEditor', () => {
     );
 
     act(() => controller?.execute({ command: 'replace', value: 'Edited' }));
+    expect(onLayoutChange).not.toHaveBeenCalled();
     expect(onContentChange).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(300));
 
@@ -54,12 +57,36 @@ describe('RendererTextEditor', () => {
       },
       history: 'record',
     });
+    expect(onLayoutChange).toHaveBeenCalledTimes(1);
   });
 
-  it('flushes pending content on blur and Escape', () => {
+  it('does not steal focus from a toolbar input when executing a command', () => {
+    let controller: TextEditorController | null = null;
+    render(
+      <RendererTextEditor
+        elementId="txt"
+        value="<p>Hello</p>"
+        defaultColor="#000000"
+        defaultFontName="Inter"
+        onControllerChange={(next) => {
+          controller = next;
+        }}
+      />,
+    );
+    const colorInput = document.createElement('input');
+    document.body.append(colorInput);
+    colorInput.focus();
+
+    act(() => controller?.execute({ command: 'forecolor', value: '#ff0000' }));
+
+    expect(document.activeElement).toBe(colorInput);
+    colorInput.remove();
+  });
+
+  it('flushes pending content on blur and lets the Escape host decide how to exit', () => {
     let controller: TextEditorController | null = null;
     const onContentChange = vi.fn<(change: TextContentChange) => void>();
-    const onEscape = vi.fn();
+    const onEscape = vi.fn(() => controller?.flush());
     const { container } = render(
       <RendererTextEditor
         elementId="txt"
@@ -94,12 +121,31 @@ describe('RendererTextEditor', () => {
     );
   });
 
-  it('marks ProseMirror undo content as history-neutral and unregisters on unmount', () => {
+  it('does not commit normalized HTML when focus changes without an edit', () => {
+    const onContentChange = vi.fn<(change: TextContentChange) => void>();
+    const { container } = render(
+      <RendererTextEditor
+        elementId="txt"
+        value='<p style="font-size: 14px">Hello</p>'
+        defaultColor="#000000"
+        defaultFontName="Inter"
+        autoFocus
+        onContentChange={onContentChange}
+      />,
+    );
+
+    fireEvent.blur(container.querySelector('.ProseMirror') as HTMLElement);
+
+    expect(onContentChange).not.toHaveBeenCalled();
+  });
+
+  it('marks ProseMirror undo content as history-neutral and releases focus on unmount', () => {
     let controller: TextEditorController | null = null;
     const onControllerChange = vi.fn((next: TextEditorController | null) => {
       controller = next;
     });
     const onContentChange = vi.fn<(change: TextContentChange) => void>();
+    const onFocusChange = vi.fn();
     const { container, unmount } = render(
       <RendererTextEditor
         elementId="txt"
@@ -108,6 +154,7 @@ describe('RendererTextEditor', () => {
         defaultFontName="Inter"
         onControllerChange={onControllerChange}
         onContentChange={onContentChange}
+        onFocusChange={onFocusChange}
       />,
     );
     expect(controller).not.toBeNull();
@@ -122,7 +169,9 @@ describe('RendererTextEditor', () => {
       expect.objectContaining({ history: 'neutral' }),
     );
 
+    fireEvent.focus(editor);
     unmount();
     expect(onControllerChange).toHaveBeenLastCalledWith(null);
+    expect(onFocusChange).toHaveBeenLastCalledWith(false);
   });
 });

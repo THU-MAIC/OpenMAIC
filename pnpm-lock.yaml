@@ -629,6 +629,9 @@ importers:
       react:
         specifier: '>=18'
         version: 19.2.3
+      react-colorful:
+        specifier: ^5.7.0
+        version: 5.7.0(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       react-dom:
         specifier: '>=18'
         version: 19.2.3(react@19.2.3)

@@ -54,6 +54,8 @@ export interface TextEditorController {
   readonly elementId: string;
   focus(): void;
   flush(): void;
+  /** Drops an uncommitted text change when the host will delete this element. */
+  discard(): void;
   execute(command: TextEditCommand | readonly TextEditCommand[]): void;
   getHTML(): string;
 }

@@ -51,13 +51,13 @@ export function FontSizeControl({ value, labels, onCommand }: FontSizeControlPro
   };
 
   return (
-    <div className="maic-editing-ui-group" role="group" aria-label={labels.fontSize}>
+    <div className="maic-editing-ui-font-size-stepper" role="group" aria-label={labels.fontSize}>
       <button
         type="button"
-        className="maic-editing-ui-icon-button"
+        className="maic-editing-ui-step-button"
         aria-label={labels.sizeDown}
         onMouseDown={(event) => event.preventDefault()}
-        onClick={() => step(-1)}
+        onClick={() => step(-2)}
       >
         <Minus aria-hidden />
       </button>
@@ -83,10 +83,10 @@ export function FontSizeControl({ value, labels, onCommand }: FontSizeControlPro
       />
       <button
         type="button"
-        className="maic-editing-ui-icon-button"
+        className="maic-editing-ui-step-button"
         aria-label={labels.sizeUp}
         onMouseDown={(event) => event.preventDefault()}
-        onClick={() => step(1)}
+        onClick={() => step(2)}
       >
         <Plus aria-hidden />
       </button>

@@ -28,7 +28,7 @@ import { useRotateGesture } from './useRotateGesture';
 import { getResizeHandles } from './core/resize';
 import { canRotate } from './core/rotate';
 import { RendererTextEditor } from './text/RendererTextEditor';
-import { TextAutoSize } from './text/TextAutoSize';
+import { TextAutoSize, type TextAutoSizeController } from './text/TextAutoSize';
 import { isSemanticallyEmptyText } from './text/richText';
 import type { TextEditorController } from './text/types';
 import { EMPTY_SELECTION, type EditableSlideCanvasProps } from './types';
@@ -84,11 +84,18 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   const activeEditingTextId = slide.elements.find(
     (element) =>
       element.id === activeSelection.editingId &&
+      activeSelection.elementIds.length === 1 &&
       element.type === 'text' &&
       !element.lock &&
       !hiddenElementIds?.includes(element.id),
   )?.id;
   const textControllerRef = useRef<TextEditorController | null>(null);
+  const textAutoSizeRef = useRef<TextAutoSizeController | null>(null);
+  const pendingTextFocusPointRef = useRef<{
+    elementId: string;
+    left: number;
+    top: number;
+  } | null>(null);
   const publishSelection = useCallback(
     (next: typeof activeSelection) => {
       const controller = textControllerRef.current;
@@ -97,9 +104,15 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
         controller?.elementId === activeEditingTextId &&
         next.editingId !== activeEditingTextId
       ) {
-        controller.flush();
-        if (isSemanticallyEmptyText(controller.getHTML())) {
+        if (isSemanticallyEmptyText(controller.getHTML()) && onElementsChange) {
+          controller.discard();
           onElementsChange?.([{ type: 'element.delete', ids: [activeEditingTextId] }]);
+          if (next.elementIds.includes(activeEditingTextId)) {
+            onSelectionChange?.(EMPTY_SELECTION);
+            return;
+          }
+        } else {
+          controller.flush();
         }
       }
       onSelectionChange?.(next);
@@ -108,8 +121,13 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   );
 
   const handleTextClick = useCallback(
-    (element: PPTElement) => {
+    (element: PPTElement, event: ReactPointerEvent) => {
       if (!textEditingEnabled || element.type !== 'text' || element.lock) return;
+      pendingTextFocusPointRef.current = {
+        elementId: element.id,
+        left: event.clientX,
+        top: event.clientY,
+      };
       publishSelection({
         elementIds: [element.id],
         primaryId: element.id,
@@ -250,6 +268,9 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   const handleTextEditorChange = useCallback(
     (controller: TextEditorController | null) => {
       textControllerRef.current = controller;
+      if (controller && pendingTextFocusPointRef.current?.elementId === controller.elementId) {
+        pendingTextFocusPointRef.current = null;
+      }
       onTextEditorChange?.(controller);
     },
     [onTextEditorChange],
@@ -257,8 +278,14 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   const renderText = useCallback(
     (element: PPTTextElement, defaultContent: ReactNode) => {
       if (activeEditingTextId !== element.id) return defaultContent;
+      const pendingFocusPoint = pendingTextFocusPointRef.current;
+      const initialFocusPoint =
+        pendingFocusPoint?.elementId === element.id
+          ? { left: pendingFocusPoint.left, top: pendingFocusPoint.top }
+          : undefined;
       return (
         <TextAutoSize
+          ref={textAutoSizeRef}
           elementId={element.id}
           vertical={Boolean(element.vertical)}
           width={element.width}
@@ -272,7 +299,9 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
             defaultColor={element.defaultColor}
             defaultFontName={element.defaultFontName}
             autoFocus
+            initialFocusPoint={initialFocusPoint}
             onContentChange={onTextContentChange}
+            onLayoutChange={() => textAutoSizeRef.current?.notifyContentChange()}
             onFormatChange={onTextFormatChange}
             onControllerChange={handleTextEditorChange}
             onFocusChange={onTextFocusChange}

@@ -119,8 +119,40 @@ describe('TextFormatToolbar', () => {
     fireEvent.click(screen.getByRole('button', { name: '减小字号' }));
     fireEvent.click(screen.getByRole('button', { name: '增大字号' }));
 
-    expect(onCommand).toHaveBeenNthCalledWith(1, { command: 'fontsize', value: '19px' });
-    expect(onCommand).toHaveBeenNthCalledWith(2, { command: 'fontsize', value: '21px' });
+    expect(onCommand).toHaveBeenNthCalledWith(1, { command: 'fontsize', value: '18px' });
+    expect(onCommand).toHaveBeenNthCalledWith(2, { command: 'fontsize', value: '22px' });
+  });
+
+  it('uses the legacy control order and visual structure', () => {
+    const { container } = renderToolbar({
+      onBringToFront: vi.fn(),
+      onSendToBack: vi.fn(),
+      onDelete: vi.fn(),
+    });
+    const toolbar = screen.getByRole('toolbar');
+
+    expect(toolbar.classList).toContain('maic-editing-ui-text-toolbar');
+    expect(container.querySelector('.maic-editing-ui-font-size-stepper')).not.toBeNull();
+    expect(container.querySelectorAll('.maic-editing-ui-divider')).toHaveLength(4);
+    expect(
+      Array.from(toolbar.querySelectorAll('button')).map((button) =>
+        button.getAttribute('aria-label'),
+      ),
+    ).toEqual([
+      '减小字号',
+      '增大字号',
+      '粗体',
+      '斜体',
+      '下划线',
+      '文字颜色',
+      '左对齐',
+      '居中对齐',
+      '右对齐',
+      '无序列表',
+      '置于顶层',
+      '置于底层',
+      '删除',
+    ]);
   });
 
   it('renders optional element action buttons only when callbacks are supplied', () => {
@@ -147,11 +179,11 @@ describe('TextFormatToolbar', () => {
   });
 
   it.each([
-    ['20px', 1, '21px'],
-    ['0px', -1, '8px'],
-    ['8px', -1, '8px'],
-    ['96px', 1, '96px'],
-    ['invalid', 1, '17px'],
+    ['20px', 2, '22px'],
+    ['0px', -2, '8px'],
+    ['8px', -2, '8px'],
+    ['96px', 2, '96px'],
+    ['invalid', 2, '18px'],
   ])('clamps font size %s by %i to %s', (current, delta, expected) => {
     expect(stepTextToolbarFontSize(current, delta)).toBe(expected);
   });

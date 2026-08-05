@@ -122,7 +122,7 @@ export function TextToolbarOverlay({
         position: 'fixed',
         top: position ? `${position.top}px` : '0px',
         visibility: position ? 'visible' : 'hidden',
-        zIndex: 80,
+        zIndex: 'var(--maic-editing-ui-z-index, 80)',
       }}
     >
       <TextFormatToolbar elementId={elementId} placement={placement} {...toolbarProps} />
