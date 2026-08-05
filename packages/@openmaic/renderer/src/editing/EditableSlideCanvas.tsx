@@ -6,9 +6,10 @@ import {
   useEffect,
   useMemo,
   useRef,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import type { PPTElement } from '@openmaic/dsl';
+import type { PPTElement, PPTTextElement } from '@openmaic/dsl';
 
 import { SlideCanvas } from '../SlideCanvas';
 import { useViewportSize } from '../hooks/useViewportSize';
@@ -26,6 +27,7 @@ import { useResizeGesture } from './useResizeGesture';
 import { useRotateGesture } from './useRotateGesture';
 import { getResizeHandles } from './core/resize';
 import { canRotate } from './core/rotate';
+import { RendererTextEditor } from './text/RendererTextEditor';
 import { EMPTY_SELECTION, type EditableSlideCanvasProps } from './types';
 
 /**
@@ -65,6 +67,10 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     selection,
     onSelectionChange,
     onElementsChange,
+    onTextContentChange,
+    onTextFormatChange,
+    onTextEditorChange,
+    onTextFocusChange,
     snapping,
   } = props;
 
@@ -191,6 +197,31 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   // Touch suppression belongs to mutation gestures: select-only hosts keep
   // native touch panning, while tap-select still receives pointer events.
   const editingTouchAction = onElementsChange ? 'none' : undefined;
+  const renderText = useCallback(
+    (element: PPTTextElement, defaultContent: ReactNode) => {
+      if (activeSelection.editingId !== element.id || element.lock) return defaultContent;
+      return (
+        <RendererTextEditor
+          elementId={element.id}
+          value={element.content}
+          defaultColor={element.defaultColor}
+          defaultFontName={element.defaultFontName}
+          autoFocus
+          onContentChange={onTextContentChange}
+          onFormatChange={onTextFormatChange}
+          onControllerChange={onTextEditorChange}
+          onFocusChange={onTextFocusChange}
+        />
+      );
+    },
+    [
+      activeSelection.editingId,
+      onTextContentChange,
+      onTextEditorChange,
+      onTextFocusChange,
+      onTextFormatChange,
+    ],
+  );
 
   return (
     // Outer wrapper carries the documented `className`/`style` pass-through
@@ -212,6 +243,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
           scale={props.scale}
           renderImage={renderImage}
           renderVideo={renderVideo}
+          renderText={renderText}
           videoInteractive={videoInteractive}
           elementIdPrefix={elementIdPrefix}
           dragOffsets={renderDragOffsets}

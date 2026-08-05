@@ -5,6 +5,7 @@ import {
   ElementTypes,
   type PPTElement,
   type PPTImageElement,
+  type PPTTextElement,
   type PPTVideoElement,
   type SlideTheme,
 } from '@openmaic/dsl';
@@ -35,6 +36,7 @@ export interface SlideElementProps {
     defaultContent: ReactNode,
   ) => ReactNode;
   renderVideo?: (element: PPTVideoElement) => ReactNode;
+  renderText?: (element: PPTTextElement, defaultContent: ReactNode) => ReactNode;
   videoInteractive?: boolean;
   onElementClick?: (element: PPTElement, event: React.MouseEvent) => void;
   /** Prefix used for the root div id — must match SpotlightOverlay's `elementIdPrefix`. */
@@ -45,7 +47,7 @@ export interface SlideElementProps {
 
 type SlideElementContentProps = Pick<
   SlideElementProps,
-  'elementInfo' | 'animate' | 'renderImage' | 'renderVideo' | 'videoInteractive'
+  'elementInfo' | 'animate' | 'renderImage' | 'renderVideo' | 'renderText' | 'videoInteractive'
 >;
 
 const SlideElementContent = memo(function SlideElementContent({
@@ -53,6 +55,7 @@ const SlideElementContent = memo(function SlideElementContent({
   animate,
   renderImage,
   renderVideo,
+  renderText,
   videoInteractive,
 }: SlideElementContentProps) {
   const Component = useMemo(() => {
@@ -85,7 +88,7 @@ const SlideElementContent = memo(function SlideElementContent({
   return (
     <>
       {Component === 'text' && elementInfo.type === 'text' && (
-        <BaseTextElement elementInfo={elementInfo} />
+        <BaseTextElement elementInfo={elementInfo} renderContent={renderText} />
       )}
       {Component === 'shape' && elementInfo.type === 'shape' && (
         <BaseShapeElement elementInfo={elementInfo} />
@@ -126,6 +129,7 @@ export const SlideElement = memo(function SlideElement({
   animate,
   renderImage,
   renderVideo,
+  renderText,
   videoInteractive,
   onElementClick,
   idPrefix = 'slide-element-',
@@ -163,6 +167,7 @@ export const SlideElement = memo(function SlideElement({
           animate={animate}
           renderImage={renderImage}
           renderVideo={renderVideo}
+          renderText={renderText}
           videoInteractive={videoInteractive}
         />
       </div>

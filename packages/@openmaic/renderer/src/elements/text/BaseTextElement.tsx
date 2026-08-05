@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { PPTTextElement } from '@openmaic/dsl';
 import { useElementShadow } from '../shared/useElementShadow';
 import { ElementOutline } from '../shared/ElementOutline';
@@ -8,14 +8,25 @@ import { ElementOutline } from '../shared/ElementOutline';
 export interface BaseTextElementProps {
   elementInfo: PPTTextElement;
   target?: string;
+  renderContent?: (element: PPTTextElement, defaultContent: ReactNode) => ReactNode;
 }
 
-export function BaseTextElement({ elementInfo, target }: BaseTextElementProps) {
+export function BaseTextElement({ elementInfo, target, renderContent }: BaseTextElementProps) {
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
 
   const vAlign = elementInfo.vAlign ?? 'top';
   const justifyContent =
     vAlign === 'middle' ? 'center' : vAlign === 'bottom' ? 'flex-end' : 'flex-start';
+  const defaultContent = (
+    <div
+      className="text ProseMirror-static"
+      style={{
+        position: 'relative',
+        pointerEvents: target === 'thumbnail' ? 'none' : undefined,
+      }}
+      dangerouslySetInnerHTML={{ __html: elementInfo.content }}
+    />
+  );
 
   return (
     <div
@@ -65,14 +76,7 @@ export function BaseTextElement({ elementInfo, target }: BaseTextElementProps) {
             height={elementInfo.height}
             outline={elementInfo.outline}
           />
-          <div
-            className="text ProseMirror-static"
-            style={{
-              position: 'relative',
-              pointerEvents: target === 'thumbnail' ? 'none' : undefined,
-            }}
-            dangerouslySetInnerHTML={{ __html: elementInfo.content }}
-          />
+          {renderContent?.(elementInfo, defaultContent) ?? defaultContent}
         </div>
       </div>
     </div>
