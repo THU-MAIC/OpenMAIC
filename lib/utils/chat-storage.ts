@@ -540,8 +540,7 @@ function isDeterministicChatSyncFailure(error: unknown): error is HttpRuntimeSto
 }
 
 function normalizeLegacyConversion(records: unknown): LegacyChatConversion {
-  const conversion = fromLegacyRecords(records);
-  return { ...conversion, sessions: conversion.sessions.map(normalizeSession) };
+  return fromLegacyRecords(records);
 }
 
 function legacyRowLabels(rows: readonly SkippedLegacyChatRow[]): string {

@@ -140,6 +140,16 @@ function isLegacyRecord(record: unknown): record is ChatSessionRecord {
       candidate.status === 'completed' ||
       candidate.status === 'error') &&
     Array.isArray(candidate.messages) &&
+    candidate.messages.every(
+      (message) =>
+        typeof message === 'object' &&
+        message !== null &&
+        typeof (message as { id?: unknown }).id === 'string' &&
+        Array.isArray((message as { parts?: unknown }).parts) &&
+        (message as { parts: unknown[] }).parts.every(
+          (part) => typeof part === 'object' && part !== null,
+        ),
+    ) &&
     typeof candidate.config === 'object' &&
     candidate.config !== null &&
     Array.isArray(candidate.toolCalls) &&
@@ -201,7 +211,7 @@ export function fromLegacyRecords(records: unknown): LegacyChatConversion {
   const skippedRows: SkippedLegacyChatRow[] = [];
   records.forEach((record, index) => {
     try {
-      sessions.push(fromLegacyRecord(record as ChatSessionRecord));
+      sessions.push(normalizeSession(fromLegacyRecord(record as ChatSessionRecord)));
     } catch (error) {
       const id =
         typeof record === 'object' &&

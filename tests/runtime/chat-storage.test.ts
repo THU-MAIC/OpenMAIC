@@ -1782,6 +1782,41 @@ describe('chat RuntimeStore cutover', () => {
     ).toBe(false);
   });
 
+  it.each([
+    ['a null message', [null]],
+    [
+      'a message without a string id',
+      [{ ...message('message-1', 'user', 'Hello', 1_000), id: undefined }],
+    ],
+  ])('skips a legacy row with %s while migrating valid rows', async (_label, messages) => {
+    const store = makeRuntimeStore();
+    const malformed = {
+      ...session({ id: 'bad-row' }),
+      messages,
+    } as unknown as ChatSession;
+    const valid = session({ id: 'good-row', status: 'completed' });
+    const legacyStore = new MemoryLegacyChatStore([malformed, valid]);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      loadChatSessions(STAGE_ID, {
+        store,
+        learnerKey: LEARNER_KEY,
+        legacyStore,
+      }),
+    ).resolves.toMatchObject([{ id: 'good-row' }]);
+
+    expect(legacyStore.clearCalls).toBe(0);
+    expect(legacyStore.sessions.map((chat) => chat.id)).toEqual(['bad-row', 'good-row']);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('bad-row'));
+    expect(
+      (await store.listSessions(STAGE_ID, LEARNER_KEY)).filter(
+        (candidate) => candidate.kind === 'chat',
+      ),
+    ).toHaveLength(1);
+  });
+
   it('preserves the malformed-row clear guard across an unobserved runtime load', async () => {
     const store = makeRuntimeStore();
     const malformed = {
