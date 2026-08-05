@@ -37,6 +37,7 @@ function shapeElement(id: string, overrides: Partial<PPTShapeElement> = {}): PPT
       content: '<p>Shape</p>',
       defaultFontName: 'Inter',
       defaultColor: '#111827',
+      align: 'middle',
     },
     ...overrides,
   };
