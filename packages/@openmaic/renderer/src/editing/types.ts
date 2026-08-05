@@ -90,6 +90,9 @@ export interface EditableSlideCanvasProps {
   renderVideo?: (element: PPTVideoElement) => ReactNode;
   videoInteractive?: boolean;
 
+  /** Prefix used for each rendered element root DOM id. */
+  elementIdPrefix?: string;
+
   /** Editor affordances (no-ops until Part A). */
   snapping?: boolean | SnappingOptions;
   grid?: 0 | 25 | 50 | 100;

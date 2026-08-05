@@ -12,6 +12,7 @@ let activeElementIds: string[] = [];
 let lastRendererProps:
   | {
       selection?: Selection;
+      elementIdPrefix?: string;
       onSelectionChange?: (next: Selection) => void;
       onElementsChange?: (intents: EditIntent[]) => void;
     }
@@ -95,6 +96,7 @@ vi.mock('@openmaic/renderer/editing', async (importOriginal) => {
     ...actual,
     EditableSlideCanvas: (props: {
       selection?: Selection;
+      elementIdPrefix?: string;
       onSelectionChange?: (next: Selection) => void;
       onElementsChange?: (intents: EditIntent[]) => void;
     }) => {
@@ -191,6 +193,7 @@ describe('slide editor canvas renderer flag', () => {
       elementIds: ['title-1'],
       primaryId: 'title-1',
     });
+    expect(lastRendererProps?.elementIdPrefix).toBe('editable-element-');
     expect(mockSetActiveElementIdList).toHaveBeenCalledWith(['title-1']);
     expect(mockApplyOp).not.toHaveBeenCalled();
     expect(mockCommitContent).toHaveBeenCalledTimes(1);

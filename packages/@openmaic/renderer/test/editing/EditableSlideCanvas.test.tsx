@@ -53,6 +53,21 @@ describe('EditableSlideCanvas', () => {
     });
   });
 
+  it('forwards a custom element id prefix to the rendered slide elements', () => {
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        elementIdPrefix="editable-element-"
+        selection={{ elementIds: [] }}
+        onSelectionChange={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('#editable-element-a')).not.toBeNull();
+    expect(container.querySelector('#slide-element-a')).toBeNull();
+  });
+
   it('offsets the interaction overlay by SlideCanvas centering offset', () => {
     // Letterboxed container: slide is centered with a 160px left gutter, so
     // an element rendered by SlideCanvas sits at left = 160 + el.left*scale.

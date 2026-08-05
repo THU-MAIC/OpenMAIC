@@ -39,7 +39,7 @@ import { EMPTY_SELECTION, type EditableSlideCanvasProps } from './types';
  * `scale` is omitted the canvas auto-fits: the overlay reads the SAME
  * `fitScale` SlideCanvas uses (both measure the same box — see the inner
  * wrapper below), so overlay and elements stay aligned at auto-fit.
- * `renderImage`/`renderVideo`/`className`/`style` pass through.
+ * `renderImage`/`renderVideo`/`elementIdPrefix`/`className`/`style` pass through.
  *
  * The interaction hit layer is only mounted when a mutation/selection callback
  * is provided; with neither, the canvas renders read-only (no pointer-capturing
@@ -51,6 +51,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     renderImage,
     renderVideo,
     videoInteractive,
+    elementIdPrefix,
     className,
     style,
     selection,
@@ -182,6 +183,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
           renderImage={renderImage}
           renderVideo={renderVideo}
           videoInteractive={videoInteractive}
+          elementIdPrefix={elementIdPrefix}
         />
 
         {/* Interaction overlay: hit targets below, selection chrome above.

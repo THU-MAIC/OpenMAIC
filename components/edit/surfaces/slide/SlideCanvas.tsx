@@ -55,6 +55,7 @@ function RendererEditorCanvas() {
   return (
     <EditableSlideCanvas
       slide={resolvedSlide}
+      elementIdPrefix="editable-element-"
       selection={selection}
       onSelectionChange={handleSelectionChange}
       onElementsChange={handleElementsChange}
