@@ -96,6 +96,23 @@ describe('TextFormatToolbar', () => {
     expect(onCommand).toHaveBeenCalledWith({ command: 'fontsize', value: expected });
   });
 
+  it('clamps imported 0px on commit and step while preserving its display on Escape', () => {
+    const { onCommand } = renderToolbar({ format: { ...format, fontsize: '0px' } });
+    const fontSize = screen.getByRole('spinbutton', { name: '字号' });
+
+    expect((fontSize as HTMLInputElement).value).toBe('0');
+    fireEvent.change(fontSize, { target: { value: '44' } });
+    fireEvent.keyDown(fontSize, { key: 'Escape' });
+    expect((fontSize as HTMLInputElement).value).toBe('0');
+
+    fireEvent.keyDown(fontSize, { key: 'Enter' });
+    expect(onCommand).toHaveBeenCalledWith({ command: 'fontsize', value: '8px' });
+
+    onCommand.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '减小字号' }));
+    expect(onCommand).toHaveBeenCalledWith({ command: 'fontsize', value: '8px' });
+  });
+
   it('steps font size through bounded explicit font-size commands', () => {
     const { onCommand } = renderToolbar();
 
@@ -131,6 +148,7 @@ describe('TextFormatToolbar', () => {
 
   it.each([
     ['20px', 1, '21px'],
+    ['0px', -1, '8px'],
     ['8px', -1, '8px'],
     ['96px', 1, '96px'],
     ['invalid', 1, '17px'],

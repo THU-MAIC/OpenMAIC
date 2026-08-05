@@ -8,9 +8,14 @@ import type { TextToolbarLabels } from '../types';
 export const TEXT_TOOLBAR_FONT_SIZE_MIN = 8;
 export const TEXT_TOOLBAR_FONT_SIZE_MAX = 96;
 
+function parseTextToolbarFontSize(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? 16 : parsed;
+}
+
 export function stepTextToolbarFontSize(current: string, delta: number): string {
-  const value = Number.parseInt(current, 10) || 16;
-  return `${Math.max(8, Math.min(96, value + delta))}px`;
+  const value = parseTextToolbarFontSize(current);
+  return `${Math.max(TEXT_TOOLBAR_FONT_SIZE_MIN, Math.min(TEXT_TOOLBAR_FONT_SIZE_MAX, value + delta))}px`;
 }
 
 interface FontSizeControlProps {
@@ -24,15 +29,15 @@ function normalizeTextToolbarFontSize(value: string): string {
 }
 
 export function FontSizeControl({ value, labels, onCommand }: FontSizeControlProps) {
-  const [inputValue, setInputValue] = useState(() => String(Number.parseInt(value, 10) || 16));
+  const [inputValue, setInputValue] = useState(() => String(parseTextToolbarFontSize(value)));
 
   useEffect(() => {
-    setInputValue(String(Number.parseInt(value, 10) || 16));
+    setInputValue(String(parseTextToolbarFontSize(value)));
   }, [value]);
 
   const commit = () => {
     const nextValue = normalizeTextToolbarFontSize(inputValue);
-    setInputValue(String(Number.parseInt(nextValue, 10)));
+    setInputValue(String(parseTextToolbarFontSize(nextValue)));
     if (nextValue !== value) {
       onCommand({ command: 'fontsize', value: nextValue });
     }
@@ -72,7 +77,7 @@ export function FontSizeControl({ value, labels, onCommand }: FontSizeControlPro
           }
           if (event.key === 'Escape') {
             event.preventDefault();
-            setInputValue(String(Number.parseInt(value, 10) || 16));
+            setInputValue(String(parseTextToolbarFontSize(value)));
           }
         }}
       />
