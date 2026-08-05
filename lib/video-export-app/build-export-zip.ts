@@ -16,9 +16,11 @@
  */
 import { compileVideoTimeline, emitHyperframes, toSrt, toVtt } from '@/lib/video-export';
 import { useStageStore } from '@/lib/store';
+import type { Locale } from '@/lib/i18n';
 import { accessDocument } from '@/lib/document-store';
 import { createVideoTimelineDeps } from './timeline-deps';
 import { collectVideoAssets } from './collect';
+import { getVideoExportCoverLabels, resolveVideoExportCta } from './cover-config';
 import { packageVideoZip } from './package-zip';
 
 /** Selectable render resolutions (16:9). Width drives slide-snapshot render width too. */
@@ -48,6 +50,24 @@ export interface BuildExportZipResult {
 }
 
 export class NoScenesError extends Error {}
+
+let warnedInvalidVideoExportCta = false;
+
+/** Resolve the build-time public setting at the app boundary, warning once. */
+function configuredVideoExportCta() {
+  const raw = process.env.NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION;
+  const cta = resolveVideoExportCta(raw);
+  const value = raw?.trim();
+  const isExpectedNull = !value || value.toLowerCase() === 'off';
+
+  if (!cta && !isExpectedNull && !warnedInvalidVideoExportCta) {
+    warnedInvalidVideoExportCta = true;
+    console.warn(
+      'Ignoring invalid NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION; video-export CTA is disabled.',
+    );
+  }
+  return cta;
+}
 
 /**
  * Shared compile prologue for both export paths: read the current stage + scenes
@@ -89,6 +109,8 @@ export interface BuildExportZipOptions {
   resolution: VideoResolution;
   /** Burn the subtitle overlay into the video. Default false (sidecar SRT/VTT only). */
   burnInSubtitles?: boolean;
+  /** Locale the card chrome and the emitted document are written in. */
+  locale: Locale;
 }
 
 /**
@@ -98,14 +120,28 @@ export interface BuildExportZipOptions {
 export async function buildExportZip(
   options: BuildExportZipOptions,
 ): Promise<BuildExportZipResult> {
-  const { resolution, burnInSubtitles = false } = options;
+  const { resolution, burnInSubtitles = false, locale } = options;
   const { width, height } = VIDEO_RESOLUTIONS[resolution];
+
+  // Resolve the chrome before the first await: compiling the IR takes seconds
+  // (Dexie probes, off-screen measurement), and the learner may switch the UI
+  // language while it runs. Reading the labels here pins one export to one
+  // locale instead of whichever language happened to win the race.
+  const labels = getVideoExportCoverLabels(locale);
+  const cta = configuredVideoExportCta();
 
   // 1. DI deps (Dexie durations + asset presence + measured geometry) → 2. pure compile.
   const { ir, stageName, scenes, deps } = await compileStageIr();
 
   // 3. emit the Hyperframes project text.
-  const project = emitHyperframes(ir, { width, height, burnInSubtitles });
+  const project = emitHyperframes(ir, {
+    width,
+    height,
+    burnInSubtitles,
+    labels,
+    locale,
+    cta,
+  });
 
   // 4. collect asset bytes (slide snapshots + narration/media).
   const { blobs, missing } = await collectVideoAssets(ir, scenes, deps.records, {

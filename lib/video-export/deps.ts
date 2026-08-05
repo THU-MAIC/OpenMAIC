@@ -34,9 +34,19 @@ import type { PercentageGeometry } from './ir';
  * (slide/quiz/interactive/pbl) is structurally assignable to this, so callers
  * pass their scenes without casting; non-slide content simply lacks `canvas`.
  */
+export interface CompilerSceneContent {
+  type?: string;
+  canvas?: { elements?: PPTElement[] };
+  /** Quiz authored content; kept structural so the pure compiler needs no app types. */
+  questions?: readonly unknown[];
+  /** App-owned PBL payloads enter as unknown and are narrowed by the pure visual pass. */
+  projectV2?: unknown;
+  projectConfig?: unknown;
+}
+
 export type CompilerScene = SceneCore & {
   type: SceneType;
-  content?: { type?: string; canvas?: { elements?: PPTElement[] } };
+  content?: CompilerSceneContent;
 };
 
 /**

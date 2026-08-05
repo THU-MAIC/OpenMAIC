@@ -181,6 +181,46 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install chromium --with-deps
 
+      # Measures the emitted cover cards in Chromium. Lives with the unit tests
+      # (it needs the compiler), but only this job has a browser, so it runs
+      # here with the flag that turns a missing one into a failure.
+      - name: Cover-card layout guardrail
+        run: pnpm exec vitest run tests/video-export/cover-card-layout.browser.test.ts
+        env:
+          COVER_LAYOUT_BROWSER: '1'
+
+      # runner.* is only valid in step contexts (not job-level env).
+      - name: Materialize Hyperframes lint samples
+        run: pnpm exec vitest run tests/video-export/e2e-materialize.test.ts
+        env:
+          HF_E2E_DIR: ${{ runner.temp }}/openmaic-hyperframes-samples
+
+      # Hyperframes 0.7.60 reports warning-only lint with exit status zero, so
+      # require its plain clean summary as well as a successful process.
+      - name: Lint Hyperframes samples
+        shell: bash
+        env:
+          HF_E2E_DIR: ${{ runner.temp }}/openmaic-hyperframes-samples
+        run: |
+          set -euo pipefail
+          for sample in quiz pbl-v2 pbl-legacy pbl-dense mixed arabic; do
+            dir="$HF_E2E_DIR/$sample"
+            if output="$(npx --yes hyperframes@0.7.60 lint "$dir" 2>&1)"; then
+              status=0
+            else
+              status=$?
+            fi
+            printf '%s\n' "$output"
+            if [ "$status" -ne 0 ]; then
+              echo "::error::Hyperframes lint failed for $sample (exit $status)."
+              exit "$status"
+            fi
+            if ! grep -Fq -- '0 errors, 0 warnings' <<<"$output"; then
+              echo "::error::Hyperframes lint for $sample did not report zero errors and zero warnings."
+              exit 1
+            fi
+          done
+
       - name: Run e2e tests
         run: pnpm exec playwright test
 

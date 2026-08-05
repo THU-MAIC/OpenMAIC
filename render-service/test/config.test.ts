@@ -7,12 +7,20 @@
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
-const KEY = 'RENDER_MAX_JOBS_PER_USER';
-const original = process.env[KEY];
+const KEYS = [
+  'RENDER_MAX_JOBS_PER_USER',
+  'RENDER_MAX_CONCURRENCY',
+  'RENDER_MAX_CONCURRENT_EXTRACTIONS',
+  'PRODUCER_MAX_WORKERS',
+] as const;
+const originals = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
 
 afterEach(() => {
-  if (original === undefined) delete process.env[KEY];
-  else process.env[KEY] = original;
+  for (const key of KEYS) {
+    const original = originals[key];
+    if (original === undefined) delete process.env[key];
+    else process.env[key] = original;
+  }
   vi.resetModules();
 });
 
@@ -24,24 +32,63 @@ async function loadConfig() {
 
 describe('config maxJobsPerUser', () => {
   it('accepts 0 to disable the per-identity guard', async () => {
-    process.env[KEY] = '0';
+    process.env.RENDER_MAX_JOBS_PER_USER = '0';
     expect((await loadConfig()).maxJobsPerUser).toBe(0);
   });
 
   it('accepts a positive override', async () => {
-    process.env[KEY] = '5';
+    process.env.RENDER_MAX_JOBS_PER_USER = '5';
     expect((await loadConfig()).maxJobsPerUser).toBe(5);
   });
 
   it('falls back to the default (1) for negative or non-numeric values', async () => {
-    process.env[KEY] = '-3';
+    process.env.RENDER_MAX_JOBS_PER_USER = '-3';
     expect((await loadConfig()).maxJobsPerUser).toBe(1);
-    process.env[KEY] = 'nonsense';
+    process.env.RENDER_MAX_JOBS_PER_USER = 'nonsense';
     expect((await loadConfig()).maxJobsPerUser).toBe(1);
   });
 
   it('falls back to the default when unset', async () => {
-    delete process.env[KEY];
+    delete process.env.RENDER_MAX_JOBS_PER_USER;
     expect((await loadConfig()).maxJobsPerUser).toBe(1);
+  });
+});
+
+describe('config producerWorkers', () => {
+  it('defaults to producer auto-sizing when no explicit override is supplied', async () => {
+    delete process.env.PRODUCER_MAX_WORKERS;
+    expect((await loadConfig()).producerWorkers).toBeUndefined();
+  });
+
+  it('accepts an explicit single-worker profile without silently raising it', async () => {
+    process.env.PRODUCER_MAX_WORKERS = '1';
+    expect((await loadConfig()).producerWorkers).toBe(1);
+  });
+
+  it('ignores zero, negative, or non-numeric values', async () => {
+    process.env.PRODUCER_MAX_WORKERS = '0';
+    expect((await loadConfig()).producerWorkers).toBeUndefined();
+    process.env.PRODUCER_MAX_WORKERS = '-2';
+    expect((await loadConfig()).producerWorkers).toBeUndefined();
+    process.env.PRODUCER_MAX_WORKERS = 'many';
+    expect((await loadConfig()).producerWorkers).toBeUndefined();
+  });
+});
+
+describe('config latency-profile concurrency', () => {
+  it('defaults to one render and one extraction at a time', async () => {
+    delete process.env.RENDER_MAX_CONCURRENCY;
+    delete process.env.RENDER_MAX_CONCURRENT_EXTRACTIONS;
+    const config = await loadConfig();
+    expect(config.maxConcurrency).toBe(1);
+    expect(config.maxConcurrentExtractions).toBe(1);
+  });
+
+  it('allows an operator to opt into a higher-throughput profile', async () => {
+    process.env.RENDER_MAX_CONCURRENCY = '2';
+    process.env.RENDER_MAX_CONCURRENT_EXTRACTIONS = '2';
+    const config = await loadConfig();
+    expect(config.maxConcurrency).toBe(2);
+    expect(config.maxConcurrentExtractions).toBe(2);
   });
 });

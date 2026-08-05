@@ -3,7 +3,7 @@
  *
  * Composes the ordered passes into the `VideoTimeline` IR:
  *
- *   normalize → probe → timeline → geometry → assets → (unsupported) → assemble
+ *   normalize → probe → timeline → visuals → geometry → assets → (unsupported) → assemble
  *
  * Every pass is a pure function; live app state enters only through the injected
  * {@link TimingProbe} / {@link AssetSource} (issue #864 DI boundary), so the whole
@@ -12,9 +12,9 @@
  * consumer of it.
  *
  * Diagnostics from all passes are concatenated in pass order, so the manifest
- * reads as a chronological export report. Scene families the compiler cannot
- * render (quiz/interactive/pbl) are represented with an `unsupported-scene`
- * marker + diagnostic and a placeholder base — never silently dropped.
+ * reads as a chronological export report. Quiz/PBL become deterministic cover
+ * visuals; remaining scene families the compiler cannot render are represented
+ * with an `unsupported-scene` marker + diagnostic and a placeholder base.
  *
  * Pure: no IO beyond the injected dependencies.
  */
@@ -32,6 +32,7 @@ import {
 import { normalizeScenes } from './passes/normalize';
 import { buildTimelineOptions } from './passes/probe';
 import { buildTimeline } from './passes/timeline';
+import { applyVisuals } from './passes/visuals';
 import { applyGeometry } from './passes/geometry';
 import { planAssets } from './passes/assets';
 
@@ -58,12 +59,8 @@ export interface CompileDeps {
 /** Human-readable reason a scene family is not rendered by this compiler slice. */
 function unsupportedReason(type: SceneType): string {
   switch (type) {
-    case 'quiz':
-      return 'Quiz scenes are represented by markers; video rendering is deferred to the Hyperframes renderer.';
     case 'interactive':
       return 'Interactive/widget scenes require runtime playback; represented by markers in this slice.';
-    case 'pbl':
-      return 'PBL scenes require the OpenMAIC task runtime; represented by markers in this slice.';
     default:
       return 'This scene family is preserved as markers but is not rendered by this compiler slice.';
   }
@@ -72,7 +69,7 @@ function unsupportedReason(type: SceneType): string {
 /**
  * Mark unsupported scenes: attach a placeholder `base.reason`, prepend an
  * `unsupported-scene` marker spanning the scene, and record a diagnostic. Slide
- * scenes pass through untouched.
+ * supported scenes pass through untouched.
  */
 function markUnsupported(
   scenes: readonly VideoTimelineScene[],
@@ -152,20 +149,24 @@ export function compileVideoTimeline(input: CompileInput, deps: CompileDeps): Vi
   // 3. timeline — index→time expansion folded into per-scene buckets + subtitles.
   const timeline = buildTimeline(normalized.scenes, opts);
 
-  // 4. geometry — resolve effect + video element placement (degrade on miss).
-  //    Prefers measured content-box geometry when a GeometryProbe is supplied.
-  const geometry = applyGeometry(timeline.scenes, normalized.scenes, deps.geometry);
+  // 4. visuals — turn Quiz/PBL authored data into whole-scene static covers.
+  const visuals = applyVisuals(timeline.scenes, normalized.scenes);
 
-  // 5. assets — dedup + naming plan; stamp asset refs onto segments.
+  // 5. geometry — resolve effect + video element placement (degrade on miss).
+  //    Prefers measured content-box geometry when a GeometryProbe is supplied.
+  const geometry = applyGeometry(visuals.scenes, normalized.scenes, deps.geometry);
+
+  // 6. assets — dedup + naming plan; stamp asset refs onto segments.
   const assets = planAssets(normalized.scenes, geometry.scenes, deps.assets);
 
-  // 6. unsupported scene families → markers + diagnostics.
+  // 7. remaining unsupported scene families → markers + diagnostics.
   const unsupportedDiagnostics: Diagnostic[] = [];
   const scenes = markUnsupported(assets.scenes, unsupportedDiagnostics);
 
   const diagnostics: Diagnostic[] = [
     ...normalized.diagnostics,
     ...timeline.diagnostics,
+    ...visuals.diagnostics,
     ...geometry.diagnostics,
     ...assets.diagnostics,
     ...unsupportedDiagnostics,

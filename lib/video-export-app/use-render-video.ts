@@ -14,7 +14,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useVideoRenderStore } from '@/lib/store/video-render';
 
 export function useRenderVideo() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const status = useVideoRenderStore((s) => s.status);
   const percent = useVideoRenderStore((s) => s.percent);
   const etaMs = useVideoRenderStore((s) => s.etaMs);
@@ -22,7 +22,7 @@ export function useRenderVideo() {
   const setOptions = useVideoRenderStore((s) => s.setOptions);
   const startRender = useVideoRenderStore((s) => s.startRender);
 
-  const renderVideo = useCallback(() => startRender(t), [startRender, t]);
+  const renderVideo = useCallback(() => startRender(t, locale), [startRender, t, locale]);
 
   return {
     rendering: status === 'compiling' || status === 'rendering',

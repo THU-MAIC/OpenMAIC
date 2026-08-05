@@ -1,0 +1,119 @@
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  accessDocument: vi.fn(),
+  collectVideoAssets: vi.fn(),
+  compileVideoTimeline: vi.fn(),
+  createVideoTimelineDeps: vi.fn(),
+  emitHyperframes: vi.fn(),
+  packageVideoZip: vi.fn(),
+  stageState: vi.fn(),
+}));
+
+vi.mock('@/lib/video-export', () => ({
+  compileVideoTimeline: mocks.compileVideoTimeline,
+  emitHyperframes: mocks.emitHyperframes,
+  toSrt: vi.fn(),
+  toVtt: vi.fn(),
+}));
+vi.mock('@/lib/store', () => ({
+  useStageStore: { getState: mocks.stageState },
+}));
+vi.mock('@/lib/document-store', () => ({
+  accessDocument: mocks.accessDocument,
+}));
+vi.mock('@/lib/video-export-app/timeline-deps', () => ({
+  createVideoTimelineDeps: mocks.createVideoTimelineDeps,
+}));
+vi.mock('@/lib/video-export-app/collect', () => ({
+  collectVideoAssets: mocks.collectVideoAssets,
+}));
+vi.mock('@/lib/video-export-app/package-zip', () => ({
+  packageVideoZip: mocks.packageVideoZip,
+}));
+
+import { buildExportZip } from '@/lib/video-export-app/build-export-zip';
+
+const ENV_KEY = 'NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION';
+const originalEnv = process.env[ENV_KEY];
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.stageState.mockReturnValue({
+    stage: { id: 'stage-1', name: 'Stage' },
+    scenes: [{ id: 'scene-1' }],
+  });
+  mocks.createVideoTimelineDeps.mockResolvedValue({
+    timing: {},
+    assets: {},
+    records: {},
+  });
+  mocks.compileVideoTimeline.mockReturnValue({ diagnostics: [] });
+  mocks.emitHyperframes.mockReturnValue({ files: [] });
+  mocks.collectVideoAssets.mockResolvedValue({ blobs: new Map(), missing: [] });
+  mocks.packageVideoZip.mockResolvedValue(new Blob(['zip']));
+});
+
+afterAll(() => {
+  if (originalEnv === undefined) delete process.env[ENV_KEY];
+  else process.env[ENV_KEY] = originalEnv;
+});
+
+describe('buildExportZip CTA boundary', () => {
+  it('freezes the configured CTA and complete locale labels before its first await', async () => {
+    let releaseDocument!: (value: unknown) => void;
+    mocks.accessDocument.mockReturnValue(
+      new Promise((resolve) => {
+        releaseDocument = resolve;
+      }),
+    );
+    process.env[ENV_KEY] = 'https://Courses.Example.com/start/';
+
+    const building = buildExportZip({ resolution: '720p', locale: 'en-US' });
+    process.env[ENV_KEY] = 'off';
+    releaseDocument({ document: { stage: { name: 'Resolved stage' } } });
+    await building;
+
+    expect(mocks.emitHyperframes).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        cta: { destination: 'courses.example.com/start' },
+        labels: expect.objectContaining({
+          quizCtaPrompt: 'Want to try an interactive quiz?',
+          pblCtaPrompt: 'Want to explore project-based learning?',
+          ctaVisit: 'Visit',
+        }),
+        locale: 'en-US',
+      }),
+    );
+  });
+
+  it('does not warn for an explicitly disabled CTA', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.accessDocument.mockResolvedValue(undefined);
+    process.env[ENV_KEY] = ' OFF ';
+
+    await buildExportZip({ resolution: '720p', locale: 'zh-CN' });
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(mocks.emitHyperframes.mock.calls[0][1]).toMatchObject({ cta: null });
+    warn.mockRestore();
+  });
+
+  it('warns once per process for invalid environment values and disables the CTA', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.accessDocument.mockResolvedValue(undefined);
+    process.env[ENV_KEY] = 'ftp://unsafe.example';
+
+    await buildExportZip({ resolution: '720p', locale: 'en-US' });
+    await buildExportZip({ resolution: '1080p', locale: 'en-US' });
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION'),
+    );
+    expect(mocks.emitHyperframes.mock.calls[0][1]).toMatchObject({ cta: null });
+    expect(mocks.emitHyperframes.mock.calls[1][1]).toMatchObject({ cta: null });
+    warn.mockRestore();
+  });
+});

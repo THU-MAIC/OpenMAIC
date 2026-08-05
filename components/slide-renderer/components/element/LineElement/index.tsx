@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 import type { PPTLineElement } from '@openmaic/dsl';
 import { getLineElementPath } from '@/lib/utils/element';
 import { useElementShadow } from '../hooks/useElementShadow';
@@ -19,6 +19,7 @@ export interface LineElementProps {
  */
 export function LineElement({ elementInfo, selectElement }: LineElementProps) {
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
+  const markerId = `${elementInfo.id}-${useId().replaceAll(':', '')}`;
 
   const handleSelectElement = (e: React.MouseEvent | React.TouchEvent) => {
     if (elementInfo.lock) return;
@@ -79,7 +80,7 @@ export function LineElement({ elementInfo, selectElement }: LineElementProps) {
           <defs>
             {elementInfo.points[0] && (
               <LinePointMarker
-                id={elementInfo.id}
+                id={markerId}
                 position="start"
                 type={elementInfo.points[0]}
                 color={elementInfo.color}
@@ -88,7 +89,7 @@ export function LineElement({ elementInfo, selectElement }: LineElementProps) {
             )}
             {elementInfo.points[1] && (
               <LinePointMarker
-                id={elementInfo.id}
+                id={markerId}
                 position="end"
                 type={elementInfo.points[1]}
                 color={elementInfo.color}
@@ -105,10 +106,10 @@ export function LineElement({ elementInfo, selectElement }: LineElementProps) {
             strokeDasharray={lineDashArray}
             fill="none"
             markerStart={
-              elementInfo.points[0] ? `url(#${elementInfo.id}-${elementInfo.points[0]}-start)` : ''
+              elementInfo.points[0] ? `url(#${markerId}-${elementInfo.points[0]}-start)` : ''
             }
             markerEnd={
-              elementInfo.points[1] ? `url(#${elementInfo.id}-${elementInfo.points[1]}-end)` : ''
+              elementInfo.points[1] ? `url(#${markerId}-${elementInfo.points[1]}-end)` : ''
             }
           />
           {/* Invisible wider path for easier clicking */}
