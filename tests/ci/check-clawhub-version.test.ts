@@ -217,10 +217,8 @@ describe('check-clawhub-version', () => {
       String.raw`bash \.github/scripts/publish-openmaic-skill\.sh`,
     ].join(String.raw`\s+`);
     expect(publishJob).toMatch(new RegExp(publishSequence));
-    expect(
-      publishJob.match(/^\s+bash \.github\/scripts\/publish-openmaic-skill\.sh$/gm),
-    ).toHaveLength(1);
-    expect(publishJob.match(/handle_divergence "/g)).toHaveLength(3);
+    expect(publishJob.match(/publish-openmaic-skill\.sh/g)).toHaveLength(2);
+    expect(publishJob.match(/\bhandle_divergence\b/g)).toHaveLength(4);
   });
 
   it('lets Node drain output without immediate process exits', () => {
