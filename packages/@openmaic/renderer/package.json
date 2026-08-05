@@ -27,6 +27,10 @@
       "types": "./dist/editing/index.d.ts",
       "import": "./dist/editing/index.js"
     },
+    "./editing-ui": {
+      "types": "./dist/editing-ui/index.d.ts",
+      "import": "./dist/editing-ui/index.js"
+    },
     "./fonts.css": "./fonts.css"
   },
   "files": [
