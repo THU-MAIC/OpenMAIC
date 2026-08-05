@@ -48,8 +48,7 @@ if (
   typeof preflight.version !== 'string' ||
   typeof preflight.fingerprint !== 'string' ||
   preflight.fingerprint.length === 0 ||
-  !Object.hasOwn(preflight, 'latestVersion') ||
-  preflight.latestVersion === undefined
+  !Object.hasOwn(preflight, 'latestVersion')
 ) {
   fail('ClawHub returned incomplete version metadata.');
 }

@@ -60,6 +60,7 @@ function runCheck(desired: string, fixture: FixtureInput, options: RunOptions = 
 
 function expectFailure(result: ReturnType<typeof runCheck>, message: string) {
   expect(result.error).toBeUndefined();
+  expect(result.signal).toBeNull();
   expect(result.status).toBe(1);
   expect(result.stdout).toBe('');
   expect(result.stderr).toBe(`::error::${message}\n`);
@@ -67,6 +68,7 @@ function expectFailure(result: ReturnType<typeof runCheck>, message: string) {
 
 function expectSuccess(result: ReturnType<typeof runCheck>, stdout: string) {
   expect(result.error).toBeUndefined();
+  expect(result.signal).toBeNull();
   expect(result.status).toBe(0);
   expect(result.stdout).toBe(stdout);
   expect(result.stderr).toBe('');
@@ -158,6 +160,13 @@ describe('check-clawhub-version', () => {
     );
   });
 
+  it('rejects a numeric latest version', () => {
+    expectFailure(
+      runCheck('0.4.0', jsonFixture({ ...validPreflight, latestVersion: 42 })),
+      'ClawHub returned an invalid latest version.',
+    );
+  });
+
   it('rejects an empty fingerprint', () => {
     expectFailure(
       runCheck('0.4.0', jsonFixture({ ...validPreflight, fingerprint: '' })),
@@ -190,6 +199,21 @@ describe('check-clawhub-version', () => {
     ],
   ])('returns only a continue decision for a %s', (_name, desired, fixture, stdout) => {
     expectSuccess(runCheck(desired, jsonFixture(fixture)), stdout);
+  });
+
+  it('continues for an unknown status instead of treating it as unchanged', () => {
+    expectSuccess(
+      runCheck(
+        '0.4.0',
+        jsonFixture({
+          status: 'blocked',
+          version: '0.4.0',
+          latestVersion: '0.3.1',
+          fingerprint: 'fixture-fingerprint',
+        }),
+      ),
+      'continue\t0.4.0\n',
+    );
   });
 
   it('rejects manual build metadata', () => {
