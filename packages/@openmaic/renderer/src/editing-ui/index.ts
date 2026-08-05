@@ -1,5 +1,6 @@
 'use client';
 
+export { EditableSlideCanvasWithUI } from './EditableSlideCanvasWithUI';
 export { DEFAULT_TEXT_TOOLBAR_FONTS, resolveTextToolbarLabels } from './labels';
 export { EDITING_UI_STYLES } from './styles';
 export {
