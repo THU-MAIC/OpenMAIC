@@ -147,7 +147,7 @@ describe('DefaultColorPicker', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Red' }));
+    fireEvent.click(screen.getByRole('button', { name: `${labels.color} #ef4444` }));
     expect(onChange).toHaveBeenCalledWith('#ef4444');
     expect(onCommit).toHaveBeenCalledWith('#ef4444');
 
@@ -155,6 +155,21 @@ describe('DefaultColorPicker', () => {
     fireEvent.change(input, { target: { value: '#00ff00' } });
     fireEvent.keyDown(input, { key: 'Escape' });
     expect((input as HTMLInputElement).value).toBe('#112233');
+  });
+
+  it('uses localized and overridden color labels for swatch names', () => {
+    const overriddenLabels = resolveTextToolbarLabels('zh-CN', { color: '自定义颜色' });
+    render(
+      <DefaultColorPicker
+        value="#112233"
+        labels={overriddenLabels}
+        onChange={vi.fn()}
+        onCommit={vi.fn()}
+      />,
+    );
+
+    const swatch = screen.getByRole('button', { name: '自定义颜色 #ef4444' });
+    expect(swatch.getAttribute('title')).toBe('自定义颜色 #ef4444');
   });
 
   it('passes the current value and callbacks to a custom toolbar renderer', () => {
@@ -217,7 +232,7 @@ describe('TextFormatToolbar color popover', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Text color' }));
     const input = screen.getByRole('textbox', { name: 'Color hex' });
-    const swatch = screen.getByRole('button', { name: 'Red' });
+    const swatch = screen.getByRole('button', { name: 'Text color #ef4444' });
     input.focus();
     expect(document.activeElement).toBe(input);
 
@@ -229,6 +244,53 @@ describe('TextFormatToolbar color popover', () => {
 
     expect(onCommand).toHaveBeenNthCalledWith(1, { command: 'forecolor', value: '#ef4444' });
     expect(onCommand).toHaveBeenNthCalledWith(2, { command: 'forecolor', value: '#ef4444' });
+    expect(screen.queryByRole('textbox', { name: 'Color hex' })).toBeNull();
+  });
+
+  it('waits for a native color commit after the focused hex input blurs during pointer down', () => {
+    const onCommand = vi.fn();
+
+    function ControlledToolbar() {
+      const [controlledFormat, setControlledFormat] = useState(format);
+      return (
+        <TextFormatToolbar
+          elementId="text-1"
+          format={controlledFormat}
+          locale="en-US"
+          onCommand={(command) => {
+            onCommand(command);
+            if (command.command === 'forecolor') {
+              setControlledFormat((current) => ({
+                ...current,
+                color: command.value ?? current.color,
+              }));
+            }
+          }}
+        />
+      );
+    }
+
+    const { container } = render(<ControlledToolbar />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Text color' }));
+    const hexInput = screen.getByRole('textbox', { name: 'Color hex' });
+    const nativeInput = container.querySelector<HTMLInputElement>('input[type="color"]');
+    if (!nativeInput) throw new Error('Native color input not found');
+    hexInput.focus();
+
+    const pointerDown = new Event('pointerdown', { bubbles: true, cancelable: true });
+    nativeInput.dispatchEvent(pointerDown);
+    expect(pointerDown.defaultPrevented).toBe(false);
+    fireEvent.blur(hexInput);
+
+    expect(screen.getByRole('textbox', { name: 'Color hex' })).not.toBeNull();
+    expect(onCommand).not.toHaveBeenCalled();
+
+    fireEvent.change(nativeInput, { target: { value: '#ff0000' } });
+
+    expect(onCommand).toHaveBeenNthCalledWith(1, { command: 'forecolor', value: '#ff0000' });
+    expect(onCommand).toHaveBeenNthCalledWith(2, { command: 'forecolor', value: '#ff0000' });
+    expect(onCommand).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole('textbox', { name: 'Color hex' })).toBeNull();
   });
 
@@ -245,7 +307,7 @@ describe('TextFormatToolbar color popover', () => {
 
     fireEvent.click(button);
     expect(screen.getByRole('textbox', { name: labels.colorHex })).not.toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Blue' }));
+    fireEvent.click(screen.getByRole('button', { name: '文字颜色 #3b82f6' }));
     expect(onCommand).toHaveBeenNthCalledWith(1, { command: 'forecolor', value: '#3b82f6' });
     expect(onCommand).toHaveBeenNthCalledWith(2, { command: 'forecolor', value: '#3b82f6' });
     expect(screen.queryByRole('textbox', { name: labels.colorHex })).toBeNull();

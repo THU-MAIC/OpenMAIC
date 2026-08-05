@@ -1,21 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ChangeEvent, KeyboardEvent, MouseEvent } from 'react';
+import type { ChangeEvent, KeyboardEvent, MouseEvent, PointerEvent } from 'react';
 import type { TextToolbarColorPickerProps } from '../types';
 
 interface ToolbarColorSwatch {
-  readonly name: string;
   readonly value: string;
 }
 
 const COMMON_COLOR_SWATCHES: readonly ToolbarColorSwatch[] = [
-  { name: 'Black', value: '#000000' },
-  { name: 'Red', value: '#ef4444' },
-  { name: 'Orange', value: '#f97316' },
-  { name: 'Yellow', value: '#eab308' },
-  { name: 'Green', value: '#22c55e' },
-  { name: 'Blue', value: '#3b82f6' },
-  { name: 'Purple', value: '#a855f7' },
-  { name: 'White', value: '#ffffff' },
+  { value: '#000000' },
+  { value: '#ef4444' },
+  { value: '#f97316' },
+  { value: '#eab308' },
+  { value: '#22c55e' },
+  { value: '#3b82f6' },
+  { value: '#a855f7' },
+  { value: '#ffffff' },
 ];
 
 export function normalizeToolbarColor(value: string): string | null {
@@ -51,10 +50,26 @@ export function DefaultColorPicker({
   const previewColorRef = useRef(openingColorRef.current);
   const lastCommittedColorRef = useRef<string | null>(null);
   const pendingSwatchClickRef = useRef(false);
+  const pendingNativeInteractionRef = useRef(false);
+  const nativeInputRef = useRef<HTMLInputElement>(null);
+
+  const clearNativeInteraction = () => {
+    pendingNativeInteractionRef.current = false;
+  };
 
   useEffect(() => {
     setDraft(incomingValue);
   }, [incomingValue]);
+
+  useEffect(() => {
+    const nativeInput = nativeInputRef.current;
+    if (!nativeInput) return clearNativeInteraction;
+    nativeInput.addEventListener('cancel', clearNativeInteraction);
+    return () => {
+      nativeInput.removeEventListener('cancel', clearNativeInteraction);
+      clearNativeInteraction();
+    };
+  }, []);
 
   const commitColor = (color: string) => {
     if (lastCommittedColorRef.current === color) return;
@@ -100,6 +115,7 @@ export function DefaultColorPicker({
       pendingSwatchClickRef.current = false;
       return;
     }
+    if (pendingNativeInteractionRef.current) return;
     commitDraft();
   };
 
@@ -116,11 +132,16 @@ export function DefaultColorPicker({
   };
 
   const handleNativeColorChange = (event: ChangeEvent<HTMLInputElement>) => {
+    pendingNativeInteractionRef.current = false;
     const normalized = normalizeToolbarColor(event.target.value);
     if (!normalized) return;
     setDraft(normalized);
     previewColor(normalized);
     commitColor(normalized);
+  };
+
+  const handleNativePointerDown = (_event: PointerEvent<HTMLInputElement>) => {
+    pendingNativeInteractionRef.current = true;
   };
 
   return (
@@ -134,8 +155,8 @@ export function DefaultColorPicker({
             key={swatch.value}
             type="button"
             className="maic-editing-ui-color-swatch"
-            aria-label={swatch.name}
-            title={swatch.name}
+            aria-label={`${labels.color} ${swatch.value}`}
+            title={`${labels.color} ${swatch.value}`}
             style={{ backgroundColor: swatch.value }}
             onMouseDown={handleSwatchMouseDown}
             onClick={() => selectSwatch(swatch.value)}
@@ -148,7 +169,10 @@ export function DefaultColorPicker({
           className="maic-editing-ui-color-native-input"
           aria-label={labels.color}
           value={getPreviewColor(draft)}
+          ref={nativeInputRef}
+          onPointerDown={handleNativePointerDown}
           onChange={handleNativeColorChange}
+          onBlur={clearNativeInteraction}
         />
         <input
           type="text"
