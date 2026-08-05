@@ -160,9 +160,14 @@ assert.equal(typeof validateRuntimeSession, 'function');
 assert.match(DOCUMENT_PG_SCHEMA, /CREATE TABLE IF NOT EXISTS document_stages/);
 assert.equal(typeof SlideCanvas, 'function');
 
-const generationPrompt = buildPrompt(PROMPT_IDS.SLIDE_ACTIONS, {});
+// requirements-to-outlines references three snippets (inside media conditionals),
+// so this asserts the packaged snippets/ directory is present and resolvable, not
+// just templates/: snippet inlining runs before conditional pruning, so a missing
+// snippets/ directory throws here even for pruned blocks.
+const generationPrompt = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, { mediaEnabled: true });
 assert(generationPrompt);
 assert(generationPrompt.system.length > 100);
+assert.match(generationPrompt.system, /Content Safety Guidelines for Generation Prompts/);
 assert.doesNotMatch(generationPrompt.system, /\{\{snippet:/);
 assert.doesNotMatch(generationPrompt.user, /\{\{snippet:/);
 
