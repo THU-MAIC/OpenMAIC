@@ -9,10 +9,14 @@ const mockSetActiveElementIdList = vi.fn();
 const mockApplyOp = vi.fn();
 const mockCommitContent = vi.fn();
 let activeElementIds: string[] = [];
+let hiddenElementIds: string[] = [];
+let spotlightPrefix: string | undefined;
+let laserPrefix: string | undefined;
 let lastRendererProps:
   | {
       selection?: Selection;
       elementIdPrefix?: string;
+      hiddenElementIds?: readonly string[];
       snapping?: boolean | SnappingOptions;
       onSelectionChange?: (next: Selection) => void;
       onElementsChange?: (intents: EditIntent[]) => void;
@@ -24,11 +28,17 @@ vi.mock('@/components/slide-renderer/Editor/Canvas', () => ({
 }));
 
 vi.mock('@/components/slide-renderer/Editor/SpotlightOverlay', () => ({
-  SpotlightOverlay: () => createElement('div', { 'data-testid': 'spotlight-overlay' }),
+  SpotlightOverlay: ({ domIdPrefix }: { domIdPrefix?: string }) => {
+    spotlightPrefix = domIdPrefix;
+    return createElement('div', { 'data-testid': 'spotlight-overlay' });
+  },
 }));
 
 vi.mock('@/components/slide-renderer/Editor/LaserPointerOverlay', () => ({
-  LaserPointerOverlay: () => createElement('div', { 'data-testid': 'laser-overlay' }),
+  LaserPointerOverlay: ({ domIdPrefix }: { domIdPrefix?: string }) => {
+    laserPrefix = domIdPrefix;
+    return createElement('div', { 'data-testid': 'laser-overlay' });
+  },
 }));
 
 vi.mock('@/components/edit/surfaces/slide/AnchoredTextBar', () => ({
@@ -52,6 +62,9 @@ vi.mock('@/lib/store/canvas', () => ({
   useCanvasStore: {
     use: {
       activeElementIdList: () => activeElementIds,
+      hiddenElementIdList: () => hiddenElementIds,
+      pickTarget: () => null,
+      disableHotkeys: () => false,
       setActiveElementIdList: () => mockSetActiveElementIdList,
     },
     getState: () => ({
@@ -98,6 +111,7 @@ vi.mock('@openmaic/renderer/editing', async (importOriginal) => {
     EditableSlideCanvas: (props: {
       selection?: Selection;
       elementIdPrefix?: string;
+      hiddenElementIds?: readonly string[];
       snapping?: boolean | SnappingOptions;
       onSelectionChange?: (next: Selection) => void;
       onElementsChange?: (intents: EditIntent[]) => void;
@@ -152,6 +166,9 @@ describe('slide editor canvas renderer flag', () => {
     mockApplyOp.mockClear();
     mockCommitContent.mockClear();
     activeElementIds = [];
+    hiddenElementIds = [];
+    spotlightPrefix = undefined;
+    laserPrefix = undefined;
     lastRendererProps = undefined;
   });
 
@@ -173,6 +190,7 @@ describe('slide editor canvas renderer flag', () => {
   it('uses EditableSlideCanvas and bridges selection plus intents when the flag is enabled', async () => {
     process.env[flag] = 'true';
     activeElementIds = ['title-1'];
+    hiddenElementIds = ['hidden-1'];
     vi.resetModules();
     const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
 
@@ -184,6 +202,7 @@ describe('slide editor canvas renderer flag', () => {
     ]);
 
     expect(html).toContain('data-testid="renderer-editor-canvas"');
+    expect(html).toContain('data-renderer-canvas-context-menu=""');
     expect(html).toContain('data-selection="title-1"');
     expect(html).not.toContain('data-testid="legacy-editor-canvas"');
     expect(html).toContain('data-testid="spotlight-overlay"');
@@ -196,6 +215,9 @@ describe('slide editor canvas renderer flag', () => {
       primaryId: 'title-1',
     });
     expect(lastRendererProps?.elementIdPrefix).toBe('editable-element-');
+    expect(lastRendererProps?.hiddenElementIds).toEqual(['hidden-1']);
+    expect(spotlightPrefix).toBe(lastRendererProps?.elementIdPrefix);
+    expect(laserPrefix).toBe(lastRendererProps?.elementIdPrefix);
     expect(lastRendererProps?.snapping).toBe(true);
     expect(mockSetActiveElementIdList).toHaveBeenCalledWith(['title-1']);
     expect(mockApplyOp).not.toHaveBeenCalled();

@@ -156,6 +156,30 @@ describe('useEditGesture — locked element (defense-in-depth)', () => {
     expect(onSelectionChange).not.toHaveBeenCalled();
   });
 
+  it('ignores a secondary-button pointer-down so context menus never arm a drag', () => {
+    const slide = makeSlide();
+    const onElementsChange = vi.fn();
+    const onSelectionChange = vi.fn();
+    const { container } = render(
+      <Harness
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSelectionChange}
+        onElementsChange={onElementsChange}
+        targetEl={slide.elements[0]}
+      />,
+    );
+    const hit = container.querySelector('[data-testid="hit"]') as HTMLElement;
+
+    fireEvent.pointerDown(hit, { button: 2, pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(hit, { button: 2, pointerId: 1, clientX: 40, clientY: 40 });
+    fireEvent.pointerUp(hit, { button: 2, pointerId: 1, clientX: 40, clientY: 40 });
+
+    expect(onSelectionChange).not.toHaveBeenCalled();
+    expect(onElementsChange).not.toHaveBeenCalled();
+  });
+
   it('dragging a not-currently-selected element selects it (on pointer-down) AND emits exactly one element.update', () => {
     // R1: a drag must leave the dragged element selected in the controlled
     // `selection`. Starting from an empty selection, pointer-down selects the

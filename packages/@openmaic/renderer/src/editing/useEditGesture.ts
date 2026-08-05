@@ -97,6 +97,9 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
   );
 
   const onElementPointerDown = (el: PPTElement, e: ReactPointerEvent) => {
+    // Secondary/middle buttons belong to host context menus or browser actions;
+    // they must never alter selection or arm a move gesture.
+    if (e.button !== 0) return;
     // Defense-in-depth: never arm a gesture for a locked element, even if a
     // move hit target somehow reached it (the primary guard lives in
     // EditableSlideCanvas, which skips rendering a hit target for `el.lock`).

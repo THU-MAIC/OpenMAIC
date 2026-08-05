@@ -18,8 +18,8 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { setElementIdById } from '@/components/edit/ActionsBar/actions-edit';
 import { cueLabel, elementLabel } from '@/components/edit/ActionsBar/cue-meta';
 import { clearCuePreview, previewCueEffect } from '@/components/edit/ActionsBar/cue-preview';
+import { EDITABLE_ELEMENT_ID_PREFIX, editableElementDomId } from './renderer-element-dom';
 
-const PREFIX = 'editable-element-';
 const PANEL_W = 232;
 
 interface Box {
@@ -36,8 +36,10 @@ interface ElementLite {
 
 function elementHostAt(x: number, y: number): HTMLElement | null {
   for (const node of document.elementsFromPoint(x, y)) {
-    const host = (node as HTMLElement).closest?.(`[id^="${PREFIX}"]`) as HTMLElement | null;
-    if (host?.id?.startsWith(PREFIX)) return host;
+    const host = (node as HTMLElement).closest?.(
+      `[id^="${EDITABLE_ELEMENT_ID_PREFIX}"]`,
+    ) as HTMLElement | null;
+    if (host?.id?.startsWith(EDITABLE_ELEMENT_ID_PREFIX)) return host;
   }
   return null;
 }
@@ -111,7 +113,7 @@ export function ElementPickLayer() {
   const measureOutlines = useCallback(() => {
     const boxes: Array<{ id: string; box: Box }> = [];
     for (const el of elements) {
-      const host = document.getElementById(`${PREFIX}${el.id}`);
+      const host = document.getElementById(editableElementDomId(el.id));
       if (!host) continue;
       const b = toLocal(host.getBoundingClientRect());
       if (b) boxes.push({ id: el.id, box: b });
@@ -180,7 +182,7 @@ export function ElementPickLayer() {
         }
         return;
       }
-      const id = host.id.slice(PREFIX.length);
+      const id = host.id.slice(EDITABLE_ELEMENT_ID_PREFIX.length);
       if (id !== hover?.id) {
         const box = toLocal(host.getBoundingClientRect());
         setHover(box ? { id, box } : null);
@@ -195,7 +197,7 @@ export function ElementPickLayer() {
   };
 
   const highlightById = (id: string) => {
-    const host = document.getElementById(`${PREFIX}${id}`);
+    const host = document.getElementById(editableElementDomId(id));
     const box = host ? toLocal(host.getBoundingClientRect()) : null;
     setHover(box ? { id, box } : { id, box: { left: 0, top: 0, width: 0, height: 0 } });
     preview(id);

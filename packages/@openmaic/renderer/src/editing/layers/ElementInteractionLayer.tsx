@@ -85,6 +85,7 @@ function ElementInteractionTarget({
         >
           <path
             data-hit-kind="line"
+            data-context-element-id={element.id}
             d={path}
             fill="none"
             stroke="transparent"
@@ -138,6 +139,7 @@ function ElementInteractionTarget({
     return (
       <div
         data-hit-kind="blocker"
+        data-context-element-id={element.id}
         onPointerDown={(event) => event.stopPropagation()}
         style={{ ...frameStyle, cursor: 'default' }}
       />

@@ -20,12 +20,19 @@ import { AnchoredTextBar } from './AnchoredTextBar';
 import { AnchoredElementBar } from './AnchoredElementBar';
 import { ElementPickLayer } from './ElementPickLayer';
 import { applyRendererEditIntents } from './renderer-edit-intents';
+import { createRendererCanvasCommands } from './renderer-canvas-commands';
+import { RendererCanvasContextMenu } from './RendererCanvasContextMenu';
 import { useSlideEditSession } from './slide-edit-session';
+import { useRendererCanvasShortcuts } from './use-renderer-canvas-shortcuts';
+import { EDITABLE_ELEMENT_ID_PREFIX } from './renderer-element-dom';
 
 function RendererEditorCanvas() {
   const content = useResolvedSlideContent();
   const resolvedSlide = useResolvedSlide(content.canvas);
   const activeElementIds = useCanvasStore.use.activeElementIdList();
+  const hiddenElementIds = useCanvasStore.use.hiddenElementIdList();
+  const pickTarget = useCanvasStore.use.pickTarget();
+  const disableHotkeys = useCanvasStore.use.disableHotkeys();
   const setActiveElementIdList = useCanvasStore.use.setActiveElementIdList();
 
   const selection = useMemo<Selection>(
@@ -52,15 +59,39 @@ function RendererEditorCanvas() {
     [content],
   );
 
+  const commands = useMemo(
+    () =>
+      createRendererCanvasCommands({
+        content,
+        selection,
+        hiddenElementIds,
+        onIntents: handleElementsChange,
+        onSelectionChange: handleSelectionChange,
+      }),
+    [content, handleElementsChange, handleSelectionChange, hiddenElementIds, selection],
+  );
+  useRendererCanvasShortcuts(commands, {
+    enabled: !disableHotkeys,
+    pickActive: Boolean(pickTarget),
+  });
+
   return (
-    <EditableSlideCanvas
-      slide={resolvedSlide}
-      elementIdPrefix="editable-element-"
-      snapping
+    <RendererCanvasContextMenu
+      content={content}
       selection={selection}
+      commands={commands}
       onSelectionChange={handleSelectionChange}
-      onElementsChange={handleElementsChange}
-    />
+    >
+      <EditableSlideCanvas
+        slide={resolvedSlide}
+        elementIdPrefix={EDITABLE_ELEMENT_ID_PREFIX}
+        hiddenElementIds={hiddenElementIds}
+        snapping
+        selection={selection}
+        onSelectionChange={handleSelectionChange}
+        onElementsChange={handleElementsChange}
+      />
+    </RendererCanvasContextMenu>
   );
 }
 
@@ -113,8 +144,8 @@ export function SlideCanvas() {
             editor's element ids — driven by useCanvasStore.setSpotlight /
             setLaser (e.g. from the ActionsBar cue-badge hover). The laser cue
             replays as a laser pointer, the spotlight cue as a spotlight. */}
-        <SpotlightOverlay domIdPrefix="editable-element-" />
-        <LaserPointerOverlay domIdPrefix="editable-element-" />
+        <SpotlightOverlay domIdPrefix={EDITABLE_ELEMENT_ID_PREFIX} />
+        <LaserPointerOverlay domIdPrefix={EDITABLE_ELEMENT_ID_PREFIX} />
       </SceneProvider>
       <AnchoredTextBar editingElementId={editingElementId} />
       <AnchoredElementBar element={nonTextElement} />
