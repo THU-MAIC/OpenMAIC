@@ -2,6 +2,7 @@
 
 export { EditableSlideCanvas } from './EditableSlideCanvas';
 export { EMPTY_SELECTION } from './types';
+export { RendererTextEditor } from './text';
 export type {
   EditableSlideCanvasProps,
   EditIntent,
@@ -10,3 +11,10 @@ export type {
   ReorderCommand,
   AlignCommand,
 } from './types';
+export type {
+  RendererTextEditorProps,
+  TextContentChange,
+  TextEditCommand,
+  TextEditorController,
+  TextFormatState,
+} from './text';
