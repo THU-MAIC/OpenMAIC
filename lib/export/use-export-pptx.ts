@@ -31,6 +31,7 @@ import {
   resolveMediaRef,
   type MediaTaskState,
 } from '@/lib/media/resolve-media-ref';
+import { resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
 
 const log = createLogger('ExportPPTX');
 
@@ -461,6 +462,7 @@ export async function buildPptxBlob(
   stageId?: string,
 ): Promise<Blob> {
   const pptx = new pptxgen();
+  const documentElements = slides.flatMap((slide) => slide.elements);
 
   // Set layout based on aspect ratio
   if (viewportRatio === 0.625) pptx.layout = 'LAYOUT_16x10';
@@ -1048,16 +1050,28 @@ export async function buildPptxBlob(
 
       // ── VIDEO / AUDIO ──
       else if (el.type === 'video' || el.type === 'audio') {
-        // Resolve generated video mediaRef or legacy placeholder src → blob URL.
-        let resolvedSrc = renderableMediaUrl(exportMediaResolution(el.src, stageId));
-        const mediaRef = el.type === 'video' ? el.mediaRef : undefined;
+        const videoBinding =
+          el.type === 'video'
+            ? resolveVideoMediaForElement(
+                useMediaGenerationStore.getState().tasks,
+                el,
+                stageId,
+                documentElements,
+              )
+            : undefined;
+        const sourceRef = videoBinding?.sourceRef ?? el.src;
+        let resolvedSrc = renderableMediaUrl(
+          videoBinding
+            ? resolvePptxMediaBinding(sourceRef, videoBinding.task).resolution
+            : exportMediaResolution(sourceRef, stageId),
+        );
         const mediaLookupKey =
-          mediaRef ||
-          (typeof el.src === 'string' && isMediaPlaceholder(el.src) ? el.src : undefined);
+          sourceRef && !isConcreteMediaAddress(sourceRef) && isMediaPlaceholder(sourceRef)
+            ? sourceRef
+            : undefined;
         if (mediaLookupKey) {
           const stored = await resolveStoredMediaBlob(mediaLookupKey, stageId);
           if (stored) resolvedSrc = await blobToDataUrl(stored);
-          else resolvedSrc = renderableMediaUrl(exportMediaResolution(mediaLookupKey, stageId));
         }
 
         if (!resolvedSrc) continue;
@@ -1095,14 +1109,12 @@ export async function buildPptxBlob(
             let coverBase64: string | undefined;
 
             // 1. Try poster from element or media generation store
-            let posterUrl = 'poster' in el && el.poster ? el.poster : undefined;
+            let posterUrl = videoBinding?.posterRef;
             let posterBlob = posterUrl ? await resolveStoredMediaBlob(posterUrl, stageId) : null;
             if (posterUrl && !posterBlob) {
-              posterUrl = renderableMediaUrl(exportMediaResolution(posterUrl, stageId));
-            }
-            if (!posterUrl && mediaLookupKey) {
-              const task = useMediaGenerationStore.getState().tasks[mediaLookupKey];
-              if (task?.poster) posterUrl = task.poster;
+              posterUrl = renderableMediaUrl(
+                resolvePptxMediaBinding(posterUrl, videoBinding?.posterTask).resolution,
+              );
             }
             if (posterBlob) {
               coverBase64 = await blobToDataUrl(posterBlob);

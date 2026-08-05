@@ -43,4 +43,14 @@ describe('video media resolution boundary', () => {
     // indirection, and choices spread across wider expressions can evade regex.
     expect(violations).toEqual([]);
   });
+
+  it('routes the PPTX element path through the unified video resolver', () => {
+    const source = readFileSync(join(process.cwd(), 'lib/export/use-export-pptx.ts'), 'utf8');
+    expect(source).toMatch(
+      /import\s+\{\s*resolveVideoMediaForElement\s*\}\s+from\s+'@\/lib\/media\/media-task-resolution'/,
+    );
+    expect(source).toMatch(
+      /el\.type === 'video'[\s\S]{0,200}?resolveVideoMediaForElement\([\s\S]{0,300}?documentElements/,
+    );
+  });
 });

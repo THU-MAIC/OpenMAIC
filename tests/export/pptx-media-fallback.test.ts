@@ -89,6 +89,35 @@ describe('PPTX media fallback chains', () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
+  it('embeds a concrete video src when its opaque mediaRef cannot be resolved', async () => {
+    const videoBytes = new TextEncoder().encode('direct-video-bytes');
+    const fetchSpy = vi.fn(async (url: string) => {
+      if (url === 'https://cdn.example/video.mp4') {
+        return new Response(new Blob([videoBytes], { type: 'video/mp4' }));
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const slide = baseSlide({
+      id: 'video-1',
+      type: 'video',
+      src: 'https://cdn.example/video.mp4',
+      mediaRef: 'ast_missing',
+      left: 0,
+      top: 0,
+      width: 640,
+      height: 360,
+      rotate: 0,
+    });
+
+    const blob = await buildPptxBlob([slide], [sceneFor(slide)], 0.5625, 1000, 100, 1, 'stage-1');
+    const media = await pptxMediaBytes(blob);
+
+    expect(fetchSpy).toHaveBeenCalledWith('https://cdn.example/video.mp4');
+    expect(mocks.mediaGet).not.toHaveBeenCalledWith('stage-1:ast_missing');
+    expect(media.some((bytes) => Buffer.from(bytes).equals(Buffer.from(videoBytes)))).toBe(true);
+  });
+
   it('embeds an allocated generated poster from its own Dexie row', async () => {
     mocks.mediaGet.mockImplementation(async (key: string) => {
       if (key === 'stage-1:ast_video') {
