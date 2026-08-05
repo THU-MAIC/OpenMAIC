@@ -1,13 +1,17 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
+import { EditableSlideCanvas, type EditIntent, type Selection } from '@openmaic/renderer/editing';
 import Canvas from '@/components/slide-renderer/Editor/Canvas';
 import { SpotlightOverlay } from '@/components/slide-renderer/Editor/SpotlightOverlay';
 import { LaserPointerOverlay } from '@/components/slide-renderer/Editor/LaserPointerOverlay';
 import { SceneProvider } from '@/lib/contexts/scene-context';
+import { isEditorRendererEnabled } from '@/lib/config/feature-flags';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { useResolvedSlide } from '@/components/slide-renderer/use-resolved-slide';
 import {
   useEditingTextElementId,
+  useResolvedSlideContent,
   useSelectedNonTextElement,
   useSlideCanvasController,
   useSyncEditingElementId,
@@ -15,6 +19,47 @@ import {
 import { AnchoredTextBar } from './AnchoredTextBar';
 import { AnchoredElementBar } from './AnchoredElementBar';
 import { ElementPickLayer } from './ElementPickLayer';
+import { applyRendererEditIntents } from './renderer-edit-intents';
+import { useSlideEditSession } from './slide-edit-session';
+
+function RendererEditorCanvas() {
+  const content = useResolvedSlideContent();
+  const resolvedSlide = useResolvedSlide(content.canvas);
+  const activeElementIds = useCanvasStore.use.activeElementIdList();
+  const setActiveElementIdList = useCanvasStore.use.setActiveElementIdList();
+
+  const selection = useMemo<Selection>(
+    () => ({
+      elementIds: activeElementIds,
+      primaryId: activeElementIds[0],
+    }),
+    [activeElementIds],
+  );
+
+  const handleSelectionChange = useCallback(
+    (next: Selection) => {
+      setActiveElementIdList([...next.elementIds]);
+    },
+    [setActiveElementIdList],
+  );
+
+  const handleElementsChange = useCallback(
+    (intents: EditIntent[]) => {
+      const next = applyRendererEditIntents(content, intents);
+      useSlideEditSession.getState().commitContent(next, true);
+    },
+    [content],
+  );
+
+  return (
+    <EditableSlideCanvas
+      slide={resolvedSlide}
+      selection={selection}
+      onSelectionChange={handleSelectionChange}
+      onElementsChange={handleElementsChange}
+    />
+  );
+}
 
 /**
  * The slide surface's canvas. Reuses the unmodified slide renderer
@@ -34,6 +79,7 @@ export function SlideCanvas() {
   const { controller, gestureProps } = useSlideCanvasController();
   const editingElementId = useEditingTextElementId();
   const nonTextElement = useSelectedNonTextElement();
+  const useRendererEditor = isEditorRendererEnabled();
   useSyncEditingElementId(editingElementId);
 
   // Esc disarms in-flight insert mode. Read via getState so the listener mounts
@@ -59,7 +105,7 @@ export function SlideCanvas() {
     // interactive layout jump.
     <div className="relative h-full w-full" {...gestureProps}>
       <SceneProvider controller={controller}>
-        <Canvas />
+        {useRendererEditor ? <RendererEditorCanvas /> : <Canvas />}
         {/* Same spotlight + laser effects as playback, retargeted to the
             editor's element ids — driven by useCanvasStore.setSpotlight /
             setLaser (e.g. from the ActionsBar cue-badge hover). The laser cue
