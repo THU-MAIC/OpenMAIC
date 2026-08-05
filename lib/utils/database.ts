@@ -627,9 +627,9 @@ export async function exportDatabase(chatOptions: ChatStorageOptions = {}): Prom
   // document migration — so legacy-only documents can still own runtime chat
   // history. Enumerate chats for EVERY exported document, not just stored ones.
   // The legacy chat rows are collected separately above by direct table reads,
-  // so the runtime read gets an empty legacy store: it never needs the
-  // cross-realm migration lock and therefore also works without Web Locks
-  // (where the document seam already exports legacy-only courses read-only).
+  // so the RuntimeStore load gets an empty legacy source and never needs the
+  // cross-realm migration lock. It may still finalize a pending restore marker;
+  // `observe: false` only keeps this export from changing partition memos.
   const runtimeChats = (
     await Promise.all(
       documents.map(async ({ stage }) =>

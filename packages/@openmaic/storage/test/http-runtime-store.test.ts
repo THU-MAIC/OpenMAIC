@@ -249,6 +249,32 @@ describe('HttpRuntimeStore error mapping', () => {
 });
 
 describe('HttpRuntimeStore HTTP hardening', () => {
+  test('validates append envelopes before sending a request', async () => {
+    let requestCount = 0;
+    const store = new HttpRuntimeStore({
+      baseUrl: 'https://runtime.invalid',
+      fetch: async () => {
+        requestCount += 1;
+        return fakeJsonResponse({}, 201);
+      },
+    });
+
+    const init = { ...makeRecord('session'), createdAt: 'not-iso' };
+    let failure: unknown;
+    try {
+      await store.appendRecord(init);
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(HttpRuntimeStoreError);
+    expect(failure).toMatchObject({ status: 400, code: 'VALIDATION_FAILED' });
+    expect((failure as Error).message).toBe(
+      `@openmaic/storage: invalid runtime record ${JSON.stringify(init.id)}: /createdAt: expected ISO 8601 \`createdAt\``,
+    );
+    expect(requestCount).toBe(0);
+  });
+
   test('rejects payload values that cannot be represented faithfully by JSON', async () => {
     const storeId = `json-${namespace++}`;
     const store = new HttpRuntimeStore({
