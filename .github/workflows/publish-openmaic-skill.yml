@@ -1,0 +1,186 @@
+name: Publish OpenMAIC skill
+
+# Required repository setup:
+# - Create a GitHub Environment named `clawhub-release`.
+# - Restrict its deployment branches to `main` with a custom policy.
+# - Store `CLAWHUB_TOKEN` as an Environment secret.
+# - Do not also store `CLAWHUB_TOKEN` as a repository secret.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "skills/openmaic/**"
+      - ".github/workflows/publish-openmaic-skill.yml"
+  push:
+    branches: [main]
+    paths:
+      - "skills/openmaic/**"
+      - ".github/workflows/publish-openmaic-skill.yml"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview the current main branch without publishing"
+        type: boolean
+        default: true
+
+jobs:
+  reject-invalid-dispatch:
+    name: Reject publish outside main
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      !inputs.dry_run && github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Reject publish outside main
+        run: |
+          echo "::error::Publishing is only allowed from the main branch."
+          exit 1
+
+  preview:
+    name: Preview ClawHub publish
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && inputs.dry_run)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: clawhub-preview-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || 'main' }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Install ClawHub CLI
+        working-directory: ${{ runner.temp }}
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/empty-npmrc
+        run: |
+          : > "$NPM_CONFIG_USERCONFIG"
+          npm install --global --ignore-scripts clawhub@0.23.3
+
+      - name: Configure ClawHub registry
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "clawhub-preview-config.json"
+          path.write_text(
+              json.dumps({"registry": "https://clawhub.ai"}, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          path.chmod(0o600)
+          PY
+          echo "CLAWHUB_CONFIG_PATH=$RUNNER_TEMP/clawhub-preview-config.json" >> "$GITHUB_ENV"
+
+      - name: Preview OpenMAIC skill publish
+        env:
+          SOURCE_REPO: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
+        run: |
+          set -euo pipefail
+          source_commit="$(git rev-parse HEAD)"
+          clawhub skill publish skills/openmaic \
+            --slug openmaic \
+            --name OpenMAIC \
+            --owner wyuc \
+            --dry-run \
+            --json \
+            --source-repo "$SOURCE_REPO" \
+            --source-commit "$source_commit" \
+            --source-path skills/openmaic
+
+  publish:
+    name: Publish to ClawHub
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' && !inputs.dry_run)
+    runs-on: ubuntu-latest
+    environment: clawhub-release
+    permissions:
+      contents: read
+    concurrency:
+      group: publish-openmaic-skill
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Install ClawHub CLI
+        working-directory: ${{ runner.temp }}
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/empty-npmrc
+        run: |
+          : > "$NPM_CONFIG_USERCONFIG"
+          npm install --global --ignore-scripts clawhub@0.23.3
+
+      - name: Verify ClawHub token is configured
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          if [[ -z "$CLAWHUB_TOKEN" ]]; then
+            echo "::error::CLAWHUB_TOKEN is not configured in the clawhub-release environment."
+            exit 1
+          fi
+
+      - name: Write ClawHub config
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "clawhub-config.json"
+          path.write_text(
+              json.dumps({"registry": "https://clawhub.ai", "token": os.environ["CLAWHUB_TOKEN"]}, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          path.chmod(0o600)
+          PY
+          echo "CLAWHUB_CONFIG_PATH=$RUNNER_TEMP/clawhub-config.json" >> "$GITHUB_ENV"
+
+      - name: Verify ClawHub authentication
+        run: clawhub whoami
+
+      - name: Publish OpenMAIC skill
+        env:
+          SOURCE_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          source_commit="$(git rev-parse HEAD)"
+          git fetch --no-tags origin main
+          source_tree="$(git rev-parse HEAD:skills/openmaic)"
+          main_tree="$(git rev-parse origin/main:skills/openmaic)"
+          if [[ "$source_tree" != "$main_tree" ]]; then
+            echo "::notice::Skipping $source_commit because skills/openmaic changed on main."
+            exit 0
+          fi
+          clawhub skill publish skills/openmaic \
+            --slug openmaic \
+            --name OpenMAIC \
+            --owner wyuc \
+            --json \
+            --source-repo "$SOURCE_REPO" \
+            --source-commit "$source_commit" \
+            --source-path skills/openmaic
