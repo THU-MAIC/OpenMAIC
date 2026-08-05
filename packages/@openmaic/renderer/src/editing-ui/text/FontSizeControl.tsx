@@ -1,0 +1,91 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Minus, Plus } from 'lucide-react';
+import type { TextEditCommand } from '../../editing/text/types';
+import type { TextToolbarLabels } from '../types';
+
+export const TEXT_TOOLBAR_FONT_SIZE_MIN = 8;
+export const TEXT_TOOLBAR_FONT_SIZE_MAX = 96;
+
+export function stepTextToolbarFontSize(current: string, delta: number): string {
+  const value = Number.parseInt(current, 10) || 16;
+  return `${Math.max(8, Math.min(96, value + delta))}px`;
+}
+
+interface FontSizeControlProps {
+  readonly value: string;
+  readonly labels: TextToolbarLabels;
+  readonly onCommand: (command: TextEditCommand) => void;
+}
+
+function normalizeTextToolbarFontSize(value: string): string {
+  return stepTextToolbarFontSize(value, 0);
+}
+
+export function FontSizeControl({ value, labels, onCommand }: FontSizeControlProps) {
+  const [inputValue, setInputValue] = useState(() => String(Number.parseInt(value, 10) || 16));
+  const normalizedValue = normalizeTextToolbarFontSize(value);
+
+  useEffect(() => {
+    setInputValue(String(Number.parseInt(value, 10) || 16));
+  }, [value]);
+
+  const commit = () => {
+    const nextValue = normalizeTextToolbarFontSize(inputValue);
+    setInputValue(String(Number.parseInt(nextValue, 10)));
+    if (nextValue !== normalizedValue) {
+      onCommand({ command: 'fontsize', value: nextValue });
+    }
+  };
+
+  const step = (delta: number) => {
+    const nextValue = stepTextToolbarFontSize(value, delta);
+    if (nextValue !== normalizedValue) {
+      onCommand({ command: 'fontsize', value: nextValue });
+    }
+  };
+
+  return (
+    <div className="maic-editing-ui-group" role="group" aria-label={labels.fontSize}>
+      <button
+        type="button"
+        className="maic-editing-ui-icon-button"
+        aria-label={labels.sizeDown}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => step(-1)}
+      >
+        <Minus aria-hidden />
+      </button>
+      <input
+        type="text"
+        inputMode="numeric"
+        role="spinbutton"
+        className="maic-editing-ui-font-size-input"
+        aria-label={labels.fontSize}
+        value={inputValue}
+        onChange={(event) => setInputValue(event.target.value.replace(/\D/g, ''))}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            commit();
+          }
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            setInputValue(String(Number.parseInt(value, 10) || 16));
+          }
+        }}
+      />
+      <button
+        type="button"
+        className="maic-editing-ui-icon-button"
+        aria-label={labels.sizeUp}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => step(1)}
+      >
+        <Plus aria-hidden />
+      </button>
+    </div>
+  );
+}
