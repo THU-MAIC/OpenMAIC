@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
  * {@link assertPackageListIsComplete} verifies from the outside that the
  * workflow's own list still agrees with this one.
  *
- * Ordered by dependency: dsl first, since the other three build against it.
+ * Ordered by dependency: dsl first, since the other four build against it.
  *
  * ── THREAT MODEL FOR EVERY GATE THAT READS THIS ──────────────────────────────
  *
@@ -31,10 +31,11 @@ import { fileURLToPath } from 'node:url';
  * scripts to hide a change can edit the production sources directly, and code
  * review, not tooling, is what stands in the way of that.
  */
-export const OPENMAIC_PACKAGES = ['dsl', 'storage', 'renderer', 'importer'];
+export const OPENMAIC_PACKAGES = ['dsl', 'generation', 'storage', 'renderer', 'importer'];
 
 /** The packages that depend on another owned package, and on which one. */
 export const INTERNAL_DEPENDENTS = {
+  generation: '@openmaic/dsl',
   storage: '@openmaic/dsl',
   renderer: '@openmaic/dsl',
   importer: '@openmaic/dsl',
