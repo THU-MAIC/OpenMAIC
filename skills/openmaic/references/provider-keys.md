@@ -10,25 +10,13 @@ This skill does not rely on runtime overrides for model, provider, API key, base
 
 If the user wants to change any of those, they must edit OpenMAIC server-side config files.
 
-## Interaction Policy
+## Interaction Flow
 
-- Do not begin by asking the user to paste an API key into chat.
-- First, recommend a provider path.
-- Then ask how the user wants to configure it.
-- The user should edit `.env.local` or `server-providers.yml` themselves.
-- Do not offer to write the key for them.
-- Do not ask for the literal key in chat.
-- Do not suggest temporary request-time overrides.
-- If generation fails because of auth, provider, or model selection, direct the user back to server-side config files.
-
-## Preferred User Flow
-
-1. Recommend a provider option.
-2. Ask where the user wants to configure it:
-   - `.env.local` (recommended for most users)
-   - `server-providers.yml`
-3. Tell the user exactly which variables or YAML fields to edit.
+1. Recommend one provider path first (see "Recommendation Paths" below). Do not start by asking for an API key.
+2. Ask whether the user wants to configure it in `.env.local` (recommended for most users) or `server-providers.yml`.
+3. Tell the user exactly which variables or YAML fields to edit — they edit the file themselves. Do not offer to write the key for them, do not ask for the literal key in chat, and do not suggest temporary request-time overrides.
 4. Wait for the user to confirm they finished editing before continuing.
+5. If generation later fails because of auth, provider, or model selection, direct the user back to the same server-side config files and wait for confirmation before retrying.
 
 ## Recommendation Paths
 
@@ -44,7 +32,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 Why:
 
-- OpenMAIC server fallback is currently `gpt-4o-mini` if `DEFAULT_MODEL` is unset.
+- OpenMAIC server fallback is currently `gpt-4o-mini` if `DEFAULT_MODEL` is unset. **This fallback requires an OpenAI key** — if the user only configures a non-OpenAI provider and leaves `DEFAULT_MODEL` unset, generation will fail with an auth error.
 - If the user wants Anthropic or Google by default, they should set `DEFAULT_MODEL` explicitly.
 
 ### 2. Better Speed / Cost Balance
@@ -91,6 +79,8 @@ When recommending or showing `DEFAULT_MODEL`, always include the provider prefix
 
 Do not recommend bare model IDs such as `gemini-3-flash-preview` by themselves, because OpenMAIC will otherwise parse them as OpenAI models.
 
+The exact model IDs above are examples. Model names change as providers release new versions — if a recommended ID is rejected, direct the user to check the provider's official docs for the current model name and keep the `provider:` prefix.
+
 Do not work around a wrong `DEFAULT_MODEL` by changing request parameters. The user should fix the server-side config instead.
 
 ## Preferred Config Method
@@ -125,25 +115,12 @@ DEFAULT_MODEL=google:gemini-3-flash-preview
 
 ## Recommended Prompts To The User
 
-Preferred:
+Example phrasing the agent can adapt:
 
 - "I recommend configuring OpenMAIC through `.env.local` first. Please edit that file locally and tell me when you're done."
-- "For the simplest setup, I recommend Anthropic. For better speed/cost balance, I recommend Google plus `DEFAULT_MODEL=google:gemini-3-flash-preview`. Which path do you want?"
+- "For the simplest setup, I recommend Anthropic. For better speed/cost balance, I recommend Google plus a `DEFAULT_MODEL` like `google:<current-gemini-flash-model>`. Which path do you want?"
 
-Avoid as the first move:
-
-- "Send me your API key"
-- "Paste your API key here"
-- "Do you want me to write the key for you?"
-
-## Confirmation Requirements
-
-- Recommend one provider path first.
-- Ask the user which config-file path they want.
-- Instruct the user to modify the file themselves.
-- Wait for the user to confirm they finished editing before continuing.
-- Do not request the literal key.
-- If provider/model/auth errors happen later, tell the user exactly which config entry to fix and wait for confirmation before retrying.
+The "do not ask for the key in chat / do not offer to write it" rules are covered in [Interaction Flow](#interaction-flow) above — do not open by requesting the key.
 
 ## Optional Features
 

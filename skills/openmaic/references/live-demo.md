@@ -1,15 +1,14 @@
-# Hosted Mode
+# Live Demo Mode
 
-Use this when the user has an access code from open.maic.chat and wants to skip local setup.
+The OpenMAIC Live Demo (open.maic.chat) is the cloud edition — the version officially deployed and hosted by the OpenMAIC team, so no local setup is required. Use this when the user has an access code from open.maic.chat and wants to skip local setup.
 
 ## Access Code Setup
 
 1. Read `accessCode` from skill config (`~/.openclaw/openclaw.json` → `skills.entries.openmaic.config.accessCode`).
 2. If found, use it directly. Do not ask the user to paste the code into chat.
-3. If not found, tell the user to add their access code to the config file:
-   ```
-   Edit ~/.openclaw/openclaw.json and set skills.entries.openmaic.config.accessCode to your access code (starts with sk-).
-   ```
+3. If not found, tell the user how to get an access code and where to put it:
+   - Get your access code: sign in at https://open.maic.chat, click your account in the top-right corner, open "访问码设置" (access code settings), and generate a code (starts with `sk-`).
+   - Add it to the config file: edit `~/.openclaw/openclaw.json` and set `skills.entries.openmaic.config.accessCode` to your access code.
    Wait for the user to confirm before continuing. Do not ask them to paste the code in chat.
 4. Verify connectivity: `GET https://open.maic.chat/api/health` with `Authorization: Bearer <access-code>`
    - On success: confirm connection and proceed to generation.
@@ -24,9 +23,9 @@ Follow the same generation flow as [generate-flow.md](generate-flow.md) with the
 - **Authorization**: Include header `Authorization: Bearer <access-code>` on all API requests
 - **Classroom URL**: `https://open.maic.chat/classroom/{id}`
 
-### Feature Detection in Hosted Mode
+### Feature Detection in Live Demo Mode
 
-Before generating, query `GET https://open.maic.chat/api/health` (with auth header) to check `capabilities`. Automatically include optional feature flags (`enableWebSearch`, `enableImageGeneration`, etc.) based on what the server supports. Do not send new fields if the server does not return `capabilities` (older version). This ensures forward compatibility — the hosted instance may update on a different schedule than the local codebase.
+Before generating, query `GET https://open.maic.chat/api/health` (with auth header) to check `capabilities`. Automatically include optional feature flags (`enableWebSearch`, `enableImageGeneration`, etc.) based on what the server supports. Do not send new fields if the server does not return `capabilities` (older version). This ensures forward compatibility — the Live Demo instance may update on a different schedule than the local codebase.
 
 ## Quota
 
