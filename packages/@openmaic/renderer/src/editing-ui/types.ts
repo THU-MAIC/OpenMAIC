@@ -38,9 +38,7 @@ export interface TextToolbarColorPickerProps {
   readonly onCommit: (color: string) => void;
 }
 
-export type TextToolbarColorPickerRenderer = (
-  props: TextToolbarColorPickerProps,
-) => ReactNode;
+export type TextToolbarColorPickerRenderer = (props: TextToolbarColorPickerProps) => ReactNode;
 
 export interface TextToolbarOptions {
   readonly locale?: TextToolbarLocale;

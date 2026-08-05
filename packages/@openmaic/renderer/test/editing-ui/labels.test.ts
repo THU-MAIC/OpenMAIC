@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  DEFAULT_TEXT_TOOLBAR_FONTS,
-  resolveTextToolbarLabels,
-} from '../../src/editing-ui/labels';
+import { DEFAULT_TEXT_TOOLBAR_FONTS, resolveTextToolbarLabels } from '../../src/editing-ui/labels';
 
 describe('editing-ui labels', () => {
   it('provides Chinese and English defaults with overrides taking precedence', () => {
