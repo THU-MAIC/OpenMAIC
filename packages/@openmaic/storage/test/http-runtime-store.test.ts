@@ -249,6 +249,22 @@ describe('HttpRuntimeStore error mapping', () => {
 });
 
 describe('HttpRuntimeStore HTTP hardening', () => {
+  test('validates append envelopes before sending a request', async () => {
+    let requestCount = 0;
+    const store = new HttpRuntimeStore({
+      baseUrl: 'https://runtime.invalid',
+      fetch: async () => {
+        requestCount += 1;
+        return fakeJsonResponse({}, 201);
+      },
+    });
+
+    await expect(
+      store.appendRecord({ ...makeRecord('session'), createdAt: 'not-iso' }),
+    ).rejects.toThrow(/invalid runtime record.*createdAt/);
+    expect(requestCount).toBe(0);
+  });
+
   test('rejects payload values that cannot be represented faithfully by JSON', async () => {
     const storeId = `json-${namespace++}`;
     const store = new HttpRuntimeStore({
