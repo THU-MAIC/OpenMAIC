@@ -7,11 +7,13 @@ fail() {
   exit 1
 }
 
-case "${1:-}" in
-  "") dry_run=false ;;
-  --dry-run) dry_run=true ;;
-  *) fail "Usage: publish-openmaic-skill.sh [--dry-run]" ;;
-esac
+if [[ "$#" -eq 0 ]]; then
+  dry_run=false
+elif [[ "$#" -eq 1 && "$1" == "--dry-run" ]]; then
+  dry_run=true
+else
+  fail "Usage: publish-openmaic-skill.sh [--dry-run]"
+fi
 
 [[ -n "${SOURCE_REPO:-}" ]] || fail "SOURCE_REPO is required."
 [[ "${PUBLISH_VERSION+x}" == x ]] || fail "PUBLISH_VERSION is required."

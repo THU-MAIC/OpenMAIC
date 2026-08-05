@@ -9,6 +9,8 @@ name: Publish OpenMAIC skill
 # require it only through rules that apply to the paths below.
 # PR previews execute the checked-out head scripts, so they intentionally receive no secrets,
 # have read-only contents permission, and disable persisted checkout credentials.
+# Deleting skills/openmaic does not unpublish or deprecate an existing ClawHub release;
+# that registry lifecycle action must be performed manually in ClawHub.
 
 on:
   pull_request:
@@ -57,23 +59,57 @@ jobs:
     runs-on: macos-15
     permissions:
       contents: read
+    concurrency:
+      group: clawhub-bash3-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
-      - name: Run automatic-version publish path with macOS Bash 3.2
-        env:
-          CLAWHUB: /usr/bin/true
-          PUBLISH_VERSION: ""
-          SOURCE_REPO: ${{ github.repository }}
+      - name: Run publish paths with macOS Bash 3.2
         run: |
+          set -euo pipefail
           bash_version="$(/bin/bash -c 'printf "%s.%s" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"')"
           if [[ "$bash_version" != "3.2" ]]; then
             echo "::error::Expected macOS system Bash 3.2, found $bash_version."
             exit 1
           fi
-          /bin/bash .github/scripts/publish-openmaic-skill.sh
+
+          CLAWHUB=/usr/bin/true \
+            PUBLISH_VERSION='' \
+            SOURCE_REPO='THU-MAIC/OpenMAIC' \
+            /bin/bash .github/scripts/publish-openmaic-skill.sh
+
+          compat_dir="$RUNNER_TEMP/clawhub-bash3"
+          mkdir -p "$compat_dir"
+          cat > "$compat_dir/clawhub" <<'BASH'
+          #!/bin/bash
+          printf '%s\t' "$@" >> "$CLAWHUB_CALLS"
+          printf '\n' >> "$CLAWHUB_CALLS"
+          if [[ " $* " != *" --version 0.4.0 "* ]]; then
+            printf '%s\n' '{"status":"would-publish","version":"0.4.0","latestVersion":"0.3.1","fingerprint":"bash3-fixture"}'
+          fi
+          BASH
+          cat > "$compat_dir/node" <<'BASH'
+          #!/bin/bash
+          printf 'continue\t0.4.0\n'
+          BASH
+          chmod 700 "$compat_dir/clawhub" "$compat_dir/node"
+          : > "$compat_dir/calls"
+
+          CLAWHUB="$compat_dir/clawhub" \
+            CLAWHUB_CALLS="$compat_dir/calls" \
+            PATH="$compat_dir:$PATH" \
+            PUBLISH_VERSION='0.4.0' \
+            RUNNER_TEMP="$compat_dir" \
+            SOURCE_REPO='THU-MAIC/OpenMAIC' \
+            /bin/bash .github/scripts/publish-openmaic-skill.sh
+          if [[ "$(wc -l < "$compat_dir/calls" | tr -d ' ')" != "2" ]] ||
+            ! grep -q -- $'--version\t0.4.0\t' "$compat_dir/calls"; then
+            echo "::error::Bash 3.2 manual-version path did not reach canonical publish."
+            exit 1
+          fi
 
   preview:
     name: Preview ClawHub publish
@@ -108,9 +144,15 @@ jobs:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org
           NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/empty-npmrc
         run: |
+          set -euo pipefail
           : > "$NPM_CONFIG_USERCONFIG"
           npm install --global --ignore-scripts clawhub@0.23.3 semver@7.8.5
-          echo "SEMVER_PACKAGE_JSON=$(npm root --global)/semver/package.json" >> "$GITHUB_ENV"
+          global_root="$(npm root --global)"
+          if [[ -z "$global_root" ]]; then
+            echo "::error::npm returned an empty global package root."
+            exit 1
+          fi
+          echo "SEMVER_PACKAGE_JSON=$global_root/semver/package.json" >> "$GITHUB_ENV"
 
       - name: Configure ClawHub registry
         run: |
@@ -158,6 +200,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -175,9 +218,15 @@ jobs:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org
           NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/empty-npmrc
         run: |
+          set -euo pipefail
           : > "$NPM_CONFIG_USERCONFIG"
           npm install --global --ignore-scripts clawhub@0.23.3 semver@7.8.5
-          echo "SEMVER_PACKAGE_JSON=$(npm root --global)/semver/package.json" >> "$GITHUB_ENV"
+          global_root="$(npm root --global)"
+          if [[ -z "$global_root" ]]; then
+            echo "::error::npm returned an empty global package root."
+            exit 1
+          fi
+          echo "SEMVER_PACKAGE_JSON=$global_root/semver/package.json" >> "$GITHUB_ENV"
 
       - name: Verify ClawHub token is configured
         env:
@@ -222,14 +271,14 @@ jobs:
       - name: Publish OpenMAIC skill
         env:
           CLAWHUB: clawhub
+          EVENT_NAME: ${{ github.event_name }}
           PUBLISH_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
           SOURCE_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           source_commit="$(git rev-parse HEAD)"
-          git fetch --no-tags origin main
           if ! git rev-parse --verify --quiet "refs/remotes/origin/main^{commit}" >/dev/null; then
-            echo "::error::Unable to resolve the fetched origin/main commit."
+            echo "::error::Unable to resolve the checked-out origin/main commit."
             exit 1
           fi
           if ! git cat-file -e "HEAD^{tree}:skills/openmaic" 2>/dev/null; then
@@ -243,6 +292,10 @@ jobs:
           source_tree="$(git rev-parse HEAD:skills/openmaic)"
           main_tree="$(git rev-parse origin/main:skills/openmaic)"
           if [[ "$source_tree" != "$main_tree" ]]; then
+            if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+              echo "::error::Refusing manual publish because skills/openmaic changed on main."
+              exit 1
+            fi
             echo "::notice::Skipping $source_commit because skills/openmaic changed on main."
             exit 0
           fi

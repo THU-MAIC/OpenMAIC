@@ -181,6 +181,16 @@ describe('publish-openmaic-skill shell contract', () => {
   });
 
   it.each([
+    ['an empty argument before dry-run', ['', '--dry-run']],
+    ['a trailing argument after dry-run', ['--dry-run', '--anything']],
+  ])('rejects %s without invoking ClawHub', (_name, args) => {
+    const { calls, result } = runPublish({ args });
+
+    expectFailure(result, 'Usage: publish-openmaic-skill.sh [--dry-run]');
+    expect(calls).toEqual([]);
+  });
+
+  it.each([
     ['SOURCE_REPO', 'SOURCE_REPO is required.'],
     ['PUBLISH_VERSION', 'PUBLISH_VERSION is required.'],
     ['CLAWHUB', 'CLAWHUB is required.'],

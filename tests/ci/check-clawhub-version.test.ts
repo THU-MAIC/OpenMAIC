@@ -16,6 +16,16 @@ const semverPackageJsonPath = requireFromRoot.resolve('semver/package.json');
 const fixtureRoot = mkdtempSync(resolve(tmpdir(), 'clawhub-version-test-'));
 let fixtureIndex = 0;
 
+function workflowJob(workflow: string, name: string) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const markedWorkflow = `${workflow}\n  __end__:\n`;
+  const job = markedWorkflow.match(
+    new RegExp(`^  ${escapedName}:\\n([\\s\\S]*?)(?=^  [A-Za-z0-9_-]+:\\n)`, 'm'),
+  )?.[1];
+  expect(job, `workflow job ${name}`).toBeDefined();
+  return job ?? '';
+}
+
 afterAll(() => {
   rmSync(fixtureRoot, { recursive: true, force: true });
 });
@@ -99,6 +109,9 @@ describe('check-clawhub-version', () => {
       ['0.23.3', '7.8.5'],
     ]);
     expect(workflow.match(/SEMVER_PACKAGE_JSON=/g)).toHaveLength(2);
+    expect(workflow.match(/global_root="\$\(npm root --global\)"/g)).toHaveLength(2);
+    expect(workflow.match(/if \[\[ -z "\$global_root" \]\]; then/g)).toHaveLength(2);
+    expect(workflow.match(/set -euo pipefail\n\s+: > "\$NPM_CONFIG_USERCONFIG"/g)).toHaveLength(2);
     expect(workflow).not.toContain('CLAWHUB_PACKAGE_JSON');
     expect(semverPackage.version).toBe('7.8.5');
   });
@@ -121,24 +134,93 @@ describe('check-clawhub-version', () => {
     expect(publishScript).toContain('source_commit="$(git rev-parse HEAD)"');
   });
 
-  it('runs the automatic-version path in a no-secret macOS Bash 3.2 job', () => {
+  it('runs automatic and manual paths in a no-secret macOS Bash 3.2 job', () => {
     const workflow = readFileSync(workflowPath, 'utf8');
-    const compatibilityJob = workflow.match(/  bash-3-compatibility:\n([\s\S]*?)\n  preview:/)?.[1];
+    const compatibilityJob = workflowJob(workflow, 'bash-3-compatibility');
 
-    expect(compatibilityJob).toBeDefined();
     expect(compatibilityJob).toContain("if: github.event_name == 'pull_request'");
     expect(compatibilityJob).toContain('runs-on: macos-15');
     expect(compatibilityJob).toContain('permissions:\n      contents: read');
+    expect(compatibilityJob).toContain(
+      'group: clawhub-bash3-${{ github.event.pull_request.number }}',
+    );
+    expect(compatibilityJob).toContain('cancel-in-progress: true');
     expect(compatibilityJob).toContain('persist-credentials: false');
-    expect(compatibilityJob).toContain('CLAWHUB: /usr/bin/true');
-    expect(compatibilityJob).toContain('PUBLISH_VERSION: ""');
+    expect(compatibilityJob).toContain('CLAWHUB=/usr/bin/true');
+    expect(compatibilityJob).toContain("PUBLISH_VERSION=''");
     expect(compatibilityJob).toContain('BASH_VERSINFO[0]');
     expect(compatibilityJob).toContain('if [[ "$bash_version" != "3.2" ]]');
-    expect(compatibilityJob).toContain('/bin/bash .github/scripts/publish-openmaic-skill.sh');
+    expect(
+      compatibilityJob.match(/\/bin\/bash \.github\/scripts\/publish-openmaic-skill\.sh/g),
+    ).toHaveLength(2);
+    expect(compatibilityJob).toContain("PUBLISH_VERSION='0.4.0'");
+    expect(compatibilityJob).toContain('"status":"would-publish"');
+    expect(compatibilityJob).toContain("printf 'continue\\t0.4.0\\n'");
+    expect(compatibilityJob).toContain("grep -q -- $'--version\\t0.4.0\\t'");
     expect(compatibilityJob).not.toContain('secrets.');
     expect(compatibilityJob).not.toContain('environment:');
     expect(compatibilityJob).not.toContain('setup-node');
     expect(compatibilityJob).not.toContain('npm install');
+  });
+
+  it('keeps the preview job isolated from secrets and pinned to the fork head', () => {
+    const workflow = readFileSync(workflowPath, 'utf8');
+    const previewJob = workflowJob(workflow, 'preview');
+
+    expect(previewJob).toContain("github.event_name == 'pull_request'");
+    expect(previewJob).toContain('permissions:\n      contents: read');
+    expect(previewJob).toContain(
+      "repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}",
+    );
+    expect(previewJob).toContain(
+      "ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || 'main' }}",
+    );
+    expect(previewJob).toContain('persist-credentials: false');
+    expect(previewJob).not.toMatch(/^\s+environment:/m);
+    expect(previewJob).not.toContain('secrets.');
+  });
+
+  it('gates publish on main and preserves checkout and stale-tree safeguards', () => {
+    const workflow = readFileSync(workflowPath, 'utf8');
+    const publishJob = workflowJob(workflow, 'publish');
+
+    expect(workflow).toContain('push:\n    branches: [main]');
+    expect(publishJob).toContain("github.event_name == 'push'");
+    expect(publishJob).toContain("github.ref == 'refs/heads/main'");
+    expect(publishJob).toContain('!inputs.dry_run');
+    expect(publishJob).toContain('environment: clawhub-release');
+    expect(publishJob).toContain('permissions:\n      contents: read');
+    expect(publishJob).toContain('ref: ${{ github.sha }}');
+    expect(publishJob).toContain('fetch-depth: 0');
+    expect(publishJob).toContain('persist-credentials: false');
+    expect(publishJob).not.toContain('git fetch');
+    expect(publishJob).toContain('refs/remotes/origin/main^{commit}');
+    expect(publishJob).toContain('HEAD^{tree}:skills/openmaic');
+    expect(publishJob).toContain('origin/main^{tree}:skills/openmaic');
+    expect(publishJob).toContain(
+      `if ! git cat-file -e "HEAD^{tree}:skills/openmaic" 2>/dev/null; then
+            echo "::notice::Skipping $source_commit because skills/openmaic was deleted."
+            exit 0
+          fi`,
+    );
+    expect(publishJob).toContain(
+      `if ! git cat-file -e "origin/main^{tree}:skills/openmaic" 2>/dev/null; then
+            echo "::notice::Skipping $source_commit because skills/openmaic was removed from main."
+            exit 0
+          fi`,
+    );
+    expect(publishJob).toContain('if [[ "$source_tree" != "$main_tree" ]]');
+    expect(publishJob).toContain('EVENT_NAME: ${{ github.event_name }}');
+    expect(publishJob).toContain(
+      `if [[ "$source_tree" != "$main_tree" ]]; then
+            if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+              echo "::error::Refusing manual publish because skills/openmaic changed on main."
+              exit 1
+            fi
+            echo "::notice::Skipping $source_commit because skills/openmaic changed on main."
+            exit 0
+          fi`,
+    );
   });
 
   it('lets Node drain output without immediate process exits', () => {
