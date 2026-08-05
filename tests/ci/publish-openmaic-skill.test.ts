@@ -97,6 +97,13 @@ function expectFailure(result: ReturnType<typeof runPublish>['result'], message:
 }
 
 describe('publish-openmaic-skill shell contract', () => {
+  it('does not use empty arrays that break under Bash 3.2 with nounset', () => {
+    const source = readFileSync(publishScript, 'utf8');
+
+    expect(source).toContain('set -euo pipefail');
+    expect(source).not.toMatch(/\b[A-Za-z_][A-Za-z0-9_]*=\(\s*\)/);
+  });
+
   it('performs a real publish with no positional argument under macOS Bash 3.2', () => {
     const { calls, result } = runPublish();
 
@@ -135,6 +142,26 @@ describe('publish-openmaic-skill shell contract', () => {
     expect(calls[1][calls[1].indexOf('--version') + 1]).toBe('0.4.0');
   });
 
+  it('keeps a manual version preview in dry-run mode after preflight', () => {
+    const preflight = {
+      status: 'would-publish',
+      version: '0.4.0',
+      latestVersion: '0.3.1',
+      fingerprint: 'fixture-fingerprint',
+    };
+    const { calls, result } = runPublish({
+      args: ['--dry-run'],
+      preflight,
+      publishVersion: ' v0.4.0 ',
+    });
+
+    expectSuccess(result, `${JSON.stringify(preflight)}\n{"published":true}\n`);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toContain('--dry-run');
+    expect(calls[1]).toContain('--version');
+    expect(calls[1][calls[1].indexOf('--version') + 1]).toBe('0.4.0');
+  });
+
   it('stops after a noop preflight', () => {
     const preflight = {
       status: 'unchanged',
@@ -152,14 +179,29 @@ describe('publish-openmaic-skill shell contract', () => {
     expect(calls[0]).toContain('--dry-run');
   });
 
-  it('rejects unsupported arguments and missing environment', () => {
+  it('rejects unsupported arguments', () => {
     const usage = runPublish({ args: ['--publish'] });
     expectFailure(usage.result, 'Usage: publish-openmaic-skill.sh [--dry-run]');
     expect(usage.calls).toEqual([]);
+  });
 
-    const missingSource = runPublish({ omittedEnvironment: 'SOURCE_REPO' });
-    expectFailure(missingSource.result, 'SOURCE_REPO is required.');
-    expect(missingSource.calls).toEqual([]);
+  it.each([
+    ['SOURCE_REPO', 'SOURCE_REPO is required.'],
+    ['PUBLISH_VERSION', 'PUBLISH_VERSION is required.'],
+    ['CLAWHUB', 'CLAWHUB is required.'],
+  ] as const)('rejects an unset %s environment variable', (name, message) => {
+    const { calls, result } = runPublish({ omittedEnvironment: name });
+
+    expectFailure(result, message);
+    expect(calls).toEqual([]);
+  });
+
+  it('accepts an explicitly empty PUBLISH_VERSION for automatic versioning', () => {
+    const { calls, result } = runPublish({ publishVersion: '' });
+
+    expectSuccess(result, '{"published":true}\n');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).not.toContain('--version');
   });
 
   it('rejects a malformed checker decision', () => {
