@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { executeTextCommands } from './commandExecutor';
@@ -49,15 +49,26 @@ export function RendererTextEditor({
   });
   const defaultsRef = useRef({ color: defaultColor, fontname: defaultFontName });
 
-  valueRef.current = value;
-  callbacksRef.current = {
+  useLayoutEffect(() => {
+    valueRef.current = value;
+    callbacksRef.current = {
+      onContentChange,
+      onFormatChange,
+      onControllerChange,
+      onFocusChange,
+      onEscape,
+    };
+    defaultsRef.current = { color: defaultColor, fontname: defaultFontName };
+  }, [
+    defaultColor,
+    defaultFontName,
     onContentChange,
-    onFormatChange,
     onControllerChange,
-    onFocusChange,
     onEscape,
-  };
-  defaultsRef.current = { color: defaultColor, fontname: defaultFontName };
+    onFocusChange,
+    onFormatChange,
+    value,
+  ]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -99,10 +110,12 @@ export function RendererTextEditor({
 
     const view = initTextEditor(host, valueRef.current, {
       editable: () => true,
-      dispatchTransaction(this: EditorView, transaction) {
-        const nextState = this.state.apply(transaction);
-        this.updateState(nextState);
-        if (shouldPushAttrs(transaction)) pushFormatState(this);
+      dispatchTransaction(transaction) {
+        const currentView = viewRef.current;
+        if (!currentView) return;
+        const nextState = currentView.state.apply(transaction);
+        currentView.updateState(nextState);
+        if (shouldPushAttrs(transaction)) pushFormatState(currentView);
         if (transaction.docChanged) {
           const history = nextTransactionHistory;
           nextTransactionHistory = 'record';

@@ -69,8 +69,9 @@ export function mapRendererTextFormatState(state: TextFormatState): TextAttrs {
 }
 
 export function commitRendererTextChange(content: SlideContent, change: TextContentChange): void {
-  const next = applyRendererEditIntents(content, [change.intent]);
-  if (next === content) return;
+  const base = useSlideEditSession.getState().history?.present ?? content;
+  const next = applyRendererEditIntents(base, [change.intent]);
+  if (next === base) return;
   useSlideEditSession.getState().commitContent(next, change.history === 'record');
 }
 
@@ -78,7 +79,8 @@ export function commitRendererTextAutoSize(
   content: SlideContent,
   intent: TextAutoSizeIntent,
 ): void {
-  const next = applyRendererEditIntents(content, [intent]);
-  if (next === content) return;
+  const base = useSlideEditSession.getState().history?.present ?? content;
+  const next = applyRendererEditIntents(base, [intent]);
+  if (next === base) return;
   useSlideEditSession.getState().commitContent(next, false);
 }

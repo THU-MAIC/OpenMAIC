@@ -7,11 +7,7 @@ interface AlignmentGuidesProps {
   canvasScale: number;
 }
 
-export function AlignmentGuides({
-  guides,
-  viewportStyles,
-  canvasScale,
-}: AlignmentGuidesProps) {
+export function AlignmentGuides({ guides, viewportStyles, canvasScale }: AlignmentGuidesProps) {
   return guides.map((guide, index) => {
     const vertical = guide.type === 'vertical';
     return (

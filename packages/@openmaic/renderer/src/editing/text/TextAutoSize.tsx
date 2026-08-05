@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { TextAutoSizeIntent } from './types';
 
 export interface TextAutoSizeProps {
@@ -28,7 +28,9 @@ export function TextAutoSize({
   const pendingSizeRef = useRef<number | null>(null);
   const lastEmittedSizeRef = useRef<number | null>(null);
   const propsRef = useRef({ elementId, vertical, width, height, resizeActive, onAutoSize });
-  propsRef.current = { elementId, vertical, width, height, resizeActive, onAutoSize };
+  useLayoutEffect(() => {
+    propsRef.current = { elementId, vertical, width, height, resizeActive, onAutoSize };
+  }, [elementId, height, onAutoSize, resizeActive, vertical, width]);
 
   const emitSize = useCallback((size: number) => {
     const current = propsRef.current;

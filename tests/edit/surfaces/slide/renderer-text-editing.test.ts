@@ -45,7 +45,10 @@ const content: SlideContent = {
 };
 
 describe('renderer text editing adapter', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useSlideEditSession.setState({ sceneId: null, history: null, gestureActive: false });
+  });
 
   it('routes toolbar commands to the active renderer controller and unregisters it', () => {
     const execute = vi.fn();
@@ -145,5 +148,32 @@ describe('renderer text editing adapter', () => {
       }),
       false,
     );
+  });
+
+  it('applies normalization to the latest session content instead of a stale render', () => {
+    const latest: SlideContent = {
+      ...content,
+      canvas: {
+        ...content.canvas,
+        elements: content.canvas.elements.map((element) =>
+          element.type === 'text' ? { ...element, content: '<p>Latest input</p>' } : element,
+        ),
+      },
+    };
+    useSlideEditSession.setState({
+      history: { past: [], present: latest, future: [] },
+    });
+    const commitContent = vi.spyOn(useSlideEditSession.getState(), 'commitContent');
+
+    commitRendererTextAutoSize(content, {
+      type: 'element.update',
+      id: 'text-1',
+      props: { height: 96 },
+    });
+
+    expect(commitContent.mock.calls[0][0].canvas.elements[0]).toMatchObject({
+      content: '<p>Latest input</p>',
+      height: 96,
+    });
   });
 });
