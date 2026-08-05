@@ -127,6 +127,23 @@ function matrixDocument(): StageAssetDocument {
   } as unknown as StageAssetDocument;
 }
 
+function documentWithSpeechAudio(id: string, audioId: string): StageAssetDocument {
+  return {
+    stage: { id, name: id, createdAt: 1, updatedAt: 1 },
+    scenes: [
+      {
+        id: `${id}-scene`,
+        stageId: id,
+        type: 'slide',
+        title: id,
+        order: 1,
+        content: { type: 'slide', canvas: slide(`${id}-slide`, []) },
+        actions: [{ id: `${id}-speech`, type: 'speech', text: 'Shared', audioId }],
+      },
+    ],
+  } as unknown as StageAssetDocument;
+}
+
 function documentWithImage(id: string, ref: string): StageAssetDocument {
   return {
     stage: { id, name: id, createdAt: 1, updatedAt: 1 },
@@ -326,6 +343,67 @@ describe('stage asset reference and reclamation matrix', () => {
     expect(mocks.removeAsset).not.toHaveBeenCalledWith(sharedRef);
     expect(mocks.mediaRows).toEqual([]);
     expect(await resolveImageBytes(survivingDocument)).toBe('shared-surviving-bytes');
+  });
+
+  it('preserves the compatibility row of an audio ref a surviving document shares', async () => {
+    const sharedAudioId = 'ast_shared_audio_alias';
+    const deletedStageId = 'stage-deleted';
+    const deletedDocument = documentWithSpeechAudio(deletedStageId, sharedAudioId);
+    const survivingDocument = documentWithSpeechAudio('stage-surviving', sharedAudioId);
+    mocks.mediaRows.splice(0, mocks.mediaRows.length);
+    // The row is keyed globally by audioId and only the deleted stage carries it.
+    mocks.audioRows.splice(0, mocks.audioRows.length, {
+      id: sharedAudioId,
+      stageId: deletedStageId,
+    });
+    mocks.poolBytes.set(sharedAudioId, new Blob(['shared-audio-bytes']));
+    mocks.documents.set(deletedDocument.stage.id, deletedDocument);
+    mocks.documents.set(survivingDocument.stage.id, survivingDocument);
+    const inventory = await loadStageAssetInventory(deletedDocument);
+    const plan = buildStageAssetReclamationPlan(
+      deletedStageId,
+      inventory.refs,
+      inventory.mediaRows,
+      inventory.audioRows,
+    );
+    expect(plan.audioRowIds).toContain(sharedAudioId);
+    mocks.documents.delete(deletedStageId);
+
+    await executeStageAssetReclamation(plan, null);
+
+    // Playback, classroom export and video export read this table directly, so
+    // the survivor keeps both the pool entry and its compatibility row.
+    expect(mocks.removeAsset).not.toHaveBeenCalledWith(sharedAudioId);
+    expect(mocks.audioRows.map((row) => row.id)).toContain(sharedAudioId);
+  });
+
+  it('removes audio compatibility rows no surviving document references', async () => {
+    const exclusiveAudioId = 'ast_exclusive_audio';
+    const legacyAudioId = 'tts_s1_legacy';
+    const deletedStageId = 'stage-deleted';
+    const deletedDocument = documentWithSpeechAudio(deletedStageId, exclusiveAudioId);
+    mocks.mediaRows.splice(0, mocks.mediaRows.length);
+    mocks.audioRows.splice(
+      0,
+      mocks.audioRows.length,
+      { id: exclusiveAudioId, stageId: deletedStageId },
+      // Legacy rows never had a pool entry; they are still removable.
+      { id: legacyAudioId, stageId: deletedStageId },
+    );
+    mocks.poolBytes.set(exclusiveAudioId, new Blob(['exclusive-audio']));
+    mocks.documents.set(deletedDocument.stage.id, deletedDocument);
+    const inventory = await loadStageAssetInventory(deletedDocument);
+    const plan = buildStageAssetReclamationPlan(
+      deletedStageId,
+      inventory.refs,
+      inventory.mediaRows,
+      inventory.audioRows,
+    );
+    mocks.documents.delete(deletedStageId);
+
+    await executeStageAssetReclamation(plan, null);
+
+    expect(mocks.audioRows).toEqual([]);
   });
 
   it('preserves a ref owned by a surviving document only through its video manifest', async () => {

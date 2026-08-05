@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   __resetAssetReplacementChannelForTesting,
+  bindAssetReplacementChannel,
   notifyAssetReplaced,
   observeAssetReplacements,
   type AssetReplacementPool,
@@ -32,6 +33,43 @@ describe('asset replacement events', () => {
     stop();
   });
 
+  it('receives peer replacements in a realm that never sends one', async () => {
+    // A passive tab only renders: it binds the channel when it starts observing,
+    // never through the sender path.
+    const refreshed: string[] = [];
+    const stop = observeAssetReplacements((ref) => {
+      refreshed.push(ref);
+    });
+    bindAssetReplacementChannel(() => pool);
+
+    const peerChannel = new BroadcastChannel('maic-asset-replacements');
+    peerChannel.postMessage('ast_from_peer');
+    await settle();
+
+    expect(refreshed).toEqual(['ast_from_peer']);
+    peerChannel.close();
+    stop();
+  });
+
+  it('keeps a failing observer from failing the committed replacement', async () => {
+    // The durable write has already committed by the time observers run.
+    const stopFailing = observeAssetReplacements(() => {
+      throw new Error('stale dynamic import');
+    });
+    const seen: string[] = [];
+    const stopHealthy = observeAssetReplacements((ref) => {
+      seen.push(ref);
+    });
+
+    try {
+      await expect(notifyAssetReplaced('ast_committed', pool)).resolves.toBeUndefined();
+      expect(seen).toEqual(['ast_committed']);
+    } finally {
+      stopFailing();
+      stopHealthy();
+    }
+  });
+
   it('propagates a same-id replacement to a mounted consumer in another realm', async () => {
     // Tab B: a consumer holding a lease, listening on its own channel instance.
     // The module-local observer set is shared in-process, so the peer realm is
@@ -42,7 +80,8 @@ describe('asset replacement events', () => {
       if (typeof event.data === 'string') refreshedInPeerTab.push(event.data);
     };
 
-    // Tab A replaces the bytes behind the same id.
+    // Tab A: its module bound the channel on load, then it replaces the bytes.
+    bindAssetReplacementChannel(() => pool);
     await notifyAssetReplaced('ast_shared', pool);
     await settle();
 

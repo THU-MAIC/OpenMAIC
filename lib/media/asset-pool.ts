@@ -1,6 +1,10 @@
 import { BrowserAssetStore, toAssetId } from '@openmaic/storage';
 import type { AssetMeta } from '@openmaic/dsl';
-import { notifyAssetReplaced, observeAssetReplacements } from './asset-replacement-events';
+import {
+  bindAssetReplacementChannel,
+  notifyAssetReplaced,
+  observeAssetReplacements,
+} from './asset-replacement-events';
 
 const ASSET_POOL_DATABASE_NAME = 'maic-asset-pool';
 let pool: BrowserAssetStore | undefined;
@@ -20,6 +24,14 @@ observeAssetReplacements(async (ref, current) => {
   const { invalidateAssetUrlLeaseCache } = await import('./use-asset-url');
   await invalidateAssetUrlLeaseCache(ref, current);
 });
+
+// A realm that only renders a classroom never sends a replacement, so binding
+// the channel here — at module load, alongside the observer — is what makes a
+// passive tab receive peers' invalidations. The pool is resolved lazily so this
+// stays SSR-safe.
+if (typeof window !== 'undefined') {
+  bindAssetReplacementChannel(() => getAssetPool());
+}
 
 /** Lazy browser-wide asset pool. Construction is forbidden during SSR. */
 export function getAssetPool(): BrowserAssetStore {
