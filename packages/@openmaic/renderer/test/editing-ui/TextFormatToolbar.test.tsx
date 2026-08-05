@@ -85,6 +85,17 @@ describe('TextFormatToolbar', () => {
     expect((fontSize as HTMLInputElement).value).toBe('20');
   });
 
+  it.each([
+    ['4px', '8px'],
+    ['100px', '96px'],
+  ])('corrects an out-of-range current font size on direct commit', (current, expected) => {
+    const { onCommand } = renderToolbar({ format: { ...format, fontsize: current } });
+
+    fireEvent.keyDown(screen.getByRole('spinbutton', { name: '字号' }), { key: 'Enter' });
+
+    expect(onCommand).toHaveBeenCalledWith({ command: 'fontsize', value: expected });
+  });
+
   it('steps font size through bounded explicit font-size commands', () => {
     const { onCommand } = renderToolbar();
 

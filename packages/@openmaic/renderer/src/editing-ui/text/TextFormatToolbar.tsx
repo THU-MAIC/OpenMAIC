@@ -28,7 +28,6 @@ export function TextFormatToolbar({
   locale,
   labels: labelOverrides,
   placement,
-  renderColorPicker,
 }: TextFormatToolbarProps) {
   const labels = resolveTextToolbarLabels(locale, labelOverrides);
   const hasCurrentFont = fonts.some((font) => font.value === format.fontname);
@@ -89,16 +88,6 @@ export function TextFormatToolbar({
           <Underline aria-hidden />
         </button>
       </div>
-      {renderColorPicker ? (
-        <div className="maic-editing-ui-group">
-          {renderColorPicker({
-            value: format.color,
-            labels,
-            onChange: (color) => onCommand({ command: 'forecolor', value: color }),
-            onCommit: (color) => onCommand({ command: 'forecolor', value: color }),
-          })}
-        </div>
-      ) : null}
       <div className="maic-editing-ui-group">
         <button
           type="button"

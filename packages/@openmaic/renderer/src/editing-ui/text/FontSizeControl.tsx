@@ -25,7 +25,6 @@ function normalizeTextToolbarFontSize(value: string): string {
 
 export function FontSizeControl({ value, labels, onCommand }: FontSizeControlProps) {
   const [inputValue, setInputValue] = useState(() => String(Number.parseInt(value, 10) || 16));
-  const normalizedValue = normalizeTextToolbarFontSize(value);
 
   useEffect(() => {
     setInputValue(String(Number.parseInt(value, 10) || 16));
@@ -34,14 +33,14 @@ export function FontSizeControl({ value, labels, onCommand }: FontSizeControlPro
   const commit = () => {
     const nextValue = normalizeTextToolbarFontSize(inputValue);
     setInputValue(String(Number.parseInt(nextValue, 10)));
-    if (nextValue !== normalizedValue) {
+    if (nextValue !== value) {
       onCommand({ command: 'fontsize', value: nextValue });
     }
   };
 
   const step = (delta: number) => {
     const nextValue = stepTextToolbarFontSize(value, delta);
-    if (nextValue !== normalizedValue) {
+    if (nextValue !== value) {
       onCommand({ command: 'fontsize', value: nextValue });
     }
   };
