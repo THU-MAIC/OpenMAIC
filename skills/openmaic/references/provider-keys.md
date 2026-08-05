@@ -32,8 +32,8 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 Why:
 
-- OpenMAIC server fallback is currently `gpt-4o-mini` if `DEFAULT_MODEL` is unset. **This fallback requires an OpenAI key** — if the user only configures a non-OpenAI provider and leaves `DEFAULT_MODEL` unset, generation will fail with an auth error.
-- If the user wants Anthropic or Google by default, they should set `DEFAULT_MODEL` explicitly.
+- OpenMAIC has **no hardcoded model fallback**. If `DEFAULT_MODEL` is unset (and no client model is sent), generation **fails with an error** rather than silently picking a default. So the user must always set `DEFAULT_MODEL` explicitly to match whichever provider key they configured.
+- With only `ANTHROPIC_API_KEY` set, the user must also set `DEFAULT_MODEL=anthropic:<model>` — otherwise generation cannot start.
 
 ### 2. Better Speed / Cost Balance
 
@@ -43,7 +43,7 @@ Set:
 
 ```env
 GOOGLE_API_KEY=...
-DEFAULT_MODEL=google:gemini-3-flash-preview
+DEFAULT_MODEL=google:gemini-2.5-flash
 ```
 
 Why:
@@ -60,7 +60,7 @@ Examples:
 
 ```env
 OPENAI_API_KEY=sk-...
-DEFAULT_MODEL=openai:gpt-4o-mini
+DEFAULT_MODEL=openai:gpt-5.4-mini
 ```
 
 ```env
@@ -72,12 +72,12 @@ DEFAULT_MODEL=deepseek:deepseek-chat
 
 When recommending or showing `DEFAULT_MODEL`, always include the provider prefix:
 
-- `google:gemini-3-flash-preview`
-- `anthropic:claude-3-5-haiku-20241022`
-- `openai:gpt-4o-mini`
+- `google:gemini-2.5-flash`
+- `anthropic:claude-sonnet-4`
+- `openai:gpt-5.4-mini`
 - `deepseek:deepseek-chat`
 
-Do not recommend bare model IDs such as `gemini-3-flash-preview` by themselves, because OpenMAIC will otherwise parse them as OpenAI models.
+Do not recommend bare model IDs such as `gemini-2.5-flash` by themselves, because OpenMAIC will otherwise parse them as OpenAI models.
 
 The exact model IDs above are examples. Model names change as providers release new versions — if a recommended ID is rejected, direct the user to check the provider's official docs for the current model name and keep the `provider:` prefix.
 
@@ -110,7 +110,7 @@ providers:
 If using a non-default provider for classroom generation, also set the model selection explicitly:
 
 ```env
-DEFAULT_MODEL=google:gemini-3-flash-preview
+DEFAULT_MODEL=google:gemini-2.5-flash
 ```
 
 ## Recommended Prompts To The User
@@ -118,7 +118,7 @@ DEFAULT_MODEL=google:gemini-3-flash-preview
 Example phrasing the agent can adapt:
 
 - "I recommend configuring OpenMAIC through `.env.local` first. Please edit that file locally and tell me when you're done."
-- "For the simplest setup, I recommend Anthropic. For better speed/cost balance, I recommend Google plus a `DEFAULT_MODEL` like `google:<current-gemini-flash-model>`. Which path do you want?"
+- "For the simplest setup, I recommend Anthropic. For better speed/cost balance, I recommend Google plus a `DEFAULT_MODEL` like `google:gemini-2.5-flash`. Which path do you want?"
 
 The "do not ask for the key in chat / do not offer to write it" rules are covered in [Interaction Flow](#interaction-flow) above — do not open by requesting the key.
 
