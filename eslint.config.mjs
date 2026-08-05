@@ -139,11 +139,11 @@ const eslintConfig = defineConfig([
     },
   },
   // Package boundary (machine-enforced): @openmaic/generation is a standalone,
-  // app-agnostic package. Production source may import only @openmaic/dsl,
-  // Node built-ins, or relative modules. Tests additionally use the package's
-  // own public entry and Vitest; the root config uses Vitest and node:url.
+  // app-agnostic package. Every package code directory is covered so future
+  // scripts and tooling cannot bypass the boundary. Package code may import
+  // only @openmaic/dsl, Node built-ins, or relative modules.
   {
-    files: ['packages/@openmaic/generation/src/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    files: ['packages/@openmaic/generation/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
     rules: {
       'no-restricted-syntax': [
         'error',
@@ -160,36 +160,42 @@ const eslintConfig = defineConfig([
         },
         {
           selector:
-            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|node:|\\.\\/).+/]',
+            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|node:|\\.\\.?\\/).+/]',
           message:
-            '@openmaic/generation source may import only from @openmaic/dsl, Node built-ins, or relative modules.',
+            '@openmaic/generation may import only from @openmaic/dsl, Node built-ins, or relative modules (./… or ../…).',
         },
         {
           selector:
-            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|node:|\\.\\/).+/]',
+            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|node:|\\.\\.?\\/).+/]',
           message:
-            '@openmaic/generation source may re-export only from @openmaic/dsl, Node built-ins, or relative modules.',
+            '@openmaic/generation may re-export only from @openmaic/dsl, Node built-ins, or relative modules (./… or ../…).',
         },
         {
           selector:
-            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|node:|\\.\\/).+/]',
+            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|node:|\\.\\.?\\/).+/]',
           message:
-            '@openmaic/generation source may re-export only from @openmaic/dsl, Node built-ins, or relative modules.',
+            '@openmaic/generation may re-export only from @openmaic/dsl, Node built-ins, or relative modules (./… or ../…).',
         },
         {
           selector: 'ImportExpression',
           message:
-            '@openmaic/generation source must use static imports from @openmaic/dsl, Node built-ins, or relative modules.',
+            '@openmaic/generation must use static imports from @openmaic/dsl, Node built-ins, or relative modules.',
         },
         {
           selector: "CallExpression[callee.name='require']",
-          message: '@openmaic/generation source must not use require().',
+          message: '@openmaic/generation must not use require().',
         },
       ],
     },
   },
+  // Flat config replaces a rule's complete options in later matching blocks.
+  // Repeat every restriction for tests (and their Vitest config), changing only
+  // the static import allowlist to add the package public entry and Vitest.
   {
-    files: ['packages/@openmaic/generation/test/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    files: [
+      'packages/@openmaic/generation/test/**/*.{ts,tsx,js,jsx,mjs,cjs}',
+      'packages/@openmaic/generation/vitest.config.ts',
+    ],
     rules: {
       'no-restricted-syntax': [
         'error',
@@ -197,81 +203,38 @@ const eslintConfig = defineConfig([
         {
           selector: 'Literal[value=/^@\\//]',
           message:
-            '@openmaic/generation tests must not reference a host-app path (@/…). Read app prompt assets as files for parity checks.',
+            '@openmaic/generation tests and test config must not reference a host-app path (@/…). Read app prompt assets as files for parity checks.',
         },
         {
           selector: 'TemplateElement[value.cooked=/^@\\//]',
           message:
-            '@openmaic/generation tests must not reference a host-app path (@/…) in a template literal.',
+            '@openmaic/generation tests and test config must not reference a host-app path (@/…) in a template literal.',
         },
         {
           selector:
-            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\/).+/]',
+            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\.?\\/).+/]',
           message:
-            '@openmaic/generation tests may import only @openmaic/dsl, the package public entry, Node built-ins, Vitest, or relative modules.',
+            '@openmaic/generation tests and test config may import only @openmaic/dsl, the package public entry, Node built-ins, Vitest, or relative modules (./… or ../…).',
         },
         {
           selector:
-            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\/).+/]',
+            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\.?\\/).+/]',
           message:
-            '@openmaic/generation tests may re-export only @openmaic/dsl, the package public entry, Node built-ins, Vitest, or relative modules.',
+            '@openmaic/generation tests and test config may re-export only @openmaic/dsl, the package public entry, Node built-ins, Vitest, or relative modules (./… or ../…).',
         },
         {
           selector:
-            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\/).+/]',
+            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\.?\\/).+/]',
           message:
-            '@openmaic/generation tests may re-export only @openmaic/dsl, the package public entry, Node built-ins, Vitest, or relative modules.',
+            '@openmaic/generation tests and test config may re-export only @openmaic/dsl, the package public entry, Node built-ins, Vitest, or relative modules (./… or ../…).',
         },
         {
           selector: 'ImportExpression',
-          message: '@openmaic/generation tests must use static imports.',
+          message: '@openmaic/generation tests and test config must use static imports.',
         },
         {
           selector: "CallExpression[callee.name='require']",
-          message: '@openmaic/generation tests must not use require().',
-        },
-      ],
-    },
-  },
-  {
-    files: ['packages/@openmaic/generation/*.{ts,tsx,js,jsx,mjs,cjs}'],
-    rules: {
-      'no-restricted-syntax': [
-        'error',
-        ...AI_SDK_DYNAMIC_IMPORT_BAN,
-        {
-          selector: 'Literal[value=/^@\\//]',
-          message: '@openmaic/generation tooling must not reference a host-app path (@/…).',
-        },
-        {
-          selector: 'TemplateElement[value.cooked=/^@\\//]',
-          message:
-            '@openmaic/generation tooling must not reference a host-app path (@/…) in a template literal.',
-        },
-        {
-          selector: 'ImportDeclaration > Literal.source[value=/^(?!node:|vitest(\\/|$)|\\.\\/).+/]',
-          message:
-            '@openmaic/generation tooling may import only Node built-ins, Vitest, or relative modules.',
-        },
-        {
-          selector:
-            'ExportNamedDeclaration > Literal.source[value=/^(?!node:|vitest(\\/|$)|\\.\\/).+/]',
-          message:
-            '@openmaic/generation tooling may re-export only Node built-ins, Vitest, or relative modules.',
-        },
-        {
-          selector:
-            'ExportAllDeclaration > Literal.source[value=/^(?!node:|vitest(\\/|$)|\\.\\/).+/]',
-          message:
-            '@openmaic/generation tooling may re-export only Node built-ins, Vitest, or relative modules.',
-        },
-        {
-          selector: 'ImportExpression',
-          message: '@openmaic/generation tooling must use static imports.',
-        },
-        {
-          selector: "CallExpression[callee.name='require']",
-          message: '@openmaic/generation tooling must not use require().',
+          message: '@openmaic/generation tests and test config must not use require().',
         },
       ],
     },
@@ -583,9 +546,10 @@ const eslintConfig = defineConfig([
       ],
     },
   },
-  // Same boundary, dynamic form. This block cannot match the files of the five
-  // blocks above that also set no-restricted-syntax (flat config replaces rule
-  // options per key, so it would drop their module boundaries), hence the ignores.
+  // Same boundary, dynamic form. This block cannot match files covered by the
+  // package and module boundary blocks above that also set no-restricted-syntax
+  // (flat config replaces rule options per key, so it would drop their module
+  // boundaries), hence the ignores.
   // Every ignored directory is nonetheless covered, and covered by a rule rather
   // than by an argument:
   //   - packages/@openmaic/renderer, packages/@openmaic/storage, and

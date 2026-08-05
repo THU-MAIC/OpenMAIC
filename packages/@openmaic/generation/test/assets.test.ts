@@ -34,6 +34,17 @@ const SNIPPET_IDS = [
   'slide-video-instructions',
 ] as const satisfies readonly SnippetId[];
 
+const GRANDFATHERED_NON_CAMEL_CASE_PLACEHOLDERS = [
+  'slide-content/system.md: {{canvas_height}}',
+  'slide-content/system.md: {{canvas_height}}',
+  'slide-content/system.md: {{canvas_width}}',
+  'slide-content/system.md: {{canvas_width}}',
+  'slide-content/system.md: {{canvas_width}}',
+  'slide-content/system.md: {{canvas_width}}',
+  'slide-content/user.md: {{canvas_height}}',
+  'slide-content/user.md: {{canvas_width}}',
+].sort();
+
 function listFiles(directory: string): string[] {
   return readdirSync(directory)
     .flatMap((name) => {
@@ -84,13 +95,11 @@ describe('packaged prompt assets', () => {
     }
   });
 
-  // The loader only interpolates `\w+` names. Keep the app's grandfathered
-  // slide dimensions, but prevent new non-camelCase placeholders elsewhere.
+  // The loader only interpolates `\w+` names. Pin the app's grandfathered
+  // slide dimensions exactly, while preventing any new non-camelCase names.
   test('templates use the supported placeholder naming convention', () => {
     const offenders: string[] = [];
     for (const promptId of PROMPT_IDS) {
-      if (promptId === 'slide-content') continue;
-
       for (const filename of ['system.md', 'user.md']) {
         const source = readFileSync(join(PACKAGE_ROOT, 'templates', promptId, filename), 'utf8');
         const matches = source.match(/\{\{(?!snippet:|#if |\/if)([^}]+)\}\}/g) ?? [];
@@ -103,6 +112,6 @@ describe('packaged prompt assets', () => {
       }
     }
 
-    expect(offenders).toEqual([]);
+    expect(offenders.sort()).toEqual(GRANDFATHERED_NON_CAMEL_CASE_PLACEHOLDERS);
   });
 });

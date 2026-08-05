@@ -10,6 +10,10 @@ import type { LoadedPrompt, PromptId, SnippetId } from './types.js';
 // `src/prompts` and `dist/prompts` have the same depth below the package root.
 const DEFAULT_PROMPTS_DIR = fileURLToPath(new URL('../../', import.meta.url));
 
+function isMissingFileError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+}
+
 /** Load a snippet by ID. */
 export function loadSnippet(
   snippetId: SnippetId,
@@ -54,29 +58,32 @@ export function loadPrompt(
   promptsDir: string = DEFAULT_PROMPTS_DIR,
 ): LoadedPrompt | null {
   const promptDir = join(promptsDir, 'templates', promptId);
+  const systemPath = join(promptDir, 'system.md');
+  let systemPrompt: string;
 
   try {
-    const systemPath = join(promptDir, 'system.md');
-    let systemPrompt = readFileSync(systemPath, 'utf-8').trim();
-    systemPrompt = processSnippets(systemPrompt, promptsDir);
-
-    const userPath = join(promptDir, 'user.md');
-    let userPromptTemplate = '';
-    try {
-      userPromptTemplate = readFileSync(userPath, 'utf-8').trim();
-      userPromptTemplate = processSnippets(userPromptTemplate, promptsDir);
-    } catch {
-      // user.md is optional.
-    }
-
-    return {
-      id: promptId,
-      systemPrompt,
-      userPromptTemplate,
-    };
-  } catch {
-    return null;
+    systemPrompt = readFileSync(systemPath, 'utf-8').trim();
+  } catch (error) {
+    if (isMissingFileError(error)) return null;
+    throw error;
   }
+  systemPrompt = processSnippets(systemPrompt, promptsDir);
+
+  const userPath = join(promptDir, 'user.md');
+  let userPromptTemplate = '';
+  try {
+    userPromptTemplate = readFileSync(userPath, 'utf-8').trim();
+  } catch (error) {
+    // user.md is optional, but only when it is genuinely absent.
+    if (!isMissingFileError(error)) throw error;
+  }
+  userPromptTemplate = processSnippets(userPromptTemplate, promptsDir);
+
+  return {
+    id: promptId,
+    systemPrompt,
+    userPromptTemplate,
+  };
 }
 
 /** Replace camelCase or snake_case placeholders with supplied values. */
