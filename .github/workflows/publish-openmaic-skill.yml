@@ -23,6 +23,10 @@ on:
         description: "Preview the current main branch without publishing"
         type: boolean
         default: true
+      version:
+        description: "Optional version for manual preview or publish; leave empty for automatic patch"
+        type: string
+        default: ""
 
 jobs:
   reject-invalid-dispatch:
@@ -87,14 +91,20 @@ jobs:
 
       - name: Preview OpenMAIC skill publish
         env:
+          PUBLISH_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
           SOURCE_REPO: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
         run: |
           set -euo pipefail
           source_commit="$(git rev-parse HEAD)"
+          version_args=()
+          if [[ -n "$PUBLISH_VERSION" ]]; then
+            version_args=(--version "$PUBLISH_VERSION")
+          fi
           clawhub skill publish skills/openmaic \
             --slug openmaic \
             --name OpenMAIC \
             --owner wyuc \
+            "${version_args[@]}" \
             --dry-run \
             --json \
             --source-repo "$SOURCE_REPO" \
@@ -165,6 +175,7 @@ jobs:
 
       - name: Publish OpenMAIC skill
         env:
+          PUBLISH_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
           SOURCE_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -176,10 +187,15 @@ jobs:
             echo "::notice::Skipping $source_commit because skills/openmaic changed on main."
             exit 0
           fi
+          version_args=()
+          if [[ -n "$PUBLISH_VERSION" ]]; then
+            version_args=(--version "$PUBLISH_VERSION")
+          fi
           clawhub skill publish skills/openmaic \
             --slug openmaic \
             --name OpenMAIC \
             --owner wyuc \
+            "${version_args[@]}" \
             --json \
             --source-repo "$SOURCE_REPO" \
             --source-commit "$source_commit" \
