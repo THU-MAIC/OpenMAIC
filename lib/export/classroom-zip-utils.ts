@@ -3,6 +3,8 @@ import type { ManifestAction } from './classroom-zip-types';
 import { db } from '@/lib/utils/database';
 import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
 import type { Scene } from '@/lib/types/stage';
+import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
+import { withAssetUrl } from '@/lib/media/use-asset-url';
 
 // ─── Export: Collect Media ─────────────────────────────────────
 
@@ -37,13 +39,35 @@ export async function collectAudioFiles(scenes: Scene[]): Promise<CollectedAudio
   return collected;
 }
 
+/**
+ * A same-id replacement commits the new bytes to the pool first; if the
+ * compatibility write then fails, the task records
+ * `MEDIA_COMPATIBILITY_STORE_LAGGED` and the document deliberately keeps the
+ * same reference. Rendering and the other export paths resolve the pool, so the
+ * ZIP must too — otherwise it ships media the classroom no longer shows.
+ */
+async function pooledBytesForRef(ref: string): Promise<Blob | null> {
+  if (isConcreteMediaAddress(ref)) return null;
+  try {
+    return await withAssetUrl(ref, async (url) => (url ? fetch(url).then((r) => r.blob()) : null));
+  } catch {
+    // The compatibility row remains the fallback when pool access fails.
+    return null;
+  }
+}
+
 export async function collectMediaFiles(stageId: string): Promise<CollectedMedia[]> {
   const records = await db.mediaFiles.where('stageId').equals(stageId).toArray();
   const collected: CollectedMedia[] = [];
   for (const record of records) {
     const elementId = record.id.includes(':') ? record.id.split(':').slice(1).join(':') : record.id;
     const ext = record.mimeType?.split('/')[1] || 'jpg';
-    collected.push({ zipPath: `media/${elementId}.${ext}`, record, elementId });
+    const pooled = await pooledBytesForRef(elementId);
+    collected.push({
+      zipPath: `media/${elementId}.${ext}`,
+      record: pooled ? { ...record, blob: pooled } : record,
+      elementId,
+    });
   }
   return collected;
 }

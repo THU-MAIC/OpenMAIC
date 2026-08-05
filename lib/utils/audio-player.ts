@@ -12,6 +12,26 @@ import { createLogger } from '@/lib/logger';
 const log = createLogger('AudioPlayer');
 
 /**
+ * Bytes an allocated audio id currently resolves to, or null when the id is not
+ * pool-backed (legacy/imported rows) or the pool cannot answer.
+ */
+async function pooledAudioBlob(audioId: string): Promise<Blob | null> {
+  try {
+    const [{ isConcreteMediaAddress }, { withAssetUrl }] = await Promise.all([
+      import('@/lib/media/resolve-media-ref'),
+      import('@/lib/media/use-asset-url'),
+    ]);
+    if (isConcreteMediaAddress(audioId)) return null;
+    return await withAssetUrl(audioId, async (url) =>
+      url ? fetch(url).then((response) => response.blob()) : null,
+    );
+  } catch {
+    // Stored rows stay the fallback when the pool is unavailable.
+    return null;
+  }
+}
+
+/**
  * Audio player implementation
  */
 export class AudioPlayer {
@@ -58,11 +78,16 @@ export class AudioPlayer {
         return true;
       }
 
-      // 2. Fall back to IndexedDB (client-generated TTS)
+      // 2. Fall back to stored bytes (client-generated TTS). Speech
+      // regeneration replaces bytes under the same id, committing to the pool
+      // first; when the compatibility write then fails the row is stale, so the
+      // pool answers first and Dexie only covers legacy/imported rows.
       const audioRecord = await db.audioFiles.get(audioId);
+      const pooledBlob = await pooledAudioBlob(audioId);
       if (requestToken !== this.requestToken) return false;
 
-      if (!audioRecord) {
+      const blob = pooledBlob ?? audioRecord?.blob;
+      if (!blob) {
         // Pre-generated audio does not exist (generation failed), skip silently
         return false;
       }
@@ -75,7 +100,7 @@ export class AudioPlayer {
       this.audio = new Audio();
 
       // Set audio source
-      const blobUrl = URL.createObjectURL(audioRecord.blob);
+      const blobUrl = URL.createObjectURL(blob);
       this.audio.src = blobUrl;
       if (this.muted) this.audio.volume = 0;
       else this.audio.volume = this.volume;

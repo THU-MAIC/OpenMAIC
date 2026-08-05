@@ -106,15 +106,13 @@ export async function executeStageAssetReclamation(
   // `audioFiles` rows are keyed globally by audioId, so a row shared with a
   // surviving document must stay: playback, classroom export and video export
   // read this table directly and cannot fall back to the preserved pool blob.
-  // Rows no survivor references are still removed, including legacy/imported
-  // ones that never had a pool entry.
-  // Failing to enumerate survivors withholds the irreversible pool removal, but
-  // the deleted stage's own rows are still cleaned up, as they always were.
-  if (plan.audioRowIds.length > 0) {
-    const removableAudioRowIds =
-      liveRefs === null
-        ? [...plan.audioRowIds]
-        : plan.audioRowIds.filter((id) => !liveRefs.has(id));
+  // Losing one is therefore as irreversible for those consumers as removing the
+  // pool entry, so unknown liveness (`null`) preserves every row here as well,
+  // leaving bounded garbage for a later pass that can prove exclusivity. Rows no
+  // survivor references are still removed, including legacy/imported ones that
+  // never had a pool entry.
+  if (plan.audioRowIds.length > 0 && liveRefs !== null) {
+    const removableAudioRowIds = plan.audioRowIds.filter((id) => !liveRefs.has(id));
     if (removableAudioRowIds.length > 0) {
       await db.audioFiles.bulkDelete(removableAudioRowIds);
     }

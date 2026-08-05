@@ -377,6 +377,36 @@ describe('stage asset reference and reclamation matrix', () => {
     expect(mocks.audioRows.map((row) => row.id)).toContain(sharedAudioId);
   });
 
+  it('keeps a shared audio row when surviving-document enumeration fails', async () => {
+    const sharedAudioId = 'ast_shared_audio_unknown_liveness';
+    const deletedStageId = 'stage-deleted';
+    const deletedDocument = documentWithSpeechAudio(deletedStageId, sharedAudioId);
+    const survivingDocument = documentWithSpeechAudio('stage-surviving', sharedAudioId);
+    mocks.mediaRows.splice(0, mocks.mediaRows.length);
+    mocks.audioRows.splice(0, mocks.audioRows.length, {
+      id: sharedAudioId,
+      stageId: deletedStageId,
+    });
+    mocks.poolBytes.set(sharedAudioId, new Blob(['shared-audio-bytes']));
+    mocks.documents.set(deletedDocument.stage.id, deletedDocument);
+    mocks.documents.set(survivingDocument.stage.id, survivingDocument);
+    const inventory = await loadStageAssetInventory(deletedDocument);
+    const plan = buildStageAssetReclamationPlan(
+      deletedStageId,
+      inventory.refs,
+      inventory.mediaRows,
+      inventory.audioRows,
+    );
+    mocks.documents.delete(deletedStageId);
+    mocks.listDocuments.mockRejectedValue(new Error('document repository unavailable'));
+
+    await executeStageAssetReclamation(plan, null);
+
+    // The pool entry survives, and so must the row the survivor plays from.
+    expect(mocks.removeAsset).not.toHaveBeenCalled();
+    expect(mocks.audioRows.map((row) => row.id)).toContain(sharedAudioId);
+  });
+
   it('removes audio compatibility rows no surviving document references', async () => {
     const exclusiveAudioId = 'ast_exclusive_audio';
     const legacyAudioId = 'tts_s1_legacy';
@@ -464,7 +494,12 @@ describe('stage asset reference and reclamation matrix', () => {
     expect(mocks.removeAsset).not.toHaveBeenCalled();
     expect(await mocks.poolBytes.get(exclusiveRef)?.text()).toBe(`${exclusiveRef}-bytes`);
     expect(mocks.mediaRows.every((row) => row.stageId !== stageId)).toBe(true);
-    expect(mocks.audioRows.every((row) => row.stageId !== stageId)).toBe(true);
+    // Audio rows are globally keyed, so losing one is as irreversible for
+    // playback and the export paths as removing the pool entry: unknown
+    // liveness keeps them and leaves bounded garbage behind.
+    expect(mocks.audioRows.map((row) => row.id)).toEqual(
+      expect.arrayContaining([...plan.audioRowIds]),
+    );
   });
 
   it('continues row cleanup after one pool removal fails', async () => {
