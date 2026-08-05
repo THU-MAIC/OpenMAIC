@@ -20,6 +20,24 @@ export const SLIDE_RENDERER_STYLES = `
 .slide-renderer-prose .katex-display {
   margin: 0 !important;
 }
+.renderer-prosemirror-editor {
+  cursor: text;
+}
+.renderer-prosemirror-editor :focus,
+.renderer-prosemirror-editor :focus-visible {
+  outline: none;
+}
+.renderer-prosemirror-editor ul {
+  list-style: disc outside !important;
+  padding-inline-start: 1.5rem !important;
+}
+.renderer-prosemirror-editor ol {
+  list-style: decimal outside !important;
+  padding-inline-start: 1.5rem !important;
+}
+.renderer-prosemirror-editor li {
+  display: list-item !important;
+}
 /* Table cell inner container — matches the classroom (Vue) .cell-text design:
    tight base line-height, and a small spacing between adjacent <p> siblings
    so multi-paragraph cells don't collapse into a single visual block. The

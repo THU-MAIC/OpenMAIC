@@ -57,6 +57,9 @@ export function BaseTextElement({ elementInfo, target, renderContent }: BaseText
           className="element-content slide-renderer-prose"
           style={{
             position: 'relative',
+            boxSizing: 'border-box',
+            padding: '10px',
+            overflowWrap: 'break-word',
             width: elementInfo.vertical ? 'auto' : '100%',
             height: elementInfo.vertical ? '100%' : 'auto',
             textShadow: shadowStyle,

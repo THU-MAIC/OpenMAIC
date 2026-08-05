@@ -28,6 +28,9 @@ import { useRotateGesture } from './useRotateGesture';
 import { getResizeHandles } from './core/resize';
 import { canRotate } from './core/rotate';
 import { RendererTextEditor } from './text/RendererTextEditor';
+import { TextAutoSize } from './text/TextAutoSize';
+import { isSemanticallyEmptyText } from './text/richText';
+import type { TextEditorController } from './text/types';
 import { EMPTY_SELECTION, type EditableSlideCanvasProps } from './types';
 
 /**
@@ -68,6 +71,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     onSelectionChange,
     onElementsChange,
     onTextContentChange,
+    onTextAutoSize,
     onTextFormatChange,
     onTextEditorChange,
     onTextFocusChange,
@@ -77,17 +81,42 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   const activeSelection = selection ?? EMPTY_SELECTION;
   const interactive = Boolean(onElementsChange || onSelectionChange);
   const textEditingEnabled = Boolean(onTextContentChange);
+  const activeEditingTextId = slide.elements.find(
+    (element) =>
+      element.id === activeSelection.editingId &&
+      element.type === 'text' &&
+      !element.lock &&
+      !hiddenElementIds?.includes(element.id),
+  )?.id;
+  const textControllerRef = useRef<TextEditorController | null>(null);
+  const publishSelection = useCallback(
+    (next: typeof activeSelection) => {
+      const controller = textControllerRef.current;
+      if (
+        activeEditingTextId &&
+        controller?.elementId === activeEditingTextId &&
+        next.editingId !== activeEditingTextId
+      ) {
+        controller.flush();
+        if (isSemanticallyEmptyText(controller.getHTML())) {
+          onElementsChange?.([{ type: 'element.delete', ids: [activeEditingTextId] }]);
+        }
+      }
+      onSelectionChange?.(next);
+    },
+    [activeEditingTextId, onElementsChange, onSelectionChange],
+  );
 
   const handleTextClick = useCallback(
     (element: PPTElement) => {
       if (!textEditingEnabled || element.type !== 'text' || element.lock) return;
-      onSelectionChange?.({
+      publishSelection({
         elementIds: [element.id],
         primaryId: element.id,
         editingId: element.id,
       });
     },
-    [onSelectionChange, textEditingEnabled],
+    [publishSelection, textEditingEnabled],
   );
 
   // Overlay wrapper is `inset: 0` of the same padding-free inner box that
@@ -113,7 +142,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     scale: canvasScale,
     selection: activeSelection,
     snapping,
-    onSelectionChange,
+    onSelectionChange: publishSelection,
     onElementsChange,
     onElementClick: textEditingEnabled ? handleTextClick : undefined,
   });
@@ -170,7 +199,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     viewportStyles,
     selection: activeSelection,
     excludeIds: hiddenElementIds,
-    onSelectionChange,
+    onSelectionChange: publishSelection,
   });
 
   // The elements to render/hit-test: the box gesture's working copy, with the
@@ -207,46 +236,60 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     const hidden = new Set(hiddenElementIds);
     return displayElements.filter((element) => !hidden.has(element.id));
   }, [displayElements, hiddenElementIds]);
-  const activeEditingTextId = elements.find(
-    (element) =>
-      element.id === activeSelection.editingId && element.type === 'text' && !element.lock,
-  )?.id;
   const activeGuides = resizeDrag?.guides ?? dragGuides;
   // Touch suppression belongs to mutation gestures: select-only hosts keep
   // native touch panning, while tap-select still receives pointer events.
   const editingTouchAction = onElementsChange ? 'none' : undefined;
   const exitTextEditing = useCallback(() => {
     if (!activeEditingTextId) return;
-    onSelectionChange?.({
+    publishSelection({
       elementIds: activeSelection.elementIds,
       primaryId: activeSelection.primaryId,
       groupId: activeSelection.groupId,
     });
-  }, [activeEditingTextId, activeSelection, onSelectionChange]);
+  }, [activeEditingTextId, activeSelection, publishSelection]);
+  const handleTextEditorChange = useCallback(
+    (controller: TextEditorController | null) => {
+      textControllerRef.current = controller;
+      onTextEditorChange?.(controller);
+    },
+    [onTextEditorChange],
+  );
   const renderText = useCallback(
     (element: PPTTextElement, defaultContent: ReactNode) => {
-      if (activeSelection.editingId !== element.id || element.lock) return defaultContent;
+      if (activeEditingTextId !== element.id) return defaultContent;
       return (
-        <RendererTextEditor
+        <TextAutoSize
           elementId={element.id}
-          value={element.content}
-          defaultColor={element.defaultColor}
-          defaultFontName={element.defaultFontName}
-          autoFocus
-          onContentChange={onTextContentChange}
-          onFormatChange={onTextFormatChange}
-          onControllerChange={onTextEditorChange}
-          onFocusChange={onTextFocusChange}
-          onEscape={exitTextEditing}
-        />
+          vertical={Boolean(element.vertical)}
+          width={element.width}
+          height={element.height}
+          resizeActive={resizeDrag?.id === element.id}
+          onAutoSize={onTextAutoSize}
+        >
+          <RendererTextEditor
+            elementId={element.id}
+            value={element.content}
+            defaultColor={element.defaultColor}
+            defaultFontName={element.defaultFontName}
+            autoFocus
+            onContentChange={onTextContentChange}
+            onFormatChange={onTextFormatChange}
+            onControllerChange={handleTextEditorChange}
+            onFocusChange={onTextFocusChange}
+            onEscape={exitTextEditing}
+          />
+        </TextAutoSize>
       );
     },
     [
-      activeSelection.editingId,
+      activeEditingTextId,
+      handleTextEditorChange,
       onTextContentChange,
-      onTextEditorChange,
+      onTextAutoSize,
       onTextFocusChange,
       onTextFormatChange,
+      resizeDrag?.id,
       exitTextEditing,
     ],
   );
@@ -262,9 +305,9 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
       ) {
         return;
       }
-      onSelectionChange?.(EMPTY_SELECTION);
+      publishSelection(EMPTY_SELECTION);
     },
-    [activeEditingTextId, onSelectionChange],
+    [activeEditingTextId, publishSelection],
   );
 
   return (
@@ -344,7 +387,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
             canvasScale={canvasScale}
             editingTouchAction={editingTouchAction}
             onElementPointerDown={handleElementPointerDown}
-            onSelectionChange={onSelectionChange}
+            onSelectionChange={publishSelection}
           />
 
           {/* Line handles: a selected, unlocked line's endpoint/control handles

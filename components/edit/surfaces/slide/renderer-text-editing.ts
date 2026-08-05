@@ -1,4 +1,5 @@
 import type {
+  TextAutoSizeIntent,
   TextContentChange,
   TextEditCommand,
   TextEditorController,
@@ -71,4 +72,13 @@ export function commitRendererTextChange(content: SlideContent, change: TextCont
   const next = applyRendererEditIntents(content, [change.intent]);
   if (next === content) return;
   useSlideEditSession.getState().commitContent(next, change.history === 'record');
+}
+
+export function commitRendererTextAutoSize(
+  content: SlideContent,
+  intent: TextAutoSizeIntent,
+): void {
+  const next = applyRendererEditIntents(content, [intent]);
+  if (next === content) return;
+  useSlideEditSession.getState().commitContent(next, false);
 }

@@ -13,6 +13,7 @@ export type {
 } from './types';
 export type {
   RendererTextEditorProps,
+  TextAutoSizeIntent,
   TextContentChange,
   TextEditCommand,
   TextEditorController,

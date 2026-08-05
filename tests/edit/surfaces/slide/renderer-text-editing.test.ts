@@ -8,6 +8,7 @@ import type { SlideContent } from '@/lib/types/stage';
 import { runActiveTextCommand } from '@/lib/prosemirror/active-editor-registry';
 import {
   commitRendererTextChange,
+  commitRendererTextAutoSize,
   connectRendererTextController,
   mapRendererTextFormatState,
   mapToolbarCommand,
@@ -124,6 +125,25 @@ describe('renderer text editing adapter', () => {
         }),
       }),
       isUserEdit,
+    );
+  });
+
+  it('commits text auto-size as history-neutral normalization', () => {
+    const commitContent = vi.spyOn(useSlideEditSession.getState(), 'commitContent');
+
+    commitRendererTextAutoSize(content, {
+      type: 'element.update',
+      id: 'text-1',
+      props: { height: 88 },
+    });
+
+    expect(commitContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canvas: expect.objectContaining({
+          elements: [expect.objectContaining({ height: 88 })],
+        }),
+      }),
+      false,
     );
   });
 });

@@ -181,7 +181,7 @@ export function RendererTextEditor({
     <div
       ref={hostRef}
       data-renderer-text-editor={elementId}
-      className="text renderer-prosemirror-editor"
+      className="text prosemirror-editor renderer-prosemirror-editor"
       style={{ position: 'relative', cursor: 'text', pointerEvents: 'auto', userSelect: 'text' }}
     />
   );

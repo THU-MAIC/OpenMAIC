@@ -5,6 +5,7 @@ import {
   EditableSlideCanvas,
   type EditIntent,
   type Selection,
+  type TextAutoSizeIntent,
   type TextContentChange,
   type TextEditorController,
   type TextFormatState,
@@ -34,6 +35,7 @@ import { useRendererCanvasShortcuts } from './use-renderer-canvas-shortcuts';
 import { EDITABLE_ELEMENT_ID_PREFIX } from './renderer-element-dom';
 import { resolveEditingElementId } from './editing-state';
 import {
+  commitRendererTextAutoSize,
   commitRendererTextChange,
   connectRendererTextController,
   mapRendererTextFormatState,
@@ -85,6 +87,10 @@ function RendererEditorCanvas() {
 
   const handleTextContentChange = useCallback(
     (change: TextContentChange) => commitRendererTextChange(content, change),
+    [content],
+  );
+  const handleTextAutoSize = useCallback(
+    (intent: TextAutoSizeIntent) => commitRendererTextAutoSize(content, intent),
     [content],
   );
   const handleTextFormatChange = useCallback(
@@ -142,6 +148,7 @@ function RendererEditorCanvas() {
         onSelectionChange={handleSelectionChange}
         onElementsChange={handleElementsChange}
         onTextContentChange={handleTextContentChange}
+        onTextAutoSize={handleTextAutoSize}
         onTextFormatChange={handleTextFormatChange}
         onTextEditorChange={handleTextEditorChange}
         onTextFocusChange={handleTextFocusChange}

@@ -59,6 +59,9 @@ export interface TextEditorController {
 }
 
 type TextContentIntent = Extract<EditIntent, { type: 'text.updateContent' }>;
+export type TextAutoSizeIntent = Extract<EditIntent, { type: 'element.update' }> & {
+  props: { width?: number; height?: number };
+};
 
 export interface TextContentChange {
   intent: TextContentIntent & { target: 'text' };

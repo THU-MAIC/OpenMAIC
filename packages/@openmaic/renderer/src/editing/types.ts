@@ -1,6 +1,11 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { Slide, PPTElement, PPTImageElement, PPTVideoElement } from '@openmaic/dsl';
-import type { TextContentChange, TextEditorController, TextFormatState } from './text/types';
+import type {
+  TextAutoSizeIntent,
+  TextContentChange,
+  TextEditorController,
+  TextFormatState,
+} from './text/types';
 
 /**
  * Editing surface types (renderer v2). These are the **L1** contract from the
@@ -84,6 +89,7 @@ export interface EditableSlideCanvasProps {
 
   /** Rich-text editor lifecycle emitted by an active Text element. */
   onTextContentChange?: (change: TextContentChange) => void;
+  onTextAutoSize?: (intent: TextAutoSizeIntent) => void;
   onTextFormatChange?: (elementId: string, state: TextFormatState) => void;
   onTextEditorChange?: (controller: TextEditorController | null) => void;
   onTextFocusChange?: (focused: boolean) => void;

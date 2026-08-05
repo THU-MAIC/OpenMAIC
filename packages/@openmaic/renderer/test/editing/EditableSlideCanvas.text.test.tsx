@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Slide } from '@openmaic/dsl';
 import { EditableSlideCanvas } from '../../src/editing/EditableSlideCanvas';
+import type { TextEditorController } from '../../src/editing/text/types';
 
 const textElement = {
   id: 'text-1',
@@ -149,5 +150,35 @@ describe('EditableSlideCanvas text rendering', () => {
       pointerId: 1,
     });
     expect(onSelectionChange).toHaveBeenLastCalledWith({ elementIds: [] });
+  });
+
+  it('flushes and deletes semantically empty text before leaving edit mode', () => {
+    let controller: TextEditorController | null = null;
+    const onElementsChange = vi.fn();
+    const onSelectionChange = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: ['text-1'], primaryId: 'text-1', editingId: 'text-1' }}
+        onSelectionChange={onSelectionChange}
+        onElementsChange={onElementsChange}
+        onTextContentChange={vi.fn()}
+        onTextEditorChange={(next) => {
+          controller = next;
+        }}
+      />,
+    );
+
+    act(() => controller?.execute({ command: 'replace', value: '' }));
+    fireEvent.keyDown(container.querySelector('.ProseMirror') as HTMLElement, { key: 'Escape' });
+
+    expect(onElementsChange).toHaveBeenLastCalledWith([
+      { type: 'element.delete', ids: ['text-1'] },
+    ]);
+    expect(onSelectionChange).toHaveBeenLastCalledWith({
+      elementIds: ['text-1'],
+      primaryId: 'text-1',
+    });
   });
 });
