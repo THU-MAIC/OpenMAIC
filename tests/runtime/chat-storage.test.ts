@@ -1782,6 +1782,39 @@ describe('chat RuntimeStore cutover', () => {
     ).toBe(false);
   });
 
+  it('preserves the malformed-row clear guard across an unobserved runtime load', async () => {
+    const store = makeRuntimeStore();
+    const malformed = {
+      ...session({ id: 'bad-row' }),
+      toolCalls: null,
+    } as unknown as ChatSession;
+    const legacyStore = new MemoryLegacyChatStore([
+      session({ id: 'good-row', status: 'completed' }),
+      malformed,
+    ]);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const loaded = await loadChatSessions(STAGE_ID, {
+      store,
+      learnerKey: LEARNER_KEY,
+      legacyStore,
+    });
+    await loadChatSessions(STAGE_ID, {
+      store,
+      learnerKey: LEARNER_KEY,
+      legacyStore: new MemoryLegacyChatStore(),
+      observe: false,
+    });
+    await saveChatSessions(STAGE_ID, loaded, {
+      store,
+      learnerKey: LEARNER_KEY,
+      legacyStore,
+    });
+
+    expect(legacyStore.clearCalls).toBe(0);
+    expect(legacyStore.sessions.map((chat) => chat.id)).toEqual(['good-row', 'bad-row']);
+  });
+
   it('lets a genuinely newer post-cutover legacy row win the merge unchanged', async () => {
     const store = makeRuntimeStore();
     const legacyStore = new MemoryLegacyChatStore();

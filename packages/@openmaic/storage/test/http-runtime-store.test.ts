@@ -259,9 +259,19 @@ describe('HttpRuntimeStore HTTP hardening', () => {
       },
     });
 
-    await expect(
-      store.appendRecord({ ...makeRecord('session'), createdAt: 'not-iso' }),
-    ).rejects.toThrow(/invalid runtime record.*createdAt/);
+    const init = { ...makeRecord('session'), createdAt: 'not-iso' };
+    let failure: unknown;
+    try {
+      await store.appendRecord(init);
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(HttpRuntimeStoreError);
+    expect(failure).toMatchObject({ status: 400, code: 'VALIDATION_FAILED' });
+    expect((failure as Error).message).toBe(
+      `@openmaic/storage: invalid runtime record ${JSON.stringify(init.id)}: /createdAt: expected ISO 8601 \`createdAt\``,
+    );
     expect(requestCount).toBe(0);
   });
 

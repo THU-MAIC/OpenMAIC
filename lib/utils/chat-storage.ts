@@ -1190,7 +1190,9 @@ export async function loadChatSessions(
         const rawLegacy = await resolved.legacyStore.load(stageId);
         const conversion = normalizeLegacyConversion(rawLegacy);
         legacy = conversion.sessions;
-        rememberSkippedLegacyRows(resolved.store, queueKey, conversion.skippedRows);
+        if (options.observe !== false) {
+          rememberSkippedLegacyRows(resolved.store, queueKey, conversion.skippedRows);
+        }
         // Rows the stricter serializer refuses stay in the legacy source (clear
         // is blocked on both load and save paths by the per-partition guard)
         // and are excluded from the snapshot until the shape is supported.

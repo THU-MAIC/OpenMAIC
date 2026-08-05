@@ -120,7 +120,9 @@ function assertValidRecordInit<TPayload extends RuntimePayload>(
   const result = validateRuntimeRecord({ ...init, seq: 0 });
   if (result.valid) return;
   const detail = result.errors.map((error) => `${error.path || '/'}: ${error.message}`).join('; ');
-  throw new Error(
+  throw new HttpRuntimeStoreError(
+    400,
+    'VALIDATION_FAILED',
     `@openmaic/storage: invalid runtime record ${JSON.stringify(init.id)}: ${detail}`,
   );
 }
