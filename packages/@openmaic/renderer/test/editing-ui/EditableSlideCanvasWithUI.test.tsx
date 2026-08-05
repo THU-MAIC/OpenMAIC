@@ -201,7 +201,9 @@ function emitFormat(elementId: string, format: TextFormatState = canvasMock.form
 }
 
 beforeEach(() => {
-  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+    this: HTMLElement,
+  ) {
     if (this.hasAttribute('data-toolbar-overlay')) return rect(0, 0, 640, 48);
     if (this.classList.contains('base-element-text')) return rect(100, 100, 240, 80);
     return new DOMRect();

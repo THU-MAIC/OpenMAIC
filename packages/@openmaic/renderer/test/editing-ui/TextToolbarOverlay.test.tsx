@@ -135,7 +135,9 @@ describe('TextToolbarOverlay', () => {
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
     const { text, wrapper } = addTextAnchor();
     vi.spyOn(text, 'getBoundingClientRect').mockReturnValue(rect(200, 200, 100, 50));
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
       return this.hasAttribute('data-toolbar-overlay') ? rect(0, 0, 300, 48) : new DOMRect();
     });
 
@@ -163,7 +165,9 @@ describe('TextToolbarOverlay', () => {
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
     const { text } = addTextAnchor();
     vi.spyOn(text, 'getBoundingClientRect').mockReturnValue(rect(200, 200, 100, 50));
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
       return this.hasAttribute('data-toolbar-overlay') ? rect(0, 0, 300, 48) : new DOMRect();
     });
     const windowRemove = vi.spyOn(window, 'removeEventListener');
