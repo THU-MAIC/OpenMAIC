@@ -15,7 +15,7 @@ services:
         - NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION=${NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION:-}
         - NEXT_PUBLIC_ENABLE_PPTX_IMPORT=${NEXT_PUBLIC_ENABLE_PPTX_IMPORT:-}
     ports:
-      - "3000:3000"
+      - '3000:3000'
     env_file:
       - .env.local
     environment:
@@ -49,7 +49,7 @@ services:
       # before using the stack outside a local trusted environment.
       - POSTGRES_PASSWORD=${PERSISTENCE_POSTGRES_PASSWORD:-openmaic-dev}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U openmaic -d openmaic"]
+      test: ['CMD-SHELL', 'pg_isready -U openmaic -d openmaic']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -76,26 +76,35 @@ services:
     profiles:
       - video-export
     expose:
-      - "9000"
+      - '9000'
     # Required for the entrypoint's iptables egress lockdown. Without it the
     # service still boots, but logs a warning and does NOT block Chromium egress.
     cap_add:
       - NET_ADMIN
     environment:
       - PORT=9000
-      # Use Chromium's HeadlessExperimental.beginFrame capture path instead of
-      # the CPU-bound Page.captureScreenshot fallback. The default "software" GPU
-      # mode (SwiftShader) silently force-enables screenshot capture, which pegs
-      # all cores on CPU rasterization and caps throughput at ~10 fps. Selecting
-      # "hardware" keeps beginFrame active — measured ~2x capture throughput
-      # (~10 -> ~19 fps, 900-frame clip 100s -> 62s), roughly half the CPU, and
-      # pixel-identical static frames (animation frames differ only in sub-pixel
-      # edge antialiasing). No real GPU is required: the win is the faster capture
-      # API, not hardware rasterization — beginFrame falls back gracefully if the
-      # host lacks a GPU.
+      # Keep the beginFrame-capable browser path available when producer decides
+      # the cgroup has enough memory. Under this service's 4 GiB limit producer's
+      # automatic low-memory profile safely selects screenshot capture + one
+      # worker instead of multiplying Chromium for unvalidated 1080p/4K renders.
       - PRODUCER_BROWSER_GPU_MODE=hardware
-      # Tune for the host; each concurrent render drives a full Chromium + FFmpeg.
-      - RENDER_MAX_CONCURRENCY=2
+      - PRODUCER_HEADLESS_SHELL_PATH=/usr/bin/chromium-headless-shell
+      - RENDER_MAX_CONCURRENCY=1
+      - RENDER_MAX_CONCURRENT_EXTRACTIONS=1
+      # Producer's browser pool shares a Chromium compositor across capture
+      # sessions. Keep it disabled so an operator who raises memory and opts into
+      # parallel capture gets independent browsers; the 4 GiB default resolves to
+      # one worker, so this does not multiply memory by itself.
+      - PRODUCER_ENABLE_BROWSER_POOL=false
+      # Leave producer workers unset: producer 0.7.60 applies its cgroup memory,
+      # CPU, small-job, low-memory, and capture-cost guards. Operators may opt
+      # into the measured 720p latency profile documented in the service README.
+      # Long compositions still need CDP headroom even with one adaptive worker.
+      - PRODUCER_PUPPETEER_PROTOCOL_TIMEOUT_MS=900000
+      # OpenMAIC's long slide exports currently exhaust producer's 15s static
+      # verification budget and disable dedup anyway. Skip that guaranteed-lost
+      # startup cost until the verifier can share/scale its plan across workers.
+      - HF_STATIC_DEDUP=false
       # In this default topology the app is exposed directly and does NOT set
       # TRUST_PROXY_HEADERS, so every caller collapses to one identity. A
       # per-identity limit would then throttle the whole deployment to a single
@@ -107,6 +116,9 @@ services:
     # heavy, and extraction is capped separately (RENDER_MAX_CONCURRENT_EXTRACTIONS).
     # Raise for higher RENDER_MAX_CONCURRENCY / larger classrooms.
     mem_limit: 4g
+    # Chromium media/frame work can exceed Docker's 64 MiB default shared-memory
+    # mount. This is a ceiling inside the same 4 GiB cgroup, not eager allocation.
+    shm_size: 2gb
     networks:
       - render
     restart: unless-stopped
