@@ -36,10 +36,12 @@ afterAll(() => {
 
 type RunOptions = {
   args?: string[];
-  omittedEnvironment?: 'SOURCE_REPO' | 'PUBLISH_VERSION' | 'CLAWHUB';
+  clawhub?: string;
+  omittedEnvironment?: 'SOURCE_REPO' | 'PUBLISH_VERSION' | 'CLAWHUB' | 'RUNNER_TEMP';
   pathPrefix?: string;
   preflight?: unknown;
   publishVersion?: string;
+  sourceRepo?: string;
 };
 
 function runPublish(options: RunOptions = {}) {
@@ -49,11 +51,11 @@ function runPublish(options: RunOptions = {}) {
     if (process.env[name] !== undefined) env[name] = process.env[name];
   }
   Object.assign(env, {
-    CLAWHUB: stubClawhub,
+    CLAWHUB: options.clawhub ?? stubClawhub,
     PUBLISH_VERSION: options.publishVersion ?? '',
     RUNNER_TEMP: fixtureRoot,
     SEMVER_PACKAGE_JSON: semverPackageJsonPath,
-    SOURCE_REPO: 'THU-MAIC/OpenMAIC',
+    SOURCE_REPO: options.sourceRepo ?? 'THU-MAIC/OpenMAIC',
     STUB_CALLS: callsPath,
   });
   if (options.preflight !== undefined) {
@@ -97,13 +99,6 @@ function expectFailure(result: ReturnType<typeof runPublish>['result'], message:
 }
 
 describe('publish-openmaic-skill shell contract', () => {
-  it('does not use empty arrays that break under Bash 3.2 with nounset', () => {
-    const source = readFileSync(publishScript, 'utf8');
-
-    expect(source).toContain('set -euo pipefail');
-    expect(source).not.toMatch(/\b[A-Za-z_][A-Za-z0-9_]*=\(\s*\)/);
-  });
-
   it('performs a real publish with no positional argument under macOS Bash 3.2', () => {
     const { calls, result } = runPublish();
 
@@ -193,6 +188,26 @@ describe('publish-openmaic-skill shell contract', () => {
     const { calls, result } = runPublish({ omittedEnvironment: name });
 
     expectFailure(result, message);
+    expect(calls).toEqual([]);
+  });
+
+  it.each([
+    ['SOURCE_REPO', { sourceRepo: '' }, 'SOURCE_REPO is required.'],
+    ['CLAWHUB', { clawhub: '' }, 'CLAWHUB is required.'],
+  ] as const)('rejects an empty %s environment variable', (_name, options, message) => {
+    const { calls, result } = runPublish(options);
+
+    expectFailure(result, message);
+    expect(calls).toEqual([]);
+  });
+
+  it('requires RUNNER_TEMP when an explicit version reaches preflight', () => {
+    const { calls, result } = runPublish({
+      omittedEnvironment: 'RUNNER_TEMP',
+      publishVersion: '0.4.0',
+    });
+
+    expectFailure(result, 'RUNNER_TEMP is required for version preflight.');
     expect(calls).toEqual([]);
   });
 

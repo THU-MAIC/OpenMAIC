@@ -121,6 +121,26 @@ describe('check-clawhub-version', () => {
     expect(publishScript).toContain('source_commit="$(git rev-parse HEAD)"');
   });
 
+  it('runs the automatic-version path in a no-secret macOS Bash 3.2 job', () => {
+    const workflow = readFileSync(workflowPath, 'utf8');
+    const compatibilityJob = workflow.match(/  bash-3-compatibility:\n([\s\S]*?)\n  preview:/)?.[1];
+
+    expect(compatibilityJob).toBeDefined();
+    expect(compatibilityJob).toContain("if: github.event_name == 'pull_request'");
+    expect(compatibilityJob).toContain('runs-on: macos-15');
+    expect(compatibilityJob).toContain('permissions:\n      contents: read');
+    expect(compatibilityJob).toContain('persist-credentials: false');
+    expect(compatibilityJob).toContain('CLAWHUB: /usr/bin/true');
+    expect(compatibilityJob).toContain('PUBLISH_VERSION: ""');
+    expect(compatibilityJob).toContain('BASH_VERSINFO[0]');
+    expect(compatibilityJob).toContain('if [[ "$bash_version" != "3.2" ]]');
+    expect(compatibilityJob).toContain('/bin/bash .github/scripts/publish-openmaic-skill.sh');
+    expect(compatibilityJob).not.toContain('secrets.');
+    expect(compatibilityJob).not.toContain('environment:');
+    expect(compatibilityJob).not.toContain('setup-node');
+    expect(compatibilityJob).not.toContain('npm install');
+  });
+
   it('lets Node drain output without immediate process exits', () => {
     const checker = readFileSync(scriptPath, 'utf8');
 

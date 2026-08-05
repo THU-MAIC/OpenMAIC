@@ -51,6 +51,30 @@ jobs:
           echo "::error::Publishing is only allowed from the main branch."
           exit 1
 
+  bash-3-compatibility:
+    name: Verify macOS Bash 3.2 publish compatibility
+    if: github.event_name == 'pull_request'
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Run automatic-version publish path with macOS Bash 3.2
+        env:
+          CLAWHUB: /usr/bin/true
+          PUBLISH_VERSION: ""
+          SOURCE_REPO: ${{ github.repository }}
+        run: |
+          bash_version="$(/bin/bash -c 'printf "%s.%s" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"')"
+          if [[ "$bash_version" != "3.2" ]]; then
+            echo "::error::Expected macOS system Bash 3.2, found $bash_version."
+            exit 1
+          fi
+          /bin/bash .github/scripts/publish-openmaic-skill.sh
+
   preview:
     name: Preview ClawHub publish
     if: >-
