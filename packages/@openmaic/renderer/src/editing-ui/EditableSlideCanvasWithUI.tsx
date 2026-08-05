@@ -29,6 +29,7 @@ export function EditableSlideCanvasWithUI({
   const activeFormat = formatEntry?.elementId === editingId ? formatEntry.state : null;
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- selection changes must clear stale editor state before a later re-selection.
     setController((current) => (current?.elementId === editingId ? current : null));
     setFormatEntry((current) => (current?.elementId === editingId ? current : null));
   }, [editingId]);

@@ -83,6 +83,7 @@ export function TextToolbarOverlay({
   useLayoutEffect(() => {
     const overlay = overlayRef.current;
     if (!anchor || !overlay) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the anchor lifecycle must discard an obsolete DOM measurement.
       setToolbarSize(null);
       return;
     }

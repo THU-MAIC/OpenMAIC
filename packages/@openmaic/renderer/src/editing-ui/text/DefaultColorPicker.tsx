@@ -46,8 +46,9 @@ export function DefaultColorPicker({
 }: TextToolbarColorPickerProps) {
   const [draft, setDraft] = useState(() => getDraftValue(value));
   const incomingValue = getDraftValue(value);
-  const openingColorRef = useRef(getPreviewColor(value));
-  const previewColorRef = useRef(openingColorRef.current);
+  const openingColor = getPreviewColor(value);
+  const openingColorRef = useRef(openingColor);
+  const previewColorRef = useRef(openingColor);
   const lastCommittedColorRef = useRef<string | null>(null);
   const pendingSwatchClickRef = useRef(false);
   const pendingNativeInteractionRef = useRef(false);
