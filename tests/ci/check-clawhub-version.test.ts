@@ -19,17 +19,26 @@ afterAll(() => {
 
 type ScriptEnvironment = 'CLAWHUB_PACKAGE_JSON' | 'PREFLIGHT_FILE' | 'PUBLISH_VERSION';
 
+type FixtureInput =
+  | { kind: 'json'; value: unknown }
+  | { kind: 'missing' }
+  | { kind: 'raw'; content: string };
+
 type RunOptions = {
-  missingFile?: boolean;
+  environmentOverrides?: Partial<Record<ScriptEnvironment, string>>;
   omittedEnvironment?: ScriptEnvironment;
-  rawContent?: string;
 };
 
-function runCheck(desired: string, fixture: unknown, options: RunOptions = {}) {
+const jsonFixture = (value: unknown): FixtureInput => ({ kind: 'json', value });
+const missingFixture: FixtureInput = { kind: 'missing' };
+const rawFixture = (content: string): FixtureInput => ({ kind: 'raw', content });
+
+function runCheck(desired: string, fixture: FixtureInput, options: RunOptions = {}) {
   const fixturePath = resolve(fixtureRoot, `${fixtureIndex++}.json`);
-  if (!options.missingFile) {
-    const content = options.rawContent ?? `${JSON.stringify(fixture)}\n`;
-    writeFileSync(fixturePath, content, 'utf8');
+  if (fixture.kind === 'json') {
+    writeFileSync(fixturePath, `${JSON.stringify(fixture.value)}\n`, 'utf8');
+  } else if (fixture.kind === 'raw') {
+    writeFileSync(fixturePath, fixture.content, 'utf8');
   }
   const env = Object.create(null) as NodeJS.ProcessEnv;
   for (const name of ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'SystemRoot', 'WINDIR']) {
@@ -40,6 +49,7 @@ function runCheck(desired: string, fixture: unknown, options: RunOptions = {}) {
     PREFLIGHT_FILE: fixturePath,
     PUBLISH_VERSION: desired,
   });
+  Object.assign(env, options.environmentOverrides);
   if (options.omittedEnvironment) delete env[options.omittedEnvironment];
   return spawnSync(process.execPath, [scriptPath], {
     cwd: repositoryRoot,
@@ -49,9 +59,17 @@ function runCheck(desired: string, fixture: unknown, options: RunOptions = {}) {
 }
 
 function expectFailure(result: ReturnType<typeof runCheck>, message: string) {
+  expect(result.error).toBeUndefined();
   expect(result.status).toBe(1);
   expect(result.stdout).toBe('');
   expect(result.stderr).toBe(`::error::${message}\n`);
+}
+
+function expectSuccess(result: ReturnType<typeof runCheck>, stdout: string) {
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(0);
+  expect(result.stdout).toBe(stdout);
+  expect(result.stderr).toBe('');
 }
 
 const validPreflight = {
@@ -83,10 +101,7 @@ describe('check-clawhub-version', () => {
     process.env.NODE_OPTIONS = '--require=/definitely/missing/clawhub-test-module';
     process.env.NODE_DEBUG = 'module';
     try {
-      const result = runCheck('0.4.0', validPreflight);
-      expect(result.status).toBe(0);
-      expect(result.stdout).toBe('continue\t0.4.0\n');
-      expect(result.stderr).toBe('');
+      expectSuccess(runCheck('0.4.0', jsonFixture(validPreflight)), 'continue\t0.4.0\n');
     } finally {
       if (previousOptions === undefined) delete process.env.NODE_OPTIONS;
       else process.env.NODE_OPTIONS = previousOptions;
@@ -105,50 +120,64 @@ describe('check-clawhub-version', () => {
       { status: 'would-publish', version: '0.3.2', fingerprint: 'fixture-fingerprint' },
     ],
   ])('rejects incomplete %s metadata without a stack trace', (_name, fixture) => {
-    expectFailure(runCheck('0.4.0', fixture), 'ClawHub returned incomplete version metadata.');
+    expectFailure(
+      runCheck('0.4.0', jsonFixture(fixture)),
+      'ClawHub returned incomplete version metadata.',
+    );
   });
 
   it.each([
-    ['malformed JSON', { rawContent: '{not-json' }],
-    ['a nonexistent file', { missingFile: true }],
-  ])('rejects %s without a stack trace', (_name, options) => {
+    ['status', { ...validPreflight, status: 42 }],
+    ['version', { ...validPreflight, version: 42 }],
+    ['fingerprint', { ...validPreflight, fingerprint: 123 }],
+  ])('rejects a non-string %s as incomplete metadata', (_name, fixture) => {
     expectFailure(
-      runCheck('0.4.0', null, options),
-      'Unable to read ClawHub version preflight metadata.',
+      runCheck('0.4.0', jsonFixture(fixture)),
+      'ClawHub returned incomplete version metadata.',
     );
+  });
+
+  it.each([
+    ['malformed JSON', rawFixture('{not-json')],
+    ['a nonexistent file', missingFixture],
+  ])('rejects %s without a stack trace', (_name, fixture) => {
+    expectFailure(runCheck('0.4.0', fixture), 'Unable to read ClawHub version preflight metadata.');
   });
 
   it('rejects an invalid preflight version', () => {
     expectFailure(
-      runCheck('0.4.0', { ...validPreflight, version: 'invalid' }),
+      runCheck('0.4.0', jsonFixture({ ...validPreflight, version: 'invalid' })),
       'ClawHub returned an invalid preflight version.',
     );
   });
 
   it('rejects an invalid non-null latest version', () => {
     expectFailure(
-      runCheck('0.4.0', { ...validPreflight, latestVersion: 'invalid' }),
+      runCheck('0.4.0', jsonFixture({ ...validPreflight, latestVersion: 'invalid' })),
       'ClawHub returned an invalid latest version.',
     );
   });
 
   it('rejects an empty fingerprint', () => {
     expectFailure(
-      runCheck('0.4.0', { ...validPreflight, fingerprint: '' }),
+      runCheck('0.4.0', jsonFixture({ ...validPreflight, fingerprint: '' })),
       'ClawHub returned incomplete version metadata.',
     );
   });
 
   it('returns only a noop decision for unchanged identical content', () => {
-    const result = runCheck(' v0.3.1 ', {
-      status: 'unchanged',
-      version: '0.3.1',
-      latestVersion: '0.3.1',
-      fingerprint: 'fixture-fingerprint',
-    });
-    expect(result.status).toBe(0);
-    expect(result.stdout).toBe('noop\t0.3.1\n');
-    expect(result.stderr).toBe('');
+    expectSuccess(
+      runCheck(
+        ' v0.3.1 ',
+        jsonFixture({
+          status: 'unchanged',
+          version: '0.3.1',
+          latestVersion: '0.3.1',
+          fingerprint: 'fixture-fingerprint',
+        }),
+      ),
+      'noop\t0.3.1\n',
+    );
   });
 
   it.each([
@@ -160,27 +189,27 @@ describe('check-clawhub-version', () => {
       'continue\t1.0.0\n',
     ],
   ])('returns only a continue decision for a %s', (_name, desired, fixture, stdout) => {
-    const result = runCheck(desired, fixture);
-    expect(result.status).toBe(0);
-    expect(result.stdout).toBe(stdout);
-    expect(result.stderr).toBe('');
+    expectSuccess(runCheck(desired, jsonFixture(fixture)), stdout);
   });
 
   it('rejects manual build metadata', () => {
     expectFailure(
-      runCheck('0.4.0+ci.1', validPreflight),
+      runCheck('0.4.0+ci.1', jsonFixture(validPreflight)),
       'Requested version must not include build metadata.',
     );
   });
 
   it('rejects unchanged registry content with conflicting build metadata', () => {
     expectFailure(
-      runCheck('1.2.3', {
-        status: 'unchanged',
-        version: '1.2.3+old',
-        latestVersion: '1.2.3+old',
-        fingerprint: 'fixture-fingerprint',
-      }),
+      runCheck(
+        '1.2.3',
+        jsonFixture({
+          status: 'unchanged',
+          version: '1.2.3+old',
+          latestVersion: '1.2.3+old',
+          fingerprint: 'fixture-fingerprint',
+        }),
+      ),
       'ClawHub has unchanged content at the same SemVer precedence with different build metadata.',
     );
   });
@@ -189,23 +218,39 @@ describe('check-clawhub-version', () => {
     'rejects non-increasing version %s for different content',
     (desired) => {
       expectFailure(
-        runCheck(desired, validPreflight),
+        runCheck(desired, jsonFixture(validPreflight)),
         'Requested version must be greater than 0.3.1.',
       );
     },
   );
 
   it('rejects invalid semver', () => {
-    expectFailure(runCheck('invalid', validPreflight), 'Requested version is not valid semver.');
+    expectFailure(
+      runCheck('invalid', jsonFixture(validPreflight)),
+      'Requested version is not valid semver.',
+    );
   });
 
   it.each(['CLAWHUB_PACKAGE_JSON', 'PREFLIGHT_FILE', 'PUBLISH_VERSION'] as const)(
     'rejects missing %s environment',
     (name) => {
       expectFailure(
-        runCheck('0.4.0', validPreflight, { omittedEnvironment: name }),
+        runCheck('0.4.0', jsonFixture(validPreflight), { omittedEnvironment: name }),
         'ClawHub version check environment is incomplete.',
       );
     },
   );
+
+  it.each([
+    ['CLAWHUB_PACKAGE_JSON', 'ClawHub version check environment is incomplete.'],
+    ['PREFLIGHT_FILE', 'ClawHub version check environment is incomplete.'],
+    ['PUBLISH_VERSION', 'Requested version is not valid semver.'],
+  ] as const)('rejects empty %s environment', (name, message) => {
+    expectFailure(
+      runCheck('0.4.0', jsonFixture(validPreflight), {
+        environmentOverrides: { [name]: '' },
+      }),
+      message,
+    );
+  });
 });
