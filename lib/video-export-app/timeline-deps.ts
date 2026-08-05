@@ -18,6 +18,8 @@
  * compiler's purity boundary keeps out.
  */
 import type {
+  PPTElement,
+  PPTVideoElement,
   PlayVideoAction,
   SpeechAction,
   SceneCore,
@@ -29,6 +31,8 @@ import type { Scene, SlideContent } from '@/lib/types/stage';
 import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import { measureSlideElementGeometry, type MeasuredGeometry } from '@openmaic/renderer/snapshot';
 import { db, type AudioFileRecord, type MediaFileRecord } from '@/lib/utils/database';
+import { useMediaGenerationStore } from '@/lib/store/media-generation';
+import { resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
 
 /** Loaded source records, keyed for both metadata (compiler) and byte collection. */
 export interface VideoTimelineRecords {
@@ -64,16 +68,26 @@ function formatFromMime(mimeType: string | undefined): string | undefined {
 /**
  * The generated-media reference a slide element points at, mirroring the live
  * playback engine's bridge (`lib/action/engine.ts` `resolveMediaPlaceholderId`):
- * prefer the explicit `mediaRef`, then a legacy `src` that is itself a media
- * placeholder id. Returns undefined for elements that carry no generated media.
+ * use the unified video binding so a playable concrete `src` wins over a stale
+ * opaque `mediaRef`; images retain their legacy placeholder selection.
  *
  * A `play_video` action targets the slide element by its `.id`, but the media
  * records are keyed by this ref (`gen_vid_…`), so the asset/duration lookups must
  * bridge id → ref or every generated video misses and is dropped from the export.
  */
-function elementMediaRef(el: { mediaRef?: unknown; src?: unknown }): string | undefined {
-  if (typeof el.mediaRef === 'string' && el.mediaRef) return el.mediaRef;
-  if (typeof el.src === 'string' && isMediaPlaceholder(el.src)) return el.src;
+function elementMediaRef(
+  el: PPTElement,
+  tasks: ReturnType<typeof useMediaGenerationStore.getState>['tasks'],
+  stageId: string,
+  documentElements: readonly PPTElement[],
+): string | undefined {
+  if (el.type === 'video') {
+    return resolveVideoMediaForElement(tasks, el as PPTVideoElement, stageId, documentElements)
+      .sourceRef;
+  }
+  if (el.type === 'image' && typeof el.src === 'string' && isMediaPlaceholder(el.src)) {
+    return el.src;
+  }
   return undefined;
 }
 
@@ -237,12 +251,18 @@ export async function createVideoTimelineDeps(input: {
   // later scene's media ref — the wrong asset and duration. Keying by scene id
   // keeps each slide's bridge isolated.
   const mediaRefBySceneElement = new Map<string, Map<string, string>>();
+  const mediaTasks = useMediaGenerationStore.getState().tasks;
+  const documentElements = scenes.flatMap((scene) =>
+    scene.type === 'slide'
+      ? (((scene.content as SlideContent)?.canvas?.elements ?? []) as PPTElement[])
+      : [],
+  );
   for (const scene of scenes) {
     if (scene.type !== 'slide') continue;
     const elements = (scene.content as SlideContent)?.canvas?.elements ?? [];
     const byElement = new Map<string, string>();
     for (const el of elements) {
-      const ref = elementMediaRef(el as { mediaRef?: unknown; src?: unknown });
+      const ref = elementMediaRef(el as PPTElement, mediaTasks, stage.id, documentElements);
       if (ref) byElement.set((el as { id: string }).id, ref);
     }
     if (byElement.size > 0) mediaRefBySceneElement.set(scene.id, byElement);

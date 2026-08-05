@@ -110,7 +110,7 @@ export function resolveVideoMediaForElement<T extends MediaTaskLookupEntry>(
     : resolveMediaTaskForElement(effectiveTasks, element, stageId);
   const posterRef = element.poster ?? task?.poster;
   const posterTask =
-    element.poster && task?.poster
+    element.poster && !isConcreteMediaAddress(element.poster) && task?.poster
       ? ({ ...task, objectUrl: task.poster } as T & { readonly objectUrl: string })
       : undefined;
 

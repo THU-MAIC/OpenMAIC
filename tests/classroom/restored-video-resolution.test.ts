@@ -112,6 +112,44 @@ describe('restored classroom video resolution', () => {
     expect(binding.task).toMatchObject({ status: 'done', placeholderRef: legacyRef });
   });
 
+  it('keeps a concrete explicit poster ahead of a completed task poster', () => {
+    const element = {
+      ...videoElement(),
+      poster: 'https://cdn.example/explicit-poster.jpg',
+    };
+    const task = {
+      ...lookupTask('done'),
+      objectUrl: 'blob:video',
+      poster: 'blob:generated-poster',
+    };
+
+    const binding = resolveVideoMediaForElement({ [legacyRef]: task }, element, stageId);
+
+    expect(binding.posterRef).toBe(element.poster);
+    expect(binding.posterTask).toBeUndefined();
+  });
+
+  it('keeps a concrete explicit poster visible while its video task is pending', () => {
+    const element = {
+      ...videoElement(),
+      poster: 'https://cdn.example/explicit-poster.jpg',
+    };
+    const task = {
+      ...lookupTask('pending'),
+      poster: 'blob:last-generated-poster',
+      retryCount: 0,
+    };
+
+    const binding = resolveVideoMediaForElement({ [legacyRef]: task }, element, stageId);
+
+    expect(binding.posterRef).toBe(element.poster);
+    expect(binding.posterTask).toBeUndefined();
+    expect(resolveMediaRef(binding.posterRef, binding.posterTask)).toEqual({
+      kind: 'raw',
+      value: element.poster,
+    });
+  });
+
   it('does not map one stored row to two unmatched legacy elements', () => {
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:stored-video');
     const elements = [videoElement('gen_vid_1', 'video-1'), videoElement('gen_vid_2', 'video-2')];

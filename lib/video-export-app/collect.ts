@@ -21,7 +21,7 @@
  * DOM — outside the `lib/video-export/**` purity boundary by design.
  */
 import { slideToPng } from '@openmaic/renderer/snapshot';
-import type { Slide } from '@openmaic/dsl';
+import type { PPTElement, PPTVideoElement, Slide } from '@openmaic/dsl';
 import type { VideoTimeline } from '@/lib/video-export';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import { isMediaPlaceholder } from '@/lib/store/media-generation';
@@ -37,6 +37,7 @@ import {
   type MediaTaskState,
 } from '@/lib/media/resolve-media-ref';
 import { slideMediaReferenceSlots } from '@/lib/media/slide-media-slots';
+import { resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
 
 export interface CollectOptions {
   /** Slide-snapshot render width in px (frame height follows the slide ratio). Default 1920. */
@@ -203,14 +204,10 @@ async function resolveMediaBytesWithFallback(
   return resolved ? resolveBytes(undefined, resolved) : null;
 }
 
-/** The generated-media ref an element points at, when it is an unresolved placeholder. */
-function snapshotMediaRef(element: SnapshotMediaElement): string | undefined {
+/** The generated-image ref an element points at, when it is an unresolved placeholder. */
+function snapshotImageMediaRef(element: SnapshotMediaElement): string | undefined {
   if (element.type === 'image' && element.src && isMediaPlaceholder(element.src))
     return element.src;
-  if (element.type === 'video') {
-    if (element.mediaRef && isMediaPlaceholder(element.mediaRef)) return element.mediaRef;
-    if (element.src && isMediaPlaceholder(element.src)) return element.src;
-  }
   return undefined;
 }
 
@@ -265,6 +262,7 @@ async function resolveGeneratedMedia(
   for (const slot of slots) {
     if (slot.element) mediaElements.add(slot.element as SnapshotMediaElement);
   }
+  const documentElements = [...mediaElements] as PPTElement[];
   for (const element of mediaElements) {
     let resolvedPoster = false;
     if (element.type === 'video' && element.poster && isMediaPlaceholder(element.poster)) {
@@ -285,12 +283,16 @@ async function resolveGeneratedMedia(
         element.poster = undefined;
       }
     }
-    const ref = snapshotMediaRef(element);
+    const tasks = useMediaGenerationStore.getState().tasks;
+    const ref =
+      element.type === 'video'
+        ? resolveVideoMediaForElement(tasks, element as PPTVideoElement, stageId, documentElements)
+            .sourceRef
+        : snapshotImageMediaRef(element);
     if (!ref) continue;
     const record = mediaByElementId.get(ref);
     const bytes = await resolveMediaBytesWithFallback(ref, record, stageId);
     if (!bytes) {
-      const tasks = useMediaGenerationStore.getState().tasks;
       const task =
         tasks[ref] ??
         Object.values(tasks).find(

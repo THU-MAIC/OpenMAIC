@@ -499,4 +499,29 @@ describe('collectVideoAssets — frame base restores evicted generated media', (
     });
     expect(revoked).toHaveLength(1);
   });
+
+  it('snapshots a concrete video src instead of a stale opaque mediaRef', async () => {
+    const concreteSrc = 'https://cdn.example/direct.mp4';
+    const fetchSpy = vi.fn(async (url: string) =>
+      url === concreteSrc
+        ? new Response(new Blob(['direct-video'], { type: 'video/mp4' }))
+        : new Response(null, { status: 404 }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    stubObjectUrls();
+    stubFirstFrameDecode(null);
+
+    await collectVideoAssets(
+      irWith([frameEntry]),
+      [slideScene({ type: 'video', src: concreteSrc, mediaRef: 'ast_stale_video' })],
+      records(),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith(concreteSrc);
+    expect(mediaOwnerMocks.withAssetUrl).not.toHaveBeenCalledWith(
+      'ast_stale_video',
+      expect.any(Function),
+    );
+    expect(capturedSlides[0].elements[0].src).toMatch(/^blob:mock\//);
+  });
 });

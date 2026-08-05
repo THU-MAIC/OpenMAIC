@@ -142,21 +142,11 @@ export async function retryMediaTask(
     : undefined;
 
   const allocated = await assetRefExists(elementId);
-  let activePersistedRefs: StageAssetRefs | undefined;
-  if (allocated) {
-    try {
-      const document = await getDocumentStore().loadDocument(task.stageId);
-      if (!document) throw new Error(`Document ${task.stageId} could not be loaded`);
-      activePersistedRefs = collectStageAssetRefs(document, { mediaRows: [], audioRows: [] });
-    } catch (error) {
-      log.warn(`Could not prove exclusive ownership of media ${elementId}:`, error);
-    }
-  }
-  const referencedByAnotherDocument = allocated
-    ? await isAllocatedAssetRefReferencedBySurvivingDocument(elementId, task.stageId)
-    : false;
-  const activeDocumentCount = activePersistedRefs?.referenceCounts.get(elementId) ?? 0;
-  const exclusive = activeDocumentCount === 1 && !referencedByAnotherDocument;
+  const ownership = allocated
+    ? await proveExclusiveAssetOwnership(elementId, task.stageId)
+    : undefined;
+  const activePersistedRefs = ownership?.activePersistedRefs;
+  const exclusive = ownership?.exclusive ?? false;
   const replaceAssetId = allocated && exclusive ? elementId : undefined;
   const targetedFork = allocated ? !replaceAssetId : !!target;
   if (targetedFork && (!scopedTarget?.sceneId || !scopedTarget.slideId)) {
@@ -218,6 +208,10 @@ export async function retryMediaTask(
       replacePosterAssetIds: posterAssetIds,
       target: targetedFork ? scopedTarget : undefined,
       sourceRef: targetedFork ? elementId : undefined,
+      forkIfShared:
+        replaceAssetId && scopedTarget
+          ? { sourceRef: elementId, target: scopedTarget, sourceTask: task }
+          : undefined,
     },
   );
   if (generatedAssetId && failureRefs) {
@@ -549,6 +543,30 @@ interface GeneratedMediaDetails {
   duration?: number;
 }
 
+async function proveExclusiveAssetOwnership(
+  assetId: string,
+  stageId: string,
+): Promise<{ readonly exclusive: boolean; readonly activePersistedRefs?: StageAssetRefs }> {
+  let activePersistedRefs: StageAssetRefs | undefined;
+  try {
+    const document = await getDocumentStore().loadDocument(stageId);
+    if (!document) throw new Error(`Document ${stageId} could not be loaded`);
+    activePersistedRefs = collectStageAssetRefs(document, { mediaRows: [], audioRows: [] });
+  } catch (error) {
+    log.warn(`Could not prove exclusive ownership of media ${assetId}:`, error);
+  }
+  const referencedByAnotherDocument = await isAllocatedAssetRefReferencedBySurvivingDocument(
+    assetId,
+    stageId,
+  );
+  return {
+    exclusive:
+      (activePersistedRefs?.referenceCounts.get(assetId) ?? 0) === 1 &&
+      !referencedByAnotherDocument,
+    activePersistedRefs,
+  };
+}
+
 async function replaceablePosterRefs(
   stageId: string,
   refs: string[],
@@ -601,17 +619,31 @@ async function generateSingleMedia(
       readonly slideId?: string;
     };
     readonly sourceRef?: string;
+    readonly forkIfShared?: {
+      readonly sourceRef: string;
+      readonly target: {
+        readonly elementId: string;
+        readonly sceneId?: string;
+        readonly slideId?: string;
+      };
+      readonly sourceTask: MediaTask;
+    };
   } = {},
 ): Promise<string | undefined> {
-  const { replaceAssetId, replacePosterAssetIds = [], target, sourceRef } = replacement;
+  const { forkIfShared } = replacement;
+  let activeReplaceAssetId = replacement.replaceAssetId;
+  let activeReplacePosterAssetIds = replacement.replacePosterAssetIds ?? [];
+  let activeTarget = replacement.target;
+  let activeSourceRef = replacement.sourceRef;
+  let progressElementId = req.elementId;
   const store = useMediaGenerationStore.getState();
   store.markGenerating(req.elementId);
   const placeholderRef =
-    sourceRef === undefined
+    activeSourceRef === undefined
       ? (store.getTask(req.elementId)?.placeholderRef ??
         (isGeneratedMediaPlaceholder(req.elementId) ? req.elementId : undefined))
       : undefined;
-  const documentRef = sourceRef ?? req.elementId;
+  const documentRef = activeSourceRef ?? req.elementId;
   let poolReplacementCommitted = false;
   const freshAllocations = new Set<string>();
 
@@ -643,13 +675,58 @@ async function generateSingleMedia(
     const contentType = blob.type || mimeType;
     const meta = generationMeta(req, contentType, details);
 
+    // The generation request is asynchronous, so the start-time ownership
+    // proof may be stale. Re-run the repository-wide proof immediately before
+    // the first pool write and fail closed into the target-scoped fork path.
+    if (activeReplaceAssetId) {
+      const ownership = await proveExclusiveAssetOwnership(activeReplaceAssetId, stageId);
+      if (!ownership.exclusive) {
+        if (!forkIfShared?.target.sceneId || !forkIfShared.target.slideId) {
+          throw new MediaApiError(
+            'Media ownership changed and the retry target is no longer safely scoped',
+            'TARGET_MISSING',
+          );
+        }
+        const generatingTask = useMediaGenerationStore.getState().tasks[req.elementId];
+        activeSourceRef = forkIfShared.sourceRef;
+        activeTarget = forkIfShared.target;
+        progressElementId = forkIfShared.target.elementId;
+        activeReplaceAssetId = undefined;
+        activeReplacePosterAssetIds = [];
+        useMediaGenerationStore.setState((state) => ({
+          tasks: {
+            ...state.tasks,
+            [forkIfShared.sourceRef]: forkIfShared.sourceTask,
+            ...(generatingTask
+              ? {
+                  [progressElementId]: {
+                    ...generatingTask,
+                    elementId: progressElementId,
+                    placeholderRef: undefined,
+                    objectUrl: undefined,
+                    poster: undefined,
+                    posterAssetId: undefined,
+                  },
+                }
+              : {}),
+          },
+        }));
+      } else if (req.type === 'video' && ownership.activePersistedRefs) {
+        activeReplacePosterAssetIds = await replaceablePosterRefs(
+          stageId,
+          currentPosterRefs(stageId, activeReplaceAssetId),
+          ownership.activePersistedRefs,
+        );
+      }
+    }
+
     // Crash-safety invariant: pool bytes first, the Part 2 compatibility
     // double-write second, and the document rewrite last. A failed step leaves
     // the document on its old reference, never pointing at missing bytes.
-    const assetId = replaceAssetId ?? (await putAsset(blob, meta));
-    if (!replaceAssetId) freshAllocations.add(assetId);
-    if (replaceAssetId) {
-      await replaceAsset(replaceAssetId, blob, meta);
+    const assetId = activeReplaceAssetId ?? (await putAsset(blob, meta));
+    if (!activeReplaceAssetId) freshAllocations.add(assetId);
+    if (activeReplaceAssetId) {
+      await replaceAsset(activeReplaceAssetId, blob, meta);
       poolReplacementCommitted = true;
     }
     const posterMeta: AssetMeta | undefined = posterBlob
@@ -662,9 +739,9 @@ async function generateSingleMedia(
       : undefined;
     let posterAssetId: string | undefined;
     if (posterBlob && posterMeta) {
-      if (replaceAssetId && replacePosterAssetIds.length > 0) {
+      if (activeReplaceAssetId && activeReplacePosterAssetIds.length > 0) {
         await Promise.all(
-          replacePosterAssetIds.map((ref) => replaceAsset(ref, posterBlob, posterMeta)),
+          activeReplacePosterAssetIds.map((ref) => replaceAsset(ref, posterBlob, posterMeta)),
         );
       } else {
         posterAssetId = await putAsset(posterBlob, posterMeta);
@@ -697,7 +774,7 @@ async function generateSingleMedia(
       // Posters are independently allocated assets. Keep a compatibility row
       // under each poster's own id as well as the legacy copy on the video row.
       if (posterBlob) {
-        const posterIds = posterAssetId ? [posterAssetId] : replacePosterAssetIds;
+        const posterIds = posterAssetId ? [posterAssetId] : activeReplacePosterAssetIds;
         await Promise.all(
           posterIds.map((posterId) =>
             db.mediaFiles.put({
@@ -715,7 +792,7 @@ async function generateSingleMedia(
         );
       }
     } catch (error) {
-      if (replaceAssetId && poolReplacementCommitted) {
+      if (activeReplaceAssetId && poolReplacementCommitted) {
         throw new MediaApiError(
           `Asset pool replacement succeeded but the compatibility media store lagged: ${error instanceof Error ? error.message : String(error)}`,
           'MEDIA_COMPATIBILITY_STORE_LAGGED',
@@ -724,19 +801,19 @@ async function generateSingleMedia(
       throw error;
     }
 
-    if (!replaceAssetId || posterAssetId) {
+    if (!activeReplaceAssetId || posterAssetId) {
       const committed = await persistDocumentMediaRef(
         stageId,
         documentRef,
         assetId,
         posterAssetId,
         {
-          target,
-          preserveManifestSource: sourceRef !== undefined,
+          target: activeTarget,
+          preserveManifestSource: activeSourceRef !== undefined,
         },
       );
       for (const ref of committed) freshAllocations.delete(ref);
-      if (sourceRef !== undefined && !committed.has(assetId)) {
+      if (activeSourceRef !== undefined && !committed.has(assetId)) {
         throw new MediaApiError(
           'The selected media retry target no longer exists',
           'TARGET_MISSING',
@@ -744,7 +821,7 @@ async function generateSingleMedia(
       }
     }
 
-    if (!replaceAssetId && sourceRef === undefined) {
+    if (!activeReplaceAssetId && activeSourceRef === undefined) {
       // Close the late-scene window: a scene inserted after the first rewrite
       // is reconciled under the same document lock. Do not re-key the task
       // until this final rewrite succeeds: rollback must retain the placeholder
@@ -755,7 +832,7 @@ async function generateSingleMedia(
         assetId,
         posterAssetId,
         {
-          target,
+          target: activeTarget,
           preserveManifestSource: false,
         },
       );
@@ -765,14 +842,14 @@ async function generateSingleMedia(
     // Publish completion only after every document reconciliation succeeds.
     const objectUrl = URL.createObjectURL(blob);
     const posterObjectUrl = posterBlob ? URL.createObjectURL(posterBlob) : undefined;
-    if (replaceAssetId) {
+    if (activeReplaceAssetId) {
       useMediaGenerationStore.getState().markDone(assetId, objectUrl, posterObjectUrl);
-    } else if (sourceRef !== undefined) {
+    } else if (activeSourceRef !== undefined) {
       useMediaGenerationStore.setState((state) => {
-        const progress = state.tasks[req.elementId];
+        const progress = state.tasks[progressElementId];
         if (!progress) return state;
         const tasks = { ...state.tasks };
-        delete tasks[req.elementId];
+        delete tasks[progressElementId];
         tasks[assetId] = {
           ...progress,
           elementId: assetId,
@@ -810,13 +887,13 @@ async function generateSingleMedia(
     const message = err instanceof Error ? err.message : String(err);
     const errorCode = err instanceof MediaApiError ? err.errorCode : undefined;
     log.error(`Failed ${req.elementId}:`, message);
-    const failedRef = replaceAssetId ?? req.elementId;
+    const failedRef = activeReplaceAssetId ?? progressElementId;
     useMediaGenerationStore.getState().markFailed(failedRef, message, errorCode);
 
     // Never overwrite a usable same-id compatibility row with an empty failure
     // marker. The live task still carries the retryable error while last-good
     // bytes remain available through Dexie/the pool.
-    if (errorCode || replaceAssetId) {
+    if (errorCode || activeReplaceAssetId) {
       const key = mediaFileKey(stageId, failedRef);
       const existing = await db.mediaFiles.get(key).catch(() => undefined);
       if (!existing || existing.error || existing.blob.size === 0) {
