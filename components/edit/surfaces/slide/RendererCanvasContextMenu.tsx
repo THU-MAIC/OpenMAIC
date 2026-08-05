@@ -35,8 +35,14 @@ export function resolveRendererContextSelection(
 ): Selection | null {
   if (!targetId) return null;
   const target = content.canvas.elements.find((element) => element.id === targetId);
-  if (!target || target.lock || selection.elementIds.includes(targetId)) return null;
+  if (!target || target.lock) return null;
   const ids = groupMembers(content.canvas.elements, target).map((element) => element.id);
+  if (
+    selection.elementIds.includes(targetId) &&
+    ids.every((id) => selection.elementIds.includes(id))
+  ) {
+    return null;
+  }
   return { elementIds: ids, primaryId: target.id };
 }
 

@@ -17,7 +17,7 @@ function commands(): RendererCanvasCommands {
 
 function keyEvent(
   key: string,
-  options: { ctrlKey?: boolean; metaKey?: boolean; target?: unknown } = {},
+  options: { ctrlKey?: boolean; metaKey?: boolean; repeat?: boolean; target?: unknown } = {},
 ) {
   return {
     key,
@@ -25,6 +25,7 @@ function keyEvent(
     metaKey: options.metaKey ?? false,
     altKey: false,
     shiftKey: false,
+    repeat: options.repeat ?? false,
     target: options.target ?? null,
     preventDefault: vi.fn(),
   };
@@ -101,5 +102,14 @@ describe('handleRendererCanvasShortcut', () => {
     const event = keyEvent('a');
     expect(handleRendererCanvasShortcut(event, c)).toBe(false);
     expect(c.selectAll).not.toHaveBeenCalled();
+  });
+
+  it('ignores keyboard auto-repeat so toggle commands run once per key press', () => {
+    const c = commands();
+    const event = keyEvent('g', { ctrlKey: true, repeat: true });
+
+    expect(handleRendererCanvasShortcut(event, c)).toBe(false);
+    expect(c.toggleGroup).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
   });
 });

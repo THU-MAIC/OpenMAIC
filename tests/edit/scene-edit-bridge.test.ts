@@ -112,6 +112,17 @@ describe('deriveSlideEditOperations', () => {
     ]);
   });
 
+  it('emits reorder ops when only the element z-order changed', () => {
+    const prev = makeContent();
+    prev.canvas.elements.push(createDefaultImageElement('img-1', 'https://example.com/a.png'));
+    const next = clone(prev);
+    next.canvas.elements.reverse();
+
+    expect(deriveSlideEditOperations(prev, next)).toEqual([
+      { type: 'element.reorder', elementId: 'img-1', index: 0 },
+    ]);
+  });
+
   it('emits element.removeProps when a top-level prop is dropped', () => {
     const prev = makeContent();
     const next = clone(prev);
@@ -164,6 +175,22 @@ describe('commitSlideEdit', () => {
     const undone = undoSlideEditOperation(after);
     expect(undone.present.canvas.elements[0].left).toBe(base.canvas.elements[0].left);
     expect(undone.present.canvas.elements[1].top).toBe(base.canvas.elements[1].top);
+  });
+
+  it('records an order-only commit and restores it with undo', () => {
+    const base = makeContent();
+    base.canvas.elements.push(createDefaultImageElement('img-1', 'https://example.com/a.png'));
+    const history = createSlideEditHistory(base);
+    const next = clone(history.present);
+    next.canvas.elements.reverse();
+
+    const after = commitSlideEdit(history, next);
+
+    expect(after.past).toHaveLength(1);
+    expect(after.present.canvas.elements.map((element) => element.id)).toEqual(['img-1', 'text-1']);
+    expect(
+      undoSlideEditOperation(after).present.canvas.elements.map((element) => element.id),
+    ).toEqual(['text-1', 'img-1']);
   });
 
   it('is a no-op when the committed content is unchanged', () => {

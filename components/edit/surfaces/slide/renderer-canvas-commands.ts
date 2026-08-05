@@ -89,6 +89,47 @@ function reorderUnitIntents(
   ).flat();
 }
 
+function reorderToMatchIds(
+  elements: readonly PPTElement[],
+  desiredIds: readonly string[],
+): EditIntent[] {
+  const workingIds = elements.map((element) => element.id);
+  const intents: EditIntent[] = [];
+
+  desiredIds.forEach((id, targetIndex) => {
+    let currentIndex = workingIds.indexOf(id);
+    while (currentIndex > targetIndex) {
+      intents.push({ type: 'element.reorder', id, command: 'backward' });
+      [workingIds[currentIndex - 1], workingIds[currentIndex]] = [
+        workingIds[currentIndex],
+        workingIds[currentIndex - 1],
+      ];
+      currentIndex -= 1;
+    }
+  });
+
+  return intents;
+}
+
+function compactSelectionIntents(
+  elements: readonly PPTElement[],
+  selectedIds: readonly string[],
+): EditIntent[] {
+  const selectedSet = new Set(selectedIds);
+  const selectedBlock = elements.filter((element) => selectedSet.has(element.id));
+  const highestIndex = elements.findLastIndex((element) => selectedSet.has(element.id));
+  if (selectedBlock.length < 2 || highestIndex === -1) return [];
+
+  const remaining = elements.filter((element) => !selectedSet.has(element.id));
+  const insertIndex = highestIndex - selectedBlock.length + 1;
+  const desired = [...remaining];
+  desired.splice(insertIndex, 0, ...selectedBlock);
+  return reorderToMatchIds(
+    elements,
+    desired.map((element) => element.id),
+  );
+}
+
 export function createRendererCanvasCommands({
   content,
   selection,
@@ -99,17 +140,15 @@ export function createRendererCanvasCommands({
 }: RendererCanvasCommandArgs): RendererCanvasCommands {
   const elements = content.canvas.elements;
   const byId = new Map(elements.map((element) => [element.id, element]));
-  const selected: PPTElement[] = [];
   const selectedSet = new Set<string>();
   for (const id of selection.elementIds) {
     const target = byId.get(id);
     if (!target) continue;
     for (const element of groupUnit(elements, target)) {
-      if (selectedSet.has(element.id)) continue;
       selectedSet.add(element.id);
-      selected.push(element);
     }
   }
+  const selected = elements.filter((element) => selectedSet.has(element.id));
   const selectedIds = selected.map((element) => element.id);
 
   const clearSelection = () => {
@@ -178,6 +217,7 @@ export function createRendererCanvasCommands({
 
       const nextGroupId = createGroupId();
       onIntents([
+        ...compactSelectionIntents(elements, selectedIds),
         {
           type: 'element.updateMany',
           updates: selectedIds.map((id) => ({ id, props: { groupId: nextGroupId } })),

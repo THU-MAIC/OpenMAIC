@@ -9,6 +9,7 @@ interface CanvasShortcutEvent {
   metaKey: boolean;
   altKey: boolean;
   shiftKey: boolean;
+  repeat: boolean;
   target: unknown;
   preventDefault: () => void;
 }
@@ -36,7 +37,12 @@ export function handleRendererCanvasShortcut(
   commands: RendererCanvasCommands,
   options: CanvasShortcutOptions = {},
 ): boolean {
-  if (options.enabled === false || options.pickActive || isEditableTarget(event.target)) {
+  if (
+    options.enabled === false ||
+    options.pickActive ||
+    event.repeat ||
+    isEditableTarget(event.target)
+  ) {
     return false;
   }
 

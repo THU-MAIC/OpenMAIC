@@ -52,6 +52,14 @@ describe('renderer context menu target resolution', () => {
     expect(resolveRendererContextSelection(slide, selection, 'g1')).toBeNull();
   });
 
+  it('closes a partial group selection when right-clicking an included member', () => {
+    const selection: Selection = { elementIds: ['g1'], primaryId: 'g1' };
+    expect(resolveRendererContextSelection(slide, selection, 'g1')).toEqual({
+      elementIds: ['g1', 'g2'],
+      primaryId: 'g1',
+    });
+  });
+
   it('does not select a locked target but exposes unlock-only menu state', () => {
     const selection: Selection = { elementIds: [] };
     expect(resolveRendererContextSelection(slide, selection, 'locked')).toBeNull();

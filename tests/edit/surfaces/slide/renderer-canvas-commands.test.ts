@@ -169,6 +169,24 @@ describe('createRendererCanvasCommands', () => {
     });
   });
 
+  it('toggleGroup compacts non-adjacent members into the legacy contiguous z-order block', () => {
+    const elements = [text('a'), text('between'), text('c'), text('top')];
+    const { commands, onIntents } = setup({
+      elements,
+      selection: { elementIds: ['a', 'c'], primaryId: 'c' },
+    });
+
+    commands.toggleGroup();
+
+    const intents = onIntents.mock.calls[0][0];
+    const next = applyRendererEditIntents(content(elements), intents);
+    expect(next.canvas.elements.map((element) => element.id)).toEqual(['between', 'a', 'c', 'top']);
+    expect(next.canvas.elements.filter((element) => element.groupId === 'group-new')).toHaveLength(
+      2,
+    );
+    expect(onIntents).toHaveBeenCalledTimes(1);
+  });
+
   it('reorderTarget moves a group as one block across an adjacent group', () => {
     const elements = [
       text('a1', { groupId: 'A' }),
