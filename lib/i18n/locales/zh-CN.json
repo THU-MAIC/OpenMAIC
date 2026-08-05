@@ -1317,6 +1317,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "浏览器原生 ASR",
     "providerQwenASR": "Qwen ASR（阿里云百炼）",
+    "providerFunASRASR": "FunASR（本地）",
     "providerLemonadeASR": "Lemonade ASR（本地）",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf（内置）",
