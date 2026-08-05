@@ -60,7 +60,7 @@ export function getRendererContextMenuState(
 }
 
 interface RendererCanvasContextMenuProps {
-  children: ReactNode;
+  children?: ReactNode;
   content: SlideContent;
   selection: Selection;
   commands: RendererCanvasCommands;
