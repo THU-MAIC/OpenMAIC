@@ -8,8 +8,11 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
 const scriptPath = resolve(repositoryRoot, '.github/scripts/check-clawhub-version.mjs');
+const publishScriptPath = resolve(repositoryRoot, '.github/scripts/publish-openmaic-skill.sh');
 const workflowPath = resolve(repositoryRoot, '.github/workflows/publish-openmaic-skill.yml');
 const packageJsonPath = resolve(repositoryRoot, 'package.json');
+const requireFromRoot = createRequire(packageJsonPath);
+const semverPackageJsonPath = requireFromRoot.resolve('semver/package.json');
 const fixtureRoot = mkdtempSync(resolve(tmpdir(), 'clawhub-version-test-'));
 let fixtureIndex = 0;
 
@@ -17,7 +20,7 @@ afterAll(() => {
   rmSync(fixtureRoot, { recursive: true, force: true });
 });
 
-type ScriptEnvironment = 'CLAWHUB_PACKAGE_JSON' | 'PREFLIGHT_FILE' | 'PUBLISH_VERSION';
+type ScriptEnvironment = 'SEMVER_PACKAGE_JSON' | 'PREFLIGHT_FILE' | 'PUBLISH_VERSION';
 
 type FixtureInput =
   | { kind: 'json'; value: unknown }
@@ -45,7 +48,7 @@ function runCheck(desired: string, fixture: FixtureInput, options: RunOptions = 
     if (process.env[name] !== undefined) env[name] = process.env[name];
   }
   Object.assign(env, {
-    CLAWHUB_PACKAGE_JSON: packageJsonPath,
+    SEMVER_PACKAGE_JSON: semverPackageJsonPath,
     PREFLIGHT_FILE: fixturePath,
     PUBLISH_VERSION: desired,
   });
@@ -82,19 +85,48 @@ const validPreflight = {
 };
 
 describe('check-clawhub-version', () => {
-  it('keeps the test SemVer dependency aligned with the pinned ClawHub CLI', () => {
-    // clawhub@0.23.3 declares semver@7.8.5. Update both assertions when the CLI pin changes.
-    const requireFromRoot = createRequire(packageJsonPath);
-    const semverPackage = JSON.parse(
-      readFileSync(requireFromRoot.resolve('semver/package.json'), 'utf8'),
-    ) as { version: string };
+  it('pins the ClawHub CLI and its independent SemVer runtime in both jobs', () => {
+    const semverPackage = JSON.parse(readFileSync(semverPackageJsonPath, 'utf8')) as {
+      version: string;
+    };
     const workflow = readFileSync(workflowPath, 'utf8');
-    const clawhubPins = [
-      ...workflow.matchAll(/npm install --global --ignore-scripts clawhub@(\S+)/g),
-    ].map((match) => match[1]);
+    const installPins = [
+      ...workflow.matchAll(/npm install --global --ignore-scripts clawhub@(\S+) semver@(\S+)/g),
+    ].map((match) => match.slice(1));
 
-    expect(clawhubPins).toEqual(['0.23.3', '0.23.3']);
+    expect(installPins).toEqual([
+      ['0.23.3', '7.8.5'],
+      ['0.23.3', '7.8.5'],
+    ]);
+    expect(workflow.match(/SEMVER_PACKAGE_JSON=/g)).toHaveLength(2);
+    expect(workflow).not.toContain('CLAWHUB_PACKAGE_JSON');
     expect(semverPackage.version).toBe('7.8.5');
+  });
+
+  it('routes preview and publish through the same shared script', () => {
+    const workflow = readFileSync(workflowPath, 'utf8');
+    const publishScript = readFileSync(publishScriptPath, 'utf8');
+
+    expect(
+      workflow.match(/bash \.github\/scripts\/publish-openmaic-skill\.sh --dry-run/g),
+    ).toHaveLength(1);
+    expect(
+      workflow.match(/^\s+bash \.github\/scripts\/publish-openmaic-skill\.sh$/gm),
+    ).toHaveLength(1);
+    expect(workflow.match(/bash -n \.github\/scripts\/publish-openmaic-skill\.sh/g)).toHaveLength(
+      2,
+    );
+    expect(workflow.match(/- "\.github\/scripts\/publish-openmaic-skill\.sh"/g)).toHaveLength(2);
+    expect(publishScript).toContain('set -euo pipefail');
+    expect(publishScript).toContain('source_commit="$(git rev-parse HEAD)"');
+  });
+
+  it('lets Node drain output without immediate process exits', () => {
+    const checker = readFileSync(scriptPath, 'utf8');
+
+    expect(checker).not.toMatch(/process\.exit\s*\(/);
+    expect(checker.match(/process\.stdout\.write/g)).toHaveLength(1);
+    expect(checker).toContain('process.exitCode = 1');
   });
 
   it('does not inherit Node control variables from the test runner', () => {
@@ -223,6 +255,13 @@ describe('check-clawhub-version', () => {
     );
   });
 
+  it('rejects a manual prerelease version', () => {
+    expectFailure(
+      runCheck('0.4.0-rc.1', jsonFixture(validPreflight)),
+      'Requested version must be a stable SemVer release.',
+    );
+  });
+
   it('rejects unchanged registry content with conflicting build metadata', () => {
     expectFailure(
       runCheck(
@@ -255,7 +294,7 @@ describe('check-clawhub-version', () => {
     );
   });
 
-  it.each(['CLAWHUB_PACKAGE_JSON', 'PREFLIGHT_FILE', 'PUBLISH_VERSION'] as const)(
+  it.each(['SEMVER_PACKAGE_JSON', 'PREFLIGHT_FILE', 'PUBLISH_VERSION'] as const)(
     'rejects missing %s environment',
     (name) => {
       expectFailure(
@@ -266,7 +305,7 @@ describe('check-clawhub-version', () => {
   );
 
   it.each([
-    ['CLAWHUB_PACKAGE_JSON', 'ClawHub version check environment is incomplete.'],
+    ['SEMVER_PACKAGE_JSON', 'ClawHub version check environment is incomplete.'],
     ['PREFLIGHT_FILE', 'ClawHub version check environment is incomplete.'],
     ['PUBLISH_VERSION', 'Requested version is not valid semver.'],
   ] as const)('rejects empty %s environment', (name, message) => {
@@ -275,6 +314,15 @@ describe('check-clawhub-version', () => {
         environmentOverrides: { [name]: '' },
       }),
       message,
+    );
+  });
+
+  it('reports a missing SemVer runtime without a stack trace', () => {
+    expectFailure(
+      runCheck('0.4.0', jsonFixture(validPreflight), {
+        environmentOverrides: { SEMVER_PACKAGE_JSON: '/definitely/missing/semver/package.json' },
+      }),
+      'Unable to load the pinned SemVer dependency.',
     );
   });
 });

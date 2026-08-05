@@ -5,6 +5,10 @@ name: Publish OpenMAIC skill
 # - Restrict its deployment branches to `main` with a custom policy.
 # - Store `CLAWHUB_TOKEN` as an Environment secret.
 # - Do not also store `CLAWHUB_TOKEN` as a repository secret.
+# This workflow is path-filtered. Do not configure it as a required check for every PR;
+# require it only through rules that apply to the paths below.
+# PR previews execute the checked-out head scripts, so they intentionally receive no secrets,
+# have read-only contents permission, and disable persisted checkout credentials.
 
 on:
   pull_request:
@@ -12,12 +16,14 @@ on:
     paths:
       - "skills/openmaic/**"
       - ".github/scripts/check-clawhub-version.mjs"
+      - ".github/scripts/publish-openmaic-skill.sh"
       - ".github/workflows/publish-openmaic-skill.yml"
   push:
     branches: [main]
     paths:
       - "skills/openmaic/**"
       - ".github/scripts/check-clawhub-version.mjs"
+      - ".github/scripts/publish-openmaic-skill.sh"
       - ".github/workflows/publish-openmaic-skill.yml"
   workflow_dispatch:
     inputs:
@@ -26,7 +32,7 @@ on:
         type: boolean
         default: true
       version:
-        description: "Optional version without build metadata; leave empty for automatic patch"
+        description: "Optional stable SemVer version (no prerelease/build); empty means automatic patch"
         type: string
         default: ""
 
@@ -67,8 +73,10 @@ jobs:
         with:
           node-version: 22
 
-      - name: Check ClawHub version script syntax
-        run: node --check .github/scripts/check-clawhub-version.mjs
+      - name: Check publish script syntax
+        run: |
+          node --check .github/scripts/check-clawhub-version.mjs
+          bash -n .github/scripts/publish-openmaic-skill.sh
 
       - name: Install ClawHub CLI
         working-directory: ${{ runner.temp }}
@@ -77,8 +85,8 @@ jobs:
           NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/empty-npmrc
         run: |
           : > "$NPM_CONFIG_USERCONFIG"
-          npm install --global --ignore-scripts clawhub@0.23.3
-          echo "CLAWHUB_PACKAGE_JSON=$(npm root --global)/clawhub/package.json" >> "$GITHUB_ENV"
+          npm install --global --ignore-scripts clawhub@0.23.3 semver@7.8.5
+          echo "SEMVER_PACKAGE_JSON=$(npm root --global)/semver/package.json" >> "$GITHUB_ENV"
 
       - name: Configure ClawHub registry
         run: |
@@ -97,6 +105,7 @@ jobs:
 
       - name: Preview OpenMAIC skill publish
         env:
+          CLAWHUB: clawhub
           PUBLISH_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
           SOURCE_REPO: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
         run: |
@@ -106,41 +115,7 @@ jobs:
             echo "::notice::Skipping $source_commit because skills/openmaic was deleted."
             exit 0
           fi
-          publish_args=(
-            skills/openmaic
-            --slug openmaic
-            --name OpenMAIC
-            --owner wyuc
-            --source-repo "$SOURCE_REPO"
-            --source-commit "$source_commit"
-            --source-path skills/openmaic
-          )
-          if [[ -n "$PUBLISH_VERSION" ]]; then
-            preflight_file="$RUNNER_TEMP/clawhub-version-preflight.json"
-            clawhub skill publish "${publish_args[@]}" --dry-run --json | tee "$preflight_file"
-            if ! decision="$(PREFLIGHT_FILE="$preflight_file" node .github/scripts/check-clawhub-version.mjs)"; then
-              exit 1
-            fi
-            IFS=$'\t' read -r action canonical_version extra <<< "$decision"
-            if [[ -n "${extra:-}" || -z "$action" || -z "$canonical_version" ]]; then
-              echo "::error::Invalid version preflight decision."
-              exit 1
-            fi
-            case "$action" in
-              noop)
-                echo "::notice::The requested version already has identical content."
-                exit 0
-                ;;
-              continue)
-                publish_args+=(--version "$canonical_version")
-                ;;
-              *)
-                echo "::error::Unknown version preflight action."
-                exit 1
-                ;;
-            esac
-          fi
-          clawhub skill publish "${publish_args[@]}" --dry-run --json
+          bash .github/scripts/publish-openmaic-skill.sh --dry-run
 
   publish:
     name: Publish to ClawHub
@@ -165,8 +140,10 @@ jobs:
         with:
           node-version: 22
 
-      - name: Check ClawHub version script syntax
-        run: node --check .github/scripts/check-clawhub-version.mjs
+      - name: Check publish script syntax
+        run: |
+          node --check .github/scripts/check-clawhub-version.mjs
+          bash -n .github/scripts/publish-openmaic-skill.sh
 
       - name: Install ClawHub CLI
         working-directory: ${{ runner.temp }}
@@ -175,8 +152,8 @@ jobs:
           NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/empty-npmrc
         run: |
           : > "$NPM_CONFIG_USERCONFIG"
-          npm install --global --ignore-scripts clawhub@0.23.3
-          echo "CLAWHUB_PACKAGE_JSON=$(npm root --global)/clawhub/package.json" >> "$GITHUB_ENV"
+          npm install --global --ignore-scripts clawhub@0.23.3 semver@7.8.5
+          echo "SEMVER_PACKAGE_JSON=$(npm root --global)/semver/package.json" >> "$GITHUB_ENV"
 
       - name: Verify ClawHub token is configured
         env:
@@ -220,6 +197,7 @@ jobs:
 
       - name: Publish OpenMAIC skill
         env:
+          CLAWHUB: clawhub
           PUBLISH_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
           SOURCE_REPO: ${{ github.repository }}
         run: |
@@ -244,38 +222,4 @@ jobs:
             echo "::notice::Skipping $source_commit because skills/openmaic changed on main."
             exit 0
           fi
-          publish_args=(
-            skills/openmaic
-            --slug openmaic
-            --name OpenMAIC
-            --owner wyuc
-            --source-repo "$SOURCE_REPO"
-            --source-commit "$source_commit"
-            --source-path skills/openmaic
-          )
-          if [[ -n "$PUBLISH_VERSION" ]]; then
-            preflight_file="$RUNNER_TEMP/clawhub-version-preflight.json"
-            clawhub skill publish "${publish_args[@]}" --dry-run --json | tee "$preflight_file"
-            if ! decision="$(PREFLIGHT_FILE="$preflight_file" node .github/scripts/check-clawhub-version.mjs)"; then
-              exit 1
-            fi
-            IFS=$'\t' read -r action canonical_version extra <<< "$decision"
-            if [[ -n "${extra:-}" || -z "$action" || -z "$canonical_version" ]]; then
-              echo "::error::Invalid version preflight decision."
-              exit 1
-            fi
-            case "$action" in
-              noop)
-                echo "::notice::The requested version already has identical content."
-                exit 0
-                ;;
-              continue)
-                publish_args+=(--version "$canonical_version")
-                ;;
-              *)
-                echo "::error::Unknown version preflight action."
-                exit 1
-                ;;
-            esac
-          fi
-          clawhub skill publish "${publish_args[@]}" --json
+          bash .github/scripts/publish-openmaic-skill.sh
