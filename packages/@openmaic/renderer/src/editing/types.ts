@@ -93,6 +93,9 @@ export interface EditableSlideCanvasProps {
   /** Prefix used for each rendered element root DOM id. */
   elementIdPrefix?: string;
 
+  /** Host-controlled element ids omitted from rendering and interaction. */
+  hiddenElementIds?: readonly string[];
+
   /** Editor affordances (no-ops until Part A). */
   snapping?: boolean | SnappingOptions;
   grid?: 0 | 25 | 50 | 100;

@@ -34,6 +34,8 @@ export interface UseMarqueeGestureArgs {
   /** SlideCanvas centering offset (screen px) inside the overlay. */
   viewportStyles: ViewportStyles;
   selection: Selection;
+  /** Ids excluded from marquee selection, such as host-hidden elements. */
+  excludeIds?: readonly string[];
   onSelectionChange?: (next: Selection) => void;
 }
 
@@ -61,7 +63,8 @@ export interface UseMarqueeGestureResult {
  * Pure gesture glue: no store, no `@/` imports.
  */
 export function useMarqueeGesture(args: UseMarqueeGestureArgs): UseMarqueeGestureResult {
-  const { slide, scale, overlayRef, viewportStyles, selection, onSelectionChange } = args;
+  const { slide, scale, overlayRef, viewportStyles, selection, excludeIds, onSelectionChange } =
+    args;
 
   const [liveRect, setLiveRect] = useState<MarqueeRect | null>(null);
 
@@ -170,7 +173,7 @@ export function useMarqueeGesture(args: UseMarqueeGestureArgs): UseMarqueeGestur
       // Ctrl/Shift/Meta = intersection. Meta is included for mac parity with the
       // resize aspect modifier — a deliberate superset of the app's Ctrl/Shift.
       const mode = ev.ctrlKey || ev.shiftKey || ev.metaKey ? 'intersect' : 'contain';
-      const ids = computeMarqueeSelection(rect, slide.elements, { mode });
+      const ids = computeMarqueeSelection(rect, slide.elements, { mode, excludeIds });
 
       // The marquee REPLACES the selection. An empty result clears it (skip the
       // emit only when it was already empty). The top-most matched element (last

@@ -4,6 +4,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
@@ -58,6 +59,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     renderVideo,
     videoInteractive,
     elementIdPrefix,
+    hiddenElementIds,
     className,
     style,
     selection,
@@ -147,6 +149,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     overlayRef,
     viewportStyles,
     selection: activeSelection,
+    excludeIds: hiddenElementIds,
     onSelectionChange,
   });
 
@@ -179,7 +182,11 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   const renderDragOffsets = lineDrag || resizeDrag || rotateDrag ? undefined : dragOffsets;
   const renderedSlide = renderDragOffsets ? slide : displaySlide;
 
-  const elements = displayElements;
+  const elements = useMemo(() => {
+    if (!hiddenElementIds?.length) return displayElements;
+    const hidden = new Set(hiddenElementIds);
+    return displayElements.filter((element) => !hidden.has(element.id));
+  }, [displayElements, hiddenElementIds]);
   const activeGuides = resizeDrag?.guides ?? dragGuides;
   // Touch suppression belongs to mutation gestures: select-only hosts keep
   // native touch panning, while tap-select still receives pointer events.
@@ -208,6 +215,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
           videoInteractive={videoInteractive}
           elementIdPrefix={elementIdPrefix}
           dragOffsets={renderDragOffsets}
+          hiddenElementIds={hiddenElementIds}
         />
 
         {/* Interaction overlay: hit targets below, selection chrome above.

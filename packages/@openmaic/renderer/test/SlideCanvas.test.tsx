@@ -52,6 +52,20 @@ describe('SlideCanvas', () => {
     expect(html).toContain('id="screen-element-title-1"');
   });
 
+  it('does not render elements listed in hiddenElementIds', () => {
+    const html = renderToStaticMarkup(
+      createElement(SlideCanvas, {
+        slide,
+        scale: 1,
+        chrome: false,
+        hiddenElementIds: ['title-1'],
+      }),
+    );
+
+    expect(html).not.toContain('id="slide-element-title-1"');
+    expect(html).not.toContain('Hello');
+  });
+
   it('does not report an auto-fit scale when a fixed scale is provided', () => {
     const onScaleChange = vi.fn();
 

@@ -217,6 +217,30 @@ describe('EditableSlideCanvas — marquee', () => {
     expect(onSel).toHaveBeenCalledTimes(1);
     expect(onSel).toHaveBeenCalledWith({ elementIds: [] });
   });
+
+  it('does not render, hit-test, outline, or marquee-select hidden elements', () => {
+    const onSel = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={makeSlide()}
+        scale={1}
+        hiddenElementIds={['a']}
+        selection={{ elementIds: ['a'], primaryId: 'a' }}
+        onSelectionChange={onSel}
+        onElementsChange={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('#slide-element-a')).toBeNull();
+    expect(hit(container, 'a')).toBeNull();
+    expect(container.querySelector('[data-selection-border]')).toBeNull();
+
+    const s = surface(container);
+    fireEvent.pointerDown(s, { pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(s, { pointerId: 1, clientX: 350, clientY: 250 });
+    fireEvent.pointerUp(s, { pointerId: 1, clientX: 350, clientY: 250 });
+    expect(onSel).toHaveBeenLastCalledWith({ elementIds: [] });
+  });
 });
 
 describe('EditableSlideCanvas — click modifiers', () => {
@@ -241,6 +265,26 @@ describe('EditableSlideCanvas — click modifiers', () => {
     fireEvent.pointerDown(hit(container, 'b'), { pointerId: 1, clientX: 0, clientY: 0 });
     fireEvent.pointerUp(hit(container, 'b'), { pointerId: 1, clientX: 0, clientY: 0 });
     expect(onSel).toHaveBeenCalledWith({ elementIds: ['b'], primaryId: 'b' });
+  });
+
+  it('clicking a visible group member selects the complete source group, including hidden members', () => {
+    const onSel = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={makeSlide([groupEl('g1', 100), groupEl('g2', 300)])}
+        scale={1}
+        hiddenElementIds={['g2']}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSel}
+        onElementsChange={vi.fn()}
+      />,
+    );
+
+    expect(hit(container, 'g2')).toBeNull();
+    fireEvent.pointerDown(hit(container, 'g1'), { pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerUp(hit(container, 'g1'), { pointerId: 1, clientX: 100, clientY: 100 });
+
+    expect(onSel).toHaveBeenCalledWith({ elementIds: ['g1', 'g2'], primaryId: 'g1' });
   });
 
   it('a Ctrl-click on an unselected element ADDS it to the selection (uniq)', () => {
