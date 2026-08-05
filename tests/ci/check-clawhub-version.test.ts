@@ -207,7 +207,7 @@ describe('check-clawhub-version', () => {
       /if ! git cat-file -e "origin\/main\^\{tree\}:skills\/openmaic" 2>\/dev\/null; then\s+handle_divergence "skills\/openmaic was removed from main"\s+fi/,
     );
     expect(publishJob).toMatch(
-      /if \[\[ "\$source_tree" != "\$main_tree" \]\]; then\s+handle_divergence "skills\/openmaic changed on main"\s+fi/,
+      /source_tree="\$\(git rev-parse HEAD:skills\/openmaic\)"\s+main_tree="\$\(git rev-parse origin\/main:skills\/openmaic\)"\s+if \[\[ "\$source_tree" != "\$main_tree" \]\]; then\s+handle_divergence "skills\/openmaic changed on main"\s+fi/,
     );
   });
 
