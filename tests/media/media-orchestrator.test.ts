@@ -21,6 +21,9 @@ const mocks = vi.hoisted(() => ({
   markStagePersistenceDirty: vi.fn(),
   beforeDocumentWork: vi.fn(),
   accessDocument: vi.fn(),
+  listDocuments: vi.fn(),
+  loadDocument: vi.fn(),
+  otherDocuments: new Map<string, ReturnType<typeof documentWithMedia>>(),
   mediaRows: new Map<string, { id: string; blob: Blob; error?: string }>(),
 }));
 
@@ -48,6 +51,10 @@ vi.mock('@/lib/media/asset-pool', () => ({
 
 vi.mock('@/lib/document-store', () => ({
   accessDocument: mocks.accessDocument,
+  getDocumentStore: () => ({
+    listDocuments: mocks.listDocuments,
+    loadDocument: mocks.loadDocument,
+  }),
   mutateDocument: async (
     _stageId: string,
     work: (document: unknown, store: { saveDocument: (next: unknown) => Promise<void> }) => unknown,
@@ -207,6 +214,18 @@ describe('media orchestrator asset write paths', () => {
     mocks.stageSetState.mockReset();
     mocks.markStagePersistenceDirty.mockReset();
     mocks.beforeDocumentWork.mockReset();
+    mocks.otherDocuments.clear();
+    mocks.listDocuments
+      .mockReset()
+      .mockImplementation(async () => [
+        ...(mocks.document ? [{ id: mocks.document.stage.id }] : []),
+        ...[...mocks.otherDocuments.keys()].map((id) => ({ id })),
+      ]);
+    mocks.loadDocument
+      .mockReset()
+      .mockImplementation(async (id) =>
+        id === mocks.document?.stage.id ? mocks.document : (mocks.otherDocuments.get(id) ?? null),
+      );
     mocks.accessDocument.mockReset().mockImplementation(async () => ({
       document: mocks.document,
       readOnlyLegacy: false,
@@ -622,7 +641,65 @@ describe('media orchestrator asset write paths', () => {
       expect.objectContaining({ id: `${stageId}:${assetId}` }),
     );
     expect(useMediaGenerationStore.getState().tasks[assetId]?.status).toBe('done');
+    expect(mocks.listDocuments).toHaveBeenCalledTimes(1);
+    expect(mocks.loadDocument).toHaveBeenCalledWith(stageId);
     await assertOwnership();
+  });
+
+  it('forks a targeted retry when another persisted document aliases the allocated ref', async () => {
+    const assetId = await pool.put(new Blob(['shared-original'], { type: 'image/png' }));
+    mocks.document = documentWithMedia(assetId, 'image');
+    mocks.stageState = {
+      stage: structuredClone(mocks.document.stage),
+      scenes: structuredClone(mocks.document.scenes),
+    };
+    const other = documentWithMedia(assetId, 'image');
+    other.stage.id = 'stage-other';
+    other.scenes[0].stageId = 'stage-other';
+    mocks.otherDocuments.set('stage-other', other);
+    useMediaGenerationStore.setState({ tasks: { [assetId]: failedTask(assetId) } });
+    const replace = vi.spyOn(pool, 'replace');
+    serveImage('retried-target');
+
+    await retryMediaTask(assetId, {
+      elementId: 'image-1',
+      sceneId: 'scene-1',
+      slideId: 'slide-1',
+    });
+
+    const retriedRef = mocks.document.scenes[0].content.canvas.elements[0].src;
+    expect(retriedRef).toMatch(/^ast_/);
+    expect(retriedRef).not.toBe(assetId);
+    expect(other.scenes[0].content.canvas.elements[0].src).toBe(assetId);
+    expect(await resolvedText(assetId)).toBe('shared-original');
+    expect(await resolvedText(retriedRef)).toBe('retried-target');
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('forks instead of replacing when persisted ownership enumeration fails', async () => {
+    const assetId = await pool.put(new Blob(['original-bytes'], { type: 'image/png' }));
+    mocks.document = documentWithMedia(assetId, 'image');
+    mocks.stageState = {
+      stage: structuredClone(mocks.document.stage),
+      scenes: structuredClone(mocks.document.scenes),
+    };
+    mocks.listDocuments.mockRejectedValueOnce(new Error('document store unavailable'));
+    useMediaGenerationStore.setState({ tasks: { [assetId]: failedTask(assetId) } });
+    const replace = vi.spyOn(pool, 'replace');
+    serveImage('forked-bytes');
+
+    await retryMediaTask(assetId, {
+      elementId: 'image-1',
+      sceneId: 'scene-1',
+      slideId: 'slide-1',
+    });
+
+    const retriedRef = mocks.document.scenes[0].content.canvas.elements[0].src;
+    expect(retriedRef).toMatch(/^ast_/);
+    expect(retriedRef).not.toBe(assetId);
+    expect(await resolvedText(assetId)).toBe('original-bytes');
+    expect(await resolvedText(retriedRef)).toBe('forked-bytes');
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it('replaces an allocated video and its referenced poster without rewriting the document', async () => {

@@ -43,6 +43,13 @@ export interface StageAssetRefs {
   readonly referenceCounts: ReadonlyMap<string, number>;
 }
 
+export interface PersistedDocumentAssetRefs {
+  /** Logical-owner totals across every supplied persisted document. */
+  readonly referenceCounts: ReadonlyMap<string, number>;
+  /** Per-document results from the same stage enumerator used by deletion. */
+  readonly byDocument: ReadonlyMap<string, StageAssetRefs>;
+}
+
 function addValue(target: Set<string>, value: string | undefined): value is string {
   if (!value) return false;
   target.add(value);
@@ -208,4 +215,22 @@ export function collectStageAssetRefs(
     poolOwned,
     referenceCounts,
   };
+}
+
+/** Aggregate logical asset owners without introducing a second ref heuristic. */
+export function collectPersistedDocumentAssetRefs(
+  documents: readonly StageAssetDocument[],
+): PersistedDocumentAssetRefs {
+  const referenceCounts = new Map<string, number>();
+  const byDocument = new Map<string, StageAssetRefs>();
+
+  for (const document of documents) {
+    const refs = collectStageAssetRefs(document, { mediaRows: [], audioRows: [] });
+    byDocument.set(document.stage.id, refs);
+    for (const [ref, count] of refs.referenceCounts) {
+      referenceCounts.set(ref, (referenceCounts.get(ref) ?? 0) + count);
+    }
+  }
+
+  return { referenceCounts, byDocument };
 }

@@ -10,7 +10,12 @@ import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { markStagePersistenceDirty, useStageStore } from '@/lib/store/stage';
 import { db, mediaFileKey } from '@/lib/utils/database';
-import { accessDocument, mutateDocument, type AppDocument } from '@/lib/document-store';
+import {
+  accessDocument,
+  getDocumentStore,
+  mutateDocument,
+  type AppDocument,
+} from '@/lib/document-store';
 import type { SceneOutline } from '@/lib/types/generation';
 import { makeScene, type Scene, type Stage, type Whiteboard } from '@/lib/types/stage';
 import type { MediaGenerationRequest } from '@/lib/media/types';
@@ -20,7 +25,11 @@ import { assetRefExists } from '@/lib/media/use-asset-url';
 import { createLogger } from '@/lib/logger';
 import { isStageWriteStale, stageDeletionEpoch } from '@/lib/utils/deleted-stages';
 import type { MediaTask } from '@/lib/store/media-generation';
-import { collectStageAssetRefs } from './collect-stage-asset-refs';
+import {
+  collectPersistedDocumentAssetRefs,
+  collectStageAssetRefs,
+  type PersistedDocumentAssetRefs,
+} from './collect-stage-asset-refs';
 import { isGeneratedMediaPlaceholder } from './media-ref';
 
 const log = createLogger('MediaOrchestrator');
@@ -124,33 +133,48 @@ export async function retryMediaTask(
   }
 
   const stageState = useStageStore.getState();
-  const stageDocument =
-    stageState.stage?.id === task.stageId
-      ? { stage: stageState.stage, scenes: stageState.scenes }
-      : undefined;
-  const referenceCount = stageDocument
-    ? (collectStageAssetRefs(stageDocument, { mediaRows: [], audioRows: [] }).referenceCounts.get(
-        elementId,
-      ) ?? 0)
-    : 0;
-  const shared = referenceCount > 1;
   const scopedTarget = target
     ? {
         ...target,
         sceneId: target.sceneId ?? stageState.currentSceneId ?? undefined,
       }
     : undefined;
-  if (shared && (!scopedTarget?.sceneId || !scopedTarget.slideId)) {
-    log.warn(`Cannot retry shared media ${elementId} without a scene-and-slide target`);
+
+  const allocated = await assetRefExists(elementId);
+  let persistedRefs: PersistedDocumentAssetRefs | undefined;
+  if (allocated) {
+    try {
+      const documentStore = getDocumentStore();
+      const summaries = await documentStore.listDocuments();
+      const documents = await Promise.all(
+        summaries.map(async ({ id }) => {
+          const document = await documentStore.loadDocument(id);
+          if (!document) throw new Error(`Listed document ${id} could not be loaded`);
+          return document;
+        }),
+      );
+      persistedRefs = collectPersistedDocumentAssetRefs(documents);
+    } catch (error) {
+      log.warn(`Could not prove exclusive ownership of media ${elementId}:`, error);
+    }
+  }
+  const activeDocumentCount =
+    persistedRefs?.byDocument.get(task.stageId)?.referenceCounts.get(elementId) ?? 0;
+  const repositoryCount = persistedRefs?.referenceCounts.get(elementId) ?? 0;
+  const exclusive = activeDocumentCount === 1 && repositoryCount === 1;
+  const replaceAssetId = allocated && !target && exclusive ? elementId : undefined;
+  const targetedFork = !!target || (allocated && !replaceAssetId);
+  if (targetedFork && (!scopedTarget?.sceneId || !scopedTarget.slideId)) {
+    log.warn(`Cannot fork media ${elementId} without a scene-and-slide target`);
     return;
   }
-
-  // Asset refs are opaque. A uniquely-owned allocated ref keeps its identity;
-  // a duplicated ref gets a fresh allocation for the selected element only.
-  const replaceAssetId = !shared && (await assetRefExists(elementId)) ? elementId : undefined;
   const posterAssetIds =
     replaceAssetId && task.type === 'video'
-      ? await replaceablePosterRefs(task.stageId, currentPosterRefs(task.stageId, replaceAssetId))
+      ? await replaceablePosterRefs(
+          task.stageId,
+          currentPosterRefs(task.stageId, replaceAssetId),
+          persistedRefs!,
+        )
       : [];
 
   // Only legacy/failure placeholders are disposable. Keep them durable while
@@ -159,8 +183,8 @@ export async function retryMediaTask(
     ? new Set([elementId, target?.elementId].filter(Boolean) as string[])
     : undefined;
 
-  const progressKey = shared ? scopedTarget!.elementId : elementId;
-  if (shared) {
+  const progressKey = targetedFork ? scopedTarget!.elementId : elementId;
+  if (targetedFork) {
     useMediaGenerationStore.setState((state) => {
       const previousFork = state.tasks[progressKey];
       return {
@@ -197,8 +221,8 @@ export async function retryMediaTask(
     {
       replaceAssetId,
       replacePosterAssetIds: posterAssetIds,
-      target: shared ? scopedTarget : undefined,
-      sourceRef: shared ? elementId : undefined,
+      target: targetedFork ? scopedTarget : undefined,
+      sourceRef: targetedFork ? elementId : undefined,
     },
   );
   if (generatedAssetId && failureRefs) {
@@ -526,17 +550,21 @@ interface GeneratedMediaDetails {
   duration?: number;
 }
 
-async function replaceablePosterRefs(stageId: string, refs: string[]): Promise<string[]> {
+async function replaceablePosterRefs(
+  stageId: string,
+  refs: string[],
+  persistedRefs: PersistedDocumentAssetRefs,
+): Promise<string[]> {
   if (refs.length === 0) return [];
-  const state = useStageStore.getState();
-  const counts =
-    state.stage?.id === stageId
-      ? collectStageAssetRefs(
-          { stage: state.stage, scenes: state.scenes },
-          { mediaRows: [], audioRows: [] },
-        ).referenceCounts
-      : new Map<string, number>();
-  if (refs.some((ref) => (counts.get(ref) ?? 0) > 1)) return [];
+  const activeCounts = persistedRefs.byDocument.get(stageId)?.referenceCounts;
+  if (
+    refs.some(
+      (ref) =>
+        (activeCounts?.get(ref) ?? 0) !== 1 || (persistedRefs.referenceCounts.get(ref) ?? 0) !== 1,
+    )
+  ) {
+    return [];
+  }
   const found = await Promise.all(refs.map((ref) => assetRefExists(ref)));
   return found.every(Boolean) ? refs : [];
 }
