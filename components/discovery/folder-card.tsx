@@ -205,10 +205,11 @@ export function FolderCard({
 }
 
 /**
- * Stack up to three course covers inside the folder tile. Each cover is offset
- * and scaled down slightly; the frontmost cover is the most recently updated
- * member. A small ResizeObserver feeds the thumbnail its rendered width so the
- * slide canvas can size correctly.
+ * Render member course covers as a tidy, slightly-fanned stack: each rear cover
+ * peeks out from behind the one in front, offset up and to alternating sides,
+ * with a gentle rotation. Inspired by the iOS Photos / macOS folder cover —
+ * restrained, geometric, readable. The frontmost cover is the most recently
+ * updated member.
  */
 function CoverStack({
   covers,
@@ -221,7 +222,6 @@ function CoverStack({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Measure the cover area so every SlideThumbnail sizes to it.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -232,31 +232,41 @@ function CoverStack({
     return () => ro.disconnect();
   }, [setThumbWidth]);
 
-  // Ordered back→front so the frontmost is the last (most recent).
-  const ordered = [...covers].reverse();
+  const count = covers.length;
+  // `covers` is ordered most-recent-first; that cover is the front (drawn last,
+  // on top). Rear covers offset up + alternate sides + small rotation so a sliver
+  // of each is visible behind the front. Offsets are % of the tile for consistency.
+  const rear: Array<{ dx: number; dy: number; rot: number }> = [
+    { dx: -8, dy: 10, rot: -5 }, // rearmost (left, up, tilted left)
+    { dx: 8, dy: 5, rot: 5 }, // mid (right, up a bit, tilted right)
+  ];
 
   return (
-    <div ref={containerRef} className="absolute inset-0">
-      {ordered.map((cover, i) => {
-        const depth = ordered.length - 1 - i; // 0 = frontmost
-        const scale = 1 - depth * 0.06;
-        const offsetY = depth * 6;
-        const offsetX = depth * 4;
+    <div ref={containerRef} className="absolute inset-0 flex items-center justify-center">
+      {/* Render back→front: iterate covers in reverse so the front is last (on top). */}
+      {[...covers].reverse().map((cover, i) => {
+        const depthFromFront = count - 1 - i; // 0 = frontmost
+        const isFront = depthFromFront === 0;
+        const cfg = rear[depthFromFront - 1] ?? rear[rear.length - 1];
+        const widthPct = isFront ? 66 : 60;
         return (
           <div
             key={i}
-            className="absolute inset-0 flex items-center justify-center p-2"
+            className="absolute"
             style={{
-              transform: `translate(${offsetX}px, ${offsetY}px) scale(${scale})`,
-              zIndex: ordered.length - depth,
-              opacity: 1 - depth * 0.12,
+              width: `${widthPct}%`,
+              transform: isFront
+                ? 'translate(0, 0)'
+                : `translate(${cfg.dx}%, -${cfg.dy}%) rotate(${cfg.rot}deg)`,
+              zIndex: i + 1,
+              opacity: isFront ? 1 : 0.85,
             }}
           >
             {thumbWidth > 0 && (
-              <div className="w-[78%] aspect-[16/9] rounded-lg overflow-hidden shadow-md ring-1 ring-black/5">
+              <div className="aspect-[16/9] w-full rounded-xl overflow-hidden shadow-md ring-1 ring-black/5 bg-slate-200 dark:bg-slate-700">
                 <SlideThumbnail
                   slide={cover}
-                  size={Math.round(thumbWidth * 0.78)}
+                  size={Math.round((thumbWidth * widthPct) / 100)}
                   viewportSize={cover.viewportSize ?? 1000}
                   viewportRatio={cover.viewportRatio ?? 0.5625}
                 />
