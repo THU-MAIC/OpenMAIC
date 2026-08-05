@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { act, render } from '@testing-library/react';
 import { fireEvent } from '@testing-library/dom';
 import type { Slide, PPTElement } from '@openmaic/dsl';
+
+vi.mock('../../src/editing/core/snapping', async () => {
+  const actual = await vi.importActual<typeof import('../../src/editing/core/snapping')>(
+    '../../src/editing/core/snapping',
+  );
+  return { ...actual, buildAlignLines: vi.fn(actual.buildAlignLines) };
+});
+
+import { buildAlignLines } from '../../src/editing/core/snapping';
 import { useEditGesture, type UseEditGestureArgs } from '../../src/editing/useEditGesture';
 
 const baseElement = {
@@ -38,11 +47,87 @@ function makeSlide(overrides: Record<string, unknown> = {}): Slide {
  */
 function Harness(props: UseEditGestureArgs & { targetEl: PPTElement }) {
   const { targetEl, ...args } = props;
-  const { onElementPointerDown } = useEditGesture(args);
-  return <div data-testid="hit" onPointerDown={(e) => onElementPointerDown(targetEl, e)} />;
+  const { workingSlide, onElementPointerDown } = useEditGesture(args);
+  return (
+    <div
+      data-testid="hit"
+      data-left={workingSlide.elements[0].left}
+      onPointerDown={(e) => onElementPointerDown(targetEl, e)}
+    />
+  );
 }
 
 describe('useEditGesture — locked element (defense-in-depth)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('coalesces pointer moves to the latest coordinates once per animation frame', () => {
+    let frameId = 0;
+    const frames = new Map<number, FrameRequestCallback>();
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn((callback: FrameRequestCallback) => {
+        frameId += 1;
+        frames.set(frameId, callback);
+        return frameId;
+      }),
+    );
+    vi.stubGlobal(
+      'cancelAnimationFrame',
+      vi.fn((id: number) => frames.delete(id)),
+    );
+
+    const slide = makeSlide();
+    const { container } = render(
+      <Harness
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: ['a'], primaryId: 'a' }}
+        snapping={false}
+        onElementsChange={vi.fn()}
+        targetEl={slide.elements[0]}
+      />,
+    );
+    const hit = container.querySelector('[data-testid="hit"]') as HTMLElement;
+
+    fireEvent.pointerDown(hit, { pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(hit, { pointerId: 1, clientX: 20, clientY: 10 });
+    fireEvent.pointerMove(hit, { pointerId: 1, clientX: 30, clientY: 15 });
+
+    expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+    expect(hit.dataset.left).toBe('100');
+
+    const callback = frames.get(1);
+    expect(callback).toBeDefined();
+    act(() => callback?.(0));
+    expect(hit.dataset.left).toBe('130');
+  });
+
+  it('builds snapping candidates once at pointer-down and reuses them for the gesture', () => {
+    vi.mocked(buildAlignLines).mockClear();
+    const slide = makeSlide();
+    const el = slide.elements[0];
+
+    const { container, unmount } = render(
+      <Harness
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: ['a'], primaryId: 'a' }}
+        snapping
+        onElementsChange={vi.fn()}
+        targetEl={el}
+      />,
+    );
+
+    const hit = container.querySelector('[data-testid="hit"]') as HTMLElement;
+    fireEvent.pointerDown(hit, { pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(hit, { pointerId: 1, clientX: 20, clientY: 20 });
+    fireEvent.pointerMove(hit, { pointerId: 1, clientX: 30, clientY: 30 });
+    fireEvent.pointerUp(hit, { pointerId: 1, clientX: 30, clientY: 30 });
+
+    expect(buildAlignLines).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
   it('onElementPointerDown ignores a pointer-down on a locked element: no gesture arms', () => {
     const lockedSlide = makeSlide({ lock: true });
     const el = lockedSlide.elements[0];

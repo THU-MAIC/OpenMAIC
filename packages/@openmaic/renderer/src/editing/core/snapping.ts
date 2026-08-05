@@ -25,6 +25,12 @@ export interface Guide {
   length: number;
 }
 
+/** Candidate alignment lines prepared once for the lifetime of a gesture. */
+export interface AlignLines {
+  vertical: AlignLine[];
+  horizontal: AlignLine[];
+}
+
 /** Guides are drawn 100 canvas units longer than the strict overlap span (50 past each end). */
 const GUIDE_OVERHANG = 50;
 
@@ -42,7 +48,7 @@ export function buildAlignLines(
   others: PPTElement[],
   viewport: { width: number; height: number },
   opts: SnappingOptions = {},
-): { vertical: AlignLine[]; horizontal: AlignLine[] } {
+): AlignLines {
   const vertical: AlignLine[] = [];
   const horizontal: AlignLine[] = [];
 
@@ -118,7 +124,7 @@ function findBestMatch(lines: AlignLine[], probes: number[], range: number): Bes
  */
 export function snapRange(
   target: ElementRange,
-  lines: { vertical: AlignLine[]; horizontal: AlignLine[] },
+  lines: AlignLines,
   range: number,
 ): { dx: number; dy: number; guides: Guide[] } {
   const { minX, maxX, minY, maxY } = target;

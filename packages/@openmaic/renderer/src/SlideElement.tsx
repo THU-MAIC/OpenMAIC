@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, type ReactNode } from 'react';
+import { memo, useMemo, type ReactNode } from 'react';
 import {
   ElementTypes,
   type PPTElement,
@@ -39,19 +39,22 @@ export interface SlideElementProps {
   onElementClick?: (element: PPTElement, event: React.MouseEvent) => void;
   /** Prefix used for the root div id — must match SpotlightOverlay's `elementIdPrefix`. */
   idPrefix?: string;
+  /** Compositor-only offset used by the editing surface during a move gesture. */
+  dragOffset?: { x: number; y: number };
 }
 
-export function SlideElement({
+type SlideElementContentProps = Pick<
+  SlideElementProps,
+  'elementInfo' | 'animate' | 'renderImage' | 'renderVideo' | 'videoInteractive'
+>;
+
+const SlideElementContent = memo(function SlideElementContent({
   elementInfo,
-  elementIndex,
-  theme,
   animate,
   renderImage,
   renderVideo,
   videoInteractive,
-  onElementClick,
-  idPrefix = 'slide-element-',
-}: SlideElementProps) {
+}: SlideElementContentProps) {
   const Component = useMemo(() => {
     switch (elementInfo.type) {
       case ElementTypes.IMAGE:
@@ -79,9 +82,7 @@ export function SlideElement({
 
   if (!Component) return null;
 
-  const fontColor = theme?.fontColor ?? DEFAULT_THEME.fontColor;
-  const fontName = theme?.fontName ?? DEFAULT_THEME.fontName;
-  const renderedElement = (
+  return (
     <>
       {Component === 'text' && elementInfo.type === 'text' && (
         <BaseTextElement elementInfo={elementInfo} />
@@ -116,6 +117,22 @@ export function SlideElement({
       )}
     </>
   );
+});
+
+export const SlideElement = memo(function SlideElement({
+  elementInfo,
+  elementIndex,
+  theme,
+  animate,
+  renderImage,
+  renderVideo,
+  videoInteractive,
+  onElementClick,
+  idPrefix = 'slide-element-',
+  dragOffset,
+}: SlideElementProps) {
+  const fontColor = theme?.fontColor ?? DEFAULT_THEME.fontColor;
+  const fontName = theme?.fontName ?? DEFAULT_THEME.fontName;
 
   return (
     <div
@@ -133,10 +150,22 @@ export function SlideElement({
     >
       <div
         className="slide-element-hit-target"
-        style={onElementClick ? { pointerEvents: 'auto' } : undefined}
+        style={{
+          pointerEvents: onElementClick ? 'auto' : undefined,
+          transform: dragOffset
+            ? `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`
+            : undefined,
+          willChange: dragOffset ? 'transform' : undefined,
+        }}
       >
-        {renderedElement}
+        <SlideElementContent
+          elementInfo={elementInfo}
+          animate={animate}
+          renderImage={renderImage}
+          renderVideo={renderVideo}
+          videoInteractive={videoInteractive}
+        />
       </div>
     </div>
   );
-}
+});

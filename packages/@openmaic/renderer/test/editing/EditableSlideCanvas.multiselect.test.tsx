@@ -94,6 +94,14 @@ const hit = (c: HTMLElement, id: string) =>
 const surface = (c: HTMLElement) => c.querySelector('[data-marquee-surface]') as HTMLElement;
 const lineBlocker = (c: HTMLElement) => c.querySelector('[data-hit-kind="line"]') as Element;
 
+beforeEach(() => {
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    callback(0);
+    return 1;
+  });
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+});
+
 describe('EditableSlideCanvas — marquee', () => {
   beforeEach(() => {
     vi.mocked(useViewportSize).mockReturnValue({

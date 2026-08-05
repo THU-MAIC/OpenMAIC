@@ -45,6 +45,11 @@ function findLineHit(container: HTMLElement) {
 
 describe('EditableSlideCanvas', () => {
   beforeEach(() => {
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
     // Default: no centering offset (matches jsdom's zero-size container), so
     // the existing gesture tests run exactly as before.
     vi.mocked(useViewportSize).mockReturnValue({

@@ -1,7 +1,12 @@
 import type { PPTElement } from '@openmaic/dsl';
 import type { SnappingOptions } from '../types';
 import { getElementRange, getEditingElementListRange } from './geometry';
-import { buildAlignLines, snapRange, type Guide } from './snapping';
+import { buildAlignLines, snapRange, type AlignLines, type Guide } from './snapping';
+
+export interface PreparedSnapping {
+  lines: AlignLines;
+  range: number;
+}
 
 /**
  * Single-element drag input for one gesture-commit tick: the element being
@@ -16,6 +21,8 @@ export interface DragInput {
   deltaCanvas: { x: number; y: number };
   axisLock?: 'x' | 'y';
   snapping?: boolean | SnappingOptions;
+  /** Precomputed candidates reused by every update in one pointer gesture. */
+  preparedSnapping?: PreparedSnapping | null;
 }
 
 /** The dragged element's new position plus the guides to render, if any. */
@@ -46,6 +53,20 @@ export function resolveSnapping(
   return { opts: snapping, range: snapping.range ?? DEFAULT_SNAP_RANGE };
 }
 
+/** Build the immutable snapping candidates once when a gesture is armed. */
+export function prepareSnapping(
+  others: PPTElement[],
+  viewport: { width: number; height: number },
+  snapping: boolean | SnappingOptions | undefined,
+): PreparedSnapping | null {
+  const resolved = resolveSnapping(snapping);
+  if (!resolved) return null;
+  return {
+    lines: buildAlignLines(others, viewport, resolved.opts),
+    range: resolved.range,
+  };
+}
+
 /**
  * Apply a drag delta to a single element (respecting an optional axis lock),
  * then snap the moved position against `others`/the canvas per `snapping`.
@@ -56,7 +77,7 @@ export function resolveSnapping(
  * No React, no store, no `@/` imports.
  */
 export function computeDragMove(input: DragInput): DragResult {
-  const { element, others, viewport, deltaCanvas, axisLock, snapping } = input;
+  const { element, others, viewport, deltaCanvas, axisLock, snapping, preparedSnapping } = input;
 
   // Lines are filtered from dragging upstream (they carry `start`/`end`, not a
   // `width`/`height` box, so the box-model drag intent can't represent them).
@@ -76,8 +97,9 @@ export function computeDragMove(input: DragInput): DragResult {
   const shiftedLeft = left + dx0;
   const shiftedTop = top + dy0;
 
-  const resolved = resolveSnapping(snapping);
-  if (!resolved) {
+  const prepared =
+    preparedSnapping === undefined ? prepareSnapping(others, viewport, snapping) : preparedSnapping;
+  if (!prepared) {
     return { props: { left: shiftedLeft, top: shiftedTop }, guides: [] };
   }
 
@@ -91,8 +113,7 @@ export function computeDragMove(input: DragInput): DragResult {
   } as PPTElement;
   const targetRange = getElementRange(shiftedElement);
 
-  const lines = buildAlignLines(others, viewport, resolved.opts);
-  const { dx, dy, guides } = snapRange(targetRange, lines, resolved.range);
+  const { dx, dy, guides } = snapRange(targetRange, prepared.lines, prepared.range);
 
   return {
     props: { left: shiftedLeft + dx, top: shiftedTop + dy },
@@ -116,6 +137,8 @@ export interface MultiDragInput {
   deltaCanvas: { x: number; y: number };
   axisLock?: 'x' | 'y';
   snapping?: boolean | SnappingOptions;
+  /** Precomputed candidates reused by every update in one pointer gesture. */
+  preparedSnapping?: PreparedSnapping | null;
 }
 
 /** Every selected element's new position plus the guides to render, if any. */
@@ -145,7 +168,7 @@ export interface MultiDragResult {
  * No React, no store, no `@/` imports.
  */
 export function computeMultiDragMove(input: MultiDragInput): MultiDragResult {
-  const { selected, others, viewport, deltaCanvas, axisLock, snapping } = input;
+  const { selected, others, viewport, deltaCanvas, axisLock, snapping, preparedSnapping } = input;
 
   // Exported-API hardening: an empty set has no union bbox (a min/max over
   // nothing degenerates to ±Infinity), so there is nothing to move or snap.
@@ -158,14 +181,14 @@ export function computeMultiDragMove(input: MultiDragInput): MultiDragResult {
   let dy = 0;
   let guides: Guide[] = [];
 
-  const resolved = resolveSnapping(snapping);
-  if (resolved) {
+  const prepared =
+    preparedSnapping === undefined ? prepareSnapping(others, viewport, snapping) : preparedSnapping;
+  if (prepared) {
     const shifted = selected.map(
       (el) => ({ ...el, left: el.left + dx0, top: el.top + dy0 }) as PPTElement,
     );
     const targetRange = getEditingElementListRange(shifted);
-    const lines = buildAlignLines(others, viewport, resolved.opts);
-    const snapped = snapRange(targetRange, lines, resolved.range);
+    const snapped = snapRange(targetRange, prepared.lines, prepared.range);
     dx = snapped.dx;
     dy = snapped.dy;
     guides = snapped.guides;

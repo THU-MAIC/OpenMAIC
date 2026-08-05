@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import type { PPTElement, Slide } from '@openmaic/dsl';
 
-import { computeDragMove, computeMultiDragMove } from './core/drag';
+import { computeDragMove, computeMultiDragMove, prepareSnapping } from './core/drag';
 import { moveIntent, moveManyIntent } from './core/intent';
 import { isSelectionModifier, resolveClickSelection } from './core/selection';
 import type { Guide } from './core/snapping';
@@ -30,6 +30,8 @@ export interface UseEditGestureResult {
   workingSlide: Slide;
   /** Alignment guides for the active drag. */
   guides: Guide[];
+  /** Compositor offsets for the elements participating in the active move. */
+  dragOffsets?: ReadonlyMap<string, { x: number; y: number }>;
   /** Arm a move/click gesture for `el` from a pointer-down on its hit target. */
   onElementPointerDown: (el: PPTElement, e: ReactPointerEvent) => void;
 }
@@ -39,6 +41,7 @@ interface Working {
   /** Live slide with the dragged element's `left`/`top` updated for 60fps feedback. */
   live: Slide;
   guides: Guide[];
+  offsets: ReadonlyMap<string, { x: number; y: number }>;
 }
 
 /**
@@ -130,12 +133,14 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
     const selectedSet = new Set(dragIds);
     const isMover = (o: PPTElement) => selectedSet.has(o.id) && !o.lock;
     const selectedElements = slide.elements.filter(isMover);
+    const selectedById = new Map(selectedElements.map((selected) => [selected.id, selected]));
     const others = slide.elements.filter((o) => !isMover(o));
     const isMulti = selectedElements.length > 1;
     const viewport = {
       width: slide.viewportSize,
       height: slide.viewportSize * slide.viewportRatio,
     };
+    const preparedSnapping = prepareSnapping(others, viewport, snapping);
     const effectiveScale = scale || 1;
 
     try {
@@ -176,6 +181,7 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
           deltaCanvas,
           axisLock,
           snapping,
+          preparedSnapping,
         });
       }
       const { props, guides } = computeDragMove({
@@ -185,8 +191,53 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
         deltaCanvas,
         axisLock,
         snapping,
+        preparedSnapping,
       });
       return { updates: [{ id: el.id, props }], guides };
+    };
+
+    const updateWorkingCopy = (clientX: number, clientY: number, shiftKey: boolean) => {
+      const { updates, guides } = compute(clientX, clientY, shiftKey);
+      const patch = new Map(updates.map((u) => [u.id, u.props]));
+      const live: Slide = {
+        ...slide,
+        elements: slide.elements.map((o) => {
+          const props = patch.get(o.id);
+          return props ? ({ ...o, ...props } as PPTElement) : o;
+        }),
+      };
+      const offsets = new Map(
+        updates.map((update) => {
+          const origin = selectedById.get(update.id);
+          return [
+            update.id,
+            {
+              x: update.props.left - (origin?.left ?? update.props.left),
+              y: update.props.top - (origin?.top ?? update.props.top),
+            },
+          ];
+        }),
+      );
+      setWorking({ id: el.id, live, guides, offsets });
+    };
+
+    type PendingMove = { clientX: number; clientY: number; shiftKey: boolean };
+    let pendingMove: PendingMove | null = null;
+    let animationFrameId: number | null = null;
+
+    const flushPendingMove = () => {
+      animationFrameId = null;
+      const latest = pendingMove;
+      pendingMove = null;
+      if (!latest || activePointerRef.current === null) return;
+      updateWorkingCopy(latest.clientX, latest.clientY, latest.shiftKey);
+    };
+
+    const cancelPendingMove = () => {
+      pendingMove = null;
+      if (animationFrameId === null) return;
+      if (typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
     };
 
     const handleMove = (ev: PointerEvent) => {
@@ -196,22 +247,29 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
       // snap back on pointer-up. Skip live movement entirely when there's no
       // mutation channel — the gesture only ends up selecting (see handleUp).
       if (!onElementsChange) return;
-      const { updates, guides } = compute(ev.clientX, ev.clientY, ev.shiftKey);
-      const patch = new Map(updates.map((u) => [u.id, u.props]));
-      const live: Slide = {
-        ...slide,
-        elements: slide.elements.map((o) => {
-          const props = patch.get(o.id);
-          return props ? ({ ...o, ...props } as PPTElement) : o;
-        }),
-      };
-      setWorking({ id: el.id, live, guides });
+
+      pendingMove = { clientX: ev.clientX, clientY: ev.clientY, shiftKey: ev.shiftKey };
+      if (animationFrameId !== null) return;
+
+      // Browsers deliver pointer events faster than they can paint on many
+      // devices. Keep only the latest coordinates and publish at most one
+      // working copy per frame. The fallback preserves non-browser/test hosts.
+      if (typeof requestAnimationFrame === 'undefined') {
+        flushPendingMove();
+        return;
+      }
+      // Mark the frame as scheduled before invoking the host API so a
+      // synchronous test polyfill cannot leave a stale id after flushing.
+      animationFrameId = -1;
+      const scheduledFrameId = requestAnimationFrame(flushPendingMove);
+      if (animationFrameId !== null) animationFrameId = scheduledFrameId;
     };
 
     const removeListeners = () => {
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleCancel);
+      cancelPendingMove();
     };
 
     const handleUp = (ev: PointerEvent) => {
@@ -261,6 +319,7 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
   return {
     workingSlide: working?.live ?? slide,
     guides: working?.guides ?? [],
+    dragOffsets: working?.offsets,
     onElementPointerDown,
   };
 }

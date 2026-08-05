@@ -60,6 +60,8 @@ export interface SlideCanvasProps {
   elementIdPrefix?: string;
   /** Class on the outer container. */
   className?: string;
+  /** Compositor-only offsets used by the editing surface during a move gesture. */
+  dragOffsets?: ReadonlyMap<string, { x: number; y: number }>;
   /** Inline style on the outer container. */
   style?: CSSProperties;
   /**
@@ -90,7 +92,7 @@ export function SlideCanvas(props: SlideCanvasProps) {
   const videoInteractive = props.videoInteractive ?? ctx?.videoInteractive;
   const onElementClick = props.onElementClick ?? ctx?.onElementClick;
   const elementIdPrefix = props.elementIdPrefix ?? 'slide-element-';
-  const { className, style } = props;
+  const { className, dragOffsets, style } = props;
   const chrome = props.chrome ?? true;
 
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -194,6 +196,7 @@ export function SlideCanvas(props: SlideCanvasProps) {
               videoInteractive={videoInteractive}
               onElementClick={onElementClick}
               idPrefix={elementIdPrefix}
+              dragOffset={dragOffsets?.get(element.id)}
             />
           ))}
 
