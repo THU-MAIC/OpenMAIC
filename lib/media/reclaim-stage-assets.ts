@@ -1,6 +1,7 @@
 import { removeAsset } from './asset-pool';
 import {
   collectStageAssetRefs,
+  isAllocatedAssetRefReferencedBySurvivingDocument,
   type StageAssetDocument,
   type StageAssetRefs,
   type StageAudioRow,
@@ -90,6 +91,7 @@ export async function executeStageAssetReclamation(
   void deletedDocument;
 
   for (const ref of plan.poolRefs) {
+    if (await isAllocatedAssetRefReferencedBySurvivingDocument(ref)) continue;
     try {
       await removeAsset(ref);
     } catch (error) {

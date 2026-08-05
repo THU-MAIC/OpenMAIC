@@ -26,9 +26,9 @@ import { createLogger } from '@/lib/logger';
 import { isStageWriteStale, stageDeletionEpoch } from '@/lib/utils/deleted-stages';
 import type { MediaTask } from '@/lib/store/media-generation';
 import {
-  collectPersistedDocumentAssetRefs,
   collectStageAssetRefs,
-  type PersistedDocumentAssetRefs,
+  isAllocatedAssetRefReferencedBySurvivingDocument,
+  type StageAssetRefs,
 } from './collect-stage-asset-refs';
 import { isGeneratedMediaPlaceholder } from './media-ref';
 
@@ -141,27 +141,21 @@ export async function retryMediaTask(
     : undefined;
 
   const allocated = await assetRefExists(elementId);
-  let persistedRefs: PersistedDocumentAssetRefs | undefined;
+  let activePersistedRefs: StageAssetRefs | undefined;
   if (allocated) {
     try {
-      const documentStore = getDocumentStore();
-      const summaries = await documentStore.listDocuments();
-      const documents = await Promise.all(
-        summaries.map(async ({ id }) => {
-          const document = await documentStore.loadDocument(id);
-          if (!document) throw new Error(`Listed document ${id} could not be loaded`);
-          return document;
-        }),
-      );
-      persistedRefs = collectPersistedDocumentAssetRefs(documents);
+      const document = await getDocumentStore().loadDocument(task.stageId);
+      if (!document) throw new Error(`Document ${task.stageId} could not be loaded`);
+      activePersistedRefs = collectStageAssetRefs(document, { mediaRows: [], audioRows: [] });
     } catch (error) {
       log.warn(`Could not prove exclusive ownership of media ${elementId}:`, error);
     }
   }
-  const activeDocumentCount =
-    persistedRefs?.byDocument.get(task.stageId)?.referenceCounts.get(elementId) ?? 0;
-  const repositoryCount = persistedRefs?.referenceCounts.get(elementId) ?? 0;
-  const exclusive = activeDocumentCount === 1 && repositoryCount === 1;
+  const referencedByAnotherDocument = allocated
+    ? await isAllocatedAssetRefReferencedBySurvivingDocument(elementId, task.stageId)
+    : false;
+  const activeDocumentCount = activePersistedRefs?.referenceCounts.get(elementId) ?? 0;
+  const exclusive = activeDocumentCount === 1 && !referencedByAnotherDocument;
   const replaceAssetId = allocated && !target && exclusive ? elementId : undefined;
   const targetedFork = !!target || (allocated && !replaceAssetId);
   if (targetedFork && (!scopedTarget?.sceneId || !scopedTarget.slideId)) {
@@ -173,7 +167,7 @@ export async function retryMediaTask(
       ? await replaceablePosterRefs(
           task.stageId,
           currentPosterRefs(task.stageId, replaceAssetId),
-          persistedRefs!,
+          activePersistedRefs!,
         )
       : [];
 
@@ -553,18 +547,14 @@ interface GeneratedMediaDetails {
 async function replaceablePosterRefs(
   stageId: string,
   refs: string[],
-  persistedRefs: PersistedDocumentAssetRefs,
+  activePersistedRefs: StageAssetRefs,
 ): Promise<string[]> {
   if (refs.length === 0) return [];
-  const activeCounts = persistedRefs.byDocument.get(stageId)?.referenceCounts;
-  if (
-    refs.some(
-      (ref) =>
-        (activeCounts?.get(ref) ?? 0) !== 1 || (persistedRefs.referenceCounts.get(ref) ?? 0) !== 1,
-    )
-  ) {
-    return [];
-  }
+  if (refs.some((ref) => (activePersistedRefs.referenceCounts.get(ref) ?? 0) !== 1)) return [];
+  const shared = await Promise.all(
+    refs.map((ref) => isAllocatedAssetRefReferencedBySurvivingDocument(ref, stageId)),
+  );
+  if (shared.some(Boolean)) return [];
   const found = await Promise.all(refs.map((ref) => assetRefExists(ref)));
   return found.every(Boolean) ? refs : [];
 }

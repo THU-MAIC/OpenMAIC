@@ -10,10 +10,21 @@ const mocks = vi.hoisted(() => ({
   removeAsset: vi.fn(),
   mediaRows: [] as Array<{ id: string; stageId: string }>,
   audioRows: [] as Array<{ id: string; stageId?: string }>,
+  documents: new Map<string, StageAssetDocument>(),
+  listDocuments: vi.fn(),
+  loadDocument: vi.fn(),
+  poolBytes: new Map<string, Blob>(),
 }));
 
 vi.mock('@/lib/media/asset-pool', () => ({
   removeAsset: mocks.removeAsset,
+}));
+
+vi.mock('@/lib/document-store', () => ({
+  getDocumentStore: () => ({
+    listDocuments: mocks.listDocuments,
+    loadDocument: mocks.loadDocument,
+  }),
 }));
 
 function indexedRows<T extends { id: string; stageId?: string }>(rows: T[]) {
@@ -39,7 +50,10 @@ vi.mock('@/lib/utils/database', () => ({
   },
 }));
 
-import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
+import {
+  collectPersistedDocumentAssetRefs,
+  collectStageAssetRefs,
+} from '@/lib/media/collect-stage-asset-refs';
 import {
   buildStageAssetReclamationPlan,
   executeStageAssetReclamation,
@@ -113,6 +127,33 @@ function matrixDocument(): StageAssetDocument {
   } as unknown as StageAssetDocument;
 }
 
+function documentWithImage(id: string, ref: string): StageAssetDocument {
+  return {
+    stage: { id, name: id, createdAt: 1, updatedAt: 1 },
+    scenes: [
+      {
+        id: `${id}-scene`,
+        stageId: id,
+        type: 'slide',
+        title: id,
+        order: 1,
+        content: {
+          type: 'slide',
+          canvas: slide(`${id}-slide`, [{ id: `${id}-image`, type: 'image', src: ref }]),
+        },
+      },
+    ],
+  } as unknown as StageAssetDocument;
+}
+
+async function resolveImageBytes(document: StageAssetDocument): Promise<string | undefined> {
+  const scene = document.scenes[0];
+  if (scene?.content.type !== 'slide') return undefined;
+  const element = scene.content.canvas.elements[0];
+  if (element?.type !== 'image') return undefined;
+  return mocks.poolBytes.get(element.src)?.text();
+}
+
 const mediaRefs = [
   'stage-whiteboard-ref',
   'scene-whiteboard-ref',
@@ -127,7 +168,17 @@ const mediaRefs = [
 
 describe('stage asset reference and reclamation matrix', () => {
   beforeEach(() => {
-    mocks.removeAsset.mockReset().mockResolvedValue(undefined);
+    mocks.documents.clear();
+    mocks.poolBytes.clear();
+    mocks.removeAsset.mockReset().mockImplementation(async (ref: string) => {
+      mocks.poolBytes.delete(ref);
+    });
+    mocks.listDocuments
+      .mockReset()
+      .mockImplementation(async () => [...mocks.documents.keys()].map((id) => ({ id })));
+    mocks.loadDocument
+      .mockReset()
+      .mockImplementation(async (id: string) => mocks.documents.get(id) ?? null);
     mocks.mediaRows.splice(
       0,
       mocks.mediaRows.length,
@@ -142,6 +193,9 @@ describe('stage asset reference and reclamation matrix', () => {
       { id: 'tts_s1_action_1' },
       { id: 'other-audio', stageId: 'other-stage' },
     );
+    for (const ref of [...mediaRefs, 'audio-exclusive', 'audio-orphan']) {
+      mocks.poolBytes.set(ref, new Blob([`${ref}-bytes`]));
+    }
   });
 
   it('enumerates every document reference category', () => {
@@ -225,6 +279,59 @@ describe('stage asset reference and reclamation matrix', () => {
       { id: 'tts_s1_action_1' },
       { id: 'other-audio', stageId: 'other-stage' },
     ]);
+  });
+
+  it('preserves a globally shared pool ref when one owning stage is deleted', async () => {
+    const sharedRef = 'ast_cross_document_alias';
+    const deletedStageId = 'stage-deleted';
+    const deletedDocument = documentWithImage(deletedStageId, sharedRef);
+    const survivingDocument = documentWithImage('stage-surviving', sharedRef);
+    mocks.mediaRows.splice(0, mocks.mediaRows.length, {
+      id: `${deletedStageId}:${sharedRef}`,
+      stageId: deletedStageId,
+    });
+    mocks.audioRows.splice(0, mocks.audioRows.length);
+    mocks.poolBytes.set(sharedRef, new Blob(['shared-surviving-bytes']));
+    mocks.documents.set(deletedDocument.stage.id, deletedDocument);
+    mocks.documents.set(survivingDocument.stage.id, survivingDocument);
+    expect(
+      collectPersistedDocumentAssetRefs([...mocks.documents.values()]).referenceCounts.get(
+        sharedRef,
+      ),
+    ).toBe(2);
+    const inventory = await loadStageAssetInventory(deletedDocument);
+    const plan = buildStageAssetReclamationPlan(
+      deletedStageId,
+      inventory.refs,
+      inventory.mediaRows,
+      inventory.audioRows,
+    );
+    mocks.documents.delete(deletedStageId);
+
+    await executeStageAssetReclamation(plan, null);
+
+    expect(mocks.removeAsset).not.toHaveBeenCalledWith(sharedRef);
+    expect(mocks.mediaRows).toEqual([]);
+    expect(await resolveImageBytes(survivingDocument)).toBe('shared-surviving-bytes');
+  });
+
+  it('fails closed when surviving document enumeration fails', async () => {
+    const exclusiveRef = 'image-exclusive-ref';
+    const inventory = await loadStageAssetInventory(matrixDocument());
+    const plan = buildStageAssetReclamationPlan(
+      stageId,
+      inventory.refs,
+      inventory.mediaRows,
+      inventory.audioRows,
+    );
+    mocks.listDocuments.mockRejectedValue(new Error('document repository unavailable'));
+
+    await executeStageAssetReclamation(plan, null);
+
+    expect(mocks.removeAsset).not.toHaveBeenCalled();
+    expect(await mocks.poolBytes.get(exclusiveRef)?.text()).toBe(`${exclusiveRef}-bytes`);
+    expect(mocks.mediaRows.every((row) => row.stageId !== stageId)).toBe(true);
+    expect(mocks.audioRows.every((row) => row.stageId !== stageId)).toBe(true);
   });
 
   it('continues row cleanup after one pool removal fails', async () => {

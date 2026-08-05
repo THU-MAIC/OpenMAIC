@@ -103,7 +103,10 @@ const {
 vi.mock('@/lib/document-store', () => ({
   accessDocument: vi.fn(),
   clearCurrentScene: vi.fn().mockResolvedValue(undefined),
-  getDocumentStore: vi.fn(),
+  getDocumentStore: vi.fn(() => ({
+    listDocuments: vi.fn().mockResolvedValue([]),
+    loadDocument: vi.fn().mockResolvedValue(null),
+  })),
   getLegacyDocumentStore: vi.fn(),
   loadCurrentScene: vi.fn().mockResolvedValue(null),
   mutateDocument,

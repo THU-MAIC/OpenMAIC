@@ -1,5 +1,9 @@
 import type { Slide } from '@openmaic/dsl';
+import { getDocumentStore } from '@/lib/document-store';
+import { createLogger } from '@/lib/logger';
 import type { Scene, Stage } from '@/lib/types/stage';
+
+const log = createLogger('PersistedAssetRefs');
 
 export interface StageAssetDocument {
   readonly stage: Stage;
@@ -233,4 +237,33 @@ export function collectPersistedDocumentAssetRefs(
   }
 
   return { referenceCounts, byDocument };
+}
+
+/**
+ * Return whether an allocated ref remains live in any persisted document other
+ * than the optional document being replaced or deleted. Repository enumeration
+ * is authoritative and fail-closed: an unavailable listing, an unreadable
+ * listed document, or any other enumeration failure returns `true`.
+ */
+export async function isAllocatedAssetRefReferencedBySurvivingDocument(
+  ref: string,
+  excludedDocumentId?: string,
+): Promise<boolean> {
+  try {
+    const store = getDocumentStore();
+    const summaries = await store.listDocuments();
+    const documents = await Promise.all(
+      summaries
+        .filter(({ id }) => id !== excludedDocumentId)
+        .map(async ({ id }) => {
+          const document = await store.loadDocument(id);
+          if (!document) throw new Error(`Listed document ${id} could not be loaded`);
+          return document;
+        }),
+    );
+    return (collectPersistedDocumentAssetRefs(documents).referenceCounts.get(ref) ?? 0) > 0;
+  } catch (error) {
+    log.warn(`Could not determine persisted liveness of asset ${ref}:`, error);
+    return true;
+  }
 }
