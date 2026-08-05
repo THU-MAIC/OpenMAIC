@@ -718,6 +718,72 @@ describe('media orchestrator asset write paths', () => {
     expect(mocks.listDocuments).toHaveBeenCalledTimes(2);
   });
 
+  it('forks when the duplicate exists only in the unflushed editor state', async () => {
+    const assetId = await pool.put(new Blob(['image-original'], { type: 'image/png' }));
+    mocks.document = documentWithMedia(assetId, 'image');
+    mocks.stageState = {
+      stage: structuredClone(mocks.document.stage),
+      scenes: structuredClone(mocks.document.scenes),
+    };
+    mocks.mediaRows.set(`${stageId}:${assetId}`, {
+      id: `${stageId}:${assetId}`,
+      blob: new Blob(['image-original'], { type: 'image/png' }),
+    });
+    useMediaGenerationStore.setState({ tasks: { [assetId]: failedTask(assetId) } });
+    const replace = vi.spyOn(pool, 'replace');
+    let finishGeneration!: (response: Response) => void;
+    const generation = new Promise<Response>((resolve) => {
+      finishGeneration = resolve;
+    });
+    fetchMock.mockImplementation(async (input: string) => {
+      if (input === '/api/generate/image') return generation;
+      if (input === '/api/proxy-media') {
+        return new Response(new Blob(['image-retried'], { type: 'image/png' }), { status: 200 });
+      }
+      throw new Error(`Unexpected fetch: ${input}`);
+    });
+
+    const retrying = retryMediaTask(assetId, {
+      elementId: 'image-1',
+      sceneId: 'scene-1',
+      slideId: 'slide-1',
+    });
+    await vi.waitFor(() => {
+      expect(useMediaGenerationStore.getState().tasks[assetId]?.status).toBe('generating');
+    });
+
+    // Duplication lands in the Zustand aggregate immediately; persistence is
+    // still behind its debounce, so the stored document keeps a single owner.
+    const copy = structuredClone(mocks.stageState.scenes[0]);
+    copy.id = 'scene-copy';
+    copy.order = 2;
+    copy.content.canvas.id = 'slide-copy';
+    copy.content.canvas.elements[0].id = 'image-copy';
+    mocks.stageState.scenes.push(copy);
+    expect(mocks.document.scenes).toHaveLength(1);
+
+    finishGeneration(
+      new Response(
+        JSON.stringify({
+          success: true,
+          result: { url: 'https://media.test/image', width: 1024, height: 576 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    await retrying;
+
+    const targetRef = mocks.document.scenes[0].content.canvas.elements[0].src;
+    expect(targetRef).toMatch(/^ast_/);
+    expect(targetRef).not.toBe(assetId);
+    expect(await resolvedText(targetRef)).toBe('image-retried');
+    // The unflushed copy still points at the original id, whose bytes are intact.
+    expect(mocks.stageState.scenes[1].content.canvas.elements[0].src).toBe(assetId);
+    expect(await resolvedText(assetId)).toBe('image-original');
+    expect(await mocks.mediaRows.get(`${stageId}:${assetId}`)?.blob.text()).toBe('image-original');
+    expect(replace).not.toHaveBeenCalled();
+  });
+
   it('forks a targeted retry when another persisted document aliases the allocated ref', async () => {
     const assetId = await pool.put(new Blob(['shared-original'], { type: 'image/png' }));
     mocks.document = documentWithMedia(assetId, 'image');

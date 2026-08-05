@@ -543,6 +543,22 @@ interface GeneratedMediaDetails {
   duration?: number;
 }
 
+/**
+ * Owners the editor holds but has not flushed yet. Slide duplication updates the
+ * Zustand aggregate synchronously and schedules persistence behind a debounce, so
+ * the persisted document can still report a single owner while the live stage
+ * already has two. An in-place replacement decided from the persisted copy alone
+ * would rewrite bytes both slides reference.
+ */
+function unflushedStageOwnerCount(assetId: string, stageId: string): number | undefined {
+  const { stage, scenes } = useStageStore.getState();
+  if (!stage || stage.id !== stageId) return undefined;
+  return collectStageAssetRefs(
+    { stage, scenes },
+    { mediaRows: [], audioRows: [] },
+  ).referenceCounts.get(assetId);
+}
+
 async function proveExclusiveAssetOwnership(
   assetId: string,
   stageId: string,
@@ -559,9 +575,13 @@ async function proveExclusiveAssetOwnership(
     assetId,
     stageId,
   );
+  // The live snapshot only participates when it represents this stage; when it
+  // does, an owner it knows about counts even though persistence is pending.
+  const liveOwners = unflushedStageOwnerCount(assetId, stageId);
   return {
     exclusive:
       (activePersistedRefs?.referenceCounts.get(assetId) ?? 0) === 1 &&
+      (liveOwners === undefined || liveOwners === 1) &&
       !referencedByAnotherDocument,
     activePersistedRefs,
   };
