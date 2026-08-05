@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { ChangeEvent, KeyboardEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { ChangeEvent, KeyboardEvent, MouseEvent } from 'react';
 import type { TextToolbarColorPickerProps } from '../types';
 
 interface ToolbarColorSwatch {
@@ -47,6 +47,9 @@ export function DefaultColorPicker({
 }: TextToolbarColorPickerProps) {
   const [draft, setDraft] = useState(() => getDraftValue(value));
   const incomingValue = getDraftValue(value);
+  const openingColorRef = useRef(getPreviewColor(value));
+  const previewColorRef = useRef(openingColorRef.current);
+  const pendingSwatchClickRef = useRef(false);
 
   useEffect(() => {
     setDraft(incomingValue);
@@ -59,11 +62,16 @@ export function DefaultColorPicker({
     onCommit(normalized);
   };
 
+  const previewColor = (color: string) => {
+    previewColorRef.current = color;
+    onChange(color);
+  };
+
   const handleTextChange = (event: ChangeEvent<HTMLInputElement>) => {
     const nextDraft = event.target.value;
     setDraft(nextDraft);
     const normalized = normalizeToolbarColor(nextDraft);
-    if (normalized) onChange(normalized);
+    if (normalized) previewColor(normalized);
   };
 
   const handleTextKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -73,13 +81,29 @@ export function DefaultColorPicker({
     }
     if (event.key === 'Escape') {
       event.preventDefault();
-      setDraft(incomingValue);
+      const openingColor = openingColorRef.current;
+      setDraft(openingColor);
+      if (previewColorRef.current !== openingColor) previewColor(openingColor);
     }
   };
 
+  const handleTextBlur = () => {
+    if (pendingSwatchClickRef.current) {
+      pendingSwatchClickRef.current = false;
+      return;
+    }
+    commitDraft();
+  };
+
+  const handleSwatchMouseDown = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    pendingSwatchClickRef.current = true;
+  };
+
   const selectSwatch = (color: string) => {
+    pendingSwatchClickRef.current = false;
     setDraft(color);
-    onChange(color);
+    previewColor(color);
     onCommit(color);
   };
 
@@ -87,7 +111,7 @@ export function DefaultColorPicker({
     const normalized = normalizeToolbarColor(event.target.value);
     if (!normalized) return;
     setDraft(normalized);
-    onChange(normalized);
+    previewColor(normalized);
   };
 
   return (
@@ -104,6 +128,7 @@ export function DefaultColorPicker({
             aria-label={swatch.name}
             title={swatch.name}
             style={{ backgroundColor: swatch.value }}
+            onMouseDown={handleSwatchMouseDown}
             onClick={() => selectSwatch(swatch.value)}
           />
         ))}
@@ -119,10 +144,10 @@ export function DefaultColorPicker({
         <input
           type="text"
           className="maic-editing-ui-color-hex-input"
-          aria-label="十六进制颜色"
+          aria-label={labels.colorHex}
           value={draft}
           onChange={handleTextChange}
-          onBlur={commitDraft}
+          onBlur={handleTextBlur}
           onKeyDown={handleTextKeyDown}
           spellCheck={false}
         />
