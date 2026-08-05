@@ -40,7 +40,10 @@ if (desiredVersion.hasBuild) {
 }
 const canonical = desiredVersion.full;
 
+const isPreflightObject =
+  preflight !== null && typeof preflight === 'object' && !Array.isArray(preflight);
 if (
+  !isPreflightObject ||
   typeof preflight.status !== 'string' ||
   typeof preflight.version !== 'string' ||
   typeof preflight.fingerprint !== 'string' ||
