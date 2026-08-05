@@ -58,6 +58,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A full commit SHA is the only immutable GitHub Action reference. Version
+  # comments beside each pin keep the selected release human-readable.
+  # SECURITY BOUNDARY: package installation, builds and packing happen only in
+  # `validate`, before any job can read NPM_TOKEN. `publish` receives immutable
+  # tarballs and verifies their digests before giving those exact files to npm.
+  # This structurally removes build-code tampering with the git index, validated
+  # bytes differing from published bytes, and build code rewriting enforcement
+  # scripts before the token-bearing step uses them: the token-bearing job runs
+  # neither install nor build code.
+
   # Everything that does not need the token, so it can run from any ref and a
   # dry run stays useful to contributors.
   validate:
@@ -84,13 +94,13 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -119,36 +129,104 @@ jobs:
       # (renderer's fonts.css and its KaTeX font snapshot). If the committed
       # copies are stale, the build rewrites them here and the registry would
       # receive content that is not in the commit being released.
-      - name: Verify the build did not rewrite tracked package files
+      #
+      # Compare against GITHUB_SHA, not the index or HEAD. A bare `git diff`
+      # misses staged changes, while build code can create a commit and move
+      # HEAD. This check exists precisely because build code ran before it, so
+      # its reference point must be something that code cannot move. Disabling
+      # replacement objects also prevents a local replace ref from redirecting
+      # the commit comparison.
+      - name: Verify the build did not rewrite tracked files
         run: |
           set -euo pipefail
-          if ! git diff --quiet -- packages/@openmaic; then
-            echo "::error::The build modified tracked files under packages/@openmaic."
-            echo "Regenerate them and commit the result before releasing."
-            git --no-pager diff --stat -- packages/@openmaic
+          actual_head="$(git --no-replace-objects rev-parse HEAD)"
+          if [ "$actual_head" != "$GITHUB_SHA" ]; then
+            echo "::error::HEAD moved from $GITHUB_SHA to $actual_head during the build."
             exit 1
           fi
-          echo "Tracked package files match the commit being released."
+          if ! git --no-replace-objects diff --quiet "$GITHUB_SHA"; then
+            echo "::error::The build modified tracked repository files."
+            echo "Regenerate them and commit the result before releasing."
+            git --no-replace-objects --no-pager diff --stat "$GITHUB_SHA"
+            exit 1
+          fi
+          echo "Tracked repository files match the commit being released."
 
+      # Seal the checked build before any repository test code runs. Uploading
+      # immediately after packing makes the publish input immutable before the
+      # tests or smoke test can write to their local copies. `needs: validate`
+      # still prevents publication unless every later validation step passes.
+      #
+      # Pack each package exactly once. pnpm resolves workspace:^ in the packed
+      # manifest, while the config form suppresses prepack and prepare (pnpm
+      # pack does not accept --ignore-scripts).
+      - name: Pack release artifacts and record digests
+        env:
+          RELEASE_ARTIFACTS: ${{ runner.temp }}/openmaic-package-tarballs
+        run: |
+          set -euo pipefail
+          mkdir "$RELEASE_ARTIFACTS"
+          for pkg in dsl storage renderer importer; do
+            echo "::group::@openmaic/$pkg"
+            ( cd "packages/@openmaic/$pkg" \
+              && pnpm pack --config.ignore-scripts=true --pack-destination "$RELEASE_ARTIFACTS" )
+            echo "::endgroup::"
+          done
+          node scripts/verify-package-artifacts.mjs --write "$RELEASE_ARTIFACTS"
+
+      - name: Verify freshly packed release artifacts
+        env:
+          RELEASE_ARTIFACTS: ${{ runner.temp }}/openmaic-package-tarballs
+        run: node scripts/verify-package-artifacts.mjs "$RELEASE_ARTIFACTS"
+
+      # actions/upload-artifact v4 artifacts cannot be modified after upload.
+      # Tests below keep using the same local tarballs, while `publish` receives
+      # this already-uploaded snapshot only after the whole validate job passes.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: openmaic-package-tarballs-${{ github.sha }}
+          path: ${{ runner.temp }}/openmaic-package-tarballs
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+      # storage runs separately, under the json reporter, so that the run leaves
+      # a record of WHICH suites executed. STORAGE_PG_CONTRACT_REQUIRED only
+      # protects against a missing database: it is a `throw` inside the test
+      # modules, so it never fires if vitest stops collecting those modules at
+      # all, and what decides collection is storage's vitest.config.ts — an
+      # ignored publishable input, so excluding `*.pg.test.ts` there needs no
+      # version bump and leaves the run green. The assertion below is outside
+      # the tests for exactly that reason.
       - name: Test & typecheck
         env:
           PG_CONTRACT_URL: postgresql://postgres:postgres@localhost:5432/openmaic
           STORAGE_PG_CONTRACT_REQUIRED: "1"
+          STORAGE_VITEST_RESULTS: ${{ runner.temp }}/storage-vitest.json
+          STORAGE_PG_BASELINE: ${{ runner.temp }}/storage-pg-baseline.json
         run: |
-          pnpm --filter "@openmaic/dsl" --filter "@openmaic/storage" \
+          set -euo pipefail
+          pnpm --filter "@openmaic/dsl" \
             --filter "@openmaic/renderer" --filter "@openmaic/importer" run test
+          node scripts/assert-pg-contract-suites.mjs --capture-baseline "$STORAGE_PG_BASELINE"
+          pnpm --filter "@openmaic/storage" exec \
+            vitest run --reporter=default --reporter=json \
+            --outputFile.json="$STORAGE_VITEST_RESULTS"
+          node scripts/assert-pg-contract-suites.mjs "$STORAGE_VITEST_RESULTS" \
+            --baseline "$STORAGE_PG_BASELINE"
           pnpm --filter "@openmaic/dsl" --filter "@openmaic/storage" --filter "@openmaic/renderer" run typecheck
 
-      - name: Inspect tarball contents (dry-run pack)
-        run: |
-          for pkg in dsl storage renderer importer; do
-            echo "::group::@openmaic/$pkg"
-            ( cd "packages/@openmaic/$pkg" && pnpm pack --dry-run )
-            echo "::endgroup::"
-          done
-
+      # KNOWN LIMITATION: this smoke test reads the writable local directory,
+      # not the uploaded snapshot. Because upload already happened, a test
+      # process can replace a poisoned local tarball with a valid one and make
+      # this pass while `publish` downloads the poisoned snapshot, whose own
+      # SHA256SUMS can still be internally consistent. This cannot be closed
+      # while packing, uploading, and testing share one job and filesystem;
+      # closing it requires a separate packing-only job that runs no tests.
       - name: Smoke-test publishable tarballs
-        run: pnpm test:package-tarballs
+        env:
+          RELEASE_ARTIFACTS: ${{ runner.temp }}/openmaic-package-tarballs
+        run: pnpm test:package-tarballs -- "$RELEASE_ARTIFACTS"
 
   # The only job that can reach NPM_TOKEN. It is separate so the environment,
   # and therefore the token, is never attached to a run that is merely
@@ -163,23 +241,29 @@ jobs:
       actions: read # required to read this commit's CI conclusion
       id-token: write # required for npm provenance
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # The first-parent check needs real history.
           fetch-depth: 0
-          # This job installs dependencies and builds the packages, so it
-          # executes third-party code while holding NPM_TOKEN. It must not also
-          # hold a git credential that could push repository refs; writing the
-          # release markers is a separate job that runs no package code.
+          # Publishing holds no repository credential. Writing release markers
+          # remains isolated in the `mark` job.
           persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-          cache: pnpm
           registry-url: https://registry.npmjs.org
+
+      - name: Download validated package tarballs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: openmaic-package-tarballs-${{ github.sha }}
+          path: ${{ runner.temp }}/openmaic-package-tarballs
+
+      - name: Verify validated package tarballs
+        run: node scripts/verify-package-artifacts.mjs "$RELEASE_ARTIFACTS"
+        env:
+          RELEASE_ARTIFACTS: ${{ runner.temp }}/openmaic-package-tarballs
 
       # The environment's branch rule is the real boundary; this is defence in
       # depth, and it catches the case the rule cannot see. First-parent only:
@@ -236,30 +320,22 @@ jobs:
             sleep 30
           done
 
-      # Recomputed here rather than carried over from `validate`: this job must
-      # decide what to publish from the tree it is actually publishing.
-      - name: Plan the release
-        run: node scripts/check-package-version-bumps.mjs --release
-        env:
-          RELEASE_PLAN_PATH: ${{ runner.temp }}/release-plan.json
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Build @openmaic packages
-        run: >-
-          pnpm -r
-          --filter "@openmaic/dsl"
-          --filter "@openmaic/storage"
-          --filter "@openmaic/renderer"
-          --filter "@openmaic/importer"
-          run build
-
-      - name: Verify the build did not rewrite tracked package files
+      # No install or build runs in this job. This whole-tree check is defence
+      # in depth after repository code has run. It exists precisely because
+      # code ran before it, so its reference point must be GITHUB_SHA, which
+      # that code cannot move, rather than HEAD, which it can. Disabling
+      # replacement objects prevents local indirection during the comparison.
+      - name: Verify the release checkout is unchanged
         run: |
           set -euo pipefail
-          if ! git diff --quiet -- packages/@openmaic; then
-            echo "::error::The build modified tracked files under packages/@openmaic."
-            git --no-pager diff --stat -- packages/@openmaic
+          actual_head="$(git --no-replace-objects rev-parse HEAD)"
+          if [ "$actual_head" != "$GITHUB_SHA" ]; then
+            echo "::error::HEAD moved from $GITHUB_SHA to $actual_head before publication."
+            exit 1
+          fi
+          if ! git --no-replace-objects diff --quiet "$GITHUB_SHA"; then
+            echo "::error::Tracked repository files differ from the release commit."
+            git --no-replace-objects --no-pager diff --stat "$GITHUB_SHA"
             exit 1
           fi
 
@@ -268,13 +344,23 @@ jobs:
       # it; per-package publishing makes an ordinary re-run pick up exactly
       # where it stopped, because a version already on the registry is no
       # longer in the plan.
-      - name: Publish to npm
+      # The registry preflight is deliberately in this token-bearing step,
+      # immediately before the sequential loop, to minimize the race window.
+      - name: Registry preflight and publish validated tarballs
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
           RELEASE_PLAN_PATH: ${{ runner.temp }}/release-plan.json
+          RELEASE_ARTIFACTS: ${{ runner.temp }}/openmaic-package-tarballs
         run: |
           set -euo pipefail
+          # Anchor the validated digests in this shell before any repository
+          # script runs with the npm token. A child process can alter files,
+          # but it cannot rewrite its parent shell's scalar.
+          trusted_digests="$(< "$RELEASE_ARTIFACTS/SHA256SUMS")"
+          node scripts/verify-package-artifacts.mjs "$RELEASE_ARTIFACTS"
+
+          node scripts/check-package-version-bumps.mjs --release
           for pkg in dsl storage renderer importer; do
             name="@openmaic/$pkg"
             version="$(node -p "require('./packages/@openmaic/$pkg/package.json').version")"
@@ -286,11 +372,29 @@ jobs:
               echo "Skipping $name@$version: already on the registry."
               continue
             fi
-            # --ignore-scripts: every package's prepublishOnly reruns the build,
-            # which would delete and regenerate the dist that was just verified,
-            # so npm could receive bytes nothing checked.
-            ( cd "packages/@openmaic/$pkg" \
-              && pnpm publish --access public --provenance --no-git-checks --ignore-scripts )
+            filename="openmaic-$pkg-$version.tgz"
+            tarball="$RELEASE_ARTIFACTS/$filename"
+            expected_digest="$(
+              printf '%s\n' "$trusted_digests" | awk -v filename="$filename" \
+                '$2 == filename { print $1 }'
+            )"
+            if [ -z "$expected_digest" ]; then
+              echo "::error::$filename has no validated SHA-256 digest."
+              exit 1
+            fi
+            if ! actual_digest="$(sha256sum "$tarball" | awk '{print $1}')"; then
+              echo "::error::Could not re-verify $filename immediately before publication."
+              exit 1
+            fi
+            if [ "$actual_digest" != "$expected_digest" ]; then
+              echo "::error::$filename failed its pre-publish SHA-256 re-check."
+              exit 1
+            fi
+            echo "Re-verified $filename immediately before publication."
+            # npm accepts a tarball package-spec and attaches provenance to the
+            # supplied bytes. --ignore-scripts also prevents publish lifecycle
+            # scripts from executing in the token-bearing job.
+            npm publish "$tarball" --access public --provenance --ignore-scripts
             echo "Published $name@$version."
           done
 
@@ -301,8 +405,8 @@ jobs:
   # plan alone could never do, because a version already on the registry is
   # excluded from it.
   #
-  # Tag pushes use GITHUB_TOKEN credentials, and GitHub does not start new
-  # workflow runs from GITHUB_TOKEN pushes.
+  # Tags are created through the GitHub API with GITHUB_TOKEN, and GitHub does
+  # not start new workflow runs from GITHUB_TOKEN writes.
   mark:
     name: Mark released versions
     needs: publish
@@ -310,17 +414,19 @@ jobs:
     permissions:
       contents: write # required to push the release marker tags
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
       - name: Write missing release markers
         env:
           GIT_COMMIT: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           for pkg in dsl storage renderer importer; do
@@ -340,7 +446,8 @@ jobs:
               fi
               continue
             fi
-            if git tag "$tag" "$GIT_COMMIT" && git push origin "refs/tags/$tag"; then
+            if gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$tag" -f sha="$GIT_COMMIT" >/dev/null; then
               echo "Marked $tag at $GIT_COMMIT."
             else
               echo "::warning::Could not write the release marker $tag; $name@$version is published."

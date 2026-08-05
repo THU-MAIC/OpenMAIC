@@ -202,6 +202,7 @@ function baseScene(id: string, index: number): VideoTimelineScene {
     durationMs: 0,
     supported: true,
     base: { kind: 'slide-snapshot' },
+    visuals: [],
     narration: [],
     effects: [],
     videos: [],
