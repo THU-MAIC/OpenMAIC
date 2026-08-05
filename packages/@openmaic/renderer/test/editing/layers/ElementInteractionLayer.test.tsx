@@ -24,6 +24,7 @@ function makeProps(): ElementInteractionTargetProps {
     element,
     isSelected: true,
     interactive: true,
+    movable: true,
     sourceElements: [element],
     selection: { elementIds: ['a'], primaryId: 'a' },
     viewportLeft: 0,
@@ -49,6 +50,73 @@ describe('ElementInteractionLayer memoization', () => {
 });
 
 describe('ElementInteractionLayer context target ids', () => {
+  it('uses the element body for selection and the selected border for movement', () => {
+    const { container } = render(
+      <ElementInteractionLayer
+        elements={[element]}
+        sourceElements={[element]}
+        selection={{ elementIds: ['a'], primaryId: 'a' }}
+        interactive
+        movable
+        viewportLeft={0}
+        viewportTop={0}
+        canvasScale={1}
+        editingTouchAction="none"
+        onElementPointerDown={vi.fn()}
+        onSelectionChange={vi.fn()}
+      />,
+    );
+
+    const body = container.querySelector('[data-select-element-id="a"]') as HTMLElement;
+    const border = container.querySelector('[data-element-id="a"]') as SVGElement;
+    expect(body.style.cursor).toBe('text');
+    expect(border.style.cursor).toBe('move');
+  });
+
+  it('does not expose a movement target before the element is selected', () => {
+    const { container } = render(
+      <ElementInteractionLayer
+        elements={[element]}
+        sourceElements={[element]}
+        selection={{ elementIds: [] }}
+        interactive
+        movable
+        viewportLeft={0}
+        viewportTop={0}
+        canvasScale={1}
+        editingTouchAction="none"
+        onElementPointerDown={vi.fn()}
+        onSelectionChange={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('[data-select-element-id="a"]')).not.toBeNull();
+    expect(container.querySelector('[data-element-id="a"]')).toBeNull();
+  });
+
+  it('keeps only the active text border interactive while editing', () => {
+    const other = { ...element, id: 'b' } as PPTElement;
+    const { container } = render(
+      <ElementInteractionLayer
+        elements={[element, other]}
+        sourceElements={[element, other]}
+        selection={{ elementIds: ['a'], primaryId: 'a', editingId: 'a' }}
+        interactive
+        movable
+        viewportLeft={0}
+        viewportTop={0}
+        canvasScale={1}
+        editingTouchAction="none"
+        onElementPointerDown={vi.fn()}
+        onSelectionChange={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('[data-select-element-id]')).toBeNull();
+    expect(container.querySelectorAll('[data-element-id]')).toHaveLength(1);
+    expect(container.querySelector('[data-element-id="a"]')).not.toBeNull();
+  });
+
   it('marks locked box blockers with their element id', () => {
     const locked = { ...element, lock: true } as PPTElement;
     const { container } = render(
@@ -57,6 +125,7 @@ describe('ElementInteractionLayer context target ids', () => {
         sourceElements={[locked]}
         selection={{ elementIds: [] }}
         interactive
+        movable
         viewportLeft={0}
         viewportTop={0}
         canvasScale={1}
@@ -90,6 +159,7 @@ describe('ElementInteractionLayer context target ids', () => {
         sourceElements={[line]}
         selection={{ elementIds: [] }}
         interactive
+        movable
         viewportLeft={0}
         viewportTop={0}
         canvasScale={1}

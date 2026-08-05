@@ -1,4 +1,10 @@
-import { memo, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  Fragment,
+  memo,
+  useRef,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import type { PPTElement } from '@openmaic/dsl';
 
 import { getLineElementPath } from '../../utils/element';
@@ -9,6 +15,7 @@ export interface ElementInteractionTargetProps {
   element: PPTElement;
   isSelected: boolean;
   interactive: boolean;
+  movable: boolean;
   sourceElements: PPTElement[];
   selection: Selection;
   viewportLeft: number;
@@ -16,6 +23,7 @@ export interface ElementInteractionTargetProps {
   canvasScale: number;
   editingTouchAction: CSSProperties['touchAction'];
   onElementPointerDown: (element: PPTElement, event: ReactPointerEvent) => void;
+  onElementClick?: (element: PPTElement) => void;
   onSelectionChange?: (next: Selection) => void;
 }
 
@@ -27,6 +35,7 @@ export function areElementInteractionTargetPropsEqual(
     previous.element === next.element &&
     previous.isSelected === next.isSelected &&
     previous.interactive === next.interactive &&
+    previous.movable === next.movable &&
     previous.sourceElements === next.sourceElements &&
     previous.selection === next.selection &&
     previous.viewportLeft === next.viewportLeft &&
@@ -34,14 +43,19 @@ export function areElementInteractionTargetPropsEqual(
     previous.canvasScale === next.canvasScale &&
     previous.editingTouchAction === next.editingTouchAction &&
     previous.onElementPointerDown === next.onElementPointerDown &&
+    previous.onElementClick === next.onElementClick &&
     previous.onSelectionChange === next.onSelectionChange
   );
 }
+
+const BODY_CLICK_THRESHOLD_PX = 2;
+const MOVE_BORDER_WIDTH_PX = 10;
 
 function ElementInteractionTarget({
   element,
   isSelected,
   interactive,
+  movable,
   sourceElements,
   selection,
   viewportLeft,
@@ -49,14 +63,52 @@ function ElementInteractionTarget({
   canvasScale,
   editingTouchAction,
   onElementPointerDown,
+  onElementClick,
   onSelectionChange,
 }: ElementInteractionTargetProps) {
-  if (element.type === 'text' && !element.lock && selection.editingId === element.id) {
-    return null;
-  }
+  const bodyPressRef = useRef<{
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    modifier: boolean;
+  } | null>(null);
+  const editingActive = Boolean(selection.editingId);
+
+  const selectElement = (event: ReactPointerEvent) => {
+    event.stopPropagation();
+    if (event.button !== 0 || element.lock) return;
+    const modifier = isSelectionModifier(event);
+    const { next } = resolveClickSelection({
+      element,
+      elements: sourceElements,
+      selection,
+      modifier,
+    });
+    if (next) onSelectionChange?.(next);
+    bodyPressRef.current = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      modifier,
+    };
+    try {
+      (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
+    } catch {
+      // Pointer capture is best effort in jsdom and older browsers.
+    }
+  };
+
+  const finishBodyPress = (event: ReactPointerEvent) => {
+    const press = bodyPressRef.current;
+    bodyPressRef.current = null;
+    if (!press || press.pointerId !== event.pointerId || press.modifier) return;
+    const moved = Math.hypot(event.clientX - press.clientX, event.clientY - press.clientY);
+    if (moved <= BODY_CLICK_THRESHOLD_PX) onElementClick?.(element);
+  };
 
   if (element.type === 'line') {
     if (!interactive && !isSelected) return null;
+    if (editingActive) return null;
 
     const path = getLineElementPath(element);
     const spanWidth = Math.abs(element.start[0] - element.end[0]);
@@ -64,6 +116,7 @@ function ElementInteractionTarget({
     const grabScreenPx = Math.max(10, element.width * canvasScale);
     const grabCanvas = canvasScale > 0 ? grabScreenPx / canvasScale : grabScreenPx;
 
+    const moveFromStroke = isSelected && movable && !element.lock;
     return (
       <div
         style={{
@@ -90,23 +143,20 @@ function ElementInteractionTarget({
           <path
             data-hit-kind="line"
             data-context-element-id={element.id}
+            data-element-id={moveFromStroke ? element.id : undefined}
+            data-select-element-id={!moveFromStroke ? element.id : undefined}
             d={path}
             fill="none"
             stroke="transparent"
             strokeWidth={grabCanvas}
             pointerEvents={interactive ? 'stroke' : 'none'}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-              if (element.lock) return;
-              const { next } = resolveClickSelection({
-                element,
-                elements: sourceElements,
-                selection,
-                modifier: isSelectionModifier(event),
-              });
-              if (next) onSelectionChange?.(next);
+            onPointerDown={(event) =>
+              moveFromStroke ? onElementPointerDown(element, event) : selectElement(event)
+            }
+            style={{
+              cursor: moveFromStroke ? 'move' : 'default',
+              touchAction: editingTouchAction,
             }}
-            style={{ cursor: 'default', touchAction: editingTouchAction }}
           />
           {isSelected && (
             <path
@@ -140,6 +190,7 @@ function ElementInteractionTarget({
   } satisfies CSSProperties;
 
   if (element.lock) {
+    if (editingActive) return null;
     return (
       <div
         data-hit-kind="blocker"
@@ -150,12 +201,61 @@ function ElementInteractionTarget({
     );
   }
 
+  const screenWidth = element.width * canvasScale;
+  const screenHeight = element.height * canvasScale;
+  const showMoveBorder = isSelected && movable;
+
   return (
-    <div
-      data-element-id={element.id}
-      onPointerDown={(event) => onElementPointerDown(element, event)}
-      style={{ ...frameStyle, cursor: 'move' }}
-    />
+    <Fragment>
+      {!editingActive && (
+        <div
+          data-select-element-id={element.id}
+          data-context-element-id={element.id}
+          onPointerDown={selectElement}
+          onPointerUp={finishBodyPress}
+          onPointerCancel={() => {
+            bodyPressRef.current = null;
+          }}
+          style={{
+            ...frameStyle,
+            cursor: element.type === 'text' ? 'text' : 'default',
+          }}
+        />
+      )}
+      {showMoveBorder && (
+        <div
+          data-element-id={element.id}
+          data-context-element-id={element.id}
+          onPointerDown={(event) => onElementPointerDown(element, event)}
+          style={{
+            ...frameStyle,
+            pointerEvents: 'none',
+            overflow: 'visible',
+            cursor: 'move',
+          }}
+        >
+          <svg
+            width={screenWidth}
+            height={screenHeight}
+            overflow="visible"
+            style={{ display: 'block', overflow: 'visible', pointerEvents: 'none' }}
+          >
+            <rect
+              data-move-border={element.id}
+              x={0}
+              y={0}
+              width={screenWidth}
+              height={screenHeight}
+              fill="none"
+              stroke="transparent"
+              strokeWidth={MOVE_BORDER_WIDTH_PX}
+              pointerEvents="stroke"
+              style={{ cursor: 'move', touchAction: editingTouchAction }}
+            />
+          </svg>
+        </div>
+      )}
+    </Fragment>
   );
 }
 
@@ -169,11 +269,13 @@ interface ElementInteractionLayerProps {
   sourceElements: PPTElement[];
   selection: Selection;
   interactive: boolean;
+  movable: boolean;
   viewportLeft: number;
   viewportTop: number;
   canvasScale: number;
   editingTouchAction: CSSProperties['touchAction'];
   onElementPointerDown: (element: PPTElement, event: ReactPointerEvent) => void;
+  onElementClick?: (element: PPTElement) => void;
   onSelectionChange?: (next: Selection) => void;
 }
 
@@ -182,11 +284,13 @@ export function ElementInteractionLayer({
   sourceElements,
   selection,
   interactive,
+  movable,
   viewportLeft,
   viewportTop,
   canvasScale,
   editingTouchAction,
   onElementPointerDown,
+  onElementClick,
   onSelectionChange,
 }: ElementInteractionLayerProps) {
   return elements.map((element) => (
@@ -195,6 +299,7 @@ export function ElementInteractionLayer({
       element={element}
       isSelected={selection.elementIds.includes(element.id)}
       interactive={interactive}
+      movable={movable}
       sourceElements={sourceElements}
       selection={selection}
       viewportLeft={viewportLeft}
@@ -202,6 +307,7 @@ export function ElementInteractionLayer({
       canvasScale={canvasScale}
       editingTouchAction={editingTouchAction}
       onElementPointerDown={onElementPointerDown}
+      onElementClick={onElementClick}
       onSelectionChange={onSelectionChange}
     />
   ));

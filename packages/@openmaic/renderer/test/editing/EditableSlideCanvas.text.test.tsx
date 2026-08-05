@@ -76,7 +76,7 @@ describe('EditableSlideCanvas text rendering', () => {
   it('enters text editing on a click but keeps a drag as a move gesture', () => {
     const onSelectionChange = vi.fn();
     const onElementsChange = vi.fn();
-    const { container } = render(
+    const { container, rerender } = render(
       <EditableSlideCanvas
         slide={slide}
         scale={1}
@@ -86,10 +86,10 @@ describe('EditableSlideCanvas text rendering', () => {
         onTextContentChange={vi.fn()}
       />,
     );
-    const hit = container.querySelector('[data-element-id="text-1"]') as HTMLElement;
+    const body = container.querySelector('[data-select-element-id="text-1"]') as HTMLElement;
 
-    fireEvent.pointerDown(hit, { pointerId: 1, clientX: 10, clientY: 10 });
-    fireEvent.pointerUp(hit, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerDown(body, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(body, { pointerId: 1, clientX: 10, clientY: 10 });
     expect(onSelectionChange).toHaveBeenLastCalledWith({
       elementIds: ['text-1'],
       primaryId: 'text-1',
@@ -97,8 +97,19 @@ describe('EditableSlideCanvas text rendering', () => {
     });
 
     onSelectionChange.mockClear();
-    fireEvent.pointerDown(hit, { pointerId: 2, clientX: 10, clientY: 10 });
-    fireEvent.pointerUp(hit, { pointerId: 2, clientX: 30, clientY: 20 });
+    rerender(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: ['text-1'], primaryId: 'text-1' }}
+        onSelectionChange={onSelectionChange}
+        onElementsChange={onElementsChange}
+        onTextContentChange={vi.fn()}
+      />,
+    );
+    const border = container.querySelector('[data-element-id="text-1"]') as SVGElement;
+    fireEvent.pointerDown(border, { pointerId: 2, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(border, { pointerId: 2, clientX: 30, clientY: 20 });
     expect(onElementsChange).toHaveBeenCalledWith([
       expect.objectContaining({ type: 'element.update', id: 'text-1' }),
     ]);
@@ -120,7 +131,8 @@ describe('EditableSlideCanvas text rendering', () => {
       />,
     );
 
-    expect(container.querySelector('[data-element-id="text-1"]')).toBeNull();
+    expect(container.querySelector('[data-select-element-id="text-1"]')).toBeNull();
+    expect(container.querySelector('[data-element-id="text-1"]')).not.toBeNull();
     expect(
       (container.querySelector('[data-marquee-surface]') as HTMLElement).style.pointerEvents,
     ).toBe('none');
@@ -130,6 +142,27 @@ describe('EditableSlideCanvas text rendering', () => {
       elementIds: ['text-1'],
       primaryId: 'text-1',
     });
+  });
+
+  it('suspends element move hit targets while ProseMirror is editing', () => {
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: ['text-1'], primaryId: 'text-1', editingId: 'text-1' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+        onTextContentChange={vi.fn()}
+      />,
+    );
+
+    const editor = container.querySelector('[data-renderer-text-editor]') as HTMLElement;
+    expect(editor.style.cursor).toBe('text');
+    expect(editor.style.userSelect).toBe('text');
+    expect(container.querySelector('[data-select-element-id]')).toBeNull();
+    expect(container.querySelectorAll('[data-element-id]')).toHaveLength(1);
+    expect(container.querySelector('[data-element-id="text-1"]')).not.toBeNull();
+    expect(container.querySelector('[data-hit-kind="blocker"]')).toBeNull();
   });
 
   it('clears editing selection when the blank canvas is pressed', () => {

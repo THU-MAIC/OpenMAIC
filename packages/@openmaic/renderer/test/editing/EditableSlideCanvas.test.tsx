@@ -36,7 +36,8 @@ const slide = {
 } as unknown as Slide;
 
 function findHit(container: HTMLElement) {
-  return container.querySelector('[data-element-id="a"]') as HTMLElement;
+  return (container.querySelector('[data-element-id="a"]') ??
+    container.querySelector('[data-select-element-id="a"]')) as HTMLElement;
 }
 
 function findLineHit(container: HTMLElement) {
@@ -202,10 +203,9 @@ describe('EditableSlideCanvas', () => {
         onElementsChange={vi.fn()}
       />,
     );
-    // Box element still hit-testable; line element has no draggable hit node
-    // (its blocker is an inert SVG path, not a data-element-id move target).
+    // Both selected elements expose movement only on their visible border/stroke.
     expect(container.querySelector('[data-element-id="a"]')).not.toBeNull();
-    expect(container.querySelector('[data-element-id="line1"]')).toBeNull();
+    expect(container.querySelector('[data-element-id="line1"]')).not.toBeNull();
     // The selected line's chrome is its endpoint handles, NOT a bbox border.
     expect(container.querySelector('[data-line-handle="start"]')).not.toBeNull();
     expect(container.querySelector('[data-line-handle="end"]')).not.toBeNull();
@@ -486,14 +486,17 @@ describe('EditableSlideCanvas', () => {
     );
     expect(onCh).not.toHaveBeenCalled();
 
-    // A pointer-down in the line's bbox but away from the stroke still reaches
-    // the box: its own hit target is present and drives a move.
-    const boxHit = container.querySelector('[data-element-id="a"]') as HTMLElement;
+    // A pointer-down in the line's bbox but away from the stroke reaches the
+    // box body. The body selects only; movement starts from a selected border.
+    const boxHit = container.querySelector('[data-select-element-id="a"]') as HTMLElement;
     expect(boxHit).not.toBeNull();
     fireEvent.pointerDown(boxHit, { clientX: 0, clientY: 0 });
     fireEvent.pointerMove(boxHit, { clientX: 30, clientY: 20 });
     fireEvent.pointerUp(boxHit, { clientX: 30, clientY: 20 });
-    expect(onCh).toHaveBeenCalledTimes(1);
+    expect(onCh).not.toHaveBeenCalled();
+    expect(onSel).toHaveBeenLastCalledWith(
+      expect.objectContaining({ elementIds: ['a'], primaryId: 'a' }),
+    );
   });
 
   it('a pointer-down on a line selects it via onSelectionChange but emits no element.update (selectable, not draggable)', () => {
@@ -1121,8 +1124,10 @@ describe('EditableSlideCanvas', () => {
         onElementsChange={vi.fn()}
       />,
     );
-    // Unlocked element still hit-testable; locked element has no hit node.
-    expect(container.querySelector('[data-element-id="a"]')).not.toBeNull();
+    // Unlocked element body remains selectable, but no element exposes a move
+    // border until it is selected. The locked element stays non-movable.
+    expect(container.querySelector('[data-select-element-id="a"]')).not.toBeNull();
+    expect(container.querySelector('[data-element-id="a"]')).toBeNull();
     expect(container.querySelector('[data-element-id="locked1"]')).toBeNull();
   });
 

@@ -90,7 +90,8 @@ const groupEl = (id: string, left: number) => ({
 });
 
 const hit = (c: HTMLElement, id: string) =>
-  c.querySelector(`[data-element-id="${id}"]`) as HTMLElement;
+  (c.querySelector(`[data-element-id="${id}"]`) ??
+    c.querySelector(`[data-select-element-id="${id}"]`)) as HTMLElement;
 const surface = (c: HTMLElement) => c.querySelector('[data-marquee-surface]') as HTMLElement;
 const lineBlocker = (c: HTMLElement) => c.querySelector('[data-hit-kind="line"]') as Element;
 
@@ -762,7 +763,7 @@ describe('EditableSlideCanvas — group cohesion on click', () => {
   it('dragging a group member moves the WHOLE group (one updateMany)', () => {
     const onSel = vi.fn();
     const onCh = vi.fn();
-    const { container } = render(
+    const { container, rerender } = render(
       <EditableSlideCanvas
         slide={makeSlide([g1, g2, textEl])}
         scale={1}
@@ -773,11 +774,23 @@ describe('EditableSlideCanvas — group cohesion on click', () => {
       />,
     );
     fireEvent.pointerDown(hit(container, 'g1'), { pointerId: 1, clientX: 0, clientY: 0 });
-    fireEvent.pointerMove(hit(container, 'g1'), { pointerId: 1, clientX: 30, clientY: 20 });
-    fireEvent.pointerUp(hit(container, 'g1'), { pointerId: 1, clientX: 30, clientY: 20 });
-    // Selection landed on the whole group at pointer-down…
+    fireEvent.pointerUp(hit(container, 'g1'), { pointerId: 1, clientX: 0, clientY: 0 });
+    // The first body click selects the whole group.
     expect(onSel).toHaveBeenCalledWith({ elementIds: ['g1', 'g2'], primaryId: 'g1' });
-    // …and the drag translated every member as ONE updateMany.
+    rerender(
+      <EditableSlideCanvas
+        slide={makeSlide([g1, g2, textEl])}
+        scale={1}
+        selection={{ elementIds: ['g1', 'g2'], primaryId: 'g1' }}
+        onSelectionChange={onSel}
+        onElementsChange={onCh}
+        snapping={false}
+      />,
+    );
+    // A following drag from the selected border moves the whole group.
+    fireEvent.pointerDown(hit(container, 'g1'), { pointerId: 2, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(hit(container, 'g1'), { pointerId: 2, clientX: 30, clientY: 20 });
+    fireEvent.pointerUp(hit(container, 'g1'), { pointerId: 2, clientX: 30, clientY: 20 });
     expect(onCh).toHaveBeenCalledTimes(1);
     expect(onCh.mock.calls[0][0]).toEqual([
       {

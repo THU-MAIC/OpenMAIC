@@ -144,7 +144,6 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     snapping,
     onSelectionChange: publishSelection,
     onElementsChange,
-    onElementClick: textEditingEnabled ? handleTextClick : undefined,
   });
   const onElementPointerDownRef = useRef(onElementPointerDown);
   useEffect(() => {
@@ -382,11 +381,13 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
             sourceElements={slide.elements}
             selection={activeSelection}
             interactive={interactive}
+            movable={Boolean(onElementsChange)}
             viewportLeft={viewportStyles.left}
             viewportTop={viewportStyles.top}
             canvasScale={canvasScale}
             editingTouchAction={editingTouchAction}
             onElementPointerDown={handleElementPointerDown}
+            onElementClick={textEditingEnabled ? handleTextClick : undefined}
             onSelectionChange={publishSelection}
           />
 
