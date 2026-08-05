@@ -5,17 +5,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * real `@openmaic/renderer/snapshot` needs a build + DOM). `slideToPng` records
  * the slide it was handed so tests can assert which media the frame captured.
  */
-const capturedSlides: Array<{ elements: Array<Record<string, unknown>> }> = [];
+const capturedSlides: Array<{
+  elements: Array<Record<string, unknown>>;
+  background?: { type: string; image?: { src: string } };
+}> = [];
 const mediaOwnerMocks = vi.hoisted(() => ({
   withAssetUrl: vi.fn(async (_ref: string, fn: (url: string | null) => Promise<unknown>) =>
     fn(null),
   ),
 }));
 vi.mock('@openmaic/renderer/snapshot', () => ({
-  slideToPng: vi.fn(async (slide: { elements: Array<Record<string, unknown>> }) => {
-    capturedSlides.push(structuredClone(slide));
-    return new Blob(['png'], { type: 'image/png' });
-  }),
+  slideToPng: vi.fn(
+    async (slide: {
+      elements: Array<Record<string, unknown>>;
+      background?: { type: string; image?: { src: string } };
+    }) => {
+      capturedSlides.push(structuredClone(slide));
+      return new Blob(['png'], { type: 'image/png' });
+    },
+  ),
 }));
 vi.mock('@/lib/media/use-asset-url', () => ({
   withAssetUrl: mediaOwnerMocks.withAssetUrl,
@@ -341,6 +349,29 @@ describe('collectVideoAssets — frame base restores evicted generated media', (
     path: 'frames/s1.png',
     present: true,
   };
+
+  it('resolves and revokes an allocated image background before snapshotting', async () => {
+    stubObjectUrls();
+    const scene = slideScene({ type: 'text', content: 'Title' });
+    if (scene.content.type !== 'slide') throw new Error('Expected slide scene');
+    scene.content.canvas.background = {
+      type: 'image',
+      image: { src: 'ast_background', size: 'cover' },
+    };
+    const rec = imageRecord({
+      id: 'stage:ast_background',
+      blob: new Blob(['background'], { type: 'image/png' }),
+    });
+
+    await collectVideoAssets(
+      irWith([frameEntry]),
+      [scene],
+      records({ mediaByElementId: new Map([['ast_background', rec]]) }),
+    );
+
+    expect(capturedSlides[0].background?.image?.src).toBe('blob:mock/1');
+    expect(revoked).toEqual(['blob:mock/1']);
+  });
 
   it('restores an evicted generated image via ossKey before snapshotting', async () => {
     const fetchSpy = vi.fn(async () => new Response(new Blob(['remote-img'])));

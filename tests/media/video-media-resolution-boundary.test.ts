@@ -6,6 +6,7 @@ const SOURCE_EXTENSION = /\.(?:[cm]?[jt]sx?)$/;
 const DIRECT_TASK_LOOKUP = /\btasks\s*\[[^\]]+\]|\.\s*getTask\s*\(/;
 const VIDEO_SOURCE_CHOICE =
   /\b(?:element|elementInfo|el)\.(?:src|mediaRef)\s*(?:(?:\?\?|\|\||&&)\s*(?:element|elementInfo|el)\.(?:src|mediaRef)|\?\s*(?:element|elementInfo|el)\.(?:src|mediaRef)\s*:\s*(?:element|elementInfo|el)\.(?:src|mediaRef))/;
+const DIRECT_SLIDE_ELEMENT_WALK = /\b(?:slide|source)\.elements\b/;
 
 function sourceFiles(directory: string): string[] {
   const files: string[] = [];
@@ -22,6 +23,25 @@ describe('video media resolution boundary', () => {
     expect(DIRECT_TASK_LOOKUP.test('const task = tasks[element.id];')).toBe(true);
     expect(DIRECT_TASK_LOOKUP.test('const task = store.getTask(mediaRef);')).toBe(true);
     expect(VIDEO_SOURCE_CHOICE.test('const ref = element.mediaRef ?? element.src;')).toBe(true);
+    expect(DIRECT_SLIDE_ELEMENT_WALK.test('for (const element of slide.elements) {}')).toBe(true);
+  });
+
+  it('routes slide media resolvers through the complete reference-slot helper', () => {
+    const cwd = process.cwd();
+    const paths = [
+      join(cwd, 'lib/media/collect-stage-asset-refs.ts'),
+      join(cwd, 'lib/media/media-orchestrator.ts'),
+      join(cwd, 'lib/media/media-task-resolution.ts'),
+      join(cwd, 'lib/video-export-app/collect.ts'),
+      join(cwd, 'lib/utils/stage-storage.ts'),
+    ];
+    const violations = paths.flatMap((path) =>
+      DIRECT_SLIDE_ELEMENT_WALK.test(readFileSync(path, 'utf8')) ? [relative(cwd, path)] : [],
+    );
+
+    // Best-effort static guard: aliases, destructuring, computed access, and
+    // helper indirection can evade this regex and remain review responsibilities.
+    expect(violations).toEqual([]);
   });
 
   it('keeps video source and task decisions inside media-task-resolution', () => {

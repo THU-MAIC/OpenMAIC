@@ -66,6 +66,7 @@ import {
   resolveVideoMediaForElement,
   type MediaTaskLookupEntry,
 } from '@/lib/media/media-task-resolution';
+import { slideMediaReferenceSlots } from '@/lib/media/slide-media-slots';
 
 const log = createLogger('StageStorage');
 
@@ -813,13 +814,8 @@ function revokeObjectUrl(url: string | undefined) {
 
 export function revokeThumbnailSlideMediaUrls(slides: Record<string, ThumbnailSlide>) {
   for (const slide of Object.values(slides)) {
-    for (const element of slide.elements as ThumbnailMediaElement[]) {
-      if (element.type === 'image' || element.type === 'video') {
-        revokeObjectUrl(element.src);
-      }
-      if (element.type === 'video') {
-        revokeObjectUrl(element.poster);
-      }
+    for (const slot of slideMediaReferenceSlots(slide)) {
+      if (slot.kind !== 'video-media-ref') revokeObjectUrl(slot.read());
     }
   }
 }
@@ -841,10 +837,23 @@ export async function getFirstSlideByStages(
         if (firstSlide && firstSlide.content.type === 'slide') {
           const slide = structuredClone(firstSlide.content.canvas);
 
-          const mediaElements = slide.elements.filter(
-            (el) => el.type === 'video' || !!getThumbnailMediaRef(el as ThumbnailMediaElement),
-          );
-          if (mediaElements.length > 0) {
+          const mediaSlots = [...slideMediaReferenceSlots(slide)];
+          const mediaElements = new Set<ThumbnailMediaElement>();
+          for (const slot of mediaSlots) {
+            if (
+              slot.element &&
+              (slot.element.type === 'video' ||
+                !!getThumbnailMediaRef(slot.element as ThumbnailMediaElement))
+            ) {
+              mediaElements.add(slot.element as ThumbnailMediaElement);
+            }
+          }
+          const backgroundSlot = mediaSlots.find((slot) => slot.kind === 'background-image');
+          const backgroundRef = backgroundSlot?.read();
+          if (
+            mediaElements.size > 0 ||
+            (backgroundRef && isResolvableThumbnailMediaRef(backgroundRef))
+          ) {
             const settings = useSettingsStore.getState();
             const mediaRecords = await db.mediaFiles.where('stageId').equals(stageId).toArray();
             const mediaMap = new Map(
@@ -871,7 +880,28 @@ export async function getFirstSlideByStages(
               document?.scenes ?? [],
             );
 
-            for (const el of mediaElements as ThumbnailMediaElement[]) {
+            if (backgroundSlot && backgroundRef && isResolvableThumbnailMediaRef(backgroundRef)) {
+              const selectedRecord = mediaMap.get(backgroundRef);
+              const task = selectedRecord?.error
+                ? ({
+                    status: 'failed',
+                    errorCode: selectedRecord.errorCode,
+                    retryCount: 0,
+                  } satisfies MediaTaskState)
+                : undefined;
+              const record = selectedRecord && !selectedRecord.error ? selectedRecord : undefined;
+              backgroundSlot.write(
+                (await resolveThumbnailMediaValue(
+                  backgroundRef,
+                  task,
+                  record?.type === 'image' ? record.blob : undefined,
+                  record?.mimeType || 'image/png',
+                  !settings.imageGenerationEnabled,
+                )) ?? '',
+              );
+            }
+
+            for (const el of mediaElements) {
               const videoBinding =
                 el.type === 'video'
                   ? resolveVideoMediaForElement(

@@ -2,6 +2,7 @@ import type { Slide } from '@openmaic/dsl';
 import { getDocumentStore } from '@/lib/document-store';
 import { createLogger } from '@/lib/logger';
 import type { Scene, Stage } from '@/lib/types/stage';
+import { slideMediaReferenceSlots } from './slide-media-slots';
 
 const log = createLogger('PersistedAssetRefs');
 
@@ -111,17 +112,9 @@ export function collectStageAssetRefs(
     scope: 'scene' | 'stage-whiteboard' | 'scene-whiteboard',
     scopeId: string,
   ) => {
-    const backgroundRef =
-      slide.background?.type === 'image' ? slide.background.image?.src : undefined;
-    if (addValue(backgroundImage, backgroundRef)) {
-      own(backgroundRef, `${scope}:${scopeId}:background`);
-      if (scope === 'stage-whiteboard') stageWhiteboard.add(backgroundRef);
-      if (scope === 'scene-whiteboard') sceneWhiteboard.add(backgroundRef);
-    }
-    for (let index = 0; index < slide.elements.length; index += 1) {
-      const element = slide.elements[index];
-      if (element.type !== 'image' && element.type !== 'video') continue;
-      const ownerKey = `${scope}:${scopeId}:${element.id || index}`;
+    for (const slot of slideMediaReferenceSlots(slide)) {
+      const ref = slot.read();
+      if (!ref) continue;
       const whiteboardCategory =
         scope === 'stage-whiteboard'
           ? stageWhiteboard
@@ -129,26 +122,16 @@ export function collectStageAssetRefs(
             ? sceneWhiteboard
             : undefined;
 
-      if (element.type === 'image') {
-        if (addValue(imageSrc, element.src)) {
-          own(element.src, ownerKey);
-          whiteboardCategory?.add(element.src);
-        }
-        continue;
-      }
-
-      if (addValue(videoSrc, element.src)) {
-        own(element.src, ownerKey);
-        whiteboardCategory?.add(element.src);
-      }
-      if (addValue(videoMediaRef, element.mediaRef)) {
-        own(element.mediaRef, ownerKey);
-        whiteboardCategory?.add(element.mediaRef);
-      }
-      if (addValue(poster, element.poster)) {
-        own(element.poster, `${ownerKey}:poster`);
-        whiteboardCategory?.add(element.poster);
-      }
+      const ownerKey = slot.element
+        ? `${scope}:${scopeId}:${slot.element.id || slot.elementIndex}`
+        : `${scope}:${scopeId}:background`;
+      if (slot.kind === 'background-image') addValue(backgroundImage, ref);
+      else if (slot.kind === 'image-src') addValue(imageSrc, ref);
+      else if (slot.kind === 'video-src') addValue(videoSrc, ref);
+      else if (slot.kind === 'video-media-ref') addValue(videoMediaRef, ref);
+      else addValue(poster, ref);
+      own(ref, slot.kind === 'video-poster' ? `${ownerKey}:poster` : ownerKey);
+      whiteboardCategory?.add(ref);
     }
   };
 
@@ -249,6 +232,14 @@ export async function isAllocatedAssetRefReferencedBySurvivingDocument(
   ref: string,
   excludedDocumentId?: string,
 ): Promise<boolean> {
+  const liveRefs = await loadSurvivingDocumentAssetRefs(excludedDocumentId);
+  return liveRefs === null || liveRefs.has(ref);
+}
+
+/** Load complete document refs once; null means enumeration failed and callers must fail closed. */
+export async function loadSurvivingDocumentAssetRefs(
+  excludedDocumentId?: string,
+): Promise<ReadonlySet<string> | null> {
   try {
     const store = getDocumentStore();
     const summaries = await store.listDocuments();
@@ -261,9 +252,13 @@ export async function isAllocatedAssetRefReferencedBySurvivingDocument(
           return document;
         }),
     );
-    return (collectPersistedDocumentAssetRefs(documents).referenceCounts.get(ref) ?? 0) > 0;
+    const liveRefs = new Set<string>();
+    for (const refs of collectPersistedDocumentAssetRefs(documents).byDocument.values()) {
+      for (const ref of refs.document) liveRefs.add(ref);
+    }
+    return liveRefs;
   } catch (error) {
-    log.warn(`Could not determine persisted liveness of asset ${ref}:`, error);
-    return true;
+    log.warn('Could not enumerate persisted asset liveness:', error);
+    return null;
   }
 }

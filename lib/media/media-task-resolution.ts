@@ -2,6 +2,7 @@ import type { PPTElement, PPTVideoElement, Slide } from '@openmaic/dsl';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { getVideoMediaRefForElement } from '@/lib/media/video-manifest';
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
+import { slideMediaReferenceSlots } from '@/lib/media/slide-media-slots';
 
 export interface MediaTaskLookupEntry {
   readonly stageId: string;
@@ -126,7 +127,15 @@ export function collectDocumentMediaElements(
   scenes: readonly Scene[],
 ): PPTElement[] {
   const elements: PPTElement[] = [];
-  const addSlide = (slide: Pick<Slide, 'elements'>) => elements.push(...slide.elements);
+  const addSlide = (slide: Pick<Slide, 'background' | 'elements'>) => {
+    const seen = new Set<PPTElement>();
+    for (const slot of slideMediaReferenceSlots(slide)) {
+      if (slot.element && !seen.has(slot.element)) {
+        seen.add(slot.element);
+        elements.push(slot.element);
+      }
+    }
+  };
 
   for (const slide of stage?.whiteboard ?? []) addSlide(slide);
   for (const scene of scenes) {

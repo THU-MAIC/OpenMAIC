@@ -43,7 +43,7 @@ vi.mock('@/lib/pbl/v2/runtime/document-persistence', () => ({
   preparePBLScenesForDocumentPersistence: vi.fn(),
 }));
 
-import { getFirstSlideByStages } from '@/lib/utils/stage-storage';
+import { getFirstSlideByStages, revokeThumbnailSlideMediaUrls } from '@/lib/utils/stage-storage';
 
 describe('stage thumbnail allocated assets', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -110,6 +110,54 @@ describe('stage thumbnail allocated assets', () => {
     expect(slides['stage-1'].elements[0]).toMatchObject({
       src: 'blob:thumbnail-asset',
     });
+  });
+
+  it('hydrates and revokes an allocated image background', async () => {
+    mocks.accessDocument.mockResolvedValueOnce({
+      document: {
+        scenes: [
+          {
+            id: 'scene-1',
+            stageId: 'stage-1',
+            type: 'slide',
+            title: 'Slide',
+            order: 1,
+            content: {
+              type: 'slide',
+              canvas: {
+                id: 'slide-1',
+                viewportSize: 1000,
+                viewportRatio: 0.5625,
+                background: {
+                  type: 'image',
+                  image: { src: 'ast_background', size: 'cover' },
+                },
+                elements: [],
+              },
+            },
+          },
+        ],
+      },
+    });
+    mocks.mediaToArray.mockResolvedValueOnce([
+      {
+        id: 'stage-1:ast_background',
+        stageId: 'stage-1',
+        type: 'image',
+        blob: new Blob(['background'], { type: 'image/png' }),
+        mimeType: 'image/png',
+        size: 10,
+        prompt: 'Background',
+        params: '{}',
+        createdAt: 1,
+      },
+    ]);
+
+    const slides = await getFirstSlideByStages(['stage-1']);
+
+    expect(slides['stage-1'].background?.image?.src).toBe('blob:thumbnail-asset');
+    revokeThumbnailSlideMediaUrls(slides);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:thumbnail-asset');
   });
 
   it('prefers replaced pool bytes over a stale compatibility row', async () => {

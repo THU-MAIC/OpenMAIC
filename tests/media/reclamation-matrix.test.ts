@@ -146,6 +146,19 @@ function documentWithImage(id: string, ref: string): StageAssetDocument {
   } as unknown as StageAssetDocument;
 }
 
+function documentWithManifestRef(id: string, ref: string): StageAssetDocument {
+  return {
+    stage: {
+      id,
+      name: id,
+      createdAt: 1,
+      updatedAt: 1,
+      videoManifest: { [ref]: { type: 'video', prompt: 'Finishing before insertion' } },
+    },
+    scenes: [],
+  } as unknown as StageAssetDocument;
+}
+
 async function resolveImageBytes(document: StageAssetDocument): Promise<string | undefined> {
   const scene = document.scenes[0];
   if (scene?.content.type !== 'slide') return undefined;
@@ -313,6 +326,48 @@ describe('stage asset reference and reclamation matrix', () => {
     expect(mocks.removeAsset).not.toHaveBeenCalledWith(sharedRef);
     expect(mocks.mediaRows).toEqual([]);
     expect(await resolveImageBytes(survivingDocument)).toBe('shared-surviving-bytes');
+  });
+
+  it('preserves a ref owned by a surviving document only through its video manifest', async () => {
+    const sharedRef = 'ast_manifest_before_scene_insert';
+    const deletedDocument = documentWithImage('stage-deleted', sharedRef);
+    const survivingDocument = documentWithManifestRef('stage-surviving', sharedRef);
+    mocks.mediaRows.splice(0, mocks.mediaRows.length, {
+      id: `stage-deleted:${sharedRef}`,
+      stageId: 'stage-deleted',
+    });
+    mocks.audioRows.splice(0, mocks.audioRows.length);
+    mocks.documents.set(survivingDocument.stage.id, survivingDocument);
+    const inventory = await loadStageAssetInventory(deletedDocument);
+    const plan = buildStageAssetReclamationPlan(
+      deletedDocument.stage.id,
+      inventory.refs,
+      inventory.mediaRows,
+      inventory.audioRows,
+    );
+
+    await executeStageAssetReclamation(plan, null);
+
+    expect(mocks.removeAsset).not.toHaveBeenCalledWith(sharedRef);
+    expect(mocks.mediaRows).toEqual([]);
+  });
+
+  it('enumerates surviving documents once for every ref in a reclamation plan', async () => {
+    mocks.documents.set('stage-one', documentWithImage('stage-one', 'unrelated-one'));
+    mocks.documents.set('stage-two', documentWithManifestRef('stage-two', 'unrelated-two'));
+    const inventory = await loadStageAssetInventory(matrixDocument());
+    const plan = buildStageAssetReclamationPlan(
+      stageId,
+      inventory.refs,
+      inventory.mediaRows,
+      inventory.audioRows,
+    );
+    expect(plan.poolRefs.length).toBeGreaterThan(3);
+
+    await executeStageAssetReclamation(plan, null);
+
+    expect(mocks.listDocuments).toHaveBeenCalledTimes(1);
+    expect(mocks.loadDocument).toHaveBeenCalledTimes(2);
   });
 
   it('fails closed when surviving document enumeration fails', async () => {

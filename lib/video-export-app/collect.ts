@@ -36,6 +36,7 @@ import {
   resolveMediaRef,
   type MediaTaskState,
 } from '@/lib/media/resolve-media-ref';
+import { slideMediaReferenceSlots } from '@/lib/media/slide-media-slots';
 
 export interface CollectOptions {
   /** Slide-snapshot render width in px (frame height follows the slide ratio). Default 1920. */
@@ -232,7 +233,39 @@ async function resolveGeneratedMedia(
   const slide = structuredClone(source);
   const objectUrls: string[] = [];
 
-  for (const element of slide.elements as SnapshotMediaElement[]) {
+  const slots = [...slideMediaReferenceSlots(slide)];
+  const backgroundSlot = slots.find((slot) => slot.kind === 'background-image');
+  const backgroundRef = backgroundSlot?.read();
+  if (backgroundSlot && backgroundRef && isMediaPlaceholder(backgroundRef)) {
+    const record = mediaByElementId.get(backgroundRef);
+    const bytes = await resolveMediaBytesWithFallback(backgroundRef, record, stageId);
+    if (bytes && (!record || record.type === 'image')) {
+      const url = URL.createObjectURL(
+        blobWithType(bytes, record?.mimeType || bytes.type || 'image/png'),
+      );
+      objectUrls.push(url);
+      backgroundSlot.write(url);
+    } else {
+      const tasks = useMediaGenerationStore.getState().tasks;
+      const task =
+        tasks[backgroundRef] ??
+        Object.values(tasks).find(
+          (candidate) =>
+            candidate.placeholderRef === backgroundRef &&
+            (!stageId || candidate.stageId === stageId),
+        );
+      const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
+      if (!renderableMediaUrl(resolveMediaRef(backgroundRef, effectiveTask))) {
+        backgroundSlot.write('');
+      }
+    }
+  }
+
+  const mediaElements = new Set<SnapshotMediaElement>();
+  for (const slot of slots) {
+    if (slot.element) mediaElements.add(slot.element as SnapshotMediaElement);
+  }
+  for (const element of mediaElements) {
     let resolvedPoster = false;
     if (element.type === 'video' && element.poster && isMediaPlaceholder(element.poster)) {
       const posterRecord = mediaByElementId.get(element.poster);

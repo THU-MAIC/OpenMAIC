@@ -31,6 +31,7 @@ import {
   type StageAssetRefs,
 } from './collect-stage-asset-refs';
 import { isGeneratedMediaPlaceholder } from './media-ref';
+import { slideMediaReferenceSlots } from './slide-media-slots';
 
 const log = createLogger('MediaOrchestrator');
 
@@ -252,42 +253,46 @@ function rewriteSlideMediaRefs<T extends Slide | Whiteboard>(
   posterAssetId?: string,
   target?: { readonly elementId: string },
 ): { slide: T; changed: boolean } {
+  const rewritten = structuredClone(slide);
   let changed = false;
-  const elements = slide.elements.map((element): PPTElement => {
-    if (target && element.id !== target.elementId) return element;
-    if (element.type === 'image' && element.src === oldRef) {
+  const matchedVideos = new Set<PPTElement>();
+  const slots = [...slideMediaReferenceSlots(rewritten)];
+  for (const slot of slots) {
+    if (target && slot.element?.id !== target.elementId) continue;
+    if (slot.kind === 'video-poster' || slot.read() !== oldRef) continue;
+    if (slot.kind === 'background-image' || slot.kind === 'image-src') {
       changed = true;
-      return { ...element, src: assetId };
+      slot.write(assetId);
+      continue;
     }
-    if (element.type === 'video') {
-      const srcMatches = element.src === oldRef;
-      const mediaRefMatches = element.mediaRef === oldRef;
-      if (srcMatches || mediaRefMatches) {
-        changed = true;
-        return {
-          ...element,
-          ...(srcMatches ? { src: assetId } : {}),
-          ...(mediaRefMatches ? { mediaRef: assetId } : {}),
-          ...(posterAssetId ? { poster: posterAssetId } : {}),
-        };
+    if (slot.element?.type === 'video') {
+      changed = true;
+      slot.write(assetId);
+      matchedVideos.add(slot.element);
+    }
+  }
+  if (posterAssetId && matchedVideos.size > 0) {
+    for (const slot of slots) {
+      if (slot.kind === 'video-poster' && slot.element && matchedVideos.has(slot.element)) {
+        slot.write(posterAssetId);
       }
     }
-    return element;
-  });
-  return changed ? { slide: { ...slide, elements } as T, changed } : { slide, changed };
+  }
+  return changed ? { slide: rewritten, changed } : { slide, changed };
 }
 
 function posterRefsInSlide(slide: Slide | Whiteboard, mediaRef: string): string[] {
-  return slide.elements.flatMap((element) => {
-    if (
-      element.type !== 'video' ||
-      (element.src !== mediaRef && element.mediaRef !== mediaRef) ||
-      !element.poster
-    ) {
-      return [];
+  const refs: string[] = [];
+  const seen = new Set<PPTElement>();
+  for (const slot of slideMediaReferenceSlots(slide)) {
+    const element = slot.element;
+    if (!element || element.type !== 'video' || seen.has(element)) continue;
+    seen.add(element);
+    if ((element.src === mediaRef || element.mediaRef === mediaRef) && element.poster) {
+      refs.push(element.poster);
     }
-    return [element.poster];
-  });
+  }
+  return refs;
 }
 
 function currentPosterRefs(stageId: string, mediaRef: string): string[] {
