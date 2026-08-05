@@ -97,6 +97,10 @@ jobs:
         run: |
           set -euo pipefail
           source_commit="$(git rev-parse HEAD)"
+          if ! git cat-file -e "HEAD^{tree}:skills/openmaic" 2>/dev/null; then
+            echo "::notice::Skipping $source_commit because skills/openmaic was deleted."
+            exit 0
+          fi
           publish_args=(
             skills/openmaic
             --slug openmaic
@@ -118,7 +122,8 @@ jobs:
           const desired = process.env.PUBLISH_VERSION;
           const preflight = JSON.parse(readFileSync(process.env.PREFLIGHT_FILE, "utf8"));
 
-          if (!semver.valid(desired)) {
+          const canonical = semver.valid(desired);
+          if (!canonical) {
             console.error("::error::Requested version is not valid semver.");
             process.exit(1);
           }
@@ -131,8 +136,13 @@ jobs:
             console.error("::error::ClawHub returned incomplete version metadata.");
             process.exit(1);
           }
-          if (preflight.status === "unchanged" && preflight.version === desired) {
-            console.log("noop");
+          const preflightVersion = semver.valid(preflight.version);
+          if (!preflightVersion) {
+            console.error("::error::ClawHub returned an invalid preflight version.");
+            process.exit(1);
+          }
+          if (preflight.status === "unchanged" && semver.eq(preflightVersion, canonical)) {
+            console.log(`noop\t${canonical}`);
             process.exit(0);
           }
           if (preflight.latestVersion !== null && preflight.latestVersion !== undefined) {
@@ -141,21 +151,34 @@ jobs:
               console.error("::error::ClawHub returned an invalid latest version.");
               process.exit(1);
             }
-            if (!semver.gt(desired, latest)) {
+            if (!semver.gt(canonical, latest)) {
               console.error(`::error::Requested version must be greater than ${latest}.`);
               process.exit(1);
             }
           }
-          console.log("continue");
+          console.log(`continue\t${canonical}`);
           NODE
             )"; then
               exit 1
             fi
-            if [[ "$decision" == "noop" ]]; then
-              echo "::notice::The requested version already has identical content."
-              exit 0
+            IFS=$'\t' read -r action canonical_version extra <<< "$decision"
+            if [[ -n "${extra:-}" || -z "$action" || -z "$canonical_version" ]]; then
+              echo "::error::Invalid version preflight decision."
+              exit 1
             fi
-            publish_args+=(--version "$PUBLISH_VERSION")
+            case "$action" in
+              noop)
+                echo "::notice::The requested version already has identical content."
+                exit 0
+                ;;
+              continue)
+                publish_args+=(--version "$canonical_version")
+                ;;
+              *)
+                echo "::error::Unknown version preflight action."
+                exit 1
+                ;;
+            esac
           fi
           clawhub skill publish "${publish_args[@]}" --dry-run --json
 
@@ -205,14 +228,20 @@ jobs:
         env:
           CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           import json
           import os
+          import sys
           from pathlib import Path
 
           path = Path(os.environ["RUNNER_TEMP"]) / "clawhub-config.json"
           flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-          fd = os.open(path, flags, 0o600)
+          try:
+              fd = os.open(path, flags, 0o600)
+          except FileExistsError:
+              print("::error::ClawHub config already exists in RUNNER_TEMP.", file=sys.stderr)
+              sys.exit(1)
           with os.fdopen(fd, "w", encoding="utf-8") as config:
               json.dump(
                   {"registry": "https://clawhub.ai", "token": os.environ["CLAWHUB_TOKEN"]},
@@ -234,6 +263,10 @@ jobs:
           set -euo pipefail
           source_commit="$(git rev-parse HEAD)"
           git fetch --no-tags origin main
+          if ! git rev-parse --verify --quiet "refs/remotes/origin/main^{commit}" >/dev/null; then
+            echo "::error::Unable to resolve the fetched origin/main commit."
+            exit 1
+          fi
           if ! git cat-file -e "HEAD^{tree}:skills/openmaic" 2>/dev/null; then
             echo "::notice::Skipping $source_commit because skills/openmaic was deleted."
             exit 0
@@ -269,7 +302,8 @@ jobs:
           const desired = process.env.PUBLISH_VERSION;
           const preflight = JSON.parse(readFileSync(process.env.PREFLIGHT_FILE, "utf8"));
 
-          if (!semver.valid(desired)) {
+          const canonical = semver.valid(desired);
+          if (!canonical) {
             console.error("::error::Requested version is not valid semver.");
             process.exit(1);
           }
@@ -282,8 +316,13 @@ jobs:
             console.error("::error::ClawHub returned incomplete version metadata.");
             process.exit(1);
           }
-          if (preflight.status === "unchanged" && preflight.version === desired) {
-            console.log("noop");
+          const preflightVersion = semver.valid(preflight.version);
+          if (!preflightVersion) {
+            console.error("::error::ClawHub returned an invalid preflight version.");
+            process.exit(1);
+          }
+          if (preflight.status === "unchanged" && semver.eq(preflightVersion, canonical)) {
+            console.log(`noop\t${canonical}`);
             process.exit(0);
           }
           if (preflight.latestVersion !== null && preflight.latestVersion !== undefined) {
@@ -292,20 +331,33 @@ jobs:
               console.error("::error::ClawHub returned an invalid latest version.");
               process.exit(1);
             }
-            if (!semver.gt(desired, latest)) {
+            if (!semver.gt(canonical, latest)) {
               console.error(`::error::Requested version must be greater than ${latest}.`);
               process.exit(1);
             }
           }
-          console.log("continue");
+          console.log(`continue\t${canonical}`);
           NODE
             )"; then
               exit 1
             fi
-            if [[ "$decision" == "noop" ]]; then
-              echo "::notice::The requested version already has identical content."
-              exit 0
+            IFS=$'\t' read -r action canonical_version extra <<< "$decision"
+            if [[ -n "${extra:-}" || -z "$action" || -z "$canonical_version" ]]; then
+              echo "::error::Invalid version preflight decision."
+              exit 1
             fi
-            publish_args+=(--version "$PUBLISH_VERSION")
+            case "$action" in
+              noop)
+                echo "::notice::The requested version already has identical content."
+                exit 0
+                ;;
+              continue)
+                publish_args+=(--version "$canonical_version")
+                ;;
+              *)
+                echo "::error::Unknown version preflight action."
+                exit 1
+                ;;
+            esac
           fi
           clawhub skill publish "${publish_args[@]}" --json
