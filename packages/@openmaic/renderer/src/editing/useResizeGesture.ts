@@ -33,7 +33,7 @@ export interface UseResizeGestureArgs {
 export interface ResizeDrag {
   id: string;
   props: ResizeResult['props'];
-  /** Alignment guides for the active resize (computed; drawn by a later PR). */
+  /** Alignment guides for the active resize. */
   guides: Guide[];
 }
 

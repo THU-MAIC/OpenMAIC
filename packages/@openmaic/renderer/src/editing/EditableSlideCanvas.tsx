@@ -11,6 +11,7 @@ import { LineHandles } from './handles/LineHandles';
 import { ResizeHandles } from './handles/ResizeHandles';
 import { RotateHandle } from './handles/RotateHandle';
 import { MarqueeBox } from './handles/MarqueeBox';
+import { AlignmentGuides } from './handles/AlignmentGuides';
 import { isSelectionModifier, resolveClickSelection } from './core/selection';
 import { useEditGesture } from './useEditGesture';
 import { useLineHandleGesture } from './useLineHandleGesture';
@@ -76,7 +77,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   });
   const canvasScale = props.scale ?? fitScale;
 
-  const { workingSlide, onElementPointerDown } = useEditGesture({
+  const { workingSlide, guides: dragGuides, onElementPointerDown } = useEditGesture({
     slide,
     scale: canvasScale,
     selection: activeSelection,
@@ -158,6 +159,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
       : { ...workingSlide, elements: displayElements };
 
   const elements = displayElements;
+  const activeGuides = resizeDrag?.guides ?? dragGuides;
   // Touch suppression belongs to mutation gestures: select-only hosts keep
   // native touch panning, while tap-select still receives pointer events.
   const editingTouchAction = onElementsChange ? 'none' : undefined;
@@ -192,6 +194,12 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
             line up with the rendered elements even when the container is
             letterboxed (aspect ratio != slide's). */}
         <div ref={overlayRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+          <AlignmentGuides
+            guides={activeGuides}
+            viewportStyles={viewportStyles}
+            canvasScale={canvasScale}
+          />
+
           {/* Blank-canvas marquee capture surface. Rendered FIRST so it sits
               beneath the per-element hit targets in stacking order: a pointer-
               down on an element hits that element's div (painted later, on top),

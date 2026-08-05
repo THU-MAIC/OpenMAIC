@@ -56,6 +56,7 @@ function RendererEditorCanvas() {
     <EditableSlideCanvas
       slide={resolvedSlide}
       elementIdPrefix="editable-element-"
+      snapping
       selection={selection}
       onSelectionChange={handleSelectionChange}
       onElementsChange={handleElementsChange}

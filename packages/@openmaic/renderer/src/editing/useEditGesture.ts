@@ -28,7 +28,7 @@ export interface UseEditGestureArgs {
 export interface UseEditGestureResult {
   /** The slide to render: the in-gesture working copy while dragging, else `slide`. */
   workingSlide: Slide;
-  /** Alignment guides for the active drag (computed; drawn by a later PR). */
+  /** Alignment guides for the active drag. */
   guides: Guide[];
   /** Arm a move/click gesture for `el` from a pointer-down on its hit target. */
   onElementPointerDown: (el: PPTElement, e: ReactPointerEvent) => void;

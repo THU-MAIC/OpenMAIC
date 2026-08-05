@@ -68,6 +68,31 @@ describe('EditableSlideCanvas', () => {
     expect(container.querySelector('#slide-element-a')).toBeNull();
   });
 
+  it('renders alignment guides while a snapping drag is active and clears them on release', () => {
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        snapping
+        selection={{ elementIds: ['a'], primaryId: 'a' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+      />,
+    );
+
+    const hit = findHit(container);
+    fireEvent.pointerDown(hit, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(hit, { clientX: -98, clientY: 0 });
+
+    const guide = container.querySelector('[data-alignment-guide="vertical"]') as HTMLElement;
+    expect(guide).not.toBeNull();
+    expect(guide.style.left).toBe('0px');
+    expect(guide.style.borderLeftStyle).toBe('dashed');
+
+    fireEvent.pointerUp(hit, { clientX: -98, clientY: 0 });
+    expect(container.querySelector('[data-alignment-guide]')).toBeNull();
+  });
+
   it('offsets the interaction overlay by SlideCanvas centering offset', () => {
     // Letterboxed container: slide is centered with a 160px left gutter, so
     // an element rendered by SlideCanvas sits at left = 160 + el.left*scale.

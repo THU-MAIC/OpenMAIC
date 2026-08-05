@@ -1,7 +1,7 @@
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EditIntent, Selection } from '@openmaic/renderer/editing';
+import type { EditIntent, Selection, SnappingOptions } from '@openmaic/renderer/editing';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
 
@@ -13,6 +13,7 @@ let lastRendererProps:
   | {
       selection?: Selection;
       elementIdPrefix?: string;
+      snapping?: boolean | SnappingOptions;
       onSelectionChange?: (next: Selection) => void;
       onElementsChange?: (intents: EditIntent[]) => void;
     }
@@ -97,6 +98,7 @@ vi.mock('@openmaic/renderer/editing', async (importOriginal) => {
     EditableSlideCanvas: (props: {
       selection?: Selection;
       elementIdPrefix?: string;
+      snapping?: boolean | SnappingOptions;
       onSelectionChange?: (next: Selection) => void;
       onElementsChange?: (intents: EditIntent[]) => void;
     }) => {
@@ -194,6 +196,7 @@ describe('slide editor canvas renderer flag', () => {
       primaryId: 'title-1',
     });
     expect(lastRendererProps?.elementIdPrefix).toBe('editable-element-');
+    expect(lastRendererProps?.snapping).toBe(true);
     expect(mockSetActiveElementIdList).toHaveBeenCalledWith(['title-1']);
     expect(mockApplyOp).not.toHaveBeenCalled();
     expect(mockCommitContent).toHaveBeenCalledTimes(1);
