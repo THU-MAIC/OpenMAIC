@@ -11,11 +11,13 @@ on:
     branches: [main]
     paths:
       - "skills/openmaic/**"
+      - ".github/scripts/check-clawhub-version.mjs"
       - ".github/workflows/publish-openmaic-skill.yml"
   push:
     branches: [main]
     paths:
       - "skills/openmaic/**"
+      - ".github/scripts/check-clawhub-version.mjs"
       - ".github/workflows/publish-openmaic-skill.yml"
   workflow_dispatch:
     inputs:
@@ -24,7 +26,7 @@ on:
         type: boolean
         default: true
       version:
-        description: "Optional version for manual preview or publish; leave empty for automatic patch"
+        description: "Optional version without build metadata; leave empty for automatic patch"
         type: string
         default: ""
 
@@ -113,64 +115,7 @@ jobs:
           if [[ -n "$PUBLISH_VERSION" ]]; then
             preflight_file="$RUNNER_TEMP/clawhub-version-preflight.json"
             clawhub skill publish "${publish_args[@]}" --dry-run --json | tee "$preflight_file"
-            if ! decision="$(PREFLIGHT_FILE="$preflight_file" node --input-type=module <<'NODE'
-          import { readFileSync } from "node:fs";
-          import { createRequire } from "node:module";
-
-          const require = createRequire(process.env.CLAWHUB_PACKAGE_JSON);
-          const semver = require("semver");
-          const desired = process.env.PUBLISH_VERSION;
-          const preflight = JSON.parse(readFileSync(process.env.PREFLIGHT_FILE, "utf8"));
-
-          function canonicalVersion(value) {
-            const parsed = semver.parse(value);
-            if (!parsed) return null;
-            const build = parsed.build.length > 0 ? `+${parsed.build.join(".")}` : "";
-            return { full: `${parsed.version}${build}`, hasBuild: parsed.build.length > 0 };
-          }
-
-          const desiredVersion = canonicalVersion(desired);
-          if (!desiredVersion) {
-            console.error("::error::Requested version is not valid semver.");
-            process.exit(1);
-          }
-          if (desiredVersion.hasBuild) {
-            console.error("::error::Requested version must not include build metadata.");
-            process.exit(1);
-          }
-          const canonical = desiredVersion.full;
-          if (
-            typeof preflight.status !== "string" ||
-            typeof preflight.version !== "string" ||
-            typeof preflight.fingerprint !== "string" ||
-            preflight.fingerprint.length === 0
-          ) {
-            console.error("::error::ClawHub returned incomplete version metadata.");
-            process.exit(1);
-          }
-          const preflightVersion = canonicalVersion(preflight.version);
-          if (!preflightVersion) {
-            console.error("::error::ClawHub returned an invalid preflight version.");
-            process.exit(1);
-          }
-          if (preflight.status === "unchanged" && preflightVersion.full === canonical) {
-            console.log(`noop\t${canonical}`);
-            process.exit(0);
-          }
-          if (preflight.latestVersion !== null && preflight.latestVersion !== undefined) {
-            const latest = canonicalVersion(preflight.latestVersion);
-            if (!latest) {
-              console.error("::error::ClawHub returned an invalid latest version.");
-              process.exit(1);
-            }
-            if (!semver.gt(canonical, latest.full)) {
-              console.error(`::error::Requested version must be greater than ${latest.full}.`);
-              process.exit(1);
-            }
-          }
-          console.log(`continue\t${canonical}`);
-          NODE
-            )"; then
+            if ! decision="$(PREFLIGHT_FILE="$preflight_file" node .github/scripts/check-clawhub-version.mjs)"; then
               exit 1
             fi
             IFS=$'\t' read -r action canonical_version extra <<< "$decision"
@@ -305,64 +250,7 @@ jobs:
           if [[ -n "$PUBLISH_VERSION" ]]; then
             preflight_file="$RUNNER_TEMP/clawhub-version-preflight.json"
             clawhub skill publish "${publish_args[@]}" --dry-run --json | tee "$preflight_file"
-            if ! decision="$(PREFLIGHT_FILE="$preflight_file" node --input-type=module <<'NODE'
-          import { readFileSync } from "node:fs";
-          import { createRequire } from "node:module";
-
-          const require = createRequire(process.env.CLAWHUB_PACKAGE_JSON);
-          const semver = require("semver");
-          const desired = process.env.PUBLISH_VERSION;
-          const preflight = JSON.parse(readFileSync(process.env.PREFLIGHT_FILE, "utf8"));
-
-          function canonicalVersion(value) {
-            const parsed = semver.parse(value);
-            if (!parsed) return null;
-            const build = parsed.build.length > 0 ? `+${parsed.build.join(".")}` : "";
-            return { full: `${parsed.version}${build}`, hasBuild: parsed.build.length > 0 };
-          }
-
-          const desiredVersion = canonicalVersion(desired);
-          if (!desiredVersion) {
-            console.error("::error::Requested version is not valid semver.");
-            process.exit(1);
-          }
-          if (desiredVersion.hasBuild) {
-            console.error("::error::Requested version must not include build metadata.");
-            process.exit(1);
-          }
-          const canonical = desiredVersion.full;
-          if (
-            typeof preflight.status !== "string" ||
-            typeof preflight.version !== "string" ||
-            typeof preflight.fingerprint !== "string" ||
-            preflight.fingerprint.length === 0
-          ) {
-            console.error("::error::ClawHub returned incomplete version metadata.");
-            process.exit(1);
-          }
-          const preflightVersion = canonicalVersion(preflight.version);
-          if (!preflightVersion) {
-            console.error("::error::ClawHub returned an invalid preflight version.");
-            process.exit(1);
-          }
-          if (preflight.status === "unchanged" && preflightVersion.full === canonical) {
-            console.log(`noop\t${canonical}`);
-            process.exit(0);
-          }
-          if (preflight.latestVersion !== null && preflight.latestVersion !== undefined) {
-            const latest = canonicalVersion(preflight.latestVersion);
-            if (!latest) {
-              console.error("::error::ClawHub returned an invalid latest version.");
-              process.exit(1);
-            }
-            if (!semver.gt(canonical, latest.full)) {
-              console.error(`::error::Requested version must be greater than ${latest.full}.`);
-              process.exit(1);
-            }
-          }
-          console.log(`continue\t${canonical}`);
-          NODE
-            )"; then
+            if ! decision="$(PREFLIGHT_FILE="$preflight_file" node .github/scripts/check-clawhub-version.mjs)"; then
               exit 1
             fi
             IFS=$'\t' read -r action canonical_version extra <<< "$decision"
