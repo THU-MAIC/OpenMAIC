@@ -49,22 +49,30 @@ export function DefaultColorPicker({
   const incomingValue = getDraftValue(value);
   const openingColorRef = useRef(getPreviewColor(value));
   const previewColorRef = useRef(openingColorRef.current);
+  const lastCommittedColorRef = useRef<string | null>(null);
   const pendingSwatchClickRef = useRef(false);
 
   useEffect(() => {
     setDraft(incomingValue);
   }, [incomingValue]);
 
+  const commitColor = (color: string) => {
+    if (lastCommittedColorRef.current === color) return;
+    lastCommittedColorRef.current = color;
+    onCommit(color);
+  };
+
+  const previewColor = (color: string) => {
+    if (previewColorRef.current !== color) lastCommittedColorRef.current = null;
+    previewColorRef.current = color;
+    onChange(color);
+  };
+
   const commitDraft = () => {
     const normalized = normalizeToolbarColor(draft);
     if (!normalized) return;
     setDraft(normalized);
-    onCommit(normalized);
-  };
-
-  const previewColor = (color: string) => {
-    previewColorRef.current = color;
-    onChange(color);
+    commitColor(normalized);
   };
 
   const handleTextChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -104,7 +112,7 @@ export function DefaultColorPicker({
     pendingSwatchClickRef.current = false;
     setDraft(color);
     previewColor(color);
-    onCommit(color);
+    commitColor(color);
   };
 
   const handleNativeColorChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -112,6 +120,7 @@ export function DefaultColorPicker({
     if (!normalized) return;
     setDraft(normalized);
     previewColor(normalized);
+    commitColor(normalized);
   };
 
   return (

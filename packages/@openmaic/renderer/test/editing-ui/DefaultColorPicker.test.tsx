@@ -60,6 +60,29 @@ describe('DefaultColorPicker', () => {
     expect(onCommit).toHaveBeenCalledWith('#ff0000');
   });
 
+  it('previews and commits a native color change once when followed by blur', () => {
+    const onChange = vi.fn();
+    const onCommit = vi.fn();
+    const { container } = render(
+      <DefaultColorPicker
+        value="#112233"
+        labels={labels}
+        onChange={onChange}
+        onCommit={onCommit}
+      />,
+    );
+
+    const input = container.querySelector<HTMLInputElement>('input[type="color"]');
+    if (!input) throw new Error('Native color input not found');
+    fireEvent.change(input, { target: { value: '#ff0000' } });
+    fireEvent.blur(input);
+
+    expect(onChange).toHaveBeenLastCalledWith('#ff0000');
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith('#ff0000');
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
   it('does not call either callback for invalid hex input', () => {
     const onChange = vi.fn();
     const onCommit = vi.fn();
