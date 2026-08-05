@@ -8,8 +8,8 @@ fail() {
 }
 
 case "${1:-}" in
-  "") final_mode=() ;;
-  --dry-run) final_mode=(--dry-run) ;;
+  "") dry_run=false ;;
+  --dry-run) dry_run=true ;;
   *) fail "Usage: publish-openmaic-skill.sh [--dry-run]" ;;
 esac
 
@@ -49,4 +49,8 @@ if [[ -n "$PUBLISH_VERSION" ]]; then
   esac
 fi
 
-"$CLAWHUB" skill publish "${publish_args[@]}" "${final_mode[@]}" --json
+if [[ "$dry_run" == true ]]; then
+  "$CLAWHUB" skill publish "${publish_args[@]}" --dry-run --json
+else
+  "$CLAWHUB" skill publish "${publish_args[@]}" --json
+fi
