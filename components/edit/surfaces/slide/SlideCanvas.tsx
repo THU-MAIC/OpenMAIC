@@ -1,7 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo } from 'react';
-import { EditableSlideCanvas, type EditIntent, type Selection } from '@openmaic/renderer/editing';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  EditableSlideCanvas,
+  type EditIntent,
+  type Selection,
+  type TextContentChange,
+  type TextEditorController,
+  type TextFormatState,
+} from '@openmaic/renderer/editing';
 import Canvas from '@/components/slide-renderer/Editor/Canvas';
 import { SpotlightOverlay } from '@/components/slide-renderer/Editor/SpotlightOverlay';
 import { LaserPointerOverlay } from '@/components/slide-renderer/Editor/LaserPointerOverlay';
@@ -25,6 +32,12 @@ import { RendererCanvasContextMenu } from './RendererCanvasContextMenu';
 import { useSlideEditSession } from './slide-edit-session';
 import { useRendererCanvasShortcuts } from './use-renderer-canvas-shortcuts';
 import { EDITABLE_ELEMENT_ID_PREFIX } from './renderer-element-dom';
+import { resolveEditingElementId } from './editing-state';
+import {
+  commitRendererTextChange,
+  connectRendererTextController,
+  mapRendererTextFormatState,
+} from './renderer-text-editing';
 
 function RendererEditorCanvas() {
   const content = useResolvedSlideContent();
@@ -33,21 +46,32 @@ function RendererEditorCanvas() {
   const hiddenElementIds = useCanvasStore.use.hiddenElementIdList();
   const pickTarget = useCanvasStore.use.pickTarget();
   const disableHotkeys = useCanvasStore.use.disableHotkeys();
+  const editingElementId = useCanvasStore.use.editingElementId();
   const setActiveElementIdList = useCanvasStore.use.setActiveElementIdList();
+  const setEditingElementId = useCanvasStore.use.setEditingElementId();
+  const setRichtextAttrs = useCanvasStore.use.setRichtextAttrs();
+  const setDisableHotkeysState = useCanvasStore.use.setDisableHotkeysState();
+  const detachTextControllerRef = useRef<(() => void) | null>(null);
+  const activeEditingElementId = useMemo(
+    () => resolveEditingElementId(activeElementIds, content.canvas.elements, editingElementId),
+    [activeElementIds, content.canvas.elements, editingElementId],
+  );
 
   const selection = useMemo<Selection>(
     () => ({
       elementIds: activeElementIds,
       primaryId: activeElementIds[0],
+      editingId: activeEditingElementId || undefined,
     }),
-    [activeElementIds],
+    [activeEditingElementId, activeElementIds],
   );
 
   const handleSelectionChange = useCallback(
     (next: Selection) => {
       setActiveElementIdList([...next.elementIds]);
+      setEditingElementId(next.editingId ?? '');
     },
-    [setActiveElementIdList],
+    [setActiveElementIdList, setEditingElementId],
   );
 
   const handleElementsChange = useCallback(
@@ -57,6 +81,33 @@ function RendererEditorCanvas() {
       useSlideEditSession.getState().commitContent(next, true);
     },
     [content],
+  );
+
+  const handleTextContentChange = useCallback(
+    (change: TextContentChange) => commitRendererTextChange(content, change),
+    [content],
+  );
+  const handleTextFormatChange = useCallback(
+    (_elementId: string, state: TextFormatState) => {
+      setRichtextAttrs(mapRendererTextFormatState(state));
+    },
+    [setRichtextAttrs],
+  );
+  const handleTextEditorChange = useCallback((controller: TextEditorController | null) => {
+    detachTextControllerRef.current?.();
+    detachTextControllerRef.current = controller ? connectRendererTextController(controller) : null;
+  }, []);
+  const handleTextFocusChange = useCallback(
+    (focused: boolean) => setDisableHotkeysState(focused),
+    [setDisableHotkeysState],
+  );
+  useEffect(
+    () => () => {
+      detachTextControllerRef.current?.();
+      detachTextControllerRef.current = null;
+      setDisableHotkeysState(false);
+    },
+    [setDisableHotkeysState],
   );
 
   const commands = useMemo(
@@ -90,6 +141,10 @@ function RendererEditorCanvas() {
         selection={selection}
         onSelectionChange={handleSelectionChange}
         onElementsChange={handleElementsChange}
+        onTextContentChange={handleTextContentChange}
+        onTextFormatChange={handleTextFormatChange}
+        onTextEditorChange={handleTextEditorChange}
+        onTextFocusChange={handleTextFocusChange}
       />
     </RendererCanvasContextMenu>
   );
@@ -111,10 +166,13 @@ function RendererEditorCanvas() {
  */
 export function SlideCanvas() {
   const { controller, gestureProps } = useSlideCanvasController();
-  const editingElementId = useEditingTextElementId();
-  const nonTextElement = useSelectedNonTextElement();
   const useRendererEditor = isEditorRendererEnabled();
-  useSyncEditingElementId(editingElementId);
+  const requestedEditingElementId = useCanvasStore.use.editingElementId();
+  const editingElementId = useEditingTextElementId(
+    useRendererEditor ? requestedEditingElementId : undefined,
+  );
+  const nonTextElement = useSelectedNonTextElement();
+  useSyncEditingElementId(editingElementId, !useRendererEditor);
 
   // Esc disarms in-flight insert mode. Read via getState so the listener mounts
   // once; checking inside the handler keeps us inert when nothing is armed.

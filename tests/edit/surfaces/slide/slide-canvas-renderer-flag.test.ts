@@ -1,15 +1,26 @@
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EditIntent, Selection, SnappingOptions } from '@openmaic/renderer/editing';
+import type {
+  EditIntent,
+  Selection,
+  SnappingOptions,
+  TextContentChange,
+  TextEditorController,
+  TextFormatState,
+} from '@openmaic/renderer/editing';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
 
 const mockSetActiveElementIdList = vi.fn();
+const mockSetEditingElementId = vi.fn();
+const mockSetRichtextAttrs = vi.fn();
+const mockSetDisableHotkeysState = vi.fn();
 const mockApplyOp = vi.fn();
 const mockCommitContent = vi.fn();
 let activeElementIds: string[] = [];
 let hiddenElementIds: string[] = [];
+let editingElementId = '';
 let spotlightPrefix: string | undefined;
 let laserPrefix: string | undefined;
 let lastRendererProps:
@@ -20,6 +31,10 @@ let lastRendererProps:
       snapping?: boolean | SnappingOptions;
       onSelectionChange?: (next: Selection) => void;
       onElementsChange?: (intents: EditIntent[]) => void;
+      onTextContentChange?: (change: TextContentChange) => void;
+      onTextFormatChange?: (elementId: string, state: TextFormatState) => void;
+      onTextEditorChange?: (controller: TextEditorController | null) => void;
+      onTextFocusChange?: (focused: boolean) => void;
     }
   | undefined;
 
@@ -65,12 +80,19 @@ vi.mock('@/lib/store/canvas', () => ({
       hiddenElementIdList: () => hiddenElementIds,
       pickTarget: () => null,
       disableHotkeys: () => false,
+      editingElementId: () => editingElementId,
       setActiveElementIdList: () => mockSetActiveElementIdList,
+      setEditingElementId: () => mockSetEditingElementId,
+      setRichtextAttrs: () => mockSetRichtextAttrs,
+      setDisableHotkeysState: () => mockSetDisableHotkeysState,
     },
     getState: () => ({
       creatingElement: null,
       setCreatingElement: vi.fn(),
       setActiveElementIdList: mockSetActiveElementIdList,
+      setEditingElementId: mockSetEditingElementId,
+      setRichtextAttrs: mockSetRichtextAttrs,
+      setDisableHotkeysState: mockSetDisableHotkeysState,
     }),
   },
 }));
@@ -115,6 +137,10 @@ vi.mock('@openmaic/renderer/editing', async (importOriginal) => {
       snapping?: boolean | SnappingOptions;
       onSelectionChange?: (next: Selection) => void;
       onElementsChange?: (intents: EditIntent[]) => void;
+      onTextContentChange?: (change: TextContentChange) => void;
+      onTextFormatChange?: (elementId: string, state: TextFormatState) => void;
+      onTextEditorChange?: (controller: TextEditorController | null) => void;
+      onTextFocusChange?: (focused: boolean) => void;
     }) => {
       lastRendererProps = props;
       return createElement('button', {
@@ -163,10 +189,14 @@ describe('slide editor canvas renderer flag', () => {
   beforeEach(() => {
     original = process.env[flag];
     mockSetActiveElementIdList.mockClear();
+    mockSetEditingElementId.mockClear();
+    mockSetRichtextAttrs.mockClear();
+    mockSetDisableHotkeysState.mockClear();
     mockApplyOp.mockClear();
     mockCommitContent.mockClear();
     activeElementIds = [];
     hiddenElementIds = [];
+    editingElementId = '';
     spotlightPrefix = undefined;
     laserPrefix = undefined;
     lastRendererProps = undefined;
@@ -190,12 +220,17 @@ describe('slide editor canvas renderer flag', () => {
   it('uses EditableSlideCanvas and bridges selection plus intents when the flag is enabled', async () => {
     process.env[flag] = 'true';
     activeElementIds = ['title-1'];
+    editingElementId = 'title-1';
     hiddenElementIds = ['hidden-1'];
     vi.resetModules();
     const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
 
     const html = renderToStaticMarkup(createElement(SlideCanvas));
-    lastRendererProps?.onSelectionChange?.({ elementIds: ['title-1'], primaryId: 'title-1' });
+    lastRendererProps?.onSelectionChange?.({
+      elementIds: ['title-1'],
+      primaryId: 'title-1',
+      editingId: 'title-1',
+    });
     lastRendererProps?.onElementsChange?.([
       { type: 'element.update', id: 'title-1', props: { left: 48 } },
       { type: 'element.update', id: 'title-1', props: { top: 64 } },
@@ -213,6 +248,7 @@ describe('slide editor canvas renderer flag', () => {
     expect(lastRendererProps?.selection).toEqual({
       elementIds: ['title-1'],
       primaryId: 'title-1',
+      editingId: 'title-1',
     });
     expect(lastRendererProps?.elementIdPrefix).toBe('editable-element-');
     expect(lastRendererProps?.hiddenElementIds).toEqual(['hidden-1']);
@@ -220,6 +256,7 @@ describe('slide editor canvas renderer flag', () => {
     expect(laserPrefix).toBe(lastRendererProps?.elementIdPrefix);
     expect(lastRendererProps?.snapping).toBe(true);
     expect(mockSetActiveElementIdList).toHaveBeenCalledWith(['title-1']);
+    expect(mockSetEditingElementId).toHaveBeenCalledWith('title-1');
     expect(mockApplyOp).not.toHaveBeenCalled();
     expect(mockCommitContent).toHaveBeenCalledTimes(1);
     expect(mockCommitContent.mock.calls[0][0].canvas.elements[0]).toMatchObject({
@@ -227,6 +264,49 @@ describe('slide editor canvas renderer flag', () => {
       top: 64,
     });
     expect(mockCommitContent.mock.calls[0][1]).toBe(true);
+  });
+
+  it('bridges renderer text format, focus and history callbacks', async () => {
+    process.env[flag] = 'true';
+    activeElementIds = ['title-1'];
+    editingElementId = 'title-1';
+    vi.resetModules();
+    const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
+
+    renderToStaticMarkup(createElement(SlideCanvas));
+    const format = {
+      bold: true,
+      em: false,
+      underline: false,
+      strikethrough: false,
+      superscript: false,
+      subscript: false,
+      code: false,
+      color: '#111111',
+      backcolor: '',
+      fontsize: '24px',
+      fontname: 'Arial',
+      link: '',
+      align: 'left',
+      bulletList: false,
+      orderedList: false,
+      blockquote: false,
+    } satisfies TextFormatState;
+    lastRendererProps?.onTextFormatChange?.('title-1', format);
+    lastRendererProps?.onTextFocusChange?.(true);
+    lastRendererProps?.onTextContentChange?.({
+      intent: {
+        type: 'text.updateContent',
+        id: 'title-1',
+        target: 'text',
+        content: '<p>Edited</p>',
+      },
+      history: 'neutral',
+    });
+
+    expect(mockSetRichtextAttrs).toHaveBeenCalledWith(format);
+    expect(mockSetDisableHotkeysState).toHaveBeenCalledWith(true);
+    expect(mockCommitContent).toHaveBeenCalledWith(expect.any(Object), false);
   });
 
   it('does not commit empty or ineffective renderer intent batches', async () => {

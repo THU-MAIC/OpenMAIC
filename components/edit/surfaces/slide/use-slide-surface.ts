@@ -321,10 +321,10 @@ export function useSlideCanvasController(): SlideCanvasController {
  * element, when it is a text element. "" means "not editing text". Drives both
  * the AnchoredTextBar and the canvas store's `editingElementId`.
  */
-export function useEditingTextElementId(): string {
+export function useEditingTextElementId(requestedId?: string): string {
   const activeElementIds = useCanvasStore.use.activeElementIdList();
   const content = useResolvedSlideContent();
-  return resolveEditingElementId(activeElementIds, content.canvas.elements);
+  return resolveEditingElementId(activeElementIds, content.canvas.elements, requestedId);
 }
 
 /**
@@ -346,7 +346,7 @@ export function useSelectedNonTextElement(): PPTElement | null {
  * useLayoutEffect so the renderer suppresses the dashed frame in the same
  * commit the selection changes — no one-frame flicker. Cleared on unmount.
  */
-export function useSyncEditingElementId(editingElementId: string): void {
+export function useSyncEditingElementId(editingElementId: string, enabled = true): void {
   const setEditingElementId = useCanvasStore.use.setEditingElementId();
   const setRichTextAttrs = useCanvasStore.use.setRichtextAttrs();
   // Track the previous editing id so we only reset attrs on element-to-element
@@ -356,6 +356,7 @@ export function useSyncEditingElementId(editingElementId: string): void {
   // values, which is more jarring than skipping the reset there.
   const prevEditingElementId = useRef('');
   useLayoutEffect(() => {
+    if (!enabled) return;
     setEditingElementId(editingElementId);
     if (prevEditingElementId.current && prevEditingElementId.current !== editingElementId) {
       // `richTextAttrs` is a single shared store updated by whichever
@@ -367,5 +368,5 @@ export function useSyncEditingElementId(editingElementId: string): void {
     }
     prevEditingElementId.current = editingElementId;
     return () => setEditingElementId('');
-  }, [editingElementId, setEditingElementId, setRichTextAttrs]);
+  }, [editingElementId, enabled, setEditingElementId, setRichTextAttrs]);
 }

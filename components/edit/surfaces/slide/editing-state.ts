@@ -25,7 +25,9 @@ export function resolveSelectedElement(
 export function resolveEditingElementId(
   activeElementIdList: readonly string[],
   elements: readonly PPTElement[],
+  requestedId?: string,
 ): string {
   const el = resolveSelectedElement(activeElementIdList, elements);
-  return el?.type === 'text' ? el.id : '';
+  if (requestedId === undefined) return el?.type === 'text' ? el.id : '';
+  return el?.type === 'text' && !el.lock && el.id === requestedId ? requestedId : '';
 }

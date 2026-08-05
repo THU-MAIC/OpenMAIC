@@ -49,4 +49,14 @@ describe('resolveEditingElementId', () => {
   test('returns the id when a single text element is selected', () => {
     expect(resolveEditingElementId(['t1'], [text, image])).toBe('t1');
   });
+
+  test('requires the explicit renderer editing id to match the selected text', () => {
+    expect(resolveEditingElementId(['t1'], [text, image], '')).toBe('');
+    expect(resolveEditingElementId(['t1'], [text, image], 't1')).toBe('t1');
+    expect(resolveEditingElementId(['t1'], [text, image], 'other')).toBe('');
+  });
+
+  test('rejects a locked text in explicit renderer mode', () => {
+    expect(resolveEditingElementId(['t1'], [{ ...text, lock: true }], 't1')).toBe('');
+  });
 });
