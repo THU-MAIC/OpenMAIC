@@ -420,6 +420,21 @@ function HomePage() {
     }
     return counts;
   }, [classrooms]);
+  // Up to 3 member course covers (first-slide thumbnails) per folder, for the
+  // folder tile's cover stack. Members are ordered by updatedAt desc so the
+  // frontmost cover is the most recently touched course.
+  const coverSlidesByFolder = useMemo(() => {
+    const byFolder = new Map<string, Slide[]>();
+    for (const c of [...classrooms].sort((a, b) => b.updatedAt - a.updatedAt)) {
+      if (!c.folderId) continue;
+      const slide = thumbnails[c.id];
+      if (!slide) continue;
+      const list = byFolder.get(c.folderId) ?? [];
+      if (list.length < 3) list.push(slide);
+      byFolder.set(c.folderId, list);
+    }
+    return byFolder;
+  }, [classrooms, thumbnails]);
   const currentFolder = effectiveFolders.find((f) => f.id === effectiveCurrentFolderId);
 
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
@@ -1167,9 +1182,11 @@ function HomePage() {
                               <FolderCard
                                 folder={folder}
                                 courseCount={courseCountByFolder.get(folder.id) ?? 0}
+                                coverSlides={coverSlidesByFolder.get(folder.id) ?? []}
                                 onOpen={() => setCurrentFolderId(folder.id)}
                                 onRename={handleRenameFolder(folder)}
                                 onRequestDelete={() => setDeleteTarget(folder)}
+                                onDropCourse={(stageId) => handleMoveCourse(stageId, folder.id)}
                               />
                             </motion.div>
                           ))}
@@ -1603,7 +1620,15 @@ function ClassroomCard({
   };
 
   return (
-    <div className="group cursor-pointer" onClick={confirmingDelete ? undefined : onClick}>
+    <div
+      className="group cursor-pointer"
+      onClick={confirmingDelete ? undefined : onClick}
+      draggable={COURSE_FOLDERS_ENABLED && !confirmingDelete}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/stage-id', classroom.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+    >
       {/* Thumbnail — large radius, no border, subtle bg */}
       <div
         ref={thumbRef}
