@@ -668,6 +668,16 @@ export const EDITING_UI_STYLES = `
   opacity: 0.45;
 }
 
+.maic-editing-ui-latex-toolbar {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 14%);
+  display: flex;
+  padding: 4px;
+}
+
 @media (max-width: 720px) {
   .maic-editing-ui-latex-backdrop {
     align-items: flex-start;

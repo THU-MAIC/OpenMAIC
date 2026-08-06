@@ -60,7 +60,13 @@ vi.mock('../../src/editing/EditableSlideCanvas', async () => {
         'div',
         { 'data-testid': 'editable-slide-canvas' },
         props.slide.elements
-          .filter((element) => element.type === 'text' || element.type === 'table' || element.type === 'line')
+          .filter(
+            (element) =>
+              element.type === 'text' ||
+              element.type === 'table' ||
+              element.type === 'line' ||
+              element.type === 'latex',
+          )
           .map((element) =>
             React.createElement(
               'div',
@@ -73,13 +79,18 @@ vi.mock('../../src/editing/EditableSlideCanvas', async () => {
                       ? 'base-element-text'
                       : element.type === 'table'
                         ? 'base-element-table'
-                        : 'base-element-line',
-                  onClick: element.type === 'text' ? () =>
-                    props.onSelectionChange?.({
-                      elementIds: [element.id],
-                      primaryId: element.id,
-                      editingId: element.id,
-                    }) : undefined,
+                        : element.type === 'line'
+                          ? 'base-element-line'
+                          : 'base-element-latex',
+                  onClick:
+                    element.type === 'text'
+                      ? () =>
+                          props.onSelectionChange?.({
+                            elementIds: [element.id],
+                            primaryId: element.id,
+                            editingId: element.id,
+                          })
+                      : undefined,
                   type: element.type === 'text' ? 'button' : undefined,
                 },
                 element.id === 'text-1' ? 'Hello' : 'Second',
@@ -141,6 +152,20 @@ const slide = {
     },
   ],
 } as unknown as Slide;
+
+const latexElement = {
+  id: 'formula-1',
+  type: 'latex',
+  left: 100,
+  top: 100,
+  width: 180,
+  height: 60,
+  rotate: 0,
+  latex: 'x^2',
+  html: '<span class="katex">x<sup>2</sup></span>',
+  color: '#2563eb',
+  align: 'center',
+} as const;
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
   return {
@@ -242,6 +267,7 @@ beforeEach(() => {
     if (this.classList.contains('base-element-text')) return rect(100, 100, 240, 80);
     if (this.classList.contains('base-element-table')) return rect(100, 260, 240, 80);
     if (this.classList.contains('base-element-line')) return rect(100, 200, 120, 80);
+    if (this.classList.contains('base-element-latex')) return rect(100, 100, 180, 60);
     return new DOMRect();
   });
 });
@@ -297,6 +323,39 @@ describe('EditableSlideCanvasWithUI', () => {
 
     expect(getByRole('toolbar', { name: 'Insert' })).not.toBeNull();
     expect(onInsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the shared dialog from the Formula insert icon', () => {
+    const onInsert = vi.fn();
+
+    renderControlled({
+      insertToolbar: { label: 'Insert', items: [] },
+      latexEditor: { onInsert, onUpdate: vi.fn() },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert formula' }));
+
+    expect(screen.getByRole('dialog', { name: 'Formula editor' })).not.toBeNull();
+    expect(onInsert).not.toHaveBeenCalled();
+  });
+
+  it('opens the shared dialog prefilled for a selected Latex element', async () => {
+    const onUpdate = vi.fn();
+
+    renderControlled({
+      slide: { ...slide, elements: [latexElement] } as unknown as Slide,
+      initialSelection: { elementIds: ['formula-1'], primaryId: 'formula-1' },
+      latexEditor: { onInsert: vi.fn(), onUpdate },
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit formula' }));
+    expect((screen.getByLabelText('LaTeX source') as HTMLTextAreaElement).value).toBe('x^2');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    expect(onUpdate).toHaveBeenCalledWith(
+      'formula-1',
+      expect.objectContaining({ latex: 'x^2', html: expect.stringContaining('katex') }),
+    );
   });
 
   it('waits for controller and format state matching the controlled editing id', () => {
@@ -493,7 +552,9 @@ describe('EditableSlideCanvasWithUI', () => {
     ]);
 
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
-    expect(onElementsChange).toHaveBeenLastCalledWith([{ type: 'element.delete', ids: ['line-1'] }]);
+    expect(onElementsChange).toHaveBeenLastCalledWith([
+      { type: 'element.delete', ids: ['line-1'] },
+    ]);
     expect(onSelectionChange).toHaveBeenLastCalledWith({ elementIds: [] });
   });
 
@@ -553,7 +614,9 @@ describe('EditableSlideCanvasWithUI', () => {
     expect(screen.queryByRole('button', { name: '置于底层' })).toBeNull();
     expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
 
-    fireEvent.change(screen.getByRole('combobox', { name: '字体' }), { target: { value: 'Inter' } });
+    fireEvent.change(screen.getByRole('combobox', { name: '字体' }), {
+      target: { value: 'Inter' },
+    });
     expect(canvasMock.executions).toEqual([
       { elementId: 'table-1', command: { command: 'fontname', value: 'Inter' } },
     ]);
