@@ -16,15 +16,17 @@
 import { describe, it, expect } from 'vitest';
 import {
   generatePBLV2Project,
+  plannerStepHasAcceptedCompletion,
+} from '@/lib/pbl/v2/agents/planner';
+import {
   PlannerV2Error,
   plannerCompletionGaps,
-  plannerStepHasAcceptedCompletion,
   normalizeSynthesisChecks,
   buildScenarioDesignBlock,
   MAX_SYNTHESIS_STAGES,
   type PlannerV2Callbacks,
   type PlannerV2ProgressEvent,
-} from '@/lib/pbl/v2/agents/planner';
+} from '@/lib/pbl/v2/agents/planner-core';
 import type { StepResult, ToolSet } from 'ai';
 
 describe('PBL v2 — scenario design block (free-first dialogue)', () => {
@@ -220,9 +222,9 @@ describe('PBL v2 Planner — error paths (no LLM needed)', () => {
     // the first thing it does. Using `as never` keeps the test
     // payload honest (we are deliberately violating the contract to
     // observe the guard).
-    await expect(generatePBLV2Project(input, undefined as never)).rejects.toBeInstanceOf(
-      PlannerV2Error,
-    );
+    await expect(
+      generatePBLV2Project(input, undefined as never, undefined as never),
+    ).rejects.toBeInstanceOf(PlannerV2Error);
   });
 });
 
@@ -463,6 +465,7 @@ describe('PBL v2 Planner — targetLanguage overrides detection (UI locale path)
       await generatePBLV2Project(
         { ...input, outline: { ...outline, pblConfig: undefined } },
         undefined as never,
+        undefined as never,
       );
     } catch (err) {
       // `partial` was built via emptyProject(input), which now reads
@@ -496,7 +499,7 @@ describe('PBL v2 Planner — targetLanguage overrides detection (UI locale path)
       // No targetLanguage → language stays '' (no content-based locale guessing).
     };
     try {
-      await generatePBLV2Project(input, undefined as never);
+      await generatePBLV2Project(input, undefined as never, undefined as never);
     } catch (err) {
       const partial = (err as PlannerV2Error).partial;
       expect(partial.language).toBe('');
@@ -522,7 +525,7 @@ describe('PBL v2 Planner — targetLanguage overrides detection (UI locale path)
       targetLanguage: '   ',
     };
     try {
-      await generatePBLV2Project(input, undefined as never);
+      await generatePBLV2Project(input, undefined as never, undefined as never);
     } catch (err) {
       const partial = (err as PlannerV2Error).partial;
       // whitespace targetLanguage → '' (content is NOT scanned for a locale)

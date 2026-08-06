@@ -34,7 +34,7 @@
  * evidence-path (Path B default) rules in instructor-base-rules.md.
  */
 
-import { DEFAULT_TIER } from '../operations/proficiency';
+import { DEFAULT_TIER } from '../operations/kernel/proficiency';
 import type { PBLProficiency } from '../types';
 
 const COMMON_RULES = [

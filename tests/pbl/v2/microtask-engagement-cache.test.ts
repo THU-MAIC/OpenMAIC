@@ -12,8 +12,8 @@
  * always has data. These tests pin the cache behaviour.
  */
 import { describe, expect, it } from 'vitest';
-import { advanceMicrotask } from '@/lib/pbl/v2/operations/progress';
-import { recordEvent } from '@/lib/pbl/v2/operations/engagement';
+import { advanceMicrotask } from '@/lib/pbl/v2/operations/kernel/progress';
+import { recordEvent } from '@/lib/pbl/v2/operations/kernel/engagement';
 import type { PBLMicrotask, PBLMilestone, PBLProjectV2 } from '@/lib/pbl/v2/types';
 
 function mkTask(id: string, status: PBLMicrotask['status'] = 'in_progress'): PBLMicrotask {

@@ -11,8 +11,8 @@
  * paste-text handling lives in the workspace submission panel.
  */
 
-import type { PBLProjectV2, PBLSubmission, PBLSubmissionKind } from '../types';
-import { appendRuntimeEvent, mintRuntimeEventId } from './runtime-events';
+import type { PBLProjectV2, PBLSubmission, PBLSubmissionKind } from '../../types';
+import { appendRuntimeEvent, mintRuntimeEventId } from '../kernel/runtime-events';
 
 function newId(prefix: string): string {
   return (

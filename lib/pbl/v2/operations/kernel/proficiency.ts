@@ -46,7 +46,7 @@ import type {
   ProficiencySignal,
   ProficiencySignalKind,
   ProficiencyTransition,
-} from '../types';
+} from '../../types';
 import type { SceneOutline } from '@/lib/types/generation';
 import { appendProficiencyUpdatedRuntimeEvent } from './runtime-events';
 

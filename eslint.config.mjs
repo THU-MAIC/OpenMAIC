@@ -487,6 +487,48 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // PBL v2 project-definition boundary: kernel operations encode the shared
+  // project invariants used by planners, runtime, and UI. Runtime-only
+  // operations may depend on the kernel, but the kernel must never reach back
+  // into operations/runtime. Match the module string in every literal form so
+  // static imports, re-exports, dynamic imports, and require-like calls cannot
+  // quietly invert the boundary.
+  {
+    files: ['lib/pbl/v2/operations/kernel/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '../runtime',
+                '../runtime/*',
+                '@/lib/pbl/v2/operations/runtime',
+                '@/lib/pbl/v2/operations/runtime/*',
+              ],
+              message:
+                'PBL v2 kernel operations must not import operations/runtime. Runtime operations may depend on the project-definition kernel, never the reverse.',
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        ...AI_SDK_DYNAMIC_IMPORT_BAN,
+        {
+          selector: 'Literal[value=/\\/runtime(?:\\/|$)/]',
+          message:
+            'PBL v2 kernel operations must not import operations/runtime. Runtime operations may depend on the project-definition kernel, never the reverse.',
+        },
+        {
+          selector: 'TemplateElement[value.cooked=/\\/runtime(?:\\/|$)/]',
+          message:
+            'PBL v2 kernel operations must not import operations/runtime. Runtime operations may depend on the project-definition kernel, never the reverse.',
+        },
+      ],
+    },
+  },
   // Single LLM entry point (machine-enforced): server-side model calls go through
   // `callLLM` / `streamLLM` in lib/ai/llm.ts. That wrapper is where usage
   // accounting (`recordUsage`), the `LLM_THINKING_DISABLED` kill switch, and
@@ -571,6 +613,7 @@ const eslintConfig = defineConfig([
       // Blocks above that configure no-restricted-syntax for their own boundary.
       'lib/choreography/**',
       'lib/video-export/**',
+      'lib/pbl/v2/operations/kernel/**',
       'packages/@openmaic/renderer/**',
       'packages/@openmaic/storage/**',
       'packages/@openmaic/generation/**',

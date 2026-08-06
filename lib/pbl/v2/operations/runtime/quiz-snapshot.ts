@@ -24,9 +24,9 @@
 import { loadQuizAttemptState, type QuizAttemptState } from '@/lib/quiz/runtime';
 import type { Scene } from '@/lib/types/stage';
 import { createLogger } from '@/lib/logger';
-import { applyQuizSnapshot, ensureAssessment } from './proficiency';
-import { appendProficiencyUpdatedRuntimeEvent } from './runtime-events';
-import type { PBLProjectV2, PriorQuizResult } from '../types';
+import { applyQuizSnapshot, ensureAssessment } from '../kernel/proficiency';
+import { appendProficiencyUpdatedRuntimeEvent } from '../kernel/runtime-events';
+import type { PBLProjectV2, PriorQuizResult } from '../../types';
 
 const log = createLogger('PBLQuizSnapshot');
 

@@ -22,13 +22,13 @@
  * end to end.
  */
 
-import { loadPBLV2Prompt } from '../prompts/loader';
-import { microtaskEngagement } from './engagement';
+import { loadPBLV2Prompt } from '../../prompts/loader';
+import { microtaskEngagement } from '../kernel/engagement';
 import { scenarioActGoalsScaffold } from './completion-stats';
-import { PBL_SIMULATOR_AGENT_ID } from './progress';
+import { PBL_SIMULATOR_AGENT_ID } from '../kernel/progress';
 import { listEvaluationsForMicrotask } from './evaluation';
 import { summarizeLatestSubmissionForMicrotask } from './submission';
-import type { PBLMicrotask, PBLMilestone, PBLProjectV2, PBLScenarioConfig } from '../types';
+import type { PBLMicrotask, PBLMilestone, PBLProjectV2, PBLScenarioConfig } from '../../types';
 
 export interface EvalPromptPair {
   system: string;

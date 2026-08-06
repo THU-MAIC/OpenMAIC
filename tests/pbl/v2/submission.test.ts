@@ -11,7 +11,7 @@ import {
   listSubmissionsForMicrotask,
   summarizeLatestSubmissionForMicrotask,
   summarizeSubmissionsForMicrotask,
-} from '@/lib/pbl/v2/operations/submission';
+} from '@/lib/pbl/v2/operations/runtime/submission';
 import { buildRevisionGuidanceMessage } from '@/components/scene-renderers/pbl/v2/submission';
 import type { PBLEvaluation, PBLProjectV2 } from '@/lib/pbl/v2/types';
 

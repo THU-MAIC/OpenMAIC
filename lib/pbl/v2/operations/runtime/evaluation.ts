@@ -8,8 +8,17 @@
  * later PRs.
  */
 
-import type { PBLEvaluation, PBLEvaluationKind, PBLProjectV2, PBLScenarioActGoals } from '../types';
-import { appendRuntimeEvent, milestoneIdForMicrotask, mintRuntimeEventId } from './runtime-events';
+import type {
+  PBLEvaluation,
+  PBLEvaluationKind,
+  PBLProjectV2,
+  PBLScenarioActGoals,
+} from '../../types';
+import {
+  appendRuntimeEvent,
+  milestoneIdForMicrotask,
+  mintRuntimeEventId,
+} from '../kernel/runtime-events';
 
 function newId(prefix: string): string {
   return (

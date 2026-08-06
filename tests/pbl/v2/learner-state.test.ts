@@ -5,7 +5,7 @@ import {
   extractLearnerState,
   stripToDesignTemplate,
 } from '@/lib/pbl/v2/runtime/learner-state';
-import { emptyAssessment } from '@/lib/pbl/v2/operations/proficiency';
+import { emptyAssessment } from '@/lib/pbl/v2/operations/kernel/proficiency';
 import type { PBLProjectV2, PBLRuntimeEvent } from '@/lib/pbl/v2/types';
 
 type ProjectFieldBoundary = 'learner-state' | 'design-template' | 'transient';

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { RuntimeRecord } from '@openmaic/dsl';
 
 import { foldPBLRuntime } from '@/lib/pbl/v2/runtime/fold';
-import { MAX_ENGAGEMENT_EVENTS } from '@/lib/pbl/v2/operations/engagement';
-import { emptyAssessment } from '@/lib/pbl/v2/operations/proficiency';
+import { MAX_ENGAGEMENT_EVENTS } from '@/lib/pbl/v2/operations/kernel/engagement';
+import { emptyAssessment } from '@/lib/pbl/v2/operations/kernel/proficiency';
 import {
   PBL_RUNTIME_PAYLOAD_VERSION,
   type PBLRuntimeStorePayload,

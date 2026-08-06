@@ -36,7 +36,7 @@ vi.mock('@/lib/server/usage-storage', () => ({
 import { thinkingContext } from '@/lib/ai/thinking-context';
 import { runTaskEvaluation } from '@/lib/pbl/v2/agents/evaluator';
 import { runSimulatorTurn } from '@/lib/pbl/v2/agents/simulator';
-import { addSubmission } from '@/lib/pbl/v2/operations/submission';
+import { addSubmission } from '@/lib/pbl/v2/operations/runtime/submission';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 import type { PBLSSEEvent } from '@/lib/pbl/v2/api/sse';
 import type { ThinkingConfig } from '@/lib/types/provider';

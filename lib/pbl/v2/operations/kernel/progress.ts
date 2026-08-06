@@ -23,7 +23,7 @@ import type {
   PBLMicrotask,
   PBLInternalAssessment,
   PBLHandover,
-} from '../types';
+} from '../../types';
 import { microtaskEngagement, recordEvent } from './engagement';
 import { clearPendingTaskCompletion } from './task-completion';
 import {

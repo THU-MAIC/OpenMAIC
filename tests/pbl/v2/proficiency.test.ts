@@ -36,7 +36,7 @@ import {
   signalFromTaskSpeed,
   tickTurn,
   updateProjectAssessment,
-} from '@/lib/pbl/v2/operations/proficiency';
+} from '@/lib/pbl/v2/operations/kernel/proficiency';
 import type { PBLProficiencyAssessment, PBLProjectV2, PriorQuizResult } from '@/lib/pbl/v2/types';
 import type { SceneOutline } from '@/lib/types/generation';
 

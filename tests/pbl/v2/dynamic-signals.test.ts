@@ -17,8 +17,8 @@ import {
   trackMicrotaskCompletion,
   trackObservation,
   trackSubmissionScore,
-} from '@/lib/pbl/v2/operations/dynamic-signals';
-import { emptyAssessment } from '@/lib/pbl/v2/operations/proficiency';
+} from '@/lib/pbl/v2/operations/runtime/dynamic-signals';
+import { emptyAssessment } from '@/lib/pbl/v2/operations/kernel/proficiency';
 import type { PBLProficiencyAssessment } from '@/lib/pbl/v2/types';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 

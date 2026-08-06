@@ -15,10 +15,10 @@ import {
   buildTaskEvalPrompt,
   formatProjectEngagementRollup,
   formatProjectSynthesisChecks,
-} from '@/lib/pbl/v2/operations/eval-prompts';
-import { addSubmission } from '@/lib/pbl/v2/operations/submission';
-import { addEvaluation } from '@/lib/pbl/v2/operations/evaluation';
-import { recordEvent } from '@/lib/pbl/v2/operations/engagement';
+} from '@/lib/pbl/v2/operations/runtime/eval-prompts';
+import { addSubmission } from '@/lib/pbl/v2/operations/runtime/submission';
+import { addEvaluation } from '@/lib/pbl/v2/operations/runtime/evaluation';
+import { recordEvent } from '@/lib/pbl/v2/operations/kernel/engagement';
 import type {
   PBLEngagementSummary,
   PBLMicrotask,

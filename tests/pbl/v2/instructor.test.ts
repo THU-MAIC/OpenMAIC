@@ -20,7 +20,7 @@ import {
   microtaskEngagement,
   milestoneSynthesisSatisfied,
   recordEvent,
-} from '@/lib/pbl/v2/operations/engagement';
+} from '@/lib/pbl/v2/operations/kernel/engagement';
 import type { PBLMilestone, PBLProjectV2 } from '@/lib/pbl/v2/types';
 
 const now = '2026-05-29T00:00:00.000Z';

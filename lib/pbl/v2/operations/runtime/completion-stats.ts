@@ -7,7 +7,7 @@
  * no network calls, no LLM invocation.
  */
 
-import type { PBLProjectV2, PBLScenarioActGoals } from '../types';
+import type { PBLProjectV2, PBLScenarioActGoals } from '../../types';
 
 // ---------------------------------------------------------------------------
 // Types

@@ -21,7 +21,7 @@ import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { createSSEResponse } from '@/lib/pbl/v2/api/sse';
 import { applyRequestLocaleToProject } from '@/lib/pbl/v2/api/locale';
 import { runInstructorTurn } from '@/lib/pbl/v2/agents/instructor';
-import { applyQuizSignalsToProject } from '@/lib/pbl/v2/operations/quiz-snapshot';
+import { applyQuizSignalsToProject } from '@/lib/pbl/v2/operations/runtime/quiz-snapshot';
 import type { PBLProjectV2, PriorQuizResult } from '@/lib/pbl/v2/types';
 
 export const maxDuration = 300;

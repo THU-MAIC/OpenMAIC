@@ -25,8 +25,10 @@ import type { PromptId } from '@/lib/prompts/types';
 import type { LanguageModel } from 'ai';
 import { createStageAPI } from '@/lib/api/stage-api';
 import { generatePBLContent } from '@/lib/pbl/generate-pbl';
-import { generatePBLV2Project, PlannerV2Error } from '@/lib/pbl/v2/agents/planner';
+import { callLLM } from '@/lib/ai/llm';
+import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { generatePBLV2ProjectSingleCall } from '@/lib/pbl/v2/agents/planner-single-call';
+import { PlannerV2Error } from '@/lib/pbl/v2/agents/planner-core';
 import { projectV2ToLegacyProjectConfig } from '@/lib/pbl/v2/compat';
 import type { PBLPlannerV2Input, PBLProjectV2 } from '@/lib/pbl/v2/types';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
@@ -948,6 +950,7 @@ async function generatePBLSceneContent(
           generatePBLV2ProjectSingleCall(
             plannerInput,
             languageModel,
+            callLLM,
             { onProgress },
             thinkingConfig,
           ),
@@ -955,7 +958,13 @@ async function generatePBLSceneContent(
       {
         label: 'loop',
         run: () =>
-          generatePBLV2Project(plannerInput, languageModel, { onProgress }, thinkingConfig),
+          generatePBLV2Project(
+            plannerInput,
+            languageModel,
+            callLLM,
+            { onProgress },
+            thinkingConfig,
+          ),
       },
     ];
 
