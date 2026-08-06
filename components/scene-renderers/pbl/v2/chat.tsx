@@ -33,15 +33,18 @@ import type {
   PBLProjectV2,
   PBLScenarioCharacter,
 } from '@/lib/pbl/v2/types';
-import { normalizeProjectRuntime, PBL_SIMULATOR_AGENT_ID } from '@/lib/pbl/v2/operations/progress';
+import {
+  normalizeProjectRuntime,
+  PBL_SIMULATOR_AGENT_ID,
+} from '@/lib/pbl/v2/operations/kernel/progress';
 import {
   appendRuntimeEvent,
   milestoneIdForMicrotask,
   mintRuntimeEventId,
   transitionProjectUiPhase,
-} from '@/lib/pbl/v2/operations/runtime-events';
-import { stripEvaluationTail } from '@/lib/pbl/v2/operations/eval-tail-parser';
-import { isTaskCompletionReadyMessageContent } from '@/lib/pbl/v2/operations/task-completion';
+} from '@/lib/pbl/v2/operations/kernel/runtime-events';
+import { stripEvaluationTail } from '@/lib/pbl/v2/operations/runtime/eval-tail-parser';
+import { isTaskCompletionReadyMessageContent } from '@/lib/pbl/v2/operations/kernel/task-completion';
 import { cn } from '@/lib/utils/cn';
 import { useInstructorStream, type StreamDisplayState } from './use-instructor-stream';
 import { instructorIntroText } from './instructor-intro';

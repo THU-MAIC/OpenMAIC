@@ -32,7 +32,7 @@ import { SCENE_TYPES } from '@openmaic/dsl';
 export const VIDEO_TIMELINE_SCHEMA = 'openmaic.videoTimeline';
 
 /** IR/manifest version. Bump on any breaking shape change. */
-export const VIDEO_TIMELINE_VERSION = 1;
+export const VIDEO_TIMELINE_VERSION = 2;
 
 /** Compiler identity stamped into the manifest for provenance. */
 export const VIDEO_TIMELINE_COMPILER = 'openmaic-video-timeline';
@@ -65,8 +65,9 @@ export const DiagnosticSeveritySchema = z.enum(['info', 'warn', 'error']);
  * - `missing-audio` — a speech has text but no resolvable audio asset.
  * - `unresolved-element` — an effect's `elementId` had no geometry (degraded).
  * - `skipped-media` — a referenced media/audio asset is absent from the source.
- * - `unsupported-scene` — a scene family (quiz/interactive/pbl) is not rendered,
+ * - `unsupported-scene` — a remaining runtime-only scene family is not rendered,
  *   represented by markers instead.
+ * - `cover-card` — a Quiz/PBL scene is rendered as a deterministic static cover.
  * - `unknown-action` — an action with an unrecognized `type` was dropped.
  * - `invalid-action` — an action missing a required field was dropped.
  */
@@ -76,6 +77,7 @@ export const DiagnosticCodeSchema = z.enum([
   'unresolved-element',
   'skipped-media',
   'unsupported-scene',
+  'cover-card',
   'unknown-action',
   'invalid-action',
 ]);
@@ -96,14 +98,49 @@ export const DiagnosticSchema = z.object({
 /** Where a segment's audio duration came from. */
 export const DurationSourceSchema = z.enum(['stored', 'estimated']);
 
-/** The scene's visual base layer — a rendered slide snapshot, or a placeholder for unsupported families. */
+/** The scene's visual base layer — a slide snapshot, timed visual segments, or an unsupported placeholder. */
 export const BaseSegmentSchema = z.object({
-  kind: z.enum(['slide-snapshot', 'placeholder']),
+  kind: z.enum(['slide-snapshot', 'visual-segments', 'placeholder']),
   /** Asset-plan path for the base frame image, when one is planned. */
   assetRef: z.string().optional(),
   /** Why a placeholder was used (unsupported scene family). */
   reason: z.string().optional(),
 });
+
+const TimedVisualSegmentSchema = z.object({
+  startMs: z.number(),
+  durationMs: z.number(),
+});
+
+/** Static Quiz title card. Questions/answers stay out of the cover IR by design. */
+export const QuizCoverVisualSchema = TimedVisualSegmentSchema.extend({
+  kind: z.literal('quiz-cover'),
+  title: z.string(),
+  questionCount: z.number(),
+  totalPoints: z.number(),
+});
+
+/** Static PBL Hero-style card built only from authored, learner-visible design fields. */
+export const PblCoverVisualSchema = TimedVisualSegmentSchema.extend({
+  kind: z.literal('pbl-cover'),
+  title: z.string(),
+  description: z.string(),
+  gains: z.array(z.string()),
+  stageCount: z.number(),
+  taskCount: z.number(),
+  instructorName: z.string().optional(),
+  instructorDescription: z.string().optional(),
+  scenarioCharacterName: z.string().optional(),
+});
+
+/**
+ * Timed visual layers are a discriminated union so later slices can add visual
+ * states (for example #986's Quiz question list) without changing scene timing.
+ */
+export const VisualSegmentSchema = z.discriminatedUnion('kind', [
+  QuizCoverVisualSchema,
+  PblCoverVisualSchema,
+]);
 
 /** Narration (speech) segment — one authored `speech` action laid on the wall-clock. */
 export const NarrationSegmentSchema = z.object({
@@ -212,6 +249,7 @@ export const VideoTimelineSceneSchema = z.object({
   /** False for scene families the compiler cannot render (quiz/interactive/pbl). */
   supported: z.boolean(),
   base: BaseSegmentSchema,
+  visuals: z.array(VisualSegmentSchema),
   narration: z.array(NarrationSegmentSchema),
   effects: z.array(EffectSegmentSchema),
   videos: z.array(VideoSegmentSchema),
@@ -293,6 +331,9 @@ export type DiagnosticCode = z.infer<typeof DiagnosticCodeSchema>;
 export type Diagnostic = z.infer<typeof DiagnosticSchema>;
 export type DurationSource = z.infer<typeof DurationSourceSchema>;
 export type BaseSegment = z.infer<typeof BaseSegmentSchema>;
+export type QuizCoverVisual = z.infer<typeof QuizCoverVisualSchema>;
+export type PblCoverVisual = z.infer<typeof PblCoverVisualSchema>;
+export type VisualSegment = z.infer<typeof VisualSegmentSchema>;
 export type NarrationSegment = z.infer<typeof NarrationSegmentSchema>;
 export type EffectSegment = z.infer<typeof EffectSegmentSchema>;
 export type VideoSegment = z.infer<typeof VideoSegmentSchema>;

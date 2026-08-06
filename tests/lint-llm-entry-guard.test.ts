@@ -48,6 +48,7 @@ const GUARDED_PATHS = [
   'components/probe',
   'packages/@openmaic/renderer/src/probe',
   'packages/@openmaic/storage/src/probe',
+  'packages/@openmaic/generation/src/probe',
   'lib/choreography/probe',
   'lib/video-export/probe',
   'scripts/probe',
@@ -104,6 +105,7 @@ describe('LLM entry-point lint guard — coverage matrix', () => {
     for (const filePath of [
       'packages/@openmaic/renderer/src/probe.ts',
       'packages/@openmaic/storage/src/probe.ts',
+      'packages/@openmaic/generation/src/probe.ts',
       'lib/choreography/probe.ts',
     ]) {
       const errors = await errorsFor(filePath, hostPathImport);

@@ -21,7 +21,7 @@
  * `/src/server.ts` or `/public-server.js`. We use the producer as a library, so
  * the entrypoint is `main.ts` to avoid spawning that phantom server.
  */
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { mkdir, stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { serve } from '@hono/node-server';
@@ -232,6 +232,8 @@ export function createApp(deps: AppDeps): Hono {
 /** Wire the production collaborators and start the server (skipped under tests). */
 async function main(): Promise<void> {
   const artifacts = new LocalDiskArtifactStore();
+  // Assigned after `jobs` so its reap callback can close over the manager.
+  // eslint-disable-next-line prefer-const
   let manager: RenderManager;
   const jobs = new InMemoryJobStore(config.jobTtlMs, (record) => {
     // A reaped job's artifact + project dir go with it.
@@ -254,10 +256,25 @@ async function main(): Promise<void> {
   // makeProjectDir() would ENOENT. mktemp still creates a fresh subdir per job.
   await mkdir(config.tmpDir, { recursive: true }).catch(() => {});
 
+  if (config.requireBeginFrame) {
+    const headlessShellPath = process.env.PRODUCER_HEADLESS_SHELL_PATH;
+    if (!headlessShellPath || !existsSync(headlessShellPath)) {
+      throw new Error(
+        'RENDER_REQUIRE_BEGINFRAME=true requires an existing ' + 'PRODUCER_HEADLESS_SHELL_PATH.',
+      );
+    }
+  }
+
   serve({ fetch: app.fetch, port: config.port }, (info) => {
-    // eslint-disable-next-line no-console
     console.log(
-      `[render-service] listening on :${info.port} (maxConcurrency=${config.maxConcurrency})`,
+      `[render-service] listening on :${info.port} ` +
+        `(maxConcurrency=${config.maxConcurrency}, producerWorkers=${config.producerWorkers ?? 'auto'}, ` +
+        `browserGpuMode=${process.env.PRODUCER_BROWSER_GPU_MODE ?? 'producer-default'}, ` +
+        `browserPool=${process.env.PRODUCER_ENABLE_BROWSER_POOL ?? 'producer-default'}, ` +
+        `lowMemoryMode=${process.env.PRODUCER_LOW_MEMORY_MODE ?? 'auto'}, ` +
+        `staticDedup=${process.env.HF_STATIC_DEDUP ?? 'producer-default'}, ` +
+        `headlessShell=${process.env.PRODUCER_HEADLESS_SHELL_PATH ?? 'unset'}, ` +
+        `requireBeginFrame=${config.requireBeginFrame})`,
     );
   });
 }

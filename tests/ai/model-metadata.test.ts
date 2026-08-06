@@ -6,10 +6,23 @@ import type { ProviderConfig, ProviderId } from '@/lib/types/provider';
 
 // These models intentionally do not expose a configurable thinking control.
 const MODELS_WITHOUT_CONFIGURABLE_THINKING = new Set<string>([
+  // Bedrock models can reason, but this provider intentionally does not expose
+  // thinking controls yet. Those require Bedrock-specific request serialization
+  // (`providerOptions.bedrock.reasoningConfig`), which is outside this text-provider
+  // rebase and belongs in the maintainer's follow-up request-serialization review.
+  'bedrock:us.anthropic.claude-sonnet-5',
+  'bedrock:us.anthropic.claude-opus-4-8',
+  'bedrock:us.anthropic.claude-opus-4-7',
+  'bedrock:us.anthropic.claude-sonnet-4-6',
+  'bedrock:us.amazon.nova-pro-v1:0',
+  'bedrock:us.amazon.nova-lite-v1:0',
+  'bedrock:us.amazon.nova-micro-v1:0',
+  'bedrock:us.meta.llama3-3-70b-instruct-v1:0',
   'siliconflow:Pro/moonshotai/Kimi-K2.5',
   'grok:grok-4.20',
   'grok:grok-4-1-fast-non-reasoning',
   'grok:grok-code-fast-1',
+  'atlascloud:qwen/qwen3.5-flash',
   'ollama:llama3.3',
   'ollama:gemma3',
   'ollama:deepseek-r1',

@@ -18,7 +18,7 @@ import {
   hasStartedProject,
   resetProjectProgress,
   completeRoleplayAct,
-} from '@/lib/pbl/v2/operations/progress';
+} from '@/lib/pbl/v2/operations/kernel/progress';
 import {
   appendTaskCompletionReadyMessage,
   currentPendingTaskCompletion,
@@ -27,9 +27,9 @@ import {
   setPendingTaskCompletion,
   taskCompletionReadyText,
   taskEvaluationCanComplete,
-} from '@/lib/pbl/v2/operations/task-completion';
-import { recordEvent } from '@/lib/pbl/v2/operations/engagement';
-import { runtimeEventEpoch } from '@/lib/pbl/v2/operations/runtime-events';
+} from '@/lib/pbl/v2/operations/kernel/task-completion';
+import { recordEvent } from '@/lib/pbl/v2/operations/kernel/engagement';
+import { runtimeEventEpoch } from '@/lib/pbl/v2/operations/kernel/runtime-events';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 
 function makeProject(): PBLProjectV2 {
