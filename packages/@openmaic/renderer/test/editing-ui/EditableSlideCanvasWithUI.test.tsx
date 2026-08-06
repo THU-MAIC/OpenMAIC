@@ -376,6 +376,18 @@ describe('EditableSlideCanvasWithUI', () => {
     });
 
     expect(screen.getByRole('toolbar', { name: 'Formula toolbar' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Edit formula' }).getAttribute('data-tooltip')).toBe(
+      'Edit formula',
+    );
+    expect(screen.getByRole('button', { name: 'Bring to front' }).getAttribute('data-tooltip')).toBe(
+      'Bring to front',
+    );
+    expect(screen.getByRole('button', { name: 'Send to back' }).getAttribute('data-tooltip')).toBe(
+      'Send to back',
+    );
+    expect(screen.getByRole('button', { name: 'Delete' }).getAttribute('data-tooltip')).toBe(
+      'Delete',
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Bring to front' }));
     fireEvent.click(screen.getByRole('button', { name: 'Send to back' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));

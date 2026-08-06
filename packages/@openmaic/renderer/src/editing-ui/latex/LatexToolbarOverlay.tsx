@@ -94,8 +94,10 @@ export function LatexToolbarOverlay({
     >
       <button
         type="button"
-        className="maic-editing-ui-icon-button"
+        className="maic-editing-ui-icon-button maic-editing-ui-tooltip-button"
         aria-label={editLabel}
+        data-tooltip={editLabel}
+        data-tooltip-placement="bottom"
         title={editLabel}
         onMouseDown={preventFocusLoss}
         onClick={onEdit}
@@ -108,8 +110,10 @@ export function LatexToolbarOverlay({
       {onBringToFront ? (
         <button
           type="button"
-          className="maic-editing-ui-icon-button"
+          className="maic-editing-ui-icon-button maic-editing-ui-tooltip-button"
           aria-label={bringToFrontLabel}
+          data-tooltip={bringToFrontLabel}
+          data-tooltip-placement="bottom"
           title={bringToFrontLabel}
           onMouseDown={preventFocusLoss}
           onClick={onBringToFront}
@@ -120,8 +124,10 @@ export function LatexToolbarOverlay({
       {onSendToBack ? (
         <button
           type="button"
-          className="maic-editing-ui-icon-button"
+          className="maic-editing-ui-icon-button maic-editing-ui-tooltip-button"
           aria-label={sendToBackLabel}
+          data-tooltip={sendToBackLabel}
+          data-tooltip-placement="bottom"
           title={sendToBackLabel}
           onMouseDown={preventFocusLoss}
           onClick={onSendToBack}
@@ -134,8 +140,10 @@ export function LatexToolbarOverlay({
           <span className="maic-editing-ui-divider" aria-hidden="true" />
           <button
             type="button"
-            className="maic-editing-ui-icon-button maic-editing-ui-delete-button"
+            className="maic-editing-ui-icon-button maic-editing-ui-delete-button maic-editing-ui-tooltip-button"
             aria-label={deleteLabel}
+            data-tooltip={deleteLabel}
+            data-tooltip-placement="bottom"
             title={deleteLabel}
             onMouseDown={preventFocusLoss}
             onClick={onDelete}

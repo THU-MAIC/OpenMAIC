@@ -26,6 +26,9 @@ describe('InsertToolbar', () => {
       />,
     );
 
+    expect(screen.getByRole('button', { name: 'Text box' }).getAttribute('data-tooltip')).toBe(
+      'Insert text box',
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Text box' }));
 
     expect(onInsertText).toHaveBeenCalledTimes(1);
@@ -113,6 +116,11 @@ describe('InsertToolbar', () => {
     expect(EDITING_UI_STYLES).toMatch(
       /\.maic-editing-ui-chart-picker-option \{[\s\S]*?align-items: center;/,
     );
+  });
+
+  it('shows toolbar button labels with the shared renderer tooltip treatment', () => {
+    expect(EDITING_UI_STYLES).toContain('.maic-editing-ui-tooltip-button::after');
+    expect(EDITING_UI_STYLES).toContain("[data-tooltip-placement='right']::after");
   });
 
   it('anchors a popover beside the triggering insert button instead of the toolbar top', () => {

@@ -17,10 +17,12 @@ function InsertToolbarButton({
   return (
     <button
       type="button"
-      className="maic-editing-ui-icon-button maic-editing-ui-insert-button"
+      className="maic-editing-ui-icon-button maic-editing-ui-insert-button maic-editing-ui-tooltip-button"
       aria-label={item.label}
       aria-pressed={typeof item.active === 'boolean' ? item.active : undefined}
       disabled={item.disabled}
+      data-tooltip={item.tooltip ?? item.label}
+      data-tooltip-placement="right"
       title={item.tooltip ?? item.label}
       onClick={hasPopover ? onOpen : item.onInvoke}
     >

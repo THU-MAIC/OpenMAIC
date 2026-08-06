@@ -203,6 +203,43 @@ export const EDITING_UI_STYLES = `
   width: 16px;
 }
 
+.maic-editing-ui-tooltip-button {
+  position: relative;
+}
+
+.maic-editing-ui-tooltip-button::after {
+  background: #27272a;
+  border-radius: 4px;
+  color: #ffffff;
+  content: attr(data-tooltip);
+  font-size: 12px;
+  line-height: 16px;
+  opacity: 0;
+  padding: 4px 6px;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 120ms ease;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.maic-editing-ui-tooltip-button[data-tooltip-placement='right']::after {
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.maic-editing-ui-tooltip-button[data-tooltip-placement='bottom']::after {
+  left: 50%;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+}
+
+.maic-editing-ui-tooltip-button:hover::after,
+.maic-editing-ui-tooltip-button:focus-visible::after {
+  opacity: 1;
+}
+
 .maic-editing-ui-icon-button:hover {
   background: #f4f4f5;
   color: #18181b;
