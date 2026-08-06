@@ -5,6 +5,7 @@ import {
   ElementTypes,
   type PPTElement,
   type PPTImageElement,
+  type PPTAudioElement,
   type PPTShapeElement,
   type PPTTableElement,
   type PPTTextElement,
@@ -20,6 +21,7 @@ import { BaseChartElement } from './elements/chart/BaseChartElement';
 import { BaseLatexElement } from './elements/latex/BaseLatexElement';
 import { BaseTableElement } from './elements/table/BaseTableElement';
 import { BaseVideoElement } from './elements/video/BaseVideoElement';
+import { BaseAudioElement } from './elements/audio/BaseAudioElement';
 import { BaseCodeElement } from './elements/code/BaseCodeElement';
 
 const DEFAULT_THEME = {
@@ -89,6 +91,8 @@ const SlideElementContent = memo(function SlideElementContent({
         return 'table';
       case ElementTypes.VIDEO:
         return 'video';
+      case ElementTypes.AUDIO:
+        return 'audio';
       case ElementTypes.CODE:
         return 'code';
       default:
@@ -127,6 +131,9 @@ const SlideElementContent = memo(function SlideElementContent({
           renderVideo={renderVideo}
           interactive={videoInteractive}
         />
+      )}
+      {Component === 'audio' && elementInfo.type === 'audio' && (
+        <BaseAudioElement elementInfo={elementInfo as PPTAudioElement} />
       )}
       {Component === 'code' && elementInfo.type === 'code' && (
         <BaseCodeElement elementInfo={elementInfo} animate={animate} />
