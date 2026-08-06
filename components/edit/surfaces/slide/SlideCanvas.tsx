@@ -165,9 +165,7 @@ function RendererEditorVideoContent({ element }: { readonly element: PPTVideoEle
 function RendererEditorCanvas() {
   const { locale, t } = useI18n();
   const content = useResolvedSlideContent();
-  const resolvedSlide = useResolvedSlide(content.canvas, {
-    preserveUnresolvedImagePlaceholders: true,
-  });
+  const resolvedSlide = useResolvedSlide(content.canvas);
   const activeElementIds = useCanvasStore.use.activeElementIdList();
   const hiddenElementIds = useCanvasStore.use.hiddenElementIdList();
   const pickTarget = useCanvasStore.use.pickTarget();
