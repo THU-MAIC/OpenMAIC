@@ -50,6 +50,7 @@ import {
 } from '@/lib/choreography';
 import katex from 'katex';
 import { createLogger } from '@/lib/logger';
+import { DEFAULT_SLIDE_FONT } from '@openmaic/dsl';
 
 const log = createLogger('ActionEngine');
 
@@ -480,7 +481,7 @@ export class ActionEngine {
         width: action.width ?? 400,
         height: action.height ?? 100,
         rotate: 0,
-        defaultFontName: 'Microsoft YaHei',
+        defaultFontName: DEFAULT_SLIDE_FONT,
         defaultColor: action.color ?? '#333333',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,

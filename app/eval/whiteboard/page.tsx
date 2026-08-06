@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { ScreenElement } from '@/components/slide-renderer/Editor/ScreenElement';
 import { SceneProvider } from '@/lib/contexts/scene-context';
 import { useStageStore } from '@/lib/store/stage';
-import type { PPTElement } from '@openmaic/dsl';
+import { DEFAULT_SLIDE_FONT, type PPTElement } from '@openmaic/dsl';
 
 const EVAL_STAGE_ID = '__eval_stage__';
 const EVAL_SCENE_ID = '__eval_scene__';
@@ -41,7 +41,7 @@ function WhiteboardCanvas() {
               backgroundColor: '#ffffff',
               themeColors: ['#5b9bd5'],
               fontColor: '#333333',
-              fontName: 'Microsoft YaHei',
+              fontName: DEFAULT_SLIDE_FONT,
             },
             elements: [],
           },
@@ -66,7 +66,7 @@ function WhiteboardCanvas() {
               backgroundColor: '#ffffff',
               themeColors: ['#5b9bd5'],
               fontColor: '#333333',
-              fontName: 'Microsoft YaHei',
+              fontName: DEFAULT_SLIDE_FONT,
             },
             elements: incoming,
           },

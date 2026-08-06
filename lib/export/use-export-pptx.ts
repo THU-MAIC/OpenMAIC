@@ -22,11 +22,12 @@ import { createLogger } from '@/lib/logger';
 import { inlineHtmlAssets, createAssetFetcher } from './inline-assets';
 import type { FetchAsset } from './inline-assets';
 import { createProxiedFetch } from './proxied-fetch';
+import { DEFAULT_SLIDE_FONT } from '@openmaic/dsl';
 
 const log = createLogger('ExportPPTX');
 
 const DEFAULT_FONT_SIZE = 16;
-const DEFAULT_FONT_FAMILY = 'Microsoft YaHei';
+const DEFAULT_FONT_FAMILY = DEFAULT_SLIDE_FONT;
 
 // ── Color formatting ──
 

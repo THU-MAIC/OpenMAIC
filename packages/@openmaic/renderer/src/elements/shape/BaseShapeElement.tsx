@@ -1,6 +1,6 @@
 'use client';
 
-import type { PPTShapeElement, ShapeText } from '@openmaic/dsl';
+import { DEFAULT_SLIDE_FONT, type PPTShapeElement, type ShapeText } from '@openmaic/dsl';
 import { useElementOutline } from '../shared/useElementOutline';
 import { useElementShadow } from '../shared/useElementShadow';
 import { useElementFlip } from '../shared/useElementFlip';
@@ -98,7 +98,7 @@ export function BaseShapeElement({ elementInfo }: BaseShapeElementProps) {
   const text: ShapeText = elementInfo.text || {
     content: '',
     align: 'middle',
-    defaultFontName: 'Microsoft YaHei',
+    defaultFontName: DEFAULT_SLIDE_FONT,
     defaultColor: '#333333',
   };
 
