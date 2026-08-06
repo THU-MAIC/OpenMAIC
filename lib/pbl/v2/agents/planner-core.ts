@@ -125,7 +125,7 @@ export function emptyProject(input: PBLPlannerV2Input): PBLProjectV2 {
 // Prompt assembly
 // ---------------------------------------------------------------------------
 
-export function formatCourseContext(input: PBLPlannerV2Input): string {
+function formatCourseContext(input: PBLPlannerV2Input): string {
   const lines: string[] = [];
   for (const o of input.courseContext.allOutlines) {
     const marker = o.id === input.outline.id ? ' ← this PBL scene' : '';
@@ -240,7 +240,7 @@ export function buildScenarioDesignBlock(
   ].join('\n');
 }
 
-export function ordinaryPBLTextOnlyGaps(project: PBLProjectV2): string[] {
+function ordinaryPBLTextOnlyGaps(project: PBLProjectV2): string[] {
   const gaps: string[] = [];
   for (const milestone of project.milestones) {
     if ((milestone.documents ?? []).length > 0) {

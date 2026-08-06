@@ -152,32 +152,28 @@ export async function generatePBLV2Project(
   // The agentic loop. The Planner emits tool calls until
   // `mark_design_complete` is accepted by the completion gate, or
   // until the defensive step budget is hit.
-  try {
-    await callLLM(
-      {
-        model,
-        system: systemPrompt,
-        prompt:
-          'Design the PBL project now. Call the tools in the documented order; do not write narrative text.',
-        tools,
-        stopWhen: [plannerDesignAccepted(), stepCountIs(MAX_PLANNER_STEPS)],
-        onStepFinish: ({ toolCalls }) => {
-          // Optional verbose log. Keep at debug-level so production
-          // logs don't drown in tool noise.
-          if (toolCalls?.length) {
-            for (const tc of toolCalls) {
-              log.debug(`tool call: ${tc.toolName}`);
-            }
+  await callLLM(
+    {
+      model,
+      system: systemPrompt,
+      prompt:
+        'Design the PBL project now. Call the tools in the documented order; do not write narrative text.',
+      tools,
+      stopWhen: [plannerDesignAccepted(), stepCountIs(MAX_PLANNER_STEPS)],
+      onStepFinish: ({ toolCalls }) => {
+        // Optional verbose log. Keep at debug-level so production
+        // logs don't drown in tool noise.
+        if (toolCalls?.length) {
+          for (const tc of toolCalls) {
+            log.debug(`tool call: ${tc.toolName}`);
           }
-        },
+        }
       },
-      'pbl-v2-planner',
-      undefined,
-      thinkingConfig,
-    );
-  } catch (err) {
-    throw err;
-  }
+    },
+    'pbl-v2-planner',
+    undefined,
+    thinkingConfig,
+  );
 
   normalizeProjectRuntime(project);
   normalizeSynthesisChecks(project);

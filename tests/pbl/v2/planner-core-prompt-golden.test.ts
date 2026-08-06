@@ -4,6 +4,8 @@
  * The fixture files were produced with Vitest's `-u` snapshot mode from the
  * ORIGINAL `buildPlannerSystemPrompt` implementation in `planner.ts` at base
  * commit 9d268943, before that implementation moved to `planner-core.ts`.
+ * The single-call variants extend that same provenance from the current,
+ * byte-identical implementation after the extraction.
  * These assertions intentionally compare the complete strings byte-for-byte.
  */
 import { describe, expect, it } from 'vitest';
@@ -101,5 +103,29 @@ describe('PBL v2 planner core — pre-refactor prompt goldens', () => {
     );
 
     await expect(prompt).toMatchFileSnapshot('./fixtures/planner-system-scenario.txt');
+  });
+
+  it('pins the ordinary single-call planner system prompt', async () => {
+    const prompt = await buildPlannerSystemPrompt(
+      ordinaryInput(),
+      'intermediate',
+      'Reply in English and keep technical terms precise.',
+      false,
+      'planner-single-call-system',
+    );
+
+    await expect(prompt).toMatchFileSnapshot('./fixtures/planner-single-call-system-ordinary.txt');
+  });
+
+  it('pins the scenario single-call planner system prompt', async () => {
+    const prompt = await buildPlannerSystemPrompt(
+      scenarioInput(),
+      'advanced',
+      'Use Simplified Chinese, preserving standard English negotiation terms.',
+      true,
+      'planner-scenario-single-call-system',
+    );
+
+    await expect(prompt).toMatchFileSnapshot('./fixtures/planner-single-call-system-scenario.txt');
   });
 });

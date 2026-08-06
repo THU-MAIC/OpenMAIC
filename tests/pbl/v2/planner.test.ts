@@ -13,7 +13,7 @@
  *      v1 `projectConfig` stub stays valid against
  *      `PBLProjectConfig` even after v2 schema changes)
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   generatePBLV2Project,
   plannerStepHasAcceptedCompletion,
@@ -225,6 +225,32 @@ describe('PBL v2 Planner — error paths (no LLM needed)', () => {
     await expect(
       generatePBLV2Project(input, undefined as never, undefined as never),
     ).rejects.toBeInstanceOf(PlannerV2Error);
+  });
+
+  it('forwards the loop planner tool contract through the injected call seam', async () => {
+    const callLLM = vi.fn(async () => ({ finishReason: 'stop', steps: [] }));
+    const thinkingConfig = { enabled: true, budgetTokens: 2048 } as const;
+
+    await expect(
+      generatePBLV2Project(plannerInput(), {} as never, callLLM, undefined, thinkingConfig),
+    ).rejects.toBeInstanceOf(PlannerV2Error);
+
+    expect(callLLM).toHaveBeenCalledOnce();
+    expect(callLLM).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools: expect.objectContaining({
+          set_project_info: expect.anything(),
+          add_role: expect.anything(),
+          add_milestone: expect.anything(),
+          add_microtask: expect.anything(),
+          mark_design_complete: expect.anything(),
+        }),
+        stopWhen: [expect.any(Function), expect.any(Function)],
+      }),
+      'pbl-v2-planner',
+      undefined,
+      thinkingConfig,
+    );
   });
 });
 

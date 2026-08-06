@@ -487,10 +487,9 @@ const eslintConfig = defineConfig([
       ],
     },
   },
-  // PBL v2 project-definition boundary: kernel operations encode the shared
-  // project invariants used by planners, runtime, and UI. Runtime-only
-  // operations may depend on the kernel, but the kernel must never reach back
-  // into operations/runtime. Match the module string in every literal form so
+  // PBL v2 operations boundary: leaf/shared kernel operations may be used by
+  // composite runtime operations, but the kernel must never reach back into
+  // operations/runtime. Match the module string in every literal form so
   // static imports, re-exports, dynamic imports, and require-like calls cannot
   // quietly invert the boundary.
   {
