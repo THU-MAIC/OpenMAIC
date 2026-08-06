@@ -106,12 +106,17 @@ function staticCaptureInjection(): string {
   function waitForImages() {
     return Promise.all(Array.from(document.images || []).map(function (img) {
       if (img.complete) {
-        if (img.src && img.naturalWidth === 0) return Promise.reject(new Error('Image failed to load'));
+        if (img.src && img.naturalWidth === 0)
+          return Promise.reject(new Error('interactive-image-load-failure'));
         return typeof img.decode === 'function' ? img.decode().catch(function () {}) : Promise.resolve();
       }
       return new Promise(function (resolve, reject) {
         img.addEventListener('load', resolve, { once: true });
-        img.addEventListener('error', function () { reject(new Error('Image failed to load')); }, { once: true });
+        img.addEventListener(
+          'error',
+          function () { reject(new Error('interactive-image-load-failure')); },
+          { once: true },
+        );
       });
     }));
   }
@@ -122,7 +127,11 @@ function staticCaptureInjection(): string {
       if (video.readyState >= 2) return Promise.resolve();
       return new Promise(function (resolve, reject) {
         video.addEventListener('loadeddata', resolve, { once: true });
-        video.addEventListener('error', function () { reject(new Error('Video failed to load')); }, { once: true });
+        video.addEventListener(
+          'error',
+          function () { reject(new Error('interactive-video-load-failure')); },
+          { once: true },
+        );
       });
     }));
   }
@@ -150,7 +159,7 @@ function staticCaptureInjection(): string {
     var readiness = Promise.all([fonts, waitForImages(), waitForVideos()]);
     var deadlineTimer;
     var deadline = new Promise(function (_, reject) {
-      deadlineTimer = nativeSetTimeout(function () { reject(new Error('Interactive readiness timed out')); }, ${internalTimeoutMs});
+      deadlineTimer = nativeSetTimeout(function () { reject(new Error('interactive-readiness-timeout')); }, ${internalTimeoutMs});
     });
     Promise.race([readiness, deadline])
       .then(function () {
@@ -168,26 +177,12 @@ function staticCaptureInjection(): string {
 }
 
 function unsupportedAssetRefs(html: string): string[] {
-  const refs = new Set<string>();
-  const add = (value: string | undefined) => {
-    const url = value?.trim();
-    if (!url || /^(?:data:|blob:|about:|#)/i.test(url)) return;
-    refs.add(url);
-  };
-
-  for (const match of html.matchAll(/<(?:link|base)\b[^>]*?\bhref\s*=\s*["']([^"']+)["'][^>]*>/gi))
-    add(match[1]);
-  for (const match of html.matchAll(
-    /<(?:script|img|source|video|audio)\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi,
-  ))
-    add(match[1]);
-  for (const match of html.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/gi)) add(match[1]);
+  const refs = new Set(collectAssetRefs(html, { includeRelative: true }).map((ref) => ref.url));
   for (const match of html.matchAll(
     /<script\b[^>]*type\s*=\s*["']importmap["'][^>]*>([\s\S]*?)<\/script>/gi,
   )) {
     try {
-      const imports = (JSON.parse(match[1]) as { imports?: Record<string, string> }).imports ?? {};
-      for (const url of Object.values(imports)) add(url);
+      JSON.parse(match[1]);
     } catch {
       refs.add('malformed importmap');
     }
@@ -209,7 +204,7 @@ async function sha256(value: string): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-class PreparedSet implements PreparedInteractiveHtmlSet {
+class PreparedInteractiveHtmlSetImpl implements PreparedInteractiveHtmlSet {
   constructor(
     private readonly bySceneId: ReadonlyMap<string, InteractiveHtmlMeta>,
     private readonly byAssetId: ReadonlyMap<string, string>,
@@ -225,7 +220,7 @@ class PreparedSet implements PreparedInteractiveHtmlSet {
 }
 
 export function emptyPreparedInteractiveHtmlSet(): PreparedInteractiveHtmlSet {
-  return new PreparedSet(new Map(), new Map());
+  return new PreparedInteractiveHtmlSetImpl(new Map(), new Map());
 }
 
 export async function prepareInteractiveHtmlScenes(
@@ -269,7 +264,7 @@ export async function prepareInteractiveHtmlScenes(
           id: assetId,
           present: false,
           failure: 'unresolved-resource',
-          message: `Interactive HTML has unresolved resources: ${residual.slice(0, 3).join(', ')}${residual.length > 3 ? ` (+${residual.length - 3} more)` : ''}.`,
+          message: `unresolved-interactive-resource:${residual.slice(0, 3).join(', ')}${residual.length > 3 ? ` (+${residual.length - 3} more)` : ''}`,
         });
         continue;
       }
@@ -281,7 +276,7 @@ export async function prepareInteractiveHtmlScenes(
           id: assetId,
           present: false,
           failure: 'too-large',
-          message: `Interactive HTML is ${size} bytes after inlining (limit ${maxBytes}).`,
+          message: `interactive-html-too-large:${size}/${maxBytes}`,
         });
         continue;
       }
@@ -294,12 +289,12 @@ export async function prepareInteractiveHtmlScenes(
         id: assetId,
         present: false,
         failure: 'packaging-failed',
-        message: `Interactive HTML packaging failed: ${error instanceof Error ? error.message : String(error)}`,
+        message: `interactive-html-packaging-failed:${error instanceof Error ? error.message : String(error)}`,
       });
     }
   }
 
-  return new PreparedSet(bySceneId, byAssetId);
+  return new PreparedInteractiveHtmlSetImpl(bySceneId, byAssetId);
 }
 
 declare global {

@@ -264,6 +264,7 @@ const COMPLETE_PROJECT_FILES = [
   'assets/vendor/gsap.min.js',
   'index.html',
   'openmaic-video-manifest.json',
+  'openmaic-runtime-diagnostics.json',
   'subtitles.srt',
   'subtitles.vtt',
 ].sort();

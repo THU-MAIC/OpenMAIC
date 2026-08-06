@@ -14,7 +14,13 @@
  *
  * App-side / impure: reads the store + Dexie and does IO.
  */
-import { compileVideoTimeline, emitHyperframes, toSrt, toVtt } from '@/lib/video-export';
+import {
+  compileVideoTimeline,
+  emitHyperframes,
+  RUNTIME_DIAGNOSTICS_PATH,
+  toSrt,
+  toVtt,
+} from '@/lib/video-export';
 import { useStageStore } from '@/lib/store';
 import type { Locale } from '@/lib/i18n';
 import { accessDocument } from '@/lib/document-store';
@@ -47,6 +53,8 @@ export interface BuildExportZipResult {
   missingCount: number;
   /** Non-info diagnostics from the compiler. */
   errorCount: number;
+  /** Runtime diagnostics are populated by the emitted composition at render time. */
+  runtimeDiagnosticsPath: typeof RUNTIME_DIAGNOSTICS_PATH;
 }
 
 export class NoScenesError extends Error {}
@@ -160,7 +168,13 @@ export async function buildExportZip(
   const zipBlob = await packageVideoZip(project, blobs);
 
   const errorCount = ir.diagnostics.filter((d) => d.severity !== 'info').length;
-  return { zipBlob, stageName, missingCount: missing.length, errorCount };
+  return {
+    zipBlob,
+    stageName,
+    missingCount: missing.length,
+    errorCount,
+    runtimeDiagnosticsPath: RUNTIME_DIAGNOSTICS_PATH,
+  };
 }
 
 export function sanitizeFilename(name: string): string {

@@ -16,9 +16,9 @@ function failureCode(meta: InteractiveHtmlMeta | null): DiagnosticCode {
 
 function failureReason(meta: InteractiveHtmlMeta | null): string {
   if (!meta || meta.failure === 'missing-html') {
-    return 'Interactive HTML is missing; using the static fallback.';
+    return 'missing-interactive-html';
   }
-  return meta.message || 'Interactive HTML could not be packaged; using the static fallback.';
+  return meta.message || 'interactive-html-packaging';
 }
 
 export function applyInteractiveHtml(
@@ -41,7 +41,7 @@ export function applyInteractiveHtml(
               id: `interactive:${scene.id}`,
               present: false,
               failure: 'packaging-failed',
-              message: 'Interactive HTML was not prepared by the export adapter.',
+              message: 'interactive-html-packaging',
             })
           : null,
       );
@@ -58,7 +58,7 @@ export function applyInteractiveHtml(
       severity: 'info',
       code: 'interactive-static-html',
       sceneId: timeline.id,
-      message: `Scene "${timeline.title}" is rendered from packaged HTML frozen at its settled initial state.`,
+      message: 'interactive-static-html',
     });
     return {
       ...timeline,

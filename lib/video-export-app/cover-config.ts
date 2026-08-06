@@ -200,5 +200,10 @@ export function getVideoExportCoverLabels(locale: Locale): CoverCardLabels {
     quizCtaPrompt: at('export.videoQuizCtaPrompt'),
     pblCtaPrompt: at('export.videoPblCtaPrompt'),
     ctaVisit: at('export.videoCtaVisit'),
+    interactiveFallback: at('export.videoFailed'),
+    interactiveReadyTimeout: at('export.videoRendering'),
+    interactiveLoadFailure: at('export.videoFailed'),
+    interactiveReadyFailure: at('export.videoFailed'),
+    interactiveRuntimeFailure: at('export.videoFailed'),
   };
 }

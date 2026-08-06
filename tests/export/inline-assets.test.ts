@@ -67,6 +67,15 @@ describe('collectAssetRefs', () => {
     expect(a).toEqual([]);
     expect(b).toEqual([]);
   });
+
+  it('collects direct module imports and CSS @import URLs', () => {
+    const refs = collectAssetRefs(
+      '<style>@import "https://cdn.example/theme.css";</style>' +
+        '<script type="module">import "https://cdn.example/dep.js";</script>',
+    );
+    expect(refs).toContainEqual({ kind: 'css-import', url: 'https://cdn.example/theme.css' });
+    expect(refs).toContainEqual({ kind: 'module-import', url: 'https://cdn.example/dep.js' });
+  });
 });
 
 describe('createAssetFetcher', () => {
@@ -467,5 +476,56 @@ describe('inlineHtmlAssets', () => {
     const { report } = await inlineHtmlAssets(html, { fetchImpl });
     expect(report.inlined).toContain('https://cdn/x.css'); // sheet itself inlined
     expect(report.failed.map((f) => f.url)).toContain('https://cdn/f.woff2'); // nested font reported
+  });
+
+  it('inlines nested CSS @import files and their assets', async () => {
+    const fetchImpl = fetchFromMap({
+      'https://cdn/x.css': { body: '@import "nested.css"; .a{color:red}', ct: 'text/css' },
+      'https://cdn/nested.css': { body: '.b{background:url(bg.png)}', ct: 'text/css' },
+      'https://cdn/bg.png': { body: 'IMG', ct: 'image/png' },
+    });
+    const { html: out, report } = await inlineHtmlAssets(
+      '<link rel="stylesheet" href="https://cdn/x.css">',
+      { fetchImpl },
+    );
+    expect(out).not.toContain('@import');
+    expect(out).toContain('data:image/png;base64,');
+    expect(report.inlined).toEqual(
+      expect.arrayContaining(['https://cdn/nested.css', 'https://cdn/bg.png']),
+    );
+  });
+
+  it('inlines relative imports in an external module without an importmap', async () => {
+    const fetchImpl = fetchFromMap({
+      'https://cdn/app.js': {
+        body: "import './dep.js'; export const app = 1",
+        ct: 'text/javascript',
+      },
+      'https://cdn/dep.js': { body: 'export const dep = 1', ct: 'text/javascript' },
+    });
+    const { html: out, report } = await inlineHtmlAssets(
+      '<script type="module" src="https://cdn/app.js"></script>',
+      { fetchImpl },
+    );
+    expect(out).toContain('src="data:text/javascript;base64,');
+    expect(report.inlined).toContain('https://cdn/dep.js');
+    expect(out).not.toContain("'./dep.js'");
+  });
+
+  it('keeps an importmap usable when the entry module is an external script', async () => {
+    const fetchImpl = fetchFromMap({
+      'https://cdn/app.js': {
+        body: "import { dep } from 'dep'; export { dep }",
+        ct: 'text/javascript',
+      },
+      'https://cdn/dep.js': { body: 'export const dep = 1', ct: 'text/javascript' },
+    });
+    const { html: out } = await inlineHtmlAssets(
+      '<script type="importmap">{"imports":{"dep":"https://cdn/dep.js"}}</script>' +
+        '<script type="module" src="https://cdn/app.js"></script>',
+      { fetchImpl, keepImportmapFallbacks: false },
+    );
+    expect(out).toContain('"dep":"data:text/javascript;base64,');
+    expect(out).toContain('src="data:text/javascript;base64,');
   });
 });

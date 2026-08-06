@@ -83,7 +83,7 @@ describe('prepareInteractiveHtmlScenes', () => {
     expect(prepared.html(scene())).toMatchObject({
       present: false,
       failure: 'too-large',
-      message: expect.stringContaining('limit 32'),
+      message: expect.stringContaining('/32'),
     });
   });
 

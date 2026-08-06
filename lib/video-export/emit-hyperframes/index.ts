@@ -83,6 +83,16 @@ export interface CoverCardLabels {
   pblCtaPrompt: string;
   /** Verb preceding the configured destination. */
   ctaVisit: string;
+  /** Localized fallback copy shown when a static interactive page cannot load. */
+  interactiveFallback: string;
+  /** Localized readiness-timeout copy shown in the static fallback. */
+  interactiveReadyTimeout: string;
+  /** Localized load-failure copy shown in the static fallback. */
+  interactiveLoadFailure: string;
+  /** Localized readiness-failure copy shown in the static fallback. */
+  interactiveReadyFailure: string;
+  /** Localized runtime-failure copy shown in the static fallback. */
+  interactiveRuntimeFailure: string;
 }
 
 export interface EmitHyperframesOptions {
@@ -129,6 +139,8 @@ export interface EmittedProject {
   gsapVendorPath: string;
 }
 
+export const RUNTIME_DIAGNOSTICS_PATH = 'openmaic-runtime-diagnostics.json';
+
 const DEFAULT_WIDTH = 1920;
 const DEFAULT_GSAP_PATH = 'assets/vendor/gsap.min.js';
 const DEFAULT_MANIFEST = 'openmaic-video-manifest.json';
@@ -156,6 +168,11 @@ const DEFAULT_COVER_LABELS: CoverCardLabels = {
   quizCtaPrompt: 'Want to try an interactive quiz?',
   pblCtaPrompt: 'Want to explore project-based learning?',
   ctaVisit: 'Visit',
+  interactiveFallback: 'interactive-static-fallback',
+  interactiveReadyTimeout: 'interactive-ready-timeout',
+  interactiveLoadFailure: 'interactive-load-failure',
+  interactiveReadyFailure: 'interactive-ready-failure',
+  interactiveRuntimeFailure: 'interactive-runtime-failure',
 };
 
 /**
@@ -187,7 +204,7 @@ function placeholderContent(scene: VideoTimelineScene, reason: string, reasonAtt
 }
 
 /** The base layer for one scene: snapshot, packaged frozen HTML, or placeholder. */
-function renderBase(scene: VideoTimelineScene): string {
+function renderBase(scene: VideoTimelineScene, labels: CoverCardLabels): string {
   const start = sec(scene.startMs);
   const duration = sec(scene.durationMs);
   const id = `scene-${scene.index + 1}-base`;
@@ -199,7 +216,7 @@ function renderBase(scene: VideoTimelineScene): string {
   if (scene.base.kind === 'interactive-html' && scene.base.assetRef) {
     const fallback = placeholderContent(
       scene,
-      'Interactive page could not be rendered; using the static fallback.',
+      labels.interactiveFallback,
       'data-interactive-fallback-reason',
     );
     return [
@@ -209,21 +226,45 @@ function renderBase(scene: VideoTimelineScene): string {
       `</div>`,
     ].join('\n');
   }
-  const reason = scene.base.kind === 'placeholder' ? (scene.base.reason ?? '') : '';
+  const reason =
+    scene.type === 'interactive'
+      ? labels.interactiveFallback
+      : scene.base.kind === 'placeholder'
+        ? (scene.base.reason ?? '')
+        : '';
   return `<div ${clip}>${placeholderContent(scene, reason)}</div>`;
 }
 
 /** Parent-side readiness/fallback bridge for every packaged interactive iframe. */
-function interactiveStaticBridgeScript(): string {
+function interactiveStaticBridgeScript(labels: CoverCardLabels): string {
   const flag = JSON.stringify(INTERACTIVE_STATIC_MESSAGE_FLAG);
+  const localized = JSON.stringify({
+    fallback: labels.interactiveFallback,
+    loadFailure: labels.interactiveLoadFailure,
+    readyTimeout: labels.interactiveReadyTimeout,
+    readyFailure: labels.interactiveReadyFailure,
+    runtimeFailure: labels.interactiveRuntimeFailure,
+  });
   return `
 function initializeOpenMaicInteractiveStaticFrames() {
   var hosts = Array.from(document.querySelectorAll('[data-interactive-static-host]'));
   window.__openmaicVideoDiagnostics = window.__openmaicVideoDiagnostics || [];
+  window.__openmaicVideoManifest = window.__openmaicVideoManifest || { runtimeDiagnostics: [] };
+  var labels = ${localized};
+  var runtimeReport = document.querySelector('[data-openmaic-runtime-diagnostics]');
   function record(sceneId, code, message) {
     var diagnostic = { sceneId: sceneId, code: code, message: String(message || '').slice(0, 1200) };
     window.__openmaicVideoDiagnostics.push(diagnostic);
-    console.error('[OpenMAIC interactive static][' + sceneId + '][' + code + '] ' + diagnostic.message);
+    window.__openmaicVideoManifest.runtimeDiagnostics = window.__openmaicVideoDiagnostics.slice();
+    if (runtimeReport) runtimeReport.textContent = JSON.stringify(window.__openmaicVideoDiagnostics);
+    console.error('interactive-static-diagnostic', diagnostic);
+  }
+  function messageFor(code, detail) {
+    var prefix = code === 'interactive-load-failure' ? labels.loadFailure
+      : code === 'interactive-ready-timeout' || code === 'interactive-load-timeout' ? labels.readyTimeout
+      : code === 'interactive-runtime-failure' ? labels.runtimeFailure
+      : labels.readyFailure;
+    return detail && detail !== 'ready' ? prefix + ': ' + detail : prefix;
   }
   return Promise.all(hosts.map(function (host) {
     return new Promise(function (resolve) {
@@ -265,10 +306,11 @@ function initializeOpenMaicInteractiveStaticFrames() {
         }
         if (data[${flag}] !== true) return;
         if (data.kind === 'failure') {
-          finish(false, data.code || 'interactive-ready-failure', data.message || 'Interactive page failed before capture.');
+          var failureCode = data.code || 'interactive-ready-failure';
+          finish(false, failureCode, messageFor(failureCode, data.message));
         } else if (data.kind === 'frozen') {
           if (runtimeErrors.length > 0) {
-            finish(false, 'interactive-runtime-failure', runtimeErrors[0]);
+          finish(false, 'interactive-runtime-failure', messageFor('interactive-runtime-failure', runtimeErrors[0]));
           } else {
             finish(true, 'interactive-static-ready', 'ready');
           }
@@ -281,13 +323,13 @@ function initializeOpenMaicInteractiveStaticFrames() {
         try { iframe.contentWindow.postMessage({ __maicErrorReplayRequest: true }, '*'); } catch (_) {}
       }, { once: true });
       iframe.addEventListener('error', function () {
-        finish(false, 'interactive-load-failure', 'Interactive page failed to load.');
+        finish(false, 'interactive-load-failure', messageFor('interactive-load-failure'));
       }, { once: true });
       var timer = setTimeout(function () {
         finish(
           false,
           loaded ? 'interactive-ready-timeout' : 'interactive-load-timeout',
-          loaded ? 'Interactive page did not become capture-ready in time.' : 'Interactive page did not load in time.'
+          messageFor(loaded ? 'interactive-ready-timeout' : 'interactive-load-timeout')
         );
       }, timeoutMs);
       iframe.setAttribute('src', iframe.getAttribute('data-src'));
@@ -968,6 +1010,7 @@ folder — no network access, no CDN.
 
 - \`index.html\` — the composition (one data-composition-id=${optionValue(project.compositionId)} stage, one paused GSAP timeline on \`window.__timelines\`).
 - ${optionValue(project.manifestPath)} — the \`VideoTimeline\` manifest / export report (scenes, timing, assets, diagnostics).
+- \`${RUNTIME_DIAGNOSTICS_PATH}\` — runtime interactive diagnostics; the same entries are mirrored in \`window.__openmaicVideoManifest.runtimeDiagnostics\` and the machine-readable DOM report.
 - \`subtitles.srt\` / \`subtitles.vtt\` — narration subtitles.
 - \`assets/frames\`, \`assets/audio\`, \`assets/media\`, \`assets/interactive\` — slide snapshots, narration audio, embedded video clips, frozen interactive pages.
 - ${optionValue(project.gsapVendorPath)} — vendored GSAP (determinism: no CDN at render time).
@@ -1038,7 +1081,7 @@ export function emitHyperframes(
 
   for (const scene of ir.scenes) {
     sceneHtml.push(`<!-- scene ${scene.index + 1}: ${escapeHtml(scene.title)} -->`);
-    sceneHtml.push(renderBase(scene));
+    sceneHtml.push(renderBase(scene, labels));
     sceneHtml.push(
       ...renderVisuals(
         scene,
@@ -1095,16 +1138,18 @@ ${coverCardCss(width)}
 ${sceneHtml.filter(Boolean).join('\n')}
 ${effectHtml.join('\n')}
 ${subtitles.html}
+<script type="application/json" data-openmaic-runtime-diagnostics>[]</script>
 </div>
 <script src="${escapeHtml(gsapVendorPath)}"></script>
 <script>
 ${EASE_DEFS}
 var tl = gsap.timeline({ paused: true });
 ${statements.join('\n')}
+window.__openmaicVideoManifest = { runtimeDiagnostics: [], manifestPath: ${JSON.stringify(manifestPath)} };
 window.__timelines = window.__timelines || {};
 ${
   hasInteractiveHtml
-    ? `${interactiveStaticBridgeScript()}
+    ? `${interactiveStaticBridgeScript(labels)}
 window.__openmaicInteractiveReady = initializeOpenMaicInteractiveStaticFrames();
 window.__openmaicInteractiveReady.then(function () {
   window.__timelines[${JSON.stringify(compositionId)}] = tl;
@@ -1120,6 +1165,7 @@ window.__openmaicInteractiveReady.then(function () {
     { path: 'index.html', content: html },
     { path: 'LICENSES/Inter-OFL-1.1.txt', content: INTER_OFL_LICENSE },
     { path: manifestPath, content: emitManifestJson(ir) },
+    { path: RUNTIME_DIAGNOSTICS_PATH, content: '[]\n' },
     { path: 'subtitles.srt', content: toSrt(ir.subtitles) },
     { path: 'subtitles.vtt', content: toVtt(ir.subtitles) },
     {

@@ -27,18 +27,79 @@ export function resolveSpecifier(spec: string, imports: Record<string, string>):
 
 export async function buildInlinedImportmap(
   originalImports: Record<string, string>,
-  moduleScriptBodies: string[],
+  moduleScripts: readonly (string | { code: string; baseUrl?: string })[],
   fetchAsset: (url: string) => Promise<{ bytes: Uint8Array; contentType: string } | null>,
 ): Promise<{ imports: Record<string, string>; report: InlineReport }> {
   const report: InlineReport = { inlined: [], failed: [] };
   const resolvedDataUri = new Map<string, string>(); // specifier -> data: URI
   const visited = new Set<string>();
 
-  async function visitSpecifier(spec: string): Promise<void> {
-    if (visited.has(spec)) return;
-    visited.add(spec);
-    const absUrl = resolveSpecifier(spec, originalImports);
-    if (!absUrl) return; // not mapped (relative/bare-unmapped) — leave to browser
+  const normalizedScripts = moduleScripts.map((script) =>
+    typeof script === 'string' ? { code: script, baseUrl: undefined } : script,
+  );
+
+  const resolveExternal = (specifier: string, baseUrl?: string): string | null => {
+    if (/^https?:\/\//i.test(specifier)) return specifier;
+    if (!baseUrl || /^(?:data:|blob:|about:|#)/i.test(specifier)) return null;
+    try {
+      const resolved = new URL(specifier, baseUrl).href;
+      return /^https?:\/\//i.test(resolved) ? resolved : null;
+    } catch {
+      return null;
+    }
+  };
+
+  async function inlineModuleDependencies(
+    code: string,
+    baseUrl: string | undefined,
+    stack: Set<string>,
+  ): Promise<string> {
+    const matches = [...code.matchAll(IMPORT_SPEC_RE)];
+    const replacements: string[] = [];
+    for (const match of matches) {
+      const spec = match[1] ?? match[2];
+      if (!spec || resolveSpecifier(spec, originalImports)) {
+        replacements.push(match[0]);
+        continue;
+      }
+      const absUrl = resolveExternal(spec, baseUrl);
+      if (!absUrl || stack.has(absUrl)) {
+        replacements.push(match[0]);
+        continue;
+      }
+      const got = await fetchAsset(absUrl);
+      if (!got) {
+        if (!report.failed.some((failure) => failure.url === absUrl)) {
+          report.failed.push({ url: absUrl, reason: 'fetch failed' });
+        }
+        replacements.push(match[0]);
+        continue;
+      }
+      if (!report.inlined.includes(absUrl)) report.inlined.push(absUrl);
+      const nestedStack = new Set(stack).add(absUrl);
+      const nestedCode = await inlineModuleDependencies(
+        new TextDecoder().decode(got.bytes),
+        absUrl,
+        nestedStack,
+      );
+      const dataUri = toDataUri(new TextEncoder().encode(nestedCode), got.contentType);
+      replacements.push(match[0].replace(spec, dataUri));
+    }
+    let out = '';
+    let last = 0;
+    matches.forEach((match, index) => {
+      out += code.slice(last, match.index!) + replacements[index];
+      last = match.index! + match[0].length;
+    });
+    return out + code.slice(last);
+  }
+
+  async function visitSpecifier(spec: string, baseUrl?: string): Promise<void> {
+    const visitKey = `${baseUrl ?? ''}\u0000${spec}`;
+    if (visited.has(visitKey)) return;
+    visited.add(visitKey);
+    const absUrl = resolveSpecifier(spec, originalImports) ?? resolveExternal(spec, baseUrl);
+    if (!absUrl) return; // bare/unmapped specifier — leave to the browser for diagnostics
     if (/^data:/i.test(absUrl)) {
       resolvedDataUri.set(spec, absUrl);
       return;
@@ -51,15 +112,25 @@ export async function buildInlinedImportmap(
     }
     resolvedDataUri.set(spec, toDataUri(got.bytes, got.contentType));
     if (!report.inlined.includes(absUrl)) report.inlined.push(absUrl);
-    const code = new TextDecoder().decode(got.bytes);
+    const code = await inlineModuleDependencies(
+      new TextDecoder().decode(got.bytes),
+      absUrl,
+      new Set([absUrl]),
+    );
+    resolvedDataUri.set(spec, toDataUri(new TextEncoder().encode(code), got.contentType));
     for (const childSpec of extractSpecifiers(code)) {
-      await visitSpecifier(childSpec);
+      await visitSpecifier(childSpec, absUrl);
     }
   }
 
-  for (const body of moduleScriptBodies) {
-    for (const spec of extractSpecifiers(body)) await visitSpecifier(spec);
+  for (const { code, baseUrl } of normalizedScripts) {
+    for (const spec of extractSpecifiers(code)) await visitSpecifier(spec, baseUrl);
   }
+
+  // Also inline direct imports from module scripts that do not use an importmap.
+  // `inlineHtmlAssets` invokes the same dependency walk while rewriting each
+  // module source; this pass ensures importmap entries still discover every
+  // nested dependency before the map is emitted.
 
   const imports: Record<string, string> = {};
   for (const [spec, dataUri] of resolvedDataUri) imports[spec] = dataUri;

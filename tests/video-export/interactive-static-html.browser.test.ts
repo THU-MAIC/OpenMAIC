@@ -139,12 +139,22 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
             __openmaicVideoDiagnostics?: Array<{ code: string; message: string }>;
           }
         ).__openmaicVideoDiagnostics;
+        const manifest = (
+          window as typeof window & {
+            __openmaicVideoManifest?: { runtimeDiagnostics?: Array<{ code: string }> };
+          }
+        ).__openmaicVideoManifest;
+        const runtimeReport = document.querySelector<HTMLElement>(
+          '[data-openmaic-runtime-diagnostics]',
+        );
         return {
           state: host.getAttribute('data-interactive-static-state'),
           code: host.getAttribute('data-interactive-diagnostic'),
           fallbackDisplay: getComputedStyle(fallback).display,
           fallbackText: fallback.textContent,
           diagnostics,
+          manifestDiagnostics: manifest?.runtimeDiagnostics,
+          runtimeReport: runtimeReport?.textContent,
         };
       });
 
@@ -159,6 +169,8 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
             message: expect.stringContaining('fixture boom'),
           }),
         ],
+        manifestDiagnostics: [expect.objectContaining({ code: 'interactive-runtime-failure' })],
+        runtimeReport: expect.stringContaining('interactive-runtime-failure'),
       });
     } finally {
       await page.close();

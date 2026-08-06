@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/video-export', () => ({
   compileVideoTimeline: mocks.compileVideoTimeline,
   emitHyperframes: mocks.emitHyperframes,
+  RUNTIME_DIAGNOSTICS_PATH: 'openmaic-runtime-diagnostics.json',
   toSrt: vi.fn(),
   toVtt: vi.fn(),
 }));
@@ -60,6 +61,14 @@ afterAll(() => {
 });
 
 describe('buildExportZip CTA boundary', () => {
+  it('exposes the runtime diagnostics sidecar path', async () => {
+    mocks.accessDocument.mockResolvedValue(undefined);
+
+    const result = await buildExportZip({ resolution: '720p', locale: 'en-US' });
+
+    expect(result.runtimeDiagnosticsPath).toBe('openmaic-runtime-diagnostics.json');
+  });
+
   it('freezes the configured CTA and complete locale labels before its first await', async () => {
     let releaseDocument!: (value: unknown) => void;
     mocks.accessDocument.mockReturnValue(

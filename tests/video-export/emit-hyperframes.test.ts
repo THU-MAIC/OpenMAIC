@@ -62,6 +62,7 @@ describe('emitHyperframes', () => {
         'LICENSES/Inter-OFL-1.1.txt',
         'README.md',
         'index.html',
+        'openmaic-runtime-diagnostics.json',
         'openmaic-video-manifest.json',
         'subtitles.srt',
         'subtitles.vtt',
@@ -116,7 +117,7 @@ describe('emitHyperframes', () => {
       /<div dir="auto" style="font-size:2\.2vw[^"]*">Mixed fallback: English ثم العربية<\/div>/,
     );
     expect(fallbackHtml).toMatch(
-      /<div dir="auto" style="font-size:1\.2vw[^"]*">Interactive HTML is missing/,
+      /<div dir="auto" style="font-size:1\.2vw[^"]*">interactive-static-fallback/,
     );
   });
 
@@ -234,6 +235,8 @@ describe('emitHyperframes frozen interactive HTML', () => {
     expect(html).toContain("'interactive-runtime-failure'");
     expect(html).toContain("'interactive-ready-timeout'");
     expect(html).toContain('window.__openmaicVideoDiagnostics');
+    expect(html).toContain('data-openmaic-runtime-diagnostics');
+    expect(html).toContain('window.__openmaicVideoManifest.runtimeDiagnostics');
   });
 });
 

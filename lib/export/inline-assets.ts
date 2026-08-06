@@ -4,7 +4,11 @@ import {
   type InlineOptions,
   type FetchAsset,
 } from './inline-assets-shared';
-import { buildInlinedImportmap } from './inline-assets-importmap';
+import {
+  buildInlinedImportmap,
+  extractSpecifiers,
+  resolveSpecifier,
+} from './inline-assets-importmap';
 
 export { toDataUri } from './inline-assets-shared';
 export type { InlineReport, InlineOptions, FetchAsset } from './inline-assets-shared';
@@ -17,6 +21,9 @@ export type AssetRefKind =
   | 'video'
   | 'audio'
   | 'css-url'
+  | 'css-import'
+  | 'module-import'
+  | 'base'
   | 'importmap';
 
 export interface AssetRef {
@@ -26,13 +33,21 @@ export interface AssetRef {
 
 const HTTP_URL = /^https?:\/\//i;
 
-/** Scan LLM-generated interactive HTML for external http(s) asset references. */
-export function collectAssetRefs(html: string): AssetRef[] {
+/** Scan LLM-generated interactive HTML for resources that must be bundled. */
+export function collectAssetRefs(
+  html: string,
+  options: { includeRelative?: boolean } = {},
+): AssetRef[] {
   const refs: AssetRef[] = [];
   const push = (kind: AssetRefKind, url: string) => {
-    if (HTTP_URL.test(url)) refs.push({ kind, url });
+    const value = url.trim();
+    if (!value || /^(?:data:|blob:|about:|#)/i.test(value)) return;
+    if (options.includeRelative || HTTP_URL.test(value)) refs.push({ kind, url: value });
   };
 
+  for (const m of html.matchAll(/<base\b[^>]*?\bhref\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
+    push('base', m[1]);
+  }
   for (const m of html.matchAll(/<link\b[^>]*?\bhref\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
     push('link', m[1]);
   }
@@ -55,6 +70,14 @@ export function collectAssetRefs(html: string): AssetRef[] {
   }
   for (const m of html.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/gi)) {
     push('css-url', m[1].trim());
+  }
+  for (const m of html.matchAll(/@import\s+(?:url\(\s*)?["']?([^"'\s)]+)["']?\s*\)?/gi)) {
+    push('css-import', m[1]);
+  }
+  for (const m of html.matchAll(
+    /<script\b([^>]*)\btype\s*=\s*["']module["']([^>]*)>([\s\S]*?)<\/script>/gi,
+  )) {
+    for (const spec of extractSpecifiers(m[3])) push('module-import', spec);
   }
   for (const m of html.matchAll(
     /<script\b[^>]*type\s*=\s*["']importmap["'][^>]*>([\s\S]*?)<\/script>/gi,
@@ -173,10 +196,49 @@ export async function inlineCssUrls(
   css: string,
   cssUrl: string,
   fetchAsset: FetchAsset,
-): Promise<{ css: string; failed: { url: string; reason: string }[] }> {
+  seenCssUrls: Set<string> = new Set(),
+): Promise<{ css: string; failed: { url: string; reason: string }[]; inlined: string[] }> {
+  const failed: { url: string; reason: string }[] = [];
+  const inlined: string[] = [];
+  const importRe = /@import\s+(?:url\(\s*)?(["']?)([^"'\s)]+)\1\s*\)?[^;]*;?/gi;
+  const imports = [...css.matchAll(importRe)];
+  const importedCss = new Map<string, string>();
+  for (const match of imports) {
+    const raw = match[2].trim();
+    if (/^(?:data:|blob:|about:|#)/i.test(raw)) continue;
+    let abs: string;
+    try {
+      abs = new URL(raw, cssUrl).href;
+    } catch {
+      continue;
+    }
+    if (seenCssUrls.has(abs)) {
+      // A repeated import is already represented by the first expansion; a
+      // cycle is dropped so it cannot survive into the offline package.
+      importedCss.set(match[0], '');
+      continue;
+    }
+    seenCssUrls.add(abs);
+    const got = await fetchAsset(abs);
+    if (!got) {
+      failed.push({ url: abs, reason: 'fetch failed' });
+      continue;
+    }
+    const nested = await inlineCssUrls(
+      new TextDecoder().decode(got.bytes),
+      abs,
+      fetchAsset,
+      seenCssUrls,
+    );
+    inlined.push(abs, ...nested.inlined);
+    importedCss.set(match[0], nested.css);
+    failed.push(...nested.failed);
+  }
+  const cssWithImports = css.replace(importRe, (full) => importedCss.get(full) ?? full);
+
   // 1. Find @font-face blocks; build dropRefs (non-woff2 fonts in blocks that have a woff2).
   const dropRefs = new Set<string>();
-  for (const block of css.match(/@font-face\s*\{[^}]*\}/gi) ?? []) {
+  for (const block of cssWithImports.match(/@font-face\s*\{[^}]*\}/gi) ?? []) {
     const blockUrls = [...block.matchAll(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi)].map((m) =>
       m[2].trim(),
     );
@@ -190,7 +252,7 @@ export async function inlineCssUrls(
   // 2. Collect unique refs to FETCH (exclude data:, dropRefs, unresolvable).
   const urlRe = /url\(\s*(["']?)([^"')]+)\1\s*\)/gi;
   const uniqueRefs = new Map<string, string>(); // raw -> absolute url
-  for (const m of css.matchAll(urlRe)) {
+  for (const m of cssWithImports.matchAll(urlRe)) {
     const raw = m[2].trim();
     if (/^data:/i.test(raw)) continue;
     if (dropRefs.has(raw)) continue;
@@ -204,26 +266,26 @@ export async function inlineCssUrls(
 
   // 3. Fetch in parallel (bounded).
   const replacements = new Map<string, string>();
-  const failed: { url: string; reason: string }[] = [];
   const entries = [...uniqueRefs.entries()];
   await mapWithConcurrency(entries, 8, async ([raw, abs]) => {
     const got = await fetchAsset(abs);
     if (got) {
       replacements.set(raw, toDataUri(got.bytes, got.contentType));
+      inlined.push(abs);
     } else {
       failed.push({ url: abs, reason: 'fetch failed' });
     }
   });
 
   // 4. Rewrite.
-  const rewritten = css.replace(urlRe, (full, _q, raw) => {
+  const rewritten = cssWithImports.replace(urlRe, (full, _q, raw) => {
     const key = String(raw).trim();
     if (replacements.has(key)) return `url(${replacements.get(key)})`;
     if (dropRefs.has(key)) return 'url(about:invalid)';
     return full;
   });
 
-  return { css: rewritten, failed };
+  return { css: rewritten, failed, inlined };
 }
 
 // ---------------------------------------------------------------------------
@@ -257,12 +319,25 @@ async function inlineImportmaps(
   report: InlineReport,
   keepFallbacks: boolean,
 ): Promise<string> {
-  // Collect inline module-script bodies (type="module", non-importmap, with a body).
-  const moduleBodies: string[] = [];
-  for (const m of html.matchAll(
-    /<script\b([^>]*)\btype\s*=\s*["']module["']([^>]*)>([\s\S]*?)<\/script>/gi,
-  )) {
-    if (m[3]?.trim()) moduleBodies.push(m[3]);
+  // Collect both inline module bodies and external module sources. The latter
+  // must be inspected before the script is converted to a data URI, otherwise
+  // bare imports in an external module are invisible to importmap analysis.
+  const moduleScripts: Array<{ code: string; baseUrl?: string }> = [];
+  for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    const attrs = m[1];
+    if (!/\btype\s*=\s*["']module["']/i.test(attrs)) continue;
+    const src = /\bsrc\s*=\s*["']([^"']+)["']/i.exec(attrs)?.[1];
+    if (src && /^https?:\/\//i.test(src)) {
+      const got = await fetchAsset(src);
+      if (!got) {
+        if (!report.failed.some((failure) => failure.url === src))
+          report.failed.push({ url: src, reason: 'fetch failed' });
+        continue;
+      }
+      moduleScripts.push({ code: new TextDecoder().decode(got.bytes), baseUrl: src });
+    } else if (m[2]?.trim()) {
+      moduleScripts.push({ code: m[2], baseUrl: undefined });
+    }
   }
   return await replaceAsync(
     html,
@@ -277,7 +352,7 @@ async function inlineImportmaps(
       const orig = parsed.imports ?? {};
       const { imports: inlined, report: r } = await buildInlinedImportmap(
         orig,
-        moduleBodies,
+        moduleScripts,
         fetchAsset,
       );
       for (const u of r.inlined) if (!report.inlined.includes(u)) report.inlined.push(u);
@@ -292,6 +367,53 @@ async function inlineImportmaps(
       return `<script type="importmap">${JSON.stringify({ imports: merged })}</script>`;
     },
   );
+}
+
+function readImportmapImports(html: string): Record<string, string> {
+  for (const match of html.matchAll(
+    /<script\b[^>]*type\s*=\s*["']importmap["'][^>]*>([\s\S]*?)<\/script>/gi,
+  )) {
+    try {
+      return (JSON.parse(match[1]) as { imports?: Record<string, string> }).imports ?? {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+/** Rewrite direct URL/relative module dependencies to data URIs for offline use. */
+async function inlineModuleSource(
+  code: string,
+  baseUrl: string | undefined,
+  imports: Record<string, string>,
+  fetchAsset: FetchAsset,
+  report: InlineReport,
+): Promise<string> {
+  const built = await buildInlinedImportmap(imports, [{ code, baseUrl }], fetchAsset);
+  for (const url of built.report.inlined)
+    if (!report.inlined.includes(url)) report.inlined.push(url);
+  for (const failure of built.report.failed) {
+    if (!report.failed.some((existing) => existing.url === failure.url))
+      report.failed.push(failure);
+  }
+  const matches = [
+    ...code.matchAll(
+      /(?:\bimport\b[\s\S]*?\bfrom\b|\bexport\b[\s\S]*?\bfrom\b|\bimport)\s*["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/g,
+    ),
+  ];
+  const replacements = matches.map((match) => {
+    const spec = match[1] ?? match[2];
+    const replacement = spec && !resolveSpecifier(spec, imports) ? built.imports[spec] : undefined;
+    return replacement ? match[0].replace(spec!, replacement) : match[0];
+  });
+  let out = '';
+  let last = 0;
+  matches.forEach((match, index) => {
+    out += code.slice(last, match.index!) + replacements[index];
+    last = match.index! + match[0].length;
+  });
+  return out + code.slice(last);
 }
 
 export async function inlineHtmlAssets(
@@ -318,6 +440,10 @@ export async function inlineHtmlAssets(
     if (!report.failed.some((f) => f.url === url)) report.failed.push({ url, reason });
   };
 
+  // Resolve importmap entries before converting external module scripts. This
+  // lets the importmap walker inspect their source bodies and nested imports.
+  out = await inlineImportmaps(out, fetchAsset, report, options?.keepImportmapFallbacks !== false);
+
   // 1) <link rel=stylesheet href> → <style> with nested url() inlined
   out = await replaceAsync(
     out,
@@ -331,9 +457,14 @@ export async function inlineHtmlAssets(
         return full;
       }
       let cssText = new TextDecoder().decode(got.bytes);
-      const { css: rewritten, failed: cssFailed } = await inlineCssUrls(cssText, url, fetchAsset);
+      const {
+        css: rewritten,
+        failed: cssFailed,
+        inlined: cssInlined,
+      } = await inlineCssUrls(cssText, url, fetchAsset);
       cssText = rewritten;
       for (const f of cssFailed) markFailed(f.url, f.reason);
+      for (const inlined of cssInlined) markInlined(inlined);
       const mediaMatch = /\bmedia\s*=\s*["']([^"']+)["']/i.exec(pre + post);
       const mediaAttr = mediaMatch ? ` media="${mediaMatch[1].replace(/"/g, '&quot;')}"` : '';
       markInlined(url);
@@ -353,8 +484,30 @@ export async function inlineHtmlAssets(
         markFailed(url, 'fetch failed');
         return full;
       }
+      const type = /\btype\s*=\s*["']module["']/i.test(pre + post);
+      const source = new TextDecoder().decode(got.bytes);
+      const rewritten = type
+        ? await inlineModuleSource(source, url, readImportmapImports(out), fetchAsset, report)
+        : source;
       markInlined(url);
-      return `<script${pre}src="${toDataUri(got.bytes, got.contentType)}"${post}>`;
+      return `<script${pre}src="${toDataUri(new TextEncoder().encode(rewritten), got.contentType)}"${post}>`;
+    },
+  );
+
+  // Inline module bodies can contain direct absolute imports or relative
+  // imports. Rewrite those too; bare specifiers remain governed by importmap.
+  out = await replaceAsync(
+    out,
+    /<script\b([^>]*?)\btype\s*=\s*["']module["']([^>]*)>([\s\S]*?)<\/script>/gi,
+    async (full, pre, post, body) => {
+      const rewritten = await inlineModuleSource(
+        body,
+        undefined,
+        readImportmapImports(out),
+        fetchAsset,
+        report,
+      );
+      return `<script${pre}type="module"${post}>${rewritten}</script>`;
     },
   );
 
@@ -379,18 +532,16 @@ export async function inlineHtmlAssets(
     /<style\b([^>]*)>([\s\S]*?)<\/style>/gi,
     async (full, attrs, body) => {
       if (/data-inlined-from=/.test(attrs)) return full;
-      const { css: rewritten, failed: cssFailed } = await inlineCssUrls(
-        body,
-        'about:blank',
-        fetchAsset,
-      );
+      const {
+        css: rewritten,
+        failed: cssFailed,
+        inlined: cssInlined,
+      } = await inlineCssUrls(body, 'about:blank', fetchAsset);
       for (const f of cssFailed) markFailed(f.url, f.reason);
+      for (const inlined of cssInlined) markInlined(inlined);
       return `<style${attrs}>${rewritten}</style>`;
     },
   );
-
-  // 5) importmap (Task 5)
-  out = await inlineImportmaps(out, fetchAsset, report, options?.keepImportmapFallbacks !== false);
 
   return { html: out, report };
 }

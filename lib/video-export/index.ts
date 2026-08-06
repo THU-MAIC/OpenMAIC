@@ -43,6 +43,7 @@ export {
   emitHyperframes,
   assetUrl,
   ASSETS_DIR,
+  RUNTIME_DIAGNOSTICS_PATH,
   type EmitHyperframesOptions,
   type EmittedProject,
   type EmittedFile,
