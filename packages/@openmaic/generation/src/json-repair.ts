@@ -132,7 +132,9 @@ function parseJsonResponseCandidate<T>(response: string, logger: GenerationLogge
         continue;
       }
 
-      if (char === '"' && !escapeNext) {
+      // escapeNext is always false here: the first branch of the loop resets
+      // and skips the iteration whenever it was set.
+      if (char === '"') {
         inString = !inString;
         continue;
       }
