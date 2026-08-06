@@ -44,4 +44,39 @@ describe('buildOutlinePrompt golden output', () => {
       ),
     ).toMatchSnapshot();
   });
+
+  test('pins image and media conditionals on with video off', () => {
+    expect(
+      buildOutlinePrompt(
+        { requirement: 'Explain the water cycle with generated diagrams' },
+        {
+          imageGenerationEnabled: true,
+          videoGenerationEnabled: false,
+        },
+      ),
+    ).toMatchSnapshot();
+  });
+
+  test('pins source-image conditionals on with generated media off', () => {
+    expect(
+      buildOutlinePrompt(
+        { requirement: 'Explain the labeled anatomy diagram' },
+        {
+          pdfImages: [
+            {
+              id: 'source_1',
+              src: '',
+              pageNumber: 4,
+              width: 1200,
+              height: 900,
+              description: 'Labeled cross-section of a plant cell',
+              sourceDocumentName: 'cell-biology.pdf',
+            },
+          ],
+          imageGenerationEnabled: false,
+          videoGenerationEnabled: false,
+        },
+      ),
+    ).toMatchSnapshot();
+  });
 });

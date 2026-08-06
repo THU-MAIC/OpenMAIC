@@ -88,6 +88,10 @@ export interface SceneOutline {
     difficulty: 'easy' | 'medium' | 'hard';
     questionTypes: ('single' | 'multiple' | 'text')[];
   };
+  /**
+   * @deprecated Use widgetType + widgetOutline instead
+   * Legacy interactive config - kept for backward compatibility only
+   */
   interactiveConfig?: {
     conceptName: string;
     conceptOverview: string;

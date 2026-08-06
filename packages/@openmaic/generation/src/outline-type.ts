@@ -1,4 +1,3 @@
-import type { GenerationLogger } from './logger.js';
 import type { SceneOutline, WidgetOutline } from './outline-types.js';
 
 type SceneType = SceneOutline['type'];
@@ -11,11 +10,7 @@ const DEFAULT_QUIZ_CONFIG = {
 const MAX_TARGET_SKILLS = 6;
 
 /** Return a new outline valid by construction for the selected scene type. */
-export function changeOutlineType(
-  outline: SceneOutline,
-  newType: SceneType,
-  _options: { logger?: GenerationLogger } = {},
-): SceneOutline {
+export function changeOutlineType(outline: SceneOutline, newType: SceneType): SceneOutline {
   if (newType === outline.type) {
     return outline;
   }

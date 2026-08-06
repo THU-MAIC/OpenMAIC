@@ -26,6 +26,12 @@ const flags = parseFlags(process.argv.slice(2));
 const endpoint = flags.get('--endpoint').replace(/\/+$/, '');
 const model = flags.get('--model');
 const apiKey = flags.get('--api-key');
+const logger = {
+  debug: () => undefined,
+  info: () => undefined,
+  warn: (...args) => console.warn(...args),
+  error: (...args) => console.error(...args),
+};
 
 const aiCall = async (systemPrompt, userPrompt) => {
   const headers = { 'content-type': 'application/json' };
@@ -59,6 +65,7 @@ const result = await generateSceneOutlinesFromRequirements(
   undefined,
   undefined,
   aiCall,
+  { logger },
 );
 
 if (!result.success || !result.data) {

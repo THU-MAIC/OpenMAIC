@@ -1,12 +1,8 @@
 import { nanoid } from 'nanoid';
-import type { GenerationLogger } from './logger.js';
 import type { SceneOutline } from './outline-types.js';
 
 /** Replace course-local generated-media IDs with globally unique IDs. */
-export function uniquifyMediaElementIds(
-  outlines: SceneOutline[],
-  _options: { logger?: GenerationLogger } = {},
-): SceneOutline[] {
+export function uniquifyMediaElementIds(outlines: SceneOutline[]): SceneOutline[] {
   const idMap = new Map<string, string>();
 
   for (const outline of outlines) {

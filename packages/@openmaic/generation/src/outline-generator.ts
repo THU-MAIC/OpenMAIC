@@ -174,7 +174,7 @@ export async function generateSceneOutlinesFromRequirements(
       order: index + 1,
     }));
 
-    const result = uniquifyMediaElementIds(enriched, { logger });
+    const result = uniquifyMediaElementIds(enriched);
 
     return { success: true, data: { languageDirective, courseTitle, outlines: result } };
   } catch (error) {
@@ -182,10 +182,7 @@ export async function generateSceneOutlinesFromRequirements(
   }
 }
 
-export function sanitizeProceduralSkillOutline(
-  outline: SceneOutline,
-  _options: { logger?: GenerationLogger } = {},
-): SceneOutline {
+export function sanitizeProceduralSkillOutline(outline: SceneOutline): SceneOutline {
   const widgetOutline = { ...(outline.widgetOutline ?? {}) };
   delete widgetOutline.procedureType;
   delete widgetOutline.task;
@@ -217,7 +214,7 @@ export function applyOutlineFallbacks(
     logger.warn(
       `Procedural-skill outline "${outline.title}" is not enabled, falling back to diagram`,
     );
-    return sanitizeProceduralSkillOutline(outline, { logger });
+    return sanitizeProceduralSkillOutline(outline);
   }
 
   if (outline.type === 'interactive' && !outline.interactiveConfig && !hasWidgetConfig) {
