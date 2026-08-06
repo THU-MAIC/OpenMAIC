@@ -1,7 +1,11 @@
 'use client';
 
 export { EditableSlideCanvasWithUI } from './EditableSlideCanvasWithUI';
-export { DEFAULT_TEXT_TOOLBAR_FONTS, resolveTextToolbarLabels } from './labels';
+export {
+  DEFAULT_TEXT_TOOLBAR_FONTS,
+  resolveLineToolbarLabels,
+  resolveTextToolbarLabels,
+} from './labels';
 export { EDITING_UI_STYLES } from './styles';
 export {
   FontSizeControl,
@@ -11,12 +15,25 @@ export {
 } from './text/FontSizeControl';
 export { DefaultColorPicker, normalizeToolbarColor } from './text/DefaultColorPicker';
 export { TextFormatToolbar } from './text/TextFormatToolbar';
+export { LineFormatToolbar } from './line/LineFormatToolbar';
+export { LineToolbarOverlay } from './line/LineToolbarOverlay';
+export { InsertToolbar } from './insert/InsertToolbar';
+export { TableInsertPicker } from './insert/TableInsertPicker';
 export { computeToolbarPosition, TextToolbarOverlay } from './text/TextToolbarOverlay';
 export { useToolbarAnchor } from './text/useToolbarAnchor';
 export type { TextToolbarOverlayProps, ToolbarPosition } from './text/TextToolbarOverlay';
+export type { LineToolbarOverlayProps } from './line/LineToolbarOverlay';
+export type { TableInsertPickerProps } from './insert/TableInsertPicker';
 export type { TrackedToolbarRect } from './text/useToolbarAnchor';
 export type {
   EditableSlideCanvasWithUIProps,
+  InsertToolbarItem,
+  InsertToolbarOptions,
+  InsertToolbarPopoverContext,
+  InsertToolbarProps,
+  LineFormatToolbarProps,
+  LineToolbarLabels,
+  LineToolbarOptions,
   TextFormatToolbarProps,
   TextToolbarColorPickerProps,
   TextToolbarColorPickerRenderer,

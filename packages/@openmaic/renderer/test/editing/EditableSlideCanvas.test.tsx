@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { fireEvent } from '@testing-library/dom';
+import { useState } from 'react';
 import type { Slide } from '@openmaic/dsl';
 import { EditableSlideCanvas } from '../../src/editing/EditableSlideCanvas';
+import type { Selection } from '../../src/editing/types';
 import { useViewportSize } from '../../src/hooks/useViewportSize';
 import { getLineElementPath } from '../../src/utils/element';
 
@@ -44,8 +46,40 @@ function findLineHit(container: HTMLElement) {
   return container.querySelector('[data-hit-kind="line"]') as unknown as SVGPathElement;
 }
 
+const tableSlide = {
+  ...slide,
+  elements: [
+    {
+      id: 'table',
+      type: 'table',
+      left: 100,
+      top: 100,
+      width: 200,
+      height: 120,
+      rotate: 0,
+      cellMinHeight: 40,
+      colWidths: [0.5, 0.5],
+      outline: { width: 6, color: '#d946ef', style: 'solid' },
+      data: [
+        [
+          { id: 'a', text: 'A', colspan: 1, rowspan: 1 },
+          { id: 'b', text: 'B', colspan: 1, rowspan: 1 },
+        ],
+        [
+          { id: 'c', text: 'C', colspan: 1, rowspan: 1 },
+          { id: 'd', text: 'D', colspan: 1, rowspan: 1 },
+        ],
+      ],
+    },
+  ],
+} as unknown as Slide;
+
 describe('EditableSlideCanvas', () => {
   beforeEach(() => {
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: () => document.body,
+    });
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
       return 1;
@@ -175,6 +209,221 @@ describe('EditableSlideCanvas', () => {
     expect(container.querySelector('[data-element-id]')).toBeNull();
   });
 
+  it('selects a table from its body hit layer', () => {
+    const onSel = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={tableSlide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSel}
+        onElementsChange={vi.fn()}
+      />,
+    );
+
+    const hit = container.querySelector('[data-select-element-id="table"]') as HTMLElement;
+    expect(hit).not.toBeNull();
+    fireEvent.pointerDown(hit, { pointerId: 1, clientX: 150, clientY: 150 });
+    fireEvent.pointerUp(hit, { pointerId: 1, clientX: 150, clientY: 150 });
+
+    expect(onSel).toHaveBeenCalledWith(
+      expect.objectContaining({ elementIds: ['table'], primaryId: 'table' }),
+    );
+  });
+
+  it('enters table editing from a double-clicked table cell hit', () => {
+    const onSelectionChange = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={tableSlide}
+        scale={1}
+        selection={{ elementIds: ['table'], primaryId: 'table' }}
+        onSelectionChange={onSelectionChange}
+        onElementsChange={vi.fn()}
+        onTableCellChange={vi.fn()}
+      />,
+    );
+
+    const hit = container.querySelector('[data-select-element-id="table"]') as HTMLElement;
+    fireEvent.doubleClick(hit, { clientX: 150, clientY: 150 });
+
+    expect(onSelectionChange).toHaveBeenCalledWith({
+      elementIds: ['table'],
+      primaryId: 'table',
+      editingId: 'table',
+    });
+  });
+
+  it('shows a double-click edit affordance for a selected table before editing starts', () => {
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={tableSlide}
+        scale={1}
+        selection={{ elementIds: ['table'], primaryId: 'table' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+        onTableCellChange={vi.fn()}
+        tableEditMaskLabel="Double-click to edit"
+      />,
+    );
+
+    expect(container.querySelector('[data-table-edit-mask]')).not.toBeNull();
+    expect(container.querySelector('[data-table-edit-mask-tip]')?.textContent).toBe('Double-click to edit');
+  });
+
+  it('flushes an active table-cell draft before a blank-canvas click exits editing', () => {
+    const onTableCellChange = vi.fn();
+    let controller: import('../../src/editing/text/types').TextEditorController | null = null;
+    function TableEditingHarness() {
+      const [selection, setSelection] = useState<Selection>({
+        elementIds: ['table'],
+        primaryId: 'table',
+        editingId: 'table',
+      });
+      return (
+        <EditableSlideCanvas
+          slide={tableSlide}
+          scale={1}
+          selection={selection}
+          onSelectionChange={setSelection}
+          onElementsChange={vi.fn()}
+          onTableCellChange={onTableCellChange}
+          onTextEditorChange={(next) => {
+            controller = next;
+          }}
+        />
+      );
+    }
+
+    const { container } = render(<TableEditingHarness />);
+    const cell = container.querySelector('[data-table-cell-id="a"]') as HTMLElement;
+    fireEvent.pointerDown(cell, { pointerId: 1, clientX: 150, clientY: 150 });
+    if (!controller) throw new Error('Expected a table cell controller');
+    act(() => controller?.execute({ command: 'replace', value: 'Persist me' }));
+
+    const canvas = container.querySelector('[data-editable-slide-canvas]') as HTMLElement;
+    fireEvent.pointerDown(canvas, { pointerId: 2, button: 0, clientX: 20, clientY: 20 });
+
+    expect(onTableCellChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: expect.objectContaining({
+          type: 'table.updateCell',
+          id: 'table',
+          cellId: 'a',
+          text: expect.stringContaining('Persist me'),
+        }),
+        history: 'record',
+      }),
+    );
+  });
+
+  it('releases the marquee surface while a table cell is being edited', () => {
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={tableSlide}
+        scale={1}
+        selection={{ elementIds: ['table'], primaryId: 'table', editingId: 'table' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+        onTableCellChange={vi.fn()}
+      />,
+    );
+
+    const marqueeSurface = container.querySelector('[data-marquee-surface]') as HTMLElement;
+    expect(marqueeSurface.style.pointerEvents).toBe('none');
+  });
+
+  it('exposes the active table cell through the shared text-editor controller', () => {
+    const onTextEditorChange = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={tableSlide}
+        scale={1}
+        selection={{ elementIds: ['table'], primaryId: 'table', editingId: 'table' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+        onTableCellChange={vi.fn()}
+        onTextEditorChange={onTextEditorChange}
+      />,
+    );
+
+    fireEvent.pointerDown(container.querySelector('[data-table-cell-id="a"]') as HTMLElement);
+
+    expect(onTextEditorChange).toHaveBeenCalledWith(
+      expect.objectContaining({ elementId: 'table', kind: 'table-cell' }),
+    );
+    expect(container.querySelector('[data-renderer-text-editor="table"]')).not.toBeNull();
+  });
+
+  it('gives a selected table geometric selection chrome while its outline stays in the table', () => {
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={tableSlide}
+        scale={1}
+        selection={{ elementIds: ['table'], primaryId: 'table' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+      />,
+    );
+
+    const border = container.querySelector('[data-selection-border]') as HTMLElement;
+    expect(border.style.left).toBe('100px');
+    expect(border.style.top).toBe('100px');
+    expect(border.style.width).toBe('200px');
+    expect(border.style.height).toBe('120px');
+    expect(container.querySelectorAll('[data-resize-handle]')).toHaveLength(8);
+    expect(container.querySelector('[data-rotate-handle]')).not.toBeNull();
+
+    const cell = container.querySelector('td') as HTMLTableCellElement;
+    expect(cell.style.borderWidth).toBe('6px');
+    expect(cell.style.borderStyle).toBe('solid');
+    expect(cell.style.borderColor).toBe('rgb(217, 70, 239)');
+  });
+
+  it('moves, resizes, and rotates a table through generic renderer gestures', () => {
+    const onCh = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={tableSlide}
+        scale={1}
+        selection={{ elementIds: ['table'], primaryId: 'table' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={onCh}
+        snapping={false}
+      />,
+    );
+
+    const move = container.querySelector('[data-element-id="table"]') as HTMLElement;
+    fireEvent.pointerDown(move, { pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(move, { pointerId: 1, clientX: 30, clientY: 20 });
+    fireEvent.pointerUp(move, { pointerId: 1, clientX: 30, clientY: 20 });
+    expect(onCh).toHaveBeenLastCalledWith([
+      { type: 'element.update', id: 'table', props: { left: 130, top: 120 } },
+    ]);
+
+    onCh.mockClear();
+    const resize = container.querySelector('[data-resize-handle="bottom"]') as HTMLElement;
+    fireEvent.pointerDown(resize, { pointerId: 2, clientX: 200, clientY: 220 });
+    fireEvent.pointerMove(window, { pointerId: 2, clientX: 200, clientY: 260 });
+    fireEvent.pointerUp(window, { pointerId: 2, clientX: 200, clientY: 260 });
+    expect(onCh).toHaveBeenLastCalledWith([
+      {
+        type: 'element.update',
+        id: 'table',
+        props: { left: 100, top: 100, width: 200, height: 160, cellMinHeight: 60 },
+      },
+    ]);
+
+    onCh.mockClear();
+    const rotate = container.querySelector('[data-rotate-handle]') as HTMLElement;
+    fireEvent.pointerDown(rotate, { pointerId: 3, clientX: 200, clientY: 75 });
+    fireEvent.pointerMove(window, { pointerId: 3, clientX: 320, clientY: 160 });
+    fireEvent.pointerUp(window, { pointerId: 3, clientX: 320, clientY: 160 });
+    expect(onCh).toHaveBeenLastCalledWith([
+      { type: 'element.update', id: 'table', props: { rotate: 90 } },
+    ]);
+  });
+
   it('creates a default-sized text rect from a click while text creation is armed', () => {
     const onTextCreate = vi.fn();
     const { container } = render(
@@ -195,6 +444,76 @@ describe('EditableSlideCanvas', () => {
     fireEvent.pointerUp(window, { pointerId: 1, button: 0, clientX: 120, clientY: 80 });
 
     expect(onTextCreate).toHaveBeenCalledWith({ left: 120, top: 80, width: 300, height: 60 });
+  });
+
+  it('creates a line from an armed canvas drag and previews its geometry', () => {
+    const onLineCreate = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+        creatingLine
+        onLineCreate={onLineCreate}
+      />,
+    );
+
+    const surface = container.querySelector('[data-line-create-surface]') as HTMLElement;
+    expect(surface).not.toBeNull();
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 120, clientY: 80 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 280, clientY: 160 });
+    expect(container.querySelector('[data-line-create-preview]')).not.toBeNull();
+    fireEvent.pointerUp(window, { pointerId: 1, button: 0, clientX: 280, clientY: 160 });
+
+    expect(onLineCreate).toHaveBeenCalledWith({ start: [120, 80], end: [280, 160] });
+  });
+
+  it('does not create a line from a short drag', () => {
+    const onLineCreate = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={vi.fn()}
+        creatingLine
+        onLineCreate={onLineCreate}
+      />,
+    );
+    const surface = container.querySelector('[data-line-create-surface]') as HTMLElement;
+
+    fireEvent.pointerDown(surface, { pointerId: 1, clientX: 120, clientY: 80, button: 0 });
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 140, clientY: 90, button: 0 });
+
+    expect(onLineCreate).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-line-create-preview]')).toBeNull();
+  });
+
+  it('cancels an armed line insertion with a context click', () => {
+    const onLineCreate = vi.fn();
+    const onLineCreateCancel = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={vi.fn()}
+        creatingLine
+        onLineCreate={onLineCreate}
+        onLineCreateCancel={onLineCreateCancel}
+      />,
+    );
+    const surface = container.querySelector('[data-line-create-surface]') as HTMLElement;
+
+    fireEvent.pointerDown(surface, { pointerId: 1, clientX: 120, clientY: 80, button: 0 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 280, clientY: 160 });
+    fireEvent.contextMenu(surface);
+
+    expect(onLineCreateCancel).toHaveBeenCalledTimes(1);
+    expect(onLineCreate).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-line-create-preview]')).toBeNull();
   });
 
   it('a selected line shows endpoint handles (not a bbox border); the box keeps its border', () => {

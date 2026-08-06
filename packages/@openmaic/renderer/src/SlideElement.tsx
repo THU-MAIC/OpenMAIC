@@ -6,6 +6,7 @@ import {
   type PPTElement,
   type PPTImageElement,
   type PPTShapeElement,
+  type PPTTableElement,
   type PPTTextElement,
   type PPTVideoElement,
   type SlideTheme,
@@ -39,6 +40,7 @@ export interface SlideElementProps {
   renderVideo?: (element: PPTVideoElement) => ReactNode;
   renderText?: (element: PPTTextElement, defaultContent: ReactNode) => ReactNode;
   renderShapeLabel?: (element: PPTShapeElement, defaultContent: ReactNode) => ReactNode;
+  renderTable?: (element: PPTTableElement, defaultContent: ReactNode) => ReactNode;
   videoInteractive?: boolean;
   onElementClick?: (element: PPTElement, event: React.MouseEvent) => void;
   /** Prefix used for the root div id — must match SpotlightOverlay's `elementIdPrefix`. */
@@ -55,6 +57,7 @@ type SlideElementContentProps = Pick<
   | 'renderVideo'
   | 'renderText'
   | 'renderShapeLabel'
+  | 'renderTable'
   | 'videoInteractive'
 >;
 
@@ -65,6 +68,7 @@ const SlideElementContent = memo(function SlideElementContent({
   renderVideo,
   renderText,
   renderShapeLabel,
+  renderTable,
   videoInteractive,
 }: SlideElementContentProps) {
   const Component = useMemo(() => {
@@ -115,7 +119,7 @@ const SlideElementContent = memo(function SlideElementContent({
         <BaseLatexElement elementInfo={elementInfo} />
       )}
       {Component === 'table' && elementInfo.type === 'table' && (
-        <BaseTableElement elementInfo={elementInfo} />
+        <BaseTableElement elementInfo={elementInfo} renderContent={renderTable} />
       )}
       {Component === 'video' && elementInfo.type === 'video' && (
         <BaseVideoElement
@@ -140,6 +144,7 @@ export const SlideElement = memo(function SlideElement({
   renderVideo,
   renderText,
   renderShapeLabel,
+  renderTable,
   videoInteractive,
   onElementClick,
   idPrefix = 'slide-element-',
@@ -179,6 +184,7 @@ export const SlideElement = memo(function SlideElement({
           renderVideo={renderVideo}
           renderText={renderText}
           renderShapeLabel={renderShapeLabel}
+          renderTable={renderTable}
           videoInteractive={videoInteractive}
         />
       </div>

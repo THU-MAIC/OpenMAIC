@@ -5,6 +5,7 @@ import {
   type PPTTextElement,
   type PPTImageElement,
   type PPTShapeElement,
+  type PPTTableElement,
 } from '@openmaic/dsl';
 import {
   computeResize,
@@ -60,10 +61,89 @@ const shape = (o: Partial<PPTShapeElement> = {}): PPTShapeElement =>
     ...o,
   }) as PPTShapeElement;
 
+const table = (o: Partial<PPTTableElement> = {}): PPTTableElement =>
+  ({
+    id: 't',
+    type: 'table',
+    left: 100,
+    top: 100,
+    width: 200,
+    height: 120,
+    rotate: 0,
+    cellMinHeight: 40,
+    colWidths: [0.5, 0.5],
+    data: [
+      [
+        { id: 'a', text: 'A', colspan: 1, rowspan: 1 },
+        { id: 'b', text: 'B', colspan: 1, rowspan: 1 },
+      ],
+      [
+        { id: 'c', text: 'C', colspan: 1, rowspan: 1 },
+        { id: 'd', text: 'D', colspan: 1, rowspan: 1 },
+      ],
+    ],
+    outline: { width: 1, color: '#000', style: 'solid' },
+    ...o,
+  }) as PPTTableElement;
+
 const viewport = { width: 1000, height: 562.5 };
 const noOthers: PPTElement[] = [];
 
 describe('computeResize — un-rotated', () => {
+  it('keeps table rows usable by growing cellMinHeight with a height resize', () => {
+    const r = computeResize({
+      element: table(),
+      handle: 'bottom',
+      others: noOthers,
+      viewport,
+      deltaCanvas: { x: 0, y: 40 },
+    });
+
+    expect(r.props).toMatchObject({
+      left: 100,
+      top: 100,
+      width: 200,
+      height: 160,
+      cellMinHeight: 60,
+    });
+  });
+
+  it('clamps table cellMinHeight at 36 when height shrinks', () => {
+    const r = computeResize({
+      element: table(),
+      handle: 'bottom',
+      others: noOthers,
+      viewport,
+      deltaCanvas: { x: 0, y: -80 },
+    });
+
+    expect(r.props).toMatchObject({ height: 40, cellMinHeight: 36 });
+  });
+
+  it('does not include a table cellMinHeight patch for width-only resize', () => {
+    const r = computeResize({
+      element: table(),
+      handle: 'right',
+      others: noOthers,
+      viewport,
+      deltaCanvas: { x: 40, y: 0 },
+    });
+
+    expect(r.props).toEqual({ left: 100, top: 100, width: 240, height: 120 });
+  });
+
+  it('uses one safe row when table data is empty', () => {
+    const r = computeResize({
+      element: table({ data: [] }),
+      handle: 'bottom',
+      others: noOthers,
+      viewport,
+      deltaCanvas: { x: 0, y: 40 },
+    });
+
+    expect(r.props).toMatchObject({ height: 160, cellMinHeight: 80 });
+  });
+
   it('rebuilds a formula shape path and viewBox while retaining its keypoints', () => {
     const r = computeResize({
       element: shape({
@@ -251,6 +331,19 @@ describe('computeResize — un-rotated', () => {
 });
 
 describe('computeResize — rotated', () => {
+  it('maintains table cellMinHeight when a rotated table changes height', () => {
+    const r = computeResize({
+      element: table({ rotate: 90 }),
+      handle: 'right-bottom',
+      others: noOthers,
+      viewport,
+      deltaCanvas: { x: -40, y: 0 },
+    });
+
+    expect(r.props.height).toBeCloseTo(160, 5);
+    expect(r.props.cellMinHeight).toBeCloseTo(60, 5);
+  });
+
   it('rotates the pointer delta into local axes and keeps the opposite corner fixed', () => {
     // rotate 90: revisedX = sin(90)*dy = 30, revisedY = 0 → width 130.
     // Opposite-point correction: the rotated left-top of the origin box sits at
@@ -368,6 +461,7 @@ describe('getResizeHandles — per-kind gates', () => {
   it('other box kinds expose all eight handles', () => {
     expect(getResizeHandles(image())).toEqual(RESIZE_HANDLES);
     expect(getResizeHandles(shape())).toEqual(RESIZE_HANDLES);
+    expect(getResizeHandles(table())).toEqual(RESIZE_HANDLES);
   });
 });
 

@@ -52,6 +52,8 @@ export interface TextFormatState {
 
 export interface TextEditorController {
   readonly elementId: string;
+  /** Identifies a controller that edits text inside a table cell rather than an element body. */
+  readonly kind?: 'element' | 'table-cell';
   focus(): void;
   flush(): void;
   /** Drops an uncommitted text change when the host will delete this element. */

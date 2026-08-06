@@ -14,11 +14,13 @@ const mockSetCanvasScale = vi.fn();
 const mockSetCreatingElement = vi.fn();
 const mockApplyOp = vi.fn();
 const mockCommitContent = vi.fn();
+const mockInsertImageElement = vi.fn();
+const mockInsertTableElement = vi.fn();
 let activeElementIds: string[] = [];
 let hiddenElementIds: string[] = [];
 let editingElementId = '';
 let clipingImageElementId = '';
-let creatingElement: { type: string } | null = null;
+let creatingElement: { type: string; data?: unknown } | null = null;
 let spotlightPrefix: string | undefined;
 let laserPrefix: string | undefined;
 let lastRendererProps: EditableSlideCanvasWithUIProps | undefined;
@@ -106,6 +108,8 @@ vi.mock('@/components/edit/surfaces/slide/slide-edit-session', () => ({
 }));
 
 vi.mock('@/components/edit/surfaces/slide/use-slide-surface', () => ({
+  insertImageElement: mockInsertImageElement,
+  insertTableElement: mockInsertTableElement,
   useEditingTextElementId: () => '',
   useSelectedNonTextElement: () => null,
   useSlideCanvasController: () => ({
@@ -162,6 +166,24 @@ const slideContent: SlideContent = {
         content: '<p>Hello</p>',
         defaultFontName: 'Arial',
         defaultColor: '#111111',
+      },
+      {
+        id: 'table-1',
+        type: 'table',
+        left: 40,
+        top: 120,
+        width: 240,
+        height: 80,
+        rotate: 0,
+        outline: { width: 1, color: '#111111', style: 'solid' },
+        colWidths: [0.5, 0.5],
+        cellMinHeight: 40,
+        data: [
+          [
+            { id: 'cell-a', colspan: 1, rowspan: 1, text: 'A' },
+            { id: 'cell-b', colspan: 1, rowspan: 1, text: 'B' },
+          ],
+        ],
       },
     ],
   },
@@ -253,6 +275,16 @@ describe('slide editor canvas renderer flag', () => {
         label: font.labelKey ? `translated:${font.labelKey}` : font.label,
       })),
     });
+    expect(lastRendererProps?.lineToolbar).toEqual({ locale: 'zh-CN' });
+    const insertToolbar = lastRendererProps?.insertToolbar;
+    expect(insertToolbar).not.toBe(false);
+    expect(insertToolbar && insertToolbar.items.map((item) => item.id)).toEqual([
+      'insert-text',
+      'insert-image',
+      'insert-table',
+      'insert-line',
+      'slide-background',
+    ]);
     expect(mockSetActiveElementIdList).toHaveBeenCalledWith(['title-1']);
     expect(mockSetEditingElementId).toHaveBeenCalledWith('title-1');
     expect(mockApplyOp).not.toHaveBeenCalled();
@@ -293,7 +325,7 @@ describe('slide editor canvas renderer flag', () => {
       1,
       expect.objectContaining({
         canvas: expect.objectContaining({
-          elements: [expect.objectContaining({ content: '<p>Edited</p>' })],
+          elements: expect.arrayContaining([expect.objectContaining({ content: '<p>Edited</p>' })]),
         }),
       }),
       false,
@@ -302,10 +334,43 @@ describe('slide editor canvas renderer flag', () => {
       2,
       expect.objectContaining({
         canvas: expect.objectContaining({
-          elements: [expect.objectContaining({ height: 72 })],
+          elements: expect.arrayContaining([expect.objectContaining({ height: 72 })]),
         }),
       }),
       false,
+    );
+  });
+
+  it('bridges a completed renderer table-cell edit as one history record', async () => {
+    process.env[flag] = 'true';
+    vi.resetModules();
+    const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
+
+    renderToStaticMarkup(createElement(SlideCanvas));
+    lastRendererProps?.onTableCellChange?.({
+      intent: {
+        type: 'table.updateCell',
+        id: 'table-1',
+        cellId: 'cell-b',
+        text: 'Edited',
+      },
+      history: 'record',
+    });
+
+    expect(mockCommitContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canvas: expect.objectContaining({
+          elements: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'table-1',
+              data: expect.arrayContaining([
+                expect.arrayContaining([expect.objectContaining({ id: 'cell-b', text: 'Edited' })]),
+              ]),
+            }),
+          ]),
+        }),
+      }),
+      true,
     );
   });
 
@@ -340,6 +405,95 @@ describe('slide editor canvas renderer flag', () => {
       }),
       true,
     );
+  });
+
+  it('creates, selects, and persists a renderer line from the armed canvas gesture', async () => {
+    process.env[flag] = 'true';
+    creatingElement = {
+      type: 'line',
+      data: { path: 'M 0 0 L 20 20', style: 'solid', points: ['', ''] },
+    };
+    vi.resetModules();
+    const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
+
+    renderToStaticMarkup(createElement(SlideCanvas));
+    lastRendererProps?.onLineCreate?.({ start: [280, 180], end: [120, 80] });
+
+    expect(mockSetCreatingElement).toHaveBeenCalledWith(null);
+    expect(mockSetActiveElementIdList).toHaveBeenCalledWith([
+      expect.stringMatching(/^line-/),
+    ]);
+    expect(mockSetEditingElementId).toHaveBeenCalledWith('');
+    expect(mockCommitContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canvas: expect.objectContaining({
+          elements: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'line',
+              left: 120,
+              top: 80,
+              width: 2,
+              start: [160, 100],
+              end: [0, 0],
+              style: 'solid',
+              color: '#333333',
+              points: ['', ''],
+            }),
+          ]),
+        }),
+      }),
+      true,
+    );
+  });
+
+  it('preserves the armed renderer line preset when creating a curve', async () => {
+    process.env[flag] = 'true';
+    creatingElement = {
+      type: 'line',
+      data: {
+        path: 'M 0 0 Q 0 20 20 20',
+        style: 'dashed',
+        points: ['dot', 'arrow'],
+        isCurve: true,
+      },
+    };
+    vi.resetModules();
+    const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
+
+    renderToStaticMarkup(createElement(SlideCanvas));
+    lastRendererProps?.onLineCreate?.({ start: [120, 80], end: [280, 180] });
+
+    expect(mockCommitContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canvas: expect.objectContaining({
+          elements: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'line',
+              style: 'dashed',
+              points: ['dot', 'arrow'],
+              curve: [80, 50],
+            }),
+          ]),
+        }),
+      }),
+      true,
+    );
+  });
+
+  it('forwards renderer line-create cancellation to the app insertion state', async () => {
+    process.env[flag] = 'true';
+    creatingElement = {
+      type: 'line',
+      data: { path: 'M 0 0 L 20 20', style: 'solid', points: ['', ''] },
+    };
+    vi.resetModules();
+    const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
+
+    renderToStaticMarkup(createElement(SlideCanvas));
+    lastRendererProps?.onLineCreateCancel?.();
+
+    expect(mockSetCreatingElement).toHaveBeenCalledWith(null);
+    expect(mockCommitContent).not.toHaveBeenCalled();
   });
 
   it('does not commit empty or ineffective renderer intent batches', async () => {

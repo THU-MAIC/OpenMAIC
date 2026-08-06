@@ -244,6 +244,9 @@
     },
     "insert": {
       "textBox": "文本框",
+      "line": "线条",
+      "table": "表格",
+      "tableDimensions": "{{rows}} x {{columns}} 表格",
       "dragToolbar": "拖动工具栏",
       "dragToolbarKeyboard": "移动工具栏：按回车或空格开始，再使用方向键移动",
       "image": "图片",
@@ -251,6 +254,9 @@
       "imageOr": "或粘贴图片 URL",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "插入"
+    },
+    "table": {
+      "doubleClickToEdit": "双击编辑"
     },
     "nav": {
       "addSlide": "新增幻灯片",

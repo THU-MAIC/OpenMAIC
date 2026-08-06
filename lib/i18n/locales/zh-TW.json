@@ -244,6 +244,9 @@
     },
     "insert": {
       "textBox": "文字方塊",
+      "line": "線條",
+      "table": "表格",
+      "tableDimensions": "{{rows}} x {{columns}} 表格",
       "dragToolbar": "拖動工具列",
       "dragToolbarKeyboard": "移動工具列：按 Enter 或空白鍵開始，再使用方向鍵移動",
       "image": "圖片",
@@ -251,6 +254,9 @@
       "imageOr": "或貼上圖片網址",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "插入"
+    },
+    "table": {
+      "doubleClickToEdit": "雙擊編輯"
     },
     "nav": {
       "addSlide": "新增投影片",

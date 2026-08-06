@@ -69,7 +69,9 @@ function isCoveredByEditingElement(
     editingIndex < 0 ||
     elementIndex < 0 ||
     elementIndex > editingIndex ||
-    (editingElement?.type !== 'text' && editingElement?.type !== 'shape')
+    (editingElement?.type !== 'text' &&
+      editingElement?.type !== 'shape' &&
+      editingElement?.type !== 'table')
   ) {
     return false;
   }

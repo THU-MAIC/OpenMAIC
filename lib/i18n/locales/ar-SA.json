@@ -244,6 +244,9 @@
     },
     "insert": {
       "textBox": "مربع نص",
+      "line": "خط",
+      "table": "جدول",
+      "tableDimensions": "جدول {{rows}} x {{columns}}",
       "dragToolbar": "نقل أدوات الإدراج",
       "dragToolbarKeyboard": "نقل أدوات الإدراج: اضغط Enter أو مسافة، ثم استخدم مفاتيح الأسهم",
       "image": "صورة",
@@ -251,6 +254,9 @@
       "imageOr": "أو الصق رابط صورة",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "إدراج"
+    },
+    "table": {
+      "doubleClickToEdit": "انقر نقراً مزدوجاً للتحرير"
     },
     "nav": {
       "addSlide": "إضافة شريحة",

@@ -6,6 +6,7 @@ import type { SlideContent } from '@/lib/types/stage';
 type ReorderIntent = Extract<EditIntent, { type: 'element.reorder' }>;
 type UpdateManyIntent = Extract<EditIntent, { type: 'element.updateMany' }>;
 type TextContentIntent = Extract<EditIntent, { type: 'text.updateContent' }>;
+type TableCellIntent = Extract<EditIntent, { type: 'table.updateCell' }>;
 
 function resolveReorderIndex(
   elements: SlideContent['canvas']['elements'],
@@ -69,6 +70,19 @@ function applyTextContentIntent(content: SlideContent, intent: TextContentIntent
   });
 }
 
+function applyTableCellIntent(content: SlideContent, intent: TableCellIntent): SlideContent {
+  return produce(content, (draft) => {
+    const element = draft.canvas.elements.find((item) => item.id === intent.id);
+    if (!element || element.type !== 'table') return;
+    for (const row of element.data) {
+      const cell = row.find((candidate) => candidate.id === intent.cellId);
+      if (!cell) continue;
+      cell.text = intent.text;
+      return;
+    }
+  });
+}
+
 function assertNever(value: never): never {
   throw new Error(`Unsupported renderer edit intent: ${JSON.stringify(value)}`);
 }
@@ -119,6 +133,8 @@ export function applyRendererEditIntents(
         });
       case 'text.updateContent':
         return applyTextContentIntent(next, intent);
+      case 'table.updateCell':
+        return applyTableCellIntent(next, intent);
       default:
         return assertNever(intent);
     }

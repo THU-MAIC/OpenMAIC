@@ -244,6 +244,9 @@
     },
     "insert": {
       "textBox": "テキストボックス",
+      "line": "線",
+      "table": "表",
+      "tableDimensions": "{{rows}} x {{columns}} 表",
       "dragToolbar": "挿入ツールを移動",
       "dragToolbarKeyboard": "挿入ツールを移動：Enter または Space を押してから矢印キーで移動",
       "image": "画像",
@@ -251,6 +254,9 @@
       "imageOr": "または画像 URL を貼り付け",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "挿入"
+    },
+    "table": {
+      "doubleClickToEdit": "ダブルクリックして編集"
     },
     "nav": {
       "addSlide": "スライドを追加",

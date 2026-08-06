@@ -31,8 +31,8 @@ function toTrackedRect(rect: DOMRect): TrackedToolbarRect {
 }
 
 /**
- * Tracks the text paint node because its viewport rect reflects renderer scale,
- * transforms, and live text layout without consulting an application store.
+ * Tracks a renderer paint node because its viewport rect reflects renderer
+ * scale and transforms without consulting an application store.
  */
 export function useToolbarAnchor(
   elementId: string,
@@ -49,7 +49,10 @@ export function useToolbarAnchor(
     }
 
     const wrapper = document.getElementById(`${elementIdPrefix}${elementId}`);
-    const node = wrapper?.querySelector<HTMLElement>('.base-element-text') ?? null;
+    const node =
+      wrapper?.querySelector<HTMLElement>(
+        '.base-element-text, .base-element-table, .base-element-line',
+      ) ?? null;
     if (!node || !node.isConnected) {
       const changed = lastRectRef.current !== null;
       lastRectRef.current = null;
@@ -98,7 +101,10 @@ export function useToolbarAnchor(
     update();
 
     const wrapper = document.getElementById(`${elementIdPrefix}${elementId}`);
-    const node = wrapper?.querySelector<HTMLElement>('.base-element-text') ?? null;
+    const node =
+      wrapper?.querySelector<HTMLElement>(
+        '.base-element-text, .base-element-table, .base-element-line',
+      ) ?? null;
     const observer =
       node && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
     if (observer && node) observer.observe(node);

@@ -244,6 +244,9 @@
     },
     "insert": {
       "textBox": "Text box",
+      "line": "Line",
+      "table": "Table",
+      "tableDimensions": "{{rows}} x {{columns}} Table",
       "dragToolbar": "Move insert tools",
       "dragToolbarKeyboard": "Move insert tools: press Enter or Space, then use the arrow keys",
       "image": "Image",
@@ -251,6 +254,9 @@
       "imageOr": "or paste an image URL",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "Insert"
+    },
+    "table": {
+      "doubleClickToEdit": "Double-click to edit"
     },
     "nav": {
       "addSlide": "Add slide",

@@ -60,22 +60,27 @@ vi.mock('../../src/editing/EditableSlideCanvas', async () => {
         'div',
         { 'data-testid': 'editable-slide-canvas' },
         props.slide.elements
-          .filter((element) => element.type === 'text')
+          .filter((element) => element.type === 'text' || element.type === 'table' || element.type === 'line')
           .map((element) =>
             React.createElement(
               'div',
               { id: `${prefix}${element.id}`, key: element.id },
               React.createElement(
-                'button',
+                element.type === 'text' ? 'button' : 'div',
                 {
-                  className: 'base-element-text',
-                  onClick: () =>
+                  className:
+                    element.type === 'text'
+                      ? 'base-element-text'
+                      : element.type === 'table'
+                        ? 'base-element-table'
+                        : 'base-element-line',
+                  onClick: element.type === 'text' ? () =>
                     props.onSelectionChange?.({
                       elementIds: [element.id],
                       primaryId: element.id,
                       editingId: element.id,
-                    }),
-                  type: 'button',
+                    }) : undefined,
+                  type: element.type === 'text' ? 'button' : undefined,
                 },
                 element.id === 'text-1' ? 'Hello' : 'Second',
               ),
@@ -106,7 +111,35 @@ const slide = {
   id: 'slide-1',
   viewportSize: 1000,
   viewportRatio: 0.5625,
-  elements: [textElement, { ...textElement, id: 'text-2', content: '<p>Second</p>' }],
+  elements: [
+    textElement,
+    { ...textElement, id: 'text-2', content: '<p>Second</p>' },
+    {
+      id: 'line-1',
+      type: 'line',
+      left: 40,
+      top: 160,
+      width: 2,
+      start: [0, 0],
+      end: [120, 80],
+      style: 'solid',
+      color: '#333333',
+      points: ['', ''],
+    },
+    {
+      id: 'table-1',
+      type: 'table',
+      left: 40,
+      top: 260,
+      width: 240,
+      height: 80,
+      rotate: 0,
+      colWidths: [1],
+      cellMinHeight: 80,
+      outline: { width: 1, color: '#333333', style: 'solid' },
+      data: [[{ id: 'cell-1', colspan: 1, rowspan: 1, text: 'Cell' }]],
+    },
+  ],
 } as unknown as Slide;
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
@@ -207,6 +240,8 @@ beforeEach(() => {
   ) {
     if (this.hasAttribute('data-toolbar-overlay')) return rect(0, 0, 640, 48);
     if (this.classList.contains('base-element-text')) return rect(100, 100, 240, 80);
+    if (this.classList.contains('base-element-table')) return rect(100, 260, 240, 80);
+    if (this.classList.contains('base-element-line')) return rect(100, 200, 120, 80);
     return new DOMRect();
   });
 });
@@ -240,6 +275,28 @@ describe('EditableSlideCanvasWithUI', () => {
         intent: expect.objectContaining({ type: 'text.updateContent', id: 'text-1' }),
       }),
     );
+  });
+
+  it('renders a configured renderer insert toolbar and forwards its action', () => {
+    const onInsert = vi.fn();
+    const { getByRole } = renderControlled({
+      insertToolbar: {
+        label: 'Insert',
+        items: [
+          {
+            id: 'insert-text',
+            label: 'Text box',
+            icon: <span>T</span>,
+            onInvoke: onInsert,
+          },
+        ],
+      },
+    });
+
+    fireEvent.click(getByRole('button', { name: 'Text box' }));
+
+    expect(getByRole('toolbar', { name: 'Insert' })).not.toBeNull();
+    expect(onInsert).toHaveBeenCalledTimes(1);
   });
 
   it('waits for controller and format state matching the controlled editing id', () => {
@@ -378,6 +435,68 @@ describe('EditableSlideCanvasWithUI', () => {
     expect(screen.queryByRole('toolbar')).toBeNull();
   });
 
+  it('shows the line toolbar for a single selected line and forwards its update intent', async () => {
+    const onElementsChange = vi.fn();
+    renderControlled({
+      initialSelection: { elementIds: ['line-1'], primaryId: 'line-1' },
+      onElementsChange,
+      lineToolbar: { locale: 'zh-CN' },
+    });
+
+    expect(await screen.findByRole('toolbar', { name: '线条工具栏' })).not.toBeNull();
+    fireEvent.change(screen.getByRole('combobox', { name: '线宽' }), { target: { value: '6' } });
+    expect(onElementsChange).toHaveBeenCalledWith([
+      { type: 'element.update', id: 'line-1', props: { width: 6 } },
+    ]);
+  });
+
+  it('hides the line toolbar for a multi-selection or locked line', () => {
+    const onElementsChange = vi.fn();
+    const view = renderControlled({
+      initialSelection: { elementIds: ['line-1', 'text-1'], primaryId: 'line-1' },
+      onElementsChange,
+      lineToolbar: { locale: 'zh-CN' },
+    });
+    expect(screen.queryByRole('toolbar', { name: '线条工具栏' })).toBeNull();
+
+    view.rerender(
+      <EditableSlideCanvasWithUI
+        slide={{
+          ...slide,
+          elements: slide.elements.map((element) =>
+            element.id === 'line-1' ? { ...element, lock: true } : element,
+          ),
+        }}
+        scale={1}
+        selection={{ elementIds: ['line-1'], primaryId: 'line-1' }}
+        onElementsChange={onElementsChange}
+        lineToolbar={{ locale: 'zh-CN' }}
+      />,
+    );
+    expect(screen.queryByRole('toolbar', { name: '线条工具栏' })).toBeNull();
+  });
+
+  it('routes line z-order and deletion through renderer intents', async () => {
+    const onElementsChange = vi.fn();
+    const onSelectionChange = vi.fn();
+    renderControlled({
+      initialSelection: { elementIds: ['line-1'], primaryId: 'line-1' },
+      onElementsChange,
+      onSelectionChange,
+      lineToolbar: { locale: 'zh-CN' },
+    });
+
+    await screen.findByRole('toolbar', { name: '线条工具栏' });
+    fireEvent.click(screen.getByRole('button', { name: '置于顶层' }));
+    expect(onElementsChange).toHaveBeenLastCalledWith([
+      { type: 'element.reorder', id: 'line-1', command: 'front' },
+    ]);
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    expect(onElementsChange).toHaveBeenLastCalledWith([{ type: 'element.delete', ids: ['line-1'] }]);
+    expect(onSelectionChange).toHaveBeenLastCalledWith({ elementIds: [] });
+  });
+
   it('emits exact reorder and delete intents before clearing selection', async () => {
     const onElementsChange = vi.fn();
     const onSelectionChange = vi.fn();
@@ -416,6 +535,28 @@ describe('EditableSlideCanvasWithUI', () => {
     expect(screen.queryByRole('button', { name: '置于顶层' })).toBeNull();
     expect(screen.queryByRole('button', { name: '置于底层' })).toBeNull();
     expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
+  });
+
+  it('reuses the text toolbar for a table-cell controller without element actions', async () => {
+    canvasMock.autoRegister = false;
+    renderControlled({
+      initialSelection: { elementIds: ['table-1'], primaryId: 'table-1', editingId: 'table-1' },
+      onElementsChange: vi.fn(),
+    });
+    const controller = { ...createController('table-1'), kind: 'table-cell' as const };
+
+    emitController(controller);
+    emitFormat('table-1');
+
+    expect(await screen.findByRole('toolbar', { name: '文本格式' })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: '置于顶层' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '置于底层' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
+
+    fireEvent.change(screen.getByRole('combobox', { name: '字体' }), { target: { value: 'Inter' } });
+    expect(canvasMock.executions).toEqual([
+      { elementId: 'table-1', command: { command: 'fontname', value: 'Inter' } },
+    ]);
   });
 
   it('mounts the editing UI styles exactly once across rerenders', () => {

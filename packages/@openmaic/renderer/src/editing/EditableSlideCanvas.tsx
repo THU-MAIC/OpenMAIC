@@ -7,9 +7,10 @@ import {
   useMemo,
   useRef,
   type ReactNode,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import type { PPTElement, PPTShapeElement, PPTTextElement } from '@openmaic/dsl';
+import type { PPTElement, PPTShapeElement, PPTTableElement, PPTTextElement } from '@openmaic/dsl';
 
 import { SlideCanvas } from '../SlideCanvas';
 import { useViewportSize } from '../hooks/useViewportSize';
@@ -28,10 +29,17 @@ import { useResizeGesture } from './useResizeGesture';
 import { useRotateGesture } from './useRotateGesture';
 import { useShapeKeypointGesture } from './useShapeKeypointGesture';
 import { useTextCreateGesture } from './useTextCreateGesture';
+import { useLineCreateGesture } from './useLineCreateGesture';
+import { getLineSnapPoints } from './core/line-drag';
 import { getResizeHandles } from './core/resize';
 import { canRotate } from './core/rotate';
 import { RendererTextEditor } from './text/RendererTextEditor';
 import { RendererShapeLabelEditor } from './shape/RendererShapeLabelEditor';
+import {
+  RendererTableEditor,
+  TableEditMask,
+  type RendererTableEditorController,
+} from './table/RendererTableEditor';
 import { TextAutoSize, type TextAutoSizeController } from './text/TextAutoSize';
 import { isSemanticallyEmptyText } from './text/richText';
 import type { TextEditorController } from './text/types';
@@ -81,8 +89,13 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     onTextFormatChange,
     onTextEditorChange,
     onTextFocusChange,
+    onTableCellChange,
+    tableEditMaskLabel,
     creatingText,
     onTextCreate,
+    creatingLine,
+    onLineCreate,
+    onLineCreateCancel,
     shapePathFormulas,
     snapping,
   } = props;
@@ -90,6 +103,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   const activeSelection = selection ?? EMPTY_SELECTION;
   const interactive = Boolean(onElementsChange || onSelectionChange);
   const textEditingEnabled = Boolean(onTextContentChange);
+  const tableEditingEnabled = Boolean(onTableCellChange);
   const activeEditingTextId = slide.elements.find(
     (element) =>
       element.id === activeSelection.editingId &&
@@ -106,9 +120,23 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
       !element.lock &&
       !hiddenElementIds?.includes(element.id),
   )?.id;
+  const activeEditingTableId = slide.elements.find(
+    (element) =>
+      element.id === activeSelection.editingId &&
+      activeSelection.elementIds.length === 1 &&
+      element.type === 'table' &&
+      !element.lock &&
+      !hiddenElementIds?.includes(element.id),
+  )?.id;
   const textControllerRef = useRef<TextEditorController | null>(null);
+  const tableEditorRef = useRef<RendererTableEditorController | null>(null);
   const textAutoSizeRef = useRef<TextAutoSizeController | null>(null);
   const pendingTextFocusPointRef = useRef<{
+    elementId: string;
+    left: number;
+    top: number;
+  } | null>(null);
+  const pendingTableFocusPointRef = useRef<{
     elementId: string;
     left: number;
     top: number;
@@ -132,9 +160,13 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
           controller.flush();
         }
       }
+      if (activeEditingTableId && next.editingId !== activeEditingTableId) {
+        tableEditorRef.current?.flush();
+        tableEditorRef.current = null;
+      }
       onSelectionChange?.(next);
     },
-    [activeEditingTextId, onElementsChange, onSelectionChange],
+    [activeEditingTableId, activeEditingTextId, onElementsChange, onSelectionChange],
   );
 
   const handleTextClick = useCallback(
@@ -153,16 +185,29 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     },
     [publishSelection, textEditingEnabled],
   );
-  const handleShapeDoubleClick = useCallback(
-    (element: PPTElement) => {
-      if (!textEditingEnabled || element.type !== 'shape' || element.lock) return;
+  const handleElementDoubleClick = useCallback(
+    (element: PPTElement, event: ReactMouseEvent) => {
+      if (textEditingEnabled && element.type === 'shape' && !element.lock) {
+        publishSelection({
+          elementIds: [element.id],
+          primaryId: element.id,
+          editingId: element.id,
+        });
+        return;
+      }
+      if (!tableEditingEnabled || element.type !== 'table' || element.lock) return;
+      pendingTableFocusPointRef.current = {
+        elementId: element.id,
+        left: event.clientX,
+        top: event.clientY,
+      };
       publishSelection({
         elementIds: [element.id],
         primaryId: element.id,
         editingId: element.id,
       });
     },
-    [publishSelection, textEditingEnabled],
+    [publishSelection, tableEditingEnabled, textEditingEnabled],
   );
 
   // Overlay wrapper is `inset: 0` of the same padding-free inner box that
@@ -178,14 +223,28 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   });
   const canvasScale = props.scale ?? fitScale;
   const textCreationActive = Boolean(creatingText && onTextCreate);
+  const lineCreationActive = Boolean(creatingLine && onLineCreate);
+  const creationActive = textCreationActive || lineCreationActive;
   const { previewRect: textCreatePreview, onCanvasPointerDown: onTextCreatePointerDown } =
     useTextCreateGesture({
       active: textCreationActive,
       scale: canvasScale,
       overlayRef,
       viewportStyles,
-      onCreate: onTextCreate,
-    });
+    onCreate: onTextCreate,
+  });
+  const {
+    preview: lineCreatePreview,
+    onCanvasPointerDown: onLineCreatePointerDown,
+    onCanvasContextMenu: onLineCreateContextMenu,
+  } = useLineCreateGesture({
+    active: lineCreationActive,
+    scale: canvasScale,
+    overlayRef,
+    viewportStyles,
+    onCreate: onLineCreate,
+    onCancel: onLineCreateCancel,
+  });
 
   const {
     workingSlide,
@@ -215,8 +274,13 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   // can be dragged to reshape it. This is independent of the box move gesture
   // above — in practice only one is ever in flight — so we layer its working
   // props on top of the box gesture's `workingSlide` below.
+  const lineSnapPoints = useMemo(
+    () => getLineSnapPoints(slide.elements.filter((element) => !hiddenElementIds?.includes(element.id))),
+    [hiddenElementIds, slide.elements],
+  );
   const { lineDrag, onHandlePointerDown } = useLineHandleGesture({
     scale: canvasScale,
+    snapPoints: lineSnapPoints,
     onElementsChange,
   });
 
@@ -308,14 +372,14 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   // Touch suppression belongs to mutation gestures: select-only hosts keep
   // native touch panning, while tap-select still receives pointer events.
   const editingTouchAction = onElementsChange ? 'none' : undefined;
-  const exitTextEditing = useCallback(() => {
-    if (!activeEditingTextId) return;
+  const exitElementEditing = useCallback(() => {
+    if (!activeEditingTextId && !activeEditingTableId) return;
     publishSelection({
       elementIds: activeSelection.elementIds,
       primaryId: activeSelection.primaryId,
       groupId: activeSelection.groupId,
     });
-  }, [activeEditingTextId, activeSelection, publishSelection]);
+  }, [activeEditingTableId, activeEditingTextId, activeSelection, publishSelection]);
   const handleTextEditorChange = useCallback(
     (controller: TextEditorController | null) => {
       textControllerRef.current = controller;
@@ -356,7 +420,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
             onFormatChange={onTextFormatChange}
             onControllerChange={handleTextEditorChange}
             onFocusChange={onTextFocusChange}
-            onEscape={exitTextEditing}
+            onEscape={exitElementEditing}
           />
         </TextAutoSize>
       );
@@ -369,7 +433,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
       onTextFocusChange,
       onTextFormatChange,
       resizeDrag?.id,
-      exitTextEditing,
+      exitElementEditing,
     ],
   );
   const renderActiveShapeLabel = useCallback(
@@ -383,13 +447,13 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
           onControllerChange={handleTextEditorChange}
           onFocusChange={onTextFocusChange}
           onElementsChange={onElementsChange}
-          onEscape={exitTextEditing}
+          onEscape={exitElementEditing}
         />
       );
     },
     [
       activeEditingShapeId,
-      exitTextEditing,
+      exitElementEditing,
       handleTextEditorChange,
       onElementsChange,
       onTextContentChange,
@@ -398,22 +462,66 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
       renderShapeLabel,
     ],
   );
+  const renderTable = useCallback(
+    (element: PPTTableElement, defaultContent: ReactNode) => {
+      if (activeEditingTableId !== element.id || !onTableCellChange) {
+        const selectedForTableEditing =
+          tableEditingEnabled &&
+          activeSelection.elementIds.length === 1 &&
+          activeSelection.primaryId === element.id &&
+          !element.lock;
+        return selectedForTableEditing ? (
+          <TableEditMask label={tableEditMaskLabel ?? 'Double-click to edit'}>
+            {defaultContent}
+          </TableEditMask>
+        ) : (
+          defaultContent
+        );
+      }
+      const pendingFocusPoint = pendingTableFocusPointRef.current;
+      const initialFocusPoint =
+        pendingFocusPoint?.elementId === element.id
+          ? { left: pendingFocusPoint.left, top: pendingFocusPoint.top }
+          : undefined;
+      return (
+        <RendererTableEditor
+          ref={tableEditorRef}
+          element={element}
+          initialFocusPoint={initialFocusPoint}
+          onChange={onTableCellChange}
+          onTextEditorChange={handleTextEditorChange}
+          onTextFormatChange={onTextFormatChange}
+          onTextFocusChange={onTextFocusChange}
+          onExit={exitElementEditing}
+        />
+      );
+    },
+    [
+      activeEditingTableId,
+      activeSelection.elementIds.length,
+      activeSelection.primaryId,
+      exitElementEditing,
+      onTableCellChange,
+      tableEditMaskLabel,
+      tableEditingEnabled,
+    ],
+  );
   const handleCanvasPointerDownCapture = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (textCreationActive) return;
-      if (!activeEditingTextId || event.button !== 0) return;
+      if (creationActive) return;
+      if ((!activeEditingTextId && !activeEditingTableId) || event.button !== 0) return;
       const target = event.target;
       if (
         target instanceof Element &&
         target.closest(
-          '.ProseMirror, [data-element-id], [data-hit-kind], [data-resize-handle], [data-rotate-handle], [data-line-handle]',
+          '.ProseMirror, [contenteditable="true"], [data-table-cell-id], [data-element-id], [data-hit-kind], [data-resize-handle], [data-rotate-handle], [data-line-handle]',
         )
       ) {
         return;
       }
       publishSelection(EMPTY_SELECTION);
     },
-    [activeEditingTextId, publishSelection, textCreationActive],
+    [activeEditingTableId, activeEditingTextId, creationActive, publishSelection],
   );
 
   return (
@@ -444,6 +552,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
           renderVideo={renderVideo}
           renderText={renderText}
           renderShapeLabel={renderActiveShapeLabel}
+          renderTable={renderTable}
           videoInteractive={videoInteractive}
           elementIdPrefix={elementIdPrefix}
           dragOffsets={renderDragOffsets}
@@ -480,7 +589,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
               style={{
                 position: 'absolute',
                 inset: 0,
-                pointerEvents: activeEditingTextId || textCreationActive ? 'none' : 'auto',
+                pointerEvents: activeEditingTextId || activeEditingTableId || creationActive ? 'none' : 'auto',
                 touchAction: editingTouchAction,
               }}
             />
@@ -489,7 +598,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
             elements={elements}
             sourceElements={slide.elements}
             selection={activeSelection}
-            interactive={interactive && !textCreationActive}
+            interactive={interactive && !creationActive}
             movable={Boolean(onElementsChange)}
             viewportLeft={viewportStyles.left}
             viewportTop={viewportStyles.top}
@@ -497,7 +606,9 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
             editingTouchAction={editingTouchAction}
             onElementPointerDown={handleElementPointerDown}
             onElementClick={textEditingEnabled ? handleTextClick : undefined}
-            onElementDoubleClick={textEditingEnabled ? handleShapeDoubleClick : undefined}
+            onElementDoubleClick={
+              textEditingEnabled || tableEditingEnabled ? handleElementDoubleClick : undefined
+            }
             onSelectionChange={publishSelection}
           />
 
@@ -515,7 +626,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
               channel, so a select-only mount (only `onSelectionChange`) would
               otherwise show draggable handles that can never commit. In that
               case show NO handles — only the stroke highlight (feedback). */}
-          {!textCreationActive &&
+          {!creationActive &&
             Boolean(onElementsChange) &&
             elements.map((el) => {
               if (el.type !== 'line') return null;
@@ -546,7 +657,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
               SINGLE-element selection: these gestures transform one element,
               and per-element handles on a multi-selection would misread as
               group scaling (which is a later slice). */}
-          {!textCreationActive &&
+          {!creationActive &&
             Boolean(onElementsChange) &&
             activeSelection.elementIds.length === 1 &&
             elements.map((el) => {
@@ -578,7 +689,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
               );
             })}
 
-          {!textCreationActive &&
+          {!creationActive &&
             Boolean(onElementsChange) &&
             activeSelection.elementIds.length === 1 &&
             elements.map((el) => {
@@ -598,7 +709,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
           {/* Live marquee rectangle, drawn while a blank-canvas rubber-band
               select is in flight. Purely visual (`pointerEvents: none`); it
               shares the element container's origin via `viewportStyles`. */}
-          {!textCreationActive && marqueeRect && (
+          {!creationActive && marqueeRect && (
             <MarqueeBox
               rect={marqueeRect}
               viewportStyles={viewportStyles}
@@ -634,6 +745,43 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                     pointerEvents: 'none',
                   }}
                 />
+              )}
+            </div>
+          )}
+
+          {lineCreationActive && (
+            <div
+              data-line-create-surface=""
+              onPointerDown={onLineCreatePointerDown}
+              onContextMenu={onLineCreateContextMenu}
+              style={{
+                position: 'absolute',
+                left: `${viewportStyles.left}px`,
+                top: `${viewportStyles.top}px`,
+                width: `${viewportStyles.width * canvasScale}px`,
+                height: `${viewportStyles.height * canvasScale}px`,
+                cursor: 'crosshair',
+                pointerEvents: 'auto',
+                touchAction: 'none',
+              }}
+            >
+              {lineCreatePreview && (
+                <svg
+                  data-line-create-preview=""
+                  width="100%"
+                  height="100%"
+                  style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }}
+                >
+                  <line
+                    x1={lineCreatePreview.start[0] * canvasScale}
+                    y1={lineCreatePreview.start[1] * canvasScale}
+                    x2={lineCreatePreview.end[0] * canvasScale}
+                    y2={lineCreatePreview.end[1] * canvasScale}
+                    stroke="#333333"
+                    strokeWidth="2"
+                    strokeDasharray="6 4"
+                  />
+                </svg>
               )}
             </div>
           )}

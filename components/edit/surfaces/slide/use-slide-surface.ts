@@ -1,13 +1,17 @@
 'use client';
 
 import { produce } from 'immer';
-import { Image as ImageIcon, PaintBucket, Type } from 'lucide-react';
+import { Image as ImageIcon, PaintBucket, Table2, Type } from 'lucide-react';
 import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
 import type { InsertPaletteItem, SurfaceState } from '@/lib/edit/scene-editor-surface';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createElementId } from '@/lib/edit/element-id';
-import { createDefaultImageElement, createDefaultSlide } from '@/lib/edit/slide-edit-elements';
+import {
+  createDefaultImageElement,
+  createDefaultSlide,
+  createDefaultTableElement,
+} from '@/lib/edit/slide-edit-elements';
 import { defaultRichTextAttrs } from '@/lib/prosemirror/utils';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
@@ -17,13 +21,15 @@ import { ImagePicker } from './ImagePicker';
 import { BackgroundControl } from './BackgroundControl';
 import { useSlideEditSession } from './slide-edit-session';
 import { resolveEditingElementId, resolveSelectedElement } from './editing-state';
+import { isEditorRendererEnabled } from '@/lib/config/feature-flags';
+import { TableInsertPicker } from './TableInsertPicker';
 
 export interface SlideSelection {
   readonly activeElementIds: readonly string[];
 }
 
 export function buildInsertItems(
-  t: (k: string) => string,
+  t: (k: string, options?: Record<string, unknown>) => string,
   // The currently-armed creating type, or undefined when nothing is armed. The
   // text item toggles `creatingElement` (no auto-insert): the active canvas
   // then captures the next click/drag and creates a text box at that rect.
@@ -33,7 +39,7 @@ export function buildInsertItems(
     const cs = useCanvasStore.getState();
     cs.setCreatingElement(creatingType === 'text' ? null : { type: 'text' });
   };
-  return [
+  const items: InsertPaletteItem[] = [
     {
       id: 'insert-text',
       label: t('edit.insert.textBox'),
@@ -54,6 +60,21 @@ export function buildInsertItems(
         }),
     },
     {
+      id: 'insert-table',
+      label: t('edit.insert.table'),
+      tooltip: t('edit.insert.table'),
+      icon: React.createElement(Table2, { className: 'h-4 w-4' }),
+      onInvoke: () => {}, // popover-only: see insert-image above
+      popoverContent: () =>
+        React.createElement(TableInsertPicker, {
+          onPick: insertTableElement,
+          getLabel: (rows: number, columns: number) =>
+            t('edit.insert.tableDimensions', { rows, columns }),
+        }),
+    },
+  ];
+  items.push(
+    {
       // Slide-level (not element-anchored): set the slide background. Rides the
       // always-visible insert strip so it stays reachable with nothing selected.
       id: 'slide-background',
@@ -63,7 +84,8 @@ export function buildInsertItems(
       onInvoke: () => {}, // popover-only: see insert-image above
       popoverContent: () => React.createElement(BackgroundControl),
     },
-  ];
+  );
+  return items;
 }
 
 // Default insertion size for an image whose natural dimensions are unknown
@@ -113,6 +135,14 @@ export function insertImageElement(src: string): void {
   };
   img.onerror = () => dispatch();
   img.src = src;
+}
+
+/** Insert an empty table and select it through the normal slide edit session. */
+export function insertTableElement(rows: number, columns: number): void {
+  const id = createElementId('table');
+  const element = createDefaultTableElement(id, rows, columns);
+  useSlideEditSession.getState().applyOp({ type: 'element.add', element });
+  useCanvasStore.getState().setActiveElementIdList([id]);
 }
 
 /** Delete a slide element and clear the canvas selection. */
@@ -187,6 +217,7 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
   const history = useSlideEditSession((s) => s.history);
   const activeElementIds = useCanvasStore.use.activeElementIdList();
   const creatingElement = useCanvasStore.use.creatingElement();
+  const rendererEditorEnabled = isEditorRendererEnabled();
   const content = useResolvedSlideContent();
 
   return {
@@ -199,7 +230,7 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
       undo: () => useSlideEditSession.getState().undo(),
       redo: () => useSlideEditSession.getState().redo(),
     },
-    insertItems: buildInsertItems(t, creatingElement?.type),
+    insertItems: rendererEditorEnabled ? [] : buildInsertItems(t, creatingElement?.type),
     // Every element type carries its own actions on a selection-anchored bar
     // (AnchoredTextBar / AnchoredElementBar) — the surface contributes no
     // top-center FloatingToolbar actions.

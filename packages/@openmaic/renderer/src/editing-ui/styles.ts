@@ -12,7 +12,8 @@ export const EDITING_UI_STYLES = `
   box-sizing: inherit;
 }
 
-.maic-editing-ui-text-toolbar {
+.maic-editing-ui-text-toolbar,
+.maic-editing-ui-line-toolbar {
   align-items: center;
   background: var(--maic-editing-ui-bg, #ffffff);
   border: 1px solid var(--maic-editing-ui-border, #e4e4e7);
@@ -30,6 +31,83 @@ export const EDITING_UI_STYLES = `
   position: relative;
   width: max-content;
   z-index: var(--maic-editing-ui-z-index, 80);
+}
+
+.maic-editing-ui-insert-toolbar {
+  left: 12px;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: var(--maic-editing-ui-z-index, 80);
+}
+
+.maic-editing-ui-insert-buttons {
+  align-items: center;
+  background: var(--maic-editing-ui-bg, #ffffff);
+  border: 1px solid var(--maic-editing-ui-border, #e4e4e7);
+  border-radius: var(--maic-editing-ui-radius, 6px);
+  box-shadow: var(
+    --maic-editing-ui-shadow,
+    0 4px 6px -1px rgb(0 0 0 / 10%), 0 2px 4px -2px rgb(0 0 0 / 10%)
+  );
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+}
+
+.maic-editing-ui-insert-button {
+  flex-basis: 32px;
+}
+
+.maic-editing-ui-insert-popover {
+  background: var(--maic-editing-ui-bg, #ffffff);
+  border: 1px solid var(--maic-editing-ui-border, #e4e4e7);
+  border-radius: var(--maic-editing-ui-radius, 6px);
+  box-shadow: var(
+    --maic-editing-ui-shadow,
+    0 4px 6px -1px rgb(0 0 0 / 10%), 0 2px 4px -2px rgb(0 0 0 / 10%)
+  );
+  left: 44px;
+  min-width: 160px;
+  padding: 12px;
+  position: absolute;
+  top: 0;
+}
+
+.maic-editing-ui-table-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.maic-editing-ui-table-grid {
+  display: grid;
+  gap: 4px;
+  grid-template-columns: repeat(8, 18px);
+}
+
+.maic-editing-ui-table-grid-cell {
+  aspect-ratio: 1;
+  background: #ffffff;
+  border: 1px solid #d4d4d8;
+  border-radius: 2px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.maic-editing-ui-table-grid-cell:hover,
+.maic-editing-ui-table-grid-cell:focus-visible,
+.maic-editing-ui-table-grid-cell[data-active] {
+  background: var(--maic-editing-ui-active-bg, #ede9fe);
+  border-color: var(--maic-editing-ui-active-fg, #6d28d9);
+}
+
+.maic-editing-ui-table-dimensions {
+  color: #52525b;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
 }
 
 .maic-editing-ui-group {
@@ -100,6 +178,19 @@ export const EDITING_UI_STYLES = `
   max-width: 128px;
   min-width: 128px;
   padding: 0 6px;
+}
+
+.maic-editing-ui-line-select {
+  min-width: 92px;
+}
+
+.maic-editing-ui-line-width-select {
+  min-width: 60px;
+  text-align: center;
+}
+
+.maic-editing-ui-line-marker-select {
+  min-width: 72px;
 }
 
 .maic-editing-ui-font-size-stepper {

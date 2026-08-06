@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import type { EditableSlideCanvasProps } from '../editing/types';
+import type { EditableSlideCanvasProps, EditIntent } from '../editing/types';
+import type { PPTLineElement } from '@openmaic/dsl';
 import type { TextEditCommand, TextFormatState } from '../editing/text/types';
 
 export type TextToolbarLocale = 'zh-CN' | 'en-US';
@@ -58,6 +59,70 @@ export interface TextFormatToolbarProps extends TextToolbarOptions {
   readonly onDelete?: () => void;
 }
 
+export interface LineToolbarLabels {
+  toolbar: string;
+  kind: string;
+  color: string;
+  width: string;
+  style: string;
+  start: string;
+  end: string;
+  straight: string;
+  broken: string;
+  broken2: string;
+  curve: string;
+  cubic: string;
+  solid: string;
+  dashed: string;
+  dotted: string;
+  none: string;
+  arrow: string;
+  dot: string;
+  bringToFront: string;
+  sendToBack: string;
+  delete: string;
+}
+
+export interface LineToolbarOptions {
+  readonly locale?: TextToolbarLocale;
+  readonly labels?: Partial<LineToolbarLabels>;
+  readonly placement?: TextToolbarPlacement;
+  readonly className?: string;
+}
+
+export interface LineFormatToolbarProps extends LineToolbarOptions {
+  readonly element: PPTLineElement;
+  readonly onChange: (intents: EditIntent[]) => void;
+  readonly onBringToFront?: () => void;
+  readonly onSendToBack?: () => void;
+  readonly onDelete?: () => void;
+}
+
+export interface InsertToolbarPopoverContext {
+  readonly close: () => void;
+}
+
+export interface InsertToolbarItem {
+  readonly id: string;
+  readonly label: string;
+  readonly icon: ReactNode;
+  readonly tooltip?: string;
+  readonly active?: boolean;
+  readonly disabled?: boolean;
+  readonly onInvoke?: () => void;
+  readonly renderPopover?: (context: InsertToolbarPopoverContext) => ReactNode;
+}
+
+export interface InsertToolbarOptions {
+  readonly items: readonly InsertToolbarItem[];
+  readonly label?: string;
+  readonly className?: string;
+}
+
+export type InsertToolbarProps = InsertToolbarOptions;
+
 export interface EditableSlideCanvasWithUIProps extends EditableSlideCanvasProps {
   readonly textToolbar?: TextToolbarOptions | false;
+  readonly lineToolbar?: LineToolbarOptions | false;
+  readonly insertToolbar?: InsertToolbarOptions | false;
 }

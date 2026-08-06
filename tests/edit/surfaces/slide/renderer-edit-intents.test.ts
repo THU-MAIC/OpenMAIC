@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AlignCommand, EditIntent, ReorderCommand } from '@openmaic/renderer/editing';
-import type { PPTElement, PPTShapeElement, PPTTextElement } from '@openmaic/dsl';
+import type { PPTElement, PPTShapeElement, PPTTableElement, PPTTextElement } from '@openmaic/dsl';
 import { applyRendererEditIntents } from '@/components/edit/surfaces/slide/renderer-edit-intents';
 import type { SlideContent } from '@/lib/types/stage';
 
@@ -43,6 +43,32 @@ function shapeElement(id: string, overrides: Partial<PPTShapeElement> = {}): PPT
   };
 }
 
+function tableElement(id: string, overrides: Partial<PPTTableElement> = {}): PPTTableElement {
+  return {
+    id,
+    type: 'table',
+    left: 100,
+    top: 100,
+    width: 200,
+    height: 120,
+    rotate: 0,
+    cellMinHeight: 40,
+    colWidths: [0.5, 0.5],
+    outline: { width: 1, color: '#111827', style: 'solid' },
+    data: [
+      [
+        { id: 'a', text: 'A', colspan: 1, rowspan: 1 },
+        { id: 'b', text: 'B', colspan: 1, rowspan: 1 },
+      ],
+      [
+        { id: 'c', text: 'C', colspan: 1, rowspan: 1 },
+        { id: 'd', text: 'D', colspan: 1, rowspan: 1 },
+      ],
+    ],
+    ...overrides,
+  };
+}
+
 function slideContent(
   elements: PPTElement[] = [textElement('a'), textElement('b'), textElement('c')],
 ): SlideContent {
@@ -65,6 +91,34 @@ function slideContent(
 }
 
 describe('applyRendererEditIntents', () => {
+  it('persists a renderer table resize including its cellMinHeight patch', () => {
+    const original = slideContent([tableElement('table')]);
+
+    const next = applyRendererEditIntents(original, [
+      {
+        type: 'element.update',
+        id: 'table',
+        props: { left: 100, top: 100, width: 200, height: 160, cellMinHeight: 60 },
+      },
+    ]);
+
+    expect(next.canvas.elements[0]).toMatchObject({ height: 160, cellMinHeight: 60 });
+    expect(original.canvas.elements[0]).toMatchObject({ height: 120, cellMinHeight: 40 });
+  });
+
+  it('updates only the requested renderer table cell text', () => {
+    const original = slideContent([tableElement('table')]);
+
+    const next = applyRendererEditIntents(original, [
+      { type: 'table.updateCell', id: 'table', cellId: 'c', text: 'Edited<br>cell' },
+    ]);
+
+    const table = next.canvas.elements[0] as PPTTableElement;
+    expect(table.data[1][0].text).toBe('Edited<br>cell');
+    expect(table.data[0][0].text).toBe('A');
+    expect((original.canvas.elements[0] as PPTTableElement).data[1][0].text).toBe('C');
+  });
+
   it('applies single and mixed multi-element updates without mutating the source', () => {
     const original = slideContent();
 

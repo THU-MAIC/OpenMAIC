@@ -2,6 +2,7 @@ import type {
   ShapePathFormulasKeys,
   PPTImageElement,
   PPTShapeElement,
+  PPTTableElement,
   PPTTextElement,
   Slide,
 } from '@openmaic/dsl';
@@ -91,6 +92,41 @@ export function createDefaultImageElement(id: string, src: string): PPTImageElem
     rotate: 0,
     fixedRatio: true,
     src,
+  };
+}
+
+/** Create an empty table with equal columns for the slide insert palette. */
+export function createDefaultTableElement(
+  id: string,
+  requestedRows: number,
+  requestedColumns: number,
+): PPTTableElement {
+  const rows = Math.max(1, Math.floor(requestedRows));
+  const columns = Math.max(1, Math.floor(requestedColumns));
+
+  return {
+    id,
+    type: 'table',
+    left: 120,
+    top: 120,
+    width: 360,
+    height: Math.max(120, rows * 36),
+    rotate: 0,
+    colWidths: Array.from({ length: columns }, () => 1 / columns),
+    cellMinHeight: 36,
+    data: Array.from({ length: rows }, (_, rowIndex) =>
+      Array.from({ length: columns }, (_, columnIndex) => ({
+        id: `${id}-cell-${rowIndex}-${columnIndex}`,
+        colspan: 1,
+        rowspan: 1,
+        text: '',
+      })),
+    ),
+    outline: {
+      width: 2,
+      color: '#eeece1',
+      style: 'solid',
+    },
   };
 }
 

@@ -244,6 +244,7 @@ export interface ResizeResult {
     top: number;
     width: number;
     height: number;
+    cellMinHeight?: number;
     path?: string;
     viewBox?: PPTShapeElement['viewBox'];
   };
@@ -264,6 +265,35 @@ function normalizeShapeResizeProps(
     viewBox: [props.width, props.height],
     path: formula.formula(props.width, props.height, element.keypoints),
   };
+}
+
+function normalizeTableResizeProps(
+  element: PPTBoxElement,
+  props: ResizeResult['props'],
+): ResizeResult['props'] {
+  if (element.type !== 'table' || props.height === element.height) return props;
+
+  const rowCount = Math.max(1, Array.isArray(element.data) ? element.data.length : 0);
+  const originCellMinHeight = Number.isFinite(element.cellMinHeight) ? element.cellMinHeight : 40;
+
+  return {
+    ...props,
+    cellMinHeight: Math.max(
+      36,
+      originCellMinHeight + (props.height - element.height) / rowCount,
+    ),
+  };
+}
+
+function normalizeResizeProps(
+  element: PPTBoxElement,
+  props: ResizeResult['props'],
+  shapePathFormulas: ShapePathFormulaMap | undefined,
+): ResizeResult['props'] {
+  return normalizeTableResizeProps(
+    element,
+    normalizeShapeResizeProps(element, props, shapePathFormulas),
+  );
 }
 
 /**
@@ -403,7 +433,7 @@ export function computeResize(input: ResizeInput): ResizeResult {
     top -= currentPoint.top - basePoint.top;
 
     return {
-      props: normalizeShapeResizeProps(
+      props: normalizeResizeProps(
         element,
         { left, top, width, height },
         shapePathFormulas,
@@ -527,7 +557,7 @@ export function computeResize(input: ResizeInput): ResizeResult {
   }
 
   return {
-    props: normalizeShapeResizeProps(element, { left, top, width, height }, shapePathFormulas),
+    props: normalizeResizeProps(element, { left, top, width, height }, shapePathFormulas),
     guides,
   };
 }

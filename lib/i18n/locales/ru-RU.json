@@ -244,6 +244,9 @@
     },
     "insert": {
       "textBox": "Текстовое поле",
+      "line": "Линия",
+      "table": "Таблица",
+      "tableDimensions": "Таблица {{rows}} x {{columns}}",
       "dragToolbar": "Переместить инструменты вставки",
       "dragToolbarKeyboard": "Переместить инструменты: нажмите Enter или пробел, затем используйте стрелки",
       "image": "Изображение",
@@ -251,6 +254,9 @@
       "imageOr": "или вставьте URL изображения",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "Вставить"
+    },
+    "table": {
+      "doubleClickToEdit": "Дважды щелкните для редактирования"
     },
     "nav": {
       "addSlide": "Добавить слайд",

@@ -4,6 +4,7 @@ import type {
   PPTElement,
   PPTImageElement,
   PPTShapeElement,
+  PPTTableElement,
   PPTVideoElement,
 } from '@openmaic/dsl';
 import type {
@@ -45,7 +46,13 @@ export type EditIntent =
   | { type: 'element.reorder'; id: string; command: ReorderCommand }
   | { type: 'element.align'; ids: string[]; command: AlignCommand }
   | { type: 'element.removeProps'; id: string; props: string[] }
-  | { type: 'text.updateContent'; id: string; content: string; target: 'text' | 'shape' };
+  | { type: 'text.updateContent'; id: string; content: string; target: 'text' | 'shape' }
+  | { type: 'table.updateCell'; id: string; cellId: string; text: string };
+
+export interface TableCellChange {
+  readonly intent: Extract<EditIntent, { type: 'table.updateCell' }>;
+  readonly history: 'record' | 'neutral';
+}
 
 /**
  * Controlled selection. The host owns it; the canvas reports changes via
@@ -65,6 +72,12 @@ export interface TextCreateRect {
   readonly top: number;
   readonly width: number;
   readonly height: number;
+}
+
+/** Canvas-space endpoints emitted after an armed line-insertion drag. */
+export interface LineCreateGeometry {
+  readonly start: [number, number];
+  readonly end: [number, number];
 }
 
 /** Immutable empty-selection sentinel. Frozen so a shared reference can't be mutated. */
@@ -110,11 +123,21 @@ export interface EditableSlideCanvasProps {
   onTextFormatChange?: (elementId: string, state: TextFormatState) => void;
   onTextEditorChange?: (controller: TextEditorController | null) => void;
   onTextFocusChange?: (focused: boolean) => void;
+  onTableCellChange?: (change: TableCellChange) => void;
+  /** Host-localized affordance shown for a selected table before editing starts. */
+  tableEditMaskLabel?: string;
 
   /** Arms a crosshair canvas layer for a click/drag text-box insertion gesture. */
   creatingText?: boolean;
   /** Host-owned text creation: the renderer emits geometry while the host creates the DSL element. */
   onTextCreate?: (rect: TextCreateRect) => void;
+
+  /** Arms a crosshair canvas layer for a draw-to-insert Line gesture. */
+  creatingLine?: boolean;
+  /** Host-owned line creation: the renderer emits endpoints while the host creates the DSL element. */
+  onLineCreate?: (geometry: LineCreateGeometry) => void;
+  /** Cancels an armed line-insertion mode, for example through a context click. */
+  onLineCreateCancel?: () => void;
 
   /** Optional host-owned geometry formulas for editable Shape keypoints. */
   shapePathFormulas?: ShapePathFormulaMap;
@@ -126,6 +149,7 @@ export interface EditableSlideCanvasProps {
     defaultContent: ReactNode,
   ) => ReactNode;
   renderShapeLabel?: (element: PPTShapeElement, defaultContent: ReactNode) => ReactNode;
+  renderTable?: (element: PPTTableElement, defaultContent: ReactNode) => ReactNode;
   renderVideo?: (element: PPTVideoElement) => ReactNode;
   videoInteractive?: boolean;
 

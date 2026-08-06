@@ -7,6 +7,7 @@ import type {
   PPTElement,
   PPTImageElement,
   PPTShapeElement,
+  PPTTableElement,
   PPTTextElement,
   PPTVideoElement,
   Slide,
@@ -55,6 +56,8 @@ export interface SlideCanvasProps {
   renderText?: (element: PPTTextElement, defaultContent: ReactNode) => ReactNode;
   /** Replace the static label node inside a Shape element. */
   renderShapeLabel?: (element: PPTShapeElement, defaultContent: ReactNode) => ReactNode;
+  /** Replace the static content node inside a Table element. */
+  renderTable?: (element: PPTTableElement, defaultContent: ReactNode) => ReactNode;
   /** Enable pointer interaction for video controls or custom video UI. */
   videoInteractive?: boolean;
   /** Click handler invoked on any element. */
@@ -99,6 +102,7 @@ export function SlideCanvas(props: SlideCanvasProps) {
   const renderVideo = props.renderVideo ?? ctx?.renderVideo;
   const renderText = props.renderText;
   const renderShapeLabel = props.renderShapeLabel;
+  const renderTable = props.renderTable;
   const videoInteractive = props.videoInteractive ?? ctx?.videoInteractive;
   const onElementClick = props.onElementClick ?? ctx?.onElementClick;
   const elementIdPrefix = props.elementIdPrefix ?? 'slide-element-';
@@ -219,6 +223,7 @@ export function SlideCanvas(props: SlideCanvasProps) {
               renderVideo={renderVideo}
               renderText={renderText}
               renderShapeLabel={renderShapeLabel}
+              renderTable={renderTable}
               videoInteractive={videoInteractive}
               onElementClick={onElementClick}
               idPrefix={elementIdPrefix}

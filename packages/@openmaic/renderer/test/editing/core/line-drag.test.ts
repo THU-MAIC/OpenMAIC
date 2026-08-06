@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { PPTLineElement } from '@openmaic/dsl';
-import { computeLineDrag } from '../../../src/editing/core/line-drag';
+import { computeLineDrag, getLineSnapPoints } from '../../../src/editing/core/line-drag';
 
 const line = (o: Partial<PPTLineElement> = {}): PPTLineElement =>
   ({
@@ -132,6 +132,34 @@ describe('computeLineDrag', () => {
         [40, 15],
         [70, -20],
       ],
+    });
+  });
+
+  it('snaps an endpoint onto a sibling element anchor point', () => {
+    const snapPoints = getLineSnapPoints([
+      line({ id: 'l' }),
+      {
+        id: 'box',
+        type: 'shape',
+        left: 200,
+        top: 120,
+        width: 100,
+        height: 80,
+        rotate: 0,
+      },
+    ] as never, 'l');
+    const r = computeLineDrag({
+      element: line(),
+      handle: 'end',
+      deltaCanvas: { x: 45, y: 5 },
+      snapPoints,
+    });
+
+    expect(r.props).toMatchObject({
+      left: 100,
+      top: 100,
+      start: [0, 0],
+      end: [100, 60],
     });
   });
 });

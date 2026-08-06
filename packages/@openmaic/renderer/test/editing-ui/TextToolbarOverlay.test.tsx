@@ -2,7 +2,8 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TextFormatState } from '../../src/editing/text/types';
-import { computeToolbarPosition, TextToolbarOverlay } from '../../src/editing-ui';
+import { computeToolbarPosition, LineToolbarOverlay, TextToolbarOverlay } from '../../src/editing-ui';
+import type { PPTLineElement } from '@openmaic/dsl';
 
 const format: TextFormatState = {
   bold: false,
@@ -59,6 +60,29 @@ function addTextAnchor(prefix = 'canvas-element-', elementId = 'text-1') {
   document.body.appendChild(wrapper);
   return { text, wrapper };
 }
+
+function addLineAnchor(prefix = 'canvas-element-', elementId = 'line-1') {
+  const wrapper = document.createElement('div');
+  wrapper.id = prefix + elementId;
+  const line = document.createElement('div');
+  line.className = 'base-element-line';
+  wrapper.appendChild(line);
+  document.body.appendChild(wrapper);
+  return { line, wrapper };
+}
+
+const lineElement: PPTLineElement = {
+  id: 'line-1',
+  type: 'line',
+  left: 0,
+  top: 0,
+  width: 2,
+  start: [0, 0],
+  end: [120, 80],
+  style: 'solid',
+  color: '#333333',
+  points: ['', ''],
+};
 
 function renderOverlay() {
   return render(
@@ -184,5 +208,32 @@ describe('TextToolbarOverlay', () => {
     expect(windowRemove).toHaveBeenCalledWith('pointerup', expect.any(Function));
     expect(windowRemove).toHaveBeenCalledWith('pointercancel', expect.any(Function));
     expect(documentRemove).toHaveBeenCalledWith('scroll', expect.any(Function), true);
+  });
+});
+
+describe('LineToolbarOverlay', () => {
+  it('uses a line paint node as its toolbar anchor', async () => {
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    const { line } = addLineAnchor();
+    vi.spyOn(line, 'getBoundingClientRect').mockReturnValue(rect(200, 200, 120, 80));
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.hasAttribute('data-toolbar-overlay') ? rect(0, 0, 300, 48) : new DOMRect();
+    });
+
+    render(
+      <LineToolbarOverlay
+        element={lineElement}
+        elementIdPrefix="canvas-element-"
+        onChange={vi.fn()}
+      />,
+    );
+
+    const toolbar = await screen.findByRole('toolbar', { name: 'Line toolbar' });
+    expect((toolbar.parentElement as HTMLElement).style.visibility).toBe('visible');
+    expect((toolbar.parentElement as HTMLElement).style.left).toBe('110px');
   });
 });

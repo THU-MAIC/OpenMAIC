@@ -1,15 +1,22 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
-import type { PPTImageElement, PPTTextElement } from '@openmaic/dsl';
+import { createElement, useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import type { PPTImageElement, PPTLineElement, PPTTextElement } from '@openmaic/dsl';
 import type {
   EditIntent,
+  LineCreateGeometry,
   Selection,
   TextCreateRect,
   TextAutoSizeIntent,
   TextContentChange,
+  TableCellChange,
 } from '@openmaic/renderer/editing';
-import { EditableSlideCanvasWithUI } from '@openmaic/renderer/editing-ui';
+import {
+  EditableSlideCanvasWithUI,
+  TableInsertPicker,
+  type InsertToolbarOptions,
+} from '@openmaic/renderer/editing-ui';
+import { Image as ImageIcon, Minus, PaintBucket, Table2, Type } from 'lucide-react';
 import Canvas from '@/components/slide-renderer/Editor/Canvas';
 import { SpotlightOverlay } from '@/components/slide-renderer/Editor/SpotlightOverlay';
 import { LaserPointerOverlay } from '@/components/slide-renderer/Editor/LaserPointerOverlay';
@@ -25,11 +32,16 @@ import { useClipImage } from '@/components/slide-renderer/components/element/Ima
 import type { ImageClipedEmitData } from '@/lib/types/edit';
 import {
   useEditingTextElementId,
+  insertImageElement,
+  insertTableElement,
   useResolvedSlideContent,
   useSelectedNonTextElement,
   useSlideCanvasController,
   useSyncEditingElementId,
 } from './use-slide-surface';
+import { ImagePicker } from './ImagePicker';
+import { BackgroundControl } from './BackgroundControl';
+import { LinePresetPicker } from './LinePresetPicker';
 import { AnchoredTextBar } from './AnchoredTextBar';
 import { AnchoredElementBar } from './AnchoredElementBar';
 import { ElementPickLayer } from './ElementPickLayer';
@@ -42,6 +54,25 @@ import { EDITABLE_ELEMENT_ID_PREFIX } from './renderer-element-dom';
 import { createElementId } from '@/lib/edit/element-id';
 import { resolveEditingElementId } from './editing-state';
 import { commitRendererTextAutoSize, commitRendererTextChange } from './renderer-text-editing';
+import { commitRendererTableCellChange } from './renderer-table-editing';
+import type { LinePoolItem } from '@/configs/lines';
+
+const DEFAULT_LINE_PRESET: LinePoolItem = {
+  path: 'M 0 0 L 20 20',
+  style: 'solid',
+  points: ['', ''],
+};
+
+function linePresetControls(
+  preset: LinePoolItem,
+  midpoint: [number, number],
+): Partial<PPTLineElement> {
+  if (preset.isCubic) return { cubic: [midpoint, midpoint] };
+  if (preset.isCurve) return { curve: midpoint };
+  if (preset.isBroken2) return { broken2: midpoint };
+  if (preset.isBroken) return { broken: midpoint };
+  return {};
+}
 
 function RendererEditorImageContent({
   element,
@@ -103,6 +134,7 @@ function RendererEditorCanvas() {
         'text',
         'shape',
         'image',
+        'table',
       ]),
     [activeElementIds, content.canvas.elements, editingElementId],
   );
@@ -142,6 +174,10 @@ function RendererEditorCanvas() {
     (intent: TextAutoSizeIntent) => commitRendererTextAutoSize(content, intent),
     [content],
   );
+  const handleTableCellChange = useCallback(
+    (change: TableCellChange) => commitRendererTableCellChange(content, change),
+    [content],
+  );
   const handleTextFocusChange = useCallback(
     (focused: boolean) => setDisableHotkeysState(focused),
     [setDisableHotkeysState],
@@ -166,6 +202,122 @@ function RendererEditorCanvas() {
       setEditingElementId(id);
     },
     [handleElementsChange, setActiveElementIdList, setCreatingElement, setEditingElementId],
+  );
+
+  const handleLineCreate = useCallback(
+    (geometry: LineCreateGeometry) => {
+      const id = createElementId('line');
+      const [startX, startY] = geometry.start;
+      const [endX, endY] = geometry.end;
+      const left = Math.min(startX, endX);
+      const top = Math.min(startY, endY);
+      const preset =
+        creatingElement?.type === 'line'
+          ? creatingElement.data
+          : DEFAULT_LINE_PRESET;
+      const start: [number, number] = [startX - left, startY - top];
+      const end: [number, number] = [endX - left, endY - top];
+      const midpoint: [number, number] = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+      const element: PPTLineElement = {
+        id,
+        type: 'line',
+        left,
+        top,
+        width: 2,
+        start,
+        end,
+        style: preset.style,
+        color: '#333333',
+        points: preset.points,
+        ...linePresetControls(preset, midpoint),
+      };
+      handleElementsChange([{ type: 'element.add', element }]);
+      setCreatingElement(null);
+      setActiveElementIdList([id]);
+      setEditingElementId('');
+    },
+    [
+      creatingElement,
+      handleElementsChange,
+      setActiveElementIdList,
+      setCreatingElement,
+      setEditingElementId,
+    ],
+  );
+  const cancelLineCreate = useCallback(() => setCreatingElement(null), [setCreatingElement]);
+
+  const insertToolbar = useMemo<InsertToolbarOptions>(
+    () => {
+      const armText = () =>
+        setCreatingElement(creatingElement?.type === 'text' ? null : { type: 'text' });
+      const armLine = (preset: LinePoolItem) =>
+        setCreatingElement(
+          creatingElement?.type === 'line' ? null : { type: 'line', data: preset },
+        );
+
+      return {
+        items: [
+          {
+            id: 'insert-text',
+            label: t('edit.insert.textBox'),
+            tooltip: t('edit.insert.textBox'),
+            icon: createElement(Type, { 'aria-hidden': true }),
+            active: creatingElement?.type === 'text',
+            onInvoke: armText,
+          },
+          {
+            id: 'insert-image',
+            label: t('edit.insert.image'),
+            tooltip: t('edit.insert.image'),
+            icon: createElement(ImageIcon, { 'aria-hidden': true }),
+            renderPopover: ({ close }) =>
+              createElement(ImagePicker, {
+                onPick: (src: string) => {
+                  insertImageElement(src);
+                  close();
+                },
+              }),
+          },
+          {
+            id: 'insert-table',
+            label: t('edit.insert.table'),
+            tooltip: t('edit.insert.table'),
+            icon: createElement(Table2, { 'aria-hidden': true }),
+            renderPopover: ({ close }) =>
+              createElement(TableInsertPicker, {
+                getLabel: (rows: number, columns: number) =>
+                  t('edit.insert.tableDimensions', { rows, columns }),
+                onPick: (rows: number, columns: number) => {
+                  insertTableElement(rows, columns);
+                  close();
+                },
+              }),
+          },
+          {
+            id: 'insert-line',
+            label: t('edit.insert.line'),
+            tooltip: t('edit.insert.line'),
+            icon: createElement(Minus, { 'aria-hidden': true }),
+            active: creatingElement?.type === 'line',
+            renderPopover: ({ close }) =>
+              createElement(LinePresetPicker, {
+                onPick: (preset: LinePoolItem) => {
+                  armLine(preset);
+                  close();
+                },
+              }),
+          },
+          {
+            id: 'slide-background',
+            label: t('edit.background.label'),
+            tooltip: t('edit.background.label'),
+            icon: createElement(PaintBucket, { 'aria-hidden': true }),
+            renderPopover: () => createElement(BackgroundControl),
+          },
+        ],
+      };
+    },
+    [creatingElement?.type, setCreatingElement, t],
   );
 
   const handleImageClip = useCallback(
@@ -260,14 +412,21 @@ function RendererEditorCanvas() {
         onTextContentChange={handleTextContentChange}
         onTextAutoSize={handleTextAutoSize}
         onTextFocusChange={handleTextFocusChange}
+        onTableCellChange={handleTableCellChange}
+        tableEditMaskLabel={t('edit.table.doubleClickToEdit')}
         creatingText={creatingElement?.type === 'text'}
         onTextCreate={handleTextCreate}
+        creatingLine={creatingElement?.type === 'line'}
+        onLineCreate={handleLineCreate}
+        onLineCreateCancel={cancelLineCreate}
         renderImage={renderEditorImage}
         shapePathFormulas={SHAPE_PATH_FORMULAS}
         textToolbar={{
           locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US',
           fonts: toolbarFonts,
         }}
+        lineToolbar={{ locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US' }}
+        insertToolbar={insertToolbar}
       />
     </RendererCanvasContextMenu>
   );
@@ -329,7 +488,9 @@ export function SlideCanvas() {
         <LaserPointerOverlay domIdPrefix={EDITABLE_ELEMENT_ID_PREFIX} />
       </SceneProvider>
       {!useRendererEditor && <AnchoredTextBar editingElementId={editingElementId} />}
-      <AnchoredElementBar element={nonTextElement} />
+      <AnchoredElementBar
+        element={useRendererEditor && nonTextElement?.type === 'line' ? null : nonTextElement}
+      />
       {/* Canvas-side element picker for the timeline's element-bound cues. */}
       <ElementPickLayer />
     </div>

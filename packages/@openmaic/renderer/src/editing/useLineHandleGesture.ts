@@ -3,7 +3,11 @@
 import { useState, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import type { PPTLineElement } from '@openmaic/dsl';
 
-import { computeLineDrag, type LineDragResult } from './core/line-drag';
+import {
+  computeLineDrag,
+  type LineDragResult,
+  type LineSnapPoint,
+} from './core/line-drag';
 import type { EditIntent, LineHandle } from './types';
 
 /**
@@ -16,6 +20,8 @@ const DRAG_THRESHOLD_PX = 2;
 export interface UseLineHandleGestureArgs {
   /** Canvas → screen scale; the inverse converts the pointer delta to canvas units. */
   scale: number;
+  /** Legacy-compatible sibling anchors for endpoint adsorption. */
+  snapPoints?: readonly LineSnapPoint[];
   onElementsChange?: (intents: EditIntent[]) => void;
 }
 
@@ -47,7 +53,7 @@ export interface UseLineHandleGestureResult {
  * gesture glue: no store, no `@/` imports.
  */
 export function useLineHandleGesture(args: UseLineHandleGestureArgs): UseLineHandleGestureResult {
-  const { scale, onElementsChange } = args;
+  const { scale, snapPoints, onElementsChange } = args;
 
   const [lineDrag, setLineDrag] = useState<LineHandleDrag | null>(null);
 
@@ -100,6 +106,7 @@ export function useLineHandleGesture(args: UseLineHandleGestureArgs): UseLineHan
           x: (clientX - startX) / effectiveScale,
           y: (clientY - startY) / effectiveScale,
         },
+        snapPoints,
       });
 
     const handleMove = (ev: PointerEvent) => {

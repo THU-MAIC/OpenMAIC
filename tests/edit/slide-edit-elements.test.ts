@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   createDefaultImageElement,
   createDefaultShapeElement,
+  createDefaultTableElement,
   createDefaultTextElement,
   htmlToPlainText,
   plainTextToParagraphHtml,
@@ -64,6 +65,33 @@ describe('slide edit element factories', () => {
       width: 360,
       height: 220,
     });
+  });
+
+  test('creates a valid empty table for the requested row and column count', () => {
+    const element = createDefaultTableElement('table-1', 2, 3);
+
+    expect(element).toMatchObject({
+      id: 'table-1',
+      type: 'table',
+      left: 120,
+      top: 120,
+      width: 360,
+      height: 120,
+      cellMinHeight: 36,
+      colWidths: [1 / 3, 1 / 3, 1 / 3],
+      outline: { width: 2, style: 'solid', color: '#eeece1' },
+    });
+    expect(element.data).toHaveLength(2);
+    expect(element.data.flat()).toHaveLength(6);
+    expect(element.data.flat().map((cell) => cell.id)).toEqual([
+      'table-1-cell-0-0',
+      'table-1-cell-0-1',
+      'table-1-cell-0-2',
+      'table-1-cell-1-0',
+      'table-1-cell-1-1',
+      'table-1-cell-1-2',
+    ]);
+    expect(element.data.flat().every((cell) => cell.text === '')).toBe(true);
   });
 
   test('converts plain text to escaped paragraph html', () => {

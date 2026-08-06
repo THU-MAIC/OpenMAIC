@@ -1,4 +1,4 @@
-import type { PPTLineElement } from '@openmaic/dsl';
+import type { PPTElement, PPTLineElement } from '@openmaic/dsl';
 import type { LineHandle } from '../types';
 
 /**
@@ -21,6 +21,13 @@ export interface LineDragInput {
   element: PPTLineElement;
   handle: LineHandle;
   deltaCanvas: { x: number; y: number };
+  /** Legacy-compatible sibling anchors an endpoint can adsorb to. */
+  snapPoints?: readonly LineSnapPoint[];
+}
+
+export interface LineSnapPoint {
+  readonly x: number;
+  readonly y: number;
 }
 
 export interface LineDragResult {
@@ -32,8 +39,48 @@ export interface LineDragResult {
   } & Partial<Pick<PPTLineElement, 'broken' | 'broken2' | 'curve' | 'cubic'>>;
 }
 
+/**
+ * The old editor exposes each unrotated non-line element's corners and edge
+ * midpoints as endpoint adsorption candidates. Keep the same order so the
+ * first matching target wins consistently.
+ */
+export function getLineSnapPoints(elements: readonly PPTElement[], excludeId?: string): LineSnapPoint[] {
+  const points: LineSnapPoint[] = [];
+  for (const element of elements) {
+    if (element.id === excludeId || element.type === 'line' || element.rotate) continue;
+    const right = element.left + element.width;
+    const bottom = element.top + element.height;
+    const centerX = element.left + element.width / 2;
+    const centerY = element.top + element.height / 2;
+    points.push(
+      { x: centerX, y: element.top },
+      { x: centerX, y: bottom },
+      { x: element.left, y: centerY },
+      { x: right, y: centerY },
+      { x: element.left, y: element.top },
+      { x: right, y: element.top },
+      { x: element.left, y: bottom },
+      { x: right, y: bottom },
+    );
+  }
+  return points;
+}
+
+function snapEndpointToSibling(
+  x: number,
+  y: number,
+  points: readonly LineSnapPoint[] | undefined,
+): LineSnapPoint | null {
+  if (!points) return null;
+  return (
+    points.find(
+      (point) => Math.abs(point.x - x) < SNAP_RANGE && Math.abs(point.y - y) < SNAP_RANGE,
+    ) ?? null
+  );
+}
+
 export function computeLineDrag(input: LineDragInput): LineDragResult {
-  const { element, handle, deltaCanvas } = input;
+  const { element, handle, deltaCanvas, snapPoints } = input;
   const { left, top } = element;
   const dx = deltaCanvas.x;
   const dy = deltaCanvas.y;
@@ -57,19 +104,28 @@ export function computeLineDrag(input: LineDragInput): LineDragResult {
   let c2X = left + c2[0];
   let c2Y = top + c2[1];
 
-  // Apply the delta to the dragged handle in absolute space, with axis snapping.
-  // NOTE: external-element adsorption (snapping a handle onto sibling anchor
-  // points) is deferred — out of scope for this core.
+  // Apply the delta to the dragged handle in absolute space, with axis and
+  // legacy-compatible sibling-anchor snapping.
   if (handle === 'start') {
     startX += dx;
     startY += dy;
     if (Math.abs(startX - endX) < SNAP_RANGE) startX = endX;
     if (Math.abs(startY - endY) < SNAP_RANGE) startY = endY;
+    const snap = snapEndpointToSibling(startX, startY, snapPoints);
+    if (snap) {
+      startX = snap.x;
+      startY = snap.y;
+    }
   } else if (handle === 'end') {
     endX += dx;
     endY += dy;
     if (Math.abs(startX - endX) < SNAP_RANGE) endX = startX;
     if (Math.abs(startY - endY) < SNAP_RANGE) endY = startY;
+    const snap = snapEndpointToSibling(endX, endY, snapPoints);
+    if (snap) {
+      endX = snap.x;
+      endY = snap.y;
+    }
   } else if (handle === 'ctrl') {
     midX += dx;
     midY += dy;
