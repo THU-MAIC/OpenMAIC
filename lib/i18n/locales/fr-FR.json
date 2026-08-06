@@ -244,13 +244,65 @@
     },
     "insert": {
       "textBox": "Zone de texte",
+      "line": "Ligne",
+      "linePresets": {
+        "straight": "Ligne droite",
+        "dashed": "Ligne en pointillés",
+        "arrow": "Ligne avec flèche",
+        "dashedArrow": "Ligne en pointillés avec flèche",
+        "dottedEnd": "Ligne avec point final",
+        "broken": "Ligne brisée",
+        "doubleBroken": "Ligne à double coude",
+        "curve": "Courbe",
+        "cubic": "Courbe cubique"
+      },
+      "table": "Tableau",
+      "formula": "Formule",
+      "chart": "Graphique",
+      "chartBar": "Histogramme",
+      "chartLine": "Graphique linéaire",
+      "chartPie": "Diagramme circulaire",
+      "tableDimensions": "Tableau {{rows}} x {{columns}}",
       "dragToolbar": "Déplacer les outils d’insertion",
       "dragToolbarKeyboard": "Déplacer les outils d’insertion : appuyez sur Entrée ou Espace, puis utilisez les flèches",
       "image": "Image",
       "imageDrop": "Déposez une image ou cliquez pour choisir un fichier",
       "imageOr": "ou collez l’URL d’une image",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "Insérer"
+      "imageInsert": "Insérer",
+      "video": "Vidéo",
+      "videoDrop": "Déposez une vidéo ou cliquez pour choisir un fichier",
+      "videoOr": "ou collez l’URL d’une vidéo",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "Insérer",
+      "audio": "Audio",
+      "audioDrop": "Déposez un fichier audio ou cliquez pour choisir un fichier",
+      "audioOr": "ou collez l’URL d’un fichier audio",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "Insérer"
+    },
+    "latex": {
+      "toolbar": "Barre d’outils de formule",
+      "editFormula": "Modifier la formule",
+      "dialog": "Éditeur de formules",
+      "source": "Source LaTeX",
+      "preview": "Aperçu",
+      "symbols": "Symboles",
+      "presets": "Préréglages",
+      "invalidSource": "La source LaTeX est invalide."
+    },
+    "video": {
+      "toolbar": "Barre d’outils vidéo",
+      "poster": "Définir l’affiche"
+    },
+    "audio": {
+      "toolbar": "Barre d’outils audio",
+      "preview": "Préécouter l’audio",
+      "pause": "Suspendre l’aperçu",
+      "loop": "Lire en boucle"
+    },
+    "table": {
+      "doubleClickToEdit": "Double-cliquez pour modifier"
     },
     "nav": {
       "addSlide": "Ajouter une diapositive",
@@ -275,7 +327,25 @@
     "image": {
       "replace": "Remplacer l’image",
       "flipH": "Retourner horizontalement",
-      "flipV": "Retourner verticalement"
+      "flipV": "Retourner verticalement",
+      "crop": "Rogner l’image"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "Alignement horizontal",
+      "verticalAlignment": "Alignement vertical",
+      "selectAll": "Tout sélectionner",
+      "copy": "Copier",
+      "cut": "Couper",
+      "paste": "Coller",
+      "unlock": "Déverrouiller",
+      "lock": "Verrouiller",
+      "group": "Grouper",
+      "ungroup": "Dégrouper",
+      "bringForward": "Avancer",
+      "sendBackward": "Reculer",
+      "alignTop": "Aligner en haut",
+      "alignMiddle": "Aligner au milieu",
+      "alignBottom": "Aligner en bas"
     },
     "background": {
       "label": "Arrière-plan",
