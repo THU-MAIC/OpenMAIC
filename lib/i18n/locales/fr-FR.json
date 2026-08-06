@@ -1636,6 +1636,7 @@
     "clearCacheButton": "Supprimer définitivement toutes les données",
     "clearCacheSuccess": "Cache vidé, la page va se recharger dans un instant",
     "clearCacheFailed": "Échec du vidage du cache, veuillez réessayer",
+    "clearCacheBlockedByOtherTabs": "Fermez les autres onglets de l'application, puis réessayez.",
     "persistUnavailable": "Vos modifications ne sont pas enregistrées car l’application n’accède pas à ses données stockées. Si un rechargement ne suffit pas, videz le cache local dans les paramètres.",
     "persistChangesLost": "Le stockage fonctionne à nouveau, mais les modifications faites pendant l’indisponibilité n’ont pas pu être enregistrées et ont été remplacées par la dernière version sauvegardée.",
     "webSearchSettings": "Recherche web",
