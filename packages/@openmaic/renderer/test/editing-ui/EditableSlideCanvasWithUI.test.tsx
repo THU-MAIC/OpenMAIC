@@ -66,7 +66,8 @@ vi.mock('../../src/editing/EditableSlideCanvas', async () => {
               element.type === 'table' ||
               element.type === 'line' ||
               element.type === 'latex' ||
-              element.type === 'video',
+              element.type === 'video' ||
+              element.type === 'audio',
           )
           .map((element) =>
             React.createElement(
@@ -84,7 +85,9 @@ vi.mock('../../src/editing/EditableSlideCanvas', async () => {
                           ? 'base-element-line'
                           : element.type === 'latex'
                             ? 'base-element-latex'
-                            : 'base-element-video',
+                            : element.type === 'video'
+                              ? 'base-element-video'
+                              : 'base-element-audio',
                   onClick:
                     element.type === 'text'
                       ? () =>
@@ -181,6 +184,21 @@ const videoElement = {
   src: 'video.mp4',
   poster: 'cover.png',
   autoplay: false,
+} as const;
+
+const audioElement = {
+  id: 'audio-1',
+  type: 'audio',
+  left: 100,
+  top: 100,
+  width: 240,
+  height: 64,
+  rotate: 0,
+  fixedRatio: true,
+  color: '#7c3aed',
+  loop: false,
+  autoplay: false,
+  src: 'lesson.mp3',
 } as const;
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
@@ -285,7 +303,9 @@ beforeEach(() => {
     if (this.classList.contains('base-element-line')) return rect(100, 200, 120, 80);
     if (this.classList.contains('base-element-latex')) return rect(100, 100, 180, 60);
     if (this.classList.contains('base-element-video')) return rect(100, 100, 320, 180);
+    if (this.classList.contains('base-element-audio')) return rect(100, 100, 240, 64);
     if (this.classList.contains('maic-editing-ui-video-toolbar')) return rect(0, 0, 192, 40);
+    if (this.classList.contains('maic-editing-ui-audio-toolbar')) return rect(0, 0, 224, 40);
     return new DOMRect();
   });
 });
@@ -343,14 +363,16 @@ describe('EditableSlideCanvasWithUI', () => {
     expect(onInsert).toHaveBeenCalledTimes(1);
   });
 
-  it('reserves a left or top rail so the insert toolbar does not cover the canvas', () => {
+  it('defaults to a top rail and supports an explicit left rail without covering the canvas', () => {
     const { rerender } = renderControlled({
       insertToolbar: { label: 'Insert', items: [] },
     });
 
-    expect(canvasMock.latestProps?.style).toMatchObject({
-      marginLeft: '48px',
-      width: 'calc(100% - 48px)',
+    expect(screen.getByTestId('editable-slide-canvas').parentElement?.style).toMatchObject({
+      bottom: '0px',
+      left: '0px',
+      right: '0px',
+      top: '48px',
     });
 
     rerender(
@@ -359,13 +381,15 @@ describe('EditableSlideCanvasWithUI', () => {
         scale={1}
         textToolbar={{ locale: 'zh-CN', labels: { toolbar: '文本格式' } }}
         onTextContentChange={vi.fn()}
-        insertToolbar={{ label: 'Insert', items: [], placement: 'top' }}
+        insertToolbar={{ label: 'Insert', items: [], placement: 'left' }}
       />,
     );
 
-    expect(canvasMock.latestProps?.style).toMatchObject({
-      height: 'calc(100% - 48px)',
-      marginTop: '48px',
+    expect(screen.getByTestId('editable-slide-canvas').parentElement?.style).toMatchObject({
+      bottom: '0px',
+      left: '48px',
+      right: '0px',
+      top: '0px',
     });
   });
 
@@ -409,6 +433,35 @@ describe('EditableSlideCanvasWithUI', () => {
     expect(onInsert).toHaveBeenCalledWith({
       src: 'https://cdn.example.com/lesson.mp4?version=2',
       ext: 'mp4',
+    });
+  });
+
+  it('adds the renderer-owned audio picker to the insert toolbar', () => {
+    const onInsert = vi.fn();
+
+    renderControlled({
+      insertToolbar: { label: 'Insert', items: [] },
+      audioInsert: {
+        labels: {
+          insertAudio: 'Insert audio',
+          audioDrop: 'Drop audio',
+          audioOr: 'or URL',
+          audioUrlPlaceholder: 'Audio URL',
+          audioInsert: 'Insert',
+        },
+        onInsert,
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert audio' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Audio URL' }), {
+      target: { value: 'https://cdn.example.com/lesson.mp3?version=2' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+
+    expect(onInsert).toHaveBeenCalledWith({
+      src: 'https://cdn.example.com/lesson.mp3?version=2',
+      ext: 'mp3',
     });
   });
 
@@ -516,6 +569,46 @@ describe('EditableSlideCanvasWithUI', () => {
     expect(onBringToFront).toHaveBeenCalledWith('video-1');
     expect(onSendToBack).toHaveBeenCalledWith('video-1');
     expect(onDelete).toHaveBeenCalledWith('video-1');
+  });
+
+  it('groups selected audio controls and delegates loop and element actions', async () => {
+    const onLoopChange = vi.fn();
+    const onBringToFront = vi.fn();
+    const onSendToBack = vi.fn();
+    const onDelete = vi.fn();
+
+    renderControlled({
+      slide: { ...slide, elements: [audioElement] } as unknown as Slide,
+      initialSelection: { elementIds: ['audio-1'], primaryId: 'audio-1' },
+      audioEditor: {
+        labels: {
+          toolbar: '音频工具栏',
+          preview: '试听',
+          pause: '暂停',
+          loop: '循环播放',
+          bringToFront: '置于顶层',
+          sendToBack: '置于底层',
+          delete: '删除',
+        },
+        onLoopChange,
+        onBringToFront,
+        onSendToBack,
+        onDelete,
+      },
+    });
+
+    expect(await screen.findByRole('toolbar', { name: '音频工具栏' })).not.toBeNull();
+    const loop = screen.getByRole('button', { name: '循环播放' });
+    expect(loop.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(loop);
+    fireEvent.click(screen.getByRole('button', { name: '置于顶层' }));
+    fireEvent.click(screen.getByRole('button', { name: '置于底层' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+
+    expect(onLoopChange).toHaveBeenCalledWith('audio-1', true);
+    expect(onBringToFront).toHaveBeenCalledWith('audio-1');
+    expect(onSendToBack).toHaveBeenCalledWith('audio-1');
+    expect(onDelete).toHaveBeenCalledWith('audio-1');
   });
 
   it('waits for controller and format state matching the controlled editing id', () => {

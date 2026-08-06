@@ -47,7 +47,7 @@ export function InsertToolbar({
   items,
   label = 'Insert',
   className,
-  placement = 'left',
+  placement = 'top',
   onRailSizeChange,
 }: InsertToolbarInternalProps) {
   const [openId, setOpenId] = useState<string | null>(null);

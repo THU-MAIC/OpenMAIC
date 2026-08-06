@@ -263,7 +263,12 @@
       "videoDrop": "Drop a video or click to choose a file",
       "videoOr": "or paste a video URL",
       "videoUrlPlaceholder": "https://…",
-      "videoInsert": "Insert"
+      "videoInsert": "Insert",
+      "audio": "Audio",
+      "audioDrop": "Drop audio or click to choose a file",
+      "audioOr": "or paste an audio URL",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "Insert"
     },
     "latex": {
       "toolbar": "Formula toolbar",
@@ -278,6 +283,12 @@
     "video": {
       "toolbar": "Video toolbar",
       "poster": "Set poster"
+    },
+    "audio": {
+      "toolbar": "Audio toolbar",
+      "preview": "Preview audio",
+      "pause": "Pause preview",
+      "loop": "Loop"
     },
     "table": {
       "doubleClickToEdit": "Double-click to edit"

@@ -263,7 +263,12 @@
       "videoDrop": "أفلِت فيديو أو انقر لاختيار ملف",
       "videoOr": "أو الصق رابط فيديو",
       "videoUrlPlaceholder": "https://…",
-      "videoInsert": "إدراج"
+      "videoInsert": "إدراج",
+      "audio": "صوت",
+      "audioDrop": "أفلِت ملفاً صوتياً أو انقر لاختيار ملف",
+      "audioOr": "أو الصق رابطاً صوتياً",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "إدراج"
     },
     "latex": {
       "toolbar": "شريط أدوات المعادلات",
@@ -278,6 +283,12 @@
     "video": {
       "toolbar": "شريط أدوات الفيديو",
       "poster": "تعيين الغلاف"
+    },
+    "audio": {
+      "toolbar": "شريط أدوات الصوت",
+      "preview": "معاينة الصوت",
+      "pause": "إيقاف المعاينة مؤقتاً",
+      "loop": "تكرار"
     },
     "table": {
       "doubleClickToEdit": "انقر نقراً مزدوجاً للتحرير"

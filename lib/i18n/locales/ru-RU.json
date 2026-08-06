@@ -263,7 +263,12 @@
       "videoDrop": "Перетащите видео или нажмите, чтобы выбрать файл",
       "videoOr": "или вставьте URL видео",
       "videoUrlPlaceholder": "https://…",
-      "videoInsert": "Вставить"
+      "videoInsert": "Вставить",
+      "audio": "Аудио",
+      "audioDrop": "Перетащите аудио или нажмите, чтобы выбрать файл",
+      "audioOr": "или вставьте URL аудио",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "Вставить"
     },
     "latex": {
       "toolbar": "Панель формул",
@@ -278,6 +283,12 @@
     "video": {
       "toolbar": "Панель видео",
       "poster": "Задать обложку"
+    },
+    "audio": {
+      "toolbar": "Панель аудио",
+      "preview": "Прослушать аудио",
+      "pause": "Приостановить прослушивание",
+      "loop": "Повтор"
     },
     "table": {
       "doubleClickToEdit": "Дважды щелкните для редактирования"

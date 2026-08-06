@@ -248,7 +248,12 @@
       "videoDrop": "Arraste um vídeo ou clique para escolher um arquivo",
       "videoOr": "ou cole a URL de um vídeo",
       "videoUrlPlaceholder": "https://…",
-      "videoInsert": "Inserir"
+      "videoInsert": "Inserir",
+      "audio": "Áudio",
+      "audioDrop": "Arraste um áudio ou clique para escolher um arquivo",
+      "audioOr": "ou cole a URL de um áudio",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "Inserir"
     },
     "latex": {
       "toolbar": "Barra de fórmulas",
@@ -263,6 +268,12 @@
     "video": {
       "toolbar": "Barra de vídeo",
       "poster": "Definir capa"
+    },
+    "audio": {
+      "toolbar": "Barra de áudio",
+      "preview": "Ouvir áudio",
+      "pause": "Pausar prévia",
+      "loop": "Repetir"
     },
     "table": {
       "doubleClickToEdit": "Clique duas vezes para editar"

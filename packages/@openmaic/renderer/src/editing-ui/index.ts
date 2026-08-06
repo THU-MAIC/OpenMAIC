@@ -26,6 +26,8 @@ export { LatexEditorDialog } from './latex/LatexEditorDialog';
 export { LatexToolbarOverlay } from './latex/LatexToolbarOverlay';
 export { VideoToolbarOverlay } from './video/VideoToolbarOverlay';
 export { VideoInsertPicker } from './video/VideoInsertPicker';
+export { AudioToolbarOverlay } from './audio/AudioToolbarOverlay';
+export { AudioInsertPicker } from './audio/AudioInsertPicker';
 export {
   insertLatexAtSelection,
   renderLatexSource,
@@ -39,6 +41,8 @@ export type { LatexEditorDialogProps } from './latex/LatexEditorDialog';
 export type { LatexToolbarOverlayProps } from './latex/LatexToolbarOverlay';
 export type { VideoToolbarOverlayProps } from './video/VideoToolbarOverlay';
 export type { VideoInsertPickerProps } from './video/VideoInsertPicker';
+export type { AudioToolbarOverlayProps } from './audio/AudioToolbarOverlay';
+export type { AudioInsertPickerProps } from './audio/AudioInsertPicker';
 export type { TableInsertPickerProps } from './insert/TableInsertPicker';
 export type { ChartInsertPickerOption, ChartInsertPickerProps } from './insert/ChartInsertPicker';
 export type { TrackedToolbarRect } from './text/useToolbarAnchor';
@@ -69,4 +73,9 @@ export type {
   VideoInsertResult,
   VideoPosterPickerProps,
   VideoPosterPickerRenderer,
+  AudioEditorLabels,
+  AudioEditorOptions,
+  AudioInsertLabels,
+  AudioInsertOptions,
+  AudioInsertResult,
 } from './types';

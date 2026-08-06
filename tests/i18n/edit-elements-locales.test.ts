@@ -30,4 +30,19 @@ describe('edit_elements locale coverage', () => {
       expect(locale.edit.insert.videoInsert).toBeTruthy();
     },
   );
+
+  it.each([enUS, zhCN, zhTW, jaJP, koKR, ruRU, arSA, ptBR, esMX])(
+    'defines renderer audio toolbar and insert labels',
+    (locale) => {
+      expect(locale.edit.audio.toolbar).toBeTruthy();
+      expect(locale.edit.audio.preview).toBeTruthy();
+      expect(locale.edit.audio.pause).toBeTruthy();
+      expect(locale.edit.audio.loop).toBeTruthy();
+      expect(locale.edit.insert.audio).toBeTruthy();
+      expect(locale.edit.insert.audioDrop).toBeTruthy();
+      expect(locale.edit.insert.audioOr).toBeTruthy();
+      expect(locale.edit.insert.audioUrlPlaceholder).toBeTruthy();
+      expect(locale.edit.insert.audioInsert).toBeTruthy();
+    },
+  );
 });

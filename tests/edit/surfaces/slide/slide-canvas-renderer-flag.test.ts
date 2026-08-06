@@ -213,6 +213,20 @@ const slideContent: SlideContent = {
         src: 'video.mp4',
         autoplay: false,
       },
+      {
+        id: 'audio-1',
+        type: 'audio',
+        left: 560,
+        top: 300,
+        width: 240,
+        height: 64,
+        rotate: 0,
+        fixedRatio: true,
+        color: '#7c3aed',
+        loop: false,
+        autoplay: false,
+        src: 'lesson.mp3',
+      },
     ],
   },
 };
@@ -317,6 +331,18 @@ describe('slide editor canvas renderer flag', () => {
       labels: {
         insertVideo: 'translated:edit.insert.video',
         videoDrop: 'translated:edit.insert.videoDrop',
+      },
+    });
+    expect(lastRendererProps?.audioEditor).toMatchObject({
+      labels: {
+        toolbar: 'translated:edit.audio.toolbar',
+        loop: 'translated:edit.audio.loop',
+      },
+    });
+    expect(lastRendererProps?.audioInsert).toMatchObject({
+      labels: {
+        insertAudio: 'translated:edit.insert.audio',
+        audioDrop: 'translated:edit.insert.audioDrop',
       },
     });
     const insertToolbar = lastRendererProps?.insertToolbar;
@@ -566,7 +592,6 @@ describe('slide editor canvas renderer flag', () => {
       }),
       true,
     );
-
   });
 
   it('bridges a renderer-owned video insert result into one history entry', async () => {
@@ -595,6 +620,48 @@ describe('slide editor canvas renderer flag', () => {
               height: 203,
               autoplay: false,
             }),
+          ]),
+        }),
+      }),
+      true,
+    );
+  });
+
+  it('bridges renderer-owned audio insertion and loop updates through history', async () => {
+    process.env[flag] = 'true';
+    vi.resetModules();
+    const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
+
+    renderToStaticMarkup(createElement(SlideCanvas));
+    const audioInsert = lastRendererProps?.audioInsert;
+    const audioEditor = lastRendererProps?.audioEditor;
+    if (!audioInsert || !audioEditor) throw new Error('Expected renderer audio configuration');
+
+    audioInsert.onInsert({ src: 'https://cdn.example.com/lesson.mp3', ext: 'mp3' });
+    expect(mockCommitContent).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        canvas: expect.objectContaining({
+          elements: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'audio',
+              src: 'https://cdn.example.com/lesson.mp3',
+              ext: 'mp3',
+              loop: false,
+              autoplay: false,
+            }),
+          ]),
+        }),
+      }),
+      true,
+    );
+
+    mockCommitContent.mockClear();
+    audioEditor.onLoopChange('audio-1', true);
+    expect(mockCommitContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canvas: expect.objectContaining({
+          elements: expect.arrayContaining([
+            expect.objectContaining({ id: 'audio-1', loop: true }),
           ]),
         }),
       }),

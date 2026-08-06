@@ -726,7 +726,8 @@ export const EDITING_UI_STYLES = `
 }
 
 .maic-editing-ui-latex-toolbar,
-.maic-editing-ui-video-toolbar {
+.maic-editing-ui-video-toolbar,
+.maic-editing-ui-audio-toolbar {
   align-items: center;
   background: #ffffff;
   border: 1px solid #e4e4e7;
@@ -761,7 +762,26 @@ export const EDITING_UI_STYLES = `
   gap: 12px;
 }
 
+.maic-editing-ui-audio-insert-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .maic-editing-ui-video-dropzone {
+  background: transparent;
+  border: 1px dashed #d4d4d8;
+  border-radius: 6px;
+  color: #71717a;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  min-height: 72px;
+  padding: 12px;
+  text-align: center;
+}
+
+.maic-editing-ui-audio-dropzone {
   background: transparent;
   border: 1px dashed #d4d4d8;
   border-radius: 6px;
@@ -781,7 +801,20 @@ export const EDITING_UI_STYLES = `
   outline: none;
 }
 
+.maic-editing-ui-audio-dropzone:hover,
+.maic-editing-ui-audio-dropzone:focus-visible {
+  border-color: var(--maic-editing-ui-active-fg, #6d28d9);
+  color: var(--maic-editing-ui-active-fg, #6d28d9);
+  outline: none;
+}
+
 .maic-editing-ui-video-or {
+  color: #a1a1aa;
+  font-size: 12px;
+  text-align: center;
+}
+
+.maic-editing-ui-audio-or {
   color: #a1a1aa;
   font-size: 12px;
   text-align: center;
@@ -792,7 +825,22 @@ export const EDITING_UI_STYLES = `
   gap: 8px;
 }
 
+.maic-editing-ui-audio-url-row {
+  display: flex;
+  gap: 8px;
+}
+
 .maic-editing-ui-video-url-row input {
+  border: 1px solid #d4d4d8;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 12px;
+  min-width: 0;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.maic-editing-ui-audio-url-row input {
   border: 1px solid #d4d4d8;
   border-radius: 4px;
   font: inherit;
@@ -814,7 +862,24 @@ export const EDITING_UI_STYLES = `
   padding: 0 10px;
 }
 
+.maic-editing-ui-audio-url-row button {
+  background: var(--maic-editing-ui-active-fg, #6d28d9);
+  border: 1px solid var(--maic-editing-ui-active-fg, #6d28d9);
+  border-radius: 4px;
+  color: #ffffff;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 12px;
+  padding: 0 10px;
+}
+
 .maic-editing-ui-video-url-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.maic-editing-ui-audio-url-row button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }

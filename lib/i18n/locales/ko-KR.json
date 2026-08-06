@@ -263,7 +263,12 @@
       "videoDrop": "비디오를 끌어다 놓거나 클릭하여 파일을 선택하세요",
       "videoOr": "또는 비디오 URL 붙여넣기",
       "videoUrlPlaceholder": "https://…",
-      "videoInsert": "삽입"
+      "videoInsert": "삽입",
+      "audio": "오디오",
+      "audioDrop": "오디오를 끌어다 놓거나 클릭하여 파일을 선택하세요",
+      "audioOr": "또는 오디오 URL 붙여넣기",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "삽입"
     },
     "latex": {
       "toolbar": "수식 도구 모음",
@@ -278,6 +283,12 @@
     "video": {
       "toolbar": "비디오 도구 모음",
       "poster": "포스터 설정"
+    },
+    "audio": {
+      "toolbar": "오디오 도구 모음",
+      "preview": "오디오 미리 듣기",
+      "pause": "미리 듣기 일시 중지",
+      "loop": "반복 재생"
     },
     "table": {
       "doubleClickToEdit": "두 번 클릭하여 편집"

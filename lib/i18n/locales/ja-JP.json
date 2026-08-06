@@ -263,7 +263,12 @@
       "videoDrop": "動画をドロップまたはクリックして選択",
       "videoOr": "または動画 URL を貼り付け",
       "videoUrlPlaceholder": "https://…",
-      "videoInsert": "挿入"
+      "videoInsert": "挿入",
+      "audio": "音声",
+      "audioDrop": "音声をドロップまたはクリックして選択",
+      "audioOr": "または音声 URL を貼り付け",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "挿入"
     },
     "latex": {
       "toolbar": "数式ツールバー",
@@ -278,6 +283,12 @@
     "video": {
       "toolbar": "動画ツールバー",
       "poster": "ポスターを設定"
+    },
+    "audio": {
+      "toolbar": "音声ツールバー",
+      "preview": "音声を試聴",
+      "pause": "試聴を一時停止",
+      "loop": "繰り返し再生"
     },
     "table": {
       "doubleClickToEdit": "ダブルクリックして編集"

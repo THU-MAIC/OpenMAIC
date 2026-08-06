@@ -1,8 +1,15 @@
 'use client';
 
-import { createElement, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { Sigma, Video } from 'lucide-react';
-import type { PPTLatexElement } from '@openmaic/dsl';
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+} from 'react';
+import { Sigma, Video, Volume2 } from 'lucide-react';
+import type { PPTAudioElement, PPTLatexElement } from '@openmaic/dsl';
 import { EditableSlideCanvas } from '../editing/EditableSlideCanvas';
 import type { ReorderCommand } from '../editing/types';
 import type { TextEditorController, TextFormatState } from '../editing/text/types';
@@ -14,6 +21,8 @@ import { LatexEditorDialog } from './latex/LatexEditorDialog';
 import { LatexToolbarOverlay } from './latex/LatexToolbarOverlay';
 import { VideoToolbarOverlay } from './video/VideoToolbarOverlay';
 import { VideoInsertPicker } from './video/VideoInsertPicker';
+import { AudioToolbarOverlay } from './audio/AudioToolbarOverlay';
+import { AudioInsertPicker } from './audio/AudioInsertPicker';
 import type { LatexEditorResult } from './latex/latex-editor';
 import type { EditableSlideCanvasWithUIProps } from './types';
 
@@ -36,6 +45,8 @@ export function EditableSlideCanvasWithUI({
   latexEditor,
   videoEditor,
   videoInsert,
+  audioEditor,
+  audioInsert,
   onTextEditorChange,
   onTextFormatChange,
   onElementsChange,
@@ -61,6 +72,8 @@ export function EditableSlideCanvasWithUI({
   const activeLatexEditor = latexEditor === false ? null : latexEditor;
   const activeVideoEditor = videoEditor === false ? null : videoEditor;
   const activeVideoInsert = videoInsert === false ? null : videoInsert;
+  const activeAudioEditor = audioEditor === false ? null : audioEditor;
+  const activeAudioInsert = audioInsert === false ? null : audioInsert;
   const selectedLatex = useMemo(() => {
     if (!activeLatexEditor) return null;
     const elementIds = canvasProps.selection?.elementIds ?? [];
@@ -113,8 +126,42 @@ export function EditableSlideCanvasWithUI({
     sendToBack: videoLabels?.sendToBack ?? 'Send to back',
     delete: videoLabels?.delete ?? 'Delete',
   };
+  const audioInsertLabels = activeAudioInsert?.labels;
+  const resolvedAudioInsertLabels = {
+    insertAudio: audioInsertLabels?.insertAudio ?? 'Insert audio',
+    audioDrop: audioInsertLabels?.audioDrop ?? 'Drop audio or click to choose a file',
+    audioOr: audioInsertLabels?.audioOr ?? 'or paste an audio URL',
+    audioUrlPlaceholder: audioInsertLabels?.audioUrlPlaceholder ?? 'https://...',
+    audioInsert: audioInsertLabels?.audioInsert ?? 'Insert',
+  };
+  const selectedAudio = useMemo(() => {
+    if (!activeAudioEditor) return null;
+    const elementIds = canvasProps.selection?.elementIds ?? [];
+    if (elementIds.length !== 1) return null;
+    const elementId = canvasProps.selection?.primaryId ?? elementIds[0];
+    if (canvasProps.hiddenElementIds?.includes(elementId)) return null;
+    const element = canvasProps.slide.elements.find((candidate) => candidate.id === elementId);
+    return element?.type === 'audio' && !element.lock ? element : null;
+  }, [
+    activeAudioEditor,
+    canvasProps.hiddenElementIds,
+    canvasProps.selection,
+    canvasProps.slide.elements,
+  ]);
+  const audioLabels = activeAudioEditor?.labels;
+  const resolvedAudioLabels = {
+    toolbar: audioLabels?.toolbar ?? 'Audio toolbar',
+    preview: audioLabels?.preview ?? 'Preview audio',
+    pause: audioLabels?.pause ?? 'Pause preview',
+    loop: audioLabels?.loop ?? 'Loop',
+    bringToFront: audioLabels?.bringToFront ?? 'Bring to front',
+    sendToBack: audioLabels?.sendToBack ?? 'Send to back',
+    delete: audioLabels?.delete ?? 'Delete',
+  };
   const resolvedInsertToolbar = useMemo(() => {
-    if (!insertToolbar || (!activeLatexEditor && !activeVideoInsert)) return insertToolbar;
+    if (!insertToolbar || (!activeLatexEditor && !activeVideoInsert && !activeAudioInsert)) {
+      return insertToolbar;
+    }
     const items = [...insertToolbar.items];
     if (activeLatexEditor) {
       items.push({
@@ -142,39 +189,63 @@ export function EditableSlideCanvasWithUI({
         ),
       });
     }
+    if (activeAudioInsert) {
+      items.push({
+        id: 'insert-audio',
+        label: resolvedAudioInsertLabels.insertAudio,
+        tooltip: resolvedAudioInsertLabels.insertAudio,
+        icon: createElement(Volume2, { 'aria-hidden': true }),
+        renderPopover: ({ close }) => (
+          <AudioInsertPicker
+            labels={resolvedAudioInsertLabels}
+            onInsert={(result) => {
+              activeAudioInsert.onInsert(result);
+              close();
+            }}
+          />
+        ),
+      });
+    }
     return {
       ...insertToolbar,
       items,
     };
   }, [
     activeLatexEditor,
+    activeAudioInsert,
     activeVideoInsert,
     insertToolbar,
     latexInsertLabel,
+    resolvedAudioInsertLabels,
     resolvedVideoInsertLabels,
   ]);
   const insertToolbarPlacement = resolvedInsertToolbar
-    ? resolvedInsertToolbar.placement ?? 'left'
-    : 'left';
+    ? (resolvedInsertToolbar.placement ?? 'top')
+    : 'top';
   const handleInsertToolbarRailSizeChange = useCallback((size: number) => {
     setInsertToolbarRailSize((current) => (current === size ? current : size));
   }, []);
-  const canvasStyle = useMemo<CSSProperties>(() => {
-    const base = canvasProps.style;
-    if (!resolvedInsertToolbar) return base ?? {};
+  const canvasViewportStyle = useMemo<CSSProperties>(() => {
+    if (!resolvedInsertToolbar) {
+      return { position: 'relative', width: '100%', height: '100%' };
+    }
     if (insertToolbarPlacement === 'top') {
       return {
-        ...base,
-        height: `calc(100% - ${insertToolbarRailSize}px)`,
-        marginTop: `${insertToolbarRailSize}px`,
+        bottom: 0,
+        left: 0,
+        position: 'absolute',
+        right: 0,
+        top: `${insertToolbarRailSize}px`,
       };
     }
     return {
-      ...base,
-      marginLeft: `${insertToolbarRailSize}px`,
-      width: `calc(100% - ${insertToolbarRailSize}px)`,
+      bottom: 0,
+      left: `${insertToolbarRailSize}px`,
+      position: 'absolute',
+      right: 0,
+      top: 0,
     };
-  }, [canvasProps.style, insertToolbarPlacement, insertToolbarRailSize, resolvedInsertToolbar]);
+  }, [insertToolbarPlacement, insertToolbarRailSize, resolvedInsertToolbar]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- selection changes must clear stale editor state before a later re-selection.
@@ -253,15 +324,16 @@ export function EditableSlideCanvasWithUI({
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <style dangerouslySetInnerHTML={{ __html: EDITING_UI_STYLES }} />
-      <EditableSlideCanvas
-        {...canvasProps}
-        style={canvasStyle}
-        elementIdPrefix={elementIdPrefix}
-        onElementsChange={onElementsChange}
-        onSelectionChange={onSelectionChange}
-        onTextEditorChange={handleTextEditorChange}
-        onTextFormatChange={handleTextFormatChange}
-      />
+      <div data-editing-ui-canvas-viewport="" style={canvasViewportStyle}>
+        <EditableSlideCanvas
+          {...canvasProps}
+          elementIdPrefix={elementIdPrefix}
+          onElementsChange={onElementsChange}
+          onSelectionChange={onSelectionChange}
+          onTextEditorChange={handleTextEditorChange}
+          onTextFormatChange={handleTextFormatChange}
+        />
+      </div>
       {resolvedInsertToolbar !== false && resolvedInsertToolbar ? (
         <InsertToolbar
           {...resolvedInsertToolbar}
@@ -336,6 +408,29 @@ export function EditableSlideCanvasWithUI({
           onDelete={
             activeVideoEditor.onDelete
               ? () => activeVideoEditor.onDelete?.(selectedVideo.id)
+              : undefined
+          }
+        />
+      ) : null}
+      {selectedAudio && activeAudioEditor ? (
+        <AudioToolbarOverlay
+          element={selectedAudio as PPTAudioElement}
+          elementIdPrefix={elementIdPrefix ?? 'slide-element-'}
+          labels={resolvedAudioLabels}
+          onLoopChange={(loop) => activeAudioEditor.onLoopChange(selectedAudio.id, loop)}
+          onBringToFront={
+            activeAudioEditor.onBringToFront
+              ? () => activeAudioEditor.onBringToFront?.(selectedAudio.id)
+              : undefined
+          }
+          onSendToBack={
+            activeAudioEditor.onSendToBack
+              ? () => activeAudioEditor.onSendToBack?.(selectedAudio.id)
+              : undefined
+          }
+          onDelete={
+            activeAudioEditor.onDelete
+              ? () => activeAudioEditor.onDelete?.(selectedAudio.id)
               : undefined
           }
         />

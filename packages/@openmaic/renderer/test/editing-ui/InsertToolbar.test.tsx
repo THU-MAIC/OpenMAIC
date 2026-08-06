@@ -126,6 +126,7 @@ describe('InsertToolbar', () => {
   it('anchors a popover beside the triggering insert button instead of the toolbar top', () => {
     const { container } = render(
       <InsertToolbar
+        placement="left"
         items={[
           { id: 'text', label: 'Text', icon: <span>T</span> },
           { id: 'image', label: 'Image', icon: <span>I</span> },

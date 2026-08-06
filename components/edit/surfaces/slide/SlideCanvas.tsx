@@ -3,6 +3,7 @@
 import { createElement, useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import type {
   ChartType,
+  PPTAudioElement,
   PPTImageElement,
   PPTLineElement,
   PPTTextElement,
@@ -23,6 +24,7 @@ import {
   TableInsertPicker,
   type InsertToolbarOptions,
   type LatexEditorResult,
+  type AudioInsertResult,
   type VideoInsertResult,
 } from '@openmaic/renderer/editing-ui';
 import { BarChart3, Image as ImageIcon, Minus, PaintBucket, Table2, Type } from 'lucide-react';
@@ -325,6 +327,54 @@ function RendererEditorCanvas() {
       };
       handleElementsChange([{ type: 'element.add', element }]);
       setActiveElementIdList([id]);
+      setEditingElementId('');
+    },
+    [handleElementsChange, setActiveElementIdList, setEditingElementId],
+  );
+
+  const handleAudioInsert = useCallback(
+    ({ src, ext }: AudioInsertResult) => {
+      const id = createElementId('audio');
+      const element: PPTAudioElement = {
+        id,
+        type: 'audio',
+        left: 180,
+        top: 180,
+        width: 240,
+        height: 64,
+        rotate: 0,
+        fixedRatio: true,
+        color: '#7c3aed',
+        loop: false,
+        autoplay: false,
+        src,
+        ...(ext ? { ext } : {}),
+      };
+      handleElementsChange([{ type: 'element.add', element }]);
+      setActiveElementIdList([id]);
+      setEditingElementId('');
+    },
+    [handleElementsChange, setActiveElementIdList, setEditingElementId],
+  );
+
+  const handleAudioLoopChange = useCallback(
+    (elementId: string, loop: boolean) => {
+      handleElementsChange([{ type: 'element.update', id: elementId, props: { loop } }]);
+    },
+    [handleElementsChange],
+  );
+
+  const handleAudioReorder = useCallback(
+    (elementId: string, command: 'front' | 'back') => {
+      handleElementsChange([{ type: 'element.reorder', id: elementId, command }]);
+    },
+    [handleElementsChange],
+  );
+
+  const handleAudioDelete = useCallback(
+    (elementId: string) => {
+      handleElementsChange([{ type: 'element.delete', ids: [elementId] }]);
+      setActiveElementIdList([]);
       setEditingElementId('');
     },
     [handleElementsChange, setActiveElementIdList, setEditingElementId],
@@ -639,6 +689,31 @@ function RendererEditorCanvas() {
             videoInsert: t('edit.insert.videoInsert'),
           },
           onInsert: handleVideoInsert,
+        }}
+        audioEditor={{
+          labels: {
+            toolbar: t('edit.audio.toolbar'),
+            preview: t('edit.audio.preview'),
+            pause: t('edit.audio.pause'),
+            loop: t('edit.audio.loop'),
+            bringToFront: t('edit.zorder.toFront'),
+            sendToBack: t('edit.zorder.toBack'),
+            delete: t('edit.delete'),
+          },
+          onLoopChange: handleAudioLoopChange,
+          onBringToFront: (elementId) => handleAudioReorder(elementId, 'front'),
+          onSendToBack: (elementId) => handleAudioReorder(elementId, 'back'),
+          onDelete: handleAudioDelete,
+        }}
+        audioInsert={{
+          labels: {
+            insertAudio: t('edit.insert.audio'),
+            audioDrop: t('edit.insert.audioDrop'),
+            audioOr: t('edit.insert.audioOr'),
+            audioUrlPlaceholder: t('edit.insert.audioUrlPlaceholder'),
+            audioInsert: t('edit.insert.audioInsert'),
+          },
+          onInsert: handleAudioInsert,
         }}
       />
     </RendererCanvasContextMenu>

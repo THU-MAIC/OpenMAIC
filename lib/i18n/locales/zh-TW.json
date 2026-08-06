@@ -263,7 +263,12 @@
       "videoDrop": "拖曳影片或點按選擇檔案",
       "videoOr": "或貼上影片網址",
       "videoUrlPlaceholder": "https://…",
-      "videoInsert": "插入"
+      "videoInsert": "插入",
+      "audio": "音訊",
+      "audioDrop": "拖曳音訊或點按選擇檔案",
+      "audioOr": "或貼上音訊網址",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "插入"
     },
     "latex": {
       "toolbar": "公式工具列",
@@ -278,6 +283,12 @@
     "video": {
       "toolbar": "影片工具列",
       "poster": "設定封面"
+    },
+    "audio": {
+      "toolbar": "音訊工具列",
+      "preview": "試聽音訊",
+      "pause": "暫停試聽",
+      "loop": "循環播放"
     },
     "table": {
       "doubleClickToEdit": "雙擊編輯"

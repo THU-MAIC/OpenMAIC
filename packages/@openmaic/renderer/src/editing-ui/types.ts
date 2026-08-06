@@ -120,7 +120,7 @@ export interface InsertToolbarOptions {
   readonly items: readonly InsertToolbarItem[];
   readonly label?: string;
   readonly className?: string;
-  /** Dock outside the reduced canvas viewport instead of covering the slide. */
+  /** Dock outside the reduced canvas viewport instead of covering the slide. Defaults to `top`. */
   readonly placement?: InsertToolbarPlacement;
 }
 
@@ -199,6 +199,42 @@ export interface VideoInsertOptions {
   readonly onInsert: (result: VideoInsertResult) => void;
 }
 
+export interface AudioEditorLabels {
+  toolbar: string;
+  preview: string;
+  pause: string;
+  loop: string;
+  bringToFront: string;
+  sendToBack: string;
+  delete: string;
+}
+
+export interface AudioEditorOptions {
+  readonly labels?: Partial<AudioEditorLabels>;
+  readonly onLoopChange: (elementId: string, loop: boolean) => void;
+  readonly onBringToFront?: (elementId: string) => void;
+  readonly onSendToBack?: (elementId: string) => void;
+  readonly onDelete?: (elementId: string) => void;
+}
+
+export interface AudioInsertLabels {
+  insertAudio: string;
+  audioDrop: string;
+  audioOr: string;
+  audioUrlPlaceholder: string;
+  audioInsert: string;
+}
+
+export interface AudioInsertResult {
+  readonly src: string;
+  readonly ext?: string;
+}
+
+export interface AudioInsertOptions {
+  readonly labels?: Partial<AudioInsertLabels>;
+  readonly onInsert: (result: AudioInsertResult) => void;
+}
+
 export interface EditableSlideCanvasWithUIProps extends EditableSlideCanvasProps {
   readonly textToolbar?: TextToolbarOptions | false;
   readonly lineToolbar?: LineToolbarOptions | false;
@@ -206,4 +242,6 @@ export interface EditableSlideCanvasWithUIProps extends EditableSlideCanvasProps
   readonly latexEditor?: LatexEditorOptions | false;
   readonly videoEditor?: VideoEditorOptions | false;
   readonly videoInsert?: VideoInsertOptions | false;
+  readonly audioEditor?: AudioEditorOptions | false;
+  readonly audioInsert?: AudioInsertOptions | false;
 }
