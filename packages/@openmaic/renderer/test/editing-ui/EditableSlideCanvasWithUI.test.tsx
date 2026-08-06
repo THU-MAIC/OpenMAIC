@@ -372,25 +372,32 @@ describe('EditableSlideCanvasWithUI', () => {
         onBringToFront,
         onSendToBack,
         onDelete,
+        labels: {
+          toolbar: '公式工具栏',
+          editFormula: '编辑公式',
+          bringToFront: '置于顶层',
+          sendToBack: '置于底层',
+          delete: '删除',
+        },
       },
     });
 
-    expect(screen.getByRole('toolbar', { name: 'Formula toolbar' })).not.toBeNull();
-    expect(screen.getByRole('button', { name: 'Edit formula' }).getAttribute('data-tooltip')).toBe(
-      'Edit formula',
+    expect(screen.getByRole('toolbar', { name: '公式工具栏' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: '编辑公式' }).getAttribute('data-tooltip')).toBe(
+      '编辑公式',
     );
-    expect(screen.getByRole('button', { name: 'Bring to front' }).getAttribute('data-tooltip')).toBe(
-      'Bring to front',
+    expect(screen.getByRole('button', { name: '置于顶层' }).getAttribute('data-tooltip')).toBe(
+      '置于顶层',
     );
-    expect(screen.getByRole('button', { name: 'Send to back' }).getAttribute('data-tooltip')).toBe(
-      'Send to back',
+    expect(screen.getByRole('button', { name: '置于底层' }).getAttribute('data-tooltip')).toBe(
+      '置于底层',
     );
-    expect(screen.getByRole('button', { name: 'Delete' }).getAttribute('data-tooltip')).toBe(
-      'Delete',
+    expect(screen.getByRole('button', { name: '删除' }).getAttribute('data-tooltip')).toBe(
+      '删除',
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Bring to front' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Send to back' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: '置于顶层' }));
+    fireEvent.click(screen.getByRole('button', { name: '置于底层' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
 
     expect(onBringToFront).toHaveBeenCalledWith('formula-1');
     expect(onSendToBack).toHaveBeenCalledWith('formula-1');
