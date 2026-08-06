@@ -246,6 +246,7 @@
       "textBox": "テキストボックス",
       "line": "線",
       "table": "表",
+      "formula": "数式",
       "chart": "グラフ",
       "chartBar": "棒グラフ",
       "chartLine": "折れ線グラフ",
@@ -258,6 +259,15 @@
       "imageOr": "または画像 URL を貼り付け",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "挿入"
+    },
+    "latex": {
+      "editFormula": "数式を編集",
+      "dialog": "数式エディター",
+      "source": "LaTeX ソース",
+      "preview": "プレビュー",
+      "symbols": "記号",
+      "presets": "定型数式",
+      "invalidSource": "LaTeX ソースが無効です。"
     },
     "table": {
       "doubleClickToEdit": "ダブルクリックして編集"

@@ -231,6 +231,7 @@
       "textBox": "Caixa de texto",
       "line": "Linha",
       "table": "Tabela",
+      "formula": "Fórmula",
       "chart": "Gráfico",
       "chartBar": "Gráfico de barras",
       "chartLine": "Gráfico de linhas",
@@ -243,6 +244,15 @@
       "imageOr": "ou cole a URL de uma imagem",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "Inserir"
+    },
+    "latex": {
+      "editFormula": "Editar fórmula",
+      "dialog": "Editor de fórmulas",
+      "source": "Código-fonte LaTeX",
+      "preview": "Pré-visualização",
+      "symbols": "Símbolos",
+      "presets": "Fórmulas predefinidas",
+      "invalidSource": "O código-fonte LaTeX é inválido."
     },
     "table": {
       "doubleClickToEdit": "Clique duas vezes para editar"

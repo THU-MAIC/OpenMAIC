@@ -189,6 +189,19 @@ const slideContent: SlideContent = {
           ],
         ],
       },
+      {
+        id: 'formula-1',
+        type: 'latex',
+        left: 320,
+        top: 120,
+        width: 180,
+        height: 60,
+        rotate: 0,
+        latex: 'x^2',
+        html: '<span class="katex">x<sup>2</sup></span>',
+        color: '#2563eb',
+        align: 'center',
+      },
     ],
   },
 };
@@ -390,6 +403,116 @@ describe('slide editor canvas renderer flag', () => {
     );
   });
 
+  it('commits latex insertion and geometry changes through the renderer host history path', async () => {
+    process.env[flag] = 'true';
+    vi.resetModules();
+    const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
+
+    renderToStaticMarkup(createElement(SlideCanvas));
+    lastRendererProps?.onElementsChange?.([
+      {
+        type: 'element.add',
+        element: {
+          id: 'formula-inserted',
+          type: 'latex',
+          left: 100,
+          top: 120,
+          width: 240,
+          height: 80,
+          rotate: 0,
+          latex: 'E = mc^2',
+          html: '<span class="katex">E = mc<sup>2</sup></span>',
+          color: '#2563eb',
+          align: 'center',
+        },
+      },
+      {
+        type: 'element.update',
+        id: 'formula-inserted',
+        props: { left: 140, rotate: 45 },
+      },
+    ]);
+
+    expect(mockCommitContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canvas: expect.objectContaining({
+          elements: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'formula-inserted',
+              type: 'latex',
+              latex: 'E = mc^2',
+              html: '<span class="katex">E = mc<sup>2</sup></span>',
+              color: '#2563eb',
+              align: 'center',
+              left: 140,
+              top: 120,
+              rotate: 45,
+            }),
+          ]),
+        }),
+      }),
+      true,
+    );
+  });
+
+  it('bridges shared Latex dialog results to one insert or update history entry', async () => {
+    process.env[flag] = 'true';
+    vi.resetModules();
+    const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
+    const result = {
+      latex: '\\frac{a}{b}',
+      html: '<span class="katex">a/b</span>',
+      width: 160,
+      height: 60,
+    };
+
+    renderToStaticMarkup(createElement(SlideCanvas));
+    const latexEditor = lastRendererProps?.latexEditor;
+    if (!latexEditor) throw new Error('Expected renderer Latex editor');
+    latexEditor.onInsert(result);
+
+    expect(mockCommitContent).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        canvas: expect.objectContaining({
+          elements: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'latex',
+              latex: '\\frac{a}{b}',
+              html: '<span class="katex">a/b</span>',
+              width: 160,
+              height: 60,
+              color: '#333333',
+              align: 'center',
+            }),
+          ]),
+        }),
+      }),
+      true,
+    );
+
+    mockCommitContent.mockClear();
+    latexEditor.onUpdate('formula-1', result);
+
+    expect(mockCommitContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canvas: expect.objectContaining({
+          elements: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'formula-1',
+              latex: '\\frac{a}{b}',
+              html: '<span class="katex">a/b</span>',
+              width: 160,
+              height: 60,
+              color: '#2563eb',
+              align: 'center',
+            }),
+          ]),
+        }),
+      }),
+      true,
+    );
+  });
+
   it('creates, selects, and persists a renderer text box from the armed canvas gesture', async () => {
     process.env[flag] = 'true';
     creatingElement = { type: 'text' };
@@ -400,9 +523,7 @@ describe('slide editor canvas renderer flag', () => {
     lastRendererProps?.onTextCreate?.({ left: 120, top: 80, width: 300, height: 60 });
 
     expect(mockSetCreatingElement).toHaveBeenCalledWith(null);
-    expect(mockSetActiveElementIdList).toHaveBeenCalledWith([
-      expect.stringMatching(/^text-/),
-    ]);
+    expect(mockSetActiveElementIdList).toHaveBeenCalledWith([expect.stringMatching(/^text-/)]);
     expect(mockSetEditingElementId).toHaveBeenCalledWith(expect.stringMatching(/^text-/));
     expect(mockCommitContent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -436,9 +557,7 @@ describe('slide editor canvas renderer flag', () => {
     lastRendererProps?.onLineCreate?.({ start: [280, 180], end: [120, 80] });
 
     expect(mockSetCreatingElement).toHaveBeenCalledWith(null);
-    expect(mockSetActiveElementIdList).toHaveBeenCalledWith([
-      expect.stringMatching(/^line-/),
-    ]);
+    expect(mockSetActiveElementIdList).toHaveBeenCalledWith([expect.stringMatching(/^line-/)]);
     expect(mockSetEditingElementId).toHaveBeenCalledWith('');
     expect(mockCommitContent).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -246,6 +246,7 @@
       "textBox": "文本框",
       "line": "线条",
       "table": "表格",
+      "formula": "公式",
       "chart": "图表",
       "chartBar": "柱状图",
       "chartLine": "折线图",
@@ -258,6 +259,15 @@
       "imageOr": "或粘贴图片 URL",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "插入"
+    },
+    "latex": {
+      "editFormula": "编辑公式",
+      "dialog": "公式编辑器",
+      "source": "LaTeX 源码",
+      "preview": "预览",
+      "symbols": "常用符号",
+      "presets": "预置公式",
+      "invalidSource": "LaTeX 源码无效。"
     },
     "table": {
       "doubleClickToEdit": "双击编辑"

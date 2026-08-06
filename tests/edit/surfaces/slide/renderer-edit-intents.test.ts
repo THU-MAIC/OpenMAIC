@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { AlignCommand, EditIntent, ReorderCommand } from '@openmaic/renderer/editing';
-import type { PPTElement, PPTShapeElement, PPTTableElement, PPTTextElement } from '@openmaic/dsl';
+import type {
+  PPTElement,
+  PPTLatexElement,
+  PPTShapeElement,
+  PPTTableElement,
+  PPTTextElement,
+} from '@openmaic/dsl';
 import { applyRendererEditIntents } from '@/components/edit/surfaces/slide/renderer-edit-intents';
 import type { SlideContent } from '@/lib/types/stage';
 
@@ -65,6 +71,23 @@ function tableElement(id: string, overrides: Partial<PPTTableElement> = {}): PPT
         { id: 'd', text: 'D', colspan: 1, rowspan: 1 },
       ],
     ],
+    ...overrides,
+  };
+}
+
+function latexElement(id: string, overrides: Partial<PPTLatexElement> = {}): PPTLatexElement {
+  return {
+    id,
+    type: 'latex',
+    left: 100,
+    top: 100,
+    width: 240,
+    height: 80,
+    rotate: 0,
+    latex: 'E = mc^2',
+    html: '<span class="katex">E = mc<sup>2</sup></span>',
+    color: '#2563eb',
+    align: 'center',
     ...overrides,
   };
 }
@@ -153,6 +176,34 @@ describe('applyRendererEditIntents', () => {
     expect(next.canvas.elements.map((element) => element.id)).toEqual(['inserted', 'c']);
     expect(next.canvas.animations?.map((animation) => animation.elId)).toEqual(['c']);
     expect(original.canvas.elements.map((element) => element.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('persists latex additions and geometry updates without changing the formula contract', () => {
+    const original = slideContent([latexElement('formula')]);
+
+    const next = applyRendererEditIntents(original, [
+      {
+        type: 'element.update',
+        id: 'formula',
+        props: { left: 140, top: 160, width: 300, height: 100, rotate: 45 },
+      },
+      { type: 'element.add', element: latexElement('inserted'), index: 0 },
+    ]);
+
+    expect(next.canvas.elements.map((element) => element.id)).toEqual(['inserted', 'formula']);
+    expect(next.canvas.elements[1]).toMatchObject({
+      type: 'latex',
+      latex: 'E = mc^2',
+      html: '<span class="katex">E = mc<sup>2</sup></span>',
+      color: '#2563eb',
+      align: 'center',
+      left: 140,
+      top: 160,
+      width: 300,
+      height: 100,
+      rotate: 45,
+    });
+    expect(original.canvas.elements[0]).toMatchObject({ left: 100, top: 100, rotate: 0 });
   });
 
   it.each<[ReorderCommand, string, string[]]>([

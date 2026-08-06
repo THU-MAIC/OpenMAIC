@@ -246,6 +246,7 @@
       "textBox": "텍스트 상자",
       "line": "선",
       "table": "표",
+      "formula": "수식",
       "chart": "차트",
       "chartBar": "막대 차트",
       "chartLine": "꺾은선 차트",
@@ -258,6 +259,15 @@
       "imageOr": "또는 이미지 URL 붙여넣기",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "삽입"
+    },
+    "latex": {
+      "editFormula": "수식 편집",
+      "dialog": "수식 편집기",
+      "source": "LaTeX 소스",
+      "preview": "미리 보기",
+      "symbols": "기호",
+      "presets": "미리 정의된 수식",
+      "invalidSource": "LaTeX 소스가 올바르지 않습니다."
     },
     "table": {
       "doubleClickToEdit": "두 번 클릭하여 편집"

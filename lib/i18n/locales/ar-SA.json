@@ -246,6 +246,7 @@
       "textBox": "مربع نص",
       "line": "خط",
       "table": "جدول",
+      "formula": "معادلة",
       "chart": "مخطط",
       "chartBar": "مخطط أعمدة",
       "chartLine": "مخطط خطي",
@@ -258,6 +259,15 @@
       "imageOr": "أو الصق رابط صورة",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "إدراج"
+    },
+    "latex": {
+      "editFormula": "تحرير المعادلة",
+      "dialog": "محرر المعادلات",
+      "source": "مصدر LaTeX",
+      "preview": "معاينة",
+      "symbols": "رموز",
+      "presets": "معادلات جاهزة",
+      "invalidSource": "مصدر LaTeX غير صالح."
     },
     "table": {
       "doubleClickToEdit": "انقر نقراً مزدوجاً للتحرير"

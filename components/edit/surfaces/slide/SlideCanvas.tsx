@@ -16,6 +16,7 @@ import {
   EditableSlideCanvasWithUI,
   TableInsertPicker,
   type InsertToolbarOptions,
+  type LatexEditorResult,
 } from '@openmaic/renderer/editing-ui';
 import { BarChart3, Image as ImageIcon, Minus, PaintBucket, Table2, Type } from 'lucide-react';
 import Canvas from '@/components/slide-renderer/Editor/Canvas';
@@ -54,6 +55,7 @@ import { useSlideEditSession } from './slide-edit-session';
 import { useRendererCanvasShortcuts } from './use-renderer-canvas-shortcuts';
 import { EDITABLE_ELEMENT_ID_PREFIX } from './renderer-element-dom';
 import { createElementId } from '@/lib/edit/element-id';
+import { createDefaultLatexElement } from '@/lib/edit/slide-edit-elements';
 import { resolveEditingElementId } from './editing-state';
 import { commitRendererTextAutoSize, commitRendererTextChange } from './renderer-text-editing';
 import { commitRendererTableCellChange } from './renderer-table-editing';
@@ -204,6 +206,34 @@ function RendererEditorCanvas() {
       setEditingElementId(id);
     },
     [handleElementsChange, setActiveElementIdList, setCreatingElement, setEditingElementId],
+  );
+
+  const handleLatexInsert = useCallback(
+    (result: LatexEditorResult) => {
+      const id = createElementId('latex');
+      handleElementsChange([{ type: 'element.add', element: createDefaultLatexElement(id, result) }]);
+      setActiveElementIdList([id]);
+      setEditingElementId('');
+    },
+    [handleElementsChange, setActiveElementIdList, setEditingElementId],
+  );
+
+  const handleLatexUpdate = useCallback(
+    (elementId: string, result: LatexEditorResult) => {
+      handleElementsChange([
+        {
+          type: 'element.update',
+          id: elementId,
+          props: {
+            latex: result.latex,
+            html: result.html,
+            width: result.width,
+            height: result.height,
+          },
+        },
+      ]);
+    },
+    [handleElementsChange],
   );
 
   const handleLineCreate = useCallback(
@@ -447,6 +477,22 @@ function RendererEditorCanvas() {
         }}
         lineToolbar={{ locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US' }}
         insertToolbar={insertToolbar}
+        latexEditor={{
+          labels: {
+            insertFormula: t('edit.insert.formula'),
+            editFormula: t('edit.latex.editFormula'),
+            dialog: t('edit.latex.dialog'),
+            source: t('edit.latex.source'),
+            preview: t('edit.latex.preview'),
+            symbols: t('edit.latex.symbols'),
+            presets: t('edit.latex.presets'),
+            invalidSource: t('edit.latex.invalidSource'),
+            cancel: t('common.cancel'),
+            confirm: t('common.confirm'),
+          },
+          onInsert: handleLatexInsert,
+          onUpdate: handleLatexUpdate,
+        }}
       />
     </RendererCanvasContextMenu>
   );

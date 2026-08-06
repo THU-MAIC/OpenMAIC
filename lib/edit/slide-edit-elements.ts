@@ -3,11 +3,13 @@ import type {
   PPTChartElement,
   ShapePathFormulasKeys,
   PPTImageElement,
+  PPTLatexElement,
   PPTShapeElement,
   PPTTableElement,
   PPTTextElement,
   Slide,
 } from '@openmaic/dsl';
+import type { LatexEditorResult } from '@openmaic/renderer/editing-ui';
 
 export interface ShapeSpec {
   viewBox: [number, number];
@@ -94,6 +96,26 @@ export function createDefaultImageElement(id: string, src: string): PPTImageElem
     rotate: 0,
     fixedRatio: true,
     src,
+  };
+}
+
+export function createDefaultLatexElement(
+  id: string,
+  result: LatexEditorResult,
+): PPTLatexElement {
+  return {
+    id,
+    type: 'latex',
+    left: 160,
+    top: 160,
+    width: result.width,
+    height: result.height,
+    rotate: 0,
+    latex: result.latex,
+    html: result.html,
+    color: '#333333',
+    align: 'center',
+    fixedRatio: true,
   };
 }
 

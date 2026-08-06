@@ -92,6 +92,25 @@ const chartSlide = {
   ],
 } as unknown as Slide;
 
+const latexSlide = {
+  ...slide,
+  elements: [
+    {
+      id: 'formula',
+      type: 'latex',
+      left: 100,
+      top: 100,
+      width: 300,
+      height: 220,
+      rotate: 0,
+      latex: 'E = mc^2',
+      html: '<span class="katex">E = mc<sup>2</sup></span>',
+      color: '#2563eb',
+      align: 'center',
+    },
+  ],
+} as unknown as Slide;
+
 describe('EditableSlideCanvas', () => {
   beforeEach(() => {
     Object.defineProperty(document, 'elementFromPoint', {
@@ -288,6 +307,78 @@ describe('EditableSlideCanvas', () => {
     ]);
   });
 
+  it('selects, moves, resizes, and rotates a latex formula through generic renderer gestures', () => {
+    const onSelectionChange = vi.fn();
+    const onElementsChange = vi.fn();
+    const selectable = render(
+      <EditableSlideCanvas
+        slide={latexSlide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSelectionChange}
+        onElementsChange={onElementsChange}
+      />,
+    );
+    const select = selectable.container.querySelector(
+      '[data-select-element-id="formula"]',
+    ) as HTMLElement;
+    fireEvent.pointerDown(select, { pointerId: 10, clientX: 150, clientY: 150 });
+    fireEvent.pointerUp(select, { pointerId: 10, clientX: 150, clientY: 150 });
+    expect(onSelectionChange).toHaveBeenCalledWith({
+      elementIds: ['formula'],
+      primaryId: 'formula',
+    });
+    selectable.unmount();
+
+    onSelectionChange.mockClear();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={latexSlide}
+        scale={1}
+        selection={{ elementIds: ['formula'], primaryId: 'formula' }}
+        onSelectionChange={onSelectionChange}
+        onElementsChange={onElementsChange}
+        snapping={false}
+      />,
+    );
+
+    expect(container.querySelector('.base-element-latex')).not.toBeNull();
+    expect(container.querySelectorAll('[data-resize-handle]')).toHaveLength(8);
+    expect(container.querySelector('[data-rotate-handle]')).not.toBeNull();
+
+    const move = container.querySelector('[data-element-id="formula"]') as HTMLElement;
+    fireEvent.pointerDown(move, { pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(move, { pointerId: 1, clientX: 30, clientY: 20 });
+    fireEvent.pointerUp(move, { pointerId: 1, clientX: 30, clientY: 20 });
+    expect(onElementsChange).toHaveBeenLastCalledWith([
+      { type: 'element.update', id: 'formula', props: { left: 130, top: 120 } },
+    ]);
+
+    onElementsChange.mockClear();
+    const resize = container.querySelector('[data-resize-handle="right-bottom"]') as HTMLElement;
+    fireEvent.pointerDown(resize, { pointerId: 2, clientX: 400, clientY: 320 });
+    fireEvent.pointerMove(window, { pointerId: 2, clientX: 440, clientY: 350 });
+    fireEvent.pointerUp(window, { pointerId: 2, clientX: 440, clientY: 350 });
+    expect(onElementsChange).toHaveBeenLastCalledWith([
+      {
+        type: 'element.update',
+        id: 'formula',
+        props: { left: 100, top: 100, width: 340, height: 250 },
+      },
+    ]);
+
+    onElementsChange.mockClear();
+    const rotate = container.querySelector('[data-rotate-handle]') as HTMLElement;
+    fireEvent.pointerDown(rotate, { pointerId: 3, clientX: 250, clientY: 75 });
+    fireEvent.pointerMove(window, { pointerId: 3, clientX: 350, clientY: 210 });
+    fireEvent.pointerUp(window, { pointerId: 3, clientX: 350, clientY: 210 });
+    expect(onElementsChange).toHaveBeenLastCalledWith([
+      { type: 'element.update', id: 'formula', props: { rotate: 90 } },
+    ]);
+
+    expect(onSelectionChange).not.toHaveBeenCalled();
+  });
+
   it('enters table editing from a double-clicked table cell hit', () => {
     const onSelectionChange = vi.fn();
     const { container } = render(
@@ -325,7 +416,9 @@ describe('EditableSlideCanvas', () => {
     );
 
     expect(container.querySelector('[data-table-edit-mask]')).not.toBeNull();
-    expect(container.querySelector('[data-table-edit-mask-tip]')?.textContent).toBe('Double-click to edit');
+    expect(container.querySelector('[data-table-edit-mask-tip]')?.textContent).toBe(
+      'Double-click to edit',
+    );
   });
 
   it('flushes an active table-cell draft before a blank-canvas click exits editing', () => {

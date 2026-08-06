@@ -6,6 +6,7 @@ import {
   insertTableElement,
 } from '@/components/edit/surfaces/slide/use-slide-surface';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
+import { createDefaultLatexElement } from '@/lib/edit/slide-edit-elements';
 import { useCanvasStore } from '@/lib/store/canvas';
 
 function seedEmptySlideSession() {
@@ -102,6 +103,30 @@ describe('slide insert palette', () => {
       data: { labels: ['A', 'B', 'C', 'D'], legends: ['Series 1'] },
     });
     expect(selectionSpy).toHaveBeenCalledWith([operation.element.id]);
+  });
+
+  it('creates a renderer Latex element with the shared editor result', () => {
+    expect(
+      createDefaultLatexElement('formula-1', {
+        latex: '\\frac{a}{b}',
+        html: '<span class="katex">a/b</span>',
+        width: 160,
+        height: 60,
+      }),
+    ).toEqual({
+      id: 'formula-1',
+      type: 'latex',
+      left: 160,
+      top: 160,
+      width: 160,
+      height: 60,
+      rotate: 0,
+      latex: '\\frac{a}{b}',
+      html: '<span class="katex">a/b</span>',
+      color: '#333333',
+      align: 'center',
+      fixedRatio: true,
+    });
   });
 });
 

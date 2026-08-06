@@ -246,6 +246,7 @@
       "textBox": "Текстовое поле",
       "line": "Линия",
       "table": "Таблица",
+      "formula": "Формула",
       "chart": "Диаграмма",
       "chartBar": "Столбчатая диаграмма",
       "chartLine": "Линейная диаграмма",
@@ -258,6 +259,15 @@
       "imageOr": "или вставьте URL изображения",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "Вставить"
+    },
+    "latex": {
+      "editFormula": "Редактировать формулу",
+      "dialog": "Редактор формул",
+      "source": "Исходный код LaTeX",
+      "preview": "Предпросмотр",
+      "symbols": "Символы",
+      "presets": "Готовые формулы",
+      "invalidSource": "Исходный код LaTeX недействителен."
     },
     "table": {
       "doubleClickToEdit": "Дважды щелкните для редактирования"

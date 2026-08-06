@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { PPTChartElement, PPTElement, PPTTextElement } from '@openmaic/dsl';
+import type { PPTChartElement, PPTElement, PPTLatexElement, PPTTextElement } from '@openmaic/dsl';
 import type { EditIntent, Selection } from '@openmaic/renderer/editing';
 import { createRendererCanvasCommands } from '@/components/edit/surfaces/slide/renderer-canvas-commands';
 import { applyRendererEditIntents } from '@/components/edit/surfaces/slide/renderer-edit-intents';
@@ -33,6 +33,22 @@ function chart(id: string, overrides: Partial<PPTChartElement> = {}): PPTChartEl
     chartType: 'bar',
     data: { labels: ['A', 'B'], legends: ['Series 1'], series: [[24, 36]] },
     themeColors: ['#5b8def'],
+    ...overrides,
+  };
+}
+
+function latex(id: string, overrides: Partial<PPTLatexElement> = {}): PPTLatexElement {
+  return {
+    id,
+    type: 'latex',
+    left: 0,
+    top: 0,
+    width: 180,
+    height: 60,
+    rotate: 0,
+    latex: 'E = mc^2',
+    html: '<span class="katex">E = mc<sup>2</sup></span>',
+    color: '#2563eb',
     ...overrides,
   };
 }
@@ -72,6 +88,69 @@ function setup({
 }
 
 describe('createRendererCanvasCommands', () => {
+  it('applies delete, lock, unlock, grouping, and layer commands to latex through generic intents', () => {
+    const formula = latex('formula');
+    const textElement = text('text');
+    const selected = { elementIds: ['formula'], primaryId: 'formula' };
+    const lockSetup = setup({ elements: [formula], selection: selected });
+
+    lockSetup.commands.lockSelection();
+    expect(lockSetup.onIntents).toHaveBeenCalledWith([
+      {
+        type: 'element.updateMany',
+        updates: [{ id: 'formula', props: { lock: true } }],
+      },
+    ]);
+    const lockedContent = applyRendererEditIntents(
+      content([formula]),
+      lockSetup.onIntents.mock.calls[0][0],
+    );
+    expect(lockedContent.canvas.elements[0]).toMatchObject({ lock: true });
+
+    const unlockSetup = setup({
+      elements: [latex('formula', { lock: true })],
+      selection: { elementIds: [] },
+    });
+    unlockSetup.commands.unlockTarget('formula');
+    expect(unlockSetup.onIntents).toHaveBeenCalledWith([
+      {
+        type: 'element.updateMany',
+        updates: [{ id: 'formula', props: { lock: false } }],
+      },
+    ]);
+
+    const groupedSetup = setup({
+      elements: [formula, textElement],
+      selection: { elementIds: ['formula', 'text'], primaryId: 'formula' },
+    });
+    groupedSetup.commands.toggleGroup();
+    const grouped = applyRendererEditIntents(
+      content([formula, textElement]),
+      groupedSetup.onIntents.mock.calls[0][0],
+    );
+    expect(grouped.canvas.elements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'formula', groupId: 'group-new' }),
+        expect.objectContaining({ id: 'text', groupId: 'group-new' }),
+      ]),
+    );
+
+    const layerSetup = setup({ elements: [formula, textElement], selection: selected });
+    layerSetup.commands.reorderTarget('formula', 'front');
+    expect(
+      applyRendererEditIntents(
+        content([formula, textElement]),
+        layerSetup.onIntents.mock.calls[0][0],
+      ),
+    ).toMatchObject({ canvas: { elements: [textElement, formula] } });
+
+    const deleteSetup = setup({ elements: [formula], selection: selected });
+    deleteSetup.commands.deleteSelection();
+    expect(deleteSetup.onIntents).toHaveBeenCalledWith([
+      { type: 'element.delete', ids: ['formula'] },
+    ]);
+  });
+
   it('selectAll selects only visible unlocked elements without committing', () => {
     const { commands, onIntents, onSelectionChange } = setup({
       elements: [text('a'), text('b', { lock: true }), text('c')],
@@ -131,7 +210,10 @@ describe('createRendererCanvasCommands', () => {
   it('applies delete, lock, group, and z-order commands to chart elements', () => {
     const elements = [chart('chart'), text('label')];
 
-    const deleteSetup = setup({ elements, selection: { elementIds: ['chart'], primaryId: 'chart' } });
+    const deleteSetup = setup({
+      elements,
+      selection: { elementIds: ['chart'], primaryId: 'chart' },
+    });
     deleteSetup.commands.deleteSelection();
     expect(deleteSetup.onIntents).toHaveBeenCalledWith([
       { type: 'element.delete', ids: ['chart'] },

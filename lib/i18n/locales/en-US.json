@@ -246,6 +246,7 @@
       "textBox": "Text box",
       "line": "Line",
       "table": "Table",
+      "formula": "Formula",
       "chart": "Chart",
       "chartBar": "Bar chart",
       "chartLine": "Line chart",
@@ -258,6 +259,15 @@
       "imageOr": "or paste an image URL",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "Insert"
+    },
+    "latex": {
+      "editFormula": "Edit formula",
+      "dialog": "Formula editor",
+      "source": "LaTeX source",
+      "preview": "Preview",
+      "symbols": "Symbols",
+      "presets": "Presets",
+      "invalidSource": "The LaTeX source is invalid."
     },
     "table": {
       "doubleClickToEdit": "Double-click to edit"
