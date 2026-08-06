@@ -10,12 +10,7 @@ import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { markStagePersistenceDirty, useStageStore } from '@/lib/store/stage';
 import { db, mediaFileKey } from '@/lib/utils/database';
-import {
-  accessDocument,
-  getDocumentStore,
-  mutateDocument,
-  type AppDocument,
-} from '@/lib/document-store';
+import { accessDocument, mutateDocument, type AppDocument } from '@/lib/document-store';
 import type { SceneOutline } from '@/lib/types/generation';
 import { makeScene, type Scene, type Stage, type Whiteboard } from '@/lib/types/stage';
 import type { MediaGenerationRequest } from '@/lib/media/types';
