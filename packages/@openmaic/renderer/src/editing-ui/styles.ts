@@ -455,4 +455,233 @@ export const EDITING_UI_STYLES = `
   outline: 2px solid var(--maic-editing-ui-active-fg, #6d28d9);
   outline-offset: 1px;
 }
+
+.maic-editing-ui-latex-backdrop {
+  align-items: center;
+  background: rgb(24 24 27 / 42%);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: calc(var(--maic-editing-ui-z-index, 80) + 20);
+}
+
+.maic-editing-ui-latex-dialog {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 20px 44px rgb(0 0 0 / 22%);
+  color: #27272a;
+  max-height: min(680px, calc(100vh - 48px));
+  max-width: 880px;
+  overflow: hidden;
+  width: min(880px, 100%);
+}
+
+.maic-editing-ui-latex-main {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  max-height: calc(min(680px, 100vh - 48px) - 64px);
+  overflow: auto;
+  padding: 20px;
+}
+
+.maic-editing-ui-latex-workspace {
+  display: grid;
+  grid-template-rows: auto minmax(160px, 1fr) minmax(144px, 0.7fr);
+  min-height: 420px;
+}
+
+.maic-editing-ui-latex-source-label,
+.maic-editing-ui-latex-preview-label {
+  color: #52525b;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.maic-editing-ui-latex-source {
+  border: 1px solid #d4d4d8;
+  border-radius: 6px;
+  color: #18181b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 0;
+  padding: 10px;
+  resize: none;
+}
+
+.maic-editing-ui-latex-source:focus {
+  border-color: var(--maic-editing-ui-active-fg, #6d28d9);
+  outline: 2px solid color-mix(in srgb, var(--maic-editing-ui-active-fg, #6d28d9) 20%, transparent);
+  outline-offset: 1px;
+}
+
+.maic-editing-ui-latex-preview-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  margin-top: 16px;
+  min-height: 0;
+}
+
+.maic-editing-ui-latex-preview {
+  align-items: center;
+  background: #fafafa;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  display: flex;
+  justify-content: center;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.maic-editing-ui-latex-preview .katex-display,
+.maic-editing-ui-latex-symbol-grid .katex-display,
+.maic-editing-ui-latex-preset-list .katex-display {
+  margin: 0;
+}
+
+.maic-editing-ui-latex-error {
+  color: #dc2626;
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 6px 0 0;
+  min-height: 17px;
+}
+
+.maic-editing-ui-latex-palette {
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+  overflow: hidden;
+}
+
+.maic-editing-ui-latex-tabs,
+.maic-editing-ui-latex-symbol-groups {
+  background: #fafafa;
+  border-bottom: 1px solid #e4e4e7;
+  display: flex;
+  gap: 2px;
+  padding: 6px;
+}
+
+.maic-editing-ui-latex-tabs button,
+.maic-editing-ui-latex-symbol-groups button {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: #52525b;
+  cursor: pointer;
+  font-size: 12px;
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+.maic-editing-ui-latex-tabs button[aria-selected='true'],
+.maic-editing-ui-latex-symbol-groups button[aria-selected='true'] {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.maic-editing-ui-latex-symbol-grid {
+  display: grid;
+  gap: 4px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: auto;
+  padding: 12px;
+}
+
+.maic-editing-ui-latex-symbol-grid button,
+.maic-editing-ui-latex-preset-list button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 4px;
+  color: #3f3f46;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  min-height: 40px;
+  padding: 6px;
+}
+
+.maic-editing-ui-latex-symbol-grid button:hover,
+.maic-editing-ui-latex-preset-list button:hover {
+  background: #faf5ff;
+  border-color: #a78bfa;
+}
+
+.maic-editing-ui-latex-preset-list {
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.maic-editing-ui-latex-preset-list button {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.maic-editing-ui-latex-preset-list button > span:first-child {
+  color: #52525b;
+  font-size: 11px;
+}
+
+.maic-editing-ui-latex-footer {
+  border-top: 1px solid #e4e4e7;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 12px 20px;
+}
+
+.maic-editing-ui-latex-footer button {
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  height: 32px;
+  padding: 0 14px;
+}
+
+.maic-editing-ui-latex-cancel {
+  background: #ffffff;
+  border: 1px solid #d4d4d8;
+  color: #3f3f46;
+}
+
+.maic-editing-ui-latex-confirm {
+  background: var(--maic-editing-ui-active-fg, #6d28d9);
+  border: 1px solid var(--maic-editing-ui-active-fg, #6d28d9);
+  color: #ffffff;
+}
+
+.maic-editing-ui-latex-confirm:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@media (max-width: 720px) {
+  .maic-editing-ui-latex-backdrop {
+    align-items: flex-start;
+    padding: 12px;
+  }
+
+  .maic-editing-ui-latex-main {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px;
+  }
+
+  .maic-editing-ui-latex-workspace,
+  .maic-editing-ui-latex-palette {
+    min-height: 360px;
+  }
+}
 `;
