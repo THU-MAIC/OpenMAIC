@@ -8,7 +8,7 @@
  */
 
 import { z } from 'zod';
-import type { PBLClosingQuality } from '../types';
+import type { PBLClosingQuality } from '../../types';
 
 // ---------------------------------------------------------------------------
 // Argument schemas

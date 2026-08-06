@@ -8,14 +8,14 @@
  * checkpoint across the server/client boundary as one contract.
  */
 
-import type { PBLAdvanceProjectPatch } from '../api/sse';
-import { capEngagementEvents } from './engagement';
-import type { PBLProjectV2, PBLRuntimeEvent } from '../types';
+import type { PBLAdvanceProjectPatch } from '../../api/sse';
+import { capEngagementEvents } from '../kernel/engagement';
+import type { PBLProjectV2, PBLRuntimeEvent } from '../../types';
 import {
   appendRuntimeEvent,
   appendStatusChangedRuntimeEvent,
   patchStatusChangedRuntimeEventId,
-} from './runtime-events';
+} from '../kernel/runtime-events';
 
 export function buildAdvanceProjectPatch(
   project: PBLProjectV2,

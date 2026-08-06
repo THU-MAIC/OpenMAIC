@@ -31,7 +31,7 @@ import { ChevronDown, ChevronUp, Hand } from 'lucide-react';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
-import { PBL_SIMULATOR_AGENT_ID } from '@/lib/pbl/v2/operations/progress';
+import { PBL_SIMULATOR_AGENT_ID } from '@/lib/pbl/v2/operations/kernel/progress';
 import { SceneBackdrop } from './scene-backdrop';
 import { sanitizeSceneVisual } from './scene-types';
 

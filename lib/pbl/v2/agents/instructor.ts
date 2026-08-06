@@ -31,26 +31,26 @@ import type {
   PBLProficiency,
 } from '../types';
 import type { PBLSSEEvent } from '../api/sse';
-import { RecordObservationArgs, AdjustDifficultyArgs } from '../operations/schemas';
+import { RecordObservationArgs, AdjustDifficultyArgs } from '../operations/runtime/schemas';
 import {
   recordEvent,
   microtaskEngagement,
   milestoneSynthesisSatisfied,
-} from '../operations/engagement';
+} from '../operations/kernel/engagement';
 import {
   currentMicrotask,
   advanceMicrotask as advanceMicrotaskOp,
   normalizeProjectRuntime,
-} from '../operations/progress';
-import { summarizeLatestSubmissionForMicrotask } from '../operations/submission';
+} from '../operations/kernel/progress';
+import { summarizeLatestSubmissionForMicrotask } from '../operations/runtime/submission';
 import {
   applyProficiencyDirective,
   tickTurnOnProject,
   trackObservation,
-} from '../operations/dynamic-signals';
-import { DEFAULT_TIER, proficiencyDirectiveFromTarget } from '../operations/proficiency';
-import { buildAdvanceProjectPatch } from '../operations/advance-patch';
-import { formatScenarioTranscript } from '../operations/eval-prompts';
+} from '../operations/runtime/dynamic-signals';
+import { DEFAULT_TIER, proficiencyDirectiveFromTarget } from '../operations/kernel/proficiency';
+import { buildAdvanceProjectPatch } from '../operations/runtime/advance-patch';
+import { formatScenarioTranscript } from '../operations/runtime/eval-prompts';
 
 const log = createLogger('PBL v2 Instructor');
 

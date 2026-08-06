@@ -12,6 +12,12 @@ import { useFilter } from './useFilter';
 import { ImageOutline } from './ImageOutline';
 import { ImageClipHandler } from './ImageClipHandler';
 import { useResolvedImageSrc } from './useResolvedImageSrc';
+import { ImageOff, RotateCcw } from 'lucide-react';
+import { useI18n } from '@/lib/hooks/use-i18n';
+import { useSceneData } from '@/lib/contexts/scene-context';
+import type { SlideContent } from '@/lib/types/stage';
+import { mediaRetryTarget, retryMediaTask } from '@/lib/media/media-orchestrator';
+import { mediaResolutionCanRetry } from '@/lib/media/resolve-media-ref';
 
 export interface ImageElementProps {
   elementInfo: PPTImageElement;
@@ -22,6 +28,8 @@ export interface ImageElementProps {
  * Image element component with interaction support
  */
 export function ImageElement({ elementInfo, selectElement }: ImageElementProps) {
+  const { t } = useI18n();
+  const { sceneId, sceneData } = useSceneData<SlideContent>();
   const clipingImageElementId = useCanvasStore.use.clipingImageElementId();
   const setClipingImageElementId = useCanvasStore.use.setClipingImageElementId();
   const { updateElement } = useCanvasOperations();
@@ -36,7 +44,8 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
   // editor canvas displays the generated image (the read-only BaseImageElement
   // has always done this; the interactive variant previously rendered the raw
   // placeholder string, surfacing a broken-image icon in Pro mode).
-  const { resolvedSrc } = useResolvedImageSrc(elementInfo);
+  const { resolvedSrc, resolution } = useResolvedImageSrc(elementInfo);
+  const canRetry = mediaResolutionCanRetry(resolution);
 
   const isCliping = clipingImageElementId === elementInfo.id;
 
@@ -135,21 +144,58 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
               className="image-content w-full h-full overflow-hidden relative"
               style={{ clipPath: clipShape.style }}
             >
-              <img
-                src={resolvedSrc}
-                draggable={false}
-                style={{
-                  position: 'absolute',
-                  top: imgPosition.top,
-                  left: imgPosition.left,
-                  width: imgPosition.width,
-                  height: imgPosition.height,
-                  filter,
-                }}
-                alt=""
-                onDragStart={(e) => e.preventDefault()}
-              />
-              {elementInfo.colorMask && (
+              {resolution.kind === 'pending' || resolution.kind === 'placeholder' ? (
+                <div
+                  className="h-full w-full animate-pulse bg-black/10"
+                  data-media-state="pending"
+                />
+              ) : resolution.kind === 'disabled' ? (
+                <div
+                  className="flex h-full w-full items-center justify-center gap-1 bg-gray-50 px-2 text-[10px] font-medium text-gray-500 dark:bg-gray-900/20 dark:text-gray-400"
+                  data-media-state="disabled"
+                >
+                  <ImageOff className="h-3 w-3 shrink-0" />
+                  <span>{t('settings.mediaGenerationDisabled')}</span>
+                </div>
+              ) : resolution.kind === 'failed' ? (
+                <div
+                  className="flex h-full w-full items-center justify-center bg-red-50"
+                  data-media-state="failed"
+                >
+                  {canRetry ? (
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        retryMediaTask(
+                          elementInfo.src,
+                          mediaRetryTarget(elementInfo.id, sceneId, sceneData),
+                        );
+                      }}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      className="flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-[10px] font-medium text-red-600"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      {t('settings.mediaRetry')}
+                    </button>
+                  ) : null}
+                </div>
+              ) : resolvedSrc ? (
+                <img
+                  src={resolvedSrc}
+                  draggable={false}
+                  style={{
+                    position: 'absolute',
+                    top: imgPosition.top,
+                    left: imgPosition.left,
+                    width: imgPosition.width,
+                    height: imgPosition.height,
+                    filter,
+                  }}
+                  alt=""
+                  onDragStart={(e) => e.preventDefault()}
+                />
+              ) : null}
+              {resolvedSrc && elementInfo.colorMask && (
                 <div
                   className="color-mask absolute inset-0"
                   style={{
@@ -160,6 +206,19 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
             </div>
           </div>
         )}
+        {canRetry && resolution.kind !== 'failed' ? (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              retryMediaTask(elementInfo.src, mediaRetryTarget(elementInfo.id, sceneId, sceneData));
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            className="absolute right-1 top-1 flex items-center gap-1 rounded bg-red-100/95 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm"
+          >
+            <RotateCcw className="h-3 w-3" />
+            {t('settings.mediaRetry')}
+          </button>
+        ) : null}
       </div>
     </div>
   );

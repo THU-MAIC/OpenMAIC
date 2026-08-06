@@ -20,7 +20,7 @@ import type {
   PBLEngagementEventKind,
   PBLEngagementSummary,
   PBLProjectV2,
-} from '../types';
+} from '../../types';
 
 /** Soft cap on the engagement ledger size. Older events are dropped
  *  first; per-microtask summaries cache what's lost. Conservatively

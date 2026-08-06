@@ -1,5 +1,5 @@
-import type { PBLProjectV2, PriorQuizResult } from '../types';
-import { transitionProjectUiPhase } from './runtime-events';
+import type { PBLProjectV2, PriorQuizResult } from '../../types';
+import { transitionProjectUiPhase } from '../kernel/runtime-events';
 
 /** Invalidate an async Hero launch before a different scene can reuse it. */
 export function invalidatePendingWorkspaceLaunch(

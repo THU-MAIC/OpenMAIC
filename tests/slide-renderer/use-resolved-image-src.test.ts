@@ -48,25 +48,56 @@ describe('resolveImageSrc (pure)', () => {
     expect(r.task?.status).toBe('done');
   });
 
-  it('falls back to the raw placeholder src when no task is supplied', () => {
+  it('never returns a raw generated placeholder when no task is supplied', () => {
     const r = resolveImageSrc(PLACEHOLDER, STAGE, undefined);
-    expect(r.resolvedSrc).toBe(PLACEHOLDER.src);
+    expect(r.resolvedSrc).toBe('');
+    expect(r.resolution).toEqual({ kind: 'placeholder' });
     expect(r.isPlaceholder).toBe(true);
     expect(r.task).toBeUndefined();
   });
 
-  it.each(['pending', 'generating', 'failed'] as const)(
-    'falls back when task status is %s',
+  it.each(['pending', 'generating'] as const)('keeps task status %s non-renderable', (status) => {
+    const r = resolveImageSrc(PLACEHOLDER, STAGE, task({ status, objectUrl: undefined }));
+    expect(r.resolvedSrc).toBe('');
+    expect(r.resolution).toEqual({ kind: 'pending' });
+    expect(r.task?.status).toBe(status);
+  });
+
+  it.each(['pending', 'generating'] as const)(
+    'keeps a %s task authoritative over stale pool bytes',
     (status) => {
-      const r = resolveImageSrc(PLACEHOLDER, STAGE, task({ status, objectUrl: undefined }));
-      expect(r.resolvedSrc).toBe(PLACEHOLDER.src);
-      expect(r.task?.status).toBe(status);
+      const r = resolveImageSrc(
+        PLACEHOLDER,
+        STAGE,
+        task({ status, objectUrl: undefined }),
+        'blob:pool-image',
+      );
+      expect(r.resolvedSrc).toBe('');
+      expect(r.resolution).toEqual({ kind: 'pending' });
     },
   );
 
+  it('renders last-good pool bytes for a failed regeneration', () => {
+    const r = resolveImageSrc(
+      PLACEHOLDER,
+      STAGE,
+      task({ status: 'failed', objectUrl: undefined }),
+      'blob:pool-image',
+    );
+    expect(r.resolvedSrc).toBe('blob:pool-image');
+    expect(r.resolution).toEqual({ kind: 'url', url: 'blob:pool-image', retryable: true });
+  });
+
+  it('returns failed without bytes so the surface can render error UI', () => {
+    const r = resolveImageSrc(PLACEHOLDER, STAGE, task({ status: 'failed', objectUrl: undefined }));
+    expect(r.resolvedSrc).toBe('');
+    expect(r.resolution).toEqual({ kind: 'failed', retryable: true });
+  });
+
   it('falls back when a done task has no objectUrl set', () => {
     const r = resolveImageSrc(PLACEHOLDER, STAGE, task({ status: 'done', objectUrl: undefined }));
-    expect(r.resolvedSrc).toBe(PLACEHOLDER.src);
+    expect(r.resolvedSrc).toBe('');
+    expect(r.resolution).toEqual({ kind: 'pending' });
   });
 
   it('cross-stage isolation: drops a done task that belongs to a different stage', () => {
@@ -75,7 +106,8 @@ describe('resolveImageSrc (pure)', () => {
       STAGE,
       task({ status: 'done', objectUrl: 'blob:other-stage', stageId: 'stage-other' }),
     );
-    expect(r.resolvedSrc).toBe(PLACEHOLDER.src);
+    expect(r.resolvedSrc).toBe('');
+    expect(r.resolution).toEqual({ kind: 'placeholder' });
     expect(r.task).toBeUndefined();
   });
 
@@ -86,7 +118,8 @@ describe('resolveImageSrc (pure)', () => {
       undefined,
       task({ status: 'done', objectUrl: 'blob:leak' }),
     );
-    expect(r.resolvedSrc).toBe(PLACEHOLDER.src);
+    expect(r.resolvedSrc).toBe('');
+    expect(r.resolution).toEqual({ kind: 'placeholder' });
     expect(r.isPlaceholder).toBe(false);
     expect(r.task).toBeUndefined();
   });
@@ -101,5 +134,24 @@ describe('resolveImageSrc (pure)', () => {
     expect(r.resolvedSrc).toBe(CONCRETE.src);
     expect(r.isPlaceholder).toBe(false);
     expect(r.task).toBeUndefined();
+  });
+
+  it('falls back to an unknown browser-resolvable string when pool lookup misses', () => {
+    const unknown = { ...PLACEHOLDER, src: 'logo.png' };
+    const r = resolveImageSrc(unknown, STAGE, undefined, null);
+    expect(r.resolvedSrc).toBe('logo.png');
+  });
+
+  it('hides an opaque allocated ref when pool lookup misses', () => {
+    const allocated = { ...PLACEHOLDER, src: 'ast_missing_image' };
+    const r = resolveImageSrc(allocated, STAGE, undefined, null);
+    expect(r.resolvedSrc).toBe('');
+    expect(r.resolution).toEqual({ kind: 'placeholder' });
+  });
+
+  it('returns disabled for an unresolved placeholder when generation is off', () => {
+    const r = resolveImageSrc(PLACEHOLDER, STAGE, undefined, null, true);
+    expect(r.resolvedSrc).toBe('');
+    expect(r.resolution).toEqual({ kind: 'disabled' });
   });
 });

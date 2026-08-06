@@ -1,4 +1,4 @@
-import type { PBLProjectV2, PBLRuntimeActorType, PBLRuntimeEvent, PBLUiPhase } from '../types';
+import type { PBLProjectV2, PBLRuntimeActorType, PBLRuntimeEvent, PBLUiPhase } from '../../types';
 
 export const MAX_RUNTIME_EVENTS = 500;
 

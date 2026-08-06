@@ -21,6 +21,8 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore } from '@/lib/store/user-profile';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
+import { clearCacheErrorMessage } from './clear-cache-error-message';
+import { runClearCache, shouldReloadAfterClear } from './clear-cache-workflow';
 
 const log = createLogger('GeneralSettings');
 
@@ -61,24 +63,32 @@ export function GeneralSettings() {
     if (!isConfirmValid) return;
     setClearing(true);
     try {
-      // 1. Clear IndexedDB
-      await clearDatabase();
-      // 2. Clear localStorage
-      localStorage.clear();
-      // 3. Clear sessionStorage
-      sessionStorage.clear();
-      // 4. Clear the stores that persist through the KVStore. The blanket
-      // clear above only reaches them because the KV browser backend happens
-      // to sit on localStorage; under a server-backed `account` scope it would
-      // report success and the data would come straight back on reload. The
-      // remaining ad-hoc localStorage keys still rely on that blanket clear —
-      // they lose the dependency as they move to the KVStore.
-      await Promise.all([
-        clearPersistedStore(useSettingsStore.persist, 'settings-storage'),
-        clearPersistedStore(useUserProfileStore.persist, 'user-profile-storage'),
-      ]);
+      const result = await runClearCache({
+        clearDatabase,
+        clearLocalStorage: () => localStorage.clear(),
+        clearSessionStorage: () => sessionStorage.clear(),
+        clearPersistedStores: async () => {
+          // The blanket clear only reaches these stores while their KV backend
+          // happens to use localStorage. Account-scoped storage needs explicit cleanup.
+          await Promise.all([
+            clearPersistedStore(useSettingsStore.persist, 'settings-storage'),
+            clearPersistedStore(useUserProfileStore.persist, 'user-profile-storage'),
+          ]);
+        },
+      });
 
-      toast.success(t('settings.clearCacheSuccess'));
+      if (result.status === 'asset-pool-deferred') {
+        log.warn('Asset pool deletion deferred; remaining cache cleanup completed.');
+        toast.error(clearCacheErrorMessage(result.error, t));
+      } else {
+        toast.success(t('settings.clearCacheSuccess'));
+      }
+
+      if (!shouldReloadAfterClear(result)) {
+        // The retry stays actionable on this page; see shouldReloadAfterClear.
+        setClearing(false);
+        return;
+      }
 
       // Reload without waiting. The stores are still live in memory, so the
       // longer this page stays up the more chances a `set()` has to persist
@@ -89,7 +99,7 @@ export function GeneralSettings() {
       window.location.reload();
     } catch (error) {
       log.error('Failed to clear cache:', error);
-      toast.error(t('settings.clearCacheFailed'));
+      toast.error(clearCacheErrorMessage(error, t));
       setClearing(false);
     }
   }, [isConfirmValid, t]);

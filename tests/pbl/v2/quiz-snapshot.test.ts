@@ -11,8 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   applyQuizSignalsToProject,
   buildQuizSnapshot,
-} from '@/lib/pbl/v2/operations/quiz-snapshot';
-import { emptyAssessment } from '@/lib/pbl/v2/operations/proficiency';
+} from '@/lib/pbl/v2/operations/runtime/quiz-snapshot';
+import { emptyAssessment } from '@/lib/pbl/v2/operations/kernel/proficiency';
 import type { PBLProjectV2, PriorQuizResult } from '@/lib/pbl/v2/types';
 import type { Scene } from '@/lib/types/stage';
 

@@ -27,7 +27,7 @@
  * the rationale.
  */
 
-import { microtaskEngagement, recordEvent } from './engagement';
+import { microtaskEngagement, recordEvent } from '../kernel/engagement';
 import {
   ensureAssessment,
   explicitAssessment,
@@ -39,10 +39,10 @@ import {
   stepProficiency,
   updateProjectAssessment,
   type ProficiencyDirective,
-} from './proficiency';
-import { appendProficiencyUpdatedRuntimeEvent } from './runtime-events';
-import type { PBLProjectV2, ProficiencyTransition } from '../types';
-import type { PBLSSEEvent } from '../api/sse';
+} from '../kernel/proficiency';
+import { appendProficiencyUpdatedRuntimeEvent } from '../kernel/runtime-events';
+import type { PBLProjectV2, ProficiencyTransition } from '../../types';
+import type { PBLSSEEvent } from '../../api/sse';
 
 /** Did a transition fire on the last signal? Used by callers that
  *  need to render the transition history outside the SSE channel

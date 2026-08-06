@@ -5,12 +5,28 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * real `@openmaic/renderer/snapshot` needs a build + DOM). `slideToPng` records
  * the slide it was handed so tests can assert which media the frame captured.
  */
-const capturedSlides: Array<{ elements: Array<Record<string, unknown>> }> = [];
+const capturedSlides: Array<{
+  elements: Array<Record<string, unknown>>;
+  background?: { type: string; image?: { src: string } };
+}> = [];
+const mediaOwnerMocks = vi.hoisted(() => ({
+  withAssetUrl: vi.fn(async (_ref: string, fn: (url: string | null) => Promise<unknown>) =>
+    fn(null),
+  ),
+}));
 vi.mock('@openmaic/renderer/snapshot', () => ({
-  slideToPng: vi.fn(async (slide: { elements: Array<Record<string, unknown>> }) => {
-    capturedSlides.push(structuredClone(slide));
-    return new Blob(['png'], { type: 'image/png' });
-  }),
+  slideToPng: vi.fn(
+    async (slide: {
+      elements: Array<Record<string, unknown>>;
+      background?: { type: string; image?: { src: string } };
+    }) => {
+      capturedSlides.push(structuredClone(slide));
+      return new Blob(['png'], { type: 'image/png' });
+    },
+  ),
+}));
+vi.mock('@/lib/media/use-asset-url', () => ({
+  withAssetUrl: mediaOwnerMocks.withAssetUrl,
 }));
 
 import { collectVideoAssets } from '@/lib/video-export-app/collect';
@@ -89,6 +105,7 @@ afterEach(() => {
   capturedSlides.length = 0;
   revoked.length = 0;
   objectUrlSeq = 0;
+  mediaOwnerMocks.withAssetUrl.mockReset().mockImplementation(async (_ref, fn) => fn(null));
 });
 
 /** Stub URL object-URL lifecycle (absent in Node) so frame tests can run. */
@@ -245,6 +262,84 @@ describe('collectVideoAssets — ossKey fallback for evicted blobs', () => {
     expect(await blobs.get('media/v.jpg')?.text()).toBe('https://cdn/v.jpg');
     expect(missing).toHaveLength(0);
   });
+
+  it('falls back to the original source fetch when generated-media lookup misses', async () => {
+    const fetchSpy = vi.fn(async (url: string) =>
+      url === 'logo.png'
+        ? new Response(new Blob(['relative-image'], { type: 'image/png' }))
+        : new Response(null, { status: 404 }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { blobs, missing } = await collectVideoAssets(
+      irWith([{ assetId: 'logo.png', kind: 'image', path: 'media/logo.png', present: true }]),
+      [],
+      records(),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith('logo.png');
+    expect(await blobs.get('media/logo.png')?.text()).toBe('relative-image');
+    expect(missing).toHaveLength(0);
+  });
+
+  it('reads allocated image bytes through the shared pool-owner fallback', async () => {
+    mediaOwnerMocks.withAssetUrl.mockImplementationOnce(async (_ref, fn) =>
+      fn('https://pool.test/image'),
+    );
+    const fetchSpy = vi.fn(async (url: string) =>
+      url === 'https://pool.test/image'
+        ? new Response(new Blob(['pool-image'], { type: 'image/png' }))
+        : new Response(null, { status: 404 }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { blobs, missing } = await collectVideoAssets(
+      irWith([{ assetId: 'ast_pool_image', kind: 'image', path: 'media/pool.png', present: true }]),
+      [],
+      records(),
+    );
+
+    expect(mediaOwnerMocks.withAssetUrl).toHaveBeenCalledWith(
+      'ast_pool_image',
+      expect.any(Function),
+    );
+    expect(await blobs.get('media/pool.png')?.text()).toBe('pool-image');
+    expect(missing).toHaveLength(0);
+  });
+
+  it('prefers replaced pool bytes over a stale compatibility row', async () => {
+    mediaOwnerMocks.withAssetUrl.mockImplementationOnce(async (_ref, fn) =>
+      fn('https://pool.test/replaced-image'),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(new Blob(['pool-new'], { type: 'image/png' }))),
+    );
+    const rec = imageRecord({
+      id: 'stage:ast_retried_image',
+      blob: new Blob(['dexie-old'], { type: 'image/png' }),
+    });
+
+    const { blobs, missing } = await collectVideoAssets(
+      irWith([
+        {
+          assetId: 'stage:ast_retried_image',
+          kind: 'image',
+          path: 'media/retried.png',
+          present: true,
+        },
+      ]),
+      [],
+      records({ mediaByElementId: new Map([['ast_retried_image', rec]]) }),
+    );
+
+    expect(mediaOwnerMocks.withAssetUrl).toHaveBeenCalledWith(
+      'ast_retried_image',
+      expect.any(Function),
+    );
+    expect(await blobs.get('media/retried.png')?.text()).toBe('pool-new');
+    expect(missing).toHaveLength(0);
+  });
 });
 
 describe('collectVideoAssets — frame base restores evicted generated media', () => {
@@ -254,6 +349,29 @@ describe('collectVideoAssets — frame base restores evicted generated media', (
     path: 'frames/s1.png',
     present: true,
   };
+
+  it('resolves and revokes an allocated image background before snapshotting', async () => {
+    stubObjectUrls();
+    const scene = slideScene({ type: 'text', content: 'Title' });
+    if (scene.content.type !== 'slide') throw new Error('Expected slide scene');
+    scene.content.canvas.background = {
+      type: 'image',
+      image: { src: 'ast_background', size: 'cover' },
+    };
+    const rec = imageRecord({
+      id: 'stage:ast_background',
+      blob: new Blob(['background'], { type: 'image/png' }),
+    });
+
+    await collectVideoAssets(
+      irWith([frameEntry]),
+      [scene],
+      records({ mediaByElementId: new Map([['ast_background', rec]]) }),
+    );
+
+    expect(capturedSlides[0].background?.image?.src).toBe('blob:mock/1');
+    expect(revoked).toEqual(['blob:mock/1']);
+  });
 
   it('restores an evicted generated image via ossKey before snapshotting', async () => {
     const fetchSpy = vi.fn(async () => new Response(new Blob(['remote-img'])));
@@ -339,7 +457,7 @@ describe('collectVideoAssets — frame base restores evicted generated media', (
     expect(blobs.has('frames/s1.png')).toBe(true); // frame still rendered
   });
 
-  it('clears an image whose blob is evicted and has no ossKey', async () => {
+  it('clears an image placeholder whose generated-media lookup misses', async () => {
     stubObjectUrls();
     const rec = imageRecord({ blob: new Blob([]) });
 
@@ -350,5 +468,60 @@ describe('collectVideoAssets — frame base restores evicted generated media', (
     );
 
     expect(capturedSlides[0].elements[0].src).toBe('');
+  });
+
+  it('resolves a poster through its original fetch fallback independently of video src', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url === 'poster.jpg'
+          ? new Response(new Blob(['poster'], { type: 'image/jpeg' }))
+          : new Response(null, { status: 404 }),
+      ),
+    );
+    stubObjectUrls();
+
+    await collectVideoAssets(
+      irWith([frameEntry]),
+      [
+        slideScene({
+          type: 'video',
+          src: 'https://example.test/video.mp4',
+          poster: 'poster.jpg',
+        }),
+      ],
+      records(),
+    );
+
+    expect(capturedSlides[0].elements[0]).toMatchObject({
+      src: 'https://example.test/video.mp4',
+      poster: expect.stringMatching(/^blob:mock\//),
+    });
+    expect(revoked).toHaveLength(1);
+  });
+
+  it('snapshots a concrete video src instead of a stale opaque mediaRef', async () => {
+    const concreteSrc = 'https://cdn.example/direct.mp4';
+    const fetchSpy = vi.fn(async (url: string) =>
+      url === concreteSrc
+        ? new Response(new Blob(['direct-video'], { type: 'video/mp4' }))
+        : new Response(null, { status: 404 }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    stubObjectUrls();
+    stubFirstFrameDecode(null);
+
+    await collectVideoAssets(
+      irWith([frameEntry]),
+      [slideScene({ type: 'video', src: concreteSrc, mediaRef: 'ast_stale_video' })],
+      records(),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith(concreteSrc);
+    expect(mediaOwnerMocks.withAssetUrl).not.toHaveBeenCalledWith(
+      'ast_stale_video',
+      expect.any(Function),
+    );
+    expect(capturedSlides[0].elements[0].src).toMatch(/^blob:mock\//);
   });
 });

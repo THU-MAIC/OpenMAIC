@@ -6,7 +6,7 @@ import type {
   PBLMicrotask,
   PBLPendingTaskCompletion,
   PBLProjectV2,
-} from '../types';
+} from '../../types';
 import { recordEvent } from './engagement';
 import { appendRuntimeEvent, milestoneIdForMicrotask, mintRuntimeEventId } from './runtime-events';
 

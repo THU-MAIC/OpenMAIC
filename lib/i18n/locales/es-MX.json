@@ -1636,6 +1636,7 @@
     "clearCacheButton": "Eliminar permanentemente todos los datos",
     "clearCacheSuccess": "Caché borrada, la página se actualizará en breve",
     "clearCacheFailed": "No se pudo borrar la caché, inténtalo de nuevo",
+    "clearCacheBlockedByOtherTabs": "Cierra las otras pestañas de la app y vuelve a intentarlo.",
     "persistUnavailable": "Tus cambios no se están guardando porque la aplicación no puede acceder a sus datos almacenados. Si recargar no ayuda, borra la caché local en Configuración.",
     "persistChangesLost": "El almacenamiento vuelve a funcionar, pero los cambios que hiciste mientras no estaba disponible no se pudieron guardar y se reemplazaron por la última versión guardada.",
     "webSearchSettings": "Búsqueda web",

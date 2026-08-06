@@ -3,20 +3,28 @@
 import type { PPTImageElement } from '@openmaic/dsl';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
 import {
-  useMediaGenerationStore,
-  isMediaPlaceholder,
-  type MediaTask,
-} from '@/lib/store/media-generation';
+  MISSING_ASSET_LEASE,
+  isConcreteMediaAddress,
+  renderableMediaUrl,
+  resolveMediaRef,
+  useResolvedMediaRef,
+  type MediaResolution,
+} from '@/lib/media/resolve-media-ref';
+import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
+import { useMediaGenerationStore, type MediaTask } from '@/lib/store/media-generation';
+import { useSettingsStore } from '@/lib/store/settings';
+import { resolveMediaTaskForElement } from '@/lib/media/media-task-resolution';
 
 export interface ResolvedImageSrc {
   /**
-   * The src to actually feed to `<img>`: the generated `objectUrl` when the
-   * placeholder's task is done; otherwise the original `elementInfo.src`.
-   * For non-placeholder src this is byte-equal to `elementInfo.src`.
+   * The src safe to feed to `<img>`. Concrete addresses and resolved asset URLs
+   * pass through; placeholders and unresolved opaque refs become an empty src.
    */
   readonly resolvedSrc: string;
   readonly isPlaceholder: boolean;
+  readonly resolvedFromAsset: boolean;
   readonly task: MediaTask | undefined;
+  readonly resolution: MediaResolution;
 }
 
 /**
@@ -25,23 +33,37 @@ export interface ResolvedImageSrc {
  * Splitting this out of the hook keeps the logic unit-testable in a plain
  * node environment (no RTL/jsdom needed).
  *
- * Behavior is strictly additive: for non-placeholder src (every legacy /
- * direct-URL / data-URL image), `resolvedSrc === elementInfo.src`. For a
- * placeholder, the task is honored only if it belongs to the current stage
- * (cross-course contamination guard) and its objectUrl is set.
+ * Direct and relative browser addresses pass through. Opaque references are
+ * rendered only after the asset lease or task supplies a concrete URL. Tasks
+ * are honored only when they belong to the current stage.
  */
 export function resolveImageSrc(
   elementInfo: PPTImageElement,
   stageId: string | undefined,
   task: MediaTask | undefined,
+  assetUrl?: string | null,
+  mediaGenerationDisabled = false,
 ): ResolvedImageSrc {
-  const isPlaceholder = !!stageId && isMediaPlaceholder(elementInfo.src);
-  const effectiveTask = isPlaceholder && task && task.stageId === stageId ? task : undefined;
-  const resolvedSrc =
-    effectiveTask?.status === 'done' && effectiveTask.objectUrl
-      ? effectiveTask.objectUrl
-      : elementInfo.src;
-  return { resolvedSrc, isPlaceholder, task: effectiveTask };
+  const isPlaceholder = !!stageId && isGeneratedMediaPlaceholder(elementInfo.src);
+  const effectiveTask =
+    stageId && !isConcreteMediaAddress(elementInfo.src) && task?.stageId === stageId
+      ? task
+      : undefined;
+  const lease = assetUrl ? ({ status: 'resolved', url: assetUrl } as const) : MISSING_ASSET_LEASE;
+  const resolution = resolveMediaRef(
+    elementInfo.src,
+    effectiveTask,
+    lease,
+    mediaGenerationDisabled,
+  );
+  const resolvedSrc = renderableMediaUrl(resolution) ?? '';
+  return {
+    resolvedSrc,
+    isPlaceholder,
+    resolvedFromAsset: resolution.kind === 'url',
+    task: effectiveTask,
+    resolution,
+  };
 }
 
 /**
@@ -62,11 +84,16 @@ export function resolveImageSrc(
  */
 export function useResolvedImageSrc(elementInfo: PPTImageElement): ResolvedImageSrc {
   const stageId = useMediaStageId();
-  // Tight selector: only the task keyed by this src (and only for placeholder
-  // src), so unrelated task updates don't re-render the renderer.
-  const task = useMediaGenerationStore((s) => {
-    if (!stageId || !isMediaPlaceholder(elementInfo.src)) return undefined;
-    return s.tasks[elementInfo.src];
-  });
-  return resolveImageSrc(elementInfo, stageId, task);
+  const mediaGenerationDisabled = useSettingsStore((state) => !state.imageGenerationEnabled);
+  const task = useMediaGenerationStore((state) =>
+    resolveMediaTaskForElement(state.tasks, elementInfo, stageId),
+  );
+  const resolution = useResolvedMediaRef(elementInfo.src, task, mediaGenerationDisabled);
+  return {
+    resolvedSrc: renderableMediaUrl(resolution) ?? '',
+    isPlaceholder: !!stageId && isGeneratedMediaPlaceholder(elementInfo.src),
+    resolvedFromAsset: resolution.kind === 'url',
+    task,
+    resolution,
+  };
 }

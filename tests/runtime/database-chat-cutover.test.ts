@@ -863,7 +863,7 @@ describe('database runtime chat integration', () => {
     const { db } = await import('@/lib/utils/database');
     await db.open();
 
-    expect(db.verno).toBe(15);
+    expect(db.verno).toBe(16);
     expect([...db.backendDB().objectStoreNames]).not.toContain('chatStorageLocks');
     expect([...db.backendDB().objectStoreNames]).toContain('chatRestoreStaging');
   });
@@ -1356,6 +1356,32 @@ describe('database runtime chat integration', () => {
     ).toBe(false);
   });
 
+  it('deletes stage-owned media rows when the document has no asset references', async () => {
+    const { db, deleteStageWithRelatedData } = await import('@/lib/utils/database');
+    const stageId = 'stage-delete-media-row';
+    await db.stages.put({
+      id: stageId,
+      name: 'Media row only',
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    });
+    await db.mediaFiles.put({
+      id: `${stageId}:ast_orphan`,
+      stageId,
+      type: 'image',
+      blob: new Blob(['image']),
+      mimeType: 'image/png',
+      size: 5,
+      prompt: '',
+      params: '{}',
+      createdAt: 1_000,
+    });
+
+    await deleteStageWithRelatedData(stageId);
+
+    await expect(db.mediaFiles.where('stageId').equals(stageId).count()).resolves.toBe(0);
+  });
+
   it('keeps the maintenance lock until a timed-out stage cascade actually settles', async () => {
     vi.stubGlobal('navigator', { locks: fairLockManager() });
     stubMemoryLocalStorage();
@@ -1759,6 +1785,7 @@ describe('database runtime chat integration', () => {
       dbName: 'clear-without-web-locks',
     });
     const { clearDatabase, db } = await import('@/lib/utils/database');
+    const { putAsset } = await import('@/lib/media/asset-pool');
     const { getDocumentStore } = await import('@/lib/document-store');
     await db.stages.put({
       id: 'stage-clear-no-lock',
@@ -1786,6 +1813,8 @@ describe('database runtime chat integration', () => {
     });
     localStorage.setItem('maic:device:document-migration:stage-clear-document', '{}');
     localStorage.setItem('maic:device:editor-current-scene:stage-clear-document', '{}');
+    await putAsset(new Blob(['private generated media'], { type: 'text/plain' }));
+    expect((await indexedDB.databases()).map((entry) => entry.name)).toContain('maic-asset-pool');
 
     await expect(clearDatabase(runtimeStore)).resolves.toBeUndefined();
     await expect(runtimeStore.listSessions('stage-clear-no-lock', learnerKey)).resolves.toEqual([]);
@@ -1796,6 +1825,9 @@ describe('database runtime chat integration', () => {
     expect(
       localStorage.getItem('maic:device:editor-current-scene:stage-clear-document'),
     ).toBeNull();
+    expect((await indexedDB.databases()).map((entry) => entry.name)).not.toContain(
+      'maic-asset-pool',
+    );
   });
 
   it('round-trips versioned document backups including outline envelopes', async () => {

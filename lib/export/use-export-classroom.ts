@@ -84,6 +84,7 @@ export function useExportClassroom() {
         description: stage.description,
         language: stage.languageDirective,
         style: stage.style,
+        videoManifest: stage.videoManifest,
         createdAt: stage.createdAt,
         updatedAt: stage.updatedAt,
       };

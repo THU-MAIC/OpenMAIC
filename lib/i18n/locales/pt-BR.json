@@ -1636,6 +1636,7 @@
     "clearCacheButton": "Excluir Permanentemente Todos os Dados",
     "clearCacheSuccess": "Cache limpo. A página será atualizada em instantes",
     "clearCacheFailed": "Falha ao limpar o cache, tente novamente",
+    "clearCacheBlockedByOtherTabs": "Feche as outras abas do app e tente novamente.",
     "persistUnavailable": "Suas alterações não estão sendo salvas porque o aplicativo não consegue acessar os dados armazenados. Se recarregar não resolver, limpe o cache local nas Configurações.",
     "persistChangesLost": "O armazenamento voltou a funcionar, mas as alterações feitas enquanto ele estava indisponível não puderam ser salvas e foram substituídas pela última versão salva.",
     "webSearchSettings": "Busca na Web",

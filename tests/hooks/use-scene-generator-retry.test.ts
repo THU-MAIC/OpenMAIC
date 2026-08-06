@@ -5,6 +5,10 @@ const mocks = vi.hoisted(() => ({
   getCurrentModelConfig: vi.fn(),
   settingsState: vi.fn(),
   audioPut: vi.fn(),
+  audioDelete: vi.fn(),
+  poolPut: vi.fn(),
+  poolReplace: vi.fn(),
+  poolRemove: vi.fn(),
   isTTSProviderEnabled: vi.fn(),
   pickNarratorAgent: vi.fn(),
   resolveAgentVoiceOptions: vi.fn(),
@@ -25,8 +29,15 @@ vi.mock('@/lib/utils/database', () => ({
   db: {
     audioFiles: {
       put: mocks.audioPut,
+      delete: mocks.audioDelete,
     },
   },
+}));
+
+vi.mock('@/lib/media/asset-pool', () => ({
+  putAsset: mocks.poolPut,
+  replaceAsset: mocks.poolReplace,
+  removeAsset: mocks.poolRemove,
 }));
 
 vi.mock('@/lib/audio/provider-enablement', () => ({
@@ -77,6 +88,11 @@ describe('browser scene generation retry wrappers', () => {
   beforeEach(() => {
     mockFetch.mockReset();
     mocks.audioPut.mockReset();
+    mocks.audioDelete.mockReset().mockResolvedValue(undefined);
+    mocks.poolPut.mockReset();
+    mocks.poolReplace.mockReset().mockResolvedValue(undefined);
+    mocks.poolRemove.mockReset().mockResolvedValue(undefined);
+    mocks.poolPut.mockResolvedValue('ast_audio_allocated');
     mocks.getCurrentModelConfig.mockReturnValue({});
     mocks.settingsState.mockReturnValue({
       imageProviderId: '',
@@ -251,14 +267,178 @@ describe('browser scene generation retry wrappers', () => {
         }),
       );
 
-    await generateAndStoreTTS('tts_s2_action_1', 'Hello class', 'English', undefined, retryOptions);
+    const assetId = await generateAndStoreTTS(
+      'tts_s2_action_1',
+      'Hello class',
+      'English',
+      undefined,
+      retryOptions,
+    );
 
+    expect(assetId).toBe('ast_audio_allocated');
     expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mocks.poolPut).toHaveBeenCalledWith(
+      expect.any(Blob),
+      expect.objectContaining({
+        contentType: 'audio/wav',
+        mediaType: 'audio',
+        text: 'Hello class',
+        voice: 'narrator',
+      }),
+    );
     expect(mocks.audioPut).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'tts_s2_action_1',
+        id: 'ast_audio_allocated',
         format: 'wav',
       }),
+    );
+  });
+
+  it('does not write Dexie when pool allocation fails', async () => {
+    const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
+    mockFetch.mockResolvedValue(
+      jsonResponse(200, {
+        success: true,
+        base64: btoa('audio-data'),
+        format: 'wav',
+      }),
+    );
+    mocks.poolPut.mockRejectedValueOnce(new Error('pool unavailable'));
+
+    await expect(generateAndStoreTTS('request-1', 'Hello class')).rejects.toThrow(
+      'pool unavailable',
+    );
+    expect(mocks.audioPut).not.toHaveBeenCalled();
+  });
+
+  it('does not report an allocated id when the compatibility write fails', async () => {
+    const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
+    mockFetch.mockResolvedValue(
+      jsonResponse(200, {
+        success: true,
+        base64: btoa('audio-data'),
+        format: 'wav',
+      }),
+    );
+    mocks.audioPut.mockRejectedValueOnce(new Error('Dexie unavailable'));
+
+    await expect(generateAndStoreTTS('request-1', 'Hello class')).rejects.toThrow(
+      'Dexie unavailable',
+    );
+    expect(mocks.poolPut).toHaveBeenCalledOnce();
+    expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_audio_allocated');
+  });
+
+  it('reclaims earlier allocations when partial scene synthesis fails', async () => {
+    const { generateTTSForScene } = await import('@/lib/hooks/use-scene-generator');
+    mocks.poolPut.mockResolvedValueOnce('ast_first_audio');
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          success: true,
+          base64: btoa('first-audio'),
+          format: 'wav',
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(401, { error: 'second speech rejected' }));
+    const scene = {
+      id: 'scene-1',
+      stageId: 'stage-1',
+      type: 'slide',
+      title: 'Scene',
+      order: 1,
+      content: { type: 'slide', canvas: { id: 'slide-1', elements: [] } },
+      actions: [
+        { id: 'speech-1', type: 'speech', text: 'First line' },
+        { id: 'speech-2', type: 'speech', text: 'Second line' },
+      ],
+    } as unknown as Parameters<typeof generateTTSForScene>[0];
+
+    const result = await generateTTSForScene(scene, 'English', undefined, {
+      ...retryOptions,
+      maxRetries: 0,
+    });
+
+    expect(result).toMatchObject({ success: false, failedCount: 1 });
+    expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_first_audio');
+    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('ast_first_audio');
+    expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
+  });
+
+  it('waits for parallel TTS workers before rolling back an abandoned scene', async () => {
+    const { generateTTSForScene } = await import('@/lib/hooks/use-scene-generator');
+    mocks.settingsState.mockReturnValue({
+      ...mocks.settingsState(),
+      parallelSceneConcurrency: 2,
+    });
+    const abort = Object.assign(new Error('Aborted'), { name: 'AbortError' });
+    let releaseSibling!: () => void;
+    const siblingMayFinish = new Promise<void>((resolve) => {
+      releaseSibling = resolve;
+    });
+    mockFetch.mockRejectedValueOnce(abort).mockImplementationOnce(async () => {
+      await siblingMayFinish;
+      return jsonResponse(200, {
+        success: true,
+        base64: btoa('late-audio'),
+        format: 'wav',
+      });
+    });
+    mocks.poolPut.mockResolvedValueOnce('ast_late_audio');
+    const scene = {
+      id: 'scene-1',
+      stageId: 'stage-1',
+      type: 'slide',
+      title: 'Scene',
+      order: 1,
+      content: { type: 'slide', canvas: { id: 'slide-1', elements: [] } },
+      actions: [
+        { id: 'speech-1', type: 'speech', text: 'Aborted line' },
+        { id: 'speech-2', type: 'speech', text: 'Late line' },
+      ],
+    } as unknown as Parameters<typeof generateTTSForScene>[0];
+
+    const generating = generateTTSForScene(scene, 'English', undefined, retryOptions);
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    expect(mocks.poolRemove).not.toHaveBeenCalled();
+
+    releaseSibling();
+    await expect(generating).rejects.toBe(abort);
+
+    expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_late_audio');
+    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('ast_late_audio');
+    expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
+  });
+
+  it('replaces allocated audio under the stable id and refreshes its compatibility row', async () => {
+    const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
+    mockFetch.mockResolvedValue(
+      jsonResponse(200, {
+        success: true,
+        base64: btoa('replacement-audio'),
+        format: 'wav',
+      }),
+    );
+
+    await expect(
+      generateAndStoreTTS(
+        'request-1',
+        'Updated class',
+        'English',
+        undefined,
+        undefined,
+        'ast_stable_audio',
+      ),
+    ).resolves.toBe('ast_stable_audio');
+
+    expect(mocks.poolPut).not.toHaveBeenCalled();
+    expect(mocks.poolReplace).toHaveBeenCalledExactlyOnceWith(
+      'ast_stable_audio',
+      expect.any(Blob),
+      expect.objectContaining({ mediaType: 'audio', text: 'Updated class' }),
+    );
+    expect(mocks.audioPut).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id: 'ast_stable_audio', format: 'wav' }),
     );
   });
 });
