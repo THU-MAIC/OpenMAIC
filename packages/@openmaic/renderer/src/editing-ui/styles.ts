@@ -28,6 +28,7 @@ export const EDITING_UI_STYLES = `
   gap: 4px;
   max-width: calc(100vw - 24px);
   overflow-x: auto;
+  overflow-y: hidden;
   padding: 4px;
   position: relative;
   width: max-content;

@@ -113,6 +113,7 @@ describe('InsertToolbar', () => {
     expect(EDITING_UI_STYLES).toContain('flex-direction: row;');
     expect(EDITING_UI_STYLES).toContain('content: attr(data-tooltip);');
     expect(EDITING_UI_STYLES).toContain('width: 32px;');
+    expect(EDITING_UI_STYLES).toContain('overflow-y: hidden;');
     expect(EDITING_UI_STYLES).toMatch(
       /\.maic-editing-ui-chart-picker-option \{[\s\S]*?align-items: center;/,
     );
