@@ -112,14 +112,104 @@ describe('generated JSON Schema — SerializedScene', () => {
       },
     },
   };
+  const legacyPBLScene = {
+    id: 'legacy-pbl',
+    stageId: 'st',
+    type: 'pbl',
+    title: 'Legacy project',
+    order: 1,
+    content: {
+      type: 'pbl',
+      projectConfig: {
+        projectInfo: {
+          title: 'Neighborhood garden',
+          description: 'Plan a shared garden for the neighborhood.',
+        },
+        agents: [{ id: 'mentor-1', name: 'Mentor', role: 'mentor' }],
+        issueboard: {
+          issues: [{ id: 'issue-1', title: 'Choose the site', description: 'Compare options.' }],
+        },
+        chat: {
+          messages: [{ id: 'message-1', role: 'assistant', content: 'Let us compare sites.' }],
+        },
+      },
+    },
+  };
+  const plannerPBLScene = {
+    id: 'planner-pbl',
+    stageId: 'st',
+    type: 'pbl',
+    title: 'Planner project',
+    order: 2,
+    content: {
+      type: 'pbl',
+      projectV2: {
+        uiPhase: 'hero',
+        title: 'Build a weather station',
+        description: 'Create and explain a simple weather station.',
+        learningObjective: 'Interpret sensor readings and communicate uncertainty.',
+        gains: ['Read sensors', 'Explain observations'],
+        tags: ['science', 'sensors'],
+        language: 'en-US',
+        proficiency: 'beginner',
+        status: 'active',
+        roles: [
+          {
+            id: 'instructor',
+            type: 'instructor',
+            name: 'Instructor',
+            description: 'Guides the project.',
+          },
+        ],
+        milestones: [
+          {
+            id: 'milestone-1',
+            title: 'Assemble the station',
+            status: 'active',
+            order: 0,
+            microtasks: [
+              {
+                id: 'task-1',
+                title: 'Connect the sensor',
+                status: 'todo',
+                assignee: 'user',
+                hints: ['Check the pin labels.'],
+                order: 0,
+              },
+            ],
+            documents: [
+              {
+                id: 'doc-1',
+                title: 'Wiring guide',
+                content: '# Sensor wiring',
+                docType: 'markdown',
+              },
+            ],
+          },
+        ],
+        submissions: [],
+        evaluations: [],
+        threads: [{ agentId: 'instructor', messages: [] }],
+        engagementEvents: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    },
+  };
   it('accepts a well-formed slide scene', () => {
     expect(v(slideScene)).toBe(true);
   });
   it('rejects a scene missing required fields', () => {
     expect(v({ id: 'sc' })).toBe(false);
   });
-  it('rejects content that is not a contract content kind (slide/quiz)', () => {
-    expect(v({ ...slideScene, content: { type: 'pbl' } })).toBe(false);
+  it('accepts a realistic legacy PBL scene with opaque v1 projectConfig', () => {
+    expect(v(legacyPBLScene), JSON.stringify(v.errors)).toBe(true);
+  });
+  it('accepts a planner-produced v2 project with the full seeded skeleton', () => {
+    expect(v(plannerPBLScene), JSON.stringify(v.errors)).toBe(true);
+  });
+  it('rejects a cross-kind slide/PBL content mismatch', () => {
+    expect(v({ ...slideScene, content: legacyPBLScene.content })).toBe(false);
   });
   it('rejects a scene whose type disagrees with its content (type<->content bound)', () => {
     expect(v({ ...slideScene, type: 'quiz' })).toBe(false);

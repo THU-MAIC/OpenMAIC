@@ -7,8 +7,18 @@ import {
   normalizeSlideWith,
   normalizeScene,
   normalizeStage,
+  normalizePBLProject,
 } from '@openmaic/dsl';
-import type { PPTElement, Slide, Scene, Stage, SlideContent, Action } from '@openmaic/dsl';
+import type {
+  PPTElement,
+  Slide,
+  Scene,
+  Stage,
+  SlideContent,
+  Action,
+  PBLProject,
+  PBLContent,
+} from '@openmaic/dsl';
 // JS codegen helper (build-only); vitest/esbuild resolves it at runtime.
 import { generateSchema } from '../scripts/gen-schema.mjs';
 
@@ -371,6 +381,89 @@ describe('document-level walkers', () => {
     expect(
       (out.whiteboard![0].elements[0] as Extract<PPTElement, { type: 'text' }>).defaultFontName,
     ).toBe(ELEMENT_DEFAULTS.text.defaultFontName);
+  });
+});
+
+describe('normalizePBLProject', () => {
+  const unseeded = {
+    title: 'Build a weather station',
+    description: 'Create a small weather station.',
+    tags: ['science'],
+    language: 'en-US',
+    proficiency: 'beginner',
+    roles: [{ id: 'instructor', type: 'instructor', name: 'Instructor' }],
+    milestones: [
+      {
+        id: 'milestone-1',
+        title: 'Assembly',
+        order: 0,
+        microtasks: [
+          {
+            id: 'task-1',
+            title: 'Connect the sensor',
+            hints: [],
+            order: 0,
+          },
+        ],
+      },
+      {
+        id: 'milestone-2',
+        title: 'Analysis',
+        order: 1,
+        microtasks: [],
+      },
+    ],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+
+  it('fills every missing canonical seed, including thread seats', () => {
+    const out = normalizePBLProject(unseeded as unknown as PBLProject);
+    expect(out.uiPhase).toBe('hero');
+    expect(out.status).toBe('active');
+    expect(out.milestones.map((milestone) => milestone.status)).toEqual(['active', 'locked']);
+    expect(out.milestones[0].microtasks[0]).toMatchObject({ status: 'todo', assignee: 'user' });
+    expect(out.submissions).toEqual([]);
+    expect(out.evaluations).toEqual([]);
+    expect(out.engagementEvents).toEqual([]);
+    expect(out.threads).toEqual([{ agentId: 'instructor', messages: [] }]);
+  });
+
+  it('is pure and idempotent', () => {
+    const once = normalizePBLProject(unseeded as unknown as PBLProject);
+    const twice = normalizePBLProject(once);
+    expect(twice).toEqual(once);
+    expect(unseeded).not.toHaveProperty('uiPhase');
+  });
+
+  it('throws on present-but-wrong-typed seeded fields', () => {
+    expect(() => normalizePBLProject({ ...unseeded, status: 42 } as unknown as PBLProject)).toThrow(
+      /status/,
+    );
+    expect(() =>
+      normalizePBLProject({ ...unseeded, submissions: {} } as unknown as PBLProject),
+    ).toThrow(/submissions/);
+    expect(() =>
+      normalizePBLProject({
+        ...unseeded,
+        threads: [{ agentId: 'instructor', messages: 'bad' }],
+      } as unknown as PBLProject),
+    ).toThrow(/messages/);
+  });
+
+  it('is wired into normalizeScene for PBL project payloads', () => {
+    const scene = {
+      id: 'pbl-scene',
+      stageId: 'stage',
+      title: 'Project',
+      order: 0,
+      type: 'pbl',
+      content: { type: 'pbl', projectV2: unseeded },
+    } as unknown as Scene<Action, PBLContent>;
+    const out = normalizeScene(scene);
+    if (out.content.type !== 'pbl') throw new Error('unreachable');
+    expect(out.content.projectV2?.uiPhase).toBe('hero');
+    expect(out.content.projectV2?.threads[0].messages).toEqual([]);
   });
 });
 

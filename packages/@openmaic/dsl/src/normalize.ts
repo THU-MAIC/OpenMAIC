@@ -54,6 +54,15 @@ import type {
 } from './slides.js';
 import type { Scene, SceneType, Stage } from './stage.js';
 import { isSlideContent } from './stage.js';
+import type {
+  PBLAssignee,
+  PBLMicrotaskStatus,
+  PBLMilestoneStatus,
+  PBLProject,
+  PBLProjectStatus,
+  PBLThreadSeat,
+  PBLUiPhase,
+} from './pbl.js';
 
 /**
  * The canonical static defaults for required element fields, and the single
@@ -98,6 +107,145 @@ type Raw = Record<string, unknown>;
 
 function isObject(v: unknown): v is Raw {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function pblFail(field: string, expected: string, value: unknown): never {
+  throw new Error(
+    `@openmaic/dsl: cannot normalize PBL project: \`${field}\` must be ${expected}, got ${JSON.stringify(value)}`,
+  );
+}
+
+function pblEnum<T extends string>(
+  source: Raw,
+  field: string,
+  values: readonly T[],
+  fallback: T,
+  path = field,
+): T {
+  const value = source[field];
+  if (value === undefined) return fallback;
+  if (typeof value !== 'string' || !values.includes(value as T)) {
+    pblFail(
+      path,
+      `one of ${values.map((candidate) => JSON.stringify(candidate)).join(' | ')}`,
+      value,
+    );
+  }
+  return value as T;
+}
+
+function pblArray(source: Raw, field: string, path = field): unknown[] {
+  const value = source[field];
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) pblFail(path, 'an array', value);
+  return value;
+}
+
+const PBL_UI_PHASES: readonly PBLUiPhase[] = ['hero', 'generating', 'workspace', 'completed'];
+const PBL_PROJECT_STATUSES: readonly PBLProjectStatus[] = [
+  'designing',
+  'review',
+  'active',
+  'completed',
+  'archived',
+];
+const PBL_MILESTONE_STATUSES: readonly PBLMilestoneStatus[] = ['locked', 'active', 'completed'];
+const PBL_MICROTASK_STATUSES: readonly PBLMicrotaskStatus[] = [
+  'todo',
+  'in_progress',
+  'completed',
+  'skipped',
+];
+const PBL_ASSIGNEES: readonly PBLAssignee[] = ['user'];
+
+function normalizePBLThread(thread: unknown, index: number): PBLThreadSeat {
+  const path = `threads[${index}]`;
+  if (!isObject(thread)) pblFail(path, 'an object', thread);
+  if (typeof thread.agentId !== 'string') {
+    pblFail(`${path}.agentId`, 'a string', thread.agentId);
+  }
+  return {
+    ...thread,
+    agentId: thread.agentId,
+    messages: pblArray(thread, 'messages', `${path}.messages`),
+  };
+}
+
+/**
+ * Fill the deterministic planner-seeded PBL skeleton without interpreting app
+ * runtime state. Missing seed fields receive canonical values; present malformed
+ * values throw. Pure and idempotent.
+ */
+export function normalizePBLProject(project: unknown): PBLProject {
+  if (!isObject(project)) pblFail('project', 'an object', project);
+
+  const roles = project.roles;
+  if (roles !== undefined && !Array.isArray(roles)) pblFail('roles', 'an array', roles);
+  const milestones = project.milestones;
+  if (!Array.isArray(milestones)) pblFail('milestones', 'an array', milestones);
+
+  const normalizedMilestones = milestones.map((milestone, milestoneIndex) => {
+    const milestonePath = `milestones[${milestoneIndex}]`;
+    if (!isObject(milestone)) pblFail(milestonePath, 'an object', milestone);
+    if (!Array.isArray(milestone.microtasks)) {
+      pblFail(`${milestonePath}.microtasks`, 'an array', milestone.microtasks);
+    }
+    return {
+      ...milestone,
+      status: pblEnum(
+        milestone,
+        'status',
+        PBL_MILESTONE_STATUSES,
+        milestoneIndex === 0 ? 'active' : 'locked',
+        `${milestonePath}.status`,
+      ),
+      microtasks: milestone.microtasks.map((microtask, microtaskIndex) => {
+        const microtaskPath = `${milestonePath}.microtasks[${microtaskIndex}]`;
+        if (!isObject(microtask)) pblFail(microtaskPath, 'an object', microtask);
+        return {
+          ...microtask,
+          status: pblEnum(
+            microtask,
+            'status',
+            PBL_MICROTASK_STATUSES,
+            'todo',
+            `${microtaskPath}.status`,
+          ),
+          assignee: pblEnum(
+            microtask,
+            'assignee',
+            PBL_ASSIGNEES,
+            'user',
+            `${microtaskPath}.assignee`,
+          ),
+        };
+      }),
+    };
+  });
+
+  let threads: PBLThreadSeat[];
+  if (project.threads === undefined) {
+    threads = (roles ?? []).map((role, index) => {
+      if (!isObject(role) || typeof role.id !== 'string') {
+        pblFail(`roles[${index}].id`, 'a string', isObject(role) ? role.id : role);
+      }
+      return { agentId: role.id, messages: [] };
+    });
+  } else {
+    if (!Array.isArray(project.threads)) pblFail('threads', 'an array', project.threads);
+    threads = project.threads.map(normalizePBLThread);
+  }
+
+  return {
+    ...project,
+    uiPhase: pblEnum(project, 'uiPhase', PBL_UI_PHASES, 'hero'),
+    status: pblEnum(project, 'status', PBL_PROJECT_STATUSES, 'active'),
+    milestones: normalizedMilestones,
+    submissions: pblArray(project, 'submissions'),
+    evaluations: pblArray(project, 'evaluations'),
+    threads,
+    engagementEvents: pblArray(project, 'engagementEvents'),
+  } as PBLProject;
 }
 
 function isNumberPair(v: unknown): v is [number, number] {
@@ -377,9 +525,9 @@ export function normalizeSlideWith(
 }
 
 /**
- * Normalize a {@link Scene}: fills element defaults on a slide scene's canvas and
- * on any attached whiteboards. Quiz — and app-widened (interactive / pbl) —
- * content carries no slide elements and passes through untouched. Generic over
+ * Normalize a {@link Scene}: fills element defaults on a slide scene's canvas,
+ * fills a PBL scene's canonical seeded skeleton, and normalizes any attached
+ * whiteboards. Quiz and interactive content pass through untouched. Generic over
  * `TAction` / `TContent` so app-widened scenes (`Scene<AppAction, AppContent>`)
  * can call it too. Pure; returns a fresh Scene.
  */
@@ -397,6 +545,14 @@ export function normalizeScene<TAction, TContent extends { type: SceneType }>(
       ...next,
       content: { ...scene.content, canvas: normalizeSlide(scene.content.canvas) },
     } as Scene<TAction, TContent>;
+  } else if (scene.content.type === 'pbl' && 'projectV2' in scene.content) {
+    const projectV2 = scene.content.projectV2;
+    if (projectV2 !== undefined) {
+      next = {
+        ...next,
+        content: { ...scene.content, projectV2: normalizePBLProject(projectV2) },
+      } as Scene<TAction, TContent>;
+    }
   }
   return next;
 }
