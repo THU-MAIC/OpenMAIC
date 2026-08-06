@@ -11,6 +11,17 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('AudioPlayer');
 
+/** Bytes an audio id currently resolves to, pool first. Loaded lazily to keep
+ * this module importable without the media graph. */
+async function resolveBytes(audioId: string): Promise<Blob | null> {
+  try {
+    const { resolveAudioBlob } = await import('@/lib/media/resolve-audio-bytes');
+    return await resolveAudioBlob(audioId);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Audio player implementation
  */
@@ -58,11 +69,13 @@ export class AudioPlayer {
         return true;
       }
 
-      // 2. Fall back to IndexedDB (client-generated TTS)
-      const audioRecord = await db.audioFiles.get(audioId);
+      // 2. Fall back to stored bytes (client-generated TTS), resolved pool-first
+      // so a stable-id regeneration whose mirror write failed does not keep
+      // serving superseded narration.
+      const blob = await resolveBytes(audioId);
       if (requestToken !== this.requestToken) return false;
 
-      if (!audioRecord) {
+      if (!blob) {
         // Pre-generated audio does not exist (generation failed), skip silently
         return false;
       }
@@ -75,7 +88,7 @@ export class AudioPlayer {
       this.audio = new Audio();
 
       // Set audio source
-      const blobUrl = URL.createObjectURL(audioRecord.blob);
+      const blobUrl = URL.createObjectURL(blob);
       this.audio.src = blobUrl;
       if (this.muted) this.audio.volume = 0;
       else this.audio.volume = this.volume;

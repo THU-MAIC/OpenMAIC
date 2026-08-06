@@ -16,6 +16,11 @@ import {
 import type { MediaFileRecord } from '@/lib/utils/database';
 import { unmarkStageDeleted } from '@/lib/utils/deleted-stages';
 import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
+import type { PPTElement } from '@openmaic/dsl';
+import {
+  collectDocumentMediaElements,
+  withDocumentLegacyVideoRecovery,
+} from '@/lib/media/media-task-resolution';
 
 export interface ClassroomPayload {
   stage: Stage;
@@ -285,7 +290,10 @@ export async function loadRestoredMediaTasksFromDB(
   try {
     const { db } = await import('@/lib/utils/database');
     const records = await db.mediaFiles.where('stageId').equals(stageId).toArray();
-    return buildRestoredMediaTasks(stageId, records);
+    const state = useStageStore.getState();
+    const documentElements =
+      state.stage?.id === stageId ? collectDocumentMediaElements(state.stage, state.scenes) : [];
+    return buildRestoredMediaTasks(stageId, records, documentElements);
   } catch {
     return {};
   }
@@ -294,6 +302,7 @@ export async function loadRestoredMediaTasksFromDB(
 export function buildRestoredMediaTasks(
   stageId: string,
   records: readonly MediaFileRecord[],
+  documentElements: readonly PPTElement[] = [],
 ): Record<string, MediaTask> {
   const restored: Record<string, MediaTask> = {};
   for (const rec of records) {
@@ -303,6 +312,7 @@ export function buildRestoredMediaTasks(
     if (rec.error) {
       restored[elementId] = {
         elementId,
+        placeholderRef: rec.placeholderRef,
         type: rec.type,
         status: 'failed',
         prompt: rec.prompt,
@@ -318,6 +328,7 @@ export function buildRestoredMediaTasks(
     const blob = rec.blob.type ? rec.blob : new Blob([rec.blob], { type: rec.mimeType });
     restored[elementId] = {
       elementId,
+      placeholderRef: rec.placeholderRef,
       type: rec.type,
       status: 'done',
       prompt: rec.prompt,
@@ -328,7 +339,7 @@ export function buildRestoredMediaTasks(
       stageId,
     };
   }
-  return restored;
+  return withDocumentLegacyVideoRecovery(restored, documentElements, stageId);
 }
 
 export function applyRestoredMediaTasks(tasks: Record<string, MediaTask>): void {

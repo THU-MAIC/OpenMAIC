@@ -18,7 +18,9 @@ import { createLogger } from '@/lib/logger';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 import { resolveModel } from '@/lib/server/resolve-model';
-import { getStageModel } from '@/lib/server/model-routes';
+import { getStageModel, type LlmStage } from '@/lib/server/model-routes';
+import type { LanguageModel } from 'ai';
+import type { ThinkingConfig } from '@/lib/types/provider';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
@@ -223,22 +225,153 @@ export async function generateClassroom(
     return result.text;
   };
 
-  const sceneAiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
-    const result = await callLLM(
-      {
+  // Per-stage model resolution for the scene pipeline. The classroom used to
+  // bind a single `languageModel` (from the `generate-classroom` stage) into one
+  // `sceneAiCall` closure shared by scene-content and scene-actions. That made
+  // every `MODEL_ROUTES` entry for `scene-content` / `scene-content:<type>` /
+  // `scene-actions` a no-op on this path — the browser UI already routes each
+  // stage independently via /api/generate/*, but the one-shot skill API did not.
+  //
+  // Each stage is resolved lazily and only when a route is actually configured
+  // (getStageModel returns undefined), so unrouted deployments pay zero extra
+  // cost and reuse the classroom model. Resolution failure (e.g. an unknown
+  // provider in the route) degrades to the classroom model with a warn, mirroring
+  // the existing web-search-query-rewrite handling below — a misconfigured
+  // optional route never aborts classroom generation.
+  const stageModelCache = new Map<
+    LlmStage,
+    {
+      model: LanguageModel;
+      outputWindow?: number;
+      thinking: ThinkingConfig | undefined;
+    }
+  >();
+
+  const resolveStageModel = async (
+    stage: LlmStage,
+  ): Promise<{
+    model: LanguageModel;
+    outputWindow?: number;
+    thinking: ThinkingConfig | undefined;
+  }> => {
+    const cached = stageModelCache.get(stage);
+    if (cached) return cached;
+
+    // No route configured → reuse the classroom model, no extra resolution.
+    if (!getStageModel(stage)) {
+      const fallback = {
         model: languageModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        maxOutputTokens: modelInfo?.outputWindow,
-        maxRetries: 0,
-      },
-      'generate-classroom-scene',
-      undefined,
-      classroomThinking,
-    );
-    return result.text;
+        outputWindow: modelInfo?.outputWindow,
+        thinking: classroomThinking,
+      };
+      stageModelCache.set(stage, fallback);
+      return fallback;
+    }
+
+    try {
+      const resolved = await resolveModel({ stage });
+      const entry = {
+        model: resolved.model,
+        outputWindow: resolved.modelInfo?.outputWindow,
+        thinking: resolved.thinkingConfig,
+      };
+      log.info(`Stage "${stage}" routed to model: ${resolved.modelString}`);
+      stageModelCache.set(stage, entry);
+      return entry;
+    } catch (err) {
+      log.warn(
+        `Stage "${stage}" route "${getStageModel(stage)}" could not be resolved; ` +
+          `falling back to the generate-classroom model.`,
+        err,
+      );
+      const fallback = {
+        model: languageModel,
+        outputWindow: modelInfo?.outputWindow,
+        thinking: classroomThinking,
+      };
+      stageModelCache.set(stage, fallback);
+      return fallback;
+    }
+  };
+
+  // scene-content routes per outline type via the composite key
+  // `scene-content:<type>` (slide/quiz/interactive/pbl), falling back to the
+  // base `scene-content` route — same resolution the browser UI uses at
+  // /api/generate/scene-content. Returns the aiCall plus the resolved model
+  // and thinking config, because PBL scene generation drives its own LLM
+  // calls through the model object (generatePBLSceneContent) rather than the
+  // aiCall closure, and consumes the route's thinking config separately.
+  const resolveSceneContentCall = async (outlineType?: string) => {
+    const stage = (outlineType ? `scene-content:${outlineType}` : 'scene-content') as LlmStage;
+    const { model, outputWindow, thinking } = await resolveStageModel(stage);
+    const aiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
+      const result = await callLLM(
+        {
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          maxOutputTokens: outputWindow,
+          maxRetries: 0,
+        },
+        'generate-classroom-scene',
+        undefined,
+        thinking,
+      );
+      return result.text;
+    };
+    return { aiCall, model, thinking };
+  };
+
+  // agent-profiles routes via the `agent-profiles` stage (matches the browser
+  // UI's /api/generate/agent-profiles). Lazy + cached like the scene stages.
+  let agentProfilesAiCall: AICallFn | undefined;
+  const getAgentProfilesAiCall = async (): Promise<AICallFn> => {
+    if (agentProfilesAiCall) return agentProfilesAiCall;
+    const { model, outputWindow, thinking } = await resolveStageModel('agent-profiles');
+    agentProfilesAiCall = async (systemPrompt, userPrompt, _images) => {
+      const result = await callLLM(
+        {
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          maxOutputTokens: outputWindow,
+        },
+        'generate-classroom',
+        undefined,
+        thinking,
+      );
+      return result.text;
+    };
+    return agentProfilesAiCall;
+  };
+
+  // scene-actions routes via the `scene-actions` stage.
+  let sceneActionsAiCall: AICallFn | undefined;
+  const getSceneActionsAiCall = async (): Promise<AICallFn> => {
+    if (sceneActionsAiCall) return sceneActionsAiCall;
+    const { model, outputWindow, thinking } = await resolveStageModel('scene-actions');
+    sceneActionsAiCall = async (systemPrompt, userPrompt, _images) => {
+      const result = await callLLM(
+        {
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          maxOutputTokens: outputWindow,
+          maxRetries: 0,
+        },
+        'generate-classroom-scene',
+        undefined,
+        thinking,
+      );
+      return result.text;
+    };
+    return sceneActionsAiCall;
   };
 
   const searchQueryAiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
@@ -367,7 +500,8 @@ export async function generateClassroom(
   if (agentMode === 'generate') {
     log.info('Generating custom agent profiles via LLM...');
     try {
-      agents = await generateAgentProfiles(requirement, languageDirective, aiCall);
+      const agentProfilesCall = await getAgentProfilesAiCall();
+      agents = await generateAgentProfiles(requirement, languageDirective, agentProfilesCall);
       log.info(`Generated ${agents.length} agent profiles`);
     } catch (e) {
       log.warn('Agent profile generation failed, falling back to defaults:', e);
@@ -443,12 +577,27 @@ export async function generateClassroom(
       });
     };
 
+    // Resolve this scene's content model lazily, per outline type. The browser
+    // UI does the same at /api/generate/scene-content (composite key
+    // scene-content:<type> → scene-content). PBL scenes additionally need the
+    // resolved model object, since generatePBLSceneContent drives its own LLM
+    // calls through it instead of the aiCall closure — without it PBL scenes
+    // silently fail (return null) on this one-shot path.
+    const contentCall = await resolveSceneContentCall(safeOutline.type);
     const content = await withGenerationRetry(
       () =>
-        generateSceneContent(safeOutline, sceneAiCall, {
+        generateSceneContent(safeOutline, contentCall.aiCall, {
           agents,
           languageDirective,
           allowProceduralSkill: vocationalActive,
+          // PBL scene content is driven by the model object, not the aiCall
+          // closure, so both the routed model AND its thinking config must be
+          // passed explicitly — otherwise a `scene-content:pbl` route with a
+          // `thinking` config would be silently ignored here (slide/quiz/
+          // interactive go through the aiCall closure and already honor it).
+          ...(safeOutline.type === 'pbl'
+            ? { languageModel: contentCall.model, thinkingConfig: contentCall.thinking }
+            : {}),
         }),
       {
         label: `scene ${index + 1}/${outlines.length} content`,
@@ -461,9 +610,10 @@ export async function generateClassroom(
       continue;
     }
 
+    const actionsAiCall = await getSceneActionsAiCall();
     const actions = await withGenerationRetry(
       () =>
-        generateSceneActions(safeOutline, content, sceneAiCall, {
+        generateSceneActions(safeOutline, content, actionsAiCall, {
           agents,
           languageDirective,
         }),

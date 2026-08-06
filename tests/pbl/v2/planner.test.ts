@@ -13,18 +13,20 @@
  *      v1 `projectConfig` stub stays valid against
  *      `PBLProjectConfig` even after v2 schema changes)
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   generatePBLV2Project,
+  plannerStepHasAcceptedCompletion,
+} from '@/lib/pbl/v2/agents/planner';
+import {
   PlannerV2Error,
   plannerCompletionGaps,
-  plannerStepHasAcceptedCompletion,
   normalizeSynthesisChecks,
   buildScenarioDesignBlock,
   MAX_SYNTHESIS_STAGES,
   type PlannerV2Callbacks,
   type PlannerV2ProgressEvent,
-} from '@/lib/pbl/v2/agents/planner';
+} from '@/lib/pbl/v2/agents/planner-core';
 import type { StepResult, ToolSet } from 'ai';
 
 describe('PBL v2 — scenario design block (free-first dialogue)', () => {
@@ -220,8 +222,34 @@ describe('PBL v2 Planner — error paths (no LLM needed)', () => {
     // the first thing it does. Using `as never` keeps the test
     // payload honest (we are deliberately violating the contract to
     // observe the guard).
-    await expect(generatePBLV2Project(input, undefined as never)).rejects.toBeInstanceOf(
-      PlannerV2Error,
+    await expect(
+      generatePBLV2Project(input, undefined as never, undefined as never),
+    ).rejects.toBeInstanceOf(PlannerV2Error);
+  });
+
+  it('forwards the loop planner tool contract through the injected call seam', async () => {
+    const callLLM = vi.fn(async () => ({ finishReason: 'stop', steps: [] }));
+    const thinkingConfig = { enabled: true, budgetTokens: 2048 } as const;
+
+    await expect(
+      generatePBLV2Project(plannerInput(), {} as never, callLLM, undefined, thinkingConfig),
+    ).rejects.toBeInstanceOf(PlannerV2Error);
+
+    expect(callLLM).toHaveBeenCalledOnce();
+    expect(callLLM).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools: expect.objectContaining({
+          set_project_info: expect.anything(),
+          add_role: expect.anything(),
+          add_milestone: expect.anything(),
+          add_microtask: expect.anything(),
+          mark_design_complete: expect.anything(),
+        }),
+        stopWhen: [expect.any(Function), expect.any(Function)],
+      }),
+      'pbl-v2-planner',
+      undefined,
+      thinkingConfig,
     );
   });
 });
@@ -463,6 +491,7 @@ describe('PBL v2 Planner — targetLanguage overrides detection (UI locale path)
       await generatePBLV2Project(
         { ...input, outline: { ...outline, pblConfig: undefined } },
         undefined as never,
+        undefined as never,
       );
     } catch (err) {
       // `partial` was built via emptyProject(input), which now reads
@@ -496,7 +525,7 @@ describe('PBL v2 Planner — targetLanguage overrides detection (UI locale path)
       // No targetLanguage → language stays '' (no content-based locale guessing).
     };
     try {
-      await generatePBLV2Project(input, undefined as never);
+      await generatePBLV2Project(input, undefined as never, undefined as never);
     } catch (err) {
       const partial = (err as PlannerV2Error).partial;
       expect(partial.language).toBe('');
@@ -522,7 +551,7 @@ describe('PBL v2 Planner — targetLanguage overrides detection (UI locale path)
       targetLanguage: '   ',
     };
     try {
-      await generatePBLV2Project(input, undefined as never);
+      await generatePBLV2Project(input, undefined as never, undefined as never);
     } catch (err) {
       const partial = (err as PlannerV2Error).partial;
       // whitespace targetLanguage → '' (content is NOT scanned for a locale)

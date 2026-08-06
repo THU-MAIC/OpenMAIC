@@ -41,14 +41,17 @@ import {
   X,
 } from 'lucide-react';
 
-import { addSubmission, listSubmissionsForMicrotask } from '@/lib/pbl/v2/operations/submission';
+import {
+  addSubmission,
+  listSubmissionsForMicrotask,
+} from '@/lib/pbl/v2/operations/runtime/submission';
 import { findModelById } from '@/lib/ai/model-aliases';
 import {
   TEXT_PDF_IMAGE_ACCEPT,
   isImageFile,
   isPdfFile,
   isValidTextFile,
-} from '@/lib/pbl/v2/operations/file-validation';
+} from '@/lib/pbl/v2/operations/runtime/file-validation';
 import { uploadBlobToStorage } from '@/lib/storage/client';
 import type {
   PBLChatMessage,
@@ -60,20 +63,20 @@ import type { PBLSSEEvent } from '@/lib/pbl/v2/api/sse';
 import { applyInstructorEvent } from './apply-instructor-event';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { useSettingsStore } from '@/lib/store/settings';
-import { normalizeProjectRuntime } from '@/lib/pbl/v2/operations/progress';
+import { normalizeProjectRuntime } from '@/lib/pbl/v2/operations/kernel/progress';
 import {
   appendRuntimeEvent,
   milestoneIdForMicrotask,
   mintRuntimeEventId,
-} from '@/lib/pbl/v2/operations/runtime-events';
-import { trackSubmissionScore } from '@/lib/pbl/v2/operations/dynamic-signals';
+} from '@/lib/pbl/v2/operations/kernel/runtime-events';
+import { trackSubmissionScore } from '@/lib/pbl/v2/operations/runtime/dynamic-signals';
 import {
   appendTaskCompletionReadyMessage,
   recordPendingTaskCompletionEvidence,
   setPendingTaskCompletion,
   TASK_EVAL_PASS_SCORE,
   taskEvaluationCanComplete,
-} from '@/lib/pbl/v2/operations/task-completion';
+} from '@/lib/pbl/v2/operations/kernel/task-completion';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import i18n from '@/lib/i18n/config';
 import {

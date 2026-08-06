@@ -1,6 +1,6 @@
 ---
 name: openmaic
-description: Guided SOP for setting up and using OpenMAIC from OpenClaw. Use when the user wants to clone the OpenMAIC repo, choose a startup mode, configure recommended API keys, start the service, or generate a classroom from requirements or a PDF. Run one phase at a time and ask for confirmation before each state-changing step.
+description: OpenMAIC assistant for setting up and generating AI-taught classrooms. Use when the user wants to use OpenMAIC, or to generate a multi-agent interactive classroom — covers getting started via the Live Demo cloud service (open.maic.chat) or a local install, choosing a startup mode, configuring provider keys, starting the service, and generating a classroom from a requirement or PDF.
 user-invocable: true
 metadata: { "openclaw": { "emoji": "🏫" } }
 ---
@@ -45,7 +45,7 @@ If present, read defaults from `~/.openclaw/openclaw.json` under:
 }
 ```
 
-- If `accessCode` is present, default to hosted mode and skip the mode-selection prompt.
+- If `accessCode` is present, default to Live Demo mode and skip the mode-selection prompt.
 - Use `repoDir` and `url` only as defaults for local mode.
 - Still confirm before acting.
 
@@ -53,14 +53,14 @@ If present, read defaults from `~/.openclaw/openclaw.json` under:
 
 ### 0. Choose Mode
 
-First check skill config for `accessCode`. If present, announce that a stored access code was found and proceed directly to hosted mode (load [references/hosted-mode.md](references/hosted-mode.md), skip phases 1–4). Do not ask the user to paste the code again.
+First check skill config for `accessCode`. If present, announce that a stored access code was found and proceed directly to Live Demo mode (load [references/live-demo.md](references/live-demo.md), skip phases 1–4). Do not ask the user to paste the code again.
 
 If no `accessCode` in config, ask the user how they want to use OpenMAIC:
 
-1. **Use hosted OpenMAIC** (recommended for quick start) — Requires an access code from open.maic.chat. No local setup needed.
+1. **Use the OpenMAIC Live Demo** (recommended for quick start) — The cloud edition: the version officially deployed and hosted by the OpenMAIC team at open.maic.chat. Requires an access code (starts with `sk-`). Get yours by signing in at https://open.maic.chat, clicking your account in the top-right corner, opening "访问码设置" (access code settings), and generating a code; then add it to `~/.openclaw/openclaw.json` under `skills.entries.openmaic.config.accessCode`. No local setup needed.
 2. **Run locally** — Clone the repo, configure provider keys, and run on your machine.
 
-If the user chooses hosted mode, load [references/hosted-mode.md](references/hosted-mode.md) and skip phases 1–4.
+If the user chooses Live Demo mode, load [references/live-demo.md](references/live-demo.md) and skip phases 1–4.
 If the user chooses local mode, proceed to phase 1 as usual.
 
 ### 1. Clone Or Reuse Existing Repo

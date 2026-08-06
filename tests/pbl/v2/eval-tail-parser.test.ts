@@ -16,7 +16,7 @@ import {
   sanitizeMilestoneEvaluationFeedback,
   stripEvaluationTail,
   stripTemplatePlaceholders,
-} from '@/lib/pbl/v2/operations/eval-tail-parser';
+} from '@/lib/pbl/v2/operations/runtime/eval-tail-parser';
 
 describe('parseEvaluationTail', () => {
   it('returns null on empty / blank input', () => {

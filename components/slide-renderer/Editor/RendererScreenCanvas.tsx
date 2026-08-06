@@ -6,62 +6,42 @@ import { SlideCanvas, type SlideEffects } from '@openmaic/renderer';
 import type { PPTImageElement, PPTVideoElement } from '@openmaic/dsl';
 import { Film, ImageOff, Paintbrush, RotateCcw, ShieldAlert, VideoOff } from 'lucide-react';
 import { useCanvasStore } from '@/lib/store';
-import { useSceneSelector } from '@/lib/contexts/scene-context';
+import { useSceneData, useSceneSelector } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
-import { useResolvedSlide } from '../use-resolved-slide';
-import { useMediaStageId } from '@/lib/contexts/media-stage-context';
-import { getVideoMediaRefForElement } from '@/lib/media/video-manifest';
-import {
-  isMediaPlaceholder,
-  type MediaTask,
-  useMediaGenerationStore,
-} from '@/lib/store/media-generation';
-import { useSettingsStore } from '@/lib/store/settings';
+import { useResolvedSlideMedia, type ResolvedSlideMediaEntry } from '../use-resolved-slide';
 import { retryMediaTask } from '@/lib/media/media-orchestrator';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
+import { mediaResolutionCanRetry, type MediaResolution } from '@/lib/media/resolve-media-ref';
 
 const log = createLogger('RendererScreenCanvas');
 
-function isLegacySequentialVideoRef(value: string | undefined): boolean {
-  return !!value && /^gen_vid_\d+$/i.test(value);
-}
-
-function PlaybackVideoContent({ element }: { readonly element: PPTVideoElement }) {
+function PlaybackVideoContent({
+  element,
+  media,
+  sceneId,
+  slideId,
+}: {
+  readonly element: PPTVideoElement;
+  readonly media: ResolvedSlideMediaEntry | undefined;
+  readonly sceneId: string;
+  readonly slideId: string;
+}) {
   const { t } = useI18n();
   const videoRef = useRef<HTMLVideoElement>(null);
   const playingVideoElementId = useCanvasStore.use.playingVideoElementId();
   const prevPlayingRef = useRef('');
   const [scope, animate] = useAnimate<HTMLDivElement>();
 
-  const stageId = useMediaStageId();
-  const mediaRef = getVideoMediaRefForElement(element);
-  const concreteSrc = element.src && !isMediaPlaceholder(element.src) ? element.src : undefined;
-  const isPlaceholder = !!mediaRef;
-  const task = useMediaGenerationStore((s) => {
-    if (!mediaRef) return undefined;
-    const candidate = s.tasks[mediaRef];
-    if (candidate && candidate.stageId !== stageId) return undefined;
-    if (candidate) return candidate;
-
-    const sameStageVideoTasks = Object.values(s.tasks).filter(
-      (item) => item.type === 'video' && item.stageId === stageId && item.status === 'done',
-    );
-    if (isLegacySequentialVideoRef(mediaRef) && sameStageVideoTasks.length === 1) {
-      return sameStageVideoTasks[0];
-    }
-
-    return undefined;
-  });
-  const videoGenerationEnabled = useSettingsStore((s) => s.videoGenerationEnabled);
-  const resolvedSrc = task?.status === 'done' && task.objectUrl ? task.objectUrl : concreteSrc;
-  const showDisabled = isPlaceholder && !concreteSrc && !task && !videoGenerationEnabled;
+  const task = media?.task;
+  const mediaRef = media?.ref;
+  const resolvedSrc = element.src || undefined;
+  const resolvedPoster = element.poster || undefined;
   const showSkeleton =
-    isPlaceholder &&
-    !concreteSrc &&
-    !showDisabled &&
-    (!task || task.status === 'pending' || task.status === 'generating');
-  const showError = isPlaceholder && !concreteSrc && task?.status === 'failed';
+    media?.resolution.kind === 'pending' || media?.resolution.kind === 'placeholder';
+  const showDisabled = media?.resolution.kind === 'disabled';
+  const showError = media?.resolution.kind === 'failed';
+  const canRetry = mediaResolutionCanRetry(media?.resolution);
 
   useEffect(() => {
     videoRef.current?.pause();
@@ -95,17 +75,6 @@ function PlaybackVideoContent({ element }: { readonly element: PPTVideoElement }
     }
   };
 
-  if (showDisabled) {
-    return (
-      <div className="flex h-full w-full items-center justify-center rounded bg-gray-50 dark:bg-gray-900/30">
-        <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 dark:text-gray-400">
-          <VideoOff className="h-3 w-3 shrink-0" />
-          <span>{t('settings.mediaGenerationDisabled')}</span>
-        </div>
-      </div>
-    );
-  }
-
   if (showSkeleton) {
     return (
       <div className="flex h-full w-full items-center justify-center rounded bg-gradient-to-br from-indigo-50 via-violet-50/60 to-blue-50 dark:from-indigo-950/40 dark:via-violet-950/30 dark:to-blue-950/20">
@@ -120,7 +89,21 @@ function PlaybackVideoContent({ element }: { readonly element: PPTVideoElement }
     );
   }
 
-  if (showError) {
+  if (showDisabled) {
+    return (
+      <div
+        className="flex h-full w-full items-center justify-center rounded bg-gray-50 dark:bg-gray-900/20"
+        data-media-state="disabled"
+      >
+        <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 dark:text-gray-400">
+          <VideoOff className="h-3 w-3 shrink-0" />
+          <span>{t('settings.mediaGenerationDisabled')}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (showError && media?.resolution.kind === 'failed') {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 rounded bg-red-50 dark:bg-red-900/20">
         {task?.errorCode === 'CONTENT_SENSITIVE' ? (
@@ -128,16 +111,13 @@ function PlaybackVideoContent({ element }: { readonly element: PPTVideoElement }
             <ShieldAlert className="h-3 w-3 shrink-0" />
             <span>{t('settings.mediaContentSensitive')}</span>
           </div>
-        ) : task?.errorCode === 'GENERATION_DISABLED' ? (
-          <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 dark:text-gray-400">
-            <VideoOff className="h-3 w-3 shrink-0" />
-            <span>{t('settings.mediaGenerationDisabled')}</span>
-          </div>
-        ) : (
+        ) : canRetry ? (
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (mediaRef) retryMediaTask(mediaRef);
+              if (mediaRef) {
+                retryMediaTask(mediaRef, { elementId: element.id, sceneId, slideId });
+              }
             }}
             onPointerDown={(e) => e.stopPropagation()}
             className="flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-[10px] font-medium text-red-600 transition-colors hover:bg-red-200 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60"
@@ -145,24 +125,39 @@ function PlaybackVideoContent({ element }: { readonly element: PPTVideoElement }
             <RotateCcw className="h-3 w-3" />
             {t('settings.mediaRetry')}
           </button>
-        )}
+        ) : null}
       </div>
     );
   }
 
   if (resolvedSrc) {
     return (
-      <div ref={scope} className="h-full w-full">
+      <div ref={scope} className="relative h-full w-full">
         <video
           ref={videoRef}
           className="h-full w-full"
           style={{ objectFit: 'contain' }}
           src={resolvedSrc}
-          poster={task?.poster || element.poster}
+          poster={resolvedPoster ?? undefined}
           preload="metadata"
           controls
           onEnded={handleEnded}
         />
+        {canRetry ? (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              if (mediaRef) {
+                retryMediaTask(mediaRef, { elementId: element.id, sceneId, slideId });
+              }
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            className="absolute right-1 top-1 flex items-center gap-1 rounded bg-red-100/95 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm dark:bg-red-900/80 dark:text-red-300"
+          >
+            <RotateCcw className="h-3 w-3" />
+            {t('settings.mediaRetry')}
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -184,55 +179,32 @@ function PlaybackVideoContent({ element }: { readonly element: PPTVideoElement }
   );
 }
 
-function renderPlaybackVideo(element: PPTVideoElement) {
-  return <PlaybackVideoContent element={element} />;
-}
-
 export type PlaybackImageState = 'ready' | 'pending' | 'failed' | 'disabled';
 
-export function getPlaybackImageState(
-  isPlaceholder: boolean,
-  task: MediaTask | undefined,
-  imageGenerationEnabled: boolean,
-): PlaybackImageState {
-  if (!isPlaceholder) return 'ready';
-  if (!task && !imageGenerationEnabled) return 'disabled';
-  if (!task || task.status === 'pending' || task.status === 'generating') return 'pending';
-  if (task.status === 'failed') return 'failed';
+export function getPlaybackImageState(resolution: MediaResolution): PlaybackImageState {
+  if (resolution.kind === 'failed') return 'failed';
+  if (resolution.kind === 'disabled') return 'disabled';
+  if (resolution.kind === 'pending' || resolution.kind === 'placeholder') return 'pending';
   return 'ready';
 }
 
 function PlaybackImageContent({
   element,
   defaultContent,
+  media,
+  sceneId,
+  slideId,
 }: {
   readonly element: PPTImageElement;
   readonly defaultContent: ReactNode;
+  readonly media: ResolvedSlideMediaEntry | undefined;
+  readonly sceneId: string;
+  readonly slideId: string;
 }) {
   const { t } = useI18n();
-  const stageId = useMediaStageId();
-  const isPlaceholder = !!stageId && !!element.src && isMediaPlaceholder(element.src);
-  const task = useMediaGenerationStore((s) => {
-    if (!isPlaceholder) return undefined;
-    const candidate = s.tasks[element.src];
-    return candidate?.stageId === stageId ? candidate : undefined;
-  });
-  const imageGenerationEnabled = useSettingsStore((s) => s.imageGenerationEnabled);
-  const state = getPlaybackImageState(isPlaceholder, task, imageGenerationEnabled);
-
-  if (state === 'disabled') {
-    return (
-      <div
-        className="flex h-full w-full items-center justify-center bg-gray-50 dark:bg-gray-900/30"
-        data-media-state="disabled"
-      >
-        <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 dark:text-gray-400">
-          <ImageOff className="h-3 w-3 shrink-0" />
-          <span>{t('settings.mediaGenerationDisabled')}</span>
-        </div>
-      </div>
-    );
-  }
+  const task = media?.task;
+  const state = getPlaybackImageState(media?.resolution ?? { kind: 'placeholder' });
+  const canRetry = mediaResolutionCanRetry(media?.resolution);
 
   if (state === 'pending') {
     return (
@@ -251,7 +223,21 @@ function PlaybackImageContent({
     );
   }
 
-  if (state === 'failed') {
+  if (state === 'disabled') {
+    return (
+      <div
+        className="flex h-full w-full items-center justify-center bg-gray-50 dark:bg-gray-900/20"
+        data-media-state="disabled"
+      >
+        <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 dark:text-gray-400">
+          <ImageOff className="h-3 w-3 shrink-0" />
+          <span>{t('settings.mediaGenerationDisabled')}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === 'failed' && media?.resolution.kind === 'failed') {
     return (
       <div
         className="flex h-full w-full flex-col items-center justify-center gap-1.5 bg-red-50 dark:bg-red-900/20"
@@ -262,16 +248,13 @@ function PlaybackImageContent({
             <ShieldAlert className="h-3 w-3 shrink-0" />
             <span>{t('settings.mediaContentSensitive')}</span>
           </div>
-        ) : task?.errorCode === 'GENERATION_DISABLED' ? (
-          <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 dark:text-gray-400">
-            <ImageOff className="h-3 w-3 shrink-0" />
-            <span>{t('settings.mediaGenerationDisabled')}</span>
-          </div>
-        ) : (
+        ) : canRetry ? (
           <button
             onClick={(event) => {
               event.stopPropagation();
-              retryMediaTask(element.src);
+              if (media?.ref) {
+                retryMediaTask(media.ref, { elementId: element.id, sceneId, slideId });
+              }
             }}
             onPointerDown={(event) => event.stopPropagation()}
             className="flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-[10px] font-medium text-red-600 transition-colors hover:bg-red-200 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60"
@@ -279,27 +262,37 @@ function PlaybackImageContent({
             <RotateCcw className="h-3 w-3" />
             {t('settings.mediaRetry')}
           </button>
-        )}
+        ) : null}
       </div>
     );
   }
 
-  return defaultContent;
-}
-
-function renderPlaybackImage(
-  element: PPTImageElement,
-  _resolvedSrc: string,
-  defaultContent: ReactNode,
-) {
-  return <PlaybackImageContent element={element} defaultContent={defaultContent} />;
+  return (
+    <>
+      {defaultContent}
+      {canRetry ? (
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            if (media?.ref) {
+              retryMediaTask(media.ref, { elementId: element.id, sceneId, slideId });
+            }
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          className="absolute right-1 top-1 flex items-center gap-1 rounded bg-red-100/95 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm dark:bg-red-900/80 dark:text-red-300"
+        >
+          <RotateCcw className="h-3 w-3" />
+          {t('settings.mediaRetry')}
+        </button>
+      ) : null}
+    </>
+  );
 }
 
 export function RendererScreenCanvas() {
+  const { sceneId } = useSceneData<SlideContent>();
   const slide = useSceneSelector<SlideContent, SlideContent['canvas']>((content) => content.canvas);
-  const resolvedSlide = useResolvedSlide(slide, {
-    preserveUnresolvedImagePlaceholders: true,
-  });
+  const resolved = useResolvedSlideMedia(slide);
 
   const canvasPercentage = useCanvasStore.use.canvasPercentage();
   const setCanvasScale = useCanvasStore.use.setCanvasScale();
@@ -356,13 +349,28 @@ export function RendererScreenCanvas() {
 
   return (
     <SlideCanvas
-      slide={resolvedSlide}
+      slide={resolved.slide}
       canvasPercentage={canvasPercentage}
       onScaleChange={handleScaleChange}
       effects={effects}
       elementIdPrefix="screen-element-"
-      renderImage={renderPlaybackImage}
-      renderVideo={renderPlaybackVideo}
+      renderImage={(element, _src, defaultContent) => (
+        <PlaybackImageContent
+          element={element}
+          defaultContent={defaultContent}
+          media={resolved.byElementId[element.id]}
+          sceneId={sceneId}
+          slideId={slide.id}
+        />
+      )}
+      renderVideo={(element) => (
+        <PlaybackVideoContent
+          element={element}
+          media={resolved.byElementId[element.id]}
+          sceneId={sceneId}
+          slideId={slide.id}
+        />
+      )}
       videoInteractive
       chrome
     />

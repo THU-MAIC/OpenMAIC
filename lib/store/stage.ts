@@ -21,6 +21,7 @@ import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/doc
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
 import type { ChatStorageSnapshot } from '@/lib/utils/chat-storage';
 import type { PendingChange, StaleDroppedSave } from '@/lib/utils/stage-storage';
+import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
 import {
   isStageDeleted,
   isStageDeletionInFlight,
@@ -586,19 +587,38 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     const state = get();
     const wasComplete = !state.generationComplete && isDeckComplete(state);
 
-    const scenes = get().scenes.filter((scene) => scene.id !== sceneId);
+    const scenes = state.scenes.filter((scene) => scene.id !== sceneId);
     const currentSceneId = get().currentSceneId;
+    const provisionalAfter = state.stage ? { stage: state.stage, scenes } : null;
+    const beforeRefs = collectStageAssetRefs(
+      state.stage ? { stage: state.stage, scenes: state.scenes } : null,
+      { mediaRows: [], audioRows: [] },
+    );
+    const afterRefs = collectStageAssetRefs(provisionalAfter, { mediaRows: [], audioRows: [] });
+    const detachedRefs = new Set(
+      [...beforeRefs.referenced].filter((ref) => !afterRefs.referenced.has(ref)),
+    );
+    let nextStage = state.stage;
+    if (nextStage?.videoManifest && detachedRefs.size > 0) {
+      const nextManifest = Object.fromEntries(
+        Object.entries(nextStage.videoManifest).filter(([ref]) => !detachedRefs.has(ref)),
+      );
+      if (Object.keys(nextManifest).length !== Object.keys(nextStage.videoManifest).length) {
+        nextStage = { ...nextStage, videoManifest: nextManifest };
+      }
+    }
 
     // If deleted scene was current, select next or previous
     if (currentSceneId === sceneId) {
       const index = get().getSceneIndex(sceneId);
       const newIndex = index < scenes.length ? index : scenes.length - 1;
       set({
+        stage: nextStage,
         scenes,
         currentSceneId: scenes[newIndex]?.id || null,
       });
     } else {
-      set({ scenes });
+      set({ stage: nextStage, scenes });
     }
 
     if (wasComplete) get().setGenerationComplete(true);
@@ -606,6 +626,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     markPendingChanges(
       get().stage?.id,
       { kind: 'structure' },
+      ...(nextStage !== state.stage ? ([{ kind: 'stage' }] as PendingChange[]) : []),
       ...(currentSceneId === sceneId ? ([{ kind: 'currentScene' }] as PendingChange[]) : []),
     );
   },

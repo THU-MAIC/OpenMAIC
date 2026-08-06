@@ -138,6 +138,108 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // Package boundary (machine-enforced): @openmaic/generation is a standalone,
+  // app-agnostic package. Every package code directory is covered so future
+  // scripts and tooling cannot bypass the boundary. The leaf dependency list
+  // mirrors the package's declared dependencies and is widened only together
+  // with package.json.
+  {
+    files: ['packages/@openmaic/generation/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...AI_SDK_DYNAMIC_IMPORT_BAN,
+        {
+          selector: 'Literal[value=/^@\\//]',
+          message:
+            '@openmaic/generation must not reference a host-app path (@/…). Depend only on @openmaic/dsl, Node built-ins, and relative modules.',
+        },
+        {
+          selector: 'TemplateElement[value.cooked=/^@\\//]',
+          message:
+            '@openmaic/generation must not reference a host-app path (@/…) in a template literal.',
+        },
+        {
+          selector:
+            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|(nanoid|jsonrepair)(\\/|$)|node:|\\.\\.?\\/).+/]',
+          message:
+            '@openmaic/generation may import only from @openmaic/dsl, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
+        },
+        {
+          selector:
+            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|(nanoid|jsonrepair)(\\/|$)|node:|\\.\\.?\\/).+/]',
+          message:
+            '@openmaic/generation may re-export only from @openmaic/dsl, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
+        },
+        {
+          selector:
+            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|(nanoid|jsonrepair)(\\/|$)|node:|\\.\\.?\\/).+/]',
+          message:
+            '@openmaic/generation may re-export only from @openmaic/dsl, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
+        },
+        {
+          selector: 'ImportExpression',
+          message:
+            '@openmaic/generation must use static imports from @openmaic/dsl, Node built-ins, or relative modules.',
+        },
+        {
+          selector: "CallExpression[callee.name='require']",
+          message: '@openmaic/generation must not use require().',
+        },
+      ],
+    },
+  },
+  // Flat config replaces a rule's complete options in later matching blocks.
+  // Repeat every restriction for tests (and their Vitest config), changing only
+  // the static import allowlist to add the package public entry and Vitest.
+  {
+    files: [
+      'packages/@openmaic/generation/test/**/*.{ts,tsx,js,jsx,mjs,cjs}',
+      'packages/@openmaic/generation/vitest.config.ts',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...AI_SDK_DYNAMIC_IMPORT_BAN,
+        {
+          selector: 'Literal[value=/^@\\//]',
+          message:
+            '@openmaic/generation tests and test config must not reference a host-app path (@/…). Read app prompt assets as files for parity checks.',
+        },
+        {
+          selector: 'TemplateElement[value.cooked=/^@\\//]',
+          message:
+            '@openmaic/generation tests and test config must not reference a host-app path (@/…) in a template literal.',
+        },
+        {
+          selector:
+            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\.?\\/).+/]',
+          message:
+            '@openmaic/generation tests and test config may import only @openmaic/dsl, the package public entry, Node built-ins, Vitest, or relative modules (./… or ../…).',
+        },
+        {
+          selector:
+            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\.?\\/).+/]',
+          message:
+            '@openmaic/generation tests and test config may re-export only @openmaic/dsl, the package public entry, Node built-ins, Vitest, or relative modules (./… or ../…).',
+        },
+        {
+          selector:
+            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|@openmaic\\/generation(\\/|$)|node:|vitest(\\/|$)|\\.\\.?\\/).+/]',
+          message:
+            '@openmaic/generation tests and test config may re-export only @openmaic/dsl, the package public entry, Node built-ins, Vitest, or relative modules (./… or ../…).',
+        },
+        {
+          selector: 'ImportExpression',
+          message: '@openmaic/generation tests and test config must use static imports.',
+        },
+        {
+          selector: "CallExpression[callee.name='require']",
+          message: '@openmaic/generation tests and test config must not use require().',
+        },
+      ],
+    },
+  },
   // Module boundary (machine-enforced): lib/choreography is the shared
   // orchestration spec (timing + action timeline). It lives in the app (not a
   // package) because its semantics co-evolve with the playback engine, but it
@@ -385,6 +487,47 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // PBL v2 operations boundary: leaf/shared kernel operations may be used by
+  // composite runtime operations, but the kernel must never reach back into
+  // operations/runtime. Match the module string in every literal form so
+  // static imports, re-exports, dynamic imports, and require-like calls cannot
+  // quietly invert the boundary.
+  {
+    files: ['lib/pbl/v2/operations/kernel/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '../runtime',
+                '../runtime/*',
+                '@/lib/pbl/v2/operations/runtime',
+                '@/lib/pbl/v2/operations/runtime/*',
+              ],
+              message:
+                'PBL v2 kernel operations must not import operations/runtime. Runtime operations may depend on the project-definition kernel, never the reverse.',
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        ...AI_SDK_DYNAMIC_IMPORT_BAN,
+        {
+          selector: 'Literal[value=/\\/runtime(?:\\/|$)/]',
+          message:
+            'PBL v2 kernel operations must not import operations/runtime. Runtime operations may depend on the project-definition kernel, never the reverse.',
+        },
+        {
+          selector: 'TemplateElement[value.cooked=/\\/runtime(?:\\/|$)/]',
+          message:
+            'PBL v2 kernel operations must not import operations/runtime. Runtime operations may depend on the project-definition kernel, never the reverse.',
+        },
+      ],
+    },
+  },
   // Single LLM entry point (machine-enforced): server-side model calls go through
   // `callLLM` / `streamLLM` in lib/ai/llm.ts. That wrapper is where usage
   // accounting (`recordUsage`), the `LLM_THINKING_DISABLED` kill switch, and
@@ -445,12 +588,14 @@ const eslintConfig = defineConfig([
       ],
     },
   },
-  // Same boundary, dynamic form. This block cannot match the files of the five
-  // blocks above that also set no-restricted-syntax (flat config replaces rule
-  // options per key, so it would drop their module boundaries), hence the ignores.
+  // Same boundary, dynamic form. This block cannot match files covered by the
+  // package and module boundary blocks above that also set no-restricted-syntax
+  // (flat config replaces rule options per key, so it would drop their module
+  // boundaries), hence the ignores.
   // Every ignored directory is nonetheless covered, and covered by a rule rather
   // than by an argument:
-  //   - packages/@openmaic/renderer, packages/@openmaic/storage — the same
+  //   - packages/@openmaic/renderer, packages/@openmaic/storage, and
+  //     packages/@openmaic/generation — the same
   //     AI_SDK_DYNAMIC_IMPORT_BAN is spread into their own blocks above. An earlier
   //     revision left them out on the reasoning that they are built in isolation
   //     against @openmaic/dsl; review showed `void import('ai')` under the renderer
@@ -467,8 +612,10 @@ const eslintConfig = defineConfig([
       // Blocks above that configure no-restricted-syntax for their own boundary.
       'lib/choreography/**',
       'lib/video-export/**',
+      'lib/pbl/v2/operations/kernel/**',
       'packages/@openmaic/renderer/**',
       'packages/@openmaic/storage/**',
+      'packages/@openmaic/generation/**',
     ],
     rules: {
       'no-restricted-syntax': ['error', ...AI_SDK_DYNAMIC_IMPORT_BAN],

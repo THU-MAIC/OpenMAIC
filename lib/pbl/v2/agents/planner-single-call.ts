@@ -16,15 +16,14 @@
  * All the deterministic hydration (ids / status / order / assignee /
  * thread bootstrap / proficiency re-seat) and post-processing
  * (`normalizeProjectRuntime`, `normalizeSynthesisChecks`, completion
- * gate) is shared with the loop via exported helpers in `./planner.ts`.
+ * gate) is shared with the loop via exported helpers in `./planner-core.ts`.
  */
 
 import type { LanguageModel } from 'ai';
 
-import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import { parseJsonResponse } from '@/lib/generation/json-repair';
-import { normalizeProjectRuntime, normalizeScenario } from '../operations/progress';
+import { normalizeProjectRuntime, normalizeScenario } from '../operations/kernel/progress';
 import type { ThinkingConfig } from '@/lib/types/provider';
 
 import {
@@ -38,7 +37,7 @@ import {
   normalizeSynthesisChecks,
   plannerCompletionGaps,
   type PlannerV2Callbacks,
-} from './planner';
+} from './planner-core';
 
 import type {
   PBLProjectV2,
@@ -55,6 +54,14 @@ const log = createLogger('PBL v2 Planner (single-call)');
 
 const SINGLE_CALL_PROMPT = 'planner-single-call-system';
 const SCENARIO_PROMPT = 'planner-scenario-single-call-system';
+
+/** Narrow call seam used by the untooled single-call planner. */
+export type PlannerSingleCallFn = (
+  params: { model: LanguageModel; system: string; prompt: string },
+  source: 'pbl-v2-planner-single',
+  retryOptions: undefined,
+  thinkingConfig?: ThinkingConfig,
+) => Promise<{ text: string }>;
 
 function buildSingleCallUserPrompt(scenarioRoleplay: boolean): string {
   const sharedChecklist = [
@@ -477,6 +484,7 @@ function hydrateProject(project: PBLProjectV2, parsed: PlannerLLMOutput): void {
 export async function generatePBLV2ProjectSingleCall(
   input: PBLPlannerV2Input,
   model: LanguageModel,
+  callLLM: PlannerSingleCallFn,
   callbacks?: PlannerV2Callbacks,
   thinkingConfig?: ThinkingConfig,
 ): Promise<PBLProjectV2> {
