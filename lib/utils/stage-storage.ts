@@ -10,6 +10,7 @@ import { ChatSession } from '../types/chat';
 import { db } from './database';
 import type { FolderRecord } from './database';
 import { nanoid } from 'nanoid';
+import { validateFolderName } from './folder-name-validation';
 import {
   ChatStorageLockUnavailableError,
   saveChatSessions,
@@ -897,17 +898,46 @@ export async function listFolders(): Promise<FolderRecord[]> {
   return folders.sort((a, b) => a.order - b.order);
 }
 
+/** Error thrown when a folder name fails validation at the storage boundary. */
+export class FolderNameError extends Error {
+  constructor(
+    message: string,
+    readonly kind: 'empty' | 'tooLong' | 'duplicate',
+  ) {
+    super(message);
+    this.name = 'FolderNameError';
+  }
+}
+
+/** Validate a folder name against the width rule and (optionally) duplicates. */
+function assertFolderName(name: string, existing: FolderRecord[], currentId?: string): void {
+  const result = validateFolderName(name);
+  if (!result.ok) {
+    throw new FolderNameError(
+      result.kind === 'empty' ? 'Folder name must not be empty' : 'Folder name is too long',
+      result.kind,
+    );
+  }
+  const trimmed = name.trim();
+  const clash = existing.some(
+    (f) => f.name.toLowerCase() === trimmed.toLowerCase() && f.id !== currentId,
+  );
+  if (clash) throw new FolderNameError('A folder with this name already exists', 'duplicate');
+}
+
 /**
  * Create a folder. `order` is placed after the current maximum so new folders
- * land at the end of the list.
+ * land at the end of the list. Validates the name (width + uniqueness) at the
+ * storage boundary.
  */
 export async function createFolder(name: string): Promise<FolderRecord> {
   const now = Date.now();
   const existing = await db.folders.toArray();
+  assertFolderName(name, existing);
   const order = existing.reduce((max, folder) => Math.max(max, folder.order), -1) + 1;
   const folder: FolderRecord = {
     id: nanoid(),
-    name,
+    name: name.trim(),
     order,
     createdAt: now,
     updatedAt: now,
@@ -918,13 +948,16 @@ export async function createFolder(name: string): Promise<FolderRecord> {
 }
 
 /**
- * Rename a folder.
+ * Rename a folder. Validates the name (width + uniqueness excluding itself) at
+ * the storage boundary, so the UI invariant cannot be bypassed.
  */
 export async function renameFolder(id: string, name: string): Promise<void> {
   const now = Date.now();
-  const folder = await db.folders.get(id);
+  const existing = await db.folders.toArray();
+  assertFolderName(name, existing, id);
+  const folder = existing.find((f) => f.id === id);
   if (!folder) throw new Error(`Folder not found: ${id}`);
-  await db.folders.put({ ...folder, name, updatedAt: now });
+  await db.folders.put({ ...folder, name: name.trim(), updatedAt: now });
   log.info(`Renamed folder ${id} to "${name}"`);
 }
 

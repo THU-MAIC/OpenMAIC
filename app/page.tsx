@@ -62,6 +62,7 @@ import {
   renameFolder,
   deleteFolder,
   setStageFolder,
+  FolderNameError,
   type DeleteFolderMode,
 } from '@/lib/utils/stage-storage';
 import type { FolderRecord } from '@/lib/utils/database';
@@ -319,11 +320,19 @@ function HomePage() {
   const handleRenameFolder =
     (folder: FolderRecord) =>
     async (newName: string): Promise<string | null> => {
+      // Empty or unchanged input just exits editing without an error.
+      const trimmed = newName.trim();
+      if (!trimmed || trimmed === folder.name) return null;
       try {
         await renameFolder(folder.id, newName);
-        setFolders((prev) => prev.map((f) => (f.id === folder.id ? { ...f, name: newName } : f)));
+        setFolders((prev) => prev.map((f) => (f.id === folder.id ? { ...f, name: trimmed } : f)));
         return null;
       } catch (err) {
+        if (err instanceof FolderNameError) {
+          if (err.kind === 'duplicate') return t('classroom.folderNameExists');
+          if (err.kind === 'tooLong') return t('classroom.folderWidth', { width: 0, max: 40 });
+          return t('classroom.folderNameHint');
+        }
         log.error('Failed to rename folder:', err);
         return t('classroom.folderRenameFailed');
       }
@@ -334,15 +343,15 @@ function HomePage() {
     if (!target) return;
     try {
       await deleteFolder(target.id, mode);
-      // 'remove' deletes the member courses via deleteStageData, so reload
-      // classrooms; 'ungroup' only changes membership, but reload is cheap and
-      // keeps the list authoritative.
-      await Promise.all([loadFolders(), loadClassrooms()]);
       if (currentFolderId === target.id) setCurrentFolderId(undefined);
     } catch (err) {
       log.error('Failed to delete folder:', err);
       toast.error(t('classroom.folderDeleteFailed'));
     } finally {
+      // Always refresh authoritative state: in 'remove' mode a partial failure
+      // may have durably deleted some courses before throwing, and the UI must
+      // reflect that rather than leaving stale cards/counts behind.
+      await Promise.all([loadFolders(), loadClassrooms()]);
       setDeleteTarget(null);
     }
   };
@@ -925,7 +934,10 @@ function HomePage() {
       </motion.div>
 
       {/* ═══ Recent classrooms — collapsible ═══ */}
-      {classrooms.length > 0 && (
+      {/* Keep the section alive as long as there is anything to show: courses,
+          folders, or — when the flag is on — the "New folder" affordance. This
+          avoids trapping persisted folders when the last course is deleted. */}
+      {(classrooms.length > 0 || effectiveFolders.length > 0 || COURSE_FOLDERS_ENABLED) && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -945,14 +957,6 @@ function HomePage() {
               >
                 <Clock className="size-3.5" />
                 {t('classroom.recentClassrooms')}
-                {currentFolder && (
-                  <>
-                    <ChevronRight className="size-3 opacity-40" />
-                    <span className="text-foreground/70 truncate max-w-[160px]">
-                      {currentFolder.name}
-                    </span>
-                  </>
-                )}
                 <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
                 <motion.div
                   animate={{ rotate: recentOpen ? 180 : 0 }}
@@ -1070,7 +1074,10 @@ function HomePage() {
               {COURSE_FOLDERS_ENABLED && !currentFolderId && !isSearching && (
                 <button
                   type="button"
-                  onClick={() => setNewFolderOpen(true)}
+                  onClick={() => {
+                    if (!recentOpen) persistRecentOpen(true);
+                    setNewFolderOpen(true);
+                  }}
                   aria-label={t('classroom.newFolderTitle')}
                   title={t('classroom.newFolderTitle')}
                   className="inline-flex items-center justify-center size-7 rounded-full bg-muted/40 text-muted-foreground ring-1 ring-border/50 hover:bg-muted hover:text-foreground hover:ring-border transition-[background-color,color,box-shadow] cursor-pointer"
@@ -1235,29 +1242,35 @@ function HomePage() {
                         ))}
                       </motion.div>
                     </AnimatePresence>
-
-                    <NewFolderDialog
-                      open={newFolderOpen}
-                      onOpenChange={(open) => {
-                        setNewFolderOpen(open);
-                        if (!open) setCreateAndMoveTarget(null);
-                      }}
-                      folders={effectiveFolders}
-                      onCreate={handleCreateFolder}
-                    />
-                    <DeleteFolderDialog
-                      open={deleteTarget !== null}
-                      onOpenChange={(open) => !open && setDeleteTarget(null)}
-                      folder={deleteTarget}
-                      courseCount={deleteTargetCourseCount}
-                      onConfirm={confirmDeleteFolder}
-                    />
                   </div>
                 )}
               </motion.div>
             )}
           </AnimatePresence>
         </motion.div>
+      )}
+
+      {/* Folder dialogs — mounted at the top level so they are reachable even
+          while the Recent section is collapsed or the course list is empty. */}
+      {COURSE_FOLDERS_ENABLED && (
+        <>
+          <NewFolderDialog
+            open={newFolderOpen}
+            onOpenChange={(open) => {
+              setNewFolderOpen(open);
+              if (!open) setCreateAndMoveTarget(null);
+            }}
+            folders={effectiveFolders}
+            onCreate={handleCreateFolder}
+          />
+          <DeleteFolderDialog
+            open={deleteTarget !== null}
+            onOpenChange={(open) => !open && setDeleteTarget(null)}
+            folder={deleteTarget}
+            courseCount={deleteTargetCourseCount}
+            onConfirm={confirmDeleteFolder}
+          />
+        </>
       )}
 
       {/* Footer — flows with content, at the very end */}
