@@ -244,6 +244,13 @@
     },
     "insert": {
       "textBox": "Cuadro de texto",
+      "line": "Línea",
+      "table": "Tabla",
+      "chart": "Gráfica",
+      "chartBar": "Gráfica de barras",
+      "chartLine": "Gráfica de líneas",
+      "chartPie": "Gráfica circular",
+      "tableDimensions": "Tabla {{rows}} x {{columns}}",
       "dragToolbar": "Mover herramientas de inserción",
       "dragToolbarKeyboard": "Mover herramientas de inserción: presiona Enter o Espacio y luego usa las flechas",
       "image": "Imagen",
@@ -251,6 +258,9 @@
       "imageOr": "o pega la URL de una imagen",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "Insertar"
+    },
+    "table": {
+      "doubleClickToEdit": "Haz doble clic para editar"
     },
     "nav": {
       "addSlide": "Agregar diapositiva",

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   buildInsertItems,
   deleteSlideElement,
+  insertChartElement,
   insertTableElement,
 } from '@/components/edit/surfaces/slide/use-slide-surface';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
@@ -83,6 +84,24 @@ describe('slide insert palette', () => {
     expect(element.data).toHaveLength(3);
     expect(element.data.flat()).toHaveLength(12);
     expect(selectionSpy).toHaveBeenCalledWith([element.id]);
+  });
+
+  it('inserts and selects a default chart through the slide session', () => {
+    const operationSpy = vi.spyOn(useSlideEditSession.getState(), 'applyOp');
+    const selectionSpy = vi.spyOn(useCanvasStore.getState(), 'setActiveElementIdList');
+
+    insertChartElement('line');
+
+    const operation = operationSpy.mock.calls.at(-1)?.[0];
+    if (!operation || operation.type !== 'element.add') {
+      throw new Error('Expected an element.add operation');
+    }
+    expect(operation.element).toMatchObject({
+      type: 'chart',
+      chartType: 'line',
+      data: { labels: ['A', 'B', 'C', 'D'], legends: ['Series 1'] },
+    });
+    expect(selectionSpy).toHaveBeenCalledWith([operation.element.id]);
   });
 });
 

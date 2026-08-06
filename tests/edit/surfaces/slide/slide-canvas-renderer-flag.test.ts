@@ -1,4 +1,4 @@
-import { createElement, type ReactNode } from 'react';
+import { createElement, isValidElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EditableSlideCanvasWithUIProps } from '@openmaic/renderer/editing-ui';
@@ -15,6 +15,7 @@ const mockSetCreatingElement = vi.fn();
 const mockApplyOp = vi.fn();
 const mockCommitContent = vi.fn();
 const mockInsertImageElement = vi.fn();
+const mockInsertChartElement = vi.fn();
 const mockInsertTableElement = vi.fn();
 let activeElementIds: string[] = [];
 let hiddenElementIds: string[] = [];
@@ -109,6 +110,7 @@ vi.mock('@/components/edit/surfaces/slide/slide-edit-session', () => ({
 
 vi.mock('@/components/edit/surfaces/slide/use-slide-surface', () => ({
   insertImageElement: mockInsertImageElement,
+  insertChartElement: mockInsertChartElement,
   insertTableElement: mockInsertTableElement,
   useEditingTextElementId: () => '',
   useSelectedNonTextElement: () => null,
@@ -130,6 +132,8 @@ vi.mock('@/components/edit/surfaces/slide/use-slide-surface', () => ({
 }));
 
 vi.mock('@openmaic/renderer/editing-ui', () => ({
+  ChartInsertPicker: (props: Record<string, unknown>) =>
+    createElement('div', { 'data-testid': 'chart-insert-picker', ...props }),
   EditableSlideCanvasWithUI: (props: EditableSlideCanvasWithUIProps) => {
     lastRendererProps = props;
     return createElement('button', {
@@ -202,6 +206,7 @@ describe('slide editor canvas renderer flag', () => {
     mockSetCreatingElement.mockClear();
     mockApplyOp.mockClear();
     mockCommitContent.mockClear();
+    mockInsertChartElement.mockClear();
     activeElementIds = [];
     hiddenElementIds = [];
     editingElementId = '';
@@ -282,9 +287,20 @@ describe('slide editor canvas renderer flag', () => {
       'insert-text',
       'insert-image',
       'insert-table',
+      'insert-chart',
       'insert-line',
       'slide-background',
     ]);
+    if (!insertToolbar) throw new Error('Expected renderer insert toolbar');
+    const chartItem = insertToolbar.items.find((item) => item.id === 'insert-chart');
+    const close = vi.fn();
+    const chartPicker = chartItem?.renderPopover?.({ close });
+    if (!isValidElement<{ onPick: (type: 'pie') => void }>(chartPicker)) {
+      throw new Error('Expected chart picker popover');
+    }
+    chartPicker.props.onPick('pie');
+    expect(mockInsertChartElement).toHaveBeenCalledWith('pie');
+    expect(close).toHaveBeenCalledTimes(1);
     expect(mockSetActiveElementIdList).toHaveBeenCalledWith(['title-1']);
     expect(mockSetEditingElementId).toHaveBeenCalledWith('title-1');
     expect(mockApplyOp).not.toHaveBeenCalled();

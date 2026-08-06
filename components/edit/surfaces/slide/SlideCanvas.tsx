@@ -1,7 +1,7 @@
 'use client';
 
 import { createElement, useCallback, useEffect, useMemo, type ReactNode } from 'react';
-import type { PPTImageElement, PPTLineElement, PPTTextElement } from '@openmaic/dsl';
+import type { ChartType, PPTImageElement, PPTLineElement, PPTTextElement } from '@openmaic/dsl';
 import type {
   EditIntent,
   LineCreateGeometry,
@@ -12,11 +12,12 @@ import type {
   TableCellChange,
 } from '@openmaic/renderer/editing';
 import {
+  ChartInsertPicker,
   EditableSlideCanvasWithUI,
   TableInsertPicker,
   type InsertToolbarOptions,
 } from '@openmaic/renderer/editing-ui';
-import { Image as ImageIcon, Minus, PaintBucket, Table2, Type } from 'lucide-react';
+import { BarChart3, Image as ImageIcon, Minus, PaintBucket, Table2, Type } from 'lucide-react';
 import Canvas from '@/components/slide-renderer/Editor/Canvas';
 import { SpotlightOverlay } from '@/components/slide-renderer/Editor/SpotlightOverlay';
 import { LaserPointerOverlay } from '@/components/slide-renderer/Editor/LaserPointerOverlay';
@@ -32,6 +33,7 @@ import { useClipImage } from '@/components/slide-renderer/components/element/Ima
 import type { ImageClipedEmitData } from '@/lib/types/edit';
 import {
   useEditingTextElementId,
+  insertChartElement,
   insertImageElement,
   insertTableElement,
   useResolvedSlideContent,
@@ -289,6 +291,24 @@ function RendererEditorCanvas() {
                   t('edit.insert.tableDimensions', { rows, columns }),
                 onPick: (rows: number, columns: number) => {
                   insertTableElement(rows, columns);
+                  close();
+                },
+              }),
+          },
+          {
+            id: 'insert-chart',
+            label: t('edit.insert.chart'),
+            tooltip: t('edit.insert.chart'),
+            icon: createElement(BarChart3, { 'aria-hidden': true }),
+            renderPopover: ({ close }) =>
+              createElement(ChartInsertPicker, {
+                options: [
+                  { type: 'bar' as ChartType, label: t('edit.insert.chartBar') },
+                  { type: 'line' as ChartType, label: t('edit.insert.chartLine') },
+                  { type: 'pie' as ChartType, label: t('edit.insert.chartPie') },
+                ],
+                onPick: (chartType: ChartType) => {
+                  insertChartElement(chartType);
                   close();
                 },
               }),

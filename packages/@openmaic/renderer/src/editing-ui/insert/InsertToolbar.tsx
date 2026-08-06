@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { InsertToolbarItem, InsertToolbarProps } from '../types';
 
+const INSERT_BUTTON_STEP = 34;
+
 function InsertToolbarButton({
   item,
   onOpen,
@@ -39,6 +41,7 @@ export function InsertToolbar({
   const [openId, setOpenId] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const openItem = items.find((item) => item.id === openId) ?? null;
+  const openItemIndex = openId ? items.findIndex((item) => item.id === openId) : -1;
 
   useEffect(() => {
     if (!openId) return;
@@ -78,7 +81,12 @@ export function InsertToolbar({
         ))}
       </div>
       {openItem?.renderPopover ? (
-        <div className="maic-editing-ui-insert-popover" role="dialog" aria-label={openItem.label}>
+        <div
+          className="maic-editing-ui-insert-popover"
+          role="dialog"
+          aria-label={openItem.label}
+          style={{ top: `${Math.max(openItemIndex, 0) * INSERT_BUTTON_STEP}px` }}
+        >
           {openItem.renderPopover({ close: () => setOpenId(null) })}
         </div>
       ) : null}

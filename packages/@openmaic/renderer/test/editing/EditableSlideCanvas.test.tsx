@@ -74,6 +74,24 @@ const tableSlide = {
   ],
 } as unknown as Slide;
 
+const chartSlide = {
+  ...slide,
+  elements: [
+    {
+      id: 'chart',
+      type: 'chart',
+      left: 100,
+      top: 100,
+      width: 300,
+      height: 220,
+      rotate: 0,
+      chartType: 'bar',
+      data: { labels: ['A', 'B'], legends: ['Series 1'], series: [[24, 36]] },
+      themeColors: ['#5b8def', '#8b5cf6', '#10b981', '#f59e0b'],
+    },
+  ],
+} as unknown as Slide;
+
 describe('EditableSlideCanvas', () => {
   beforeEach(() => {
     Object.defineProperty(document, 'elementFromPoint', {
@@ -229,6 +247,45 @@ describe('EditableSlideCanvas', () => {
     expect(onSel).toHaveBeenCalledWith(
       expect.objectContaining({ elementIds: ['table'], primaryId: 'table' }),
     );
+  });
+
+  it('moves and resizes a chart with no rotate handle', () => {
+    const onCh = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={chartSlide}
+        scale={1}
+        selection={{ elementIds: ['chart'], primaryId: 'chart' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={onCh}
+        snapping={false}
+      />,
+    );
+
+    expect(container.querySelector('.base-element-chart')).not.toBeNull();
+    expect(container.querySelectorAll('[data-resize-handle]')).toHaveLength(8);
+    expect(container.querySelector('[data-rotate-handle]')).toBeNull();
+
+    const move = container.querySelector('[data-element-id="chart"]') as HTMLElement;
+    fireEvent.pointerDown(move, { pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(move, { pointerId: 1, clientX: 30, clientY: 20 });
+    fireEvent.pointerUp(move, { pointerId: 1, clientX: 30, clientY: 20 });
+    expect(onCh).toHaveBeenLastCalledWith([
+      { type: 'element.update', id: 'chart', props: { left: 130, top: 120 } },
+    ]);
+
+    onCh.mockClear();
+    const resize = container.querySelector('[data-resize-handle="right-bottom"]') as HTMLElement;
+    fireEvent.pointerDown(resize, { pointerId: 2, clientX: 400, clientY: 320 });
+    fireEvent.pointerMove(window, { pointerId: 2, clientX: 440, clientY: 350 });
+    fireEvent.pointerUp(window, { pointerId: 2, clientX: 440, clientY: 350 });
+    expect(onCh).toHaveBeenLastCalledWith([
+      {
+        type: 'element.update',
+        id: 'chart',
+        props: { left: 100, top: 100, width: 340, height: 250 },
+      },
+    ]);
   });
 
   it('enters table editing from a double-clicked table cell hit', () => {

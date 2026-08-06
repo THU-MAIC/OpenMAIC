@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { InsertToolbar, TableInsertPicker } from '../../src/editing-ui';
+import {
+  ChartInsertPicker,
+  EDITING_UI_STYLES,
+  InsertToolbar,
+  TableInsertPicker,
+} from '../../src/editing-ui';
 
 describe('InsertToolbar', () => {
   it('invokes a configured insert action', () => {
@@ -59,5 +64,77 @@ describe('InsertToolbar', () => {
 
     expect(onInsertTable).toHaveBeenCalledWith(3, 4);
     expect(screen.queryByTestId('table-insert-dimensions')).toBeNull();
+  });
+
+  it('renders injected chart content and returns the selected chart type', () => {
+    const onInsertChart = vi.fn();
+
+    render(
+      <InsertToolbar
+        items={[
+          {
+            id: 'chart',
+            label: 'Chart',
+            tooltip: 'Insert chart',
+            icon: <span>Chart</span>,
+            renderPopover: ({ close }) => (
+              <ChartInsertPicker
+                options={[
+                  { type: 'bar', label: 'Bar chart' },
+                  { type: 'line', label: 'Line chart' },
+                  { type: 'pie', label: 'Pie chart' },
+                ]}
+                onPick={(type) => {
+                  onInsertChart(type);
+                  close();
+                }}
+              />
+            ),
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chart' }));
+    const pieButton = screen.getByRole('button', { name: 'Pie chart' });
+    expect(pieButton.textContent).toBe('');
+    expect(pieButton.getAttribute('data-tooltip')).toBe('Pie chart');
+    expect(pieButton.querySelector('svg')).not.toBeNull();
+    fireEvent.click(pieButton);
+
+    expect(onInsertChart).toHaveBeenCalledWith('pie');
+    expect(screen.queryByRole('dialog', { name: 'Chart' })).toBeNull();
+  });
+
+  it('lays chart choices out as icon buttons with hover labels', () => {
+    expect(EDITING_UI_STYLES).toContain('flex-direction: row;');
+    expect(EDITING_UI_STYLES).toContain('content: attr(data-tooltip);');
+    expect(EDITING_UI_STYLES).toContain('width: 32px;');
+    expect(EDITING_UI_STYLES).toMatch(
+      /\.maic-editing-ui-chart-picker-option \{[\s\S]*?align-items: center;/,
+    );
+  });
+
+  it('anchors a popover beside the triggering insert button instead of the toolbar top', () => {
+    const { container } = render(
+      <InsertToolbar
+        items={[
+          { id: 'text', label: 'Text', icon: <span>T</span> },
+          { id: 'image', label: 'Image', icon: <span>I</span> },
+          { id: 'table', label: 'Table', icon: <span>Table</span> },
+          {
+            id: 'chart',
+            label: 'Chart',
+            icon: <span>Chart</span>,
+            renderPopover: () => <span>Chart options</span>,
+          },
+        ]}
+      />,
+    );
+
+    const toolbar = within(container);
+    fireEvent.click(toolbar.getByRole('button', { name: 'Chart' }));
+
+    expect(toolbar.getByRole('dialog', { name: 'Chart' }).style.top).toBe('102px');
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { PPTElement, PPTTextElement } from '@openmaic/dsl';
+import type { PPTChartElement, PPTElement, PPTTextElement } from '@openmaic/dsl';
 import type { EditIntent, Selection } from '@openmaic/renderer/editing';
 import { createRendererCanvasCommands } from '@/components/edit/surfaces/slide/renderer-canvas-commands';
 import { applyRendererEditIntents } from '@/components/edit/surfaces/slide/renderer-edit-intents';
@@ -17,6 +17,22 @@ function text(id: string, overrides: Partial<PPTTextElement> = {}): PPTTextEleme
     content: `<p>${id}</p>`,
     defaultFontName: 'Inter',
     defaultColor: '#111111',
+    ...overrides,
+  };
+}
+
+function chart(id: string, overrides: Partial<PPTChartElement> = {}): PPTChartElement {
+  return {
+    id,
+    type: 'chart',
+    left: 0,
+    top: 0,
+    width: 300,
+    height: 220,
+    rotate: 0,
+    chartType: 'bar',
+    data: { labels: ['A', 'B'], legends: ['Series 1'], series: [[24, 36]] },
+    themeColors: ['#5b8def'],
     ...overrides,
   };
 }
@@ -110,6 +126,43 @@ describe('createRendererCanvasCommands', () => {
       },
     ]);
     expect(onSelectionChange).toHaveBeenCalledWith({ elementIds: [] });
+  });
+
+  it('applies delete, lock, group, and z-order commands to chart elements', () => {
+    const elements = [chart('chart'), text('label')];
+
+    const deleteSetup = setup({ elements, selection: { elementIds: ['chart'], primaryId: 'chart' } });
+    deleteSetup.commands.deleteSelection();
+    expect(deleteSetup.onIntents).toHaveBeenCalledWith([
+      { type: 'element.delete', ids: ['chart'] },
+    ]);
+
+    const lockSetup = setup({ elements, selection: { elementIds: ['chart'], primaryId: 'chart' } });
+    lockSetup.commands.lockSelection();
+    expect(lockSetup.onIntents).toHaveBeenCalledWith([
+      { type: 'element.updateMany', updates: [{ id: 'chart', props: { lock: true } }] },
+    ]);
+
+    const groupSetup = setup({
+      elements,
+      selection: { elementIds: ['chart', 'label'], primaryId: 'chart' },
+    });
+    groupSetup.commands.toggleGroup();
+    expect(groupSetup.onIntents).toHaveBeenCalledWith([
+      {
+        type: 'element.updateMany',
+        updates: [
+          { id: 'chart', props: { groupId: 'group-new' } },
+          { id: 'label', props: { groupId: 'group-new' } },
+        ],
+      },
+    ]);
+
+    const reorderSetup = setup({ elements: [text('behind'), ...elements] });
+    reorderSetup.commands.reorderTarget('chart', 'front');
+    expect(reorderSetup.onIntents).toHaveBeenCalledWith([
+      { type: 'element.reorder', id: 'chart', command: 'front' },
+    ]);
   });
 
   it('unlockTarget unlocks and selects the complete target group', () => {

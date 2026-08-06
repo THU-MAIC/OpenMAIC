@@ -8,6 +8,7 @@ import type { InsertPaletteItem, SurfaceState } from '@/lib/edit/scene-editor-su
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createElementId } from '@/lib/edit/element-id';
 import {
+  createDefaultChartElement,
   createDefaultImageElement,
   createDefaultSlide,
   createDefaultTableElement,
@@ -16,7 +17,7 @@ import { defaultRichTextAttrs } from '@/lib/prosemirror/utils';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
 import type { SlideContent } from '@/lib/types/stage';
-import type { PPTElement, PPTImageElement, SlideBackground } from '@openmaic/dsl';
+import type { ChartType, PPTElement, PPTImageElement, SlideBackground } from '@openmaic/dsl';
 import { ImagePicker } from './ImagePicker';
 import { BackgroundControl } from './BackgroundControl';
 import { useSlideEditSession } from './slide-edit-session';
@@ -141,6 +142,14 @@ export function insertImageElement(src: string): void {
 export function insertTableElement(rows: number, columns: number): void {
   const id = createElementId('table');
   const element = createDefaultTableElement(id, rows, columns);
+  useSlideEditSession.getState().applyOp({ type: 'element.add', element });
+  useCanvasStore.getState().setActiveElementIdList([id]);
+}
+
+/** Insert a chart and select it through the normal slide edit session. */
+export function insertChartElement(chartType: ChartType): void {
+  const id = createElementId('chart');
+  const element = createDefaultChartElement(id, chartType);
   useSlideEditSession.getState().applyOp({ type: 'element.add', element });
   useCanvasStore.getState().setActiveElementIdList([id]);
 }

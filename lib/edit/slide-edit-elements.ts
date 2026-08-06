@@ -1,4 +1,6 @@
 import type {
+  ChartType,
+  PPTChartElement,
   ShapePathFormulasKeys,
   PPTImageElement,
   PPTShapeElement,
@@ -92,6 +94,28 @@ export function createDefaultImageElement(id: string, src: string): PPTImageElem
     rotate: 0,
     fixedRatio: true,
     src,
+  };
+}
+
+/** Create a renderer-editor chart with data that is valid for every chart type. */
+export function createDefaultChartElement(id: string, chartType: ChartType): PPTChartElement {
+  return {
+    id,
+    type: 'chart',
+    left: 160,
+    top: 140,
+    width: 420,
+    height: 260,
+    rotate: 0,
+    chartType,
+    data: {
+      labels: ['A', 'B', 'C', 'D'],
+      legends: ['Series 1'],
+      series: [[24, 36, 28, 42]],
+    },
+    themeColors: ['#5b8def', '#8b5cf6', '#10b981', '#f59e0b'],
+    textColor: '#333333',
+    lineColor: '#d4d4d8',
   };
 }
 

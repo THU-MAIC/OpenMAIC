@@ -110,6 +110,65 @@ export const EDITING_UI_STYLES = `
   text-align: center;
 }
 
+.maic-editing-ui-chart-picker {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  width: fit-content;
+}
+
+.maic-editing-ui-chart-picker-option {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #d4d4d8;
+  border-radius: 4px;
+  color: #3f3f46;
+  cursor: pointer;
+  display: inline-flex;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  position: relative;
+  width: 32px;
+}
+
+.maic-editing-ui-chart-picker-option svg {
+  height: 16px;
+  width: 16px;
+}
+
+.maic-editing-ui-chart-picker-option::after {
+  background: #27272a;
+  border-radius: 4px;
+  color: #ffffff;
+  content: attr(data-tooltip);
+  font-size: 12px;
+  left: 50%;
+  opacity: 0;
+  padding: 4px 6px;
+  pointer-events: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+  transition: opacity 120ms ease;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.maic-editing-ui-chart-picker-option:hover,
+.maic-editing-ui-chart-picker-option:focus-visible {
+  background: var(--maic-editing-ui-active-bg, #ede9fe);
+  border-color: var(--maic-editing-ui-active-fg, #6d28d9);
+  color: var(--maic-editing-ui-active-fg, #6d28d9);
+  outline: none;
+}
+
+.maic-editing-ui-chart-picker-option:hover::after,
+.maic-editing-ui-chart-picker-option:focus-visible::after {
+  opacity: 1;
+}
+
 .maic-editing-ui-group {
   align-items: center;
   display: flex;

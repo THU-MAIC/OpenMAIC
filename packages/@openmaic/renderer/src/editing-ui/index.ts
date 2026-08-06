@@ -19,11 +19,13 @@ export { LineFormatToolbar } from './line/LineFormatToolbar';
 export { LineToolbarOverlay } from './line/LineToolbarOverlay';
 export { InsertToolbar } from './insert/InsertToolbar';
 export { TableInsertPicker } from './insert/TableInsertPicker';
+export { ChartInsertPicker } from './insert/ChartInsertPicker';
 export { computeToolbarPosition, TextToolbarOverlay } from './text/TextToolbarOverlay';
 export { useToolbarAnchor } from './text/useToolbarAnchor';
 export type { TextToolbarOverlayProps, ToolbarPosition } from './text/TextToolbarOverlay';
 export type { LineToolbarOverlayProps } from './line/LineToolbarOverlay';
 export type { TableInsertPickerProps } from './insert/TableInsertPicker';
+export type { ChartInsertPickerOption, ChartInsertPickerProps } from './insert/ChartInsertPicker';
 export type { TrackedToolbarRect } from './text/useToolbarAnchor';
 export type {
   EditableSlideCanvasWithUIProps,

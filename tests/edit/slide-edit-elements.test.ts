@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  createDefaultChartElement,
   createDefaultImageElement,
   createDefaultShapeElement,
   createDefaultTableElement,
@@ -65,6 +66,28 @@ describe('slide edit element factories', () => {
       width: 360,
       height: 220,
     });
+  });
+
+  test('creates a valid default chart for the requested chart type', () => {
+    const element = createDefaultChartElement('chart-1', 'pie');
+
+    expect(element).toMatchObject({
+      id: 'chart-1',
+      type: 'chart',
+      chartType: 'pie',
+      left: 160,
+      top: 140,
+      width: 420,
+      height: 260,
+      rotate: 0,
+      themeColors: expect.any(Array),
+      data: {
+        labels: ['A', 'B', 'C', 'D'],
+        legends: ['Series 1'],
+        series: [[24, 36, 28, 42]],
+      },
+    });
+    expect(element.themeColors).toHaveLength(4);
   });
 
   test('creates a valid empty table for the requested row and column count', () => {

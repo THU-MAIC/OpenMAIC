@@ -244,6 +244,13 @@
     },
     "insert": {
       "textBox": "텍스트 상자",
+      "line": "선",
+      "table": "표",
+      "chart": "차트",
+      "chartBar": "막대 차트",
+      "chartLine": "꺾은선 차트",
+      "chartPie": "원형 차트",
+      "tableDimensions": "{{rows}} x {{columns}} 표",
       "dragToolbar": "삽입 도구 이동",
       "dragToolbarKeyboard": "삽입 도구 이동: Enter 또는 Space를 누른 다음 방향키로 이동",
       "image": "이미지",
@@ -251,6 +258,9 @@
       "imageOr": "또는 이미지 URL 붙여넣기",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "삽입"
+    },
+    "table": {
+      "doubleClickToEdit": "두 번 클릭하여 편집"
     },
     "nav": {
       "addSlide": "슬라이드 추가",
