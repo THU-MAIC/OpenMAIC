@@ -32,7 +32,7 @@ import { SCENE_TYPES } from '@openmaic/dsl';
 export const VIDEO_TIMELINE_SCHEMA = 'openmaic.videoTimeline';
 
 /** IR/manifest version. Bump on any breaking shape change. */
-export const VIDEO_TIMELINE_VERSION = 2;
+export const VIDEO_TIMELINE_VERSION = 3;
 
 /** Compiler identity stamped into the manifest for provenance. */
 export const VIDEO_TIMELINE_COMPILER = 'openmaic-video-timeline';
@@ -70,6 +70,10 @@ export const DiagnosticSeveritySchema = z.enum(['info', 'warn', 'error']);
  * - `cover-card` — a Quiz/PBL scene is rendered as a deterministic static cover.
  * - `unknown-action` — an action with an unrecognized `type` was dropped.
  * - `invalid-action` — an action missing a required field was dropped.
+ * - `interactive-static-html` — an interactive scene uses packaged frozen HTML.
+ * - `missing-interactive-html` — an interactive scene has no embedded HTML.
+ * - `interactive-html-packaging` — HTML preparation failed or exceeded its bound.
+ * - `unresolved-interactive-resource` — an external/relative resource remained.
  */
 export const DiagnosticCodeSchema = z.enum([
   'estimated-duration',
@@ -80,6 +84,10 @@ export const DiagnosticCodeSchema = z.enum([
   'cover-card',
   'unknown-action',
   'invalid-action',
+  'interactive-static-html',
+  'missing-interactive-html',
+  'interactive-html-packaging',
+  'unresolved-interactive-resource',
 ]);
 
 /** A recorded compile-time degradation or note. Never thrown away — first-class in the IR. */
@@ -98,14 +106,33 @@ export const DiagnosticSchema = z.object({
 /** Where a segment's audio duration came from. */
 export const DurationSourceSchema = z.enum(['stored', 'estimated']);
 
-/** The scene's visual base layer — a slide snapshot, timed visual segments, or an unsupported placeholder. */
-export const BaseSegmentSchema = z.object({
-  kind: z.enum(['slide-snapshot', 'visual-segments', 'placeholder']),
-  /** Asset-plan path for the base frame image, when one is planned. */
-  assetRef: z.string().optional(),
-  /** Why a placeholder was used (unsupported scene family). */
-  reason: z.string().optional(),
-});
+/** The scene's visual base layer. */
+export const BaseSegmentSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('slide-snapshot'),
+    /** Asset-plan path for the base frame image, when one is planned. */
+    assetRef: z.string().optional(),
+  }),
+  z.object({ kind: z.literal('visual-segments') }),
+  z.object({
+    kind: z.literal('placeholder'),
+    /** Why a placeholder was used (unsupported scene family or failed HTML capture). */
+    reason: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal('interactive-html'),
+    /** Stable prepared-content identity; the asset pass maps it to assetRef. */
+    assetId: z.string(),
+    /** Asset-plan path for the packaged HTML page. */
+    assetRef: z.string().optional(),
+    /** SHA-256 of the exact packaged HTML bytes. */
+    contentHash: z.string(),
+    /** Bounded load/readiness deadline used by the emitted parent bridge. */
+    readyTimeoutMs: z.number().int().positive(),
+    /** Quiet period before the child page is frozen. */
+    settleMs: z.number().int().nonnegative(),
+  }),
+]);
 
 const TimedVisualSegmentSchema = z.object({
   startMs: z.number(),
@@ -246,7 +273,7 @@ export const VideoTimelineSceneSchema = z.object({
   type: z.enum(SCENE_TYPES),
   startMs: z.number(),
   durationMs: z.number(),
-  /** False for scene families the compiler cannot render (quiz/interactive/pbl). */
+  /** False for scene families the compiler cannot render or that failed preparation. */
   supported: z.boolean(),
   base: BaseSegmentSchema,
   visuals: z.array(VisualSegmentSchema),
@@ -267,7 +294,7 @@ export const SubtitleCueSchema = z.object({
 });
 
 /** The kind of asset a plan entry bundles. */
-export const AssetKindSchema = z.enum(['audio', 'image', 'video', 'poster', 'frame']);
+export const AssetKindSchema = z.enum(['audio', 'image', 'video', 'poster', 'frame', 'html']);
 
 /**
  * A single planned asset in the export zip. The plan is layout + naming only —

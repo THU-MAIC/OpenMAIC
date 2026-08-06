@@ -22,11 +22,13 @@
 export * from './ir';
 export * from './deps';
 export * from './geometry';
+export * from './interactive-static';
 export { compileVideoTimeline, type CompileInput, type CompileDeps } from './compile';
 export { normalizeScenes, type NormalizeResult } from './passes/normalize';
 export { buildTimelineOptions } from './passes/probe';
 export { buildTimeline, type TimelineResult } from './passes/timeline';
 export { applyVisuals, type VisualsResult } from './passes/visuals';
+export { applyInteractiveHtml, type InteractiveResult } from './passes/interactive';
 export {
   applyGeometry,
   resolveEffectGeometry,

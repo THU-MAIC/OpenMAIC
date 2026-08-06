@@ -10,13 +10,15 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Locale } from '@/lib/i18n';
+import type { Scene } from '@/lib/types/stage';
 import { compileVideoTimeline, emitHyperframes } from '@/lib/video-export';
 import type { CompilerScene } from '@/lib/video-export';
+import { prepareInteractiveHtmlScenes } from '@/lib/video-export-app/prepare-interactive-html';
 import {
   getVideoExportCoverLabels,
   resolveVideoExportCta,
 } from '@/lib/video-export-app/cover-config';
-import { NO_ASSETS, NO_PROBE, slide, speech } from './helpers';
+import { NO_ASSETS, NO_PROBE, interactive, slide, speech } from './helpers';
 
 /**
  * Materializes a fully-emitted Hyperframes project (index.html + manifest +
@@ -253,6 +255,7 @@ const EXPECTED_SAMPLE_NAMES = [
   'pbl-dense',
   'mixed',
   'arabic',
+  'interactive-static',
 ] as const;
 
 const COMPLETE_PROJECT_FILES = [
@@ -307,10 +310,23 @@ const samples: MaterializedSample[] = [
     locale: 'ar-SA',
     marker: 'إنشاء مشروع تعليمي قابل للتصدير والتحقق دون اتصال',
   },
+  {
+    name: 'interactive-static',
+    scenes: [
+      {
+        ...interactive(
+          'interactive-static-fixture',
+          '<!doctype html><html><head></head><body><h1>Frozen interactive fixture</h1></body></html>',
+        ),
+        title: 'Frozen interactive fixture',
+      },
+    ],
+    marker: 'Frozen interactive fixture',
+  },
 ];
 
 describe('Hyperframes materialized sample contract', () => {
-  it('defines the exact six distinguishable sample directories', () => {
+  it('defines the exact seven distinguishable sample directories', () => {
     expect(samples.map((sample) => sample.name)).toEqual(EXPECTED_SAMPLE_NAMES);
   });
 
@@ -330,15 +346,20 @@ describe('Hyperframes materialized sample contract', () => {
 });
 
 describe.skipIf(!OUT_DIR)('materialize a Hyperframes project for real-CLI E2E', () => {
-  it('writes a complete, self-contained project', () => {
+  it('writes a complete, self-contained project', async () => {
     const root = OUT_DIR!;
 
     rmSync(root, { recursive: true, force: true });
     for (const sample of samples) {
       const dir = join(root, sample.name);
+      const preparedInteractive = await prepareInteractiveHtmlScenes(sample.scenes as Scene[]);
       const ir = compileVideoTimeline(
         { stage: { id: 'stage', name: `E2E ${sample.name}` }, scenes: sample.scenes },
-        { timing: NO_PROBE, assets: NO_ASSETS },
+        {
+          timing: NO_PROBE,
+          assets: NO_ASSETS,
+          interactive: preparedInteractive,
+        },
       );
       const project = emitHyperframes(ir, effectiveSampleOptions(sample));
       mkdirSync(dir, { recursive: true });
@@ -355,7 +376,14 @@ describe.skipIf(!OUT_DIR)('materialize a Hyperframes project for real-CLI E2E', 
         if (!entry.present || entry.dedupOf) continue;
         const target = join(dir, 'assets', entry.path);
         mkdirSync(dirname(target), { recursive: true });
-        writeFileSync(target, entry.kind === 'frame' ? PNG_1x1 : Buffer.from(''));
+        writeFileSync(
+          target,
+          entry.kind === 'frame'
+            ? PNG_1x1
+            : entry.kind === 'html'
+              ? Buffer.from(preparedInteractive.content(entry.assetId) ?? '')
+              : Buffer.from(''),
+        );
       }
 
       // Vendored GSAP from the committed public copy.

@@ -69,6 +69,7 @@ function records(over: Partial<VideoTimelineRecords> = {}): VideoTimelineRecords
     audioById: new Map(),
     mediaByElementId: new Map(),
     videoDurationMsByElementId: new Map(),
+    interactiveHtml: { html: () => null, content: () => undefined },
     ...over,
   };
 }
@@ -350,5 +351,31 @@ describe('collectVideoAssets — frame base restores evicted generated media', (
     );
 
     expect(capturedSlides[0].elements[0].src).toBe('');
+  });
+});
+
+describe('collectVideoAssets — interactive HTML', () => {
+  it('collects exact prepared HTML bytes for an html asset-plan entry', async () => {
+    const prepared = '<!doctype html><h1>Frozen fixture</h1>';
+    const { blobs, missing } = await collectVideoAssets(
+      irWith([
+        {
+          assetId: 'interactive:s1',
+          kind: 'html',
+          path: 'interactive/001-fixture.html',
+          present: true,
+        },
+      ]),
+      [],
+      records({
+        interactiveHtml: {
+          html: () => null,
+          content: (assetId) => (assetId === 'interactive:s1' ? prepared : undefined),
+        },
+      }),
+    );
+
+    expect(await blobs.get('interactive/001-fixture.html')?.text()).toBe(prepared);
+    expect(missing).toEqual([]);
   });
 });

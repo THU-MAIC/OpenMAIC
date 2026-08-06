@@ -9,7 +9,15 @@ import { buildInlinedImportmap } from './inline-assets-importmap';
 export { toDataUri } from './inline-assets-shared';
 export type { InlineReport, InlineOptions, FetchAsset } from './inline-assets-shared';
 
-export type AssetRefKind = 'link' | 'script' | 'img' | 'source' | 'css-url' | 'importmap';
+export type AssetRefKind =
+  | 'link'
+  | 'script'
+  | 'img'
+  | 'source'
+  | 'video'
+  | 'audio'
+  | 'css-url'
+  | 'importmap';
 
 export interface AssetRef {
   kind: AssetRefKind;
@@ -38,6 +46,12 @@ export function collectAssetRefs(html: string): AssetRef[] {
   }
   for (const m of html.matchAll(/<source\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
     push('source', m[1]);
+  }
+  for (const m of html.matchAll(/<video\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
+    push('video', m[1]);
+  }
+  for (const m of html.matchAll(/<audio\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
+    push('audio', m[1]);
   }
   for (const m of html.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/gi)) {
     push('css-url', m[1].trim());
@@ -241,6 +255,7 @@ async function inlineImportmaps(
   html: string,
   fetchAsset: FetchAsset,
   report: InlineReport,
+  keepFallbacks: boolean,
 ): Promise<string> {
   // Collect inline module-script bodies (type="module", non-importmap, with a body).
   const moduleBodies: string[] = [];
@@ -273,7 +288,7 @@ async function inlineImportmaps(
       // data: entries take precedence for the modules we inlined. Keeping both is safe per
       // the importmap spec (explicit specifier shadows prefix key) and strictly more correct:
       // a sub-path not seen during static analysis can still resolve via the prefix online.
-      const merged: Record<string, string> = { ...orig, ...inlined };
+      const merged: Record<string, string> = keepFallbacks ? { ...orig, ...inlined } : inlined;
       return `<script type="importmap">${JSON.stringify({ imports: merged })}</script>`;
     },
   );
@@ -343,10 +358,10 @@ export async function inlineHtmlAssets(
     },
   );
 
-  // 3) <img src> and <source src>
+  // 3) <img>/<source>/<video>/<audio> src
   out = await replaceAsync(
     out,
-    /<(img|source)\b([^>]*?)\bsrc\s*=\s*["'](https?:\/\/[^"']+)["']([^>]*)>/gi,
+    /<(img|source|video|audio)\b([^>]*?)\bsrc\s*=\s*["'](https?:\/\/[^"']+)["']([^>]*)>/gi,
     async (full, tag, pre, url, post) => {
       const got = await fetchAsset(url);
       if (!got) {
@@ -375,7 +390,7 @@ export async function inlineHtmlAssets(
   );
 
   // 5) importmap (Task 5)
-  out = await inlineImportmaps(out, fetchAsset, report);
+  out = await inlineImportmaps(out, fetchAsset, report, options?.keepImportmapFallbacks !== false);
 
   return { html: out, report };
 }

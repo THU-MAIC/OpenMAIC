@@ -392,6 +392,22 @@ describe('inlineHtmlAssets', () => {
     expect(report.inlined).toContain('https://cdn.tailwindcss.com');
   });
 
+  it('inlines direct video and audio src attributes', async () => {
+    const html =
+      '<video src="https://cdn.test/demo.mp4"></video><audio src="https://cdn.test/demo.mp3"></audio>';
+    const fetchImpl = fetchFromMap({
+      'https://cdn.test/demo.mp4': { body: 'video', ct: 'video/mp4' },
+      'https://cdn.test/demo.mp3': { body: 'audio', ct: 'audio/mpeg' },
+    });
+    const { html: out, report } = await inlineHtmlAssets(html, { fetchImpl });
+
+    expect(out).toContain('<video src="data:video/mp4;base64,');
+    expect(out).toContain('<audio src="data:audio/mpeg;base64,');
+    expect(report.inlined).toEqual(
+      expect.arrayContaining(['https://cdn.test/demo.mp4', 'https://cdn.test/demo.mp3']),
+    );
+  });
+
   it('records failures and leaves the URL in place', async () => {
     const html = '<img src="https://oss.example/blocked.png">';
     const fetchImpl = fetchFromMap({});

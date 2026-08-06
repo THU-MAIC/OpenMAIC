@@ -28,6 +28,7 @@ import type {
   VideoTimelineScene,
   VisualSegment,
 } from '../ir';
+import { INTERACTIVE_STATIC_MESSAGE_FLAG } from '../interactive-static';
 import { emitManifestJson } from '../passes/emit';
 import { toSrt, toVtt } from '../subtitles';
 import { EASE_DEFS, emitEffect } from './effects';
@@ -171,7 +172,21 @@ export function assetUrl(planPath: string): string {
   return `${ASSETS_DIR}/${planPath}`;
 }
 
-/** The base layer for one scene: a slide-snapshot `<img>` clip, or a true unsupported placeholder. */
+function placeholderContent(scene: VideoTimelineScene, reason: string, reasonAttrs = ''): string {
+  const reasonAttributeText = reasonAttrs ? ` ${reasonAttrs}` : '';
+  return [
+    `<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#0f172a;color:#e2e8f0;font-family:system-ui,sans-serif;text-align:center;padding:8%">`,
+    `  <div dir="auto" style="font-size:2.2vw;font-weight:700">${escapeHtml(scene.title)}</div>`,
+    reason
+      ? `  <div${reasonAttributeText} dir="auto" style="font-size:1.2vw;color:#94a3b8;max-width:70%">${escapeHtml(reason)}</div>`
+      : '',
+    `</div>`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** The base layer for one scene: snapshot, packaged frozen HTML, or placeholder. */
 function renderBase(scene: VideoTimelineScene): string {
   const start = sec(scene.startMs);
   const duration = sec(scene.durationMs);
@@ -181,17 +196,105 @@ function renderBase(scene: VideoTimelineScene): string {
     return `<img ${clip} src="${escapeHtml(assetUrl(scene.base.assetRef))}" alt="" style="position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain" />`;
   }
   if (scene.base.kind === 'visual-segments') return '';
-  const reason = scene.base.reason ? escapeHtml(scene.base.reason) : '';
-  return [
-    `<div ${clip} style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#0f172a;color:#e2e8f0;font-family:system-ui,sans-serif;text-align:center;padding:8%">`,
-    `  <div dir="auto" style="font-size:2.2vw;font-weight:700">${escapeHtml(scene.title)}</div>`,
-    reason
-      ? `  <div dir="auto" style="font-size:1.2vw;color:#94a3b8;max-width:70%">${reason}</div>`
-      : '',
-    `</div>`,
-  ]
-    .filter(Boolean)
-    .join('\n');
+  if (scene.base.kind === 'interactive-html' && scene.base.assetRef) {
+    const fallback = placeholderContent(
+      scene,
+      'Interactive page could not be rendered; using the static fallback.',
+      'data-interactive-fallback-reason',
+    );
+    return [
+      `<div ${clip} data-interactive-static-host data-scene-id="${escapeHtml(scene.id)}" data-ready-timeout-ms="${scene.base.readyTimeoutMs}" data-content-hash="${escapeHtml(scene.base.contentHash)}" style="position:absolute;inset:0;background:#0f172a">`,
+      `  <div data-interactive-fallback>${fallback}</div>`,
+      `  <iframe data-interactive-static-frame data-src="${escapeHtml(assetUrl(scene.base.assetRef))}" title="${escapeHtml(scene.title)}" sandbox="allow-scripts" style="position:absolute;inset:0;width:100%;height:100%;border:0;visibility:hidden;pointer-events:none;background:#fff"></iframe>`,
+      `</div>`,
+    ].join('\n');
+  }
+  const reason = scene.base.kind === 'placeholder' ? (scene.base.reason ?? '') : '';
+  return `<div ${clip}>${placeholderContent(scene, reason)}</div>`;
+}
+
+/** Parent-side readiness/fallback bridge for every packaged interactive iframe. */
+function interactiveStaticBridgeScript(): string {
+  const flag = JSON.stringify(INTERACTIVE_STATIC_MESSAGE_FLAG);
+  return `
+function initializeOpenMaicInteractiveStaticFrames() {
+  var hosts = Array.from(document.querySelectorAll('[data-interactive-static-host]'));
+  window.__openmaicVideoDiagnostics = window.__openmaicVideoDiagnostics || [];
+  function record(sceneId, code, message) {
+    var diagnostic = { sceneId: sceneId, code: code, message: String(message || '').slice(0, 1200) };
+    window.__openmaicVideoDiagnostics.push(diagnostic);
+    console.error('[OpenMAIC interactive static][' + sceneId + '][' + code + '] ' + diagnostic.message);
+  }
+  return Promise.all(hosts.map(function (host) {
+    return new Promise(function (resolve) {
+      var sceneId = host.getAttribute('data-scene-id') || 'interactive';
+      var timeoutMs = Number(host.getAttribute('data-ready-timeout-ms')) || 8000;
+      var iframe = host.querySelector('[data-interactive-static-frame]');
+      var fallback = host.querySelector('[data-interactive-fallback]');
+      var reason = host.querySelector('[data-interactive-fallback-reason]');
+      var loaded = false;
+      var settled = false;
+      var runtimeErrors = [];
+
+      function finish(ok, code, message) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        window.removeEventListener('message', onMessage);
+        if (ok) {
+          iframe.style.visibility = 'visible';
+          fallback.style.display = 'none';
+          host.setAttribute('data-interactive-static-state', 'frozen');
+        } else {
+          iframe.style.visibility = 'hidden';
+          fallback.style.display = 'block';
+          if (reason) reason.textContent = message;
+          host.setAttribute('data-interactive-static-state', 'fallback');
+          host.setAttribute('data-interactive-diagnostic', code);
+          record(sceneId, code, message);
+        }
+        resolve({ sceneId: sceneId, ok: ok, code: code });
+      }
+
+      function onMessage(event) {
+        if (event.source !== iframe.contentWindow) return;
+        var data = event.data || {};
+        if (data.__maicInteractive === true && data.kind === 'runtime-error') {
+          runtimeErrors.push('[' + (data.errorKind || 'error') + '] ' + String(data.message || 'runtime error'));
+          return;
+        }
+        if (data[${flag}] !== true) return;
+        if (data.kind === 'failure') {
+          finish(false, data.code || 'interactive-ready-failure', data.message || 'Interactive page failed before capture.');
+        } else if (data.kind === 'frozen') {
+          if (runtimeErrors.length > 0) {
+            finish(false, 'interactive-runtime-failure', runtimeErrors[0]);
+          } else {
+            finish(true, 'interactive-static-ready', 'ready');
+          }
+        }
+      }
+
+      window.addEventListener('message', onMessage);
+      iframe.addEventListener('load', function () {
+        loaded = true;
+        try { iframe.contentWindow.postMessage({ __maicErrorReplayRequest: true }, '*'); } catch (_) {}
+      }, { once: true });
+      iframe.addEventListener('error', function () {
+        finish(false, 'interactive-load-failure', 'Interactive page failed to load.');
+      }, { once: true });
+      var timer = setTimeout(function () {
+        finish(
+          false,
+          loaded ? 'interactive-ready-timeout' : 'interactive-load-timeout',
+          loaded ? 'Interactive page did not become capture-ready in time.' : 'Interactive page did not load in time.'
+        );
+      }, timeoutMs);
+      iframe.setAttribute('src', iframe.getAttribute('data-src'));
+    });
+  }));
+}
+`;
 }
 
 /**
@@ -866,7 +969,7 @@ folder — no network access, no CDN.
 - \`index.html\` — the composition (one data-composition-id=${optionValue(project.compositionId)} stage, one paused GSAP timeline on \`window.__timelines\`).
 - ${optionValue(project.manifestPath)} — the \`VideoTimeline\` manifest / export report (scenes, timing, assets, diagnostics).
 - \`subtitles.srt\` / \`subtitles.vtt\` — narration subtitles.
-- \`assets/frames\`, \`assets/audio\`, \`assets/media\` — slide snapshots, narration audio, embedded video clips.
+- \`assets/frames\`, \`assets/audio\`, \`assets/media\`, \`assets/interactive\` — slide snapshots, narration audio, embedded video clips, frozen interactive pages.
 - ${optionValue(project.gsapVendorPath)} — vendored GSAP (determinism: no CDN at render time).
 - \`LICENSES/Inter-OFL-1.1.txt\` — license for the font embedded in \`index.html\`.
 
@@ -927,6 +1030,7 @@ export function emitHyperframes(
   const cta = options.cta ?? null;
   const locale = options.locale ?? DEFAULT_LOCALE;
   const totalSec = sec(ir.totalDurationMs);
+  const hasInteractiveHtml = ir.scenes.some((scene) => scene.base.kind === 'interactive-html');
 
   const sceneHtml: string[] = [];
   const effectHtml: string[] = [];
@@ -998,7 +1102,15 @@ ${EASE_DEFS}
 var tl = gsap.timeline({ paused: true });
 ${statements.join('\n')}
 window.__timelines = window.__timelines || {};
-window.__timelines[${JSON.stringify(compositionId)}] = tl;
+${
+  hasInteractiveHtml
+    ? `${interactiveStaticBridgeScript()}
+window.__openmaicInteractiveReady = initializeOpenMaicInteractiveStaticFrames();
+window.__openmaicInteractiveReady.then(function () {
+  window.__timelines[${JSON.stringify(compositionId)}] = tl;
+});`
+    : `window.__timelines[${JSON.stringify(compositionId)}] = tl;`
+}
 </script>
 </body>
 </html>

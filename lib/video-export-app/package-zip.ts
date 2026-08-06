@@ -57,7 +57,9 @@ export async function packageVideoZip(
 
   // Collected binary assets under assets/<planPath>.
   for (const [planPath, blob] of assetBlobs) {
-    zip.file(assetUrl(planPath), blob);
+    // JSZip's Node build cannot reliably consume a web Blob directly; an
+    // ArrayBuffer works in both browser and Node and preserves the exact bytes.
+    zip.file(assetUrl(planPath), await blob.arrayBuffer());
   }
 
   // Vendored GSAP at the path the HTML loads it from.

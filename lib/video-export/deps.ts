@@ -25,6 +25,7 @@ import type {
   PPTElement,
 } from '@openmaic/dsl';
 import type { PercentageGeometry } from './ir';
+import type { InteractiveHtmlFailure } from './interactive-static';
 
 /**
  * The compiler's scene input — the structural slice it reads. Deliberately
@@ -42,6 +43,8 @@ export interface CompilerSceneContent {
   /** App-owned PBL payloads enter as unknown and are narrowed by the pure visual pass. */
   projectV2?: unknown;
   projectConfig?: unknown;
+  /** Embedded interactive HTML; prepared by the app-side adapter before compile. */
+  html?: string;
 }
 
 export type CompilerScene = SceneCore & {
@@ -100,6 +103,24 @@ export interface AssetSource {
   audio(action: SpeechAction): AssetMeta | null;
   /** Media asset (image/video) for an element on a scene, or null when none. */
   media(elementId: string, scene: SceneCore): AssetMeta | null;
+}
+
+/** Prepared interactive HTML metadata exposed synchronously to the pure compiler. */
+export interface InteractiveHtmlMeta {
+  /** Stable id used by the asset plan and byte collector. */
+  id: string;
+  present: boolean;
+  /** SHA-256 of the exact packaged HTML, present only on success. */
+  contentHash?: string;
+  /** Stable failure category when `present` is false. */
+  failure?: InteractiveHtmlFailure;
+  /** Bounded, human-readable detail for the export report. */
+  message?: string;
+}
+
+/** Synchronous adapter over HTML that the app prepared before pure compilation. */
+export interface InteractiveHtmlSource {
+  html(scene: SceneCore): InteractiveHtmlMeta | null;
 }
 
 /**

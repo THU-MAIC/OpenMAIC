@@ -77,7 +77,9 @@ function configuredVideoExportCta() {
  * build and the subtitles-only path go through here so their timing/assets/
  * geometry wiring can never drift.
  */
-async function compileStageIr(options: { skipGeometry?: boolean } = {}): Promise<{
+async function compileStageIr(
+  options: { skipGeometry?: boolean; skipInteractiveHtml?: boolean } = {},
+): Promise<{
   ir: ReturnType<typeof compileVideoTimeline>;
   stageName: string;
   scenes: ReturnType<typeof useStageStore.getState>['scenes'];
@@ -95,10 +97,16 @@ async function compileStageIr(options: { skipGeometry?: boolean } = {}): Promise
     stage: { id: stage.id },
     scenes,
     skipGeometry: options.skipGeometry,
+    skipInteractiveHtml: options.skipInteractiveHtml,
   });
   const ir = compileVideoTimeline(
     { stage: { id: stage.id, name: stageName }, scenes },
-    { timing: deps.timing, assets: deps.assets, geometry: deps.geometry },
+    {
+      timing: deps.timing,
+      assets: deps.assets,
+      geometry: deps.geometry,
+      interactive: deps.interactive,
+    },
   );
 
   return { ir, stageName, scenes, deps };
@@ -180,7 +188,10 @@ export interface CompiledSubtitles {
  * so these cues match the ones the burned-in video would carry.
  */
 export async function compileSubtitles(): Promise<CompiledSubtitles> {
-  const { ir, stageName } = await compileStageIr({ skipGeometry: true });
+  const { ir, stageName } = await compileStageIr({
+    skipGeometry: true,
+    skipInteractiveHtml: true,
+  });
 
   return {
     srt: toSrt(ir.subtitles),
