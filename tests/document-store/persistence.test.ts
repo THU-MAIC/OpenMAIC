@@ -217,7 +217,36 @@ describe('app document validators', () => {
     ).toEqual({ valid: true });
   });
 
-  test('round-trips app interactive content through the contract scene validator', () => {
+  test('accepts stored interactive widget config without a type', () => {
+    const scene = {
+      ...interactiveScene(),
+      content: {
+        type: 'interactive',
+        html: '<!doctype html><main>Diagram</main>',
+        widgetType: 'diagram',
+        widgetConfig: { nodes: [], edges: [], revealOrder: [] },
+      },
+    } as unknown as AppScene;
+
+    expect(validateAppScene(scene)).toEqual({ valid: true });
+    expect(validateScene(scene).valid).toBe(false);
+  });
+
+  test('accepts an unknown widget type at the app write boundary', () => {
+    const scene = {
+      ...interactiveScene(),
+      content: {
+        type: 'interactive',
+        html: '<!doctype html><main>Future widget</main>',
+        widgetType: 'future-kind',
+      },
+    } as unknown as AppScene;
+
+    expect(validateAppScene(scene)).toEqual({ valid: true });
+    expect(validateScene(scene).valid).toBe(false);
+  });
+
+  test('keeps canonical app interactive content compatible with the contract validator', () => {
     const content: InteractiveContent = {
       type: 'interactive',
       html: '<!doctype html><main>Simulation</main>',

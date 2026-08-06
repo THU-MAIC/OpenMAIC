@@ -1,8 +1,8 @@
-/** Image extracted from a source document with metadata used by outline prompts. */
 import type { WidgetType } from '@openmaic/dsl';
 
 export type { WidgetType } from '@openmaic/dsl';
 
+/** Image extracted from a source document with metadata used by outline prompts. */
 export interface PdfImage {
   id: string;
   src: string;

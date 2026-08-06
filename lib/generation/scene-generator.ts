@@ -45,7 +45,7 @@ import {
   formatImagePlaceholder,
 } from './prompt-formatters';
 import type { PPTElement, Slide, SlideBackground, SlideTheme } from '@openmaic/dsl';
-import { normalizeElement } from '@openmaic/dsl';
+import { isWidgetType, normalizeElement } from '@openmaic/dsl';
 import type { QuizQuestion } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import type {
@@ -1186,7 +1186,7 @@ export async function generateWidgetContent(
   }
 
   // Extract widget config from HTML if present
-  const widgetConfig = extractWidgetConfig(html);
+  const widgetConfig = extractWidgetConfig(html, widgetType);
 
   return {
     html: postProcessInteractiveHtml(html),
@@ -1198,14 +1198,21 @@ export async function generateWidgetContent(
 /**
  * Extract widget config from embedded JSON in HTML
  */
-function extractWidgetConfig(html: string): WidgetConfig | undefined {
+export function extractWidgetConfig(
+  html: string,
+  widgetType: WidgetType,
+): WidgetConfig | undefined {
   const match = html.match(
     /<script type="application\/json" id="widget-config">([\s\S]*?)<\/script>/,
   );
   if (!match) return undefined;
 
   try {
-    return JSON.parse(match[1]);
+    const parsed: unknown = JSON.parse(match[1]);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+
+    const config = parsed as Record<string, unknown>;
+    return (isWidgetType(config.type) ? config : { ...config, type: widgetType }) as WidgetConfig;
   } catch {
     return undefined;
   }

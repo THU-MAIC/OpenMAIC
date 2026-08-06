@@ -1,9 +1,4 @@
-import {
-  validateInteractiveContent,
-  validateScene,
-  validateStage,
-  type ValidationIssue,
-} from '@openmaic/dsl';
+import { validateScene, validateStage, type ValidationIssue } from '@openmaic/dsl';
 import type { SceneValidator, StageValidator } from '@openmaic/storage';
 
 function objectValue(value: unknown): Record<string, unknown> | null {
@@ -50,15 +45,21 @@ export const validateAppScene: SceneValidator = (scene) => {
       message: `content type ${JSON.stringify(content.type)} does not match scene type ${JSON.stringify(value.type)}`,
     });
   } else if (value.type === 'interactive') {
-    const result = validateInteractiveContent(content);
-    if (!result.valid) {
-      errors.push(
-        ...result.errors.map((issue) => ({
-          ...issue,
-          path: issue.path === '/' ? '/content' : `/content${issue.path}`,
-        })),
-      );
+    if (typeof content.html !== 'string' && typeof content.url !== 'string') {
+      errors.push({
+        path: '/content',
+        message: 'interactive content requires `html` or `url` as a string',
+      });
     }
+    if (content.url !== undefined && typeof content.url !== 'string') {
+      errors.push({ path: '/content/url', message: '`url` must be a string when present' });
+    }
+    if (content.html !== undefined && typeof content.html !== 'string') {
+      errors.push({ path: '/content/html', message: '`html` must be a string when present' });
+    }
+    // The contract validator stays strict for external consumers. The app write
+    // path remains lenient over historical widget shapes until stored configs
+    // are canonicalized in a follow-up.
   } else if (value.type === 'pbl' && !objectValue(content.projectConfig)) {
     errors.push({
       path: '/content/projectConfig',
