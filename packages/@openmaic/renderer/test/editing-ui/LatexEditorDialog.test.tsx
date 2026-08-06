@@ -22,15 +22,11 @@ describe('LatexEditorDialog', () => {
     });
   });
 
-  it('inserts a palette symbol at the textarea caret', () => {
+  it('temporarily hides the symbol and preset palettes', () => {
     render(<LatexEditorDialog initialLatex="ab" onConfirm={vi.fn()} onClose={vi.fn()} />);
 
-    const source = screen.getByLabelText('LaTeX source') as HTMLTextAreaElement;
-    source.focus();
-    source.setSelectionRange(1, 1);
-    fireEvent.click(screen.getByRole('button', { name: 'Insert integral' }));
-
-    expect(source.value).toBe('a\\intb');
+    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Insert integral' })).toBeNull();
   });
 
   it('disables confirm and announces an error for invalid Latex', () => {

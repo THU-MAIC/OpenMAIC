@@ -510,15 +510,15 @@ export const EDITING_UI_STYLES = `
   box-shadow: 0 20px 44px rgb(0 0 0 / 22%);
   color: #27272a;
   max-height: min(680px, calc(100vh - 48px));
-  max-width: 880px;
+  max-width: 720px;
   overflow: hidden;
-  width: min(880px, 100%);
+  width: min(720px, 100%);
 }
 
 .maic-editing-ui-latex-main {
   display: grid;
   gap: 20px;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr);
   max-height: calc(min(680px, 100vh - 48px) - 64px);
   overflow: auto;
   padding: 20px;
@@ -726,8 +726,7 @@ export const EDITING_UI_STYLES = `
     padding: 16px;
   }
 
-  .maic-editing-ui-latex-workspace,
-  .maic-editing-ui-latex-palette {
+  .maic-editing-ui-latex-workspace {
     min-height: 360px;
   }
 }

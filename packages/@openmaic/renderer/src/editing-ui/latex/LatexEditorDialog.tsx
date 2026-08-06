@@ -1,12 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { LATEX_PRESETS, LATEX_SYMBOL_GROUPS } from './latex-presets';
-import {
-  insertLatexAtSelection,
-  renderLatexSource,
-  type LatexEditorResult,
-} from './latex-editor';
+import { renderLatexSource, type LatexEditorResult } from './latex-editor';
 import type { LatexEditorLabels } from '../types';
 
 const DEFAULT_LABELS: LatexEditorLabels = {
@@ -26,11 +21,6 @@ const DEFAULT_LABELS: LatexEditorLabels = {
   invalidSource: 'The LaTeX source is invalid.',
 };
 
-function latexPreviewHtml(source: string): string {
-  const result = renderLatexSource(source);
-  return 'html' in result ? result.html : '';
-}
-
 export interface LatexEditorDialogProps {
   readonly initialLatex?: string;
   readonly labels?: Partial<LatexEditorLabels>;
@@ -46,14 +36,10 @@ export function LatexEditorDialog({
 }: LatexEditorDialogProps) {
   const labels = { ...DEFAULT_LABELS, ...providedLabels };
   const [latex, setLatex] = useState(initialLatex);
-  const [panel, setPanel] = useState<'symbols' | 'presets'>('symbols');
-  const [symbolGroupId, setSymbolGroupId] = useState(LATEX_SYMBOL_GROUPS[0]?.id ?? '');
   const sourceRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const rendered = useMemo(() => renderLatexSource(latex), [latex]);
   const canConfirm = latex.trim().length > 0 && !('error' in rendered);
-  const activeSymbolGroup =
-    LATEX_SYMBOL_GROUPS.find((group) => group.id === symbolGroupId) ?? LATEX_SYMBOL_GROUPS[0];
 
   useEffect(() => {
     sourceRef.current?.focus();
@@ -66,21 +52,6 @@ export function LatexEditorDialog({
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
-
-  const insertSymbol = (symbol: string) => {
-    const source = sourceRef.current;
-    const next = insertLatexAtSelection(
-      latex,
-      source?.selectionStart ?? latex.length,
-      source?.selectionEnd ?? latex.length,
-      symbol,
-    );
-    setLatex(next.value);
-    requestAnimationFrame(() => {
-      sourceRef.current?.focus();
-      sourceRef.current?.setSelectionRange(next.cursor, next.cursor);
-    });
-  };
 
   const confirm = () => {
     if (!canConfirm || 'error' in rendered) return;
@@ -132,77 +103,11 @@ export function LatexEditorDialog({
             </div>
           </div>
 
-          <div className="maic-editing-ui-latex-palette">
-            <div className="maic-editing-ui-latex-tabs" role="tablist" aria-label={labels.dialog}>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={panel === 'symbols'}
-                onClick={() => setPanel('symbols')}
-              >
-                {labels.symbols}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={panel === 'presets'}
-                onClick={() => setPanel('presets')}
-              >
-                {labels.presets}
-              </button>
-            </div>
-            {panel === 'symbols' ? (
-              <>
-                <div className="maic-editing-ui-latex-symbol-groups" role="tablist">
-                  {LATEX_SYMBOL_GROUPS.map((group) => (
-                    <button
-                      key={group.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={group.id === activeSymbolGroup?.id}
-                      onClick={() => setSymbolGroupId(group.id)}
-                    >
-                      {group.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="maic-editing-ui-latex-symbol-grid">
-                  {activeSymbolGroup?.symbols.map((symbol) => (
-                    <button
-                      key={`${activeSymbolGroup.id}-${symbol.latex}`}
-                      type="button"
-                      aria-label={`Insert ${symbol.label.toLocaleLowerCase()}`}
-                      title={`Insert ${symbol.label.toLocaleLowerCase()}`}
-                      onClick={() => insertSymbol(symbol.latex)}
-                    >
-                      <span dangerouslySetInnerHTML={{ __html: latexPreviewHtml(symbol.latex) }} />
-                    </button>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="maic-editing-ui-latex-preset-list">
-                {LATEX_PRESETS.map((preset) => {
-                  const preview = renderLatexSource(preset.latex);
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      aria-label={preset.label}
-                      title={preset.label}
-                      onClick={() => setLatex(preset.latex)}
-                    >
-                      <span>{preset.label}</span>
-                      <span
-                        className="slide-renderer-prose"
-                        dangerouslySetInnerHTML={{ __html: 'html' in preview ? preview.html : '' }}
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {/*
+            Temporarily hide the sample palette while the complete PPTist catalog
+            is migrated and checked against the KaTeX HTML rendering contract.
+            Keep the labels and catalog module for the planned restoration.
+          */}
         </div>
         <footer className="maic-editing-ui-latex-footer">
           <button type="button" className="maic-editing-ui-latex-cancel" onClick={onClose}>
