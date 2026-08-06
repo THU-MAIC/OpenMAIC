@@ -68,6 +68,7 @@ describe('SlideElement', () => {
     );
 
     expect(html).toContain('base-element-audio');
-    expect(html).toContain('lesson.mp3');
+    expect(html).toContain('Play audio');
+    expect(html).not.toContain('lesson.mp3');
   });
 });

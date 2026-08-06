@@ -20,23 +20,24 @@ const audio: PPTAudioElement = {
 };
 
 describe('BaseAudioElement', () => {
-  it('renders a compact audio card using a source-derived name', () => {
+  it('renders a standalone speaker control without exposing the source name', () => {
     const markup = renderToStaticMarkup(
       React.createElement(BaseAudioElement, { elementInfo: audio }),
     );
 
     expect(markup).toContain('base-element-audio');
     expect(markup).toContain('data-audio-element');
-    expect(markup).toContain('lesson-intro.mp3');
+    expect(markup).toContain('Play audio');
+    expect(markup).not.toContain('lesson-intro.mp3');
     expect(markup).toContain('width:240px');
     expect(markup).toContain('height:64px');
   });
 
-  it('renders a neutral unavailable card for a missing source', () => {
+  it('renders a disabled speaker when the source is missing', () => {
     const markup = renderToStaticMarkup(
       React.createElement(BaseAudioElement, { elementInfo: { ...audio, src: '' } }),
     );
 
-    expect(markup).toContain('Audio unavailable');
+    expect(markup).toContain('disabled=""');
   });
 });
