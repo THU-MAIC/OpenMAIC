@@ -28,6 +28,7 @@ import type { MediaTask } from '@/lib/store/media-generation';
 import {
   collectStageAssetRefs,
   isAllocatedAssetRefReferencedBySurvivingDocument,
+  proveExclusiveAssetOwnership,
   type StageAssetRefs,
 } from './collect-stage-asset-refs';
 import { isGeneratedMediaPlaceholder } from './media-ref';
@@ -541,50 +542,6 @@ interface GeneratedMediaDetails {
   width?: number;
   height?: number;
   duration?: number;
-}
-
-/**
- * Owners the editor holds but has not flushed yet. Slide duplication updates the
- * Zustand aggregate synchronously and schedules persistence behind a debounce, so
- * the persisted document can still report a single owner while the live stage
- * already has two. An in-place replacement decided from the persisted copy alone
- * would rewrite bytes both slides reference.
- */
-function unflushedStageOwnerCount(assetId: string, stageId: string): number | undefined {
-  const { stage, scenes } = useStageStore.getState();
-  if (!stage || stage.id !== stageId) return undefined;
-  return collectStageAssetRefs(
-    { stage, scenes },
-    { mediaRows: [], audioRows: [] },
-  ).referenceCounts.get(assetId);
-}
-
-async function proveExclusiveAssetOwnership(
-  assetId: string,
-  stageId: string,
-): Promise<{ readonly exclusive: boolean; readonly activePersistedRefs?: StageAssetRefs }> {
-  let activePersistedRefs: StageAssetRefs | undefined;
-  try {
-    const document = await getDocumentStore().loadDocument(stageId);
-    if (!document) throw new Error(`Document ${stageId} could not be loaded`);
-    activePersistedRefs = collectStageAssetRefs(document, { mediaRows: [], audioRows: [] });
-  } catch (error) {
-    log.warn(`Could not prove exclusive ownership of media ${assetId}:`, error);
-  }
-  const referencedByAnotherDocument = await isAllocatedAssetRefReferencedBySurvivingDocument(
-    assetId,
-    stageId,
-  );
-  // The live snapshot only participates when it represents this stage; when it
-  // does, an owner it knows about counts even though persistence is pending.
-  const liveOwners = unflushedStageOwnerCount(assetId, stageId);
-  return {
-    exclusive:
-      (activePersistedRefs?.referenceCounts.get(assetId) ?? 0) === 1 &&
-      (liveOwners === undefined || liveOwners === 1) &&
-      !referencedByAnotherDocument,
-    activePersistedRefs,
-  };
 }
 
 async function replaceablePosterRefs(

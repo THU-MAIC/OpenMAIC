@@ -12,6 +12,14 @@ const mocks = vi.hoisted(() => ({
   },
   audioRows: new Map<string, { id: string; stageId?: string }>(),
   accessDocument: vi.fn(),
+  assetRefExists: vi.fn(),
+  proveExclusiveAssetOwnership: vi.fn(),
+}));
+
+vi.mock('@/lib/media/use-asset-url', () => ({ assetRefExists: mocks.assetRefExists }));
+
+vi.mock('@/lib/media/collect-stage-asset-refs', () => ({
+  proveExclusiveAssetOwnership: mocks.proveExclusiveAssetOwnership,
 }));
 
 vi.mock('@/lib/utils/database', () => ({
@@ -64,6 +72,8 @@ describe('allocated speech audio identities', () => {
       readOnlyLegacy: false,
     }));
     mocks.settings.mockReturnValue({ ttsEnabled: true, ttsProviderId: 'managed-tts' });
+    mocks.assetRefExists.mockReset().mockResolvedValue(false);
+    mocks.proveExclusiveAssetOwnership.mockReset().mockResolvedValue({ exclusive: false });
   });
 
   it('treats a missing action audioId as no current audio', () => {
@@ -103,6 +113,69 @@ describe('allocated speech audio identities', () => {
       undefined,
       undefined,
     );
+  });
+
+  it('replaces bytes under an exclusively owned allocated id', async () => {
+    // Same rule as a media retry: an exclusively owned clip keeps its identity,
+    // so references stay valid and no orphan entry or row is left behind.
+    mocks.stageState = { stage: { id: 'stage-1' }, scenes: [] };
+    mocks.assetRefExists.mockResolvedValue(true);
+    mocks.proveExclusiveAssetOwnership.mockResolvedValue({ exclusive: true });
+    mocks.generateAndStoreTTS.mockResolvedValueOnce('ast_owned_audio');
+
+    await expect(
+      regenerateSpeechAudio(
+        3,
+        { id: 'speech-1', text: 'New narration', audioId: 'ast_owned_audio' },
+        'English',
+      ),
+    ).resolves.toBe('ast_owned_audio');
+
+    expect(mocks.proveExclusiveAssetOwnership).toHaveBeenCalledWith('ast_owned_audio', 'stage-1');
+    expect(mocks.generateAndStoreTTS).toHaveBeenCalledWith(
+      'tts_request_s3_speech-1',
+      'New narration',
+      'English',
+      undefined,
+      undefined,
+      'ast_owned_audio',
+      'stage-1',
+    );
+  });
+
+  it('allocates a fresh id when the clip is shared or ownership is unproven', async () => {
+    mocks.stageState = { stage: { id: 'stage-1' }, scenes: [] };
+    mocks.assetRefExists.mockResolvedValue(true);
+    mocks.proveExclusiveAssetOwnership.mockResolvedValue({ exclusive: false });
+    mocks.generateAndStoreTTS.mockResolvedValueOnce('ast_fresh_audio');
+
+    await expect(
+      regenerateSpeechAudio(
+        3,
+        { id: 'speech-1', text: 'New narration', audioId: 'ast_shared_audio' },
+        'English',
+      ),
+    ).resolves.toBe('ast_fresh_audio');
+
+    // The shared clip must keep its bytes for the other holders.
+    expect(mocks.generateAndStoreTTS.mock.calls[0][5]).toBeUndefined();
+  });
+
+  it('allocates fresh audio for a legacy id with no pool entry', async () => {
+    mocks.stageState = { stage: { id: 'stage-1' }, scenes: [] };
+    mocks.assetRefExists.mockResolvedValue(false);
+    mocks.generateAndStoreTTS.mockResolvedValueOnce('ast_fresh_audio');
+
+    await expect(
+      regenerateSpeechAudio(
+        3,
+        { id: 'speech-1', text: 'New narration', audioId: 'tts_s3_speech-1' },
+        'English',
+      ),
+    ).resolves.toBe('ast_fresh_audio');
+
+    expect(mocks.proveExclusiveAssetOwnership).not.toHaveBeenCalled();
+    expect(mocks.generateAndStoreTTS.mock.calls[0][5]).toBeUndefined();
   });
 
   it('allocates fresh speech audio before the old id is superseded', async () => {

@@ -9,6 +9,8 @@ import { db } from '@/lib/utils/database';
 import { useSettingsStore } from '@/lib/store/settings';
 import { generateAndStoreTTS } from '@/lib/hooks/use-scene-generator';
 import { useStageStore } from '@/lib/store/stage';
+import { proveExclusiveAssetOwnership } from '@/lib/media/collect-stage-asset-refs';
+import { assetRefExists } from '@/lib/media/use-asset-url';
 
 /** Legacy deterministic Dexie key used before pool allocation. */
 export function speechAudioId(sceneOrder: number, actionId: string): string {
@@ -65,8 +67,28 @@ export async function audioObjectUrl(audioId: string): Promise<string | null> {
 }
 
 /**
- * (Re)generate TTS for one speech line under a fresh allocated asset id.
- * Returns that id on success, or null when TTS isn't applicable.
+ * The current audio id when it is pool-backed and provably owned by this stage
+ * alone, so its bytes may be replaced in place; undefined otherwise.
+ */
+async function exclusivelyOwnedAudioId(
+  audioId: string | undefined,
+  stageId: string | undefined,
+): Promise<string | undefined> {
+  if (!audioId || !stageId) return undefined;
+  if (!(await assetRefExists(audioId))) return undefined;
+  const { exclusive } = await proveExclusiveAssetOwnership(audioId, stageId);
+  return exclusive ? audioId : undefined;
+}
+
+/**
+ * (Re)generate TTS for one speech line.
+ *
+ * A clip this line exclusively owns keeps its id and has its bytes replaced, so
+ * references stay valid and no orphan entry or compatibility row is left behind
+ * — the same rule media retries follow. A clip shared with another element or
+ * document, or one whose ownership cannot be proven, gets a fresh allocation so
+ * the other holders keep their audio. Returns the id on success, or null when
+ * TTS isn't applicable.
  */
 export async function regenerateSpeechAudio(
   sceneOrder: number,
@@ -79,5 +101,6 @@ export async function regenerateSpeechAudio(
   if (!text || !action.id) return null;
   const requestId = `tts_request_s${sceneOrder}_${action.id}`;
   const stageId = useStageStore.getState().stage?.id;
-  return generateAndStoreTTS(requestId, text, language, signal, undefined, undefined, stageId);
+  const replaceAssetId = await exclusivelyOwnedAudioId(action.audioId, stageId);
+  return generateAndStoreTTS(requestId, text, language, signal, undefined, replaceAssetId, stageId);
 }

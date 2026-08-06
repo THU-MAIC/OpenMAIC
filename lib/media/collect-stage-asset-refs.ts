@@ -2,6 +2,7 @@ import type { Slide } from '@openmaic/dsl';
 import { getDocumentStore } from '@/lib/document-store';
 import { createLogger } from '@/lib/logger';
 import type { Scene, Stage } from '@/lib/types/stage';
+import { useStageStore } from '@/lib/store/stage';
 import { slideMediaReferenceSlots } from './slide-media-slots';
 
 const log = createLogger('PersistedAssetRefs');
@@ -234,6 +235,57 @@ export async function isAllocatedAssetRefReferencedBySurvivingDocument(
 ): Promise<boolean> {
   const liveRefs = await loadSurvivingDocumentAssetRefs(excludedDocumentId);
   return liveRefs === null || liveRefs.has(ref);
+}
+
+/**
+ * Owners the editor holds but has not flushed yet. Slide duplication updates the
+ * Zustand aggregate synchronously and schedules persistence behind a debounce, so
+ * the persisted document can still report a single owner while the live stage
+ * already has two. An in-place replacement decided from the persisted copy alone
+ * would rewrite bytes both slides reference. Returns undefined when the live
+ * snapshot represents a different stage and therefore has nothing to say.
+ */
+function unflushedStageOwnerCount(assetId: string, stageId: string): number | undefined {
+  const { stage, scenes } = useStageStore.getState();
+  if (!stage || stage.id !== stageId) return undefined;
+  return collectStageAssetRefs(
+    { stage, scenes },
+    { mediaRows: [], audioRows: [] },
+  ).referenceCounts.get(assetId);
+}
+
+/**
+ * Whether an allocated ref may have its bytes replaced in place. Every writer
+ * that mutates a globally keyed asset — media retry, poster replacement, speech
+ * regeneration — clears this first, so the rule lives here once instead of being
+ * restated per call site.
+ */
+export async function proveExclusiveAssetOwnership(
+  assetId: string,
+  stageId: string,
+): Promise<{ readonly exclusive: boolean; readonly activePersistedRefs?: StageAssetRefs }> {
+  let activePersistedRefs: StageAssetRefs | undefined;
+  try {
+    const document = await getDocumentStore().loadDocument(stageId);
+    if (!document) throw new Error(`Document ${stageId} could not be loaded`);
+    activePersistedRefs = collectStageAssetRefs(document, { mediaRows: [], audioRows: [] });
+  } catch (error) {
+    log.warn(`Could not prove exclusive ownership of asset ${assetId}:`, error);
+  }
+  const referencedByAnotherDocument = await isAllocatedAssetRefReferencedBySurvivingDocument(
+    assetId,
+    stageId,
+  );
+  // The live snapshot only participates when it represents this stage; when it
+  // does, an owner it knows about counts even though persistence is pending.
+  const liveOwners = unflushedStageOwnerCount(assetId, stageId);
+  return {
+    exclusive:
+      (activePersistedRefs?.referenceCounts.get(assetId) ?? 0) === 1 &&
+      (liveOwners === undefined || liveOwners === 1) &&
+      !referencedByAnotherDocument,
+    activePersistedRefs,
+  };
 }
 
 /** Load complete document refs once; null means enumeration failed and callers must fail closed. */
