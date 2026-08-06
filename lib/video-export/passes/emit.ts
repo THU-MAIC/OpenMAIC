@@ -25,5 +25,15 @@ export function emitManifest(ir: VideoTimeline): VideoTimeline {
 
 /** Serialize the manifest to a JSON string (pretty-printed by default). */
 export function emitManifestJson(ir: VideoTimeline, space: number = 2): string {
-  return JSON.stringify(emitManifest(ir), null, space);
+  return JSON.stringify(
+    {
+      ...emitManifest(ir),
+      // Runtime interactive diagnostics are appended by the emitted
+      // composition in memory; the ZIP carries this initialized report so
+      // consumers have a stable machine-readable location from the outset.
+      runtimeDiagnostics: [],
+    },
+    null,
+    space,
+  );
 }

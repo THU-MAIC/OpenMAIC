@@ -29,6 +29,7 @@ describe('emitManifest', () => {
     const round = JSON.parse(json);
     expect(round.schema).toBe(VIDEO_TIMELINE_SCHEMA);
     expect(round.scenes[0].narration[0].text).toBe('hi');
+    expect(round.runtimeDiagnostics).toEqual([]);
   });
 
   it('throws on a malformed IR (schema is enforced)', () => {
