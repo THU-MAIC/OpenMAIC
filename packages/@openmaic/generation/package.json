@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/generation",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Pure generation pipeline contracts and packaged prompt assets for MAIC consumers.",
   "type": "module",
   "main": "./dist/index.js",
@@ -40,6 +40,10 @@
     "type": "git",
     "url": "https://github.com/THU-MAIC/OpenMAIC",
     "directory": "packages/@openmaic/generation"
+  },
+  "dependencies": {
+    "jsonrepair": "^3.13.2",
+    "nanoid": "^5.1.6"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",

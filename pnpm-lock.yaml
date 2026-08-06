@@ -449,6 +449,13 @@ importers:
         version: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@22.19.15)(jsdom@29.1.1(@noble/hashes@1.8.0)(canvas@3.2.3))(msw@2.12.10(@types/node@22.19.15)(typescript@5.9.3))(vite@8.0.0(@emnapi/core@1.8.1)(@emnapi/runtime@1.8.1)(@types/node@22.19.15)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/@openmaic/generation:
+    dependencies:
+      jsonrepair:
+        specifier: ^3.13.2
+        version: 3.13.3
+      nanoid:
+        specifier: ^5.1.6
+        version: 5.1.14
     devDependencies:
       typescript:
         specifier: ^5

@@ -128,6 +128,35 @@ jobs:
       - name: Unit Tests (generation)
         run: pnpm --filter @openmaic/generation test
 
+      - name: Node consumer smoke (generation outlines)
+        shell: bash
+        run: |
+          set -euo pipefail
+          port=43127
+          node scripts/generation-node-smoke-server.mjs --port "$port" >generation-smoke-server.log 2>&1 &
+          server_pid=$!
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for attempt in {1..50}; do
+            if node -e "fetch('http://127.0.0.1:$port/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"; then
+              break
+            fi
+            if [ "$attempt" -eq 50 ]; then
+              cat generation-smoke-server.log
+              exit 1
+            fi
+            sleep 0.1
+          done
+          output="$(node scripts/generation-node-smoke.mjs \
+            --requirement "Explain dependency injection" \
+            --endpoint "http://127.0.0.1:$port" \
+            --model smoke-model)"
+          printf '%s\n' "$output"
+          node -e 'const value = JSON.parse(process.argv[1]); if (!Array.isArray(value.outlines) || value.outlines.length === 0) process.exit(1)' "$output"
+
       # Covers the package's own test tree, which the root tsc reaches only by an
       # incidental glob. The device-scope guard is written as `@ts-expect-error`
       # probes in those tests, and a probe nothing type-checks proves nothing.
