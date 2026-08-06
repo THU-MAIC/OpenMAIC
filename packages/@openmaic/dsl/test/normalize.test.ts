@@ -8,6 +8,8 @@ import {
   normalizeScene,
   normalizeStage,
   normalizePBLProject,
+  isPBLProject,
+  validateScene,
 } from '@openmaic/dsl';
 import type {
   PPTElement,
@@ -388,6 +390,8 @@ describe('normalizePBLProject', () => {
   const unseeded = {
     title: 'Build a weather station',
     description: 'Create a small weather station.',
+    learningObjective: 'Understand how sensors capture weather data.',
+    gains: ['Connect a sensor', 'Interpret readings'],
     tags: ['science'],
     language: 'en-US',
     proficiency: 'beginner',
@@ -434,6 +438,72 @@ describe('normalizePBLProject', () => {
     const twice = normalizePBLProject(once);
     expect(twice).toEqual(once);
     expect(unseeded).not.toHaveProperty('uiPhase');
+  });
+
+  it('throws when design-authored fields are absent or status presence is mixed', () => {
+    const { roles: _roles, ...withoutRoles } = unseeded;
+    expect(() => normalizePBLProject(withoutRoles)).toThrow(/roles/);
+
+    const { learningObjective: _learningObjective, ...withoutObjective } = unseeded;
+    expect(() => normalizePBLProject(withoutObjective)).toThrow(/learningObjective/);
+
+    expect(() =>
+      normalizePBLProject({
+        ...unseeded,
+        milestones: [{ ...unseeded.milestones[0], status: 'active' }, unseeded.milestones[1]],
+      }),
+    ).toThrow(/milestones\[\]\.status/);
+
+    expect(() =>
+      normalizePBLProject({
+        ...unseeded,
+        milestones: [
+          {
+            ...unseeded.milestones[0],
+            microtasks: [
+              { ...unseeded.milestones[0].microtasks[0], status: 'todo' },
+              { ...unseeded.milestones[0].microtasks[0], id: 'task-2' },
+            ],
+          },
+          unseeded.milestones[1],
+        ],
+      }),
+    ).toThrow(/microtasks\[\]\.status/);
+  });
+
+  it('produces projects accepted by both the runtime guard and scene validator', () => {
+    const fullySeeded = {
+      ...unseeded,
+      uiPhase: 'workspace',
+      status: 'review',
+      milestones: unseeded.milestones.map((milestone, index) => ({
+        ...milestone,
+        status: index === 0 ? 'completed' : 'active',
+        microtasks: milestone.microtasks.map((microtask) => ({
+          ...microtask,
+          status: 'completed',
+          assignee: 'user',
+        })),
+      })),
+      submissions: [],
+      evaluations: [],
+      threads: [{ agentId: 'instructor', messages: [] }],
+      engagementEvents: [],
+    };
+
+    for (const input of [unseeded, fullySeeded]) {
+      const project = normalizePBLProject(input);
+      const scene = {
+        id: 'pbl-scene',
+        stageId: 'stage',
+        title: project.title,
+        order: 0,
+        type: 'pbl',
+        content: { type: 'pbl', projectV2: project },
+      };
+      expect(isPBLProject(project)).toBe(true);
+      expect(validateScene(scene)).toEqual({ valid: true });
+    }
   });
 
   it('throws on present-but-wrong-typed seeded fields', () => {

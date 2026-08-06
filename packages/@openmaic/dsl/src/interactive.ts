@@ -31,19 +31,22 @@ export function isWidgetType(value: unknown): value is WidgetType {
 }
 
 /**
- * Minimal contract shared by every widget configuration. Rich per-widget
- * payloads remain consumer-owned and extend this shape through a generic.
+ * Minimal contract shared by every widget configuration. The contract names
+ * only `type`; every other widget-config member belongs to the app domain.
  */
-export type WidgetConfigBase = {
+export interface WidgetConfigBase {
   type: WidgetType;
-};
+  [key: string]: unknown;
+}
 
 /**
  * Interactive web content.
  *
  * `html` is a complete HTML document rendered via iframe `srcDoc`; `url` is a
  * `src` fallback used only when `html` is absent. `url` is optional because
- * producers historically wrote `url: ''` when no fallback existed.
+ * producers historically wrote `url: ''` when no fallback existed. The
+ * validators require at least one of `html` or `url` to be present as a string,
+ * a disjunction intentionally not expressed by the generated schema.
  */
 export type InteractiveContent<TWidgetConfig extends WidgetConfigBase = WidgetConfigBase> = {
   type: 'interactive';
@@ -58,6 +61,7 @@ export function isInteractiveContent(value: unknown): value is InteractiveConten
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const content = value as Record<string, unknown>;
   if (content.type !== 'interactive') return false;
+  if (typeof content.html !== 'string' && typeof content.url !== 'string') return false;
   if (content.url !== undefined && typeof content.url !== 'string') return false;
   if (content.html !== undefined && typeof content.html !== 'string') return false;
   if (content.widgetType !== undefined && !isWidgetType(content.widgetType)) return false;

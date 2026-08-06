@@ -19,6 +19,7 @@ type GeneratedSchema = {
     {
       type?: string;
       properties?: Record<string, Record<string, unknown>>;
+      additionalProperties?: unknown;
     }
   >;
 };
@@ -196,6 +197,24 @@ describe('generated JSON Schema — SerializedScene', () => {
       },
     },
   };
+  const interactiveScene = {
+    id: 'interactive-scene',
+    stageId: 'st',
+    type: 'interactive',
+    title: 'Simulation',
+    order: 3,
+    content: {
+      type: 'interactive',
+      html: '<!doctype html><div id="simulation"></div>',
+      widgetType: 'simulation',
+      widgetConfig: {
+        type: 'simulation',
+        concept: 'projectile motion',
+        variables: [{ name: 'velocity', initialValue: 12 }],
+        controls: { reset: true, pause: true },
+      },
+    },
+  };
   it('accepts a well-formed slide scene', () => {
     expect(v(slideScene)).toBe(true);
   });
@@ -207,6 +226,52 @@ describe('generated JSON Schema — SerializedScene', () => {
   });
   it('accepts a planner-produced v2 project with the full seeded skeleton', () => {
     expect(v(plannerPBLScene), JSON.stringify(v.errors)).toBe(true);
+  });
+  it('accepts realistic app-owned widget config fields but rejects an unknown widget type', () => {
+    expect(v(interactiveScene), JSON.stringify(v.errors)).toBe(true);
+    expect(
+      v({
+        ...interactiveScene,
+        content: {
+          ...interactiveScene.content,
+          widgetConfig: { ...interactiveScene.content.widgetConfig, type: 'bogus' },
+        },
+      }),
+    ).toBe(false);
+    const { type: _type, ...configWithoutType } = interactiveScene.content.widgetConfig;
+    expect(
+      v({
+        ...interactiveScene,
+        content: { ...interactiveScene.content, widgetConfig: configWithoutType },
+      }),
+    ).toBe(false);
+  });
+  it('keeps the widget config and historical PBL runtime-overlay surfaces open', () => {
+    const definitions = (schemas.SerializedScene as GeneratedSchema).definitions;
+    expect(definitions.WidgetConfigBase.additionalProperties).not.toBe(false);
+    for (const name of ['PBLProject', 'PBLMilestone', 'PBLMicrotask', 'PBLThreadSeat']) {
+      expect(definitions[name].additionalProperties, name).not.toBe(false);
+    }
+
+    const project = plannerPBLScene.content.projectV2;
+    const sceneWithRuntimeOverlay = {
+      ...plannerPBLScene,
+      content: {
+        ...plannerPBLScene.content,
+        projectV2: {
+          ...project,
+          runtimeEvents: [],
+          milestones: project.milestones.map((milestone) => ({
+            ...milestone,
+            microtasks: milestone.microtasks.map((microtask) => ({
+              ...microtask,
+              engagement: { learnerTurnCount: 2 },
+            })),
+          })),
+        },
+      },
+    };
+    expect(v(sceneWithRuntimeOverlay), JSON.stringify(v.errors)).toBe(true);
   });
   it('rejects a cross-kind slide/PBL content mismatch', () => {
     expect(v({ ...slideScene, content: legacyPBLScene.content })).toBe(false);

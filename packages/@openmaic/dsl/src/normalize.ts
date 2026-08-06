@@ -60,6 +60,8 @@ import type {
   PBLMilestoneStatus,
   PBLProject,
   PBLProjectStatus,
+  PBLProficiency,
+  PBLRoleType,
   PBLThreadSeat,
   PBLUiPhase,
 } from './pbl.js';
@@ -134,11 +136,59 @@ function pblEnum<T extends string>(
   return value as T;
 }
 
+function pblRequiredEnum<T extends string>(
+  source: Raw,
+  field: string,
+  values: readonly T[],
+  path = field,
+): T {
+  const value = source[field];
+  if (typeof value !== 'string' || !values.includes(value as T)) {
+    pblFail(
+      path,
+      `one of ${values.map((candidate) => JSON.stringify(candidate)).join(' | ')}`,
+      value,
+    );
+  }
+  return value as T;
+}
+
 function pblArray(source: Raw, field: string, path = field): unknown[] {
   const value = source[field];
   if (value === undefined) return [];
   if (!Array.isArray(value)) pblFail(path, 'an array', value);
   return value;
+}
+
+function pblRequiredString(source: Raw, field: string, path = field): string {
+  const value = source[field];
+  if (typeof value !== 'string') pblFail(path, 'a string', value);
+  return value;
+}
+
+function pblRequiredNumber(source: Raw, field: string, path = field): number {
+  const value = source[field];
+  if (typeof value !== 'number') pblFail(path, 'a number', value);
+  return value;
+}
+
+function pblStringArray(source: Raw, field: string, path = field): string[] {
+  const value = source[field];
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
+    pblFail(path, 'an array of strings', value);
+  }
+  return value;
+}
+
+function pblRequireConsistentPresence(items: Raw[], field: string, path: string): void {
+  const present = items.filter((item) => item[field] !== undefined).length;
+  if (present !== 0 && present !== items.length) {
+    pblFail(
+      path,
+      `present on every item or absent from every item`,
+      items.map((item) => item[field]),
+    );
+  }
 }
 
 const PBL_UI_PHASES: readonly PBLUiPhase[] = ['hero', 'generating', 'workspace', 'completed'];
@@ -157,6 +207,16 @@ const PBL_MICROTASK_STATUSES: readonly PBLMicrotaskStatus[] = [
   'skipped',
 ];
 const PBL_ASSIGNEES: readonly PBLAssignee[] = ['user'];
+const PBL_PROFICIENCIES: readonly PBLProficiency[] = ['', 'beginner', 'intermediate', 'advanced'];
+const PBL_ROLE_TYPES: readonly PBLRoleType[] = [
+  'user',
+  'instructor',
+  'evaluator',
+  'mentor',
+  'collaborator',
+  'simulator',
+  'system',
+];
 
 function normalizePBLThread(thread: unknown, index: number): PBLThreadSeat {
   const path = `threads[${index}]`;
@@ -172,24 +232,69 @@ function normalizePBLThread(thread: unknown, index: number): PBLThreadSeat {
 }
 
 /**
- * Fill the deterministic planner-seeded PBL skeleton without interpreting app
- * runtime state. Missing seed fields receive canonical values; present malformed
- * values throw. Pure and idempotent.
+ * Normalize a complete design-authored PBL project without interpreting app
+ * runtime state. Design-authored fields must be present because normalization
+ * cannot invent project content. Seeded skeleton fields may be absent and then
+ * receive their canonical values; present malformed values throw.
+ *
+ * Milestone and microtask statuses must each be consistently absent or present
+ * across the project. All-absent milestones seed first-active then locked;
+ * all-absent microtasks seed `todo`. Mixed presence is rejected.
+ * Pure and idempotent.
  */
 export function normalizePBLProject(project: unknown): PBLProject {
   if (!isObject(project)) pblFail('project', 'an object', project);
 
+  const title = pblRequiredString(project, 'title');
+  const description = pblRequiredString(project, 'description');
+  const learningObjective = pblRequiredString(project, 'learningObjective');
+  const gains = pblStringArray(project, 'gains');
+  const tags = pblStringArray(project, 'tags');
+  const language = pblRequiredString(project, 'language');
+  const createdAt = pblRequiredString(project, 'createdAt');
+  const updatedAt = pblRequiredString(project, 'updatedAt');
+  const proficiency = pblRequiredEnum(project, 'proficiency', PBL_PROFICIENCIES);
+
   const roles = project.roles;
-  if (roles !== undefined && !Array.isArray(roles)) pblFail('roles', 'an array', roles);
+  if (!Array.isArray(roles)) pblFail('roles', 'an array', roles);
+  roles.forEach((role, roleIndex) => {
+    const rolePath = `roles[${roleIndex}]`;
+    if (!isObject(role)) pblFail(rolePath, 'an object', role);
+    pblRequiredString(role, 'id', `${rolePath}.id`);
+    pblRequiredEnum(role, 'type', PBL_ROLE_TYPES, `${rolePath}.type`);
+    pblRequiredString(role, 'name', `${rolePath}.name`);
+  });
+
   const milestones = project.milestones;
   if (!Array.isArray(milestones)) pblFail('milestones', 'an array', milestones);
-
-  const normalizedMilestones = milestones.map((milestone, milestoneIndex) => {
+  const milestoneObjects = milestones.map((milestone, milestoneIndex) => {
+    if (!isObject(milestone)) pblFail(`milestones[${milestoneIndex}]`, 'an object', milestone);
+    return milestone;
+  });
+  pblRequireConsistentPresence(milestoneObjects, 'status', 'milestones[].status');
+  const microtaskObjectsByMilestone = milestoneObjects.map((milestone, milestoneIndex) => {
     const milestonePath = `milestones[${milestoneIndex}]`;
-    if (!isObject(milestone)) pblFail(milestonePath, 'an object', milestone);
     if (!Array.isArray(milestone.microtasks)) {
       pblFail(`${milestonePath}.microtasks`, 'an array', milestone.microtasks);
     }
+    return milestone.microtasks.map((microtask, microtaskIndex) => {
+      const microtaskPath = `${milestonePath}.microtasks[${microtaskIndex}]`;
+      if (!isObject(microtask)) pblFail(microtaskPath, 'an object', microtask);
+      return microtask;
+    });
+  });
+  pblRequireConsistentPresence(
+    microtaskObjectsByMilestone.flat(),
+    'status',
+    'milestones[].microtasks[].status',
+  );
+
+  const normalizedMilestones = milestoneObjects.map((milestone, milestoneIndex) => {
+    const milestonePath = `milestones[${milestoneIndex}]`;
+    pblRequiredString(milestone, 'id', `${milestonePath}.id`);
+    pblRequiredString(milestone, 'title', `${milestonePath}.title`);
+    pblRequiredNumber(milestone, 'order', `${milestonePath}.order`);
+    const microtaskObjects = microtaskObjectsByMilestone[milestoneIndex];
     return {
       ...milestone,
       status: pblEnum(
@@ -199,9 +304,12 @@ export function normalizePBLProject(project: unknown): PBLProject {
         milestoneIndex === 0 ? 'active' : 'locked',
         `${milestonePath}.status`,
       ),
-      microtasks: milestone.microtasks.map((microtask, microtaskIndex) => {
+      microtasks: microtaskObjects.map((microtask, microtaskIndex) => {
         const microtaskPath = `${milestonePath}.microtasks[${microtaskIndex}]`;
-        if (!isObject(microtask)) pblFail(microtaskPath, 'an object', microtask);
+        pblRequiredString(microtask, 'id', `${microtaskPath}.id`);
+        pblRequiredString(microtask, 'title', `${microtaskPath}.title`);
+        pblStringArray(microtask, 'hints', `${microtaskPath}.hints`);
+        pblRequiredNumber(microtask, 'order', `${microtaskPath}.order`);
         return {
           ...microtask,
           status: pblEnum(
@@ -238,6 +346,16 @@ export function normalizePBLProject(project: unknown): PBLProject {
 
   return {
     ...project,
+    title,
+    description,
+    learningObjective,
+    gains,
+    tags,
+    language,
+    proficiency,
+    roles,
+    createdAt,
+    updatedAt,
     uiPhase: pblEnum(project, 'uiPhase', PBL_UI_PHASES, 'hero'),
     status: pblEnum(project, 'status', PBL_PROJECT_STATUSES, 'active'),
     milestones: normalizedMilestones,

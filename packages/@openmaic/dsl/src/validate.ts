@@ -185,6 +185,12 @@ function checkInteractiveContent(doc: unknown, path: string, errors: ValidationI
   if (doc.type !== 'interactive') {
     errors.push({ path: `${path}/type`, message: 'expected `interactive` content type' });
   }
+  if (typeof doc.html !== 'string' && typeof doc.url !== 'string') {
+    errors.push({
+      path: path || '/',
+      message: 'interactive content requires `html` or `url` as a string',
+    });
+  }
   if (doc.url !== undefined && typeof doc.url !== 'string') {
     errors.push({ path: `${path}/url`, message: '`url` must be a string when present' });
   }

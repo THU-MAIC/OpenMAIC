@@ -155,8 +155,9 @@ appended (and `DSL_VERSION` bumped) when the serialized shape first changes.
 Promoting `interactive` and `pbl` into the contract does **not** bump
 `DSL_VERSION`: it widens accepted content without changing stored bytes or the
 meaning of an existing field. This follows the additive-field precedent in
-`stage.ts:92-107` (`GeneratedAgentConfig`); schema-pinned consumers still need
-the new package version to accept documents carrying the newly described shapes.
+the `GeneratedAgentConfig` compatibility note in `stage.ts`; schema-pinned
+consumers still need the new package version to accept documents carrying the
+newly described shapes.
 
 Which aggregate carries the `dslVersion` field — a whole `Stage`, a single Scene
 row, or a bundle — is left to the store that first consumes this pipeline; the

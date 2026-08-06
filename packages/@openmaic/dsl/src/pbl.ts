@@ -23,7 +23,12 @@ export interface PBLRole {
   systemPrompt?: string;
 }
 
-export interface PBLMicrotask {
+/**
+ * Documents written before the design-template strip may carry app runtime
+ * fields; the contract tolerates unknown members on the project tree for that
+ * reason and does not interpret them.
+ */
+export interface PBLMicrotask extends Record<string, unknown> {
   id: string;
   title: string;
   description?: string;
@@ -48,7 +53,12 @@ export interface PBLDocument {
   docType: 'markdown' | 'reference' | 'starter_file';
 }
 
-export interface PBLMilestone {
+/**
+ * Documents written before the design-template strip may carry app runtime
+ * fields; the contract tolerates unknown members on the project tree for that
+ * reason and does not interpret them.
+ */
+export interface PBLMilestone extends Record<string, unknown> {
   id: string;
   title: string;
   description?: string;
@@ -94,18 +104,22 @@ export interface PBLScenarioConfig {
 /**
  * Persisted seat for an agent chat thread. `messages` is seeded empty in
  * stored documents; message contents belong to the app domain and are not
- * interpreted by this contract.
+ * interpreted by this contract. Documents written before the design-template
+ * strip may carry app runtime fields; the contract tolerates unknown members on
+ * the project tree for that reason and does not interpret them.
  */
-export interface PBLThreadSeat {
+export interface PBLThreadSeat extends Record<string, unknown> {
   agentId: string;
   messages: unknown[];
 }
 
 /**
  * Design-time PBL definition plus the canonical planner-seeded initial
- * skeleton. Runtime learner overlays deliberately remain app-side.
+ * skeleton. Documents written before the design-template strip may carry app
+ * runtime fields; the contract tolerates unknown members on the project tree
+ * for that reason and does not interpret them.
  */
-export interface PBLProject {
+export interface PBLProject extends Record<string, unknown> {
   /** Seeded to the canonical `hero` value in stored documents. */
   uiPhase: PBLUiPhase;
   title: string;
@@ -138,9 +152,10 @@ export interface PBLContent {
   type: 'pbl';
   projectV2?: PBLProject;
   /**
-   * Opaque payload of the retired v1 pipeline. It is present on pre-v2 stored
-   * scenes, is read-only, and is never written by current code. The contract
-   * records its existence without interpreting it.
+   * Pre-v2 scenes carry the legacy payload; current code still writes a
+   * compatibility mirror alongside `projectV2`, and #1058 retires that write
+   * path, after which the field is read-only history. The contract records its
+   * existence and does not interpret it.
    * @deprecated
    */
   projectConfig?: Record<string, unknown>;
@@ -149,13 +164,27 @@ export interface PBLContent {
 /** Cheap structural guard aligned with the app's persisted-project check. */
 export function isPBLProject(value: unknown): value is PBLProject {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  const project = value as Partial<PBLProject>;
+  const project = value as Record<string, unknown>;
   return (
-    typeof project.uiPhase === 'string' &&
+    (['hero', 'generating', 'workspace', 'completed'] as const).includes(
+      project.uiPhase as PBLUiPhase,
+    ) &&
     typeof project.title === 'string' &&
+    typeof project.description === 'string' &&
+    Array.isArray(project.tags) &&
+    typeof project.language === 'string' &&
+    typeof project.proficiency === 'string' &&
+    (['designing', 'review', 'active', 'completed', 'archived'] as const).includes(
+      project.status as PBLProjectStatus,
+    ) &&
     Array.isArray(project.milestones) &&
     Array.isArray(project.roles) &&
-    Array.isArray(project.threads)
+    Array.isArray(project.submissions) &&
+    Array.isArray(project.evaluations) &&
+    Array.isArray(project.threads) &&
+    Array.isArray(project.engagementEvents) &&
+    typeof project.createdAt === 'string' &&
+    typeof project.updatedAt === 'string'
   );
 }
 

@@ -60,11 +60,28 @@ describe('validateScene', () => {
     expect(errors(r)).toContain('/content/questions');
   });
   it.each([
+    [{ type: 'interactive' }, '/content'],
     [{ type: 'interactive', widgetType: 'video' }, '/content/widgetType'],
     [{ type: 'interactive', html: 42 }, '/content/html'],
     [{ type: 'interactive', widgetConfig: { type: 'video' } }, '/content/widgetConfig/type'],
   ])('rejects malformed interactive content %#', (content, path) => {
     expect(errors(validateScene({ ...ok, type: 'interactive', content }))).toContain(path);
+  });
+  it('accepts html-only and url-only interactive content', () => {
+    expect(
+      validateScene({
+        ...ok,
+        type: 'interactive',
+        content: { type: 'interactive', html: '<div/>' },
+      }),
+    ).toEqual({ valid: true });
+    expect(
+      validateScene({
+        ...ok,
+        type: 'interactive',
+        content: { type: 'interactive', url: 'https://example.com' },
+      }),
+    ).toEqual({ valid: true });
   });
   it.each([
     [{ type: 'pbl', projectV2: 'not-an-object' }, '/content/projectV2'],
@@ -95,10 +112,16 @@ describe('validateScene', () => {
 });
 
 describe('standalone promoted-content validators', () => {
-  it('reports interactive payload errors without a scene envelope', () => {
-    expect(validateInteractiveContent({ type: 'interactive', widgetType: 'game' })).toEqual({
+  it('requires an html or url payload and accepts either one without a scene envelope', () => {
+    expect(validateInteractiveContent({ type: 'interactive', html: '<div/>' })).toEqual({
       valid: true,
     });
+    expect(validateInteractiveContent({ type: 'interactive', url: 'https://example.com' })).toEqual(
+      {
+        valid: true,
+      },
+    );
+    expect(errors(validateInteractiveContent({ type: 'interactive' }))).toContain('/');
     expect(errors(validateInteractiveContent({ type: 'interactive', url: 42 }))).toContain('/url');
   });
 

@@ -98,19 +98,37 @@ describe('discriminant guards', () => {
         widgetConfig: { type: 'diagram' },
       }),
     ).toBe(true);
+    expect(isInteractiveContent({ type: 'interactive' })).toBe(false);
     expect(isInteractiveContent({ type: 'interactive', widgetType: 'video' })).toBe(false);
 
+    const project = {
+      uiPhase: 'hero',
+      title: 'Project',
+      description: 'Build something.',
+      tags: [],
+      language: 'en-US',
+      proficiency: 'beginner',
+      status: 'active',
+      milestones: [],
+      roles: [],
+      submissions: [],
+      evaluations: [],
+      threads: [],
+      engagementEvents: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
     expect(
       isPBLContent({
         type: 'pbl',
-        projectV2: { uiPhase: 'hero', title: 'Project', milestones: [], roles: [], threads: [] },
+        projectV2: project,
       }),
     ).toBe(true);
     expect(isPBLContent({ type: 'pbl', projectConfig: [] })).toBe(false);
-    expect(
-      isPBLProject({ uiPhase: 'hero', title: 'Project', milestones: [], roles: [], threads: [] }),
-    ).toBe(true);
-    expect(isPBLProject({ uiPhase: 'hero', title: 'Project', milestones: {} })).toBe(false);
+    expect(isPBLProject(project)).toBe(true);
+    expect(isPBLProject({ ...project, uiPhase: 'bogus' })).toBe(false);
+    expect(isPBLProject({ ...project, status: 'bogus' })).toBe(false);
+    expect(isPBLProject({ ...project, milestones: {} })).toBe(false);
   });
 });
 
