@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PPTChartElement, PPTElement, PPTLatexElement, PPTTextElement } from '@openmaic/dsl';
 import type { EditIntent, Selection } from '@openmaic/renderer/editing';
 import { createRendererCanvasCommands } from '@/components/edit/surfaces/slide/renderer-canvas-commands';
+import {
+  createRendererClipboardPasteState,
+  type RendererElementClipboard,
+} from '@/components/edit/surfaces/slide/renderer-element-clipboard';
 import { applyRendererEditIntents } from '@/components/edit/surfaces/slide/renderer-edit-intents';
 import type { SlideContent } from '@/lib/types/stage';
 
@@ -69,10 +73,16 @@ function setup({
   elements = [text('a'), text('b'), text('c')],
   selection = { elementIds: ['a'], primaryId: 'a' },
   hiddenElementIds = [],
+  clipboard,
+  createElementId,
+  createGroupId,
 }: {
   elements?: PPTElement[];
   selection?: Selection;
   hiddenElementIds?: readonly string[];
+  clipboard?: RendererElementClipboard;
+  createElementId?: (type: PPTElement['type']) => string;
+  createGroupId?: () => string;
 } = {}) {
   const onIntents = vi.fn<(intents: EditIntent[]) => void>();
   const onSelectionChange = vi.fn<(selection: Selection) => void>();
@@ -82,7 +92,10 @@ function setup({
     hiddenElementIds,
     onIntents,
     onSelectionChange,
-    createGroupId: () => 'group-new',
+    createGroupId: createGroupId ?? (() => 'group-new'),
+    createElementId,
+    clipboard,
+    clipboardPasteState: createRendererClipboardPasteState(),
   });
   return { commands, onIntents, onSelectionChange };
 }
@@ -372,5 +385,68 @@ describe('createRendererCanvasCommands', () => {
 
     expect(onIntents).not.toHaveBeenCalled();
     expect(onSelectionChange).not.toHaveBeenCalled();
+  });
+
+  it('copies complete groups and pastes cloned elements with fresh group ids and offsets', async () => {
+    const source = [
+      text('g1', { groupId: 'source-group', left: 10, top: 20 }),
+      text('g2', { groupId: 'source-group', left: 80, top: 20 }),
+    ];
+    const clipboard: RendererElementClipboard = {
+      write: vi.fn().mockResolvedValue(true),
+      read: vi.fn().mockResolvedValue(source),
+    };
+    let nextId = 0;
+    let nextGroupId = 0;
+    const { commands, onIntents, onSelectionChange } = setup({
+      elements: source,
+      selection: { elementIds: ['g1'], primaryId: 'g1' },
+      clipboard,
+      createElementId: (type) => `${type}-copy-${++nextId}`,
+      createGroupId: () => `copied-group-${++nextGroupId}`,
+    });
+
+    await commands.copySelection();
+    expect(clipboard.write).toHaveBeenCalledWith(source);
+
+    await commands.pasteElements();
+    const firstPaste = onIntents.mock.calls[0][0];
+    expect(firstPaste).toMatchObject([
+      {
+        type: 'element.add',
+        element: { id: 'text-copy-1', left: 30, top: 40, groupId: 'copied-group-1' },
+      },
+      {
+        type: 'element.add',
+        element: { id: 'text-copy-2', left: 100, top: 40, groupId: 'copied-group-1' },
+      },
+    ]);
+    expect(onSelectionChange).toHaveBeenLastCalledWith({
+      elementIds: ['text-copy-1', 'text-copy-2'],
+      primaryId: 'text-copy-1',
+    });
+
+    await commands.pasteElements();
+    expect(onIntents.mock.calls[1][0]).toMatchObject([
+      { type: 'element.add', element: { id: 'text-copy-3', left: 50, top: 60 } },
+      { type: 'element.add', element: { id: 'text-copy-4', left: 120, top: 60 } },
+    ]);
+  });
+
+  it('cuts only after a copy has been retained', async () => {
+    const clipboard: RendererElementClipboard = {
+      write: vi.fn().mockResolvedValue(false),
+      read: vi.fn(),
+    };
+    const { commands, onIntents, onSelectionChange } = setup({ clipboard });
+
+    await commands.cutSelection();
+    expect(onIntents).not.toHaveBeenCalled();
+    expect(onSelectionChange).not.toHaveBeenCalled();
+
+    vi.mocked(clipboard.write).mockResolvedValue(true);
+    await commands.cutSelection();
+    expect(onIntents).toHaveBeenCalledWith([{ type: 'element.delete', ids: ['a'] }]);
+    expect(onSelectionChange).toHaveBeenCalledWith({ elementIds: [] });
   });
 });

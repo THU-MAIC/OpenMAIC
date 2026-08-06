@@ -8,6 +8,9 @@ function commands(): RendererCanvasCommands {
     selectAll: vi.fn(),
     deleteSelection: vi.fn(),
     lockSelection: vi.fn(),
+    copySelection: vi.fn(),
+    cutSelection: vi.fn(),
+    pasteElements: vi.fn(),
     unlockTarget: vi.fn(),
     toggleGroup: vi.fn(),
     reorderTarget: vi.fn(),
@@ -48,6 +51,9 @@ describe('handleRendererCanvasShortcut', () => {
 
   it.each([
     ['a', 'selectAll'],
+    ['c', 'copySelection'],
+    ['x', 'cutSelection'],
+    ['v', 'pasteElements'],
     ['l', 'lockSelection'],
     ['g', 'toggleGroup'],
   ] as const)('maps Mod+%s to %s for Ctrl and Meta', (key, command) => {

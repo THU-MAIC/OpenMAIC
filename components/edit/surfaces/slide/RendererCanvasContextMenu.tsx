@@ -108,10 +108,17 @@ export function RendererCanvasContextMenu({
       </ContextMenuTrigger>
       <ContextMenuContent>
         {menu.kind === 'canvas' && (
-          <ContextMenuItem data-command="select-all" onSelect={commands.selectAll}>
-            全选
-            <ContextMenuShortcut>Ctrl + A</ContextMenuShortcut>
-          </ContextMenuItem>
+          <>
+            <ContextMenuItem data-command="paste" onSelect={() => void commands.pasteElements()}>
+              粘贴
+              <ContextMenuShortcut>Ctrl + V</ContextMenuShortcut>
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem data-command="select-all" onSelect={commands.selectAll}>
+              全选
+              <ContextMenuShortcut>Ctrl + A</ContextMenuShortcut>
+            </ContextMenuItem>
+          </>
         )}
 
         {menu.kind === 'locked' && (
@@ -176,6 +183,19 @@ export function RendererCanvasContextMenu({
                 </ContextMenuItem>
               </ContextMenuSubContent>
             </ContextMenuSub>
+            <ContextMenuSeparator />
+            <ContextMenuItem data-command="copy" onSelect={() => void commands.copySelection()}>
+              复制
+              <ContextMenuShortcut>Ctrl + C</ContextMenuShortcut>
+            </ContextMenuItem>
+            <ContextMenuItem data-command="cut" onSelect={() => void commands.cutSelection()}>
+              剪切
+              <ContextMenuShortcut>Ctrl + X</ContextMenuShortcut>
+            </ContextMenuItem>
+            <ContextMenuItem data-command="paste" onSelect={() => void commands.pasteElements()}>
+              粘贴
+              <ContextMenuShortcut>Ctrl + V</ContextMenuShortcut>
+            </ContextMenuItem>
             <ContextMenuSeparator />
             {menu.groupAction && (
               <ContextMenuItem data-command="toggle-group" onSelect={commands.toggleGroup}>

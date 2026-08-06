@@ -27,6 +27,9 @@ function commands(): RendererCanvasCommands {
     selectAll: vi.fn(),
     deleteSelection: vi.fn(),
     lockSelection: vi.fn(),
+    copySelection: vi.fn(),
+    cutSelection: vi.fn(),
+    pasteElements: vi.fn(),
     unlockTarget: vi.fn(),
     toggleGroup: vi.fn(),
     reorderTarget: vi.fn(),
@@ -75,6 +78,9 @@ describe('RendererCanvasContextMenu UI', () => {
       elementIds: ['g1', 'g2'],
       primaryId: 'g2',
     });
+    expect(document.querySelector('[data-command="copy"]')).not.toBeNull();
+    expect(document.querySelector('[data-command="cut"]')).not.toBeNull();
+    expect(document.querySelector('[data-command="paste"]')).not.toBeNull();
     expect(document.querySelector('[data-command="lock"]')).not.toBeNull();
     expect(document.querySelector('[data-command="delete"]')).not.toBeNull();
     await act(async () => {

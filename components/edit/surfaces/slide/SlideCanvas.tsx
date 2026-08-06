@@ -1,6 +1,6 @@
 'use client';
 
-import { createElement, useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import { createElement, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import type {
   ChartType,
   PPTAudioElement,
@@ -59,6 +59,10 @@ import { AnchoredElementBar } from './AnchoredElementBar';
 import { ElementPickLayer } from './ElementPickLayer';
 import { applyRendererEditIntents } from './renderer-edit-intents';
 import { createRendererCanvasCommands } from './renderer-canvas-commands';
+import {
+  createRendererClipboardPasteState,
+  createRendererElementClipboard,
+} from './renderer-element-clipboard';
 import { RendererCanvasContextMenu } from './RendererCanvasContextMenu';
 import { useSlideEditSession } from './slide-edit-session';
 import { useRendererCanvasShortcuts } from './use-renderer-canvas-shortcuts';
@@ -175,6 +179,8 @@ function RendererEditorCanvas() {
   const setCreatingElement = useCanvasStore.use.setCreatingElement();
   const setCanvasScale = useCanvasStore.use.setCanvasScale();
   const setDisableHotkeysState = useCanvasStore.use.setDisableHotkeysState();
+  const clipboardRef = useRef(createRendererElementClipboard());
+  const clipboardPasteStateRef = useRef(createRendererClipboardPasteState());
   const toolbarFonts = useMemo(
     () =>
       FONTS.map((font) => ({
@@ -599,6 +605,9 @@ function RendererEditorCanvas() {
         hiddenElementIds,
         onIntents: handleElementsChange,
         onSelectionChange: handleSelectionChange,
+        createElementId,
+        clipboard: clipboardRef.current,
+        clipboardPasteState: clipboardPasteStateRef.current,
       }),
     [content, handleElementsChange, handleSelectionChange, hiddenElementIds, selection],
   );

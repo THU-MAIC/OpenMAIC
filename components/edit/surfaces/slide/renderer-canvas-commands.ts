@@ -7,6 +7,14 @@ import type {
   Selection,
 } from '@openmaic/renderer/editing';
 import type { SlideContent } from '@/lib/types/stage';
+import {
+  createRendererElementClipboard,
+  createRendererClipboardPasteState,
+  type RendererClipboardPasteState,
+  type RendererElementClipboard,
+} from './renderer-element-clipboard';
+
+const CLIPBOARD_PASTE_OFFSET = 20;
 
 interface RendererCanvasCommandArgs {
   content: SlideContent;
@@ -15,6 +23,9 @@ interface RendererCanvasCommandArgs {
   onIntents: (intents: EditIntent[]) => void;
   onSelectionChange: (selection: Selection) => void;
   createGroupId?: () => string;
+  createElementId?: (type: PPTElement['type']) => string;
+  clipboard?: RendererElementClipboard;
+  clipboardPasteState?: RendererClipboardPasteState;
 }
 
 export interface RendererCanvasCommands {
@@ -22,6 +33,9 @@ export interface RendererCanvasCommands {
   selectAll: () => void;
   deleteSelection: () => void;
   lockSelection: () => void;
+  copySelection: () => Promise<void>;
+  cutSelection: () => Promise<void>;
+  pasteElements: () => Promise<void>;
   unlockTarget: (elementId: string) => void;
   toggleGroup: () => void;
   reorderTarget: (elementId: string, command: ReorderCommand) => void;
@@ -137,6 +151,9 @@ export function createRendererCanvasCommands({
   onIntents,
   onSelectionChange,
   createGroupId = () => nanoid(10),
+  createElementId = (type) => `${type}-${nanoid(8)}`,
+  clipboard = createRendererElementClipboard(),
+  clipboardPasteState = createRendererClipboardPasteState(),
 }: RendererCanvasCommandArgs): RendererCanvasCommands {
   const elements = content.canvas.elements;
   const byId = new Map(elements.map((element) => [element.id, element]));
@@ -153,6 +170,44 @@ export function createRendererCanvasCommands({
 
   const clearSelection = () => {
     if (selection.elementIds.length > 0) onSelectionChange({ elementIds: [] });
+  };
+  const copySelection = async (): Promise<boolean> => {
+    if (selected.length === 0) return false;
+    const copied = await clipboard.write(selected);
+    if (copied) {
+      clipboardPasteState.payloadKey = null;
+      clipboardPasteState.count = 0;
+    }
+    return copied;
+  };
+  const pasteElements = async () => {
+    const copied = await clipboard.read();
+    if (!copied?.length) return;
+    const payloadKey = JSON.stringify(copied);
+    if (clipboardPasteState.payloadKey !== payloadKey) {
+      clipboardPasteState.payloadKey = payloadKey;
+      clipboardPasteState.count = 0;
+    }
+    clipboardPasteState.count += 1;
+    const offset = CLIPBOARD_PASTE_OFFSET * clipboardPasteState.count;
+    const groupIds = new Map<string, string>();
+    const elements = copied.map((source) => {
+      const element = JSON.parse(JSON.stringify(source)) as PPTElement;
+      if (source.groupId) {
+        const nextGroupId = groupIds.get(source.groupId) ?? createGroupId();
+        groupIds.set(source.groupId, nextGroupId);
+        element.groupId = nextGroupId;
+      }
+      return {
+        ...element,
+        id: createElementId(source.type),
+        left: source.left + offset,
+        top: source.top + offset,
+      } as PPTElement;
+    });
+    onIntents(elements.map((element) => ({ type: 'element.add', element })));
+    const ids = elements.map((element) => element.id);
+    onSelectionChange({ elementIds: ids, primaryId: ids[0] });
   };
 
   return {
@@ -183,6 +238,18 @@ export function createRendererCanvasCommands({
       ]);
       clearSelection();
     },
+
+    copySelection: async () => {
+      await copySelection();
+    },
+
+    cutSelection: async () => {
+      if (!(await copySelection())) return;
+      onIntents([{ type: 'element.delete', ids: selectedIds }]);
+      clearSelection();
+    },
+
+    pasteElements,
 
     unlockTarget: (elementId) => {
       const target = byId.get(elementId);

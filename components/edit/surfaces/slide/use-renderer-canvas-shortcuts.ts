@@ -53,6 +53,9 @@ export function handleRendererCanvasShortcut(
   if (event.key === 'Delete' || event.key === 'Backspace') command = commands.deleteSelection;
   else if (event.key === 'Escape') command = commands.clearSelection;
   else if (mod && !event.altKey && key === 'a') command = commands.selectAll;
+  else if (mod && !event.altKey && key === 'c') command = () => void commands.copySelection();
+  else if (mod && !event.altKey && key === 'x') command = () => void commands.cutSelection();
+  else if (mod && !event.altKey && key === 'v') command = () => void commands.pasteElements();
   else if (mod && !event.altKey && key === 'l') command = commands.lockSelection;
   else if (mod && !event.altKey && key === 'g') command = commands.toggleGroup;
 
