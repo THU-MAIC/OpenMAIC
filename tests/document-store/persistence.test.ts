@@ -232,6 +232,24 @@ describe('app document validators', () => {
     expect(validateScene(scene).valid).toBe(false);
   });
 
+  test('rejects a primitive widget config that would crash hydration', () => {
+    const scene = {
+      ...interactiveScene(),
+      content: {
+        type: 'interactive',
+        html: '<!doctype html><main>Broken</main>',
+        widgetType: 'diagram',
+        widgetConfig: 'diagram',
+      },
+    } as unknown as AppScene;
+
+    const result = validateAppScene(scene);
+    expect(result.valid).toBe(false);
+    expect(
+      result.valid === false && result.errors.some((e) => e.path === '/content/widgetConfig'),
+    ).toBe(true);
+  });
+
   test('accepts an unknown widget type at the app write boundary', () => {
     const scene = {
       ...interactiveScene(),
