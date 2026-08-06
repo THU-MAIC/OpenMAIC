@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { EditableSlideCanvasProps, EditIntent } from '../editing/types';
 import type { PPTLineElement } from '@openmaic/dsl';
 import type { TextEditCommand, TextFormatState } from '../editing/text/types';
+import type { LatexEditorResult } from './latex/latex-editor';
 
 export type TextToolbarLocale = 'zh-CN' | 'en-US';
 export type TextToolbarPlacement = 'top' | 'bottom';
@@ -121,8 +122,28 @@ export interface InsertToolbarOptions {
 
 export type InsertToolbarProps = InsertToolbarOptions;
 
+export interface LatexEditorLabels {
+  insertFormula: string;
+  editFormula: string;
+  dialog: string;
+  source: string;
+  preview: string;
+  symbols: string;
+  presets: string;
+  cancel: string;
+  confirm: string;
+  invalidSource: string;
+}
+
+export interface LatexEditorOptions {
+  readonly labels?: Partial<LatexEditorLabels>;
+  readonly onInsert: (result: LatexEditorResult) => void;
+  readonly onUpdate: (elementId: string, result: LatexEditorResult) => void;
+}
+
 export interface EditableSlideCanvasWithUIProps extends EditableSlideCanvasProps {
   readonly textToolbar?: TextToolbarOptions | false;
   readonly lineToolbar?: LineToolbarOptions | false;
   readonly insertToolbar?: InsertToolbarOptions | false;
+  readonly latexEditor?: LatexEditorOptions | false;
 }

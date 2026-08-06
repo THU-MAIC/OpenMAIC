@@ -22,6 +22,13 @@ export { TableInsertPicker } from './insert/TableInsertPicker';
 export { ChartInsertPicker } from './insert/ChartInsertPicker';
 export { computeToolbarPosition, TextToolbarOverlay } from './text/TextToolbarOverlay';
 export { useToolbarAnchor } from './text/useToolbarAnchor';
+export {
+  insertLatexAtSelection,
+  renderLatexSource,
+  type LatexEditorResult,
+  type LatexRenderResult,
+} from './latex/latex-editor';
+export { LATEX_PRESETS, LATEX_SYMBOL_GROUPS } from './latex/latex-presets';
 export type { TextToolbarOverlayProps, ToolbarPosition } from './text/TextToolbarOverlay';
 export type { LineToolbarOverlayProps } from './line/LineToolbarOverlay';
 export type { TableInsertPickerProps } from './insert/TableInsertPicker';
@@ -33,6 +40,8 @@ export type {
   InsertToolbarOptions,
   InsertToolbarPopoverContext,
   InsertToolbarProps,
+  LatexEditorLabels,
+  LatexEditorOptions,
   LineFormatToolbarProps,
   LineToolbarLabels,
   LineToolbarOptions,
