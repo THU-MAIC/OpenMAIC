@@ -896,7 +896,8 @@
     "folderDeleteFailed": "Error al eliminar la carpeta",
     "moveFailed": "Error al mover el curso",
     "emptyFolderHint": "Esta carpeta está vacía",
-    "backToAllCourses": "Volver a todos los cursos"
+    "backToAllCourses": "Volver a todos los cursos",
+    "emptyLibraryHint": "Aún no hay cursos — crea uno arriba o importa un curso."
   },
   "upload": {
     "pdfSizeLimit": "Admite archivos PDF de hasta 50 MB",

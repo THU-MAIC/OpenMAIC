@@ -18,6 +18,7 @@ import {
   validateFolderName,
 } from '@/lib/utils/folder-name-validation';
 import type { FolderRecord } from '@/lib/utils/database';
+import { FolderNameError } from '@/lib/utils/stage-storage';
 
 // ============ F1: New folder dialog ============
 
@@ -56,7 +57,8 @@ export function NewFolderDialog({
       return;
     }
     const trimmed = name.trim();
-    if (folders.some((f) => f.name === trimmed)) {
+    // Case-insensitive duplicate check, matching the storage-boundary rule.
+    if (folders.some((f) => f.name.toLowerCase() === trimmed.toLowerCase())) {
       setError(t('classroom.folderNameExists'));
       return;
     }
@@ -68,8 +70,22 @@ export function NewFolderDialog({
     try {
       await onCreate(trimmed);
       onOpenChange(false);
-    } catch {
-      setError(t('classroom.folderCreateFailed'));
+    } catch (err) {
+      // Map the storage-boundary error to a specific message when possible.
+      if (err instanceof FolderNameError) {
+        setError(
+          err.kind === 'duplicate'
+            ? t('classroom.folderNameExists')
+            : err.kind === 'tooLong'
+              ? t('classroom.folderWidth', {
+                  width: displayNameWidth(trimmed),
+                  max: FOLDER_NAME_MAX_WIDTH,
+                })
+              : t('classroom.folderNameHint'),
+        );
+      } else {
+        setError(t('classroom.folderCreateFailed'));
+      }
     } finally {
       setSubmitting(false);
     }

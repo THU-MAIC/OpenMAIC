@@ -46,6 +46,7 @@ export function FolderCard({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [dropActive, setDropActive] = useState(false);
+  const dragDepth = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const thumbRef = useRef<HTMLDivElement>(null);
   const [thumbWidth, setThumbWidth] = useState(0);
@@ -90,18 +91,28 @@ export function FolderCard({
     <div
       className="group cursor-pointer"
       onClick={editing ? undefined : onOpen}
-      onDragOver={(e) => {
+      onDragEnter={(e) => {
         if (editing) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
+        // Only react to course-card drags (carrying a stage-id payload).
+        if (!Array.from(e.dataTransfer.types).includes('text/stage-id')) return;
+        dragDepth.current += 1;
         setDropActive(true);
       }}
-      onDragLeave={(e) => {
-        // Only clear when leaving the card entirely, not when crossing children.
-        if (e.currentTarget === e.target) setDropActive(false);
+      onDragOver={(e) => {
+        if (editing) return;
+        if (!Array.from(e.dataTransfer.types).includes('text/stage-id')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      }}
+      onDragLeave={() => {
+        // dragenter/dragleave fire per child element; balance them with a
+        // counter so the highlight clears only when the pointer fully exits.
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDropActive(false);
       }}
       onDrop={(e) => {
         e.preventDefault();
+        dragDepth.current = 0;
         setDropActive(false);
         const stageId = e.dataTransfer.getData('text/stage-id');
         if (stageId) onDropCourse(stageId);

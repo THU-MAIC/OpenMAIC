@@ -66,6 +66,7 @@ import {
   type DeleteFolderMode,
 } from '@/lib/utils/stage-storage';
 import type { FolderRecord } from '@/lib/utils/database';
+import { displayNameWidth, FOLDER_NAME_MAX_WIDTH } from '@/lib/utils/folder-name-validation';
 import { FolderCard } from '@/components/discovery/folder-card';
 import { NewFolderDialog, DeleteFolderDialog } from '@/components/discovery/folder-dialogs';
 import { MoveToFolderMenu } from '@/components/discovery/move-to-folder-menu';
@@ -330,7 +331,11 @@ function HomePage() {
       } catch (err) {
         if (err instanceof FolderNameError) {
           if (err.kind === 'duplicate') return t('classroom.folderNameExists');
-          if (err.kind === 'tooLong') return t('classroom.folderWidth', { width: 0, max: 40 });
+          if (err.kind === 'tooLong')
+            return t('classroom.folderWidth', {
+              width: displayNameWidth(trimmed),
+              max: FOLDER_NAME_MAX_WIDTH,
+            });
           return t('classroom.folderNameHint');
         }
         log.error('Failed to rename folder:', err);
@@ -730,7 +735,9 @@ function HomePage() {
         transition={{ duration: 0.6, ease: 'easeOut' }}
         className={cn(
           'relative z-20 w-full max-w-[800px] flex flex-col items-center',
-          classrooms.length === 0 ? 'justify-center min-h-[calc(100dvh-8rem)]' : 'mt-[10vh]',
+          classrooms.length === 0 && !effectiveCurrentFolderId
+            ? 'justify-center min-h-[calc(100dvh-8rem)]'
+            : 'mt-[10vh]',
         )}
       >
         {/* ── Logo ── */}
@@ -957,6 +964,14 @@ function HomePage() {
               >
                 <Clock className="size-3.5" />
                 {t('classroom.recentClassrooms')}
+                {currentFolder && (
+                  <>
+                    <ChevronRight className="size-3 opacity-40" />
+                    <span className="text-foreground/80 truncate max-w-[160px]">
+                      {currentFolder.name}
+                    </span>
+                  </>
+                )}
                 <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
                 <motion.div
                   animate={{ rotate: recentOpen ? 180 : 0 }}
@@ -1101,22 +1116,16 @@ function HomePage() {
               >
                 {effectiveFolders.length === 0 && classrooms.length === 0 ? (
                   <div className="pt-8 pb-2 text-center text-[13px] text-muted-foreground/60">
-                    {t('classroom.searchEmpty')}
+                    {t('classroom.emptyLibraryHint')}
                   </div>
                 ) : !isSearching &&
                   effectiveCurrentFolderId &&
                   currentFolderClassrooms.length === 0 ? (
-                  // Empty folder: hint + back link.
+                  // Empty folder: hint directly below the centered path bar.
                   <div className="pt-8 text-center">
                     <p className="text-[14px] text-muted-foreground">
                       {t('classroom.emptyFolderHint')}
                     </p>
-                    <button
-                      onClick={() => setCurrentFolderId(undefined)}
-                      className="mt-3 text-[13px] text-violet-500 hover:text-violet-600"
-                    >
-                      {t('classroom.backToAllCourses')}
-                    </button>
                   </div>
                 ) : isSearching && filteredClassrooms.length === 0 ? (
                   <div className="pt-8 pb-2 text-center text-[13px] text-muted-foreground/60">
@@ -1124,40 +1133,28 @@ function HomePage() {
                   </div>
                 ) : (
                   <div className="pt-8">
-                    {/* Breadcrumb — shown inside a folder or while searching. */}
-                    {(effectiveCurrentFolderId || isSearching) && (
+                    {/* Breadcrumb — shown only while searching (the folder path
+                        already lives in the centered header above). */}
+                    {isSearching && (
                       <div className="mb-4 flex items-center gap-1.5 text-[13px] text-muted-foreground">
                         <button
                           type="button"
                           onClick={() => {
                             setCurrentFolderId(undefined);
-                            if (isSearching) {
-                              setSearchQuery('');
-                              setSearchOpen(false);
-                            }
+                            setSearchQuery('');
+                            setSearchOpen(false);
                           }}
                           className="hover:text-foreground transition-colors"
                         >
                           {t('classroom.recentClassrooms')}
                         </button>
                         <ChevronRight className="size-3.5" />
-                        {isSearching ? (
-                          <>
-                            <span className="text-foreground font-medium">
-                              {t('classroom.searchResults')}
-                            </span>
-                            <span className="ml-1.5 text-[12px] text-muted-foreground tabular-nums">
-                              ({filteredClassrooms.length})
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <Folder className="size-3.5 text-violet-500" />
-                            <span className="text-foreground font-medium truncate max-w-[60vw]">
-                              {currentFolder?.name}
-                            </span>
-                          </>
-                        )}
+                        <span className="text-foreground font-medium">
+                          {t('classroom.searchResults')}
+                        </span>
+                        <span className="ml-1.5 text-[12px] text-muted-foreground tabular-nums">
+                          ({filteredClassrooms.length})
+                        </span>
                       </div>
                     )}
 

@@ -928,37 +928,43 @@ function assertFolderName(name: string, existing: FolderRecord[], currentId?: st
 /**
  * Create a folder. `order` is placed after the current maximum so new folders
  * land at the end of the list. Validates the name (width + uniqueness) at the
- * storage boundary.
+ * storage boundary, with the read-check-write inside a read-write transaction
+ * so two tabs cannot both pass the duplicate check before either write commits.
  */
 export async function createFolder(name: string): Promise<FolderRecord> {
   const now = Date.now();
-  const existing = await db.folders.toArray();
-  assertFolderName(name, existing);
-  const order = existing.reduce((max, folder) => Math.max(max, folder.order), -1) + 1;
-  const folder: FolderRecord = {
-    id: nanoid(),
-    name: name.trim(),
-    order,
-    createdAt: now,
-    updatedAt: now,
-  };
-  await db.folders.put(folder);
-  log.info(`Created folder "${name}" (${folder.id})`);
-  return folder;
+  return db.transaction('rw', db.folders, async () => {
+    const existing = await db.folders.toArray();
+    assertFolderName(name, existing);
+    const order = existing.reduce((max, folder) => Math.max(max, folder.order), -1) + 1;
+    const folder: FolderRecord = {
+      id: nanoid(),
+      name: name.trim(),
+      order,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.folders.put(folder);
+    log.info(`Created folder "${name}" (${folder.id})`);
+    return folder;
+  });
 }
 
 /**
  * Rename a folder. Validates the name (width + uniqueness excluding itself) at
- * the storage boundary, so the UI invariant cannot be bypassed.
+ * the storage boundary, with the read-check-write inside a read-write
+ * transaction so the UI invariant cannot be bypassed or raced across tabs.
  */
 export async function renameFolder(id: string, name: string): Promise<void> {
   const now = Date.now();
-  const existing = await db.folders.toArray();
-  assertFolderName(name, existing, id);
-  const folder = existing.find((f) => f.id === id);
-  if (!folder) throw new Error(`Folder not found: ${id}`);
-  await db.folders.put({ ...folder, name: name.trim(), updatedAt: now });
-  log.info(`Renamed folder ${id} to "${name}"`);
+  await db.transaction('rw', db.folders, async () => {
+    const existing = await db.folders.toArray();
+    assertFolderName(name, existing, id);
+    const folder = existing.find((f) => f.id === id);
+    if (!folder) throw new Error(`Folder not found: ${id}`);
+    await db.folders.put({ ...folder, name: name.trim(), updatedAt: now });
+    log.info(`Renamed folder ${id} to "${name}"`);
+  });
 }
 
 export type DeleteFolderMode = 'ungroup' | 'remove';

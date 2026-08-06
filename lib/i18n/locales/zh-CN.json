@@ -896,7 +896,8 @@
     "folderDeleteFailed": "删除文件夹失败",
     "moveFailed": "移动课程失败",
     "emptyFolderHint": "这个文件夹还是空的",
-    "backToAllCourses": "返回全部课程"
+    "backToAllCourses": "返回全部课程",
+    "emptyLibraryHint": "还没有课程——在上方创建，或导入一个课程。"
   },
   "upload": {
     "pdfSizeLimit": "支持最大50MB的PDF文件",

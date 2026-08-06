@@ -896,7 +896,8 @@
     "folderDeleteFailed": "Failed to delete folder",
     "moveFailed": "Failed to move course",
     "emptyFolderHint": "This folder is empty",
-    "backToAllCourses": "Back to all courses"
+    "backToAllCourses": "Back to all courses",
+    "emptyLibraryHint": "No courses yet — create one above, or import a course."
   },
   "upload": {
     "pdfSizeLimit": "Supports PDF files up to 50MB",
