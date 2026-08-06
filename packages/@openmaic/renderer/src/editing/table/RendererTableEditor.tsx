@@ -3,7 +3,6 @@
 import {
   forwardRef,
   useCallback,
-  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -22,15 +21,6 @@ function cellBorderCss(border?: TableCellBorder): string | undefined {
   if (!border || border.width <= 0) return undefined;
   const style = border.style === 'dashed' || border.style === 'dotted' ? border.style : 'solid';
   return `${border.width}px ${style} ${border.color}`;
-}
-
-function findCell(data: readonly TableCell[][], id: string | null): TableCell | null {
-  if (!id) return null;
-  for (const row of data) {
-    const cell = row.find((candidate) => candidate.id === id);
-    if (cell) return cell;
-  }
-  return null;
 }
 
 export interface RendererTableEditorProps {
@@ -116,7 +106,6 @@ export const RendererTableEditor = forwardRef<
   const activeCellControllerRef = useRef<TextEditorController | null>(null);
   const cellRefs = useRef(new Map<string, HTMLTableCellElement>());
   const focusedInitialPointRef = useRef(false);
-  const activeCell = findCell(element.data, activeCellId);
   const [subThemeDark, subThemeLight] = useMemo(() => {
     if (!element.theme) return ['', ''];
     return getTableSubThemeColor(element.theme.color);
