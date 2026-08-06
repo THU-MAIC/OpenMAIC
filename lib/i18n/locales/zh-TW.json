@@ -261,6 +261,7 @@
       "imageInsert": "插入"
     },
     "latex": {
+      "toolbar": "公式工具列",
       "editFormula": "編輯公式",
       "dialog": "公式編輯器",
       "source": "LaTeX 原始碼",

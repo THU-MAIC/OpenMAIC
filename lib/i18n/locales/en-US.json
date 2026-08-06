@@ -261,6 +261,7 @@
       "imageInsert": "Insert"
     },
     "latex": {
+      "toolbar": "Formula toolbar",
       "editFormula": "Edit formula",
       "dialog": "Formula editor",
       "source": "LaTeX source",

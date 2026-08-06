@@ -261,6 +261,7 @@
       "imageInsert": "Вставить"
     },
     "latex": {
+      "toolbar": "Панель формул",
       "editFormula": "Редактировать формулу",
       "dialog": "Редактор формул",
       "source": "Исходный код LaTeX",

@@ -358,6 +358,33 @@ describe('EditableSlideCanvasWithUI', () => {
     );
   });
 
+  it('groups selected Latex actions into one renderer toolbar', () => {
+    const onBringToFront = vi.fn();
+    const onSendToBack = vi.fn();
+    const onDelete = vi.fn();
+
+    renderControlled({
+      slide: { ...slide, elements: [latexElement] } as unknown as Slide,
+      initialSelection: { elementIds: ['formula-1'], primaryId: 'formula-1' },
+      latexEditor: {
+        onInsert: vi.fn(),
+        onUpdate: vi.fn(),
+        onBringToFront,
+        onSendToBack,
+        onDelete,
+      },
+    });
+
+    expect(screen.getByRole('toolbar', { name: 'Formula toolbar' })).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Bring to front' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send to back' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(onBringToFront).toHaveBeenCalledWith('formula-1');
+    expect(onSendToBack).toHaveBeenCalledWith('formula-1');
+    expect(onDelete).toHaveBeenCalledWith('formula-1');
+  });
+
   it('waits for controller and format state matching the controlled editing id', () => {
     canvasMock.autoRegister = false;
     renderControlled({

@@ -246,6 +246,7 @@
       "imageInsert": "Inserir"
     },
     "latex": {
+      "toolbar": "Barra de fórmulas",
       "editFormula": "Editar fórmula",
       "dialog": "Editor de fórmulas",
       "source": "Código-fonte LaTeX",

@@ -236,6 +236,22 @@ function RendererEditorCanvas() {
     [handleElementsChange],
   );
 
+  const handleLatexReorder = useCallback(
+    (elementId: string, command: 'front' | 'back') => {
+      handleElementsChange([{ type: 'element.reorder', id: elementId, command }]);
+    },
+    [handleElementsChange],
+  );
+
+  const handleLatexDelete = useCallback(
+    (elementId: string) => {
+      handleElementsChange([{ type: 'element.delete', ids: [elementId] }]);
+      setActiveElementIdList([]);
+      setEditingElementId('');
+    },
+    [handleElementsChange, setActiveElementIdList, setEditingElementId],
+  );
+
   const handleLineCreate = useCallback(
     (geometry: LineCreateGeometry) => {
       const id = createElementId('line');
@@ -479,8 +495,12 @@ function RendererEditorCanvas() {
         insertToolbar={insertToolbar}
         latexEditor={{
           labels: {
+            toolbar: t('edit.latex.toolbar'),
             insertFormula: t('edit.insert.formula'),
             editFormula: t('edit.latex.editFormula'),
+            bringToFront: t('edit.zorder.toFront'),
+            sendToBack: t('edit.zorder.toBack'),
+            delete: t('edit.delete'),
             dialog: t('edit.latex.dialog'),
             source: t('edit.latex.source'),
             preview: t('edit.latex.preview'),
@@ -492,6 +512,9 @@ function RendererEditorCanvas() {
           },
           onInsert: handleLatexInsert,
           onUpdate: handleLatexUpdate,
+          onBringToFront: (elementId) => handleLatexReorder(elementId, 'front'),
+          onSendToBack: (elementId) => handleLatexReorder(elementId, 'back'),
+          onDelete: handleLatexDelete,
         }}
       />
     </RendererCanvasContextMenu>
@@ -555,7 +578,12 @@ export function SlideCanvas() {
       </SceneProvider>
       {!useRendererEditor && <AnchoredTextBar editingElementId={editingElementId} />}
       <AnchoredElementBar
-        element={useRendererEditor && nonTextElement?.type === 'line' ? null : nonTextElement}
+        element={
+          useRendererEditor &&
+          (nonTextElement?.type === 'line' || nonTextElement?.type === 'latex')
+            ? null
+            : nonTextElement
+        }
       />
       {/* Canvas-side element picker for the timeline's element-bound cues. */}
       <ElementPickLayer />

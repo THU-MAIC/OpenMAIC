@@ -10,8 +10,12 @@ import {
 import type { LatexEditorLabels } from '../types';
 
 const DEFAULT_LABELS: LatexEditorLabels = {
+  toolbar: 'Formula toolbar',
   insertFormula: 'Insert formula',
   editFormula: 'Edit formula',
+  bringToFront: 'Bring to front',
+  sendToBack: 'Send to back',
+  delete: 'Delete',
   dialog: 'Formula editor',
   source: 'LaTeX source',
   preview: 'Preview',

@@ -261,6 +261,7 @@
       "imageInsert": "삽입"
     },
     "latex": {
+      "toolbar": "수식 도구 모음",
       "editFormula": "수식 편집",
       "dialog": "수식 편집기",
       "source": "LaTeX 소스",

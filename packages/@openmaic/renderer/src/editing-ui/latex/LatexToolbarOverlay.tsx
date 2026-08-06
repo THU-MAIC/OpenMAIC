@@ -2,7 +2,8 @@
 
 import { createPortal } from 'react-dom';
 import { useLayoutEffect, useRef, useState } from 'react';
-import { PencilLine } from 'lucide-react';
+import { BringToFront, PencilLine, SendToBack, Trash2 } from 'lucide-react';
+import type { MouseEvent } from 'react';
 import type { PPTLatexElement } from '@openmaic/dsl';
 import { computeToolbarPosition } from '../text/TextToolbarOverlay';
 import { useToolbarAnchor } from '../text/useToolbarAnchor';
@@ -15,19 +16,34 @@ interface ToolbarSize {
 export interface LatexToolbarOverlayProps {
   readonly element: PPTLatexElement;
   readonly elementIdPrefix?: string;
+  readonly toolbarLabel: string;
   readonly editLabel: string;
+  readonly bringToFrontLabel: string;
+  readonly sendToBackLabel: string;
+  readonly deleteLabel: string;
   readonly onEdit: () => void;
+  readonly onBringToFront?: () => void;
+  readonly onSendToBack?: () => void;
+  readonly onDelete?: () => void;
 }
 
 export function LatexToolbarOverlay({
   element,
   elementIdPrefix = 'slide-element-',
+  toolbarLabel,
   editLabel,
+  bringToFrontLabel,
+  sendToBackLabel,
+  deleteLabel,
   onEdit,
+  onBringToFront,
+  onSendToBack,
+  onDelete,
 }: LatexToolbarOverlayProps) {
   const anchor = useToolbarAnchor(element.id, elementIdPrefix);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [toolbarSize, setToolbarSize] = useState<ToolbarSize | null>(null);
+  const preventFocusLoss = (event: MouseEvent<HTMLButtonElement>) => event.preventDefault();
 
   useLayoutEffect(() => {
     const overlay = overlayRef.current;
@@ -64,7 +80,7 @@ export function LatexToolbarOverlay({
   return createPortal(
     <div
       ref={overlayRef}
-      className="maic-editing-ui-latex-toolbar"
+      className="maic-editing-ui-root maic-editing-ui-latex-toolbar"
       data-toolbar-overlay=""
       style={{
         left: position ? `${position.left}px` : '0px',
@@ -74,17 +90,60 @@ export function LatexToolbarOverlay({
         zIndex: 'var(--maic-editing-ui-z-index, 80)',
       }}
       role="toolbar"
-      aria-label={editLabel}
+      aria-label={toolbarLabel}
     >
       <button
         type="button"
         className="maic-editing-ui-icon-button"
         aria-label={editLabel}
         title={editLabel}
+        onMouseDown={preventFocusLoss}
         onClick={onEdit}
       >
         <PencilLine aria-hidden="true" />
       </button>
+      {onBringToFront || onSendToBack || onDelete ? (
+        <span className="maic-editing-ui-divider" aria-hidden="true" />
+      ) : null}
+      {onBringToFront ? (
+        <button
+          type="button"
+          className="maic-editing-ui-icon-button"
+          aria-label={bringToFrontLabel}
+          title={bringToFrontLabel}
+          onMouseDown={preventFocusLoss}
+          onClick={onBringToFront}
+        >
+          <BringToFront aria-hidden="true" />
+        </button>
+      ) : null}
+      {onSendToBack ? (
+        <button
+          type="button"
+          className="maic-editing-ui-icon-button"
+          aria-label={sendToBackLabel}
+          title={sendToBackLabel}
+          onMouseDown={preventFocusLoss}
+          onClick={onSendToBack}
+        >
+          <SendToBack aria-hidden="true" />
+        </button>
+      ) : null}
+      {onDelete ? (
+        <>
+          <span className="maic-editing-ui-divider" aria-hidden="true" />
+          <button
+            type="button"
+            className="maic-editing-ui-icon-button maic-editing-ui-delete-button"
+            aria-label={deleteLabel}
+            title={deleteLabel}
+            onMouseDown={preventFocusLoss}
+            onClick={onDelete}
+          >
+            <Trash2 aria-hidden="true" />
+          </button>
+        </>
+      ) : null}
     </div>,
     document.body,
   );

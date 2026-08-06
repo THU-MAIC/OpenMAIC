@@ -68,8 +68,12 @@ export function EditableSlideCanvasWithUI({
   ]);
 
   const latexLabels = activeLatexEditor?.labels;
+  const latexToolbarLabel = latexLabels?.toolbar ?? 'Formula toolbar';
   const latexInsertLabel = latexLabels?.insertFormula ?? 'Insert formula';
   const latexEditLabel = latexLabels?.editFormula ?? 'Edit formula';
+  const latexBringToFrontLabel = latexLabels?.bringToFront ?? 'Bring to front';
+  const latexSendToBackLabel = latexLabels?.sendToBack ?? 'Send to back';
+  const latexDeleteLabel = latexLabels?.delete ?? 'Delete';
   const resolvedInsertToolbar = useMemo(() => {
     if (!insertToolbar || !activeLatexEditor) return insertToolbar;
     return {
@@ -200,8 +204,27 @@ export function EditableSlideCanvasWithUI({
         <LatexToolbarOverlay
           element={selectedLatex}
           elementIdPrefix={elementIdPrefix ?? 'slide-element-'}
+          toolbarLabel={latexToolbarLabel}
           editLabel={latexEditLabel}
+          bringToFrontLabel={latexBringToFrontLabel}
+          sendToBackLabel={latexSendToBackLabel}
+          deleteLabel={latexDeleteLabel}
           onEdit={() => setLatexDialog({ mode: 'edit', element: selectedLatex })}
+          onBringToFront={
+            activeLatexEditor.onBringToFront
+              ? () => activeLatexEditor.onBringToFront?.(selectedLatex.id)
+              : undefined
+          }
+          onSendToBack={
+            activeLatexEditor.onSendToBack
+              ? () => activeLatexEditor.onSendToBack?.(selectedLatex.id)
+              : undefined
+          }
+          onDelete={
+            activeLatexEditor.onDelete
+              ? () => activeLatexEditor.onDelete?.(selectedLatex.id)
+              : undefined
+          }
         />
       ) : null}
       {latexDialog && activeLatexEditor ? (

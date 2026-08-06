@@ -261,6 +261,7 @@
       "imageInsert": "إدراج"
     },
     "latex": {
+      "toolbar": "شريط أدوات المعادلات",
       "editFormula": "تحرير المعادلة",
       "dialog": "محرر المعادلات",
       "source": "مصدر LaTeX",

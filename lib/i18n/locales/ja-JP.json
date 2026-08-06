@@ -261,6 +261,7 @@
       "imageInsert": "挿入"
     },
     "latex": {
+      "toolbar": "数式ツールバー",
       "editFormula": "数式を編集",
       "dialog": "数式エディター",
       "source": "LaTeX ソース",

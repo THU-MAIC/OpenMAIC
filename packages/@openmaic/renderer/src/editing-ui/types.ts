@@ -123,8 +123,12 @@ export interface InsertToolbarOptions {
 export type InsertToolbarProps = InsertToolbarOptions;
 
 export interface LatexEditorLabels {
+  toolbar: string;
   insertFormula: string;
   editFormula: string;
+  bringToFront: string;
+  sendToBack: string;
+  delete: string;
   dialog: string;
   source: string;
   preview: string;
@@ -139,6 +143,9 @@ export interface LatexEditorOptions {
   readonly labels?: Partial<LatexEditorLabels>;
   readonly onInsert: (result: LatexEditorResult) => void;
   readonly onUpdate: (elementId: string, result: LatexEditorResult) => void;
+  readonly onBringToFront?: (elementId: string) => void;
+  readonly onSendToBack?: (elementId: string) => void;
+  readonly onDelete?: (elementId: string) => void;
 }
 
 export interface EditableSlideCanvasWithUIProps extends EditableSlideCanvasProps {
