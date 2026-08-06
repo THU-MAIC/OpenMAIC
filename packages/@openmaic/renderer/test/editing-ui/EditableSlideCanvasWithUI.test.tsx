@@ -65,7 +65,8 @@ vi.mock('../../src/editing/EditableSlideCanvas', async () => {
               element.type === 'text' ||
               element.type === 'table' ||
               element.type === 'line' ||
-              element.type === 'latex',
+              element.type === 'latex' ||
+              element.type === 'video',
           )
           .map((element) =>
             React.createElement(
@@ -81,7 +82,9 @@ vi.mock('../../src/editing/EditableSlideCanvas', async () => {
                         ? 'base-element-table'
                         : element.type === 'line'
                           ? 'base-element-line'
-                          : 'base-element-latex',
+                          : element.type === 'latex'
+                            ? 'base-element-latex'
+                            : 'base-element-video',
                   onClick:
                     element.type === 'text'
                       ? () =>
@@ -165,6 +168,19 @@ const latexElement = {
   html: '<span class="katex">x<sup>2</sup></span>',
   color: '#2563eb',
   align: 'center',
+} as const;
+
+const videoElement = {
+  id: 'video-1',
+  type: 'video',
+  left: 100,
+  top: 100,
+  width: 320,
+  height: 180,
+  rotate: 0,
+  src: 'video.mp4',
+  poster: 'cover.png',
+  autoplay: false,
 } as const;
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
@@ -268,6 +284,8 @@ beforeEach(() => {
     if (this.classList.contains('base-element-table')) return rect(100, 260, 240, 80);
     if (this.classList.contains('base-element-line')) return rect(100, 200, 120, 80);
     if (this.classList.contains('base-element-latex')) return rect(100, 100, 180, 60);
+    if (this.classList.contains('base-element-video')) return rect(100, 100, 320, 180);
+    if (this.classList.contains('maic-editing-ui-video-toolbar')) return rect(0, 0, 192, 40);
     return new DOMRect();
   });
 });
@@ -325,6 +343,32 @@ describe('EditableSlideCanvasWithUI', () => {
     expect(onInsert).toHaveBeenCalledTimes(1);
   });
 
+  it('reserves a left or top rail so the insert toolbar does not cover the canvas', () => {
+    const { rerender } = renderControlled({
+      insertToolbar: { label: 'Insert', items: [] },
+    });
+
+    expect(canvasMock.latestProps?.style).toMatchObject({
+      marginLeft: '48px',
+      width: 'calc(100% - 48px)',
+    });
+
+    rerender(
+      <ControlledHarness
+        slide={slide}
+        scale={1}
+        textToolbar={{ locale: 'zh-CN', labels: { toolbar: '文本格式' } }}
+        onTextContentChange={vi.fn()}
+        insertToolbar={{ label: 'Insert', items: [], placement: 'top' }}
+      />,
+    );
+
+    expect(canvasMock.latestProps?.style).toMatchObject({
+      height: 'calc(100% - 48px)',
+      marginTop: '48px',
+    });
+  });
+
   it('opens the shared dialog from the Formula insert icon', () => {
     const onInsert = vi.fn();
 
@@ -337,6 +381,35 @@ describe('EditableSlideCanvasWithUI', () => {
 
     expect(screen.getByRole('dialog', { name: 'Formula editor' })).not.toBeNull();
     expect(onInsert).not.toHaveBeenCalled();
+  });
+
+  it('adds the renderer-owned video picker to the insert toolbar', () => {
+    const onInsert = vi.fn();
+
+    renderControlled({
+      insertToolbar: { label: 'Insert', items: [] },
+      videoInsert: {
+        labels: {
+          insertVideo: 'Insert video',
+          videoDrop: 'Drop video',
+          videoOr: 'or URL',
+          videoUrlPlaceholder: 'Video URL',
+          videoInsert: 'Insert',
+        },
+        onInsert,
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert video' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Video URL' }), {
+      target: { value: 'https://cdn.example.com/lesson.mp4?version=2' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+
+    expect(onInsert).toHaveBeenCalledWith({
+      src: 'https://cdn.example.com/lesson.mp4?version=2',
+      ext: 'mp4',
+    });
   });
 
   it('opens the shared dialog prefilled for a selected Latex element', async () => {
@@ -392,9 +465,7 @@ describe('EditableSlideCanvasWithUI', () => {
     expect(screen.getByRole('button', { name: '置于底层' }).getAttribute('data-tooltip')).toBe(
       '置于底层',
     );
-    expect(screen.getByRole('button', { name: '删除' }).getAttribute('data-tooltip')).toBe(
-      '删除',
-    );
+    expect(screen.getByRole('button', { name: '删除' }).getAttribute('data-tooltip')).toBe('删除');
     fireEvent.click(screen.getByRole('button', { name: '置于顶层' }));
     fireEvent.click(screen.getByRole('button', { name: '置于底层' }));
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
@@ -402,6 +473,49 @@ describe('EditableSlideCanvasWithUI', () => {
     expect(onBringToFront).toHaveBeenCalledWith('formula-1');
     expect(onSendToBack).toHaveBeenCalledWith('formula-1');
     expect(onDelete).toHaveBeenCalledWith('formula-1');
+  });
+
+  it('groups selected video controls and delegates poster changes', async () => {
+    const onPosterChange = vi.fn();
+    const onBringToFront = vi.fn();
+    const onSendToBack = vi.fn();
+    const onDelete = vi.fn();
+
+    renderControlled({
+      slide: { ...slide, elements: [videoElement] } as unknown as Slide,
+      initialSelection: { elementIds: ['video-1'], primaryId: 'video-1' },
+      videoEditor: {
+        labels: {
+          toolbar: '视频工具栏',
+          poster: '设置封面',
+          bringToFront: '置于顶层',
+          sendToBack: '置于底层',
+          delete: '删除',
+        },
+        renderPosterPicker: ({ onPick }) => (
+          <button type="button" onClick={() => onPick('next-cover.png')}>
+            Pick poster
+          </button>
+        ),
+        onPosterChange,
+        onBringToFront,
+        onSendToBack,
+        onDelete,
+      },
+    });
+
+    expect(await screen.findByRole('toolbar', { name: '视频工具栏' })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: '自动播放' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '设置封面' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick poster' }));
+    fireEvent.click(screen.getByRole('button', { name: '置于顶层' }));
+    fireEvent.click(screen.getByRole('button', { name: '置于底层' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+
+    expect(onPosterChange).toHaveBeenCalledWith('video-1', 'next-cover.png');
+    expect(onBringToFront).toHaveBeenCalledWith('video-1');
+    expect(onSendToBack).toHaveBeenCalledWith('video-1');
+    expect(onDelete).toHaveBeenCalledWith('video-1');
   });
 
   it('waits for controller and format state matching the controlled editing id', () => {

@@ -145,4 +145,33 @@ describe('InsertToolbar', () => {
 
     expect(toolbar.getByRole('dialog', { name: 'Chart' }).style.top).toBe('102px');
   });
+
+  it('docks across the top and anchors popovers under the triggering button', () => {
+    const { container } = render(
+      <InsertToolbar
+        placement="top"
+        items={[
+          { id: 'text', label: 'Text', icon: <span>T</span> },
+          {
+            id: 'table',
+            label: 'Table',
+            icon: <span>Table</span>,
+            renderPopover: () => <span>Table options</span>,
+          },
+        ]}
+      />,
+    );
+
+    const toolbar = within(container);
+    fireEvent.click(toolbar.getByRole('button', { name: 'Table' }));
+
+    expect(toolbar.getByTestId('renderer-insert-toolbar').getAttribute('data-placement')).toBe(
+      'top',
+    );
+    expect(toolbar.getByRole('button', { name: 'Table' }).getAttribute('data-tooltip-placement')).toBe(
+      'bottom',
+    );
+    expect(toolbar.getByRole('dialog', { name: 'Table' }).style.left).toBe('34px');
+    expect(toolbar.getByRole('dialog', { name: 'Table' }).style.top).toBe('');
+  });
 });

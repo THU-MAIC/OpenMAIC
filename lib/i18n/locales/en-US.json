@@ -258,7 +258,12 @@
       "imageDrop": "Drop an image or click to choose a file",
       "imageOr": "or paste an image URL",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "Insert"
+      "imageInsert": "Insert",
+      "video": "Video",
+      "videoDrop": "Drop a video or click to choose a file",
+      "videoOr": "or paste a video URL",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "Insert"
     },
     "latex": {
       "toolbar": "Formula toolbar",
@@ -269,6 +274,10 @@
       "symbols": "Symbols",
       "presets": "Presets",
       "invalidSource": "The LaTeX source is invalid."
+    },
+    "video": {
+      "toolbar": "Video toolbar",
+      "poster": "Set poster"
     },
     "table": {
       "doubleClickToEdit": "Double-click to edit"

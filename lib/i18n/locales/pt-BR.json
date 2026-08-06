@@ -243,7 +243,12 @@
       "imageDrop": "Arraste uma imagem ou clique para escolher um arquivo",
       "imageOr": "ou cole a URL de uma imagem",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "Inserir"
+      "imageInsert": "Inserir",
+      "video": "Vídeo",
+      "videoDrop": "Arraste um vídeo ou clique para escolher um arquivo",
+      "videoOr": "ou cole a URL de um vídeo",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "Inserir"
     },
     "latex": {
       "toolbar": "Barra de fórmulas",
@@ -254,6 +259,10 @@
       "symbols": "Símbolos",
       "presets": "Fórmulas predefinidas",
       "invalidSource": "O código-fonte LaTeX é inválido."
+    },
+    "video": {
+      "toolbar": "Barra de vídeo",
+      "poster": "Definir capa"
     },
     "table": {
       "doubleClickToEdit": "Clique duas vezes para editar"

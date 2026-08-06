@@ -24,6 +24,8 @@ export { computeToolbarPosition, TextToolbarOverlay } from './text/TextToolbarOv
 export { useToolbarAnchor } from './text/useToolbarAnchor';
 export { LatexEditorDialog } from './latex/LatexEditorDialog';
 export { LatexToolbarOverlay } from './latex/LatexToolbarOverlay';
+export { VideoToolbarOverlay } from './video/VideoToolbarOverlay';
+export { VideoInsertPicker } from './video/VideoInsertPicker';
 export {
   insertLatexAtSelection,
   renderLatexSource,
@@ -35,6 +37,8 @@ export type { TextToolbarOverlayProps, ToolbarPosition } from './text/TextToolba
 export type { LineToolbarOverlayProps } from './line/LineToolbarOverlay';
 export type { LatexEditorDialogProps } from './latex/LatexEditorDialog';
 export type { LatexToolbarOverlayProps } from './latex/LatexToolbarOverlay';
+export type { VideoToolbarOverlayProps } from './video/VideoToolbarOverlay';
+export type { VideoInsertPickerProps } from './video/VideoInsertPicker';
 export type { TableInsertPickerProps } from './insert/TableInsertPicker';
 export type { ChartInsertPickerOption, ChartInsertPickerProps } from './insert/ChartInsertPicker';
 export type { TrackedToolbarRect } from './text/useToolbarAnchor';
@@ -44,6 +48,7 @@ export type {
   InsertToolbarOptions,
   InsertToolbarPopoverContext,
   InsertToolbarProps,
+  InsertToolbarPlacement,
   LatexEditorLabels,
   LatexEditorOptions,
   LineFormatToolbarProps,
@@ -57,4 +62,11 @@ export type {
   TextToolbarLocale,
   TextToolbarOptions,
   TextToolbarPlacement,
+  VideoEditorLabels,
+  VideoEditorOptions,
+  VideoInsertLabels,
+  VideoInsertOptions,
+  VideoInsertResult,
+  VideoPosterPickerProps,
+  VideoPosterPickerRenderer,
 } from './types';

@@ -258,7 +258,12 @@
       "imageDrop": "أفلِت صورة أو انقر لاختيار ملف",
       "imageOr": "أو الصق رابط صورة",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "إدراج"
+      "imageInsert": "إدراج",
+      "video": "فيديو",
+      "videoDrop": "أفلِت فيديو أو انقر لاختيار ملف",
+      "videoOr": "أو الصق رابط فيديو",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "إدراج"
     },
     "latex": {
       "toolbar": "شريط أدوات المعادلات",
@@ -269,6 +274,10 @@
       "symbols": "رموز",
       "presets": "معادلات جاهزة",
       "invalidSource": "مصدر LaTeX غير صالح."
+    },
+    "video": {
+      "toolbar": "شريط أدوات الفيديو",
+      "poster": "تعيين الغلاف"
     },
     "table": {
       "doubleClickToEdit": "انقر نقراً مزدوجاً للتحرير"

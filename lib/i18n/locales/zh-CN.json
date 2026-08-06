@@ -258,7 +258,12 @@
       "imageDrop": "拖入图片或点击选择文件",
       "imageOr": "或粘贴图片 URL",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "插入"
+      "imageInsert": "插入",
+      "video": "视频",
+      "videoDrop": "拖入视频或点击选择文件",
+      "videoOr": "或粘贴视频 URL",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "插入"
     },
     "latex": {
       "toolbar": "公式工具栏",
@@ -269,6 +274,10 @@
       "symbols": "常用符号",
       "presets": "预置公式",
       "invalidSource": "LaTeX 源码无效。"
+    },
+    "video": {
+      "toolbar": "视频工具栏",
+      "poster": "设置封面"
     },
     "table": {
       "doubleClickToEdit": "双击编辑"

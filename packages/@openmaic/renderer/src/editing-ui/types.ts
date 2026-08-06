@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { EditableSlideCanvasProps, EditIntent } from '../editing/types';
-import type { PPTLineElement } from '@openmaic/dsl';
+import type { PPTLineElement, PPTVideoElement } from '@openmaic/dsl';
 import type { TextEditCommand, TextFormatState } from '../editing/text/types';
 import type { LatexEditorResult } from './latex/latex-editor';
 
@@ -103,6 +103,8 @@ export interface InsertToolbarPopoverContext {
   readonly close: () => void;
 }
 
+export type InsertToolbarPlacement = 'left' | 'top';
+
 export interface InsertToolbarItem {
   readonly id: string;
   readonly label: string;
@@ -118,6 +120,8 @@ export interface InsertToolbarOptions {
   readonly items: readonly InsertToolbarItem[];
   readonly label?: string;
   readonly className?: string;
+  /** Dock outside the reduced canvas viewport instead of covering the slide. */
+  readonly placement?: InsertToolbarPlacement;
 }
 
 export type InsertToolbarProps = InsertToolbarOptions;
@@ -148,9 +152,58 @@ export interface LatexEditorOptions {
   readonly onDelete?: (elementId: string) => void;
 }
 
+export interface VideoEditorLabels {
+  toolbar: string;
+  poster: string;
+  bringToFront: string;
+  sendToBack: string;
+  delete: string;
+}
+
+export interface VideoPosterPickerProps {
+  readonly element: PPTVideoElement;
+  readonly onPick: (poster: string) => void;
+  readonly close: () => void;
+}
+
+/**
+ * The app owns uploads and asset persistence. The renderer only owns the
+ * selection-anchored shell around this picker.
+ */
+export type VideoPosterPickerRenderer = (props: VideoPosterPickerProps) => ReactNode;
+
+export interface VideoEditorOptions {
+  readonly labels?: Partial<VideoEditorLabels>;
+  readonly renderPosterPicker?: VideoPosterPickerRenderer;
+  readonly onPosterChange: (elementId: string, poster: string) => void;
+  readonly onBringToFront?: (elementId: string) => void;
+  readonly onSendToBack?: (elementId: string) => void;
+  readonly onDelete?: (elementId: string) => void;
+}
+
+export interface VideoInsertLabels {
+  insertVideo: string;
+  videoDrop: string;
+  videoOr: string;
+  videoUrlPlaceholder: string;
+  videoInsert: string;
+}
+
+export interface VideoInsertResult {
+  readonly src: string;
+  readonly ext?: string;
+}
+
+export interface VideoInsertOptions {
+  readonly labels?: Partial<VideoInsertLabels>;
+  readonly onInsert: (result: VideoInsertResult) => void;
+}
+
 export interface EditableSlideCanvasWithUIProps extends EditableSlideCanvasProps {
   readonly textToolbar?: TextToolbarOptions | false;
   readonly lineToolbar?: LineToolbarOptions | false;
   readonly insertToolbar?: InsertToolbarOptions | false;
   readonly latexEditor?: LatexEditorOptions | false;
+  readonly videoEditor?: VideoEditorOptions | false;
+  readonly videoInsert?: VideoInsertOptions | false;
 }

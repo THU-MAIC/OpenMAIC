@@ -6,6 +6,7 @@ import type {
   PPTShapeElement,
   PPTTableElement,
   PPTTextElement,
+  PPTVideoElement,
 } from '@openmaic/dsl';
 import { applyRendererEditIntents } from '@/components/edit/surfaces/slide/renderer-edit-intents';
 import type { SlideContent } from '@/lib/types/stage';
@@ -88,6 +89,21 @@ function latexElement(id: string, overrides: Partial<PPTLatexElement> = {}): PPT
     html: '<span class="katex">E = mc<sup>2</sup></span>',
     color: '#2563eb',
     align: 'center',
+    ...overrides,
+  };
+}
+
+function videoElement(id: string, overrides: Partial<PPTVideoElement> = {}): PPTVideoElement {
+  return {
+    id,
+    type: 'video',
+    left: 100,
+    top: 100,
+    width: 320,
+    height: 180,
+    rotate: 0,
+    src: 'video.mp4',
+    autoplay: false,
     ...overrides,
   };
 }
@@ -204,6 +220,27 @@ describe('applyRendererEditIntents', () => {
       rotate: 45,
     });
     expect(original.canvas.elements[0]).toMatchObject({ left: 100, top: 100, rotate: 0 });
+  });
+
+  it('persists video poster and autoplay properties without mutating the source', () => {
+    const original = slideContent([videoElement('video')]);
+
+    const next = applyRendererEditIntents(original, [
+      {
+        type: 'element.update',
+        id: 'video',
+        props: { poster: 'cover.png', autoplay: true },
+      },
+    ]);
+
+    expect(next.canvas.elements[0]).toMatchObject({
+      id: 'video',
+      type: 'video',
+      poster: 'cover.png',
+      autoplay: true,
+    });
+    expect(original.canvas.elements[0]).toMatchObject({ autoplay: false });
+    expect(original.canvas.elements[0]).not.toHaveProperty('poster');
   });
 
   it.each<[ReorderCommand, string, string[]]>([

@@ -258,7 +258,12 @@
       "imageDrop": "이미지를 끌어다 놓거나 클릭하여 파일을 선택하세요",
       "imageOr": "또는 이미지 URL 붙여넣기",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "삽입"
+      "imageInsert": "삽입",
+      "video": "비디오",
+      "videoDrop": "비디오를 끌어다 놓거나 클릭하여 파일을 선택하세요",
+      "videoOr": "또는 비디오 URL 붙여넣기",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "삽입"
     },
     "latex": {
       "toolbar": "수식 도구 모음",
@@ -269,6 +274,10 @@
       "symbols": "기호",
       "presets": "미리 정의된 수식",
       "invalidSource": "LaTeX 소스가 올바르지 않습니다."
+    },
+    "video": {
+      "toolbar": "비디오 도구 모음",
+      "poster": "포스터 설정"
     },
     "table": {
       "doubleClickToEdit": "두 번 클릭하여 편집"

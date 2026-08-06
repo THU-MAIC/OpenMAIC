@@ -1,7 +1,13 @@
 'use client';
 
 import { createElement, useCallback, useEffect, useMemo, type ReactNode } from 'react';
-import type { ChartType, PPTImageElement, PPTLineElement, PPTTextElement } from '@openmaic/dsl';
+import type {
+  ChartType,
+  PPTImageElement,
+  PPTLineElement,
+  PPTTextElement,
+  PPTVideoElement,
+} from '@openmaic/dsl';
 import type {
   EditIntent,
   LineCreateGeometry,
@@ -17,6 +23,7 @@ import {
   TableInsertPicker,
   type InsertToolbarOptions,
   type LatexEditorResult,
+  type VideoInsertResult,
 } from '@openmaic/renderer/editing-ui';
 import { BarChart3, Image as ImageIcon, Minus, PaintBucket, Table2, Type } from 'lucide-react';
 import Canvas from '@/components/slide-renderer/Editor/Canvas';
@@ -56,6 +63,7 @@ import { useRendererCanvasShortcuts } from './use-renderer-canvas-shortcuts';
 import { EDITABLE_ELEMENT_ID_PREFIX } from './renderer-element-dom';
 import { createElementId } from '@/lib/edit/element-id';
 import { createDefaultLatexElement } from '@/lib/edit/slide-edit-elements';
+import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import { resolveEditingElementId } from './editing-state';
 import { commitRendererTextAutoSize, commitRendererTextChange } from './renderer-text-editing';
 import { commitRendererTableCellChange } from './renderer-table-editing';
@@ -103,6 +111,47 @@ function RendererEditorImageContent({
       rotate={element.rotate}
       onClip={onClip}
     />
+  );
+}
+
+/**
+ * Keep the editor preview inert. Presentation playback owns all media state,
+ * so selection and resize gestures never compete with native video controls.
+ */
+function RendererEditorVideoContent({ element }: { readonly element: PPTVideoElement }) {
+  const playableSrc = element.src && !isMediaPlaceholder(element.src) ? element.src : undefined;
+
+  return (
+    <div
+      className="relative flex h-full w-full items-center justify-center overflow-hidden rounded bg-black/10"
+      data-renderer-editor-video-preview=""
+    >
+      {element.poster ? (
+        <img
+          className="h-full w-full"
+          style={{ objectFit: 'contain' }}
+          src={element.poster}
+          alt=""
+          draggable={false}
+        />
+      ) : playableSrc ? (
+        <video
+          className="h-full w-full"
+          style={{ objectFit: 'contain' }}
+          src={playableSrc}
+          muted
+          playsInline
+          preload="metadata"
+        />
+      ) : null}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-black/50">
+          <svg className="ml-0.5 h-6 w-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -244,6 +293,51 @@ function RendererEditorCanvas() {
   );
 
   const handleLatexDelete = useCallback(
+    (elementId: string) => {
+      handleElementsChange([{ type: 'element.delete', ids: [elementId] }]);
+      setActiveElementIdList([]);
+      setEditingElementId('');
+    },
+    [handleElementsChange, setActiveElementIdList, setEditingElementId],
+  );
+
+  const handleVideoPosterChange = useCallback(
+    (elementId: string, poster: string) => {
+      handleElementsChange([{ type: 'element.update', id: elementId, props: { poster } }]);
+    },
+    [handleElementsChange],
+  );
+
+  const handleVideoInsert = useCallback(
+    ({ src, ext }: VideoInsertResult) => {
+      const id = createElementId('video');
+      const element: PPTVideoElement = {
+        id,
+        type: 'video',
+        left: 180,
+        top: 140,
+        width: 360,
+        height: 203,
+        rotate: 0,
+        src,
+        autoplay: false,
+        ...(ext ? { ext } : {}),
+      };
+      handleElementsChange([{ type: 'element.add', element }]);
+      setActiveElementIdList([id]);
+      setEditingElementId('');
+    },
+    [handleElementsChange, setActiveElementIdList, setEditingElementId],
+  );
+
+  const handleVideoReorder = useCallback(
+    (elementId: string, command: 'front' | 'back') => {
+      handleElementsChange([{ type: 'element.reorder', id: elementId, command }]);
+    },
+    [handleElementsChange],
+  );
+
+  const handleVideoDelete = useCallback(
     (elementId: string) => {
       handleElementsChange([{ type: 'element.delete', ids: [elementId] }]);
       setActiveElementIdList([]);
@@ -442,6 +536,10 @@ function RendererEditorCanvas() {
     ),
     [clipingImageElementId, handleImageClip],
   );
+  const renderEditorVideo = useCallback(
+    (element: PPTVideoElement) => <RendererEditorVideoContent element={element} />,
+    [],
+  );
 
   const commands = useMemo(
     () =>
@@ -486,6 +584,8 @@ function RendererEditorCanvas() {
         onLineCreate={handleLineCreate}
         onLineCreateCancel={cancelLineCreate}
         renderImage={renderEditorImage}
+        renderVideo={renderEditorVideo}
+        videoInteractive={false}
         shapePathFormulas={SHAPE_PATH_FORMULAS}
         textToolbar={{
           locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US',
@@ -515,6 +615,30 @@ function RendererEditorCanvas() {
           onBringToFront: (elementId) => handleLatexReorder(elementId, 'front'),
           onSendToBack: (elementId) => handleLatexReorder(elementId, 'back'),
           onDelete: handleLatexDelete,
+        }}
+        videoEditor={{
+          labels: {
+            toolbar: t('edit.video.toolbar'),
+            poster: t('edit.video.poster'),
+            bringToFront: t('edit.zorder.toFront'),
+            sendToBack: t('edit.zorder.toBack'),
+            delete: t('edit.delete'),
+          },
+          renderPosterPicker: ({ onPick }) => <ImagePicker onPick={onPick} />,
+          onPosterChange: handleVideoPosterChange,
+          onBringToFront: (elementId) => handleVideoReorder(elementId, 'front'),
+          onSendToBack: (elementId) => handleVideoReorder(elementId, 'back'),
+          onDelete: handleVideoDelete,
+        }}
+        videoInsert={{
+          labels: {
+            insertVideo: t('edit.insert.video'),
+            videoDrop: t('edit.insert.videoDrop'),
+            videoOr: t('edit.insert.videoOr'),
+            videoUrlPlaceholder: t('edit.insert.videoUrlPlaceholder'),
+            videoInsert: t('edit.insert.videoInsert'),
+          },
+          onInsert: handleVideoInsert,
         }}
       />
     </RendererCanvasContextMenu>
@@ -580,7 +704,9 @@ export function SlideCanvas() {
       <AnchoredElementBar
         element={
           useRendererEditor &&
-          (nonTextElement?.type === 'line' || nonTextElement?.type === 'latex')
+          (nonTextElement?.type === 'line' ||
+            nonTextElement?.type === 'latex' ||
+            nonTextElement?.type === 'video')
             ? null
             : nonTextElement
         }

@@ -258,7 +258,12 @@
       "imageDrop": "Перетащите изображение или нажмите, чтобы выбрать файл",
       "imageOr": "или вставьте URL изображения",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "Вставить"
+      "imageInsert": "Вставить",
+      "video": "Видео",
+      "videoDrop": "Перетащите видео или нажмите, чтобы выбрать файл",
+      "videoOr": "или вставьте URL видео",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "Вставить"
     },
     "latex": {
       "toolbar": "Панель формул",
@@ -269,6 +274,10 @@
       "symbols": "Символы",
       "presets": "Готовые формулы",
       "invalidSource": "Исходный код LaTeX недействителен."
+    },
+    "video": {
+      "toolbar": "Панель видео",
+      "poster": "Задать обложку"
     },
     "table": {
       "doubleClickToEdit": "Дважды щелкните для редактирования"

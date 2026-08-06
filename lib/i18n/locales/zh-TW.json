@@ -258,7 +258,12 @@
       "imageDrop": "拖曳圖片或點按選擇檔案",
       "imageOr": "或貼上圖片網址",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "插入"
+      "imageInsert": "插入",
+      "video": "影片",
+      "videoDrop": "拖曳影片或點按選擇檔案",
+      "videoOr": "或貼上影片網址",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "插入"
     },
     "latex": {
       "toolbar": "公式工具列",
@@ -269,6 +274,10 @@
       "symbols": "常用符號",
       "presets": "預設公式",
       "invalidSource": "LaTeX 原始碼無效。"
+    },
+    "video": {
+      "toolbar": "影片工具列",
+      "poster": "設定封面"
     },
     "table": {
       "doubleClickToEdit": "雙擊編輯"

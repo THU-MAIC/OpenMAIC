@@ -1,7 +1,7 @@
 'use client';
 
-import { createElement, useCallback, useEffect, useMemo, useState } from 'react';
-import { Sigma } from 'lucide-react';
+import { createElement, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { Sigma, Video } from 'lucide-react';
 import type { PPTLatexElement } from '@openmaic/dsl';
 import { EditableSlideCanvas } from '../editing/EditableSlideCanvas';
 import type { ReorderCommand } from '../editing/types';
@@ -12,8 +12,12 @@ import { LineToolbarOverlay } from './line/LineToolbarOverlay';
 import { InsertToolbar } from './insert/InsertToolbar';
 import { LatexEditorDialog } from './latex/LatexEditorDialog';
 import { LatexToolbarOverlay } from './latex/LatexToolbarOverlay';
+import { VideoToolbarOverlay } from './video/VideoToolbarOverlay';
+import { VideoInsertPicker } from './video/VideoInsertPicker';
 import type { LatexEditorResult } from './latex/latex-editor';
 import type { EditableSlideCanvasWithUIProps } from './types';
+
+const INSERT_TOOLBAR_RAIL_SIZE = 48;
 
 interface TextFormatEntry {
   readonly elementId: string;
@@ -30,6 +34,8 @@ export function EditableSlideCanvasWithUI({
   lineToolbar,
   insertToolbar,
   latexEditor,
+  videoEditor,
+  videoInsert,
   onTextEditorChange,
   onTextFormatChange,
   onElementsChange,
@@ -40,6 +46,7 @@ export function EditableSlideCanvasWithUI({
   const [controller, setController] = useState<TextEditorController | null>(null);
   const [formatEntry, setFormatEntry] = useState<TextFormatEntry | null>(null);
   const [latexDialog, setLatexDialog] = useState<LatexDialogState>(null);
+  const [insertToolbarRailSize, setInsertToolbarRailSize] = useState(INSERT_TOOLBAR_RAIL_SIZE);
   const editingId = canvasProps.selection?.editingId ?? '';
   const activeController = controller?.elementId === editingId ? controller : null;
   const activeFormat = formatEntry?.elementId === editingId ? formatEntry.state : null;
@@ -52,6 +59,8 @@ export function EditableSlideCanvasWithUI({
     return element?.type === 'line' && !element.lock ? element : null;
   }, [canvasProps.hiddenElementIds, canvasProps.selection, canvasProps.slide.elements]);
   const activeLatexEditor = latexEditor === false ? null : latexEditor;
+  const activeVideoEditor = videoEditor === false ? null : videoEditor;
+  const activeVideoInsert = videoInsert === false ? null : videoInsert;
   const selectedLatex = useMemo(() => {
     if (!activeLatexEditor) return null;
     const elementIds = canvasProps.selection?.elementIds ?? [];
@@ -74,22 +83,98 @@ export function EditableSlideCanvasWithUI({
   const latexBringToFrontLabel = latexLabels?.bringToFront ?? 'Bring to front';
   const latexSendToBackLabel = latexLabels?.sendToBack ?? 'Send to back';
   const latexDeleteLabel = latexLabels?.delete ?? 'Delete';
+  const videoInsertLabels = activeVideoInsert?.labels;
+  const resolvedVideoInsertLabels = {
+    insertVideo: videoInsertLabels?.insertVideo ?? 'Insert video',
+    videoDrop: videoInsertLabels?.videoDrop ?? 'Drop a video or click to choose a file',
+    videoOr: videoInsertLabels?.videoOr ?? 'or paste a video URL',
+    videoUrlPlaceholder: videoInsertLabels?.videoUrlPlaceholder ?? 'https://...',
+    videoInsert: videoInsertLabels?.videoInsert ?? 'Insert',
+  };
+  const selectedVideo = useMemo(() => {
+    if (!activeVideoEditor) return null;
+    const elementIds = canvasProps.selection?.elementIds ?? [];
+    if (elementIds.length !== 1) return null;
+    const elementId = canvasProps.selection?.primaryId ?? elementIds[0];
+    if (canvasProps.hiddenElementIds?.includes(elementId)) return null;
+    const element = canvasProps.slide.elements.find((candidate) => candidate.id === elementId);
+    return element?.type === 'video' && !element.lock ? element : null;
+  }, [
+    activeVideoEditor,
+    canvasProps.hiddenElementIds,
+    canvasProps.selection,
+    canvasProps.slide.elements,
+  ]);
+  const videoLabels = activeVideoEditor?.labels;
+  const resolvedVideoLabels = {
+    toolbar: videoLabels?.toolbar ?? 'Video toolbar',
+    poster: videoLabels?.poster ?? 'Set poster',
+    bringToFront: videoLabels?.bringToFront ?? 'Bring to front',
+    sendToBack: videoLabels?.sendToBack ?? 'Send to back',
+    delete: videoLabels?.delete ?? 'Delete',
+  };
   const resolvedInsertToolbar = useMemo(() => {
-    if (!insertToolbar || !activeLatexEditor) return insertToolbar;
+    if (!insertToolbar || (!activeLatexEditor && !activeVideoInsert)) return insertToolbar;
+    const items = [...insertToolbar.items];
+    if (activeLatexEditor) {
+      items.push({
+        id: 'insert-latex',
+        label: latexInsertLabel,
+        tooltip: latexInsertLabel,
+        icon: createElement(Sigma, { 'aria-hidden': true }),
+        onInvoke: () => setLatexDialog({ mode: 'insert' }),
+      });
+    }
+    if (activeVideoInsert) {
+      items.push({
+        id: 'insert-video',
+        label: resolvedVideoInsertLabels.insertVideo,
+        tooltip: resolvedVideoInsertLabels.insertVideo,
+        icon: createElement(Video, { 'aria-hidden': true }),
+        renderPopover: ({ close }) => (
+          <VideoInsertPicker
+            labels={resolvedVideoInsertLabels}
+            onInsert={(result) => {
+              activeVideoInsert.onInsert(result);
+              close();
+            }}
+          />
+        ),
+      });
+    }
     return {
       ...insertToolbar,
-      items: [
-        ...insertToolbar.items,
-        {
-          id: 'insert-latex',
-          label: latexInsertLabel,
-          tooltip: latexInsertLabel,
-          icon: createElement(Sigma, { 'aria-hidden': true }),
-          onInvoke: () => setLatexDialog({ mode: 'insert' }),
-        },
-      ],
+      items,
     };
-  }, [activeLatexEditor, insertToolbar, latexInsertLabel]);
+  }, [
+    activeLatexEditor,
+    activeVideoInsert,
+    insertToolbar,
+    latexInsertLabel,
+    resolvedVideoInsertLabels,
+  ]);
+  const insertToolbarPlacement = resolvedInsertToolbar
+    ? resolvedInsertToolbar.placement ?? 'left'
+    : 'left';
+  const handleInsertToolbarRailSizeChange = useCallback((size: number) => {
+    setInsertToolbarRailSize((current) => (current === size ? current : size));
+  }, []);
+  const canvasStyle = useMemo<CSSProperties>(() => {
+    const base = canvasProps.style;
+    if (!resolvedInsertToolbar) return base ?? {};
+    if (insertToolbarPlacement === 'top') {
+      return {
+        ...base,
+        height: `calc(100% - ${insertToolbarRailSize}px)`,
+        marginTop: `${insertToolbarRailSize}px`,
+      };
+    }
+    return {
+      ...base,
+      marginLeft: `${insertToolbarRailSize}px`,
+      width: `calc(100% - ${insertToolbarRailSize}px)`,
+    };
+  }, [canvasProps.style, insertToolbarPlacement, insertToolbarRailSize, resolvedInsertToolbar]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- selection changes must clear stale editor state before a later re-selection.
@@ -170,6 +255,7 @@ export function EditableSlideCanvasWithUI({
       <style dangerouslySetInnerHTML={{ __html: EDITING_UI_STYLES }} />
       <EditableSlideCanvas
         {...canvasProps}
+        style={canvasStyle}
         elementIdPrefix={elementIdPrefix}
         onElementsChange={onElementsChange}
         onSelectionChange={onSelectionChange}
@@ -177,7 +263,10 @@ export function EditableSlideCanvasWithUI({
         onTextFormatChange={handleTextFormatChange}
       />
       {resolvedInsertToolbar !== false && resolvedInsertToolbar ? (
-        <InsertToolbar {...resolvedInsertToolbar} />
+        <InsertToolbar
+          {...resolvedInsertToolbar}
+          onRailSizeChange={handleInsertToolbarRailSizeChange}
+        />
       ) : null}
       {textToolbar !== false && activeController && activeFormat ? (
         <TextToolbarOverlay
@@ -223,6 +312,30 @@ export function EditableSlideCanvasWithUI({
           onDelete={
             activeLatexEditor.onDelete
               ? () => activeLatexEditor.onDelete?.(selectedLatex.id)
+              : undefined
+          }
+        />
+      ) : null}
+      {selectedVideo && activeVideoEditor ? (
+        <VideoToolbarOverlay
+          element={selectedVideo}
+          elementIdPrefix={elementIdPrefix ?? 'slide-element-'}
+          labels={resolvedVideoLabels}
+          renderPosterPicker={activeVideoEditor.renderPosterPicker}
+          onPosterChange={(poster) => activeVideoEditor.onPosterChange(selectedVideo.id, poster)}
+          onBringToFront={
+            activeVideoEditor.onBringToFront
+              ? () => activeVideoEditor.onBringToFront?.(selectedVideo.id)
+              : undefined
+          }
+          onSendToBack={
+            activeVideoEditor.onSendToBack
+              ? () => activeVideoEditor.onSendToBack?.(selectedVideo.id)
+              : undefined
+          }
+          onDelete={
+            activeVideoEditor.onDelete
+              ? () => activeVideoEditor.onDelete?.(selectedVideo.id)
               : undefined
           }
         />

@@ -258,7 +258,12 @@
       "imageDrop": "画像をドロップまたはクリックして選択",
       "imageOr": "または画像 URL を貼り付け",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "挿入"
+      "imageInsert": "挿入",
+      "video": "動画",
+      "videoDrop": "動画をドロップまたはクリックして選択",
+      "videoOr": "または動画 URL を貼り付け",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "挿入"
     },
     "latex": {
       "toolbar": "数式ツールバー",
@@ -269,6 +274,10 @@
       "symbols": "記号",
       "presets": "定型数式",
       "invalidSource": "LaTeX ソースが無効です。"
+    },
+    "video": {
+      "toolbar": "動画ツールバー",
+      "poster": "ポスターを設定"
     },
     "table": {
       "doubleClickToEdit": "ダブルクリックして編集"

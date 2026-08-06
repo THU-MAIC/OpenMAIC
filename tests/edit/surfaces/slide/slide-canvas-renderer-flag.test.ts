@@ -202,6 +202,17 @@ const slideContent: SlideContent = {
         color: '#2563eb',
         align: 'center',
       },
+      {
+        id: 'video-1',
+        type: 'video',
+        left: 560,
+        top: 120,
+        width: 240,
+        height: 135,
+        rotate: 0,
+        src: 'video.mp4',
+        autoplay: false,
+      },
     ],
   },
 };
@@ -285,6 +296,8 @@ describe('slide editor canvas renderer flag', () => {
     expect(laserPrefix).toBe(lastRendererProps?.elementIdPrefix);
     expect(lastRendererProps?.snapping).toBe(true);
     expect(lastRendererProps?.renderImage).toBeTypeOf('function');
+    expect(lastRendererProps?.renderVideo).toBeTypeOf('function');
+    expect(lastRendererProps?.videoInteractive).toBe(false);
     expect(lastRendererProps?.shapePathFormulas).toBeDefined();
     expect(lastRendererProps?.textToolbar).toEqual({
       locale: 'zh-CN',
@@ -294,6 +307,18 @@ describe('slide editor canvas renderer flag', () => {
       })),
     });
     expect(lastRendererProps?.lineToolbar).toEqual({ locale: 'zh-CN' });
+    expect(lastRendererProps?.videoEditor).toMatchObject({
+      labels: {
+        toolbar: 'translated:edit.video.toolbar',
+        poster: 'translated:edit.video.poster',
+      },
+    });
+    expect(lastRendererProps?.videoInsert).toMatchObject({
+      labels: {
+        insertVideo: 'translated:edit.insert.video',
+        videoDrop: 'translated:edit.insert.videoDrop',
+      },
+    });
     const insertToolbar = lastRendererProps?.insertToolbar;
     expect(insertToolbar).not.toBe(false);
     expect(insertToolbar && insertToolbar.items.map((item) => item.id)).toEqual([
@@ -505,6 +530,70 @@ describe('slide editor canvas renderer flag', () => {
               height: 60,
               color: '#2563eb',
               align: 'center',
+            }),
+          ]),
+        }),
+      }),
+      true,
+    );
+  });
+
+  it('keeps renderer video preview inert while persisting poster through history', async () => {
+    process.env[flag] = 'true';
+    vi.resetModules();
+    const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
+
+    renderToStaticMarkup(createElement(SlideCanvas));
+    const video = slideContent.canvas.elements.find((element) => element.id === 'video-1');
+    if (!video || video.type !== 'video') throw new Error('Expected fixture video');
+    const renderVideo = lastRendererProps?.renderVideo;
+    const videoEditor = lastRendererProps?.videoEditor;
+    if (!renderVideo || !videoEditor) throw new Error('Expected renderer video editor');
+
+    const markup = renderToStaticMarkup(renderVideo(video));
+    expect(markup).toContain('data-renderer-editor-video-preview=""');
+    expect(markup).not.toContain('autoplay');
+    expect(markup).not.toContain('controls');
+
+    videoEditor.onPosterChange('video-1', 'cover.png');
+    expect(mockCommitContent).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        canvas: expect.objectContaining({
+          elements: expect.arrayContaining([
+            expect.objectContaining({ id: 'video-1', poster: 'cover.png', autoplay: false }),
+          ]),
+        }),
+      }),
+      true,
+    );
+
+  });
+
+  it('bridges a renderer-owned video insert result into one history entry', async () => {
+    process.env[flag] = 'true';
+    vi.resetModules();
+    const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
+
+    renderToStaticMarkup(createElement(SlideCanvas));
+    const videoInsert = lastRendererProps?.videoInsert;
+    if (!videoInsert) throw new Error('Expected renderer video insert bridge');
+    videoInsert.onInsert({ src: 'https://cdn.example.com/lesson.mp4', ext: 'mp4' });
+
+    expect(mockSetActiveElementIdList).toHaveBeenCalledWith([expect.stringMatching(/^video-/)]);
+    expect(mockSetEditingElementId).toHaveBeenCalledWith('');
+    expect(mockCommitContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canvas: expect.objectContaining({
+          elements: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'video',
+              src: 'https://cdn.example.com/lesson.mp4',
+              ext: 'mp4',
+              left: 180,
+              top: 140,
+              width: 360,
+              height: 203,
+              autoplay: false,
             }),
           ]),
         }),

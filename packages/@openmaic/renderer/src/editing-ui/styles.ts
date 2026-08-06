@@ -34,11 +34,22 @@ export const EDITING_UI_STYLES = `
 }
 
 .maic-editing-ui-insert-toolbar {
-  left: 12px;
+  --maic-editing-ui-insert-rail-size: 48px;
+  position: absolute;
+  z-index: var(--maic-editing-ui-z-index, 80);
+}
+
+.maic-editing-ui-insert-toolbar[data-placement='left'] {
+  left: 0;
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  z-index: var(--maic-editing-ui-z-index, 80);
+}
+
+.maic-editing-ui-insert-toolbar[data-placement='top'] {
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
 }
 
 .maic-editing-ui-insert-buttons {
@@ -54,6 +65,10 @@ export const EDITING_UI_STYLES = `
   flex-direction: column;
   gap: 2px;
   padding: 4px;
+}
+
+.maic-editing-ui-insert-toolbar[data-placement='top'] .maic-editing-ui-insert-buttons {
+  flex-direction: row;
 }
 
 .maic-editing-ui-insert-button {
@@ -73,6 +88,11 @@ export const EDITING_UI_STYLES = `
   padding: 12px;
   position: absolute;
   top: 0;
+}
+
+.maic-editing-ui-insert-toolbar[data-placement='top'] .maic-editing-ui-insert-popover {
+  left: 0;
+  top: 44px;
 }
 
 .maic-editing-ui-table-picker {
@@ -705,7 +725,8 @@ export const EDITING_UI_STYLES = `
   opacity: 0.45;
 }
 
-.maic-editing-ui-latex-toolbar {
+.maic-editing-ui-latex-toolbar,
+.maic-editing-ui-video-toolbar {
   align-items: center;
   background: #ffffff;
   border: 1px solid #e4e4e7;
@@ -713,6 +734,98 @@ export const EDITING_UI_STYLES = `
   box-shadow: 0 4px 12px rgb(0 0 0 / 14%);
   display: flex;
   padding: 4px;
+}
+
+.maic-editing-ui-video-toolbar-root {
+  min-width: 0;
+}
+
+.maic-editing-ui-video-poster-popover {
+  background: var(--maic-editing-ui-bg, #ffffff);
+  border: 1px solid var(--maic-editing-ui-border, #e4e4e7);
+  border-radius: var(--maic-editing-ui-radius, 6px);
+  box-shadow: var(
+    --maic-editing-ui-shadow,
+    0 4px 6px -1px rgb(0 0 0 / 10%), 0 2px 4px -2px rgb(0 0 0 / 10%)
+  );
+  left: 0;
+  min-width: 288px;
+  padding: 12px;
+  position: absolute;
+  top: calc(100% + 8px);
+}
+
+.maic-editing-ui-video-insert-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.maic-editing-ui-video-dropzone {
+  background: transparent;
+  border: 1px dashed #d4d4d8;
+  border-radius: 6px;
+  color: #71717a;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  min-height: 72px;
+  padding: 12px;
+  text-align: center;
+}
+
+.maic-editing-ui-video-dropzone:hover,
+.maic-editing-ui-video-dropzone:focus-visible {
+  border-color: var(--maic-editing-ui-active-fg, #6d28d9);
+  color: var(--maic-editing-ui-active-fg, #6d28d9);
+  outline: none;
+}
+
+.maic-editing-ui-video-or {
+  color: #a1a1aa;
+  font-size: 12px;
+  text-align: center;
+}
+
+.maic-editing-ui-video-url-row {
+  display: flex;
+  gap: 8px;
+}
+
+.maic-editing-ui-video-url-row input {
+  border: 1px solid #d4d4d8;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 12px;
+  min-width: 0;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.maic-editing-ui-video-url-row button {
+  background: var(--maic-editing-ui-active-fg, #6d28d9);
+  border: 1px solid var(--maic-editing-ui-active-fg, #6d28d9);
+  border-radius: 4px;
+  color: #ffffff;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 12px;
+  padding: 0 10px;
+}
+
+.maic-editing-ui-video-url-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.maic-editing-ui-visually-hidden {
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  width: 1px;
 }
 
 @media (max-width: 720px) {
