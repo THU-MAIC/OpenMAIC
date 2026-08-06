@@ -319,6 +319,23 @@
       "flipV": "Voltear vertical",
       "crop": "Recortar imagen"
     },
+    "contextMenu": {
+      "horizontalAlignment": "Alineación horizontal",
+      "verticalAlignment": "Alineación vertical",
+      "selectAll": "Seleccionar todo",
+      "copy": "Copiar",
+      "cut": "Cortar",
+      "paste": "Pegar",
+      "unlock": "Desbloquear",
+      "lock": "Bloquear",
+      "group": "Agrupar",
+      "ungroup": "Desagrupar",
+      "bringForward": "Traer adelante",
+      "sendBackward": "Enviar atrás",
+      "alignTop": "Alinear arriba",
+      "alignMiddle": "Alinear al medio",
+      "alignBottom": "Alinear abajo"
+    },
     "background": {
       "label": "Fondo",
       "solid": "Sólido",

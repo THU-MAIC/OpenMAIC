@@ -319,6 +319,23 @@
       "flipV": "Flip vertical",
       "crop": "Crop image"
     },
+    "contextMenu": {
+      "horizontalAlignment": "Horizontal alignment",
+      "verticalAlignment": "Vertical alignment",
+      "selectAll": "Select all",
+      "copy": "Copy",
+      "cut": "Cut",
+      "paste": "Paste",
+      "unlock": "Unlock",
+      "lock": "Lock",
+      "group": "Group",
+      "ungroup": "Ungroup",
+      "bringForward": "Bring forward",
+      "sendBackward": "Send backward",
+      "alignTop": "Align top",
+      "alignMiddle": "Align middle",
+      "alignBottom": "Align bottom"
+    },
     "background": {
       "label": "Background",
       "solid": "Solid",

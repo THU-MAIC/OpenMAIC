@@ -20,6 +20,8 @@ export { LineToolbarOverlay } from './line/LineToolbarOverlay';
 export { InsertToolbar } from './insert/InsertToolbar';
 export { TableInsertPicker } from './insert/TableInsertPicker';
 export { ChartInsertPicker } from './insert/ChartInsertPicker';
+export { LineInsertPicker } from './insert/LineInsertPicker';
+export { BackgroundInsertPicker } from './insert/BackgroundInsertPicker';
 export { computeToolbarPosition, TextToolbarOverlay } from './text/TextToolbarOverlay';
 export { useToolbarAnchor } from './text/useToolbarAnchor';
 export { LatexEditorDialog } from './latex/LatexEditorDialog';
@@ -28,6 +30,9 @@ export { VideoToolbarOverlay } from './video/VideoToolbarOverlay';
 export { VideoInsertPicker } from './video/VideoInsertPicker';
 export { AudioToolbarOverlay } from './audio/AudioToolbarOverlay';
 export { AudioInsertPicker } from './audio/AudioInsertPicker';
+export { ElementToolbarOverlay } from './element/ElementToolbarOverlay';
+export { ImageToolbarOverlay } from './element/ImageToolbarOverlay';
+export { CanvasContextMenu } from './context/CanvasContextMenu';
 export {
   insertLatexAtSelection,
   renderLatexSource,
@@ -43,8 +48,19 @@ export type { VideoToolbarOverlayProps } from './video/VideoToolbarOverlay';
 export type { VideoInsertPickerProps } from './video/VideoInsertPicker';
 export type { AudioToolbarOverlayProps } from './audio/AudioToolbarOverlay';
 export type { AudioInsertPickerProps } from './audio/AudioInsertPicker';
+export type { ElementToolbarOverlayProps } from './element/ElementToolbarOverlay';
+export type { ImageToolbarOverlayProps } from './element/ImageToolbarOverlay';
 export type { TableInsertPickerProps } from './insert/TableInsertPicker';
 export type { ChartInsertPickerOption, ChartInsertPickerProps } from './insert/ChartInsertPicker';
+export type {
+  LineInsertPickerLabels,
+  LineInsertPickerProps,
+  LineInsertPreset,
+} from './insert/LineInsertPicker';
+export type {
+  BackgroundInsertPickerLabels,
+  BackgroundInsertPickerProps,
+} from './insert/BackgroundInsertPicker';
 export type { TrackedToolbarRect } from './text/useToolbarAnchor';
 export type {
   EditableSlideCanvasWithUIProps,
@@ -78,4 +94,11 @@ export type {
   AudioInsertLabels,
   AudioInsertOptions,
   AudioInsertResult,
+  ElementToolbarLabels,
+  ElementToolbarOptions,
+  ImageEditorLabels,
+  ImageEditorOptions,
+  ImagePickerProps,
+  CanvasContextMenuLabels,
+  CanvasContextMenuOptions,
 } from './types';

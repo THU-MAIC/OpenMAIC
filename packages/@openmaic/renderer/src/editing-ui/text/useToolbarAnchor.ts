@@ -51,7 +51,7 @@ export function useToolbarAnchor(
     const wrapper = document.getElementById(`${elementIdPrefix}${elementId}`);
     const node =
       wrapper?.querySelector<HTMLElement>(
-        '.base-element-text, .base-element-table, .base-element-line, .base-element-latex, .base-element-video, .base-element-audio',
+        '.base-element-text, .base-element-image, .base-element-shape, .base-element-table, .base-element-chart, .base-element-line, .base-element-latex, .base-element-video, .base-element-audio',
       ) ?? null;
     if (!node || !node.isConnected) {
       const changed = lastRectRef.current !== null;
@@ -103,7 +103,7 @@ export function useToolbarAnchor(
     const wrapper = document.getElementById(`${elementIdPrefix}${elementId}`);
     const node =
       wrapper?.querySelector<HTMLElement>(
-        '.base-element-text, .base-element-table, .base-element-line, .base-element-latex, .base-element-video, .base-element-audio',
+        '.base-element-text, .base-element-image, .base-element-shape, .base-element-table, .base-element-chart, .base-element-line, .base-element-latex, .base-element-video, .base-element-audio',
       ) ?? null;
     const observer =
       node && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;

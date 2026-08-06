@@ -9,7 +9,7 @@ import {
   type CSSProperties,
 } from 'react';
 import { Sigma, Video, Volume2 } from 'lucide-react';
-import type { PPTAudioElement, PPTLatexElement } from '@openmaic/dsl';
+import type { PPTAudioElement, PPTImageElement, PPTLatexElement } from '@openmaic/dsl';
 import { EditableSlideCanvas } from '../editing/EditableSlideCanvas';
 import type { ReorderCommand } from '../editing/types';
 import type { TextEditorController, TextFormatState } from '../editing/text/types';
@@ -23,6 +23,9 @@ import { VideoToolbarOverlay } from './video/VideoToolbarOverlay';
 import { VideoInsertPicker } from './video/VideoInsertPicker';
 import { AudioToolbarOverlay } from './audio/AudioToolbarOverlay';
 import { AudioInsertPicker } from './audio/AudioInsertPicker';
+import { ElementToolbarOverlay } from './element/ElementToolbarOverlay';
+import { ImageToolbarOverlay } from './element/ImageToolbarOverlay';
+import { CanvasContextMenu } from './context/CanvasContextMenu';
 import type { LatexEditorResult } from './latex/latex-editor';
 import type { EditableSlideCanvasWithUIProps } from './types';
 
@@ -47,6 +50,9 @@ export function EditableSlideCanvasWithUI({
   videoInsert,
   audioEditor,
   audioInsert,
+  elementToolbar,
+  imageEditor,
+  contextMenu,
   onTextEditorChange,
   onTextFormatChange,
   onElementsChange,
@@ -74,6 +80,9 @@ export function EditableSlideCanvasWithUI({
   const activeVideoInsert = videoInsert === false ? null : videoInsert;
   const activeAudioEditor = audioEditor === false ? null : audioEditor;
   const activeAudioInsert = audioInsert === false ? null : audioInsert;
+  const activeElementToolbar = elementToolbar === false ? null : elementToolbar;
+  const activeImageEditor = imageEditor === false ? null : imageEditor;
+  const activeContextMenu = contextMenu === false ? null : contextMenu;
   const selectedLatex = useMemo(() => {
     if (!activeLatexEditor) return null;
     const elementIds = canvasProps.selection?.elementIds ?? [];
@@ -157,6 +166,51 @@ export function EditableSlideCanvasWithUI({
     bringToFront: audioLabels?.bringToFront ?? 'Bring to front',
     sendToBack: audioLabels?.sendToBack ?? 'Send to back',
     delete: audioLabels?.delete ?? 'Delete',
+  };
+  const selectedElement = useMemo(() => {
+    if (!activeElementToolbar) return null;
+    const elementIds = canvasProps.selection?.elementIds ?? [];
+    if (elementIds.length !== 1) return null;
+    const elementId = canvasProps.selection?.primaryId ?? elementIds[0];
+    if (canvasProps.hiddenElementIds?.includes(elementId)) return null;
+    const element = canvasProps.slide.elements.find((candidate) => candidate.id === elementId);
+    return element && ['shape', 'table', 'chart'].includes(element.type) && !element.lock
+      ? element
+      : null;
+  }, [
+    activeElementToolbar,
+    canvasProps.hiddenElementIds,
+    canvasProps.selection,
+    canvasProps.slide.elements,
+  ]);
+  const selectedImage = useMemo(() => {
+    if (!activeImageEditor) return null;
+    const elementIds = canvasProps.selection?.elementIds ?? [];
+    if (elementIds.length !== 1) return null;
+    const elementId = canvasProps.selection?.primaryId ?? elementIds[0];
+    if (canvasProps.hiddenElementIds?.includes(elementId)) return null;
+    const element = canvasProps.slide.elements.find((candidate) => candidate.id === elementId);
+    return element?.type === 'image' && !element.lock ? element : null;
+  }, [
+    activeImageEditor,
+    canvasProps.hiddenElementIds,
+    canvasProps.selection,
+    canvasProps.slide.elements,
+  ]);
+  const resolvedElementToolbarLabels = {
+    toolbar: activeElementToolbar?.labels?.toolbar ?? 'Element toolbar',
+    bringToFront: activeElementToolbar?.labels?.bringToFront ?? 'Bring to front',
+    sendToBack: activeElementToolbar?.labels?.sendToBack ?? 'Send to back',
+    delete: activeElementToolbar?.labels?.delete ?? 'Delete',
+  };
+  const resolvedImageEditorLabels = {
+    toolbar: activeImageEditor?.labels?.toolbar ?? 'Image toolbar',
+    replace: activeImageEditor?.labels?.replace ?? 'Replace image',
+    flipH: activeImageEditor?.labels?.flipH ?? 'Flip horizontally',
+    flipV: activeImageEditor?.labels?.flipV ?? 'Flip vertically',
+    bringToFront: activeImageEditor?.labels?.bringToFront ?? 'Bring to front',
+    sendToBack: activeImageEditor?.labels?.sendToBack ?? 'Send to back',
+    delete: activeImageEditor?.labels?.delete ?? 'Delete',
   };
   const resolvedInsertToolbar = useMemo(() => {
     if (!insertToolbar || (!activeLatexEditor && !activeVideoInsert && !activeAudioInsert)) {
@@ -325,14 +379,32 @@ export function EditableSlideCanvasWithUI({
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <style dangerouslySetInnerHTML={{ __html: EDITING_UI_STYLES }} />
       <div data-editing-ui-canvas-viewport="" style={canvasViewportStyle}>
-        <EditableSlideCanvas
-          {...canvasProps}
-          elementIdPrefix={elementIdPrefix}
-          onElementsChange={onElementsChange}
-          onSelectionChange={onSelectionChange}
-          onTextEditorChange={handleTextEditorChange}
-          onTextFormatChange={handleTextFormatChange}
-        />
+        {activeContextMenu ? (
+          <CanvasContextMenu
+            {...activeContextMenu}
+            elements={canvasProps.slide.elements}
+            selection={canvasProps.selection ?? { elementIds: [] }}
+            onSelectionChange={onSelectionChange ?? (() => undefined)}
+          >
+            <EditableSlideCanvas
+              {...canvasProps}
+              elementIdPrefix={elementIdPrefix}
+              onElementsChange={onElementsChange}
+              onSelectionChange={onSelectionChange}
+              onTextEditorChange={handleTextEditorChange}
+              onTextFormatChange={handleTextFormatChange}
+            />
+          </CanvasContextMenu>
+        ) : (
+          <EditableSlideCanvas
+            {...canvasProps}
+            elementIdPrefix={elementIdPrefix}
+            onElementsChange={onElementsChange}
+            onSelectionChange={onSelectionChange}
+            onTextEditorChange={handleTextEditorChange}
+            onTextFormatChange={handleTextFormatChange}
+          />
+        )}
       </div>
       {resolvedInsertToolbar !== false && resolvedInsertToolbar ? (
         <InsertToolbar
@@ -431,6 +503,61 @@ export function EditableSlideCanvasWithUI({
           onDelete={
             activeAudioEditor.onDelete
               ? () => activeAudioEditor.onDelete?.(selectedAudio.id)
+              : undefined
+          }
+        />
+      ) : null}
+      {selectedElement && activeElementToolbar ? (
+        <ElementToolbarOverlay
+          element={selectedElement}
+          elementIdPrefix={elementIdPrefix ?? 'slide-element-'}
+          labels={resolvedElementToolbarLabels}
+          onBringToFront={
+            activeElementToolbar.onBringToFront
+              ? () => activeElementToolbar.onBringToFront?.(selectedElement.id)
+              : undefined
+          }
+          onSendToBack={
+            activeElementToolbar.onSendToBack
+              ? () => activeElementToolbar.onSendToBack?.(selectedElement.id)
+              : undefined
+          }
+          onDelete={
+            activeElementToolbar.onDelete
+              ? () => activeElementToolbar.onDelete?.(selectedElement.id)
+              : undefined
+          }
+        />
+      ) : null}
+      {selectedImage && activeImageEditor ? (
+        <ImageToolbarOverlay
+          element={selectedImage as PPTImageElement}
+          elementIdPrefix={elementIdPrefix ?? 'slide-element-'}
+          labels={resolvedImageEditorLabels}
+          renderPicker={activeImageEditor.renderPicker}
+          onReplace={
+            activeImageEditor.onReplace
+              ? (src) => activeImageEditor.onReplace?.(selectedImage.id, src)
+              : undefined
+          }
+          onFlip={
+            activeImageEditor.onFlip
+              ? (axis) => activeImageEditor.onFlip?.(selectedImage, axis)
+              : undefined
+          }
+          onBringToFront={
+            activeImageEditor.onBringToFront
+              ? () => activeImageEditor.onBringToFront?.(selectedImage.id)
+              : undefined
+          }
+          onSendToBack={
+            activeImageEditor.onSendToBack
+              ? () => activeImageEditor.onSendToBack?.(selectedImage.id)
+              : undefined
+          }
+          onDelete={
+            activeImageEditor.onDelete
+              ? () => activeImageEditor.onDelete?.(selectedImage.id)
               : undefined
           }
         />

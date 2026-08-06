@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import type { EditableSlideCanvasProps, EditIntent } from '../editing/types';
-import type { PPTLineElement, PPTVideoElement } from '@openmaic/dsl';
+import type { AlignCommand, EditableSlideCanvasProps, EditIntent, ReorderCommand } from '../editing/types';
+import type { PPTElement, PPTImageElement, PPTLineElement, PPTVideoElement } from '@openmaic/dsl';
 import type { TextEditCommand, TextFormatState } from '../editing/text/types';
 import type { LatexEditorResult } from './latex/latex-editor';
 
@@ -235,6 +235,77 @@ export interface AudioInsertOptions {
   readonly onInsert: (result: AudioInsertResult) => void;
 }
 
+export interface ElementToolbarLabels {
+  toolbar: string;
+  bringToFront: string;
+  sendToBack: string;
+  delete: string;
+}
+
+export interface ElementToolbarOptions {
+  readonly labels?: Partial<ElementToolbarLabels>;
+  readonly onBringToFront?: (elementId: string) => void;
+  readonly onSendToBack?: (elementId: string) => void;
+  readonly onDelete?: (elementId: string) => void;
+}
+
+export interface ImageEditorLabels extends ElementToolbarLabels {
+  replace: string;
+  flipH: string;
+  flipV: string;
+}
+
+export interface ImagePickerProps {
+  readonly element: PPTImageElement;
+  readonly onPick: (src: string) => void;
+  readonly close: () => void;
+}
+
+export interface ImageEditorOptions extends ElementToolbarOptions {
+  readonly labels?: Partial<ImageEditorLabels>;
+  readonly renderPicker?: (props: ImagePickerProps) => ReactNode;
+  readonly onReplace?: (elementId: string, src: string) => void;
+  readonly onFlip?: (element: PPTImageElement, axis: 'H' | 'V') => void;
+}
+
+export interface CanvasContextMenuLabels {
+  horizontalAlignment: string;
+  verticalAlignment: string;
+  selectAll: string;
+  copy: string;
+  cut: string;
+  paste: string;
+  unlock: string;
+  lock: string;
+  delete: string;
+  group: string;
+  ungroup: string;
+  bringToFront: string;
+  bringForward: string;
+  sendToBack: string;
+  sendBackward: string;
+  alignLeft: string;
+  alignCenter: string;
+  alignRight: string;
+  alignTop: string;
+  alignMiddle: string;
+  alignBottom: string;
+}
+
+export interface CanvasContextMenuOptions {
+  readonly labels?: Partial<CanvasContextMenuLabels>;
+  readonly onSelectAll: () => void;
+  readonly onCopy: () => void | Promise<void>;
+  readonly onCut: () => void | Promise<void>;
+  readonly onPaste: () => void | Promise<void>;
+  readonly onUnlock: (elementId: string) => void;
+  readonly onLock: () => void;
+  readonly onDelete: () => void;
+  readonly onToggleGroup: () => void;
+  readonly onReorder: (elementId: string, command: ReorderCommand) => void;
+  readonly onAlign: (command: AlignCommand) => void;
+}
+
 export interface EditableSlideCanvasWithUIProps extends EditableSlideCanvasProps {
   readonly textToolbar?: TextToolbarOptions | false;
   readonly lineToolbar?: LineToolbarOptions | false;
@@ -244,4 +315,7 @@ export interface EditableSlideCanvasWithUIProps extends EditableSlideCanvasProps
   readonly videoInsert?: VideoInsertOptions | false;
   readonly audioEditor?: AudioEditorOptions | false;
   readonly audioInsert?: AudioInsertOptions | false;
+  readonly elementToolbar?: ElementToolbarOptions | false;
+  readonly imageEditor?: ImageEditorOptions | false;
+  readonly contextMenu?: CanvasContextMenuOptions | false;
 }

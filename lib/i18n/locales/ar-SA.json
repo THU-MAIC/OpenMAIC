@@ -319,6 +319,23 @@
       "flipV": "قلب رأسي",
       "crop": "اقتصاص الصورة"
     },
+    "contextMenu": {
+      "horizontalAlignment": "محاذاة أفقية",
+      "verticalAlignment": "محاذاة عمودية",
+      "selectAll": "تحديد الكل",
+      "copy": "نسخ",
+      "cut": "قص",
+      "paste": "لصق",
+      "unlock": "إلغاء القفل",
+      "lock": "قفل",
+      "group": "تجميع",
+      "ungroup": "إلغاء التجميع",
+      "bringForward": "إحضار إلى الأمام",
+      "sendBackward": "إرسال إلى الخلف",
+      "alignTop": "محاذاة للأعلى",
+      "alignMiddle": "محاذاة للوسط",
+      "alignBottom": "محاذاة للأسفل"
+    },
     "background": {
       "label": "الخلفية",
       "solid": "لون خالص",

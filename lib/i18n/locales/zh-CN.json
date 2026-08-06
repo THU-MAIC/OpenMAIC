@@ -319,6 +319,23 @@
       "flipV": "垂直翻转",
       "crop": "裁剪图片"
     },
+    "contextMenu": {
+      "horizontalAlignment": "水平对齐",
+      "verticalAlignment": "垂直对齐",
+      "selectAll": "全选",
+      "copy": "复制",
+      "cut": "剪切",
+      "paste": "粘贴",
+      "unlock": "解锁",
+      "lock": "锁定",
+      "group": "组合",
+      "ungroup": "取消组合",
+      "bringForward": "上移一层",
+      "sendBackward": "下移一层",
+      "alignTop": "顶部对齐",
+      "alignMiddle": "垂直居中",
+      "alignBottom": "底部对齐"
+    },
     "background": {
       "label": "背景",
       "solid": "纯色",

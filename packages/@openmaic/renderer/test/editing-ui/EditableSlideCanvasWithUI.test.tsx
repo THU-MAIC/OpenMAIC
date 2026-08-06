@@ -63,7 +63,10 @@ vi.mock('../../src/editing/EditableSlideCanvas', async () => {
           .filter(
             (element) =>
               element.type === 'text' ||
-              element.type === 'table' ||
+            element.type === 'table' ||
+              element.type === 'image' ||
+              element.type === 'shape' ||
+              element.type === 'chart' ||
               element.type === 'line' ||
               element.type === 'latex' ||
               element.type === 'video' ||
@@ -72,22 +75,11 @@ vi.mock('../../src/editing/EditableSlideCanvas', async () => {
           .map((element) =>
             React.createElement(
               'div',
-              { id: `${prefix}${element.id}`, key: element.id },
+              { id: `${prefix}${element.id}`, key: element.id, 'data-element-id': element.id },
               React.createElement(
                 element.type === 'text' ? 'button' : 'div',
                 {
-                  className:
-                    element.type === 'text'
-                      ? 'base-element-text'
-                      : element.type === 'table'
-                        ? 'base-element-table'
-                        : element.type === 'line'
-                          ? 'base-element-line'
-                          : element.type === 'latex'
-                            ? 'base-element-latex'
-                            : element.type === 'video'
-                              ? 'base-element-video'
-                              : 'base-element-audio',
+                  className: `base-element-${element.type}`,
                   onClick:
                     element.type === 'text'
                       ? () =>
@@ -201,6 +193,17 @@ const audioElement = {
   src: 'lesson.mp3',
 } as const;
 
+const imageElement = {
+  id: 'image-1',
+  type: 'image',
+  left: 100,
+  top: 100,
+  width: 240,
+  height: 160,
+  rotate: 0,
+  src: 'cover.png',
+} as const;
+
 function rect(left: number, top: number, width: number, height: number): DOMRect {
   return {
     x: left,
@@ -300,6 +303,7 @@ beforeEach(() => {
     if (this.hasAttribute('data-toolbar-overlay')) return rect(0, 0, 640, 48);
     if (this.classList.contains('base-element-text')) return rect(100, 100, 240, 80);
     if (this.classList.contains('base-element-table')) return rect(100, 260, 240, 80);
+    if (this.classList.contains('base-element-image')) return rect(100, 100, 240, 160);
     if (this.classList.contains('base-element-line')) return rect(100, 200, 120, 80);
     if (this.classList.contains('base-element-latex')) return rect(100, 100, 180, 60);
     if (this.classList.contains('base-element-video')) return rect(100, 100, 320, 180);
@@ -609,6 +613,108 @@ describe('EditableSlideCanvasWithUI', () => {
     expect(onBringToFront).toHaveBeenCalledWith('audio-1');
     expect(onSendToBack).toHaveBeenCalledWith('audio-1');
     expect(onDelete).toHaveBeenCalledWith('audio-1');
+  });
+
+  it('renders renderer-owned element controls for a selected table', async () => {
+    const onBringToFront = vi.fn();
+    const onSendToBack = vi.fn();
+    const onDelete = vi.fn();
+
+    renderControlled({
+      initialSelection: { elementIds: ['table-1'], primaryId: 'table-1' },
+      elementToolbar: {
+        labels: {
+          toolbar: '元素工具栏',
+          bringToFront: '置于顶层',
+          sendToBack: '置于底层',
+          delete: '删除',
+        },
+        onBringToFront,
+        onSendToBack,
+        onDelete,
+      },
+    });
+
+    expect(await screen.findByRole('toolbar', { name: '元素工具栏' })).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '置于顶层' }));
+    fireEvent.click(screen.getByRole('button', { name: '置于底层' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+
+    expect(onBringToFront).toHaveBeenCalledWith('table-1');
+    expect(onSendToBack).toHaveBeenCalledWith('table-1');
+    expect(onDelete).toHaveBeenCalledWith('table-1');
+  });
+
+  it('renders renderer-owned image actions while delegating asset selection to the host', async () => {
+    const onReplace = vi.fn();
+    const onFlip = vi.fn();
+
+    renderControlled({
+      slide: { ...slide, elements: [imageElement] } as unknown as Slide,
+      initialSelection: { elementIds: ['image-1'], primaryId: 'image-1' },
+      imageEditor: {
+        labels: {
+          toolbar: '图片工具栏',
+          replace: '替换图片',
+          flipH: '水平翻转',
+          flipV: '垂直翻转',
+          bringToFront: '置于顶层',
+          sendToBack: '置于底层',
+          delete: '删除',
+        },
+        renderPicker: ({ onPick }) => (
+          <button type="button" onClick={() => onPick('replacement.png')}>
+            Pick image
+          </button>
+        ),
+        onReplace,
+        onFlip,
+      },
+    });
+
+    expect(await screen.findByRole('toolbar', { name: '图片工具栏' })).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '替换图片' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick image' }));
+    fireEvent.click(screen.getByRole('button', { name: '水平翻转' }));
+    fireEvent.click(screen.getByRole('button', { name: '垂直翻转' }));
+
+    expect(onReplace).toHaveBeenCalledWith('image-1', 'replacement.png');
+    expect(onFlip).toHaveBeenCalledWith(expect.objectContaining({ id: 'image-1' }), 'H');
+    expect(onFlip).toHaveBeenCalledWith(expect.objectContaining({ id: 'image-1' }), 'V');
+  });
+
+  it('uses the renderer-owned context menu and delegates its commands', async () => {
+    const onSelectionChange = vi.fn();
+    const onCopy = vi.fn();
+
+    renderControlled({
+      onSelectionChange,
+      contextMenu: {
+        labels: { copy: '复制' },
+        onSelectAll: vi.fn(),
+        onCopy,
+        onCut: vi.fn(),
+        onPaste: vi.fn(),
+        onUnlock: vi.fn(),
+        onLock: vi.fn(),
+        onDelete: vi.fn(),
+        onToggleGroup: vi.fn(),
+        onReorder: vi.fn(),
+        onAlign: vi.fn(),
+      },
+    });
+
+    fireEvent.contextMenu(screen.getAllByRole('button', { name: 'Second' })[0], {
+      clientX: 120,
+      clientY: 120,
+    });
+    expect(onSelectionChange).toHaveBeenLastCalledWith({
+      elementIds: ['text-2'],
+      primaryId: 'text-2',
+    });
+    expect(await screen.findByRole('menu')).not.toBeNull();
+    fireEvent.click(screen.getByRole('menuitem', { name: /复制/ }));
+    expect(onCopy).toHaveBeenCalledTimes(1);
   });
 
   it('waits for controller and format state matching the controlled editing id', () => {

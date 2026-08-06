@@ -13,7 +13,8 @@ export const EDITING_UI_STYLES = `
 }
 
 .maic-editing-ui-text-toolbar,
-.maic-editing-ui-line-toolbar {
+.maic-editing-ui-line-toolbar,
+.maic-editing-ui-element-toolbar {
   align-items: center;
   background: var(--maic-editing-ui-bg, #ffffff);
   border: 1px solid var(--maic-editing-ui-border, #e4e4e7);
@@ -31,6 +32,97 @@ export const EDITING_UI_STYLES = `
   position: relative;
   width: max-content;
   z-index: var(--maic-editing-ui-z-index, 80);
+}
+
+.maic-editing-ui-image-picker-popover {
+  background: var(--maic-editing-ui-bg, #ffffff);
+  border: 1px solid var(--maic-editing-ui-border, #e4e4e7);
+  border-radius: var(--maic-editing-ui-radius, 6px);
+  box-shadow: var(
+    --maic-editing-ui-shadow,
+    0 4px 6px -1px rgb(0 0 0 / 10%), 0 2px 4px -2px rgb(0 0 0 / 10%)
+  );
+  left: 0;
+  min-width: 288px;
+  padding: 12px;
+  position: absolute;
+  top: calc(100% + 8px);
+}
+
+.maic-editing-ui-context-menu-root {
+  height: 100%;
+  width: 100%;
+}
+
+.maic-editing-ui-context-menu,
+.maic-editing-ui-context-menu-submenu-content {
+  background: var(--maic-editing-ui-bg, #ffffff);
+  border: 1px solid var(--maic-editing-ui-border, #e4e4e7);
+  border-radius: var(--maic-editing-ui-radius, 6px);
+  box-shadow: var(
+    --maic-editing-ui-shadow,
+    0 10px 15px -3px rgb(0 0 0 / 12%), 0 4px 6px -4px rgb(0 0 0 / 12%)
+  );
+  min-width: 180px;
+  padding: 4px;
+}
+
+.maic-editing-ui-context-menu-item {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: #3f3f46;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 13px;
+  justify-content: space-between;
+  line-height: 20px;
+  min-height: 28px;
+  padding: 4px 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.maic-editing-ui-context-menu-item:hover,
+.maic-editing-ui-context-menu-item:focus-visible {
+  background: var(--maic-editing-ui-active-bg, #ede9fe);
+  color: var(--maic-editing-ui-active-fg, #6d28d9);
+  outline: none;
+}
+
+.maic-editing-ui-context-menu-item.is-destructive {
+  color: #dc2626;
+}
+
+.maic-editing-ui-context-menu-shortcut {
+  color: #a1a1aa;
+  font-size: 11px;
+  margin-left: 20px;
+}
+
+.maic-editing-ui-context-menu-separator {
+  background: var(--maic-editing-ui-border, #e4e4e7);
+  height: 1px;
+  margin: 4px;
+}
+
+.maic-editing-ui-context-menu-submenu {
+  position: relative;
+}
+
+.maic-editing-ui-context-menu-submenu-content {
+  display: none;
+  left: calc(100% + 4px);
+  position: absolute;
+  top: -4px;
+  z-index: 1;
+}
+
+.maic-editing-ui-context-menu-submenu:hover .maic-editing-ui-context-menu-submenu-content,
+.maic-editing-ui-context-menu-submenu:focus-within .maic-editing-ui-context-menu-submenu-content {
+  display: block;
 }
 
 .maic-editing-ui-insert-toolbar {
@@ -136,6 +228,111 @@ export const EDITING_UI_STYLES = `
   flex-direction: row;
   gap: 4px;
   width: fit-content;
+}
+
+.maic-editing-ui-line-insert-picker {
+  display: grid;
+  gap: 4px;
+  grid-template-columns: repeat(5, 32px);
+}
+
+.maic-editing-ui-line-insert-option {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #52525b;
+  cursor: pointer;
+  display: inline-flex;
+  height: 32px;
+  justify-content: center;
+  padding: 5px;
+  width: 32px;
+}
+
+.maic-editing-ui-line-insert-option:hover,
+.maic-editing-ui-line-insert-option:focus-visible {
+  background: var(--maic-editing-ui-active-bg, #ede9fe);
+  border-color: var(--maic-editing-ui-active-fg, #6d28d9);
+  color: var(--maic-editing-ui-active-fg, #6d28d9);
+  outline: none;
+}
+
+.maic-editing-ui-line-insert-option svg {
+  height: 22px;
+  width: 22px;
+}
+
+.maic-editing-ui-background-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 264px;
+}
+
+.maic-editing-ui-background-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.maic-editing-ui-background-tab {
+  background: #ffffff;
+  border: 1px solid var(--maic-editing-ui-border, #e4e4e7);
+  color: #52525b;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  min-height: 32px;
+}
+
+.maic-editing-ui-background-tab:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.maic-editing-ui-background-tab:last-child {
+  border-left: 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.maic-editing-ui-background-tab[data-active] {
+  background: var(--maic-editing-ui-active-bg, #ede9fe);
+  color: var(--maic-editing-ui-active-fg, #6d28d9);
+}
+
+.maic-editing-ui-background-color-field {
+  color: #52525b;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.maic-editing-ui-background-color-inputs {
+  align-items: center;
+  border: 1px solid var(--maic-editing-ui-border, #e4e4e7);
+  border-radius: 4px;
+  display: flex;
+  gap: 8px;
+  padding: 4px;
+}
+
+.maic-editing-ui-background-color-inputs input[type='color'] {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  height: 28px;
+  padding: 0;
+  width: 32px;
+}
+
+.maic-editing-ui-background-color-inputs input[type='text'] {
+  border: 0;
+  color: #3f3f46;
+  font: inherit;
+  min-width: 0;
+  outline: 0;
+  width: 100%;
 }
 
 .maic-editing-ui-chart-picker-option {

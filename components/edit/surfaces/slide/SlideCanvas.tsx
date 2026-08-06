@@ -20,12 +20,15 @@ import type {
 } from '@openmaic/renderer/editing';
 import {
   ChartInsertPicker,
+  BackgroundInsertPicker,
   EditableSlideCanvasWithUI,
+  LineInsertPicker,
   TableInsertPicker,
   type InsertToolbarOptions,
   type LatexEditorResult,
   type AudioInsertResult,
   type VideoInsertResult,
+  type LineInsertPreset,
 } from '@openmaic/renderer/editing-ui';
 import { BarChart3, Image as ImageIcon, Minus, PaintBucket, Table2, Type } from 'lucide-react';
 import Canvas from '@/components/slide-renderer/Editor/Canvas';
@@ -46,14 +49,15 @@ import {
   insertChartElement,
   insertImageElement,
   insertTableElement,
+  replaceImageSrc,
+  toggleImageFlip,
+  updateSlideBackground,
   useResolvedSlideContent,
   useSelectedNonTextElement,
   useSlideCanvasController,
   useSyncEditingElementId,
 } from './use-slide-surface';
 import { ImagePicker } from './ImagePicker';
-import { BackgroundControl } from './BackgroundControl';
-import { LinePresetPicker } from './LinePresetPicker';
 import { AnchoredTextBar } from './AnchoredTextBar';
 import { AnchoredElementBar } from './AnchoredElementBar';
 import { ElementPickLayer } from './ElementPickLayer';
@@ -63,7 +67,6 @@ import {
   createRendererClipboardPasteState,
   createRendererElementClipboard,
 } from './renderer-element-clipboard';
-import { RendererCanvasContextMenu } from './RendererCanvasContextMenu';
 import { useSlideEditSession } from './slide-edit-session';
 import { useRendererCanvasShortcuts } from './use-renderer-canvas-shortcuts';
 import { EDITABLE_ELEMENT_ID_PREFIX } from './renderer-element-dom';
@@ -73,16 +76,14 @@ import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import { resolveEditingElementId } from './editing-state';
 import { commitRendererTextAutoSize, commitRendererTextChange } from './renderer-text-editing';
 import { commitRendererTableCellChange } from './renderer-table-editing';
-import type { LinePoolItem } from '@/configs/lines';
-
-const DEFAULT_LINE_PRESET: LinePoolItem = {
+const DEFAULT_LINE_PRESET: LineInsertPreset = {
   path: 'M 0 0 L 20 20',
   style: 'solid',
   points: ['', ''],
 };
 
 function linePresetControls(
-  preset: LinePoolItem,
+  preset: LineInsertPreset,
   midpoint: [number, number],
 ): Partial<PPTLineElement> {
   if (preset.isCubic) return { cubic: [midpoint, midpoint] };
@@ -293,14 +294,14 @@ function RendererEditorCanvas() {
     [handleElementsChange],
   );
 
-  const handleLatexReorder = useCallback(
+  const handleElementReorder = useCallback(
     (elementId: string, command: 'front' | 'back') => {
       handleElementsChange([{ type: 'element.reorder', id: elementId, command }]);
     },
     [handleElementsChange],
   );
 
-  const handleLatexDelete = useCallback(
+  const handleElementDelete = useCallback(
     (elementId: string) => {
       handleElementsChange([{ type: 'element.delete', ids: [elementId] }]);
       setActiveElementIdList([]);
@@ -448,7 +449,7 @@ function RendererEditorCanvas() {
     () => {
       const armText = () =>
         setCreatingElement(creatingElement?.type === 'text' ? null : { type: 'text' });
-      const armLine = (preset: LinePoolItem) =>
+      const armLine = (preset: LineInsertPreset) =>
         setCreatingElement(
           creatingElement?.type === 'line' ? null : { type: 'line', data: preset },
         );
@@ -516,8 +517,9 @@ function RendererEditorCanvas() {
             icon: createElement(Minus, { 'aria-hidden': true }),
             active: creatingElement?.type === 'line',
             renderPopover: ({ close }) =>
-              createElement(LinePresetPicker, {
-                onPick: (preset: LinePoolItem) => {
+              createElement(LineInsertPicker, {
+                labels: { label: t('edit.insert.line') },
+                onPick: (preset: LineInsertPreset) => {
                   armLine(preset);
                   close();
                 },
@@ -528,12 +530,28 @@ function RendererEditorCanvas() {
             label: t('edit.background.label'),
             tooltip: t('edit.background.label'),
             icon: createElement(PaintBucket, { 'aria-hidden': true }),
-            renderPopover: () => createElement(BackgroundControl),
+            renderPopover: ({ close }) =>
+              createElement(BackgroundInsertPicker, {
+                background: content.canvas.background,
+                labels: {
+                  solid: t('edit.background.solid'),
+                  image: t('edit.background.image'),
+                  color: t('edit.text.color'),
+                },
+                renderImagePicker: (onPick: (src: string) => void) =>
+                  createElement(ImagePicker, {
+                    onPick: (src: string) => {
+                      onPick(src);
+                      close();
+                    },
+                  }),
+                onChange: updateSlideBackground,
+              }),
           },
         ],
       };
     },
-    [creatingElement?.type, setCreatingElement, t],
+    [content.canvas.background, creatingElement?.type, setCreatingElement, t],
   );
 
   const handleImageClip = useCallback(
@@ -617,12 +635,6 @@ function RendererEditorCanvas() {
   });
 
   return (
-    <RendererCanvasContextMenu
-      content={content}
-      selection={selection}
-      commands={commands}
-      onSelectionChange={handleSelectionChange}
-    >
       <EditableSlideCanvasWithUI
         slide={resolvedSlide}
         onScaleChange={setCanvasScale}
@@ -671,9 +683,9 @@ function RendererEditorCanvas() {
           },
           onInsert: handleLatexInsert,
           onUpdate: handleLatexUpdate,
-          onBringToFront: (elementId) => handleLatexReorder(elementId, 'front'),
-          onSendToBack: (elementId) => handleLatexReorder(elementId, 'back'),
-          onDelete: handleLatexDelete,
+          onBringToFront: (elementId) => handleElementReorder(elementId, 'front'),
+          onSendToBack: (elementId) => handleElementReorder(elementId, 'back'),
+          onDelete: handleElementDelete,
         }}
         videoEditor={{
           labels: {
@@ -724,8 +736,68 @@ function RendererEditorCanvas() {
           },
           onInsert: handleAudioInsert,
         }}
+        elementToolbar={{
+          labels: {
+            bringToFront: t('edit.zorder.toFront'),
+            sendToBack: t('edit.zorder.toBack'),
+            delete: t('edit.delete'),
+          },
+          onBringToFront: (elementId) => handleElementReorder(elementId, 'front'),
+          onSendToBack: (elementId) => handleElementReorder(elementId, 'back'),
+          onDelete: handleElementDelete,
+        }}
+        imageEditor={{
+          labels: {
+            replace: t('edit.image.replace'),
+            flipH: t('edit.image.flipH'),
+            flipV: t('edit.image.flipV'),
+            bringToFront: t('edit.zorder.toFront'),
+            sendToBack: t('edit.zorder.toBack'),
+            delete: t('edit.delete'),
+          },
+          renderPicker: ({ onPick }) => <ImagePicker onPick={onPick} />,
+          onReplace: replaceImageSrc,
+          onFlip: toggleImageFlip,
+          onBringToFront: (elementId) => handleElementReorder(elementId, 'front'),
+          onSendToBack: (elementId) => handleElementReorder(elementId, 'back'),
+          onDelete: handleElementDelete,
+        }}
+        contextMenu={{
+          labels: {
+            horizontalAlignment: t('edit.contextMenu.horizontalAlignment'),
+            verticalAlignment: t('edit.contextMenu.verticalAlignment'),
+            selectAll: t('edit.contextMenu.selectAll'),
+            copy: t('edit.contextMenu.copy'),
+            cut: t('edit.contextMenu.cut'),
+            paste: t('edit.contextMenu.paste'),
+            unlock: t('edit.contextMenu.unlock'),
+            lock: t('edit.contextMenu.lock'),
+            delete: t('edit.delete'),
+            group: t('edit.contextMenu.group'),
+            ungroup: t('edit.contextMenu.ungroup'),
+            bringToFront: t('edit.zorder.toFront'),
+            bringForward: t('edit.contextMenu.bringForward'),
+            sendToBack: t('edit.zorder.toBack'),
+            sendBackward: t('edit.contextMenu.sendBackward'),
+            alignLeft: t('edit.text.alignLeft'),
+            alignCenter: t('edit.text.alignCenter'),
+            alignRight: t('edit.text.alignRight'),
+            alignTop: t('edit.contextMenu.alignTop'),
+            alignMiddle: t('edit.contextMenu.alignMiddle'),
+            alignBottom: t('edit.contextMenu.alignBottom'),
+          },
+          onSelectAll: commands.selectAll,
+          onCopy: commands.copySelection,
+          onCut: commands.cutSelection,
+          onPaste: commands.pasteElements,
+          onUnlock: commands.unlockTarget,
+          onLock: commands.lockSelection,
+          onDelete: commands.deleteSelection,
+          onToggleGroup: commands.toggleGroup,
+          onReorder: commands.reorderTarget,
+          onAlign: commands.alignSelection,
+        }}
       />
-    </RendererCanvasContextMenu>
   );
 }
 
@@ -736,12 +808,10 @@ function RendererEditorCanvas() {
  * through the slide-edit-session which auto-saves it back to the
  * canonical stage store (no staging, no "restore unsaved" prompt).
  *
- * It also owns the selection-anchored chrome: it derives the selected element,
- * mirrors a selected text element into the canvas store's `editingElementId`
- * (which the renderer reads to draw a clean frame), and renders the anchored
- * bars — the format bar for text, a type-aware element bar (z-order + delete,
- * plus replace/crop/flip for images) for every other element type.
- * At most one bar is open at a time (single selection).
+ * In the renderer editor path, selection-anchored editing UI is rendered by
+ * `@openmaic/renderer/editing-ui`; this surface supplies only commands, locale
+ * strings, and App-owned asset selection. The legacy canvas keeps its existing
+ * anchored bars unchanged.
  */
 export function SlideCanvas() {
   const { controller, gestureProps } = useSlideCanvasController();
@@ -785,16 +855,7 @@ export function SlideCanvas() {
         <LaserPointerOverlay domIdPrefix={EDITABLE_ELEMENT_ID_PREFIX} />
       </SceneProvider>
       {!useRendererEditor && <AnchoredTextBar editingElementId={editingElementId} />}
-      <AnchoredElementBar
-        element={
-          useRendererEditor &&
-          (nonTextElement?.type === 'line' ||
-            nonTextElement?.type === 'latex' ||
-            nonTextElement?.type === 'video')
-            ? null
-            : nonTextElement
-        }
-      />
+      {!useRendererEditor && <AnchoredElementBar element={nonTextElement} />}
       {/* Canvas-side element picker for the timeline's element-bound cues. */}
       <ElementPickLayer />
     </div>

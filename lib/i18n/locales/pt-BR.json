@@ -304,6 +304,23 @@
       "flipV": "Inverter verticalmente",
       "crop": "Recortar imagem"
     },
+    "contextMenu": {
+      "horizontalAlignment": "Alinhamento horizontal",
+      "verticalAlignment": "Alinhamento vertical",
+      "selectAll": "Selecionar tudo",
+      "copy": "Copiar",
+      "cut": "Recortar",
+      "paste": "Colar",
+      "unlock": "Desbloquear",
+      "lock": "Bloquear",
+      "group": "Agrupar",
+      "ungroup": "Desagrupar",
+      "bringForward": "Trazer para frente",
+      "sendBackward": "Enviar para trás",
+      "alignTop": "Alinhar acima",
+      "alignMiddle": "Alinhar ao meio",
+      "alignBottom": "Alinhar abaixo"
+    },
     "background": {
       "label": "Fundo",
       "solid": "Cor sólida",

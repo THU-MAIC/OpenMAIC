@@ -319,6 +319,23 @@
       "flipV": "上下反転",
       "crop": "画像を切り抜く"
     },
+    "contextMenu": {
+      "horizontalAlignment": "水平揃え",
+      "verticalAlignment": "垂直揃え",
+      "selectAll": "すべて選択",
+      "copy": "コピー",
+      "cut": "切り取り",
+      "paste": "貼り付け",
+      "unlock": "ロック解除",
+      "lock": "ロック",
+      "group": "グループ化",
+      "ungroup": "グループ解除",
+      "bringForward": "前面へ移動",
+      "sendBackward": "背面へ移動",
+      "alignTop": "上揃え",
+      "alignMiddle": "垂直中央揃え",
+      "alignBottom": "下揃え"
+    },
     "background": {
       "label": "背景",
       "solid": "単色",

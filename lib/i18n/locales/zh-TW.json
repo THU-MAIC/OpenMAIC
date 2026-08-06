@@ -319,6 +319,23 @@
       "flipV": "垂直翻轉",
       "crop": "裁剪圖片"
     },
+    "contextMenu": {
+      "horizontalAlignment": "水平對齊",
+      "verticalAlignment": "垂直對齊",
+      "selectAll": "全選",
+      "copy": "複製",
+      "cut": "剪下",
+      "paste": "貼上",
+      "unlock": "解鎖",
+      "lock": "鎖定",
+      "group": "群組",
+      "ungroup": "取消群組",
+      "bringForward": "上移一層",
+      "sendBackward": "下移一層",
+      "alignTop": "頂端對齊",
+      "alignMiddle": "垂直置中",
+      "alignBottom": "底端對齊"
+    },
     "background": {
       "label": "背景",
       "solid": "純色",
