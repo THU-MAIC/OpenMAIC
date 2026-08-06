@@ -1,3 +1,4 @@
+import { validateScene, type WidgetConfigBase } from '@openmaic/dsl';
 import type { DocumentStore } from '@openmaic/storage';
 import { describe, expect, test, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
@@ -11,7 +12,8 @@ import { getDocumentStore } from '@/lib/document-store/store';
 import type { AppDocument } from '@/lib/document-store/persistence-types';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import type { SceneOutline } from '@/lib/types/generation';
-import type { AppScene } from '@/lib/types/stage';
+import type { AppScene, InteractiveContent } from '@/lib/types/stage';
+import type { SimulationConfig } from '@/lib/types/widgets';
 import type { SceneRecord, StageOutlinesRecord, StageRecord } from '@/lib/utils/database';
 
 const stageRecord: StageRecord = {
@@ -206,6 +208,32 @@ describe('app document validators', () => {
       expect(result.errors).toContainEqual(expect.objectContaining({ path: '/content/type' }));
   });
 
+  test('accepts generated interactive HTML with an empty URL', () => {
+    expect(
+      validateAppScene({
+        ...interactiveScene(),
+        content: { type: 'interactive', html: '<!doctype html><main>Widget</main>', url: '' },
+      }),
+    ).toEqual({ valid: true });
+  });
+
+  test('round-trips app interactive content through the contract scene validator', () => {
+    const content: InteractiveContent = {
+      type: 'interactive',
+      html: '<!doctype html><main>Simulation</main>',
+    };
+    const scene: AppScene = {
+      id: 'interactive-contract-1',
+      stageId: 'stage-1',
+      title: 'Contract interactive',
+      order: 4,
+      type: 'interactive',
+      content,
+    };
+
+    expect(validateScene(JSON.parse(JSON.stringify(scene)))).toEqual({ valid: true });
+  });
+
   test('rejects stages carrying currentSceneId with a clear path', () => {
     const result = validateAppStage(stageRecord);
     expect(result.valid).toBe(false);
@@ -213,6 +241,13 @@ describe('app document validators', () => {
       expect(result.errors).toContainEqual(expect.objectContaining({ path: '/currentSceneId' }));
     }
   });
+});
+
+type Assert<T extends true> = T;
+
+test('SimulationConfig satisfies the contract widget config base', () => {
+  const assignable: Assert<SimulationConfig extends WidgetConfigBase ? true : false> = true;
+  expect(assignable).toBe(true);
 });
 
 describe('legacy scene canonicalization', () => {

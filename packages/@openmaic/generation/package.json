@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/generation",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pure generation pipeline contracts and packaged prompt assets for MAIC consumers.",
   "type": "module",
   "main": "./dist/index.js",
@@ -42,6 +42,7 @@
     "directory": "packages/@openmaic/generation"
   },
   "dependencies": {
+    "@openmaic/dsl": "workspace:^",
     "jsonrepair": "^3.13.2",
     "nanoid": "^5.1.6"
   },

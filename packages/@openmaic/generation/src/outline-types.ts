@@ -1,4 +1,8 @@
 /** Image extracted from a source document with metadata used by outline prompts. */
+import type { WidgetType } from '@openmaic/dsl';
+
+export type { WidgetType } from '@openmaic/dsl';
+
 export interface PdfImage {
   id: string;
   src: string;
@@ -25,14 +29,6 @@ export interface UserRequirements {
   interactiveMode?: boolean;
   taskEngineMode?: boolean;
 }
-
-export type WidgetType =
-  | 'simulation'
-  | 'diagram'
-  | 'code'
-  | 'game'
-  | 'visualization3d'
-  | 'procedural-skill';
 
 export interface WidgetOutline {
   concept?: string;

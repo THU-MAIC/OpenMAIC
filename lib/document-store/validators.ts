@@ -1,4 +1,9 @@
-import { validateScene, validateStage, type ValidationIssue } from '@openmaic/dsl';
+import {
+  validateInteractiveContent,
+  validateScene,
+  validateStage,
+  type ValidationIssue,
+} from '@openmaic/dsl';
 import type { SceneValidator, StageValidator } from '@openmaic/storage';
 
 function objectValue(value: unknown): Record<string, unknown> | null {
@@ -44,8 +49,16 @@ export const validateAppScene: SceneValidator = (scene) => {
       path: '/content/type',
       message: `content type ${JSON.stringify(content.type)} does not match scene type ${JSON.stringify(value.type)}`,
     });
-  } else if (value.type === 'interactive' && typeof content.url !== 'string') {
-    errors.push({ path: '/content/url', message: 'interactive content requires string `url`' });
+  } else if (value.type === 'interactive') {
+    const result = validateInteractiveContent(content);
+    if (!result.valid) {
+      errors.push(
+        ...result.errors.map((issue) => ({
+          ...issue,
+          path: issue.path === '/' ? '/content' : `/content${issue.path}`,
+        })),
+      );
+    }
   } else if (value.type === 'pbl' && !objectValue(content.projectConfig)) {
     errors.push({
       path: '/content/projectConfig',
