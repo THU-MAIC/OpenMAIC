@@ -15,9 +15,10 @@
  * allocated `AssetId` names a registry entry and the registry names
  * content-addressed bytes (#1007). Its byte table is embedded in the registry's
  * IndexedDB database so writes, reference counting, and reclamation share one
- * transaction. A replaceable blob interface belongs to the future asset server
- * backend, where consistency is enforced server-side; no HTTP asset backend is
- * exposed here yet.
+ * transaction, and its inline reclamation is what keeps them there. A server
+ * backend collects bytes offline instead, which lets its byte layer be
+ * pluggable — a column of the transactional store, or an object store keyed by
+ * content hash; no HTTP asset backend is exposed here yet.
  */
 export type { DeviceSafeKVStore, KVScope, KVStore, LocalKVStore } from './kv/types.js';
 export { assertKVScope, DEFAULT_KV_SCOPE, KVScopeViolationError } from './kv/types.js';
