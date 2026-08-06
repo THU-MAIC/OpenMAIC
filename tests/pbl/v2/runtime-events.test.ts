@@ -1,23 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
 import { applyInstructorEvent } from '@/components/scene-renderers/pbl/v2/apply-instructor-event';
-import { applyAdvanceProjectPatch } from '@/lib/pbl/v2/operations/advance-patch';
-import { trackSubmissionScore } from '@/lib/pbl/v2/operations/dynamic-signals';
-import { emptyAssessment } from '@/lib/pbl/v2/operations/proficiency';
+import { applyAdvanceProjectPatch } from '@/lib/pbl/v2/operations/runtime/advance-patch';
+import { trackSubmissionScore } from '@/lib/pbl/v2/operations/runtime/dynamic-signals';
+import { emptyAssessment } from '@/lib/pbl/v2/operations/kernel/proficiency';
 import {
   advanceMicrotask,
   continueAfterHandover,
   startMicrotask,
-} from '@/lib/pbl/v2/operations/progress';
-import { applyQuizSignalsToProject } from '@/lib/pbl/v2/operations/quiz-snapshot';
-import { appendRuntimeEvent } from '@/lib/pbl/v2/operations/runtime-events';
-import { addSubmission } from '@/lib/pbl/v2/operations/submission';
+} from '@/lib/pbl/v2/operations/kernel/progress';
+import { applyQuizSignalsToProject } from '@/lib/pbl/v2/operations/runtime/quiz-snapshot';
+import { appendRuntimeEvent } from '@/lib/pbl/v2/operations/kernel/runtime-events';
+import { addSubmission } from '@/lib/pbl/v2/operations/runtime/submission';
 import {
   appendTaskCompletionReadyMessage,
   clearPendingTaskCompletion,
   setPendingTaskCompletion,
-} from '@/lib/pbl/v2/operations/task-completion';
-import { prepareWorkspaceLaunchProject } from '@/lib/pbl/v2/operations/workspace-launch';
+} from '@/lib/pbl/v2/operations/kernel/task-completion';
+import { prepareWorkspaceLaunchProject } from '@/lib/pbl/v2/operations/runtime/workspace-launch';
 import type { PBLProjectV2, PBLRuntimeEvent, PriorQuizResult } from '@/lib/pbl/v2/types';
 
 function makeProject(overrides: Partial<PBLProjectV2> = {}): PBLProjectV2 {

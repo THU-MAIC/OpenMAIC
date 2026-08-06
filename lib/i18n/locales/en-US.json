@@ -1636,6 +1636,7 @@
     "clearCacheButton": "Permanently Delete All Data",
     "clearCacheSuccess": "Cache cleared, page will refresh shortly",
     "clearCacheFailed": "Failed to clear cache, please try again",
+    "clearCacheBlockedByOtherTabs": "Close other app tabs and retry.",
     "persistUnavailable": "Your changes aren't being saved because the app can't access its stored data. If reloading doesn't help, clear the local cache in Settings.",
     "persistChangesLost": "Storage is working again, but changes you made while it was unavailable could not be saved and have been replaced by the last saved version.",
     "webSearchSettings": "Web Search",

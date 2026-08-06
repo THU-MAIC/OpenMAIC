@@ -6,7 +6,7 @@ import type {
   PBLProjectV2,
   PBLRuntimeEvent,
 } from '@/lib/pbl/v2/types';
-import { MAX_ENGAGEMENT_EVENTS } from '@/lib/pbl/v2/operations/engagement';
+import { MAX_ENGAGEMENT_EVENTS } from '@/lib/pbl/v2/operations/kernel/engagement';
 import {
   applyLearnerState,
   extractLearnerState,

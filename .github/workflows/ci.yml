@@ -65,7 +65,7 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
 
       # The tarball smoke test proves this about the bytes that would actually
-      # be published, but it installs four package tarballs, so it runs only on
+      # be published, but it installs five package tarballs, so it runs only on
       # the release path. This is the cheap source-level form, here so that a
       # pull request restoring `workspace:*` fails at review time rather than at
       # release time, after a version number has already been spent.
@@ -74,7 +74,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # `postinstall` builds all four @openmaic packages, and some of them
+      # `postinstall` builds all five @openmaic packages, and some of them
       # generate tracked, publishable files (renderer's fonts.css and its KaTeX
       # font snapshot). The publish workflow refuses to release when the build
       # rewrites one; catching it here means a stale generated file is a pull
@@ -121,6 +121,53 @@ jobs:
 
       - name: Unit Tests (dsl)
         run: pnpm --filter @openmaic/dsl test
+
+      - name: TypeScript (generation)
+        run: pnpm --filter @openmaic/generation run typecheck
+
+      - name: Unit Tests (generation)
+        run: pnpm --filter @openmaic/generation test
+
+      # Remove this duplicate-asset guard in Part D with the app prompt copy.
+      - name: Prompt asset parity (generation)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in templates/requirements-to-outlines snippets/{image-instructions,json-output-rules,media-safety-guidelines,slide-generated-image-instructions,slide-image-instructions,slide-video-instructions,video-instructions}.md; do
+            if ! diff -r "lib/prompts/$path" "packages/@openmaic/generation/$path"; then
+              echo "::error file=lib/prompts/$path::Prompt asset $path diverged; the app and package copies must be edited together until Part D removes the app copy."
+              exit 1
+            fi
+          done
+
+      - name: Node consumer smoke (generation outlines)
+        shell: bash
+        run: |
+          set -euo pipefail
+          port=43127
+          node scripts/generation-node-smoke-server.mjs --port "$port" >"$RUNNER_TEMP/generation-smoke-server.log" 2>&1 &
+          server_pid=$!
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for attempt in {1..50}; do
+            if node -e "fetch('http://127.0.0.1:$port/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"; then
+              break
+            fi
+            if [ "$attempt" -eq 50 ]; then
+              cat "$RUNNER_TEMP/generation-smoke-server.log"
+              exit 1
+            fi
+            sleep 0.1
+          done
+          output="$(node scripts/generation-node-smoke.mjs \
+            --requirement "Explain dependency injection" \
+            --endpoint "http://127.0.0.1:$port" \
+            --model smoke-model)"
+          printf '%s\n' "$output"
+          node -e 'const value = JSON.parse(process.argv[1]); if (!Array.isArray(value.outlines) || value.outlines.length === 0) process.exit(1)' "$output"
 
       # Covers the package's own test tree, which the root tsc reaches only by an
       # incidental glob. The device-scope guard is written as `@ts-expect-error`

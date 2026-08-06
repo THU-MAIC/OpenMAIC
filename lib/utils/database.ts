@@ -32,6 +32,7 @@ import {
 import type { ChatStorageOptions } from './chat-storage';
 import type { AppDocument } from '@/lib/document-store';
 import { BrowserKVStore } from '@openmaic/storage';
+import { clearAssetPool } from '@/lib/media/asset-pool';
 
 const log = createLogger('Database');
 
@@ -96,6 +97,8 @@ export interface SceneRecord {
  */
 export interface AudioFileRecord {
   id: string; // Primary key (audioId)
+  /** Stage ownership index. Absent on legacy rows; document walking remains their fallback. */
+  stageId?: string;
   blob: Blob; // Audio binary data
   duration?: number; // Duration (seconds)
   format: string; // mp3, wav, etc.
@@ -165,8 +168,12 @@ export interface StageOutlinesRecord {
  * MediaFile table - AI-generated media files (images/videos)
  */
 export interface MediaFileRecord {
-  id: string; // Compound key: `${stageId}:${elementId}`
+  // Compound key: `${stageId}:${mediaRef}`. Successful and failed rows use
+  // the same reference space (allocated id after allocation, legacy ref before it).
+  id: string;
   stageId: string; // FK → stages.id
+  /** Original gen_* reference retained after allocation for reload reconciliation. */
+  placeholderRef?: string;
   type: 'image' | 'video';
   blob: Blob; // Media binary
   mimeType: string; // image/png, video/mp4
@@ -242,7 +249,7 @@ export function mediaFileKey(stageId: string, elementId: string): string {
 // ==================== Database Definition ====================
 
 const DATABASE_NAME = 'MAIC-Database';
-const _DATABASE_VERSION = 15;
+const _DATABASE_VERSION = 16;
 
 /**
  * MAIC Database Instance
@@ -489,6 +496,12 @@ class MAICDatabase extends Dexie {
     this.version(15).stores({
       chatRestoreStaging: '[stageId+id], stageId, [stageId+createdAt]',
     });
+
+    // Version 16: make newly-written audio independently reclaimable by stage.
+    // Legacy rows remain valid and are found through speech-action references.
+    this.version(16).stores({
+      audioFiles: 'id, stageId, createdAt',
+    });
   }
 }
 
@@ -529,6 +542,7 @@ export async function clearDatabase(runtimeStore?: RuntimeStore): Promise<void> 
     await deleteAllDocuments();
     await clearDocumentStoreKeys();
     await db.delete();
+    await clearAssetPool();
   });
   log.info('Database cleared');
 }
@@ -627,9 +641,9 @@ export async function exportDatabase(chatOptions: ChatStorageOptions = {}): Prom
   // document migration — so legacy-only documents can still own runtime chat
   // history. Enumerate chats for EVERY exported document, not just stored ones.
   // The legacy chat rows are collected separately above by direct table reads,
-  // so the runtime read gets an empty legacy store: it never needs the
-  // cross-realm migration lock and therefore also works without Web Locks
-  // (where the document seam already exports legacy-only courses read-only).
+  // so the RuntimeStore load gets an empty legacy source and never needs the
+  // cross-realm migration lock. It may still finalize a pending restore marker;
+  // `observe: false` only keeps this export from changing partition memos.
   const runtimeChats = (
     await Promise.all(
       documents.map(async ({ stage }) =>
@@ -869,9 +883,26 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
   // inside it (self-deadlock against our own exclusive hold).
   await mutateDocument(
     stageId,
-    async (_document, store) =>
+    async (document, store) =>
       withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
+        const {
+          buildStageAssetReclamationPlan,
+          executeStageAssetReclamation,
+          loadStageAssetInventory,
+        } = await import('@/lib/media/reclaim-stage-assets');
+        const deletionDocument = document ?? {
+          stage: { id: stageId, name: '', createdAt: 0, updatedAt: 0 },
+          scenes: [],
+        };
+        const inventory = await loadStageAssetInventory(deletionDocument);
+        const assetPlan = buildStageAssetReclamationPlan(
+          stageId,
+          inventory.refs,
+          inventory.mediaRows,
+          inventory.audioRows,
+        );
         await store.deleteDocument(stageId);
+        await executeStageAssetReclamation(assetPlan, null);
         await db.transaction(
           'rw',
           [
@@ -881,7 +912,6 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
             db.chatRestoreStaging,
             db.playbackState,
             db.stageOutlines,
-            db.mediaFiles,
             db.generatedAgents,
             db.agentEditSessions,
           ],
@@ -892,7 +922,6 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
             await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
             await db.playbackState.delete(stageId);
             await db.stageOutlines.delete(stageId);
-            await db.mediaFiles.where('stageId').equals(stageId).delete();
             await db.generatedAgents.where('stageId').equals(stageId).delete();
             await db.agentEditSessions.where('stageId').equals(stageId).delete();
           },

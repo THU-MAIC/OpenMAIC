@@ -29,14 +29,14 @@ import {
 
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 import { useStageStore } from '@/lib/store/stage';
-import { buildQuizSnapshot } from '@/lib/pbl/v2/operations/quiz-snapshot';
-import { hasStartedProject, resetProjectProgress } from '@/lib/pbl/v2/operations/progress';
-import { transitionProjectUiPhase } from '@/lib/pbl/v2/operations/runtime-events';
+import { buildQuizSnapshot } from '@/lib/pbl/v2/operations/runtime/quiz-snapshot';
+import { hasStartedProject, resetProjectProgress } from '@/lib/pbl/v2/operations/kernel/progress';
+import { transitionProjectUiPhase } from '@/lib/pbl/v2/operations/kernel/runtime-events';
 import {
   invalidatePendingWorkspaceLaunch,
   isCurrentWorkspaceLaunch,
   prepareCurrentWorkspaceLaunchProject,
-} from '@/lib/pbl/v2/operations/workspace-launch';
+} from '@/lib/pbl/v2/operations/runtime/workspace-launch';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   AlertDialog,

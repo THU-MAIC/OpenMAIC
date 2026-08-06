@@ -4,7 +4,7 @@ import {
   TEXT_FILE_EXTENSIONS,
   TEXT_FILE_ACCEPT,
   isValidTextFile,
-} from '@/lib/pbl/v2/operations/file-validation';
+} from '@/lib/pbl/v2/operations/runtime/file-validation';
 
 function file(name: string, type = ''): File {
   return new File(['dummy content'], name, { type });

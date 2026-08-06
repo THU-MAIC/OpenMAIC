@@ -114,6 +114,19 @@ function assertValidRecord<TPayload extends RuntimePayload>(
   );
 }
 
+function assertValidRecordInit<TPayload extends RuntimePayload>(
+  init: RuntimeRecordInit<TPayload>,
+): void {
+  const result = validateRuntimeRecord({ ...init, seq: 0 });
+  if (result.valid) return;
+  const detail = result.errors.map((error) => `${error.path || '/'}: ${error.message}`).join('; ');
+  throw new HttpRuntimeStoreError(
+    400,
+    'VALIDATION_FAILED',
+    `@openmaic/storage: invalid runtime record ${JSON.stringify(init.id)}: ${detail}`,
+  );
+}
+
 function normalizeHeaders(init: HeadersInit | undefined): Record<string, string> {
   const normalized: Record<string, string> = {};
   const set = (name: string, value: string): void => {
@@ -304,6 +317,7 @@ export class HttpRuntimeStore implements RuntimeStore {
     assertJsonValue(init.payload, `runtime record ${JSON.stringify(init.id)} payload`);
     const normalizedInit = withoutUndefinedAnchors(init);
     assertJsonValue(normalizedInit, `runtime record ${JSON.stringify(init.id)}`);
+    assertValidRecordInit(normalizedInit);
     const body = {
       ...normalizedInit,
       ...(options.expectedLastSeq === undefined

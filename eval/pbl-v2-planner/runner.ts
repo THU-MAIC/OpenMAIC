@@ -42,8 +42,10 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText, type LanguageModel } from 'ai';
 
-import { generatePBLV2Project, PlannerV2Error } from '@/lib/pbl/v2/agents/planner';
+import { callLLM } from '@/lib/ai/llm';
+import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { generatePBLV2ProjectSingleCall } from '@/lib/pbl/v2/agents/planner-single-call';
+import { PlannerV2Error } from '@/lib/pbl/v2/agents/planner-core';
 import { parseJsonResponse } from '@/lib/generation/json-repair';
 import { buildCompareHtml } from './compare-html';
 import type { PBLPlannerV2Input, PBLProjectV2 } from '@/lib/pbl/v2/types';
@@ -455,8 +457,8 @@ function runVariant(
   thinkingConfig?: ThinkingConfig,
 ): Promise<PBLProjectV2> {
   return variant === 'single-call'
-    ? generatePBLV2ProjectSingleCall(input, model, undefined, thinkingConfig)
-    : generatePBLV2Project(input, model, undefined, thinkingConfig);
+    ? generatePBLV2ProjectSingleCall(input, model, callLLM, undefined, thinkingConfig)
+    : generatePBLV2Project(input, model, callLLM, undefined, thinkingConfig);
 }
 
 async function runOne(

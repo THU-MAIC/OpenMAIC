@@ -12,8 +12,8 @@ import {
   projectV2ToLegacyProjectConfig,
   upgradeLegacyPBLConfigToProjectV2,
 } from '@/lib/pbl/v2/compat';
-import { normalizeProjectRuntime } from '@/lib/pbl/v2/operations/progress';
-import { transitionProjectUiPhase } from '@/lib/pbl/v2/operations/runtime-events';
+import { normalizeProjectRuntime } from '@/lib/pbl/v2/operations/kernel/progress';
+import { transitionProjectUiPhase } from '@/lib/pbl/v2/operations/kernel/runtime-events';
 import { useStageStore } from '@/lib/store/stage';
 import { cn } from '@/lib/utils/cn';
 import { PBLRoleSelection } from './pbl/role-selection';

@@ -118,7 +118,8 @@ export function insertImageElement(src: string): void {
 
 /** Delete a slide element and clear the canvas selection. */
 export function deleteSlideElement(elementId: string): void {
-  useSlideEditSession.getState().applyOp({ type: 'element.delete', elementId });
+  const session = useSlideEditSession.getState();
+  session.applyOp({ type: 'element.delete', elementId });
   useCanvasStore.getState().setActiveElementIdList([]);
 }
 

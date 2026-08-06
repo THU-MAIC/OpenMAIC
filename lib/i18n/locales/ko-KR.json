@@ -1636,6 +1636,7 @@
     "clearCacheButton": "모든 데이터 영구 삭제",
     "clearCacheSuccess": "캐시가 지워졌습니다. 잠시 후 페이지가 새로 고침됩니다",
     "clearCacheFailed": "캐시 삭제에 실패했습니다. 다시 시도해 주세요",
+    "clearCacheBlockedByOtherTabs": "앱을 연 다른 탭을 닫고 다시 시도해 주세요.",
     "persistUnavailable": "변경 사항이 저장되지 않고 있습니다. 앱이 저장된 데이터에 접근할 수 없습니다. 새로 고쳐도 해결되지 않으면 설정에서 로컬 캐시를 삭제하세요.",
     "persistChangesLost": "저장소가 복구되었지만 사용할 수 없는 동안 변경한 내용은 저장되지 못하고 마지막으로 저장된 버전으로 대체되었습니다.",
     "webSearchSettings": "웹 검색",

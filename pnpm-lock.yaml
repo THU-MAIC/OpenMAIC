@@ -119,6 +119,9 @@ importers:
       '@openmaic/dsl':
         specifier: workspace:*
         version: link:packages/@openmaic/dsl
+      '@openmaic/generation':
+        specifier: workspace:*
+        version: link:packages/@openmaic/generation
       '@openmaic/importer':
         specifier: workspace:*
         version: link:packages/@openmaic/importer
@@ -411,6 +414,9 @@ importers:
       rollup-plugin-typescript2:
         specifier: ^0.36.0
         version: 0.36.0(rollup@4.59.0)(typescript@5.9.3)
+      semver:
+        specifier: 7.8.5
+        version: 7.8.5
       tailwindcss:
         specifier: ^4
         version: 4.2.1
@@ -438,6 +444,22 @@ importers:
       ts-json-schema-generator:
         specifier: ~2.4.0
         version: 2.4.0
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@22.19.15)(jsdom@29.1.1(@noble/hashes@1.8.0)(canvas@3.2.3))(msw@2.12.10(@types/node@22.19.15)(typescript@5.9.3))(vite@8.0.0(@emnapi/core@1.8.1)(@emnapi/runtime@1.8.1)(@types/node@22.19.15)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0))
+
+  packages/@openmaic/generation:
+    dependencies:
+      jsonrepair:
+        specifier: ^3.13.2
+        version: 3.13.3
+      nanoid:
+        specifier: ^5.1.6
+        version: 5.1.14
+    devDependencies:
       typescript:
         specifier: ^5
         version: 5.9.3
@@ -11816,6 +11838,11 @@ packages:
 
   semver@7.7.4:
     resolution: {integrity: sha512-vFKC2IEtQnVhpT78h1Yp8wzwrf8CM+MzKMHGJZfBtzhZNycRFnXsHk6E5TxIkkMsgNS7mdX3AGB7x2QM2di4lA==}
+    engines: {node: '>=10'}
+    hasBin: true
+
+  semver@7.8.5:
+    resolution: {integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==}
     engines: {node: '>=10'}
     hasBin: true
 
@@ -26365,6 +26392,8 @@ snapshots:
   semver@6.3.1: {}
 
   semver@7.7.4: {}
+
+  semver@7.8.5: {}
 
   send@0.19.2:
     dependencies:
