@@ -29,3 +29,16 @@ export async function runClearCache(steps: ClearCacheSteps): Promise<ClearCacheR
     ? { status: 'asset-pool-deferred', error: deferredError }
     : { status: 'cleared' };
 }
+
+/**
+ * Whether the page should reload after a clear.
+ *
+ * A deferred deletion leaves the asset-pool database on disk while the guidance
+ * asks the user to close the other tab and retry; reloading would discard that
+ * state and drop them back into settings with the cache still present. Only a
+ * completed clear reloads, which also keeps short the window in which live
+ * stores could persist themselves again from memory.
+ */
+export function shouldReloadAfterClear(result: ClearCacheResult): boolean {
+  return result.status === 'cleared';
+}

@@ -4,6 +4,7 @@ import { db } from '@/lib/utils/database';
 import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
 import type { Scene } from '@/lib/types/stage';
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
+import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 import { withAssetUrl } from '@/lib/media/use-asset-url';
 
 // ─── Export: Collect Media ─────────────────────────────────────
@@ -31,9 +32,15 @@ export async function collectAudioFiles(scenes: Scene[]): Promise<CollectedAudio
   const collected: CollectedAudio[] = [];
   for (const audioId of audioIds) {
     const record = await db.audioFiles.get(audioId);
-    if (record) {
-      const ext = record.format || 'mp3';
-      collected.push({ zipPath: `audio/${audioId}.${ext}`, record });
+    // The pool answers first: after a stable-id regeneration whose mirror write
+    // failed, the row holds the superseded narration.
+    const blob = await resolveAudioBlob(audioId);
+    if (record || blob) {
+      const ext = record?.format || 'mp3';
+      const resolved = (
+        record ? { ...record, ...(blob ? { blob } : {}) } : { id: audioId, blob: blob! }
+      ) as AudioFileRecord;
+      collected.push({ zipPath: `audio/${audioId}.${ext}`, record: resolved });
     }
   }
   return collected;

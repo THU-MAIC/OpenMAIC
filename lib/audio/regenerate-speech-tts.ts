@@ -10,6 +10,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { generateAndStoreTTS } from '@/lib/hooks/use-scene-generator';
 import { useStageStore } from '@/lib/store/stage';
 import { proveExclusiveAssetOwnership } from '@/lib/media/collect-stage-asset-refs';
+import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 import { assetRefExists } from '@/lib/media/use-asset-url';
 
 /** Legacy deterministic Dexie key used before pool allocation. */
@@ -60,10 +61,10 @@ export async function audioExistsBulk(audioIds: string[]): Promise<Set<string>> 
   return have;
 }
 
-/** Object URL for the audio cached under this exact audioId (caller revokes). */
+/** Object URL for the audio this id currently resolves to (caller revokes). */
 export async function audioObjectUrl(audioId: string): Promise<string | null> {
-  const rec = await db.audioFiles.get(audioId);
-  return rec ? URL.createObjectURL(rec.blob) : null;
+  const blob = await resolveAudioBlob(audioId);
+  return blob ? URL.createObjectURL(blob) : null;
 }
 
 /**

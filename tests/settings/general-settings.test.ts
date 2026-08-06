@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { clearCacheErrorMessage } from '@/components/settings/clear-cache-error-message';
 import { AssetPoolDeletionDeferredError } from '@/lib/media/asset-pool';
-import { runClearCache } from '@/components/settings/clear-cache-workflow';
+import { runClearCache, shouldReloadAfterClear } from '@/components/settings/clear-cache-workflow';
 import arSA from '@/lib/i18n/locales/ar-SA.json';
 import enUS from '@/lib/i18n/locales/en-US.json';
 import esMX from '@/lib/i18n/locales/es-MX.json';
@@ -67,5 +67,22 @@ describe('general settings clear-cache errors', () => {
     expect(clearCacheErrorMessage(new AssetPoolDeletionDeferredError(), t)).toBe(
       'Close other app tabs and retry.',
     );
+  });
+});
+
+describe('reload decision after clearing', () => {
+  it('reloads only when the clear completed', () => {
+    expect(shouldReloadAfterClear({ status: 'cleared' })).toBe(true);
+  });
+
+  it('stays on the page when the asset-pool deletion is deferred', () => {
+    // Reloading would discard the guidance asking the user to close the other
+    // tab and retry, while the pool database is still on disk.
+    expect(
+      shouldReloadAfterClear({
+        status: 'asset-pool-deferred',
+        error: new AssetPoolDeletionDeferredError(),
+      }),
+    ).toBe(false);
   });
 });

@@ -33,6 +33,7 @@ import { measureSlideElementGeometry, type MeasuredGeometry } from '@openmaic/re
 import { db, type AudioFileRecord, type MediaFileRecord } from '@/lib/utils/database';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
+import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 
 /** Loaded source records, keyed for both metadata (compiler) and byte collection. */
 export interface VideoTimelineRecords {
@@ -212,7 +213,11 @@ export async function createVideoTimelineDeps(input: {
   const audioById = new Map<string, AudioFileRecord>();
   for (const audioId of audioIds) {
     const record = await db.audioFiles.get(audioId);
-    if (record) audioById.set(audioId, record);
+    // A stable-id regeneration whose mirror write failed leaves the row on the
+    // superseded narration, so the pool answers first here too.
+    const blob = await resolveAudioBlob(audioId);
+    if (record) audioById.set(audioId, blob ? { ...record, blob } : record);
+    else if (blob) audioById.set(audioId, { id: audioId, blob } as AudioFileRecord);
   }
 
   // Probe real audio durations from the local blobs up front, so the compiler's

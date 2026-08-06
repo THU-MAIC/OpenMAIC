@@ -22,7 +22,7 @@ import { useUserProfileStore } from '@/lib/store/user-profile';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 import { clearCacheErrorMessage } from './clear-cache-error-message';
-import { runClearCache } from './clear-cache-workflow';
+import { runClearCache, shouldReloadAfterClear } from './clear-cache-workflow';
 
 const log = createLogger('GeneralSettings');
 
@@ -82,6 +82,12 @@ export function GeneralSettings() {
         toast.error(clearCacheErrorMessage(result.error, t));
       } else {
         toast.success(t('settings.clearCacheSuccess'));
+      }
+
+      if (!shouldReloadAfterClear(result)) {
+        // The retry stays actionable on this page; see shouldReloadAfterClear.
+        setClearing(false);
+        return;
       }
 
       // Reload without waiting. The stores are still live in memory, so the

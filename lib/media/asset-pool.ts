@@ -31,6 +31,13 @@ observeAssetReplacements(async (ref, current) => {
 // stays SSR-safe.
 if (typeof window !== 'undefined') {
   bindAssetReplacementChannel(() => getAssetPool());
+  // Answering presence probes is what lets a peer decide it cannot replace an
+  // asset in place, so every realm that touches the pool must respond.
+  void import('./stage-realm-presence').then(({ bindStageRealmPresence }) =>
+    import('@/lib/store/stage').then(({ useStageStore }) =>
+      bindStageRealmPresence(() => useStageStore.getState().stage?.id),
+    ),
+  );
 }
 
 /** Lazy browser-wide asset pool. Construction is forbidden during SSR. */

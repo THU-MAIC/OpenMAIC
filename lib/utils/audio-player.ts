@@ -11,22 +11,13 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('AudioPlayer');
 
-/**
- * Bytes an allocated audio id currently resolves to, or null when the id is not
- * pool-backed (legacy/imported rows) or the pool cannot answer.
- */
-async function pooledAudioBlob(audioId: string): Promise<Blob | null> {
+/** Bytes an audio id currently resolves to, pool first. Loaded lazily to keep
+ * this module importable without the media graph. */
+async function resolveBytes(audioId: string): Promise<Blob | null> {
   try {
-    const [{ isConcreteMediaAddress }, { withAssetUrl }] = await Promise.all([
-      import('@/lib/media/resolve-media-ref'),
-      import('@/lib/media/use-asset-url'),
-    ]);
-    if (isConcreteMediaAddress(audioId)) return null;
-    return await withAssetUrl(audioId, async (url) =>
-      url ? fetch(url).then((response) => response.blob()) : null,
-    );
+    const { resolveAudioBlob } = await import('@/lib/media/resolve-audio-bytes');
+    return await resolveAudioBlob(audioId);
   } catch {
-    // Stored rows stay the fallback when the pool is unavailable.
     return null;
   }
 }
@@ -78,15 +69,12 @@ export class AudioPlayer {
         return true;
       }
 
-      // 2. Fall back to stored bytes (client-generated TTS). Speech
-      // regeneration replaces bytes under the same id, committing to the pool
-      // first; when the compatibility write then fails the row is stale, so the
-      // pool answers first and Dexie only covers legacy/imported rows.
-      const audioRecord = await db.audioFiles.get(audioId);
-      const pooledBlob = await pooledAudioBlob(audioId);
+      // 2. Fall back to stored bytes (client-generated TTS), resolved pool-first
+      // so a stable-id regeneration whose mirror write failed does not keep
+      // serving superseded narration.
+      const blob = await resolveBytes(audioId);
       if (requestToken !== this.requestToken) return false;
 
-      const blob = pooledBlob ?? audioRecord?.blob;
       if (!blob) {
         // Pre-generated audio does not exist (generation failed), skip silently
         return false;
