@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   __resetStageRealmPresenceForTesting,
   bindStageRealmPresence,
-  isStageOpenInAnotherRealm,
+  probeStageRealmPresence,
 } from '@/lib/media/stage-realm-presence';
 
 /**
@@ -28,7 +28,7 @@ describe('stage realm presence', () => {
     const peer = peerHoldingStage('stage-1');
 
     try {
-      expect(await isStageOpenInAnotherRealm('stage-1')).toBe(true);
+      expect(await probeStageRealmPresence('stage-1')).toBe('present');
     } finally {
       peer.close();
     }
@@ -39,7 +39,7 @@ describe('stage realm presence', () => {
     const peer = peerHoldingStage('stage-other');
 
     try {
-      expect(await isStageOpenInAnotherRealm('stage-1')).toBe(false);
+      expect(await probeStageRealmPresence('stage-1')).toBe('absent');
     } finally {
       peer.close();
     }
@@ -48,6 +48,37 @@ describe('stage realm presence', () => {
   it('reports no peer when nobody answers', async () => {
     bindStageRealmPresence(() => 'stage-1');
 
-    expect(await isStageOpenInAnotherRealm('stage-1')).toBe(false);
+    expect(await probeStageRealmPresence('stage-1')).toBe('absent');
+  });
+
+  it('reports unknown when the environment has no BroadcastChannel', async () => {
+    const original = globalThis.BroadcastChannel;
+    // @ts-expect-error - modelling an environment without the API
+    delete globalThis.BroadcastChannel;
+    try {
+      expect(await probeStageRealmPresence('stage-1')).toBe('unknown');
+    } finally {
+      globalThis.BroadcastChannel = original;
+    }
+  });
+
+  it('reports unknown before any realm has bound', async () => {
+    // No bindStageRealmPresence call: the pool binds asynchronously at load.
+    expect(await probeStageRealmPresence('stage-1')).toBe('unknown');
+  });
+
+  it('reports unknown when the channel constructor throws', async () => {
+    const original = globalThis.BroadcastChannel;
+    globalThis.BroadcastChannel = class {
+      constructor() {
+        throw new Error('channel unavailable');
+      }
+    } as unknown as typeof BroadcastChannel;
+    try {
+      bindStageRealmPresence(() => 'stage-1');
+      expect(await probeStageRealmPresence('stage-1')).toBe('unknown');
+    } finally {
+      globalThis.BroadcastChannel = original;
+    }
   });
 });

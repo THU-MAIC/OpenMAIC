@@ -16,6 +16,27 @@ type PresenceMessage =
 
 let channel: BroadcastChannel | undefined;
 let openStageId: (() => string | undefined) | undefined;
+/** Resolves once binding has been attempted, so a probe never races the load-time bind. */
+let binding: Promise<void> | undefined;
+let bindingSettled: (() => void) | undefined;
+
+/**
+ * Declares that binding is about to be attempted. The pool binds asynchronously
+ * at module load, so without this a probe issued in that window would see no
+ * channel and report `unknown` even though presence works moments later.
+ */
+export function expectStageRealmPresenceBinding(): void {
+  if (binding) return;
+  binding = new Promise<void>((resolve) => {
+    bindingSettled = resolve;
+  });
+}
+
+/** Opens the gate when binding will never happen, so probes fall through to `unknown`. */
+export function releaseStageRealmPresenceBinding(): void {
+  bindingSettled?.();
+  bindingSettled = undefined;
+}
 
 /**
  * Announces which stage this realm has open, so peers probing for owners get an
@@ -23,6 +44,8 @@ let openStageId: (() => string | undefined) | undefined;
  */
 export function bindStageRealmPresence(currentStageId: () => string | undefined): void {
   openStageId = currentStageId;
+  bindingSettled?.();
+  bindingSettled = undefined;
   if (channel || typeof BroadcastChannel !== 'function') return;
   try {
     channel = new BroadcastChannel(PRESENCE_CHANNEL);
@@ -42,33 +65,46 @@ export function bindStageRealmPresence(currentStageId: () => string | undefined)
 }
 
 /**
- * True when another realm answers that it has this stage open, and also true
- * when presence cannot be established at all — an unanswerable question must
- * not be read as "nobody else is editing".
+ * Outcome of a presence probe. `unknown` is distinct from `absent` on purpose:
+ * a question we could not ask must never be read as "nobody else is editing",
+ * and keeping it in the type stops a caller from collapsing the two.
  */
-export async function isStageOpenInAnotherRealm(stageId: string): Promise<boolean> {
-  if (typeof BroadcastChannel !== 'function') return false;
-  if (!channel) return false;
+export type StageRealmPresence = 'present' | 'absent' | 'unknown';
+
+/**
+ * Ask whether another realm has this stage open.
+ *
+ * Returns `unknown` whenever the transport cannot carry the question — no
+ * `BroadcastChannel` in this environment, binding not completed yet (the pool
+ * binds asynchronously at load), a channel constructor that threw, or a send
+ * that failed. Callers must treat `unknown` the way they treat `present`.
+ */
+export async function probeStageRealmPresence(stageId: string): Promise<StageRealmPresence> {
+  if (typeof BroadcastChannel !== 'function') return 'unknown';
+  if (binding) await binding;
+  if (!channel) return 'unknown';
+  const probe = channel;
   const probeId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return new Promise<boolean>((resolve) => {
+  return new Promise<StageRealmPresence>((resolve) => {
     let settled = false;
-    const finish = (present: boolean) => {
+    const finish = (presence: StageRealmPresence) => {
       if (settled) return;
       settled = true;
-      channel?.removeEventListener('message', listener);
+      probe.removeEventListener('message', listener);
       clearTimeout(timer);
-      resolve(present);
+      resolve(presence);
     };
     const listener = (event: MessageEvent<PresenceMessage>) => {
       const message = event.data;
-      if (message?.kind === 'present' && message.probeId === probeId) finish(true);
+      if (message?.kind === 'present' && message.probeId === probeId) finish('present');
     };
-    const timer = setTimeout(() => finish(false), PROBE_TIMEOUT_MS);
+    // Only a probe that was actually sent and went unanswered means "absent".
+    const timer = setTimeout(() => finish('absent'), PROBE_TIMEOUT_MS);
     try {
-      channel!.addEventListener('message', listener);
-      channel!.postMessage({ kind: 'probe', stageId, probeId } satisfies PresenceMessage);
+      probe.addEventListener('message', listener);
+      probe.postMessage({ kind: 'probe', stageId, probeId } satisfies PresenceMessage);
     } catch {
-      finish(false);
+      finish('unknown');
     }
   });
 }

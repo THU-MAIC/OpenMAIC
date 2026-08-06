@@ -4,7 +4,7 @@ import { createLogger } from '@/lib/logger';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { useStageStore } from '@/lib/store/stage';
 import { slideMediaReferenceSlots } from './slide-media-slots';
-import { isStageOpenInAnotherRealm } from './stage-realm-presence';
+import { probeStageRealmPresence } from './stage-realm-presence';
 
 const log = createLogger('PersistedAssetRefs');
 
@@ -283,8 +283,9 @@ export async function proveExclusiveAssetOwnership(
   // Another realm's unflushed edits are unobservable — its Zustand state lives
   // in a different realm and leaves no persisted trace during its debounce — so
   // a peer editing this stage forces the fork path rather than a global mutation
-  // decided from state we cannot see.
-  const peerRealmEditing = await isStageOpenInAnotherRealm(stageId);
+  // decided from state we cannot see. A probe we could not carry out is treated
+  // exactly like a peer: proving nothing is not the same as proving absence.
+  const peerRealmEditing = (await probeStageRealmPresence(stageId)) !== 'absent';
   return {
     exclusive:
       (activePersistedRefs?.referenceCounts.get(assetId) ?? 0) === 1 &&

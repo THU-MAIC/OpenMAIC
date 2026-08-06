@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     stage: Record<string, unknown> | null;
     scenes: unknown[];
   },
-  isStageOpenInAnotherRealm: vi.fn(),
+  probeStageRealmPresence: vi.fn(),
 }));
 
 vi.mock('@/lib/document-store', () => ({
@@ -22,7 +22,7 @@ vi.mock('@/lib/store/stage', () => ({
 }));
 
 vi.mock('@/lib/media/stage-realm-presence', () => ({
-  isStageOpenInAnotherRealm: mocks.isStageOpenInAnotherRealm,
+  probeStageRealmPresence: mocks.probeStageRealmPresence,
 }));
 
 import { proveExclusiveAssetOwnership } from '@/lib/media/collect-stage-asset-refs';
@@ -56,7 +56,7 @@ describe('exclusive asset ownership', () => {
     mocks.loadDocument.mockResolvedValue(documentWithOneOwner('stage-1'));
     mocks.listDocuments.mockResolvedValue([{ id: 'stage-1' }]);
     mocks.stageState = { stage: null, scenes: [] };
-    mocks.isStageOpenInAnotherRealm.mockResolvedValue(false);
+    mocks.probeStageRealmPresence.mockResolvedValue('absent');
   });
 
   it('is exclusive with a single owner and no peer realm', async () => {
@@ -70,12 +70,12 @@ describe('exclusive asset ownership', () => {
    * fork path rather than a global mutation decided from state we cannot see.
    */
   it('is not exclusive while another realm has the stage open', async () => {
-    mocks.isStageOpenInAnotherRealm.mockResolvedValue(true);
+    mocks.probeStageRealmPresence.mockResolvedValue('present');
 
     const { exclusive } = await proveExclusiveAssetOwnership(ASSET, 'stage-1');
 
     expect(exclusive).toBe(false);
-    expect(mocks.isStageOpenInAnotherRealm).toHaveBeenCalledWith('stage-1');
+    expect(mocks.probeStageRealmPresence).toHaveBeenCalledWith('stage-1');
   });
 
   it('is not exclusive when another persisted document references the asset', async () => {
@@ -97,6 +97,18 @@ describe('exclusive asset ownership', () => {
     copy.content.canvas.elements[0].id = 'image-copy';
     live.scenes.push(copy);
     mocks.stageState = { stage: live.stage, scenes: live.scenes };
+
+    const { exclusive } = await proveExclusiveAssetOwnership(ASSET, 'stage-1');
+
+    expect(exclusive).toBe(false);
+  });
+
+  /**
+   * A probe that could not be carried out proves nothing, so it must not be
+   * read as "nobody else is editing".
+   */
+  it('is not exclusive when presence cannot be probed', async () => {
+    mocks.probeStageRealmPresence.mockResolvedValue('unknown');
 
     const { exclusive } = await proveExclusiveAssetOwnership(ASSET, 'stage-1');
 

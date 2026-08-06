@@ -1,6 +1,10 @@
 import { BrowserAssetStore, toAssetId } from '@openmaic/storage';
 import type { AssetMeta } from '@openmaic/dsl';
 import {
+  expectStageRealmPresenceBinding,
+  releaseStageRealmPresenceBinding,
+} from './stage-realm-presence';
+import {
   bindAssetReplacementChannel,
   notifyAssetReplaced,
   observeAssetReplacements,
@@ -32,12 +36,22 @@ observeAssetReplacements(async (ref, current) => {
 if (typeof window !== 'undefined') {
   bindAssetReplacementChannel(() => getAssetPool());
   // Answering presence probes is what lets a peer decide it cannot replace an
-  // asset in place, so every realm that touches the pool must respond.
-  void import('./stage-realm-presence').then(({ bindStageRealmPresence }) =>
-    import('@/lib/store/stage').then(({ useStageStore }) =>
-      bindStageRealmPresence(() => useStageStore.getState().stage?.id),
-    ),
-  );
+  // asset in place, so every realm that touches the pool must respond. The
+  // binding is asynchronous, so the intent is declared synchronously first —
+  // a probe issued in that window then waits for it instead of concluding that
+  // presence is unavailable.
+  expectStageRealmPresenceBinding();
+  void import('./stage-realm-presence')
+    .then(({ bindStageRealmPresence }) =>
+      import('@/lib/store/stage').then(({ useStageStore }) =>
+        bindStageRealmPresence(() => useStageStore.getState().stage?.id),
+      ),
+    )
+    .catch(() => {
+      // Releasing the gate keeps probes from waiting forever; they report
+      // `unknown`, which callers already treat as "cannot replace in place".
+      releaseStageRealmPresenceBinding();
+    });
 }
 
 /** Lazy browser-wide asset pool. Construction is forbidden during SSR. */

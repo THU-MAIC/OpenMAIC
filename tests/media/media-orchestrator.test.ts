@@ -7,6 +7,7 @@ import type { Scene, Stage } from '@/lib/types/stage';
 import type { MediaFileRecord } from '@/lib/utils/database';
 
 const mocks = vi.hoisted(() => ({
+  probePresence: vi.fn(),
   settings: vi.fn(),
   mediaPut: vi.fn(),
   mediaGet: vi.fn(),
@@ -47,6 +48,12 @@ vi.mock('@/lib/media/asset-pool', () => ({
   putAsset: (...args: unknown[]) => mocks.getPool().put(...args),
   replaceAsset: (...args: unknown[]) => mocks.getPool().replace(...args),
   removeAsset: (...args: unknown[]) => mocks.getPool().remove(...args),
+}));
+
+// Production runs one realm unless a peer answers; individual tests override
+// this to model an unavailable probe or a live peer.
+vi.mock('@/lib/media/stage-realm-presence', () => ({
+  probeStageRealmPresence: mocks.probePresence,
 }));
 
 vi.mock('@/lib/document-store', () => ({
@@ -203,6 +210,7 @@ describe('media orchestrator asset write paths', () => {
     });
     mocks.getPool.mockReset();
     mocks.getPool.mockReturnValue(pool);
+    mocks.probePresence.mockReset().mockResolvedValue('absent');
     mocks.mediaRows.clear();
     mocks.mediaPut.mockReset().mockImplementation(async (row) => {
       mocks.mediaRows.set(row.id, row);
@@ -651,6 +659,32 @@ describe('media orchestrator asset write paths', () => {
     expect(mocks.listDocuments).toHaveBeenCalledTimes(2);
     expect(mocks.loadDocument).toHaveBeenCalledWith(stageId);
     await assertOwnership();
+  });
+
+  it('forks a targeted retry when peer presence cannot be probed', async () => {
+    // No BroadcastChannel, binding not finished, or a constructor that threw all
+    // report 'unknown'. Proving nothing about other realms must not authorize a
+    // global mutation, so the write boundary itself has to fork.
+    mocks.probePresence.mockResolvedValue('unknown');
+    const assetId = await pool.put(new Blob(['image-old'], { type: 'image/png' }));
+    mocks.document = documentWithMedia(assetId, 'image');
+    const replace = vi.spyOn(pool, 'replace');
+    serveImage('image-forked');
+    useMediaGenerationStore.setState({ tasks: { [assetId]: failedTask(assetId) } });
+
+    await retryMediaTask(assetId, {
+      elementId: 'image-1',
+      sceneId: 'scene-1',
+      slideId: 'slide-1',
+    });
+
+    const rewritten = mocks.document.scenes[0].content.canvas.elements[0].src;
+    expect(replace).not.toHaveBeenCalled();
+    expect(rewritten).toMatch(/^ast_/);
+    expect(rewritten).not.toBe(assetId);
+    expect(await resolvedText(rewritten)).toBe('image-forked');
+    // A peer's unflushed owner, had there been one, still resolves the old bytes.
+    expect(await resolvedText(assetId)).toBe('image-old');
   });
 
   it('forks when an exclusive ref becomes shared while generation is pending', async () => {
