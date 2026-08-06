@@ -444,8 +444,14 @@ describe('normalizePBLProject', () => {
     const { roles: _roles, ...withoutRoles } = unseeded;
     expect(() => normalizePBLProject(withoutRoles)).toThrow(/roles/);
 
+    // Optional design fields normalize cleanly when absent and stay absent.
     const { learningObjective: _learningObjective, ...withoutObjective } = unseeded;
-    expect(() => normalizePBLProject(withoutObjective)).toThrow(/learningObjective/);
+    const normalizedWithoutObjective = normalizePBLProject(withoutObjective);
+    expect(normalizedWithoutObjective).not.toHaveProperty('learningObjective');
+    expect(isPBLProject(normalizedWithoutObjective)).toBe(true);
+    expect(() => normalizePBLProject({ ...unseeded, learningObjective: 42 })).toThrow(
+      /learningObjective/,
+    );
 
     expect(() =>
       normalizePBLProject({

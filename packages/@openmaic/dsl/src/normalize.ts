@@ -247,8 +247,12 @@ export function normalizePBLProject(project: unknown): PBLProject {
 
   const title = pblRequiredString(project, 'title');
   const description = pblRequiredString(project, 'description');
-  const learningObjective = pblRequiredString(project, 'learningObjective');
-  const gains = pblStringArray(project, 'gains');
+  // Optional design fields: preserved when present, never invented when absent.
+  const learningObjective =
+    project.learningObjective === undefined
+      ? undefined
+      : pblRequiredString(project, 'learningObjective');
+  const gains = project.gains === undefined ? undefined : pblStringArray(project, 'gains');
   const tags = pblStringArray(project, 'tags');
   const language = pblRequiredString(project, 'language');
   const createdAt = pblRequiredString(project, 'createdAt');
@@ -348,8 +352,8 @@ export function normalizePBLProject(project: unknown): PBLProject {
     ...project,
     title,
     description,
-    learningObjective,
-    gains,
+    ...(learningObjective === undefined ? {} : { learningObjective }),
+    ...(gains === undefined ? {} : { gains }),
     tags,
     language,
     proficiency,
