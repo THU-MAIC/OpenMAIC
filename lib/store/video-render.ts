@@ -29,6 +29,7 @@ import {
   type VideoQuality,
   type VideoResolution,
 } from '@/lib/video-export-app/build-export-zip';
+import type { Locale } from '@/lib/i18n';
 
 const log = createLogger('VideoRenderStore');
 
@@ -94,7 +95,8 @@ interface VideoRenderState {
   setOptions: (patch: Partial<ResolvedOptions>) => void;
   /** True while a render is in flight (compiling or rendering). */
   isActive: () => boolean;
-  startRender: (t: Translate) => Promise<void>;
+  /** `locale` is the export's, not the store's: it is baked into the emitted card chrome. */
+  startRender: (t: Translate, locale: Locale) => Promise<void>;
   reset: () => void;
 }
 
@@ -117,7 +119,7 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
 
   reset: () => set({ status: 'idle', percent: 0, etaMs: null, filename: null, error: null }),
 
-  startRender: async (t) => {
+  startRender: async (t, locale) => {
     // Guard against a duplicate submit — the whole reason state lives here.
     if (inFlight(get().status)) return;
 
@@ -131,7 +133,7 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
     let missingCount = 0;
     let errorCount = 0;
     try {
-      const built = await buildExportZip({ resolution, burnInSubtitles });
+      const built = await buildExportZip({ resolution, burnInSubtitles, locale });
       ({ zipBlob, stageName, missingCount, errorCount } = built);
     } catch (error) {
       if (error instanceof NoScenesError) {

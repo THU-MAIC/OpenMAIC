@@ -621,7 +621,7 @@ export interface PBLProficiencyAssessment {
    *    `score > +0.33` → bucket `advanced`
    *  Hysteresis: once a tier is entered, the score must move past
    *  the *opposite* boundary (±0.20) to leave. See
-   *  `scoreToTier(score, currentTier)` in operations/proficiency. */
+   *  `scoreToTier(score, currentTier)` in operations/kernel/proficiency. */
   score: number;
   /** `[0, 1]`. Accumulates as more signals arrive. Gates tier
    *  switches: cannot cross a boundary while confidence < 0.4. */
@@ -644,7 +644,7 @@ export interface PBLProficiencyAssessment {
 }
 
 /** Snapshot of a single prior quiz scene the learner attempted.
- *  Aggregated by `lib/pbl/v2/operations/quiz-snapshot.ts` from
+ *  Aggregated by `lib/pbl/v2/operations/runtime/quiz-snapshot.ts` from
  *  `lib/quiz/persistence.ts` localStorage and piggybacked on the
  *  `/api/pbl/v2/open-task` request when the learner first enters
  *  the Hero. */
@@ -795,7 +795,7 @@ export interface PBLProjectV2 {
   proficiency: PBLProficiency;
   /** Adaptive proficiency state — pre-play initial assessment + the
    *  in-PBL EWMA-updated score. Drives Instructor's tier guidance.
-   *  See `lib/pbl/v2/operations/proficiency.ts` for the algorithm. */
+   *  See `lib/pbl/v2/operations/kernel/proficiency.ts` for the algorithm. */
   proficiencyAssessment?: PBLProficiencyAssessment;
   /** ISO 639 language code from outline language inference.
    *  BCP-47 fallback locale for deterministic platform text (e.g.

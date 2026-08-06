@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { BrowserRuntimeStore, type RuntimeStore } from '@openmaic/storage';
+import {
+  BrowserRuntimeStore,
+  RuntimeAppendConflictError,
+  type RuntimeStore,
+} from '@openmaic/storage';
+import { HttpRuntimeStoreError } from '@openmaic/storage/runtime/http';
 import type { RuntimeRecord } from '@openmaic/dsl';
 import type { UIMessage } from 'ai';
 
@@ -19,6 +24,7 @@ import {
   saveChatSessions,
   type ChatStorageSnapshot,
 } from '@/lib/utils/chat-storage';
+import { buildChatRecordInit, runtimeSessionId, statePayload } from '@/lib/utils/chat-storage-core';
 
 if (!('IDBKeyRange' in globalThis)) {
   Object.defineProperty(globalThis, 'IDBKeyRange', { value: IDBKeyRange, configurable: true });
@@ -145,6 +151,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -179,6 +186,33 @@ describe('chat RuntimeStore cutover', () => {
         pendingToolCalls: [],
       },
     ]);
+  });
+
+  it('round-trips a live save captured during the soft-close window', async () => {
+    const store = makeRuntimeStore();
+    const legacyStore = new MemoryLegacyChatStore();
+
+    await saveChatSessions(STAGE_ID, [session({ status: 'soft-closing' })], {
+      store,
+      learnerKey: LEARNER_KEY,
+      legacyStore,
+    });
+
+    await expect(
+      loadChatSessions(STAGE_ID, { store, learnerKey: LEARNER_KEY, legacyStore }),
+    ).resolves.toMatchObject([{ id: 'session-1', status: 'interrupted' }]);
+  });
+
+  it('migrates a soft-closing legacy row as an interrupted runtime chat', async () => {
+    const store = makeRuntimeStore();
+    const legacyStore = new MemoryLegacyChatStore([session({ status: 'soft-closing' })]);
+
+    await expect(
+      loadChatSessions(STAGE_ID, { store, learnerKey: LEARNER_KEY, legacyStore }),
+    ).resolves.toMatchObject([{ id: 'session-1', status: 'interrupted' }]);
+    await expect(
+      loadChatSessions(STAGE_ID, { store, learnerKey: LEARNER_KEY, legacyStore }),
+    ).resolves.toMatchObject([{ id: 'session-1', status: 'interrupted' }]);
   });
 
   it('finishes an empty save when a JavaScript caller passes no session array', async () => {
@@ -909,10 +943,188 @@ describe('chat RuntimeStore cutover', () => {
     expect(await backing.listRecords(runtimeSessions[0]!.id)).toHaveLength(2);
   });
 
+  it.each([
+    ['HTTP 400', new HttpRuntimeStoreError(400, 'HTTP_ERROR', 'bad request')],
+    ['HTTP 401', new HttpRuntimeStoreError(401, 'HTTP_ERROR', 'unauthorized')],
+    [
+      'VALIDATION_FAILED',
+      new HttpRuntimeStoreError(422, 'VALIDATION_FAILED', 'record validation failed'),
+    ],
+    ['HTTP 403', new HttpRuntimeStoreError(403, 'HTTP_ERROR', 'forbidden')],
+    ['HTTP 413', new HttpRuntimeStoreError(413, 'HTTP_ERROR', 'too large')],
+    [
+      'FUTURE_VERSION',
+      new HttpRuntimeStoreError(409, 'FUTURE_VERSION', 'newer runtime DSL version'),
+    ],
+  ])('does not retry a deterministic %s append failure', async (_label, appendError) => {
+    const backing = makeRuntimeStore();
+    const legacyStore = new MemoryLegacyChatStore();
+    const appendRecord = vi.fn().mockRejectedValue(appendError);
+    const store = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'appendRecord') return appendRecord;
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+
+    await expect(
+      saveChatSessions(STAGE_ID, [session()], {
+        store,
+        learnerKey: LEARNER_KEY,
+        legacyStore,
+      }),
+    ).rejects.toThrow(
+      `Chat sync rejected for session "session-1": ${appendError.code} (HTTP ${appendError.status})`,
+    );
+
+    expect(appendRecord).toHaveBeenCalledTimes(1);
+    expect(
+      (await backing.listSessions(STAGE_ID, LEARNER_KEY)).filter(
+        (candidate) => candidate.kind === 'chat',
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([
+    [
+      'pre-append status check',
+      `@openmaic/storage: cannot append to session "chat:stage-chat:anon%3Achat-test:session-1" with status 'completed' — records may only be appended to an active session`,
+    ],
+    [
+      'post-race reclassification',
+      `@openmaic/storage: session "chat:stage-chat:anon%3Achat-test:session-1" is no longer active; its current status is 'completed'`,
+    ],
+  ])('retries the %s inactive-session append race with backoff', async (_label, message) => {
+    const backing = makeRuntimeStore();
+    const legacyStore = new MemoryLegacyChatStore();
+    const appendError = new HttpRuntimeStoreError(400, 'VALIDATION_FAILED', message);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    let appendCalls = 0;
+    const store = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'appendRecord') {
+          return async (...args: Parameters<RuntimeStore['appendRecord']>) => {
+            appendCalls += 1;
+            if (appendCalls === 1) throw appendError;
+            return backing.appendRecord(...args);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+
+    await expect(
+      saveChatSessions(STAGE_ID, [session()], {
+        store,
+        learnerKey: LEARNER_KEY,
+        legacyStore,
+        sleep,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(appendCalls).toBeGreaterThan(1);
+    expect(sleep).toHaveBeenCalledWith(100);
+  });
+
+  it('retries inactive-session wording for any VALIDATION_FAILED status', async () => {
+    const backing = makeRuntimeStore();
+    const legacyStore = new MemoryLegacyChatStore();
+    const appendError = new HttpRuntimeStoreError(
+      422,
+      'VALIDATION_FAILED',
+      `@openmaic/storage: cannot append to session "chat:stage-chat:anon%3Achat-test:session-1" with status 'completed' — records may only be appended to an active session`,
+    );
+    let appendCalls = 0;
+    const store = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'appendRecord') {
+          return async (...args: Parameters<RuntimeStore['appendRecord']>) => {
+            appendCalls += 1;
+            if (appendCalls === 1) throw appendError;
+            return backing.appendRecord(...args);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+
+    await expect(
+      saveChatSessions(STAGE_ID, [session()], {
+        store,
+        learnerKey: LEARNER_KEY,
+        legacyStore,
+        sleep: async () => undefined,
+      }),
+    ).resolves.toBeUndefined();
+    expect(appendCalls).toBeGreaterThan(1);
+  });
+
+  it.each([
+    ['network failure', new Error('network unavailable')],
+    [
+      'append conflict',
+      new RuntimeAppendConflictError('chat:stage-chat:anon%3Achat-test:session-1', 1, 2),
+    ],
+    ['vanished session', new HttpRuntimeStoreError(404, 'SESSION_NOT_FOUND', 'not found')],
+  ])('retries a transient %s in the locked WRITE branch', async (_label, appendError) => {
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: async (
+          _name: string,
+          optionsOrWork: LockOptions | (() => Promise<unknown>),
+          maybeWork?: () => Promise<unknown>,
+        ) => (typeof optionsOrWork === 'function' ? optionsOrWork : maybeWork!)(),
+      },
+    });
+    const backing = makeRuntimeStore();
+    const legacyStore = new MemoryLegacyChatStore();
+    const original = session({ updatedAt: 2_000 });
+    await saveChatSessions(STAGE_ID, [original], {
+      store: backing,
+      learnerKey: LEARNER_KEY,
+      legacyStore,
+    });
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    let failed = false;
+    const store = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'appendRecord') {
+          return async (...args: Parameters<RuntimeStore['appendRecord']>) => {
+            if (!failed) {
+              failed = true;
+              throw appendError;
+            }
+            return backing.appendRecord(...args);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+
+    await expect(
+      saveChatSessions(STAGE_ID, [{ ...original, title: 'Updated', updatedAt: 3_000 }], {
+        store,
+        learnerKey: LEARNER_KEY,
+        legacyStore,
+        sleep,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(sleep).toHaveBeenCalledWith(100);
+    await expect(
+      loadChatSessions(STAGE_ID, { store: backing, learnerKey: LEARNER_KEY, legacyStore }),
+    ).resolves.toMatchObject([{ title: 'Updated', updatedAt: 3_000 }]);
+  });
+
   it('does not retain partial isolated generations when appends keep failing', async () => {
     const backing = makeRuntimeStore();
     const legacyStore = new MemoryLegacyChatStore();
     const appendError = new Error('append storage unavailable');
+    const sleep = vi.fn().mockResolvedValue(undefined);
     const store = new Proxy(backing, {
       get(target, property) {
         const value = Reflect.get(target, property, target) as unknown;
@@ -930,14 +1142,172 @@ describe('chat RuntimeStore cutover', () => {
         store,
         learnerKey: LEARNER_KEY,
         legacyStore,
+        sleep,
       }),
     ).rejects.toBe(appendError);
+
+    const delays = sleep.mock.calls.map(([milliseconds]) => milliseconds as number);
+    expect(delays).toEqual([100, 200, 400, 500, 500, 500, 500]);
+    expect(Math.max(...delays)).toBe(500);
+    expect(delays.reduce((total, delay) => total + delay, 0)).toBe(2_700);
 
     expect(
       (await backing.listSessions(STAGE_ID, LEARNER_KEY)).filter(
         (candidate) => candidate.kind === 'chat',
       ),
     ).toHaveLength(0);
+  });
+
+  it('uses the default setTimeout sleep when no retry sleep is injected', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const backing = makeRuntimeStore();
+    const legacyStore = new MemoryLegacyChatStore();
+    let appendCalls = 0;
+    let observedFirstFailure!: () => void;
+    const firstFailure = new Promise<void>((resolve) => {
+      observedFirstFailure = resolve;
+    });
+    const store = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'appendRecord') {
+          return async (...args: Parameters<RuntimeStore['appendRecord']>) => {
+            appendCalls += 1;
+            if (appendCalls === 1) {
+              observedFirstFailure();
+              throw new Error('retry with the default sleep');
+            }
+            return backing.appendRecord(...args);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+
+    const saving = saveChatSessions(STAGE_ID, [session()], {
+      store,
+      learnerKey: LEARNER_KEY,
+      legacyStore,
+    });
+    await firstFailure;
+    for (let index = 0; index < 20 && vi.getTimerCount() === 0; index += 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(saving).resolves.toBeUndefined();
+    expect(appendCalls).toBeGreaterThan(1);
+  });
+
+  it('backs off and refreshes after plan-step exhaustion without hiding an earlier error', async () => {
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: async (
+          _name: string,
+          optionsOrWork: LockOptions | (() => Promise<unknown>),
+          maybeWork?: () => Promise<unknown>,
+        ) => (typeof optionsOrWork === 'function' ? optionsOrWork : maybeWork!)(),
+      },
+    });
+    const backing = makeRuntimeStore();
+    const legacyStore = new MemoryLegacyChatStore();
+    const appendError = new Error('specific first append failure');
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    let createCalls = 0;
+    const listSessions = vi.fn(backing.listSessions.bind(backing));
+    const store = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'listSessions') return listSessions;
+        if (property === 'createSession') {
+          return async (...args: Parameters<RuntimeStore['createSession']>) => {
+            createCalls += 1;
+            if (createCalls === 1) return backing.createSession(...args);
+            return {
+              ...args[0],
+              id: `not-a-chat-runtime-id-${createCalls}`,
+              runtimeDslVersion: '0.1.0',
+            };
+          };
+        }
+        if (property === 'appendRecord') {
+          return async () => {
+            throw appendError;
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+
+    await expect(
+      saveChatSessions(STAGE_ID, [session()], {
+        store,
+        learnerKey: LEARNER_KEY,
+        legacyStore,
+        sleep,
+      }),
+    ).rejects.toBe(appendError);
+
+    expect(sleep.mock.calls.map(([milliseconds]) => milliseconds)).toEqual([
+      100, 200, 400, 500, 500, 500, 500,
+    ]);
+    expect(listSessions.mock.calls.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it('keeps a historical soft-closing state-only session when a later save exhausts retries', async () => {
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: async (
+          _name: string,
+          optionsOrWork: LockOptions | (() => Promise<unknown>),
+          maybeWork?: () => Promise<unknown>,
+        ) => (typeof optionsOrWork === 'function' ? optionsOrWork : maybeWork!)(),
+      },
+    });
+    const backing = makeRuntimeStore();
+    const legacyStore = new MemoryLegacyChatStore();
+    const historical = session({ status: 'soft-closing', messages: [] });
+    const runtimeId = runtimeSessionId(STAGE_ID, LEARNER_KEY, historical.id);
+    await backing.createSession({
+      id: runtimeId,
+      kind: 'chat',
+      stageId: STAGE_ID,
+      learnerKey: LEARNER_KEY,
+      status: 'active',
+      createdAt: new Date(historical.createdAt).toISOString(),
+      updatedAt: new Date(historical.updatedAt).toISOString(),
+    });
+    await backing.appendRecord(
+      buildChatRecordInit(runtimeId, statePayload(historical), historical, 'state'),
+    );
+    await expect(
+      loadChatSessions(STAGE_ID, { store: backing, learnerKey: LEARNER_KEY, legacyStore }),
+    ).resolves.toMatchObject([{ id: historical.id, status: 'soft-closing' }]);
+
+    const failingStore = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'appendRecord') {
+          return async () => {
+            throw new Error('persistent append failure');
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    await expect(
+      saveChatSessions(STAGE_ID, [session({ status: 'idle', updatedAt: 5_000 })], {
+        store: failingStore,
+        learnerKey: LEARNER_KEY,
+        legacyStore,
+        sleep: async () => undefined,
+      }),
+    ).rejects.toThrow('persistent append failure');
+
+    await expect(backing.listSessions(STAGE_ID, LEARNER_KEY)).resolves.toMatchObject([
+      { id: runtimeId },
+    ]);
   });
 
   it('does not expose partially appended messages when a locked snapshot save fails', async () => {
@@ -963,7 +1333,11 @@ describe('chat RuntimeStore cutover', () => {
       legacyStore,
     });
 
-    const appendError = new Error('state append failed');
+    const appendError = new HttpRuntimeStoreError(
+      400,
+      'VALIDATION_FAILED',
+      'state payload validation failed',
+    );
     const failingStore = new Proxy(backing, {
       get(target, property) {
         const value = Reflect.get(target, property, target) as unknown;
@@ -991,7 +1365,7 @@ describe('chat RuntimeStore cutover', () => {
         ],
         { store: failingStore, learnerKey: LEARNER_KEY, legacyStore },
       ),
-    ).rejects.toBe(appendError);
+    ).rejects.toThrow('Chat sync rejected for session "session-1": VALIDATION_FAILED (HTTP 400)');
 
     await expect(
       loadChatSessions(STAGE_ID, { store: backing, learnerKey: LEARNER_KEY, legacyStore }),
@@ -1367,6 +1741,195 @@ describe('chat RuntimeStore cutover', () => {
         (candidate) => candidate.kind === 'chat',
       ),
     ).toHaveLength(1);
+  });
+
+  it('retains the entire legacy source when any migration row is malformed', async () => {
+    const store = makeRuntimeStore();
+    const malformed = {
+      ...session({ id: 'bad-row' }),
+      toolCalls: null,
+    } as unknown as ChatSession;
+    const legacyStore = new MemoryLegacyChatStore([
+      session({ id: 'good-row', status: 'completed' }),
+      malformed,
+    ]);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const loaded = await loadChatSessions(STAGE_ID, {
+      store,
+      learnerKey: LEARNER_KEY,
+      legacyStore,
+    });
+
+    expect(loaded.map((chat) => chat.id)).toEqual(['good-row']);
+    expect(loaded.some((chat) => chat.id === malformed.id)).toBe(false);
+    expect(legacyStore.clearCalls).toBe(0);
+    expect(legacyStore.sessions.map((chat) => chat.id)).toEqual(['good-row', 'bad-row']);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('bad-row'));
+
+    await saveChatSessions(STAGE_ID, loaded, {
+      store,
+      learnerKey: LEARNER_KEY,
+      legacyStore,
+    });
+    expect(legacyStore.clearCalls).toBe(0);
+    expect(legacyStore.sessions.map((chat) => chat.id)).toEqual(['good-row', 'bad-row']);
+    expect(
+      (await store.listSessions(STAGE_ID, LEARNER_KEY)).some((runtime) =>
+        runtime.id.includes(encodeURIComponent(malformed.id)),
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    ['a null message', [null]],
+    [
+      'a message without a string id',
+      [{ ...message('message-1', 'user', 'Hello', 1_000), id: undefined }],
+    ],
+  ])('skips a legacy row with %s while migrating valid rows', async (_label, messages) => {
+    const store = makeRuntimeStore();
+    const malformed = {
+      ...session({ id: 'bad-row' }),
+      messages,
+    } as unknown as ChatSession;
+    const valid = session({ id: 'good-row', status: 'completed' });
+    const legacyStore = new MemoryLegacyChatStore([malformed, valid]);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      loadChatSessions(STAGE_ID, {
+        store,
+        learnerKey: LEARNER_KEY,
+        legacyStore,
+      }),
+    ).resolves.toMatchObject([{ id: 'good-row' }]);
+
+    expect(legacyStore.clearCalls).toBe(0);
+    expect(legacyStore.sessions.map((chat) => chat.id)).toEqual(['bad-row', 'good-row']);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('bad-row'));
+    expect(
+      (await store.listSessions(STAGE_ID, LEARNER_KEY)).filter(
+        (candidate) => candidate.kind === 'chat',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('preserves the malformed-row clear guard across an unobserved runtime load', async () => {
+    const store = makeRuntimeStore();
+    const malformed = {
+      ...session({ id: 'bad-row' }),
+      toolCalls: null,
+    } as unknown as ChatSession;
+    const legacyStore = new MemoryLegacyChatStore([
+      session({ id: 'good-row', status: 'completed' }),
+      malformed,
+    ]);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const loaded = await loadChatSessions(STAGE_ID, {
+      store,
+      learnerKey: LEARNER_KEY,
+      legacyStore,
+    });
+    await loadChatSessions(STAGE_ID, {
+      store,
+      learnerKey: LEARNER_KEY,
+      legacyStore: new MemoryLegacyChatStore(),
+      observe: false,
+    });
+    await saveChatSessions(STAGE_ID, loaded, {
+      store,
+      learnerKey: LEARNER_KEY,
+      legacyStore,
+    });
+
+    expect(legacyStore.clearCalls).toBe(0);
+    expect(legacyStore.sessions.map((chat) => chat.id)).toEqual(['good-row', 'bad-row']);
+  });
+
+  it('lets a genuinely newer post-cutover legacy row win the merge unchanged', async () => {
+    const store = makeRuntimeStore();
+    const legacyStore = new MemoryLegacyChatStore();
+    const runtimeUpdatedAt = Date.UTC(2026, 7, 6);
+    await saveChatSessions(
+      STAGE_ID,
+      [session({ title: 'Runtime older', updatedAt: runtimeUpdatedAt })],
+      { store, learnerKey: LEARNER_KEY, legacyStore },
+    );
+    legacyStore.sessions = [
+      session({
+        title: 'Legacy newer',
+        messages: [
+          message('message-1', 'user', 'Hello', 1_000),
+          message('legacy-only', 'assistant', 'Newer legacy edit', 2_000),
+        ],
+        updatedAt: runtimeUpdatedAt + 24 * 60 * 60 * 1_000,
+      }),
+    ];
+
+    await expect(
+      loadChatSessions(STAGE_ID, { store, learnerKey: LEARNER_KEY, legacyStore }),
+    ).resolves.toMatchObject([
+      {
+        title: 'Legacy newer',
+        messages: [{ id: 'message-1' }, { id: 'legacy-only' }],
+        updatedAt: runtimeUpdatedAt + 24 * 60 * 60 * 1_000,
+      },
+    ]);
+  });
+
+  it('preserves post-cutover timestamps while restoring legacy backup rows', async () => {
+    const store = makeRuntimeStore();
+    const legacyStore = new MemoryLegacyChatStore();
+    const restoredAt = Date.UTC(2027, 0, 1);
+
+    await restoreChatSessionsFromBackup(
+      [STAGE_ID],
+      async () => {
+        legacyStore.sessions = [session({ status: 'completed', updatedAt: restoredAt })];
+      },
+      { store, learnerKey: LEARNER_KEY, legacyStore },
+    );
+
+    await expect(
+      loadChatSessions(STAGE_ID, { store, learnerKey: LEARNER_KEY, legacyStore }),
+    ).resolves.toMatchObject([{ updatedAt: restoredAt }]);
+  });
+
+  it('fails backup restore loudly before deleting runtime data when a row is malformed', async () => {
+    const store = makeRuntimeStore();
+    const legacyStore = new MemoryLegacyChatStore();
+    const original = session({ title: 'Runtime before restore', status: 'completed' });
+    await saveChatSessions(STAGE_ID, [original], {
+      store,
+      learnerKey: LEARNER_KEY,
+      legacyStore,
+    });
+    const rollbackLegacyRows = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      restoreChatSessionsFromBackup(
+        [STAGE_ID],
+        async () => {
+          legacyStore.sessions = [
+            { ...session({ id: 'invalid-backup-row' }), messages: null } as unknown as ChatSession,
+          ];
+        },
+        { store, learnerKey: LEARNER_KEY, legacyStore, rollbackLegacyRows },
+      ),
+    ).rejects.toThrow(/invalid-backup-row/);
+
+    expect(rollbackLegacyRows).toHaveBeenCalledOnce();
+    await expect(
+      loadChatSessions(STAGE_ID, {
+        store,
+        learnerKey: LEARNER_KEY,
+        legacyStore: new MemoryLegacyChatStore(),
+      }),
+    ).resolves.toMatchObject([{ title: 'Runtime before restore' }]);
   });
 
   it('keeps a restore marker visible after the learner partition is merged', async () => {

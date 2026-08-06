@@ -56,13 +56,13 @@ import type {
   PBLProjectV2,
 } from '../types';
 import type { PBLSSEEvent } from '../api/sse';
-import { addEvaluation } from '../operations/evaluation';
-import { latestSubmissionForMicrotask } from '../operations/submission';
+import { addEvaluation } from '../operations/runtime/evaluation';
+import { latestSubmissionForMicrotask } from '../operations/runtime/submission';
 import {
   buildFinalEvalPrompt,
   buildMilestoneEvalPrompt,
   buildTaskEvalPrompt,
-} from '../operations/eval-prompts';
+} from '../operations/runtime/eval-prompts';
 import {
   normalizeOptionalString,
   normalizeScore,
@@ -71,8 +71,8 @@ import {
   parseEvaluationTail,
   sanitizeMilestoneEvaluationFeedback,
   stripEvaluationTail,
-} from '../operations/eval-tail-parser';
-import { normalizeActGoals } from '../operations/completion-stats';
+} from '../operations/runtime/eval-tail-parser';
+import { normalizeActGoals } from '../operations/runtime/completion-stats';
 
 const log = createLogger('PBL v2 Evaluator');
 

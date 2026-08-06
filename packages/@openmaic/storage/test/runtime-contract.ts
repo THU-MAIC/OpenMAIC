@@ -172,6 +172,15 @@ export function runRuntimeStoreContract(name: string, makeStore: () => RuntimeSt
     });
 
     describe('records', () => {
+      test('appendRecord rejects an invalid envelope with the shared validation message', async () => {
+        const store = makeStore();
+        const init = makeRecordInit('sess-1', { createdAt: 'not-iso' });
+
+        await expect(store.appendRecord(init)).rejects.toThrow(
+          `@openmaic/storage: invalid runtime record ${JSON.stringify(init.id)}: /createdAt: expected ISO 8601 \`createdAt\``,
+        );
+      });
+
       test('appendRecord assigns monotonic seq from 0 and stamps nothing on the record', async () => {
         const store = makeStore();
         await store.createSession(makeSession());

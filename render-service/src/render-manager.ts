@@ -15,7 +15,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createRenderJob, executeRenderJob } from '@hyperframes/producer';
+import { createRenderJob, executeRenderJob, type RenderConfigInput } from '@hyperframes/producer';
 import type { JobStore } from './job-store.js';
 import type { ArtifactStore } from './artifact-store.js';
 import type { RenderJobRecord, RenderOptions } from './types.js';
@@ -34,6 +34,38 @@ interface QueuedJob {
   record: RenderJobRecord;
   options: RenderOptions;
   abort: AbortController;
+}
+
+/**
+ * Build the producer job config with an explicit worker count. Producer's env
+ * `concurrency` is only an auto-sizing hint and can be raised by its minimum
+ * parallel-frame rule; `job.config.workers` is the authoritative user choice.
+ */
+export function buildProducerJobConfig(
+  options: RenderOptions,
+  workers = config.producerWorkers,
+): RenderConfigInput {
+  const producerOptions: RenderConfigInput = {
+    fps: options.fps,
+    quality: options.quality,
+    format: options.format,
+  };
+  if (workers !== undefined) producerOptions.workers = workers;
+  return producerOptions;
+}
+
+/** Assert the worker-reported capture mode when the deployment requires beginFrame. */
+export function assertRequiredCaptureMode(
+  captureMode: string | undefined,
+  requireBeginFrame: boolean,
+): void {
+  if (!requireBeginFrame) return;
+  if (captureMode !== 'beginframe') {
+    throw new Error(
+      `Producer did not resolve beginFrame capture (actual=${captureMode ?? 'unknown'}). ` +
+        'Check PRODUCER_HEADLESS_SHELL_PATH and Chromium compatibility.',
+    );
+  }
 }
 
 export class RenderManager {
@@ -181,11 +213,7 @@ export class RenderManager {
     try {
       await this.jobs.update(id, { status: 'running', currentStage: 'preparing' });
 
-      const job = createRenderJob({
-        fps: options.fps,
-        quality: options.quality,
-        format: options.format,
-      });
+      const job = createRenderJob(buildProducerJobConfig(options));
 
       await executeRenderJob(
         job,
@@ -207,6 +235,8 @@ export class RenderManager {
         },
         abort.signal,
       );
+
+      assertRequiredCaptureMode(job.perfSummary?.drawElement?.mode, config.requireBeginFrame);
 
       if (abort.signal.aborted) {
         // Deadline overrun is a failure, not a user cancellation.

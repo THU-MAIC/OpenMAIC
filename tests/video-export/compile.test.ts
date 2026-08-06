@@ -36,7 +36,7 @@ describe('compileVideoTimeline — end-to-end golden', () => {
   it('stamps the envelope + config', () => {
     expect(ir).toMatchObject({
       schema: 'openmaic.videoTimeline',
-      version: 1,
+      version: 2,
       compiler: 'openmaic-video-timeline',
       stage: { id: 'stg', name: 'Demo' },
       config: { playbackSpeed: 1, ttsEnabled: true, whiteboardInitiallyOpen: false },
@@ -60,15 +60,27 @@ describe('compileVideoTimeline — end-to-end golden', () => {
     expect(s0.effects[0].geometry).not.toBeNull();
   });
 
-  it('represents the quiz scene as unsupported (placeholder base + marker + diagnostic), never dropped', () => {
+  it('represents the quiz scene as a deterministic cover visual, never dropped', () => {
     const q0 = ir.scenes[1];
-    expect(q0).toMatchObject({ index: 1, type: 'quiz', supported: false, startMs: 5000 });
-    expect(q0.base.kind).toBe('placeholder');
-    expect(q0.base.reason).toMatch(/Quiz/);
-    expect(q0.markers[0].kind).toBe('unsupported-scene');
+    expect(q0).toMatchObject({ index: 1, type: 'quiz', supported: true, startMs: 5000 });
+    expect(q0.base.kind).toBe('visual-segments');
+    expect(q0.visuals).toEqual([
+      {
+        kind: 'quiz-cover',
+        startMs: 5000,
+        durationMs: 2500,
+        title: 'q0',
+        questionCount: 0,
+        totalPoints: 0,
+      },
+    ]);
+    expect(q0.markers).not.toContainEqual(expect.objectContaining({ kind: 'unsupported-scene' }));
     // quiz narration is still on the timeline
     expect(q0.narration.map((n) => n.text)).toEqual(['Answer this']);
     expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({ severity: 'info', code: 'cover-card', sceneId: 'q0' }),
+    );
+    expect(ir.diagnostics).not.toContainEqual(
       expect.objectContaining({ code: 'unsupported-scene', sceneId: 'q0' }),
     );
   });

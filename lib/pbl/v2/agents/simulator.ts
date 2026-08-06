@@ -39,12 +39,12 @@ import type {
   PBLAgentThread,
 } from '../types';
 import type { PBLSSEEvent } from '../api/sse';
-import { recordEvent } from '../operations/engagement';
+import { recordEvent } from '../operations/kernel/engagement';
 import {
   currentMicrotask,
   normalizeProjectRuntime,
   PBL_SIMULATOR_AGENT_ID,
-} from '../operations/progress';
+} from '../operations/kernel/progress';
 
 const log = createLogger('PBL v2 Simulator');
 

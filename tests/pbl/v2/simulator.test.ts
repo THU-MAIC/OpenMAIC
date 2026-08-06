@@ -7,7 +7,10 @@ import {
   isFirstSceneEntry,
 } from '@/lib/pbl/v2/agents/simulator';
 import type { PBLChatMessage, PBLAgentThread } from '@/lib/pbl/v2/types';
-import { normalizeProjectRuntime, PBL_SIMULATOR_AGENT_ID } from '@/lib/pbl/v2/operations/progress';
+import {
+  normalizeProjectRuntime,
+  PBL_SIMULATOR_AGENT_ID,
+} from '@/lib/pbl/v2/operations/kernel/progress';
 import type { PBLProjectV2, PBLMilestone, PBLMicrotask } from '@/lib/pbl/v2/types';
 
 function roleplayMilestone(): PBLMilestone {

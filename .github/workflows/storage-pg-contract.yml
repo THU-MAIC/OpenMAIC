@@ -42,5 +42,22 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Baseline, then the run, then the audit against that baseline. The
+      # in-module STORAGE_PG_CONTRACT_REQUIRED guard only covers a missing
+      # database: it is a `throw` inside the test modules, so it cannot fire if
+      # vitest stops collecting them, and collection is decided by storage's
+      # vitest.config.ts — a file no publishable-input rule covers, so excluding
+      # `*.pg.test.ts` there would silence this whole job while it still
+      # reported success.
       - name: Storage PostgreSQL contract
-        run: pnpm --filter @openmaic/storage test
+        env:
+          STORAGE_VITEST_RESULTS: ${{ runner.temp }}/storage-vitest.json
+          STORAGE_PG_BASELINE: ${{ runner.temp }}/storage-pg-baseline.json
+        run: |
+          set -euo pipefail
+          node scripts/assert-pg-contract-suites.mjs --capture-baseline "$STORAGE_PG_BASELINE"
+          pnpm --filter @openmaic/storage exec \
+            vitest run --reporter=default --reporter=json \
+            --outputFile.json="$STORAGE_VITEST_RESULTS"
+          node scripts/assert-pg-contract-suites.mjs "$STORAGE_VITEST_RESULTS" \
+            --baseline "$STORAGE_PG_BASELINE"

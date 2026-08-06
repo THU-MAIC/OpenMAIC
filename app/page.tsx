@@ -706,8 +706,8 @@ function HomePage() {
                   >
                     <span
                       className={cn(
-                        'absolute top-0.5 size-2.5 rounded-full bg-white transition-transform',
-                        form.vocationalTestMode ? 'translate-x-3' : 'translate-x-0.5',
+                        'absolute left-0.5 top-0.5 size-2.5 rounded-full bg-white transition-transform',
+                        form.vocationalTestMode ? 'translate-x-2.5' : 'translate-x-0',
                       )}
                     />
                   </span>

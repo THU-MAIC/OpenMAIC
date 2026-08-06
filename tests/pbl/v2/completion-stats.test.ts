@@ -5,7 +5,7 @@ import {
   humanizeConceptSignature,
   normalizeActGoals,
   scenarioActGoalsScaffold,
-} from '@/lib/pbl/v2/operations/completion-stats';
+} from '@/lib/pbl/v2/operations/runtime/completion-stats';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 
 function baseProject(): PBLProjectV2 {
