@@ -151,6 +151,7 @@ import { stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { RUNTIME_DSL_VERSION, validateRuntimeSession } from '@openmaic/dsl';
+import { PROMPT_IDS, buildPrompt } from '@openmaic/generation';
 import { DOCUMENT_PG_SCHEMA } from '@openmaic/storage';
 import { SlideCanvas } from '@openmaic/renderer';
 
@@ -158,6 +159,17 @@ assert.equal(typeof RUNTIME_DSL_VERSION, 'string');
 assert.equal(typeof validateRuntimeSession, 'function');
 assert.match(DOCUMENT_PG_SCHEMA, /CREATE TABLE IF NOT EXISTS document_stages/);
 assert.equal(typeof SlideCanvas, 'function');
+
+// requirements-to-outlines references three snippets (inside media conditionals),
+// so this asserts the packaged snippets/ directory is present and resolvable, not
+// just templates/: snippet inlining runs before conditional pruning, so a missing
+// snippets/ directory throws here even for pruned blocks.
+const generationPrompt = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, { mediaEnabled: true });
+assert(generationPrompt);
+assert(generationPrompt.system.length > 100);
+assert.match(generationPrompt.system, /Content Safety Guidelines for Generation Prompts/);
+assert.doesNotMatch(generationPrompt.system, /\{\{snippet:/);
+assert.doesNotMatch(generationPrompt.user, /\{\{snippet:/);
 
 const importerEntry = fileURLToPath(import.meta.resolve('@openmaic/importer'));
 assert((await stat(importerEntry)).isFile());

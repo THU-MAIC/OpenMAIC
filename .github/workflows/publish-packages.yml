@@ -1,8 +1,8 @@
 name: Publish @openmaic packages
 
-# Publishes the @openmaic/* package family (dsl, storage, renderer, importer) to npm.
+# Publishes the @openmaic/* package family (dsl, generation, storage, renderer, importer) to npm.
 #
-# Scope is pinned to those four packages by name on purpose: the workspace also
+# Scope is pinned to those five packages by name on purpose: the workspace also
 # contains vendored forks (mathml2omml, pptxgenjs) whose names we do NOT own, so
 # a publish must never touch them.
 #
@@ -40,6 +40,7 @@ on:
     branches: [main]
     paths:
       - "packages/@openmaic/dsl/package.json"
+      - "packages/@openmaic/generation/package.json"
       - "packages/@openmaic/storage/package.json"
       - "packages/@openmaic/renderer/package.json"
       - "packages/@openmaic/importer/package.json"
@@ -114,12 +115,13 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Build in dependency order (dsl first); storage/renderer/importer resolve
-      # @openmaic/dsl through the workspace link.
+      # Build in dependency order (dsl first); generation/storage/renderer/importer
+      # resolve @openmaic/dsl through the workspace link.
       - name: Build @openmaic packages
         run: >-
           pnpm -r
           --filter "@openmaic/dsl"
+          --filter "@openmaic/generation"
           --filter "@openmaic/storage"
           --filter "@openmaic/renderer"
           --filter "@openmaic/importer"
@@ -166,7 +168,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir "$RELEASE_ARTIFACTS"
-          for pkg in dsl storage renderer importer; do
+          for pkg in dsl generation storage renderer importer; do
             echo "::group::@openmaic/$pkg"
             ( cd "packages/@openmaic/$pkg" \
               && pnpm pack --config.ignore-scripts=true --pack-destination "$RELEASE_ARTIFACTS" )
@@ -207,14 +209,16 @@ jobs:
         run: |
           set -euo pipefail
           pnpm --filter "@openmaic/dsl" \
-            --filter "@openmaic/renderer" --filter "@openmaic/importer" run test
+            --filter "@openmaic/generation" --filter "@openmaic/renderer" \
+            --filter "@openmaic/importer" run test
           node scripts/assert-pg-contract-suites.mjs --capture-baseline "$STORAGE_PG_BASELINE"
           pnpm --filter "@openmaic/storage" exec \
             vitest run --reporter=default --reporter=json \
             --outputFile.json="$STORAGE_VITEST_RESULTS"
           node scripts/assert-pg-contract-suites.mjs "$STORAGE_VITEST_RESULTS" \
             --baseline "$STORAGE_PG_BASELINE"
-          pnpm --filter "@openmaic/dsl" --filter "@openmaic/storage" --filter "@openmaic/renderer" run typecheck
+          pnpm --filter "@openmaic/dsl" --filter "@openmaic/generation" \
+            --filter "@openmaic/storage" --filter "@openmaic/renderer" run typecheck
 
       # KNOWN LIMITATION: this smoke test reads the writable local directory,
       # not the uploaded snapshot. Because upload already happened, a test
@@ -361,7 +365,7 @@ jobs:
           node scripts/verify-package-artifacts.mjs "$RELEASE_ARTIFACTS"
 
           node scripts/check-package-version-bumps.mjs --release
-          for pkg in dsl storage renderer importer; do
+          for pkg in dsl generation storage renderer importer; do
             name="@openmaic/$pkg"
             version="$(node -p "require('./packages/@openmaic/$pkg/package.json').version")"
             planned="$(node -e 'const plan = require(process.env.RELEASE_PLAN_PATH);
@@ -429,7 +433,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          for pkg in dsl storage renderer importer; do
+          for pkg in dsl generation storage renderer importer; do
             name="@openmaic/$pkg"
             version="$(node -p "require('./packages/@openmaic/$pkg/package.json').version")"
             tag="$name@$version"
