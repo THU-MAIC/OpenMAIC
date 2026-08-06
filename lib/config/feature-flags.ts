@@ -82,15 +82,3 @@ export function isVideoExportEnabled(): boolean {
 export function isPptxImportEnabled(): boolean {
   return readBoolean(process.env.NEXT_PUBLIC_ENABLE_PPTX_IMPORT);
 }
-
-/**
- * Course folders — grouping courses into user-created folders on the home page.
- * Default OFF. Gates the "New folder" entry point, the folder navigation
- * (breadcrumb / folder tiles), and the per-course "Move to folder" menu. The
- * underlying Dexie tables (`folders` / `stageFolders`) and storage functions
- * are always available; this flag hides the affordances until the feature is
- * stable.
- */
-export function isCourseFoldersEnabled(): boolean {
-  return readBoolean(process.env.NEXT_PUBLIC_ENABLE_COURSE_FOLDERS);
-}

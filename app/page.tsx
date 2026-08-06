@@ -78,11 +78,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
-import {
-  isCourseFoldersEnabled,
-  isPptxImportEnabled,
-  shouldShowVocationalTestUi,
-} from '@/lib/config/feature-flags';
+import { isPptxImportEnabled, shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
 
@@ -96,11 +92,6 @@ const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
 // yet, so the flow only logs the parsed slides. Hide the entry point behind a
 // flag until it's wired end-to-end, so the UI doesn't expose a no-op button.
 const PPTX_IMPORT_ENABLED = isPptxImportEnabled();
-
-// Course folders — hide every folder affordance (new-folder button, folder
-// tiles, breadcrumb, move menu) until the feature is enabled. The underlying
-// storage layer is always present; the flag only gates the UI surface.
-const COURSE_FOLDERS_ENABLED = isCourseFoldersEnabled();
 
 interface FormState {
   courseMaterials: SelectedCourseMaterial[];
@@ -195,6 +186,10 @@ function HomePage() {
   // that folder's course list. Searching flattens every course regardless of
   // folder and annotates each with its folder name.
   const [folders, setFolders] = useState<FolderRecord[]>([]);
+  // True once the initial classroom + folder loads resolve. Guards layout
+  // selection so the hero does not flip between full-screen and compact as the
+  // two async reads land (avoids a visible layout shift on first paint).
+  const [hydrated, setHydrated] = useState(false);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<FolderRecord | null>(null);
@@ -271,8 +266,9 @@ function HomePage() {
     useMediaGenerationStore.getState().revokeObjectUrls();
     useMediaGenerationStore.setState({ tasks: {} });
 
-    loadClassrooms();
-    if (COURSE_FOLDERS_ENABLED) loadFolders();
+    // Both reads resolve before flipping `hydrated`, so the hero layout does
+    // not thrash between full-screen and compact as each lands independently.
+    void Promise.all([loadClassrooms(), loadFolders()]).finally(() => setHydrated(true));
 
     return () => {
       revokeThumbnailSlideMediaUrls(thumbnailsRef.current);
@@ -405,27 +401,20 @@ function HomePage() {
   // that folder's members.
   const folderNameById = useMemo(() => new Map(folders.map((f) => [f.id, f.name])), [folders]);
   // When the feature flag is off, treat the folder world as empty so the home
-  // page renders exactly the legacy unfiled-only grid.
-  const effectiveFolders = COURSE_FOLDERS_ENABLED ? folders : [];
-  const effectiveCurrentFolderId = COURSE_FOLDERS_ENABLED ? currentFolderId : undefined;
   const isSearching = deferredSearchQuery.trim().length > 0;
   // The course tiles rendered in the active view: search flattens everything;
   // a folder shows only its members; the root shows unfiled courses (folder
   // tiles are rendered separately above them).
   const visibleClassrooms = useMemo(() => {
     if (isSearching) return filteredClassrooms;
-    if (effectiveCurrentFolderId)
-      return filteredClassrooms.filter((c) => c.folderId === effectiveCurrentFolderId);
+    if (currentFolderId) return filteredClassrooms.filter((c) => c.folderId === currentFolderId);
     return filteredClassrooms.filter(
       (c) => c.folderId === undefined || !folderNameById.has(c.folderId),
     );
-  }, [filteredClassrooms, isSearching, effectiveCurrentFolderId, folderNameById]);
+  }, [filteredClassrooms, isSearching, currentFolderId, folderNameById]);
   const currentFolderClassrooms = useMemo(
-    () =>
-      effectiveCurrentFolderId
-        ? classrooms.filter((c) => c.folderId === effectiveCurrentFolderId)
-        : [],
-    [classrooms, effectiveCurrentFolderId],
+    () => (currentFolderId ? classrooms.filter((c) => c.folderId === currentFolderId) : []),
+    [classrooms, currentFolderId],
   );
   const courseCountByFolder = useMemo(() => {
     const counts = new Map<string, number>();
@@ -449,7 +438,7 @@ function HomePage() {
     }
     return byFolder;
   }, [classrooms, thumbnails]);
-  const currentFolder = effectiveFolders.find((f) => f.id === effectiveCurrentFolderId);
+  const currentFolder = folders.find((f) => f.id === currentFolderId);
 
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -735,7 +724,10 @@ function HomePage() {
         transition={{ duration: 0.6, ease: 'easeOut' }}
         className={cn(
           'relative z-20 w-full max-w-[800px] flex flex-col items-center',
-          classrooms.length === 0 && !effectiveCurrentFolderId
+          // Full-screen landing hero only when the library is truly empty
+          // (zero courses AND zero folders) and storage has hydrated, so the
+          // hero does not flip from full-screen to compact once folders load.
+          hydrated && classrooms.length === 0 && folders.length === 0
             ? 'justify-center min-h-[calc(100dvh-8rem)]'
             : 'mt-[10vh]',
         )}
@@ -944,20 +936,22 @@ function HomePage() {
       {/* Keep the section alive as long as there is anything to show: courses,
           folders, or — when the flag is on — the "New folder" affordance. This
           avoids trapping persisted folders when the last course is deleted. */}
-      {(classrooms.length > 0 || effectiveFolders.length > 0 || COURSE_FOLDERS_ENABLED) && (
+      {(classrooms.length > 0 || folders.length > 0) && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
           className="relative z-10 mt-10 w-full max-w-6xl flex flex-col items-center"
         >
-          {/* Trigger — divider-line with centered text */}
-          <div className="group w-full flex items-center gap-4 py-2">
+          {/* Trigger — divider-line with centered text. Fixed height keeps the
+              bar geometrically stable when the New-folder action or the folder
+              path appears/disappears (entering vs leaving a folder). */}
+          <div className="group w-full flex items-center gap-4 h-9">
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
             <div className="shrink-0 flex items-center gap-3 text-[13px] text-muted-foreground/60 select-none">
               <button
                 onClick={() => {
-                  if (effectiveCurrentFolderId) setCurrentFolderId(undefined);
+                  if (currentFolderId) setCurrentFolderId(undefined);
                   else persistRecentOpen(!recentOpen);
                 }}
                 className="flex items-center gap-2 hover:text-foreground/70 transition-colors cursor-pointer"
@@ -1086,7 +1080,7 @@ function HomePage() {
                 </button>
               )}
               {/* New folder — round icon button, matches the import/upload affordances. */}
-              {COURSE_FOLDERS_ENABLED && !currentFolderId && !isSearching && (
+              {!currentFolderId && !isSearching && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1114,13 +1108,11 @@ function HomePage() {
                 transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
                 className="w-full overflow-hidden"
               >
-                {effectiveFolders.length === 0 && classrooms.length === 0 ? (
+                {folders.length === 0 && classrooms.length === 0 ? (
                   <div className="pt-8 pb-2 text-center text-[13px] text-muted-foreground/60">
                     {t('classroom.emptyLibraryHint')}
                   </div>
-                ) : !isSearching &&
-                  effectiveCurrentFolderId &&
-                  currentFolderClassrooms.length === 0 ? (
+                ) : !isSearching && currentFolderId && currentFolderClassrooms.length === 0 ? (
                   // Empty folder: hint directly below the centered path bar.
                   <div className="pt-8 text-center">
                     <p className="text-[14px] text-muted-foreground">
@@ -1163,8 +1155,8 @@ function HomePage() {
                         key={
                           isSearching
                             ? 'search'
-                            : effectiveCurrentFolderId
-                              ? `folder-${effectiveCurrentFolderId}`
+                            : currentFolderId
+                              ? `folder-${currentFolderId}`
                               : 'root'
                         }
                         initial={{ opacity: 0, y: 8 }}
@@ -1175,8 +1167,8 @@ function HomePage() {
                       >
                         {/* Root + non-search: render folder tiles first. */}
                         {!isSearching &&
-                          effectiveCurrentFolderId === undefined &&
-                          effectiveFolders.map((folder, i) => (
+                          currentFolderId === undefined &&
+                          folders.map((folder, i) => (
                             <motion.div
                               key={folder.id}
                               initial={{ opacity: 0, y: 16 }}
@@ -1214,25 +1206,21 @@ function HomePage() {
                               onCancelDelete={() => setPendingDeleteId(null)}
                               onClick={() => router.push(`/classroom/${classroom.id}`)}
                               overlay={
-                                COURSE_FOLDERS_ENABLED ? (
-                                  <>
-                                    <MoveToFolderMenu
-                                      folders={effectiveFolders}
-                                      currentFolderId={classroom.folderId}
-                                      onMove={(folderId) =>
-                                        handleMoveCourse(classroom.id, folderId)
-                                      }
-                                      onCreateAndMove={handleCreateAndMove(classroom.id)}
-                                    />
-                                    {/* Search view: show the owning folder as a badge. */}
-                                    {isSearching && classroom.folderId && (
-                                      <span className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 rounded-md bg-violet-500/80 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm pointer-events-none">
-                                        <Folder className="size-2.5" />
-                                        {folderNameById.get(classroom.folderId) ?? ''}
-                                      </span>
-                                    )}
-                                  </>
-                                ) : undefined
+                                <>
+                                  <MoveToFolderMenu
+                                    folders={folders}
+                                    currentFolderId={classroom.folderId}
+                                    onMove={(folderId) => handleMoveCourse(classroom.id, folderId)}
+                                    onCreateAndMove={handleCreateAndMove(classroom.id)}
+                                  />
+                                  {/* Search view: show the owning folder as a badge. */}
+                                  {isSearching && classroom.folderId && (
+                                    <span className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 rounded-md bg-violet-500/80 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm pointer-events-none">
+                                      <Folder className="size-2.5" />
+                                      {folderNameById.get(classroom.folderId) ?? ''}
+                                    </span>
+                                  )}
+                                </>
                               }
                             />
                           </motion.div>
@@ -1249,26 +1237,22 @@ function HomePage() {
 
       {/* Folder dialogs — mounted at the top level so they are reachable even
           while the Recent section is collapsed or the course list is empty. */}
-      {COURSE_FOLDERS_ENABLED && (
-        <>
-          <NewFolderDialog
-            open={newFolderOpen}
-            onOpenChange={(open) => {
-              setNewFolderOpen(open);
-              if (!open) setCreateAndMoveTarget(null);
-            }}
-            folders={effectiveFolders}
-            onCreate={handleCreateFolder}
-          />
-          <DeleteFolderDialog
-            open={deleteTarget !== null}
-            onOpenChange={(open) => !open && setDeleteTarget(null)}
-            folder={deleteTarget}
-            courseCount={deleteTargetCourseCount}
-            onConfirm={confirmDeleteFolder}
-          />
-        </>
-      )}
+      <NewFolderDialog
+        open={newFolderOpen}
+        onOpenChange={(open) => {
+          setNewFolderOpen(open);
+          if (!open) setCreateAndMoveTarget(null);
+        }}
+        folders={folders}
+        onCreate={handleCreateFolder}
+      />
+      <DeleteFolderDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        folder={deleteTarget}
+        courseCount={deleteTargetCourseCount}
+        onConfirm={confirmDeleteFolder}
+      />
 
       {/* Footer — flows with content, at the very end */}
       <div className="mt-auto pt-12 pb-4 text-center text-xs text-muted-foreground/40">
@@ -1633,7 +1617,7 @@ function ClassroomCard({
     <div
       className="group cursor-pointer"
       onClick={confirmingDelete ? undefined : onClick}
-      draggable={COURSE_FOLDERS_ENABLED && !confirmingDelete}
+      draggable={!confirmingDelete}
       onDragStart={(e) => {
         e.dataTransfer.setData('text/stage-id', classroom.id);
         e.dataTransfer.effectAllowed = 'move';
