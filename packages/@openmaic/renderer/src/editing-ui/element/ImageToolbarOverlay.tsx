@@ -84,7 +84,11 @@ export function ImageToolbarOverlay({
             </button>
           ) : null}
           {pickerOpen && renderPicker && onReplace ? (
-            <div className="maic-editing-ui-image-picker-popover" role="dialog" aria-label={labels.replace}>
+            <div
+              className="maic-editing-ui-image-picker-popover"
+              role="dialog"
+              aria-label={labels.replace}
+            >
               {renderPicker({
                 element,
                 onPick: (src) => {

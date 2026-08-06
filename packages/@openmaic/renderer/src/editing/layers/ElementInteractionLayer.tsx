@@ -107,11 +107,7 @@ function ElementInteractionTarget({
     modifier: boolean;
   } | null>(null);
   const isEditingElement = selection.editingId === element.id;
-  const isCoveredUnderlay = isCoveredByEditingElement(
-    element,
-    sourceElements,
-    selection.editingId,
-  );
+  const isCoveredUnderlay = isCoveredByEditingElement(element, sourceElements, selection.editingId);
 
   const selectElement = (event: ReactPointerEvent) => {
     event.stopPropagation();

@@ -51,7 +51,11 @@ function Harness() {
   );
 }
 
-function EmptyLabelHarness({ onElementsChange }: { onElementsChange: (intents: EditIntent[]) => void }) {
+function EmptyLabelHarness({
+  onElementsChange,
+}: {
+  onElementsChange: (intents: EditIntent[]) => void;
+}) {
   const [selection, setSelection] = useState<Selection>({
     elementIds: ['shape-1'],
     primaryId: 'shape-1',

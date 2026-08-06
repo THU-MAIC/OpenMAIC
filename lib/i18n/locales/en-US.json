@@ -245,6 +245,17 @@
     "insert": {
       "textBox": "Text box",
       "line": "Line",
+      "linePresets": {
+        "straight": "Straight line",
+        "dashed": "Dashed line",
+        "arrow": "Arrow line",
+        "dashedArrow": "Dashed arrow line",
+        "dottedEnd": "Dot end line",
+        "broken": "Broken line",
+        "doubleBroken": "Double broken line",
+        "curve": "Curve",
+        "cubic": "Cubic curve"
+      },
       "table": "Table",
       "formula": "Formula",
       "chart": "Chart",

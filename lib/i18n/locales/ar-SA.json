@@ -245,6 +245,17 @@
     "insert": {
       "textBox": "مربع نص",
       "line": "خط",
+      "linePresets": {
+        "straight": "خط مستقيم",
+        "dashed": "خط متقطع",
+        "arrow": "خط بسهم",
+        "dashedArrow": "خط متقطع بسهم",
+        "dottedEnd": "خط بنقطة في النهاية",
+        "broken": "خط منكسر",
+        "doubleBroken": "خط منكسر مزدوج",
+        "curve": "منحنى",
+        "cubic": "منحنى تكعيبي"
+      },
       "table": "جدول",
       "formula": "معادلة",
       "chart": "مخطط",

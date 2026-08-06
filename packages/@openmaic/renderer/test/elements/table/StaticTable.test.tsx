@@ -22,6 +22,8 @@ describe('StaticTable', () => {
   it('vertically centers a cell when no explicit vertical alignment is stored', () => {
     const { container } = render(<StaticTable elementInfo={table} />);
 
-    expect((container.querySelector('.slide-renderer-cell-text') as HTMLElement).style.justifyContent).toBe('center');
+    expect(
+      (container.querySelector('.slide-renderer-cell-text') as HTMLElement).style.justifyContent,
+    ).toBe('center');
   });
 });

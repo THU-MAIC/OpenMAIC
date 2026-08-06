@@ -136,18 +136,21 @@ describe('computeLineDrag', () => {
   });
 
   it('snaps an endpoint onto a sibling element anchor point', () => {
-    const snapPoints = getLineSnapPoints([
-      line({ id: 'l' }),
-      {
-        id: 'box',
-        type: 'shape',
-        left: 200,
-        top: 120,
-        width: 100,
-        height: 80,
-        rotate: 0,
-      },
-    ] as never, 'l');
+    const snapPoints = getLineSnapPoints(
+      [
+        line({ id: 'l' }),
+        {
+          id: 'box',
+          type: 'shape',
+          left: 200,
+          top: 120,
+          width: 100,
+          height: 80,
+          rotate: 0,
+        },
+      ] as never,
+      'l',
+    );
     const r = computeLineDrag({
       element: line(),
       handle: 'end',

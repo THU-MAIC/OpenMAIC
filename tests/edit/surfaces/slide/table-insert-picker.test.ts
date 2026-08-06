@@ -4,8 +4,9 @@ import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 import { TableInsertPicker } from '@/components/edit/surfaces/slide/TableInsertPicker';
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 async function renderPicker(onPick = vi.fn()) {
   const container = document.createElement('div');
@@ -35,7 +36,9 @@ describe('TableInsertPicker', () => {
     expect(container.querySelector('[data-testid="table-insert-dimensions"]')?.textContent).toBe(
       '2 x 3 Table',
     );
-    expect(container.querySelectorAll('[data-table-insert-cell][data-active="true"]')).toHaveLength(6);
+    expect(container.querySelectorAll('[data-table-insert-cell][data-active="true"]')).toHaveLength(
+      6,
+    );
     await act(async () => root.unmount());
     container.remove();
   });

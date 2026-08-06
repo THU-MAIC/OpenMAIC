@@ -30,6 +30,6 @@ export function resolveEditingElementId(
 ): string {
   const el = resolveSelectedElement(activeElementIdList, elements);
   const editable = Boolean(el && editableTypes.includes(el.type));
-  if (requestedId === undefined) return editable ? el?.id ?? '' : '';
+  if (requestedId === undefined) return editable ? (el?.id ?? '') : '';
   return editable && !el?.lock && el?.id === requestedId ? requestedId : '';
 }

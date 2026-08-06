@@ -245,6 +245,17 @@
     "insert": {
       "textBox": "Cuadro de texto",
       "line": "Línea",
+      "linePresets": {
+        "straight": "Línea recta",
+        "dashed": "Línea discontinua",
+        "arrow": "Línea con flecha",
+        "dashedArrow": "Línea discontinua con flecha",
+        "dottedEnd": "Línea con extremo de punto",
+        "broken": "Línea quebrada",
+        "doubleBroken": "Línea con doble quiebre",
+        "curve": "Curva",
+        "cubic": "Curva cúbica"
+      },
       "table": "Tabla",
       "formula": "Fórmula",
       "chart": "Gráfica",

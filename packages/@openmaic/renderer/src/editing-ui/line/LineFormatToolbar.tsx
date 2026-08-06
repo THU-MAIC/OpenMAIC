@@ -56,9 +56,15 @@ export function LineFormatToolbar({
       const rect = colorButtonRef.current?.getBoundingClientRect();
       if (!rect) return;
       const minLeft = VIEWPORT_EDGE_OFFSET;
-      const maxLeft = Math.max(minLeft, window.innerWidth - COLOR_POPOVER_WIDTH - VIEWPORT_EDGE_OFFSET);
+      const maxLeft = Math.max(
+        minLeft,
+        window.innerWidth - COLOR_POPOVER_WIDTH - VIEWPORT_EDGE_OFFSET,
+      );
       setColorPopoverPosition({
-        left: Math.min(Math.max(rect.left + rect.width / 2 - COLOR_POPOVER_WIDTH / 2, minLeft), maxLeft),
+        left: Math.min(
+          Math.max(rect.left + rect.width / 2 - COLOR_POPOVER_WIDTH / 2, minLeft),
+          maxLeft,
+        ),
         top: rect.bottom + COLOR_POPOVER_OFFSET,
       });
     };
@@ -120,7 +126,9 @@ export function LineFormatToolbar({
         onChange={(event) => emit({ width: Number(event.target.value) })}
       >
         {WIDTHS.map((width) => (
-          <option key={width} value={width}>{width}px</option>
+          <option key={width} value={width}>
+            {width}px
+          </option>
         ))}
       </select>
       <select
@@ -130,7 +138,9 @@ export function LineFormatToolbar({
         onChange={(event) => emit({ style: event.target.value as LineStyleType })}
       >
         {LINE_STYLES.map((style) => (
-          <option key={style} value={style}>{labels[style]}</option>
+          <option key={style} value={style}>
+            {labels[style]}
+          </option>
         ))}
       </select>
       {(['start', 'end'] as const).map((position, index) => (
@@ -146,7 +156,9 @@ export function LineFormatToolbar({
           }}
         >
           {LINE_POINTS.map((point) => (
-            <option key={point || 'none'} value={point}>{pointLabel(point)}</option>
+            <option key={point || 'none'} value={point}>
+              {pointLabel(point)}
+            </option>
           ))}
         </select>
       ))}

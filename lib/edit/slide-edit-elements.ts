@@ -99,10 +99,7 @@ export function createDefaultImageElement(id: string, src: string): PPTImageElem
   };
 }
 
-export function createDefaultLatexElement(
-  id: string,
-  result: LatexEditorResult,
-): PPTLatexElement {
+export function createDefaultLatexElement(id: string, result: LatexEditorResult): PPTLatexElement {
   return {
     id,
     type: 'latex',

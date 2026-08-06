@@ -2,7 +2,11 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TextFormatState } from '../../src/editing/text/types';
-import { computeToolbarPosition, LineToolbarOverlay, TextToolbarOverlay } from '../../src/editing-ui';
+import {
+  computeToolbarPosition,
+  LineToolbarOverlay,
+  TextToolbarOverlay,
+} from '../../src/editing-ui';
 import type { PPTLineElement } from '@openmaic/dsl';
 
 const format: TextFormatState = {
@@ -214,7 +218,10 @@ describe('TextToolbarOverlay', () => {
 describe('LineToolbarOverlay', () => {
   it('uses a line paint node as its toolbar anchor', async () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock);
-    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn(() => 1),
+    );
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
     const { line } = addLineAnchor();
     vi.spyOn(line, 'getBoundingClientRect').mockReturnValue(rect(200, 200, 120, 80));

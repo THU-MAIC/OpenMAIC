@@ -44,10 +44,7 @@ export function VideoToolbarOverlay({
 
   useLayoutEffect(() => {
     const toolbar = toolbarRef.current;
-    if (!anchor || !toolbar) {
-      setToolbarSize(null);
-      return;
-    }
+    if (!anchor || !toolbar) return;
     const measure = () => {
       const rect = toolbar.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { createElement, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { createElement, useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import type {
   ChartType,
   PPTAudioElement,
@@ -180,8 +180,8 @@ function RendererEditorCanvas() {
   const setCreatingElement = useCanvasStore.use.setCreatingElement();
   const setCanvasScale = useCanvasStore.use.setCanvasScale();
   const setDisableHotkeysState = useCanvasStore.use.setDisableHotkeysState();
-  const clipboardRef = useRef(createRendererElementClipboard());
-  const clipboardPasteStateRef = useRef(createRendererClipboardPasteState());
+  const clipboard = useMemo(() => createRendererElementClipboard(), []);
+  const clipboardPasteState = useMemo(() => createRendererClipboardPasteState(), []);
   const toolbarFonts = useMemo(
     () =>
       FONTS.map((font) => ({
@@ -269,7 +269,9 @@ function RendererEditorCanvas() {
   const handleLatexInsert = useCallback(
     (result: LatexEditorResult) => {
       const id = createElementId('latex');
-      handleElementsChange([{ type: 'element.add', element: createDefaultLatexElement(id, result) }]);
+      handleElementsChange([
+        { type: 'element.add', element: createDefaultLatexElement(id, result) },
+      ]);
       setActiveElementIdList([id]);
       setEditingElementId('');
     },
@@ -410,10 +412,7 @@ function RendererEditorCanvas() {
       const [endX, endY] = geometry.end;
       const left = Math.min(startX, endX);
       const top = Math.min(startY, endY);
-      const preset =
-        creatingElement?.type === 'line'
-          ? creatingElement.data
-          : DEFAULT_LINE_PRESET;
+      const preset = creatingElement?.type === 'line' ? creatingElement.data : DEFAULT_LINE_PRESET;
       const start: [number, number] = [startX - left, startY - top];
       const end: [number, number] = [endX - left, endY - top];
       const midpoint: [number, number] = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
@@ -445,114 +444,120 @@ function RendererEditorCanvas() {
   );
   const cancelLineCreate = useCallback(() => setCreatingElement(null), [setCreatingElement]);
 
-  const insertToolbar = useMemo<InsertToolbarOptions>(
-    () => {
-      const armText = () =>
-        setCreatingElement(creatingElement?.type === 'text' ? null : { type: 'text' });
-      const armLine = (preset: LineInsertPreset) =>
-        setCreatingElement(
-          creatingElement?.type === 'line' ? null : { type: 'line', data: preset },
-        );
+  const insertToolbar = useMemo<InsertToolbarOptions>(() => {
+    const armText = () =>
+      setCreatingElement(creatingElement?.type === 'text' ? null : { type: 'text' });
+    const armLine = (preset: LineInsertPreset) =>
+      setCreatingElement(creatingElement?.type === 'line' ? null : { type: 'line', data: preset });
 
-      return {
-        items: [
-          {
-            id: 'insert-text',
-            label: t('edit.insert.textBox'),
-            tooltip: t('edit.insert.textBox'),
-            icon: createElement(Type, { 'aria-hidden': true }),
-            active: creatingElement?.type === 'text',
-            onInvoke: armText,
-          },
-          {
-            id: 'insert-image',
-            label: t('edit.insert.image'),
-            tooltip: t('edit.insert.image'),
-            icon: createElement(ImageIcon, { 'aria-hidden': true }),
-            renderPopover: ({ close }) =>
-              createElement(ImagePicker, {
-                onPick: (src: string) => {
-                  insertImageElement(src);
-                  close();
-                },
-              }),
-          },
-          {
-            id: 'insert-table',
-            label: t('edit.insert.table'),
-            tooltip: t('edit.insert.table'),
-            icon: createElement(Table2, { 'aria-hidden': true }),
-            renderPopover: ({ close }) =>
-              createElement(TableInsertPicker, {
-                getLabel: (rows: number, columns: number) =>
-                  t('edit.insert.tableDimensions', { rows, columns }),
-                onPick: (rows: number, columns: number) => {
-                  insertTableElement(rows, columns);
-                  close();
-                },
-              }),
-          },
-          {
-            id: 'insert-chart',
-            label: t('edit.insert.chart'),
-            tooltip: t('edit.insert.chart'),
-            icon: createElement(BarChart3, { 'aria-hidden': true }),
-            renderPopover: ({ close }) =>
-              createElement(ChartInsertPicker, {
-                options: [
-                  { type: 'bar' as ChartType, label: t('edit.insert.chartBar') },
-                  { type: 'line' as ChartType, label: t('edit.insert.chartLine') },
-                  { type: 'pie' as ChartType, label: t('edit.insert.chartPie') },
-                ],
-                onPick: (chartType: ChartType) => {
-                  insertChartElement(chartType);
-                  close();
-                },
-              }),
-          },
-          {
-            id: 'insert-line',
-            label: t('edit.insert.line'),
-            tooltip: t('edit.insert.line'),
-            icon: createElement(Minus, { 'aria-hidden': true }),
-            active: creatingElement?.type === 'line',
-            renderPopover: ({ close }) =>
-              createElement(LineInsertPicker, {
-                labels: { label: t('edit.insert.line') },
-                onPick: (preset: LineInsertPreset) => {
-                  armLine(preset);
-                  close();
-                },
-              }),
-          },
-          {
-            id: 'slide-background',
-            label: t('edit.background.label'),
-            tooltip: t('edit.background.label'),
-            icon: createElement(PaintBucket, { 'aria-hidden': true }),
-            renderPopover: ({ close }) =>
-              createElement(BackgroundInsertPicker, {
-                background: content.canvas.background,
-                labels: {
-                  solid: t('edit.background.solid'),
-                  image: t('edit.background.image'),
-                  color: t('edit.text.color'),
-                },
-                renderImagePicker: (onPick: (src: string) => void) =>
-                  createElement(ImagePicker, {
-                    onPick: (src: string) => {
-                      onPick(src);
-                      close();
-                    },
-                  }),
-                onChange: updateSlideBackground,
-              }),
-          },
-        ],
-      };
-    },
-    [content.canvas.background, creatingElement?.type, setCreatingElement, t],
-  );
+    return {
+      items: [
+        {
+          id: 'insert-text',
+          label: t('edit.insert.textBox'),
+          tooltip: t('edit.insert.textBox'),
+          icon: createElement(Type, { 'aria-hidden': true }),
+          active: creatingElement?.type === 'text',
+          onInvoke: armText,
+        },
+        {
+          id: 'insert-image',
+          label: t('edit.insert.image'),
+          tooltip: t('edit.insert.image'),
+          icon: createElement(ImageIcon, { 'aria-hidden': true }),
+          renderPopover: ({ close }) =>
+            createElement(ImagePicker, {
+              onPick: (src: string) => {
+                insertImageElement(src);
+                close();
+              },
+            }),
+        },
+        {
+          id: 'insert-table',
+          label: t('edit.insert.table'),
+          tooltip: t('edit.insert.table'),
+          icon: createElement(Table2, { 'aria-hidden': true }),
+          renderPopover: ({ close }) =>
+            createElement(TableInsertPicker, {
+              getLabel: (rows: number, columns: number) =>
+                t('edit.insert.tableDimensions', { rows, columns }),
+              onPick: (rows: number, columns: number) => {
+                insertTableElement(rows, columns);
+                close();
+              },
+            }),
+        },
+        {
+          id: 'insert-chart',
+          label: t('edit.insert.chart'),
+          tooltip: t('edit.insert.chart'),
+          icon: createElement(BarChart3, { 'aria-hidden': true }),
+          renderPopover: ({ close }) =>
+            createElement(ChartInsertPicker, {
+              options: [
+                { type: 'bar' as ChartType, label: t('edit.insert.chartBar') },
+                { type: 'line' as ChartType, label: t('edit.insert.chartLine') },
+                { type: 'pie' as ChartType, label: t('edit.insert.chartPie') },
+              ],
+              onPick: (chartType: ChartType) => {
+                insertChartElement(chartType);
+                close();
+              },
+            }),
+        },
+        {
+          id: 'insert-line',
+          label: t('edit.insert.line'),
+          tooltip: t('edit.insert.line'),
+          icon: createElement(Minus, { 'aria-hidden': true }),
+          active: creatingElement?.type === 'line',
+          renderPopover: ({ close }) =>
+            createElement(LineInsertPicker, {
+              labels: {
+                label: t('edit.insert.line'),
+                straight: t('edit.insert.linePresets.straight'),
+                dashed: t('edit.insert.linePresets.dashed'),
+                arrow: t('edit.insert.linePresets.arrow'),
+                dashedArrow: t('edit.insert.linePresets.dashedArrow'),
+                dottedEnd: t('edit.insert.linePresets.dottedEnd'),
+                broken: t('edit.insert.linePresets.broken'),
+                doubleBroken: t('edit.insert.linePresets.doubleBroken'),
+                curve: t('edit.insert.linePresets.curve'),
+                cubic: t('edit.insert.linePresets.cubic'),
+              },
+              onPick: (preset: LineInsertPreset) => {
+                armLine(preset);
+                close();
+              },
+            }),
+        },
+        {
+          id: 'slide-background',
+          label: t('edit.background.label'),
+          tooltip: t('edit.background.label'),
+          icon: createElement(PaintBucket, { 'aria-hidden': true }),
+          renderPopover: ({ close }) =>
+            createElement(BackgroundInsertPicker, {
+              background: content.canvas.background,
+              labels: {
+                solid: t('edit.background.solid'),
+                image: t('edit.background.image'),
+                color: t('edit.text.color'),
+              },
+              renderImagePicker: (onPick: (src: string) => void) =>
+                createElement(ImagePicker, {
+                  onPick: (src: string) => {
+                    onPick(src);
+                    close();
+                  },
+                }),
+              onChange: updateSlideBackground,
+            }),
+        },
+      ],
+    };
+  }, [content.canvas.background, creatingElement?.type, setCreatingElement, t]);
 
   const handleImageClip = useCallback(
     (element: PPTImageElement, data: ImageClipedEmitData | null) => {
@@ -624,10 +629,18 @@ function RendererEditorCanvas() {
         onIntents: handleElementsChange,
         onSelectionChange: handleSelectionChange,
         createElementId,
-        clipboard: clipboardRef.current,
-        clipboardPasteState: clipboardPasteStateRef.current,
+        clipboard,
+        clipboardPasteState,
       }),
-    [content, handleElementsChange, handleSelectionChange, hiddenElementIds, selection],
+    [
+      clipboard,
+      clipboardPasteState,
+      content,
+      handleElementsChange,
+      handleSelectionChange,
+      hiddenElementIds,
+      selection,
+    ],
   );
   useRendererCanvasShortcuts(commands, {
     enabled: !disableHotkeys,
@@ -635,169 +648,169 @@ function RendererEditorCanvas() {
   });
 
   return (
-      <EditableSlideCanvasWithUI
-        slide={resolvedSlide}
-        onScaleChange={setCanvasScale}
-        elementIdPrefix={EDITABLE_ELEMENT_ID_PREFIX}
-        hiddenElementIds={hiddenElementIds}
-        snapping
-        selection={selection}
-        onSelectionChange={handleSelectionChange}
-        onElementsChange={handleElementsChange}
-        onTextContentChange={handleTextContentChange}
-        onTextAutoSize={handleTextAutoSize}
-        onTextFocusChange={handleTextFocusChange}
-        onTableCellChange={handleTableCellChange}
-        tableEditMaskLabel={t('edit.table.doubleClickToEdit')}
-        creatingText={creatingElement?.type === 'text'}
-        onTextCreate={handleTextCreate}
-        creatingLine={creatingElement?.type === 'line'}
-        onLineCreate={handleLineCreate}
-        onLineCreateCancel={cancelLineCreate}
-        renderImage={renderEditorImage}
-        renderVideo={renderEditorVideo}
-        videoInteractive={false}
-        shapePathFormulas={SHAPE_PATH_FORMULAS}
-        textToolbar={{
-          locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US',
-          fonts: toolbarFonts,
-        }}
-        lineToolbar={{ locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US' }}
-        insertToolbar={insertToolbar}
-        latexEditor={{
-          labels: {
-            toolbar: t('edit.latex.toolbar'),
-            insertFormula: t('edit.insert.formula'),
-            editFormula: t('edit.latex.editFormula'),
-            bringToFront: t('edit.zorder.toFront'),
-            sendToBack: t('edit.zorder.toBack'),
-            delete: t('edit.delete'),
-            dialog: t('edit.latex.dialog'),
-            source: t('edit.latex.source'),
-            preview: t('edit.latex.preview'),
-            symbols: t('edit.latex.symbols'),
-            presets: t('edit.latex.presets'),
-            invalidSource: t('edit.latex.invalidSource'),
-            cancel: t('common.cancel'),
-            confirm: t('common.confirm'),
-          },
-          onInsert: handleLatexInsert,
-          onUpdate: handleLatexUpdate,
-          onBringToFront: (elementId) => handleElementReorder(elementId, 'front'),
-          onSendToBack: (elementId) => handleElementReorder(elementId, 'back'),
-          onDelete: handleElementDelete,
-        }}
-        videoEditor={{
-          labels: {
-            toolbar: t('edit.video.toolbar'),
-            poster: t('edit.video.poster'),
-            bringToFront: t('edit.zorder.toFront'),
-            sendToBack: t('edit.zorder.toBack'),
-            delete: t('edit.delete'),
-          },
-          renderPosterPicker: ({ onPick }) => <ImagePicker onPick={onPick} />,
-          onPosterChange: handleVideoPosterChange,
-          onBringToFront: (elementId) => handleVideoReorder(elementId, 'front'),
-          onSendToBack: (elementId) => handleVideoReorder(elementId, 'back'),
-          onDelete: handleVideoDelete,
-        }}
-        videoInsert={{
-          labels: {
-            insertVideo: t('edit.insert.video'),
-            videoDrop: t('edit.insert.videoDrop'),
-            videoOr: t('edit.insert.videoOr'),
-            videoUrlPlaceholder: t('edit.insert.videoUrlPlaceholder'),
-            videoInsert: t('edit.insert.videoInsert'),
-          },
-          onInsert: handleVideoInsert,
-        }}
-        audioEditor={{
-          labels: {
-            toolbar: t('edit.audio.toolbar'),
-            preview: t('edit.audio.preview'),
-            pause: t('edit.audio.pause'),
-            loop: t('edit.audio.loop'),
-            bringToFront: t('edit.zorder.toFront'),
-            sendToBack: t('edit.zorder.toBack'),
-            delete: t('edit.delete'),
-          },
-          onLoopChange: handleAudioLoopChange,
-          onBringToFront: (elementId) => handleAudioReorder(elementId, 'front'),
-          onSendToBack: (elementId) => handleAudioReorder(elementId, 'back'),
-          onDelete: handleAudioDelete,
-        }}
-        audioInsert={{
-          labels: {
-            insertAudio: t('edit.insert.audio'),
-            audioDrop: t('edit.insert.audioDrop'),
-            audioOr: t('edit.insert.audioOr'),
-            audioUrlPlaceholder: t('edit.insert.audioUrlPlaceholder'),
-            audioInsert: t('edit.insert.audioInsert'),
-          },
-          onInsert: handleAudioInsert,
-        }}
-        elementToolbar={{
-          labels: {
-            bringToFront: t('edit.zorder.toFront'),
-            sendToBack: t('edit.zorder.toBack'),
-            delete: t('edit.delete'),
-          },
-          onBringToFront: (elementId) => handleElementReorder(elementId, 'front'),
-          onSendToBack: (elementId) => handleElementReorder(elementId, 'back'),
-          onDelete: handleElementDelete,
-        }}
-        imageEditor={{
-          labels: {
-            replace: t('edit.image.replace'),
-            flipH: t('edit.image.flipH'),
-            flipV: t('edit.image.flipV'),
-            bringToFront: t('edit.zorder.toFront'),
-            sendToBack: t('edit.zorder.toBack'),
-            delete: t('edit.delete'),
-          },
-          renderPicker: ({ onPick }) => <ImagePicker onPick={onPick} />,
-          onReplace: replaceImageSrc,
-          onFlip: toggleImageFlip,
-          onBringToFront: (elementId) => handleElementReorder(elementId, 'front'),
-          onSendToBack: (elementId) => handleElementReorder(elementId, 'back'),
-          onDelete: handleElementDelete,
-        }}
-        contextMenu={{
-          labels: {
-            horizontalAlignment: t('edit.contextMenu.horizontalAlignment'),
-            verticalAlignment: t('edit.contextMenu.verticalAlignment'),
-            selectAll: t('edit.contextMenu.selectAll'),
-            copy: t('edit.contextMenu.copy'),
-            cut: t('edit.contextMenu.cut'),
-            paste: t('edit.contextMenu.paste'),
-            unlock: t('edit.contextMenu.unlock'),
-            lock: t('edit.contextMenu.lock'),
-            delete: t('edit.delete'),
-            group: t('edit.contextMenu.group'),
-            ungroup: t('edit.contextMenu.ungroup'),
-            bringToFront: t('edit.zorder.toFront'),
-            bringForward: t('edit.contextMenu.bringForward'),
-            sendToBack: t('edit.zorder.toBack'),
-            sendBackward: t('edit.contextMenu.sendBackward'),
-            alignLeft: t('edit.text.alignLeft'),
-            alignCenter: t('edit.text.alignCenter'),
-            alignRight: t('edit.text.alignRight'),
-            alignTop: t('edit.contextMenu.alignTop'),
-            alignMiddle: t('edit.contextMenu.alignMiddle'),
-            alignBottom: t('edit.contextMenu.alignBottom'),
-          },
-          onSelectAll: commands.selectAll,
-          onCopy: commands.copySelection,
-          onCut: commands.cutSelection,
-          onPaste: commands.pasteElements,
-          onUnlock: commands.unlockTarget,
-          onLock: commands.lockSelection,
-          onDelete: commands.deleteSelection,
-          onToggleGroup: commands.toggleGroup,
-          onReorder: commands.reorderTarget,
-          onAlign: commands.alignSelection,
-        }}
-      />
+    <EditableSlideCanvasWithUI
+      slide={resolvedSlide}
+      onScaleChange={setCanvasScale}
+      elementIdPrefix={EDITABLE_ELEMENT_ID_PREFIX}
+      hiddenElementIds={hiddenElementIds}
+      snapping
+      selection={selection}
+      onSelectionChange={handleSelectionChange}
+      onElementsChange={handleElementsChange}
+      onTextContentChange={handleTextContentChange}
+      onTextAutoSize={handleTextAutoSize}
+      onTextFocusChange={handleTextFocusChange}
+      onTableCellChange={handleTableCellChange}
+      tableEditMaskLabel={t('edit.table.doubleClickToEdit')}
+      creatingText={creatingElement?.type === 'text'}
+      onTextCreate={handleTextCreate}
+      creatingLine={creatingElement?.type === 'line'}
+      onLineCreate={handleLineCreate}
+      onLineCreateCancel={cancelLineCreate}
+      renderImage={renderEditorImage}
+      renderVideo={renderEditorVideo}
+      videoInteractive={false}
+      shapePathFormulas={SHAPE_PATH_FORMULAS}
+      textToolbar={{
+        locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US',
+        fonts: toolbarFonts,
+      }}
+      lineToolbar={{ locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US' }}
+      insertToolbar={insertToolbar}
+      latexEditor={{
+        labels: {
+          toolbar: t('edit.latex.toolbar'),
+          insertFormula: t('edit.insert.formula'),
+          editFormula: t('edit.latex.editFormula'),
+          bringToFront: t('edit.zorder.toFront'),
+          sendToBack: t('edit.zorder.toBack'),
+          delete: t('edit.delete'),
+          dialog: t('edit.latex.dialog'),
+          source: t('edit.latex.source'),
+          preview: t('edit.latex.preview'),
+          symbols: t('edit.latex.symbols'),
+          presets: t('edit.latex.presets'),
+          invalidSource: t('edit.latex.invalidSource'),
+          cancel: t('common.cancel'),
+          confirm: t('common.confirm'),
+        },
+        onInsert: handleLatexInsert,
+        onUpdate: handleLatexUpdate,
+        onBringToFront: (elementId) => handleElementReorder(elementId, 'front'),
+        onSendToBack: (elementId) => handleElementReorder(elementId, 'back'),
+        onDelete: handleElementDelete,
+      }}
+      videoEditor={{
+        labels: {
+          toolbar: t('edit.video.toolbar'),
+          poster: t('edit.video.poster'),
+          bringToFront: t('edit.zorder.toFront'),
+          sendToBack: t('edit.zorder.toBack'),
+          delete: t('edit.delete'),
+        },
+        renderPosterPicker: ({ onPick }) => <ImagePicker onPick={onPick} />,
+        onPosterChange: handleVideoPosterChange,
+        onBringToFront: (elementId) => handleVideoReorder(elementId, 'front'),
+        onSendToBack: (elementId) => handleVideoReorder(elementId, 'back'),
+        onDelete: handleVideoDelete,
+      }}
+      videoInsert={{
+        labels: {
+          insertVideo: t('edit.insert.video'),
+          videoDrop: t('edit.insert.videoDrop'),
+          videoOr: t('edit.insert.videoOr'),
+          videoUrlPlaceholder: t('edit.insert.videoUrlPlaceholder'),
+          videoInsert: t('edit.insert.videoInsert'),
+        },
+        onInsert: handleVideoInsert,
+      }}
+      audioEditor={{
+        labels: {
+          toolbar: t('edit.audio.toolbar'),
+          preview: t('edit.audio.preview'),
+          pause: t('edit.audio.pause'),
+          loop: t('edit.audio.loop'),
+          bringToFront: t('edit.zorder.toFront'),
+          sendToBack: t('edit.zorder.toBack'),
+          delete: t('edit.delete'),
+        },
+        onLoopChange: handleAudioLoopChange,
+        onBringToFront: (elementId) => handleAudioReorder(elementId, 'front'),
+        onSendToBack: (elementId) => handleAudioReorder(elementId, 'back'),
+        onDelete: handleAudioDelete,
+      }}
+      audioInsert={{
+        labels: {
+          insertAudio: t('edit.insert.audio'),
+          audioDrop: t('edit.insert.audioDrop'),
+          audioOr: t('edit.insert.audioOr'),
+          audioUrlPlaceholder: t('edit.insert.audioUrlPlaceholder'),
+          audioInsert: t('edit.insert.audioInsert'),
+        },
+        onInsert: handleAudioInsert,
+      }}
+      elementToolbar={{
+        labels: {
+          bringToFront: t('edit.zorder.toFront'),
+          sendToBack: t('edit.zorder.toBack'),
+          delete: t('edit.delete'),
+        },
+        onBringToFront: (elementId) => handleElementReorder(elementId, 'front'),
+        onSendToBack: (elementId) => handleElementReorder(elementId, 'back'),
+        onDelete: handleElementDelete,
+      }}
+      imageEditor={{
+        labels: {
+          replace: t('edit.image.replace'),
+          flipH: t('edit.image.flipH'),
+          flipV: t('edit.image.flipV'),
+          bringToFront: t('edit.zorder.toFront'),
+          sendToBack: t('edit.zorder.toBack'),
+          delete: t('edit.delete'),
+        },
+        renderPicker: ({ onPick }) => <ImagePicker onPick={onPick} />,
+        onReplace: replaceImageSrc,
+        onFlip: toggleImageFlip,
+        onBringToFront: (elementId) => handleElementReorder(elementId, 'front'),
+        onSendToBack: (elementId) => handleElementReorder(elementId, 'back'),
+        onDelete: handleElementDelete,
+      }}
+      contextMenu={{
+        labels: {
+          horizontalAlignment: t('edit.contextMenu.horizontalAlignment'),
+          verticalAlignment: t('edit.contextMenu.verticalAlignment'),
+          selectAll: t('edit.contextMenu.selectAll'),
+          copy: t('edit.contextMenu.copy'),
+          cut: t('edit.contextMenu.cut'),
+          paste: t('edit.contextMenu.paste'),
+          unlock: t('edit.contextMenu.unlock'),
+          lock: t('edit.contextMenu.lock'),
+          delete: t('edit.delete'),
+          group: t('edit.contextMenu.group'),
+          ungroup: t('edit.contextMenu.ungroup'),
+          bringToFront: t('edit.zorder.toFront'),
+          bringForward: t('edit.contextMenu.bringForward'),
+          sendToBack: t('edit.zorder.toBack'),
+          sendBackward: t('edit.contextMenu.sendBackward'),
+          alignLeft: t('edit.text.alignLeft'),
+          alignCenter: t('edit.text.alignCenter'),
+          alignRight: t('edit.text.alignRight'),
+          alignTop: t('edit.contextMenu.alignTop'),
+          alignMiddle: t('edit.contextMenu.alignMiddle'),
+          alignBottom: t('edit.contextMenu.alignBottom'),
+        },
+        onSelectAll: commands.selectAll,
+        onCopy: commands.copySelection,
+        onCut: commands.cutSelection,
+        onPaste: commands.pasteElements,
+        onUnlock: commands.unlockTarget,
+        onLock: commands.lockSelection,
+        onDelete: commands.deleteSelection,
+        onToggleGroup: commands.toggleGroup,
+        onReorder: commands.reorderTarget,
+        onAlign: commands.alignSelection,
+      }}
+    />
   );
 }
 

@@ -230,6 +230,17 @@
     "insert": {
       "textBox": "Caixa de texto",
       "line": "Linha",
+      "linePresets": {
+        "straight": "Linha reta",
+        "dashed": "Linha tracejada",
+        "arrow": "Linha com seta",
+        "dashedArrow": "Linha tracejada com seta",
+        "dottedEnd": "Linha com ponta circular",
+        "broken": "Linha quebrada",
+        "doubleBroken": "Linha com quebra dupla",
+        "curve": "Curva",
+        "cubic": "Curva cúbica"
+      },
       "table": "Tabela",
       "formula": "Fórmula",
       "chart": "Gráfico",

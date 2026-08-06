@@ -49,13 +49,27 @@ export interface RendererTableEditorController {
 }
 
 /** Visual affordance for a selected table before its cells enter edit mode. */
-export function TableEditMask({ children, label }: { readonly children: ReactNode; readonly label: string }) {
+export function TableEditMask({
+  children,
+  label,
+}: {
+  readonly children: ReactNode;
+  readonly label: string;
+}) {
   return (
-    <div data-table-edit-mask-container="" style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div
+      data-table-edit-mask-container=""
+      style={{ position: 'relative', width: '100%', height: '100%' }}
+    >
       {children}
       <div
         data-table-edit-mask=""
-        style={{ position: 'absolute', inset: 0, backgroundColor: 'rgb(0 0 0 / 0.02)', pointerEvents: 'none' }}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundColor: 'rgb(0 0 0 / 0.02)',
+          pointerEvents: 'none',
+        }}
       >
         <span
           data-table-edit-mask-tip=""
@@ -78,16 +92,21 @@ export function TableEditMask({ children, label }: { readonly children: ReactNod
 }
 
 /** A PPTist-style table editor where only one cell is contenteditable. */
-export const RendererTableEditor = forwardRef<RendererTableEditorController, RendererTableEditorProps>(
-function RendererTableEditor({
-  element,
-  initialFocusPoint,
-  onChange,
-  onTextEditorChange,
-  onTextFormatChange,
-  onTextFocusChange,
-  onExit,
-}, ref) {
+export const RendererTableEditor = forwardRef<
+  RendererTableEditorController,
+  RendererTableEditorProps
+>(function RendererTableEditor(
+  {
+    element,
+    initialFocusPoint,
+    onChange,
+    onTextEditorChange,
+    onTextFormatChange,
+    onTextFocusChange,
+    onExit,
+  },
+  ref,
+) {
   const [activeCellId, setActiveCellId] = useState<string | null>(null);
   const [cellFocusPoint, setCellFocusPoint] = useState<{
     readonly cellId: string;
@@ -135,8 +154,10 @@ function RendererTableEditor({
     const target = [...cellRefs.current.entries()].find(([, cell]) => {
       const rect = cell.getBoundingClientRect();
       return (
-        initialFocusPoint.left >= rect.left && initialFocusPoint.left <= rect.right &&
-        initialFocusPoint.top >= rect.top && initialFocusPoint.top <= rect.bottom
+        initialFocusPoint.left >= rect.left &&
+        initialFocusPoint.left <= rect.right &&
+        initialFocusPoint.top >= rect.top &&
+        initialFocusPoint.top <= rect.bottom
       );
     });
     if (!target) return;
@@ -192,7 +213,13 @@ function RendererTableEditor({
   return (
     <table
       className="slide-renderer-prose"
-      style={{ width: '100%', height: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', pointerEvents: 'auto' }}
+      style={{
+        width: '100%',
+        height: '100%',
+        borderCollapse: 'collapse',
+        tableLayout: 'fixed',
+        pointerEvents: 'auto',
+      }}
     >
       <colgroup>
         {element.colWidths.map((width, index) => (
@@ -201,7 +228,10 @@ function RendererTableEditor({
       </colgroup>
       <tbody>
         {element.data.map((row, rowIndex) => (
-          <tr key={rowIndex} style={{ height: `${element.rowHeights?.[rowIndex] ?? element.cellMinHeight}px` }}>
+          <tr
+            key={rowIndex}
+            style={{ height: `${element.rowHeights?.[rowIndex] ?? element.cellMinHeight}px` }}
+          >
             {row.map((cell, columnIndex) => {
               const headerColor = getHeaderTextColor(rowIndex);
               const textStyle = getTextStyle(cell.style);
@@ -224,7 +254,11 @@ function RendererTableEditor({
                 flexDirection: 'column',
                 lineHeight: 1,
                 justifyContent:
-                  cell.vAlign === 'top' ? 'flex-start' : cell.vAlign === 'bottom' ? 'flex-end' : 'center',
+                  cell.vAlign === 'top'
+                    ? 'flex-start'
+                    : cell.vAlign === 'bottom'
+                      ? 'flex-end'
+                      : 'center',
                 ...textStyle,
               };
               const isActive = activeCellId === cell.id;
@@ -243,7 +277,14 @@ function RendererTableEditor({
                   data-table-cell-id={cell.id}
                   colSpan={cell.colspan > 1 ? cell.colspan : undefined}
                   rowSpan={cell.rowspan > 1 ? cell.rowspan : undefined}
-                  style={{ ...borderCss, backgroundColor: getCellBackground(rowIndex, columnIndex, cell.style?.backcolor) }}
+                  style={{
+                    ...borderCss,
+                    backgroundColor: getCellBackground(
+                      rowIndex,
+                      columnIndex,
+                      cell.style?.backcolor,
+                    ),
+                  }}
                   onPointerDown={(event: ReactPointerEvent<HTMLTableCellElement>) => {
                     event.stopPropagation();
                     if (activeCellId !== cell.id) event.preventDefault();
@@ -276,7 +317,10 @@ function RendererTableEditor({
                       />
                     </div>
                   ) : (
-                    <div style={{ ...cellTextStyle, cursor: 'text' }} dangerouslySetInnerHTML={{ __html: cell.text }} />
+                    <div
+                      style={{ ...cellTextStyle, cursor: 'text' }}
+                      dangerouslySetInnerHTML={{ __html: cell.text }}
+                    />
                   )}
                 </td>
               );
@@ -286,5 +330,4 @@ function RendererTableEditor({
       </tbody>
     </table>
   );
-},
-);
+});

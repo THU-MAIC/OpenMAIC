@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { SlideBackground } from '@openmaic/dsl';
 
 export interface BackgroundInsertPickerLabels {
@@ -37,11 +37,18 @@ export function BackgroundInsertPicker({
   const [color, setColor] = useState(
     background?.type === 'solid' && background.color ? background.color : '#ffffff',
   );
+  const backgroundType = background?.type ?? 'solid';
+  const backgroundColor = background?.type === 'solid' ? background.color : undefined;
+  const [syncedBackground, setSyncedBackground] = useState({
+    type: backgroundType,
+    color: backgroundColor,
+  });
 
-  useEffect(() => {
-    if (background?.type === 'image') setTab('image');
-    if (background?.type === 'solid' && background.color) setColor(background.color);
-  }, [background]);
+  if (backgroundType !== syncedBackground.type || backgroundColor !== syncedBackground.color) {
+    setSyncedBackground({ type: backgroundType, color: backgroundColor });
+    if (backgroundType === 'image') setTab('image');
+    if (backgroundColor) setColor(backgroundColor);
+  }
 
   const applyColor = (nextColor: string) => {
     setColor(nextColor);

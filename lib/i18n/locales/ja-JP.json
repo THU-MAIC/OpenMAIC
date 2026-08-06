@@ -245,6 +245,17 @@
     "insert": {
       "textBox": "テキストボックス",
       "line": "線",
+      "linePresets": {
+        "straight": "直線",
+        "dashed": "破線",
+        "arrow": "矢印線",
+        "dashedArrow": "破線矢印",
+        "dottedEnd": "終点ドット線",
+        "broken": "折れ線",
+        "doubleBroken": "二重折れ線",
+        "curve": "曲線",
+        "cubic": "3次曲線"
+      },
       "table": "表",
       "formula": "数式",
       "chart": "グラフ",

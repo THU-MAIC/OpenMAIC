@@ -25,6 +25,10 @@ const COLOR_POPOVER_OFFSET = 8;
 const VIEWPORT_EDGE_OFFSET = 12;
 const useColorPopoverLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
+function Divider() {
+  return <div className="maic-editing-ui-divider" aria-hidden="true" />;
+}
+
 export function TextFormatToolbar({
   format,
   onCommand,
@@ -105,8 +109,6 @@ export function TextFormatToolbar({
     dispatchColorChange(color);
     setIsColorPickerOpen(false);
   };
-  const Divider = () => <div className="maic-editing-ui-divider" aria-hidden="true" />;
-
   return (
     <div className={classes} role="toolbar" aria-label={labels.toolbar} data-placement={placement}>
       <div className="maic-editing-ui-group maic-editing-ui-font-group">

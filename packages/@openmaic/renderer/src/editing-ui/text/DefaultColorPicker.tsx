@@ -1,5 +1,5 @@
 import { Pipette } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { HexColorPicker } from 'react-colorful';
 import type { TextToolbarColorPickerProps } from '../types';
 
@@ -49,23 +49,26 @@ export function DefaultColorPicker({
 }: TextToolbarColorPickerProps) {
   const incomingColor = getPickerColor(value);
   const [color, setColor] = useState(incomingColor);
-  const isDragging = useRef(false);
+  const [previousIncomingColor, setPreviousIncomingColor] = useState(incomingColor);
+  const [isDragging, setIsDragging] = useState(false);
+
+  if (incomingColor !== previousIncomingColor) {
+    setPreviousIncomingColor(incomingColor);
+    if (!isDragging) setColor(incomingColor);
+  }
 
   useEffect(() => {
     const stopDragging = () => {
-      isDragging.current = false;
+      setIsDragging(false);
     };
     const channels = ['mouseup', 'touchend', 'pointerup', 'pointercancel'] as const;
     channels.forEach((eventName) => window.addEventListener(eventName, stopDragging));
-    return () => channels.forEach((eventName) => window.removeEventListener(eventName, stopDragging));
+    return () =>
+      channels.forEach((eventName) => window.removeEventListener(eventName, stopDragging));
   }, []);
 
-  useEffect(() => {
-    if (!isDragging.current) setColor(incomingColor);
-  }, [incomingColor]);
-
   const handleChange = (nextColor: string) => {
-    isDragging.current = true;
+    setIsDragging(true);
     setColor(nextColor);
     onChange(nextColor);
   };

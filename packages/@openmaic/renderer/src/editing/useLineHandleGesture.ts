@@ -3,11 +3,7 @@
 import { useState, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import type { PPTLineElement } from '@openmaic/dsl';
 
-import {
-  computeLineDrag,
-  type LineDragResult,
-  type LineSnapPoint,
-} from './core/line-drag';
+import { computeLineDrag, type LineDragResult, type LineSnapPoint } from './core/line-drag';
 import type { EditIntent, LineHandle } from './types';
 
 /**

@@ -87,7 +87,11 @@ export function BaseAudioElement({ elementInfo }: BaseAudioElementProps) {
           width: '40px',
         }}
       >
-        {playing ? <Pause aria-hidden="true" size={22} /> : <Volume2 aria-hidden="true" size={28} />}
+        {playing ? (
+          <Pause aria-hidden="true" size={22} />
+        ) : (
+          <Volume2 aria-hidden="true" size={28} />
+        )}
       </button>
     </div>
   );

@@ -63,7 +63,7 @@ vi.mock('../../src/editing/EditableSlideCanvas', async () => {
           .filter(
             (element) =>
               element.type === 'text' ||
-            element.type === 'table' ||
+              element.type === 'table' ||
               element.type === 'image' ||
               element.type === 'shape' ||
               element.type === 'chart' ||

@@ -42,12 +42,14 @@ describe('BaseAudioElement preview control', () => {
     fireEvent.click(button);
 
     expect(AudioMock).toHaveBeenCalledWith(audio.src);
-    expect((await screen.findByRole('button', { name: 'Pause audio' })).getAttribute('aria-pressed')).toBe(
-      'true',
-    );
+    expect(
+      (await screen.findByRole('button', { name: 'Pause audio' })).getAttribute('aria-pressed'),
+    ).toBe('true');
 
     fireEvent.click(screen.getByRole('button', { name: 'Pause audio' }));
     expect(instance.pause).toHaveBeenCalledOnce();
-    expect(screen.getByRole('button', { name: 'Play audio' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: 'Play audio' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    );
   });
 });

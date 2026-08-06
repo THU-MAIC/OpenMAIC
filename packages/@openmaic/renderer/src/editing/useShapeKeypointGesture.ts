@@ -19,11 +19,7 @@ export interface UseShapeKeypointGestureArgs {
   onElementsChange?: (intents: EditIntent[]) => void;
 }
 
-function deltaForRelative(
-  relative: ShapeKeypointRelative,
-  moveX: number,
-  moveY: number,
-): number {
+function deltaForRelative(relative: ShapeKeypointRelative, moveX: number, moveY: number): number {
   switch (relative) {
     case 'center':
       return -moveX * 2;
@@ -104,7 +100,10 @@ export function useShapeKeypointGesture({
       const [min, max] = range;
       const nextValue = Math.min(
         max,
-        Math.max(min, (originKeypoint * baseSize + deltaForRelative(relative, moveX, moveY)) / baseSize),
+        Math.max(
+          min,
+          (originKeypoint * baseSize + deltaForRelative(relative, moveX, moveY)) / baseSize,
+        ),
       );
       const keypoints = [...originKeypoints];
       keypoints[index] = nextValue;

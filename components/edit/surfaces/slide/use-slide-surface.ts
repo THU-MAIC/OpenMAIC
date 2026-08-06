@@ -74,18 +74,16 @@ export function buildInsertItems(
         }),
     },
   ];
-  items.push(
-    {
-      // Slide-level (not element-anchored): set the slide background. Rides the
-      // always-visible insert strip so it stays reachable with nothing selected.
-      id: 'slide-background',
-      label: t('edit.background.label'),
-      tooltip: t('edit.background.label'),
-      icon: React.createElement(PaintBucket, { className: 'h-4 w-4' }),
-      onInvoke: () => {}, // popover-only: see insert-image above
-      popoverContent: () => React.createElement(BackgroundControl),
-    },
-  );
+  items.push({
+    // Slide-level (not element-anchored): set the slide background. Rides the
+    // always-visible insert strip so it stays reachable with nothing selected.
+    id: 'slide-background',
+    label: t('edit.background.label'),
+    tooltip: t('edit.background.label'),
+    icon: React.createElement(PaintBucket, { className: 'h-4 w-4' }),
+    onInvoke: () => {}, // popover-only: see insert-image above
+    popoverContent: () => React.createElement(BackgroundControl),
+  });
   return items;
 }
 

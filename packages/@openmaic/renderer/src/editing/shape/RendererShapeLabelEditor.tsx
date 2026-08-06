@@ -6,11 +6,7 @@ import type { PPTShapeElement, ShapeText } from '@openmaic/dsl';
 import { useElementFlip } from '../../elements/shared/useElementFlip';
 import { isSemanticallyEmptyText } from '../text/richText';
 import { RendererTextEditor } from '../text/RendererTextEditor';
-import type {
-  TextContentChange,
-  TextEditorController,
-  TextFormatState,
-} from '../text/types';
+import type { TextContentChange, TextEditorController, TextFormatState } from '../text/types';
 import type { EditIntent } from '../types';
 
 export interface RendererShapeLabelEditorProps {
@@ -61,7 +57,11 @@ export function RendererShapeLabelEditor({
   const handleFocusChange = useCallback(
     (focused: boolean) => {
       onFocusChange?.(focused);
-      if (focused || !element.text || !isSemanticallyEmptyText(controllerRef.current?.getHTML() ?? '')) {
+      if (
+        focused ||
+        !element.text ||
+        !isSemanticallyEmptyText(controllerRef.current?.getHTML() ?? '')
+      ) {
         return;
       }
       onElementsChange?.([{ type: 'element.removeProps', id: element.id, props: ['text'] }]);

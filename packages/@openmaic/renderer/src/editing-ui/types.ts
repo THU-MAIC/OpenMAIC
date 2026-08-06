@@ -1,5 +1,10 @@
 import type { ReactNode } from 'react';
-import type { AlignCommand, EditableSlideCanvasProps, EditIntent, ReorderCommand } from '../editing/types';
+import type {
+  AlignCommand,
+  EditableSlideCanvasProps,
+  EditIntent,
+  ReorderCommand,
+} from '../editing/types';
 import type { PPTElement, PPTImageElement, PPTLineElement, PPTVideoElement } from '@openmaic/dsl';
 import type { TextEditCommand, TextFormatState } from '../editing/text/types';
 import type { LatexEditorResult } from './latex/latex-editor';

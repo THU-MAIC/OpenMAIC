@@ -245,6 +245,17 @@
     "insert": {
       "textBox": "텍스트 상자",
       "line": "선",
+      "linePresets": {
+        "straight": "직선",
+        "dashed": "점선",
+        "arrow": "화살표 선",
+        "dashedArrow": "점선 화살표",
+        "dottedEnd": "끝점 원 선",
+        "broken": "꺾은선",
+        "doubleBroken": "이중 꺾은선",
+        "curve": "곡선",
+        "cubic": "3차 곡선"
+      },
       "table": "표",
       "formula": "수식",
       "chart": "차트",

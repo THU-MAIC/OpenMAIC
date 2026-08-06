@@ -278,10 +278,7 @@ function normalizeTableResizeProps(
 
   return {
     ...props,
-    cellMinHeight: Math.max(
-      36,
-      originCellMinHeight + (props.height - element.height) / rowCount,
-    ),
+    cellMinHeight: Math.max(36, originCellMinHeight + (props.height - element.height) / rowCount),
   };
 }
 
@@ -433,11 +430,7 @@ export function computeResize(input: ResizeInput): ResizeResult {
     top -= currentPoint.top - basePoint.top;
 
     return {
-      props: normalizeResizeProps(
-        element,
-        { left, top, width, height },
-        shapePathFormulas,
-      ),
+      props: normalizeResizeProps(element, { left, top, width, height }, shapePathFormulas),
       guides,
     };
   }

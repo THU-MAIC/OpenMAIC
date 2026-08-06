@@ -81,22 +81,12 @@ describe('DefaultColorPicker', () => {
 
   it('synchronizes the displayed hex value from controlled color changes', () => {
     const { rerender } = render(
-      <DefaultColorPicker
-        value="#112233"
-        labels={labels}
-        onChange={vi.fn()}
-        onCommit={vi.fn()}
-      />,
+      <DefaultColorPicker value="#112233" labels={labels} onChange={vi.fn()} onCommit={vi.fn()} />,
     );
 
     expect(screen.getByText('#112233')).not.toBeNull();
     rerender(
-      <DefaultColorPicker
-        value="#abcdef"
-        labels={labels}
-        onChange={vi.fn()}
-        onCommit={vi.fn()}
-      />,
+      <DefaultColorPicker value="#abcdef" labels={labels} onChange={vi.fn()} onCommit={vi.fn()} />,
     );
     expect(screen.getByText('#abcdef')).not.toBeNull();
   });

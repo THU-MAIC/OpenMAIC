@@ -17,6 +17,8 @@ const mockCommitContent = vi.fn();
 const mockInsertImageElement = vi.fn();
 const mockInsertChartElement = vi.fn();
 const mockInsertTableElement = vi.fn();
+const mockReplaceImageSrc = vi.fn();
+const mockToggleImageFlip = vi.fn();
 let activeElementIds: string[] = [];
 let hiddenElementIds: string[] = [];
 let editingElementId = '';
@@ -112,6 +114,8 @@ vi.mock('@/components/edit/surfaces/slide/use-slide-surface', () => ({
   insertImageElement: mockInsertImageElement,
   insertChartElement: mockInsertChartElement,
   insertTableElement: mockInsertTableElement,
+  replaceImageSrc: mockReplaceImageSrc,
+  toggleImageFlip: mockToggleImageFlip,
   useEditingTextElementId: () => '',
   useSelectedNonTextElement: () => null,
   useSlideCanvasController: () => ({
@@ -134,13 +138,19 @@ vi.mock('@/components/edit/surfaces/slide/use-slide-surface', () => ({
 vi.mock('@openmaic/renderer/editing-ui', () => ({
   ChartInsertPicker: (props: Record<string, unknown>) =>
     createElement('div', { 'data-testid': 'chart-insert-picker', ...props }),
+  LineInsertPicker: (props: Record<string, unknown>) =>
+    createElement('div', { 'data-testid': 'line-insert-picker', ...props }),
   EditableSlideCanvasWithUI: (props: EditableSlideCanvasWithUIProps) => {
     lastRendererProps = props;
-    return createElement('button', {
-      type: 'button',
-      'data-testid': 'renderer-editing-ui',
-      'data-selection': props.selection?.elementIds.join(',') ?? '',
-    });
+    return createElement(
+      'div',
+      { 'data-renderer-canvas-context-menu': '' },
+      createElement('button', {
+        type: 'button',
+        'data-testid': 'renderer-editing-ui',
+        'data-selection': props.selection?.elementIds.join(',') ?? '',
+      }),
+    );
   },
 }));
 
@@ -297,7 +307,7 @@ describe('slide editor canvas renderer flag', () => {
     expect(html).toContain('data-testid="spotlight-overlay"');
     expect(html).toContain('data-testid="laser-overlay"');
     expect(html).not.toContain('data-testid="anchored-text-bar"');
-    expect(html).toContain('data-testid="anchored-element-bar"');
+    expect(html).not.toContain('data-testid="anchored-element-bar"');
     expect(html).toContain('data-testid="element-pick-layer"');
     expect(lastRendererProps?.selection).toEqual({
       elementIds: ['title-1'],
@@ -357,6 +367,7 @@ describe('slide editor canvas renderer flag', () => {
     ]);
     if (!insertToolbar) throw new Error('Expected renderer insert toolbar');
     const chartItem = insertToolbar.items.find((item) => item.id === 'insert-chart');
+    const lineItem = insertToolbar.items.find((item) => item.id === 'insert-line');
     const close = vi.fn();
     const chartPicker = chartItem?.renderPopover?.({ close });
     if (!isValidElement<{ onPick: (type: 'pie') => void }>(chartPicker)) {
@@ -365,6 +376,22 @@ describe('slide editor canvas renderer flag', () => {
     chartPicker.props.onPick('pie');
     expect(mockInsertChartElement).toHaveBeenCalledWith('pie');
     expect(close).toHaveBeenCalledTimes(1);
+    const linePicker = lineItem?.renderPopover?.({ close });
+    if (!isValidElement<{ labels: Record<string, string> }>(linePicker)) {
+      throw new Error('Expected line picker popover');
+    }
+    expect(linePicker.props.labels).toEqual({
+      label: 'translated:edit.insert.line',
+      straight: 'translated:edit.insert.linePresets.straight',
+      dashed: 'translated:edit.insert.linePresets.dashed',
+      arrow: 'translated:edit.insert.linePresets.arrow',
+      dashedArrow: 'translated:edit.insert.linePresets.dashedArrow',
+      dottedEnd: 'translated:edit.insert.linePresets.dottedEnd',
+      broken: 'translated:edit.insert.linePresets.broken',
+      doubleBroken: 'translated:edit.insert.linePresets.doubleBroken',
+      curve: 'translated:edit.insert.linePresets.curve',
+      cubic: 'translated:edit.insert.linePresets.cubic',
+    });
     expect(mockSetActiveElementIdList).toHaveBeenCalledWith(['title-1']);
     expect(mockSetEditingElementId).toHaveBeenCalledWith('title-1');
     expect(mockApplyOp).not.toHaveBeenCalled();

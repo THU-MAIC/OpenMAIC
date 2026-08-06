@@ -49,7 +49,11 @@ export const LATEX_SYMBOL_GROUPS: readonly LatexSymbolGroup[] = [
 ];
 
 export const LATEX_PRESETS: readonly LatexPreset[] = [
-  { id: 'quadratic', label: 'Quadratic formula', latex: 'x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}' },
+  {
+    id: 'quadratic',
+    label: 'Quadratic formula',
+    latex: 'x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}',
+  },
   { id: 'euler', label: 'Euler identity', latex: 'e^{i\\pi} + 1 = 0' },
   { id: 'integral', label: 'Definite integral', latex: '\\int_a^b f(x)\\,dx' },
   { id: 'matrix', label: 'Matrix', latex: '\\begin{bmatrix}a & b \\\\ c & d\\end{bmatrix}' },

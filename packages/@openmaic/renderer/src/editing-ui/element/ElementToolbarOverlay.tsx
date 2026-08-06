@@ -45,7 +45,14 @@ export function ElementToolbarOverlay({
     return () => observer?.disconnect();
   }, [anchor]);
   if (!anchor || typeof document === 'undefined') return null;
-  const position = size ? computeToolbarPosition(anchor, size, { width: window.innerWidth, height: window.innerHeight }, 'top') : null;
+  const position = size
+    ? computeToolbarPosition(
+        anchor,
+        size,
+        { width: window.innerWidth, height: window.innerHeight },
+        'top',
+      )
+    : null;
   return createPortal(
     <div
       ref={ref}

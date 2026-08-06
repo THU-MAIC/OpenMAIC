@@ -231,8 +231,8 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
       scale: canvasScale,
       overlayRef,
       viewportStyles,
-    onCreate: onTextCreate,
-  });
+      onCreate: onTextCreate,
+    });
   const {
     preview: lineCreatePreview,
     onCanvasPointerDown: onLineCreatePointerDown,
@@ -275,7 +275,10 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   // above — in practice only one is ever in flight — so we layer its working
   // props on top of the box gesture's `workingSlide` below.
   const lineSnapPoints = useMemo(
-    () => getLineSnapPoints(slide.elements.filter((element) => !hiddenElementIds?.includes(element.id))),
+    () =>
+      getLineSnapPoints(
+        slide.elements.filter((element) => !hiddenElementIds?.includes(element.id)),
+      ),
     [hiddenElementIds, slide.elements],
   );
   const { lineDrag, onHandlePointerDown } = useLineHandleGesture({
@@ -351,9 +354,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   }
   if (shapeKeypointDrag) {
     displayElements = displayElements.map((el) =>
-      el.id === shapeKeypointDrag.id
-        ? ({ ...el, ...shapeKeypointDrag.props } as PPTElement)
-        : el,
+      el.id === shapeKeypointDrag.id ? ({ ...el, ...shapeKeypointDrag.props } as PPTElement) : el,
     );
   }
   const displaySlide =
@@ -438,7 +439,8 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   );
   const renderActiveShapeLabel = useCallback(
     (element: PPTShapeElement, defaultContent: ReactNode) => {
-      if (activeEditingShapeId !== element.id) return renderShapeLabel?.(element, defaultContent) ?? defaultContent;
+      if (activeEditingShapeId !== element.id)
+        return renderShapeLabel?.(element, defaultContent) ?? defaultContent;
       return (
         <RendererShapeLabelEditor
           element={element}
@@ -501,7 +503,10 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
       activeSelection.elementIds.length,
       activeSelection.primaryId,
       exitElementEditing,
+      handleTextEditorChange,
       onTableCellChange,
+      onTextFocusChange,
+      onTextFormatChange,
       tableEditMaskLabel,
       tableEditingEnabled,
     ],
@@ -589,7 +594,8 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
               style={{
                 position: 'absolute',
                 inset: 0,
-                pointerEvents: activeEditingTextId || activeEditingTableId || creationActive ? 'none' : 'auto',
+                pointerEvents:
+                  activeEditingTextId || activeEditingTableId || creationActive ? 'none' : 'auto',
                 touchAction: editingTouchAction,
               }}
             />
@@ -770,7 +776,12 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                   data-line-create-preview=""
                   width="100%"
                   height="100%"
-                  style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    overflow: 'visible',
+                    pointerEvents: 'none',
+                  }}
                 >
                   <line
                     x1={lineCreatePreview.start[0] * canvasScale}

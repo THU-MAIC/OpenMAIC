@@ -43,16 +43,44 @@ const DEFAULT_LABELS: LineInsertPickerLabels = {
   cubic: 'Cubic curve',
 };
 
-const PRESETS: readonly { readonly label: keyof Omit<LineInsertPickerLabels, 'label'>; readonly preset: LineInsertPreset }[] = [
+const PRESETS: readonly {
+  readonly label: keyof Omit<LineInsertPickerLabels, 'label'>;
+  readonly preset: LineInsertPreset;
+}[] = [
   { label: 'straight', preset: { path: 'M 0 0 L 20 20', style: 'solid', points: ['', ''] } },
   { label: 'dashed', preset: { path: 'M 0 0 L 20 20', style: 'dashed', points: ['', ''] } },
   { label: 'arrow', preset: { path: 'M 0 0 L 20 20', style: 'solid', points: ['', 'arrow'] } },
-  { label: 'dashedArrow', preset: { path: 'M 0 0 L 20 20', style: 'dashed', points: ['', 'arrow'] } },
+  {
+    label: 'dashedArrow',
+    preset: { path: 'M 0 0 L 20 20', style: 'dashed', points: ['', 'arrow'] },
+  },
   { label: 'dottedEnd', preset: { path: 'M 0 0 L 20 20', style: 'solid', points: ['', 'dot'] } },
-  { label: 'broken', preset: { path: 'M 0 0 L 0 20 L 20 20', style: 'solid', points: ['', 'arrow'], isBroken: true } },
-  { label: 'doubleBroken', preset: { path: 'M 0 0 L 10 0 L 10 20 L 20 20', style: 'solid', points: ['', 'arrow'], isBroken2: true } },
-  { label: 'curve', preset: { path: 'M 0 0 Q 0 20 20 20', style: 'solid', points: ['', 'arrow'], isCurve: true } },
-  { label: 'cubic', preset: { path: 'M 0 0 C 20 0 0 20 20 20', style: 'solid', points: ['', 'arrow'], isCubic: true } },
+  {
+    label: 'broken',
+    preset: { path: 'M 0 0 L 0 20 L 20 20', style: 'solid', points: ['', 'arrow'], isBroken: true },
+  },
+  {
+    label: 'doubleBroken',
+    preset: {
+      path: 'M 0 0 L 10 0 L 10 20 L 20 20',
+      style: 'solid',
+      points: ['', 'arrow'],
+      isBroken2: true,
+    },
+  },
+  {
+    label: 'curve',
+    preset: { path: 'M 0 0 Q 0 20 20 20', style: 'solid', points: ['', 'arrow'], isCurve: true },
+  },
+  {
+    label: 'cubic',
+    preset: {
+      path: 'M 0 0 C 20 0 0 20 20 20',
+      style: 'solid',
+      points: ['', 'arrow'],
+      isCubic: true,
+    },
+  },
 ];
 
 export function LineInsertPicker({ labels: labelOverrides, onPick }: LineInsertPickerProps) {

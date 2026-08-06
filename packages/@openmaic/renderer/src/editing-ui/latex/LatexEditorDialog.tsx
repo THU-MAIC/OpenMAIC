@@ -113,7 +113,12 @@ export function LatexEditorDialog({
           <button type="button" className="maic-editing-ui-latex-cancel" onClick={onClose}>
             {labels.cancel}
           </button>
-          <button type="button" className="maic-editing-ui-latex-confirm" disabled={!canConfirm} onClick={confirm}>
+          <button
+            type="button"
+            className="maic-editing-ui-latex-confirm"
+            disabled={!canConfirm}
+            onClick={confirm}
+          >
             {labels.confirm}
           </button>
         </footer>

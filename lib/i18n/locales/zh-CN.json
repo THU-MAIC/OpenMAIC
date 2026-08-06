@@ -245,6 +245,17 @@
     "insert": {
       "textBox": "文本框",
       "line": "线条",
+      "linePresets": {
+        "straight": "直线",
+        "dashed": "虚线",
+        "arrow": "箭头直线",
+        "dashedArrow": "虚线箭头",
+        "dottedEnd": "圆点终点线",
+        "broken": "折线",
+        "doubleBroken": "双折线",
+        "curve": "曲线",
+        "cubic": "三次曲线"
+      },
       "table": "表格",
       "formula": "公式",
       "chart": "图表",

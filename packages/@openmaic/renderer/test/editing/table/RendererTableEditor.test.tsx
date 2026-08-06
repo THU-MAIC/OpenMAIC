@@ -110,7 +110,10 @@ describe('RendererTableEditor', () => {
 
     fireEvent.pointerDown(screen.getByRole('cell', { name: 'A' }));
 
-    expect((document.querySelector('[data-table-cell-editor="cell-a"]') as HTMLElement).style.justifyContent).toBe('center');
+    expect(
+      (document.querySelector('[data-table-cell-editor="cell-a"]') as HTMLElement).style
+        .justifyContent,
+    ).toBe('center');
   });
 
   it('reports table-cell format state and persists shared text toolbar commands', () => {

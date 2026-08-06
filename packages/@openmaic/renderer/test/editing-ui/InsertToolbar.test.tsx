@@ -169,9 +169,9 @@ describe('InsertToolbar', () => {
     expect(toolbar.getByTestId('renderer-insert-toolbar').getAttribute('data-placement')).toBe(
       'top',
     );
-    expect(toolbar.getByRole('button', { name: 'Table' }).getAttribute('data-tooltip-placement')).toBe(
-      'bottom',
-    );
+    expect(
+      toolbar.getByRole('button', { name: 'Table' }).getAttribute('data-tooltip-placement'),
+    ).toBe('bottom');
     expect(toolbar.getByRole('dialog', { name: 'Table' }).style.left).toBe('34px');
     expect(toolbar.getByRole('dialog', { name: 'Table' }).style.top).toBe('');
   });

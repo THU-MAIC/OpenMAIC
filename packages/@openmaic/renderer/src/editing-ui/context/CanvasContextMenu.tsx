@@ -24,7 +24,11 @@ interface CanvasContextMenuProps extends CanvasContextMenuOptions {
 type MenuState =
   | { readonly kind: 'canvas' }
   | { readonly kind: 'locked'; readonly targetId: string }
-  | { readonly kind: 'element'; readonly targetId: string; readonly groupAction?: 'group' | 'ungroup' };
+  | {
+      readonly kind: 'element';
+      readonly targetId: string;
+      readonly groupAction?: 'group' | 'ungroup';
+    };
 
 const DEFAULT_LABELS: CanvasContextMenuLabels = {
   horizontalAlignment: 'Horizontal alignment',
@@ -114,7 +118,11 @@ function MenuItem({
     <button
       type="button"
       role="menuitem"
-      className={destructive ? 'maic-editing-ui-context-menu-item is-destructive' : 'maic-editing-ui-context-menu-item'}
+      className={
+        destructive
+          ? 'maic-editing-ui-context-menu-item is-destructive'
+          : 'maic-editing-ui-context-menu-item'
+      }
       onClick={onClick}
     >
       {children}
@@ -122,7 +130,13 @@ function MenuItem({
   );
 }
 
-function MenuSubmenu({ label, children }: { readonly label: string; readonly children: ReactNode }) {
+function MenuSubmenu({
+  label,
+  children,
+}: {
+  readonly label: string;
+  readonly children: ReactNode;
+}) {
   return (
     <div className="maic-editing-ui-context-menu-submenu">
       <button type="button" className="maic-editing-ui-context-menu-item" aria-haspopup="menu">
@@ -201,7 +215,9 @@ export function CanvasContextMenu({
     const target = event.target as Element;
     const host = target.closest?.('[data-element-id], [data-context-element-id]');
     const nextTargetId =
-      host?.getAttribute('data-element-id') || host?.getAttribute('data-context-element-id') || null;
+      host?.getAttribute('data-element-id') ||
+      host?.getAttribute('data-context-element-id') ||
+      null;
     const nextSelection = selectionForTarget(elements, selection, nextTargetId);
     if (nextSelection) onSelectionChange(nextSelection);
     setTargetId(nextTargetId);
@@ -237,7 +253,9 @@ export function CanvasContextMenu({
             >
               {menu.kind === 'canvas' ? (
                 <>
-                  <MenuItem onClick={() => invoke(onPaste)}>{shortcut(labels.paste, 'Ctrl + V')}</MenuItem>
+                  <MenuItem onClick={() => invoke(onPaste)}>
+                    {shortcut(labels.paste, 'Ctrl + V')}
+                  </MenuItem>
                   <div className="maic-editing-ui-context-menu-separator" role="separator" />
                   <MenuItem onClick={() => invoke(onSelectAll)}>
                     {shortcut(labels.selectAll, 'Ctrl + A')}
@@ -245,19 +263,33 @@ export function CanvasContextMenu({
                 </>
               ) : null}
               {menu.kind === 'locked' ? (
-                <MenuItem onClick={() => invoke(() => onUnlock(menu.targetId))}>{labels.unlock}</MenuItem>
+                <MenuItem onClick={() => invoke(() => onUnlock(menu.targetId))}>
+                  {labels.unlock}
+                </MenuItem>
               ) : null}
               {menu.kind === 'element' ? (
                 <>
                   <MenuSubmenu label={labels.horizontalAlignment}>
-                    <MenuItem onClick={() => invoke(() => onAlign('left'))}>{labels.alignLeft}</MenuItem>
-                    <MenuItem onClick={() => invoke(() => onAlign('center'))}>{labels.alignCenter}</MenuItem>
-                    <MenuItem onClick={() => invoke(() => onAlign('right'))}>{labels.alignRight}</MenuItem>
+                    <MenuItem onClick={() => invoke(() => onAlign('left'))}>
+                      {labels.alignLeft}
+                    </MenuItem>
+                    <MenuItem onClick={() => invoke(() => onAlign('center'))}>
+                      {labels.alignCenter}
+                    </MenuItem>
+                    <MenuItem onClick={() => invoke(() => onAlign('right'))}>
+                      {labels.alignRight}
+                    </MenuItem>
                   </MenuSubmenu>
                   <MenuSubmenu label={labels.verticalAlignment}>
-                    <MenuItem onClick={() => invoke(() => onAlign('top'))}>{labels.alignTop}</MenuItem>
-                    <MenuItem onClick={() => invoke(() => onAlign('middle'))}>{labels.alignMiddle}</MenuItem>
-                    <MenuItem onClick={() => invoke(() => onAlign('bottom'))}>{labels.alignBottom}</MenuItem>
+                    <MenuItem onClick={() => invoke(() => onAlign('top'))}>
+                      {labels.alignTop}
+                    </MenuItem>
+                    <MenuItem onClick={() => invoke(() => onAlign('middle'))}>
+                      {labels.alignMiddle}
+                    </MenuItem>
+                    <MenuItem onClick={() => invoke(() => onAlign('bottom'))}>
+                      {labels.alignBottom}
+                    </MenuItem>
                   </MenuSubmenu>
                   <div className="maic-editing-ui-context-menu-separator" role="separator" />
                   <MenuSubmenu label={labels.bringToFront}>
@@ -277,19 +309,30 @@ export function CanvasContextMenu({
                     </MenuItem>
                   </MenuSubmenu>
                   <div className="maic-editing-ui-context-menu-separator" role="separator" />
-                  <MenuItem onClick={() => invoke(onCopy)}>{shortcut(labels.copy, 'Ctrl + C')}</MenuItem>
-                  <MenuItem onClick={() => invoke(onCut)}>{shortcut(labels.cut, 'Ctrl + X')}</MenuItem>
-                  <MenuItem onClick={() => invoke(onPaste)}>{shortcut(labels.paste, 'Ctrl + V')}</MenuItem>
+                  <MenuItem onClick={() => invoke(onCopy)}>
+                    {shortcut(labels.copy, 'Ctrl + C')}
+                  </MenuItem>
+                  <MenuItem onClick={() => invoke(onCut)}>
+                    {shortcut(labels.cut, 'Ctrl + X')}
+                  </MenuItem>
+                  <MenuItem onClick={() => invoke(onPaste)}>
+                    {shortcut(labels.paste, 'Ctrl + V')}
+                  </MenuItem>
                   <div className="maic-editing-ui-context-menu-separator" role="separator" />
                   {menu.groupAction ? (
                     <MenuItem onClick={() => invoke(onToggleGroup)}>
-                      {shortcut(menu.groupAction === 'group' ? labels.group : labels.ungroup, 'Ctrl + G')}
+                      {shortcut(
+                        menu.groupAction === 'group' ? labels.group : labels.ungroup,
+                        'Ctrl + G',
+                      )}
                     </MenuItem>
                   ) : null}
                   <MenuItem onClick={() => invoke(onSelectAll)}>
                     {shortcut(labels.selectAll, 'Ctrl + A')}
                   </MenuItem>
-                  <MenuItem onClick={() => invoke(onLock)}>{shortcut(labels.lock, 'Ctrl + L')}</MenuItem>
+                  <MenuItem onClick={() => invoke(onLock)}>
+                    {shortcut(labels.lock, 'Ctrl + L')}
+                  </MenuItem>
                   <MenuItem destructive onClick={() => invoke(onDelete)}>
                     {shortcut(labels.delete, 'Delete')}
                   </MenuItem>

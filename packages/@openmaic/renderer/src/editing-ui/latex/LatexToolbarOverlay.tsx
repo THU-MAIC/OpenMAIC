@@ -47,10 +47,7 @@ export function LatexToolbarOverlay({
 
   useLayoutEffect(() => {
     const overlay = overlayRef.current;
-    if (!anchor || !overlay) {
-      setToolbarSize(null);
-      return;
-    }
+    if (!anchor || !overlay) return;
     const measure = () => {
       const rect = overlay.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {

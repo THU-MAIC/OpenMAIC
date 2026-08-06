@@ -51,7 +51,9 @@ export function useLineCreateGesture({
 
   useEffect(() => () => clearGesture(), []);
   useEffect(() => {
-    if (!active) clearGesture();
+    if (active) return;
+    const timer = window.setTimeout(clearGesture);
+    return () => window.clearTimeout(timer);
   }, [active]);
 
   const onCanvasPointerDown = (event: ReactPointerEvent) => {

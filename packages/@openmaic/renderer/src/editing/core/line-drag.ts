@@ -44,7 +44,10 @@ export interface LineDragResult {
  * midpoints as endpoint adsorption candidates. Keep the same order so the
  * first matching target wins consistently.
  */
-export function getLineSnapPoints(elements: readonly PPTElement[], excludeId?: string): LineSnapPoint[] {
+export function getLineSnapPoints(
+  elements: readonly PPTElement[],
+  excludeId?: string,
+): LineSnapPoint[] {
   const points: LineSnapPoint[] = [];
   for (const element of elements) {
     if (element.id === excludeId || element.type === 'line' || element.rotate) continue;
