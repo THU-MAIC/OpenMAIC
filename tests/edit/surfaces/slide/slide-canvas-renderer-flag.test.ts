@@ -10,11 +10,15 @@ const mockSetActiveElementIdList = vi.fn();
 const mockSetEditingElementId = vi.fn();
 const mockSetRichtextAttrs = vi.fn();
 const mockSetDisableHotkeysState = vi.fn();
+const mockSetCanvasScale = vi.fn();
+const mockSetCreatingElement = vi.fn();
 const mockApplyOp = vi.fn();
 const mockCommitContent = vi.fn();
 let activeElementIds: string[] = [];
 let hiddenElementIds: string[] = [];
 let editingElementId = '';
+let clipingImageElementId = '';
+let creatingElement: { type: string } | null = null;
 let spotlightPrefix: string | undefined;
 let laserPrefix: string | undefined;
 let lastRendererProps: EditableSlideCanvasWithUIProps | undefined;
@@ -68,19 +72,26 @@ vi.mock('@/lib/store/canvas', () => ({
       hiddenElementIdList: () => hiddenElementIds,
       pickTarget: () => null,
       disableHotkeys: () => false,
+      creatingElement: () => creatingElement,
       editingElementId: () => editingElementId,
+      clipingImageElementId: () => clipingImageElementId,
       setActiveElementIdList: () => mockSetActiveElementIdList,
       setEditingElementId: () => mockSetEditingElementId,
       setRichtextAttrs: () => mockSetRichtextAttrs,
       setDisableHotkeysState: () => mockSetDisableHotkeysState,
+      setCanvasScale: () => mockSetCanvasScale,
+      setCreatingElement: () => mockSetCreatingElement,
+      setClipingImageElementId: () => vi.fn(),
     },
     getState: () => ({
       creatingElement: null,
-      setCreatingElement: vi.fn(),
+      setCreatingElement: mockSetCreatingElement,
       setActiveElementIdList: mockSetActiveElementIdList,
       setEditingElementId: mockSetEditingElementId,
       setRichtextAttrs: mockSetRichtextAttrs,
       setDisableHotkeysState: mockSetDisableHotkeysState,
+      setCanvasScale: mockSetCanvasScale,
+      setClipingImageElementId: vi.fn(),
     }),
   },
 }));
@@ -165,11 +176,15 @@ describe('slide editor canvas renderer flag', () => {
     mockSetEditingElementId.mockClear();
     mockSetRichtextAttrs.mockClear();
     mockSetDisableHotkeysState.mockClear();
+    mockSetCanvasScale.mockClear();
+    mockSetCreatingElement.mockClear();
     mockApplyOp.mockClear();
     mockCommitContent.mockClear();
     activeElementIds = [];
     hiddenElementIds = [];
     editingElementId = '';
+    clipingImageElementId = '';
+    creatingElement = null;
     spotlightPrefix = undefined;
     laserPrefix = undefined;
     lastRendererProps = undefined;
@@ -229,6 +244,8 @@ describe('slide editor canvas renderer flag', () => {
     expect(spotlightPrefix).toBe(lastRendererProps?.elementIdPrefix);
     expect(laserPrefix).toBe(lastRendererProps?.elementIdPrefix);
     expect(lastRendererProps?.snapping).toBe(true);
+    expect(lastRendererProps?.renderImage).toBeTypeOf('function');
+    expect(lastRendererProps?.shapePathFormulas).toBeDefined();
     expect(lastRendererProps?.textToolbar).toEqual({
       locale: 'zh-CN',
       fonts: FONTS.map((font) => ({
@@ -289,6 +306,39 @@ describe('slide editor canvas renderer flag', () => {
         }),
       }),
       false,
+    );
+  });
+
+  it('creates, selects, and persists a renderer text box from the armed canvas gesture', async () => {
+    process.env[flag] = 'true';
+    creatingElement = { type: 'text' };
+    vi.resetModules();
+    const { SlideCanvas } = await import('@/components/edit/surfaces/slide/SlideCanvas');
+
+    renderToStaticMarkup(createElement(SlideCanvas));
+    lastRendererProps?.onTextCreate?.({ left: 120, top: 80, width: 300, height: 60 });
+
+    expect(mockSetCreatingElement).toHaveBeenCalledWith(null);
+    expect(mockSetActiveElementIdList).toHaveBeenCalledWith([
+      expect.stringMatching(/^text-/),
+    ]);
+    expect(mockSetEditingElementId).toHaveBeenCalledWith(expect.stringMatching(/^text-/));
+    expect(mockCommitContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canvas: expect.objectContaining({
+          elements: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'text',
+              left: 120,
+              top: 80,
+              width: 300,
+              height: 60,
+              content: '<p style="text-align: center"><br></p>',
+            }),
+          ]),
+        }),
+      }),
+      true,
     );
   });
 

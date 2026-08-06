@@ -260,7 +260,8 @@
     "image": {
       "replace": "Substituir imagem",
       "flipH": "Inverter horizontalmente",
-      "flipV": "Inverter verticalmente"
+      "flipV": "Inverter verticalmente",
+      "crop": "Recortar imagem"
     },
     "background": {
       "label": "Fundo",

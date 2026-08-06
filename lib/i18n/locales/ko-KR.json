@@ -418,7 +418,8 @@
     "image": {
       "flipH": "좌우 반전",
       "flipV": "상하 반전",
-      "replace": "이미지 교체"
+      "replace": "이미지 교체",
+      "crop": "이미지 자르기"
     },
     "quiz": {
       "addOption": "선택지 추가",

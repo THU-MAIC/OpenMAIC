@@ -22,9 +22,13 @@ describe('slide insert palette', () => {
   beforeEach(seedEmptySlideSession);
   afterEach(() => vi.restoreAllMocks());
 
-  it('exposes a text-box and an image insert item', () => {
+  it('exposes text-box and image insert items', () => {
     const items = buildInsertItems((k) => k, undefined);
-    expect(items.map((i) => i.id)).toEqual(['insert-text', 'insert-image', 'slide-background']);
+    expect(items.map((i) => i.id)).toEqual([
+      'insert-text',
+      'insert-image',
+      'slide-background',
+    ]);
     expect(items[1].popoverContent).toBeTypeOf('function');
     expect(items[0].onInvoke).toBeTypeOf('function');
   });

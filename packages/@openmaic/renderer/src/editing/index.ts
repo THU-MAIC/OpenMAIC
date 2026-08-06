@@ -3,10 +3,12 @@
 export { EditableSlideCanvas } from './EditableSlideCanvas';
 export { EMPTY_SELECTION } from './types';
 export { RendererTextEditor } from './text';
+export type { ShapePathFormula, ShapePathFormulaMap, ShapeKeypointRelative } from './shape/types';
 export type {
   EditableSlideCanvasProps,
   EditIntent,
   Selection,
+  TextCreateRect,
   SnappingOptions,
   ReorderCommand,
   AlignCommand,

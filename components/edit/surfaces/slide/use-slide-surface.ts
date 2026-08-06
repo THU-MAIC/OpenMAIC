@@ -25,9 +25,8 @@ export interface SlideSelection {
 export function buildInsertItems(
   t: (k: string) => string,
   // The currently-armed creating type, or undefined when nothing is armed. The
-  // text item toggles `creatingElement` (no auto-insert): the renderer's
-  // ElementCreateSelection then captures the canvas click/drag and the text
-  // branch in useInsertFromCreateSelection adds the element at that rect.
+  // text item toggles `creatingElement` (no auto-insert): the active canvas
+  // then captures the next click/drag and creates a text box at that rect.
   creatingType?: string,
 ): InsertPaletteItem[] {
   const armText = () => {

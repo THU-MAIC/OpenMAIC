@@ -175,6 +175,28 @@ describe('EditableSlideCanvas', () => {
     expect(container.querySelector('[data-element-id]')).toBeNull();
   });
 
+  it('creates a default-sized text rect from a click while text creation is armed', () => {
+    const onTextCreate = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+        creatingText
+        onTextCreate={onTextCreate}
+      />,
+    );
+
+    const surface = container.querySelector('[data-text-create-surface]') as HTMLElement;
+    expect(surface).not.toBeNull();
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 120, clientY: 80 });
+    fireEvent.pointerUp(window, { pointerId: 1, button: 0, clientX: 120, clientY: 80 });
+
+    expect(onTextCreate).toHaveBeenCalledWith({ left: 120, top: 80, width: 300, height: 60 });
+  });
+
   it('a selected line shows endpoint handles (not a bbox border); the box keeps its border', () => {
     const lineSlide = {
       ...slide,

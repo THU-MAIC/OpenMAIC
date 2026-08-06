@@ -275,7 +275,8 @@
     "image": {
       "replace": "替換圖片",
       "flipH": "水平翻轉",
-      "flipV": "垂直翻轉"
+      "flipV": "垂直翻轉",
+      "crop": "裁剪圖片"
     },
     "background": {
       "label": "背景",

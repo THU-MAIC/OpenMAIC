@@ -129,6 +129,39 @@ describe('ElementInteractionLayer context target ids', () => {
     expect(container.querySelectorAll('[data-move-border="a"]')).toHaveLength(4);
   });
 
+  it('does not expose an overlapping underlay while editing a Shape label', () => {
+    const shape = {
+      id: 'shape',
+      type: 'shape',
+      left: 10,
+      top: 20,
+      width: 200,
+      height: 80,
+      rotate: 0,
+      viewBox: [200, 80],
+      path: 'M 0 0 L 200 80',
+      fill: '#fff',
+    } as PPTElement;
+    const underlay = { ...shape, id: 'underlay', left: 0, top: 0, width: 400, height: 200 };
+    const { container } = render(
+      <ElementInteractionLayer
+        elements={[underlay, shape]}
+        sourceElements={[underlay, shape]}
+        selection={{ elementIds: ['shape'], primaryId: 'shape', editingId: 'shape' }}
+        interactive
+        movable
+        viewportLeft={0}
+        viewportTop={0}
+        canvasScale={1}
+        editingTouchAction="none"
+        onElementPointerDown={vi.fn()}
+        onSelectionChange={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('[data-select-element-id="underlay"]')).toBeNull();
+  });
+
   it('marks locked box blockers with their element id', () => {
     const locked = { ...element, lock: true } as PPTElement;
     const { container } = render(

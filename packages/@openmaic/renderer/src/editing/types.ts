@@ -1,11 +1,18 @@
 import type { CSSProperties, ReactNode } from 'react';
-import type { Slide, PPTElement, PPTImageElement, PPTVideoElement } from '@openmaic/dsl';
+import type {
+  Slide,
+  PPTElement,
+  PPTImageElement,
+  PPTShapeElement,
+  PPTVideoElement,
+} from '@openmaic/dsl';
 import type {
   TextAutoSizeIntent,
   TextContentChange,
   TextEditorController,
   TextFormatState,
 } from './text/types';
+import type { ShapePathFormulaMap } from './shape/types';
 
 /**
  * Editing surface types (renderer v2). These are the **L1** contract from the
@@ -52,6 +59,14 @@ export interface Selection {
   editingId?: string;
 }
 
+/** Canvas-space rectangle emitted after an armed text-insertion click or drag. */
+export interface TextCreateRect {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 /** Immutable empty-selection sentinel. Frozen so a shared reference can't be mutated. */
 export const EMPTY_SELECTION: Selection = Object.freeze({
   elementIds: Object.freeze([] as string[]),
@@ -71,6 +86,8 @@ export interface EditableSlideCanvasProps {
   /** Controlled document — the host owns it (and undo). */
   slide: Slide;
   scale?: number;
+  /** Reports the auto-fit scale so host-owned overlay tools share renderer coordinates. */
+  onScaleChange?: (scale: number) => void;
 
   /**
    * Controlled selection. Optional in this scaffold: the Stage 0 shell renders
@@ -94,12 +111,21 @@ export interface EditableSlideCanvasProps {
   onTextEditorChange?: (controller: TextEditorController | null) => void;
   onTextFocusChange?: (focused: boolean) => void;
 
+  /** Arms a crosshair canvas layer for a click/drag text-box insertion gesture. */
+  creatingText?: boolean;
+  /** Host-owned text creation: the renderer emits geometry while the host creates the DSL element. */
+  onTextCreate?: (rect: TextCreateRect) => void;
+
+  /** Optional host-owned geometry formulas for editable Shape keypoints. */
+  shapePathFormulas?: ShapePathFormulaMap;
+
   /** Host-injected media render slots (v1 behaviour preserved). */
   renderImage?: (
     element: PPTImageElement,
     resolvedSrc: string,
     defaultContent: ReactNode,
   ) => ReactNode;
+  renderShapeLabel?: (element: PPTShapeElement, defaultContent: ReactNode) => ReactNode;
   renderVideo?: (element: PPTVideoElement) => ReactNode;
   videoInteractive?: boolean;
 

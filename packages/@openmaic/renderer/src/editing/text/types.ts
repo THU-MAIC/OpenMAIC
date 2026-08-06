@@ -66,6 +66,6 @@ export type TextAutoSizeIntent = Extract<EditIntent, { type: 'element.update' }>
 };
 
 export interface TextContentChange {
-  intent: TextContentIntent & { target: 'text' };
+  intent: TextContentIntent;
   history: 'record' | 'neutral';
 }

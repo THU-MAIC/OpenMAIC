@@ -62,6 +62,32 @@ const lineEl = {
   points: ['', ''],
 };
 
+const formulaShapeEl = {
+  id: 'shape',
+  type: 'shape',
+  left: 100,
+  top: 100,
+  width: 200,
+  height: 100,
+  rotate: 0,
+  viewBox: [200, 100],
+  path: 'M 0 0 L 200 100',
+  pathFormula: 'rounded',
+  keypoints: [0.25],
+  fill: '#fff',
+};
+
+const shapePathFormulas = {
+  rounded: {
+    editable: true,
+    range: [[0, 0.5]] as const,
+    relative: ['left'] as const,
+    getBaseSize: [(width: number, height: number) => Math.min(width, height)],
+    formula: (width: number, height: number, values?: readonly number[]) =>
+      `M ${width} ${height} ${values?.[0]}`,
+  },
+};
+
 function makeSlide(elements: unknown[]): Slide {
   return {
     id: 's',
@@ -113,6 +139,21 @@ describe('EditableSlideCanvas — operate handle gates', () => {
     const { container } = renderCanvas([imageEl], 'img');
     expect(resizeHandlesIn(container)).toHaveLength(8);
     expect(container.querySelector('[data-rotate-handle]')).not.toBeNull();
+  });
+
+  it('a selected editable formula shape exposes its adjustment keypoint', () => {
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={makeSlide([formulaShapeEl])}
+        scale={1}
+        selection={{ elementIds: ['shape'], primaryId: 'shape' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+        shapePathFormulas={shapePathFormulas}
+      />,
+    );
+
+    expect(container.querySelector('[data-shape-keypoint="shape:0"]')).not.toBeNull();
   });
 
   it('a selected video gets eight resize handles but NO rotate handle', () => {

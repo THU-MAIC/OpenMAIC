@@ -57,8 +57,14 @@ function applyTextContentIntent(content: SlideContent, intent: TextContentIntent
 
     if (intent.target === 'text' && element.type === 'text') {
       element.content = intent.content;
-    } else if (intent.target === 'shape' && element.type === 'shape' && element.text) {
-      element.text.content = intent.content;
+    } else if (intent.target === 'shape' && element.type === 'shape') {
+      element.text = {
+        align: 'middle',
+        defaultFontName: 'Microsoft YaHei',
+        defaultColor: '#333333',
+        ...element.text,
+        content: intent.content,
+      };
     }
   });
 }

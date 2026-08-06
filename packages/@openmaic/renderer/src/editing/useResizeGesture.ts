@@ -12,6 +12,7 @@ import {
 import { resizeIntent } from './core/intent';
 import type { Guide } from './core/snapping';
 import type { EditIntent, SnappingOptions } from './types';
+import type { ShapePathFormulaMap } from './shape/types';
 
 /**
  * Distance (screen px) a handle must travel between pointer-down and pointer-up
@@ -26,6 +27,7 @@ export interface UseResizeGestureArgs {
   /** Canvas → screen scale; the inverse converts the pointer delta to canvas units. */
   scale: number;
   snapping?: boolean | SnappingOptions;
+  shapePathFormulas?: ShapePathFormulaMap;
   onElementsChange?: (intents: EditIntent[]) => void;
 }
 
@@ -65,7 +67,7 @@ export interface UseResizeGestureResult {
  * gesture glue: no store, no `@/` imports.
  */
 export function useResizeGesture(args: UseResizeGestureArgs): UseResizeGestureResult {
-  const { slide, scale, snapping, onElementsChange } = args;
+  const { slide, scale, snapping, shapePathFormulas, onElementsChange } = args;
 
   const [resizeDrag, setResizeDrag] = useState<ResizeDrag | null>(null);
 
@@ -128,6 +130,7 @@ export function useResizeGesture(args: UseResizeGestureArgs): UseResizeGestureRe
         },
         aspectModifier,
         snapping,
+        shapePathFormulas,
       });
 
     // The aspect-lock modifier is re-read from EVERY pointer event, so the

@@ -1,9 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import type { PPTImageElement, PPTTextElement } from '@openmaic/dsl';
 import type {
   EditIntent,
   Selection,
+  TextCreateRect,
   TextAutoSizeIntent,
   TextContentChange,
 } from '@openmaic/renderer/editing';
@@ -12,11 +14,15 @@ import Canvas from '@/components/slide-renderer/Editor/Canvas';
 import { SpotlightOverlay } from '@/components/slide-renderer/Editor/SpotlightOverlay';
 import { LaserPointerOverlay } from '@/components/slide-renderer/Editor/LaserPointerOverlay';
 import { FONTS } from '@/configs/font';
+import { SHAPE_PATH_FORMULAS } from '@/configs/shapes';
 import { SceneProvider } from '@/lib/contexts/scene-context';
 import { isEditorRendererEnabled } from '@/lib/config/feature-flags';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useResolvedSlide } from '@/components/slide-renderer/use-resolved-slide';
+import { ImageClipHandler } from '@/components/slide-renderer/components/element/ImageElement/ImageClipHandler';
+import { useClipImage } from '@/components/slide-renderer/components/element/ImageElement/useClipImage';
+import type { ImageClipedEmitData } from '@/lib/types/edit';
 import {
   useEditingTextElementId,
   useResolvedSlideContent,
@@ -33,20 +39,55 @@ import { RendererCanvasContextMenu } from './RendererCanvasContextMenu';
 import { useSlideEditSession } from './slide-edit-session';
 import { useRendererCanvasShortcuts } from './use-renderer-canvas-shortcuts';
 import { EDITABLE_ELEMENT_ID_PREFIX } from './renderer-element-dom';
+import { createElementId } from '@/lib/edit/element-id';
 import { resolveEditingElementId } from './editing-state';
 import { commitRendererTextAutoSize, commitRendererTextChange } from './renderer-text-editing';
+
+function RendererEditorImageContent({
+  element,
+  defaultContent,
+  clipping,
+  onClip,
+}: {
+  readonly element: PPTImageElement;
+  readonly defaultContent: ReactNode;
+  readonly clipping: boolean;
+  readonly onClip: (data: ImageClipedEmitData | null) => void;
+}) {
+  const { clipShape } = useClipImage(element);
+  if (!clipping) return defaultContent;
+  return (
+    <ImageClipHandler
+      src={element.src}
+      clipData={element.clip}
+      clipPath={clipShape.style}
+      width={element.width}
+      height={element.height}
+      top={element.top}
+      left={element.left}
+      rotate={element.rotate}
+      onClip={onClip}
+    />
+  );
+}
 
 function RendererEditorCanvas() {
   const { locale, t } = useI18n();
   const content = useResolvedSlideContent();
-  const resolvedSlide = useResolvedSlide(content.canvas);
+  const resolvedSlide = useResolvedSlide(content.canvas, {
+    preserveUnresolvedImagePlaceholders: true,
+  });
   const activeElementIds = useCanvasStore.use.activeElementIdList();
   const hiddenElementIds = useCanvasStore.use.hiddenElementIdList();
   const pickTarget = useCanvasStore.use.pickTarget();
   const disableHotkeys = useCanvasStore.use.disableHotkeys();
   const editingElementId = useCanvasStore.use.editingElementId();
+  const creatingElement = useCanvasStore.use.creatingElement();
+  const clipingImageElementId = useCanvasStore.use.clipingImageElementId();
   const setActiveElementIdList = useCanvasStore.use.setActiveElementIdList();
   const setEditingElementId = useCanvasStore.use.setEditingElementId();
+  const setCreatingElement = useCanvasStore.use.setCreatingElement();
+  const setCanvasScale = useCanvasStore.use.setCanvasScale();
   const setDisableHotkeysState = useCanvasStore.use.setDisableHotkeysState();
   const toolbarFonts = useMemo(
     () =>
@@ -57,7 +98,12 @@ function RendererEditorCanvas() {
     [t],
   );
   const activeEditingElementId = useMemo(
-    () => resolveEditingElementId(activeElementIds, content.canvas.elements, editingElementId),
+    () =>
+      resolveEditingElementId(activeElementIds, content.canvas.elements, editingElementId, [
+        'text',
+        'shape',
+        'image',
+      ]),
     [activeElementIds, content.canvas.elements, editingElementId],
   );
 
@@ -102,6 +148,83 @@ function RendererEditorCanvas() {
   );
   useEffect(() => () => setDisableHotkeysState(false), [setDisableHotkeysState]);
 
+  const handleTextCreate = useCallback(
+    (rect: TextCreateRect) => {
+      const id = createElementId('text');
+      const element: PPTTextElement = {
+        id,
+        type: 'text',
+        ...rect,
+        rotate: 0,
+        content: '<p style="text-align: center"><br></p>',
+        defaultFontName: '',
+        defaultColor: '#333',
+      };
+      handleElementsChange([{ type: 'element.add', element }]);
+      setCreatingElement(null);
+      setActiveElementIdList([id]);
+      setEditingElementId(id);
+    },
+    [handleElementsChange, setActiveElementIdList, setCreatingElement, setEditingElementId],
+  );
+
+  const handleImageClip = useCallback(
+    (element: PPTImageElement, data: ImageClipedEmitData | null) => {
+      useCanvasStore.getState().setClipingImageElementId('');
+      useCanvasStore.getState().setEditingElementId('');
+      if (!data) return;
+
+      const originClip = element.clip ?? {
+        shape: 'rect' as const,
+        range: [
+          [0, 0],
+          [100, 100],
+        ] as [[number, number], [number, number]],
+      };
+      const { range, position } = data;
+      const left = element.left + position.left;
+      const top = element.top + position.top;
+      const width = element.width + position.width;
+      const height = element.height + position.height;
+      let centerOffsetX = 0;
+      let centerOffsetY = 0;
+      if (element.rotate) {
+        const centerX = left + width / 2 - (element.left + element.width / 2);
+        const centerY = -(top + height / 2 - (element.top + element.height / 2));
+        const radian = (-element.rotate * Math.PI) / 180;
+        const rotatedCenterX = centerX * Math.cos(radian) - centerY * Math.sin(radian);
+        const rotatedCenterY = centerX * Math.sin(radian) + centerY * Math.cos(radian);
+        centerOffsetX = rotatedCenterX - centerX;
+        centerOffsetY = -(rotatedCenterY - centerY);
+      }
+      handleElementsChange([
+        {
+          type: 'element.update',
+          id: element.id,
+          props: {
+            clip: { ...originClip, range },
+            left: left + centerOffsetX,
+            top: top + centerOffsetY,
+            width,
+            height,
+          },
+        },
+      ]);
+    },
+    [handleElementsChange],
+  );
+  const renderEditorImage = useCallback(
+    (element: PPTImageElement, _resolvedSrc: string, defaultContent: ReactNode) => (
+      <RendererEditorImageContent
+        element={element}
+        defaultContent={defaultContent}
+        clipping={clipingImageElementId === element.id}
+        onClip={(data) => handleImageClip(element, data)}
+      />
+    ),
+    [clipingImageElementId, handleImageClip],
+  );
+
   const commands = useMemo(
     () =>
       createRendererCanvasCommands({
@@ -127,6 +250,7 @@ function RendererEditorCanvas() {
     >
       <EditableSlideCanvasWithUI
         slide={resolvedSlide}
+        onScaleChange={setCanvasScale}
         elementIdPrefix={EDITABLE_ELEMENT_ID_PREFIX}
         hiddenElementIds={hiddenElementIds}
         snapping
@@ -136,6 +260,10 @@ function RendererEditorCanvas() {
         onTextContentChange={handleTextContentChange}
         onTextAutoSize={handleTextAutoSize}
         onTextFocusChange={handleTextFocusChange}
+        creatingText={creatingElement?.type === 'text'}
+        onTextCreate={handleTextCreate}
+        renderImage={renderEditorImage}
+        shapePathFormulas={SHAPE_PATH_FORMULAS}
         textToolbar={{
           locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US',
           fonts: toolbarFonts,

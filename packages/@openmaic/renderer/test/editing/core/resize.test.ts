@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import type { PPTElement, PPTTextElement, PPTImageElement, PPTShapeElement } from '@openmaic/dsl';
+import {
+  ShapePathFormulasKeys,
+  type PPTElement,
+  type PPTTextElement,
+  type PPTImageElement,
+  type PPTShapeElement,
+} from '@openmaic/dsl';
 import {
   computeResize,
   getResizeHandles,
@@ -58,6 +64,34 @@ const viewport = { width: 1000, height: 562.5 };
 const noOthers: PPTElement[] = [];
 
 describe('computeResize — un-rotated', () => {
+  it('rebuilds a formula shape path and viewBox while retaining its keypoints', () => {
+    const r = computeResize({
+      element: shape({
+        pathFormula: ShapePathFormulasKeys.ROUND_RECT,
+        keypoints: [0.25],
+        path: 'old-path',
+      }),
+      handle: 'right-bottom',
+      others: noOthers,
+      viewport,
+      deltaCanvas: { x: 40, y: 30 },
+      shapePathFormulas: {
+        [ShapePathFormulasKeys.ROUND_RECT]: {
+          formula: (width, height, values) => `M 0 0 L ${width} ${height} ${values?.join(',')}`,
+        },
+      },
+    });
+
+    expect(r.props).toEqual({
+      left: 400,
+      top: 300,
+      width: 140,
+      height: 80,
+      viewBox: [140, 80],
+      path: 'M 0 0 L 140 80 0.25',
+    });
+  });
+
   it('grows width/height from the right-bottom corner without moving left/top', () => {
     const r = computeResize({
       element: text(),

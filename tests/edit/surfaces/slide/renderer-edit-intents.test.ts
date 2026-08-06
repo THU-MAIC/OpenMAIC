@@ -155,6 +155,23 @@ describe('applyRendererEditIntents', () => {
     });
   });
 
+  it('creates a Shape text contract when a label is edited for the first time', () => {
+    const content = slideContent([shapeElement('shape', { text: undefined })]);
+
+    const next = applyRendererEditIntents(content, [
+      { type: 'text.updateContent', id: 'shape', content: '<p>New label</p>', target: 'shape' },
+    ]);
+
+    expect(next.canvas.elements[0]).toMatchObject({
+      text: {
+        content: '<p>New label</p>',
+        align: 'middle',
+        defaultFontName: 'Microsoft YaHei',
+        defaultColor: '#333333',
+      },
+    });
+  });
+
   it('ignores missing targets and target-kind mismatches without allocating a snapshot', () => {
     const content = slideContent([textElement('text'), shapeElement('shape')]);
     const intents: EditIntent[] = [

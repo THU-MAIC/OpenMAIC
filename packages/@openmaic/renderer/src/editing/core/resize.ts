@@ -1,5 +1,6 @@
-import type { PPTElement, PPTLineElement } from '@openmaic/dsl';
+import type { PPTElement, PPTLineElement, PPTShapeElement } from '@openmaic/dsl';
 import type { SnappingOptions } from '../types';
+import type { ShapePathFormulaMap } from '../shape/types';
 import { resolveSnapping } from './drag';
 import { buildAlignLines, snapRange, type Guide } from './snapping';
 
@@ -232,12 +233,37 @@ export interface ResizeInput {
   deltaCanvas: { x: number; y: number };
   aspectModifier?: boolean;
   snapping?: boolean | SnappingOptions;
+  /** Host-owned Shape formula registry. No registry means plain box resize. */
+  shapePathFormulas?: ShapePathFormulaMap;
 }
 
 /** The resized element's new box plus the guides to render, if any. */
 export interface ResizeResult {
-  props: { left: number; top: number; width: number; height: number };
+  props: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    path?: string;
+    viewBox?: PPTShapeElement['viewBox'];
+  };
   guides: Guide[];
+}
+
+function normalizeShapeResizeProps(
+  element: PPTBoxElement,
+  props: ResizeResult['props'],
+  shapePathFormulas: ShapePathFormulaMap | undefined,
+): ResizeResult['props'] {
+  if (element.type !== 'shape' || !element.pathFormula) return props;
+  const formula = shapePathFormulas?.[element.pathFormula];
+  if (!formula) return props;
+
+  return {
+    ...props,
+    viewBox: [props.width, props.height],
+    path: formula.formula(props.width, props.height, element.keypoints),
+  };
 }
 
 /**
@@ -263,7 +289,16 @@ export interface ResizeResult {
  * lock the limit is scaled so both axes reach their minimum together.
  */
 export function computeResize(input: ResizeInput): ResizeResult {
-  const { element, handle, others, viewport, deltaCanvas, aspectModifier, snapping } = input;
+  const {
+    element,
+    handle,
+    others,
+    viewport,
+    deltaCanvas,
+    aspectModifier,
+    snapping,
+    shapePathFormulas,
+  } = input;
 
   const originLeft = element.left;
   const originTop = element.top;
@@ -367,7 +402,14 @@ export function computeResize(input: ResizeInput): ResizeResult {
     left -= currentPoint.left - basePoint.left;
     top -= currentPoint.top - basePoint.top;
 
-    return { props: { left, top, width, height }, guides };
+    return {
+      props: normalizeShapeResizeProps(
+        element,
+        { left, top, width, height },
+        shapePathFormulas,
+      ),
+      guides,
+    };
   }
 
   // UN-ROTATED path: the pointer delta applies directly, with alignment
@@ -484,5 +526,8 @@ export function computeResize(input: ResizeInput): ResizeResult {
     height = getSizeWithinRange(originHeight + moveY, 'height');
   }
 
-  return { props: { left, top, width, height }, guides };
+  return {
+    props: normalizeShapeResizeProps(element, { left, top, width, height }, shapePathFormulas),
+    guides,
+  };
 }

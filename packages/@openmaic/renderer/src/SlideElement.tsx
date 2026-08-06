@@ -5,6 +5,7 @@ import {
   ElementTypes,
   type PPTElement,
   type PPTImageElement,
+  type PPTShapeElement,
   type PPTTextElement,
   type PPTVideoElement,
   type SlideTheme,
@@ -37,6 +38,7 @@ export interface SlideElementProps {
   ) => ReactNode;
   renderVideo?: (element: PPTVideoElement) => ReactNode;
   renderText?: (element: PPTTextElement, defaultContent: ReactNode) => ReactNode;
+  renderShapeLabel?: (element: PPTShapeElement, defaultContent: ReactNode) => ReactNode;
   videoInteractive?: boolean;
   onElementClick?: (element: PPTElement, event: React.MouseEvent) => void;
   /** Prefix used for the root div id — must match SpotlightOverlay's `elementIdPrefix`. */
@@ -47,7 +49,13 @@ export interface SlideElementProps {
 
 type SlideElementContentProps = Pick<
   SlideElementProps,
-  'elementInfo' | 'animate' | 'renderImage' | 'renderVideo' | 'renderText' | 'videoInteractive'
+  | 'elementInfo'
+  | 'animate'
+  | 'renderImage'
+  | 'renderVideo'
+  | 'renderText'
+  | 'renderShapeLabel'
+  | 'videoInteractive'
 >;
 
 const SlideElementContent = memo(function SlideElementContent({
@@ -56,6 +64,7 @@ const SlideElementContent = memo(function SlideElementContent({
   renderImage,
   renderVideo,
   renderText,
+  renderShapeLabel,
   videoInteractive,
 }: SlideElementContentProps) {
   const Component = useMemo(() => {
@@ -91,7 +100,7 @@ const SlideElementContent = memo(function SlideElementContent({
         <BaseTextElement elementInfo={elementInfo} renderContent={renderText} />
       )}
       {Component === 'shape' && elementInfo.type === 'shape' && (
-        <BaseShapeElement elementInfo={elementInfo} />
+        <BaseShapeElement elementInfo={elementInfo} renderLabel={renderShapeLabel} />
       )}
       {Component === 'image' && elementInfo.type === 'image' && (
         <BaseImageElement elementInfo={elementInfo} renderImage={renderImage} />
@@ -130,6 +139,7 @@ export const SlideElement = memo(function SlideElement({
   renderImage,
   renderVideo,
   renderText,
+  renderShapeLabel,
   videoInteractive,
   onElementClick,
   idPrefix = 'slide-element-',
@@ -168,6 +178,7 @@ export const SlideElement = memo(function SlideElement({
           renderImage={renderImage}
           renderVideo={renderVideo}
           renderText={renderText}
+          renderShapeLabel={renderShapeLabel}
           videoInteractive={videoInteractive}
         />
       </div>

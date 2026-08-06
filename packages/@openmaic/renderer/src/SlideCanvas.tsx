@@ -6,6 +6,7 @@ import { AnimatePresence } from 'motion/react';
 import type {
   PPTElement,
   PPTImageElement,
+  PPTShapeElement,
   PPTTextElement,
   PPTVideoElement,
   Slide,
@@ -52,6 +53,8 @@ export interface SlideCanvasProps {
   renderVideo?: (element: PPTVideoElement) => ReactNode;
   /** Replace the content node inside the shared text paint wrapper. */
   renderText?: (element: PPTTextElement, defaultContent: ReactNode) => ReactNode;
+  /** Replace the static label node inside a Shape element. */
+  renderShapeLabel?: (element: PPTShapeElement, defaultContent: ReactNode) => ReactNode;
   /** Enable pointer interaction for video controls or custom video UI. */
   videoInteractive?: boolean;
   /** Click handler invoked on any element. */
@@ -95,6 +98,7 @@ export function SlideCanvas(props: SlideCanvasProps) {
   const renderImage = props.renderImage ?? ctx?.renderImage;
   const renderVideo = props.renderVideo ?? ctx?.renderVideo;
   const renderText = props.renderText;
+  const renderShapeLabel = props.renderShapeLabel;
   const videoInteractive = props.videoInteractive ?? ctx?.videoInteractive;
   const onElementClick = props.onElementClick ?? ctx?.onElementClick;
   const elementIdPrefix = props.elementIdPrefix ?? 'slide-element-';
@@ -214,6 +218,7 @@ export function SlideCanvas(props: SlideCanvasProps) {
               renderImage={renderImage}
               renderVideo={renderVideo}
               renderText={renderText}
+              renderShapeLabel={renderShapeLabel}
               videoInteractive={videoInteractive}
               onElementClick={onElementClick}
               idPrefix={elementIdPrefix}

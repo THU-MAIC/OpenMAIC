@@ -275,7 +275,8 @@
     "image": {
       "replace": "画像を置き換え",
       "flipH": "左右反転",
-      "flipV": "上下反転"
+      "flipV": "上下反転",
+      "crop": "画像を切り抜く"
     },
     "background": {
       "label": "背景",

@@ -26,8 +26,10 @@ export function resolveEditingElementId(
   activeElementIdList: readonly string[],
   elements: readonly PPTElement[],
   requestedId?: string,
+  editableTypes: readonly PPTElement['type'][] = ['text'],
 ): string {
   const el = resolveSelectedElement(activeElementIdList, elements);
-  if (requestedId === undefined) return el?.type === 'text' ? el.id : '';
-  return el?.type === 'text' && !el.lock && el.id === requestedId ? requestedId : '';
+  const editable = Boolean(el && editableTypes.includes(el.type));
+  if (requestedId === undefined) return editable ? el?.id ?? '' : '';
+  return editable && !el?.lock && el?.id === requestedId ? requestedId : '';
 }

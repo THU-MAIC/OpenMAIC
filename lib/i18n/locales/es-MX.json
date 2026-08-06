@@ -275,7 +275,8 @@
     "image": {
       "replace": "Reemplazar imagen",
       "flipH": "Voltear horizontal",
-      "flipV": "Voltear vertical"
+      "flipV": "Voltear vertical",
+      "crop": "Recortar imagen"
     },
     "background": {
       "label": "Fondo",

@@ -275,7 +275,8 @@
     "image": {
       "replace": "Replace image",
       "flipH": "Flip horizontal",
-      "flipV": "Flip vertical"
+      "flipV": "Flip vertical",
+      "crop": "Crop image"
     },
     "background": {
       "label": "Background",

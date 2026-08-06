@@ -3,6 +3,7 @@ import {
   memo,
   useRef,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { PPTElement } from '@openmaic/dsl';
@@ -24,6 +25,7 @@ export interface ElementInteractionTargetProps {
   editingTouchAction: CSSProperties['touchAction'];
   onElementPointerDown: (element: PPTElement, event: ReactPointerEvent) => void;
   onElementClick?: (element: PPTElement, event: ReactPointerEvent) => void;
+  onElementDoubleClick?: (element: PPTElement, event: ReactMouseEvent) => void;
   onSelectionChange?: (next: Selection) => void;
 }
 
@@ -44,6 +46,7 @@ export function areElementInteractionTargetPropsEqual(
     previous.editingTouchAction === next.editingTouchAction &&
     previous.onElementPointerDown === next.onElementPointerDown &&
     previous.onElementClick === next.onElementClick &&
+    previous.onElementDoubleClick === next.onElementDoubleClick &&
     previous.onSelectionChange === next.onSelectionChange
   );
 }
@@ -52,7 +55,7 @@ const BODY_CLICK_THRESHOLD_PX = 2;
 const MOVE_BORDER_WIDTH_PX = 10;
 const EDITING_MOVE_BORDER_OUTSET_PX = 8;
 
-function isCoveredByEditingText(
+function isCoveredByEditingElement(
   element: PPTElement,
   sourceElements: PPTElement[],
   editingId: string | undefined,
@@ -66,7 +69,7 @@ function isCoveredByEditingText(
     editingIndex < 0 ||
     elementIndex < 0 ||
     elementIndex > editingIndex ||
-    editingElement?.type !== 'text'
+    (editingElement?.type !== 'text' && editingElement?.type !== 'shape')
   ) {
     return false;
   }
@@ -92,6 +95,7 @@ function ElementInteractionTarget({
   editingTouchAction,
   onElementPointerDown,
   onElementClick,
+  onElementDoubleClick,
   onSelectionChange,
 }: ElementInteractionTargetProps) {
   const bodyPressRef = useRef<{
@@ -101,7 +105,11 @@ function ElementInteractionTarget({
     modifier: boolean;
   } | null>(null);
   const isEditingElement = selection.editingId === element.id;
-  const isCoveredUnderlay = isCoveredByEditingText(element, sourceElements, selection.editingId);
+  const isCoveredUnderlay = isCoveredByEditingElement(
+    element,
+    sourceElements,
+    selection.editingId,
+  );
 
   const selectElement = (event: ReactPointerEvent) => {
     event.stopPropagation();
@@ -245,6 +253,7 @@ function ElementInteractionTarget({
           onPointerCancel={() => {
             bodyPressRef.current = null;
           }}
+          onDoubleClick={(event) => onElementDoubleClick?.(element, event)}
           style={{
             ...frameStyle,
             cursor: element.type === 'text' ? 'text' : 'default',
@@ -359,6 +368,7 @@ interface ElementInteractionLayerProps {
   editingTouchAction: CSSProperties['touchAction'];
   onElementPointerDown: (element: PPTElement, event: ReactPointerEvent) => void;
   onElementClick?: (element: PPTElement, event: ReactPointerEvent) => void;
+  onElementDoubleClick?: (element: PPTElement, event: ReactMouseEvent) => void;
   onSelectionChange?: (next: Selection) => void;
 }
 
@@ -374,6 +384,7 @@ export function ElementInteractionLayer({
   editingTouchAction,
   onElementPointerDown,
   onElementClick,
+  onElementDoubleClick,
   onSelectionChange,
 }: ElementInteractionLayerProps) {
   return elements.map((element) => (
@@ -391,6 +402,7 @@ export function ElementInteractionLayer({
       editingTouchAction={editingTouchAction}
       onElementPointerDown={onElementPointerDown}
       onElementClick={onElementClick}
+      onElementDoubleClick={onElementDoubleClick}
       onSelectionChange={onSelectionChange}
     />
   ));

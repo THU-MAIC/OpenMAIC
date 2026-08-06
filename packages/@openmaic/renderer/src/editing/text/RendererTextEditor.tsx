@@ -12,6 +12,7 @@ import type { TextContentChange, TextEditorController, TextFormatState } from '.
 
 export interface RendererTextEditorProps {
   elementId: string;
+  target?: 'text' | 'shape';
   value: string;
   defaultColor: string;
   defaultFontName: string;
@@ -29,6 +30,7 @@ type HistoryMode = TextContentChange['history'];
 
 export function RendererTextEditor({
   elementId,
+  target = 'text',
   value,
   defaultColor,
   defaultFontName,
@@ -109,7 +111,7 @@ export function RendererTextEditor({
       if (normalized === lastEmittedRef.current) return;
       lastEmittedRef.current = normalized;
       callbacksRef.current.onContentChange?.({
-        intent: { type: 'text.updateContent', id: elementId, content, target: 'text' },
+        intent: { type: 'text.updateContent', id: elementId, content, target },
         history: pendingHistory,
       });
       pendingHistory = 'record';
@@ -212,7 +214,7 @@ export function RendererTextEditor({
       viewRef.current = null;
       view.destroy();
     };
-  }, [autoFocus, elementId]);
+  }, [autoFocus, elementId, target]);
 
   useEffect(() => {
     const view = viewRef.current;

@@ -5,11 +5,13 @@ import {
 } from '@/components/edit/surfaces/slide/editing-state';
 import {
   createDefaultImageElement,
+  createDefaultShapeElement,
   createDefaultTextElement,
 } from '@/lib/edit/slide-edit-elements';
 
 const text = createDefaultTextElement('t1');
 const image = createDefaultImageElement('i1', 'gen_img_x');
+const shape = createDefaultShapeElement('s1');
 
 describe('resolveSelectedElement', () => {
   test('returns undefined when nothing is selected', () => {
@@ -58,5 +60,9 @@ describe('resolveEditingElementId', () => {
 
   test('rejects a locked text in explicit renderer mode', () => {
     expect(resolveEditingElementId(['t1'], [{ ...text, lock: true }], 't1')).toBe('');
+  });
+
+  test('allows renderer mode to explicitly edit a selected Shape label', () => {
+    expect(resolveEditingElementId(['s1'], [text, shape], 's1', ['text', 'shape'])).toBe('s1');
   });
 });
