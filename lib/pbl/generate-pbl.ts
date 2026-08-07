@@ -285,28 +285,46 @@ export async function generatePBLContent(
   // Run the agentic loop
   const systemPrompt = buildPBLSystemPrompt(config);
 
-  const _result = await callLLM(
-    {
-      model,
-      system: systemPrompt,
-      prompt: `Design a PBL project. Start in project_info mode by setting the project title and description.`,
-      tools: pblTools,
-      stopWhen: stepCountIs(30),
-      onStepFinish: ({ toolCalls, text }) => {
-        if (text) {
-          callbacks?.onProgress?.(`Thinking: ${text.slice(0, 100)}...`);
-        }
-        if (toolCalls) {
-          for (const tc of toolCalls) {
-            callbacks?.onProgress?.(`Tool: ${tc.toolName}`);
+  // PBL is the only generation path that requires native tool calling, and
+  // providers whose chat template lacks tools support reject such requests
+  // outright (e.g. LM Studio templates without a tools section, see #664).
+  // Track loop progress so a rejection before the first step — the signature
+  // of missing tool support — gets an actionable message instead of a raw
+  // provider error, while mid-loop failures keep their original error.
+  let completedSteps = 0;
+  try {
+    await callLLM(
+      {
+        model,
+        system: systemPrompt,
+        prompt: `Design a PBL project. Start in project_info mode by setting the project title and description.`,
+        tools: pblTools,
+        stopWhen: stepCountIs(30),
+        onStepFinish: ({ toolCalls, text }) => {
+          completedSteps += 1;
+          if (text) {
+            callbacks?.onProgress?.(`Thinking: ${text.slice(0, 100)}...`);
           }
-        }
+          if (toolCalls) {
+            for (const tc of toolCalls) {
+              callbacks?.onProgress?.(`Tool: ${tc.toolName}`);
+            }
+          }
+        },
       },
-    },
-    'pbl-generate',
-    undefined,
-    thinkingConfig,
-  );
+      'pbl-generate',
+      undefined,
+      thinkingConfig,
+    );
+  } catch (error) {
+    if (completedSteps === 0) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `PBL generation was rejected before the first step. PBL scenes drive the model through tool/function calls, so the selected model must support tool calling; models without it reject the request immediately. Pick a tool-capable model for PBL scenes, or change this scene's type. Original error: ${message}`,
+      );
+    }
+    throw error;
+  }
 
   // Check if mode reached idle; if not, the LLM may have stopped early
   if (modeMCP.getCurrentMode() !== 'idle') {
