@@ -3,8 +3,21 @@
   "version": "0.0.1",
   "description": "Composable slide editing core, React surface, and UI for OpenMAIC.",
   "type": "module",
-  "private": true,
+  "main": "./dist/core/index.js",
+  "types": "./dist/core/index.d.ts",
+  "exports": {
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
+    "build": "rm -rf dist && rollup -c && tsc --emitDeclarationOnly --declarationDir dist",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -13,6 +26,9 @@
     "immer": "^11.1.3"
   },
   "devDependencies": {
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-typescript": "^12.1.0",
+    "rollup": "^4.35.0",
     "typescript": "^5",
     "vitest": "^4.1.8"
   }
