@@ -130,4 +130,46 @@ describe('editor transaction core', () => {
     expect(() => applyEditorTransaction(original, transaction)).toThrow(message);
     expect(original.canvas.elements[0]).toMatchObject({ id: 'text-1', type: 'text' });
   });
+
+  it.each([
+    {
+      operation: { type: 'slide.update', patch: { viewportSize: null } },
+      message: 'slide.update must set required property "viewportSize" to number',
+    },
+    {
+      operation: { type: 'element.update', elementId: 'text-1', patch: { left: null } },
+      message: 'element.update must set required property "left" to number',
+    },
+    {
+      operation: {
+        type: 'element.updateMany',
+        updates: [{ elementId: 'text-1', patch: { content: 42 } }],
+      },
+      message: 'element.updateMany must set required property "content" to string',
+    },
+    {
+      operation: {
+        type: 'element.add',
+        element: {
+          id: 'incomplete-text',
+          type: 'text',
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          rotate: 0,
+          defaultFontName: 'Arial',
+          defaultColor: '#333333',
+        },
+      },
+      message: 'element.add requires string property "content"',
+    },
+  ] as const)('rejects invalid required field values', ({ operation, message }) => {
+    const transaction = createEditorTransaction({
+      origin: 'agent',
+      operations: [operation] as unknown as EditorOperation[],
+    });
+
+    expect(() => applyEditorTransaction(slideContent(), transaction)).toThrow(message);
+  });
 });

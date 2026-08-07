@@ -1,4 +1,4 @@
-import type { PPTElement, Slide, SlideContent } from '@openmaic/dsl';
+import { isPPTElementType, type PPTElement, type Slide, type SlideContent } from '@openmaic/dsl';
 
 export const MAX_EDITOR_HISTORY = 50;
 
@@ -8,77 +8,70 @@ export type ElementPatch<T extends PPTElement = PPTElement> = T extends PPTEleme
 
 const IMMUTABLE_ELEMENT_PROPERTIES = new Set(['id', 'type']);
 const IMMUTABLE_SLIDE_PROPERTIES = new Set(['id']);
-const REQUIRED_SLIDE_PROPERTIES = new Set(['id', 'viewportSize', 'viewportRatio', 'theme']);
-const REQUIRED_ELEMENT_PROPERTIES: Record<PPTElement['type'], ReadonlySet<string>> = {
-  text: new Set([
-    'id',
-    'type',
-    'left',
-    'top',
-    'width',
-    'height',
-    'rotate',
-    'content',
-    'defaultFontName',
-    'defaultColor',
-  ]),
-  image: new Set(['id', 'type', 'left', 'top', 'width', 'height', 'rotate', 'fixedRatio', 'src']),
-  shape: new Set([
-    'id',
-    'type',
-    'left',
-    'top',
-    'width',
-    'height',
-    'rotate',
-    'viewBox',
-    'path',
-    'fixedRatio',
-    'fill',
-  ]),
-  line: new Set(['id', 'type', 'left', 'top', 'width', 'start', 'end', 'style', 'color', 'points']),
-  chart: new Set([
-    'id',
-    'type',
-    'left',
-    'top',
-    'width',
-    'height',
-    'rotate',
-    'chartType',
-    'data',
-    'themeColors',
-  ]),
-  table: new Set([
-    'id',
-    'type',
-    'left',
-    'top',
-    'width',
-    'height',
-    'rotate',
-    'outline',
-    'colWidths',
-    'cellMinHeight',
-    'data',
-  ]),
-  latex: new Set(['id', 'type', 'left', 'top', 'width', 'height', 'rotate', 'latex']),
-  video: new Set(['id', 'type', 'left', 'top', 'width', 'height', 'rotate', 'autoplay']),
-  audio: new Set([
-    'id',
-    'type',
-    'left',
-    'top',
-    'width',
-    'height',
-    'rotate',
-    'fixedRatio',
-    'color',
-    'loop',
-    'autoplay',
-    'src',
-  ]),
-  code: new Set(['id', 'type', 'left', 'top', 'width', 'height', 'rotate', 'language', 'lines']),
+type FieldKind = 'string' | 'number' | 'boolean' | 'array' | 'object';
+
+const REQUIRED_SLIDE_FIELD_KINDS: Readonly<Record<string, FieldKind>> = {
+  id: 'string',
+  viewportSize: 'number',
+  viewportRatio: 'number',
+  theme: 'object',
+};
+const REQUIRED_BOX_FIELD_KINDS: Readonly<Record<string, FieldKind>> = {
+  id: 'string',
+  left: 'number',
+  top: 'number',
+  width: 'number',
+  height: 'number',
+  rotate: 'number',
+};
+const REQUIRED_ELEMENT_FIELD_KINDS: Record<
+  PPTElement['type'],
+  Readonly<Record<string, FieldKind>>
+> = {
+  text: {
+    ...REQUIRED_BOX_FIELD_KINDS,
+    content: 'string',
+    defaultFontName: 'string',
+    defaultColor: 'string',
+  },
+  image: { ...REQUIRED_BOX_FIELD_KINDS, fixedRatio: 'boolean', src: 'string' },
+  shape: {
+    ...REQUIRED_BOX_FIELD_KINDS,
+    viewBox: 'array',
+    path: 'string',
+    fixedRatio: 'boolean',
+    fill: 'string',
+  },
+  line: {
+    id: 'string',
+    left: 'number',
+    top: 'number',
+    width: 'number',
+    start: 'array',
+    end: 'array',
+    style: 'string',
+    color: 'string',
+    points: 'array',
+  },
+  chart: { ...REQUIRED_BOX_FIELD_KINDS, chartType: 'string', data: 'object', themeColors: 'array' },
+  table: {
+    ...REQUIRED_BOX_FIELD_KINDS,
+    outline: 'object',
+    colWidths: 'array',
+    cellMinHeight: 'number',
+    data: 'array',
+  },
+  latex: { ...REQUIRED_BOX_FIELD_KINDS, latex: 'string' },
+  video: { ...REQUIRED_BOX_FIELD_KINDS, autoplay: 'boolean' },
+  audio: {
+    ...REQUIRED_BOX_FIELD_KINDS,
+    fixedRatio: 'boolean',
+    color: 'string',
+    loop: 'boolean',
+    autoplay: 'boolean',
+    src: 'string',
+  },
+  code: { ...REQUIRED_BOX_FIELD_KINDS, language: 'string', lines: 'array' },
 };
 
 export type EditorTransactionOrigin = 'canvas' | 'toolbar' | 'agent' | 'system';
@@ -210,11 +203,12 @@ function applyOperation(content: SlideContent, operation: EditorOperation): void
       return;
     }
     case 'element.add': {
-      if (elements.some((element) => element.id === operation.element.id)) {
-        throw new Error(`element.add: id "${operation.element.id}" already exists`);
+      const element = requireValidElement(operation.type, operation.element);
+      if (elements.some((candidate) => candidate.id === element.id)) {
+        throw new Error(`element.add: id "${element.id}" already exists`);
       }
       const index = clampIndex(operation.index ?? elements.length, elements.length);
-      elements.splice(index, 0, clone(operation.element));
+      elements.splice(index, 0, clone(element));
       return;
     }
     case 'element.update': {
@@ -282,7 +276,7 @@ function applyOperation(content: SlideContent, operation: EditorOperation): void
             `${operation.type} cannot remove immutable property ${JSON.stringify(propName)}`,
           );
         }
-        if (REQUIRED_ELEMENT_PROPERTIES[element.type].has(propName)) {
+        if (propName in REQUIRED_ELEMENT_FIELD_KINDS[element.type]) {
           throw new Error(
             `${operation.type} cannot remove required property ${JSON.stringify(propName)} from ${element.type} elements`,
           );
@@ -328,16 +322,18 @@ function applyOperation(content: SlideContent, operation: EditorOperation): void
 }
 
 function assertMutableElementPatch(operation: string, element: PPTElement, patch: object): void {
-  for (const property of Object.keys(patch)) {
+  const values = requireRecord(`${operation} patch`, patch);
+  for (const property of Object.keys(values)) {
     if (IMMUTABLE_ELEMENT_PROPERTIES.has(property)) {
       throw new Error(`${operation} cannot mutate immutable property ${JSON.stringify(property)}`);
     }
   }
-  assertRequiredPropertiesAreDefined(operation, REQUIRED_ELEMENT_PROPERTIES[element.type], patch);
+  assertRequiredPatchValues(operation, REQUIRED_ELEMENT_FIELD_KINDS[element.type], values);
 }
 
 function assertMutableSlidePatch(patch: object): void {
-  for (const property of Object.keys(patch)) {
+  const values = requireRecord('slide.update patch', patch);
+  for (const property of Object.keys(values)) {
     if (IMMUTABLE_SLIDE_PROPERTIES.has(property)) {
       throw new Error(`slide.update cannot mutate immutable property ${JSON.stringify(property)}`);
     }
@@ -345,21 +341,64 @@ function assertMutableSlidePatch(patch: object): void {
       throw new Error('slide.update cannot mutate elements or animations');
     }
   }
-  assertRequiredPropertiesAreDefined('slide.update', REQUIRED_SLIDE_PROPERTIES, patch);
+  assertRequiredPatchValues('slide.update', REQUIRED_SLIDE_FIELD_KINDS, values);
 }
 
-function assertRequiredPropertiesAreDefined(
+function requireValidElement(operation: string, value: unknown): PPTElement {
+  const element = requireRecord(`${operation} element`, value);
+  if (!isPPTElementType(element.type)) {
+    throw new Error(`${operation} requires a supported element type`);
+  }
+  assertRequiredElementFields(operation, element.type, element);
+  return element as unknown as PPTElement;
+}
+
+function assertRequiredElementFields(
   operation: string,
-  requiredProperties: ReadonlySet<string>,
-  patch: object,
+  type: PPTElement['type'],
+  element: Readonly<Record<string, unknown>>,
+): void {
+  for (const [property, kind] of Object.entries(REQUIRED_ELEMENT_FIELD_KINDS[type])) {
+    if (!matchesFieldKind(element[property], kind)) {
+      throw new Error(`${operation} requires ${kind} property ${JSON.stringify(property)}`);
+    }
+  }
+}
+
+function assertRequiredPatchValues(
+  operation: string,
+  requiredFieldKinds: Readonly<Record<string, FieldKind>>,
+  patch: Readonly<Record<string, unknown>>,
 ): void {
   for (const [property, value] of Object.entries(patch)) {
-    if (requiredProperties.has(property) && value === undefined) {
+    const kind = requiredFieldKinds[property];
+    if (!kind) continue;
+    if (value === undefined) {
       throw new Error(
         `${operation} cannot set required property ${JSON.stringify(property)} to undefined`,
       );
     }
+    if (!matchesFieldKind(value, kind)) {
+      throw new Error(
+        `${operation} must set required property ${JSON.stringify(property)} to ${kind}`,
+      );
+    }
   }
+}
+
+function requireRecord(label: string, value: unknown): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function matchesFieldKind(value: unknown, kind: FieldKind): boolean {
+  if (kind === 'array') return Array.isArray(value);
+  if (kind === 'object')
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  if (kind === 'number') return typeof value === 'number' && Number.isFinite(value);
+  return typeof value === kind;
 }
 
 function deleteElements(content: SlideContent, ids: readonly string[], operation: string): void {
