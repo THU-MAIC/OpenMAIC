@@ -26,7 +26,7 @@ export type ImportPhase =
   | 'writingCourse'
   | 'done';
 
-export function useImportClassroom(onSuccess?: () => void) {
+export function useImportClassroom(onSuccess?: (importedStageId: string) => void) {
   const [importing, setImporting] = useState(false);
   const [phase, setPhase] = useState<ImportPhase>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -236,7 +236,7 @@ export function useImportClassroom(onSuccess?: () => void) {
         // 6. Done
         setPhase('done');
         toast.success(t('import.success'), { id: toastId });
-        onSuccess?.();
+        onSuccess?.(newStageId);
       } catch (error) {
         log.error('Classroom ZIP import failed:', error);
         // Media files are a separate legacy domain and cannot join the document transaction.

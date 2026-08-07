@@ -246,11 +246,31 @@ function HomePage() {
     }
   };
 
-  const { importing, fileInputRef, triggerFileSelect, handleFileChange } = useImportClassroom(
-    () => {
-      loadClassrooms();
-    },
-  );
+  // Capture the active folder when an import starts so the imported course
+  // lands in that folder, not whichever folder is active when the async import
+  // resolves (the user may have navigated away in the meantime).
+  const importFolderRef = useRef<string | undefined>(undefined);
+  const handleImportSuccess = async (importedStageId: string) => {
+    const folderId = importFolderRef.current;
+    importFolderRef.current = undefined;
+    // File the imported course into the folder that was active when the
+    // import began, before refreshing the list so the card appears in place.
+    if (folderId) {
+      try {
+        await setStageFolder(importedStageId, folderId);
+      } catch (err) {
+        log.error('Failed to assign imported course to folder:', err);
+        toast.error(t('classroom.moveFailed'));
+      }
+    }
+    await loadClassrooms();
+  };
+  const { importing, fileInputRef, triggerFileSelect, handleFileChange } =
+    useImportClassroom(handleImportSuccess);
+  const triggerImport = () => {
+    importFolderRef.current = currentFolderId;
+    triggerFileSelect();
+  };
 
   const {
     importing: pptxImporting,
@@ -1035,7 +1055,7 @@ function HomePage() {
               </AnimatePresence>
 
               <button
-                onClick={triggerFileSelect}
+                onClick={triggerImport}
                 disabled={importing}
                 className="group/import grid grid-cols-[auto_0fr] hover:grid-cols-[auto_1fr] items-center gap-1 rounded-full px-1.5 py-0.5 text-[12px] text-muted-foreground/35 hover:text-muted-foreground/70 hover:bg-muted/50 transition-all duration-200 cursor-pointer"
               >
