@@ -5,6 +5,7 @@ import {
   createEditorHistory,
   createEditorTransaction,
   redoEditorTransaction,
+  type EditorOperation,
   undoEditorTransaction,
 } from '../../src/core/index';
 
@@ -76,5 +77,30 @@ describe('editor transaction core', () => {
     });
     expect(undoEditorTransaction(after).present).toEqual(original);
     expect(redoEditorTransaction(undoEditorTransaction(after)).present).toEqual(after.present);
+  });
+
+  it.each([
+    {
+      operation: { type: 'element.update', elementId: 'text-1', patch: { id: 'other-id' } },
+      message: 'element.update cannot mutate immutable property "id"',
+    },
+    {
+      operation: { type: 'element.update', elementId: 'text-1', patch: { type: 'image' } },
+      message: 'element.update cannot mutate immutable property "type"',
+    },
+    {
+      operation: { type: 'element.removeProps', elementId: 'text-1', propNames: ['id'] },
+      message: 'element.removeProps cannot remove immutable property "id"',
+    },
+  ] as const)('rejects immutable element fields', ({ operation, message }) => {
+    const original = slideContent();
+    const transaction = createEditorTransaction({
+      origin: 'agent',
+      // Simulate an untyped external caller so the runtime guard remains covered.
+      operations: [operation] as unknown as EditorOperation[],
+    });
+
+    expect(() => applyEditorTransaction(original, transaction)).toThrow(message);
+    expect(original.canvas.elements[0]).toMatchObject({ id: 'text-1', type: 'text' });
   });
 });

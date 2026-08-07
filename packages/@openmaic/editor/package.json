@@ -6,6 +6,10 @@
   "main": "./dist/core/index.js",
   "types": "./dist/core/index.d.ts",
   "exports": {
+    ".": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
     "./core": {
       "types": "./dist/core/index.d.ts",
       "import": "./dist/core/index.js"
@@ -27,7 +31,8 @@
   "scripts": {
     "build": "rm -rf dist && rollup -c && tsc --emitDeclarationOnly --declarationDir dist",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "@openmaic/dsl": "workspace:^",

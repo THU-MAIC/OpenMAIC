@@ -2,6 +2,12 @@ import type { PPTElement, Slide, SlideContent } from '@openmaic/dsl';
 
 export const MAX_EDITOR_HISTORY = 50;
 
+export type ElementPatch<T extends PPTElement = PPTElement> = T extends PPTElement
+  ? Omit<Partial<T>, 'id' | 'type'>
+  : never;
+
+const IMMUTABLE_ELEMENT_PROPERTIES = new Set(['id', 'type']);
+
 export type EditorTransactionOrigin = 'canvas' | 'toolbar' | 'agent' | 'system';
 export type EditorHistoryMode = 'record' | 'neutral';
 export type SlideElementAlignCommand =
@@ -16,10 +22,10 @@ export type SlideElementAlignCommand =
 export type EditorOperation =
   | { type: 'slide.update'; patch: Partial<Omit<Slide, 'elements' | 'animations'>> }
   | { type: 'element.add'; element: PPTElement; index?: number }
-  | { type: 'element.update'; elementId: string; patch: Partial<PPTElement> }
+  | { type: 'element.update'; elementId: string; patch: ElementPatch }
   | {
       type: 'element.updateMany';
-      updates: ReadonlyArray<{ readonly elementId: string; readonly patch: Partial<PPTElement> }>;
+      updates: ReadonlyArray<{ readonly elementId: string; readonly patch: ElementPatch }>;
     }
   | { type: 'element.delete'; elementId: string }
   | { type: 'element.deleteMany'; elementIds: readonly string[] }
@@ -141,11 +147,13 @@ function applyOperation(content: SlideContent, operation: EditorOperation): void
       return;
     }
     case 'element.update': {
+      assertMutableElementPatch(operation.type, operation.patch);
       Object.assign(requireElement(elements, operation.elementId, operation.type), operation.patch);
       return;
     }
     case 'element.updateMany': {
       for (const update of operation.updates) {
+        assertMutableElementPatch(operation.type, update.patch);
         Object.assign(requireElement(elements, update.elementId, operation.type), update.patch);
       }
       return;
@@ -194,6 +202,13 @@ function applyOperation(content: SlideContent, operation: EditorOperation): void
       return;
     }
     case 'element.removeProps': {
+      for (const propName of operation.propNames) {
+        if (IMMUTABLE_ELEMENT_PROPERTIES.has(propName)) {
+          throw new Error(
+            `${operation.type} cannot remove immutable property ${JSON.stringify(propName)}`,
+          );
+        }
+      }
       const element = requireElement(
         elements,
         operation.elementId,
@@ -233,6 +248,14 @@ function applyOperation(content: SlideContent, operation: EditorOperation): void
       if (!cell) throw new Error(`table.updateCell: cell "${operation.cellId}" does not exist`);
       cell.text = operation.text;
       return;
+    }
+  }
+}
+
+function assertMutableElementPatch(operation: string, patch: object): void {
+  for (const property of Object.keys(patch)) {
+    if (IMMUTABLE_ELEMENT_PROPERTIES.has(property)) {
+      throw new Error(`${operation} cannot mutate immutable property ${JSON.stringify(property)}`);
     }
   }
 }

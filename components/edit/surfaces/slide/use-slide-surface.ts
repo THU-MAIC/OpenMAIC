@@ -1,7 +1,7 @@
 'use client';
 
 import { produce } from 'immer';
-import { Image as ImageIcon, PaintBucket, Table2, Type } from 'lucide-react';
+import { Image as ImageIcon, PaintBucket, Type } from 'lucide-react';
 import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
 import type { InsertPaletteItem, SurfaceState } from '@/lib/edit/scene-editor-surface';
@@ -23,7 +23,6 @@ import { BackgroundControl } from './BackgroundControl';
 import { useSlideEditSession } from './slide-edit-session';
 import { resolveEditingElementId, resolveSelectedElement } from './editing-state';
 import { isEditorRendererEnabled } from '@/lib/config/feature-flags';
-import { TableInsertPicker } from './TableInsertPicker';
 
 export interface SlideSelection {
   readonly activeElementIds: readonly string[];
@@ -58,19 +57,6 @@ export function buildInsertItems(
       popoverContent: () =>
         React.createElement(ImagePicker, {
           onPick: insertImageElement,
-        }),
-    },
-    {
-      id: 'insert-table',
-      label: t('edit.insert.table'),
-      tooltip: t('edit.insert.table'),
-      icon: React.createElement(Table2, { className: 'h-4 w-4' }),
-      onInvoke: () => {}, // popover-only: see insert-image above
-      popoverContent: () =>
-        React.createElement(TableInsertPicker, {
-          onPick: insertTableElement,
-          getLabel: (rows: number, columns: number) =>
-            t('edit.insert.tableDimensions', { rows, columns }),
         }),
     },
   ];

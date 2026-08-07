@@ -25,16 +25,10 @@ describe('slide insert palette', () => {
   beforeEach(() => seedSlideSession());
   afterEach(() => vi.restoreAllMocks());
 
-  it('exposes text-box, image, and table insert items', () => {
+  it('exposes only legacy-supported text-box and image insert items', () => {
     const items = buildInsertItems((k) => k, undefined);
-    expect(items.map((i) => i.id)).toEqual([
-      'insert-text',
-      'insert-image',
-      'insert-table',
-      'slide-background',
-    ]);
+    expect(items.map((i) => i.id)).toEqual(['insert-text', 'insert-image', 'slide-background']);
     expect(items[1].popoverContent).toBeTypeOf('function');
-    expect(items[2].popoverContent).toBeTypeOf('function');
     expect(items[0].onInvoke).toBeTypeOf('function');
   });
 
