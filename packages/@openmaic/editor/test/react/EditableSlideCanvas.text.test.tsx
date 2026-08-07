@@ -56,6 +56,25 @@ describe('EditableSlideCanvas text rendering', () => {
     );
   });
 
+  it('injects ProseMirror list styles when used without the UI wrapper', () => {
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: ['text-1'], primaryId: 'text-1', editingId: 'text-1' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+        onTextContentChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      [...container.querySelectorAll('style')].some((style) =>
+        style.textContent?.includes('.renderer-prosemirror-editor ul {'),
+      ),
+    ).toBe(true);
+  });
+
   it.each([
     ['locked text', 'locked-text', undefined],
     ['hidden text', 'hidden-text', ['hidden-text']],

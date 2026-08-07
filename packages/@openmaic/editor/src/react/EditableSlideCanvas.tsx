@@ -41,6 +41,7 @@ import {
 } from './table/RendererTableEditor';
 import { TextAutoSize, type TextAutoSizeController } from './text/TextAutoSize';
 import { isSemanticallyEmptyText } from './text/richText';
+import { EDITOR_REACT_STYLES } from './styles';
 import type { TextEditorController } from './text/types';
 import { EMPTY_SELECTION, type EditableSlideCanvasProps } from './types';
 
@@ -545,6 +546,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
       onPointerDownCapture={handleCanvasPointerDownCapture}
       style={{ width: '100%', height: '100%', ...style }}
     >
+      <style dangerouslySetInnerHTML={{ __html: EDITOR_REACT_STYLES }} />
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>
         {/* Pass `props.scale` (possibly undefined) THROUGH so SlideCanvas
             auto-fits with the same `fitScale` the overlay reads above. */}

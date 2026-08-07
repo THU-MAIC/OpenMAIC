@@ -114,9 +114,6 @@ describe('InsertToolbar', () => {
     expect(EDITING_UI_STYLES).toContain('content: attr(data-tooltip);');
     expect(EDITING_UI_STYLES).toContain('width: 32px;');
     expect(EDITING_UI_STYLES).toContain('overflow-y: hidden;');
-    expect(EDITING_UI_STYLES).toContain('.renderer-prosemirror-editor ul {');
-    expect(EDITING_UI_STYLES).toContain('list-style-type: disc !important;');
-    expect(EDITING_UI_STYLES).toContain('list-style-type: decimal !important;');
     expect(EDITING_UI_STYLES).toMatch(
       /\.maic-editing-ui-chart-picker-option \{[\s\S]*?align-items: center;/,
     );

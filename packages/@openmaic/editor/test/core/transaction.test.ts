@@ -104,6 +104,21 @@ describe('editor transaction core', () => {
       operation: { type: 'element.removeProps', elementId: 'text-1', propNames: ['content'] },
       message: 'element.removeProps cannot remove required property "content" from text elements',
     },
+    {
+      operation: { type: 'slide.update', patch: { viewportSize: undefined } },
+      message: 'slide.update cannot set required property "viewportSize" to undefined',
+    },
+    {
+      operation: { type: 'element.update', elementId: 'text-1', patch: { left: undefined } },
+      message: 'element.update cannot set required property "left" to undefined',
+    },
+    {
+      operation: {
+        type: 'element.updateMany',
+        updates: [{ elementId: 'text-1', patch: { content: undefined } }],
+      },
+      message: 'element.updateMany cannot set required property "content" to undefined',
+    },
   ] as const)('rejects immutable and required fields', ({ operation, message }) => {
     const original = slideContent();
     const transaction = createEditorTransaction({

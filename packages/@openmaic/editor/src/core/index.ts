@@ -8,6 +8,7 @@ export type ElementPatch<T extends PPTElement = PPTElement> = T extends PPTEleme
 
 const IMMUTABLE_ELEMENT_PROPERTIES = new Set(['id', 'type']);
 const IMMUTABLE_SLIDE_PROPERTIES = new Set(['id']);
+const REQUIRED_SLIDE_PROPERTIES = new Set(['id', 'viewportSize', 'viewportRatio', 'theme']);
 const REQUIRED_ELEMENT_PROPERTIES: Record<PPTElement['type'], ReadonlySet<string>> = {
   text: new Set([
     'id',
@@ -217,14 +218,16 @@ function applyOperation(content: SlideContent, operation: EditorOperation): void
       return;
     }
     case 'element.update': {
-      assertMutableElementPatch(operation.type, operation.patch);
-      Object.assign(requireElement(elements, operation.elementId, operation.type), operation.patch);
+      const element = requireElement(elements, operation.elementId, operation.type);
+      assertMutableElementPatch(operation.type, element, operation.patch);
+      Object.assign(element, operation.patch);
       return;
     }
     case 'element.updateMany': {
       for (const update of operation.updates) {
-        assertMutableElementPatch(operation.type, update.patch);
-        Object.assign(requireElement(elements, update.elementId, operation.type), update.patch);
+        const element = requireElement(elements, update.elementId, operation.type);
+        assertMutableElementPatch(operation.type, element, update.patch);
+        Object.assign(element, update.patch);
       }
       return;
     }
@@ -324,12 +327,13 @@ function applyOperation(content: SlideContent, operation: EditorOperation): void
   }
 }
 
-function assertMutableElementPatch(operation: string, patch: object): void {
+function assertMutableElementPatch(operation: string, element: PPTElement, patch: object): void {
   for (const property of Object.keys(patch)) {
     if (IMMUTABLE_ELEMENT_PROPERTIES.has(property)) {
       throw new Error(`${operation} cannot mutate immutable property ${JSON.stringify(property)}`);
     }
   }
+  assertRequiredPropertiesAreDefined(operation, REQUIRED_ELEMENT_PROPERTIES[element.type], patch);
 }
 
 function assertMutableSlidePatch(patch: object): void {
@@ -339,6 +343,21 @@ function assertMutableSlidePatch(patch: object): void {
     }
     if (property === 'elements' || property === 'animations') {
       throw new Error('slide.update cannot mutate elements or animations');
+    }
+  }
+  assertRequiredPropertiesAreDefined('slide.update', REQUIRED_SLIDE_PROPERTIES, patch);
+}
+
+function assertRequiredPropertiesAreDefined(
+  operation: string,
+  requiredProperties: ReadonlySet<string>,
+  patch: object,
+): void {
+  for (const [property, value] of Object.entries(patch)) {
+    if (requiredProperties.has(property) && value === undefined) {
+      throw new Error(
+        `${operation} cannot set required property ${JSON.stringify(property)} to undefined`,
+      );
     }
   }
 }
