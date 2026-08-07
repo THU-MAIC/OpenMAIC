@@ -35,6 +35,7 @@ export const OPENMAIC_PACKAGES = ['dsl', 'generation', 'storage', 'renderer', 'i
 
 /** The packages that depend on another owned package, and on which one. */
 export const INTERNAL_DEPENDENTS = {
+  generation: '@openmaic/dsl',
   storage: '@openmaic/dsl',
   renderer: '@openmaic/dsl',
   importer: '@openmaic/dsl',
