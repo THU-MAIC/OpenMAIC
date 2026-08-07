@@ -230,7 +230,7 @@ function assertLosslessJson(value: unknown, path: string, seen = new Set<object>
       throw new Error(`${path} is not finite JSON`);
     return;
   }
-  if (typeof value !== 'object' || value === null) throw new Error(`${path} is not JSON`);
+  if (typeof value !== 'object') throw new Error(`${path} is not JSON`);
   if (seen.has(value)) throw new Error(`${path} is cyclic`);
   seen.add(value);
   try {
