@@ -154,11 +154,13 @@ import { RUNTIME_DSL_VERSION, validateRuntimeSession } from '@openmaic/dsl';
 import { PROMPT_IDS, buildPrompt } from '@openmaic/generation';
 import { DOCUMENT_PG_SCHEMA } from '@openmaic/storage';
 import { SlideCanvas } from '@openmaic/renderer';
+import { createEditorTransaction } from '@openmaic/editor/core';
 
 assert.equal(typeof RUNTIME_DSL_VERSION, 'string');
 assert.equal(typeof validateRuntimeSession, 'function');
 assert.match(DOCUMENT_PG_SCHEMA, /CREATE TABLE IF NOT EXISTS document_stages/);
 assert.equal(typeof SlideCanvas, 'function');
+assert.equal(typeof createEditorTransaction, 'function');
 
 // requirements-to-outlines references three snippets (inside media conditionals),
 // so this asserts the packaged snippets/ directory is present and resolvable, not
