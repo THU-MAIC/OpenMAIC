@@ -10,9 +10,9 @@
 import {
   applyEditorTransaction,
   createEditorTransaction,
+  type EditIntent,
   type EditorOperation,
 } from '@openmaic/editor/core';
-import type { EditIntent } from '@openmaic/editor/react';
 import type { PPTElement, PPTShapeElement } from '@openmaic/dsl';
 import { SHAPE_PATH_FORMULAS } from '@/configs/shapes';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';

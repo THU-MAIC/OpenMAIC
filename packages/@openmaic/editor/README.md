@@ -23,26 +23,65 @@ toolbars, dialogs, clipboard behavior, shortcuts, and the conversion of UI inten
 transactions. Hosts may provide stable capabilities such as locale, element ID generation, and a
 generic asset picker; they do not configure individual element types.
 
+## Install and styles
+
+The editor uses the renderer and DSL directly. Install them alongside the renderer's required
+peers and KaTeX so the host can import their public styles:
+
+```bash
+pnpm add @openmaic/editor @openmaic/dsl @openmaic/renderer \
+  react react-dom motion tailwindcss katex
+```
+
+Import the renderer fonts and KaTeX stylesheet once from the application shell:
+
+```tsx
+import '@openmaic/renderer/fonts.css';
+import 'katex/dist/katex.min.css';
+```
+
+The renderer emits Tailwind 4 classes. Configure Tailwind to scan
+`node_modules/@openmaic/renderer/dist/**/*.{js,cjs}` as described in the
+[`@openmaic/renderer` setup](https://www.npmjs.com/package/@openmaic/renderer#tailwind-4-setup).
+Charts and code elements also need the renderer's optional `echarts` and `shiki` peers
+respectively.
+
 ## Editor surface
 
 `EditableSlideCanvasWithUI` is a controlled editor surface. The host provides the current slide
-and selection, then persists the canonical transactions emitted by the editor:
+and selection, then applies and persists the canonical transactions emitted by the editor. This
+complete example keeps undo history in React state; a production host can persist
+`history.present` whenever it changes:
 
 ```tsx
-import {
-  EditableSlideCanvasWithUI,
-  type EditorInsertItem,
-} from '@openmaic/editor/ui';
+import { useCallback, useState } from 'react';
+import type { SlideContent } from '@openmaic/dsl';
+import { applyEditorTransaction, createEditorHistory, type EditorTransaction } from '@openmaic/editor/core';
+import { EMPTY_SELECTION, type Selection } from '@openmaic/editor/react';
+import { EditableSlideCanvasWithUI, type EditorInsertItem } from '@openmaic/editor/ui';
 
 const insertItems: EditorInsertItem[] = ['text', 'image', 'table', 'audio'];
 
-<EditableSlideCanvasWithUI
-  slide={slide}
-  selection={selection}
-  onSelectionChange={setSelection}
-  onTransaction={applyTransaction}
-  insertItems={insertItems}
-/>;
+export function SlideEditor({ initialContent }: { initialContent: SlideContent }) {
+  const [history, setHistory] = useState(() => createEditorHistory(initialContent));
+  const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
+  const applyTransaction = useCallback((transaction: EditorTransaction) => {
+    setHistory((current) => applyEditorTransaction(current, transaction));
+  }, []);
+
+  return (
+    <div style={{ width: '100%', height: '100%', minHeight: 480 }}>
+      <EditableSlideCanvasWithUI
+        slide={history.present.canvas}
+        selection={selection}
+        onSelectionChange={setSelection}
+        onTransaction={applyTransaction}
+        insertItems={insertItems}
+        snapping
+      />
+    </div>
+  );
+}
 ```
 
 `insertItems` is optional. It controls both which insert buttons are visible and their display
