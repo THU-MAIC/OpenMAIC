@@ -1,0 +1,19 @@
+{
+  "name": "@openmaic/editor",
+  "version": "0.0.1",
+  "description": "Composable slide editing core, React surface, and UI for OpenMAIC.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@openmaic/dsl": "workspace:^",
+    "immer": "^11.1.3"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "vitest": "^4.1.8"
+  }
+}
