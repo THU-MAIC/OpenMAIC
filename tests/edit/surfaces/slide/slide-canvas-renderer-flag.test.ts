@@ -1,7 +1,8 @@
 import { createElement, isValidElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EditableSlideCanvasWithUIProps } from '@openmaic/renderer/editing-ui';
+import { applyEditorTransaction, type EditorTransaction } from '@openmaic/editor/core';
+import type { EditableSlideCanvasWithUIProps } from '@openmaic/editor/ui';
 import { FONTS } from '@/configs/font';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
@@ -14,6 +15,12 @@ const mockSetCanvasScale = vi.fn();
 const mockSetCreatingElement = vi.fn();
 const mockApplyOp = vi.fn();
 const mockCommitContent = vi.fn();
+const mockApplyTransaction = vi.fn((transaction: EditorTransaction) => {
+  mockCommitContent(
+    applyEditorTransaction(slideContent, transaction),
+    transaction.history === 'record',
+  );
+});
 const mockInsertImageElement = vi.fn();
 const mockInsertChartElement = vi.fn();
 const mockInsertTableElement = vi.fn();
@@ -105,6 +112,7 @@ vi.mock('@/components/edit/surfaces/slide/slide-edit-session', () => ({
   useSlideEditSession: {
     getState: () => ({
       applyOp: mockApplyOp,
+      applyTransaction: mockApplyTransaction,
       commitContent: mockCommitContent,
     }),
   },
@@ -135,7 +143,7 @@ vi.mock('@/components/edit/surfaces/slide/use-slide-surface', () => ({
   useResolvedSlideContent: () => slideContent,
 }));
 
-vi.mock('@openmaic/renderer/editing-ui', () => ({
+vi.mock('@openmaic/editor/ui', () => ({
   ChartInsertPicker: (props: Record<string, unknown>) =>
     createElement('div', { 'data-testid': 'chart-insert-picker', ...props }),
   LineInsertPicker: (props: Record<string, unknown>) =>
@@ -253,6 +261,7 @@ describe('slide editor canvas renderer flag', () => {
     mockSetCanvasScale.mockClear();
     mockSetCreatingElement.mockClear();
     mockApplyOp.mockClear();
+    mockApplyTransaction.mockClear();
     mockCommitContent.mockClear();
     mockInsertChartElement.mockClear();
     activeElementIds = [];

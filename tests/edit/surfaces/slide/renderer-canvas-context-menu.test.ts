@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PPTElement, PPTTextElement } from '@openmaic/dsl';
-import type { Selection } from '@openmaic/renderer/editing';
+import type { Selection } from '@openmaic/editor/react';
 import {
   getRendererContextMenuState,
   resolveRendererContextSelection,

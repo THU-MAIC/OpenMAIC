@@ -3,7 +3,7 @@ import {
   createEditorTransaction,
   type EditorOperation,
 } from '@openmaic/editor/core';
-import type { EditIntent } from '@openmaic/renderer/editing';
+import type { EditIntent } from '@openmaic/editor/react';
 import type { SlideContent } from '@/lib/types/stage';
 
 type ReorderIntent = Extract<EditIntent, { type: 'element.reorder' }>;

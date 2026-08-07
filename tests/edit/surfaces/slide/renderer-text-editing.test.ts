@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { TextContentChange } from '@openmaic/renderer/editing';
+import { applyEditorTransaction, type EditorTransaction } from '@openmaic/editor/core';
+import type { TextContentChange } from '@openmaic/editor/react';
 import type { SlideContent } from '@/lib/types/stage';
 import {
   commitRendererTextChange,
@@ -43,10 +44,10 @@ describe('renderer text editing adapter', () => {
   });
 
   it.each([
-    ['record', true],
-    ['neutral', false],
-  ] as const)('commits %s content with the matching host history mode', (history, isUserEdit) => {
-    const commitContent = vi.spyOn(useSlideEditSession.getState(), 'commitContent');
+    ['record'],
+    ['neutral'],
+  ] as const)('commits %s content as a transaction', (history) => {
+    const applyTransaction = vi.spyOn(useSlideEditSession.getState(), 'applyTransaction');
     const change: TextContentChange = {
       intent: {
         type: 'text.updateContent',
@@ -59,18 +60,17 @@ describe('renderer text editing adapter', () => {
 
     commitRendererTextChange(content, change);
 
-    expect(commitContent).toHaveBeenCalledWith(
+    expect(applyTransaction).toHaveBeenCalledWith(
       expect.objectContaining({
-        canvas: expect.objectContaining({
-          elements: [expect.objectContaining({ content: '<p>After</p>' })],
-        }),
+        origin: 'canvas',
+        history,
+        operations: [expect.objectContaining({ type: 'text.updateContent', content: '<p>After</p>' })],
       }),
-      isUserEdit,
     );
   });
 
   it('commits text auto-size as history-neutral normalization', () => {
-    const commitContent = vi.spyOn(useSlideEditSession.getState(), 'commitContent');
+    const applyTransaction = vi.spyOn(useSlideEditSession.getState(), 'applyTransaction');
 
     commitRendererTextAutoSize(content, {
       type: 'element.update',
@@ -78,13 +78,12 @@ describe('renderer text editing adapter', () => {
       props: { height: 88 },
     });
 
-    expect(commitContent).toHaveBeenCalledWith(
+    expect(applyTransaction).toHaveBeenCalledWith(
       expect.objectContaining({
-        canvas: expect.objectContaining({
-          elements: [expect.objectContaining({ height: 88 })],
-        }),
+        origin: 'system',
+        history: 'neutral',
+        operations: [expect.objectContaining({ type: 'element.update', patch: { height: 88 } })],
       }),
-      false,
     );
   });
 
@@ -101,7 +100,7 @@ describe('renderer text editing adapter', () => {
     useSlideEditSession.setState({
       history: { past: [], present: latest, future: [] },
     });
-    const commitContent = vi.spyOn(useSlideEditSession.getState(), 'commitContent');
+    const applyTransaction = vi.spyOn(useSlideEditSession.getState(), 'applyTransaction');
 
     commitRendererTextAutoSize(content, {
       type: 'element.update',
@@ -109,7 +108,8 @@ describe('renderer text editing adapter', () => {
       props: { height: 96 },
     });
 
-    expect(commitContent.mock.calls[0][0].canvas.elements[0]).toMatchObject({
+    const transaction = applyTransaction.mock.calls[0][0] as EditorTransaction;
+    expect(applyEditorTransaction(latest, transaction).canvas.elements[0]).toMatchObject({
       content: '<p>Latest input</p>',
       height: 96,
     });

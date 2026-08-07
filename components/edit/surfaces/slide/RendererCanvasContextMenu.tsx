@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import type { PPTElement } from '@openmaic/dsl';
-import type { Selection } from '@openmaic/renderer/editing';
+import type { Selection } from '@openmaic/editor/react';
 import {
   ContextMenu,
   ContextMenuContent,

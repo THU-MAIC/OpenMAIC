@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EditIntent } from '@openmaic/renderer/editing';
+import type { EditIntent } from '@openmaic/editor/react';
 import type { PPTElement } from '@openmaic/dsl';
 import type { SlideContent } from '@/lib/types/stage';
 

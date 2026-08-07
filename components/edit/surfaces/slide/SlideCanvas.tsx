@@ -17,7 +17,7 @@ import type {
   TextAutoSizeIntent,
   TextContentChange,
   TableCellChange,
-} from '@openmaic/renderer/editing';
+} from '@openmaic/editor/react';
 import {
   ChartInsertPicker,
   BackgroundInsertPicker,
@@ -29,7 +29,7 @@ import {
   type AudioInsertResult,
   type VideoInsertResult,
   type LineInsertPreset,
-} from '@openmaic/renderer/editing-ui';
+} from '@openmaic/editor/ui';
 import { createEditorTransaction } from '@openmaic/editor/core';
 import { BarChart3, Image as ImageIcon, Minus, PaintBucket, Table2, Type } from 'lucide-react';
 import Canvas from '@/components/slide-renderer/Editor/Canvas';
@@ -823,7 +823,7 @@ function RendererEditorCanvas() {
  * canonical stage store (no staging, no "restore unsaved" prompt).
  *
  * In the renderer editor path, selection-anchored editing UI is rendered by
- * `@openmaic/renderer/editing-ui`; this surface supplies only commands, locale
+ * `@openmaic/editor/ui`; this surface supplies only commands, locale
  * strings, and App-owned asset selection. The legacy canvas keeps its existing
  * anchored bars unchanged.
  */

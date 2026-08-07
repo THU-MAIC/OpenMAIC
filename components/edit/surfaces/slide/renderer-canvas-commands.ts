@@ -5,7 +5,7 @@ import type {
   EditIntent,
   ReorderCommand,
   Selection,
-} from '@openmaic/renderer/editing';
+} from '@openmaic/editor/react';
 import type { SlideContent } from '@/lib/types/stage';
 import {
   createRendererElementClipboard,

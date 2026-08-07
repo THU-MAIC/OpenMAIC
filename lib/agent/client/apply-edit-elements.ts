@@ -13,7 +13,7 @@
  * whole batch if anything drifted (never partial apply).
  */
 
-import type { EditIntent } from '@openmaic/renderer/editing';
+import type { EditIntent } from '@openmaic/editor/react';
 import type { PPTElement, PPTShapeElement } from '@openmaic/dsl';
 import { produce } from 'immer';
 import { SHAPE_PATH_FORMULAS } from '@/configs/shapes';

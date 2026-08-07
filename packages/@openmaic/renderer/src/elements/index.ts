@@ -14,3 +14,4 @@ export { useElementFill } from './shared/useElementFill';
 export { useElementOutline } from './shared/useElementOutline';
 export { useElementShadow } from './shared/useElementShadow';
 export { useElementFlip } from './shared/useElementFlip';
+export { getTextStyle } from './table/tableUtils';

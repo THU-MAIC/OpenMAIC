@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PPTChartElement, PPTElement, PPTLatexElement, PPTTextElement } from '@openmaic/dsl';
-import type { EditIntent, Selection } from '@openmaic/renderer/editing';
+import type { EditIntent, Selection } from '@openmaic/editor/react';
 import { createRendererCanvasCommands } from '@/components/edit/surfaces/slide/renderer-canvas-commands';
 import {
   createRendererClipboardPasteState,

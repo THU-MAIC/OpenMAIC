@@ -1,4 +1,4 @@
-import type { TextAutoSizeIntent, TextContentChange } from '@openmaic/renderer/editing';
+import type { TextAutoSizeIntent, TextContentChange } from '@openmaic/editor/react';
 import { createEditorTransaction } from '@openmaic/editor/core';
 import type { SlideContent } from '@/lib/types/stage';
 import { compileRendererEditIntents } from './renderer-edit-intents';

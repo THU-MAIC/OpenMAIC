@@ -9,7 +9,7 @@ import type {
   PPTTextElement,
   Slide,
 } from '@openmaic/dsl';
-import type { LatexEditorResult } from '@openmaic/renderer/editing-ui';
+import type { LatexEditorResult } from '@openmaic/editor/ui';
 
 export interface ShapeSpec {
   viewBox: [number, number];

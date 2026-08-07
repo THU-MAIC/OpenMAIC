@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AlignCommand, EditIntent, ReorderCommand } from '@openmaic/renderer/editing';
+import type { AlignCommand, EditIntent, ReorderCommand } from '@openmaic/editor/react';
 import type {
   PPTElement,
   PPTLatexElement,
