@@ -906,37 +906,14 @@ function HomePage() {
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* ── Import buttons (empty state) ── */}
-        {classrooms.length === 0 && (
-          <div className="relative z-10 mt-4 flex items-center gap-4">
-            <button
-              onClick={triggerFileSelect}
-              disabled={importing}
-              className="flex items-center gap-1.5 text-[12px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
-            >
-              <Upload className="size-3.5" />
-              <span>{t('import.classroom')}</span>
-            </button>
-            {PPTX_IMPORT_ENABLED && (
-              <button
-                onClick={triggerPptxFileSelect}
-                disabled={pptxImporting}
-                className="flex items-center gap-1.5 text-[12px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
-              >
-                <Presentation className="size-3.5" />
-                <span>{t('import.pptx')}</span>
-              </button>
-            )}
-          </div>
-        )}
       </motion.div>
 
       {/* ═══ Recent classrooms — collapsible ═══ */}
-      {/* Keep the section alive as long as there is anything to show: courses,
-          folders, or — when the flag is on — the "New folder" affordance. This
-          avoids trapping persisted folders when the last course is deleted. */}
-      {(classrooms.length > 0 || folders.length > 0) && (
+      {/* The library action bar is always present after hydration: it carries
+          the New-folder / import / search actions, so a brand-new user with
+          zero courses and zero folders can still create the first folder or
+          import. One stable action surface across root, folder, and empty. */}
+      {hydrated && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
