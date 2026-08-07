@@ -18,28 +18,33 @@
  */
 
 import { create } from 'zustand';
+import {
+  applyEditorTransaction,
+  createEditorHistory,
+  redoEditorTransaction,
+  undoEditorTransaction,
+  type EditorHistory,
+  type EditorOperation,
+  type EditorTransaction,
+} from '@openmaic/editor/core';
 import { commitSlideEdit } from '@/lib/edit/scene-edit-bridge';
 import { migrateSlideContent } from '@/lib/edit/slide-schema';
-import {
-  applySlideEditOperation,
-  createSlideEditHistory,
-  redoSlideEditOperation,
-  undoSlideEditOperation,
-} from '@/lib/edit/slide-ops';
-import type { SlideEditHistory, SlideEditOperation } from '@/lib/edit/slide-ops';
+import type { SlideEditHistory } from '@/lib/edit/slide-ops';
 import { useStageStore } from '@/lib/store/stage';
 import type { SlideContent } from '@/lib/types/stage';
 
 interface SlideEditSessionState {
   sceneId: string | null;
-  history: SlideEditHistory | null;
+  history: EditorHistory | null;
   /** True while the legacy canvas holds an uncommitted pointer gesture locally. */
   gestureActive: boolean;
 
   /** Establish a fresh in-memory baseline for a scene. */
   seed: (sceneId: string, content: SlideContent) => void;
   /** Apply one canonical op (numeric inspectors, future affordances). */
-  applyOp: (op: SlideEditOperation) => void;
+  applyOp: (op: EditorOperation) => void;
+  /** Apply a fully described editor transaction to the canonical document. */
+  applyTransaction: (transaction: EditorTransaction) => void;
   /**
    * Fold a renderer-committed snapshot in. `isUserEdit` is the causal
    * discriminator: a real gesture commits synchronously inside a pointer
@@ -75,7 +80,7 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
     useStageStore.getState().updateScene(sceneId, { content: next });
   };
 
-  const replace = (history: SlideEditHistory) => {
+  const replace = (history: EditorHistory) => {
     const { history: prev } = get();
     if (history === prev) return;
     writeThrough(history.present);
@@ -95,7 +100,7 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
       // commitContent's writeThrough.
       set({
         sceneId,
-        history: createSlideEditHistory(migrateSlideContent(content)),
+        history: createEditorHistory(migrateSlideContent(content)),
         gestureActive: false,
       });
     },
@@ -103,7 +108,19 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
     applyOp: (op) => {
       const { history } = get();
       if (!history) return;
-      replace(applySlideEditOperation(history, op));
+      replace(
+        applyEditorTransaction(history, {
+          origin: 'toolbar',
+          history: 'record',
+          operations: [op],
+        }),
+      );
+    },
+
+    applyTransaction: (transaction) => {
+      const { history } = get();
+      if (!history) return;
+      replace(applyEditorTransaction(history, transaction));
     },
 
     commitContent: (next, isUserEdit) => {
@@ -122,7 +139,12 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
         set({ history: { ...history, present: next, future: [] } });
         return;
       }
-      replace(commitSlideEdit(history, next));
+      // The legacy Canvas still emits complete snapshots while the renderer
+      // editor is feature-flagged. Keep this compatibility bridge isolated
+      // to that fallback until its React surface moves into @openmaic/editor.
+      replace(
+        commitSlideEdit(history as unknown as SlideEditHistory, next) as unknown as EditorHistory,
+      );
     },
 
     setGestureActive: (gestureActive) => set({ gestureActive }),
@@ -130,13 +152,13 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
     undo: () => {
       const { history } = get();
       if (!history) return;
-      replace(undoSlideEditOperation(history));
+      replace(undoEditorTransaction(history));
     },
 
     redo: () => {
       const { history } = get();
       if (!history) return;
-      replace(redoSlideEditOperation(history));
+      replace(redoEditorTransaction(history));
     },
 
     end: () => {

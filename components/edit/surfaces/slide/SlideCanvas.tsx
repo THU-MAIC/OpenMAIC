@@ -30,6 +30,7 @@ import {
   type VideoInsertResult,
   type LineInsertPreset,
 } from '@openmaic/renderer/editing-ui';
+import { createEditorTransaction } from '@openmaic/editor/core';
 import { BarChart3, Image as ImageIcon, Minus, PaintBucket, Table2, Type } from 'lucide-react';
 import Canvas from '@/components/slide-renderer/Editor/Canvas';
 import { SpotlightOverlay } from '@/components/slide-renderer/Editor/SpotlightOverlay';
@@ -61,7 +62,7 @@ import { ImagePicker } from './ImagePicker';
 import { AnchoredTextBar } from './AnchoredTextBar';
 import { AnchoredElementBar } from './AnchoredElementBar';
 import { ElementPickLayer } from './ElementPickLayer';
-import { applyRendererEditIntents } from './renderer-edit-intents';
+import { compileRendererEditIntents } from './renderer-edit-intents';
 import { createRendererCanvasCommands } from './renderer-canvas-commands';
 import {
   createRendererClipboardPasteState,
@@ -219,9 +220,11 @@ function RendererEditorCanvas() {
   const handleElementsChange = useCallback(
     (intents: EditIntent[]) => {
       const base = useSlideEditSession.getState().history?.present ?? content;
-      const next = applyRendererEditIntents(base, intents);
-      if (next === base) return;
-      useSlideEditSession.getState().commitContent(next, true);
+      const operations = compileRendererEditIntents(base, intents);
+      if (operations.length === 0) return;
+      useSlideEditSession
+        .getState()
+        .applyTransaction(createEditorTransaction({ origin: 'canvas', operations }));
     },
     [content],
   );

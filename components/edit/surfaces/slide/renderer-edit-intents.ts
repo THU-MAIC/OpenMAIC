@@ -1,12 +1,12 @@
-import { produce } from 'immer';
+import {
+  applyEditorTransaction,
+  createEditorTransaction,
+  type EditorOperation,
+} from '@openmaic/editor/core';
 import type { EditIntent } from '@openmaic/renderer/editing';
-import { applySlideEditOperation } from '@/lib/edit/slide-ops';
 import type { SlideContent } from '@/lib/types/stage';
 
 type ReorderIntent = Extract<EditIntent, { type: 'element.reorder' }>;
-type UpdateManyIntent = Extract<EditIntent, { type: 'element.updateMany' }>;
-type TextContentIntent = Extract<EditIntent, { type: 'text.updateContent' }>;
-type TableCellIntent = Extract<EditIntent, { type: 'table.updateCell' }>;
 
 function resolveReorderIndex(
   elements: SlideContent['canvas']['elements'],
@@ -28,115 +28,123 @@ function resolveReorderIndex(
   }
 }
 
-function applyMixedUpdates(
+/**
+ * Temporary app-side compatibility compiler while the React canvas still
+ * lives under renderer. The compiler never mutates a snapshot itself: it
+ * translates UI vocabulary into core operations, then advances a private
+ * working document through the same transaction engine used by the host.
+ */
+export function compileRendererEditIntents(
   content: SlideContent,
-  updates: UpdateManyIntent['updates'],
-): SlideContent {
-  return produce(content, (draft) => {
-    for (const update of updates) {
-      const element = draft.canvas.elements.find((item) => item.id === update.id);
-      if (element) Object.assign(element, update.props);
+  intents: readonly EditIntent[],
+): EditorOperation[] {
+  let working = content;
+  const compiled: EditorOperation[] = [];
+
+  const append = (operations: EditorOperation[]) => {
+    if (operations.length === 0) return;
+    working = applyEditorTransaction(
+      working,
+      createEditorTransaction({ origin: 'system', history: 'neutral', operations }),
+    );
+    compiled.push(...operations);
+  };
+
+  for (const intent of intents) {
+    const elements = working.canvas.elements;
+    switch (intent.type) {
+      case 'element.update': {
+        if (!elements.some((element) => element.id === intent.id)) break;
+        append([{ type: 'element.update', elementId: intent.id, patch: intent.props }]);
+        break;
+      }
+      case 'element.updateMany': {
+        const updates = intent.updates
+          .filter((update) => elements.some((element) => element.id === update.id))
+          .map((update) => ({ elementId: update.id, patch: update.props }));
+        if (updates.length > 0) append([{ type: 'element.updateMany', updates }]);
+        break;
+      }
+      case 'element.add': {
+        append([{ type: 'element.add', element: intent.element, index: intent.index }]);
+        break;
+      }
+      case 'element.delete': {
+        const elementIds = intent.ids.filter((id) => elements.some((element) => element.id === id));
+        if (elementIds.length > 0) append([{ type: 'element.deleteMany', elementIds }]);
+        break;
+      }
+      case 'element.reorder': {
+        const index = resolveReorderIndex(elements, intent.id, intent.command);
+        if (index !== null) append([{ type: 'element.reorder', elementId: intent.id, index }]);
+        break;
+      }
+      case 'element.align': {
+        const elementIds = intent.ids.filter((id) => elements.some((element) => element.id === id));
+        if (elementIds.length === 0) break;
+        append([
+          {
+            type: 'element.align',
+            elementIds,
+            command:
+              intent.command === 'center'
+                ? 'horizontal'
+                : intent.command === 'middle'
+                  ? 'vertical'
+                  : intent.command,
+          },
+        ]);
+        break;
+      }
+      case 'element.removeProps': {
+        if (!elements.some((element) => element.id === intent.id)) break;
+        append([{ type: 'element.removeProps', elementId: intent.id, propNames: intent.props }]);
+        break;
+      }
+      case 'text.updateContent': {
+        const element = elements.find((candidate) => candidate.id === intent.id);
+        if (!element) break;
+        if (intent.target === 'text' && element.type === 'text') {
+          append([{ type: 'text.updateContent', elementId: intent.id, content: intent.content }]);
+        } else if (intent.target === 'shape' && element.type === 'shape') {
+          append([
+            { type: 'shape.updateTextContent', elementId: intent.id, content: intent.content },
+          ]);
+        }
+        break;
+      }
+      case 'table.updateCell': {
+        const element = elements.find((candidate) => candidate.id === intent.id);
+        if (
+          element?.type === 'table' &&
+          element.data.some((row) => row.some((cell) => cell.id === intent.cellId))
+        ) {
+          append([
+            {
+              type: 'table.updateCell',
+              elementId: intent.id,
+              cellId: intent.cellId,
+              text: intent.text,
+            },
+          ]);
+        }
+        break;
+      }
     }
-  });
+  }
+
+  return compiled;
 }
 
-function applyReorderIntent(content: SlideContent, intent: ReorderIntent): SlideContent {
-  const index = resolveReorderIndex(content.canvas.elements, intent.id, intent.command);
-  if (index === null) return content;
-
-  return applySlideEditOperation(content, {
-    type: 'element.reorder',
-    elementId: intent.id,
-    index,
-  });
-}
-
-function applyTextContentIntent(content: SlideContent, intent: TextContentIntent): SlideContent {
-  return produce(content, (draft) => {
-    const element = draft.canvas.elements.find((item) => item.id === intent.id);
-    if (!element) return;
-
-    if (intent.target === 'text' && element.type === 'text') {
-      element.content = intent.content;
-    } else if (intent.target === 'shape' && element.type === 'shape') {
-      element.text = {
-        align: 'middle',
-        defaultFontName: 'Microsoft YaHei',
-        defaultColor: '#333333',
-        ...element.text,
-        content: intent.content,
-      };
-    }
-  });
-}
-
-function applyTableCellIntent(content: SlideContent, intent: TableCellIntent): SlideContent {
-  return produce(content, (draft) => {
-    const element = draft.canvas.elements.find((item) => item.id === intent.id);
-    if (!element || element.type !== 'table') return;
-    for (const row of element.data) {
-      const cell = row.find((candidate) => candidate.id === intent.cellId);
-      if (!cell) continue;
-      cell.text = intent.text;
-      return;
-    }
-  });
-}
-
-function assertNever(value: never): never {
-  throw new Error(`Unsupported renderer edit intent: ${JSON.stringify(value)}`);
-}
-
+/** @deprecated Use compileRendererEditIntents with applyEditorTransaction. */
 export function applyRendererEditIntents(
   content: SlideContent,
   intents: readonly EditIntent[],
 ): SlideContent {
-  return intents.reduce((next, intent) => {
-    switch (intent.type) {
-      case 'element.update':
-        return applySlideEditOperation(next, {
-          type: 'element.update',
-          elementId: intent.id,
-          patch: intent.props,
-        });
-      case 'element.updateMany':
-        return applyMixedUpdates(next, intent.updates);
-      case 'element.add':
-        return applySlideEditOperation(next, {
-          type: 'element.add',
-          element: intent.element,
-          index: intent.index,
-        });
-      case 'element.delete':
-        return applySlideEditOperation(next, {
-          type: 'element.deleteMany',
-          elementIds: [...intent.ids],
-        });
-      case 'element.reorder':
-        return applyReorderIntent(next, intent);
-      case 'element.align':
-        return applySlideEditOperation(next, {
-          type: 'element.align',
-          elementIds: [...intent.ids],
-          command:
-            intent.command === 'center'
-              ? 'horizontal'
-              : intent.command === 'middle'
-                ? 'vertical'
-                : intent.command,
-        });
-      case 'element.removeProps':
-        return applySlideEditOperation(next, {
-          type: 'element.removeProps',
-          elementId: intent.id,
-          propNames: [...intent.props],
-        });
-      case 'text.updateContent':
-        return applyTextContentIntent(next, intent);
-      case 'table.updateCell':
-        return applyTableCellIntent(next, intent);
-      default:
-        return assertNever(intent);
-    }
-  }, content);
+  const operations = compileRendererEditIntents(content, intents);
+  if (operations.length === 0) return content;
+  return applyEditorTransaction(
+    content,
+    createEditorTransaction({ origin: 'system', history: 'neutral', operations }),
+  );
 }

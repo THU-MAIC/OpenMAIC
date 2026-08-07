@@ -8,7 +8,10 @@ import type {
   PPTTextElement,
   PPTVideoElement,
 } from '@openmaic/dsl';
-import { applyRendererEditIntents } from '@/components/edit/surfaces/slide/renderer-edit-intents';
+import {
+  applyRendererEditIntents,
+  compileRendererEditIntents,
+} from '@/components/edit/surfaces/slide/renderer-edit-intents';
 import type { SlideContent } from '@/lib/types/stage';
 
 function textElement(id: string, overrides: Partial<PPTTextElement> = {}): PPTTextElement {
@@ -130,6 +133,18 @@ function slideContent(
 }
 
 describe('applyRendererEditIntents', () => {
+  it('compiles renderer intents into canonical editor operations', () => {
+    const operations = compileRendererEditIntents(slideContent(), [
+      { type: 'element.update', id: 'a', props: { left: 48 } },
+      { type: 'element.reorder', id: 'a', command: 'front' },
+    ]);
+
+    expect(operations).toEqual([
+      { type: 'element.update', elementId: 'a', patch: { left: 48 } },
+      { type: 'element.reorder', elementId: 'a', index: 2 },
+    ]);
+  });
+
   it('persists a renderer table resize including its cellMinHeight patch', () => {
     const original = slideContent([tableElement('table')]);
 
