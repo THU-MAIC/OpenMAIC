@@ -43,17 +43,18 @@ vi.mock('../../src/react/EditableSlideCanvas', async () => {
     EditableSlideCanvas(props: EditableSlideCanvasProps) {
       canvasMock.latestProps = props;
       const editingId = props.selection?.editingId;
+      const { onTextContentChange, onTextEditorChange, onTextFormatChange } = props;
 
       React.useEffect(() => {
         if (!editingId || !canvasMock.autoRegister) return;
 
-        const controller = createController(editingId, props.onTextContentChange);
-        props.onTextEditorChange?.(controller);
+        const controller = createController(editingId, onTextContentChange);
+        onTextEditorChange?.(controller);
         if (canvasMock.autoFormat) {
-          props.onTextFormatChange?.(editingId, canvasMock.format);
+          onTextFormatChange?.(editingId, canvasMock.format);
         }
-        return () => props.onTextEditorChange?.(null);
-      }, [editingId]);
+        return () => onTextEditorChange?.(null);
+      }, [editingId, onTextContentChange, onTextEditorChange, onTextFormatChange]);
 
       const prefix = props.elementIdPrefix ?? 'slide-element-';
       return React.createElement(
@@ -321,9 +322,144 @@ afterEach(() => {
   canvasMock.executions.length = 0;
   canvasMock.latestProps = null;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('EditableSlideCanvasWithUI', () => {
+  it('keeps the canvas read-only when no mutation sink is supplied', () => {
+    renderControlled({
+      onTextContentChange: undefined,
+      onElementsChange: undefined,
+      onTransaction: undefined,
+    });
+
+    expect(canvasMock.latestProps?.onElementsChange).toBeUndefined();
+    expect(canvasMock.latestProps?.onTextContentChange).toBeUndefined();
+    expect(canvasMock.latestProps?.onTextAutoSize).toBeUndefined();
+    expect(canvasMock.latestProps?.onTableCellChange).toBeUndefined();
+  });
+
+  it('copies canonical media references instead of resolved render URLs', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText, readText: vi.fn() },
+    });
+    const resolvedImage = { ...imageElement, src: 'blob:resolved-preview' };
+    const canonicalImage = { ...imageElement, src: 'asset://canonical-image' };
+
+    renderControlled({
+      slide: { ...slide, elements: [resolvedImage] } as unknown as Slide,
+      documentSlide: { ...slide, elements: [canonicalImage] } as unknown as Slide,
+      initialSelection: { elementIds: ['image-1'], primaryId: 'image-1' },
+      host: { locale: 'en-US' },
+      onTransaction: vi.fn(),
+    });
+
+    fireEvent.keyDown(document, { key: 'c', metaKey: true });
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+    const payload = JSON.parse(writeText.mock.calls[0][0]);
+    expect(payload.elements[0].src).toBe('asset://canonical-image');
+  });
+
+  it('provides built-in insert tools and creates elements with only a host', () => {
+    const onTransaction = vi.fn();
+    const onSelectionChange = vi.fn();
+    renderControlled({
+      host: { locale: 'en-US', createElementId: (type) => `new-${type}` },
+      onTransaction,
+      onSelectionChange,
+    });
+
+    expect(screen.getByRole('toolbar', { name: 'Insert toolbar' })).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Insert text box' }));
+    act(() =>
+      canvasMock.latestProps?.onTextCreate?.({ left: 40, top: 50, width: 240, height: 80 }),
+    );
+
+    expect(onTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        origin: 'toolbar',
+        operations: [
+          expect.objectContaining({
+            type: 'element.add',
+            element: expect.objectContaining({ id: 'new-text', type: 'text', left: 40, top: 50 }),
+          }),
+        ],
+      }),
+    );
+    expect(onSelectionChange).toHaveBeenCalledWith({
+      elementIds: ['new-text'],
+      primaryId: 'new-text',
+      editingId: 'new-text',
+    });
+    expect(screen.getByRole('button', { name: 'Insert image' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Insert table' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Insert chart' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Insert line' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Insert formula' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Insert video' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Insert audio' })).not.toBeNull();
+    expect(Object.keys(canvasMock.latestProps?.shapePathFormulas ?? {})).not.toHaveLength(0);
+  });
+
+  it('preserves image aspect ratio when a custom asset picker only returns src', async () => {
+    class TestImage {
+      naturalWidth = 1200;
+      naturalHeight = 600;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+    vi.stubGlobal('Image', TestImage);
+    const onTransaction = vi.fn();
+    renderControlled({
+      host: {
+        locale: 'en-US',
+        createElementId: () => 'new-image',
+        renderAssetPicker: ({ onPick }) => (
+          <button type="button" onClick={() => onPick({ src: 'custom-image.png' })}>
+            Pick custom image
+          </button>
+        ),
+      },
+      onTransaction,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert image' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick custom image' }));
+
+    await waitFor(() =>
+      expect(onTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operations: [
+            expect.objectContaining({
+              type: 'element.add',
+              element: expect.objectContaining({ width: 600, height: 300 }),
+            }),
+          ],
+        }),
+      ),
+    );
+  });
+
+  it('cancels an editor-owned insertion mode with Escape', () => {
+    renderControlled({
+      host: { locale: 'en-US' },
+      onTransaction: vi.fn(),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert text box' }));
+    expect(canvasMock.latestProps?.creatingText).toBe(true);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(canvasMock.latestProps?.creatingText).toBe(false);
+  });
+
   it('composes controlled text editing and forwards toolbar commands', async () => {
     const onSelectionChange = vi.fn();
     const { onTextContentChange } = renderControlled({ onSelectionChange });
@@ -681,6 +817,41 @@ describe('EditableSlideCanvasWithUI', () => {
     expect(onReplace).toHaveBeenCalledWith('image-1', 'replacement.png');
     expect(onFlip).toHaveBeenCalledWith(expect.objectContaining({ id: 'image-1' }), 'H');
     expect(onFlip).toHaveBeenCalledWith(expect.objectContaining({ id: 'image-1' }), 'V');
+  });
+
+  it('owns selected image actions when only the generic host is configured', async () => {
+    const onTransaction = vi.fn();
+    const renderAssetPicker = vi.fn(({ onPick }: { onPick: (asset: { src: string }) => void }) => (
+      <button type="button" onClick={() => onPick({ src: 'host-replacement.png' })}>
+        Pick host image
+      </button>
+    ));
+
+    renderControlled({
+      slide: { ...slide, elements: [imageElement] } as unknown as Slide,
+      initialSelection: { elementIds: ['image-1'], primaryId: 'image-1' },
+      host: { locale: 'en-US', renderAssetPicker },
+      onTransaction,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Replace image' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick host image' }));
+
+    expect(renderAssetPicker).toHaveBeenCalledWith(
+      expect.objectContaining({ accept: 'image/*', currentSrc: 'cover.png' }),
+    );
+    expect(onTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        origin: 'toolbar',
+        operations: [
+          expect.objectContaining({
+            type: 'element.update',
+            elementId: 'image-1',
+            patch: expect.objectContaining({ src: 'host-replacement.png' }),
+          }),
+        ],
+      }),
+    );
   });
 
   it('uses the renderer-owned context menu and delegates its commands', async () => {

@@ -1,0 +1,44 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const sourcePath = resolve(
+  process.cwd(),
+  'components/edit/surfaces/slide/RendererEditorCanvas.tsx',
+);
+
+describe('renderer editor app boundary', () => {
+  it('uses one generic host bridge without element-specific editor configuration', () => {
+    const source = readFileSync(sourcePath, 'utf8');
+
+    expect(source).toContain('host={');
+    for (const forbidden of [
+      'latexEditor=',
+      'videoEditor=',
+      'videoInsert=',
+      'audioEditor=',
+      'audioInsert=',
+      'imageEditor=',
+      'elementToolbar=',
+      'insertToolbar=',
+      'createDefaultLatexElement',
+      'PPTVideoElement',
+      'PPTAudioElement',
+      'PPTImageElement',
+      'PPTLineElement',
+      'SHAPE_PATH_FORMULAS',
+      'shapePathFormulas=',
+    ]) {
+      expect(source, forbidden).not.toContain(forbidden);
+    }
+  });
+
+  it('keeps document persistence in the app transaction sink', () => {
+    const source = readFileSync(sourcePath, 'utf8');
+
+    expect(source).toContain('applyTransaction(transaction)');
+    expect(source).toContain('onTransaction={applyTransaction}');
+    expect(source).toContain('onSelectionChange={handleSelectionChange}');
+    expect(source).toContain('documentSlide={content.canvas}');
+  });
+});

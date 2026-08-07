@@ -5,9 +5,11 @@ import type {
   EditIntent,
   ReorderCommand,
 } from '../react/types';
-import type { PPTElement, PPTImageElement, PPTLineElement, PPTVideoElement } from '@openmaic/dsl';
+import type { EditorTransaction } from '../core';
+import type { PPTImageElement, PPTLineElement, PPTVideoElement, Slide } from '@openmaic/dsl';
 import type { TextEditCommand, TextFormatState } from '../react/text/types';
 import type { LatexEditorResult } from './latex/latex-editor';
+import type { EditorHostCapabilities } from './host';
 
 export type TextToolbarLocale = 'zh-CN' | 'en-US';
 export type TextToolbarPlacement = 'top' | 'bottom';
@@ -312,6 +314,16 @@ export interface CanvasContextMenuOptions {
 }
 
 export interface EditableSlideCanvasWithUIProps extends EditableSlideCanvasProps {
+  /** Canonical document data used by transactions and clipboard when `slide` contains resolved render URLs. */
+  readonly documentSlide?: Slide;
+  /**
+   * Canonical transaction channel for hosts that use the editor transaction
+   * engine. When supplied, renderer gestures never require host-side intent
+   * compilation. The intent callbacks remain for backwards compatibility.
+   */
+  readonly onTransaction?: (transaction: EditorTransaction) => void;
+  /** Stable host integration for built-in editor capabilities. */
+  readonly host?: EditorHostCapabilities;
   readonly textToolbar?: TextToolbarOptions | false;
   readonly lineToolbar?: LineToolbarOptions | false;
   readonly insertToolbar?: InsertToolbarOptions | false;

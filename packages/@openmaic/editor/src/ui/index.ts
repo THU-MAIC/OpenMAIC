@@ -3,9 +3,19 @@
 export { EditableSlideCanvasWithUI } from './EditableSlideCanvasWithUI';
 export {
   DEFAULT_TEXT_TOOLBAR_FONTS,
+  resolveEditorLabels,
   resolveLineToolbarLabels,
   resolveTextToolbarLabels,
 } from './labels';
+export { resolveEditorHost } from './host';
+export type {
+  EditorAsset,
+  EditorAssetPickerRequest,
+  EditorError,
+  EditorHostCapabilities,
+  EditorLocale,
+  ResolvedEditorHostCapabilities,
+} from './host';
 export { EDITING_UI_STYLES } from './styles';
 export {
   FontSizeControl,
@@ -27,9 +37,11 @@ export { useToolbarAnchor } from './text/useToolbarAnchor';
 export { LatexEditorDialog } from './latex/LatexEditorDialog';
 export { LatexToolbarOverlay } from './latex/LatexToolbarOverlay';
 export { VideoToolbarOverlay } from './video/VideoToolbarOverlay';
+export { EditorVideoContent } from './video/EditorVideoContent';
 export { VideoInsertPicker } from './video/VideoInsertPicker';
 export { AudioToolbarOverlay } from './audio/AudioToolbarOverlay';
 export { AudioInsertPicker } from './audio/AudioInsertPicker';
+export { DefaultAssetPicker } from './assets/DefaultAssetPicker';
 export { ElementToolbarOverlay } from './element/ElementToolbarOverlay';
 export { ImageToolbarOverlay } from './element/ImageToolbarOverlay';
 export { CanvasContextMenu } from './context/CanvasContextMenu';

@@ -1,12 +1,12 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type {
   Slide,
-  PPTElement,
   PPTImageElement,
   PPTShapeElement,
   PPTTableElement,
   PPTVideoElement,
 } from '@openmaic/dsl';
+import type { EditIntent } from '../core';
 import type {
   TextAutoSizeIntent,
   TextContentChange,
@@ -23,8 +23,7 @@ import type { ShapePathFormulaMap } from './shape/types';
  * representation (L0, which belongs in @openmaic/dsl). L1 normalizes down to L0.
  */
 
-export type ReorderCommand = 'front' | 'back' | 'forward' | 'backward';
-export type AlignCommand = 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom';
+export type { AlignCommand, EditIntent, ReorderCommand } from '../core';
 
 /**
  * The draggable handles on a line element. `start`/`end` are the two endpoints;
@@ -38,17 +37,6 @@ export type LineHandle = 'start' | 'end' | 'ctrl' | 'ctrl1' | 'ctrl2';
  * owns the document and undo and applies them. One intent (or batch) per completed
  * gesture — never per animation frame — so it maps 1:1 onto one host undo entry.
  */
-export type EditIntent =
-  | { type: 'element.update'; id: string; props: Partial<PPTElement> }
-  | { type: 'element.updateMany'; updates: Array<{ id: string; props: Partial<PPTElement> }> }
-  | { type: 'element.add'; element: PPTElement; index?: number }
-  | { type: 'element.delete'; ids: string[] }
-  | { type: 'element.reorder'; id: string; command: ReorderCommand }
-  | { type: 'element.align'; ids: string[]; command: AlignCommand }
-  | { type: 'element.removeProps'; id: string; props: string[] }
-  | { type: 'text.updateContent'; id: string; content: string; target: 'text' | 'shape' }
-  | { type: 'table.updateCell'; id: string; cellId: string; text: string };
-
 export interface TableCellChange {
   readonly intent: Extract<EditIntent, { type: 'table.updateCell' }>;
   readonly history: 'record' | 'neutral';

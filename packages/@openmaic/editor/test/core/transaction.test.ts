@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { PPTTextElement, SlideContent } from '@openmaic/dsl';
 import {
   applyEditorTransaction,
+  compileEditorEditIntents,
   createEditorHistory,
   createEditorTransaction,
+  createEditorTransactionFromIntents,
   redoEditorTransaction,
   type EditorOperation,
   undoEditorTransaction,
@@ -43,6 +45,57 @@ function slideContent(): SlideContent {
 }
 
 describe('editor transaction core', () => {
+  it('compiles canvas intents into canonical operations without host-specific semantics', () => {
+    const operations = compileEditorEditIntents(slideContent(), [
+      { type: 'element.update', id: 'text-1', props: { left: 120 } },
+      { type: 'element.reorder', id: 'text-1', command: 'front' },
+    ]);
+
+    expect(operations).toEqual([
+      { type: 'element.update', elementId: 'text-1', patch: { left: 120 } },
+      { type: 'element.reorder', elementId: 'text-1', index: 0 },
+    ]);
+  });
+
+  it('compiles slide background changes through the same intent channel', () => {
+    const operations = compileEditorEditIntents(slideContent(), [
+      { type: 'slide.update', props: { background: { type: 'solid', color: '#112233' } } },
+    ]);
+
+    expect(operations).toEqual([
+      { type: 'slide.update', patch: { background: { type: 'solid', color: '#112233' } } },
+    ]);
+  });
+
+  it('creates one host-ready transaction from a mixed canvas gesture batch', () => {
+    const content = slideContent();
+    const transaction = createEditorTransactionFromIntents({
+      content,
+      intents: [
+        { type: 'text.updateContent', id: 'text-1', target: 'text', content: '<p>Changed</p>' },
+        { type: 'element.update', id: 'text-1', props: { top: 80 } },
+      ],
+    });
+
+    expect(transaction).toMatchObject({ origin: 'canvas', history: 'record' });
+    expect(transaction?.operations).toEqual([
+      { type: 'text.updateContent', elementId: 'text-1', content: '<p>Changed</p>' },
+      { type: 'element.update', elementId: 'text-1', patch: { top: 80 } },
+    ]);
+    expect(applyEditorTransaction(content, transaction!)).toMatchObject({
+      canvas: { elements: [{ content: '<p>Changed</p>', top: 80 }] },
+    });
+  });
+
+  it('ignores stale intents and does not create an empty transaction', () => {
+    expect(
+      createEditorTransactionFromIntents({
+        content: slideContent(),
+        intents: [{ type: 'element.delete', ids: ['missing'] }],
+      }),
+    ).toBeNull();
+  });
+
   it('rejects an invalid batch without applying its preceding operations', () => {
     const original = slideContent();
     const transaction = createEditorTransaction({

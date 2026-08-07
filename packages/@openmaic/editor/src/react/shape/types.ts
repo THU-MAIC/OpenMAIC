@@ -9,10 +9,7 @@ export type ShapeKeypointRelative =
   | 'top_right'
   | 'bottom_right';
 
-/**
- * Formula metadata is injected by the host. Keeping it structural lets the
- * renderer implement geometry without importing an application shape registry.
- */
+/** Formula metadata consumed by the editor geometry runtime. */
 export interface ShapePathFormula {
   editable?: boolean;
   defaultValue?: readonly number[];

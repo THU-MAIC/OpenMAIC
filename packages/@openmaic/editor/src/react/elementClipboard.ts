@@ -1,28 +1,34 @@
 import type { PPTElement } from '@openmaic/dsl';
 
-const CLIPBOARD_KIND = 'openmaic/renderer-elements';
+const CLIPBOARD_KIND = 'openmaic/editor-elements';
+const LEGACY_CLIPBOARD_KIND = 'openmaic/renderer-elements';
 const CLIPBOARD_VERSION = 1;
 
-interface RendererElementClipboardPayload {
-  readonly kind: typeof CLIPBOARD_KIND;
+interface ElementClipboardPayload {
+  readonly kind: typeof CLIPBOARD_KIND | typeof LEGACY_CLIPBOARD_KIND;
   readonly version: typeof CLIPBOARD_VERSION;
   readonly elements: PPTElement[];
 }
 
-export interface RendererElementClipboard {
+export interface ElementClipboard {
   write(elements: readonly PPTElement[]): Promise<boolean>;
   read(): Promise<PPTElement[] | null>;
+}
+
+export interface ClipboardPasteState {
+  payloadKey: string | null;
+  count: number;
 }
 
 function cloneElements(elements: readonly PPTElement[]): PPTElement[] {
   return JSON.parse(JSON.stringify(elements)) as PPTElement[];
 }
 
-function parsePayload(value: string): PPTElement[] | null {
+export function parseElementClipboardPayload(value: string): PPTElement[] | null {
   try {
-    const payload = JSON.parse(value) as Partial<RendererElementClipboardPayload>;
+    const payload = JSON.parse(value) as Partial<ElementClipboardPayload>;
     if (
-      payload.kind !== CLIPBOARD_KIND ||
+      (payload.kind !== CLIPBOARD_KIND && payload.kind !== LEGACY_CLIPBOARD_KIND) ||
       payload.version !== CLIPBOARD_VERSION ||
       !Array.isArray(payload.elements) ||
       payload.elements.some(
@@ -42,7 +48,7 @@ function parsePayload(value: string): PPTElement[] | null {
 }
 
 /** Browser clipboard with a session-local fallback for denied permissions. */
-export function createRendererElementClipboard(): RendererElementClipboard {
+export function createElementClipboard(): ElementClipboard {
   let fallback: PPTElement[] | null = null;
 
   return {
@@ -54,7 +60,7 @@ export function createRendererElementClipboard(): RendererElementClipboard {
         kind: CLIPBOARD_KIND,
         version: CLIPBOARD_VERSION,
         elements: copied,
-      } satisfies RendererElementClipboardPayload);
+      } satisfies ElementClipboardPayload);
       if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return true;
       try {
         await navigator.clipboard.writeText(payload);
@@ -69,8 +75,7 @@ export function createRendererElementClipboard(): RendererElementClipboard {
         return fallback ? cloneElements(fallback) : null;
       }
       try {
-        const copied = parsePayload(await navigator.clipboard.readText());
-        return copied;
+        return parseElementClipboardPayload(await navigator.clipboard.readText());
       } catch {
         return fallback ? cloneElements(fallback) : null;
       }
@@ -78,11 +83,6 @@ export function createRendererElementClipboard(): RendererElementClipboard {
   };
 }
 
-export interface RendererClipboardPasteState {
-  payloadKey: string | null;
-  count: number;
-}
-
-export function createRendererClipboardPasteState(): RendererClipboardPasteState {
+export function createClipboardPasteState(): ClipboardPasteState {
   return { payloadKey: null, count: 0 };
 }

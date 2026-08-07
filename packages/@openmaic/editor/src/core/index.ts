@@ -108,6 +108,26 @@ export type EditorOperation =
   | { type: 'shape.updateTextContent'; elementId: string; content: string }
   | { type: 'table.updateCell'; elementId: string; cellId: string; text: string };
 
+/**
+ * Bounded UI gesture vocabulary. Editors may emit these while interacting with a
+ * canvas; this core module is the only place that translates them into canonical
+ * document operations.
+ */
+export type ReorderCommand = 'front' | 'back' | 'forward' | 'backward';
+export type AlignCommand = 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom';
+
+export type EditIntent =
+  | { type: 'slide.update'; props: Omit<Partial<Slide>, 'id' | 'elements' | 'animations'> }
+  | { type: 'element.update'; id: string; props: Partial<PPTElement> }
+  | { type: 'element.updateMany'; updates: Array<{ id: string; props: Partial<PPTElement> }> }
+  | { type: 'element.add'; element: PPTElement; index?: number }
+  | { type: 'element.delete'; ids: string[] }
+  | { type: 'element.reorder'; id: string; command: ReorderCommand }
+  | { type: 'element.align'; ids: string[]; command: AlignCommand }
+  | { type: 'element.removeProps'; id: string; props: string[] }
+  | { type: 'text.updateContent'; id: string; content: string; target: 'text' | 'shape' }
+  | { type: 'table.updateCell'; id: string; cellId: string; text: string };
+
 export interface EditorTransaction {
   readonly origin: EditorTransactionOrigin;
   readonly history: EditorHistoryMode;
@@ -132,6 +152,130 @@ export function createEditorTransaction({
   if (operations.length === 0)
     throw new Error('Editor transaction must contain at least one operation');
   return { origin, history, operations: [...operations] };
+}
+
+/**
+ * Compiles UI edit intents using a private working snapshot. Advancing that
+ * snapshot between intents makes a batch deterministic while keeping all
+ * document mutation semantics in the editor package.
+ */
+export function compileEditorEditIntents(
+  content: SlideContent,
+  intents: readonly EditIntent[],
+): EditorOperation[] {
+  let working = content;
+  const compiled: EditorOperation[] = [];
+
+  const append = (operations: EditorOperation[]) => {
+    if (operations.length === 0) return;
+    working = applyEditorTransaction(
+      working,
+      createEditorTransaction({ origin: 'system', history: 'neutral', operations }),
+    );
+    compiled.push(...operations);
+  };
+
+  for (const intent of intents) {
+    const elements = working.canvas.elements;
+    switch (intent.type) {
+      case 'slide.update':
+        append([{ type: 'slide.update', patch: intent.props }]);
+        break;
+      case 'element.update': {
+        if (!elements.some((element) => element.id === intent.id)) break;
+        append([{ type: 'element.update', elementId: intent.id, patch: intent.props }]);
+        break;
+      }
+      case 'element.updateMany': {
+        const updates = intent.updates
+          .filter((update) => elements.some((element) => element.id === update.id))
+          .map((update) => ({ elementId: update.id, patch: update.props }));
+        if (updates.length > 0) append([{ type: 'element.updateMany', updates }]);
+        break;
+      }
+      case 'element.add':
+        append([{ type: 'element.add', element: intent.element, index: intent.index }]);
+        break;
+      case 'element.delete': {
+        const elementIds = intent.ids.filter((id) => elements.some((element) => element.id === id));
+        if (elementIds.length > 0) append([{ type: 'element.deleteMany', elementIds }]);
+        break;
+      }
+      case 'element.reorder': {
+        const index = resolveReorderIndex(elements, intent.id, intent.command);
+        if (index !== null) append([{ type: 'element.reorder', elementId: intent.id, index }]);
+        break;
+      }
+      case 'element.align': {
+        const elementIds = intent.ids.filter((id) => elements.some((element) => element.id === id));
+        if (elementIds.length === 0) break;
+        append([
+          {
+            type: 'element.align',
+            elementIds,
+            command:
+              intent.command === 'center'
+                ? 'horizontal'
+                : intent.command === 'middle'
+                  ? 'vertical'
+                  : intent.command,
+          },
+        ]);
+        break;
+      }
+      case 'element.removeProps':
+        if (elements.some((element) => element.id === intent.id)) {
+          append([{ type: 'element.removeProps', elementId: intent.id, propNames: intent.props }]);
+        }
+        break;
+      case 'text.updateContent': {
+        const element = elements.find((candidate) => candidate.id === intent.id);
+        if (intent.target === 'text' && element?.type === 'text') {
+          append([{ type: 'text.updateContent', elementId: intent.id, content: intent.content }]);
+        } else if (intent.target === 'shape' && element?.type === 'shape') {
+          append([
+            { type: 'shape.updateTextContent', elementId: intent.id, content: intent.content },
+          ]);
+        }
+        break;
+      }
+      case 'table.updateCell': {
+        const element = elements.find((candidate) => candidate.id === intent.id);
+        if (
+          element?.type === 'table' &&
+          element.data.some((row) => row.some((cell) => cell.id === intent.cellId))
+        ) {
+          append([
+            {
+              type: 'table.updateCell',
+              elementId: intent.id,
+              cellId: intent.cellId,
+              text: intent.text,
+            },
+          ]);
+        }
+        break;
+      }
+    }
+  }
+
+  return compiled;
+}
+
+/** Creates one host-ready transaction for a completed canvas gesture. */
+export function createEditorTransactionFromIntents({
+  content,
+  intents,
+  origin = 'canvas',
+  history = 'record',
+}: {
+  readonly content: SlideContent;
+  readonly intents: readonly EditIntent[];
+  readonly origin?: EditorTransactionOrigin;
+  readonly history?: EditorHistoryMode;
+}): EditorTransaction | null {
+  const operations = compileEditorEditIntents(content, intents);
+  return operations.length === 0 ? null : createEditorTransaction({ origin, history, operations });
 }
 
 export function createEditorHistory(content: SlideContent): EditorHistory {
@@ -192,6 +336,26 @@ function applyToContent(
   const next = clone(content);
   for (const operation of operations) applyOperation(next, operation);
   return JSON.stringify(next) === JSON.stringify(content) ? content : next;
+}
+
+function resolveReorderIndex(
+  elements: readonly PPTElement[],
+  id: string,
+  command: ReorderCommand,
+): number | null {
+  const currentIndex = elements.findIndex((element) => element.id === id);
+  if (currentIndex === -1) return null;
+
+  switch (command) {
+    case 'front':
+      return elements.length - 1;
+    case 'back':
+      return 0;
+    case 'forward':
+      return Math.min(elements.length - 1, currentIndex + 1);
+    case 'backward':
+      return Math.max(0, currentIndex - 1);
+  }
 }
 
 function applyOperation(content: SlideContent, operation: EditorOperation): void {
