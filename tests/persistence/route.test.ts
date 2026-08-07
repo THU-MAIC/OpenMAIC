@@ -102,6 +102,63 @@ describe('embedded persistence route', () => {
     expect(hmrPoolFactory).not.toHaveBeenCalled();
   });
 
+  it('passes one complete app payload-validator table to Pg and HTTP boundaries', async () => {
+    const pgOptions: unknown[] = [];
+    const handlerOptions: unknown[] = [];
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {
+        constructor(_queryable: unknown, options: unknown) {
+          pgOptions.push(options);
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.doMock('@openmaic/storage/server', () => ({
+      createStorageHttpHandler: vi.fn((_runtime: unknown, _document: unknown, options: unknown) => {
+        handlerOptions.push(options);
+        return (
+          _request: unknown,
+          response: { writeHead: (status: number) => void; end: () => void },
+        ) => {
+          response.writeHead(204);
+          response.end();
+        };
+      }),
+    }));
+    vi.stubEnv('DATABASE_URL', 'postgres://validator-wiring-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    const [{ handlePersistenceRequest }, { APP_RUNTIME_PAYLOAD_VALIDATORS }] = await Promise.all([
+      import('@/app/api/persistence/[...path]/route'),
+      import('@/lib/runtime/payload-validators'),
+    ]);
+    const response = await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/runtime/sessions', {
+        headers: { authorization: 'Bearer test-token' },
+      }),
+      { poolFactory: () => ({ end: vi.fn() }) as never },
+    );
+
+    expect(response.status).toBe(204);
+    expect((pgOptions[0] as { payloadValidators?: unknown }).payloadValidators).toBe(
+      APP_RUNTIME_PAYLOAD_VALIDATORS,
+    );
+    expect((handlerOptions[0] as { payloadValidators?: unknown }).payloadValidators).toBe(
+      APP_RUNTIME_PAYLOAD_VALIDATORS,
+    );
+    expect(Object.keys(APP_RUNTIME_PAYLOAD_VALIDATORS)).toEqual([
+      'chat',
+      'quizAttempt',
+      'whiteboard',
+    ]);
+  });
+
   it('round-trips status, headers, and bodies through the Fetch↔Node adapter', async () => {
     // The adapter (Web Request faked as IncomingMessage; writeHead/end bridged
     // back to a Response) is the most bug-prone code in the route — exercise a
