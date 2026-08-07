@@ -1,6 +1,7 @@
 import type { PPTElement, SlideContent } from '@openmaic/dsl';
 import {
   createEditorTransactionFromIntents,
+  isValidEditorElement,
   type AlignCommand,
   type EditorTransaction,
   type ReorderCommand,
@@ -164,7 +165,12 @@ export function createCanvasCommands({
   };
   const copy = async () => {
     if (selected.length === 0) return false;
-    const copied = await clipboard.write(selected);
+    let copied = false;
+    try {
+      copied = await clipboard.write(selected);
+    } catch {
+      return false;
+    }
     if (copied) Object.assign(clipboardPasteState, { payloadKey: null, count: 0 });
     return copied;
   };
@@ -203,8 +209,13 @@ export function createCanvasCommands({
       clearSelection();
     },
     pasteElements: async () => {
-      const copied = await clipboard.read();
-      if (!copied?.length) return;
+      let copied: PPTElement[] | null;
+      try {
+        copied = await clipboard.read();
+      } catch {
+        return;
+      }
+      if (!copied?.length || copied.some((element) => !isValidEditorElement(element))) return;
       const payloadKey = JSON.stringify(copied);
       if (clipboardPasteState.payloadKey !== payloadKey)
         Object.assign(clipboardPasteState, { payloadKey, count: 0 });

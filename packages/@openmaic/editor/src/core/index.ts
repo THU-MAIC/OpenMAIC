@@ -75,7 +75,7 @@ const REQUIRED_ELEMENT_FIELD_KINDS: Record<
 };
 
 export type EditorTransactionOrigin = 'canvas' | 'toolbar' | 'agent' | 'system';
-export type EditorHistoryMode = 'record' | 'neutral';
+export type EditorHistoryMode = 'record' | 'neutral' | 'navigate';
 export type SlideElementAlignCommand =
   | 'top'
   | 'bottom'
@@ -297,9 +297,32 @@ export function applyEditorTransaction(
   if (isEditorHistory(target)) {
     const next = applyToContent(target.present, transaction.operations);
     if (next === target.present) return target;
-    if (transaction.history === 'neutral') {
+    if (transaction.history === 'navigate') {
+      const matches = (snapshot: SlideContent) =>
+        matchesNavigationTarget(snapshot, next, transaction.operations);
+      const pastIndex = findLastMatchingIndex(target.past, matches);
+      if (pastIndex >= 0) {
+        return {
+          past: target.past.slice(0, pastIndex),
+          present: next,
+          future: [...target.past.slice(pastIndex + 1), target.present, ...target.future],
+        };
+      }
+      const futureIndex = target.future.findIndex(matches);
+      if (futureIndex >= 0) {
+        return {
+          past: capHistory([
+            ...target.past,
+            target.present,
+            ...target.future.slice(0, futureIndex),
+          ]),
+          present: next,
+          future: target.future.slice(futureIndex + 1),
+        };
+      }
       return { ...target, present: next, future: [] };
     }
+    if (transaction.history === 'neutral') return { ...target, present: next, future: [] };
     return {
       past: capHistory([...target.past, target.present]),
       present: next,
@@ -307,6 +330,46 @@ export function applyEditorTransaction(
     };
   }
   return applyToContent(target, transaction.operations);
+}
+
+function sameContent(left: SlideContent, right: SlideContent): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function findLastMatchingIndex<T>(values: readonly T[], matches: (value: T) => boolean): number {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    if (matches(values[index])) return index;
+  }
+  return -1;
+}
+
+function matchesNavigationTarget(
+  snapshot: SlideContent,
+  next: SlideContent,
+  operations: readonly EditorOperation[],
+): boolean {
+  if (sameContent(snapshot, next)) return true;
+  return operations.every((operation) => {
+    const element =
+      'elementId' in operation
+        ? snapshot.canvas.elements.find((candidate) => candidate.id === operation.elementId)
+        : undefined;
+    switch (operation.type) {
+      case 'text.updateContent':
+        return element?.type === 'text' && element.content === operation.content;
+      case 'shape.updateTextContent':
+        return element?.type === 'shape' && element.text?.content === operation.content;
+      case 'table.updateCell':
+        return (
+          element?.type === 'table' &&
+          element.data
+            .flat()
+            .some((cell) => cell.id === operation.cellId && cell.text === operation.text)
+        );
+      default:
+        return false;
+    }
+  });
 }
 
 export function undoEditorTransaction(history: EditorHistory): EditorHistory {
@@ -517,6 +580,15 @@ function requireValidElement(operation: string, value: unknown): PPTElement {
   return element as unknown as PPTElement;
 }
 
+export function isValidEditorElement(value: unknown): value is PPTElement {
+  try {
+    requireValidElement('element', value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function assertRequiredElementFields(
   operation: string,
   type: PPTElement['type'],
@@ -595,6 +667,7 @@ function alignElements(
   elementIds: readonly string[],
   command: SlideElementAlignCommand,
 ): void {
+  for (const id of new Set(elementIds)) requireElement(slide.elements, id, 'element.align');
   const selected = slide.elements.filter((element) => elementIds.includes(element.id));
   if (selected.length === 0) throw new Error('element.align: no selected elements exist');
   const range = getElementListRange(selected);

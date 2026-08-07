@@ -97,4 +97,15 @@ describe('EditableSlideCanvas — Shape label editing', () => {
       { type: 'element.removeProps', id: 'shape-1', props: ['text'] },
     ]);
   });
+
+  it('exits Shape label editing when Escape is pressed', () => {
+    const { container } = render(<Harness />);
+    const target = container.querySelector('[data-select-element-id="shape-1"]') as HTMLElement;
+    fireEvent.doubleClick(target);
+    const editor = container.querySelector('.ProseMirror') as HTMLElement;
+
+    fireEvent.keyDown(editor, { key: 'Escape' });
+
+    expect(container.querySelector('[data-renderer-shape-label-editor="shape-1"]')).toBeNull();
+  });
 });

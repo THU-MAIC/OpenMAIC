@@ -323,6 +323,21 @@ describe('canvas commands', () => {
     expect(state.onSelectionChange).toHaveBeenCalledWith({ elementIds: [] });
   });
 
+  it('ignores invalid elements returned by an injected clipboard', async () => {
+    const clipboard: ElementClipboard = {
+      write: vi.fn().mockResolvedValue(true),
+      read: vi
+        .fn()
+        .mockResolvedValue([{ ...text('bad'), left: 'invalid' }] as unknown as PPTElement[]),
+    };
+    const state = setup({ clipboard });
+
+    await expect(state.commands.pasteElements()).resolves.toBeUndefined();
+
+    expect(state.onTransaction).not.toHaveBeenCalled();
+    expect(state.onSelectionChange).not.toHaveBeenCalled();
+  });
+
   it('does not steal native text editing shortcuts and maps canvas delete', () => {
     const commands = setup().commands;
     const editable = {

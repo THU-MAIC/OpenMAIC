@@ -132,6 +132,163 @@ describe('editor transaction core', () => {
     expect(redoEditorTransaction(undoEditorTransaction(after)).present).toEqual(after.present);
   });
 
+  it('reconciles history-neutral rich-text undo with canonical history', () => {
+    const original = slideContent();
+    const first = applyEditorTransaction(
+      createEditorHistory(original),
+      createEditorTransaction({
+        origin: 'canvas',
+        operations: [{ type: 'text.updateContent', elementId: 'text-1', content: '<p>First</p>' }],
+      }),
+    );
+    const second = applyEditorTransaction(
+      first,
+      createEditorTransaction({
+        origin: 'canvas',
+        operations: [{ type: 'text.updateContent', elementId: 'text-1', content: '<p>Second</p>' }],
+      }),
+    );
+
+    const afterRichTextUndo = applyEditorTransaction(
+      second,
+      createEditorTransaction({
+        origin: 'canvas',
+        history: 'navigate',
+        operations: [{ type: 'text.updateContent', elementId: 'text-1', content: '<p>First</p>' }],
+      }),
+    );
+
+    expect(afterRichTextUndo.past).toEqual([original]);
+    expect(afterRichTextUndo.present).toEqual(first.present);
+    expect(afterRichTextUndo.future).toEqual([second.present]);
+    expect(undoEditorTransaction(afterRichTextUndo).present).toEqual(original);
+  });
+
+  it('preserves skipped rich-text snapshots in redo order', () => {
+    const original = slideContent();
+    const contents = ['First', 'Second', 'Third'];
+    const histories = contents.reduce<ReturnType<typeof createEditorHistory>[]>(
+      (items, content) => {
+        const previous = items.at(-1) ?? createEditorHistory(original);
+        return [
+          ...items,
+          applyEditorTransaction(
+            previous,
+            createEditorTransaction({
+              origin: 'canvas',
+              operations: [
+                { type: 'text.updateContent', elementId: 'text-1', content: `<p>${content}</p>` },
+              ],
+            }),
+          ),
+        ];
+      },
+      [],
+    );
+
+    const navigated = applyEditorTransaction(
+      histories[2],
+      createEditorTransaction({
+        origin: 'canvas',
+        history: 'navigate',
+        operations: [{ type: 'text.updateContent', elementId: 'text-1', content: '<p>First</p>' }],
+      }),
+    );
+
+    expect(
+      navigated.future.map((snapshot) => (snapshot.canvas.elements[0] as PPTTextElement).content),
+    ).toEqual(['<p>Second</p>', '<p>Third</p>']);
+  });
+
+  it('keeps normalization neutral even when it happens to match an old snapshot', () => {
+    const original = slideContent();
+    const resized = applyEditorTransaction(
+      createEditorHistory(original),
+      createEditorTransaction({
+        origin: 'canvas',
+        operations: [{ type: 'element.update', elementId: 'text-1', patch: { height: 120 } }],
+      }),
+    );
+    const normalized = applyEditorTransaction(
+      resized,
+      createEditorTransaction({
+        origin: 'system',
+        history: 'neutral',
+        operations: [{ type: 'element.update', elementId: 'text-1', patch: { height: 80 } }],
+      }),
+    );
+
+    expect(normalized.past).toEqual([original]);
+    expect(normalized.present).toEqual(original);
+    expect(normalized.future).toEqual([]);
+  });
+
+  it('reconciles rich-text navigation while preserving current auto-size geometry', () => {
+    const original = slideContent();
+    const first = applyEditorTransaction(
+      createEditorHistory(original),
+      createEditorTransaction({
+        origin: 'canvas',
+        operations: [{ type: 'text.updateContent', elementId: 'text-1', content: '<p>First</p>' }],
+      }),
+    );
+    const firstSized = applyEditorTransaction(
+      first,
+      createEditorTransaction({
+        origin: 'system',
+        history: 'neutral',
+        operations: [{ type: 'element.update', elementId: 'text-1', patch: { height: 90 } }],
+      }),
+    );
+    const second = applyEditorTransaction(
+      firstSized,
+      createEditorTransaction({
+        origin: 'canvas',
+        operations: [{ type: 'text.updateContent', elementId: 'text-1', content: '<p>Second</p>' }],
+      }),
+    );
+    const secondSized = applyEditorTransaction(
+      second,
+      createEditorTransaction({
+        origin: 'system',
+        history: 'neutral',
+        operations: [{ type: 'element.update', elementId: 'text-1', patch: { height: 100 } }],
+      }),
+    );
+
+    const navigated = applyEditorTransaction(
+      secondSized,
+      createEditorTransaction({
+        origin: 'canvas',
+        history: 'navigate',
+        operations: [{ type: 'text.updateContent', elementId: 'text-1', content: '<p>First</p>' }],
+      }),
+    );
+
+    expect(navigated.past).toEqual([original]);
+    expect(navigated.present.canvas.elements[0]).toMatchObject({
+      content: '<p>First</p>',
+      height: 100,
+    });
+    expect(navigated.future[0].canvas.elements[0]).toMatchObject({
+      content: '<p>Second</p>',
+      height: 100,
+    });
+  });
+
+  it('rejects an alignment batch when any requested element is missing', () => {
+    const original = slideContent();
+    const transaction = createEditorTransaction({
+      origin: 'toolbar',
+      operations: [{ type: 'element.align', elementIds: ['text-1', 'missing'], command: 'center' }],
+    });
+
+    expect(() => applyEditorTransaction(original, transaction)).toThrow(
+      'element.align: element "missing" does not exist',
+    );
+    expect(original.canvas.elements[0].left).toBe(40);
+  });
+
   it.each([
     {
       operation: { type: 'slide.update', patch: { id: 'other-slide' } },

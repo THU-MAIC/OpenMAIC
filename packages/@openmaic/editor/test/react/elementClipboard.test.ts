@@ -27,4 +27,16 @@ describe('element clipboard payload compatibility', () => {
   it('rejects unrelated clipboard data', () => {
     expect(parseElementClipboardPayload('{"kind":"other","version":1,"elements":[]}')).toBeNull();
   });
+
+  it('rejects branded payloads whose elements violate the DSL contract', () => {
+    expect(
+      parseElementClipboardPayload(
+        JSON.stringify({
+          kind: 'openmaic/editor-elements',
+          version: 1,
+          elements: [{ ...element, left: '10' }],
+        }),
+      ),
+    ).toBeNull();
+  });
 });

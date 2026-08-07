@@ -2,7 +2,20 @@
 
 React component for rendering PPTist-style `Slide` JSON. Extracted from [OpenMAIC](https://github.com/THU-MAIC/OpenMAIC).
 
-> **v1 = read-only canvas.** Editing (selection, drag/resize, ProseMirror inline editor) is planned for v2.
+> `@openmaic/renderer` is the read-only canvas package. Editing lives in the
+> separate `@openmaic/editor` package, which depends on this renderer.
+
+## Migrating from 0.0.x
+
+Version `0.1.0` removes the experimental `@openmaic/renderer/editing` subpath.
+Install `@openmaic/editor` and migrate editing imports to its explicit layers:
+
+```ts
+import { EditableSlideCanvas } from '@openmaic/editor/react';
+import { EditableSlideCanvasWithUI } from '@openmaic/editor/ui';
+```
+
+Read-only rendering imports from `@openmaic/renderer` are unchanged.
 
 ## Install
 

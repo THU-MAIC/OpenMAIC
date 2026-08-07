@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { SlideContent } from '@openmaic/dsl';
-import { createEditorTransactionFromIntents } from '../core';
+import { createEditorTransactionFromIntents, type EditorHistoryMode } from '../core';
 import { EditableSlideCanvas } from '../react/EditableSlideCanvas';
 import {
   createCanvasCommands,
@@ -103,7 +103,7 @@ export function EditableSlideCanvasWithUI({
       intents: Parameters<typeof createEditorTransactionFromIntents>[0]['intents'],
       options: {
         origin?: 'canvas' | 'toolbar' | 'agent' | 'system';
-        history?: 'record' | 'neutral';
+        history?: EditorHistoryMode;
       } = {},
     ) => {
       if (onTransaction) {

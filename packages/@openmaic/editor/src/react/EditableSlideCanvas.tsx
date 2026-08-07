@@ -374,13 +374,19 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   // native touch panning, while tap-select still receives pointer events.
   const editingTouchAction = onElementsChange ? 'none' : undefined;
   const exitElementEditing = useCallback(() => {
-    if (!activeEditingTextId && !activeEditingTableId) return;
+    if (!activeEditingTextId && !activeEditingTableId && !activeEditingShapeId) return;
     publishSelection({
       elementIds: activeSelection.elementIds,
       primaryId: activeSelection.primaryId,
       groupId: activeSelection.groupId,
     });
-  }, [activeEditingTableId, activeEditingTextId, activeSelection, publishSelection]);
+  }, [
+    activeEditingShapeId,
+    activeEditingTableId,
+    activeEditingTextId,
+    activeSelection,
+    publishSelection,
+  ]);
   const handleTextEditorChange = useCallback(
     (controller: TextEditorController | null) => {
       textControllerRef.current = controller;

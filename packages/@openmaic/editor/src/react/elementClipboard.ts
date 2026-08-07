@@ -1,4 +1,5 @@
 import type { PPTElement } from '@openmaic/dsl';
+import { isValidEditorElement } from '../core';
 
 const CLIPBOARD_KIND = 'openmaic/editor-elements';
 const LEGACY_CLIPBOARD_KIND = 'openmaic/renderer-elements';
@@ -31,13 +32,7 @@ export function parseElementClipboardPayload(value: string): PPTElement[] | null
       (payload.kind !== CLIPBOARD_KIND && payload.kind !== LEGACY_CLIPBOARD_KIND) ||
       payload.version !== CLIPBOARD_VERSION ||
       !Array.isArray(payload.elements) ||
-      payload.elements.some(
-        (element) =>
-          !element ||
-          typeof element !== 'object' ||
-          typeof element.id !== 'string' ||
-          typeof element.type !== 'string',
-      )
+      payload.elements.some((element) => !isValidEditorElement(element))
     ) {
       return null;
     }

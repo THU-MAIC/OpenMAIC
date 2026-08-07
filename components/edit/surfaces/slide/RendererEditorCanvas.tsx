@@ -23,6 +23,7 @@ export function RendererEditorCanvas() {
   const setActiveElementIdList = useCanvasStore.use.setActiveElementIdList();
   const setEditingElementId = useCanvasStore.use.setEditingElementId();
   const setCanvasScale = useCanvasStore.use.setCanvasScale();
+  const sceneId = useSlideEditSession.getState().sceneId;
 
   const selection = useMemo<Selection>(() => {
     const editingId =
@@ -40,15 +41,20 @@ export function RendererEditorCanvas() {
 
   const handleSelectionChange = useCallback(
     (next: Selection) => {
+      if (!sceneId || useSlideEditSession.getState().sceneId !== sceneId) return;
       setActiveElementIdList([...next.elementIds]);
       setEditingElementId(next.editingId ?? '');
     },
-    [setActiveElementIdList, setEditingElementId],
+    [sceneId, setActiveElementIdList, setEditingElementId],
   );
 
-  const applyTransaction = useCallback((transaction: EditorTransaction) => {
-    useSlideEditSession.getState().applyTransaction(transaction);
-  }, []);
+  const applyTransaction = useCallback(
+    (transaction: EditorTransaction) => {
+      if (!sceneId) return;
+      useSlideEditSession.getState().applyTransactionForScene(sceneId, transaction);
+    },
+    [sceneId],
+  );
 
   const host = useMemo<EditorHostCapabilities>(
     () => ({

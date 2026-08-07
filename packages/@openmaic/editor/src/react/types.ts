@@ -39,7 +39,7 @@ export type LineHandle = 'start' | 'end' | 'ctrl' | 'ctrl1' | 'ctrl2';
  */
 export interface TableCellChange {
   readonly intent: Extract<EditIntent, { type: 'table.updateCell' }>;
-  readonly history: 'record' | 'neutral';
+  readonly history: 'record' | 'neutral' | 'navigate';
 }
 
 /**

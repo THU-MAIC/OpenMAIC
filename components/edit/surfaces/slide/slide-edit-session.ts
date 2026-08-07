@@ -45,6 +45,8 @@ interface SlideEditSessionState {
   applyOp: (op: EditorOperation) => void;
   /** Apply a fully described editor transaction to the canonical document. */
   applyTransaction: (transaction: EditorTransaction) => void;
+  /** Apply only while the transaction still belongs to the captured scene. */
+  applyTransactionForScene: (sceneId: string, transaction: EditorTransaction) => void;
   /**
    * Fold a renderer-committed snapshot in. `isUserEdit` is the causal
    * discriminator: a real gesture commits synchronously inside a pointer
@@ -130,6 +132,12 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
     applyTransaction: (transaction) => {
       const { history } = get();
       if (!history) return;
+      replace(applyEditorTransaction(history, transaction));
+    },
+
+    applyTransactionForScene: (sceneId, transaction) => {
+      const { history, sceneId: currentSceneId } = get();
+      if (!history || currentSceneId !== sceneId) return;
       replace(applyEditorTransaction(history, transaction));
     },
 

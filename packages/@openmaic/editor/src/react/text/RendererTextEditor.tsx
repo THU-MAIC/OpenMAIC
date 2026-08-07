@@ -45,6 +45,7 @@ export function RendererTextEditor({
 }: RendererTextEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const replaceValueRef = useRef<((nextValue: string) => void) | null>(null);
   const valueRef = useRef(value);
   const lastEmittedRef = useRef('');
   const initialFocusPointRef = useRef(initialFocusPoint);
@@ -161,7 +162,7 @@ export function RendererTextEditor({
         keydown(_view, event) {
           const mod = event.ctrlKey || event.metaKey;
           if (mod && (event.key.toLowerCase() === 'z' || event.key.toLowerCase() === 'y')) {
-            nextTransactionHistory = 'neutral';
+            nextTransactionHistory = 'navigate';
             return false;
           }
           if (event.key === 'Escape') {
@@ -175,6 +176,28 @@ export function RendererTextEditor({
     });
     viewRef.current = view;
     lastEmittedRef.current = serializeTextDocument(view.state.doc).replace(/ style=""/g, '');
+    replaceValueRef.current = (nextValue) => {
+      const incoming = nextValue.replace(/ style=""/g, '');
+      const current = serializeTextDocument(view.state.doc).replace(/ style=""/g, '');
+      if (current === incoming) return;
+
+      const hadFocus = view.hasFocus();
+      const selectionHead = view.state.selection.head;
+      discard();
+      let nextState = EditorState.create({
+        doc: createTextDocument(nextValue),
+        schema: textSchema,
+        plugins: view.state.plugins,
+      });
+      const position = Math.min(selectionHead, nextState.doc.content.size);
+      nextState = nextState.apply(
+        nextState.tr.setSelection(TextSelection.near(nextState.doc.resolve(position))),
+      );
+      view.updateState(nextState);
+      lastEmittedRef.current = incoming;
+      pushFormatState(view);
+      if (hadFocus) view.focus();
+    };
 
     const controller: TextEditorController = {
       elementId,
@@ -211,24 +234,14 @@ export function RendererTextEditor({
       flush();
       callbacksRef.current.onFocusChange?.(false);
       callbacksRef.current.onControllerChange?.(null);
+      replaceValueRef.current = null;
       viewRef.current = null;
       view.destroy();
     };
   }, [autoFocus, elementId, target]);
 
   useEffect(() => {
-    const view = viewRef.current;
-    if (!view || view.hasFocus()) return;
-    const current = serializeTextDocument(view.state.doc).replace(/ style=""/g, '');
-    const incoming = value.replace(/ style=""/g, '');
-    if (current === incoming) return;
-    const nextState = EditorState.create({
-      doc: createTextDocument(value),
-      schema: textSchema,
-      plugins: view.state.plugins,
-    });
-    view.updateState(nextState);
-    lastEmittedRef.current = serializeTextDocument(nextState.doc).replace(/ style=""/g, '');
+    replaceValueRef.current?.(value);
   }, [value]);
 
   return (

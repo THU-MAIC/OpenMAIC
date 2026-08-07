@@ -166,12 +166,32 @@ describe('RendererTextEditor', () => {
     act(() => vi.advanceTimersByTime(300));
 
     expect(onContentChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({ history: 'neutral' }),
+      expect.objectContaining({ history: 'navigate' }),
     );
 
     fireEvent.focus(editor);
     unmount();
     expect(onControllerChange).toHaveBeenLastCalledWith(null);
     expect(onFocusChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('adopts an external canonical value while focused without emitting stale content', () => {
+    const onContentChange = vi.fn<(change: TextContentChange) => void>();
+    const props = {
+      elementId: 'txt',
+      defaultColor: '#000000',
+      defaultFontName: 'Inter',
+      onContentChange,
+    } as const;
+    const { container, rerender } = render(<RendererTextEditor {...props} value="<p>Local</p>" />);
+    const editor = container.querySelector('.ProseMirror') as HTMLElement;
+    act(() => editor.focus());
+    expect(document.activeElement).toBe(editor);
+
+    rerender(<RendererTextEditor {...props} value="<p>External</p>" />);
+
+    expect(editor.textContent).toBe('External');
+    act(() => vi.advanceTimersByTime(300));
+    expect(onContentChange).not.toHaveBeenCalled();
   });
 });

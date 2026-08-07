@@ -36,7 +36,7 @@ describe('renderer editor app boundary', () => {
   it('keeps document persistence in the app transaction sink', () => {
     const source = readFileSync(sourcePath, 'utf8');
 
-    expect(source).toContain('applyTransaction(transaction)');
+    expect(source).toContain('applyTransactionForScene(sceneId, transaction)');
     expect(source).toContain('onTransaction={applyTransaction}');
     expect(source).toContain('onSelectionChange={handleSelectionChange}');
     expect(source).toContain('documentSlide={content.canvas}');
