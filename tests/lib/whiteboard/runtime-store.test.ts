@@ -108,6 +108,51 @@ describe('whiteboard RuntimeStore service', () => {
     ).toHaveLength(1);
   });
 
+  it('rejects an anticipated tail before persistence while preserving exact replay', async () => {
+    const store = runtimeStore();
+    const runtime = service(store);
+    await expect(
+      runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: 0,
+        payload: payload(),
+      }),
+    ).rejects.toBeInstanceOf(RuntimeAppendConflictError);
+    expect(
+      await store.listRecords(whiteboardRuntimeSessionId('stage-1', 'learner-1')),
+    ).toHaveLength(0);
+
+    await runtime.append({ stageId: 'stage-1', expectedLastSeq: null, payload: payload() });
+    await expect(
+      runtime.append({ stageId: 'stage-1', expectedLastSeq: 99, payload: payload() }),
+    ).resolves.toMatchObject({ committedSeq: 0, replayed: true });
+    expect(
+      await store.listRecords(whiteboardRuntimeSessionId('stage-1', 'learner-1')),
+    ).toHaveLength(1);
+  });
+
+  it('rejects a second distinct legacy import before persistence', async () => {
+    const store = runtimeStore();
+    const runtime = service(store);
+    await runtime.append({ stageId: 'stage-1', expectedLastSeq: null, payload: payload() });
+
+    await expect(
+      runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: 0,
+        payload: payload('operation-2', 'board-2'),
+      }),
+    ).rejects.toThrow('WHITEBOARD_RUNTIME_IMPORT_AFTER_STATE');
+
+    const sessionId = whiteboardRuntimeSessionId('stage-1', 'learner-1');
+    expect(await store.listRecords(sessionId)).toHaveLength(1);
+    await expect(runtime.read('stage-1')).resolves.toMatchObject({
+      sessionId,
+      whiteboard: { id: 'board-1' },
+      lastSeq: 0,
+    });
+  });
+
   it('recovers a committed response loss without appending twice', async () => {
     const backing = runtimeStore();
     let first = true;

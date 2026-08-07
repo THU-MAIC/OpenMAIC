@@ -209,6 +209,12 @@ export function createWhiteboardRuntimeService(
           replayed: true,
         };
       }
+      if (before.lastSeq !== input.expectedLastSeq) {
+        throw new RuntimeAppendConflictError(session.id, input.expectedLastSeq, before.lastSeq);
+      }
+      if (payload.operation.kind === 'legacy_snapshot_imported' && before.whiteboard !== null) {
+        throw new Error('WHITEBOARD_RUNTIME_IMPORT_AFTER_STATE');
+      }
 
       let appended: RuntimeRecord;
       try {
