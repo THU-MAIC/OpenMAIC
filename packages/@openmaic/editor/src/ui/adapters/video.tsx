@@ -15,6 +15,7 @@ export function createVideoAdapter(
   return {
     id: 'video',
     type: 'video',
+    insertType: 'video',
     insertItem: {
       id: 'insert-video',
       label: labels.insert.video,

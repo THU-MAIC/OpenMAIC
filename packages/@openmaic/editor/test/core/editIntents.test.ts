@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AlignCommand, EditIntent, ReorderCommand } from '@openmaic/editor/react';
 import type {
+  SlideContent,
   PPTElement,
   PPTLatexElement,
   PPTShapeElement,
@@ -9,10 +9,23 @@ import type {
   PPTVideoElement,
 } from '@openmaic/dsl';
 import {
-  applyRendererEditIntents,
-  compileRendererEditIntents,
-} from '@/components/edit/surfaces/slide/renderer-edit-intents';
-import type { SlideContent } from '@/lib/types/stage';
+  applyEditorTransaction,
+  compileEditorEditIntents,
+  createEditorTransactionFromIntents,
+  type AlignCommand,
+  type EditIntent,
+  type ReorderCommand,
+} from '../../src/core/index';
+
+function applyEditIntents(content: SlideContent, intents: readonly EditIntent[]): SlideContent {
+  const transaction = createEditorTransactionFromIntents({
+    content,
+    intents,
+    origin: 'system',
+    history: 'neutral',
+  });
+  return transaction ? applyEditorTransaction(content, transaction) : content;
+}
 
 function textElement(id: string, overrides: Partial<PPTTextElement> = {}): PPTTextElement {
   return {
@@ -132,9 +145,9 @@ function slideContent(
   };
 }
 
-describe('applyRendererEditIntents', () => {
-  it('compiles renderer intents into canonical editor operations', () => {
-    const operations = compileRendererEditIntents(slideContent(), [
+describe('editor edit intents', () => {
+  it('compiles edit intents into canonical editor operations', () => {
+    const operations = compileEditorEditIntents(slideContent(), [
       { type: 'element.update', id: 'a', props: { left: 48 } },
       { type: 'element.reorder', id: 'a', command: 'front' },
     ]);
@@ -145,10 +158,10 @@ describe('applyRendererEditIntents', () => {
     ]);
   });
 
-  it('persists a renderer table resize including its cellMinHeight patch', () => {
+  it('persists a table resize including its cellMinHeight patch', () => {
     const original = slideContent([tableElement('table')]);
 
-    const next = applyRendererEditIntents(original, [
+    const next = applyEditIntents(original, [
       {
         type: 'element.update',
         id: 'table',
@@ -160,10 +173,10 @@ describe('applyRendererEditIntents', () => {
     expect(original.canvas.elements[0]).toMatchObject({ height: 120, cellMinHeight: 40 });
   });
 
-  it('updates only the requested renderer table cell text', () => {
+  it('updates only the requested table cell text', () => {
     const original = slideContent([tableElement('table')]);
 
-    const next = applyRendererEditIntents(original, [
+    const next = applyEditIntents(original, [
       { type: 'table.updateCell', id: 'table', cellId: 'c', text: 'Edited<br>cell' },
     ]);
 
@@ -176,7 +189,7 @@ describe('applyRendererEditIntents', () => {
   it('applies single and mixed multi-element updates without mutating the source', () => {
     const original = slideContent();
 
-    const next = applyRendererEditIntents(original, [
+    const next = applyEditIntents(original, [
       { type: 'element.update', id: 'a', props: { left: 40 } },
       {
         type: 'element.updateMany',
@@ -199,7 +212,7 @@ describe('applyRendererEditIntents', () => {
       { id: 'anim-c', elId: 'c', effect: 'fade', type: 'in', duration: 500, trigger: 'click' },
     ];
 
-    const next = applyRendererEditIntents(original, [
+    const next = applyEditIntents(original, [
       { type: 'element.add', element: textElement('inserted'), index: 1 },
       { type: 'element.delete', ids: ['a', 'b'] },
     ]);
@@ -212,7 +225,7 @@ describe('applyRendererEditIntents', () => {
   it('persists latex additions and geometry updates without changing the formula contract', () => {
     const original = slideContent([latexElement('formula')]);
 
-    const next = applyRendererEditIntents(original, [
+    const next = applyEditIntents(original, [
       {
         type: 'element.update',
         id: 'formula',
@@ -240,7 +253,7 @@ describe('applyRendererEditIntents', () => {
   it('persists video poster and autoplay properties without mutating the source', () => {
     const original = slideContent([videoElement('video')]);
 
-    const next = applyRendererEditIntents(original, [
+    const next = applyEditIntents(original, [
       {
         type: 'element.update',
         id: 'video',
@@ -264,9 +277,7 @@ describe('applyRendererEditIntents', () => {
     ['forward', 'a', ['b', 'a', 'c']],
     ['backward', 'c', ['a', 'c', 'b']],
   ])('maps %s reorder commands', (command, id, expectedOrder) => {
-    const next = applyRendererEditIntents(slideContent(), [
-      { type: 'element.reorder', id, command },
-    ]);
+    const next = applyEditIntents(slideContent(), [{ type: 'element.reorder', id, command }]);
 
     expect(next.canvas.elements.map((element) => element.id)).toEqual(expectedOrder);
   });
@@ -281,9 +292,7 @@ describe('applyRendererEditIntents', () => {
   ])('maps %s alignment to the canonical canvas operation', (command, expected) => {
     const content = slideContent([textElement('a')]);
 
-    const next = applyRendererEditIntents(content, [
-      { type: 'element.align', ids: ['a'], command },
-    ]);
+    const next = applyEditIntents(content, [{ type: 'element.align', ids: ['a'], command }]);
 
     expect(next.canvas.elements[0]).toMatchObject(expected);
   });
@@ -294,7 +303,7 @@ describe('applyRendererEditIntents', () => {
       shapeElement('shape'),
     ]);
 
-    const next = applyRendererEditIntents(content, [
+    const next = applyEditIntents(content, [
       { type: 'element.removeProps', id: 'text', props: ['shadow'] },
       { type: 'text.updateContent', id: 'text', content: '<p>Edited</p>', target: 'text' },
       {
@@ -315,7 +324,7 @@ describe('applyRendererEditIntents', () => {
   it('creates a Shape text contract when a label is edited for the first time', () => {
     const content = slideContent([shapeElement('shape', { text: undefined })]);
 
-    const next = applyRendererEditIntents(content, [
+    const next = applyEditIntents(content, [
       { type: 'text.updateContent', id: 'shape', content: '<p>New label</p>', target: 'shape' },
     ]);
 
@@ -342,11 +351,11 @@ describe('applyRendererEditIntents', () => {
       { type: 'text.updateContent', id: 'shape', content: '<p>No</p>', target: 'text' },
     ];
 
-    expect(applyRendererEditIntents(content, intents)).toBe(content);
+    expect(applyEditIntents(content, intents)).toBe(content);
   });
 
   it('applies an intent batch in order', () => {
-    const next = applyRendererEditIntents(slideContent(), [
+    const next = applyEditIntents(slideContent(), [
       { type: 'element.update', id: 'a', props: { left: 48 } },
       { type: 'element.update', id: 'a', props: { left: 96, top: 64 } },
       { type: 'element.reorder', id: 'a', command: 'front' },

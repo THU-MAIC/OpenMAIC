@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   setActiveElementIdList: vi.fn(),
   setEditingElementId: vi.fn(),
   setCanvasScale: vi.fn(),
+  translate: vi.fn((key: string) => `app:${key}`),
 }));
 
 const content: SlideContent = {
@@ -97,7 +98,7 @@ vi.mock('@/components/slide-renderer/use-resolved-slide', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-i18n', () => ({
-  useI18n: () => ({ locale: 'zh-CN' }),
+  useI18n: () => ({ locale: 'ja-JP', t: state.translate }),
 }));
 
 vi.mock('@/lib/edit/element-id', () => ({
@@ -149,6 +150,7 @@ beforeEach(() => {
   state.setActiveElementIdList.mockReset();
   state.setEditingElementId.mockReset();
   state.setCanvasScale.mockReset();
+  state.translate.mockClear();
 });
 
 describe('slide editor renderer feature flag', () => {
@@ -161,12 +163,16 @@ describe('slide editor renderer feature flag', () => {
     expect(state.lastRendererProps).toMatchObject({
       slide: content.canvas,
       selection: { elementIds: ['text-1'], primaryId: 'text-1', editingId: 'text-1' },
+      insertToolbarPlacement: 'top',
       snapping: true,
     });
     expect(state.lastRendererProps?.host).toMatchObject({
-      locale: 'zh-CN',
+      locale: 'ja-JP',
       shortcutsEnabled: true,
     });
+    expect(state.lastRendererProps?.host?.translate?.('insert.textBox')).toBe(
+      'app:edit.insert.textBox',
+    );
     expect(state.lastRendererProps?.host?.createElementId?.('image')).toBe('app-image');
   });
 

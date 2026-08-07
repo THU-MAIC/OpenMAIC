@@ -2,7 +2,11 @@
 
 import { useCallback, useMemo } from 'react';
 import type { Selection } from '@openmaic/editor/react';
-import { EditableSlideCanvasWithUI, type EditorHostCapabilities } from '@openmaic/editor/ui';
+import {
+  EditableSlideCanvasWithUI,
+  type EditorHostCapabilities,
+  type EditorTranslate,
+} from '@openmaic/editor/ui';
 import type { EditorTransaction } from '@openmaic/editor/core';
 import { useResolvedSlide } from '@/components/slide-renderer/use-resolved-slide';
 import { createElementId } from '@/lib/edit/element-id';
@@ -13,7 +17,7 @@ import { useSlideEditSession } from './slide-edit-session';
 import { useResolvedSlideContent } from './use-slide-surface';
 
 export function RendererEditorCanvas() {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const content = useResolvedSlideContent();
   const slide = useResolvedSlide(content.canvas);
   const activeElementIds = useCanvasStore.use.activeElementIdList();
@@ -56,13 +60,20 @@ export function RendererEditorCanvas() {
     [sceneId],
   );
 
+  const translateEditor = useCallback<EditorTranslate>(
+    (key, params, defaultMessage) =>
+      t(`edit.${key}`, { ...(params ?? {}), defaultValue: defaultMessage }),
+    [t],
+  );
+
   const host = useMemo<EditorHostCapabilities>(
     () => ({
-      locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US',
+      locale,
+      translate: translateEditor,
       createElementId,
       shortcutsEnabled: !pickTarget,
     }),
-    [locale, pickTarget],
+    [locale, pickTarget, translateEditor],
   );
 
   return (
@@ -76,6 +87,7 @@ export function RendererEditorCanvas() {
       onScaleChange={setCanvasScale}
       elementIdPrefix={EDITABLE_ELEMENT_ID_PREFIX}
       hiddenElementIds={hiddenElementIds}
+      insertToolbarPlacement="top"
       snapping
     />
   );

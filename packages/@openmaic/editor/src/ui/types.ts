@@ -4,14 +4,16 @@ import type {
   EditableSlideCanvasProps,
   EditIntent,
   ReorderCommand,
+  Selection,
 } from '../react/types';
 import type { EditorTransaction } from '../core';
 import type { PPTImageElement, PPTLineElement, PPTVideoElement, Slide } from '@openmaic/dsl';
 import type { TextEditCommand, TextFormatState } from '../react/text/types';
 import type { LatexEditorResult } from './latex/latex-editor';
 import type { EditorHostCapabilities } from './host';
+import type { EditorInsertItem } from './adapters/insertRegistry';
 
-export type TextToolbarLocale = 'zh-CN' | 'en-US';
+export type TextToolbarLocale = string;
 export type TextToolbarPlacement = 'top' | 'bottom';
 
 export interface TextToolbarFont {
@@ -313,26 +315,30 @@ export interface CanvasContextMenuOptions {
   readonly onAlign: (command: AlignCommand) => void;
 }
 
-export interface EditableSlideCanvasWithUIProps extends EditableSlideCanvasProps {
+export interface EditableSlideCanvasWithUIProps extends Pick<
+  EditableSlideCanvasProps,
+  | 'slide'
+  | 'scale'
+  | 'onScaleChange'
+  | 'elementIdPrefix'
+  | 'hiddenElementIds'
+  | 'snapping'
+  | 'grid'
+  | 'ruler'
+  | 'className'
+  | 'style'
+> {
   /** Canonical document data used by transactions and clipboard when `slide` contains resolved render URLs. */
   readonly documentSlide?: Slide;
-  /**
-   * Canonical transaction channel for hosts that use the editor transaction
-   * engine. When supplied, renderer gestures never require host-side intent
-   * compilation. The intent callbacks remain for backwards compatibility.
-   */
-  readonly onTransaction?: (transaction: EditorTransaction) => void;
+  /** Controlled editor selection owned by the host application. */
+  readonly selection: Selection;
+  readonly onSelectionChange: (selection: Selection) => void;
+  /** The only document mutation channel exposed to host applications. */
+  readonly onTransaction: (transaction: EditorTransaction) => void;
   /** Stable host integration for built-in editor capabilities. */
   readonly host?: EditorHostCapabilities;
-  readonly textToolbar?: TextToolbarOptions | false;
-  readonly lineToolbar?: LineToolbarOptions | false;
-  readonly insertToolbar?: InsertToolbarOptions | false;
-  readonly latexEditor?: LatexEditorOptions | false;
-  readonly videoEditor?: VideoEditorOptions | false;
-  readonly videoInsert?: VideoInsertOptions | false;
-  readonly audioEditor?: AudioEditorOptions | false;
-  readonly audioInsert?: AudioInsertOptions | false;
-  readonly elementToolbar?: ElementToolbarOptions | false;
-  readonly imageEditor?: ImageEditorOptions | false;
-  readonly contextMenu?: CanvasContextMenuOptions | false;
+  /** Visible insert buttons in display order. Omit to use the built-in default order. */
+  readonly insertItems?: readonly EditorInsertItem[];
+  /** Dock outside the canvas viewport. Defaults to `top`. */
+  readonly insertToolbarPlacement?: InsertToolbarPlacement;
 }

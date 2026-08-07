@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "テキストツールバー",
       "label": "テキスト",
       "font": "フォント",
       "fontDefault": "デフォルト",
@@ -240,9 +241,31 @@
       "alignLeft": "左揃え",
       "alignCenter": "中央揃え",
       "alignRight": "右揃え",
-      "bullet": "箇条書き"
+      "bullet": "箇条書き",
+      "colorHex": "カラーコード"
+    },
+    "line": {
+      "toolbar": "線ツールバー",
+      "kind": "線の種類",
+      "color": "線の色",
+      "width": "線幅",
+      "style": "線のスタイル",
+      "start": "始点のスタイル",
+      "end": "終点のスタイル",
+      "straight": "直線",
+      "broken": "折れ線",
+      "broken2": "二重折れ線",
+      "curve": "曲線",
+      "cubic": "3次曲線",
+      "solid": "実線",
+      "dashed": "破線",
+      "dotted": "点線",
+      "none": "なし",
+      "arrow": "矢印",
+      "dot": "点"
     },
     "insert": {
+      "toolbar": "挿入ツールバー",
       "textBox": "テキストボックス",
       "line": "線",
       "linePresets": {
@@ -280,6 +303,14 @@
       "audioOr": "または音声 URL を貼り付け",
       "audioUrlPlaceholder": "https://…",
       "audioInsert": "挿入"
+    },
+    "asset": {
+      "drop": "ファイルをドロップまたはクリックして選択",
+      "orUrl": "またはファイル URL を貼り付け",
+      "urlPlaceholder": "https://…",
+      "insert": "挿入",
+      "invalidType": "サポートされていないファイル形式",
+      "readFailed": "ファイルを読み込めません"
     },
     "latex": {
       "toolbar": "数式ツールバー",
@@ -325,6 +356,7 @@
       "toBack": "最背面へ移動"
     },
     "image": {
+      "toolbar": "画像ツールバー",
       "replace": "画像を置き換え",
       "flipH": "左右反転",
       "flipV": "上下反転",
@@ -350,7 +382,12 @@
     "background": {
       "label": "背景",
       "solid": "単色",
-      "image": "画像"
+      "image": "画像",
+      "color": "色"
+    },
+    "common": {
+      "cancel": "キャンセル",
+      "confirm": "確定"
     },
     "quiz": {
       "addQuestion": "問題を追加",
@@ -400,6 +437,7 @@
       "discussion": "ディスカッション"
     },
     "element": {
+      "toolbar": "要素ツールバー",
       "text": "テキスト",
       "image": "画像",
       "shape": "図形",

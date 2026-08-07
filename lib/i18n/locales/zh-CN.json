@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "文本工具栏",
       "label": "文本",
       "font": "字体",
       "fontDefault": "默认",
@@ -240,9 +241,31 @@
       "alignLeft": "左对齐",
       "alignCenter": "居中对齐",
       "alignRight": "右对齐",
-      "bullet": "项目符号"
+      "bullet": "项目符号",
+      "colorHex": "颜色值"
+    },
+    "line": {
+      "toolbar": "线条工具栏",
+      "kind": "线条类型",
+      "color": "线条颜色",
+      "width": "线宽",
+      "style": "线条样式",
+      "start": "起点样式",
+      "end": "终点样式",
+      "straight": "直线",
+      "broken": "折线",
+      "broken2": "双折线",
+      "curve": "曲线",
+      "cubic": "三次曲线",
+      "solid": "实线",
+      "dashed": "虚线",
+      "dotted": "点线",
+      "none": "无",
+      "arrow": "箭头",
+      "dot": "圆点"
     },
     "insert": {
+      "toolbar": "插入工具栏",
       "textBox": "文本框",
       "line": "线条",
       "linePresets": {
@@ -280,6 +303,14 @@
       "audioOr": "或粘贴音频 URL",
       "audioUrlPlaceholder": "https://…",
       "audioInsert": "插入"
+    },
+    "asset": {
+      "drop": "拖入文件或点击选择",
+      "orUrl": "或粘贴文件 URL",
+      "urlPlaceholder": "https://…",
+      "insert": "插入",
+      "invalidType": "文件类型不受支持",
+      "readFailed": "无法读取文件"
     },
     "latex": {
       "toolbar": "公式工具栏",
@@ -325,6 +356,7 @@
       "toBack": "置于底层"
     },
     "image": {
+      "toolbar": "图片工具栏",
       "replace": "替换图片",
       "flipH": "水平翻转",
       "flipV": "垂直翻转",
@@ -350,7 +382,12 @@
     "background": {
       "label": "背景",
       "solid": "纯色",
-      "image": "图片"
+      "image": "图片",
+      "color": "颜色"
+    },
+    "common": {
+      "cancel": "取消",
+      "confirm": "确定"
     },
     "quiz": {
       "addQuestion": "添加题目",
@@ -400,6 +437,7 @@
       "discussion": "讨论"
     },
     "element": {
+      "toolbar": "元素工具栏",
       "text": "文本",
       "image": "图片",
       "shape": "形状",

@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "文字工具列",
       "label": "文字",
       "font": "字型",
       "fontDefault": "預設",
@@ -240,9 +241,31 @@
       "alignLeft": "靠左對齊",
       "alignCenter": "置中對齊",
       "alignRight": "靠右對齊",
-      "bullet": "項目符號"
+      "bullet": "項目符號",
+      "colorHex": "顏色值"
+    },
+    "line": {
+      "toolbar": "線條工具列",
+      "kind": "線條類型",
+      "color": "線條顏色",
+      "width": "線寬",
+      "style": "線條樣式",
+      "start": "起點樣式",
+      "end": "終點樣式",
+      "straight": "直線",
+      "broken": "折線",
+      "broken2": "雙折線",
+      "curve": "曲線",
+      "cubic": "三次曲線",
+      "solid": "實線",
+      "dashed": "虛線",
+      "dotted": "點線",
+      "none": "無",
+      "arrow": "箭頭",
+      "dot": "圓點"
     },
     "insert": {
+      "toolbar": "插入工具列",
       "textBox": "文字方塊",
       "line": "線條",
       "linePresets": {
@@ -280,6 +303,14 @@
       "audioOr": "或貼上音訊網址",
       "audioUrlPlaceholder": "https://…",
       "audioInsert": "插入"
+    },
+    "asset": {
+      "drop": "拖入檔案或點擊選擇",
+      "orUrl": "或貼上檔案 URL",
+      "urlPlaceholder": "https://…",
+      "insert": "插入",
+      "invalidType": "不支援此檔案類型",
+      "readFailed": "無法讀取檔案"
     },
     "latex": {
       "toolbar": "公式工具列",
@@ -325,6 +356,7 @@
       "toBack": "移至最下層"
     },
     "image": {
+      "toolbar": "圖片工具列",
       "replace": "替換圖片",
       "flipH": "水平翻轉",
       "flipV": "垂直翻轉",
@@ -350,7 +382,12 @@
     "background": {
       "label": "背景",
       "solid": "純色",
-      "image": "圖片"
+      "image": "圖片",
+      "color": "顏色"
+    },
+    "common": {
+      "cancel": "取消",
+      "confirm": "確定"
     },
     "quiz": {
       "addQuestion": "新增題目",
@@ -400,6 +437,7 @@
       "discussion": "討論"
     },
     "element": {
+      "toolbar": "元素工具列",
       "text": "文字",
       "image": "圖片",
       "shape": "形狀",

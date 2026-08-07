@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import type { PPTElement } from '@openmaic/dsl';
-import type { TextToolbarLocale } from './types';
+import type { EditorTranslate } from './translation';
 
-export type EditorLocale = TextToolbarLocale;
+export type EditorLocale = string;
 
 export interface EditorAsset {
   readonly src: string;
@@ -26,6 +26,7 @@ export interface EditorError {
 
 export interface EditorHostCapabilities {
   readonly locale?: EditorLocale;
+  readonly translate?: EditorTranslate;
   readonly createElementId?: (type: PPTElement['type']) => string;
   readonly renderAssetPicker?: (request: EditorAssetPickerRequest) => ReactNode;
   readonly onError?: (error: EditorError) => void;
@@ -34,6 +35,7 @@ export interface EditorHostCapabilities {
 
 export interface ResolvedEditorHostCapabilities {
   readonly locale: EditorLocale;
+  readonly translate?: EditorTranslate;
   readonly createElementId: (type: PPTElement['type']) => string;
   readonly renderAssetPicker?: (request: EditorAssetPickerRequest) => ReactNode;
   readonly onError?: (error: EditorError) => void;
@@ -52,6 +54,7 @@ export function resolveEditorHost(
 ): ResolvedEditorHostCapabilities {
   return {
     locale: host.locale ?? 'en-US',
+    translate: host.translate,
     createElementId: host.createElementId ?? createDefaultElementId,
     renderAssetPicker: host.renderAssetPicker,
     onError: host.onError,

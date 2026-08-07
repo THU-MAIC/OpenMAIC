@@ -8,6 +8,9 @@ export {
   resolveTextToolbarLabels,
 } from './labels';
 export { resolveEditorHost } from './host';
+export type { EditorTranslate, EditorTranslationKey, EditorTranslationParams } from './translation';
+export { DEFAULT_EDITOR_INSERT_ITEMS } from './adapters/insertRegistry';
+export type { EditorInsertItem } from './adapters/insertRegistry';
 export type {
   EditorAsset,
   EditorAssetPickerRequest,

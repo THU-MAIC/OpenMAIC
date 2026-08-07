@@ -26,6 +26,7 @@ export function useLatexAdapters(
     const adapter: ElementEditorAdapter<PPTLatexElement> = {
       id: 'latex',
       type: 'latex',
+      insertType: 'latex',
       insertItem: {
         id: 'insert-latex',
         label: labels.insert.formula,

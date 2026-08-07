@@ -7,6 +7,7 @@ import { ChartInsertPicker } from '../insert/ChartInsertPicker';
 import { LineInsertPicker, type LineInsertPreset } from '../insert/LineInsertPicker';
 import { TableInsertPicker } from '../insert/TableInsertPicker';
 import type { InsertToolbarItem } from '../types';
+import type { EditorInsertContribution } from './insertRegistry';
 import {
   createDefaultChartElement,
   createDefaultImageElement,
@@ -24,37 +25,11 @@ export function createHostInsertItems(
   context: ElementAdapterContext,
   mode: EditorCreationMode,
   setMode: (mode: EditorCreationMode) => void,
-): readonly InsertToolbarItem[] {
+): readonly EditorInsertContribution[] {
   const labels = context.labels;
-  const locale = context.host.locale;
-  const lineLabels =
-    locale === 'zh-CN'
-      ? {
-          label: labels.insert.line,
-          straight: '直线',
-          dashed: '虚线',
-          arrow: '箭头',
-          dashedArrow: '虚线箭头',
-          dottedEnd: '圆点终点',
-          broken: '折线',
-          doubleBroken: '双折线',
-          curve: '曲线',
-          cubic: '三次曲线',
-        }
-      : {
-          label: labels.insert.line,
-          straight: 'Straight',
-          dashed: 'Dashed',
-          arrow: 'Arrow',
-          dashedArrow: 'Dashed arrow',
-          dottedEnd: 'Dotted end',
-          broken: 'Elbow',
-          doubleBroken: 'Double elbow',
-          curve: 'Curve',
-          cubic: 'Cubic curve',
-        };
+  const lineLabels = { label: labels.insert.line, ...labels.insert.linePresets };
 
-  return [
+  const items: InsertToolbarItem[] = [
     {
       id: 'insert-text',
       label: labels.insert.text,
@@ -174,4 +149,6 @@ export function createHostInsertItems(
         }),
     },
   ];
+  const types = ['text', 'image', 'table', 'chart', 'line', 'background'] as const;
+  return items.map((item, index) => ({ type: types[index], item }));
 }

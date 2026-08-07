@@ -212,6 +212,7 @@
       }
     },
     "text": {
+      "toolbar": "Barra de texto",
       "label": "Texto",
       "font": "Fonte",
       "fontDefault": "Padrão",
@@ -225,9 +226,31 @@
       "alignLeft": "Alinhar à esquerda",
       "alignCenter": "Centralizar",
       "alignRight": "Alinhar à direita",
-      "bullet": "Lista com marcadores"
+      "bullet": "Lista com marcadores",
+      "colorHex": "Código da cor"
+    },
+    "line": {
+      "toolbar": "Barra de linha",
+      "kind": "Tipo de linha",
+      "color": "Cor da linha",
+      "width": "Espessura da linha",
+      "style": "Estilo da linha",
+      "start": "Estilo inicial",
+      "end": "Estilo final",
+      "straight": "Reta",
+      "broken": "Linha quebrada",
+      "broken2": "Linha quebrada dupla",
+      "curve": "Curva",
+      "cubic": "Curva cúbica",
+      "solid": "Sólida",
+      "dashed": "Tracejada",
+      "dotted": "Pontilhada",
+      "none": "Nenhum",
+      "arrow": "Seta",
+      "dot": "Ponto"
     },
     "insert": {
+      "toolbar": "Barra de inserção",
       "textBox": "Caixa de texto",
       "line": "Linha",
       "linePresets": {
@@ -265,6 +288,14 @@
       "audioOr": "ou cole a URL de um áudio",
       "audioUrlPlaceholder": "https://…",
       "audioInsert": "Inserir"
+    },
+    "asset": {
+      "drop": "Arraste um arquivo ou clique para escolher",
+      "orUrl": "ou cole a URL do arquivo",
+      "urlPlaceholder": "https://…",
+      "insert": "Inserir",
+      "invalidType": "Tipo de arquivo não compatível",
+      "readFailed": "Não foi possível ler o arquivo"
     },
     "latex": {
       "toolbar": "Barra de fórmulas",
@@ -310,6 +341,7 @@
       "toBack": "Enviar para trás"
     },
     "image": {
+      "toolbar": "Barra da imagem",
       "replace": "Substituir imagem",
       "flipH": "Inverter horizontalmente",
       "flipV": "Inverter verticalmente",
@@ -335,7 +367,12 @@
     "background": {
       "label": "Fundo",
       "solid": "Cor sólida",
-      "image": "Imagem"
+      "image": "Imagem",
+      "color": "Cor"
+    },
+    "common": {
+      "cancel": "Cancelar",
+      "confirm": "Confirmar"
     },
     "quiz": {
       "addQuestion": "Adicionar pergunta",
@@ -385,6 +422,7 @@
       "discussion": "Discussão"
     },
     "element": {
+      "toolbar": "Barra do elemento",
       "text": "Texto",
       "image": "Imagem",
       "shape": "Forma",

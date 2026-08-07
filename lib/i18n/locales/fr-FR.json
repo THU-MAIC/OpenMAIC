@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "Barre de texte",
       "label": "Texte",
       "font": "Police",
       "fontDefault": "Par défaut",
@@ -240,9 +241,31 @@
       "alignLeft": "Aligner à gauche",
       "alignCenter": "Centrer",
       "alignRight": "Aligner à droite",
-      "bullet": "Liste à puces"
+      "bullet": "Liste à puces",
+      "colorHex": "Code couleur"
+    },
+    "line": {
+      "toolbar": "Barre de ligne",
+      "kind": "Type de ligne",
+      "color": "Couleur de ligne",
+      "width": "Épaisseur de ligne",
+      "style": "Style de ligne",
+      "start": "Style de départ",
+      "end": "Style d’arrivée",
+      "straight": "Droite",
+      "broken": "Ligne brisée",
+      "broken2": "Double ligne brisée",
+      "curve": "Courbe",
+      "cubic": "Courbe cubique",
+      "solid": "Continue",
+      "dashed": "Tirets",
+      "dotted": "Pointillés",
+      "none": "Aucun",
+      "arrow": "Flèche",
+      "dot": "Point"
     },
     "insert": {
+      "toolbar": "Barre d’insertion",
       "textBox": "Zone de texte",
       "line": "Ligne",
       "linePresets": {
@@ -280,6 +303,14 @@
       "audioOr": "ou collez l’URL d’un fichier audio",
       "audioUrlPlaceholder": "https://…",
       "audioInsert": "Insérer"
+    },
+    "asset": {
+      "drop": "Déposez un fichier ou cliquez pour choisir",
+      "orUrl": "ou collez l’URL du fichier",
+      "urlPlaceholder": "https://…",
+      "insert": "Insérer",
+      "invalidType": "Type de fichier non pris en charge",
+      "readFailed": "Impossible de lire le fichier"
     },
     "latex": {
       "toolbar": "Barre d’outils de formule",
@@ -325,6 +356,7 @@
       "toBack": "Mettre à l’arrière-plan"
     },
     "image": {
+      "toolbar": "Barre d’image",
       "replace": "Remplacer l’image",
       "flipH": "Retourner horizontalement",
       "flipV": "Retourner verticalement",
@@ -350,7 +382,12 @@
     "background": {
       "label": "Arrière-plan",
       "solid": "Uni",
-      "image": "Image"
+      "image": "Image",
+      "color": "Couleur"
+    },
+    "common": {
+      "cancel": "Annuler",
+      "confirm": "Confirmer"
     },
     "quiz": {
       "addQuestion": "Ajouter une question",
@@ -400,6 +437,7 @@
       "discussion": "Discussion"
     },
     "element": {
+      "toolbar": "Barre d’élément",
       "text": "Texte",
       "image": "Image",
       "shape": "Forme",

@@ -4,6 +4,9 @@ import type {
   TextToolbarLabels,
   TextToolbarLocale,
 } from './types';
+import { translateEditorLabel, type EditorTranslate } from './translation';
+
+type BuiltInEditorLocale = 'zh-CN' | 'en-US';
 
 export interface EditorLabels {
   readonly insert: {
@@ -17,6 +20,17 @@ export interface EditorLabels {
     readonly chartLine: string;
     readonly chartPie: string;
     readonly line: string;
+    readonly linePresets: {
+      readonly straight: string;
+      readonly dashed: string;
+      readonly arrow: string;
+      readonly dashedArrow: string;
+      readonly dottedEnd: string;
+      readonly broken: string;
+      readonly doubleBroken: string;
+      readonly curve: string;
+      readonly cubic: string;
+    };
     readonly formula: string;
     readonly video: string;
     readonly audio: string;
@@ -36,6 +50,7 @@ export interface EditorLabels {
     readonly delete: string;
   };
   readonly image: {
+    readonly toolbar: string;
     readonly replace: string;
     readonly flipH: string;
     readonly flipV: string;
@@ -93,7 +108,7 @@ export interface EditorLabels {
   };
 }
 
-const BUILT_IN_EDITOR_LABELS: Record<TextToolbarLocale, EditorLabels> = {
+const BUILT_IN_EDITOR_LABELS: Record<BuiltInEditorLocale, EditorLabels> = {
   'zh-CN': {
     insert: {
       toolbar: '插入工具栏',
@@ -106,6 +121,17 @@ const BUILT_IN_EDITOR_LABELS: Record<TextToolbarLocale, EditorLabels> = {
       chartLine: '折线图',
       chartPie: '饼图',
       line: '插入线条',
+      linePresets: {
+        straight: '直线',
+        dashed: '虚线',
+        arrow: '箭头',
+        dashedArrow: '虚线箭头',
+        dottedEnd: '圆点终点',
+        broken: '折线',
+        doubleBroken: '双折线',
+        curve: '曲线',
+        cubic: '三次曲线',
+      },
       formula: '插入公式',
       video: '插入视频',
       audio: '插入音频',
@@ -124,7 +150,12 @@ const BUILT_IN_EDITOR_LABELS: Record<TextToolbarLocale, EditorLabels> = {
       sendToBack: '置于底层',
       delete: '删除',
     },
-    image: { replace: '替换图片', flipH: '水平翻转', flipV: '垂直翻转' },
+    image: {
+      toolbar: '图片工具栏',
+      replace: '替换图片',
+      flipH: '水平翻转',
+      flipV: '垂直翻转',
+    },
     latex: {
       toolbar: '公式工具栏',
       edit: '编辑公式',
@@ -176,6 +207,17 @@ const BUILT_IN_EDITOR_LABELS: Record<TextToolbarLocale, EditorLabels> = {
       chartLine: 'Line chart',
       chartPie: 'Pie chart',
       line: 'Insert line',
+      linePresets: {
+        straight: 'Straight',
+        dashed: 'Dashed',
+        arrow: 'Arrow',
+        dashedArrow: 'Dashed arrow',
+        dottedEnd: 'Dotted end',
+        broken: 'Elbow',
+        doubleBroken: 'Double elbow',
+        curve: 'Curve',
+        cubic: 'Cubic curve',
+      },
       formula: 'Insert formula',
       video: 'Insert video',
       audio: 'Insert audio',
@@ -194,7 +236,12 @@ const BUILT_IN_EDITOR_LABELS: Record<TextToolbarLocale, EditorLabels> = {
       sendToBack: 'Send to back',
       delete: 'Delete',
     },
-    image: { replace: 'Replace image', flipH: 'Flip horizontally', flipV: 'Flip vertically' },
+    image: {
+      toolbar: 'Image toolbar',
+      replace: 'Replace image',
+      flipH: 'Flip horizontally',
+      flipV: 'Flip vertically',
+    },
     latex: {
       toolbar: 'Formula toolbar',
       edit: 'Edit formula',
@@ -241,11 +288,132 @@ const BUILT_IN_EDITOR_LABELS: Record<TextToolbarLocale, EditorLabels> = {
   },
 };
 
-export function resolveEditorLabels(locale: TextToolbarLocale = 'en-US'): EditorLabels {
-  return BUILT_IN_EDITOR_LABELS[locale] ?? BUILT_IN_EDITOR_LABELS['en-US'];
+export function resolveEditorLabels(
+  locale: TextToolbarLocale = 'en-US',
+  translate?: EditorTranslate,
+): EditorLabels {
+  const base =
+    BUILT_IN_EDITOR_LABELS[locale as BuiltInEditorLocale] ?? BUILT_IN_EDITOR_LABELS['en-US'];
+  const tx = (
+    key: Parameters<typeof translateEditorLabel>[1],
+    defaultMessage: string,
+    params?: Parameters<typeof translateEditorLabel>[3],
+  ) => translateEditorLabel(translate, key, defaultMessage, params);
+
+  return {
+    insert: {
+      toolbar: tx('insert.toolbar', base.insert.toolbar),
+      text: tx('insert.textBox', base.insert.text),
+      image: tx('insert.image', base.insert.image),
+      table: tx('insert.table', base.insert.table),
+      tableDimensions: (rows, columns) =>
+        tx('insert.tableDimensions', base.insert.tableDimensions(rows, columns), {
+          rows,
+          columns,
+        }),
+      chart: tx('insert.chart', base.insert.chart),
+      chartBar: tx('insert.chartBar', base.insert.chartBar),
+      chartLine: tx('insert.chartLine', base.insert.chartLine),
+      chartPie: tx('insert.chartPie', base.insert.chartPie),
+      line: tx('insert.line', base.insert.line),
+      linePresets: {
+        straight: tx('insert.linePresets.straight', base.insert.linePresets.straight),
+        dashed: tx('insert.linePresets.dashed', base.insert.linePresets.dashed),
+        arrow: tx('insert.linePresets.arrow', base.insert.linePresets.arrow),
+        dashedArrow: tx('insert.linePresets.dashedArrow', base.insert.linePresets.dashedArrow),
+        dottedEnd: tx('insert.linePresets.dottedEnd', base.insert.linePresets.dottedEnd),
+        broken: tx('insert.linePresets.broken', base.insert.linePresets.broken),
+        doubleBroken: tx('insert.linePresets.doubleBroken', base.insert.linePresets.doubleBroken),
+        curve: tx('insert.linePresets.curve', base.insert.linePresets.curve),
+        cubic: tx('insert.linePresets.cubic', base.insert.linePresets.cubic),
+      },
+      formula: tx('insert.formula', base.insert.formula),
+      video: tx('insert.video', base.insert.video),
+      audio: tx('insert.audio', base.insert.audio),
+    },
+    asset: {
+      drop: tx('asset.drop', base.asset.drop),
+      orUrl: tx('asset.orUrl', base.asset.orUrl),
+      urlPlaceholder: tx('asset.urlPlaceholder', base.asset.urlPlaceholder),
+      insert: tx('asset.insert', base.asset.insert),
+      invalidType: tx('asset.invalidType', base.asset.invalidType),
+      readFailed: tx('asset.readFailed', base.asset.readFailed),
+    },
+    element: {
+      toolbar: tx('element.toolbar', base.element.toolbar),
+      bringToFront: tx('zorder.toFront', base.element.bringToFront),
+      sendToBack: tx('zorder.toBack', base.element.sendToBack),
+      delete: tx('delete', base.element.delete),
+    },
+    image: {
+      toolbar: tx('image.toolbar', base.image.toolbar),
+      replace: tx('image.replace', base.image.replace),
+      flipH: tx('image.flipH', base.image.flipH),
+      flipV: tx('image.flipV', base.image.flipV),
+    },
+    latex: {
+      toolbar: tx('latex.toolbar', base.latex.toolbar),
+      edit: tx('latex.editFormula', base.latex.edit),
+      dialog: tx('latex.dialog', base.latex.dialog),
+      source: tx('latex.source', base.latex.source),
+      preview: tx('latex.preview', base.latex.preview),
+      symbols: tx('latex.symbols', base.latex.symbols),
+      presets: tx('latex.presets', base.latex.presets),
+      invalidSource: tx('latex.invalidSource', base.latex.invalidSource),
+    },
+    video: {
+      toolbar: tx('video.toolbar', base.video.toolbar),
+      poster: tx('video.poster', base.video.poster),
+    },
+    audio: {
+      toolbar: tx('audio.toolbar', base.audio.toolbar),
+      preview: tx('audio.preview', base.audio.preview),
+      pause: tx('audio.pause', base.audio.pause),
+      loop: tx('audio.loop', base.audio.loop),
+    },
+    background: {
+      label: tx('background.label', base.background.label),
+      solid: tx('background.solid', base.background.solid),
+      image: tx('background.image', base.background.image),
+      color: tx('background.color', base.background.color),
+    },
+    table: {
+      doubleClickToEdit: tx('table.doubleClickToEdit', base.table.doubleClickToEdit),
+    },
+    common: {
+      cancel: tx('common.cancel', base.common.cancel),
+      confirm: tx('common.confirm', base.common.confirm),
+    },
+    contextMenu: {
+      horizontalAlignment: tx(
+        'contextMenu.horizontalAlignment',
+        base.contextMenu.horizontalAlignment,
+      ),
+      verticalAlignment: tx('contextMenu.verticalAlignment', base.contextMenu.verticalAlignment),
+      selectAll: tx('contextMenu.selectAll', base.contextMenu.selectAll),
+      copy: tx('contextMenu.copy', base.contextMenu.copy),
+      cut: tx('contextMenu.cut', base.contextMenu.cut),
+      paste: tx('contextMenu.paste', base.contextMenu.paste),
+      unlock: tx('contextMenu.unlock', base.contextMenu.unlock),
+      lock: tx('contextMenu.lock', base.contextMenu.lock),
+      delete: tx('delete', base.contextMenu.delete),
+      group: tx('contextMenu.group', base.contextMenu.group),
+      ungroup: tx('contextMenu.ungroup', base.contextMenu.ungroup),
+      bringToFront: tx('zorder.toFront', base.contextMenu.bringToFront),
+      bringForward: tx('contextMenu.bringForward', base.contextMenu.bringForward),
+      sendToBack: tx('zorder.toBack', base.contextMenu.sendToBack),
+      sendBackward: tx('contextMenu.sendBackward', base.contextMenu.sendBackward),
+      alignLeft: tx('text.alignLeft', base.contextMenu.alignLeft),
+      alignCenter: tx('text.alignCenter', base.contextMenu.alignCenter),
+      alignRight: tx('text.alignRight', base.contextMenu.alignRight),
+      alignTop: tx('contextMenu.alignTop', base.contextMenu.alignTop),
+      alignMiddle: tx('contextMenu.alignMiddle', base.contextMenu.alignMiddle),
+      alignBottom: tx('contextMenu.alignBottom', base.contextMenu.alignBottom),
+    },
+  };
 }
 
-const BUILT_IN_LABELS: Record<TextToolbarLocale, TextToolbarLabels> = {
+const BUILT_IN_LABELS: Record<BuiltInEditorLocale, TextToolbarLabels> = {
   'zh-CN': Object.freeze({
     toolbar: '文本工具栏',
     font: '字体',
@@ -288,7 +456,7 @@ const BUILT_IN_LABELS: Record<TextToolbarLocale, TextToolbarLabels> = {
   }),
 };
 
-const BUILT_IN_LINE_LABELS: Record<TextToolbarLocale, LineToolbarLabels> = {
+const BUILT_IN_LINE_LABELS: Record<BuiltInEditorLocale, LineToolbarLabels> = {
   'zh-CN': Object.freeze({
     toolbar: '线条工具栏',
     kind: '线条类型',
@@ -359,13 +527,64 @@ export const DEFAULT_TEXT_TOOLBAR_FONTS: readonly TextToolbarFont[] = Object.fre
 export function resolveTextToolbarLabels(
   locale: TextToolbarLocale = 'en-US',
   overrides?: Partial<TextToolbarLabels>,
+  translate?: EditorTranslate,
 ): TextToolbarLabels {
-  return { ...(BUILT_IN_LABELS[locale] ?? BUILT_IN_LABELS['en-US']), ...overrides };
+  const base = BUILT_IN_LABELS[locale as BuiltInEditorLocale] ?? BUILT_IN_LABELS['en-US'];
+  const tx = (key: Parameters<typeof translateEditorLabel>[1], defaultMessage: string) =>
+    translateEditorLabel(translate, key, defaultMessage);
+  return {
+    toolbar: tx('text.toolbar', base.toolbar),
+    font: tx('text.font', base.font),
+    fontDefault: tx('text.fontDefault', base.fontDefault),
+    fontSize: tx('text.fontSize', base.fontSize),
+    sizeDown: tx('text.sizeDown', base.sizeDown),
+    sizeUp: tx('text.sizeUp', base.sizeUp),
+    bold: tx('text.bold', base.bold),
+    italic: tx('text.italic', base.italic),
+    underline: tx('text.underline', base.underline),
+    color: tx('text.color', base.color),
+    alignLeft: tx('text.alignLeft', base.alignLeft),
+    alignCenter: tx('text.alignCenter', base.alignCenter),
+    alignRight: tx('text.alignRight', base.alignRight),
+    bullet: tx('text.bullet', base.bullet),
+    bringToFront: tx('zorder.toFront', base.bringToFront),
+    sendToBack: tx('zorder.toBack', base.sendToBack),
+    delete: tx('delete', base.delete),
+    colorHex: tx('text.colorHex', base.colorHex),
+    ...overrides,
+  };
 }
 
 export function resolveLineToolbarLabels(
   locale: TextToolbarLocale = 'en-US',
   overrides?: Partial<LineToolbarLabels>,
+  translate?: EditorTranslate,
 ): LineToolbarLabels {
-  return { ...(BUILT_IN_LINE_LABELS[locale] ?? BUILT_IN_LINE_LABELS['en-US']), ...overrides };
+  const base = BUILT_IN_LINE_LABELS[locale as BuiltInEditorLocale] ?? BUILT_IN_LINE_LABELS['en-US'];
+  const tx = (key: Parameters<typeof translateEditorLabel>[1], defaultMessage: string) =>
+    translateEditorLabel(translate, key, defaultMessage);
+  return {
+    toolbar: tx('line.toolbar', base.toolbar),
+    kind: tx('line.kind', base.kind),
+    color: tx('line.color', base.color),
+    width: tx('line.width', base.width),
+    style: tx('line.style', base.style),
+    start: tx('line.start', base.start),
+    end: tx('line.end', base.end),
+    straight: tx('line.straight', base.straight),
+    broken: tx('line.broken', base.broken),
+    broken2: tx('line.broken2', base.broken2),
+    curve: tx('line.curve', base.curve),
+    cubic: tx('line.cubic', base.cubic),
+    solid: tx('line.solid', base.solid),
+    dashed: tx('line.dashed', base.dashed),
+    dotted: tx('line.dotted', base.dotted),
+    none: tx('line.none', base.none),
+    arrow: tx('line.arrow', base.arrow),
+    dot: tx('line.dot', base.dot),
+    bringToFront: tx('zorder.toFront', base.bringToFront),
+    sendToBack: tx('zorder.toBack', base.sendToBack),
+    delete: tx('delete', base.delete),
+    ...overrides,
+  };
 }

@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "텍스트 도구 모음",
       "label": "텍스트",
       "font": "글꼴",
       "fontDefault": "기본",
@@ -240,9 +241,31 @@
       "alignLeft": "왼쪽 정렬",
       "alignCenter": "가운데 정렬",
       "alignRight": "오른쪽 정렬",
-      "bullet": "글머리 기호 목록"
+      "bullet": "글머리 기호 목록",
+      "colorHex": "색상 코드"
+    },
+    "line": {
+      "toolbar": "선 도구 모음",
+      "kind": "선 유형",
+      "color": "선 색상",
+      "width": "선 두께",
+      "style": "선 스타일",
+      "start": "시작점 스타일",
+      "end": "끝점 스타일",
+      "straight": "직선",
+      "broken": "꺾은선",
+      "broken2": "이중 꺾은선",
+      "curve": "곡선",
+      "cubic": "3차 곡선",
+      "solid": "실선",
+      "dashed": "파선",
+      "dotted": "점선",
+      "none": "없음",
+      "arrow": "화살표",
+      "dot": "점"
     },
     "insert": {
+      "toolbar": "삽입 도구 모음",
       "textBox": "텍스트 상자",
       "line": "선",
       "linePresets": {
@@ -280,6 +303,14 @@
       "audioOr": "또는 오디오 URL 붙여넣기",
       "audioUrlPlaceholder": "https://…",
       "audioInsert": "삽입"
+    },
+    "asset": {
+      "drop": "파일을 끌어다 놓거나 클릭하여 선택",
+      "orUrl": "또는 파일 URL 붙여넣기",
+      "urlPlaceholder": "https://…",
+      "insert": "삽입",
+      "invalidType": "지원하지 않는 파일 형식",
+      "readFailed": "파일을 읽을 수 없습니다"
     },
     "latex": {
       "toolbar": "수식 도구 모음",
@@ -333,6 +364,7 @@
       "discussion": "토론"
     },
     "element": {
+      "toolbar": "요소 도구 모음",
       "text": "텍스트",
       "image": "이미지",
       "shape": "도형",
@@ -482,13 +514,19 @@
     "background": {
       "image": "이미지",
       "label": "배경",
-      "solid": "단색"
+      "solid": "단색",
+      "color": "색상"
     },
     "image": {
+      "toolbar": "이미지 도구 모음",
       "flipH": "좌우 반전",
       "flipV": "상하 반전",
       "replace": "이미지 교체",
       "crop": "이미지 자르기"
+    },
+    "common": {
+      "cancel": "취소",
+      "confirm": "확인"
     },
     "quiz": {
       "addOption": "선택지 추가",

@@ -34,4 +34,12 @@ describe('editor host capabilities', () => {
       shortcutsEnabled: false,
     });
   });
+
+  it('accepts arbitrary locales and preserves an external translator', () => {
+    const translate = (key: string) => `translated:${key}`;
+    const host = resolveEditorHost({ locale: 'ja-JP', translate });
+
+    expect(host.locale).toBe('ja-JP');
+    expect(host.translate).toBe(translate);
+  });
 });

@@ -5,7 +5,7 @@ import type {
   PPTLatexElement,
   PPTVideoElement,
 } from '@openmaic/dsl';
-import type { InsertToolbarItem } from '../types';
+import type { EditorInsertContribution } from './insertRegistry';
 import { createAudioAdapter } from './audio';
 import { createGenericAdapter } from './generic';
 import { createImageAdapter } from './image';
@@ -15,7 +15,7 @@ import type { ElementAdapterContext, ElementEditorAdapter } from './types';
 import { createVideoAdapter } from './video';
 
 export function useHostElementEditorAdapters(context: ElementAdapterContext | null): {
-  readonly insertItems: readonly InsertToolbarItem[];
+  readonly insertContributions: readonly EditorInsertContribution[];
   readonly overlays: readonly ReactNode[];
 } {
   const selected = context ? selectedEditableElement(context) : null;
@@ -25,7 +25,7 @@ export function useHostElementEditorAdapters(context: ElementAdapterContext | nu
   );
 
   return useMemo(() => {
-    if (!context) return { insertItems: [], overlays: [] };
+    if (!context) return { insertContributions: [], overlays: [] };
     const adapters: ElementEditorAdapter[] = [
       ...latexAdapters,
       createVideoAdapter(
@@ -45,7 +45,11 @@ export function useHostElementEditorAdapters(context: ElementAdapterContext | nu
     }
 
     return {
-      insertItems: adapters.flatMap((adapter) => (adapter.insertItem ? [adapter.insertItem] : [])),
+      insertContributions: adapters.flatMap((adapter) =>
+        adapter.insertType && adapter.insertItem
+          ? [{ type: adapter.insertType, item: adapter.insertItem }]
+          : [],
+      ),
       overlays: adapters.flatMap((adapter) => (adapter.overlay ? [adapter.overlay] : [])),
     };
   }, [context, latexAdapters, selected]);

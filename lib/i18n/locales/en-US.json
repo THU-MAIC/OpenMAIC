@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "Text toolbar",
       "label": "Text",
       "font": "Font",
       "fontDefault": "Default",
@@ -240,9 +241,31 @@
       "alignLeft": "Align left",
       "alignCenter": "Align center",
       "alignRight": "Align right",
-      "bullet": "Bulleted list"
+      "bullet": "Bulleted list",
+      "colorHex": "Color value"
+    },
+    "line": {
+      "toolbar": "Line toolbar",
+      "kind": "Line type",
+      "color": "Line color",
+      "width": "Line width",
+      "style": "Line style",
+      "start": "Start marker",
+      "end": "End marker",
+      "straight": "Straight",
+      "broken": "Broken line",
+      "broken2": "Double broken line",
+      "curve": "Curve",
+      "cubic": "Cubic curve",
+      "solid": "Solid",
+      "dashed": "Dashed",
+      "dotted": "Dotted",
+      "none": "None",
+      "arrow": "Arrow",
+      "dot": "Dot"
     },
     "insert": {
+      "toolbar": "Insert toolbar",
       "textBox": "Text box",
       "line": "Line",
       "linePresets": {
@@ -280,6 +303,14 @@
       "audioOr": "or paste an audio URL",
       "audioUrlPlaceholder": "https://…",
       "audioInsert": "Insert"
+    },
+    "asset": {
+      "drop": "Drop a file or click to choose",
+      "orUrl": "or paste a file URL",
+      "urlPlaceholder": "https://…",
+      "insert": "Insert",
+      "invalidType": "Unsupported file type",
+      "readFailed": "Unable to read file"
     },
     "latex": {
       "toolbar": "Formula toolbar",
@@ -325,6 +356,7 @@
       "toBack": "Send to back"
     },
     "image": {
+      "toolbar": "Image toolbar",
       "replace": "Replace image",
       "flipH": "Flip horizontal",
       "flipV": "Flip vertical",
@@ -350,7 +382,12 @@
     "background": {
       "label": "Background",
       "solid": "Solid",
-      "image": "Image"
+      "image": "Image",
+      "color": "Color"
+    },
+    "common": {
+      "cancel": "Cancel",
+      "confirm": "Confirm"
     },
     "quiz": {
       "addQuestion": "Add question",
@@ -400,6 +437,7 @@
       "discussion": "Discussion"
     },
     "element": {
+      "toolbar": "Element toolbar",
       "text": "Text",
       "image": "Image",
       "shape": "Shape",

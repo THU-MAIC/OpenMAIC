@@ -5,6 +5,7 @@ import type { Selection } from '../../react/types';
 import type { InsertToolbarItem } from '../types';
 import type { EditorLabels } from '../labels';
 import type { ResolvedEditorHostCapabilities } from '../host';
+import type { EditorInsertItem } from './insertRegistry';
 
 export interface ElementAdapterDispatchOptions {
   readonly origin?: EditorTransactionOrigin;
@@ -28,6 +29,7 @@ export interface ElementAdapterContext {
 export interface ElementEditorAdapter<T extends PPTElement = PPTElement> {
   readonly id: string;
   readonly type?: T['type'];
+  readonly insertType?: EditorInsertItem;
   readonly insertItem?: InsertToolbarItem;
   readonly overlay?: ReactNode;
 }

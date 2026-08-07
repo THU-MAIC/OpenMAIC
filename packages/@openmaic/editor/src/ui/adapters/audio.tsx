@@ -15,6 +15,7 @@ export function createAudioAdapter(
   return {
     id: 'audio',
     type: 'audio',
+    insertType: 'audio',
     insertItem: {
       id: 'insert-audio',
       label: labels.insert.audio,

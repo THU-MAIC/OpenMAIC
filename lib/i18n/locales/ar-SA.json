@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "شريط أدوات النص",
       "label": "نص",
       "font": "الخط",
       "fontDefault": "افتراضي",
@@ -240,9 +241,31 @@
       "alignLeft": "محاذاة لليسار",
       "alignCenter": "توسيط",
       "alignRight": "محاذاة لليمين",
-      "bullet": "قائمة نقطية"
+      "bullet": "قائمة نقطية",
+      "colorHex": "رمز اللون"
+    },
+    "line": {
+      "toolbar": "شريط أدوات الخط",
+      "kind": "نوع الخط",
+      "color": "لون الخط",
+      "width": "عرض الخط",
+      "style": "نمط الخط",
+      "start": "نمط البداية",
+      "end": "نمط النهاية",
+      "straight": "مستقيم",
+      "broken": "منكسر",
+      "broken2": "منكسر مزدوج",
+      "curve": "منحني",
+      "cubic": "منحنى تكعيبي",
+      "solid": "متصل",
+      "dashed": "متقطع",
+      "dotted": "منقط",
+      "none": "بلا",
+      "arrow": "سهم",
+      "dot": "نقطة"
     },
     "insert": {
+      "toolbar": "شريط أدوات الإدراج",
       "textBox": "مربع نص",
       "line": "خط",
       "linePresets": {
@@ -280,6 +303,14 @@
       "audioOr": "أو الصق رابطاً صوتياً",
       "audioUrlPlaceholder": "https://…",
       "audioInsert": "إدراج"
+    },
+    "asset": {
+      "drop": "اسحب ملفًا أو انقر للاختيار",
+      "orUrl": "أو الصق رابط الملف",
+      "urlPlaceholder": "https://…",
+      "insert": "إدراج",
+      "invalidType": "نوع ملف غير مدعوم",
+      "readFailed": "تعذرت قراءة الملف"
     },
     "latex": {
       "toolbar": "شريط أدوات المعادلات",
@@ -325,6 +356,7 @@
       "toBack": "إرسال إلى الخلف"
     },
     "image": {
+      "toolbar": "شريط أدوات الصورة",
       "replace": "استبدال الصورة",
       "flipH": "قلب أفقي",
       "flipV": "قلب رأسي",
@@ -350,7 +382,12 @@
     "background": {
       "label": "الخلفية",
       "solid": "لون خالص",
-      "image": "صورة"
+      "image": "صورة",
+      "color": "اللون"
+    },
+    "common": {
+      "cancel": "إلغاء",
+      "confirm": "تأكيد"
     },
     "quiz": {
       "addQuestion": "إضافة سؤال",
@@ -400,6 +437,7 @@
       "discussion": "مناقشة"
     },
     "element": {
+      "toolbar": "شريط أدوات العنصر",
       "text": "نص",
       "image": "صورة",
       "shape": "شكل",

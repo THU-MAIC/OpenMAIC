@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_TEXT_TOOLBAR_FONTS,
   resolveEditorLabels,
+  resolveLineToolbarLabels,
   resolveTextToolbarLabels,
 } from '../../src/ui/labels';
 
@@ -31,5 +32,24 @@ describe('editing-ui labels', () => {
 
   it('falls back to English built-in editor labels for unsupported locales', () => {
     expect(resolveEditorLabels('fr-FR' as 'en-US').insert.audio).toBe('Insert audio');
+  });
+
+  it('resolves every editor label family through a framework-independent translator', () => {
+    const translate = (
+      key: string,
+      params?: Readonly<Record<string, string | number>>,
+      defaultMessage?: string,
+    ) => `${key}:${params ? JSON.stringify(params) : defaultMessage}`;
+
+    const labels = resolveEditorLabels('ja-JP', translate);
+
+    expect(labels.insert.video).toBe('insert.video:Insert video');
+    expect(labels.insert.tableDimensions(2, 3)).toBe(
+      'insert.tableDimensions:{"rows":2,"columns":3}',
+    );
+    expect(resolveTextToolbarLabels('ja-JP', undefined, translate).bold).toBe('text.bold:Bold');
+    expect(resolveLineToolbarLabels('ja-JP', undefined, translate).dashed).toBe(
+      'line.dashed:Dashed',
+    );
   });
 });
