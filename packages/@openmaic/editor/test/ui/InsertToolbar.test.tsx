@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ChartInsertPicker,
   EDITING_UI_STYLES,
@@ -9,6 +9,10 @@ import {
 } from '../../src/ui';
 
 describe('InsertToolbar', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('invokes a configured insert action', () => {
     const onInsertText = vi.fn();
 
@@ -175,5 +179,31 @@ describe('InsertToolbar', () => {
     ).toBe('bottom');
     expect(toolbar.getByRole('dialog', { name: 'Table' }).style.left).toBe('34px');
     expect(toolbar.getByRole('dialog', { name: 'Table' }).style.top).toBe('');
+  });
+
+  it('keeps the canvas rail fixed while a tall popover is open', () => {
+    const onRailSizeChange = vi.fn();
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(0, 0, 240, 320),
+    );
+
+    render(
+      <InsertToolbar
+        placement="top"
+        onRailSizeChange={onRailSizeChange}
+        items={[
+          {
+            id: 'video',
+            label: 'Video',
+            icon: <span>Video</span>,
+            renderPopover: () => <span>Video options</span>,
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Video' }));
+
+    expect(onRailSizeChange).toHaveBeenLastCalledWith(48);
   });
 });

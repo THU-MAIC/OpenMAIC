@@ -5,7 +5,6 @@ import type { InsertToolbarItem, InsertToolbarProps } from '../types';
 
 const INSERT_BUTTON_STEP = 34;
 const INSERT_TOOLBAR_SIZE = 48;
-const INSERT_POPOVER_OFFSET = 44;
 
 interface InsertToolbarInternalProps extends InsertToolbarProps {
   readonly onRailSizeChange?: (size: number) => void;
@@ -52,7 +51,6 @@ export function InsertToolbar({
 }: InsertToolbarInternalProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
   const openItem = items.find((item) => item.id === openId) ?? null;
   const openItemIndex = openId ? items.findIndex((item) => item.id === openId) : -1;
   const popoverStyle: CSSProperties =
@@ -77,27 +75,10 @@ export function InsertToolbar({
   }, [openId]);
 
   useLayoutEffect(() => {
-    const popover = popoverRef.current;
-    if (!popover || !onRailSizeChange) {
-      onRailSizeChange?.(INSERT_TOOLBAR_SIZE);
-      return;
-    }
-
-    const updateRailSize = () => {
-      const rect = popover.getBoundingClientRect();
-      const popoverSize = placement === 'top' ? rect.height : rect.width;
-      onRailSizeChange(
-        Math.max(INSERT_TOOLBAR_SIZE, Math.ceil(popoverSize) + INSERT_POPOVER_OFFSET),
-      );
-    };
-
-    updateRailSize();
-    if (typeof ResizeObserver === 'undefined') return;
-
-    const observer = new ResizeObserver(updateRailSize);
-    observer.observe(popover);
-    return () => observer.disconnect();
-  }, [onRailSizeChange, openId, placement]);
+    // The popover is an overlay. Its dimensions must never resize the canvas
+    // viewport, otherwise opening a picker shifts the slide under the pointer.
+    onRailSizeChange?.(INSERT_TOOLBAR_SIZE);
+  }, [onRailSizeChange]);
 
   if (items.length === 0) return null;
 
@@ -124,7 +105,6 @@ export function InsertToolbar({
       </div>
       {openItem?.renderPopover ? (
         <div
-          ref={popoverRef}
           className="maic-editing-ui-insert-popover"
           role="dialog"
           aria-label={openItem.label}
