@@ -7,6 +7,78 @@ export type ElementPatch<T extends PPTElement = PPTElement> = T extends PPTEleme
   : never;
 
 const IMMUTABLE_ELEMENT_PROPERTIES = new Set(['id', 'type']);
+const IMMUTABLE_SLIDE_PROPERTIES = new Set(['id']);
+const REQUIRED_ELEMENT_PROPERTIES: Record<PPTElement['type'], ReadonlySet<string>> = {
+  text: new Set([
+    'id',
+    'type',
+    'left',
+    'top',
+    'width',
+    'height',
+    'rotate',
+    'content',
+    'defaultFontName',
+    'defaultColor',
+  ]),
+  image: new Set(['id', 'type', 'left', 'top', 'width', 'height', 'rotate', 'fixedRatio', 'src']),
+  shape: new Set([
+    'id',
+    'type',
+    'left',
+    'top',
+    'width',
+    'height',
+    'rotate',
+    'viewBox',
+    'path',
+    'fixedRatio',
+    'fill',
+  ]),
+  line: new Set(['id', 'type', 'left', 'top', 'width', 'start', 'end', 'style', 'color', 'points']),
+  chart: new Set([
+    'id',
+    'type',
+    'left',
+    'top',
+    'width',
+    'height',
+    'rotate',
+    'chartType',
+    'data',
+    'themeColors',
+  ]),
+  table: new Set([
+    'id',
+    'type',
+    'left',
+    'top',
+    'width',
+    'height',
+    'rotate',
+    'outline',
+    'colWidths',
+    'cellMinHeight',
+    'data',
+  ]),
+  latex: new Set(['id', 'type', 'left', 'top', 'width', 'height', 'rotate', 'latex']),
+  video: new Set(['id', 'type', 'left', 'top', 'width', 'height', 'rotate', 'autoplay']),
+  audio: new Set([
+    'id',
+    'type',
+    'left',
+    'top',
+    'width',
+    'height',
+    'rotate',
+    'fixedRatio',
+    'color',
+    'loop',
+    'autoplay',
+    'src',
+  ]),
+  code: new Set(['id', 'type', 'left', 'top', 'width', 'height', 'rotate', 'language', 'lines']),
+};
 
 export type EditorTransactionOrigin = 'canvas' | 'toolbar' | 'agent' | 'system';
 export type EditorHistoryMode = 'record' | 'neutral';
@@ -20,7 +92,7 @@ export type SlideElementAlignCommand =
   | 'center';
 
 export type EditorOperation =
-  | { type: 'slide.update'; patch: Partial<Omit<Slide, 'elements' | 'animations'>> }
+  | { type: 'slide.update'; patch: Omit<Partial<Slide>, 'id' | 'elements' | 'animations'> }
   | { type: 'element.add'; element: PPTElement; index?: number }
   | { type: 'element.update'; elementId: string; patch: ElementPatch }
   | {
@@ -132,9 +204,7 @@ function applyOperation(content: SlideContent, operation: EditorOperation): void
   const elements = content.canvas.elements;
   switch (operation.type) {
     case 'slide.update': {
-      if ('elements' in operation.patch || 'animations' in operation.patch) {
-        throw new Error('slide.update cannot mutate elements or animations');
-      }
+      assertMutableSlidePatch(operation.patch);
       Object.assign(content.canvas, operation.patch);
       return;
     }
@@ -202,19 +272,21 @@ function applyOperation(content: SlideContent, operation: EditorOperation): void
       return;
     }
     case 'element.removeProps': {
+      const element = requireElement(elements, operation.elementId, operation.type);
       for (const propName of operation.propNames) {
         if (IMMUTABLE_ELEMENT_PROPERTIES.has(propName)) {
           throw new Error(
             `${operation.type} cannot remove immutable property ${JSON.stringify(propName)}`,
           );
         }
+        if (REQUIRED_ELEMENT_PROPERTIES[element.type].has(propName)) {
+          throw new Error(
+            `${operation.type} cannot remove required property ${JSON.stringify(propName)} from ${element.type} elements`,
+          );
+        }
       }
-      const element = requireElement(
-        elements,
-        operation.elementId,
-        operation.type,
-      ) as unknown as Record<string, unknown>;
-      for (const propName of operation.propNames) delete element[propName];
+      const mutableElement = element as unknown as Record<string, unknown>;
+      for (const propName of operation.propNames) delete mutableElement[propName];
       return;
     }
     case 'text.updateContent': {
@@ -256,6 +328,17 @@ function assertMutableElementPatch(operation: string, patch: object): void {
   for (const property of Object.keys(patch)) {
     if (IMMUTABLE_ELEMENT_PROPERTIES.has(property)) {
       throw new Error(`${operation} cannot mutate immutable property ${JSON.stringify(property)}`);
+    }
+  }
+}
+
+function assertMutableSlidePatch(patch: object): void {
+  for (const property of Object.keys(patch)) {
+    if (IMMUTABLE_SLIDE_PROPERTIES.has(property)) {
+      throw new Error(`slide.update cannot mutate immutable property ${JSON.stringify(property)}`);
+    }
+    if (property === 'elements' || property === 'animations') {
+      throw new Error('slide.update cannot mutate elements or animations');
     }
   }
 }

@@ -108,6 +108,16 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
     applyOp: (op) => {
       const { history } = get();
       if (!history) return;
+      // Legacy toolbar actions may arrive after their selected element was
+      // deleted. Keep that one-operation UI path a silent no-op as before;
+      // explicit transactions remain strict so callers cannot hide invalid
+      // batch operations behind this compatibility behavior.
+      if (
+        'elementId' in op &&
+        !history.present.canvas.elements.some((element) => element.id === op.elementId)
+      ) {
+        return;
+      }
       replace(
         applyEditorTransaction(history, {
           origin: 'toolbar',

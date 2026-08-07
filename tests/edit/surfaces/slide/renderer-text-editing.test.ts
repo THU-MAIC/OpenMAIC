@@ -43,10 +43,7 @@ describe('renderer text editing adapter', () => {
     useSlideEditSession.setState({ sceneId: null, history: null, gestureActive: false });
   });
 
-  it.each([
-    ['record'],
-    ['neutral'],
-  ] as const)('commits %s content as a transaction', (history) => {
+  it.each([['record'], ['neutral']] as const)('commits %s content as a transaction', (history) => {
     const applyTransaction = vi.spyOn(useSlideEditSession.getState(), 'applyTransaction');
     const change: TextContentChange = {
       intent: {
@@ -64,7 +61,9 @@ describe('renderer text editing adapter', () => {
       expect.objectContaining({
         origin: 'canvas',
         history,
-        operations: [expect.objectContaining({ type: 'text.updateContent', content: '<p>After</p>' })],
+        operations: [
+          expect.objectContaining({ type: 'text.updateContent', content: '<p>After</p>' }),
+        ],
       }),
     );
   });

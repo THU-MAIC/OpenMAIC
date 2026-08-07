@@ -81,6 +81,10 @@ describe('editor transaction core', () => {
 
   it.each([
     {
+      operation: { type: 'slide.update', patch: { id: 'other-slide' } },
+      message: 'slide.update cannot mutate immutable property "id"',
+    },
+    {
       operation: { type: 'element.update', elementId: 'text-1', patch: { id: 'other-id' } },
       message: 'element.update cannot mutate immutable property "id"',
     },
@@ -92,7 +96,15 @@ describe('editor transaction core', () => {
       operation: { type: 'element.removeProps', elementId: 'text-1', propNames: ['id'] },
       message: 'element.removeProps cannot remove immutable property "id"',
     },
-  ] as const)('rejects immutable element fields', ({ operation, message }) => {
+    {
+      operation: { type: 'element.removeProps', elementId: 'text-1', propNames: ['left'] },
+      message: 'element.removeProps cannot remove required property "left" from text elements',
+    },
+    {
+      operation: { type: 'element.removeProps', elementId: 'text-1', propNames: ['content'] },
+      message: 'element.removeProps cannot remove required property "content" from text elements',
+    },
+  ] as const)('rejects immutable and required fields', ({ operation, message }) => {
     const original = slideContent();
     const transaction = createEditorTransaction({
       origin: 'agent',

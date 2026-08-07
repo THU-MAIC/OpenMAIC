@@ -1,11 +1,6 @@
 import { nanoid } from 'nanoid';
 import type { PPTElement } from '@openmaic/dsl';
-import type {
-  AlignCommand,
-  EditIntent,
-  ReorderCommand,
-  Selection,
-} from '@openmaic/editor/react';
+import type { AlignCommand, EditIntent, ReorderCommand, Selection } from '@openmaic/editor/react';
 import type { SlideContent } from '@/lib/types/stage';
 import {
   createRendererElementClipboard,

@@ -12,6 +12,39 @@ export const EDITING_UI_STYLES = `
   box-sizing: inherit;
 }
 
+/* ProseMirror is rendered by the editor package, so its editing-state rules
+   live here rather than in the read-only renderer package. */
+.renderer-prosemirror-editor {
+  cursor: text;
+}
+
+.renderer-prosemirror-editor :focus,
+.renderer-prosemirror-editor :focus-visible {
+  outline: none;
+}
+
+.renderer-prosemirror-editor ul {
+  list-style-position: outside !important;
+  padding-inline-start: 1.5rem !important;
+}
+
+.renderer-prosemirror-editor ul:not([style*='list-style-type']) {
+  list-style-type: disc !important;
+}
+
+.renderer-prosemirror-editor ol {
+  list-style-position: outside !important;
+  padding-inline-start: 1.5rem !important;
+}
+
+.renderer-prosemirror-editor ol:not([style*='list-style-type']) {
+  list-style-type: decimal !important;
+}
+
+.renderer-prosemirror-editor li {
+  display: list-item !important;
+}
+
 .maic-editing-ui-text-toolbar,
 .maic-editing-ui-line-toolbar,
 .maic-editing-ui-element-toolbar {

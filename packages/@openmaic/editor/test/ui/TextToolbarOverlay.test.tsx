@@ -2,11 +2,7 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TextFormatState } from '../../src/react/text/types';
-import {
-  computeToolbarPosition,
-  LineToolbarOverlay,
-  TextToolbarOverlay,
-} from '../../src/ui';
+import { computeToolbarPosition, LineToolbarOverlay, TextToolbarOverlay } from '../../src/ui';
 import type { PPTLineElement } from '@openmaic/dsl';
 
 const format: TextFormatState = {
