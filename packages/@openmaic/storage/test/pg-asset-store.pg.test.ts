@@ -40,18 +40,18 @@ function transactionFor(pool: Pool): WithTransaction {
   };
 }
 
-class SignalingPgAssetByteStore extends PgAssetByteStore {
-  constructor(
-    queryable: Queryable,
-    private readonly started: () => void,
-  ) {
-    super(queryable);
+async function waitForLockWaiter(pool: { query: Queryable['query'] }): Promise<void> {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    const waiting = await pool.query(
+      `SELECT 1 FROM pg_stat_activity
+        WHERE wait_event_type = 'Lock' AND datname = current_database()`,
+    );
+    if (waiting.rows.length > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
   }
-
-  override async write(...args: Parameters<PgAssetByteStore['write']>): Promise<void> {
-    this.started();
-    await super.write(...args);
-  }
+  throw new Error(
+    'no backend blocked on a lock: the adopting put never contended for the blob row',
+  );
 }
 
 describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
@@ -139,17 +139,17 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
 
     const collection = collector.collect();
     await rowLocked;
-    let writeStarted!: () => void;
-    const writing = new Promise<void>((resolve) => {
-      writeStarted = resolve;
-    });
-    const adoptingBytes = new SignalingPgAssetByteStore(pool as Queryable, writeStarted);
+
+    // The adopting put blocks on the collector's row lock before it can write
+    // any bytes -- claim first, then write, is the ordering under test. Observe
+    // a backend actually waiting on a lock rather than sleeping or signalling
+    // off an implementation detail.
     const adopter = new PgAssetStore(pool as Queryable, {
-      byteStore: adoptingBytes,
+      byteStore: bytes,
       withTransaction: transactionFor(pool),
     });
     const adoption = adopter.put(principal, data);
-    await writing;
+    await waitForLockWaiter(pool);
     release();
 
     expect(await collection).toBe(1);
@@ -159,28 +159,26 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
     );
   });
 
-  test('collects a PostgreSQL byte orphan left by a failed registry transaction', async () => {
+  test('a failed registry transaction leaves no PostgreSQL bytes behind', async () => {
+    // This byte layer writes through the registry's own transaction, so a
+    // rollback takes the bytes with it and there is no orphan to collect. An
+    // object store cannot join that transaction and does strand one; that case
+    // is deployment housekeeping, not reference counting.
     const data = new Blob(['postgres orphan']);
     const { contentHash } = await contentHashOf(data);
     const failing = new PgAssetStore(pool as Queryable, {
       byteStore: bytes,
-      withTransaction: async () => {
-        throw new Error('injected failure');
-      },
+      withTransaction: (body) =>
+        transactionFor(pool)(async (queryable) => {
+          await body(queryable);
+          throw new Error('injected failure after the body');
+        }) as Promise<never>,
     });
-    await expect(failing.put(principal, data)).rejects.toThrow(/registry put failed/);
-    await pool.query(
-      `UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'
-        WHERE content_hash = $1`,
-      [contentHash],
-    );
 
-    const collector = new AssetCollector(pool as Queryable, bytes, {
-      graceMs: 0,
-      now: () => new Date('2026-01-01T00:00:00.000Z'),
-      withTransaction: transactionFor(pool),
-    });
-    expect(await collector.collect()).toBe(1);
+    await expect(failing.put(principal, data)).rejects.toThrow(/registry put failed/);
+
+    expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+    expect((await pool.query('SELECT * FROM asset_blobs')).rows).toEqual([]);
     expect(await bytes.read(contentHash)).toBeNull();
   });
 });
