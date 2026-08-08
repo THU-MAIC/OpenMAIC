@@ -282,7 +282,14 @@ export function cloneCanonicalJson<T>(value: T): T {
     const object = objectValue(input);
     if (!object) return input;
     const output: Record<string, unknown> = {};
-    for (const key of Object.keys(object).sort()) output[key] = clone(object[key]);
+    for (const key of Object.keys(object).sort()) {
+      Object.defineProperty(output, key, {
+        value: clone(object[key]),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
     return output;
   };
   return clone(value) as T;

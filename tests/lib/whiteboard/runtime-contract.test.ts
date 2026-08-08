@@ -213,6 +213,21 @@ describe('whiteboard RuntimeStore payload contract', () => {
     expect(await sha256Canonical(copy)).toBe(before);
     expect(await sha256Canonical({ b: 2, a: 1 })).toBe(await sha256Canonical({ a: 1, b: 2 }));
   });
+
+  it('preserves own __proto__ keys as plain data during canonical cloning', () => {
+    const source = JSON.parse(
+      '{"nested":{"safe":true,"__proto__":0},"__proto__":"root"}',
+    ) as Record<string, unknown>;
+    const copy = cloneCanonicalJson(source);
+    const nested = copy.nested as Record<string, unknown>;
+
+    expect(Object.getPrototypeOf(copy)).toBe(Object.prototype);
+    expect(Object.hasOwn(copy, '__proto__')).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(copy, '__proto__')?.value).toBe('root');
+    expect(Object.getPrototypeOf(nested)).toBe(Object.prototype);
+    expect(Object.hasOwn(nested, '__proto__')).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(nested, '__proto__')?.value).toBe(0);
+  });
 });
 
 describe('whiteboard RuntimeStore fold', () => {

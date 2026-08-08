@@ -239,6 +239,33 @@ describe('whiteboard RuntimeStore service', () => {
     expect((await runtime.read('stage-1')).whiteboard?.id).toBe('board-1');
   });
 
+  it.each(['payload', 'whiteboard'] as const)(
+    'rejects an own __proto__ key on the %s before persistence',
+    async (target) => {
+      const store = runtimeStore();
+      const runtime = service(store);
+      const candidate = payload();
+      const object = target === 'payload' ? candidate : candidate.operation.whiteboard;
+      Object.defineProperty(object, '__proto__', {
+        value: 0,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+
+      await expect(
+        runtime.append({
+          stageId: 'stage-1',
+          expectedLastSeq: null,
+          payload: candidate,
+        }),
+      ).rejects.toThrow('Invalid whiteboard runtime payload');
+      expect(
+        await store.listRecords(whiteboardRuntimeSessionId('stage-1', 'learner-1')),
+      ).toHaveLength(0);
+    },
+  );
+
   it('uses only the trusted service learner identity even if input has an extra learnerKey', async () => {
     const store = runtimeStore();
     const runtime = service(store, 'trusted-learner');
