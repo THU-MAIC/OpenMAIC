@@ -123,22 +123,18 @@ export const EXCLUDED_RENDERABLE_TYPES: readonly string[] = [
 /**
  * A store of allocated assets, partitioned by principal.
  *
- * Implementations MUST keep the byte write, the registry entry, the
- * cross-principal reference count, and any reclamation inside a single
- * transaction. That requirement is why there is no replaceable byte layer
- * inside an implementation: moving bytes out of the transactional store
- * replaces atomicity with a two-phase write plus reconciliation, which is a
- * different correctness model rather than a different backend. A store built
- * on object storage is a separate implementation of this interface.
+ * Server implementations write bytes before the registry transaction and
+ * reclaim them only through an offline collector. The registry transaction
+ * owns ids, principals, metadata, revisions, and the reference-count decision;
+ * the byte layer may live in PostgreSQL or an object store. A crash between the
+ * byte write and the registry transaction may therefore leave harmless orphan
+ * bytes, but it must never leave a registry entry that points at bytes which
+ * were not stored.
  *
- * One transaction is necessary but not sufficient. Unlike IndexedDB, a SQL
- * transaction at a typical default isolation level does not serialize a
- * deduplicating write against a concurrent reclamation of the same bytes, so an
- * implementation must additionally serialize the two on the byte row — a
- * removal locking the row before it counts, and a write acquiring that same
- * lock through a single statement that behaves identically whether or not the
- * row existed. Locking by reading the row and branching on the result would
- * satisfy this and violate the allocation rule below at the same time.
+ * Request paths never delete bytes and never explicitly lock a blob row.
+ * Collection performs the lock and re-check instead. This separation is what
+ * makes the byte layer replaceable without changing the observable store
+ * semantics.
  */
 export interface AssetStore {
   /**

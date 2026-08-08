@@ -103,7 +103,7 @@ function base32(digest: Uint8Array, alphabet: string): string {
   return encoded;
 }
 
-async function commonDigestEncodings(data: Blob): Promise<string[]> {
+export async function commonDigestEncodings(data: Blob): Promise<string[]> {
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await data.arrayBuffer()));
   const binary = String.fromCharCode(...digest);
   const base64 = btoa(binary);
@@ -118,7 +118,7 @@ async function commonDigestEncodings(data: Blob): Promise<string[]> {
   ];
 }
 
-async function expectNoDigestSubstring(id: AssetRef, data: Blob): Promise<void> {
+export async function expectNoDigestSubstring(id: AssetRef, data: Blob): Promise<void> {
   const minimumLeakLength = 12;
   for (const encoding of await commonDigestEncodings(data)) {
     for (const idForm of new Set([id, id.toLowerCase()])) {

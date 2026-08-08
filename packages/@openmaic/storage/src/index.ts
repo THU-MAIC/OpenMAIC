@@ -35,6 +35,27 @@ export {
 } from './kv/http.js';
 export { BrowserAssetStore, type BrowserAssetStoreOptions } from './asset/browser-store.js';
 export { newAssetId, toAssetId, type AssetId } from './asset/id.js';
+export {
+  AssetNotFoundError,
+  AssetQuotaExceededError,
+  DEFAULT_RENDERABLE_TYPES,
+  EXCLUDED_RENDERABLE_TYPES,
+  type AssetBytes,
+  type AssetPrincipal,
+  type AssetStore,
+} from './asset/types.js';
+export {
+  ASSET_PG_SCHEMA,
+  PgAssetStore,
+  ensureAssetSchema,
+  type PgAssetStoreOptions,
+} from './asset/pg.js';
+export { PgAssetByteStore } from './asset/pg-bytes.js';
+export {
+  AssetCollector,
+  DEFAULT_ASSET_COLLECTION_GRACE_MS,
+  type AssetCollectorOptions,
+} from './asset/collector.js';
 
 export {
   kvPersistStorage,
