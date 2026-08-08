@@ -1,9 +1,17 @@
 /**
  * PostgreSQL registry for server assets over a pluggable byte layer.
  *
- * Byte writes precede registry transactions. Request paths never delete bytes;
- * the offline collector is the only reclaimer. `withTransaction` must pin all
- * queries in its body to one freshly checked-out transaction.
+ * Within a write, the blob row is claimed first, then the bytes are written,
+ * then the entry that references them. The order is load-bearing at both ends:
+ * claiming the row first serializes the write against the collector, which
+ * could otherwise delete those bytes while this upsert waited for the lock, and
+ * writing bytes before the entry keeps every surviving entry backed by bytes
+ * that were actually stored. The byte write is unconditional, so both existence
+ * paths emit the same statements.
+ *
+ * Request paths never delete bytes; the offline collector is the only reclaimer.
+ * `withTransaction` must pin all queries in its body to one freshly checked-out
+ * transaction.
  */
 import type { AssetMeta, AssetRef, BinaryBlob } from '@openmaic/dsl';
 import { contentHashOf, type ContentHash } from './blob.js';
@@ -226,11 +234,6 @@ export class PgAssetStore implements AssetStore {
     const { contentHash, bytes: buffer } = await contentHashOf(data);
     const bytes = byteView(buffer);
     await this.assertPutQuota(principal, bytes.byteLength);
-    try {
-      await this.byteStore.write(contentHash, bytes);
-    } catch {
-      throw registryFailure('put');
-    }
     let id: AssetId;
     try {
       id = newAssetId();
@@ -248,9 +251,13 @@ export class PgAssetStore implements AssetStore {
                  byte_size = EXCLUDED.byte_size`,
           [contentHash, bytes.byteLength],
         );
-        // The collector may have deleted the first write while this upsert was
-        // waiting for its row lock. Rewriting after coordination closes that
-        // interleaving without branching on prior byte existence.
+        // Bytes are written only after the upsert above has taken the blob
+        // row's lock. Writing before it instead would not be safe: the
+        // collector can hold that lock, delete those bytes, and commit while
+        // this upsert waits, leaving a fresh entry pointing at nothing. The
+        // write is unconditional, so both existence paths still emit the same
+        // sequence. The entry is inserted after it, so no row ever references
+        // bytes that were not stored first.
         await this.coordinatedWrite(queryable, contentHash, bytes);
         await queryable.query(
           `INSERT INTO asset_entries
@@ -329,11 +336,6 @@ export class PgAssetStore implements AssetStore {
     const { contentHash, bytes: buffer } = await contentHashOf(data);
     const bytes = byteView(buffer);
     await this.assertReplaceQuota(principal, ref, bytes.byteLength);
-    try {
-      await this.byteStore.write(contentHash, bytes);
-    } catch {
-      throw registryFailure('replace');
-    }
 
     try {
       await this.transaction(async (queryable) => {

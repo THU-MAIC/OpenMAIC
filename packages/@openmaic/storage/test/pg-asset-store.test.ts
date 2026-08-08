@@ -173,18 +173,6 @@ class MemoryByteStore implements AssetByteStore {
   }
 }
 
-function serializedTransactions(db: PGlite): WithTransaction {
-  let tail = Promise.resolve();
-  return <T>(body: (queryable: Queryable) => Promise<T>): Promise<T> => {
-    const result = tail.then(() => db.transaction((tx: Queryable) => body(tx)));
-    tail = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
-  };
-}
-
 describe('PgAssetStore registry behavior with PGlite', () => {
   let db: PGlite;
   let byteStore: PgAssetByteStore;
@@ -277,7 +265,9 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     await expect(quotaStore.put(PRINCIPAL, blob('1'))).rejects.toBeInstanceOf(
       AssetQuotaExceededError,
     );
-    expect(writes).toEqual(['write', 'write']);
+    // One write for the accepted put, none for the rejected one: the quota check
+    // runs before any byte reaches the byte store.
+    expect(writes).toEqual(['write']);
   });
 
   test('put emits an identical statement sequence for existing and new bytes', async () => {
@@ -304,12 +294,10 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     const existing = await observe(true);
     const fresh = await observe(false);
     expect(existing).toEqual(fresh);
-    expect(existing.map((sql) => sql.split(' ')[0])).toEqual([
-      'INSERT',
-      'INSERT',
-      'UPDATE',
-      'INSERT',
-    ]);
+    // Blob row claimed, then bytes, then the entry. The byte write sits between
+    // the two registry writes deliberately: it must follow the upsert that takes
+    // the blob row's lock, and precede the entry that references it.
+    expect(existing.map((sql) => sql.split(' ')[0])).toEqual(['INSERT', 'UPDATE', 'INSERT']);
   });
 
   test('remove emits the same statements with and without another principal reference', async () => {
@@ -335,33 +323,67 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     expect(await observe(false)).toEqual(await observe(true));
   });
 
-  test('a failed registry transaction leaves an orphan which the collector removes', async () => {
-    const failing = new PgAssetStore(db, {
-      byteStore,
-      withTransaction: async () => {
-        throw new Error('injected transaction failure');
-      },
+  test('a transactional byte layer leaves nothing behind when the registry write fails', async () => {
+    // Its bytes are written through the registry's own transaction, so a
+    // rollback takes them with it. This layer has nothing to reconcile.
+    const local = new PGlite();
+    await local.waitReady;
+    await ensureAssetSchema(local);
+    const layer = new PgAssetByteStore(local);
+    const failing = new PgAssetStore(local, {
+      byteStore: layer,
+      withTransaction: (body) =>
+        local.transaction(async (tx: Queryable) => {
+          await body(tx);
+          throw new Error('injected failure after the body committed nothing');
+        }) as Promise<never>,
     });
     const data = blob('crash window');
     const { contentHash } = await contentHashOf(data);
-    await expect(failing.put(PRINCIPAL, data)).rejects.toThrow(/registry put failed/);
-    expect((await db.query('SELECT * FROM asset_entries')).rows).toEqual([]);
-    expect(await byteStore.read(contentHash)).toEqual(bytes('crash window'));
 
-    await db.query(
-      `UPDATE asset_blobs
-          SET unreferenced_at = '2000-01-01T00:00:00.000Z'
-        WHERE content_hash = $1`,
-      [contentHash],
-    );
-    const collector = new AssetCollector(db, byteStore, {
-      withTransaction: transactions(db),
+    await expect(failing.put(PRINCIPAL, data)).rejects.toThrow(/registry put failed/);
+
+    expect((await local.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+    expect((await local.query('SELECT * FROM asset_blobs')).rows).toEqual([]);
+    expect(await layer.read(contentHash)).toBeNull();
+    await local.close();
+  });
+
+  test('a non-transactional byte layer leaves an orphan the collector cannot see', async () => {
+    // An object store cannot join the registry transaction, so a rollback
+    // strands its bytes -- and strands them with no blob row, which is what
+    // puts them beyond reference counting. Recovering them is deployment
+    // housekeeping (a lifecycle rule or a bucket-versus-table reconciliation),
+    // not something the collector can do.
+    const local = new PGlite();
+    await local.waitReady;
+    await ensureAssetSchema(local);
+    const layer = new MemoryByteStore();
+    const failing = new PgAssetStore(local, {
+      byteStore: layer,
+      withTransaction: (body) =>
+        local.transaction(async (tx: Queryable) => {
+          await body(tx);
+          throw new Error('injected failure after the body committed nothing');
+        }) as Promise<never>,
+    });
+    const data = blob('crash window');
+    const { contentHash } = await contentHashOf(data);
+
+    await expect(failing.put(PRINCIPAL, data)).rejects.toThrow(/registry put failed/);
+
+    expect((await local.query('SELECT * FROM asset_entries')).rows).toEqual([]);
+    expect((await local.query('SELECT * FROM asset_blobs')).rows).toEqual([]);
+    expect(await layer.read(contentHash)).toEqual(bytes('crash window'));
+
+    const collector = new AssetCollector(local, layer, {
+      withTransaction: transactions(local),
       graceMs: 0,
       now: () => new Date('2026-01-01T00:00:00.000Z'),
     });
-    expect(await collector.collect()).toBe(1);
-    expect(await byteStore.read(contentHash)).toBeNull();
-    expect((await db.query('SELECT * FROM asset_blobs')).rows).toEqual([]);
+    expect(await collector.collect()).toBe(0);
+    expect(await layer.read(contentHash)).toEqual(bytes('crash window'));
+    await local.close();
   });
 
   test('collector observes grace, re-checks references, and is re-runnable', async () => {
@@ -400,62 +422,52 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     );
   });
 
-  test('a put adopting bytes while the collector holds the row lock resolves afterwards', async () => {
+  test('put writes bytes unconditionally, even when they are already stored', async () => {
+    // This is what makes an adopting write safe against the collector. The
+    // collector can hold the blob row's lock, delete those bytes and commit
+    // while this put's upsert waits; the put then re-claims the row and writes
+    // again. A put that skipped the write when the bytes looked present would
+    // resolve to nothing -- and would also be branching on prior existence,
+    // which the allocation rule forbids.
     const local = new PGlite();
     await local.waitReady;
     await ensureAssetSchema(local);
-    const memory = new MemoryByteStore();
-    const serialized = serializedTransactions(local);
-    const registry = new PgAssetStore(local, { byteStore: memory, withTransaction: serialized });
-    const data = blob('adopting write');
-    const id = await registry.put(PRINCIPAL, data);
-    await registry.remove(PRINCIPAL, id);
-    await local.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+    const layer = new MemoryByteStore();
+    let writes = 0;
+    layer.onWrite = () => {
+      writes += 1;
+    };
+    const registry = new PgAssetStore(local, options(local, layer));
 
-    let locked!: () => void;
-    const lockHeld = new Promise<void>((resolve) => {
-      locked = resolve;
-    });
-    let release!: () => void;
-    const mayCollect = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const collector = new AssetCollector(local, memory, {
+    await registry.put(PRINCIPAL, blob('unconditional'));
+    await registry.put(PRINCIPAL, blob('unconditional'));
+
+    expect(writes).toBe(2);
+    await local.close();
+  });
+
+  test('a put re-stores bytes the collector has already removed', async () => {
+    const local = new PGlite();
+    await local.waitReady;
+    await ensureAssetSchema(local);
+    const layer = new MemoryByteStore();
+    const registry = new PgAssetStore(local, options(local, layer));
+    const data = blob('adopting write');
+    const { contentHash } = await contentHashOf(data);
+
+    const first = await registry.put(PRINCIPAL, data);
+    await registry.remove(PRINCIPAL, first);
+    await local.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+    const collector = new AssetCollector(local, layer, {
+      withTransaction: transactions(local),
       graceMs: 0,
       now: () => new Date('2026-01-01T00:00:00.000Z'),
-      withTransaction: (body) =>
-        serialized((queryable) =>
-          body({
-            async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
-              text: string,
-              params?: unknown[],
-            ): Promise<QueryResult<TRow>> {
-              const result = await queryable.query<TRow>(text, params);
-              if (text.includes('FOR UPDATE')) {
-                locked();
-                await mayCollect;
-              }
-              return result;
-            },
-          }),
-        ),
     });
+    expect(await collector.collect()).toBe(1);
+    expect(await layer.read(contentHash)).toBeNull();
 
-    const collection = collector.collect();
-    await lockHeld;
-    let firstWrite!: () => void;
-    const bytesWritten = new Promise<void>((resolve) => {
-      firstWrite = resolve;
-    });
-    memory.onWrite = firstWrite;
-    const adoption = registry.put(PRINCIPAL, data);
-    await bytesWritten;
-    memory.onWrite = undefined;
-    release();
-
-    expect(await collection).toBe(1);
-    const adoptedId = await adoption;
-    expect(await registry.resolve(PRINCIPAL, adoptedId)).toMatchObject({
+    const adopted = await registry.put(PRINCIPAL, data);
+    expect(await registry.resolve(PRINCIPAL, adopted)).toMatchObject({
       bytes: bytes('adopting write'),
       revision: 1,
     });
