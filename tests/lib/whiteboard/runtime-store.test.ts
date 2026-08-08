@@ -247,7 +247,7 @@ describe('whiteboard RuntimeStore service', () => {
       const candidate = payload();
       const object = target === 'payload' ? candidate : candidate.operation.whiteboard;
       Object.defineProperty(object, '__proto__', {
-        value: 0,
+        value: null,
         enumerable: true,
         writable: true,
         configurable: true,
