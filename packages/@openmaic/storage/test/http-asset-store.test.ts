@@ -425,6 +425,45 @@ describe('asset HTTP handler contract', () => {
     expect(response.status).toBe(400);
   });
 
+  test('malformed quoted dispositions are rejected rather than trusted', async () => {
+    // Each of these would have been read as a real part name by the tokenizer
+    // as first written -- an unterminated quote running to end of header,
+    // trailing junk after the closing quote, and an extended form competing
+    // with a plain one. All three recreate the parser differential the
+    // tokenizer exists to remove.
+    const boundary = 'asset-test-boundary';
+    const dispositions = [
+      ['unterminated quote', 'form-data; name="meta', 'form-data; name="bytes'],
+      ['trailing junk', 'form-data; name="meta"junk', 'form-data; name="bytes"junk'],
+      [
+        'competing extended form',
+        `form-data; name=meta; name*=UTF-8''meta`,
+        `form-data; name=bytes; name*=UTF-8''bytes`,
+      ],
+    ] as const;
+
+    for (const [label, metaDisposition, bytesDisposition] of dispositions) {
+      const body = Buffer.concat([
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: ${metaDisposition}\r\n` +
+            'Content-Type: application/json\r\n\r\n{}\r\n',
+        ),
+        Buffer.from(`--${boundary}\r\nContent-Disposition: ${bytesDisposition}\r\n\r\npayload\r\n`),
+        Buffer.from(`--${boundary}--\r\n`),
+      ]);
+      const response = await rawRequest({
+        method: 'POST',
+        path: '/assets',
+        headers: {
+          'content-type': `multipart/form-data; boundary=${boundary}`,
+          'x-asset-store-id': `disposition-${namespace++}`,
+        },
+        body,
+      });
+      expect(response.status, label).toBe(400);
+    }
+  });
+
   test('exceeding maxParts is a payload limit, not a validation failure', async () => {
     const limited = await startAssetConformanceServer({ maxParts: 2 });
     try {

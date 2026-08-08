@@ -184,7 +184,10 @@ export class PgAssetStore implements AssetStore {
    * configuration, never on data, so it discloses nothing.
    */
   private async lockPrincipal(queryable: Queryable, principal: AssetPrincipal): Promise<void> {
-    await queryable.query('SELECT pg_advisory_xact_lock(hashtext($1), 0)', [principal.key]);
+    // hashtextextended is 64-bit: hashtext is 32-bit, and colliding principals
+    // would block each other for the whole transaction -- which spans a byte
+    // write that may be a network upload.
+    await queryable.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [principal.key]);
   }
 
   private async assertPutQuota(
@@ -417,7 +420,12 @@ export class PgAssetStore implements AssetStore {
         return Number(updated.rows[0]!.revision);
       });
     } catch (error) {
-      if (error instanceof AssetNotFoundError) throw error;
+      // Both typed errors have to survive: the quota check moved inside the
+      // transaction, so collapsing it here would answer 500 for a condition the
+      // contract gives a status and a code.
+      if (error instanceof AssetNotFoundError || error instanceof AssetQuotaExceededError) {
+        throw error;
+      }
       throw registryFailure('replace');
     }
   }

@@ -251,6 +251,19 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     expect(await store.resolve(PRINCIPAL, id)).toBeNull();
   });
 
+  test('an over-quota replace raises the quota error rather than a generic failure', async () => {
+    // The quota check runs inside the write transaction, so the transaction's
+    // catch has to let this error through. Collapsing it would answer 500 for
+    // a condition the contract gives a status and a code of its own.
+    const quotaStore = new PgAssetStore(db, options(db, byteStore, { quotaBytes: 5 }));
+    const id = await quotaStore.put(PRINCIPAL, blob('1'));
+
+    await expect(quotaStore.replace(PRINCIPAL, id, blob('123456'))).rejects.toBeInstanceOf(
+      AssetQuotaExceededError,
+    );
+    expect((await quotaStore.resolve(PRINCIPAL, id))?.bytes).toEqual(bytes('1'));
+  });
+
   test('logical quota counts every principal entry and runs before byte writes', async () => {
     const writes: string[] = [];
     const observingBytes: AssetByteStore = {
