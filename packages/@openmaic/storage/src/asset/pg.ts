@@ -326,7 +326,7 @@ export class PgAssetStore implements AssetStore {
     ref: AssetId,
     data: BinaryBlob,
     meta?: AssetMeta,
-  ): Promise<void> {
+  ): Promise<number> {
     if (!isLosslessJsonString(ref) || !isLosslessJsonString(principal.key)) {
       throw new AssetNotFoundError();
     }
@@ -338,7 +338,7 @@ export class PgAssetStore implements AssetStore {
     await this.assertReplaceQuota(principal, ref, bytes.byteLength);
 
     try {
-      await this.transaction(async (queryable) => {
+      return await this.transaction(async (queryable) => {
         const existing = await queryable.query<EntryRow>(
           `SELECT content_hash, mime, meta, revision
              FROM asset_entries
@@ -359,23 +359,26 @@ export class PgAssetStore implements AssetStore {
         );
         await this.coordinatedWrite(queryable, contentHash, bytes);
 
+        let updated;
         if (storedMeta === undefined) {
-          await queryable.query(
+          updated = await queryable.query<{ revision: number | string }>(
             `UPDATE asset_entries
                 SET content_hash = $3,
                     mime = CASE WHEN $4 = '' THEN mime ELSE $4 END,
                     revision = revision + 1
-              WHERE id = $1 AND principal = $2`,
+              WHERE id = $1 AND principal = $2
+              RETURNING revision`,
             [ref, principal.key, contentHash, data.type],
           );
         } else {
-          await queryable.query(
+          updated = await queryable.query<{ revision: number | string }>(
             `UPDATE asset_entries
                 SET content_hash = $3,
                     mime = $4,
                     meta = $5::jsonb,
                     revision = revision + 1
-              WHERE id = $1 AND principal = $2`,
+              WHERE id = $1 AND principal = $2
+              RETURNING revision`,
             [ref, principal.key, contentHash, replacementMime, encodedMeta],
           );
         }
@@ -389,6 +392,7 @@ export class PgAssetStore implements AssetStore {
               )`,
           [oldEntry.content_hash],
         );
+        return Number(updated.rows[0]!.revision);
       });
     } catch (error) {
       if (error instanceof AssetNotFoundError) throw error;

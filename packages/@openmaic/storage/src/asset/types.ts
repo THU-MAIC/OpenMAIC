@@ -213,15 +213,17 @@ export interface AssetStore {
    * that folded omission into an empty object would erase that provenance on
    * every regeneration.
    *
-   * Advances the entry's revision. Rejects an unknown id and another
-   * principal's id identically, with {@link AssetNotFoundError}.
+   * Advances and returns the entry's revision. The exact value lets an HTTP
+   * handler report the revision produced by this write without a racy follow-up
+   * read. Rejects an unknown id and another principal's id identically, with
+   * {@link AssetNotFoundError}.
    */
   replace(
     principal: AssetPrincipal,
     ref: AssetId,
     data: BinaryBlob,
     meta?: AssetMeta,
-  ): Promise<void>;
+  ): Promise<number>;
 }
 
 /**

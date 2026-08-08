@@ -18,7 +18,8 @@
  * transaction, and its inline reclamation is what keeps them there. A server
  * backend collects bytes offline instead, which lets its byte layer be
  * pluggable — a column of the transactional store, or an object store keyed by
- * content hash; no HTTP asset backend is exposed here yet.
+ * content hash. The HTTP backend downloads bytes through authenticated fetches
+ * and mints object URLs locally.
  */
 export type { DeviceSafeKVStore, KVScope, KVStore, LocalKVStore } from './kv/types.js';
 export { assertKVScope, DEFAULT_KV_SCOPE, KVScopeViolationError } from './kv/types.js';
@@ -34,6 +35,13 @@ export {
   type HttpKVStoreOptions,
 } from './kv/http.js';
 export { BrowserAssetStore, type BrowserAssetStoreOptions } from './asset/browser-store.js';
+export {
+  HttpAssetStore,
+  HttpAssetStoreError,
+  type HttpAssetHeadersContext,
+  type HttpAssetHeadersHook,
+  type HttpAssetStoreOptions,
+} from './asset/http.js';
 export { newAssetId, toAssetId, type AssetId } from './asset/id.js';
 export {
   AssetNotFoundError,

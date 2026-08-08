@@ -136,7 +136,7 @@ export async function expectNoDigestSubstring(id: AssetRef, data: Blob): Promise
  * an ordinary miss — the id domain is opaque and unvalidated, so there is no
  * such thing as a malformed id, only an id nothing is stored under.
  */
-const FOREIGN_IDS: ReadonlyArray<readonly [label: string, id: string]> = [
+export const FOREIGN_IDS: ReadonlyArray<readonly [label: string, id: string]> = [
   ['empty string', ''],
   ['whitespace', '   '],
   ['bare prefix', 'ast_'],
