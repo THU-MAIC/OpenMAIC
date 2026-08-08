@@ -1,3 +1,4 @@
+import { validateScene, type WidgetConfigBase } from '@openmaic/dsl';
 import type { DocumentStore } from '@openmaic/storage';
 import { describe, expect, test, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
@@ -11,7 +12,8 @@ import { getDocumentStore } from '@/lib/document-store/store';
 import type { AppDocument } from '@/lib/document-store/persistence-types';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import type { SceneOutline } from '@/lib/types/generation';
-import type { AppScene } from '@/lib/types/stage';
+import type { AppScene, InteractiveContent } from '@/lib/types/stage';
+import type { SimulationConfig } from '@/lib/types/widgets';
 import type { SceneRecord, StageOutlinesRecord, StageRecord } from '@/lib/utils/database';
 
 const stageRecord: StageRecord = {
@@ -206,6 +208,79 @@ describe('app document validators', () => {
       expect(result.errors).toContainEqual(expect.objectContaining({ path: '/content/type' }));
   });
 
+  test('accepts generated interactive HTML with an empty URL', () => {
+    expect(
+      validateAppScene({
+        ...interactiveScene(),
+        content: { type: 'interactive', html: '<!doctype html><main>Widget</main>', url: '' },
+      }),
+    ).toEqual({ valid: true });
+  });
+
+  test('accepts stored interactive widget config without a type', () => {
+    const scene = {
+      ...interactiveScene(),
+      content: {
+        type: 'interactive',
+        html: '<!doctype html><main>Diagram</main>',
+        widgetType: 'diagram',
+        widgetConfig: { nodes: [], edges: [], revealOrder: [] },
+      },
+    } as unknown as AppScene;
+
+    expect(validateAppScene(scene)).toEqual({ valid: true });
+    expect(validateScene(scene).valid).toBe(false);
+  });
+
+  test('rejects a primitive widget config that would crash hydration', () => {
+    const scene = {
+      ...interactiveScene(),
+      content: {
+        type: 'interactive',
+        html: '<!doctype html><main>Broken</main>',
+        widgetType: 'diagram',
+        widgetConfig: 'diagram',
+      },
+    } as unknown as AppScene;
+
+    const result = validateAppScene(scene);
+    expect(result.valid).toBe(false);
+    expect(
+      result.valid === false && result.errors.some((e) => e.path === '/content/widgetConfig'),
+    ).toBe(true);
+  });
+
+  test('accepts an unknown widget type at the app write boundary', () => {
+    const scene = {
+      ...interactiveScene(),
+      content: {
+        type: 'interactive',
+        html: '<!doctype html><main>Future widget</main>',
+        widgetType: 'future-kind',
+      },
+    } as unknown as AppScene;
+
+    expect(validateAppScene(scene)).toEqual({ valid: true });
+    expect(validateScene(scene).valid).toBe(false);
+  });
+
+  test('keeps canonical app interactive content compatible with the contract validator', () => {
+    const content: InteractiveContent = {
+      type: 'interactive',
+      html: '<!doctype html><main>Simulation</main>',
+    };
+    const scene: AppScene = {
+      id: 'interactive-contract-1',
+      stageId: 'stage-1',
+      title: 'Contract interactive',
+      order: 4,
+      type: 'interactive',
+      content,
+    };
+
+    expect(validateScene(JSON.parse(JSON.stringify(scene)))).toEqual({ valid: true });
+  });
+
   test('rejects stages carrying currentSceneId with a clear path', () => {
     const result = validateAppStage(stageRecord);
     expect(result.valid).toBe(false);
@@ -213,6 +288,13 @@ describe('app document validators', () => {
       expect(result.errors).toContainEqual(expect.objectContaining({ path: '/currentSceneId' }));
     }
   });
+});
+
+type Assert<T extends true> = T;
+
+test('SimulationConfig satisfies the contract widget config base', () => {
+  const assignable: Assert<SimulationConfig extends WidgetConfigBase ? true : false> = true;
+  expect(assignable).toBe(true);
 });
 
 describe('legacy scene canonicalization', () => {

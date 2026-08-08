@@ -10,9 +10,13 @@
 // `Scene` is re-exported as an alias of the app's fully-instantiated
 // `Scene<Action, AppSceneContent>`, so existing `import { Scene }` callers keep
 // the same semantics (actions are `Action[]`, content spans all four kinds).
-import type { Scene as DslScene, SceneContent as DslSceneContent } from '@openmaic/dsl';
+import type {
+  InteractiveContent as DslInteractiveContent,
+  Scene as DslScene,
+  SceneContent as DslSceneContent,
+} from '@openmaic/dsl';
 import type { Action } from '@/lib/types/action';
-import type { WidgetType, WidgetConfig } from '@/lib/types/widgets';
+import type { WidgetConfig } from '@/lib/types/widgets';
 import type { PBLProjectConfig } from '@/lib/pbl/types';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 
@@ -54,18 +58,10 @@ export type { Scene as SceneShape } from '@openmaic/dsl';
 /**
  * Interactive content - Interactive web page (iframe).
  *
- * App-level feature surface: kept here rather than in `@openmaic/dsl` because it
- * couples to Ultra-mode widget configs (`WidgetType` / `WidgetConfig`).
+ * The contract owns the shared interactive shape; the app supplies its richer
+ * Ultra-mode widget-config union through the contract's generic extension point.
  */
-export interface InteractiveContent {
-  type: 'interactive';
-  url: string; // URL of the interactive page
-  // Optional: embedded HTML content
-  html?: string;
-  // Ultra Mode widget fields
-  widgetType?: WidgetType;
-  widgetConfig?: WidgetConfig;
-}
+export type InteractiveContent = DslInteractiveContent<WidgetConfig>;
 
 /**
  * PBL content - Project-based learning.

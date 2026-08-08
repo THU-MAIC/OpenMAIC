@@ -453,6 +453,9 @@ importers:
 
   packages/@openmaic/generation:
     dependencies:
+      '@openmaic/dsl':
+        specifier: workspace:^
+        version: link:../dsl
       jsonrepair:
         specifier: ^3.13.2
         version: 3.13.3

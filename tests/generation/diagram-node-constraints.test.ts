@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { generateWidgetContent } from '@/lib/generation/scene-generator';
+import { extractWidgetConfig, generateWidgetContent } from '@/lib/generation/scene-generator';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
 import type { SceneOutline } from '@/lib/types/generation';
 
@@ -68,5 +68,27 @@ describe('diagram widget node constraints', () => {
     expect(prompt).not.toContain('## Node Count Constraint');
     expect(prompt).not.toContain('## Prescribed Nodes');
     expect(prompt).not.toContain('{{');
+  });
+});
+
+describe('extractWidgetConfig', () => {
+  const configHtml = (json: string) => `<!doctype html>
+<script type="application/json" id="widget-config">${json}</script>`;
+
+  test('seeds a missing type from the routed widget type', () => {
+    expect(
+      extractWidgetConfig(configHtml('{"nodes":[],"edges":[],"revealOrder":[]}'), 'diagram'),
+    ).toEqual({ type: 'diagram', nodes: [], edges: [], revealOrder: [] });
+  });
+
+  test('preserves an existing valid type', () => {
+    expect(extractWidgetConfig(configHtml('{"type":"game","questions":[]}'), 'diagram')).toEqual({
+      type: 'game',
+      questions: [],
+    });
+  });
+
+  test.each(['[]', '"diagram"', '42'])('drops non-object config JSON %s', (json) => {
+    expect(extractWidgetConfig(configHtml(json), 'diagram')).toBeUndefined();
   });
 });
