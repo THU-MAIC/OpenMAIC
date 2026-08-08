@@ -57,6 +57,25 @@ describe('S3AssetByteStore commands and failures', () => {
     await expect(store.read(contentHash)).resolves.toBeNull();
   });
 
+  test('a bucket-level 404 is a failure, not an absent object', async () => {
+    // NoSuchBucket, a misdirected endpoint, and a revoked access point all
+    // answer 404 while the bytes still exist. Reporting one as a miss would
+    // have the registry answer ASSET_NOT_FOUND for a live entry, and a caller
+    // that clears its reference on that turns an outage into data loss.
+    const failing = {
+      async send(): Promise<never> {
+        throw Object.assign(new Error('bucket is gone'), {
+          name: 'NoSuchBucket',
+          $metadata: { httpStatusCode: 404 },
+        });
+      },
+    };
+    const store = makeStore(failing as never);
+    const { contentHash } = await contentHashOf(new Blob(['still here']));
+
+    await expect(store.read(contentHash)).rejects.toThrow(/S3 asset byte read failed/);
+  });
+
   test('sanitizes SDK failures so the digest cannot escape', async () => {
     const data = new Blob(['secret failure bytes']);
     const { contentHash, bytes } = await contentHashOf(data);

@@ -4,6 +4,7 @@ import { contentHashOf } from '../src/asset/blob.js';
 import { AssetCollector } from '../src/asset/collector.js';
 import { PgAssetByteStore } from '../src/asset/pg-bytes.js';
 import {
+  AssetQuotaExceededError,
   PgAssetStore,
   ensureAssetSchema,
   type QueryResult,
@@ -157,6 +158,42 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
     expect((await adopter.resolve(principal, adoptedId))?.bytes).toEqual(
       new TextEncoder().encode('locked adoption'),
     );
+  });
+
+  test('concurrent writes cannot exceed a principal logical quota', async () => {
+    // A quota read on the pool is already stale when it is acted on: two
+    // concurrent writes both observe the old total and both pass. Enforcement
+    // has to happen inside the write transaction, behind a per-principal lock,
+    // which only a real connection pool can exercise -- PGlite is
+    // single-connection and cannot contend.
+    const quoted = new PgAssetStore(pool as Queryable, {
+      byteStore: bytes,
+      withTransaction: transactionFor(pool),
+      quotaBytes: 10,
+    });
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 4 }, (_, index) =>
+        quoted.put(principal, new Blob([`${index}`.repeat(6)])),
+      ),
+    );
+
+    const accepted = results.filter((result) => result.status === 'fulfilled');
+    const usage = await pool.query<{ total: string }>(
+      `SELECT COALESCE(SUM(blobs.byte_size), 0)::text AS total
+         FROM asset_entries AS entries
+         JOIN asset_blobs AS blobs ON blobs.content_hash = entries.content_hash
+        WHERE entries.principal = $1`,
+      [principal.key],
+    );
+
+    expect(accepted).toHaveLength(1);
+    expect(Number(usage.rows[0]!.total)).toBeLessThanOrEqual(10);
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        expect(result.reason).toBeInstanceOf(AssetQuotaExceededError);
+      }
+    }
   });
 
   test('a failed registry transaction leaves no PostgreSQL bytes behind', async () => {

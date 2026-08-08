@@ -173,11 +173,30 @@ export class PgAssetStore implements AssetStore {
       : this.byteStore.read(hash);
   }
 
-  private async assertPutQuota(principal: AssetPrincipal, addedBytes: number): Promise<void> {
+  /**
+   * Serialize this principal's writes before reading their usage.
+   *
+   * A quota read outside the write transaction is stale by the time it is
+   * used: two concurrent writes both observe the old total, both pass, and the
+   * principal ends up over quota by as much as the concurrency allows. The
+   * lock is transaction-scoped, so it releases on commit or rollback, and it
+   * is taken only when a quota is configured -- a branch on deployment
+   * configuration, never on data, so it discloses nothing.
+   */
+  private async lockPrincipal(queryable: Queryable, principal: AssetPrincipal): Promise<void> {
+    await queryable.query('SELECT pg_advisory_xact_lock(hashtext($1), 0)', [principal.key]);
+  }
+
+  private async assertPutQuota(
+    queryable: Queryable,
+    principal: AssetPrincipal,
+    addedBytes: number,
+  ): Promise<void> {
     if (this.quotaBytes === undefined) return;
+    await this.lockPrincipal(queryable, principal);
     let result;
     try {
-      result = await this.queryable.query<UsageRow>(
+      result = await queryable.query<UsageRow>(
         `SELECT COALESCE(SUM(blobs.byte_size), 0)::text AS logical_bytes
            FROM asset_entries AS entries
            JOIN asset_blobs AS blobs ON blobs.content_hash = entries.content_hash
@@ -192,14 +211,16 @@ export class PgAssetStore implements AssetStore {
   }
 
   private async assertReplaceQuota(
+    queryable: Queryable,
     principal: AssetPrincipal,
     ref: AssetId,
     replacementBytes: number,
   ): Promise<void> {
     if (this.quotaBytes === undefined) return;
+    await this.lockPrincipal(queryable, principal);
     let result;
     try {
-      result = await this.queryable.query<ReplaceUsageRow>(
+      result = await queryable.query<ReplaceUsageRow>(
         `SELECT current_blob.byte_size::text AS current_bytes,
                 usage.logical_bytes
            FROM asset_entries AS current_entry
@@ -233,7 +254,6 @@ export class PgAssetStore implements AssetStore {
     const mime = storedMeta.contentType ?? data.type;
     const { contentHash, bytes: buffer } = await contentHashOf(data);
     const bytes = byteView(buffer);
-    await this.assertPutQuota(principal, bytes.byteLength);
     let id: AssetId;
     try {
       id = newAssetId();
@@ -243,6 +263,9 @@ export class PgAssetStore implements AssetStore {
 
     try {
       await this.transaction(async (queryable) => {
+        // Inside the transaction, and before anything is written: a check on
+        // the pool is already stale when it is acted on.
+        await this.assertPutQuota(queryable, principal, bytes.byteLength);
         await queryable.query(
           `INSERT INTO asset_blobs (content_hash, byte_size, unreferenced_at)
            VALUES ($1, $2, NULL)
@@ -335,10 +358,9 @@ export class PgAssetStore implements AssetStore {
     const replacementMime = storedMeta?.contentType ?? data.type;
     const { contentHash, bytes: buffer } = await contentHashOf(data);
     const bytes = byteView(buffer);
-    await this.assertReplaceQuota(principal, ref, bytes.byteLength);
-
     try {
       return await this.transaction(async (queryable) => {
+        await this.assertReplaceQuota(queryable, principal, ref, bytes.byteLength);
         const existing = await queryable.query<EntryRow>(
           `SELECT content_hash, mime, meta, revision
              FROM asset_entries

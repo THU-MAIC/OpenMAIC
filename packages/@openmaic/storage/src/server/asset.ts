@@ -204,15 +204,68 @@ function parsePartHeaders(raw: Buffer): Map<string, string> {
   return headers;
 }
 
+/**
+ * Split a `Content-Disposition` value into its parameters, honouring quoted
+ * strings and backslash escapes.
+ *
+ * A regex scan of the raw header cannot do this, and the gap is exploitable
+ * rather than cosmetic: a `;` inside a quoted `filename` looks exactly like a
+ * parameter separator, so `filename="x; name=meta; y"` reads as a `name`
+ * parameter to a naive scanner while an RFC-aware intermediary sees an unnamed
+ * part. Two parsers disagreeing about which part is which is precisely the
+ * parser differential this contract requires be rejected.
+ *
+ * Returns pairs rather than a map so a repeated parameter stays visible;
+ * collapsing duplicates would hide a second `name`.
+ */
+function dispositionParameters(disposition: string): Array<[string, string]> {
+  const parameters: Array<[string, string]> = [];
+  let index = disposition.indexOf(';');
+  if (index < 0) return parameters;
+  index += 1;
+  while (index < disposition.length) {
+    while (index < disposition.length && /[\s;]/.test(disposition[index]!)) index += 1;
+    let name = '';
+    while (index < disposition.length && disposition[index] !== '=' && disposition[index] !== ';') {
+      name += disposition[index]!;
+      index += 1;
+    }
+    name = name.trim().toLowerCase();
+    if (disposition[index] !== '=') {
+      if (name !== '') parameters.push([name, '']);
+      continue;
+    }
+    index += 1;
+    let value = '';
+    if (disposition[index] === '"') {
+      index += 1;
+      while (index < disposition.length && disposition[index] !== '"') {
+        if (disposition[index] === '\\' && index + 1 < disposition.length) index += 1;
+        value += disposition[index]!;
+        index += 1;
+      }
+      index += 1;
+    } else {
+      while (index < disposition.length && disposition[index] !== ';') {
+        value += disposition[index]!;
+        index += 1;
+      }
+      value = value.trim();
+    }
+    if (name !== '') parameters.push([name, value]);
+  }
+  return parameters;
+}
+
 function partName(disposition: string | undefined): 'meta' | 'bytes' {
-  if (disposition === undefined || !/^form-data(?:\s*;|$)/i.test(disposition)) {
+  if (disposition === undefined || !/^\s*form-data\s*(?:;|$)/i.test(disposition)) {
     throw validationFailure('@openmaic/storage: multipart parts require form-data disposition');
   }
-  const names = [...disposition.matchAll(/(?:^|;)\s*name\s*=\s*(?:"([^"]*)"|([^\s;]+))/gi)];
-  if (names.length !== 1) {
+  const named = dispositionParameters(disposition).filter(([key]) => key === 'name');
+  if (named.length !== 1) {
     throw validationFailure('@openmaic/storage: multipart parts require exactly one name');
   }
-  const name = names[0]![1] ?? names[0]![2];
+  const name = named[0]![1];
   if (name !== 'meta' && name !== 'bytes') {
     throw validationFailure('@openmaic/storage: asset write body contains an unrecognized part');
   }
@@ -238,7 +291,11 @@ function parseMultipart(
   let offset = opening.length;
   while (true) {
     if (parts.length >= limits.maxParts) {
-      throw validationFailure('@openmaic/storage: asset write body contains too many parts');
+      // A declared resource limit, so it answers like the other three rather
+      // than as a validation failure.
+      throw payloadTooLarge(
+        `@openmaic/storage: asset write body exceeds maxParts (${limits.maxParts})`,
+      );
     }
     const headerEnd = body.indexOf('\r\n\r\n', offset, 'latin1');
     if (headerEnd < 0) throw validationFailure('@openmaic/storage: malformed multipart body');

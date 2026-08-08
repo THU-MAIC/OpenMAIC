@@ -395,6 +395,78 @@ describe('asset HTTP handler contract', () => {
     }
   });
 
+  test('a name smuggled inside a quoted filename is not a part name', async () => {
+    // An RFC-aware intermediary sees two unnamed parts here; a regex scan of
+    // the raw header sees `name=meta` and `name=bytes`. That disagreement is
+    // the parser differential the contract requires be rejected.
+    const storeId = `disposition-${namespace++}`;
+    const boundary = 'asset-test-boundary';
+    const body = Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; filename="x; name=meta; y"\r\n` +
+          'Content-Type: application/json\r\n\r\n{}\r\n',
+      ),
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; filename="x; name=bytes; y"\r\n\r\npayload\r\n`,
+      ),
+      Buffer.from(`--${boundary}--\r\n`),
+    ]);
+
+    const response = await rawRequest({
+      method: 'POST',
+      path: '/assets',
+      headers: {
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+        'x-asset-store-id': storeId,
+      },
+      body,
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  test('exceeding maxParts is a payload limit, not a validation failure', async () => {
+    const limited = await startAssetConformanceServer({ maxParts: 2 });
+    try {
+      const url = new URL(limited.baseUrl);
+      const body = multipart([
+        { name: 'meta', value: '{}', contentType: 'application/json' },
+        { name: 'bytes', value: 'ok' },
+        { name: 'bytes', value: 'extra' },
+      ]);
+      const response = await new Promise<RawResponse>((resolve, reject) => {
+        const req = httpRequest(
+          {
+            hostname: url.hostname,
+            port: url.port,
+            method: 'POST',
+            path: '/assets',
+            headers: {
+              'content-type': 'multipart/form-data; boundary=asset-test-boundary',
+              'content-length': String(body.byteLength),
+            },
+          },
+          (res) => {
+            const chunks: Buffer[] = [];
+            res.on('data', (chunk: Buffer) => chunks.push(chunk));
+            res.on('end', () =>
+              resolve({
+                status: res.statusCode ?? 0,
+                headers: res.headers,
+                body: Buffer.concat(chunks),
+              }),
+            );
+          },
+        );
+        req.on('error', reject);
+        req.end(body);
+      });
+      expect(response.status).toBe(413);
+    } finally {
+      await limited.close();
+    }
+  });
+
   test('wrong methods return 405 with Allow and /assetsfoo is ROUTE_NOT_FOUND', async () => {
     const storeId = `routes-${namespace++}`;
     for (const [path, allow] of [
