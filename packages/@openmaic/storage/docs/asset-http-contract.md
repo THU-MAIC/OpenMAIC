@@ -2,7 +2,7 @@
 
 This contract exposes the asset operations — `put` / `resolve` / `remove` / `replace` — over HTTP. All paths below are relative to a deployment-defined base URL. Path segments are percent-encoded UTF-8 strings. Metadata travels as JSON; asset bytes travel as bytes, as a multipart part on writes and as the whole body on reads. Successful operations with no return value respond with `204 No Content`.
 
-A conformance server for this contract belongs with the server backend, which has not shipped. Like the ones this package already provides for other layers it will be test-only: it implements no authentication or authorization model beyond what the contract's response codes require, because deriving the principal from an authenticated session is the reference server's job.
+The server backend for this contract ships as `createAssetHttpHandler`, with asset requests dispatched by `createStorageHttpHandler`. The conformance server this package provides remains test-only: it implements no authentication or authorization model beyond what the contract's response codes require, because deriving the principal from an authenticated session is the reference server's job.
 
 The design this contract serves has three layers — an allocated asset id names a registry entry, and a registry entry names a content hash, and a content hash names bytes. **Only the first layer is on the wire.** The content hash is an internal deduplication key: it MUST NOT appear in any URL, response header, response body, error message, error details, or log line.
 
