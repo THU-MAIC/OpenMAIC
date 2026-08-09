@@ -43,6 +43,7 @@ import {
 import { MarkdownText } from '../markdown-text';
 import { StarRating } from './star-rating';
 import type { PBLEvaluation, PBLHandover } from '@/lib/pbl/v2/types';
+import { trimmedPBLText } from '@/lib/pbl/v2/readers';
 
 interface Props {
   evaluation: PBLEvaluation;
@@ -62,7 +63,7 @@ export function MilestoneCard({ evaluation, handover, onContinue, className }: P
   const performance = (evaluation.improvements ?? [])[0] ?? '';
   const stars = typeof evaluation.stars === 'number' ? evaluation.stars : null;
   const rawNarrative = stripEvaluationTail(
-    sanitizeMilestoneEvaluationFeedback(evaluation.feedback ?? ''),
+    sanitizeMilestoneEvaluationFeedback(trimmedPBLText(evaluation.feedback)),
   );
   const narrative = handover ? rawNarrative : stripFinalMilestoneContinueGuidance(rawNarrative);
   const ctaState = milestoneHandoverCtaState(handover);

@@ -95,15 +95,7 @@ export function createDefaultInteractiveContent(): InteractiveContent {
  * Create default PBLContent
  */
 export function createDefaultPBLContent(): PBLContent {
-  return {
-    type: 'pbl',
-    projectConfig: {
-      projectInfo: { title: '', description: '' },
-      agents: [],
-      issueboard: { agent_ids: [], issues: [], current_issue_id: null },
-      chat: { messages: [] },
-    },
-  };
+  return { type: 'pbl' };
 }
 
 /**

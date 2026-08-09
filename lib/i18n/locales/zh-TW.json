@@ -568,67 +568,7 @@
     "startRecording": "開始錄音"
   },
   "pbl": {
-    "legacyFormat": "此PBL場景使用舊格式，請重新生成課程",
     "emptyProject": "PBL專案尚未生成，請透過課程生成建立",
-    "roleSelection": {
-      "title": "選擇你的角色",
-      "description": "選擇一個角色開始專案協作"
-    },
-    "workspace": {
-      "restart": "重新開始",
-      "confirmRestart": "確定重設進度？",
-      "confirm": "確定",
-      "cancel": "取消"
-    },
-    "issueboard": {
-      "title": "任務看板",
-      "noIssues": "暫無任務",
-      "statusDone": "已完成",
-      "statusActive": "進行中",
-      "statusPending": "待處理"
-    },
-    "chat": {
-      "title": "專案討論",
-      "currentIssue": "目前任務",
-      "mentionHint": "使用 @question 提問，@judge 提交評審",
-      "placeholder": "輸入訊息...",
-      "send": "傳送",
-      "issueCompleteMessage": "任務「{{completed}}」已完成！進入下一個任務：「{{next}}」",
-      "allCompleteMessage": "🎉 所有任務都已完成！專案做得很棒！"
-    },
-    "guide": {
-      "howItWorks": "如何參與專案",
-      "help": "使用說明",
-      "title": "使用說明",
-      "step1": {
-        "title": "第一步：選擇角色",
-        "desc": "專案生成後，從角色清單中選擇一個角色（標記為🟢的非系統角色）"
-      },
-      "step2": {
-        "title": "第二步：完成任務",
-        "desc": "每個任務代表一個學習目標：",
-        "s1": {
-          "title": "檢視目前任務",
-          "desc": "檢視任務的標題、描述、負責人"
-        },
-        "s2": {
-          "title": "取得指導",
-          "example": "@question 我應該從哪裡開始？\n@question 如何實現這個功能？",
-          "desc": "提問助手會提供引導性問題和提示（不直接給答案）"
-        },
-        "s3": {
-          "title": "提交作品",
-          "example": "@judge 我已經完成了，請檢查",
-          "desc": "評審助手會評估你的工作並給予回饋：",
-          "complete": "自動進入下一個任務",
-          "revision": "依據回饋改進"
-        }
-      },
-      "step3": {
-        "title": "第三步：完成專案",
-        "desc": "所有任務完成後，系統會顯示「🎉 專案已完成！」"
-      }
-    },
     "v2": {
       "hero": {
         "title": "專案實戰 · Project-Based Learning",

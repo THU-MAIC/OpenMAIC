@@ -583,67 +583,7 @@
     "startRecording": "録音を開始"
   },
   "pbl": {
-    "legacyFormat": "このPBLシーンは旧形式です。コースを再生成してください。",
     "emptyProject": "PBLプロジェクトがまだ生成されていません。コース生成から作成してください。",
-    "roleSelection": {
-      "title": "役割を選択",
-      "description": "プロジェクトでの協力を始めるために役割を選んでください"
-    },
-    "workspace": {
-      "restart": "リスタート",
-      "confirmRestart": "すべての進捗をリセットしますか？",
-      "confirm": "確認",
-      "cancel": "キャンセル"
-    },
-    "issueboard": {
-      "title": "課題ボード",
-      "noIssues": "課題はまだありません",
-      "statusDone": "完了",
-      "statusActive": "進行中",
-      "statusPending": "未着手"
-    },
-    "chat": {
-      "title": "プロジェクトディスカッション",
-      "currentIssue": "現在の課題",
-      "mentionHint": "@question で質問、@judge で提出・レビュー依頼",
-      "placeholder": "メッセージを入力...",
-      "send": "送信",
-      "issueCompleteMessage": "課題「{{completed}}」が完了しました！次の課題に進みます：「{{next}}」",
-      "allCompleteMessage": "🎉 すべての課題が完了しました！プロジェクトお疲れさまでした！"
-    },
-    "guide": {
-      "howItWorks": "使い方",
-      "help": "ヘルプ",
-      "title": "ヘルプ",
-      "step1": {
-        "title": "ステップ1：役割を選ぶ",
-        "desc": "プロジェクト生成後、リストから役割を選択してください（🟢マークの非システム役割）"
-      },
-      "step2": {
-        "title": "ステップ2：課題に取り組む",
-        "desc": "各課題は学習タスクです：",
-        "s1": {
-          "title": "現在の課題を確認",
-          "desc": "課題のタイトル、説明、担当者を確認します"
-        },
-        "s2": {
-          "title": "ガイダンスを受ける",
-          "example": "@question どこから始めればいいですか？\n@question この機能はどう実装しますか？",
-          "desc": "質問エージェントがヒントや誘導質問を提供します（直接的な答えは出しません）"
-        },
-        "s3": {
-          "title": "成果を提出する",
-          "example": "@judge 完了しました。ノートを確認してください",
-          "desc": "審査エージェントが成果を評価しフィードバックします：",
-          "complete": "自動的に次の課題に進みます",
-          "revision": "フィードバックに基づいて改善してください"
-        }
-      },
-      "step3": {
-        "title": "ステップ3：プロジェクトを完了する",
-        "desc": "すべての課題が完了すると「🎉 プロジェクト完了！」と表示されます"
-      }
-    },
     "v2": {
       "hero": {
         "title": "プロジェクトベースドラーニング",

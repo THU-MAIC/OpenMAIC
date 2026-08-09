@@ -10,6 +10,7 @@ import {
   createSceneWithActions,
   generateSceneActions,
   generateSceneContent,
+  PBLGenerationError,
 } from '@/lib/generation/scene-generator';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
 import type { AgentInfo } from '@/lib/generation/pipeline-types';
@@ -38,6 +39,12 @@ import type { Scene, Stage } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
 
 const log = createLogger('Classroom');
+
+export function containPBLGenerationError(error: unknown, sceneTitle: string): null {
+  if (!(error instanceof PBLGenerationError)) throw error;
+  log.warn(`PBL generation failed for scene "${sceneTitle}": ${error.message}`);
+  return null;
+}
 
 export interface GenerateClassroomInput {
   requirement: string;
@@ -584,27 +591,33 @@ export async function generateClassroom(
     // calls through it instead of the aiCall closure — without it PBL scenes
     // silently fail (return null) on this one-shot path.
     const contentCall = await resolveSceneContentCall(safeOutline.type);
-    const content = await withGenerationRetry(
-      () =>
-        generateSceneContent(safeOutline, contentCall.aiCall, {
-          agents,
-          languageDirective,
-          allowProceduralSkill: vocationalActive,
-          // PBL scene content is driven by the model object, not the aiCall
-          // closure, so both the routed model AND its thinking config must be
-          // passed explicitly — otherwise a `scene-content:pbl` route with a
-          // `thinking` config would be silently ignored here (slide/quiz/
-          // interactive go through the aiCall closure and already honor it).
-          ...(safeOutline.type === 'pbl'
-            ? { languageModel: contentCall.model, thinkingConfig: contentCall.thinking }
-            : {}),
-        }),
-      {
-        label: `scene ${index + 1}/${outlines.length} content`,
-        shouldRetryResult: (result) => result === null,
-        onRetry: (event) => reportSceneRetry('content', event),
-      },
-    );
+    const content = await (async () => {
+      try {
+        return await withGenerationRetry(
+          () =>
+            generateSceneContent(safeOutline, contentCall.aiCall, {
+              agents,
+              languageDirective,
+              allowProceduralSkill: vocationalActive,
+              // PBL scene content is driven by the model object, not the aiCall
+              // closure, so both the routed model AND its thinking config must be
+              // passed explicitly — otherwise a `scene-content:pbl` route with a
+              // `thinking` config would be silently ignored here (slide/quiz/
+              // interactive go through the aiCall closure and already honor it).
+              ...(safeOutline.type === 'pbl'
+                ? { languageModel: contentCall.model, thinkingConfig: contentCall.thinking }
+                : {}),
+            }),
+          {
+            label: `scene ${index + 1}/${outlines.length} content`,
+            shouldRetryResult: (result) => result === null,
+            onRetry: (event) => reportSceneRetry('content', event),
+          },
+        );
+      } catch (error) {
+        return containPBLGenerationError(error, safeOutline.title);
+      }
+    })();
     if (!content) {
       log.warn(`Skipping scene "${safeOutline.title}" — content generation failed`);
       continue;

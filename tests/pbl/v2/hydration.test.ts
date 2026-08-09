@@ -9,7 +9,6 @@ import type {
 import { BrowserRuntimeStore, type RuntimeSessionInit, type RuntimeStore } from '@openmaic/storage';
 
 import { applyInstructorEvent } from '@/components/scene-renderers/pbl/v2/apply-instructor-event';
-import type { PBLProjectConfig } from '@/lib/pbl/types';
 import { recordEvent } from '@/lib/pbl/v2/operations/kernel/engagement';
 import { addEvaluation } from '@/lib/pbl/v2/operations/runtime/evaluation';
 import {
@@ -28,6 +27,7 @@ import { drainProjectRuntime } from '@/lib/pbl/v2/runtime/drain';
 import { foldPBLRuntime } from '@/lib/pbl/v2/runtime/fold';
 import {
   appendPBLRuntimeSnapshotIfChanged,
+  documentContainsLearnerState,
   hydratePBLProjectFromRuntime,
   hydratePBLScenesFromRuntime,
   synchronizePBLProjectRuntime,
@@ -41,6 +41,7 @@ import { makeScene, type Scene } from '@/lib/types/stage';
 import type { KVScope, KVStore } from '@openmaic/storage';
 import type { PBLProjectV2, PBLRuntimeEvent } from '@/lib/pbl/v2/types';
 import { withRuntimeStorageExclusiveLock } from '@/lib/utils/chat-storage-lock';
+import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
 
 if (!('IDBKeyRange' in globalThis)) {
   Object.defineProperty(globalThis, 'IDBKeyRange', { value: IDBKeyRange, configurable: true });
@@ -357,7 +358,6 @@ function makePBLScene(project: PBLProjectV2): Scene {
     },
     {
       type: 'pbl',
-      projectConfig: {} as PBLProjectConfig,
       projectV2: project,
     },
   );
@@ -398,6 +398,37 @@ async function ensureSession(store: MemoryRuntimeStore): Promise<RuntimeSession>
 }
 
 describe('PBL runtime hydration', () => {
+  it('skips a damaged hybrid without touching runtime or learner-state hydration', async () => {
+    const damagedHybrid = structuredClone(legacyPBLSceneFixture) as Scene;
+    if (damagedHybrid.content.type !== 'pbl') throw new Error('expected PBL scene');
+    Reflect.set(damagedHybrid.content, 'projectV2', { title: 'broken' });
+
+    const hydrated = await hydratePBLScenesFromRuntime(STAGE_ID, [damagedHybrid], {
+      store: new ThrowingRuntimeStore(),
+      kv: new MemoryKVStore(),
+      learnerKey: LEARNER_KEY,
+    });
+
+    expect(hydrated).toEqual([damagedHybrid]);
+    expect(hydrated[0]).toBe(damagedHybrid);
+    expect(documentContainsLearnerState({ title: 'broken' })).toBe(false);
+  });
+
+  it('skips a container-valid v2 project with no runnable milestones', async () => {
+    const project = makeProject();
+    project.milestones = [];
+    const scene = makePBLScene(project);
+
+    const hydrated = await hydratePBLScenesFromRuntime(STAGE_ID, [scene], {
+      store: new ThrowingRuntimeStore(),
+      kv: new MemoryKVStore(),
+      learnerKey: LEARNER_KEY,
+    });
+
+    expect(hydrated).toEqual([scene]);
+    expect(hydrated[0]).toBe(scene);
+  });
+
   it('returns unchanged scenes when runtime hydration throws for a scene', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const project = makeProject({ uiPhase: 'workspace' });

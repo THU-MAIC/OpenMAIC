@@ -6,7 +6,8 @@ import { getLearnerKey } from '@/lib/runtime/learner-key';
 import { getRuntimeStore } from '@/lib/runtime/store';
 import { withRuntimeStorageSharedLockUntilSettled } from '@/lib/utils/chat-storage-lock';
 import type { Scene } from '@/lib/types/stage';
-import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
+import { resolvePBLContent } from '@/lib/pbl/legacy/read';
+import { hasPBLProjectV2Containers, type PBLProjectV2 } from '@/lib/pbl/v2/types';
 import {
   ensurePBLRuntimeSession,
   PBL_HYDRATION_DRAIN_BARRIER_TIMEOUT_MS,
@@ -165,9 +166,11 @@ function preserveDocumentTransients(
   };
 }
 
-function documentContainsLearnerState(project: PBLProjectV2): boolean {
-  const baseline = stripToDesignTemplate(project);
-  return !isEqual(extractLearnerState(project), extractLearnerState(baseline));
+export function documentContainsLearnerState(project: unknown): boolean {
+  if (!hasPBLProjectV2Containers(project)) return false;
+  const validProject = project as PBLProjectV2;
+  const baseline = stripToDesignTemplate(validProject);
+  return !isEqual(extractLearnerState(validProject), extractLearnerState(baseline));
 }
 
 function hasWriteCutoverSnapshot(records: readonly RuntimeRecord[]): boolean {
@@ -332,14 +335,16 @@ export async function hydratePBLScenesFromRuntime(
   return Promise.all(
     scenes.map(async (scene) => {
       const content = scene.content;
-      if (content.type !== 'pbl' || !content.projectV2) {
+      if (content.type !== 'pbl') {
         return scene;
       }
+      const resolved = resolvePBLContent(content);
+      if (resolved.kind !== 'v2') return scene;
       try {
         const result = await hydratePBLProjectFromRuntime({
           stageId,
           sceneId: scene.id,
-          project: content.projectV2,
+          project: resolved.projectV2,
           store: options.store,
           kv: options.kv,
           learnerKey: options.learnerKey,
@@ -352,7 +357,7 @@ export async function hydratePBLScenesFromRuntime(
           },
         } as Scene;
       } catch (error) {
-        if (!documentContainsLearnerState(content.projectV2)) {
+        if (!documentContainsLearnerState(resolved.projectV2)) {
           throw error;
         }
         if (process.env.NODE_ENV !== 'production') {

@@ -9,6 +9,7 @@
 import { createLogger } from '@/lib/logger';
 import { loadPBLV2Prompt } from '../prompts/loader';
 import { computeInitialAssessment, reseatAssessmentTier } from '../operations/kernel/proficiency';
+import { trimmedPBLText } from '../readers';
 
 import type { PBLProjectV2, PBLPlannerV2Input, PBLProficiency, PBLRole } from '../types';
 
@@ -350,7 +351,11 @@ export function plannerCompletionGaps(
         errors.push('scenario has no characters (set_scenario needs at least one character)');
       } else {
         characters.forEach((c, i) => {
-          if (!c?.name?.trim() || !c?.persona?.trim() || !c?.situation?.trim()) {
+          if (
+            !trimmedPBLText(c?.name) ||
+            !trimmedPBLText(c?.persona) ||
+            !trimmedPBLText(c?.situation)
+          ) {
             errors.push(`scenario character #${i + 1} is missing name, persona, or situation`);
           }
         });
@@ -376,7 +381,7 @@ export function plannerCompletionGaps(
     // The project-wide scene visual must be authored (caption + ≥1 emoji
     // motif) so the entrance animation / banner fits this exact project.
     const sv = project.scenario?.sceneVisual;
-    if (!sv?.caption?.trim() || (sv?.motifs?.length ?? 0) === 0) {
+    if (!trimmedPBLText(sv?.caption) || (sv?.motifs?.length ?? 0) === 0) {
       errors.push(
         'scenario project: call set_scene_visual once (a project-wide caption + 2–4 fitting emoji motifs + colours) AFTER authoring the roleplay stages',
       );
@@ -469,9 +474,9 @@ export function normalizeSynthesisChecks(project: PBLProjectV2): void {
     }
     if (pick) {
       const coreConcept = (
-        project.learningObjective?.trim() ||
-        pick.description?.trim() ||
-        pick.title
+        trimmedPBLText(project.learningObjective) ||
+        trimmedPBLText(pick.description) ||
+        trimmedPBLText(pick.title)
       ).slice(0, 120);
       pick.synthesisCheck = { coreConcept };
     }

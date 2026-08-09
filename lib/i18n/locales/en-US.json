@@ -583,67 +583,7 @@
     "startRecording": "Start recording"
   },
   "pbl": {
-    "legacyFormat": "This PBL scene uses a legacy format. Please regenerate the course.",
     "emptyProject": "PBL project has not been generated yet. Please create via course generation.",
-    "roleSelection": {
-      "title": "Choose Your Role",
-      "description": "Select a role to start collaborating on the project"
-    },
-    "workspace": {
-      "restart": "Restart",
-      "confirmRestart": "Reset all progress?",
-      "confirm": "Confirm",
-      "cancel": "Cancel"
-    },
-    "issueboard": {
-      "title": "Issue Board",
-      "noIssues": "No issues yet",
-      "statusDone": "Done",
-      "statusActive": "Active",
-      "statusPending": "Pending"
-    },
-    "chat": {
-      "title": "Project Discussion",
-      "currentIssue": "Current Issue",
-      "mentionHint": "Use @question to ask, @judge to submit for review",
-      "placeholder": "Type a message...",
-      "send": "Send",
-      "issueCompleteMessage": "Issue \"{{completed}}\" completed! Moving to next issue: \"{{next}}\"",
-      "allCompleteMessage": "🎉 All issues completed! Great work on the project!"
-    },
-    "guide": {
-      "howItWorks": "How it works",
-      "help": "Help",
-      "title": "Help",
-      "step1": {
-        "title": "Step 1: Choose a Role",
-        "desc": "After the project is generated, select a role from the list (non-system roles marked with 🟢)"
-      },
-      "step2": {
-        "title": "Step 2: Complete Issues",
-        "desc": "Each issue represents a learning task:",
-        "s1": {
-          "title": "View current Issue",
-          "desc": "Check the issue's title, description, and assignee"
-        },
-        "s2": {
-          "title": "Get guidance",
-          "example": "@question Where should I start?\n@question How do I implement this feature?",
-          "desc": "The Question Agent provides guiding questions and hints (no direct answers)"
-        },
-        "s3": {
-          "title": "Submit your work",
-          "example": "@judge I'm done, please check my Notes",
-          "desc": "The Judge Agent evaluates your work and gives feedback:",
-          "complete": "Automatically moves to the next issue",
-          "revision": "Improve based on feedback"
-        }
-      },
-      "step3": {
-        "title": "Step 3: Complete the Project",
-        "desc": "When all issues are done, the system displays \"🎉 Project Complete!\""
-      }
-    },
     "v2": {
       "hero": {
         "title": "Project-Based Learning",

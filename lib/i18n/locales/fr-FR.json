@@ -583,67 +583,7 @@
     "startRecording": "Démarrer l’enregistrement"
   },
   "pbl": {
-    "legacyFormat": "Cette scène d’apprentissage par projet utilise un format obsolète. Veuillez régénérer le cours.",
     "emptyProject": "Le projet n’a pas encore été généré. Veuillez le créer via la génération de cours.",
-    "roleSelection": {
-      "title": "Choisissez votre rôle",
-      "description": "Sélectionnez un rôle pour commencer à collaborer sur le projet"
-    },
-    "workspace": {
-      "restart": "Recommencer",
-      "confirmRestart": "Réinitialiser toute la progression ?",
-      "confirm": "Confirmer",
-      "cancel": "Annuler"
-    },
-    "issueboard": {
-      "title": "Tableau des tâches",
-      "noIssues": "Aucune tâche pour l’instant",
-      "statusDone": "Terminée",
-      "statusActive": "En cours",
-      "statusPending": "En attente"
-    },
-    "chat": {
-      "title": "Discussion du projet",
-      "currentIssue": "Tâche en cours",
-      "mentionHint": "Utilisez @question pour demander de l’aide, @judge pour rendre votre travail",
-      "placeholder": "Saisissez un message…",
-      "send": "Envoyer",
-      "issueCompleteMessage": "Tâche « {{completed}} » terminée ! Passons à la suivante : « {{next}} »",
-      "allCompleteMessage": "🎉 Toutes les tâches sont terminées ! Beau travail sur ce projet !"
-    },
-    "guide": {
-      "howItWorks": "Comment ça marche",
-      "help": "Aide",
-      "title": "Aide",
-      "step1": {
-        "title": "Étape 1 : choisir un rôle",
-        "desc": "Une fois le projet généré, sélectionnez un rôle dans la liste (les rôles non systèmes sont marqués d’un 🟢)"
-      },
-      "step2": {
-        "title": "Étape 2 : réaliser les tâches",
-        "desc": "Chaque tâche correspond à un objectif d’apprentissage :",
-        "s1": {
-          "title": "Consulter la tâche en cours",
-          "desc": "Vérifiez son titre, sa description et la personne qui en a la charge"
-        },
-        "s2": {
-          "title": "Demander de l’aide",
-          "example": "@question Par où commencer ?\n@question Comment mettre en œuvre cette fonctionnalité ?",
-          "desc": "L’agent Question fournit des pistes et des questions de relance, jamais de réponse toute faite"
-        },
-        "s3": {
-          "title": "Rendre votre travail",
-          "example": "@judge J’ai terminé, merci de vérifier mes notes",
-          "desc": "L’agent Évaluateur examine votre travail et vous donne un retour :",
-          "complete": "Passage automatique à la tâche suivante",
-          "revision": "Améliorez votre travail à partir du retour"
-        }
-      },
-      "step3": {
-        "title": "Étape 3 : achever le projet",
-        "desc": "Lorsque toutes les tâches sont terminées, le système affiche « 🎉 Projet terminé ! »"
-      }
-    },
     "v2": {
       "hero": {
         "title": "Apprentissage par projet",

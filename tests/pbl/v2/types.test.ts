@@ -14,6 +14,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  hasPBLProjectV2Containers,
+  isRunnablePBLProjectV2,
   isPBLProjectV2,
   type PBLProjectV2,
   type PBLMilestone,
@@ -251,5 +253,84 @@ describe('PBL v2 — isPBLProjectV2 type guard', () => {
         threads: [],
       }),
     ).toBe(false);
+  });
+});
+
+describe('PBL v2 — runnable workspace predicate', () => {
+  it('accepts a normal planner-shaped project', () => {
+    expect(isRunnablePBLProjectV2(makeFullProject())).toBe(true);
+  });
+
+  it('requires an Instructor role and a microtask in every milestone', () => {
+    const withoutInstructor = makeFullProject();
+    withoutInstructor.roles[0]!.type = 'mentor';
+    expect(hasPBLProjectV2Containers(withoutInstructor)).toBe(true);
+    expect(isRunnablePBLProjectV2(withoutInstructor)).toBe(false);
+
+    const withoutTasks = makeFullProject();
+    withoutTasks.milestones.forEach((milestone) => {
+      milestone.microtasks = [];
+    });
+    expect(hasPBLProjectV2Containers(withoutTasks)).toBe(true);
+    expect(isRunnablePBLProjectV2(withoutTasks)).toBe(false);
+
+    const withEmptyLaterMilestone = makeFullProject();
+    withEmptyLaterMilestone.milestones.push({
+      id: 'ms-2',
+      title: 'Empty later stage',
+      status: 'locked',
+      order: 1,
+      microtasks: [],
+    });
+    expect(hasPBLProjectV2Containers(withEmptyLaterMilestone)).toBe(true);
+    expect(isRunnablePBLProjectV2(withEmptyLaterMilestone)).toBe(false);
+  });
+
+  it('requires runtime lookup identities and labels', () => {
+    const cases: Array<[string, (project: PBLProjectV2) => void]> = [
+      [
+        'Instructor id',
+        (project) => {
+          Reflect.deleteProperty(project.roles[0]!, 'id');
+        },
+      ],
+      [
+        'non-empty Instructor id',
+        (project) => {
+          project.roles[0]!.id = '   ';
+        },
+      ],
+      [
+        'Instructor name',
+        (project) => {
+          Reflect.deleteProperty(project.roles[0]!, 'name');
+        },
+      ],
+      [
+        'microtask id',
+        (project) => {
+          Reflect.deleteProperty(project.milestones[0]!.microtasks[0]!, 'id');
+        },
+      ],
+      [
+        'non-empty microtask id',
+        (project) => {
+          project.milestones[0]!.microtasks[0]!.id = '   ';
+        },
+      ],
+      [
+        'microtask title',
+        (project) => {
+          Reflect.deleteProperty(project.milestones[0]!.microtasks[0]!, 'title');
+        },
+      ],
+    ];
+
+    for (const [_label, damage] of cases) {
+      const project = makeFullProject();
+      damage(project);
+      expect(hasPBLProjectV2Containers(project)).toBe(true);
+      expect(isRunnablePBLProjectV2(project)).toBe(false);
+    }
   });
 });

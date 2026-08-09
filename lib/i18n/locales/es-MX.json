@@ -583,67 +583,7 @@
     "startRecording": "Iniciar grabación"
   },
   "pbl": {
-    "legacyFormat": "Esta escena de ABP usa un formato heredado. Vuelve a generar el curso.",
     "emptyProject": "El proyecto de ABP aún no se ha generado. Créalo desde la generación de cursos.",
-    "roleSelection": {
-      "title": "Elige tu rol",
-      "description": "Selecciona un rol para empezar a colaborar en el proyecto"
-    },
-    "workspace": {
-      "restart": "Reiniciar",
-      "confirmRestart": "¿Restablecer todo el progreso?",
-      "confirm": "Confirmar",
-      "cancel": "Cancelar"
-    },
-    "issueboard": {
-      "title": "Tablero de retos",
-      "noIssues": "Aún no hay retos",
-      "statusDone": "Hecho",
-      "statusActive": "En curso",
-      "statusPending": "Pendiente"
-    },
-    "chat": {
-      "title": "Discusión del proyecto",
-      "currentIssue": "Reto actual",
-      "mentionHint": "Usa @question para preguntar y @judge para enviar a revisión",
-      "placeholder": "Escribe un mensaje...",
-      "send": "Enviar",
-      "issueCompleteMessage": "¡Completaste el reto \"{{completed}}\"! Vamos con el siguiente: \"{{next}}\"",
-      "allCompleteMessage": "🎉 ¡Completaste todos los retos! ¡Gran trabajo en el proyecto!"
-    },
-    "guide": {
-      "howItWorks": "Cómo funciona",
-      "help": "Ayuda",
-      "title": "Ayuda",
-      "step1": {
-        "title": "Paso 1: elige un rol",
-        "desc": "Cuando el proyecto se haya generado, selecciona un rol de la lista (los roles que no son del sistema están marcados con 🟢)"
-      },
-      "step2": {
-        "title": "Paso 2: completa los retos",
-        "desc": "Cada reto representa una tarea de aprendizaje:",
-        "s1": {
-          "title": "Ver el reto actual",
-          "desc": "Revisa el título, la descripción y el responsable del reto"
-        },
-        "s2": {
-          "title": "Recibe orientación",
-          "example": "@question ¿Por dónde empiezo?\n@question ¿Cómo implemento esta función?",
-          "desc": "El agente de preguntas te da preguntas guía y pistas (sin respuestas directas)"
-        },
-        "s3": {
-          "title": "Entrega tu trabajo",
-          "example": "@judge Ya terminé, revisa mis notas por favor",
-          "desc": "El agente juez evalúa tu trabajo y te da retroalimentación:",
-          "complete": "Pasa automáticamente al siguiente reto",
-          "revision": "Mejora tu trabajo según la retroalimentación"
-        }
-      },
-      "step3": {
-        "title": "Paso 3: completa el proyecto",
-        "desc": "Cuando todos los retos estén terminados, el sistema mostrará \"🎉 ¡Proyecto completado!\""
-      }
-    },
     "v2": {
       "hero": {
         "title": "Aprendizaje basado en proyectos",

@@ -583,67 +583,7 @@
     "startRecording": "녹음 시작"
   },
   "pbl": {
-    "legacyFormat": "이 PBL 장면은 이전 형식을 사용합니다. 강좌를 다시 생성해주세요.",
     "emptyProject": "PBL 프로젝트가 아직 생성되지 않았습니다. 강좌 생성을 통해 만들어주세요.",
-    "roleSelection": {
-      "title": "역할 선택",
-      "description": "프로젝트 협업을 시작할 역할을 선택하세요"
-    },
-    "workspace": {
-      "restart": "다시 시작",
-      "confirmRestart": "모든 진행 상황을 초기화할까요?",
-      "confirm": "확인",
-      "cancel": "취소"
-    },
-    "issueboard": {
-      "title": "이슈 보드",
-      "noIssues": "이슈가 없습니다",
-      "statusDone": "완료",
-      "statusActive": "진행 중",
-      "statusPending": "대기 중"
-    },
-    "chat": {
-      "title": "프로젝트 토론",
-      "currentIssue": "현재 이슈",
-      "mentionHint": "@question으로 질문, @judge로 검토 요청",
-      "placeholder": "메시지를 입력하세요...",
-      "send": "전송",
-      "issueCompleteMessage": "이슈 \"{{completed}}\" 완료! 다음 이슈로 이동합니다: \"{{next}}\"",
-      "allCompleteMessage": "🎉 모든 이슈 완료! 프로젝트 수고 많으셨어요!"
-    },
-    "guide": {
-      "howItWorks": "진행 방식",
-      "help": "도움말",
-      "title": "도움말",
-      "step1": {
-        "title": "1단계: 역할 선택",
-        "desc": "프로젝트가 생성된 후, 목록에서 역할을 선택하세요 (🟢 표시된 역할은 비시스템 역할)"
-      },
-      "step2": {
-        "title": "2단계: 이슈 완료",
-        "desc": "각 이슈는 하나의 학습 과제를 나타냅니다:",
-        "s1": {
-          "title": "현재 이슈 확인",
-          "desc": "이슈의 제목, 설명, 담당자를 확인하세요"
-        },
-        "s2": {
-          "title": "안내 받기",
-          "example": "@question 어디서부터 시작하면 될까요?\n@question 이 기능은 어떻게 구현하나요?",
-          "desc": "질문 에이전트가 유도 질문과 힌트를 제공합니다 (직접적인 답변은 제공하지 않음)"
-        },
-        "s3": {
-          "title": "작업 제출",
-          "example": "@judge 완료했습니다, 제 메모를 검토해주세요",
-          "desc": "판정 에이전트가 작업을 평가하고 피드백을 제공합니다:",
-          "complete": "다음 이슈로 자동 이동",
-          "revision": "피드백을 바탕으로 개선하세요"
-        }
-      },
-      "step3": {
-        "title": "3단계: 프로젝트 완료",
-        "desc": "모든 이슈가 완료되면 \"🎉 프로젝트 완료!\"가 표시됩니다"
-      }
-    },
     "v2": {
       "hero": {
         "title": "Project-Based Learning",

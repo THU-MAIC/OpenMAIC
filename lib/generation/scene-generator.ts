@@ -25,13 +25,12 @@ import type { WidgetType, WidgetConfig } from '@/lib/types/widgets';
 import type { PromptId } from '@/lib/prompts/types';
 import type { LanguageModel } from 'ai';
 import { createStageAPI } from '@/lib/api/stage-api';
-import { generatePBLContent } from '@/lib/pbl/generate-pbl';
 import { callLLM } from '@/lib/ai/llm';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { generatePBLV2ProjectSingleCall } from '@/lib/pbl/v2/agents/planner-single-call';
 import { PlannerV2Error } from '@/lib/pbl/v2/agents/planner-core';
-import { projectV2ToLegacyProjectConfig } from '@/lib/pbl/v2/compat';
 import type { PBLPlannerV2Input, PBLProjectV2 } from '@/lib/pbl/v2/types';
+import { resolvePBLContent } from '@/lib/pbl/legacy/read';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator';
 import { postProcessInteractiveHtml } from './interactive-post-processor';
@@ -882,9 +881,34 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
 /**
  * Generate PBL project content.
  *
- * Routes to v2 by default. Ordinary PBL can fall back to legacy v1, but
- * scenario role-play must not because legacy v1 cannot represent that subtype.
+ * Uses the v2 single-call planner first, then the v2 loop planner.
  */
+export class PBLGenerationError extends Error {
+  readonly statusCode?: number;
+
+  constructor(message: string, options?: ErrorOptions & { statusCode?: number }) {
+    super(message, options);
+    this.name = 'PBLGenerationError';
+    this.statusCode = options?.statusCode;
+  }
+}
+
+function plannerErrorStatus(error: unknown, seen = new Set<unknown>()): number | undefined {
+  if (!error || seen.has(error) || typeof error !== 'object') return undefined;
+  seen.add(error);
+
+  const record = error as Record<string, unknown>;
+  const raw = record.statusCode ?? record.status ?? record.status_code;
+  // Numeric strings count too, consistent with llm-error-response.ts.
+  const status =
+    typeof raw === 'number' ? raw : typeof raw === 'string' ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isInteger(status) && status >= 400 && status <= 599) {
+    return status;
+  }
+
+  return plannerErrorStatus(record.cause, seen) ?? plannerErrorStatus(record.lastError, seen);
+}
+
 async function generatePBLSceneContent(
   outline: SceneOutline,
   languageModel?: LanguageModel,
@@ -906,114 +930,91 @@ async function generatePBLSceneContent(
 
   log.info(`Generating PBL content for: ${outline.title}`);
 
-  const v2Disabled = process.env.PBL_V2_DISABLED === 'true';
   const scenarioRoleplay = pblConfig.scenarioRoleplay === true;
+  const plannerInput: PBLPlannerV2Input = {
+    outline,
+    courseContext: {
+      // Keep the planner scoped to the active PBL outline.
+      allOutlines: [outline],
+      languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
+    },
+    user: userRequirements
+      ? {
+          nickname: userRequirements.userNickname,
+          bio: userRequirements.userBio,
+          requirement: userRequirements.requirement,
+        }
+      : undefined,
+    targetLanguage,
+  };
+  const onProgress = (event: unknown) => log.info(`PBL v2 progress: ${JSON.stringify(event)}`);
 
-  if (v2Disabled && scenarioRoleplay) {
-    log.error(
-      `PBL scenario role-play requested for "${outline.title}" but PBL v2 is disabled; refusing to generate legacy ordinary PBL.`,
-    );
-    return null;
-  }
+  const attempts: Array<{ label: string; run: () => Promise<PBLProjectV2> }> = [
+    {
+      label: 'single-call',
+      run: () =>
+        generatePBLV2ProjectSingleCall(
+          plannerInput,
+          languageModel,
+          callLLM,
+          { onProgress },
+          thinkingConfig,
+        ),
+    },
+    {
+      label: 'loop',
+      run: () =>
+        generatePBLV2Project(plannerInput, languageModel, callLLM, { onProgress }, thinkingConfig),
+    },
+  ];
+  const attemptErrors: unknown[] = [];
 
-  if (!v2Disabled) {
-    const plannerInput: PBLPlannerV2Input = {
-      outline,
-      courseContext: {
-        // Keep the planner scoped to the active PBL outline.
-        allOutlines: [outline],
-        languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
-      },
-      user: userRequirements
-        ? {
-            nickname: userRequirements.userNickname,
-            bio: userRequirements.userBio,
-            requirement: userRequirements.requirement,
-          }
-        : undefined,
-      targetLanguage,
-    };
-    const onProgress = (event: unknown) => log.info(`PBL v2 progress: ${JSON.stringify(event)}`);
-
-    const attempts: Array<{ label: string; run: () => Promise<PBLProjectV2> }> = [
-      {
-        label: 'single-call',
-        run: () =>
-          generatePBLV2ProjectSingleCall(
-            plannerInput,
-            languageModel,
-            callLLM,
-            { onProgress },
-            thinkingConfig,
-          ),
-      },
-      {
-        label: 'loop',
-        run: () =>
-          generatePBLV2Project(
-            plannerInput,
-            languageModel,
-            callLLM,
-            { onProgress },
-            thinkingConfig,
-          ),
-      },
-    ];
-
-    for (const attempt of attempts) {
-      try {
-        const projectV2 = await attempt.run();
-        log.info(
-          `PBL v2 generated (${attempt.label}): ${projectV2.milestones.length} milestones, ${projectV2.roles.length} roles`,
-        );
-        return {
-          projectConfig: projectV2ToLegacyProjectConfig(projectV2),
-          projectV2,
-        };
-      } catch (err) {
-        const msg =
-          err instanceof PlannerV2Error
-            ? `validation failed: ${err.message}`
-            : err instanceof Error
-              ? err.message
-              : String(err);
-        log.warn(`PBL v2 generation failed (${attempt.label}: ${msg}).`);
+  for (const attempt of attempts) {
+    try {
+      const projectV2 = await attempt.run();
+      log.info(
+        `PBL v2 generated (${attempt.label}): ${projectV2.milestones.length} milestones, ${projectV2.roles.length} roles`,
+      );
+      return { projectV2 };
+    } catch (err) {
+      attemptErrors.push(err);
+      const msg =
+        err instanceof PlannerV2Error
+          ? `validation failed: ${err.message}`
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      log.warn(`PBL v2 generation failed (${attempt.label}: ${msg}).`);
+      // Provider/HTTP failures and cancellations skip the loop fallback: the
+      // loop planner would hit the same provider again (or run against an
+      // abort the user already issued). Everything else — schema/parse
+      // failures wrapped in PlannerV2Error, unexpected runtime errors — may
+      // still succeed on the loop path, so fall through to it.
+      if (
+        attempt.label === 'single-call' &&
+        (plannerErrorStatus(err) !== undefined ||
+          (err instanceof DOMException && err.name === 'AbortError'))
+      ) {
+        break;
       }
     }
-    if (scenarioRoleplay) {
-      log.error(
-        `PBL v2 scenario generation failed for "${outline.title}"; refusing to fall back to legacy ordinary PBL.`,
-      );
-      return null;
-    }
-
-    log.warn('All PBL v2 attempts failed; falling back to v1 generator.');
   }
 
-  try {
-    const projectConfig = await generatePBLContent(
-      {
-        projectTopic: pblConfig.projectTopic,
-        projectDescription: pblConfig.projectDescription,
-        targetSkills: pblConfig.targetSkills,
-        issueCount: pblConfig.issueCount,
-        languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
-      },
-      languageModel,
-      {
-        onProgress: (msg) => log.info(`${msg}`),
-      },
-      thinkingConfig,
-    );
-    log.info(
-      `PBL v1 generated: ${projectConfig.agents.length} agents, ${projectConfig.issueboard.issues.length} issues`,
-    );
+  const firstError = attemptErrors[0];
+  const lastError = attemptErrors[attemptErrors.length - 1];
+  let failureMessage = `PBL v2 generation failed for "${outline.title}" after all planner attempts.`;
 
-    return { projectConfig };
-  } catch (error) {
-    log.error(`PBL v1 generation also failed:`, error);
-    return null;
+  if (scenarioRoleplay) {
+    log.error(
+      `PBL v2 scenario generation failed for "${outline.title}"; refusing to generate an ordinary PBL project.`,
+    );
+    failureMessage = `PBL v2 scenario generation failed for "${outline.title}" after all planner attempts.`;
   }
+
+  throw new PBLGenerationError(failureMessage, {
+    cause: lastError,
+    statusCode: plannerErrorStatus(lastError) ?? plannerErrorStatus(firstError),
+  });
 }
 
 /**
@@ -1500,6 +1501,45 @@ function isUtilityClass(cls: string): boolean {
   return UTILITY_EXACT.has(cls);
 }
 
+function buildPBLProjectSummary(outline: SceneOutline, project: PBLProjectV2 | undefined): string {
+  const fallbackTitle = outline.pblConfig?.projectTopic?.trim() || outline.title;
+  const fallbackDescription = outline.pblConfig?.projectDescription?.trim() || outline.description;
+  const summaryText = (value: unknown): string | undefined =>
+    typeof value === 'string' ? value.trim() || undefined : undefined;
+  const title = summaryText(project?.title) || fallbackTitle;
+  const description = summaryText(project?.description) || fallbackDescription;
+  const learningObjective = summaryText(project?.learningObjective);
+  const scenarioGoal = summaryText(project?.scenario?.goal);
+  const gains = Array.isArray(project?.gains)
+    ? project.gains.map(summaryText).filter((gain): gain is string => gain !== undefined)
+    : [];
+  const milestones = Array.isArray(project?.milestones)
+    ? [...project.milestones]
+        .map((milestone, index) => ({ milestone, index }))
+        .sort((a, b) => {
+          const aOrder = typeof a.milestone.order === 'number' ? a.milestone.order : a.index;
+          const bOrder = typeof b.milestone.order === 'number' ? b.milestone.order : b.index;
+          return aOrder - bOrder;
+        })
+        .map(({ milestone }) => milestone)
+        .map((milestone, index) => summaryText(milestone.title) ?? `Task ${index + 1}`)
+    : [];
+
+  return [
+    `Project title: ${title}`,
+    `Driving goal: ${description}`,
+    learningObjective ? `Learning objective: ${learningObjective}` : '',
+    scenarioGoal ? `Scenario goal: ${scenarioGoal}` : '',
+    gains.length > 0 ? `Learner gains: ${gains.join('; ')}` : '',
+    'Milestones:',
+    milestones.length > 0
+      ? milestones.map((milestone, index) => `${index + 1}. ${milestone}`).join('\n')
+      : '(No generated milestones are available; introduce the project topic without inventing any.)',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 /**
  * Step 3.2: Generate Actions based on content and script
  */
@@ -1623,15 +1663,18 @@ export async function generateSceneActions(
     return generateDefaultInteractiveActions(outline);
   }
 
-  if (outline.type === 'pbl' && 'projectConfig' in content) {
+  if (outline.type === 'pbl') {
     const pblConfig = outline.pblConfig;
     const agentsText = formatAgentsForPrompt(agents);
+    const resolved = resolvePBLContent(content as Partial<GeneratedPBLContent>);
+    const projectV2 = resolved.kind === 'v2' ? resolved.projectV2 : undefined;
     const prompts = buildPrompt(PROMPT_IDS.PBL_ACTIONS, {
       title: outline.title,
       keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
       description: outline.description,
       projectTopic: pblConfig?.projectTopic || outline.title,
       projectDescription: pblConfig?.projectDescription || outline.description,
+      projectSummary: buildPBLProjectSummary(outline, projectV2),
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
       languageDirective: languageDirective || '',
@@ -1663,7 +1706,7 @@ function generateDefaultPBLActions(_outline: SceneOutline): Action[] {
       id: `action_${nanoid(8)}`,
       type: 'speech',
       title: 'PBL 项目介绍',
-      text: '现在让我们开始一个项目式学习活动。请选择你的角色，查看任务看板，开始协作完成项目。',
+      text: '现在让我们开始一个项目式学习活动，了解项目的驱动问题，并在项目工作区中逐步探索和实践。',
     },
   ];
 }
@@ -1903,15 +1946,16 @@ export function createSceneWithActions(
     return sceneResult.success ? (sceneResult.data ?? null) : null;
   }
 
-  if (outline.type === 'pbl' && 'projectConfig' in content) {
+  const resolvedPBL =
+    outline.type === 'pbl' ? resolvePBLContent(content as Partial<GeneratedPBLContent>) : undefined;
+  if (resolvedPBL?.kind === 'v2') {
     const sceneResult = api.scene.create({
       type: 'pbl',
       title: outline.title,
       order: outline.order,
       content: {
         type: 'pbl',
-        projectConfig: content.projectConfig,
-        ...(content.projectV2 ? { projectV2: content.projectV2 } : {}),
+        projectV2: resolvedPBL.projectV2,
       },
       actions,
       outlineId: outline.id,
