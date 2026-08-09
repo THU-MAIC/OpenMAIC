@@ -11,6 +11,18 @@ const mocks = vi.hoisted(() => ({
   persistClassroom: vi.fn(),
   callLLM: vi.fn(),
 }));
+const PBLGenerationErrorMock = vi.hoisted(
+  () =>
+    class PBLGenerationError extends Error {
+      readonly statusCode?: number;
+
+      constructor(message: string, options?: { statusCode?: number }) {
+        super(message);
+        this.name = 'PBLGenerationError';
+        this.statusCode = options?.statusCode;
+      }
+    },
+);
 
 vi.mock('@/lib/server/resolve-model', () => ({
   resolveModel: mocks.resolveModel,
@@ -36,6 +48,7 @@ vi.mock('@/lib/generation/scene-generator', () => ({
   generateSceneContent: mocks.generateSceneContent,
   generateSceneActions: mocks.generateSceneActions,
   createSceneWithActions: mocks.createSceneWithActions,
+  PBLGenerationError: PBLGenerationErrorMock,
 }));
 
 vi.mock('@/lib/server/classroom-storage', () => ({
@@ -189,5 +202,140 @@ describe('classroom scene generation retries', () => {
     await expect(generateWithProgress()).rejects.toBe(unauthorized);
 
     expect(mocks.generateSceneActions).toHaveBeenCalledTimes(1);
+  });
+
+  it('converts only PBLGenerationError to a null scene result', async () => {
+    const { containPBLGenerationError } = await import('@/lib/server/classroom-generation');
+
+    expect(
+      containPBLGenerationError(
+        new PBLGenerationErrorMock('both planners failed'),
+        'Failed PBL scene',
+      ),
+    ).toBeNull();
+
+    const unrelated = new Error('unrelated failure');
+    expect(() => containPBLGenerationError(unrelated, 'Other scene')).toThrow(unrelated);
+  });
+
+  it('does not retry a status-less PBL failure and completes surrounding slides', async () => {
+    const outlines = [
+      { ...outline, id: 'outline-slide-1', title: 'Opening slide', order: 0 },
+      {
+        ...outline,
+        id: 'outline-pbl',
+        type: 'pbl' as const,
+        title: 'Practice project',
+        order: 1,
+        pblConfig: {
+          projectTopic: 'Retries',
+          projectDescription: 'Practice resilient generation',
+          targetSkills: ['Retry handling'],
+        },
+      },
+      { ...outline, id: 'outline-slide-2', title: 'Closing slide', order: 2 },
+    ];
+    mocks.generateSceneOutlinesFromRequirements.mockResolvedValue({
+      success: true,
+      data: { languageDirective: 'Use English.', outlines },
+    });
+    mocks.generateSceneContent.mockImplementation(async (sceneOutline) => {
+      if (sceneOutline.type === 'pbl') {
+        throw new PBLGenerationErrorMock('both planners failed');
+      }
+      return slideContent;
+    });
+
+    const { result } = await generateWithProgress();
+    const pblCalls = mocks.generateSceneContent.mock.calls.filter(
+      ([sceneOutline]) => sceneOutline.type === 'pbl',
+    );
+
+    expect(result.scenesCount).toBe(2);
+    expect(result.scenes.map((scene) => scene.title)).toEqual(['Opening slide', 'Closing slide']);
+    expect(pblCalls).toHaveLength(1);
+  });
+
+  it('does not retry a 401 PBL failure and completes surrounding slides', async () => {
+    const outlines = [
+      { ...outline, id: 'outline-slide-1', title: 'Opening slide', order: 0 },
+      {
+        ...outline,
+        id: 'outline-pbl',
+        type: 'pbl' as const,
+        title: 'Practice project',
+        order: 1,
+        pblConfig: {
+          projectTopic: 'Retries',
+          projectDescription: 'Practice resilient generation',
+          targetSkills: ['Retry handling'],
+        },
+      },
+      { ...outline, id: 'outline-slide-2', title: 'Closing slide', order: 2 },
+    ];
+    mocks.generateSceneOutlinesFromRequirements.mockResolvedValue({
+      success: true,
+      data: { languageDirective: 'Use English.', outlines },
+    });
+    mocks.generateSceneContent.mockImplementation(async (sceneOutline) => {
+      if (sceneOutline.type === 'pbl') {
+        throw new PBLGenerationErrorMock('provider key rejected', { statusCode: 401 });
+      }
+      return slideContent;
+    });
+
+    const { result } = await generateWithProgress();
+    const pblCalls = mocks.generateSceneContent.mock.calls.filter(
+      ([sceneOutline]) => sceneOutline.type === 'pbl',
+    );
+
+    expect(result.scenesCount).toBe(2);
+    expect(result.scenes.map((scene) => scene.title)).toEqual(['Opening slide', 'Closing slide']);
+    expect(pblCalls).toHaveLength(1);
+  });
+
+  it('retries a 429 PBL failure before skipping it and completing surrounding slides', async () => {
+    vi.useFakeTimers();
+    try {
+      const outlines = [
+        { ...outline, id: 'outline-slide-1', title: 'Opening slide', order: 0 },
+        {
+          ...outline,
+          id: 'outline-pbl',
+          type: 'pbl' as const,
+          title: 'Practice project',
+          order: 1,
+          pblConfig: {
+            projectTopic: 'Retries',
+            projectDescription: 'Practice resilient generation',
+            targetSkills: ['Retry handling'],
+          },
+        },
+        { ...outline, id: 'outline-slide-2', title: 'Closing slide', order: 2 },
+      ];
+      mocks.generateSceneOutlinesFromRequirements.mockResolvedValue({
+        success: true,
+        data: { languageDirective: 'Use English.', outlines },
+      });
+      mocks.generateSceneContent.mockImplementation(async (sceneOutline) => {
+        if (sceneOutline.type === 'pbl') {
+          throw new PBLGenerationErrorMock('provider rate limited', { statusCode: 429 });
+        }
+        return slideContent;
+      });
+
+      const generation = generateWithProgress();
+      await vi.runAllTimersAsync();
+      const { result } = await generation;
+      const pblCalls = mocks.generateSceneContent.mock.calls.filter(
+        ([sceneOutline]) => sceneOutline.type === 'pbl',
+      );
+
+      expect(result.scenesCount).toBe(2);
+      expect(result.scenes.map((scene) => scene.title)).toEqual(['Opening slide', 'Closing slide']);
+      expect(pblCalls).toHaveLength(6);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

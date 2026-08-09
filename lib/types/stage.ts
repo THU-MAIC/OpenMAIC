@@ -17,7 +17,7 @@ import type {
 } from '@openmaic/dsl';
 import type { Action } from '@/lib/types/action';
 import type { WidgetConfig } from '@/lib/types/widgets';
-import type { PBLProjectConfig } from '@/lib/pbl/types';
+import type { PBLProjectConfig } from '@/lib/pbl/legacy/read';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 
 export type {
@@ -67,12 +67,13 @@ export type InteractiveContent = DslInteractiveContent<WidgetConfig>;
  * PBL content - Project-based learning.
  *
  * App-level feature surface: kept here rather than in `@openmaic/dsl` because it
- * couples to the project-based-learning config (`PBLProjectConfig`).
+ * supports v2 projects and read-only legacy v1 project data.
  */
 export interface PBLContent {
   type: 'pbl';
-  projectConfig: PBLProjectConfig;
-  /** PBL v2 payload used by the new web-PBL runtime, while preserving v1 compatibility. */
+  /** Read-only data retained on scenes stored before the PBL v2 cutover. */
+  projectConfig?: PBLProjectConfig;
+  /** PBL v2 project payload used by the web-PBL runtime. */
   projectV2?: PBLProjectV2;
 }
 

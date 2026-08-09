@@ -583,67 +583,7 @@
     "startRecording": "开始录音"
   },
   "pbl": {
-    "legacyFormat": "此PBL场景使用旧格式，请重新生成课程",
     "emptyProject": "PBL项目尚未生成，请通过课程生成创建",
-    "roleSelection": {
-      "title": "选择你的角色",
-      "description": "选择一个角色开始项目协作"
-    },
-    "workspace": {
-      "restart": "重新开始",
-      "confirmRestart": "确定重置进度？",
-      "confirm": "确定",
-      "cancel": "取消"
-    },
-    "issueboard": {
-      "title": "任务看板",
-      "noIssues": "暂无任务",
-      "statusDone": "已完成",
-      "statusActive": "进行中",
-      "statusPending": "待处理"
-    },
-    "chat": {
-      "title": "项目讨论",
-      "currentIssue": "当前任务",
-      "mentionHint": "使用 @question 提问，@judge 提交评审",
-      "placeholder": "输入消息...",
-      "send": "发送",
-      "issueCompleteMessage": "任务「{{completed}}」已完成！进入下一个任务：「{{next}}」",
-      "allCompleteMessage": "🎉 所有任务都已完成！项目做得很棒！"
-    },
-    "guide": {
-      "howItWorks": "如何参与项目",
-      "help": "使用帮助",
-      "title": "使用帮助",
-      "step1": {
-        "title": "第一步：选择角色",
-        "desc": "项目生成后，从角色列表中选择一个角色（标记为🟢的非系统角色）"
-      },
-      "step2": {
-        "title": "第二步：完成任务",
-        "desc": "每个任务代表一个学习目标：",
-        "s1": {
-          "title": "查看当前任务",
-          "desc": "查看任务的标题、描述、负责人"
-        },
-        "s2": {
-          "title": "获取指导",
-          "example": "@question 我应该从哪里开始？\n@question 如何实现这个功能？",
-          "desc": "提问助手会提供引导性问题和提示（不直接给答案）"
-        },
-        "s3": {
-          "title": "提交作品",
-          "example": "@judge 我已经完成了，请检查",
-          "desc": "评审助手会评估你的工作并给出反馈：",
-          "complete": "自动进入下一个任务",
-          "revision": "根据反馈改进"
-        }
-      },
-      "step3": {
-        "title": "第三步：完成项目",
-        "desc": "所有任务完成后，系统会显示「🎉 项目已完成！」"
-      }
-    },
     "v2": {
       "hero": {
         "title": "项目实战 · Project-Based Learning",

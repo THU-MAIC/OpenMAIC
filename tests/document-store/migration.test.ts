@@ -294,7 +294,12 @@ describe('legacy document migration', () => {
       type: 'pbl',
       projectConfig: {},
       projectV2: {
+        roles: [],
         milestones: [{ microtasks: [{ internalAssessment: undefined }] }],
+        submissions: [],
+        evaluations: [],
+        threads: [],
+        engagementEvents: [],
       },
     } as never;
     const kv = new MemoryKv();

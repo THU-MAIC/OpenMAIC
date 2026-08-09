@@ -26,8 +26,7 @@ export type PromptId =
   | 'agent-system-wb-teacher'
   | 'agent-system-wb-assistant'
   | 'agent-system-wb-student'
-  | 'director'
-  | 'pbl-design';
+  | 'director';
 
 /**
  * Snippet identifier
@@ -53,3 +52,5 @@ export interface LoadedPrompt {
   systemPrompt: string;
   userPromptTemplate: string;
 }
+
+export type PromptVariableDefaults = Partial<Record<PromptId, Readonly<Record<string, unknown>>>>;

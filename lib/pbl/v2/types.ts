@@ -4,9 +4,8 @@
  * Replaces v1's role-selection + read-only issueboard + @question/@judge
  * model with a single-Instructor guided flow (Hero → Workspace → Completion).
  *
- * v1 (`PBLProjectConfig` in `./types.ts`) is **preserved** for backward
- * compatibility — both fields coexist on `PBLContent`, the renderer
- * branches on which one is populated.
+ * Legacy v1 project data is supported only through the read-only adapter in
+ * `../legacy/read.ts`; new generation and persistence use this v2 model.
  *
  * The product ships a single Instructor. The multi-agent chat-thread
  * structure is kept generic so additional roles can be introduced later
@@ -748,7 +747,7 @@ export interface PBLPendingTaskCompletion {
 /**
  * The v2 PBL project model. Lives at `scene.content.projectV2`.
  *
- * Key differences from v1 `PBLProjectConfig`:
+ * Key differences from the legacy v1 project shape:
  *  - Replaces "issueboard" with structured Milestones + Microtasks
  *  - Replaces the role-selection Landing with Hero → Workspace →
  *    Completion flow
@@ -944,9 +943,82 @@ export interface PBLPlannerV2Input {
 // Type guards
 // ---------------------------------------------------------------------------
 
-/** Narrow `unknown` to `PBLProjectV2`. Used by `pbl-renderer.tsx` to
- *  branch v1 vs v2 paths. Cheap structural check — does not validate
- *  every field; intended as a safety net, not a full validator. */
+function isNonArrayObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isObjectArray(value: unknown): value is Record<string, unknown>[] {
+  return Array.isArray(value) && value.every(isNonArrayObject);
+}
+
+/** Whether a persisted v2 value has every container the renderer and runtime
+ *  normalization path dereference on mount. Deliberately ignores leaf fields:
+ *  old or hand-edited projects may have incomplete scalar metadata while still
+ *  being safe to normalize and render. */
+export function hasPBLProjectV2Containers(value: unknown): boolean {
+  if (!isNonArrayObject(value)) return false;
+
+  if (
+    !isObjectArray(value.milestones) ||
+    !isObjectArray(value.roles) ||
+    !isObjectArray(value.submissions) ||
+    !isObjectArray(value.evaluations) ||
+    !isObjectArray(value.threads) ||
+    !isObjectArray(value.engagementEvents)
+  ) {
+    return false;
+  }
+
+  if (value.milestones.some((milestone) => !isObjectArray(milestone.microtasks))) return false;
+  if (value.threads.some((thread) => !isObjectArray(thread.messages))) return false;
+
+  if (value.gains !== undefined && !Array.isArray(value.gains)) return false;
+  if (value.runtimeEvents !== undefined && !isObjectArray(value.runtimeEvents)) return false;
+  if (value.scenario !== undefined) {
+    if (!isNonArrayObject(value.scenario)) return false;
+    if (!isObjectArray(value.scenario.characters)) return false;
+  }
+
+  return true;
+}
+
+/** Whether a stored v2 payload has the minimum design structure the current
+ * workspace can turn into learner progress. Runtime normalization can repair
+ * status and create the Instructor thread, but it cannot synthesize the role
+ * id used to bind that thread, the microtask ids used by lookup/update paths,
+ * or the role/task labels rendered by the workspace and Instructor prompt.
+ * Other scalar leaves remain deliberately outside this structural predicate. */
+export function isRunnablePBLProjectV2(value: unknown): boolean {
+  if (!hasPBLProjectV2Containers(value)) return false;
+
+  const project = value as {
+    roles: Record<string, unknown>[];
+    milestones: Array<{ microtasks: Record<string, unknown>[] }>;
+  };
+  return (
+    project.roles.some(
+      (role) =>
+        role.type === 'instructor' &&
+        typeof role.id === 'string' &&
+        role.id.trim().length > 0 &&
+        typeof role.name === 'string',
+    ) &&
+    project.milestones.length > 0 &&
+    project.milestones.every(
+      (milestone) =>
+        milestone.microtasks.length > 0 &&
+        milestone.microtasks.every(
+          (microtask) =>
+            typeof microtask.id === 'string' &&
+            microtask.id.trim().length > 0 &&
+            typeof microtask.title === 'string',
+        ),
+    )
+  );
+}
+
+/** Narrow `unknown` to `PBLProjectV2`. Cheap structural check — does not
+ *  validate every field; intended as a safety net, not a full validator. */
 export function isPBLProjectV2(value: unknown): value is PBLProjectV2 {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Partial<PBLProjectV2>;

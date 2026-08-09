@@ -34,3 +34,5 @@ export interface LoadedPrompt {
   systemPrompt: string;
   userPromptTemplate: string;
 }
+
+export type PromptVariableDefaults = Partial<Record<PromptId, Readonly<Record<string, unknown>>>>;

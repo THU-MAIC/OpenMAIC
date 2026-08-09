@@ -51,6 +51,7 @@ import {
 import { DEFAULT_TIER, proficiencyDirectiveFromTarget } from '../operations/kernel/proficiency';
 import { buildAdvanceProjectPatch } from '../operations/runtime/advance-patch';
 import { formatScenarioTranscript } from '../operations/runtime/eval-prompts';
+import { trimmedPBLText } from '../readers';
 
 const log = createLogger('PBL v2 Instructor');
 
@@ -186,9 +187,10 @@ export function taskEvaluationStatusForMicrotask(
   return 'latest task evaluation recorded without a numeric score';
 }
 
-function truncateForPrompt(text: string | undefined, max = 260): string {
-  if (!text) return '';
-  const compact = text.replace(/\s+/g, ' ').trim();
+function truncateForPrompt(text: unknown, max = 260): string {
+  const stringText = typeof text === 'string' ? text : '';
+  if (!stringText) return '';
+  const compact = stringText.replace(/\s+/g, ' ').trim();
   return compact.length > max ? compact.slice(0, max - 1) + '…' : compact;
 }
 
@@ -267,10 +269,9 @@ export function buildPriorSubmissionsBlock(
           : sub.kind === 'link'
             ? 'link'
             : 'text';
-      const body =
-        sub.summary && sub.summary.trim()
-          ? truncateForPrompt(sub.summary, perSnippet)
-          : truncateForPrompt(sub.content, perSnippet);
+      const body = trimmedPBLText(sub.summary)
+        ? truncateForPrompt(sub.summary, perSnippet)
+        : truncateForPrompt(sub.content, perSnippet);
       // Only treat the evaluation as belonging to THIS (latest) submission when
       // it is not older than the submission. A newer-but-unevaluated submission
       // must not borrow the previous version's score — otherwise the Instructor
@@ -693,8 +694,8 @@ export function buildScenarioAwarenessBlock(args: {
 
   const cast = characters
     .map((c) => {
-      const persona = (c.persona ?? '').trim();
-      const situation = (c.situation ?? '').trim();
+      const persona = trimmedPBLText(c.persona);
+      const situation = trimmedPBLText(c.situation);
       const personaShort = persona.length > 140 ? persona.slice(0, 140) + '…' : persona;
       const situationShort = situation.length > 160 ? situation.slice(0, 160) + '…' : situation;
       const parts = [personaShort, situationShort ? `当下处境：${situationShort}` : '']
@@ -728,7 +729,7 @@ export function buildScenarioAwarenessBlock(args: {
       // interviews / etc. get it; free scenarios like "comfort a friend"
       // leave it empty). When present we REQUIRE a real rules section;
       // when absent we forbid inventing one.
-      const hasRules = !!scenario.rules?.trim();
+      const hasRules = !!trimmedPBLText(scenario.rules);
       const rulesPart = hasRules
         ? '6. **Rules — REQUIRED for this scenario.** It has a defined rule-set, so include a clearly-formatted "rules" section that genuinely TEACHES a newcomer how to take part — never just name jargon. As **bullet points**, lay out the concrete rules from "Rules the learner must know" above (e.g. for a card game: hand ranking, the betting rounds, blinds, and what each key term like Pot Odds / Fold / Call / Raise / Check actually means; for a debate: the motion, each side\'s stance, the speaking format; for an interview: the rounds and what each assesses). A beginner must be able to actually play / participate after reading it — do not leave any named term unexplained.'
         : '6. Any remaining background THIS scenario needs so nothing important is missing (e.g. the relationship context, who knows what). This scenario has **no special rule-set**, so do NOT invent rules or a rulebook — keep it to the natural background.';
@@ -906,7 +907,7 @@ export function ensureNonEmptyInstructorMessages(
   fallbackUserContent: string,
 ): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
   const cleaned = messages
-    .map((m) => ({ ...m, content: m.content.trim() }))
+    .map((m) => ({ ...m, content: trimmedPBLText(m.content) }))
     .filter((m) => m.content.length > 0);
   const hasConversationalTurn = cleaned.some((m) => m.role === 'user' || m.role === 'assistant');
   if (cleaned.length > 0 && hasConversationalTurn) return cleaned;
