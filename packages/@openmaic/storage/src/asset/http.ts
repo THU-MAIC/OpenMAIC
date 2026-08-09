@@ -33,6 +33,10 @@ interface ObjectUrlIdentity {
   mediaType: string;
 }
 
+// This fixed filename is required for binary safety under standards-conforming parsers, not decoration.
+const ASSET_BYTES_FILENAME = 'asset';
+const DEFAULT_ASSET_CONTENT_TYPE = 'application/octet-stream';
+
 /** An asset HTTP failure, retaining its machine-readable identity. */
 export class HttpAssetStoreError extends Error {
   constructor(
@@ -299,8 +303,8 @@ export class HttpAssetStore implements StorageProvider {
     }
     parts.push(
       `--${boundary}\r\n` +
-        'Content-Disposition: form-data; name="bytes"\r\n' +
-        (data.type === '' ? '' : `Content-Type: ${data.type}\r\n`) +
+        `Content-Disposition: form-data; name="bytes"; filename="${ASSET_BYTES_FILENAME}"\r\n` +
+        `Content-Type: ${data.type === '' ? DEFAULT_ASSET_CONTENT_TYPE : data.type}\r\n` +
         '\r\n',
       bytes,
       `\r\n--${boundary}--\r\n`,

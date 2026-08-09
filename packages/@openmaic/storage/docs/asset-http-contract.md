@@ -67,13 +67,13 @@ Byte responses MUST NOT advertise `Accept-Ranges` and MUST ignore a `Range` head
 `POST /assets` and `PUT /assets/{id}/content` take `multipart/form-data`, with the parts in this order:
 
 - **`meta`** — `application/json`, the metadata object. Required on `POST`. **Optional on `PUT`**, where its absence is meaningful; see below.
-- **`bytes`** — the asset bytes, carrying the asset's own `Content-Type`.
+- **`bytes`** — the asset bytes, carrying the asset's own `Content-Type`. The package client uses `application/octet-stream` when the source blob has no type, because multipart parsers otherwise supply their own default media type.
 
-Each part's `Content-Disposition` MUST be `form-data` followed by exactly one `name` parameter, whose parsed value is exactly `meta` or `bytes`, and at most one `filename` parameter. The disposition type and parameter names are case-insensitive; the `name` value is case-sensitive. Parameter values may be MIME tokens or quoted strings with backslash escapes. Optional whitespace is ASCII space or horizontal tab only. A `filename` value is parsed for grammatical validity and then discarded; it has no meaning anywhere in this package.
+The multipart framing MUST be parsed by a standards-conforming multipart parser; a deployment MUST NOT hand-roll one. A bespoke grammar disagrees with the parsers intermediaries use, and every such disagreement is a way for a scanner and the application to see different parts.
 
-The server MUST refuse with `400 VALIDATION_FAILED` every other disposition shape: a third parameter; a repeated `name` or `filename`; any extended or continuation form such as `name*`, `name*0`, or `name*0*` (and the corresponding `filename` forms), in any case; an empty parameter slot; a separator followed by nothing; a parameter without `=`; an unterminated quoted value; a dangling escape; or any text after a closing quote other than ASCII optional whitespace. Non-ASCII whitespace is not optional whitespace and MUST also be refused. This surface is deliberately narrower than RFC 2183 permits because three review rounds found parser differentials in this exact header, while the asset transport needs only part identity plus `filename` compatibility with standard clients.
+The `bytes` part MUST carry a `filename`. Without one, a conforming parser text-decodes the payload and silently corrupts non-UTF-8 bytes. Its value is fixed by the client, never read by the server, and never derived from caller data. The `meta` part may be sent with or without a `filename`.
 
-Multipart rather than metadata alongside a raw body, because there is nowhere safe to put the metadata. It is an open-ended object, and real callers fill it with generated-narration text and image-generation prompts — **unbounded caller-supplied content**. In a query parameter that content would sit in the request target, where it hits the request-target ceiling and is written verbatim into every intermediary's access log. A custom header has the same size problem for the same reason. Multipart is a standards-defined framing rather than a bespoke one, which is the property that matters; note honestly that it is *not* free at the Node request boundary this package's reference server uses, where no multipart parser is built in — a Fetch-boundary deployment can use `Request.formData()`, while a Node-boundary deployment needs a bounded parser, and either way `maxMetaBytes` must be enforced before the JSON is parsed rather than after.
+Multipart rather than metadata alongside a raw body, because there is nowhere safe to put the metadata. It is an open-ended object, and real callers fill it with generated-narration text and image-generation prompts — **unbounded caller-supplied content**. In a query parameter that content would sit in the request target, where it hits the request-target ceiling and is written verbatim into every intermediary's access log. A custom header has the same size problem for the same reason. Multipart is a standards-defined framing rather than a bespoke one, which is the property that matters; `maxMetaBytes` must be enforced against the parsed metadata part before the JSON is parsed rather than after.
 
 From this, one rule the other layers have no need for:
 
@@ -83,7 +83,7 @@ The client's request-header hook MUST NOT set `Content-Type`, and a client whose
 
 ### Sizes
 
-Three separate limits, because they bound three different things:
+Three byte limits and one part-count limit, because they bound different things:
 
 | Limit | Default | Bounds | Measured on |
 | --- | --- | --- | --- |
@@ -91,25 +91,26 @@ Three separate limits, because they bound three different things:
 | `maxAssetBytes` | 32 MiB | The `bytes` part | Decoded part content |
 | `maxMetaBytes` | 64 KiB | The `meta` part | Decoded part content |
 | `maxParts` | 8 | Number of multipart parts | Parsed frames |
-| `maxPartHeaderBytes` | 8 KiB | One part's header block | Raw octets |
 
-`maxAssetBytes` and `maxMetaBytes` measure a storage budget and a parsing budget respectively; one shared limit either caps assets at metadata scale or admits metadata at asset scale. `maxRequestBytes` exists because those two each bound one named part and nothing else: without it, a multipart preamble, a part header block, or a flood of parts named neither `meta` nor `bytes` satisfies both stated limits at unbounded cost. `maxParts` and `maxPartHeaderBytes` bound the two dimensions a byte count alone does not express usefully.
+`maxAssetBytes` and `maxMetaBytes` measure a storage budget and a parsing budget respectively; one shared limit either caps assets at metadata scale or admits metadata at asset scale. `maxRequestBytes` exists because those two each bound one named part and nothing else: without it, a multipart preamble, a part header block, or a flood of parts named neither `meta` nor `bytes` satisfies both stated limits at unbounded cost. `maxParts` bounds the parsed entry count. Per-part header bounding belongs to the standards-conforming parser rather than to this contract; the whole request remains bounded by `maxRequestBytes`.
 
 The outer bound is measured differently from the inner two, and deliberately so: it exists to stop reading, so it cannot wait for a decode. A handler MUST assert at construction that `maxRequestBytes` exceeds `maxAssetBytes + maxMetaBytes` with room for multipart framing, or the outer bound silently masks the inner one — with the defaults above equal, an asset at exactly `maxAssetBytes` would always be rejected by the request bound, reporting the wrong limit.
 
-None may be inferred from `Content-Length`, which is a claim by the sender. Counting bytes as they are read is necessary but not sufficient for the decoded limits — under a `Content-Encoding` the bytes read are a fraction of the bytes stored, and the expansion lands inside the transaction that holds the write. A server therefore MUST reject `Content-Encoding` on these requests, and any `Content-Transfer-Encoding` other than `binary`, `8bit`, or `7bit`, with `400 VALIDATION_FAILED`. Exceeding any size limit is `413 PAYLOAD_TOO_LARGE`, raised **before any bytes are stored**.
+None may be inferred from `Content-Length`, which is a claim by the sender. Counting bytes as they are read is necessary but not sufficient for the decoded limits — under a `Content-Encoding` the bytes read are a fraction of the bytes stored, and the expansion lands inside the transaction that holds the write. A server therefore MUST reject `Content-Encoding` on these requests with `400 VALIDATION_FAILED`. Exceeding any size limit is `413 PAYLOAD_TOO_LARGE`, raised **before any bytes are stored**.
 
 ### Malformed and hostile bodies
 
-A request whose `Content-Type` is not `multipart/form-data` with a valid boundary is `415 UNSUPPORTED_MEDIA_TYPE`. The expected part count is exactly two on `POST`, and one or two on `PUT` since `meta` is optional there; any other count, any duplicate part name, any unnamed or unrecognized part, and any nested multipart is `400 VALIDATION_FAILED`. Duplicate parts in particular MUST be rejected rather than resolved by a first-wins or last-wins rule: a scanning intermediary and the application choosing differently is a parser differential, and the two would disagree about which metadata a request carried.
+A request whose `Content-Type` is not `multipart/form-data` is `415 UNSUPPORTED_MEDIA_TYPE`. A failure by the multipart parser, including invalid boundary framing, is `400 VALIDATION_FAILED` with a fixed package message. The expected entries are exactly `meta` and `bytes` on `POST`, and `bytes` with optional `meta` on `PUT`; any other entry name or any duplicate is `400 VALIDATION_FAILED`. Duplicate entries in particular MUST be rejected rather than resolved by a first-wins or last-wins rule: a scanning intermediary and the application choosing differently is a parser differential, and the two would disagree about which metadata a request carried.
 
-`meta` MUST precede `bytes` so that `maxMetaBytes` is enforceable without buffering the asset first.
+When both entries are present, `meta` MUST precede `bytes`.
 
 ### Recording the media type
 
 On `POST`, the recorded media type is `meta.contentType` when that member is **present** — including when it is the empty string — and the `bytes` part's own `Content-Type` only when it is absent. The distinction is `??` rather than `||`, and it is observable: an explicitly empty `contentType` records the empty string and is therefore served as an attachment, where a fallback would have served the blob's type inline.
 
 On `PUT`, when `meta` is present it replaces the entry's metadata wholesale and the media type is derived the same way. When `meta` is **absent**, the entry's existing metadata is retained and its media type is retained unless the `bytes` part carries one.
+
+The package client always carries a media type on `bytes`: an untyped source blob is sent as `application/octet-stream`. This is necessary because a standards-conforming parser supplies a default media type for a file part whose header omits one, so omission cannot survive parsing as an empty type and cannot signal retention. Metadata omission still retains the existing metadata object; only the media type follows the replacement bytes.
 
 Both branches exist because the browser backend has both, and the absent branch is the one that matters: regenerating bytes in place while keeping the recorded provenance is the use case `replace` exists for. A wire on which `meta` were mandatory would force a client to send `{}`, erasing the accumulated prompt, model, narration, and voice on every regeneration — through a call that returns `204`.
 
@@ -125,7 +126,7 @@ video/mp4  video/webm  video/ogg
 
 Matching is exact, case-insensitive, and whole-string, with no parameters accepted. A deployment may narrow this list; widening it is a decision about executable content. **Excluded, and MUST remain excluded:** `image/svg+xml` and `image/svg`, `text/html`, `application/xhtml+xml`, `text/xml` and `application/xml`, and `application/pdf`. These are document formats that execute script, not media, and serving one same-origin turns stored bytes into stored script.
 
-A recorded media type that is not a string, is empty, or is outside the allowlist is served as `application/octet-stream` with `Content-Disposition: attachment`. The empty case is real: with no `meta.contentType` and an untyped `bytes` part, the recorded type is the empty string. The client MUST label its minted object URL from the **served** `Content-Type` and from nothing else; labelling it from metadata would reintroduce inside a `blob:` URL exactly what the allowlist excludes.
+A recorded media type that is not a string, is empty, or is outside the allowlist is served as `application/octet-stream` with `Content-Disposition: attachment`. The empty case is real when metadata explicitly carries an empty `contentType`. The client MUST label its minted object URL from the **served** `Content-Type` and from nothing else; labelling it from metadata would reintroduce inside a `blob:` URL exactly what the allowlist excludes.
 
 **Relabelling is not refusal.** `resolve` returns a minted URL for every stored asset regardless of media type; a non-renderable asset yields a URL labelled `application/octet-stream` that a media element will not render, and that is the intended outcome rather than a miss. Returning `null` instead would fail the shared conformance suite, every blob in which is `text/plain` — outside any sensible allowlist — and would conflate "these bytes are not safe to render inline" with "there are no bytes." The disposition header governs direct navigation and does no work on this path, where bytes reach the caller through `fetch`; the protection that carries the weight is the relabelling together with `nosniff`.
 
@@ -287,7 +288,7 @@ The client raises `HttpAssetStoreError` in every throwing case below.
 | Condition | HTTP status | Error code | Client behavior |
 | --- | --- | --- | --- |
 | Malformed multipart, a missing or duplicate part, a query string, a prohibited header, a body on a bodyless method, or metadata outside the value domain (an *id* is opaque and never a validation failure) | `400` | `VALIDATION_FAILED` | Throw with the server message |
-| Request `Content-Type` is not `multipart/form-data` with a valid boundary | `415` | `UNSUPPORTED_MEDIA_TYPE` | Throw |
+| Request `Content-Type` is not `multipart/form-data` | `415` | `UNSUPPORTED_MEDIA_TYPE` | Throw |
 | Method not allowed on this route | `405` | `METHOD_NOT_ALLOWED` | Throw |
 | Metadata, bytes, or the whole request exceed the deployment's bound | `413` | `PAYLOAD_TOO_LARGE` | Throw |
 | The principal's logical bytes would exceed its quota | `507` | `ASSET_QUOTA_EXCEEDED` | Throw |

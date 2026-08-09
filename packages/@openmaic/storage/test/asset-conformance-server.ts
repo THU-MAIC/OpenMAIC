@@ -81,9 +81,6 @@ export async function startAssetConformanceServer(
         ...(options.maxAssetBytes === undefined ? {} : { maxAssetBytes: options.maxAssetBytes }),
         ...(options.maxMetaBytes === undefined ? {} : { maxMetaBytes: options.maxMetaBytes }),
         ...(options.maxParts === undefined ? {} : { maxParts: options.maxParts }),
-        ...(options.maxPartHeaderBytes === undefined
-          ? {}
-          : { maxPartHeaderBytes: options.maxPartHeaderBytes }),
       }),
     };
     states.set(namespace, state);

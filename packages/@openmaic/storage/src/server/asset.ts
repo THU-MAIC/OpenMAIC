@@ -34,24 +34,15 @@ export interface AssetHttpHandlerOptions {
   maxMetaBytes?: number;
   /** Multipart frame-count limit. Defaults to 8. */
   maxParts?: number;
-  /** Raw header limit for each multipart part. Defaults to 8 KiB. */
-  maxPartHeaderBytes?: number;
 }
 
 export const DEFAULT_MAX_ASSET_REQUEST_BYTES = 33 * 1024 * 1024;
 export const DEFAULT_MAX_ASSET_BYTES = 32 * 1024 * 1024;
 export const DEFAULT_MAX_ASSET_META_BYTES = 64 * 1024;
 export const DEFAULT_MAX_ASSET_PARTS = 8;
-export const DEFAULT_MAX_ASSET_PART_HEADER_BYTES = 8 * 1024;
 
 interface ErrorBody {
   error: { code: string; message: string; details?: unknown };
-}
-
-interface MultipartPart {
-  name: 'meta' | 'bytes';
-  contentType: string;
-  bytes: Buffer;
 }
 
 interface ParsedWrite {
@@ -116,49 +107,18 @@ function assertPositiveSafeInteger(value: number, label: string): void {
   }
 }
 
-function parseBoundary(contentType: string | undefined): string {
-  if (contentType === undefined) {
-    throw new AssetHttpError(
-      415,
-      'UNSUPPORTED_MEDIA_TYPE',
-      '@openmaic/storage: asset writes require multipart/form-data',
-    );
-  }
-  const pieces = contentType.split(';');
-  if (pieces.shift()?.trim().toLowerCase() !== 'multipart/form-data') {
-    throw new AssetHttpError(
-      415,
-      'UNSUPPORTED_MEDIA_TYPE',
-      '@openmaic/storage: asset writes require multipart/form-data',
-    );
-  }
-  let boundary: string | undefined;
-  for (const piece of pieces) {
-    const match = /^\s*boundary\s*=\s*(?:"([^"]*)"|([^\s;]+))\s*$/i.exec(piece);
-    if (match) {
-      if (boundary !== undefined) {
-        throw new AssetHttpError(
-          415,
-          'UNSUPPORTED_MEDIA_TYPE',
-          '@openmaic/storage: multipart/form-data must carry one boundary',
-        );
-      }
-      boundary = match[1] ?? match[2];
-    }
-  }
+function assertMultipartContentType(contentType: string | undefined): string {
   if (
-    boundary === undefined ||
-    boundary.length < 1 ||
-    boundary.length > 70 ||
-    !/^[0-9A-Za-z'()+_,\-.\/:=? ]*[0-9A-Za-z'()+_,\-.\/:=?]$/.test(boundary)
+    contentType === undefined ||
+    contentType.split(';', 1)[0]?.trim().toLowerCase() !== 'multipart/form-data'
   ) {
     throw new AssetHttpError(
       415,
       'UNSUPPORTED_MEDIA_TYPE',
-      '@openmaic/storage: multipart/form-data requires a valid boundary',
+      '@openmaic/storage: asset writes require multipart/form-data',
     );
   }
-  return boundary;
+  return contentType;
 }
 
 async function readBoundedBody(req: IncomingMessage, maxRequestBytes: number): Promise<Buffer> {
@@ -186,243 +146,6 @@ async function assertBodyless(req: IncomingMessage): Promise<void> {
   }
 }
 
-function parsePartHeaders(raw: Buffer): Map<string, string> {
-  const headers = new Map<string, string>();
-  const text = raw.toString('latin1');
-  for (const line of text.split('\r\n')) {
-    const separator = line.indexOf(':');
-    if (separator <= 0 || /^[ \t]/.test(line)) {
-      throw validationFailure('@openmaic/storage: malformed multipart part headers');
-    }
-    const name = trimAsciiWhitespace(line.slice(0, separator)).toLowerCase();
-    const value = trimAsciiWhitespace(line.slice(separator + 1));
-    if (!isMimeToken(name)) {
-      throw validationFailure('@openmaic/storage: malformed multipart part headers');
-    }
-    if (headers.has(name)) {
-      throw validationFailure('@openmaic/storage: duplicate multipart part header');
-    }
-    headers.set(name, value);
-  }
-  return headers;
-}
-
-function trimAsciiWhitespace(value: string): string {
-  return value.replace(/^[ \t]+|[ \t]+$/g, '');
-}
-
-function isMimeToken(value: string): boolean {
-  return /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(value);
-}
-
-/**
- * Parse disposition parameters, honouring quoted strings and backslash
- * escapes.
- *
- * This is deliberately narrower than RFC 2183 permits: asset writes need only
- * `name` and the compatibility-only `filename`. Requiring complete MIME tokens
- * and ASCII optional whitespace rejects extensions, continuations, empty
- * slots, and non-ASCII parser differentials without interpreting them.
- */
-function dispositionParameters(disposition: string): Array<[string, string]> {
-  const parameters: Array<[string, string]> = [];
-  let index = disposition.indexOf(';');
-  if (index < 0) return parameters;
-
-  while (index < disposition.length) {
-    index += 1;
-    while (index < disposition.length && /[ \t]/.test(disposition[index]!)) index += 1;
-    if (index >= disposition.length || disposition[index] === ';') {
-      throw validationFailure(
-        '@openmaic/storage: multipart part disposition requires complete parameters',
-      );
-    }
-
-    const nameStart = index;
-    while (index < disposition.length && isMimeToken(disposition[index]!)) index += 1;
-    if (index === nameStart) {
-      throw validationFailure(
-        '@openmaic/storage: multipart part disposition parameters require a valid name',
-      );
-    }
-    const name = disposition.slice(nameStart, index).toLowerCase();
-    while (index < disposition.length && /[ \t]/.test(disposition[index]!)) index += 1;
-    if (disposition[index] !== '=') {
-      throw validationFailure(
-        '@openmaic/storage: multipart part disposition parameters require a value',
-      );
-    }
-    index += 1;
-    while (index < disposition.length && /[ \t]/.test(disposition[index]!)) index += 1;
-
-    let value = '';
-    if (disposition[index] === '"') {
-      index += 1;
-      let closed = false;
-      while (index < disposition.length) {
-        const character = disposition[index]!;
-        if (character === '\\') {
-          if (index + 1 >= disposition.length) {
-            throw validationFailure(
-              '@openmaic/storage: multipart part disposition ends in a dangling escape',
-            );
-          }
-          value += disposition[index + 1]!;
-          index += 2;
-          continue;
-        }
-        if (character === '"') {
-          closed = true;
-          index += 1;
-          break;
-        }
-        value += character;
-        index += 1;
-      }
-      if (!closed) {
-        throw validationFailure(
-          '@openmaic/storage: multipart part disposition has an unterminated quoted value',
-        );
-      }
-      while (index < disposition.length && /[ \t]/.test(disposition[index]!)) index += 1;
-      if (index < disposition.length && disposition[index] !== ';') {
-        throw validationFailure(
-          '@openmaic/storage: multipart part disposition has trailing text after a quoted value',
-        );
-      }
-    } else {
-      const valueStart = index;
-      while (index < disposition.length && isMimeToken(disposition[index]!)) index += 1;
-      if (index === valueStart) {
-        throw validationFailure(
-          '@openmaic/storage: multipart part disposition parameters require a value',
-        );
-      }
-      value = disposition.slice(valueStart, index);
-      while (index < disposition.length && /[ \t]/.test(disposition[index]!)) index += 1;
-      if (index < disposition.length && disposition[index] !== ';') {
-        throw validationFailure(
-          '@openmaic/storage: multipart part disposition has trailing text after a token value',
-        );
-      }
-    }
-    parameters.push([name, value]);
-  }
-  return parameters;
-}
-
-function partName(disposition: string | undefined): 'meta' | 'bytes' {
-  if (disposition === undefined || !/^[ \t]*form-data[ \t]*(?:;|$)/i.test(disposition)) {
-    throw validationFailure('@openmaic/storage: multipart parts require form-data disposition');
-  }
-  const parameters = dispositionParameters(disposition);
-  let name: string | undefined;
-  let sawFilename = false;
-  for (const parameter of parameters) {
-    const key = parameter[0];
-    if (key === 'name') {
-      if (name !== undefined) {
-        throw validationFailure('@openmaic/storage: multipart parts require exactly one name');
-      }
-      name = parameter[1];
-      continue;
-    }
-    if (key === 'filename') {
-      if (sawFilename) {
-        throw validationFailure('@openmaic/storage: multipart parts permit at most one filename');
-      }
-      // Accepted for standard client compatibility, then deliberately never read.
-      sawFilename = true;
-      continue;
-    }
-    throw validationFailure('@openmaic/storage: multipart part disposition parameter is refused');
-  }
-  if (name === undefined) {
-    throw validationFailure('@openmaic/storage: multipart parts require exactly one name');
-  }
-  if (name !== 'meta' && name !== 'bytes') {
-    throw validationFailure('@openmaic/storage: asset write body contains an unrecognized part');
-  }
-  return name;
-}
-
-function parseMultipart(
-  body: Buffer,
-  boundary: string,
-  limits: {
-    maxParts: number;
-    maxPartHeaderBytes: number;
-    maxMetaBytes: number;
-    maxAssetBytes: number;
-  },
-): MultipartPart[] {
-  const opening = Buffer.from(`--${boundary}\r\n`, 'latin1');
-  const delimiter = Buffer.from(`\r\n--${boundary}`, 'latin1');
-  if (!body.subarray(0, opening.length).equals(opening)) {
-    throw validationFailure('@openmaic/storage: malformed multipart body');
-  }
-  const parts: MultipartPart[] = [];
-  let offset = opening.length;
-  while (true) {
-    if (parts.length >= limits.maxParts) {
-      // A declared resource limit, so it answers like the other three rather
-      // than as a validation failure.
-      throw payloadTooLarge(
-        `@openmaic/storage: asset write body exceeds maxParts (${limits.maxParts})`,
-      );
-    }
-    const headerEnd = body.indexOf('\r\n\r\n', offset, 'latin1');
-    if (headerEnd < 0) throw validationFailure('@openmaic/storage: malformed multipart body');
-    if (headerEnd - offset > limits.maxPartHeaderBytes) {
-      throw payloadTooLarge(
-        `@openmaic/storage: multipart part headers exceed maxPartHeaderBytes (${limits.maxPartHeaderBytes})`,
-      );
-    }
-    const headers = parsePartHeaders(body.subarray(offset, headerEnd));
-    const name = partName(headers.get('content-disposition'));
-    if (parts.some((part) => part.name === name)) {
-      throw validationFailure('@openmaic/storage: asset write body contains a duplicate part');
-    }
-    const transferEncoding = headers.get('content-transfer-encoding')?.toLowerCase();
-    if (
-      transferEncoding !== undefined &&
-      transferEncoding !== 'binary' &&
-      transferEncoding !== '8bit' &&
-      transferEncoding !== '7bit'
-    ) {
-      throw validationFailure('@openmaic/storage: unsupported Content-Transfer-Encoding');
-    }
-    const contentType = headers.get('content-type') ?? '';
-    if (contentType.toLowerCase().startsWith('multipart/')) {
-      throw validationFailure('@openmaic/storage: nested multipart parts are not accepted');
-    }
-    const contentStart = headerEnd + 4;
-    const next = body.indexOf(delimiter, contentStart);
-    if (next < 0) throw validationFailure('@openmaic/storage: malformed multipart body');
-    const bytes = body.subarray(contentStart, next);
-    const limit = name === 'meta' ? limits.maxMetaBytes : limits.maxAssetBytes;
-    if (bytes.byteLength > limit) {
-      const label = name === 'meta' ? 'maxMetaBytes' : 'maxAssetBytes';
-      throw payloadTooLarge(`@openmaic/storage: ${name} part exceeds ${label} (${limit})`);
-    }
-    parts.push({ name, contentType, bytes });
-
-    offset = next + delimiter.length;
-    if (body.subarray(offset, offset + 2).equals(Buffer.from('--'))) {
-      offset += 2;
-      if (body.subarray(offset, offset + 2).equals(Buffer.from('\r\n'))) offset += 2;
-      if (offset !== body.length) {
-        throw validationFailure('@openmaic/storage: malformed multipart epilogue');
-      }
-      return parts;
-    }
-    if (!body.subarray(offset, offset + 2).equals(Buffer.from('\r\n'))) {
-      throw validationFailure('@openmaic/storage: malformed multipart boundary');
-    }
-    offset += 2;
-  }
-}
-
 function assertServerMetadataValue(value: unknown): void {
   const visit = (member: unknown): void => {
     if (typeof member === 'string' && member.includes('\u0000')) {
@@ -443,13 +166,19 @@ function assertServerMetadataValue(value: unknown): void {
   visit(value);
 }
 
-function parseMeta(part: MultipartPart): AssetMeta {
-  if (part.contentType.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
+async function parseMeta(part: string | Blob): Promise<AssetMeta> {
+  if (
+    part instanceof Blob &&
+    part.type.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json'
+  ) {
     throw validationFailure('@openmaic/storage: the meta part must be application/json');
   }
   let value: unknown;
   try {
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(part.bytes);
+    const text =
+      typeof part === 'string'
+        ? part
+        : new TextDecoder('utf-8', { fatal: true }).decode(await part.arrayBuffer());
     value = JSON.parse(text) as unknown;
   } catch {
     throw validationFailure('@openmaic/storage: the meta part must contain valid JSON');
@@ -470,7 +199,6 @@ async function readWrite(
   limits: {
     maxRequestBytes: number;
     maxParts: number;
-    maxPartHeaderBytes: number;
     maxMetaBytes: number;
     maxAssetBytes: number;
   },
@@ -478,34 +206,69 @@ async function readWrite(
   if (req.headers['content-encoding'] !== undefined) {
     throw validationFailure('@openmaic/storage: Content-Encoding is not accepted on asset writes');
   }
-  const boundary = parseBoundary(req.headers['content-type']);
+  const contentType = assertMultipartContentType(req.headers['content-type']);
   const body = await readBoundedBody(req, limits.maxRequestBytes);
-  const parts = parseMultipart(body, boundary, limits);
+  let form: FormData;
+  try {
+    const bytes = body.buffer.slice(
+      body.byteOffset,
+      body.byteOffset + body.byteLength,
+    ) as ArrayBuffer;
+    form = await new Response(bytes, { headers: { 'content-type': contentType } }).formData();
+  } catch {
+    throw validationFailure('@openmaic/storage: malformed multipart body');
+  }
+  const parts = [...form.entries()];
+  if (parts.length > limits.maxParts) {
+    throw payloadTooLarge(
+      `@openmaic/storage: asset write body exceeds maxParts (${limits.maxParts})`,
+    );
+  }
+  const named = new Map<'meta' | 'bytes', string | Blob>();
+  for (const [name, part] of parts) {
+    if (name !== 'meta' && name !== 'bytes') {
+      throw validationFailure('@openmaic/storage: asset write body contains an unrecognized part');
+    }
+    if (named.has(name)) {
+      throw validationFailure('@openmaic/storage: asset write body contains a duplicate part');
+    }
+    named.set(name, part);
+  }
   const expectedLengths = requiredMeta ? [2] : [1, 2];
   if (!expectedLengths.includes(parts.length)) {
     throw validationFailure('@openmaic/storage: asset write body has the wrong number of parts');
   }
-  const metaPart = parts.find((part) => part.name === 'meta');
-  const bytesPart = parts.find((part) => part.name === 'bytes');
+  const metaPart = named.get('meta');
+  const bytesPart = named.get('bytes');
   if (bytesPart === undefined) {
     throw validationFailure('@openmaic/storage: asset write body must carry a "bytes" part');
   }
   if (requiredMeta && metaPart === undefined) {
     throw validationFailure('@openmaic/storage: asset write body must carry a "meta" part');
   }
-  if (metaPart !== undefined && parts[0] !== metaPart) {
+  if (metaPart !== undefined && parts[0]?.[0] !== 'meta') {
     throw validationFailure('@openmaic/storage: the meta part must precede the bytes part');
   }
-  if (parts.at(-1) !== bytesPart) {
-    throw validationFailure('@openmaic/storage: the bytes part must be last');
+  if (typeof bytesPart === 'string') {
+    throw validationFailure('@openmaic/storage: the bytes part must be sent as a file');
   }
-  const meta = metaPart === undefined ? undefined : parseMeta(metaPart);
-  const bytes = bytesPart.bytes.buffer.slice(
-    bytesPart.bytes.byteOffset,
-    bytesPart.bytes.byteOffset + bytesPart.bytes.byteLength,
-  ) as ArrayBuffer;
+  if (bytesPart.size > limits.maxAssetBytes) {
+    throw payloadTooLarge(
+      `@openmaic/storage: bytes part exceeds maxAssetBytes (${limits.maxAssetBytes})`,
+    );
+  }
+  if (metaPart !== undefined) {
+    const metaSize =
+      typeof metaPart === 'string' ? new TextEncoder().encode(metaPart).byteLength : metaPart.size;
+    if (metaSize > limits.maxMetaBytes) {
+      throw payloadTooLarge(
+        `@openmaic/storage: meta part exceeds maxMetaBytes (${limits.maxMetaBytes})`,
+      );
+    }
+  }
+  const meta = metaPart === undefined ? undefined : await parseMeta(metaPart);
   return {
-    data: new Blob([bytes], { type: bytesPart.contentType }),
+    data: bytesPart,
     ...(meta === undefined ? {} : { meta }),
   };
 }
@@ -612,7 +375,6 @@ async function route(
     maxAssetBytes: number;
     maxMetaBytes: number;
     maxParts: number;
-    maxPartHeaderBytes: number;
   },
 ): Promise<void> {
   const parts = parsePath(req);
@@ -730,13 +492,11 @@ export function createAssetHttpHandler(
   const maxAssetBytes = options.maxAssetBytes ?? DEFAULT_MAX_ASSET_BYTES;
   const maxMetaBytes = options.maxMetaBytes ?? DEFAULT_MAX_ASSET_META_BYTES;
   const maxParts = options.maxParts ?? DEFAULT_MAX_ASSET_PARTS;
-  const maxPartHeaderBytes = options.maxPartHeaderBytes ?? DEFAULT_MAX_ASSET_PART_HEADER_BYTES;
   for (const [label, value] of [
     ['maxRequestBytes', maxRequestBytes],
     ['maxAssetBytes', maxAssetBytes],
     ['maxMetaBytes', maxMetaBytes],
     ['maxParts', maxParts],
-    ['maxPartHeaderBytes', maxPartHeaderBytes],
   ] as const) {
     assertPositiveSafeInteger(value, label);
   }
@@ -765,7 +525,6 @@ export function createAssetHttpHandler(
     maxAssetBytes,
     maxMetaBytes,
     maxParts,
-    maxPartHeaderBytes,
   };
   return (req, res) => {
     void route(req, res, store, options, config).catch((error: unknown) => {

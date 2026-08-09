@@ -82,28 +82,29 @@ function rawRequest(options: {
 
 interface Part {
   name: string;
-  value: string;
+  value: string | Uint8Array;
   contentType?: string;
-  transferEncoding?: string;
+  filename?: string | null;
   extraHeaders?: Record<string, string>;
 }
 
 function multipart(parts: readonly Part[], boundary = 'asset-test-boundary'): Buffer {
   const chunks: Buffer[] = [];
   for (const part of parts) {
+    const filename =
+      part.filename === undefined ? (part.name === 'bytes' ? 'asset' : undefined) : part.filename;
     chunks.push(
-      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${part.name}"\r\n`),
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="${part.name}"${filename === null || filename === undefined ? '' : `; filename="${filename}"`}\r\n`,
+      ),
     );
     if (part.contentType !== undefined) {
       chunks.push(Buffer.from(`Content-Type: ${part.contentType}\r\n`));
     }
-    if (part.transferEncoding !== undefined) {
-      chunks.push(Buffer.from(`Content-Transfer-Encoding: ${part.transferEncoding}\r\n`));
-    }
     for (const [name, value] of Object.entries(part.extraHeaders ?? {})) {
       chunks.push(Buffer.from(`${name}: ${value}\r\n`));
     }
-    chunks.push(Buffer.from(`\r\n${part.value}\r\n`));
+    chunks.push(Buffer.from('\r\n'), Buffer.from(part.value), Buffer.from('\r\n'));
   }
   chunks.push(Buffer.from(`--${boundary}--\r\n`));
   return Buffer.concat(chunks);
@@ -280,7 +281,16 @@ describe('asset HTTP handler contract', () => {
     const headers = multipartHeaders(storeId);
     const cases: Array<[string, Buffer, number]> = [
       [
-        'duplicate parts',
+        'duplicate meta parts',
+        multipart([
+          { name: 'meta', value: '{}', contentType: 'application/json' },
+          { name: 'meta', value: '{}', contentType: 'application/json' },
+          { name: 'bytes', value: 'a' },
+        ]),
+        400,
+      ],
+      [
+        'duplicate bytes parts',
         multipart([
           { name: 'meta', value: '{}', contentType: 'application/json' },
           { name: 'bytes', value: 'a' },
@@ -307,14 +317,6 @@ describe('asset HTTP handler contract', () => {
         multipart([
           { name: 'bytes', value: 'a' },
           { name: 'meta', value: '{}', contentType: 'application/json' },
-        ]),
-        400,
-      ],
-      [
-        'transfer encoding',
-        multipart([
-          { name: 'meta', value: '{}', contentType: 'application/json' },
-          { name: 'bytes', value: 'YQ==', transferEncoding: 'base64' },
         ]),
         400,
       ],
@@ -395,156 +397,90 @@ describe('asset HTTP handler contract', () => {
     }
   });
 
-  test('a name smuggled inside a quoted filename is not a part name', async () => {
-    // An RFC-aware intermediary sees two unnamed parts here; a regex scan of
-    // the raw header sees `name=meta` and `name=bytes`. That disagreement is
-    // the parser differential the contract requires be rejected.
-    const storeId = `disposition-${namespace++}`;
+  test.each([
+    ['name smuggled in a quoted filename', 'form-data; filename="x; name=meta; y"'],
+    ['unterminated quote', 'form-data; name="meta'],
+    ['trailing text after a quote', 'form-data; name="meta"junk'],
+    ['continuation parameter', 'form-data; name=meta; name*0=bytes'],
+    ['non-ASCII separator', 'form-data;\u00a0name=meta'],
+    ['bare LF in a quoted filename', 'form-data; name=meta; filename="a\nb"'],
+  ] as const)('platform parser rejects %s', async (_label, metaDisposition) => {
     const boundary = 'asset-test-boundary';
     const body = Buffer.concat([
       Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; filename="x; name=meta; y"\r\n` +
+        `--${boundary}\r\nContent-Disposition: ${metaDisposition}\r\n` +
           'Content-Type: application/json\r\n\r\n{}\r\n',
+        'latin1',
       ),
       Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; filename="x; name=bytes; y"\r\n\r\npayload\r\n`,
+        `--${boundary}\r\nContent-Disposition: form-data; name="bytes"; filename="asset"\r\n\r\npayload\r\n`,
+        'latin1',
       ),
       Buffer.from(`--${boundary}--\r\n`),
     ]);
-
     const response = await rawRequest({
       method: 'POST',
       path: '/assets',
-      headers: {
-        'content-type': `multipart/form-data; boundary=${boundary}`,
-        'x-asset-store-id': storeId,
-      },
+      headers: multipartHeaders(`disposition-${namespace++}`, 'principal-a', boundary),
       body,
     });
-
     expect(response.status).toBe(400);
+    expect(JSON.parse(response.body.toString())).toEqual({
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: '@openmaic/storage: malformed multipart body',
+      },
+    });
   });
 
-  test('malformed quoted dispositions are rejected rather than trusted', async () => {
-    // Each of these would have been read as a real part name by the tokenizer
-    // as first written -- an unterminated quote running to end of header,
-    // trailing junk after the closing quote, and an extended form competing
-    // with a plain one. All three recreate the parser differential the
-    // tokenizer exists to remove.
-    const boundary = 'asset-test-boundary';
-    const dispositions = [
-      ['unterminated quote', 'form-data; name="meta', 'form-data; name="bytes'],
-      ['trailing junk', 'form-data; name="meta"junk', 'form-data; name="bytes"junk'],
-      [
-        'competing extended form',
-        `form-data; name=meta; name*=UTF-8''meta`,
-        `form-data; name=bytes; name*=UTF-8''bytes`,
-      ],
-    ] as const;
-
-    for (const [label, metaDisposition, bytesDisposition] of dispositions) {
-      const body = Buffer.concat([
-        Buffer.from(
-          `--${boundary}\r\nContent-Disposition: ${metaDisposition}\r\n` +
-            'Content-Type: application/json\r\n\r\n{}\r\n',
-        ),
-        Buffer.from(`--${boundary}\r\nContent-Disposition: ${bytesDisposition}\r\n\r\npayload\r\n`),
-        Buffer.from(`--${boundary}--\r\n`),
-      ]);
+  test.each([undefined, 'meta.json'] as const)(
+    'accepts metadata with filename $filename',
+    async (filename) => {
       const response = await rawRequest({
         method: 'POST',
         path: '/assets',
-        headers: {
-          'content-type': `multipart/form-data; boundary=${boundary}`,
-          'x-asset-store-id': `disposition-${namespace++}`,
-        },
-        body,
-      });
-      expect(response.status, label).toBe(400);
-    }
-  });
-
-  test.each([
-    {
-      metaDisposition: 'form-data; name=meta',
-      bytesDisposition: 'form-data; name="bytes"',
-    },
-    {
-      metaDisposition: 'form-data; name=meta',
-      bytesDisposition: 'form-data; name="bytes"; filename="blob"',
-    },
-  ] as const)(
-    'accepts normative part dispositions: $metaDisposition / $bytesDisposition',
-    async ({ metaDisposition, bytesDisposition }) => {
-      const boundary = 'asset-test-boundary';
-      const body = Buffer.concat([
-        Buffer.from(
-          `--${boundary}\r\nContent-Disposition: ${metaDisposition}\r\n` +
-            'Content-Type: application/json\r\n\r\n{}\r\n',
-          'latin1',
-        ),
-        Buffer.from(
-          `--${boundary}\r\nContent-Disposition: ${bytesDisposition}\r\n\r\npayload\r\n`,
-          'latin1',
-        ),
-        Buffer.from(`--${boundary}--\r\n`),
-      ]);
-      const response = await rawRequest({
-        method: 'POST',
-        path: '/assets',
-        headers: multipartHeaders(`disposition-${namespace++}`, 'principal-a', boundary),
-        body,
+        headers: multipartHeaders(`meta-file-${namespace++}`),
+        body: multipart([
+          {
+            name: 'meta',
+            value: '{}',
+            contentType: 'application/json',
+            ...(filename === undefined ? {} : { filename }),
+          },
+          { name: 'bytes', value: 'payload' },
+        ]),
       });
       expect(response.status).toBe(201);
     },
   );
 
-  test.each([
-    { part: 'meta', disposition: '\u00a0form-data; name=meta' },
-    { part: 'meta', disposition: 'form-data;\u00a0name=meta' },
-    { part: 'bytes', disposition: 'form-data\u00a0; name=bytes' },
-    { part: 'meta', disposition: 'form-data; name=meta; filename="a"; filename="b"' },
-    { part: 'meta', disposition: 'form-data; name=meta; name=bytes' },
-    { part: 'meta', disposition: 'form-data; filename="x"' },
-    { part: 'meta', disposition: 'form-data; name=meta; name*0=bytes' },
-    { part: 'meta', disposition: `form-data; name=meta; FILENAME*0*=UTF-8''x` },
-    { part: 'meta', disposition: `form-data; name=meta; name*0*=UTF-8''bytes` },
-    { part: 'meta', disposition: 'form-data; name=meta; NAME*0=bytes; NAME*1=x' },
-    { part: 'meta', disposition: 'form-data; =ignored; name=meta' },
-    { part: 'meta', disposition: 'form-data;;; name=meta' },
-    { part: 'meta', disposition: 'form-data; name=meta;' },
-    { part: 'meta', disposition: 'form-data; name' },
-    { part: 'meta', disposition: 'form-data; name="meta' },
-    { part: 'meta', disposition: 'form-data; name="meta\\' },
-    { part: 'meta', disposition: 'form-data; name="meta"junk' },
-    { part: 'meta', disposition: 'form-data; filename="x; name=meta; y"' },
-  ] as const)(
-    'refuses non-normative part disposition: $disposition',
-    async ({ part, disposition }) => {
-      const boundary = 'asset-test-boundary';
-      const metaDisposition = part === 'meta' ? disposition : 'form-data; name=meta';
-      const bytesDisposition = part === 'bytes' ? disposition : 'form-data; name="bytes"';
-      const body = Buffer.concat([
-        Buffer.from(
-          `--${boundary}\r\nContent-Disposition: ${metaDisposition}\r\n` +
-            'Content-Type: application/json\r\n\r\n{}\r\n',
-          'latin1',
-        ),
-        Buffer.from(
-          `--${boundary}\r\nContent-Disposition: ${bytesDisposition}\r\n\r\npayload\r\n`,
-          'latin1',
-        ),
-        Buffer.from(`--${boundary}--\r\n`),
-      ]);
-      const response = await rawRequest({
-        method: 'POST',
-        path: '/assets',
-        headers: multipartHeaders(`disposition-${namespace++}`, 'principal-a', boundary),
-        body,
-      });
-      expect(response.status).toBe(400);
-    },
-  );
+  test('rejects a bytes part without filename as text-decoded data', async () => {
+    const response = await rawRequest({
+      method: 'POST',
+      path: '/assets',
+      headers: multipartHeaders(`bytes-string-${namespace++}`),
+      body: multipart([
+        { name: 'meta', value: '{}', contentType: 'application/json' },
+        { name: 'bytes', value: 'payload', filename: null },
+      ]),
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.toString()).toContain('bytes part must be sent as a file');
+  });
+
+  test('the client round-trips non-UTF-8 bytes through a file part', async () => {
+    const storeId = `binary-${namespace++}`;
+    const store = makeStore('principal-a', storeId);
+    const original = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe, 0x80);
+    const id = await store.put(new Blob([original], { type: 'image/png' }));
+    const response = await rawRequest({
+      method: 'GET',
+      path: `/assets/${id}/content`,
+      headers: { 'x-asset-store-id': storeId, 'x-asset-principal': 'principal-a' },
+    });
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(Buffer.from(original));
+  });
 
   test('exceeding maxParts is a payload limit, not a validation failure', async () => {
     const limited = await startAssetConformanceServer({ maxParts: 2 });
@@ -629,7 +565,7 @@ describe('asset HTTP handler contract', () => {
     expect(stored?.type).toBe('application/octet-stream');
   });
 
-  test('metadata-omitting PUT with an untyped blob retains the recorded media type', async () => {
+  test('metadata-omitting PUT with an untyped blob uses the binary default media type', async () => {
     const storeId = `retained-type-${namespace++}`;
     const store = makeStore('principal-a', storeId);
     const id = await store.put(blob('before', 'image/png'), { contentType: 'image/png' });
@@ -637,7 +573,7 @@ describe('asset HTTP handler contract', () => {
     const response = await server.fetch(`${server.baseUrl}/assets/${id}/content`, {
       headers: { 'x-asset-principal': 'principal-a', 'x-asset-store-id': storeId },
     });
-    expect(response.headers.get('content-type')).toBe('image/png');
+    expect(response.headers.get('content-type')).toBe('application/octet-stream');
   });
 
   test('no digest encoding appears in response headers, bodies, ids, or error messages', async () => {
