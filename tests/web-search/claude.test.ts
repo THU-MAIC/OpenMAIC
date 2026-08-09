@@ -190,6 +190,18 @@ describe('searchWithClaude', () => {
     );
   });
 
+  it('trims whitespace around a pasted API key and base URL', async () => {
+    mockAIResponse();
+    await searchWithClaude({
+      query: 'test',
+      apiKey: '  sk-test\n',
+      baseUrl: '  https://api.anthropic.com/v1  ',
+    });
+    expect(mockCreateAnthropic).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: 'sk-test', baseURL: 'https://api.anthropic.com/v1' }),
+    );
+  });
+
   it('strips trailing slashes from a custom base URL', async () => {
     mockAIResponse();
     await searchWithClaude({

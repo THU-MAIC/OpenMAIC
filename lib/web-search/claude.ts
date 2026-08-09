@@ -69,8 +69,12 @@ export async function searchWithClaude(params: {
   baseUrl?: string;
   maxResults?: number;
 }): Promise<WebSearchResult> {
-  const { query, apiKey, baseUrl, maxResults } = params;
+  const { query, maxResults } = params;
   const modelId = params.modelId?.trim() || CLAUDE_WEB_SEARCH_DEFAULT_MODEL;
+  // Keys and URLs are pasted by hand into Settings; surrounding whitespace
+  // would otherwise be sent verbatim and come back as "invalid x-api-key".
+  const apiKey = params.apiKey.trim();
+  const baseUrl = params.baseUrl?.trim();
 
   const provider = createAnthropic({
     apiKey,
