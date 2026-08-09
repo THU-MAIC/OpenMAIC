@@ -33,7 +33,9 @@ interface ObjectUrlIdentity {
   mediaType: string;
 }
 
-// This fixed filename is required for binary safety under standards-conforming parsers, not decoration.
+// These fixed filenames preserve part bytes under standards-conforming parsers. Neither filename
+// is read by this package or derived from caller data.
+const ASSET_META_FILENAME = 'metadata.json';
 const ASSET_BYTES_FILENAME = 'asset';
 const DEFAULT_ASSET_CONTENT_TYPE = 'application/octet-stream';
 
@@ -296,7 +298,7 @@ export class HttpAssetStore implements StorageProvider {
     if (encoded !== undefined) {
       parts.push(
         `--${boundary}\r\n` +
-          'Content-Disposition: form-data; name="meta"\r\n' +
+          `Content-Disposition: form-data; name="meta"; filename="${ASSET_META_FILENAME}"\r\n` +
           'Content-Type: application/json\r\n\r\n' +
           `${encoded}\r\n`,
       );

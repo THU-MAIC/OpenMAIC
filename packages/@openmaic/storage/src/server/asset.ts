@@ -166,19 +166,18 @@ function assertServerMetadataValue(value: unknown): void {
   visit(value);
 }
 
-async function parseMeta(part: string | Blob): Promise<AssetMeta> {
-  if (
-    part instanceof Blob &&
-    part.type.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json'
-  ) {
+async function parseMeta(part: Blob): Promise<AssetMeta> {
+  if (part.type.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
     throw validationFailure('@openmaic/storage: the meta part must be application/json');
+  }
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(await part.arrayBuffer());
+  } catch {
+    throw validationFailure('@openmaic/storage: the meta part must contain valid UTF-8');
   }
   let value: unknown;
   try {
-    const text =
-      typeof part === 'string'
-        ? part
-        : new TextDecoder('utf-8', { fatal: true }).decode(await part.arrayBuffer());
     value = JSON.parse(text) as unknown;
   } catch {
     throw validationFailure('@openmaic/storage: the meta part must contain valid JSON');
@@ -252,15 +251,16 @@ async function readWrite(
   if (typeof bytesPart === 'string') {
     throw validationFailure('@openmaic/storage: the bytes part must be sent as a file');
   }
+  if (typeof metaPart === 'string') {
+    throw validationFailure('@openmaic/storage: the meta part must be sent as a file');
+  }
   if (bytesPart.size > limits.maxAssetBytes) {
     throw payloadTooLarge(
       `@openmaic/storage: bytes part exceeds maxAssetBytes (${limits.maxAssetBytes})`,
     );
   }
   if (metaPart !== undefined) {
-    const metaSize =
-      typeof metaPart === 'string' ? new TextEncoder().encode(metaPart).byteLength : metaPart.size;
-    if (metaSize > limits.maxMetaBytes) {
+    if (metaPart.size > limits.maxMetaBytes) {
       throw payloadTooLarge(
         `@openmaic/storage: meta part exceeds maxMetaBytes (${limits.maxMetaBytes})`,
       );

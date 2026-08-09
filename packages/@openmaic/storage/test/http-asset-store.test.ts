@@ -92,7 +92,13 @@ function multipart(parts: readonly Part[], boundary = 'asset-test-boundary'): Bu
   const chunks: Buffer[] = [];
   for (const part of parts) {
     const filename =
-      part.filename === undefined ? (part.name === 'bytes' ? 'asset' : undefined) : part.filename;
+      part.filename === undefined
+        ? part.name === 'meta'
+          ? 'metadata.json'
+          : part.name === 'bytes'
+            ? 'asset'
+            : undefined
+        : part.filename;
     chunks.push(
       Buffer.from(
         `--${boundary}\r\nContent-Disposition: form-data; name="${part.name}"${filename === null || filename === undefined ? '' : `; filename="${filename}"`}\r\n`,
@@ -433,26 +439,51 @@ describe('asset HTTP handler contract', () => {
     });
   });
 
-  test.each([undefined, 'meta.json'] as const)(
-    'accepts metadata with filename $filename',
-    async (filename) => {
-      const response = await rawRequest({
-        method: 'POST',
-        path: '/assets',
-        headers: multipartHeaders(`meta-file-${namespace++}`),
-        body: multipart([
-          {
-            name: 'meta',
-            value: '{}',
-            contentType: 'application/json',
-            ...(filename === undefined ? {} : { filename }),
-          },
-          { name: 'bytes', value: 'payload' },
-        ]),
-      });
-      expect(response.status).toBe(201);
-    },
-  );
+  test('rejects a meta part without filename as text-decoded data', async () => {
+    const response = await rawRequest({
+      method: 'POST',
+      path: '/assets',
+      headers: multipartHeaders(`meta-string-${namespace++}`),
+      body: multipart([
+        { name: 'meta', value: '{}', contentType: 'application/json', filename: null },
+        { name: 'bytes', value: 'payload' },
+      ]),
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.toString()).toContain('meta part must be sent as a file');
+  });
+
+  test('rejects a meta file whose media type is not application/json', async () => {
+    const response = await rawRequest({
+      method: 'POST',
+      path: '/assets',
+      headers: multipartHeaders(`meta-type-${namespace++}`),
+      body: multipart([
+        { name: 'meta', value: '{}', contentType: 'text/plain' },
+        { name: 'bytes', value: 'payload' },
+      ]),
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.toString()).toContain('meta part must be application/json');
+  });
+
+  test('rejects a meta file whose bytes are not valid UTF-8', async () => {
+    const response = await rawRequest({
+      method: 'POST',
+      path: '/assets',
+      headers: multipartHeaders(`meta-utf8-${namespace++}`),
+      body: multipart([
+        {
+          name: 'meta',
+          value: Uint8Array.of(0x7b, 0x22, 0x78, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d),
+          contentType: 'application/json',
+        },
+        { name: 'bytes', value: 'payload' },
+      ]),
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.toString()).toContain('meta part must contain valid UTF-8');
+  });
 
   test('rejects a bytes part without filename as text-decoded data', async () => {
     const response = await rawRequest({
