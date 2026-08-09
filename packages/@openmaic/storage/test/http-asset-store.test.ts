@@ -464,28 +464,28 @@ describe('asset HTTP handler contract', () => {
     }
   });
 
-  test('part dispositions accept only one canonical name parameter', async () => {
-    const boundary = 'asset-test-boundary';
-    const rejected = [
-      `form-data; name=meta; name*0*=UTF-8''bytes`,
-      'form-data; name=meta; NAME*0=bytes; NAME*1=x',
-      'form-data; =ignored; name=meta',
-      'form-data;;; name=meta',
-      'form-data; name=meta;',
-      'form-data; name=meta; filename="x"',
-      'form-data; name="meta',
-      'form-data; name="meta"junk',
-      'form-data; filename="x; name=meta; y"',
-    ] as const;
-
-    for (const disposition of rejected) {
+  test.each([
+    {
+      metaDisposition: 'form-data; name=meta',
+      bytesDisposition: 'form-data; name="bytes"',
+    },
+    {
+      metaDisposition: 'form-data; name=meta',
+      bytesDisposition: 'form-data; name="bytes"; filename="blob"',
+    },
+  ] as const)(
+    'accepts normative part dispositions: $metaDisposition / $bytesDisposition',
+    async ({ metaDisposition, bytesDisposition }) => {
+      const boundary = 'asset-test-boundary';
       const body = Buffer.concat([
         Buffer.from(
-          `--${boundary}\r\nContent-Disposition: ${disposition}\r\n` +
+          `--${boundary}\r\nContent-Disposition: ${metaDisposition}\r\n` +
             'Content-Type: application/json\r\n\r\n{}\r\n',
+          'latin1',
         ),
         Buffer.from(
-          `--${boundary}\r\nContent-Disposition: form-data; name="bytes"\r\n\r\npayload\r\n`,
+          `--${boundary}\r\nContent-Disposition: ${bytesDisposition}\r\n\r\npayload\r\n`,
+          'latin1',
         ),
         Buffer.from(`--${boundary}--\r\n`),
       ]);
@@ -495,27 +495,56 @@ describe('asset HTTP handler contract', () => {
         headers: multipartHeaders(`disposition-${namespace++}`, 'principal-a', boundary),
         body,
       });
-      expect(response.status, disposition).toBe(400);
-    }
+      expect(response.status).toBe(201);
+    },
+  );
 
-    const canonical = Buffer.concat([
-      Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name=meta\r\n` +
-          'Content-Type: application/json\r\n\r\n{}\r\n',
-      ),
-      Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="bytes"\r\n\r\npayload\r\n`,
-      ),
-      Buffer.from(`--${boundary}--\r\n`),
-    ]);
-    const response = await rawRequest({
-      method: 'POST',
-      path: '/assets',
-      headers: multipartHeaders(`disposition-${namespace++}`, 'principal-a', boundary),
-      body: canonical,
-    });
-    expect(response.status).toBe(201);
-  });
+  test.each([
+    { part: 'meta', disposition: '\u00a0form-data; name=meta' },
+    { part: 'meta', disposition: 'form-data;\u00a0name=meta' },
+    { part: 'bytes', disposition: 'form-data\u00a0; name=bytes' },
+    { part: 'meta', disposition: 'form-data; name=meta; filename="a"; filename="b"' },
+    { part: 'meta', disposition: 'form-data; name=meta; name=bytes' },
+    { part: 'meta', disposition: 'form-data; filename="x"' },
+    { part: 'meta', disposition: 'form-data; name=meta; name*0=bytes' },
+    { part: 'meta', disposition: `form-data; name=meta; FILENAME*0*=UTF-8''x` },
+    { part: 'meta', disposition: `form-data; name=meta; name*0*=UTF-8''bytes` },
+    { part: 'meta', disposition: 'form-data; name=meta; NAME*0=bytes; NAME*1=x' },
+    { part: 'meta', disposition: 'form-data; =ignored; name=meta' },
+    { part: 'meta', disposition: 'form-data;;; name=meta' },
+    { part: 'meta', disposition: 'form-data; name=meta;' },
+    { part: 'meta', disposition: 'form-data; name' },
+    { part: 'meta', disposition: 'form-data; name="meta' },
+    { part: 'meta', disposition: 'form-data; name="meta\\' },
+    { part: 'meta', disposition: 'form-data; name="meta"junk' },
+    { part: 'meta', disposition: 'form-data; filename="x; name=meta; y"' },
+  ] as const)(
+    'refuses non-normative part disposition: $disposition',
+    async ({ part, disposition }) => {
+      const boundary = 'asset-test-boundary';
+      const metaDisposition = part === 'meta' ? disposition : 'form-data; name=meta';
+      const bytesDisposition = part === 'bytes' ? disposition : 'form-data; name="bytes"';
+      const body = Buffer.concat([
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: ${metaDisposition}\r\n` +
+            'Content-Type: application/json\r\n\r\n{}\r\n',
+          'latin1',
+        ),
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: ${bytesDisposition}\r\n\r\npayload\r\n`,
+          'latin1',
+        ),
+        Buffer.from(`--${boundary}--\r\n`),
+      ]);
+      const response = await rawRequest({
+        method: 'POST',
+        path: '/assets',
+        headers: multipartHeaders(`disposition-${namespace++}`, 'principal-a', boundary),
+        body,
+      });
+      expect(response.status).toBe(400);
+    },
+  );
 
   test('exceeding maxParts is a payload limit, not a validation failure', async () => {
     const limited = await startAssetConformanceServer({ maxParts: 2 });
