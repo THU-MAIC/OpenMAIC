@@ -23,6 +23,8 @@ const OFFICIAL_CLIENT_BASE_URLS: Record<WebSearchProviderId, string[]> = {
     'https://api.search.brave.com',
   ],
   baidu: ['https://qianfan.baidubce.com'],
+  // The bare root is accepted for convenience; the Claude adapter normalizes it
+  // to the /v1 root, since the AI SDK appends "/messages" to the base URL.
   claude: ['https://api.anthropic.com', 'https://api.anthropic.com/v1'],
   minimax: [
     'https://api.minimaxi.com',

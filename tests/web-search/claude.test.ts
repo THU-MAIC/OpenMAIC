@@ -59,12 +59,15 @@ describe('searchWithClaude', () => {
 
   // ── fetch interceptor: allowed_callers injection ──────────────────────────
 
-  it('injects allowed_callers=["direct"] on tools that omit it', async () => {
+  it('injects allowed_callers=["direct"] on the basic tool (Haiku 4.5 request body)', async () => {
     mockAIResponse();
-    await searchWithClaude({ query: 'test', apiKey: 'sk-test' });
+    await searchWithClaude({ query: 'test', apiKey: 'sk-test', modelId: 'claude-haiku-4-5' });
 
     const wrappedFetch = getWrappedFetch();
-    const body = JSON.stringify({ tools: [{ type: 'web_search_20260209', name: 'web_search' }] });
+    const body = JSON.stringify({
+      model: 'claude-haiku-4-5',
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    });
     mockProxyFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }));
     await wrappedFetch('https://api.anthropic.com/v1/messages', { method: 'POST', body });
 
@@ -73,13 +76,33 @@ describe('searchWithClaude', () => {
     expect(sentBody.tools[0].allowed_callers).toEqual(['direct']);
   });
 
-  it('does not overwrite allowed_callers when already set', async () => {
+  it('leaves the dynamic-filtering tool unpinned (Sonnet 5 request body)', async () => {
     mockAIResponse();
-    await searchWithClaude({ query: 'test', apiKey: 'sk-test' });
+    await searchWithClaude({ query: 'test', apiKey: 'sk-test', modelId: 'claude-sonnet-5' });
 
     const wrappedFetch = getWrappedFetch();
     const body = JSON.stringify({
-      tools: [{ type: 'web_search_20260209', name: 'web_search', allowed_callers: ['code'] }],
+      model: 'claude-sonnet-5',
+      tools: [{ type: 'web_search_20260209', name: 'web_search' }],
+    });
+    mockProxyFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+    await wrappedFetch('https://api.anthropic.com/v1/messages', { method: 'POST', body });
+
+    const proxyCalls = mockProxyFetch.mock.calls as unknown as [string, RequestInit][];
+    // Untouched body: pinning to "direct" would bypass the code-execution
+    // caller that provides dynamic filtering.
+    expect(proxyCalls[0]![1]!.body).toBe(body);
+    const sentBody = JSON.parse(proxyCalls[0]![1]!.body as string);
+    expect(sentBody.tools[0].allowed_callers).toBeUndefined();
+  });
+
+  it('does not overwrite allowed_callers when already set', async () => {
+    mockAIResponse();
+    await searchWithClaude({ query: 'test', apiKey: 'sk-test', modelId: 'claude-haiku-4-5' });
+
+    const wrappedFetch = getWrappedFetch();
+    const body = JSON.stringify({
+      tools: [{ type: 'web_search_20250305', name: 'web_search', allowed_callers: ['code'] }],
     });
     mockProxyFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }));
     await wrappedFetch('https://api.anthropic.com/v1/messages', { method: 'POST', body });
@@ -137,25 +160,39 @@ describe('searchWithClaude', () => {
     expect(mockProvider).toHaveBeenCalledWith(CLAUDE_WEB_SEARCH_DEFAULT_MODEL);
   });
 
-  it.each(['claude-sonnet-5', 'claude-opus-5', 'claude-opus-4-6', 'claude-sonnet-4-6'])(
-    'uses web_search_20260209 for %s',
-    async (modelId) => {
-      mockAIResponse();
-      await searchWithClaude({ query: 'test', apiKey: 'sk-test', modelId });
-      expect(mockProvider.tools.webSearch_20260209).toHaveBeenCalled();
-      expect(mockProvider.tools.webSearch_20250305).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    'claude-sonnet-5',
+    'claude-opus-5',
+    'claude-fable-5',
+    'claude-opus-4-8',
+    'claude-opus-4-7',
+    'claude-opus-4-6',
+    'claude-sonnet-4-6',
+  ])('uses web_search_20260209 for %s', async (modelId) => {
+    mockAIResponse();
+    await searchWithClaude({ query: 'test', apiKey: 'sk-test', modelId });
+    expect(mockProvider.tools.webSearch_20260209).toHaveBeenCalled();
+    expect(mockProvider.tools.webSearch_20250305).not.toHaveBeenCalled();
+  });
 
-  it.each(['claude-haiku-4-5', 'claude-sonnet-4-5', 'claude-opus-4-1'])(
-    'uses the basic web_search_20250305 for %s',
-    async (modelId) => {
-      mockAIResponse();
-      await searchWithClaude({ query: 'test', apiKey: 'sk-test', modelId });
-      expect(mockProvider.tools.webSearch_20250305).toHaveBeenCalled();
-      expect(mockProvider.tools.webSearch_20260209).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    'claude-haiku-4-5',
+    'claude-haiku-4-5-20251001',
+    'claude-sonnet-4-5',
+    'claude-sonnet-4-5-20250929',
+    'claude-opus-4-5-20251101',
+    'claude-opus-4-1',
+    // Canonical dated Claude 4.0 ids — pre-4.6, so basic search only.
+    'claude-sonnet-4-20250514',
+    'claude-opus-4-20250514',
+    'claude-3-5-sonnet-20241022',
+    'not-a-claude-model',
+  ])('uses the basic web_search_20250305 for %s', async (modelId) => {
+    mockAIResponse();
+    await searchWithClaude({ query: 'test', apiKey: 'sk-test', modelId });
+    expect(mockProvider.tools.webSearch_20250305).toHaveBeenCalled();
+    expect(mockProvider.tools.webSearch_20260209).not.toHaveBeenCalled();
+  });
 
   it('maps maxResults to the tool maxUses argument', async () => {
     mockAIResponse();
@@ -214,6 +251,34 @@ describe('searchWithClaude', () => {
     );
   });
 
+  // The allowlist and Settings both accept the bare Anthropic root, but the AI
+  // SDK appends "/messages" verbatim — without /v1 the request 404s.
+  it.each([
+    'https://api.anthropic.com',
+    'https://api.anthropic.com/',
+    '  https://api.anthropic.com  ',
+  ])('normalizes the bare Anthropic root (%s) so the request URL keeps /v1', async (baseUrl) => {
+    mockAIResponse();
+    await searchWithClaude({ query: 'test', apiKey: 'sk-test', baseUrl });
+
+    const calls = mockCreateAnthropic.mock.calls as unknown as [{ baseURL: string }][];
+    const { baseURL } = calls[0]![0]!;
+    expect(baseURL).toBe('https://api.anthropic.com/v1');
+    expect(`${baseURL}/messages`).toBe('https://api.anthropic.com/v1/messages');
+  });
+
+  it('leaves a self-hosted gateway base URL untouched', async () => {
+    mockAIResponse();
+    await searchWithClaude({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://gateway.internal.example.com/anthropic',
+    });
+    expect(mockCreateAnthropic).toHaveBeenCalledWith(
+      expect.objectContaining({ baseURL: 'https://gateway.internal.example.com/anthropic' }),
+    );
+  });
+
   // ── result mapping ─────────────────────────────────────────────────────────
 
   it('returns the answer and cited sources without fetching pages', async () => {
@@ -244,6 +309,16 @@ describe('searchWithClaude', () => {
     // No page-content enrichment: the only proxyFetch usage is the wrapped
     // provider fetch, which the mocked generateText never invokes.
     expect(mockProxyFetch).not.toHaveBeenCalled();
+  });
+
+  it('reports responseTime in seconds, like every sibling adapter', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(3_500);
+    mockAIResponse('answer');
+
+    const result = await searchWithClaude({ query: 'q', apiKey: 'sk-test' });
+
+    expect(result.responseTime).toBe(2.5);
+    nowSpy.mockRestore();
   });
 
   it('deduplicates sources by URL', async () => {

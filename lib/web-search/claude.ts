@@ -17,37 +17,75 @@ import type { WebSearchResult, WebSearchSource } from '@/lib/types/web-search';
 
 const CLAUDE_MAX_OUTPUT_TOKENS = 4096;
 
+/** Anthropic's basic web-search tool, for models without dynamic filtering. */
+const BASIC_WEB_SEARCH_TOOL_TYPE = 'web_search_20250305';
+
+const CLAUDE_DEFAULT_BASE_URL = WEB_SEARCH_PROVIDERS.claude.defaultBaseUrl ?? '';
+
 const log = createLogger('ClaudeSearch');
 
 /**
- * Haiku-tier and pre-4.6 models only support the basic web_search_20250305
- * tool; 4.6+ Opus/Sonnet models use web_search_20260209 (dynamic filtering).
+ * Anthropic's dynamic-filtering web_search_20260209 tool is limited to the 4.6+
+ * Opus/Sonnet models and the 5 series (Opus 5, Sonnet 5, Fable 5, Mythos 5).
+ * Everything else — Haiku, Claude 4.5 and older (including dated ids such as
+ * `claude-sonnet-4-20250514`), and any id we don't recognize — takes the basic
+ * web_search_20250305 tool, which the newer models accept too.
  */
+const DYNAMIC_WEB_SEARCH_MODEL =
+  /^claude-(?:opus|sonnet)-4-[6-9](?:-|$)|^claude-(?:opus|sonnet|fable|mythos)-[5-9](?:-|$)/;
+
 function usesBasicWebSearchTool(modelId: string): boolean {
-  return /haiku|-4-5|-4-1|-4-0|-3-/.test(modelId);
+  return !DYNAMIC_WEB_SEARCH_MODEL.test(modelId);
 }
 
 /**
  * The AI SDK serializes its provider-defined web_search tools without
- * `allowed_callers`, but Anthropic requires `allowed_callers: ["direct"]` on
- * the tool for models without programmatic tool support (the request 400s
- * otherwise). Patch it into outgoing request bodies at the fetch layer.
+ * `allowed_callers`, but Anthropic requires `allowed_callers: ["direct"]` on the
+ * basic tool, whose models have no programmatic tool support (the request 400s
+ * otherwise). Patch it into outgoing request bodies at the fetch layer. The
+ * dynamic-filtering tool is left alone: it runs searches through the
+ * code-execution caller, which pinning to "direct" would disable.
  */
 async function fetchWithAllowedCallers(url: string, init?: RequestInit): Promise<Response> {
   if (init?.method === 'POST' && typeof init.body === 'string') {
     try {
       const body = JSON.parse(init.body);
       if (Array.isArray(body?.tools)) {
-        body.tools = body.tools.map((tool: Record<string, unknown>) =>
-          tool.allowed_callers ? tool : { ...tool, allowed_callers: ['direct'] },
-        );
-        init = { ...init, body: JSON.stringify(body) };
+        let patched = false;
+        body.tools = body.tools.map((tool: Record<string, unknown>) => {
+          if (tool.type !== BASIC_WEB_SEARCH_TOOL_TYPE || tool.allowed_callers) return tool;
+          patched = true;
+          return { ...tool, allowed_callers: ['direct'] };
+        });
+        if (patched) init = { ...init, body: JSON.stringify(body) };
       }
     } catch {
       /* leave body unchanged if it can't be parsed */
     }
   }
   return proxyFetch(url, init);
+}
+
+/**
+ * `@ai-sdk/anthropic` appends `/messages` to the base URL verbatim, so the bare
+ * Anthropic root would request `https://api.anthropic.com/messages` and 404.
+ * Both Settings and the server allowlist accept that form, so restore the
+ * versioned root before handing it to the SDK. Other hosts (self-hosted
+ * gateways) are passed through untouched.
+ */
+function resolveClaudeBaseUrl(baseUrl?: string): string {
+  const normalized = (baseUrl || CLAUDE_DEFAULT_BASE_URL).replace(/\/+$/, '');
+  if (!normalized) return '';
+  try {
+    const parsed = new URL(normalized);
+    const official = new URL(CLAUDE_DEFAULT_BASE_URL);
+    if (parsed.origin === official.origin && parsed.pathname === '/') {
+      return CLAUDE_DEFAULT_BASE_URL;
+    }
+  } catch {
+    /* unparsable base URL: leave it for the SDK to surface */
+  }
+  return normalized;
 }
 
 function isHttpUrl(value: string): boolean {
@@ -78,7 +116,7 @@ export async function searchWithClaude(params: {
 
   const provider = createAnthropic({
     apiKey,
-    baseURL: (baseUrl || WEB_SEARCH_PROVIDERS.claude.defaultBaseUrl || '').replace(/\/+$/, ''),
+    baseURL: resolveClaudeBaseUrl(baseUrl),
     fetch: fetchWithAllowedCallers as typeof fetch,
   });
 
@@ -123,7 +161,8 @@ export async function searchWithClaude(params: {
       answer: result.text,
       sources: [...sources.values()],
       query,
-      responseTime: Date.now() - startTime,
+      // Seconds, matching every sibling adapter's WebSearchResult contract.
+      responseTime: (Date.now() - startTime) / 1000,
     };
   } catch (e) {
     log.error(`Claude web search failed [model="${modelId}"]:`, e);
