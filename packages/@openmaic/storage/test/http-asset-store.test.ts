@@ -464,6 +464,59 @@ describe('asset HTTP handler contract', () => {
     }
   });
 
+  test('part dispositions accept only one canonical name parameter', async () => {
+    const boundary = 'asset-test-boundary';
+    const rejected = [
+      `form-data; name=meta; name*0*=UTF-8''bytes`,
+      'form-data; name=meta; NAME*0=bytes; NAME*1=x',
+      'form-data; =ignored; name=meta',
+      'form-data;;; name=meta',
+      'form-data; name=meta;',
+      'form-data; name=meta; filename="x"',
+      'form-data; name="meta',
+      'form-data; name="meta"junk',
+      'form-data; filename="x; name=meta; y"',
+    ] as const;
+
+    for (const disposition of rejected) {
+      const body = Buffer.concat([
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: ${disposition}\r\n` +
+            'Content-Type: application/json\r\n\r\n{}\r\n',
+        ),
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="bytes"\r\n\r\npayload\r\n`,
+        ),
+        Buffer.from(`--${boundary}--\r\n`),
+      ]);
+      const response = await rawRequest({
+        method: 'POST',
+        path: '/assets',
+        headers: multipartHeaders(`disposition-${namespace++}`, 'principal-a', boundary),
+        body,
+      });
+      expect(response.status, disposition).toBe(400);
+    }
+
+    const canonical = Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name=meta\r\n` +
+          'Content-Type: application/json\r\n\r\n{}\r\n',
+      ),
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="bytes"\r\n\r\npayload\r\n`,
+      ),
+      Buffer.from(`--${boundary}--\r\n`),
+    ]);
+    const response = await rawRequest({
+      method: 'POST',
+      path: '/assets',
+      headers: multipartHeaders(`disposition-${namespace++}`, 'principal-a', boundary),
+      body: canonical,
+    });
+    expect(response.status).toBe(201);
+  });
+
   test('exceeding maxParts is a payload limit, not a validation failure', async () => {
     const limited = await startAssetConformanceServer({ maxParts: 2 });
     try {

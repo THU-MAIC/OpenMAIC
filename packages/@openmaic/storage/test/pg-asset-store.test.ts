@@ -283,6 +283,59 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     expect(writes).toEqual(['write']);
   });
 
+  test('principal quota locks use the 64-bit hash function', async () => {
+    const statements: string[] = [];
+    const instrumented = new PgAssetStore(recordingQueryable(db, statements), {
+      byteStore,
+      withTransaction: recordingTransactions(db, statements),
+      quotaBytes: 10,
+    });
+
+    await instrumented.put(PRINCIPAL, blob('lock'));
+
+    // This SQL-text assertion deliberately pins the 64-bit lock key: a
+    // behavioral test would depend on unstable collisions in PostgreSQL's
+    // internal hash function.
+    expect(statements).toContain('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))');
+  });
+
+  test('byte-layer quota errors collapse to generic registry failures', async () => {
+    const internalDetail = 'internal byte-layer detail';
+    const failingBytes: AssetByteStore = {
+      write: async () => {
+        throw new AssetQuotaExceededError(internalDetail);
+      },
+      read: async () => null,
+      delete: async () => undefined,
+    };
+    const failing = new PgAssetStore(db, options(db, failingBytes));
+
+    let putError: unknown;
+    try {
+      await failing.put(PRINCIPAL, blob('put'));
+    } catch (error) {
+      putError = error;
+    }
+    expect(putError).toBeInstanceOf(Error);
+    expect(putError).not.toBeInstanceOf(AssetQuotaExceededError);
+    expect((putError as Error).message).toBe('@openmaic/storage: asset registry put failed');
+    expect((putError as Error).message).not.toContain(internalDetail);
+
+    const id = await store.put(PRINCIPAL, blob('original'));
+    let replaceError: unknown;
+    try {
+      await failing.replace(PRINCIPAL, id, blob('replacement'));
+    } catch (error) {
+      replaceError = error;
+    }
+    expect(replaceError).toBeInstanceOf(Error);
+    expect(replaceError).not.toBeInstanceOf(AssetQuotaExceededError);
+    expect((replaceError as Error).message).toBe(
+      '@openmaic/storage: asset registry replace failed',
+    );
+    expect((replaceError as Error).message).not.toContain(internalDetail);
+  });
+
   test('put emits an identical statement sequence for existing and new bytes', async () => {
     async function observe(seed: boolean): Promise<string[]> {
       const local = new PGlite();

@@ -109,6 +109,10 @@ function registryFailure(operation: string): Error {
   return new Error(`@openmaic/storage: asset registry ${operation} failed`);
 }
 
+class RegistryAssetNotFound extends Error {}
+
+class RegistryAssetQuotaExceeded extends Error {}
+
 function encodeMeta(meta: AssetMeta): string {
   try {
     const encoded = JSON.stringify(meta);
@@ -210,7 +214,7 @@ export class PgAssetStore implements AssetStore {
       throw registryFailure('quota check');
     }
     const used = Number(result.rows[0]?.logical_bytes ?? 0);
-    if (used + addedBytes > this.quotaBytes) throw new AssetQuotaExceededError();
+    if (used + addedBytes > this.quotaBytes) throw new RegistryAssetQuotaExceeded();
   }
 
   private async assertReplaceQuota(
@@ -242,12 +246,12 @@ export class PgAssetStore implements AssetStore {
       throw registryFailure('quota check');
     }
     const row = result.rows[0];
-    if (!row) throw new AssetNotFoundError();
+    if (!row) throw new RegistryAssetNotFound();
     if (
       Number(row.logical_bytes) - Number(row.current_bytes) + replacementBytes >
       this.quotaBytes
     ) {
-      throw new AssetQuotaExceededError();
+      throw new RegistryAssetQuotaExceeded();
     }
   }
 
@@ -293,7 +297,7 @@ export class PgAssetStore implements AssetStore {
         );
       });
     } catch (error) {
-      if (error instanceof AssetQuotaExceededError) throw error;
+      if (error instanceof RegistryAssetQuotaExceeded) throw new AssetQuotaExceededError();
       throw registryFailure('put');
     }
     return id;
@@ -372,7 +376,7 @@ export class PgAssetStore implements AssetStore {
           [ref, principal.key],
         );
         const oldEntry = existing.rows[0];
-        if (!oldEntry) throw new AssetNotFoundError();
+        if (!oldEntry) throw new RegistryAssetNotFound();
 
         await queryable.query(
           `INSERT INTO asset_blobs (content_hash, byte_size, unreferenced_at)
@@ -420,12 +424,8 @@ export class PgAssetStore implements AssetStore {
         return Number(updated.rows[0]!.revision);
       });
     } catch (error) {
-      // Both typed errors have to survive: the quota check moved inside the
-      // transaction, so collapsing it here would answer 500 for a condition the
-      // contract gives a status and a code.
-      if (error instanceof AssetNotFoundError || error instanceof AssetQuotaExceededError) {
-        throw error;
-      }
+      if (error instanceof RegistryAssetNotFound) throw new AssetNotFoundError();
+      if (error instanceof RegistryAssetQuotaExceeded) throw new AssetQuotaExceededError();
       throw registryFailure('replace');
     }
   }

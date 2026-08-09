@@ -299,7 +299,7 @@ export class HttpAssetStore implements StorageProvider {
     }
     parts.push(
       `--${boundary}\r\n` +
-        'Content-Disposition: form-data; name="bytes"; filename="asset"\r\n' +
+        'Content-Disposition: form-data; name="bytes"\r\n' +
         (data.type === '' ? '' : `Content-Type: ${data.type}\r\n`) +
         '\r\n',
       bytes,

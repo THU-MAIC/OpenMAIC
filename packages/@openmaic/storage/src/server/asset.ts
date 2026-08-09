@@ -205,91 +205,88 @@ function parsePartHeaders(raw: Buffer): Map<string, string> {
 }
 
 /**
- * Split a `Content-Disposition` value into its parameters, honouring quoted
+ * Parse the single parameter this multipart surface accepts, honouring quoted
  * strings and backslash escapes.
  *
- * A regex scan of the raw header cannot do this, and the gap is exploitable
- * rather than cosmetic: a `;` inside a quoted `filename` looks exactly like a
- * parameter separator, so `filename="x; name=meta; y"` reads as a `name`
- * parameter to a naive scanner while an RFC-aware intermediary sees an unnamed
- * part. Two parsers disagreeing about which part is which is precisely the
- * parser differential this contract requires be rejected.
- *
- * Returns pairs rather than a map so a repeated parameter stays visible;
- * collapsing duplicates would hide a second `name`.
+ * This is deliberately narrower than RFC 2183 permits: asset writes need only
+ * a `name` parameter, so accepting filenames, extensions, or extra separators
+ * creates parser-differential surface without adding a supported capability.
+ * Requiring exactly one complete parameter also rejects duplicate names and
+ * RFC 2231 forms without having to interpret them.
  */
 function dispositionParameters(disposition: string): Array<[string, string]> {
-  const parameters: Array<[string, string]> = [];
   let index = disposition.indexOf(';');
-  if (index < 0) return parameters;
+  if (index < 0) return [];
   index += 1;
-  while (index < disposition.length) {
-    while (index < disposition.length && /\s/.test(disposition[index]!)) index += 1;
-    if (index >= disposition.length) break;
-    if (disposition[index] === ';') {
-      index += 1;
-      continue;
-    }
-    let name = '';
-    while (index < disposition.length && disposition[index] !== '=' && disposition[index] !== ';') {
-      name += disposition[index]!;
-      index += 1;
-    }
-    name = name.trim().toLowerCase();
-    if (disposition[index] !== '=') {
-      if (name !== '') parameters.push([name, '']);
-      continue;
-    }
-    index += 1;
-    let value = '';
-    if (disposition[index] === '"') {
-      index += 1;
-      let closed = false;
-      while (index < disposition.length) {
-        const character = disposition[index]!;
-        if (character === '\\') {
-          if (index + 1 >= disposition.length) {
-            throw validationFailure(
-              '@openmaic/storage: multipart part disposition ends in a dangling escape',
-            );
-          }
-          value += disposition[index + 1]!;
-          index += 2;
-          continue;
-        }
-        if (character === '"') {
-          closed = true;
-          index += 1;
-          break;
-        }
-        value += character;
-        index += 1;
-      }
-      // A quoted value that simply runs to the end of the header is malformed,
-      // and accepting it is how `name="meta` was read as a real name. Anything
-      // other than whitespace and a separator after the closing quote is
-      // malformed too: `name="meta"junk` must not be read as `meta`.
-      if (!closed) {
-        throw validationFailure(
-          '@openmaic/storage: multipart part disposition has an unterminated quoted value',
-        );
-      }
-      while (index < disposition.length && /\s/.test(disposition[index]!)) index += 1;
-      if (index < disposition.length && disposition[index] !== ';') {
-        throw validationFailure(
-          '@openmaic/storage: multipart part disposition has trailing text after a quoted value',
-        );
-      }
-    } else {
-      while (index < disposition.length && disposition[index] !== ';') {
-        value += disposition[index]!;
-        index += 1;
-      }
-      value = value.trim();
-    }
-    if (name !== '') parameters.push([name, value]);
+  while (index < disposition.length && /\s/.test(disposition[index]!)) index += 1;
+  if (index >= disposition.length || disposition[index] === ';') {
+    throw validationFailure(
+      '@openmaic/storage: multipart part disposition requires exactly one parameter',
+    );
   }
-  return parameters;
+
+  let name = '';
+  while (index < disposition.length && disposition[index] !== '=' && disposition[index] !== ';') {
+    name += disposition[index]!;
+    index += 1;
+  }
+  name = name.trim().toLowerCase();
+  if (disposition[index] !== '=') {
+    throw validationFailure(
+      '@openmaic/storage: multipart part disposition parameters require a value',
+    );
+  }
+  index += 1;
+
+  let value = '';
+  if (disposition[index] === '"') {
+    index += 1;
+    let closed = false;
+    while (index < disposition.length) {
+      const character = disposition[index]!;
+      if (character === '\\') {
+        if (index + 1 >= disposition.length) {
+          throw validationFailure(
+            '@openmaic/storage: multipart part disposition ends in a dangling escape',
+          );
+        }
+        value += disposition[index + 1]!;
+        index += 2;
+        continue;
+      }
+      if (character === '"') {
+        closed = true;
+        index += 1;
+        break;
+      }
+      value += character;
+      index += 1;
+    }
+    if (!closed) {
+      throw validationFailure(
+        '@openmaic/storage: multipart part disposition has an unterminated quoted value',
+      );
+    }
+    while (index < disposition.length && /\s/.test(disposition[index]!)) index += 1;
+    if (index < disposition.length && disposition[index] !== ';') {
+      throw validationFailure(
+        '@openmaic/storage: multipart part disposition has trailing text after a quoted value',
+      );
+    }
+  } else {
+    while (index < disposition.length && disposition[index] !== ';') {
+      value += disposition[index]!;
+      index += 1;
+    }
+    value = value.trim();
+  }
+
+  if (index < disposition.length) {
+    throw validationFailure(
+      '@openmaic/storage: multipart part disposition requires exactly one parameter',
+    );
+  }
+  return [[name, value]];
 }
 
 function partName(disposition: string | undefined): 'meta' | 'bytes' {
@@ -297,18 +294,10 @@ function partName(disposition: string | undefined): 'meta' | 'bytes' {
     throw validationFailure('@openmaic/storage: multipart parts require form-data disposition');
   }
   const parameters = dispositionParameters(disposition);
-  // An extended form competing with a plain one is another way for two parsers
-  // to disagree about which part this is, so refuse rather than pick a winner.
-  if (parameters.some(([key]) => key === 'name*')) {
-    throw validationFailure(
-      '@openmaic/storage: multipart part names must not use an extended parameter form',
-    );
-  }
-  const named = parameters.filter(([key]) => key === 'name');
-  if (named.length !== 1) {
+  if (parameters.length !== 1 || parameters[0]![0] !== 'name') {
     throw validationFailure('@openmaic/storage: multipart parts require exactly one name');
   }
-  const name = named[0]![1];
+  const name = parameters[0]![1];
   if (name !== 'meta' && name !== 'bytes') {
     throw validationFailure('@openmaic/storage: asset write body contains an unrecognized part');
   }
