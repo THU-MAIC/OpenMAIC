@@ -15,7 +15,7 @@ import {
 import { getDocumentStore } from '@/lib/document-store/store';
 import type { AppDocument } from '@/lib/document-store/persistence-types';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
-import { upgradeLegacyPBLConfigToProjectV2 } from '@/lib/pbl/legacy/read';
+import { upgradeLegacyPBLConfigToProjectV2, type PBLProjectConfig } from '@/lib/pbl/legacy/read';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { AppScene, InteractiveContent, PBLContent } from '@/lib/types/stage';
 import type { SimulationConfig } from '@/lib/types/widgets';
@@ -451,6 +451,12 @@ describe('app document validators', () => {
 });
 
 type Assert<T extends true> = T;
+
+test('typed legacy PBL config remains assignable to app PBLContent', () => {
+  type LegacyPBLContent = { type: 'pbl'; projectConfig: PBLProjectConfig };
+  const assignable: Assert<LegacyPBLContent extends PBLContent ? true : false> = true;
+  expect(assignable).toBe(true);
+});
 
 test('app PBLContent remains assignable to the contract PBLContent', () => {
   const assignable: Assert<PBLContent extends ContractPBLContent ? true : false> = true;
