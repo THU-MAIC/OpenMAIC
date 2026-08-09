@@ -201,6 +201,22 @@ describe('PBL learner state split', () => {
     expect(template.proficiencyAssessment).toBeUndefined();
   });
 
+  it('treats a malformed proficiencyAssessment as absent on both ends', () => {
+    const project = makeProject();
+    Reflect.set(project, 'proficiencyAssessment', {});
+
+    const state = extractLearnerState(project);
+    expect(state).not.toHaveProperty('proficiencyAssessment');
+
+    const template = stripToDesignTemplate(makeProject());
+    const priorProficiency = template.proficiency;
+    const corrupted = { ...state, proficiencyAssessment: {} } as typeof state;
+    const restored = applyLearnerState(template, corrupted);
+
+    expect(restored.proficiencyAssessment).toBeUndefined();
+    expect(restored.proficiency).toBe(priorProficiency);
+  });
+
   it('does not leak design-time fields into PBLLearnerState', () => {
     const state = extractLearnerState(makeProject());
 

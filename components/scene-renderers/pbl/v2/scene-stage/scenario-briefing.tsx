@@ -21,6 +21,7 @@ import { useMemo, type ReactNode } from 'react';
 import Image from 'next/image';
 import { BookOpen, Film, Target, User, Users } from 'lucide-react';
 import type { PBLProjectV2, PBLScenarioCharacter } from '@/lib/pbl/v2/types';
+import { trimmedPBLText } from '@/lib/pbl/v2/readers';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { sanitizeSceneVisual } from './scene-types';
 
@@ -35,10 +36,10 @@ export function ScenarioBriefing({ project }: Props) {
 
   if (!scenario) return null;
 
-  const setting = scenario.setting?.trim();
-  const learnerRole = scenario.learnerRole?.trim();
-  const goal = scenario.goal?.trim();
-  const rules = scenario.rules?.trim();
+  const setting = trimmedPBLText(scenario.setting);
+  const learnerRole = trimmedPBLText(scenario.learnerRole);
+  const goal = trimmedPBLText(scenario.goal);
+  const rules = trimmedPBLText(scenario.rules);
   const characters = scenario.characters ?? [];
 
   return (
@@ -143,8 +144,8 @@ function CharacterCard({
   readonly accent: string;
 }) {
   const { t } = useI18n();
-  const persona = character.persona?.trim();
-  const situation = character.situation?.trim();
+  const persona = trimmedPBLText(character.persona);
+  const situation = trimmedPBLText(character.situation);
   return (
     <li className="rounded-lg border border-cyan-100/[0.12] bg-slate-700/[0.30] p-2.5">
       <div className="flex items-center gap-2.5">
@@ -185,8 +186,8 @@ function BriefingAvatar({
   readonly avatar?: string;
   readonly accent: string;
 }) {
-  const initial = (name?.trim()?.[0] ?? '·').toUpperCase();
-  const isImg = !!avatar && avatar.startsWith('/');
+  const initial = (trimmedPBLText(name)[0] ?? '·').toUpperCase();
+  const isImg = typeof avatar === 'string' && avatar.startsWith('/');
   return (
     <span
       className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-bold text-white shadow-[0_4px_12px_rgba(0,0,0,0.3)]"

@@ -11,10 +11,9 @@ vi.mock('@/lib/pbl/v2/runtime/hydration', async (importOriginal) => ({
 
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { stripToDesignTemplate } from '@/lib/pbl/v2/runtime/learner-state';
-import { projectV2ToLegacyProjectConfig } from '@/lib/pbl/v2/compat';
-import type { PBLProjectConfig } from '@/lib/pbl/types';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 import { makeScene, type Scene } from '@/lib/types/stage';
+import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
 
 function makeProject(): PBLProjectV2 {
   return {
@@ -75,7 +74,6 @@ function makePBLScene(project: PBLProjectV2): Scene {
     },
     {
       type: 'pbl',
-      projectConfig: projectV2ToLegacyProjectConfig(project) as PBLProjectConfig,
       projectV2: project,
     },
   );
@@ -112,6 +110,106 @@ beforeEach(() => {
 });
 
 describe('PBL document persistence cutover', () => {
+  it('passes a damaged hybrid through unchanged without runtime synchronization', async () => {
+    const damagedHybrid = structuredClone(legacyPBLSceneFixture) as Scene;
+    if (damagedHybrid.content.type !== 'pbl') throw new Error('expected PBL scene');
+    Reflect.set(damagedHybrid.content, 'projectV2', { title: 'broken' });
+
+    const [persisted] = await preparePBLScenesForDocumentPersistence('stage-1', [damagedHybrid]);
+
+    expect(persisted).toBe(damagedHybrid);
+    expect(persisted).toEqual(damagedHybrid);
+    expect(synchronizePBLProjectRuntimeMock).not.toHaveBeenCalled();
+  });
+
+  it('passes through a project with damaged learner-state containers untouched', async () => {
+    const project = makeProject();
+    Reflect.set(project, 'threads', {});
+    const damagedScene = makePBLScene(project);
+
+    const [persisted] = await preparePBLScenesForDocumentPersistence('stage-1', [damagedScene]);
+
+    expect(persisted).toBe(damagedScene);
+    expect(persisted).toEqual(damagedScene);
+    expect(synchronizePBLProjectRuntimeMock).not.toHaveBeenCalled();
+  });
+
+  it('persists container-valid projects with malformed optional leaves without throwing', async () => {
+    const project = makeProject();
+    Reflect.set(project, 'gains', [42]);
+    Reflect.set(project, 'proficiencyAssessment', {});
+
+    const [persisted] = await preparePBLScenesForDocumentPersistence('stage-1', [
+      makePBLScene(project),
+    ]);
+
+    expect(synchronizePBLProjectRuntimeMock).toHaveBeenCalledTimes(1);
+    expect(persisted.content.type).toBe('pbl');
+    if (persisted.content.type !== 'pbl') throw new Error('expected PBL scene');
+    expect(persisted.content.projectV2?.gains).toEqual([42]);
+    expect(persisted.content.projectV2?.proficiencyAssessment).toBeUndefined();
+    expect(persisted.content.projectV2?.proficiency).toBe('intermediate');
+  });
+
+  it('passes through a project failing the shared container check untouched', async () => {
+    // Single acceptance criterion across validator, resolver and persistence:
+    // a payload the renderer will not treat as v2 is inert bytes here too, so
+    // persistence must neither synchronize it nor rewrite it.
+    const project = makeProject();
+    project.threads[0]?.messages.push({
+      id: 'message-1',
+      roleType: 'user',
+      content: 'Learner discussion',
+      ts: '2026-07-14T00:01:00.000Z',
+    });
+    Reflect.set(project, 'gains', 'oops');
+    const damagedScene = makePBLScene(project);
+
+    const [persisted] = await preparePBLScenesForDocumentPersistence('stage-1', [damagedScene]);
+
+    expect(persisted).toBe(damagedScene);
+    expect(synchronizePBLProjectRuntimeMock).not.toHaveBeenCalled();
+  });
+
+  it('passes through a non-runnable v2 payload on a hybrid untouched', async () => {
+    // The resolver treats a container-valid v2 payload with no usable task as
+    // non-authoritative when legacy data can run; persistence must follow that
+    // verdict and neither synchronize nor rewrite either arm of the hybrid.
+    const project = makeProject();
+    project.milestones.forEach((milestone) => {
+      milestone.microtasks = [];
+    });
+    project.threads[0]?.messages.push({
+      id: 'message-1',
+      roleType: 'user',
+      content: 'Learner discussion',
+      ts: '2026-07-14T00:01:00.000Z',
+    });
+    const hybridScene = structuredClone(legacyPBLSceneFixture) as Scene;
+    if (hybridScene.content.type !== 'pbl') throw new Error('expected PBL scene');
+    hybridScene.content.projectV2 = project;
+
+    const [persisted] = await preparePBLScenesForDocumentPersistence('stage-1', [hybridScene]);
+
+    expect(persisted).toBe(hybridScene);
+    expect(persisted).toEqual(hybridScene);
+    expect(synchronizePBLProjectRuntimeMock).not.toHaveBeenCalled();
+  });
+
+  it('strips learner state when proficiencyAssessment is an explicit null', async () => {
+    const project = makeProject();
+    Reflect.set(project, 'proficiencyAssessment', null);
+
+    const [persisted] = await preparePBLScenesForDocumentPersistence('stage-1', [
+      makePBLScene(project),
+    ]);
+
+    expect(synchronizePBLProjectRuntimeMock).toHaveBeenCalledOnce();
+    expect(persisted?.content.type).toBe('pbl');
+    if (persisted?.content.type !== 'pbl') return;
+    expect(persisted.content.projectV2).toEqual(stripToDesignTemplate(project));
+  });
+
   it('durably synchronizes learner state before returning design-only scenes', async () => {
     const project = makeProject();
     const pblScene = makePBLScene(project);
@@ -131,12 +229,9 @@ describe('PBL document persistence cutover', () => {
     expect(persisted[0]).not.toBe(pblScene);
     expect(persisted[0]?.content).toMatchObject({
       type: 'pbl',
-      projectConfig: projectV2ToLegacyProjectConfig(stripToDesignTemplate(project)),
       projectV2: stripToDesignTemplate(project),
     });
-    expect(
-      persisted[0]?.content.type === 'pbl' && persisted[0].content.projectConfig.selectedRole,
-    ).toBeNull();
+    expect(persisted[0]?.content).not.toHaveProperty('projectConfig');
     expect(persisted[1]).toBe(slideScene);
     expect(pblScene.content.type === 'pbl' && pblScene.content.projectV2).toBe(project);
   });
@@ -147,6 +242,26 @@ describe('PBL document persistence cutover', () => {
     await expect(
       preparePBLScenesForDocumentPersistence('stage-1', [makePBLScene(makeProject())]),
     ).rejects.toThrow('runtime unavailable');
+  });
+
+  it('strips hybrid v2 learner state while preserving the original legacy projectConfig', async () => {
+    const project = makeProject();
+    const projectConfig = structuredClone(
+      legacyPBLSceneFixture.content.type === 'pbl'
+        ? legacyPBLSceneFixture.content.projectConfig
+        : undefined,
+    );
+    if (!projectConfig) throw new Error('expected legacy PBL projectConfig');
+    const hybridScene = makePBLScene(project);
+    if (hybridScene.content.type !== 'pbl') throw new Error('expected PBL scene');
+    hybridScene.content.projectConfig = projectConfig;
+
+    const [persisted] = await preparePBLScenesForDocumentPersistence('stage-1', [hybridScene]);
+
+    expect(persisted?.content.type).toBe('pbl');
+    if (persisted?.content.type !== 'pbl') return;
+    expect(persisted.content.projectV2).toEqual(stripToDesignTemplate(project));
+    expect(persisted.content.projectConfig).toEqual(projectConfig);
   });
 
   it('restores the authored proficiency instead of persisting the learner retier', async () => {

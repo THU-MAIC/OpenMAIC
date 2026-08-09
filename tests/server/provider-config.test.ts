@@ -54,6 +54,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'VIDEO_GROK',
   'BOCHA',
   'WEB_SEARCH_MINIMAX',
+  'WEB_SEARCH_CLAUDE',
 ];
 
 function clearProviderEnv() {
@@ -424,6 +425,31 @@ providers:
       expect(resolveWebSearchApiKey('minimax', undefined)).toBe('minimax-env-key');
       expect(resolveWebSearchBaseUrl('minimax')).toBe('https://proxy.example.com/minimax');
       expect(getServerWebSearchProviders().minimax).toEqual({});
+    });
+
+    it('resolves Claude web search key, base URL, and pinned model from dedicated env vars', async () => {
+      vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'claude-env-key');
+      vi.stubEnv('WEB_SEARCH_CLAUDE_BASE_URL', 'https://proxy.example.com/anthropic');
+      vi.stubEnv('WEB_SEARCH_CLAUDE_MODELS', 'claude-sonnet-5,claude-opus-5');
+      const {
+        getServerWebSearchProviders,
+        resolveWebSearchApiKey,
+        resolveWebSearchBaseUrl,
+        resolveWebSearchModel,
+      } = await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchApiKey('claude', undefined)).toBe('claude-env-key');
+      expect(resolveWebSearchBaseUrl('claude')).toBe('https://proxy.example.com/anthropic');
+      // Server-pinned model (first entry) is authoritative over the client model.
+      expect(resolveWebSearchModel('claude', 'claude-haiku-4-5')).toBe('claude-sonnet-5');
+      expect(getServerWebSearchProviders().claude).toEqual({});
+    });
+
+    it('lets the client model win when no Claude model is pinned server-side', async () => {
+      const { resolveWebSearchModel } = await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchModel('claude', 'claude-opus-5')).toBe('claude-opus-5');
+      expect(resolveWebSearchModel('claude')).toBeUndefined();
     });
   });
 

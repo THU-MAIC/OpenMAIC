@@ -1,84 +1,92 @@
-import type {
-  PBLAgent,
-  PBLChatMessage as LegacyPBLChatMessage,
-  PBLIssue,
-  PBLProjectConfig,
-} from '@/lib/pbl/types';
-import type { PBLChatMessage, PBLMilestoneStatus, PBLProjectV2, PBLRole } from './types';
+/**
+ * Read-only support for PBL v1 scenes stored before the v2 cutover.
+ *
+ * This module is kept indefinitely so historical scenes remain renderable and
+ * exportable. Writers must never import it to create or project legacy shapes;
+ * v1 data is accepted only when it already exists in stored scene content.
+ */
+import {
+  isRunnablePBLProjectV2,
+  type PBLChatMessage,
+  type PBLMilestoneStatus,
+  type PBLProjectV2,
+  type PBLRole,
+} from '../v2/types';
 
-const COMPAT_INSTRUCTOR_ROLE_ID = 'role-compat-instructor';
-const COMPAT_LEARNER_AGENT_NAME = 'Learner';
-
-export function projectV2ToLegacyProjectConfig(project: PBLProjectV2): PBLProjectConfig {
-  const instructor = project.roles.find((role) => role.type === 'instructor') ?? project.roles[0];
-  const instructorName = instructor?.name || 'Instructor';
-  const issues = project.milestones.map((milestone, index): PBLIssue => {
-    const activeTask =
-      milestone.microtasks.find((task) => task.status === 'in_progress') ??
-      milestone.microtasks.find((task) => task.status === 'todo') ??
-      milestone.microtasks[0];
-    return {
-      id: legacyIssueId(milestone.id),
-      title: milestone.title || `Stage ${index + 1}`,
-      description: milestone.description || activeTask?.description || '',
-      person_in_charge: COMPAT_LEARNER_AGENT_NAME,
-      participants: [instructorName],
-      notes: (milestone.documents ?? [])
-        .map((document) => document.content)
-        .filter(Boolean)
-        .join('\n\n'),
-      parent_issue: null,
-      index,
-      is_done: milestone.status === 'completed',
-      is_active: milestone.status === 'active',
-      generated_questions: [milestone.briefing, ...(activeTask?.hints ?? [])]
-        .filter(Boolean)
-        .join('\n'),
-      question_agent_name: instructorName,
-      judge_agent_name: instructorName,
-    };
-  });
-
-  return {
-    projectInfo: {
-      title: project.title,
-      description: project.description,
-    },
-    agents: [
-      compatInstructorAgent(instructorName),
-      {
-        name: COMPAT_LEARNER_AGENT_NAME,
-        actor_role: 'Learner',
-        role_division: 'development',
-        system_prompt: '',
-        default_mode: 'idle',
-        delay_time: 0,
-        env: {},
-        is_user_role: true,
-        is_active: true,
-        is_system_agent: false,
-      },
-    ],
-    issueboard: {
-      agent_ids: [instructorName],
-      issues,
-      current_issue_id: issues.find((issue) => issue.is_active)?.id ?? issues[0]?.id ?? null,
-    },
-    chat: {
-      messages: [],
-    },
-    selectedRole: hasStartedProject(project) ? COMPAT_LEARNER_AGENT_NAME : null,
-  };
+interface LegacyPBLProjectInfo {
+  title: string;
+  description: string;
 }
+
+interface LegacyPBLAgent {
+  name: string;
+  actor_role: string;
+  role_division: 'management' | 'development';
+  system_prompt: string;
+  default_mode: string;
+  delay_time: number;
+  env: Record<string, unknown>;
+  is_user_role: boolean;
+  is_active: boolean;
+  is_system_agent: boolean;
+}
+
+interface LegacyPBLIssue {
+  id: string;
+  title: string;
+  description: string;
+  person_in_charge: string;
+  participants: string[];
+  notes: string;
+  parent_issue: string | null;
+  index: number;
+  is_done: boolean;
+  is_active: boolean;
+  generated_questions: string;
+  question_agent_name: string;
+  judge_agent_name: string;
+}
+
+interface LegacyPBLChatMessage {
+  id: string;
+  agent_name: string;
+  message: string;
+  timestamp: number;
+  read_by: string[];
+}
+
+export interface PBLProjectConfig {
+  projectInfo: LegacyPBLProjectInfo;
+  agents: LegacyPBLAgent[];
+  issueboard: {
+    agent_ids: string[];
+    issues: LegacyPBLIssue[];
+    current_issue_id: string | null;
+  };
+  chat: { messages: LegacyPBLChatMessage[] };
+  selectedRole?: string | null;
+}
+
+interface LegacyReadablePBLContent {
+  type: 'pbl';
+  projectConfig?: PBLProjectConfig;
+  projectV2?: PBLProjectV2;
+}
+
+export type ResolvedPBLContent =
+  | { kind: 'v2'; projectV2: PBLProjectV2 }
+  | { kind: 'legacy'; projectConfig: PBLProjectConfig }
+  | { kind: 'empty' };
+
+const LEGACY_INSTRUCTOR_ROLE_ID = 'role-compat-instructor';
 
 export function upgradeLegacyPBLConfigToProjectV2(config: PBLProjectConfig): PBLProjectV2 {
   const now = new Date().toISOString();
   const language = detectLegacyLanguage(config);
-  const instructorName = inferInstructorName(config);
   const instructorRole: PBLRole = {
-    id: COMPAT_INSTRUCTOR_ROLE_ID,
+    id: LEGACY_INSTRUCTOR_ROLE_ID,
     type: 'instructor',
-    name: instructorName,
+    name: inferInstructorName(config),
     description: 'Guides the learner through the upgraded legacy PBL project.',
   };
   const orderedIssues = config.issueboard.issues.slice().sort((a, b) => a.index - b.index);
@@ -101,14 +109,14 @@ export function upgradeLegacyPBLConfigToProjectV2(config: PBLProjectConfig): PBL
     milestones: orderedIssues.map((issue, index) => {
       const status = legacyIssueStatus(issue, index, orderedIssues, activeIssueId);
       return {
-        id: legacyMilestoneId(issue.id),
+        id: `legacy_ms_${issue.id}`,
         title: issue.title || `Task ${index + 1}`,
         description: issue.description || issue.notes || undefined,
         status,
         order: index,
         microtasks: [
           {
-            id: legacyMicrotaskId(issue.id),
+            id: `legacy_mt_${issue.id}`,
             title: issue.title || `Task ${index + 1}`,
             description: legacyMicrotaskDescription(issue),
             status:
@@ -138,7 +146,9 @@ export function upgradeLegacyPBLConfigToProjectV2(config: PBLProjectConfig): PBL
     threads: [
       {
         agentId: instructorRole.id,
-        messages: config.chat.messages.map((message) => legacyChatMessage(message, config)),
+        messages: config.chat.messages
+          .filter((message) => typeof message.message === 'string')
+          .map((message) => legacyChatMessage(message, config)),
       },
     ],
     engagementEvents: [],
@@ -148,63 +158,87 @@ export function upgradeLegacyPBLConfigToProjectV2(config: PBLProjectConfig): PBL
 }
 
 export function isEmptyLegacyPBLConfig(config: PBLProjectConfig): boolean {
+  if (
+    !config ||
+    Array.isArray(config) ||
+    typeof config !== 'object' ||
+    !config?.projectInfo ||
+    Array.isArray(config.projectInfo) ||
+    typeof config.projectInfo !== 'object' ||
+    !Array.isArray(config?.agents) ||
+    config.agents.some(
+      (agent) =>
+        !agent ||
+        Array.isArray(agent) ||
+        typeof agent !== 'object' ||
+        (agent.name !== undefined && agent.name !== null && typeof agent.name !== 'string'),
+    ) ||
+    !config?.issueboard ||
+    Array.isArray(config.issueboard) ||
+    typeof config.issueboard !== 'object' ||
+    !Array.isArray(config.issueboard?.issues) ||
+    config.issueboard.issues.some(
+      (issue) => !issue || Array.isArray(issue) || typeof issue !== 'object',
+    ) ||
+    !config?.chat ||
+    Array.isArray(config.chat) ||
+    typeof config.chat !== 'object' ||
+    !Array.isArray(config.chat?.messages) ||
+    config.chat.messages.some(
+      (message) => !message || Array.isArray(message) || typeof message !== 'object',
+    ) ||
+    (config.selectedRole !== undefined &&
+      config.selectedRole !== null &&
+      typeof config.selectedRole !== 'string')
+  ) {
+    return true;
+  }
   return (
-    config.projectInfo.title === '' &&
-    config.projectInfo.description === '' &&
+    !config?.projectInfo?.title &&
+    !config?.projectInfo?.description &&
     config.agents.length === 0 &&
     config.issueboard.issues.length === 0 &&
     config.chat.messages.length === 0
   );
 }
 
-function compatInstructorAgent(name: string): PBLAgent {
-  return {
-    name,
-    actor_role: 'Instructor',
-    role_division: 'management',
-    system_prompt: '',
-    default_mode: 'idle',
-    delay_time: 0,
-    env: {},
-    is_user_role: false,
-    is_active: true,
-    is_system_agent: true,
-  };
+export function resolvePBLContent(content: {
+  projectV2?: unknown;
+  projectConfig?: unknown;
+}): ResolvedPBLContent {
+  if (isRunnablePBLProjectV2(content.projectV2)) {
+    return { kind: 'v2', projectV2: content.projectV2 as PBLProjectV2 };
+  }
+
+  if (
+    content.projectConfig != null &&
+    !isEmptyLegacyPBLConfig(content.projectConfig as PBLProjectConfig) &&
+    (content.projectConfig as PBLProjectConfig).issueboard.issues.length > 0
+  ) {
+    return { kind: 'legacy', projectConfig: content.projectConfig as PBLProjectConfig };
+  }
+
+  return { kind: 'empty' };
 }
 
-function hasStartedProject(project: PBLProjectV2): boolean {
-  return (
-    project.uiPhase !== 'hero' ||
-    project.threads.some((thread) => thread.messages.length > 0) ||
-    project.submissions.length > 0 ||
-    project.evaluations.length > 0 ||
-    project.engagementEvents.length > 0 ||
-    project.milestones.some(
-      (milestone) =>
-        milestone.status === 'completed' ||
-        milestone.microtasks.some(
-          (microtask) => microtask.status === 'completed' || microtask.status === 'skipped',
-        ),
-    )
-  );
-}
+export function normalizeLegacyPBLContent<T extends LegacyReadablePBLContent>(
+  content: T,
+): T | { type: 'pbl'; projectV2: PBLProjectV2 } {
+  const resolved = resolvePBLContent(content);
+  if (resolved.kind === 'legacy') {
+    return {
+      type: 'pbl',
+      projectV2: upgradeLegacyPBLConfigToProjectV2(resolved.projectConfig),
+    };
+  }
 
-function legacyIssueId(milestoneId: string): string {
-  return `compat_issue_${milestoneId}`;
-}
-
-function legacyMilestoneId(issueId: string): string {
-  return `legacy_ms_${issueId}`;
-}
-
-function legacyMicrotaskId(issueId: string): string {
-  return `legacy_mt_${issueId}`;
+  return content;
 }
 
 function legacyIssueStatus(
-  issue: PBLProjectConfig['issueboard']['issues'][number],
+  issue: LegacyPBLIssue,
   index: number,
-  issues: PBLProjectConfig['issueboard']['issues'],
+  issues: LegacyPBLIssue[],
   activeIssueId: string | null,
 ): PBLMilestoneStatus {
   if (issue.is_done) return 'completed';
@@ -217,9 +251,7 @@ function legacyIssueStatus(
   return 'locked';
 }
 
-function legacyMicrotaskDescription(
-  issue: PBLProjectConfig['issueboard']['issues'][number],
-): string | undefined {
+function legacyMicrotaskDescription(issue: LegacyPBLIssue): string | undefined {
   return [issue.description, issue.notes ? `Notes: ${issue.notes}` : ''].filter(Boolean).join('\n');
 }
 
@@ -228,12 +260,13 @@ function legacyChatMessage(
   config: PBLProjectConfig,
 ): PBLChatMessage {
   const isUser = isLegacyUserMessage(message, config);
+  const timestamp = new Date(message.timestamp || Date.now());
   return {
     id: message.id,
-    agentId: isUser ? undefined : COMPAT_INSTRUCTOR_ROLE_ID,
+    agentId: isUser ? undefined : LEGACY_INSTRUCTOR_ROLE_ID,
     roleType: isUser ? 'user' : 'instructor',
     content: message.message,
-    ts: new Date(message.timestamp || Date.now()).toISOString(),
+    ts: Number.isNaN(timestamp.getTime()) ? new Date().toISOString() : timestamp.toISOString(),
   };
 }
 
@@ -253,7 +286,7 @@ function inferInstructorName(config: PBLProjectConfig): string {
     );
   if (activeIssue?.question_agent_name) return activeIssue.question_agent_name;
   const questionAgent = config.agents.find((agent) =>
-    agent.name.toLowerCase().includes('question'),
+    agent.name?.toLowerCase().includes('question'),
   );
   return questionAgent?.name || 'Instructor';
 }
