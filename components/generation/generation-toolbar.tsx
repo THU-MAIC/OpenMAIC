@@ -1,16 +1,7 @@
 'use client';
 
-import { useState, useRef, useMemo } from 'react';
-import {
-  Bot,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Paperclip,
-  FileText,
-  X,
-  Globe2,
-} from 'lucide-react';
+import { useState, useRef, useMemo, useEffect } from 'react';
+import { Bot, Brain, Check, Paperclip, FileText, X, Globe2, Search } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -19,22 +10,48 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
+import { isLLMProviderConfigured } from '@/lib/store/settings-validation';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
-import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import {
+  WEB_SEARCH_PROVIDERS,
+  getWebSearchProviderDisplayName,
+  isWebSearchProviderConfigured,
+} from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import type { ProviderId } from '@/lib/ai/providers';
+import type {
+  ModelInfo,
+  ThinkingConfig,
+  ThinkingEffort,
+  ThinkingLevel,
+} from '@/lib/types/provider';
+import {
+  getDefaultThinkingConfig,
+  getThinkingDisplayValue,
+  getThinkingConfigKey,
+  normalizeThinkingConfig,
+  supportsConfigurableThinking,
+} from '@/lib/ai/thinking-config';
 import type { SettingsSection } from '@/lib/types/settings';
 import { MediaPopover } from '@/components/generation/media-popover';
+import { getAcceptStringForProviders, isMimeSupportedByProviders } from '@/lib/document/mime';
+import {
+  MAX_DOCUMENT_BUNDLE_FILES,
+  MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES,
+} from '@/lib/document/bundle';
+import { dedupeCourseMaterialFiles } from '@/lib/document/course-materials';
+import type { SelectedCourseMaterial } from '@/lib/types/generation';
+import { findModelById, modelIdsMatch } from '@/lib/ai/model-aliases';
 
 // ─── Constants ───────────────────────────────────────────────
-const MAX_PDF_SIZE_MB = 50;
-const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
+const MAX_COURSE_MATERIAL_SIZE_MB = 50;
+const MAX_COURSE_MATERIAL_SIZE_BYTES = MAX_COURSE_MATERIAL_SIZE_MB * 1024 * 1024;
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
@@ -42,8 +59,9 @@ export interface GenerationToolbarProps {
   onWebSearchChange: (v: boolean) => void;
   onSettingsOpen: (section?: SettingsSection) => void;
   // PDF
-  pdfFile: File | null;
-  onPdfFileChange: (file: File | null) => void;
+  courseMaterials: SelectedCourseMaterial[];
+  onCourseMaterialsAdd: (files: File[]) => void;
+  onCourseMaterialRemove: (id: string) => void;
   onPdfError: (error: string | null) => void;
 }
 
@@ -52,8 +70,9 @@ export function GenerationToolbar({
   webSearch,
   onWebSearchChange,
   onSettingsOpen,
-  pdfFile,
-  onPdfFileChange,
+  courseMaterials,
+  onCourseMaterialsAdd,
+  onCourseMaterialRemove,
   onPdfError,
 }: GenerationToolbarProps) {
   const { t } = useI18n();
@@ -61,35 +80,32 @@ export function GenerationToolbar({
   const currentModelId = useSettingsStore((s) => s.modelId);
   const providersConfig = useSettingsStore((s) => s.providersConfig);
   const setModel = useSettingsStore((s) => s.setModel);
+  const thinkingConfigs = useSettingsStore((s) => s.thinkingConfigs);
+  const setThinkingConfig = useSettingsStore((s) => s.setThinkingConfig);
   const pdfProviderId = useSettingsStore((s) => s.pdfProviderId);
   const pdfProvidersConfig = useSettingsStore((s) => s.pdfProvidersConfig);
   const setPDFProvider = useSettingsStore((s) => s.setPDFProvider);
   const webSearchProviderId = useSettingsStore((s) => s.webSearchProviderId);
   const webSearchProvidersConfig = useSettingsStore((s) => s.webSearchProvidersConfig);
   const setWebSearchProvider = useSettingsStore((s) => s.setWebSearchProvider);
-  const setWebSearchProviderConfig = useSettingsStore((s) => s.setWebSearchProviderConfig);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [webSearchPopoverOpen, setWebSearchPopoverOpen] = useState(false);
-  const [drillWebSearchProvider, setDrillWebSearchProvider] = useState<WebSearchProviderId | null>(
-    null,
-  );
 
-  // Check if any web search provider has a valid config (API key or server-configured)
-  const webSearchAvailable = Object.values(WEB_SEARCH_PROVIDERS).some((provider) => {
-    const config = webSearchProvidersConfig[provider.id];
-    return !provider.requiresApiKey || !!config?.apiKey || !!config?.isServerConfigured;
-  });
+  // Check web search availability. Keyless providers such as Brave should keep
+  // the toolbar reachable even when the current API-key provider is not ready.
+  const webSearchProvider = WEB_SEARCH_PROVIDERS[webSearchProviderId];
+  const webSearchConfig = webSearchProvidersConfig[webSearchProviderId];
+  const selectedWebSearchAvailable = webSearchProvider
+    ? isWebSearchProviderConfigured(webSearchProvider, webSearchConfig)
+    : false;
+  const webSearchAvailable = Object.values(WEB_SEARCH_PROVIDERS).some((provider) =>
+    isWebSearchProviderConfigured(provider, webSearchProvidersConfig[provider.id]),
+  );
 
   // Configured LLM providers (only those with valid credentials + models + endpoint)
   const configuredProviders = providersConfig
     ? Object.entries(providersConfig)
-        .filter(
-          ([, config]) =>
-            (!config.requiresApiKey || config.apiKey || config.isServerConfigured) &&
-            config.models.length >= 1 &&
-            (config.baseUrl || config.defaultBaseUrl || config.serverBaseUrl),
-        )
+        .filter(([, config]) => isLLMProviderConfigured(config))
         .map(([id, config]) => ({
           id: id as ProviderId,
           name: config.name,
@@ -97,22 +113,100 @@ export function GenerationToolbar({
           isServerConfigured: config.isServerConfigured,
           models:
             config.isServerConfigured && !config.apiKey && config.serverModels?.length
-              ? config.models.filter((m) => new Set(config.serverModels).has(m.id))
+              ? config.models.filter((model) =>
+                  config.serverModels?.some((serverModelId) =>
+                    modelIdsMatch(id, model.id, serverModelId),
+                  ),
+                )
               : config.models,
         }))
     : [];
 
   const currentProviderConfig = providersConfig?.[currentProviderId];
+  const currentModel = findModelById(
+    currentProviderId,
+    currentProviderConfig?.models,
+    currentModelId,
+  );
+  const currentThinkingConfig =
+    thinkingConfigs[getThinkingConfigKey(currentProviderId, currentModelId)];
 
-  // PDF handler
-  const handleFileSelect = (file: File) => {
-    if (file.type !== 'application/pdf') return;
-    if (file.size > MAX_PDF_SIZE_BYTES) {
+  // Course material handler. `plain-text` is always active alongside the
+  // user-selected extractor so txt/md files remain uploadable without
+  // configuring an external service.
+  const activeDocumentProviderIds = useMemo(
+    () => [pdfProviderId, 'plain-text'] as const,
+    [pdfProviderId],
+  );
+  const acceptForCurrentProvider = useMemo(
+    () => getAcceptStringForProviders(activeDocumentProviderIds),
+    [activeDocumentProviderIds],
+  );
+
+  // If the user switches to a provider that doesn't support already attached
+  // materials, drop only the incompatible files so the eventual extraction
+  // request matches the current provider capability.
+  useEffect(() => {
+    const unsupportedMaterials = courseMaterials.filter(
+      (file) =>
+        !isMimeSupportedByProviders(
+          { mimeType: file.type, fileName: file.name },
+          activeDocumentProviderIds,
+        ),
+    );
+    if (unsupportedMaterials.length === 0) return;
+
+    for (const file of unsupportedMaterials) {
+      onCourseMaterialRemove(file.id);
+    }
+    onPdfError(t('upload.unsupportedCourseMaterial'));
+    // Intentionally omit callbacks/t from deps: adding them would re-run this
+    // provider capability cleanup on unrelated parent re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDocumentProviderIds, courseMaterials]);
+
+  const handleFilesSelect = (incomingFiles: File[]) => {
+    const supportedFiles = incomingFiles.filter((file) =>
+      isMimeSupportedByProviders(
+        { mimeType: file.type, fileName: file.name },
+        activeDocumentProviderIds,
+      ),
+    );
+    if (supportedFiles.length === 0) {
+      onPdfError(t('upload.unsupportedCourseMaterial'));
+      return;
+    }
+    if (supportedFiles.length !== incomingFiles.length) {
+      onPdfError(t('upload.unsupportedCourseMaterial'));
+      return;
+    }
+    if (supportedFiles.some((file) => file.size > MAX_COURSE_MATERIAL_SIZE_BYTES)) {
       onPdfError(t('upload.fileTooLarge'));
       return;
     }
+
+    const dedupedFiles = dedupeCourseMaterialFiles(courseMaterials, supportedFiles);
+    if (dedupedFiles.length === 0) return;
+
+    if (courseMaterials.length + dedupedFiles.length > MAX_DOCUMENT_BUNDLE_FILES) {
+      onPdfError(t('upload.courseMaterialCountLimit', { n: MAX_DOCUMENT_BUNDLE_FILES }));
+      return;
+    }
+
+    const totalSize =
+      courseMaterials.reduce((sum, file) => sum + file.size, 0) +
+      dedupedFiles.reduce((sum, file) => sum + file.size, 0);
+    if (totalSize > MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES) {
+      onPdfError(
+        t('upload.courseMaterialTotalSizeLimit', {
+          n: Math.floor(MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES / 1024 / 1024),
+        }),
+      );
+      return;
+    }
+
     onPdfError(null);
-    onPdfFileChange(file);
+    onCourseMaterialsAdd(dedupedFiles);
   };
 
   // ─── Pill button helper ─────────────────────────────
@@ -125,12 +219,17 @@ export function GenerationToolbar({
     <div className="flex items-center gap-1 flex-wrap">
       {/* ── Model selector ── */}
       {configuredProviders.length > 0 ? (
-        <ModelSelectorPopover
+        <ModelSettingsPopover
           configuredProviders={configuredProviders}
           currentProviderId={currentProviderId}
           currentModelId={currentModelId}
           currentProviderConfig={currentProviderConfig}
+          currentModel={currentModel}
           setModel={setModel}
+          thinkingConfig={currentThinkingConfig}
+          onThinkingChange={(config) =>
+            setThinkingConfig(currentProviderId, currentModelId, config)
+          }
           t={t}
         />
       ) : (
@@ -152,548 +251,756 @@ export function GenerationToolbar({
         </Tooltip>
       )}
 
-      {/* ── Separator ── */}
-      <div className="w-px h-4 bg-border/60 mx-1" />
+      <div className="flex min-w-0 items-center gap-1">
+        {/* ── Separator ── */}
+        <div className="w-px h-4 bg-border/60 mx-1" />
 
-      {/* ── PDF (parser + upload) combined Popover ── */}
-      <Popover>
-        <PopoverTrigger asChild>
-          {pdfFile ? (
-            <button className={pillActive}>
-              <Paperclip className="size-3.5" />
-              <span className="max-w-[100px] truncate">{pdfFile.name}</span>
-              <span
-                role="button"
-                className="size-4 rounded-full inline-flex items-center justify-center hover:bg-violet-200 dark:hover:bg-violet-800 transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onPdfFileChange(null);
-                }}
-              >
-                <X className="size-2.5" />
-              </span>
-            </button>
-          ) : (
-            <button className={pillMuted}>
-              <Paperclip className="size-3.5" />
-            </button>
-          )}
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-72 p-0">
-          {/* Parser selector */}
-          <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-            <span className="text-xs font-medium text-muted-foreground shrink-0">
-              {t('toolbar.pdfParser')}
-            </span>
-            <Select value={pdfProviderId} onValueChange={(v) => setPDFProvider(v as PDFProviderId)}>
-              <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.values(PDF_PROVIDERS).map((provider) => {
-                  const cfg = pdfProvidersConfig[provider.id];
-                  const available =
-                    !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured;
-                  return (
-                    <SelectItem key={provider.id} value={provider.id} disabled={!available}>
-                      <div className={cn('flex items-center gap-1.5', !available && 'opacity-50')}>
-                        {provider.icon && (
-                          <img src={provider.icon} alt={provider.name} className="w-3.5 h-3.5" />
-                        )}
-                        {provider.name}
-                        {cfg?.isServerConfigured && (
-                          <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
-                            {t('settings.serverConfigured')}
-                          </span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Upload area / file info */}
-          <div className="px-3 pb-3">
-            <input
-              type="file"
-              ref={fileInputRef}
-              className="hidden"
-              accept=".pdf"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFileSelect(f);
-                e.target.value = '';
-              }}
-            />
-            {pdfFile ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="size-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
-                    <FileText className="size-4 text-violet-600 dark:text-violet-400" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{pdfFile.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {(pdfFile.size / 1024 / 1024).toFixed(2)} MB
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => onPdfFileChange(null)}
-                  className="w-full text-xs text-destructive hover:underline text-left"
-                >
-                  {t('toolbar.removePdf')}
-                </button>
-              </div>
+        {/* ── Course material (extractor + upload) combined Popover ── */}
+        <Popover>
+          <PopoverTrigger asChild>
+            {courseMaterials.length > 0 ? (
+              <button className={pillActive}>
+                <Paperclip className="size-3.5" />
+                <span className="max-w-[140px] truncate">
+                  {courseMaterials.length === 1
+                    ? courseMaterials[0].name
+                    : t('toolbar.courseMaterialsSelected', { n: courseMaterials.length })}
+                </span>
+              </button>
             ) : (
-              <div
-                className={cn(
-                  'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors cursor-pointer',
-                  isDragging
-                    ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20'
-                    : 'border-muted-foreground/20 hover:border-violet-300',
-                )}
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragging(true);
-                }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setIsDragging(false);
-                  const f = e.dataTransfer.files?.[0];
-                  if (f) handleFileSelect(f);
-                }}
-              >
-                <Paperclip className="size-5 text-muted-foreground/50 mb-1.5" />
-                <p className="text-xs font-medium">{t('toolbar.pdfUpload')}</p>
-                <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                  {t('upload.pdfSizeLimit')}
-                </p>
-              </div>
+              <button className={pillMuted}>
+                <Paperclip className="size-3.5" />
+              </button>
             )}
-          </div>
-        </PopoverContent>
-      </Popover>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-72 p-0">
+            {/* Extractor selector */}
+            <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+              <span className="text-xs font-medium text-muted-foreground shrink-0">
+                {t('toolbar.documentExtractor')}
+              </span>
+              <Select
+                value={pdfProviderId}
+                onValueChange={(v) => setPDFProvider(v as PDFProviderId)}
+              >
+                <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.values(PDF_PROVIDERS).map((provider) => {
+                    const cfg = pdfProvidersConfig[provider.id];
+                    // AliDocMind authenticates with an AK/SK pair rather than a
+                    // single apiKey — recognize either credential shape.
+                    const hasCredentials =
+                      !!cfg?.apiKey || (!!cfg?.accessKeyId && !!cfg?.accessKeySecret);
+                    const available =
+                      !provider.requiresApiKey || hasCredentials || !!cfg?.isServerConfigured;
+                    return (
+                      <SelectItem key={provider.id} value={provider.id} disabled={!available}>
+                        <div
+                          className={cn('flex items-center gap-1.5', !available && 'opacity-50')}
+                        >
+                          {provider.icon && (
+                            <img src={provider.icon} alt={provider.name} className="w-3.5 h-3.5" />
+                          )}
+                          {provider.name}
+                          {cfg?.isServerConfigured && (
+                            <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
+                              {t('settings.serverConfigured')}
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
 
-      {/* ── Web Search ── */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span>
-            <Popover
-              open={webSearchPopoverOpen}
-              onOpenChange={(open) => {
-                setWebSearchPopoverOpen(open);
-                setDrillWebSearchProvider(null);
-                if (!open && webSearch && !webSearchProviderId) {
-                  onWebSearchChange(false);
-                }
-              }}
-            >
-              <PopoverTrigger asChild>
-                <button
+            {/* Upload area / file info */}
+            <div className="px-3 pb-3">
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept={acceptForCurrentProvider}
+                multiple
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  if (files.length > 0) handleFilesSelect(files);
+                  e.target.value = '';
+                }}
+              />
+              <div className="space-y-3">
+                <div
                   className={cn(
-                    webSearch && webSearchProviderId ? pillActive : pillMuted,
-                    !webSearchAvailable && 'opacity-40 cursor-not-allowed',
+                    'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors cursor-pointer',
+                    isDragging
+                      ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20'
+                      : 'border-muted-foreground/20 hover:border-violet-300',
                   )}
-                  disabled={!webSearchAvailable}
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    const files = Array.from(e.dataTransfer.files ?? []);
+                    if (files.length > 0) handleFilesSelect(files);
+                  }}
                 >
-                  {(() => {
-                    if (!webSearch || !webSearchProviderId) {
-                      return <Globe2 className="size-3.5" />;
-                    }
-                    const activeProvider = WEB_SEARCH_PROVIDERS[webSearchProviderId];
-                    if (activeProvider?.icon) {
-                      return (
-                        <img
-                          src={activeProvider.icon}
-                          alt={activeProvider.name}
-                          className="size-3.5 rounded-sm animate-pulse"
-                        />
-                      );
-                    }
-                    return <Globe2 className="size-3.5 animate-pulse" />;
-                  })()}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-64 p-0">
-                {/* Level 1: Provider list */}
-                {!drillWebSearchProvider && (
-                  <div className="max-h-72 overflow-y-auto">
-                    <div className="px-3 py-2 border-b bg-muted/30 flex items-center gap-2.5">
-                      <Globe2
-                        className={cn(
-                          'size-4 shrink-0 transition-colors',
-                          webSearch
-                            ? 'text-violet-600 dark:text-violet-400'
-                            : 'text-muted-foreground/50',
-                        )}
-                      />
-                      <span
-                        className={cn(
-                          'flex-1 text-sm font-medium transition-colors',
-                          !webSearch && 'text-muted-foreground',
-                        )}
-                      >
-                        {t('toolbar.webSearchProvider')}
-                      </span>
-                      <Switch
-                        checked={webSearch}
-                        onCheckedChange={(enabled) => {
-                          onWebSearchChange(enabled);
-                        }}
-                        className="scale-[0.85] origin-right"
-                      />
-                    </div>
-                    <div className="p-1">
-                      {Object.values(WEB_SEARCH_PROVIDERS)
-                        .filter((provider) => {
-                          const cfg = webSearchProvidersConfig[provider.id];
-                          return (
-                            !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured
-                          );
-                        })
-                        .map((provider) => {
-                          const cfg = webSearchProvidersConfig[provider.id as WebSearchProviderId];
-                          const isActive = webSearchProviderId === provider.id && webSearch;
-                          const builtinModels =
-                            WEB_SEARCH_PROVIDERS[provider.id as WebSearchProviderId]?.models || [];
-                          const effectiveModels = cfg?.models?.length ? cfg.models : builtinModels;
-                          const hasModels = effectiveModels.length > 0;
+                  <Paperclip className="size-5 text-muted-foreground/50 mb-1.5" />
+                  <p className="text-xs font-medium">{t('toolbar.courseMaterialUpload')}</p>
+                  <p className="text-[10px] text-muted-foreground/60 mt-0.5 text-center">
+                    {t('upload.courseMaterialSizeLimit')}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground/60 text-center">
+                    {t('upload.courseMaterialCountLimit', { n: MAX_DOCUMENT_BUNDLE_FILES })}
+                  </p>
+                </div>
 
-                          return (
+                {courseMaterials.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] text-muted-foreground/70">
+                      {t('toolbar.courseMaterialMergeOrder')}
+                    </p>
+                    <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
+                      {[...courseMaterials]
+                        .sort((a, b) => a.order - b.order)
+                        .map((file) => (
+                          <div
+                            key={file.id}
+                            className="flex items-center gap-2 rounded-lg border border-border/50 px-2 py-2"
+                          >
+                            <div className="size-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
+                              <FileText className="size-4 text-violet-600 dark:text-violet-400" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium truncate">
+                                {file.order}. {file.name}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {(file.size / 1024 / 1024).toFixed(2)} MB
+                              </p>
+                            </div>
                             <button
-                              key={provider.id}
-                              disabled={!webSearch}
-                              onClick={() => {
-                                if (!webSearch) return;
-                                if (hasModels) {
-                                  setDrillWebSearchProvider(provider.id as WebSearchProviderId);
-                                } else {
-                                  setWebSearchProvider(provider.id as WebSearchProviderId);
-                                  setWebSearchPopoverOpen(false);
-                                }
-                              }}
-                              className={cn(
-                                'w-full flex items-center justify-between px-3 py-2 rounded-md text-left transition-colors mb-1',
-                                isActive
-                                  ? 'bg-violet-50 dark:bg-violet-950/20 text-violet-700 dark:text-violet-300 font-medium'
-                                  : 'hover:bg-muted/50 text-foreground/80',
-                                !webSearch && 'opacity-50 cursor-not-allowed hover:bg-muted/50',
-                              )}
+                              onClick={() => onCourseMaterialRemove(file.id)}
+                              className="size-6 rounded-full inline-flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+                              aria-label={t('toolbar.removeCourseMaterial')}
                             >
-                              <div className="flex items-center gap-2 truncate">
-                                {provider.icon ? (
-                                  <img
-                                    src={provider.icon}
-                                    alt={provider.name}
-                                    className="size-3.5 rounded-sm shrink-0"
-                                  />
-                                ) : (
-                                  <Globe2
-                                    className={cn(
-                                      'size-3.5',
-                                      isActive
-                                        ? 'text-violet-600 dark:text-violet-400'
-                                        : 'text-muted-foreground',
-                                    )}
-                                  />
-                                )}
-                                <span className="text-sm">{provider.name}</span>
-                              </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {cfg?.isServerConfigured && (
-                                  <span className="text-[9px] px-1 py-0 rounded border border-border text-muted-foreground bg-background">
-                                    {t('settings.serverConfigured')}
-                                  </span>
-                                )}
-                                {hasModels && cfg?.modelId && (
-                                  <span className="text-[10px] text-muted-foreground truncate max-w-[80px] font-mono">
-                                    {effectiveModels.find((m) => m.id === cfg.modelId)?.name ||
-                                      cfg.modelId}
-                                  </span>
-                                )}
-                                {isActive && !hasModels && (
-                                  <Check className="size-3.5 text-violet-600 dark:text-violet-400" />
-                                )}
-                                {hasModels && (
-                                  <ChevronRight className="size-3.5 text-muted-foreground" />
-                                )}
-                              </div>
+                              <X className="size-3.5" />
                             </button>
-                          );
-                        })}
+                          </div>
+                        ))}
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
 
-                {/* Level 2: Model list for the drilled provider */}
-                {drillWebSearchProvider &&
-                  (() => {
-                    const cfg = webSearchProvidersConfig[drillWebSearchProvider];
-                    const provider = WEB_SEARCH_PROVIDERS[drillWebSearchProvider];
-                    const models = cfg?.models?.length ? cfg.models : provider?.models || [];
-                    const selectedModelId = cfg?.modelId || '';
-                    return (
-                      <div className="max-h-72 overflow-y-auto">
-                        <button
-                          onClick={() => setDrillWebSearchProvider(null)}
-                          className="w-full flex items-center gap-2 px-3 py-2 border-b bg-muted/40 hover:bg-muted/60 transition-colors"
-                        >
-                          <ChevronLeft className="size-3.5 text-muted-foreground" />
-                          {provider?.icon ? (
-                            <img
-                              src={provider.icon}
-                              alt={provider.name}
-                              className="size-4 rounded-sm"
-                            />
-                          ) : (
-                            <Globe2 className="size-4 text-muted-foreground" />
-                          )}
-                          <span className="text-xs font-semibold">{provider?.name}</span>
-                          <span className="text-[10px] text-muted-foreground ml-auto">
-                            {models.length} {t('settings.modelCount')}
-                          </span>
-                        </button>
-                        {models.map((model) => {
-                          const isSelected = selectedModelId === model.id;
-                          return (
-                            <button
-                              key={model.id}
-                              onClick={() => {
-                                setWebSearchProvider(drillWebSearchProvider);
-                                setWebSearchProviderConfig(drillWebSearchProvider, {
-                                  modelId: model.id,
-                                });
-                                setWebSearchPopoverOpen(false);
-                              }}
-                              className={cn(
-                                'w-full flex items-center gap-2 px-3 py-2 text-left transition-colors border-b border-border/30',
-                                isSelected
-                                  ? 'bg-violet-50 dark:bg-violet-950/20 text-violet-700 dark:text-violet-300'
-                                  : 'hover:bg-muted/50',
-                              )}
-                            >
-                              <span className="flex-1 truncate font-mono text-xs">
-                                {model.name}
+        {/* ── Web Search ── */}
+        {webSearchAvailable ? (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className={webSearch ? pillActive : pillMuted}>
+                <Globe2 className={cn('size-3.5', webSearch && 'animate-pulse')} />
+                {webSearch && (
+                  <span>
+                    {WEB_SEARCH_PROVIDERS[webSearchProviderId]
+                      ? getWebSearchProviderDisplayName(webSearchProviderId, t)
+                      : 'Search'}
+                  </span>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-64 p-3 space-y-3">
+              {/* Toggle */}
+              <button
+                onClick={() => {
+                  if (!selectedWebSearchAvailable) return;
+                  onWebSearchChange(!webSearch);
+                }}
+                className={cn(
+                  'w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all',
+                  webSearch
+                    ? 'bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800'
+                    : 'border-border hover:bg-muted/50',
+                  !selectedWebSearchAvailable && 'opacity-60',
+                )}
+              >
+                <Globe2
+                  className={cn(
+                    'size-4 shrink-0',
+                    webSearch ? 'text-violet-600 dark:text-violet-400' : 'text-muted-foreground',
+                  )}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium">
+                    {webSearch ? t('toolbar.webSearchOn') : t('toolbar.webSearchOff')}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                    {t('toolbar.webSearchDesc')}
+                  </p>
+                </div>
+              </button>
+
+              {/* Provider selector */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground shrink-0">
+                  {t('toolbar.webSearchProvider')}
+                </span>
+                <Select
+                  value={webSearchProviderId}
+                  onValueChange={(v) => setWebSearchProvider(v as WebSearchProviderId)}
+                >
+                  <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.values(WEB_SEARCH_PROVIDERS).map((provider) => {
+                      const cfg = webSearchProvidersConfig[provider.id];
+                      const available = isWebSearchProviderConfigured(provider, cfg);
+                      return (
+                        <SelectItem key={provider.id} value={provider.id} disabled={!available}>
+                          <div
+                            className={cn('flex items-center gap-1.5', !available && 'opacity-50')}
+                          >
+                            {getWebSearchProviderDisplayName(provider.id, t)}
+                            {cfg?.isServerConfigured && (
+                              <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
+                                {t('settings.serverConfigured')}
                               </span>
-                              {isSelected && (
-                                <Check className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-              </PopoverContent>
-            </Popover>
-          </span>
-        </TooltipTrigger>
-        {!webSearchAvailable ? (
-          <TooltipContent>{t('toolbar.webSearchNoProvider')}</TooltipContent>
-        ) : webSearch && webSearchProviderId ? (
-          <TooltipContent>
-            {(() => {
-              const providerName =
-                WEB_SEARCH_PROVIDERS[webSearchProviderId]?.name || webSearchProviderId;
-              const cfg = webSearchProvidersConfig[webSearchProviderId];
-              const builtinModels =
-                WEB_SEARCH_PROVIDERS[webSearchProviderId as WebSearchProviderId]?.models || [];
-              const effectiveModels = cfg?.models?.length ? cfg.models : builtinModels;
-              if (cfg?.modelId) {
-                const modelName =
-                  effectiveModels.find((m) => m.id === cfg.modelId)?.name || cfg.modelId;
-                return `${providerName} / ${modelName}`;
-              }
-              return providerName;
-            })()}
-          </TooltipContent>
+                            )}
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            </PopoverContent>
+          </Popover>
         ) : (
-          <TooltipContent>{t('toolbar.webSearchProvider')}</TooltipContent>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className={cn(pillCls, 'text-muted-foreground/40 cursor-not-allowed')}
+                disabled
+              >
+                <Globe2 className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{t('toolbar.webSearchNoProvider')}</TooltipContent>
+          </Tooltip>
         )}
-      </Tooltip>
 
-      {/* ── Separator ── */}
-      <div className="w-px h-4 bg-border/60 mx-1" />
+        {/* ── Separator ── */}
+        <div className="w-px h-4 bg-border/60 mx-1" />
 
-      {/* ── Media popover ── */}
-      <MediaPopover onSettingsOpen={onSettingsOpen} />
+        {/* ── Media popover ── */}
+        <MediaPopover onSettingsOpen={onSettingsOpen} />
+      </div>
     </div>
   );
 }
 
-// ─── ModelSelectorPopover (two-level: provider → model) ─────
+function formatThinkingValue(value?: string, t?: (key: string) => string) {
+  if (!value) return '';
+  if (value === 'none') return t ? t('toolbar.off') : 'off';
+  if (t && (value === 'dynamic' || value === 'on' || value === 'off' || value === 'auto')) {
+    return t(`toolbar.${value}`);
+  }
+  return value === 'xhigh' ? 'x-high' : value;
+}
+
+function formatCompactThinkingValue(value?: string, t?: (key: string) => string) {
+  if (!value) return '';
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue) && value.trim() !== '') {
+    return numericValue >= 10000 ? `${Math.round(numericValue / 1000)}k` : `${numericValue}`;
+  }
+  return formatThinkingValue(value, t);
+}
+
+function InlineThinkingControl({
+  model,
+  config,
+  onChange,
+  t,
+}: {
+  model?: ModelInfo;
+  config?: ThinkingConfig;
+  onChange: (config: ThinkingConfig | undefined) => void;
+  t: (key: string) => string;
+}) {
+  const thinking = model?.capabilities?.thinking;
+  if (!supportsConfigurableThinking(thinking)) return null;
+
+  const effective = normalizeThinkingConfig(thinking, config) ?? getDefaultThinkingConfig(thinking);
+  const applyConfig = (next: ThinkingConfig) => {
+    onChange(normalizeThinkingConfig(thinking, next));
+  };
+
+  const applyBudget = (value: number | undefined) => {
+    applyConfig({ ...effective, mode: effective?.mode ?? 'enabled', budgetTokens: value });
+  };
+  const defaultEnabledBudget =
+    typeof thinking.defaultBudgetTokens === 'number' && thinking.defaultBudgetTokens > 0
+      ? thinking.defaultBudgetTokens
+      : (thinking.budgetRange?.step ?? thinking.budgetRange?.min);
+  const applyAutoBudget = () => {
+    applyConfig({ ...effective, mode: 'auto', enabled: undefined, budgetTokens: -1 });
+  };
+  const applyBudgetMode = (mode: 'disabled' | 'enabled' | 'auto') => {
+    if (mode === 'auto') {
+      applyAutoBudget();
+      return;
+    }
+
+    applyConfig({
+      ...effective,
+      mode,
+      enabled: mode === 'enabled',
+      budgetTokens:
+        mode === 'enabled' && effective?.budgetTokens === -1
+          ? defaultEnabledBudget
+          : effective?.budgetTokens,
+    });
+  };
+  const applySimpleMode = (mode: 'disabled' | 'enabled' | 'auto') => {
+    applyConfig({
+      ...effective,
+      mode,
+      enabled: mode === 'enabled' ? true : mode === 'disabled' ? false : undefined,
+    });
+  };
+
+  const selectTriggerCls =
+    'h-6 min-w-[84px] rounded-full border-0 bg-violet-100 px-2 py-0 !text-[10px] font-medium leading-none text-violet-700 shadow-none focus-visible:ring-0 data-[size=sm]:h-6 dark:bg-violet-900/40 dark:text-violet-200 [&_svg]:size-3';
+  const selectItemCls = 'py-1 text-xs';
+  const hasAutoBudget =
+    (thinking.control === 'toggle-budget' || thinking.control === 'budget-only') &&
+    !!thinking.budgetRange?.allowDynamic;
+  const autoBudgetMode =
+    effective?.budgetTokens === -1 && thinking.budgetRange?.allowDynamic
+      ? 'auto'
+      : effective?.mode === 'disabled'
+        ? 'disabled'
+        : 'enabled';
+  const simpleMode =
+    thinking.control === 'mode' && effective?.mode === 'auto'
+      ? 'auto'
+      : effective?.mode === 'disabled'
+        ? 'disabled'
+        : 'enabled';
+
+  return (
+    <div
+      className="flex min-w-0 shrink-0 items-center gap-1"
+      onClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      <Brain className="size-3.5 shrink-0 text-violet-500" />
+      <div className="flex min-w-0 items-center gap-0.5 rounded-full border border-violet-200/70 bg-white/65 p-0.5 dark:border-violet-800/70 dark:bg-violet-950/25">
+        {hasAutoBudget && (
+          <Select
+            value={autoBudgetMode}
+            onValueChange={(mode) => applyBudgetMode(mode as 'disabled' | 'enabled' | 'auto')}
+          >
+            <SelectTrigger
+              size="sm"
+              className="h-6 min-w-[76px] rounded-full border-0 bg-violet-100 px-2 py-0 !text-[10px] font-medium leading-none text-violet-700 shadow-none focus-visible:ring-0 data-[size=sm]:h-6 dark:bg-violet-900/40 dark:text-violet-200 [&_svg]:size-3"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end" className="min-w-[96px]">
+              {thinking.control === 'toggle-budget' && (
+                <SelectItem value="disabled" className={selectItemCls}>
+                  {t('toolbar.off')}
+                </SelectItem>
+              )}
+              <SelectItem value="enabled" className={selectItemCls}>
+                {t('toolbar.on')}
+              </SelectItem>
+              <SelectItem value="auto" className={selectItemCls}>
+                {t('toolbar.auto')}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+
+        {(thinking.control === 'toggle' ||
+          (thinking.control === 'toggle-budget' && !hasAutoBudget) ||
+          thinking.control === 'mode') && (
+          <Select
+            value={simpleMode}
+            onValueChange={(mode) => applySimpleMode(mode as 'disabled' | 'enabled' | 'auto')}
+          >
+            <SelectTrigger
+              size="sm"
+              className="h-6 min-w-[76px] rounded-full border-0 bg-violet-100 px-2 py-0 !text-[10px] font-medium leading-none text-violet-700 shadow-none focus-visible:ring-0 data-[size=sm]:h-6 dark:bg-violet-900/40 dark:text-violet-200 [&_svg]:size-3"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end" className="min-w-[96px]">
+              {thinking.control === 'mode' && (
+                <SelectItem value="auto" className={selectItemCls}>
+                  {t('toolbar.auto')}
+                </SelectItem>
+              )}
+              <SelectItem value="disabled" className={selectItemCls}>
+                {t('toolbar.off')}
+              </SelectItem>
+              <SelectItem value="enabled" className={selectItemCls}>
+                {t('toolbar.on')}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+
+        {thinking.control === 'level' && !!thinking.levelValues?.length && (
+          <Select
+            value={effective?.level ?? thinking.defaultLevel ?? thinking.levelValues[0]}
+            onValueChange={(level) =>
+              applyConfig({ ...effective, mode: 'enabled', level: level as ThinkingLevel })
+            }
+          >
+            <SelectTrigger size="sm" className={selectTriggerCls}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end" className="min-w-[96px]">
+              {thinking.levelValues.map((level: ThinkingLevel) => (
+                <SelectItem key={level} value={level} className={selectItemCls}>
+                  {level}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {thinking.control === 'effort' && !!thinking.effortValues?.length && (
+          <Select
+            value={effective?.effort ?? thinking.defaultEffort ?? thinking.effortValues[0]}
+            onValueChange={(effort) =>
+              applyConfig({
+                ...effective,
+                mode: effort === 'none' ? 'disabled' : 'enabled',
+                effort: effort as ThinkingEffort,
+              })
+            }
+          >
+            <SelectTrigger size="sm" className={selectTriggerCls}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end" className="min-w-[104px]">
+              {thinking.effortValues.map((effort: ThinkingEffort) => (
+                <SelectItem key={effort} value={effort} className={selectItemCls}>
+                  {formatThinkingValue(effort, t)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {(thinking.control === 'toggle-budget' || thinking.control === 'budget-only') &&
+          thinking.budgetRange &&
+          (!hasAutoBudget || autoBudgetMode === 'enabled') && (
+            <label className="ml-0.5 grid h-6 shrink-0 grid-cols-[auto_60px] items-stretch overflow-hidden rounded-full border border-violet-200/70 bg-background dark:border-violet-800/70">
+              <span className="grid h-[22px] shrink-0 place-items-center border-r border-violet-200/70 bg-muted/30 px-2 font-sans text-[11px] font-medium leading-[22px] text-muted-foreground dark:border-violet-800/70">
+                {t('toolbar.thinkingBudget')}
+              </span>
+              <input
+                type="text"
+                inputMode="numeric"
+                aria-label={t('toolbar.thinkingBudget')}
+                disabled={effective?.mode === 'disabled'}
+                value={
+                  typeof effective?.budgetTokens === 'number' && effective.budgetTokens !== -1
+                    ? effective.budgetTokens
+                    : ''
+                }
+                placeholder={`${thinking.budgetRange.min}-${thinking.budgetRange.max}`}
+                title={`${thinking.budgetRange.min}-${thinking.budgetRange.max} tokens`}
+                onChange={(event) => {
+                  const rawValue = event.target.value.trim();
+                  if (!/^\d*$/.test(rawValue)) return;
+                  const value = rawValue ? Number(rawValue) : undefined;
+                  applyBudget(value);
+                }}
+                className="block h-[22px] w-[60px] border-0 bg-transparent px-1 py-0 text-center font-sans text-[11px] font-medium leading-[22px] tabular-nums outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              />
+            </label>
+          )}
+      </div>
+    </div>
+  );
+}
+
+// ─── ModelSettingsPopover (provider + model picker) ─────
 interface ConfiguredProvider {
   id: ProviderId;
   name: string;
   icon?: string;
   isServerConfigured?: boolean;
-  models: { id: string; name: string }[];
+  models: ModelInfo[];
 }
 
-function ModelSelectorPopover({
+function ModelSettingsPopover({
   configuredProviders,
   currentProviderId,
   currentModelId,
   currentProviderConfig,
+  currentModel,
   setModel,
+  thinkingConfig,
+  onThinkingChange,
   t,
 }: {
   configuredProviders: ConfiguredProvider[];
   currentProviderId: ProviderId;
   currentModelId: string;
   currentProviderConfig: { name: string; icon?: string } | undefined;
+  currentModel?: ModelInfo;
   setModel: (providerId: ProviderId, modelId: string) => void;
+  thinkingConfig?: ThinkingConfig;
+  onThinkingChange: (config: ThinkingConfig | undefined) => void;
   t: (key: string) => string;
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
-  // null = provider list, ProviderId = model list for that provider
-  const [drillProvider, setDrillProvider] = useState<ProviderId | null>(null);
+  const [activeProviderId, setActiveProviderId] = useState<ProviderId>(currentProviderId);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const activeProvider = useMemo(
-    () => configuredProviders.find((p) => p.id === drillProvider),
-    [configuredProviders, drillProvider],
+  const currentProvider = configuredProviders.find((provider) => provider.id === currentProviderId);
+  const searchTerm = searchQuery.trim().toLowerCase();
+  const isSearching = searchTerm.length > 0;
+  const providerEntries = useMemo(() => {
+    const matchesSearch = (model: ModelInfo) =>
+      !searchTerm ||
+      model.name.toLowerCase().includes(searchTerm) ||
+      model.id.toLowerCase().includes(searchTerm);
+
+    return configuredProviders
+      .map((provider) => ({
+        provider,
+        matchingModels: provider.models.filter(matchesSearch),
+      }))
+      .filter((entry) => !isSearching || entry.matchingModels.length > 0);
+  }, [configuredProviders, isSearching, searchTerm]);
+
+  const activeProviderVisible = providerEntries.some(
+    (entry) => entry.provider.id === activeProviderId,
   );
+  const firstVisibleProviderId = providerEntries[0]?.provider.id;
+  const resolvedActiveProviderId =
+    isSearching && !activeProviderVisible ? firstVisibleProviderId : activeProviderId;
+  const activeProviderEntry =
+    providerEntries.find((entry) => entry.provider.id === resolvedActiveProviderId) ??
+    providerEntries[0];
+  const activeProvider = activeProviderEntry?.provider;
+
+  const visibleModelEntries = useMemo(() => {
+    if (!activeProviderEntry) return [];
+    const { provider, matchingModels } = activeProviderEntry;
+    return matchingModels.map((model) => ({ provider, model }));
+  }, [activeProviderEntry]);
+
+  const currentProviderName =
+    currentProvider?.name ?? currentProviderConfig?.name ?? currentProviderId;
+  const currentProviderIcon = currentProvider?.icon ?? currentProviderConfig?.icon;
+  // Under the #580 invariant this popover only renders when a usable provider
+  // exists, which guarantees a concrete model — so the label is always
+  // provider / model (no "Select Model" fallback state).
+  const currentModelLabel = currentModel?.name || currentModelId;
+  const currentThinkingValue = getThinkingDisplayValue(
+    currentModel?.capabilities?.thinking,
+    thinkingConfig,
+  );
+  const currentThinkingLabel = formatCompactThinkingValue(currentThinkingValue, t);
 
   return (
     <Popover
       open={popoverOpen}
-      onOpenChange={(open) => {
-        setPopoverOpen(open);
-        if (open) setDrillProvider(null);
+      onOpenChange={(nextOpen) => {
+        setPopoverOpen(nextOpen);
+        if (nextOpen) {
+          setActiveProviderId(currentProviderId);
+          setSearchQuery('');
+        }
       }}
     >
       <Tooltip>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
             <button
+              aria-label={`${currentProviderName} / ${currentModelLabel}`}
               className={cn(
-                'inline-flex items-center justify-center size-7 rounded-full transition-all cursor-pointer select-none',
-                'ring-1 ring-border/60 hover:ring-border hover:bg-muted/60',
+                'inline-flex h-8 min-w-0 items-center gap-1.5 rounded-full border px-2 text-xs font-medium transition-all',
+                'border-violet-200/70 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-800/70 dark:bg-violet-950/30 dark:text-violet-300',
                 currentModelId &&
-                  'ring-violet-300 dark:ring-violet-700 bg-violet-50 dark:bg-violet-950/20',
+                  'shadow-[0_0_0_1px_rgba(124,58,237,0.12)] dark:shadow-[0_0_0_1px_rgba(167,139,250,0.16)]',
               )}
             >
-              {currentProviderConfig?.icon ? (
+              {currentProviderIcon ? (
                 <img
-                  src={currentProviderConfig.icon}
-                  alt={currentProviderConfig.name}
-                  className="size-4 rounded-sm"
+                  src={currentProviderIcon}
+                  alt={currentProviderName}
+                  className="size-4 shrink-0 rounded-sm"
                 />
               ) : (
-                <Bot className="size-3.5 text-muted-foreground" />
+                <Bot className="size-3.5 shrink-0" />
+              )}
+              {currentThinkingLabel && (
+                <span className="shrink-0 rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-violet-700 ring-1 ring-violet-200/70 dark:bg-violet-950/50 dark:text-violet-200 dark:ring-violet-800/70">
+                  {currentThinkingLabel}
+                </span>
               )}
             </button>
           </PopoverTrigger>
         </TooltipTrigger>
         <TooltipContent>
-          {currentModelId
-            ? `${currentProviderConfig?.name || currentProviderId} / ${currentModelId}`
-            : t('settings.selectModel')}
+          {`${currentProviderConfig?.name || currentProviderId} / ${currentModelId}`}
         </TooltipContent>
       </Tooltip>
 
-      <PopoverContent align="start" className="w-64 p-0">
-        {/* Level 1: Provider list */}
-        {!drillProvider && (
-          <div className="max-h-72 overflow-y-auto">
-            <div className="px-3 py-2 border-b">
-              <span className="text-xs font-semibold text-muted-foreground">
-                {t('toolbar.selectProvider')}
-              </span>
+      <PopoverContent
+        align="start"
+        side="top"
+        sideOffset={8}
+        collisionPadding={12}
+        className="w-[640px] max-w-[calc(100vw-2rem)] overflow-hidden p-0"
+      >
+        <div className="grid h-[430px] grid-cols-[128px_minmax(0,1fr)] sm:grid-cols-[160px_minmax(0,1fr)]">
+          <div className="min-h-0 border-r bg-muted/20">
+            <div className="px-3 py-2 text-[10px] font-semibold uppercase text-muted-foreground">
+              {t('toolbar.selectProvider')}
             </div>
-            {configuredProviders.map((provider) => {
-              const isActive = currentProviderId === provider.id;
-              return (
-                <button
-                  key={provider.id}
-                  onClick={() => setDrillProvider(provider.id)}
-                  className={cn(
-                    'w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors border-b border-border/30',
-                    isActive ? 'bg-violet-50/50 dark:bg-violet-950/10' : 'hover:bg-muted/50',
-                  )}
-                >
-                  {provider.icon ? (
-                    <img
-                      src={provider.icon}
-                      alt={provider.name}
-                      className="size-5 rounded-sm shrink-0"
-                    />
-                  ) : (
-                    <Bot className="size-5 text-muted-foreground shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm font-medium">{provider.name}</span>
-                    {provider.isServerConfigured && (
-                      <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground ml-1.5">
-                        {t('settings.serverConfigured')}
-                      </span>
-                    )}
-                  </div>
-                  {isActive && currentModelId && (
-                    <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">
-                      {currentModelId}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Level 2: Model list for selected provider */}
-        {drillProvider && activeProvider && (
-          <div className="max-h-72 overflow-y-auto">
-            {/* Back header */}
-            <button
-              onClick={() => setDrillProvider(null)}
-              className="w-full flex items-center gap-2 px-3 py-2 border-b bg-muted/40 hover:bg-muted/60 transition-colors"
-            >
-              <ChevronLeft className="size-3.5 text-muted-foreground" />
-              {activeProvider.icon ? (
-                <img
-                  src={activeProvider.icon}
-                  alt={activeProvider.name}
-                  className="size-4 rounded-sm"
-                />
+            <div className="h-[calc(100%-28px)] overflow-y-auto px-2 pb-2 pt-1">
+              {providerEntries.length === 0 ? (
+                <div className="px-2 py-4 text-[11px] text-muted-foreground">
+                  {t('settings.noModelsFound')}
+                </div>
               ) : (
-                <Bot className="size-4 text-muted-foreground" />
+                providerEntries.map(({ provider, matchingModels }) => {
+                  const isActive = activeProvider?.id === provider.id;
+                  const isCurrent = currentProviderId === provider.id;
+                  return (
+                    <button
+                      key={provider.id}
+                      onClick={() => setActiveProviderId(provider.id)}
+                      className={cn(
+                        'mb-1 flex h-10 w-full items-center gap-2 rounded-md px-2 text-left transition-colors',
+                        isActive
+                          ? 'bg-background text-foreground shadow-sm ring-1 ring-border/70'
+                          : 'text-muted-foreground hover:bg-background/70 hover:text-foreground',
+                      )}
+                    >
+                      {provider.icon ? (
+                        <img
+                          src={provider.icon}
+                          alt={provider.name}
+                          className="size-4 shrink-0 rounded-sm"
+                        />
+                      ) : (
+                        <Bot className="size-4 shrink-0" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs font-medium">{provider.name}</div>
+                        <div className="text-[10px] text-muted-foreground">
+                          {isSearching ? `${matchingModels.length}/` : ''}
+                          {provider.models.length}
+                        </div>
+                      </div>
+                      {isCurrent && <span className="size-1.5 rounded-full bg-violet-500" />}
+                    </button>
+                  );
+                })
               )}
-              <span className="text-xs font-semibold">{activeProvider.name}</span>
-              <span className="text-[10px] text-muted-foreground ml-auto">
-                {activeProvider.models.length} {t('settings.modelCount')}
-              </span>
-            </button>
-            {/* Models */}
-            {activeProvider.models.map((model) => {
-              const isSelected = currentProviderId === drillProvider && currentModelId === model.id;
-              return (
-                <button
-                  key={model.id}
-                  onClick={() => {
-                    setModel(drillProvider, model.id);
-                    setPopoverOpen(false);
-                  }}
-                  className={cn(
-                    'w-full flex items-center gap-2 px-3 py-2 text-left transition-colors border-b border-border/30',
-                    isSelected
-                      ? 'bg-violet-50 dark:bg-violet-950/20 text-violet-700 dark:text-violet-300'
-                      : 'hover:bg-muted/50',
-                  )}
-                >
-                  <span className="flex-1 truncate font-mono text-xs">{model.name}</span>
-                  {isSelected && (
-                    <Check className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
-                  )}
-                </button>
-              );
-            })}
+            </div>
           </div>
-        )}
+
+          <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+            <div className="border-b p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={searchQuery}
+                    onChange={(event) => {
+                      const nextSearch = event.target.value;
+                      setSearchQuery(nextSearch);
+                      if (!nextSearch.trim()) setActiveProviderId(currentProviderId);
+                    }}
+                    placeholder={t('settings.searchModels')}
+                    className="h-8 pl-8 text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {visibleModelEntries.length === 0 ? (
+                <div className="px-3 py-8 text-center text-xs text-muted-foreground">
+                  {searchQuery ? t('settings.noModelsFound') : t('settings.noModelsAvailable')}
+                </div>
+              ) : (
+                visibleModelEntries.map(({ provider, model }) => {
+                  const isSelected =
+                    currentProviderId === provider.id && currentModelId === model.id;
+                  const selectModel = () => {
+                    setActiveProviderId(provider.id);
+                    setModel(provider.id, model.id);
+                  };
+                  return (
+                    <div
+                      key={`${provider.id}:${model.id}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={selectModel}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return;
+                        event.preventDefault();
+                        selectModel();
+                      }}
+                      className={cn(
+                        'mb-1 flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors',
+                        isSelected
+                          ? 'bg-violet-50 text-violet-700 ring-1 ring-violet-200 dark:bg-violet-950/25 dark:text-violet-300 dark:ring-violet-800'
+                          : 'hover:bg-muted/60',
+                      )}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-mono text-xs font-medium">{model.name}</div>
+                        {model.id !== model.name && (
+                          <div className="truncate font-mono text-[10px] text-muted-foreground">
+                            {model.id}
+                          </div>
+                        )}
+                      </div>
+                      {isSelected && currentModel && (
+                        <InlineThinkingControl
+                          model={currentModel}
+                          config={thinkingConfig}
+                          onChange={onThinkingChange}
+                          t={t}
+                        />
+                      )}
+                      {isSelected && (
+                        <Check className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
       </PopoverContent>
     </Popover>
   );

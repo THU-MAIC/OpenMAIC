@@ -20,21 +20,25 @@ lib/prompts/
 
 ## Template syntax
 
-Two kinds of placeholder:
+Three kinds of placeholder:
 
 | Syntax | Semantics | Resolved by |
 |---|---|---|
 | `{{variableName}}` | Value is provided by the caller via `buildPrompt(id, vars)` | `interpolateVariables` in `loader.ts` |
 | `{{snippet:snippet-name}}` | File content is spliced in at load time | `processSnippets` in `loader.ts` |
+| `{{#if conditionName}}...{{/if}}` | Content is included only when `conditionName` is truthy in the template variables | `processConditionalBlocks` in `loader.ts` |
 
-Processing order is **snippet includes first, then variable interpolation**, so
-snippets may themselves contain `{{variableName}}` placeholders if the caller
-provides the value.
+Processing order is **snippet includes first, then conditional blocks, then
+variable interpolation**, so snippets may themselves contain `{{#if}}`
+blocks and `{{variableName}}` placeholders if the caller provides the value.
+
+Conditional blocks read from the same `variables` record passed to
+`buildPrompt` — no separate conditions object is needed.
 
 ## Naming conventions
 
 - **Placeholder names use `camelCase`.** Example: `{{agentName}}`, `{{stateContext}}`.
-- **Template IDs use `kebab-case`.** Example: `agent-system`, `pbl-design`.
+- **Template IDs use `kebab-case`.** Example: `agent-system`, `slide-content`.
 - `lib/prompts/templates/slide-content/{system,user}.md` still uses legacy
   `snake_case` placeholders (`{{canvas_width}}`, `{{canvas_height}}`). This
   predates the camelCase convention; don't imitate it when writing new templates.
@@ -57,7 +61,6 @@ still exists as TS template literals and needs editing directly:
 |---|---|---|
 | `ROLE_GUIDELINES` (teacher / assistant / student blocks) | `lib/orchestration/prompt-builder.ts` | Branches by `agentConfig.role` |
 | Length targets (100 / 80 / 50 chars per role) | `buildLengthGuidelines` in `lib/orchestration/prompt-builder.ts` | Branches by role |
-| Whiteboard guidelines (LaTeX sizing table, 1000×562 canvas, layout rules, code block spacing) | `buildWhiteboardGuidelines` in `lib/orchestration/prompt-builder.ts` | Branches by role |
 
 These may migrate into snippets in a later pass once Phase 2 eval feedback
 shows which parts need frequent iteration.
@@ -75,7 +78,7 @@ This is intentional for partial-render scenarios but means a typo in a
 placeholder name ships literal `{{…}}` text to the LLM. Defence:
 
 - Tests in `tests/prompts/templates.test.ts` assert that the fully-rendered
-  agent-system / director / pbl-design prompts contain no surviving
+  agent-system / director / slide-content prompts contain no surviving
   `{{…}}` tokens. Keep that check passing when adding variables.
 - `{{snippet:name}}` lookups **throw** on a missing snippet file rather than
   passing through silently, so a typo like `{{snippet:speach-guidelines}}`
@@ -99,9 +102,8 @@ EVAL_CHAT_MODEL=<provider:model> EVAL_SCORER_MODEL=<provider:model> \
   --scenario econ-tech-innovation
 ```
 
-## Caching
+## Loading
 
-`loadPrompt` and `loadSnippet` cache on first read for the lifetime of the
-process. Call `clearPromptCache()` if you're iterating on markdown in a
-long-lived REPL / dev server and want to pick up changes. Production reads
-are idempotent so the cache is always hot.
+`loadPrompt` and `loadSnippet` read from disk on every call. No caching —
+markdown edits take effect immediately without restarting any dev server.
+Prompt disk I/O is negligible next to the LLM call it feeds.

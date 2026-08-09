@@ -1,0 +1,63 @@
+name: Storage PostgreSQL Contract
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, runtime-server-backend, feat/maic-editor-v0, feat/maic-editor-v1]
+
+concurrency:
+  group: storage-pg-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  storage-pg-contract:
+    name: Storage Contract (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: openmaic
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d openmaic"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PG_CONTRACT_URL: postgresql://postgres:postgres@localhost:5432/openmaic
+      STORAGE_PG_CONTRACT_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Baseline, then the run, then the audit against that baseline. The
+      # in-module STORAGE_PG_CONTRACT_REQUIRED guard only covers a missing
+      # database: it is a `throw` inside the test modules, so it cannot fire if
+      # vitest stops collecting them, and collection is decided by storage's
+      # vitest.config.ts — a file no publishable-input rule covers, so excluding
+      # `*.pg.test.ts` there would silence this whole job while it still
+      # reported success.
+      - name: Storage PostgreSQL contract
+        env:
+          STORAGE_VITEST_RESULTS: ${{ runner.temp }}/storage-vitest.json
+          STORAGE_PG_BASELINE: ${{ runner.temp }}/storage-pg-baseline.json
+        run: |
+          set -euo pipefail
+          node scripts/assert-pg-contract-suites.mjs --capture-baseline "$STORAGE_PG_BASELINE"
+          pnpm --filter @openmaic/storage exec \
+            vitest run --reporter=default --reporter=json \
+            --outputFile.json="$STORAGE_VITEST_RESULTS"
+          node scripts/assert-pg-contract-suites.mjs "$STORAGE_VITEST_RESULTS" \
+            --baseline "$STORAGE_PG_BASELINE"

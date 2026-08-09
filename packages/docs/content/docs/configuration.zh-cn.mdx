@@ -1,0 +1,298 @@
+---
+title: 配置说明
+description: LLM 提供方、媒体生成、文档解析、TTS、ASR、访问控制和功能开关。
+---
+
+OpenMAIC 在服务器启动时读取环境变量。所有项都是可选的——按需启用。环境变量示例见仓库里的 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)。内置模型 ID 请见[支持模型](./supported-models.mdx)。
+
+除环境变量外，也可以使用项目根目录下的 `server-providers.yml` 配置代码中已注册的服务端 provider。环境变量会逐字段覆盖 YAML 中的同名配置；自定义 OpenAI 兼容 provider 只能在设置中添加，不能通过任意环境变量前缀或未知 YAML provider ID 注册。
+
+## LLM 提供方
+
+云端提供方通常使用以下三个环境变量：API key、base URL 和 model 列表。其中 API key 通常是必填的，base URL 和 model 列表可选；Azure OpenAI 需要配置资源 endpoint，Ollama 和 Lemonade 不需要 API key。
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=                # 可选的 base URL 覆盖
+OPENAI_MODELS=                  # 可选的模型白名单（逗号分隔）
+```
+
+支持的 provider 前缀：
+
+| 前缀               | 提供方                               |
+| ------------------ | ------------------------------------ |
+| `OPENAI_`          | OpenAI                               |
+| `AZURE_OPENAI_`    | Azure OpenAI                         |
+| `ANTHROPIC_`       | Anthropic                            |
+| `GOOGLE_`          | Google Gemini                        |
+| `DEEPSEEK_`        | DeepSeek                             |
+| `QWEN_`            | 阿里 Qwen                            |
+| `KIMI_`            | Moonshot Kimi                        |
+| `MINIMAX_`         | MiniMax（默认用 Anthropic 兼容端点） |
+| `GLM_`             | 智谱 GLM                             |
+| `SILICONFLOW_`     | SiliconFlow                          |
+| `DOUBAO_`          | 豆包（字节跳动）                     |
+| `OPENROUTER_`      | OpenRouter                           |
+| `GROK_`            | xAI Grok                             |
+| `TENCENT_`         | 腾讯混元                             |
+| `TENCENT_HUNYUAN_` | 腾讯混元（别名）                     |
+| `XIAOMI_`          | 小米 MiMo                            |
+| `MIMO_`            | 小米 MiMo（别名）                    |
+| `OLLAMA_`          | Ollama（本地）                       |
+| `LEMONADE_`        | Lemonade（本地）                     |
+
+Azure OpenAI 使用 deployment name 作为模型 ID：
+
+```bash
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
+AZURE_OPENAI_MODELS=your-deployment-name
+```
+
+如需连接其他 OpenAI 兼容的 LLM 服务，请在 **设置 → 模型提供方** 中添加自定义 provider，并选择对应的协议类型。
+
+## 本地模型（Ollama 和 Lemonade）
+
+Ollama 和 Lemonade 不需要 API key；本地服务的 base URL 应写在服务端配置中，以通过 SSRF 校验：
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434/v1
+# LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+如需限制可用模型，可使用 `OLLAMA_MODELS` 或 `LEMONADE_MODELS` 指定模型白名单。
+
+## TTS 提供方
+
+服务端 TTS 提供方使用 `TTS_<PROVIDER>_API_KEY`，可选 `TTS_<PROVIDER>_BASE_URL`。
+
+```bash
+# 豆包 TTS（火山引擎 Seed-TTS，原生 MP3）
+TTS_DOUBAO_API_KEY=appId:accessKey
+TTS_DOUBAO_BASE_URL=       # 可选覆盖
+
+# Qwen TTS
+TTS_QWEN_API_KEY=
+TTS_QWEN_BASE_URL=         # 可选覆盖
+
+# 任何 OpenAI 兼容的 TTS 端点
+TTS_OPENAI_API_KEY=
+TTS_OPENAI_BASE_URL=
+
+# VoxCPM2（自托管 TTS，支持声音克隆，详见 VoxCPM2 单独页）
+TTS_VOXCPM_BASE_URL=http://localhost:8000
+```
+
+支持的 TTS 前缀包括 `TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_ELEVENLABS_`、`TTS_VOXCPM_` 和 `TTS_LEMONADE_`。本地 Lemonade TTS 和 VoxCPM2 不需要 API key。浏览器原生 TTS 不需要服务端配置。
+
+管理员可以使用 `TTS_<PROVIDER>_ENABLED=false` 在服务端强制关闭某个 TTS 提供方。VoxCPM2（自托管 TTS + 声音克隆）请见单独的 [VoxCPM2](./voxcpm.mdx) 章节。
+
+也可以在设置中添加自定义 OpenAI 兼容 TTS provider，填写 Base URL、模型和音色。这类自定义 provider 保存在客户端设置中，不通过任意 `TTS_*` 环境变量或 YAML provider ID 注册。
+
+## ASR（语音转文字）
+
+```bash
+# OpenAI Whisper
+ASR_OPENAI_API_KEY=
+ASR_OPENAI_BASE_URL=       # 可选覆盖
+
+# Qwen ASR
+ASR_QWEN_API_KEY=
+ASR_QWEN_BASE_URL=         # 可选覆盖
+
+# Azure ASR
+ASR_AZURE_API_KEY=
+ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
+
+# FunASR（本地，不需要 key）
+ASR_FUNASR_BASE_URL=http://localhost:8000/v1
+
+# Lemonade ASR（本地，不需要 key）
+ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+使用 `funasr-server --device cuda` 启动 OpenAI 兼容服务。它在 `/v1/audio/transcriptions` 接收 WAV，并可在模型选择器中使用 SenseVoiceSmall、Paraformer 和 Fun-ASR-Nano。
+
+浏览器原生 ASR 不需要服务端配置。
+
+也可以在设置中添加自定义 OpenAI 兼容 ASR provider，填写 Base URL、模型和支持语言；该配置保存在客户端设置中。
+
+## 图像生成提供方
+
+图像生成提供方使用 `IMAGE_<PROVIDER>_API_KEY`，可选 `IMAGE_<PROVIDER>_BASE_URL`。支持的前缀包括：
+
+`IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_` 和 `IMAGE_LEMONADE_`。
+
+Lemonade 是本地服务，不需要 key：
+
+```bash
+IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+ComfyUI Image 不需要 API key，默认连接 `http://localhost:8188`。在设置中填写 ComfyUI Base URL，并把以 API 格式导出的 workflow JSON 放入 OpenMAIC 的 `public/` 目录；文件名使用 `comfyui-*.json` 或包含 `workflow`，设置页会自动发现这些文件并将其作为可选 workflow。Docker 部署时还需要在构建镜像前加入 workflow，或把单个 workflow 文件挂载到容器的 `/app/public/` 目录。由于 `comfyui-image` 不是服务端托管 provider，生产环境连接宿主机 ComfyUI 时还需要设置 `ALLOW_LOCAL_NETWORKS=true`。
+
+## 视频生成提供方
+
+视频生成提供方使用 `VIDEO_<PROVIDER>_API_KEY`，可选 `VIDEO_<PROVIDER>_BASE_URL`。支持的前缀包括：
+
+`VIDEO_SEEDANCE_`、`VIDEO_KLING_`、`VIDEO_VEO_`、`VIDEO_SORA_`、`VIDEO_MINIMAX_`、`VIDEO_GROK_` 和 `VIDEO_HAPPYHORSE_`。
+
+## 文档和媒体解析
+
+课程材料的具体格式取决于所选解析器。当前支持文本、PDF、Office 文档、图片以及部分音视频格式；不同 provider 支持的格式和能力不同。
+
+```bash
+# MinerU 自托管
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# MinerU 自托管的可选后端
+PDF_MINERU_BACKEND=pipeline
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+
+# AliDocMind（使用阿里云 AccessKey，而不是单独的 API key）
+ALIDOCMIND_ACCESS_KEY_ID=
+ALIDOCMIND_ACCESS_KEY_SECRET=
+ALIDOCMIND_BASE_URL=       # 可选覆盖
+```
+
+`unpdf` 内置于 OpenMAIC，可用于基础 PDF 解析。Office 文档、图片和需要 OCR、表格、公式或版面分析的材料，应选择兼容的 MinerU 或 AliDocMind provider。
+
+AliDocMind 的文档解析支持 PDF、DOCX、PPTX、XLSX，以及 PNG、JPG/JPEG、BMP、GIF。当前音视频材料仅支持通过 AliDocMind 解析：视频格式为 MP4、MOV、AVI、MKV、WMV，音频格式为 MP3、WAV、AAC；不支持 M4A。
+
+## 联网搜索
+
+配置 Tavily、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # 可选覆盖
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # 可选覆盖
+
+BAIDU_API_KEY=
+BAIDU_BASE_URL=https://qianfan.baidubce.com  # 可选覆盖
+
+# 自托管 SearXNG，不需要 API key
+SEARXNG_BASE_URL=
+
+WEB_SEARCH_MINIMAX_API_KEY=
+WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # 可选覆盖
+```
+
+Brave 和 SearXNG 不需要 API key；前端可以在每次生成时选择是否启用搜索。Grok 的联网搜索通过 Grok LLM 的搜索工具提供，不是独立的联网搜索 provider。
+
+## ACCESS_CODE —— 站点级访问密码
+
+对共享部署（内部 demo、课堂），可以设置访问码，访客先输密码才能看到应用：
+
+```bash
+ACCESS_CODE=your-secret-code
+```
+
+访客只会被提示一次，密码存在 HTTP-only cookie 里。留空则关闭。
+
+## 默认模型和模型路由
+
+服务端 API 没有收到客户端模型时，需要通过 `DEFAULT_MODEL` 指定默认模型。模型写法是 `provider:model-id`，例如：
+
+```bash
+DEFAULT_MODEL=openai:gpt-5.5
+```
+
+可以使用 `MODEL_ROUTES` 为不同生成阶段指定模型；未配置的阶段继续按客户端模型和 `DEFAULT_MODEL` 解析。它是一个 JSON 对象，键为生成阶段，值可以是模型字符串，也可以是包含 `model` 和 `thinking` 的对象。完整的阶段列表和示例见仓库里的 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)。
+
+## 功能开关
+
+功能开关的值为 `true` 或 `1`，其他值视为关闭。`NEXT_PUBLIC_*` 开关会在构建时注入客户端，修改后需要重新构建：
+
+```bash
+# MAIC Editor（Pro 模式）
+NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
+
+# Pi 对话运行时
+NEXT_PUBLIC_PI_CHAT_ENABLED=true
+
+# 职业教育任务引擎（服务端开关）
+OPENMAIC_ENABLE_VOCATIONAL=true
+
+# 显示职业教育实验开关
+NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=true
+
+# 显示视频导出入口
+NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
+
+# 显示实验性 PPTX 导入入口
+NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+```
+
+PPTX 导入目前仍是实验性入口，解析结果尚未完整接入课堂数据流。以上 `NEXT_PUBLIC_*` 变量都是构建时开关；Docker 部署还需要通过 build args 传入，不能只写在容器运行时环境变量中。
+
+## 其他服务端选项
+
+以下服务端选项也可以通过环境变量配置：
+
+```bash
+# 场景内容并行生成；0 或未设置表示串行
+PARALLEL_SCENE_CONCURRENCY=3
+
+# 允许访问 localhost、内网等本地网络地址；仅用于自托管/内网部署
+ALLOW_LOCAL_NETWORKS=true
+
+# 可选的 MP4 渲染服务
+RENDER_SERVICE_URL=http://render-service:9000
+
+# 日志和推理
+LOG_LEVEL=info
+LOG_FORMAT=pretty
+LLM_THINKING_DISABLED=false
+```
+
+## 用 YAML 配置文件
+
+除了环境变量，你也可以把代码中已注册 provider 的配置放在项目根目录下的 `server-providers.yml` 文件里。服务端启动时加载，结构与环境变量分类对应：
+
+```yaml title="server-providers.yml"
+providers:
+  openai:
+    apiKey: sk-...
+    baseUrl: https://api.openai.com/v1
+    models:
+      - gpt-5.5
+  anthropic:
+    apiKey: sk-ant-...
+
+tts:
+  doubao-tts:
+    apiKey: appId:accessKey
+
+asr:
+  openai-whisper:
+    apiKey: sk-...
+
+pdf:
+  mineru:
+    baseUrl: http://localhost:8888
+  alidocmind:
+    accessKeyId: your-access-key-id
+    accessKeySecret: your-access-key-secret
+
+image:
+  seedream:
+    apiKey: ...
+
+video:
+  seedance:
+    apiKey: ...
+
+web-search:
+  tavily:
+    apiKey: tvly-...
+  searxng:
+    baseUrl: http://localhost:8080
+```
+
+环境变量会逐字段覆盖 YAML 中的同名 provider 配置。键名必须使用代码中已注册的 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`tavily` 或 `searxng`；未知 ID 不能在这里注册为自定义 LLM provider。

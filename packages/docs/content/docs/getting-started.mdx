@@ -1,0 +1,69 @@
+---
+title: Getting started
+description: Run OpenMAIC locally in five minutes.
+---
+
+OpenMAIC is a Next.js application that runs on your own machine. You need to configure at least one LLM provider: cloud providers usually require an API key, while local Ollama or Lemonade does not.
+
+## Prerequisites
+
+- **Node.js** 20.9.0 or later
+- **pnpm** 10.28.0 (if needed, run `npm install -g pnpm@10.28.0`)
+- At least one LLM provider; cloud providers usually require an API key, while local Ollama or Lemonade does not
+
+## Install
+
+Clone the repository and install dependencies:
+
+```bash
+git clone https://github.com/THU-MAIC/OpenMAIC.git
+cd OpenMAIC
+pnpm install
+```
+
+Installation builds the workspace packages required by the project, so the first install may take some time.
+
+## Configure
+
+Copy the example environment file and configure at least one LLM provider:
+
+```bash
+cp .env.example .env.local
+```
+
+Open `.env.local` and enter credentials for a provider you use. For example:
+
+```bash title=".env.local"
+OPENAI_API_KEY=sk-...
+# or
+ANTHROPIC_API_KEY=sk-ant-...
+# or local Ollama (no key required)
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+See [Configuration](./configuration.mdx) for complete provider, image/video generation, TTS, ASR, document parsing, web search, access control, and feature flag configuration.
+
+## Run
+
+Start the development server:
+
+```bash
+pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). You should see the OpenMAIC classroom generator. Enter a topic or upload learning material, then click Generate; the AI teachers will build a complete, multi-scene classroom. Supported material formats depend on the selected parser and typically include PDF, Office documents, Markdown/plain text, images, and some audio/video formats. Consult the parser's supported formats for the exact range.
+
+## Build for production
+
+```bash
+pnpm build
+pnpm start
+```
+
+Or deploy to Vercel, Docker, or your own server—see the [Deployment guide](./deployment.mdx).
+
+## Next steps
+
+- [Configure providers, TTS, and ACCESS_CODE →](./configuration.mdx)
+- [Deploy to Vercel or Docker →](./deployment.mdx)
+- For architecture details or contribution guidance, visit [GitHub](https://github.com/THU-MAIC/OpenMAIC#-contributing)

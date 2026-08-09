@@ -3,6 +3,8 @@
 import { Stage } from '@/components/stage';
 import { ThemeProvider } from '@/lib/hooks/use-theme';
 import { useStageStore } from '@/lib/store';
+import { useSettingsStore } from '@/lib/store/settings';
+import { claimStageSceneLoadToken, isCurrentStageSceneLoadToken } from '@/lib/store/stage';
 import { loadImageMapping } from '@/lib/utils/image-storage';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
@@ -12,6 +14,12 @@ import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { createLogger } from '@/lib/logger';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
+import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import {
+  applyClassroomStageAndScenes,
+  defaultClassroomLoadDeps,
+  runClassroomLoad,
+} from '@/lib/classroom/load-classroom';
 
 const log = createLogger('Classroom');
 
@@ -32,83 +40,48 @@ export default function ClassroomDetailPage() {
     },
   });
 
-  const loadClassroom = useCallback(async () => {
-    try {
-      await loadFromStorage(classroomId);
+  const loadClassroom = useCallback(
+    async (isEffectCurrent: () => boolean = () => true) => {
+      const loadToken = claimStageSceneLoadToken();
+      const isCurrent = () => isEffectCurrent() && isCurrentStageSceneLoadToken(loadToken);
 
-      // If IndexedDB had no data, try server-side storage (API-generated classrooms)
-      if (!useStageStore.getState().stage) {
-        log.info('No IndexedDB data, trying server-side storage for:', classroomId);
-        try {
-          const res = await fetch(`/api/classroom?id=${encodeURIComponent(classroomId)}`);
-          if (res.ok) {
-            const json = await res.json();
-            if (json.success && json.classroom) {
-              const { stage, scenes } = json.classroom;
-              useStageStore.getState().setStage(stage);
-              useStageStore.setState({
-                scenes,
-                currentSceneId: scenes[0]?.id ?? null,
-              });
-              log.info('Loaded from server-side storage:', classroomId);
-
-              // Hydrate server-generated agents into IndexedDB + registry.
-              // Don't set selectedAgentIds here — the general agent
-              // restoration logic below (Path 2) handles it uniformly.
-              if (stage.generatedAgentConfigs?.length) {
-                const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
-                await saveGeneratedAgents(stage.id, stage.generatedAgentConfigs);
-                log.info('Hydrated server-generated agents for stage:', stage.id);
-              }
-            }
-          }
-        } catch (fetchErr) {
-          log.warn('Server-side storage fetch failed:', fetchErr);
-        }
-      }
-
-      // Restore completed media generation tasks from IndexedDB
-      await useMediaGenerationStore.getState().restoreFromDB(classroomId);
-      // Restore agents for this stage
-      const { loadGeneratedAgentsForStage, useAgentRegistry } =
-        await import('@/lib/orchestration/registry/store');
-      const generatedAgentIds = await loadGeneratedAgentsForStage(classroomId);
-      const { useSettingsStore } = await import('@/lib/store/settings');
-      if (generatedAgentIds.length > 0) {
-        // Auto mode — use generated agents from IndexedDB
-        useSettingsStore.getState().setAgentMode('auto');
-        useSettingsStore.getState().setSelectedAgentIds(generatedAgentIds);
-      } else {
-        // Preset mode — restore agent IDs saved in the stage at creation time.
-        // Filter out any stale generated IDs that may have been persisted before
-        // the bleed-fix, so they don't resolve against a leftover registry entry.
-        const stage = useStageStore.getState().stage;
-        const stageAgentIds = stage?.agentIds;
-        const registry = useAgentRegistry.getState();
-        const cleanIds = stageAgentIds?.filter((id) => {
-          const a = registry.getAgent(id);
-          return a && !a.isGenerated;
-        });
-        useSettingsStore.getState().setAgentMode('preset');
-        useSettingsStore
-          .getState()
-          .setSelectedAgentIds(
-            cleanIds && cleanIds.length > 0 ? cleanIds : ['default-1', 'default-2', 'default-3'],
-          );
-      }
-    } catch (error) {
-      log.error('Failed to load classroom:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load classroom');
-    } finally {
-      setLoading(false);
-    }
-  }, [classroomId, loadFromStorage]);
+      await runClassroomLoad({
+        classroomId,
+        loadToken,
+        isCurrent,
+        loadFromStorage,
+        getCurrentStage: () => useStageStore.getState().stage,
+        fetchClassroom: defaultClassroomLoadDeps.fetchClassroom,
+        applyFallbackScenes: (args) =>
+          defaultClassroomLoadDeps.applyFallbackScenes({
+            ...args,
+            isCurrent,
+            applyStageAndScenes: applyClassroomStageAndScenes,
+          }),
+        loadRestoredMediaTasks: defaultClassroomLoadDeps.loadRestoredMediaTasks,
+        applyRestoredMediaTasks: defaultClassroomLoadDeps.applyRestoredMediaTasks,
+        discardRestoredMediaTasks: defaultClassroomLoadDeps.discardRestoredMediaTasks,
+        loadLegacyAgentFallbacks: defaultClassroomLoadDeps.loadLegacyAgentFallbacks,
+        commitMigratedAgentConfigs: defaultClassroomLoadDeps.commitMigratedAgentConfigs,
+        applyGeneratedAgents: defaultClassroomLoadDeps.applyGeneratedAgents,
+        getSettings: () => useSettingsStore.getState(),
+        getAgent: (id) => useAgentRegistry.getState().getAgent(id),
+        restoreAgentSelection: defaultClassroomLoadDeps.restoreAgentSelection,
+        setError,
+        setLoading,
+        log,
+      });
+    },
+    [classroomId, loadFromStorage],
+  );
 
   useEffect(() => {
     // Reset loading state on course switch to unmount Stage during transition,
     // preventing stale data from syncing back to the new course
+    /* eslint-disable react-hooks/set-state-in-effect -- Course switch must hide stale Stage before async load */
     setLoading(true);
     setError(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
     generationStartedRef.current = false;
 
     // Clear previous classroom's media tasks to prevent cross-classroom contamination.
@@ -121,10 +94,12 @@ export default function ClassroomDetailPage() {
     // Clear whiteboard history to prevent snapshots from a previous course leaking in.
     useWhiteboardHistoryStore.getState().clearHistory();
 
-    loadClassroom();
+    let cancelled = false;
+    loadClassroom(() => !cancelled);
 
     // Cancel ongoing generation when classroomId changes or component unmounts
     return () => {
+      cancelled = true;
       stop();
     };
   }, [classroomId, loadClassroom, stop]);
@@ -134,11 +109,14 @@ export default function ClassroomDetailPage() {
     if (loading || error || generationStartedRef.current) return;
 
     const state = useStageStore.getState();
-    const { outlines, scenes, stage } = state;
+    const { outlines, scenes, stage, generationComplete } = state;
 
-    // Check if there are pending outlines
+    // Check if there are pending outlines. A finished deck is frozen for
+    // editing: deleting a slide leaves its outline orphaned, but that must not
+    // be treated as an interrupted generation and regenerated. Only resume
+    // when generation has not completed.
     const completedOrders = new Set(scenes.map((s) => s.order));
-    const hasPending = outlines.some((o) => !completedOrders.has(o.order));
+    const hasPending = !generationComplete && outlines.some((o) => !completedOrders.has(o.order));
 
     if (hasPending && stage) {
       generationStartedRef.current = true;
@@ -171,7 +149,19 @@ export default function ClassroomDetailPage() {
       // Resume media generation for any tasks not yet in IndexedDB.
       // generateMediaForOutlines skips already-completed tasks automatically.
       generationStartedRef.current = true;
-      generateMediaForOutlines(outlines, stage.id).catch((err) => {
+      // The deck reached the classroom already fully materialized (e.g. a
+      // single-slide course, or a deck whose last slide finished in
+      // generation-preview), so generateRemaining's completion path never
+      // ran. Record completion now so a later edit/delete is not treated as
+      // an interrupted generation. No-op if already complete or not all
+      // outlines have scenes.
+      useStageStore.getState().markGenerationCompleteIfDone();
+      // Resume media only for outlines that still have a scene. On a finished
+      // deck the user may have deleted a slide, leaving an orphaned outline;
+      // generating its media would waste API calls on a slide that is gone.
+      const materializedOrders = new Set(scenes.map((s) => s.order));
+      const materializedOutlines = outlines.filter((o) => materializedOrders.has(o.order));
+      generateMediaForOutlines(materializedOutlines, stage.id).catch((err) => {
         log.warn('[Classroom] Media generation resume error:', err);
       });
     }

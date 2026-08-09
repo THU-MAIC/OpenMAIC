@@ -1,0 +1,116 @@
+---
+title: Deployment
+description: Deploy OpenMAIC to Vercel, Docker, or your own host.
+---
+
+OpenMAIC is a standard Next.js application. It runs anywhere Next.js runs.
+
+## Vercel (one click)
+
+The fastest path is the Deploy button in the [repository README](https://github.com/THU-MAIC/OpenMAIC). Fork the repository and enter an API key for at least one LLM when prompted.
+
+Vercel rebuilds and deploys the Next.js application after every commit. Configure at least one LLM provider in the project settings for deployment.
+
+Vercel deployments use browser-side persistence by default. For server-side persistence, use an external PostgreSQL database and a server deployment; the `server-persistence` Compose profile cannot be used directly with Vercel.
+
+## Docker
+
+The repository includes a production-ready `Dockerfile`. The image uses Node.js 22 internally. Build and run it with:
+
+```bash
+docker build -t openmaic .
+
+docker run --env-file .env.local -p 3000:3000 openmaic
+```
+
+We recommend the repository's Docker Compose configuration:
+
+```bash
+cp .env.example .env.local
+# Edit .env.local and configure at least one LLM provider, then:
+docker compose up --build
+```
+
+The default Compose deployment starts the OpenMAIC app and mounts the `openmaic-data` volume. Configure other providers and features as needed; see [Configuration](./configuration.mdx).
+
+`NEXT_PUBLIC_*` feature flags are injected at Docker build time and cannot be set only in the runtime `.env.local`. For example, to enable video export and experimental PPTX import:
+
+```bash
+NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true \
+NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true \
+docker compose --profile video-export up --build
+```
+
+Other client-side feature flags can be passed in the same way. When using `docker build`, use the corresponding `--build-arg` options instead.
+
+To use a server-side provider configuration, mount the file at its fixed container path:
+
+```yaml
+services:
+  openmaic:
+    volumes:
+      - ./server-providers.yml:/app/server-providers.yml:ro
+```
+
+Inside a Docker container, `localhost` refers to the container itself. If Ollama, Lemonade, VoxCPM, or ComfyUI runs on the host, use `host.docker.internal`, for example `http://host.docker.internal:11434/v1` or `http://host.docker.internal:8188`. Linux Docker usually also requires `extra_hosts: ["host.docker.internal:host-gateway"]` on the `openmaic` service. Because ComfyUI is not currently a server-managed provider, production deployments must also set `ALLOW_LOCAL_NETWORKS=true`, or the SSRF guard will reject the address.
+
+## Self-host on a VM
+
+The host needs Node.js `20.9.0` or later and pnpm `10.28.0`. Build and start with `pnpm`:
+
+```bash
+pnpm install
+pnpm build
+pnpm start      # listens on port 3000 by default
+```
+
+Put nginx or Caddy in front for TLS termination. By default, classroom state is stored in browser IndexedDB. With server-side persistence enabled, runtime data and course documents are stored in server storage and PostgreSQL. Choose an appropriate persistence strategy before deploying multiple instances.
+
+## Server-side persistence (PostgreSQL)
+
+The repository's `server-persistence` profile starts OpenMAIC and PostgreSQL in two containers. The persistence HTTP API is embedded in OpenMAIC; no separate persistence service is required.
+
+First add the database connection and development token to `.env.local`:
+
+```bash
+DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
+PERSISTENCE_DEV_TOKEN=openmaic-local-dev
+```
+
+Then start the profile:
+
+```bash
+NEXT_PUBLIC_PERSISTENCE=1 \
+NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev \
+docker compose --profile server-persistence up --build
+```
+
+`NEXT_PUBLIC_PERSISTENCE` and `NEXT_PUBLIC_PERSISTENCE_TOKEN` are build-time variables and must match the server-side runtime configuration. `PERSISTENCE_DEV_TOKEN` is suitable only for local or trusted private-network deployments. It does not provide real user isolation and must not be used directly as authentication for a public production deployment.
+
+PostgreSQL data is stored in the `openmaic-postgres` volume. `PERSISTENCE_POSTGRES_PASSWORD` sets the password only when the database directory is first initialized. Changing the environment variable later does not automatically change the existing database user's password.
+
+Leave `NEXT_PUBLIC_PERSISTENCE` unset to keep the original browser-side persistence behavior.
+
+## Optional: MP4 video export
+
+The “Export video” feature first generates a self-contained Hyperframes project in the browser, then sends it to a separate `render-service` that uses Chromium and FFmpeg to render an MP4. The service is optional and does not affect normal classroom generation.
+
+Enable the `video-export` profile:
+
+```bash
+docker compose --profile video-export up --build
+```
+
+Compose connects OpenMAIC to the rendering service through `RENDER_SERVICE_URL`. If the profile is disabled or the rendering service is unavailable, export falls back to downloading the project ZIP for rendering with the local CLI. The rendering service uses an isolated network and requires the `NET_ADMIN` capability at startup. See [`render-service/README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/main/render-service/README.md) for more limitations and standalone deployment instructions.
+
+## Environment variables
+
+See [Configuration](./configuration.mdx) for the complete environment variables and provider configuration. You must configure a key for at least one LLM provider.
+
+## Access control
+
+Shared demos can use `ACCESS_CODE` to put a password gate in front of the entire site. See [Configuration → ACCESS_CODE](./configuration.mdx#access_code--site-wide-password).
+
+## Optional self-hosted services
+
+- [VoxCPM2: self-hosted TTS and voice cloning →](./voxcpm.mdx)

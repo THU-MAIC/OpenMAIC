@@ -255,12 +255,74 @@ export function parseStructuredChunk(chunk: string, state: ParserState): ParseRe
 }
 
 /**
+ * Detect a leftover buffer that is structured-output residue rather than
+ * natural speech — a bare object/array, or a brace-less fragment like
+ * `type":"text","content":"..."` left behind when the model's JSON is
+ * truncated. Used as a fail-safe so such residue is suppressed, never shown
+ * as visible speech.
+ */
+export function looksLikeStructuredFragment(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed) return false;
+  // The structured-output schema signature: a `type` discriminator, or one of
+  // the well-known keys as a JSON property, appearing at the START of the
+  // buffer. Anchoring to the start is deliberate: it still catches residue and
+  // brace-less truncated tails like `type":"text","content":"...`, but does NOT
+  // fire on natural speech that merely mentions a JSON example mid-sentence,
+  // e.g. `我们用对象 {"name":"树"} 表示一棵树。` — which must stay visible.
+  const hasSchemaKey =
+    /^"?type"?\s*:\s*"(text|action)"/.test(trimmed) ||
+    /^"(content|name|params|action_id)"\s*:/.test(trimmed);
+  if (hasSchemaKey) return true;
+  // A bare `{`/`[` opener counts only when it is immediately structural
+  // (another opener, a quoted key, a closer, or end-of-string) — NOT any
+  // sentence that merely starts with a bracket, e.g. "[重点] ..." or set
+  // notation "{x | x > 0}".
+  return /^[[{]\s*([[{"\]}]|$)/.test(trimmed);
+}
+
+/**
+ * When the model emits a bare structured object/array instead of the required
+ * top-level array, extract visible text from well-formed `{type:'text'}` items.
+ * Requires a strict parse: a malformed object (one that would need repair), or
+ * an action/unknown-typed object, yields no text so the caller suppresses it
+ * rather than leaking raw JSON.
+ */
+function extractCleanStructuredText(raw: string): { matched: boolean; texts: string[] } {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+    return { matched: false, texts: [] };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { matched: false, texts: [] };
+  }
+  const items = Array.isArray(parsed) ? parsed : [parsed];
+  const allTyped = items.every(
+    (item) => item && typeof item === 'object' && 'type' in (item as object),
+  );
+  if (!allTyped) {
+    return { matched: false, texts: [] };
+  }
+  const texts: string[] = [];
+  for (const item of items) {
+    const obj = item as Record<string, unknown>;
+    if (obj.type === 'text' && typeof obj.content === 'string' && obj.content.trim()) {
+      texts.push(obj.content);
+    }
+  }
+  return { matched: true, texts };
+}
+
+/**
  * Finalize parsing after the stream ends.
  *
- * Handles the case where the model never produced a valid JSON array —
- * e.g. it output plain text instead of the expected `[...]` format.
- * Emits whatever content is in the buffer as a single text item so the
- * frontend can still display something rather than showing nothing.
+ * Handles the case where the model never produced a valid JSON array. Rather
+ * than dumping the raw buffer (which leaks `{"type":"text",...}` into the
+ * chat bubble), we structurally recover visible text where possible and
+ * suppress anything that is still structured-output residue.
  */
 export function finalizeParser(state: ParserState): ParseResult {
   const result: ParseResult = {
@@ -276,29 +338,42 @@ export function finalizeParser(state: ParserState): ParseResult {
 
   const content = state.buffer.trim();
   if (!content) {
+    state.isDone = true;
     return result;
   }
 
+  const pushText = (value: string) => {
+    if (!value) return;
+    result.textChunks.push(value);
+    result.ordered.push({ type: 'text', index: result.textChunks.length - 1 });
+  };
+
   if (!state.jsonStarted) {
-    // Model never output `[` — treat entire buffer as plain text
-    result.textChunks.push(content);
-    result.ordered.push({ type: 'text', index: 0 });
+    // Model never emitted the required top-level `[`. It may have produced a
+    // bare structured object, a truncated JSON fragment, or genuine prose.
+    const structured = extractCleanStructuredText(content);
+    if (structured.matched) {
+      // Bare `{type:'text'}` (or array of them) → show content; action/unknown → suppress.
+      structured.texts.forEach(pushText);
+    } else if (!looksLikeStructuredFragment(content)) {
+      // Genuine plain prose — display it.
+      pushText(content);
+    } else {
+      // JSON-ish fragment that did not parse cleanly → suppress (never leak raw
+      // JSON). Log so this path stays observable instead of silently dropping.
+      log.debug(
+        `[finalizeParser] Suppressed structured-output residue (${content.length} chars): ${content.slice(0, 80)}`,
+      );
+    }
   } else {
-    // JSON started but never closed — try one final parse
+    // JSON array started but never closed — flush whatever the incremental
+    // parser can still recover. Intentionally NO raw-buffer fallback:
+    // suppressing a truncated structured tail is safer than leaking
+    // `{"type":"text",...` as visible speech.
     const finalChunk = parseStructuredChunk('', state);
     result.textChunks.push(...finalChunk.textChunks);
     result.actions.push(...finalChunk.actions);
     result.ordered.push(...finalChunk.ordered);
-
-    // If final parse yielded nothing, emit raw text after `[` as fallback
-    if (result.textChunks.length === 0 && result.actions.length === 0) {
-      const bracketIndex = content.indexOf('[');
-      const raw = content.slice(bracketIndex + 1).trim();
-      if (raw) {
-        result.textChunks.push(raw);
-        result.ordered.push({ type: 'text', index: 0 });
-      }
-    }
   }
 
   state.isDone = true;

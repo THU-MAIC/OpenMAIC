@@ -1,4 +1,4 @@
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement } from '@openmaic/dsl';
 import type { Stage, Scene } from '@/lib/types/stage';
 
 // ==================== Scenario ====================
@@ -60,6 +60,8 @@ export interface ScenarioRunResult {
   runIndex: number;
   model: string;
   checkpoints: CheckpointResult[];
+  /** Per-turn wall-clock latency (ms) from runAgentLoop start to end. */
+  turnDurationsMs?: number[];
   error?: string;
 }
 

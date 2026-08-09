@@ -2,6 +2,7 @@ import type { ProviderId, ModelInfo, ProviderType } from '@/lib/types/provider';
 
 export type SettingsSection =
   | 'general'
+  | 'token-plan'
   | 'providers'
   | 'agents'
   | 'tts'
@@ -30,10 +31,16 @@ export interface ProviderSettings {
   requiresApiKey: boolean;
   isBuiltIn: boolean; // true for built-in providers, false for custom
 
-  // Server-side configuration (set by fetchServerProviders)
-  isServerConfigured?: boolean; // Server has API key for this provider
+  // Optional explicit /models URL override for model probing (from a preset, or
+  // when the vendor's model-list path is non-standard). Empty = auto candidates.
+  modelsUrl?: string;
+
+  // Server-side configuration (set by fetchServerProviders).
+  // A server-configured provider is admin-managed: the operator owns its key
+  // and base URL, and the client cannot override them. The server base URL is
+  // deliberately NOT exposed to the client.
+  isServerConfigured?: boolean; // Server manages this provider's credentials
   serverModels?: string[]; // Server-restricted model list (if set)
-  serverBaseUrl?: string; // Server-provided base URL override
 }
 
 /**

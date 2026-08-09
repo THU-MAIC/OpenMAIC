@@ -1,8 +1,11 @@
-import type { Action, SpeechAction } from '@/lib/types/action';
+import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
 import type { ManifestAction } from './classroom-zip-types';
 import { db } from '@/lib/utils/database';
 import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
 import type { Scene } from '@/lib/types/stage';
+import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
+import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
+import { withAssetUrl } from '@/lib/media/use-asset-url';
 
 // ─── Export: Collect Media ─────────────────────────────────────
 
@@ -29,12 +32,35 @@ export async function collectAudioFiles(scenes: Scene[]): Promise<CollectedAudio
   const collected: CollectedAudio[] = [];
   for (const audioId of audioIds) {
     const record = await db.audioFiles.get(audioId);
-    if (record) {
-      const ext = record.format || 'mp3';
-      collected.push({ zipPath: `audio/${audioId}.${ext}`, record });
+    // The pool answers first: after a stable-id regeneration whose mirror write
+    // failed, the row holds the superseded narration.
+    const blob = await resolveAudioBlob(audioId);
+    if (record || blob) {
+      const ext = record?.format || 'mp3';
+      const resolved = (
+        record ? { ...record, ...(blob ? { blob } : {}) } : { id: audioId, blob: blob! }
+      ) as AudioFileRecord;
+      collected.push({ zipPath: `audio/${audioId}.${ext}`, record: resolved });
     }
   }
   return collected;
+}
+
+/**
+ * A same-id replacement commits the new bytes to the pool first; if the
+ * compatibility write then fails, the task records
+ * `MEDIA_COMPATIBILITY_STORE_LAGGED` and the document deliberately keeps the
+ * same reference. Rendering and the other export paths resolve the pool, so the
+ * ZIP must too — otherwise it ships media the classroom no longer shows.
+ */
+async function pooledBytesForRef(ref: string): Promise<Blob | null> {
+  if (isConcreteMediaAddress(ref)) return null;
+  try {
+    return await withAssetUrl(ref, async (url) => (url ? fetch(url).then((r) => r.blob()) : null));
+  } catch {
+    // The compatibility row remains the fallback when pool access fails.
+    return null;
+  }
 }
 
 export async function collectMediaFiles(stageId: string): Promise<CollectedMedia[]> {
@@ -43,7 +69,12 @@ export async function collectMediaFiles(stageId: string): Promise<CollectedMedia
   for (const record of records) {
     const elementId = record.id.includes(':') ? record.id.split(':').slice(1).join(':') : record.id;
     const ext = record.mimeType?.split('/')[1] || 'jpg';
-    collected.push({ zipPath: `media/${elementId}.${ext}`, record, elementId });
+    const pooled = await pooledBytesForRef(elementId);
+    collected.push({
+      zipPath: `media/${elementId}.${ext}`,
+      record: pooled ? { ...record, blob: pooled } : record,
+      elementId,
+    });
   }
   return collected;
 }
@@ -53,6 +84,7 @@ export async function collectMediaFiles(stageId: string): Promise<CollectedMedia
 export function actionsToManifest(
   actions: Action[],
   audioIdToPath: Map<string, string>,
+  agentIdToIndex: Map<string, number> = new Map(),
 ): ManifestAction[] {
   return actions.map((action) => {
     if (action.type === 'speech') {
@@ -65,15 +97,30 @@ export function actionsToManifest(
         ...(speech.audioUrl ? { audioUrl: speech.audioUrl } : {}),
       } as ManifestAction;
     }
+    if (action.type === 'discussion') {
+      const discussion = action as DiscussionAction;
+      const { agentId, ...rest } = discussion;
+      const agentIndex = agentId ? agentIdToIndex.get(agentId) : undefined;
+      return {
+        ...rest,
+        ...(agentIndex !== undefined ? { agentIndex } : agentId ? { agentId } : {}),
+      } as ManifestAction;
+    }
     return action as ManifestAction;
   });
 }
 
 // ─── Import: Reference Rewriting ───────────────────────────────
 
+interface RewriteManifestActionOptions {
+  agentIds?: string[];
+  fallbackDiscussionAgentIndex?: number;
+}
+
 export function rewriteAudioRefsToIds(
   actions: ManifestAction[],
   audioRefMap: Record<string, string>,
+  options: RewriteManifestActionOptions = {},
 ): Action[] {
   return actions.map((action) => {
     if (action.type === 'speech' && 'audioRef' in action) {
@@ -82,6 +129,30 @@ export function rewriteAudioRefsToIds(
       return {
         ...rest,
         ...(audioId ? { audioId } : {}),
+      } as Action;
+    }
+    if (action.type === 'discussion') {
+      const {
+        agentIndex,
+        agentId: legacyAgentId,
+        ...rest
+      } = action as ManifestAction & { type: 'discussion'; agentIndex?: number; agentId?: string };
+      const indexedAgentId =
+        typeof agentIndex === 'number' ? options.agentIds?.[agentIndex] : undefined;
+      const preservedLegacyAgentId =
+        legacyAgentId && (!options.agentIds?.length || options.agentIds.includes(legacyAgentId))
+          ? legacyAgentId
+          : undefined;
+      const fallbackAgentId =
+        typeof options.fallbackDiscussionAgentIndex === 'number'
+          ? options.agentIds?.[options.fallbackDiscussionAgentIndex]
+          : undefined;
+
+      return {
+        ...rest,
+        ...(indexedAgentId || preservedLegacyAgentId || fallbackAgentId
+          ? { agentId: indexedAgentId || preservedLegacyAgentId || fallbackAgentId }
+          : {}),
       } as Action;
     }
     return action as Action;

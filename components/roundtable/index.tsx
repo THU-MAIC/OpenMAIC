@@ -59,12 +59,19 @@ interface RoundtableProps {
   readonly endFlashSessionType?: 'qa' | 'discussion';
   readonly thinkingState?: { stage: string; agentId?: string } | null;
   readonly isCueUser?: boolean;
+  /** Session entered the soft-closing grace window (client-side, ~15s). */
+  readonly isSoftClosing?: boolean;
+  readonly softCloseDeadline?: number;
   readonly isTopicPending?: boolean;
   readonly onMessageSend?: (message: string) => void;
   readonly onDiscussionStart?: (request: DiscussionAction) => void;
   readonly onDiscussionSkip?: () => void;
   readonly onStopDiscussion?: () => void;
+  readonly onContinueDiscussion?: () => void;
   readonly onInputActivate?: () => void;
+  readonly onUserInputActivity?: (
+    kind: 'text_input' | 'composition_start' | 'recording_start',
+  ) => void;
 
   readonly onResumeTopic?: () => void;
   readonly onPlayPause?: () => void;
@@ -92,6 +99,9 @@ interface RoundtableProps {
    *  renders inside the top-layer during presentation mode. */
   readonly fullscreenContainerRef?: React.RefObject<HTMLDivElement | null>;
 }
+
+// This must stay in sync with the non-presentation textarea's max-h-[100px] class.
+const NON_PRESENTATION_INPUT_MAX_HEIGHT_PX = 100;
 
 const VOICE_WAVE_BARS = [
   { peak: 18, duration: 0.55 },
@@ -147,12 +157,16 @@ export function Roundtable({
   endFlashSessionType = 'discussion',
   thinkingState,
   isCueUser,
+  isSoftClosing,
+  softCloseDeadline,
   isTopicPending,
   onMessageSend,
   onDiscussionStart,
   onDiscussionSkip,
   onStopDiscussion,
+  onContinueDiscussion,
   onInputActivate,
+  onUserInputActivity,
 
   onResumeTopic,
   onPlayPause,
@@ -191,11 +205,24 @@ export function Roundtable({
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [userMessage, setUserMessage] = useState<string | null>(null);
+  const nonPresentationInputRef = useRef<HTMLTextAreaElement>(null);
   const agentScrollRef = useRef<HTMLDivElement>(null);
   const bubbleScrollRef = useRef<HTMLDivElement>(null);
   const teacherAvatarRef = useRef<HTMLDivElement>(null);
   const studentAvatarRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const userMessageClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (isPresenting) return;
+    const textarea = nonPresentationInputRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(
+      textarea.scrollHeight,
+      NON_PRESENTATION_INPUT_MAX_HEIGHT_PX,
+    )}px`;
+  }, [inputValue, isInputOpen, isPresenting]);
 
   // End flash visible state (Issue 3)
   const [endFlashVisible, setEndFlashVisible] = useState(false);
@@ -388,10 +415,17 @@ export function Roundtable({
     } else {
       if (isSendCooldown || isProcessing) return;
       onInputActivate?.();
+      onUserInputActivity?.('recording_start');
       setIsVoiceOpen(true);
       setIsInputOpen(false);
       startRecording();
     }
+  };
+
+  const handleContinueSoftClosing = () => {
+    onContinueDiscussion?.();
+    setIsVoiceOpen(false);
+    setIsInputOpen(true);
   };
 
   // Keyboard shortcuts for roundtable interaction (#255)
@@ -626,6 +660,8 @@ export function Roundtable({
             : 'idle'
       }
       isLiveSession={isStreaming || isTopicPending || engineMode === 'live'}
+      isSoftClosing={isSoftClosing}
+      softCloseDeadline={softCloseDeadline}
       whiteboardOpen={whiteboardOpen}
       sidebarCollapsed={sidebarCollapsed}
       chatCollapsed={chatCollapsed}
@@ -639,6 +675,7 @@ export function Roundtable({
       onTogglePresentation={onTogglePresentation}
       showStopDiscussion={showStopButton}
       onStopDiscussion={onStopDiscussion}
+      onContinueDiscussion={handleContinueSoftClosing}
       ttsEnabled={ttsEnabled}
       ttsMuted={ttsMuted}
       ttsVolume={ttsVolume}
@@ -740,6 +777,8 @@ export function Roundtable({
                     <textarea
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
+                      onBeforeInput={() => onUserInputActivity?.('text_input')}
+                      onCompositionStart={() => onUserInputActivity?.('composition_start')}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                           e.preventDefault();
@@ -1225,6 +1264,7 @@ export function Roundtable({
           </AnimatePresence>
 
           <div
+            data-testid="roundtable-non-presentation-card"
             onClick={() => {
               if (isInputOpen || isVoiceOpen) {
                 setIsInputOpen(false);
@@ -1239,6 +1279,7 @@ export function Roundtable({
               {isInputOpen && (
                 <motion.div
                   key="input-stage"
+                  data-testid="roundtable-non-presentation-input-stage"
                   initial={{
                     opacity: 0,
                     scale: 0.95,
@@ -1250,11 +1291,17 @@ export function Roundtable({
                   onClick={(e) => e.stopPropagation()}
                   className="absolute inset-x-6 bottom-4 z-20 flex items-center justify-end"
                 >
-                  <div className="relative w-fit max-w-[85%] sm:max-w-[65%] min-w-[200px] sm:min-w-[300px] bg-white/90 dark:bg-gray-800/90 backdrop-blur-md p-2 pr-2 rounded-2xl rounded-br-none shadow-2xl border border-purple-200 dark:border-purple-700 flex items-end gap-2 ring-1 ring-purple-100/50 dark:ring-purple-800/50">
+                  <div
+                    data-testid="roundtable-non-presentation-input-panel"
+                    className="relative w-fit max-w-[85%] sm:max-w-[65%] min-w-[200px] sm:min-w-[300px] bg-white/90 dark:bg-gray-800/90 backdrop-blur-md p-2 pr-2 rounded-2xl rounded-br-none shadow-2xl border border-purple-200 dark:border-purple-700 flex items-end gap-2 ring-1 ring-purple-100/50 dark:ring-purple-800/50"
+                  >
                     <div className="pl-4 flex-1 py-1 min-w-0">
                       <textarea
+                        ref={nonPresentationInputRef}
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
+                        onBeforeInput={() => onUserInputActivity?.('text_input')}
+                        onCompositionStart={() => onUserInputActivity?.('composition_start')}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                             e.preventDefault();
@@ -1264,8 +1311,7 @@ export function Roundtable({
                         placeholder={t('roundtable.inputPlaceholder')}
                         autoFocus
                         rows={1}
-                        className="w-full resize-none bg-transparent border-none focus:ring-0 focus:outline-none outline-none shadow-none ring-0 text-gray-700 dark:text-gray-200 text-sm placeholder:text-gray-400 dark:placeholder:text-gray-500 min-h-[40px] max-h-[120px]"
-                        style={{ fieldSizing: 'content' } as Record<string, string>}
+                        className="w-full resize-none overflow-y-auto bg-transparent border-none focus:ring-0 focus:outline-none outline-none shadow-none ring-0 text-gray-700 dark:text-gray-200 text-sm placeholder:text-gray-400 dark:placeholder:text-gray-500 min-h-[40px] max-h-[100px]"
                       />
                     </div>
                     <button

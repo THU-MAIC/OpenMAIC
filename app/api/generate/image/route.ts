@@ -16,8 +16,17 @@
  */
 
 import { NextRequest } from 'next/server';
-import { generateImage, aspectRatioToDimensions } from '@/lib/media/image-providers';
-import { resolveImageApiKey, resolveImageBaseUrl } from '@/lib/server/provider-config';
+import { recordGenerationUsage } from '@/lib/server/usage-storage';
+import {
+  generateImage,
+  aspectRatioToDimensions,
+  IMAGE_PROVIDERS,
+} from '@/lib/media/image-providers';
+import {
+  isServerConfiguredProvider,
+  resolveImageApiKey,
+  resolveImageBaseUrl,
+} from '@/lib/server/provider-config';
 import type { ImageProviderId, ImageGenerationOptions } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -25,7 +34,12 @@ import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
 const log = createLogger('ImageGeneration API');
 
-export const maxDuration = 60;
+// The ComfyUI adapter polls up to GENERATION_TIMEOUT_MS (5 min) and real
+// workflows can take 3–5 min. 60s would let platforms that enforce maxDuration
+// (e.g. Vercel) kill the request ~4 min before the adapter finishes. 300s is
+// the practical ceiling on most managed platforms and matches the poll budget.
+// (Self-hosted Node servers ignore this value entirely.)
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,8 +50,10 @@ export async function POST(request: NextRequest) {
     }
 
     const providerId = (request.headers.get('x-image-provider') || 'seedream') as ImageProviderId;
-    const clientApiKey = request.headers.get('x-api-key') || undefined;
-    const clientBaseUrl = request.headers.get('x-base-url') || undefined;
+    // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
+    const managed = isServerConfiguredProvider('image', providerId);
+    const clientApiKey = managed ? undefined : request.headers.get('x-api-key') || undefined;
+    const clientBaseUrl = managed ? undefined : request.headers.get('x-base-url') || undefined;
     const clientModel = request.headers.get('x-image-model') || undefined;
 
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
@@ -47,10 +63,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const apiKey = clientBaseUrl
-      ? clientApiKey || ''
-      : resolveImageApiKey(providerId, clientApiKey);
-    if (!apiKey) {
+    const apiKey = resolveImageApiKey(providerId, clientApiKey);
+    const provider = IMAGE_PROVIDERS[providerId];
+    if (provider?.requiresApiKey && !apiKey) {
       return apiError(
         'MISSING_API_KEY',
         401,
@@ -58,7 +73,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const baseUrl = clientBaseUrl ? clientBaseUrl : resolveImageBaseUrl(providerId, clientBaseUrl);
+    const baseUrl = resolveImageBaseUrl(providerId, clientBaseUrl);
 
     // Resolve dimensions from aspect ratio if not explicitly set
     if (!body.width && !body.height && body.aspectRatio) {
@@ -73,6 +88,14 @@ export async function POST(request: NextRequest) {
     );
 
     const result = await generateImage({ providerId, apiKey, baseUrl, model: clientModel }, body);
+
+    void recordGenerationUsage({
+      kind: 'image',
+      unit: 'image',
+      providerId,
+      modelId: clientModel,
+      quantity: 1,
+    });
 
     return apiSuccess({ result });
   } catch (error) {

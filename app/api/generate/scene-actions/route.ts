@@ -23,9 +23,12 @@ import type {
   GeneratedPBLContent,
 } from '@/lib/types/generation';
 import type { SpeechAction } from '@/lib/types/action';
+import type { PBLContent } from '@/lib/types/stage';
 import { createLogger } from '@/lib/logger';
+import { normalizeLegacyPBLContent } from '@/lib/pbl/legacy/read';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { llmApiError } from '@/lib/server/llm-error-response';
+import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 
 const log = createLogger('Scene Actions API');
 
@@ -52,7 +55,8 @@ export async function POST(req: NextRequest) {
         | GeneratedSlideContent
         | GeneratedQuizContent
         | GeneratedInteractiveContent
-        | GeneratedPBLContent;
+        | GeneratedPBLContent
+        | PBLContent;
       stageId: string;
       agents?: AgentInfo[];
       previousSpeeches?: string[];
@@ -78,8 +82,13 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageId is required');
     }
 
-    // ── Model resolution from request headers ──
-    const { model: languageModel, modelInfo, modelString } = await resolveModelFromHeaders(req);
+    // ── Model resolution from request headers/body ──
+    const {
+      model: languageModel,
+      modelInfo,
+      modelString,
+      thinkingConfig,
+    } = await resolveModelFromRequest(req, body, 'scene-actions');
     outlineTitle = outline?.title;
     resolvedModelString = modelString;
 
@@ -104,8 +113,11 @@ export async function POST(req: NextRequest) {
               },
             ],
             maxOutputTokens: modelInfo?.outputWindow,
+            maxRetries: 0,
           },
           'scene-actions',
+          undefined,
+          thinkingConfig,
         );
         return result.text;
       }
@@ -115,8 +127,11 @@ export async function POST(req: NextRequest) {
           system: systemPrompt,
           prompt: userPrompt,
           maxOutputTokens: modelInfo?.outputWindow,
+          maxRetries: 0,
         },
         'scene-actions',
+        undefined,
+        thinkingConfig,
       );
       return result.text;
     };
@@ -134,7 +149,15 @@ export async function POST(req: NextRequest) {
     // ── Generate actions ──
     log.info(`Generating actions: "${outline.title}" (${outline.type}) [model=${modelString}]`);
 
-    const actions = await generateSceneActions(outline, content, aiCall, {
+    const generationContent = (
+      'type' in content && content.type === 'pbl' ? normalizeLegacyPBLContent(content) : content
+    ) as
+      | GeneratedSlideContent
+      | GeneratedQuizContent
+      | GeneratedInteractiveContent
+      | GeneratedPBLContent;
+
+    const actions = await generateSceneActions(outline, generationContent, aiCall, {
       ctx,
       agents,
       userProfile,
@@ -144,7 +167,7 @@ export async function POST(req: NextRequest) {
     log.info(`Generated ${actions.length} actions for: "${outline.title}"`);
 
     // ── Build complete scene ──
-    const scene = buildCompleteScene(outline, content, actions, stageId);
+    const scene = buildCompleteScene(outline, generationContent, actions, stageId);
 
     if (!scene) {
       log.error(`Failed to build scene: "${outline.title}"`);
@@ -167,6 +190,6 @@ export async function POST(req: NextRequest) {
       `Scene actions generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,
       error,
     );
-    return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
+    return llmApiError(error);
   }
 }

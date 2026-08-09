@@ -1,0 +1,298 @@
+---
+title: 設定
+description: LLM プロバイダー、メディア生成、ドキュメント解析、TTS、ASR、アクセス制御、機能フラグ。
+---
+
+OpenMAIC はサーバー起動時に環境変数を読み込みます。すべて任意項目なので、必要に応じて有効化してください。環境変数の例はリポジトリの [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) を参照してください。組み込みモデル ID は[対応モデル](./supported-models.mdx)にあります。
+
+環境変数のほかに、プロジェクトルートの `server-providers.yml` にコード内で登録済みのサーバー側 provider の設定を書くこともできます。環境変数は YAML の同名設定をフィールド単位で上書きします。カスタム OpenAI 互換 provider は設定画面から追加可能で、任意の環境変数 prefix や未知の YAML provider ID からは登録できません。
+
+## LLM プロバイダー
+
+クラウドプロバイダーは通常、API key、base URL、モデル一覧の3つの環境変数を使います。API key は必須の場合が多く、base URL とモデル一覧は任意です。Azure OpenAI はリソース endpoint の設定が必要で、Ollama と Lemonade は API key 不要です。
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=                # 任意の base URL 上書き
+OPENAI_MODELS=                  # 任意の許可モデル一覧（カンマ区切り）
+```
+
+対応している provider prefix:
+
+| Prefix             | プロバイダー                                     |
+| ------------------ | ------------------------------------------------ |
+| `OPENAI_`          | OpenAI                                           |
+| `AZURE_OPENAI_`    | Azure OpenAI                                     |
+| `ANTHROPIC_`       | Anthropic                                        |
+| `GOOGLE_`          | Google Gemini                                    |
+| `DEEPSEEK_`        | DeepSeek                                         |
+| `QWEN_`            | Alibaba Qwen                                     |
+| `KIMI_`            | Moonshot Kimi                                    |
+| `MINIMAX_`         | MiniMax（既定では Anthropic 互換エンドポイント） |
+| `GLM_`             | Zhipu GLM                                        |
+| `SILICONFLOW_`     | SiliconFlow                                      |
+| `DOUBAO_`          | Doubao（ByteDance）                              |
+| `OPENROUTER_`      | OpenRouter                                       |
+| `GROK_`            | xAI Grok                                         |
+| `TENCENT_`         | Tencent Hunyuan                                  |
+| `TENCENT_HUNYUAN_` | Tencent Hunyuan（別名）                          |
+| `XIAOMI_`          | Xiaomi MiMo                                      |
+| `MIMO_`            | Xiaomi MiMo（別名）                              |
+| `OLLAMA_`          | Ollama（ローカル）                               |
+| `LEMONADE_`        | Lemonade（ローカル）                             |
+
+Azure OpenAI は deployment name をモデル ID として使います：
+
+```bash
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
+AZURE_OPENAI_MODELS=your-deployment-name
+```
+
+他の OpenAI 互換 LLM サービスに接続する場合は、**設定 → モデルプロバイダー** からカスタム provider を追加し、対応するプロトコルタイプを選択してください。
+
+## ローカルモデル（Ollama と Lemonade）
+
+Ollama と Lemonade は API key 不要です。ローカルサービスの base URL はサーバー側設定に書き、SSRF チェックを通過させます。
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434/v1
+# LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+利用可能モデルを制限したい場合は、`OLLAMA_MODELS` または `LEMONADE_MODELS` でホワイトリストを指定できます。
+
+## TTS プロバイダー
+
+サーバー側 TTS プロバイダーは `TTS_<PROVIDER>_API_KEY` と任意の `TTS_<PROVIDER>_BASE_URL` を使います。
+
+```bash
+# Doubao TTS（Volcengine Seed-TTS、ネイティブ MP3）
+TTS_DOUBAO_API_KEY=appId:accessKey
+TTS_DOUBAO_BASE_URL=       # 任意の上書き
+
+# Qwen TTS
+TTS_QWEN_API_KEY=
+TTS_QWEN_BASE_URL=         # 任意の上書き
+
+# 任意の OpenAI 互換 TTS エンドポイント
+TTS_OPENAI_API_KEY=
+TTS_OPENAI_BASE_URL=
+
+# VoxCPM2（セルフホスト TTS、音声クローン対応。VoxCPM2 ページを参照）
+TTS_VOXCPM_BASE_URL=http://localhost:8000
+```
+
+対応している TTS prefix は `TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_ELEVENLABS_`、`TTS_VOXCPM_`、`TTS_LEMONADE_` です。ローカル Lemonade TTS と VoxCPM2 は API key 不要です。ブラウザのネイティブ TTS はサーバー設定不要です。
+
+管理者は `TTS_<PROVIDER>_ENABLED=false` で特定の TTS プロバイダーをサーバー側で強制無効化できます。VoxCPM2（セルフホスト TTS＋音声クローン）については専用の [VoxCPM2](./voxcpm.mdx) ページを参照してください。
+
+カスタム OpenAI 互換 TTS provider は設定画面から追加可能で、Base URL、モデル、音色を指定します。これらはクライアント設定に保存され、任意の `TTS_*` 環境変数や YAML provider ID では登録されません。
+
+## ASR（音声認識）
+
+```bash
+# OpenAI Whisper
+ASR_OPENAI_API_KEY=
+ASR_OPENAI_BASE_URL=       # 任意の上書き
+
+# Qwen ASR
+ASR_QWEN_API_KEY=
+ASR_QWEN_BASE_URL=         # 任意の上書き
+
+# Azure ASR
+ASR_AZURE_API_KEY=
+ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
+
+# FunASR（ローカル、key 不要）
+ASR_FUNASR_BASE_URL=http://localhost:8000/v1
+
+# Lemonade ASR（ローカル、key 不要）
+ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+`funasr-server --device cuda` で OpenAI 互換サービスを起動します。`/v1/audio/transcriptions` で WAV を受け付け、モデル選択から SenseVoiceSmall、Paraformer、Fun-ASR-Nano を利用できます。
+
+ブラウザのネイティブ ASR はサーバー設定不要です。
+
+カスタム OpenAI 互換 ASR provider も設定画面から追加可能で、Base URL、モデル、対応言語を指定します。これらはクライアント設定に保存されます。
+
+## 画像生成プロバイダー
+
+画像生成プロバイダーは `IMAGE_<PROVIDER>_API_KEY` と任意の `IMAGE_<PROVIDER>_BASE_URL` を使います。対応 prefix は以下の通りです：
+
+`IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_`、`IMAGE_LEMONADE_`
+
+Lemonade はローカルサービスで API key 不要です：
+
+```bash
+IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+ComfyUI Image は API key 不要で、デフォルトで `http://localhost:8188` に接続します。設定画面で ComfyUI Base URL を指定し、OpenMAIC の `public/` ディレクトリに API 形式でエクスポートした workflow JSON（`comfyui-*.json` またはファイル名に `workflow` を含む）を置くと自動検出され、選択可能になります。Docker 本番環境ではビルド前に workflow を追加するか、単一の workflow ファイルをコンテナの `/app/public/` にマウントしてください。`comfyui-image` はサーバー管理 provider ではないため、本番環境でホストの ComfyUI に接続する場合は `ALLOW_LOCAL_NETWORKS=true` を設定してください。
+
+## 動画生成プロバイダー
+
+動画生成プロバイダーは `VIDEO_<PROVIDER>_API_KEY` と任意の `VIDEO_<PROVIDER>_BASE_URL` を使います。対応 prefix は：
+
+`VIDEO_SEEDANCE_`、`VIDEO_KLING_`、`VIDEO_VEO_`、`VIDEO_SORA_`、`VIDEO_MINIMAX_`、`VIDEO_GROK_`、`VIDEO_HAPPYHORSE_`
+
+## ドキュメント・メディア解析
+
+教材の具体的なフォーマットは選択したパーサーに依存します。現在はテキスト、PDF、Office 文書、画像、一部の音声・動画形式をサポートし、provider によって対応範囲が異なります。
+
+```bash
+# MinerU 自ホスト
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# MinerU 自ホストのオプションバックエンド
+PDF_MINERU_BACKEND=pipeline
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+
+# AliDocMind（API key ではなく Alibaba Cloud AccessKey を使用）
+ALIDOCMIND_ACCESS_KEY_ID=
+ALIDOCMIND_ACCESS_KEY_SECRET=
+ALIDOCMIND_BASE_URL=       # 任意の上書き
+```
+
+`unpdf` は OpenMAIC に組み込み済みで、基本的な PDF 解析に使えます。Office 文書、画像、OCR、表、数式、レイアウト解析が必要な教材は MinerU または AliDocMind の互換 provider を選択してください。
+
+AliDocMind のドキュメント解析は PDF、DOCX、PPTX、XLSX、PNG、JPG/JPEG、BMP、GIF に対応します。現在の音声・動画素材は AliDocMind でのみ解析可能で、動画は MP4、MOV、AVI、MKV、WMV、音声は MP3、WAV、AAC に対応し、M4A は非対応です。
+
+## Web 検索
+
+Tavily、Bocha、Brave、Baidu、SearXNG、MiniMax を設定可能です。
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # 任意の上書き
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # 任意の上書き
+
+BAIDU_API_KEY=
+BAIDU_BASE_URL=https://qianfan.baidubce.com  # 任意の上書き
+
+# 自ホスト SearXNG（API key 不要）
+SEARXNG_BASE_URL=
+
+WEB_SEARCH_MINIMAX_API_KEY=
+WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # 任意の上書き
+```
+
+Brave と SearXNG は API key 不要です。フロントエンドでは生成ごとに検索を有効化するトグルが表示されます。Grok の Web 検索は Grok LLM の検索ツール経由で提供され、独立した Web 検索 provider ではありません。
+
+## ACCESS_CODE — サイト全体のパスワード
+
+共有デプロイ（社内デモ、授業など）ではアクセスコードを設定し、訪問者にアプリ表示前のパスワード入力を求められます。
+
+```bash
+ACCESS_CODE=your-secret-code
+```
+
+訪問者は一度だけ入力を求められ、コードは HTTP-only cookie に保存されます。空欄にすると無効になります。
+
+## デフォルトモデルとモデルルーティング
+
+サーバー API がクライアントからモデル指定を受け取らない場合、`DEFAULT_MODEL` でデフォルトモデルを指定します。モデル指定は `provider:model-id` 形式です。例：
+
+```bash
+DEFAULT_MODEL=openai:gpt-5.5
+```
+
+`MODEL_ROUTES` で生成の各フェーズに別モデルを割り当て可能です。未設定フェーズはクライアント指定モデルか `DEFAULT_MODEL` を使います。JSON オブジェクトで、キーがフェーズ名、値がモデル文字列または `model` と `thinking` を含むオブジェクトです。完全なフェーズ一覧と例はリポジトリの [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) を参照してください。
+
+## 機能フラグ
+
+機能フラグは `true` または `1` を有効とし、それ以外は無効です。`NEXT_PUBLIC_*` はビルド時にクライアントに注入されるため、変更後は再ビルドが必要です。
+
+```bash
+# MAIC Editor（Pro モード）
+NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
+
+# Pi 対話ランタイム
+NEXT_PUBLIC_PI_CHAT_ENABLED=true
+
+# 職業教育タスクエンジン（サーバー側スイッチ）
+OPENMAIC_ENABLE_VOCATIONAL=true
+
+# 職業教育実験 UI 表示
+NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=true
+
+# 動画エクスポート入口表示
+NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
+
+# 実験的 PPTX インポート入口表示
+NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+```
+
+PPTX インポートはまだ実験的で、解析結果は完全に授業データフローに統合されていません。`NEXT_PUBLIC_*` 変数はビルド時スイッチで、Docker では build args で渡す必要があり、コンテナ実行時環境変数だけでは反映されません。
+
+## その他サーバーオプション
+
+以下のサーバーオプションも環境変数で設定可能です：
+
+```bash
+# シーン内容の並列生成。0 または未設定は逐次生成
+PARALLEL_SCENE_CONCURRENCY=3
+
+# localhost や内部ネットワークへのアクセス許可。セルフホスト／プライベートネットワーク向け
+ALLOW_LOCAL_NETWORKS=true
+
+# 任意の MP4 レンダリングサービス
+RENDER_SERVICE_URL=http://render-service:9000
+
+# ログと推論設定
+LOG_LEVEL=info
+LOG_FORMAT=pretty
+LLM_THINKING_DISABLED=false
+```
+
+## YAML 設定ファイルを使う
+
+環境変数のほかに、コード内で登録済みの provider 設定をプロジェクトルートの `server-providers.yml` に書くこともできます。サーバー起動時に読み込まれ、環境変数のカテゴリに対応した構造です。
+
+```yaml title="server-providers.yml"
+providers:
+  openai:
+    apiKey: sk-...
+    baseUrl: https://api.openai.com/v1
+    models:
+      - gpt-5.5
+  anthropic:
+    apiKey: sk-ant-...
+
+tts:
+  doubao-tts:
+    apiKey: appId:accessKey
+
+asr:
+  openai-whisper:
+    apiKey: sk-...
+
+pdf:
+  mineru:
+    baseUrl: http://localhost:8888
+  alidocmind:
+    accessKeyId: your-access-key-id
+    accessKeySecret: your-access-key-secret
+
+image:
+  seedream:
+    apiKey: ...
+
+video:
+  seedance:
+    apiKey: ...
+
+web-search:
+  tavily:
+    apiKey: tvly-...
+  searxng:
+    baseUrl: http://localhost:8080
+```
+
+環境変数は YAML の同名フィールドを逐次上書きします。キーはコード内登録済みの provider ID（例：`openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`tavily`、`searxng`）でなければなりません。未知の ID でカスタム LLM provider を登録することはできません。

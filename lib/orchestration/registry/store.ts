@@ -7,7 +7,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AgentConfig } from './types';
 import { getActionsForRole } from './types';
-import type { TTSProviderId } from '@/lib/audio/types';
+import { isKnownTTSProviderId } from '@/lib/audio/constants';
+import type { GeneratedAgentConfig } from '@/lib/types/stage';
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import type { Participant, ParticipantRole } from '@/lib/types/roundtable';
 import { useUserProfileStore } from '@/lib/store/user-profile';
@@ -236,6 +237,15 @@ export const useAgentRegistry = create<AgentRegistryState>()(
       name: 'agent-registry-storage',
       version: 11, // Bumped: add voiceOverrides field to AgentConfig
       migrate: (persistedState: unknown) => persistedState,
+      // Generated agents are single-sourced on the stage document and rebuilt
+      // from it on every classroom load — keep them out of the localStorage
+      // snapshot entirely. The merge filter below stays as defense in depth
+      // for snapshots written before this partialize existed.
+      partialize: (state) => ({
+        agents: Object.fromEntries(
+          Object.entries(state.agents).filter(([, agent]) => !agent.isGenerated),
+        ),
+      }),
       // Merge persisted state with default agents
       // Default agents always use code-defined values (not cached)
       // Custom agents use persisted values
@@ -328,99 +338,62 @@ export function agentsToParticipants(
 }
 
 /**
- * Load generated agents for a stage from IndexedDB into the registry.
- * Clears any previously loaded generated agents first.
- * Returns the loaded agent IDs.
+ * Replace the registry's generated agents with the given stage roster.
+ *
+ * In-memory registry side effect: the persisted source of truth for the
+ * roster is `stage.generatedAgentConfigs` on the stage document, and callers
+ * persist it through the document path — the registry's own localStorage
+ * snapshot excludes generated agents (see the persist `partialize` above), so
+ * nothing written here becomes durable.
+ * Clears previously loaded generated agents first (even when the new roster is
+ * empty) so a prior classroom's roster cannot leak into the current one.
+ * The contract keeps `voiceConfig.providerId` an open string; a binding whose
+ * provider is not registered in this app is dropped here (the agent keeps its
+ * voiceDesign, and the TTS path falls back at call time).
+ * Returns the applied agent IDs.
  */
-export async function loadGeneratedAgentsForStage(stageId: string): Promise<string[]> {
-  const { getGeneratedAgentsByStageId } = await import('@/lib/utils/database');
-  const records = await getGeneratedAgentsByStageId(stageId);
-
-  const registry = useAgentRegistry.getState();
-
-  // Always clear previously loaded generated agents — even when the new stage
-  // has none — to prevent stale agents from a prior auto-classroom leaking
-  // into the current preset classroom.
-  const currentAgents = registry.listAgents();
-  for (const agent of currentAgents) {
-    if (agent.isGenerated) {
-      registry.deleteAgent(agent.id);
-    }
-  }
-
-  if (records.length === 0) return [];
-
-  // Add new ones
-  const ids: string[] = [];
-  for (const record of records) {
-    registry.addAgent({
-      ...record,
-      allowedActions: getActionsForRole(record.role),
-      isDefault: false,
-      isGenerated: true,
-      boundStageId: record.stageId,
-      createdAt: new Date(record.createdAt),
-      updatedAt: new Date(record.createdAt),
-    });
-    ids.push(record.id);
-  }
-
-  return ids;
-}
-
-/**
- * Save generated agents to IndexedDB and registry.
- * Clears old generated agents for this stage first.
- */
-export async function saveGeneratedAgents(
+export function applyGeneratedAgentsToRegistry(
   stageId: string,
-  agents: Array<{
-    id: string;
-    name: string;
-    role: string;
-    persona: string;
-    avatar: string;
-    color: string;
-    priority: number;
-    voiceConfig?: { providerId: string; voiceId: string };
-  }>,
-): Promise<string[]> {
-  const { db } = await import('@/lib/utils/database');
-
-  // Clear old generated agents for this stage
-  await db.generatedAgents.where('stageId').equals(stageId).delete();
-
-  // Clear from registry
+  agents: ReadonlyArray<GeneratedAgentConfig>,
+): string[] {
   const registry = useAgentRegistry.getState();
   for (const agent of registry.listAgents()) {
     if (agent.isGenerated) registry.deleteAgent(agent.id);
   }
 
-  // Write to IndexedDB
-  const records = agents.map((a) => ({ ...a, stageId, createdAt: Date.now() }));
-  await db.generatedAgents.bulkPut(records);
-
-  // Add to registry
-  for (const record of records) {
-    const { voiceConfig, ...rest } = record;
+  const now = Date.now();
+  const ids: string[] = [];
+  for (const agent of agents) {
+    const { voiceConfig, ...rest } = agent;
     registry.addAgent({
       ...rest,
-      allowedActions: getActionsForRole(record.role),
+      allowedActions: getActionsForRole(agent.role),
       isDefault: false,
       isGenerated: true,
       boundStageId: stageId,
-      createdAt: new Date(record.createdAt),
-      updatedAt: new Date(record.createdAt),
-      ...(voiceConfig
+      createdAt: new Date(now),
+      updatedAt: new Date(now),
+      ...(voiceConfig && isKnownTTSProviderId(voiceConfig.providerId)
         ? {
             voiceConfig: {
-              providerId: voiceConfig.providerId as TTSProviderId,
+              providerId: voiceConfig.providerId,
               voiceId: voiceConfig.voiceId,
             },
           }
         : {}),
     });
+    ids.push(agent.id);
   }
 
-  return records.map((r) => r.id);
+  // Eager warm-up: pre-register each generated agent's auto voice so the first
+  // spoken line is already stable. Same idempotent ensure as the TTS path;
+  // fire-and-forget. Dynamic import keeps this client-only dep out of the
+  // server-importable store module.
+  if (ids.length > 0 && typeof window !== 'undefined') {
+    void import('@/lib/audio/agent-voice')
+      .then((m) => m.warmUpAgentVoices(registry.listAgents().filter((a) => a.isGenerated)))
+      .catch(() => undefined);
+  }
+
+  return ids;
 }

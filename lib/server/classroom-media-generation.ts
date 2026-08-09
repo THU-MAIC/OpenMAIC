@@ -15,7 +15,6 @@ import { generateTTS } from '@/lib/audio/tts-providers';
 import { DEFAULT_TTS_VOICES, DEFAULT_TTS_MODELS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
-import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import {
   getServerImageProviders,
   getServerVideoProviders,
@@ -34,6 +33,8 @@ import type { ImageProviderId } from '@/lib/media/types';
 import type { VideoProviderId } from '@/lib/media/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
+import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 
 const log = createLogger('ClassroomMedia');
 
@@ -94,11 +95,11 @@ export async function generateMediaForClassroom(
       try {
         const providerId = imageProviderIds[0] as ImageProviderId;
         const apiKey = resolveImageApiKey(providerId);
-        if (!apiKey) {
+        const providerConfig = IMAGE_PROVIDERS[providerId];
+        if (providerConfig?.requiresApiKey && !apiKey) {
           log.warn(`No API key for image provider "${providerId}", skipping ${req.elementId}`);
           continue;
         }
-        const providerConfig = IMAGE_PROVIDERS[providerId];
         const model = providerConfig?.models?.[0]?.id;
 
         const result = await generateImage(
@@ -179,16 +180,27 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
     if (scene.type !== 'slide') continue;
     const canvas = (
       scene.content as {
-        canvas?: { elements?: Array<{ id: string; src?: string; type?: string }> };
+        canvas?: {
+          elements?: Array<{ id: string; src?: string; mediaRef?: string; type?: string }>;
+        };
       }
     )?.canvas;
     if (!canvas?.elements) continue;
 
     for (const el of canvas.elements) {
       if (
+        el.type === 'video' &&
+        typeof el.mediaRef === 'string' &&
+        mediaMap[el.mediaRef] &&
+        (!el.src || /^gen_vid_[\w-]+$/i.test(el.src))
+      ) {
+        el.src = mediaMap[el.mediaRef];
+        continue;
+      }
+      if (
         (el.type === 'image' || el.type === 'video') &&
         typeof el.src === 'string' &&
-        isMediaPlaceholder(el.src) &&
+        isGeneratedMediaPlaceholder(el.src) &&
         mediaMap[el.src]
       ) {
         el.src = mediaMap[el.src];
@@ -209,10 +221,11 @@ export async function generateTTSForClassroom(
   const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
   await ensureDir(audioDir);
 
-  // Resolve TTS provider (exclude browser-native-tts)
-  const ttsProviderIds = Object.keys(getServerTTSProviders()).filter(
-    (id) => id !== 'browser-native-tts',
-  );
+  // Resolve TTS provider (exclude browser-native-tts and operator force-disabled
+  // providers — server precedence, #665).
+  const ttsProviderIds = Object.entries(getServerTTSProviders())
+    .filter(([id, info]) => id !== 'browser-native-tts' && !info.disabled)
+    .map(([id]) => id);
   if (ttsProviderIds.length === 0) {
     log.warn('No server TTS provider configured, skipping TTS generation');
     return;
@@ -220,16 +233,18 @@ export async function generateTTSForClassroom(
 
   const providerId = ttsProviderIds[0] as TTSProviderId;
   const apiKey = resolveTTSApiKey(providerId);
-  if (!apiKey) {
+  const ttsProvider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
+  if (ttsProvider?.requiresApiKey && !apiKey) {
     log.warn(`No API key for TTS provider "${providerId}", skipping TTS generation`);
     return;
   }
-  const ttsBaseUrl =
-    resolveTTSBaseUrl(providerId) ||
-    TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS]?.defaultBaseUrl;
+  const ttsBaseUrl = resolveTTSBaseUrl(providerId) || ttsProvider?.defaultBaseUrl;
   const voice = DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
-  const format =
-    TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS]?.supportedFormats?.[0] || 'mp3';
+  const format = ttsProvider?.supportedFormats?.[0] || 'mp3';
+  if (providerId === VOXCPM_TTS_PROVIDER_ID && voice === VOXCPM_AUTO_VOICE_ID) {
+    log.warn('VoxCPM Auto Voice requires agent context; skipping server-side TTS generation');
+    return;
+  }
 
   for (const scene of scenes) {
     if (!scene.actions) continue;
@@ -244,7 +259,8 @@ export async function generateTTSForClassroom(
     for (const action of scene.actions) {
       if (action.type !== 'speech' || !(action as SpeechAction).text) continue;
       const speechAction = action as SpeechAction;
-      // Include scene order in audioId to prevent collision across scenes
+      // Server transport keeps derived ids and audioUrl playback priority;
+      // browser generation allocates pool ids. Unifying them is Part 2 step (c).
       const audioId = `tts_s${sceneOrder}_${action.id}`;
 
       try {
@@ -260,7 +276,7 @@ export async function generateTTSForClassroom(
           speechAction.text,
         );
 
-        const filename = `${audioId}.${format}`;
+        const filename = `${audioId}.${result.format || format}`;
         await fs.writeFile(path.join(audioDir, filename), result.audio);
 
         speechAction.audioId = audioId;

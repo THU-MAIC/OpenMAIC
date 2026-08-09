@@ -17,6 +17,7 @@ import {
   testMiniMaxVideoConnectivity,
 } from './adapters/minimax-video-adapter';
 import { generateWithGrokVideo, testGrokVideoConnectivity } from './adapters/grok-video-adapter';
+import { generateWithHappyHorse, testHappyHorseConnectivity } from './adapters/happyhorse-adapter';
 
 export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   seedance: {
@@ -25,6 +26,15 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://ark.cn-beijing.volces.com',
     models: [
+      { id: 'doubao-seedance-2-0-260128', name: 'Seedance 2.0' },
+      {
+        id: 'doubao-seedance-2-0-fast-260128',
+        name: 'Seedance 2.0 Fast',
+      },
+      {
+        id: 'doubao-seedance-2-0-mini-260615',
+        name: 'Seedance 2.0 Mini',
+      },
       { id: 'doubao-seedance-1-5-pro-251215', name: 'Seedance 1.5 Pro' },
       { id: 'doubao-seedance-1-0-pro-250528', name: 'Seedance 1.0 Pro' },
       {
@@ -84,9 +94,10 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     name: 'MiniMax Video',
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.minimaxi.com',
+    // Hailuo 2.3 Fast requires Image-to-Video with first_frame_image; this
+    // provider currently submits Text-to-Video requests only.
     models: [
       { id: 'MiniMax-Hailuo-2.3', name: 'Hailuo 2.3' },
-      { id: 'MiniMax-Hailuo-2.3-Fast', name: 'Hailuo 2.3 Fast' },
       { id: 'MiniMax-Hailuo-02', name: 'Hailuo 02' },
       { id: 'T2V-01-Director', name: 'T2V-01 Director' },
       { id: 'T2V-01', name: 'T2V-01' },
@@ -106,6 +117,17 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     supportedDurations: [6],
     maxDuration: 6,
   },
+  happyhorse: {
+    id: 'happyhorse',
+    name: 'HappyHorse',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://dashscope.aliyuncs.com',
+    models: [{ id: 'happyhorse-1.0-t2v', name: 'HappyHorse 1.0 T2V' }],
+    supportedAspectRatios: ['16:9', '9:16', '1:1', '4:3', '3:4'],
+    supportedDurations: [5, 10, 15],
+    supportedResolutions: ['720p', '1080p'],
+    maxDuration: 15,
+  },
 };
 
 export async function testVideoConnectivity(
@@ -122,6 +144,8 @@ export async function testVideoConnectivity(
       return testMiniMaxVideoConnectivity(config);
     case 'grok-video':
       return testGrokVideoConnectivity(config);
+    case 'happyhorse':
+      return testHappyHorseConnectivity(config);
     default:
       return {
         success: false,
@@ -187,6 +211,8 @@ export async function generateVideo(
       return generateWithMiniMaxVideo(config, options);
     case 'grok-video':
       return generateWithGrokVideo(config, options);
+    case 'happyhorse':
+      return generateWithHappyHorse(config, options);
     default:
       throw new Error(`Unsupported video provider: ${config.providerId}`);
   }

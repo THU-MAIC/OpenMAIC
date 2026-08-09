@@ -1,0 +1,69 @@
+---
+title: 快速開始
+description: 五分鐘內在本機跑起 OpenMAIC。
+---
+
+OpenMAIC 是一個 Next.js 應用程式，可以在自己的機器上執行。你需要至少設定一個 LLM provider：雲端 provider 通常需要 API key；本機 Ollama 或 Lemonade 不需要 API key。
+
+## 前置條件
+
+- **Node.js** 20.9.0 或更新版本
+- **pnpm** 10.28.0（如果尚未安裝，請先執行 `npm install -g pnpm@10.28.0`）
+- 至少設定一個 LLM provider；雲端 provider 通常需要 API key，本機 Ollama 或 Lemonade 不需要 API key
+
+## 安裝
+
+複製儲存庫並安裝相依套件：
+
+```bash
+git clone https://github.com/THU-MAIC/OpenMAIC.git
+cd OpenMAIC
+pnpm install
+```
+
+安裝過程中會建置專案所需的 workspace 套件，首次安裝可能需要一些時間。
+
+## 設定
+
+複製範例環境檔，填入至少一個 LLM 供應商：
+
+```bash
+cp .env.example .env.local
+```
+
+開啟 `.env.local`，填入你有 key 的供應商。例如：
+
+```bash title=".env.local"
+OPENAI_API_KEY=sk-...
+# 或
+ANTHROPIC_API_KEY=sk-ant-...
+# 或本機 Ollama（不需要 key）
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+完整的 provider、圖片／影片生成、TTS、ASR、文件解析、網路搜尋、存取控制和 feature flag 設定請見[設定說明](./configuration.mdx)。
+
+## 執行
+
+啟動開發伺服器：
+
+```bash
+pnpm dev
+```
+
+開啟 [http://localhost:3000](http://localhost:3000)，應該會看到 OpenMAIC 的課堂生成器。輸入主題或上傳學習材料，點選「生成」，AI 教師就會建立一場完整的多場景課堂。支援的材料格式取決於所選解析器，通常包括 PDF、Office 文件、Markdown／純文字、圖片及部分音訊／影片；實際範圍以解析器支援情況為準。
+
+## 生產建置
+
+```bash
+pnpm build
+pnpm start
+```
+
+也可以部署到 Vercel、Docker 或你自己的伺服器上——請見[部署指南](./deployment.mdx)。
+
+## 下一步
+
+- [設定 provider、TTS、ACCESS_CODE →](./configuration.mdx)
+- [部署到 Vercel 或 Docker →](./deployment.mdx)
+- 想了解架構或貢獻程式碼，請前往 [GitHub](https://github.com/THU-MAIC/OpenMAIC#-contributing)

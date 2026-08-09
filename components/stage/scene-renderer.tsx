@@ -12,6 +12,11 @@ interface SceneRendererProps {
   readonly mode: StageMode;
 }
 
+/**
+ * Playback scene dispatcher. In Pro (edit) mode, Stage renders EditShell
+ * directly as a top-level takeover — SceneRenderer is only on the playback
+ * path, so it does not branch on `mode === 'edit'`.
+ */
 export function SceneRenderer({ scene, mode }: SceneRendererProps) {
   const renderer = useMemo(() => {
     switch (scene.type) {
@@ -20,7 +25,14 @@ export function SceneRenderer({ scene, mode }: SceneRendererProps) {
         return <SlideRenderer mode={mode} />;
       case 'quiz':
         if (scene.content.type !== 'quiz') return <div>Invalid quiz content</div>;
-        return <QuizView key={scene.id} questions={scene.content.questions} sceneId={scene.id} />;
+        return (
+          <QuizView
+            key={scene.id}
+            questions={scene.content.questions}
+            sceneId={scene.id}
+            stageId={scene.stageId}
+          />
+        );
       case 'interactive':
         if (scene.content.type !== 'interactive') return <div>Invalid interactive content</div>;
         return <InteractiveRenderer content={scene.content} sceneId={scene.id} />;

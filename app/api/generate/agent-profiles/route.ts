@@ -10,8 +10,9 @@ import { nanoid } from 'nanoid';
 import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { AGENT_COLOR_PALETTE } from '@/lib/constants/agent-defaults';
+import { normalizeVoiceDesign } from '@/lib/audio/voice-design';
 
 const log = createLogger('Agent Profiles API');
 
@@ -23,7 +24,12 @@ interface RequestBody {
   languageDirective: string;
   availableAvatars: string[];
   avatarDescriptions?: Array<{ path: string; desc: string }>;
-  availableVoices?: Array<{ providerId: string; voiceId: string; voiceName: string }>;
+  availableVoices?: Array<{
+    providerId: string;
+    voiceId: string;
+    voiceName: string;
+    voiceLanguage?: string;
+  }>;
 }
 
 function stripCodeFences(text: string): string {
@@ -65,8 +71,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── Model resolution from request headers ──
-    const { model: languageModel, modelString: _modelString } = await resolveModelFromHeaders(req);
+    // ── Model resolution from request headers/body ──
+    const {
+      model: languageModel,
+      modelString: _modelString,
+      thinkingConfig,
+    } = await resolveModelFromRequest(req, body, 'agent-profiles');
     modelString = _modelString;
 
     // ── Build prompt ──
@@ -85,12 +95,14 @@ export async function POST(req: NextRequest) {
             availableVoices.map((v) => ({
               id: `${v.providerId}::${v.voiceId}`,
               name: v.voiceName,
+              language: v.voiceLanguage || 'unknown',
             })),
           )
         : '';
 
     const voicePrompt = voiceListStr
       ? `- Each agent should be assigned a voice that matches their persona from this list: ${voiceListStr}
+  - Prefer a voice whose language matches the course language directive
   - Pick a voice that suits the agent's personality and role (e.g. authoritative voice for teacher, lively voice for energetic student)
   - Try to use different voices for each agent`
       : '';
@@ -117,6 +129,10 @@ Requirements:
   - Use the "path" value as the avatar field in the output
 - Each agent must be assigned one color from this list: ${JSON.stringify(AGENT_COLOR_PALETTE)}
   - Each agent must have a different color
+- Each agent needs a "voiceDesign" object describing their VOCAL identity (not personality), written following the language directive and consistent with the persona, as three short comma-free phrases:
+  - "identity": gender + age + role (e.g. "middle-aged male teacher")
+  - "texture": pitch + vocal quality (e.g. "warm low-pitched slightly husky")
+  - "delivery": emotion + pace (e.g. "calm measured encouraging")
 ${voicePrompt}
 
 Return a JSON object with this exact structure:
@@ -126,6 +142,7 @@ Return a JSON object with this exact structure:
       "name": "string",
       "role": "teacher" | "assistant" | "student",
       "persona": "string (2-3 sentences)",
+      "voiceDesign": { "identity": "string", "texture": "string", "delivery": "string" },
       "avatar": "string (from available list)",
       "color": "string (hex color from palette)",
       "priority": number (10 for teacher, 7 for assistant, 4-6 for student)${voiceJsonField}
@@ -135,17 +152,21 @@ Return a JSON object with this exact structure:
 
     log.info(`Generating agent profiles for "${stageInfo.name}" [model=${modelString}]`);
 
-    const result = await callLLM(
-      {
-        model: languageModel,
-        system: systemPrompt,
-        prompt: userPrompt,
-      },
-      'agent-profiles',
-    );
+    const rawResult = (
+      await callLLM(
+        {
+          model: languageModel,
+          system: systemPrompt,
+          prompt: userPrompt,
+        },
+        'agent-profiles',
+        undefined,
+        thinkingConfig,
+      )
+    ).text;
 
     // ── Parse LLM response ──
-    const rawText = stripCodeFences(result.text);
+    const rawText = stripCodeFences(rawResult);
     let parsed: {
       agents: Array<{
         name: string;
@@ -155,6 +176,7 @@ Return a JSON object with this exact structure:
         color: string;
         priority: number;
         voice?: string;
+        voiceDesign?: unknown;
       }>;
     };
 
@@ -196,6 +218,8 @@ Return a JSON object with this exact structure:
         }
       }
 
+      const voiceDesign = normalizeVoiceDesign(agent.voiceDesign);
+
       return {
         id: `gen-${nanoid(8)}`,
         name: agent.name,
@@ -206,6 +230,7 @@ Return a JSON object with this exact structure:
         priority:
           agent.priority ?? (agent.role === 'teacher' ? 10 : agent.role === 'assistant' ? 7 : 5),
         ...(voiceConfig ? { voiceConfig } : {}),
+        ...(voiceDesign ? { voiceDesign } : {}),
       };
     });
 

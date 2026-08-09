@@ -6,9 +6,78 @@ import { jsonrepair } from 'jsonrepair';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('Generation');
 
+function repairQuotedPropertyFragments(jsonStr: string): string {
+  return jsonStr.replace(
+    /([,{]\s*)"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(true|false|null|[+-]?\d+(?:\.\d+)?)"(?=\s*[,}])/g,
+    (_match, prefix, key, value) => `${prefix}"${key}": ${value}`,
+  );
+}
+
+function logJsonParseError(stage: string, jsonStr: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  const positionMatch = message.match(/position\s+(\d+)/i);
+  const position = positionMatch ? Number(positionMatch[1]) : undefined;
+
+  if (typeof position === 'number' && Number.isFinite(position)) {
+    const start = Math.max(0, position - 120);
+    const end = Math.min(jsonStr.length, position + 120);
+    log.warn(
+      `${stage} parse error at position ${position}: ${message}. Context: ${jsonStr
+        .slice(start, end)
+        .replace(/\n/g, '\\n')}`,
+    );
+    return;
+  }
+
+  log.warn(`${stage} parse error: ${message}`);
+}
+
 export function parseJsonResponse<T>(response: string): T | null {
+  const exactParsed = tryParseExactJson<T>(response);
+  if (exactParsed !== null) return exactParsed;
+
+  const cleanedResponse = stripReasoningPrefix(response);
+  if (cleanedResponse !== response.trim()) {
+    const parsedCleaned = parseJsonResponseCandidate<T>(cleanedResponse);
+    if (parsedCleaned !== null) return parsedCleaned;
+  }
+
+  const parsed = parseJsonResponseCandidate<T>(response);
+  if (parsed !== null) return parsed;
+
+  log.error('Failed to parse JSON from response');
+  log.error('Raw response (first 500 chars):', cleanedResponse.substring(0, 500));
+  log.error(
+    'Raw response (last 500 chars):',
+    cleanedResponse.substring(Math.max(0, cleanedResponse.length - 500)),
+  );
+
+  return null;
+}
+
+function tryParseExactJson<T>(response: string): T | null {
+  try {
+    return JSON.parse(response.trim()) as T;
+  } catch {
+    return null;
+  }
+}
+
+function stripReasoningPrefix(response: string): string {
+  const trimmed = response.trim();
+  const matches = [...trimmed.matchAll(/<\/(?:think|thinking|reasoning)>\s*/gi)];
+  const lastMatch = matches.at(-1);
+
+  if (!lastMatch || lastMatch.index === undefined) return trimmed;
+
+  return trimmed.slice(lastMatch.index + lastMatch[0].length).trim();
+}
+
+function parseJsonResponseCandidate<T>(response: string): T | null {
+  const cleanedResponse = response.trim();
+
   // Strategy 1: Try to extract JSON from markdown code blocks (may have multiple)
-  const codeBlockMatches = response.matchAll(/```(?:json)?\s*([\s\S]*?)```/g);
+  const codeBlockMatches = cleanedResponse.matchAll(/```(?:json)?\s*([\s\S]*?)```/g);
   for (const match of codeBlockMatches) {
     const extracted = match[1].trim();
     // Only try if it looks like JSON (starts with { or [)
@@ -23,8 +92,8 @@ export function parseJsonResponse<T>(response: string): T | null {
 
   // Strategy 2: Try to find JSON structure directly in response (no code block)
   // Look for array or object start
-  const jsonStartArray = response.indexOf('[');
-  const jsonStartObject = response.indexOf('{');
+  const jsonStartArray = cleanedResponse.indexOf('[');
+  const jsonStartObject = cleanedResponse.indexOf('{');
 
   if (jsonStartArray !== -1 || jsonStartObject !== -1) {
     // Prefer the structure that appears first
@@ -41,8 +110,8 @@ export function parseJsonResponse<T>(response: string): T | null {
     let inString = false;
     let escapeNext = false;
 
-    for (let i = startIndex; i < response.length; i++) {
-      const char = response[i];
+    for (let i = startIndex; i < cleanedResponse.length; i++) {
+      const char = cleanedResponse[i];
 
       if (escapeNext) {
         escapeNext = false;
@@ -72,7 +141,7 @@ export function parseJsonResponse<T>(response: string): T | null {
     }
 
     if (endIndex !== -1) {
-      const jsonStr = response.substring(startIndex, endIndex + 1);
+      const jsonStr = cleanedResponse.substring(startIndex, endIndex + 1);
       const result = tryParseJson<T>(jsonStr);
       if (result !== null) {
         log.debug('Successfully parsed JSON from response body');
@@ -82,14 +151,11 @@ export function parseJsonResponse<T>(response: string): T | null {
   }
 
   // Strategy 3: Last resort - try the whole response
-  const result = tryParseJson<T>(response.trim());
+  const result = tryParseJson<T>(cleanedResponse.trim());
   if (result !== null) {
     log.debug('Successfully parsed raw response as JSON');
     return result;
   }
-
-  log.error('Failed to parse JSON from response');
-  log.error('Raw response (first 500 chars):', response.substring(0, 500));
 
   return null;
 }
@@ -101,13 +167,21 @@ export function tryParseJson<T>(jsonStr: string): T | null {
   // Attempt 1: Try parsing as-is
   try {
     return JSON.parse(jsonStr) as T;
-  } catch {
+  } catch (error) {
+    logJsonParseError('Attempt 1', jsonStr, error);
     // Continue to fix attempts
   }
 
   // Attempt 2: Fix common JSON issues from AI responses
   try {
     let fixed = jsonStr;
+
+    // Fix 0: Recover malformed property fragments that were accidentally
+    // emitted as standalone strings inside an object, such as:
+    // `"height: 76"` -> `"height": 76`
+    // `"fixedRatio: false"` -> `"fixedRatio": false`
+    // The object-context prefix/suffix guards keep valid JSON strings intact.
+    fixed = repairQuotedPropertyFragments(fixed);
 
     // Fix 1: Handle LaTeX-style escapes that break JSON (e.g., \frac, \left, \right, \times, etc.)
     // These are common in math content and need to be double-escaped
@@ -152,7 +226,8 @@ export function tryParseJson<T>(jsonStr: string): T | null {
     }
 
     return JSON.parse(fixed) as T;
-  } catch {
+  } catch (error) {
+    logJsonParseError('Attempt 2', jsonStr, error);
     // Continue to next attempt
   }
 
@@ -160,7 +235,8 @@ export function tryParseJson<T>(jsonStr: string): T | null {
   try {
     const repaired = jsonrepair(jsonStr);
     return JSON.parse(repaired) as T;
-  } catch {
+  } catch (error) {
+    logJsonParseError('Attempt 3', jsonStr, error);
     // Continue to next attempt
   }
 
@@ -183,7 +259,8 @@ export function tryParseJson<T>(jsonStr: string): T | null {
     });
 
     return JSON.parse(fixed) as T;
-  } catch {
+  } catch (error) {
+    logJsonParseError('Attempt 4', jsonStr, error);
     return null;
   }
 }

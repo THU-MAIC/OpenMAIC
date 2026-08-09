@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+
+# next.js build output
+.next/
+
+# static export output
+out/
+
+# fumadocs-mdx generated sources
+.source/
+
+# verification screenshots
+verify-screens/
+
+# misc
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store

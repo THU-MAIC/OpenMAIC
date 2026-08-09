@@ -9,6 +9,51 @@ Transform user requirements into an **interactive-first** course structure:
 - Use **slides for introductions, summaries, and conceptual frameworks**
 - Adjust the balance based on course length and subject matter
 
+---
+
+## Language Inference
+
+Infer the course language from all available signals and produce:
+
+1. **`languageDirective`** (required): A 2-5 sentence instruction covering teaching language, terminology handling, and cross-language situations.
+2. **`languageNote`** (optional, per scene): Only when a scene's language handling differs from the course-level directive.
+
+### Decision rules (apply in order)
+
+1. **Explicit language request wins**: "请用英文教我", "teach me in Chinese", "用中英双语" → follow directly.
+
+2. **Requirement language = teaching language** (default): The language the user writes in is the strongest implicit signal.
+
+3. **Foreign language learning → teach in the user's native language, NOT the target language**:
+   - "I want to learn Chinese" → teach in **English**
+   - "我想学日语" → teach in **Chinese**
+   - Exception: advanced learners (TEM-8/专八, DALF C1, JLPT N1) aiming for native-level fluency → teach in the **target language** for immersion.
+
+4. **Cross-language PDF → requirement language wins**: Translate/explain document content in the teaching language. Never let the PDF language override the requirement language.
+
+5. **Proxy requests (parent/teacher/tutor) → consider the learner's context**: A parent writing in Chinese for a child in IB/AP → teach in **English**. A Chinese teacher designing a Japanese reading lesson → teach in **Chinese** with Japanese as learning material.
+
+6. **Audience-appropriate language**: For children or beginners, explicitly specify simple vocabulary and supportive scaffolding in the directive.
+
+### Terminology
+
+- **Programming / product names** (Python, Docker, ComfyUI): keep in English.
+- **Science / academic terms** with standard translations: use the teaching language's translation.
+- **Emerging tech terms** (AI/ML): show bilingually.
+- **User's explicit request** about terminology overrides the above defaults.
+
+### Course Title
+
+Produce a **`courseTitle`** (required): a concise, human-readable name for the **entire course**. This becomes the course's display name, so it must be short and scannable — never the raw requirement text.
+
+- **Length**: ≤ 30 characters (roughly one short phrase). Hard cap; if the concept is long, compress it.
+- **Language**: write it in the **inferred teaching language** (same language `languageDirective` targets).
+- **Style**: a noun phrase summarizing the topic — e.g. "抛体运动实战", "Hands-on Recursion", "太阳系探索". Not a sentence, not a question.
+- **Do NOT** include: quotes, numbering, leading emojis, the teacher's name/role, or words like "Course"/"课程"/"A course about".
+- If the requirement is already a crisp title, you may reuse it (trimmed to the limit). If it is a long prompt, distill it to its essence.
+
+---
+
 ## Widget Types
 
 ### 1. Simulation Widget (`simulation`)
@@ -191,43 +236,84 @@ For **shorter courses (<10 scenes)**:
 }
 ```
 
+{{#if imageEnabled}}
+{{snippet:image-instructions}}
+{{/if}}
+
+{{#if videoEnabled}}
+{{snippet:video-instructions}}
+{{/if}}
+
+{{#if mediaEnabled}}
+{{snippet:media-safety-guidelines}}
+{{/if}}
+
 ## Output Format
 
-Output a JSON array where each scene has this structure:
+### Top-level shape — NON-NEGOTIABLE
+
+Your entire response MUST be a single JSON **object** with exactly these three top-level keys:
 
 ```json
-[
-  {
-    "id": "scene_1",
-    "type": "slide",
-    "title": "Introduction to Projectile Motion",
-    "description": "Introduce the concept and learning objectives",
-    "keyPoints": ["What is projectile motion", "Real-world examples", "Key variables"],
-    "order": 1
-  },
-  {
-    "id": "scene_2",
-    "type": "interactive",
-    "title": "Projectile Motion Simulator",
-    "description": "Explore how angle and velocity affect trajectory",
-    "keyPoints": ["Adjust angle and velocity", "Observe trajectory changes", "Hit the target challenge"],
-    "order": 2,
-    "widgetType": "simulation",
-    "widgetOutline": {
-      "concept": "projectile_motion",
-      "keyVariables": ["angle", "initial_velocity"]
+{
+  "languageDirective": "<the directive you inferred in the Language Inference step>",
+  "courseTitle": "<concise course name, ≤30 chars, in the teaching language>",
+  "outlines": [ /* array of scene objects */ ]
+}
+```
+
+Rules:
+
+- **Never** return a bare array. The top level is an object, not an array.
+- **Never** omit `languageDirective` or `courseTitle`. Both are required even if you think they are obvious.
+- **Never** wrap the response in any other structure, prose, or code fence.
+
+### Minimal complete example
+
+```json
+{
+  "languageDirective": "Deliver the entire course in English. Use simple vocabulary suitable for a beginner.",
+  "courseTitle": "Intro to Projectile Motion",
+  "outlines": [
+    {
+      "id": "scene_1",
+      "type": "slide",
+      "title": "Introduction to Projectile Motion",
+      "description": "Introduce the concept and learning objectives",
+      "keyPoints": ["What is projectile motion", "Real-world examples", "Key variables"],
+      "order": 1
+    },
+    {
+      "id": "scene_2",
+      "type": "interactive",
+      "title": "Projectile Motion Simulator",
+      "description": "Explore how angle and velocity affect trajectory",
+      "keyPoints": ["Adjust angle and velocity", "Observe trajectory changes", "Hit the target challenge"],
+      "order": 2,
+      "widgetType": "simulation",
+      "widgetOutline": {
+        "concept": "projectile_motion",
+        "keyVariables": ["angle", "initial_velocity"]
+      }
     }
-  }
-]
+  ]
+}
 ```
 
 ## Important Guidelines
 
-1. **Interactive focus**: Prefer interactive widgets for hands-on learning
-2. **Widget variety**: Use different widget types throughout the course when appropriate
-3. **Flow**: Slides should introduce concepts, widgets should let students explore
-4. **Language**: Output all content in the specified course language
-5. **Valid JSON**: Always output valid JSON array format
-6. **REQUIRED for interactive scenes**: Every scene with `type: "interactive"` MUST include both `widgetType` AND `widgetOutline` fields
-7. **Game quality**: Game widgets should be INTERACTIVE and FUN, not boring quizzes
-8. **Mobile-first**: All widgets should work well on mobile devices
+**Top-level response shape (most often violated):**
+
+1. Return exactly one JSON **object** — never a bare array.
+2. That object MUST have `languageDirective` (string), `courseTitle` (string, ≤30 chars), and `outlines` (array) as top-level keys. Omitting any is a failure.
+3. Do not wrap the object in prose, markdown, or code fences.
+
+**Scene-level rules:**
+
+4. **Interactive focus**: Prefer interactive widgets for hands-on learning.
+5. **Widget variety**: Use different widget types throughout the course when appropriate.
+6. **Flow**: Slides should introduce concepts, widgets should let students explore.
+7. **Language**: Apply the Language Inference decision rules above when producing `languageDirective`, and author all scene content in the inferred language.
+8. **REQUIRED for interactive scenes**: Every scene with `type: "interactive"` MUST include both `widgetType` AND `widgetOutline` fields.
+9. **Game quality**: Game widgets should be INTERACTIVE and FUN, not boring quizzes.
+10. **Mobile-first**: All widgets should work well on mobile devices.

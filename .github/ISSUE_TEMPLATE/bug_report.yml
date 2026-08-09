@@ -8,6 +8,8 @@ body:
       value: |
         Thanks for taking the time to report a bug! Please fill out the information below to help us investigate.
 
+        Before submitting, please search existing issues for duplicates and remove API keys, access tokens, personal data, and other secrets from logs, screenshots, or recordings.
+
   - type: textarea
     id: description
     attributes:
@@ -58,24 +60,62 @@ body:
       required: true
 
   - type: input
+    id: version
+    attributes:
+      label: OpenMAIC Version
+      description: Which release, commit SHA, or Docker image tag are you using?
+      placeholder: e.g. v0.4.2, 40ff80a, or latest
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected Area
+      description: Which part of OpenMAIC is affected?
+      options:
+        - Classroom generation
+        - Playback / presentation
+        - Editor / canvas
+        - Import / export
+        - Model / provider integration
+        - Storage / persistence
+        - Deployment / infrastructure
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: input
     id: browser
     attributes:
       label: Browser
-      description: Which browser are you using?
-      placeholder: e.g. Chrome 120, Firefox 121, Safari 17
+      description: Which browser are you using? Enter "Not applicable" for non-browser issues.
+      placeholder: e.g. Chrome 120, Firefox 121, Safari 17, or Not applicable
+    validations:
+      required: true
 
   - type: input
     id: os
     attributes:
       label: Operating System
-      placeholder: e.g. macOS 14.2, Windows 11, Ubuntu 22.04
+      description: Which operating system are you using? Enter "Not applicable" for non-runtime issues.
+      placeholder: e.g. macOS 14.2, Windows 11, Ubuntu 22.04, or Not applicable
+    validations:
+      required: true
 
   - type: textarea
     id: logs
     attributes:
-      label: Relevant Logs / Screenshots
-      description: Paste any error messages, console logs, or screenshots.
+      label: Relevant Logs
+      description: Paste error messages and console or server logs after removing secrets and personal data.
       render: shell
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or Recordings
+      description: Attach screenshots or recordings after removing secrets and personal data.
 
   - type: textarea
     id: additional

@@ -27,15 +27,12 @@ import type {
   VideoGenerationOptions,
   VideoGenerationResult,
 } from '../types';
+import { runPolledTask, type TerminalResult } from '../polled-task';
 
 const DEFAULT_MODEL = 'veo-3.0-generate-001';
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com';
 const POLL_INTERVAL_MS = 10_000; // 10 seconds
 const MAX_POLL_ATTEMPTS = 60; // 10 minutes max
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /** Dimension defaults per aspect ratio */
 function getDimensions(aspectRatio?: string): {
@@ -77,6 +74,41 @@ interface VeoOperation {
     }>;
   };
   error?: { code: number; message: string; status: string };
+}
+
+function resolveCompletedOperation(
+  operation: VeoOperation,
+  options: VideoGenerationOptions,
+): TerminalResult<VideoGenerationResult> {
+  if (operation.error) {
+    return {
+      status: 'failed',
+      message: `Veo generation failed: ${operation.error.code} - ${operation.error.message}`,
+    };
+  }
+
+  const videos = operation.response?.videos;
+  if (!videos || videos.length === 0) {
+    throw new Error('Veo returned no generated videos');
+  }
+
+  const first = videos[0];
+  if (!first.bytesBase64Encoded) {
+    throw new Error('Veo returned video entry without data');
+  }
+
+  const mimeType = first.mimeType || 'video/mp4';
+  const { width, height } = getDimensions(options.aspectRatio);
+
+  return {
+    status: 'done',
+    result: {
+      url: `data:${mimeType};base64,${first.bytesBase64Encoded}`,
+      duration: options.duration || 8,
+      width,
+      height,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -161,7 +193,10 @@ export async function testVeoConnectivity(
   // Try ?key= query param first (direct Google API), fall back to x-goog-api-key header (proxy)
   let response: Response | null = null;
   try {
-    response = await fetch(`${url}?key=${config.apiKey}`, { method: 'GET' });
+    response = await fetch(`${url}?key=${config.apiKey}`, {
+      method: 'GET',
+      redirect: 'manual',
+    });
   } catch {
     // Direct API unreachable, try header auth
   }
@@ -169,6 +204,7 @@ export async function testVeoConnectivity(
     try {
       response = await fetch(url, {
         method: 'GET',
+        redirect: 'manual',
         headers: { 'x-goog-api-key': config.apiKey },
       });
     } catch (_err) {
@@ -204,50 +240,23 @@ export async function generateWithVeo(
   const model = config.model || DEFAULT_MODEL;
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
 
-  // 1. Submit
-  const operation = await submitVideoGeneration(baseUrl, config.apiKey, model, options);
-
-  if (!operation.name) {
-    throw new Error('Veo returned operation without name');
-  }
-
-  // 2. Poll until done
-  let current = operation;
-  let pollCount = 0;
-  while (!current.done) {
-    if (pollCount >= MAX_POLL_ATTEMPTS) {
-      throw new Error('Veo video generation timed out after 10 minutes');
-    }
-    await delay(POLL_INTERVAL_MS);
-    current = await pollOperation(baseUrl, config.apiKey, model, current.name);
-    pollCount++;
-  }
-
-  // 3. Check for errors
-  if (current.error) {
-    throw new Error(`Veo generation failed: ${current.error.code} - ${current.error.message}`);
-  }
-
-  // 4. Extract inline base64 video from response.videos[]
-  const videos = current.response?.videos;
-  if (!videos || videos.length === 0) {
-    throw new Error('Veo returned no generated videos');
-  }
-
-  const first = videos[0];
-  if (!first.bytesBase64Encoded) {
-    throw new Error('Veo returned video entry without data');
-  }
-
-  const base64 = first.bytesBase64Encoded;
-  const mimeType = first.mimeType || 'video/mp4';
-
-  const { width, height } = getDimensions(options.aspectRatio);
-
-  return {
-    url: `data:${mimeType};base64,${base64}`,
-    duration: options.duration || 8,
-    width,
-    height,
-  };
+  return runPolledTask<VideoGenerationResult>({
+    submit: async () => {
+      const operation = await submitVideoGeneration(baseUrl, config.apiKey, model, options);
+      if (!operation.name) {
+        throw new Error('Veo returned operation without name');
+      }
+      return operation.done
+        ? resolveCompletedOperation(operation, options)
+        : { status: 'submitted', taskId: operation.name };
+    },
+    poll: async (operationName) => {
+      const operation = await pollOperation(baseUrl, config.apiKey, model, operationName);
+      return operation.done ? resolveCompletedOperation(operation, options) : { status: 'pending' };
+    },
+    intervalMs: POLL_INTERVAL_MS,
+    maxAttempts: MAX_POLL_ATTEMPTS,
+    label: 'Veo video generation',
+    formatTimeout: () => 'Veo video generation timed out after 10 minutes',
+  });
 }

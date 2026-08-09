@@ -1,7 +1,12 @@
 import { NextRequest } from 'next/server';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { resolvePDFApiKey, resolvePDFBaseUrl } from '@/lib/server/provider-config';
+import {
+  isServerConfiguredProvider,
+  resolveManagedAliDocMindCredentials,
+  resolvePDFApiKey,
+  resolvePDFBaseUrl,
+} from '@/lib/server/provider-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { MINERU_CLOUD_DEFAULT_BASE } from '@/lib/pdf/constants';
 
@@ -12,20 +17,69 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     providerId = body.providerId;
-    const { apiKey, baseUrl } = body;
+    const { apiKey, baseUrl, accessKeyId, accessKeySecret } = body;
 
     if (!providerId) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Provider ID is required');
     }
 
-    // MinerU Cloud: verify by calling the cloud API with the token
-    if (providerId === 'mineru-cloud') {
-      const resolvedApiKey = resolvePDFApiKey(providerId, apiKey);
-      if (!resolvedApiKey) {
-        return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for MinerU Cloud');
+    // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
+    const managed = isServerConfiguredProvider('pdf', providerId);
+
+    // AliDocMind: verify AK/SK by issuing a lightweight authenticated probe.
+    if (providerId === 'alidocmind') {
+      let ak: string | undefined;
+      let sk: string | undefined;
+      let endpoint: string | undefined;
+
+      if (managed) {
+        // Managed: use server-owned credentials + endpoint only. Ignore any
+        // client-supplied AK/SK/baseUrl.
+        const serverCreds = resolveManagedAliDocMindCredentials();
+        if (!serverCreds) {
+          return apiError('INTERNAL_ERROR', 500, 'AliDocMind is not configured on the server');
+        }
+        ak = serverCreds.accessKeyId;
+        sk = serverCreds.accessKeySecret;
+        endpoint = serverCreds.baseUrl;
+      } else {
+        // Unmanaged: client credentials only — never fall back to server env.
+        ak = (accessKeyId as string | undefined) || undefined;
+        sk = (accessKeySecret as string | undefined) || undefined;
+        endpoint = (baseUrl as string | undefined) || undefined;
+        if (!ak || !sk) {
+          return apiError(
+            'MISSING_REQUIRED_FIELD',
+            400,
+            'AccessKey ID and AccessKey Secret are required for AliDocMind',
+          );
+        }
+        // Validate a client-supplied endpoint before we sign a request to it.
+        if (endpoint && process.env.NODE_ENV === 'production') {
+          const ssrfError = await validateUrlForSSRF(
+            endpoint.startsWith('http') ? endpoint : `https://${endpoint}`,
+          );
+          if (ssrfError) {
+            return apiError('INVALID_URL', 403, ssrfError);
+          }
+        }
       }
 
-      const clientCloudBase = (baseUrl as string | undefined) || undefined;
+      const { verifyAliDocMindCredentials } = await import('@/lib/pdf/alidocmind-client');
+      const result = await verifyAliDocMindCredentials({
+        accessKeyId: ak,
+        accessKeySecret: sk,
+        endpoint,
+      });
+      if (!result.ok) {
+        return apiError('INVALID_CREDENTIALS', 400, `Authentication failed: ${result.error}`);
+      }
+      return apiSuccess({ message: 'Connection successful' });
+    }
+
+    // MinerU Cloud: verify by calling the cloud API with the token
+    if (providerId === 'mineru-cloud') {
+      const clientCloudBase = managed ? undefined : (baseUrl as string | undefined) || undefined;
       if (clientCloudBase && process.env.NODE_ENV === 'production') {
         const ssrfError = await validateUrlForSSRF(clientCloudBase);
         if (ssrfError) {
@@ -33,10 +87,13 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      const resolvedApiKey = resolvePDFApiKey(providerId, managed ? undefined : apiKey);
+      if (!resolvedApiKey) {
+        return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for MinerU Cloud');
+      }
+
       const cloudBase = (
-        clientCloudBase ||
-        resolvePDFBaseUrl(providerId) ||
-        MINERU_CLOUD_DEFAULT_BASE
+        resolvePDFBaseUrl(providerId, clientCloudBase) || MINERU_CLOUD_DEFAULT_BASE
       ).replace(/\/+$/, '');
 
       // Probe the batch endpoint with an empty body to verify auth
@@ -46,10 +103,15 @@ export async function POST(req: NextRequest) {
           Accept: 'application/json',
         },
         signal: AbortSignal.timeout(10000),
+        redirect: 'manual',
       });
 
-      // Any response (including 4xx for "batch not found") means auth + connectivity works
-      // Only network errors or 401/403 indicate a problem
+      if (response.status >= 300 && response.status < 400) {
+        return apiError('REDIRECT_NOT_ALLOWED', 403, 'Redirects are not allowed');
+      }
+
+      // Other responses (including 4xx for "batch not found") mean auth + connectivity works.
+      // Only network errors, redirects, or 401/403 indicate a problem.
       if (response.status === 401 || response.status === 403) {
         const text = await response.text().catch(() => '');
         return apiError(
@@ -66,7 +128,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Self-hosted providers: verify by connecting to the base URL
-    const clientBaseUrl = (baseUrl as string | undefined) || undefined;
+    const clientBaseUrl = managed ? undefined : (baseUrl as string | undefined) || undefined;
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
       const ssrfError = await validateUrlForSSRF(clientBaseUrl);
       if (ssrfError) {
@@ -74,14 +136,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const resolvedBaseUrl = clientBaseUrl ? clientBaseUrl : resolvePDFBaseUrl(providerId, baseUrl);
+    const resolvedBaseUrl = resolvePDFBaseUrl(providerId, clientBaseUrl);
     if (!resolvedBaseUrl) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Base URL is required');
     }
 
-    const resolvedApiKey = clientBaseUrl
-      ? (apiKey as string | undefined) || ''
-      : resolvePDFApiKey(providerId, apiKey);
+    const resolvedApiKey = resolvePDFApiKey(providerId, managed ? undefined : apiKey);
 
     const headers: Record<string, string> = {};
     if (resolvedApiKey) {

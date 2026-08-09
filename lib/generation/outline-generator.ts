@@ -13,11 +13,21 @@ import type {
 } from '@/lib/types/generation';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import { formatImageDescription, formatImagePlaceholder } from './prompt-formatters';
+import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { parseJsonResponse } from './json-repair';
 import { uniquifyMediaElementIds } from './scene-builder';
-import type { AICallFn, GenerationResult, GenerationCallbacks } from './pipeline-types';
+import type { AICallFn, GenerationResult } from './pipeline-types';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('Generation');
+
+/**
+ * Used when the outline stage fails to produce an explicit directive (LLM
+ * schema regression, empty response, upstream error). Downstream prompts
+ * still need *something* that steers the model toward the requirement's
+ * language rather than defaulting to the training-distribution prior.
+ */
+export const DEFAULT_LANGUAGE_DIRECTIVE =
+  'Teach in the language that matches the user requirement.';
 
 /**
  * Generate scene outlines from user requirements
@@ -28,7 +38,6 @@ export async function generateSceneOutlinesFromRequirements(
   pdfText: string | undefined,
   pdfImages: PdfImage[] | undefined,
   aiCall: AICallFn,
-  callbacks?: GenerationCallbacks,
   options?: {
     visionEnabled?: boolean;
     imageMapping?: ImageMapping;
@@ -37,7 +46,9 @@ export async function generateSceneOutlinesFromRequirements(
     researchContext?: string;
     teacherContext?: string;
   },
-): Promise<GenerationResult<{ languageDirective: string; outlines: SceneOutline[] }>> {
+): Promise<
+  GenerationResult<{ languageDirective: string; courseTitle?: string; outlines: SceneOutline[] }>
+> {
   // Build available images description for the prompt
   let availableImagesText = 'No images available';
   let visionImages: Array<{ id: string; src: string }> | undefined;
@@ -45,10 +56,11 @@ export async function generateSceneOutlinesFromRequirements(
   if (pdfImages && pdfImages.length > 0) {
     if (options?.visionEnabled && options?.imageMapping) {
       // Vision mode: split into vision images (first N) and text-only (rest)
-      const allWithSrc = pdfImages.filter((img) => options.imageMapping![img.id]);
+      const sortedImages = sortDocumentImagesForVision(pdfImages);
+      const allWithSrc = sortedImages.filter((img) => options.imageMapping![img.id]);
       const visionSlice = allWithSrc.slice(0, MAX_VISION_IMAGES);
       const textOnlySlice = allWithSrc.slice(MAX_VISION_IMAGES);
-      const noSrcImages = pdfImages.filter((img) => !options.imageMapping![img.id]);
+      const noSrcImages = sortedImages.filter((img) => !options.imageMapping![img.id]);
 
       const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
       const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
@@ -74,20 +86,11 @@ export async function generateSceneOutlinesFromRequirements(
       ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` — ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
       : '';
 
-  // Build media generation policy based on enabled flags
+  // Build media snippet conditions based on enabled flags.
   const imageEnabled = options?.imageGenerationEnabled ?? false;
   const videoEnabled = options?.videoGenerationEnabled ?? false;
-  let mediaGenerationPolicy = '';
-  if (!imageEnabled && !videoEnabled) {
-    mediaGenerationPolicy =
-      '**IMPORTANT: Do NOT include any mediaGenerations in the outlines. Both image and video generation are disabled.**';
-  } else if (!imageEnabled) {
-    mediaGenerationPolicy =
-      '**IMPORTANT: Do NOT include any image mediaGenerations (type: "image") in the outlines. Image generation is disabled. Video generation is allowed.**';
-  } else if (!videoEnabled) {
-    mediaGenerationPolicy =
-      '**IMPORTANT: Do NOT include any video mediaGenerations (type: "video") in the outlines. Video generation is disabled. Image generation is allowed.**';
-  }
+  const mediaEnabled = imageEnabled || videoEnabled;
+  const hasSourceImages = (pdfImages?.length ?? 0) > 0;
 
   // Use simplified prompt variables
   const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
@@ -96,7 +99,10 @@ export async function generateSceneOutlinesFromRequirements(
     pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
     availableImages: availableImagesText,
     userProfile: userProfileText,
-    mediaGenerationPolicy,
+    hasSourceImages,
+    imageEnabled,
+    videoEnabled,
+    mediaEnabled,
     researchContext: options?.researchContext || 'None',
     // Server-side generation populates this via options; client-side populates via formatTeacherPersonaForPrompt
     teacherContext: options?.teacherContext || '',
@@ -107,30 +113,27 @@ export async function generateSceneOutlinesFromRequirements(
   }
 
   try {
-    callbacks?.onProgress?.({
-      currentStage: 1,
-      overallProgress: 20,
-      stageProgress: 50,
-      statusMessage: '正在分析需求，生成场景大纲...',
-      scenesGenerated: 0,
-      totalScenes: 0,
-    });
-
     const response = await aiCall(prompts.system, prompts.user, visionImages);
     const parsed = parseJsonResponse<
-      { languageDirective: string; outlines: SceneOutline[] } | SceneOutline[]
+      { languageDirective: string; courseTitle?: string; outlines: SceneOutline[] } | SceneOutline[]
     >(response);
 
     let languageDirective: string;
+    let courseTitle: string | undefined;
     let rawOutlines: SceneOutline[];
 
     if (Array.isArray(parsed)) {
       // Fallback: LLM returned old flat array format
-      languageDirective = 'Teach in the language that matches the user requirement.';
+      languageDirective = DEFAULT_LANGUAGE_DIRECTIVE;
       rawOutlines = parsed;
     } else if (parsed && parsed.outlines) {
-      languageDirective =
-        parsed.languageDirective || 'Teach in the language that matches the user requirement.';
+      languageDirective = parsed.languageDirective || DEFAULT_LANGUAGE_DIRECTIVE;
+      // courseTitle is optional — only honor a non-empty string, and cap its
+      // length defensively (the prompt asks for ≤30 chars, but older/hallucinating
+      // models may return far more). The downstream Stage.name column is bounded too.
+      const rawTitle = parsed.courseTitle;
+      courseTitle =
+        typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle.trim().slice(0, 120) : undefined;
       rawOutlines = parsed.outlines;
     } else {
       return { success: false, error: 'Failed to parse scene outlines response' };
@@ -150,16 +153,7 @@ export async function generateSceneOutlinesFromRequirements(
     // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
     const result = uniquifyMediaElementIds(enriched);
 
-    callbacks?.onProgress?.({
-      currentStage: 1,
-      overallProgress: 50,
-      stageProgress: 100,
-      statusMessage: `已生成 ${result.length} 个场景大纲`,
-      scenesGenerated: 0,
-      totalScenes: result.length,
-    });
-
-    return { success: true, data: { languageDirective, outlines: result } };
+    return { success: true, data: { languageDirective, courseTitle, outlines: result } };
   } catch (error) {
     return { success: false, error: String(error) };
   }
@@ -170,12 +164,38 @@ export async function generateSceneOutlinesFromRequirements(
  * - interactive without interactiveConfig OR widgetType+widgetOutline → slide
  * - pbl without pblConfig or languageModel → slide
  */
+export function sanitizeProceduralSkillOutline(outline: SceneOutline): SceneOutline {
+  const widgetOutline = { ...(outline.widgetOutline ?? {}) };
+  delete widgetOutline.procedureType;
+  delete widgetOutline.task;
+  delete widgetOutline.tools;
+  delete widgetOutline.steps;
+  delete widgetOutline.successCriteria;
+  delete widgetOutline.errorConsequences;
+
+  return {
+    ...outline,
+    type: 'interactive',
+    widgetType: 'diagram',
+    description: outline.description
+      ? `${outline.description} Present this as a process or structure diagram.`
+      : 'Present this topic as a process or structure diagram.',
+    widgetOutline,
+  };
+}
+
 export function applyOutlineFallbacks(
   outline: SceneOutline,
   hasLanguageModel: boolean,
+  options: { allowProceduralSkill?: boolean } = {},
 ): SceneOutline {
   // Ultra Mode: interactive scenes with widgetType + widgetOutline are valid
   const hasWidgetConfig = outline.widgetType && outline.widgetOutline;
+
+  if (outline.widgetType === 'procedural-skill' && !options.allowProceduralSkill) {
+    log.warn(`Procedural-skill outline "${outline.title}" is not enabled, falling back to diagram`);
+    return sanitizeProceduralSkillOutline(outline);
+  }
 
   if (outline.type === 'interactive' && !outline.interactiveConfig && !hasWidgetConfig) {
     log.warn(

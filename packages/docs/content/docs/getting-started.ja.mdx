@@ -1,0 +1,69 @@
+---
+title: クイックスタート
+description: 5分でローカルに OpenMAIC を立ち上げます。
+---
+
+OpenMAIC は自分のマシンで動かせる Next.js アプリケーションです。少なくとも 1 つの LLM プロバイダーを設定する必要があります。クラウドのプロバイダーは通常 API key が必要ですが、ローカルの Ollama や Lemonade は API key 不要です。
+
+## 前提条件
+
+- **Node.js** 20.9.0 以上
+- **pnpm** 10.28.0（未インストールの場合は `npm install -g pnpm@10.28.0`）
+- 少なくとも 1 つの LLM プロバイダーを設定。クラウドのプロバイダーは通常 API key が必要、ローカルの Ollama や Lemonade は API key 不要
+
+## インストール
+
+リポジトリをクローンし、依存関係をインストールします。
+
+```bash
+git clone https://github.com/THU-MAIC/OpenMAIC.git
+cd OpenMAIC
+pnpm install
+```
+
+インストール中にプロジェクトで使う workspace パッケージがビルドされます。初回は少し時間がかかる場合があります。
+
+## 設定
+
+サンプルの環境ファイルをコピーし、少なくとも 1 つの LLM プロバイダーを入力します。
+
+```bash
+cp .env.example .env.local
+```
+
+`.env.local` を開き、利用可能な key を持つプロバイダーを設定します。例：
+
+```bash title=".env.local"
+OPENAI_API_KEY=sk-...
+# または
+ANTHROPIC_API_KEY=sk-ant-...
+# またはローカル Ollama（key 不要）
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+プロバイダー、画像／動画生成、TTS、ASR、ドキュメント解析、Web 検索、アクセス制御、feature flag の詳細設定は[設定説明](./configuration.mdx)を参照してください。
+
+## 実行
+
+開発サーバーを起動します。
+
+```bash
+pnpm dev
+```
+
+[http://localhost:3000](http://localhost:3000) を開くと OpenMAIC の授業生成ツールが表示されます。トピックを入力するか学習資料をアップロードし、「生成」をクリックすると、AI 教師が完全なマルチシーン授業を構築します。対応する資料形式は選択したパーサーに依存し、通常は PDF、Office 文書、Markdown／プレーンテキスト、画像、一部の音声・動画を含みます。
+
+## 本番ビルド
+
+```bash
+pnpm build
+pnpm start
+```
+
+または Vercel、Docker、自分のサーバーにデプロイ可能です。詳しくは[デプロイガイド](./deployment.mdx)を参照してください。
+
+## 次のステップ
+
+- [プロバイダー、TTS、ACCESS_CODE の設定 →](./configuration.mdx)
+- [Vercel または Docker へのデプロイ →](./deployment.mdx)
+- アーキテクチャの確認やコントリビュートは [GitHub](https://github.com/THU-MAIC/OpenMAIC#-contributing) をご覧ください

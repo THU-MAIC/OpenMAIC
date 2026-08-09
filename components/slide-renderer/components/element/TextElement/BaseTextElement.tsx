@@ -1,6 +1,6 @@
 'use client';
 
-import type { PPTTextElement } from '@/lib/types/slides';
+import type { PPTTextElement } from '@openmaic/dsl';
 import { useElementShadow } from '../hooks/useElementShadow';
 import { ElementOutline } from '../ElementOutline';
 
@@ -28,15 +28,17 @@ export function BaseTextElement({ elementInfo, target }: BaseTextElementProps) {
     >
       <div
         className="rotate-wrapper w-full h-full"
-        style={{ transform: `rotate(${elementInfo.rotate}deg)` }}
+        style={{
+          transform: `rotate(${elementInfo.rotate}deg)`,
+          backgroundColor: elementInfo.fill,
+          opacity: elementInfo.opacity,
+        }}
       >
         <div
           className="element-content relative p-[10px] leading-[1.5] break-words"
           style={{
             width: elementInfo.vertical ? 'auto' : `${elementInfo.width}px`,
             height: elementInfo.vertical ? `${elementInfo.height}px` : 'auto',
-            backgroundColor: elementInfo.fill,
-            opacity: elementInfo.opacity,
             textShadow: shadowStyle,
             lineHeight: elementInfo.lineHeight,
             letterSpacing: `${elementInfo.wordSpace || 0}px`,

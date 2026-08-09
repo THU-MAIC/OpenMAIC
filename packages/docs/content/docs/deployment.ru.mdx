@@ -1,0 +1,116 @@
+---
+title: Развертывание
+description: Разверните OpenMAIC на Vercel, Docker или собственном хосте.
+---
+
+OpenMAIC — это стандартное приложение Next.js, которое можно запускать везде, где поддерживается Next.js.
+
+## Vercel (один клик)
+
+Самый быстрый способ. Нажмите кнопку Deploy в [README репозитория](https://github.com/THU-MAIC/OpenMAIC), сделайте fork репозитория и введите минимум один API ключ LLM по инструкции.
+
+Vercel автоматически пересобирает и разворачивает Next.js приложение при каждом коммите. Для деплоя необходимо в настройках проекта указать хотя бы одного LLM провайдера.
+
+По умолчанию Vercel использует браузерное хранение данных. Если нужна серверная персистентность, используйте внешний PostgreSQL и серверный способ развертывания; профиль Compose `server-persistence` не подходит для Vercel.
+
+## Docker
+
+В репозитории есть production-ready `Dockerfile`. В образе используется Node.js 22. Соберите и запустите:
+
+```bash
+docker build -t openmaic .
+
+docker run --env-file .env.local -p 3000:3000 openmaic
+```
+
+Рекомендуется использовать Docker Compose из репозитория:
+
+```bash
+cp .env.example .env.local
+# Отредактируйте .env.local, указав минимум одного LLM провайдера, затем:
+docker compose up --build
+```
+
+По умолчанию Compose запускает OpenMAIC и монтирует volume `openmaic-data`. Другие провайдеры и функции настраиваются по необходимости, подробности в [Конфигурации](./configuration.mdx).
+
+Флаги `NEXT_PUBLIC_*` внедряются во время сборки Docker, их нельзя просто указать в `.env.local` при запуске. Например, чтобы включить экспорт видео и экспериментальный импорт PPTX:
+
+```bash
+NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true \
+NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true \
+docker compose --profile video-export up --build
+```
+
+Другие клиентские флаги можно передавать аналогично. При использовании `docker build` применяйте соответствующие `--build-arg`.
+
+Для конфигурации серверных провайдеров смонтируйте файл в контейнер по фиксированному пути:
+
+```yaml
+services:
+  openmaic:
+    volumes:
+      - ./server-providers.yml:/app/server-providers.yml:ro
+```
+
+В Docker контейнере `localhost` указывает на сам контейнер. Если Ollama, Lemonade, VoxCPM или ComfyUI запущены на хосте, используйте `host.docker.internal`, например `http://host.docker.internal:11434/v1` или `http://host.docker.internal:8188`. В Linux обычно также нужно добавить `extra_hosts: ["host.docker.internal:host-gateway"]` для сервиса `openmaic`. ComfyUI пока не является серверным провайдером, поэтому в продакшене нужно задать `ALLOW_LOCAL_NETWORKS=true`, иначе SSRF-защита отклонит запросы к этому адресу.
+
+## Самостоятельный хостинг на виртуальной машине
+
+Требуется Node.js версии не ниже `20.9.0` и pnpm `10.28.0`. Соберите и запустите через `pnpm`:
+
+```bash
+pnpm install
+pnpm build
+pnpm start      # по умолчанию слушает порт 3000
+```
+
+Рекомендуется поставить nginx или Caddy для TLS termination перед приложением. По умолчанию состояние курсов хранится в IndexedDB браузера; при включении серверной персистентности данные и документы сохраняются на сервере и в PostgreSQL. Для многократного запуска экземпляров выберите подходящую схему персистентности.
+
+## Серверная персистентность (PostgreSQL)
+
+Профиль `server-persistence` запускает OpenMAIC и PostgreSQL в двух контейнерах. HTTP API персистентности встроено в OpenMAIC, отдельный сервис не требуется.
+
+Добавьте в `.env.local` параметры подключения к базе и токен для разработки:
+
+```bash
+DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
+PERSISTENCE_DEV_TOKEN=openmaic-local-dev
+```
+
+Запустите профиль:
+
+```bash
+NEXT_PUBLIC_PERSISTENCE=1 \
+NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev \
+docker compose --profile server-persistence up --build
+```
+
+`NEXT_PUBLIC_PERSISTENCE` и `NEXT_PUBLIC_PERSISTENCE_TOKEN` — переменные сборки, должны совпадать с серверной конфигурацией. Схема с `PERSISTENCE_DEV_TOKEN` подходит только для локальной или доверенной сети, не обеспечивает полноценной изоляции пользователей и не предназначена для публичного продакшена.
+
+Данные PostgreSQL хранятся в volume `openmaic-postgres`. Пароль `PERSISTENCE_POSTGRES_PASSWORD` задаётся только при первой инициализации базы, последующие изменения переменной не меняют пароль существующего пользователя.
+
+Если не задавать `NEXT_PUBLIC_PERSISTENCE`, сохраняется стандартное браузерное хранение.
+
+## Опционально: экспорт MP4 видео
+
+Функция «Экспорт видео» сначала создаёт в браузере автономный проект Hyperframes, затем отдельный `render-service` с Chromium и FFmpeg рендерит MP4. Этот сервис необязателен и не влияет на обычное создание курсов.
+
+Включите профиль `video-export`:
+
+```bash
+docker compose --profile video-export up --build
+```
+
+Compose передаёт OpenMAIC URL рендер-сервиса через `RENDER_SERVICE_URL`. Если профиль не включён или сервис недоступен, экспорт возвращается к скачиванию ZIP проекта для локального рендеринга через CLI. Рендер-сервис работает в изолированной сети и требует capability `NET_ADMIN` при запуске; подробности и отдельные варианты развертывания — в [`render-service/README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/main/render-service/README.md).
+
+## Переменные окружения
+
+Полный список переменных и конфигураций провайдеров смотрите в [Конфигурации](./configuration.mdx). Необходимо указать минимум один ключ LLM провайдера.
+
+## Контроль доступа
+
+Для общих демо можно задать `ACCESS_CODE`, чтобы закрыть сайт паролем. Подробнее в [Конфигурации → ACCESS_CODE](./configuration.mdx#access_code--пароль-для-всего-сайта).
+
+## Опциональные самохостинг сервисы
+
+- [VoxCPM2: самохостинг TTS и клонирование голоса →](./voxcpm.mdx)

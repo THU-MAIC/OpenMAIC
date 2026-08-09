@@ -1,0 +1,22 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+/* OpenMAIC brand — match Live Demo --primary (Ant purple) */
+:root {
+  --color-fd-primary: #722ed1;
+  --color-fd-ring: #722ed1;
+}
+.dark {
+  --color-fd-primary: #8b47ea;
+  --color-fd-ring: #8b47ea;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}

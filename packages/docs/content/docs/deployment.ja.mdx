@@ -1,0 +1,116 @@
+---
+title: デプロイ
+description: OpenMAIC を Vercel、Docker、または自分のホストにデプロイします。
+---
+
+OpenMAIC は標準的な Next.js アプリケーションであり、Next.js が動作する環境であればどこでも動作します。
+
+## Vercel（一括デプロイ）
+
+最速の方法です。[リポジトリの README](https://github.com/THU-MAIC/OpenMAIC) にある Deploy ボタンをクリックし、リポジトリをフォークして、案内に従い少なくとも 1 つの LLM API キーを入力してください。
+
+Vercel は各コミットごとに Next.js アプリを再ビルド・再デプロイします。デプロイ時にはプロジェクト設定で少なくとも 1 つの LLM プロバイダーを設定する必要があります。
+
+Vercel のデプロイはデフォルトでブラウザ側の永続化を使用します。サーバー側の永続化が必要な場合は、外部の PostgreSQL とサーバー側のデプロイ方法を利用してください。`server-persistence` Compose プロファイルは Vercel では直接利用できません。
+
+## Docker
+
+リポジトリには本番向けの `Dockerfile` が含まれています。イメージは Node.js 22 を使用しています。ビルドして実行します：
+
+```bash
+docker build -t openmaic .
+
+docker run --env-file .env.local -p 3000:3000 openmaic
+```
+
+リポジトリにある Docker Compose 設定の利用を推奨します：
+
+```bash
+cp .env.example .env.local
+# .env.local を編集し、少なくとも 1 つの LLM プロバイダーの設定を入力したら：
+docker compose up --build
+```
+
+デフォルトの Compose デプロイは OpenMAIC アプリを起動し、`openmaic-data` ボリュームをマウントします。その他のプロバイダーや機能は必要に応じて設定してください。詳細は[設定説明](./configuration.mdx)を参照してください。
+
+`NEXT_PUBLIC_*` の機能フラグは Docker ビルド時に注入されるため、実行時の `.env.local` に書くだけでは反映されません。例えば動画エクスポートと実験的な PPTX インポートを有効にする場合：
+
+```bash
+NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true \
+NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true \
+docker compose --profile video-export up --build
+```
+
+他のクライアント機能フラグも同様に渡せます。`docker build` を使う場合は対応する `--build-arg` を利用してください。
+
+サーバー側プロバイダー設定を使う場合は、設定ファイルをコンテナ内の固定パスにマウントします：
+
+```yaml
+services:
+  openmaic:
+    volumes:
+      - ./server-providers.yml:/app/server-providers.yml:ro
+```
+
+Docker コンテナ内の `localhost` はコンテナ自身を指します。ホスト上で Ollama、Lemonade、VoxCPM、ComfyUI を動かしている場合は `host.docker.internal` を使ってください。例：`http://host.docker.internal:11434/v1` や `http://host.docker.internal:8188`。Linux の Docker では通常、`openmaic` サービスに対して `extra_hosts: ["host.docker.internal:host-gateway"]` の追加が必要です。ComfyUI は現状サーバー管理型プロバイダーではないため、本番環境では `ALLOW_LOCAL_NETWORKS=true` を設定しないと SSRF 保護によりアクセスが拒否されます。
+
+## 自前の仮想マシンでのセルフホスト
+
+ホストには Node.js `20.9.0` 以上と pnpm `10.28.0` が必要です。`pnpm` でビルドして起動します：
+
+```bash
+pnpm install
+pnpm build
+pnpm start      # デフォルトでポート 3000 をリッスンします
+```
+
+TLS 終端は nginx や Caddy などを前段に置いてください。デフォルトでは授業の状態はブラウザの IndexedDB に保存されます。サーバー側永続化を有効にすると、実行時データや授業ドキュメントはサーバー側ストレージと PostgreSQL に保存されます。複数インスタンスでの運用を検討する場合は、適切な永続化方式を選択してください。
+
+## サーバー側永続化（PostgreSQL）
+
+リポジトリの `server-persistence` プロファイルは OpenMAIC と PostgreSQL の 2 つのコンテナを起動します。永続化用の HTTP API は OpenMAIC に組み込まれており、追加の永続化サービスは不要です。
+
+まず `.env.local` にデータベース接続情報と開発用トークンを追加します：
+
+```bash
+DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
+PERSISTENCE_DEV_TOKEN=openmaic-local-dev
+```
+
+次にプロファイルを起動します：
+
+```bash
+NEXT_PUBLIC_PERSISTENCE=1 \
+NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev \
+docker compose --profile server-persistence up --build
+```
+
+`NEXT_PUBLIC_PERSISTENCE` と `NEXT_PUBLIC_PERSISTENCE_TOKEN` はビルド時の変数であり、実行時のサーバー設定と一致させる必要があります。`PERSISTENCE_DEV_TOKEN` 方式はローカルまたは信頼できるネットワーク向けであり、真のユーザー分離は提供しません。公開本番環境の認証方式としては推奨されません。
+
+PostgreSQL のデータは `openmaic-postgres` ボリュームに保存されます。`PERSISTENCE_POSTGRES_PASSWORD` はデータベースディレクトリ初回初期化時にのみパスワードを設定し、その後の環境変数変更では既存ユーザーのパスワードは自動的に変更されません。
+
+`NEXT_PUBLIC_PERSISTENCE` を設定しなければ、従来通りブラウザ側の永続化が維持されます。
+
+## オプション：MP4 動画エクスポート
+
+「動画エクスポート」機能は、まずブラウザで自己完結型の Hyperframes プロジェクトを生成し、独立した `render-service` が Chromium と FFmpeg を使って MP4 にレンダリングします。このサービスは任意であり、通常の授業生成には影響しません。
+
+`video-export` プロファイルを有効にします：
+
+```bash
+docker compose --profile video-export up --build
+```
+
+Compose は `RENDER_SERVICE_URL` を通じて OpenMAIC とレンダリングサービスを接続します。このプロファイルを有効にしないか、レンダリングサービスが利用できない場合は、エクスポートはプロジェクト ZIP のダウンロードにフォールバックし、ローカル CLI でのレンダリングを想定します。レンダリングサービスは分離されたネットワークで動作し、起動時に `NET_ADMIN` 権限が必要です。詳細や独立デプロイ方法はリポジトリの [`render-service/README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/main/render-service/README.md) を参照してください。
+
+## 環境変数
+
+完全な環境変数とプロバイダー設定は[設定説明](./configuration.mdx)を参照してください。最低でも 1 つの LLM プロバイダーのキーを設定する必要があります。
+
+## アクセス制御
+
+共有デモでは `ACCESS_CODE` を設定してサイト全体にパスワードをかけることができます。詳細は[設定説明 → ACCESS_CODE](./configuration.mdx#access_code--サイト全体のパスワード)を参照してください。
+
+## オプションのセルフホストサービス
+
+- [VoxCPM2：セルフホスト TTS と音声クローン →](./voxcpm.mdx)

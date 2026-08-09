@@ -11,12 +11,14 @@ import { CanvasToolbar } from '@/components/canvas/canvas-toolbar';
 import type { CanvasToolbarProps } from '@/components/canvas/canvas-toolbar';
 import type { Scene, StageMode } from '@/lib/types/stage';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { ClassroomCompletePageConnected } from '@/components/scene-renderers/classroom-complete';
 
 interface CanvasAreaProps extends CanvasToolbarProps {
   readonly currentScene: Scene | null;
   readonly mode: StageMode;
   readonly hideToolbar?: boolean;
   readonly isPendingScene?: boolean;
+  readonly isCourseComplete?: boolean;
   readonly isGenerationFailed?: boolean;
   readonly onRetryGeneration?: () => void;
 }
@@ -28,6 +30,8 @@ export function CanvasArea({
   mode,
   engineState,
   isLiveSession,
+  isSoftClosing,
+  softCloseDeadline,
   whiteboardOpen,
   sidebarCollapsed,
   chatCollapsed,
@@ -41,8 +45,10 @@ export function CanvasArea({
   onTogglePresentation,
   showStopDiscussion,
   onStopDiscussion,
+  onContinueDiscussion,
   hideToolbar,
   isPendingScene,
+  isCourseComplete,
   isGenerationFailed,
   onRetryGeneration,
 }: CanvasAreaProps) {
@@ -116,9 +122,21 @@ export function CanvasArea({
             </div>
           )}
 
-          {/* Pending Scene Loading Overlay */}
+          {/* Pending Scene Loading / Completion Overlay */}
           <AnimatePresence>
-            {isPendingScene && !currentScene && (
+            {isPendingScene && !currentScene && isCourseComplete && (
+              <motion.div
+                key="course-complete"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
+                className="absolute inset-0"
+              >
+                <ClassroomCompletePageConnected />
+              </motion.div>
+            )}
+            {isPendingScene && !currentScene && !isCourseComplete && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -239,6 +257,8 @@ export function CanvasArea({
           scenesCount={scenesCount}
           engineState={engineState}
           isLiveSession={isLiveSession}
+          isSoftClosing={isSoftClosing}
+          softCloseDeadline={softCloseDeadline}
           whiteboardOpen={whiteboardOpen}
           sidebarCollapsed={sidebarCollapsed}
           chatCollapsed={chatCollapsed}
@@ -252,6 +272,7 @@ export function CanvasArea({
           onTogglePresentation={onTogglePresentation}
           showStopDiscussion={showStopDiscussion}
           onStopDiscussion={onStopDiscussion}
+          onContinueDiscussion={onContinueDiscussion}
         />
       )}
     </div>

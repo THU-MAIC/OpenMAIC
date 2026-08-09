@@ -1,0 +1,422 @@
+[
+  {
+    "case_id": "math_quadratic_axis_drift_no_frustration",
+    "description": "First-turn drift, no frustration yet. User asks for the axis-of-symmetry x-coordinate formula; teacher + student + assistant drift to geometric meaning, opening direction, zero-midpoint. None gave the formula x = -b/(2a). Director must route to teacher to give the actual answer.",
+    "agents": [
+      {
+        "id": "default-1",
+        "name": "李老师",
+        "role": "teacher",
+        "priority": 10
+      },
+      {
+        "id": "default-2",
+        "name": "助教小韩",
+        "role": "assistant",
+        "priority": 7
+      },
+      {
+        "id": "default-3",
+        "name": "小明",
+        "role": "student",
+        "priority": 4
+      }
+    ],
+    "teacherAgentId": "default-1",
+    "messages": [
+      {
+        "role": "user",
+        "content": "[你]: y=ax²+bx+c 这个二次函数的对称轴 x 坐标公式是什么?"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"对称轴是把抛物线分成左右两半完全镜像的那条竖直线。任何一条抛物线都有且只有这样一条对称轴。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"对了老师,a 的正负还决定开口方向呢——a>0 朝上,a<0 朝下。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"补充一下:如果方程有两个实根 x₁、x₂,那对称轴就刚好穿过两根的中点。\"}]"
+      }
+    ],
+    "agentResponses": [
+      {
+        "agentId": "default-1",
+        "agentName": "李老师",
+        "contentPreview": "对称轴是把抛物线分成左右两半完全镜像的那条竖直线。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "default-3",
+        "agentName": "小明",
+        "contentPreview": "对了老师,a 的正负还决定开口方向呢——a>0 朝上,a<0 朝下。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "default-2",
+        "agentName": "助教小韩",
+        "contentPreview": "如果方程有两个实根 x₁、x₂,那对称轴就刚好穿过两根的中点。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      }
+    ],
+    "turnCount": 3,
+    "whiteboardOpen": false
+  },
+  {
+    "case_id": "bio_dark_reaction_drift_no_frustration",
+    "description": "First-turn drift, no frustration yet. User asks whether dark reactions need enzymes; agents drift to location, light-reaction products, and general definition without ever mentioning enzymes (or RuBisCO). Director must route to teacher.",
+    "agents": [
+      {
+        "id": "default-1",
+        "name": "陈老师",
+        "role": "teacher",
+        "priority": 10
+      },
+      {
+        "id": "default-2",
+        "name": "小光助教",
+        "role": "assistant",
+        "priority": 7
+      },
+      {
+        "id": "default-3",
+        "name": "好奇宝宝",
+        "role": "student",
+        "priority": 5
+      }
+    ],
+    "teacherAgentId": "default-1",
+    "messages": [
+      {
+        "role": "user",
+        "content": "[你]: 光合作用的暗反应需要酶吗?"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"暗反应发生在叶绿体的基质里,跟光反应分隔开。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"对,光反应给暗反应供能——光反应在类囊体上产生 ATP 和 NADPH。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"那暗反应整体就是把 CO₂ 通过卡尔文循环一步步固定成糖。\"}]"
+      }
+    ],
+    "agentResponses": [
+      {
+        "agentId": "default-1",
+        "agentName": "陈老师",
+        "contentPreview": "暗反应发生在叶绿体的基质里,跟光反应分隔开。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "default-2",
+        "agentName": "小光助教",
+        "contentPreview": "光反应给暗反应供能——光反应产生 ATP 和 NADPH。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "default-3",
+        "agentName": "好奇宝宝",
+        "contentPreview": "暗反应整体就是把 CO₂ 通过卡尔文循环固定成糖。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      }
+    ],
+    "turnCount": 3,
+    "whiteboardOpen": false
+  },
+  {
+    "case_id": "english_team_isare_drift_no_frustration",
+    "description": "First-turn drift, no frustration yet. User asks 'team is or team are'; teacher and assistant give the abstract collective-noun framework and example list but never the literal answer. Director must route to teacher.",
+    "agents": [
+      {
+        "id": "default-1",
+        "name": "Tina 老师",
+        "role": "teacher",
+        "priority": 10
+      },
+      {
+        "id": "default-2",
+        "name": "Mike 助教",
+        "role": "assistant",
+        "priority": 7
+      },
+      {
+        "id": "default-3",
+        "name": "小米同学",
+        "role": "student",
+        "priority": 4
+      }
+    ],
+    "teacherAgentId": "default-1",
+    "messages": [
+      {
+        "role": "user",
+        "content": "[你]: team is 还是 team are 哪个对?"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"主谓一致里最有意思的就是集合名词,它指一群人或一组事物,在语义上有'整体'和'个体'两种视角。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"补充几个例子:family、government、team、staff,这些词背后都是一群人组成的整体。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"老师我记得 family 在不同语境下也能用单复数,跟说话人想强调整体还是成员有关。\"}]"
+      }
+    ],
+    "agentResponses": [
+      {
+        "agentId": "default-1",
+        "agentName": "Tina 老师",
+        "contentPreview": "主谓一致里最有意思的就是集合名词。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "default-2",
+        "agentName": "Mike 助教",
+        "contentPreview": "补充几个例子:family、government、team、staff。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "default-3",
+        "agentName": "小米同学",
+        "contentPreview": "老师我记得 family 在不同语境下也能用单复数。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      }
+    ],
+    "turnCount": 3,
+    "whiteboardOpen": false
+  },
+  {
+    "case_id": "physics_inertial_mass_escalated_frustration",
+    "description": "User asked whether m in F=ma is inertial or gravitational mass; agents drifted; user complained twice; agents still drifted onto a numeric example. Two unresolved frustrations: the director must re-route to the teacher to answer (a USER cue would be dead air; a peer agent would keep drifting).",
+    "agents": [
+      {
+        "id": "default-1",
+        "name": "王教授",
+        "role": "teacher",
+        "priority": 10
+      },
+      {
+        "id": "default-3",
+        "name": "小华",
+        "role": "student",
+        "priority": 4
+      }
+    ],
+    "teacherAgentId": "default-1",
+    "messages": [
+      {
+        "role": "user",
+        "content": "[你]: F=ma 里的 m 到底是惯性质量还是引力质量?"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"F=ma 是牛顿第二定律的核心表达式,描述了力、质量和加速度之间的定量关系。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"老师,反过来推也对吧?a=F/m,相同的力作用下质量越大加速度越小。\"}]"
+      },
+      {
+        "role": "user",
+        "content": "[你]: 你答非所问"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"好的换个角度。F=ma 里的 m 表示物体对加速度变化的'抵抗能力',这种性质叫做物体的固有属性。\"}]"
+      },
+      {
+        "role": "user",
+        "content": "[你]: 你还是没回答我。"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"那我们来看一个具体的例子吧——一辆汽车,质量 1000 kg,如果对它施加 5000 N 的力,它的加速度会是多少呢?\"}]"
+      }
+    ],
+    "agentResponses": [
+      {
+        "agentId": "default-1",
+        "agentName": "王教授",
+        "contentPreview": "F=ma 是牛顿第二定律的核心表达式。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "default-3",
+        "agentName": "小华",
+        "contentPreview": "反过来推也对吧?a=F/m。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "default-1",
+        "agentName": "王教授",
+        "contentPreview": "F=ma 里的 m 表示物体对加速度变化的'抵抗能力'。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "default-1",
+        "agentName": "王教授",
+        "contentPreview": "那我们来看一个具体的例子吧——一辆汽车质量 1000 kg。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      }
+    ],
+    "turnCount": 4,
+    "whiteboardOpen": false
+  },
+  {
+    "case_id": "calculus_product_rule_drift_no_frustration",
+    "description": "First-turn drift, English. User asks for d/dx of x²·sin(x); teacher gives the product rule abstractly; student adds chain-rule red herring; neither computes the derivative. Director must route to teacher to actually compute 2x·sin(x) + x²·cos(x).",
+    "agents": [
+      {
+        "id": "default-1",
+        "name": "Dr. Smith",
+        "role": "teacher",
+        "priority": 10
+      },
+      {
+        "id": "default-3",
+        "name": "Alex",
+        "role": "student",
+        "priority": 4
+      }
+    ],
+    "teacherAgentId": "default-1",
+    "messages": [
+      {
+        "role": "user",
+        "content": "[You]: What's d/dx of x²·sin(x)?"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"This is a great chance to review the product rule: for two differentiable functions u(x) and v(x), the derivative of their product is d/dx(uv) = u'v + uv'.\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"And don't forget — if the inside of either function is itself a function, you'd layer in the chain rule.\"}]"
+      }
+    ],
+    "agentResponses": [
+      {
+        "agentId": "default-1",
+        "agentName": "Dr. Smith",
+        "contentPreview": "Product rule: d/dx(uv) = u'v + uv'.",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "default-3",
+        "agentName": "Alex",
+        "contentPreview": "And don't forget the chain rule when functions nest.",
+        "actionCount": 0,
+        "whiteboardActions": []
+      }
+    ],
+    "turnCount": 2,
+    "whiteboardOpen": false
+  },
+  {
+    "case_id": "ambiguous_look_at_this_no_context",
+    "description": "User opens with a vague request '帮我看一下这个' that has no clear referent (issue 3). The director must route to the teacher, who will ask a clarifying question. Routing to USER (cue) is wrong — it produces dead air (no agent speaks), leaving the user with nothing to react to.",
+    "agents": [
+      {
+        "id": "default-1",
+        "name": "李老师",
+        "role": "teacher",
+        "priority": 10
+      },
+      {
+        "id": "default-2",
+        "name": "助教小韩",
+        "role": "assistant",
+        "priority": 7
+      },
+      {
+        "id": "default-3",
+        "name": "小明",
+        "role": "student",
+        "priority": 4
+      }
+    ],
+    "teacherAgentId": "default-1",
+    "messages": [
+      {
+        "role": "user",
+        "content": "[你]: 帮我看一下这个"
+      }
+    ],
+    "agentResponses": [],
+    "turnCount": 0,
+    "whiteboardOpen": false
+  },
+  {
+    "case_id": "ambiguous_vague_followup_after_qa",
+    "description": "After a real Q&A on gradient descent, the user drops a vague '再帮我看看这个吧' with no clear referent. Director must route to the teacher to ask what '这个' refers to — not cue USER (dead air), not pick a peer agent to guess, not END.",
+    "agents": [
+      {
+        "id": "default-1",
+        "name": "周老师",
+        "role": "teacher",
+        "priority": 10
+      },
+      {
+        "id": "default-2",
+        "name": "小研助教",
+        "role": "assistant",
+        "priority": 7
+      },
+      {
+        "id": "default-3",
+        "name": "阿明",
+        "role": "student",
+        "priority": 4
+      }
+    ],
+    "teacherAgentId": "default-1",
+    "messages": [
+      {
+        "role": "user",
+        "content": "[你]: 什么是梯度下降?"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"梯度下降是一种优化算法:沿着损失函数梯度的反方向一步步更新参数,直到找到(局部)最小值。学习率决定每一步的大小。\"}]"
+      },
+      {
+        "role": "user",
+        "content": "[你]: 嗯,再帮我看看这个吧"
+      }
+    ],
+    "agentResponses": [
+      {
+        "agentId": "default-1",
+        "agentName": "周老师",
+        "contentPreview": "梯度下降是一种优化算法:沿着损失函数梯度的反方向一步步更新参数。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      }
+    ],
+    "turnCount": 1,
+    "whiteboardOpen": false
+  }
+]

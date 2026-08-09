@@ -2,25 +2,28 @@
  * Web Search API
  *
  * POST /api/web-search
- * Supports multiple search providers (Tavily, Claude).
+ * Simple JSON request/response using the configured web search provider.
  */
 
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
-import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
-import { searchWithClaude } from '@/lib/web-search/claude';
-import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
-import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
-import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
+import {
+  isServerConfiguredProvider,
+  resolveServerWebSearchProviderId,
+  resolveWebSearchApiKey,
+} from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
-import { API_ERROR_CODES, apiError, apiSuccess } from '@/lib/server/api-response';
+import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
   buildSearchQuery,
   SEARCH_QUERY_REWRITE_EXCERPT_LENGTH,
 } from '@/lib/server/search-query-builder';
-import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
-import type { WebSearchProviderId } from '@/lib/web-search/types';
+import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
+import { resolveWebSearchRouteBaseUrl } from '@/lib/server/web-search-config';
 
 const log = createLogger('WebSearch');
 
@@ -31,48 +34,72 @@ export async function POST(req: NextRequest) {
     const {
       query: requestQuery,
       pdfText,
-      apiKey: clientApiKey,
       providerId: requestProviderId,
-      providerConfig,
+      apiKey: bodyApiKey,
+      baseUrl: bodyBaseUrl,
+      baiduSubSources,
     } = body as {
       query?: string;
       pdfText?: string;
-      apiKey?: string;
       providerId?: WebSearchProviderId;
-      providerConfig?: {
-        modelId?: string;
-        baseUrl?: string;
-        tools?: Array<{ type: string; name: string }>;
-      };
+      apiKey?: string;
+      baseUrl?: string;
+      baiduSubSources?: BaiduSubSources;
     };
     query = requestQuery;
-
-    // Provider must be explicitly specified
-    const providerId: WebSearchProviderId | null = requestProviderId ?? null;
 
     if (!query || !query.trim()) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'query is required');
     }
 
-    if (!providerId) {
-      return apiError(
-        'MISSING_PROVIDER',
-        400,
-        'Web search provider is not selected. Please select a provider in the toolbar.',
+    const serverProviderId = resolveServerWebSearchProviderId() as WebSearchProviderId | undefined;
+    let providerId: WebSearchProviderId =
+      requestProviderId && WEB_SEARCH_PROVIDERS[requestProviderId]
+        ? requestProviderId
+        : (serverProviderId ?? 'tavily');
+
+    // Prefer the operator's server-configured backend over stale client defaults
+    // (e.g. Tavily without a key, or Brave HTML scrape with empty results).
+    if (
+      serverProviderId &&
+      isServerConfiguredProvider('webSearch', serverProviderId) &&
+      providerId !== serverProviderId &&
+      !isServerConfiguredProvider('webSearch', providerId)
+    ) {
+      log.info(
+        `Using server-configured web search provider "${serverProviderId}" instead of "${providerId}"`,
       );
+      providerId = serverProviderId;
     }
 
-    if (!(providerId in WEB_SEARCH_PROVIDERS)) {
-      return apiError('INVALID_REQUEST', 400, `Unknown web search provider: ${providerId}`);
-    }
-
+    const provider = WEB_SEARCH_PROVIDERS[providerId];
+    // Managed providers are admin-owned: ignore (don't reject) any client-sent
+    // key/baseUrl. The server config is authoritative, so a stale client base
+    // URL is dropped rather than failing the request.
+    const managed = isServerConfiguredProvider('webSearch', providerId);
+    const clientApiKey = managed ? undefined : bodyApiKey;
+    // SearXNG base URLs are operator-managed only (SEARXNG_BASE_URL); never trust client input.
+    const clientBaseUrl = managed || providerId === 'searxng' ? undefined : bodyBaseUrl;
     const apiKey = resolveWebSearchApiKey(providerId, clientApiKey);
-    if (!apiKey) {
-      const envVar = providerId === 'claude' ? 'ANTHROPIC_API_KEY' : 'TAVILY_API_KEY';
+    if (provider.requiresApiKey && !apiKey) {
       return apiError(
         'MISSING_API_KEY',
         400,
-        `${providerId} API key is not configured. Set it in Settings → Web Search or set ${envVar} env var.`,
+        `${provider.name} API key is not configured. Set it in Settings -> Web Search or configure ${getWebSearchEnvKey(providerId)} on the server.`,
+      );
+    }
+    let baseUrl: string | undefined;
+    try {
+      baseUrl = resolveWebSearchRouteBaseUrl(providerId, clientBaseUrl);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid web search base URL';
+      return apiError('INVALID_REQUEST', 400, message);
+    }
+    if (provider.requiresBaseUrl && !baseUrl) {
+      return apiError(
+        'MISSING_REQUIRED_FIELD',
+        400,
+        getMissingBaseUrlMessage(providerId, provider.name),
       );
     }
 
@@ -81,7 +108,11 @@ export async function POST(req: NextRequest) {
 
     let aiCall: AICallFn | undefined;
     try {
-      const { model: languageModel } = await resolveModelFromHeaders(req);
+      const { model: languageModel, thinkingConfig } = await resolveModelFromRequest(
+        req,
+        body,
+        'web-search-query-rewrite',
+      );
       aiCall = async (systemPrompt, userPrompt) => {
         const result = await callLLM(
           {
@@ -93,6 +124,8 @@ export async function POST(req: NextRequest) {
             maxOutputTokens: 256,
           },
           'web-search-query-rewrite',
+          undefined,
+          thinkingConfig,
         );
         return result.text;
       };
@@ -103,45 +136,19 @@ export async function POST(req: NextRequest) {
     const searchQuery = await buildSearchQuery(query, boundedPdfText, aiCall);
 
     log.info('Running web search API request', {
-      provider: providerId,
       hasPdfContext: searchQuery.hasPdfContext,
       rawRequirementLength: searchQuery.rawRequirementLength,
       rewriteAttempted: searchQuery.rewriteAttempted,
       finalQueryLength: searchQuery.finalQueryLength,
     });
 
-    // Validate client-supplied base URL against SSRF in all environments
-    if (providerConfig?.baseUrl) {
-      const ssrfError = await validateUrlForSSRF(providerConfig.baseUrl);
-      if (ssrfError) {
-        return apiError(API_ERROR_CODES.INVALID_URL, 400, ssrfError);
-      }
-    }
-
-    const baseUrl =
-      providerConfig?.baseUrl || WEB_SEARCH_PROVIDERS[providerId].defaultBaseUrl || '';
-
-    let result;
-    switch (providerId) {
-      case 'claude': {
-        result = await searchWithClaude({
-          query: searchQuery.query,
-          apiKey,
-          baseUrl,
-          modelId: providerConfig?.modelId,
-          tools: providerConfig?.tools,
-        });
-        break;
-      }
-      case 'tavily': {
-        result = await searchWithTavily({
-          query: searchQuery.query,
-          apiKey,
-          baseUrl,
-        });
-        break;
-      }
-    }
+    const result = await searchWeb({
+      providerId,
+      query: searchQuery.query,
+      apiKey,
+      baseUrl,
+      ...(providerId === 'baidu' && baiduSubSources ? { baiduSubSources } : {}),
+    });
     const context = formatSearchResultsAsContext(result);
 
     return apiSuccess({
@@ -155,5 +162,30 @@ export async function POST(req: NextRequest) {
     log.error(`Web search failed [query="${query?.substring(0, 60) ?? 'unknown'}"]:`, err);
     const message = err instanceof Error ? err.message : 'Web search failed';
     return apiError('INTERNAL_ERROR', 500, message);
+  }
+}
+
+function getMissingBaseUrlMessage(providerId: WebSearchProviderId, providerName: string): string {
+  if (providerId === 'searxng') {
+    return `${providerName} base URL is not configured. Set SEARXNG_BASE_URL on the server.`;
+  }
+  return `${providerName} base URL is not configured. Set ${getWebSearchEnvKey(providerId)} on the server or configure the base URL in Settings -> Web Search.`;
+}
+
+function getWebSearchEnvKey(providerId: WebSearchProviderId): string {
+  switch (providerId) {
+    case 'baidu':
+      return 'BAIDU_API_KEY';
+    case 'bocha':
+      return 'BOCHA_API_KEY';
+    case 'brave':
+      return 'BRAVE_API_KEY';
+    case 'minimax':
+      return 'WEB_SEARCH_MINIMAX_API_KEY';
+    case 'searxng':
+      return 'SEARXNG_BASE_URL';
+    case 'tavily':
+    default:
+      return 'TAVILY_API_KEY';
   }
 }

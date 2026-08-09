@@ -1,0 +1,298 @@
+---
+title: شرح الإعدادات
+description: موفرو LLM، توليد الوسائط، تحليل المستندات، TTS، ASR، التحكم بالوصول و feature flags.
+---
+
+يقرأ OpenMAIC متغيرات البيئة عند بدء تشغيل الخادم. جميع الإعدادات اختيارية — فعّل ما تحتاجه فقط. مثال متغيرات البيئة موجود في المستودع ضمن [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example). لمعرفات النماذج المدمجة، راجع [النماذج المدعومة](./supported-models.mdx).
+
+بجانب متغيرات البيئة، يمكنك أيضًا استخدام ملف `server-providers.yml` في جذر المشروع لتكوين موفري الخادم المسجلين في الكود. متغيرات البيئة تتجاوز حقول YAML المطابقة حقلًا بحقل. لا يمكن تسجيل موفري LLM متوافقين مع OpenAI مخصصين عبر بادئات متغيرات بيئة عشوائية أو معرفات YAML غير معروفة، بل فقط من خلال الإعدادات.
+
+## موفرو LLM
+
+عادةً ما يستخدم موفرو السحابة ثلاثة متغيرات بيئة: مفتاح API، عنوان URL الأساسي، وقائمة النماذج. مفتاح API عادةً مطلوب، أما العنوان الأساسي وقائمة النماذج فاختياريان. Azure OpenAI يحتاج إلى تكوين نقطة نهاية المورد، بينما Ollama وLemonade لا يحتاجان إلى مفتاح API.
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=                # تجاوز اختياري للعنوان الأساسي
+OPENAI_MODELS=                  # قائمة بيضاء اختيارية للنماذج (مفصولة بفواصل)
+```
+
+بادئات الموفرين المدعومة:
+
+| البادئة             | الموفر                              |
+| ------------------- | ---------------------------------- |
+| `OPENAI_`           | OpenAI                             |
+| `AZURE_OPENAI_`     | Azure OpenAI                       |
+| `ANTHROPIC_`        | Anthropic                         |
+| `GOOGLE_`           | Google Gemini                     |
+| `DEEPSEEK_`         | DeepSeek                         |
+| `QWEN_`             | Alibaba Qwen                     |
+| `KIMI_`             | Moonshot Kimi                   |
+| `MINIMAX_`          | MiniMax (يستخدم نقطة نهاية متوافقة مع Anthropic افتراضيًا) |
+| `GLM_`              | Zhipu GLM                       |
+| `SILICONFLOW_`      | SiliconFlow                     |
+| `DOUBAO_`           | Doubao (ByteDance)              |
+| `OPENROUTER_`       | OpenRouter                     |
+| `GROK_`             | xAI Grok                       |
+| `TENCENT_`          | Tencent Hunyuan                |
+| `TENCENT_HUNYUAN_`  | Tencent Hunyuan (اسم بديل)    |
+| `XIAOMI_`           | Xiaomi MiMo                   |
+| `MIMO_`             | Xiaomi MiMo (اسم بديل)        |
+| `OLLAMA_`           | Ollama (محلي)                 |
+| `LEMONADE_`         | Lemonade (محلي)               |
+
+يستخدم Azure OpenAI اسم النشر كمعرف للنموذج:
+
+```bash
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
+AZURE_OPENAI_MODELS=your-deployment-name
+```
+
+للاتصال بخدمات LLM متوافقة مع OpenAI أخرى، أضف موفرًا مخصصًا في **الإعدادات → موفرو النماذج** واختر نوع البروتوكول المناسب.
+
+## النماذج المحلية (Ollama و Lemonade)
+
+لا تحتاج Ollama وLemonade إلى مفتاح API؛ يجب كتابة عنوان URL الأساسي للخدمة المحلية في إعدادات الخادم لتجاوز فحص SSRF:
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434/v1
+# LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+يمكن تحديد قائمة بيضاء للنماذج المتاحة باستخدام `OLLAMA_MODELS` أو `LEMONADE_MODELS`.
+
+## موفرو TTS
+
+يستخدم موفرو TTS على الخادم متغيرات `TTS_<PROVIDER>_API_KEY`، مع خيار `TTS_<PROVIDER>_BASE_URL` للتجاوز.
+
+```bash
+# Doubao TTS (Volcengine Seed-TTS، MP3 أصلي)
+TTS_DOUBAO_API_KEY=appId:accessKey
+TTS_DOUBAO_BASE_URL=       # تجاوز اختياري
+
+# Qwen TTS
+TTS_QWEN_API_KEY=
+TTS_QWEN_BASE_URL=         # تجاوز اختياري
+
+# أي نقطة نهاية متوافقة مع OpenAI TTS
+TTS_OPENAI_API_KEY=
+TTS_OPENAI_BASE_URL=
+
+# VoxCPM2 (TTS ذاتي الاستضافة مع استنساخ الصوت، راجع صفحة VoxCPM2)
+TTS_VOXCPM_BASE_URL=http://localhost:8000
+```
+
+بادئات TTS المدعومة تشمل `TTS_OPENAI_`، `TTS_AZURE_`، `TTS_GLM_`، `TTS_QWEN_`، `TTS_MINIMAX_`، `TTS_DOUBAO_`، `TTS_ELEVENLABS_`، `TTS_VOXCPM_` و `TTS_LEMONADE_`. TTS المحلي لـ Lemonade وVoxCPM2 لا يحتاجان إلى مفتاح API. TTS المدمج في المتصفح لا يحتاج إلى إعدادات خادم.
+
+يمكن للمسؤولين تعطيل موفر TTS معين على الخادم باستخدام `TTS_<PROVIDER>_ENABLED=false`. لمزيد من التفاصيل عن VoxCPM2 (TTS ذاتي الاستضافة واستنساخ الصوت)، راجع الفصل الخاص بـ [VoxCPM2](./voxcpm.mdx).
+
+يمكن أيضًا إضافة provider مخصص متوافق مع OpenAI لـ TTS من الإعدادات عبر إدخال Base URL والنموذج والصوت. يُحفظ هذا provider المخصص في إعدادات العميل ولا يمكن تسجيله عبر متغيرات بيئة `TTS_*` عشوائية أو YAML provider ID.
+
+## ASR (تحويل الكلام إلى نص)
+
+```bash
+# OpenAI Whisper
+ASR_OPENAI_API_KEY=
+ASR_OPENAI_BASE_URL=       # تجاوز اختياري
+
+# Qwen ASR
+ASR_QWEN_API_KEY=
+ASR_QWEN_BASE_URL=         # تجاوز اختياري
+
+# Azure ASR
+ASR_AZURE_API_KEY=
+ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
+
+# FunASR (محلي، لا يحتاج إلى مفتاح)
+ASR_FUNASR_BASE_URL=http://localhost:8000/v1
+
+# Lemonade ASR (محلي، لا يحتاج إلى مفتاح)
+ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+شغّل خدمة FunASR المتوافقة مع OpenAI باستخدام `funasr-server --device cuda`. تستقبل ملفات WAV على `/v1/audio/transcriptions` وتدعم SenseVoiceSmall وParaformer وFun-ASR-Nano.
+
+ASR المدمج في المتصفح لا يحتاج إلى إعدادات خادم.
+
+يمكن أيضًا إضافة موفري ASR مخصصين متوافقين مع OpenAI من الإعدادات، مع إدخال عنوان URL الأساسي، النموذج، واللغات المدعومة. تحفظ هذه الإعدادات في إعدادات العميل.
+
+## موفرو توليد الصور
+
+يستخدم موفرو الصور متغيرات `IMAGE_<PROVIDER>_API_KEY`، مع خيار `IMAGE_<PROVIDER>_BASE_URL`. البادئات المدعومة تشمل:
+
+`IMAGE_OPENAI_`، `IMAGE_SEEDREAM_`، `IMAGE_QWEN_IMAGE_`، `IMAGE_NANO_BANANA_`، `IMAGE_MINIMAX_`، `IMAGE_GROK_` و `IMAGE_LEMONADE_`.
+
+Lemonade خدمة محلية ولا تحتاج إلى مفتاح API:
+
+```bash
+IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+ComfyUI Image لا يحتاج إلى مفتاح API، ويتصل افتراضيًا بـ `http://localhost:8188`. أدخل عنوان URL الأساسي لـ ComfyUI في الإعدادات، وضع ملفات workflow بصيغة JSON المصدرة من ComfyUI API في مجلد `public/` الخاص بـ OpenMAIC؛ يجب أن يكون اسم الملف مطابقًا لـ `comfyui-*.json` أو يحتوي على `workflow`. ستكتشف صفحة الإعدادات هذه الملفات تلقائيًا وتعرضها كخيارات workflow. عند نشر Docker، يجب تضمين ملفات workflow أثناء بناء الصورة أو ربط ملف workflow واحد بمجلد `/app/public/` داخل الحاوية. لأن `comfyui-image` ليس موفرًا مستضافًا على الخادم، عند تشغيل ComfyUI على المضيف مع Docker في الإنتاج، يجب تعيين `ALLOW_LOCAL_NETWORKS=true` للسماح بالوصول المحلي، وإلا سيرفض حارس SSRF العنوان المحلي المرسل من العميل.
+
+## موفرو توليد الفيديو
+
+يستخدم موفرو الفيديو متغيرات `VIDEO_<PROVIDER>_API_KEY`، مع خيار `VIDEO_<PROVIDER>_BASE_URL`. البادئات المدعومة تشمل:
+
+`VIDEO_SEEDANCE_`، `VIDEO_KLING_`، `VIDEO_VEO_`، `VIDEO_SORA_`، `VIDEO_MINIMAX_`، `VIDEO_GROK_` و `VIDEO_HAPPYHORSE_`.
+
+## تحليل المستندات والوسائط
+
+تعتمد صيغ المواد التعليمية على المحلل المختار. حاليًا يدعم النصوص، PDF، مستندات Office، الصور، وبعض صيغ الصوت والفيديو؛ تختلف الصيغ المدعومة والقدرات حسب الموفر.
+
+```bash
+# MinerU ذاتي الاستضافة
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# MinerU backend اختياري ذاتي الاستضافة
+PDF_MINERU_BACKEND=pipeline
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+
+# AliDocMind (يستخدم AccessKey من Alibaba Cloud بدلاً من مفتاح API منفصل)
+ALIDOCMIND_ACCESS_KEY_ID=
+ALIDOCMIND_ACCESS_KEY_SECRET=
+ALIDOCMIND_BASE_URL=       # تجاوز اختياري
+```
+
+`unpdf` مدمج في OpenMAIC ويستخدم لتحليل PDF الأساسي. لتحليل مستندات Office، الصور، أو المواد التي تحتاج إلى OCR، جداول، معادلات أو تحليل تخطيط، يجب اختيار موفر MinerU أو AliDocMind المتوافق.
+
+يدعم AliDocMind تحليل PDF، DOCX، PPTX، XLSX، بالإضافة إلى PNG، JPG/JPEG، BMP، GIF. حاليًا، يدعم تحليل الوسائط الصوتية والفيديو فقط عبر AliDocMind: صيغ الفيديو MP4، MOV، AVI، MKV، WMV، وصيغ الصوت MP3، WAV، AAC؛ لا يدعم M4A.
+
+## البحث عبر الإنترنت
+
+اضبط موفري البحث Tavily، Bocha، Brave، Baidu، SearXNG أو MiniMax:
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # تجاوز اختياري
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # تجاوز اختياري
+
+BAIDU_API_KEY=
+BAIDU_BASE_URL=https://qianfan.baidubce.com  # تجاوز اختياري
+
+# SearXNG ذاتي الاستضافة، لا يحتاج إلى مفتاح API
+SEARXNG_BASE_URL=
+
+WEB_SEARCH_MINIMAX_API_KEY=
+WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # تجاوز اختياري
+```
+
+Brave وSearXNG لا يحتاجان إلى مفتاح API؛ يمكن للواجهة الأمامية اختيار تفعيل البحث في كل عملية توليد. بحث Grok متوفر عبر أدوات البحث في Grok LLM، وليس موفر بحث مستقل.
+
+## ACCESS_CODE — كلمة مرور على مستوى الموقع
+
+للنشر المشترك (عروض داخلية، صفوف)، يمكن تعيين رمز وصول ليطلب من الزوار إدخال كلمة مرور قبل رؤية التطبيق:
+
+```bash
+ACCESS_CODE=your-secret-code
+```
+
+يُطلب من الزائر إدخاله مرة واحدة فقط، ويحفظ في cookie من نوع HTTP-only. اتركه فارغًا لتعطيله.
+
+## النموذج الافتراضي ومسارات النماذج
+
+عندما لا يرسل العميل نموذجًا، يستخدم API الخادم النموذج الافتراضي المحدد بـ `DEFAULT_MODEL`. صيغة النموذج هي `provider:model-id`، مثل:
+
+```bash
+DEFAULT_MODEL=openai:gpt-5.5
+```
+
+يمكن استخدام `MODEL_ROUTES` لتحديد نماذج مختلفة لمراحل توليد مختلفة؛ المراحل غير المحددة تستخدم النموذج المرسل من العميل أو `DEFAULT_MODEL`. هو كائن JSON، المفاتيح هي أسماء المراحل، والقيم إما سلسلة نموذج أو كائن يحتوي على `model` و `thinking`. قائمة المراحل الكاملة والأمثلة موجودة في [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example).
+
+## feature flags (مفاتيح الميزات)
+
+تُعتبر القيم `true` أو `1` مفعلة، وأي قيمة أخرى معطلة. تُحقن متغيرات `NEXT_PUBLIC_*` في وقت البناء للعميل، ويجب إعادة البناء بعد تعديلها:
+
+```bash
+# محرر MAIC (وضع Pro)
+NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
+
+# وقت تشغيل محادثة Pi
+NEXT_PUBLIC_PI_CHAT_ENABLED=true
+
+# محرك مهام التعليم المهني (مفتاح خادم)
+OPENMAIC_ENABLE_VOCATIONAL=true
+
+# عرض مفتاح تجربة التعليم المهني
+NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=true
+
+# عرض مدخل تصدير الفيديو
+NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
+
+# عرض مدخل استيراد PPTX التجريبي
+NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+```
+
+استيراد PPTX لا يزال تجريبيًا، والنتائج لم تُدمج بالكامل في تدفق بيانات الصف. جميع متغيرات `NEXT_PUBLIC_*` هي مفاتيح بناء؛ عند نشر Docker، يجب تمريرها كـ build args، لا يمكن فقط تعيينها في بيئة الحاوية.
+
+## خيارات خادم أخرى
+
+يمكن تكوين الخيارات التالية عبر متغيرات البيئة:
+
+```bash
+# توليد متوازي لمحتوى المشاهد؛ 0 أو عدم التعيين يعني توليد تسلسلي
+PARALLEL_SCENE_CONCURRENCY=3
+
+# السماح بالوصول إلى localhost والشبكات المحلية؛ فقط للنشر الذاتي/الشبكات الداخلية
+ALLOW_LOCAL_NETWORKS=true
+
+# خدمة تصيير MP4 اختيارية
+RENDER_SERVICE_URL=http://render-service:9000
+
+# إعدادات السجلات والتفكير
+LOG_LEVEL=info
+LOG_FORMAT=pretty
+LLM_THINKING_DISABLED=false
+```
+
+## استخدام ملف إعداد YAML
+
+بدلاً من متغيرات البيئة، يمكنك وضع إعدادات موفري الخادم المسجلين في الكود داخل ملف `server-providers.yml` في جذر المشروع. يُحمّل الملف عند بدء الخادم، والبنية تطابق تصنيفات متغيرات البيئة:
+
+```yaml title="server-providers.yml"
+providers:
+  openai:
+    apiKey: sk-...
+    baseUrl: https://api.openai.com/v1
+    models:
+      - gpt-5.5
+  anthropic:
+    apiKey: sk-ant-...
+
+tts:
+  doubao-tts:
+    apiKey: appId:accessKey
+
+asr:
+  openai-whisper:
+    apiKey: sk-...
+
+pdf:
+  mineru:
+    baseUrl: http://localhost:8888
+  alidocmind:
+    accessKeyId: your-access-key-id
+    accessKeySecret: your-access-key-secret
+
+image:
+  seedream:
+    apiKey: ...
+
+video:
+  seedance:
+    apiKey: ...
+
+web-search:
+  tavily:
+    apiKey: tvly-...
+  searxng:
+    baseUrl: http://localhost:8080
+```
+
+تتجاوز متغيرات البيئة حقول YAML المطابقة حقلًا بحقل. يجب أن تستخدم المفاتيح معرفات الموفرين المسجلين في الكود مثل `openai`، `doubao-tts`، `openai-whisper`، `mineru`، `alidocmind`، `seedream`، `seedance`، `tavily` أو `searxng`. لا يمكن تسجيل معرفات غير معروفة هنا كموفري LLM مخصصين.

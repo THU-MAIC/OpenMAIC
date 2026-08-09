@@ -4,19 +4,22 @@
  * Supports:
  * - Loading prompts from templates/{promptId}/ directory
  * - Snippet inclusion via {{snippet:name}} syntax
+ * - Conditional blocks via {{#if condition}}...{{/if}} syntax
  * - Variable interpolation via {{variable}} syntax
- * - Caching for performance
  */
 
 import fs from 'fs';
 import path from 'path';
-import type { PromptId, LoadedPrompt, SnippetId } from './types';
+import type { PromptId, LoadedPrompt, PromptVariableDefaults, SnippetId } from './types';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('PromptLoader');
 
-// Cache for loaded prompts and snippets
-const promptCache = new Map<string, LoadedPrompt>();
-const snippetCache = new Map<string, string>();
+const PROMPT_VARIABLE_DEFAULTS = {
+  'pbl-actions': {
+    projectSummary:
+      '(No generated milestones are available; introduce the project topic without inventing any.)',
+  },
+} satisfies PromptVariableDefaults;
 
 /**
  * Get the prompts directory path
@@ -30,15 +33,10 @@ function getPromptsDir(): string {
  * Load a snippet by ID
  */
 export function loadSnippet(snippetId: SnippetId): string {
-  const cached = snippetCache.get(snippetId);
-  if (cached) return cached;
-
   const snippetPath = path.join(getPromptsDir(), 'snippets', `${snippetId}.md`);
 
   try {
-    const content = fs.readFileSync(snippetPath, 'utf-8').trim();
-    snippetCache.set(snippetId, content);
-    return content;
+    return fs.readFileSync(snippetPath, 'utf-8').trim();
   } catch {
     // Fail loud rather than silently shipping `{{snippet:foo}}` to the LLM.
     // A missing snippet is always a config/typo bug — surface at load time.
@@ -47,22 +45,39 @@ export function loadSnippet(snippetId: SnippetId): string {
 }
 
 /**
- * Process snippet includes in a template
- * Replaces {{snippet:name}} with actual snippet content
+ * Process snippet includes in a template.
+ * Replaces {{snippet:name}} with actual snippet content.
  */
-function processSnippets(template: string): string {
+export function processSnippets(template: string): string {
   return template.replace(/\{\{snippet:(\w[\w-]*)\}\}/g, (_, snippetId) => {
     return loadSnippet(snippetId as SnippetId);
   });
 }
 
 /**
+ * Process conditional blocks in a template.
+ * Replaces {{#if conditionName}}...{{/if}} with the inner content when the
+ * named condition is truthy, or removes the entire block when it is falsy.
+ *
+ * Blocks do not nest — this is intentional to keep the prompt templating
+ * language simple and reviewable.
+ */
+export function processConditionalBlocks(
+  template: string,
+  conditions: Record<string, unknown>,
+): string {
+  return template.replace(
+    /\{\{#if (\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g,
+    (_, conditionName: string, content: string) => {
+      return conditions[conditionName] ? content : '';
+    },
+  );
+}
+
+/**
  * Load a prompt by ID
  */
 export function loadPrompt(promptId: PromptId): LoadedPrompt | null {
-  const cached = promptCache.get(promptId);
-  if (cached) return cached;
-
   const promptDir = path.join(getPromptsDir(), 'templates', promptId);
 
   try {
@@ -81,14 +96,11 @@ export function loadPrompt(promptId: PromptId): LoadedPrompt | null {
       // user.md is optional
     }
 
-    const loaded: LoadedPrompt = {
+    return {
       id: promptId,
       systemPrompt,
       userPromptTemplate,
     };
-
-    promptCache.set(promptId, loaded);
-    return loaded;
   } catch (error) {
     log.error(`Failed to load prompt ${promptId}:`, error);
     return null;
@@ -112,8 +124,27 @@ export function interpolateVariables(template: string, variables: Record<string,
   });
 }
 
+function applyPromptVariableDefaults(
+  promptId: PromptId,
+  variables: Record<string, unknown>,
+): Record<string, unknown> {
+  const defaults = PROMPT_VARIABLE_DEFAULTS[promptId as keyof typeof PROMPT_VARIABLE_DEFAULTS];
+  if (!defaults) return variables;
+
+  const resolved = { ...variables };
+  for (const [key, value] of Object.entries(defaults)) {
+    if (resolved[key] === undefined) resolved[key] = value;
+  }
+  return resolved;
+}
+
 /**
- * Build a complete prompt with variables
+ * Build a complete prompt with variables.
+ *
+ * Processing order:
+ *   1. Snippet includes ({{snippet:name}}) — file content spliced in
+ *   2. Conditional blocks ({{#if flag}}...{{/if}}) — gated on `variables`
+ *   3. Variable interpolation ({{varName}}) — values substituted
  */
 export function buildPrompt(
   promptId: PromptId,
@@ -121,17 +152,16 @@ export function buildPrompt(
 ): { system: string; user: string } | null {
   const prompt = loadPrompt(promptId);
   if (!prompt) return null;
+  const resolvedVariables = applyPromptVariableDefaults(promptId, variables);
 
   return {
-    system: interpolateVariables(prompt.systemPrompt, variables),
-    user: interpolateVariables(prompt.userPromptTemplate, variables),
+    system: interpolateVariables(
+      processConditionalBlocks(prompt.systemPrompt, resolvedVariables),
+      resolvedVariables,
+    ),
+    user: interpolateVariables(
+      processConditionalBlocks(prompt.userPromptTemplate, resolvedVariables),
+      resolvedVariables,
+    ),
   };
-}
-
-/**
- * Clear all caches (useful for development/testing)
- */
-export function clearPromptCache(): void {
-  promptCache.clear();
-  snippetCache.clear();
 }

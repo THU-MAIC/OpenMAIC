@@ -11,7 +11,6 @@ export type {
   SceneGenerationContext,
   GeneratedSlideData,
   GenerationResult,
-  GenerationCallbacks,
   AICallFn,
 } from './pipeline-types';
 
@@ -34,10 +33,10 @@ export { generateSceneOutlinesFromRequirements, applyOutlineFallbacks } from './
 
 // Scene generator (Stage 2)
 export {
-  generateFullScenes,
   generateSceneContent,
   generateSceneActions,
   createSceneWithActions,
+  PBLGenerationError,
 } from './scene-generator';
 export type { SceneContentOptions, SceneActionsOptions } from './scene-generator';
 
@@ -47,6 +46,3 @@ export {
   buildCompleteScene,
   uniquifyMediaElementIds,
 } from './scene-builder';
-
-// Pipeline runner
-export { createGenerationSession, runGenerationPipeline } from './pipeline-runner';

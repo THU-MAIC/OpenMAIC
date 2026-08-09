@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { memo, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   PieChart,
@@ -20,64 +20,74 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('QuizView');
 import type { QuizQuestion } from '@/lib/types/stage';
-import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
+import { gradeChoiceQuestions, isShortAnswer, type QuestionResult } from '@/lib/quiz/grading';
+import { renderQuizMathText } from '@/lib/quiz/math-text';
+import { writeDraftRecovery } from '@/lib/quiz/persistence';
+import {
+  createQuizAttemptWriter,
+  loadQuizAttemptState,
+  QuizRetryProgressedError,
+  type QuizAttemptWriter,
+} from '@/lib/quiz/runtime';
+import {
+  createQuizViewLifetime,
+  isQuizRuntimeReady,
+  persistQuizReview,
+  persistQuizRetry,
+  persistQuizSubmission,
+  quizViewStateFromAttempt,
+  runQuizPersistenceTransition,
+  type QuizRuntimeGate,
+  type QuizViewLifetime,
+} from '@/lib/quiz/view-state';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type Phase = 'not_started' | 'answering' | 'grading' | 'reviewing';
-
-interface QuestionResult {
-  questionId: string;
-  correct: boolean | null;
-  status: 'correct' | 'incorrect';
-  earned: number;
-  aiComment?: string;
-}
+type Phase = 'not_started' | 'answering' | 'submitting' | 'grading' | 'reviewing';
 
 interface QuizViewProps {
   readonly questions: QuizQuestion[];
   readonly sceneId: string;
+  readonly stageId: string;
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+const QuizMathText = memo(function QuizMathText({
+  text,
+  className,
+  allowDisplayMode = false,
+}: {
+  text: string;
+  className?: string;
+  allowDisplayMode?: boolean;
+}) {
+  const segments = useMemo(() => renderQuizMathText(text), [text]);
+  if (segments.length === 1 && segments[0].type === 'text') {
+    return <span className={className}>{segments[0].value}</span>;
+  }
 
-function arraysEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const sa = [...a].sort();
-  const sb = [...b].sort();
-  return sa.every((v, i) => v === sb[i]);
-}
+  return (
+    <span className={className}>
+      {segments.map((segment, index) => {
+        if (segment.type === 'text') {
+          return <span key={index}>{segment.value}</span>;
+        }
 
-function toArray(v: string | string[] | undefined): string[] {
-  if (!v) return [];
-  return Array.isArray(v) ? v : [v];
-}
-
-function isShortAnswer(q: QuizQuestion): boolean {
-  return q.type === 'short_answer' || (!q.hasAnswer && (!q.answer || q.answer.length === 0));
-}
-
-/** Grade choice questions locally. Returns results only for non-short-answer questions. */
-function gradeChoiceQuestions(
-  questions: QuizQuestion[],
-  answers: Record<string, string | string[]>,
-): QuestionResult[] {
-  return questions
-    .filter((q) => !isShortAnswer(q))
-    .map((q) => {
-      const pts = q.points ?? 1;
-      const userAnswer = toArray(answers[q.id]);
-      const correctAnswer = toArray(q.answer);
-      const correct = arraysEqual(userAnswer, correctAnswer);
-      return {
-        questionId: q.id,
-        correct,
-        status: correct ? ('correct' as const) : ('incorrect' as const),
-        earned: correct ? pts : 0,
-      };
-    });
-}
+        return (
+          <span
+            key={index}
+            className={cn(
+              allowDisplayMode && segment.displayMode
+                ? 'block my-1 overflow-x-auto [&_.katex-display]:!my-0'
+                : 'inline-block align-baseline [&_.katex-display]:!my-0',
+            )}
+            dangerouslySetInnerHTML={{ __html: segment.html }}
+          />
+        );
+      })}
+    </span>
+  );
+});
 
 /** Call /api/quiz-grade for a single short-answer question. */
 async function gradeShortAnswerQuestion(
@@ -293,7 +303,7 @@ function SingleChoiceQuestion({
                   isReview && !isCorrectOpt && !selected && 'text-gray-400 dark:text-gray-500',
                 )}
               >
-                {opt.label}
+                <QuizMathText text={opt.label} />
               </span>
               {isReview && isCorrectOpt && (
                 <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
@@ -398,7 +408,7 @@ function MultipleChoiceQuestion({
                   isReview && !isCorrectOpt && !isSelected && 'text-gray-400 dark:text-gray-500',
                 )}
               >
-                {opt.label}
+                <QuizMathText text={opt.label} />
               </span>
               {isReview && isCorrectOpt && (
                 <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
@@ -463,7 +473,9 @@ function ShortAnswerQuestion({
         <div className="space-y-3">
           <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300">
             <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">{t('quiz.yourAnswer')}</p>
-            {value || (
+            {value ? (
+              <QuizMathText text={value} />
+            ) : (
               <span className="text-gray-400 dark:text-gray-500 italic">
                 {t('quiz.notAnswered')}
               </span>
@@ -477,7 +489,7 @@ function ShortAnswerQuestion({
                   {t('quiz.aiComment')}
                 </p>
                 <p className="text-xs text-violet-600/80 dark:text-violet-400/80">
-                  {result.aiComment}
+                  <QuizMathText text={result.aiComment} />
                 </p>
               </div>
               <span className="ml-auto text-xs font-bold text-violet-600 dark:text-violet-400 shrink-0">
@@ -552,9 +564,9 @@ function QuestionCard({
             {index + 1}
           </span>
           <div>
-            <p className="text-sm font-medium text-gray-800 dark:text-gray-100 leading-relaxed">
-              {question.question}
-            </p>
+            <div className="text-sm font-medium text-gray-800 dark:text-gray-100 leading-relaxed">
+              <QuizMathText text={question.question} allowDisplayMode />
+            </div>
             <p className="text-xs text-gray-400 mt-0.5">
               {question.type === 'single'
                 ? t('quiz.singleChoice')
@@ -581,7 +593,7 @@ function QuestionCard({
       {isReview && question.analysis && (
         <div className="mt-3 p-3 rounded-lg bg-blue-50/70 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
           <span className="font-medium">{t('quiz.analysis')}</span>
-          {question.analysis}
+          <QuizMathText text={question.analysis} allowDisplayMode />
         </div>
       )}
     </motion.div>
@@ -684,30 +696,55 @@ function ScoreBanner({
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
-export function QuizView({ questions, sceneId }: QuizViewProps) {
+export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
   const { t, locale } = useI18n();
+
   const [phase, setPhase] = useState<Phase>('not_started');
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [results, setResults] = useState<QuestionResult[]>([]);
-
-  // Draft cache for quiz answers, keyed by sceneId to isolate across classrooms
-  const {
-    cachedValue: cachedAnswers,
-    updateCache: updateAnswersCache,
-    clearCache: clearAnswersCache,
-  } = useDraftCache<Record<string, string | string[]>>({
-    key: `quizDraft:${sceneId}`,
+  const [runtimeGate, setRuntimeGate] = useState<QuizRuntimeGate>({ status: 'loading' });
+  const [hydrationVersion, setHydrationVersion] = useState(0);
+  const [retrying, setRetrying] = useState(false);
+  const viewLifetimeRef = useRef<QuizViewLifetime | null>(null);
+  viewLifetimeRef.current ??= createQuizViewLifetime();
+  const viewLifetime = viewLifetimeRef.current;
+  const runtimeWriterRef = useRef<QuizAttemptWriter | null>(null);
+  runtimeWriterRef.current ??= createQuizAttemptWriter({
+    onError: (error) => log.warn('Failed to persist quiz runtime:', error),
   });
+  const runtimeWriter = runtimeWriterRef.current;
 
-  // Restore cached answers during render (derived state pattern)
-  const [prevCachedAnswers, setPrevCachedAnswers] = useState(cachedAnswers);
-  if (cachedAnswers !== prevCachedAnswers) {
-    setPrevCachedAnswers(cachedAnswers);
-    if (cachedAnswers && Object.keys(cachedAnswers).length > 0 && phase === 'not_started') {
-      setAnswers(cachedAnswers);
-      setPhase('answering');
-    }
-  }
+  useEffect(() => {
+    return () => {
+      void runtimeWriter.flushDraft();
+    };
+  }, [runtimeWriter]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRuntimeGate({ status: 'loading' });
+    setRetrying(false);
+    void loadQuizAttemptState({ stageId, sceneId })
+      .then(({ attemptId: nextAttemptId, state }) => {
+        if (cancelled) return;
+        const next = quizViewStateFromAttempt(state);
+        setPhase(next.phase);
+        setAnswers(next.answers);
+        setResults(next.results);
+        setRuntimeGate({ status: 'ready', attemptId: nextAttemptId });
+      })
+      .catch((error) => {
+        log.warn('Failed to hydrate quiz runtime:', error);
+        if (!cancelled) setRuntimeGate({ status: 'error' });
+      });
+    return () => {
+      cancelled = true;
+      viewLifetime.invalidate();
+      void runtimeWriter.flushDraft();
+    };
+  }, [hydrationVersion, runtimeWriter, sceneId, stageId, viewLifetime]);
+
+  const attemptId = isQuizRuntimeReady(runtimeGate) ? runtimeGate.attemptId : null;
 
   const totalPoints = useMemo(
     () => questions.reduce((sum, q) => sum + (q.points ?? 1), 0),
@@ -727,17 +764,34 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
     (questionId: string, value: string | string[]) => {
       setAnswers((prev) => {
         const next = { ...prev, [questionId]: value };
-        updateAnswersCache(next);
+        if (attemptId) {
+          writeDraftRecovery(sceneId, attemptId, next);
+          runtimeWriter.scheduleDraft({
+            stageId,
+            sceneId,
+            attemptId,
+            answers: next,
+          });
+        }
         return next;
       });
     },
-    [updateAnswersCache],
+    [attemptId, runtimeWriter, sceneId, stageId],
   );
 
-  const handleSubmit = useCallback(() => {
-    setPhase('grading');
-    clearAnswersCache();
-  }, [clearAnswersCache]);
+  const handleSubmit = useCallback(async () => {
+    if (!attemptId) return;
+    setPhase('submitting');
+    await runQuizPersistenceTransition(
+      () => persistQuizSubmission({ stageId, sceneId, attemptId, answers }, runtimeWriter),
+      viewLifetime,
+      () => setPhase('grading'),
+      (error) => {
+        log.warn('Failed to persist quiz submission:', error);
+        setRuntimeGate({ status: 'error' });
+      },
+    );
+  }, [attemptId, answers, runtimeWriter, sceneId, stageId, viewLifetime]);
 
   // When entering grading phase, grade choice questions locally + call API for short-answer
   useEffect(() => {
@@ -765,22 +819,54 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
       }
       const ordered = questions.map((q) => allResultsMap.get(q.id)!).filter(Boolean);
 
+      if (!attemptId) {
+        setRuntimeGate({ status: 'error' });
+        return;
+      }
+      try {
+        await persistQuizReview(
+          { stageId, sceneId, attemptId, answers, results: ordered },
+          runtimeWriter,
+        );
+      } catch (error) {
+        log.warn('Failed to persist quiz review:', error);
+        if (!cancelled) setRuntimeGate({ status: 'error' });
+        return;
+      }
+      if (cancelled) return;
       setResults(ordered);
-
       setPhase('reviewing');
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [phase, questions, answers, locale]);
+  }, [phase, questions, answers, locale, sceneId, stageId, attemptId, runtimeWriter]);
 
-  const handleRetry = useCallback(() => {
-    setPhase('not_started');
-    setAnswers({});
-    setResults([]);
-    clearAnswersCache();
-  }, [clearAnswersCache]);
+  const handleRetry = useCallback(async () => {
+    if (!attemptId || retrying) return;
+    setRetrying(true);
+    runtimeWriter.cancelDraft();
+    await runQuizPersistenceTransition(
+      () => persistQuizRetry({ stageId, sceneId, attemptId }, runtimeWriter),
+      viewLifetime,
+      () => {
+        setPhase('not_started');
+        setAnswers({});
+        setResults([]);
+        setRetrying(false);
+      },
+      (error) => {
+        log.warn('Failed to persist quiz retry:', error);
+        setRetrying(false);
+        if (error instanceof QuizRetryProgressedError) {
+          setHydrationVersion((version) => version + 1);
+          return;
+        }
+        setRuntimeGate({ status: 'error' });
+      },
+    );
+  }, [attemptId, retrying, runtimeWriter, sceneId, stageId, viewLifetime]);
 
   const earnedScore = useMemo(() => results.reduce((sum, r) => sum + r.earned, 0), [results]);
 
@@ -791,6 +877,29 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
     });
     return map;
   }, [results]);
+
+  if (runtimeGate.status === 'error') {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <button
+          type="button"
+          onClick={() => setHydrationVersion((version) => version + 1)}
+          className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-700"
+        >
+          <RotateCcw className="h-4 w-4" />
+          {t('quiz.retry')}
+        </button>
+      </div>
+    );
+  }
+
+  if (!isQuizRuntimeReady(runtimeGate)) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-full bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900 overflow-hidden flex flex-col">
@@ -838,7 +947,8 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
                 </span>
               </div>
               <button
-                onClick={handleSubmit}
+                type="button"
+                onClick={() => void handleSubmit()}
                 disabled={!allAnswered}
                 className={cn(
                   'px-4 py-1.5 rounded-lg text-xs font-medium transition-all',
@@ -890,7 +1000,7 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
           </motion.div>
         )}
 
-        {phase === 'grading' && (
+        {(phase === 'submitting' || phase === 'grading') && (
           <motion.div
             key="grading"
             initial={{ opacity: 0 }}
@@ -943,8 +1053,10 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
                 </span>
               </div>
               <button
-                onClick={handleRetry}
-                className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+                type="button"
+                onClick={() => void handleRetry()}
+                disabled={retrying}
+                className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 {t('quiz.retry')}

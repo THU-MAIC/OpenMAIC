@@ -16,10 +16,10 @@ import { NextRequest } from 'next/server';
 import { statelessGenerate } from '@/lib/orchestration/stateless-generate';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
-import type { ThinkingConfig } from '@/lib/types/provider';
 import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModel } from '@/lib/server/resolve-model';
+import type { ThinkingConfig } from '@/lib/types/provider';
 const log = createLogger('Chat API');
 
 // Allow streaming responses up to 60 seconds
@@ -68,11 +68,16 @@ export async function POST(req: NextRequest) {
       model: languageModel,
       apiKey: resolvedApiKey,
       providerId,
+      thinkingConfig: resolvedThinking,
     } = await resolveModel({
       modelString: body.model,
+      stage: 'chat-adapter',
       apiKey: body.apiKey,
       baseUrl: body.baseUrl,
       providerType: body.providerType,
+      // Let resolveModel arbitrate thinking too: a routed chat-adapter's thinking
+      // wins, an unrouted one honors this client thinking (see resolve-model.ts).
+      thinkingConfig: body.thinkingConfig ?? body.thinking,
     });
 
     if (isProviderKeyRequired(providerId) && !resolvedApiKey) {
@@ -117,6 +122,13 @@ export async function POST(req: NextRequest) {
       try {
         startHeartbeat();
 
+        // Use the resolved thinking (route-pinned for a routed chat-adapter,
+        // else the client's). Default to disabled for low-latency chat.
+        const thinkingConfig: ThinkingConfig = resolvedThinking ?? {
+          mode: 'disabled',
+          enabled: false,
+        };
+
         const generator = statelessGenerate(
           {
             ...body,
@@ -124,7 +136,7 @@ export async function POST(req: NextRequest) {
           },
           signal,
           languageModel,
-          { enabled: false } satisfies ThinkingConfig,
+          thinkingConfig,
         );
 
         for await (const event of generator) {

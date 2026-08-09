@@ -1,0 +1,80 @@
+---
+title: VoxCPM2
+description: Self-hosted TTS and voice cloning. Backend selection, configuration, and voice management.
+---
+
+[VoxCPM2](https://github.com/OpenBMB/VoxCPM) is an open-source TTS model from OpenBMB with voice cloning support. OpenMAIC includes an adapter, so you only need to run VoxCPM on your own machine and connect it.
+
+## When to use VoxCPM2
+
+- You want stable, free TTS with no per-character charges.
+- You want voice cloning, with each Agent using a short sample to generate its own voice.
+- You deploy locally or in an offline environment.
+
+If you only need one default voice, the built-in **Doubao** or **OpenAI-compatible** provider is simpler. See [Configuration → TTS providers](./configuration.mdx#tts-providers).
+
+## 1. Run a VoxCPM backend
+
+OpenMAIC supports three deployment modes. All three use the same OpenMAIC adapter; select the corresponding backend type in Settings.
+
+| Backend        | Endpoint           | Best for                                      |
+| -------------- | ------------------ | --------------------------------------------- |
+| **vLLM-Omni**  | `/v1/audio/speech` | OpenAI-compatible speech endpoint for GPU servers. |
+| **Python API** | `/tts/upload`      | Official VoxCPM Python runtime based on FastAPI. |
+| **Nano-vLLM**  | `/generate`        | Lightweight Nano-vLLM FastAPI deployment for smaller machines. |
+
+See the [VoxCPM repository](https://github.com/OpenBMB/VoxCPM) for startup instructions for each backend. A typical local quick start:
+
+```bash
+# vLLM-Omni example
+pip install vllm
+python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
+# endpoint at http://localhost:8000/v1
+```
+
+## 2. Point OpenMAIC at it
+
+Choose one of the following methods.
+
+### A. Per-user (Settings UI, no server change)
+
+Open **Settings → Text to speech → VoxCPM2**, choose the backend type, and paste the Base URL. The Request URL preview below shows the actual address OpenMAIC will call.
+
+This is suitable for personal testing and per-browser overrides, and does not affect other users.
+
+### B. Server default (environment variable, shared by everyone)
+
+Add the following line to `.env.local` or the YAML configuration. No API key is required.
+
+```bash
+TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+```
+
+Server configuration is sent to users. If the provider is server-managed, clients cannot override these settings.
+
+## 3. Voice management
+
+VoxCPM2 has three voice modes under **Settings → Text to speech → VoxCPM2 → VoxCPM voices**.
+
+### Auto Voice (default)
+
+During synthesis, OpenMAIC dynamically generates a voice prompt from each Agent's persona. No configuration is required; this is what you get by doing nothing.
+
+### Prompt voice
+
+Describe a voice in natural language. Once generated, it can be reused and assigned to any Agent.
+
+> _Example: “A warm female teacher voice, calm and encouraging, mid-range, with clear articulation.”_
+
+### Clone voice
+
+Upload a short reference audio clip (≤ 60 seconds, ≤ 10 MB), or record one directly in the browser. The audio is stored in IndexedDB and sent to the backend with each synthesis request.
+
+## Troubleshooting
+
+| Symptom                         | Likely cause                                                               |
+| ------------------------------- | -------------------------------------------------------------------------- |
+| Request URL preview returns 404 | The wrong backend type is selected; compare it with the endpoint table in step 1. |
+| First clone request takes ~30s  | The backend is cold-starting; later clones reuse the warm runtime.         |
+| Audio stops partway through     | The backend output token limit is too low; increase `--max-tokens` or the corresponding VoxCPM setting. |
+| 401 / 403                       | `TTS_VOXCPM_API_KEY` was set for a backend that does not require a key; leave it empty. |

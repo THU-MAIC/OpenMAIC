@@ -19,6 +19,8 @@ export type MediaTaskStatus = 'pending' | 'generating' | 'done' | 'failed';
 
 export interface MediaTask {
   elementId: string;
+  /** Original generation placeholder retained after the task is re-keyed to an allocated id. */
+  placeholderRef?: string;
   type: 'image' | 'video';
   status: MediaTaskStatus;
   prompt: string;
@@ -29,6 +31,7 @@ export interface MediaTask {
   };
   objectUrl?: string; // URL.createObjectURL() for rendering
   poster?: string; // Video poster objectUrl
+  posterAssetId?: string; // Allocated poster identity used by late scene reconciliation
   error?: string;
   errorCode?: string; // Structured error code (e.g. 'CONTENT_SENSITIVE')
   retryCount: number;
@@ -44,6 +47,13 @@ interface MediaGenerationState {
   // Status transitions
   markGenerating: (elementId: string) => void;
   markDone: (elementId: string, objectUrl: string, poster?: string) => void;
+  rekeyDone: (
+    oldRef: string,
+    newRef: string,
+    objectUrl: string,
+    poster?: string,
+    posterAssetId?: string,
+  ) => void;
   markFailed: (elementId: string, error: string, errorCode?: string) => void;
 
   // Retry support
@@ -63,9 +73,11 @@ interface MediaGenerationState {
 
 // ==================== Helper ====================
 
-/** Check if a src string is a generated media placeholder ID */
+const CONCRETE_URL = /^(https?:|data:|blob:|\/|\.\.?\/)/i;
+
+/** Check whether a media reference still needs resolution before rendering. */
 export function isMediaPlaceholder(src: string): boolean {
-  return /^gen_(img|vid)_[\w-]+$/i.test(src);
+  return !!src && !CONCRETE_URL.test(src);
 }
 
 // ==================== Store ====================
@@ -123,6 +135,26 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
       };
     }),
 
+  rekeyDone: (oldRef, newRef, objectUrl, poster, posterAssetId) =>
+    set((s) => {
+      const task = s.tasks[oldRef];
+      if (!task) return s;
+      const tasks = { ...s.tasks };
+      delete tasks[oldRef];
+      tasks[newRef] = {
+        ...task,
+        elementId: newRef,
+        placeholderRef: task.placeholderRef ?? oldRef,
+        status: 'done',
+        objectUrl,
+        poster,
+        posterAssetId,
+        error: undefined,
+        errorCode: undefined,
+      };
+      return { tasks };
+    }),
+
   markFailed: (elementId, error, errorCode) =>
     set((s) => {
       const task = s.tasks[elementId];
@@ -170,6 +202,7 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
           // Restore as failed task (persisted non-retryable error)
           restored[elementId] = {
             elementId,
+            placeholderRef: rec.placeholderRef,
             type: rec.type,
             status: 'failed',
             prompt: rec.prompt,
@@ -186,6 +219,7 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
           const poster = rec.poster ? URL.createObjectURL(rec.poster) : undefined;
           restored[elementId] = {
             elementId,
+            placeholderRef: rec.placeholderRef,
             type: rec.type,
             status: 'done',
             prompt: rec.prompt,

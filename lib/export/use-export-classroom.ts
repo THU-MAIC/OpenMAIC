@@ -5,10 +5,10 @@ import { saveAs } from 'file-saver';
 import { toast } from 'sonner';
 import { useStageStore } from '@/lib/store/stage';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { db, getGeneratedAgentsByStageId } from '@/lib/utils/database';
 import {
   CLASSROOM_ZIP_FORMAT_VERSION,
   CLASSROOM_ZIP_EXTENSION,
+  manifestAgentFromConfig,
   type ClassroomManifest,
   type ManifestStage,
   type ManifestAgent,
@@ -18,6 +18,27 @@ import {
 import { collectAudioFiles, collectMediaFiles, actionsToManifest } from './classroom-zip-utils';
 import type { SpeechAction } from '@/lib/types/action';
 import { createLogger } from '@/lib/logger';
+import {
+  inlineHtmlAssets,
+  createAssetFetcher,
+  type InlineOptions,
+  type InlineReport,
+} from './inline-assets';
+import { createProxiedFetch } from './proxied-fetch';
+import type { SceneContent } from '@/lib/types/stage';
+import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
+import { accessDocument } from '@/lib/document-store';
+
+export async function inlineSceneContent(
+  content: SceneContent,
+  options?: InlineOptions,
+): Promise<{ content: SceneContent; report: InlineReport }> {
+  if (content?.type !== 'interactive' || !('html' in content) || !content.html) {
+    return { content, report: { inlined: [], failed: [] } };
+  }
+  const { html, report } = await inlineHtmlAssets(content.html, options);
+  return { content: { ...content, html }, report };
+}
 
 const log = createLogger('ExportClassroom');
 
@@ -35,13 +56,15 @@ export function useExportClassroom() {
     try {
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
+      const documentScenes = await preparePBLScenesForDocumentPersistence(stage.id, scenes);
 
-      // 1. Read latest stage name from IndexedDB (may have been renamed on home page)
-      const freshStage = await db.stages.get(stage.id);
-      const latestName = freshStage?.name || stage.name;
+      // 1. Read latest stage name from the document aggregate (it may have been renamed at home).
+      const freshDocument = await accessDocument(stage.id);
+      const latestName = freshDocument.document?.stage.name || stage.name;
 
-      // 2. Collect agents from DB
-      const agentRecords = await getGeneratedAgentsByStageId(stage.id);
+      // 2. Collect the roster from the stage document (single source of truth;
+      // the in-memory stage already carries any lazily migrated voice fields).
+      const agentConfigs = stage.generatedAgentConfigs ?? [];
 
       // 3. Collect audio files
       const audioFiles = await collectAudioFiles(scenes);
@@ -61,59 +84,52 @@ export function useExportClassroom() {
         description: stage.description,
         language: stage.languageDirective,
         style: stage.style,
+        videoManifest: stage.videoManifest,
         createdAt: stage.createdAt,
         updatedAt: stage.updatedAt,
       };
 
-      const manifestAgents: ManifestAgent[] = agentRecords.map((a) => ({
-        name: a.name,
-        role: a.role,
-        persona: a.persona,
-        avatar: a.avatar,
-        color: a.color,
-        priority: a.priority,
-      }));
-
-      // Also include generatedAgentConfigs from stage if agents not in DB
-      if (manifestAgents.length === 0 && stage.generatedAgentConfigs?.length) {
-        for (const a of stage.generatedAgentConfigs) {
-          manifestAgents.push({
-            name: a.name,
-            role: a.role,
-            persona: a.persona,
-            avatar: a.avatar,
-            color: a.color,
-            priority: a.priority,
-          });
-        }
-      }
+      const manifestAgents: ManifestAgent[] = agentConfigs.map(manifestAgentFromConfig);
 
       // Build agent ID → index mapping for multiAgent references
       const agentIdToIndex = new Map<string, number>();
-      agentRecords.forEach((a, i) => agentIdToIndex.set(a.id, i));
-      if (stage.generatedAgentConfigs?.length && agentRecords.length === 0) {
-        stage.generatedAgentConfigs.forEach((a, i) => agentIdToIndex.set(a.id, i));
-      }
+      agentConfigs.forEach((a, i) => agentIdToIndex.set(a.id, i));
 
-      const manifestScenes: ManifestScene[] = scenes.map((scene) => ({
-        type: scene.type,
-        title: scene.title,
-        order: scene.order,
-        content: scene.content,
-        actions: scene.actions ? actionsToManifest(scene.actions, audioIdToPath) : undefined,
-        whiteboards: scene.whiteboards,
-        ...(scene.multiAgent?.enabled
-          ? {
-              multiAgent: {
-                enabled: true,
-                agentIndices: (scene.multiAgent.agentIds ?? [])
-                  .map((id) => agentIdToIndex.get(id))
-                  .filter((i): i is number => i !== undefined),
-                directorPrompt: scene.multiAgent.directorPrompt,
-              },
-            }
-          : {}),
-      }));
+      const aggregateReport: InlineReport = { inlined: [], failed: [] };
+      const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
+      const manifestScenes: ManifestScene[] = await Promise.all(
+        documentScenes.map(async (scene) => {
+          const { content, report } = await inlineSceneContent(scene.content, {
+            fetcher: sharedFetcher,
+          });
+          for (const u of report.inlined)
+            if (!aggregateReport.inlined.includes(u)) aggregateReport.inlined.push(u);
+          for (const f of report.failed)
+            if (!aggregateReport.failed.some((g) => g.url === f.url))
+              aggregateReport.failed.push(f);
+          return {
+            type: scene.type,
+            title: scene.title,
+            order: scene.order,
+            content,
+            actions: scene.actions
+              ? actionsToManifest(scene.actions, audioIdToPath, agentIdToIndex)
+              : undefined,
+            whiteboards: scene.whiteboards,
+            ...(scene.multiAgent?.enabled
+              ? {
+                  multiAgent: {
+                    enabled: true,
+                    agentIndices: (scene.multiAgent.agentIds ?? [])
+                      .map((id) => agentIdToIndex.get(id))
+                      .filter((i): i is number => i !== undefined),
+                    directorPrompt: scene.multiAgent.directorPrompt,
+                  },
+                }
+              : {}),
+          };
+        }),
+      );
 
       // 7. Build mediaIndex
       const mediaIndex: Record<string, MediaIndexEntry> = {};
@@ -177,6 +193,23 @@ export function useExportClassroom() {
       const safeName = latestName.replace(/[\\/:*?"<>|]/g, '_') || 'classroom';
       saveAs(zipBlob, `${safeName}${CLASSROOM_ZIP_EXTENSION}`);
 
+      if (aggregateReport.failed.length > 0) {
+        log.warn('Some interactive-scene assets could not be inlined:', aggregateReport.failed);
+        const hosts = [
+          ...new Set(
+            aggregateReport.failed.map((f) => {
+              try {
+                return new URL(f.url).host;
+              } catch {
+                return f.url;
+              }
+            }),
+          ),
+        ];
+        toast.warning(t('export.inlinePartial', { count: aggregateReport.failed.length }), {
+          description: hosts.join(', '),
+        });
+      }
       toast.success(t('export.exportSuccess'), { id: toastId });
     } catch (error) {
       log.error('Classroom ZIP export failed:', error);

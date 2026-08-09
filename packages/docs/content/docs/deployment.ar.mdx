@@ -1,0 +1,116 @@
+---
+title: النشر
+description: نشر OpenMAIC إلى Vercel، Docker، أو مضيفك الخاص.
+---
+
+OpenMAIC هو تطبيق Next.js قياسي، حيث يمكن تشغيله في أي مكان يدعم Next.js.
+
+## Vercel (بنقرة واحدة)
+
+أسرع مسار. اضغط على زر النشر في [README المستودع](https://github.com/THU-MAIC/OpenMAIC)، قم بعمل fork للمستودع، واملأ مفتاح API لموفر LLM واحد على الأقل حسب التعليمات.
+
+يقوم Vercel بإعادة بناء ونشر تطبيق Next.js مع كل commit. عند النشر، يجب تكوين مزود LLM واحد على الأقل في إعدادات المشروع.
+
+يستخدم نشر Vercel بشكل افتراضي التخزين الدائم على جانب المتصفح. إذا كنت بحاجة إلى تخزين دائم على الخادم، فاستخدم PostgreSQL خارجي وحل نشر على الخادم؛ ملف تعريف Compose `server-persistence` لا يمكن استخدامه مباشرة على Vercel.
+
+## Docker
+
+يحتوي المستودع على `Dockerfile` مناسب للإنتاج. يستخدم داخل الصورة Node.js 22، قم بالبناء والتشغيل:
+
+```bash
+docker build -t openmaic .
+
+docker run --env-file .env.local -p 3000:3000 openmaic
+```
+
+يوصى باستخدام تكوين Docker Compose الموجود في المستودع:
+
+```bash
+cp .env.example .env.local
+# حرر .env.local وأدخل إعدادات مزود LLM واحد على الأقل، ثم:
+docker compose up --build
+```
+
+يبدأ نشر Compose الافتراضي تطبيق OpenMAIC ويربط مجلد البيانات `openmaic-data`. يمكن تكوين مزودين ووظائف أخرى حسب الحاجة، راجع [شرح الإعدادات](./configuration.mdx).
+
+تُحقن مفاتيح التكوين `NEXT_PUBLIC_*` أثناء بناء Docker، ولا يمكن الاعتماد فقط على `.env.local` وقت التشغيل. على سبيل المثال، لتمكين تصدير الفيديو واستيراد PPTX التجريبي:
+
+```bash
+NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true \
+NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true \
+docker compose --profile video-export up --build
+```
+
+يمكن تمرير مفاتيح وظائف العميل الأخرى بنفس الطريقة. إذا استخدمت `docker build`، فاستخدم `--build-arg` المقابلة.
+
+إذا كنت تستخدم إعداد مزود من الخادم، قم بربط الملف داخل الحاوية على المسار الثابت:
+
+```yaml
+services:
+  openmaic:
+    volumes:
+      - ./server-providers.yml:/app/server-providers.yml:ro
+```
+
+يشير `localhost` داخل حاوية Docker إلى الحاوية نفسها. إذا كانت خدمات مثل Ollama أو Lemonade أو VoxCPM أو ComfyUI تعمل على المضيف، فاستخدم `host.docker.internal`، مثل `http://host.docker.internal:11434/v1` أو `http://host.docker.internal:8188`. على Linux، عادةً ما تحتاج إلى إضافة `extra_hosts: ["host.docker.internal:host-gateway"]` لخدمة `openmaic`. ComfyUI ليست مزودًا مُدارًا من الخادم، لذا في بيئة الإنتاج يجب تعيين `ALLOW_LOCAL_NETWORKS=true` لتجنب رفض الحماية من SSRF لهذا العنوان.
+
+## الاستضافة الذاتية على جهاز افتراضي
+
+يحتاج المضيف إلى Node.js `20.9.0` أو أحدث، وpnpm `10.28.0`. قم بالبناء والتشغيل باستخدام `pnpm`:
+
+```bash
+pnpm install
+pnpm build
+pnpm start      # يستمع على المنفذ 3000 افتراضياً
+```
+
+ضع nginx أو Caddy أمام التطبيق لإنهاء TLS. بشكل افتراضي، يتم حفظ حالة الدروس في IndexedDB داخل المتصفح؛ عند تمكين التخزين الدائم على الخادم، يتم حفظ بيانات التشغيل ومستندات الدروس في التخزين على الخادم وPostgreSQL. قبل نشر عدة نسخ، يجب اختيار حل التخزين الدائم المناسب.
+
+## التخزين الدائم على الخادم (PostgreSQL)
+
+يبدأ ملف تعريف `server-persistence` في المستودع حاويتين: OpenMAIC وPostgreSQL. واجهة برمجة التطبيقات للتخزين الدائم مضمنة في OpenMAIC ولا تحتاج إلى خدمة تخزين منفصلة.
+
+أضف اتصال قاعدة البيانات ورمز التطوير في `.env.local`:
+
+```bash
+DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
+PERSISTENCE_DEV_TOKEN=openmaic-local-dev
+```
+
+ثم شغّل ملف التعريف:
+
+```bash
+NEXT_PUBLIC_PERSISTENCE=1 \
+NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev \
+docker compose --profile server-persistence up --build
+```
+
+`NEXT_PUBLIC_PERSISTENCE` و`NEXT_PUBLIC_PERSISTENCE_TOKEN` هما متغيرات بناء ويجب أن تتطابق مع إعدادات الخادم وقت التشغيل. رمز التطوير `PERSISTENCE_DEV_TOKEN` مناسب فقط للنشر المحلي أو الشبكات الموثوقة، ولا يوفر عزلاً حقيقياً للمستخدمين، ولا ينبغي استخدامه كآلية مصادقة في بيئة الإنتاج العامة.
+
+يتم حفظ بيانات PostgreSQL في مجلد `openmaic-postgres`. يتم تعيين كلمة مرور `PERSISTENCE_POSTGRES_PASSWORD` فقط عند التهيئة الأولى لقاعدة البيانات، ولا يتم تعديلها تلقائياً عند تغيير متغير البيئة لاحقاً.
+
+إذا لم يتم تعيين `NEXT_PUBLIC_PERSISTENCE`, فسيستمر التطبيق في استخدام التخزين الدائم على جانب المتصفح كما كان.
+
+## اختياري: تصدير فيديو MP4
+
+تقوم ميزة "تصدير الفيديو" أولاً بإنشاء مشروع Hyperframes مستقل في المتصفح، ثم يستخدم خدمة `render-service` المستقلة Chromium وFFmpeg لتصيير MP4. هذه الخدمة اختيارية ولا تؤثر على إنشاء الدروس العادي.
+
+لتفعيل ملف التعريف `video-export`:
+
+```bash
+docker compose --profile video-export up --build
+```
+
+يتيح Compose لـ OpenMAIC الاتصال بخدمة التصيير عبر `RENDER_SERVICE_URL`. إذا لم يتم تفعيل هذا الملف التعريفي أو كانت خدمة التصيير غير متاحة، يتحول التصدير إلى تنزيل مشروع ZIP للتصيير المحلي عبر CLI. تستخدم خدمة التصيير شبكة معزولة وتتطلب قدرة `NET_ADMIN` عند التشغيل؛ لمزيد من القيود وطرق النشر المستقلة، راجع [`render-service/README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/main/render-service/README.md).
+
+## متغيرات البيئة
+
+للحصول على قائمة كاملة بمتغيرات البيئة وإعدادات المزودين، راجع [شرح الإعدادات](./configuration.mdx). يجب تكوين مفتاح مزود LLM واحد على الأقل.
+
+## التحكم في الوصول
+
+يمكن تعيين `ACCESS_CODE` لحماية العرض التوضيحي المشترك بكلمة مرور على مستوى الموقع. راجع [شرح الإعدادات → ACCESS_CODE](./configuration.mdx#access_code--كلمة-مرور-على-مستوى-الموقع).
+
+## خدمات الاستضافة الذاتية الاختيارية
+
+- [VoxCPM2: استضافة ذاتية لتحويل النص إلى كلام واستنساخ الصوت →](./voxcpm.mdx)

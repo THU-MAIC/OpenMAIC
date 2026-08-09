@@ -1,6 +1,10 @@
 import { NextRequest } from 'next/server';
 import { transcribeAudio } from '@/lib/audio/asr-providers';
-import { resolveASRApiKey, resolveASRBaseUrl } from '@/lib/server/provider-config';
+import {
+  isServerConfiguredProvider,
+  resolveASRApiKey,
+  resolveASRBaseUrl,
+} from '@/lib/server/provider-config';
 import type { ASRProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -30,7 +34,9 @@ export async function POST(req: NextRequest) {
     resolvedProviderId = effectiveProviderId;
     resolvedModelId = modelId ?? undefined;
 
-    const clientBaseUrl = baseUrl || undefined;
+    // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
+    const managed = isServerConfiguredProvider('asr', effectiveProviderId);
+    const clientBaseUrl = managed ? undefined : baseUrl || undefined;
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
       const ssrfError = await validateUrlForSSRF(clientBaseUrl);
       if (ssrfError) {
@@ -42,20 +48,12 @@ export async function POST(req: NextRequest) {
       providerId: effectiveProviderId,
       modelId: modelId || undefined,
       language: language || 'auto',
-      apiKey: clientBaseUrl
-        ? apiKey || ''
-        : resolveASRApiKey(effectiveProviderId, apiKey || undefined),
-      baseUrl: clientBaseUrl
-        ? clientBaseUrl
-        : resolveASRBaseUrl(effectiveProviderId, baseUrl || undefined),
+      apiKey: resolveASRApiKey(effectiveProviderId, managed ? undefined : apiKey || undefined),
+      baseUrl: resolveASRBaseUrl(effectiveProviderId, clientBaseUrl),
     };
 
-    // Convert audio file to buffer
-    const arrayBuffer = await audioFile.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
     // Transcribe using the provider system
-    const result = await transcribeAudio(config, buffer);
+    const result = await transcribeAudio(config, audioFile);
 
     return apiSuccess({ text: result.text });
   } catch (error) {

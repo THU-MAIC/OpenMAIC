@@ -1,0 +1,116 @@
+---
+title: 部署
+description: 部署 OpenMAIC 到 Vercel、Docker，或你自己的主機。
+---
+
+OpenMAIC 是一個標準的 Next.js 應用程式，任何能執行 Next.js 的環境都可以部署。
+
+## Vercel（一鍵）
+
+最快的方式是點選[儲存庫 README](https://github.com/THU-MAIC/OpenMAIC) 中的 Deploy 按鈕，fork 儲存庫，並依照提示填入至少一個 LLM 的 API key。
+
+Vercel 會在每次提交後重新建置並部署 Next.js 應用程式。部署時需要在專案設定中設定至少一個 LLM 供應商。
+
+Vercel 部署預設使用瀏覽器端持久化。若需要伺服器端持久化，請使用外部 PostgreSQL 與伺服器端部署方案；`server-persistence` Compose profile 無法直接用於 Vercel。
+
+## Docker
+
+儲存庫中提供適合正式環境的 `Dockerfile`。映像內部使用 Node.js 22，建置及執行方式如下：
+
+```bash
+docker build -t openmaic .
+
+docker run --env-file .env.local -p 3000:3000 openmaic
+```
+
+建議使用儲存庫中的 Docker Compose 設定：
+
+```bash
+cp .env.example .env.local
+# 編輯 .env.local，填入至少一個 LLM 供應商的設定，然後執行：
+docker compose up --build
+```
+
+預設 Compose 部署會啟動 OpenMAIC 應用程式，並掛載 `openmaic-data` 資料卷。其他 provider 與功能可依需求設定，詳見[設定說明](./configuration.mdx)。
+
+`NEXT_PUBLIC_*` 功能開關會在 Docker 建置時編譯至用戶端，不能只寫在執行時的 `.env.local` 中。例如啟用影片匯出和實驗性 PPTX 匯入：
+
+```bash
+NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true \
+NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true \
+docker compose --profile video-export up --build
+```
+
+其他用戶端功能開關也可以用相同方式傳入。若使用 `docker build`，請改用對應的 `--build-arg`。
+
+如需使用伺服器端 provider 設定，把檔案掛載到容器內的固定路徑：
+
+```yaml
+services:
+  openmaic:
+    volumes:
+      - ./server-providers.yml:/app/server-providers.yml:ro
+```
+
+Docker 容器中的 `localhost` 指向容器本身。若 Ollama、Lemonade、VoxCPM 或 ComfyUI 執行在主機上，請使用 `host.docker.internal`，例如 `http://host.docker.internal:11434/v1` 或 `http://host.docker.internal:8188`。Linux Docker 通常還需要為 `openmaic` 服務新增 `extra_hosts: ["host.docker.internal:host-gateway"]`。ComfyUI 目前不是伺服器端託管 provider，因此正式環境還必須設定 `ALLOW_LOCAL_NETWORKS=true`，否則 SSRF 防護會拒絕此位址。
+
+## 自建 VM
+
+主機需要 Node.js `20.9.0` 或更新版本，以及 pnpm `10.28.0`。使用 `pnpm` 建置並啟動：
+
+```bash
+pnpm install
+pnpm build
+pnpm start      # 預設監聽 3000 連接埠
+```
+
+可在前方使用 nginx 或 Caddy 終止 TLS。預設情況下，課堂狀態會儲存在瀏覽器的 IndexedDB 中；啟用伺服器端持久化後，執行階段資料和課程文件會儲存至伺服器儲存空間與 PostgreSQL。部署多個實例前，請先選擇合適的持久化方案。
+
+## 伺服器端持久化（PostgreSQL）
+
+儲存庫的 `server-persistence` profile 會啟動 OpenMAIC 和 PostgreSQL 兩個容器。持久化 HTTP API 內嵌在 OpenMAIC 中，不需要額外的 persistence 服務。
+
+先在 `.env.local` 中加入資料庫連線和開發token：
+
+```bash
+DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
+PERSISTENCE_DEV_TOKEN=openmaic-local-dev
+```
+
+然後啟動 profile：
+
+```bash
+NEXT_PUBLIC_PERSISTENCE=1 \
+NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev \
+docker compose --profile server-persistence up --build
+```
+
+`NEXT_PUBLIC_PERSISTENCE` 和 `NEXT_PUBLIC_PERSISTENCE_TOKEN` 是建置時變數，必須與執行時的伺服器端設定相符。`PERSISTENCE_DEV_TOKEN` 方案只適合本機或可信任的內部網路部署，不提供真正的使用者隔離，不應直接作為公開正式環境的驗證方案。
+
+PostgreSQL 資料儲存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRES_PASSWORD` 只會在資料庫目錄首次初始化時設定密碼，之後修改環境變數不會自動修改已有資料庫使用者密碼。
+
+不設定 `NEXT_PUBLIC_PERSISTENCE` 即保持原有的瀏覽器端持久化行為。
+
+## 選用：MP4 影片匯出
+
+「匯出影片」功能會先在瀏覽器中生成完整的 Hyperframes 專案，再由獨立的 `render-service` 使用 Chromium 和 FFmpeg 渲染為 MP4。此服務為選用項目，不影響一般課堂生成。
+
+啟用 `video-export` profile：
+
+```bash
+docker compose --profile video-export up --build
+```
+
+Compose 會透過 `RENDER_SERVICE_URL` 讓 OpenMAIC 連線至渲染服務。若未啟用此 profile，或渲染服務無法使用，匯出功能會改為下載專案 ZIP，以供本機 CLI 渲染。渲染服務使用隔離網路，啟動時需要 `NET_ADMIN` capability；其他限制與獨立部署方式請見儲存庫中的 [`render-service/README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/main/render-service/README.md)。
+
+## 環境變數
+
+完整的環境變數和 provider 設定請見[設定說明](./configuration.mdx)。至少需要設定一個 LLM 供應商的 key。
+
+## 存取控制
+
+共享 demo 可以設定 `ACCESS_CODE`，為整個網站加上密碼保護。請見[設定說明 → ACCESS_CODE](./configuration.mdx#access_code--全站存取密碼)。
+
+## 選用的自託管服務
+
+- [VoxCPM2：自託管 TTS 與聲音複製 →](./voxcpm.mdx)

@@ -14,7 +14,7 @@ import type {
   ImageMapping,
 } from '@/lib/types/generation';
 import type { LanguageModel } from 'ai';
-import type { Slide, SlideTheme } from '@/lib/types/slides';
+import type { Slide, SlideTheme } from '@openmaic/dsl';
 import type { Scene } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import { applyOutlineFallbacks } from './outline-generator';
@@ -22,6 +22,7 @@ import { generateSceneContent, generateSceneActions } from './scene-generator';
 import type { AgentInfo, SceneGenerationContext, AICallFn } from './pipeline-types';
 import { buildLanguageText } from './prompt-formatters';
 import { createLogger } from '@/lib/logger';
+import { resolvePBLContent } from '@/lib/pbl/legacy/read';
 const log = createLogger('Generation');
 
 /**
@@ -115,6 +116,7 @@ export async function buildSceneFromOutline(
     ctx,
     agents,
     userProfile,
+    languageDirective: langText,
   });
   log.debug(`Generated ${actions.length} actions for: ${outline.title}`);
 
@@ -123,9 +125,27 @@ export async function buildSceneFromOutline(
 }
 
 /**
- * Build complete Scene object (without API/store)
+ * Build complete Scene object (without API/store).
+ *
+ * Stamps `outlineId` with the originating outline's id so editor agent tools
+ * can later resolve this scene's generation outline by identity rather than by
+ * the mutable `order` (which Pro-mode reorder/insert/delete rebalances).
  */
 export function buildCompleteScene(
+  outline: SceneOutline,
+  content:
+    | GeneratedSlideContent
+    | GeneratedQuizContent
+    | GeneratedInteractiveContent
+    | GeneratedPBLContent,
+  actions: Action[],
+  stageId: string,
+): Scene | null {
+  const scene = buildCompleteSceneInner(outline, content, actions, stageId);
+  return scene && { ...scene, outlineId: outline.id };
+}
+
+function buildCompleteSceneInner(
   outline: SceneOutline,
   content:
     | GeneratedSlideContent
@@ -204,7 +224,6 @@ export function buildCompleteScene(
         // Ultra Mode widget fields
         widgetType: content.widgetType,
         widgetConfig: content.widgetConfig,
-        teacherActions: content.teacherActions,
       },
       actions,
       createdAt: Date.now(),
@@ -212,7 +231,9 @@ export function buildCompleteScene(
     };
   }
 
-  if (outline.type === 'pbl' && 'projectConfig' in content) {
+  const resolvedPBL =
+    outline.type === 'pbl' ? resolvePBLContent(content as Partial<GeneratedPBLContent>) : undefined;
+  if (resolvedPBL?.kind === 'v2') {
     return {
       id: sceneId,
       stageId,
@@ -221,7 +242,7 @@ export function buildCompleteScene(
       order: outline.order,
       content: {
         type: 'pbl',
-        projectConfig: content.projectConfig,
+        projectV2: resolvedPBL.projectV2,
       },
       actions,
       createdAt: Date.now(),

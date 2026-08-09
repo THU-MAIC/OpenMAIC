@@ -31,6 +31,11 @@ export function useStreamingText(options: StreamingTextOptions): StreamingTextRe
   const frameRef = useRef<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const lastIndexRef = useRef(0);
+  const onCompleteRef = useRef(onComplete);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   /**
    * Skip streaming animation and display all text immediately
@@ -44,8 +49,8 @@ export function useStreamingText(options: StreamingTextOptions): StreamingTextRe
     setIsStreaming(false);
     startTimeRef.current = null;
     lastIndexRef.current = text.length;
-    onComplete?.();
-  }, [text, onComplete]);
+    onCompleteRef.current?.();
+  }, [text]);
 
   /**
    * Reset streaming state
@@ -74,7 +79,7 @@ export function useStreamingText(options: StreamingTextOptions): StreamingTextRe
     if (text.length > 500) {
       setDisplayedText(text);
       setIsStreaming(false);
-      onComplete?.();
+      onCompleteRef.current?.();
       return;
     }
 
@@ -102,7 +107,7 @@ export function useStreamingText(options: StreamingTextOptions): StreamingTextRe
       } else {
         setIsStreaming(false);
         startTimeRef.current = null;
-        onComplete?.();
+        onCompleteRef.current?.();
       }
     };
 
@@ -113,7 +118,7 @@ export function useStreamingText(options: StreamingTextOptions): StreamingTextRe
         cancelAnimationFrame(frameRef.current);
       }
     };
-  }, [text, speed, enabled, onComplete]);
+  }, [text, speed, enabled]);
 
   return {
     displayedText,

@@ -6,6 +6,7 @@ import {
   useEffect,
   useCallback,
   useMemo,
+  memo,
   forwardRef,
   useImperativeHandle,
 } from 'react';
@@ -13,7 +14,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { ScreenElement } from '@/components/slide-renderer/Editor/ScreenElement';
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement } from '@openmaic/dsl';
 import { useI18n } from '@/lib/hooks/use-i18n';
 
 export type WhiteboardCanvasHandle = {
@@ -33,7 +34,7 @@ type InteractiveWhiteboardCanvasProps = {
   readyText: string;
 };
 
-function AnimatedElement({
+function AnimatedElementBase({
   element,
   index,
   isClearing,
@@ -92,6 +93,13 @@ function AnimatedElement({
     </motion.div>
   );
 }
+
+// Memoized so whiteboard pan/zoom state changes (which rerender the parent
+// on every pointer/wheel event) do not cascade into ScreenElement rerenders.
+// Without this, motion's projection system inside CodeLineRow remeasures
+// against the panning parent transform and animates the diff, making code
+// content visibly lag behind the surrounding element box during a pan.
+const AnimatedElement = memo(AnimatedElementBase);
 
 const InteractiveWhiteboardCanvas = forwardRef<
   WhiteboardCanvasHandle,

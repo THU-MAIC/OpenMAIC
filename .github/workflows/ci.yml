@@ -2,13 +2,27 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Integration branches are listed here as well as below: a pull_request run
+    # only ever proves one part merged into the branch, so without a push
+    # trigger the accumulated state of the branch that eventually reaches main
+    # is never built on its own.
+    branches: [main, integration/kv-asset-server-backend]
   pull_request:
-    branches: [main]
+    branches:
+      [
+        main,
+        feat/maic-editor-v0,
+        feat/maic-editor-v1,
+        runtime-server-backend,
+        integration/kv-asset-server-backend,
+      ]
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a main run. Each main run validates only its own push range, so
+  # a superseded run takes the range that contained a package change with it and
+  # the replacement, comparing against the cancelled tip, sees nothing.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -16,6 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
@@ -24,7 +40,66 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Package version bumps
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-package-version-bumps.mjs "$BASE_SHA"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+      # A branch creation or a force push reports an unusable `before`. Fail
+      # rather than substituting HEAD^: a force push can replace many commits at
+      # once, so the previous commit is not the range that needs checking, and
+      # publishing requires this run to be green.
+      - name: Package version bumps (main push)
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          base="$BEFORE_SHA"
+          if [ -z "$base" ] || ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
+            echo "::error::Push range base ${base:-<empty>} is unavailable, so this push cannot be checked."
+            echo "Re-run after the branch has an ordinary push range, or verify the versions by hand."
+            exit 1
+          fi
+          node scripts/check-package-version-bumps.mjs "$base"
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+
+      # The tarball smoke test proves this about the bytes that would actually
+      # be published, but it installs five package tarballs, so it runs only on
+      # the release path. This is the cheap source-level form, here so that a
+      # pull request restoring `workspace:*` fails at review time rather than at
+      # release time, after a version number has already been spent.
+      - name: Internal dependency ranges
+        run: node scripts/check-internal-dependency-ranges.mjs
+
       - run: pnpm install --frozen-lockfile
+
+      # `postinstall` builds all five @openmaic packages, and some of them
+      # generate tracked, publishable files (renderer's fonts.css and its KaTeX
+      # font snapshot). The publish workflow refuses to release when the build
+      # rewrites one; catching it here means a stale generated file is a pull
+      # request failure instead of a release failure.
+      #
+      # Against GITHUB_SHA, not the index or HEAD: a bare `git diff` misses
+      # staged changes, while install code can create a commit and move HEAD.
+      # This check exists precisely because code ran before it, so its reference
+      # point must be something that code cannot move. Disabling replacement
+      # objects also prevents a local replace ref from redirecting the commit.
+      - name: Verify the install did not rewrite tracked package files
+        run: |
+          set -euo pipefail
+          actual_head="$(git --no-replace-objects rev-parse HEAD)"
+          if [ "$actual_head" != "$GITHUB_SHA" ]; then
+            echo "::error::HEAD moved from $GITHUB_SHA to $actual_head during installation."
+            exit 1
+          fi
+          if ! git --no-replace-objects diff --quiet "$GITHUB_SHA" -- packages/@openmaic; then
+            echo "::error::Installing rewrote tracked files under packages/@openmaic."
+            echo "Regenerate them and commit the result."
+            git --no-replace-objects --no-pager diff --stat "$GITHUB_SHA" -- packages/@openmaic
+            exit 1
+          fi
+          echo "Tracked package files match the commit under test."
 
       - name: Prettier
         run: pnpm check
@@ -40,6 +115,100 @@ jobs:
 
       - name: Unit Tests
         run: pnpm test
+
+      - name: Unit Tests (importer)
+        run: pnpm --filter @openmaic/importer test
+
+      - name: Unit Tests (dsl)
+        run: pnpm --filter @openmaic/dsl test
+
+      - name: TypeScript (generation)
+        run: pnpm --filter @openmaic/generation run typecheck
+
+      - name: Unit Tests (generation)
+        run: pnpm --filter @openmaic/generation test
+
+      # Remove this duplicate-asset guard in Part D with the app prompt copy.
+      - name: Prompt asset parity (generation)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in templates/requirements-to-outlines snippets/{image-instructions,json-output-rules,media-safety-guidelines,slide-generated-image-instructions,slide-image-instructions,slide-video-instructions,video-instructions}.md; do
+            if ! diff -r "lib/prompts/$path" "packages/@openmaic/generation/$path"; then
+              echo "::error file=lib/prompts/$path::Prompt asset $path diverged; the app and package copies must be edited together until Part D removes the app copy."
+              exit 1
+            fi
+          done
+
+      - name: Node consumer smoke (generation outlines)
+        shell: bash
+        run: |
+          set -euo pipefail
+          port=43127
+          node scripts/generation-node-smoke-server.mjs --port "$port" >"$RUNNER_TEMP/generation-smoke-server.log" 2>&1 &
+          server_pid=$!
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for attempt in {1..50}; do
+            if node -e "fetch('http://127.0.0.1:$port/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"; then
+              break
+            fi
+            if [ "$attempt" -eq 50 ]; then
+              cat "$RUNNER_TEMP/generation-smoke-server.log"
+              exit 1
+            fi
+            sleep 0.1
+          done
+          output="$(node scripts/generation-node-smoke.mjs \
+            --requirement "Explain dependency injection" \
+            --endpoint "http://127.0.0.1:$port" \
+            --model smoke-model)"
+          printf '%s\n' "$output"
+          node -e 'const value = JSON.parse(process.argv[1]); if (!Array.isArray(value.outlines) || value.outlines.length === 0) process.exit(1)' "$output"
+
+      # Covers the package's own test tree, which the root tsc reaches only by an
+      # incidental glob. The device-scope guard is written as `@ts-expect-error`
+      # probes in those tests, and a probe nothing type-checks proves nothing.
+      - name: TypeScript (storage, incl. tests)
+        run: pnpm --filter @openmaic/storage run typecheck
+
+      - name: Unit Tests (storage)
+        run: pnpm --filter @openmaic/storage test
+
+  render-service:
+    name: Render Service (typecheck + tests)
+    runs-on: ubuntu-latest
+    # The producer dep bundles puppeteer; skip its Chromium download — the unit
+    # tests exercise the service's boundaries (unzip, admission, body caps) and
+    # never launch a browser.
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # render-service is its own npm package (own lockfile, Node-only deps),
+          # excluded from the root eslint/tsc/pnpm workspace — so it gets its own
+          # install + quality gate here rather than riding on the `check` job.
+          cache: npm
+          cache-dependency-path: render-service/package-lock.json
+
+      - name: Install
+        working-directory: render-service
+        run: npm ci
+
+      - name: TypeScript
+        working-directory: render-service
+        run: npm run typecheck
+
+      - name: Unit Tests
+        working-directory: render-service
+        run: npm test
 
   e2e:
     name: E2E Tests
@@ -58,6 +227,46 @@ jobs:
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install chromium --with-deps
+
+      # Measures the emitted cover cards in Chromium. Lives with the unit tests
+      # (it needs the compiler), but only this job has a browser, so it runs
+      # here with the flag that turns a missing one into a failure.
+      - name: Cover-card layout guardrail
+        run: pnpm exec vitest run tests/video-export/cover-card-layout.browser.test.ts
+        env:
+          COVER_LAYOUT_BROWSER: '1'
+
+      # runner.* is only valid in step contexts (not job-level env).
+      - name: Materialize Hyperframes lint samples
+        run: pnpm exec vitest run tests/video-export/e2e-materialize.test.ts
+        env:
+          HF_E2E_DIR: ${{ runner.temp }}/openmaic-hyperframes-samples
+
+      # Hyperframes 0.7.60 reports warning-only lint with exit status zero, so
+      # require its plain clean summary as well as a successful process.
+      - name: Lint Hyperframes samples
+        shell: bash
+        env:
+          HF_E2E_DIR: ${{ runner.temp }}/openmaic-hyperframes-samples
+        run: |
+          set -euo pipefail
+          for sample in quiz pbl-v2 pbl-legacy pbl-dense mixed arabic; do
+            dir="$HF_E2E_DIR/$sample"
+            if output="$(npx --yes hyperframes@0.7.60 lint "$dir" 2>&1)"; then
+              status=0
+            else
+              status=$?
+            fi
+            printf '%s\n' "$output"
+            if [ "$status" -ne 0 ]; then
+              echo "::error::Hyperframes lint failed for $sample (exit $status)."
+              exit "$status"
+            fi
+            if ! grep -Fq -- '0 errors, 0 warnings' <<<"$output"; then
+              echo "::error::Hyperframes lint for $sample did not report zero errors and zero warnings."
+              exit 1
+            fi
+          done
 
       - name: Run e2e tests
         run: pnpm exec playwright test
