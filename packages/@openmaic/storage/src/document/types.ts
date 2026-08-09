@@ -15,10 +15,10 @@ import type { Stage, Scene } from '@openmaic/dsl';
  * The minimal scene shape the store itself depends on — the fields it uses to
  * normalize (`stageId` + `id` are the compound row key), order (`order`), and
  * integrity-check scenes. The DSL `Scene` satisfies it. The store is generic
- * over the concrete scene type so an app can persist its own widened scene union
- * (interactive / pbl / …) — content the DSL does not own — by supplying a
- * matching {@link SceneValidator}. Everything below `SceneLike` is opaque to the
- * store and rides along verbatim.
+ * over the concrete scene type so an app can persist widened payloads for the
+ * contract's interactive / pbl kinds by supplying a matching
+ * {@link SceneValidator}. Everything below `SceneLike` is opaque to the store
+ * and rides along verbatim.
  */
 export interface SceneLike {
   id: string;
@@ -27,10 +27,10 @@ export interface SceneLike {
 }
 
 /**
- * Validate a scene at the write boundary. Defaults to the DSL `validateScene`
- * (which owns the universal `slide` / `quiz` kinds); an app that widens `Scene`
- * with its own content kinds injects a validator that also accepts those, so the
- * gate stays fail-loud for the app's shapes rather than silently rejecting them.
+ * Validate a scene at the write boundary. Defaults to the DSL `validateScene`,
+ * which owns all four persisted content kinds. An app that widens their payloads
+ * injects its own validator so the gate applies the app's compatibility policy
+ * instead of rejecting its richer or historical shapes.
  */
 export type SceneValidator = (
   scene: unknown,

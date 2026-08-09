@@ -13,6 +13,7 @@
  *      `PBLProjectConfig` from v2 `PBLProjectV2`.
  */
 import { describe, it, expect } from 'vitest';
+import { isPBLProject, type PBLProject } from '@openmaic/dsl';
 import {
   hasPBLProjectV2Containers,
   isRunnablePBLProjectV2,
@@ -28,6 +29,58 @@ import {
   type PBLHandover,
   type PBLRuntimeEvent,
 } from '@/lib/pbl/v2/types';
+
+const canonicalStoredDesignTemplate = {
+  uiPhase: 'hero',
+  title: 'Neighborhood biodiversity survey',
+  description: 'Create a field guide from local observations.',
+  learningObjective: 'Practice observation, classification, and evidence-based writing.',
+  gains: ['Record observations consistently', 'Classify organisms from evidence'],
+  proficiency: 'beginner',
+  language: 'en-US',
+  languageDirective: 'Reply in English.',
+  tags: ['biology', 'fieldwork'],
+  status: 'active',
+  roles: [
+    {
+      id: 'role-instructor',
+      type: 'instructor',
+      name: 'Field Guide',
+      description: 'Helps you turn observations into a clear field guide.',
+    },
+  ],
+  milestones: [
+    {
+      id: 'milestone-observe',
+      title: 'Observe the site',
+      status: 'active',
+      order: 0,
+      briefing: 'Start with a repeatable observation method.',
+      completionCriteria: 'Three observations use the same recording format.',
+      microtasks: [
+        {
+          id: 'microtask-record',
+          title: 'Record three organisms',
+          status: 'todo',
+          assignee: 'user',
+          hints: ['Note location, visible traits, and behavior.'],
+          order: 0,
+        },
+      ],
+    },
+  ],
+  submissions: [],
+  evaluations: [],
+  threads: [{ agentId: 'role-instructor', messages: [] }],
+  engagementEvents: [],
+  createdAt: '2026-08-09T08:00:00.000Z',
+  updatedAt: '2026-08-09T08:00:00.000Z',
+} satisfies PBLProjectV2;
+
+const canonicalContractProject: PBLProject = canonicalStoredDesignTemplate;
+
+type Assert<T extends true> = T;
+const appProjectSatisfiesContract: Assert<PBLProjectV2 extends PBLProject ? true : false> = true;
 
 // A fully-populated reference value covering every optional field so
 // drift in any nested shape is caught.
@@ -192,6 +245,11 @@ function makeFullProject(): PBLProjectV2 {
 }
 
 describe('PBL v2 — types', () => {
+  it('keeps a canonical stored design template assignable to app and contract types', () => {
+    expect(appProjectSatisfiesContract).toBe(true);
+    expect(isPBLProject(canonicalContractProject)).toBe(true);
+  });
+
   it('JSON round-trip is loss-free on a fully populated project', () => {
     const project = makeFullProject();
     const serialized = JSON.stringify(project);
