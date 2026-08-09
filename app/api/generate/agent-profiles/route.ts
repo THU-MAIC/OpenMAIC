@@ -29,6 +29,7 @@ interface RequestBody {
     voiceId: string;
     voiceName: string;
     voiceLanguage?: string;
+    voiceGender?: 'male' | 'female' | 'neutral';
   }>;
 }
 
@@ -96,6 +97,7 @@ export async function POST(req: NextRequest) {
               id: `${v.providerId}::${v.voiceId}`,
               name: v.voiceName,
               language: v.voiceLanguage || 'unknown',
+              gender: v.voiceGender || 'unknown',
             })),
           )
         : '';
@@ -103,7 +105,13 @@ export async function POST(req: NextRequest) {
     const voicePrompt = voiceListStr
       ? `- Each agent should be assigned a voice that matches their persona from this list: ${voiceListStr}
   - Prefer a voice whose language matches the course language directive
-  - Pick a voice that suits the agent's personality and role (e.g. authoritative voice for teacher, lively voice for energetic student)
+  - The voice's "gender" MUST match the gender implied by the agent's name and by
+    the "identity" of its voiceDesign. A female-named agent must not get a voice
+    whose gender is "male", and vice versa. Voice display names may be in a
+    language you are not generating in — trust the "gender" field, not the name.
+  - Within the voices of the right gender, pick one that suits the agent's
+    personality and role (e.g. authoritative voice for teacher, lively voice for
+    energetic student)
   - Try to use different voices for each agent`
       : '';
 
@@ -129,6 +137,10 @@ Requirements:
   - Use the "path" value as the avatar field in the output
 - Each agent must be assigned one color from this list: ${JSON.stringify(AGENT_COLOR_PALETTE)}
   - Each agent must have a different color
+- Each agent needs a "gender" field — always one of the literal English values
+  "male", "female" or "neutral" — consistent with the agent's name. This is a
+  machine field: it stays in English even when names and personas follow the
+  language directive, and it is what binds the agent to a matching voice.
 - Each agent needs a "voiceDesign" object describing their VOCAL identity (not personality), written following the language directive and consistent with the persona, as three short comma-free phrases:
   - "identity": gender + age + role (e.g. "middle-aged male teacher")
   - "texture": pitch + vocal quality (e.g. "warm low-pitched slightly husky")
@@ -142,6 +154,7 @@ Return a JSON object with this exact structure:
       "name": "string",
       "role": "teacher" | "assistant" | "student",
       "persona": "string (2-3 sentences)",
+      "gender": "male" | "female" | "neutral",
       "voiceDesign": { "identity": "string", "texture": "string", "delivery": "string" },
       "avatar": "string (from available list)",
       "color": "string (hex color from palette)",
@@ -175,6 +188,7 @@ Return a JSON object with this exact structure:
         avatar: string;
         color: string;
         priority: number;
+        gender?: string;
         voice?: string;
         voiceDesign?: unknown;
       }>;
@@ -219,6 +233,11 @@ Return a JSON object with this exact structure:
       }
 
       const voiceDesign = normalizeVoiceDesign(agent.voiceDesign);
+      const rawGender = typeof agent.gender === 'string' ? agent.gender.trim().toLowerCase() : '';
+      const gender =
+        rawGender === 'male' || rawGender === 'female' || rawGender === 'neutral'
+          ? (rawGender as 'male' | 'female' | 'neutral')
+          : undefined;
 
       return {
         id: `gen-${nanoid(8)}`,
@@ -229,6 +248,7 @@ Return a JSON object with this exact structure:
         color: agent.color || AGENT_COLOR_PALETTE[index % AGENT_COLOR_PALETTE.length],
         priority:
           agent.priority ?? (agent.role === 'teacher' ? 10 : agent.role === 'assistant' ? 7 : 5),
+        ...(gender ? { gender } : {}),
         ...(voiceConfig ? { voiceConfig } : {}),
         ...(voiceDesign ? { voiceDesign } : {}),
       };

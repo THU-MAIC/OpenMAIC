@@ -15,6 +15,8 @@ export interface AgentConfig {
   color: string; // UI theme color (hex)
   allowedActions: string[]; // Action types this agent can use
   priority: number; // Priority for director selection (1-10)
+  /** Vocal gender of the agent, used to bind it to a matching voice. */
+  gender?: 'male' | 'female' | 'neutral';
   voiceConfig?: { providerId: TTSProviderId; modelId?: string; voiceId: string }; // Per-agent TTS voice selection
   voiceDesign?: VoiceDesign; // 3-layer vocal descriptor for auto voice (provider-neutral)
 
@@ -37,6 +39,8 @@ export interface AgentTemplate {
   color: string;
   allowedActions: string[];
   priority: number;
+  /** Vocal gender of the agent, used to bind it to a matching voice. */
+  gender?: 'male' | 'female' | 'neutral';
   voiceConfig?: { providerId: TTSProviderId; modelId?: string; voiceId: string }; // Per-agent TTS voice selection
   voiceDesign?: VoiceDesign; // 3-layer vocal descriptor for auto voice (provider-neutral)
 
