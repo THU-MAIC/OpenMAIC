@@ -13,6 +13,180 @@ function repairQuotedPropertyFragments(jsonStr: string): string {
   );
 }
 
+/**
+ * LaTeX command names that begin with a JSON control-escape letter (n/r/t) and
+ * therefore collide with `\n` `\r` `\t`. Used by
+ * {@link normalizeJsonStringBackslashes} to tell e.g. `\nu` / `\times` (LaTeX)
+ * apart from a genuine newline / tab escape. The list is intentionally limited
+ * to common math commands; an unlisted command simply keeps the previous
+ * behaviour (no regression) — it does not break parsing.
+ */
+const NRT_LATEX_COMMANDS = new Set([
+  // \n…
+  'nu',
+  'nabla',
+  'neq',
+  'ne',
+  'ni',
+  'not',
+  'notin',
+  'nleq',
+  'ngeq',
+  'nless',
+  'ngtr',
+  'nmid',
+  'nparallel',
+  'nsubseteq',
+  'nsupseteq',
+  'nsim',
+  'ncong',
+  'nearrow',
+  'nwarrow',
+  'nexists',
+  'neg',
+  'natural',
+  'nrightarrow',
+  'nleftarrow',
+  'nleftrightarrow',
+  'nprec',
+  'nsucc',
+  // \r…
+  'rho',
+  'right',
+  'rightarrow',
+  'rightleftharpoons',
+  'rightharpoonup',
+  'rightharpoondown',
+  'rangle',
+  'rceil',
+  'rfloor',
+  'rbrace',
+  'rbrack',
+  'rtimes',
+  'rvert',
+  'rmoustache',
+  // \t…
+  'theta',
+  'times',
+  'tau',
+  'tan',
+  'tanh',
+  'text',
+  'textbf',
+  'textit',
+  'textrm',
+  'texttt',
+  'textstyle',
+  'tfrac',
+  'tbinom',
+  'therefore',
+  'tilde',
+  'to',
+  'top',
+  'tag',
+  'triangle',
+  'triangledown',
+  'triangleleft',
+  'triangleright',
+  'triangleq',
+  'tt',
+]);
+
+/**
+ * Re-escape stray backslashes inside JSON string literals so that raw LaTeX
+ * (which LLMs frequently emit) survives `JSON.parse`.
+ *
+ * Why this is needed: `JSON.parse` does not throw on `"\frac"` or `"\times"` —
+ * it silently decodes `\f` -> U+000C (form feed) and `\t` -> U+0009 (tab),
+ * corrupting the math content. Sequences whose command starts with a letter
+ * that is not a valid escape (`\sum`, `\alpha`) make `JSON.parse` throw instead,
+ * so the previous regex fixes only ever saw that second class and left the
+ * silent corruption in place. Normalising here, before the first parse, closes
+ * both paths with a single linear scan (no catastrophic backtracking).
+ *
+ * The function is a strict no-op on already-valid JSON: every valid escape
+ * (`\"` `\\` `\/` `\n` `\r` `\t` `\uXXXX`) is preserved, including newlines that
+ * precede a lowercase word and tabs inside code. The only deliberate
+ * reinterpretation is a bare `\b` / `\f` followed by letters — a
+ * backspace / form-feed reading never occurs in real educational content,
+ * whereas `\beta` / `\frac` are ubiquitous, so those are read as LaTeX.
+ */
+export function normalizeJsonStringBackslashes(jsonStr: string): string {
+  // Fast path: no backslash means no escapes to normalise, so the scan below
+  // would be a pure copy. Most structure-heavy JSON hits this.
+  if (!jsonStr.includes('\\')) return jsonStr;
+
+  let out = '';
+  let inString = false;
+  let i = 0;
+  while (i < jsonStr.length) {
+    const ch = jsonStr[i];
+    if (!inString) {
+      out += ch;
+      if (ch === '"') inString = true;
+      i += 1;
+      continue;
+    }
+    if (ch === '"') {
+      out += ch;
+      inString = false;
+      i += 1;
+      continue;
+    }
+    if (ch !== '\\') {
+      out += ch;
+      i += 1;
+      continue;
+    }
+    // `ch` is a backslash inside a string literal.
+    const next = jsonStr[i + 1];
+    if (next === undefined) {
+      out += '\\\\';
+      i += 1;
+      continue;
+    }
+    // Valid pass-through escapes.
+    if (next === '"' || next === '\\' || next === '/') {
+      out += '\\' + next;
+      i += 2;
+      continue;
+    }
+    if (next === 'u' && /^[0-9a-fA-F]{4}$/.test(jsonStr.slice(i + 2, i + 6))) {
+      out += jsonStr.slice(i, i + 6);
+      i += 6;
+      continue;
+    }
+    // `\b` / `\f`: a control reading never appears in content -> LaTeX command.
+    if (next === 'b' || next === 'f') {
+      out += '\\\\' + next;
+      i += 2;
+      continue;
+    }
+    // `\n` / `\r` / `\t`: a genuine control escape UNLESS the maximal lowercase
+    // run spells a known LaTeX command (`\nu`, `\rho`, `\times`, ...).
+    if (next === 'n' || next === 'r' || next === 't') {
+      let j = i + 1;
+      while (j < jsonStr.length && jsonStr[j] >= 'a' && jsonStr[j] <= 'z') j += 1;
+      const run = jsonStr.slice(i + 1, j);
+      if (NRT_LATEX_COMMANDS.has(run)) {
+        out += '\\\\' + run;
+        i = j;
+        continue;
+      }
+      out += '\\' + next;
+      i += 2;
+      continue;
+    }
+    // Any other char is not a valid JSON escape: a LaTeX command letter
+    // (`\sum`, `\alpha`, `\Gamma`), a `\u` that is not `\uXXXX` (`\underline`),
+    // or LaTeX punctuation (`\%`, `\_`, `\{`). Double-escape to keep the literal
+    // backslash.
+    out += '\\\\' + next;
+    i += 2;
+  }
+  return out;
+}
+
 function logJsonParseError(stage: string, jsonStr: string, error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
   const positionMatch = message.match(/position\s+(\d+)/i);
@@ -164,9 +338,12 @@ function parseJsonResponseCandidate<T>(response: string): T | null {
  * Try to parse JSON with various fixes for common AI response issues
  */
 export function tryParseJson<T>(jsonStr: string): T | null {
-  // Attempt 1: Try parsing as-is
+  // Attempt 1: Normalise stray LaTeX backslashes, then parse.
+  // This runs before any plain parse because JSON.parse silently mis-decodes
+  // raw LaTeX (`\frac` -> form feed, `\times` -> tab) instead of throwing;
+  // normalisation is a no-op on already-valid JSON.
   try {
-    return JSON.parse(jsonStr) as T;
+    return JSON.parse(normalizeJsonStringBackslashes(jsonStr)) as T;
   } catch (error) {
     logJsonParseError('Attempt 1', jsonStr, error);
     // Continue to fix attempts
@@ -183,29 +360,11 @@ export function tryParseJson<T>(jsonStr: string): T | null {
     // The object-context prefix/suffix guards keep valid JSON strings intact.
     fixed = repairQuotedPropertyFragments(fixed);
 
-    // Fix 1: Handle LaTeX-style escapes that break JSON (e.g., \frac, \left, \right, \times, etc.)
-    // These are common in math content and need to be double-escaped
-    // Match backslash followed by letters (LaTeX commands) inside strings,
-    // but skip valid JSON escape sequences (\b, \f, \n, \r, \t, \u)
-    fixed = fixed.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (_match, content) => {
-      // Double-escape backslash+letter ONLY for non-JSON-escape letters
-      const fixedContent = content.replace(/\\([a-zA-Z])/g, (_m: string, ch: string) => {
-        // Preserve valid JSON escape sequences
-        if ('bfnrtu'.includes(ch)) return `\\${ch}`;
-        return `\\\\${ch}`;
-      });
-      return `"${fixedContent}"`;
-    });
-
-    // Fix 2: Fix other invalid escape sequences (e.g., \S, \L, etc.)
-    // Valid JSON escapes: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
-    fixed = fixed.replace(/\\([^"\\\/bfnrtu\n\r])/g, (match, char) => {
-      // If it's a letter, it's likely a LaTeX command
-      if (/[a-zA-Z]/.test(char)) {
-        return '\\\\' + char;
-      }
-      return match;
-    });
+    // Fix 1: Re-escape raw LaTeX backslashes (`\frac`, `\times`, `\sum`, ...) so
+    // the math content survives JSON.parse. See normalizeJsonStringBackslashes
+    // for the full rationale; it supersedes the previous per-letter regex fixes
+    // which left `\b\f\n\r\t`-initial commands silently corrupted.
+    fixed = normalizeJsonStringBackslashes(fixed);
 
     // Fix 3: Try to fix truncated JSON arrays/objects
     const trimmed = fixed.trim();
