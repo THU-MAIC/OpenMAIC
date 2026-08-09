@@ -10,6 +10,7 @@ export type WebSearchProviderId =
   | 'bocha'
   | 'brave'
   | 'baidu'
+  | 'claude'
   | 'minimax'
   | 'doubao'
   | 'searxng';

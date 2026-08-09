@@ -134,6 +134,8 @@ const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   BOCHA: 'bocha',
   BRAVE: 'brave',
   BAIDU: 'baidu',
+  // WEB_SEARCH_ prefix avoids colliding with ANTHROPIC_* LLM provider vars.
+  WEB_SEARCH_CLAUDE: 'claude',
   WEB_SEARCH_MINIMAX: 'minimax',
   SEARXNG: 'searxng',
 };
@@ -699,6 +701,20 @@ export function resolveWebSearchBaseUrl(
   return resolveSectionBaseUrl('webSearch', providerId, clientBaseUrl);
 }
 
+/**
+ * Resolve the web-search model for model-based providers (currently Claude).
+ * A managed provider may pin its model server-side (`${PREFIX}_MODELS`, first
+ * entry) — authoritative like its key/baseUrl. Otherwise the client model wins.
+ */
+export function resolveWebSearchModel(
+  providerId: string,
+  clientModel?: string,
+): string | undefined {
+  const entry = getConfig().webSearch[providerId];
+  if (entry?.models && entry.models.length > 0) return entry.models[0];
+  return clientModel;
+}
+
 export function resolveServerWebSearchProviderId(preferredProviderId?: string): string | undefined {
   const webSearch = getConfig().webSearch;
   if (preferredProviderId && webSearch[preferredProviderId]?.apiKey) {
@@ -708,6 +724,7 @@ export function resolveServerWebSearchProviderId(preferredProviderId?: string): 
   if (webSearch.bocha?.apiKey) return 'bocha';
   if (webSearch.baidu?.apiKey) return 'baidu';
   if (webSearch.minimax?.apiKey) return 'minimax';
+  if (webSearch.claude?.apiKey) return 'claude';
   return Object.keys(webSearch)[0];
 }
 

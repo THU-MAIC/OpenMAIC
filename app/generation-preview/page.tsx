@@ -520,6 +520,7 @@ function GenerationPreviewContent() {
               apiKey: wsConfig?.apiKey || undefined,
               baseUrl: wsProviderId === 'searxng' ? undefined : wsConfig?.baseUrl || undefined,
               baiduSubSources: wsProviderId === 'baidu' ? wsSettings.baiduSubSources : undefined,
+              claudeModelId: wsProviderId === 'claude' ? wsConfig?.modelId || undefined : undefined,
             }),
           ),
           signal,

@@ -1034,6 +1034,7 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
@@ -1495,6 +1496,8 @@
     "webSearchApiKeyPlaceholder": "輸入你的 Tavily API Key",
     "webSearchApiKeyPlaceholderServer": "已設定服務端密鑰，選填覆蓋",
     "webSearchApiKeyHint": "從所選搜尋服務商取得 API Key，用於網路搜尋",
+    "claudeSearchModel": "搜尋模型",
+    "claudeSearchModelHint": "用於執行網路搜尋並總結結果的 Claude 模型。",
     "webSearchApiKeyOptional": "API Key 為可選項。未填寫時將透過公開頁面抓取獲取結果。",
     "searxngServerOnlyNotice": "SearXNG 須由伺服器端設定。請設定 SEARXNG_BASE_URL 環境變數（或在 server-providers.yml 的 web-search 區段中設定）。不接受用戶端自行填寫實例位址。",
     "baiduSubSources": "百度搜尋來源",
