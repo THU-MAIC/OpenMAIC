@@ -34,6 +34,28 @@ function validPayload(operationId = 'legacy-import:valid') {
   } as const;
 }
 
+function validElementPayload(operationId = 'element-add:valid') {
+  return {
+    payloadVersion: 1,
+    operationId,
+    operation: {
+      kind: 'element_added',
+      element: {
+        id: 'text-added',
+        type: 'text',
+        left: 40,
+        top: 50,
+        width: 240,
+        height: 60,
+        rotate: 0,
+        content: 'learner text',
+        defaultFontName: 'Inter',
+        defaultColor: '#000000',
+      },
+    },
+  } as const;
+}
+
 function handlerFetch(handler: RequestListener): typeof globalThis.fetch {
   return async (input, init) => {
     const request = new Request(input, init);
@@ -125,6 +147,34 @@ describe('default BrowserRuntimeStore app payload wiring', () => {
         payload: { payloadVersion: 1 },
       }),
     ).rejects.toThrow('invalid runtime record');
+    await expect(
+      store.appendRecord(
+        {
+          id: 'element-add:valid',
+          sessionId: 'whiteboard-session',
+          createdAt: now,
+          payload: validElementPayload(),
+        },
+        { expectedLastSeq: null },
+      ),
+    ).resolves.toMatchObject({ seq: 0 });
+    await expect(
+      store.appendRecord(
+        {
+          id: 'element-add:invalid-target',
+          sessionId: 'whiteboard-session',
+          createdAt: now,
+          payload: {
+            ...validElementPayload('element-add:invalid-target'),
+            operation: {
+              ...validElementPayload().operation,
+              whiteboardId: 'model-selected-board',
+            },
+          },
+        },
+        { expectedLastSeq: 0 },
+      ),
+    ).rejects.toThrow('invalid runtime record');
   });
 
   it('enforces the same whiteboard validator and CAS through HTTP', async () => {
@@ -177,6 +227,48 @@ describe('default BrowserRuntimeStore app payload wiring', () => {
       { expectedLastSeq: null },
     );
     expect(httpCommitted.seq).toBe(0);
+
+    await client.createSession({
+      id: 'http-whiteboard-element',
+      kind: 'whiteboard',
+      stageId: 'stage-1',
+      learnerKey: 'learner-1',
+      status: 'active',
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await expect(
+      client.appendRecord(
+        {
+          id: 'element-add:http',
+          sessionId: 'http-whiteboard-element',
+          createdAt: NOW,
+          payload: validElementPayload('element-add:http'),
+        },
+        { expectedLastSeq: null },
+      ),
+    ).resolves.toMatchObject({ seq: 0 });
+    await expect(
+      client.appendRecord(
+        {
+          id: 'element-add:http-invalid',
+          sessionId: 'http-whiteboard-element',
+          createdAt: NOW,
+          payload: {
+            ...validElementPayload('element-add:http-invalid'),
+            operation: {
+              ...validElementPayload().operation,
+              whiteboardId: 'model-selected-board',
+            },
+          },
+        },
+        { expectedLastSeq: 0 },
+      ),
+    ).rejects.toMatchObject({
+      name: HttpRuntimeStoreError.name,
+      status: 400,
+      code: 'VALIDATION_FAILED',
+    });
     const stale = await client
       .appendRecord(
         {

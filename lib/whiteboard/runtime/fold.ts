@@ -1,9 +1,10 @@
-import { validateRuntimeRecord, type RuntimeRecord } from '@openmaic/dsl';
+import { validateRuntimeRecord, type RuntimeRecord, type Whiteboard } from '@openmaic/dsl';
 
 import {
   type FoldedWhiteboardRuntimeDetails,
   type FoldedWhiteboardRuntimeState,
   type Sha256Digest,
+  type WhiteboardRuntimeOperationV1,
   type WhiteboardRuntimePayloadV1,
 } from './types';
 import { assertWhiteboardRuntimePayload, cloneCanonicalJson, sha256Canonical } from './validate';
@@ -17,6 +18,46 @@ function immutableClone<T>(value: T): T {
   };
   freeze(cloned);
   return cloned;
+}
+
+const RUNTIME_WHITEBOARD_ID_NAMESPACE = 'openmaic.whiteboard-runtime-board.v1';
+
+async function deriveRuntimeWhiteboardId(sessionId: string): Promise<string> {
+  const digest = await sha256Canonical({
+    namespace: RUNTIME_WHITEBOARD_ID_NAMESPACE,
+    sessionId,
+  });
+  return `runtime-whiteboard:${digest.slice('sha256:'.length)}`;
+}
+
+export async function applyWhiteboardRuntimeOperation(
+  sessionId: string,
+  current: Whiteboard | null,
+  operation: WhiteboardRuntimeOperationV1,
+): Promise<Whiteboard> {
+  const snapshot = immutableClone(operation);
+  if (snapshot.kind === 'legacy_snapshot_imported') {
+    if (current !== null) throw new Error('WHITEBOARD_RUNTIME_IMPORT_AFTER_STATE');
+    return immutableClone(snapshot.whiteboard);
+  }
+
+  if (current?.elements.some((element) => element.id === snapshot.element.id)) {
+    throw new Error('WHITEBOARD_RUNTIME_ELEMENT_ALREADY_EXISTS');
+  }
+  if (current === null) {
+    return immutableClone({
+      id: await deriveRuntimeWhiteboardId(sessionId),
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      elements: [snapshot.element],
+      background: { type: 'solid', color: '#ffffff' },
+      animations: [],
+    });
+  }
+  return immutableClone({
+    ...current,
+    elements: [...current.elements, snapshot.element],
+  });
 }
 
 export async function foldWhiteboardRuntimeRecords(
@@ -56,10 +97,7 @@ export async function foldWhiteboardRuntimeRecords(
       continue;
     }
     operations[payload.operationId] = Object.freeze({ digest, seq: record.seq });
-    if (payload.operation.kind === 'legacy_snapshot_imported') {
-      if (whiteboard !== null) throw new Error('WHITEBOARD_RUNTIME_IMPORT_AFTER_STATE');
-      whiteboard = immutableClone(payload.operation.whiteboard);
-    }
+    whiteboard = await applyWhiteboardRuntimeOperation(sessionId, whiteboard, payload.operation);
   }
 
   return Object.freeze({

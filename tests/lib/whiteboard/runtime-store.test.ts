@@ -1,5 +1,5 @@
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import type { Whiteboard } from '@openmaic/dsl';
+import type { PPTElement, Whiteboard } from '@openmaic/dsl';
 import {
   BrowserRuntimeStore,
   RuntimeAppendConflictError,
@@ -19,6 +19,8 @@ import {
 import {
   LEGACY_WHITEBOARD_SOURCE_KIND,
   WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
+  type LegacySnapshotImportedOperation,
+  type WhiteboardElementAddedOperation,
   type WhiteboardRuntimePayloadV1,
 } from '@/lib/whiteboard/runtime/types';
 
@@ -30,7 +32,30 @@ function board(id = 'board-1'): Whiteboard {
   return { id, viewportSize: 1000, viewportRatio: 0.5625, elements: [] };
 }
 
-function payload(id = 'operation-1', boardId = 'board-1'): WhiteboardRuntimePayloadV1 {
+type LegacyPayload = WhiteboardRuntimePayloadV1 & {
+  operation: LegacySnapshotImportedOperation;
+};
+
+type ElementAddedPayload = WhiteboardRuntimePayloadV1 & {
+  operation: WhiteboardElementAddedOperation;
+};
+
+function textElement(id = 'text-added', content = 'learner text'): PPTElement {
+  return {
+    id,
+    type: 'text',
+    left: 40,
+    top: 50,
+    width: 240,
+    height: 60,
+    rotate: 0,
+    content,
+    defaultFontName: 'Inter',
+    defaultColor: '#000000',
+  };
+}
+
+function payload(id = 'operation-1', boardId = 'board-1'): LegacyPayload {
   return {
     payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
     operationId: id,
@@ -42,6 +67,14 @@ function payload(id = 'operation-1', boardId = 'board-1'): WhiteboardRuntimePayl
       },
       whiteboard: board(boardId),
     },
+  };
+}
+
+function elementPayload(id = 'element-operation-1', element = textElement()): ElementAddedPayload {
+  return {
+    payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
+    operationId: id,
+    operation: { kind: 'element_added', element },
   };
 }
 
@@ -82,6 +115,155 @@ describe('whiteboard RuntimeStore service', () => {
     ).toMatchObject({ kind: 'whiteboard', status: 'active' });
   });
 
+  it('commits learner elements into one deterministic session-owned board', async () => {
+    const store = runtimeStore();
+    const runtime = service(store, 'private-learner');
+    const firstInput = {
+      stageId: 'stage-1',
+      expectedLastSeq: null,
+      payload: elementPayload(),
+    };
+    const first = await runtime.append(firstInput);
+    expect(first).toMatchObject({
+      committedSeq: 0,
+      replayed: false,
+      state: {
+        whiteboard: {
+          id: expect.stringMatching(/^runtime-whiteboard:[0-9a-f]{64}$/u),
+          viewportSize: 1000,
+          viewportRatio: 0.5625,
+          background: { type: 'solid', color: '#ffffff' },
+          animations: [],
+          elements: [{ id: 'text-added' }],
+        },
+      },
+    });
+    expect(first.state.whiteboard?.id).not.toContain('private-learner');
+    await expect(runtime.append({ ...firstInput, expectedLastSeq: 99 })).resolves.toMatchObject({
+      committedSeq: 0,
+      replayed: true,
+    });
+
+    const second = await runtime.append({
+      stageId: 'stage-1',
+      expectedLastSeq: 0,
+      payload: elementPayload('element-operation-2', textElement('text-2', 'second')),
+    });
+    expect(second.state.whiteboard?.id).toBe(first.state.whiteboard?.id);
+    expect(second.state.whiteboard?.elements.map((element) => element.id)).toEqual([
+      'text-added',
+      'text-2',
+    ]);
+    expect(Object.isFrozen(second.state.whiteboard)).toBe(true);
+
+    const sameIdentity = await service(runtimeStore(), 'private-learner').append(firstInput);
+    const otherIdentity = await service(runtimeStore(), 'other-learner').append(firstInput);
+    expect(sameIdentity.state.whiteboard?.id).toBe(first.state.whiteboard?.id);
+    expect(otherIdentity.state.whiteboard?.id).not.toBe(first.state.whiteboard?.id);
+  });
+
+  it('rejects duplicate elements and Legacy-after-learner before persistence', async () => {
+    const store = runtimeStore();
+    const runtime = service(store);
+    await runtime.append({
+      stageId: 'stage-1',
+      expectedLastSeq: null,
+      payload: elementPayload(),
+    });
+    await expect(
+      runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: null,
+        payload: elementPayload('element-operation-stale'),
+      }),
+    ).rejects.toBeInstanceOf(RuntimeAppendConflictError);
+    await expect(
+      runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: 0,
+        payload: elementPayload('element-operation-2'),
+      }),
+    ).rejects.toThrow('WHITEBOARD_RUNTIME_ELEMENT_ALREADY_EXISTS');
+    await expect(
+      runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: 0,
+        payload: payload('legacy-after-learner'),
+      }),
+    ).rejects.toThrow('WHITEBOARD_RUNTIME_IMPORT_AFTER_STATE');
+
+    const sessionId = whiteboardRuntimeSessionId('stage-1', 'learner-1');
+    expect(await store.listRecords(sessionId)).toHaveLength(1);
+    await expect(runtime.read('stage-1')).resolves.toMatchObject({
+      lastSeq: 0,
+      whiteboard: { elements: [{ id: 'text-added' }] },
+    });
+  });
+
+  it('preserves imported board metadata when applying a learner element', async () => {
+    const imported = payload();
+    imported.operation.whiteboard = {
+      id: 'board-1',
+      viewportSize: 2048,
+      viewportRatio: 0.75,
+      elements: [textElement('legacy-text', 'legacy')],
+      background: { type: 'solid', color: '#123456' },
+      animations: [
+        {
+          id: 'animation-1',
+          elId: 'legacy-text',
+          effect: 'fadeIn',
+          type: 'in',
+          duration: 500,
+          trigger: 'click',
+        },
+      ],
+      script: 'preserve this script',
+    };
+    const runtime = service(runtimeStore());
+    await runtime.append({ stageId: 'stage-1', expectedLastSeq: null, payload: imported });
+    const result = await runtime.append({
+      stageId: 'stage-1',
+      expectedLastSeq: 0,
+      payload: elementPayload(),
+    });
+    expect(result.state.whiteboard).toMatchObject({
+      id: 'board-1',
+      viewportSize: 2048,
+      viewportRatio: 0.75,
+      background: { type: 'solid', color: '#123456' },
+      animations: [
+        {
+          id: 'animation-1',
+          elId: 'legacy-text',
+          effect: 'fadeIn',
+          type: 'in',
+          duration: 500,
+          trigger: 'click',
+        },
+      ],
+      script: 'preserve this script',
+    });
+    expect(result.state.whiteboard?.elements.map((element) => element.id)).toEqual([
+      'legacy-text',
+      'text-added',
+    ]);
+  });
+
+  it('detaches a learner element before the first async boundary', async () => {
+    const runtime = service(runtimeStore());
+    const mutable = elementPayload();
+    const pending = runtime.append({
+      stageId: 'stage-1',
+      expectedLastSeq: null,
+      payload: mutable,
+    });
+    mutable.operation.element.id = 'mutated-after-call';
+    mutable.operation.element.left = 999;
+    const result = await pending;
+    expect(result.state.whiteboard?.elements[0]).toMatchObject({ id: 'text-added', left: 40 });
+  });
+
   it('replays an exact committed operation and rejects a conflicting retry', async () => {
     const runtime = service(runtimeStore());
     const input = { stageId: 'stage-1', expectedLastSeq: null, payload: payload() };
@@ -90,6 +272,70 @@ describe('whiteboard RuntimeStore service', () => {
     await expect(
       runtime.append({ ...input, payload: payload('operation-1', 'board-other') }),
     ).rejects.toThrow('WHITEBOARD_RUNTIME_OPERATION_CONFLICT');
+  });
+
+  it('rejects a conflicting learner operation id without changing committed state', async () => {
+    const store = runtimeStore();
+    const runtime = service(store);
+    const first = elementPayload('element-operation-conflict', textElement('text-a', 'first'));
+    await runtime.append({ stageId: 'stage-1', expectedLastSeq: null, payload: first });
+
+    await expect(
+      runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: 0,
+        payload: elementPayload('element-operation-conflict', textElement('text-b', 'conflicting')),
+      }),
+    ).rejects.toThrow('WHITEBOARD_RUNTIME_OPERATION_CONFLICT');
+
+    const sessionId = whiteboardRuntimeSessionId('stage-1', 'learner-1');
+    expect(await store.listRecords(sessionId)).toHaveLength(1);
+    await expect(runtime.read('stage-1')).resolves.toMatchObject({
+      lastSeq: 0,
+      whiteboard: { elements: [{ id: 'text-a', content: 'first' }] },
+    });
+  });
+
+  it('rejects inherited payload fields before persistence', async () => {
+    const store = runtimeStore();
+    const runtime = service(store);
+    const inherited = {
+      payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
+      operationId: 'inherited-operation',
+      operation: elementPayload().operation,
+    };
+    const previous = new Map(
+      Object.keys(inherited).map((key) => [
+        key,
+        Object.getOwnPropertyDescriptor(Object.prototype, key),
+      ]),
+    );
+    let attempt: ReturnType<typeof runtime.append>;
+    try {
+      for (const [key, value] of Object.entries(inherited)) {
+        Object.defineProperty(Object.prototype, key, {
+          value,
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+      }
+      attempt = runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: null,
+        payload: {} as WhiteboardRuntimePayloadV1,
+      });
+    } finally {
+      for (const [key, descriptor] of previous) {
+        if (descriptor) Object.defineProperty(Object.prototype, key, descriptor);
+        else delete (Object.prototype as Record<string, unknown>)[key];
+      }
+    }
+
+    await expect(attempt!).rejects.toThrow('Invalid whiteboard runtime payload');
+    expect(
+      await store.listRecords(whiteboardRuntimeSessionId('stage-1', 'learner-1')),
+    ).toHaveLength(0);
   });
 
   it('preserves RuntimeAppendConflictError and commits no stale record', async () => {

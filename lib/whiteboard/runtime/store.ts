@@ -8,6 +8,7 @@ import { withRuntimeStorageSharedLock } from '@/lib/utils/chat-storage-lock';
 
 import {
   EMPTY_WHITEBOARD_RUNTIME_STATE,
+  applyWhiteboardRuntimeOperation,
   foldWhiteboardRuntimeRecords,
   publicWhiteboardRuntimeState,
 } from './fold';
@@ -212,9 +213,13 @@ export function createWhiteboardRuntimeService(
       if (before.lastSeq !== input.expectedLastSeq) {
         throw new RuntimeAppendConflictError(session.id, input.expectedLastSeq, before.lastSeq);
       }
-      if (payload.operation.kind === 'legacy_snapshot_imported' && before.whiteboard !== null) {
+      // Any existing valid domain record makes RuntimeStore authoritative, even if a future
+      // operation does not materialize a board. The fold transition separately rejects raw
+      // import-after-state records that bypass this typed service boundary.
+      if (payload.operation.kind === 'legacy_snapshot_imported' && before.lastSeq !== null) {
         throw new Error('WHITEBOARD_RUNTIME_IMPORT_AFTER_STATE');
       }
+      await applyWhiteboardRuntimeOperation(session.id, before.whiteboard, payload.operation);
 
       let appended: RuntimeRecord;
       try {

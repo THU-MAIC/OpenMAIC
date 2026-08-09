@@ -22,8 +22,10 @@ const WHITEBOARD_KEYS = new Set([
   'animations',
   'script',
 ]);
+const REQUIRED_WHITEBOARD_KEYS = new Set(['id', 'viewportSize', 'viewportRatio', 'elements']);
 const PAYLOAD_KEYS = new Set(['payloadVersion', 'operationId', 'operation']);
-const OPERATION_KEYS = new Set(['kind', 'source', 'whiteboard']);
+const LEGACY_OPERATION_KEYS = new Set(['kind', 'source', 'whiteboard']);
+const ELEMENT_ADDED_OPERATION_KEYS = new Set(['kind', 'element']);
 const SOURCE_KEYS = new Set(['kind', 'fingerprint']);
 
 type JsonSchema = {
@@ -96,8 +98,26 @@ function objectValue(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function hasExactKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
+function hasOnlyAllowedOwnKeys(
+  value: Record<string, unknown>,
+  allowed: ReadonlySet<string>,
+): boolean {
   return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function hasAllRequiredOwnKeys(
+  value: Record<string, unknown>,
+  required: ReadonlySet<string>,
+): boolean {
+  return Array.from(required).every((key) => Object.hasOwn(value, key));
+}
+
+function hasExactOwnKeys(value: Record<string, unknown>, expected: ReadonlySet<string>): boolean {
+  return (
+    Object.keys(value).length === expected.size &&
+    hasOnlyAllowedOwnKeys(value, expected) &&
+    hasAllRequiredOwnKeys(value, expected)
+  );
 }
 
 function isSafeIdentifier(value: unknown, maxLength = MAX_OPERATION_ID_LENGTH): value is string {
@@ -218,6 +238,15 @@ function validateElement(element: PPTElement): string | null {
   return schema ? validateSchema(element, schema, 'element') : 'unknown element type';
 }
 
+function normalizeAndValidateWhiteboardElement(value: unknown): PPTElement {
+  assertLosslessJson(value, '$');
+  const normalized = normalizeElement(value as PPTElement);
+  if (!isSafeIdentifier(normalized.id)) throw new Error('invalid element id');
+  const error = validateElement(normalized);
+  if (error) throw new Error(error);
+  return cloneCanonicalJson(normalized);
+}
+
 function assertLosslessJson(value: unknown, path: string, seen = new Set<object>()): void {
   if (value === null || typeof value === 'boolean' || typeof value === 'string') {
     if (typeof value === 'string' && (value.includes('\u0000') || /[\uD800-\uDFFF]/u.test(value))) {
@@ -309,7 +338,11 @@ export async function sha256Canonical(value: unknown): Promise<Sha256Digest> {
 export function normalizeAndValidateLegacyWhiteboard(value: unknown): Whiteboard {
   assertLosslessJson(value, '$');
   const board = objectValue(value);
-  if (!board || !hasExactKeys(board, WHITEBOARD_KEYS))
+  if (
+    !board ||
+    !hasOnlyAllowedOwnKeys(board, WHITEBOARD_KEYS) ||
+    !hasAllRequiredOwnKeys(board, REQUIRED_WHITEBOARD_KEYS)
+  )
     throw new Error('invalid whiteboard envelope');
   if (!isSafeIdentifier(board.id)) throw new Error('invalid whiteboard id');
   if (typeof board.viewportSize !== 'number' || !Number.isFinite(board.viewportSize)) {
@@ -319,7 +352,7 @@ export function normalizeAndValidateLegacyWhiteboard(value: unknown): Whiteboard
     throw new Error('invalid whiteboard viewportRatio');
   }
   if (!Array.isArray(board.elements)) throw new Error('invalid whiteboard elements');
-  if (board.background !== undefined) {
+  if (Object.hasOwn(board, 'background')) {
     const error = validateSchema(
       board.background,
       schemaDefinitions.SlideBackground ?? {},
@@ -327,25 +360,22 @@ export function normalizeAndValidateLegacyWhiteboard(value: unknown): Whiteboard
     );
     if (error) throw new Error(error);
   }
-  if (board.animations !== undefined) {
+  if (Object.hasOwn(board, 'animations')) {
     if (!Array.isArray(board.animations)) throw new Error('invalid whiteboard animations');
     for (const animation of board.animations) {
       const error = validateSchema(animation, schemaDefinitions.PPTAnimation ?? {}, 'animation');
       if (error) throw new Error(error);
     }
   }
-  if (board.script !== undefined && typeof board.script !== 'string') {
+  if (Object.hasOwn(board, 'script') && typeof board.script !== 'string') {
     throw new Error('invalid whiteboard script');
   }
 
   const ids = new Set<string>();
   const elements = board.elements.map((candidate) => {
-    const normalized = normalizeElement(candidate);
-    if (!isSafeIdentifier(normalized.id)) throw new Error('invalid element id');
+    const normalized = normalizeAndValidateWhiteboardElement(candidate);
     if (ids.has(normalized.id)) throw new Error('duplicate element id');
     ids.add(normalized.id);
-    const error = validateElement(normalized);
-    if (error) throw new Error(error);
     return normalized;
   });
   return cloneCanonicalJson({ ...board, elements } as Whiteboard);
@@ -357,28 +387,43 @@ export function validateWhiteboardRuntimePayload(
   try {
     assertLosslessJson(payload, '$');
     const value = objectValue(payload);
-    if (!value || !hasExactKeys(value, PAYLOAD_KEYS)) throw new Error('payload keys are invalid');
+    if (!value || !hasExactOwnKeys(value, PAYLOAD_KEYS)) {
+      throw new Error('payload keys are invalid');
+    }
     if (value.payloadVersion !== WHITEBOARD_RUNTIME_PAYLOAD_VERSION) {
       throw new Error('payloadVersion must be 1');
     }
     if (!isSafeIdentifier(value.operationId)) throw new Error('operationId is invalid');
     const operation = objectValue(value.operation);
-    if (!operation || !hasExactKeys(operation, OPERATION_KEYS))
-      throw new Error('operation is invalid');
-    if (operation.kind !== 'legacy_snapshot_imported') throw new Error('operation kind is invalid');
-    const source = objectValue(operation.source);
-    if (!source || !hasExactKeys(source, SOURCE_KEYS)) throw new Error('source is invalid');
-    if (source.kind !== LEGACY_WHITEBOARD_SOURCE_KIND) throw new Error('source kind is invalid');
-    if (
-      typeof source.fingerprint !== 'string' ||
-      source.fingerprint.length !== MAX_FINGERPRINT_LENGTH ||
-      !SHA256.test(source.fingerprint)
-    ) {
-      throw new Error('source fingerprint is invalid');
-    }
-    const normalized = normalizeAndValidateLegacyWhiteboard(operation.whiteboard);
-    if (canonicalJson(normalized) !== canonicalJson(operation.whiteboard)) {
-      throw new Error('whiteboard payload is not canonical');
+    if (!operation) throw new Error('operation is invalid');
+    if (operation.kind === 'legacy_snapshot_imported') {
+      if (!hasExactOwnKeys(operation, LEGACY_OPERATION_KEYS)) {
+        throw new Error('operation is invalid');
+      }
+      const source = objectValue(operation.source);
+      if (!source || !hasExactOwnKeys(source, SOURCE_KEYS)) throw new Error('source is invalid');
+      if (source.kind !== LEGACY_WHITEBOARD_SOURCE_KIND) throw new Error('source kind is invalid');
+      if (
+        typeof source.fingerprint !== 'string' ||
+        source.fingerprint.length !== MAX_FINGERPRINT_LENGTH ||
+        !SHA256.test(source.fingerprint)
+      ) {
+        throw new Error('source fingerprint is invalid');
+      }
+      const normalized = normalizeAndValidateLegacyWhiteboard(operation.whiteboard);
+      if (canonicalJson(normalized) !== canonicalJson(operation.whiteboard)) {
+        throw new Error('whiteboard payload is not canonical');
+      }
+    } else if (operation.kind === 'element_added') {
+      if (!hasExactOwnKeys(operation, ELEMENT_ADDED_OPERATION_KEYS)) {
+        throw new Error('operation is invalid');
+      }
+      const normalized = normalizeAndValidateWhiteboardElement(operation.element);
+      if (canonicalJson(normalized) !== canonicalJson(operation.element)) {
+        throw new Error('element payload is not canonical');
+      }
+    } else {
+      throw new Error('operation kind is invalid');
     }
     return { valid: true };
   } catch (error) {

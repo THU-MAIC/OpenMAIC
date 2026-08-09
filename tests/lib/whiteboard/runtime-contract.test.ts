@@ -1,10 +1,12 @@
-import type { RuntimeRecord, Whiteboard } from '@openmaic/dsl';
+import type { PPTElement, RuntimeRecord, Whiteboard } from '@openmaic/dsl';
 import { describe, expect, it } from 'vitest';
 
 import { foldWhiteboardRuntimeRecords } from '@/lib/whiteboard/runtime/fold';
 import {
   LEGACY_WHITEBOARD_SOURCE_KIND,
   WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
+  type LegacySnapshotImportedOperation,
+  type WhiteboardElementAddedOperation,
   type WhiteboardRuntimePayloadV1,
 } from '@/lib/whiteboard/runtime/types';
 import {
@@ -37,7 +39,30 @@ function board(overrides: Partial<Whiteboard> = {}): Whiteboard {
   };
 }
 
-function payload(overrides: Partial<WhiteboardRuntimePayloadV1> = {}): WhiteboardRuntimePayloadV1 {
+type LegacyPayload = WhiteboardRuntimePayloadV1 & {
+  operation: LegacySnapshotImportedOperation;
+};
+
+type ElementAddedPayload = WhiteboardRuntimePayloadV1 & {
+  operation: WhiteboardElementAddedOperation;
+};
+
+function textElement(id = 'text-added', content = 'learner text'): PPTElement {
+  return {
+    id,
+    type: 'text',
+    left: 40,
+    top: 50,
+    width: 240,
+    height: 60,
+    rotate: 0,
+    content,
+    defaultFontName: 'Inter',
+    defaultColor: '#000000',
+  };
+}
+
+function payload(overrides: Partial<LegacyPayload> = {}): LegacyPayload {
   return {
     payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
     operationId: 'legacy-import:one',
@@ -53,7 +78,18 @@ function payload(overrides: Partial<WhiteboardRuntimePayloadV1> = {}): Whiteboar
   };
 }
 
-function record(seq: number, value = payload()): RuntimeRecord {
+function elementPayload(
+  operationId = 'element-add:one',
+  element = textElement(),
+): ElementAddedPayload {
+  return {
+    payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
+    operationId,
+    operation: { kind: 'element_added', element },
+  };
+}
+
+function record(seq: number, value: WhiteboardRuntimePayloadV1 = payload()): RuntimeRecord {
   return {
     id: value.operationId,
     sessionId: 'session-1',
@@ -66,6 +102,101 @@ function record(seq: number, value = payload()): RuntimeRecord {
 describe('whiteboard RuntimeStore payload contract', () => {
   it('accepts a canonical exact-key import payload', () => {
     expect(validateWhiteboardRuntimePayload(payload())).toEqual({ valid: true });
+  });
+
+  it('accepts only the canonical tool-agnostic element_added shape', () => {
+    expect(validateWhiteboardRuntimePayload(elementPayload())).toEqual({ valid: true });
+    expect(
+      validateWhiteboardRuntimePayload({
+        ...elementPayload(),
+        operation: { ...elementPayload().operation, whiteboardId: 'model-selected-board' },
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateWhiteboardRuntimePayload({
+        ...elementPayload(),
+        operation: {
+          kind: 'element_added',
+          element: { ...textElement(), content: undefined },
+        },
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateWhiteboardRuntimePayload({
+        ...elementPayload(),
+        operation: {
+          kind: 'element_added',
+          element: {
+            id: 'text-raw',
+            type: 'text',
+            left: 0,
+            top: 0,
+            width: 100,
+            height: 40,
+            rotate: 0,
+          },
+        },
+      }).valid,
+    ).toBe(false);
+  });
+
+  it('requires contract fields to be own properties', () => {
+    const validateWithInheritedFields = (
+      inherited: Readonly<Record<string, unknown>>,
+      candidate: unknown,
+    ) => {
+      const previous = new Map(
+        Object.keys(inherited).map((key) => [
+          key,
+          Object.getOwnPropertyDescriptor(Object.prototype, key),
+        ]),
+      );
+      try {
+        for (const [key, value] of Object.entries(inherited)) {
+          Object.defineProperty(Object.prototype, key, {
+            value,
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+        }
+        return validateWhiteboardRuntimePayload(candidate);
+      } finally {
+        for (const [key, descriptor] of previous) {
+          if (descriptor) Object.defineProperty(Object.prototype, key, descriptor);
+          else delete (Object.prototype as Record<string, unknown>)[key];
+        }
+      }
+    };
+
+    expect(
+      validateWithInheritedFields(
+        {
+          payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
+          operationId: 'inherited-operation',
+          operation: elementPayload().operation,
+        },
+        {},
+      ).valid,
+    ).toBe(false);
+    expect(
+      validateWithInheritedFields(
+        { kind: 'element_added', element: textElement() },
+        { ...elementPayload(), operation: {} },
+      ).valid,
+    ).toBe(false);
+    expect(
+      validateWithInheritedFields(
+        { kind: LEGACY_WHITEBOARD_SOURCE_KIND, fingerprint: `sha256:${'0'.repeat(64)}` },
+        { ...payload(), operation: { ...payload().operation, source: {} } },
+      ).valid,
+    ).toBe(false);
+    expect(
+      validateWithInheritedFields(
+        { id: 'inherited-board', viewportSize: 1000, viewportRatio: 0.5625, elements: [] },
+        { ...payload(), operation: { ...payload().operation, whiteboard: {} } },
+      ).valid,
+    ).toBe(false);
   });
 
   it.each([
@@ -246,6 +377,66 @@ describe('whiteboard RuntimeStore fold', () => {
     expect(Object.keys(result.operations)).toEqual(['legacy-import:one']);
     expect(Object.isFrozen(result.whiteboard)).toBe(true);
     expect(Object.isFrozen(result.operations)).toBe(true);
+  });
+
+  it('materializes and extends one deterministic session-owned learner board', async () => {
+    const sessionId = 'whiteboard:stage-1:private-learner';
+    const first = { ...record(0, elementPayload()), sessionId };
+    const second = {
+      ...record(1, elementPayload('element-add:two', textElement('text-2', 'second'))),
+      sessionId,
+    };
+    const initial = await foldWhiteboardRuntimeRecords(sessionId, [first]);
+    const repeated = await foldWhiteboardRuntimeRecords(sessionId, [first]);
+    const otherSessionRecord = { ...first, sessionId: 'whiteboard:stage-1:other-learner' };
+    const other = await foldWhiteboardRuntimeRecords(otherSessionRecord.sessionId, [
+      otherSessionRecord,
+    ]);
+
+    expect(initial.whiteboard).toMatchObject({
+      id: expect.stringMatching(/^runtime-whiteboard:[0-9a-f]{64}$/u),
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      background: { type: 'solid', color: '#ffffff' },
+      animations: [],
+      elements: [{ id: 'text-added' }],
+    });
+    expect(initial.whiteboard?.id).toBe(repeated.whiteboard?.id);
+    expect(initial.whiteboard?.id).not.toBe(other.whiteboard?.id);
+    expect(initial.whiteboard?.id).not.toContain('private-learner');
+
+    const extended = await foldWhiteboardRuntimeRecords(sessionId, [first, second]);
+    expect(extended.whiteboard?.id).toBe(initial.whiteboard?.id);
+    expect(extended.whiteboard?.elements.map((element) => element.id)).toEqual([
+      'text-added',
+      'text-2',
+    ]);
+    expect(Object.isFrozen(extended.whiteboard?.elements)).toBe(true);
+  });
+
+  it('preserves a Legacy board for learner adds and rejects invalid ordering or duplicates', async () => {
+    const legacyThenAdd = await foldWhiteboardRuntimeRecords('session-1', [
+      record(0, payload()),
+      record(1, elementPayload()),
+    ]);
+    expect(legacyThenAdd.whiteboard?.id).toBe('board-1');
+    expect(legacyThenAdd.whiteboard?.elements.map((element) => element.id)).toEqual([
+      'text-1',
+      'text-added',
+    ]);
+
+    await expect(
+      foldWhiteboardRuntimeRecords('session-1', [
+        record(0, elementPayload()),
+        record(1, payload()),
+      ]),
+    ).rejects.toThrow('WHITEBOARD_RUNTIME_IMPORT_AFTER_STATE');
+    await expect(
+      foldWhiteboardRuntimeRecords('session-1', [
+        record(0, elementPayload()),
+        record(1, elementPayload('element-add:two')),
+      ]),
+    ).rejects.toThrow('WHITEBOARD_RUNTIME_ELEMENT_ALREADY_EXISTS');
   });
 
   it('fails closed on conflicting duplicate, sequence, and session identity', async () => {

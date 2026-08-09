@@ -1,4 +1,4 @@
-import type { RuntimeRecord, Whiteboard } from '@openmaic/dsl';
+import type { PPTElement, RuntimeRecord, Whiteboard } from '@openmaic/dsl';
 
 export const WHITEBOARD_RUNTIME_KIND = 'whiteboard';
 export const WHITEBOARD_RUNTIME_PAYLOAD_VERSION = 1;
@@ -16,10 +16,19 @@ export interface LegacySnapshotImportedOperation {
   whiteboard: Whiteboard;
 }
 
+export interface WhiteboardElementAddedOperation {
+  kind: 'element_added';
+  element: PPTElement;
+}
+
+export type WhiteboardRuntimeOperationV1 =
+  | LegacySnapshotImportedOperation
+  | WhiteboardElementAddedOperation;
+
 export interface WhiteboardRuntimePayloadV1 {
   payloadVersion: typeof WHITEBOARD_RUNTIME_PAYLOAD_VERSION;
   operationId: string;
-  operation: LegacySnapshotImportedOperation;
+  operation: WhiteboardRuntimeOperationV1;
 }
 
 export interface FoldedWhiteboardRuntimeState {
