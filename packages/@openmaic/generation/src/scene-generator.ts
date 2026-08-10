@@ -979,7 +979,16 @@ async function generatePBLSceneContent(
           : String(singleCallError);
     log.warn(`PBL v2 generation failed (single-call: ${message}).`);
 
-    if (pblLoopFallback) {
+    // Provider/HTTP failures and cancellations skip the loop fallback: the
+    // loop planner would hit the same provider again (or run against an
+    // abort the user already issued). Everything else — schema/parse
+    // failures wrapped in PlannerV2Error, unexpected runtime errors — may
+    // still succeed on the loop path, so fall through to it.
+    const skipLoopFallback =
+      plannerErrorStatus(singleCallError) !== undefined ||
+      (singleCallError instanceof DOMException && singleCallError.name === 'AbortError');
+
+    if (pblLoopFallback && !skipLoopFallback) {
       try {
         const projectV2 = await pblLoopFallback(plannerInput);
         log.info(
@@ -989,13 +998,18 @@ async function generatePBLSceneContent(
       } catch (fallbackError) {
         throw new PBLGenerationError(
           `PBL v2 generation failed for "${outline.title}" after all planner attempts.`,
-          { cause: fallbackError, statusCode: plannerErrorStatus(fallbackError) },
+          {
+            cause: fallbackError,
+            statusCode: plannerErrorStatus(fallbackError) ?? plannerErrorStatus(singleCallError),
+          },
         );
       }
     }
 
     throw new PBLGenerationError(
-      `PBL v2 generation failed for "${outline.title}" and no loop fallback was provided.`,
+      pblLoopFallback
+        ? `PBL v2 generation failed for "${outline.title}" after all planner attempts.`
+        : `PBL v2 generation failed for "${outline.title}" and no loop fallback was provided.`,
       { cause: singleCallError, statusCode: plannerErrorStatus(singleCallError) },
     );
   }

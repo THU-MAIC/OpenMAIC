@@ -139,14 +139,49 @@ describe('scene generation primitives', () => {
       updatedAt: '2026-01-01T00:00:00.000Z',
     }));
 
-    const content = await generateSceneContent(
-      pblOutline(),
-      async () => {
-        throw new Error('invalid single-call response');
-      },
-      { pblLoopFallback: fallback },
-    );
+    const content = await generateSceneContent(pblOutline(), async () => '{}', {
+      pblLoopFallback: fallback,
+    });
     expect(fallback).toHaveBeenCalledTimes(1);
     expect(content).toMatchObject({ projectV2: { title: 'Recovered project' } });
+  });
+
+  it('skips the PBL loop fallback after a single-call abort', async () => {
+    const fallback = vi.fn();
+
+    await expect(
+      generateSceneContent(
+        pblOutline(),
+        async () => {
+          throw new DOMException('The operation was aborted.', 'AbortError');
+        },
+        { pblLoopFallback: fallback },
+      ),
+    ).rejects.toMatchObject({
+      name: 'PBLGenerationError',
+      message: expect.stringContaining('after all planner attempts'),
+      cause: expect.objectContaining({ name: 'AbortError' }),
+    });
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it('skips the PBL loop fallback after a status-bearing provider failure', async () => {
+    const fallback = vi.fn();
+
+    await expect(
+      generateSceneContent(
+        pblOutline(),
+        async () => {
+          throw Object.assign(new Error('rate limited'), { status: 429 });
+        },
+        { pblLoopFallback: fallback },
+      ),
+    ).rejects.toMatchObject({
+      name: 'PBLGenerationError',
+      message: expect.stringContaining('after all planner attempts'),
+      statusCode: 429,
+      cause: expect.objectContaining({ message: 'rate limited', status: 429 }),
+    });
+    expect(fallback).not.toHaveBeenCalled();
   });
 });
