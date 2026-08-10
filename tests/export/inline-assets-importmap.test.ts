@@ -88,4 +88,21 @@ describe('buildInlinedImportmap', () => {
     );
     expect(imports.three).toMatch(/^data:/);
   });
+
+  it('rejects cyclic external modules as an explicit unresolved resource', async () => {
+    const modules: Record<string, string> = {
+      'https://cdn.example/a.js': "import './b.js'; export const a = 1;",
+      'https://cdn.example/b.js': "import './a.js'; export const b = 1;",
+    };
+    const { report } = await buildInlinedImportmap(
+      { entry: 'https://cdn.example/a.js' },
+      ["import 'entry';"],
+      async (url) => (modules[url] ? enc(modules[url]) : null),
+    );
+
+    expect(report.failed).toContainEqual({
+      url: 'https://cdn.example/a.js',
+      reason: 'cyclic module dependency',
+    });
+  });
 });

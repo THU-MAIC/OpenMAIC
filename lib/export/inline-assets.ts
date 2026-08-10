@@ -20,6 +20,7 @@ export type AssetRefKind =
   | 'script'
   | 'img'
   | 'srcset'
+  | 'poster'
   | 'source'
   | 'video'
   | 'audio'
@@ -35,6 +36,63 @@ export interface AssetRef {
 }
 
 const HTTP_URL = /^https?:\/\//i;
+
+interface CssImportConditions {
+  layer?: string | null;
+  supports?: string;
+  media?: string;
+}
+
+function readParenthesized(value: string, start: number): { inner: string; rest: string } | null {
+  if (value[start] !== '(') return null;
+  let depth = 0;
+  for (let index = start; index < value.length; index++) {
+    if (value[index] === '(') depth++;
+    if (value[index] === ')') depth--;
+    if (depth === 0) {
+      return { inner: value.slice(start + 1, index), rest: value.slice(index + 1).trim() };
+    }
+  }
+  return null;
+}
+
+function parseCssImportConditions(value: string): CssImportConditions {
+  let rest = value.trim();
+  const conditions: CssImportConditions = {};
+  if (/^layer\b/i.test(rest)) {
+    rest = rest.slice(5).trimStart();
+    if (rest.startsWith('(')) {
+      const parsed = readParenthesized(rest, 0);
+      conditions.layer = parsed?.inner.trim() ?? null;
+      rest = parsed?.rest ?? '';
+    } else {
+      conditions.layer = null;
+    }
+  }
+  if (/^supports\s*\(/i.test(rest)) {
+    const open = rest.indexOf('(');
+    const parsed = readParenthesized(rest, open);
+    conditions.supports = parsed?.inner.trim() ?? '';
+    rest = parsed?.rest ?? '';
+  }
+  conditions.media = rest || undefined;
+  return conditions;
+}
+
+function wrapImportedCss(css: string, conditions: CssImportConditions): string {
+  let wrapped = css;
+  if (conditions.media) wrapped = `@media ${conditions.media}{${wrapped}}`;
+  if (conditions.supports) {
+    const supports = /^(?:\(|not\b|selector\(|font-(?:format|tech)\()/i.test(conditions.supports)
+      ? conditions.supports
+      : `(${conditions.supports})`;
+    wrapped = `@supports ${supports}{${wrapped}}`;
+  }
+  if (conditions.layer !== undefined) {
+    wrapped = conditions.layer ? `@layer ${conditions.layer}{${wrapped}}` : `@layer{${wrapped}}`;
+  }
+  return wrapped;
+}
 
 function serializeSrcset(candidates: SrcsetCandidate[]): string {
   return candidates
@@ -86,6 +144,9 @@ export function collectAssetRefs(
   }
   for (const m of html.matchAll(/<video\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
     push('video', m[1]);
+  }
+  for (const m of html.matchAll(/<video\b[^>]*?\bposter\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
+    push('poster', m[1]);
   }
   for (const m of html.matchAll(/<audio\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
     push('audio', m[1]);
@@ -222,7 +283,7 @@ export async function inlineCssUrls(
 ): Promise<{ css: string; failed: { url: string; reason: string }[]; inlined: string[] }> {
   const failed: { url: string; reason: string }[] = [];
   const inlined: string[] = [];
-  const importRe = /@import\s+(?:url\(\s*)?(["']?)([^"'\s)]+)\1\s*\)?[^;]*;?/gi;
+  const importRe = /@import\s+(?:url\(\s*)?(["']?)([^"'\s)]+)\1\s*\)?\s*([^;]*);?/gi;
   const imports = [...css.matchAll(importRe)];
   const importedCss = new Map<string, string>();
   for (const match of imports) {
@@ -253,7 +314,7 @@ export async function inlineCssUrls(
       seenCssUrls,
     );
     inlined.push(abs, ...nested.inlined);
-    importedCss.set(match[0], nested.css);
+    importedCss.set(match[0], wrapImportedCss(nested.css, parseCssImportConditions(match[3])));
     failed.push(...nested.failed);
   }
   const cssWithImports = css.replace(importRe, (full) => importedCss.get(full) ?? full);
@@ -556,7 +617,22 @@ export async function inlineHtmlAssets(
     },
   );
 
-  // 5) url() inside authored <style> blocks (skip ones we created in step 1)
+  // 5) <video poster> is an external image resource too.
+  out = await replaceAsync(
+    out,
+    /<video\b([^>]*?)\bposter\s*=\s*["'](https?:\/\/[^"']+)["']([^>]*)>/gi,
+    async (full, pre, url, post) => {
+      const got = await fetchAsset(url);
+      if (!got) {
+        markFailed(url, 'fetch failed');
+        return full;
+      }
+      markInlined(url);
+      return `<video${pre}poster="${toDataUri(got.bytes, got.contentType)}"${post}>`;
+    },
+  );
+
+  // 6) url() inside authored <style> blocks (skip ones we created in step 1)
   out = await replaceAsync(
     out,
     /<style\b([^>]*)>([\s\S]*?)<\/style>/gi,

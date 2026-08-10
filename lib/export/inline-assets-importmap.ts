@@ -81,7 +81,13 @@ export async function buildInlinedImportmap(
         return undefined;
       }
       const absUrl = resolveExternal(spec, baseUrl);
-      if (!absUrl || stack.has(absUrl)) {
+      if (!absUrl) {
+        return undefined;
+      }
+      if (stack.has(absUrl)) {
+        if (!report.failed.some((failure) => failure.url === absUrl)) {
+          report.failed.push({ url: absUrl, reason: 'cyclic module dependency' });
+        }
         return undefined;
       }
       const got = await fetchAsset(absUrl);

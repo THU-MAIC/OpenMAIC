@@ -52,7 +52,7 @@ export {
   type EmitHyperframesOptions,
   type EmittedProject,
   type EmittedFile,
-  type CoverCardLabels,
+  type VideoExportLabels,
   type InteractiveFallbackLabels,
   type VideoExportCta,
 } from './emit-hyperframes';

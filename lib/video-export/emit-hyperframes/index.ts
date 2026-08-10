@@ -62,13 +62,13 @@ export interface InteractiveFallbackLabels {
 }
 
 /**
- * Learner-facing chrome on the Quiz/PBL cover cards — everything on the card
+ * Learner-facing chrome on exported video cards and fallback scenes — everything
  * that is *not* authored scene data. The defaults are the `en-US` values of the
  * very i18n keys the live QuizView/PBL Hero use; the app passes the classroom's
  * active locale so an exported video reads like the lesson it came from. Kept as
  * injected strings (not an i18n import) so the emitter stays pure.
  */
-export interface CoverCardLabels {
+export interface VideoExportLabels {
   /** `quiz.title` — the Quiz card's eyebrow. */
   quiz: string;
   /** `quiz.questionsCount` — unit after the question count. */
@@ -101,7 +101,7 @@ export interface CoverCardLabels {
   interactive: InteractiveFallbackLabels;
 }
 
-type CoverCardLabelOverrides = Partial<Omit<CoverCardLabels, 'interactive'>> & {
+type VideoExportLabelOverrides = Partial<Omit<VideoExportLabels, 'interactive'>> & {
   interactive?: Partial<InteractiveFallbackLabels>;
 };
 
@@ -117,7 +117,7 @@ export interface EmitHyperframesOptions {
   /** Manifest filename. Default `openmaic-video-manifest.json`. */
   manifestPath?: string;
   /** Cover-card chrome; each omitted key falls back to its `en-US` default. */
-  labels?: CoverCardLabelOverrides;
+  labels?: VideoExportLabelOverrides;
   /** Informational destination for Quiz/PBL covers. Omitted or null disables it. */
   cta?: VideoExportCta | null;
   /**
@@ -126,7 +126,7 @@ export interface EmitHyperframesOptions {
    * right-to-left direction is scoped to text-bearing cover panels because
    * Hyperframes cannot safely render a document-level RTL direction. The locale
    * is recorded in the project README so a re-render can reproduce this exact
-   * output. Default `en-US`, matching {@link DEFAULT_COVER_LABELS}.
+   * output. Default `en-US`, matching {@link DEFAULT_VIDEO_EXPORT_LABELS}.
    */
   locale?: string;
   /**
@@ -161,7 +161,7 @@ function isRtl(locale: string): boolean {
   return RTL_LANGUAGES.has(locale.split('-')[0].toLowerCase());
 }
 
-const DEFAULT_COVER_LABELS: CoverCardLabels = {
+const DEFAULT_VIDEO_EXPORT_LABELS: VideoExportLabels = {
   quiz: 'Quiz',
   questions: 'questions',
   points: 'pts',
@@ -214,7 +214,7 @@ function placeholderContent(scene: VideoTimelineScene, reason: string, reasonAtt
 }
 
 /** The base layer for one scene: snapshot, packaged frozen HTML, or placeholder. */
-function renderBase(scene: VideoTimelineScene, labels: CoverCardLabels): string {
+function renderBase(scene: VideoTimelineScene, labels: VideoExportLabels): string {
   const start = sec(scene.startMs);
   const duration = sec(scene.durationMs);
   const id = `scene-${scene.index + 1}-base`;
@@ -384,7 +384,7 @@ function renderQuizCover(
   scene: VideoTimelineScene,
   visual: QuizCoverVisual,
   index: number,
-  labels: CoverCardLabels,
+  labels: VideoExportLabels,
   cta: VideoExportCta | null,
   direction: 'ltr' | 'rtl',
 ): string {
@@ -426,7 +426,7 @@ function renderPblCover(
   scene: VideoTimelineScene,
   visual: PblCoverVisual,
   index: number,
-  labels: CoverCardLabels,
+  labels: VideoExportLabels,
   plan: PblCoverPlan,
   cta: VideoExportCta | null,
   direction: 'ltr' | 'rtl',
@@ -490,7 +490,7 @@ function renderPblCover(
 /** Render first-class track-0 visuals independently from the scene base. */
 function renderVisuals(
   scene: VideoTimelineScene,
-  labels: CoverCardLabels,
+  labels: VideoExportLabels,
   frame: { width: number; height: number; burnInSubtitles: boolean },
   cta: VideoExportCta | null,
   direction: 'ltr' | 'rtl',
@@ -799,7 +799,7 @@ interface PblCoverPlan {
  * alongside the authored text: an eyebrow or section heading that wraps in one
  * language and not another moves the whole card down with it.
  */
-function pblPlanHeight(title: string, plan: PblCoverPlan, labels: CoverCardLabels): number {
+function pblPlanHeight(title: string, plan: PblCoverPlan, labels: VideoExportLabels): number {
   const gainColumn = (PANEL_CONTENT_WIDTH - GAIN_ROW_GAP) / 2 - 44;
   const gainRows = Math.ceil(plan.gains.length / 2);
   const tallestGainRow = Math.max(1, ...plan.gains.map((g) => lineCount(g, 13, gainColumn, 2)));
@@ -844,7 +844,7 @@ function pblPlanHeight(title: string, plan: PblCoverPlan, labels: CoverCardLabel
  */
 function planPblCover(
   visual: PblCoverVisual,
-  labels: CoverCardLabels,
+  labels: VideoExportLabels,
   frame: {
     width: number;
     height: number;
@@ -982,7 +982,7 @@ function renderReadme(project: {
   stageName: string;
   locale: string;
   burnInSubtitles: boolean;
-  labels: CoverCardLabels;
+  labels: VideoExportLabels;
   cta: VideoExportCta | null;
 }): string {
   const seconds = (project.totalDurationMs / 1000).toFixed(1);
@@ -1076,11 +1076,11 @@ export function emitHyperframes(
   const compositionId = options.compositionId ?? 'openmaic';
   const gsapVendorPath = options.gsapVendorPath ?? DEFAULT_GSAP_PATH;
   const manifestPath = options.manifestPath ?? DEFAULT_MANIFEST;
-  const labels: CoverCardLabels = {
-    ...DEFAULT_COVER_LABELS,
+  const labels: VideoExportLabels = {
+    ...DEFAULT_VIDEO_EXPORT_LABELS,
     ...options.labels,
     interactive: {
-      ...DEFAULT_COVER_LABELS.interactive,
+      ...DEFAULT_VIDEO_EXPORT_LABELS.interactive,
       ...options.labels?.interactive,
     },
   };

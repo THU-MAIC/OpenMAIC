@@ -31,6 +31,11 @@ describe('collectAssetRefs', () => {
     expect(refs).toContainEqual({ kind: 'srcset', url: 'https://cdn.example/c@2x.png' });
   });
 
+  it('collects external video poster URLs', () => {
+    const refs = collectAssetRefs('<video poster="https://cdn.example/poster.jpg"></video>');
+    expect(refs).toContainEqual({ kind: 'poster', url: 'https://cdn.example/poster.jpg' });
+  });
+
   it('collects source srcs (video/audio)', () => {
     const refs = collectAssetRefs('<video><source src="https://cdn.example/d.mp4"></video>');
     expect(refs).toContainEqual({ kind: 'source', url: 'https://cdn.example/d.mp4' });
@@ -187,6 +192,25 @@ describe('toDataUri', () => {
 });
 
 describe('inlineCssUrls', () => {
+  it('preserves @import layer, supports, and media conditions when inlining', async () => {
+    const css =
+      '@import "theme.css" layer(theme) supports(display: grid) screen and (min-width: 600px);';
+    const { css: out } = await inlineCssUrls(
+      css,
+      'https://cdn.example/styles/base.css',
+      async (url) =>
+        url === 'https://cdn.example/styles/theme.css'
+          ? { bytes: new TextEncoder().encode('.card{display:grid}'), contentType: 'text/css' }
+          : null,
+    );
+
+    expect(out).toContain('@layer theme');
+    expect(out).toContain('@supports (display: grid)');
+    expect(out).toContain('@media screen and (min-width: 600px)');
+    expect(out).toContain('.card{display:grid}');
+    expect(out).not.toContain('@import');
+  });
+
   it('inlines relative font url() resolved against the css base url', async () => {
     const css = "@font-face{font-family:K;src:url(fonts/K.woff2) format('woff2')}";
     const fetchAsset = async (url: string) => {
@@ -389,6 +413,20 @@ describe('inlineHtmlAssets', () => {
       'https://cdn.example/small.png',
       'https://cdn.example/large.png',
     ]);
+  });
+
+  it('inlines external video posters', async () => {
+    const url = 'https://cdn.example/poster.jpg';
+    const { html, report } = await inlineHtmlAssets(`<video poster="${url}"></video>`, {
+      fetcher: async (requested) =>
+        requested === url
+          ? { bytes: new TextEncoder().encode('POSTER'), contentType: 'image/jpeg' }
+          : null,
+    });
+
+    expect(html).toContain('poster="data:image/jpeg;base64,');
+    expect(html).not.toContain(url);
+    expect(report.failed).toEqual([]);
   });
 
   it('reports a responsive image candidate that cannot be packaged', async () => {

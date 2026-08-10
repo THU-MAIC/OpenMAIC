@@ -9,7 +9,7 @@ import ptBR from '@/lib/i18n/locales/pt-BR.json';
 import ruRU from '@/lib/i18n/locales/ru-RU.json';
 import zhCN from '@/lib/i18n/locales/zh-CN.json';
 import zhTW from '@/lib/i18n/locales/zh-TW.json';
-import type { CoverCardLabels, VideoExportCta } from '@/lib/video-export';
+import type { VideoExportLabels, VideoExportCta } from '@/lib/video-export';
 
 const DEFAULT_DESTINATION = 'open.maic.chat';
 const MAX_RAW_DESTINATION_LENGTH = 96;
@@ -173,7 +173,7 @@ export function resolveVideoExportCta(raw: string | undefined): VideoExportCta |
 }
 
 /** Resolve every learner-facing cover label synchronously for one export locale. */
-export function getVideoExportCoverLabels(locale: Locale): CoverCardLabels {
+export function getVideoExportCoverLabels(locale: Locale): VideoExportLabels {
   const resource = LOCALE_RESOURCES[locale];
   const at = (key: string): string => {
     const value = key.split('.').reduce<unknown>((current, part) => {

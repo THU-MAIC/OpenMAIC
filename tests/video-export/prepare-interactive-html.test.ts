@@ -85,6 +85,16 @@ describe('prepareInteractiveHtmlScenes', () => {
       failure: 'unresolved-resource',
       message: expect.stringContaining('https://cdn.test/missing.png'),
     });
+
+    const poster = await prepareInteractiveHtmlScenes(
+      [scene('<video poster="https://cdn.test/missing-poster.jpg"></video>')],
+      { fetcher: async () => null },
+    );
+    expect(poster.html(scene())).toMatchObject({
+      present: false,
+      failure: 'unresolved-resource',
+      message: expect.stringContaining('https://cdn.test/missing-poster.jpg'),
+    });
   });
 
   it('rejects a page whose packaged bytes exceed the configured cap', async () => {
