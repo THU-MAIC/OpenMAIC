@@ -18,7 +18,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { setElementIdById } from '@/components/edit/ActionsBar/actions-edit';
 import { cueLabel, elementLabel } from '@/components/edit/ActionsBar/cue-meta';
 import { clearCuePreview, previewCueEffect } from '@/components/edit/ActionsBar/cue-preview';
-import { EDITABLE_ELEMENT_ID_PREFIX, editableElementDomId } from './renderer-element-dom';
+import { editableElementDomId } from './renderer-element-dom';
 
 const PANEL_W = 232;
 
