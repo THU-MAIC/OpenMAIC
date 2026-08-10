@@ -6,6 +6,7 @@ import {
   type PPTImageElement,
   type PPTShapeElement,
   type PPTTableElement,
+  type PPTVideoElement,
 } from '@openmaic/dsl';
 import {
   computeResize,
@@ -86,10 +87,36 @@ const table = (o: Partial<PPTTableElement> = {}): PPTTableElement =>
     ...o,
   }) as PPTTableElement;
 
+const video = (o: Partial<PPTVideoElement> = {}): PPTVideoElement =>
+  ({
+    id: 'v',
+    type: 'video',
+    left: 100,
+    top: 100,
+    width: 200,
+    height: 80,
+    rotate: 0,
+    src: 'video.mp4',
+    autoplay: false,
+    ...o,
+  }) as PPTVideoElement;
+
 const viewport = { width: 1000, height: 562.5 };
 const noOthers: PPTElement[] = [];
 
 describe('computeResize — un-rotated', () => {
+  it('always preserves a video aspect ratio when resizing from a corner', () => {
+    const r = computeResize({
+      element: video({ width: 400, height: 300 }),
+      handle: 'right-bottom',
+      others: noOthers,
+      viewport,
+      deltaCanvas: { x: 40, y: 20 },
+    });
+
+    expect(r.props).toEqual({ left: 100, top: 100, width: 440, height: 330 });
+  });
+
   it('keeps table rows usable by growing cellMinHeight with a height resize', () => {
     const r = computeResize({
       element: table(),
@@ -456,6 +483,15 @@ describe('getResizeHandles — per-kind gates', () => {
 
   it('vertical text exposes only top/bottom', () => {
     expect(getResizeHandles(text({ vertical: true }))).toEqual(['top', 'bottom']);
+  });
+
+  it('video exposes only corner handles', () => {
+    expect(getResizeHandles(video())).toEqual([
+      'left-top',
+      'right-top',
+      'left-bottom',
+      'right-bottom',
+    ]);
   });
 
   it('other box kinds expose all eight handles', () => {

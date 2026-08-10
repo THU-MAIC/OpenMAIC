@@ -44,6 +44,13 @@ export const RESIZE_HANDLES: readonly ResizeHandle[] = [
   'right-bottom',
 ];
 
+const CORNER_RESIZE_HANDLES: readonly ResizeHandle[] = [
+  'left-top',
+  'right-top',
+  'left-bottom',
+  'right-bottom',
+];
+
 /** The diagonally/axially opposite handle — the visually fixed point of a resize. */
 export const OPPOSITE_HANDLE: Record<ResizeHandle, ResizeHandle> = {
   'left-top': 'right-bottom',
@@ -206,6 +213,7 @@ export function getResizeCursor(handle: ResizeHandle, rotate: number): ResizeCur
  * - `code`: none — the app renders no resize points for code blocks.
  * - `text`: only the width axis, since text height follows content — `left`/
  *   `right`, or `top`/`bottom` when the text is vertical.
+ * - `video`: only corners, so video canvases cannot be stretched off-ratio.
  * - everything else: all eight points.
  * Line elements never reach here (they have endpoint handles, not a box).
  */
@@ -214,6 +222,7 @@ export function getResizeHandles(element: PPTBoxElement): readonly ResizeHandle[
   if (element.type === 'text') {
     return element.vertical ? ['top', 'bottom'] : ['left', 'right'];
   }
+  if (element.type === 'video') return CORNER_RESIZE_HANDLES;
   return RESIZE_HANDLES;
 }
 
@@ -308,9 +317,10 @@ function normalizeResizeProps(
  *   (resizing changes where the rotated opposite corner lands, so `left`/`top`
  *   must compensate). No snapping for rotated elements (app parity).
  *
- * Aspect lock (`aspectModifier` held, or the element's own `fixedRatio`) only
- * affects the four CORNER handles: the vertical delta is recomputed from the
- * horizontal one at the origin's aspect ratio. Edge handles ignore it.
+ * Aspect lock (`aspectModifier` held, an element's own `fixedRatio`, or a
+ * video element) only affects the four CORNER handles: the vertical delta is
+ * recomputed from the horizontal one at the origin's aspect ratio. Edge
+ * handles ignore it.
  *
  * Min-size clamping uses the per-type {@link ELEMENT_MIN_SIZE}; under aspect
  * lock the limit is scaled so both axes reach their minimum together.
@@ -336,7 +346,9 @@ export function computeResize(input: ResizeInput): ResizeResult {
   const rotateRadian = (Math.PI * rotate) / 180;
 
   const fixedRatio =
-    Boolean(aspectModifier) || ('fixedRatio' in element && Boolean(element.fixedRatio));
+    element.type === 'video' ||
+    Boolean(aspectModifier) ||
+    ('fixedRatio' in element && Boolean(element.fixedRatio));
   const aspectRatio = originWidth / originHeight;
 
   const minSize = ELEMENT_MIN_SIZE[element.type] ?? DEFAULT_MIN_SIZE;

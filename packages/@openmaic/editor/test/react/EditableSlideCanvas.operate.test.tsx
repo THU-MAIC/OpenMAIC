@@ -157,9 +157,14 @@ describe('EditableSlideCanvas — operate handle gates', () => {
     expect(container.querySelector('[data-shape-keypoint="shape:0"]')).not.toBeNull();
   });
 
-  it('a selected video gets eight resize handles but NO rotate handle', () => {
+  it('a selected video gets four corner resize handles but NO rotate handle', () => {
     const { container } = renderCanvas([videoEl], 'vid');
-    expect(resizeHandlesIn(container)).toHaveLength(8);
+    expect(resizeHandlesIn(container)).toEqual([
+      'left-top',
+      'right-top',
+      'left-bottom',
+      'right-bottom',
+    ]);
     expect(container.querySelector('[data-rotate-handle]')).toBeNull();
   });
 
