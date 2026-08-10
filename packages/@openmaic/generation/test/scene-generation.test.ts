@@ -165,6 +165,25 @@ describe('scene generation primitives', () => {
     expect(fallback).not.toHaveBeenCalled();
   });
 
+  it('skips the PBL loop fallback after an error-shaped single-call abort', async () => {
+    const fallback = vi.fn();
+
+    await expect(
+      generateSceneContent(
+        pblOutline(),
+        async () => {
+          throw Object.assign(new Error('Aborted'), { name: 'AbortError' });
+        },
+        { pblLoopFallback: fallback },
+      ),
+    ).rejects.toMatchObject({
+      name: 'PBLGenerationError',
+      message: expect.stringContaining('after all planner attempts'),
+      cause: expect.objectContaining({ name: 'AbortError', message: 'Aborted' }),
+    });
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
   it('skips the PBL loop fallback after a status-bearing provider failure', async () => {
     const fallback = vi.fn();
 

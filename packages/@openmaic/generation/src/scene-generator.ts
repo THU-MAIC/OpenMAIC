@@ -54,6 +54,7 @@ import type {
   AICallFn,
 } from './pipeline-types.js';
 import { noopGenerationLogger, type GenerationLogger } from './logger.js';
+import { isAbortError } from './generation-retry.js';
 import { generatePBLV2ProjectSingleCall } from './pbl/planner-single-call.js';
 import { PlannerV2Error } from './pbl/planner-core.js';
 import type { PBLPlannerV2Input } from './pbl/types.js';
@@ -984,9 +985,9 @@ async function generatePBLSceneContent(
     // abort the user already issued). Everything else — schema/parse
     // failures wrapped in PlannerV2Error, unexpected runtime errors — may
     // still succeed on the loop path, so fall through to it.
+    // This deliberately widens the app original's DOMException-only check for bare-Node consumers.
     const skipLoopFallback =
-      plannerErrorStatus(singleCallError) !== undefined ||
-      (singleCallError instanceof DOMException && singleCallError.name === 'AbortError');
+      plannerErrorStatus(singleCallError) !== undefined || isAbortError(singleCallError);
 
     if (pblLoopFallback && !skipLoopFallback) {
       try {
