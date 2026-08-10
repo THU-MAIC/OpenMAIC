@@ -182,6 +182,9 @@ importers:
       embla-carousel-react:
         specifier: ^8.6.0
         version: 8.6.0(react@19.2.3)
+      es-module-lexer:
+        specifier: ^2.0.0
+        version: 2.0.0
       file-saver:
         specifier: ^2.0.5
         version: 2.0.5

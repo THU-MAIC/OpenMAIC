@@ -36,6 +36,21 @@ describe('collectAssetRefs', () => {
     expect(refs).toContainEqual({ kind: 'poster', url: 'https://cdn.example/poster.jpg' });
   });
 
+  it('collects unsupported embedded-document resources for rejection', () => {
+    const refs = collectAssetRefs(
+      '<iframe src="https://embed.example/frame"></iframe>' +
+        '<object data="https://embed.example/object"></object>' +
+        '<embed src="https://embed.example/plugin">',
+    );
+    expect(refs).toEqual(
+      expect.arrayContaining([
+        { kind: 'iframe-src', url: 'https://embed.example/frame' },
+        { kind: 'object-data', url: 'https://embed.example/object' },
+        { kind: 'embed-src', url: 'https://embed.example/plugin' },
+      ]),
+    );
+  });
+
   it('collects source srcs (video/audio)', () => {
     const refs = collectAssetRefs('<video><source src="https://cdn.example/d.mp4"></video>');
     expect(refs).toContainEqual({ kind: 'source', url: 'https://cdn.example/d.mp4' });
@@ -209,6 +224,22 @@ describe('inlineCssUrls', () => {
     expect(out).toContain('@media screen and (min-width: 600px)');
     expect(out).toContain('.card{display:grid}');
     expect(out).not.toContain('@import');
+  });
+
+  it('preserves repeated imports of one stylesheet under different conditions', async () => {
+    const css = '@import "theme.css" screen; @import "theme.css" print;';
+    const { css: out } = await inlineCssUrls(
+      css,
+      'https://cdn.example/styles/base.css',
+      async () => ({
+        bytes: new TextEncoder().encode('.theme{color:blue}'),
+        contentType: 'text/css',
+      }),
+    );
+
+    expect(out).toContain('@media screen{.theme{color:blue}}');
+    expect(out).toContain('@media print{.theme{color:blue}}');
+    expect(out.match(/\.theme\{color:blue\}/g)).toHaveLength(2);
   });
 
   it('inlines relative font url() resolved against the css base url', async () => {

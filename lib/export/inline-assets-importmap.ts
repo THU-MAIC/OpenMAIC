@@ -1,38 +1,48 @@
 import { toDataUri, type InlineReport } from './inline-assets-shared';
+import { parse } from 'es-module-lexer/js';
 
-// Matches: import ... from 'X'  |  import 'X'  |  export ... from 'X'  |  import('X')
-const IMPORT_SPEC_RE =
-  /(?:\bimport\b[\s\S]*?\bfrom\b|\bexport\b[\s\S]*?\bfrom\b|\bimport)\s*["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/g;
+interface ModuleSpecifierRange {
+  specifier: string;
+  start: number;
+  end: number;
+}
+
+function moduleSpecifierRanges(code: string): ModuleSpecifierRange[] {
+  const [imports] = parse(code);
+  return imports.flatMap((entry) => {
+    if (!entry.n || entry.d === -2) return [];
+    let start = entry.s;
+    let end = entry.e;
+    if (entry.d >= 0 && (code[start] === '"' || code[start] === "'")) {
+      start++;
+      end--;
+    }
+    return [{ specifier: entry.n, start, end }];
+  });
+}
 
 /** Rewrite every statically discoverable module specifier without duplicating parser logic. */
 export async function rewriteModuleSpecifiers(
   code: string,
   replacementFor: (specifier: string) => string | undefined | Promise<string | undefined>,
 ): Promise<string> {
-  const matches = [...code.matchAll(IMPORT_SPEC_RE)];
+  const ranges = moduleSpecifierRanges(code);
   const replacements = await Promise.all(
-    matches.map(async (match) => {
-      const specifier = match[1] ?? match[2];
-      const replacement = specifier ? await replacementFor(specifier) : undefined;
-      return replacement ? match[0].replace(specifier, replacement) : match[0];
+    ranges.map(async ({ specifier, start, end }) => {
+      return (await replacementFor(specifier)) ?? code.slice(start, end);
     }),
   );
   let rewritten = '';
   let last = 0;
-  matches.forEach((match, index) => {
-    rewritten += code.slice(last, match.index!) + replacements[index];
-    last = match.index! + match[0].length;
+  ranges.forEach((range, index) => {
+    rewritten += code.slice(last, range.start) + replacements[index];
+    last = range.end;
   });
   return rewritten + code.slice(last);
 }
 
 export function extractSpecifiers(code: string): string[] {
-  const specs = new Set<string>();
-  for (const m of code.matchAll(IMPORT_SPEC_RE)) {
-    const s = m[1] ?? m[2];
-    if (s) specs.add(s);
-  }
-  return [...specs];
+  return [...new Set(moduleSpecifierRanges(code).map(({ specifier }) => specifier))];
 }
 
 /** Resolve a specifier against importmap: exact match first, then longest '/'-terminated prefix. */

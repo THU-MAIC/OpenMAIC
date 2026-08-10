@@ -87,6 +87,7 @@
     "dexie": "^4.2.1",
     "echarts": "^6.0.0",
     "embla-carousel-react": "^8.6.0",
+    "es-module-lexer": "^2.0.0",
     "file-saver": "^2.0.5",
     "geist": "^1.7.0",
     "i18next": "^26.0.1",

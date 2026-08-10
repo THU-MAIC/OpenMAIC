@@ -39,6 +39,17 @@ describe('prepareInteractiveHtmlScenes', () => {
     expect(html).toContain('interactive-worker-disabled');
   });
 
+  it('keeps the doctype first when authored HTML omits an explicit head', async () => {
+    const prepared = await prepareInteractiveHtmlScenes([
+      scene('<!doctype html><html><body><h1>Standards mode</h1></body></html>'),
+    ]);
+    const html = prepared.content('interactive:widget')!;
+
+    expect(html.toLowerCase().startsWith('<!doctype html><html><head>')).toBe(true);
+    expect(html.indexOf('data-openmaic-static-csp')).toBeGreaterThan(html.indexOf('<head>'));
+    expect(html.indexOf('</head>')).toBeLessThan(html.indexOf('<body>'));
+  });
+
   it('inlines supported remote assets and removes the network URL', async () => {
     const prepared = await prepareInteractiveHtmlScenes(
       [scene('<html><head></head><body><img src="https://cdn.test/pixel.png"></body></html>')],
@@ -95,6 +106,21 @@ describe('prepareInteractiveHtmlScenes', () => {
       failure: 'unresolved-resource',
       message: expect.stringContaining('https://cdn.test/missing-poster.jpg'),
     });
+
+    for (const embedded of [
+      '<iframe src="https://embed.test/frame"></iframe>',
+      '<object data="https://embed.test/object"></object>',
+      '<embed src="https://embed.test/plugin">',
+    ]) {
+      const prepared = await prepareInteractiveHtmlScenes([scene(embedded)], {
+        fetcher: async () => null,
+      });
+      expect(prepared.html(scene())).toMatchObject({
+        present: false,
+        failure: 'unresolved-resource',
+        message: expect.stringContaining('https://embed.test/'),
+      });
+    }
   });
 
   it('rejects a page whose packaged bytes exceed the configured cap', async () => {

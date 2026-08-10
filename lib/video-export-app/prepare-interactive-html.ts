@@ -33,6 +33,20 @@ function insertAfterHead(html: string, injection: string): string {
   return html.slice(0, pos) + injection + html.slice(pos);
 }
 
+function ensureHtmlHead(html: string): string {
+  if (/<head(?:\s[^>]*)?>/i.test(html)) return html;
+  const htmlElement = /<html(?:\s[^>]*)?>/i.exec(html);
+  if (htmlElement?.index !== undefined) {
+    const pos = htmlElement.index + htmlElement[0].length;
+    return `${html.slice(0, pos)}<head></head>${html.slice(pos)}`;
+  }
+  const doctype = /^\s*<!doctype\s+html[^>]*>/i.exec(html);
+  if (doctype) {
+    return `${html.slice(0, doctype[0].length)}<head></head>${html.slice(doctype[0].length)}`;
+  }
+  return `<head></head>${html}`;
+}
+
 function staticCaptureInjection(): string {
   const flag = JSON.stringify(INTERACTIVE_STATIC_MESSAGE_FLAG);
   const settleMs = INTERACTIVE_SETTLE_MS;
@@ -273,7 +287,10 @@ export async function prepareInteractiveHtmlScenes(
         continue;
       }
 
-      const packaged = insertAfterHead(patchHtmlForIframe(sanitized), staticCaptureInjection());
+      const packaged = insertAfterHead(
+        patchHtmlForIframe(ensureHtmlHead(sanitized)),
+        staticCaptureInjection(),
+      );
       const size = new TextEncoder().encode(packaged).byteLength;
       if (size > maxBytes) {
         bySceneId.set(scene.id, {

@@ -21,6 +21,9 @@ export type AssetRefKind =
   | 'img'
   | 'srcset'
   | 'poster'
+  | 'iframe-src'
+  | 'object-data'
+  | 'embed-src'
   | 'source'
   | 'video'
   | 'audio'
@@ -151,6 +154,15 @@ export function collectAssetRefs(
   for (const m of html.matchAll(/<audio\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
     push('audio', m[1]);
   }
+  for (const m of html.matchAll(/<iframe\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
+    push('iframe-src', m[1]);
+  }
+  for (const m of html.matchAll(/<object\b[^>]*?\bdata\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
+    push('object-data', m[1]);
+  }
+  for (const m of html.matchAll(/<embed\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
+    push('embed-src', m[1]);
+  }
   for (const m of html.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/gi)) {
     push('css-url', m[1].trim());
   }
@@ -279,7 +291,7 @@ export async function inlineCssUrls(
   css: string,
   cssUrl: string,
   fetchAsset: FetchAsset,
-  seenCssUrls: Set<string> = new Set(),
+  activeCssUrls: ReadonlySet<string> = new Set(),
 ): Promise<{ css: string; failed: { url: string; reason: string }[]; inlined: string[] }> {
   const failed: { url: string; reason: string }[] = [];
   const inlined: string[] = [];
@@ -295,13 +307,12 @@ export async function inlineCssUrls(
     } catch {
       continue;
     }
-    if (seenCssUrls.has(abs)) {
-      // A repeated import is already represented by the first expansion; a
-      // cycle is dropped so it cannot survive into the offline package.
+    if (activeCssUrls.has(abs)) {
+      // Only imports on the current recursion path are cycles. Sibling imports
+      // of the same stylesheet may carry distinct media/layer/supports guards.
       importedCss.set(match[0], '');
       continue;
     }
-    seenCssUrls.add(abs);
     const got = await fetchAsset(abs);
     if (!got) {
       failed.push({ url: abs, reason: 'fetch failed' });
@@ -311,7 +322,7 @@ export async function inlineCssUrls(
       new TextDecoder().decode(got.bytes),
       abs,
       fetchAsset,
-      seenCssUrls,
+      new Set(activeCssUrls).add(abs),
     );
     inlined.push(abs, ...nested.inlined);
     importedCss.set(match[0], wrapImportedCss(nested.css, parseCssImportConditions(match[3])));
@@ -497,7 +508,13 @@ export async function inlineHtmlAssets(
   // inside inlineCssUrls; importmap modules are handled in buildInlinedImportmap).
   await Promise.all(
     collectAssetRefs(html)
-      .filter((r) => r.kind !== 'importmap')
+      .filter(
+        (ref) =>
+          ref.kind !== 'importmap' &&
+          ref.kind !== 'iframe-src' &&
+          ref.kind !== 'object-data' &&
+          ref.kind !== 'embed-src',
+      )
       .map((r) => fetchAsset(r.url).catch(() => null)),
   );
   let out = html;

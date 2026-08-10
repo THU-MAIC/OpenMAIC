@@ -119,6 +119,30 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
     }
   });
 
+  it('keeps a doctype-only document in standards mode when creating its head', async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    try {
+      await load(
+        page,
+        await emittedFixture(
+          '<!doctype html><html><body><main id="mode">Standards mode</main></body></html>',
+        ),
+      );
+      await page.waitForFunction(() => {
+        return (
+          document
+            .querySelector('[data-interactive-static-host]')
+            ?.getAttribute('data-interactive-static-state') === 'frozen'
+        );
+      });
+
+      const child = page.frames().find((frame) => frame !== page.mainFrame())!;
+      expect(await child.evaluate(() => document.compatMode)).toBe('CSS1Compat');
+    } finally {
+      await page.close();
+    }
+  });
+
   it('switches a runtime failure to the visible placeholder without failing the composition', async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     try {
