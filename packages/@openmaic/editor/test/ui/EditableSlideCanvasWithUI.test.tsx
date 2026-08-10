@@ -12,6 +12,7 @@ import type {
 
 const canvasMock = vi.hoisted(() => ({
   latestProps: null as EditableSlideCanvasProps | null,
+  activeController: null as { discard: ReturnType<typeof vi.fn> } | null,
   format: {
     bold: false,
     em: false,
@@ -36,7 +37,7 @@ function controller(
   elementId: string,
   onTextContentChange: EditableSlideCanvasProps['onTextContentChange'],
 ): TextEditorController {
-  return {
+  const next = {
     elementId,
     execute(_command: TextEditCommand | TextEditCommand[]) {
       onTextContentChange?.({
@@ -54,6 +55,8 @@ function controller(
     focus: vi.fn(),
     getHTML: () => `<p>${elementId}</p>`,
   };
+  canvasMock.activeController = next;
+  return next;
 }
 
 vi.mock('../../src/react/EditableSlideCanvas', async () => {
@@ -267,6 +270,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   canvasMock.latestProps = null;
+  canvasMock.activeController = null;
   vi.restoreAllMocks();
 });
 
@@ -379,6 +383,23 @@ describe('EditableSlideCanvasWithUI canonical host', () => {
             content: '<p><strong>text-1</strong></p>',
           },
         ],
+      }),
+    );
+  });
+
+  it('discards a buffered text draft before toolbar deletion', async () => {
+    const { onTransaction } = renderEditor({
+      initialSelection: { elementIds: ['text-1'], primaryId: 'text-1', editingId: 'text-1' },
+    });
+    const activeController = canvasMock.activeController;
+    expect(activeController).not.toBeNull();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+
+    expect(activeController?.discard).toHaveBeenCalledBefore(onTransaction);
+    expect(onTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operations: [{ type: 'element.deleteMany', elementIds: ['text-1'] }],
       }),
     );
   });

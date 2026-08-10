@@ -88,9 +88,10 @@ export function useTextEditorAdapter({
 
   const deleteElement = useCallback(() => {
     if (!editingId) return;
+    activeController?.discard();
     dispatch([{ type: 'element.delete', ids: [editingId] }], { origin: 'toolbar' });
     onSelectionChange({ elementIds: [] });
-  }, [dispatch, editingId, onSelectionChange]);
+  }, [activeController, dispatch, editingId, onSelectionChange]);
   const reorderElement = useCallback(
     (command: 'front' | 'back') => {
       if (!editingId) return;
