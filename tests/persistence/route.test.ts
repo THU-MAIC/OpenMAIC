@@ -514,6 +514,22 @@ describe('embedded persistence route', () => {
     expect(body).toEqual(bytes);
   });
 
+  it('returns binary response bodies byte-for-byte', async () => {
+    // `ServerResponse.end` accepts a `Uint8Array`. Bytes that are not valid
+    // UTF-8 must survive intact: decoding them substitutes U+FFFD and corrupts
+    // the body with no error anywhere.
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe, 0x80, 0x01]);
+    mockAdapterHandler((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/octet-stream' });
+      response.end(bytes);
+    }, 'postgres://binary-test');
+
+    const { response, body } = await readAdapterBody('documents/binary');
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual(bytes);
+  });
+
   it('supports handlers that call write before end', async () => {
     // `write` was missing entirely, so a chunked handler was a runtime
     // TypeError rather than a compile error.
