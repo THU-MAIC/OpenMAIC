@@ -4,6 +4,7 @@ describe('embedded persistence route', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.unstubAllEnvs();
+    vi.stubEnv('ASSET_S3_BUCKET', '');
   });
 
   it('returns a clear 404 when DATABASE_URL is unset', async () => {
@@ -54,6 +55,13 @@ describe('embedded persistence route', () => {
       ensureDocumentSchema,
       PgDocumentStore: class {},
     }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
+      PgAssetByteStore: class {},
+    }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
       nodePostgresTransaction: vi.fn(() => vi.fn()),
     }));
@@ -102,6 +110,167 @@ describe('embedded persistence route', () => {
     expect(hmrPoolFactory).not.toHaveBeenCalled();
   });
 
+  it('mounts an asset store on the document pool and transaction and ensures its schema', async () => {
+    const ensureSchema = vi.fn().mockResolvedValue(undefined);
+    const ensureDocumentSchema = vi.fn().mockResolvedValue(undefined);
+    const ensureAssetSchema = vi.fn().mockResolvedValue(undefined);
+    const transaction = vi.fn();
+    const nodePostgresTransaction = vi.fn(() => transaction);
+    const runtimeConstructions: Array<{ queryable: unknown; options: unknown }> = [];
+    const documentConstructions: Array<{ queryable: unknown; options: unknown }> = [];
+    const byteConstructions: unknown[] = [];
+    const assetConstructions: Array<{ queryable: unknown; options: unknown; instance: unknown }> =
+      [];
+    const handlerOptions: unknown[] = [];
+
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema,
+      PgRuntimeStore: class {
+        constructor(queryable: unknown, options: unknown) {
+          runtimeConstructions.push({ queryable, options });
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema,
+      PgDocumentStore: class {
+        constructor(queryable: unknown, options: unknown) {
+          documentConstructions.push({ queryable, options });
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
+      PgAssetByteStore: class {
+        constructor(queryable: unknown) {
+          byteConstructions.push(queryable);
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema,
+      PgAssetStore: class {
+        constructor(queryable: unknown, options: unknown) {
+          assetConstructions.push({ queryable, options, instance: this });
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({ nodePostgresTransaction }));
+    vi.doMock('@openmaic/storage/server', () => ({
+      createStorageHttpHandler: vi.fn(
+        (_runtime: unknown, _documents: unknown, options: unknown) => {
+          handlerOptions.push(options);
+          return (
+            _request: unknown,
+            response: { writeHead: (status: number) => void; end: () => void },
+          ) => {
+            response.writeHead(204);
+            response.end();
+          };
+        },
+      ),
+    }));
+    vi.stubEnv('DATABASE_URL', 'postgres://asset-wiring-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const pool = { end: vi.fn().mockResolvedValue(undefined) };
+    const s3AssetByteStoreLoader = vi.fn().mockRejectedValue(new Error('SDK imported'));
+
+    const response = await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/assets/ast_example/content', {
+        headers: { authorization: 'Bearer test-token', 'x-learner-key': 'anon:test' },
+      }),
+      { poolFactory: () => pool as never, s3AssetByteStoreLoader },
+    );
+
+    expect(response.status).toBe(204);
+    expect(ensureSchema).toHaveBeenCalledWith(pool);
+    expect(ensureDocumentSchema).toHaveBeenCalledWith(pool);
+    expect(ensureAssetSchema).toHaveBeenCalledWith(pool);
+    expect(nodePostgresTransaction).toHaveBeenCalledWith(pool);
+    expect(runtimeConstructions[0]?.queryable).toBe(pool);
+    expect(documentConstructions[0]?.queryable).toBe(pool);
+    expect(assetConstructions[0]?.queryable).toBe(pool);
+    expect(byteConstructions[0]).toBe(pool);
+    expect(
+      (runtimeConstructions[0]?.options as { withTransaction?: unknown }).withTransaction,
+    ).toBe(transaction);
+    expect(
+      (documentConstructions[0]?.options as { withTransaction?: unknown }).withTransaction,
+    ).toBe(transaction);
+    expect((assetConstructions[0]?.options as { withTransaction?: unknown }).withTransaction).toBe(
+      transaction,
+    );
+    expect((handlerOptions[0] as { assetStore?: unknown }).assetStore).toBe(
+      assetConstructions[0]?.instance,
+    );
+    expect(s3AssetByteStoreLoader).not.toHaveBeenCalled();
+  });
+
+  it('selects the optional S3 byte loader only when its bucket is configured', async () => {
+    const pgByteStore = vi.fn();
+    const assetOptions: unknown[] = [];
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
+      PgAssetByteStore: class {
+        constructor(queryable: unknown) {
+          pgByteStore(queryable);
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {
+        constructor(_queryable: unknown, options: unknown) {
+          assetOptions.push(options);
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.doMock('@openmaic/storage/server', () => ({
+      createStorageHttpHandler: vi.fn(
+        () =>
+          (
+            _request: unknown,
+            response: { writeHead: (status: number) => void; end: () => void },
+          ) => {
+            response.writeHead(204);
+            response.end();
+          },
+      ),
+    }));
+    vi.stubEnv('DATABASE_URL', 'postgres://asset-s3-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    vi.stubEnv('ASSET_S3_BUCKET', '  asset-bucket  ');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const s3ByteStore = { kind: 's3' };
+    const s3AssetByteStoreLoader = vi.fn().mockResolvedValue(s3ByteStore);
+
+    const response = await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/assets', {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'x-learner-key': 'anon:test' },
+      }),
+      {
+        poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never,
+        s3AssetByteStoreLoader,
+      },
+    );
+
+    expect(response.status).toBe(204);
+    expect(s3AssetByteStoreLoader).toHaveBeenCalledExactlyOnceWith('asset-bucket');
+    expect(pgByteStore).not.toHaveBeenCalled();
+    expect((assetOptions[0] as { byteStore?: unknown }).byteStore).toBe(s3ByteStore);
+  });
+
   it('passes one complete app payload-validator table to Pg and HTTP boundaries', async () => {
     const pgOptions: unknown[] = [];
     const handlerOptions: unknown[] = [];
@@ -116,6 +285,13 @@ describe('embedded persistence route', () => {
     vi.doMock('@openmaic/storage/document/pg', () => ({
       ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
       PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
+      PgAssetByteStore: class {},
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
       nodePostgresTransaction: vi.fn(() => vi.fn()),
@@ -171,6 +347,13 @@ describe('embedded persistence route', () => {
     vi.doMock('@openmaic/storage/document/pg', () => ({
       ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
       PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
+      PgAssetByteStore: class {},
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
       nodePostgresTransaction: vi.fn(() => vi.fn()),

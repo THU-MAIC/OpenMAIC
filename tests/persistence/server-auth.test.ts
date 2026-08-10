@@ -22,7 +22,7 @@ describe('embedded persistence development authentication', () => {
           'x-learner-key': 'anon:learner-1',
         }),
       ),
-    ).resolves.toEqual({ learnerKey: 'anon:learner-1' });
+    ).resolves.toEqual({ key: 'anon:learner-1', learnerKey: 'anon:learner-1' });
   });
 
   it('rejects missing and incorrect bearer tokens', async () => {

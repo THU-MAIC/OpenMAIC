@@ -26,6 +26,11 @@ const mocks = vi.hoisted(() => ({
   loadDocument: vi.fn(),
   otherDocuments: new Map<string, ReturnType<typeof documentWithMedia>>(),
   mediaRows: new Map<string, { id: string; blob: Blob; error?: string }>(),
+  serverBacked: false,
+}));
+
+vi.mock('@/lib/media/asset-pool-config', () => ({
+  isAssetPoolServerBacked: () => mocks.serverBacked,
 }));
 
 vi.mock('@/lib/store/settings', () => ({
@@ -211,6 +216,7 @@ describe('media orchestrator asset write paths', () => {
     mocks.getPool.mockReset();
     mocks.getPool.mockReturnValue(pool);
     mocks.probePresence.mockReset().mockResolvedValue('absent');
+    mocks.serverBacked = false;
     mocks.mediaRows.clear();
     mocks.mediaPut.mockReset().mockImplementation(async (row) => {
       mocks.mediaRows.set(row.id, row);
@@ -684,6 +690,28 @@ describe('media orchestrator asset write paths', () => {
     expect(rewritten).not.toBe(assetId);
     expect(await resolvedText(rewritten)).toBe('image-forked');
     // A peer's unflushed owner, had there been one, still resolves the old bytes.
+    expect(await resolvedText(assetId)).toBe('image-old');
+  });
+
+  it('forks a targeted retry in server mode even when local ownership is exclusive', async () => {
+    mocks.serverBacked = true;
+    const assetId = await pool.put(new Blob(['image-old'], { type: 'image/png' }));
+    mocks.document = documentWithMedia(assetId, 'image');
+    const replace = vi.spyOn(pool, 'replace');
+    serveImage('image-server-fork');
+    useMediaGenerationStore.setState({ tasks: { [assetId]: failedTask(assetId) } });
+
+    await retryMediaTask(assetId, {
+      elementId: 'image-1',
+      sceneId: 'scene-1',
+      slideId: 'slide-1',
+    });
+
+    const rewritten = mocks.document.scenes[0].content.canvas.elements[0].src;
+    expect(replace).not.toHaveBeenCalled();
+    expect(rewritten).toMatch(/^ast_/);
+    expect(rewritten).not.toBe(assetId);
+    expect(await resolvedText(rewritten)).toBe('image-server-fork');
     expect(await resolvedText(assetId)).toBe('image-old');
   });
 

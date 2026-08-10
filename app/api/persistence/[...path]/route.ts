@@ -1,6 +1,8 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 
+import { PgAssetByteStore } from '@openmaic/storage/asset/pg-bytes';
+import { PgAssetStore, ensureAssetSchema, type AssetByteStore } from '@openmaic/storage/asset/pg';
 import { PgDocumentStore, ensureDocumentSchema } from '@openmaic/storage/document/pg';
 import { PgRuntimeStore, ensureSchema } from '@openmaic/storage/runtime/pg';
 import { createStorageHttpHandler } from '@openmaic/storage/server';
@@ -19,6 +21,22 @@ export const runtime = 'nodejs';
 const ROUTE_PREFIX = '/api/persistence';
 
 type PoolFactory = (connectionString: string) => Pool;
+type S3AssetByteStoreLoader = (bucket: string) => Promise<AssetByteStore>;
+
+const AWS_S3_CLIENT_PACKAGE = '@aws-sdk/client-s3';
+
+async function loadS3AssetByteStore(bucket: string): Promise<AssetByteStore> {
+  // Both optional modules load only after ASSET_S3_BUCKET opts this deployment
+  // into S3. The app deliberately has no hard AWS SDK dependency.
+  const [{ S3AssetByteStore }, sdk] = await Promise.all([
+    import('@openmaic/storage/asset/s3-bytes'),
+    import(/* webpackIgnore: true */ AWS_S3_CLIENT_PACKAGE),
+  ]);
+  const { S3Client } = sdk as {
+    S3Client: new (options: Record<string, never>) => unknown;
+  };
+  return new S3AssetByteStore({ bucket, client: new S3Client({}) as never });
+}
 
 interface PersistenceHandlerState {
   connectionString?: string;
@@ -38,13 +56,22 @@ function jsonError(status: number, code: string, message: string): Response {
 async function createPersistenceHandler(
   connectionString: string,
   poolFactory: PoolFactory,
+  s3AssetByteStoreLoader: S3AssetByteStoreLoader,
 ): Promise<RequestListener> {
   const pool = poolFactory(connectionString);
   const queryable = pool as unknown as ConnectableQueryable;
   try {
     await ensureSchema(queryable);
     await ensureDocumentSchema(queryable);
+    await ensureAssetSchema(queryable);
     const withTransaction = nodePostgresTransaction(queryable);
+    // ASSET_S3_BUCKET: a non-empty bucket name opts asset bytes into S3. The
+    // optional AWS SDK owns its standard region, credential, and endpoint
+    // configuration; this route reads no AWS environment variables itself.
+    const s3Bucket = process.env.ASSET_S3_BUCKET?.trim();
+    const byteStore = s3Bucket
+      ? await s3AssetByteStoreLoader(s3Bucket)
+      : new PgAssetByteStore(queryable);
     const runtimeStore = new PgRuntimeStore(queryable, {
       withTransaction,
       payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
@@ -54,6 +81,17 @@ async function createPersistenceHandler(
       validateScene: validateAppScene,
       validateStage: validateAppStage,
     });
+    // The asset contract requires a server-derived principal; this development
+    // authenticator instead takes the partition key from a client-supplied header.
+    // Cross-principal isolation is therefore not in force: asset bytes are as
+    // reachable as documents and runtime records under this authenticator. Before
+    // asset routes carry anything that matters, production must replace
+    // authenticatePersistenceRequest with real session verification. See
+    // lib/persistence/server-auth.ts for the token's limits.
+    const assetStore = new PgAssetStore(queryable, { withTransaction, byteStore });
+    // AssetCollector is intentionally not scheduled by this request route.
+    // Without a deployment-managed collector and grace period, unreferenced
+    // bytes accumulate without bound; scheduling is a host decision.
     return createStorageHttpHandler(runtimeStore, documentStore, {
       authenticate: authenticatePersistenceRequest,
       authorizeMerge: async () => false,
@@ -62,6 +100,7 @@ async function createPersistenceHandler(
       validateScene: validateAppScene,
       validateStage: validateAppStage,
       payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      assetStore,
     });
   } catch (error) {
     await pool.end().catch(() => {});
@@ -72,13 +111,18 @@ async function createPersistenceHandler(
 function getPersistenceHandler(
   connectionString: string,
   poolFactory: PoolFactory,
+  s3AssetByteStoreLoader: S3AssetByteStoreLoader,
 ): Promise<RequestListener> {
   if (handlerState.handlerPromise && handlerState.connectionString === connectionString) {
     return handlerState.handlerPromise;
   }
 
   handlerState.connectionString = connectionString;
-  const initialization = createPersistenceHandler(connectionString, poolFactory).catch((error) => {
+  const initialization = createPersistenceHandler(
+    connectionString,
+    poolFactory,
+    s3AssetByteStoreLoader,
+  ).catch((error) => {
     // Do not poison the singleton with a rejected promise. createPersistenceHandler
     // has already closed its failed pool, and the next request gets a clean retry.
     if (handlerState.handlerPromise === initialization) {
@@ -173,6 +217,7 @@ function runNodeHandler(handler: RequestListener, request: Request): Promise<Res
 
 interface PersistenceRequestDeps {
   poolFactory?: PoolFactory;
+  s3AssetByteStoreLoader?: S3AssetByteStoreLoader;
 }
 
 export async function handlePersistenceRequest(
@@ -194,7 +239,11 @@ export async function handlePersistenceRequest(
   try {
     const poolFactory = deps.poolFactory ?? ((value) => new Pool({ connectionString: value }));
     return await runNodeHandler(
-      await getPersistenceHandler(connectionString, poolFactory),
+      await getPersistenceHandler(
+        connectionString,
+        poolFactory,
+        deps.s3AssetByteStoreLoader ?? loadS3AssetByteStore,
+      ),
       request,
     );
   } catch (error) {
