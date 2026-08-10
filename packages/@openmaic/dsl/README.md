@@ -152,6 +152,13 @@ already *is* `0.1.0`. The entry wires the pipeline end to end and gives real
 documents a version to migrate forward from; the first real transform is
 appended (and `DSL_VERSION` bumped) when the serialized shape first changes.
 
+Promoting `interactive` and `pbl` into the contract does **not** bump
+`DSL_VERSION`: it widens accepted content without changing stored bytes or the
+meaning of an existing field. This follows the additive-field precedent in
+the `GeneratedAgentConfig` compatibility note in `stage.ts`; schema-pinned
+consumers still need the new package version to accept documents carrying the
+newly described shapes.
+
 Which aggregate carries the `dslVersion` field — a whole `Stage`, a single Scene
 row, or a bundle — is left to the store that first consumes this pipeline; the
 runner only needs the envelope field.
@@ -234,8 +241,9 @@ of the slide types:
 - [x] Bring the `Action` playback verb set into the DSL (`action.ts`); the
       widget interaction actions graduated into the contract once they decoupled
       from widget configs, so the standard `Action` union now covers them too.
-      `Scene<TAction>` defaults to that union; PBL configs and the app's richer
-      content kinds still plug in via `Scene`'s generics.
+      `Scene<TAction>` defaults to that union.
+- [x] Promote interactive and PBL content into the persisted contract, with a
+      minimal widget-config extension point and the PBL design/seed skeleton.
 - [x] Activate the migration registry: `version.ts` ships the `DSL_MIGRATIONS`
       ladder and a pure `migrate` runner (idempotent, forward-compatible,
       fail-loud), no longer a stub. See **Version & migration** above.
@@ -247,8 +255,8 @@ of the slide types:
 
 ### Stage / Scene split
 
-`stage.ts` owns the **universal lesson skeleton**: `Stage`, the discriminated
-`SceneContent` (`SlideContent | QuizContent`), and a generic
+`stage.ts` owns the **universal lesson skeleton**: `Stage`, the compatibility
+default `SceneContent` (`SlideContent | QuizContent`), and a generic
 
 ```ts
 interface Scene<TAction = Action, TContent extends { type: SceneType } = SlideContent | QuizContent>
@@ -256,20 +264,22 @@ interface Scene<TAction = Action, TContent extends { type: SceneType } = SlideCo
 
 `TAction` defaults to the contract's standard `Action` union (defined in
 `action.ts`), so a scene carries playback actions out of the box; skeleton-only
-consumers that reject actions opt out with `Scene<never, …>`. Apps widen the
-content union (and, if they add their own actions, the action union) by
-injecting their own types:
+consumers that reject actions opt out with `Scene<never, …>`. `InteractiveContent`
+and `PBLContent` are contract-owned and compose into concrete scene unions through
+the generic; apps may also specialize widget configs and action unions:
 
 ```ts
-import type { Scene, Action } from '@openmaic/dsl';
-type AppScene = Scene<Action, SlideContent | QuizContent | InteractiveContent | PBLContent>;
+import type { Action, InteractiveContent, PBLContent, Scene, SceneContent, WidgetConfigBase } from '@openmaic/dsl';
+interface AppWidgetConfig extends WidgetConfigBase { featurePayload?: unknown }
+type AppContent = SceneContent | InteractiveContent<AppWidgetConfig> | PBLContent;
+type AppScene = Scene<Action, AppContent>;
 ```
 
-Widget *configs* (`WidgetType` / `WidgetConfig`) and `PBLProjectConfig` remain
-out of scope here — they're faster-moving product surfaces that stay app-side
-and plug in via `Scene`'s generics. The widget *actions* (`widget_highlight`,
-`widget_setState`, …), by contrast, are config-free playback verbs and live in
-`action.ts` with the rest of the `Action` union.
+The contract owns `WidgetType`, the minimal `WidgetConfigBase`,
+`InteractiveContent`, `PBLContent`, and the design-time `PBLProject` plus its
+canonical planner-seeded skeleton. Rich per-widget payloads and PBL learner
+runtime overlays stay app-side. The widget actions (`widget_highlight`,
+`widget_setState`, …) remain config-free playback verbs in `action.ts`.
 
 ## Divergence reconciled (seed provenance)
 

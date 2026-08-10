@@ -2,15 +2,11 @@
  * Widget Configuration Types for Ultra Interaction Mode
  */
 
+import type { WidgetConfigBase } from '@openmaic/dsl';
+
 // ==================== Base Types ====================
 
-export type WidgetType =
-  | 'simulation'
-  | 'diagram'
-  | 'code'
-  | 'game'
-  | 'visualization3d'
-  | 'procedural-skill';
+export type { WidgetType } from '@openmaic/dsl';
 
 // ==================== Simulation Widget ====================
 
@@ -24,7 +20,7 @@ export interface SimulationVariable {
   step?: number;
 }
 
-export interface SimulationConfig {
+export interface SimulationConfig extends WidgetConfigBase {
   type: 'simulation';
   concept: string;
   description: string;
@@ -52,7 +48,7 @@ export interface DiagramEdge {
   label?: string;
 }
 
-export interface DiagramConfig {
+export interface DiagramConfig extends WidgetConfigBase {
   type: 'diagram';
   diagramType: 'flowchart' | 'mindmap' | 'hierarchy' | 'system';
   description: string;
@@ -71,7 +67,7 @@ export interface CodeTestCase {
   isHidden?: boolean;
 }
 
-export interface CodeConfig {
+export interface CodeConfig extends WidgetConfigBase {
   type: 'code';
   language: 'python' | 'javascript' | 'typescript' | 'java' | 'cpp';
   description: string;
@@ -93,7 +89,7 @@ export interface GameQuestion {
   points?: number;
 }
 
-export interface GameConfig {
+export interface GameConfig extends WidgetConfigBase {
   type: 'game';
   gameType: 'quiz' | 'puzzle' | 'strategy' | 'card';
   description: string;
@@ -151,7 +147,7 @@ export interface Visualization3DInteraction {
   step?: number;
 }
 
-export interface Visualization3DConfig {
+export interface Visualization3DConfig extends WidgetConfigBase {
   type: 'visualization3d';
   visualizationType: 'molecular' | 'solar' | 'anatomy' | 'geometry' | 'physics' | 'custom';
   description: string;
@@ -192,7 +188,7 @@ export interface ProceduralSkillStep {
   successCriteria?: string[];
 }
 
-export interface ProceduralSkillConfig {
+export interface ProceduralSkillConfig extends WidgetConfigBase {
   type: 'procedural-skill';
   task: string;
   description: string;

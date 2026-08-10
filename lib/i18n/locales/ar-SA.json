@@ -78,6 +78,9 @@
     "videoServiceHint": "يتطلب عرض MP4 خدمة العرض. نزّل ملف ZIP للعرض محليًا.",
     "videoBurnSubtitles": "دمج الترجمة في الفيديو",
     "videoBurnSubtitlesDesc": "عند الإيقاف: صدّر فيديو نظيفًا وأضف ملف الترجمة في برنامج التحرير لديك.",
+    "videoQuizCtaPrompt": "هل تريد تجربة اختبار تفاعلي؟",
+    "videoPblCtaPrompt": "هل تريد استكشاف التعلم القائم على المشاريع؟",
+    "videoCtaVisit": "تفضل بزيارة",
     "videoDownloadSubtitles": "تنزيل الترجمة (.srt)",
     "subtitlesCompiling": "جارٍ تجميع الترجمة...",
     "subtitlesSuccess": "تم تنزيل الترجمة",
@@ -382,7 +385,8 @@
         "lead": "صِف خطأً في هذه الصفحة التفاعلية — مثل زر لا يفعل شيئًا — وسأُصلح ذلك فقط مع الإبقاء على كل شيء آخر.",
         "placeholder": "صِف الخطأ في هذه الصفحة التفاعلية…"
       },
-      "thinking": "جارٍ التفكير…"
+      "thinking": "جارٍ التفكير…",
+      "title": "التحرير باستخدام الذكاء الاصطناعي"
     },
     "timeline": {
       "title": "نص السرد",
@@ -475,6 +479,21 @@
       "notApplied": "لم يُطبَّق",
       "applyFailed": "تعذر على المحرر تطبيق تعديل العنصر. لم يتم تغيير أي محتوى.",
       "applyPartiallyFailed": "تعذر على المحرر تطبيق تعديل واحد أو أكثر للعناصر. ربما تم تطبيق تعديلات أخرى."
+    },
+    "roster": {
+      "title": "تشكيلة الفصل",
+      "count": "{{count}} أعضاء",
+      "editHint": "انقر على عضو للتعديل",
+      "personaLabel": "الشخصية",
+      "personaPlaceholder": "صف شخصية الدور وأسلوب التدريس والمهام...",
+      "noPersona": "لا توجد شخصية بعد",
+      "unnamed": "بلا عنوان",
+      "teacherBadge": "القائد",
+      "moveUp": "نقل لأعلى",
+      "moveDown": "نقل لأسفل",
+      "removeFromClass": "إزالة من الفصل",
+      "aiClassmates": "زملاء AI · {{count}}",
+      "addRole": "إضافة دور"
     }
   },
   "classroomComplete": {
@@ -564,67 +583,7 @@
     "startRecording": "بدء التسجيل"
   },
   "pbl": {
-    "legacyFormat": "يستخدم مشهد التعلم القائم على المشاريع هذا تنسيقًا قديمًا. يرجى إعادة توليد المقرر.",
     "emptyProject": "لم يتم توليد مشروع التعلم القائم على المشاريع بعد. يرجى إنشاؤه عبر توليد المقرر.",
-    "roleSelection": {
-      "title": "اختر دورك",
-      "description": "حدد دورًا لبدء التعاون في المشروع"
-    },
-    "workspace": {
-      "restart": "إعادة البدء",
-      "confirmRestart": "إعادة تعيين كل التقدم؟",
-      "confirm": "تأكيد",
-      "cancel": "إلغاء"
-    },
-    "issueboard": {
-      "title": "لوحة المهام",
-      "noIssues": "لا توجد مهام بعد",
-      "statusDone": "مكتمل",
-      "statusActive": "نشط",
-      "statusPending": "معلّق"
-    },
-    "chat": {
-      "title": "نقاش المشروع",
-      "currentIssue": "المهمة الحالية",
-      "mentionHint": "استخدم @question للسؤال، و@judge للتقديم للمراجعة",
-      "placeholder": "اكتب رسالة...",
-      "send": "إرسال",
-      "issueCompleteMessage": "تم إكمال المهمة \"{{completed}}\"! الانتقال إلى المهمة التالية: \"{{next}}\"",
-      "allCompleteMessage": "🎉 تم إكمال جميع المهام! عمل رائع في المشروع!"
-    },
-    "guide": {
-      "howItWorks": "كيف يعمل",
-      "help": "مساعدة",
-      "title": "مساعدة",
-      "step1": {
-        "title": "الخطوة 1: اختر دورًا",
-        "desc": "بعد توليد المشروع، حدد دورًا من القائمة (الأدوار غير النظامية مميزة بـ 🟢)"
-      },
-      "step2": {
-        "title": "الخطوة 2: أكمل المهام",
-        "desc": "كل مهمة تمثل نشاطًا تعليميًا:",
-        "s1": {
-          "title": "عرض المهمة الحالية",
-          "desc": "تحقق من عنوان المهمة ووصفها والمسؤول عنها"
-        },
-        "s2": {
-          "title": "الحصول على إرشادات",
-          "example": "@question من أين أبدأ؟\n@question كيف أنفذ هذه الميزة؟",
-          "desc": "يقدم وكيل الأسئلة أسئلة إرشادية وتلميحات (بدون إجابات مباشرة)"
-        },
-        "s3": {
-          "title": "تقديم عملك",
-          "example": "@judge لقد انتهيت، يرجى مراجعة ملاحظاتي",
-          "desc": "يقوم وكيل التقييم بتقييم عملك وتقديم ملاحظات:",
-          "complete": "ينتقل تلقائيًا إلى المهمة التالية",
-          "revision": "حسّن بناءً على الملاحظات"
-        }
-      },
-      "step3": {
-        "title": "الخطوة 3: أكمل المشروع",
-        "desc": "عند إتمام جميع المهام، يعرض النظام \"🎉 اكتمل المشروع!\""
-      }
-    },
     "v2": {
       "hero": {
         "title": "التعلم القائم على المشاريع · Project-Based Learning",
@@ -1102,6 +1061,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "Qwen",
       "kimi": "Kimi",
@@ -1119,13 +1079,15 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "بروتوكول OpenAI",
       "azure": "Azure OpenAI",
       "anthropic": "بروتوكول Claude",
-      "google": "بروتوكول Gemini"
+      "google": "بروتوكول Gemini",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "نماذج",
     "modelSingular": "نموذج",
@@ -1326,6 +1288,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "التعرّف على الكلام المدمج في المتصفح",
     "providerQwenASR": "Qwen ASR (سحابة علي بابا بايليان)",
+    "providerFunASRASR": "FunASR (محلي)",
     "providerLemonadeASR": "Lemonade ASR (محلي)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (مُدمج)",
@@ -1644,11 +1607,16 @@
     "clearCacheButton": "حذف جميع البيانات نهائيًا",
     "clearCacheSuccess": "تم مسح الذاكرة المؤقتة، ستتم إعادة تحميل الصفحة قريبًا",
     "clearCacheFailed": "فشل مسح الذاكرة المؤقتة، يرجى المحاولة مرة أخرى",
+    "clearCacheBlockedByOtherTabs": "أغلق علامات تبويب التطبيق الأخرى وأعد المحاولة.",
+    "persistUnavailable": "لا يتم حفظ تغييراتك لأن التطبيق لا يستطيع الوصول إلى بياناته المخزّنة. إذا لم تُجدِ إعادة التحميل نفعًا، فامسح ذاكرة التخزين المؤقت المحلية من الإعدادات.",
+    "persistChangesLost": "عاد التخزين إلى العمل، لكن تعذّر حفظ التغييرات التي أجريتها أثناء تعطّله، وتم استبدالها بآخر نسخة محفوظة.",
     "webSearchSettings": "بحث الإنترنت",
     "webSearchApiKey": "مفتاح API للبحث",
     "webSearchApiKeyPlaceholder": "أدخل مفتاح API للبحث",
     "webSearchApiKeyPlaceholderServer": "تم تكوين مفتاح الخادم، يمكنك التجاوز اختياريًا",
     "webSearchApiKeyHint": "احصل على مفتاح API من مزود البحث المحدد",
+    "claudeSearchModel": "نموذج البحث",
+    "claudeSearchModelHint": "نموذج Claude الذي يقوم بالبحث في الويب وتلخيص النتائج.",
     "webSearchApiKeyOptional": "مفتاح API اختياري. بدونه، سيتم استخدام استخراج الصفحة العامة كبديل.",
     "searxngServerOnlyNotice": "يجب تكوين SearXNG على الخادم. عيّن متغير البيئة SEARXNG_BASE_URL (أو قسم web-search في server-providers.yml). لا يُقبل عناوين URL للمثيلات المقدمة من العميل.",
     "baiduSubSources": "مصادر بحث Baidu",

@@ -132,6 +132,7 @@ export function buildTimeline(
       durationMs: Math.max(0, end - start),
       supported,
       base: { kind: supported ? 'slide-snapshot' : 'placeholder' },
+      visuals: [],
       ...buckets[index],
     };
   });

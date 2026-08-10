@@ -24,7 +24,7 @@ import {
   runTaskEvaluation,
 } from '@/lib/pbl/v2/agents/evaluator';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
-import { addSubmission } from '@/lib/pbl/v2/operations/submission';
+import { addSubmission } from '@/lib/pbl/v2/operations/runtime/submission';
 import type { PBLSSEEvent } from '@/lib/pbl/v2/api/sse';
 
 type DoStreamConfig = NonNullable<

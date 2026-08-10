@@ -23,7 +23,7 @@ const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
  */
 async function seedQuiz(page: Page, stageId: string, questions: QuizQuestion[]) {
   await page.addInitScript((settings) => {
-    localStorage.setItem('settings-storage', settings);
+    localStorage.setItem('maic:account:settings-storage', settings);
   }, SETTINGS_STORAGE);
   await page.goto('/', { waitUntil: 'networkidle' });
   await page.evaluate(

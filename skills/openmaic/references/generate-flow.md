@@ -7,10 +7,10 @@
 - OpenMAIC is healthy at the selected `url`
 - Provider keys are configured
 
-> **Hosted mode**: If using hosted OpenMAIC (open.maic.chat), all
+> **Live Demo mode**: If using the OpenMAIC Live Demo (open.maic.chat), all
 > preconditions (repo, startup, provider keys) are already satisfied.
 > Include `Authorization: Bearer <access-code>` header on all requests below.
-> See [hosted-mode.md](hosted-mode.md) for details.
+> See [live-demo.md](live-demo.md) for details.
 
 ## Requirement-Only Generation
 

@@ -78,6 +78,9 @@
     "videoServiceHint": "Renderizar a MP4 necesita el servicio de renderizado. Descarga el ZIP para renderizar en tu equipo.",
     "videoBurnSubtitles": "Incrustar subtítulos",
     "videoBurnSubtitlesDesc": "Desactivado: exporta un video limpio y agrega el archivo de subtítulos en tu editor.",
+    "videoQuizCtaPrompt": "¿Quieres probar un cuestionario interactivo?",
+    "videoPblCtaPrompt": "¿Quieres explorar el aprendizaje basado en proyectos?",
+    "videoCtaVisit": "Visita",
     "videoDownloadSubtitles": "Descargar subtítulos (.srt)",
     "subtitlesCompiling": "Compilando subtítulos...",
     "subtitlesSuccess": "Subtítulos descargados",
@@ -382,7 +385,8 @@
       "sessionEmpty": "No hay conversaciones anteriores",
       "thinking": "Pensando…",
       "reasoning": "Razonamiento",
-      "thought": "Pensó durante"
+      "thought": "Pensó durante",
+      "title": "Editar con IA"
     },
     "timeline": {
       "title": "Guion de narración",
@@ -475,6 +479,21 @@
       "notApplied": "Sin aplicar",
       "applyFailed": "El editor no pudo aplicar la edición del elemento. No se cambió nada.",
       "applyPartiallyFailed": "El editor no pudo aplicar una o más ediciones de elementos. Es posible que otras ediciones sí se hayan aplicado."
+    },
+    "roster": {
+      "title": "Elenco del aula",
+      "count": "{{count}} integrantes",
+      "editHint": "Haz clic en un integrante para editar",
+      "personaLabel": "Persona",
+      "personaPlaceholder": "Describe la personalidad, el estilo de enseñanza y las tareas del rol...",
+      "noPersona": "Sin persona todavía",
+      "unnamed": "Sin título",
+      "teacherBadge": "Principal",
+      "moveUp": "Mover arriba",
+      "moveDown": "Mover abajo",
+      "removeFromClass": "Quitar del aula",
+      "aiClassmates": "Compañeros de IA · {{count}}",
+      "addRole": "Agregar rol"
     }
   },
   "classroomComplete": {
@@ -564,67 +583,7 @@
     "startRecording": "Iniciar grabación"
   },
   "pbl": {
-    "legacyFormat": "Esta escena de ABP usa un formato heredado. Vuelve a generar el curso.",
     "emptyProject": "El proyecto de ABP aún no se ha generado. Créalo desde la generación de cursos.",
-    "roleSelection": {
-      "title": "Elige tu rol",
-      "description": "Selecciona un rol para empezar a colaborar en el proyecto"
-    },
-    "workspace": {
-      "restart": "Reiniciar",
-      "confirmRestart": "¿Restablecer todo el progreso?",
-      "confirm": "Confirmar",
-      "cancel": "Cancelar"
-    },
-    "issueboard": {
-      "title": "Tablero de retos",
-      "noIssues": "Aún no hay retos",
-      "statusDone": "Hecho",
-      "statusActive": "En curso",
-      "statusPending": "Pendiente"
-    },
-    "chat": {
-      "title": "Discusión del proyecto",
-      "currentIssue": "Reto actual",
-      "mentionHint": "Usa @question para preguntar y @judge para enviar a revisión",
-      "placeholder": "Escribe un mensaje...",
-      "send": "Enviar",
-      "issueCompleteMessage": "¡Completaste el reto \"{{completed}}\"! Vamos con el siguiente: \"{{next}}\"",
-      "allCompleteMessage": "🎉 ¡Completaste todos los retos! ¡Gran trabajo en el proyecto!"
-    },
-    "guide": {
-      "howItWorks": "Cómo funciona",
-      "help": "Ayuda",
-      "title": "Ayuda",
-      "step1": {
-        "title": "Paso 1: elige un rol",
-        "desc": "Cuando el proyecto se haya generado, selecciona un rol de la lista (los roles que no son del sistema están marcados con 🟢)"
-      },
-      "step2": {
-        "title": "Paso 2: completa los retos",
-        "desc": "Cada reto representa una tarea de aprendizaje:",
-        "s1": {
-          "title": "Ver el reto actual",
-          "desc": "Revisa el título, la descripción y el responsable del reto"
-        },
-        "s2": {
-          "title": "Recibe orientación",
-          "example": "@question ¿Por dónde empiezo?\n@question ¿Cómo implemento esta función?",
-          "desc": "El agente de preguntas te da preguntas guía y pistas (sin respuestas directas)"
-        },
-        "s3": {
-          "title": "Entrega tu trabajo",
-          "example": "@judge Ya terminé, revisa mis notas por favor",
-          "desc": "El agente juez evalúa tu trabajo y te da retroalimentación:",
-          "complete": "Pasa automáticamente al siguiente reto",
-          "revision": "Mejora tu trabajo según la retroalimentación"
-        }
-      },
-      "step3": {
-        "title": "Paso 3: completa el proyecto",
-        "desc": "Cuando todos los retos estén terminados, el sistema mostrará \"🎉 ¡Proyecto completado!\""
-      }
-    },
     "v2": {
       "hero": {
         "title": "Aprendizaje basado en proyectos",
@@ -1102,6 +1061,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "Qwen",
       "kimi": "Kimi",
@@ -1119,13 +1079,15 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "Protocolo OpenAI",
       "azure": "Azure OpenAI",
       "anthropic": "Protocolo Claude",
-      "google": "Protocolo Gemini"
+      "google": "Protocolo Gemini",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "modelos",
     "modelSingular": "modelo",
@@ -1326,6 +1288,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "ASR nativo del navegador",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
+    "providerFunASRASR": "FunASR (local)",
     "providerLemonadeASR": "Lemonade ASR (local)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (integrado)",
@@ -1644,11 +1607,16 @@
     "clearCacheButton": "Eliminar permanentemente todos los datos",
     "clearCacheSuccess": "Caché borrada, la página se actualizará en breve",
     "clearCacheFailed": "No se pudo borrar la caché, inténtalo de nuevo",
+    "clearCacheBlockedByOtherTabs": "Cierra las otras pestañas de la app y vuelve a intentarlo.",
+    "persistUnavailable": "Tus cambios no se están guardando porque la aplicación no puede acceder a sus datos almacenados. Si recargar no ayuda, borra la caché local en Configuración.",
+    "persistChangesLost": "El almacenamiento vuelve a funcionar, pero los cambios que hiciste mientras no estaba disponible no se pudieron guardar y se reemplazaron por la última versión guardada.",
     "webSearchSettings": "Búsqueda web",
     "webSearchApiKey": "Clave API de búsqueda",
     "webSearchApiKeyPlaceholder": "Ingresa tu clave API de búsqueda",
     "webSearchApiKeyPlaceholderServer": "Clave del servidor configurada; puedes sobrescribirla opcionalmente",
     "webSearchApiKeyHint": "Obtén una clave API del proveedor de búsqueda seleccionado",
+    "claudeSearchModel": "Modelo de búsqueda",
+    "claudeSearchModelHint": "El modelo de Claude que realiza las búsquedas web y resume los resultados.",
     "webSearchApiKeyOptional": "La clave API es opcional. Sin ella, se usará el scraping de páginas públicas como alternativa.",
     "searxngServerOnlyNotice": "SearXNG debe configurarse en el servidor. Define la variable de entorno SEARXNG_BASE_URL (o la sección web-search en server-providers.yml). No se aceptan URLs de instancia proporcionadas por el cliente.",
     "baiduSubSources": "Fuentes de búsqueda de Baidu",

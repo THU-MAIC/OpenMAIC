@@ -81,6 +81,20 @@ describe('video manifest', () => {
 
     expect(
       getVideoMediaRefForElement({
+        id: 'video_allocated',
+        type: 'video',
+        left: 0,
+        top: 0,
+        width: 100,
+        height: 56,
+        rotate: 0,
+        src: 'ast_allocated_video',
+        autoplay: false,
+      }),
+    ).toBe('ast_allocated_video');
+
+    expect(
+      getVideoMediaRefForElement({
         id: 'video_3',
         type: 'video',
         left: 0,

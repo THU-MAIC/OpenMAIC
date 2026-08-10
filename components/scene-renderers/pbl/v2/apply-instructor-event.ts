@@ -11,15 +11,15 @@
 
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 import type { PBLSSEEvent } from '@/lib/pbl/v2/api/sse';
-import { applyAdvanceProjectPatch } from '@/lib/pbl/v2/operations/advance-patch';
-import { capEngagementEvents } from '@/lib/pbl/v2/operations/engagement';
-import { PBL_SIMULATOR_AGENT_ID } from '@/lib/pbl/v2/operations/progress';
+import { applyAdvanceProjectPatch } from '@/lib/pbl/v2/operations/runtime/advance-patch';
+import { capEngagementEvents } from '@/lib/pbl/v2/operations/kernel/engagement';
+import { PBL_SIMULATOR_AGENT_ID } from '@/lib/pbl/v2/operations/kernel/progress';
 import {
   appendProficiencyUpdatedRuntimeEvent,
   appendRuntimeEvent,
   milestoneIdForMicrotask,
   mintRuntimeEventId,
-} from '@/lib/pbl/v2/operations/runtime-events';
+} from '@/lib/pbl/v2/operations/kernel/runtime-events';
 import { isStandaloneDividerMessage, stripEmbeddedDividerMarkers } from './protocol-markers';
 import type { PBLChatMessage, PBLRuntimeActorType } from '@/lib/pbl/v2/types';
 

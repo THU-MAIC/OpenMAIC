@@ -37,7 +37,7 @@ import { motion } from 'motion/react';
 import type { ReactNode } from 'react';
 import type { PBLEvaluation, PBLProjectV2, PBLScenarioActGoals } from '@/lib/pbl/v2/types';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { stripEvaluationTail } from '@/lib/pbl/v2/operations/eval-tail-parser';
+import { stripEvaluationTail } from '@/lib/pbl/v2/operations/runtime/eval-tail-parser';
 import {
   computeCompletionStats,
   type CompletionStats,
@@ -45,7 +45,7 @@ import {
   type ScenarioCompletionStats,
   type ScenarioActGoalScaffold,
   type StageDetail,
-} from '@/lib/pbl/v2/operations/completion-stats';
+} from '@/lib/pbl/v2/operations/runtime/completion-stats';
 
 interface Props {
   readonly project: PBLProjectV2;
@@ -97,8 +97,8 @@ export function buildCompletionReportViewModel(project: PBLProjectV2): Completio
   };
 }
 
-export function cleanCompletionIntro(feedback: string | undefined): string | undefined {
-  const intro = stripEvaluationTail(feedback ?? '')
+export function cleanCompletionIntro(feedback: unknown): string | undefined {
+  const intro = stripEvaluationTail(typeof feedback === 'string' ? feedback : '')
     .replace(/\{\{\s*[^}]+\s*\}\}/g, '')
     .trim();
   return intro || undefined;

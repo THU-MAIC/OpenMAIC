@@ -52,6 +52,7 @@ interface ServerConfig {
 const LLM_ENV_MAP: Record<string, string> = {
   OPENAI: 'openai',
   AZURE_OPENAI: 'azure',
+  ATLASCLOUD: 'atlascloud',
   ANTHROPIC: 'anthropic',
   GOOGLE: 'google',
   DEEPSEEK: 'deepseek',
@@ -69,6 +70,7 @@ const LLM_ENV_MAP: Record<string, string> = {
   MIMO: 'xiaomi',
   OLLAMA: 'ollama',
   LEMONADE: 'lemonade',
+  BEDROCK: 'bedrock',
 };
 
 const TTS_ENV_MAP: Record<string, string> = {
@@ -97,6 +99,7 @@ const ASR_ENV_MAP: Record<string, string> = {
   ASR_OPENAI: 'openai-whisper',
   ASR_QWEN: 'qwen-asr',
   ASR_AZURE: 'azure-asr',
+  ASR_FUNASR: 'funasr-asr',
   ASR_LEMONADE: 'lemonade-asr',
 };
 
@@ -131,6 +134,8 @@ const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   BOCHA: 'bocha',
   BRAVE: 'brave',
   BAIDU: 'baidu',
+  // WEB_SEARCH_ prefix avoids colliding with ANTHROPIC_* LLM provider vars.
+  WEB_SEARCH_CLAUDE: 'claude',
   WEB_SEARCH_MINIMAX: 'minimax',
   SEARXNG: 'searxng',
 };
@@ -277,6 +282,7 @@ function collectDisabledTTS(
 const DEFAULT_FILENAME = 'server-providers.yml';
 const OPENAI_IMAGE_PROVIDER_ID = 'openai-image';
 const ALIDOCMIND_PROVIDER_ID = 'alidocmind';
+const BEDROCK_PROVIDER_ID = 'bedrock';
 
 /** Cache keyed by YAML filename (empty string = default file). */
 const _configs: Map<string, ServerConfig> = new Map();
@@ -359,6 +365,48 @@ function applyOpenAIImageFallback(
   return imageConfig;
 }
 
+function splitModels(models: string | undefined): string[] | undefined {
+  const parsed = models
+    ?.split(',')
+    .map((model) => model.trim())
+    .filter(Boolean);
+  return parsed && parsed.length > 0 ? parsed : undefined;
+}
+
+function applyBedrockProviderConfig(
+  providers: Record<string, ServerProviderEntry>,
+  yamlProviders: Record<string, Partial<ServerProviderEntry>> | undefined,
+): Record<string, ServerProviderEntry> {
+  const yamlBedrock = yamlProviders?.[BEDROCK_PROVIDER_ID];
+  const envApiKey = process.env.BEDROCK_API_KEY || undefined;
+  const envBaseUrl = process.env.BEDROCK_BASE_URL || undefined;
+  const envRegion = process.env.BEDROCK_REGION?.trim() || undefined;
+  const envModels = splitModels(process.env.BEDROCK_MODELS);
+  const hasExplicitBedrockEnv =
+    !!envRegion ||
+    !!envModels ||
+    !!envApiKey ||
+    !!envBaseUrl ||
+    !!process.env.AWS_BEARER_TOKEN_BEDROCK;
+  const hasYamlBedrock = Object.prototype.hasOwnProperty.call(
+    yamlProviders ?? {},
+    BEDROCK_PROVIDER_ID,
+  );
+
+  if (!providers[BEDROCK_PROVIDER_ID] && !hasExplicitBedrockEnv && !hasYamlBedrock) {
+    return providers;
+  }
+
+  providers[BEDROCK_PROVIDER_ID] = {
+    apiKey: envApiKey || yamlBedrock?.apiKey || providers[BEDROCK_PROVIDER_ID]?.apiKey || '',
+    baseUrl: envBaseUrl || yamlBedrock?.baseUrl || providers[BEDROCK_PROVIDER_ID]?.baseUrl,
+    models: envModels || yamlBedrock?.models || providers[BEDROCK_PROVIDER_ID]?.models,
+    proxy: yamlBedrock?.proxy || providers[BEDROCK_PROVIDER_ID]?.proxy,
+  };
+
+  return providers;
+}
+
 function buildConfig(yamlData: YamlData): ServerConfig {
   const image = applyOpenAIImageFallback(
     loadEnvSection(IMAGE_ENV_MAP, yamlData.image, {
@@ -366,16 +414,20 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     }),
     yamlData.image,
   );
+  const providers = applyBedrockProviderConfig(
+    loadEnvSection(LLM_ENV_MAP, yamlData.providers, {
+      keylessProviders: new Set(['ollama', 'lemonade', BEDROCK_PROVIDER_ID]),
+    }),
+    yamlData.providers,
+  );
 
   return {
-    providers: loadEnvSection(LLM_ENV_MAP, yamlData.providers, {
-      keylessProviders: new Set(['ollama', 'lemonade']),
-    }),
+    providers,
     tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts, {
       keylessProviders: new Set(['voxcpm-tts', 'lemonade-tts']),
     }),
     asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr, {
-      keylessProviders: new Set(['lemonade-asr']),
+      keylessProviders: new Set(['funasr-asr', 'lemonade-asr']),
     }),
     pdf: applyAliDocMindFallback(
       loadEnvSection(PDF_ENV_MAP, yamlData.pdf, {
@@ -649,6 +701,20 @@ export function resolveWebSearchBaseUrl(
   return resolveSectionBaseUrl('webSearch', providerId, clientBaseUrl);
 }
 
+/**
+ * Resolve the web-search model for model-based providers (currently Claude).
+ * A managed provider may pin its model server-side (`${PREFIX}_MODELS`, first
+ * entry) — authoritative like its key/baseUrl. Otherwise the client model wins.
+ */
+export function resolveWebSearchModel(
+  providerId: string,
+  clientModel?: string,
+): string | undefined {
+  const entry = getConfig().webSearch[providerId];
+  if (entry?.models && entry.models.length > 0) return entry.models[0];
+  return clientModel;
+}
+
 export function resolveServerWebSearchProviderId(preferredProviderId?: string): string | undefined {
   const webSearch = getConfig().webSearch;
   if (preferredProviderId && webSearch[preferredProviderId]?.apiKey) {
@@ -658,6 +724,7 @@ export function resolveServerWebSearchProviderId(preferredProviderId?: string): 
   if (webSearch.bocha?.apiKey) return 'bocha';
   if (webSearch.baidu?.apiKey) return 'baidu';
   if (webSearch.minimax?.apiKey) return 'minimax';
+  if (webSearch.claude?.apiKey) return 'claude';
   return Object.keys(webSearch)[0];
 }
 

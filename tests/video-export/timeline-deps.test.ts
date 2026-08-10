@@ -35,6 +35,8 @@ vi.mock('@openmaic/renderer/snapshot', () => ({
 }));
 
 import { createVideoTimelineDeps } from '@/lib/video-export-app/timeline-deps';
+import { resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
+import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import type { MediaFileRecord } from '@/lib/utils/database';
 import type { Scene } from '@/lib/types/stage';
 
@@ -100,6 +102,7 @@ beforeEach(() => {
   mediaToArray.mockReset();
   audioGet.mockReset().mockImplementation(() => Promise.resolve(undefined));
   measureCalls.length = 0;
+  useMediaGenerationStore.setState({ tasks: {} });
 });
 
 describe('createVideoTimelineDeps — media ref bridge', () => {
@@ -130,6 +133,31 @@ describe('createVideoTimelineDeps — media ref bridge', () => {
 
     const deps = await createVideoTimelineDeps({ stage: { id: STAGE_ID }, scenes: [scene] });
     expect(deps.assets.media('plain_text', scene)).toBeNull();
+  });
+
+  it('plans a concrete src instead of a stale opaque mediaRef', async () => {
+    mediaToArray.mockResolvedValue([]);
+    const concreteSrc = 'https://cdn.example/direct.mp4';
+    const element = {
+      id: ELEMENT_ID,
+      type: 'video',
+      src: concreteSrc,
+      mediaRef: 'ast_stale_video',
+    };
+    const action = { type: 'play_video', elementId: ELEMENT_ID };
+    const scene = slideScene(element, [action]);
+
+    const deps = await createVideoTimelineDeps({ stage: { id: STAGE_ID }, scenes: [scene] });
+    const rendererRef = resolveVideoMediaForElement({}, element as never, STAGE_ID, [
+      element as never,
+    ]).sourceRef;
+
+    expect(rendererRef).toBe(concreteSrc);
+    expect(deps.assets.media(ELEMENT_ID, scene)).toMatchObject({
+      id: rendererRef,
+      present: true,
+      format: 'mp4',
+    });
   });
 
   it('scopes the bridge by scene: a shared element id resolves per-scene, not last-writer-wins', async () => {

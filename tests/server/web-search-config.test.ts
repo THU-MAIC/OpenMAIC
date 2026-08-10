@@ -14,6 +14,9 @@ describe('server web search config', () => {
     delete process.env.BAIDU_BASE_URL;
     delete process.env.WEB_SEARCH_MINIMAX_API_KEY;
     delete process.env.WEB_SEARCH_MINIMAX_BASE_URL;
+    delete process.env.WEB_SEARCH_CLAUDE_API_KEY;
+    delete process.env.WEB_SEARCH_CLAUDE_BASE_URL;
+    delete process.env.WEB_SEARCH_CLAUDE_MODELS;
     delete process.env.SEARXNG_BASE_URL;
   });
 
@@ -92,6 +95,57 @@ describe('server web search config', () => {
       providerId: 'minimax',
       apiKey: 'minimax-server-key',
       baseUrl: 'https://api.minimaxi.com',
+    });
+  });
+
+  it('allows official Claude client base URLs and rejects others', async () => {
+    const { resolveSafeClientWebSearchBaseUrl } = await import('@/lib/server/web-search-config');
+
+    expect(resolveSafeClientWebSearchBaseUrl('claude', 'https://api.anthropic.com/v1')).toBe(
+      'https://api.anthropic.com/v1',
+    );
+    expect(resolveSafeClientWebSearchBaseUrl('claude', 'https://api.anthropic.com/')).toBe(
+      'https://api.anthropic.com',
+    );
+    expect(() =>
+      resolveSafeClientWebSearchBaseUrl('claude', 'https://evil.example.com/v1'),
+    ).toThrow('Unsupported Claude base URL');
+  });
+
+  it('resolves Claude classroom web search config with the client-selected model', async () => {
+    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
+
+    expect(
+      resolveClassroomWebSearchConfig({
+        webSearchProviderId: 'claude',
+        webSearchApiKey: 'sk-client-key',
+        webSearchModelId: 'claude-opus-5',
+      }),
+    ).toEqual({
+      providerId: 'claude',
+      apiKey: 'sk-client-key',
+      baseUrl: undefined,
+      claudeModelId: 'claude-opus-5',
+    });
+  });
+
+  it('pins the Claude model from WEB_SEARCH_CLAUDE_MODELS over the client model', async () => {
+    vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'sk-server-key');
+    vi.stubEnv('WEB_SEARCH_CLAUDE_BASE_URL', 'https://api.anthropic.com/v1');
+    vi.stubEnv('WEB_SEARCH_CLAUDE_MODELS', 'claude-sonnet-5,claude-opus-5');
+
+    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
+
+    expect(
+      resolveClassroomWebSearchConfig({
+        webSearchProviderId: 'claude',
+        webSearchModelId: 'claude-haiku-4-5',
+      }),
+    ).toEqual({
+      providerId: 'claude',
+      apiKey: 'sk-server-key',
+      baseUrl: 'https://api.anthropic.com/v1',
+      claudeModelId: 'claude-sonnet-5',
     });
   });
 

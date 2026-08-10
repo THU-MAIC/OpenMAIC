@@ -36,6 +36,7 @@ export {
   generateSceneContent,
   generateSceneActions,
   createSceneWithActions,
+  PBLGenerationError,
 } from './scene-generator';
 export type { SceneContentOptions, SceneActionsOptions } from './scene-generator';
 

@@ -78,6 +78,9 @@
     "videoServiceHint": "算圖 MP4 需要算圖服務。可下載 ZIP 在本機算圖。",
     "videoBurnSubtitles": "燒錄字幕",
     "videoBurnSubtitlesDesc": "關閉時匯出無字幕的乾淨影片，可在剪輯軟體中自行加入字幕檔。",
+    "videoQuizCtaPrompt": "想親自體驗互動測驗？",
+    "videoPblCtaPrompt": "想親自參與專題式學習？",
+    "videoCtaVisit": "前往",
     "videoDownloadSubtitles": "下載字幕 (.srt)",
     "subtitlesCompiling": "正在產生字幕…",
     "subtitlesSuccess": "字幕已下載",
@@ -382,7 +385,8 @@
       "sessionEmpty": "暫無歷史對話",
       "thinking": "思考中…",
       "reasoning": "思考過程",
-      "thought": "已思考"
+      "thought": "已思考",
+      "title": "用 AI 編輯"
     },
     "timeline": {
       "title": "講解腳本",
@@ -475,6 +479,21 @@
       "notApplied": "未套用",
       "applyFailed": "編輯器無法套用元素修改，未變更任何內容。",
       "applyPartiallyFailed": "編輯器未能套用一項或多項元素修改，其他修改可能已套用。"
+    },
+    "roster": {
+      "title": "課堂陣容",
+      "count": "{{count}} 位",
+      "editHint": "點擊一位展開編輯",
+      "personaLabel": "人設描述",
+      "personaPlaceholder": "描述角色的性格、教學風格與任務…",
+      "noPersona": "暫無人設",
+      "unnamed": "未命名",
+      "teacherBadge": "主講",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "removeFromClass": "移出課堂",
+      "aiClassmates": "AI 同學 · {{count}}",
+      "addRole": "新增角色"
     }
   },
   "whiteboard": {
@@ -549,67 +568,7 @@
     "startRecording": "開始錄音"
   },
   "pbl": {
-    "legacyFormat": "此PBL場景使用舊格式，請重新生成課程",
     "emptyProject": "PBL專案尚未生成，請透過課程生成建立",
-    "roleSelection": {
-      "title": "選擇你的角色",
-      "description": "選擇一個角色開始專案協作"
-    },
-    "workspace": {
-      "restart": "重新開始",
-      "confirmRestart": "確定重設進度？",
-      "confirm": "確定",
-      "cancel": "取消"
-    },
-    "issueboard": {
-      "title": "任務看板",
-      "noIssues": "暫無任務",
-      "statusDone": "已完成",
-      "statusActive": "進行中",
-      "statusPending": "待處理"
-    },
-    "chat": {
-      "title": "專案討論",
-      "currentIssue": "目前任務",
-      "mentionHint": "使用 @question 提問，@judge 提交評審",
-      "placeholder": "輸入訊息...",
-      "send": "傳送",
-      "issueCompleteMessage": "任務「{{completed}}」已完成！進入下一個任務：「{{next}}」",
-      "allCompleteMessage": "🎉 所有任務都已完成！專案做得很棒！"
-    },
-    "guide": {
-      "howItWorks": "如何參與專案",
-      "help": "使用說明",
-      "title": "使用說明",
-      "step1": {
-        "title": "第一步：選擇角色",
-        "desc": "專案生成後，從角色清單中選擇一個角色（標記為🟢的非系統角色）"
-      },
-      "step2": {
-        "title": "第二步：完成任務",
-        "desc": "每個任務代表一個學習目標：",
-        "s1": {
-          "title": "檢視目前任務",
-          "desc": "檢視任務的標題、描述、負責人"
-        },
-        "s2": {
-          "title": "取得指導",
-          "example": "@question 我應該從哪裡開始？\n@question 如何實現這個功能？",
-          "desc": "提問助手會提供引導性問題和提示（不直接給答案）"
-        },
-        "s3": {
-          "title": "提交作品",
-          "example": "@judge 我已經完成了，請檢查",
-          "desc": "評審助手會評估你的工作並給予回饋：",
-          "complete": "自動進入下一個任務",
-          "revision": "依據回饋改進"
-        }
-      },
-      "step3": {
-        "title": "第三步：完成專案",
-        "desc": "所有任務完成後，系統會顯示「🎉 專案已完成！」"
-      }
-    },
     "v2": {
       "hero": {
         "title": "專案實戰 · Project-Based Learning",
@@ -1087,6 +1046,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "通義千問",
       "kimi": "Kimi",
@@ -1104,13 +1064,15 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAI 協定",
       "azure": "Azure OpenAI",
       "anthropic": "Claude 協定",
-      "google": "Gemini 協定"
+      "google": "Gemini 協定",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "個模型",
     "modelSingular": "個模型",
@@ -1259,6 +1221,7 @@
     "providerBrowserNativeTTS": "瀏覽器原生 TTS",
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "瀏覽器原生 ASR",
+    "providerFunASRASR": "FunASR（本機）",
     "providerLemonadeASR": "Lemonade ASR（本機）",
     "providerAzureASR": "Azure STT（語音轉文字）",
     "providerQwenASR": "Qwen ASR（阿里雲百煉）",
@@ -1555,11 +1518,16 @@
     "clearCacheButton": "永久刪除所有資料",
     "clearCacheSuccess": "緩存已清空，頁面即將重新整理",
     "clearCacheFailed": "清空緩存失敗，請重試",
+    "clearCacheBlockedByOtherTabs": "請關閉其他開啟此應用程式的分頁，然後重試。",
+    "persistUnavailable": "變更未被儲存：應用程式無法存取已儲存的資料。若重新整理後仍未恢復，請至設定中清除本機快取。",
+    "persistChangesLost": "儲存已恢復，但在無法使用期間所做的變更未能儲存，已被上次儲存的版本覆蓋。",
     "webSearchSettings": "網路搜尋",
     "webSearchApiKey": "Tavily API Key",
     "webSearchApiKeyPlaceholder": "輸入你的 Tavily API Key",
     "webSearchApiKeyPlaceholderServer": "已設定服務端密鑰，選填覆蓋",
     "webSearchApiKeyHint": "從所選搜尋服務商取得 API Key，用於網路搜尋",
+    "claudeSearchModel": "搜尋模型",
+    "claudeSearchModelHint": "用於執行網路搜尋並總結結果的 Claude 模型。",
     "webSearchApiKeyOptional": "API Key 為可選項。未填寫時將透過公開頁面抓取獲取結果。",
     "searxngServerOnlyNotice": "SearXNG 須由伺服器端設定。請設定 SEARXNG_BASE_URL 環境變數（或在 server-providers.yml 的 web-search 區段中設定）。不接受用戶端自行填寫實例位址。",
     "baiduSubSources": "百度搜尋來源",

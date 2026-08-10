@@ -1,5 +1,3 @@
-/* eslint-disable max-lines */
-/* eslint-disable no-console */
 import {
   parse as parsePptxDefault,
   type Shape,
@@ -984,14 +982,14 @@ export async function transformParsedToSlides(
               element.path = el.path;
               element.viewBox = [originWidth, originHeight];
             }
-            if (el.shapType === 'custom') {
-              if (el.path!.indexOf('NaN') !== -1) {
+            if (el.shapType === 'custom' && el.path) {
+              if (el.path.indexOf('NaN') !== -1) {
                 if (element.width === 0) element.width = 0.1;
                 if (element.height === 0) element.height = 0.1;
-                element.path = el.path!.replace(/NaN/g, '0');
+                element.path = el.path.replace(/NaN/g, '0');
               } else {
                 element.special = true;
-                element.path = el.path!;
+                element.path = el.path;
               }
               const { maxX, maxY } = getSvgPathRange(element.path);
               element.viewBox = [maxX || originWidth, maxY || originHeight];

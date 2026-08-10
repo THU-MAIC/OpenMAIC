@@ -78,6 +78,9 @@
     "videoServiceHint": "Для рендеринга MP4 нужен сервис рендеринга. Скачайте ZIP для локального рендеринга.",
     "videoBurnSubtitles": "Встроить субтитры",
     "videoBurnSubtitlesDesc": "Выключено: экспортируйте чистое видео и добавьте файл субтитров в своём редакторе.",
+    "videoQuizCtaPrompt": "Хотите пройти интерактивный тест?",
+    "videoPblCtaPrompt": "Хотите попробовать проектное обучение?",
+    "videoCtaVisit": "Посетите",
     "videoDownloadSubtitles": "Скачать субтитры (.srt)",
     "subtitlesCompiling": "Компиляция субтитров...",
     "subtitlesSuccess": "Субтитры скачаны",
@@ -382,7 +385,8 @@
         "lead": "Опишите ошибку на этой интерактивной странице — например, кнопку, которая не реагирует, — и я исправлю только её, сохранив всё остальное.",
         "placeholder": "Опишите ошибку на этой интерактивной странице…"
       },
-      "thinking": "Думаю…"
+      "thinking": "Думаю…",
+      "title": "Редактировать с ИИ"
     },
     "timeline": {
       "title": "Сценарий закадрового текста",
@@ -475,6 +479,21 @@
       "notApplied": "Не применено",
       "applyFailed": "Редактору не удалось применить изменение элемента. Ничего не изменено.",
       "applyPartiallyFailed": "Редактору не удалось применить одно или несколько изменений. Другие изменения могли быть применены."
+    },
+    "roster": {
+      "title": "Состав класса",
+      "count": "Участников: {{count}}",
+      "editHint": "Нажмите участника, чтобы редактировать",
+      "personaLabel": "Персона",
+      "personaPlaceholder": "Опишите характер роли, стиль преподавания и задачи...",
+      "noPersona": "Персона не задана",
+      "unnamed": "Без названия",
+      "teacherBadge": "Ведущий",
+      "moveUp": "Переместить вверх",
+      "moveDown": "Переместить вниз",
+      "removeFromClass": "Удалить из класса",
+      "aiClassmates": "AI-одноклассники · {{count}}",
+      "addRole": "Добавить роль"
     }
   },
   "classroomComplete": {
@@ -564,67 +583,7 @@
     "startRecording": "Начать запись"
   },
   "pbl": {
-    "legacyFormat": "Эта PBL-сцена использует устаревший формат. Пожалуйста, перегенерируйте курс.",
     "emptyProject": "PBL-проект ещё не создан. Создайте его через генерацию курса.",
-    "roleSelection": {
-      "title": "Выберите роль",
-      "description": "Выберите роль для совместной работы над проектом"
-    },
-    "workspace": {
-      "restart": "Перезапуск",
-      "confirmRestart": "Сбросить весь прогресс?",
-      "confirm": "Подтвердить",
-      "cancel": "Отмена"
-    },
-    "issueboard": {
-      "title": "Доска задач",
-      "noIssues": "Задач пока нет",
-      "statusDone": "Готово",
-      "statusActive": "Активна",
-      "statusPending": "В ожидании"
-    },
-    "chat": {
-      "title": "Обсуждение проекта",
-      "currentIssue": "Текущая задача",
-      "mentionHint": "Используйте @question для вопроса, @judge для проверки",
-      "placeholder": "Введите сообщение...",
-      "send": "Отправить",
-      "issueCompleteMessage": "Задача \"{{completed}}\" выполнена! Переход к следующей: \"{{next}}\"",
-      "allCompleteMessage": "🎉 Все задачи выполнены! Отличная работа над проектом!"
-    },
-    "guide": {
-      "howItWorks": "Как это работает",
-      "help": "Помощь",
-      "title": "Помощь",
-      "step1": {
-        "title": "Шаг 1: Выберите роль",
-        "desc": "После генерации проекта выберите роль из списка (не-системные роли отмечены 🟢)"
-      },
-      "step2": {
-        "title": "Шаг 2: Выполняйте задачи",
-        "desc": "Каждая задача — это учебное задание:",
-        "s1": {
-          "title": "Просмотрите задачу",
-          "desc": "Изучите заголовок, описание и исполнителя задачи"
-        },
-        "s2": {
-          "title": "Получите подсказки",
-          "example": "@question С чего начать?\n@question Как реализовать эту функцию?",
-          "desc": "Question Agent даёт наводящие вопросы и подсказки (не прямые ответы)"
-        },
-        "s3": {
-          "title": "Сдайте работу",
-          "example": "@judge Готово, проверьте мои заметки",
-          "desc": "Judge Agent оценивает вашу работу и даёт обратную связь:",
-          "complete": "Автоматический переход к следующей задаче",
-          "revision": "Доработайте по замечаниям"
-        }
-      },
-      "step3": {
-        "title": "Шаг 3: Завершите проект",
-        "desc": "Когда все задачи выполнены, система показывает \"🎉 Проект завершён!\""
-      }
-    },
     "v2": {
       "hero": {
         "title": "Проектное обучение · Project-Based Learning",
@@ -1102,6 +1061,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "Qwen",
       "kimi": "Kimi",
@@ -1119,13 +1079,15 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "Протокол OpenAI",
       "azure": "Azure OpenAI",
       "anthropic": "Протокол Claude",
-      "google": "Протокол Gemini"
+      "google": "Протокол Gemini",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "моделей",
     "modelSingular": "модель",
@@ -1326,6 +1288,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "Встроенный ASR браузера",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
+    "providerFunASRASR": "FunASR (Локальный)",
     "providerLemonadeASR": "Lemonade ASR (Локальный)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (встроенный)",
@@ -1644,11 +1607,16 @@
     "clearCacheButton": "Удалить все данные навсегда",
     "clearCacheSuccess": "Кэш очищен, страница скоро обновится",
     "clearCacheFailed": "Не удалось очистить кэш, попробуйте снова",
+    "clearCacheBlockedByOtherTabs": "Закройте другие вкладки приложения и попробуйте снова.",
+    "persistUnavailable": "Изменения не сохраняются: приложению не удаётся получить доступ к сохранённым данным. Если перезагрузка не помогает, очистите локальный кэш в настройках.",
+    "persistChangesLost": "Хранилище снова работает, но изменения, сделанные во время сбоя, сохранить не удалось — они заменены последней сохранённой версией.",
     "webSearchSettings": "Веб-поиск",
     "webSearchApiKey": "API-ключ поиска",
     "webSearchApiKeyPlaceholder": "Введите API-ключ поиска",
     "webSearchApiKeyPlaceholderServer": "Серверный ключ настроен, можно ввести свой",
     "webSearchApiKeyHint": "Получите API-ключ у выбранного поискового провайдера",
+    "claudeSearchModel": "Модель поиска",
+    "claudeSearchModelHint": "Модель Claude, которая выполняет веб-поиск и обобщает результаты.",
     "webSearchApiKeyOptional": "API-ключ необязателен. Без него будет использоваться парсинг публичной страницы.",
     "searxngServerOnlyNotice": "SearXNG должен быть настроен на сервере. Установите переменную окружения SEARXNG_BASE_URL (или раздел web-search в server-providers.yml). URL экземпляра от клиента не принимаются.",
     "baiduSubSources": "Источники поиска Baidu",

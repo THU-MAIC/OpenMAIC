@@ -40,7 +40,7 @@ async function expectBodyScrollState(page: Page, initialSpacing: BodySpacing, lo
 test.describe('Home → Generation', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript((settings) => {
-      localStorage.setItem('settings-storage', settings);
+      localStorage.setItem('maic:account:settings-storage', settings);
       localStorage.setItem('locale', 'en-US');
     }, SETTINGS_STORAGE);
   });

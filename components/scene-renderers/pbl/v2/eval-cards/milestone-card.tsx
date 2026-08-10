@@ -17,7 +17,7 @@
  *      The button is the ONLY way to cross into the next stage —
  *      while `pendingHandover.consumed === false` the next milestone
  *      stays LOCKED in the store (gate enforced by continueAfter
- *      Handover in operations/progress.ts).
+ *      Handover in operations/kernel/progress.ts).
  *
  * Visual scope:
  *  - full-width (not a bubble); breaks out of the chat's max-width
@@ -39,10 +39,11 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   sanitizeMilestoneEvaluationFeedback,
   stripEvaluationTail,
-} from '@/lib/pbl/v2/operations/eval-tail-parser';
+} from '@/lib/pbl/v2/operations/runtime/eval-tail-parser';
 import { MarkdownText } from '../markdown-text';
 import { StarRating } from './star-rating';
 import type { PBLEvaluation, PBLHandover } from '@/lib/pbl/v2/types';
+import { trimmedPBLText } from '@/lib/pbl/v2/readers';
 
 interface Props {
   evaluation: PBLEvaluation;
@@ -62,7 +63,7 @@ export function MilestoneCard({ evaluation, handover, onContinue, className }: P
   const performance = (evaluation.improvements ?? [])[0] ?? '';
   const stars = typeof evaluation.stars === 'number' ? evaluation.stars : null;
   const rawNarrative = stripEvaluationTail(
-    sanitizeMilestoneEvaluationFeedback(evaluation.feedback ?? ''),
+    sanitizeMilestoneEvaluationFeedback(trimmedPBLText(evaluation.feedback)),
   );
   const narrative = handover ? rawNarrative : stripFinalMilestoneContinueGuidance(rawNarrative);
   const ctaState = milestoneHandoverCtaState(handover);

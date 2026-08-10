@@ -13,7 +13,10 @@
  *      `PBLProjectConfig` from v2 `PBLProjectV2`.
  */
 import { describe, it, expect } from 'vitest';
+import { isPBLProject, type PBLProject } from '@openmaic/dsl';
 import {
+  hasPBLProjectV2Containers,
+  isRunnablePBLProjectV2,
   isPBLProjectV2,
   type PBLProjectV2,
   type PBLMilestone,
@@ -26,6 +29,79 @@ import {
   type PBLHandover,
   type PBLRuntimeEvent,
 } from '@/lib/pbl/v2/types';
+
+const canonicalStoredDesignTemplate = {
+  uiPhase: 'hero',
+  title: 'Neighborhood biodiversity survey',
+  description: 'Create a field guide from local observations.',
+  learningObjective: 'Practice observation, classification, and evidence-based writing.',
+  gains: ['Record observations consistently', 'Classify organisms from evidence'],
+  proficiency: 'beginner',
+  language: 'en-US',
+  languageDirective: 'Reply in English.',
+  tags: ['biology', 'fieldwork'],
+  status: 'active',
+  roles: [
+    {
+      id: 'role-instructor',
+      type: 'instructor',
+      name: 'Field Guide',
+      description: 'Helps you turn observations into a clear field guide.',
+    },
+  ],
+  milestones: [
+    {
+      id: 'milestone-observe',
+      title: 'Observe the site',
+      status: 'active',
+      order: 0,
+      briefing: 'Start with a repeatable observation method.',
+      completionCriteria: 'Three observations use the same recording format.',
+      microtasks: [
+        {
+          id: 'microtask-record',
+          title: 'Record three organisms',
+          status: 'todo',
+          assignee: 'user',
+          hints: ['Note location, visible traits, and behavior.'],
+          order: 0,
+        },
+      ],
+    },
+  ],
+  submissions: [],
+  evaluations: [],
+  threads: [{ agentId: 'role-instructor', messages: [] }],
+  engagementEvents: [],
+  createdAt: '2026-08-09T08:00:00.000Z',
+  updatedAt: '2026-08-09T08:00:00.000Z',
+} satisfies PBLProjectV2;
+
+const canonicalContractProject: PBLProject = canonicalStoredDesignTemplate;
+
+type Assert<T extends true> = T;
+const appProjectSatisfiesContract: Assert<PBLProjectV2 extends PBLProject ? true : false> = true;
+const projectHasTitle: Assert<'title' extends keyof PBLProjectV2 ? true : false> = true;
+const projectHasStatus: Assert<'status' extends keyof PBLProjectV2 ? true : false> = true;
+const projectHasRoles: Assert<'roles' extends keyof PBLProjectV2 ? true : false> = true;
+const projectHasCreatedAt: Assert<'createdAt' extends keyof PBLProjectV2 ? true : false> = true;
+const projectHasRuntimeEvents: Assert<'runtimeEvents' extends keyof PBLProjectV2 ? true : false> =
+  true;
+
+const { title: _omittedTitle, ...projectWithoutTitle } = canonicalStoredDesignTemplate;
+// @ts-expect-error title is required by the contract-backed app type.
+const projectMissingTitle: PBLProjectV2 = { ...projectWithoutTitle };
+
+// @ts-expect-error id is required by the contract-backed app microtask type.
+const microtaskMissingId: PBLMicrotask = {
+  title: 'Record three organisms',
+  status: 'todo',
+  assignee: 'user',
+  hints: [],
+  order: 0,
+};
+void projectMissingTitle;
+void microtaskMissingId;
 
 // A fully-populated reference value covering every optional field so
 // drift in any nested shape is caught.
@@ -190,6 +266,16 @@ function makeFullProject(): PBLProjectV2 {
 }
 
 describe('PBL v2 — types', () => {
+  it('keeps a canonical stored design template assignable to app and contract types', () => {
+    expect(appProjectSatisfiesContract).toBe(true);
+    expect(projectHasTitle).toBe(true);
+    expect(projectHasStatus).toBe(true);
+    expect(projectHasRoles).toBe(true);
+    expect(projectHasCreatedAt).toBe(true);
+    expect(projectHasRuntimeEvents).toBe(true);
+    expect(isPBLProject(canonicalContractProject)).toBe(true);
+  });
+
   it('JSON round-trip is loss-free on a fully populated project', () => {
     const project = makeFullProject();
     const serialized = JSON.stringify(project);
@@ -251,5 +337,84 @@ describe('PBL v2 — isPBLProjectV2 type guard', () => {
         threads: [],
       }),
     ).toBe(false);
+  });
+});
+
+describe('PBL v2 — runnable workspace predicate', () => {
+  it('accepts a normal planner-shaped project', () => {
+    expect(isRunnablePBLProjectV2(makeFullProject())).toBe(true);
+  });
+
+  it('requires an Instructor role and a microtask in every milestone', () => {
+    const withoutInstructor = makeFullProject();
+    withoutInstructor.roles[0]!.type = 'mentor';
+    expect(hasPBLProjectV2Containers(withoutInstructor)).toBe(true);
+    expect(isRunnablePBLProjectV2(withoutInstructor)).toBe(false);
+
+    const withoutTasks = makeFullProject();
+    withoutTasks.milestones.forEach((milestone) => {
+      milestone.microtasks = [];
+    });
+    expect(hasPBLProjectV2Containers(withoutTasks)).toBe(true);
+    expect(isRunnablePBLProjectV2(withoutTasks)).toBe(false);
+
+    const withEmptyLaterMilestone = makeFullProject();
+    withEmptyLaterMilestone.milestones.push({
+      id: 'ms-2',
+      title: 'Empty later stage',
+      status: 'locked',
+      order: 1,
+      microtasks: [],
+    });
+    expect(hasPBLProjectV2Containers(withEmptyLaterMilestone)).toBe(true);
+    expect(isRunnablePBLProjectV2(withEmptyLaterMilestone)).toBe(false);
+  });
+
+  it('requires runtime lookup identities and labels', () => {
+    const cases: Array<[string, (project: PBLProjectV2) => void]> = [
+      [
+        'Instructor id',
+        (project) => {
+          Reflect.deleteProperty(project.roles[0]!, 'id');
+        },
+      ],
+      [
+        'non-empty Instructor id',
+        (project) => {
+          project.roles[0]!.id = '   ';
+        },
+      ],
+      [
+        'Instructor name',
+        (project) => {
+          Reflect.deleteProperty(project.roles[0]!, 'name');
+        },
+      ],
+      [
+        'microtask id',
+        (project) => {
+          Reflect.deleteProperty(project.milestones[0]!.microtasks[0]!, 'id');
+        },
+      ],
+      [
+        'non-empty microtask id',
+        (project) => {
+          project.milestones[0]!.microtasks[0]!.id = '   ';
+        },
+      ],
+      [
+        'microtask title',
+        (project) => {
+          Reflect.deleteProperty(project.milestones[0]!.microtasks[0]!, 'title');
+        },
+      ],
+    ];
+
+    for (const [_label, damage] of cases) {
+      const project = makeFullProject();
+      damage(project);
+      expect(hasPBLProjectV2Containers(project)).toBe(true);
+      expect(isRunnablePBLProjectV2(project)).toBe(false);
+    }
   });
 });

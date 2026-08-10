@@ -78,6 +78,9 @@
     "videoServiceHint": "MP4 レンダリングにはレンダーサービスが必要です。ZIP をダウンロードしてローカルでレンダリングできます。",
     "videoBurnSubtitles": "字幕を焼き込む",
     "videoBurnSubtitlesDesc": "オフ：字幕なしの動画を書き出し、字幕ファイルは編集ソフトで追加します。",
+    "videoQuizCtaPrompt": "インタラクティブなクイズを体験しませんか？",
+    "videoPblCtaPrompt": "プロジェクト型学習を体験しませんか？",
+    "videoCtaVisit": "アクセス",
     "videoDownloadSubtitles": "字幕をダウンロード (.srt)",
     "subtitlesCompiling": "字幕を生成中…",
     "subtitlesSuccess": "字幕をダウンロードしました",
@@ -382,7 +385,8 @@
         "lead": "このインタラクティブページの不具合（例：押しても反応しないボタン）を教えてください。その箇所だけを修正し、ほかはそのまま残します。",
         "placeholder": "このインタラクティブページの不具合を入力…"
       },
-      "thinking": "考え中…"
+      "thinking": "考え中…",
+      "title": "AIで編集"
     },
     "timeline": {
       "title": "ナレーション台本",
@@ -475,6 +479,21 @@
       "notApplied": "未適用",
       "applyFailed": "エディターで要素の編集を適用できませんでした。変更はありません。",
       "applyPartiallyFailed": "一部の要素編集を適用できませんでした。ほかの編集は適用されている可能性があります。"
+    },
+    "roster": {
+      "title": "クラス編成",
+      "count": "{{count}}人",
+      "editHint": "メンバーをクリックして編集",
+      "personaLabel": "ペルソナ",
+      "personaPlaceholder": "役割の性格、指導スタイル、タスクを説明…",
+      "noPersona": "ペルソナ未設定",
+      "unnamed": "無題",
+      "teacherBadge": "主担当",
+      "moveUp": "上へ移動",
+      "moveDown": "下へ移動",
+      "removeFromClass": "クラスから削除",
+      "aiClassmates": "AIクラスメイト · {{count}}",
+      "addRole": "役割を追加"
     }
   },
   "classroomComplete": {
@@ -564,67 +583,7 @@
     "startRecording": "録音を開始"
   },
   "pbl": {
-    "legacyFormat": "このPBLシーンは旧形式です。コースを再生成してください。",
     "emptyProject": "PBLプロジェクトがまだ生成されていません。コース生成から作成してください。",
-    "roleSelection": {
-      "title": "役割を選択",
-      "description": "プロジェクトでの協力を始めるために役割を選んでください"
-    },
-    "workspace": {
-      "restart": "リスタート",
-      "confirmRestart": "すべての進捗をリセットしますか？",
-      "confirm": "確認",
-      "cancel": "キャンセル"
-    },
-    "issueboard": {
-      "title": "課題ボード",
-      "noIssues": "課題はまだありません",
-      "statusDone": "完了",
-      "statusActive": "進行中",
-      "statusPending": "未着手"
-    },
-    "chat": {
-      "title": "プロジェクトディスカッション",
-      "currentIssue": "現在の課題",
-      "mentionHint": "@question で質問、@judge で提出・レビュー依頼",
-      "placeholder": "メッセージを入力...",
-      "send": "送信",
-      "issueCompleteMessage": "課題「{{completed}}」が完了しました！次の課題に進みます：「{{next}}」",
-      "allCompleteMessage": "🎉 すべての課題が完了しました！プロジェクトお疲れさまでした！"
-    },
-    "guide": {
-      "howItWorks": "使い方",
-      "help": "ヘルプ",
-      "title": "ヘルプ",
-      "step1": {
-        "title": "ステップ1：役割を選ぶ",
-        "desc": "プロジェクト生成後、リストから役割を選択してください（🟢マークの非システム役割）"
-      },
-      "step2": {
-        "title": "ステップ2：課題に取り組む",
-        "desc": "各課題は学習タスクです：",
-        "s1": {
-          "title": "現在の課題を確認",
-          "desc": "課題のタイトル、説明、担当者を確認します"
-        },
-        "s2": {
-          "title": "ガイダンスを受ける",
-          "example": "@question どこから始めればいいですか？\n@question この機能はどう実装しますか？",
-          "desc": "質問エージェントがヒントや誘導質問を提供します（直接的な答えは出しません）"
-        },
-        "s3": {
-          "title": "成果を提出する",
-          "example": "@judge 完了しました。ノートを確認してください",
-          "desc": "審査エージェントが成果を評価しフィードバックします：",
-          "complete": "自動的に次の課題に進みます",
-          "revision": "フィードバックに基づいて改善してください"
-        }
-      },
-      "step3": {
-        "title": "ステップ3：プロジェクトを完了する",
-        "desc": "すべての課題が完了すると「🎉 プロジェクト完了！」と表示されます"
-      }
-    },
     "v2": {
       "hero": {
         "title": "プロジェクトベースドラーニング",
@@ -1102,6 +1061,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "Qwen",
       "kimi": "Kimi",
@@ -1119,13 +1079,15 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAIプロトコル",
       "azure": "Azure OpenAI",
       "anthropic": "Claudeプロトコル",
-      "google": "Geminiプロトコル"
+      "google": "Geminiプロトコル",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "モデル",
     "modelSingular": "モデル",
@@ -1326,6 +1288,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "ブラウザネイティブASR",
     "providerQwenASR": "Qwen ASR（Alibaba Cloud百錬）",
+    "providerFunASRASR": "FunASR（ローカル）",
     "providerLemonadeASR": "Lemonade ASR（ローカル）",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf（組み込み）",
@@ -1644,11 +1607,16 @@
     "clearCacheButton": "すべてのデータを完全に削除",
     "clearCacheSuccess": "キャッシュをクリアしました。まもなくページが更新されます",
     "clearCacheFailed": "キャッシュのクリアに失敗しました。もう一度お試しください",
+    "clearCacheBlockedByOtherTabs": "このアプリを開いている他のタブを閉じて、もう一度お試しください。",
+    "persistUnavailable": "変更が保存されていません。アプリが保存済みデータにアクセスできません。再読み込みしても解決しない場合は、設定からローカルキャッシュを削除してください。",
+    "persistChangesLost": "ストレージは復旧しましたが、利用できなかった間の変更は保存できず、最後に保存された内容に戻りました。",
     "webSearchSettings": "ウェブ検索",
     "webSearchApiKey": "検索APIキー",
     "webSearchApiKeyPlaceholder": "検索APIキーを入力",
     "webSearchApiKeyPlaceholderServer": "サーバーキー設定済み、任意で上書き",
     "webSearchApiKeyHint": "選択した検索プロバイダーからAPIキーを取得してください",
+    "claudeSearchModel": "検索モデル",
+    "claudeSearchModelHint": "ウェブ検索を実行し、結果を要約する Claude モデル。",
     "webSearchApiKeyOptional": "APIキーは任意です。未設定の場合、公開ページのスクレイピングが使用されます。",
     "searxngServerOnlyNotice": "SearXNG はサーバー側で設定する必要があります。SEARXNG_BASE_URL 環境変数（または server-providers.yml の web-search セクション）を設定してください。クライアントからのインスタンス URL は受け付けません。",
     "baiduSubSources": "Baidu検索ソース",

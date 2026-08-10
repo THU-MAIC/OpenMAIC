@@ -31,7 +31,7 @@ vi.mock('@/lib/pbl/v2/agents/evaluator', () => ({
   runMilestoneEvaluation: vi.fn(),
   runFinalEvaluation: vi.fn(),
 }));
-vi.mock('@/lib/pbl/v2/operations/quiz-snapshot', () => ({
+vi.mock('@/lib/pbl/v2/operations/runtime/quiz-snapshot', () => ({
   applyQuizSignalsToProject: vi.fn(() => ({ updated: false, tierChanged: false })),
 }));
 vi.mock('@/lib/logger', () => ({

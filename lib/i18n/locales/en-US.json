@@ -78,6 +78,9 @@
     "videoServiceHint": "MP4 rendering needs the render service. Download the ZIP to render locally.",
     "videoBurnSubtitles": "Burn in subtitles",
     "videoBurnSubtitlesDesc": "Off: export a clean video and add the subtitle file in your editor.",
+    "videoQuizCtaPrompt": "Want to try an interactive quiz?",
+    "videoPblCtaPrompt": "Want to explore project-based learning?",
+    "videoCtaVisit": "Visit",
     "videoDownloadSubtitles": "Download subtitles (.srt)",
     "subtitlesCompiling": "Compiling subtitles...",
     "subtitlesSuccess": "Subtitles downloaded",
@@ -382,7 +385,8 @@
       "sessionEmpty": "No past conversations",
       "thinking": "Thinking…",
       "reasoning": "Reasoning",
-      "thought": "Thought for"
+      "thought": "Thought for",
+      "title": "Edit with AI"
     },
     "timeline": {
       "title": "Narration script",
@@ -475,6 +479,21 @@
       "notApplied": "Not applied",
       "applyFailed": "The editor could not apply the element edit. Nothing was changed.",
       "applyPartiallyFailed": "The editor could not apply one or more element edits. Other edits may have been applied."
+    },
+    "roster": {
+      "title": "Class roster",
+      "count": "{{count}} members",
+      "editHint": "Click a member to edit",
+      "personaLabel": "Persona",
+      "personaPlaceholder": "Describe the role personality, teaching style, and tasks...",
+      "noPersona": "No persona yet",
+      "unnamed": "Untitled",
+      "teacherBadge": "Lead",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "removeFromClass": "Remove from class",
+      "aiClassmates": "AI classmates · {{count}}",
+      "addRole": "Add role"
     }
   },
   "classroomComplete": {
@@ -564,67 +583,7 @@
     "startRecording": "Start recording"
   },
   "pbl": {
-    "legacyFormat": "This PBL scene uses a legacy format. Please regenerate the course.",
     "emptyProject": "PBL project has not been generated yet. Please create via course generation.",
-    "roleSelection": {
-      "title": "Choose Your Role",
-      "description": "Select a role to start collaborating on the project"
-    },
-    "workspace": {
-      "restart": "Restart",
-      "confirmRestart": "Reset all progress?",
-      "confirm": "Confirm",
-      "cancel": "Cancel"
-    },
-    "issueboard": {
-      "title": "Issue Board",
-      "noIssues": "No issues yet",
-      "statusDone": "Done",
-      "statusActive": "Active",
-      "statusPending": "Pending"
-    },
-    "chat": {
-      "title": "Project Discussion",
-      "currentIssue": "Current Issue",
-      "mentionHint": "Use @question to ask, @judge to submit for review",
-      "placeholder": "Type a message...",
-      "send": "Send",
-      "issueCompleteMessage": "Issue \"{{completed}}\" completed! Moving to next issue: \"{{next}}\"",
-      "allCompleteMessage": "🎉 All issues completed! Great work on the project!"
-    },
-    "guide": {
-      "howItWorks": "How it works",
-      "help": "Help",
-      "title": "Help",
-      "step1": {
-        "title": "Step 1: Choose a Role",
-        "desc": "After the project is generated, select a role from the list (non-system roles marked with 🟢)"
-      },
-      "step2": {
-        "title": "Step 2: Complete Issues",
-        "desc": "Each issue represents a learning task:",
-        "s1": {
-          "title": "View current Issue",
-          "desc": "Check the issue's title, description, and assignee"
-        },
-        "s2": {
-          "title": "Get guidance",
-          "example": "@question Where should I start?\n@question How do I implement this feature?",
-          "desc": "The Question Agent provides guiding questions and hints (no direct answers)"
-        },
-        "s3": {
-          "title": "Submit your work",
-          "example": "@judge I'm done, please check my Notes",
-          "desc": "The Judge Agent evaluates your work and gives feedback:",
-          "complete": "Automatically moves to the next issue",
-          "revision": "Improve based on feedback"
-        }
-      },
-      "step3": {
-        "title": "Step 3: Complete the Project",
-        "desc": "When all issues are done, the system displays \"🎉 Project Complete!\""
-      }
-    },
     "v2": {
       "hero": {
         "title": "Project-Based Learning",
@@ -1102,6 +1061,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "Qwen",
       "kimi": "Kimi",
@@ -1119,13 +1079,15 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAI Protocol",
       "azure": "Azure OpenAI",
       "anthropic": "Claude Protocol",
-      "google": "Gemini Protocol"
+      "google": "Gemini Protocol",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "models",
     "modelSingular": "model",
@@ -1326,6 +1288,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "Browser Native ASR",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
+    "providerFunASRASR": "FunASR (Local)",
     "providerLemonadeASR": "Lemonade ASR (Local)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (Built-in)",
@@ -1644,11 +1607,16 @@
     "clearCacheButton": "Permanently Delete All Data",
     "clearCacheSuccess": "Cache cleared, page will refresh shortly",
     "clearCacheFailed": "Failed to clear cache, please try again",
+    "clearCacheBlockedByOtherTabs": "Close other app tabs and retry.",
+    "persistUnavailable": "Your changes aren't being saved because the app can't access its stored data. If reloading doesn't help, clear the local cache in Settings.",
+    "persistChangesLost": "Storage is working again, but changes you made while it was unavailable could not be saved and have been replaced by the last saved version.",
     "webSearchSettings": "Web Search",
     "webSearchApiKey": "Search API Key",
     "webSearchApiKeyPlaceholder": "Enter your search API key",
     "webSearchApiKeyPlaceholderServer": "Server key configured, optionally override",
     "webSearchApiKeyHint": "Get an API key from the selected search provider",
+    "claudeSearchModel": "Search Model",
+    "claudeSearchModelHint": "The Claude model that runs web searches and summarizes results.",
     "webSearchApiKeyOptional": "API key is optional. Without one, public page scraping will be used as a fallback.",
     "searxngServerOnlyNotice": "SearXNG must be configured on the server. Set the SEARXNG_BASE_URL environment variable (or the web-search section in server-providers.yml). Client-supplied instance URLs are not accepted.",
     "baiduSubSources": "Baidu Search Sources",

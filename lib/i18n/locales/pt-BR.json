@@ -78,6 +78,9 @@
     "videoServiceHint": "A renderização de MP4 requer o serviço de renderização. Baixe o ZIP para renderizar localmente.",
     "videoBurnSubtitles": "Gravar legendas no vídeo",
     "videoBurnSubtitlesDesc": "Desligado: exporte um vídeo limpo e adicione o arquivo de legenda no seu editor.",
+    "videoQuizCtaPrompt": "Quer experimentar um quiz interativo?",
+    "videoPblCtaPrompt": "Quer explorar a aprendizagem baseada em projetos?",
+    "videoCtaVisit": "Acesse",
     "videoDownloadSubtitles": "Baixar legendas (.srt)",
     "subtitlesCompiling": "Compilando legendas...",
     "subtitlesSuccess": "Legendas baixadas",
@@ -367,7 +370,8 @@
         "lead": "Descreva um bug nesta página interativa — por exemplo, um botão que não faz nada — e eu corrijo apenas isso, mantendo o resto.",
         "placeholder": "Descreva o bug desta página interativa…"
       },
-      "thinking": "Pensando…"
+      "thinking": "Pensando…",
+      "title": "Editar com IA"
     },
     "timeline": {
       "title": "Roteiro de narração",
@@ -460,6 +464,21 @@
       "notApplied": "Não aplicado",
       "applyFailed": "O editor não conseguiu aplicar a edição do elemento. Nada foi alterado.",
       "applyPartiallyFailed": "O editor não conseguiu aplicar uma ou mais edições de elementos. Outras edições podem ter sido aplicadas."
+    },
+    "roster": {
+      "title": "Elenco da sala",
+      "count": "{{count}} integrantes",
+      "editHint": "Clique em um integrante para editar",
+      "personaLabel": "Persona",
+      "personaPlaceholder": "Descreva a personalidade, o estilo de ensino e as tarefas do papel...",
+      "noPersona": "Nenhuma persona ainda",
+      "unnamed": "Sem título",
+      "teacherBadge": "Principal",
+      "moveUp": "Mover para cima",
+      "moveDown": "Mover para baixo",
+      "removeFromClass": "Remover da sala",
+      "aiClassmates": "Colegas de IA · {{count}}",
+      "addRole": "Adicionar papel"
     }
   },
   "stage": {
@@ -564,67 +583,7 @@
     "startRecording": "Iniciar gravação"
   },
   "pbl": {
-    "legacyFormat": "Esta cena PBL usa um formato antigo. Gere o curso novamente.",
     "emptyProject": "O projeto PBL ainda não foi gerado. Crie via geração de curso.",
-    "roleSelection": {
-      "title": "Escolha seu Papel",
-      "description": "Selecione um papel para começar a colaborar no projeto"
-    },
-    "workspace": {
-      "restart": "Reiniciar",
-      "confirmRestart": "Apagar todo o progresso?",
-      "confirm": "Confirmar",
-      "cancel": "Cancelar"
-    },
-    "issueboard": {
-      "title": "Quadro de Tarefas",
-      "noIssues": "Nenhuma tarefa ainda",
-      "statusDone": "Concluída",
-      "statusActive": "Ativa",
-      "statusPending": "Pendente"
-    },
-    "chat": {
-      "title": "Discussão do Projeto",
-      "currentIssue": "Tarefa Atual",
-      "mentionHint": "Use @question para perguntar, @judge para submeter à revisão",
-      "placeholder": "Digite uma mensagem...",
-      "send": "Enviar",
-      "issueCompleteMessage": "Tarefa \"{{completed}}\" concluída! Indo para a próxima: \"{{next}}\"",
-      "allCompleteMessage": "🎉 Todas as tarefas concluídas! Ótimo trabalho no projeto!"
-    },
-    "guide": {
-      "howItWorks": "Como funciona",
-      "help": "Ajuda",
-      "title": "Ajuda",
-      "step1": {
-        "title": "Passo 1: Escolha um Papel",
-        "desc": "Após o projeto ser gerado, selecione um papel da lista (papéis não-sistema marcados com 🟢)"
-      },
-      "step2": {
-        "title": "Passo 2: Conclua as Tarefas",
-        "desc": "Cada tarefa representa um objetivo de aprendizagem:",
-        "s1": {
-          "title": "Ver tarefa atual",
-          "desc": "Veja o título, descrição e responsável da tarefa"
-        },
-        "s2": {
-          "title": "Obter orientação",
-          "example": "@question Por onde devo começar?\n@question Como implemento esse recurso?",
-          "desc": "O Agente Perguntador faz perguntas guiadas e dá dicas (sem respostas diretas)"
-        },
-        "s3": {
-          "title": "Submeta seu trabalho",
-          "example": "@judge Terminei, por favor revise minhas anotações",
-          "desc": "O Agente Juiz avalia seu trabalho e dá feedback:",
-          "complete": "Avança automaticamente para a próxima tarefa",
-          "revision": "Melhore com base no feedback"
-        }
-      },
-      "step3": {
-        "title": "Passo 3: Conclua o Projeto",
-        "desc": "Quando todas as tarefas forem concluídas, o sistema exibe \"🎉 Projeto Concluído!\""
-      }
-    },
     "v2": {
       "hero": {
         "title": "Project-Based Learning",
@@ -1102,6 +1061,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "Qwen",
       "kimi": "Kimi",
@@ -1119,13 +1079,15 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "Protocolo OpenAI",
       "azure": "Azure OpenAI",
       "anthropic": "Protocolo Claude",
-      "google": "Protocolo Gemini"
+      "google": "Protocolo Gemini",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "modelos",
     "modelSingular": "modelo",
@@ -1326,6 +1288,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "ASR Nativo do Navegador",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
+    "providerFunASRASR": "FunASR (Local)",
     "providerLemonadeASR": "Lemonade ASR (Local)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (Nativo)",
@@ -1644,11 +1607,16 @@
     "clearCacheButton": "Excluir Permanentemente Todos os Dados",
     "clearCacheSuccess": "Cache limpo. A página será atualizada em instantes",
     "clearCacheFailed": "Falha ao limpar o cache, tente novamente",
+    "clearCacheBlockedByOtherTabs": "Feche as outras abas do app e tente novamente.",
+    "persistUnavailable": "Suas alterações não estão sendo salvas porque o aplicativo não consegue acessar os dados armazenados. Se recarregar não resolver, limpe o cache local nas Configurações.",
+    "persistChangesLost": "O armazenamento voltou a funcionar, mas as alterações feitas enquanto ele estava indisponível não puderam ser salvas e foram substituídas pela última versão salva.",
     "webSearchSettings": "Busca na Web",
     "webSearchApiKey": "Chave de API de Busca",
     "webSearchApiKeyPlaceholder": "Digite sua chave de API de busca",
     "webSearchApiKeyPlaceholderServer": "Chave configurada no servidor, opcionalmente sobreponha",
     "webSearchApiKeyHint": "Obtenha uma chave de API com o provedor de busca selecionado",
+    "claudeSearchModel": "Modelo de busca",
+    "claudeSearchModelHint": "O modelo Claude que realiza as buscas na web e resume os resultados.",
     "webSearchApiKeyOptional": "A chave de API é opcional. Sem ela, será usada extração pública de páginas como alternativa.",
     "searxngServerOnlyNotice": "O SearXNG deve ser configurado no servidor. Defina a variável de ambiente SEARXNG_BASE_URL (ou a seção web-search em server-providers.yml). URLs de instância fornecidas pelo cliente não são aceitas.",
     "baiduSubSources": "Fontes do Baidu",

@@ -23,13 +23,13 @@
  * intentionally NOT here — they land in increment 4.
  */
 
-import { streamText, generateText } from 'ai';
 import type { LanguageModel } from 'ai';
 
 import { createLogger } from '@/lib/logger';
-import { resolveThinkingProviderOptions } from '@/lib/ai/llm';
+import { callLLM, streamLLM } from '@/lib/ai/llm';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { loadPBLV2Prompt } from '../prompts/loader';
+import { trimmedPBLText } from '../readers';
 
 import type {
   PBLProjectV2,
@@ -40,12 +40,12 @@ import type {
   PBLAgentThread,
 } from '../types';
 import type { PBLSSEEvent } from '../api/sse';
-import { recordEvent } from '../operations/engagement';
+import { recordEvent } from '../operations/kernel/engagement';
 import {
   currentMicrotask,
   normalizeProjectRuntime,
   PBL_SIMULATOR_AGENT_ID,
-} from '../operations/progress';
+} from '../operations/kernel/progress';
 
 const log = createLogger('PBL v2 Simulator');
 
@@ -104,7 +104,7 @@ export function buildSimulatorHistory(
     out.push({ role: 'system', content: `## Earlier in the scene\n${thread.earlierSummary}` });
   }
   for (const m of thread.messages.slice(-MAX_HISTORY_MESSAGES)) {
-    const content = m.content.trim();
+    const content = trimmedPBLText(m.content);
     if (!content) continue;
     if (m.roleType === 'user') out.push({ role: 'user', content });
     else if (m.roleType === 'simulator') out.push({ role: 'assistant', content });
@@ -136,15 +136,16 @@ export function buildSimulatorSystemPrompt(
     lines.push(`Who the learner is (the person you are talking to): ${scenario.learnerRole}`);
   }
   lines.push(`Current scene: ${milestone.title}`);
-  if (milestone.briefing?.trim())
-    lines.push(`What is happening right now: ${milestone.briefing.trim()}`);
+  const milestoneBriefing = trimmedPBLText(milestone.briefing);
+  if (milestoneBriefing) lines.push(`What is happening right now: ${milestoneBriefing}`);
   // Established facts of the current beat — the system narrator delivers
   // these to the learner; the character must stay 100% consistent with
   // them and must NEVER invent or contradict positions / cards / who did
   // what / whose turn it is. Pulls from the beat's narration + description
   // (the same concrete setup the learner sees), so the character can never
   // drift to a different version of the situation.
-  const established = [microtask?.narration?.trim(), microtask?.description?.trim()]
+  const established = [microtask?.narration, microtask?.description]
+    .map(trimmedPBLText)
     .filter(Boolean)
     .join(' ');
   if (established) {
@@ -164,10 +165,12 @@ export function buildSimulatorSystemPrompt(
   const cast = scenario.characters ?? [];
   for (const c of cast) {
     const parts: string[] = [];
-    if (c.persona?.trim()) parts.push(c.persona.trim());
-    if (c.situation?.trim()) parts.push(`Current situation: ${c.situation.trim()}`);
-    if (c.boundaries?.trim())
-      parts.push(`Hard boundaries you must never cross: ${c.boundaries.trim()}`);
+    const persona = trimmedPBLText(c.persona);
+    const situation = trimmedPBLText(c.situation);
+    const boundaries = trimmedPBLText(c.boundaries);
+    if (persona) parts.push(persona);
+    if (situation) parts.push(`Current situation: ${situation}`);
+    if (boundaries) parts.push(`Hard boundaries you must never cross: ${boundaries}`);
     lines.push(`- **${c.name}** — ${parts.join(' | ')}`);
   }
   if (cast.length === 1) {
@@ -183,7 +186,7 @@ export function buildSimulatorSystemPrompt(
   // makes the character pursue something, so the scene has momentum instead
   // of flat Q&A. It is a motive to act on, NEVER a line to say, narrate,
   // evaluate, or coach (that would break role purity).
-  const objective = microtask?.characterObjective?.trim();
+  const objective = trimmedPBLText(microtask?.characterObjective);
   if (objective) {
     lines.push(
       '',
@@ -213,8 +216,10 @@ export function buildNarratorSystemPrompt(
   if (scenario.rules) lines.push(`Rules of this world: ${scenario.rules}`);
   if (scenario.learnerRole) lines.push(`The learner's role in the scene: ${scenario.learnerRole}`);
   lines.push(`Current scene: ${milestone.title}`);
-  if (milestone.briefing?.trim()) lines.push(`What is happening: ${milestone.briefing.trim()}`);
-  const established = [microtask?.narration?.trim(), microtask?.description?.trim()]
+  const milestoneBriefing = trimmedPBLText(milestone.briefing);
+  if (milestoneBriefing) lines.push(`What is happening: ${milestoneBriefing}`);
+  const established = [microtask?.narration, microtask?.description]
+    .map(trimmedPBLText)
     .filter(Boolean)
     .join(' ');
   if (established) {
@@ -222,9 +227,10 @@ export function buildNarratorSystemPrompt(
       `Established facts of this beat (your narration must stay consistent with these): ${established}`,
     );
   }
-  if (microtask?.completionCriteria?.trim()) {
+  const completionCriteria = trimmedPBLText(microtask?.completionCriteria);
+  if (completionCriteria) {
     lines.push(
-      `This beat is resolved once the following is true — let the world keep moving naturally, but NEVER announce it, evaluate the learner, or coach/hint them toward it: ${microtask.completionCriteria.trim()}`,
+      `This beat is resolved once the following is true — let the world keep moving naturally, but NEVER announce it, evaluate the learner, or coach/hint them toward it: ${completionCriteria}`,
     );
   }
   const castNames = (scenario.characters ?? []).map((c) => c.name).join('、');
@@ -263,7 +269,17 @@ async function runDirectorNarratorPass(args: {
    *  warns against re-describing what the prior act already covered. */
   firstEntry?: boolean;
 }): Promise<string[]> {
-  const { project, milestone, microtask, phase, thread, languageModel, signal, firstEntry } = args;
+  const {
+    project,
+    milestone,
+    microtask,
+    phase,
+    thread,
+    languageModel,
+    thinkingConfig,
+    signal,
+    firstEntry,
+  } = args;
   const system = buildNarratorSystemPrompt(project, milestone, microtask);
   const history = buildSimulatorHistory(thread, 'director');
   const greetingNudge = firstEntry
@@ -278,12 +294,21 @@ async function runDirectorNarratorPass(args: {
   const messages = [...history, { role: 'user' as const, content: nudge }];
 
   try {
-    const result = await generateText({
-      model: languageModel,
-      system,
-      messages,
-      ...(signal ? { abortSignal: signal } : {}),
-    });
+    const result = await callLLM(
+      {
+        model: languageModel,
+        system,
+        messages,
+        ...(signal ? { abortSignal: signal } : {}),
+      },
+      'pbl-v2-simulator-narrator',
+      undefined,
+      // Same contract as every other site: the request / stage route decides.
+      // This pass used to drop the config on the floor — its callers passed one
+      // and the helper never forwarded it, so the provider silently fell back to
+      // the model default.
+      thinkingConfig,
+    );
     const text = (result.text ?? '').trim();
     if (!text) return [];
     // Sentinel: model says nothing happened → no narration this turn.
@@ -341,7 +366,7 @@ function buildActContext(milestone: PBLMilestone, current: PBLMicrotask): PBLMic
   if (milestone.scenarioStage !== 'roleplay') return current;
   const beats = milestone.microtasks;
   if (beats.length <= 1) return current;
-  const objectives = beats.map((b) => b.characterObjective?.trim()).filter((s): s is string => !!s);
+  const objectives = beats.map((b) => trimmedPBLText(b.characterObjective)).filter(Boolean);
   return {
     ...current,
     // Opening scene = first beat's authored facts only (avoid front-loading
@@ -430,13 +455,14 @@ export async function* runSimulatorTurn(
     // 2) An authored opening line is delivered verbatim on the FIRST scene
     //    entry (reproducible packaged scene); on a later-stage advance, or when
     //    none is authored, the LLM generates a fresh in-character line below.
-    if (character.openingLine?.trim() && firstEntry) {
+    const openingLine = trimmedPBLText(character.openingLine);
+    if (openingLine && firstEntry) {
       const opening: PBLChatMessage = {
         id: genMessageId(),
         agentId: PBL_SIMULATOR_AGENT_ID,
         roleType: 'simulator',
         characterId: character.id,
-        content: character.openingLine.trim(),
+        content: openingLine,
         ts: new Date().toISOString(),
         microtaskId: microtask.id,
       };
@@ -500,15 +526,22 @@ export async function* runSimulatorTurn(
   // so the caller can decide retry vs surface.
   async function* streamCharacterLine(): AsyncGenerator<PBLSSEEvent, string, void> {
     let acc = '';
-    const stream = streamText({
-      model: languageModel,
-      system,
-      messages,
-      ...(thinkingConfig
-        ? { providerOptions: resolveThinkingProviderOptions(languageModel, thinkingConfig) }
-        : {}),
-      ...(signal ? { abortSignal: signal } : {}),
-    });
+    // The incoming per-request / stage-route config is what applies, handed to
+    // the wrapper: it resolves provider options for native adapters AND seeds the
+    // thinking context that the OpenAI-compatible fetch wrapper reads. The
+    // hand-rolled `resolveThinkingProviderOptions` call this replaced only ever
+    // covered the former, so a stage-route config was silently dropped on
+    // OpenAI-compatible providers.
+    const stream = streamLLM(
+      {
+        model: languageModel,
+        system,
+        messages,
+        ...(signal ? { abortSignal: signal } : {}),
+      },
+      'pbl-v2-simulator',
+      thinkingConfig,
+    );
     for await (const part of stream.fullStream) {
       if (part.type === 'text-delta') {
         const delta =

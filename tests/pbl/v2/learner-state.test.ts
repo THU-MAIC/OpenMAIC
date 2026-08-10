@@ -5,7 +5,7 @@ import {
   extractLearnerState,
   stripToDesignTemplate,
 } from '@/lib/pbl/v2/runtime/learner-state';
-import { emptyAssessment } from '@/lib/pbl/v2/operations/proficiency';
+import { emptyAssessment } from '@/lib/pbl/v2/operations/kernel/proficiency';
 import type { PBLProjectV2, PBLRuntimeEvent } from '@/lib/pbl/v2/types';
 
 type ProjectFieldBoundary = 'learner-state' | 'design-template' | 'transient';
@@ -199,6 +199,22 @@ describe('PBL learner state split', () => {
     expect(restored.runtimeEvents).toBeUndefined();
     expect(restored.pendingOpenTaskPriorQuizResults).toBeUndefined();
     expect(template.proficiencyAssessment).toBeUndefined();
+  });
+
+  it('treats a malformed proficiencyAssessment as absent on both ends', () => {
+    const project = makeProject();
+    Reflect.set(project, 'proficiencyAssessment', {});
+
+    const state = extractLearnerState(project);
+    expect(state).not.toHaveProperty('proficiencyAssessment');
+
+    const template = stripToDesignTemplate(makeProject());
+    const priorProficiency = template.proficiency;
+    const corrupted = { ...state, proficiencyAssessment: {} } as typeof state;
+    const restored = applyLearnerState(template, corrupted);
+
+    expect(restored.proficiencyAssessment).toBeUndefined();
+    expect(restored.proficiency).toBe(priorProficiency);
   });
 
   it('does not leak design-time fields into PBLLearnerState', () => {

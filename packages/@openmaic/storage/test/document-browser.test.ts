@@ -209,22 +209,22 @@ describe('BrowserDocumentStore migrate-on-read', () => {
 });
 
 // The store is generic over the scene type: an app can persist its own widened
-// scene union (kinds the DSL does not own, e.g. `interactive`) by injecting a
+// scene union (kinds the DSL does not own, e.g. `holo-deck`) by injecting a
 // matching validator. The store treats scene content opaquely.
 describe('BrowserDocumentStore with an app-widened scene union', () => {
-  interface InteractiveScene {
+  interface HoloDeckScene {
     id: string;
     stageId: string;
     title: string;
     order: number;
-    type: 'interactive';
-    content: { type: 'interactive'; html: string };
+    type: 'holo-deck';
+    content: { type: 'holo-deck'; program: string };
   }
 
-  // Accept the app's own kind, else fall back to the DSL validator (slide/quiz).
+  // Accept the app's own kind, else fall back to the DSL validator.
   const validateAppScene = (scene: unknown) => {
     const s = scene as { type?: unknown; id?: unknown };
-    if (s.type === 'interactive') {
+    if (s.type === 'holo-deck') {
       return typeof s.id === 'string'
         ? { valid: true as const }
         : { valid: false as const, errors: [{ path: '/id', message: 'expected string id' }] };
@@ -232,56 +232,56 @@ describe('BrowserDocumentStore with an app-widened scene union', () => {
     return validateScene(scene);
   };
 
-  const interactiveDoc: MaicDocument<InteractiveScene> = {
-    stage: { id: 'stage-1', name: 'Interactive Course', createdAt: 1, updatedAt: 2 },
+  const holoDeckDoc: MaicDocument<HoloDeckScene> = {
+    stage: { id: 'stage-1', name: 'Holo-deck Course', createdAt: 1, updatedAt: 2 },
     scenes: [
       {
         id: 'i1',
         stageId: 'stage-1',
         title: 'Widget',
         order: 0,
-        type: 'interactive',
-        content: { type: 'interactive', html: '<div/>' },
+        type: 'holo-deck',
+        content: { type: 'holo-deck', program: 'launch()' },
       },
     ],
   };
 
-  test('persists an app-only interactive scene via an injected validator', async () => {
-    const store = new BrowserDocumentStore<InteractiveScene>({
+  test('persists an app-only holo-deck scene via an injected validator', async () => {
+    const store = new BrowserDocumentStore<HoloDeckScene>({
       indexedDB: new IDBFactory(),
       validateScene: validateAppScene,
     });
-    await store.saveDocument(interactiveDoc);
+    await store.saveDocument(holoDeckDoc);
 
     const loaded = await store.loadDocument('stage-1');
     expect(loaded!.scenes[0]).toMatchObject({
-      type: 'interactive',
-      content: { type: 'interactive', html: '<div/>' },
+      type: 'holo-deck',
+      content: { type: 'holo-deck', program: 'launch()' },
     });
   });
 
   test('the default store (DSL validator) rejects an app-only scene kind', async () => {
     const store = new BrowserDocumentStore({ indexedDB: new IDBFactory() });
-    await expect(store.saveDocument(interactiveDoc as unknown as MaicDocument)).rejects.toThrow();
+    await expect(store.saveDocument(holoDeckDoc as unknown as MaicDocument)).rejects.toThrow();
   });
 
   test('supports incremental scene ops for an app scene union', async () => {
-    const store = new BrowserDocumentStore<InteractiveScene>({
+    const store = new BrowserDocumentStore<HoloDeckScene>({
       indexedDB: new IDBFactory(),
       validateScene: validateAppScene,
     });
-    await store.saveDocument(interactiveDoc);
+    await store.saveDocument(holoDeckDoc);
 
-    const added: InteractiveScene = {
+    const added: HoloDeckScene = {
       id: 'i2',
       stageId: 'stage-1',
       title: 'Widget 2',
       order: 1,
-      type: 'interactive',
-      content: { type: 'interactive', html: '<span/>' },
+      type: 'holo-deck',
+      content: { type: 'holo-deck', program: 'launchNext()' },
     };
     await store.putScene('stage-1', added);
-    expect((await store.getScene('stage-1', 'i2'))!.content.html).toBe('<span/>');
+    expect((await store.getScene('stage-1', 'i2'))!.content.program).toBe('launchNext()');
 
     await store.deleteScene('stage-1', 'i1');
     expect((await store.loadDocument('stage-1'))!.scenes.map((s) => s.id)).toEqual(['i2']);
@@ -291,11 +291,11 @@ describe('BrowserDocumentStore with an app-widened scene union', () => {
     // A validator that accepts everything must NOT be able to weaken the store's
     // own key invariant: a scene whose stageId disagrees with its document is
     // still rejected (assertStorableScene runs independently of the validator).
-    const store = new BrowserDocumentStore<InteractiveScene>({
+    const store = new BrowserDocumentStore<HoloDeckScene>({
       indexedDB: new IDBFactory(),
       validateScene: () => ({ valid: true }),
     });
-    const mismatched: MaicDocument<InteractiveScene> = {
+    const mismatched: MaicDocument<HoloDeckScene> = {
       stage: { id: 'stage-1', name: 'C', createdAt: 1, updatedAt: 2 },
       scenes: [
         {
@@ -303,8 +303,8 @@ describe('BrowserDocumentStore with an app-widened scene union', () => {
           stageId: 'other-stage',
           title: 'W',
           order: 0,
-          type: 'interactive',
-          content: { type: 'interactive', html: '' },
+          type: 'holo-deck',
+          content: { type: 'holo-deck', program: '' },
         },
       ],
     };

@@ -19,9 +19,9 @@ import { applyInstructorEvent } from '@/components/scene-renderers/pbl/v2/apply-
 import {
   applyAdvanceProjectPatch,
   buildAdvanceProjectPatch,
-} from '@/lib/pbl/v2/operations/advance-patch';
-import { advanceMicrotask, startMicrotask } from '@/lib/pbl/v2/operations/progress';
-import { addSubmission } from '@/lib/pbl/v2/operations/submission';
+} from '@/lib/pbl/v2/operations/runtime/advance-patch';
+import { advanceMicrotask, startMicrotask } from '@/lib/pbl/v2/operations/kernel/progress';
+import { addSubmission } from '@/lib/pbl/v2/operations/runtime/submission';
 import { clearStageDrainWatermarks, drainProjectRuntime } from '@/lib/pbl/v2/runtime/drain';
 import { withRuntimeStorageExclusiveLock } from '@/lib/utils/chat-storage-lock';
 import {

@@ -12,6 +12,7 @@ import '@/lib/persistence/bootstrap';
 import { BrowserRuntimeStore, type RuntimeStore } from '@openmaic/storage';
 
 import { registerRuntimeStorageResetHook, resolveConfiguredRuntimeStore } from './config';
+import { APP_RUNTIME_PAYLOAD_VALIDATORS } from './payload-validators';
 
 export {
   configureRuntimeStorage,
@@ -34,7 +35,13 @@ let usesDefaultBrowserStore = false;
 function createRuntimeStore(): RuntimeStore {
   const configured = resolveConfiguredRuntimeStore();
   usesDefaultBrowserStore = configured === undefined;
-  return configured ?? new BrowserRuntimeStore({ dbName: RUNTIME_DB_NAME });
+  return (
+    configured ??
+    new BrowserRuntimeStore({
+      dbName: RUNTIME_DB_NAME,
+      payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+    })
+  );
 }
 
 export function getRuntimeStore(): RuntimeStore {

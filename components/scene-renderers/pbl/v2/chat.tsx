@@ -33,15 +33,19 @@ import type {
   PBLProjectV2,
   PBLScenarioCharacter,
 } from '@/lib/pbl/v2/types';
-import { normalizeProjectRuntime, PBL_SIMULATOR_AGENT_ID } from '@/lib/pbl/v2/operations/progress';
+import { trimmedPBLText } from '@/lib/pbl/v2/readers';
+import {
+  normalizeProjectRuntime,
+  PBL_SIMULATOR_AGENT_ID,
+} from '@/lib/pbl/v2/operations/kernel/progress';
 import {
   appendRuntimeEvent,
   milestoneIdForMicrotask,
   mintRuntimeEventId,
   transitionProjectUiPhase,
-} from '@/lib/pbl/v2/operations/runtime-events';
-import { stripEvaluationTail } from '@/lib/pbl/v2/operations/eval-tail-parser';
-import { isTaskCompletionReadyMessageContent } from '@/lib/pbl/v2/operations/task-completion';
+} from '@/lib/pbl/v2/operations/kernel/runtime-events';
+import { stripEvaluationTail } from '@/lib/pbl/v2/operations/runtime/eval-tail-parser';
+import { isTaskCompletionReadyMessageContent } from '@/lib/pbl/v2/operations/kernel/task-completion';
 import { cn } from '@/lib/utils/cn';
 import { useInstructorStream, type StreamDisplayState } from './use-instructor-stream';
 import { instructorIntroText } from './instructor-intro';
@@ -314,7 +318,7 @@ export function PBLV2Chat({
     );
     if (!playedRoleplay) return [];
     const sim = project.threads.find((t) => t.agentId === PBL_SIMULATOR_AGENT_ID);
-    return (sim?.messages ?? []).filter((m) => m.content?.trim());
+    return (sim?.messages ?? []).filter((m) => trimmedPBLText(m.content));
   }, [project.scenario, project.milestones, project.threads, isRoleplay]);
   const [roleplayHistoryOpen, setRoleplayHistoryOpen] = useState(false);
 
@@ -562,7 +566,7 @@ export function PBLV2Chat({
             // chat reply. It stays in the same timeline but uses a
             // subtle accent treatment so learners can scan it apart
             // from instructor guidance.
-            const feedback = stripTailForDisplay(ev.feedback).trim();
+            const feedback = stripTailForDisplay(ev.feedback);
             return (
               <div key={ev.id} className="flex justify-start">
                 <div className="pbl-v2-task-review-shell max-w-[90%] rounded-[22px] px-4 py-3 text-sm text-slate-800">
@@ -994,7 +998,7 @@ function MessageBubble({
   // SCENARIO ONLY — neutral system narration (旁白): centred, italic, no
   // avatar/name, so it reads as the scene speaking, not a person.
   if (message.roleType === 'system') {
-    const narration = message.content.trim();
+    const narration = trimmedPBLText(message.content);
     if (!narration) return null;
     return (
       <div className="flex justify-center py-1.5">
@@ -1010,7 +1014,7 @@ function MessageBubble({
   if (message.roleType === 'simulator') {
     const character = characters?.find((c) => c.id === message.characterId) ?? characters?.[0];
     const name = character?.name ?? agentName;
-    const content = message.content.trim();
+    const content = trimmedPBLText(message.content);
     if (!content) return null;
     return (
       <div className="flex justify-start">
@@ -1060,12 +1064,12 @@ function MessageBubble({
   }
 
   const isUser = message.roleType === 'user';
-  const displayContent = (
+  const displayContent = trimmedPBLText(
     !isUser && typeof message.content === 'string'
       ? stripEmbeddedDividerMarkers(message.content)
-      : message.content
-  ).trim();
-  if (!displayContent.trim()) return null;
+      : message.content,
+  );
+  if (!displayContent) return null;
 
   if (!isUser) {
     return (
@@ -1210,7 +1214,7 @@ function CharacterAvatar({
       title={name}
       aria-hidden="true"
     >
-      {Array.from(name.trim())[0] ?? '·'}
+      {Array.from(trimmedPBLText(name))[0] ?? '·'}
     </div>
   );
 }
@@ -1364,12 +1368,12 @@ export function buildTimeline(
   return items;
 }
 
-function stripTailForDisplay(text: string | undefined): string {
-  return stripEvaluationTail(text ?? '');
+function stripTailForDisplay(text: unknown): string {
+  return stripEvaluationTail(trimmedPBLText(text)).trim();
 }
 
-export function displayAgentName(name: string | undefined | null, fallback: string): string {
-  const trimmed = name?.trim();
+export function displayAgentName(name: unknown, fallback: string): string {
+  const trimmed = trimmedPBLText(name);
   return trimmed || fallback;
 }
 

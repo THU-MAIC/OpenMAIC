@@ -34,7 +34,7 @@ export type { VideoResolution };
 
 export function useExportVideo() {
   const [exporting, setExporting] = useState(false);
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const exportVideo = useCallback(
     async (resolution: VideoResolution = '1080p', burnInSubtitles = false) => {
@@ -50,6 +50,7 @@ export function useExportVideo() {
         const { zipBlob, stageName, missingCount, errorCount } = await buildExportZip({
           resolution,
           burnInSubtitles,
+          locale,
         });
 
         toast.loading(t('export.videoPackaging'), { id: toastId });
@@ -73,7 +74,7 @@ export function useExportVideo() {
         setExporting(false);
       }
     },
-    [t],
+    [t, locale],
   );
 
   return { exporting, exportVideo };

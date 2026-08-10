@@ -6,8 +6,8 @@
  */
 
 import type { NextRequest } from 'next/server';
-import { getModel, parseModelString, type ModelWithInfo } from '@/lib/ai/providers';
-import type { ThinkingConfig } from '@/lib/types/provider';
+import { getModel, getProvider, parseModelString, type ModelWithInfo } from '@/lib/ai/providers';
+import type { ProviderType, ThinkingConfig } from '@/lib/types/provider';
 import {
   isServerConfiguredProvider,
   resolveApiKey,
@@ -84,6 +84,22 @@ export async function resolveModel(params: {
   // therefore applies only to unmanaged providers, where the base URL really is
   // client-supplied. (Server-configured URLs are trusted by the operator.)
   const managed = isServerConfiguredProvider('providers', providerId);
+  const registeredProviderType = getProvider(providerId)?.type;
+  if (
+    clientProviderType &&
+    registeredProviderType &&
+    clientProviderType !== registeredProviderType
+  ) {
+    throw new Error(
+      `Provider type mismatch for ${providerId}: expected ${registeredProviderType}, received ${clientProviderType}.`,
+    );
+  }
+  const effectiveProviderType = (clientProviderType || registeredProviderType) as
+    | ProviderType
+    | undefined;
+  if (effectiveProviderType === 'bedrock' && (providerId !== 'bedrock' || !managed)) {
+    throw new Error('Amazon Bedrock must be enabled by the server operator before it can be used.');
+  }
   const clientBaseUrl = managed ? undefined : clientBaseUrlParam || undefined;
   if (clientBaseUrl && process.env.NODE_ENV === 'production') {
     const ssrfError = await validateUrlForSSRF(clientBaseUrl);
@@ -101,7 +117,7 @@ export async function resolveModel(params: {
     apiKey,
     baseUrl,
     proxy,
-    providerType: clientProviderType as 'openai' | 'azure' | 'anthropic' | 'google' | undefined,
+    providerType: clientProviderType as ProviderType | undefined,
   });
 
   // Thinking arbitration mirrors model routing — the route carries a full

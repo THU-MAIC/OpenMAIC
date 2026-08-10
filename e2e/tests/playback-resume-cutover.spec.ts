@@ -89,7 +89,7 @@ test('playback cursor persists to device KV and survives a fresh page', async ({
   test.setTimeout(120_000);
   await page.addInitScript(
     (settings) => {
-      localStorage.setItem('settings-storage', settings);
+      localStorage.setItem('maic:account:settings-storage', settings);
     },
     createSettingsStorage({ autoPlayLecture: true, ttsEnabled: false }),
   );

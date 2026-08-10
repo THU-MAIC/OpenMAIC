@@ -5,7 +5,7 @@ import {
   isCurrentWorkspaceLaunch,
   prepareCurrentWorkspaceLaunchProject,
   prepareWorkspaceLaunchProject,
-} from '@/lib/pbl/v2/operations/workspace-launch';
+} from '@/lib/pbl/v2/operations/runtime/workspace-launch';
 import type { PBLProjectV2, PriorQuizResult } from '@/lib/pbl/v2/types';
 
 function mkProject(overrides: Partial<PBLProjectV2> = {}): PBLProjectV2 {

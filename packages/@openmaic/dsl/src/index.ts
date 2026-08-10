@@ -18,14 +18,15 @@
  *
  * The lesson skeleton (`Stage` / `Scene` / `SceneContent`) and the playback
  * verb set (`Action` and its variants) both live here. `Scene` is generic: the
- * contract owns the universal structure, the slide/quiz content kinds, and the
- * standard `Action` union (which `TAction` now defaults to). PBL configs and
- * the app's richer content kinds remain app-side feature surfaces that
- * consumers inject via `Scene`'s type parameters.
+ * contract owns the universal structure, all four persisted content kinds, and
+ * the standard `Action` union. Rich widget payloads remain consumer-defined
+ * through the interactive content generic extension point.
  */
 export * from './slides.js';
 export * from './guards.js';
 export * from './stage.js';
+export * from './interactive.js';
+export * from './pbl.js';
 export * from './action.js';
 export * from './validate.js';
 export * from './normalize.js';

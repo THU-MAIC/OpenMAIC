@@ -17,6 +17,9 @@
  */
 import { isActionType } from './action.js';
 import type { ActionType } from './action.js';
+import { isWidgetType } from './interactive.js';
+import { isPBLProject } from './pbl.js';
+import { isSceneType } from './stage.js';
 import { isIsoTimestamp, isRuntimeSessionStatus } from './runtime.js';
 import { isWellFormedDslVersion } from './version.js';
 
@@ -174,6 +177,69 @@ function checkAction(doc: unknown, path: string, errors: ValidationIssue[]): voi
   }
 }
 
+function checkInteractiveContent(doc: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!isObject(doc)) {
+    errors.push({ path: path || '/', message: 'interactive content must be an object' });
+    return;
+  }
+  if (doc.type !== 'interactive') {
+    errors.push({ path: `${path}/type`, message: 'expected `interactive` content type' });
+  }
+  if (typeof doc.html !== 'string' && typeof doc.url !== 'string') {
+    errors.push({
+      path: path || '/',
+      message: 'interactive content requires `html` or `url` as a string',
+    });
+  }
+  if (doc.url !== undefined && typeof doc.url !== 'string') {
+    errors.push({ path: `${path}/url`, message: '`url` must be a string when present' });
+  }
+  if (doc.html !== undefined && typeof doc.html !== 'string') {
+    errors.push({ path: `${path}/html`, message: '`html` must be a string when present' });
+  }
+  if (doc.widgetType !== undefined && !isWidgetType(doc.widgetType)) {
+    errors.push({
+      path: `${path}/widgetType`,
+      message: `unknown widget type: ${JSON.stringify(doc.widgetType)}`,
+    });
+  }
+  if (doc.widgetConfig !== undefined) {
+    if (!isObject(doc.widgetConfig)) {
+      errors.push({
+        path: `${path}/widgetConfig`,
+        message: '`widgetConfig` must be an object when present',
+      });
+    } else if (!isWidgetType(doc.widgetConfig.type)) {
+      errors.push({
+        path: `${path}/widgetConfig/type`,
+        message: `unknown widget config type: ${JSON.stringify(doc.widgetConfig.type)}`,
+      });
+    }
+  }
+}
+
+function checkPBLContent(doc: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!isObject(doc)) {
+    errors.push({ path: path || '/', message: 'pbl content must be an object' });
+    return;
+  }
+  if (doc.type !== 'pbl') {
+    errors.push({ path: `${path}/type`, message: 'expected `pbl` content type' });
+  }
+  if (doc.projectV2 !== undefined && !isPBLProject(doc.projectV2)) {
+    errors.push({
+      path: `${path}/projectV2`,
+      message: '`projectV2` must be a structurally valid PBL project when present',
+    });
+  }
+  if (doc.projectConfig !== undefined && !isObject(doc.projectConfig)) {
+    errors.push({
+      path: `${path}/projectConfig`,
+      message: '`projectConfig` must be an object when present',
+    });
+  }
+}
+
 function checkScene(doc: unknown, path: string, errors: ValidationIssue[]): void {
   if (!isObject(doc)) {
     errors.push({ path: path || '/', message: 'scene must be an object' });
@@ -184,21 +250,20 @@ function checkScene(doc: unknown, path: string, errors: ValidationIssue[]): void
   reqString(doc, 'title', path, errors);
   reqNumber(doc, 'order', path, errors);
 
-  // The scene `type` is bound to its `content` (see `Scene`): a slide scene
-  // carries slide content, a quiz scene quiz content. The contract owns the
-  // slide/quiz kinds; app-widened kinds validate their own scenes.
+  // The scene `type` is bound to its `content` (see `Scene`) for all four
+  // persisted kinds owned by the contract.
   const t = doc.type;
-  if (t !== 'slide' && t !== 'quiz') {
+  if (!isSceneType(t)) {
     errors.push({
       path: `${path}/type`,
-      message: `unknown scene type: ${JSON.stringify(t)} (the contract owns 'slide' and 'quiz')`,
+      message: `unknown scene type: ${JSON.stringify(t)}`,
     });
   }
 
   const content = doc.content;
   if (!isObject(content)) {
     errors.push({ path: `${path}/content`, message: 'scene `content` must be an object' });
-  } else if (t === 'slide' || t === 'quiz') {
+  } else if (isSceneType(t)) {
     if (content.type !== t) {
       errors.push({
         path: `${path}/content/type`,
@@ -214,6 +279,10 @@ function checkScene(doc: unknown, path: string, errors: ValidationIssue[]): void
         path: `${path}/content/questions`,
         message: 'quiz content requires a `questions` array',
       });
+    } else if (t === 'interactive') {
+      checkInteractiveContent(content, `${path}/content`, errors);
+    } else if (t === 'pbl') {
+      checkPBLContent(content, `${path}/content`, errors);
     }
   }
 
@@ -242,6 +311,20 @@ export function validateStage(doc: unknown): ValidationResult {
 export function validateScene(doc: unknown): ValidationResult {
   const errors: ValidationIssue[] = [];
   checkScene(doc, '', errors);
+  return done(errors);
+}
+
+/** Validate a standalone interactive content payload. */
+export function validateInteractiveContent(doc: unknown): ValidationResult {
+  const errors: ValidationIssue[] = [];
+  checkInteractiveContent(doc, '', errors);
+  return done(errors);
+}
+
+/** Validate a standalone current or legacy PBL content payload. */
+export function validatePBLContent(doc: unknown): ValidationResult {
+  const errors: ValidationIssue[] = [];
+  checkPBLContent(doc, '', errors);
   return done(errors);
 }
 

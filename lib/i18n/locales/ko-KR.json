@@ -78,6 +78,9 @@
     "videoServiceHint": "MP4 렌더링에는 렌더 서비스가 필요합니다. ZIP을 다운로드하여 로컬에서 렌더링하세요.",
     "videoBurnSubtitles": "자막 굽기",
     "videoBurnSubtitlesDesc": "끄면 자막 없는 깨끗한 영상을 내보내고, 자막 파일은 편집 프로그램에서 추가합니다.",
+    "videoQuizCtaPrompt": "인터랙티브 퀴즈를 직접 체험해 보세요",
+    "videoPblCtaPrompt": "프로젝트 기반 학습을 직접 체험해 보세요",
+    "videoCtaVisit": "방문",
     "videoDownloadSubtitles": "자막 다운로드 (.srt)",
     "subtitlesCompiling": "자막 생성 중…",
     "subtitlesSuccess": "자막을 다운로드했습니다",
@@ -333,7 +336,8 @@
         "lead": "이 인터랙티브 페이지의 버그(예: 눌러도 반응 없는 버튼)를 설명해 주세요. 해당 부분만 수정하고 나머지는 그대로 둡니다.",
         "placeholder": "이 인터랙티브 페이지의 버그를 설명하세요…"
       },
-      "thinking": "생각 중…"
+      "thinking": "생각 중…",
+      "title": "AI로 편집"
     },
     "timeline": {
       "title": "내레이션 스크립트",
@@ -475,6 +479,21 @@
       "notApplied": "미적용",
       "applyFailed": "편집기에서 요소 편집을 적용하지 못했습니다. 변경된 내용이 없습니다.",
       "applyPartiallyFailed": "하나 이상의 요소 편집을 적용하지 못했습니다. 다른 편집은 적용되었을 수 있습니다."
+    },
+    "roster": {
+      "title": "수업 구성원",
+      "count": "{{count}}명",
+      "editHint": "구성원을 클릭해 편집",
+      "personaLabel": "페르소나",
+      "personaPlaceholder": "역할의 성격, 수업 스타일, 과제를 설명하세요…",
+      "noPersona": "페르소나 없음",
+      "unnamed": "제목 없음",
+      "teacherBadge": "주강사",
+      "moveUp": "위로 이동",
+      "moveDown": "아래로 이동",
+      "removeFromClass": "수업에서 제거",
+      "aiClassmates": "AI 반 친구 · {{count}}",
+      "addRole": "역할 추가"
     }
   },
   "classroomComplete": {
@@ -564,67 +583,7 @@
     "startRecording": "녹음 시작"
   },
   "pbl": {
-    "legacyFormat": "이 PBL 장면은 이전 형식을 사용합니다. 강좌를 다시 생성해주세요.",
     "emptyProject": "PBL 프로젝트가 아직 생성되지 않았습니다. 강좌 생성을 통해 만들어주세요.",
-    "roleSelection": {
-      "title": "역할 선택",
-      "description": "프로젝트 협업을 시작할 역할을 선택하세요"
-    },
-    "workspace": {
-      "restart": "다시 시작",
-      "confirmRestart": "모든 진행 상황을 초기화할까요?",
-      "confirm": "확인",
-      "cancel": "취소"
-    },
-    "issueboard": {
-      "title": "이슈 보드",
-      "noIssues": "이슈가 없습니다",
-      "statusDone": "완료",
-      "statusActive": "진행 중",
-      "statusPending": "대기 중"
-    },
-    "chat": {
-      "title": "프로젝트 토론",
-      "currentIssue": "현재 이슈",
-      "mentionHint": "@question으로 질문, @judge로 검토 요청",
-      "placeholder": "메시지를 입력하세요...",
-      "send": "전송",
-      "issueCompleteMessage": "이슈 \"{{completed}}\" 완료! 다음 이슈로 이동합니다: \"{{next}}\"",
-      "allCompleteMessage": "🎉 모든 이슈 완료! 프로젝트 수고 많으셨어요!"
-    },
-    "guide": {
-      "howItWorks": "진행 방식",
-      "help": "도움말",
-      "title": "도움말",
-      "step1": {
-        "title": "1단계: 역할 선택",
-        "desc": "프로젝트가 생성된 후, 목록에서 역할을 선택하세요 (🟢 표시된 역할은 비시스템 역할)"
-      },
-      "step2": {
-        "title": "2단계: 이슈 완료",
-        "desc": "각 이슈는 하나의 학습 과제를 나타냅니다:",
-        "s1": {
-          "title": "현재 이슈 확인",
-          "desc": "이슈의 제목, 설명, 담당자를 확인하세요"
-        },
-        "s2": {
-          "title": "안내 받기",
-          "example": "@question 어디서부터 시작하면 될까요?\n@question 이 기능은 어떻게 구현하나요?",
-          "desc": "질문 에이전트가 유도 질문과 힌트를 제공합니다 (직접적인 답변은 제공하지 않음)"
-        },
-        "s3": {
-          "title": "작업 제출",
-          "example": "@judge 완료했습니다, 제 메모를 검토해주세요",
-          "desc": "판정 에이전트가 작업을 평가하고 피드백을 제공합니다:",
-          "complete": "다음 이슈로 자동 이동",
-          "revision": "피드백을 바탕으로 개선하세요"
-        }
-      },
-      "step3": {
-        "title": "3단계: 프로젝트 완료",
-        "desc": "모든 이슈가 완료되면 \"🎉 프로젝트 완료!\"가 표시됩니다"
-      }
-    },
     "v2": {
       "hero": {
         "title": "Project-Based Learning",
@@ -1102,6 +1061,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "Qwen",
       "kimi": "Kimi",
@@ -1119,13 +1079,15 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAI 프로토콜",
       "azure": "Azure OpenAI",
       "anthropic": "Claude 프로토콜",
-      "google": "Gemini 프로토콜"
+      "google": "Gemini 프로토콜",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "개 모델",
     "modelSingular": "개 모델",
@@ -1326,6 +1288,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "브라우저 기본 ASR",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
+    "providerFunASRASR": "FunASR (로컬)",
     "providerLemonadeASR": "Lemonade ASR (로컬)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (내장)",
@@ -1644,11 +1607,16 @@
     "clearCacheButton": "모든 데이터 영구 삭제",
     "clearCacheSuccess": "캐시가 지워졌습니다. 잠시 후 페이지가 새로 고침됩니다",
     "clearCacheFailed": "캐시 삭제에 실패했습니다. 다시 시도해 주세요",
+    "clearCacheBlockedByOtherTabs": "앱을 연 다른 탭을 닫고 다시 시도해 주세요.",
+    "persistUnavailable": "변경 사항이 저장되지 않고 있습니다. 앱이 저장된 데이터에 접근할 수 없습니다. 새로 고쳐도 해결되지 않으면 설정에서 로컬 캐시를 삭제하세요.",
+    "persistChangesLost": "저장소가 복구되었지만 사용할 수 없는 동안 변경한 내용은 저장되지 못하고 마지막으로 저장된 버전으로 대체되었습니다.",
     "webSearchSettings": "웹 검색",
     "webSearchApiKey": "검색 API 키",
     "webSearchApiKeyPlaceholder": "검색 API 키를 입력하세요",
     "webSearchApiKeyPlaceholderServer": "서버 키가 설정되어 있습니다. 선택적으로 재정의할 수 있습니다",
     "webSearchApiKeyHint": "선택한 검색 제공업체에서 API 키를 발급받으세요",
+    "claudeSearchModel": "검색 모델",
+    "claudeSearchModelHint": "웹 검색을 수행하고 결과를 요약하는 Claude 모델입니다.",
     "webSearchApiKeyOptional": "API 키는 선택 사항입니다. 키가 없으면 공개 페이지 스크래핑이 대체 수단으로 사용됩니다.",
     "searxngServerOnlyNotice": "SearXNG는 서버에서 구성해야 합니다. SEARXNG_BASE_URL 환경 변수(또는 server-providers.yml의 web-search 섹션)를 설정하세요. 클라이언트가 제공한 인스턴스 URL은 허용되지 않습니다.",
     "baiduSubSources": "바이두 검색 소스",
