@@ -118,6 +118,28 @@ function setHeaders(target: Headers, source: Record<string, string | number | st
   }
 }
 
+type ResponseCallback = () => void;
+
+function responseEncoding(encodingOrCallback?: BufferEncoding | ResponseCallback): BufferEncoding {
+  const encoding = typeof encodingOrCallback === 'string' ? encodingOrCallback : 'utf8';
+  if (!Buffer.isEncoding(encoding)) {
+    // Let Buffer produce Node's ERR_UNKNOWN_ENCODING TypeError.
+    Buffer.from('', encoding);
+  }
+  return encoding;
+}
+
+function responseCallback(
+  encodingOrCallback?: BufferEncoding | ResponseCallback,
+  callback?: ResponseCallback,
+): ResponseCallback | undefined {
+  return typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+}
+
+function suppressesResponseBody(request: Request, status: number): boolean {
+  return request.method === 'HEAD' || status === 204 || status === 205 || status === 304;
+}
+
 function runNodeHandler(handler: RequestListener, request: Request): Promise<Response> {
   return new Promise<Response>((resolve, reject) => {
     let status = 200;
@@ -129,8 +151,8 @@ function runNodeHandler(handler: RequestListener, request: Request): Promise<Res
     // with U+FFFD and silently corrupt the response.
     const body: Buffer[] = [];
 
-    const appendChunk = (chunk: string | Uint8Array) => {
-      body.push(typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk));
+    const appendChunk = (chunk: string | Uint8Array, encoding: BufferEncoding) => {
+      body.push(typeof chunk === 'string' ? Buffer.from(chunk, encoding) : Buffer.from(chunk));
     };
 
     const response = {
@@ -149,25 +171,44 @@ function runNodeHandler(handler: RequestListener, request: Request): Promise<Res
         if (values) setHeaders(headers, values);
         return this;
       },
-      write(chunk: string | Uint8Array, encodingOrCallback?: unknown, callback?: unknown) {
+      write(
+        chunk: string | Uint8Array,
+        encodingOrCallback?: BufferEncoding | ResponseCallback,
+        callback?: ResponseCallback,
+      ) {
         // `write` is part of the `ServerResponse` surface this object claims to
         // implement. Omitting it made any chunked handler a runtime TypeError
         // that the `as unknown as ServerResponse` cast hid from the compiler.
         headersSent = true;
-        appendChunk(chunk);
-        const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
-        if (typeof done === 'function') done();
+        appendChunk(chunk, responseEncoding(encodingOrCallback));
+        const done = responseCallback(encodingOrCallback, callback);
+        if (done) process.nextTick(done);
         return true;
       },
-      end(chunk?: string | Uint8Array) {
+      end(
+        chunkOrCallback?: string | Uint8Array | ResponseCallback,
+        encodingOrCallback?: BufferEncoding | ResponseCallback,
+        callback?: ResponseCallback,
+      ) {
         headersSent = true;
-        if (chunk !== undefined) appendChunk(chunk);
+        const chunk = typeof chunkOrCallback === 'function' ? undefined : chunkOrCallback;
+        const done =
+          typeof chunkOrCallback === 'function'
+            ? chunkOrCallback
+            : responseCallback(encodingOrCallback, callback);
+        if (chunk !== undefined) appendChunk(chunk, responseEncoding(encodingOrCallback));
         resolve(
-          new Response(body.length === 0 ? undefined : Buffer.concat(body), {
-            status,
-            headers,
-          }),
+          new Response(
+            suppressesResponseBody(request, status) || body.length === 0
+              ? undefined
+              : Buffer.concat(body),
+            {
+              status,
+              headers,
+            },
+          ),
         );
+        if (done) process.nextTick(done);
         return this;
       },
       destroy(error?: Error) {
