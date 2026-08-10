@@ -1049,6 +1049,7 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
@@ -1584,6 +1585,8 @@
     "webSearchApiKeyPlaceholder": "검색 API 키를 입력하세요",
     "webSearchApiKeyPlaceholderServer": "서버 키가 설정되어 있습니다. 선택적으로 재정의할 수 있습니다",
     "webSearchApiKeyHint": "선택한 검색 제공업체에서 API 키를 발급받으세요",
+    "claudeSearchModel": "검색 모델",
+    "claudeSearchModelHint": "웹 검색을 수행하고 결과를 요약하는 Claude 모델입니다.",
     "webSearchApiKeyOptional": "API 키는 선택 사항입니다. 키가 없으면 공개 페이지 스크래핑이 대체 수단으로 사용됩니다.",
     "searxngServerOnlyNotice": "SearXNG는 서버에서 구성해야 합니다. SEARXNG_BASE_URL 환경 변수(또는 server-providers.yml의 web-search 섹션)를 설정하세요. 클라이언트가 제공한 인스턴스 URL은 허용되지 않습니다.",
     "baiduSubSources": "바이두 검색 소스",

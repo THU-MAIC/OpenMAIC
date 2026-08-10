@@ -1049,6 +1049,7 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
@@ -1584,6 +1585,8 @@
     "webSearchApiKeyPlaceholder": "Введите API-ключ поиска",
     "webSearchApiKeyPlaceholderServer": "Серверный ключ настроен, можно ввести свой",
     "webSearchApiKeyHint": "Получите API-ключ у выбранного поискового провайдера",
+    "claudeSearchModel": "Модель поиска",
+    "claudeSearchModelHint": "Модель Claude, которая выполняет веб-поиск и обобщает результаты.",
     "webSearchApiKeyOptional": "API-ключ необязателен. Без него будет использоваться парсинг публичной страницы.",
     "searxngServerOnlyNotice": "SearXNG должен быть настроен на сервере. Установите переменную окружения SEARXNG_BASE_URL (или раздел web-search в server-providers.yml). URL экземпляра от клиента не принимаются.",
     "baiduSubSources": "Источники поиска Baidu",
