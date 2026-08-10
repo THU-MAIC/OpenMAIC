@@ -40,21 +40,7 @@ export type PBLEvaluationKind = 'task' | 'milestone' | 'final';
  *  `record_closing_check` tool before `advance_micro_task` is allowed. */
 export type PBLClosingQuality = 'weak' | 'ok' | 'strong';
 
-// Contract PBL tree nodes deliberately tolerate unknown stored fields via an
-// index signature. Remove only that signature before replacing known nested
-// properties, so the app surface remains as precise as it was before the
-// contract extraction.
-type WithoutIndexSignature<T> = {
-  [K in keyof T as string extends K
-    ? never
-    : number extends K
-      ? never
-      : symbol extends K
-        ? never
-        : K]: T[K];
-};
-
-type RuntimeOverlay<Base, Overlay> = Omit<WithoutIndexSignature<Base>, keyof Overlay> & Overlay;
+type RuntimeOverlay<Base, Overlay> = Omit<Base, keyof Overlay> & Overlay;
 
 /** Set by Instructor when advancing a task via `advance_micro_task`.
  *  Never shown to the learner — internal teaching record. */

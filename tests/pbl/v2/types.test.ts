@@ -81,6 +81,27 @@ const canonicalContractProject: PBLProject = canonicalStoredDesignTemplate;
 
 type Assert<T extends true> = T;
 const appProjectSatisfiesContract: Assert<PBLProjectV2 extends PBLProject ? true : false> = true;
+const projectHasTitle: Assert<'title' extends keyof PBLProjectV2 ? true : false> = true;
+const projectHasStatus: Assert<'status' extends keyof PBLProjectV2 ? true : false> = true;
+const projectHasRoles: Assert<'roles' extends keyof PBLProjectV2 ? true : false> = true;
+const projectHasCreatedAt: Assert<'createdAt' extends keyof PBLProjectV2 ? true : false> = true;
+const projectHasRuntimeEvents: Assert<'runtimeEvents' extends keyof PBLProjectV2 ? true : false> =
+  true;
+
+const { title: _omittedTitle, ...projectWithoutTitle } = canonicalStoredDesignTemplate;
+// @ts-expect-error title is required by the contract-backed app type.
+const projectMissingTitle: PBLProjectV2 = { ...projectWithoutTitle };
+
+// @ts-expect-error id is required by the contract-backed app microtask type.
+const microtaskMissingId: PBLMicrotask = {
+  title: 'Record three organisms',
+  status: 'todo',
+  assignee: 'user',
+  hints: [],
+  order: 0,
+};
+void projectMissingTitle;
+void microtaskMissingId;
 
 // A fully-populated reference value covering every optional field so
 // drift in any nested shape is caught.
@@ -247,6 +268,11 @@ function makeFullProject(): PBLProjectV2 {
 describe('PBL v2 — types', () => {
   it('keeps a canonical stored design template assignable to app and contract types', () => {
     expect(appProjectSatisfiesContract).toBe(true);
+    expect(projectHasTitle).toBe(true);
+    expect(projectHasStatus).toBe(true);
+    expect(projectHasRoles).toBe(true);
+    expect(projectHasCreatedAt).toBe(true);
+    expect(projectHasRuntimeEvents).toBe(true);
     expect(isPBLProject(canonicalContractProject)).toBe(true);
   });
 
