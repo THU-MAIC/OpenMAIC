@@ -34,14 +34,32 @@ interface ElementLite {
   content?: string;
 }
 
-function elementHostAt(x: number, y: number): HTMLElement | null {
+const INTERACTION_ELEMENT_ID_ATTRIBUTES = [
+  'data-element-id',
+  'data-select-element-id',
+  'data-context-element-id',
+] as const;
+
+function interactionElementIdAt(x: number, y: number): string | null {
   for (const node of document.elementsFromPoint(x, y)) {
-    const host = (node as HTMLElement).closest?.(
-      `[id^="${EDITABLE_ELEMENT_ID_PREFIX}"]`,
+    const target = (node as HTMLElement).closest?.(
+      INTERACTION_ELEMENT_ID_ATTRIBUTES.map((attribute) => `[${attribute}]`).join(','),
     ) as HTMLElement | null;
-    if (host?.id?.startsWith(EDITABLE_ELEMENT_ID_PREFIX)) return host;
+    if (!target) continue;
+    for (const attribute of INTERACTION_ELEMENT_ID_ATTRIBUTES) {
+      const id = target.getAttribute(attribute);
+      if (id) return id;
+    }
   }
   return null;
+}
+
+function rendererPaintNode(elementId: string): HTMLElement | null {
+  const host = document.getElementById(editableElementDomId(elementId));
+  if (!host) return null;
+  return host.querySelector<HTMLElement>(
+    '.slide-element-hit-target > [class^="base-element-"], .slide-element-hit-target > [class*=" base-element-"]',
+  );
 }
 
 export function ElementPickLayer() {
@@ -113,9 +131,9 @@ export function ElementPickLayer() {
   const measureOutlines = useCallback(() => {
     const boxes: Array<{ id: string; box: Box }> = [];
     for (const el of elements) {
-      const host = document.getElementById(editableElementDomId(el.id));
-      if (!host) continue;
-      const b = toLocal(host.getBoundingClientRect());
+      const paint = rendererPaintNode(el.id);
+      if (!paint) continue;
+      const b = toLocal(paint.getBoundingClientRect());
       if (b) boxes.push({ id: el.id, box: b });
     }
     setOutlines(boxes);
@@ -174,17 +192,17 @@ export function ElementPickLayer() {
     if (moveRafRef.current != null) return;
     moveRafRef.current = requestAnimationFrame(() => {
       moveRafRef.current = null;
-      const host = elementHostAt(clientX, clientY);
-      if (!host) {
+      const id = interactionElementIdAt(clientX, clientY);
+      if (!id) {
         if (hover) {
           setHover(null);
           preview('');
         }
         return;
       }
-      const id = host.id.slice(EDITABLE_ELEMENT_ID_PREFIX.length);
       if (id !== hover?.id) {
-        const box = toLocal(host.getBoundingClientRect());
+        const paint = rendererPaintNode(id);
+        const box = paint ? toLocal(paint.getBoundingClientRect()) : null;
         setHover(box ? { id, box } : null);
         preview(id);
       }
@@ -197,8 +215,8 @@ export function ElementPickLayer() {
   };
 
   const highlightById = (id: string) => {
-    const host = document.getElementById(editableElementDomId(id));
-    const box = host ? toLocal(host.getBoundingClientRect()) : null;
+    const paint = rendererPaintNode(id);
+    const box = paint ? toLocal(paint.getBoundingClientRect()) : null;
     setHover(box ? { id, box } : { id, box: { left: 0, top: 0, width: 0, height: 0 } });
     preview(id);
   };

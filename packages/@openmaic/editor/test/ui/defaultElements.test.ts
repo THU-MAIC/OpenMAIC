@@ -6,6 +6,7 @@ import {
   createDefaultChartElement,
   createDefaultImageElement,
   createDefaultLatexElement,
+  createDefaultLineElement,
   createDefaultTableElement,
   createDefaultTextElement,
   createDefaultVideoElement,
@@ -60,6 +61,30 @@ describe('built-in editor element factories', () => {
     expect(table.data[1][2].id).toBe('table-1-cell-1-2');
     expect(minimum.data).toHaveLength(1);
     expect(minimum.data[0]).toHaveLength(1);
+  });
+
+  it.each([
+    ['broken', { isBroken: true }, { broken: [0, 200] }],
+    ['double broken', { isBroken2: true }, { broken2: [100, 0] }],
+    ['curve', { isCurve: true }, { curve: [0, 200] }],
+    [
+      'cubic',
+      { isCubic: true },
+      {
+        cubic: [
+          [200, 0],
+          [0, 200],
+        ],
+      },
+    ],
+  ] as const)('preserves %s preset geometry for a diagonal drag', (_label, preset, controls) => {
+    const line = createDefaultLineElement(
+      'line-1',
+      { start: [100, 200], end: [300, 400] },
+      { path: '', style: 'solid', points: ['', ''], ...preset },
+    );
+
+    expect(line).toMatchObject({ start: [0, 0], end: [200, 200], ...controls });
   });
 
   it('creates insertable DSL elements accepted by the transaction core', () => {

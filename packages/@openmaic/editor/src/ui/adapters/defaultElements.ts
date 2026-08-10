@@ -180,15 +180,20 @@ export function createDefaultLineElement(
   const top = Math.min(startY, endY);
   const start: [number, number] = [startX - left, startY - top];
   const end: [number, number] = [endX - left, endY - top];
-  const midpoint: [number, number] = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+  const midpointX = (start[0] + end[0]) / 2;
   const controls = preset.isCubic
-    ? { cubic: [midpoint, midpoint] as [[number, number], [number, number]] }
+    ? {
+        cubic: [
+          [end[0], start[1]],
+          [start[0], end[1]],
+        ] as [[number, number], [number, number]],
+      }
     : preset.isCurve
-      ? { curve: midpoint }
+      ? { curve: [start[0], end[1]] as [number, number] }
       : preset.isBroken2
-        ? { broken2: midpoint }
+        ? { broken2: [midpointX, start[1]] as [number, number] }
         : preset.isBroken
-          ? { broken: midpoint }
+          ? { broken: [start[0], end[1]] as [number, number] }
           : {};
 
   return {

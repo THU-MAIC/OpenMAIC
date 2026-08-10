@@ -62,11 +62,22 @@ describe('ElementPickLayer renderer DOM integration', () => {
     const rendererHost = document.createElement('div');
     rendererHost.id = editableElementDomId('title-1');
     rendererHost.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 1000, height: 562.5, right: 1000, bottom: 562.5 }) as DOMRect;
+    const hitTarget = document.createElement('div');
+    hitTarget.className = 'slide-element-hit-target';
+    const paintNode = document.createElement('div');
+    paintNode.className = 'base-element-text';
+    paintNode.getBoundingClientRect = () =>
       ({ left: 40, top: 30, width: 120, height: 50, right: 160, bottom: 80 }) as DOMRect;
+    hitTarget.appendChild(paintNode);
+    rendererHost.appendChild(hitTarget);
     document.body.appendChild(rendererHost);
+    const interactionTarget = document.createElement('div');
+    interactionTarget.dataset.selectElementId = 'title-1';
+    document.body.appendChild(interactionTarget);
     Object.defineProperty(document, 'elementsFromPoint', {
       configurable: true,
-      value: () => [rendererHost],
+      value: () => [interactionTarget],
     });
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
@@ -79,6 +90,12 @@ describe('ElementPickLayer renderer DOM integration', () => {
     await act(async () => {
       root.render(createElement(ElementPickLayer));
     });
+
+    const outline = container.querySelector('.ring-violet-400\\/40') as HTMLElement;
+    expect(outline.style.left).toBe('40px');
+    expect(outline.style.top).toBe('30px');
+    expect(outline.style.width).toBe('120px');
+    expect(outline.style.height).toBe('50px');
 
     const clickCatcher = container.querySelector('.cursor-crosshair') as HTMLElement;
     await act(async () => {
