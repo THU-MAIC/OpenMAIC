@@ -279,7 +279,14 @@ export function FolderCard({
                 </button>
                 <button
                   className="px-3.5 py-1 rounded-lg text-[12px] font-medium bg-red-500/90 text-white hover:bg-red-500 transition-colors"
-                  onClick={() => onDelete(courseCount === 0 ? 'ungroup' : 'remove')}
+                  onClick={() => {
+                    // Close the overlay before the async delete: on success the
+                    // card unmounts; on failure the user sees the error toast
+                    // and the card is interactive again (not stuck behind the
+                    // backdrop).
+                    setConfirmingDelete(false);
+                    onDelete(courseCount === 0 ? 'ungroup' : 'remove');
+                  }}
                 >
                   {t('classroom.delete')}
                 </button>

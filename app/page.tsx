@@ -436,7 +436,6 @@ function HomePage() {
   // view shows folder tiles + unfiled courses, and a folder view shows only
   // that folder's members.
   const folderNameById = useMemo(() => new Map(folders.map((f) => [f.id, f.name])), [folders]);
-  // When the feature flag is off, treat the folder world as empty so the home
   const isSearching = deferredSearchQuery.trim().length > 0;
   // The course tiles rendered in the active view: search flattens everything;
   // a folder shows only its members; the root shows unfiled courses (folder
