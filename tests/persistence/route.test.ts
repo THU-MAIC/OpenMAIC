@@ -461,8 +461,8 @@ describe('embedded persistence route', () => {
   });
 
   // The adapter claims to be a `ServerResponse` through an `as unknown as`
-  // cast, so the compiler checks none of that surface. These cases pin the two
-  // parts of it that carry bytes rather than JSON text.
+  // cast, so the compiler checks none of that surface. These cases pin the
+  // response behavior that differs materially from a plain Fetch Response.
   const mockAdapterHandler = (handler: RequestListener, connectionString: string) => {
     vi.doMock('@openmaic/storage/runtime/pg', () => ({
       ensureSchema: vi.fn().mockResolvedValue(undefined),
@@ -530,5 +530,104 @@ describe('embedded persistence route', () => {
 
     expect(response.status).toBe(200);
     expect(body).toEqual(new Uint8Array([...first, ...second]));
+  });
+
+  it('defers write callbacks without synchronous recursion', async () => {
+    const chunkCount = 20_000;
+    let callbackRanInline = false;
+    let writesCompleted = 0;
+    mockAdapterHandler((_request, response) => {
+      const writeNext = () => {
+        let writeReturned = false;
+        response.write('x', () => {
+          if (!writeReturned) callbackRanInline = true;
+          writesCompleted += 1;
+          if (writesCompleted === chunkCount) response.end();
+          else writeNext();
+        });
+        writeReturned = true;
+      };
+      writeNext();
+    }, 'postgres://deferred-write-callback-test');
+
+    const { response, body } = await readAdapterBody('documents/deferred-write-callback');
+
+    expect(response.status).toBe(200);
+    expect(callbackRanInline).toBe(false);
+    expect(writesCompleted).toBe(chunkCount);
+    expect(body).toHaveLength(chunkCount);
+  });
+
+  it.each(['write', 'end'] as const)('honors latin1 encoding in %s', async (method) => {
+    mockAdapterHandler((_request, response) => {
+      if (method === 'write') {
+        response.write('é', 'latin1');
+        response.end();
+      } else {
+        response.end('é', 'latin1');
+      }
+    }, `postgres://latin1-${method}-test`);
+
+    const { response, body } = await readAdapterBody(`documents/latin1-${method}`);
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual(new Uint8Array([0xe9]));
+  });
+
+  it('throws Node ERR_UNKNOWN_ENCODING for an invalid response encoding', async () => {
+    let encodingError: unknown;
+    mockAdapterHandler((_request, response) => {
+      try {
+        response.write('x', 'definitely-invalid' as BufferEncoding);
+      } catch (error) {
+        encodingError = error;
+      }
+      response.end();
+    }, 'postgres://invalid-encoding-test');
+
+    const { response } = await readAdapterBody('documents/invalid-encoding');
+
+    expect(response.status).toBe(200);
+    expect(encodingError).toMatchObject({
+      name: 'TypeError',
+      code: 'ERR_UNKNOWN_ENCODING',
+      message: 'Unknown encoding: definitely-invalid',
+    });
+  });
+
+  it.each([204, 205, 304])('suppresses a buffered body for status %i', async (status) => {
+    mockAdapterHandler((_request, response) => {
+      response.writeHead(status);
+      response.write('x');
+      response.end();
+    }, `postgres://null-body-${status}-test`);
+
+    const { response, body } = await readAdapterBody(`documents/null-body-${status}`);
+
+    expect(response.status).toBe(status);
+    expect(body).toHaveLength(0);
+  });
+
+  it('suppresses a handler body for HEAD requests while retaining headers', async () => {
+    mockAdapterHandler((_request, response) => {
+      response.writeHead(200, {
+        'content-length': '7',
+        'content-type': 'text/plain',
+      });
+      response.end('content');
+    }, 'postgres://head-test');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const response = await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/documents/head', {
+        method: 'HEAD',
+        headers: { authorization: 'Bearer test-token' },
+      }),
+      { poolFactory: () => ({ end: vi.fn() }) as never },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-length')).toBe('7');
+    expect(response.headers.get('content-type')).toBe('text/plain');
+    expect(new Uint8Array(await response.arrayBuffer())).toHaveLength(0);
   });
 });
