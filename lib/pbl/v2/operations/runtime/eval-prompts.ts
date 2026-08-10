@@ -29,6 +29,7 @@ import { PBL_SIMULATOR_AGENT_ID } from '../kernel/progress';
 import { listEvaluationsForMicrotask } from './evaluation';
 import { summarizeLatestSubmissionForMicrotask } from './submission';
 import type { PBLMicrotask, PBLMilestone, PBLProjectV2, PBLScenarioConfig } from '../../types';
+import { trimmedPBLText } from '../../readers';
 
 export interface EvalPromptPair {
   system: string;
@@ -175,7 +176,7 @@ export function buildMilestoneEvalPrompt(
     }
     if (summary.closingQuality) {
       const cq = summary.closingQuality;
-      let ans = (summary.closingAnswer ?? '').trim();
+      let ans = trimmedPBLText(summary.closingAnswer);
       if (ans.length > 140) ans = ans.slice(0, 140) + '…';
       teleLines.push(`- closing check: quality=${cq}, answer="${ans}"`);
     }
@@ -420,11 +421,14 @@ export function formatScenarioTranscript(project: PBLProjectV2): string {
   const nameOf = (characterId?: string) =>
     project.scenario?.characters?.find((c) => c.id === characterId)?.name ?? 'Character';
   const lines = messages
-    .filter((m) => m.content?.trim())
-    .map((m) => {
-      if (m.roleType === 'system') return `[narration] ${m.content.trim()}`;
-      if (m.roleType === 'user') return `Learner: ${m.content.trim()}`;
-      if (m.roleType === 'simulator') return `${nameOf(m.characterId)}: ${m.content.trim()}`;
+    .map((message) => ({ message, content: trimmedPBLText(message.content) }))
+    .filter(({ content }) => content)
+    .map(({ message, content }) => {
+      if (message.roleType === 'system') return `[narration] ${content}`;
+      if (message.roleType === 'user') return `Learner: ${content}`;
+      if (message.roleType === 'simulator') {
+        return `${nameOf(message.characterId)}: ${content}`;
+      }
       return null;
     })
     .filter((l): l is string => !!l);
@@ -544,9 +548,8 @@ export function buildFinalEvalPrompt(
       const last = evs[evs.length - 1];
       const learned = last.strengths.slice(0, 4).join(', ') || '(no bullets)';
       const starsStr = typeof last.stars === 'number' ? `${last.stars}★` : '(unrated)';
-      const prose =
-        (last.feedback ?? '').slice(0, 280).trim() +
-        ((last.feedback ?? '').length > 280 ? '…' : '');
+      const feedback = trimmedPBLText(last.feedback);
+      const prose = feedback.slice(0, 280) + (feedback.length > 280 ? '…' : '');
       msSummaries.push(`- ${ms.title} [${starsStr}]\n  learned: ${learned}\n  prose: ${prose}`);
     } else {
       msSummaries.push(`- ${ms.title}: (no milestone evaluation recorded)`);

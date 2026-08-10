@@ -10,9 +10,16 @@
 
 import fs from 'fs';
 import path from 'path';
-import type { PromptId, LoadedPrompt, SnippetId } from './types';
+import type { PromptId, LoadedPrompt, PromptVariableDefaults, SnippetId } from './types';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('PromptLoader');
+
+const PROMPT_VARIABLE_DEFAULTS = {
+  'pbl-actions': {
+    projectSummary:
+      '(No generated milestones are available; introduce the project topic without inventing any.)',
+  },
+} satisfies PromptVariableDefaults;
 
 /**
  * Get the prompts directory path
@@ -117,6 +124,20 @@ export function interpolateVariables(template: string, variables: Record<string,
   });
 }
 
+function applyPromptVariableDefaults(
+  promptId: PromptId,
+  variables: Record<string, unknown>,
+): Record<string, unknown> {
+  const defaults = PROMPT_VARIABLE_DEFAULTS[promptId as keyof typeof PROMPT_VARIABLE_DEFAULTS];
+  if (!defaults) return variables;
+
+  const resolved = { ...variables };
+  for (const [key, value] of Object.entries(defaults)) {
+    if (resolved[key] === undefined) resolved[key] = value;
+  }
+  return resolved;
+}
+
 /**
  * Build a complete prompt with variables.
  *
@@ -131,15 +152,16 @@ export function buildPrompt(
 ): { system: string; user: string } | null {
   const prompt = loadPrompt(promptId);
   if (!prompt) return null;
+  const resolvedVariables = applyPromptVariableDefaults(promptId, variables);
 
   return {
     system: interpolateVariables(
-      processConditionalBlocks(prompt.systemPrompt, variables),
-      variables,
+      processConditionalBlocks(prompt.systemPrompt, resolvedVariables),
+      resolvedVariables,
     ),
     user: interpolateVariables(
-      processConditionalBlocks(prompt.userPromptTemplate, variables),
-      variables,
+      processConditionalBlocks(prompt.userPromptTemplate, resolvedVariables),
+      resolvedVariables,
     ),
   };
 }

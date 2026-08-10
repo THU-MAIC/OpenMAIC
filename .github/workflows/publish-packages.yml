@@ -241,6 +241,8 @@ jobs:
     if: github.event_name == 'push' || inputs.dry_run == false
     runs-on: ubuntu-latest
     environment: release
+    outputs:
+      published_versions: ${{ steps.publish.outputs.published_versions }}
     permissions:
       actions: read # required to read this commit's CI conclusion
       id-token: write # required for npm provenance
@@ -351,6 +353,7 @@ jobs:
       # The registry preflight is deliberately in this token-bearing step,
       # immediately before the sequential loop, to minimize the race window.
       - name: Registry preflight and publish validated tarballs
+        id: publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
@@ -358,6 +361,7 @@ jobs:
           RELEASE_ARTIFACTS: ${{ runner.temp }}/openmaic-package-tarballs
         run: |
           set -euo pipefail
+          published_versions=""
           # Anchor the validated digests in this shell before any repository
           # script runs with the npm token. A child process can alter files,
           # but it cannot rewrite its parent shell's scalar.
@@ -400,7 +404,9 @@ jobs:
             # scripts from executing in the token-bearing job.
             npm publish "$tarball" --access public --provenance --ignore-scripts
             echo "Published $name@$version."
+            published_versions="${published_versions:+$published_versions,}$name@$version"
           done
+          printf 'published_versions=%s\n' "$published_versions" >> "$GITHUB_OUTPUT"
 
   # Writing the release markers is the only thing that needs a git credential,
   # so it is the only job that holds one, and it installs nothing and builds
@@ -431,13 +437,16 @@ jobs:
         env:
           GIT_COMMIT: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
+          PUBLISHED_VERSIONS: ${{ needs.publish.outputs.published_versions }}
         run: |
           set -euo pipefail
           for pkg in dsl generation storage renderer importer; do
             name="@openmaic/$pkg"
             version="$(node -p "require('./packages/@openmaic/$pkg/package.json').version")"
             tag="$name@$version"
-            if ! npm view "$name@$version" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
+            if [[ ",$PUBLISHED_VERSIONS," == *",$tag,"* ]]; then
+              echo "Published $tag in this run; registry propagation is not required."
+            elif ! npm view "$name@$version" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
               echo "$tag is not on the registry; nothing to mark."
               continue
             fi

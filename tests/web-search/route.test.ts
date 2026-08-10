@@ -57,6 +57,9 @@ describe('POST /api/web-search', () => {
     delete process.env.BAIDU_BASE_URL;
     delete process.env.WEB_SEARCH_MINIMAX_API_KEY;
     delete process.env.WEB_SEARCH_MINIMAX_BASE_URL;
+    delete process.env.WEB_SEARCH_CLAUDE_API_KEY;
+    delete process.env.WEB_SEARCH_CLAUDE_BASE_URL;
+    delete process.env.WEB_SEARCH_CLAUDE_MODELS;
     delete process.env.SEARXNG_BASE_URL;
     mocks.searchWeb.mockReset();
     mocks.formatSearchResultsAsContext.mockClear();
@@ -188,6 +191,56 @@ describe('POST /api/web-search', () => {
         baseUrl: 'https://api.minimaxi.com',
       }),
     );
+  });
+
+  it('routes Claude web search through the dispatcher with the client model', async () => {
+    const res = await postWebSearch({
+      query: 'test query',
+      providerId: 'claude',
+      apiKey: 'sk-client-key',
+      claudeModelId: 'claude-opus-5',
+    });
+
+    expect(res.status).toBe(200);
+    expect(mocks.searchWeb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'claude',
+        apiKey: 'sk-client-key',
+        claudeModelId: 'claude-opus-5',
+      }),
+    );
+  });
+
+  it('pins the Claude model from server env over the client model', async () => {
+    vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'claude-server-key');
+    vi.stubEnv('WEB_SEARCH_CLAUDE_MODELS', 'claude-sonnet-5');
+
+    const res = await postWebSearch({
+      query: 'test query',
+      providerId: 'claude',
+      claudeModelId: 'claude-haiku-4-5',
+    });
+
+    expect(res.status).toBe(200);
+    expect(mocks.searchWeb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'claude',
+        apiKey: 'claude-server-key',
+        claudeModelId: 'claude-sonnet-5',
+      }),
+    );
+  });
+
+  it('rejects Claude requests without an API key, naming the env var', async () => {
+    const res = await postWebSearch({
+      query: 'test query',
+      providerId: 'claude',
+    });
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(JSON.stringify(data)).toContain('WEB_SEARCH_CLAUDE_API_KEY');
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
   });
 
   it('prefers server-configured SearXNG over client-selected Brave', async () => {

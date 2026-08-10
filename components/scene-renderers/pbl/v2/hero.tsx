@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
+import { trimmedPBLText } from '@/lib/pbl/v2/readers';
 import { useStageStore } from '@/lib/store/stage';
 import { buildQuizSnapshot } from '@/lib/pbl/v2/operations/runtime/quiz-snapshot';
 import { hasStartedProject, resetProjectProgress } from '@/lib/pbl/v2/operations/kernel/progress';
@@ -168,8 +169,8 @@ export function PBLV2Hero({
   // `gains` existed; hide entirely when neither is set. We never
   // back-fill from task titles — that produced unreadable fragments
   // ("架构可行", "场景清晰") that aren't capabilities.
-  const plannerGains = (project.gains ?? []).map((g) => g.trim()).filter(Boolean);
-  const learningObjective = project.learningObjective?.trim() ?? '';
+  const plannerGains = (project.gains ?? []).map(trimmedPBLText).filter(Boolean);
+  const learningObjective = trimmedPBLText(project.learningObjective);
   const gains =
     plannerGains.length > 0 ? plannerGains : learningObjective ? [learningObjective] : [];
 

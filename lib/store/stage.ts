@@ -250,10 +250,10 @@ function mergeSceneContentForUpdate(
   if (current.type !== 'pbl' || incoming.type !== 'pbl') return incoming;
   const currentPBL = current as PBLContent;
   const incomingPBL = incoming as PBLContent;
-  if ('projectV2' in incomingPBL || !currentPBL.projectV2) return incoming;
   return {
+    ...currentPBL,
     ...incomingPBL,
-    projectV2: currentPBL.projectV2,
+    ...(incomingPBL.projectV2 || !currentPBL.projectV2 ? {} : { projectV2: currentPBL.projectV2 }),
   };
 }
 

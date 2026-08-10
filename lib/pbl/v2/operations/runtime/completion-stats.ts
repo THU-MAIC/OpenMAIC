@@ -8,6 +8,7 @@
  */
 
 import type { PBLProjectV2, PBLScenarioActGoals } from '../../types';
+import { trimmedPBLText } from '../../readers';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -178,9 +179,9 @@ export function scenarioActGoalsScaffold(project: PBLProjectV2): ScenarioActGoal
     if (ms.scenarioStage !== 'roleplay') continue;
     const goals = ms.microtasks
       .map((b) => {
-        const goal = b.successWhen?.trim() || b.completionCriteria?.trim();
+        const goal = trimmedPBLText(b.successWhen) || trimmedPBLText(b.completionCriteria);
         if (!goal) return undefined;
-        const skillFocus = b.skillFocus?.trim() || undefined;
+        const skillFocus = trimmedPBLText(b.skillFocus) || undefined;
         return skillFocus ? { goal, skillFocus } : { goal };
       })
       .filter((g): g is { goal: string; skillFocus?: string } => !!g);
@@ -320,7 +321,7 @@ function computeScenarioStats(project: PBLProjectV2): ScenarioCompletionStats {
   const goalScaffold = goalCoverage ? undefined : scenarioActGoalsScaffold(project);
   return {
     kind: 'scenario',
-    sceneCaption: project.scenario?.sceneVisual?.caption?.trim() || undefined,
+    sceneCaption: trimmedPBLText(project.scenario?.sceneVisual?.caption) || undefined,
     characterNames: (project.scenario?.characters ?? []).map((c) => c.name).filter(Boolean),
     acts: { completed: actsCompleted, total: actsTotal },
     totalTurns,
@@ -447,7 +448,7 @@ function buildStageDetails(project: PBLProjectV2): StageDetail[] {
           if (c) conceptsSeen.add(c);
         }
         for (const [sig, label] of Object.entries(mt.engagement?.conceptUnlockLabels ?? {})) {
-          const trimmed = (label ?? '').trim();
+          const trimmed = trimmedPBLText(label);
           if (sig && trimmed && !labelBySignature.has(sig)) labelBySignature.set(sig, trimmed);
         }
       }

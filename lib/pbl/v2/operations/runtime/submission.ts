@@ -12,6 +12,7 @@
  */
 
 import type { PBLProjectV2, PBLSubmission, PBLSubmissionKind } from '../../types';
+import { trimmedPBLText } from '../../readers';
 import { appendRuntimeEvent, mintRuntimeEventId } from '../kernel/runtime-events';
 
 function newId(prefix: string): string {
@@ -97,12 +98,13 @@ export function summarizeLatestSubmissionForMicrotask(
   // Image submissions carry the picture as a multimodal message part (see the
   // evaluator); their text `content` is just an optional caption. Tell the LLM
   // to grade the attached image when there's no caption text.
-  const isImage = sub.mimeType?.startsWith('image/') ?? false;
-  const content = sub.content?.trim()
-    ? sub.content
+  const isImage = typeof sub.mimeType === 'string' && sub.mimeType.startsWith('image/');
+  const submissionText = trimmedPBLText(sub.content);
+  const content = submissionText
+    ? submissionText
     : isImage
       ? '(Image submission — grade the attached image.)'
-      : (sub.content ?? '');
+      : '';
   const room = Math.max(0, maxChars - header.length);
   const snippet = content.length > room ? content.slice(0, room) : content;
   const truncated = content.length > snippet.length;

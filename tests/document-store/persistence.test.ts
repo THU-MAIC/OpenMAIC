@@ -1,4 +1,8 @@
-import { validateScene, type WidgetConfigBase } from '@openmaic/dsl';
+import {
+  validateScene,
+  type PBLContent as ContractPBLContent,
+  type WidgetConfigBase,
+} from '@openmaic/dsl';
 import type { DocumentStore } from '@openmaic/storage';
 import { describe, expect, test, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
@@ -11,10 +15,12 @@ import {
 import { getDocumentStore } from '@/lib/document-store/store';
 import type { AppDocument } from '@/lib/document-store/persistence-types';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
+import { upgradeLegacyPBLConfigToProjectV2, type PBLProjectConfig } from '@/lib/pbl/legacy/read';
 import type { SceneOutline } from '@/lib/types/generation';
-import type { AppScene, InteractiveContent } from '@/lib/types/stage';
+import type { AppScene, InteractiveContent, PBLContent } from '@/lib/types/stage';
 import type { SimulationConfig } from '@/lib/types/widgets';
 import type { SceneRecord, StageOutlinesRecord, StageRecord } from '@/lib/utils/database';
+import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
 
 const stageRecord: StageRecord = {
   id: 'stage-1',
@@ -96,6 +102,40 @@ function pblScene(): AppScene {
 }
 
 describe('app document persistence seam', () => {
+  test('round-trips a document containing a v1-native PBL scene', async () => {
+    const document: AppDocument = {
+      stage: canonicalizeLegacyStage(stageRecord).stage,
+      scenes: [{ ...legacyPBLSceneFixture, stageId: stageRecord.id }],
+    };
+    const store = getDocumentStore({
+      indexedDB: new IDBFactory(),
+      dbName: 'app-document-legacy-pbl-roundtrip',
+    });
+
+    await store.saveDocument(document);
+
+    expect((await store.loadDocument(stageRecord.id))?.scenes).toEqual(document.scenes);
+  });
+
+  test('round-trips a stored hybrid with inert damaged projectV2 bytes', async () => {
+    const damagedHybrid = structuredClone(legacyPBLSceneFixture) as AppScene;
+    if (damagedHybrid.content.type !== 'pbl') throw new Error('expected PBL scene');
+    Reflect.set(damagedHybrid.content, 'projectV2', { title: 'broken' });
+    const document: AppDocument = {
+      stage: canonicalizeLegacyStage(stageRecord).stage,
+      scenes: [{ ...damagedHybrid, stageId: stageRecord.id }],
+    };
+    const store = getDocumentStore({
+      indexedDB: new IDBFactory(),
+      dbName: 'app-document-damaged-hybrid-roundtrip',
+    });
+
+    expect(validateAppScene(document.scenes[0])).toEqual({ valid: true });
+    await store.saveDocument(document);
+
+    expect((await store.loadDocument(stageRecord.id))?.scenes).toEqual(document.scenes);
+  });
+
   test('omits nested undefined PBL state before calling the configured store', async () => {
     const saveDocument = vi.fn(async (_document: AppDocument) => undefined);
     const store = getDocumentStore({
@@ -109,11 +149,16 @@ describe('app document persistence seam', () => {
           content: {
             ...pblScene().content,
             projectV2: {
+              roles: [],
               milestones: [
                 {
                   microtasks: [{ id: 'mt-1', internalAssessment: undefined }],
                 },
               ],
+              submissions: [],
+              evaluations: [],
+              threads: [],
+              engagementEvents: [],
             },
           },
         },
@@ -196,6 +241,121 @@ describe('app document validators', () => {
     ['pbl', pblScene()],
   ])('accepts a valid %s scene', (_kind, scene) => {
     expect(validateAppScene(scene)).toEqual({ valid: true });
+  });
+
+  test('rejects projectV2 without the renderer-required containers', () => {
+    const scene = {
+      ...pblScene(),
+      content: { type: 'pbl', projectV2: { title: 'V2 project' } },
+    } as unknown as AppScene;
+
+    expect(validateAppScene(scene)).toEqual({
+      valid: false,
+      errors: [
+        {
+          path: '/content/projectV2',
+          message: '`projectV2` must contain milestones, roles and threads arrays',
+        },
+      ],
+    });
+  });
+
+  test('accepts damaged projectV2 as inert bytes on a stored hybrid', () => {
+    const scene = structuredClone(legacyPBLSceneFixture) as AppScene;
+    if (scene.content.type !== 'pbl') throw new Error('expected PBL scene');
+    Reflect.set(scene.content, 'projectV2', { title: 'broken' });
+
+    expect(validateAppScene(scene)).toEqual({ valid: true });
+  });
+
+  test('an empty projectConfig stub does not disable projectV2 validation', () => {
+    const scene = {
+      ...pblScene(),
+      content: { type: 'pbl', projectConfig: {}, projectV2: { title: 'broken' } },
+    } as unknown as AppScene;
+
+    const result = validateAppScene(scene);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.errors).toContainEqual({
+        path: '/content/projectV2',
+        message: '`projectV2` must contain milestones, roles and threads arrays',
+      });
+    }
+  });
+
+  test('accepts a complete v2 project', () => {
+    const content = structuredClone(legacyPBLSceneFixture.content);
+    if (content.type !== 'pbl' || !content.projectConfig) {
+      throw new Error('expected legacy PBL projectConfig fixture');
+    }
+    const scene = {
+      ...pblScene(),
+      content: {
+        type: 'pbl',
+        projectV2: upgradeLegacyPBLConfigToProjectV2(content.projectConfig),
+      },
+    } as AppScene;
+
+    expect(validateAppScene(scene)).toEqual({ valid: true });
+  });
+
+  test('accepts PBL content with only a legacy projectConfig', () => {
+    expect(validateAppScene(legacyPBLSceneFixture)).toEqual({ valid: true });
+  });
+
+  test('keeps a historical projectConfig-only scene inside the write-validator matrix', () => {
+    const historicalScene = structuredClone(legacyPBLSceneFixture);
+    expect(historicalScene.content).not.toHaveProperty('projectV2');
+    expect(validateAppScene(historicalScene)).toEqual({ valid: true });
+  });
+
+  test('accepts PBL content with an empty legacy projectConfig object', () => {
+    expect(
+      validateAppScene({
+        ...pblScene(),
+        content: { type: 'pbl', projectConfig: {} },
+      }),
+    ).toEqual({ valid: true });
+  });
+
+  test('accepts a null projectV2 as if absent', () => {
+    expect(
+      validateAppScene({
+        ...pblScene(),
+        content: { type: 'pbl', projectV2: null },
+      }),
+    ).toEqual({ valid: true });
+  });
+
+  test('rejects an array projectV2', () => {
+    const result = validateAppScene({
+      ...pblScene(),
+      content: { type: 'pbl', projectV2: [] },
+    });
+
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.errors).toContainEqual({
+        path: '/content/projectV2',
+        message: '`projectV2` must contain milestones, roles and threads arrays',
+      });
+    }
+  });
+
+  test('rejects an array projectConfig', () => {
+    const result = validateAppScene({
+      ...pblScene(),
+      content: { type: 'pbl', projectConfig: [] },
+    });
+
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.errors).toContainEqual({
+        path: '/content/projectConfig',
+        message: '`projectConfig` must be an object',
+      });
+    }
   });
 
   test('rejects content/type mismatches with a clear path', () => {
@@ -291,6 +451,17 @@ describe('app document validators', () => {
 });
 
 type Assert<T extends true> = T;
+
+test('typed legacy PBL config remains assignable to app PBLContent', () => {
+  type LegacyPBLContent = { type: 'pbl'; projectConfig: PBLProjectConfig };
+  const assignable: Assert<LegacyPBLContent extends PBLContent ? true : false> = true;
+  expect(assignable).toBe(true);
+});
+
+test('app PBLContent remains assignable to the contract PBLContent', () => {
+  const assignable: Assert<PBLContent extends ContractPBLContent ? true : false> = true;
+  expect(assignable).toBe(true);
+});
 
 test('SimulationConfig satisfies the contract widget config base', () => {
   const assignable: Assert<SimulationConfig extends WidgetConfigBase ? true : false> = true;
