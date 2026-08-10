@@ -1,8 +1,7 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 
-import { PgAssetByteStore } from '@openmaic/storage/asset/pg-bytes';
-import { PgAssetStore, ensureAssetSchema, type AssetByteStore } from '@openmaic/storage/asset/pg';
+import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
 import { PgDocumentStore, ensureDocumentSchema } from '@openmaic/storage/document/pg';
 import { PgRuntimeStore, ensureSchema } from '@openmaic/storage/runtime/pg';
 import { createStorageHttpHandler } from '@openmaic/storage/server';
@@ -13,6 +12,7 @@ import {
 import { Pool } from 'pg';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
+import { configuredS3Bucket, createAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { authenticatePersistenceRequest } from '@/lib/persistence/server-auth';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 
@@ -21,36 +21,6 @@ export const runtime = 'nodejs';
 const ROUTE_PREFIX = '/api/persistence';
 
 type PoolFactory = (connectionString: string) => Pool;
-
-const S3_RESERVED_PREFIXES = ['xn--', 'sthree-', 'amzn-s3-demo-'];
-const S3_RESERVED_SUFFIXES = ['-s3alias', '--ol-s3', '.mrap', '--x-s3', '--table-s3'];
-
-async function loadS3AssetByteStore(bucket: string): Promise<AssetByteStore> {
-  // This is the only optional import path. The storage package owns both the
-  // SDK dependency and its ignored native import, so resolution happens from
-  // the package that declares the peer rather than from this app.
-  const storage = await import('@openmaic/storage/asset/s3-bytes');
-  return storage.loadS3AssetByteStore(bucket);
-}
-
-function configuredS3Bucket(value: string | undefined): string | undefined {
-  const bucket = value?.trim();
-  if (!bucket) return undefined;
-  const invalid =
-    bucket.length < 3 ||
-    bucket.length > 63 ||
-    !/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(bucket) ||
-    bucket.includes('..') ||
-    /^\d{1,3}(?:\.\d{1,3}){3}$/.test(bucket) ||
-    S3_RESERVED_PREFIXES.some((prefix) => bucket.startsWith(prefix)) ||
-    S3_RESERVED_SUFFIXES.some((suffix) => bucket.endsWith(suffix));
-  if (invalid) {
-    throw new Error(
-      'Invalid ASSET_S3_BUCKET: expected a valid Amazon S3 general purpose bucket name',
-    );
-  }
-  return bucket;
-}
 
 interface PersistenceHandlerState {
   connectionString?: string;
@@ -79,12 +49,7 @@ async function createPersistenceHandler(
     await ensureDocumentSchema(queryable);
     await ensureAssetSchema(queryable);
     const withTransaction = nodePostgresTransaction(queryable);
-    // ASSET_S3_BUCKET: a valid bucket name opts asset bytes into S3. The
-    // optional AWS SDK owns its standard region, credential, and endpoint
-    // configuration; this route reads no AWS environment variables itself.
-    const byteStore = s3Bucket
-      ? await loadS3AssetByteStore(s3Bucket)
-      : new PgAssetByteStore(queryable);
+    const byteStore = await createAssetByteStore(s3Bucket, queryable);
     const runtimeStore = new PgRuntimeStore(queryable, {
       withTransaction,
       payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
@@ -102,9 +67,11 @@ async function createPersistenceHandler(
     // authenticatePersistenceRequest with real session verification. See
     // lib/persistence/server-auth.ts for the token's limits.
     const assetStore = new PgAssetStore(queryable, { withTransaction, byteStore });
-    // AssetCollector is intentionally not scheduled by this request route.
-    // Without a deployment-managed collector and grace period, unreferenced
-    // bytes accumulate without bound; scheduling is a host decision.
+    // Reclamation is not scheduled from here, and must not be: a route module
+    // has no once-per-process guarantee and no shutdown hook. AssetCollector
+    // runs from instrumentation.ts instead, over the byte store this same
+    // lib/persistence/asset-byte-store selection produces, so the collector
+    // always deletes through the layer the request path wrote through.
     return createStorageHttpHandler(runtimeStore, documentStore, {
       authenticate: authenticatePersistenceRequest,
       authorizeMerge: async () => false,
