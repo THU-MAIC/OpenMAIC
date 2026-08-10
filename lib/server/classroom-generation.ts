@@ -52,6 +52,7 @@ export interface GenerateClassroomInput {
   enableWebSearch?: boolean;
   webSearchProviderId?: WebSearchProviderId;
   webSearchApiKey?: string;
+  webSearchModelId?: string;
   baiduSubSources?: BaiduSubSources;
   enableImageGeneration?: boolean;
   enableVideoGeneration?: boolean;
@@ -450,6 +451,7 @@ export async function generateClassroom(
           apiKey: webSearchConfig.apiKey,
           baseUrl: webSearchConfig.baseUrl,
           baiduSubSources: webSearchConfig.baiduSubSources,
+          claudeModelId: webSearchConfig.claudeModelId,
         });
         researchContext = formatSearchResultsAsContext(searchResult);
         if (researchContext) {

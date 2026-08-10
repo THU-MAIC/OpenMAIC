@@ -28,7 +28,7 @@ export interface PBLRole {
  * fields; the contract tolerates unknown members on the project tree for that
  * reason and does not interpret them.
  */
-export interface PBLMicrotask extends Record<string, unknown> {
+export interface PBLMicrotask {
   id: string;
   title: string;
   description?: string;
@@ -58,7 +58,7 @@ export interface PBLDocument {
  * fields; the contract tolerates unknown members on the project tree for that
  * reason and does not interpret them.
  */
-export interface PBLMilestone extends Record<string, unknown> {
+export interface PBLMilestone {
   id: string;
   title: string;
   description?: string;
@@ -108,7 +108,7 @@ export interface PBLScenarioConfig {
  * strip may carry app runtime fields; the contract tolerates unknown members on
  * the project tree for that reason and does not interpret them.
  */
-export interface PBLThreadSeat extends Record<string, unknown> {
+export interface PBLThreadSeat {
   agentId: string;
   messages: unknown[];
 }
@@ -119,7 +119,7 @@ export interface PBLThreadSeat extends Record<string, unknown> {
  * runtime fields; the contract tolerates unknown members on the project tree
  * for that reason and does not interpret them.
  */
-export interface PBLProject extends Record<string, unknown> {
+export interface PBLProject {
   /** Seeded to the canonical `hero` value in stored documents. */
   uiPhase: PBLUiPhase;
   title: string;

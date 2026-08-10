@@ -1049,6 +1049,7 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
@@ -1584,6 +1585,8 @@
     "webSearchApiKeyPlaceholder": "Enter your search API key",
     "webSearchApiKeyPlaceholderServer": "Server key configured, optionally override",
     "webSearchApiKeyHint": "Get an API key from the selected search provider",
+    "claudeSearchModel": "Search Model",
+    "claudeSearchModelHint": "The Claude model that runs web searches and summarizes results.",
     "webSearchApiKeyOptional": "API key is optional. Without one, public page scraping will be used as a fallback.",
     "searxngServerOnlyNotice": "SearXNG must be configured on the server. Set the SEARXNG_BASE_URL environment variable (or the web-search section in server-providers.yml). Client-supplied instance URLs are not accepted.",
     "baiduSubSources": "Baidu Search Sources",

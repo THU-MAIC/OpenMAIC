@@ -1,6 +1,7 @@
 import { searchWithBaidu } from './baidu';
 import { searchWithBocha } from './bocha';
 import { searchWithBrave } from './brave';
+import { searchWithClaude } from './claude';
 import { searchWithDoubao } from './doubao';
 import { searchWithMiniMax } from './minimax';
 import { searchWithSearxng } from './searxng';
@@ -17,8 +18,17 @@ export async function searchWeb(params: {
   maxResults?: number;
   baseUrl?: string;
   baiduSubSources?: BaiduSubSources;
+  claudeModelId?: string;
 }): Promise<WebSearchResult> {
-  const { providerId, query, apiKey = '', maxResults, baseUrl, baiduSubSources } = params;
+  const {
+    providerId,
+    query,
+    apiKey = '',
+    maxResults,
+    baseUrl,
+    baiduSubSources,
+    claudeModelId,
+  } = params;
 
   switch (providerId) {
     case 'baidu':
@@ -27,6 +37,8 @@ export async function searchWeb(params: {
       return searchWithBocha({ query, apiKey, maxResults, baseUrl });
     case 'brave':
       return searchWithBrave({ query, apiKey: apiKey || undefined, maxResults, baseUrl });
+    case 'claude':
+      return searchWithClaude({ query, apiKey, modelId: claudeModelId, baseUrl, maxResults });
     case 'doubao':
       return searchWithDoubao({ query, apiKey, maxResults, baseUrl });
     case 'minimax':

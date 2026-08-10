@@ -1049,6 +1049,7 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
@@ -1584,6 +1585,8 @@
     "webSearchApiKeyPlaceholder": "أدخل مفتاح API للبحث",
     "webSearchApiKeyPlaceholderServer": "تم تكوين مفتاح الخادم، يمكنك التجاوز اختياريًا",
     "webSearchApiKeyHint": "احصل على مفتاح API من مزود البحث المحدد",
+    "claudeSearchModel": "نموذج البحث",
+    "claudeSearchModelHint": "نموذج Claude الذي يقوم بالبحث في الويب وتلخيص النتائج.",
     "webSearchApiKeyOptional": "مفتاح API اختياري. بدونه، سيتم استخدام استخراج الصفحة العامة كبديل.",
     "searxngServerOnlyNotice": "يجب تكوين SearXNG على الخادم. عيّن متغير البيئة SEARXNG_BASE_URL (أو قسم web-search في server-providers.yml). لا يُقبل عناوين URL للمثيلات المقدمة من العميل.",
     "baiduSubSources": "مصادر بحث Baidu",
