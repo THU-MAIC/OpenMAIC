@@ -211,6 +211,12 @@ describe('PgAssetStore registry behavior with PGlite', () => {
 
   test('ownership is checked on resolve, replace, and remove', async () => {
     const id = await store.put(PRINCIPAL, blob('private'));
+    expect(await store.identify(PRINCIPAL, id)).toEqual({
+      mime: 'text/plain',
+      revision: 1,
+      byteLength: 7,
+    });
+    expect(await store.identify(OTHER_PRINCIPAL, id)).toBeNull();
     expect(await store.resolve(OTHER_PRINCIPAL, id)).toBeNull();
     await expect(store.replace(OTHER_PRINCIPAL, id, blob('foreign'))).rejects.toBeInstanceOf(
       AssetNotFoundError,

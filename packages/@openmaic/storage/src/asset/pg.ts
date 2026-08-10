@@ -21,6 +21,7 @@ import {
   AssetNotFoundError,
   AssetQuotaExceededError,
   type AssetBytes,
+  type AssetIdentity,
   type AssetPrincipal,
   type AssetStore,
 } from './types.js';
@@ -29,7 +30,7 @@ import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
 export type { QueryResult, Queryable, WithTransaction } from '../runtime/pg.js';
 export type { AssetByteStore } from './byte-store.js';
-export type { AssetBytes, AssetPrincipal, AssetStore } from './types.js';
+export type { AssetBytes, AssetIdentity, AssetPrincipal, AssetStore } from './types.js';
 export { AssetNotFoundError, AssetQuotaExceededError } from './types.js';
 
 export interface PgAssetStoreOptions {
@@ -83,6 +84,12 @@ interface EntryRow extends Record<string, unknown> {
   mime: string;
   meta: unknown;
   revision: number | string;
+}
+
+interface IdentityRow extends Record<string, unknown> {
+  mime: string;
+  revision: number | string;
+  byte_size: number | string;
 }
 
 interface HashRow extends Record<string, unknown> {
@@ -315,12 +322,42 @@ export class PgAssetStore implements AssetStore {
         );
         const entry = result.rows[0];
         if (!entry) return null;
+        const locked = await queryable.query(
+          `SELECT 1
+             FROM asset_blobs
+            WHERE content_hash = $1
+            FOR SHARE`,
+          [entry.content_hash],
+        );
+        if (!locked.rows[0]) return null;
         const bytes = await this.readBytes(queryable, entry.content_hash);
         if (bytes === null) return null;
         return { bytes, mime: entry.mime, revision: Number(entry.revision) };
       });
     } catch {
       throw registryFailure('resolve');
+    }
+  }
+
+  async identify(principal: AssetPrincipal, ref: AssetRef): Promise<AssetIdentity | null> {
+    if (!isLosslessJsonString(ref) || !isLosslessJsonString(principal.key)) return null;
+    try {
+      const result = await this.queryable.query<IdentityRow>(
+        `SELECT entries.mime, entries.revision, blobs.byte_size
+           FROM asset_entries AS entries
+           JOIN asset_blobs AS blobs ON blobs.content_hash = entries.content_hash
+          WHERE entries.id = $1 AND entries.principal = $2`,
+        [ref, principal.key],
+      );
+      const identity = result.rows[0];
+      if (!identity) return null;
+      return {
+        mime: identity.mime,
+        revision: Number(identity.revision),
+        byteLength: Number(identity.byte_size),
+      };
+    } catch {
+      throw registryFailure('identify');
     }
   }
 

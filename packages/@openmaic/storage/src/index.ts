@@ -49,6 +49,7 @@ export {
   DEFAULT_RENDERABLE_TYPES,
   EXCLUDED_RENDERABLE_TYPES,
   type AssetBytes,
+  type AssetIdentity,
   type AssetPrincipal,
   type AssetStore,
 } from './asset/types.js';

@@ -78,12 +78,16 @@ function sendJson(
   headers: Record<string, string> = {},
 ): void {
   res.sendDate = false;
+  const encoded = JSON.stringify(body);
   const errorCode =
     status >= 300 && typeof body === 'object' && body !== null
       ? (body as ErrorBody).error.code
       : undefined;
   res.writeHead(status, {
     'content-type': 'application/json',
+    ...(req.method === 'GET' || req.method === 'HEAD'
+      ? { 'content-length': String(Buffer.byteLength(encoded)) }
+      : {}),
     ...(errorCode !== undefined && (req.method === 'GET' || req.method === 'HEAD')
       ? {
           'x-error-code': errorCode,
@@ -92,7 +96,7 @@ function sendJson(
       : {}),
     ...headers,
   });
-  res.end(JSON.stringify(body));
+  res.end(req.method === 'HEAD' ? undefined : encoded);
 }
 
 function sendNoContent(res: ServerResponse, headers: Record<string, string> = {}): void {
@@ -453,7 +457,8 @@ async function route(
 
   let asset;
   try {
-    asset = await store.resolve(principal, id);
+    asset =
+      method === 'HEAD' ? await store.identify(principal, id) : await store.resolve(principal, id);
   } catch (error) {
     classifyStoreError(error);
   }
@@ -461,12 +466,15 @@ async function route(
   if (!Number.isSafeInteger(asset.revision) || asset.revision < 1) {
     throw new Error('@openmaic/storage: asset store returned a malformed revision');
   }
+  if ('byteLength' in asset && (!Number.isSafeInteger(asset.byteLength) || asset.byteLength < 0)) {
+    throw new Error('@openmaic/storage: asset store returned a malformed byte length');
+  }
   const recordedType = typeof asset.mime === 'string' ? asset.mime.toLowerCase() : '';
   const inline = config.renderableTypes.has(recordedType);
   const servedType = inline ? recordedType : 'application/octet-stream';
   const headers: Record<string, string> = {
     'content-type': servedType,
-    'content-length': String(asset.bytes.byteLength),
+    'content-length': String('byteLength' in asset ? asset.byteLength : asset.bytes.byteLength),
     'x-asset-revision': String(asset.revision),
     'x-content-type-options': 'nosniff',
     'cache-control': 'private, no-store',
@@ -476,7 +484,7 @@ async function route(
   };
   res.sendDate = false;
   res.writeHead(200, headers);
-  res.end(method === 'HEAD' ? undefined : asset.bytes);
+  res.end('bytes' in asset ? asset.bytes : undefined);
 }
 
 /** Create a Node HTTP request handler for the complete AssetStore HTTP contract. */

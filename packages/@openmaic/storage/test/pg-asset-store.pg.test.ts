@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { Pool } from 'pg';
-import { contentHashOf } from '../src/asset/blob.js';
+import { contentHashOf, type ContentHash } from '../src/asset/blob.js';
+import type { AssetByteStore } from '../src/asset/byte-store.js';
 import { AssetCollector } from '../src/asset/collector.js';
 import { PgAssetByteStore } from '../src/asset/pg-bytes.js';
 import {
@@ -50,9 +51,38 @@ async function waitForLockWaiter(pool: { query: Queryable['query'] }): Promise<v
     if (waiting.rows.length > 0) return;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  throw new Error(
-    'no backend blocked on a lock: the adopting put never contended for the blob row',
-  );
+  throw new Error('no backend blocked on a lock: the operation never contended for the blob row');
+}
+
+class BlockingReadByteStore implements AssetByteStore {
+  private readonly values = new Map<ContentHash, Uint8Array>();
+  private signalReadStarted!: () => void;
+  private allowReadToFinish!: () => void;
+  readonly readStarted = new Promise<void>((resolve) => {
+    this.signalReadStarted = resolve;
+  });
+  private readonly mayFinishRead = new Promise<void>((resolve) => {
+    this.allowReadToFinish = resolve;
+  });
+
+  async write(hash: ContentHash, value: Uint8Array): Promise<void> {
+    this.values.set(hash, new Uint8Array(value));
+  }
+
+  async read(hash: ContentHash): Promise<Uint8Array | null> {
+    this.signalReadStarted();
+    await this.mayFinishRead;
+    const value = this.values.get(hash);
+    return value === undefined ? null : new Uint8Array(value);
+  }
+
+  async delete(hash: ContentHash): Promise<void> {
+    this.values.delete(hash);
+  }
+
+  finishRead(): void {
+    this.allowReadToFinish();
+  }
 }
 
 describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
@@ -158,6 +188,38 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
     expect((await adopter.resolve(principal, adoptedId))?.bytes).toEqual(
       new TextEncoder().encode('locked adoption'),
     );
+  });
+
+  test('a resolving read pins the blob row until its byte read completes', async () => {
+    const layer = new BlockingReadByteStore();
+    const registry = new PgAssetStore(pool as Queryable, {
+      byteStore: layer,
+      withTransaction: transactionFor(pool),
+    });
+    const data = new Blob(['pinned read']);
+    const { contentHash } = await contentHashOf(data);
+    const id = await registry.put(principal, data);
+    // Make the row a collector candidate while it is still referenced. The
+    // collector's transaction re-checks references, so deleting the entry
+    // after the read starts isolates the lock interleaving under test.
+    await pool.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+
+    const resolving = registry.resolve(principal, id);
+    await layer.readStarted;
+    await pool.query('DELETE FROM asset_entries WHERE id = $1', [id]);
+
+    const collector = new AssetCollector(pool as Queryable, layer, {
+      graceMs: 0,
+      now: () => new Date('2026-01-01T00:00:00.000Z'),
+      withTransaction: transactionFor(pool),
+    });
+    const collection = collector.collect();
+    await waitForLockWaiter(pool);
+
+    layer.finishRead();
+    expect((await resolving)?.bytes).toEqual(new TextEncoder().encode('pinned read'));
+    expect(await collection).toBe(1);
+    expect(await layer.read(contentHash)).toBeNull();
   });
 
   test('concurrent writes cannot exceed a principal logical quota', async () => {

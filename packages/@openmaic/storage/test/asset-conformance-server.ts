@@ -3,6 +3,7 @@
 // handler, registry, transaction, and byte-storage boundaries end to end.
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { PGlite } from '@electric-sql/pglite';
+import type { AssetByteStore } from '../src/asset/byte-store.js';
 import { PgAssetByteStore } from '../src/asset/pg-bytes.js';
 import {
   PgAssetStore,
@@ -29,6 +30,7 @@ export interface AssetConformanceServerOptions extends Omit<
 > {
   authenticate?: (req: IncomingMessage) => Promise<AssetPrincipal | undefined>;
   authorizeAssets?: AssetHttpAuthorize;
+  byteStore?: (db: PGlite) => AssetByteStore;
 }
 
 interface NamespaceState {
@@ -62,7 +64,7 @@ export async function startAssetConformanceServer(
     const db = new PGlite();
     const store = new PgAssetStore(db, {
       withTransaction: transactions(db),
-      byteStore: new PgAssetByteStore(db),
+      byteStore: options.byteStore?.(db) ?? new PgAssetByteStore(db),
     });
     state = {
       db,

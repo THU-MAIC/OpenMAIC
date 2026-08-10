@@ -131,10 +131,10 @@ export const EXCLUDED_RENDERABLE_TYPES: readonly string[] = [
  * bytes, but it must never leave a registry entry that points at bytes which
  * were not stored.
  *
- * Request paths never delete bytes and never explicitly lock a blob row.
- * Collection performs the lock and re-check instead. This separation is what
- * makes the byte layer replaceable without changing the observable store
- * semantics.
+ * Request paths never delete bytes. Reads hold a shared blob-row lock while
+ * accessing the byte layer, and collection takes an exclusive lock before
+ * deletion. This separation is what makes the byte layer replaceable without
+ * changing the observable store semantics.
  */
 export interface AssetStore {
   /**
@@ -159,6 +159,15 @@ export interface AssetStore {
    * caller observes first.
    */
   put(principal: AssetPrincipal, data: BinaryBlob, meta?: AssetMeta): Promise<AssetId>;
+
+  /**
+   * Read the response identity stored under an id without reading its bytes.
+   *
+   * Ownership and miss behavior are identical to {@link resolve}. The byte
+   * length is registry data used only to reproduce the `GET` response headers
+   * on a bytes-free HTTP `HEAD` request.
+   */
+  identify(principal: AssetPrincipal, ref: AssetRef): Promise<AssetIdentity | null>;
 
   /**
    * Read the bytes stored under an id, or `null` if there are none.
@@ -251,4 +260,14 @@ export interface AssetBytes {
    * them, which is precisely what the registry layer exists to prevent.
    */
   readonly revision: number;
+}
+
+/** Registry identity and representation length for a bytes-free read. */
+export interface AssetIdentity {
+  /** The recorded media type, subject to the HTTP renderable allowlist. */
+  readonly mime: string;
+  /** The registry entry revision. */
+  readonly revision: number;
+  /** The stored representation length, in bytes. */
+  readonly byteLength: number;
 }

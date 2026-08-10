@@ -1,7 +1,10 @@
 import { request as httpRequest } from 'node:http';
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
+import type { ContentHash } from '../src/asset/blob.js';
 import { HttpAssetStore } from '../src/asset/http.js';
 import { __setAssetIdFactoryForTesting, type AssetId } from '../src/asset/id.js';
+import { PgAssetByteStore } from '../src/asset/pg-bytes.js';
+import type { Queryable } from '../src/asset/pg.js';
 import { createAssetHttpHandler } from '../src/server/asset.js';
 import type { AssetStore } from '../src/asset/types.js';
 import {
@@ -172,6 +175,111 @@ runAssetStoreContract(
 );
 
 describe('asset HTTP handler contract', () => {
+  test('HEAD and GET have identical outcomes and headers for owned and missing ids', async () => {
+    const storeId = `head-parity-${namespace++}`;
+    const owner = makeStore('owner', storeId);
+    const other = makeStore('other', storeId);
+    const ownId = await owner.put(blob('owned bytes', 'image/png'));
+    const foreignId = await other.put(blob('foreign bytes', 'image/png'));
+    const deletedId = await owner.put(blob('deleted bytes', 'image/png'));
+    await owner.remove(deletedId);
+
+    const cases = [
+      ['own', ownId],
+      ['foreign', foreignId],
+      ['never-allocated', 'ast_never_allocated'],
+      ['already-deleted', deletedId],
+    ] as const;
+    const requestHeaders = {
+      'x-asset-store-id': storeId,
+      'x-asset-principal': 'owner',
+    };
+
+    for (const [kind, id] of cases) {
+      const path = `/assets/${encodeURIComponent(id)}/content`;
+      const [get, head] = await Promise.all([
+        rawRequest({ method: 'GET', path, headers: requestHeaders }),
+        rawRequest({ method: 'HEAD', path, headers: requestHeaders }),
+      ]);
+      const getHeaders = get.headers;
+      const headHeaders = head.headers;
+
+      expect(head.status, kind).toBe(get.status);
+      expect(headHeaders, kind).toEqual(getHeaders);
+      expect(head.body, kind).toHaveLength(0);
+      if (kind === 'own') {
+        expect(get.status).toBe(200);
+        expect(get.body).toEqual(Buffer.from('owned bytes'));
+        expect(getHeaders).toEqual({
+          'access-control-expose-headers': 'X-Asset-Revision, X-Error-Code',
+          'cache-control': 'private, no-store',
+          connection: 'keep-alive',
+          'content-length': '11',
+          'content-type': 'image/png',
+          'keep-alive': 'timeout=5',
+          vary: 'Cookie, Authorization',
+          'x-asset-revision': '1',
+          'x-content-type-options': 'nosniff',
+        });
+      } else {
+        expect(get.status).toBe(404);
+        expect(JSON.parse(get.body.toString())).toEqual({
+          error: {
+            code: 'ASSET_NOT_FOUND',
+            message: '@openmaic/storage: no asset is stored under that id',
+          },
+        });
+        expect(getHeaders).toEqual({
+          'access-control-expose-headers': 'X-Asset-Revision, X-Error-Code',
+          connection: 'keep-alive',
+          'content-length': '100',
+          'content-type': 'application/json',
+          'keep-alive': 'timeout=5',
+          'x-error-code': 'ASSET_NOT_FOUND',
+        });
+      }
+    }
+  });
+
+  test('HEAD reads registry identity without reaching the byte layer', async () => {
+    class FailingReadByteStore extends PgAssetByteStore {
+      override async read(_hash: ContentHash): Promise<Uint8Array | null> {
+        throw new Error('HEAD reached the byte layer');
+      }
+
+      override async readWith(
+        _queryable: Queryable,
+        _hash: ContentHash,
+      ): Promise<Uint8Array | null> {
+        throw new Error('HEAD reached the byte layer');
+      }
+    }
+
+    const isolated = await startAssetConformanceServer({
+      byteStore: (db) => new FailingReadByteStore(db),
+    });
+    const store = new HttpAssetStore({
+      baseUrl: isolated.baseUrl,
+      fetch: isolated.fetch,
+      headers: () => ({ 'x-asset-principal': 'owner' }),
+    });
+    try {
+      const id = await store.put(blob('identity only', 'image/png'));
+      const response = await isolated.fetch(`${isolated.baseUrl}/assets/${id}/content`, {
+        method: 'HEAD',
+        headers: { 'x-asset-principal': 'owner' },
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toBe('image/png');
+      expect(response.headers.get('content-length')).toBe('13');
+      expect(response.headers.get('x-asset-revision')).toBe('1');
+      expect((await response.arrayBuffer()).byteLength).toBe(0);
+    } finally {
+      await store.close();
+      await isolated.close();
+    }
+  });
+
   test('foreign, absent, deleted, and malformed-shape ids are indistinguishable on every id route', async () => {
     const storeId = `matrix-${namespace++}`;
     const owner = makeStore('owner', storeId);
