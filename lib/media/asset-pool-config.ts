@@ -5,6 +5,7 @@ import type { AssetMeta, AssetRef, BinaryBlob } from '@openmaic/dsl';
 export interface AssetPoolStore {
   put(data: BinaryBlob, meta?: AssetMeta): Promise<AssetRef>;
   resolve(ref: AssetRef): Promise<string | null>;
+  invalidate(ref: AssetRef): Promise<void>;
   remove(ref: AssetRef): Promise<void>;
   replace(ref: AssetId, data: BinaryBlob, meta?: AssetMeta): Promise<void>;
   release(ref: AssetRef): Promise<void>;

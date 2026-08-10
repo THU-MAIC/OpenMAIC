@@ -113,6 +113,7 @@ describe('embedded persistence route', () => {
   });
 
   it('mounts an asset store on the document pool and transaction and ensures its schema', async () => {
+    const sdkModuleResolved = vi.fn();
     const ensureSchema = vi.fn().mockResolvedValue(undefined);
     const ensureDocumentSchema = vi.fn().mockResolvedValue(undefined);
     const ensureAssetSchema = vi.fn().mockResolvedValue(undefined);
@@ -171,17 +172,20 @@ describe('embedded persistence route', () => {
         },
       ),
     }));
+    vi.doMock('@aws-sdk/client-s3', () => {
+      sdkModuleResolved();
+      throw new Error('the optional SDK must not resolve without a bucket');
+    });
     vi.stubEnv('DATABASE_URL', 'postgres://asset-wiring-test');
     vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
     const pool = { end: vi.fn().mockResolvedValue(undefined) };
-    const s3AssetByteStoreLoader = vi.fn().mockRejectedValue(new Error('SDK imported'));
 
     const response = await handlePersistenceRequest(
       new Request('http://localhost/api/persistence/assets/ast_example/content', {
         headers: { authorization: 'Bearer test-token', 'x-learner-key': 'anon:test' },
       }),
-      { poolFactory: () => pool as never, s3AssetByteStoreLoader },
+      { poolFactory: () => pool as never },
     );
 
     expect(response.status).toBe(204);
@@ -205,12 +209,14 @@ describe('embedded persistence route', () => {
     expect((handlerOptions[0] as { assetStore?: unknown }).assetStore).toBe(
       assetConstructions[0]?.instance,
     );
-    expect(s3AssetByteStoreLoader).not.toHaveBeenCalled();
+    expect(sdkModuleResolved).not.toHaveBeenCalled();
   });
 
-  it('selects the optional S3 byte loader only when its bucket is configured', async () => {
+  it('takes the storage package single-loader path only when its bucket is configured', async () => {
     const pgByteStore = vi.fn();
     const assetOptions: unknown[] = [];
+    const s3ModuleResolved = vi.fn();
+    const loadS3AssetByteStore = vi.fn().mockResolvedValue({ kind: 's3' });
     vi.doMock('@openmaic/storage/runtime/pg', () => ({
       ensureSchema: vi.fn().mockResolvedValue(undefined),
       PgRuntimeStore: class {},
@@ -249,28 +255,61 @@ describe('embedded persistence route', () => {
           },
       ),
     }));
+    vi.doMock('@openmaic/storage/asset/s3-bytes', () => {
+      s3ModuleResolved();
+      return { loadS3AssetByteStore };
+    });
     vi.stubEnv('DATABASE_URL', 'postgres://asset-s3-test');
     vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
     vi.stubEnv('ASSET_S3_BUCKET', '  asset-bucket  ');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
-    const s3ByteStore = { kind: 's3' };
-    const s3AssetByteStoreLoader = vi.fn().mockResolvedValue(s3ByteStore);
 
     const response = await handlePersistenceRequest(
       new Request('http://localhost/api/persistence/assets', {
         method: 'POST',
         headers: { authorization: 'Bearer test-token', 'x-learner-key': 'anon:test' },
       }),
-      {
-        poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never,
-        s3AssetByteStoreLoader,
-      },
+      { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never },
     );
 
     expect(response.status).toBe(204);
-    expect(s3AssetByteStoreLoader).toHaveBeenCalledExactlyOnceWith('asset-bucket');
+    expect(s3ModuleResolved).toHaveBeenCalledOnce();
+    expect(loadS3AssetByteStore).toHaveBeenCalledExactlyOnceWith('asset-bucket');
     expect(pgByteStore).not.toHaveBeenCalled();
-    expect((assetOptions[0] as { byteStore?: unknown }).byteStore).toBe(s3ByteStore);
+    expect((assetOptions[0] as { byteStore?: unknown }).byteStore).toEqual({ kind: 's3' });
+  });
+
+  it('rejects a malformed S3 bucket before opening the database or loading S3', async () => {
+    const s3ModuleResolved = vi.fn();
+    vi.doMock('@openmaic/storage/asset/s3-bytes', () => {
+      s3ModuleResolved();
+      return { loadS3AssetByteStore: vi.fn() };
+    });
+    vi.stubEnv('DATABASE_URL', 'postgres://invalid-s3-bucket-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    vi.stubEnv('ASSET_S3_BUCKET', 'Invalid_Bucket');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const poolFactory = vi.fn();
+
+    const response = await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/assets'),
+      { poolFactory },
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: 'PERSISTENCE_INIT_FAILED',
+        message: 'server persistence initialization failed',
+      },
+    });
+    expect(poolFactory).not.toHaveBeenCalled();
+    expect(s3ModuleResolved).not.toHaveBeenCalled();
+    expect(error.mock.calls[0]?.[1]).toMatchObject({
+      message: 'Invalid ASSET_S3_BUCKET: expected a valid Amazon S3 general purpose bucket name',
+    });
+    error.mockRestore();
   });
 
   it('passes one complete app payload-validator table to Pg and HTTP boundaries', async () => {
@@ -455,19 +494,23 @@ describe('embedded persistence route', () => {
     return { response, body: new Uint8Array(await response.arrayBuffer()) };
   };
 
-  it('returns binary response bodies byte-for-byte', async () => {
+  it('round-trips an asset GET body with invalid UTF-8 byte-for-byte', async () => {
     // `ServerResponse.end` accepts a `Uint8Array`. Bytes that are not valid
     // UTF-8 must survive intact: decoding them substitutes U+FFFD and corrupts
     // the body with no error anywhere.
     const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe, 0x80, 0x01]);
     mockAdapterHandler((_request, response) => {
-      response.writeHead(200, { 'content-type': 'application/octet-stream' });
+      response.writeHead(200, {
+        'content-type': 'application/octet-stream',
+        'content-length': bytes.byteLength,
+      });
       response.end(bytes);
     }, 'postgres://binary-test');
 
-    const { response, body } = await readAdapterBody('documents/binary');
+    const { response, body } = await readAdapterBody('assets/ast_binary/content');
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('content-length')).toBe(String(bytes.byteLength));
     expect(body).toEqual(bytes);
   });
 

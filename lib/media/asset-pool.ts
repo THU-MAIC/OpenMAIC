@@ -125,8 +125,7 @@ export function clearAssetPool(): Promise<void> {
   clearing = (async () => {
     try {
       if (current) await current.close();
-      if (serverBacked) return;
-      await deleteAssetPoolDatabase();
+      if (!serverBacked) await deleteAssetPoolDatabase();
     } catch (error) {
       // A blocked delete stays pending until every other connection closes.
       // Keep the closed singleton installed so writes fail loudly instead of

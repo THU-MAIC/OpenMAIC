@@ -92,6 +92,7 @@ describe('getAssetPool', () => {
     const injected = {
       put: vi.fn(),
       resolve: vi.fn(),
+      invalidate: vi.fn(),
       remove: vi.fn(),
       replace: vi.fn(),
       release: vi.fn(),
@@ -136,5 +137,34 @@ describe('getAssetPool', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:server-asset');
     expect(remove).not.toHaveBeenCalled();
     expect(fetch.mock.calls.every(([, init]) => init?.method !== 'DELETE')).toBe(true);
+  });
+
+  it('rebuilds a fresh usable server client after clear', async () => {
+    const makeClient = (url: string) => ({
+      put: vi.fn(),
+      resolve: vi.fn().mockResolvedValue(url),
+      invalidate: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn(),
+      replace: vi.fn(),
+      release: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
+    });
+    const firstClient = makeClient('blob:first-client');
+    const secondClient = makeClient('blob:second-client');
+    const factory = vi.fn().mockReturnValueOnce(firstClient).mockReturnValueOnce(secondClient);
+    const config = await import('@/lib/media/asset-pool-config');
+    config.configureAssetPoolStorage({ store: factory, serverBacked: true });
+    const { clearAssetPool, getAssetPool } = await import('@/lib/media/asset-pool');
+
+    const first = getAssetPool();
+    await expect(clearAssetPool()).resolves.toBeUndefined();
+    const reopened = getAssetPool();
+
+    expect(first).toBe(firstClient);
+    expect(firstClient.close).toHaveBeenCalledOnce();
+    expect(reopened).toBe(secondClient);
+    expect(reopened).not.toBe(first);
+    await expect(reopened.resolve('ast_reopened')).resolves.toBe('blob:second-client');
+    expect(factory).toHaveBeenCalledTimes(2);
   });
 });

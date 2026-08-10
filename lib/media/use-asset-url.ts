@@ -12,7 +12,7 @@ export type AssetUrlLeaseState =
   | { readonly status: 'resolved'; readonly url: string }
   | { readonly status: 'missing' };
 
-type AssetPoolView = Pick<AssetPoolStore, 'resolve' | 'release'>;
+type AssetPoolView = Pick<AssetPoolStore, 'invalidate' | 'resolve' | 'release'>;
 interface OwnedResolution {
   owners: number;
   resolution: Promise<string | null>;
@@ -128,6 +128,10 @@ export async function invalidateAssetUrlLeaseCache(
   ref: string,
   pool: AssetReplacementPool = getAssetPool(),
 ): Promise<void> {
+  // A peer's replacement can arrive while the HTTP store still has the old
+  // revision in flight. Advance its generation before asking for fresh bytes
+  // so that request cannot satisfy this refresh or a later caller.
+  await pool.invalidate(ref);
   const owned = ownedResolutions.get(pool)?.get(ref);
   if (!owned || owned.owners === 0) return;
   const resolution = resolveAfterPendingRelease(ref, pool);

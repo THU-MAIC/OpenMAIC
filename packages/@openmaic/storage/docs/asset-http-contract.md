@@ -56,7 +56,7 @@ The route table admits exactly one segment after `assets`, and it is the id. The
 
 **No route takes a query parameter.** A server MUST reject any request whose target contains `?` at all with `400 VALIDATION_FAILED` — stated on the raw target rather than on a parsed query, so that a bare trailing `?` cannot be read as absent by one implementation and present by another. That is total where an enumeration of forbidden parameter names would not be, and it costs nothing, because there is no parameter here to preserve.
 
-There is deliberately **no metadata read route**. No backend offers one: the browser store's public surface is `put` / `resolve` / `release` / `replace` / `remove` / `close`, and no metadata member is ever returned to a caller. (`contentType` is read back, but only by the store itself, to label the bytes it hands out.) A route no backend can satisfy is not a contract but a promise. Warm-cache revalidation is what `HEAD` is for.
+There is deliberately **no metadata read route**. No backend offers one: the browser store's public surface is `put` / `resolve` / `invalidate` / `release` / `replace` / `remove` / `close`, and no metadata member is ever returned to a caller. (`contentType` is read back, but only by the store itself, to label the bytes it hands out.) A route no backend can satisfy is not a contract but a promise. Warm-cache revalidation is what `HEAD` is for.
 
 `HEAD` performs an ownership-checked registry identity read and MUST NOT read or materialize the asset bytes. Its status and headers are identical to `GET` for the same registry state; only the response body is absent. The registry's recorded byte length supplies `Content-Length`, so reproducing the `GET` headers does not require a byte-layer read.
 
@@ -170,6 +170,7 @@ Pinned by the shared suite:
 Normative but **not** pinned by the shared suite, and therefore the HTTP backend's own tests must pin them when it lands:
 
 - **A returned URL is an immutable snapshot.** A later mutation retires it rather than revoking it; already-issued URLs stay valid. Only `release(id)` and `close()` revoke. (The suite has no `release` coverage; the browser backend's own tests carry it.)
+- **`invalidate(id)` is a local cache operation, distinct from `release(id)`.** It advances the id's resolution generation, prevents an older in-flight request from satisfying later callers, forgets the warm identity, and retires the current snapshot without revoking URLs already issued to holders. A replacement notification from another realm must invalidate before it resolves again.
 - **The object-URL cache is keyed per asset id, never per content.** A client that keys it on a digest of the response bytes discloses byte equality to a holder of two ids — the disclosure the whole design exists to prevent, reintroduced client-side. The suite asserts identical bytes yield distinct *ids*, never that they yield distinct *URLs*.
 - **A `replace` invalidates the warm snapshot and any in-flight resolution for that id.** (A `put` allocates a fresh id, which by construction has no cache entry to invalidate.)
 - **The warm-hit identity is the revision together with the served media type** — the HTTP analogue of the browser backend's content-hash-and-media-type pair. The suite is transport-agnostic and has no vocabulary for revisions.

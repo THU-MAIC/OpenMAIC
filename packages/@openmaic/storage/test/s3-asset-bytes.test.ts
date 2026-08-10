@@ -5,6 +5,13 @@ import { S3AssetByteStore } from '../src/asset/s3-bytes.js';
 import { expectNoDigestSubstring } from './asset-contract.js';
 import { runAssetByteStoreContract } from './asset-byte-store-contract.js';
 
+const commands = {
+  put: (input: ConstructorParameters<typeof PutObjectCommand>[0]) => new PutObjectCommand(input),
+  get: (input: ConstructorParameters<typeof GetObjectCommand>[0]) => new GetObjectCommand(input),
+  delete: (input: ConstructorParameters<typeof DeleteObjectCommand>[0]) =>
+    new DeleteObjectCommand(input),
+};
+
 class MemoryS3Client {
   readonly objects = new Map<string, Uint8Array>();
 
@@ -35,6 +42,7 @@ class MemoryS3Client {
 function makeStore(client = new MemoryS3Client()): S3AssetByteStore {
   return new S3AssetByteStore({
     client: client as never,
+    commands,
     bucket: 'asset-contract',
   });
 }
@@ -84,7 +92,7 @@ describe('S3AssetByteStore commands and failures', () => {
         throw new Error(contentHash);
       },
     };
-    const store = new S3AssetByteStore({ client: failing as never, bucket: 'failure' });
+    const store = new S3AssetByteStore({ client: failing as never, commands, bucket: 'failure' });
 
     for (const operation of [
       () => store.write(contentHash, new Uint8Array(bytes)),

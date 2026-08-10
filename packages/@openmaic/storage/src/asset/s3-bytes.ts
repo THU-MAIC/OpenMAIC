@@ -8,20 +8,72 @@
  * are harmless and a later write of the same bytes overwrites them
  * idempotently; no pending-object state is required.
  */
-import {
-  DeleteObjectCommand,
-  GetObjectCommand,
-  PutObjectCommand,
-  type S3Client,
-} from '@aws-sdk/client-s3';
 import type { ContentHash } from './blob.js';
 import type { AssetByteStore } from './byte-store.js';
 
+interface S3ObjectInput {
+  Bucket: string;
+  Key: string;
+}
+
+interface S3PutObjectInput extends S3ObjectInput {
+  Body: Uint8Array;
+  ContentLength: number;
+}
+
+interface S3GetObjectOutput {
+  Body?: { transformToByteArray(): Promise<Uint8Array> };
+}
+
+export interface S3AssetByteStoreClient {
+  send(command: unknown): Promise<unknown>;
+}
+
+export interface S3AssetByteStoreCommands {
+  put(input: S3PutObjectInput): unknown;
+  get(input: S3ObjectInput): unknown;
+  delete(input: S3ObjectInput): unknown;
+}
+
 export interface S3AssetByteStoreOptions {
   /** An AWS SDK v3 S3 client, or a compatible client used by a test double. */
-  client: Pick<S3Client, 'send'>;
+  client: S3AssetByteStoreClient;
+  /** Command factories from the same SDK implementation as the client. */
+  commands: S3AssetByteStoreCommands;
   /** Bucket dedicated to content-hash-named asset objects. */
   bucket: string;
+}
+
+const AWS_S3_CLIENT_PACKAGE = '@aws-sdk/client-s3';
+
+/**
+ * Load the optional AWS SDK from this package's resolution scope.
+ *
+ * The ignored native import is deliberate: consumers that do not select S3
+ * neither resolve nor bundle the optional peer dependency.
+ */
+export async function loadS3AssetByteStore(bucket: string): Promise<AssetByteStore> {
+  try {
+    const sdk = (await import(/* webpackIgnore: true */ AWS_S3_CLIENT_PACKAGE)) as {
+      S3Client: new (options: Record<string, never>) => S3AssetByteStoreClient;
+      PutObjectCommand: new (input: S3PutObjectInput) => unknown;
+      GetObjectCommand: new (input: S3ObjectInput) => unknown;
+      DeleteObjectCommand: new (input: S3ObjectInput) => unknown;
+    };
+    return new S3AssetByteStore({
+      bucket,
+      client: new sdk.S3Client({}),
+      commands: {
+        put: (input) => new sdk.PutObjectCommand(input),
+        get: (input) => new sdk.GetObjectCommand(input),
+        delete: (input) => new sdk.DeleteObjectCommand(input),
+      },
+    });
+  } catch (error) {
+    throw new Error('@openmaic/storage: S3 asset byte store initialization failed', {
+      cause: error,
+    });
+  }
 }
 
 function s3Failure(operation: string): Error {
@@ -50,18 +102,20 @@ function isNotFound(error: unknown): boolean {
 }
 
 export class S3AssetByteStore implements AssetByteStore {
-  private readonly client: Pick<S3Client, 'send'>;
+  private readonly client: S3AssetByteStoreClient;
+  private readonly commands: S3AssetByteStoreCommands;
   private readonly bucket: string;
 
   constructor(options: S3AssetByteStoreOptions) {
     this.client = options.client;
+    this.commands = options.commands;
     this.bucket = options.bucket;
   }
 
   async write(hash: ContentHash, bytes: Uint8Array): Promise<void> {
     try {
       await this.client.send(
-        new PutObjectCommand({
+        this.commands.put({
           Bucket: this.bucket,
           Key: hash,
           Body: bytes,
@@ -75,9 +129,9 @@ export class S3AssetByteStore implements AssetByteStore {
 
   async read(hash: ContentHash): Promise<Uint8Array | null> {
     try {
-      const output = await this.client.send(
-        new GetObjectCommand({ Bucket: this.bucket, Key: hash }),
-      );
+      const output = (await this.client.send(
+        this.commands.get({ Bucket: this.bucket, Key: hash }),
+      )) as S3GetObjectOutput;
       if (!output.Body) throw s3Failure('read');
       return Uint8Array.from(await output.Body.transformToByteArray());
     } catch (error) {
@@ -88,7 +142,7 @@ export class S3AssetByteStore implements AssetByteStore {
 
   async delete(hash: ContentHash): Promise<void> {
     try {
-      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: hash }));
+      await this.client.send(this.commands.delete({ Bucket: this.bucket, Key: hash }));
     } catch (error) {
       if (isNotFound(error)) return;
       throw s3Failure('delete');
