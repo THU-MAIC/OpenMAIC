@@ -9,6 +9,7 @@ import type {
 } from '../../types';
 import { recordEvent } from './engagement';
 import { appendRuntimeEvent, milestoneIdForMicrotask, mintRuntimeEventId } from './runtime-events';
+import { trimmedPBLText } from '../../readers';
 
 export const TASK_EVAL_PASS_SCORE = 60;
 
@@ -102,8 +103,8 @@ const TASK_COMPLETION_READY_TEXTS = new Set(
   ),
 );
 
-export function isTaskCompletionReadyMessageContent(content: string | undefined): boolean {
-  return TASK_COMPLETION_READY_TEXTS.has((content ?? '').trim());
+export function isTaskCompletionReadyMessageContent(content: unknown): boolean {
+  return TASK_COMPLETION_READY_TEXTS.has(trimmedPBLText(content));
 }
 
 function isoAfter(previous?: string): string {

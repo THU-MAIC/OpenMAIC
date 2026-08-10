@@ -23,7 +23,9 @@ import type {
   GeneratedPBLContent,
 } from '@/lib/types/generation';
 import type { SpeechAction } from '@/lib/types/action';
+import type { PBLContent } from '@/lib/types/stage';
 import { createLogger } from '@/lib/logger';
+import { normalizeLegacyPBLContent } from '@/lib/pbl/legacy/read';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
@@ -53,7 +55,8 @@ export async function POST(req: NextRequest) {
         | GeneratedSlideContent
         | GeneratedQuizContent
         | GeneratedInteractiveContent
-        | GeneratedPBLContent;
+        | GeneratedPBLContent
+        | PBLContent;
       stageId: string;
       agents?: AgentInfo[];
       previousSpeeches?: string[];
@@ -146,7 +149,15 @@ export async function POST(req: NextRequest) {
     // ── Generate actions ──
     log.info(`Generating actions: "${outline.title}" (${outline.type}) [model=${modelString}]`);
 
-    const actions = await generateSceneActions(outline, content, aiCall, {
+    const generationContent = (
+      'type' in content && content.type === 'pbl' ? normalizeLegacyPBLContent(content) : content
+    ) as
+      | GeneratedSlideContent
+      | GeneratedQuizContent
+      | GeneratedInteractiveContent
+      | GeneratedPBLContent;
+
+    const actions = await generateSceneActions(outline, generationContent, aiCall, {
       ctx,
       agents,
       userProfile,
@@ -156,7 +167,7 @@ export async function POST(req: NextRequest) {
     log.info(`Generated ${actions.length} actions for: "${outline.title}"`);
 
     // ── Build complete scene ──
-    const scene = buildCompleteScene(outline, content, actions, stageId);
+    const scene = buildCompleteScene(outline, generationContent, actions, stageId);
 
     if (!scene) {
       log.error(`Failed to build scene: "${outline.title}"`);

@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   validateStage,
   validateScene,
+  validateInteractiveContent,
+  validatePBLContent,
   validateAction,
   validateRuntimeSession,
   validateRuntimeRecord,
@@ -41,6 +43,14 @@ describe('validateScene', () => {
   it('accepts a well-formed slide scene', () => {
     expect(validateScene(ok)).toEqual({ valid: true });
   });
+  it.each([
+    ['slide', { type: 'slide', canvas: { id: 'c' } }],
+    ['quiz', { type: 'quiz', questions: [] }],
+    ['interactive', { type: 'interactive', html: '<!doctype html><p>Hello</p>' }],
+    ['pbl', { type: 'pbl', projectConfig: { projectInfo: { title: 'Legacy' } } }],
+  ])('accepts the %s content kind', (type, content) => {
+    expect(validateScene({ ...ok, type, content })).toEqual({ valid: true });
+  });
   it('flags an unknown content type', () => {
     const r = validateScene({ ...ok, content: { type: 'bogus' } });
     expect(errors(r)).toContain('/content/type');
@@ -49,9 +59,36 @@ describe('validateScene', () => {
     const r = validateScene({ ...ok, type: 'quiz', content: { type: 'quiz' } });
     expect(errors(r)).toContain('/content/questions');
   });
-  it('flags app-widened scene kinds (contract owns only slide/quiz)', () => {
-    const r = validateScene({ ...ok, type: 'pbl', content: { type: 'pbl' } });
-    expect(errors(r)).toContain('/type');
+  it.each([
+    [{ type: 'interactive' }, '/content'],
+    [{ type: 'interactive', widgetType: 'video' }, '/content/widgetType'],
+    [{ type: 'interactive', html: 42 }, '/content/html'],
+    [{ type: 'interactive', widgetConfig: { type: 'video' } }, '/content/widgetConfig/type'],
+  ])('rejects malformed interactive content %#', (content, path) => {
+    expect(errors(validateScene({ ...ok, type: 'interactive', content }))).toContain(path);
+  });
+  it('accepts html-only and url-only interactive content', () => {
+    expect(
+      validateScene({
+        ...ok,
+        type: 'interactive',
+        content: { type: 'interactive', html: '<div/>' },
+      }),
+    ).toEqual({ valid: true });
+    expect(
+      validateScene({
+        ...ok,
+        type: 'interactive',
+        content: { type: 'interactive', url: 'https://example.com' },
+      }),
+    ).toEqual({ valid: true });
+  });
+  it.each([
+    [{ type: 'pbl', projectV2: 'not-an-object' }, '/content/projectV2'],
+    [{ type: 'pbl', projectV2: {} }, '/content/projectV2'],
+    [{ type: 'pbl', projectConfig: [] }, '/content/projectConfig'],
+  ])('rejects malformed PBL content %#', (content, path) => {
+    expect(errors(validateScene({ ...ok, type: 'pbl', content }))).toContain(path);
   });
   it('flags a scene whose content.type disagrees with its type', () => {
     const r = validateScene({
@@ -71,6 +108,28 @@ describe('validateScene', () => {
       ],
     });
     expect(errors(r)).toContain('/actions/1/type');
+  });
+});
+
+describe('standalone promoted-content validators', () => {
+  it('requires an html or url payload and accepts either one without a scene envelope', () => {
+    expect(validateInteractiveContent({ type: 'interactive', html: '<div/>' })).toEqual({
+      valid: true,
+    });
+    expect(validateInteractiveContent({ type: 'interactive', url: 'https://example.com' })).toEqual(
+      {
+        valid: true,
+      },
+    );
+    expect(errors(validateInteractiveContent({ type: 'interactive' }))).toContain('/');
+    expect(errors(validateInteractiveContent({ type: 'interactive', url: 42 }))).toContain('/url');
+  });
+
+  it('accepts legacy PBL and reports malformed current payloads', () => {
+    expect(validatePBLContent({ type: 'pbl', projectConfig: { legacy: true } })).toEqual({
+      valid: true,
+    });
+    expect(errors(validatePBLContent({ type: 'pbl', projectV2: null }))).toContain('/projectV2');
   });
 });
 

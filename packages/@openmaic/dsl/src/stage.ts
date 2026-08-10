@@ -3,10 +3,12 @@
  *
  * This module owns the *structural* part of a lesson: the top-level `Stage`
  * container and a per-page `Scene` whose `content` is a discriminated union of
- * the universal content kinds (`SlideContent`, `QuizContent`). `Scene`'s
+ * the universal content kinds (`SlideContent`, `QuizContent`). Interactive and
+ * PBL content contracts are exported alongside them and compose through
+ * `Scene`'s generic content parameter. `Scene`'s
  * playback `actions` default to the contract's standard {@link Action} union
- * (defined in `./action.ts`); apps still thread their own richer content
- * kinds (interactive / PBL configs) in through `Scene`'s generic parameters.
+ * (defined in `./action.ts`); apps can still extend widget payloads and action
+ * sets through `Scene`'s generic parameters.
  *
  * The split keeps `@openmaic/dsl` focused on the lesson skeleton while letting the
  * runtime engine, renderer, and importer share one source of truth for it.
@@ -16,7 +18,7 @@
 import type { Slide } from './slides.js';
 import type { Action } from './action.js';
 
-/** All scene kinds the contract is aware of. Feature kinds (interactive/pbl) are still valid `type` values — their *content* shapes live in the app and are composed in via {@link Scene}'s `TContent` parameter. */
+/** All scene kinds owned by the contract. */
 export type SceneType = 'slide' | 'quiz' | 'interactive' | 'pbl';
 
 /** Frozen set of every valid {@link SceneType}, for cheap membership checks. */
@@ -210,13 +212,9 @@ export interface QuizContent {
 }
 
 /**
- * The universal scene-content kinds owned by the contract.
- *
- * App-specific kinds (interactive / pbl) are NOT members here: they carry
- * richer feature coupling (Ultra-mode widgets, PBL project configs) and stay in
- * the consuming app. Apps compose their full content union as
- * `SceneContent | InteractiveContent | PBLContent` and feed it to {@link Scene}'s
- * `TContent` parameter.
+ * The universal scene-content subset used by {@link Scene}'s compatibility
+ * default. Interactive and PBL content are also contract-owned and are composed
+ * into concrete scene unions through the generic content parameter.
  */
 export type SceneContent = SlideContent | QuizContent;
 
@@ -257,8 +255,9 @@ export interface SceneCore<TAction = Action> {
  * Implemented as a distributive conditional over `TContent`: the binding holds
  * per member of the content union, so the default `Scene<Action, SlideContent |
  * QuizContent>` is `({ type: 'slide'; content: SlideContent } | { type: 'quiz';
- * content: QuizContent }) & SceneCore`, and an app can still widen `TContent`
- * with its own content kinds — each new kind ties its own `type` to its shape.
+ * content: QuizContent }) & SceneCore`; consumers compose the exported
+ * interactive and PBL types into `TContent`, and every member ties its own
+ * `type` to its shape.
  *
  * ```ts
  * // app side — widen content; widen actions only if the app adds its own
@@ -271,7 +270,8 @@ export interface SceneCore<TAction = Action> {
  * @template TAction  - The playback action type (defaults to the standard {@link Action} union).
  * @template TContent - The scene-content union; any object union tagged with a
  *                      `type: {@link SceneType}` discriminant (defaults to the
- *                      two universal kinds). Each member binds its own `type`.
+ *                      slide/quiz compatibility subset). Each member binds its
+ *                      own `type`.
  */
 export type Scene<
   TAction = Action,
@@ -286,8 +286,8 @@ export type Scene<
 
 /**
  * Narrow a candidate to {@link SlideContent}. Accepts any value tagged with a
- * `type: SceneType` discriminant — including an app-widened content union that
- * adds interactive / pbl kinds beyond the contract's universal two.
+ * `type: SceneType` discriminant, including a consumer-specialized interactive
+ * content union.
  * Pure, no runtime deps.
  */
 export function isSlideContent<T extends { type: SceneType }>(
@@ -298,8 +298,8 @@ export function isSlideContent<T extends { type: SceneType }>(
 
 /**
  * Narrow a candidate to {@link QuizContent}. Accepts any value tagged with a
- * `type: SceneType` discriminant — including an app-widened content union that
- * adds interactive / pbl kinds beyond the contract's universal two.
+ * `type: SceneType` discriminant, including a consumer-specialized interactive
+ * content union.
  * Pure, no runtime deps.
  */
 export function isQuizContent<T extends { type: SceneType }>(

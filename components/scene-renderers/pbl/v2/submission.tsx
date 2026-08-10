@@ -59,6 +59,7 @@ import type {
   PBLProjectV2,
   PBLSubmission,
 } from '@/lib/pbl/v2/types';
+import { trimmedPBLText } from '@/lib/pbl/v2/readers';
 import type { PBLSSEEvent } from '@/lib/pbl/v2/api/sse';
 import { applyInstructorEvent } from './apply-instructor-event';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
@@ -330,7 +331,7 @@ export function PBLV2SubmissionPanel({
     const beats = milestone.microtasks;
     const brief = beats
       .map((b) => b.learnerBrief || b.description || '')
-      .map((s) => s.trim())
+      .map(trimmedPBLText)
       .filter(Boolean)
       .join('\n\n');
     const hints = beats.flatMap((b) => b.hints ?? []).filter(Boolean);
@@ -872,7 +873,7 @@ function SubmissionViewer({
                 alt={submission.filename || 'submission'}
                 className="mx-auto max-h-[60vh] rounded-lg border border-cyan-100/[0.14] object-contain"
               />
-              {submission.content?.trim() && (
+              {trimmedPBLText(submission.content) && (
                 <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground/90">
                   {submission.content}
                 </pre>
@@ -1053,7 +1054,7 @@ function SubmissionModal({
         if (ac.signal.aborted) return;
         const parsed: string =
           json?.data?.markdown ?? json?.data?.text ?? json?.markdown ?? json?.text ?? '';
-        if (!parsed.trim()) {
+        if (!trimmedPBLText(parsed)) {
           setError(t('pbl.v2.submission.pdfNoText'));
           return;
         }
@@ -1347,7 +1348,7 @@ function SubmissionModal({
                           {new Date(s.createdAt).toLocaleString()}
                         </span>
                       </div>
-                      {(s.content ?? '').trim() && (
+                      {trimmedPBLText(s.content) && (
                         <p className="mt-1 text-muted-foreground/90 line-clamp-2">
                           {(s.content ?? '').slice(0, 200)}
                           {(s.content ?? '').length > 200 ? '…' : ''}

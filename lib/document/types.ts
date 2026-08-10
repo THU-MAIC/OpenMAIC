@@ -108,6 +108,23 @@ export interface DocumentDiagnostic {
   metadata?: Record<string, unknown>;
 }
 
+export type DocumentTransformStatus = 'applied' | 'skipped' | 'partial' | 'failed';
+
+export interface DocumentTransformRecord {
+  id: string;
+  transformId: string;
+  version: string;
+  status: DocumentTransformStatus;
+  startedAt: string;
+  completedAt: string;
+  inputBlockCount: number;
+  outputBlockCount: number;
+  inputAssetCount: number;
+  outputAssetCount: number;
+  options?: Record<string, unknown>;
+  diagnostics?: DocumentDiagnostic[];
+}
+
 export interface DocumentArtifact {
   metadata: {
     fileName?: string;
@@ -121,6 +138,7 @@ export interface DocumentArtifact {
   assets: DocumentAsset[];
   citations?: DocumentCitation[];
   diagnostics?: DocumentDiagnostic[];
+  transforms?: DocumentTransformRecord[];
   providerRaw?: unknown;
 }
 

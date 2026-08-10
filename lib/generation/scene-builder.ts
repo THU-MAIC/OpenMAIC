@@ -22,6 +22,7 @@ import { generateSceneContent, generateSceneActions } from './scene-generator';
 import type { AgentInfo, SceneGenerationContext, AICallFn } from './pipeline-types';
 import { buildLanguageText } from './prompt-formatters';
 import { createLogger } from '@/lib/logger';
+import { resolvePBLContent } from '@/lib/pbl/legacy/read';
 const log = createLogger('Generation');
 
 /**
@@ -230,7 +231,9 @@ function buildCompleteSceneInner(
     };
   }
 
-  if (outline.type === 'pbl' && 'projectConfig' in content) {
+  const resolvedPBL =
+    outline.type === 'pbl' ? resolvePBLContent(content as Partial<GeneratedPBLContent>) : undefined;
+  if (resolvedPBL?.kind === 'v2') {
     return {
       id: sceneId,
       stageId,
@@ -239,8 +242,7 @@ function buildCompleteSceneInner(
       order: outline.order,
       content: {
         type: 'pbl',
-        projectConfig: content.projectConfig,
-        ...(content.projectV2 ? { projectV2: content.projectV2 } : {}),
+        projectV2: resolvedPBL.projectV2,
       },
       actions,
       createdAt: Date.now(),

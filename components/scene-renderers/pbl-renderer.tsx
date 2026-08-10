@@ -5,19 +5,12 @@ import { createPortal } from 'react-dom';
 import { Maximize2, Minimize2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { PBLContent, StageMode } from '@/lib/types/stage';
-import type { PBLProjectConfig } from '@/lib/pbl/types';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
-import {
-  isEmptyLegacyPBLConfig,
-  projectV2ToLegacyProjectConfig,
-  upgradeLegacyPBLConfigToProjectV2,
-} from '@/lib/pbl/v2/compat';
+import { resolvePBLContent, upgradeLegacyPBLConfigToProjectV2 } from '@/lib/pbl/legacy/read';
 import { normalizeProjectRuntime } from '@/lib/pbl/v2/operations/kernel/progress';
 import { transitionProjectUiPhase } from '@/lib/pbl/v2/operations/kernel/runtime-events';
 import { useStageStore } from '@/lib/store/stage';
 import { cn } from '@/lib/utils/cn';
-import { PBLRoleSelection } from './pbl/role-selection';
-import { PBLWorkspace } from './pbl/workspace';
 import { PBLV2Hero } from './pbl/v2/hero';
 import { PBLV2Workspace } from './pbl/v2/workspace';
 import { PBLV2Completion } from './pbl/v2/completion';
@@ -45,70 +38,16 @@ interface PBLRendererProps {
 export function PBLRenderer({ content, mode: _mode, sceneId }: PBLRendererProps) {
   const { t } = useI18n();
 
-  const { projectConfig } = content;
-  const selectedRole = projectConfig?.selectedRole ?? null;
   const resolvedProjectV2 = useMemo(() => {
-    if (content.projectV2) return content.projectV2;
-    if (!projectConfig || isEmptyLegacyPBLConfig(projectConfig)) return null;
-    return upgradeLegacyPBLConfigToProjectV2(projectConfig);
-  }, [content.projectV2, projectConfig]);
-
-  const updateConfig = useCallback(
-    (updatedConfig: PBLProjectConfig) => {
-      useStageStore.getState().updateScene(sceneId, {
-        content: { type: 'pbl' as const, projectConfig: updatedConfig },
-      });
-    },
-    [sceneId],
-  );
-
-  const handleSelectRole = useCallback(
-    (roleName: string) => {
-      if (!projectConfig) return;
-      const newConfig = { ...projectConfig, selectedRole: roleName };
-
-      // Add Question Agent welcome message if chat is empty and active issue has questions
-      const activeIssue = newConfig.issueboard.issues.find((i) => i.is_active);
-      if (activeIssue?.generated_questions && newConfig.chat.messages.length === 0) {
-        newConfig.chat = {
-          messages: [
-            {
-              id: `msg_welcome_${Date.now()}`,
-              agent_name: activeIssue.question_agent_name,
-              message: activeIssue.generated_questions,
-              timestamp: Date.now(),
-              read_by: [],
-            },
-          ],
-        };
-      }
-
-      updateConfig(newConfig);
-    },
-    [projectConfig, updateConfig, t], // eslint-disable-line react-hooks/exhaustive-deps
-  );
-
-  const handleReset = useCallback(() => {
-    if (!projectConfig) return;
-    // Reset all issues and re-activate the first one
-    const resetIssues = projectConfig.issueboard.issues
-      .map((i) => ({ ...i, is_done: false, is_active: false }))
-      .sort((a, b) => a.index - b.index);
-    if (resetIssues.length > 0) {
-      resetIssues[0].is_active = true;
+    // null is treated like absent: stored scenes predating projectV2 validation
+    // may carry an explicit null and must keep falling back to the legacy path.
+    const resolved = resolvePBLContent(content);
+    if (resolved.kind === 'v2') return resolved.projectV2;
+    if (resolved.kind === 'legacy') {
+      return upgradeLegacyPBLConfigToProjectV2(resolved.projectConfig);
     }
-
-    updateConfig({
-      ...projectConfig,
-      selectedRole: null,
-      chat: { messages: [] },
-      issueboard: {
-        ...projectConfig.issueboard,
-        issues: resetIssues,
-        current_issue_id: resetIssues.length > 0 ? resetIssues[0].id : null,
-      },
-    });
-  }, [projectConfig, updateConfig]);
+    return null;
+  }, [content]);
 
   if (resolvedProjectV2) {
     return (
@@ -119,7 +58,6 @@ export function PBLRenderer({ content, mode: _mode, sceneId }: PBLRendererProps)
           useStageStore.getState().updateScene(sceneId, {
             content: {
               ...content,
-              projectConfig: projectV2ToLegacyProjectConfig(next),
               projectV2: next,
             },
           });
@@ -128,43 +66,10 @@ export function PBLRenderer({ content, mode: _mode, sceneId }: PBLRendererProps)
     );
   }
 
-  // Check for legacy format (old PBL with url/html)
-  if (!projectConfig) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        <p>{t('pbl.legacyFormat')}</p>
-      </div>
-    );
-  }
-
-  // Check if project has been generated (has agents)
-  if (projectConfig.agents.length === 0 && projectConfig.projectInfo.title === '') {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        <p>{t('pbl.emptyProject')}</p>
-      </div>
-    );
-  }
-
-  // No role selected → show role selection
-  if (!selectedRole) {
-    return (
-      <PBLRoleSelection
-        projectInfo={projectConfig.projectInfo}
-        agents={projectConfig.agents}
-        onSelectRole={handleSelectRole}
-      />
-    );
-  }
-
-  // Role selected → show workspace
   return (
-    <PBLWorkspace
-      projectConfig={projectConfig}
-      userRole={selectedRole}
-      onConfigUpdate={updateConfig}
-      onReset={handleReset}
-    />
+    <div className="flex items-center justify-center h-full text-muted-foreground">
+      <p>{t('pbl.emptyProject')}</p>
+    </div>
   );
 }
 
