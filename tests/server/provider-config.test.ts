@@ -34,6 +34,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'TTS_DOUBAO',
   'TTS_ELEVENLABS',
   'TTS_MINIMAX',
+  'TTS_VOXCPM',
   'ASR_OPENAI',
   'ASR_QWEN',
   'ASR_FUNASR',
@@ -62,6 +63,7 @@ function clearProviderEnv() {
     delete process.env[`${prefix}_API_KEY`];
     delete process.env[`${prefix}_BASE_URL`];
     delete process.env[`${prefix}_MODELS`];
+    delete process.env[`${prefix}_ENABLED`];
   }
   delete process.env.TAVILY_API_KEY;
   delete process.env.BOCHA_API_KEY;

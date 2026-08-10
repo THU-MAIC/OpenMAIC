@@ -3,7 +3,7 @@ import {
   isAbortError,
   isRetryableGenerationError,
   withGenerationRetry,
-} from '@/lib/generation/generation-retry';
+} from '@openmaic/generation';
 
 describe('generation retry helper', () => {
   it('retries retryable null results and reports the next backoff delay', async () => {

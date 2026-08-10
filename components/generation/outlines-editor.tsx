@@ -28,7 +28,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { WidgetType } from '@/lib/types/widgets';
-import { changeOutlineType } from '@/lib/generation/outline-type';
+import { changeOutlineType } from '@openmaic/generation';
 import { countBlockingOutlines, validateOutline } from '@/lib/edit/content-validation';
 
 type SceneType = SceneOutline['type'];

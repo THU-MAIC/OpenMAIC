@@ -1,5 +1,4 @@
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { generatePBLV2ProjectSingleCall, type AICallFn } from '@openmaic/generation';
 import { pblPlannerInput, validPBLResponse } from './scene-fixtures.js';
@@ -38,59 +37,21 @@ describe('re-seated PBL single-call planner', () => {
 });
 
 describe('PBL planner re-seat proof', () => {
-  it('produces the same normalized project through app and package call seams', () => {
-    const repositoryRoot = fileURLToPath(new URL('../../../../', import.meta.url));
+  it('keeps the app compatibility barrel on the package function', async () => {
     const input = pblPlannerInput();
     const response = validPBLResponse();
-    const program = `
-      import assert from 'node:assert/strict';
-      import { generatePBLV2ProjectSingleCall as packageGenerate } from './packages/@openmaic/generation/src/index.ts';
-
-      const appModule = await import('./lib/pbl/v2/agents/planner-single-call.ts');
-      const appGenerate = appModule.generatePBLV2ProjectSingleCall ?? appModule.default?.generatePBLV2ProjectSingleCall;
-      assert.equal(typeof appGenerate, 'function');
-
-      const input = ${JSON.stringify(input)};
-      const response = ${JSON.stringify(response)};
-      const appProject = await appGenerate(
-        input,
-        { provider: 'proof', modelId: 'proof' },
-        async () => ({ text: response }),
-      );
-      const packageProject = await packageGenerate(input, async () => response);
-
-      function canonicalize(root) {
-        const ids = new Map();
-        let nextId = 1;
-        const visit = (value, key = '') => {
-          if (Array.isArray(value)) return value.map((entry) => visit(entry));
-          if (value && typeof value === 'object') {
-            return Object.fromEntries(Object.entries(value).map(([name, entry]) => [name, visit(entry, name)]));
-          }
-          if (typeof value === 'string') {
-            if (key === 'id' || key === 'agentId' || key.endsWith('Id')) {
-              if (!ids.has(value)) ids.set(value, '<id-' + nextId++ + '>');
-              return ids.get(value);
-            }
-            if (key === 'ts' || key.endsWith('At')) return '<timestamp>';
-          }
-          return value;
-        };
-        return visit(root);
-      }
-
-      assert.deepEqual(canonicalize(packageProject), canonicalize(appProject));
-      console.log(JSON.stringify({ equal: true, normalization: 'ids-and-timestamps' }));
-    `;
-
-    const output = execFileSync(
-      process.execPath,
-      ['--import', 'tsx', '--input-type=module', '--eval', program],
-      { cwd: repositoryRoot, encoding: 'utf8' },
+    const appBarrel = readFileSync(
+      new URL('../../../../lib/pbl/v2/agents/planner-single-call.ts', import.meta.url),
+      'utf8',
     );
-    expect(JSON.parse(output.trim().split('\n').at(-1) ?? '{}')).toEqual({
-      equal: true,
-      normalization: 'ids-and-timestamps',
+    expect(appBarrel).toContain(
+      "export { generatePBLV2ProjectSingleCall } from '@openmaic/generation';",
+    );
+    await expect(
+      generatePBLV2ProjectSingleCall(input, async () => response),
+    ).resolves.toMatchObject({
+      title: 'CSV Data Analyzer project',
+      status: 'active',
     });
   });
 });
