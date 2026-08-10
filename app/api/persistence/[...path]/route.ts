@@ -167,6 +167,15 @@ function runNodeHandler(handler: RequestListener, request: Request): Promise<Res
     let status = 200;
     const headers = new Headers();
     let headersSent = false;
+    // Buffered as bytes rather than as a string. A handler may end with a
+    // `Uint8Array`, which `ServerResponse.end` accepts and which is not
+    // necessarily valid UTF-8; decoding it would replace every unpaired byte
+    // with U+FFFD and silently corrupt the response.
+    const body: Buffer[] = [];
+
+    const appendChunk = (chunk: string | Uint8Array) => {
+      body.push(typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk));
+    };
 
     const response = {
       get headersSent() {
@@ -184,20 +193,24 @@ function runNodeHandler(handler: RequestListener, request: Request): Promise<Res
         if (values) setHeaders(headers, values);
         return this;
       },
+      write(chunk: string | Uint8Array, encodingOrCallback?: unknown, callback?: unknown) {
+        // `write` is part of the `ServerResponse` surface this object claims to
+        // implement. Omitting it made any chunked handler a runtime TypeError
+        // that the `as unknown as ServerResponse` cast hid from the compiler.
+        headersSent = true;
+        appendChunk(chunk);
+        const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+        if (typeof done === 'function') done();
+        return true;
+      },
       end(chunk?: string | Uint8Array) {
         headersSent = true;
+        if (chunk !== undefined) appendChunk(chunk);
         resolve(
-          new Response(
-            chunk === undefined
-              ? undefined
-              : typeof chunk === 'string'
-                ? chunk
-                : Buffer.from(chunk).toString(),
-            {
-              status,
-              headers,
-            },
-          ),
+          new Response(body.length === 0 ? undefined : Buffer.concat(body), {
+            status,
+            headers,
+          }),
         );
         return this;
       },
