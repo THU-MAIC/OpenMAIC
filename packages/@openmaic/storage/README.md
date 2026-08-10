@@ -54,11 +54,14 @@ a browser.
   branches do not reveal whether the bytes were already present. The browser
   registry embeds its `blobs` table in the same database because reference
   counting, byte writes, and reclamation must share one transaction. This is
-  not a replaceable browser-side blob backend; a replaceable blob interface is
-  a server-backend concern (delivery plan part 4), where consistency is enforced
-  server-side. Resource-accounting channels remain:
+  not a replaceable blob backend *in the browser*, because that store reclaims
+  inline. The server backend collects offline instead, so no request deletes
+  bytes and its byte layer is pluggable — a column of the transactional store,
+  or an object store keyed by content hash. Resource-accounting channels remain:
   quota errors, storage estimates, and server billing or metering can disclose
-  existence, so server deployments must budget them per principal. Object URLs
+  existence, so server deployments must budget them per principal — the
+  [asset registry HTTP contract](./docs/asset-http-contract.md) requires quota
+  to be accounted on a principal's logical bytes for exactly that reason. Object URLs
   are minted per id, not shared per `contentHash`: sharing would let a holder of
   two ids learn that their bytes match by comparing URL strings. Each
   `replace(id, ...)` followed by `resolve(id)` adds one retired snapshot that
@@ -174,11 +177,12 @@ adding a caller-configurable allocation path.
 - [x] DocumentStore PostgreSQL backend
 - [x] `KVStore` (`account`) HTTP backend + HTTP contract
 - [ ] `KVStore` server-side reference backend and reference-server route
-- [ ] asset server backend — registry (principal column, server-derived) +
-      replaceable blob storage, over the global resource pool model (#1007),
-      with consistency enforced server-side. It must validate or allowlist
-      content types before serving bytes rather than reflecting cross-principal
-      metadata into response content types
+- [x] asset registry HTTP contract (#1007)
+- [ ] asset server backend — registry (principal column, server-derived) over a
+      pluggable byte layer, with transactional-store and object-store
+      implementations and an offline byte collector (#1007). It must allowlist
+      content types before serving bytes, and it must account quota on a
+      principal's logical bytes rather than on bytes physically written
 - [ ] asset manifest: the one enumeration of "which `AssetId`s does this course
       reference?" the export paths converge on (#1007)
 
