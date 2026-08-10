@@ -54,6 +54,23 @@ const { folders, memberships, dbMock, mutateDocumentMock } = vi.hoisted(() => {
       generatedAgents: {
         where: () => ({ equals: () => ({ delete: vi.fn().mockResolvedValue(undefined) }) }),
       },
+      mediaFiles: {
+        where: () => ({
+          equals: () => ({
+            toArray: vi.fn().mockResolvedValue([]),
+            delete: vi.fn().mockResolvedValue(undefined),
+          }),
+        }),
+        bulkDelete: vi.fn().mockResolvedValue(undefined),
+      },
+      audioFiles: {
+        where: () => ({
+          equals: () => ({
+            toArray: vi.fn().mockResolvedValue([]),
+            delete: vi.fn().mockResolvedValue(undefined),
+          }),
+        }),
+      },
       transaction: vi.fn(async (_mode: string, _tables: unknown[], fn: () => Promise<void>) =>
         fn(),
       ),
@@ -154,10 +171,17 @@ describe('createFolder / renameFolder name validation', () => {
 });
 
 describe('setStageFolder membership', () => {
-  it('writes a membership row keyed by stageId', async () => {
-    await setStageFolder('stage-1', 'folder-1');
+  it('writes a membership row keyed by stageId for an existing folder', async () => {
+    const folder = await createFolder('Dest');
+    await setStageFolder('stage-1', folder.id);
     const row = await dbMock.stageFolders.get('stage-1');
-    expect(row).toMatchObject({ stageId: 'stage-1', folderId: 'folder-1' });
+    expect(row).toMatchObject({ stageId: 'stage-1', folderId: folder.id });
+  });
+
+  it('rejects a folderId that does not exist (orphan prevention)', async () => {
+    await expect(setStageFolder('stage-1', 'nonexistent-folder')).rejects.toThrow(
+      'Folder not found',
+    );
   });
 
   it('moving out stores folderId undefined', async () => {

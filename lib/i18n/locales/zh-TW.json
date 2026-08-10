@@ -825,7 +825,7 @@
     "folderCourseCountUnit": "門課程",
     "deleteFolderTitle": "刪除資料夾「{{name}}」",
     "deleteFolderEmptyDesc": "這個資料夾是空的。刪除後無法復原。",
-    "deleteFolderUngroupDesc": "课程保留在「我的课程」，只是不再归类。",
+    "deleteFolderUngroupDesc": "課程保留在「我的課程」，只是不再歸類。",
     "moveToFolder": "移動到資料夾",
     "moveToFolderLabel": "移動到資料夾",
     "ungrouped": "未分類",

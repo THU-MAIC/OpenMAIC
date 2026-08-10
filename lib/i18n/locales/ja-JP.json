@@ -840,7 +840,7 @@
     "folderCourseCountUnit": "件のコース",
     "deleteFolderTitle": "フォルダ「{{name}}」を削除",
     "deleteFolderEmptyDesc": "このフォルダは空です。削除後は復元できません。",
-    "deleteFolderUngroupDesc": "Courses stay in \"My courses\", just unfiled.",
+    "deleteFolderUngroupDesc": "コースは「マイコース」に残り、未分類になります。",
     "moveToFolder": "フォルダに移動",
     "moveToFolderLabel": "フォルダに移動",
     "ungrouped": "未分類",

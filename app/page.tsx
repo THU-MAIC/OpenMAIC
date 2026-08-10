@@ -196,14 +196,9 @@ function HomePage() {
   const [hydrated, setHydrated] = useState(false);
   // Sticky once true for the tab session: the full-screen landing hero is a
   // first-visit treatment only. Mirrored in sessionStorage so a refresh within
-  // the same tab keeps the compact layout.
-  const [librarySeen, setLibrarySeen] = useState(() => {
-    try {
-      return sessionStorage.getItem(LIBRARY_SEEN_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
+  // the same tab keeps the compact layout. Initialized to false (matching SSR)
+  // and read from sessionStorage in an effect to avoid hydration mismatch.
+  const [librarySeen, setLibrarySeen] = useState(false);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   // When set, the new-folder dialog is creating a folder AND moving this course
@@ -298,6 +293,13 @@ function HomePage() {
     // (gen_img_1, etc.) collide with other courses' placeholders.
     useMediaGenerationStore.getState().revokeObjectUrls();
     useMediaGenerationStore.setState({ tasks: {} });
+
+    // Read sessionStorage on the client only (avoids SSR hydration mismatch).
+    try {
+      if (sessionStorage.getItem(LIBRARY_SEEN_KEY) === '1') setLibrarySeen(true);
+    } catch {
+      /* ignore */
+    }
 
     // Both reads resolve before flipping `hydrated`, so the hero layout does
     // not thrash between full-screen and compact as each lands independently.
@@ -759,11 +761,12 @@ function HomePage() {
         transition={{ duration: 0.6, ease: 'easeOut' }}
         className={cn(
           'relative z-20 w-full max-w-[800px] flex flex-col items-center',
-          // Full-screen landing hero is a first-visit treatment only: it shows
-          // before the library has ever been seen this session. Once the
-          // library bar renders (hydrated), the hero stays compact forever so
-          // create/delete operations cannot change the bar's Y position.
-          hydrated && !librarySeen ? 'justify-center min-h-[calc(100dvh-8rem)]' : 'mt-[10vh]',
+          // Full-screen landing hero is a first-session-visit treatment only.
+          // `librarySeen` is read synchronously from sessionStorage on mount
+          // (false on the very first visit), then latched true once the library
+          // loads. It never recomputes from mutable counts, so create/delete
+          // operations cannot change the bar's Y position.
+          !librarySeen ? 'justify-center min-h-[calc(100dvh-8rem)]' : 'mt-[10vh]',
         )}
       >
         {/* ── Logo ── */}
@@ -1623,10 +1626,15 @@ function ClassroomCard({
     <div
       className="group cursor-pointer"
       onClick={confirmingDelete ? undefined : onClick}
-      draggable={!confirmingDelete}
+      draggable={!confirmingDelete && !editing}
       onDragStart={(e) => {
         e.dataTransfer.setData('text/stage-id', classroom.id);
         e.dataTransfer.effectAllowed = 'move';
+      }}
+      onDragEnd={() => {
+        // Notify folder cards to clear any lingering drop highlight (Escape-
+        // cancelled drags may not fire dragleave on every target).
+        window.dispatchEvent(new CustomEvent('course-drag-end'));
       }}
     >
       {/* Thumbnail — large radius, no border, subtle bg */}

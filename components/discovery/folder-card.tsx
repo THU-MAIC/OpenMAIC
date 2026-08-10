@@ -61,6 +61,17 @@ export function FolderCard({
   const thumbRef = useRef<HTMLDivElement>(null);
   const [thumbWidth, setThumbWidth] = useState(0);
 
+  // Clear lingering drop highlight when a course drag ends (covers Escape-
+  // cancelled drags that may not fire dragleave on every target).
+  useEffect(() => {
+    const handler = () => {
+      dragDepth.current = 0;
+      setDropActive(false);
+    };
+    window.addEventListener('course-drag-end', handler);
+    return () => window.removeEventListener('course-drag-end', handler);
+  }, []);
+
   const startEditing = () => {
     setDraft(folder.name);
     setError(null);
@@ -105,7 +116,10 @@ export function FolderCard({
   };
 
   const covers = coverSlides.slice(0, MAX_COVERS);
-  const isEmpty = covers.length === 0;
+  // Emptiness is derived from courseCount (the authoritative source), not from
+  // covers.length — a non-empty folder whose courses have no cached thumbnails
+  // must not show the empty-folder icon. `hasCovers` gates the cover stack.
+  const hasCovers = covers.length > 0;
 
   return (
     <div
@@ -147,14 +161,17 @@ export function FolderCard({
             : 'ring-violet-200/50 dark:ring-violet-800/40',
         )}
       >
-        {isEmpty ? (
+        {hasCovers ? (
+          <CoverStack covers={covers} thumbWidth={thumbWidth} setThumbWidth={setThumbWidth} />
+        ) : (
+          // No cached covers: empty folder shows the folder icon; a non-empty
+          // folder whose covers haven't loaded shows the same icon but the
+          // course-count badge (always visible) distinguishes it from empty.
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
             <div className="size-14 rounded-2xl bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center">
               <Folder className="size-7 text-violet-500 dark:text-violet-300" />
             </div>
           </div>
-        ) : (
-          <CoverStack covers={covers} thumbWidth={thumbWidth} setThumbWidth={setThumbWidth} />
         )}
 
         {/* Course count badge — always visible (bottom-right). */}

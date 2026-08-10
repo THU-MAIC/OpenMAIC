@@ -840,7 +840,7 @@
     "folderCourseCountUnit": "cursos",
     "deleteFolderTitle": "Excluir pasta \"{{name}}\"",
     "deleteFolderEmptyDesc": "Esta pasta está vazia. A exclusão não pode ser desfeita.",
-    "deleteFolderUngroupDesc": "Courses stay in \"My courses\", just unfiled.",
+    "deleteFolderUngroupDesc": "Os cursos permanecem em \"Meus cursos\", apenas sem pasta.",
     "moveToFolder": "Mover para pasta",
     "moveToFolderLabel": "Mover para a pasta",
     "ungrouped": "Sem pasta",

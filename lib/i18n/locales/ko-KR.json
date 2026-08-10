@@ -840,7 +840,7 @@
     "folderCourseCountUnit": "개 강의",
     "deleteFolderTitle": "폴더 \"{{name}}\" 삭제",
     "deleteFolderEmptyDesc": "이 폴더는 비어 있습니다. 삭제 후 복구할 수 없습니다.",
-    "deleteFolderUngroupDesc": "Courses stay in \"My courses\", just unfiled.",
+    "deleteFolderUngroupDesc": "강의는 «내 강의»에 유지되며, 미분류로 변경됩니다.",
     "moveToFolder": "폴더로 이동",
     "moveToFolderLabel": "폴더로 이동",
     "ungrouped": "미분류",

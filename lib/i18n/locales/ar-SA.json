@@ -840,7 +840,7 @@
     "folderCourseCountUnit": "دورة",
     "deleteFolderTitle": "حذف المجلد «{{name}}»",
     "deleteFolderEmptyDesc": "هذا المجلد فارغ. لا يمكن التراجع عن الحذف.",
-    "deleteFolderUngroupDesc": "Courses stay in \"My courses\", just unfiled.",
+    "deleteFolderUngroupDesc": "تبقى الدورات في «دوراتي»، تصبح غير مصنّفة.",
     "moveToFolder": "نقل إلى مجلد",
     "moveToFolderLabel": "نقل إلى مجلد",
     "ungrouped": "غير مصنّف",

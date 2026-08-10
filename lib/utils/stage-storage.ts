@@ -10,7 +10,7 @@ import { ChatSession } from '../types/chat';
 import { db } from './database';
 import type { FolderRecord } from './database';
 import { nanoid } from 'nanoid';
-import { validateFolderName } from './folder-name-validation';
+import { validateFolderName, FOLDER_COUNT_LIMIT } from './folder-name-validation';
 import {
   ChatStorageLockUnavailableError,
   saveChatSessions,
@@ -1059,7 +1059,7 @@ export async function listFolders(): Promise<FolderRecord[]> {
 export class FolderNameError extends Error {
   constructor(
     message: string,
-    readonly kind: 'empty' | 'tooLong' | 'duplicate',
+    readonly kind: 'empty' | 'tooLong' | 'duplicate' | 'limit',
   ) {
     super(message);
     this.name = 'FolderNameError';
@@ -1092,6 +1092,9 @@ export async function createFolder(name: string): Promise<FolderRecord> {
   const now = Date.now();
   return db.transaction('rw', db.folders, async () => {
     const existing = await db.folders.toArray();
+    if (existing.length >= FOLDER_COUNT_LIMIT) {
+      throw new FolderNameError('Folder count limit reached', 'limit');
+    }
     assertFolderName(name, existing);
     const order = existing.reduce((max, folder) => Math.max(max, folder.order), -1) + 1;
     const folder: FolderRecord = {
@@ -1164,6 +1167,19 @@ export async function deleteFolder(id: string, mode: DeleteFolderMode = 'ungroup
  */
 export async function setStageFolder(stageId: string, folderId: string | undefined): Promise<void> {
   const now = Date.now();
-  await db.stageFolders.put({ stageId, folderId, updatedAt: now });
+  // Validate the destination folder exists before writing the membership row.
+  // Without this, an import that started inside a folder which is then deleted
+  // would write an orphan membership pointing at a gone folder. The check+write
+  // is in one transaction so deletion cannot race between them. Unfiling
+  // (folderId undefined) always succeeds — it just removes the membership.
+  if (folderId !== undefined) {
+    await db.transaction('rw', [db.folders, db.stageFolders], async () => {
+      const folder = await db.folders.get(folderId);
+      if (!folder) throw new Error(`Folder not found: ${folderId}`);
+      await db.stageFolders.put({ stageId, folderId, updatedAt: now });
+    });
+  } else {
+    await db.stageFolders.put({ stageId, folderId: undefined, updatedAt: now });
+  }
   log.info(`Set stage ${stageId} folder -> ${folderId ?? '(unfiled)'}`);
 }

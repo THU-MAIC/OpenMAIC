@@ -53,7 +53,11 @@ export function NewFolderDialog({
     if (submitting) return;
     const widthCheck = validateFolderName(name);
     if (!widthCheck.ok) {
-      setError(t('classroom.folderWidth', { width: widthCheck.width, max: FOLDER_NAME_MAX_WIDTH }));
+      setError(
+        widthCheck.kind === 'empty'
+          ? t('classroom.folderNameEmpty')
+          : t('classroom.folderWidth', { width: widthCheck.width, max: FOLDER_NAME_MAX_WIDTH }),
+      );
       return;
     }
     const trimmed = name.trim();
@@ -81,7 +85,9 @@ export function NewFolderDialog({
                   width: displayNameWidth(trimmed),
                   max: FOLDER_NAME_MAX_WIDTH,
                 })
-              : t('classroom.folderNameHint'),
+              : err.kind === 'limit'
+                ? t('classroom.folderCountLimit')
+                : t('classroom.folderNameHint'),
         );
       } else {
         setError(t('classroom.folderCreateFailed'));

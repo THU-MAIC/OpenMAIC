@@ -840,7 +840,7 @@
     "folderCourseCountUnit": "курсов",
     "deleteFolderTitle": "Удалить папку «{{name}}»",
     "deleteFolderEmptyDesc": "Эта папка пуста. Удаление необратимо.",
-    "deleteFolderUngroupDesc": "Courses stay in \"My courses\", just unfiled.",
+    "deleteFolderUngroupDesc": "Курсы остаются в «Мои курсы», просто без папки.",
     "moveToFolder": "Переместить в папку",
     "moveToFolderLabel": "Переместить в папку",
     "ungrouped": "Без папки",
