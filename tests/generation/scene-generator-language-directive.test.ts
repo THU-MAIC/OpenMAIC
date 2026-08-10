@@ -10,9 +10,8 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { generateSceneContent, generateSceneActions } from '@/lib/generation/scene-generator';
-import { buildSceneFromOutline } from '@/lib/generation/scene-builder';
-import type { AICallFn } from '@/lib/generation/pipeline-types';
+import { generateSceneActions, generateSceneContent, type AICallFn } from '@openmaic/generation';
+import { buildSceneFromOutline } from '@/lib/server/scene-generation';
 import { normalizeLegacyPBLContent } from '@/lib/pbl/legacy/read';
 import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
 import type {

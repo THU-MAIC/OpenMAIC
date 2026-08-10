@@ -10,7 +10,7 @@
 import { describe, test, expect } from 'vitest';
 import { buildStructuredPrompt } from '@/lib/orchestration/prompt-builder';
 import { buildDirectorPrompt } from '@/lib/orchestration/director-prompt';
-import { loadPrompt } from '@/lib/prompts';
+import { loadPrompt } from '@openmaic/generation';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 

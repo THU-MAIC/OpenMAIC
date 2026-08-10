@@ -459,9 +459,15 @@ importers:
       jsonrepair:
         specifier: ^3.13.2
         version: 3.13.3
+      katex:
+        specifier: ^0.16.22
+        version: 0.16.38
       nanoid:
         specifier: ^5.1.6
         version: 5.1.14
+      partial-json:
+        specifier: ^0.1.7
+        version: 0.1.7
     devDependencies:
       typescript:
         specifier: ^5

@@ -784,7 +784,7 @@ OpenMAIC/
 
 ### Key Architecture
 
-- **Generation Pipeline** (`lib/generation/`) — Two-stage: outline generation → scene content generation
+- **Generation Pipeline** (`@openmaic/generation`) — Two-stage: outline generation → scene content generation
 - **Multi-Agent Orchestration** (`lib/orchestration/`) — LangGraph state machine managing agent turns and discussions
 - **Playback Engine** (`lib/playback/`) — State machine driving classroom playback and live interaction
 - **Action Engine** (`lib/action/`) — Executes 28+ action types (speech, whiteboard draw/text/shape/chart, spotlight, laser …)

@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { extractWidgetConfig, generateWidgetContent } from '@/lib/generation/scene-generator';
-import type { AICallFn } from '@/lib/generation/pipeline-types';
+import { extractWidgetConfig, generateWidgetContent, type AICallFn } from '@openmaic/generation';
 import type { SceneOutline } from '@/lib/types/generation';
 
 const renderDiagramPrompt = async (widgetOutline: SceneOutline['widgetOutline']) => {

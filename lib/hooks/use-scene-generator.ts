@@ -12,7 +12,7 @@ import type {
   ImageMapping,
   UserRequirements,
 } from '@/lib/types/generation';
-import type { AgentInfo } from '@/lib/generation/generation-pipeline';
+import type { AgentInfo } from '@openmaic/generation';
 import type { Scene } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
@@ -31,7 +31,7 @@ import {
   isAbortError,
   withGenerationRetry,
   type GenerationRetryOptions,
-} from '@/lib/generation/generation-retry';
+} from '@openmaic/generation';
 
 const log = createLogger('SceneGenerator');
 
