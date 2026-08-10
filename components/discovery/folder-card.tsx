@@ -163,14 +163,25 @@ export function FolderCard({
       >
         {hasCovers ? (
           <CoverStack covers={covers} thumbWidth={thumbWidth} setThumbWidth={setThumbWidth} />
-        ) : (
-          // No cached covers: empty folder shows the folder icon; a non-empty
-          // folder whose covers haven't loaded shows the same icon but the
-          // course-count badge (always visible) distinguishes it from empty.
+        ) : courseCount === 0 ? (
+          // Truly empty folder: folder icon.
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
             <div className="size-14 rounded-2xl bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center">
               <Folder className="size-7 text-violet-500 dark:text-violet-300" />
             </div>
+          </div>
+        ) : (
+          // Non-empty but no cached covers: a neutral stacked-card placeholder
+          // distinct from the empty-folder icon, so it does not read as empty.
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div
+              className="w-[60%] aspect-[16/9] rounded-xl bg-violet-200/60 dark:bg-violet-800/30 shadow-md ring-1 ring-violet-300/30 dark:ring-violet-700/30"
+              style={{ transform: 'translate(-3%, 2%)' }}
+            />
+            <div
+              className="absolute w-[60%] aspect-[16/9] rounded-xl bg-violet-300/50 dark:bg-violet-700/20 shadow-md ring-1 ring-violet-300/30 dark:ring-violet-700/30"
+              style={{ transform: 'translate(3%, -1%)' }}
+            />
           </div>
         )}
 

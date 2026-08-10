@@ -87,10 +87,6 @@ const log = createLogger('Home');
 const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
-// Session flag: once the library bar has been shown this tab session, the hero
-// never returns to the full-screen landing layout even if every course/folder
-// is deleted — so create/delete operations cannot change the bar's Y position.
-const LIBRARY_SEEN_KEY = 'librarySeen';
 
 // PPTX import is still scaffolding: `useImportPptx` has no `onImported` consumer
 // yet, so the flow only logs the parsed slides. Hide the entry point behind a
@@ -194,11 +190,6 @@ function HomePage() {
   // selection so the hero does not flip between full-screen and compact as the
   // two async reads land (avoids a visible layout shift on first paint).
   const [hydrated, setHydrated] = useState(false);
-  // Sticky once true for the tab session: the full-screen landing hero is a
-  // first-visit treatment only. Mirrored in sessionStorage so a refresh within
-  // the same tab keeps the compact layout. Initialized to false (matching SSR)
-  // and read from sessionStorage in an effect to avoid hydration mismatch.
-  const [librarySeen, setLibrarySeen] = useState(false);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   // When set, the new-folder dialog is creating a folder AND moving this course
@@ -295,26 +286,9 @@ function HomePage() {
     useMediaGenerationStore.setState({ tasks: {} });
 
     // Read sessionStorage on the client only (avoids SSR hydration mismatch).
-    try {
-      if (sessionStorage.getItem(LIBRARY_SEEN_KEY) === '1') setLibrarySeen(true);
-    } catch {
-      /* ignore */
-    }
-
     // Both reads resolve before flipping `hydrated`, so the hero layout does
-    // not thrash between full-screen and compact as each lands independently.
-    void Promise.all([loadClassrooms(), loadFolders()]).finally(() => {
-      setHydrated(true);
-      setLibrarySeen((prev) => {
-        if (prev) return prev;
-        try {
-          sessionStorage.setItem(LIBRARY_SEEN_KEY, '1');
-        } catch {
-          /* ignore */
-        }
-        return true;
-      });
-    });
+    // not thrash as each lands independently.
+    void Promise.all([loadClassrooms(), loadFolders()]).finally(() => setHydrated(true));
 
     return () => {
       revokeThumbnailSlideMediaUrls(thumbnailsRef.current);
@@ -759,15 +733,7 @@ function HomePage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: 'easeOut' }}
-        className={cn(
-          'relative z-20 w-full max-w-[800px] flex flex-col items-center',
-          // Full-screen landing hero is a first-session-visit treatment only.
-          // `librarySeen` is read synchronously from sessionStorage on mount
-          // (false on the very first visit), then latched true once the library
-          // loads. It never recomputes from mutable counts, so create/delete
-          // operations cannot change the bar's Y position.
-          !librarySeen ? 'justify-center min-h-[calc(100dvh-8rem)]' : 'mt-[10vh]',
-        )}
+        className={cn('relative z-20 w-full max-w-[800px] flex flex-col items-center mt-[10vh]')}
       >
         {/* ── Logo ── */}
         <motion.img

@@ -1140,23 +1140,26 @@ export type DeleteFolderMode = 'ungroup' | 'remove';
  *   (document, scenes, chats, runtime, mirrors) applies.
  */
 export async function deleteFolder(id: string, mode: DeleteFolderMode = 'ungroup'): Promise<void> {
-  const members = await db.stageFolders.where('folderId').equals(id).toArray();
+  // Atomically capture members, delete the folder row, and clear all membership
+  // rows in ONE transaction BEFORE the course-deletion cascade. This makes the
+  // folder invisible to `setStageFolder` (which checks folder existence in its
+  // own transaction) for the entire duration of the cascade, preventing an
+  // orphan membership from being written while courses are being deleted.
+  const members = await db.transaction('rw', [db.folders, db.stageFolders], async () => {
+    const rows = await db.stageFolders.where('folderId').equals(id).toArray();
+    await db.folders.delete(id);
+    for (const row of rows) {
+      await db.stageFolders.delete(row.stageId);
+    }
+    return rows;
+  });
+
   if (mode === 'remove') {
-    // Each course deletion runs its own cascade (document, scenes, chats,
-    // runtime, mirrors), which also clears that stage's `stageFolders` row.
-    // The folder row itself is dropped afterwards so an empty tile does not
-    // linger once every member is gone.
+    // Now delete each member course through the full cascade. The folder is
+    // already gone, so a concurrent setStageFolder will reject the assignment.
     for (const member of members) {
       if (member.stageId) await deleteStageData(member.stageId);
     }
-    await db.folders.delete(id);
-  } else {
-    await db.transaction('rw', [db.folders, db.stageFolders], async () => {
-      await db.folders.delete(id);
-      for (const member of members) {
-        await db.stageFolders.delete(member.stageId);
-      }
-    });
   }
   log.info(`Deleted folder ${id} (mode=${mode})`);
 }
