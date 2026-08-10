@@ -139,8 +139,14 @@ jobs:
               exit 1
             fi
           done
+          for prompt in planner-single-call-system planner-scenario-single-call-system; do
+            if ! diff "lib/pbl/v2/prompts/$prompt.md" "packages/@openmaic/generation/prompts-pbl/$prompt.md"; then
+              echo "::error file=lib/pbl/v2/prompts/$prompt.md::PBL planner prompt $prompt diverged; the app and package copies must be edited together until Part D removes the app copy."
+              exit 1
+            fi
+          done
 
-      - name: Node consumer smoke (generation outlines)
+      - name: Node consumer smoke (generation scene)
         shell: bash
         run: |
           set -euo pipefail
@@ -167,7 +173,7 @@ jobs:
             --endpoint "http://127.0.0.1:$port" \
             --model smoke-model)"
           printf '%s\n' "$output"
-          node -e 'const value = JSON.parse(process.argv[1]); if (!Array.isArray(value.outlines) || value.outlines.length === 0) process.exit(1)' "$output"
+          node -e 'const value = JSON.parse(process.argv[1]); if (!Array.isArray(value.outlines) || value.outlines.length === 0 || !value.scene || value.sceneValidation?.valid !== true) process.exit(1)' "$output"
 
       # Covers the package's own test tree, which the root tsc reaches only by an
       # incidental glob. The device-scope guard is written as `@ts-expect-error`

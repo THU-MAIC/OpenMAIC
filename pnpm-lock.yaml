@@ -459,9 +459,15 @@ importers:
       jsonrepair:
         specifier: ^3.13.2
         version: 3.13.3
+      katex:
+        specifier: ^0.16.22
+        version: 0.16.38
       nanoid:
         specifier: ^5.1.6
         version: 5.1.14
+      partial-json:
+        specifier: ^0.1.7
+        version: 0.1.7
     devDependencies:
       typescript:
         specifier: ^5
@@ -2115,6 +2121,7 @@ packages:
   '@copilotkitnext/shared@1.53.0':
     resolution: {integrity: sha512-RdhudJUq79RM0zLLzIJDAg//aLc0vW2WocaJmsQzz/awZEbcbo13Ag6jL+oZOOlq++Lu9xWd7SQ83jhoZwCJXg==}
     engines: {node: '>=18'}
+    deprecated: Use @copilotkit/shared instead.
 
   '@csstools/color-helpers@6.1.0':
     resolution: {integrity: sha512-064IFJdjTfUqnjpCVpMOdbr8FLQBhinbZj6yRv2An2E41O/pLEXqfFRWqGq/SxlE5PEUYTlvWsG2r8MswAVvkg==}
