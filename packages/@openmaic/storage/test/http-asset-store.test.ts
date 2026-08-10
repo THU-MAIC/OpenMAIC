@@ -6,7 +6,7 @@ import { __setAssetIdFactoryForTesting, type AssetId } from '../src/asset/id.js'
 import { PgAssetByteStore } from '../src/asset/pg-bytes.js';
 import type { Queryable } from '../src/asset/pg.js';
 import { createAssetHttpHandler } from '../src/server/asset.js';
-import type { AssetStore } from '../src/asset/types.js';
+import type { AssetPrincipal, AssetStore } from '../src/asset/types.js';
 import {
   FOREIGN_IDS,
   commonDigestEncodings,
@@ -16,6 +16,7 @@ import {
 import {
   startAssetConformanceServer,
   type AssetConformanceServer,
+  type AssetConformanceServerOptions,
 } from './asset-conformance-server.js';
 import { blobForObjectUrl } from './setup.js';
 
@@ -141,6 +142,58 @@ function comparable(response: RawResponse): unknown {
   };
 }
 
+const ASSET_ROUTES = [
+  ['POST', '/assets'],
+  ['GET', '/assets/id/content'],
+  ['HEAD', '/assets/id/content'],
+  ['PUT', '/assets/id/content'],
+  ['DELETE', '/assets/id'],
+] as const;
+
+function unreachableRegistry(): { store: AssetStore; methods: Array<ReturnType<typeof vi.fn>> } {
+  const fail = () => {
+    throw new Error('asset registry was reached');
+  };
+  const store = {
+    put: vi.fn(fail),
+    identify: vi.fn(fail),
+    resolve: vi.fn(fail),
+    remove: vi.fn(fail),
+    replace: vi.fn(fail),
+  } satisfies AssetStore;
+  return { store, methods: Object.values(store) };
+}
+
+async function expectAuthRejection(
+  options: Pick<AssetConformanceServerOptions, 'authenticate' | 'authorizeAssets'>,
+  expectedStatus: number,
+  expectedCode: string,
+): Promise<void> {
+  const registry = unreachableRegistry();
+  const isolated = await startAssetConformanceServer({
+    ...options,
+    store: () => registry.store,
+  });
+  try {
+    for (const [method, path] of ASSET_ROUTES) {
+      const response = await isolated.fetch(`${isolated.baseUrl}${path}`, { method });
+      expect(response.status, `${method} ${path}`).toBe(expectedStatus);
+      if (method === 'HEAD') {
+        expect(response.headers.get('x-error-code'), `${method} ${path}`).toBe(expectedCode);
+      } else {
+        await expect(response.json(), `${method} ${path}`).resolves.toMatchObject({
+          error: { code: expectedCode },
+        });
+      }
+      for (const registryMethod of registry.methods) {
+        expect(registryMethod, `${method} ${path}`).not.toHaveBeenCalled();
+      }
+    }
+  } finally {
+    await isolated.close();
+  }
+}
+
 beforeAll(async () => {
   server = await startAssetConformanceServer();
 });
@@ -175,6 +228,69 @@ runAssetStoreContract(
 );
 
 describe('asset HTTP handler contract', () => {
+  test('exposes revisions on successful cross-origin writes', async () => {
+    const storeId = `write-revision-${namespace++}`;
+    const allocation = await rawRequest({
+      method: 'POST',
+      path: '/assets',
+      headers: multipartHeaders(storeId),
+      body: multipart([
+        { name: 'meta', value: '{}', contentType: 'application/json' },
+        { name: 'bytes', value: 'original', contentType: 'text/plain' },
+      ]),
+    });
+    expect(allocation.status).toBe(201);
+    expect(allocation.headers['x-asset-revision']).toBe('1');
+    expect(allocation.headers['access-control-expose-headers']).toBe('X-Asset-Revision');
+
+    const id = (JSON.parse(allocation.body.toString()) as { id: string }).id;
+    const replacement = await rawRequest({
+      method: 'PUT',
+      path: `/assets/${encodeURIComponent(id)}/content`,
+      headers: multipartHeaders(storeId),
+      body: multipart([{ name: 'bytes', value: 'replacement', contentType: 'text/plain' }]),
+    });
+    expect(replacement.status).toBe(204);
+    expect(replacement.headers['x-asset-revision']).toBe('2');
+    expect(replacement.headers['access-control-expose-headers']).toBe('X-Asset-Revision');
+  });
+
+  test('rejects unauthenticated requests before reaching the registry', async () => {
+    await expectAuthRejection({ authenticate: async () => undefined }, 401, 'UNAUTHENTICATED');
+  });
+
+  test('maps a malformed authenticated principal to an internal error before the registry', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await expectAuthRejection(
+        { authenticate: async () => null as unknown as AssetPrincipal },
+        500,
+        'INTERNAL_ERROR',
+      );
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
+  test('forbids a principal without an asset key on every route before the registry', async () => {
+    await expectAuthRejection(
+      { authenticate: async () => ({}) as AssetPrincipal },
+      403,
+      'FORBIDDEN_ASSETS',
+    );
+  });
+
+  test('applies authorizeAssets denial uniformly before the registry', async () => {
+    await expectAuthRejection(
+      {
+        authenticate: async () => ({ key: 'principal' }),
+        authorizeAssets: async () => false,
+      },
+      403,
+      'FORBIDDEN_ASSETS',
+    );
+  });
+
   test('HEAD and GET have identical outcomes and headers for owned and missing ids', async () => {
     const storeId = `head-parity-${namespace++}`;
     const owner = makeStore('owner', storeId);

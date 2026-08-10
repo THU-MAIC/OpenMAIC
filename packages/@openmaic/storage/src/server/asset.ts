@@ -425,7 +425,16 @@ async function route(
     if (typeof id !== 'string') {
       throw new Error('@openmaic/storage: asset store returned a malformed id');
     }
-    sendJson(req, res, 201, { id }, { 'x-asset-revision': '1' });
+    sendJson(
+      req,
+      res,
+      201,
+      { id },
+      {
+        'x-asset-revision': '1',
+        'access-control-expose-headers': 'X-Asset-Revision',
+      },
+    );
     return;
   }
 
@@ -451,7 +460,10 @@ async function route(
     if (!Number.isSafeInteger(revision) || revision < 1) {
       throw new Error('@openmaic/storage: asset store returned a malformed revision');
     }
-    sendNoContent(res, { 'x-asset-revision': String(revision) });
+    sendNoContent(res, {
+      'x-asset-revision': String(revision),
+      'access-control-expose-headers': 'X-Asset-Revision',
+    });
     return;
   }
 

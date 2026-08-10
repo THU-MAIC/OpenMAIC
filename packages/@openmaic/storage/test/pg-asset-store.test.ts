@@ -251,6 +251,80 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     expect(row.rows[0]?.meta).toEqual({ contentType: '', provenance: 'replacement' });
   });
 
+  test('rejects JSON-lossy metadata on put and replace without changing entries', async () => {
+    const id = await store.put(PRINCIPAL, blob('original', 'image/png'), {
+      contentType: 'image/png',
+      provenance: 'original',
+    });
+    const original = (await db.query('SELECT * FROM asset_entries WHERE id = $1', [id])).rows[0];
+    const originalBlobs = (await db.query('SELECT * FROM asset_blobs ORDER BY content_hash')).rows;
+    const cases: Array<[string, AssetMeta, string, string?]> = [
+      [
+        'Date',
+        { invalid: new Date('2026-01-01T00:00:00.000Z') } as unknown as AssetMeta,
+        '/invalid',
+        '2026-01-01',
+      ],
+      [
+        'Map',
+        { invalid: new Map([['map-secret', 'value']]) } as unknown as AssetMeta,
+        '/invalid',
+        'map-secret',
+      ],
+      ['negative zero', { invalid: -0 } as AssetMeta, '/invalid'],
+      [
+        'nested undefined',
+        { nested: { invalid: undefined } } as unknown as AssetMeta,
+        '/nested/invalid',
+      ],
+      ['U+0000', { invalid: 'nul-secret\u0000tail' } as AssetMeta, '/invalid', 'nul-secret'],
+    ];
+
+    for (const [name, invalidMeta, path, hiddenValue] of cases) {
+      for (const [operation, write] of [
+        ['put', () => store.put(PRINCIPAL, blob('new bytes'), invalidMeta)],
+        ['replace', () => store.replace(PRINCIPAL, id, blob('replacement'), invalidMeta)],
+      ] as const) {
+        let thrown: unknown;
+        try {
+          await write();
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown, `${operation} ${name}`).toBeInstanceOf(Error);
+        expect((thrown as Error).message, `${operation} ${name}`).toContain(`'${path}'`);
+        if (hiddenValue !== undefined) {
+          expect((thrown as Error).message, `${operation} ${name}`).not.toContain(hiddenValue);
+        }
+        expect(
+          (await db.query('SELECT * FROM asset_entries ORDER BY id')).rows,
+          `${operation} ${name}`,
+        ).toEqual([original]);
+        expect(
+          (await db.query('SELECT * FROM asset_blobs ORDER BY content_hash')).rows,
+          `${operation} ${name}`,
+        ).toEqual(originalBlobs);
+      }
+    }
+  });
+
+  test('accepts plain metadata objects on put and replace', async () => {
+    const id = await store.put(PRINCIPAL, blob('plain put'), {
+      contentType: 'image/png',
+      nested: { accepted: true },
+    });
+    await expect(
+      store.replace(PRINCIPAL, id, blob('plain replace'), {
+        contentType: 'audio/mpeg',
+        nested: { accepted: ['yes'] },
+      }),
+    ).resolves.toBe(2);
+    expect(
+      (await db.query<{ meta: unknown }>('SELECT meta FROM asset_entries WHERE id = $1', [id]))
+        .rows[0]?.meta,
+    ).toEqual({ contentType: 'audio/mpeg', nested: { accepted: ['yes'] } });
+  });
+
   test('an entry whose bytes are gone resolves as a miss', async () => {
     const id = await store.put(PRINCIPAL, blob('missing bytes'));
     await db.query('UPDATE asset_blobs SET bytes = NULL');

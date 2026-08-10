@@ -11,7 +11,7 @@ import {
   type Queryable,
   type WithTransaction,
 } from '../src/asset/pg.js';
-import type { AssetPrincipal } from '../src/asset/types.js';
+import type { AssetPrincipal, AssetStore } from '../src/asset/types.js';
 import {
   createAssetHttpHandler,
   type AssetHttpAuthorize,
@@ -31,6 +31,7 @@ export interface AssetConformanceServerOptions extends Omit<
   authenticate?: (req: IncomingMessage) => Promise<AssetPrincipal | undefined>;
   authorizeAssets?: AssetHttpAuthorize;
   byteStore?: (db: PGlite) => AssetByteStore;
+  store?: (db: PGlite) => AssetStore;
 }
 
 interface NamespaceState {
@@ -62,10 +63,12 @@ export async function startAssetConformanceServer(
     let state = states.get(namespace);
     if (state !== undefined) return state;
     const db = new PGlite();
-    const store = new PgAssetStore(db, {
-      withTransaction: transactions(db),
-      byteStore: options.byteStore?.(db) ?? new PgAssetByteStore(db),
-    });
+    const store =
+      options.store?.(db) ??
+      new PgAssetStore(db, {
+        withTransaction: transactions(db),
+        byteStore: options.byteStore?.(db) ?? new PgAssetByteStore(db),
+      });
     state = {
       db,
       ready: db.waitReady.then(() => ensureAssetSchema(db)),

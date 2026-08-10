@@ -25,7 +25,7 @@ import {
   type AssetPrincipal,
   type AssetStore,
 } from './types.js';
-import { isLosslessJsonString } from '../runtime/json-value.js';
+import { assertJsonValue, isLosslessJsonString } from '../runtime/json-value.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
 export type { QueryResult, Queryable, WithTransaction } from '../runtime/pg.js';
@@ -121,6 +121,7 @@ class RegistryAssetNotFound extends Error {}
 class RegistryAssetQuotaExceeded extends Error {}
 
 function encodeMeta(meta: AssetMeta): string {
+  assertJsonValue(meta, 'asset metadata');
   try {
     const encoded = JSON.stringify(meta);
     if (encoded === undefined) throw new TypeError('not serializable');
