@@ -22,10 +22,16 @@
  * databases: reference counting happens *inside* the same transaction that
  * deletes the entry, so the last entry's removal can never reclaim bytes a
  * concurrent `put` has just adopted. The byte table is deliberately not a
- * replaceable browser-side backend: byte writes, reference counting, and
- * reclamation must share this transaction. A genuinely replaceable blob
- * service belongs to the server backend in delivery plan part 4, where the
- * server enforces consistency.
+ * replaceable backend *here*: byte writes, reference counting, and reclamation
+ * must share this transaction, because this store reclaims **inline** — a
+ * `remove` that drops the last reference deletes the bytes in the same
+ * transaction. Bytes outside that transaction could be deleted while a
+ * concurrent `put` adopted them, with nothing able to serialize the two.
+ *
+ * The server backend is not bound this way, and the difference is reclamation
+ * rather than storage. It collects offline, so no request path ever deletes
+ * bytes, and its byte layer is genuinely pluggable — a column of the
+ * transactional store or an object store keyed by content hash.
  *
  * On successful `put` calls, every returned value and every branch taken
  * reveals nothing about whether the bytes already existed — see

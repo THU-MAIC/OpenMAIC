@@ -2,18 +2,22 @@
 //
 // The universal lesson skeleton (Stage / Scene / SceneContent / Whiteboard /
 // VideoManifest / SlideContent / QuizContent / …) now lives in `@openmaic/dsl` and
-// is re-exported below. `Scene` is generic there: the contract owns only the
-// structure + the slide/quiz content kinds, while the playback `Action` set and
-// the richer feature content (interactive widgets, PBL) are app-side and get
-// composed in here.
+// is re-exported below. `Scene` is generic there: the contract owns the
+// structure and all four persisted content kinds, while richer interactive
+// widget payloads and PBL learner/runtime state are composed in here.
 //
 // `Scene` is re-exported as an alias of the app's fully-instantiated
 // `Scene<Action, AppSceneContent>`, so existing `import { Scene }` callers keep
 // the same semantics (actions are `Action[]`, content spans all four kinds).
-import type { Scene as DslScene, SceneContent as DslSceneContent } from '@openmaic/dsl';
+import type {
+  InteractiveContent as DslInteractiveContent,
+  PBLContent as DslPBLContent,
+  Scene as DslScene,
+  SceneContent as DslSceneContent,
+} from '@openmaic/dsl';
 import type { Action } from '@/lib/types/action';
-import type { WidgetType, WidgetConfig } from '@/lib/types/widgets';
-import type { PBLProjectConfig } from '@/lib/pbl/types';
+import type { WidgetConfig } from '@/lib/types/widgets';
+import type { PBLProjectConfig } from '@/lib/pbl/legacy/read';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 
 export type {
@@ -41,10 +45,9 @@ export { isSlideContent, isQuizContent } from '@openmaic/dsl';
 // `QuizQuestionType` from `@/lib/types/stage`.
 export type QuizQuestionType = import('@openmaic/dsl').QuizQuestion['type'];
 
-// The contract's `SceneContent` is the universal subset (slide | quiz). Reach it
-// under a distinct name; the app's own `SceneContent` (declared below) is the
-// full four-way union so existing `switch (content.type)` call sites keep all
-// four cases.
+// The contract's compatibility-default `SceneContent` is slide | quiz. Reach it
+// under a distinct name; the contract-owned interactive and PBL shapes are
+// widened below before composing the app's full four-way union.
 export type { SceneContent as SceneContentBase } from '@openmaic/dsl';
 
 // The raw, generic contract Scene is reachable under a distinct name for
@@ -54,36 +57,27 @@ export type { Scene as SceneShape } from '@openmaic/dsl';
 /**
  * Interactive content - Interactive web page (iframe).
  *
- * App-level feature surface: kept here rather than in `@openmaic/dsl` because it
- * couples to Ultra-mode widget configs (`WidgetType` / `WidgetConfig`).
+ * The contract owns the shared interactive shape; the app supplies its richer
+ * Ultra-mode widget-config union through the contract's generic extension point.
  */
-export interface InteractiveContent {
-  type: 'interactive';
-  url: string; // URL of the interactive page
-  // Optional: embedded HTML content
-  html?: string;
-  // Ultra Mode widget fields
-  widgetType?: WidgetType;
-  widgetConfig?: WidgetConfig;
-}
+export type InteractiveContent = DslInteractiveContent<WidgetConfig>;
 
 /**
  * PBL content - Project-based learning.
  *
- * App-level feature surface: kept here rather than in `@openmaic/dsl` because it
- * couples to the project-based-learning config (`PBLProjectConfig`).
+ * The contract records the stored field names and opaque legacy configuration;
+ * the app retains its read-only typed view of that record and widens
+ * `projectV2` with learner/runtime state.
  */
-export interface PBLContent {
-  type: 'pbl';
-  projectConfig: PBLProjectConfig;
-  /** PBL v2 payload used by the new web-PBL runtime, while preserving v1 compatibility. */
+export type PBLContent = DslPBLContent & {
+  projectConfig?: PBLProjectConfig & Record<string, unknown>;
   projectV2?: PBLProjectV2;
-}
+};
 
 /**
  * The app's full scene-content union: the contract's universal kinds plus the
- * app-only feature kinds. This is what `@/lib/types/stage` callers have always
- * known as `SceneContent` (all four cases).
+ * app-widened feature kinds. This is what `@/lib/types/stage` callers have
+ * always known as `SceneContent` (all four cases).
  */
 export type AppSceneContent = DslSceneContent | InteractiveContent | PBLContent;
 

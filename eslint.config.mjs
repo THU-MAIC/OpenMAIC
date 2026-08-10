@@ -413,11 +413,14 @@ const eslintConfig = defineConfig([
       ],
     },
   },
-  // Pass files — lib/video-export/passes/**: one level deeper, so a single `../…`
+  // Nested files — lib/video-export/{passes,legacy}/**: one level deeper, so a single `../…`
   // reaches a module-root file and STAYS inside the module; only a two-level
   // `../../…` escapes, and that is allowed solely for `../../choreography`.
   {
-    files: ['lib/video-export/passes/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    files: [
+      'lib/video-export/passes/**/*.{ts,tsx,js,jsx,mjs,cjs}',
+      'lib/video-export/legacy/**/*.{ts,tsx,js,jsx,mjs,cjs}',
+    ],
     rules: {
       'no-restricted-syntax': [
         'error',

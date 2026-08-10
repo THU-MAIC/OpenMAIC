@@ -1,94 +1,46 @@
 /**
- * PBL v2 — Project Schema
+ * PBL v2 — contract design types plus the app runtime overlay.
  *
- * Replaces v1's role-selection + read-only issueboard + @question/@judge
- * model with a single-Instructor guided flow (Hero → Workspace → Completion).
- *
- * v1 (`PBLProjectConfig` in `./types.ts`) is **preserved** for backward
- * compatibility — both fields coexist on `PBLContent`, the renderer
- * branches on which one is populated.
- *
- * The product ships a single Instructor. The multi-agent chat-thread
- * structure is kept generic so additional roles can be introduced later
- * with their own design, but no other role type exists today.
+ * The persisted design/skeleton belongs to `@openmaic/dsl`. This barrel keeps
+ * the established app-facing names while adding learner/runtime state to the
+ * nested contract shapes that carry it.
  */
+import type {
+  PBLMicrotask as ContractPBLMicrotask,
+  PBLMilestone as ContractPBLMilestone,
+  PBLProject as ContractPBLProject,
+  PBLProficiency,
+  PBLRoleType,
+  PBLThreadSeat as ContractPBLThreadSeat,
+} from '@openmaic/dsl';
 import type { SceneOutline } from '@/lib/types/generation';
 
-// ---------------------------------------------------------------------------
-// Enums (string-literal unions; no runtime enum cost)
-// ---------------------------------------------------------------------------
-
-/** Project lifecycle status. */
-export type PBLProjectStatus = 'designing' | 'review' | 'active' | 'completed' | 'archived';
-
-/** Milestone lifecycle. The LOCKED→ACTIVE transition is gated by the
- *  learner clicking "Continue" on a milestone handover card (see
- *  `PBLHandover`). */
-export type PBLMilestoneStatus = 'locked' | 'active' | 'completed';
-
-export type PBLMicrotaskStatus = 'todo' | 'in_progress' | 'completed' | 'skipped';
-
-/** Role types. `user` is the implicit learner (a message/event actor, never
- *  created as a role record). The product currently ships a single Instructor;
- *  `evaluator` / `mentor` / `collaborator` are reserved role kinds. Tools are
- *  NOT roles — roles/agents call tools, recorded as runtime events.
- *  `simulator` is the in-scene role-play character voice and `system` is
- *  neutral scene narration (旁白) — neither a character nor the Instructor;
- *  both ONLY appear on scenario projects (`project.scenario` set) as message
- *  `roleType`s for rendering, NOT `roles[]` records. Normal projects never
- *  produce a `simulator` or `system` message. */
-export type PBLRoleType =
-  | 'user'
-  | 'instructor'
-  | 'evaluator'
-  | 'mentor'
-  | 'collaborator'
-  | 'simulator'
-  | 'system';
-
-/** Self-reported skill tier; drives Instructor's three-tier guidance.
- *  Empty string means "not yet set" — Planner refuses to leave the
- *  initial phase without it (in v1 standalone; in v2 the value is
- *  derived from outline context, not asked from the user). */
-export type PBLProficiency = '' | 'beginner' | 'intermediate' | 'advanced';
+export type {
+  PBLProject,
+  PBLRole,
+  PBLDocument,
+  PBLScenarioConfig,
+  PBLScenarioCharacter,
+  PBLSceneVisual,
+  PBLThreadSeat,
+  PBLProjectStatus,
+  PBLMilestoneStatus,
+  PBLMicrotaskStatus,
+  PBLRoleType,
+  PBLProficiency,
+  PBLAssignee,
+  PBLUiPhase,
+} from '@openmaic/dsl';
 
 export type PBLSubmissionKind = 'text' | 'file' | 'link';
 
 export type PBLEvaluationKind = 'task' | 'milestone' | 'final';
 
-/** Who is responsible for a microtask. The AI-collaborator option was
- *  removed from the product, so every microtask is learner-owned. Kept
- *  as a named type (rather than inlining `'user'`) so the field stays
- *  self-documenting and a future re-introduction is a one-line change. */
-export type PBLAssignee = 'user';
-
 /** Closing-check answer quality. Recorded by Instructor via the
  *  `record_closing_check` tool before `advance_micro_task` is allowed. */
 export type PBLClosingQuality = 'weak' | 'ok' | 'strong';
 
-/** UI state machine for the in-scene PBL flow. */
-export type PBLUiPhase = 'hero' | 'generating' | 'workspace' | 'completed';
-
-// ---------------------------------------------------------------------------
-// Core types
-// ---------------------------------------------------------------------------
-
-/** A participant in the project. The Instructor is always present; the
- *  learner ("user") is implicit and has no role record. */
-export interface PBLRole {
-  id: string;
-  type: PBLRoleType;
-  name: string;
-  /** SHORT, learner-facing introduction shown as a hover tooltip on the
-   *  instructor's avatar. Written TO the learner, in the project language.
-   *  Curated to be meaningful/reassuring — must NOT expose internal mechanics
-   *  (history, tools, evaluation/scoring, task-advancing). Optional: when
-   *  absent the avatar hover falls back to showing the role name. */
-  description?: string;
-  /** Internal persona/voice that drives the agent's behaviour. NOT shown to
-   *  the learner. */
-  systemPrompt?: string;
-}
+type RuntimeOverlay<Base, Overlay> = Omit<Base, keyof Overlay> & Overlay;
 
 /** Set by Instructor when advancing a task via `advance_micro_task`.
  *  Never shown to the learner — internal teaching record. */
@@ -125,196 +77,29 @@ export interface PBLEngagementSummary {
   closingQuality?: PBLClosingQuality;
 }
 
-/** A single actionable step within a milestone. */
-export interface PBLMicrotask {
-  id: string;
-  title: string;
-  description?: string;
-  status: PBLMicrotaskStatus;
-  /** Always "user" — the learner does this task. */
-  assignee: PBLAssignee;
-  hints: string[];
-  order: number;
-  /** Internal teaching record from `advance_micro_task`. */
-  internalAssessment?: PBLInternalAssessment;
-  completionReason?: string;
-  /** Engagement summary cached on completion. */
-  engagement?: PBLEngagementSummary;
-  /** SCENARIO ONLY (design-time). Per-beat advance criteria for a SCENE
-   *  beat. Normal microtasks / prep / wrapup leave this undefined and
-   *  rely on the milestone-level gate. */
-  completionCriteria?: string;
-  /** SCENARIO ONLY (design-time, B1′). The CONCRETE, OBSERVABLE in-scene
-   *  action the learner must say or do for THIS beat to count as done — the
-   *  scenario equivalent of a "deliverable" (e.g. "下注、加注或弃牌" /
-   *  "对对方的感受做出共情回应"). Authored in plain scene terms, NOT a
-   *  teaching goal. The advance detector uses this (falling back to
-   *  `completionCriteria`) so off-topic / small-talk turns do NOT advance.
-   *  Undefined = fall back to `completionCriteria`. */
-  successWhen?: string;
-  /** SCENARIO ONLY (design-time, B1′). What the character PRIVATELY wants
-   *  this beat (their in-scene drive, e.g. "试探对方是否在虚张声势"). Fed to
-   *  the Simulator so the character pursues a goal in character — NEVER
-   *  narrated, evaluated, or coached. Undefined = no explicit drive. */
-  characterObjective?: string;
-  /** SCENARIO ONLY (design-time, B1′). The single skill this beat practises
-   *  (e.g. "底池赔率判断" / "积极倾听"). Consumed by the final evaluator's
-   *  per-act goal scaffold and surfaced in the completion page's per-act
-   *  review; never spoken by the character. Undefined = none. */
-  skillFocus?: string;
-  /** SCENARIO ONLY (design-time). Neutral system narration shown when
-   *  this SCENE beat is entered (e.g. "you walk into a quiet café").
-   *  Rendered as a `'system'` message — NOT a character, NOT the
-   *  Instructor. Undefined = no narration. */
-  narration?: string;
-  /** SCENARIO ONLY (design-time). Learner-facing brief for the right-side
-   *  "current task" panel — what this beat is about and WHY it matters, in
-   *  the learner's own framing. May give orientation / things to think about,
-   *  but NEVER names the exact action or answer (that is the hidden
-   *  `successWhen`) and NEVER spoils a `characterObjective` fact. This is a
-   *  PURE DISPLAY field: it is NOT fed to the character/narrator (so it can
-   *  carry light teaching framing without polluting the role-play), unlike
-   *  `description` which is the character's established-fact source. When
-   *  absent, the panel falls back to `description`. */
-  learnerBrief?: string;
-}
+/** Contract microtask plus learner-owned runtime state. */
+export type PBLMicrotask = RuntimeOverlay<
+  ContractPBLMicrotask,
+  {
+    /** Internal teaching record from `advance_micro_task`. */
+    internalAssessment?: PBLInternalAssessment;
+    completionReason?: string;
+    /** Engagement summary cached on completion. */
+    engagement?: PBLEngagementSummary;
+  }
+>;
 
-/** A learning document or reference material attached to a milestone. */
-export interface PBLDocument {
-  id: string;
-  title: string;
-  content: string;
-  docType: 'markdown' | 'reference' | 'starter_file';
-}
-
-/** A major phase of the project.
- *
- * The three "script" fields — `briefing`, `completionCriteria`,
- * `debrief` — are the Planner's hand-off to the Instructor. The
- * Instructor reads them off the milestone like a script: what to set
- * up, what counts as done, how to wrap.
- */
-export interface PBLMilestone {
-  id: string;
-  title: string;
-  description?: string;
-  status: PBLMilestoneStatus;
-  order: number;
-  microtasks: PBLMicrotask[];
-  /** Legacy / future resource slot. Current generators do not author this. */
-  documents?: PBLDocument[];
-  /** Short intro: why this milestone exists, what to expect. */
-  briefing?: string;
-  /** How to tell the learner is done. */
-  completionCriteria?: string;
-  /** What to say when wrapping up. */
-  debrief?: string;
-  /** Optional, authored by the Planner ONLY for the 1-2 stages that
-   *  carry the project's core knowledge. When present, the Instructor
-   *  runs a one-time integrative reverse-question about the whole
-   *  stage's core concept before the stage is allowed to seal (see
-   *  the milestone evidence gate in `agents/instructor.ts`). Leaving
-   *  it undefined means "no stage-level synthesis check" — most
-   *  stages. This is the deterministic knob that keeps stage-level
-   *  reverse-questions from being asked on every stage (too many) or
-   *  never (too few). */
-  synthesisCheck?: {
-    /** Short description of the core concept the integrative question
-     *  should probe (e.g. "为什么循环能避免重复代码"). */
-    coreConcept: string;
-  };
-  /** Same idea as `PBLMicrotask.internalAssessment` — Instructor sets
-   *  this when auto-completing the milestone via `advance_micro_task`
-   *  on the last task. */
-  internalAssessment?: PBLInternalAssessment;
-  /** SCENARIO ONLY (design-time). This milestone's role in the fixed
-   *  three-stage scenario skeleton:
-   *    - 'prep'   = first stage; Instructor introduces the concrete
-   *                 premise + cast (no assessment, confirm-to-advance).
-   *    - 'roleplay' = immersive role-play stage driven by the Simulator
-   *                 (the cast in `project.scenario.characters`); there
-   *                 may be MORE THAN ONE consecutive roleplay stage.
-   *    - 'wrapup' = last stage; Instructor gives light, data-driven
-   *                 feedback (detailed report lives on the completion page).
-   *  Normal milestones leave this undefined and run the standard
-   *  Instructor flow. (Named 'roleplay' — NOT 'scene' — to avoid
-   *  collision with OpenMAIC's top-level "scene" type.) */
-  scenarioStage?: 'prep' | 'roleplay' | 'wrapup';
-}
-
-/** SCENARIO ONLY. One character in the role-play cast. Authored at
- *  design time (Planner) and frozen into the packaged project. The
- *  character is data on `project.scenario`, NOT a `roles[]` record. */
-export interface PBLScenarioCharacter {
-  id: string;
-  name: string;
-  /** Persona: stable identity / relationship to the learner /
-   *  personality / speaking style — injected into the Simulator system
-   *  prompt. */
-  persona: string;
-  /** SCENARIO ONLY (design-time). This character's CONCRETE current
-   *  circumstance / role in the scenario that the learner walks into —
-   *  e.g. "just went through a breakup, low mood, says they're fine but
-   *  aren't"; in a game: "sits at the under-the-gun position, plays
-   *  tight". Distinct from `persona` (stable identity). Pinned at design
-   *  time and introduced by the Instructor in the prep stage — the
-   *  learner never has to guess it. */
-  situation?: string;
-  /** Hard safety boundaries (what the character must never say/do). */
-  boundaries?: string;
-  /** Avatar asset path or style seed; rendered distinct from the
-   *  Instructor avatar. */
-  avatar?: string;
-  /** Optional design-time opening line so the packaged scene is
-   *  reproducible; if absent the Simulator generates one at runtime. */
-  openingLine?: string;
-}
-
-/** SCENARIO ONLY (design-time). ONE project-wide scene visual for the
- *  role-play entrance animation + banner. Authored by the Planner from an
- *  understanding of ALL roleplay stages, so it fits the whole project (not a
- *  guessed/enumerated category). Rendered deterministically; EVERY field is
- *  optional and sanitized at render time, so a missing / malformed value can
- *  never break the view. Purely cosmetic — never gates logic. */
-export interface PBLSceneVisual {
-  /** A short, project-wide scene phrase that fits every roleplay stage
-   *  (e.g. "深夜，各自房间隔着手机聊到天亮" / "决赛辩论赛场" / "牌桌现金局"). */
-  caption?: string;
-  /** Background gradient top colour (hex, e.g. "#3a2740"). */
-  bg1?: string;
-  /** Background gradient bottom colour (hex). */
-  bg2?: string;
-  /** Accent colour for glows / motifs (hex). */
-  accent?: string;
-  /** 2–4 emoji that evoke the shared setting (e.g. ["📱","🌙","🛏️"]). */
-  motifs?: string[];
-}
-
-/** SCENARIO ONLY. Presence of `project.scenario` is the single gate
- *  that marks a project as a role-play scenario project. Absent on all
- *  normal projects (the baseline). Authored at design time and frozen
- *  into the packaged project. */
-export interface PBLScenarioConfig {
-  /** The overall premise / situation (what is going on). Introduced by
-   *  the Instructor in the prep stage. */
-  setting: string;
-  /** SCENARIO ONLY (design-time). The project-wide scene visual (entrance
-   *  animation + banner backdrop), authored by the Planner to fit all
-   *  roleplay stages. Cosmetic; absent → a neutral fallback is rendered. */
-  sceneVisual?: PBLSceneVisual;
-  /** What the learner is practicing (used by wrapup / completion page). */
-  goal?: string;
-  /** SCENARIO ONLY (design-time). Rules / structure the learner must be
-   *  told before the scene (games / interviews / debates etc.). Omit for
-   *  free-form emotional scenarios. Introduced by the Instructor in prep. */
-  rules?: string;
-  /** SCENARIO ONLY (design-time). The learner's OWN role / position in
-   *  the scenario — e.g. "you are their close friend" / "you are the 5th
-   *  player, on the button". Introduced by the Instructor in prep. */
-  learnerRole?: string;
-  /** The cast (1..N; first showcase ships a single character). */
-  characters: PBLScenarioCharacter[];
-}
+/** Contract milestone with runtime-aware microtasks and assessment state. */
+export type PBLMilestone = RuntimeOverlay<
+  ContractPBLMilestone,
+  {
+    microtasks: PBLMicrotask[];
+    /** Same idea as `PBLMicrotask.internalAssessment` — Instructor sets
+     *  this when auto-completing the milestone via `advance_micro_task`
+     *  on the last task. */
+    internalAssessment?: PBLInternalAssessment;
+  }
+>;
 
 /** A piece of learner-produced work attached to a microtask. */
 export interface PBLSubmission {
@@ -693,16 +478,16 @@ export interface PBLChatMessage {
   characterId?: string;
 }
 
-/** Per-agent chat thread. Currently only the Instructor thread is
- *  populated. */
-export interface PBLAgentThread {
-  /** Matches `PBLRole.id`. */
-  agentId: string;
-  messages: PBLChatMessage[];
-  /** When messages exceed a threshold, the older half is folded into
-   *  a summary string so the context window stays bounded. */
-  earlierSummary?: string;
-}
+/** Contract thread seat plus app-owned typed message history. */
+export type PBLAgentThread = RuntimeOverlay<
+  ContractPBLThreadSeat,
+  {
+    messages: PBLChatMessage[];
+    /** When messages exceed a threshold, the older half is folded into
+     *  a summary string so the context window stays bounded. */
+    earlierSummary?: string;
+  }
+>;
 
 // ---------------------------------------------------------------------------
 // Milestone handover
@@ -746,146 +531,27 @@ export interface PBLPendingTaskCompletion {
 // ---------------------------------------------------------------------------
 
 /**
- * The v2 PBL project model. Lives at `scene.content.projectV2`.
- *
- * Key differences from v1 `PBLProjectConfig`:
- *  - Replaces "issueboard" with structured Milestones + Microtasks
- *  - Replaces the role-selection Landing with Hero → Workspace →
- *    Completion flow
- *  - Single Instructor agent (the `roles` / `threads` arrays are kept
- *    generic so additional roles could be introduced later)
- *  - First-class evaluations (task / milestone / final) with
- *    structured fields
- *  - First-class engagement analytics
- *  - Submission objects (paste-text / upload / link)
- *  - Milestone gating (LOCKED→ACTIVE explicit user gate via
- *    `pendingHandover`)
- *
- * Only the Instructor is wired: `roles` contains exactly one Instructor
- * record and `threads` contains its single thread.
+ * Contract design/skeleton with app-owned learner and runtime state overlaid
+ * onto the nested arrays. The property replacement is essential: intersecting
+ * only the two top-level project types would leave contract microtasks and
+ * thread messages untyped at app call sites.
  */
-export interface PBLProjectV2 {
-  /** UI state machine for the in-scene PBL flow. */
-  uiPhase: PBLUiPhase;
-
-  // --- Project metadata --------------------------------------------------
-
-  title: string;
-  description: string;
-  /** What the learner wants to LEARN (distinct from `description` =
-   *  what they will BUILD). Derived from outline context in v2 (in v1
-   *  standalone this was captured by Planner's intent-convergence
-   *  phase, which we drop in v2). */
-  learningObjective?: string;
-  /** Learner-facing "what you'll gain" statements shown on the Hero —
-   *  3-5 concise, readable phrases for the abilities / awareness /
-   *  knowledge the learner BUILDS by working through the project. These
-   *  describe what the learner takes away (capabilities exercised), NOT
-   *  the final deliverable/result the project produces (that is
-   *  `description`). Authored by the Planner in the project language,
-   *  typically by expanding each terse outline `targetSkills` entry into
-   *  a readable competency. Distinct from `learningObjective`, the single
-   *  internal skill sentence used by prompts. Optional only for backward
-   *  compatibility with projects packaged before this field existed
-   *  (legacy v1→v2 upgrades); new Planner runs always populate it. */
-  gains?: string[];
-  /** Skill tier — kept in sync with `proficiencyAssessment.tier` for
-   *  legacy consumers (planner prompt, tier-guidance block, dev
-   *  logs). The full adaptive state lives in `proficiencyAssessment`. */
-  proficiency: PBLProficiency;
-  /** Adaptive proficiency state — pre-play initial assessment + the
-   *  in-PBL EWMA-updated score. Drives Instructor's tier guidance.
-   *  See `lib/pbl/v2/operations/kernel/proficiency.ts` for the algorithm. */
-  proficiencyAssessment?: PBLProficiencyAssessment;
-  /** ISO 639 language code from outline language inference.
-   *  BCP-47 fallback locale for deterministic platform text (e.g.
-   *  syntheticPlatformOpener). For CONTENT language, prefer
-   *  `languageDirective` — it carries the classroom's full language
-   *  policy (e.g. "中文为主，英文技术术语保留原文") and is the
-   *  authoritative source for Planner / Instructor / Evaluator. */
-  language: string;
-  /** Classroom-level content-language policy. Set by the Planner from
-   *  `courseContext.languageDirective`. When present, it overrides
-   *  `language` as the content-language rule. It may be a simple locale
-   *  ("zh-CN") or a nuanced directive ("中文为主，英文技术术语保留原文").
-   *  When undefined (legacy projects), `language` is the fallback. */
-  languageDirective?: string;
-  /** Free-form tags (e.g. ["python", "data-analysis"]). */
-  tags: string[];
-
-  /** SCENARIO ONLY. Role-play scenario configuration. Presence of this
-   *  field is the single gate that marks the project as a scenario
-   *  project; absent on all normal projects. Authored at design time
-   *  (Planner) and frozen into the packaged project. */
-  scenario?: PBLScenarioConfig;
-
-  /** Packaged-format version. Absent = baseline (current). Reserved for
-   *  future migrations once the project package format is frozen. */
-  schemaVersion?: number;
-
-  // --- Lifecycle ---------------------------------------------------------
-
-  status: PBLProjectStatus;
-
-  // --- Structure ---------------------------------------------------------
-
-  /** Multi-agent participants. Stage A only populates the Instructor
-   *  (one record with `type === 'instructor'`). The schema supports
-   *  any number of additional agents for follow-up PRs. */
-  roles: PBLRole[];
-
-  milestones: PBLMilestone[];
-
-  /** Learner deliverables attached to microtasks. */
-  submissions: PBLSubmission[];
-
-  /** Instructor's structured feedback at task / milestone / final
-   *  levels. */
-  evaluations: PBLEvaluation[];
-
-  // --- Runtime state -----------------------------------------------------
-
-  /** Per-agent chat threads. Stage A only contains an Instructor
-   *  thread. */
-  threads: PBLAgentThread[];
-
-  /** Append-only event ledger (ring-buffer capped; see analytics
-   *  module for the cap). */
-  engagementEvents: PBLEngagementEvent[];
-
-  /** Append-only runtime fact ledger. This is intentionally broader than
-   *  engagement analytics: it records actor actions such as messages, tool
-   *  calls, submissions, evaluations and state changes. It remains optional
-   *  for old v2 projects; future runtime-split work can make it required. */
-  runtimeEvents?: PBLRuntimeEvent[];
-
-  /** Monotonically incremented by resetProjectProgress, never derived from
-   *  the bounded runtime event ring buffer. */
-  runtimeResetEpoch?: number;
-
-  /** Cross-milestone hand-off state. Present after Instructor
-   *  completes a milestone's last microtask, until the learner clicks
-   *  Continue. */
-  pendingHandover?: PBLHandover;
-
-  /** Task-level manual-completion state. Present after a microtask has
-   *  reached B point; the task remains active until the learner clicks
-   *  the sidebar "Done" button. */
-  pendingTaskCompletion?: PBLPendingTaskCompletion;
-
-  /** Transient client-only payload for the first Workspace greeting.
-   *  The Hero computes the prior-quiz snapshot immediately before
-   *  launch, then the Chat consumes and clears this field before it
-   *  starts `/api/pbl/v2/open-task`. It should not remain on persisted
-   *  project state after that first request begins. */
-  pendingOpenTaskPriorQuizResults?: PriorQuizResult[];
-
-  // --- Timestamps --------------------------------------------------------
-
-  /** ISO timestamps. */
-  createdAt: string;
-  updatedAt: string;
-}
+export type PBLProjectV2 = RuntimeOverlay<
+  ContractPBLProject,
+  {
+    milestones: PBLMilestone[];
+    submissions: PBLSubmission[];
+    evaluations: PBLEvaluation[];
+    threads: PBLAgentThread[];
+    engagementEvents: PBLEngagementEvent[];
+    proficiencyAssessment?: PBLProficiencyAssessment;
+    runtimeEvents?: PBLRuntimeEvent[];
+    runtimeResetEpoch?: number;
+    pendingHandover?: PBLHandover;
+    pendingTaskCompletion?: PBLPendingTaskCompletion;
+    pendingOpenTaskPriorQuizResults?: PriorQuizResult[];
+  }
+>;
 
 // ---------------------------------------------------------------------------
 // Planner input (consumed by PR 2)
@@ -944,9 +610,82 @@ export interface PBLPlannerV2Input {
 // Type guards
 // ---------------------------------------------------------------------------
 
-/** Narrow `unknown` to `PBLProjectV2`. Used by `pbl-renderer.tsx` to
- *  branch v1 vs v2 paths. Cheap structural check — does not validate
- *  every field; intended as a safety net, not a full validator. */
+function isNonArrayObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isObjectArray(value: unknown): value is Record<string, unknown>[] {
+  return Array.isArray(value) && value.every(isNonArrayObject);
+}
+
+/** Whether a persisted v2 value has every container the renderer and runtime
+ *  normalization path dereference on mount. Deliberately ignores leaf fields:
+ *  old or hand-edited projects may have incomplete scalar metadata while still
+ *  being safe to normalize and render. */
+export function hasPBLProjectV2Containers(value: unknown): boolean {
+  if (!isNonArrayObject(value)) return false;
+
+  if (
+    !isObjectArray(value.milestones) ||
+    !isObjectArray(value.roles) ||
+    !isObjectArray(value.submissions) ||
+    !isObjectArray(value.evaluations) ||
+    !isObjectArray(value.threads) ||
+    !isObjectArray(value.engagementEvents)
+  ) {
+    return false;
+  }
+
+  if (value.milestones.some((milestone) => !isObjectArray(milestone.microtasks))) return false;
+  if (value.threads.some((thread) => !isObjectArray(thread.messages))) return false;
+
+  if (value.gains !== undefined && !Array.isArray(value.gains)) return false;
+  if (value.runtimeEvents !== undefined && !isObjectArray(value.runtimeEvents)) return false;
+  if (value.scenario !== undefined) {
+    if (!isNonArrayObject(value.scenario)) return false;
+    if (!isObjectArray(value.scenario.characters)) return false;
+  }
+
+  return true;
+}
+
+/** Whether a stored v2 payload has the minimum design structure the current
+ * workspace can turn into learner progress. Runtime normalization can repair
+ * status and create the Instructor thread, but it cannot synthesize the role
+ * id used to bind that thread, the microtask ids used by lookup/update paths,
+ * or the role/task labels rendered by the workspace and Instructor prompt.
+ * Other scalar leaves remain deliberately outside this structural predicate. */
+export function isRunnablePBLProjectV2(value: unknown): boolean {
+  if (!hasPBLProjectV2Containers(value)) return false;
+
+  const project = value as {
+    roles: Record<string, unknown>[];
+    milestones: Array<{ microtasks: Record<string, unknown>[] }>;
+  };
+  return (
+    project.roles.some(
+      (role) =>
+        role.type === 'instructor' &&
+        typeof role.id === 'string' &&
+        role.id.trim().length > 0 &&
+        typeof role.name === 'string',
+    ) &&
+    project.milestones.length > 0 &&
+    project.milestones.every(
+      (milestone) =>
+        milestone.microtasks.length > 0 &&
+        milestone.microtasks.every(
+          (microtask) =>
+            typeof microtask.id === 'string' &&
+            microtask.id.trim().length > 0 &&
+            typeof microtask.title === 'string',
+        ),
+    )
+  );
+}
+
+/** Narrow `unknown` to `PBLProjectV2`. Cheap structural check — does not
+ *  validate every field; intended as a safety net, not a full validator. */
 export function isPBLProjectV2(value: unknown): value is PBLProjectV2 {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Partial<PBLProjectV2>;

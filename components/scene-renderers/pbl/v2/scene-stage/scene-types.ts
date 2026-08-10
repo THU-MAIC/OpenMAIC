@@ -10,6 +10,7 @@
  */
 
 import type { PBLSceneVisual } from '@/lib/pbl/v2/types';
+import { trimmedPBLText } from '@/lib/pbl/v2/readers';
 
 export interface SanitizedSceneVisual {
   /** Background gradient top colour (hex). */
@@ -29,8 +30,8 @@ const FALLBACK = { bg1: '#26244a', bg2: '#1a1934', accent: '#9d8cff' } as const;
 
 const HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
-function hex(value: string | undefined, fallback: string): string {
-  const v = value?.trim();
+function hex(value: unknown, fallback: string): string {
+  const v = trimmedPBLText(value);
   return v && HEX.test(v) ? v : fallback;
 }
 
@@ -41,7 +42,7 @@ export function sanitizeSceneVisual(visual: PBLSceneVisual | undefined): Sanitiz
     .map((m) => (typeof m === 'string' ? m.trim() : ''))
     .filter((m) => m.length > 0 && m.length <= 8)
     .slice(0, 4);
-  const caption = visual?.caption?.trim();
+  const caption = trimmedPBLText(visual?.caption);
   return {
     bg1: hex(visual?.bg1, FALLBACK.bg1),
     bg2: hex(visual?.bg2, FALLBACK.bg2),

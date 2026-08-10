@@ -97,8 +97,8 @@ export function buildCompletionReportViewModel(project: PBLProjectV2): Completio
   };
 }
 
-export function cleanCompletionIntro(feedback: string | undefined): string | undefined {
-  const intro = stripEvaluationTail(feedback ?? '')
+export function cleanCompletionIntro(feedback: unknown): string | undefined {
+  const intro = stripEvaluationTail(typeof feedback === 'string' ? feedback : '')
     .replace(/\{\{\s*[^}]+\s*\}\}/g, '')
     .trim();
   return intro || undefined;

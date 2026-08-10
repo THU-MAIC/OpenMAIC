@@ -12,6 +12,7 @@ import { Pool } from 'pg';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { authenticatePersistenceRequest } from '@/lib/persistence/server-auth';
+import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 
 export const runtime = 'nodejs';
 
@@ -44,7 +45,10 @@ async function createPersistenceHandler(
     await ensureSchema(queryable);
     await ensureDocumentSchema(queryable);
     const withTransaction = nodePostgresTransaction(queryable);
-    const runtimeStore = new PgRuntimeStore(queryable, { withTransaction });
+    const runtimeStore = new PgRuntimeStore(queryable, {
+      withTransaction,
+      payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+    });
     const documentStore = new PgDocumentStore(queryable, {
       withTransaction,
       validateScene: validateAppScene,
@@ -57,6 +61,7 @@ async function createPersistenceHandler(
       authorizeDocuments: async () => true,
       validateScene: validateAppScene,
       validateStage: validateAppStage,
+      payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
     });
   } catch (error) {
     await pool.end().catch(() => {});

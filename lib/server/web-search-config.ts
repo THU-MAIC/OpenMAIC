@@ -2,6 +2,7 @@ import {
   resolveServerWebSearchProviderId,
   resolveWebSearchApiKey,
   resolveWebSearchBaseUrl,
+  resolveWebSearchModel,
 } from '@/lib/server/provider-config';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
@@ -22,6 +23,9 @@ const OFFICIAL_CLIENT_BASE_URLS: Record<WebSearchProviderId, string[]> = {
     'https://api.search.brave.com',
   ],
   baidu: ['https://qianfan.baidubce.com'],
+  // The bare root is accepted for convenience; the Claude adapter normalizes it
+  // to the /v1 root, since the AI SDK appends "/messages" to the base URL.
+  claude: ['https://api.anthropic.com', 'https://api.anthropic.com/v1'],
   minimax: [
     'https://api.minimaxi.com',
     'https://api.minimaxi.com/v1',
@@ -82,6 +86,7 @@ export function resolveWebSearchRouteBaseUrl(
 export function resolveClassroomWebSearchConfig(input: {
   webSearchProviderId?: WebSearchProviderId;
   webSearchApiKey?: string;
+  webSearchModelId?: string;
   baiduSubSources?: BaiduSubSources;
 }):
   | {
@@ -89,6 +94,7 @@ export function resolveClassroomWebSearchConfig(input: {
       apiKey: string;
       baseUrl?: string;
       baiduSubSources?: BaiduSubSources;
+      claudeModelId?: string;
     }
   | undefined {
   const requestedProviderId = assertWebSearchProviderId(input.webSearchProviderId)
@@ -111,6 +117,9 @@ export function resolveClassroomWebSearchConfig(input: {
     baseUrl,
     ...(providerId === 'baidu' && input.baiduSubSources
       ? { baiduSubSources: input.baiduSubSources }
+      : {}),
+    ...(providerId === 'claude'
+      ? { claudeModelId: resolveWebSearchModel('claude', input.webSearchModelId) }
       : {}),
   };
 }
