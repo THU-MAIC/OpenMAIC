@@ -11,14 +11,16 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { interpolateVariables } from '../../prompts/loader.js';
 
 const _cache = new Map<string, string>();
 
 // `src/pbl/prompts` and `dist/pbl/prompts` have the same depth below the package root.
-const PROMPTS_DIR = fileURLToPath(new URL('../../../prompts-pbl/', import.meta.url));
+// Resolve from this module's URL via path operations so app bundlers do not
+// mistake the Markdown directory for a statically imported module asset.
+const PROMPTS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../prompts-pbl');
 
 /** Read a markdown prompt by file name (without extension), cached. */
 function readPromptFile(name: string): string {

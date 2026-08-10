@@ -128,24 +128,6 @@ jobs:
       - name: Unit Tests (generation)
         run: pnpm --filter @openmaic/generation test
 
-      # Remove this duplicate-asset guard in Part D with the app prompt copy.
-      - name: Prompt asset parity (generation)
-        shell: bash
-        run: |
-          set -euo pipefail
-          for path in templates/requirements-to-outlines snippets/{image-instructions,json-output-rules,media-safety-guidelines,slide-generated-image-instructions,slide-image-instructions,slide-video-instructions,video-instructions}.md; do
-            if ! diff -r "lib/prompts/$path" "packages/@openmaic/generation/$path"; then
-              echo "::error file=lib/prompts/$path::Prompt asset $path diverged; the app and package copies must be edited together until Part D removes the app copy."
-              exit 1
-            fi
-          done
-          for prompt in planner-single-call-system planner-scenario-single-call-system; do
-            if ! diff "lib/pbl/v2/prompts/$prompt.md" "packages/@openmaic/generation/prompts-pbl/$prompt.md"; then
-              echo "::error file=lib/pbl/v2/prompts/$prompt.md::PBL planner prompt $prompt diverged; the app and package copies must be edited together until Part D removes the app copy."
-              exit 1
-            fi
-          done
-
       - name: Node consumer smoke (generation scene)
         shell: bash
         run: |

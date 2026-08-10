@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildCompleteScene } from '@/lib/generation/scene-builder';
+import { buildCompleteScene } from '@openmaic/generation';
 import type { GeneratedPBLContent, SceneOutline } from '@/lib/types/generation';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 

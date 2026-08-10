@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { generateSceneActions, generateSceneContent } from '@/lib/generation/scene-generator';
-import type { AICallFn } from '@/lib/generation/pipeline-types';
+import { generateSceneActions, generateSceneContent, type AICallFn } from '@openmaic/generation';
 import type { GeneratedInteractiveContent, SceneOutline } from '@/lib/types/generation';
 
 function baseInteractiveOutline(overrides: Partial<SceneOutline> = {}): SceneOutline {

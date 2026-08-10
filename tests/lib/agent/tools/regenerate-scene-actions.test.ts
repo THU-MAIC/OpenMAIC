@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('@/lib/generation/generation-pipeline', () => ({
+vi.mock('@openmaic/generation', () => ({
   generateSceneActions: vi.fn(async () => [{ type: 'speech', id: 'a1', title: 'hi', text: 'hi' }]),
 }));
 
@@ -8,7 +8,7 @@ import {
   makeRegenerateSceneActionsTool,
   type SceneContext,
 } from '@/lib/agent/tools/regenerate-scene-actions';
-import { generateSceneActions } from '@/lib/generation/generation-pipeline';
+import { generateSceneActions } from '@openmaic/generation';
 import type { SlideContent } from '@/lib/types/stage';
 import type { PPTElement, Slide } from '@openmaic/dsl';
 import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';

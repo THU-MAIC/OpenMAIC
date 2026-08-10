@@ -12,7 +12,7 @@ import type { GeneratedAgentConfig } from '@/lib/types/stage';
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import type { Participant, ParticipantRole } from '@/lib/types/roundtable';
 import { useUserProfileStore } from '@/lib/store/user-profile';
-import type { AgentInfo } from '@/lib/generation/pipeline-types';
+import type { AgentInfo } from '@openmaic/generation';
 
 interface AgentRegistryState {
   agents: Record<string, AgentConfig>; // Map of agentId -> config

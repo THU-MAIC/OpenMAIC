@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { extractInteractiveElements } from '@/lib/generation/scene-generator';
+import { extractInteractiveElements } from '@openmaic/generation';
 
 describe('extractInteractiveElements', () => {
   test('returns empty string on empty input', () => {

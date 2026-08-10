@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest';
 import { MockLanguageModelV3 } from 'ai/test';
 
 import { callLLM } from '@/lib/ai/llm';
-import { generatePBLV2ProjectSingleCall } from '@/lib/pbl/v2/agents/planner-single-call';
+import { generatePBLV2ProjectSingleCall as generatePBLV2ProjectSingleCallPackage } from '@/lib/pbl/v2/agents/planner-single-call';
 import { PlannerV2Error } from '@/lib/pbl/v2/agents/planner-core';
 import { PBL_SIMULATOR_AGENT_ID } from '@/lib/pbl/v2/operations/kernel/progress';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -22,6 +22,19 @@ const USAGE = {
   inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
   outputTokens: { total: 0, text: 0, reasoning: 0 },
 };
+
+// Preserve the historical model-fixture shape while exercising the package's
+// new provider-neutral AICallFn seam.
+async function generatePBLV2ProjectSingleCall(
+  input: PBLPlannerV2Input,
+  model: MockLanguageModelV3,
+  call: typeof callLLM,
+) {
+  return generatePBLV2ProjectSingleCallPackage(input, async (system, prompt) => {
+    const result = await call({ model, system, prompt }, 'pbl-v2-planner-single', undefined);
+    return result.text;
+  });
+}
 
 /** A model whose `doGenerate` replays the given text responses in order. */
 function textModel(...responses: string[]): MockLanguageModelV3 {
