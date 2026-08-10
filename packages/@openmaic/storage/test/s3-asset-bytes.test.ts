@@ -47,7 +47,21 @@ function makeStore(client = new MemoryS3Client()): S3AssetByteStore {
   });
 }
 
+/**
+ * The construction shape that omits `commands` entirely — what a host holding
+ * only a client and a bucket writes, and what this store accepted before
+ * `commands` existed. The constructors then come from the installed SDK, which
+ * is the same module the client double matches its commands against.
+ */
+function makeLazyStore(client = new MemoryS3Client()): S3AssetByteStore {
+  return new S3AssetByteStore({
+    client: client as never,
+    bucket: 'asset-contract-lazy',
+  });
+}
+
 runAssetByteStoreContract('S3 bytes (in-memory SDK double)', () => makeStore());
+runAssetByteStoreContract('S3 bytes (commands resolved from the SDK)', () => makeLazyStore());
 
 describe('S3AssetByteStore commands and failures', () => {
   test('uses the content hash as the complete object key', async () => {

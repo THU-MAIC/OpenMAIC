@@ -38,36 +38,71 @@ export interface S3AssetByteStoreCommands {
 export interface S3AssetByteStoreOptions {
   /** An AWS SDK v3 S3 client, or a compatible client used by a test double. */
   client: S3AssetByteStoreClient;
-  /** Command factories from the same SDK implementation as the client. */
-  commands: S3AssetByteStoreCommands;
+  /**
+   * Command factories from the same SDK implementation as the client.
+   *
+   * Optional. Omitted, the store resolves the AWS SDK's own command
+   * constructors on its first method call, so `{ client, bucket }` — the shape
+   * this store has always accepted — keeps working. Supply this to bind a test
+   * double, or an SDK copy other than the one this package resolves.
+   */
+  commands?: S3AssetByteStoreCommands;
   /** Bucket dedicated to content-hash-named asset objects. */
   bucket: string;
 }
 
 const AWS_S3_CLIENT_PACKAGE = '@aws-sdk/client-s3';
 
+interface S3Sdk {
+  S3Client: new (options: Record<string, never>) => S3AssetByteStoreClient;
+  PutObjectCommand: new (input: S3PutObjectInput) => unknown;
+  GetObjectCommand: new (input: S3ObjectInput) => unknown;
+  DeleteObjectCommand: new (input: S3ObjectInput) => unknown;
+}
+
 /**
- * Load the optional AWS SDK from this package's resolution scope.
+ * Resolve the optional AWS SDK from this package's resolution scope.
  *
  * The ignored native import is deliberate: consumers that do not select S3
- * neither resolve nor bundle the optional peer dependency.
+ * neither resolve nor bundle the optional peer dependency. Every caller of this
+ * function is therefore reached only from an `await`ed code path, never from
+ * module evaluation or a constructor.
+ */
+async function importS3Sdk(): Promise<S3Sdk> {
+  return (await import(/* webpackIgnore: true */ AWS_S3_CLIENT_PACKAGE)) as S3Sdk;
+}
+
+function sdkCommands(sdk: S3Sdk): S3AssetByteStoreCommands {
+  return {
+    put: (input) => new sdk.PutObjectCommand(input),
+    get: (input) => new sdk.GetObjectCommand(input),
+    delete: (input) => new sdk.DeleteObjectCommand(input),
+  };
+}
+
+function missingSdk(error: unknown): Error {
+  return new Error(
+    `@openmaic/storage: the S3 asset byte store requires the optional ${AWS_S3_CLIENT_PACKAGE} ` +
+      'dependency, which could not be resolved. Install it, or construct the store with ' +
+      'explicit `commands`.',
+    { cause: error },
+  );
+}
+
+/**
+ * Build a store bound to the optional AWS SDK, resolving it now.
+ *
+ * The store this returns already carries its commands, so the lazy path below
+ * never runs for it. A host that wants resolution deferred to first use can
+ * construct `new S3AssetByteStore({ client, bucket })` itself instead.
  */
 export async function loadS3AssetByteStore(bucket: string): Promise<AssetByteStore> {
   try {
-    const sdk = (await import(/* webpackIgnore: true */ AWS_S3_CLIENT_PACKAGE)) as {
-      S3Client: new (options: Record<string, never>) => S3AssetByteStoreClient;
-      PutObjectCommand: new (input: S3PutObjectInput) => unknown;
-      GetObjectCommand: new (input: S3ObjectInput) => unknown;
-      DeleteObjectCommand: new (input: S3ObjectInput) => unknown;
-    };
+    const sdk = await importS3Sdk();
     return new S3AssetByteStore({
       bucket,
       client: new sdk.S3Client({}),
-      commands: {
-        put: (input) => new sdk.PutObjectCommand(input),
-        get: (input) => new sdk.GetObjectCommand(input),
-        delete: (input) => new sdk.DeleteObjectCommand(input),
-      },
+      commands: sdkCommands(sdk),
     });
   } catch (error) {
     throw new Error('@openmaic/storage: S3 asset byte store initialization failed', {
@@ -103,19 +138,56 @@ function isNotFound(error: unknown): boolean {
 
 export class S3AssetByteStore implements AssetByteStore {
   private readonly client: S3AssetByteStoreClient;
-  private readonly commands: S3AssetByteStoreCommands;
   private readonly bucket: string;
+  /** Set once resolved, whether supplied by the caller or loaded from the SDK. */
+  private resolvedCommands: S3AssetByteStoreCommands | undefined;
+  private pendingCommands: Promise<S3AssetByteStoreCommands> | undefined;
 
   constructor(options: S3AssetByteStoreOptions) {
     this.client = options.client;
-    this.commands = options.commands;
+    this.resolvedCommands = options.commands;
     this.bucket = options.bucket;
   }
 
+  /**
+   * The command constructors, resolved on first use and cached afterwards.
+   *
+   * Resolution is deliberately not done in the constructor. Importing this
+   * module must not reach the optional peer dependency, and neither must
+   * constructing a store: a deployment that never stores a byte in S3 must
+   * never resolve the SDK. Only an actual `write` / `read` / `delete` does.
+   *
+   * A failed resolution is not cached, so a store built before the dependency
+   * was installed starts working once it is, rather than staying poisoned for
+   * the life of the process.
+   */
+  private commands(): Promise<S3AssetByteStoreCommands> {
+    const resolved = this.resolvedCommands;
+    if (resolved) return Promise.resolve(resolved);
+    if (this.pendingCommands) return this.pendingCommands;
+    const pending = importS3Sdk().then(
+      (sdk) => {
+        const commands = sdkCommands(sdk);
+        this.resolvedCommands = commands;
+        this.pendingCommands = undefined;
+        return commands;
+      },
+      (error: unknown) => {
+        if (this.pendingCommands === pending) this.pendingCommands = undefined;
+        throw missingSdk(error);
+      },
+    );
+    this.pendingCommands = pending;
+    return pending;
+  }
+
   async write(hash: ContentHash, bytes: Uint8Array): Promise<void> {
+    // Resolved outside the try so a missing optional dependency reports itself
+    // by name instead of being flattened into an opaque "write failed".
+    const commands = await this.commands();
     try {
       await this.client.send(
-        this.commands.put({
+        commands.put({
           Bucket: this.bucket,
           Key: hash,
           Body: bytes,
@@ -128,9 +200,10 @@ export class S3AssetByteStore implements AssetByteStore {
   }
 
   async read(hash: ContentHash): Promise<Uint8Array | null> {
+    const commands = await this.commands();
     try {
       const output = (await this.client.send(
-        this.commands.get({ Bucket: this.bucket, Key: hash }),
+        commands.get({ Bucket: this.bucket, Key: hash }),
       )) as S3GetObjectOutput;
       if (!output.Body) throw s3Failure('read');
       return Uint8Array.from(await output.Body.transformToByteArray());
@@ -141,8 +214,9 @@ export class S3AssetByteStore implements AssetByteStore {
   }
 
   async delete(hash: ContentHash): Promise<void> {
+    const commands = await this.commands();
     try {
-      await this.client.send(this.commands.delete({ Bucket: this.bucket, Key: hash }));
+      await this.client.send(commands.delete({ Bucket: this.bucket, Key: hash }));
     } catch (error) {
       if (isNotFound(error)) return;
       throw s3Failure('delete');
