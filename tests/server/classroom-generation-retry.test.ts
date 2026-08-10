@@ -39,16 +39,17 @@ vi.mock('@/lib/ai/llm', () => ({
   callLLM: mocks.callLLM,
 }));
 
-vi.mock('@/lib/generation/outline-generator', () => ({
+vi.mock('@openmaic/generation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@openmaic/generation')>()),
   generateSceneOutlinesFromRequirements: mocks.generateSceneOutlinesFromRequirements,
   applyOutlineFallbacks: mocks.applyOutlineFallbacks,
-}));
-
-vi.mock('@/lib/generation/scene-generator', () => ({
   generateSceneContent: mocks.generateSceneContent,
   generateSceneActions: mocks.generateSceneActions,
-  createSceneWithActions: mocks.createSceneWithActions,
   PBLGenerationError: PBLGenerationErrorMock,
+}));
+
+vi.mock('@/lib/server/scene-generation', () => ({
+  createSceneWithActions: mocks.createSceneWithActions,
 }));
 
 vi.mock('@/lib/server/classroom-storage', () => ({

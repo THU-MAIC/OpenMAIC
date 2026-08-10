@@ -24,7 +24,7 @@ import {
   generateSceneActions,
   type SceneGenerationContext,
   type AgentInfo,
-} from '@/lib/generation/generation-pipeline';
+} from '@openmaic/generation';
 import type { Action } from '@/lib/types/action';
 import type {
   SceneOutline,

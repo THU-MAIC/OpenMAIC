@@ -109,7 +109,7 @@ consumes content from the **trusted source**. Both paths are needed.
 - `V0_ALLOWLIST` → `new Set(['read_scene_content', 'regenerate_scene',
   'regenerate_scene_actions'])`.
 
-### 5.4 Generation pipeline — `lib/generation/scene-generator.ts`
+### 5.4 Generation pipeline — `@openmaic/generation`
 
 `generateSceneContent` already threads a `languageDirective` into its prompt;
 this is the template for the new inputs. Add to `SceneContentOptions`:

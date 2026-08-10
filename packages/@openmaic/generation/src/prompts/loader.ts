@@ -3,12 +3,14 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { LoadedPrompt, PromptId, PromptVariableDefaults, SnippetId } from './types.js';
 
 // `src/prompts` and `dist/prompts` have the same depth below the package root.
-const DEFAULT_PROMPTS_DIR = fileURLToPath(new URL('../../', import.meta.url));
+// Resolve from this module's URL via path operations so app bundlers do not
+// mistake the Markdown directory for a statically imported module asset.
+const DEFAULT_PROMPTS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 const PROMPT_VARIABLE_DEFAULTS = {
   'pbl-actions': {

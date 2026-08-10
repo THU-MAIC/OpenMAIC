@@ -3,9 +3,13 @@
  * byte table, the hashing operation, and the object-URL cache used by resolve.
  *
  * These are implementation building blocks, not a replaceable blob-backend
- * seam. The browser registry keeps byte writes, reference counting, and
- * reclamation in the same IndexedDB transaction. Replaceable blob storage is a
- * server-backend concern, where the server enforces consistency.
+ * seam *for the browser*. The browser registry keeps byte writes, reference
+ * counting, and reclamation in one IndexedDB transaction, and its reclamation
+ * happens inline, so its bytes cannot move out of that transaction.
+ *
+ * A server backend does have a byte seam — see `./byte-store.js` — because its
+ * reclamation is offline rather than inline, which is the property that lets
+ * bytes sit outside the registry's transaction.
  */
 import type { AssetRef, BinaryBlob } from '@openmaic/dsl';
 

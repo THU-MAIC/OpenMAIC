@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { generateSceneContent, generateWidgetContent } from '@/lib/generation/scene-generator';
-import type { AICallFn } from '@/lib/generation/pipeline-types';
+import { generateSceneContent, generateWidgetContent, type AICallFn } from '@openmaic/generation';
 import type { GeneratedInteractiveContent, SceneOutline } from '@/lib/types/generation';
 
 const DIRECTIVE = '<<PROCEDURAL-SKILL-LANGUAGE-DIRECTIVE>>';

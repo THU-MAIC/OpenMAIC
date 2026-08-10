@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
+import { buildPrompt, PROMPT_IDS } from '@openmaic/generation';
 
 const UNRESOLVED_PLACEHOLDER = /\{\{[^}]+\}\}/;
 

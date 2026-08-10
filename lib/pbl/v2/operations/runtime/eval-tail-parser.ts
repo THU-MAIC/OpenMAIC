@@ -23,7 +23,7 @@
  * we encode them all up front here.
  */
 
-import { parseJsonResponse } from '@/lib/generation/json-repair';
+import { parseJsonResponse } from '@openmaic/generation';
 
 const FENCED_JSON_RE = /```json\s*\n([\s\S]*?)\n\s*```/g;
 const ANY_FENCED_JSON_RE = /```(?:json)?\s*([\s\S]*?)```/g;
