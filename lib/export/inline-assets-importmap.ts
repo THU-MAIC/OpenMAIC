@@ -4,6 +4,28 @@ import { toDataUri, type InlineReport } from './inline-assets-shared';
 const IMPORT_SPEC_RE =
   /(?:\bimport\b[\s\S]*?\bfrom\b|\bexport\b[\s\S]*?\bfrom\b|\bimport)\s*["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/g;
 
+/** Rewrite every statically discoverable module specifier without duplicating parser logic. */
+export async function rewriteModuleSpecifiers(
+  code: string,
+  replacementFor: (specifier: string) => string | undefined | Promise<string | undefined>,
+): Promise<string> {
+  const matches = [...code.matchAll(IMPORT_SPEC_RE)];
+  const replacements = await Promise.all(
+    matches.map(async (match) => {
+      const specifier = match[1] ?? match[2];
+      const replacement = specifier ? await replacementFor(specifier) : undefined;
+      return replacement ? match[0].replace(specifier, replacement) : match[0];
+    }),
+  );
+  let rewritten = '';
+  let last = 0;
+  matches.forEach((match, index) => {
+    rewritten += code.slice(last, match.index!) + replacements[index];
+    last = match.index! + match[0].length;
+  });
+  return rewritten + code.slice(last);
+}
+
 export function extractSpecifiers(code: string): string[] {
   const specs = new Set<string>();
   for (const m of code.matchAll(IMPORT_SPEC_RE)) {
@@ -54,26 +76,20 @@ export async function buildInlinedImportmap(
     baseUrl: string | undefined,
     stack: Set<string>,
   ): Promise<string> {
-    const matches = [...code.matchAll(IMPORT_SPEC_RE)];
-    const replacements: string[] = [];
-    for (const match of matches) {
-      const spec = match[1] ?? match[2];
+    return rewriteModuleSpecifiers(code, async (spec) => {
       if (!spec || resolveSpecifier(spec, originalImports)) {
-        replacements.push(match[0]);
-        continue;
+        return undefined;
       }
       const absUrl = resolveExternal(spec, baseUrl);
       if (!absUrl || stack.has(absUrl)) {
-        replacements.push(match[0]);
-        continue;
+        return undefined;
       }
       const got = await fetchAsset(absUrl);
       if (!got) {
         if (!report.failed.some((failure) => failure.url === absUrl)) {
           report.failed.push({ url: absUrl, reason: 'fetch failed' });
         }
-        replacements.push(match[0]);
-        continue;
+        return undefined;
       }
       if (!report.inlined.includes(absUrl)) report.inlined.push(absUrl);
       const nestedStack = new Set(stack).add(absUrl);
@@ -83,15 +99,8 @@ export async function buildInlinedImportmap(
         nestedStack,
       );
       const dataUri = toDataUri(new TextEncoder().encode(nestedCode), got.contentType);
-      replacements.push(match[0].replace(spec, dataUri));
-    }
-    let out = '';
-    let last = 0;
-    matches.forEach((match, index) => {
-      out += code.slice(last, match.index!) + replacements[index];
-      last = match.index! + match[0].length;
+      return dataUri;
     });
-    return out + code.slice(last);
   }
 
   async function visitSpecifier(spec: string, baseUrl?: string): Promise<void> {

@@ -106,6 +106,7 @@
     "next-themes": "^0.4.6",
     "openai": "^4.104.0",
     "partial-json": "^0.1.7",
+    "parse-srcset": "^1.0.2",
     "pg": "^8.16.3",
     "pptxgenjs": "workspace:*",
     "pptxtojson": "^1.11.0",

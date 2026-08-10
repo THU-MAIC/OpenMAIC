@@ -30,6 +30,7 @@ import type {
 } from '../ir';
 import { INTERACTIVE_STATIC_MESSAGE_FLAG } from '../interactive-static';
 import { emitManifestJson } from '../passes/emit';
+import { RUNTIME_DIAGNOSTIC_CODES } from '../runtime-diagnostics';
 import { toSrt, toVtt } from '../subtitles';
 import { EASE_DEFS, emitEffect } from './effects';
 import { escapeHtml, sec } from './format';
@@ -45,6 +46,19 @@ export interface EmittedFile {
 export interface VideoExportCta {
   /** Normalized display destination without a URL scheme or trailing slash. */
   destination: string;
+}
+
+export interface InteractiveFallbackLabels {
+  /** Localized fallback copy shown when a static interactive page cannot load. */
+  fallback: string;
+  /** Localized readiness-timeout copy shown in the static fallback. */
+  readyTimeout: string;
+  /** Localized load-failure copy shown in the static fallback. */
+  loadFailure: string;
+  /** Localized readiness-failure copy shown in the static fallback. */
+  readyFailure: string;
+  /** Localized runtime-failure copy shown in the static fallback. */
+  runtimeFailure: string;
 }
 
 /**
@@ -83,17 +97,13 @@ export interface CoverCardLabels {
   pblCtaPrompt: string;
   /** Verb preceding the configured destination. */
   ctaVisit: string;
-  /** Localized fallback copy shown when a static interactive page cannot load. */
-  interactiveFallback: string;
-  /** Localized readiness-timeout copy shown in the static fallback. */
-  interactiveReadyTimeout: string;
-  /** Localized load-failure copy shown in the static fallback. */
-  interactiveLoadFailure: string;
-  /** Localized readiness-failure copy shown in the static fallback. */
-  interactiveReadyFailure: string;
-  /** Localized runtime-failure copy shown in the static fallback. */
-  interactiveRuntimeFailure: string;
+  /** Localized fallback and failure copy for static interactive scenes. */
+  interactive: InteractiveFallbackLabels;
 }
+
+type CoverCardLabelOverrides = Partial<Omit<CoverCardLabels, 'interactive'>> & {
+  interactive?: Partial<InteractiveFallbackLabels>;
+};
 
 export interface EmitHyperframesOptions {
   /** Render width in px. Default 1920. Height is derived from the IR's 16:9 aspect. */
@@ -107,7 +117,7 @@ export interface EmitHyperframesOptions {
   /** Manifest filename. Default `openmaic-video-manifest.json`. */
   manifestPath?: string;
   /** Cover-card chrome; each omitted key falls back to its `en-US` default. */
-  labels?: Partial<CoverCardLabels>;
+  labels?: CoverCardLabelOverrides;
   /** Informational destination for Quiz/PBL covers. Omitted or null disables it. */
   cta?: VideoExportCta | null;
   /**
@@ -139,8 +149,6 @@ export interface EmittedProject {
   gsapVendorPath: string;
 }
 
-export const RUNTIME_DIAGNOSTICS_PATH = 'openmaic-runtime-diagnostics.json';
-
 const DEFAULT_WIDTH = 1920;
 const DEFAULT_GSAP_PATH = 'assets/vendor/gsap.min.js';
 const DEFAULT_MANIFEST = 'openmaic-video-manifest.json';
@@ -168,11 +176,13 @@ const DEFAULT_COVER_LABELS: CoverCardLabels = {
   quizCtaPrompt: 'Want to try an interactive quiz?',
   pblCtaPrompt: 'Want to explore project-based learning?',
   ctaVisit: 'Visit',
-  interactiveFallback: 'interactive-static-fallback',
-  interactiveReadyTimeout: 'interactive-ready-timeout',
-  interactiveLoadFailure: 'interactive-load-failure',
-  interactiveReadyFailure: 'interactive-ready-failure',
-  interactiveRuntimeFailure: 'interactive-runtime-failure',
+  interactive: {
+    fallback: 'interactive-static-fallback',
+    readyTimeout: 'interactive-ready-timeout',
+    loadFailure: 'interactive-load-failure',
+    readyFailure: 'interactive-ready-failure',
+    runtimeFailure: 'interactive-runtime-failure',
+  },
 };
 
 /**
@@ -216,7 +226,7 @@ function renderBase(scene: VideoTimelineScene, labels: CoverCardLabels): string 
   if (scene.base.kind === 'interactive-html' && scene.base.assetRef) {
     const fallback = placeholderContent(
       scene,
-      labels.interactiveFallback,
+      labels.interactive.fallback,
       'data-interactive-fallback-reason',
     );
     return [
@@ -228,7 +238,7 @@ function renderBase(scene: VideoTimelineScene, labels: CoverCardLabels): string 
   }
   const reason =
     scene.type === 'interactive'
-      ? labels.interactiveFallback
+      ? labels.interactive.fallback
       : scene.base.kind === 'placeholder'
         ? (scene.base.reason ?? '')
         : '';
@@ -236,24 +246,21 @@ function renderBase(scene: VideoTimelineScene, labels: CoverCardLabels): string 
 }
 
 /** Parent-side readiness/fallback bridge for every packaged interactive iframe. */
-function interactiveStaticBridgeScript(labels: CoverCardLabels): string {
+function interactiveStaticBridgeScript(labels: InteractiveFallbackLabels): string {
   const flag = JSON.stringify(INTERACTIVE_STATIC_MESSAGE_FLAG);
-  const localized = JSON.stringify({
-    fallback: labels.interactiveFallback,
-    loadFailure: labels.interactiveLoadFailure,
-    readyTimeout: labels.interactiveReadyTimeout,
-    readyFailure: labels.interactiveReadyFailure,
-    runtimeFailure: labels.interactiveRuntimeFailure,
-  });
+  const localized = JSON.stringify(labels);
+  const diagnosticCodes = JSON.stringify(RUNTIME_DIAGNOSTIC_CODES);
   return `
 function initializeOpenMaicInteractiveStaticFrames() {
   var hosts = Array.from(document.querySelectorAll('[data-interactive-static-host]'));
   window.__openmaicVideoDiagnostics = window.__openmaicVideoDiagnostics || [];
   window.__openmaicVideoManifest = window.__openmaicVideoManifest || { runtimeDiagnostics: [] };
   var labels = ${localized};
+  var diagnosticCodes = new Set(${diagnosticCodes});
   var runtimeReport = document.querySelector('[data-openmaic-runtime-diagnostics]');
   function record(sceneId, code, message) {
-    var diagnostic = { sceneId: sceneId, code: code, message: String(message || '').slice(0, 1200) };
+    var normalizedCode = diagnosticCodes.has(code) ? code : 'interactive-ready-failure';
+    var diagnostic = { sceneId: sceneId, code: normalizedCode, message: String(message || '').slice(0, 1200) };
     window.__openmaicVideoDiagnostics.push(diagnostic);
     window.__openmaicVideoManifest.runtimeDiagnostics = window.__openmaicVideoDiagnostics.slice();
     if (runtimeReport) runtimeReport.textContent = JSON.stringify(window.__openmaicVideoDiagnostics);
@@ -1010,7 +1017,7 @@ folder — no network access, no CDN.
 
 - \`index.html\` — the composition (one data-composition-id=${optionValue(project.compositionId)} stage, one paused GSAP timeline on \`window.__timelines\`).
 - ${optionValue(project.manifestPath)} — the \`VideoTimeline\` manifest / export report (scenes, timing, assets, diagnostics).
-- \`${RUNTIME_DIAGNOSTICS_PATH}\` — runtime interactive diagnostics; the same entries are mirrored in \`window.__openmaicVideoManifest.runtimeDiagnostics\` and the machine-readable DOM report.
+- Runtime interactive diagnostics are exposed live through \`window.__openmaicVideoManifest.runtimeDiagnostics\` and the machine-readable DOM report in \`index.html\`.
 - \`subtitles.srt\` / \`subtitles.vtt\` — narration subtitles.
 - \`assets/frames\`, \`assets/audio\`, \`assets/media\`, \`assets/interactive\` — slide snapshots, narration audio, embedded video clips, frozen interactive pages.
 - ${optionValue(project.gsapVendorPath)} — vendored GSAP (determinism: no CDN at render time).
@@ -1069,7 +1076,14 @@ export function emitHyperframes(
   const compositionId = options.compositionId ?? 'openmaic';
   const gsapVendorPath = options.gsapVendorPath ?? DEFAULT_GSAP_PATH;
   const manifestPath = options.manifestPath ?? DEFAULT_MANIFEST;
-  const labels: CoverCardLabels = { ...DEFAULT_COVER_LABELS, ...options.labels };
+  const labels: CoverCardLabels = {
+    ...DEFAULT_COVER_LABELS,
+    ...options.labels,
+    interactive: {
+      ...DEFAULT_COVER_LABELS.interactive,
+      ...options.labels?.interactive,
+    },
+  };
   const cta = options.cta ?? null;
   const locale = options.locale ?? DEFAULT_LOCALE;
   const totalSec = sec(ir.totalDurationMs);
@@ -1149,7 +1163,7 @@ window.__openmaicVideoManifest = { runtimeDiagnostics: [], manifestPath: ${JSON.
 window.__timelines = window.__timelines || {};
 ${
   hasInteractiveHtml
-    ? `${interactiveStaticBridgeScript(labels)}
+    ? `${interactiveStaticBridgeScript(labels.interactive)}
 window.__openmaicInteractiveReady = initializeOpenMaicInteractiveStaticFrames();
 window.__openmaicInteractiveReady.then(function () {
   window.__timelines[${JSON.stringify(compositionId)}] = tl;
@@ -1165,7 +1179,6 @@ window.__openmaicInteractiveReady.then(function () {
     { path: 'index.html', content: html },
     { path: 'LICENSES/Inter-OFL-1.1.txt', content: INTER_OFL_LICENSE },
     { path: manifestPath, content: emitManifestJson(ir) },
-    { path: RUNTIME_DIAGNOSTICS_PATH, content: '[]\n' },
     { path: 'subtitles.srt', content: toSrt(ir.subtitles) },
     { path: 'subtitles.vtt', content: toVtt(ir.subtitles) },
     {

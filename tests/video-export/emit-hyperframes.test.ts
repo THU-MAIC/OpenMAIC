@@ -62,7 +62,6 @@ describe('emitHyperframes', () => {
         'LICENSES/Inter-OFL-1.1.txt',
         'README.md',
         'index.html',
-        'openmaic-runtime-diagnostics.json',
         'openmaic-video-manifest.json',
         'subtitles.srt',
         'subtitles.vtt',
@@ -237,6 +236,12 @@ describe('emitHyperframes frozen interactive HTML', () => {
     expect(html).toContain('window.__openmaicVideoDiagnostics');
     expect(html).toContain('data-openmaic-runtime-diagnostics');
     expect(html).toContain('window.__openmaicVideoManifest.runtimeDiagnostics');
+  });
+
+  it('keeps runtime diagnostics in the live report instead of an immutable sidecar', () => {
+    expect(html).toContain('data-openmaic-runtime-diagnostics');
+    expect(html).toContain('window.__openmaicVideoManifest.runtimeDiagnostics');
+    expect(html).not.toContain('openmaic-runtime-diagnostics.json');
   });
 });
 

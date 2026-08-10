@@ -13,27 +13,26 @@
  * Pure: validation only, no IO.
  */
 import { type VideoTimeline, VideoTimelineSchema } from '../ir';
+import { RuntimeDiagnosticSchema } from '../runtime-diagnostics';
+
+export const VideoExportManifestSchema = VideoTimelineSchema.extend({
+  runtimeDiagnostics: RuntimeDiagnosticSchema.array(),
+});
+export type VideoExportManifest = ReturnType<typeof VideoExportManifestSchema.parse>;
 
 /**
  * Validate and return the IR as a manifest object. Throws (via zod) if the IR
  * does not satisfy {@link VideoTimelineSchema} — a compiler bug, since the IR is
  * assembled internally, so failing loud is correct.
  */
-export function emitManifest(ir: VideoTimeline): VideoTimeline {
-  return VideoTimelineSchema.parse(ir);
+export function emitManifest(ir: VideoTimeline): VideoExportManifest {
+  return VideoExportManifestSchema.parse({
+    ...VideoTimelineSchema.parse(ir),
+    runtimeDiagnostics: [],
+  });
 }
 
 /** Serialize the manifest to a JSON string (pretty-printed by default). */
 export function emitManifestJson(ir: VideoTimeline, space: number = 2): string {
-  return JSON.stringify(
-    {
-      ...emitManifest(ir),
-      // Runtime interactive diagnostics are appended by the emitted
-      // composition in memory; the ZIP carries this initialized report so
-      // consumers have a stable machine-readable location from the outset.
-      runtimeDiagnostics: [],
-    },
-    null,
-    space,
-  );
+  return JSON.stringify(emitManifest(ir), null, space);
 }

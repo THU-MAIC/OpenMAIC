@@ -35,6 +35,8 @@ describe('prepareInteractiveHtmlScenes', () => {
       "document.documentElement.setAttribute('data-openmaic-static-state', 'frozen')",
     );
     expect(html).toContain("connect-src 'none'");
+    expect(html).toContain("worker-src 'none'");
+    expect(html).toContain('interactive-worker-disabled');
   });
 
   it('inlines supported remote assets and removes the network URL', async () => {
@@ -72,6 +74,16 @@ describe('prepareInteractiveHtmlScenes', () => {
       present: false,
       failure: 'unresolved-resource',
       message: expect.stringContaining('./app.js'),
+    });
+
+    const responsive = await prepareInteractiveHtmlScenes(
+      [scene('<img srcset="https://cdn.test/missing.png 2x">')],
+      { fetcher: async () => null },
+    );
+    expect(responsive.html(scene())).toMatchObject({
+      present: false,
+      failure: 'unresolved-resource',
+      message: expect.stringContaining('https://cdn.test/missing.png'),
     });
   });
 

@@ -8,7 +8,9 @@ import {
   buildInlinedImportmap,
   extractSpecifiers,
   resolveSpecifier,
+  rewriteModuleSpecifiers,
 } from './inline-assets-importmap';
+import parseSrcset, { type SrcsetCandidate } from 'parse-srcset';
 
 export { toDataUri } from './inline-assets-shared';
 export type { InlineReport, InlineOptions, FetchAsset } from './inline-assets-shared';
@@ -17,6 +19,7 @@ export type AssetRefKind =
   | 'link'
   | 'script'
   | 'img'
+  | 'srcset'
   | 'source'
   | 'video'
   | 'audio'
@@ -32,6 +35,22 @@ export interface AssetRef {
 }
 
 const HTTP_URL = /^https?:\/\//i;
+
+function serializeSrcset(candidates: SrcsetCandidate[]): string {
+  return candidates
+    .map((candidate) => {
+      const descriptor =
+        candidate.w !== undefined
+          ? `${candidate.w}w`
+          : candidate.d !== undefined
+            ? `${candidate.d}x`
+            : candidate.h !== undefined
+              ? `${candidate.h}h`
+              : '';
+      return descriptor ? `${candidate.url} ${descriptor}` : candidate.url;
+    })
+    .join(', ');
+}
 
 /** Scan LLM-generated interactive HTML for resources that must be bundled. */
 export function collectAssetRefs(
@@ -58,6 +77,9 @@ export function collectAssetRefs(
   }
   for (const m of html.matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
     push('img', m[1]);
+  }
+  for (const m of html.matchAll(/<(?:img|source)\b[^>]*?\bsrcset\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
+    for (const candidate of parseSrcset(m[1])) push('srcset', candidate.url);
   }
   for (const m of html.matchAll(/<source\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
     push('source', m[1]);
@@ -397,23 +419,9 @@ async function inlineModuleSource(
     if (!report.failed.some((existing) => existing.url === failure.url))
       report.failed.push(failure);
   }
-  const matches = [
-    ...code.matchAll(
-      /(?:\bimport\b[\s\S]*?\bfrom\b|\bexport\b[\s\S]*?\bfrom\b|\bimport)\s*["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/g,
-    ),
-  ];
-  const replacements = matches.map((match) => {
-    const spec = match[1] ?? match[2];
-    const replacement = spec && !resolveSpecifier(spec, imports) ? built.imports[spec] : undefined;
-    return replacement ? match[0].replace(spec!, replacement) : match[0];
+  return rewriteModuleSpecifiers(code, (specifier) => {
+    return !resolveSpecifier(specifier, imports) ? built.imports[specifier] : undefined;
   });
-  let out = '';
-  let last = 0;
-  matches.forEach((match, index) => {
-    out += code.slice(last, match.index!) + replacements[index];
-    last = match.index! + match[0].length;
-  });
-  return out + code.slice(last);
 }
 
 export async function inlineHtmlAssets(
@@ -526,7 +534,29 @@ export async function inlineHtmlAssets(
     },
   );
 
-  // 4) url() inside authored <style> blocks (skip ones we created in step 1)
+  // 4) Responsive image candidates use the same offline guarantee as src.
+  out = await replaceAsync(
+    out,
+    /<(img|source)\b([^>]*?)\bsrcset\s*=\s*(["'])([^"']+)\3([^>]*)>/gi,
+    async (full, tag, pre, quote, value, post) => {
+      const candidates = parseSrcset(value);
+      const rewritten = await Promise.all(
+        candidates.map(async (candidate) => {
+          if (!HTTP_URL.test(candidate.url)) return candidate;
+          const got = await fetchAsset(candidate.url);
+          if (!got) {
+            markFailed(candidate.url, 'fetch failed');
+            return candidate;
+          }
+          markInlined(candidate.url);
+          return { ...candidate, url: toDataUri(got.bytes, got.contentType) };
+        }),
+      );
+      return `<${tag}${pre}srcset=${quote}${serializeSrcset(rewritten)}${quote}${post}>`;
+    },
+  );
+
+  // 5) url() inside authored <style> blocks (skip ones we created in step 1)
   out = await replaceAsync(
     out,
     /<style\b([^>]*)>([\s\S]*?)<\/style>/gi,

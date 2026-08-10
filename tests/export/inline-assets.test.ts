@@ -23,6 +23,14 @@ describe('collectAssetRefs', () => {
     expect(refs).toContainEqual({ kind: 'img', url: 'https://cdn.example/c.png' });
   });
 
+  it('collects every responsive image candidate', () => {
+    const refs = collectAssetRefs(
+      '<img srcset="https://cdn.example/c.png 1x, https://cdn.example/c@2x.png 2x">',
+    );
+    expect(refs).toContainEqual({ kind: 'srcset', url: 'https://cdn.example/c.png' });
+    expect(refs).toContainEqual({ kind: 'srcset', url: 'https://cdn.example/c@2x.png' });
+  });
+
   it('collects source srcs (video/audio)', () => {
     const refs = collectAssetRefs('<video><source src="https://cdn.example/d.mp4"></video>');
     expect(refs).toContainEqual({ kind: 'source', url: 'https://cdn.example/d.mp4' });
@@ -362,6 +370,37 @@ function fetchFromMap(map: Record<string, { body: string; ct: string }>): typeof
 }
 
 describe('inlineHtmlAssets', () => {
+  it('inlines every responsive image candidate and preserves its descriptor', async () => {
+    const { html, report } = await inlineHtmlAssets(
+      '<img srcset="https://cdn.example/small.png 1x, https://cdn.example/large.png 2x">',
+      {
+        fetcher: async (url) => ({
+          bytes: new TextEncoder().encode(url.endsWith('large.png') ? 'LARGE' : 'SMALL'),
+          contentType: 'image/png',
+        }),
+      },
+    );
+
+    expect(html).not.toContain('https://cdn.example/');
+    expect(html).toMatch(
+      /srcset="data:image\/png;base64,[^\s]+ 1x, data:image\/png;base64,[^\s]+ 2x"/,
+    );
+    expect(report.inlined).toEqual([
+      'https://cdn.example/small.png',
+      'https://cdn.example/large.png',
+    ]);
+  });
+
+  it('reports a responsive image candidate that cannot be packaged', async () => {
+    const url = 'https://cdn.example/missing.png';
+    const { html, report } = await inlineHtmlAssets(`<img srcset="${url} 2x">`, {
+      fetcher: async () => null,
+    });
+
+    expect(html).toContain(url);
+    expect(report.failed).toContainEqual({ url, reason: 'fetch failed' });
+  });
+
   it('inlines a stylesheet link into a <style> with fonts inlined', async () => {
     const html = '<head><link rel="stylesheet" href="https://cdn/x/katex.min.css"></head>';
     const fetchImpl = fetchFromMap({

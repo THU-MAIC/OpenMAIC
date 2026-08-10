@@ -76,8 +76,13 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
         page,
         await emittedFixture(`<!doctype html><html><head>
           <style>#box{width:120px;height:120px;background:#6d28d9;animation:pulse .1s infinite alternate}@keyframes pulse{to{transform:scale(1.2)}}</style>
-        </head><body><div id="box"></div><output id="counter">0</output><script>
+        </head><body><div id="box"></div><output id="counter">0</output><output id="worker-status">pending</output><script>
           var count=0; setInterval(function(){ document.getElementById('counter').textContent=String(++count); },20);
+          try {
+            new Worker(URL.createObjectURL(new Blob(['setInterval(function(){postMessage("tick")},20)'])));
+          } catch (error) {
+            document.getElementById('worker-status').textContent = error && error.message || String(error);
+          }
         </script></body></html>`),
       );
 
@@ -93,17 +98,20 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
       const child = page.frames().find((frame) => frame !== page.mainFrame())!;
       const before = await child.evaluate(() => ({
         counter: document.querySelector('#counter')?.textContent,
+        workerStatus: document.querySelector('#worker-status')?.textContent,
         state: document.documentElement.getAttribute('data-openmaic-static-state'),
         animations: document.getAnimations().map((animation) => animation.playState),
       }));
       await page.waitForTimeout(350);
       const after = await child.evaluate(() => ({
         counter: document.querySelector('#counter')?.textContent,
+        workerStatus: document.querySelector('#worker-status')?.textContent,
         state: document.documentElement.getAttribute('data-openmaic-static-state'),
         animations: document.getAnimations().map((animation) => animation.playState),
       }));
 
       expect(before.state).toBe('frozen');
+      expect(before.workerStatus).toContain('interactive-worker-disabled');
       expect(after).toEqual(before);
       expect(after.animations.every((state) => state === 'paused')).toBe(true);
     } finally {

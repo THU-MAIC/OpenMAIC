@@ -38,7 +38,7 @@ function staticCaptureInjection(): string {
   const settleMs = INTERACTIVE_SETTLE_MS;
   const internalTimeoutMs = Math.max(1_000, INTERACTIVE_READY_TIMEOUT_MS - 1_000);
   return `
-<meta data-openmaic-static-csp http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' data: blob:; style-src 'unsafe-inline' data:; img-src data: blob:; font-src data:; media-src data: blob:; worker-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">
+<meta data-openmaic-static-csp http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' data: blob:; style-src 'unsafe-inline' data:; img-src data: blob:; font-src data:; media-src data: blob:; worker-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">
 <script data-openmaic-static-capture>
 (function () {
   var FLAG = ${flag};
@@ -52,6 +52,10 @@ function staticCaptureInjection(): string {
   var nativeClearInterval = window.clearInterval.bind(window);
   var nativeRaf = window.requestAnimationFrame.bind(window);
   var nativeCancelRaf = window.cancelAnimationFrame.bind(window);
+
+  function disabledWorker() { throw new Error('interactive-worker-disabled'); }
+  try { window.Worker = disabledWorker; } catch (_) {}
+  try { window.SharedWorker = disabledWorker; } catch (_) {}
 
   function post(kind, code, message) {
     try {
@@ -106,9 +110,9 @@ function staticCaptureInjection(): string {
   function waitForImages() {
     return Promise.all(Array.from(document.images || []).map(function (img) {
       if (img.complete) {
-        if (img.src && img.naturalWidth === 0)
+        if ((img.currentSrc || img.src || img.getAttribute('srcset')) && img.naturalWidth === 0)
           return Promise.reject(new Error('interactive-image-load-failure'));
-        return typeof img.decode === 'function' ? img.decode().catch(function () {}) : Promise.resolve();
+        return typeof img.decode === 'function' ? img.decode() : Promise.resolve();
       }
       return new Promise(function (resolve, reject) {
         img.addEventListener('load', resolve, { once: true });

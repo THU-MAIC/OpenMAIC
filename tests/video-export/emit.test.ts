@@ -3,6 +3,7 @@ import {
   compileVideoTimeline,
   emitManifest,
   emitManifestJson,
+  RuntimeDiagnosticSchema,
   VideoTimelineSchema,
   VIDEO_TIMELINE_SCHEMA,
   VIDEO_TIMELINE_VERSION,
@@ -30,6 +31,27 @@ describe('emitManifest', () => {
     expect(round.schema).toBe(VIDEO_TIMELINE_SCHEMA);
     expect(round.scenes[0].narration[0].text).toBe('hi');
     expect(round.runtimeDiagnostics).toEqual([]);
+  });
+
+  it('models runtime diagnostic codes instead of accepting arbitrary strings', () => {
+    expect(
+      RuntimeDiagnosticSchema.parse({
+        sceneId: 'widget',
+        code: 'interactive-runtime-failure',
+        message: 'fixture boom',
+      }),
+    ).toEqual({
+      sceneId: 'widget',
+      code: 'interactive-runtime-failure',
+      message: 'fixture boom',
+    });
+    expect(() =>
+      RuntimeDiagnosticSchema.parse({
+        sceneId: 'widget',
+        code: 'arbitrary-string',
+        message: 'fixture boom',
+      }),
+    ).toThrow();
   });
 
   it('throws on a malformed IR (schema is enforced)', () => {

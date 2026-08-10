@@ -23,6 +23,7 @@ export * from './ir';
 export * from './deps';
 export * from './geometry';
 export * from './interactive-static';
+export * from './runtime-diagnostics';
 export { compileVideoTimeline, type CompileInput, type CompileDeps } from './compile';
 export { normalizeScenes, type NormalizeResult } from './passes/normalize';
 export { buildTimelineOptions } from './passes/probe';
@@ -36,17 +37,22 @@ export {
   type GeometryResult,
 } from './passes/geometry';
 export { planAssets, sanitizeFilenamePart, type AssetsResult } from './passes/assets';
-export { emitManifest, emitManifestJson } from './passes/emit';
+export {
+  emitManifest,
+  emitManifestJson,
+  VideoExportManifestSchema,
+  type VideoExportManifest,
+} from './passes/emit';
 export { toSrt, toVtt, usableCues } from './subtitles';
 export { splitCue, splitCues, splitCueText, textUnits } from './split-cue';
 export {
   emitHyperframes,
   assetUrl,
   ASSETS_DIR,
-  RUNTIME_DIAGNOSTICS_PATH,
   type EmitHyperframesOptions,
   type EmittedProject,
   type EmittedFile,
   type CoverCardLabels,
+  type InteractiveFallbackLabels,
   type VideoExportCta,
 } from './emit-hyperframes';
