@@ -897,7 +897,12 @@
     "moveFailed": "강의 이동에 실패했습니다",
     "emptyFolderHint": "이 폴더가 비어 있습니다",
     "backToAllCourses": "전체 강의로 돌아가기",
-    "emptyLibraryHint": "아직 강의가 없습니다. 위에서 만들거나 강의를 가져오세요."
+    "emptyLibraryHint": "아직 강의가 없습니다. 위에서 만들거나 강의를 가져오세요.",
+    "folderNameEmpty": "폴더 이름은 비워둘 수 없습니다",
+    "deleteFolderOnly": "폴더만 삭제",
+    "deleteFolderAndCourses": "폴더와 강의 {{count}}개 삭제",
+    "deleteFolderConfirmRemove": "폴더와 강의(채팅 기록 포함)가 삭제됩니다.",
+    "deleteFolderAndCourses_other": "폴더와 강의 {{count}}개 삭제"
   },
   "upload": {
     "pdfSizeLimit": "최대 50MB PDF 파일을 지원합니다",

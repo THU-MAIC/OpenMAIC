@@ -2,12 +2,20 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Folder, Pencil, Trash2 } from 'lucide-react';
+import { AlertTriangle, Folder, Pencil, Trash2 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import type { Slide } from '@openmaic/dsl';
 import type { FolderRecord } from '@/lib/utils/database';
+import type { DeleteFolderMode } from '@/lib/utils/stage-storage';
 
 /** Maximum number of course covers stacked on a folder tile. */
 const MAX_COVERS = 3;
@@ -27,7 +35,7 @@ export function FolderCard({
   coverSlides,
   onOpen,
   onRename,
-  onRequestDelete,
+  onDelete,
   onDropCourse,
 }: {
   folder: FolderRecord;
@@ -36,7 +44,8 @@ export function FolderCard({
   coverSlides: Slide[];
   onOpen: () => void;
   onRename: (newName: string) => Promise<string | null>;
-  onRequestDelete: () => void;
+  /** Delete the folder with the chosen mode. */
+  onDelete: (mode: DeleteFolderMode) => void;
   /** Files the dragged course (its stage id is in the payload) into this folder. */
   onDropCourse: (stageId: string) => void;
 }) {
@@ -46,6 +55,7 @@ export function FolderCard({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [dropActive, setDropActive] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const dragDepth = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const thumbRef = useRef<HTMLDivElement>(null);
@@ -58,6 +68,18 @@ export function FolderCard({
     requestAnimationFrame(() => inputRef.current?.focus());
   };
 
+  const shake = () => {
+    inputRef.current?.animate(
+      [
+        { transform: 'translateX(0)' },
+        { transform: 'translateX(-4px)' },
+        { transform: 'translateX(4px)' },
+        { transform: 'translateX(0)' },
+      ],
+      { duration: 200 },
+    );
+  };
+
   const commit = async () => {
     if (!editing || submitting) return;
     const trimmed = draft.trim();
@@ -65,20 +87,18 @@ export function FolderCard({
       setEditing(false);
       return;
     }
+    // Empty name: show an error and keep editing (do not silently exit).
+    if (!trimmed) {
+      setError(t('classroom.folderNameEmpty'));
+      shake();
+      return;
+    }
     setSubmitting(true);
     const err = await onRename(trimmed);
     setSubmitting(false);
     if (err) {
       setError(err);
-      inputRef.current?.animate(
-        [
-          { transform: 'translateX(0)' },
-          { transform: 'translateX(-4px)' },
-          { transform: 'translateX(4px)' },
-          { transform: 'translateX(0)' },
-        ],
-        { duration: 200 },
-      );
+      shake();
       return;
     }
     setEditing(false);
@@ -148,36 +168,124 @@ export function FolderCard({
           </div>
         )}
 
+        {/* Hover actions — hidden while a delete confirmation is shown. */}
+        {!confirmingDelete && (
+          <AnimatePresence>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              {/* Delete — empty folder: inline confirm; non-empty: dropdown menu. */}
+              {courseCount === 0 ? (
+                <button
+                  type="button"
+                  aria-label={t('classroom.delete')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmingDelete(true);
+                  }}
+                  className="absolute top-2 right-2 size-7 inline-flex items-center justify-center rounded-full bg-black/30 hover:bg-destructive/80 text-white hover:text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              ) : (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={t('classroom.delete')}
+                      onClick={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      className="absolute top-2 right-2 size-7 inline-flex items-center justify-center rounded-full bg-black/30 hover:bg-destructive/80 text-white hover:text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    onClick={(e) => e.stopPropagation()}
+                    className="min-w-[200px]"
+                  >
+                    <DropdownMenuItem
+                      onClick={() => onDelete('ungroup')}
+                      className="gap-2 text-[13px]"
+                    >
+                      <Folder className="size-3.5 shrink-0 mt-0.5" />
+                      <span className="flex flex-col">
+                        <span>{t('classroom.deleteFolderOnly')}</span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {t('classroom.deleteFolderUngroupDesc')}
+                        </span>
+                      </span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setConfirmingDelete(true)}
+                      className="gap-2 text-[13px] text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="size-3.5" />
+                      {t('classroom.deleteFolderAndCourses', { count: courseCount })}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              <button
+                type="button"
+                aria-label={t('classroom.rename')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  startEditing();
+                }}
+                className="absolute top-2 right-11 size-7 inline-flex items-center justify-center rounded-full bg-black/30 hover:bg-black/50 text-white hover:text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity z-10"
+              >
+                <Pencil className="size-3.5" />
+              </button>
+            </motion.div>
+          </AnimatePresence>
+        )}
+
+        {/* Inline delete confirmation overlay (empty folder + destructive path). */}
         <AnimatePresence>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-          >
-            <button
-              type="button"
-              aria-label={t('classroom.delete')}
-              onClick={(e) => {
-                e.stopPropagation();
-                onRequestDelete();
-              }}
-              className="absolute top-2 right-2 size-7 inline-flex items-center justify-center rounded-full bg-black/30 hover:bg-destructive/80 text-white hover:text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          {confirmingDelete && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/50 backdrop-blur-[6px]"
+              onClick={(e) => e.stopPropagation()}
             >
-              <Trash2 className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              aria-label={t('classroom.rename')}
-              onClick={(e) => {
-                e.stopPropagation();
-                startEditing();
-              }}
-              className="absolute top-2 right-11 size-7 inline-flex items-center justify-center rounded-full bg-black/30 hover:bg-black/50 text-white hover:text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity z-10"
-            >
-              <Pencil className="size-3.5" />
-            </button>
-          </motion.div>
+              {courseCount > 0 && (
+                <div className="flex items-center gap-1.5 text-amber-300">
+                  <AlertTriangle className="size-3.5" />
+                  <span className="text-[11px] font-medium">
+                    {t('classroom.deleteFolderConfirmRemove')}
+                  </span>
+                </div>
+              )}
+              <span className="px-4 text-center text-[13px] font-medium text-white/90">
+                {courseCount === 0
+                  ? t('classroom.deleteFolderEmptyDesc')
+                  : t('classroom.deleteFolderTitle', { name: folder.name })}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  className="px-3.5 py-1 rounded-lg text-[12px] font-medium bg-white/15 text-white/80 hover:bg-white/25 backdrop-blur-sm transition-colors"
+                  onClick={() => setConfirmingDelete(false)}
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  className="px-3.5 py-1 rounded-lg text-[12px] font-medium bg-red-500/90 text-white hover:bg-red-500 transition-colors"
+                  onClick={() => onDelete(courseCount === 0 ? 'ungroup' : 'remove')}
+                >
+                  {t('classroom.delete')}
+                </button>
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
 

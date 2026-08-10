@@ -897,7 +897,12 @@
     "moveFailed": "Failed to move course",
     "emptyFolderHint": "This folder is empty",
     "backToAllCourses": "Back to all courses",
-    "emptyLibraryHint": "No courses yet — create one above, or import a course."
+    "emptyLibraryHint": "No courses yet — create one above, or import a course.",
+    "folderNameEmpty": "Folder name cannot be empty",
+    "deleteFolderOnly": "Delete folder only",
+    "deleteFolderAndCourses": "Delete folder and {{count}} course",
+    "deleteFolderAndCourses_other": "Delete folder and {{count}} courses",
+    "deleteFolderConfirmRemove": "This removes the folder and its courses, including chat history."
   },
   "upload": {
     "pdfSizeLimit": "Supports PDF files up to 50MB",

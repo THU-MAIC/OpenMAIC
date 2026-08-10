@@ -897,7 +897,12 @@
     "moveFailed": "移动课程失败",
     "emptyFolderHint": "这个文件夹还是空的",
     "backToAllCourses": "返回全部课程",
-    "emptyLibraryHint": "还没有课程——在上方创建，或导入一个课程。"
+    "emptyLibraryHint": "还没有课程——在上方创建，或导入一个课程。",
+    "folderNameEmpty": "文件夹名不能为空",
+    "deleteFolderOnly": "仅删除文件夹",
+    "deleteFolderAndCourses": "删除文件夹和 {{count}} 门课程",
+    "deleteFolderConfirmRemove": "将删除文件夹及其课程（含聊天记录），不可恢复。",
+    "deleteFolderAndCourses_other": "删除文件夹和 {{count}} 门课程"
   },
   "upload": {
     "pdfSizeLimit": "支持最大50MB的PDF文件",

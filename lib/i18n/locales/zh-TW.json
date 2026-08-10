@@ -882,7 +882,12 @@
     "moveFailed": "移動課程失敗",
     "emptyFolderHint": "這個資料夾是空的",
     "backToAllCourses": "返回全部課程",
-    "emptyLibraryHint": "還沒有課程——在上方建立，或匯入一個課程。"
+    "emptyLibraryHint": "還沒有課程——在上方建立，或匯入一個課程。",
+    "folderNameEmpty": "資料夾名稱不能為空",
+    "deleteFolderOnly": "僅刪除資料夾",
+    "deleteFolderAndCourses": "刪除資料夾和 {{count}} 門課程",
+    "deleteFolderConfirmRemove": "將刪除資料夾及其課程（含聊天記錄），無法復原。",
+    "deleteFolderAndCourses_other": "刪除資料夾和 {{count}} 門課程"
   },
   "upload": {
     "pdfSizeLimit": "支援最大50MB的PDF檔案",

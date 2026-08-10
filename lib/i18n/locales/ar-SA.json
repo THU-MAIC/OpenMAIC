@@ -897,7 +897,12 @@
     "moveFailed": "فشل نقل الدورة",
     "emptyFolderHint": "هذا المجلد فارغ",
     "backToAllCourses": "العودة إلى كل الدورات",
-    "emptyLibraryHint": "لا توجد دورات بعد — أنشئ واحدة بالأعلى أو استورد دورة."
+    "emptyLibraryHint": "لا توجد دورات بعد — أنشئ واحدة بالأعلى أو استورد دورة.",
+    "folderNameEmpty": "لا يمكن أن يكون اسم المجلد فارغًا",
+    "deleteFolderOnly": "حذف المجلد فقط",
+    "deleteFolderAndCourses": "حذف المجلد و {{count}} دورة",
+    "deleteFolderConfirmRemove": "سيؤدي هذا إلى حذف المجلد ودوراته، بما في ذلك سجل الدردشة.",
+    "deleteFolderAndCourses_other": "حذف المجلد و {{count}} دورة"
   },
   "upload": {
     "pdfSizeLimit": "يدعم ملفات PDF حتى 50 ميغابايت",

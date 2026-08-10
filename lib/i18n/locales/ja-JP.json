@@ -897,7 +897,12 @@
     "moveFailed": "コースの移動に失敗しました",
     "emptyFolderHint": "このフォルダは空です",
     "backToAllCourses": "すべてのコースに戻る",
-    "emptyLibraryHint": "まだコースがありません。上で作成するか、コースをインポートしてください。"
+    "emptyLibraryHint": "まだコースがありません。上で作成するか、コースをインポートしてください。",
+    "folderNameEmpty": "フォルダ名は空にできません",
+    "deleteFolderOnly": "フォルダのみ削除",
+    "deleteFolderAndCourses": "フォルダと {{count}} 件のコースを削除",
+    "deleteFolderConfirmRemove": "フォルダとコース（チャット履歴を含む）が削除されます。",
+    "deleteFolderAndCourses_other": "フォルダと {{count}} 件のコースを削除"
   },
   "upload": {
     "pdfSizeLimit": "50MBまでのPDFファイルに対応しています",

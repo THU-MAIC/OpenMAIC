@@ -897,7 +897,12 @@
     "moveFailed": "Falha ao mover o curso",
     "emptyFolderHint": "Esta pasta está vazia",
     "backToAllCourses": "Voltar para todos os cursos",
-    "emptyLibraryHint": "Nenhum curso ainda — crie um acima ou importe um curso."
+    "emptyLibraryHint": "Nenhum curso ainda — crie um acima ou importe um curso.",
+    "folderNameEmpty": "O nome da pasta não pode estar vazio",
+    "deleteFolderOnly": "Excluir apenas a pasta",
+    "deleteFolderAndCourses": "Excluir pasta e {{count}} curso",
+    "deleteFolderAndCourses_other": "Excluir pasta e {{count}} cursos",
+    "deleteFolderConfirmRemove": "Isto remove a pasta e seus cursos, incluindo o histórico de chat."
   },
   "upload": {
     "pdfSizeLimit": "Suporta arquivos PDF de até 50 MB",

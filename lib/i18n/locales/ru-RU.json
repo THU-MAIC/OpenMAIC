@@ -897,7 +897,12 @@
     "moveFailed": "Не удалось переместить курс",
     "emptyFolderHint": "Эта папка пуста",
     "backToAllCourses": "Назад ко всем курсам",
-    "emptyLibraryHint": "Курсов пока нет — создайте выше или импортируйте курс."
+    "emptyLibraryHint": "Курсов пока нет — создайте выше или импортируйте курс.",
+    "folderNameEmpty": "Название папки не может быть пустым",
+    "deleteFolderOnly": "Удалить только папку",
+    "deleteFolderAndCourses": "Удалить папку и {{count}} курс",
+    "deleteFolderAndCourses_other": "Удалить папку и {{count}} курсов",
+    "deleteFolderConfirmRemove": "Папка и её курсы (включая историю чата) будут удалены."
   },
   "upload": {
     "pdfSizeLimit": "Поддержка PDF до 50 МБ",
