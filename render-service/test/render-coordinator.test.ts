@@ -2,7 +2,6 @@ import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ArtifactLocation, ArtifactStore } from '../src/artifact-store.js';
 import type { JobStore } from '../src/job-store.js';
 import { RenderCoordinator } from '../src/render-coordinator.js';
 import type { RenderExecutor } from '../src/render-executor.js';
@@ -11,56 +10,13 @@ import type {
   RenderExecutionResult,
   RenderJobRecord,
 } from '../src/types.js';
+import { createMemoryArtifactStore, createMemoryJobStore } from './support/fakes.js';
 
 const scratch: string[] = [];
 
 afterEach(async () => {
   await Promise.all(scratch.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
-
-function memoryJobs(): JobStore {
-  const jobs = new Map<string, RenderJobRecord>();
-  return {
-    async create(record) {
-      jobs.set(record.id, record);
-    },
-    async get(id) {
-      return jobs.get(id) ?? null;
-    },
-    async update(id, patch) {
-      const current = jobs.get(id);
-      if (current) jobs.set(id, { ...current, ...patch, updatedAtMs: Date.now() });
-    },
-    async remove(id) {
-      jobs.delete(id);
-    },
-    async list() {
-      return [...jobs.values()];
-    },
-    async countActiveForUser(userId) {
-      return [...jobs.values()].filter(
-        (job) => job.userId === userId && (job.status === 'queued' || job.status === 'running'),
-      ).length;
-    },
-  };
-}
-
-function memoryArtifacts() {
-  const paths = new Map<string, string>();
-  const store: ArtifactStore = {
-    async put(id, sourcePath) {
-      paths.set(id, sourcePath);
-    },
-    async locate(id): Promise<ArtifactLocation | null> {
-      const path = paths.get(id);
-      return path ? { kind: 'file', path } : null;
-    },
-    async remove(id) {
-      paths.delete(id);
-    },
-  };
-  return { paths, store };
-}
 
 class FakeExecutor implements RenderExecutor {
   readonly requests: RenderExecutionRequest[] = [];
@@ -98,8 +54,8 @@ const renderOptions = { fps: 30, quality: 'standard', format: 'mp4' } as const;
 
 describe('RenderCoordinator through the RenderExecutor seam', () => {
   it('persists normalized progress, performance, and the artifact on success', async () => {
-    const jobs = memoryJobs();
-    const artifacts = memoryArtifacts();
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore();
     const performance = {
       totalElapsedMs: 800,
       stages: { captureMs: 600 },
@@ -137,8 +93,8 @@ describe('RenderCoordinator through the RenderExecutor seam', () => {
   });
 
   it('routes running-job cancellation through the executor signal and cleans up', async () => {
-    const jobs = memoryJobs();
-    const artifacts = memoryArtifacts();
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore();
     const executor = new FakeExecutor(
       (request) =>
         new Promise((resolve) => {
@@ -162,8 +118,8 @@ describe('RenderCoordinator through the RenderExecutor seam', () => {
   });
 
   it('keeps deadline failure classification from a replaceable executor', async () => {
-    const jobs = memoryJobs();
-    const artifacts = memoryArtifacts();
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore();
     const executor = new FakeExecutor(async () => ({
       status: 'failed',
       failure: { code: 'deadline_exceeded', message: 'Render exceeded the deadline' },
@@ -186,8 +142,8 @@ describe('RenderCoordinator through the RenderExecutor seam', () => {
   });
 
   it('classifies unexpected executor errors and still performs cleanup', async () => {
-    const jobs = memoryJobs();
-    const artifacts = memoryArtifacts();
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore();
     const executor = new FakeExecutor(async () => {
       throw new Error('executor unavailable');
     });

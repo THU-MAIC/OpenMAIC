@@ -12,10 +12,11 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Semaphore } from '../src/semaphore.js';
-import type { JobStore } from '../src/job-store.js';
-import type { ArtifactStore, ArtifactLocation } from '../src/artifact-store.js';
-import type { RenderExecutor } from '../src/render-executor.js';
-import type { RenderJobRecord } from '../src/types.js';
+import {
+  createMemoryArtifactStore,
+  createMemoryJobStore,
+  succeedingExecutor,
+} from './support/fakes.js';
 
 // Prevent main.ts from binding a port when we import it.
 process.env.RENDER_SERVICE_NO_LISTEN = 'true';
@@ -28,45 +29,6 @@ beforeAll(async () => {
   ({ createApp } = await import('../src/main.js'));
   ({ RenderCoordinator } = await import('../src/render-coordinator.js'));
 });
-
-function fakeJobStore(): JobStore {
-  const jobs = new Map<string, RenderJobRecord>();
-  return {
-    async create(r) {
-      jobs.set(r.id, r);
-    },
-    async get(id) {
-      return jobs.get(id) ?? null;
-    },
-    async update(id, patch) {
-      const e = jobs.get(id);
-      if (e) jobs.set(id, { ...e, ...patch });
-    },
-    async remove(id) {
-      jobs.delete(id);
-    },
-    async list() {
-      return [...jobs.values()];
-    },
-    async countActiveForUser() {
-      return 0;
-    },
-  };
-}
-
-const fakeArtifacts: ArtifactStore = {
-  async put() {},
-  async locate(): Promise<ArtifactLocation | null> {
-    return null;
-  },
-  async remove() {},
-};
-
-const fakeExecutor: RenderExecutor = {
-  async execute() {
-    return { status: 'succeeded' };
-  },
-};
 
 /** Build a valid-looking multipart body for `POST /render`. */
 function renderRequest(sizeBytes = 4096, identity = 'anon'): Request {
@@ -106,13 +68,14 @@ describe('POST /render buffering/extraction bound', () => {
     let n = 0;
     const makeProjectDir = async () => `/tmp/fake-${n++}`;
 
-    const jobs = fakeJobStore();
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore().store;
     // A big per-user cap so all REQUESTS are admitted (we're testing the gate,
     // not the per-identity guard); unique identities would also work.
-    const coordinator = new RenderCoordinator(fakeExecutor, jobs, fakeArtifacts);
+    const coordinator = new RenderCoordinator(succeedingExecutor, jobs, artifacts);
     const app = createApp({
       jobs,
-      artifacts: fakeArtifacts,
+      artifacts,
       coordinator,
       extractionGate: new Semaphore(PERMITS),
       unzipProject,

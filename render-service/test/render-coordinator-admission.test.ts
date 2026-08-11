@@ -12,52 +12,18 @@
  */
 import { describe, it, expect } from 'vitest';
 import { RenderCoordinator, RenderRejectedError } from '../src/render-coordinator.js';
-import type { JobStore } from '../src/job-store.js';
-import type { ArtifactStore, ArtifactLocation } from '../src/artifact-store.js';
-import type { RenderExecutor } from '../src/render-executor.js';
-import type { RenderJobRecord } from '../src/types.js';
-
-function fakeJobStore(): JobStore {
-  const jobs = new Map<string, RenderJobRecord>();
-  return {
-    async create(record) {
-      jobs.set(record.id, record);
-    },
-    async get(id) {
-      return jobs.get(id) ?? null;
-    },
-    async update(id, patch) {
-      const existing = jobs.get(id);
-      if (existing) jobs.set(id, { ...existing, ...patch });
-    },
-    async remove(id) {
-      jobs.delete(id);
-    },
-    async list() {
-      return [...jobs.values()];
-    },
-    async countActiveForUser() {
-      return 0;
-    },
-  };
-}
-
-const fakeArtifacts: ArtifactStore = {
-  async put() {},
-  async locate(): Promise<ArtifactLocation | null> {
-    return null;
-  },
-  async remove() {},
-};
-
-const fakeExecutor: RenderExecutor = {
-  async execute() {
-    return { status: 'succeeded' };
-  },
-};
+import {
+  createMemoryArtifactStore,
+  createMemoryJobStore,
+  succeedingExecutor,
+} from './support/fakes.js';
 
 function newCoordinator(): RenderCoordinator {
-  return new RenderCoordinator(fakeExecutor, fakeJobStore(), fakeArtifacts);
+  return new RenderCoordinator(
+    succeedingExecutor,
+    createMemoryJobStore(),
+    createMemoryArtifactStore().store,
+  );
 }
 
 describe('RenderCoordinator admission control', () => {
@@ -111,11 +77,11 @@ describe('RenderCoordinator admission control', () => {
     // submit() consumes the reservation and persists the job; if create() throws
     // (a fallible JobStore, e.g. a future Redis backend), run() never runs to
     // decrement the identity — so submit() must decrement it itself.
-    const store = fakeJobStore();
+    const store = createMemoryJobStore();
     store.create = async () => {
       throw new Error('store down');
     };
-    const m = new RenderCoordinator(fakeExecutor, store, fakeArtifacts);
+    const m = new RenderCoordinator(succeedingExecutor, store, createMemoryArtifactStore().store);
     const r = m.reserve('carol');
     await expect(
       m.submit(r, '/tmp/whatever', { fps: 30, quality: 'draft', format: 'mp4' }),

@@ -100,13 +100,18 @@ export class InProcessExecutor implements RenderExecutor {
     }
 
     const abort = new AbortController();
-    let timedOut = false;
-    const cancel = () => abort.abort();
+    let abortCause: 'cancelled' | 'deadline' | null = null;
+    const cancel = () => {
+      if (abortCause !== null) return;
+      abortCause = 'cancelled';
+      abort.abort();
+    };
     request.signal.addEventListener('abort', cancel, { once: true });
 
     const deadline = setTimeout(
       () => {
-        timedOut = true;
+        if (abortCause !== null) return;
+        abortCause = 'deadline';
         abort.abort();
       },
       Math.max(0, request.deadlineMs),
@@ -140,14 +145,14 @@ export class InProcessExecutor implements RenderExecutor {
       );
 
       const performance = performanceSummary(job.perfSummary);
-      if (timedOut) {
+      if (abortCause === 'deadline') {
         return {
           status: 'failed',
           failure: { code: 'deadline_exceeded', message: 'Render exceeded the deadline' },
           ...(performance ? { performance } : {}),
         };
       }
-      if (request.signal.aborted) {
+      if (abortCause === 'cancelled') {
         return {
           status: 'cancelled',
           failure: { code: 'cancelled', message: 'Render cancelled' },
@@ -172,14 +177,17 @@ export class InProcessExecutor implements RenderExecutor {
       return { status: 'succeeded', ...(performance ? { performance } : {}) };
     } catch (error) {
       const performance = performanceSummary(job?.perfSummary);
-      if (timedOut || (error instanceof RenderCancelledError && error.reason === 'timeout')) {
+      if (
+        abortCause === 'deadline' ||
+        (abortCause === null && error instanceof RenderCancelledError && error.reason === 'timeout')
+      ) {
         return {
           status: 'failed',
           failure: { code: 'deadline_exceeded', message: 'Render exceeded the deadline' },
           ...(performance ? { performance } : {}),
         };
       }
-      if (request.signal.aborted) {
+      if (abortCause === 'cancelled') {
         return {
           status: 'cancelled',
           failure: { code: 'cancelled', message: 'Render cancelled' },

@@ -14,8 +14,9 @@ import { config } from './config.js';
 import type { JobStore } from './job-store.js';
 import type { RenderExecutor } from './render-executor.js';
 import type {
+  RenderCancelledFailure,
   RenderExecutionResult,
-  RenderFailure,
+  RenderFailedFailure,
   RenderJobRecord,
   RenderOptions,
 } from './types.js';
@@ -150,7 +151,10 @@ export class RenderCoordinator {
       const [queued] = this.queue.splice(queuedIdx, 1);
       this.controllers.delete(id);
       if (queued.record.userId) this.decrementIdentity(queued.record.userId);
-      const failure: RenderFailure = { code: 'cancelled', message: 'Render cancelled' };
+      const failure: RenderCancelledFailure = {
+        code: 'cancelled',
+        message: 'Render cancelled',
+      };
       await this.jobs.update(id, {
         status: 'cancelled',
         currentStage: 'cancelled',
@@ -235,7 +239,7 @@ export class RenderCoordinator {
       });
     } catch (error) {
       await this.artifacts.remove(id).catch(() => {});
-      const failure: RenderFailure = {
+      const failure: RenderFailedFailure = {
         code: 'execution_failed',
         message: error instanceof Error ? error.message : String(error),
       };

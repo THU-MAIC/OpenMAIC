@@ -45,10 +45,17 @@ export type RenderFailureCode =
   | 'unsupported_capture_mode'
   | 'execution_failed';
 
-export interface RenderFailure {
-  code: RenderFailureCode;
+export interface RenderCancelledFailure {
+  code: 'cancelled';
   message: string;
 }
+
+export interface RenderFailedFailure {
+  code: Exclude<RenderFailureCode, 'cancelled'>;
+  message: string;
+}
+
+export type RenderFailure = RenderCancelledFailure | RenderFailedFailure;
 
 /** Everything an executor needs to run one render without knowing about HTTP jobs. */
 export interface RenderExecutionRequest {
@@ -68,8 +75,13 @@ export type RenderExecutionResult =
       performance?: RenderPerformanceSummary;
     }
   | {
-      status: 'cancelled' | 'failed';
-      failure: RenderFailure;
+      status: 'cancelled';
+      failure: RenderCancelledFailure;
+      performance?: RenderPerformanceSummary;
+    }
+  | {
+      status: 'failed';
+      failure: RenderFailedFailure;
       performance?: RenderPerformanceSummary;
     };
 

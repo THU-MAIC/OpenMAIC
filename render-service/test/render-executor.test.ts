@@ -115,6 +115,31 @@ describe('InProcessExecutor', () => {
     });
   });
 
+  it('preserves the first user-cancellation cause when producer shutdown crosses the deadline', async () => {
+    const abort = new AbortController();
+    const executor = new InProcessExecutor(
+      {},
+      {
+        createJob(options) {
+          return createRenderJob(options);
+        },
+        async executeJob(_job, _projectDir, _outputPath, _onProgress, signal) {
+          await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          throw new RenderCancelledError('cancelled after cleanup', 'aborted');
+        },
+      },
+    );
+
+    const execution = executor.execute(request({ signal: abort.signal, deadlineMs: 5 }));
+    abort.abort();
+
+    await expect(execution).resolves.toEqual({
+      status: 'cancelled',
+      failure: { code: 'cancelled', message: 'Render cancelled' },
+    });
+  });
+
   it('enforces the deadline and classifies it independently from cancellation', async () => {
     const executor = new InProcessExecutor(
       {},
