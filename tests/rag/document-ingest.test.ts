@@ -35,12 +35,13 @@ function artifact(): DocumentArtifact {
 const resource = {
   id: 'resource-manual',
   workspaceId: 'workspace-test',
+  courseId: 'course-1',
   modality: 'document' as const,
   title: 'Manual',
   sourceRef: 'source://manual.md',
   contentHash: 'sha256:manual-v1',
   extractor: { id: 'plain-text', version: '1.0.0' },
-  metadata: { courseId: 'course-1', chapterId: 'chapter-1' },
+  metadata: { courseId: 'legacy-course', chapterId: 'chapter-1' },
 };
 
 describe('document RAG ingestion', () => {
@@ -58,6 +59,7 @@ describe('document RAG ingestion', () => {
     expect(result.artifact.providerRaw).toBeUndefined();
     expect(result.artifact.blocks[1]?.text).toBe('Wear protective equipment.');
     expect(result.resource.status).toBe('ready');
+    expect(result.resource.metadata).toEqual({ chapterId: 'chapter-1' });
     expect(result.resource.lineage.transforms.map((transform) => transform.id)).toEqual([
       'normalize',
       'remove-noise',
@@ -65,8 +67,9 @@ describe('document RAG ingestion', () => {
     expect(result.chunks).toHaveLength(2);
     expect(result.chunks[1]).toMatchObject({
       workspaceId: 'workspace-test',
+      courseId: 'course-1',
       locator: { kind: 'document', blockId: 'body', pageNumber: 2 },
-      metadata: { courseId: 'course-1', chapterId: 'chapter-1' },
+      metadata: { chapterId: 'chapter-1' },
     });
   });
 
@@ -107,5 +110,16 @@ describe('document RAG ingestion', () => {
     expect(
       result.chunks.every((chunk) => chunk.lineage.chunkPolicy.version.includes('maxChars=10')),
     ).toBe(true);
+  });
+
+  it('changes the resource version when the chunk policy changes', async () => {
+    const first = await ingestDocumentForRag({ artifact: artifact(), resource });
+    const second = await ingestDocumentForRag({
+      artifact: artifact(),
+      resource,
+      chunking: { maxChars: 10 },
+    });
+
+    expect(second.resource.resourceVersionId).not.toBe(first.resource.resourceVersionId);
   });
 });

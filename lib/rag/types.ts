@@ -1,4 +1,4 @@
-export const KNOWLEDGE_MODALITIES = ['document', 'html', 'image', 'video', 'experiment'] as const;
+export const KNOWLEDGE_MODALITIES = ['document', 'html'] as const;
 
 export type KnowledgeModality = (typeof KNOWLEDGE_MODALITIES)[number];
 
@@ -8,29 +8,17 @@ export type KnowledgeMetadata = Readonly<Record<string, KnowledgeMetadataValue>>
 
 export type KnowledgeFilterValue = string | number | boolean;
 
-export type KnowledgeLocator =
-  | {
-      readonly kind: 'document';
-      readonly blockId: string;
-      readonly pageNumber?: number;
-      readonly heading?: string;
-    }
-  | {
-      readonly kind: 'media';
-      readonly segmentId?: string;
-      readonly keyframeId?: string;
-      readonly startMs?: number;
-      readonly endMs?: number;
-    }
-  | {
-      readonly kind: 'experiment';
-      readonly courseId: string;
-      readonly chapterId?: string;
-      readonly resourceId?: string;
-      readonly section?: string;
-      readonly fileRef?: string;
-      readonly route?: string;
-    };
+export type KnowledgeScope = {
+  readonly workspaceId: string;
+  readonly courseId?: string;
+};
+
+export type KnowledgeLocator = {
+  readonly kind: 'document';
+  readonly blockId: string;
+  readonly pageNumber?: number;
+  readonly heading?: string;
+};
 
 export type KnowledgeVersion = {
   readonly id: string;
@@ -46,10 +34,9 @@ export type KnowledgeLineage = {
 
 export type KnowledgeResourceStatus = 'ready' | 'partial' | 'failed';
 
-export type KnowledgeResource = {
+export type KnowledgeResource = KnowledgeScope & {
   readonly id: string;
-  readonly workspaceId: string;
-  readonly courseId?: string;
+  readonly resourceVersionId: string;
   readonly parentResourceId?: string;
   readonly modality: KnowledgeModality;
   readonly title: string;
@@ -61,10 +48,10 @@ export type KnowledgeResource = {
   readonly metadata: KnowledgeMetadata;
 };
 
-export type KnowledgeChunk = {
+export type KnowledgeChunk = KnowledgeScope & {
   readonly id: string;
   readonly resourceId: string;
-  readonly workspaceId: string;
+  readonly resourceVersionId: string;
   readonly ordinal: number;
   readonly text: string;
   readonly contentHash: string;
@@ -79,16 +66,20 @@ export type KnowledgeIndexCapabilities = {
   readonly metadataFilter: boolean;
 };
 
-export type KnowledgeIndexQuery = {
-  readonly workspaceId: string;
+export type KnowledgeIndexQuery = KnowledgeScope & {
   readonly text: string;
   readonly topK: number;
   readonly filters?: Readonly<Record<string, KnowledgeFilterValue>>;
 };
 
-export type KnowledgeIndexDeleteRequest = {
-  readonly workspaceId: string;
+export type KnowledgeIndexDeleteRequest = KnowledgeScope & {
   readonly resourceIds: readonly string[];
+};
+
+export type KnowledgeIndexReplaceRequest = KnowledgeScope & {
+  readonly resourceId: string;
+  readonly resourceVersionId: string;
+  readonly chunks: readonly KnowledgeChunk[];
 };
 
 export type KnowledgeHit = {
@@ -100,11 +91,7 @@ export type KnowledgeHit = {
 export interface KnowledgeIndex {
   readonly id: string;
   readonly capabilities: KnowledgeIndexCapabilities;
-  upsert(chunks: readonly KnowledgeChunk[]): Promise<void>;
+  replaceResourceVersion(request: KnowledgeIndexReplaceRequest): Promise<void>;
   delete(request: KnowledgeIndexDeleteRequest): Promise<void>;
   query(request: KnowledgeIndexQuery): Promise<readonly KnowledgeHit[]>;
 }
-
-export type GroundingContextRef = {
-  readonly snapshotId?: string;
-};

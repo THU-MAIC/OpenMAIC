@@ -5,6 +5,8 @@ import type {
   KnowledgeIndex,
   KnowledgeIndexDeleteRequest,
   KnowledgeIndexQuery,
+  KnowledgeIndexReplaceRequest,
+  KnowledgeScope,
 } from '../types';
 
 const TOKEN_PATTERN =
@@ -20,6 +22,43 @@ function filterMatches(
 ): boolean {
   if (!filters) return true;
   return Object.entries(filters).every(([key, value]) => chunk.metadata[key] === value);
+}
+
+function matchesScope(chunk: KnowledgeChunk, scope: KnowledgeScope): boolean {
+  return (
+    chunk.workspaceId === scope.workspaceId &&
+    (scope.courseId === undefined || chunk.courseId === scope.courseId)
+  );
+}
+
+class InvalidKnowledgeIndexReplaceError extends Error {
+  readonly name = 'InvalidKnowledgeIndexReplaceError';
+
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+function validateReplacement(request: KnowledgeIndexReplaceRequest): void {
+  const chunkIds = new Set<string>();
+  for (const chunk of request.chunks) {
+    if (
+      chunk.workspaceId !== request.workspaceId ||
+      chunk.courseId !== request.courseId ||
+      chunk.resourceId !== request.resourceId ||
+      chunk.resourceVersionId !== request.resourceVersionId
+    ) {
+      throw new InvalidKnowledgeIndexReplaceError(
+        `Chunk "${chunk.id}" does not match the replacement scope or resource version.`,
+      );
+    }
+    if (chunkIds.has(chunk.id)) {
+      throw new InvalidKnowledgeIndexReplaceError(
+        `Replacement contains duplicate chunk ID "${chunk.id}".`,
+      );
+    }
+    chunkIds.add(chunk.id);
+  }
 }
 
 function lexicalScore(text: string, queryTokens: ReadonlySet<string>, phrase: string): number {
@@ -39,8 +78,10 @@ function compareHits(left: KnowledgeHit, right: KnowledgeHit): number {
   return 0;
 }
 
-function chunkKey(chunk: Pick<KnowledgeChunk, 'workspaceId' | 'id'>): string {
-  return JSON.stringify([chunk.workspaceId, chunk.id]);
+function chunkKey(
+  chunk: Pick<KnowledgeChunk, 'workspaceId' | 'courseId' | 'resourceId' | 'id'>,
+): string {
+  return JSON.stringify([chunk.workspaceId, chunk.courseId ?? null, chunk.resourceId, chunk.id]);
 }
 
 function snapshotChunk(chunk: KnowledgeChunk): KnowledgeChunk {
@@ -50,16 +91,31 @@ function snapshotChunk(chunk: KnowledgeChunk): KnowledgeChunk {
 export class InMemoryLexicalIndex implements KnowledgeIndex {
   readonly id = 'in-memory-lexical';
   readonly capabilities = { lexical: true, vector: false, metadataFilter: true } as const;
-  private readonly chunks = new Map<string, KnowledgeChunk>();
+  private chunks = new Map<string, KnowledgeChunk>();
 
-  async upsert(chunks: readonly KnowledgeChunk[]): Promise<void> {
-    for (const chunk of chunks) this.chunks.set(chunkKey(chunk), snapshotChunk(chunk));
+  async replaceResourceVersion(request: KnowledgeIndexReplaceRequest): Promise<void> {
+    validateReplacement(request);
+
+    const nextChunks = new Map(this.chunks);
+    for (const [chunkId, chunk] of nextChunks) {
+      if (matchesScope(chunk, request) && chunk.resourceId === request.resourceId) {
+        nextChunks.delete(chunkId);
+      }
+    }
+    for (const chunk of request.chunks) {
+      nextChunks.set(chunkKey(chunk), snapshotChunk(chunk));
+    }
+    this.chunks = nextChunks;
   }
 
   async delete(request: KnowledgeIndexDeleteRequest): Promise<void> {
     const resources = new Set(request.resourceIds);
     for (const [chunkId, chunk] of this.chunks) {
-      if (chunk.workspaceId === request.workspaceId && resources.has(chunk.resourceId)) {
+      if (
+        chunk.workspaceId === request.workspaceId &&
+        (request.courseId === undefined || chunk.courseId === request.courseId) &&
+        resources.has(chunk.resourceId)
+      ) {
         this.chunks.delete(chunkId);
       }
     }
@@ -71,7 +127,7 @@ export class InMemoryLexicalIndex implements KnowledgeIndex {
     if (!normalizedQuery || queryTokens.size === 0 || request.topK <= 0) return [];
 
     return Array.from(this.chunks.values())
-      .filter((chunk) => chunk.workspaceId === request.workspaceId)
+      .filter((chunk) => matchesScope(chunk, request))
       .filter((chunk) => filterMatches(chunk, request.filters))
       .map((chunk) => ({
         chunk: snapshotChunk(chunk),

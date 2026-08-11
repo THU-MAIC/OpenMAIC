@@ -8,7 +8,7 @@ import type { KnowledgeChunk, KnowledgeMetadata, KnowledgeResource } from '../ty
 
 export const DOCUMENT_CHUNK_POLICY = {
   id: 'document-block',
-  version: '1.0.0',
+  version: '1.1.0',
   maxChars: 1200,
 } as const;
 
@@ -26,8 +26,10 @@ export type ResolvedDocumentChunkPolicy = {
   readonly version: string;
 };
 
+const HTML_LINE_BREAK_PATTERN = /<br\b[^>]*\/?>/gi;
 const HTML_BLOCK_END_TAG_PATTERN =
-  /<\/(?:address|article|aside|blockquote|br|dd|div|dl|dt|footer|h[1-6]|header|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)>/gi;
+  /<\/(?:address|article|aside|blockquote|dd|div|dl|dt|footer|h[1-6]|header|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)>/gi;
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 class InvalidDocumentChunkPolicyError extends Error {
   readonly name = 'InvalidDocumentChunkPolicyError';
@@ -60,7 +62,10 @@ function blockText(block: DocumentBlock): string {
   const text = block.text?.trim();
   if (text) return text;
   if (!block.html) return '';
-  return sanitizeHtml(block.html.replace(HTML_BLOCK_END_TAG_PATTERN, '\n'), {
+  const projectedHtml = block.html
+    .replace(HTML_LINE_BREAK_PATTERN, '\n')
+    .replace(HTML_BLOCK_END_TAG_PATTERN, '\n');
+  return sanitizeHtml(projectedHtml, {
     allowedTags: [],
     allowedAttributes: {},
   })
@@ -74,15 +79,22 @@ function blockHeading(block: DocumentBlock): string | undefined {
   return typeof heading === 'string' && heading.trim() ? heading.trim() : undefined;
 }
 
+function graphemeSegments(value: string): readonly string[] {
+  return Array.from(GRAPHEME_SEGMENTER.segment(value), ({ segment }) => segment);
+}
+
 function splitLongSegment(value: string, maxChars: number): string[] {
   const chunks: string[] = [];
   let remaining = value.trim();
 
-  while (remaining.length > maxChars) {
-    const whitespaceBoundary = remaining.lastIndexOf(' ', maxChars);
+  while (true) {
+    const segments = graphemeSegments(remaining);
+    if (segments.length <= maxChars) break;
+    const candidate = segments.slice(0, maxChars);
+    const whitespaceBoundary = candidate.findLastIndex((segment) => /^\s$/u.test(segment));
     const boundary = whitespaceBoundary > Math.floor(maxChars / 2) ? whitespaceBoundary : maxChars;
-    chunks.push(remaining.slice(0, boundary).trim());
-    remaining = remaining.slice(boundary).trim();
+    chunks.push(segments.slice(0, boundary).join('').trim());
+    remaining = segments.slice(boundary).join('').trim();
   }
 
   if (remaining) chunks.push(remaining);
@@ -98,7 +110,7 @@ function splitBlockText(value: string, maxChars: number): string[] {
   let current = '';
 
   for (const paragraph of paragraphs) {
-    if (paragraph.length > maxChars) {
+    if (graphemeSegments(paragraph).length > maxChars) {
       if (current) {
         chunks.push(current);
         current = '';
@@ -107,7 +119,9 @@ function splitBlockText(value: string, maxChars: number): string[] {
       continue;
     }
 
-    const combinedLength = current ? current.length + 2 + paragraph.length : paragraph.length;
+    const combinedLength = current
+      ? graphemeSegments(current).length + 2 + graphemeSegments(paragraph).length
+      : graphemeSegments(paragraph).length;
     if (current && combinedLength > maxChars) {
       chunks.push(current);
       current = paragraph;
@@ -124,10 +138,11 @@ function chunkMetadata(
   resource: DocumentKnowledgeResource,
   block: DocumentBlock,
 ): KnowledgeMetadata {
-  const metadata: Record<string, string | number | boolean | readonly string[]> = {
-    ...resource.metadata,
-    blockType: block.type,
-  };
+  const metadata: Record<string, string | number | boolean | readonly string[]> = {};
+  for (const [key, value] of Object.entries(resource.metadata)) {
+    if (key !== 'workspaceId' && key !== 'courseId') metadata[key] = value;
+  }
+  metadata.blockType = block.type;
   if (typeof block.pageNumber === 'number') metadata.pageNumber = block.pageNumber;
   const role = block.metadata?.role;
   if (typeof role === 'string') metadata.role = role;
@@ -138,6 +153,7 @@ function chunkMetadata(
 
 function chunkHash(input: {
   readonly resourceId: string;
+  readonly resourceVersionId: string;
   readonly blockId: string;
   readonly ordinal: number;
   readonly text: string;
@@ -147,6 +163,7 @@ function chunkHash(input: {
     .update(
       JSON.stringify([
         input.resourceId,
+        input.resourceVersionId,
         input.blockId,
         input.ordinal,
         input.text,
@@ -158,6 +175,7 @@ function chunkHash(input: {
 
 function chunkId(input: {
   readonly resourceId: string;
+  readonly resourceVersionId: string;
   readonly blockId: string;
   readonly blockOccurrence: number;
   readonly partIndex: number;
@@ -167,6 +185,7 @@ function chunkId(input: {
       JSON.stringify([
         'document-chunk',
         input.resourceId,
+        input.resourceVersionId,
         input.blockId,
         input.blockOccurrence,
         input.partIndex,
@@ -206,16 +225,20 @@ export function chunkDocumentArtifact(
       chunks.push({
         id: chunkId({
           resourceId: resource.id,
+          resourceVersionId: resource.resourceVersionId,
           blockId: block.id,
           blockOccurrence,
           partIndex,
         }),
         resourceId: resource.id,
+        resourceVersionId: resource.resourceVersionId,
         workspaceId: resource.workspaceId,
+        ...(resource.courseId ? { courseId: resource.courseId } : {}),
         ordinal,
         text: part,
         contentHash: chunkHash({
           resourceId: resource.id,
+          resourceVersionId: resource.resourceVersionId,
           blockId: block.id,
           ordinal,
           text: part,

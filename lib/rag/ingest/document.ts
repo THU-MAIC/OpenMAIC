@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   createDefaultDocumentTransformRegistry,
   transformDocument,
@@ -76,6 +78,25 @@ function resourceLineage(
   };
 }
 
+function createResourceVersionId(input: DocumentResourceInput, lineage: KnowledgeLineage): string {
+  return `document-version:${createHash('sha256')
+    .update(
+      JSON.stringify([
+        { id: input.id, workspaceId: input.workspaceId, courseId: input.courseId },
+        lineage,
+      ]),
+    )
+    .digest('hex')}`;
+}
+
+function normalizeResourceMetadata(metadata: KnowledgeMetadata): KnowledgeMetadata {
+  const normalized: Record<string, string | number | boolean | readonly string[]> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (key !== 'workspaceId' && key !== 'courseId') normalized[key] = value;
+  }
+  return normalized;
+}
+
 function withoutProviderRaw(artifact: DocumentArtifact): DocumentArtifact {
   const safeArtifact = { ...artifact };
   delete safeArtifact.providerRaw;
@@ -93,11 +114,13 @@ export async function ingestDocumentForRag(
   );
   const policy = resolveDocumentChunkPolicy(request.chunking, DOCUMENT_CHUNK_POLICY.version);
   const lineage = resourceLineage(request.resource, transformed.artifact, policy.version);
+  const resourceVersionId = createResourceVersionId(request.resource, lineage);
   const artifact = withoutProviderRaw(transformed.artifact);
   const resource: DocumentKnowledgeResource = {
     id: request.resource.id,
     workspaceId: request.resource.workspaceId,
     ...(request.resource.courseId ? { courseId: request.resource.courseId } : {}),
+    resourceVersionId,
     ...(request.resource.parentResourceId
       ? { parentResourceId: request.resource.parentResourceId }
       : {}),
@@ -108,7 +131,7 @@ export async function ingestDocumentForRag(
     contentHash: request.resource.contentHash,
     status: 'ready',
     lineage,
-    metadata: request.resource.metadata ?? {},
+    metadata: normalizeResourceMetadata(request.resource.metadata ?? {}),
   };
   const chunks = chunkDocumentArtifact(transformed.artifact, resource, request.chunking);
   const diagnostics = [...transformed.diagnostics];

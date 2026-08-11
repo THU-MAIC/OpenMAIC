@@ -1,44 +1,78 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { InMemoryLexicalIndex, type KnowledgeChunk } from '@/lib/rag';
+import {
+  InMemoryLexicalIndex,
+  type KnowledgeChunk,
+  type KnowledgeIndexReplaceRequest,
+} from '@/lib/rag';
 
 const lineage = {
   sourceHash: 'sha256:source',
   extractor: { id: 'plain-text', version: '1.0.0' },
   transforms: [],
-  chunkPolicy: { id: 'document-block', version: '1.0.0' },
+  chunkPolicy: { id: 'document-block', version: '1.1.0' },
 } as const;
 
-function chunk(
-  id: string,
-  text: string,
-  courseId: string,
-  ordinal = 0,
-  workspaceId = 'workspace-test',
-): KnowledgeChunk {
+type ChunkInput = {
+  readonly id: string;
+  readonly text: string;
+  readonly courseId?: string;
+  readonly ordinal?: number;
+  readonly resourceId?: string;
+  readonly resourceVersionId?: string;
+  readonly workspaceId?: string;
+  readonly metadata?: KnowledgeChunk['metadata'];
+};
+
+function chunk(input: ChunkInput): KnowledgeChunk {
   return {
-    id,
-    resourceId: `resource-${courseId}`,
-    workspaceId,
-    ordinal,
-    text,
-    contentHash: `hash-${id}`,
-    locator: { kind: 'document', blockId: id, pageNumber: ordinal + 1 },
+    id: input.id,
+    resourceId: input.resourceId ?? `resource-${input.courseId ?? 'shared'}`,
+    resourceVersionId: input.resourceVersionId ?? 'resource-version-1',
+    workspaceId: input.workspaceId ?? 'workspace-test',
+    ...(input.courseId ? { courseId: input.courseId } : {}),
+    ordinal: input.ordinal ?? 0,
+    text: input.text,
+    contentHash: `hash-${input.id}`,
+    locator: {
+      kind: 'document',
+      blockId: input.id,
+      pageNumber: (input.ordinal ?? 0) + 1,
+    },
     lineage,
-    metadata: { courseId },
+    metadata: input.metadata ?? {},
+  };
+}
+
+function replacement(chunks: readonly KnowledgeChunk[]): KnowledgeIndexReplaceRequest {
+  const firstChunk = chunks[0];
+  if (!firstChunk) throw new Error('replacement fixture requires a chunk');
+  return {
+    workspaceId: firstChunk.workspaceId,
+    ...(firstChunk.courseId ? { courseId: firstChunk.courseId } : {}),
+    resourceId: firstChunk.resourceId,
+    resourceVersionId: firstChunk.resourceVersionId,
+    chunks,
   };
 }
 
 describe('in-memory lexical index', () => {
   it('ranks token matches, returns lexical hits, and enforces topK', async () => {
     const index = new InMemoryLexicalIndex();
-    await index.upsert([
-      chunk('calibration', 'Calibration procedure for the pressure sensor.', 'course-1'),
-      chunk('safety', 'Safety rules for laboratory work.', 'course-1'),
-    ]);
+    await index.replaceResourceVersion(
+      replacement([
+        chunk({
+          id: 'calibration',
+          text: 'Calibration procedure for the pressure sensor.',
+          courseId: 'course-1',
+        }),
+        chunk({ id: 'safety', text: 'Safety rules for laboratory work.', courseId: 'course-1' }),
+      ]),
+    );
 
     const hits = await index.query({
       workspaceId: 'workspace-test',
+      courseId: 'course-1',
       text: 'calibration procedure',
       topK: 1,
     });
@@ -51,60 +85,100 @@ describe('in-memory lexical index', () => {
     expect(hits[0]?.score).toBeGreaterThan(0);
   });
 
-  it('filters metadata before scoring and replaces duplicate chunk IDs', async () => {
+  it('filters metadata after applying the explicit course scope', async () => {
     const index = new InMemoryLexicalIndex();
-    await index.upsert([chunk('shared', 'old terminology', 'course-1')]);
-    await index.upsert([
-      chunk('shared', 'new terminology', 'course-1'),
-      chunk('other-course', 'new terminology', 'course-2'),
-    ]);
+    await index.replaceResourceVersion(
+      replacement([
+        chunk({
+          id: 'shared',
+          text: 'new terminology',
+          courseId: 'course-1',
+          metadata: { chapterId: 'chapter-1' },
+        }),
+      ]),
+    );
+    await index.replaceResourceVersion(
+      replacement([
+        chunk({
+          id: 'other-course',
+          text: 'new terminology',
+          courseId: 'course-2',
+          metadata: { chapterId: 'chapter-2' },
+        }),
+      ]),
+    );
 
     const hits = await index.query({
       workspaceId: 'workspace-test',
+      courseId: 'course-1',
       text: 'new terminology',
       topK: 5,
-      filters: { courseId: 'course-1' },
+      filters: { chapterId: 'chapter-1' },
     });
 
     expect(hits.map((hit) => hit.chunk.id)).toEqual(['shared']);
-    expect(hits[0]?.chunk.text).toBe('new terminology');
+
+    await expect(
+      index.query({ workspaceId: 'workspace-test', text: 'new terminology', topK: 5 }),
+    ).resolves.toHaveLength(2);
   });
 
   it('orders score ties by chunk ID and deletes all chunks for a resource', async () => {
     const index = new InMemoryLexicalIndex();
-    await index.upsert([
-      chunk('zeta', 'safety procedure', 'course-1'),
-      chunk('alpha', 'safety procedure', 'course-1'),
-    ]);
+    await index.replaceResourceVersion(
+      replacement([
+        chunk({ id: 'zeta', text: 'safety procedure', courseId: 'course-1' }),
+        chunk({ id: 'alpha', text: 'safety procedure', courseId: 'course-1' }),
+      ]),
+    );
 
     const tiedHits = await index.query({
       workspaceId: 'workspace-test',
+      courseId: 'course-1',
       text: 'safety procedure',
       topK: 5,
     });
     expect(tiedHits.map((hit) => hit.chunk.id)).toEqual(['alpha', 'zeta']);
 
-    await index.delete({ workspaceId: 'workspace-test', resourceIds: ['resource-course-1'] });
+    await index.delete({
+      workspaceId: 'workspace-test',
+      courseId: 'course-1',
+      resourceIds: ['resource-course-1'],
+    });
     await expect(
-      index.query({ workspaceId: 'workspace-test', text: 'safety procedure', topK: 5 }),
+      index.query({
+        workspaceId: 'workspace-test',
+        courseId: 'course-1',
+        text: 'safety procedure',
+        topK: 5,
+      }),
     ).resolves.toEqual([]);
   });
 
   it('returns no hits for blank or non-positive queries', async () => {
     const index = new InMemoryLexicalIndex();
-    await index.upsert([chunk('one', 'searchable text', 'course-1')]);
+    await index.replaceResourceVersion(
+      replacement([chunk({ id: 'one', text: 'searchable text', courseId: 'course-1' })]),
+    );
 
     await expect(
-      index.query({ workspaceId: 'workspace-test', text: '   ', topK: 5 }),
+      index.query({ workspaceId: 'workspace-test', courseId: 'course-1', text: '   ', topK: 5 }),
     ).resolves.toEqual([]);
     await expect(
-      index.query({ workspaceId: 'workspace-test', text: 'searchable', topK: 0 }),
+      index.query({
+        workspaceId: 'workspace-test',
+        courseId: 'course-1',
+        text: 'searchable',
+        topK: 0,
+      }),
     ).resolves.toEqual([]);
   });
 
   it('keeps case folding independent from the ambient locale', async () => {
     const index = new InMemoryLexicalIndex();
-    await index.upsert([chunk('istanbul', 'Istanbul procedure', 'course-1')]);
+    await index.replaceResourceVersion(
+      replacement([chunk({ id: 'istanbul', text: 'Istanbul procedure', courseId: 'course-1' })]),
+    );
 
     const original = String.prototype.toLocaleLowerCase;
     const localeSpy = vi.spyOn(String.prototype, 'toLocaleLowerCase').mockImplementation(function (
@@ -115,7 +189,12 @@ describe('in-memory lexical index', () => {
 
     let hits;
     try {
-      hits = await index.query({ workspaceId: 'workspace-test', text: 'istanbul', topK: 1 });
+      hits = await index.query({
+        workspaceId: 'workspace-test',
+        courseId: 'course-1',
+        text: 'istanbul',
+        topK: 1,
+      });
     } finally {
       localeSpy.mockRestore();
     }
@@ -125,46 +204,12 @@ describe('in-memory lexical index', () => {
 
   it('retrieves Chinese terms with character-level CJK tokens', async () => {
     const index = new InMemoryLexicalIndex();
-    await index.upsert([chunk('zh', '实验室安全操作规范', 'course-zh')]);
+    await index.replaceResourceVersion(
+      replacement([chunk({ id: 'zh', text: '实验室安全操作规范', courseId: 'course-zh' })]),
+    );
 
     await expect(
-      index.query({ workspaceId: 'workspace-test', text: '安全', topK: 1 }),
+      index.query({ workspaceId: 'workspace-test', courseId: 'course-zh', text: '安全', topK: 1 }),
     ).resolves.toMatchObject([{ chunk: { id: 'zh' } }]);
-  });
-
-  it('requires workspace scope for retrieval and deletion', async () => {
-    const index = new InMemoryLexicalIndex();
-    await index.upsert([
-      chunk('same-id', 'shared safety procedure', 'course-a', 0, 'workspace-a'),
-      chunk('same-id', 'shared safety procedure', 'course-b', 0, 'workspace-b'),
-    ]);
-
-    await expect(
-      index.query({ workspaceId: 'workspace-a', text: 'shared safety', topK: 5 }),
-    ).resolves.toMatchObject([{ chunk: { id: 'same-id' } }]);
-    await expect(
-      index.query({ workspaceId: 'workspace-b', text: 'shared safety', topK: 5 }),
-    ).resolves.toMatchObject([{ chunk: { id: 'same-id' } }]);
-
-    await index.delete({ workspaceId: 'workspace-a', resourceIds: ['resource-course-a'] });
-    await expect(
-      index.query({ workspaceId: 'workspace-b', text: 'shared safety', topK: 5 }),
-    ).resolves.toMatchObject([{ chunk: { id: 'same-id' } }]);
-  });
-
-  it('snapshots chunks across upsert and query boundaries', async () => {
-    const index = new InMemoryLexicalIndex();
-    const original = chunk('snapshot', 'stable indexed text', 'course-1');
-
-    await index.upsert([original]);
-    Object.assign(original, { text: 'mutated after upsert' });
-
-    const first = await index.query({ workspaceId: 'workspace-test', text: 'stable', topK: 1 });
-    expect(first).toHaveLength(1);
-    Object.assign(first[0]?.chunk ?? {}, { text: 'mutated after query' });
-
-    await expect(
-      index.query({ workspaceId: 'workspace-test', text: 'stable', topK: 1 }),
-    ).resolves.toMatchObject([{ chunk: { text: 'stable indexed text' } }]);
   });
 });

@@ -11,6 +11,8 @@ function resource(): DocumentKnowledgeResource {
   return {
     id: 'resource-manual',
     workspaceId: 'workspace-test',
+    courseId: 'course-1',
+    resourceVersionId: 'resource-version-1',
     modality: 'document',
     title: 'Manual',
     sourceRef: 'source://manual.md',
@@ -22,7 +24,7 @@ function resource(): DocumentKnowledgeResource {
       transforms: [],
       chunkPolicy: { id: DOCUMENT_CHUNK_POLICY.id, version: DOCUMENT_CHUNK_POLICY.version },
     },
-    metadata: { courseId: 'course-1', chapterId: 'chapter-1' },
+    metadata: { chapterId: 'chapter-1' },
   };
 }
 
@@ -50,7 +52,6 @@ describe('document RAG chunking', () => {
     expect(chunks[0]).toMatchObject({
       locator: { kind: 'document', blockId: 'block-1', pageNumber: 4, heading: 'Safety' },
       metadata: {
-        courseId: 'course-1',
         chapterId: 'chapter-1',
         pageNumber: 4,
         blockType: 'markdown',
@@ -90,6 +91,35 @@ describe('document RAG chunking', () => {
     expect(chunks[0]?.text).toBe('Guide\nWear protective equipment.');
     expect(chunks[0]?.text).not.toContain('ignore');
     expect(chunks[0]?.text).not.toContain('<strong>');
+  });
+
+  it('projects br tags to line breaks before sanitizing HTML', () => {
+    const chunks = chunkDocumentArtifact(
+      {
+        metadata: {},
+        blocks: [{ id: 'html-breaks', type: 'layout', html: '<p>First<br>Second<br/>Third</p>' }],
+        assets: [],
+      },
+      resource(),
+    );
+
+    expect(chunks[0]?.text).toBe('First\nSecond\nThird');
+  });
+
+  it('does not split grapheme clusters when applying the chunk limit', () => {
+    const chunks = chunkDocumentArtifact(
+      {
+        metadata: {},
+        blocks: [{ id: 'unicode', type: 'text', text: '👩‍🔬👨‍🚀e\u0301' }],
+        assets: [],
+      },
+      resource(),
+      { maxChars: 1 },
+    );
+
+    expect(chunks.map((chunk) => chunk.text)).toEqual(['👩‍🔬', '👨‍🚀', 'é']);
+    expect(chunks.every((chunk) => chunk.text.length > 0)).toBe(true);
+    expect(chunks[0]?.lineage.chunkPolicy.version).toContain('1.1.0');
   });
 
   it('keeps chunk IDs distinct when source identifiers contain separators', () => {

@@ -2,7 +2,6 @@ export { KNOWLEDGE_MODALITIES } from './types';
 export { DOCUMENT_CHUNK_POLICY, chunkDocumentArtifact } from './chunking';
 export { ingestDocumentForRag } from './ingest';
 export { InMemoryLexicalIndex } from './providers';
-export { createGroundingContextRef } from './grounding';
 export type {
   DocumentRagIngestionRequest,
   DocumentRagIngestionResult,
@@ -11,13 +10,13 @@ export type {
 export type { DocumentChunkingOptions } from './chunking';
 export type { DocumentKnowledgeResource } from './chunking';
 export type {
-  GroundingContextRef,
   KnowledgeChunk,
   KnowledgeFilterValue,
   KnowledgeHit,
   KnowledgeIndex,
   KnowledgeIndexCapabilities,
   KnowledgeIndexDeleteRequest,
+  KnowledgeIndexReplaceRequest,
   KnowledgeIndexQuery,
   KnowledgeLineage,
   KnowledgeLocator,
@@ -26,5 +25,6 @@ export type {
   KnowledgeModality,
   KnowledgeResource,
   KnowledgeResourceStatus,
+  KnowledgeScope,
   KnowledgeVersion,
 } from './types';
