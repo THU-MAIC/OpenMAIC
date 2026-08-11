@@ -191,6 +191,42 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     await db.close();
   });
 
+  /** Store each value, drop the entry that references it, and age the blob out of any grace. */
+  async function unreference(values: readonly string[]): Promise<ContentHash[]> {
+    const hashes: ContentHash[] = [];
+    for (const value of values) {
+      const id = await store.put(PRINCIPAL, blob(value));
+      const { contentHash } = await contentHashOf(blob(value));
+      await store.remove(PRINCIPAL, id);
+      await stampUnreferencedAt(contentHash, '2000-01-01T00:00:00.000Z');
+      hashes.push(contentHash);
+    }
+    return hashes;
+  }
+
+  async function stampUnreferencedAt(hash: ContentHash, at: string): Promise<void> {
+    await db.query(
+      'UPDATE asset_blobs SET unreferenced_at = $2::timestamptz WHERE content_hash = $1',
+      [hash, at],
+    );
+  }
+
+  async function remainingBlobs(): Promise<ContentHash[]> {
+    const result = await db.query<{ content_hash: ContentHash }>(
+      'SELECT content_hash FROM asset_blobs',
+    );
+    return result.rows.map((row) => row.content_hash).sort();
+  }
+
+  function boundedCollector(batchSize: number, queryable: Queryable = db): AssetCollector {
+    return new AssetCollector(queryable, byteStore, {
+      withTransaction: transactions(db),
+      graceMs: 0,
+      batchSize,
+      now: () => new Date('2026-01-01T00:00:00.000Z'),
+    });
+  }
+
   test('schema is idempotent and has one PGlite-compatible statement per entry', async () => {
     const statements: string[] = [];
     await ensureAssetSchema(recordingQueryable(db, statements));
@@ -566,6 +602,77 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     expect((await store.resolve(PRINCIPAL, referencedId))?.bytes).toEqual(
       bytes('still referenced'),
     );
+  });
+
+  test('a pass takes at most its batch size and leaves the rest for the next one', async () => {
+    // The first pass over a deployment that accumulated before collection was
+    // scheduled is the one whose size is set by history rather than by the
+    // interval, and it is the pass this cap exists for.
+    await unreference(['batch-a', 'batch-b', 'batch-c', 'batch-d', 'batch-e']);
+    const collector = boundedCollector(2);
+
+    expect(await collector.collectPass()).toEqual({ collected: 2, capped: true });
+    expect(await remainingBlobs()).toHaveLength(3);
+  });
+
+  test('following passes take the remainder, so a capped pass strands nothing', async () => {
+    await unreference(['drain-a', 'drain-b', 'drain-c', 'drain-d', 'drain-e']);
+    const collector = boundedCollector(2);
+
+    // What a caller draining the backlog does: run while the batch comes back
+    // full. `collected` alone cannot say that, which is why `capped` exists.
+    const passes: Array<{ collected: number; capped: boolean }> = [];
+    do {
+      passes.push(await collector.collectPass());
+    } while (passes[passes.length - 1]?.capped);
+
+    expect(passes).toEqual([
+      { collected: 2, capped: true },
+      { collected: 2, capped: true },
+      { collected: 1, capped: false },
+    ]);
+    expect(await remainingBlobs()).toEqual([]);
+  });
+
+  test('a bounded pass takes the oldest unreferenced blob, however its digest sorts', async () => {
+    // Ordering by content hash would starve this blob: its digest sorts above
+    // every other one here, so a bounded pass ordered that way would never
+    // reach it while lower digests keep arriving.
+    const values = ['sorting-one', 'sorting-two', 'sorting-three', 'sorting-four'];
+    const hashes = new Map<string, ContentHash>();
+    for (const value of values) hashes.set(value, (await contentHashOf(blob(value))).contentHash);
+    const hashOf = (value: string): ContentHash => hashes.get(value) as ContentHash;
+    const sortsLast = values.reduce((left, right) => (hashOf(left) > hashOf(right) ? left : right));
+    const queue = values.filter((value) => value !== sortsLast);
+
+    await unreference([...queue, sortsLast]);
+    // Stamp the newer blobs first and the oldest one last, so heap order --
+    // which is what a pass that dropped its ORDER BY would see -- puts the
+    // blob that must be collected first anywhere but first.
+    for (const [index, value] of queue.entries()) {
+      await stampUnreferencedAt(hashOf(value), `200${index + 1}-01-01T00:00:00.000Z`);
+    }
+    await stampUnreferencedAt(hashOf(sortsLast), '2000-01-01T00:00:00.000Z');
+
+    const statements: string[] = [];
+    const collector = boundedCollector(1, recordingQueryable(db, statements));
+    expect(await collector.collectPass()).toEqual({ collected: 1, capped: true });
+    expect(await remainingBlobs()).toEqual(queue.map(hashOf).sort());
+
+    // The order is asked of the database rather than inherited from a plan.
+    // PGlite answers this shape from the partial index on `unreferenced_at`,
+    // so a pass that simply dropped its ORDER BY would return these same rows
+    // here while starving a real deployment whose planner chose otherwise.
+    expect(statements[0]).toContain('ORDER BY unreferenced_at ASC, content_hash ASC LIMIT $2');
+
+    // A blob unreferenced after the queue formed joins its back, so it cannot
+    // push the waiting ones further out: the next pass still takes the oldest.
+    const { contentHash: newcomer } = await contentHashOf(blob('sorting-newcomer'));
+    await unreference(['sorting-newcomer']);
+    await stampUnreferencedAt(newcomer, '2004-01-01T00:00:00.000Z');
+
+    expect(await collector.collect()).toBe(1);
+    expect(await remainingBlobs()).toEqual([...queue.slice(1).map(hashOf), newcomer].sort());
   });
 
   test('put writes bytes unconditionally, even when they are already stored', async () => {

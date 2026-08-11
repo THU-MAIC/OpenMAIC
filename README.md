@@ -341,6 +341,18 @@ is active without also affecting the default deployment. Startup therefore
 relies on the embedded route's retry-on-next-request behavior while PostgreSQL
 becomes healthy.
 
+Deleting or replacing an asset only drops its registry entry; the bytes behind
+it are reclaimed afterwards by an offline collector. **This deployment runs that
+collector by default**, so nothing has to be configured for asset storage to
+stop growing. A pass runs every `ASSET_COLLECTION_INTERVAL_MS` (default 15
+minutes) over bytes that have been unreferenced for longer than
+`ASSET_COLLECTION_GRACE_MS` (default 1 hour); the grace period is the retention
+window a user's deleted bytes actually get, so raise it deliberately. Set
+`ASSET_COLLECTION_ENABLED=0` to switch collection off in a process. A
+horizontally scaled deployment may leave it on in every instance — each blob row
+is locked and re-checked before its bytes go, so concurrent collectors serialize
+rather than race — or disable it everywhere and run its own.
+
 The embedded endpoint implements the package's
 [RuntimeStore HTTP contract](packages/@openmaic/storage/docs/runtime-http-contract.md)
 and

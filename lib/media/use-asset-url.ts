@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { BrowserAssetStore } from '@openmaic/storage';
-import { getAssetPool } from './asset-pool';
+import { getAssetPool, type AssetPoolStore } from './asset-pool';
 import type { AssetReplacementPool } from './asset-replacement-events';
 
 const EMPTY_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({});
@@ -13,7 +12,7 @@ export type AssetUrlLeaseState =
   | { readonly status: 'resolved'; readonly url: string }
   | { readonly status: 'missing' };
 
-type AssetPoolView = Pick<BrowserAssetStore, 'resolve' | 'release'>;
+type AssetPoolView = Pick<AssetPoolStore, 'invalidate' | 'resolve' | 'release'>;
 interface OwnedResolution {
   owners: number;
   resolution: Promise<string | null>;
@@ -129,6 +128,10 @@ export async function invalidateAssetUrlLeaseCache(
   ref: string,
   pool: AssetReplacementPool = getAssetPool(),
 ): Promise<void> {
+  // A peer's replacement can arrive while the HTTP store still has the old
+  // revision in flight. Advance its generation before asking for fresh bytes
+  // so that request cannot satisfy this refresh or a later caller.
+  await pool.invalidate(ref);
   const owned = ownedResolutions.get(pool)?.get(ref);
   if (!owned || owned.owners === 0) return;
   const resolution = resolveAfterPendingRelease(ref, pool);
@@ -212,9 +215,9 @@ export function trackAssetUrl(
     tracker.active = false;
     trackers?.delete(tracker);
     if (trackers?.size === 0) trackersByRef?.delete(ref);
-    // BrowserAssetStore URLs are immutable Blob snapshots pinned until
-    // release. App-level ownership prevents one renderer surface from revoking
-    // a snapshot while another surface still uses the shared singleton URL.
+    // Pool URLs are immutable Blob snapshots pinned until release. App-level
+    // ownership prevents one renderer surface from revoking a snapshot while
+    // another surface still uses the shared singleton URL.
     void lease.release().catch(() => undefined);
   };
 }
@@ -304,7 +307,7 @@ export function useAssetUrlLeases(
   useEffect(() => {
     const currentRefs = JSON.parse(signature) as string[];
     if (currentRefs.length === 0) return;
-    let pool: BrowserAssetStore;
+    let pool: AssetPoolStore;
     try {
       pool = getAssetPool();
     } catch {

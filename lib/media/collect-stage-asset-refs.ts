@@ -3,6 +3,7 @@ import { getDocumentStore } from '@/lib/document-store';
 import { createLogger } from '@/lib/logger';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { useStageStore } from '@/lib/store/stage';
+import { isAssetPoolServerBacked } from './asset-pool-config';
 import { slideMediaReferenceSlots } from './slide-media-slots';
 import { probeStageRealmPresence } from './stage-realm-presence';
 
@@ -265,6 +266,13 @@ export async function proveExclusiveAssetOwnership(
   assetId: string,
   stageId: string,
 ): Promise<{ readonly exclusive: boolean; readonly activePersistedRefs?: StageAssetRefs }> {
+  // A server-backed id can be referenced by another device, outside the local
+  // document snapshot, unflushed Zustand state, and cross-tab presence probe.
+  // Asking which other principals hold it would create the existence oracle
+  // the asset contract forbids. The proof therefore cannot be strengthened:
+  // fail closed and let the existing regeneration path fork to a fresh id.
+  if (isAssetPoolServerBacked()) return { exclusive: false };
+
   let activePersistedRefs: StageAssetRefs | undefined;
   try {
     const document = await getDocumentStore().loadDocument(stageId);

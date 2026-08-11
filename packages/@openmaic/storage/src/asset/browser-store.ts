@@ -359,6 +359,13 @@ export class BrowserAssetStore implements StorageProvider {
     await this.urls.release(ref);
   }
 
+  /** Retire this instance's cached snapshot without revoking any issued URL. */
+  async invalidate(ref: AssetRef): Promise<void> {
+    this.assertOpen();
+    await this.openDb();
+    await this.urls.invalidate(ref);
+  }
+
   /**
    * Replace the bytes behind an allocated id without changing that id.
    *

@@ -440,7 +440,8 @@ export class HttpAssetStore implements StorageProvider {
     }
   }
 
-  private async invalidate(id: AssetRef): Promise<void> {
+  /** Retire this client's cached snapshot without revoking any issued URL. */
+  async invalidate(id: AssetRef): Promise<void> {
     this.generations.set(id, this.generation(id) + 1);
     this.inFlight.delete(id);
     this.identities.delete(id);
