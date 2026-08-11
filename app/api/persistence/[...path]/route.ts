@@ -12,7 +12,7 @@ import {
 import { Pool } from 'pg';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
-import { configuredS3Bucket, createAssetByteStore } from '@/lib/persistence/asset-byte-store';
+import { lazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { authenticatePersistenceRequest } from '@/lib/persistence/server-auth';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 
@@ -41,7 +41,6 @@ async function createPersistenceHandler(
   connectionString: string,
   poolFactory: PoolFactory,
 ): Promise<RequestListener> {
-  const s3Bucket = configuredS3Bucket(process.env.ASSET_S3_BUCKET);
   const pool = poolFactory(connectionString);
   const queryable = pool as unknown as ConnectableQueryable;
   try {
@@ -49,7 +48,10 @@ async function createPersistenceHandler(
     await ensureDocumentSchema(queryable);
     await ensureAssetSchema(queryable);
     const withTransaction = nodePostgresTransaction(queryable);
-    const byteStore = await createAssetByteStore(s3Bucket, queryable);
+    // Deferred to first asset use: the asset backend is optional, so its
+    // misconfiguration (an invalid ASSET_S3_BUCKET, an unresolvable AWS SDK)
+    // must fail asset requests only, never this handler's initialization.
+    const byteStore = lazyAssetByteStore(process.env.ASSET_S3_BUCKET, queryable);
     const runtimeStore = new PgRuntimeStore(queryable, {
       withTransaction,
       payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,

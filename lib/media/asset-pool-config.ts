@@ -15,7 +15,15 @@ export interface AssetPoolStore {
 export type AssetPoolStoreFactory = () => AssetPoolStore;
 
 export interface AssetPoolStorageOptions {
-  /** An asset pool instance, or a factory evaluated lazily until it first succeeds. */
+  /**
+   * An asset pool instance, or a factory evaluated on each resolution.
+   *
+   * Prefer the factory form: a concrete instance is single-lifecycle.
+   * `clearAssetPool()` closes whatever instance the pool held, so a pool
+   * configured with an instance cannot reopen — the next resolution refuses
+   * loudly instead of reinstalling the closed object — while a factory simply
+   * builds a fresh one.
+   */
   store?: AssetPoolStore | AssetPoolStoreFactory;
   /**
    * Whether references can be held outside this browser. Remote stores must
@@ -27,6 +35,7 @@ export interface AssetPoolStorageOptions {
 
 let options: AssetPoolStorageOptions | undefined;
 let resolutionStarted = false;
+let concreteStoreHandedOut = false;
 
 /**
  * Configure the browser-wide asset pool backend.
@@ -83,6 +92,7 @@ export function registerAssetPoolStorageResetHook(hook: AssetPoolStorageResetHoo
 export function resetAssetPoolStorageForTests(): void {
   options = undefined;
   resolutionStarted = false;
+  concreteStoreHandedOut = false;
   for (const hook of resetHooks) hook();
 }
 
@@ -90,5 +100,18 @@ export function resetAssetPoolStorageForTests(): void {
 export function resolveConfiguredAssetPoolStore(): AssetPoolStore | undefined {
   resolutionStarted = true;
   const configured = options?.store;
-  return typeof configured === 'function' ? configured() : configured;
+  if (typeof configured === 'function') return configured();
+  if (!configured) return undefined;
+  // A concrete instance gets one lifetime. The first resolution installs it as
+  // the pool; clearAssetPool() then closes it. Resolving the same object again
+  // would reinstall a closed store as the live pool, so the second handout
+  // refuses and names the fix. A factory has no such state and is called
+  // afresh on every resolution.
+  if (concreteStoreHandedOut) {
+    throw new Error(
+      'The configured asset pool store instance was closed by clearAssetPool() and cannot be reopened. Configure the pool with a factory -- store: () => new ... -- so a cleared pool resolves to a fresh store.',
+    );
+  }
+  concreteStoreHandedOut = true;
+  return configured;
 }

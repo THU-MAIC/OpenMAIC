@@ -167,4 +167,26 @@ describe('getAssetPool', () => {
     await expect(reopened.resolve('ast_reopened')).resolves.toBe('blob:second-client');
     expect(factory).toHaveBeenCalledTimes(2);
   });
+
+  it('refuses to reinstall a concrete store after clear instead of reviving the closed one', async () => {
+    // The factory form above reopens cleanly; a concrete instance cannot, and
+    // silently reinstalling it would put a closed store back in service.
+    const injected = {
+      put: vi.fn(),
+      resolve: vi.fn(),
+      invalidate: vi.fn(),
+      remove: vi.fn(),
+      replace: vi.fn(),
+      release: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
+    } as never;
+    const config = await import('@/lib/media/asset-pool-config');
+    config.configureAssetPoolStorage({ store: injected, serverBacked: true });
+    const { clearAssetPool, getAssetPool } = await import('@/lib/media/asset-pool');
+
+    expect(getAssetPool()).toBe(injected);
+    await expect(clearAssetPool()).resolves.toBeUndefined();
+
+    expect(() => getAssetPool()).toThrow(/cannot be reopened[\s\S]*factory/);
+  });
 });

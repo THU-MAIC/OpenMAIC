@@ -57,3 +57,35 @@ export async function createAssetByteStore(
   const storage = await import('@openmaic/storage/asset/s3-bytes');
   return storage.loadS3AssetByteStore(bucket);
 }
+
+/**
+ * A byte store whose construction is deferred to first use.
+ *
+ * The asset backend is optional, so its configuration must not gate the rest
+ * of persistence. Awaiting createAssetByteStore during handler initialization
+ * would let an invalid ASSET_S3_BUCKET, or an AWS SDK that cannot be resolved,
+ * reject the shared handler and take document and runtime traffic down with
+ * it. With this wrapper, installed instead, handler initialization never
+ * touches asset configuration: a misconfiguration fails asset requests and
+ * only asset requests. A failed construction is not cached, so the next asset
+ * request retries — the same no-poisoned-singleton rule the route applies to
+ * its own initialization.
+ */
+export function lazyAssetByteStore(
+  bucketValue: string | undefined,
+  queryable: Queryable,
+): AssetByteStore {
+  let pending: Promise<AssetByteStore> | undefined;
+  const resolve = (): Promise<AssetByteStore> =>
+    (pending ??= createAssetByteStore(configuredS3Bucket(bucketValue), queryable).catch(
+      (error: unknown) => {
+        pending = undefined;
+        throw error;
+      },
+    ));
+  return {
+    write: async (hash, bytes) => (await resolve()).write(hash, bytes),
+    read: async (hash) => (await resolve()).read(hash),
+    delete: async (hash) => (await resolve()).delete(hash),
+  };
+}

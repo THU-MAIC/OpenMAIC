@@ -147,6 +147,7 @@ describe('embedded persistence route', () => {
         constructor(queryable: unknown) {
           byteConstructions.push(queryable);
         }
+        read = vi.fn().mockResolvedValue(new Uint8Array([1]));
       },
     }));
     vi.doMock('@openmaic/storage/asset/pg', () => ({
@@ -196,6 +197,14 @@ describe('embedded persistence route', () => {
     expect(runtimeConstructions[0]?.queryable).toBe(pool);
     expect(documentConstructions[0]?.queryable).toBe(pool);
     expect(assetConstructions[0]?.queryable).toBe(pool);
+    // The byte layer is deferred to first use: nothing constructs it during
+    // handler initialization, and the first byte operation builds the
+    // PostgreSQL byte store on the same pool.
+    expect(byteConstructions).toHaveLength(0);
+    const byteStore = (assetConstructions[0]?.options as { byteStore?: unknown }).byteStore as {
+      read(hash: never): Promise<unknown>;
+    };
+    await expect(byteStore.read('sha256-x' as never)).resolves.toEqual(new Uint8Array([1]));
     expect(byteConstructions[0]).toBe(pool);
     expect(
       (runtimeConstructions[0]?.options as { withTransaction?: unknown }).withTransaction,
@@ -212,11 +221,12 @@ describe('embedded persistence route', () => {
     expect(sdkModuleResolved).not.toHaveBeenCalled();
   });
 
-  it('takes the storage package single-loader path only when its bucket is configured', async () => {
+  it('defers S3 resolution to the first asset byte operation', async () => {
     const pgByteStore = vi.fn();
     const assetOptions: unknown[] = [];
     const s3ModuleResolved = vi.fn();
-    const loadS3AssetByteStore = vi.fn().mockResolvedValue({ kind: 's3' });
+    const s3Read = vi.fn().mockResolvedValue(new Uint8Array([1]));
+    const loadS3AssetByteStore = vi.fn().mockResolvedValue({ read: s3Read });
     vi.doMock('@openmaic/storage/runtime/pg', () => ({
       ensureSchema: vi.fn().mockResolvedValue(undefined),
       PgRuntimeStore: class {},
@@ -272,15 +282,63 @@ describe('embedded persistence route', () => {
       { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never },
     );
 
+    // Handler initialization leaves the byte layer unresolved: the mocked
+    // handler never touches it, so neither the SDK module nor the PostgreSQL
+    // byte store has been constructed yet.
     expect(response.status).toBe(204);
+    expect(s3ModuleResolved).not.toHaveBeenCalled();
+    expect(loadS3AssetByteStore).not.toHaveBeenCalled();
+    expect(pgByteStore).not.toHaveBeenCalled();
+
+    // The first byte operation resolves through the single-loader path, with
+    // the configured bucket trimmed.
+    const byteStore = (assetOptions[0] as { byteStore?: unknown }).byteStore as {
+      read(hash: never): Promise<unknown>;
+    };
+    await expect(byteStore.read('sha256-x' as never)).resolves.toEqual(new Uint8Array([1]));
     expect(s3ModuleResolved).toHaveBeenCalledOnce();
     expect(loadS3AssetByteStore).toHaveBeenCalledExactlyOnceWith('asset-bucket');
     expect(pgByteStore).not.toHaveBeenCalled();
-    expect((assetOptions[0] as { byteStore?: unknown }).byteStore).toEqual({ kind: 's3' });
+    expect(s3Read).toHaveBeenCalledWith('sha256-x');
   });
 
-  it('rejects a malformed S3 bucket before opening the database or loading S3', async () => {
+  it('contains a malformed S3 bucket to asset traffic instead of failing persistence', async () => {
     const s3ModuleResolved = vi.fn();
+    const assetOptions: unknown[] = [];
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
+      PgAssetByteStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {
+        constructor(_queryable: unknown, options: unknown) {
+          assetOptions.push(options);
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.doMock('@openmaic/storage/server', () => ({
+      createStorageHttpHandler: vi.fn(
+        () =>
+          (
+            _request: unknown,
+            response: { writeHead: (status: number) => void; end: () => void },
+          ) => {
+            response.writeHead(204);
+            response.end();
+          },
+      ),
+    }));
     vi.doMock('@openmaic/storage/asset/s3-bytes', () => {
       s3ModuleResolved();
       return { loadS3AssetByteStore: vi.fn() };
@@ -288,28 +346,99 @@ describe('embedded persistence route', () => {
     vi.stubEnv('DATABASE_URL', 'postgres://invalid-s3-bucket-test');
     vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
     vi.stubEnv('ASSET_S3_BUCKET', 'Invalid_Bucket');
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
-    const poolFactory = vi.fn();
+    const poolFactory = vi.fn(() => ({ end: vi.fn().mockResolvedValue(undefined) }));
 
+    // The malformed bucket no longer gates handler initialization: document
+    // and runtime traffic initializes and serves normally.
     const response = await handlePersistenceRequest(
-      new Request('http://localhost/api/persistence/assets'),
-      { poolFactory },
+      new Request('http://localhost/api/persistence/runtime/sessions', {
+        headers: { authorization: 'Bearer test-token' },
+      }),
+      { poolFactory: poolFactory as never },
     );
 
-    expect(response.status).toBe(500);
-    await expect(response.json()).resolves.toEqual({
-      error: {
-        code: 'PERSISTENCE_INIT_FAILED',
-        message: 'server persistence initialization failed',
-      },
-    });
-    expect(poolFactory).not.toHaveBeenCalled();
+    expect(response.status).toBe(204);
+    expect(poolFactory).toHaveBeenCalledOnce();
     expect(s3ModuleResolved).not.toHaveBeenCalled();
-    expect(error.mock.calls[0]?.[1]).toMatchObject({
-      message: 'Invalid ASSET_S3_BUCKET: expected a valid Amazon S3 general purpose bucket name',
-    });
-    error.mockRestore();
+
+    // The misconfiguration surfaces on the first asset byte operation, naming
+    // the variable at fault, and never reaches for the SDK.
+    const byteStore = (assetOptions[0] as { byteStore?: unknown }).byteStore as {
+      read(hash: never): Promise<unknown>;
+    };
+    await expect(byteStore.read('sha256-x' as never)).rejects.toThrow(
+      'Invalid ASSET_S3_BUCKET: expected a valid Amazon S3 general purpose bucket name',
+    );
+    expect(s3ModuleResolved).not.toHaveBeenCalled();
+  });
+
+  it('does not cache a failed byte-store construction: the next asset request retries', async () => {
+    const assetOptions: unknown[] = [];
+    const loadS3AssetByteStore = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('@aws-sdk/client-s3 could not be resolved'))
+      .mockResolvedValue({ read: vi.fn().mockResolvedValue(new Uint8Array([1])) });
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
+      PgAssetByteStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {
+        constructor(_queryable: unknown, options: unknown) {
+          assetOptions.push(options);
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.doMock('@openmaic/storage/server', () => ({
+      createStorageHttpHandler: vi.fn(
+        () =>
+          (
+            _request: unknown,
+            response: { writeHead: (status: number) => void; end: () => void },
+          ) => {
+            response.writeHead(204);
+            response.end();
+          },
+      ),
+    }));
+    vi.doMock('@openmaic/storage/asset/s3-bytes', () => ({ loadS3AssetByteStore }));
+    vi.stubEnv('DATABASE_URL', 'postgres://asset-s3-retry-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    vi.stubEnv('ASSET_S3_BUCKET', 'asset-bucket');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+
+    const response = await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/runtime/sessions', {
+        headers: { authorization: 'Bearer test-token' },
+      }),
+      { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never },
+    );
+
+    // An SDK that cannot be resolved must not reach handler initialization.
+    expect(response.status).toBe(204);
+
+    const byteStore = (assetOptions[0] as { byteStore?: unknown }).byteStore as {
+      read(hash: never): Promise<unknown>;
+    };
+    await expect(byteStore.read('sha256-x' as never)).rejects.toThrow(
+      '@aws-sdk/client-s3 could not be resolved',
+    );
+    // Installing the dependency fixes an already-initialized handler: the
+    // rejection was not latched into the wrapper.
+    await expect(byteStore.read('sha256-x' as never)).resolves.toEqual(new Uint8Array([1]));
+    expect(loadS3AssetByteStore).toHaveBeenCalledTimes(2);
   });
 
   it('passes one complete app payload-validator table to Pg and HTTP boundaries', async () => {
