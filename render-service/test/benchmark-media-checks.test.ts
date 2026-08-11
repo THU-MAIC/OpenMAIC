@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import { isAbsolute } from 'node:path';
 import {
   parseProbeOutput,
+  resolveExecutablePath,
   validateProbeMetrics,
   validateRepresentativeFrameVariation,
 } from '../src/benchmark/media-checks.js';
 
 describe('benchmark ffprobe checks', () => {
+  it('resolves bare executable names to producer-compatible absolute paths', async () => {
+    const command = process.platform === 'win32' ? 'node.exe' : 'node';
+    expect(isAbsolute(await resolveExecutablePath(command))).toBe(true);
+    expect(await resolveExecutablePath(process.execPath)).toBe(process.execPath);
+  });
+
   it('extracts frame, size, duration, and A/V drift metrics', () => {
     const metrics = parseProbeOutput(
       {
@@ -51,6 +59,9 @@ describe('benchmark ffprobe checks', () => {
       outputSizeBytes: 1,
     };
     expect(() => validateProbeMetrics(metrics, 5, 30, true)).toThrow(/no audio stream/);
+    expect(() =>
+      validateProbeMetrics({ ...metrics, audioDurationSeconds: 5 }, 5, 30, false),
+    ).toThrow(/unexpected audio stream/);
     expect(() =>
       validateRepresentativeFrameVariation([
         {

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { readFile, stat, writeFile, mkdir } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import type { ProbeMetrics, RepresentativeFrame } from './types.js';
 
 interface ProbeStream {
@@ -68,6 +68,9 @@ export function validateProbeMetrics(
   if (expectedAudio && metrics.audioDurationSeconds == null) {
     throw new Error('ffprobe validation failed: output has no audio stream');
   }
+  if (!expectedAudio && metrics.audioDurationSeconds != null) {
+    throw new Error('ffprobe validation failed: output has an unexpected audio stream');
+  }
 }
 
 export function runCommand(command: string, args: string[]): Promise<string> {
@@ -84,6 +87,17 @@ export function runCommand(command: string, args: string[]): Promise<string> {
         reject(new Error(`${command} exited ${code}: ${Buffer.concat(stderr).toString('utf8')}`));
     });
   });
+}
+
+export async function resolveExecutablePath(command: string): Promise<string> {
+  if (isAbsolute(command)) return command;
+  if (command.includes(sep) || (process.platform === 'win32' && command.includes('/'))) {
+    return resolve(command);
+  }
+  const locator = process.platform === 'win32' ? 'where' : 'which';
+  const located = (await runCommand(locator, [command])).split(/\r?\n/, 1)[0]?.trim();
+  if (!located) throw new Error(`Unable to resolve executable from PATH: ${command}`);
+  return located;
 }
 
 export async function probeVideo(

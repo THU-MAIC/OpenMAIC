@@ -16,6 +16,7 @@ import { classifyFailure } from '../src/benchmark/failure.js';
 import {
   compareRepresentativeFrames,
   probeVideo,
+  resolveExecutablePath,
   runCommand,
   validateProbeMetrics,
   validateRepresentativeFrameVariation,
@@ -76,8 +77,8 @@ function parseOptions(argv: string[]): Options {
     workers: undefined,
     timeoutMs: 90 * 60 * 1000,
     outputDir: join(renderServiceRoot, 'benchmark', 'results', timestamp),
-    ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
-    ffprobePath: process.env.FFPROBE_PATH || 'ffprobe',
+    ffmpegPath: process.env.HYPERFRAMES_FFMPEG_PATH || process.env.FFMPEG_PATH || 'ffmpeg',
+    ffprobePath: process.env.HYPERFRAMES_FFPROBE_PATH || process.env.FFPROBE_PATH || 'ffprobe',
     chromiumPath:
       process.env.PRODUCER_HEADLESS_SHELL_PATH ||
       process.env.PUPPETEER_EXECUTABLE_PATH ||
@@ -170,9 +171,6 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 
 async function main(): Promise<void> {
   const options = parseOptions(process.argv.slice(2));
-  process.env.HYPERFRAMES_FFMPEG_PATH = options.ffmpegPath;
-  process.env.HYPERFRAMES_FFPROBE_PATH = options.ffprobePath;
-  if (options.chromiumPath) process.env.PRODUCER_HEADLESS_SHELL_PATH = options.chromiumPath;
   const manifest = await loadCorpusManifest(manifestPath);
   const cases = selectedCases(manifest.cases, options.cases);
   const prepared = new Map<
@@ -213,6 +211,14 @@ async function main(): Promise<void> {
     );
     return;
   }
+
+  options.ffmpegPath = await resolveExecutablePath(options.ffmpegPath);
+  options.ffprobePath = await resolveExecutablePath(options.ffprobePath);
+  if (options.chromiumPath)
+    options.chromiumPath = await resolveExecutablePath(options.chromiumPath);
+  process.env.HYPERFRAMES_FFMPEG_PATH = options.ffmpegPath;
+  process.env.HYPERFRAMES_FFPROBE_PATH = options.ffprobePath;
+  if (options.chromiumPath) process.env.PRODUCER_HEADLESS_SHELL_PATH = options.chromiumPath;
 
   await mkdir(options.outputDir, { recursive: true });
   const inputArchiveDir = join(options.outputDir, 'input-archives');
