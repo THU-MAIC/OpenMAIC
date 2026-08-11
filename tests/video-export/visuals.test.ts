@@ -111,7 +111,7 @@ describe('video-export cover visual pass', () => {
       }),
     );
 
-    expect(ir.version).toBe(3);
+    expect(ir.version).toBe(4);
     expect(ir.scenes[0]).toMatchObject({
       supported: true,
       base: { kind: 'visual-segments' },

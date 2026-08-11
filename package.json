@@ -9,6 +9,8 @@
   "scripts": {
     "postinstall": "cd packages/mathml2omml && npm run build && cd ../pptxgenjs && npm run build && cd ../@openmaic/dsl && pnpm run build && cd ../generation && pnpm run build && cd ../storage && pnpm run build && cd ../importer && pnpm run build && cd ../renderer && pnpm run build && cd ../editor && pnpm run build && cd ../../.. && node scripts/sync-maic-importer.mjs",
     "sync:maic-importer": "node scripts/sync-maic-importer.mjs",
+    "gen:video-export-katex": "node scripts/generate-video-export-katex.mjs",
+    "gen:video-export-noto-cjk": "node scripts/generate-video-export-noto-cjk.mjs",
     "dev": "next dev",
     "build": "node scripts/assert-vendor-maic-importer.mjs && next build",
     "start": "next start",
@@ -54,6 +56,7 @@
     "@fontsource/lxgw-wenkai": "^5.2.5",
     "@fontsource/merriweather": "^5.2.11",
     "@fontsource/montserrat": "^5.2.8",
+    "@fontsource/noto-sans-kr": "^5.2.9",
     "@fontsource/noto-sans-sc": "^5.2.9",
     "@fontsource/noto-serif-sc": "^5.2.8",
     "@fontsource/open-sans": "^5.2.7",

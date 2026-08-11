@@ -24,6 +24,7 @@
 import type {
   PblCoverVisual,
   QuizCoverVisual,
+  QuizQuestionListVisual,
   VideoTimeline,
   VideoTimelineScene,
   VisualSegment,
@@ -35,11 +36,31 @@ import { toSrt, toVtt } from '../subtitles';
 import { EASE_DEFS, emitEffect } from './effects';
 import { escapeHtml, sec } from './format';
 import { INTER_FONT_FACE_CSS, INTER_OFL_LICENSE } from './inter-font';
+import { KATEX_EXPORT_CSS, KATEX_FONT_ASSETS, KATEX_MIT_LICENSE } from './katex-assets';
+import {
+  NOTO_CJK_EXPORT_CSS,
+  NOTO_CJK_FONT_ASSETS,
+  NOTO_SANS_KR_OFL_LICENSE,
+  NOTO_SANS_SC_OFL_LICENSE,
+} from './noto-cjk-assets';
+import {
+  quizQuestionListCss,
+  renderQuizQuestionListSurface,
+  type QuizQuestionListLabels,
+} from './quiz-question-list';
 
 /** A file in the emitted project: a relative path and its text content. */
 export interface EmittedFile {
   path: string;
   content: string;
+}
+
+/** Binary file copied from the app's vendored public assets into the export ZIP. */
+export interface EmittedVendorAsset {
+  /** Project-relative path referenced by emitted HTML/CSS. */
+  path: string;
+  /** App-local URL used by the packaging boundary to load the committed bytes. */
+  sourceUrl: string;
 }
 
 /** Optional informational destination displayed on exported Quiz/PBL covers. */
@@ -68,13 +89,21 @@ export interface InteractiveFallbackLabels {
  * active locale so an exported video reads like the lesson it came from. Kept as
  * injected strings (not an i18n import) so the emitter stays pure.
  */
-export interface VideoExportLabels {
+export interface VideoExportLabels extends QuizQuestionListLabels {
   /** `quiz.title` — the Quiz card's eyebrow. */
   quiz: string;
   /** `quiz.questionsCount` — unit after the question count. */
   questions: string;
   /** `quiz.pointsSuffix` — unit after the total points. */
   points: string;
+  /** `quiz.singleChoice` — static question type label. */
+  singleChoice: string;
+  /** `quiz.multipleChoice` — static question type label. */
+  multipleChoice: string;
+  /** `quiz.shortAnswer` — static question type label. */
+  shortAnswer: string;
+  /** `quiz.inputPlaceholder` — text shown inside the visual-only answer box. */
+  answerPlaceholder: string;
   /** `pbl.v2.hero.title` — the PBL card's eyebrow. */
   pbl: string;
   /** `pbl.v2.hero.stage` — unit after the stage count. */
@@ -100,6 +129,9 @@ export interface VideoExportLabels {
   /** Localized fallback and failure copy for static interactive scenes. */
   interactive: InteractiveFallbackLabels;
 }
+
+/** Backward-compatible name for app-side cover and Quiz measurement labels. */
+export type CoverCardLabels = VideoExportLabels;
 
 type VideoExportLabelOverrides = Partial<Omit<VideoExportLabels, 'interactive'>> & {
   interactive?: Partial<InteractiveFallbackLabels>;
@@ -141,6 +173,8 @@ export interface EmitHyperframesOptions {
 
 export interface EmittedProject {
   files: EmittedFile[];
+  /** Font/runtime bytes required by this project; empty for exports without a Quiz list. */
+  vendorAssets: EmittedVendorAsset[];
   width: number;
   height: number;
   compositionId: string;
@@ -165,6 +199,10 @@ const DEFAULT_VIDEO_EXPORT_LABELS: VideoExportLabels = {
   quiz: 'Quiz',
   questions: 'questions',
   points: 'pts',
+  singleChoice: 'Single',
+  multipleChoice: 'Multiple',
+  shortAnswer: 'Short answer',
+  answerPlaceholder: 'Type your answer here...',
   pbl: 'Project-Based Learning',
   stages: 'Stages',
   tasks: 'Tasks',
@@ -370,6 +408,7 @@ function visualClip(
   visual: VisualSegment,
   index: number,
   className: string,
+  trackIndex = 0,
 ): string {
   return [
     `id="scene-${scene.index + 1}-visual-${index + 1}"`,
@@ -377,7 +416,7 @@ function visualClip(
     `data-visual-kind="${visual.kind}"`,
     `data-start="${sec(visual.startMs)}"`,
     `data-duration="${sec(visual.durationMs)}"`,
-    `data-track-index="0"`,
+    `data-track-index="${trackIndex}"`,
   ].join(' ');
 }
 
@@ -406,6 +445,54 @@ function renderQuizCover(
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+function renderQuizQuestionList(
+  scene: VideoTimelineScene,
+  visual: QuizQuestionListVisual,
+  index: number,
+  labels: CoverCardLabels,
+  direction: 'ltr' | 'rtl',
+): string {
+  // A crossfade is intentionally an overlap. Hyperframes rejects overlapping
+  // clips on one track, so the list owns track 3 (0=base/cover, 1=video,
+  // 2=audio) while GSAP performs the resolved 600ms transition.
+  const clip = visualClip(scene, visual, index, 'quiz-question-list', 3);
+  const contentId = `scene-${scene.index + 1}-visual-${index + 1}-content`;
+  return [
+    `<div ${clip}>`,
+    renderQuizQuestionListSurface(visual, labels, direction, contentId),
+    `</div>`,
+  ].join('\n');
+}
+
+function quizQuestionListStatements(
+  scene: VideoTimelineScene,
+  visual: QuizQuestionListVisual,
+  index: number,
+): string[] {
+  const id = `scene-${scene.index + 1}-visual-${index + 1}`;
+  const coverIndex = scene.visuals.findIndex((candidate) => candidate.kind === 'quiz-cover');
+  const coverId = `scene-${scene.index + 1}-visual-${coverIndex + 1}`;
+  const start = sec(visual.startMs);
+  const transition = sec(visual.transitionDurationMs);
+  const statements = [
+    `tl.fromTo('#${id}',{autoAlpha:0},{autoAlpha:1,duration:${transition},ease:'none'},${start});`,
+  ];
+  if (coverIndex >= 0) {
+    statements.push(
+      `tl.to('#${coverId}',{autoAlpha:0,duration:${transition},ease:'none'},${start});`,
+    );
+  }
+  if (visual.scrollDistancePx > 0 && visual.scrollDurationMs > 0) {
+    const scrollStart = sec(
+      visual.startMs + visual.transitionDurationMs + visual.topHoldDurationMs,
+    );
+    statements.push(
+      `tl.to('#${id}-content',{y:-${visual.scrollDistancePx},duration:${sec(visual.scrollDurationMs)},ease:'none'},${scrollStart});`,
+    );
+  }
+  return statements;
 }
 
 function renderPerson(
@@ -495,20 +582,32 @@ function renderVisuals(
   frame: { width: number; height: number; burnInSubtitles: boolean },
   cta: VideoExportCta | null,
   direction: 'ltr' | 'rtl',
-): string[] {
-  return scene.visuals.map((visual, index) =>
-    visual.kind === 'quiz-cover'
-      ? renderQuizCover(scene, visual, index, labels, cta, direction)
-      : renderPblCover(
-          scene,
-          visual,
-          index,
-          labels,
-          planPblCover(visual, labels, { ...frame, cta }),
-          cta,
-          direction,
-        ),
-  );
+): { html: string[]; statements: string[] } {
+  const html: string[] = [];
+  const statements: string[] = [];
+  scene.visuals.forEach((visual, index) => {
+    if (visual.kind === 'quiz-cover') {
+      html.push(renderQuizCover(scene, visual, index, labels, cta, direction));
+      return;
+    }
+    if (visual.kind === 'quiz-question-list') {
+      html.push(renderQuizQuestionList(scene, visual, index, labels, direction));
+      statements.push(...quizQuestionListStatements(scene, visual, index));
+      return;
+    }
+    html.push(
+      renderPblCover(
+        scene,
+        visual,
+        index,
+        labels,
+        planPblCover(visual, labels, { ...frame, cta }),
+        cta,
+        direction,
+      ),
+    );
+  });
+  return { html, statements };
 }
 
 /** A `play_video` clip, positioned at the target element's geometry (0–100 space). */
@@ -985,6 +1084,7 @@ function renderReadme(project: {
   burnInSubtitles: boolean;
   labels: VideoExportLabels;
   cta: VideoExportCta | null;
+  hasQuizQuestionList: boolean;
 }): string {
   const seconds = (project.totalDurationMs / 1000).toFixed(1);
   const effectiveLabels = JSON.stringify(project.labels, null, 2);
@@ -1023,6 +1123,11 @@ folder — no network access, no CDN.
 - \`assets/frames\`, \`assets/audio\`, \`assets/media\`, \`assets/interactive\` — slide snapshots, narration audio, embedded video clips, frozen interactive pages.
 - ${optionValue(project.gsapVendorPath)} — vendored GSAP (determinism: no CDN at render time).
 - \`LICENSES/Inter-OFL-1.1.txt\` — license for the font embedded in \`index.html\`.
+${
+  project.hasQuizQuestionList
+    ? '- `assets/fonts` — 20 KaTeX faces plus deterministic Han/Kana and Hangul WOFF2 assets.\n- `LICENSES/KaTeX-MIT.txt` — license for the KaTeX renderer and math-font faces.\n- `LICENSES/Noto-Sans-SC-OFL-1.1.txt` — license for the bundled deterministic Han/Kana face.\n- `LICENSES/Noto-Sans-KR-OFL-1.1.txt` — license for the bundled deterministic Hangul face.'
+    : ''
+}
 
 ## Render
 
@@ -1036,7 +1141,11 @@ Duration: ~${seconds}s at ${project.width}×${project.height}.
 ## Emitted with
 
 The same manifest, emitter implementation, and complete effective options produce byte-identical HTML.
-Local renders on different hosts do not guarantee identical non-Latin pixels because system fonts may differ.
+${
+  project.hasQuizQuestionList
+    ? 'Quiz CJK (Han/Kana/Hangul), Latin, and math rendering is host-independent because the project bundles those exact faces.'
+    : 'Local renders on different hosts do not guarantee identical non-Latin pixels because system fonts may differ.'
+}
 
 | Option | Value |
 | --- | --- |
@@ -1089,6 +1198,9 @@ export function emitHyperframes(
   const locale = options.locale ?? DEFAULT_LOCALE;
   const totalSec = sec(ir.totalDurationMs);
   const hasInteractiveHtml = ir.scenes.some((scene) => scene.base.kind === 'interactive-html');
+  const hasQuizQuestionList = ir.scenes.some((scene) =>
+    scene.visuals.some((visual) => visual.kind === 'quiz-question-list'),
+  );
 
   const sceneHtml: string[] = [];
   const effectHtml: string[] = [];
@@ -1097,19 +1209,19 @@ export function emitHyperframes(
   for (const scene of ir.scenes) {
     sceneHtml.push(`<!-- scene ${scene.index + 1}: ${escapeHtml(scene.title)} -->`);
     sceneHtml.push(renderBase(scene, labels));
-    sceneHtml.push(
-      ...renderVisuals(
-        scene,
-        labels,
-        {
-          width,
-          height,
-          burnInSubtitles: options.burnInSubtitles === true && ir.subtitles.length > 0,
-        },
-        cta,
-        isRtl(locale) ? 'rtl' : 'ltr',
-      ),
+    const visuals = renderVisuals(
+      scene,
+      labels,
+      {
+        width,
+        height,
+        burnInSubtitles: options.burnInSubtitles === true && ir.subtitles.length > 0,
+      },
+      cta,
+      isRtl(locale) ? 'rtl' : 'ltr',
     );
+    sceneHtml.push(...visuals.html);
+    statements.push(...visuals.statements);
     sceneHtml.push(...renderVideo(scene));
     sceneHtml.push(...renderNarration(scene));
 
@@ -1141,11 +1253,13 @@ export function emitHyperframes(
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${escapeHtml(ir.stage.name)} — OpenMAIC video</title>
 <style>
-  ${INTER_FONT_FACE_CSS}
+  ${INTER_FONT_FACE_CSS}${
+    hasQuizQuestionList ? `\n  ${NOTO_CJK_EXPORT_CSS}\n  ${KATEX_EXPORT_CSS}` : ''
+  }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #000; }
   #${compositionId} { font-family:Inter,system-ui,sans-serif; }
-${coverCardCss(width)}
+${coverCardCss(width)}${hasQuizQuestionList ? `\n${quizQuestionListCss(width)}` : ''}
 </style>
 </head>
 <body>
@@ -1179,6 +1293,19 @@ window.__openmaicInteractiveReady.then(function () {
   const files: EmittedFile[] = [
     { path: 'index.html', content: html },
     { path: 'LICENSES/Inter-OFL-1.1.txt', content: INTER_OFL_LICENSE },
+    ...(hasQuizQuestionList
+      ? [
+          { path: 'LICENSES/KaTeX-MIT.txt', content: KATEX_MIT_LICENSE },
+          {
+            path: 'LICENSES/Noto-Sans-SC-OFL-1.1.txt',
+            content: NOTO_SANS_SC_OFL_LICENSE,
+          },
+          {
+            path: 'LICENSES/Noto-Sans-KR-OFL-1.1.txt',
+            content: NOTO_SANS_KR_OFL_LICENSE,
+          },
+        ]
+      : []),
     { path: manifestPath, content: emitManifestJson(ir) },
     { path: 'subtitles.srt', content: toSrt(ir.subtitles) },
     { path: 'subtitles.vtt', content: toVtt(ir.subtitles) },
@@ -1196,12 +1323,14 @@ window.__openmaicInteractiveReady.then(function () {
         burnInSubtitles: options.burnInSubtitles === true,
         labels,
         cta,
+        hasQuizQuestionList,
       }),
     },
   ];
 
   return {
     files,
+    vendorAssets: hasQuizQuestionList ? [...NOTO_CJK_FONT_ASSETS, ...KATEX_FONT_ASSETS] : [],
     width,
     height,
     compositionId,

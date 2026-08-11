@@ -32,7 +32,7 @@ import { SCENE_TYPES } from '@openmaic/dsl';
 export const VIDEO_TIMELINE_SCHEMA = 'openmaic.videoTimeline';
 
 /** IR/manifest version. Bump on any breaking shape change. */
-export const VIDEO_TIMELINE_VERSION = 3;
+export const VIDEO_TIMELINE_VERSION = 4;
 
 /** Compiler identity stamped into the manifest for provenance. */
 export const VIDEO_TIMELINE_COMPILER = 'openmaic-video-timeline';
@@ -68,6 +68,8 @@ export const DiagnosticSeveritySchema = z.enum(['info', 'warn', 'error']);
  * - `unsupported-scene` — a remaining runtime-only scene family is not rendered,
  *   represented by markers instead.
  * - `cover-card` — a Quiz/PBL scene is rendered as a deterministic static cover.
+ * - `quiz-layout-unavailable` — a Quiz question list could not be measured and
+ *   safely remained on the cover-only path.
  * - `unknown-action` — an action with an unrecognized `type` was dropped.
  * - `invalid-action` — an action missing a required field was dropped.
  * - `interactive-static-html` — an interactive scene uses packaged frozen HTML.
@@ -82,6 +84,7 @@ export const DiagnosticCodeSchema = z.enum([
   'skipped-media',
   'unsupported-scene',
   'cover-card',
+  'quiz-layout-unavailable',
   'unknown-action',
   'invalid-action',
   'interactive-static-html',
@@ -147,6 +150,38 @@ export const QuizCoverVisualSchema = TimedVisualSegmentSchema.extend({
   totalPoints: z.number(),
 });
 
+/** One learner-visible option on the exported static Quiz question list. */
+export const QuizQuestionListOptionSchema = z.object({
+  value: z.string(),
+  label: z.string(),
+});
+
+/**
+ * Safe, display-only Quiz projection. Correct answers, analysis, grading
+ * prompts, points and learner runtime state are deliberately not representable.
+ */
+export const QuizQuestionListQuestionSchema = z.object({
+  id: z.string(),
+  type: z.enum(['single', 'multiple', 'short_answer']),
+  question: z.string(),
+  options: z.array(QuizQuestionListOptionSchema).optional(),
+});
+
+/** Measured and fully timed static Quiz question-list visual. */
+export const QuizQuestionListVisualSchema = TimedVisualSegmentSchema.extend({
+  kind: z.literal('quiz-question-list'),
+  title: z.string(),
+  questions: z.array(QuizQuestionListQuestionSchema),
+  contentHeightPx: z.number(),
+  viewportHeightPx: z.number(),
+  scrollDistancePx: z.number(),
+  pixelsPerSecond: z.number(),
+  transitionDurationMs: z.number(),
+  topHoldDurationMs: z.number(),
+  scrollDurationMs: z.number(),
+  bottomHoldDurationMs: z.number(),
+});
+
 /** Static PBL Hero-style card built only from authored, learner-visible design fields. */
 export const PblCoverVisualSchema = TimedVisualSegmentSchema.extend({
   kind: z.literal('pbl-cover'),
@@ -166,6 +201,7 @@ export const PblCoverVisualSchema = TimedVisualSegmentSchema.extend({
  */
 export const VisualSegmentSchema = z.discriminatedUnion('kind', [
   QuizCoverVisualSchema,
+  QuizQuestionListVisualSchema,
   PblCoverVisualSchema,
 ]);
 
@@ -359,6 +395,9 @@ export type Diagnostic = z.infer<typeof DiagnosticSchema>;
 export type DurationSource = z.infer<typeof DurationSourceSchema>;
 export type BaseSegment = z.infer<typeof BaseSegmentSchema>;
 export type QuizCoverVisual = z.infer<typeof QuizCoverVisualSchema>;
+export type QuizQuestionListOption = z.infer<typeof QuizQuestionListOptionSchema>;
+export type QuizQuestionListQuestion = z.infer<typeof QuizQuestionListQuestionSchema>;
+export type QuizQuestionListVisual = z.infer<typeof QuizQuestionListVisualSchema>;
 export type PblCoverVisual = z.infer<typeof PblCoverVisualSchema>;
 export type VisualSegment = z.infer<typeof VisualSegmentSchema>;
 export type NarrationSegment = z.infer<typeof NarrationSegmentSchema>;

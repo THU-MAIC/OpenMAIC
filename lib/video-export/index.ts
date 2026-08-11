@@ -28,8 +28,9 @@ export { compileVideoTimeline, type CompileInput, type CompileDeps } from './com
 export { normalizeScenes, type NormalizeResult } from './passes/normalize';
 export { buildTimelineOptions } from './passes/probe';
 export { buildTimeline, type TimelineResult } from './passes/timeline';
-export { applyVisuals, type VisualsResult } from './passes/visuals';
+export { applyVisuals, prepareQuizQuestionList, type VisualsResult } from './passes/visuals';
 export { applyInteractiveHtml, type InteractiveResult } from './passes/interactive';
+export { reflowQuizTimelines, type ReflowResult } from './passes/reflow';
 export {
   applyGeometry,
   resolveEffectGeometry,
@@ -54,5 +55,13 @@ export {
   type EmittedFile,
   type VideoExportLabels,
   type InteractiveFallbackLabels,
+  type EmittedVendorAsset,
+  type CoverCardLabels,
   type VideoExportCta,
 } from './emit-hyperframes';
+export {
+  quizQuestionListCss,
+  renderQuizQuestionListSurface,
+  type QuizQuestionListContent,
+  type QuizQuestionListLabels,
+} from './emit-hyperframes/quiz-question-list';

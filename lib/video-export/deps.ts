@@ -148,6 +148,24 @@ export interface GeometryProbe {
   contentGeometry(elementId: string, scene: SceneCore): PercentageGeometry | null;
 }
 
+/** Stable app-side layout facts consumed by the pure Quiz timing planner. */
+export interface QuizLayoutMeasurement {
+  /** Full static question-list content height at the target resolution. */
+  contentHeightPx: number;
+  /** Visible list viewport height at the target resolution. */
+  viewportHeightPx: number;
+  /** Target video frame height, used to scale the 720p scroll-speed baseline. */
+  frameHeightPx: number;
+}
+
+/**
+ * Synchronous Quiz layout dependency. The app measures all Quiz scenes before
+ * compile and exposes the resulting table through this pure lookup boundary.
+ */
+export interface QuizLayoutProbe {
+  measureQuestionList(scene: SceneCore): QuizLayoutMeasurement | null;
+}
+
 /** Compiler configuration — the determinism inputs recorded into the IR's `config`. */
 export interface CompileConfig {
   /** Playback speed multiplier applied to speech dwell. Default 1. */
