@@ -79,12 +79,25 @@ function blockHeading(block: DocumentBlock): string | undefined {
   return typeof heading === 'string' && heading.trim() ? heading.trim() : undefined;
 }
 
-function graphemeSegments(value: string): readonly string[] {
-  return Array.from(GRAPHEME_SEGMENTER.segment(value), ({ segment }) => segment);
+type GraphemeChunk = {
+  readonly text: string;
+  readonly length: number;
+};
+
+function trimGraphemeSegments(segments: readonly string[]): GraphemeChunk | undefined {
+  let start = 0;
+  let end = segments.length;
+  while (start < end && /^\s$/u.test(segments[start] ?? '')) start += 1;
+  while (end > start && /^\s$/u.test(segments[end - 1] ?? '')) end -= 1;
+  if (start === end) return undefined;
+  return {
+    text: segments.slice(start, end).join(''),
+    length: end - start,
+  };
 }
 
-function splitLongSegment(value: string, maxChars: number): string[] {
-  const chunks: string[] = [];
+function splitLongSegment(value: string, maxChars: number): GraphemeChunk[] {
+  const chunks: GraphemeChunk[] = [];
   const iterator = GRAPHEME_SEGMENTER.segment(value.trim())[Symbol.iterator]();
   const pending: string[] = [];
   let done = false;
@@ -101,14 +114,14 @@ function splitLongSegment(value: string, maxChars: number): string[] {
 
     if (pending.length === 0) break;
     if (done) {
-      const finalChunk = pending.join('').trim();
+      const finalChunk = trimGraphemeSegments(pending);
       if (finalChunk) chunks.push(finalChunk);
       break;
     }
 
     const whitespaceBoundary = pending.findLastIndex((segment) => /^\s$/u.test(segment));
     const boundary = whitespaceBoundary > Math.floor(maxChars / 2) ? whitespaceBoundary : maxChars;
-    const chunk = pending.splice(0, boundary).join('').trim();
+    const chunk = trimGraphemeSegments(pending.splice(0, boundary));
     if (chunk) chunks.push(chunk);
   }
 
@@ -122,25 +135,32 @@ function splitBlockText(value: string, maxChars: number): string[] {
     .filter(Boolean);
   const chunks: string[] = [];
   let current = '';
+  let currentLength = 0;
 
   for (const paragraph of paragraphs) {
-    if (graphemeSegments(paragraph).length > maxChars) {
+    const paragraphChunks = splitLongSegment(paragraph, maxChars);
+    if (paragraphChunks.length > 1) {
       if (current) {
         chunks.push(current);
         current = '';
+        currentLength = 0;
       }
-      chunks.push(...splitLongSegment(paragraph, maxChars));
+      chunks.push(...paragraphChunks.map(({ text }) => text));
       continue;
     }
 
+    const paragraphChunk = paragraphChunks[0];
+    if (!paragraphChunk) continue;
     const combinedLength = current
-      ? graphemeSegments(current).length + 2 + graphemeSegments(paragraph).length
-      : graphemeSegments(paragraph).length;
+      ? currentLength + 2 + paragraphChunk.length
+      : paragraphChunk.length;
     if (current && combinedLength > maxChars) {
       chunks.push(current);
-      current = paragraph;
+      current = paragraphChunk.text;
+      currentLength = paragraphChunk.length;
     } else {
-      current = current ? `${current}\n\n${paragraph}` : paragraph;
+      current = current ? `${current}\n\n${paragraphChunk.text}` : paragraphChunk.text;
+      currentLength = combinedLength;
     }
   }
 
