@@ -188,6 +188,9 @@ importers:
       geist:
         specifier: ^1.7.0
         version: 1.7.0(next@16.1.2(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.58.2)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))
+      graphemer:
+        specifier: 1.4.0
+        version: 1.4.0
       i18next:
         specifier: ^26.0.1
         version: 26.0.1(typescript@5.9.3)

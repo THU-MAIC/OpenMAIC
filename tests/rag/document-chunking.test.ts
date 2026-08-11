@@ -128,20 +128,24 @@ describe('document RAG chunking', () => {
     expect(chunks[0]?.lineage.chunkPolicy.version).toContain('1.1.0');
   });
 
-  it('handles long unbroken text without repeated grapheme rescans', { timeout: 5000 }, () => {
-    const longText = 'x'.repeat(50_000);
-    const chunks = chunkDocumentArtifact(
-      {
-        metadata: {},
-        blocks: [{ id: 'long-unbroken', type: 'text', text: longText }],
-        assets: [],
-      },
-      resource(),
-    );
+  it(
+    'handles long unbroken text without runtime-dependent grapheme rescans',
+    { timeout: 2000 },
+    () => {
+      const longText = 'x'.repeat(100_000);
+      const chunks = chunkDocumentArtifact(
+        {
+          metadata: {},
+          blocks: [{ id: 'long-unbroken', type: 'text', text: longText }],
+          assets: [],
+        },
+        resource(),
+      );
 
-    expect(chunks).toHaveLength(Math.ceil(longText.length / DOCUMENT_CHUNK_POLICY.maxChars));
-    expect(chunks.map((chunk) => chunk.text).join('')).toBe(longText);
-  });
+      expect(chunks).toHaveLength(Math.ceil(longText.length / DOCUMENT_CHUNK_POLICY.maxChars));
+      expect(chunks.map((chunk) => chunk.text).join('')).toBe(longText);
+    },
+  );
 
   it('keeps chunk IDs distinct when source identifiers contain separators', () => {
     const left = chunkDocumentArtifact(

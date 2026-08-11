@@ -1,4 +1,6 @@
-const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+import Graphemer from 'graphemer';
+
+const GRAPHEME_SPLITTER = new Graphemer();
 
 export type GraphemeChunk = {
   readonly text: string;
@@ -19,7 +21,7 @@ function trimGraphemeSegments(segments: readonly string[]): GraphemeChunk | unde
 
 export function splitGraphemeText(value: string, maxChars: number): GraphemeChunk[] {
   const chunks: GraphemeChunk[] = [];
-  const iterator = GRAPHEME_SEGMENTER.segment(value.trim())[Symbol.iterator]();
+  const iterator = GRAPHEME_SPLITTER.iterateGraphemes(value.trim());
   const pending: string[] = [];
   let done = false;
 
@@ -29,7 +31,7 @@ export function splitGraphemeText(value: string, maxChars: number): GraphemeChun
       if (next.done) {
         done = true;
       } else {
-        pending.push(next.value.segment);
+        pending.push(next.value);
       }
     }
 
