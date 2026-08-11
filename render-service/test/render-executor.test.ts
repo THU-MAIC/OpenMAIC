@@ -111,7 +111,7 @@ describe('InProcessExecutor', () => {
 
     await expect(execution).resolves.toEqual({
       status: 'cancelled',
-      failure: { code: 'cancelled', message: 'Render cancelled' },
+      failure: { code: 'cancelled', message: 'cancelled' },
     });
   });
 
@@ -136,7 +136,7 @@ describe('InProcessExecutor', () => {
 
     await expect(execution).resolves.toEqual({
       status: 'cancelled',
-      failure: { code: 'cancelled', message: 'Render cancelled' },
+      failure: { code: 'cancelled', message: 'cancelled after cleanup' },
     });
   });
 

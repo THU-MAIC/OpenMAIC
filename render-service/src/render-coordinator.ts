@@ -183,7 +183,7 @@ export class RenderCoordinator {
         status: result.status,
         currentStage: result.status,
         failure: result.failure,
-        ...(result.status === 'failed' ? { error: result.failure.message } : {}),
+        error: result.failure.message,
         ...(result.performance ? { performance: result.performance } : {}),
       });
     } finally {

@@ -190,7 +190,7 @@ export class InProcessExecutor implements RenderExecutor {
       if (abortCause === 'cancelled') {
         return {
           status: 'cancelled',
-          failure: { code: 'cancelled', message: 'Render cancelled' },
+          failure: { code: 'cancelled', message: message(error) },
           ...(performance ? { performance } : {}),
         };
       }
