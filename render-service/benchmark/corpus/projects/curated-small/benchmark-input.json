@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "curated-small",
+  "category": "curated-classroom",
+  "durationSeconds": 335,
+  "sceneCount": 9,
+  "complexity": "medium",
+  "construction": "manually-constructed-and-selected",
+  "profile": {
+    "totalElements": 410,
+    "maxElementsPerScene": 70,
+    "elementTypes": {
+      "image": 271,
+      "shape": 80,
+      "text": 54,
+      "line": 5
+    }
+  }
+}

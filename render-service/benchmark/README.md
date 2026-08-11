@@ -14,6 +14,15 @@ durations. It contains no external media URLs or learner data.
 | `image-gallery-10m` | repeated local bitmaps | 600 s | 20 | high |
 | `video-elements-5m` | looping video and separate audio | 300 s | 10 | high |
 | `webgl-lab-20m` | deterministic WebGL simulation | 1200 s | 8 | high |
+| `curated-small` | compact mixed-element classroom | 335 s | 9 | medium |
+| `curated-medium` | sustained image-dense classroom | 795 s | 18 | high |
+| `curated-large` | long-form mixed-media classroom | 1415 s | 33 | high |
+
+The first five cases are controlled stress profiles for isolating regressions.
+The three curated cases preserve selected classroom scene counts, element counts,
+layout geometry, color distribution, and relative narration lengths. Text and
+media contents are replaced with neutral local fixtures while keeping their
+rendering shape.
 
 `manifest.json` records an input-manifest hash, normalized project hash, and
 deterministic ZIP hash for every case. The runner refuses to benchmark a changed

@@ -7,7 +7,8 @@ export type BenchmarkCategory =
   | 'formula-chart-heavy'
   | 'image-heavy'
   | 'video-element-heavy'
-  | 'interactive-webgl';
+  | 'interactive-webgl'
+  | 'curated-classroom';
 
 export interface CorpusCase {
   id: string;

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "corpusVersion": "1.0.0",
+  "corpusVersion": "1.1.0",
   "description": "Manually constructed and selected classroom video-export benchmark corpus.",
   "sharedFiles": [
     {
@@ -101,6 +101,102 @@
       "inputManifestSha256": "3eef49643fdf6b04a4bae190db8a9e6f45070f434d8b8ef62de4f010708546f9",
       "projectHashSha256": "720933c662448cb268c0b00799f2edba6d2438c6b383464f46fa15f3d707939d",
       "archiveHashSha256": "474ab4281bb8abe5456b472a0368700dd7b895da0fe1c7b3ed555e05fd5f24d0",
+      "representativeFrameFractions": [0.1, 0.5, 0.9]
+    },
+    {
+      "id": "curated-small",
+      "category": "curated-classroom",
+      "description": "Compact curated classroom layout with mixed text, shapes, lines, and dense image elements.",
+      "durationSeconds": 335,
+      "sceneCount": 9,
+      "complexity": "medium",
+      "expectedAudio": false,
+      "projectDir": "projects/curated-small",
+      "files": [
+        {
+          "source": "render-service/benchmark/corpus/projects/image-gallery-10m/assets/image-01.png",
+          "archivePath": "assets/image-01.png"
+        },
+        {
+          "source": "render-service/benchmark/corpus/projects/image-gallery-10m/assets/image-02.png",
+          "archivePath": "assets/image-02.png"
+        },
+        {
+          "source": "render-service/benchmark/corpus/projects/image-gallery-10m/assets/image-03.png",
+          "archivePath": "assets/image-03.png"
+        },
+        {
+          "source": "render-service/benchmark/corpus/projects/image-gallery-10m/assets/image-04.png",
+          "archivePath": "assets/image-04.png"
+        }
+      ],
+      "inputManifestSha256": "a7c6b05ba5f8d0f656f606998dc567e9f3bd70dbd0f291588f9aff9c97c39e7e",
+      "projectHashSha256": "1a9e13c50616adbd59f87e3c1f82c1777fe69dc583aee1c09bbafd6ce1487395",
+      "archiveHashSha256": "738f7ff1ced825b054b233e9c3abd207617aad81a4721c562ad135266e9189a3",
+      "representativeFrameFractions": [0.1, 0.5, 0.9]
+    },
+    {
+      "id": "curated-medium",
+      "category": "curated-classroom",
+      "description": "Medium curated classroom layout with sustained image density and layered visual elements.",
+      "durationSeconds": 795,
+      "sceneCount": 18,
+      "complexity": "high",
+      "expectedAudio": false,
+      "projectDir": "projects/curated-medium",
+      "files": [
+        {
+          "source": "render-service/benchmark/corpus/projects/image-gallery-10m/assets/image-01.png",
+          "archivePath": "assets/image-01.png"
+        },
+        {
+          "source": "render-service/benchmark/corpus/projects/image-gallery-10m/assets/image-02.png",
+          "archivePath": "assets/image-02.png"
+        },
+        {
+          "source": "render-service/benchmark/corpus/projects/image-gallery-10m/assets/image-03.png",
+          "archivePath": "assets/image-03.png"
+        },
+        {
+          "source": "render-service/benchmark/corpus/projects/image-gallery-10m/assets/image-04.png",
+          "archivePath": "assets/image-04.png"
+        }
+      ],
+      "inputManifestSha256": "0842ec8f6d758267a249a198d9bd641984aebe391b2144eddd24053367a44b6b",
+      "projectHashSha256": "b393bb302de1450fa7184eaa9acb0408861eafc78f1814c8f4bbb2d5d5ad6a4e",
+      "archiveHashSha256": "ba616135ac8d476ed23d84b094bda51cde8d60c692f76420654df010a8a7f71c",
+      "representativeFrameFractions": [0.1, 0.5, 0.9]
+    },
+    {
+      "id": "curated-large",
+      "category": "curated-classroom",
+      "description": "Long-form curated classroom layout with high scene count, dense shapes, tables, and mixed media.",
+      "durationSeconds": 1415,
+      "sceneCount": 33,
+      "complexity": "high",
+      "expectedAudio": false,
+      "projectDir": "projects/curated-large",
+      "files": [
+        {
+          "source": "render-service/benchmark/corpus/projects/image-gallery-10m/assets/image-01.png",
+          "archivePath": "assets/image-01.png"
+        },
+        {
+          "source": "render-service/benchmark/corpus/projects/image-gallery-10m/assets/image-02.png",
+          "archivePath": "assets/image-02.png"
+        },
+        {
+          "source": "render-service/benchmark/corpus/projects/image-gallery-10m/assets/image-03.png",
+          "archivePath": "assets/image-03.png"
+        },
+        {
+          "source": "render-service/benchmark/corpus/projects/image-gallery-10m/assets/image-04.png",
+          "archivePath": "assets/image-04.png"
+        }
+      ],
+      "inputManifestSha256": "8d968eaca2b59a57dce4b0c9a807070ef254b7bfa2cd09a3765ff0b82e8cbaa0",
+      "projectHashSha256": "f272b5fcd67fecbc57c5b2634707725e8802247e03b0262147c16e39d2d7ba38",
+      "archiveHashSha256": "ed64dd28871eccf0667b2705b052f5dc0f86bc8731c237a424de4407f6358bdd",
       "representativeFrameFractions": [0.1, 0.5, 0.9]
     }
   ]
