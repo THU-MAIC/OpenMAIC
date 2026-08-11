@@ -183,4 +183,41 @@ describe('in-memory resource scope', () => {
       index.query({ workspaceId: 'workspace-test', courseId: 'course-a', text: 'alpha', topK: 5 }),
     ).resolves.toMatchObject([{ chunk: { text: 'updated alpha procedure' } }]);
   });
+
+  it('does not let an unscoped replacement remove a course-scoped resource', async () => {
+    const index = new InMemoryLexicalIndex();
+    await index.replaceResourceVersion(
+      replacement([
+        chunk({
+          id: 'course-scoped',
+          resourceId: 'shared-resource',
+          resourceVersionId: 'course-a-v1',
+          courseId: 'course-a',
+          text: 'course scoped procedure',
+        }),
+      ]),
+    );
+    await index.replaceResourceVersion(
+      replacement([
+        chunk({
+          id: 'unscoped',
+          resourceId: 'shared-resource',
+          resourceVersionId: 'unscoped-v1',
+          text: 'unscoped procedure',
+        }),
+      ]),
+    );
+
+    await expect(
+      index.query({
+        workspaceId: 'workspace-test',
+        courseId: 'course-a',
+        text: 'course scoped',
+        topK: 5,
+      }),
+    ).resolves.toMatchObject([{ chunk: { id: 'course-scoped' } }]);
+    await expect(
+      index.query({ workspaceId: 'workspace-test', text: 'unscoped', topK: 5 }),
+    ).resolves.toMatchObject([{ chunk: { id: 'unscoped' } }]);
+  });
 });

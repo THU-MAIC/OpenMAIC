@@ -31,6 +31,10 @@ function matchesScope(chunk: KnowledgeChunk, scope: KnowledgeScope): boolean {
   );
 }
 
+function matchesExactScope(chunk: KnowledgeChunk, scope: KnowledgeScope): boolean {
+  return chunk.workspaceId === scope.workspaceId && chunk.courseId === scope.courseId;
+}
+
 class InvalidKnowledgeIndexReplaceError extends Error {
   readonly name = 'InvalidKnowledgeIndexReplaceError';
 
@@ -98,7 +102,7 @@ export class InMemoryLexicalIndex implements KnowledgeIndex {
 
     const nextChunks = new Map(this.chunks);
     for (const [chunkId, chunk] of nextChunks) {
-      if (matchesScope(chunk, request) && chunk.resourceId === request.resourceId) {
+      if (matchesExactScope(chunk, request) && chunk.resourceId === request.resourceId) {
         nextChunks.delete(chunkId);
       }
     }
