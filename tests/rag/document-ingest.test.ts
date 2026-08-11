@@ -122,4 +122,14 @@ describe('document RAG ingestion', () => {
 
     expect(second.resource.resourceVersionId).not.toBe(first.resource.resourceVersionId);
   });
+
+  it('preserves an explicitly supplied empty course scope', async () => {
+    const result = await ingestDocumentForRag({
+      artifact: artifact(),
+      resource: { ...resource, courseId: '' },
+    });
+
+    expect(result.resource.courseId).toBe('');
+    expect(result.chunks.every((chunk) => chunk.courseId === '')).toBe(true);
+  });
 });

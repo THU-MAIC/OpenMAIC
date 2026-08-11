@@ -119,7 +119,7 @@ export async function ingestDocumentForRag(
   const resource: DocumentKnowledgeResource = {
     id: request.resource.id,
     workspaceId: request.resource.workspaceId,
-    ...(request.resource.courseId ? { courseId: request.resource.courseId } : {}),
+    ...(request.resource.courseId !== undefined ? { courseId: request.resource.courseId } : {}),
     resourceVersionId,
     ...(request.resource.parentResourceId
       ? { parentResourceId: request.resource.parentResourceId }

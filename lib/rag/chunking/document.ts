@@ -5,6 +5,7 @@ import sanitizeHtml from 'sanitize-html';
 import type { DocumentArtifact, DocumentBlock } from '@/lib/document';
 
 import type { KnowledgeChunk, KnowledgeMetadata, KnowledgeResource } from '../types';
+import { splitGraphemeText } from './grapheme';
 
 export const DOCUMENT_CHUNK_POLICY = {
   id: 'document-block',
@@ -29,8 +30,6 @@ export type ResolvedDocumentChunkPolicy = {
 const HTML_LINE_BREAK_PATTERN = /<br\b(?:[^"'<>]|"[^"]*"|'[^']*')*\/?\s*>/gi;
 const HTML_BLOCK_END_TAG_PATTERN =
   /<\/(?:address|article|aside|blockquote|dd|div|dl|dt|footer|h[1-6]|header|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)>/gi;
-const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-
 class InvalidDocumentChunkPolicyError extends Error {
   readonly name = 'InvalidDocumentChunkPolicyError';
 
@@ -79,55 +78,6 @@ function blockHeading(block: DocumentBlock): string | undefined {
   return typeof heading === 'string' && heading.trim() ? heading.trim() : undefined;
 }
 
-type GraphemeChunk = {
-  readonly text: string;
-  readonly length: number;
-};
-
-function trimGraphemeSegments(segments: readonly string[]): GraphemeChunk | undefined {
-  let start = 0;
-  let end = segments.length;
-  while (start < end && /^\s$/u.test(segments[start] ?? '')) start += 1;
-  while (end > start && /^\s$/u.test(segments[end - 1] ?? '')) end -= 1;
-  if (start === end) return undefined;
-  return {
-    text: segments.slice(start, end).join(''),
-    length: end - start,
-  };
-}
-
-function splitLongSegment(value: string, maxChars: number): GraphemeChunk[] {
-  const chunks: GraphemeChunk[] = [];
-  const iterator = GRAPHEME_SEGMENTER.segment(value.trim())[Symbol.iterator]();
-  const pending: string[] = [];
-  let done = false;
-
-  while (true) {
-    while (pending.length < maxChars && !done) {
-      const next = iterator.next();
-      if (next.done) {
-        done = true;
-      } else {
-        pending.push(next.value.segment);
-      }
-    }
-
-    if (pending.length === 0) break;
-    if (done) {
-      const finalChunk = trimGraphemeSegments(pending);
-      if (finalChunk) chunks.push(finalChunk);
-      break;
-    }
-
-    const whitespaceBoundary = pending.findLastIndex((segment) => /^\s$/u.test(segment));
-    const boundary = whitespaceBoundary > Math.floor(maxChars / 2) ? whitespaceBoundary : maxChars;
-    const chunk = trimGraphemeSegments(pending.splice(0, boundary));
-    if (chunk) chunks.push(chunk);
-  }
-
-  return chunks;
-}
-
 function splitBlockText(value: string, maxChars: number): string[] {
   const paragraphs = value
     .split(/\n{2,}/)
@@ -138,7 +88,7 @@ function splitBlockText(value: string, maxChars: number): string[] {
   let currentLength = 0;
 
   for (const paragraph of paragraphs) {
-    const paragraphChunks = splitLongSegment(paragraph, maxChars);
+    const paragraphChunks = splitGraphemeText(paragraph, maxChars);
     if (paragraphChunks.length > 1) {
       if (current) {
         chunks.push(current);
@@ -267,7 +217,7 @@ export function chunkDocumentArtifact(
         resourceId: resource.id,
         resourceVersionId: resource.resourceVersionId,
         workspaceId: resource.workspaceId,
-        ...(resource.courseId ? { courseId: resource.courseId } : {}),
+        ...(resource.courseId !== undefined ? { courseId: resource.courseId } : {}),
         ordinal,
         text: part,
         contentHash: chunkHash({
