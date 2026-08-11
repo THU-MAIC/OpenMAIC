@@ -16,6 +16,7 @@ export interface CorpusCase {
   durationSeconds: number;
   sceneCount: number;
   complexity: 'low' | 'medium' | 'high';
+  expectedAudio: boolean;
   projectDir: string;
   files?: Array<{ source: string; archivePath: string }>;
   inputManifestSha256: string;
@@ -129,8 +130,11 @@ export interface BenchmarkReport {
     arch: string;
     producer: string;
     ffmpeg: string;
+    ffmpegPath: string;
     ffprobe: string;
+    ffprobePath: string;
     chromium: string | null;
+    chromiumPath: string | null;
     containerImage: string | null;
   };
   corpus: {

@@ -18,6 +18,7 @@ import {
   probeVideo,
   runCommand,
   validateProbeMetrics,
+  validateRepresentativeFrameVariation,
 } from '../src/benchmark/media-checks.js';
 import { ResourceSampler } from '../src/benchmark/resources.js';
 import { summarizeRuns } from '../src/benchmark/stats.js';
@@ -145,8 +146,11 @@ async function runtimeInfo(options: Options): Promise<BenchmarkReport['runtime']
     arch: process.arch,
     producer,
     ffmpeg,
+    ffmpegPath: options.ffmpegPath,
     ffprobe,
+    ffprobePath: options.ffprobePath,
     chromium,
+    chromiumPath: options.chromiumPath ?? null,
     containerImage: process.env.BENCHMARK_CONTAINER_IMAGE || null,
   };
 }
@@ -166,6 +170,9 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 
 async function main(): Promise<void> {
   const options = parseOptions(process.argv.slice(2));
+  process.env.HYPERFRAMES_FFMPEG_PATH = options.ffmpegPath;
+  process.env.HYPERFRAMES_FFPROBE_PATH = options.ffprobePath;
+  if (options.chromiumPath) process.env.PRODUCER_HEADLESS_SHELL_PATH = options.chromiumPath;
   const manifest = await loadCorpusManifest(manifestPath);
   const cases = selectedCases(manifest.cases, options.cases);
   const prepared = new Map<
@@ -227,6 +234,7 @@ async function main(): Promise<void> {
 
   for (const benchmarkCase of cases) {
     const entry = prepared.get(benchmarkCase.id)!;
+    let baselineEstablished = false;
     for (let iteration = 1; iteration <= options.runs; iteration += 1) {
       const runId = `${benchmarkCase.id}-${iteration}-${randomUUID().slice(0, 8)}`;
       const runDir = join(options.outputDir, 'runs', `${benchmarkCase.id}-${iteration}`);
@@ -278,7 +286,12 @@ async function main(): Promise<void> {
       if (!renderError && job.status === 'complete') {
         try {
           probe = await probeVideo(options.ffprobePath, outputPath, options.fps);
-          validateProbeMetrics(probe, benchmarkCase.durationSeconds, options.fps);
+          validateProbeMetrics(
+            probe,
+            benchmarkCase.durationSeconds,
+            options.fps,
+            benchmarkCase.expectedAudio,
+          );
           representativeFrames = await compareRepresentativeFrames({
             ffmpegPath: options.ffmpegPath,
             videoPath: outputPath,
@@ -287,11 +300,13 @@ async function main(): Promise<void> {
             fractions: benchmarkCase.representativeFrameFractions,
             frameDir: join(runDir, 'representative-frames'),
             baselineDir: join(options.outputDir, 'frame-baseline'),
-            establishBaseline: iteration === 1,
+            establishBaseline: !baselineEstablished,
           });
+          validateRepresentativeFrameVariation(representativeFrames);
           if (representativeFrames.some((frame) => frame.matchesBaseline === false)) {
             throw new Error('Representative frame comparison failed');
           }
+          baselineEstablished = true;
         } catch (error) {
           renderError = error;
         }

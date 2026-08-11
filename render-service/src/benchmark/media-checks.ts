@@ -48,6 +48,7 @@ export function validateProbeMetrics(
   metrics: ProbeMetrics,
   expectedDurationSeconds: number,
   fps: number,
+  expectedAudio: boolean,
 ): void {
   const durationTolerance = Math.max(0.1, 2 / fps);
   if (Math.abs(metrics.videoDurationSeconds - expectedDurationSeconds) > durationTolerance) {
@@ -63,6 +64,9 @@ export function validateProbeMetrics(
   }
   if (metrics.avDriftSeconds != null && metrics.avDriftSeconds > durationTolerance) {
     throw new Error(`ffprobe A/V drift exceeded ${durationTolerance}s: ${metrics.avDriftSeconds}s`);
+  }
+  if (expectedAudio && metrics.audioDurationSeconds == null) {
+    throw new Error('ffprobe validation failed: output has no audio stream');
   }
 }
 
@@ -155,4 +159,10 @@ export async function compareRepresentativeFrames(input: {
     results.push({ fraction, timestampSeconds, sha256, baselineSha256, matchesBaseline });
   }
   return results;
+}
+
+export function validateRepresentativeFrameVariation(frames: RepresentativeFrame[]): void {
+  if (frames.length > 1 && new Set(frames.map((frame) => frame.sha256)).size < 2) {
+    throw new Error('Representative frames contain no visual variation');
+  }
 }

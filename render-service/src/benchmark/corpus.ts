@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
-import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readdir, readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+import { inflateSync } from 'node:zlib';
 import { unzipSync, zipSync, type Zippable } from 'fflate';
 import type { CorpusCase, CorpusManifest } from './types.js';
 
@@ -33,6 +34,77 @@ function assertArchivePath(path: string): void {
   }
 }
 
+const privacyMarkers: RegExp[] = [
+  /(?:^|[^\d])(?:\d{1,3}\.){3}\d{1,3}(?:$|[^\d])/,
+  /[\p{Script=Han}]{1,8}\u8001\u5e08/u,
+  /classroom\//i,
+];
+
+const imageMetadataMarkers: RegExp[] = [
+  /\b(?:author|creator|user(?:id|name)?|template(?:id|name)?|brand(?:id)?)\b/i,
+  /xmp/i,
+];
+
+function privacyScanText(path: string, bytes: Uint8Array): string {
+  const extension = path.toLowerCase().slice(path.lastIndexOf('.'));
+  if (!['.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm'].includes(extension)) {
+    return Buffer.from(bytes).toString('utf8');
+  }
+  if (extension !== '.png' || bytes.length < 8) return '';
+
+  const chunks: string[] = [];
+  let offset = 8;
+  while (offset + 12 <= bytes.length) {
+    const length = Buffer.from(bytes).readUInt32BE(offset);
+    const type = Buffer.from(bytes.subarray(offset + 4, offset + 8)).toString('ascii');
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + length;
+    if (dataEnd + 4 > bytes.length) break;
+    const data = Buffer.from(bytes.subarray(dataStart, dataEnd));
+    if (type === 'tEXt') {
+      chunks.push(data.toString('latin1'));
+    } else if (type === 'zTXt') {
+      const separator = data.indexOf(0);
+      if (separator >= 0 && separator + 2 <= data.length) {
+        chunks.push(data.subarray(0, separator).toString('latin1'));
+        try {
+          chunks.push(inflateSync(data.subarray(separator + 2)).toString('utf8'));
+        } catch {
+          // Invalid metadata is ignored here and will still fail normal image decoding.
+        }
+      }
+    } else if (type === 'iTXt') {
+      const keywordEnd = data.indexOf(0);
+      const languageEnd = keywordEnd >= 0 ? data.indexOf(0, keywordEnd + 3) : -1;
+      const translatedEnd = languageEnd >= 0 ? data.indexOf(0, languageEnd + 1) : -1;
+      if (keywordEnd >= 0 && translatedEnd >= 0) {
+        chunks.push(data.subarray(0, keywordEnd).toString('latin1'));
+        const text = data.subarray(translatedEnd + 1);
+        try {
+          chunks.push((data[keywordEnd + 1] === 1 ? inflateSync(text) : text).toString('utf8'));
+        } catch {
+          // Invalid metadata is ignored here and will still fail normal image decoding.
+        }
+      }
+    }
+    offset = dataEnd + 4;
+  }
+  return chunks.join('\n');
+}
+
+export function assertCorpusPrivacy(files: ReadonlyMap<string, Uint8Array>): void {
+  for (const [path, bytes] of files) {
+    const content = privacyScanText(path, bytes);
+    const markers = path.toLowerCase().endsWith('.png')
+      ? [...privacyMarkers, ...imageMetadataMarkers]
+      : privacyMarkers;
+    const marker = markers.find((pattern) => pattern.test(content));
+    if (marker) {
+      throw new Error(`Benchmark corpus privacy check failed for ${path}`);
+    }
+  }
+}
+
 export async function loadCorpusManifest(path: string): Promise<CorpusManifest> {
   const parsed = JSON.parse(await readFile(path, 'utf8')) as CorpusManifest;
   if (parsed.schemaVersion !== 1 || !parsed.corpusVersion || !Array.isArray(parsed.cases)) {
@@ -42,6 +114,9 @@ export async function loadCorpusManifest(path: string): Promise<CorpusManifest> 
   for (const entry of parsed.cases) {
     if (ids.has(entry.id)) throw new Error(`Duplicate benchmark case id: ${entry.id}`);
     ids.add(entry.id);
+    if (typeof entry.expectedAudio !== 'boolean') {
+      throw new Error(`Benchmark case must declare expectedAudio: ${entry.id}`);
+    }
     if (entry.representativeFrameFractions.some((value) => value <= 0 || value >= 1)) {
       throw new Error(`Representative frame fractions must be between 0 and 1: ${entry.id}`);
     }
@@ -68,7 +143,11 @@ export async function collectCaseFiles(input: {
     }
     files.set(mapping.archivePath, await readFile(resolve(input.repositoryRoot, mapping.source)));
   }
-  return new Map([...files.entries()].sort(([left], [right]) => left.localeCompare(right)));
+  const sortedFiles = new Map(
+    [...files.entries()].sort(([left], [right]) => left.localeCompare(right)),
+  );
+  assertCorpusPrivacy(sortedFiles);
+  return sortedFiles;
 }
 
 export function hashProjectFiles(files: ReadonlyMap<string, Uint8Array>): string {
@@ -126,6 +205,7 @@ export function verifyCaseHashes(
 
 export async function materializeArchive(archive: Uint8Array, outputDir: string): Promise<void> {
   const entries = unzipSync(archive);
+  await rm(outputDir, { recursive: true, force: true });
   for (const [path, bytes] of Object.entries(entries)) {
     assertArchivePath(path);
     const outputPath = join(outputDir, path);
