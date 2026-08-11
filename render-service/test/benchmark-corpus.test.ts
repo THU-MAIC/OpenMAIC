@@ -15,9 +15,7 @@ describe('benchmark corpus archives', () => {
   it('rejects recognizable personal or source metadata markers', () => {
     expect(() =>
       assertCorpusPrivacy(
-        new Map([
-          ['asset.txt', Buffer.from('created for classroom/lesson at 192.168.1.10')],
-        ]),
+        new Map([['asset.txt', Buffer.from('created for classroom/lesson at 192.168.1.10')]]),
       ),
     ).toThrow(/privacy check failed/);
 
