@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Image-rich lesson benchmark</title>
+    <style>
+      @font-face {
+        font-family: 'EB Garamond';
+        src: url('assets/fonts/eb-garamond-400.woff2') format('woff2');
+        font-weight: 400;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: 'EB Garamond';
+        src: url('assets/fonts/eb-garamond-700.woff2') format('woff2');
+        font-weight: 700;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: Inter;
+        src: url('assets/fonts/inter-400.woff2') format('woff2');
+        font-weight: 400;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: Inter;
+        src: url('assets/fonts/inter-700.woff2') format('woff2');
+        font-weight: 700;
+        font-style: normal;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: #171a1c;
+        color: #f7f4eb;
+        font-family: 'EB Garamond', serif;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      .clip {
+        position: absolute;
+        inset: 0;
+        padding: 70px 84px;
+        background: #e9e6dc;
+        color: #202629;
+      }
+      .heading {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        margin-bottom: 42px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 54px;
+        letter-spacing: 0;
+      }
+      .label {
+        font:
+          700 22px/1 Inter,
+          sans-serif;
+        color: #b74d3d;
+      }
+      .gallery {
+        display: grid;
+        grid-template-columns: 1.35fr 0.8fr 0.8fr;
+        grid-template-rows: 380px 380px;
+        gap: 22px;
+      }
+      .gallery img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border: 8px solid #fff;
+        box-shadow: 0 12px 26px rgba(28, 36, 39, 0.18);
+      }
+      .gallery img:first-child {
+        grid-row: 1 / 3;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="image-gallery"
+      data-start="0"
+      data-duration="600"
+      data-width="1920"
+      data-height="1080"
+    >
+      <section id="gallery-01" class="clip" data-start="0" data-duration="30" data-track-index="1">
+        <div class="heading">
+          <h1>Read the whole visual field</h1>
+          <span class="label">01 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-01.png" alt="Wide interface study" /><img
+            src="assets/image-02.png"
+            alt="Tablet interface study"
+          /><img src="assets/image-03.png" alt="Phone interface study" /><img
+            src="assets/image-04.png"
+            alt="Graphic study"
+          /><img src="assets/image-02.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section id="gallery-02" class="clip" data-start="30" data-duration="30" data-track-index="1">
+        <div class="heading">
+          <h1>Compare scale and hierarchy</h1>
+          <span class="label">02 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-02.png" alt="Tablet interface study" /><img
+            src="assets/image-01.png"
+            alt="Wide interface study"
+          /><img src="assets/image-04.png" alt="Graphic study" /><img
+            src="assets/image-03.png"
+            alt="Phone interface study"
+          /><img src="assets/image-01.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section id="gallery-03" class="clip" data-start="60" data-duration="30" data-track-index="1">
+        <div class="heading">
+          <h1>Find repeated structures</h1>
+          <span class="label">03 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-03.png" alt="Phone interface study" /><img
+            src="assets/image-04.png"
+            alt="Graphic study"
+          /><img src="assets/image-02.png" alt="Tablet interface study" /><img
+            src="assets/image-01.png"
+            alt="Wide interface study"
+          /><img src="assets/image-04.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section id="gallery-04" class="clip" data-start="90" data-duration="30" data-track-index="1">
+        <div class="heading">
+          <h1>Trace the primary path</h1>
+          <span class="label">04 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-04.png" alt="Graphic study" /><img
+            src="assets/image-03.png"
+            alt="Phone interface study"
+          /><img src="assets/image-01.png" alt="Wide interface study" /><img
+            src="assets/image-02.png"
+            alt="Tablet interface study"
+          /><img src="assets/image-03.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-05"
+        class="clip"
+        data-start="120"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Separate signal from decoration</h1>
+          <span class="label">05 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-01.png" alt="Wide interface study" /><img
+            src="assets/image-03.png"
+            alt="Phone interface study"
+          /><img src="assets/image-04.png" alt="Graphic study" /><img
+            src="assets/image-02.png"
+            alt="Tablet interface study"
+          /><img src="assets/image-04.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-06"
+        class="clip"
+        data-start="150"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Inspect alignment</h1>
+          <span class="label">06 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-02.png" alt="Tablet interface study" /><img
+            src="assets/image-04.png"
+            alt="Graphic study"
+          /><img src="assets/image-01.png" alt="Wide interface study" /><img
+            src="assets/image-03.png"
+            alt="Phone interface study"
+          /><img src="assets/image-01.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-07"
+        class="clip"
+        data-start="180"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Inspect density</h1>
+          <span class="label">07 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-03.png" alt="Phone interface study" /><img
+            src="assets/image-01.png"
+            alt="Wide interface study"
+          /><img src="assets/image-02.png" alt="Tablet interface study" /><img
+            src="assets/image-04.png"
+            alt="Graphic study"
+          /><img src="assets/image-02.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-08"
+        class="clip"
+        data-start="210"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Inspect contrast</h1>
+          <span class="label">08 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-04.png" alt="Graphic study" /><img
+            src="assets/image-02.png"
+            alt="Tablet interface study"
+          /><img src="assets/image-03.png" alt="Phone interface study" /><img
+            src="assets/image-01.png"
+            alt="Wide interface study"
+          /><img src="assets/image-03.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-09"
+        class="clip"
+        data-start="240"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Inspect cropping</h1>
+          <span class="label">09 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-01.png" alt="Wide interface study" /><img
+            src="assets/image-04.png"
+            alt="Graphic study"
+          /><img src="assets/image-03.png" alt="Phone interface study" /><img
+            src="assets/image-02.png"
+            alt="Tablet interface study"
+          /><img src="assets/image-04.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-10"
+        class="clip"
+        data-start="270"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Inspect rhythm</h1>
+          <span class="label">10 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-02.png" alt="Tablet interface study" /><img
+            src="assets/image-03.png"
+            alt="Phone interface study"
+          /><img src="assets/image-01.png" alt="Wide interface study" /><img
+            src="assets/image-04.png"
+            alt="Graphic study"
+          /><img src="assets/image-01.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-11"
+        class="clip"
+        data-start="300"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Group related evidence</h1>
+          <span class="label">11 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-03.png" alt="Phone interface study" /><img
+            src="assets/image-02.png"
+            alt="Tablet interface study"
+          /><img src="assets/image-04.png" alt="Graphic study" /><img
+            src="assets/image-01.png"
+            alt="Wide interface study"
+          /><img src="assets/image-02.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-12"
+        class="clip"
+        data-start="330"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Test responsive changes</h1>
+          <span class="label">12 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-04.png" alt="Graphic study" /><img
+            src="assets/image-01.png"
+            alt="Wide interface study"
+          /><img src="assets/image-02.png" alt="Tablet interface study" /><img
+            src="assets/image-03.png"
+            alt="Phone interface study"
+          /><img src="assets/image-03.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-13"
+        class="clip"
+        data-start="360"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Locate persistent anchors</h1>
+          <span class="label">13 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-01.png" alt="Wide interface study" /><img
+            src="assets/image-02.png"
+            alt="Tablet interface study"
+          /><img src="assets/image-04.png" alt="Graphic study" /><img
+            src="assets/image-03.png"
+            alt="Phone interface study"
+          /><img src="assets/image-04.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-14"
+        class="clip"
+        data-start="390"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Locate changing details</h1>
+          <span class="label">14 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-02.png" alt="Tablet interface study" /><img
+            src="assets/image-03.png"
+            alt="Phone interface study"
+          /><img src="assets/image-04.png" alt="Graphic study" /><img
+            src="assets/image-01.png"
+            alt="Wide interface study"
+          /><img src="assets/image-01.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-15"
+        class="clip"
+        data-start="420"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Compare spatial priorities</h1>
+          <span class="label">15 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-03.png" alt="Phone interface study" /><img
+            src="assets/image-04.png"
+            alt="Graphic study"
+          /><img src="assets/image-01.png" alt="Wide interface study" /><img
+            src="assets/image-02.png"
+            alt="Tablet interface study"
+          /><img src="assets/image-02.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-16"
+        class="clip"
+        data-start="450"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Compare reading order</h1>
+          <span class="label">16 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-04.png" alt="Graphic study" /><img
+            src="assets/image-01.png"
+            alt="Wide interface study"
+          /><img src="assets/image-03.png" alt="Phone interface study" /><img
+            src="assets/image-02.png"
+            alt="Tablet interface study"
+          /><img src="assets/image-03.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-17"
+        class="clip"
+        data-start="480"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Form a visual hypothesis</h1>
+          <span class="label">17 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-01.png" alt="Wide interface study" /><img
+            src="assets/image-03.png"
+            alt="Phone interface study"
+          /><img src="assets/image-02.png" alt="Tablet interface study" /><img
+            src="assets/image-04.png"
+            alt="Graphic study"
+          /><img src="assets/image-04.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-18"
+        class="clip"
+        data-start="510"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Check the hypothesis</h1>
+          <span class="label">18 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-02.png" alt="Tablet interface study" /><img
+            src="assets/image-04.png"
+            alt="Graphic study"
+          /><img src="assets/image-03.png" alt="Phone interface study" /><img
+            src="assets/image-01.png"
+            alt="Wide interface study"
+          /><img src="assets/image-01.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-19"
+        class="clip"
+        data-start="540"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Record exceptions</h1>
+          <span class="label">19 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-03.png" alt="Phone interface study" /><img
+            src="assets/image-01.png"
+            alt="Wide interface study"
+          /><img src="assets/image-04.png" alt="Graphic study" /><img
+            src="assets/image-02.png"
+            alt="Tablet interface study"
+          /><img src="assets/image-02.png" alt="Repeated crop study" />
+        </div>
+      </section>
+      <section
+        id="gallery-20"
+        class="clip"
+        data-start="570"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <div class="heading">
+          <h1>Synthesize the evidence</h1>
+          <span class="label">20 / 20</span>
+        </div>
+        <div class="gallery">
+          <img src="assets/image-04.png" alt="Graphic study" /><img
+            src="assets/image-02.png"
+            alt="Tablet interface study"
+          /><img src="assets/image-01.png" alt="Wide interface study" /><img
+            src="assets/image-03.png"
+            alt="Phone interface study"
+          /><img src="assets/image-03.png" alt="Repeated crop study" />
+        </div>
+      </section>
+    </div>
+    <script src="assets/vendor/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      for (let i = 1; i <= 20; i += 1) {
+        const at = (i - 1) * 30;
+        const id = `#gallery-${String(i).padStart(2, '0')}`;
+        tl.fromTo(
+          `${id} img`,
+          { opacity: 0 },
+          { opacity: 1, duration: 0.7, stagger: 0.12 },
+          at + 0.2,
+        );
+      }
+      tl.set({}, {}, 600);
+      window.__timelines['image-gallery'] = tl;
+    </script>
+  </body>
+</html>

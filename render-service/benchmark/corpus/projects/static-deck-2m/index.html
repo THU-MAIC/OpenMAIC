@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Static lesson benchmark</title>
+    <style>
+      @font-face {
+        font-family: 'EB Garamond';
+        src: url('assets/fonts/eb-garamond-400.woff2') format('woff2');
+        font-weight: 400;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: 'EB Garamond';
+        src: url('assets/fonts/eb-garamond-700.woff2') format('woff2');
+        font-weight: 700;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: Inter;
+        src: url('assets/fonts/inter-400.woff2') format('woff2');
+        font-weight: 400;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: Inter;
+        src: url('assets/fonts/inter-700.woff2') format('woff2');
+        font-weight: 700;
+        font-style: normal;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: #101318;
+        color: #f7f3ea;
+        font-family: 'EB Garamond', serif;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      .clip {
+        position: absolute;
+        inset: 0;
+        padding: 104px 128px;
+        background: #f5f1e8;
+        color: #17202a;
+      }
+      .clip:nth-child(even) {
+        background: #153a46;
+        color: #f7f3ea;
+      }
+      .kicker {
+        font:
+          700 24px/1.2 Inter,
+          sans-serif;
+        color: #c94f38;
+        text-transform: uppercase;
+      }
+      h1 {
+        max-width: 1280px;
+        margin: 54px 0 36px;
+        font-size: 92px;
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+      p {
+        max-width: 1180px;
+        margin: 0;
+        font-size: 42px;
+        line-height: 1.4;
+      }
+      .rule {
+        width: 220px;
+        height: 10px;
+        margin-top: 72px;
+        background: #e5b949;
+      }
+      .index {
+        position: absolute;
+        right: 128px;
+        bottom: 96px;
+        font:
+          700 30px/1 Inter,
+          sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="static-deck"
+      data-start="0"
+      data-duration="120"
+      data-width="1920"
+      data-height="1080"
+    >
+      <section id="scene-01" class="clip" data-start="0" data-duration="15" data-track-index="1">
+        <div class="kicker">Systems lesson</div>
+        <h1>Observe before changing the system</h1>
+        <p>Start with a stable description of inputs, boundaries, and expected outcomes.</p>
+        <div class="rule"></div>
+        <div class="index">01 / 08</div>
+      </section>
+      <section id="scene-02" class="clip" data-start="15" data-duration="15" data-track-index="1">
+        <div class="kicker">Step one</div>
+        <h1>Define a measurable question</h1>
+        <p>
+          A useful question names the condition, the operation, and the signal that confirms
+          success.
+        </p>
+        <div class="rule"></div>
+        <div class="index">02 / 08</div>
+      </section>
+      <section id="scene-03" class="clip" data-start="30" data-duration="15" data-track-index="1">
+        <div class="kicker">Step two</div>
+        <h1>Reduce hidden variables</h1>
+        <p>Freeze configuration and inputs so repeated observations remain comparable.</p>
+        <div class="rule"></div>
+        <div class="index">03 / 08</div>
+      </section>
+      <section id="scene-04" class="clip" data-start="45" data-duration="15" data-track-index="1">
+        <div class="kicker">Step three</div>
+        <h1>Collect evidence by stage</h1>
+        <p>Separate setup, execution, and finalization instead of relying on one total number.</p>
+        <div class="rule"></div>
+        <div class="index">04 / 08</div>
+      </section>
+      <section id="scene-05" class="clip" data-start="60" data-duration="15" data-track-index="1">
+        <div class="kicker">Step four</div>
+        <h1>Compare like with like</h1>
+        <p>Use the same runtime, worker count, media, and output settings for every trial.</p>
+        <div class="rule"></div>
+        <div class="index">05 / 08</div>
+      </section>
+      <section id="scene-06" class="clip" data-start="75" data-duration="15" data-track-index="1">
+        <div class="kicker">Step five</div>
+        <h1>Inspect representative outputs</h1>
+        <p>Performance is not a pass when frames are blank, media is missing, or timing drifts.</p>
+        <div class="rule"></div>
+        <div class="index">06 / 08</div>
+      </section>
+      <section id="scene-07" class="clip" data-start="90" data-duration="15" data-track-index="1">
+        <div class="kicker">Step six</div>
+        <h1>Report distributions</h1>
+        <p>Median and tail values distinguish typical behavior from costly outliers.</p>
+        <div class="rule"></div>
+        <div class="index">07 / 08</div>
+      </section>
+      <section id="scene-08" class="clip" data-start="105" data-duration="15" data-track-index="1">
+        <div class="kicker">Summary</div>
+        <h1>Reproducibility turns a result into evidence</h1>
+        <p>Keep the input, runtime, command, and machine-readable report together.</p>
+        <div class="rule"></div>
+        <div class="index">08 / 08</div>
+      </section>
+    </div>
+    <script src="assets/vendor/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      for (let i = 1; i <= 8; i += 1) {
+        const at = (i - 1) * 15;
+        tl.fromTo(
+          `#scene-${String(i).padStart(2, '0')} h1`,
+          { y: 36, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.8, ease: 'power2.out' },
+          at + 0.2,
+        );
+      }
+      tl.set({}, {}, 120);
+      window.__timelines['static-deck'] = tl;
+    </script>
+  </body>
+</html>

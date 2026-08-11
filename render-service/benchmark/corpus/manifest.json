@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "corpusVersion": "1.0.0",
+  "description": "Manually constructed and selected classroom video-export benchmark corpus.",
+  "sharedFiles": [
+    {
+      "source": "render-service/benchmark/corpus/shared/vendor/gsap.min.js",
+      "archivePath": "assets/vendor/gsap.min.js"
+    },
+    {
+      "source": "render-service/benchmark/corpus/shared/fonts/eb-garamond-400.woff2",
+      "archivePath": "assets/fonts/eb-garamond-400.woff2"
+    },
+    {
+      "source": "render-service/benchmark/corpus/shared/fonts/eb-garamond-700.woff2",
+      "archivePath": "assets/fonts/eb-garamond-700.woff2"
+    },
+    {
+      "source": "render-service/benchmark/corpus/shared/fonts/inter-400.woff2",
+      "archivePath": "assets/fonts/inter-400.woff2"
+    },
+    {
+      "source": "render-service/benchmark/corpus/shared/fonts/inter-700.woff2",
+      "archivePath": "assets/fonts/inter-700.woff2"
+    },
+    {
+      "source": "render-service/benchmark/corpus/shared/fonts/eb-garamond-LICENSE.txt",
+      "archivePath": "LICENSES/eb-garamond.txt"
+    },
+    {
+      "source": "render-service/benchmark/corpus/shared/fonts/inter-LICENSE.txt",
+      "archivePath": "LICENSES/inter.txt"
+    }
+  ],
+  "cases": [
+    {
+      "id": "static-deck-2m",
+      "category": "static-slides",
+      "description": "Eight low-complexity static lesson scenes with deterministic transitions.",
+      "durationSeconds": 120,
+      "sceneCount": 8,
+      "complexity": "low",
+      "projectDir": "projects/static-deck-2m",
+      "inputManifestSha256": "a1c4a533ac17ec65d06e3a53a58b21be986367c0acac1d75dafec388eef1ac5d",
+      "projectHashSha256": "1ce619b3923a3f4603dfbc26b1ab7791966e7200d7ff39f95bd8921bc15038b2",
+      "archiveHashSha256": "fbe42c77ff1af7c60cf4376aa28137c3447d3d38b61e0fe599949ec497d7b33a",
+      "representativeFrameFractions": [0.1, 0.5, 0.9]
+    },
+    {
+      "id": "formula-charts-5m",
+      "category": "formula-chart-heavy",
+      "description": "Ten medium-complexity scenes with equations, tables, SVG charts, and annotations.",
+      "durationSeconds": 300,
+      "sceneCount": 10,
+      "complexity": "medium",
+      "projectDir": "projects/formula-charts-5m",
+      "inputManifestSha256": "4ec49eb9542f7ee9c6c400db93b485bbe9e6737cd793ca591152ef1967252770",
+      "projectHashSha256": "7a95f35b86c2b0665c19fc5ead6f91ee1e7f3229babe674299b4cfa9a76272f5",
+      "archiveHashSha256": "6f3ebedd164e31aba9e044fcbc0eb90adda974ecbf251670dbdd28b532f22705",
+      "representativeFrameFractions": [0.1, 0.5, 0.9]
+    },
+    {
+      "id": "image-gallery-10m",
+      "category": "image-heavy",
+      "description": "Twenty high-density scenes composed from multiple local bitmap assets.",
+      "durationSeconds": 600,
+      "sceneCount": 20,
+      "complexity": "high",
+      "projectDir": "projects/image-gallery-10m",
+      "inputManifestSha256": "ca8e359674832f5ac584147232f0334940075c8aa17c130d41368e7c6f051617",
+      "projectHashSha256": "6faf1c764796aebc725f0f5884180abcf6fc7588fd23f92f2a30cee54a02af7c",
+      "archiveHashSha256": "17f97527527bd673c69df4cb3b83acc96e4de83b497adda3c7a5a256aa83b577",
+      "representativeFrameFractions": [0.1, 0.5, 0.9]
+    },
+    {
+      "id": "video-elements-5m",
+      "category": "video-element-heavy",
+      "description": "Ten scenes with looping local video elements and a separately mixed audio track.",
+      "durationSeconds": 300,
+      "sceneCount": 10,
+      "complexity": "high",
+      "projectDir": "projects/video-elements-5m",
+      "inputManifestSha256": "0c424a8c423b395ff589f555279f33e427eeae9e83de9d2298c180370719a31c",
+      "projectHashSha256": "7775bc9c48da683f48d1c6e2085ed6964ff689aa6bbff8bcc7006f34cbc13921",
+      "archiveHashSha256": "21b522dd18084ca492f464ef88792bdcdc02eed8a43b4a0de6eb922ecbea0d9a",
+      "representativeFrameFractions": [0.1, 0.5, 0.9]
+    },
+    {
+      "id": "webgl-lab-20m",
+      "category": "interactive-webgl",
+      "description": "Eight long-form phases driven by a deterministic seek-safe WebGL simulation.",
+      "durationSeconds": 1200,
+      "sceneCount": 8,
+      "complexity": "high",
+      "projectDir": "projects/webgl-lab-20m",
+      "inputManifestSha256": "3eef49643fdf6b04a4bae190db8a9e6f45070f434d8b8ef62de4f010708546f9",
+      "projectHashSha256": "720933c662448cb268c0b00799f2edba6d2438c6b383464f46fa15f3d707939d",
+      "archiveHashSha256": "474ab4281bb8abe5456b472a0368700dd7b895da0fe1c7b3ed555e05fd5f24d0",
+      "representativeFrameFractions": [0.1, 0.5, 0.9]
+    }
+  ]
+}

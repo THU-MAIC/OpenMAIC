@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Video element lesson benchmark</title>
+    <style>
+      @font-face {
+        font-family: 'EB Garamond';
+        src: url('assets/fonts/eb-garamond-400.woff2') format('woff2');
+        font-weight: 400;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: 'EB Garamond';
+        src: url('assets/fonts/eb-garamond-700.woff2') format('woff2');
+        font-weight: 700;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: Inter;
+        src: url('assets/fonts/inter-400.woff2') format('woff2');
+        font-weight: 400;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: Inter;
+        src: url('assets/fonts/inter-700.woff2') format('woff2');
+        font-weight: 700;
+        font-style: normal;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: #0d1114;
+        color: #f5f0e5;
+        font-family: 'EB Garamond', serif;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      video {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .panel {
+        position: absolute;
+        left: 90px;
+        bottom: 76px;
+        width: 780px;
+        padding: 38px 44px;
+        background: rgba(13, 17, 20, 0.88);
+        border-left: 10px solid #e6bc50;
+        z-index: 3;
+      }
+      h1 {
+        margin: 0 0 18px;
+        font-size: 54px;
+        letter-spacing: 0;
+      }
+      p {
+        margin: 0;
+        font:
+          26px/1.45 Inter,
+          sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="video-elements"
+      data-start="0"
+      data-duration="300"
+      data-width="1920"
+      data-height="1080"
+    >
+      <video
+        id="video-01"
+        src="assets/clip.mp4"
+        data-start="0"
+        data-duration="30"
+        data-track-index="0"
+        loop
+        muted
+        playsinline
+      ></video>
+      <video
+        id="video-02"
+        src="assets/clip.mp4"
+        data-start="30"
+        data-duration="30"
+        data-track-index="0"
+        loop
+        muted
+        playsinline
+      ></video>
+      <video
+        id="video-03"
+        src="assets/clip.mp4"
+        data-start="60"
+        data-duration="30"
+        data-track-index="0"
+        loop
+        muted
+        playsinline
+      ></video>
+      <video
+        id="video-04"
+        src="assets/clip.mp4"
+        data-start="90"
+        data-duration="30"
+        data-track-index="0"
+        loop
+        muted
+        playsinline
+      ></video>
+      <video
+        id="video-05"
+        src="assets/clip.mp4"
+        data-start="120"
+        data-duration="30"
+        data-track-index="0"
+        loop
+        muted
+        playsinline
+      ></video>
+      <video
+        id="video-06"
+        src="assets/clip.mp4"
+        data-start="150"
+        data-duration="30"
+        data-track-index="0"
+        loop
+        muted
+        playsinline
+      ></video>
+      <video
+        id="video-07"
+        src="assets/clip.mp4"
+        data-start="180"
+        data-duration="30"
+        data-track-index="0"
+        loop
+        muted
+        playsinline
+      ></video>
+      <video
+        id="video-08"
+        src="assets/clip.mp4"
+        data-start="210"
+        data-duration="30"
+        data-track-index="0"
+        loop
+        muted
+        playsinline
+      ></video>
+      <video
+        id="video-09"
+        src="assets/clip.mp4"
+        data-start="240"
+        data-duration="30"
+        data-track-index="0"
+        loop
+        muted
+        playsinline
+      ></video>
+      <video
+        id="video-10"
+        src="assets/clip.mp4"
+        data-start="270"
+        data-duration="30"
+        data-track-index="0"
+        loop
+        muted
+        playsinline
+      ></video>
+      <section
+        id="panel-01"
+        class="clip panel"
+        data-start="0"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <h1>Observe motion boundaries</h1>
+        <p>Check frame extraction, looping, and the first visible frame.</p>
+      </section>
+      <section
+        id="panel-02"
+        class="clip panel"
+        data-start="30"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <h1>Track temporal continuity</h1>
+        <p>Repeated source media should remain deterministic across seeks.</p>
+      </section>
+      <section
+        id="panel-03"
+        class="clip panel"
+        data-start="60"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <h1>Inspect decoded color</h1>
+        <p>The source combines moving gradients and high-contrast geometry.</p>
+      </section>
+      <section
+        id="panel-04"
+        class="clip panel"
+        data-start="90"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <h1>Inspect scene changes</h1>
+        <p>Each new element has an independent visibility window.</p>
+      </section>
+      <section
+        id="panel-05"
+        class="clip panel"
+        data-start="120"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <h1>Measure extraction cost</h1>
+        <p>One source is reused across ten authored video elements.</p>
+      </section>
+      <section
+        id="panel-06"
+        class="clip panel"
+        data-start="150"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <h1>Measure capture cost</h1>
+        <p>Decoded media frames must be injected before browser capture.</p>
+      </section>
+      <section
+        id="panel-07"
+        class="clip panel"
+        data-start="180"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <h1>Measure audio work</h1>
+        <p>A separate looping audio element is mixed into the output.</p>
+      </section>
+      <section
+        id="panel-08"
+        class="clip panel"
+        data-start="210"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <h1>Verify A/V duration</h1>
+        <p>ffprobe reports stream duration and final drift.</p>
+      </section>
+      <section
+        id="panel-09"
+        class="clip panel"
+        data-start="240"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <h1>Verify representative frames</h1>
+        <p>Decoded PNG hashes are compared across repeated runs.</p>
+      </section>
+      <section
+        id="panel-10"
+        class="clip panel"
+        data-start="270"
+        data-duration="30"
+        data-track-index="1"
+      >
+        <h1>Keep the input local</h1>
+        <p>The composition has no remote media or runtime network dependency.</p>
+      </section>
+      <audio
+        id="lesson-audio"
+        src="assets/clip.mp4"
+        data-start="0"
+        data-duration="300"
+        data-track-index="10"
+        data-volume="0.18"
+        loop
+      ></audio>
+    </div>
+    <script src="assets/vendor/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      for (let i = 1; i <= 10; i += 1) {
+        const at = (i - 1) * 30;
+        tl.fromTo(
+          `#panel-${String(i).padStart(2, '0')}`,
+          { x: -52, opacity: 0 },
+          { x: 0, opacity: 1, duration: 0.8, ease: 'power2.out' },
+          at + 0.2,
+        );
+      }
+      tl.set({}, {}, 300);
+      window.__timelines['video-elements'] = tl;
+    </script>
+  </body>
+</html>

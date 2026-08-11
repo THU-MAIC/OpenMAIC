@@ -8,6 +8,8 @@
     "node": ">=22"
   },
   "scripts": {
+    "benchmark:video-export": "node --import tsx scripts/benchmark-video-export.ts",
+    "benchmark:video-export:verify": "node --import tsx scripts/benchmark-video-export.ts --verify-only",
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",

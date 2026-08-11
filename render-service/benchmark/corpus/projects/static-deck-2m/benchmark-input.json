@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "static-deck-2m",
+  "category": "static-slides",
+  "durationSeconds": 120,
+  "sceneCount": 8,
+  "complexity": "low",
+  "construction": "manually-constructed-and-selected"
+}

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "video-elements-5m",
+  "category": "video-element-heavy",
+  "durationSeconds": 300,
+  "sceneCount": 10,
+  "complexity": "high",
+  "construction": "manually-constructed-and-selected"
+}

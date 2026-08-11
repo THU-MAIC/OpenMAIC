@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "webgl-lab-20m",
+  "category": "interactive-webgl",
+  "durationSeconds": 1200,
+  "sceneCount": 8,
+  "complexity": "high",
+  "construction": "manually-constructed-and-selected"
+}

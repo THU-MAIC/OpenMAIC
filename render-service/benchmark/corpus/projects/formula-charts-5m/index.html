@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Formula and chart lesson benchmark</title>
+    <style>
+      @font-face {
+        font-family: 'EB Garamond';
+        src: url('assets/fonts/eb-garamond-400.woff2') format('woff2');
+        font-weight: 400;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: 'EB Garamond';
+        src: url('assets/fonts/eb-garamond-700.woff2') format('woff2');
+        font-weight: 700;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: Inter;
+        src: url('assets/fonts/inter-400.woff2') format('woff2');
+        font-weight: 400;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: Inter;
+        src: url('assets/fonts/inter-700.woff2') format('woff2');
+        font-weight: 700;
+        font-style: normal;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: #111820;
+        color: #f4f7f8;
+        font-family: 'EB Garamond', serif;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      .clip {
+        position: absolute;
+        inset: 0;
+        padding: 82px 108px;
+        background: #111820;
+      }
+      .header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        border-bottom: 2px solid #3f5664;
+        padding-bottom: 22px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 58px;
+        letter-spacing: 0;
+      }
+      .formula {
+        margin: 72px 0 50px;
+        font-size: 72px;
+        color: #f4cf62;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 0.9fr 1.1fr;
+        gap: 72px;
+        align-items: center;
+      }
+      p,
+      li {
+        font-size: 34px;
+        line-height: 1.45;
+      }
+      svg {
+        width: 100%;
+        height: 520px;
+        overflow: visible;
+      }
+      .axis {
+        stroke: #8ea3ae;
+        stroke-width: 4;
+      }
+      .line {
+        fill: none;
+        stroke: #e15c45;
+        stroke-width: 12;
+      }
+      .bar {
+        fill: #4ca7a0;
+      }
+      .number {
+        font:
+          700 24px/1 Inter,
+          sans-serif;
+        color: #9bb0ba;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font:
+          30px/1.3 Inter,
+          sans-serif;
+      }
+      th,
+      td {
+        border: 2px solid #435764;
+        padding: 20px;
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="formula-charts"
+      data-start="0"
+      data-duration="300"
+      data-width="1920"
+      data-height="1080"
+    >
+      <section id="math-01" class="clip" data-start="0" data-duration="30" data-track-index="1">
+        <div class="header">
+          <h1>From question to model</h1>
+          <span class="number">01 / 10</span>
+        </div>
+        <div class="formula">y = f(x) + ε</div>
+        <div class="grid">
+          <p>A model separates the systematic relationship from unexplained variation.</p>
+          <svg viewBox="0 0 700 520">
+            <path class="axis" d="M60 450H660M60 450V40" />
+            <path class="line" d="M70 420 C180 390 240 320 330 300 S510 150 650 80" />
+          </svg>
+        </div>
+      </section>
+      <section id="math-02" class="clip" data-start="30" data-duration="30" data-track-index="1">
+        <div class="header">
+          <h1>Rate of change</h1>
+          <span class="number">02 / 10</span>
+        </div>
+        <div class="formula">m = (y₂ - y₁) / (x₂ - x₁)</div>
+        <div class="grid">
+          <ul>
+            <li>Choose two observed points.</li>
+            <li>Measure vertical change.</li>
+            <li>Normalize by horizontal change.</li>
+          </ul>
+          <svg viewBox="0 0 700 520">
+            <path class="axis" d="M60 450H660M60 450V40" />
+            <path class="line" d="M90 410L620 70" />
+            <circle cx="210" cy="333" r="16" fill="#f4cf62" />
+            <circle cx="510" cy="140" r="16" fill="#f4cf62" />
+          </svg>
+        </div>
+      </section>
+      <section id="math-03" class="clip" data-start="60" data-duration="30" data-track-index="1">
+        <div class="header">
+          <h1>Weighted mean</h1>
+          <span class="number">03 / 10</span>
+        </div>
+        <div class="formula">x̄ = Σ(wᵢxᵢ) / Σwᵢ</div>
+        <div class="grid">
+          <p>
+            Weights express how strongly each observation should influence the combined estimate.
+          </p>
+          <table>
+            <tr>
+              <th>Group</th>
+              <th>x</th>
+              <th>w</th>
+              <th>wx</th>
+            </tr>
+            <tr>
+              <td>A</td>
+              <td>12</td>
+              <td>2</td>
+              <td>24</td>
+            </tr>
+            <tr>
+              <td>B</td>
+              <td>18</td>
+              <td>3</td>
+              <td>54</td>
+            </tr>
+            <tr>
+              <td>C</td>
+              <td>24</td>
+              <td>1</td>
+              <td>24</td>
+            </tr>
+          </table>
+        </div>
+      </section>
+      <section id="math-04" class="clip" data-start="90" data-duration="30" data-track-index="1">
+        <div class="header">
+          <h1>Distribution shape</h1>
+          <span class="number">04 / 10</span>
+        </div>
+        <div class="formula">σ² = Σ(xᵢ - μ)² / N</div>
+        <div class="grid">
+          <p>Variance records the average squared distance from the center.</p>
+          <svg viewBox="0 0 700 520">
+            <path class="axis" d="M60 450H660M60 450V40" />
+            <rect class="bar" x="100" y="360" width="70" height="90" />
+            <rect class="bar" x="190" y="270" width="70" height="180" />
+            <rect class="bar" x="280" y="120" width="70" height="330" />
+            <rect class="bar" x="370" y="170" width="70" height="280" />
+            <rect class="bar" x="460" y="310" width="70" height="140" />
+            <rect class="bar" x="550" y="390" width="70" height="60" />
+          </svg>
+        </div>
+      </section>
+      <section id="math-05" class="clip" data-start="120" data-duration="30" data-track-index="1">
+        <div class="header">
+          <h1>Exponential response</h1>
+          <span class="number">05 / 10</span>
+        </div>
+        <div class="formula">P(t) = P₀eʳᵗ</div>
+        <div class="grid">
+          <p>A constant proportional rate produces compounding growth or decay.</p>
+          <svg viewBox="0 0 700 520">
+            <path class="axis" d="M60 450H660M60 450V40" />
+            <path class="line" d="M70 430 C330 420 480 330 640 50" />
+          </svg>
+        </div>
+      </section>
+      <section id="math-06" class="clip" data-start="150" data-duration="30" data-track-index="1">
+        <div class="header">
+          <h1>Conditional probability</h1>
+          <span class="number">06 / 10</span>
+        </div>
+        <div class="formula">P(A|B) = P(A ∩ B) / P(B)</div>
+        <div class="grid">
+          <ul>
+            <li>Restrict the sample space to B.</li>
+            <li>Measure the overlap with A.</li>
+            <li>Divide overlap by the restricted total.</li>
+          </ul>
+          <svg viewBox="0 0 700 520">
+            <circle cx="280" cy="260" r="170" fill="#4ca7a0" fill-opacity=".65" />
+            <circle cx="430" cy="260" r="170" fill="#e15c45" fill-opacity=".65" />
+          </svg>
+        </div>
+      </section>
+      <section id="math-07" class="clip" data-start="180" data-duration="30" data-track-index="1">
+        <div class="header">
+          <h1>Confidence interval</h1>
+          <span class="number">07 / 10</span>
+        </div>
+        <div class="formula">x̄ ± z* · σ / √n</div>
+        <div class="grid">
+          <p>Larger samples narrow uncertainty when spread and confidence level remain fixed.</p>
+          <svg viewBox="0 0 700 520">
+            <path class="axis" d="M60 260H660" />
+            <path class="line" d="M90 260H620" />
+            <path class="axis" d="M160 220V300M550 220V300" />
+            <circle cx="355" cy="260" r="18" fill="#f4cf62" />
+          </svg>
+        </div>
+      </section>
+      <section id="math-08" class="clip" data-start="210" data-duration="30" data-track-index="1">
+        <div class="header">
+          <h1>Optimization</h1>
+          <span class="number">08 / 10</span>
+        </div>
+        <div class="formula">arg minₓ L(x)</div>
+        <div class="grid">
+          <p>The optimum is the input where the loss surface reaches its lowest feasible value.</p>
+          <svg viewBox="0 0 700 520">
+            <path class="axis" d="M60 450H660M60 450V40" />
+            <path class="line" d="M80 80 Q350 760 640 90" />
+            <circle cx="355" cy="418" r="18" fill="#f4cf62" />
+          </svg>
+        </div>
+      </section>
+      <section id="math-09" class="clip" data-start="240" data-duration="30" data-track-index="1">
+        <div class="header">
+          <h1>Compare scenarios</h1>
+          <span class="number">09 / 10</span>
+        </div>
+        <div class="formula">Δ = outcome₁ - outcome₀</div>
+        <div class="grid">
+          <p>Keep assumptions visible when comparing a baseline against a proposed intervention.</p>
+          <svg viewBox="0 0 700 520">
+            <path class="axis" d="M60 450H660M60 450V40" />
+            <rect class="bar" x="170" y="190" width="150" height="260" />
+            <rect x="390" y="90" width="150" height="360" fill="#e15c45" />
+          </svg>
+        </div>
+      </section>
+      <section id="math-10" class="clip" data-start="270" data-duration="30" data-track-index="1">
+        <div class="header">
+          <h1>Model, test, revise</h1>
+          <span class="number">10 / 10</span>
+        </div>
+        <div class="formula">eₜ = observedₜ - predictedₜ</div>
+        <div class="grid">
+          <ul>
+            <li>Fit a transparent model.</li>
+            <li>Inspect residual structure.</li>
+            <li>Revise only with new evidence.</li>
+          </ul>
+          <svg viewBox="0 0 700 520">
+            <path class="axis" d="M60 450H660M60 450V40" />
+            <path class="line" d="M80 350L180 260L280 300L380 150L480 190L620 70" />
+          </svg>
+        </div>
+      </section>
+    </div>
+    <script src="assets/vendor/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      for (let i = 1; i <= 10; i += 1) {
+        const at = (i - 1) * 30;
+        const id = `#math-${String(i).padStart(2, '0')}`;
+        tl.fromTo(
+          `${id} .formula`,
+          { x: -42, opacity: 0 },
+          { x: 0, opacity: 1, duration: 0.9, ease: 'power2.out' },
+          at + 0.3,
+        );
+        tl.fromTo(
+          `${id} svg, ${id} table`,
+          { opacity: 0 },
+          { opacity: 1, duration: 0.8 },
+          at + 0.7,
+        );
+      }
+      tl.set({}, {}, 300);
+      window.__timelines['formula-charts'] = tl;
+    </script>
+  </body>
+</html>

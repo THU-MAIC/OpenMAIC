@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Interactive WebGL lesson benchmark</title>
+    <style>
+      @font-face {
+        font-family: 'EB Garamond';
+        src: url('assets/fonts/eb-garamond-400.woff2') format('woff2');
+        font-weight: 400;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: 'EB Garamond';
+        src: url('assets/fonts/eb-garamond-700.woff2') format('woff2');
+        font-weight: 700;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: Inter;
+        src: url('assets/fonts/inter-400.woff2') format('woff2');
+        font-weight: 400;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: Inter;
+        src: url('assets/fonts/inter-700.woff2') format('woff2');
+        font-weight: 700;
+        font-style: normal;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: #080d10;
+        color: #f5f1e7;
+        font-family: 'EB Garamond', serif;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      #simulation {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      .phase {
+        position: absolute;
+        top: 74px;
+        left: 82px;
+        width: 720px;
+        padding: 34px 40px;
+        background: rgba(8, 13, 16, 0.84);
+        border-top: 8px solid #e0b84d;
+        z-index: 2;
+      }
+      h1 {
+        margin: 0 0 16px;
+        font-size: 50px;
+        letter-spacing: 0;
+      }
+      p {
+        margin: 0;
+        font:
+          25px/1.45 Inter,
+          sans-serif;
+        color: #d7e0df;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="webgl-lab"
+      data-start="0"
+      data-duration="1200"
+      data-width="1920"
+      data-height="1080"
+      data-render-mode="screenshot"
+    >
+      <canvas id="simulation" width="1920" height="1080"></canvas>
+      <section
+        id="phase-01"
+        class="clip phase"
+        data-start="0"
+        data-duration="150"
+        data-track-index="1"
+      >
+        <h1>Initialize the field</h1>
+        <p>A deterministic shader maps absolute timeline time to color and position.</p>
+      </section>
+      <section
+        id="phase-02"
+        class="clip phase"
+        data-start="150"
+        data-duration="150"
+        data-track-index="1"
+      >
+        <h1>Vary spatial frequency</h1>
+        <p>Observe how small changes in frequency alter the visible interference pattern.</p>
+      </section>
+      <section
+        id="phase-03"
+        class="clip phase"
+        data-start="300"
+        data-duration="150"
+        data-track-index="1"
+      >
+        <h1>Introduce a second wave</h1>
+        <p>Two coherent signals combine constructively and destructively.</p>
+      </section>
+      <section
+        id="phase-04"
+        class="clip phase"
+        data-start="450"
+        data-duration="150"
+        data-track-index="1"
+      >
+        <h1>Move the observation point</h1>
+        <p>The animation remains seek-safe because no frame depends on a previous frame.</p>
+      </section>
+      <section
+        id="phase-05"
+        class="clip phase"
+        data-start="600"
+        data-duration="150"
+        data-track-index="1"
+      >
+        <h1>Inspect symmetry</h1>
+        <p>Radial and directional terms expose different spatial invariants.</p>
+      </section>
+      <section
+        id="phase-06"
+        class="clip phase"
+        data-start="750"
+        data-duration="150"
+        data-track-index="1"
+      >
+        <h1>Increase contrast</h1>
+        <p>A bounded nonlinear mapping reveals low-amplitude structure.</p>
+      </section>
+      <section
+        id="phase-07"
+        class="clip phase"
+        data-start="900"
+        data-duration="150"
+        data-track-index="1"
+      >
+        <h1>Test arbitrary seeks</h1>
+        <p>The same timestamp always produces the same pixels.</p>
+      </section>
+      <section
+        id="phase-08"
+        class="clip phase"
+        data-start="1050"
+        data-duration="150"
+        data-track-index="1"
+      >
+        <h1>Summarize the simulation</h1>
+        <p>Correctness combines deterministic state, visible output, and stable timing.</p>
+      </section>
+    </div>
+    <script src="assets/vendor/gsap.min.js"></script>
+    <script>
+      const canvas = document.getElementById('simulation');
+      const gl = canvas.getContext('webgl', { antialias: false, preserveDrawingBuffer: true });
+      if (!gl) throw new Error('WebGL is required for this benchmark case');
+      const vertex = gl.createShader(gl.VERTEX_SHADER);
+      gl.shaderSource(vertex, 'attribute vec2 p; void main(){gl_Position=vec4(p,0.0,1.0);}');
+      gl.compileShader(vertex);
+      const fragment = gl.createShader(gl.FRAGMENT_SHADER);
+      gl.shaderSource(
+        fragment,
+        'precision highp float; uniform vec2 r; uniform float t; void main(){vec2 uv=(gl_FragCoord.xy-.5*r)/r.y; float d=length(uv); float a=sin(18.0*d-2.1*t); float b=cos(11.0*(uv.x-uv.y)+1.3*t); float v=.5+.5*sin(2.4*a+1.8*b); vec3 c=mix(vec3(.02,.12,.16),vec3(.92,.54,.20),v); c+=.14*cos(vec3(0.0,2.0,4.0)+d*12.0-t*.4); gl_FragColor=vec4(c,1.0);}',
+      );
+      gl.compileShader(fragment);
+      const program = gl.createProgram();
+      gl.attachShader(program, vertex);
+      gl.attachShader(program, fragment);
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+        gl.STATIC_DRAW,
+      );
+      const position = gl.getAttribLocation(program, 'p');
+      gl.enableVertexAttribArray(position);
+      gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+      const resolution = gl.getUniformLocation(program, 'r');
+      const time = gl.getUniformLocation(program, 't');
+      gl.uniform2f(resolution, canvas.width, canvas.height);
+      const state = { time: 0 };
+      function draw() {
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.uniform1f(time, state.time);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.finish();
+      }
+      draw();
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.to(state, { time: 120, duration: 1200, ease: 'none', onUpdate: draw }, 0);
+      window.__timelines['webgl-lab'] = tl;
+    </script>
+  </body>
+</html>

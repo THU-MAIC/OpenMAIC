@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "image-gallery-10m",
+  "category": "image-heavy",
+  "durationSeconds": 600,
+  "sceneCount": 20,
+  "complexity": "high",
+  "construction": "manually-constructed-and-selected"
+}

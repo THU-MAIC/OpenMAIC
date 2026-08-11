@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "formula-charts-5m",
+  "category": "formula-chart-heavy",
+  "durationSeconds": 300,
+  "sceneCount": 10,
+  "complexity": "medium",
+  "construction": "manually-constructed-and-selected"
+}

@@ -17,6 +17,7 @@ packages/docs/
 # Build output
 .next/
 out/
+render-service/benchmark/results/
 
 # Generated files
 *.min.js
