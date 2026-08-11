@@ -204,16 +204,19 @@ async function inlineParsedCssUrls(
 ): Promise<{ failed: { url: string; reason: string }[]; inlined: string[] }> {
   const failed: { url: string; reason: string }[] = [];
   const inlined: string[] = [];
-  const refsByUrl = new Map<string, Set<string>>();
+  const refsByUrl = new Map<string, Map<string, string>>();
   root.walkDecls((declaration) => {
     for (const ref of cssUrlReferences(declaration.value)) {
       const raw = ref.raw.trim();
       if (/^(?:data:|blob:|about:|#)/i.test(raw) || dropRefs.has(raw)) continue;
       try {
-        const abs = new URL(raw, cssUrl).href;
-        const raws = refsByUrl.get(abs) ?? new Set<string>();
-        raws.add(raw);
-        refsByUrl.set(abs, raws);
+        const resolved = new URL(raw, cssUrl);
+        const fragment = resolved.hash;
+        resolved.hash = '';
+        const fetchUrl = resolved.href;
+        const raws = refsByUrl.get(fetchUrl) ?? new Map<string, string>();
+        raws.set(raw, fragment);
+        refsByUrl.set(fetchUrl, raws);
       } catch {
         // Leave unresolvable values untouched for strict residual validation.
       }
@@ -221,13 +224,14 @@ async function inlineParsedCssUrls(
   });
 
   const replacements = new Map<string, string>();
-  await mapWithConcurrency([...refsByUrl.entries()], 8, async ([abs, raws]) => {
-    const got = await fetchAsset(abs);
+  await mapWithConcurrency([...refsByUrl.entries()], 8, async ([fetchUrl, raws]) => {
+    const got = await fetchAsset(fetchUrl);
     if (got) {
-      for (const raw of raws) replacements.set(raw, toDataUri(got.bytes, got.contentType));
-      inlined.push(abs);
+      const dataUri = toDataUri(got.bytes, got.contentType);
+      for (const [raw, fragment] of raws) replacements.set(raw, dataUri + fragment);
+      inlined.push(fetchUrl);
     } else {
-      failed.push({ url: abs, reason: 'fetch failed' });
+      failed.push({ url: fetchUrl, reason: 'fetch failed' });
     }
   });
 
@@ -332,6 +336,23 @@ async function inlineStyleAttributeUrls(
   };
 }
 
+async function inlineSvgPresentationAttributeUrls(
+  attributeName: string,
+  cssValue: string,
+  fetchAsset: FetchAsset,
+): Promise<{ cssValue: string; failed: { url: string; reason: string }[]; inlined: string[] }> {
+  const root = parseCss(
+    `.openmaic-svg{${attributeName}:${cssValue}}`,
+    'svg-presentation-attribute',
+  );
+  let declarationValue = cssValue;
+  const result = await inlineParsedCssUrls(root, 'about:blank', fetchAsset, new Set());
+  root.walkDecls((declaration) => {
+    if (declaration.prop === attributeName) declarationValue = declaration.value;
+  });
+  return { cssValue: declarationValue, ...result };
+}
+
 // ---------------------------------------------------------------------------
 // inlineHtmlAssets — Task 4
 // ---------------------------------------------------------------------------
@@ -364,7 +385,7 @@ async function inlineImportmaps(
   const patches: SourcePatch[] = [];
   for (const importmap of inventory.importmaps) {
     if (!importmap.contentRange) continue;
-    let parsed: { imports?: Record<string, string> };
+    let parsed: { imports?: Record<string, string>; [key: string]: unknown };
     try {
       parsed = JSON.parse(importmap.content);
     } catch {
@@ -387,7 +408,7 @@ async function inlineImportmaps(
     const merged: Record<string, string> = keepFallbacks ? { ...orig, ...inlined } : inlined;
     patches.push({
       range: importmap.contentRange,
-      replacement: JSON.stringify({ imports: merged }),
+      replacement: JSON.stringify({ ...parsed, imports: merged }),
     });
   }
   return applySourcePatches(html, patches);
@@ -426,6 +447,31 @@ function unresolvedAssetUrls(html: string): string[] {
   return [...unresolved];
 }
 
+/**
+ * Scoped maps are intentionally rejected until module referrer URLs can be
+ * preserved through data-URI packaging; silently flattening them changes which
+ * dependency wins for modules under each scope.
+ */
+function unsupportedImportmapFeatures(html: string): string[] {
+  for (const importmap of analyzeHtmlAssetInventory(html).importmaps) {
+    try {
+      const parsed = JSON.parse(importmap.content) as { scopes?: unknown };
+      if (
+        parsed.scopes !== undefined &&
+        (typeof parsed.scopes !== 'object' ||
+          parsed.scopes === null ||
+          Array.isArray(parsed.scopes) ||
+          Object.keys(parsed.scopes).length > 0)
+      ) {
+        return ['unsupported-importmap-scopes'];
+      }
+    } catch {
+      // Malformed import maps are reported by residual validation.
+    }
+  }
+  return [];
+}
+
 /** Rewrite direct URL/relative module dependencies to data URIs for offline use. */
 async function inlineModuleSource(
   code: string,
@@ -452,6 +498,8 @@ export async function inlineHtmlAssets(
 ): Promise<{ html: string; report: InlineReport; unresolved: string[] }> {
   const fetchAsset = options?.fetcher ?? createAssetFetcher(options);
   const report: InlineReport = { inlined: [], failed: [] };
+  const unsupported = unsupportedImportmapFeatures(html);
+  if (unsupported.length > 0) return { html, report, unresolved: unsupported };
 
   // Pre-warm non-importmap asset fetches in parallel so the sequential
   // structured rewrite phases hit a warm cache (fonts are parallelized inside
@@ -462,12 +510,15 @@ export async function inlineHtmlAssets(
         (ref) =>
           ref.kind !== 'importmap' &&
           ref.kind !== 'iframe-src' &&
+          ref.kind !== 'iframe-srcdoc' &&
           ref.kind !== 'object-data' &&
           ref.kind !== 'embed-src',
       )
       .map((ref) => {
         const url =
-          ref.kind === 'svg-image' || ref.kind === 'svg-use' ? ref.url.split('#')[0] : ref.url;
+          ref.kind === 'svg-image' || ref.kind === 'svg-use' || ref.kind === 'css-url'
+            ? ref.url.split('#')[0]
+            : ref.url;
         return fetchAsset(url).catch(() => null);
       }),
   );
@@ -644,6 +695,29 @@ export async function inlineHtmlAssets(
       for (const f of cssFailed) markFailed(f.url, f.reason);
       for (const inlined of cssInlined) markInlined(inlined);
       const patch = replaceAttributeRangePatch('style', style.range, rewritten);
+      if (patch) patches.push(patch);
+    }
+    out = applySourcePatches(out, patches);
+  }
+
+  // 8) url() inside SVG presentation attributes.
+  {
+    const patches: SourcePatch[] = [];
+    for (const attribute of analyzeHtmlAssetInventory(out).svgPresentationAttributes) {
+      if (!attribute.range) continue;
+      const {
+        cssValue,
+        failed: cssFailed,
+        inlined: cssInlined,
+      } = await inlineSvgPresentationAttributeUrls(
+        attribute.attributeName,
+        attribute.cssValue,
+        fetchAsset,
+      );
+      for (const failure of cssFailed) markFailed(failure.url, failure.reason);
+      for (const inlined of cssInlined) markInlined(inlined);
+      if (cssValue === attribute.cssValue) continue;
+      const patch = replaceAttributeRangePatch(attribute.attributeName, attribute.range, cssValue);
       if (patch) patches.push(patch);
     }
     out = applySourcePatches(out, patches);

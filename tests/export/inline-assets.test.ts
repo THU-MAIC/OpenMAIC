@@ -344,6 +344,28 @@ describe('inlineCssUrls', () => {
     expect(failed).toEqual([]);
   });
 
+  it('preserves external SVG fragments while fetching only the resource URL', async () => {
+    const calls: string[] = [];
+    const { css: out, failed } = await inlineCssUrls(
+      'svg{filter:url(https://cdn.test/filters.svg#blur)}',
+      'about:blank',
+      async (url) => {
+        calls.push(url);
+        return url === 'https://cdn.test/filters.svg'
+          ? {
+              bytes: new TextEncoder().encode('<svg><filter id="blur" /></svg>'),
+              contentType: 'image/svg+xml',
+            }
+          : null;
+      },
+    );
+
+    expect(calls).toEqual(['https://cdn.test/filters.svg']);
+    expect(out).toContain('url(data:image/svg+xml;base64,');
+    expect(out).toContain('#blur)');
+    expect(failed).toEqual([]);
+  });
+
   it('ignores url-like text in CSS comments and quoted strings', async () => {
     const realUrl = 'https://cdn.test/real.png';
     const stringUrl = 'https://cdn.test/string.png';
@@ -435,6 +457,26 @@ describe('inlineCssUrls', () => {
 });
 
 describe('inlineHtmlAssets — importmap integration', () => {
+  it('preserves supported top-level import-map fields while rewriting imports', async () => {
+    const html =
+      '<script type="importmap">' +
+      '{"imports":{"dep":"https://cdn.test/dep.js"},"scopes":{},"integrity":{"https://cdn.test/dep.js":"sha384-example"}}' +
+      '</script><script type="module">import "dep";</script>';
+    const { html: out } = await inlineHtmlAssets(html, {
+      fetcher: async (url) =>
+        url === 'https://cdn.test/dep.js'
+          ? {
+              bytes: new TextEncoder().encode('export const value = 42;'),
+              contentType: 'text/javascript',
+            }
+          : null,
+    });
+
+    expect(out).toContain('"dep":"data:text/javascript;base64,');
+    expect(out).toContain('"scopes":{}');
+    expect(out).toContain('"integrity":{"https://cdn.test/dep.js":"sha384-example"}');
+  });
+
   it('inlines three + three/addons via importmap and retains the prefix as fallback', async () => {
     const base = 'https://unpkg.com/three@0.160.0/examples/jsm/';
     const fetchImpl = (async (url: string) => {
@@ -615,6 +657,29 @@ describe('inlineHtmlAssets', () => {
     expect(out).toContain('background:url(data:image/png;base64,');
     expect(out).toContain('filter:url(#blur)');
     expect(report.failed).toEqual([]);
+  });
+
+  it('inlines URL-valued SVG presentation attributes and preserves fragments', async () => {
+    const url = 'https://cdn.test/paint.svg';
+    const { html: out, unresolved } = await inlineHtmlAssets(
+      `<svg><rect fill="url(${url}#pattern)" filter="url(${url}#blur)" /></svg>`,
+      {
+        fetcher: async (requested) =>
+          requested === url
+            ? {
+                bytes: new TextEncoder().encode('<svg></svg>'),
+                contentType: 'image/svg+xml',
+              }
+            : null,
+      },
+    );
+
+    expect(out).toContain('fill="url(data:image/svg+xml;base64,');
+    expect(out).toContain('#pattern)"');
+    expect(out).toContain('filter="url(data:image/svg+xml;base64,');
+    expect(out).toContain('#blur)"');
+    expect(out).not.toContain(url);
+    expect(unresolved).toEqual([]);
   });
 
   it('inlines every responsive image candidate and preserves its descriptor', async () => {

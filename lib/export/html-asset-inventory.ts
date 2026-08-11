@@ -10,6 +10,7 @@ export type AssetRefKind =
   | 'srcset'
   | 'poster'
   | 'iframe-src'
+  | 'iframe-srcdoc'
   | 'object-data'
   | 'embed-src'
   | 'source'
@@ -60,6 +61,11 @@ export interface HtmlAssetInventory {
   importmaps: HtmlTextElement[];
   styles: HtmlTextElement[];
   styleAttributes: Array<{ css: string; range?: SourceRange }>;
+  svgPresentationAttributes: Array<{
+    attributeName: string;
+    cssValue: string;
+    range?: SourceRange;
+  }>;
 }
 
 export function applySourcePatches(html: string, patches: readonly SourcePatch[]): string {
@@ -102,6 +108,18 @@ export function replaceAttributeRangePatch(
 }
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+const SVG_URL_PRESENTATION_ATTRIBUTES = new Set([
+  'clip-path',
+  'cursor',
+  'fill',
+  'filter',
+  'marker',
+  'marker-end',
+  'marker-mid',
+  'marker-start',
+  'mask',
+  'stroke',
+]);
 
 function isElement(
   node: DefaultTreeAdapterTypes.ChildNode,
@@ -161,6 +179,7 @@ export function analyzeHtmlAssetInventory(html: string): HtmlAssetInventory {
     importmaps: [],
     styles: [],
     styleAttributes: [],
+    svgPresentationAttributes: [],
   };
   const document = parse(html, { sourceCodeLocationInfo: true });
 
@@ -199,7 +218,10 @@ export function analyzeHtmlAssetInventory(html: string): HtmlAssetInventory {
       addAttribute('poster', 'poster');
     }
     if (element.tagName === 'audio') addAttribute('audio', 'src');
-    if (element.tagName === 'iframe') addAttribute('iframe-src', 'src');
+    if (element.tagName === 'iframe') {
+      addAttribute('iframe-src', 'src');
+      addAttribute('iframe-srcdoc', 'srcdoc');
+    }
     if (element.tagName === 'object') addAttribute('object-data', 'data');
     if (element.tagName === 'embed') addAttribute('embed-src', 'src');
     if (element.namespaceURI === SVG_NAMESPACE && element.tagName === 'image') {
@@ -215,6 +237,16 @@ export function analyzeHtmlAssetInventory(html: string): HtmlAssetInventory {
         css: styleAttribute.value,
         range: attributeRange(element, styleAttribute),
       });
+    }
+    if (element.namespaceURI === SVG_NAMESPACE) {
+      for (const attribute of element.attrs) {
+        if (!SVG_URL_PRESENTATION_ATTRIBUTES.has(attribute.name)) continue;
+        inventory.svgPresentationAttributes.push({
+          attributeName: attribute.name,
+          cssValue: attribute.value,
+          range: attributeRange(element, attribute),
+        });
+      }
     }
 
     const text = textElement(html, element);
@@ -240,6 +272,10 @@ export function collectAssetRefs(
   const inventory = analyzeHtmlAssetInventory(html);
   const refs: AssetRef[] = [];
   const pushUrl = (kind: AssetRefKind, url: string) => {
+    if (kind === 'iframe-srcdoc') {
+      refs.push({ kind, url: 'iframe[srcdoc]' });
+      return;
+    }
     const value = url.trim();
     if (!value) return;
     if (/^(?:data:|blob:)/i.test(value)) {
@@ -266,6 +302,14 @@ export function collectAssetRefs(
   }
   for (const style of inventory.styleAttributes) {
     for (const ref of collectCssAssetReferences(style.css, 'declaration-list')) {
+      pushUrl(ref.kind, ref.url);
+    }
+  }
+  for (const attribute of inventory.svgPresentationAttributes) {
+    for (const ref of collectCssAssetReferences(
+      `${attribute.attributeName}:${attribute.cssValue}`,
+      'declaration-list',
+    )) {
       pushUrl(ref.kind, ref.url);
     }
   }

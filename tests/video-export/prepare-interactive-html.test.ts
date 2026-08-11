@@ -114,6 +114,33 @@ describe('prepareInteractiveHtmlScenes', () => {
     expect(prepared.content('interactive:widget')).toContain('"dep":"data:text/javascript;base64,');
   });
 
+  it('explicitly rejects scoped import maps instead of changing their semantics', async () => {
+    const authored =
+      '<script type="importmap">' +
+      '{"imports":{},"scopes":{"https://app.test/":{"dep":"https://cdn.test/dep.js"}}}' +
+      '</script><script type="module" src="https://app.test/main.js"></script>';
+    const calls: string[] = [];
+    const prepared = await prepareInteractiveHtmlScenes([scene(authored)], {
+      fetcher: async (url) => {
+        calls.push(url);
+        return url === 'https://app.test/main.js'
+          ? {
+              bytes: new TextEncoder().encode('import { value } from "dep";'),
+              contentType: 'text/javascript',
+            }
+          : null;
+      },
+    });
+
+    expect(prepared.html(scene())).toMatchObject({
+      present: false,
+      failure: 'unresolved-resource',
+      message: expect.stringContaining('unsupported-importmap-scopes'),
+    });
+    expect(prepared.content('interactive:widget')).toBeUndefined();
+    expect(calls).toEqual([]);
+  });
+
   it('rejects unresolved remote or relative resources with an explicit failure', async () => {
     const remote = await prepareInteractiveHtmlScenes(
       [scene('<img src="https://cdn.test/missing.png">')],
@@ -162,6 +189,7 @@ describe('prepareInteractiveHtmlScenes', () => {
       '<iframe src="data:text/html,%3Cp%3Eframe%3C/p%3E"></iframe>',
       '<object data="data:image/svg+xml,%3Csvg%3E%3C/svg%3E"></object>',
       '<embed src="blob:https://embed.test/plugin-id">',
+      '<iframe srcdoc="<script>setInterval(function(){}, 10)<\/script>"></iframe>',
     ]) {
       const prepared = await prepareInteractiveHtmlScenes([scene(embedded)], {
         fetcher: async () => null,
@@ -169,7 +197,7 @@ describe('prepareInteractiveHtmlScenes', () => {
       expect(prepared.html(scene())).toMatchObject({
         present: false,
         failure: 'unresolved-resource',
-        message: expect.stringMatching(/(?:https?|data|blob):/),
+        message: expect.stringMatching(/(?:https?|data|blob):|iframe\[srcdoc\]/),
       });
     }
   });
