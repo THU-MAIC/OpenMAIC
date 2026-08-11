@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compileVideoTimeline, VideoTimelineSchema } from '@/lib/video-export';
-import { NO_ASSETS, NO_PROBE, interactive, stubInteractiveHtml } from './helpers';
+import { NO_ASSETS, NO_PROBE, interactive, speech, stubInteractiveHtml } from './helpers';
+import { quizScrollScene } from './quiz-scroll-fixture';
 
 describe('compileVideoTimeline — static interactive HTML', () => {
   it('promotes prepared HTML to a supported base and plans its asset', () => {
@@ -93,5 +94,61 @@ describe('compileVideoTimeline — static interactive HTML', () => {
     expect(ir.diagnostics).toContainEqual(
       expect.objectContaining({ code: 'unresolved-interactive-resource', sceneId: 'remote' }),
     );
+  });
+
+  it('keeps static interactive first-class while a preceding Quiz shifts all later timing', () => {
+    const quiz = quizScrollScene(0);
+    const widget = interactive(
+      'widget-after-quiz',
+      '<!doctype html><h1>Widget after Quiz</h1>',
+      [speech('widget-narration', 'The interactive scene follows the extended Quiz.')],
+      1,
+    );
+    const interactiveSource = stubInteractiveHtml({
+      'widget-after-quiz': {
+        id: 'interactive:widget-after-quiz',
+        present: true,
+        contentHash: 'b'.repeat(64),
+      },
+    });
+    const baseline = compileVideoTimeline(
+      { stage: { id: 'stage', name: 'Integrated export' }, scenes: [quiz, widget] },
+      { timing: NO_PROBE, assets: NO_ASSETS, interactive: interactiveSource },
+    );
+    const ir = compileVideoTimeline(
+      { stage: { id: 'stage', name: 'Integrated export' }, scenes: [quiz, widget] },
+      {
+        timing: NO_PROBE,
+        assets: NO_ASSETS,
+        interactive: interactiveSource,
+        quizLayout: {
+          measureQuestionList: () => ({
+            contentHeightPx: 1_200,
+            viewportHeightPx: 480,
+            frameHeightPx: 720,
+          }),
+        },
+      },
+    );
+    const list = ir.scenes[0].visuals.find((visual) => visual.kind === 'quiz-question-list');
+    if (!list || list.kind !== 'quiz-question-list') throw new Error('Quiz list not planned');
+
+    expect(ir.version).toBe(4);
+    expect(() => VideoTimelineSchema.parse(ir)).not.toThrow();
+    expect(ir.scenes[1]).toMatchObject({
+      startMs: baseline.scenes[1].startMs + list.durationMs,
+      supported: true,
+      base: {
+        kind: 'interactive-html',
+        assetRef: 'interactive/002-widget-after-quiz.html',
+      },
+    });
+    expect(ir.scenes[1].narration[0].startMs).toBe(
+      baseline.scenes[1].narration[0].startMs + list.durationMs,
+    );
+    expect(ir.subtitles.find((cue) => cue.sceneId === widget.id)?.startMs).toBe(
+      baseline.subtitles.find((cue) => cue.sceneId === widget.id)!.startMs + list.durationMs,
+    );
+    expect(ir.totalDurationMs).toBe(baseline.totalDurationMs + list.durationMs);
   });
 });

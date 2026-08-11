@@ -72,37 +72,61 @@ export function createQuizQuestionListMeasurementSurface(
  */
 export async function measureQuizQuestionList(
   input: QuizQuestionListMeasurementSurface,
+  timeoutMs = 5_000,
 ): Promise<QuizLayoutMeasurement | null> {
   const host = document.createElement('div');
-  host.setAttribute('aria-hidden', 'true');
-  Object.assign(host.style, {
-    position: 'fixed',
-    left: '-100000px',
-    top: '0',
-    width: `${input.width}px`,
-    height: `${input.height}px`,
-    visibility: 'hidden',
-    pointerEvents: 'none',
-    overflow: 'hidden',
+  let active = true;
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const budgetMs = Number.isFinite(timeoutMs) ? Math.max(0, timeoutMs) : 5_000;
+  const deadline = new Promise<boolean>((resolve) => {
+    deadlineTimer = setTimeout(() => {
+      active = false;
+      resolve(false);
+    }, budgetMs);
   });
-  const style = document.createElement('style');
-  style.textContent = [
-    input.css,
-    `#quiz-layout-measurement, #quiz-layout-measurement * { box-sizing:border-box; }`,
-    `#quiz-layout-measurement { position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden; }`,
-  ].join('\n');
-  host.id = 'quiz-layout-measurement';
-  host.className = 'cover-card quiz-question-list';
-  host.append(style);
-  host.insertAdjacentHTML('beforeend', input.html);
-  document.body.append(host);
+  const waitBeforeDeadline = (work: PromiseLike<unknown>): Promise<boolean> =>
+    Promise.race([
+      Promise.resolve(work).then(
+        () => active,
+        () => false,
+      ),
+      deadline,
+    ]);
 
   try {
-    await document.fonts?.ready;
+    host.setAttribute('aria-hidden', 'true');
+    Object.assign(host.style, {
+      position: 'fixed',
+      left: '-100000px',
+      top: '0',
+      width: `${input.width}px`,
+      height: `${input.height}px`,
+      visibility: 'hidden',
+      pointerEvents: 'none',
+      overflow: 'hidden',
+    });
+    const style = document.createElement('style');
+    style.textContent = [
+      input.css,
+      `#quiz-layout-measurement, #quiz-layout-measurement * { box-sizing:border-box; }`,
+      `#quiz-layout-measurement { position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden; }`,
+    ].join('\n');
+    host.id = 'quiz-layout-measurement';
+    host.className = 'cover-card quiz-question-list';
+    host.append(style);
+    host.insertAdjacentHTML('beforeend', input.html);
+    document.body.append(host);
+
+    if (!(await waitBeforeDeadline(document.fonts?.ready ?? Promise.resolve()))) return null;
     let previous: QuizLayoutMeasurement | null = null;
     let stableReads = 0;
     for (let attempt = 0; attempt < 8; attempt += 1) {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const frame = new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          if (active) resolve();
+        });
+      });
+      if (!(await waitBeforeDeadline(frame))) return null;
       const viewport = host.querySelector<HTMLElement>('.quiz-list-viewport');
       const content = host.querySelector<HTMLElement>('.quiz-list-content');
       if (!viewport || !content) return null;
@@ -125,7 +149,11 @@ export async function measureQuizQuestionList(
       previous = current;
     }
     return null;
+  } catch {
+    return null;
   } finally {
+    active = false;
+    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
     host.remove();
   }
 }

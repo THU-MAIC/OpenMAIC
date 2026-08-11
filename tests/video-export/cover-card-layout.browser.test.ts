@@ -875,6 +875,75 @@ describe('Quiz/PBL cover cards in a real browser', () => {
     );
   }
 
+  for (const blockedStep of ['fonts', 'animation-frame'] as const) {
+    check(`bounds Quiz measurement when ${blockedStep} never settles`, async (page) => {
+      const frame = QUIZ_LIST_FRAMES['720p'];
+      const fixture = quizScrollScene();
+      const surface = createQuizQuestionListMeasurementSurface({
+        content: {
+          title: fixture.title,
+          questions: prepareQuizQuestionList(fixture),
+        },
+        width: frame.width,
+        height: frame.height,
+        locale: 'en-US',
+        labels: getVideoExportCoverLabels('en-US'),
+      });
+      await page.setViewportSize(frame);
+      await page.goto(HARNESS_URL, { waitUntil: 'load' });
+
+      const result = await page.evaluate(
+        async ({ source, input, blocked }) => {
+          const measure = (0, eval)(`(${source})`) as (
+            value: typeof input,
+            timeoutMs?: number,
+          ) => Promise<unknown>;
+          const originalRaf = window.requestAnimationFrame;
+          if (blocked === 'fonts') {
+            Object.defineProperty(document, 'fonts', {
+              configurable: true,
+              value: { ready: new Promise<void>(() => {}) },
+            });
+          } else {
+            window.requestAnimationFrame = () => 0;
+          }
+
+          const outcome = await Promise.race([
+            measure(input, 40).then((value) => ({ settled: true, value })),
+            new Promise<{ settled: false; value: null }>((resolve) =>
+              setTimeout(() => resolve({ settled: false, value: null }), 250),
+            ),
+          ]);
+          const remainingHosts = document.querySelectorAll('#quiz-layout-measurement').length;
+
+          window.requestAnimationFrame = originalRaf;
+          if (blocked === 'fonts') {
+            delete (document as unknown as { fonts?: FontFaceSet }).fonts;
+          }
+          document.querySelector('#quiz-layout-measurement')?.remove();
+          return { ...outcome, remainingHosts };
+        },
+        { source: measureQuizQuestionList.toString(), input: surface, blocked: blockedStep },
+      );
+
+      expect(result).toEqual({ settled: true, value: null, remainingHosts: 0 });
+      const degraded = compileVideoTimeline(
+        { stage: { id: 'stage', name: 'deadline fallback' }, scenes: [fixture] },
+        {
+          timing: NO_PROBE,
+          assets: NO_ASSETS,
+          quizLayout: { measureQuestionList: () => result.value as null },
+        },
+      );
+      expect(degraded.scenes[0].visuals).not.toContainEqual(
+        expect.objectContaining({ kind: 'quiz-question-list' }),
+      );
+      expect(degraded.diagnostics).toContainEqual(
+        expect.objectContaining({ code: 'quiz-layout-unavailable', sceneId: fixture.id }),
+      );
+    });
+  }
+
   check('runs the production Quiz measurer and emitted timeline end to end', async (page) => {
     const frame = QUIZ_LIST_FRAMES['720p'];
     const initial = quizListHtml(frame, LONG_QUIZ_QUESTIONS, {
