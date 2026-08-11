@@ -97,7 +97,13 @@ describe('document RAG chunking', () => {
     const chunks = chunkDocumentArtifact(
       {
         metadata: {},
-        blocks: [{ id: 'html-breaks', type: 'layout', html: '<p>First<br>Second<br/>Third</p>' }],
+        blocks: [
+          {
+            id: 'html-breaks',
+            type: 'layout',
+            html: '<p>First<br data-note="a > b">Second<BR class=\'x > y\'/>Third</p>',
+          },
+        ],
         assets: [],
       },
       resource(),

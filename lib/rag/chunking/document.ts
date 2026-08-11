@@ -26,7 +26,7 @@ export type ResolvedDocumentChunkPolicy = {
   readonly version: string;
 };
 
-const HTML_LINE_BREAK_PATTERN = /<br\b[^>]*\/?>/gi;
+const HTML_LINE_BREAK_PATTERN = /<br\b(?:[^"'<>]|"[^"]*"|'[^']*')*\/?\s*>/gi;
 const HTML_BLOCK_END_TAG_PATTERN =
   /<\/(?:address|article|aside|blockquote|dd|div|dl|dt|footer|h[1-6]|header|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)>/gi;
 const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
