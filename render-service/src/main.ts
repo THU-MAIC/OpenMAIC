@@ -30,10 +30,11 @@ import { config } from './config.js';
 import { InMemoryJobStore } from './job-store.js';
 import { LocalDiskArtifactStore } from './artifact-store.js';
 import {
-  RenderManager,
+  RenderCoordinator,
   RenderRejectedError,
   makeProjectDir as defaultMakeProjectDir,
-} from './render-manager.js';
+} from './render-coordinator.js';
+import { InProcessExecutor } from './render-executor.js';
 import { InvalidProjectError, unzipProject as defaultUnzipProject } from './unzip.js';
 import { capBodyStream } from './capped-stream.js';
 import { Semaphore } from './semaphore.js';
@@ -50,7 +51,7 @@ class BadRequestError extends Error {}
 export interface AppDeps {
   jobs: JobStore;
   artifacts: ArtifactStore;
-  manager: RenderManager;
+  coordinator: RenderCoordinator;
   /** Bounds concurrent *buffering + extraction* (the whole RAM-heavy section). */
   extractionGate: Semaphore;
   /** Extract a validated archive into a dir. Overridable in tests. */
@@ -89,7 +90,7 @@ function parseOptions(form: FormData): RenderOptions | string {
  *     not held in RAM. This is what stops a near-cap burst from OOMing the box.
  */
 export function createApp(deps: AppDeps): Hono {
-  const { jobs, artifacts, manager, extractionGate } = deps;
+  const { jobs, artifacts, coordinator, extractionGate } = deps;
   const unzipProject = deps.unzipProject ?? defaultUnzipProject;
   const makeProjectDir = deps.makeProjectDir ?? defaultMakeProjectDir;
 
@@ -115,7 +116,7 @@ export function createApp(deps: AppDeps): Hono {
     // (queue full / per-identity limit) never enters buffering or extraction.
     let reservation;
     try {
-      reservation = manager.reserve(identity);
+      reservation = coordinator.reserve(identity);
     } catch (error) {
       if (error instanceof RenderRejectedError) return c.json({ error: error.message }, 429);
       throw error;
@@ -164,12 +165,12 @@ export function createApp(deps: AppDeps): Hono {
         projectDir = await makeProjectDir();
         const bytes = new Uint8Array(await file.arrayBuffer());
         await unzipProject(bytes, projectDir);
-        return manager.submit(reservation, projectDir, options);
+        return coordinator.submit(reservation, projectDir, options);
       });
       return c.json({ jobId }, 202);
     } catch (error) {
-      manager.release(reservation);
-      if (projectDir) await manager.cleanupProject(projectDir);
+      coordinator.release(reservation);
+      if (projectDir) await coordinator.cleanupProject(projectDir);
       if (error instanceof UploadTooLargeError) return c.json({ error: error.message }, 413);
       if (error instanceof BadRequestError) return c.json({ error: error.message }, 400);
       if (error instanceof InvalidProjectError) return c.json({ error: error.message }, 400);
@@ -194,7 +195,7 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   app.delete('/render/:jobId', async (c) => {
-    const ok = await manager.cancel(c.req.param('jobId'));
+    const ok = await coordinator.cancel(c.req.param('jobId'));
     if (!ok) return c.json({ error: 'Job not found' }, 404);
     return c.json({ cancelled: true });
   });
@@ -232,20 +233,21 @@ export function createApp(deps: AppDeps): Hono {
 /** Wire the production collaborators and start the server (skipped under tests). */
 async function main(): Promise<void> {
   const artifacts = new LocalDiskArtifactStore();
-  // Assigned after `jobs` so its reap callback can close over the manager.
+  const executor = new InProcessExecutor();
+  // Assigned after `jobs` so its reap callback can close over the coordinator.
   // eslint-disable-next-line prefer-const
-  let manager: RenderManager;
+  let coordinator: RenderCoordinator;
   const jobs = new InMemoryJobStore(config.jobTtlMs, (record) => {
     // A reaped job's artifact + project dir go with it.
     void artifacts.remove(record.id);
-    void manager.cleanupProject(record.projectDir);
+    void coordinator.cleanupProject(record.projectDir);
   });
-  manager = new RenderManager(jobs, artifacts);
+  coordinator = new RenderCoordinator(executor, jobs, artifacts);
 
   const app = createApp({
     jobs,
     artifacts,
-    manager,
+    coordinator,
     // Bounds concurrent buffering + extraction so the per-archive RAM ceiling
     // can't stack across a burst of admitted requests.
     extractionGate: new Semaphore(config.maxConcurrentExtractions),

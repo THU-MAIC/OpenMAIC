@@ -6,7 +6,7 @@
  * (multipart buffering → file read → extraction) at once. Everything else waits
  * with its body unconsumed, so a burst of near-cap uploads can't stack in memory.
  *
- * We drive the real Hono app (`createApp`) with a fake manager/stores and a
+ * We drive the real Hono app (`createApp`) with a fake coordinator/stores and a
  * `unzipProject` stub that parks — recording how many calls are simultaneously
  * "inside" — so we can assert the peak never exceeds the gate's permit count.
  */
@@ -14,6 +14,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { Semaphore } from '../src/semaphore.js';
 import type { JobStore } from '../src/job-store.js';
 import type { ArtifactStore, ArtifactLocation } from '../src/artifact-store.js';
+import type { RenderExecutor } from '../src/render-executor.js';
 import type { RenderJobRecord } from '../src/types.js';
 
 // Prevent main.ts from binding a port when we import it.
@@ -21,11 +22,11 @@ process.env.RENDER_SERVICE_NO_LISTEN = 'true';
 
 // Loaded in beforeAll after the env guard above is set.
 let createApp: typeof import('../src/main.js').createApp;
-let RenderManager: typeof import('../src/render-manager.js').RenderManager;
+let RenderCoordinator: typeof import('../src/render-coordinator.js').RenderCoordinator;
 
 beforeAll(async () => {
   ({ createApp } = await import('../src/main.js'));
-  ({ RenderManager } = await import('../src/render-manager.js'));
+  ({ RenderCoordinator } = await import('../src/render-coordinator.js'));
 });
 
 function fakeJobStore(): JobStore {
@@ -59,6 +60,12 @@ const fakeArtifacts: ArtifactStore = {
     return null;
   },
   async remove() {},
+};
+
+const fakeExecutor: RenderExecutor = {
+  async execute() {
+    return { status: 'succeeded' };
+  },
 };
 
 /** Build a valid-looking multipart body for `POST /render`. */
@@ -102,11 +109,11 @@ describe('POST /render buffering/extraction bound', () => {
     const jobs = fakeJobStore();
     // A big per-user cap so all REQUESTS are admitted (we're testing the gate,
     // not the per-identity guard); unique identities would also work.
-    const manager = new RenderManager(jobs, fakeArtifacts);
+    const coordinator = new RenderCoordinator(fakeExecutor, jobs, fakeArtifacts);
     const app = createApp({
       jobs,
       artifacts: fakeArtifacts,
-      manager,
+      coordinator,
       extractionGate: new Semaphore(PERMITS),
       unzipProject,
       makeProjectDir,

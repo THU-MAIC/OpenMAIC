@@ -182,10 +182,14 @@ completion time is independently bounded.
 
 ## Scalability
 
-The service is built with two swap points so it can move from a single OSS host
+The service is built with three swap points so it can move from a single OSS host
 to a horizontally-scaled demo deployment without changing the HTTP contract or
 the app:
 
+- **`RenderExecutor`** (`src/render-executor.ts`) — `InProcessExecutor` adapts
+  the current HyperFrames producer to stable progress, cancellation, deadline,
+  failure, and performance types. A bounded local or remote executor can replace
+  it without changing `RenderCoordinator` or the routes.
 - **`JobStore`** (`src/job-store.ts`) — Part A ships `InMemoryJobStore`. A
   `RedisJobStore` implementing the same interface lets any replica serve poll /
   download requests.
@@ -193,6 +197,9 @@ the app:
   `LocalDiskArtifactStore` (streams through the app proxy). An `S3ArtifactStore`
   whose `locate` returns a presigned URL makes the download route `302` the
   browser straight to object storage, bypassing the proxy.
+
+`RenderCoordinator` owns admission, queueing, job state, artifact registration,
+and cleanup while depending only on those three interfaces.
 
 Chunked distributed rendering (`@hyperframes/producer/distributed`) to cut
 single-job latency is a further, separate follow-up.
