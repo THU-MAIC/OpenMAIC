@@ -56,6 +56,7 @@ interface LegacyPBLChatMessage {
 }
 
 export interface PBLProjectConfig {
+  [key: string]: unknown;
   projectInfo: LegacyPBLProjectInfo;
   agents: LegacyPBLAgent[];
   issueboard: {

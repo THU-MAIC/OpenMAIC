@@ -1,3 +1,5 @@
+import type { RequestListener } from 'node:http';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('embedded persistence route', () => {
@@ -234,5 +236,172 @@ describe('embedded persistence route', () => {
     expect(seen[0]?.url).toContain('stage%2Fslash');
     expect(seen[0]?.body).toBe(JSON.stringify({ hello: 'world' }));
     expect(seen[1]?.method).toBe('DELETE');
+  });
+
+  // The adapter claims to be a `ServerResponse` through an `as unknown as`
+  // cast, so the compiler checks none of that surface. These cases pin the
+  // response behavior that differs materially from a plain Fetch Response.
+  const mockAdapterHandler = (handler: RequestListener, connectionString: string) => {
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.doMock('@openmaic/storage/server', () => ({
+      createStorageHttpHandler: vi.fn(() => handler),
+    }));
+    vi.stubEnv('DATABASE_URL', connectionString);
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+  };
+
+  const readAdapterBody = async (path: string) => {
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const pool = { end: vi.fn().mockResolvedValue(undefined) };
+    const response = await handlePersistenceRequest(
+      new Request(`http://localhost/api/persistence/${path}`, {
+        headers: { authorization: 'Bearer test-token' },
+      }),
+      { poolFactory: () => pool as never },
+    );
+    return { response, body: new Uint8Array(await response.arrayBuffer()) };
+  };
+
+  it('returns binary response bodies byte-for-byte', async () => {
+    // `ServerResponse.end` accepts a `Uint8Array`. Bytes that are not valid
+    // UTF-8 must survive intact: decoding them substitutes U+FFFD and corrupts
+    // the body with no error anywhere.
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe, 0x80, 0x01]);
+    mockAdapterHandler((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/octet-stream' });
+      response.end(bytes);
+    }, 'postgres://binary-test');
+
+    const { response, body } = await readAdapterBody('documents/binary');
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual(bytes);
+  });
+
+  it('supports handlers that call write before end', async () => {
+    // `write` was missing entirely, so a chunked handler was a runtime
+    // TypeError rather than a compile error.
+    const first = new Uint8Array([0x00, 0xc3]);
+    const second = new Uint8Array([0x28, 0xff]);
+    mockAdapterHandler((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/octet-stream' });
+      response.write(first);
+      response.write(second);
+      response.end();
+    }, 'postgres://chunked-test');
+
+    const { response, body } = await readAdapterBody('documents/chunked');
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual(new Uint8Array([...first, ...second]));
+  });
+
+  it('defers write callbacks without synchronous recursion', async () => {
+    const chunkCount = 20_000;
+    let callbackRanInline = false;
+    let writesCompleted = 0;
+    mockAdapterHandler((_request, response) => {
+      const writeNext = () => {
+        let writeReturned = false;
+        response.write('x', () => {
+          if (!writeReturned) callbackRanInline = true;
+          writesCompleted += 1;
+          if (writesCompleted === chunkCount) response.end();
+          else writeNext();
+        });
+        writeReturned = true;
+      };
+      writeNext();
+    }, 'postgres://deferred-write-callback-test');
+
+    const { response, body } = await readAdapterBody('documents/deferred-write-callback');
+
+    expect(response.status).toBe(200);
+    expect(callbackRanInline).toBe(false);
+    expect(writesCompleted).toBe(chunkCount);
+    expect(body).toHaveLength(chunkCount);
+  });
+
+  it.each(['write', 'end'] as const)('honors latin1 encoding in %s', async (method) => {
+    mockAdapterHandler((_request, response) => {
+      if (method === 'write') {
+        response.write('é', 'latin1');
+        response.end();
+      } else {
+        response.end('é', 'latin1');
+      }
+    }, `postgres://latin1-${method}-test`);
+
+    const { response, body } = await readAdapterBody(`documents/latin1-${method}`);
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual(new Uint8Array([0xe9]));
+  });
+
+  it('throws Node ERR_UNKNOWN_ENCODING for an invalid response encoding', async () => {
+    let encodingError: unknown;
+    mockAdapterHandler((_request, response) => {
+      try {
+        response.write('x', 'definitely-invalid' as BufferEncoding);
+      } catch (error) {
+        encodingError = error;
+      }
+      response.end();
+    }, 'postgres://invalid-encoding-test');
+
+    const { response } = await readAdapterBody('documents/invalid-encoding');
+
+    expect(response.status).toBe(200);
+    expect(encodingError).toMatchObject({
+      name: 'TypeError',
+      code: 'ERR_UNKNOWN_ENCODING',
+      message: 'Unknown encoding: definitely-invalid',
+    });
+  });
+
+  it.each([204, 205, 304])('suppresses a buffered body for status %i', async (status) => {
+    mockAdapterHandler((_request, response) => {
+      response.writeHead(status);
+      response.write('x');
+      response.end();
+    }, `postgres://null-body-${status}-test`);
+
+    const { response, body } = await readAdapterBody(`documents/null-body-${status}`);
+
+    expect(response.status).toBe(status);
+    expect(body).toHaveLength(0);
+  });
+
+  it('suppresses a handler body for HEAD requests while retaining headers', async () => {
+    mockAdapterHandler((_request, response) => {
+      response.writeHead(200, {
+        'content-length': '7',
+        'content-type': 'text/plain',
+      });
+      response.end('content');
+    }, 'postgres://head-test');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const response = await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/documents/head', {
+        method: 'HEAD',
+        headers: { authorization: 'Bearer test-token' },
+      }),
+      { poolFactory: () => ({ end: vi.fn() }) as never },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-length')).toBe('7');
+    expect(response.headers.get('content-type')).toBe('text/plain');
+    expect(new Uint8Array(await response.arrayBuffer())).toHaveLength(0);
   });
 });

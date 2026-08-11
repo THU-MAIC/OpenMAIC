@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "Text toolbar",
       "label": "Text",
       "font": "Font",
       "fontDefault": "Default",
@@ -240,17 +241,99 @@
       "alignLeft": "Align left",
       "alignCenter": "Align center",
       "alignRight": "Align right",
-      "bullet": "Bulleted list"
+      "bullet": "Bulleted list",
+      "colorHex": "Color value"
+    },
+    "line": {
+      "toolbar": "Line toolbar",
+      "kind": "Line type",
+      "color": "Line color",
+      "width": "Line width",
+      "style": "Line style",
+      "start": "Start marker",
+      "end": "End marker",
+      "straight": "Straight",
+      "broken": "Broken line",
+      "broken2": "Double broken line",
+      "curve": "Curve",
+      "cubic": "Cubic curve",
+      "solid": "Solid",
+      "dashed": "Dashed",
+      "dotted": "Dotted",
+      "none": "None",
+      "arrow": "Arrow",
+      "dot": "Dot"
     },
     "insert": {
+      "toolbar": "Insert toolbar",
       "textBox": "Text box",
+      "line": "Line",
+      "linePresets": {
+        "straight": "Straight line",
+        "dashed": "Dashed line",
+        "arrow": "Arrow line",
+        "dashedArrow": "Dashed arrow line",
+        "dottedEnd": "Dot end line",
+        "broken": "Broken line",
+        "doubleBroken": "Double broken line",
+        "curve": "Curve",
+        "cubic": "Cubic curve"
+      },
+      "table": "Table",
+      "formula": "Formula",
+      "chart": "Chart",
+      "chartBar": "Bar chart",
+      "chartLine": "Line chart",
+      "chartPie": "Pie chart",
+      "tableDimensions": "{{rows}} x {{columns}} Table",
       "dragToolbar": "Move insert tools",
       "dragToolbarKeyboard": "Move insert tools: press Enter or Space, then use the arrow keys",
       "image": "Image",
       "imageDrop": "Drop an image or click to choose a file",
       "imageOr": "or paste an image URL",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "Insert"
+      "imageInsert": "Insert",
+      "video": "Video",
+      "videoDrop": "Drop a video or click to choose a file",
+      "videoOr": "or paste a video URL",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "Insert",
+      "audio": "Audio",
+      "audioDrop": "Drop audio or click to choose a file",
+      "audioOr": "or paste an audio URL",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "Insert"
+    },
+    "asset": {
+      "drop": "Drop a file or click to choose",
+      "orUrl": "or paste a file URL",
+      "urlPlaceholder": "https://…",
+      "insert": "Insert",
+      "invalidType": "Unsupported file type",
+      "readFailed": "Unable to read file"
+    },
+    "latex": {
+      "toolbar": "Formula toolbar",
+      "editFormula": "Edit formula",
+      "dialog": "Formula editor",
+      "source": "LaTeX source",
+      "preview": "Preview",
+      "symbols": "Symbols",
+      "presets": "Presets",
+      "invalidSource": "The LaTeX source is invalid."
+    },
+    "video": {
+      "toolbar": "Video toolbar",
+      "poster": "Set poster"
+    },
+    "audio": {
+      "toolbar": "Audio toolbar",
+      "preview": "Preview audio",
+      "pause": "Pause preview",
+      "loop": "Loop"
+    },
+    "table": {
+      "doubleClickToEdit": "Double-click to edit"
     },
     "nav": {
       "addSlide": "Add slide",
@@ -273,14 +356,38 @@
       "toBack": "Send to back"
     },
     "image": {
+      "toolbar": "Image toolbar",
       "replace": "Replace image",
       "flipH": "Flip horizontal",
-      "flipV": "Flip vertical"
+      "flipV": "Flip vertical",
+      "crop": "Crop image"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "Horizontal alignment",
+      "verticalAlignment": "Vertical alignment",
+      "selectAll": "Select all",
+      "copy": "Copy",
+      "cut": "Cut",
+      "paste": "Paste",
+      "unlock": "Unlock",
+      "lock": "Lock",
+      "group": "Group",
+      "ungroup": "Ungroup",
+      "bringForward": "Bring forward",
+      "sendBackward": "Send backward",
+      "alignTop": "Align top",
+      "alignMiddle": "Align middle",
+      "alignBottom": "Align bottom"
     },
     "background": {
       "label": "Background",
       "solid": "Solid",
-      "image": "Image"
+      "image": "Image",
+      "color": "Color"
+    },
+    "common": {
+      "cancel": "Cancel",
+      "confirm": "Confirm"
     },
     "quiz": {
       "addQuestion": "Add question",
@@ -330,6 +437,7 @@
       "discussion": "Discussion"
     },
     "element": {
+      "toolbar": "Element toolbar",
       "text": "Text",
       "image": "Image",
       "shape": "Shape",
@@ -825,7 +933,37 @@
     "searchPlaceholder": "Search courses...",
     "searchAriaLabel": "Search courses",
     "clearSearch": "Clear",
-    "searchEmpty": "No courses match your search"
+    "searchEmpty": "No courses match your search",
+    "newFolderTitle": "New folder",
+    "newFolderDesc": "Group courses by topic or use for easier access.",
+    "newFolderInline": "New folder…",
+    "folderNameLabel": "Folder name",
+    "folderNamePlaceholder": "e.g. Math, English, Major courses",
+    "folderNameHint": "CJK and Latin both OK; spaces count.",
+    "folderNameExists": "A folder with this name already exists",
+    "folderCountLimit": "Folder count limit reached",
+    "folderWidth": "Width {{width}}/{{max}}",
+    "folderCreate": "Create",
+    "folderBadge": "Folder",
+    "folderCourseCountUnit": "courses",
+    "deleteFolderTitle": "Delete folder \"{{name}}\"",
+    "deleteFolderEmptyDesc": "This folder is empty. Deletion cannot be undone.",
+    "deleteFolderUngroupDesc": "Courses stay in \"My courses\", just unfiled.",
+    "moveToFolder": "Move to folder",
+    "moveToFolderLabel": "Move to…",
+    "ungrouped": "Ungrouped",
+    "searchResults": "Search results",
+    "folderCreateFailed": "Failed to create folder",
+    "folderRenameFailed": "Failed to rename folder",
+    "folderDeleteFailed": "Failed to delete folder",
+    "moveFailed": "Failed to move course",
+    "emptyFolderHint": "This folder is empty",
+    "emptyLibraryHint": "No courses yet — create one above, or import a course.",
+    "folderNameEmpty": "Folder name cannot be empty",
+    "deleteFolderOnly": "Delete folder only",
+    "deleteFolderAndCourses": "Delete folder and {{count}} course",
+    "deleteFolderAndCourses_other": "Delete folder and {{count}} courses",
+    "deleteFolderConfirmRemove": "This removes the folder and its courses, including chat history."
   },
   "upload": {
     "pdfSizeLimit": "Supports PDF files up to 50MB",

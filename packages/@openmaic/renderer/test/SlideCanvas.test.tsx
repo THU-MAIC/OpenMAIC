@@ -52,6 +52,52 @@ describe('SlideCanvas', () => {
     expect(html).toContain('id="screen-element-title-1"');
   });
 
+  it('includes list marker rules for static text', () => {
+    const listSlide = {
+      ...slide,
+      elements: [
+        {
+          ...textElement,
+          content: '<ul><li>Bullet</li></ul><ol><li>Number</li></ol>',
+        },
+      ],
+    };
+    const { container } = render(<SlideCanvas slide={listSlide} scale={1} chrome={false} />);
+    const cssRules = Array.from(document.styleSheets).flatMap((sheet) =>
+      Array.from(sheet.cssRules),
+    );
+    const findRule = (selector: string) =>
+      cssRules.find(
+        (rule): rule is CSSStyleRule =>
+          rule instanceof CSSStyleRule && rule.selectorText === selector,
+      );
+
+    expect(container.querySelector('.slide-renderer-prose ul')).not.toBeNull();
+    expect(findRule('.slide-renderer-prose ul')?.style.listStylePosition).toBe('outside');
+    expect(
+      findRule('.slide-renderer-prose ul:not([style*="list-style-type"])')?.style.listStyleType,
+    ).toBe('disc');
+    expect(findRule('.slide-renderer-prose ol')?.style.listStylePosition).toBe('outside');
+    expect(
+      findRule('.slide-renderer-prose ol:not([style*="list-style-type"])')?.style.listStyleType,
+    ).toBe('decimal');
+    expect(findRule('.slide-renderer-prose li')?.style.display).toBe('list-item');
+  });
+
+  it('does not render elements listed in hiddenElementIds', () => {
+    const html = renderToStaticMarkup(
+      createElement(SlideCanvas, {
+        slide,
+        scale: 1,
+        chrome: false,
+        hiddenElementIds: ['title-1'],
+      }),
+    );
+
+    expect(html).not.toContain('id="slide-element-title-1"');
+    expect(html).not.toContain('Hello');
+  });
+
   it('does not report an auto-fit scale when a fixed scale is provided', () => {
     const onScaleChange = vi.fn();
 

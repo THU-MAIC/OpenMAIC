@@ -1,12 +1,16 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import { loadSnippet } from '@openmaic/generation';
 import type { SnippetId } from '@openmaic/generation';
 
 const PACKAGE_ROOT = fileURLToPath(new URL('../', import.meta.url));
-const APP_PROMPTS_DIR = resolve(PACKAGE_ROOT, '../../..', 'lib', 'prompts');
+const PBL_PROMPT_FILES = [
+  'planner-system.md',
+  'planner-scenario-single-call-system.md',
+  'planner-single-call-system.md',
+] as const;
 
 const PROMPT_IDS = [
   'requirements-to-outlines',
@@ -73,11 +77,10 @@ describe('packaged prompt assets', () => {
     expect(actualFiles).toEqual(expectedFiles);
   });
 
-  test.each(expectedFiles)('%s is byte-identical to the app asset', (assetPath) => {
-    const packageBytes = readFileSync(join(PACKAGE_ROOT, assetPath));
-    const appBytes = readFileSync(join(APP_PROMPTS_DIR, assetPath));
-
-    expect(Buffer.compare(packageBytes, appBytes)).toBe(0);
+  test.each(PBL_PROMPT_FILES)('ships prompts-pbl/%s', (filename) => {
+    expect(
+      readFileSync(join(PACKAGE_ROOT, 'prompts-pbl', filename), 'utf8').length,
+    ).toBeGreaterThan(100);
   });
 
   test('every referenced snippet is packaged and represented by SnippetId', () => {

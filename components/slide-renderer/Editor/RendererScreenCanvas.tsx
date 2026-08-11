@@ -188,7 +188,7 @@ export function getPlaybackImageState(resolution: MediaResolution): PlaybackImag
   return 'ready';
 }
 
-function PlaybackImageContent({
+export function PlaybackImageContent({
   element,
   defaultContent,
   media,

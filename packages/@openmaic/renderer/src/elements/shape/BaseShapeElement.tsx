@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import type { PPTShapeElement, ShapeText } from '@openmaic/dsl';
 import { useElementOutline } from '../shared/useElementOutline';
 import { useElementShadow } from '../shared/useElementShadow';
@@ -10,6 +11,8 @@ import { PatternDefs } from './PatternDefs';
 
 export interface BaseShapeElementProps {
   elementInfo: PPTShapeElement;
+  /** Replace the static Shape label with editor content. */
+  renderLabel?: (element: PPTShapeElement, defaultContent: ReactNode) => ReactNode;
 }
 
 /**
@@ -89,7 +92,7 @@ function pathCoordBBox(
   return { minX, minY, maxX, maxY };
 }
 
-export function BaseShapeElement({ elementInfo }: BaseShapeElementProps) {
+export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementProps) {
   const { fill } = useElementFill(elementInfo, 'base');
   const { outlineWidth, outlineColor, strokeDashArray } = useElementOutline(elementInfo.outline);
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
@@ -104,6 +107,34 @@ export function BaseShapeElement({ elementInfo }: BaseShapeElementProps) {
 
   const justifyContent =
     text.align === 'top' ? 'flex-start' : text.align === 'bottom' ? 'flex-end' : 'center';
+  const defaultLabelContent = (
+    <div
+      className="shape-text"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent,
+        overflowWrap: 'break-word',
+        lineHeight: text.lineHeight,
+        letterSpacing: `${text.wordSpace || 0}px`,
+        // PowerPoint/WPS 在 group flipH/flipV 时只镜像几何与位置，文字字形保持
+        // 正向。父层 element-content 已应用 flipStyle 镜像 SVG path；这里给文字
+        // 叠加同一个 flipStyle，两次 flip 抵消，让文字保持正向。
+        transform: flipStyle,
+      }}
+    >
+      <div
+        className="ProseMirror-static slide-renderer-prose"
+        style={{
+          // @ts-expect-error CSS custom properties
+          '--paragraphSpace': `${text.paragraphSpace === undefined ? 5 : text.paragraphSpace}px`,
+        }}
+        dangerouslySetInnerHTML={{ __html: text.content }}
+      />
+    </div>
+  );
 
   return (
     <div
@@ -203,32 +234,7 @@ export function BaseShapeElement({ elementInfo }: BaseShapeElementProps) {
             );
           })()}
 
-          <div
-            className="shape-text"
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent,
-              overflowWrap: 'break-word',
-              lineHeight: text.lineHeight,
-              letterSpacing: `${text.wordSpace || 0}px`,
-              // PowerPoint/WPS 在 group flipH/flipV 时只镜像几何与位置，文字字形保持
-              // 正向。父层 element-content 已应用 flipStyle 镜像 SVG path；这里给文字
-              // 叠加同一个 flipStyle，两次 flip 抵消，让文字保持正向。
-              transform: flipStyle,
-            }}
-          >
-            <div
-              className="ProseMirror-static slide-renderer-prose"
-              style={{
-                // @ts-expect-error CSS custom properties
-                '--paragraphSpace': `${text.paragraphSpace === undefined ? 5 : text.paragraphSpace}px`,
-              }}
-              dangerouslySetInnerHTML={{ __html: text.content }}
-            />
-          </div>
+          {renderLabel ? renderLabel(elementInfo, defaultLabelContent) : defaultLabelContent}
         </div>
       </div>
     </div>

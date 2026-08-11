@@ -30,6 +30,15 @@ export function isPlaybackRendererEnabled(): boolean {
 }
 
 /**
+ * Experimental Pro-mode slide editor renderer. Default OFF so professional
+ * editing keeps using the legacy in-app editor canvas unless explicitly enabled
+ * in `.env.local`.
+ */
+export function isEditorRendererEnabled(): boolean {
+  return readBoolean(process.env.NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED);
+}
+
+/**
  * Experimental Pi-based classroom chat runtime. Default OFF. The same public
  * flag selects the client runtime and gates the corresponding server route.
  */

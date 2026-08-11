@@ -10,7 +10,7 @@
 
 import type { PPTElement } from '@openmaic/dsl';
 import sceneSchemaJson from '@openmaic/dsl/schema/scene.schema.json';
-import type { EditIntent } from '@openmaic/renderer/editing';
+import type { EditIntent } from '@openmaic/editor/core';
 import tinycolor from 'tinycolor2';
 import { MIN_SIZE } from '@/configs/element';
 

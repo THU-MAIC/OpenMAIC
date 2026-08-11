@@ -212,6 +212,7 @@
       }
     },
     "text": {
+      "toolbar": "Barra de texto",
       "label": "Texto",
       "font": "Fonte",
       "fontDefault": "Padrão",
@@ -225,17 +226,99 @@
       "alignLeft": "Alinhar à esquerda",
       "alignCenter": "Centralizar",
       "alignRight": "Alinhar à direita",
-      "bullet": "Lista com marcadores"
+      "bullet": "Lista com marcadores",
+      "colorHex": "Código da cor"
+    },
+    "line": {
+      "toolbar": "Barra de linha",
+      "kind": "Tipo de linha",
+      "color": "Cor da linha",
+      "width": "Espessura da linha",
+      "style": "Estilo da linha",
+      "start": "Estilo inicial",
+      "end": "Estilo final",
+      "straight": "Reta",
+      "broken": "Linha quebrada",
+      "broken2": "Linha quebrada dupla",
+      "curve": "Curva",
+      "cubic": "Curva cúbica",
+      "solid": "Sólida",
+      "dashed": "Tracejada",
+      "dotted": "Pontilhada",
+      "none": "Nenhum",
+      "arrow": "Seta",
+      "dot": "Ponto"
     },
     "insert": {
+      "toolbar": "Barra de inserção",
       "textBox": "Caixa de texto",
+      "line": "Linha",
+      "linePresets": {
+        "straight": "Linha reta",
+        "dashed": "Linha tracejada",
+        "arrow": "Linha com seta",
+        "dashedArrow": "Linha tracejada com seta",
+        "dottedEnd": "Linha com ponta circular",
+        "broken": "Linha quebrada",
+        "doubleBroken": "Linha com quebra dupla",
+        "curve": "Curva",
+        "cubic": "Curva cúbica"
+      },
+      "table": "Tabela",
+      "formula": "Fórmula",
+      "chart": "Gráfico",
+      "chartBar": "Gráfico de barras",
+      "chartLine": "Gráfico de linhas",
+      "chartPie": "Gráfico de pizza",
+      "tableDimensions": "Tabela {{rows}} x {{columns}}",
       "dragToolbar": "Mover ferramentas de inserção",
       "dragToolbarKeyboard": "Mover ferramentas: pressione Enter ou Espaço e use as setas",
       "image": "Imagem",
       "imageDrop": "Arraste uma imagem ou clique para escolher um arquivo",
       "imageOr": "ou cole a URL de uma imagem",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "Inserir"
+      "imageInsert": "Inserir",
+      "video": "Vídeo",
+      "videoDrop": "Arraste um vídeo ou clique para escolher um arquivo",
+      "videoOr": "ou cole a URL de um vídeo",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "Inserir",
+      "audio": "Áudio",
+      "audioDrop": "Arraste um áudio ou clique para escolher um arquivo",
+      "audioOr": "ou cole a URL de um áudio",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "Inserir"
+    },
+    "asset": {
+      "drop": "Arraste um arquivo ou clique para escolher",
+      "orUrl": "ou cole a URL do arquivo",
+      "urlPlaceholder": "https://…",
+      "insert": "Inserir",
+      "invalidType": "Tipo de arquivo não compatível",
+      "readFailed": "Não foi possível ler o arquivo"
+    },
+    "latex": {
+      "toolbar": "Barra de fórmulas",
+      "editFormula": "Editar fórmula",
+      "dialog": "Editor de fórmulas",
+      "source": "Código-fonte LaTeX",
+      "preview": "Pré-visualização",
+      "symbols": "Símbolos",
+      "presets": "Fórmulas predefinidas",
+      "invalidSource": "O código-fonte LaTeX é inválido."
+    },
+    "video": {
+      "toolbar": "Barra de vídeo",
+      "poster": "Definir capa"
+    },
+    "audio": {
+      "toolbar": "Barra de áudio",
+      "preview": "Ouvir áudio",
+      "pause": "Pausar prévia",
+      "loop": "Repetir"
+    },
+    "table": {
+      "doubleClickToEdit": "Clique duas vezes para editar"
     },
     "nav": {
       "addSlide": "Adicionar slide",
@@ -258,14 +341,38 @@
       "toBack": "Enviar para trás"
     },
     "image": {
+      "toolbar": "Barra da imagem",
       "replace": "Substituir imagem",
       "flipH": "Inverter horizontalmente",
-      "flipV": "Inverter verticalmente"
+      "flipV": "Inverter verticalmente",
+      "crop": "Recortar imagem"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "Alinhamento horizontal",
+      "verticalAlignment": "Alinhamento vertical",
+      "selectAll": "Selecionar tudo",
+      "copy": "Copiar",
+      "cut": "Recortar",
+      "paste": "Colar",
+      "unlock": "Desbloquear",
+      "lock": "Bloquear",
+      "group": "Agrupar",
+      "ungroup": "Desagrupar",
+      "bringForward": "Trazer para frente",
+      "sendBackward": "Enviar para trás",
+      "alignTop": "Alinhar acima",
+      "alignMiddle": "Alinhar ao meio",
+      "alignBottom": "Alinhar abaixo"
     },
     "background": {
       "label": "Fundo",
       "solid": "Cor sólida",
-      "image": "Imagem"
+      "image": "Imagem",
+      "color": "Cor"
+    },
+    "common": {
+      "cancel": "Cancelar",
+      "confirm": "Confirmar"
     },
     "quiz": {
       "addQuestion": "Adicionar pergunta",
@@ -315,6 +422,7 @@
       "discussion": "Discussão"
     },
     "element": {
+      "toolbar": "Barra do elemento",
       "text": "Texto",
       "image": "Imagem",
       "shape": "Forma",
@@ -825,7 +933,37 @@
     "searchPlaceholder": "Pesquisar cursos...",
     "searchAriaLabel": "Pesquisar cursos",
     "clearSearch": "Limpar",
-    "searchEmpty": "Nenhum curso corresponde à sua busca"
+    "searchEmpty": "Nenhum curso corresponde à sua busca",
+    "newFolderTitle": "Nova pasta",
+    "newFolderDesc": "Organize cursos por tópico para facilitar o acesso.",
+    "newFolderInline": "Nova pasta",
+    "folderNameLabel": "Nome da pasta",
+    "folderNamePlaceholder": "Ex: Matemática, Inglês, Cursos principais",
+    "folderNameHint": "Caracteres largos e estreitos são aceitos; espaços contam.",
+    "folderNameExists": "Já existe uma pasta com esse nome.",
+    "folderCountLimit": "Limite de pastas atingido.",
+    "folderWidth": "Largura {{width}}/{{max}}",
+    "folderCreate": "Criar",
+    "folderBadge": "Pasta",
+    "folderCourseCountUnit": "cursos",
+    "deleteFolderTitle": "Excluir pasta \"{{name}}\"",
+    "deleteFolderEmptyDesc": "Esta pasta está vazia. A exclusão não pode ser desfeita.",
+    "deleteFolderUngroupDesc": "Os cursos permanecem em \"Meus cursos\", apenas sem pasta.",
+    "moveToFolder": "Mover para pasta",
+    "moveToFolderLabel": "Mover para a pasta",
+    "ungrouped": "Sem pasta",
+    "searchResults": "Resultados da busca",
+    "folderCreateFailed": "Falha ao criar a pasta",
+    "folderRenameFailed": "Falha ao renomear a pasta",
+    "folderDeleteFailed": "Falha ao excluir a pasta",
+    "moveFailed": "Falha ao mover o curso",
+    "emptyFolderHint": "Esta pasta está vazia",
+    "emptyLibraryHint": "Nenhum curso ainda — crie um acima ou importe um curso.",
+    "folderNameEmpty": "O nome da pasta não pode estar vazio",
+    "deleteFolderOnly": "Excluir apenas a pasta",
+    "deleteFolderAndCourses": "Excluir pasta e {{count}} curso",
+    "deleteFolderAndCourses_other": "Excluir pasta e {{count}} cursos",
+    "deleteFolderConfirmRemove": "Isto remove a pasta e seus cursos, incluindo o histórico de chat."
   },
   "upload": {
     "pdfSizeLimit": "Suporta arquivos PDF de até 50 MB",

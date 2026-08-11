@@ -993,6 +993,7 @@ test('the package entry does not expose internal asset-layer symbols', () => {
     'ContentHash',
     'BlobStore',
     'BrowserAssetProvider',
+    'S3AssetByteStore',
   ]) {
     expect(storageExports).not.toHaveProperty(name);
   }

@@ -86,7 +86,7 @@ export function BaseImageElement({ elementInfo, renderImage }: BaseImageElementP
 
   return (
     <div
-      className="element-content"
+      className="base-element-image element-content"
       style={{
         position: 'absolute',
         top: `${elementInfo.top}px`,

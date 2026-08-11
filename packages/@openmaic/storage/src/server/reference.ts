@@ -14,6 +14,7 @@ import { pathToFileURL } from 'node:url';
 import { PgRuntimeStore, ensureSchema } from '../runtime/pg.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 import type { RuntimePayloadValidator } from '../runtime/types.js';
+import type { AssetStore } from '../asset/types.js';
 import type {
   DocumentStore,
   SceneLike,
@@ -24,6 +25,7 @@ import type { Scene, Stage } from '@openmaic/dsl';
 import { createRuntimeHttpHandler, createStorageHttpHandler } from './index.js';
 import type {
   DocumentHttpAuthorize,
+  AssetHttpAuthorize,
   RuntimeHttpAuthenticate,
   RuntimeHttpAuthorizeAdmin,
   RuntimeHttpAuthorizeMerge,
@@ -46,6 +48,9 @@ export interface ReferenceRuntimeServerOptions<
   /** When supplied, the same server also exposes the `/documents` contract. */
   documentStore?: DocumentStore<TScene, TStage>;
   authorizeDocuments?: DocumentHttpAuthorize;
+  /** When supplied, the same server also exposes the `/assets` contract. */
+  assetStore?: AssetStore;
+  authorizeAssets?: AssetHttpAuthorize;
   /** Pass the same validators configured on documentStore. */
   validateScene?: SceneValidator;
   validateStage?: StageValidator;
@@ -104,7 +109,7 @@ export async function createReferenceRuntimeServer<
           return undefined;
         }
         const learnerKey = authorization.slice('Bearer '.length);
-        return learnerKey === '' ? undefined : { learnerKey };
+        return learnerKey === '' ? undefined : { learnerKey, key: learnerKey };
       }),
     authorizeMerge:
       options.authorizeMerge ??
@@ -116,12 +121,14 @@ export async function createReferenceRuntimeServer<
     ...(options.authorizeDocuments === undefined
       ? {}
       : { authorizeDocuments: options.authorizeDocuments }),
+    ...(options.assetStore === undefined ? {} : { assetStore: options.assetStore }),
+    ...(options.authorizeAssets === undefined ? {} : { authorizeAssets: options.authorizeAssets }),
     ...(options.validateScene === undefined ? {} : { validateScene: options.validateScene }),
     ...(options.validateStage === undefined ? {} : { validateStage: options.validateStage }),
     ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes }),
   };
   return createServer(
-    options.documentStore === undefined
+    options.documentStore === undefined && options.assetStore === undefined
       ? createRuntimeHttpHandler(store, handlerOptions)
       : createStorageHttpHandler(store, options.documentStore, handlerOptions),
   );

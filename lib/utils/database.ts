@@ -77,6 +77,36 @@ export interface StageRecord {
 }
 
 /**
+ * Folder table - User-created folders for grouping courses.
+ *
+ * Folder membership is device-local organization metadata, not part of the
+ * course document itself (which is owned by the `@openmaic/storage`
+ * DocumentStore in a separate database). It lives in this Dexie database
+ * alongside the legacy tables. See {@link StageFolderMembership}.
+ */
+export interface FolderRecord {
+  id: string; // Primary key
+  name: string;
+  order: number; // Sort order
+  createdAt: number; // timestamp
+  updatedAt: number; // timestamp
+}
+
+/**
+ * Stage→folder membership mapping. `stageId` is the primary key so each course
+ * has at most one row; a missing row (or `folderId === undefined`) means the
+ * course is unfiled. This is intentionally separate from both the legacy
+ * `stages` table (a migration mirror that nothing writes) and the
+ * DocumentStore stage row (version-independent document content), so folder
+ * grouping never touches document semantics.
+ */
+export interface StageFolderMembership {
+  stageId: string; // Primary key (FK -> DocumentStore stage id)
+  folderId?: string; // FK -> folders.id; undefined = unfiled
+  updatedAt: number; // timestamp
+}
+
+/**
  * Scene table - Scene/page data
  */
 export interface SceneRecord {
@@ -249,7 +279,7 @@ export function mediaFileKey(stageId: string, elementId: string): string {
 // ==================== Database Definition ====================
 
 const DATABASE_NAME = 'MAIC-Database';
-const _DATABASE_VERSION = 16;
+const _DATABASE_VERSION = 17;
 
 /**
  * MAIC Database Instance
@@ -270,6 +300,8 @@ class MAICDatabase extends Dexie {
   voiceProfiles!: EntityTable<VoiceProfileRecord, 'id'>;
   autoVoiceCache!: EntityTable<AutoVoiceCacheRecord, 'voiceId'>;
   agentEditSessions!: EntityTable<AgentEditSessionRecord, 'id'>;
+  folders!: EntityTable<FolderRecord, 'id'>;
+  stageFolders!: EntityTable<StageFolderMembership, 'stageId'>;
 
   constructor() {
     super(DATABASE_NAME);
@@ -501,6 +533,17 @@ class MAICDatabase extends Dexie {
     // Legacy rows remain valid and are found through speech-action references.
     this.version(16).stores({
       audioFiles: 'id, stageId, createdAt',
+    });
+
+    // Version 17: Course folders — group courses into user-created folders.
+    // `folders` holds folder metadata; `stageFolders` maps each course (by
+    // DocumentStore stage id) to its folder. Neither touches the document
+    // aggregate: folder grouping is device-local organization metadata kept in
+    // this Dexie database alongside the legacy tables, so an existing course
+    // with no membership row is simply unfiled (no upgrade callback needed).
+    this.version(17).stores({
+      folders: 'id, order',
+      stageFolders: 'stageId, folderId',
     });
   }
 }

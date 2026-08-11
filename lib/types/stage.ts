@@ -2,16 +2,16 @@
 //
 // The universal lesson skeleton (Stage / Scene / SceneContent / Whiteboard /
 // VideoManifest / SlideContent / QuizContent / …) now lives in `@openmaic/dsl` and
-// is re-exported below. `Scene` is generic there: the contract owns only the
-// structure + the slide/quiz content kinds, while the playback `Action` set and
-// the richer feature content (interactive widgets, PBL) are app-side and get
-// composed in here.
+// is re-exported below. `Scene` is generic there: the contract owns the
+// structure and all four persisted content kinds, while richer interactive
+// widget payloads and PBL learner/runtime state are composed in here.
 //
 // `Scene` is re-exported as an alias of the app's fully-instantiated
 // `Scene<Action, AppSceneContent>`, so existing `import { Scene }` callers keep
 // the same semantics (actions are `Action[]`, content spans all four kinds).
 import type {
   InteractiveContent as DslInteractiveContent,
+  PBLContent as DslPBLContent,
   Scene as DslScene,
   SceneContent as DslSceneContent,
 } from '@openmaic/dsl';
@@ -45,10 +45,9 @@ export { isSlideContent, isQuizContent } from '@openmaic/dsl';
 // `QuizQuestionType` from `@/lib/types/stage`.
 export type QuizQuestionType = import('@openmaic/dsl').QuizQuestion['type'];
 
-// The contract's `SceneContent` is the universal subset (slide | quiz). Reach it
-// under a distinct name; the app's own `SceneContent` (declared below) is the
-// full four-way union so existing `switch (content.type)` call sites keep all
-// four cases.
+// The contract's compatibility-default `SceneContent` is slide | quiz. Reach it
+// under a distinct name; the contract-owned interactive and PBL shapes are
+// widened below before composing the app's full four-way union.
 export type { SceneContent as SceneContentBase } from '@openmaic/dsl';
 
 // The raw, generic contract Scene is reachable under a distinct name for
@@ -66,21 +65,19 @@ export type InteractiveContent = DslInteractiveContent<WidgetConfig>;
 /**
  * PBL content - Project-based learning.
  *
- * App-level feature surface: kept here rather than in `@openmaic/dsl` because it
- * supports v2 projects and read-only legacy v1 project data.
+ * The contract records the stored field names and opaque legacy configuration;
+ * the app retains its read-only typed view of that record and widens
+ * `projectV2` with learner/runtime state.
  */
-export interface PBLContent {
-  type: 'pbl';
-  /** Read-only data retained on scenes stored before the PBL v2 cutover. */
-  projectConfig?: PBLProjectConfig;
-  /** PBL v2 project payload used by the web-PBL runtime. */
+export type PBLContent = DslPBLContent & {
+  projectConfig?: PBLProjectConfig & Record<string, unknown>;
   projectV2?: PBLProjectV2;
-}
+};
 
 /**
  * The app's full scene-content union: the contract's universal kinds plus the
- * app-only feature kinds. This is what `@/lib/types/stage` callers have always
- * known as `SceneContent` (all four cases).
+ * app-widened feature kinds. This is what `@/lib/types/stage` callers have
+ * always known as `SceneContent` (all four cases).
  */
 export type AppSceneContent = DslSceneContent | InteractiveContent | PBLContent;
 

@@ -14,7 +14,9 @@ vi.mock('@/lib/document-store', () => ({
   }),
 }));
 
-vi.mock('@/lib/utils/database', () => ({ db: {} }));
+vi.mock('@/lib/utils/database', () => ({
+  db: { stageFolders: { toArray: () => Promise.resolve([]) } },
+}));
 vi.mock('@/lib/utils/chat-storage', () => ({
   ChatStorageLockUnavailableError: class extends Error {},
   saveChatSessions: vi.fn(),

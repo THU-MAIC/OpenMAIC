@@ -280,7 +280,7 @@ export type ImportPhase =
   | 'writingCourse'
   | 'done';
 
-export function useImportClassroom(onSuccess?: () => void) {
+export function useImportClassroom(onSuccess?: (importedStageId: string) => void) {
   const [importing, setImporting] = useState(false);
   const [phase, setPhase] = useState<ImportPhase>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -499,7 +499,7 @@ export function useImportClassroom(onSuccess?: () => void) {
       // cannot make a fully committed classroom lose its already-owned assets.
       if (importCommitted) {
         toast.success(t('import.success'), { id: toastId });
-        onSuccess?.();
+        onSuccess?.(importedStageId!);
       }
     },
     [t, onSuccess],

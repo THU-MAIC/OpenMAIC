@@ -863,7 +863,7 @@ describe('database runtime chat integration', () => {
     const { db } = await import('@/lib/utils/database');
     await db.open();
 
-    expect(db.verno).toBe(16);
+    expect(db.verno).toBe(17);
     expect([...db.backendDB().objectStoreNames]).not.toContain('chatStorageLocks');
     expect([...db.backendDB().objectStoreNames]).toContain('chatRestoreStaging');
   });

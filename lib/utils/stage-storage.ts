@@ -8,6 +8,9 @@
 import { Stage, Scene } from '../types/stage';
 import { ChatSession } from '../types/chat';
 import { db } from './database';
+import type { FolderRecord } from './database';
+import { nanoid } from 'nanoid';
+import { validateFolderName, FOLDER_COUNT_LIMIT } from './folder-name-validation';
 import {
   ChatStorageLockUnavailableError,
   saveChatSessions,
@@ -102,6 +105,8 @@ export interface StageListItem {
   updatedAt: number;
   interactiveMode?: boolean;
   taskEngineMode?: boolean;
+  /** Folder this course belongs to; undefined = unfiled. Device-local only. */
+  folderId?: string;
 }
 
 function stampStage(stageId: string, stage: Stage, now: number): Stage {
@@ -625,11 +630,17 @@ async function performStageDeletion(stageId: string): Promise<void> {
             }
 
             // Migration retains legacy rows, but an explicit whole-stage deletion does not.
-            await db.transaction('rw', [db.stages, db.scenes, db.stageOutlines], async () => {
-              await db.stages.delete(stageId);
-              await db.scenes.where('stageId').equals(stageId).delete();
-              await db.stageOutlines.delete(stageId);
-            });
+            // Folder membership is device-local organization metadata; drop it too.
+            await db.transaction(
+              'rw',
+              [db.stages, db.scenes, db.stageOutlines, db.stageFolders],
+              async () => {
+                await db.stages.delete(stageId);
+                await db.scenes.where('stageId').equals(stageId).delete();
+                await db.stageOutlines.delete(stageId);
+                await db.stageFolders.delete(stageId);
+              },
+            );
 
             // Mirror hygiene: the legacy roster mirror is read-only migration
             // input, but a deleted stage needs no migration source — drop its
@@ -724,6 +735,10 @@ export async function listStages(): Promise<StageListItem[]> {
           return snapshot ? { ...stage, sceneCount: snapshot.scenes.length } : null;
         }),
     );
+    // Folder membership is device-local metadata kept in this Dexie database,
+    // not in the DocumentStore; join it in so callers can group courses.
+    const memberships = await db.stageFolders.toArray();
+    const folderByStage = new Map(memberships.map((m) => [m.stageId, m.folderId]));
     return [
       ...summaries,
       ...legacyOnly
@@ -738,7 +753,11 @@ export async function listStages(): Promise<StageListItem[]> {
           interactiveMode: stage.interactiveMode,
           taskEngineMode: stage.taskEngineMode,
         })),
-    ].sort((a, b) => b.updatedAt - a.updatedAt);
+    ]
+      .map((item) =>
+        folderByStage.get(item.id) ? { ...item, folderId: folderByStage.get(item.id) } : item,
+      )
+      .sort((a, b) => b.updatedAt - a.updatedAt);
   } catch (error) {
     log.error('Failed to list stages:', error);
     throw error;
@@ -1019,4 +1038,151 @@ export async function stageExists(stageId: string): Promise<boolean> {
     log.error('Failed to check stage existence:', error);
     return false;
   }
+}
+
+// ==================== Course Folders ====================
+//
+// Folders are device-local course-grouping metadata. They live in this Dexie
+// database (`folders` + `stageFolders` tables) and never touch the course
+// document aggregate owned by the `@openmaic/storage` DocumentStore. A course
+// with no `stageFolders` row (or one with `folderId === undefined`) is unfiled.
+
+/**
+ * List all folders, ordered by their `order` field (ascending).
+ */
+export async function listFolders(): Promise<FolderRecord[]> {
+  const folders = await db.folders.toArray();
+  return folders.sort((a, b) => a.order - b.order);
+}
+
+/** Error thrown when a folder name fails validation at the storage boundary. */
+export class FolderNameError extends Error {
+  constructor(
+    message: string,
+    readonly kind: 'empty' | 'tooLong' | 'duplicate' | 'limit',
+  ) {
+    super(message);
+    this.name = 'FolderNameError';
+  }
+}
+
+/** Validate a folder name against the width rule and (optionally) duplicates. */
+function assertFolderName(name: string, existing: FolderRecord[], currentId?: string): void {
+  const result = validateFolderName(name);
+  if (!result.ok) {
+    throw new FolderNameError(
+      result.kind === 'empty' ? 'Folder name must not be empty' : 'Folder name is too long',
+      result.kind,
+    );
+  }
+  const trimmed = name.trim();
+  const clash = existing.some(
+    (f) => f.name.toLowerCase() === trimmed.toLowerCase() && f.id !== currentId,
+  );
+  if (clash) throw new FolderNameError('A folder with this name already exists', 'duplicate');
+}
+
+/**
+ * Create a folder. `order` is placed after the current maximum so new folders
+ * land at the end of the list. Validates the name (width + uniqueness) at the
+ * storage boundary, with the read-check-write inside a read-write transaction
+ * so two tabs cannot both pass the duplicate check before either write commits.
+ */
+export async function createFolder(name: string): Promise<FolderRecord> {
+  const now = Date.now();
+  return db.transaction('rw', db.folders, async () => {
+    const existing = await db.folders.toArray();
+    if (existing.length >= FOLDER_COUNT_LIMIT) {
+      throw new FolderNameError('Folder count limit reached', 'limit');
+    }
+    assertFolderName(name, existing);
+    const order = existing.reduce((max, folder) => Math.max(max, folder.order), -1) + 1;
+    const folder: FolderRecord = {
+      id: nanoid(),
+      name: name.trim(),
+      order,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.folders.put(folder);
+    log.info(`Created folder "${name}" (${folder.id})`);
+    return folder;
+  });
+}
+
+/**
+ * Rename a folder. Validates the name (width + uniqueness excluding itself) at
+ * the storage boundary, with the read-check-write inside a read-write
+ * transaction so the UI invariant cannot be bypassed or raced across tabs.
+ */
+export async function renameFolder(id: string, name: string): Promise<void> {
+  const now = Date.now();
+  await db.transaction('rw', db.folders, async () => {
+    const existing = await db.folders.toArray();
+    assertFolderName(name, existing, id);
+    const folder = existing.find((f) => f.id === id);
+    if (!folder) throw new Error(`Folder not found: ${id}`);
+    await db.folders.put({ ...folder, name: name.trim(), updatedAt: now });
+    log.info(`Renamed folder ${id} to "${name}"`);
+  });
+}
+
+export type DeleteFolderMode = 'ungroup' | 'remove';
+
+/**
+ * Delete a folder.
+ *
+ * - `'ungroup'` (default): drop the folder; its courses become unfiled (their
+ *   `stageFolders` rows are deleted, so `listStages` reports them without a
+ *   `folderId`).
+ * - `'remove'`: drop the folder AND delete every course that was filed in it,
+ *   running each through {@link deleteStageData} so the full deletion cascade
+ *   (document, scenes, chats, runtime, mirrors) applies.
+ */
+export async function deleteFolder(id: string, mode: DeleteFolderMode = 'ungroup'): Promise<void> {
+  // Atomically capture members, delete the folder row, and clear all membership
+  // rows in ONE transaction BEFORE the course-deletion cascade. This makes the
+  // folder invisible to `setStageFolder` (which checks folder existence in its
+  // own transaction) for the entire duration of the cascade, preventing an
+  // orphan membership from being written while courses are being deleted.
+  const members = await db.transaction('rw', [db.folders, db.stageFolders], async () => {
+    const rows = await db.stageFolders.where('folderId').equals(id).toArray();
+    await db.folders.delete(id);
+    for (const row of rows) {
+      await db.stageFolders.delete(row.stageId);
+    }
+    return rows;
+  });
+
+  if (mode === 'remove') {
+    // Now delete each member course through the full cascade. The folder is
+    // already gone, so a concurrent setStageFolder will reject the assignment.
+    for (const member of members) {
+      if (member.stageId) await deleteStageData(member.stageId);
+    }
+  }
+  log.info(`Deleted folder ${id} (mode=${mode})`);
+}
+
+/**
+ * Move a course into a folder, or out of all folders when `folderId` is
+ * `undefined`. Idempotent.
+ */
+export async function setStageFolder(stageId: string, folderId: string | undefined): Promise<void> {
+  const now = Date.now();
+  // Validate the destination folder exists before writing the membership row.
+  // Without this, an import that started inside a folder which is then deleted
+  // would write an orphan membership pointing at a gone folder. The check+write
+  // is in one transaction so deletion cannot race between them. Unfiling
+  // (folderId undefined) always succeeds — it just removes the membership.
+  if (folderId !== undefined) {
+    await db.transaction('rw', [db.folders, db.stageFolders], async () => {
+      const folder = await db.folders.get(folderId);
+      if (!folder) throw new Error(`Folder not found: ${folderId}`);
+      await db.stageFolders.put({ stageId, folderId, updatedAt: now });
+    });
+  } else {
+    await db.stageFolders.put({ stageId, folderId: undefined, updatedAt: now });
+  }
+  log.info(`Set stage ${stageId} folder -> ${folderId ?? '(unfiled)'}`);
 }

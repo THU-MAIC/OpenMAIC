@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/storage",
-  "version": "0.2.2",
+  "version": "0.2.4",
   "description": "The MAIC pluggable persistence layer: document / runtime / KV / asset primitives with browser and HTTP backends, depending only on @openmaic/dsl.",
   "type": "module",
   "main": "./dist/index.js",
@@ -23,6 +23,10 @@
       "types": "./dist/kv/http.d.ts",
       "import": "./dist/kv/http.js"
     },
+    "./asset/http": {
+      "types": "./dist/asset/http.d.ts",
+      "import": "./dist/asset/http.js"
+    },
     "./document/pg": {
       "types": "./dist/document/pg.d.ts",
       "import": "./dist/document/pg.js"
@@ -30,6 +34,22 @@
     "./runtime/pg": {
       "types": "./dist/runtime/pg.d.ts",
       "import": "./dist/runtime/pg.js"
+    },
+    "./asset/pg": {
+      "types": "./dist/asset/pg.d.ts",
+      "import": "./dist/asset/pg.js"
+    },
+    "./asset/pg-bytes": {
+      "types": "./dist/asset/pg-bytes.d.ts",
+      "import": "./dist/asset/pg-bytes.js"
+    },
+    "./asset/s3-bytes": {
+      "types": "./dist/asset/s3-bytes.d.ts",
+      "import": "./dist/asset/s3-bytes.js"
+    },
+    "./asset/collector": {
+      "types": "./dist/asset/collector.d.ts",
+      "import": "./dist/asset/collector.js"
     },
     "./server": {
       "types": "./dist/server/index.d.ts",
@@ -75,7 +95,16 @@
   "dependencies": {
     "@openmaic/dsl": "workspace:^"
   },
+  "peerDependencies": {
+    "@aws-sdk/client-s3": "^3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@aws-sdk/client-s3": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1048.0",
     "@electric-sql/pglite": "^0.3.14",
     "@types/pg": "^8.15.5",
     "fake-indexeddb": "^6.0.0",

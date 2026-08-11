@@ -39,4 +39,28 @@ describe('BaseTextElement', () => {
 
     expect(markup).toContain(`justify-content:${justifyContent}`);
   });
+
+  it('shares text paint styles with custom editable content', () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(BaseTextElement, {
+        elementInfo: {
+          ...textElement,
+          fill: '#ffeeaa',
+          opacity: 0.8,
+          lineHeight: 1.8,
+          paragraphSpace: 6,
+          wordSpace: 3,
+          vertical: true,
+        },
+        renderContent: () => React.createElement('div', { 'data-renderer-text-editor': '' }),
+      }),
+    );
+
+    expect(markup).toContain('background-color:#ffeeaa');
+    expect(markup).toContain('line-height:1.8');
+    expect(markup).toContain('letter-spacing:3px');
+    expect(markup).toContain('writing-mode:vertical-rl');
+    expect(markup).toContain('data-renderer-text-editor=""');
+    expect(markup).not.toContain('ProseMirror-static');
+  });
 });
