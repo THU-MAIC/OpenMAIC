@@ -121,7 +121,14 @@ export function collectAssetRefs(
   const refs: AssetRef[] = [];
   const push = (kind: AssetRefKind, url: string) => {
     const value = url.trim();
-    if (!value || /^(?:data:|blob:|about:|#)/i.test(value)) return;
+    if (!value) return;
+    if (/^(?:data:|blob:)/i.test(value)) {
+      if (kind === 'iframe-src' || kind === 'object-data' || kind === 'embed-src') {
+        refs.push({ kind, url: value });
+      }
+      return;
+    }
+    if (/^(?:about:|#)/i.test(value)) return;
     if (options.includeRelative || HTTP_URL.test(value)) refs.push({ kind, url: value });
   };
 

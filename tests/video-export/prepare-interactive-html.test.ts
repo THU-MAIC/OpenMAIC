@@ -50,6 +50,20 @@ describe('prepareInteractiveHtmlScenes', () => {
     expect(html.indexOf('</head>')).toBeLessThan(html.indexOf('<body>'));
   });
 
+  it('does not inject into head-like text in comments or authored scripts', async () => {
+    const authoredScript = 'const template = "<head>"; window.__template = template;';
+    const prepared = await prepareInteractiveHtmlScenes([
+      scene(
+        `<!doctype html><!-- <head> --><html><body><script>${authoredScript}</script></body></html>`,
+      ),
+    ]);
+    const html = prepared.content('interactive:widget')!;
+
+    expect(prepared.html(scene())?.present).toBe(true);
+    expect(html).toContain(`<script>${authoredScript}</script>`);
+    expect(html.indexOf('data-openmaic-static-csp')).toBeLessThan(html.indexOf('<body>'));
+  });
+
   it('inlines supported remote assets and removes the network URL', async () => {
     const prepared = await prepareInteractiveHtmlScenes(
       [scene('<html><head></head><body><img src="https://cdn.test/pixel.png"></body></html>')],
@@ -111,6 +125,9 @@ describe('prepareInteractiveHtmlScenes', () => {
       '<iframe src="https://embed.test/frame"></iframe>',
       '<object data="https://embed.test/object"></object>',
       '<embed src="https://embed.test/plugin">',
+      '<iframe src="data:text/html,%3Cp%3Eframe%3C/p%3E"></iframe>',
+      '<object data="data:image/svg+xml,%3Csvg%3E%3C/svg%3E"></object>',
+      '<embed src="blob:https://embed.test/plugin-id">',
     ]) {
       const prepared = await prepareInteractiveHtmlScenes([scene(embedded)], {
         fetcher: async () => null,
@@ -118,7 +135,7 @@ describe('prepareInteractiveHtmlScenes', () => {
       expect(prepared.html(scene())).toMatchObject({
         present: false,
         failure: 'unresolved-resource',
-        message: expect.stringContaining('https://embed.test/'),
+        message: expect.stringMatching(/(?:https?|data|blob):/),
       });
     }
   });

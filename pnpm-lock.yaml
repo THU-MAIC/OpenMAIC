@@ -242,6 +242,9 @@ importers:
       partial-json:
         specifier: ^0.1.7
         version: 0.1.7
+      parse5:
+        specifier: ^8.0.1
+        version: 8.0.1
       parse-srcset:
         specifier: ^1.0.2
         version: 1.0.2

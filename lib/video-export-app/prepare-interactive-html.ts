@@ -6,6 +6,7 @@
  */
 import type { Scene } from '@/lib/types/stage';
 import { collectAssetRefs, inlineHtmlAssets, type FetchAsset } from '@/lib/export/inline-assets';
+import { injectIntoDocumentHead } from '@/lib/utils/html-document';
 import { patchHtmlForIframe } from '@/lib/utils/iframe';
 import type { InteractiveHtmlMeta, InteractiveHtmlSource } from '@/lib/video-export/deps';
 import {
@@ -24,27 +25,6 @@ export interface PreparedInteractiveHtmlSet extends InteractiveHtmlSource {
 export interface PrepareInteractiveHtmlOptions {
   fetcher?: FetchAsset;
   maxHtmlBytes?: number;
-}
-
-function insertAfterHead(html: string, injection: string): string {
-  const match = /<head(?:\s[^>]*)?>/i.exec(html);
-  if (!match || match.index === undefined) return injection + html;
-  const pos = match.index + match[0].length;
-  return html.slice(0, pos) + injection + html.slice(pos);
-}
-
-function ensureHtmlHead(html: string): string {
-  if (/<head(?:\s[^>]*)?>/i.test(html)) return html;
-  const htmlElement = /<html(?:\s[^>]*)?>/i.exec(html);
-  if (htmlElement?.index !== undefined) {
-    const pos = htmlElement.index + htmlElement[0].length;
-    return `${html.slice(0, pos)}<head></head>${html.slice(pos)}`;
-  }
-  const doctype = /^\s*<!doctype\s+html[^>]*>/i.exec(html);
-  if (doctype) {
-    return `${html.slice(0, doctype[0].length)}<head></head>${html.slice(doctype[0].length)}`;
-  }
-  return `<head></head>${html}`;
 }
 
 function staticCaptureInjection(): string {
@@ -287,8 +267,8 @@ export async function prepareInteractiveHtmlScenes(
         continue;
       }
 
-      const packaged = insertAfterHead(
-        patchHtmlForIframe(ensureHtmlHead(sanitized)),
+      const packaged = injectIntoDocumentHead(
+        patchHtmlForIframe(sanitized),
         staticCaptureInjection(),
       );
       const size = new TextEncoder().encode(packaged).byteLength;

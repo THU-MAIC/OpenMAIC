@@ -1,3 +1,5 @@
+import { injectIntoDocumentHead } from './html-document';
+
 /**
  * In-memory localStorage/sessionStorage shim, injected as the FIRST thing in the
  * document so the page's own scripts see working storage.
@@ -124,22 +126,5 @@ export function patchHtmlForIframe(html: string): string {
 
   const injection = '\n' + ERROR_CAPTURE_SHIM + '\n' + STORAGE_SHIM + '\n' + iframeCss;
 
-  // Insert right after <head> or at the start of the document
-  const headIdx = html.indexOf('<head>');
-  if (headIdx !== -1) {
-    const insertPos = headIdx + 6; // after <head>
-    return html.substring(0, insertPos) + injection + html.substring(insertPos);
-  }
-
-  const headWithAttrs = html.indexOf('<head ');
-  if (headWithAttrs !== -1) {
-    const closeAngle = html.indexOf('>', headWithAttrs);
-    if (closeAngle !== -1) {
-      const insertPos = closeAngle + 1;
-      return html.substring(0, insertPos) + injection + html.substring(insertPos);
-    }
-  }
-
-  // Fallback: prepend
-  return injection + html;
+  return injectIntoDocumentHead(html, injection);
 }

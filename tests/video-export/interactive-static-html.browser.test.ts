@@ -119,13 +119,13 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
     }
   });
 
-  it('keeps a doctype-only document in standards mode when creating its head', async () => {
+  it('creates a standards-mode head without corrupting head-like script text', async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     try {
       await load(
         page,
         await emittedFixture(
-          '<!doctype html><html><body><main id="mode">Standards mode</main></body></html>',
+          '<!doctype html><html><body><script>window.__template = "<head>";</script><main id="mode">Standards mode</main></body></html>',
         ),
       );
       await page.waitForFunction(() => {
@@ -138,6 +138,9 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
 
       const child = page.frames().find((frame) => frame !== page.mainFrame())!;
       expect(await child.evaluate(() => document.compatMode)).toBe('CSS1Compat');
+      expect(
+        await child.evaluate(() => (window as typeof window & { __template?: string }).__template),
+      ).toBe('<head>');
     } finally {
       await page.close();
     }

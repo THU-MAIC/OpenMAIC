@@ -40,13 +40,19 @@ describe('collectAssetRefs', () => {
     const refs = collectAssetRefs(
       '<iframe src="https://embed.example/frame"></iframe>' +
         '<object data="https://embed.example/object"></object>' +
-        '<embed src="https://embed.example/plugin">',
+        '<embed src="https://embed.example/plugin">' +
+        '<iframe src="data:text/html,%3Cp%3Eframe%3C/p%3E"></iframe>' +
+        '<object data="data:image/svg+xml,%3Csvg%3E%3C/svg%3E"></object>' +
+        '<embed src="blob:https://embed.example/plugin-id">',
     );
     expect(refs).toEqual(
       expect.arrayContaining([
         { kind: 'iframe-src', url: 'https://embed.example/frame' },
         { kind: 'object-data', url: 'https://embed.example/object' },
         { kind: 'embed-src', url: 'https://embed.example/plugin' },
+        { kind: 'iframe-src', url: 'data:text/html,%3Cp%3Eframe%3C/p%3E' },
+        { kind: 'object-data', url: 'data:image/svg+xml,%3Csvg%3E%3C/svg%3E' },
+        { kind: 'embed-src', url: 'blob:https://embed.example/plugin-id' },
       ]),
     );
   });
