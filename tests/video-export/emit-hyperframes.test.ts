@@ -520,7 +520,10 @@ describe('emitHyperframes static Quiz/PBL cover cards', () => {
         title: 'Bare PBL',
         order: 0,
         type: 'pbl',
-        content: { type: 'pbl', projectV2: { title: 'Bare', description: '' } },
+        content: {
+          type: 'pbl',
+          projectV2: { title: 'Bare', description: '', roles: [], milestones: [] },
+        },
         actions: [],
       },
     ] as Parameters<typeof compileVideoTimeline>[0]['scenes'];
@@ -555,6 +558,7 @@ describe('emitHyperframes static Quiz/PBL cover cards', () => {
             title: 'Named',
             description: '',
             roles: [{ id: 'i', type: 'instructor', name: '林教练' }],
+            milestones: [],
           },
         },
         actions: [],
@@ -682,6 +686,7 @@ describe('emitHyperframes cover cards at constrained resolutions', () => {
             title: 'Compact project',
             description: 'A compact project description.',
             gains: ['Gain one', 'Gain two', 'Gain three', 'Gain four', 'Gain five'],
+            roles: [],
             milestones: [{ id: 'm1', microtasks: [{ id: 't1' }] }],
           },
         },

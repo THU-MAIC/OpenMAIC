@@ -5,10 +5,17 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { LoadedPrompt, PromptId, SnippetId } from './types.js';
+import type { LoadedPrompt, PromptId, PromptVariableDefaults, SnippetId } from './types.js';
 
 // `src/prompts` and `dist/prompts` have the same depth below the package root.
 const DEFAULT_PROMPTS_DIR = fileURLToPath(new URL('../../', import.meta.url));
+
+const PROMPT_VARIABLE_DEFAULTS = {
+  'pbl-actions': {
+    projectSummary:
+      '(No generated milestones are available; introduce the project topic without inventing any.)',
+  },
+} satisfies PromptVariableDefaults;
 
 function isMissingFileError(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
@@ -97,6 +104,20 @@ export function interpolateVariables(template: string, variables: Record<string,
   });
 }
 
+function applyPromptVariableDefaults(
+  promptId: PromptId,
+  variables: Record<string, unknown>,
+): Record<string, unknown> {
+  const defaults = PROMPT_VARIABLE_DEFAULTS[promptId as keyof typeof PROMPT_VARIABLE_DEFAULTS];
+  if (!defaults) return variables;
+
+  const resolved = { ...variables };
+  for (const [key, value] of Object.entries(defaults)) {
+    if (resolved[key] === undefined) resolved[key] = value;
+  }
+  return resolved;
+}
+
 /**
  * Build a complete prompt in this order: snippets, conditionals, variables.
  */
@@ -107,15 +128,16 @@ export function buildPrompt(
 ): { system: string; user: string } | null {
   const prompt = loadPrompt(promptId, promptsDir);
   if (!prompt) return null;
+  const resolvedVariables = applyPromptVariableDefaults(promptId, variables);
 
   return {
     system: interpolateVariables(
-      processConditionalBlocks(prompt.systemPrompt, variables),
-      variables,
+      processConditionalBlocks(prompt.systemPrompt, resolvedVariables),
+      resolvedVariables,
     ),
     user: interpolateVariables(
-      processConditionalBlocks(prompt.userPromptTemplate, variables),
-      variables,
+      processConditionalBlocks(prompt.userPromptTemplate, resolvedVariables),
+      resolvedVariables,
     ),
   };
 }

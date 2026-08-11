@@ -38,7 +38,7 @@ Conditional blocks read from the same `variables` record passed to
 ## Naming conventions
 
 - **Placeholder names use `camelCase`.** Example: `{{agentName}}`, `{{stateContext}}`.
-- **Template IDs use `kebab-case`.** Example: `agent-system`, `pbl-design`.
+- **Template IDs use `kebab-case`.** Example: `agent-system`, `slide-content`.
 - `lib/prompts/templates/slide-content/{system,user}.md` still uses legacy
   `snake_case` placeholders (`{{canvas_width}}`, `{{canvas_height}}`). This
   predates the camelCase convention; don't imitate it when writing new templates.
@@ -78,7 +78,7 @@ This is intentional for partial-render scenarios but means a typo in a
 placeholder name ships literal `{{…}}` text to the LLM. Defence:
 
 - Tests in `tests/prompts/templates.test.ts` assert that the fully-rendered
-  agent-system / director / pbl-design prompts contain no surviving
+  agent-system / director / slide-content prompts contain no surviving
   `{{…}}` tokens. Keep that check passing when adding variables.
 - `{{snippet:name}}` lookups **throw** on a missing snippet file rather than
   passing through silently, so a typo like `{{snippet:speach-guidelines}}`

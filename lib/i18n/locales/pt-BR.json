@@ -583,67 +583,7 @@
     "startRecording": "Iniciar gravação"
   },
   "pbl": {
-    "legacyFormat": "Esta cena PBL usa um formato antigo. Gere o curso novamente.",
     "emptyProject": "O projeto PBL ainda não foi gerado. Crie via geração de curso.",
-    "roleSelection": {
-      "title": "Escolha seu Papel",
-      "description": "Selecione um papel para começar a colaborar no projeto"
-    },
-    "workspace": {
-      "restart": "Reiniciar",
-      "confirmRestart": "Apagar todo o progresso?",
-      "confirm": "Confirmar",
-      "cancel": "Cancelar"
-    },
-    "issueboard": {
-      "title": "Quadro de Tarefas",
-      "noIssues": "Nenhuma tarefa ainda",
-      "statusDone": "Concluída",
-      "statusActive": "Ativa",
-      "statusPending": "Pendente"
-    },
-    "chat": {
-      "title": "Discussão do Projeto",
-      "currentIssue": "Tarefa Atual",
-      "mentionHint": "Use @question para perguntar, @judge para submeter à revisão",
-      "placeholder": "Digite uma mensagem...",
-      "send": "Enviar",
-      "issueCompleteMessage": "Tarefa \"{{completed}}\" concluída! Indo para a próxima: \"{{next}}\"",
-      "allCompleteMessage": "🎉 Todas as tarefas concluídas! Ótimo trabalho no projeto!"
-    },
-    "guide": {
-      "howItWorks": "Como funciona",
-      "help": "Ajuda",
-      "title": "Ajuda",
-      "step1": {
-        "title": "Passo 1: Escolha um Papel",
-        "desc": "Após o projeto ser gerado, selecione um papel da lista (papéis não-sistema marcados com 🟢)"
-      },
-      "step2": {
-        "title": "Passo 2: Conclua as Tarefas",
-        "desc": "Cada tarefa representa um objetivo de aprendizagem:",
-        "s1": {
-          "title": "Ver tarefa atual",
-          "desc": "Veja o título, descrição e responsável da tarefa"
-        },
-        "s2": {
-          "title": "Obter orientação",
-          "example": "@question Por onde devo começar?\n@question Como implemento esse recurso?",
-          "desc": "O Agente Perguntador faz perguntas guiadas e dá dicas (sem respostas diretas)"
-        },
-        "s3": {
-          "title": "Submeta seu trabalho",
-          "example": "@judge Terminei, por favor revise minhas anotações",
-          "desc": "O Agente Juiz avalia seu trabalho e dá feedback:",
-          "complete": "Avança automaticamente para a próxima tarefa",
-          "revision": "Melhore com base no feedback"
-        }
-      },
-      "step3": {
-        "title": "Passo 3: Conclua o Projeto",
-        "desc": "Quando todas as tarefas forem concluídas, o sistema exibe \"🎉 Projeto Concluído!\""
-      }
-    },
     "v2": {
       "hero": {
         "title": "Project-Based Learning",
@@ -1109,6 +1049,7 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
@@ -1644,6 +1585,8 @@
     "webSearchApiKeyPlaceholder": "Digite sua chave de API de busca",
     "webSearchApiKeyPlaceholderServer": "Chave configurada no servidor, opcionalmente sobreponha",
     "webSearchApiKeyHint": "Obtenha uma chave de API com o provedor de busca selecionado",
+    "claudeSearchModel": "Modelo de busca",
+    "claudeSearchModelHint": "O modelo Claude que realiza as buscas na web e resume os resultados.",
     "webSearchApiKeyOptional": "A chave de API é opcional. Sem ela, será usada extração pública de páginas como alternativa.",
     "searxngServerOnlyNotice": "O SearXNG deve ser configurado no servidor. Defina a variável de ambiente SEARXNG_BASE_URL (ou a seção web-search em server-providers.yml). URLs de instância fornecidas pelo cliente não são aceitas.",
     "baiduSubSources": "Fontes do Baidu",

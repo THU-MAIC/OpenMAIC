@@ -4,9 +4,21 @@ import { useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
-import { BAIDU_SUB_SOURCES, WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import {
+  BAIDU_SUB_SOURCES,
+  CLAUDE_WEB_SEARCH_DEFAULT_MODEL,
+  CLAUDE_WEB_SEARCH_MODELS,
+  WEB_SEARCH_PROVIDERS,
+} from '@/lib/web-search/constants';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 import { ExternalLink, Eye, EyeOff } from 'lucide-react';
 
@@ -137,6 +149,30 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
             );
           })()}
         </>
+      )}
+
+      {/* Claude search model — hidden for managed providers, where the
+          operator pins the model via WEB_SEARCH_CLAUDE_MODELS */}
+      {selectedProviderId === 'claude' && !isServerConfigured && (
+        <div className="space-y-2">
+          <Label className="text-sm">{t('settings.claudeSearchModel')}</Label>
+          <Select
+            value={webSearchProvidersConfig.claude?.modelId || CLAUDE_WEB_SEARCH_DEFAULT_MODEL}
+            onValueChange={(value) => setWebSearchProviderConfig('claude', { modelId: value })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CLAUDE_WEB_SEARCH_MODELS.map((model) => (
+                <SelectItem key={model.id} value={model.id}>
+                  {model.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">{t('settings.claudeSearchModelHint')}</p>
+        </div>
       )}
 
       {selectedProviderId === 'baidu' && (
