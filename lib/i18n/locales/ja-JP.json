@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "テキストツールバー",
       "label": "テキスト",
       "font": "フォント",
       "fontDefault": "デフォルト",
@@ -240,17 +241,99 @@
       "alignLeft": "左揃え",
       "alignCenter": "中央揃え",
       "alignRight": "右揃え",
-      "bullet": "箇条書き"
+      "bullet": "箇条書き",
+      "colorHex": "カラーコード"
+    },
+    "line": {
+      "toolbar": "線ツールバー",
+      "kind": "線の種類",
+      "color": "線の色",
+      "width": "線幅",
+      "style": "線のスタイル",
+      "start": "始点のスタイル",
+      "end": "終点のスタイル",
+      "straight": "直線",
+      "broken": "折れ線",
+      "broken2": "二重折れ線",
+      "curve": "曲線",
+      "cubic": "3次曲線",
+      "solid": "実線",
+      "dashed": "破線",
+      "dotted": "点線",
+      "none": "なし",
+      "arrow": "矢印",
+      "dot": "点"
     },
     "insert": {
+      "toolbar": "挿入ツールバー",
       "textBox": "テキストボックス",
+      "line": "線",
+      "linePresets": {
+        "straight": "直線",
+        "dashed": "破線",
+        "arrow": "矢印線",
+        "dashedArrow": "破線矢印",
+        "dottedEnd": "終点ドット線",
+        "broken": "折れ線",
+        "doubleBroken": "二重折れ線",
+        "curve": "曲線",
+        "cubic": "3次曲線"
+      },
+      "table": "表",
+      "formula": "数式",
+      "chart": "グラフ",
+      "chartBar": "棒グラフ",
+      "chartLine": "折れ線グラフ",
+      "chartPie": "円グラフ",
+      "tableDimensions": "{{rows}} x {{columns}} 表",
       "dragToolbar": "挿入ツールを移動",
       "dragToolbarKeyboard": "挿入ツールを移動：Enter または Space を押してから矢印キーで移動",
       "image": "画像",
       "imageDrop": "画像をドロップまたはクリックして選択",
       "imageOr": "または画像 URL を貼り付け",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "挿入"
+      "imageInsert": "挿入",
+      "video": "動画",
+      "videoDrop": "動画をドロップまたはクリックして選択",
+      "videoOr": "または動画 URL を貼り付け",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "挿入",
+      "audio": "音声",
+      "audioDrop": "音声をドロップまたはクリックして選択",
+      "audioOr": "または音声 URL を貼り付け",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "挿入"
+    },
+    "asset": {
+      "drop": "ファイルをドロップまたはクリックして選択",
+      "orUrl": "またはファイル URL を貼り付け",
+      "urlPlaceholder": "https://…",
+      "insert": "挿入",
+      "invalidType": "サポートされていないファイル形式",
+      "readFailed": "ファイルを読み込めません"
+    },
+    "latex": {
+      "toolbar": "数式ツールバー",
+      "editFormula": "数式を編集",
+      "dialog": "数式エディター",
+      "source": "LaTeX ソース",
+      "preview": "プレビュー",
+      "symbols": "記号",
+      "presets": "定型数式",
+      "invalidSource": "LaTeX ソースが無効です。"
+    },
+    "video": {
+      "toolbar": "動画ツールバー",
+      "poster": "ポスターを設定"
+    },
+    "audio": {
+      "toolbar": "音声ツールバー",
+      "preview": "音声を試聴",
+      "pause": "試聴を一時停止",
+      "loop": "繰り返し再生"
+    },
+    "table": {
+      "doubleClickToEdit": "ダブルクリックして編集"
     },
     "nav": {
       "addSlide": "スライドを追加",
@@ -273,14 +356,38 @@
       "toBack": "最背面へ移動"
     },
     "image": {
+      "toolbar": "画像ツールバー",
       "replace": "画像を置き換え",
       "flipH": "左右反転",
-      "flipV": "上下反転"
+      "flipV": "上下反転",
+      "crop": "画像を切り抜く"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "水平揃え",
+      "verticalAlignment": "垂直揃え",
+      "selectAll": "すべて選択",
+      "copy": "コピー",
+      "cut": "切り取り",
+      "paste": "貼り付け",
+      "unlock": "ロック解除",
+      "lock": "ロック",
+      "group": "グループ化",
+      "ungroup": "グループ解除",
+      "bringForward": "前面へ移動",
+      "sendBackward": "背面へ移動",
+      "alignTop": "上揃え",
+      "alignMiddle": "垂直中央揃え",
+      "alignBottom": "下揃え"
     },
     "background": {
       "label": "背景",
       "solid": "単色",
-      "image": "画像"
+      "image": "画像",
+      "color": "色"
+    },
+    "common": {
+      "cancel": "キャンセル",
+      "confirm": "確定"
     },
     "quiz": {
       "addQuestion": "問題を追加",
@@ -330,6 +437,7 @@
       "discussion": "ディスカッション"
     },
     "element": {
+      "toolbar": "要素ツールバー",
       "text": "テキスト",
       "image": "画像",
       "shape": "図形",
@@ -825,7 +933,37 @@
     "searchPlaceholder": "コースを検索...",
     "searchAriaLabel": "コースを検索",
     "clearSearch": "クリア",
-    "searchEmpty": "該当するコースが見つかりません"
+    "searchEmpty": "該当するコースが見つかりません",
+    "newFolderTitle": "新規フォルダ",
+    "newFolderDesc": "コースをトピック別に整理し、アクセスしやすくします。",
+    "newFolderInline": "新規フォルダ",
+    "folderNameLabel": "フォルダ名",
+    "folderNamePlaceholder": "例：数学、英語、専攻科目",
+    "folderNameHint": "全角・半角どちらもOK。スペースもカウントされます。",
+    "folderNameExists": "同じ名前のフォルダが既に存在します。",
+    "folderCountLimit": "フォルダ数の上限に達しました。",
+    "folderWidth": "幅 {{width}}/{{max}}",
+    "folderCreate": "作成",
+    "folderBadge": "フォルダ",
+    "folderCourseCountUnit": "件のコース",
+    "deleteFolderTitle": "フォルダ「{{name}}」を削除",
+    "deleteFolderEmptyDesc": "このフォルダは空です。削除後は復元できません。",
+    "deleteFolderUngroupDesc": "コースは「マイコース」に残り、未分類になります。",
+    "moveToFolder": "フォルダに移動",
+    "moveToFolderLabel": "フォルダに移動",
+    "ungrouped": "未分類",
+    "searchResults": "検索結果",
+    "folderCreateFailed": "フォルダの作成に失敗しました",
+    "folderRenameFailed": "フォルダの名前変更に失敗しました",
+    "folderDeleteFailed": "フォルダの削除に失敗しました",
+    "moveFailed": "コースの移動に失敗しました",
+    "emptyFolderHint": "このフォルダは空です",
+    "emptyLibraryHint": "まだコースがありません。上で作成するか、コースをインポートしてください。",
+    "folderNameEmpty": "フォルダ名は空にできません",
+    "deleteFolderOnly": "フォルダのみ削除",
+    "deleteFolderAndCourses": "フォルダと {{count}} 件のコースを削除",
+    "deleteFolderConfirmRemove": "フォルダとコース（チャット履歴を含む）が削除されます。",
+    "deleteFolderAndCourses_other": "フォルダと {{count}} 件のコースを削除"
   },
   "upload": {
     "pdfSizeLimit": "50MBまでのPDFファイルに対応しています",

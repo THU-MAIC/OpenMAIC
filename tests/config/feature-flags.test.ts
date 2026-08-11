@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  isEditorRendererEnabled,
   isMaicEditorEnabled,
   isPlaybackRendererEnabled,
   isPiChatEnabled,
@@ -89,6 +90,44 @@ describe('isPlaybackRendererEnabled', () => {
 
     process.env[flag] = 'yes';
     expect(isPlaybackRendererEnabled()).toBe(false);
+  });
+});
+
+describe('isEditorRendererEnabled', () => {
+  const flag = 'NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED';
+  let original: string | undefined;
+
+  beforeEach(() => {
+    original = process.env[flag];
+  });
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env[flag];
+    } else {
+      process.env[flag] = original;
+    }
+  });
+
+  it('defaults off when unset', () => {
+    delete process.env[flag];
+    expect(isEditorRendererEnabled()).toBe(false);
+  });
+
+  it("returns true for 'true' and '1'", () => {
+    process.env[flag] = 'true';
+    expect(isEditorRendererEnabled()).toBe(true);
+
+    process.env[flag] = '1';
+    expect(isEditorRendererEnabled()).toBe(true);
+  });
+
+  it('returns false for other values', () => {
+    process.env[flag] = 'false';
+    expect(isEditorRendererEnabled()).toBe(false);
+
+    process.env[flag] = 'yes';
+    expect(isEditorRendererEnabled()).toBe(false);
   });
 });
 

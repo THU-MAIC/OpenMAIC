@@ -240,7 +240,7 @@ jobs:
           set -euo pipefail
           for sample in quiz pbl-v2 pbl-legacy pbl-dense mixed arabic; do
             dir="$HF_E2E_DIR/$sample"
-            if output="$(npx --yes hyperframes@0.7.60 lint "$dir" 2>&1)"; then
+            if output="$(pnpm exec hyperframes lint "$dir" 2>&1)"; then
               status=0
             else
               status=$?

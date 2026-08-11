@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "Barra de texto",
       "label": "Texto",
       "font": "Fuente",
       "fontDefault": "Predeterminada",
@@ -240,17 +241,99 @@
       "alignLeft": "Alinear a la izquierda",
       "alignCenter": "Centrar",
       "alignRight": "Alinear a la derecha",
-      "bullet": "Lista con viñetas"
+      "bullet": "Lista con viñetas",
+      "colorHex": "Código de color"
+    },
+    "line": {
+      "toolbar": "Barra de línea",
+      "kind": "Tipo de línea",
+      "color": "Color de línea",
+      "width": "Grosor de línea",
+      "style": "Estilo de línea",
+      "start": "Estilo inicial",
+      "end": "Estilo final",
+      "straight": "Recta",
+      "broken": "Quebrada",
+      "broken2": "Quebrada doble",
+      "curve": "Curva",
+      "cubic": "Curva cúbica",
+      "solid": "Sólida",
+      "dashed": "Discontinua",
+      "dotted": "Punteada",
+      "none": "Ninguno",
+      "arrow": "Flecha",
+      "dot": "Punto"
     },
     "insert": {
+      "toolbar": "Barra de inserción",
       "textBox": "Cuadro de texto",
+      "line": "Línea",
+      "linePresets": {
+        "straight": "Línea recta",
+        "dashed": "Línea discontinua",
+        "arrow": "Línea con flecha",
+        "dashedArrow": "Línea discontinua con flecha",
+        "dottedEnd": "Línea con extremo de punto",
+        "broken": "Línea quebrada",
+        "doubleBroken": "Línea con doble quiebre",
+        "curve": "Curva",
+        "cubic": "Curva cúbica"
+      },
+      "table": "Tabla",
+      "formula": "Fórmula",
+      "chart": "Gráfica",
+      "chartBar": "Gráfica de barras",
+      "chartLine": "Gráfica de líneas",
+      "chartPie": "Gráfica circular",
+      "tableDimensions": "Tabla {{rows}} x {{columns}}",
       "dragToolbar": "Mover herramientas de inserción",
       "dragToolbarKeyboard": "Mover herramientas de inserción: presiona Enter o Espacio y luego usa las flechas",
       "image": "Imagen",
       "imageDrop": "Suelta una imagen o haz clic para elegir un archivo",
       "imageOr": "o pega la URL de una imagen",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "Insertar"
+      "imageInsert": "Insertar",
+      "video": "Video",
+      "videoDrop": "Suelta un video o haz clic para elegir un archivo",
+      "videoOr": "o pega la URL de un video",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "Insertar",
+      "audio": "Audio",
+      "audioDrop": "Suelta un audio o haz clic para elegir un archivo",
+      "audioOr": "o pega la URL de un audio",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "Insertar"
+    },
+    "asset": {
+      "drop": "Arrastra un archivo o haz clic para elegir",
+      "orUrl": "o pega la URL del archivo",
+      "urlPlaceholder": "https://…",
+      "insert": "Insertar",
+      "invalidType": "Tipo de archivo no compatible",
+      "readFailed": "No se pudo leer el archivo"
+    },
+    "latex": {
+      "toolbar": "Barra de fórmulas",
+      "editFormula": "Editar fórmula",
+      "dialog": "Editor de fórmulas",
+      "source": "Código fuente LaTeX",
+      "preview": "Vista previa",
+      "symbols": "Símbolos",
+      "presets": "Fórmulas predefinidas",
+      "invalidSource": "El código fuente LaTeX no es válido."
+    },
+    "video": {
+      "toolbar": "Barra de video",
+      "poster": "Establecer portada"
+    },
+    "audio": {
+      "toolbar": "Barra de audio",
+      "preview": "Escuchar audio",
+      "pause": "Pausar vista previa",
+      "loop": "Repetir"
+    },
+    "table": {
+      "doubleClickToEdit": "Haz doble clic para editar"
     },
     "nav": {
       "addSlide": "Agregar diapositiva",
@@ -273,14 +356,38 @@
       "toBack": "Enviar al fondo"
     },
     "image": {
+      "toolbar": "Barra de imagen",
       "replace": "Reemplazar imagen",
       "flipH": "Voltear horizontal",
-      "flipV": "Voltear vertical"
+      "flipV": "Voltear vertical",
+      "crop": "Recortar imagen"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "Alineación horizontal",
+      "verticalAlignment": "Alineación vertical",
+      "selectAll": "Seleccionar todo",
+      "copy": "Copiar",
+      "cut": "Cortar",
+      "paste": "Pegar",
+      "unlock": "Desbloquear",
+      "lock": "Bloquear",
+      "group": "Agrupar",
+      "ungroup": "Desagrupar",
+      "bringForward": "Traer adelante",
+      "sendBackward": "Enviar atrás",
+      "alignTop": "Alinear arriba",
+      "alignMiddle": "Alinear al medio",
+      "alignBottom": "Alinear abajo"
     },
     "background": {
       "label": "Fondo",
       "solid": "Sólido",
-      "image": "Imagen"
+      "image": "Imagen",
+      "color": "Color"
+    },
+    "common": {
+      "cancel": "Cancelar",
+      "confirm": "Confirmar"
     },
     "quiz": {
       "addQuestion": "Agregar pregunta",
@@ -330,6 +437,7 @@
       "discussion": "Discusión"
     },
     "element": {
+      "toolbar": "Barra de elementos",
       "text": "Texto",
       "image": "Imagen",
       "shape": "Forma",
@@ -825,7 +933,37 @@
     "searchPlaceholder": "Buscar cursos...",
     "searchAriaLabel": "Buscar cursos",
     "clearSearch": "Borrar",
-    "searchEmpty": "Ningún curso coincide con tu búsqueda"
+    "searchEmpty": "Ningún curso coincide con tu búsqueda",
+    "newFolderTitle": "Nueva carpeta",
+    "newFolderDesc": "Agrupa cursos por tema o para acceder más fácil.",
+    "newFolderInline": "Nueva carpeta…",
+    "folderNameLabel": "Nombre de la carpeta",
+    "folderNamePlaceholder": "p. ej. Matemáticas, Inglés, Cursos principales",
+    "folderNameHint": "CJK y latín ambos válidos; los espacios cuentan.",
+    "folderNameExists": "Ya existe una carpeta con ese nombre",
+    "folderCountLimit": "Límite de carpetas alcanzado",
+    "folderWidth": "Ancho {{width}}/{{max}}",
+    "folderCreate": "Crear",
+    "folderBadge": "Carpeta",
+    "folderCourseCountUnit": "cursos",
+    "deleteFolderTitle": "Eliminar carpeta \"{{name}}\"",
+    "deleteFolderEmptyDesc": "Esta carpeta está vacía. La eliminación no se puede deshacer.",
+    "deleteFolderUngroupDesc": "Los cursos se quedan en \"Mis cursos\", solo sin carpeta.",
+    "moveToFolder": "Mover a carpeta",
+    "moveToFolderLabel": "Mover a…",
+    "ungrouped": "Sin clasificar",
+    "searchResults": "Resultados de búsqueda",
+    "folderCreateFailed": "Error al crear la carpeta",
+    "folderRenameFailed": "Error al renombrar la carpeta",
+    "folderDeleteFailed": "Error al eliminar la carpeta",
+    "moveFailed": "Error al mover el curso",
+    "emptyFolderHint": "Esta carpeta está vacía",
+    "emptyLibraryHint": "Aún no hay cursos — crea uno arriba o importa un curso.",
+    "folderNameEmpty": "El nombre de la carpeta no puede estar vacío",
+    "deleteFolderOnly": "Solo eliminar carpeta",
+    "deleteFolderAndCourses": "Eliminar carpeta y {{count}} curso",
+    "deleteFolderAndCourses_other": "Eliminar carpeta y {{count}} cursos",
+    "deleteFolderConfirmRemove": "Esto elimina la carpeta y sus cursos, incluido el historial de chat."
   },
   "upload": {
     "pdfSizeLimit": "Admite archivos PDF de hasta 50 MB",

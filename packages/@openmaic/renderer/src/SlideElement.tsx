@@ -1,10 +1,14 @@
 'use client';
 
-import { useMemo, type ReactNode } from 'react';
+import { memo, useMemo, type ReactNode } from 'react';
 import {
   ElementTypes,
   type PPTElement,
   type PPTImageElement,
+  type PPTAudioElement,
+  type PPTShapeElement,
+  type PPTTableElement,
+  type PPTTextElement,
   type PPTVideoElement,
   type SlideTheme,
 } from '@openmaic/dsl';
@@ -17,6 +21,7 @@ import { BaseChartElement } from './elements/chart/BaseChartElement';
 import { BaseLatexElement } from './elements/latex/BaseLatexElement';
 import { BaseTableElement } from './elements/table/BaseTableElement';
 import { BaseVideoElement } from './elements/video/BaseVideoElement';
+import { BaseAudioElement } from './elements/audio/BaseAudioElement';
 import { BaseCodeElement } from './elements/code/BaseCodeElement';
 
 const DEFAULT_THEME = {
@@ -35,23 +40,39 @@ export interface SlideElementProps {
     defaultContent: ReactNode,
   ) => ReactNode;
   renderVideo?: (element: PPTVideoElement) => ReactNode;
+  renderText?: (element: PPTTextElement, defaultContent: ReactNode) => ReactNode;
+  renderShapeLabel?: (element: PPTShapeElement, defaultContent: ReactNode) => ReactNode;
+  renderTable?: (element: PPTTableElement, defaultContent: ReactNode) => ReactNode;
   videoInteractive?: boolean;
   onElementClick?: (element: PPTElement, event: React.MouseEvent) => void;
   /** Prefix used for the root div id — must match SpotlightOverlay's `elementIdPrefix`. */
   idPrefix?: string;
+  /** Compositor-only offset used by the editing surface during a move gesture. */
+  dragOffset?: { x: number; y: number };
 }
 
-export function SlideElement({
+type SlideElementContentProps = Pick<
+  SlideElementProps,
+  | 'elementInfo'
+  | 'animate'
+  | 'renderImage'
+  | 'renderVideo'
+  | 'renderText'
+  | 'renderShapeLabel'
+  | 'renderTable'
+  | 'videoInteractive'
+>;
+
+const SlideElementContent = memo(function SlideElementContent({
   elementInfo,
-  elementIndex,
-  theme,
   animate,
   renderImage,
   renderVideo,
+  renderText,
+  renderShapeLabel,
+  renderTable,
   videoInteractive,
-  onElementClick,
-  idPrefix = 'slide-element-',
-}: SlideElementProps) {
+}: SlideElementContentProps) {
   const Component = useMemo(() => {
     switch (elementInfo.type) {
       case ElementTypes.IMAGE:
@@ -70,6 +91,8 @@ export function SlideElement({
         return 'table';
       case ElementTypes.VIDEO:
         return 'video';
+      case ElementTypes.AUDIO:
+        return 'audio';
       case ElementTypes.CODE:
         return 'code';
       default:
@@ -79,15 +102,13 @@ export function SlideElement({
 
   if (!Component) return null;
 
-  const fontColor = theme?.fontColor ?? DEFAULT_THEME.fontColor;
-  const fontName = theme?.fontName ?? DEFAULT_THEME.fontName;
-  const renderedElement = (
+  return (
     <>
       {Component === 'text' && elementInfo.type === 'text' && (
-        <BaseTextElement elementInfo={elementInfo} />
+        <BaseTextElement elementInfo={elementInfo} renderContent={renderText} />
       )}
       {Component === 'shape' && elementInfo.type === 'shape' && (
-        <BaseShapeElement elementInfo={elementInfo} />
+        <BaseShapeElement elementInfo={elementInfo} renderLabel={renderShapeLabel} />
       )}
       {Component === 'image' && elementInfo.type === 'image' && (
         <BaseImageElement elementInfo={elementInfo} renderImage={renderImage} />
@@ -102,7 +123,7 @@ export function SlideElement({
         <BaseLatexElement elementInfo={elementInfo} />
       )}
       {Component === 'table' && elementInfo.type === 'table' && (
-        <BaseTableElement elementInfo={elementInfo} />
+        <BaseTableElement elementInfo={elementInfo} renderContent={renderTable} />
       )}
       {Component === 'video' && elementInfo.type === 'video' && (
         <BaseVideoElement
@@ -111,11 +132,33 @@ export function SlideElement({
           interactive={videoInteractive}
         />
       )}
+      {Component === 'audio' && elementInfo.type === 'audio' && (
+        <BaseAudioElement elementInfo={elementInfo as PPTAudioElement} />
+      )}
       {Component === 'code' && elementInfo.type === 'code' && (
         <BaseCodeElement elementInfo={elementInfo} animate={animate} />
       )}
     </>
   );
+});
+
+export const SlideElement = memo(function SlideElement({
+  elementInfo,
+  elementIndex,
+  theme,
+  animate,
+  renderImage,
+  renderVideo,
+  renderText,
+  renderShapeLabel,
+  renderTable,
+  videoInteractive,
+  onElementClick,
+  idPrefix = 'slide-element-',
+  dragOffset,
+}: SlideElementProps) {
+  const fontColor = theme?.fontColor ?? DEFAULT_THEME.fontColor;
+  const fontName = theme?.fontName ?? DEFAULT_THEME.fontName;
 
   return (
     <div
@@ -133,10 +176,25 @@ export function SlideElement({
     >
       <div
         className="slide-element-hit-target"
-        style={onElementClick ? { pointerEvents: 'auto' } : undefined}
+        style={{
+          pointerEvents: onElementClick ? 'auto' : undefined,
+          transform: dragOffset
+            ? `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`
+            : undefined,
+          willChange: dragOffset ? 'transform' : undefined,
+        }}
       >
-        {renderedElement}
+        <SlideElementContent
+          elementInfo={elementInfo}
+          animate={animate}
+          renderImage={renderImage}
+          renderVideo={renderVideo}
+          renderText={renderText}
+          renderShapeLabel={renderShapeLabel}
+          renderTable={renderTable}
+          videoInteractive={videoInteractive}
+        />
       </div>
     </div>
   );
-}
+});

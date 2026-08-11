@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "Barre de texte",
       "label": "Texte",
       "font": "Police",
       "fontDefault": "Par défaut",
@@ -240,17 +241,99 @@
       "alignLeft": "Aligner à gauche",
       "alignCenter": "Centrer",
       "alignRight": "Aligner à droite",
-      "bullet": "Liste à puces"
+      "bullet": "Liste à puces",
+      "colorHex": "Code couleur"
+    },
+    "line": {
+      "toolbar": "Barre de ligne",
+      "kind": "Type de ligne",
+      "color": "Couleur de ligne",
+      "width": "Épaisseur de ligne",
+      "style": "Style de ligne",
+      "start": "Style de départ",
+      "end": "Style d’arrivée",
+      "straight": "Droite",
+      "broken": "Ligne brisée",
+      "broken2": "Double ligne brisée",
+      "curve": "Courbe",
+      "cubic": "Courbe cubique",
+      "solid": "Continue",
+      "dashed": "Tirets",
+      "dotted": "Pointillés",
+      "none": "Aucun",
+      "arrow": "Flèche",
+      "dot": "Point"
     },
     "insert": {
+      "toolbar": "Barre d’insertion",
       "textBox": "Zone de texte",
+      "line": "Ligne",
+      "linePresets": {
+        "straight": "Ligne droite",
+        "dashed": "Ligne en pointillés",
+        "arrow": "Ligne avec flèche",
+        "dashedArrow": "Ligne en pointillés avec flèche",
+        "dottedEnd": "Ligne avec point final",
+        "broken": "Ligne brisée",
+        "doubleBroken": "Ligne à double coude",
+        "curve": "Courbe",
+        "cubic": "Courbe cubique"
+      },
+      "table": "Tableau",
+      "formula": "Formule",
+      "chart": "Graphique",
+      "chartBar": "Histogramme",
+      "chartLine": "Graphique linéaire",
+      "chartPie": "Diagramme circulaire",
+      "tableDimensions": "Tableau {{rows}} x {{columns}}",
       "dragToolbar": "Déplacer les outils d’insertion",
       "dragToolbarKeyboard": "Déplacer les outils d’insertion : appuyez sur Entrée ou Espace, puis utilisez les flèches",
       "image": "Image",
       "imageDrop": "Déposez une image ou cliquez pour choisir un fichier",
       "imageOr": "ou collez l’URL d’une image",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "Insérer"
+      "imageInsert": "Insérer",
+      "video": "Vidéo",
+      "videoDrop": "Déposez une vidéo ou cliquez pour choisir un fichier",
+      "videoOr": "ou collez l’URL d’une vidéo",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "Insérer",
+      "audio": "Audio",
+      "audioDrop": "Déposez un fichier audio ou cliquez pour choisir un fichier",
+      "audioOr": "ou collez l’URL d’un fichier audio",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "Insérer"
+    },
+    "asset": {
+      "drop": "Déposez un fichier ou cliquez pour choisir",
+      "orUrl": "ou collez l’URL du fichier",
+      "urlPlaceholder": "https://…",
+      "insert": "Insérer",
+      "invalidType": "Type de fichier non pris en charge",
+      "readFailed": "Impossible de lire le fichier"
+    },
+    "latex": {
+      "toolbar": "Barre d’outils de formule",
+      "editFormula": "Modifier la formule",
+      "dialog": "Éditeur de formules",
+      "source": "Source LaTeX",
+      "preview": "Aperçu",
+      "symbols": "Symboles",
+      "presets": "Préréglages",
+      "invalidSource": "La source LaTeX est invalide."
+    },
+    "video": {
+      "toolbar": "Barre d’outils vidéo",
+      "poster": "Définir l’affiche"
+    },
+    "audio": {
+      "toolbar": "Barre d’outils audio",
+      "preview": "Préécouter l’audio",
+      "pause": "Suspendre l’aperçu",
+      "loop": "Lire en boucle"
+    },
+    "table": {
+      "doubleClickToEdit": "Double-cliquez pour modifier"
     },
     "nav": {
       "addSlide": "Ajouter une diapositive",
@@ -273,14 +356,38 @@
       "toBack": "Mettre à l’arrière-plan"
     },
     "image": {
+      "toolbar": "Barre d’image",
       "replace": "Remplacer l’image",
       "flipH": "Retourner horizontalement",
-      "flipV": "Retourner verticalement"
+      "flipV": "Retourner verticalement",
+      "crop": "Rogner l’image"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "Alignement horizontal",
+      "verticalAlignment": "Alignement vertical",
+      "selectAll": "Tout sélectionner",
+      "copy": "Copier",
+      "cut": "Couper",
+      "paste": "Coller",
+      "unlock": "Déverrouiller",
+      "lock": "Verrouiller",
+      "group": "Grouper",
+      "ungroup": "Dégrouper",
+      "bringForward": "Avancer",
+      "sendBackward": "Reculer",
+      "alignTop": "Aligner en haut",
+      "alignMiddle": "Aligner au milieu",
+      "alignBottom": "Aligner en bas"
     },
     "background": {
       "label": "Arrière-plan",
       "solid": "Uni",
-      "image": "Image"
+      "image": "Image",
+      "color": "Couleur"
+    },
+    "common": {
+      "cancel": "Annuler",
+      "confirm": "Confirmer"
     },
     "quiz": {
       "addQuestion": "Ajouter une question",
@@ -330,6 +437,7 @@
       "discussion": "Discussion"
     },
     "element": {
+      "toolbar": "Barre d’élément",
       "text": "Texte",
       "image": "Image",
       "shape": "Forme",
@@ -825,7 +933,37 @@
     "searchPlaceholder": "Rechercher un cours…",
     "searchAriaLabel": "Rechercher un cours",
     "clearSearch": "Effacer",
-    "searchEmpty": "Aucun cours ne correspond à votre recherche"
+    "searchEmpty": "Aucun cours ne correspond à votre recherche",
+    "deleteFolderUngroupDesc": "Les cours restent dans « Mes cours », simplement non classés.",
+    "deleteFolderAndCourses": "Supprimer le dossier et {{count}} cours",
+    "deleteFolderAndCourses_other": "Supprimer le dossier et {{count}} cours",
+    "deleteFolderConfirmRemove": "Cela supprime le dossier et ses cours, y compris l'historique des discussions.",
+    "deleteFolderEmptyDesc": "Ce dossier est vide. La suppression est irréversible.",
+    "deleteFolderOnly": "Supprimer le dossier uniquement",
+    "deleteFolderTitle": "Supprimer le dossier « {{name}} »",
+    "emptyFolderHint": "Ce dossier est vide",
+    "emptyLibraryHint": "Aucun cours pour le moment — créez-en un ci-dessus, ou importez un cours.",
+    "folderBadge": "Dossier",
+    "folderCountLimit": "Limite de dossiers atteinte.",
+    "folderCourseCountUnit": "cours",
+    "folderCreate": "Créer",
+    "folderCreateFailed": "Échec de la création du dossier",
+    "folderDeleteFailed": "Échec de la suppression du dossier",
+    "folderNameEmpty": "Le nom du dossier ne peut pas être vide",
+    "folderNameExists": "Un dossier avec ce nom existe déjà.",
+    "folderNameHint": "Caractères larges et étroits acceptés ; les espaces comptent.",
+    "folderNameLabel": "Nom du dossier",
+    "folderNamePlaceholder": "Ex : Mathématiques, Anglais, Cours principaux",
+    "folderRenameFailed": "Échec du renommage du dossier",
+    "folderWidth": "Largeur {{width}}/{{max}}",
+    "moveFailed": "Échec du déplacement du cours",
+    "moveToFolder": "Déplacer vers un dossier",
+    "moveToFolderLabel": "Déplacer vers un dossier",
+    "newFolderDesc": "Organisez les cours par sujet pour un accès plus facile.",
+    "newFolderInline": "Nouveau dossier",
+    "newFolderTitle": "Nouveau dossier",
+    "searchResults": "Résultats de recherche",
+    "ungrouped": "Non classés"
   },
   "upload": {
     "pdfSizeLimit": "Accepte les fichiers PDF jusqu’à 50 Mo",

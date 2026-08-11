@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "텍스트 도구 모음",
       "label": "텍스트",
       "font": "글꼴",
       "fontDefault": "기본",
@@ -240,17 +241,99 @@
       "alignLeft": "왼쪽 정렬",
       "alignCenter": "가운데 정렬",
       "alignRight": "오른쪽 정렬",
-      "bullet": "글머리 기호 목록"
+      "bullet": "글머리 기호 목록",
+      "colorHex": "색상 코드"
+    },
+    "line": {
+      "toolbar": "선 도구 모음",
+      "kind": "선 유형",
+      "color": "선 색상",
+      "width": "선 두께",
+      "style": "선 스타일",
+      "start": "시작점 스타일",
+      "end": "끝점 스타일",
+      "straight": "직선",
+      "broken": "꺾은선",
+      "broken2": "이중 꺾은선",
+      "curve": "곡선",
+      "cubic": "3차 곡선",
+      "solid": "실선",
+      "dashed": "파선",
+      "dotted": "점선",
+      "none": "없음",
+      "arrow": "화살표",
+      "dot": "점"
     },
     "insert": {
+      "toolbar": "삽입 도구 모음",
       "textBox": "텍스트 상자",
+      "line": "선",
+      "linePresets": {
+        "straight": "직선",
+        "dashed": "점선",
+        "arrow": "화살표 선",
+        "dashedArrow": "점선 화살표",
+        "dottedEnd": "끝점 원 선",
+        "broken": "꺾은선",
+        "doubleBroken": "이중 꺾은선",
+        "curve": "곡선",
+        "cubic": "3차 곡선"
+      },
+      "table": "표",
+      "formula": "수식",
+      "chart": "차트",
+      "chartBar": "막대 차트",
+      "chartLine": "꺾은선 차트",
+      "chartPie": "원형 차트",
+      "tableDimensions": "{{rows}} x {{columns}} 표",
       "dragToolbar": "삽입 도구 이동",
       "dragToolbarKeyboard": "삽입 도구 이동: Enter 또는 Space를 누른 다음 방향키로 이동",
       "image": "이미지",
       "imageDrop": "이미지를 끌어다 놓거나 클릭하여 파일을 선택하세요",
       "imageOr": "또는 이미지 URL 붙여넣기",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "삽입"
+      "imageInsert": "삽입",
+      "video": "비디오",
+      "videoDrop": "비디오를 끌어다 놓거나 클릭하여 파일을 선택하세요",
+      "videoOr": "또는 비디오 URL 붙여넣기",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "삽입",
+      "audio": "오디오",
+      "audioDrop": "오디오를 끌어다 놓거나 클릭하여 파일을 선택하세요",
+      "audioOr": "또는 오디오 URL 붙여넣기",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "삽입"
+    },
+    "asset": {
+      "drop": "파일을 끌어다 놓거나 클릭하여 선택",
+      "orUrl": "또는 파일 URL 붙여넣기",
+      "urlPlaceholder": "https://…",
+      "insert": "삽입",
+      "invalidType": "지원하지 않는 파일 형식",
+      "readFailed": "파일을 읽을 수 없습니다"
+    },
+    "latex": {
+      "toolbar": "수식 도구 모음",
+      "editFormula": "수식 편집",
+      "dialog": "수식 편집기",
+      "source": "LaTeX 소스",
+      "preview": "미리 보기",
+      "symbols": "기호",
+      "presets": "미리 정의된 수식",
+      "invalidSource": "LaTeX 소스가 올바르지 않습니다."
+    },
+    "video": {
+      "toolbar": "비디오 도구 모음",
+      "poster": "포스터 설정"
+    },
+    "audio": {
+      "toolbar": "오디오 도구 모음",
+      "preview": "오디오 미리 듣기",
+      "pause": "미리 듣기 일시 중지",
+      "loop": "반복 재생"
+    },
+    "table": {
+      "doubleClickToEdit": "두 번 클릭하여 편집"
     },
     "nav": {
       "addSlide": "슬라이드 추가",
@@ -281,6 +364,7 @@
       "discussion": "토론"
     },
     "element": {
+      "toolbar": "요소 도구 모음",
       "text": "텍스트",
       "image": "이미지",
       "shape": "도형",
@@ -410,15 +494,39 @@
       "restored": "복원됨",
       "resume": "다시 적용"
     },
+    "contextMenu": {
+      "horizontalAlignment": "가로 정렬",
+      "verticalAlignment": "세로 정렬",
+      "selectAll": "모두 선택",
+      "copy": "복사",
+      "cut": "잘라내기",
+      "paste": "붙여넣기",
+      "unlock": "잠금 해제",
+      "lock": "잠금",
+      "group": "그룹화",
+      "ungroup": "그룹 해제",
+      "bringForward": "앞으로 가져오기",
+      "sendBackward": "뒤로 보내기",
+      "alignTop": "위쪽 정렬",
+      "alignMiddle": "세로 가운데 정렬",
+      "alignBottom": "아래쪽 정렬"
+    },
     "background": {
       "image": "이미지",
       "label": "배경",
-      "solid": "단색"
+      "solid": "단색",
+      "color": "색상"
     },
     "image": {
+      "toolbar": "이미지 도구 모음",
       "flipH": "좌우 반전",
       "flipV": "상하 반전",
-      "replace": "이미지 교체"
+      "replace": "이미지 교체",
+      "crop": "이미지 자르기"
+    },
+    "common": {
+      "cancel": "취소",
+      "confirm": "확인"
     },
     "quiz": {
       "addOption": "선택지 추가",
@@ -825,7 +933,37 @@
     "searchPlaceholder": "강좌 검색...",
     "searchAriaLabel": "강좌 검색",
     "clearSearch": "지우기",
-    "searchEmpty": "검색 결과에 해당하는 강좌가 없습니다"
+    "searchEmpty": "검색 결과에 해당하는 강좌가 없습니다",
+    "newFolderTitle": "새 폴더",
+    "newFolderDesc": "주제별로 강의를 정리하여 접근성을 높입니다.",
+    "newFolderInline": "새 폴더",
+    "folderNameLabel": "폴더 이름",
+    "folderNamePlaceholder": "예: 수학, 영어, 전공 과목",
+    "folderNameHint": "전각/반각 모두 가능. 공백도 포함됩니다.",
+    "folderNameExists": "같은 이름의 폴더가 이미 있습니다.",
+    "folderCountLimit": "폴더 수 한도에 도달했습니다.",
+    "folderWidth": "너비 {{width}}/{{max}}",
+    "folderCreate": "만들기",
+    "folderBadge": "폴더",
+    "folderCourseCountUnit": "개 강의",
+    "deleteFolderTitle": "폴더 \"{{name}}\" 삭제",
+    "deleteFolderEmptyDesc": "이 폴더는 비어 있습니다. 삭제 후 복구할 수 없습니다.",
+    "deleteFolderUngroupDesc": "강의는 «내 강의»에 유지되며, 미분류로 변경됩니다.",
+    "moveToFolder": "폴더로 이동",
+    "moveToFolderLabel": "폴더로 이동",
+    "ungrouped": "미분류",
+    "searchResults": "검색 결과",
+    "folderCreateFailed": "폴더 만들기에 실패했습니다",
+    "folderRenameFailed": "폴더 이름 변경에 실패했습니다",
+    "folderDeleteFailed": "폴더 삭제에 실패했습니다",
+    "moveFailed": "강의 이동에 실패했습니다",
+    "emptyFolderHint": "이 폴더가 비어 있습니다",
+    "emptyLibraryHint": "아직 강의가 없습니다. 위에서 만들거나 강의를 가져오세요.",
+    "folderNameEmpty": "폴더 이름은 비워둘 수 없습니다",
+    "deleteFolderOnly": "폴더만 삭제",
+    "deleteFolderAndCourses": "폴더와 강의 {{count}}개 삭제",
+    "deleteFolderConfirmRemove": "폴더와 강의(채팅 기록 포함)가 삭제됩니다.",
+    "deleteFolderAndCourses_other": "폴더와 강의 {{count}}개 삭제"
   },
   "upload": {
     "pdfSizeLimit": "최대 50MB PDF 파일을 지원합니다",

@@ -23,6 +23,9 @@ interface Workflow {
 }
 
 const workflowSource = readFileSync(resolve(process.cwd(), '.github/workflows/ci.yml'), 'utf8');
+const rootPackage = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as {
+  devDependencies?: Record<string, string>;
+};
 
 const EXPECTED_MAIN_PUSH_GATE = `
 set -euo pipefail
@@ -39,7 +42,7 @@ const EXPECTED_HYPERFRAMES_LINT = `
 set -euo pipefail
 for sample in quiz pbl-v2 pbl-legacy pbl-dense mixed arabic; do
 dir="$HF_E2E_DIR/$sample"
-if output="$(npx --yes hyperframes@0.7.60 lint "$dir" 2>&1)"; then
+if output="$(pnpm exec hyperframes lint "$dir" 2>&1)"; then
 status=0
 else
 status=$?
@@ -137,6 +140,10 @@ function e2eRenderCommands(workflow: Workflow): string[] {
 }
 
 describe('CI video-export workflow contract', () => {
+  it('uses the pinned local Hyperframes CLI instead of an ephemeral npx install', () => {
+    expect(rootPackage.devDependencies?.hyperframes).toBe('0.7.60');
+  });
+
   it('preserves package version-bump gates for pull requests and main pushes', () => {
     const workflow = parseWorkflow();
     const pullRequest = step(workflow, 'check', 'Package version bumps');
@@ -225,7 +232,7 @@ describe('CI video-export workflow contract', () => {
     [
       'extra CLI flags',
       (source: string) =>
-        source.replace('hyperframes@0.7.60 lint "$dir"', 'hyperframes@0.7.60 lint --quiet "$dir"'),
+        source.replace('hyperframes lint "$dir"', 'hyperframes lint --quiet "$dir"'),
     ],
     ['missing nonzero capture', (source: string) => source.replace('status=$?', 'status=0')],
     ['missing nonzero propagation', (source: string) => source.replace('exit "$status"', 'exit 1')],

@@ -15,3 +15,14 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
   }
   globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
 }
+
+// ProseMirror reads Range geometry when it scrolls a restored selection into
+// view. jsdom has no layout engine, so expose stable empty geometry in tests.
+if (typeof globalThis.Range !== 'undefined') {
+  if (!globalThis.Range.prototype.getClientRects) {
+    globalThis.Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+  }
+  if (!globalThis.Range.prototype.getBoundingClientRect) {
+    globalThis.Range.prototype.getBoundingClientRect = () => new DOMRect();
+  }
+}
