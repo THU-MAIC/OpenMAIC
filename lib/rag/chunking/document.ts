@@ -85,19 +85,33 @@ function graphemeSegments(value: string): readonly string[] {
 
 function splitLongSegment(value: string, maxChars: number): string[] {
   const chunks: string[] = [];
-  let remaining = value.trim();
+  const iterator = GRAPHEME_SEGMENTER.segment(value.trim())[Symbol.iterator]();
+  const pending: string[] = [];
+  let done = false;
 
   while (true) {
-    const segments = graphemeSegments(remaining);
-    if (segments.length <= maxChars) break;
-    const candidate = segments.slice(0, maxChars);
-    const whitespaceBoundary = candidate.findLastIndex((segment) => /^\s$/u.test(segment));
+    while (pending.length < maxChars && !done) {
+      const next = iterator.next();
+      if (next.done) {
+        done = true;
+      } else {
+        pending.push(next.value.segment);
+      }
+    }
+
+    if (pending.length === 0) break;
+    if (done) {
+      const finalChunk = pending.join('').trim();
+      if (finalChunk) chunks.push(finalChunk);
+      break;
+    }
+
+    const whitespaceBoundary = pending.findLastIndex((segment) => /^\s$/u.test(segment));
     const boundary = whitespaceBoundary > Math.floor(maxChars / 2) ? whitespaceBoundary : maxChars;
-    chunks.push(segments.slice(0, boundary).join('').trim());
-    remaining = segments.slice(boundary).join('').trim();
+    const chunk = pending.splice(0, boundary).join('').trim();
+    if (chunk) chunks.push(chunk);
   }
 
-  if (remaining) chunks.push(remaining);
   return chunks;
 }
 
