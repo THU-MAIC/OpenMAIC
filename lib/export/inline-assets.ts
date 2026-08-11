@@ -6,37 +6,31 @@ import {
 } from './inline-assets-shared';
 import {
   buildInlinedImportmap,
-  extractSpecifiers,
   resolveSpecifier,
   rewriteModuleSpecifiers,
 } from './inline-assets-importmap';
+import {
+  analyzeHtmlAssetInventory,
+  applySourcePatches,
+  collectAssetRefs,
+  replaceAttributePatch,
+  replaceAttributeRangePatch,
+  type AssetRefKind,
+  type SourcePatch,
+} from './html-asset-inventory';
 import parseSrcset, { type SrcsetCandidate } from 'parse-srcset';
+import type { AtRule, Root } from 'postcss';
+import {
+  cssImportReference,
+  cssUrlReferences,
+  parseCss,
+  rewriteCssValue,
+} from './css-asset-parser';
 
 export { toDataUri } from './inline-assets-shared';
 export type { InlineReport, InlineOptions, FetchAsset } from './inline-assets-shared';
-
-export type AssetRefKind =
-  | 'link'
-  | 'script'
-  | 'img'
-  | 'srcset'
-  | 'poster'
-  | 'iframe-src'
-  | 'object-data'
-  | 'embed-src'
-  | 'source'
-  | 'video'
-  | 'audio'
-  | 'css-url'
-  | 'css-import'
-  | 'module-import'
-  | 'base'
-  | 'importmap';
-
-export interface AssetRef {
-  kind: AssetRefKind;
-  url: string;
-}
+export { collectAssetRefs } from './html-asset-inventory';
+export type { AssetRef, AssetRefKind } from './html-asset-inventory';
 
 const HTTP_URL = /^https?:\/\//i;
 
@@ -111,90 +105,6 @@ function serializeSrcset(candidates: SrcsetCandidate[]): string {
       return descriptor ? `${candidate.url} ${descriptor}` : candidate.url;
     })
     .join(', ');
-}
-
-/** Scan LLM-generated interactive HTML for resources that must be bundled. */
-export function collectAssetRefs(
-  html: string,
-  options: { includeRelative?: boolean } = {},
-): AssetRef[] {
-  const refs: AssetRef[] = [];
-  const push = (kind: AssetRefKind, url: string) => {
-    const value = url.trim();
-    if (!value) return;
-    if (/^(?:data:|blob:)/i.test(value)) {
-      if (kind === 'iframe-src' || kind === 'object-data' || kind === 'embed-src') {
-        refs.push({ kind, url: value });
-      }
-      return;
-    }
-    if (/^(?:about:|#)/i.test(value)) return;
-    if (options.includeRelative || HTTP_URL.test(value)) refs.push({ kind, url: value });
-  };
-
-  for (const m of html.matchAll(/<base\b[^>]*?\bhref\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    push('base', m[1]);
-  }
-  for (const m of html.matchAll(/<link\b[^>]*?\bhref\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    push('link', m[1]);
-  }
-  for (const m of html.matchAll(/<script\b([^>]*?)\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    const whole = m[0].toLowerCase();
-    if (whole.includes('importmap') || whole.includes('application/json')) continue;
-    push('script', m[2]);
-  }
-  for (const m of html.matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    push('img', m[1]);
-  }
-  for (const m of html.matchAll(/<(?:img|source)\b[^>]*?\bsrcset\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    for (const candidate of parseSrcset(m[1])) push('srcset', candidate.url);
-  }
-  for (const m of html.matchAll(/<source\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    push('source', m[1]);
-  }
-  for (const m of html.matchAll(/<video\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    push('video', m[1]);
-  }
-  for (const m of html.matchAll(/<video\b[^>]*?\bposter\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    push('poster', m[1]);
-  }
-  for (const m of html.matchAll(/<audio\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    push('audio', m[1]);
-  }
-  for (const m of html.matchAll(/<iframe\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    push('iframe-src', m[1]);
-  }
-  for (const m of html.matchAll(/<object\b[^>]*?\bdata\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    push('object-data', m[1]);
-  }
-  for (const m of html.matchAll(/<embed\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    push('embed-src', m[1]);
-  }
-  for (const m of html.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/gi)) {
-    push('css-url', m[1].trim());
-  }
-  for (const m of html.matchAll(/@import\s+(?:url\(\s*)?["']?([^"'\s)]+)["']?\s*\)?/gi)) {
-    push('css-import', m[1]);
-  }
-  for (const m of html.matchAll(
-    /<script\b([^>]*)\btype\s*=\s*["']module["']([^>]*)>([\s\S]*?)<\/script>/gi,
-  )) {
-    for (const spec of extractSpecifiers(m[3])) push('module-import', spec);
-  }
-  for (const m of html.matchAll(
-    /<script\b[^>]*type\s*=\s*["']importmap["'][^>]*>([\s\S]*?)<\/script>/gi,
-  )) {
-    try {
-      const map = JSON.parse(m[1]);
-      const imports = map.imports ?? {};
-      for (const v of Object.values(imports)) {
-        if (typeof v === 'string') push('importmap', v);
-      }
-    } catch {
-      // malformed importmap — skip
-    }
-  }
-  return refs;
 }
 
 const DEFAULT_MAX_ASSET_BYTES = 8 * 1024 * 1024;
@@ -286,6 +196,52 @@ function guessMime(url: string): string {
 const NON_WOFF2_FONT_EXT = /\.(woff|ttf|otf|eot)(\?|#|$)/i;
 const WOFF2_EXT = /\.woff2(\?|#|$)/i;
 
+async function inlineParsedCssUrls(
+  root: Root,
+  cssUrl: string,
+  fetchAsset: FetchAsset,
+  dropRefs: ReadonlySet<string>,
+): Promise<{ failed: { url: string; reason: string }[]; inlined: string[] }> {
+  const failed: { url: string; reason: string }[] = [];
+  const inlined: string[] = [];
+  const refsByUrl = new Map<string, Set<string>>();
+  root.walkDecls((declaration) => {
+    for (const ref of cssUrlReferences(declaration.value)) {
+      const raw = ref.raw.trim();
+      if (/^(?:data:|blob:|about:|#)/i.test(raw) || dropRefs.has(raw)) continue;
+      try {
+        const abs = new URL(raw, cssUrl).href;
+        const raws = refsByUrl.get(abs) ?? new Set<string>();
+        raws.add(raw);
+        refsByUrl.set(abs, raws);
+      } catch {
+        // Leave unresolvable values untouched for strict residual validation.
+      }
+    }
+  });
+
+  const replacements = new Map<string, string>();
+  await mapWithConcurrency([...refsByUrl.entries()], 8, async ([abs, raws]) => {
+    const got = await fetchAsset(abs);
+    if (got) {
+      for (const raw of raws) replacements.set(raw, toDataUri(got.bytes, got.contentType));
+      inlined.push(abs);
+    } else {
+      failed.push({ url: abs, reason: 'fetch failed' });
+    }
+  });
+
+  root.walkDecls((declaration) => {
+    declaration.value = rewriteCssValue(declaration.value, (raw) => {
+      const key = raw.trim();
+      if (replacements.has(key)) return replacements.get(key);
+      if (dropRefs.has(key)) return 'about:invalid';
+      return undefined;
+    });
+  });
+  return { failed, inlined };
+}
+
 /** Inline every url(...) inside a CSS text, resolving relative URLs against cssUrl.
  *
  * Woff2-preference optimisation: within any @font-face block that contains a
@@ -302,11 +258,15 @@ export async function inlineCssUrls(
 ): Promise<{ css: string; failed: { url: string; reason: string }[]; inlined: string[] }> {
   const failed: { url: string; reason: string }[] = [];
   const inlined: string[] = [];
-  const importRe = /@import\s+(?:url\(\s*)?(["']?)([^"'\s)]+)\1\s*\)?\s*([^;]*);?/gi;
-  const imports = [...css.matchAll(importRe)];
-  const importedCss = new Map<string, string>();
-  for (const match of imports) {
-    const raw = match[2].trim();
+  const root = parseCss(css, cssUrl);
+  const imports: AtRule[] = [];
+  root.walkAtRules((rule) => {
+    if (rule.name.toLowerCase() === 'import') imports.push(rule);
+  });
+  for (const rule of imports) {
+    const reference = cssImportReference(rule);
+    if (!reference) continue;
+    const raw = reference.url.trim();
     if (/^(?:data:|blob:|about:|#)/i.test(raw)) continue;
     let abs: string;
     try {
@@ -317,7 +277,7 @@ export async function inlineCssUrls(
     if (activeCssUrls.has(abs)) {
       // Only imports on the current recursion path are cycles. Sibling imports
       // of the same stylesheet may carry distinct media/layer/supports guards.
-      importedCss.set(match[0], '');
+      rule.remove();
       continue;
     }
     const got = await fetchAsset(abs);
@@ -332,87 +292,49 @@ export async function inlineCssUrls(
       new Set(activeCssUrls).add(abs),
     );
     inlined.push(abs, ...nested.inlined);
-    importedCss.set(match[0], wrapImportedCss(nested.css, parseCssImportConditions(match[3])));
     failed.push(...nested.failed);
+    const wrapped = wrapImportedCss(nested.css, parseCssImportConditions(reference.conditions));
+    rule.replaceWith(...parseCss(wrapped, abs).nodes);
   }
-  const cssWithImports = css.replace(importRe, (full) => importedCss.get(full) ?? full);
 
   // 1. Find @font-face blocks; build dropRefs (non-woff2 fonts in blocks that have a woff2).
   const dropRefs = new Set<string>();
-  for (const block of cssWithImports.match(/@font-face\s*\{[^}]*\}/gi) ?? []) {
-    const blockUrls = [...block.matchAll(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi)].map((m) =>
-      m[2].trim(),
-    );
+  root.walkAtRules((rule) => {
+    if (rule.name.toLowerCase() !== 'font-face') return;
+    const blockUrls: string[] = [];
+    rule.walkDecls((declaration) => {
+      blockUrls.push(...cssUrlReferences(declaration.value).map((ref) => ref.raw.trim()));
+    });
     const hasWoff2 = blockUrls.some((u) => WOFF2_EXT.test(u) || /^data:font\/woff2/i.test(u));
-    if (!hasWoff2) continue;
+    if (!hasWoff2) return;
     for (const u of blockUrls) {
       if (!/^data:/i.test(u) && NON_WOFF2_FONT_EXT.test(u)) dropRefs.add(u);
     }
-  }
-
-  // 2. Collect unique refs to FETCH (exclude data:, dropRefs, unresolvable).
-  const urlRe = /url\(\s*(["']?)([^"')]+)\1\s*\)/gi;
-  const uniqueRefs = new Map<string, string>(); // raw -> absolute url
-  for (const m of cssWithImports.matchAll(urlRe)) {
-    const raw = m[2].trim();
-    if (/^data:/i.test(raw)) continue;
-    if (dropRefs.has(raw)) continue;
-    if (uniqueRefs.has(raw)) continue;
-    try {
-      uniqueRefs.set(raw, new URL(raw, cssUrl).href);
-    } catch {
-      // skip unresolvable
-    }
-  }
-
-  // 3. Fetch in parallel (bounded).
-  const replacements = new Map<string, string>();
-  const entries = [...uniqueRefs.entries()];
-  await mapWithConcurrency(entries, 8, async ([raw, abs]) => {
-    const got = await fetchAsset(abs);
-    if (got) {
-      replacements.set(raw, toDataUri(got.bytes, got.contentType));
-      inlined.push(abs);
-    } else {
-      failed.push({ url: abs, reason: 'fetch failed' });
-    }
   });
 
-  // 4. Rewrite.
-  const rewritten = cssWithImports.replace(urlRe, (full, _q, raw) => {
-    const key = String(raw).trim();
-    if (replacements.has(key)) return `url(${replacements.get(key)})`;
-    if (dropRefs.has(key)) return 'url(about:invalid)';
-    return full;
-  });
+  const rewritten = await inlineParsedCssUrls(root, cssUrl, fetchAsset, dropRefs);
+  failed.push(...rewritten.failed);
+  inlined.push(...rewritten.inlined);
 
-  return { css: rewritten, failed, inlined };
+  return { css: root.toString(), failed, inlined };
+}
+
+async function inlineStyleAttributeUrls(
+  css: string,
+  fetchAsset: FetchAsset,
+): Promise<{ css: string; failed: { url: string; reason: string }[]; inlined: string[] }> {
+  const root = parseCss(`.openmaic-style{${css}}`, 'style-attribute');
+  const result = await inlineParsedCssUrls(root, 'about:blank', fetchAsset, new Set());
+  const serialized = root.toString();
+  return {
+    css: serialized.slice(serialized.indexOf('{') + 1, serialized.lastIndexOf('}')),
+    ...result,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // inlineHtmlAssets — Task 4
 // ---------------------------------------------------------------------------
-
-async function replaceAsync(
-  input: string,
-  re: RegExp,
-  replacer: (...args: string[]) => Promise<string>,
-): Promise<string> {
-  const matches = [...input.matchAll(re)];
-  // Process sequentially so the fetcher cache is populated before the next
-  // occurrence of the same URL is processed (dedup guarantee).
-  const replaced: string[] = [];
-  for (const m of matches) {
-    replaced.push(await replacer(...(m as unknown as string[])));
-  }
-  let result = '';
-  let last = 0;
-  matches.forEach((m, i) => {
-    result += input.slice(last, m.index!) + replaced[i];
-    last = m.index! + m[0].length;
-  });
-  return result + input.slice(last);
-}
 
 async function inlineImportmaps(
   html: string,
@@ -424,10 +346,9 @@ async function inlineImportmaps(
   // must be inspected before the script is converted to a data URI, otherwise
   // bare imports in an external module are invisible to importmap analysis.
   const moduleScripts: Array<{ code: string; baseUrl?: string }> = [];
-  for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
-    const attrs = m[1];
-    if (!/\btype\s*=\s*["']module["']/i.test(attrs)) continue;
-    const src = /\bsrc\s*=\s*["']([^"']+)["']/i.exec(attrs)?.[1];
+  const inventory = analyzeHtmlAssetInventory(html);
+  for (const script of inventory.moduleScripts) {
+    const src = script.attributes.src;
     if (src && /^https?:\/\//i.test(src)) {
       const got = await fetchAsset(src);
       if (!got) {
@@ -436,51 +357,73 @@ async function inlineImportmaps(
         continue;
       }
       moduleScripts.push({ code: new TextDecoder().decode(got.bytes), baseUrl: src });
-    } else if (m[2]?.trim()) {
-      moduleScripts.push({ code: m[2], baseUrl: undefined });
+    } else if (script.content.trim()) {
+      moduleScripts.push({ code: script.content, baseUrl: undefined });
     }
   }
-  return await replaceAsync(
-    html,
-    /<script\b[^>]*type\s*=\s*["']importmap["'][^>]*>([\s\S]*?)<\/script>/gi,
-    async (full, json) => {
-      let parsed: { imports?: Record<string, string> };
-      try {
-        parsed = JSON.parse(json);
-      } catch {
-        return full;
-      }
-      const orig = parsed.imports ?? {};
-      const { imports: inlined, report: r } = await buildInlinedImportmap(
-        orig,
-        moduleScripts,
-        fetchAsset,
-      );
-      for (const u of r.inlined) if (!report.inlined.includes(u)) report.inlined.push(u);
-      for (const f of r.failed)
-        if (!report.failed.some((g) => g.url === f.url)) report.failed.push(f);
-      // Merge: start from originals, overlay inlined data: entries.
-      // Merge: original prefix entries are retained as online fallback; inlined explicit
-      // data: entries take precedence for the modules we inlined. Keeping both is safe per
-      // the importmap spec (explicit specifier shadows prefix key) and strictly more correct:
-      // a sub-path not seen during static analysis can still resolve via the prefix online.
-      const merged: Record<string, string> = keepFallbacks ? { ...orig, ...inlined } : inlined;
-      return `<script type="importmap">${JSON.stringify({ imports: merged })}</script>`;
-    },
-  );
+  const patches: SourcePatch[] = [];
+  for (const importmap of inventory.importmaps) {
+    if (!importmap.contentRange) continue;
+    let parsed: { imports?: Record<string, string> };
+    try {
+      parsed = JSON.parse(importmap.content);
+    } catch {
+      continue;
+    }
+    const orig = parsed.imports ?? {};
+    const { imports: inlined, report: r } = await buildInlinedImportmap(
+      orig,
+      moduleScripts,
+      fetchAsset,
+    );
+    for (const u of r.inlined) if (!report.inlined.includes(u)) report.inlined.push(u);
+    for (const f of r.failed)
+      if (!report.failed.some((g) => g.url === f.url)) report.failed.push(f);
+    // Merge: start from originals, overlay inlined data: entries.
+    // Merge: original prefix entries are retained as online fallback; inlined explicit
+    // data: entries take precedence for the modules we inlined. Keeping both is safe per
+    // the importmap spec (explicit specifier shadows prefix key) and strictly more correct:
+    // a sub-path not seen during static analysis can still resolve via the prefix online.
+    const merged: Record<string, string> = keepFallbacks ? { ...orig, ...inlined } : inlined;
+    patches.push({
+      range: importmap.contentRange,
+      replacement: JSON.stringify({ imports: merged }),
+    });
+  }
+  return applySourcePatches(html, patches);
 }
 
 function readImportmapImports(html: string): Record<string, string> {
-  for (const match of html.matchAll(
-    /<script\b[^>]*type\s*=\s*["']importmap["'][^>]*>([\s\S]*?)<\/script>/gi,
-  )) {
+  const imports: Record<string, string> = {};
+  for (const importmap of analyzeHtmlAssetInventory(html).importmaps) {
     try {
-      return (JSON.parse(match[1]) as { imports?: Record<string, string> }).imports ?? {};
+      Object.assign(
+        imports,
+        (JSON.parse(importmap.content) as { imports?: Record<string, string> }).imports ?? {},
+      );
     } catch {
-      return {};
+      // Strict preparation reports malformed import maps separately.
     }
   }
-  return {};
+  return imports;
+}
+
+function unresolvedAssetUrls(html: string): string[] {
+  const inventory = analyzeHtmlAssetInventory(html);
+  const imports = readImportmapImports(html);
+  const unresolved = new Set(
+    collectAssetRefs(html, { includeRelative: true })
+      .filter((ref) => ref.kind !== 'module-import' || !resolveSpecifier(ref.url, imports))
+      .map((ref) => ref.url),
+  );
+  for (const importmap of inventory.importmaps) {
+    try {
+      JSON.parse(importmap.content);
+    } catch {
+      unresolved.add('malformed importmap');
+    }
+  }
+  return [...unresolved];
 }
 
 /** Rewrite direct URL/relative module dependencies to data URIs for offline use. */
@@ -506,13 +449,13 @@ async function inlineModuleSource(
 export async function inlineHtmlAssets(
   html: string,
   options?: InlineOptions,
-): Promise<{ html: string; report: InlineReport }> {
+): Promise<{ html: string; report: InlineReport; unresolved: string[] }> {
   const fetchAsset = options?.fetcher ?? createAssetFetcher(options);
   const report: InlineReport = { inlined: [], failed: [] };
 
   // Pre-warm non-importmap asset fetches in parallel so the sequential
-  // replaceAsync passes below hit a warm cache (fonts are parallelized
-  // inside inlineCssUrls; importmap modules are handled in buildInlinedImportmap).
+  // structured rewrite phases hit a warm cache (fonts are parallelized inside
+  // inlineCssUrls; importmap modules are handled in buildInlinedImportmap).
   await Promise.all(
     collectAssetRefs(html)
       .filter(
@@ -522,7 +465,11 @@ export async function inlineHtmlAssets(
           ref.kind !== 'object-data' &&
           ref.kind !== 'embed-src',
       )
-      .map((r) => fetchAsset(r.url).catch(() => null)),
+      .map((ref) => {
+        const url =
+          ref.kind === 'svg-image' || ref.kind === 'svg-use' ? ref.url.split('#')[0] : ref.url;
+        return fetchAsset(url).catch(() => null);
+      }),
   );
   let out = html;
 
@@ -533,100 +480,121 @@ export async function inlineHtmlAssets(
     if (!report.failed.some((f) => f.url === url)) report.failed.push({ url, reason });
   };
 
+  const inlineAttributes = async (kinds: ReadonlySet<AssetRefKind>) => {
+    const patches: SourcePatch[] = [];
+    for (const asset of analyzeHtmlAssetInventory(out).attributeAssets) {
+      if (!kinds.has(asset.kind) || !HTTP_URL.test(asset.url)) continue;
+      const isSvgReference = asset.kind === 'svg-image' || asset.kind === 'svg-use';
+      const hashIndex = isSvgReference ? asset.url.indexOf('#') : -1;
+      const fetchUrl = hashIndex === -1 ? asset.url : asset.url.slice(0, hashIndex);
+      const fragment = hashIndex === -1 ? '' : asset.url.slice(hashIndex);
+      const got = await fetchAsset(fetchUrl);
+      if (!got) {
+        markFailed(fetchUrl, 'fetch failed');
+        continue;
+      }
+      const patch = replaceAttributePatch(asset, toDataUri(got.bytes, got.contentType) + fragment);
+      if (patch) patches.push(patch);
+      markInlined(fetchUrl);
+    }
+    out = applySourcePatches(out, patches);
+  };
+
   // Resolve importmap entries before converting external module scripts. This
   // lets the importmap walker inspect their source bodies and nested imports.
   out = await inlineImportmaps(out, fetchAsset, report, options?.keepImportmapFallbacks !== false);
 
-  // 1) <link rel=stylesheet href> → <style> with nested url() inlined
-  out = await replaceAsync(
-    out,
-    /<link\b([^>]*?)\bhref\s*=\s*["'](https?:\/\/[^"']+)["']([^>]*)>/gi,
-    async (full, pre, url, post) => {
-      const isStylesheet = /rel\s*=\s*["']?stylesheet/i.test(pre + post);
-      if (!isStylesheet) return full;
-      const got = await fetchAsset(url);
+  // 1) Real <link rel=stylesheet href> → <style> with nested url() inlined.
+  {
+    const patches: SourcePatch[] = [];
+    for (const asset of analyzeHtmlAssetInventory(out).attributeAssets) {
+      if (
+        asset.kind !== 'link' ||
+        !HTTP_URL.test(asset.url) ||
+        !asset.attributes.rel?.toLowerCase().split(/\s+/).includes('stylesheet') ||
+        !asset.elementRange
+      ) {
+        continue;
+      }
+      const got = await fetchAsset(asset.url);
       if (!got) {
-        markFailed(url, 'fetch failed');
-        return full;
+        markFailed(asset.url, 'fetch failed');
+        continue;
       }
       let cssText = new TextDecoder().decode(got.bytes);
       const {
         css: rewritten,
         failed: cssFailed,
         inlined: cssInlined,
-      } = await inlineCssUrls(cssText, url, fetchAsset);
+      } = await inlineCssUrls(cssText, asset.url, fetchAsset);
       cssText = rewritten;
       for (const f of cssFailed) markFailed(f.url, f.reason);
       for (const inlined of cssInlined) markInlined(inlined);
-      const mediaMatch = /\bmedia\s*=\s*["']([^"']+)["']/i.exec(pre + post);
-      const mediaAttr = mediaMatch ? ` media="${mediaMatch[1].replace(/"/g, '&quot;')}"` : '';
-      markInlined(url);
-      return `<style data-inlined-from=""${mediaAttr}>${cssText}</style>`;
-    },
-  );
+      const mediaAttr = asset.attributes.media
+        ? ` media="${asset.attributes.media.replace(/"/g, '&quot;')}"`
+        : '';
+      markInlined(asset.url);
+      patches.push({
+        range: asset.elementRange,
+        replacement: `<style data-inlined-from=""${mediaAttr}>${cssText}</style>`,
+      });
+    }
+    out = applySourcePatches(out, patches);
+  }
 
-  // 2) <script src> (non-importmap) → data: URI src
-  out = await replaceAsync(
-    out,
-    /<script\b([^>]*?)\bsrc\s*=\s*["'](https?:\/\/[^"']+)["']([^>]*)>/gi,
-    async (full, pre, url, post) => {
-      const attrs = (pre + post).toLowerCase();
-      if (attrs.includes('importmap') || attrs.includes('application/json')) return full;
-      const got = await fetchAsset(url);
+  // 2) Real <script src> (non-importmap) → data: URI src.
+  {
+    const patches: SourcePatch[] = [];
+    for (const asset of analyzeHtmlAssetInventory(out).attributeAssets) {
+      if (asset.kind !== 'script' || !HTTP_URL.test(asset.url)) continue;
+      const got = await fetchAsset(asset.url);
       if (!got) {
-        markFailed(url, 'fetch failed');
-        return full;
+        markFailed(asset.url, 'fetch failed');
+        continue;
       }
-      const type = /\btype\s*=\s*["']module["']/i.test(pre + post);
+      const type = asset.attributes.type?.trim().toLowerCase() === 'module';
       const source = new TextDecoder().decode(got.bytes);
       const rewritten = type
-        ? await inlineModuleSource(source, url, readImportmapImports(out), fetchAsset, report)
+        ? await inlineModuleSource(source, asset.url, readImportmapImports(out), fetchAsset, report)
         : source;
-      markInlined(url);
-      return `<script${pre}src="${toDataUri(new TextEncoder().encode(rewritten), got.contentType)}"${post}>`;
-    },
-  );
+      const patch = replaceAttributePatch(
+        asset,
+        toDataUri(new TextEncoder().encode(rewritten), got.contentType),
+      );
+      if (patch) patches.push(patch);
+      markInlined(asset.url);
+    }
+    out = applySourcePatches(out, patches);
+  }
 
   // Inline module bodies can contain direct absolute imports or relative
   // imports. Rewrite those too; bare specifiers remain governed by importmap.
-  out = await replaceAsync(
-    out,
-    /<script\b([^>]*?)\btype\s*=\s*["']module["']([^>]*)>([\s\S]*?)<\/script>/gi,
-    async (full, pre, post, body) => {
+  {
+    const patches: SourcePatch[] = [];
+    for (const script of analyzeHtmlAssetInventory(out).moduleScripts) {
+      if (!script.contentRange || !script.content.trim()) continue;
       const rewritten = await inlineModuleSource(
-        body,
+        script.content,
         undefined,
         readImportmapImports(out),
         fetchAsset,
         report,
       );
-      return `<script${pre}type="module"${post}>${rewritten}</script>`;
-    },
-  );
+      patches.push({ range: script.contentRange, replacement: rewritten });
+    }
+    out = applySourcePatches(out, patches);
+  }
 
-  // 3) <img>/<source>/<video>/<audio> src
-  out = await replaceAsync(
-    out,
-    /<(img|source|video|audio)\b([^>]*?)\bsrc\s*=\s*["'](https?:\/\/[^"']+)["']([^>]*)>/gi,
-    async (full, tag, pre, url, post) => {
-      const got = await fetchAsset(url);
-      if (!got) {
-        markFailed(url, 'fetch failed');
-        return full;
-      }
-      markInlined(url);
-      return `<${tag}${pre}src="${toDataUri(got.bytes, got.contentType)}"${post}>`;
-    },
-  );
+  // 3) Real <img>/<source>/<video>/<audio> src attributes.
+  await inlineAttributes(new Set<AssetRefKind>(['img', 'source', 'video', 'audio']));
 
   // 4) Responsive image candidates use the same offline guarantee as src.
-  out = await replaceAsync(
-    out,
-    /<(img|source)\b([^>]*?)\bsrcset\s*=\s*(["'])([^"']+)\3([^>]*)>/gi,
-    async (full, tag, pre, quote, value, post) => {
-      const candidates = parseSrcset(value);
+  {
+    const patches: SourcePatch[] = [];
+    for (const asset of analyzeHtmlAssetInventory(out).attributeAssets) {
+      if (asset.kind !== 'srcset') continue;
       const rewritten = await Promise.all(
-        candidates.map(async (candidate) => {
+        parseSrcset(asset.url).map(async (candidate) => {
           if (!HTTP_URL.test(candidate.url)) return candidate;
           const got = await fetchAsset(candidate.url);
           if (!got) {
@@ -637,41 +605,49 @@ export async function inlineHtmlAssets(
           return { ...candidate, url: toDataUri(got.bytes, got.contentType) };
         }),
       );
-      return `<${tag}${pre}srcset=${quote}${serializeSrcset(rewritten)}${quote}${post}>`;
-    },
-  );
+      const patch = replaceAttributePatch(asset, serializeSrcset(rewritten));
+      if (patch) patches.push(patch);
+    }
+    out = applySourcePatches(out, patches);
+  }
 
   // 5) <video poster> is an external image resource too.
-  out = await replaceAsync(
-    out,
-    /<video\b([^>]*?)\bposter\s*=\s*["'](https?:\/\/[^"']+)["']([^>]*)>/gi,
-    async (full, pre, url, post) => {
-      const got = await fetchAsset(url);
-      if (!got) {
-        markFailed(url, 'fetch failed');
-        return full;
-      }
-      markInlined(url);
-      return `<video${pre}poster="${toDataUri(got.bytes, got.contentType)}"${post}>`;
-    },
-  );
+  await inlineAttributes(new Set<AssetRefKind>(['poster', 'svg-image', 'svg-use']));
 
-  // 6) url() inside authored <style> blocks (skip ones we created in step 1)
-  out = await replaceAsync(
-    out,
-    /<style\b([^>]*)>([\s\S]*?)<\/style>/gi,
-    async (full, attrs, body) => {
-      if (/data-inlined-from=/.test(attrs)) return full;
+  // 6) url() inside authored <style> blocks (skip ones we created in step 1).
+  {
+    const patches: SourcePatch[] = [];
+    for (const style of analyzeHtmlAssetInventory(out).styles) {
+      if (style.attributes['data-inlined-from'] !== undefined || !style.contentRange) continue;
       const {
         css: rewritten,
         failed: cssFailed,
         inlined: cssInlined,
-      } = await inlineCssUrls(body, 'about:blank', fetchAsset);
+      } = await inlineCssUrls(style.content, 'about:blank', fetchAsset);
       for (const f of cssFailed) markFailed(f.url, f.reason);
       for (const inlined of cssInlined) markInlined(inlined);
-      return `<style${attrs}>${rewritten}</style>`;
-    },
-  );
+      patches.push({ range: style.contentRange, replacement: rewritten });
+    }
+    out = applySourcePatches(out, patches);
+  }
 
-  return { html: out, report };
+  // 7) url() inside authored style attributes.
+  {
+    const patches: SourcePatch[] = [];
+    for (const style of analyzeHtmlAssetInventory(out).styleAttributes) {
+      if (!style.range) continue;
+      const {
+        css: rewritten,
+        failed: cssFailed,
+        inlined: cssInlined,
+      } = await inlineStyleAttributeUrls(style.css, fetchAsset);
+      for (const f of cssFailed) markFailed(f.url, f.reason);
+      for (const inlined of cssInlined) markInlined(inlined);
+      const patch = replaceAttributeRangePatch('style', style.range, rewritten);
+      if (patch) patches.push(patch);
+    }
+    out = applySourcePatches(out, patches);
+  }
+
+  return { html: out, report, unresolved: unresolvedAssetUrls(out) };
 }

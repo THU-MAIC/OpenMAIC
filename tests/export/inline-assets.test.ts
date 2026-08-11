@@ -82,6 +82,35 @@ describe('collectAssetRefs', () => {
     expect(refs.map((r) => r.url)).not.toContain('http://www.w3.org/2000/svg');
   });
 
+  it('collects external SVG image and use references but keeps local fragments local', () => {
+    const refs = collectAssetRefs(
+      '<svg><image href="https://cdn.example/image.png" />' +
+        '<use xlink:href="https://cdn.example/icons.svg#star" />' +
+        '<use href="#local" /></svg>',
+    );
+
+    expect(refs).toContainEqual({ kind: 'svg-image', url: 'https://cdn.example/image.png' });
+    expect(refs).toContainEqual({
+      kind: 'svg-use',
+      url: 'https://cdn.example/icons.svg#star',
+    });
+    expect(refs.map((ref) => ref.url)).not.toContain('#local');
+  });
+
+  it('collects CSS resources only from real url tokens', () => {
+    const realUrl = 'https://cdn.example/real.png';
+    const stringUrl = 'https://cdn.example/string.png';
+    const commentUrl = 'https://cdn.example/comment.png';
+    const refs = collectAssetRefs(
+      `<style>.x{content:"url(${stringUrl})";background:url(${realUrl})}/* url(${commentUrl}) */</style>`,
+      { includeRelative: true },
+    );
+
+    expect(refs).toContainEqual({ kind: 'css-url', url: realUrl });
+    expect(refs.map((ref) => ref.url)).not.toContain(stringUrl);
+    expect(refs.map((ref) => ref.url)).not.toContain(commentUrl);
+  });
+
   it('IGNORES data: and relative URLs', () => {
     const html =
       '<img src="data:image/png;base64,AAAA"><link rel="stylesheet" href="/local.css"><script src="./rel.js"></script>';
@@ -298,6 +327,45 @@ describe('inlineCssUrls', () => {
     expect(out).toContain('data:font/woff2;base64,AAAA');
   });
 
+  it('leaves local CSS fragments untouched and does not fetch them', async () => {
+    const calls: string[] = [];
+    const { css: out, failed } = await inlineCssUrls(
+      'svg{filter:url(#blur);mask:url("#mask")}',
+      'about:blank',
+      async (url) => {
+        calls.push(url);
+        return null;
+      },
+    );
+
+    expect(out).toContain('url(#blur)');
+    expect(out).toContain('url("#mask")');
+    expect(calls).toEqual([]);
+    expect(failed).toEqual([]);
+  });
+
+  it('ignores url-like text in CSS comments and quoted strings', async () => {
+    const realUrl = 'https://cdn.test/real.png';
+    const stringUrl = 'https://cdn.test/string.png';
+    const commentUrl = 'https://cdn.test/comment.png';
+    const calls: string[] = [];
+    const { css: out } = await inlineCssUrls(
+      `.x{content:"url(${stringUrl})";background:url(${realUrl})}/* url(${commentUrl}) */`,
+      'about:blank',
+      async (url) => {
+        calls.push(url);
+        return { bytes: new Uint8Array([1]), contentType: 'image/png' };
+      },
+    );
+
+    expect(out).toContain(`content:"url(${stringUrl})"`);
+    expect(out).toContain(`/* url(${commentUrl}) */`);
+    expect(out).toContain('background:url(data:image/png;base64,');
+    expect(calls).toContain(realUrl);
+    expect(calls).not.toContain(stringUrl);
+    expect(calls).not.toContain(commentUrl);
+  });
+
   it('handles quoted url() and multiple refs, fetching each unique once', async () => {
     let calls = 0;
     const css = `src:url("a.woff2"),url('a.woff2'),url(b.woff2)`;
@@ -431,6 +499,124 @@ function fetchFromMap(map: Record<string, { body: string; ct: string }>): typeof
 }
 
 describe('inlineHtmlAssets', () => {
+  it('rewrites real elements without touching resource-like authored script text', async () => {
+    const realUrl = 'https://cdn.test/real.png';
+    const inertUrl = 'https://cdn.test/inert.png';
+    const calls: string[] = [];
+    const authoredScript = `const template = '<img src="${inertUrl}">';`;
+    const { html: out } = await inlineHtmlAssets(
+      `<script>${authoredScript}</script><img src="${realUrl}">`,
+      {
+        fetcher: async (url) => {
+          calls.push(url);
+          return { bytes: new Uint8Array([1, 2, 3]), contentType: 'image/png' };
+        },
+      },
+    );
+
+    expect(out).toContain(`<script>${authoredScript}</script>`);
+    expect(out).toContain('<img src="data:image/png;base64,');
+    expect(calls).toContain(realUrl);
+    expect(calls).not.toContain(inertUrl);
+  });
+
+  it('inlines external SVG href resources and preserves use fragments', async () => {
+    const calls: string[] = [];
+    const { html: out } = await inlineHtmlAssets(
+      '<svg><defs><g id="local"></g></defs><use href="#local" />' +
+        '<image href="https://cdn.test/image.png" />' +
+        '<use xlink:href="https://cdn.test/icons.svg#star" /></svg>',
+      {
+        fetcher: async (url) => {
+          calls.push(url);
+          return {
+            bytes: new TextEncoder().encode(url.endsWith('.svg') ? '<svg></svg>' : 'PNG'),
+            contentType: url.endsWith('.svg') ? 'image/svg+xml' : 'image/png',
+          };
+        },
+      },
+    );
+
+    expect(out).toContain('<use href="#local"');
+    expect(out).toContain('<image href="data:image/png;base64,');
+    expect(out).toContain('xlink:href="data:image/svg+xml;base64,');
+    expect(out).toContain('#star"');
+    expect(calls).toContain('https://cdn.test/image.png');
+    expect(calls).toContain('https://cdn.test/icons.svg');
+    expect(calls).not.toContain('https://cdn.test/icons.svg#star');
+  });
+
+  it('rewrites real style blocks without touching style-like authored script text', async () => {
+    const realUrl = 'https://cdn.test/real.css-image.png';
+    const inertUrl = 'https://cdn.test/inert.css-image.png';
+    const authoredScript = `const template = '<style>.x{background:url(${inertUrl})}</style>';`;
+    const calls: string[] = [];
+    const { html: out } = await inlineHtmlAssets(
+      `<script>${authoredScript}</script><style>.x{background:url(${realUrl})}</style>`,
+      {
+        fetcher: async (url) => {
+          calls.push(url);
+          return { bytes: new Uint8Array([1]), contentType: 'image/png' };
+        },
+      },
+    );
+
+    expect(out).toContain(`<script>${authoredScript}</script>`);
+    expect(out).toContain('data:image/png;base64,');
+    expect(calls).toContain(realUrl);
+    expect(calls).not.toContain(inertUrl);
+  });
+
+  it('rewrites real script and link elements without touching authored tag text', async () => {
+    const realScript = 'https://cdn.test/real.js';
+    const realCss = 'https://cdn.test/real.css';
+    const inertScript = 'https://cdn.test/inert.js';
+    const inertCss = 'https://cdn.test/inert.css';
+    const authoredScript =
+      `const scriptTag = '<script src="${inertScript}">';` +
+      `const linkTag = '<link rel="stylesheet" href="${inertCss}">';`;
+    const calls: string[] = [];
+    const { html: out } = await inlineHtmlAssets(
+      `<script>${authoredScript}</script>` +
+        `<script src="${realScript}"></script>` +
+        `<link rel="stylesheet" href="${realCss}">`,
+      {
+        fetcher: async (url) => {
+          calls.push(url);
+          return {
+            bytes: new TextEncoder().encode(
+              url.endsWith('.css') ? '.real{color:red}' : 'window.real = true;',
+            ),
+            contentType: url.endsWith('.css') ? 'text/css' : 'text/javascript',
+          };
+        },
+      },
+    );
+
+    expect(out).toContain(`<script>${authoredScript}</script>`);
+    expect(out).toContain('<script src="data:text/javascript;base64,');
+    expect(out).toContain('<style data-inlined-from=""');
+    expect(calls).toContain(realScript);
+    expect(calls).toContain(realCss);
+    expect(calls).not.toContain(inertScript);
+    expect(calls).not.toContain(inertCss);
+  });
+
+  it('inlines style-attribute resources while preserving local fragments', async () => {
+    const url = 'https://cdn.test/background.png';
+    const { html: out, report } = await inlineHtmlAssets(
+      `<div style="background:url(${url});filter:url(#blur)"></div>`,
+      {
+        fetcher: async (requested) =>
+          requested === url ? { bytes: new Uint8Array([1]), contentType: 'image/png' } : null,
+      },
+    );
+
+    expect(out).toContain('background:url(data:image/png;base64,');
+    expect(out).toContain('filter:url(#blur)');
+    expect(report.failed).toEqual([]);
+  });
+
   it('inlines every responsive image candidate and preserves its descriptor', async () => {
     const { html, report } = await inlineHtmlAssets(
       '<img srcset="https://cdn.example/small.png 1x, https://cdn.example/large.png 2x">',

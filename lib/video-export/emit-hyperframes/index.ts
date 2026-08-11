@@ -300,6 +300,7 @@ function initializeOpenMaicInteractiveStaticFrames() {
           host.setAttribute('data-interactive-static-state', 'fallback');
           host.setAttribute('data-interactive-diagnostic', code);
           record(sceneId, code, message);
+          iframe.remove();
         }
         resolve({ sceneId: sceneId, ok: ok, code: code });
       }

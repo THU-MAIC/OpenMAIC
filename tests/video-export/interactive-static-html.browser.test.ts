@@ -207,6 +207,37 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
         manifestDiagnostics: [expect.objectContaining({ code: 'interactive-runtime-failure' })],
         runtimeReport: expect.stringContaining('interactive-runtime-failure'),
       });
+      expect(page.frames()).toHaveLength(1);
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('unloads the child document after a readiness failure', async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    try {
+      await load(
+        page,
+        await emittedFixture(
+          '<!doctype html><html><body><img src="data:image/png;base64,AAAA"><script>setInterval(function(){ window.__ticks = (window.__ticks || 0) + 1; }, 10)</script></body></html>',
+        ),
+      );
+
+      await page.waitForFunction(() => {
+        return (
+          document
+            .querySelector('[data-interactive-static-host]')
+            ?.getAttribute('data-interactive-static-state') === 'fallback'
+        );
+      });
+      await page.waitForTimeout(100);
+
+      expect(page.frames()).toHaveLength(1);
+      expect(
+        await page
+          .locator('[data-interactive-static-host]')
+          .getAttribute('data-interactive-diagnostic'),
+      ).toBe('interactive-ready-failure');
     } finally {
       await page.close();
     }

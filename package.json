@@ -111,6 +111,8 @@
     "parse5": "^8.0.1",
     "parse-srcset": "^1.0.2",
     "pg": "^8.16.3",
+    "postcss": "^8.5.15",
+    "postcss-value-parser": "^4.2.0",
     "pptxgenjs": "workspace:*",
     "pptxtojson": "^1.11.0",
     "prosemirror-commands": "^1.7.1",

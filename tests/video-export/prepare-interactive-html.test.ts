@@ -64,6 +64,17 @@ describe('prepareInteractiveHtmlScenes', () => {
     expect(html.indexOf('data-openmaic-static-csp')).toBeLessThan(html.indexOf('<body>'));
   });
 
+  it('ignores embedded-document markup inside authored script text', async () => {
+    const authoredScript =
+      'const template = `<iframe src="data:text/html,example"></iframe>`; window.__template = template;';
+    const prepared = await prepareInteractiveHtmlScenes([
+      scene(`<script>${authoredScript}</script><main>Ready</main>`),
+    ]);
+
+    expect(prepared.html(scene())).toMatchObject({ present: true });
+    expect(prepared.content('interactive:widget')).toContain(`<script>${authoredScript}</script>`);
+  });
+
   it('inlines supported remote assets and removes the network URL', async () => {
     const prepared = await prepareInteractiveHtmlScenes(
       [scene('<html><head></head><body><img src="https://cdn.test/pixel.png"></body></html>')],
@@ -78,6 +89,29 @@ describe('prepareInteractiveHtmlScenes', () => {
     expect(prepared.html(scene())?.present).toBe(true);
     expect(prepared.content('interactive:widget')).toContain('src="data:image/png;base64,');
     expect(prepared.content('interactive:widget')).not.toContain('https://cdn.test/pixel.png');
+  });
+
+  it('accepts bare module imports resolved by the final offline import map', async () => {
+    const prepared = await prepareInteractiveHtmlScenes(
+      [
+        scene(
+          '<script type="importmap">{"imports":{"dep":"https://cdn.test/dep.js"}}</script>' +
+            '<script type="module">import { value } from "dep"; window.__value = value;</script>',
+        ),
+      ],
+      {
+        fetcher: async (url) =>
+          url === 'https://cdn.test/dep.js'
+            ? {
+                bytes: new TextEncoder().encode('export const value = 42;'),
+                contentType: 'text/javascript',
+              }
+            : null,
+      },
+    );
+
+    expect(prepared.html(scene())).toMatchObject({ present: true });
+    expect(prepared.content('interactive:widget')).toContain('"dep":"data:text/javascript;base64,');
   });
 
   it('rejects unresolved remote or relative resources with an explicit failure', async () => {

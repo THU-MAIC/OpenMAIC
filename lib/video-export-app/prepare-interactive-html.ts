@@ -5,7 +5,7 @@
  * self-contained pages ready for the pure video compiler and byte collector.
  */
 import type { Scene } from '@/lib/types/stage';
-import { collectAssetRefs, inlineHtmlAssets, type FetchAsset } from '@/lib/export/inline-assets';
+import { inlineHtmlAssets, type FetchAsset } from '@/lib/export/inline-assets';
 import { injectIntoDocumentHead } from '@/lib/utils/html-document';
 import { patchHtmlForIframe } from '@/lib/utils/iframe';
 import type { InteractiveHtmlMeta, InteractiveHtmlSource } from '@/lib/video-export/deps';
@@ -167,25 +167,12 @@ function staticCaptureInjection(): string {
       .then(function () { freeze(); post('frozen', 'interactive-static-ready', 'ready'); })
       .catch(function (error) {
         nativeClearTimeout(deadlineTimer);
+        freeze();
         post('failure', 'interactive-ready-failure', error && error.message || error);
       });
   }, { once: true });
 })();
 </script>`;
-}
-
-function unsupportedAssetRefs(html: string): string[] {
-  const refs = new Set(collectAssetRefs(html, { includeRelative: true }).map((ref) => ref.url));
-  for (const match of html.matchAll(
-    /<script\b[^>]*type\s*=\s*["']importmap["'][^>]*>([\s\S]*?)<\/script>/gi,
-  )) {
-    try {
-      JSON.parse(match[1]);
-    } catch {
-      refs.add('malformed importmap');
-    }
-  }
-  return [...refs];
 }
 
 /** KaTeX emits `about:invalid` font fallbacks after its embedded data fonts. */
@@ -243,7 +230,11 @@ export async function prepareInteractiveHtmlScenes(
     }
 
     try {
-      const { html: inlined, report } = await inlineHtmlAssets(authored, {
+      const {
+        html: inlined,
+        report,
+        unresolved,
+      } = await inlineHtmlAssets(authored, {
         fetcher: options.fetcher,
         keepImportmapFallbacks: false,
       });
@@ -253,8 +244,7 @@ export async function prepareInteractiveHtmlScenes(
           ...report.failed
             .map((failure) => failure.url)
             .filter((url) => !/^about:invalid$/i.test(url)),
-          ...collectAssetRefs(sanitized).map((ref) => ref.url),
-          ...unsupportedAssetRefs(sanitized),
+          ...unresolved,
         ]),
       ];
       if (residual.length > 0) {
