@@ -9,7 +9,7 @@
 
 import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
-import type { EditIntent } from '@openmaic/renderer/editing';
+import type { EditIntent } from '@openmaic/editor/core';
 import type { PPTElement } from '@openmaic/dsl';
 import type { RegenerateActionsDeps, SceneContext } from './regenerate-scene-actions';
 import {

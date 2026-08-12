@@ -5,15 +5,15 @@ import type { StageStore } from '@/lib/api/stage-api-types';
 import {
   applyOutlineFallbacks,
   generateSceneOutlinesFromRequirements,
-} from '@/lib/generation/outline-generator';
-import {
-  createSceneWithActions,
   generateSceneActions,
   generateSceneContent,
   PBLGenerationError,
-} from '@/lib/generation/scene-generator';
-import type { AICallFn } from '@/lib/generation/pipeline-types';
-import type { AgentInfo } from '@/lib/generation/pipeline-types';
+  withGenerationRetry,
+  type AICallFn,
+  type AgentInfo,
+} from '@openmaic/generation';
+import { createSceneWithActions } from '@/lib/server/scene-generation';
+import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
@@ -32,7 +32,6 @@ import {
   replaceMediaPlaceholders,
   generateTTSForClassroom,
 } from '@/lib/server/classroom-media-generation';
-import { withGenerationRetry } from '@/lib/generation/generation-retry';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
@@ -586,12 +585,9 @@ export async function generateClassroom(
       });
     };
 
-    // Resolve this scene's content model lazily, per outline type. The browser
-    // UI does the same at /api/generate/scene-content (composite key
-    // scene-content:<type> → scene-content). PBL scenes additionally need the
-    // resolved model object, since generatePBLSceneContent drives its own LLM
-    // calls through it instead of the aiCall closure — without it PBL scenes
-    // silently fail (return null) on this one-shot path.
+    // Resolve this scene's content model lazily, per outline type. The package
+    // gets the provider-bound AICallFn and the app injects its agentic PBL loop
+    // as the classified fallback, preserving single-call → loop routing.
     const contentCall = await resolveSceneContentCall(safeOutline.type);
     const content = await (async () => {
       try {
@@ -601,13 +597,17 @@ export async function generateClassroom(
               agents,
               languageDirective,
               allowProceduralSkill: vocationalActive,
-              // PBL scene content is driven by the model object, not the aiCall
-              // closure, so both the routed model AND its thinking config must be
-              // passed explicitly — otherwise a `scene-content:pbl` route with a
-              // `thinking` config would be silently ignored here (slide/quiz/
-              // interactive go through the aiCall closure and already honor it).
               ...(safeOutline.type === 'pbl'
-                ? { languageModel: contentCall.model, thinkingConfig: contentCall.thinking }
+                ? {
+                    pblLoopFallback: (input) =>
+                      generatePBLV2Project(
+                        input,
+                        contentCall.model,
+                        callLLM,
+                        { logger: log },
+                        contentCall.thinking,
+                      ),
+                  }
                 : {}),
             }),
           {

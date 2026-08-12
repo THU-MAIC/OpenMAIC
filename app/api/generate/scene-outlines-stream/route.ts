@@ -20,11 +20,12 @@ import {
   formatImageDescription,
   formatImagePlaceholder,
   buildVisionUserContent,
+  buildOutlinePrompt,
   uniquifyMediaElementIds,
   formatTeacherPersonaForPrompt,
-} from '@/lib/generation/generation-pipeline';
-import type { AgentInfo } from '@/lib/generation/generation-pipeline';
-import { DEFAULT_LANGUAGE_DIRECTIVE } from '@/lib/generation/outline-generator';
+} from '@openmaic/generation';
+import type { AgentInfo } from '@openmaic/generation';
+import { DEFAULT_LANGUAGE_DIRECTIVE } from '@openmaic/generation';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { nanoid } from 'nanoid';
 import type {
@@ -71,7 +72,7 @@ function extractLanguageDirective(buffer: string): string | null {
 const COURSE_TITLE_RE = /"courseTitle"\s*:\s*"((?:[^"\\]|\\.)*)"/;
 
 // Normalize a captured title identically to the non-streaming parser
-// (lib/generation/outline-generator.ts): ignore whitespace-only titles and cap
+// (@openmaic/generation outline parser): ignore whitespace-only titles and cap
 // length defensively so a hallucinating model cannot push a blank or unbounded
 // value into the stage name. Returning null lets callers fall back / keep scanning.
 function normalizeStreamedTitle(raw: string): string | null {
@@ -363,24 +364,36 @@ export async function POST(req: NextRequest) {
     // Check if Interactive Mode or server-enabled Task Engine mode is enabled.
     const interactiveMode = requirements.interactiveMode ?? false;
     const taskEngineMode = resolveVocationalActive(requirements);
-    const promptId = taskEngineMode
-      ? PROMPT_IDS.TASK_ENGINE_OUTLINES
-      : interactiveMode
-        ? PROMPT_IDS.INTERACTIVE_OUTLINES
-        : PROMPT_IDS.REQUIREMENTS_TO_OUTLINES;
-
-    const prompts = buildPrompt(promptId, {
-      requirement: requirements.requirement,
-      pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
-      availableImages: availableImagesText,
-      researchContext: researchContext || 'None',
-      hasSourceImages,
-      imageEnabled: imageGenerationEnabled,
-      videoEnabled: videoGenerationEnabled,
-      mediaEnabled: mediaGenerationEnabled,
+    // Standard outline generation is byte-identical to the package path. The
+    // two app-only modes retain their own templates but share the same inputs.
+    let prompts: { system: string; user: string } | null = buildOutlinePrompt(requirements, {
+      pdfText,
+      pdfImages,
+      visionEnabled: hasVision,
+      imageMapping,
+      imageGenerationEnabled,
+      videoGenerationEnabled,
+      researchContext,
       teacherContext,
-      userProfile: userProfileText,
     });
+
+    if (taskEngineMode || interactiveMode) {
+      const promptId = taskEngineMode
+        ? PROMPT_IDS.TASK_ENGINE_OUTLINES
+        : PROMPT_IDS.INTERACTIVE_OUTLINES;
+      prompts = buildPrompt(promptId, {
+        requirement: requirements.requirement,
+        pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
+        availableImages: availableImagesText,
+        researchContext: researchContext || 'None',
+        hasSourceImages,
+        imageEnabled: imageGenerationEnabled,
+        videoEnabled: videoGenerationEnabled,
+        mediaEnabled: mediaGenerationEnabled,
+        teacherContext,
+        userProfile: userProfileText,
+      });
+    }
 
     if (!prompts) {
       return apiError('INTERNAL_ERROR', 500, 'Prompt template not found');

@@ -1,6 +1,6 @@
-# RuntimeStore and DocumentStore reference server
+# RuntimeStore, DocumentStore, and AssetStore reference server
 
-The `@openmaic/storage/server` subpath exports a Node-only HTTP request handler implementing the [RuntimeStore HTTP contract](./runtime-http-contract.md) and, when a document store is supplied, the [DocumentStore HTTP contract](./document-http-contract.md). It accepts injected `RuntimeStore` and `DocumentStore` implementations; the runnable `@openmaic/storage/server/reference` composition creates and initializes `PgRuntimeStore`, accepts an optional host-created document store, and demonstrates the required node-postgres checkout/transaction/release pattern.
+The `@openmaic/storage/server` subpath exports a Node-only HTTP request handler implementing the [RuntimeStore HTTP contract](./runtime-http-contract.md), plus the [DocumentStore HTTP contract](./document-http-contract.md) and [AssetStore HTTP contract](./asset-http-contract.md) when their stores are supplied. It accepts injected store implementations; the runnable `@openmaic/storage/server/reference` composition creates and initializes `PgRuntimeStore`, accepts optional host-created document and asset stores, and demonstrates the required node-postgres checkout/transaction/release pattern.
 
 The OpenMAIC application also mounts these same composed handlers as an
 app-integrated Next.js route at `/api/persistence`. That embedded route is the
@@ -20,8 +20,9 @@ DATABASE_URL=postgres://user:password@host/database PORT=3000 \
 
 The executable `main()` binds to `127.0.0.1`; `createReferenceRuntimeServer()` only creates and returns an unbound Node `Server`. The default bearer token payload is used directly as the demo `learnerKey`, self-merge is the only allowed merge, and admin operations are denied. Supplying `documentStore` adds the DocumentStore routes to that same server; any authenticated principal is allowed by default, or `authorizeDocuments` can enforce deployment policy. The factory also accepts `authenticate`, `authorizeMerge`, `authorizeAdmin`, and validator overrides. Replace the policy hooks before exposing a deployment:
 
-- `authenticate(req)` must validate a real credential and derive the canonical learner partition from server-controlled identity state.
+- `authenticate(req)` must validate a real credential and derive canonical learner and asset partition keys from server-controlled identity state.
 - `authorizeDocuments(principal, req)` must establish that the principal may access the requested author document operation. The default permits every authenticated principal.
+- `authorizeAssets(principal, req)` must establish that the principal may access the requested asset operation. The default permits every authenticated principal carrying an asset key; registry ownership remains mandatory on every operation.
 - `authorizeMerge(principal, fromKey, toKey)` must explicitly establish that the principal may migrate the complete source partition into the destination identity. Default denial is intentional.
 - `authorizeAdmin(principal)` must require a separately protected administrative role. Default denial is intentional.
 
@@ -53,6 +54,20 @@ the lower-level handler yourself. Full response, validation, version, and retry
 semantics are specified in the
 [DocumentStore HTTP contract](./document-http-contract.md).
 
+## Asset endpoints
+
+Every asset route requires an authenticated principal with an asset partition key. Supplying `assetStore` adds these routes to the composed server; `authorizeAssets` can apply an additional deployment policy before any registry entry is read.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/assets` | Allocate a new id and store bytes |
+| `GET` | `/assets/{id}/content` | Read bytes and identity headers |
+| `HEAD` | `/assets/{id}/content` | Read identity headers without bytes |
+| `PUT` | `/assets/{id}/content` | Replace bytes behind an existing id |
+| `DELETE` | `/assets/{id}` | Remove an entry; absent and foreign ids are no-ops |
+
+Writes use bounded `multipart/form-data`; reads are private and uncached. The full media-type allowlist, size limits, response headers, and client snapshot rules are specified in the [AssetStore HTTP contract](./asset-http-contract.md).
+
 ## Endpoint authorization matrix
 
 The matrix treats learner, merge, and admin credentials as separate capabilities. An admin-only or merge-only credential does not implicitly own a learner partition; a deployment may combine capabilities, but every applicable check still has to pass.
@@ -70,12 +85,19 @@ The matrix treats learner, merge, and admin credentials as separate capabilities
 | `DELETE /runtime/stages/{stageId}/learners/{learnerKey}` | Deny (`401`) | Allow | Deny (`403`) | Deny | Deny |
 | `DELETE /runtime/stages/{stageId}` | Deny (`401`) | Deny (`403`) | Deny (`403`) | Deny (`403`) | Allow |
 | `DELETE /runtime` | Deny (`401`) | Deny (`403`) | Deny (`403`) | Deny (`403`) | Allow |
+| `POST /assets` | Deny (`401`) | Allow in own partition | Allow in own partition | Deny without asset key | Deny without asset key |
+| `GET /assets/{id}/content` | Deny (`401`) | Allow for own id | Not found (`404`) | Deny without asset key | Deny without asset key |
+| `HEAD /assets/{id}/content` | Deny (`401`) | Allow for own id | Not found (`404`) | Deny without asset key | Deny without asset key |
+| `PUT /assets/{id}/content` | Deny (`401`) | Allow for own id | Not found (`404`) | Deny without asset key | Deny without asset key |
+| `DELETE /assets/{id}` | Deny (`401`) | Allow | Allow as no-op | Deny without asset key | Deny without asset key |
 
 ## Threat model
 
 `learnerKey` is an opaque partition key, never a credential. An attacker can alter path segments and JSON bodies, so trusting a submitted key enables lateral movement: reading another learner's sessions or records, writing records into their sessions, changing status, or deleting their data. The handler authenticates every contract operation and compares stored or submitted learner ownership before touching learner-scoped data. Direct stage / learner partition mismatches return `403 FORBIDDEN_LEARNER`; missing credentials return `401 UNAUTHENTICATED`.
 
 Session-scoped routes deliberately conceal whether another learner's session ID exists. A credential with a different `learnerKey` receives the same `404 SESSION_NOT_FOUND` as an absent session, and ownership is checked before future-version classification so version metadata cannot disclose existence. A principal with no `learnerKey` is different: it lacks the learner capability entirely and receives `403 FORBIDDEN_LEARNER` on every learner-scoped route.
+
+An asset id is an identifier, not a bearer token. Every asset operation rechecks the authenticated principal's ownership, including every byte read. An id belonging to another principal and an id that was never allocated are indistinguishable on every route: reads and replacements return the same fixed `404 ASSET_NOT_FOUND`, while deletion succeeds as the same no-op.
 
 Merge is a privilege-escalation boundary because it rewrites every source session across every stage. Merely owning either key is insufficient in a real identity system: the authorization hook must verify the account-linking or identity-upgrade proof for both the source and destination. The default is deny.
 

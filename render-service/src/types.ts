@@ -18,9 +18,76 @@ export interface RenderOptions {
   format: 'mp4';
 }
 
+/** Progress emitted by any render executor, normalized for service callers. */
+export interface RenderProgress {
+  /** Fraction complete in the stable 0..1 service range. */
+  progress: number;
+  stage: string;
+  framesRendered?: number;
+  totalFrames?: number;
+}
+
+/** Executor-independent performance data retained for diagnostics and benchmarks. */
+export interface RenderPerformanceSummary {
+  totalElapsedMs: number;
+  stages: Record<string, number>;
+  workers: number;
+  totalFrames: number;
+  captureMode?: string;
+  peakRssMb?: number;
+  tmpPeakBytes?: number;
+}
+
+/** Stable failure classification produced at the RenderExecutor seam. */
+export type RenderFailureCode =
+  | 'cancelled'
+  | 'deadline_exceeded'
+  | 'unsupported_capture_mode'
+  | 'execution_failed';
+
+export interface RenderCancelledFailure {
+  code: 'cancelled';
+  message: string;
+}
+
+export interface RenderFailedFailure {
+  code: Exclude<RenderFailureCode, 'cancelled'>;
+  message: string;
+}
+
+export type RenderFailure = RenderCancelledFailure | RenderFailedFailure;
+
+/** Everything an executor needs to run one render without knowing about HTTP jobs. */
+export interface RenderExecutionRequest {
+  projectDir: string;
+  outputPath: string;
+  options: RenderOptions;
+  /** User or coordinator cancellation. */
+  signal: AbortSignal;
+  /** Wall-clock budget starting when execution begins. */
+  deadlineMs: number;
+  onProgress: (progress: RenderProgress) => void | Promise<void>;
+}
+
+export type RenderExecutionResult =
+  | {
+      status: 'succeeded';
+      performance?: RenderPerformanceSummary;
+    }
+  | {
+      status: 'cancelled';
+      failure: RenderCancelledFailure;
+      performance?: RenderPerformanceSummary;
+    }
+  | {
+      status: 'failed';
+      failure: RenderFailedFailure;
+      performance?: RenderPerformanceSummary;
+    };
+
 /**
- * A render job's observable state. `progress` is 0..1 (producer's native
- * range); the HTTP layer surfaces it as-is and the client scales to a percent.
+ * A render job's observable state. `progress` is normalized to 0..1; the HTTP
+ * layer surfaces it as-is and the client scales it to a percent.
  */
 export interface RenderJobRecord {
   id: string;
@@ -38,6 +105,10 @@ export interface RenderJobRecord {
   projectDir: string;
   /** Absolute path to the rendered MP4 once `succeeded`. */
   outputPath?: string;
+  /** Domain failure retained independently from the HTTP-compatible error string. */
+  failure?: RenderFailure;
+  /** Executor-independent diagnostics for completed or failed attempts. */
+  performance?: RenderPerformanceSummary;
 }
 
 export function isTerminal(status: RenderJobStatus): boolean {

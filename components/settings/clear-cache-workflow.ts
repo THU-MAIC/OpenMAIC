@@ -8,6 +8,9 @@ export interface ClearCacheSteps {
 }
 
 export type ClearCacheResult =
+  // "cleared" describes local cache state. In server-backed asset mode the
+  // pool closes and revokes local object URLs, but durable remote assets remain
+  // untouched and this result deliberately makes no claim that they were deleted.
   | { readonly status: 'cleared' }
   | { readonly status: 'asset-pool-deferred'; readonly error: AssetPoolDeletionDeferredError };
 

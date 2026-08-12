@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "Панель текста",
       "label": "Текст",
       "font": "Шрифт",
       "fontDefault": "По умолчанию",
@@ -240,17 +241,99 @@
       "alignLeft": "По левому краю",
       "alignCenter": "По центру",
       "alignRight": "По правому краю",
-      "bullet": "Маркированный список"
+      "bullet": "Маркированный список",
+      "colorHex": "Код цвета"
+    },
+    "line": {
+      "toolbar": "Панель линии",
+      "kind": "Тип линии",
+      "color": "Цвет линии",
+      "width": "Толщина линии",
+      "style": "Стиль линии",
+      "start": "Начало линии",
+      "end": "Конец линии",
+      "straight": "Прямая",
+      "broken": "Ломаная",
+      "broken2": "Двойная ломаная",
+      "curve": "Кривая",
+      "cubic": "Кубическая кривая",
+      "solid": "Сплошная",
+      "dashed": "Штриховая",
+      "dotted": "Пунктирная",
+      "none": "Нет",
+      "arrow": "Стрелка",
+      "dot": "Точка"
     },
     "insert": {
+      "toolbar": "Панель вставки",
       "textBox": "Текстовое поле",
+      "line": "Линия",
+      "linePresets": {
+        "straight": "Прямая линия",
+        "dashed": "Пунктирная линия",
+        "arrow": "Линия со стрелкой",
+        "dashedArrow": "Пунктирная линия со стрелкой",
+        "dottedEnd": "Линия с точкой на конце",
+        "broken": "Ломаная линия",
+        "doubleBroken": "Линия с двойным изгибом",
+        "curve": "Кривая",
+        "cubic": "Кубическая кривая"
+      },
+      "table": "Таблица",
+      "formula": "Формула",
+      "chart": "Диаграмма",
+      "chartBar": "Столбчатая диаграмма",
+      "chartLine": "Линейная диаграмма",
+      "chartPie": "Круговая диаграмма",
+      "tableDimensions": "Таблица {{rows}} x {{columns}}",
       "dragToolbar": "Переместить инструменты вставки",
       "dragToolbarKeyboard": "Переместить инструменты: нажмите Enter или пробел, затем используйте стрелки",
       "image": "Изображение",
       "imageDrop": "Перетащите изображение или нажмите, чтобы выбрать файл",
       "imageOr": "или вставьте URL изображения",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "Вставить"
+      "imageInsert": "Вставить",
+      "video": "Видео",
+      "videoDrop": "Перетащите видео или нажмите, чтобы выбрать файл",
+      "videoOr": "или вставьте URL видео",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "Вставить",
+      "audio": "Аудио",
+      "audioDrop": "Перетащите аудио или нажмите, чтобы выбрать файл",
+      "audioOr": "или вставьте URL аудио",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "Вставить"
+    },
+    "asset": {
+      "drop": "Перетащите файл или нажмите для выбора",
+      "orUrl": "или вставьте URL файла",
+      "urlPlaceholder": "https://…",
+      "insert": "Вставить",
+      "invalidType": "Неподдерживаемый тип файла",
+      "readFailed": "Не удалось прочитать файл"
+    },
+    "latex": {
+      "toolbar": "Панель формул",
+      "editFormula": "Редактировать формулу",
+      "dialog": "Редактор формул",
+      "source": "Исходный код LaTeX",
+      "preview": "Предпросмотр",
+      "symbols": "Символы",
+      "presets": "Готовые формулы",
+      "invalidSource": "Исходный код LaTeX недействителен."
+    },
+    "video": {
+      "toolbar": "Панель видео",
+      "poster": "Задать обложку"
+    },
+    "audio": {
+      "toolbar": "Панель аудио",
+      "preview": "Прослушать аудио",
+      "pause": "Приостановить прослушивание",
+      "loop": "Повтор"
+    },
+    "table": {
+      "doubleClickToEdit": "Дважды щелкните для редактирования"
     },
     "nav": {
       "addSlide": "Добавить слайд",
@@ -273,14 +356,38 @@
       "toBack": "На задний план"
     },
     "image": {
+      "toolbar": "Панель изображения",
       "replace": "Заменить изображение",
       "flipH": "Отразить по горизонтали",
-      "flipV": "Отразить по вертикали"
+      "flipV": "Отразить по вертикали",
+      "crop": "Обрезать изображение"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "Выравнивание по горизонтали",
+      "verticalAlignment": "Выравнивание по вертикали",
+      "selectAll": "Выбрать все",
+      "copy": "Копировать",
+      "cut": "Вырезать",
+      "paste": "Вставить",
+      "unlock": "Разблокировать",
+      "lock": "Заблокировать",
+      "group": "Сгруппировать",
+      "ungroup": "Разгруппировать",
+      "bringForward": "Переместить вперед",
+      "sendBackward": "Переместить назад",
+      "alignTop": "Выровнять по верхнему краю",
+      "alignMiddle": "Выровнять по центру",
+      "alignBottom": "Выровнять по нижнему краю"
     },
     "background": {
       "label": "Фон",
       "solid": "Сплошной цвет",
-      "image": "Изображение"
+      "image": "Изображение",
+      "color": "Цвет"
+    },
+    "common": {
+      "cancel": "Отмена",
+      "confirm": "Подтвердить"
     },
     "quiz": {
       "addQuestion": "Добавить вопрос",
@@ -330,6 +437,7 @@
       "discussion": "Обсуждение"
     },
     "element": {
+      "toolbar": "Панель элемента",
       "text": "Текст",
       "image": "Изображение",
       "shape": "Фигура",
@@ -825,7 +933,37 @@
     "searchPlaceholder": "Поиск курсов...",
     "searchAriaLabel": "Поиск курсов",
     "clearSearch": "Очистить",
-    "searchEmpty": "Курсы не найдены"
+    "searchEmpty": "Курсы не найдены",
+    "newFolderTitle": "Новая папка",
+    "newFolderDesc": "Группируйте курсы по темам для удобного доступа.",
+    "newFolderInline": "Новая папка",
+    "folderNameLabel": "Название папки",
+    "folderNamePlaceholder": "Напр.: Математика, Английский, Профильные курсы",
+    "folderNameHint": "Широкие и узкие символы допустимы; пробелы учитываются.",
+    "folderNameExists": "Папка с таким названием уже существует.",
+    "folderCountLimit": "Достигнут предел количества папок.",
+    "folderWidth": "Ширина {{width}}/{{max}}",
+    "folderCreate": "Создать",
+    "folderBadge": "Папка",
+    "folderCourseCountUnit": "курсов",
+    "deleteFolderTitle": "Удалить папку «{{name}}»",
+    "deleteFolderEmptyDesc": "Эта папка пуста. Удаление необратимо.",
+    "deleteFolderUngroupDesc": "Курсы остаются в «Мои курсы», просто без папки.",
+    "moveToFolder": "Переместить в папку",
+    "moveToFolderLabel": "Переместить в папку",
+    "ungrouped": "Без папки",
+    "searchResults": "Результаты поиска",
+    "folderCreateFailed": "Не удалось создать папку",
+    "folderRenameFailed": "Не удалось переименовать папку",
+    "folderDeleteFailed": "Не удалось удалить папку",
+    "moveFailed": "Не удалось переместить курс",
+    "emptyFolderHint": "Эта папка пуста",
+    "emptyLibraryHint": "Курсов пока нет — создайте выше или импортируйте курс.",
+    "folderNameEmpty": "Название папки не может быть пустым",
+    "deleteFolderOnly": "Удалить только папку",
+    "deleteFolderAndCourses": "Удалить папку и {{count}} курс",
+    "deleteFolderAndCourses_other": "Удалить папку и {{count}} курсов",
+    "deleteFolderConfirmRemove": "Папка и её курсы (включая историю чата) будут удалены."
   },
   "upload": {
     "pdfSizeLimit": "Поддержка PDF до 50 МБ",

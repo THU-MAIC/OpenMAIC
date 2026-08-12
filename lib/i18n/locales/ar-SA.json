@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "شريط أدوات النص",
       "label": "نص",
       "font": "الخط",
       "fontDefault": "افتراضي",
@@ -240,17 +241,99 @@
       "alignLeft": "محاذاة لليسار",
       "alignCenter": "توسيط",
       "alignRight": "محاذاة لليمين",
-      "bullet": "قائمة نقطية"
+      "bullet": "قائمة نقطية",
+      "colorHex": "رمز اللون"
+    },
+    "line": {
+      "toolbar": "شريط أدوات الخط",
+      "kind": "نوع الخط",
+      "color": "لون الخط",
+      "width": "عرض الخط",
+      "style": "نمط الخط",
+      "start": "نمط البداية",
+      "end": "نمط النهاية",
+      "straight": "مستقيم",
+      "broken": "منكسر",
+      "broken2": "منكسر مزدوج",
+      "curve": "منحني",
+      "cubic": "منحنى تكعيبي",
+      "solid": "متصل",
+      "dashed": "متقطع",
+      "dotted": "منقط",
+      "none": "بلا",
+      "arrow": "سهم",
+      "dot": "نقطة"
     },
     "insert": {
+      "toolbar": "شريط أدوات الإدراج",
       "textBox": "مربع نص",
+      "line": "خط",
+      "linePresets": {
+        "straight": "خط مستقيم",
+        "dashed": "خط متقطع",
+        "arrow": "خط بسهم",
+        "dashedArrow": "خط متقطع بسهم",
+        "dottedEnd": "خط بنقطة في النهاية",
+        "broken": "خط منكسر",
+        "doubleBroken": "خط منكسر مزدوج",
+        "curve": "منحنى",
+        "cubic": "منحنى تكعيبي"
+      },
+      "table": "جدول",
+      "formula": "معادلة",
+      "chart": "مخطط",
+      "chartBar": "مخطط أعمدة",
+      "chartLine": "مخطط خطي",
+      "chartPie": "مخطط دائري",
+      "tableDimensions": "جدول {{rows}} x {{columns}}",
       "dragToolbar": "نقل أدوات الإدراج",
       "dragToolbarKeyboard": "نقل أدوات الإدراج: اضغط Enter أو مسافة، ثم استخدم مفاتيح الأسهم",
       "image": "صورة",
       "imageDrop": "أفلِت صورة أو انقر لاختيار ملف",
       "imageOr": "أو الصق رابط صورة",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "إدراج"
+      "imageInsert": "إدراج",
+      "video": "فيديو",
+      "videoDrop": "أفلِت فيديو أو انقر لاختيار ملف",
+      "videoOr": "أو الصق رابط فيديو",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "إدراج",
+      "audio": "صوت",
+      "audioDrop": "أفلِت ملفاً صوتياً أو انقر لاختيار ملف",
+      "audioOr": "أو الصق رابطاً صوتياً",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "إدراج"
+    },
+    "asset": {
+      "drop": "اسحب ملفًا أو انقر للاختيار",
+      "orUrl": "أو الصق رابط الملف",
+      "urlPlaceholder": "https://…",
+      "insert": "إدراج",
+      "invalidType": "نوع ملف غير مدعوم",
+      "readFailed": "تعذرت قراءة الملف"
+    },
+    "latex": {
+      "toolbar": "شريط أدوات المعادلات",
+      "editFormula": "تحرير المعادلة",
+      "dialog": "محرر المعادلات",
+      "source": "مصدر LaTeX",
+      "preview": "معاينة",
+      "symbols": "رموز",
+      "presets": "معادلات جاهزة",
+      "invalidSource": "مصدر LaTeX غير صالح."
+    },
+    "video": {
+      "toolbar": "شريط أدوات الفيديو",
+      "poster": "تعيين الغلاف"
+    },
+    "audio": {
+      "toolbar": "شريط أدوات الصوت",
+      "preview": "معاينة الصوت",
+      "pause": "إيقاف المعاينة مؤقتاً",
+      "loop": "تكرار"
+    },
+    "table": {
+      "doubleClickToEdit": "انقر نقراً مزدوجاً للتحرير"
     },
     "nav": {
       "addSlide": "إضافة شريحة",
@@ -273,14 +356,38 @@
       "toBack": "إرسال إلى الخلف"
     },
     "image": {
+      "toolbar": "شريط أدوات الصورة",
       "replace": "استبدال الصورة",
       "flipH": "قلب أفقي",
-      "flipV": "قلب رأسي"
+      "flipV": "قلب رأسي",
+      "crop": "اقتصاص الصورة"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "محاذاة أفقية",
+      "verticalAlignment": "محاذاة عمودية",
+      "selectAll": "تحديد الكل",
+      "copy": "نسخ",
+      "cut": "قص",
+      "paste": "لصق",
+      "unlock": "إلغاء القفل",
+      "lock": "قفل",
+      "group": "تجميع",
+      "ungroup": "إلغاء التجميع",
+      "bringForward": "إحضار إلى الأمام",
+      "sendBackward": "إرسال إلى الخلف",
+      "alignTop": "محاذاة للأعلى",
+      "alignMiddle": "محاذاة للوسط",
+      "alignBottom": "محاذاة للأسفل"
     },
     "background": {
       "label": "الخلفية",
       "solid": "لون خالص",
-      "image": "صورة"
+      "image": "صورة",
+      "color": "اللون"
+    },
+    "common": {
+      "cancel": "إلغاء",
+      "confirm": "تأكيد"
     },
     "quiz": {
       "addQuestion": "إضافة سؤال",
@@ -330,6 +437,7 @@
       "discussion": "مناقشة"
     },
     "element": {
+      "toolbar": "شريط أدوات العنصر",
       "text": "نص",
       "image": "صورة",
       "shape": "شكل",
@@ -825,7 +933,37 @@
     "searchPlaceholder": "البحث عن الدروس...",
     "searchAriaLabel": "البحث عن الدروس",
     "clearSearch": "مسح",
-    "searchEmpty": "لا توجد دروس مطابقة"
+    "searchEmpty": "لا توجد دروس مطابقة",
+    "newFolderTitle": "مجلد جديد",
+    "newFolderDesc": "نظّم الدورات حسب الموضوع لتسهيل الوصول إليها.",
+    "newFolderInline": "مجلد جديد",
+    "folderNameLabel": "اسم المجلد",
+    "folderNamePlaceholder": "مثال: رياضيات، إنجليزي، دورات التخصص",
+    "folderNameHint": "الأحرف واسعة وضيقة كلاهما مقبول؛ المسافات تُحتسب.",
+    "folderNameExists": "توجد مجلد بنفس الاسم بالفعل.",
+    "folderCountLimit": "تم بلوغ حد عدد المجلدات.",
+    "folderWidth": "العرض {{width}}/{{max}}",
+    "folderCreate": "إنشاء",
+    "folderBadge": "مجلد",
+    "folderCourseCountUnit": "دورة",
+    "deleteFolderTitle": "حذف المجلد «{{name}}»",
+    "deleteFolderEmptyDesc": "هذا المجلد فارغ. لا يمكن التراجع عن الحذف.",
+    "deleteFolderUngroupDesc": "تبقى الدورات في «دوراتي»، تصبح غير مصنّفة.",
+    "moveToFolder": "نقل إلى مجلد",
+    "moveToFolderLabel": "نقل إلى مجلد",
+    "ungrouped": "غير مصنّف",
+    "searchResults": "نتائج البحث",
+    "folderCreateFailed": "فشل إنشاء المجلد",
+    "folderRenameFailed": "فشلت إعادة تسمية المجلد",
+    "folderDeleteFailed": "فشل حذف المجلد",
+    "moveFailed": "فشل نقل الدورة",
+    "emptyFolderHint": "هذا المجلد فارغ",
+    "emptyLibraryHint": "لا توجد دورات بعد — أنشئ واحدة بالأعلى أو استورد دورة.",
+    "folderNameEmpty": "لا يمكن أن يكون اسم المجلد فارغًا",
+    "deleteFolderOnly": "حذف المجلد فقط",
+    "deleteFolderAndCourses": "حذف المجلد و {{count}} دورة",
+    "deleteFolderConfirmRemove": "سيؤدي هذا إلى حذف المجلد ودوراته، بما في ذلك سجل الدردشة.",
+    "deleteFolderAndCourses_other": "حذف المجلد و {{count}} دورة"
   },
   "upload": {
     "pdfSizeLimit": "يدعم ملفات PDF حتى 50 ميغابايت",

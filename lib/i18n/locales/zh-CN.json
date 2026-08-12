@@ -227,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "文本工具栏",
       "label": "文本",
       "font": "字体",
       "fontDefault": "默认",
@@ -240,17 +241,99 @@
       "alignLeft": "左对齐",
       "alignCenter": "居中对齐",
       "alignRight": "右对齐",
-      "bullet": "项目符号"
+      "bullet": "项目符号",
+      "colorHex": "颜色值"
+    },
+    "line": {
+      "toolbar": "线条工具栏",
+      "kind": "线条类型",
+      "color": "线条颜色",
+      "width": "线宽",
+      "style": "线条样式",
+      "start": "起点样式",
+      "end": "终点样式",
+      "straight": "直线",
+      "broken": "折线",
+      "broken2": "双折线",
+      "curve": "曲线",
+      "cubic": "三次曲线",
+      "solid": "实线",
+      "dashed": "虚线",
+      "dotted": "点线",
+      "none": "无",
+      "arrow": "箭头",
+      "dot": "圆点"
     },
     "insert": {
+      "toolbar": "插入工具栏",
       "textBox": "文本框",
+      "line": "线条",
+      "linePresets": {
+        "straight": "直线",
+        "dashed": "虚线",
+        "arrow": "箭头直线",
+        "dashedArrow": "虚线箭头",
+        "dottedEnd": "圆点终点线",
+        "broken": "折线",
+        "doubleBroken": "双折线",
+        "curve": "曲线",
+        "cubic": "三次曲线"
+      },
+      "table": "表格",
+      "formula": "公式",
+      "chart": "图表",
+      "chartBar": "柱状图",
+      "chartLine": "折线图",
+      "chartPie": "饼图",
+      "tableDimensions": "{{rows}} x {{columns}} 表格",
       "dragToolbar": "拖动工具栏",
       "dragToolbarKeyboard": "移动工具栏：按回车或空格开始，再使用方向键移动",
       "image": "图片",
       "imageDrop": "拖入图片或点击选择文件",
       "imageOr": "或粘贴图片 URL",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "插入"
+      "imageInsert": "插入",
+      "video": "视频",
+      "videoDrop": "拖入视频或点击选择文件",
+      "videoOr": "或粘贴视频 URL",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "插入",
+      "audio": "音频",
+      "audioDrop": "拖入音频或点击选择文件",
+      "audioOr": "或粘贴音频 URL",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "插入"
+    },
+    "asset": {
+      "drop": "拖入文件或点击选择",
+      "orUrl": "或粘贴文件 URL",
+      "urlPlaceholder": "https://…",
+      "insert": "插入",
+      "invalidType": "文件类型不受支持",
+      "readFailed": "无法读取文件"
+    },
+    "latex": {
+      "toolbar": "公式工具栏",
+      "editFormula": "编辑公式",
+      "dialog": "公式编辑器",
+      "source": "LaTeX 源码",
+      "preview": "预览",
+      "symbols": "常用符号",
+      "presets": "预置公式",
+      "invalidSource": "LaTeX 源码无效。"
+    },
+    "video": {
+      "toolbar": "视频工具栏",
+      "poster": "设置封面"
+    },
+    "audio": {
+      "toolbar": "音频工具栏",
+      "preview": "试听音频",
+      "pause": "暂停试听",
+      "loop": "循环播放"
+    },
+    "table": {
+      "doubleClickToEdit": "双击编辑"
     },
     "nav": {
       "addSlide": "新增幻灯片",
@@ -273,14 +356,38 @@
       "toBack": "置于底层"
     },
     "image": {
+      "toolbar": "图片工具栏",
       "replace": "替换图片",
       "flipH": "水平翻转",
-      "flipV": "垂直翻转"
+      "flipV": "垂直翻转",
+      "crop": "裁剪图片"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "水平对齐",
+      "verticalAlignment": "垂直对齐",
+      "selectAll": "全选",
+      "copy": "复制",
+      "cut": "剪切",
+      "paste": "粘贴",
+      "unlock": "解锁",
+      "lock": "锁定",
+      "group": "组合",
+      "ungroup": "取消组合",
+      "bringForward": "上移一层",
+      "sendBackward": "下移一层",
+      "alignTop": "顶部对齐",
+      "alignMiddle": "垂直居中",
+      "alignBottom": "底部对齐"
     },
     "background": {
       "label": "背景",
       "solid": "纯色",
-      "image": "图片"
+      "image": "图片",
+      "color": "颜色"
+    },
+    "common": {
+      "cancel": "取消",
+      "confirm": "确定"
     },
     "quiz": {
       "addQuestion": "添加题目",
@@ -330,6 +437,7 @@
       "discussion": "讨论"
     },
     "element": {
+      "toolbar": "元素工具栏",
       "text": "文本",
       "image": "图片",
       "shape": "形状",
@@ -825,7 +933,37 @@
     "searchPlaceholder": "搜索课程...",
     "searchAriaLabel": "搜索课程",
     "clearSearch": "清空",
-    "searchEmpty": "没有找到匹配的课程"
+    "searchEmpty": "没有找到匹配的课程",
+    "newFolderTitle": "新建文件夹",
+    "newFolderDesc": "把课程按主题或用途归类，方便查找。",
+    "newFolderInline": "新建文件夹…",
+    "folderNameLabel": "文件夹名称",
+    "folderNamePlaceholder": "例如：数学、英语、专业课",
+    "folderNameHint": "中英文均可，空格计入。",
+    "folderNameExists": "已存在同名文件夹，请换一个",
+    "folderCountLimit": "文件夹数量已达上限",
+    "folderWidth": "宽度 {{width}}/{{max}}",
+    "folderCreate": "创建",
+    "folderBadge": "文件夹",
+    "folderCourseCountUnit": "门课程",
+    "deleteFolderTitle": "删除文件夹「{{name}}」",
+    "deleteFolderEmptyDesc": "这是一个空文件夹，删除后不可恢复。",
+    "deleteFolderUngroupDesc": "课程保留在「我的课程」，只是不再归类。",
+    "moveToFolder": "移动到文件夹",
+    "moveToFolderLabel": "移动到…",
+    "ungrouped": "未分组",
+    "searchResults": "搜索结果",
+    "folderCreateFailed": "创建文件夹失败",
+    "folderRenameFailed": "重命名文件夹失败",
+    "folderDeleteFailed": "删除文件夹失败",
+    "moveFailed": "移动课程失败",
+    "emptyFolderHint": "这个文件夹还是空的",
+    "emptyLibraryHint": "还没有课程——在上方创建，或导入一个课程。",
+    "folderNameEmpty": "文件夹名不能为空",
+    "deleteFolderOnly": "仅删除文件夹",
+    "deleteFolderAndCourses": "删除文件夹和 {{count}} 门课程",
+    "deleteFolderConfirmRemove": "将删除文件夹及其课程（含聊天记录），不可恢复。",
+    "deleteFolderAndCourses_other": "删除文件夹和 {{count}} 门课程"
   },
   "upload": {
     "pdfSizeLimit": "支持最大50MB的PDF文件",

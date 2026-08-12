@@ -96,31 +96,30 @@ for (const name of OPENMAIC_PACKAGES) {
 }
 
 // Cross-checked in BOTH directions. Checking only that each mapped dependent
-// still declares its dependency leaves the map itself unguarded: delete an
+// still declares its dependencies leaves the map itself unguarded: delete an
 // entry and that package is exempt from this check and from the packed-manifest
-// assertion, which iterates the same map. Moving its dsl declaration to
-// `devDependencies` would then let it publish declaring no dsl at all.
+// assertion, which iterates the same map. Moving a declaration to
+// `devDependencies` would then let it publish without the required constraint.
 for (const [name, expected] of Object.entries(INTERNAL_DEPENDENTS)) {
+  const expectedDependencies = [...expected].sort();
   const observed = seen.get(name);
   if (observed === undefined) {
     failures.push(
       `@openmaic/${name} no longer declares any owned @openmaic dependency in \`dependencies\`; ` +
-        `it was expected to depend on ${expected}. If that is intended, update ` +
+        `it was expected to depend on ${expectedDependencies.join(', ')}. If that is intended, update ` +
         'INTERNAL_DEPENDENTS in scripts/openmaic-packages.mjs — this check must not go quiet ' +
         'on its own.',
     );
     continue;
   }
-  if (observed.length > 1) {
+  const observedDependencies = [...observed].sort();
+  if (
+    observedDependencies.length !== expectedDependencies.length ||
+    observedDependencies.some((dependency, index) => dependency !== expectedDependencies[index])
+  ) {
     failures.push(
-      `@openmaic/${name} declares ${observed.length} owned dependencies (${observed.join(', ')}); ` +
-        `INTERNAL_DEPENDENTS records only ${expected}.`,
-    );
-    continue;
-  }
-  if (observed[0] !== expected) {
-    failures.push(
-      `@openmaic/${name} depends on ${observed[0]}, but INTERNAL_DEPENDENTS expects ${expected}.`,
+      `@openmaic/${name} declares owned dependencies (${observedDependencies.join(', ')}), but ` +
+        `INTERNAL_DEPENDENTS expects (${expectedDependencies.join(', ')}).`,
     );
   }
 }
@@ -156,6 +155,5 @@ if (failures.length > 0) {
 
 console.log(
   `Internal dependency check passed: ${Object.keys(INTERNAL_DEPENDENTS).length} expected ` +
-    'dependents each declare their owned dependency exactly once, in `dependencies`, ' +
-    'as workspace:^.',
+    'dependents declare each owned dependency exactly once, in `dependencies`, as workspace:^.',
 );

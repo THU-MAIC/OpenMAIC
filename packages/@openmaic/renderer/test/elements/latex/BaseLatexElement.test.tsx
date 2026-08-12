@@ -53,7 +53,7 @@ function installFakeFonts() {
   };
 }
 
-function latex(html: string): PPTLatexElement {
+function latex(html: string, overrides: Partial<PPTLatexElement> = {}): PPTLatexElement {
   return {
     id: 'l1',
     type: 'latex',
@@ -63,6 +63,7 @@ function latex(html: string): PPTLatexElement {
     height: 100,
     rotate: 0,
     html,
+    ...overrides,
   } as unknown as PPTLatexElement;
 }
 
@@ -123,6 +124,26 @@ describe('BaseLatexElement — fit-scale re-measures after fonts settle', () => 
       await Promise.resolve();
     });
     expect(readScale(container)).toBeCloseTo(1);
+  });
+
+  it('keeps KaTeX HTML, formula color, and horizontal alignment in the shared render path', () => {
+    naturalW = 100;
+    naturalH = 100;
+    const { container } = render(
+      <BaseLatexElement
+        elementInfo={latex('<span class="katex-display">E = mc<sup>2</sup></span>', {
+          color: '#2563eb',
+          align: 'right',
+        })}
+      />,
+    );
+
+    const content = container.querySelector('.element-content') as HTMLElement;
+    const formula = container.querySelector('.slide-renderer-prose') as HTMLElement;
+    expect(content.style.color).toBe('rgb(37, 99, 235)');
+    expect(formula.innerHTML).toContain('katex-display');
+    expect(formula.style.transformOrigin).toBe('right center');
+    expect(formula.parentElement?.style.justifyContent).toBe('flex-end');
   });
 });
 

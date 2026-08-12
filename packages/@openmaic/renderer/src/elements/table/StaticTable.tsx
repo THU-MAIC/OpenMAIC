@@ -132,9 +132,7 @@ export function StaticTable({ elementInfo }: StaticTableProps) {
                           ? 'flex-start'
                           : cell.vAlign === 'bottom'
                             ? 'flex-end'
-                            : cell.vAlign === 'middle'
-                              ? 'center'
-                              : undefined,
+                            : 'center',
                     }}
                     // cell.text is already final HTML (transformParsedToSlides
                     // escapes text + converts \n/spaces and keeps <p> positioning

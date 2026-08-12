@@ -60,6 +60,15 @@ pnpm dev
 4. Run **all CI checks** before committing (see below).
 5. Open a **Pull Request** against `main`.
 
+### Environment Variable Changes
+
+When adding or renaming an operator-facing environment variable, update
+[`.env.example`](.env.example) in the same PR. Document whether it is optional,
+its safe default or example value, and whether it is read at build time or
+runtime. Variables used only by tests, CI, or internal development scripts do
+not need to be added to the template, but their owning file or documentation
+must make that limited scope clear.
+
 ## Before You Submit a PR
 
 Run the following checks locally — CI will run them too, but catching issues early saves everyone time:

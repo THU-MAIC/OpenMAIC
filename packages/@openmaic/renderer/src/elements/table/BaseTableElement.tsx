@@ -1,14 +1,17 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import type { PPTTableElement } from '@openmaic/dsl';
 import { StaticTable } from './StaticTable';
 
 export interface BaseTableElementProps {
   elementInfo: PPTTableElement;
   target?: string;
+  renderContent?: (element: PPTTableElement, defaultContent: ReactNode) => ReactNode;
 }
 
-export function BaseTableElement({ elementInfo, target }: BaseTableElementProps) {
+export function BaseTableElement({ elementInfo, target, renderContent }: BaseTableElementProps) {
+  const defaultContent = <StaticTable elementInfo={elementInfo} />;
   return (
     <div
       className="base-element-table"
@@ -30,7 +33,7 @@ export function BaseTableElement({ elementInfo, target }: BaseTableElementProps)
         }}
       >
         <div className="element-content" style={{ width: '100%', height: '100%' }}>
-          <StaticTable elementInfo={elementInfo} />
+          {renderContent?.(elementInfo, defaultContent) ?? defaultContent}
         </div>
       </div>
     </div>

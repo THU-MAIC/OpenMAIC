@@ -29,7 +29,9 @@ function run(command, args, options = {}) {
 /** The manifest as the registry will see it, read out of the tarball itself. */
 function packedManifest(tarball) {
   return JSON.parse(
-    execFileSync('tar', ['-xzOf', tarball, 'package/package.json'], { encoding: 'utf8' }),
+    execFileSync('tar', ['-x', '-z', '-O', '-f', tarball, 'package/package.json'], {
+      encoding: 'utf8',
+    }),
   );
 }
 
@@ -154,11 +156,19 @@ import { RUNTIME_DSL_VERSION, validateRuntimeSession } from '@openmaic/dsl';
 import { PROMPT_IDS, buildPrompt } from '@openmaic/generation';
 import { DOCUMENT_PG_SCHEMA } from '@openmaic/storage';
 import { SlideCanvas } from '@openmaic/renderer';
+import { createEditorTransaction as createEditorTransactionFromRoot } from '@openmaic/editor';
+import { createEditorTransaction } from '@openmaic/editor/core';
+import { EMPTY_SELECTION } from '@openmaic/editor/react';
+import { EditableSlideCanvasWithUI } from '@openmaic/editor/ui';
 
 assert.equal(typeof RUNTIME_DSL_VERSION, 'string');
 assert.equal(typeof validateRuntimeSession, 'function');
 assert.match(DOCUMENT_PG_SCHEMA, /CREATE TABLE IF NOT EXISTS document_stages/);
 assert.equal(typeof SlideCanvas, 'function');
+assert.equal(typeof createEditorTransactionFromRoot, 'function');
+assert.equal(typeof createEditorTransaction, 'function');
+assert.equal(typeof EMPTY_SELECTION, 'object');
+assert.equal(typeof EditableSlideCanvasWithUI, 'function');
 
 // requirements-to-outlines references three snippets (inside media conditionals),
 // so this asserts the packaged snippets/ directory is present and resolvable, not

@@ -1,4 +1,8 @@
-import { validateScene, type WidgetConfigBase } from '@openmaic/dsl';
+import {
+  validateScene,
+  type PBLContent as ContractPBLContent,
+  type WidgetConfigBase,
+} from '@openmaic/dsl';
 import type { DocumentStore } from '@openmaic/storage';
 import { describe, expect, test, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
@@ -11,9 +15,9 @@ import {
 import { getDocumentStore } from '@/lib/document-store/store';
 import type { AppDocument } from '@/lib/document-store/persistence-types';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
-import { upgradeLegacyPBLConfigToProjectV2 } from '@/lib/pbl/legacy/read';
+import { upgradeLegacyPBLConfigToProjectV2, type PBLProjectConfig } from '@/lib/pbl/legacy/read';
 import type { SceneOutline } from '@/lib/types/generation';
-import type { AppScene, InteractiveContent } from '@/lib/types/stage';
+import type { AppScene, InteractiveContent, PBLContent } from '@/lib/types/stage';
 import type { SimulationConfig } from '@/lib/types/widgets';
 import type { SceneRecord, StageOutlinesRecord, StageRecord } from '@/lib/utils/database';
 import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
@@ -300,6 +304,12 @@ describe('app document validators', () => {
     expect(validateAppScene(legacyPBLSceneFixture)).toEqual({ valid: true });
   });
 
+  test('keeps a historical projectConfig-only scene inside the write-validator matrix', () => {
+    const historicalScene = structuredClone(legacyPBLSceneFixture);
+    expect(historicalScene.content).not.toHaveProperty('projectV2');
+    expect(validateAppScene(historicalScene)).toEqual({ valid: true });
+  });
+
   test('accepts PBL content with an empty legacy projectConfig object', () => {
     expect(
       validateAppScene({
@@ -441,6 +451,17 @@ describe('app document validators', () => {
 });
 
 type Assert<T extends true> = T;
+
+test('typed legacy PBL config remains assignable to app PBLContent', () => {
+  type LegacyPBLContent = { type: 'pbl'; projectConfig: PBLProjectConfig };
+  const assignable: Assert<LegacyPBLContent extends PBLContent ? true : false> = true;
+  expect(assignable).toBe(true);
+});
+
+test('app PBLContent remains assignable to the contract PBLContent', () => {
+  const assignable: Assert<PBLContent extends ContractPBLContent ? true : false> = true;
+  expect(assignable).toBe(true);
+});
 
 test('SimulationConfig satisfies the contract widget config base', () => {
   const assignable: Assert<SimulationConfig extends WidgetConfigBase ? true : false> = true;

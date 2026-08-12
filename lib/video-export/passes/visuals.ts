@@ -8,8 +8,15 @@
  *
  * Pure: no IO, clock, randomness, DOM, React, or app-layer imports.
  */
-import type { CompilerScene } from '../deps';
-import type { Diagnostic, PblCoverVisual, VideoTimelineScene, VisualSegment } from '../ir';
+import type { CompilerScene, QuizLayoutMeasurement, QuizLayoutProbe } from '../deps';
+import type {
+  Diagnostic,
+  PblCoverVisual,
+  QuizQuestionListQuestion,
+  QuizQuestionListVisual,
+  VideoTimelineScene,
+  VisualSegment,
+} from '../ir';
 import {
   isRunnablePblV2CoverProject,
   isUsableLegacyCoverConfig,
@@ -19,6 +26,8 @@ import {
 export interface VisualsResult {
   scenes: VideoTimelineScene[];
   diagnostics: Diagnostic[];
+  /** Per-scene duration inserted after the original authored scene timeline. */
+  extensionsMs: number[];
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -35,6 +44,98 @@ function text(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed || undefined;
+}
+
+function quizOption(value: unknown, index: number): { value: string; label: string } | null {
+  if (typeof value === 'string') {
+    const label = text(value);
+    return label ? { value: String.fromCharCode(65 + index), label } : null;
+  }
+  if (!isRecord(value)) return null;
+  const optionValue = text(value.value);
+  const label = text(value.label);
+  return optionValue && label ? { value: optionValue, label } : null;
+}
+
+/**
+ * Project a Quiz scene onto the complete learner-visible field whitelist used
+ * by export. This is the only path from authored Quiz data into question-list
+ * IR, so answer keys and runtime state cannot leak into the emitter.
+ */
+export function prepareQuizQuestionList(scene: CompilerScene): QuizQuestionListQuestion[] {
+  const raw = Array.isArray(scene.content?.questions) ? scene.content.questions : [];
+  const questions: QuizQuestionListQuestion[] = [];
+  for (const value of raw) {
+    if (!isRecord(value)) continue;
+    const id = text(value.id);
+    const question = text(value.question);
+    const type = value.type;
+    if (!id || !question || (type !== 'single' && type !== 'multiple' && type !== 'short_answer')) {
+      continue;
+    }
+    if (type === 'short_answer') {
+      questions.push({ id, type, question });
+      continue;
+    }
+    const options = Array.isArray(value.options)
+      ? value.options
+          .map((option, index) => quizOption(option, index))
+          .filter((option): option is { value: string; label: string } => option !== null)
+      : [];
+    questions.push({ id, type, question, options });
+  }
+  return questions;
+}
+
+const QUIZ_TRANSITION_MS = 600;
+const QUIZ_TOP_HOLD_MS = 1200;
+const QUIZ_BOTTOM_HOLD_MS = 1200;
+const QUIZ_SCROLL_PX_PER_SECOND_720P = 96;
+const QUIZ_MIN_SCROLL_MS = 4000;
+const QUIZ_MAX_SCROLL_MS = 24_000;
+
+function validMeasurement(value: QuizLayoutMeasurement | null): value is QuizLayoutMeasurement {
+  return (
+    value !== null &&
+    Number.isFinite(value.contentHeightPx) &&
+    value.contentHeightPx > 0 &&
+    Number.isFinite(value.viewportHeightPx) &&
+    value.viewportHeightPx > 0 &&
+    Number.isFinite(value.frameHeightPx) &&
+    value.frameHeightPx > 0
+  );
+}
+
+function quizQuestionListVisual(
+  source: CompilerScene,
+  timeline: VideoTimelineScene,
+  questions: QuizQuestionListQuestion[],
+  measurement: QuizLayoutMeasurement,
+): QuizQuestionListVisual {
+  const scrollDistancePx = Math.max(0, measurement.contentHeightPx - measurement.viewportHeightPx);
+  const targetPixelsPerSecond = QUIZ_SCROLL_PX_PER_SECOND_720P * (measurement.frameHeightPx / 720);
+  const unclampedScrollMs = Math.round((scrollDistancePx / targetPixelsPerSecond) * 1000);
+  const scrollDurationMs =
+    scrollDistancePx === 0
+      ? 0
+      : Math.min(QUIZ_MAX_SCROLL_MS, Math.max(QUIZ_MIN_SCROLL_MS, unclampedScrollMs));
+  const pixelsPerSecond = scrollDurationMs === 0 ? 0 : scrollDistancePx / (scrollDurationMs / 1000);
+  const durationMs = QUIZ_TRANSITION_MS + QUIZ_TOP_HOLD_MS + scrollDurationMs + QUIZ_BOTTOM_HOLD_MS;
+  return {
+    kind: 'quiz-question-list',
+    startMs: timeline.startMs + timeline.durationMs,
+    durationMs,
+    title: source.title,
+    questions,
+    contentHeightPx: measurement.contentHeightPx,
+    viewportHeightPx: measurement.viewportHeightPx,
+    scrollDistancePx,
+    pixelsPerSecond,
+    transitionDurationMs: QUIZ_TRANSITION_MS,
+    topHoldDurationMs: QUIZ_TOP_HOLD_MS,
+    scrollDurationMs,
+    bottomHoldDurationMs: QUIZ_BOTTOM_HOLD_MS,
+  };
 }
 
 function quizCover(scene: CompilerScene, timeline: VideoTimelineScene): VisualSegment {
@@ -114,26 +215,60 @@ function pblCover(scene: CompilerScene, timeline: VideoTimelineScene): PblCoverV
 export function applyVisuals(
   timelineScenes: readonly VideoTimelineScene[],
   sourceScenes: readonly CompilerScene[],
+  quizLayout?: QuizLayoutProbe,
 ): VisualsResult {
   const diagnostics: Diagnostic[] = [];
+  const extensionsMs = timelineScenes.map(() => 0);
   const scenes = timelineScenes.map((timeline, index): VideoTimelineScene => {
     const source = sourceScenes[index];
     if (!source || (source.type !== 'quiz' && source.type !== 'pbl')) return timeline;
 
     const visual =
       source.type === 'quiz' ? quizCover(source, timeline) : pblCover(source, timeline);
+    let visuals: VisualSegment[] = [visual];
+    if (source.type === 'quiz') {
+      const questions = prepareQuizQuestionList(source);
+      if (questions.length > 0) {
+        let measurement: QuizLayoutMeasurement | null = null;
+        if (quizLayout) {
+          try {
+            measurement = quizLayout.measureQuestionList(source);
+          } catch {
+            measurement = null;
+          }
+        }
+        if (validMeasurement(measurement)) {
+          const list = quizQuestionListVisual(source, timeline, questions, measurement);
+          extensionsMs[index] = list.durationMs;
+          visuals = [
+            { ...visual, durationMs: timeline.durationMs + list.transitionDurationMs },
+            list,
+          ];
+        } else {
+          diagnostics.push({
+            severity: 'warn',
+            code: 'quiz-layout-unavailable',
+            sceneId: timeline.id,
+            message: `Quiz question-list layout was unavailable for scene "${timeline.title}"; using the deterministic cover-only fallback.`,
+          });
+        }
+      }
+    }
     diagnostics.push({
       severity: 'info',
       code: 'cover-card',
       sceneId: timeline.id,
-      message: `Scene "${timeline.title}" (${timeline.type}) is rendered as a deterministic static cover card.`,
+      message:
+        timeline.type === 'quiz' && visuals.some((item) => item.kind === 'quiz-question-list')
+          ? `Scene "${timeline.title}" (quiz) is rendered as a deterministic cover-to-question-list sequence.`
+          : `Scene "${timeline.title}" (${timeline.type}) is rendered as a deterministic static cover card.`,
     });
     return {
       ...timeline,
       supported: true,
       base: { kind: 'visual-segments' },
-      visuals: [visual],
+      visuals,
     };
   });
-  return { scenes, diagnostics };
+  return { scenes, diagnostics, extensionsMs };
 }

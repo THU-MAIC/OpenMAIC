@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import {
+  createDefaultChartElement,
   createDefaultImageElement,
   createDefaultShapeElement,
+  createDefaultTableElement,
   createDefaultTextElement,
   htmlToPlainText,
   plainTextToParagraphHtml,
@@ -64,6 +66,55 @@ describe('slide edit element factories', () => {
       width: 360,
       height: 220,
     });
+  });
+
+  test('creates a valid default chart for the requested chart type', () => {
+    const element = createDefaultChartElement('chart-1', 'pie');
+
+    expect(element).toMatchObject({
+      id: 'chart-1',
+      type: 'chart',
+      chartType: 'pie',
+      left: 160,
+      top: 140,
+      width: 420,
+      height: 260,
+      rotate: 0,
+      themeColors: expect.any(Array),
+      data: {
+        labels: ['A', 'B', 'C', 'D'],
+        legends: ['Series 1'],
+        series: [[24, 36, 28, 42]],
+      },
+    });
+    expect(element.themeColors).toHaveLength(4);
+  });
+
+  test('creates a valid empty table for the requested row and column count', () => {
+    const element = createDefaultTableElement('table-1', 2, 3);
+
+    expect(element).toMatchObject({
+      id: 'table-1',
+      type: 'table',
+      left: 120,
+      top: 120,
+      width: 360,
+      height: 120,
+      cellMinHeight: 36,
+      colWidths: [1 / 3, 1 / 3, 1 / 3],
+      outline: { width: 2, style: 'solid', color: '#eeece1' },
+    });
+    expect(element.data).toHaveLength(2);
+    expect(element.data.flat()).toHaveLength(6);
+    expect(element.data.flat().map((cell) => cell.id)).toEqual([
+      'table-1-cell-0-0',
+      'table-1-cell-0-1',
+      'table-1-cell-0-2',
+      'table-1-cell-1-0',
+      'table-1-cell-1-1',
+      'table-1-cell-1-2',
+    ]);
+    expect(element.data.flat().every((cell) => cell.text === '')).toBe(true);
   });
 
   test('converts plain text to escaped paragraph html', () => {
