@@ -25,6 +25,7 @@ import type {
   PPTElement,
 } from '@openmaic/dsl';
 import type { PercentageGeometry } from './ir';
+import type { InteractiveHtmlFailure } from './interactive-static';
 
 /**
  * The compiler's scene input — the structural slice it reads. Deliberately
@@ -42,6 +43,8 @@ export interface CompilerSceneContent {
   /** App-owned PBL payloads enter as unknown and are narrowed by the pure visual pass. */
   projectV2?: unknown;
   projectConfig?: unknown;
+  /** Embedded interactive HTML; prepared by the app-side adapter before compile. */
+  html?: string;
 }
 
 export type CompilerScene = SceneCore & {
@@ -102,6 +105,24 @@ export interface AssetSource {
   media(elementId: string, scene: SceneCore): AssetMeta | null;
 }
 
+/** Prepared interactive HTML metadata exposed synchronously to the pure compiler. */
+export interface InteractiveHtmlMeta {
+  /** Stable id used by the asset plan and byte collector. */
+  id: string;
+  present: boolean;
+  /** SHA-256 of the exact packaged HTML, present only on success. */
+  contentHash?: string;
+  /** Stable failure category when `present` is false. */
+  failure?: InteractiveHtmlFailure;
+  /** Bounded, human-readable detail for the export report. */
+  message?: string;
+}
+
+/** Synchronous adapter over HTML that the app prepared before pure compilation. */
+export interface InteractiveHtmlSource {
+  html(scene: SceneCore): InteractiveHtmlMeta | null;
+}
+
 /**
  * Geometry source — resolves a slide element's **rendered** percentage geometry
  * (0–100 space) so spotlight/laser/video placement matches where the element
@@ -125,6 +146,24 @@ export interface GeometryProbe {
    * caller then falls back to the authored-box calc.
    */
   contentGeometry(elementId: string, scene: SceneCore): PercentageGeometry | null;
+}
+
+/** Stable app-side layout facts consumed by the pure Quiz timing planner. */
+export interface QuizLayoutMeasurement {
+  /** Full static question-list content height at the target resolution. */
+  contentHeightPx: number;
+  /** Visible list viewport height at the target resolution. */
+  viewportHeightPx: number;
+  /** Target video frame height, used to scale the 720p scroll-speed baseline. */
+  frameHeightPx: number;
+}
+
+/**
+ * Synchronous Quiz layout dependency. The app measures all Quiz scenes before
+ * compile and exposes the resulting table through this pure lookup boundary.
+ */
+export interface QuizLayoutProbe {
+  measureQuestionList(scene: SceneCore): QuizLayoutMeasurement | null;
 }
 
 /** Compiler configuration — the determinism inputs recorded into the IR's `config`. */

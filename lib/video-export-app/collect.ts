@@ -417,6 +417,10 @@ export async function collectVideoAssets(
         const bytes = await resolveBytes(record?.poster, record?.posterOssKey);
         if (bytes) blobs.set(entry.path, bytes);
         else missing.push(entry.path);
+      } else if (entry.kind === 'html') {
+        const html = records.interactiveHtml.content(entry.assetId);
+        if (html) blobs.set(entry.path, new Blob([html], { type: 'text/html;charset=utf-8' }));
+        else missing.push(entry.path);
       }
     } catch {
       missing.push(entry.path);

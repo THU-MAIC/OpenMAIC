@@ -5,6 +5,13 @@ import { S3AssetByteStore } from '../src/asset/s3-bytes.js';
 import { expectNoDigestSubstring } from './asset-contract.js';
 import { runAssetByteStoreContract } from './asset-byte-store-contract.js';
 
+const commands = {
+  put: (input: ConstructorParameters<typeof PutObjectCommand>[0]) => new PutObjectCommand(input),
+  get: (input: ConstructorParameters<typeof GetObjectCommand>[0]) => new GetObjectCommand(input),
+  delete: (input: ConstructorParameters<typeof DeleteObjectCommand>[0]) =>
+    new DeleteObjectCommand(input),
+};
+
 class MemoryS3Client {
   readonly objects = new Map<string, Uint8Array>();
 
@@ -35,11 +42,26 @@ class MemoryS3Client {
 function makeStore(client = new MemoryS3Client()): S3AssetByteStore {
   return new S3AssetByteStore({
     client: client as never,
+    commands,
     bucket: 'asset-contract',
   });
 }
 
+/**
+ * The construction shape that omits `commands` entirely — what a host holding
+ * only a client and a bucket writes, and what this store accepted before
+ * `commands` existed. The constructors then come from the installed SDK, which
+ * is the same module the client double matches its commands against.
+ */
+function makeLazyStore(client = new MemoryS3Client()): S3AssetByteStore {
+  return new S3AssetByteStore({
+    client: client as never,
+    bucket: 'asset-contract-lazy',
+  });
+}
+
 runAssetByteStoreContract('S3 bytes (in-memory SDK double)', () => makeStore());
+runAssetByteStoreContract('S3 bytes (commands resolved from the SDK)', () => makeLazyStore());
 
 describe('S3AssetByteStore commands and failures', () => {
   test('uses the content hash as the complete object key', async () => {
@@ -84,7 +106,7 @@ describe('S3AssetByteStore commands and failures', () => {
         throw new Error(contentHash);
       },
     };
-    const store = new S3AssetByteStore({ client: failing as never, bucket: 'failure' });
+    const store = new S3AssetByteStore({ client: failing as never, commands, bucket: 'failure' });
 
     for (const operation of [
       () => store.write(contentHash, new Uint8Array(bytes)),

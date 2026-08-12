@@ -14,7 +14,10 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 
+import type { AssetPrincipal } from '@openmaic/storage';
 import type { RuntimeHttpPrincipal } from '@openmaic/storage/server';
+
+type PersistencePrincipal = RuntimeHttpPrincipal & Partial<Pick<AssetPrincipal, 'key'>>;
 
 function singleHeader(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -28,11 +31,13 @@ function secureEqual(left: string, right: string): boolean {
 
 export async function authenticatePersistenceRequest(
   req: IncomingMessage,
-): Promise<RuntimeHttpPrincipal | undefined> {
+): Promise<PersistencePrincipal | undefined> {
   const token = process.env.PERSISTENCE_DEV_TOKEN;
   const authorization = singleHeader(req.headers.authorization);
   if (!token || !authorization || !secureEqual(authorization, `Bearer ${token}`)) return undefined;
 
   const learnerKey = singleHeader(req.headers['x-learner-key']);
-  return learnerKey ? { learnerKey } : {};
+  // The authenticated anonymous learner partition is also the required asset
+  // principal. Without `key`, the asset contract correctly denies all access.
+  return learnerKey ? { key: learnerKey, learnerKey } : {};
 }

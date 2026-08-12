@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/editor",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Composable slide editing core, React surface, and UI for OpenMAIC.",
   "type": "module",
   "main": "./dist/core/index.js",
@@ -28,6 +28,11 @@
     "README.md",
     "LICENSE"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/THU-MAIC/OpenMAIC",
+    "directory": "packages/@openmaic/editor"
+  },
   "scripts": {
     "build": "rm -rf dist && rollup -c && tsc --emitDeclarationOnly --declarationDir dist",
     "test": "vitest run",

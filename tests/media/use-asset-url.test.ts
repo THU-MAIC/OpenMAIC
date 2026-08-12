@@ -1,8 +1,12 @@
 import { IDBFactory } from 'fake-indexeddb';
-import { BrowserAssetStore } from '@openmaic/storage';
+import { BrowserAssetStore, HttpAssetStore } from '@openmaic/storage';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAssetPool, putAsset, replaceAsset } from '@/lib/media/asset-pool';
 import { resolveMediaRef } from '@/lib/media/resolve-media-ref';
+import {
+  __resetAssetReplacementChannelForTesting,
+  bindAssetReplacementChannel,
+} from '@/lib/media/asset-replacement-events';
 import {
   assetRefExists,
   createAssetUrlLeaseBatchPublisher,
@@ -11,21 +15,28 @@ import {
   withAssetUrl,
 } from '@/lib/media/use-asset-url';
 
+const NativeURL = globalThis.URL;
+
 describe('asset URL ownership', () => {
   let created: Blob[];
 
   beforeEach(() => {
     created = [];
-    vi.stubGlobal('URL', {
+    const TestURL = class extends NativeURL {};
+    Object.assign(TestURL, {
       createObjectURL: vi.fn((blob: Blob) => {
         created.push(blob);
         return `blob:test-${created.length}`;
       }),
       revokeObjectURL: vi.fn(),
     });
+    vi.stubGlobal('URL', TestURL);
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    __resetAssetReplacementChannelForTesting();
+    vi.unstubAllGlobals();
+  });
 
   it('balances resolve and release on cleanup', async () => {
     const pool = new BrowserAssetStore({ indexedDB: new IDBFactory(), dbName: 'asset-url-one' });
@@ -129,6 +140,48 @@ describe('asset URL ownership', () => {
     await clearAssetPool();
   });
 
+  it('makes a replacement broadcast outrank an older in-flight HTTP resolve', async () => {
+    let finishOldGet!: (response: Response) => void;
+    const oldGet = new Promise<Response>((resolve) => {
+      finishOldGet = resolve;
+    });
+    let gets = 0;
+    const pool = new HttpAssetStore({
+      baseUrl: 'https://assets.invalid',
+      fetch: vi.fn(async (_input, init) => {
+        if (init?.method === 'HEAD') throw new Error('unexpected HEAD');
+        gets += 1;
+        if (gets === 1) return oldGet;
+        return new Response('new bytes', {
+          status: 200,
+          headers: { 'content-type': 'image/png', 'x-asset-revision': '2' },
+        });
+      }),
+    });
+    const urls: Array<string | null> = [];
+    const cleanup = trackAssetUrl('ast_race', (url) => urls.push(url), pool);
+    await vi.waitFor(() => expect(gets).toBe(1));
+
+    bindAssetReplacementChannel(() => pool);
+    const peer = new BroadcastChannel('maic-asset-replacements');
+    peer.postMessage('ast_race');
+    await vi.waitFor(() => expect(gets).toBe(2));
+
+    finishOldGet(
+      new Response('old bytes', {
+        status: 200,
+        headers: { 'content-type': 'image/png', 'x-asset-revision': '1' },
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.waitFor(() => expect(urls).toEqual(['blob:test-1']));
+    await expect(created[0]?.text()).resolves.toBe('new bytes');
+
+    peer.close();
+    cleanup();
+    await pool.close();
+  });
+
   it('waits for an in-flight final release before reacquiring the ref', async () => {
     let finishRelease!: () => void;
     let releaseStarted!: () => void;
@@ -139,6 +192,7 @@ describe('asset URL ownership', () => {
       releaseStarted = resolve;
     });
     const pool = {
+      invalidate: vi.fn().mockResolvedValue(undefined),
       resolve: vi
         .fn<() => Promise<string | null>>()
         .mockResolvedValueOnce('blob:first')
@@ -226,6 +280,7 @@ describe('asset URL ownership', () => {
     });
     const events: string[] = [];
     const pool = {
+      invalidate: vi.fn().mockResolvedValue(undefined),
       resolve: vi
         .fn<() => Promise<string | null>>()
         .mockImplementationOnce(async () => {
@@ -268,6 +323,7 @@ describe('asset URL ownership', () => {
 
   it('evicts a rejected replacement refresh so a later acquirer can recover', async () => {
     const pool = {
+      invalidate: vi.fn().mockResolvedValue(undefined),
       resolve: vi
         .fn<() => Promise<string | null>>()
         .mockResolvedValueOnce('blob:old')

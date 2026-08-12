@@ -22,13 +22,12 @@ import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 import { runPolledTask } from '@/lib/media/polled-task';
 import {
-  buildExportZip,
   NoScenesError,
   sanitizeFilename,
   type VideoFps,
   type VideoQuality,
   type VideoResolution,
-} from '@/lib/video-export-app/build-export-zip';
+} from '@/lib/video-export-app/export-options';
 import type { Locale } from '@/lib/i18n';
 
 const log = createLogger('VideoRenderStore');
@@ -133,6 +132,7 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
     let missingCount = 0;
     let errorCount = 0;
     try {
+      const { buildExportZip } = await import('@/lib/video-export-app/build-export-zip');
       const built = await buildExportZip({ resolution, burnInSubtitles, locale });
       ({ zipBlob, stageName, missingCount, errorCount } = built);
     } catch (error) {

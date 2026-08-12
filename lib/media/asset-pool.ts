@@ -1,5 +1,13 @@
+import '@/lib/persistence/bootstrap';
+
 import { BrowserAssetStore, toAssetId } from '@openmaic/storage';
 import type { AssetMeta } from '@openmaic/dsl';
+import {
+  isAssetPoolServerBacked,
+  registerAssetPoolStorageResetHook,
+  resolveConfiguredAssetPoolStore,
+  type AssetPoolStore,
+} from './asset-pool-config';
 import {
   expectStageRealmPresenceBinding,
   releaseStageRealmPresenceBinding,
@@ -11,8 +19,20 @@ import {
 } from './asset-replacement-events';
 
 const ASSET_POOL_DATABASE_NAME = 'maic-asset-pool';
-let pool: BrowserAssetStore | undefined;
+let pool: AssetPoolStore | undefined;
 let clearing: Promise<void> | undefined;
+
+registerAssetPoolStorageResetHook(() => {
+  pool = undefined;
+  clearing = undefined;
+});
+
+export {
+  configureAssetPoolStorage,
+  isAssetPoolStorageConfigured,
+  resetAssetPoolStorageForTests,
+} from './asset-pool-config';
+export type { AssetPoolStorageOptions, AssetPoolStore } from './asset-pool-config';
 
 export class AssetPoolDeletionDeferredError extends Error {
   override readonly name = 'AssetPoolDeletionDeferredError';
@@ -54,13 +74,17 @@ if (typeof window !== 'undefined') {
     });
 }
 
-/** Lazy browser-wide asset pool. Construction is forbidden during SSR. */
-export function getAssetPool(): BrowserAssetStore {
-  if (typeof indexedDB === 'undefined') {
-    throw new Error('The browser asset pool requires IndexedDB.');
-  }
+/** Lazy browser-wide asset pool. Default construction is forbidden during SSR. */
+export function getAssetPool(): AssetPoolStore {
   if (clearing) throw new Error('The browser asset pool is being cleared.');
-  return (pool ??= new BrowserAssetStore({ dbName: ASSET_POOL_DATABASE_NAME }));
+  return (pool ??= (() => {
+    const configured = resolveConfiguredAssetPoolStore();
+    if (configured) return configured;
+    if (typeof indexedDB === 'undefined') {
+      throw new Error('The browser asset pool requires IndexedDB.');
+    }
+    return new BrowserAssetStore({ dbName: ASSET_POOL_DATABASE_NAME });
+  })());
 }
 
 export function putAsset(blob: Blob, meta: AssetMeta = {}): Promise<string> {
@@ -87,14 +111,21 @@ function deleteAssetPoolDatabase(): Promise<void> {
   });
 }
 
-/** Close the browser-wide singleton and delete every locally generated asset. */
+/**
+ * Clear local asset storage without ever treating server assets as cache.
+ *
+ * A server-backed pool only closes its client, which revokes every locally
+ * minted object URL. Calling `remove` here would destroy durable user data in
+ * response to a local-cache action, so no remote deletion is attempted.
+ */
 export function clearAssetPool(): Promise<void> {
   if (clearing) return clearing;
   const current = pool;
+  const serverBacked = isAssetPoolServerBacked();
   clearing = (async () => {
     try {
       if (current) await current.close();
-      await deleteAssetPoolDatabase();
+      if (!serverBacked) await deleteAssetPoolDatabase();
     } catch (error) {
       // A blocked delete stays pending until every other connection closes.
       // Keep the closed singleton installed so writes fail loudly instead of

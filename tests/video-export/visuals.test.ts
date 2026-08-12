@@ -111,7 +111,7 @@ describe('video-export cover visual pass', () => {
       }),
     );
 
-    expect(ir.version).toBe(2);
+    expect(ir.version).toBe(4);
     expect(ir.scenes[0]).toMatchObject({
       supported: true,
       base: { kind: 'visual-segments' },
@@ -569,7 +569,7 @@ describe('video-export cover visual pass', () => {
     expect(JSON.stringify(first)).not.toMatch(/Question Agent|Instructor/);
   });
 
-  it('keeps interactive scenes unsupported while Quiz and PBL get informational diagnostics', () => {
+  it('keeps unprepared interactive scenes unsupported while Quiz and PBL get informational diagnostics', () => {
     const interactive = {
       id: 'interactive',
       stageId: 'stage',

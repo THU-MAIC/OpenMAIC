@@ -17,8 +17,9 @@ import { saveAs } from 'file-saver';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
+import { useVideoRenderStore } from '@/lib/store/video-render';
 import { acquireExport, releaseExport } from './export-in-flight';
-import { compileSubtitles, NoScenesError, sanitizeFilename } from './build-export-zip';
+import { NoScenesError, sanitizeFilename } from './export-options';
 
 const log = createLogger('DownloadSubtitles');
 
@@ -26,7 +27,8 @@ export type SubtitleFormat = 'srt' | 'vtt';
 
 export function useDownloadSubtitles() {
   const [downloading, setDownloading] = useState(false);
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const resolution = useVideoRenderStore((state) => state.options.resolution);
 
   const downloadSubtitles = useCallback(
     async (format: SubtitleFormat = 'srt') => {
@@ -37,7 +39,11 @@ export function useDownloadSubtitles() {
       setDownloading(true);
       const toastId = toast.loading(t('export.subtitlesCompiling'));
       try {
-        const { srt, vtt, stageName, cueCount } = await compileSubtitles();
+        const { compileSubtitles } = await import('./build-export-zip');
+        const { srt, vtt, stageName, cueCount } = await compileSubtitles({
+          resolution,
+          locale,
+        });
         if (cueCount === 0) {
           toast.error(t('export.subtitlesEmpty'), { id: toastId });
           return;
@@ -59,7 +65,7 @@ export function useDownloadSubtitles() {
         setDownloading(false);
       }
     },
-    [downloading, t],
+    [downloading, t, locale, resolution],
   );
 
   return { downloading, downloadSubtitles };

@@ -8,6 +8,7 @@ import {
 } from '@/lib/media/asset-replacement-events';
 
 const pool: AssetReplacementPool = {
+  invalidate: vi.fn(async () => {}),
   resolve: vi.fn(async () => 'blob:refreshed'),
   release: vi.fn(async () => {}),
 };

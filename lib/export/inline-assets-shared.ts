@@ -7,6 +7,8 @@ export interface InlineOptions {
   fetchImpl?: typeof fetch;
   maxAssetBytes?: number;
   fetcher?: FetchAsset;
+  /** Keep original remote import-map entries as an online fallback. Default true. */
+  keepImportmapFallbacks?: boolean;
 }
 
 export type FetchAsset = (
