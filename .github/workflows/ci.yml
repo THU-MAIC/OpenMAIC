@@ -224,6 +224,11 @@ jobs:
         env:
           COVER_LAYOUT_BROWSER: '1'
 
+      - name: Interactive static HTML Chromium smoke
+        run: pnpm exec vitest run tests/video-export/interactive-static-html.browser.test.ts
+        env:
+          INTERACTIVE_STATIC_BROWSER: '1'
+
       # runner.* is only valid in step contexts (not job-level env).
       - name: Materialize Hyperframes lint samples
         run: pnpm exec vitest run tests/video-export/e2e-materialize.test.ts
@@ -238,7 +243,7 @@ jobs:
           HF_E2E_DIR: ${{ runner.temp }}/openmaic-hyperframes-samples
         run: |
           set -euo pipefail
-          for sample in quiz pbl-v2 pbl-legacy pbl-dense mixed arabic; do
+          for sample in quiz pbl-v2 pbl-legacy pbl-dense mixed arabic interactive-static; do
             dir="$HF_E2E_DIR/$sample"
             if output="$(pnpm exec hyperframes lint "$dir" 2>&1)"; then
               status=0

@@ -40,7 +40,7 @@ node scripts/check-package-version-bumps.mjs "$base"
 
 const EXPECTED_HYPERFRAMES_LINT = `
 set -euo pipefail
-for sample in quiz pbl-v2 pbl-legacy pbl-dense mixed arabic; do
+for sample in quiz pbl-v2 pbl-legacy pbl-dense mixed arabic interactive-static; do
 dir="$HF_E2E_DIR/$sample"
 if output="$(pnpm exec hyperframes lint "$dir" 2>&1)"; then
 status=0
@@ -177,7 +177,18 @@ describe('CI video-export workflow contract', () => {
     expect(guard['continue-on-error']).toBeUndefined();
   });
 
-  it('materializes and warning-strict lints the exact six samples with Hyperframes 0.7.60', () => {
+  it('keeps the interactive static HTML Chromium smoke required', () => {
+    const guard = step(parseWorkflow(), 'e2e', 'Interactive static HTML Chromium smoke');
+
+    expect(guard.run).toBe(
+      'pnpm exec vitest run tests/video-export/interactive-static-html.browser.test.ts',
+    );
+    expect(guard.env).toEqual({ INTERACTIVE_STATIC_BROWSER: '1' });
+    expect(guard.if).toBeUndefined();
+    expect(guard['continue-on-error']).toBeUndefined();
+  });
+
+  it('materializes and warning-strict lints the exact seven samples with Hyperframes 0.7.60', () => {
     assertHyperframesGateContract(parseWorkflow());
   });
 

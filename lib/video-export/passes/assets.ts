@@ -146,10 +146,18 @@ export function planAssets(
     const seq = String(scene.index + 1).padStart(3, '0');
     const sceneSlug = `${seq}-${sanitizeFilenamePart(scene.title)}`;
 
-    // Base frame — planned for renderable (slide) scenes; the exporter renders it.
+    // Base frame / packaged HTML — planned for renderable scene bases.
     let base = scene.base;
     if (scene.base.kind === 'slide-snapshot') {
       const { path } = planner.plan(`frame:${scene.id}`, 'frame', `frames/${sceneSlug}.png`, true);
+      base = { ...scene.base, assetRef: path };
+    } else if (scene.base.kind === 'interactive-html') {
+      const { path } = planner.plan(
+        scene.base.assetId,
+        'html',
+        `interactive/${sceneSlug}.html`,
+        true,
+      );
       base = { ...scene.base, assetRef: path };
     }
 

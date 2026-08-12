@@ -83,6 +83,9 @@ importers:
       '@fontsource/montserrat':
         specifier: ^5.2.8
         version: 5.2.8
+      '@fontsource/noto-sans-kr':
+        specifier: ^5.2.9
+        version: 5.3.0
       '@fontsource/noto-sans-sc':
         specifier: ^5.2.9
         version: 5.2.9
@@ -185,6 +188,9 @@ importers:
       embla-carousel-react:
         specifier: ^8.6.0
         version: 8.6.0(react@19.2.3)
+      es-module-lexer:
+        specifier: ^2.0.0
+        version: 2.0.0
       file-saver:
         specifier: ^2.0.5
         version: 2.0.5
@@ -242,9 +248,21 @@ importers:
       partial-json:
         specifier: ^0.1.7
         version: 0.1.7
+      parse5:
+        specifier: ^8.0.1
+        version: 8.0.1
+      parse-srcset:
+        specifier: ^1.0.2
+        version: 1.0.2
       pg:
         specifier: ^8.16.3
         version: 8.22.0
+      postcss:
+        specifier: ^8.5.15
+        version: 8.5.15
+      postcss-value-parser:
+        specifier: ^4.2.0
+        version: 4.2.0
       pptxgenjs:
         specifier: workspace:*
         version: link:packages/pptxgenjs
@@ -2813,6 +2831,9 @@ packages:
 
   '@fontsource/montserrat@5.2.8':
     resolution: {integrity: sha512-xTjLxSbSfCycDB0pwmNsfNvdfWPaDaRQ2LC6yt/ZI7SdvXG52zHnzNYC/09mzuAuWNJyShkteutfCoDgym56hQ==}
+
+  '@fontsource/noto-sans-kr@5.3.0':
+    resolution: {integrity: sha512-/JnpTjaCOXW7xUoqOyCVYSr05VOkDy5Yla9O+WAEiS7u+yYLsmHoqj6v1W0bf91G8G3XA2+NnRS3CX2Tf/FVZg==}
 
   '@fontsource/noto-sans-sc@5.2.9':
     resolution: {integrity: sha512-bTUIWGBgJDpwi5qAr+x0/lcgv80IHTB9vl6s2f6EymZEa7qYV99yNRBZuKFT+SYDKVunZrjCEhWtpxqmbXWl5Q==}
@@ -11685,6 +11706,9 @@ packages:
     resolution: {integrity: sha512-orRsuYpJVw8LdAwqqLykBj9ecS5/cRHlI5+nvTo8LcCKmzDmqVORXtOIYEEQuL9D4BxtA1lm5isAqzQZCoQ6Eg==}
     engines: {node: '>=4'}
 
+  postcss-value-parser@4.2.0:
+    resolution: {integrity: sha512-1NNCs6uurfkVbeXG4S8JFT9t19m45ICnif8zWLd5oPSZ50QnwMfK+H3jv408d4jw/7Bttv5axS5IiHoLaVNHeQ==}
+
   postcss@7.0.39:
     resolution: {integrity: sha512-yioayjNbHn6z1/Bywyb2Y4s3yvDAeXGOyxqD+LnVOinq6Mdmd++SW2wUNVzavyyHxd6+DxzWGIuosg6P1Rj8uA==}
     engines: {node: '>=6.0.0'}
@@ -16622,6 +16646,8 @@ snapshots:
   '@fontsource/merriweather@5.2.11': {}
 
   '@fontsource/montserrat@5.2.8': {}
+
+  '@fontsource/noto-sans-kr@5.3.0': {}
 
   '@fontsource/noto-sans-sc@5.2.9': {}
 
@@ -26494,6 +26520,8 @@ snapshots:
     dependencies:
       cssesc: 3.0.0
       util-deprecate: 1.0.2
+
+  postcss-value-parser@4.2.0: {}
 
   postcss@7.0.39:
     dependencies:
