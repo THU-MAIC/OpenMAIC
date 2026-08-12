@@ -23,6 +23,7 @@ const log = createLogger('AgentLoop');
 export interface AgentLoopStoreState {
   stage: unknown;
   scenes: unknown[];
+  outlines?: unknown[];
   currentSceneId: string | null;
   mode: string;
   whiteboardOpen: boolean;

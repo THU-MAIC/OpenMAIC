@@ -32,6 +32,7 @@ import {
 import type { ChatStorageOptions } from './chat-storage';
 import type { AppDocument } from '@/lib/document-store';
 import { BrowserKVStore } from '@openmaic/storage';
+import { clearAssetPool } from '@/lib/media/asset-pool';
 
 const log = createLogger('Database');
 
@@ -76,6 +77,36 @@ export interface StageRecord {
 }
 
 /**
+ * Folder table - User-created folders for grouping courses.
+ *
+ * Folder membership is device-local organization metadata, not part of the
+ * course document itself (which is owned by the `@openmaic/storage`
+ * DocumentStore in a separate database). It lives in this Dexie database
+ * alongside the legacy tables. See {@link StageFolderMembership}.
+ */
+export interface FolderRecord {
+  id: string; // Primary key
+  name: string;
+  order: number; // Sort order
+  createdAt: number; // timestamp
+  updatedAt: number; // timestamp
+}
+
+/**
+ * Stage→folder membership mapping. `stageId` is the primary key so each course
+ * has at most one row; a missing row (or `folderId === undefined`) means the
+ * course is unfiled. This is intentionally separate from both the legacy
+ * `stages` table (a migration mirror that nothing writes) and the
+ * DocumentStore stage row (version-independent document content), so folder
+ * grouping never touches document semantics.
+ */
+export interface StageFolderMembership {
+  stageId: string; // Primary key (FK -> DocumentStore stage id)
+  folderId?: string; // FK -> folders.id; undefined = unfiled
+  updatedAt: number; // timestamp
+}
+
+/**
  * Scene table - Scene/page data
  */
 export interface SceneRecord {
@@ -96,6 +127,8 @@ export interface SceneRecord {
  */
 export interface AudioFileRecord {
   id: string; // Primary key (audioId)
+  /** Stage ownership index. Absent on legacy rows; document walking remains their fallback. */
+  stageId?: string;
   blob: Blob; // Audio binary data
   duration?: number; // Duration (seconds)
   format: string; // mp3, wav, etc.
@@ -165,8 +198,12 @@ export interface StageOutlinesRecord {
  * MediaFile table - AI-generated media files (images/videos)
  */
 export interface MediaFileRecord {
-  id: string; // Compound key: `${stageId}:${elementId}`
+  // Compound key: `${stageId}:${mediaRef}`. Successful and failed rows use
+  // the same reference space (allocated id after allocation, legacy ref before it).
+  id: string;
   stageId: string; // FK → stages.id
+  /** Original gen_* reference retained after allocation for reload reconciliation. */
+  placeholderRef?: string;
   type: 'image' | 'video';
   blob: Blob; // Media binary
   mimeType: string; // image/png, video/mp4
@@ -182,7 +219,15 @@ export interface MediaFileRecord {
 }
 
 /**
- * GeneratedAgent table - AI-generated agent profiles
+ * GeneratedAgent table - AI-generated agent profiles.
+ *
+ * LEGACY. The roster now persists on the stage document
+ * (`stage.generatedAgentConfigs`); this table is kept only as a lazy-migration
+ * source for classrooms whose roster (or voice fields) predate the
+ * document-embedded model. Production access is migration reads plus deletion
+ * hygiene: `deleteStageData` clears a deleted stage's rows (as does the
+ * deprecated `deleteStageWithRelatedData` cascade). Nothing writes new rows;
+ * do not add writers.
  */
 export interface GeneratedAgentRecord {
   id: string; // PK: agent ID (e.g. "gen-abc123")
@@ -234,7 +279,7 @@ export function mediaFileKey(stageId: string, elementId: string): string {
 // ==================== Database Definition ====================
 
 const DATABASE_NAME = 'MAIC-Database';
-const _DATABASE_VERSION = 15;
+const _DATABASE_VERSION = 17;
 
 /**
  * MAIC Database Instance
@@ -255,6 +300,8 @@ class MAICDatabase extends Dexie {
   voiceProfiles!: EntityTable<VoiceProfileRecord, 'id'>;
   autoVoiceCache!: EntityTable<AutoVoiceCacheRecord, 'voiceId'>;
   agentEditSessions!: EntityTable<AgentEditSessionRecord, 'id'>;
+  folders!: EntityTable<FolderRecord, 'id'>;
+  stageFolders!: EntityTable<StageFolderMembership, 'stageId'>;
 
   constructor() {
     super(DATABASE_NAME);
@@ -481,6 +528,23 @@ class MAICDatabase extends Dexie {
     this.version(15).stores({
       chatRestoreStaging: '[stageId+id], stageId, [stageId+createdAt]',
     });
+
+    // Version 16: make newly-written audio independently reclaimable by stage.
+    // Legacy rows remain valid and are found through speech-action references.
+    this.version(16).stores({
+      audioFiles: 'id, stageId, createdAt',
+    });
+
+    // Version 17: Course folders — group courses into user-created folders.
+    // `folders` holds folder metadata; `stageFolders` maps each course (by
+    // DocumentStore stage id) to its folder. Neither touches the document
+    // aggregate: folder grouping is device-local organization metadata kept in
+    // this Dexie database alongside the legacy tables, so an existing course
+    // with no membership row is simply unfiled (no upgrade callback needed).
+    this.version(17).stores({
+      folders: 'id, order',
+      stageFolders: 'stageId, folderId',
+    });
   }
 }
 
@@ -521,6 +585,7 @@ export async function clearDatabase(runtimeStore?: RuntimeStore): Promise<void> 
     await deleteAllDocuments();
     await clearDocumentStoreKeys();
     await db.delete();
+    await clearAssetPool();
   });
   log.info('Database cleared');
 }
@@ -619,9 +684,9 @@ export async function exportDatabase(chatOptions: ChatStorageOptions = {}): Prom
   // document migration — so legacy-only documents can still own runtime chat
   // history. Enumerate chats for EVERY exported document, not just stored ones.
   // The legacy chat rows are collected separately above by direct table reads,
-  // so the runtime read gets an empty legacy store: it never needs the
-  // cross-realm migration lock and therefore also works without Web Locks
-  // (where the document seam already exports legacy-only courses read-only).
+  // so the RuntimeStore load gets an empty legacy source and never needs the
+  // cross-realm migration lock. It may still finalize a pending restore marker;
+  // `observe: false` only keeps this export from changing partition memos.
   const runtimeChats = (
     await Promise.all(
       documents.map(async ({ stage }) =>
@@ -684,17 +749,31 @@ export async function importDatabase(
           .sort((a, b) => a.order - b.order),
       };
     });
-  const importedDocuments: Array<{ id: string; preImage: AppDocument | null }> = [];
+  const importedDocuments: Array<{
+    id: string;
+    preImage: AppDocument | null;
+    wasDeleted: boolean;
+  }> = [];
   const importedCurrentScenes: Array<{ key: string; preImage: unknown | null }> = [];
   const kv = new BrowserKVStore();
+  const { isStageDeleted, markStageDeleted, unmarkStageDeleted } = await import('./deleted-stages');
 
   try {
     for (const document of documents) {
+      // Record the pre-import deletion state alongside the document pre-image:
+      // a failed import rolls the document back, so it must roll this back too.
+      const wasDeleted = isStageDeleted(document.stage.id);
       await mutateDocument(document.stage.id, async (_existing, store) => {
         const preImage = (await store.loadDocument(document.stage.id)) as AppDocument | null;
         await store.saveDocument(document);
-        importedDocuments.push({ id: document.stage.id, preImage });
+        importedDocuments.push({ id: document.stage.id, preImage, wasDeleted });
       });
+      // Explicit document (re)creation: a backup may restore a stage deleted
+      // earlier this session under the same id. Lift the deleted flag so later
+      // edits of the restored document persist instead of being dropped. (The
+      // deletion epoch stays bumped, so pre-delete in-flight writes remain
+      // fenced off the restored document.)
+      unmarkStageDeleted(document.stage.id);
     }
     for (const legacyStage of data.stages ?? []) {
       if (legacyStage.currentSceneId !== undefined) {
@@ -801,12 +880,21 @@ export async function importDatabase(
         log.error(`Failed to roll back imported current-scene key ${key}:`, rollbackError);
       }
     }
-    for (const { id, preImage } of importedDocuments.reverse()) {
+    for (const { id, preImage, wasDeleted } of importedDocuments.reverse()) {
       try {
         await mutateDocument(id, async (_document, store) => {
           if (preImage) await store.saveDocument(preImage);
           else await store.deleteDocument(id);
         });
+        // The rollback reinstated the pre-import world; reinstate the deletion
+        // state the import lifted, or the rolled-back (absent) document would
+        // stay writable and an outstanding flush could recreate it. Re-marking
+        // bumps the epoch again — consistent either way, since every pre-import
+        // capture is already stale. Deliberately skipped when the rollback
+        // write itself failed above: the imported document then still exists,
+        // and re-marking would silently drop edits to a document that is
+        // present (the exact bug the lift exists to prevent).
+        if (wasDeleted) markStageDeleted(id);
       } catch (rollbackError) {
         log.error(`Failed to roll back imported document ${id}:`, rollbackError);
       }
@@ -838,9 +926,26 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
   // inside it (self-deadlock against our own exclusive hold).
   await mutateDocument(
     stageId,
-    async (_document, store) =>
+    async (document, store) =>
       withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
+        const {
+          buildStageAssetReclamationPlan,
+          executeStageAssetReclamation,
+          loadStageAssetInventory,
+        } = await import('@/lib/media/reclaim-stage-assets');
+        const deletionDocument = document ?? {
+          stage: { id: stageId, name: '', createdAt: 0, updatedAt: 0 },
+          scenes: [],
+        };
+        const inventory = await loadStageAssetInventory(deletionDocument);
+        const assetPlan = buildStageAssetReclamationPlan(
+          stageId,
+          inventory.refs,
+          inventory.mediaRows,
+          inventory.audioRows,
+        );
         await store.deleteDocument(stageId);
+        await executeStageAssetReclamation(assetPlan, null);
         await db.transaction(
           'rw',
           [
@@ -850,7 +955,6 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
             db.chatRestoreStaging,
             db.playbackState,
             db.stageOutlines,
-            db.mediaFiles,
             db.generatedAgents,
             db.agentEditSessions,
           ],
@@ -861,7 +965,6 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
             await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
             await db.playbackState.delete(stageId);
             await db.stageOutlines.delete(stageId);
-            await db.mediaFiles.where('stageId').equals(stageId).delete();
             await db.generatedAgents.where('stageId').equals(stageId).delete();
             await db.agentEditSessions.where('stageId').equals(stageId).delete();
           },

@@ -13,9 +13,40 @@ const schemas = {
   SerializedScene: generateSchema('SerializedScene'),
 } as const;
 
+type GeneratedSchema = {
+  definitions: Record<
+    string,
+    {
+      type?: string;
+      properties?: Record<string, Record<string, unknown>>;
+      additionalProperties?: unknown;
+    }
+  >;
+};
+
 function validator(root: keyof typeof schemas) {
   return new Ajv({ allErrors: true, strict: false }).compile(schemas[root]);
 }
+
+describe('generated JSON Schema — asset references', () => {
+  it.each(Object.entries(schemas))('%s defines AssetRef as a string', (_root, schema) => {
+    expect((schema as GeneratedSchema).definitions.AssetRef).toMatchObject({ type: 'string' });
+  });
+
+  it.each(Object.entries(schemas))('%s emits only boolean deprecated keywords', (root, schema) => {
+    for (const [definitionName, definition] of Object.entries(
+      (schema as GeneratedSchema).definitions,
+    )) {
+      for (const [propertyName, property] of Object.entries(definition.properties ?? {})) {
+        if (!Object.prototype.hasOwnProperty.call(property, 'deprecated')) continue;
+        const path = `${root}.definitions.${definitionName}.properties.${propertyName}.deprecated`;
+        expect(typeof property.deprecated, `${path} = ${JSON.stringify(property.deprecated)}`).toBe(
+          'boolean',
+        );
+      }
+    }
+  });
+});
 
 describe('generated JSON Schema — Stage', () => {
   const v = validator('Stage');
@@ -24,6 +55,32 @@ describe('generated JSON Schema — Stage', () => {
   });
   it('rejects a stage missing required fields', () => {
     expect(v({ id: 's' })).toBe(false);
+  });
+  it('accepts a roster with and without the optional voice fields', () => {
+    const agent = {
+      id: 'gen-1',
+      name: 'Narrator',
+      role: 'teacher',
+      persona: 'p',
+      avatar: 'a',
+      color: '#000',
+      priority: 10,
+    };
+    const voiced = {
+      ...agent,
+      id: 'gen-2',
+      voiceConfig: { providerId: 'tts', voiceId: 'v1' },
+      voiceDesign: { identity: 'adult narrator', texture: 'low', delivery: 'calm' },
+    };
+    expect(
+      v({
+        id: 's',
+        name: 'n',
+        createdAt: 1,
+        updatedAt: 2,
+        generatedAgentConfigs: [agent, voiced],
+      }),
+    ).toBe(true);
   });
 });
 
@@ -56,14 +113,168 @@ describe('generated JSON Schema — SerializedScene', () => {
       },
     },
   };
+  const legacyPBLScene = {
+    id: 'legacy-pbl',
+    stageId: 'st',
+    type: 'pbl',
+    title: 'Legacy project',
+    order: 1,
+    content: {
+      type: 'pbl',
+      projectConfig: {
+        projectInfo: {
+          title: 'Neighborhood garden',
+          description: 'Plan a shared garden for the neighborhood.',
+        },
+        agents: [{ id: 'mentor-1', name: 'Mentor', role: 'mentor' }],
+        issueboard: {
+          issues: [{ id: 'issue-1', title: 'Choose the site', description: 'Compare options.' }],
+        },
+        chat: {
+          messages: [{ id: 'message-1', role: 'assistant', content: 'Let us compare sites.' }],
+        },
+      },
+    },
+  };
+  const plannerPBLScene = {
+    id: 'planner-pbl',
+    stageId: 'st',
+    type: 'pbl',
+    title: 'Planner project',
+    order: 2,
+    content: {
+      type: 'pbl',
+      projectV2: {
+        uiPhase: 'hero',
+        title: 'Build a weather station',
+        description: 'Create and explain a simple weather station.',
+        learningObjective: 'Interpret sensor readings and communicate uncertainty.',
+        gains: ['Read sensors', 'Explain observations'],
+        tags: ['science', 'sensors'],
+        language: 'en-US',
+        proficiency: 'beginner',
+        status: 'active',
+        roles: [
+          {
+            id: 'instructor',
+            type: 'instructor',
+            name: 'Instructor',
+            description: 'Guides the project.',
+          },
+        ],
+        milestones: [
+          {
+            id: 'milestone-1',
+            title: 'Assemble the station',
+            status: 'active',
+            order: 0,
+            microtasks: [
+              {
+                id: 'task-1',
+                title: 'Connect the sensor',
+                status: 'todo',
+                assignee: 'user',
+                hints: ['Check the pin labels.'],
+                order: 0,
+              },
+            ],
+            documents: [
+              {
+                id: 'doc-1',
+                title: 'Wiring guide',
+                content: '# Sensor wiring',
+                docType: 'markdown',
+              },
+            ],
+          },
+        ],
+        submissions: [],
+        evaluations: [],
+        threads: [{ agentId: 'instructor', messages: [] }],
+        engagementEvents: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    },
+  };
+  const interactiveScene = {
+    id: 'interactive-scene',
+    stageId: 'st',
+    type: 'interactive',
+    title: 'Simulation',
+    order: 3,
+    content: {
+      type: 'interactive',
+      html: '<!doctype html><div id="simulation"></div>',
+      widgetType: 'simulation',
+      widgetConfig: {
+        type: 'simulation',
+        concept: 'projectile motion',
+        variables: [{ name: 'velocity', initialValue: 12 }],
+        controls: { reset: true, pause: true },
+      },
+    },
+  };
   it('accepts a well-formed slide scene', () => {
     expect(v(slideScene)).toBe(true);
   });
   it('rejects a scene missing required fields', () => {
     expect(v({ id: 'sc' })).toBe(false);
   });
-  it('rejects content that is not a contract content kind (slide/quiz)', () => {
-    expect(v({ ...slideScene, content: { type: 'pbl' } })).toBe(false);
+  it('accepts a realistic legacy PBL scene with opaque v1 projectConfig', () => {
+    expect(v(legacyPBLScene), JSON.stringify(v.errors)).toBe(true);
+  });
+  it('accepts a planner-produced v2 project with the full seeded skeleton', () => {
+    expect(v(plannerPBLScene), JSON.stringify(v.errors)).toBe(true);
+  });
+  it('accepts realistic app-owned widget config fields but rejects an unknown widget type', () => {
+    expect(v(interactiveScene), JSON.stringify(v.errors)).toBe(true);
+    expect(
+      v({
+        ...interactiveScene,
+        content: {
+          ...interactiveScene.content,
+          widgetConfig: { ...interactiveScene.content.widgetConfig, type: 'bogus' },
+        },
+      }),
+    ).toBe(false);
+    const { type: _type, ...configWithoutType } = interactiveScene.content.widgetConfig;
+    expect(
+      v({
+        ...interactiveScene,
+        content: { ...interactiveScene.content, widgetConfig: configWithoutType },
+      }),
+    ).toBe(false);
+  });
+  it('keeps the widget config and historical PBL runtime-overlay surfaces open', () => {
+    const definitions = (schemas.SerializedScene as GeneratedSchema).definitions;
+    expect(definitions.WidgetConfigBase.additionalProperties).not.toBe(false);
+    for (const name of ['PBLProject', 'PBLMilestone', 'PBLMicrotask', 'PBLThreadSeat']) {
+      expect(definitions[name].additionalProperties, name).not.toBe(false);
+    }
+
+    const project = plannerPBLScene.content.projectV2;
+    const sceneWithRuntimeOverlay = {
+      ...plannerPBLScene,
+      content: {
+        ...plannerPBLScene.content,
+        projectV2: {
+          ...project,
+          runtimeEvents: [],
+          milestones: project.milestones.map((milestone) => ({
+            ...milestone,
+            microtasks: milestone.microtasks.map((microtask) => ({
+              ...microtask,
+              engagement: { learnerTurnCount: 2 },
+            })),
+          })),
+        },
+      },
+    };
+    expect(v(sceneWithRuntimeOverlay), JSON.stringify(v.errors)).toBe(true);
+  });
+  it('rejects a cross-kind slide/PBL content mismatch', () => {
+    expect(v({ ...slideScene, content: legacyPBLScene.content })).toBe(false);
   });
   it('rejects a scene whose type disagrees with its content (type<->content bound)', () => {
     expect(v({ ...slideScene, type: 'quiz' })).toBe(false);

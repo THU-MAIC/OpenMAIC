@@ -12,8 +12,8 @@ import {
   applyOutlineFallbacks,
   generateSceneContent,
   buildVisionUserContent,
-} from '@/lib/generation/generation-pipeline';
-import type { AgentInfo } from '@/lib/generation/generation-pipeline';
+} from '@openmaic/generation';
+import type { AgentInfo } from '@openmaic/generation';
 import type {
   SceneOutline,
   PdfImage,
@@ -26,6 +26,7 @@ import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
+import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 
 const log = createLogger('Scene Content API');
 
@@ -171,15 +172,19 @@ export async function POST(req: NextRequest) {
     const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
       imageMapping,
-      languageModel: effectiveOutline.type === 'pbl' ? languageModel : undefined,
       visionEnabled: hasVision,
       generatedMediaMapping,
       agents,
       languageDirective,
-      thinkingConfig,
       targetLanguage: userLocale || undefined,
       userRequirements: requirements,
       allowProceduralSkill: vocationalActive,
+      ...(effectiveOutline.type === 'pbl'
+        ? {
+            pblLoopFallback: (input) =>
+              generatePBLV2Project(input, languageModel, callLLM, { logger: log }, thinkingConfig),
+          }
+        : {}),
     });
 
     if (!content) {

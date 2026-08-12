@@ -3,10 +3,12 @@
  *
  * This module owns the *structural* part of a lesson: the top-level `Stage`
  * container and a per-page `Scene` whose `content` is a discriminated union of
- * the universal content kinds (`SlideContent`, `QuizContent`). `Scene`'s
+ * the universal content kinds (`SlideContent`, `QuizContent`). Interactive and
+ * PBL content contracts are exported alongside them and compose through
+ * `Scene`'s generic content parameter. `Scene`'s
  * playback `actions` default to the contract's standard {@link Action} union
- * (defined in `./action.ts`); apps still thread their own richer content
- * kinds (interactive / PBL configs) in through `Scene`'s generic parameters.
+ * (defined in `./action.ts`); apps can still extend widget payloads and action
+ * sets through `Scene`'s generic parameters.
  *
  * The split keeps `@openmaic/dsl` focused on the lesson skeleton while letting the
  * runtime engine, renderer, and importer share one source of truth for it.
@@ -16,7 +18,7 @@
 import type { Slide } from './slides.js';
 import type { Action } from './action.js';
 
-/** All scene kinds the contract is aware of. Feature kinds (interactive/pbl) are still valid `type` values — their *content* shapes live in the app and are composed in via {@link Scene}'s `TContent` parameter. */
+/** All scene kinds owned by the contract. */
 export type SceneType = 'slide' | 'quiz' | 'interactive' | 'pbl';
 
 /** Frozen set of every valid {@link SceneType}, for cheap membership checks. */
@@ -57,9 +59,53 @@ export interface VideoManifestEntry {
 export type VideoManifest = Record<string, VideoManifestEntry>;
 
 /**
- * Server-generated agent configuration. Embedded in persisted classroom JSON
- * so clients can hydrate the agent registry without relying on IndexedDB
- * pre-population. Only present for API-generated classrooms.
+ * Provider-neutral vocal identity for an agent, described as a 3-layer recipe.
+ * Consumed by any TTS integration: as an inline voice prompt where supported,
+ * or as the seed for a registered/cloned voice. Part of the contract so an
+ * agent's voice travels with the document (export/import, device switches)
+ * instead of living in device-local storage.
+ */
+export interface VoiceDesign {
+  /** gender / age / role */
+  identity: string;
+  /** pitch / vocal quality */
+  texture: string;
+  /** emotion / pace */
+  delivery: string;
+}
+
+/**
+ * A concrete TTS voice binding for an agent. `providerId` is an open string at
+ * the contract level — the set of available TTS providers is app-defined, and
+ * readers must treat an unknown provider as "no bound voice". Deliberately
+ * minimal: fields are added here only once a producer actually emits them.
+ */
+export interface AgentVoiceConfig {
+  providerId: string;
+  voiceId: string;
+}
+
+/**
+ * Generated agent configuration. Embedded in the persisted stage document
+ * (`stage.generatedAgentConfigs`) so clients can hydrate the agent registry
+ * without relying on IndexedDB pre-population. Present for generated-roster
+ * classrooms; preset classrooms carry `agentIds` instead.
+ *
+ * The voice fields are optional and additive: documents written before they
+ * existed simply lack them, and readers treat an absent voice as "no bound
+ * voice" (the TTS path falls back at call time). Adding them did not change
+ * the meaning of any existing field, so within this codebase — whose
+ * structural validators tolerate unknown fields — the addition is
+ * non-breaking and does not bump `DSL_VERSION` (see `version.ts`).
+ *
+ * It is NOT transparent to schema-validating consumers, however: the
+ * generated `stage.schema.json` sets `additionalProperties: false` on every
+ * definition, so a cross-language consumer validating against a pinned copy
+ * of an older published schema artifact rejects any document that carries
+ * these fields. Under strict schema validation, additive fields ARE a
+ * breaking change — such consumers must upgrade their schema artifact in
+ * lockstep with the documents they accept. (A `DSL_VERSION` bump would not
+ * help them: an old schema rejects the new documents either way.)
  */
 export interface GeneratedAgentConfig {
   id: string;
@@ -69,6 +115,10 @@ export interface GeneratedAgentConfig {
   avatar: string;
   color: string;
   priority: number;
+  /** Bound TTS voice, when the generation pipeline selected one. */
+  voiceConfig?: AgentVoiceConfig;
+  /** 3-layer vocal descriptor for automatic voice synthesis/registration. */
+  voiceDesign?: VoiceDesign;
 }
 
 /**
@@ -162,13 +212,9 @@ export interface QuizContent {
 }
 
 /**
- * The universal scene-content kinds owned by the contract.
- *
- * App-specific kinds (interactive / pbl) are NOT members here: they carry
- * richer feature coupling (Ultra-mode widgets, PBL project configs) and stay in
- * the consuming app. Apps compose their full content union as
- * `SceneContent | InteractiveContent | PBLContent` and feed it to {@link Scene}'s
- * `TContent` parameter.
+ * The universal scene-content subset used by {@link Scene}'s compatibility
+ * default. Interactive and PBL content are also contract-owned and are composed
+ * into concrete scene unions through the generic content parameter.
  */
 export type SceneContent = SlideContent | QuizContent;
 
@@ -209,8 +255,9 @@ export interface SceneCore<TAction = Action> {
  * Implemented as a distributive conditional over `TContent`: the binding holds
  * per member of the content union, so the default `Scene<Action, SlideContent |
  * QuizContent>` is `({ type: 'slide'; content: SlideContent } | { type: 'quiz';
- * content: QuizContent }) & SceneCore`, and an app can still widen `TContent`
- * with its own content kinds — each new kind ties its own `type` to its shape.
+ * content: QuizContent }) & SceneCore`; consumers compose the exported
+ * interactive and PBL types into `TContent`, and every member ties its own
+ * `type` to its shape.
  *
  * ```ts
  * // app side — widen content; widen actions only if the app adds its own
@@ -223,7 +270,8 @@ export interface SceneCore<TAction = Action> {
  * @template TAction  - The playback action type (defaults to the standard {@link Action} union).
  * @template TContent - The scene-content union; any object union tagged with a
  *                      `type: {@link SceneType}` discriminant (defaults to the
- *                      two universal kinds). Each member binds its own `type`.
+ *                      slide/quiz compatibility subset). Each member binds its
+ *                      own `type`.
  */
 export type Scene<
   TAction = Action,
@@ -238,8 +286,8 @@ export type Scene<
 
 /**
  * Narrow a candidate to {@link SlideContent}. Accepts any value tagged with a
- * `type: SceneType` discriminant — including an app-widened content union that
- * adds interactive / pbl kinds beyond the contract's universal two.
+ * `type: SceneType` discriminant, including a consumer-specialized interactive
+ * content union.
  * Pure, no runtime deps.
  */
 export function isSlideContent<T extends { type: SceneType }>(
@@ -250,8 +298,8 @@ export function isSlideContent<T extends { type: SceneType }>(
 
 /**
  * Narrow a candidate to {@link QuizContent}. Accepts any value tagged with a
- * `type: SceneType` discriminant — including an app-widened content union that
- * adds interactive / pbl kinds beyond the contract's universal two.
+ * `type: SceneType` discriminant, including a consumer-specialized interactive
+ * content union.
  * Pure, no runtime deps.
  */
 export function isQuizContent<T extends { type: SceneType }>(

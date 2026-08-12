@@ -54,6 +54,17 @@ import type {
 } from './slides.js';
 import type { Scene, SceneType, Stage } from './stage.js';
 import { isSlideContent } from './stage.js';
+import type {
+  PBLAssignee,
+  PBLMicrotaskStatus,
+  PBLMilestoneStatus,
+  PBLProject,
+  PBLProjectStatus,
+  PBLProficiency,
+  PBLRoleType,
+  PBLThreadSeat,
+  PBLUiPhase,
+} from './pbl.js';
 
 /**
  * The canonical static defaults for required element fields, and the single
@@ -98,6 +109,265 @@ type Raw = Record<string, unknown>;
 
 function isObject(v: unknown): v is Raw {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function pblFail(field: string, expected: string, value: unknown): never {
+  throw new Error(
+    `@openmaic/dsl: cannot normalize PBL project: \`${field}\` must be ${expected}, got ${JSON.stringify(value)}`,
+  );
+}
+
+function pblEnum<T extends string>(
+  source: Raw,
+  field: string,
+  values: readonly T[],
+  fallback: T,
+  path = field,
+): T {
+  const value = source[field];
+  if (value === undefined) return fallback;
+  if (typeof value !== 'string' || !values.includes(value as T)) {
+    pblFail(
+      path,
+      `one of ${values.map((candidate) => JSON.stringify(candidate)).join(' | ')}`,
+      value,
+    );
+  }
+  return value as T;
+}
+
+function pblRequiredEnum<T extends string>(
+  source: Raw,
+  field: string,
+  values: readonly T[],
+  path = field,
+): T {
+  const value = source[field];
+  if (typeof value !== 'string' || !values.includes(value as T)) {
+    pblFail(
+      path,
+      `one of ${values.map((candidate) => JSON.stringify(candidate)).join(' | ')}`,
+      value,
+    );
+  }
+  return value as T;
+}
+
+function pblArray(source: Raw, field: string, path = field): unknown[] {
+  const value = source[field];
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) pblFail(path, 'an array', value);
+  return value;
+}
+
+function pblRequiredString(source: Raw, field: string, path = field): string {
+  const value = source[field];
+  if (typeof value !== 'string') pblFail(path, 'a string', value);
+  return value;
+}
+
+function pblRequiredNumber(source: Raw, field: string, path = field): number {
+  const value = source[field];
+  if (typeof value !== 'number') pblFail(path, 'a number', value);
+  return value;
+}
+
+function pblStringArray(source: Raw, field: string, path = field): string[] {
+  const value = source[field];
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
+    pblFail(path, 'an array of strings', value);
+  }
+  return value;
+}
+
+function pblRequireConsistentPresence(items: Raw[], field: string, path: string): void {
+  const present = items.filter((item) => item[field] !== undefined).length;
+  if (present !== 0 && present !== items.length) {
+    pblFail(
+      path,
+      `present on every item or absent from every item`,
+      items.map((item) => item[field]),
+    );
+  }
+}
+
+const PBL_UI_PHASES: readonly PBLUiPhase[] = ['hero', 'generating', 'workspace', 'completed'];
+const PBL_PROJECT_STATUSES: readonly PBLProjectStatus[] = [
+  'designing',
+  'review',
+  'active',
+  'completed',
+  'archived',
+];
+const PBL_MILESTONE_STATUSES: readonly PBLMilestoneStatus[] = ['locked', 'active', 'completed'];
+const PBL_MICROTASK_STATUSES: readonly PBLMicrotaskStatus[] = [
+  'todo',
+  'in_progress',
+  'completed',
+  'skipped',
+];
+const PBL_ASSIGNEES: readonly PBLAssignee[] = ['user'];
+const PBL_PROFICIENCIES: readonly PBLProficiency[] = ['', 'beginner', 'intermediate', 'advanced'];
+const PBL_ROLE_TYPES: readonly PBLRoleType[] = [
+  'user',
+  'instructor',
+  'evaluator',
+  'mentor',
+  'collaborator',
+  'simulator',
+  'system',
+];
+
+function normalizePBLThread(thread: unknown, index: number): PBLThreadSeat {
+  const path = `threads[${index}]`;
+  if (!isObject(thread)) pblFail(path, 'an object', thread);
+  if (typeof thread.agentId !== 'string') {
+    pblFail(`${path}.agentId`, 'a string', thread.agentId);
+  }
+  return {
+    ...thread,
+    agentId: thread.agentId,
+    messages: pblArray(thread, 'messages', `${path}.messages`),
+  };
+}
+
+/**
+ * Normalize a complete design-authored PBL project without interpreting app
+ * runtime state. Design-authored fields must be present because normalization
+ * cannot invent project content. Seeded skeleton fields may be absent and then
+ * receive their canonical values; present malformed values throw.
+ *
+ * Milestone and microtask statuses must each be consistently absent or present
+ * across the project. All-absent milestones seed first-active then locked;
+ * all-absent microtasks seed `todo`. Mixed presence is rejected.
+ * Pure and idempotent.
+ */
+export function normalizePBLProject(project: unknown): PBLProject {
+  if (!isObject(project)) pblFail('project', 'an object', project);
+
+  const title = pblRequiredString(project, 'title');
+  const description = pblRequiredString(project, 'description');
+  // Optional design fields: preserved when present, never invented when absent.
+  const learningObjective =
+    project.learningObjective === undefined
+      ? undefined
+      : pblRequiredString(project, 'learningObjective');
+  const gains = project.gains === undefined ? undefined : pblStringArray(project, 'gains');
+  const tags = pblStringArray(project, 'tags');
+  const language = pblRequiredString(project, 'language');
+  const createdAt = pblRequiredString(project, 'createdAt');
+  const updatedAt = pblRequiredString(project, 'updatedAt');
+  const proficiency = pblRequiredEnum(project, 'proficiency', PBL_PROFICIENCIES);
+
+  const roles = project.roles;
+  if (!Array.isArray(roles)) pblFail('roles', 'an array', roles);
+  roles.forEach((role, roleIndex) => {
+    const rolePath = `roles[${roleIndex}]`;
+    if (!isObject(role)) pblFail(rolePath, 'an object', role);
+    pblRequiredString(role, 'id', `${rolePath}.id`);
+    pblRequiredEnum(role, 'type', PBL_ROLE_TYPES, `${rolePath}.type`);
+    pblRequiredString(role, 'name', `${rolePath}.name`);
+  });
+
+  const milestones = project.milestones;
+  if (!Array.isArray(milestones)) pblFail('milestones', 'an array', milestones);
+  const milestoneObjects = milestones.map((milestone, milestoneIndex) => {
+    if (!isObject(milestone)) pblFail(`milestones[${milestoneIndex}]`, 'an object', milestone);
+    return milestone;
+  });
+  pblRequireConsistentPresence(milestoneObjects, 'status', 'milestones[].status');
+  const microtaskObjectsByMilestone = milestoneObjects.map((milestone, milestoneIndex) => {
+    const milestonePath = `milestones[${milestoneIndex}]`;
+    if (!Array.isArray(milestone.microtasks)) {
+      pblFail(`${milestonePath}.microtasks`, 'an array', milestone.microtasks);
+    }
+    return milestone.microtasks.map((microtask, microtaskIndex) => {
+      const microtaskPath = `${milestonePath}.microtasks[${microtaskIndex}]`;
+      if (!isObject(microtask)) pblFail(microtaskPath, 'an object', microtask);
+      return microtask;
+    });
+  });
+  pblRequireConsistentPresence(
+    microtaskObjectsByMilestone.flat(),
+    'status',
+    'milestones[].microtasks[].status',
+  );
+
+  const normalizedMilestones = milestoneObjects.map((milestone, milestoneIndex) => {
+    const milestonePath = `milestones[${milestoneIndex}]`;
+    pblRequiredString(milestone, 'id', `${milestonePath}.id`);
+    pblRequiredString(milestone, 'title', `${milestonePath}.title`);
+    pblRequiredNumber(milestone, 'order', `${milestonePath}.order`);
+    const microtaskObjects = microtaskObjectsByMilestone[milestoneIndex];
+    return {
+      ...milestone,
+      status: pblEnum(
+        milestone,
+        'status',
+        PBL_MILESTONE_STATUSES,
+        milestoneIndex === 0 ? 'active' : 'locked',
+        `${milestonePath}.status`,
+      ),
+      microtasks: microtaskObjects.map((microtask, microtaskIndex) => {
+        const microtaskPath = `${milestonePath}.microtasks[${microtaskIndex}]`;
+        pblRequiredString(microtask, 'id', `${microtaskPath}.id`);
+        pblRequiredString(microtask, 'title', `${microtaskPath}.title`);
+        pblStringArray(microtask, 'hints', `${microtaskPath}.hints`);
+        pblRequiredNumber(microtask, 'order', `${microtaskPath}.order`);
+        return {
+          ...microtask,
+          status: pblEnum(
+            microtask,
+            'status',
+            PBL_MICROTASK_STATUSES,
+            'todo',
+            `${microtaskPath}.status`,
+          ),
+          assignee: pblEnum(
+            microtask,
+            'assignee',
+            PBL_ASSIGNEES,
+            'user',
+            `${microtaskPath}.assignee`,
+          ),
+        };
+      }),
+    };
+  });
+
+  let threads: PBLThreadSeat[];
+  if (project.threads === undefined) {
+    threads = (roles ?? []).map((role, index) => {
+      if (!isObject(role) || typeof role.id !== 'string') {
+        pblFail(`roles[${index}].id`, 'a string', isObject(role) ? role.id : role);
+      }
+      return { agentId: role.id, messages: [] };
+    });
+  } else {
+    if (!Array.isArray(project.threads)) pblFail('threads', 'an array', project.threads);
+    threads = project.threads.map(normalizePBLThread);
+  }
+
+  return {
+    ...project,
+    title,
+    description,
+    ...(learningObjective === undefined ? {} : { learningObjective }),
+    ...(gains === undefined ? {} : { gains }),
+    tags,
+    language,
+    proficiency,
+    roles,
+    createdAt,
+    updatedAt,
+    uiPhase: pblEnum(project, 'uiPhase', PBL_UI_PHASES, 'hero'),
+    status: pblEnum(project, 'status', PBL_PROJECT_STATUSES, 'active'),
+    milestones: normalizedMilestones,
+    submissions: pblArray(project, 'submissions'),
+    evaluations: pblArray(project, 'evaluations'),
+    threads,
+    engagementEvents: pblArray(project, 'engagementEvents'),
+  } as PBLProject;
 }
 
 function isNumberPair(v: unknown): v is [number, number] {
@@ -377,9 +647,9 @@ export function normalizeSlideWith(
 }
 
 /**
- * Normalize a {@link Scene}: fills element defaults on a slide scene's canvas and
- * on any attached whiteboards. Quiz — and app-widened (interactive / pbl) —
- * content carries no slide elements and passes through untouched. Generic over
+ * Normalize a {@link Scene}: fills element defaults on a slide scene's canvas,
+ * fills a PBL scene's canonical seeded skeleton, and normalizes any attached
+ * whiteboards. Quiz and interactive content pass through untouched. Generic over
  * `TAction` / `TContent` so app-widened scenes (`Scene<AppAction, AppContent>`)
  * can call it too. Pure; returns a fresh Scene.
  */
@@ -397,6 +667,14 @@ export function normalizeScene<TAction, TContent extends { type: SceneType }>(
       ...next,
       content: { ...scene.content, canvas: normalizeSlide(scene.content.canvas) },
     } as Scene<TAction, TContent>;
+  } else if (scene.content.type === 'pbl' && 'projectV2' in scene.content) {
+    const projectV2 = scene.content.projectV2;
+    if (projectV2 !== undefined) {
+      next = {
+        ...next,
+        content: { ...scene.content, projectV2: normalizePBLProject(projectV2) },
+      } as Scene<TAction, TContent>;
+    }
   }
   return next;
 }

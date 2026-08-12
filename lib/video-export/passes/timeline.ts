@@ -31,6 +31,7 @@ import {
   type TimelineSegment,
 } from '../../choreography';
 import type { CompilerScene } from '../deps';
+import { splitCues } from '../split-cue';
 import type {
   Diagnostic,
   EffectSegment,
@@ -131,11 +132,17 @@ export function buildTimeline(
       durationMs: Math.max(0, end - start),
       supported,
       base: { kind: supported ? 'slide-snapshot' : 'placeholder' },
+      visuals: [],
       ...buckets[index],
     };
   });
 
-  return { scenes: irScenes, subtitles, totalDurationMs, ttsEnabled, diagnostics };
+  // Split each per-speech cue into short, line-sized cues, distributing its time
+  // window by character weight. The IR carries the split track, so the burned-in
+  // overlay and the SRT/VTT serializers all read the same short cues.
+  const splitSubtitles = splitCues(subtitles);
+
+  return { scenes: irScenes, subtitles: splitSubtitles, totalDurationMs, ttsEnabled, diagnostics };
 }
 
 function dispatchSegment(

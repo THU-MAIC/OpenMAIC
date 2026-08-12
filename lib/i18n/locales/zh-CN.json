@@ -76,6 +76,16 @@
     "videoRenderMp4": "渲染 MP4",
     "videoDownloadZip": "下载项目 ZIP",
     "videoServiceHint": "渲染 MP4 需要渲染服务。可下载 ZIP 在本地渲染。",
+    "videoBurnSubtitles": "烧录字幕",
+    "videoBurnSubtitlesDesc": "关闭时导出无字幕的干净视频，可在剪辑软件中自行添加字幕文件。",
+    "videoQuizCtaPrompt": "想亲自体验互动测验？",
+    "videoPblCtaPrompt": "想亲自参与项目学习？",
+    "videoCtaVisit": "访问",
+    "videoDownloadSubtitles": "下载字幕 (.srt)",
+    "subtitlesCompiling": "正在生成字幕…",
+    "subtitlesSuccess": "字幕已下载",
+    "subtitlesEmpty": "没有可生成字幕的旁白",
+    "subtitlesFailed": "字幕下载失败",
     "noSlides": "无可导出的幻灯片",
     "noSlidesSkipped": "本课程无幻灯片，已跳过 PPTX",
     "nothingToExport": "没有可导出的内容"
@@ -217,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "文本工具栏",
       "label": "文本",
       "font": "字体",
       "fontDefault": "默认",
@@ -230,17 +241,99 @@
       "alignLeft": "左对齐",
       "alignCenter": "居中对齐",
       "alignRight": "右对齐",
-      "bullet": "项目符号"
+      "bullet": "项目符号",
+      "colorHex": "颜色值"
+    },
+    "line": {
+      "toolbar": "线条工具栏",
+      "kind": "线条类型",
+      "color": "线条颜色",
+      "width": "线宽",
+      "style": "线条样式",
+      "start": "起点样式",
+      "end": "终点样式",
+      "straight": "直线",
+      "broken": "折线",
+      "broken2": "双折线",
+      "curve": "曲线",
+      "cubic": "三次曲线",
+      "solid": "实线",
+      "dashed": "虚线",
+      "dotted": "点线",
+      "none": "无",
+      "arrow": "箭头",
+      "dot": "圆点"
     },
     "insert": {
+      "toolbar": "插入工具栏",
       "textBox": "文本框",
+      "line": "线条",
+      "linePresets": {
+        "straight": "直线",
+        "dashed": "虚线",
+        "arrow": "箭头直线",
+        "dashedArrow": "虚线箭头",
+        "dottedEnd": "圆点终点线",
+        "broken": "折线",
+        "doubleBroken": "双折线",
+        "curve": "曲线",
+        "cubic": "三次曲线"
+      },
+      "table": "表格",
+      "formula": "公式",
+      "chart": "图表",
+      "chartBar": "柱状图",
+      "chartLine": "折线图",
+      "chartPie": "饼图",
+      "tableDimensions": "{{rows}} x {{columns}} 表格",
       "dragToolbar": "拖动工具栏",
       "dragToolbarKeyboard": "移动工具栏：按回车或空格开始，再使用方向键移动",
       "image": "图片",
       "imageDrop": "拖入图片或点击选择文件",
       "imageOr": "或粘贴图片 URL",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "插入"
+      "imageInsert": "插入",
+      "video": "视频",
+      "videoDrop": "拖入视频或点击选择文件",
+      "videoOr": "或粘贴视频 URL",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "插入",
+      "audio": "音频",
+      "audioDrop": "拖入音频或点击选择文件",
+      "audioOr": "或粘贴音频 URL",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "插入"
+    },
+    "asset": {
+      "drop": "拖入文件或点击选择",
+      "orUrl": "或粘贴文件 URL",
+      "urlPlaceholder": "https://…",
+      "insert": "插入",
+      "invalidType": "文件类型不受支持",
+      "readFailed": "无法读取文件"
+    },
+    "latex": {
+      "toolbar": "公式工具栏",
+      "editFormula": "编辑公式",
+      "dialog": "公式编辑器",
+      "source": "LaTeX 源码",
+      "preview": "预览",
+      "symbols": "常用符号",
+      "presets": "预置公式",
+      "invalidSource": "LaTeX 源码无效。"
+    },
+    "video": {
+      "toolbar": "视频工具栏",
+      "poster": "设置封面"
+    },
+    "audio": {
+      "toolbar": "音频工具栏",
+      "preview": "试听音频",
+      "pause": "暂停试听",
+      "loop": "循环播放"
+    },
+    "table": {
+      "doubleClickToEdit": "双击编辑"
     },
     "nav": {
       "addSlide": "新增幻灯片",
@@ -263,14 +356,38 @@
       "toBack": "置于底层"
     },
     "image": {
+      "toolbar": "图片工具栏",
       "replace": "替换图片",
       "flipH": "水平翻转",
-      "flipV": "垂直翻转"
+      "flipV": "垂直翻转",
+      "crop": "裁剪图片"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "水平对齐",
+      "verticalAlignment": "垂直对齐",
+      "selectAll": "全选",
+      "copy": "复制",
+      "cut": "剪切",
+      "paste": "粘贴",
+      "unlock": "解锁",
+      "lock": "锁定",
+      "group": "组合",
+      "ungroup": "取消组合",
+      "bringForward": "上移一层",
+      "sendBackward": "下移一层",
+      "alignTop": "顶部对齐",
+      "alignMiddle": "垂直居中",
+      "alignBottom": "底部对齐"
     },
     "background": {
       "label": "背景",
       "solid": "纯色",
-      "image": "图片"
+      "image": "图片",
+      "color": "颜色"
+    },
+    "common": {
+      "cancel": "取消",
+      "confirm": "确定"
     },
     "quiz": {
       "addQuestion": "添加题目",
@@ -320,6 +437,7 @@
       "discussion": "讨论"
     },
     "element": {
+      "toolbar": "元素工具栏",
       "text": "文本",
       "image": "图片",
       "shape": "形状",
@@ -375,7 +493,8 @@
       "sessionEmpty": "暂无历史对话",
       "thinking": "思考中…",
       "reasoning": "思考过程",
-      "thought": "已思考"
+      "thought": "已思考",
+      "title": "用 AI 编辑"
     },
     "timeline": {
       "title": "讲解脚本",
@@ -468,6 +587,21 @@
       "notApplied": "未应用",
       "applyFailed": "编辑器无法应用元素修改，未更改任何内容。",
       "applyPartiallyFailed": "编辑器未能应用一项或多项元素修改，其他修改可能已应用。"
+    },
+    "roster": {
+      "title": "课堂阵容",
+      "count": "{{count}} 位",
+      "editHint": "点击一位展开编辑",
+      "personaLabel": "人设描述",
+      "personaPlaceholder": "描述角色的性格、教学风格与任务…",
+      "noPersona": "暂无人设",
+      "unnamed": "未命名",
+      "teacherBadge": "主讲",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "removeFromClass": "移出课堂",
+      "aiClassmates": "AI 同学 · {{count}}",
+      "addRole": "添加角色"
     }
   },
   "classroomComplete": {
@@ -557,67 +691,7 @@
     "startRecording": "开始录音"
   },
   "pbl": {
-    "legacyFormat": "此PBL场景使用旧格式，请重新生成课程",
     "emptyProject": "PBL项目尚未生成，请通过课程生成创建",
-    "roleSelection": {
-      "title": "选择你的角色",
-      "description": "选择一个角色开始项目协作"
-    },
-    "workspace": {
-      "restart": "重新开始",
-      "confirmRestart": "确定重置进度？",
-      "confirm": "确定",
-      "cancel": "取消"
-    },
-    "issueboard": {
-      "title": "任务看板",
-      "noIssues": "暂无任务",
-      "statusDone": "已完成",
-      "statusActive": "进行中",
-      "statusPending": "待处理"
-    },
-    "chat": {
-      "title": "项目讨论",
-      "currentIssue": "当前任务",
-      "mentionHint": "使用 @question 提问，@judge 提交评审",
-      "placeholder": "输入消息...",
-      "send": "发送",
-      "issueCompleteMessage": "任务「{{completed}}」已完成！进入下一个任务：「{{next}}」",
-      "allCompleteMessage": "🎉 所有任务都已完成！项目做得很棒！"
-    },
-    "guide": {
-      "howItWorks": "如何参与项目",
-      "help": "使用帮助",
-      "title": "使用帮助",
-      "step1": {
-        "title": "第一步：选择角色",
-        "desc": "项目生成后，从角色列表中选择一个角色（标记为🟢的非系统角色）"
-      },
-      "step2": {
-        "title": "第二步：完成任务",
-        "desc": "每个任务代表一个学习目标：",
-        "s1": {
-          "title": "查看当前任务",
-          "desc": "查看任务的标题、描述、负责人"
-        },
-        "s2": {
-          "title": "获取指导",
-          "example": "@question 我应该从哪里开始？\n@question 如何实现这个功能？",
-          "desc": "提问助手会提供引导性问题和提示（不直接给答案）"
-        },
-        "s3": {
-          "title": "提交作品",
-          "example": "@judge 我已经完成了，请检查",
-          "desc": "评审助手会评估你的工作并给出反馈：",
-          "complete": "自动进入下一个任务",
-          "revision": "根据反馈改进"
-        }
-      },
-      "step3": {
-        "title": "第三步：完成项目",
-        "desc": "所有任务完成后，系统会显示「🎉 项目已完成！」"
-      }
-    },
     "v2": {
       "hero": {
         "title": "项目实战 · Project-Based Learning",
@@ -859,7 +933,37 @@
     "searchPlaceholder": "搜索课程...",
     "searchAriaLabel": "搜索课程",
     "clearSearch": "清空",
-    "searchEmpty": "没有找到匹配的课程"
+    "searchEmpty": "没有找到匹配的课程",
+    "newFolderTitle": "新建文件夹",
+    "newFolderDesc": "把课程按主题或用途归类，方便查找。",
+    "newFolderInline": "新建文件夹…",
+    "folderNameLabel": "文件夹名称",
+    "folderNamePlaceholder": "例如：数学、英语、专业课",
+    "folderNameHint": "中英文均可，空格计入。",
+    "folderNameExists": "已存在同名文件夹，请换一个",
+    "folderCountLimit": "文件夹数量已达上限",
+    "folderWidth": "宽度 {{width}}/{{max}}",
+    "folderCreate": "创建",
+    "folderBadge": "文件夹",
+    "folderCourseCountUnit": "门课程",
+    "deleteFolderTitle": "删除文件夹「{{name}}」",
+    "deleteFolderEmptyDesc": "这是一个空文件夹，删除后不可恢复。",
+    "deleteFolderUngroupDesc": "课程保留在「我的课程」，只是不再归类。",
+    "moveToFolder": "移动到文件夹",
+    "moveToFolderLabel": "移动到…",
+    "ungrouped": "未分组",
+    "searchResults": "搜索结果",
+    "folderCreateFailed": "创建文件夹失败",
+    "folderRenameFailed": "重命名文件夹失败",
+    "folderDeleteFailed": "删除文件夹失败",
+    "moveFailed": "移动课程失败",
+    "emptyFolderHint": "这个文件夹还是空的",
+    "emptyLibraryHint": "还没有课程——在上方创建，或导入一个课程。",
+    "folderNameEmpty": "文件夹名不能为空",
+    "deleteFolderOnly": "仅删除文件夹",
+    "deleteFolderAndCourses": "删除文件夹和 {{count}} 门课程",
+    "deleteFolderConfirmRemove": "将删除文件夹及其课程（含聊天记录），不可恢复。",
+    "deleteFolderAndCourses_other": "删除文件夹和 {{count}} 门课程"
   },
   "upload": {
     "pdfSizeLimit": "支持最大50MB的PDF文件",
@@ -1065,6 +1169,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "通义千问",
       "kimi": "Kimi",
@@ -1082,13 +1187,15 @@
       "bocha": "博查",
       "brave": "Brave Search",
       "baidu": "百度",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAI 协议",
       "azure": "Azure OpenAI",
       "anthropic": "Claude 协议",
-      "google": "Gemini 协议"
+      "google": "Gemini 协议",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "个模型",
     "modelSingular": "个模型",
@@ -1289,6 +1396,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "浏览器原生 ASR",
     "providerQwenASR": "Qwen ASR（阿里云百炼）",
+    "providerFunASRASR": "FunASR（本地）",
     "providerLemonadeASR": "Lemonade ASR（本地）",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf（内置）",
@@ -1607,11 +1715,16 @@
     "clearCacheButton": "永久删除所有数据",
     "clearCacheSuccess": "缓存已清空，页面即将刷新",
     "clearCacheFailed": "清空缓存失败，请重试",
+    "clearCacheBlockedByOtherTabs": "请关闭其他打开此应用的标签页，然后重试。",
+    "persistUnavailable": "更改未被保存：应用无法访问已存储的数据。如果刷新后仍未恢复，请在设置中清除本地缓存。",
+    "persistChangesLost": "存储已恢复，但在其不可用期间所做的更改未能保存，已被上次保存的版本覆盖。",
     "webSearchSettings": "网络搜索",
     "webSearchApiKey": "搜索 API Key",
     "webSearchApiKeyPlaceholder": "输入你的搜索 API Key",
     "webSearchApiKeyPlaceholderServer": "已配置服务端密钥，可选填覆盖",
     "webSearchApiKeyHint": "从所选搜索服务商获取 API Key，用于网络搜索",
+    "claudeSearchModel": "搜索模型",
+    "claudeSearchModelHint": "用于执行网络搜索并总结结果的 Claude 模型。",
     "webSearchApiKeyOptional": "API Key 为可选项。未填写时将通过公开页面抓取获取结果。",
     "searxngServerOnlyNotice": "SearXNG 须由服务端配置。请设置 SEARXNG_BASE_URL 环境变量（或在 server-providers.yml 的 web-search 段中配置）。不接受客户端自行填写实例地址。",
     "baiduSubSources": "百度搜索源",

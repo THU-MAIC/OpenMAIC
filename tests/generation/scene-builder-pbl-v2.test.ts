@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildCompleteScene } from '@/lib/generation/scene-builder';
+import { buildCompleteScene } from '@openmaic/generation';
 import type { GeneratedPBLContent, SceneOutline } from '@/lib/types/generation';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 
@@ -33,24 +33,28 @@ describe('buildCompleteScene — PBL v2', () => {
           },
         ],
       },
-      milestones: [{ scenarioStage: 'prep', microtasks: [{}] }],
+      roles: [{ id: 'role_instructor', type: 'instructor', name: 'Instructor' }],
+      milestones: [
+        {
+          scenarioStage: 'prep',
+          microtasks: [{ id: 'task_prep', title: 'Prepare for the scenario' }],
+        },
+      ],
+      submissions: [],
+      evaluations: [],
+      threads: [],
+      engagementEvents: [],
     } as unknown as PBLProjectV2;
     const content = {
-      projectConfig: {
-        projectInfo: { title: 'Scenario PBL', description: 'Legacy projection' },
-        agents: [],
-        issueboard: { agent_ids: [], issues: [] },
-        chat: { messages: [] },
-        selectedRole: null,
-      },
       projectV2,
-    } as unknown as GeneratedPBLContent;
+    } satisfies GeneratedPBLContent;
 
     const scene = buildCompleteScene(outline, content, [], 'stage-1');
 
     expect(scene?.content.type).toBe('pbl');
     if (scene?.content.type !== 'pbl') throw new Error('expected PBL scene');
     expect(scene.content.projectV2).toBe(projectV2);
+    expect(scene.content).not.toHaveProperty('projectConfig');
     expect(scene.content.projectV2?.scenario).toBeTruthy();
   });
 });

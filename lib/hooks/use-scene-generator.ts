@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
-import { useStageStore } from '@/lib/store/stage';
+import { markStagePersistenceDirty, useStageStore } from '@/lib/store/stage';
 import { isSceneEditLocked } from '@/lib/edit/regen-lock';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -12,7 +12,7 @@ import type {
   ImageMapping,
   UserRequirements,
 } from '@/lib/types/generation';
-import type { AgentInfo } from '@/lib/generation/generation-pipeline';
+import type { AgentInfo } from '@openmaic/generation';
 import type { Scene } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
@@ -20,16 +20,34 @@ import { measureAudioDuration } from '@/lib/audio/audio-duration';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { resolveAgentVoiceOptions, pickNarratorAgent } from '@/lib/audio/agent-voice';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
-import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
-import { lazyBoundedMap, mapWithConcurrency } from '@/lib/utils/concurrency';
+import {
+  generateMediaForOutlines,
+  reconcileCompletedMediaForScene,
+} from '@/lib/media/media-orchestrator';
+import { putAsset, removeAsset, replaceAsset } from '@/lib/media/asset-pool';
+import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
 import {
   isAbortError,
   withGenerationRetry,
   type GenerationRetryOptions,
-} from '@/lib/generation/generation-retry';
+} from '@openmaic/generation';
 
 const log = createLogger('SceneGenerator');
+
+function addGeneratedScene(scene: Scene): void {
+  const state = useStageStore.getState();
+  if (!state.stage || scene.stageId !== state.stage.id) {
+    state.addScene(scene);
+    return;
+  }
+  const reconciled = reconcileCompletedMediaForScene(scene, state.stage);
+  if (reconciled.stage !== state.stage) {
+    useStageStore.setState({ stage: reconciled.stage });
+    markStagePersistenceDirty([{ kind: 'stage' }]);
+  }
+  useStageStore.getState().addScene(reconciled.scene);
+}
 
 interface SceneContentResult {
   success: boolean;
@@ -236,16 +254,18 @@ interface TTSApiResponse {
   details?: string;
 }
 
-/** Generate TTS for one speech action and store in IndexedDB */
+/** Generate TTS for one speech action and return its allocated asset reference. */
 export async function generateAndStoreTTS(
-  audioId: string,
+  requestId: string,
   text: string,
   language?: string,
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<TTSApiResponse>,
-): Promise<void> {
+  replaceAssetId?: string,
+  stageId?: string,
+): Promise<string | null> {
   const settings = useSettingsStore.getState();
-  if (settings.ttsProviderId === 'browser-native-tts') return;
+  if (settings.ttsProviderId === 'browser-native-tts') return null;
   // Don't server-generate against a disabled/unconfigured provider (#665).
   if (
     !isTTSProviderEnabled(
@@ -253,7 +273,7 @@ export async function generateAndStoreTTS(
       settings.ttsProvidersConfig?.[settings.ttsProviderId],
     )
   )
-    return;
+    return null;
 
   const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
   // Narration is the teacher's voice — resolve it from the teacher agent profile
@@ -272,7 +292,7 @@ export async function generateAndStoreTTS(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text,
-          audioId,
+          audioId: requestId,
           ttsProviderId: settings.ttsProviderId,
           ttsModelId: ttsProviderConfig?.modelId,
           ttsVoice: settings.ttsVoice,
@@ -294,7 +314,7 @@ export async function generateAndStoreTTS(
       return data;
     },
     {
-      label: `tts "${audioId}"`,
+      label: `tts "${requestId}"`,
       shouldRetryResult: (result) => !result.success || !result.base64 || !result.format,
       ...retryOptions,
       signal,
@@ -304,7 +324,7 @@ export async function generateAndStoreTTS(
     const err = new Error(
       data.details || data.error || 'TTS request failed: invalid response payload',
     );
-    log.warn('TTS failed for', audioId, ':', err);
+    log.warn('TTS failed for', requestId, ':', err);
     throw err;
   }
 
@@ -318,20 +338,66 @@ export async function generateAndStoreTTS(
   // clip onto a timeline without re-decoding. null → leave undefined; the audio
   // still persists and plays.
   const duration = measureAudioDuration(bytes, data.format) ?? undefined;
-  await db.audioFiles.put({
-    id: audioId,
-    blob,
+  // Crash-safety invariant: allocate and persist pool bytes first, keep the
+  // Part 2 Dexie compatibility copy second, and let the caller stamp audioId
+  // last. A failure therefore cannot leave an action pointing at missing data.
+  const assetMeta = {
+    contentType: blob.type,
+    mediaType: 'audio',
+    text,
+    voice: settings.ttsVoice,
     duration,
-    format: data.format,
-    createdAt: Date.now(),
-  });
+    language,
+    provider: {
+      id: settings.ttsProviderId,
+      model: ttsProviderConfig?.modelId,
+    },
+  } as const;
+  const assetId = replaceAssetId ?? (await putAsset(blob, assetMeta));
+  if (replaceAssetId) await replaceAsset(replaceAssetId, blob, assetMeta);
+  // Dexie remains a deliberate double-write until Part 3 converges exporters,
+  // playback, thumbnails, and import/export onto the shared asset pool.
+  try {
+    await db.audioFiles.put({
+      id: assetId,
+      stageId,
+      blob,
+      duration,
+      format: data.format,
+      text,
+      voice: settings.ttsVoice,
+      createdAt: Date.now(),
+    });
+  } catch (error) {
+    if (!replaceAssetId) await removeAsset(assetId).catch(() => undefined);
+    throw error;
+  }
+  return assetId;
+}
+
+export async function removeFreshTtsAllocations(assetIds: readonly string[]): Promise<void> {
+  for (const assetId of new Set(assetIds)) {
+    try {
+      await removeAsset(assetId);
+    } catch {
+      // Continue to the compatibility row and later allocations.
+    }
+    await db.audioFiles.delete(assetId).catch(() => undefined);
+  }
+}
+
+function speechAllocationIds(scene: Scene): string[] {
+  return (scene.actions ?? []).flatMap((action) =>
+    action.type === 'speech' && action.audioId ? [action.audioId] : [],
+  );
 }
 
 /** Generate TTS for all speech actions in a scene. Returns result. */
-async function generateTTSForScene(
+export async function generateTTSForScene(
   scene: Scene,
   language?: string,
   signal?: AbortSignal,
+  retryOptions?: ClientRetryOptions<TTSApiResponse>,
 ): Promise<{ success: boolean; failedCount: number; error?: string }> {
   const providerId = useSettingsStore.getState().ttsProviderId;
   scene.actions = splitLongSpeechActions(scene.actions || [], providerId);
@@ -342,19 +408,30 @@ async function generateTTSForScene(
 
   let failedCount = 0;
   let lastError: string | undefined;
+  const freshAllocations: string[] = [];
 
-  // Use scene order to make audio IDs unique across scenes
-  // This prevents audio collision when action IDs are sequential (e.g., action_1, action_2)
+  // Scene order keeps the provider request correlation label unique. Storage
+  // identity is allocated by the pool and is never derived from this value.
   const sceneOrder = scene.order;
 
   // Generate + store one action's audio. Failures are counted, not thrown, so
   // one bad clip never aborts the rest of the scene.
   const generateOne = async (action: SpeechAction) => {
-    // Include scene order in audioId to prevent collision across scenes
-    const audioId = `tts_s${sceneOrder}_${action.id}`;
-    action.audioId = audioId;
+    const requestId = `tts_s${sceneOrder}_${action.id}`;
     try {
-      await generateAndStoreTTS(audioId, action.text, language, signal);
+      const assetId = await generateAndStoreTTS(
+        requestId,
+        action.text,
+        language,
+        signal,
+        retryOptions,
+        undefined,
+        scene.stageId,
+      );
+      if (assetId) {
+        action.audioId = assetId;
+        freshAllocations.push(assetId);
+      }
     } catch (error) {
       if (isAbortError(error)) throw error;
 
@@ -364,7 +441,7 @@ async function generateTTSForScene(
         providerId,
         actionId: action.id,
         sceneOrder,
-        audioId,
+        requestId,
         textLength: action.text.length,
         error: lastError,
       });
@@ -380,12 +457,29 @@ async function generateTTSForScene(
     0,
     Math.floor(useSettingsStore.getState().parallelSceneConcurrency ?? 0),
   );
-  if (ttsConcurrency > 1 && speechActions.length > 1) {
-    await mapWithConcurrency(speechActions, ttsConcurrency, generateOne);
-  } else {
-    for (const action of speechActions) {
-      await generateOne(action);
+  try {
+    if (ttsConcurrency > 1 && speechActions.length > 1) {
+      const settled = await Promise.allSettled(
+        lazyBoundedMap(speechActions, ttsConcurrency, generateOne),
+      );
+      const rejected = settled.find(
+        (result): result is PromiseRejectedResult => result.status === 'rejected',
+      );
+      if (rejected) throw rejected.reason;
+    } else {
+      for (const action of speechActions) {
+        await generateOne(action);
+      }
     }
+  } catch (error) {
+    await removeFreshTtsAllocations(freshAllocations);
+    for (const action of speechActions) delete action.audioId;
+    throw error;
+  }
+
+  if (failedCount > 0) {
+    await removeFreshTtsAllocations(freshAllocations);
+    for (const action of speechActions) delete action.audioId;
   }
 
   return {
@@ -650,12 +744,13 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
             // Epoch changed — stage switched, discard this scene
             if (store.getState().generationEpoch !== startEpoch) {
+              await removeFreshTtsAllocations(speechAllocationIds(scene));
               pausedByFailureOrAbort = true;
               break;
             }
 
             removeGeneratingOutline(outline.id);
-            store.getState().addScene(scene);
+            addGeneratedScene(scene);
             options.onSceneGenerated?.(scene, outline.order);
             previousSpeeches = actionsResult.previousSpeeches || [];
           } else {
@@ -718,6 +813,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       const outline = state.failedOutlines.find((o) => o.id === outlineId);
       const params = lastParamsRef.current;
       if (!outline || !state.stage || !params) return;
+      const retryEpoch = state.generationEpoch;
 
       // Regen-lock (#571): never silently replace a scene that is open in
       // edit mode. Failed outlines have no completed scene yet so this is
@@ -822,8 +918,13 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           }
         }
 
+        if (store.getState().generationEpoch !== retryEpoch) {
+          await removeFreshTtsAllocations(speechAllocationIds(actionsResult.scene));
+          return;
+        }
+
         removeGeneratingOutline();
-        store.getState().addScene(actionsResult.scene);
+        addGeneratedScene(actionsResult.scene);
 
         // Resume remaining generation if there are pending outlines
         if (store.getState().generatingOutlines.length > 0 && lastParamsRef.current) {

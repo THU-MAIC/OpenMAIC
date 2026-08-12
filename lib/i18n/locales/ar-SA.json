@@ -76,6 +76,16 @@
     "videoRenderMp4": "عرض MP4",
     "videoDownloadZip": "تنزيل ملف ZIP للمشروع",
     "videoServiceHint": "يتطلب عرض MP4 خدمة العرض. نزّل ملف ZIP للعرض محليًا.",
+    "videoBurnSubtitles": "دمج الترجمة في الفيديو",
+    "videoBurnSubtitlesDesc": "عند الإيقاف: صدّر فيديو نظيفًا وأضف ملف الترجمة في برنامج التحرير لديك.",
+    "videoQuizCtaPrompt": "هل تريد تجربة اختبار تفاعلي؟",
+    "videoPblCtaPrompt": "هل تريد استكشاف التعلم القائم على المشاريع؟",
+    "videoCtaVisit": "تفضل بزيارة",
+    "videoDownloadSubtitles": "تنزيل الترجمة (.srt)",
+    "subtitlesCompiling": "جارٍ تجميع الترجمة...",
+    "subtitlesSuccess": "تم تنزيل الترجمة",
+    "subtitlesEmpty": "لا يوجد سرد لإنشاء الترجمة منه",
+    "subtitlesFailed": "فشل تنزيل الترجمة",
     "noSlides": "لا توجد شرائح للتصدير",
     "noSlidesSkipped": "لا توجد شرائح في هذه الدورة — تم تخطي PPTX",
     "nothingToExport": "لا يوجد محتوى للتصدير"
@@ -217,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "شريط أدوات النص",
       "label": "نص",
       "font": "الخط",
       "fontDefault": "افتراضي",
@@ -230,17 +241,99 @@
       "alignLeft": "محاذاة لليسار",
       "alignCenter": "توسيط",
       "alignRight": "محاذاة لليمين",
-      "bullet": "قائمة نقطية"
+      "bullet": "قائمة نقطية",
+      "colorHex": "رمز اللون"
+    },
+    "line": {
+      "toolbar": "شريط أدوات الخط",
+      "kind": "نوع الخط",
+      "color": "لون الخط",
+      "width": "عرض الخط",
+      "style": "نمط الخط",
+      "start": "نمط البداية",
+      "end": "نمط النهاية",
+      "straight": "مستقيم",
+      "broken": "منكسر",
+      "broken2": "منكسر مزدوج",
+      "curve": "منحني",
+      "cubic": "منحنى تكعيبي",
+      "solid": "متصل",
+      "dashed": "متقطع",
+      "dotted": "منقط",
+      "none": "بلا",
+      "arrow": "سهم",
+      "dot": "نقطة"
     },
     "insert": {
+      "toolbar": "شريط أدوات الإدراج",
       "textBox": "مربع نص",
+      "line": "خط",
+      "linePresets": {
+        "straight": "خط مستقيم",
+        "dashed": "خط متقطع",
+        "arrow": "خط بسهم",
+        "dashedArrow": "خط متقطع بسهم",
+        "dottedEnd": "خط بنقطة في النهاية",
+        "broken": "خط منكسر",
+        "doubleBroken": "خط منكسر مزدوج",
+        "curve": "منحنى",
+        "cubic": "منحنى تكعيبي"
+      },
+      "table": "جدول",
+      "formula": "معادلة",
+      "chart": "مخطط",
+      "chartBar": "مخطط أعمدة",
+      "chartLine": "مخطط خطي",
+      "chartPie": "مخطط دائري",
+      "tableDimensions": "جدول {{rows}} x {{columns}}",
       "dragToolbar": "نقل أدوات الإدراج",
       "dragToolbarKeyboard": "نقل أدوات الإدراج: اضغط Enter أو مسافة، ثم استخدم مفاتيح الأسهم",
       "image": "صورة",
       "imageDrop": "أفلِت صورة أو انقر لاختيار ملف",
       "imageOr": "أو الصق رابط صورة",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "إدراج"
+      "imageInsert": "إدراج",
+      "video": "فيديو",
+      "videoDrop": "أفلِت فيديو أو انقر لاختيار ملف",
+      "videoOr": "أو الصق رابط فيديو",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "إدراج",
+      "audio": "صوت",
+      "audioDrop": "أفلِت ملفاً صوتياً أو انقر لاختيار ملف",
+      "audioOr": "أو الصق رابطاً صوتياً",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "إدراج"
+    },
+    "asset": {
+      "drop": "اسحب ملفًا أو انقر للاختيار",
+      "orUrl": "أو الصق رابط الملف",
+      "urlPlaceholder": "https://…",
+      "insert": "إدراج",
+      "invalidType": "نوع ملف غير مدعوم",
+      "readFailed": "تعذرت قراءة الملف"
+    },
+    "latex": {
+      "toolbar": "شريط أدوات المعادلات",
+      "editFormula": "تحرير المعادلة",
+      "dialog": "محرر المعادلات",
+      "source": "مصدر LaTeX",
+      "preview": "معاينة",
+      "symbols": "رموز",
+      "presets": "معادلات جاهزة",
+      "invalidSource": "مصدر LaTeX غير صالح."
+    },
+    "video": {
+      "toolbar": "شريط أدوات الفيديو",
+      "poster": "تعيين الغلاف"
+    },
+    "audio": {
+      "toolbar": "شريط أدوات الصوت",
+      "preview": "معاينة الصوت",
+      "pause": "إيقاف المعاينة مؤقتاً",
+      "loop": "تكرار"
+    },
+    "table": {
+      "doubleClickToEdit": "انقر نقراً مزدوجاً للتحرير"
     },
     "nav": {
       "addSlide": "إضافة شريحة",
@@ -263,14 +356,38 @@
       "toBack": "إرسال إلى الخلف"
     },
     "image": {
+      "toolbar": "شريط أدوات الصورة",
       "replace": "استبدال الصورة",
       "flipH": "قلب أفقي",
-      "flipV": "قلب رأسي"
+      "flipV": "قلب رأسي",
+      "crop": "اقتصاص الصورة"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "محاذاة أفقية",
+      "verticalAlignment": "محاذاة عمودية",
+      "selectAll": "تحديد الكل",
+      "copy": "نسخ",
+      "cut": "قص",
+      "paste": "لصق",
+      "unlock": "إلغاء القفل",
+      "lock": "قفل",
+      "group": "تجميع",
+      "ungroup": "إلغاء التجميع",
+      "bringForward": "إحضار إلى الأمام",
+      "sendBackward": "إرسال إلى الخلف",
+      "alignTop": "محاذاة للأعلى",
+      "alignMiddle": "محاذاة للوسط",
+      "alignBottom": "محاذاة للأسفل"
     },
     "background": {
       "label": "الخلفية",
       "solid": "لون خالص",
-      "image": "صورة"
+      "image": "صورة",
+      "color": "اللون"
+    },
+    "common": {
+      "cancel": "إلغاء",
+      "confirm": "تأكيد"
     },
     "quiz": {
       "addQuestion": "إضافة سؤال",
@@ -320,6 +437,7 @@
       "discussion": "مناقشة"
     },
     "element": {
+      "toolbar": "شريط أدوات العنصر",
       "text": "نص",
       "image": "صورة",
       "shape": "شكل",
@@ -375,7 +493,8 @@
         "lead": "صِف خطأً في هذه الصفحة التفاعلية — مثل زر لا يفعل شيئًا — وسأُصلح ذلك فقط مع الإبقاء على كل شيء آخر.",
         "placeholder": "صِف الخطأ في هذه الصفحة التفاعلية…"
       },
-      "thinking": "جارٍ التفكير…"
+      "thinking": "جارٍ التفكير…",
+      "title": "التحرير باستخدام الذكاء الاصطناعي"
     },
     "timeline": {
       "title": "نص السرد",
@@ -468,6 +587,21 @@
       "notApplied": "لم يُطبَّق",
       "applyFailed": "تعذر على المحرر تطبيق تعديل العنصر. لم يتم تغيير أي محتوى.",
       "applyPartiallyFailed": "تعذر على المحرر تطبيق تعديل واحد أو أكثر للعناصر. ربما تم تطبيق تعديلات أخرى."
+    },
+    "roster": {
+      "title": "تشكيلة الفصل",
+      "count": "{{count}} أعضاء",
+      "editHint": "انقر على عضو للتعديل",
+      "personaLabel": "الشخصية",
+      "personaPlaceholder": "صف شخصية الدور وأسلوب التدريس والمهام...",
+      "noPersona": "لا توجد شخصية بعد",
+      "unnamed": "بلا عنوان",
+      "teacherBadge": "القائد",
+      "moveUp": "نقل لأعلى",
+      "moveDown": "نقل لأسفل",
+      "removeFromClass": "إزالة من الفصل",
+      "aiClassmates": "زملاء AI · {{count}}",
+      "addRole": "إضافة دور"
     }
   },
   "classroomComplete": {
@@ -557,67 +691,7 @@
     "startRecording": "بدء التسجيل"
   },
   "pbl": {
-    "legacyFormat": "يستخدم مشهد التعلم القائم على المشاريع هذا تنسيقًا قديمًا. يرجى إعادة توليد المقرر.",
     "emptyProject": "لم يتم توليد مشروع التعلم القائم على المشاريع بعد. يرجى إنشاؤه عبر توليد المقرر.",
-    "roleSelection": {
-      "title": "اختر دورك",
-      "description": "حدد دورًا لبدء التعاون في المشروع"
-    },
-    "workspace": {
-      "restart": "إعادة البدء",
-      "confirmRestart": "إعادة تعيين كل التقدم؟",
-      "confirm": "تأكيد",
-      "cancel": "إلغاء"
-    },
-    "issueboard": {
-      "title": "لوحة المهام",
-      "noIssues": "لا توجد مهام بعد",
-      "statusDone": "مكتمل",
-      "statusActive": "نشط",
-      "statusPending": "معلّق"
-    },
-    "chat": {
-      "title": "نقاش المشروع",
-      "currentIssue": "المهمة الحالية",
-      "mentionHint": "استخدم @question للسؤال، و@judge للتقديم للمراجعة",
-      "placeholder": "اكتب رسالة...",
-      "send": "إرسال",
-      "issueCompleteMessage": "تم إكمال المهمة \"{{completed}}\"! الانتقال إلى المهمة التالية: \"{{next}}\"",
-      "allCompleteMessage": "🎉 تم إكمال جميع المهام! عمل رائع في المشروع!"
-    },
-    "guide": {
-      "howItWorks": "كيف يعمل",
-      "help": "مساعدة",
-      "title": "مساعدة",
-      "step1": {
-        "title": "الخطوة 1: اختر دورًا",
-        "desc": "بعد توليد المشروع، حدد دورًا من القائمة (الأدوار غير النظامية مميزة بـ 🟢)"
-      },
-      "step2": {
-        "title": "الخطوة 2: أكمل المهام",
-        "desc": "كل مهمة تمثل نشاطًا تعليميًا:",
-        "s1": {
-          "title": "عرض المهمة الحالية",
-          "desc": "تحقق من عنوان المهمة ووصفها والمسؤول عنها"
-        },
-        "s2": {
-          "title": "الحصول على إرشادات",
-          "example": "@question من أين أبدأ؟\n@question كيف أنفذ هذه الميزة؟",
-          "desc": "يقدم وكيل الأسئلة أسئلة إرشادية وتلميحات (بدون إجابات مباشرة)"
-        },
-        "s3": {
-          "title": "تقديم عملك",
-          "example": "@judge لقد انتهيت، يرجى مراجعة ملاحظاتي",
-          "desc": "يقوم وكيل التقييم بتقييم عملك وتقديم ملاحظات:",
-          "complete": "ينتقل تلقائيًا إلى المهمة التالية",
-          "revision": "حسّن بناءً على الملاحظات"
-        }
-      },
-      "step3": {
-        "title": "الخطوة 3: أكمل المشروع",
-        "desc": "عند إتمام جميع المهام، يعرض النظام \"🎉 اكتمل المشروع!\""
-      }
-    },
     "v2": {
       "hero": {
         "title": "التعلم القائم على المشاريع · Project-Based Learning",
@@ -859,7 +933,37 @@
     "searchPlaceholder": "البحث عن الدروس...",
     "searchAriaLabel": "البحث عن الدروس",
     "clearSearch": "مسح",
-    "searchEmpty": "لا توجد دروس مطابقة"
+    "searchEmpty": "لا توجد دروس مطابقة",
+    "newFolderTitle": "مجلد جديد",
+    "newFolderDesc": "نظّم الدورات حسب الموضوع لتسهيل الوصول إليها.",
+    "newFolderInline": "مجلد جديد",
+    "folderNameLabel": "اسم المجلد",
+    "folderNamePlaceholder": "مثال: رياضيات، إنجليزي، دورات التخصص",
+    "folderNameHint": "الأحرف واسعة وضيقة كلاهما مقبول؛ المسافات تُحتسب.",
+    "folderNameExists": "توجد مجلد بنفس الاسم بالفعل.",
+    "folderCountLimit": "تم بلوغ حد عدد المجلدات.",
+    "folderWidth": "العرض {{width}}/{{max}}",
+    "folderCreate": "إنشاء",
+    "folderBadge": "مجلد",
+    "folderCourseCountUnit": "دورة",
+    "deleteFolderTitle": "حذف المجلد «{{name}}»",
+    "deleteFolderEmptyDesc": "هذا المجلد فارغ. لا يمكن التراجع عن الحذف.",
+    "deleteFolderUngroupDesc": "تبقى الدورات في «دوراتي»، تصبح غير مصنّفة.",
+    "moveToFolder": "نقل إلى مجلد",
+    "moveToFolderLabel": "نقل إلى مجلد",
+    "ungrouped": "غير مصنّف",
+    "searchResults": "نتائج البحث",
+    "folderCreateFailed": "فشل إنشاء المجلد",
+    "folderRenameFailed": "فشلت إعادة تسمية المجلد",
+    "folderDeleteFailed": "فشل حذف المجلد",
+    "moveFailed": "فشل نقل الدورة",
+    "emptyFolderHint": "هذا المجلد فارغ",
+    "emptyLibraryHint": "لا توجد دورات بعد — أنشئ واحدة بالأعلى أو استورد دورة.",
+    "folderNameEmpty": "لا يمكن أن يكون اسم المجلد فارغًا",
+    "deleteFolderOnly": "حذف المجلد فقط",
+    "deleteFolderAndCourses": "حذف المجلد و {{count}} دورة",
+    "deleteFolderConfirmRemove": "سيؤدي هذا إلى حذف المجلد ودوراته، بما في ذلك سجل الدردشة.",
+    "deleteFolderAndCourses_other": "حذف المجلد و {{count}} دورة"
   },
   "upload": {
     "pdfSizeLimit": "يدعم ملفات PDF حتى 50 ميغابايت",
@@ -1065,6 +1169,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "Qwen",
       "kimi": "Kimi",
@@ -1082,13 +1187,15 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "بروتوكول OpenAI",
       "azure": "Azure OpenAI",
       "anthropic": "بروتوكول Claude",
-      "google": "بروتوكول Gemini"
+      "google": "بروتوكول Gemini",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "نماذج",
     "modelSingular": "نموذج",
@@ -1289,6 +1396,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "التعرّف على الكلام المدمج في المتصفح",
     "providerQwenASR": "Qwen ASR (سحابة علي بابا بايليان)",
+    "providerFunASRASR": "FunASR (محلي)",
     "providerLemonadeASR": "Lemonade ASR (محلي)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (مُدمج)",
@@ -1607,11 +1715,16 @@
     "clearCacheButton": "حذف جميع البيانات نهائيًا",
     "clearCacheSuccess": "تم مسح الذاكرة المؤقتة، ستتم إعادة تحميل الصفحة قريبًا",
     "clearCacheFailed": "فشل مسح الذاكرة المؤقتة، يرجى المحاولة مرة أخرى",
+    "clearCacheBlockedByOtherTabs": "أغلق علامات تبويب التطبيق الأخرى وأعد المحاولة.",
+    "persistUnavailable": "لا يتم حفظ تغييراتك لأن التطبيق لا يستطيع الوصول إلى بياناته المخزّنة. إذا لم تُجدِ إعادة التحميل نفعًا، فامسح ذاكرة التخزين المؤقت المحلية من الإعدادات.",
+    "persistChangesLost": "عاد التخزين إلى العمل، لكن تعذّر حفظ التغييرات التي أجريتها أثناء تعطّله، وتم استبدالها بآخر نسخة محفوظة.",
     "webSearchSettings": "بحث الإنترنت",
     "webSearchApiKey": "مفتاح API للبحث",
     "webSearchApiKeyPlaceholder": "أدخل مفتاح API للبحث",
     "webSearchApiKeyPlaceholderServer": "تم تكوين مفتاح الخادم، يمكنك التجاوز اختياريًا",
     "webSearchApiKeyHint": "احصل على مفتاح API من مزود البحث المحدد",
+    "claudeSearchModel": "نموذج البحث",
+    "claudeSearchModelHint": "نموذج Claude الذي يقوم بالبحث في الويب وتلخيص النتائج.",
     "webSearchApiKeyOptional": "مفتاح API اختياري. بدونه، سيتم استخدام استخراج الصفحة العامة كبديل.",
     "searxngServerOnlyNotice": "يجب تكوين SearXNG على الخادم. عيّن متغير البيئة SEARXNG_BASE_URL (أو قسم web-search في server-providers.yml). لا يُقبل عناوين URL للمثيلات المقدمة من العميل.",
     "baiduSubSources": "مصادر بحث Baidu",

@@ -11,9 +11,10 @@
 import { describe, it, expect } from 'vitest';
 import { MockLanguageModelV3 } from 'ai/test';
 
-import { generatePBLV2ProjectSingleCall } from '@/lib/pbl/v2/agents/planner-single-call';
-import { PlannerV2Error } from '@/lib/pbl/v2/agents/planner';
-import { PBL_SIMULATOR_AGENT_ID } from '@/lib/pbl/v2/operations/progress';
+import { callLLM } from '@/lib/ai/llm';
+import { generatePBLV2ProjectSingleCall as generatePBLV2ProjectSingleCallPackage } from '@/lib/pbl/v2/agents/planner-single-call';
+import { PlannerV2Error } from '@/lib/pbl/v2/agents/planner-core';
+import { PBL_SIMULATOR_AGENT_ID } from '@/lib/pbl/v2/operations/kernel/progress';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { PBLPlannerV2Input } from '@/lib/pbl/v2/types';
 
@@ -21,6 +22,19 @@ const USAGE = {
   inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
   outputTokens: { total: 0, text: 0, reasoning: 0 },
 };
+
+// Preserve the historical model-fixture shape while exercising the package's
+// new provider-neutral AICallFn seam.
+async function generatePBLV2ProjectSingleCall(
+  input: PBLPlannerV2Input,
+  model: MockLanguageModelV3,
+  call: typeof callLLM,
+) {
+  return generatePBLV2ProjectSingleCallPackage(input, async (system, prompt) => {
+    const result = await call({ model, system, prompt }, 'pbl-v2-planner-single', undefined);
+    return result.text;
+  });
+}
 
 /** A model whose `doGenerate` replays the given text responses in order. */
 function textModel(...responses: string[]): MockLanguageModelV3 {
@@ -139,7 +153,11 @@ function validOutput(overrides?: { proficiency?: string; coreConcept?: string })
 
 describe('PBL v2 single-call planner — happy path', () => {
   it('parses + hydrates a complete project from one JSON response', async () => {
-    const project = await generatePBLV2ProjectSingleCall(plannerInput(), textModel(validOutput()));
+    const project = await generatePBLV2ProjectSingleCall(
+      plannerInput(),
+      textModel(validOutput()),
+      callLLM,
+    );
 
     expect(project.title).toBe('CSV Data Analyzer project');
     expect(project.status).toBe('active');
@@ -191,6 +209,7 @@ describe('PBL v2 single-call planner — happy path', () => {
     const project = await generatePBLV2ProjectSingleCall(
       plannerInput(),
       textModel(validOutput({ coreConcept: 'why a DataFrame beats raw rows' })),
+      callLLM,
     );
     expect(project.milestones[0].synthesisCheck?.coreConcept).toBe(
       'why a DataFrame beats raw rows',
@@ -201,13 +220,18 @@ describe('PBL v2 single-call planner — happy path', () => {
     const project = await generatePBLV2ProjectSingleCall(
       plannerInput(),
       textModel(validOutput({ proficiency: 'advanced' })),
+      callLLM,
     );
     expect(project.proficiency).toBe('advanced');
   });
 
   it('parses output even when the model wraps it in ```json fences', async () => {
     const fenced = '```json\n' + validOutput() + '\n```';
-    const project = await generatePBLV2ProjectSingleCall(plannerInput(), textModel(fenced));
+    const project = await generatePBLV2ProjectSingleCall(
+      plannerInput(),
+      textModel(fenced),
+      callLLM,
+    );
     expect(project.milestones).toHaveLength(2);
     expect(project.title).toBe('CSV Data Analyzer project');
   });
@@ -227,7 +251,11 @@ describe('PBL v2 single-call planner — guards + retry', () => {
     });
 
     await expect(
-      generatePBLV2ProjectSingleCall(plannerInput(), textModel(noMilestones, noMilestones)),
+      generatePBLV2ProjectSingleCall(
+        plannerInput(),
+        textModel(noMilestones, noMilestones),
+        callLLM,
+      ),
     ).rejects.toBeInstanceOf(PlannerV2Error);
   });
 
@@ -236,6 +264,7 @@ describe('PBL v2 single-call planner — guards + retry', () => {
       generatePBLV2ProjectSingleCall(
         plannerInput(),
         textModel('Sorry, I cannot help with that.', 'Still not JSON.'),
+        callLLM,
       ),
     ).rejects.toBeInstanceOf(PlannerV2Error);
   });
@@ -243,7 +272,7 @@ describe('PBL v2 single-call planner — guards + retry', () => {
   it('throws PlannerV2Error when outline.pblConfig is missing (before any LLM call)', async () => {
     const input = plannerInput({ outline: pblOutline({ pblConfig: undefined }) });
     await expect(
-      generatePBLV2ProjectSingleCall(input, textModel(validOutput())),
+      generatePBLV2ProjectSingleCall(input, textModel(validOutput()), callLLM),
     ).rejects.toBeInstanceOf(PlannerV2Error);
   });
 
@@ -252,7 +281,7 @@ describe('PBL v2 single-call planner — guards + retry', () => {
     delete noGains.projectInfo.gains;
     const text = JSON.stringify(noGains);
     await expect(
-      generatePBLV2ProjectSingleCall(plannerInput(), textModel(text, text)),
+      generatePBLV2ProjectSingleCall(plannerInput(), textModel(text, text), callLLM),
     ).rejects.toBeInstanceOf(PlannerV2Error);
   });
 
@@ -261,7 +290,7 @@ describe('PBL v2 single-call planner — guards + retry', () => {
     fewGains.projectInfo.gains = ['Only one gain'];
     const text = JSON.stringify(fewGains);
     await expect(
-      generatePBLV2ProjectSingleCall(plannerInput(), textModel(text, text)),
+      generatePBLV2ProjectSingleCall(plannerInput(), textModel(text, text), callLLM),
     ).rejects.toBeInstanceOf(PlannerV2Error);
   });
 
@@ -272,7 +301,7 @@ describe('PBL v2 single-call planner — guards + retry', () => {
     // Must reject with the PlannerV2Error contract so the caller falls back
     // cleanly — a TypeError from `.forEach` would escape that contract.
     await expect(
-      generatePBLV2ProjectSingleCall(plannerInput(), textModel(text, text)),
+      generatePBLV2ProjectSingleCall(plannerInput(), textModel(text, text), callLLM),
     ).rejects.toBeInstanceOf(PlannerV2Error);
   });
 
@@ -281,7 +310,7 @@ describe('PBL v2 single-call planner — guards + retry', () => {
     badScalar.projectInfo.title = 123; // schema drift: number where a string is expected
     const text = JSON.stringify(badScalar);
     await expect(
-      generatePBLV2ProjectSingleCall(plannerInput(), textModel(text, text)),
+      generatePBLV2ProjectSingleCall(plannerInput(), textModel(text, text), callLLM),
     ).rejects.toBeInstanceOf(PlannerV2Error);
   });
 
@@ -291,6 +320,7 @@ describe('PBL v2 single-call planner — guards + retry', () => {
     const project = await generatePBLV2ProjectSingleCall(
       plannerInput(),
       textModel(JSON.stringify(drift)),
+      callLLM,
     );
     // Malformed hints coerce to [] — no throw.
     expect(project.milestones[0].microtasks[0].hints).toEqual([]);
@@ -301,13 +331,17 @@ describe('PBL v2 single-call planner — guards + retry', () => {
     // Model insists on `advanced` both times — never matches the beginner lock.
     const advanced = validOutput({ proficiency: 'advanced' });
     await expect(
-      generatePBLV2ProjectSingleCall(lockedInput, textModel(advanced, advanced)),
+      generatePBLV2ProjectSingleCall(lockedInput, textModel(advanced, advanced), callLLM),
     ).rejects.toBeInstanceOf(PlannerV2Error);
   });
 
   it('accepts a matching proficiency under an explicit learner-level lock', async () => {
     const lockedInput = plannerInput({ user: { requirement: '我是零基础' } });
-    const project = await generatePBLV2ProjectSingleCall(lockedInput, textModel(validOutput()));
+    const project = await generatePBLV2ProjectSingleCall(
+      lockedInput,
+      textModel(validOutput()),
+      callLLM,
+    );
     expect(project.proficiency).toBe('beginner');
   });
 
@@ -319,6 +353,7 @@ describe('PBL v2 single-call planner — guards + retry', () => {
     const project = await generatePBLV2ProjectSingleCall(
       plannerInput(),
       textModel(JSON.stringify(drift)),
+      callLLM,
     );
     expect(project.milestones[1].documents).toBeUndefined();
   });
@@ -456,6 +491,7 @@ describe('PBL v2 single-call planner — scenario roleplay', () => {
     const project = await generatePBLV2ProjectSingleCall(
       scenarioInput(),
       textModel(validScenarioOutput()),
+      callLLM,
     );
 
     // Scenario frozen onto the project + schema stamped.
@@ -495,7 +531,7 @@ describe('PBL v2 single-call planner — scenario roleplay', () => {
   it('throws PlannerV2Error when the scenario has no characters', async () => {
     const text = validScenarioOutput({ dropCharacters: true });
     await expect(
-      generatePBLV2ProjectSingleCall(scenarioInput(), textModel(text, text)),
+      generatePBLV2ProjectSingleCall(scenarioInput(), textModel(text, text), callLLM),
     ).rejects.toBeInstanceOf(PlannerV2Error);
   });
 
@@ -504,7 +540,7 @@ describe('PBL v2 single-call planner — scenario roleplay', () => {
     delete drift.milestones[1].microtasks[0].successWhen;
     const text = JSON.stringify(drift);
     await expect(
-      generatePBLV2ProjectSingleCall(scenarioInput(), textModel(text, text)),
+      generatePBLV2ProjectSingleCall(scenarioInput(), textModel(text, text), callLLM),
     ).rejects.toBeInstanceOf(PlannerV2Error);
   });
 
@@ -513,7 +549,7 @@ describe('PBL v2 single-call planner — scenario roleplay', () => {
     drift.milestones[2].scenarioStage = 'roleplay'; // last is no longer wrapup
     const text = JSON.stringify(drift);
     await expect(
-      generatePBLV2ProjectSingleCall(scenarioInput(), textModel(text, text)),
+      generatePBLV2ProjectSingleCall(scenarioInput(), textModel(text, text), callLLM),
     ).rejects.toBeInstanceOf(PlannerV2Error);
   });
 });

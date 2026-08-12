@@ -19,9 +19,9 @@ import { applyInstructorEvent } from '@/components/scene-renderers/pbl/v2/apply-
 import {
   applyAdvanceProjectPatch,
   buildAdvanceProjectPatch,
-} from '@/lib/pbl/v2/operations/advance-patch';
-import { advanceMicrotask, startMicrotask } from '@/lib/pbl/v2/operations/progress';
-import { addSubmission } from '@/lib/pbl/v2/operations/submission';
+} from '@/lib/pbl/v2/operations/runtime/advance-patch';
+import { advanceMicrotask, startMicrotask } from '@/lib/pbl/v2/operations/kernel/progress';
+import { addSubmission } from '@/lib/pbl/v2/operations/runtime/submission';
 import { clearStageDrainWatermarks, drainProjectRuntime } from '@/lib/pbl/v2/runtime/drain';
 import { withRuntimeStorageExclusiveLock } from '@/lib/utils/chat-storage-lock';
 import {
@@ -333,6 +333,15 @@ afterEach(() => {
 });
 
 describe('drainProjectRuntime', () => {
+  it('omits an undefined actor role from runtime record payloads', () => {
+    const event = runtimeEvent('evt-user', { actorRoleId: undefined });
+
+    const payload = enrichPBLRuntimeEvent(makeProject([]), event);
+
+    expect(payload.event).not.toHaveProperty('actorRoleId');
+    expect(event).toHaveProperty('actorRoleId', undefined);
+  });
+
   it('wraps unknown runtime event kinds in a valid runtime payload', () => {
     const futureEvent = {
       id: 'future-1',
@@ -487,7 +496,6 @@ describe('drainProjectRuntime', () => {
           microtaskId: 'mt-1',
         },
       },
-      attachmentMissingReason: undefined,
     });
     expect(store.records[0]!.payload as PBLRuntimeStorePayload).toMatchObject({
       kind: 'pbl_runtime_event',

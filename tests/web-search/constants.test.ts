@@ -4,6 +4,8 @@ import {
   getWebSearchProviderDisplayName,
   WEB_SEARCH_PROVIDERS,
   buildWebSearchFallbackOrder,
+  CLAUDE_WEB_SEARCH_DEFAULT_MODEL,
+  CLAUDE_WEB_SEARCH_MODELS,
 } from '@/lib/web-search/constants';
 
 describe('web search provider constants', () => {
@@ -28,6 +30,19 @@ describe('web search provider constants', () => {
       endpointPath: '/v1/coding_plan/search',
     });
     expect(getAllWebSearchProviders().map((provider) => provider.id)).toContain('minimax');
+  });
+
+  it('registers Claude as an API-key web search provider with a model list', () => {
+    expect(WEB_SEARCH_PROVIDERS.claude).toMatchObject({
+      id: 'claude',
+      name: 'Claude',
+      requiresApiKey: true,
+      defaultBaseUrl: 'https://api.anthropic.com/v1',
+      endpointPath: '/messages',
+    });
+    expect(getAllWebSearchProviders().map((provider) => provider.id)).toContain('claude');
+    expect(CLAUDE_WEB_SEARCH_MODELS.length).toBeGreaterThan(0);
+    expect(CLAUDE_WEB_SEARCH_MODELS.map((m) => m.id)).toContain(CLAUDE_WEB_SEARCH_DEFAULT_MODEL);
   });
 
   it('registers SearXNG as a base-URL-only web search provider', () => {

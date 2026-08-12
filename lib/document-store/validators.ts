@@ -1,5 +1,7 @@
 import { validateScene, validateStage, type ValidationIssue } from '@openmaic/dsl';
 import type { SceneValidator, StageValidator } from '@openmaic/storage';
+import { hasPBLProjectV2Containers } from '@/lib/pbl/v2/types';
+import { isEmptyLegacyPBLConfig, type PBLProjectConfig } from '@/lib/pbl/legacy/read';
 
 function objectValue(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
@@ -44,12 +46,59 @@ export const validateAppScene: SceneValidator = (scene) => {
       path: '/content/type',
       message: `content type ${JSON.stringify(content.type)} does not match scene type ${JSON.stringify(value.type)}`,
     });
-  } else if (value.type === 'interactive' && typeof content.url !== 'string') {
-    errors.push({ path: '/content/url', message: 'interactive content requires string `url`' });
-  } else if (value.type === 'pbl' && !objectValue(content.projectConfig)) {
+  } else if (value.type === 'interactive') {
+    if (typeof content.html !== 'string' && typeof content.url !== 'string') {
+      errors.push({
+        path: '/content',
+        message: 'interactive content requires `html` or `url` as a string',
+      });
+    }
+    if (content.url !== undefined && typeof content.url !== 'string') {
+      errors.push({ path: '/content/url', message: '`url` must be a string when present' });
+    }
+    if (content.html !== undefined && typeof content.html !== 'string') {
+      errors.push({ path: '/content/html', message: '`html` must be a string when present' });
+    }
+    if (content.widgetConfig !== undefined && objectValue(content.widgetConfig) === null) {
+      // Primitive widgetConfig values crash hydration ('in' throws on non-objects
+      // in migrateInteractiveContent), so the write barrier rejects exactly that
+      // class. Arrays and type-less objects stay tolerated as historical shapes.
+      errors.push({
+        path: '/content/widgetConfig',
+        message: '`widgetConfig` must be an object when present',
+      });
+    }
+    // The contract validator stays strict for external consumers. The app write
+    // path remains lenient over historical widget shapes until stored configs
+    // are canonicalized in a follow-up.
+  } else if (
+    value.type === 'pbl' &&
+    content.projectConfig !== undefined &&
+    (!objectValue(content.projectConfig) || Array.isArray(content.projectConfig))
+  ) {
+    errors.push({ path: '/content/projectConfig', message: '`projectConfig` must be an object' });
+  } else if (
+    value.type === 'pbl' &&
+    // null is treated like absent so documents stored before projectV2
+    // validation existed keep saving; the renderer applies the same rule.
+    content.projectV2 != null &&
+    // Every scene accepted by the old write barrier carried projectConfig, so
+    // stored scenes with both fields are the pre-cutover hybrid cohort. Preserve
+    // a damaged projectV2 there as inert bytes — but only when the legacy config
+    // is structurally sound and non-empty (real stored v1 data, the renderer's
+    // actual fallback); an empty stub like `{}` must not disable v2 validation.
+    // V2-only scenes are new planner writes, where strict container validation
+    // enforces planner output quality.
+    !(
+      objectValue(content.projectConfig) &&
+      !Array.isArray(content.projectConfig) &&
+      !isEmptyLegacyPBLConfig(content.projectConfig as PBLProjectConfig)
+    ) &&
+    !hasPBLProjectV2Containers(content.projectV2)
+  ) {
     errors.push({
-      path: '/content/projectConfig',
-      message: 'pbl content requires object `projectConfig`',
+      path: '/content/projectV2',
+      message: '`projectV2` must contain milestones, roles and threads arrays',
     });
   }
 

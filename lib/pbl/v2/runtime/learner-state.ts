@@ -15,6 +15,7 @@ import type {
   PBLSubmission,
   PBLUiPhase,
 } from '@/lib/pbl/v2/types';
+import { omitUndefinedObjectMembers } from '@/lib/persistence/plain-json';
 import { clone } from './clone';
 
 export interface PBLLearnerMicrotaskState {
@@ -64,6 +65,22 @@ function assignOptional<T extends object, K extends keyof T>(
   target[key] = clone(value);
 }
 
+/**
+ * A stored assessment enters snapshots and adaptive operations only when it
+ * carries the fields they dereference (`tier`, `transitions`). Malformed shapes
+ * like `{}` in accepted stored data are treated as absent on BOTH ends —
+ * extraction (so runtime snapshots never capture them) and application (so
+ * snapshots corrupted before this guard existed cannot resurface them).
+ */
+function usableAssessment(
+  value: PBLProficiencyAssessment | undefined,
+): PBLProficiencyAssessment | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  if (typeof value.tier !== 'string') return undefined;
+  if (!Array.isArray(value.transitions)) return undefined;
+  return value;
+}
+
 export function extractLearnerState(project: PBLProjectV2): PBLLearnerState {
   const state: PBLLearnerState = {
     uiPhase: project.uiPhase,
@@ -99,17 +116,31 @@ export function extractLearnerState(project: PBLProjectV2): PBLLearnerState {
     engagementEvents: clone(project.engagementEvents),
   };
 
-  assignOptional(state, 'proficiencyAssessment', project.proficiencyAssessment);
+  assignOptional(state, 'proficiencyAssessment', usableAssessment(project.proficiencyAssessment));
   assignOptional(state, 'pendingHandover', project.pendingHandover);
   assignOptional(state, 'pendingTaskCompletion', project.pendingTaskCompletion);
   assignOptional(state, 'runtimeResetEpoch', project.runtimeResetEpoch);
-  return state;
+  return omitUndefinedObjectMembers(state);
 }
 
 export function stripToDesignTemplate(project: PBLProjectV2): PBLProjectV2 {
   const template = clone(project);
+  const assessment = template.proficiencyAssessment as unknown;
+  const transitions =
+    assessment && typeof assessment === 'object' && !Array.isArray(assessment)
+      ? (assessment as Record<string, unknown>).transitions
+      : undefined;
+  const firstTransition = Array.isArray(transitions) ? transitions[0] : undefined;
+  const transitionFrom =
+    firstTransition && typeof firstTransition === 'object' && !Array.isArray(firstTransition)
+      ? (firstTransition as Record<string, unknown>).from
+      : undefined;
   const authoredProficiency =
-    template.proficiencyAssessment?.transitions[0]?.from ?? template.proficiency;
+    transitionFrom === 'beginner' ||
+    transitionFrom === 'intermediate' ||
+    transitionFrom === 'advanced'
+      ? transitionFrom
+      : template.proficiency;
   template.uiPhase = 'hero';
   template.status = 'active';
   template.submissions = [];
@@ -160,9 +191,10 @@ export function applyLearnerState(
   next.pendingHandover = clone(learnerState.pendingHandover);
   next.pendingTaskCompletion = clone(learnerState.pendingTaskCompletion);
 
-  if (learnerState.proficiencyAssessment) {
-    next.proficiencyAssessment = clone(learnerState.proficiencyAssessment);
-    next.proficiency = learnerState.proficiencyAssessment.tier;
+  const assessment = usableAssessment(learnerState.proficiencyAssessment);
+  if (assessment) {
+    next.proficiencyAssessment = clone(assessment);
+    next.proficiency = assessment.tier;
   }
 
   const milestonesById = new Map(

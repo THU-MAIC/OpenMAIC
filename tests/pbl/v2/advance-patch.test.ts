@@ -3,10 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
   applyAdvanceProjectPatch,
   buildAdvanceProjectPatch,
-} from '@/lib/pbl/v2/operations/advance-patch';
-import { advanceMicrotask, startMicrotask } from '@/lib/pbl/v2/operations/progress';
-import { recordEvent } from '@/lib/pbl/v2/operations/engagement';
-import { appendRuntimeEvent, MAX_RUNTIME_EVENTS } from '@/lib/pbl/v2/operations/runtime-events';
+} from '@/lib/pbl/v2/operations/runtime/advance-patch';
+import { advanceMicrotask, startMicrotask } from '@/lib/pbl/v2/operations/kernel/progress';
+import { recordEvent } from '@/lib/pbl/v2/operations/kernel/engagement';
+import {
+  appendRuntimeEvent,
+  MAX_RUNTIME_EVENTS,
+} from '@/lib/pbl/v2/operations/kernel/runtime-events';
 import type { PBLProjectV2, PBLRuntimeEvent } from '@/lib/pbl/v2/types';
 
 function makeProject(): PBLProjectV2 {

@@ -22,13 +22,13 @@ import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 import { runPolledTask } from '@/lib/media/polled-task';
 import {
-  buildExportZip,
   NoScenesError,
   sanitizeFilename,
   type VideoFps,
   type VideoQuality,
   type VideoResolution,
-} from '@/lib/video-export-app/build-export-zip';
+} from '@/lib/video-export-app/export-options';
+import type { Locale } from '@/lib/i18n';
 
 const log = createLogger('VideoRenderStore');
 
@@ -54,6 +54,8 @@ export interface RenderOptions {
   resolution?: VideoResolution;
   fps?: VideoFps;
   quality?: VideoQuality;
+  /** Burn subtitles into the MP4. Default false (sidecar SRT/VTT only). */
+  burnInSubtitles?: boolean;
 }
 
 /** Fully-resolved render options (the store always holds concrete values). */
@@ -63,6 +65,7 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   resolution: '1080p',
   fps: 30,
   quality: 'standard',
+  burnInSubtitles: false,
 };
 
 interface JobStatusResponse {
@@ -91,7 +94,8 @@ interface VideoRenderState {
   setOptions: (patch: Partial<ResolvedOptions>) => void;
   /** True while a render is in flight (compiling or rendering). */
   isActive: () => boolean;
-  startRender: (t: Translate) => Promise<void>;
+  /** `locale` is the export's, not the store's: it is baked into the emitted card chrome. */
+  startRender: (t: Translate, locale: Locale) => Promise<void>;
   reset: () => void;
 }
 
@@ -114,11 +118,11 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
 
   reset: () => set({ status: 'idle', percent: 0, etaMs: null, filename: null, error: null }),
 
-  startRender: async (t) => {
+  startRender: async (t, locale) => {
     // Guard against a duplicate submit — the whole reason state lives here.
     if (inFlight(get().status)) return;
 
-    const { resolution, fps, quality } = get().options;
+    const { resolution, fps, quality, burnInSubtitles } = get().options;
 
     set({ status: 'compiling', percent: 0, etaMs: null, filename: null, error: null });
     const toastId = toast.loading(t('export.videoCompiling'));
@@ -128,7 +132,8 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
     let missingCount = 0;
     let errorCount = 0;
     try {
-      const built = await buildExportZip(resolution);
+      const { buildExportZip } = await import('@/lib/video-export-app/build-export-zip');
+      const built = await buildExportZip({ resolution, burnInSubtitles, locale });
       ({ zipBlob, stageName, missingCount, errorCount } = built);
     } catch (error) {
       if (error instanceof NoScenesError) {

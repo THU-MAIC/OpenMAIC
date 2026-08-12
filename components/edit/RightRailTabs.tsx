@@ -40,16 +40,16 @@ export interface RightRailTabsProps {
 }
 
 /**
- * Tabbed right rail: "Edit with AI" | "课堂阵容"
+ * Tabbed right rail: AI editor | classroom roster
  *
  * Owns the aside wrapper, resize handle, collapse state, and tab state.
  * The AgentPanel is rendered in naked (no-wrapper) mode for the AI tab;
- * the 课堂阵容 tab renders AgentRosterPanel. Both are kept mounted so state
+ * the roster tab renders AgentRosterPanel. Both are kept mounted so state
  * is preserved when switching tabs (hidden via CSS).
  *
- * The "Edit with AI" tab is gated by shouldRenderAgentPanel — when the current
+ * The AI editor tab is gated by shouldRenderAgentPanel — when the current
  * scene type does not support AI editing, the tab is hidden and the active tab
- * falls back to 课堂阵容 (which is always available, as agents are stage-level).
+ * falls back to roster (which is always available, as agents are stage-level).
  */
 export function RightRailTabs({
   scene,
@@ -172,13 +172,13 @@ export function RightRailTabs({
         >
           {showAiTab && (
             <RailTabButton
-              label="Edit with AI"
+              label={t('edit.agent.title')}
               active={activeTab === 'ai'}
               onClick={() => setActiveTab('ai')}
             />
           )}
           <RailTabButton
-            label="课堂阵容"
+            label={t('edit.roster.title')}
             icon={<UsersRound className="size-[15px]" />}
             active={activeTab === 'agents'}
             onClick={() => setActiveTab('agents')}

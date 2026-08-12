@@ -1,9 +1,10 @@
-import { DSL_VERSION } from '@openmaic/dsl';
+import { DSL_VERSION, migrate } from '@openmaic/dsl';
 import { BrowserKVStore, type DocumentStore, type KVStore } from '@openmaic/storage';
 import isEqual from 'lodash/isEqual';
 
 import type { AppScene } from '@/lib/types/stage';
 import { createLogger } from '@/lib/logger';
+import { omitUndefinedObjectMembers } from '@/lib/persistence/plain-json';
 import { withRuntimeStorageSharedLock } from '@/lib/utils/chat-storage-lock';
 import {
   db,
@@ -43,6 +44,7 @@ export interface DocumentMigrationDeps {
   kv?: KVStore;
   legacyStore?: LegacyDocumentStore;
   lockManager?: LockManager | null;
+  migrateDsl?: (document: unknown) => unknown;
   /** The mutation callback acquires the runtime shared epoch before writing. */
   storageSharedLockHeld?: boolean;
 }
@@ -75,7 +77,7 @@ let defaultKv: KVStore | undefined;
 const log = createLogger('DocumentMigration');
 
 function resolveStore(deps: DocumentMigrationDeps): DocumentStore<AppScene, AppStage> {
-  return deps.store ?? getDocumentStore();
+  return deps.store ? getDocumentStore({ store: deps.store }) : getDocumentStore();
 }
 
 function resolveKv(deps: DocumentMigrationDeps): KVStore {
@@ -171,14 +173,49 @@ function assertValidDestination(stageId: string, document: AppDocument): void {
   }
 }
 
-function assertMigrationVerified(expected: AppDocument, actual: AppDocument): void {
+/**
+ * Migrate a document forward to the current DSL version, leaving the opaque,
+ * app-owned `outline` untouched. The outline is not DSL-shaped, so migrations
+ * must never see it — splitting it out here makes the "outline is not migrated"
+ * contract literally true and stops a future migration transform from silently
+ * dropping the snapshot while rebuilding the aggregate. Throws (via `migrate`)
+ * if the document's version has no path up the ladder.
+ *
+ * Scenes (including an app-widened union) *do* stay inside the migrated core:
+ * the DSL owns the scene contract, so its migrations are the authority on scene
+ * shape and are expected to key on `scene.type` and pass app kinds through
+ * untouched. This is the deliberate asymmetry with `outline`, which the DSL owns
+ * no contract for at all.
+ * This mirrors `@openmaic/storage`'s private `migrateDocument` in
+ * `document/browser.ts`; changes must be kept in sync.
+ */
+export function migrateDocumentForVerification(
+  document: AppDocument,
+  migrateDsl: (document: unknown) => unknown = migrate,
+): AppDocument {
+  const { outline, ...core } = document;
+  const migrated = migrateDsl(core) as AppDocument;
+  return outline === undefined ? migrated : { ...migrated, outline };
+}
+
+function assertMigrationVerified(
+  expected: AppDocument,
+  actual: AppDocument,
+  migrateDsl: (document: unknown) => unknown = migrate,
+): void {
   assertValidDestination(expected.stage.id, actual);
+  const migratedExpected = migrateDocumentForVerification(expected, migrateDsl);
   const strip = (document: AppDocument) => ({
     stage: document.stage,
     scenes: [...document.scenes].sort((a, b) => a.order - b.order),
     outline: document.outline,
   });
-  if (!isEqual(strip(actual), strip(expected))) {
+  if (
+    !isEqual(
+      omitUndefinedObjectMembers(strip(actual)),
+      omitUndefinedObjectMembers(strip(migratedExpected)),
+    )
+  ) {
     throw new Error(
       `Legacy migration verification failed for document ${JSON.stringify(expected.stage.id)}`,
     );
@@ -241,7 +278,7 @@ async function migrateLocked(
         const markerKey = `${MARKER_PREFIX}${stageId}`;
         if (!(await kv.get<MigrationMarker>(markerKey, 'device'))) {
           try {
-            assertMigrationVerified(canonicalize(snapshot), existing);
+            assertMigrationVerified(canonicalize(snapshot), existing, deps.migrateDsl);
           } catch (error) {
             log.warn(
               `Legacy snapshot diverges from authoritative destination for stage ${stageId}; migration marker was not written`,
@@ -264,7 +301,7 @@ async function migrateLocked(
     await store.saveDocument(expected);
     const actual = await store.loadDocument(stageId);
     if (!actual) throw new Error(`Legacy migration lost document ${JSON.stringify(stageId)}`);
-    assertMigrationVerified(expected, actual);
+    assertMigrationVerified(expected, actual, deps.migrateDsl);
 
     await finishMigrationMetadata(snapshot, resolveKv(deps));
     return { document: actual, readOnlyLegacy: false };

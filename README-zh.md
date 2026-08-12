@@ -33,7 +33,7 @@
 <p align="center">
   <a href="./README.md">English</a> | <a href="./README-zh.md">简体中文</a>
   <br/>
-  <a href="https://open.maic.chat/">在线体验</a> · <a href="#-快速开始">快速开始</a> · <a href="#lemonade-local-ai">Lemonade</a> · <a href="#-功能特性">功能特性</a> · <a href="#-使用场景">使用场景</a> · <a href="#-openclaw-集成">OpenClaw</a>
+  <a href="https://open.maic.chat/">在线体验</a> · <a href="#-快速开始">快速开始</a> · <a href="#lemonade-local-ai">Lemonade</a> · <a href="#funasr-local-asr">FunASR</a> · <a href="#-功能特性">功能特性</a> · <a href="#-使用场景">使用场景</a> · <a href="#-openclaw-集成">OpenClaw</a>
 </p>
 
 
@@ -115,6 +115,7 @@ GROK_API_KEY=xai-...
 OPENROUTER_API_KEY=sk-or-...
 TENCENT_API_KEY=sk-...
 XIAOMI_API_KEY=...
+# 或使用 AWS 凭证和 BEDROCK_REGION 配置 Amazon Bedrock。
 ```
 
 也可以通过 `server-providers.yml` 配置服务商：
@@ -130,9 +131,23 @@ providers:
       - YOUR-DEPLOYMENT-NAME
   anthropic:
     apiKey: sk-ant-...
+  bedrock:
+    models:
+      - us.anthropic.claude-sonnet-5
+      - us.anthropic.claude-opus-4-8
 ```
 
-支持的服务商：**OpenAI**、**Azure OpenAI**、**Anthropic**、**Google Gemini**、**DeepSeek**、**通义千问 Qwen**、**Kimi**、**MiniMax**、**Grok (xAI)**、**OpenRouter**、**豆包**、**腾讯混元 / TokenHub**、**小米 MiMo**、**智谱 GLM**、**Ollama**（本地）、**Lemonade**（本地 LLM / 图像 / TTS / ASR）以及任何兼容 OpenAI API 的服务。
+支持的服务商：**OpenAI**、**Azure OpenAI**、**Anthropic**、**Amazon Bedrock**、**Google Gemini**、**DeepSeek**、**通义千问 Qwen**、**Kimi**、**MiniMax**、**Grok (xAI)**、**OpenRouter**、**豆包**、**腾讯混元 / TokenHub**、**小米 MiMo**、**智谱 GLM**、**Ollama**（本地）、**Lemonade**（本地 LLM / 图像 / TTS / ASR）、**FunASR**（本地 ASR）以及任何兼容 OpenAI API 的服务。
+
+Amazon Bedrock 快速示例：
+
+```env
+BEDROCK_REGION=us-east-1
+BEDROCK_MODELS=us.anthropic.claude-sonnet-5,us.anthropic.claude-opus-4-8
+DEFAULT_MODEL=bedrock:us.anthropic.claude-sonnet-5
+```
+
+Bedrock 使用 AWS 环境凭证或 AWS SDK 凭证链。临时凭证可设置 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY` 和 `AWS_SESSION_TOKEN`，也可以使用运行环境可用的 AWS profile / role。
 
 <a id="lemonade-local-ai"></a>
 
@@ -148,6 +163,28 @@ TTS_LEMONADE_BASE_URL=http://localhost:13305/v1
 ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
 IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
+
+<a id="funasr-local-asr"></a>
+
+### 可选：FunASR（本地语音识别）
+
+OpenMAIC 可以通过 FunASR 的 OpenAI 兼容服务完成本地转写。内置 provider 支持 SenseVoiceSmall、Paraformer 和 Fun-ASR-Nano，无需 API Key。
+
+```bash
+python -m pip install torch torchaudio
+python -m pip install "funasr==1.4.0" fastapi uvicorn python-multipart
+# NVIDIA GPU 上运行 Fun-ASR-Nano 时再安装 vLLM
+python -m pip install vllm
+funasr-server --device cuda --model fun-asr-nano
+```
+
+将 OpenMAIC 指向该服务：
+
+```env
+ASR_FUNASR_BASE_URL=http://localhost:8000/v1
+```
+
+纯 CPU 环境可运行 `funasr-server --device cpu --model sensevoice`。生产部署方式参见 [FunASR 部署指南](https://github.com/modelscope/FunASR#deploy)。
 
 OpenAI 快速示例：
 
@@ -671,7 +708,7 @@ OpenMAIC/
 
 ### 核心架构
 
-- **生成流水线** (`lib/generation/`) — 两阶段：大纲生成 → 场景内容生成
+- **生成流水线** (`@openmaic/generation`) — 两阶段：大纲生成 → 场景内容生成
 - **多智能体编排** (`lib/orchestration/`) — 基于 LangGraph 的状态机，管理智能体轮次和讨论
 - **回放引擎** (`lib/playback/`) — 驱动课堂回放和实时互动的状态机
 - **动作引擎** (`lib/action/`) — 执行 28+ 种动作类型（语音、白板绘图/文字/形状/图表、聚光灯、激光笔…）

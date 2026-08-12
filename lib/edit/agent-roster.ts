@@ -28,9 +28,10 @@ export function materializeRoster(
   }
 
   // Step 2 — resolve preset ids. Global default presets get a fresh stage-scoped
-  // id (prevents saveGeneratedAgents from overwriting built-in defaults on the
-  // first edit). Stage-generated ids are kept as-is so existing scene references
-  // (scene.multiAgent.agentIds) remain valid after a roster edit.
+  // id (prevents the first roster edit from shadowing built-in defaults in the
+  // registry with stage-bound generated copies). Stage-generated ids are kept
+  // as-is so existing scene references (scene.multiAgent.agentIds) remain valid
+  // after a roster edit.
   let roster: AgentRoster = [];
   if (stage.agentIds && stage.agentIds.length > 0) {
     roster = stage.agentIds

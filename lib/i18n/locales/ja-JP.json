@@ -76,6 +76,16 @@
     "videoRenderMp4": "MP4 をレンダリング",
     "videoDownloadZip": "プロジェクト ZIP をダウンロード",
     "videoServiceHint": "MP4 レンダリングにはレンダーサービスが必要です。ZIP をダウンロードしてローカルでレンダリングできます。",
+    "videoBurnSubtitles": "字幕を焼き込む",
+    "videoBurnSubtitlesDesc": "オフ：字幕なしの動画を書き出し、字幕ファイルは編集ソフトで追加します。",
+    "videoQuizCtaPrompt": "インタラクティブなクイズを体験しませんか？",
+    "videoPblCtaPrompt": "プロジェクト型学習を体験しませんか？",
+    "videoCtaVisit": "アクセス",
+    "videoDownloadSubtitles": "字幕をダウンロード (.srt)",
+    "subtitlesCompiling": "字幕を生成中…",
+    "subtitlesSuccess": "字幕をダウンロードしました",
+    "subtitlesEmpty": "字幕にできるナレーションがありません",
+    "subtitlesFailed": "字幕のダウンロードに失敗しました",
     "noSlides": "エクスポート可能なスライドがありません",
     "noSlidesSkipped": "このコースにスライドがないため、PPTX をスキップしました",
     "nothingToExport": "エクスポートできるものがありません"
@@ -217,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "テキストツールバー",
       "label": "テキスト",
       "font": "フォント",
       "fontDefault": "デフォルト",
@@ -230,17 +241,99 @@
       "alignLeft": "左揃え",
       "alignCenter": "中央揃え",
       "alignRight": "右揃え",
-      "bullet": "箇条書き"
+      "bullet": "箇条書き",
+      "colorHex": "カラーコード"
+    },
+    "line": {
+      "toolbar": "線ツールバー",
+      "kind": "線の種類",
+      "color": "線の色",
+      "width": "線幅",
+      "style": "線のスタイル",
+      "start": "始点のスタイル",
+      "end": "終点のスタイル",
+      "straight": "直線",
+      "broken": "折れ線",
+      "broken2": "二重折れ線",
+      "curve": "曲線",
+      "cubic": "3次曲線",
+      "solid": "実線",
+      "dashed": "破線",
+      "dotted": "点線",
+      "none": "なし",
+      "arrow": "矢印",
+      "dot": "点"
     },
     "insert": {
+      "toolbar": "挿入ツールバー",
       "textBox": "テキストボックス",
+      "line": "線",
+      "linePresets": {
+        "straight": "直線",
+        "dashed": "破線",
+        "arrow": "矢印線",
+        "dashedArrow": "破線矢印",
+        "dottedEnd": "終点ドット線",
+        "broken": "折れ線",
+        "doubleBroken": "二重折れ線",
+        "curve": "曲線",
+        "cubic": "3次曲線"
+      },
+      "table": "表",
+      "formula": "数式",
+      "chart": "グラフ",
+      "chartBar": "棒グラフ",
+      "chartLine": "折れ線グラフ",
+      "chartPie": "円グラフ",
+      "tableDimensions": "{{rows}} x {{columns}} 表",
       "dragToolbar": "挿入ツールを移動",
       "dragToolbarKeyboard": "挿入ツールを移動：Enter または Space を押してから矢印キーで移動",
       "image": "画像",
       "imageDrop": "画像をドロップまたはクリックして選択",
       "imageOr": "または画像 URL を貼り付け",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "挿入"
+      "imageInsert": "挿入",
+      "video": "動画",
+      "videoDrop": "動画をドロップまたはクリックして選択",
+      "videoOr": "または動画 URL を貼り付け",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "挿入",
+      "audio": "音声",
+      "audioDrop": "音声をドロップまたはクリックして選択",
+      "audioOr": "または音声 URL を貼り付け",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "挿入"
+    },
+    "asset": {
+      "drop": "ファイルをドロップまたはクリックして選択",
+      "orUrl": "またはファイル URL を貼り付け",
+      "urlPlaceholder": "https://…",
+      "insert": "挿入",
+      "invalidType": "サポートされていないファイル形式",
+      "readFailed": "ファイルを読み込めません"
+    },
+    "latex": {
+      "toolbar": "数式ツールバー",
+      "editFormula": "数式を編集",
+      "dialog": "数式エディター",
+      "source": "LaTeX ソース",
+      "preview": "プレビュー",
+      "symbols": "記号",
+      "presets": "定型数式",
+      "invalidSource": "LaTeX ソースが無効です。"
+    },
+    "video": {
+      "toolbar": "動画ツールバー",
+      "poster": "ポスターを設定"
+    },
+    "audio": {
+      "toolbar": "音声ツールバー",
+      "preview": "音声を試聴",
+      "pause": "試聴を一時停止",
+      "loop": "繰り返し再生"
+    },
+    "table": {
+      "doubleClickToEdit": "ダブルクリックして編集"
     },
     "nav": {
       "addSlide": "スライドを追加",
@@ -263,14 +356,38 @@
       "toBack": "最背面へ移動"
     },
     "image": {
+      "toolbar": "画像ツールバー",
       "replace": "画像を置き換え",
       "flipH": "左右反転",
-      "flipV": "上下反転"
+      "flipV": "上下反転",
+      "crop": "画像を切り抜く"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "水平揃え",
+      "verticalAlignment": "垂直揃え",
+      "selectAll": "すべて選択",
+      "copy": "コピー",
+      "cut": "切り取り",
+      "paste": "貼り付け",
+      "unlock": "ロック解除",
+      "lock": "ロック",
+      "group": "グループ化",
+      "ungroup": "グループ解除",
+      "bringForward": "前面へ移動",
+      "sendBackward": "背面へ移動",
+      "alignTop": "上揃え",
+      "alignMiddle": "垂直中央揃え",
+      "alignBottom": "下揃え"
     },
     "background": {
       "label": "背景",
       "solid": "単色",
-      "image": "画像"
+      "image": "画像",
+      "color": "色"
+    },
+    "common": {
+      "cancel": "キャンセル",
+      "confirm": "確定"
     },
     "quiz": {
       "addQuestion": "問題を追加",
@@ -320,6 +437,7 @@
       "discussion": "ディスカッション"
     },
     "element": {
+      "toolbar": "要素ツールバー",
       "text": "テキスト",
       "image": "画像",
       "shape": "図形",
@@ -375,7 +493,8 @@
         "lead": "このインタラクティブページの不具合（例：押しても反応しないボタン）を教えてください。その箇所だけを修正し、ほかはそのまま残します。",
         "placeholder": "このインタラクティブページの不具合を入力…"
       },
-      "thinking": "考え中…"
+      "thinking": "考え中…",
+      "title": "AIで編集"
     },
     "timeline": {
       "title": "ナレーション台本",
@@ -468,6 +587,21 @@
       "notApplied": "未適用",
       "applyFailed": "エディターで要素の編集を適用できませんでした。変更はありません。",
       "applyPartiallyFailed": "一部の要素編集を適用できませんでした。ほかの編集は適用されている可能性があります。"
+    },
+    "roster": {
+      "title": "クラス編成",
+      "count": "{{count}}人",
+      "editHint": "メンバーをクリックして編集",
+      "personaLabel": "ペルソナ",
+      "personaPlaceholder": "役割の性格、指導スタイル、タスクを説明…",
+      "noPersona": "ペルソナ未設定",
+      "unnamed": "無題",
+      "teacherBadge": "主担当",
+      "moveUp": "上へ移動",
+      "moveDown": "下へ移動",
+      "removeFromClass": "クラスから削除",
+      "aiClassmates": "AIクラスメイト · {{count}}",
+      "addRole": "役割を追加"
     }
   },
   "classroomComplete": {
@@ -557,67 +691,7 @@
     "startRecording": "録音を開始"
   },
   "pbl": {
-    "legacyFormat": "このPBLシーンは旧形式です。コースを再生成してください。",
     "emptyProject": "PBLプロジェクトがまだ生成されていません。コース生成から作成してください。",
-    "roleSelection": {
-      "title": "役割を選択",
-      "description": "プロジェクトでの協力を始めるために役割を選んでください"
-    },
-    "workspace": {
-      "restart": "リスタート",
-      "confirmRestart": "すべての進捗をリセットしますか？",
-      "confirm": "確認",
-      "cancel": "キャンセル"
-    },
-    "issueboard": {
-      "title": "課題ボード",
-      "noIssues": "課題はまだありません",
-      "statusDone": "完了",
-      "statusActive": "進行中",
-      "statusPending": "未着手"
-    },
-    "chat": {
-      "title": "プロジェクトディスカッション",
-      "currentIssue": "現在の課題",
-      "mentionHint": "@question で質問、@judge で提出・レビュー依頼",
-      "placeholder": "メッセージを入力...",
-      "send": "送信",
-      "issueCompleteMessage": "課題「{{completed}}」が完了しました！次の課題に進みます：「{{next}}」",
-      "allCompleteMessage": "🎉 すべての課題が完了しました！プロジェクトお疲れさまでした！"
-    },
-    "guide": {
-      "howItWorks": "使い方",
-      "help": "ヘルプ",
-      "title": "ヘルプ",
-      "step1": {
-        "title": "ステップ1：役割を選ぶ",
-        "desc": "プロジェクト生成後、リストから役割を選択してください（🟢マークの非システム役割）"
-      },
-      "step2": {
-        "title": "ステップ2：課題に取り組む",
-        "desc": "各課題は学習タスクです：",
-        "s1": {
-          "title": "現在の課題を確認",
-          "desc": "課題のタイトル、説明、担当者を確認します"
-        },
-        "s2": {
-          "title": "ガイダンスを受ける",
-          "example": "@question どこから始めればいいですか？\n@question この機能はどう実装しますか？",
-          "desc": "質問エージェントがヒントや誘導質問を提供します（直接的な答えは出しません）"
-        },
-        "s3": {
-          "title": "成果を提出する",
-          "example": "@judge 完了しました。ノートを確認してください",
-          "desc": "審査エージェントが成果を評価しフィードバックします：",
-          "complete": "自動的に次の課題に進みます",
-          "revision": "フィードバックに基づいて改善してください"
-        }
-      },
-      "step3": {
-        "title": "ステップ3：プロジェクトを完了する",
-        "desc": "すべての課題が完了すると「🎉 プロジェクト完了！」と表示されます"
-      }
-    },
     "v2": {
       "hero": {
         "title": "プロジェクトベースドラーニング",
@@ -859,7 +933,37 @@
     "searchPlaceholder": "コースを検索...",
     "searchAriaLabel": "コースを検索",
     "clearSearch": "クリア",
-    "searchEmpty": "該当するコースが見つかりません"
+    "searchEmpty": "該当するコースが見つかりません",
+    "newFolderTitle": "新規フォルダ",
+    "newFolderDesc": "コースをトピック別に整理し、アクセスしやすくします。",
+    "newFolderInline": "新規フォルダ",
+    "folderNameLabel": "フォルダ名",
+    "folderNamePlaceholder": "例：数学、英語、専攻科目",
+    "folderNameHint": "全角・半角どちらもOK。スペースもカウントされます。",
+    "folderNameExists": "同じ名前のフォルダが既に存在します。",
+    "folderCountLimit": "フォルダ数の上限に達しました。",
+    "folderWidth": "幅 {{width}}/{{max}}",
+    "folderCreate": "作成",
+    "folderBadge": "フォルダ",
+    "folderCourseCountUnit": "件のコース",
+    "deleteFolderTitle": "フォルダ「{{name}}」を削除",
+    "deleteFolderEmptyDesc": "このフォルダは空です。削除後は復元できません。",
+    "deleteFolderUngroupDesc": "コースは「マイコース」に残り、未分類になります。",
+    "moveToFolder": "フォルダに移動",
+    "moveToFolderLabel": "フォルダに移動",
+    "ungrouped": "未分類",
+    "searchResults": "検索結果",
+    "folderCreateFailed": "フォルダの作成に失敗しました",
+    "folderRenameFailed": "フォルダの名前変更に失敗しました",
+    "folderDeleteFailed": "フォルダの削除に失敗しました",
+    "moveFailed": "コースの移動に失敗しました",
+    "emptyFolderHint": "このフォルダは空です",
+    "emptyLibraryHint": "まだコースがありません。上で作成するか、コースをインポートしてください。",
+    "folderNameEmpty": "フォルダ名は空にできません",
+    "deleteFolderOnly": "フォルダのみ削除",
+    "deleteFolderAndCourses": "フォルダと {{count}} 件のコースを削除",
+    "deleteFolderConfirmRemove": "フォルダとコース（チャット履歴を含む）が削除されます。",
+    "deleteFolderAndCourses_other": "フォルダと {{count}} 件のコースを削除"
   },
   "upload": {
     "pdfSizeLimit": "50MBまでのPDFファイルに対応しています",
@@ -1065,6 +1169,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "Qwen",
       "kimi": "Kimi",
@@ -1082,13 +1187,15 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAIプロトコル",
       "azure": "Azure OpenAI",
       "anthropic": "Claudeプロトコル",
-      "google": "Geminiプロトコル"
+      "google": "Geminiプロトコル",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "モデル",
     "modelSingular": "モデル",
@@ -1289,6 +1396,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "ブラウザネイティブASR",
     "providerQwenASR": "Qwen ASR（Alibaba Cloud百錬）",
+    "providerFunASRASR": "FunASR（ローカル）",
     "providerLemonadeASR": "Lemonade ASR（ローカル）",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf（組み込み）",
@@ -1607,11 +1715,16 @@
     "clearCacheButton": "すべてのデータを完全に削除",
     "clearCacheSuccess": "キャッシュをクリアしました。まもなくページが更新されます",
     "clearCacheFailed": "キャッシュのクリアに失敗しました。もう一度お試しください",
+    "clearCacheBlockedByOtherTabs": "このアプリを開いている他のタブを閉じて、もう一度お試しください。",
+    "persistUnavailable": "変更が保存されていません。アプリが保存済みデータにアクセスできません。再読み込みしても解決しない場合は、設定からローカルキャッシュを削除してください。",
+    "persistChangesLost": "ストレージは復旧しましたが、利用できなかった間の変更は保存できず、最後に保存された内容に戻りました。",
     "webSearchSettings": "ウェブ検索",
     "webSearchApiKey": "検索APIキー",
     "webSearchApiKeyPlaceholder": "検索APIキーを入力",
     "webSearchApiKeyPlaceholderServer": "サーバーキー設定済み、任意で上書き",
     "webSearchApiKeyHint": "選択した検索プロバイダーからAPIキーを取得してください",
+    "claudeSearchModel": "検索モデル",
+    "claudeSearchModelHint": "ウェブ検索を実行し、結果を要約する Claude モデル。",
     "webSearchApiKeyOptional": "APIキーは任意です。未設定の場合、公開ページのスクレイピングが使用されます。",
     "searxngServerOnlyNotice": "SearXNG はサーバー側で設定する必要があります。SEARXNG_BASE_URL 環境変数（または server-providers.yml の web-search セクション）を設定してください。クライアントからのインスタンス URL は受け付けません。",
     "baiduSubSources": "Baidu検索ソース",

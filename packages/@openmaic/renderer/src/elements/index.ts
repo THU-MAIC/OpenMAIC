@@ -6,6 +6,7 @@ export { BaseChartElement, type BaseChartElementProps } from './chart/BaseChartE
 export { BaseLatexElement, type BaseLatexElementProps } from './latex/BaseLatexElement';
 export { BaseTableElement, type BaseTableElementProps } from './table/BaseTableElement';
 export { BaseVideoElement, type BaseVideoElementProps } from './video/BaseVideoElement';
+export { BaseAudioElement, type BaseAudioElementProps } from './audio/BaseAudioElement';
 export { BaseCodeElement, type BaseCodeElementProps } from './code/BaseCodeElement';
 
 export { ElementOutline, type ElementOutlineProps } from './shared/ElementOutline';
@@ -13,3 +14,4 @@ export { useElementFill } from './shared/useElementFill';
 export { useElementOutline } from './shared/useElementOutline';
 export { useElementShadow } from './shared/useElementShadow';
 export { useElementFlip } from './shared/useElementFlip';
+export { getTextStyle } from './table/tableUtils';

@@ -1,12 +1,13 @@
 'use client';
 
-import { useMemo } from 'react';
-import { Play } from 'lucide-react';
-import type { Slide, PPTElement, PPTVideoElement } from '@openmaic/dsl';
-import { isMediaPlaceholder, useMediaGenerationStore } from '@/lib/store/media-generation';
-import { useMediaStageId } from '@/lib/contexts/media-stage-context';
-import { getVideoMediaRefForElement } from '@/lib/media/video-manifest';
+import type { CSSProperties, ReactNode } from 'react';
+import { Play, RotateCcw } from 'lucide-react';
+import type { Slide, PPTImageElement, PPTVideoElement } from '@openmaic/dsl';
 import { SlideCanvas } from '@openmaic/renderer';
+import { useResolvedSlideMedia, type ResolvedSlideMediaEntry } from './use-resolved-slide';
+import { useI18n } from '@/lib/hooks/use-i18n';
+import { retryMediaTask } from '@/lib/media/media-orchestrator';
+import { mediaResolutionCanRetry } from '@/lib/media/resolve-media-ref';
 
 interface SlideThumbnailProps {
   /** Slide data */
@@ -24,84 +25,8 @@ interface SlideThumbnailProps {
   readonly viewportRatio: number;
   /** Whether visible (for lazy loading optimization) */
   readonly visible?: boolean;
-}
-
-/**
- * Media-generation task key for an element, matching what the full-size canvas
- * subscribes to: images are keyed by their `gen_img_*` placeholder src
- * (`useResolvedImageSrc`); videos are keyed by `mediaRef ?? gen_vid_* src`
- * (`getVideoMediaRefForElement`, as in `BaseVideoElement`) — a mediaRef-keyed
- * video may carry no placeholder src at all.
- */
-function mediaTaskKeyFor(el: PPTElement): string | undefined {
-  if (el.type === 'video') return getVideoMediaRefForElement(el);
-  if (el.type === 'image' && el.src && isMediaPlaceholder(el.src)) return el.src;
-  return undefined;
-}
-
-/**
- * Resolve a slide's generated-media refs against the media-generation store so
- * the thumbnail stays in sync as generation (and retries) complete.
- *
- * `@openmaic/renderer` is a pure package: it renders `element.src` as-is and knows
- * nothing about this app's async media generation. The store never mutates the
- * slide's elements (it keeps the `gen_*`/`mediaRef` key and tracks the
- * generated `objectUrl` in a task), so a static render would show the raw
- * placeholder forever — broken on first paint, and crucially NOT updating when
- * a retry finally succeeds. We bridge that here, reactively:
- *
- * - Done task → swap `src` to the generated `objectUrl` (and video `poster`).
- * - Pending/failed with a placeholder src → blank the `src` so the package
- *   renders nothing instead of a broken `<img>`/`<video>` for the raw ref.
- *   (A mediaRef-keyed video whose src is a real URL keeps it.)
- * - No stage context (e.g. home recent-course cards) → render raw, matching
- *   the legacy thumbnail's "skip the store off-classroom" behavior.
- */
-function useResolvedSlide(slide: Slide): Slide {
-  const stageId = useMediaStageId();
-
-  // Subscribe via a primitive signature of just the resolutions THIS slide
-  // cares about (task key → done objectUrl), not the whole tasks map. Strings
-  // compare by value, so unrelated task churn (other slides' media
-  // generating/retrying) doesn't re-render this thumbnail, and the memo below
-  // re-runs only when one of our own refs actually resolves.
-  const signature = useMediaGenerationStore((s) => {
-    if (!stageId) return '';
-    let sig = '';
-    for (const el of slide.elements) {
-      const key = mediaTaskKeyFor(el);
-      if (!key) continue;
-      const task = s.tasks[key];
-      const url =
-        task && task.stageId === stageId && task.status === 'done' && task.objectUrl
-          ? task.objectUrl
-          : '';
-      sig += `${key}|${url}|`;
-    }
-    return sig;
-  });
-
-  return useMemo(() => {
-    if (!stageId || !signature) return slide;
-    const { tasks } = useMediaGenerationStore.getState();
-    const elements = slide.elements.map((el) => {
-      const key = mediaTaskKeyFor(el);
-      if (!key) return el;
-      const task = tasks[key];
-      if (task && task.stageId === stageId && task.status === 'done' && task.objectUrl) {
-        return el.type === 'video'
-          ? { ...el, src: task.objectUrl, poster: task.poster ?? el.poster }
-          : { ...el, src: task.objectUrl };
-      }
-      // Unresolved: blank a placeholder src so the renderer paints nothing
-      // rather than a broken-media icon. A real (non-placeholder) src — e.g. a
-      // mediaRef-keyed video that already carries a playable URL — is kept.
-      if ((el.type === 'image' || el.type === 'video') && el.src && isMediaPlaceholder(el.src))
-        return { ...el, src: '' };
-      return el;
-    });
-    return { ...slide, elements };
-  }, [slide, stageId, signature]);
+  /** Owning scene used to scope a shared-ref retry. */
+  readonly sceneId?: string;
 }
 
 /**
@@ -115,11 +40,35 @@ function useResolvedSlide(slide: Slide): Slide {
  * renders for a real (resolved, non-placeholder) src so unresolved media falls
  * through to the badge-only frame instead of an empty `<video>`.
  */
-function renderThumbnailVideo(element: PPTVideoElement) {
-  const src = element.src && !isMediaPlaceholder(element.src) ? element.src : undefined;
+function renderThumbnailVideo(
+  element: PPTVideoElement,
+  media: ResolvedSlideMediaEntry | undefined,
+  disabledMessage: string,
+  retryLabel: string,
+  onRetry: () => void,
+) {
+  const nonRenderable =
+    media?.resolution.kind === 'pending' || media?.resolution.kind === 'placeholder';
+  const failed = media?.resolution.kind === 'failed';
+  const disabled = media?.resolution.kind === 'disabled';
+  const src = nonRenderable || failed || disabled ? undefined : element.src;
   return (
     <>
-      {src ? (
+      {nonRenderable ? (
+        <div
+          className="h-full w-full animate-pulse rounded bg-black/10"
+          data-media-state="pending"
+        />
+      ) : disabled ? (
+        <div
+          className="flex h-full w-full items-center justify-center rounded bg-gray-50 px-2 text-center text-[10px] font-medium text-gray-500"
+          data-media-state="disabled"
+        >
+          {disabledMessage}
+        </div>
+      ) : failed ? (
+        <div className="h-full w-full rounded bg-red-50" data-media-state="failed" />
+      ) : src ? (
         <video
           className="w-full h-full"
           style={{ objectFit: 'contain' }}
@@ -132,6 +81,19 @@ function renderThumbnailVideo(element: PPTVideoElement) {
       ) : (
         <div className="w-full h-full bg-black/10 rounded" />
       )}
+      {mediaResolutionCanRetry(media?.resolution) ? (
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            onRetry();
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          className="pointer-events-auto absolute right-1 top-1 z-10 flex items-center gap-1 rounded bg-red-100/95 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm"
+        >
+          <RotateCcw className="h-3 w-3" />
+          {retryLabel}
+        </button>
+      ) : null}
       <div
         className="absolute inset-0 flex items-center justify-center pointer-events-none"
         data-testid="thumbnail-video-indicator"
@@ -140,6 +102,67 @@ function renderThumbnailVideo(element: PPTVideoElement) {
           <Play className="ml-1 size-14 fill-white text-white" />
         </div>
       </div>
+    </>
+  );
+}
+
+function renderThumbnailImage(
+  _element: PPTImageElement,
+  _src: string,
+  defaultContent: ReactNode,
+  media: ResolvedSlideMediaEntry | undefined,
+  disabledMessage: string,
+  retryLabel: string,
+  onRetry: () => void,
+) {
+  if (media?.resolution.kind === 'pending' || media?.resolution.kind === 'placeholder') {
+    return <div className="h-full w-full animate-pulse bg-black/10" data-media-state="pending" />;
+  }
+  if (media?.resolution.kind === 'failed') {
+    return (
+      <div className="relative h-full w-full bg-red-50" data-media-state="failed">
+        {mediaResolutionCanRetry(media.resolution) ? (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onRetry();
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            className="pointer-events-auto absolute right-1 top-1 z-10 flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm"
+          >
+            <RotateCcw className="h-3 w-3" />
+            {retryLabel}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+  if (media?.resolution.kind === 'disabled') {
+    return (
+      <div
+        className="flex h-full w-full items-center justify-center bg-gray-50 px-2 text-center text-[10px] font-medium text-gray-500"
+        data-media-state="disabled"
+      >
+        {disabledMessage}
+      </div>
+    );
+  }
+  return (
+    <>
+      {defaultContent}
+      {mediaResolutionCanRetry(media?.resolution) ? (
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            onRetry();
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          className="pointer-events-auto absolute right-1 top-1 z-10 flex items-center gap-1 rounded bg-red-100/95 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm"
+        >
+          <RotateCcw className="h-3 w-3" />
+          {retryLabel}
+        </button>
+      ) : null}
     </>
   );
 }
@@ -164,14 +187,16 @@ export function SlideThumbnail({
   size,
   viewportRatio,
   visible = true,
+  sceneId,
 }: SlideThumbnailProps) {
-  const resolvedSlide = useResolvedSlide(slide);
+  const { t } = useI18n();
+  const resolved = useResolvedSlideMedia(slide);
   const autoSize = size === undefined;
 
   const containerClass = autoSize
     ? 'thumbnail-slide relative bg-white overflow-hidden select-none pointer-events-none w-full h-full'
     : 'thumbnail-slide relative bg-white overflow-hidden select-none pointer-events-none';
-  const containerStyle: React.CSSProperties | undefined = autoSize
+  const containerStyle: CSSProperties | undefined = autoSize
     ? undefined
     : { width: `${size}px`, height: `${size * viewportRatio}px` };
 
@@ -187,7 +212,41 @@ export function SlideThumbnail({
 
   return (
     <div className={containerClass} style={containerStyle}>
-      <SlideCanvas slide={resolvedSlide} chrome={false} renderVideo={renderThumbnailVideo} />
+      <SlideCanvas
+        slide={resolved.slide}
+        chrome={false}
+        renderImage={(element, src, defaultContent) =>
+          renderThumbnailImage(
+            element,
+            src,
+            defaultContent,
+            resolved.byElementId[element.id],
+            t('settings.mediaGenerationDisabled'),
+            t('settings.mediaRetry'),
+            () => {
+              const media = resolved.byElementId[element.id];
+              if (media?.ref) {
+                retryMediaTask(media.ref, { elementId: element.id, sceneId, slideId: slide.id });
+              }
+            },
+          )
+        }
+        renderVideo={(element) =>
+          renderThumbnailVideo(
+            element,
+            resolved.byElementId[element.id],
+            t('settings.mediaGenerationDisabled'),
+            t('settings.mediaRetry'),
+            () => {
+              const media = resolved.byElementId[element.id];
+              if (media?.ref) {
+                retryMediaTask(media.ref, { elementId: element.id, sceneId, slideId: slide.id });
+              }
+            },
+          )
+        }
+        videoInteractive={false}
+      />
     </div>
   );
 }

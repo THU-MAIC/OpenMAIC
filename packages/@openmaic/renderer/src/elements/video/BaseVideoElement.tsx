@@ -12,12 +12,18 @@ export interface BaseVideoElementProps {
    * When omitted, the package renders a plain <video src controls preload="metadata">.
    */
   renderVideo?: (element: PPTVideoElement) => ReactNode;
+  /** Enable pointer interaction for native controls or host-provided video UI. */
+  interactive?: boolean;
 }
 
-export function BaseVideoElement({ elementInfo, renderVideo }: BaseVideoElementProps) {
+export function BaseVideoElement({
+  elementInfo,
+  renderVideo,
+  interactive = true,
+}: BaseVideoElementProps) {
   return (
     <div
-      className="element-content"
+      className="base-element-video element-content"
       data-video-element
       style={{
         position: 'absolute',
@@ -25,9 +31,10 @@ export function BaseVideoElement({ elementInfo, renderVideo }: BaseVideoElementP
         left: `${elementInfo.left}px`,
         width: `${elementInfo.width}px`,
         height: `${elementInfo.height}px`,
+        pointerEvents: interactive ? 'auto' : 'none',
       }}
-      onClick={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
+      onClick={interactive ? (e) => e.stopPropagation() : undefined}
+      onPointerDown={interactive ? (e) => e.stopPropagation() : undefined}
     >
       <div
         style={{

@@ -185,8 +185,16 @@ export async function transcribeAudio(
     case 'azure-asr':
       return await transcribeAzureASR(config, audioBuffer);
 
+    case 'funasr-asr':
+      return await transcribeWavOpenAICompatibleASR(config, audioBuffer, 'funasr-asr', 'FunASR');
+
     case 'lemonade-asr':
-      return await transcribeLemonadeASR(config, audioBuffer);
+      return await transcribeWavOpenAICompatibleASR(
+        config,
+        audioBuffer,
+        'lemonade-asr',
+        'Lemonade',
+      );
 
     default:
       if (isCustomASRProvider(config.providerId)) {
@@ -197,15 +205,17 @@ export async function transcribeAudio(
 }
 
 /**
- * Lemonade ASR implementation (OpenAI-compatible multipart transcription).
+ * WAV-only OpenAI-compatible multipart transcription.
  *
- * Lemonade currently supports WAV input and JSON response format.
+ * Used by local providers whose transcription endpoint accepts WAV and JSON.
  */
-async function transcribeLemonadeASR(
+async function transcribeWavOpenAICompatibleASR(
   config: ASRModelConfig,
   audioBuffer: Buffer | Blob,
+  providerId: 'funasr-asr' | 'lemonade-asr',
+  providerName: string,
 ): Promise<ASRTranscriptionResult> {
-  const baseUrl = (config.baseUrl || ASR_PROVIDERS['lemonade-asr'].defaultBaseUrl || '').replace(
+  const baseUrl = (config.baseUrl || ASR_PROVIDERS[providerId].defaultBaseUrl || '').replace(
     /\/$/,
     '',
   );
@@ -213,13 +223,13 @@ async function transcribeLemonadeASR(
   const audioBlob = await toAudioBlob(audioBuffer);
   if (!(await isWavAudio(audioBlob))) {
     throw new Error(
-      'Lemonade ASR currently supports WAV input only. Recordings should be converted to WAV before upload.',
+      `${providerName} ASR currently supports WAV input only. Recordings should be converted to WAV before upload.`,
     );
   }
 
   const formData = new FormData();
   formData.set('file', audioBlob, 'audio.wav');
-  formData.set('model', config.modelId || ASR_PROVIDERS['lemonade-asr'].defaultModelId);
+  formData.set('model', config.modelId || ASR_PROVIDERS[providerId].defaultModelId);
   formData.set('response_format', 'json');
   if (config.language && config.language !== 'auto') {
     formData.set('language', config.language);
@@ -236,7 +246,7 @@ async function transcribeLemonadeASR(
     if (errorText.includes('audio is empty') || errorText.includes('too short')) {
       return { text: '' };
     }
-    throw new Error(`Lemonade ASR API error: ${errorText || response.statusText}`);
+    throw new Error(`${providerName} ASR API error: ${errorText || response.statusText}`);
   }
 
   const data = await response.json();

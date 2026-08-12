@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/renderer",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "React component for rendering PPTist-style Slide JSON, extracted from OpenMAIC.",
   "type": "module",
   "main": "./dist/index.js",
@@ -23,10 +23,6 @@
       "types": "./dist/snapshot/index.d.ts",
       "import": "./dist/snapshot/index.js"
     },
-    "./editing": {
-      "types": "./dist/editing/index.d.ts",
-      "import": "./dist/editing/index.js"
-    },
     "./fonts.css": "./fonts.css"
   },
   "files": [
@@ -41,7 +37,8 @@
   "scripts": {
     "clean": "rm -rf dist",
     "genfonts": "node scripts/generate-fonts-css.mjs",
-    "build": "node scripts/generate-fonts-css.mjs && rm -rf dist && rollup -c && tsc --emitDeclarationOnly --declarationDir dist",
+    "gen-katex-fonts": "node scripts/generate-katex-fonts.mjs",
+    "build": "node scripts/generate-fonts-css.mjs && node scripts/generate-katex-fonts.mjs && rm -rf dist && rollup -c && tsc --emitDeclarationOnly --declarationDir dist",
     "dev": "rollup -c -w",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -81,7 +78,7 @@
     }
   },
   "dependencies": {
-    "@openmaic/dsl": "workspace:*",
+    "@openmaic/dsl": "workspace:^",
     "clsx": "^2.1.1",
     "html-to-image": "^1.11.13",
     "html2canvas-pro": "^2.0.4",

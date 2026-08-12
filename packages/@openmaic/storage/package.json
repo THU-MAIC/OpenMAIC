@@ -1,7 +1,7 @@
 {
   "name": "@openmaic/storage",
-  "version": "0.0.1",
-  "description": "The MAIC pluggable persistence layer: KV / asset primitives with swappable backends (browser default, HTTP later), depending only on @openmaic/dsl.",
+  "version": "0.2.5",
+  "description": "The MAIC pluggable persistence layer: document / runtime / KV / asset primitives with browser and HTTP backends, depending only on @openmaic/dsl.",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -19,6 +19,14 @@
       "types": "./dist/document/http.d.ts",
       "import": "./dist/document/http.js"
     },
+    "./kv/http": {
+      "types": "./dist/kv/http.d.ts",
+      "import": "./dist/kv/http.js"
+    },
+    "./asset/http": {
+      "types": "./dist/asset/http.d.ts",
+      "import": "./dist/asset/http.js"
+    },
     "./document/pg": {
       "types": "./dist/document/pg.d.ts",
       "import": "./dist/document/pg.js"
@@ -26,6 +34,22 @@
     "./runtime/pg": {
       "types": "./dist/runtime/pg.d.ts",
       "import": "./dist/runtime/pg.js"
+    },
+    "./asset/pg": {
+      "types": "./dist/asset/pg.d.ts",
+      "import": "./dist/asset/pg.js"
+    },
+    "./asset/pg-bytes": {
+      "types": "./dist/asset/pg-bytes.d.ts",
+      "import": "./dist/asset/pg-bytes.js"
+    },
+    "./asset/s3-bytes": {
+      "types": "./dist/asset/s3-bytes.d.ts",
+      "import": "./dist/asset/s3-bytes.js"
+    },
+    "./asset/collector": {
+      "types": "./dist/asset/collector.d.ts",
+      "import": "./dist/asset/collector.js"
     },
     "./server": {
       "types": "./dist/server/index.d.ts",
@@ -46,7 +70,7 @@
     "clean": "rm -rf dist",
     "build": "rm -rf dist && tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "pnpm run build"
@@ -69,9 +93,18 @@
     "access": "public"
   },
   "dependencies": {
-    "@openmaic/dsl": "workspace:*"
+    "@openmaic/dsl": "workspace:^"
+  },
+  "peerDependencies": {
+    "@aws-sdk/client-s3": "^3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@aws-sdk/client-s3": {
+      "optional": true
+    }
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1048.0",
     "@electric-sql/pglite": "^0.3.14",
     "@types/pg": "^8.15.5",
     "fake-indexeddb": "^6.0.0",

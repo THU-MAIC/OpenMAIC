@@ -1,146 +1,259 @@
 ---
 title: Конфигурация
-description: LLM providers, TTS, ASR, контроль доступа и feature flags.
+description: LLM провайдеры, генерация медиа, разбор документов, TTS, ASR, контроль доступа и feature flags.
 ---
 
-OpenMAIC читает конфигурацию из переменных окружения при запуске сервера. Все параметры необязательны — включайте только нужные providers и функции. Полный список смотрите в [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) в репозитории. Встроенные model ID перечислены в разделе [Поддерживаемые модели](./supported-models.mdx).
+OpenMAIC читает переменные окружения при запуске сервера. Все параметры необязательны — включайте только нужные. Пример env vars смотрите в репозитории в файле [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example). Встроенные ID моделей — в разделе [Поддерживаемые модели](./supported-models.mdx).
 
-## LLM providers
+Помимо env vars, можно использовать файл `server-providers.yml` в корне проекта для конфигурации зарегистрированных в коде серверных провайдеров. Переменные окружения по отдельным полям переопределяют соответствующие настройки в YAML. Кастомные OpenAI-совместимые провайдеры LLM можно добавить только через настройки, нельзя регистрировать их через произвольные префиксы env vars или неизвестные ID в YAML.
 
-Каждый provider использует три переменные одного формата. Обязателен только API key; base URL и список моделей необязательны.
+## LLM провайдеры
+
+Облачные провайдеры обычно используют три переменные: API key, base URL и список моделей. Обычно требуется только API key, base URL и список моделей — опциональны. Azure OpenAI требует указания endpoint ресурса, Ollama и Lemonade API key не требуют.
 
 ```bash
 OPENAI_API_KEY=sk-...
-OPENAI_BASE_URL=                # необязательное переопределение base URL
-OPENAI_MODELS=                  # необязательный список разрешенных моделей через запятую
+OPENAI_BASE_URL=                # опциональное переопределение base URL
+OPENAI_MODELS=                  # опциональный белый список моделей через запятую
 ```
 
-Поддерживаемые provider prefixes:
+Поддерживаемые префиксы провайдеров:
 
-| Prefix             | Provider                                             |
-| ------------------ | ---------------------------------------------------- |
-| `OPENAI_`          | OpenAI                                               |
-| `ANTHROPIC_`       | Anthropic                                            |
-| `GOOGLE_`          | Google Gemini                                        |
-| `DEEPSEEK_`        | DeepSeek                                             |
-| `QWEN_`            | Alibaba Qwen                                         |
-| `KIMI_`            | Moonshot Kimi                                        |
-| `MINIMAX_`         | MiniMax (по умолчанию Anthropic-compatible endpoint) |
-| `GLM_`             | Zhipu GLM                                            |
-| `SILICONFLOW_`     | SiliconFlow                                          |
-| `DOUBAO_`          | Doubao (ByteDance)                                   |
-| `OPENROUTER_`      | OpenRouter                                           |
-| `GROK_`            | xAI Grok                                             |
-| `TENCENT_`         | Tencent Hunyuan                                      |
-| `TENCENT_HUNYUAN_` | Tencent Hunyuan                                      |
-| `XIAOMI_`          | Xiaomi MiMo                                          |
-| `MIMO_`            | Xiaomi MiMo                                          |
-| `OLLAMA_`          | Ollama (локально)                                    |
-| `LEMONADE_`        | Lemonade (локально)                                  |
+| Префикс             | Провайдер                              |
+| ------------------- | ------------------------------------- |
+| `OPENAI_`           | OpenAI                                |
+| `AZURE_OPENAI_`     | Azure OpenAI                          |
+| `ANTHROPIC_`        | Anthropic                            |
+| `GOOGLE_`           | Google Gemini                        |
+| `DEEPSEEK_`         | DeepSeek                             |
+| `QWEN_`             | Alibaba Qwen                        |
+| `KIMI_`             | Moonshot Kimi                      |
+| `MINIMAX_`          | MiniMax (по умолчанию Anthropic-совместимый endpoint) |
+| `GLM_`              | Zhipu GLM                          |
+| `SILICONFLOW_`      | SiliconFlow                        |
+| `DOUBAO_`           | Doubao (ByteDance)                 |
+| `OPENROUTER_`       | OpenRouter                        |
+| `GROK_`             | xAI Grok                          |
+| `TENCENT_`          | Tencent Hunyuan                   |
+| `TENCENT_HUNYUAN_`  | Tencent Hunyuan (синоним)          |
+| `XIAOMI_`           | Xiaomi MiMo                      |
+| `MIMO_`             | Xiaomi MiMo (синоним)              |
+| `OLLAMA_`           | Ollama (локально)                 |
+| `LEMONADE_`         | Lemonade (локально)               |
 
-## Локальные модели через Ollama
+Azure OpenAI использует deployment name в качестве ID модели:
 
-API key не нужен. Укажите base URL на сервере, чтобы OpenMAIC обошел SSRF check:
+```bash
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
+AZURE_OPENAI_MODELS=your-deployment-name
+```
+
+Для подключения других OpenAI-совместимых LLM сервисов добавьте кастомный провайдер в **Настройки → Модельные провайдеры** и выберите соответствующий тип протокола.
+
+## Локальные модели (Ollama и Lemonade)
+
+Ollama и Lemonade не требуют API key; base URL локального сервиса нужно указывать в конфигурации сервера, чтобы пройти проверку SSRF:
 
 ```bash
 OLLAMA_BASE_URL=http://localhost:11434/v1
+# LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
 
-В production localhost URL, переданные клиентом, блокируются, поэтому это нужно настраивать на сервере.
+Для ограничения доступных моделей можно использовать `OLLAMA_MODELS` или `LEMONADE_MODELS` с белым списком моделей.
 
-## TTS providers
+## TTS провайдеры
 
-Серверные TTS providers используют `TTS_<PROVIDER>_API_KEY` и необязательный `TTS_<PROVIDER>_BASE_URL`.
+Серверные TTS провайдеры используют `TTS_<PROVIDER>_API_KEY` и опциональный `TTS_<PROVIDER>_BASE_URL`.
 
 ```bash
-# Doubao TTS (Volcengine Seed-TTS, native MP3)
+# Doubao TTS (Volcengine Seed-TTS, нативный MP3)
 TTS_DOUBAO_API_KEY=appId:accessKey
-TTS_DOUBAO_BASE_URL=       # необязательное переопределение
+TTS_DOUBAO_BASE_URL=       # опциональное переопределение
 
 # Qwen TTS
 TTS_QWEN_API_KEY=
-TTS_QWEN_BASE_URL=         # необязательное переопределение
+TTS_QWEN_BASE_URL=         # опциональное переопределение
 
-# Любой OpenAI-compatible TTS endpoint
+# Любой OpenAI-совместимый TTS endpoint
 TTS_OPENAI_API_KEY=
 TTS_OPENAI_BASE_URL=
 
-# VoxCPM2 (self-hosted TTS с клонированием голоса, см. страницу VoxCPM2)
+# VoxCPM2 (self-hosted TTS с клонированием голоса, см. отдельную страницу VoxCPM2)
 TTS_VOXCPM_BASE_URL=http://localhost:8000
 ```
 
-Поддерживаемые TTS prefixes: `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_VOXCPM_` и `TTS_ELEVENLABS_`. Для локального Lemonade TTS задайте `TTS_LEMONADE_BASE_URL`; API key не нужен.
+Поддерживаемые TTS префиксы: `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_ELEVENLABS_`, `TTS_VOXCPM_` и `TTS_LEMONADE_`. Локальные Lemonade TTS и VoxCPM2 не требуют API key. Встроенный в браузер TTS не требует серверной настройки.
 
-Для VoxCPM2 (self-hosted TTS с клонированием голоса) смотрите отдельную страницу [VoxCPM2](./voxcpm.mdx).
+Администратор может принудительно отключить TTS провайдер на сервере, установив `TTS_<PROVIDER>_ENABLED=false`. VoxCPM2 (self-hosted TTS + клонирование голоса) описан на отдельной странице [VoxCPM2](./voxcpm.mdx).
 
-## ASR (speech to text)
+Кастомные OpenAI-совместимые TTS провайдеры можно добавить в настройках, указав Base URL, модели и голоса. Такие кастомные провайдеры сохраняются в клиентских настройках и не регистрируются через произвольные env vars `TTS_*` или YAML ID.
+
+## ASR (распознавание речи)
 
 ```bash
 # OpenAI Whisper
 ASR_OPENAI_API_KEY=
-ASR_OPENAI_BASE_URL=       # необязательное переопределение
+ASR_OPENAI_BASE_URL=       # опциональное переопределение
 
 # Qwen ASR
 ASR_QWEN_API_KEY=
-ASR_QWEN_BASE_URL=         # необязательное переопределение
+ASR_QWEN_BASE_URL=         # опциональное переопределение
+
+# Azure ASR
+ASR_AZURE_API_KEY=
+ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
+
+# FunASR (локально, key не нужен)
+ASR_FUNASR_BASE_URL=http://localhost:8000/v1
 
 # Lemonade ASR (локально, key не нужен)
 ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
 
+Запустите OpenAI-совместимый сервис командой `funasr-server --device cuda`. Он принимает WAV на `/v1/audio/transcriptions` и поддерживает SenseVoiceSmall, Paraformer и Fun-ASR-Nano.
+
+Встроенный в браузер ASR не требует серверной настройки.
+
+Кастомные OpenAI-совместимые ASR провайдеры можно добавить в настройках, указав Base URL, модели и поддерживаемые языки. Эти настройки сохраняются в клиенте.
+
 ## Провайдеры генерации изображений
 
-Провайдеры изображений используют `IMAGE_<PROVIDER>_API_KEY` и необязательный `IMAGE_<PROVIDER>_BASE_URL`. Lemonade работает локально и не требует key:
+Провайдеры изображений используют `IMAGE_<PROVIDER>_API_KEY` и опциональный `IMAGE_<PROVIDER>_BASE_URL`. Поддерживаемые префиксы:
+
+`IMAGE_OPENAI_`, `IMAGE_SEEDREAM_`, `IMAGE_QWEN_IMAGE_`, `IMAGE_NANO_BANANA_`, `IMAGE_MINIMAX_`, `IMAGE_GROK_` и `IMAGE_LEMONADE_`.
+
+Lemonade — локальный сервис, не требует ключа:
 
 ```bash
 IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
 
-## ACCESS_CODE — пароль для всего сайта
+ComfyUI Image не требует API key, по умолчанию подключается к `http://localhost:8188`. В настройках укажите ComfyUI Base URL и положите экспортированный в формате API workflow JSON в папку `public/` OpenMAIC; имя файла должно соответствовать `comfyui-*.json` или содержать `workflow`. Настройки автоматически обнаружат эти файлы и предложат их как опции workflow. При Docker-деплое нужно добавить workflow в образ или смонтировать отдельный файл в `/app/public/`. Поскольку `comfyui-image` — не серверный провайдер, в продакшене для подключения к ComfyUI на хосте нужно установить `ALLOW_LOCAL_NETWORKS=true`.
 
-Для общих deployments (внутренние демо, классы) задайте access code, чтобы посетители вводили пароль перед входом в приложение:
+## Провайдеры генерации видео
 
-```bash
-ACCESS_CODE=your-secret-code
-```
+Видео провайдеры используют `VIDEO_<PROVIDER>_API_KEY` и опциональный `VIDEO_<PROVIDER>_BASE_URL`. Поддерживаемые префиксы:
 
-Посетитель вводит код один раз; он сохраняется в HTTP-only cookie. Оставьте пустым, чтобы отключить.
+`VIDEO_SEEDANCE_`, `VIDEO_KLING_`, `VIDEO_VEO_`, `VIDEO_SORA_`, `VIDEO_MINIMAX_`, `VIDEO_GROK_` и `VIDEO_HAPPYHORSE_`.
 
-## Web search
+## Разбор документов и медиа
 
-Настройте Tavily, Bocha или MiniMax:
-
-```bash
-TAVILY_API_KEY=
-TAVILY_BASE_URL=           # необязательное переопределение
-
-BOCHA_API_KEY=
-BOCHA_BASE_URL=            # необязательное переопределение
-
-WEB_SEARCH_MINIMAX_API_KEY=
-WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # необязательное переопределение
-```
-
-На фронтенде есть toggle для включения поиска в каждом запуске generation.
-
-## PDF parsing providers
-
-Для PDF со сложной версткой, математикой или таблицами настройте серверный parser:
+Формат материалов зависит от выбранного парсера. Поддерживаются текст, PDF, Office-документы, изображения и часть аудио/видео форматов; возможности зависят от провайдера.
 
 ```bash
 # MinerU self-hosted
 PDF_MINERU_BASE_URL=http://localhost:8888
 
+# MinerU self-hosted опциональный backend
+PDF_MINERU_BACKEND=pipeline
+
 # MinerU Cloud
 PDF_MINERU_CLOUD_API_KEY=
 PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+
+# AliDocMind (использует AccessKey Alibaba Cloud, а не отдельный API key)
+ALIDOCMIND_ACCESS_KEY_ID=
+ALIDOCMIND_ACCESS_KEY_SECRET=
+ALIDOCMIND_BASE_URL=       # опциональное переопределение
 ```
 
-Без серверного parser OpenMAIC откатывается на `unpdf`.
+`unpdf` встроен в OpenMAIC и подходит для базового разбора PDF. Для Office-документов, изображений и материалов с OCR, таблицами, формулами или сложной версткой рекомендуется MinerU или AliDocMind.
 
-## YAML config file
+AliDocMind поддерживает PDF, DOCX, PPTX, XLSX, а также PNG, JPG/JPEG, BMP, GIF. Текущая поддержка аудио/видео через AliDocMind: видео форматы MP4, MOV, AVI, MKV, WMV; аудио MP3, WAV, AAC. M4A не поддерживается.
 
-Вместо env vars можно положить конфигурацию в `server-providers.yml` в корне проекта. Файл загружается при запуске сервера. Секции соответствуют категориям env vars:
+## Поисковые провайдеры
+
+Настройте Tavily, Bocha, Brave, Baidu, SearXNG или MiniMax:
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # опциональное переопределение
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # опциональное переопределение
+
+BAIDU_API_KEY=
+BAIDU_BASE_URL=https://qianfan.baidubce.com  # опциональное переопределение
+
+# Self-hosted SearXNG, API key не нужен
+SEARXNG_BASE_URL=
+
+WEB_SEARCH_MINIMAX_API_KEY=
+WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # опциональное переопределение
+```
+
+Brave и SearXNG не требуют API key. На фронтенде есть переключатель для включения поиска при каждом запуске генерации. Grok использует поиск через инструменты Grok LLM, это не отдельный поисковый провайдер.
+
+## ACCESS_CODE — пароль для всего сайта
+
+Для общих деплоев (внутренние демо, классы) можно задать пароль, чтобы посетители вводили его перед входом:
+
+```bash
+ACCESS_CODE=your-secret-code
+```
+
+Код вводится один раз и сохраняется в HTTP-only cookie. Оставьте пустым для отключения.
+
+## Модель по умолчанию и маршруты моделей
+
+Если серверный API не получает модель от клиента, используйте `DEFAULT_MODEL` для указания модели по умолчанию. Формат: `provider:model-id`, например:
+
+```bash
+DEFAULT_MODEL=openai:gpt-5.5
+```
+
+Можно использовать `MODEL_ROUTES` для назначения моделей на разные этапы генерации; этапы без настройки используют клиентскую модель или `DEFAULT_MODEL`. Это JSON-объект, где ключ — этап генерации, значение — строка модели или объект с полями `model` и `thinking`. Полный список этапов и примеры — в [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example).
+
+## Feature flags
+
+Значения `true` или `1` включают функцию, остальные — выключают. Переменные `NEXT_PUBLIC_*` внедряются в клиент при сборке, для их изменения нужна пересборка:
+
+```bash
+# MAIC Editor (Pro режим)
+NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
+
+# Pi runtime диалог
+NEXT_PUBLIC_PI_CHAT_ENABLED=true
+
+# Профессиональное образование (серверный флаг)
+OPENMAIC_ENABLE_VOCATIONAL=true
+
+# Отображение UI для тестов профессионального образования
+NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=true
+
+# Включение видеоэкспорта
+NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
+
+# Экспериментальный импорт PPTX
+NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+```
+
+Импорт PPTX пока экспериментален, результаты парсинга не интегрированы полностью в поток данных классов. Все `NEXT_PUBLIC_*` — флаги сборки, в Docker их нужно передавать как build args, нельзя просто задавать в runtime env vars.
+
+## Другие серверные опции
+
+Дополнительные параметры сервера можно задать через env vars:
+
+```bash
+# Параллельная генерация сцен; 0 или unset — последовательная
+PARALLEL_SCENE_CONCURRENCY=3
+
+# Разрешить доступ к localhost, внутренним сетям; только для self-hosted/внутренних деплоев
+ALLOW_LOCAL_NETWORKS=true
+
+# Опциональный MP4 рендер-сервис
+RENDER_SERVICE_URL=http://render-service:9000
+
+# Логирование и режимы вывода
+LOG_LEVEL=info
+LOG_FORMAT=pretty
+LLM_THINKING_DISABLED=false
+```
+
+## Конфигурация через YAML
+
+Кроме env vars, можно положить конфигурацию зарегистрированных провайдеров в `server-providers.yml` в корне проекта. Файл загружается при старте сервера, структура соответствует категориям env vars:
 
 ```yaml title="server-providers.yml"
 providers:
@@ -148,8 +261,7 @@ providers:
     apiKey: sk-...
     baseUrl: https://api.openai.com/v1
     models:
-      - gpt-4o
-      - gpt-4o-mini
+      - gpt-5.5
   anthropic:
     apiKey: sk-ant-...
 
@@ -164,13 +276,23 @@ asr:
 pdf:
   mineru:
     baseUrl: http://localhost:8888
+  alidocmind:
+    accessKeyId: your-access-key-id
+    accessKeySecret: your-access-key-secret
+
+image:
+  seedream:
+    apiKey: ...
+
+video:
+  seedance:
+    apiKey: ...
 
 web-search:
   tavily:
     apiKey: tvly-...
-  minimax:
-    apiKey: sk-...
-    baseUrl: https://api.minimaxi.com
+  searxng:
+    baseUrl: http://localhost:8080
 ```
 
-Переменные окружения переопределяют совпадающие YAML fields по отдельным полям. Ключи соответствуют provider ID, например `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `tavily` или `minimax`.
+Переменные окружения по отдельным полям переопределяют соответствующие настройки в YAML. Ключи должны совпадать с зарегистрированными в коде ID провайдеров, например `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `seedream`, `seedance`, `tavily` или `searxng`. Неизвестные ID нельзя использовать для регистрации кастомных LLM провайдеров.

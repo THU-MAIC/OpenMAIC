@@ -1,56 +1,70 @@
 ---
 title: Configuration
-description: LLM providers, TTS, ASR, access control, and feature flags.
+description: LLM providers, media generation, document parsing, TTS, ASR, access control, and feature flags.
 ---
 
-OpenMAIC reads configuration from environment variables at server start. All of them are optional — enable the providers and features you need. For a full list see [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) in the repo. For built-in model IDs, see [Supported Models](./supported-models.mdx).
+OpenMAIC reads environment variables when the server starts. Every setting is optional—enable only what you need. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) in the repository for environment variable examples. See [Supported models](./supported-models.mdx) for built-in model IDs.
+
+In addition to environment variables, you can configure server-side providers registered in the code through `server-providers.yml` in the project root. Environment variables override matching YAML fields one by one. Custom OpenAI-compatible providers can only be added in Settings; they cannot be registered with arbitrary environment variable prefixes or unknown YAML provider IDs.
 
 ## LLM providers
 
-Every provider uses the same shape of three variables. Only the API key is required; base URL and model list are optional.
+Cloud providers generally use three environment variables: an API key, a base URL, and a model list. The API key is usually required; the base URL and model list are optional. Azure OpenAI requires a resource endpoint, while Ollama and Lemonade do not require an API key.
 
 ```bash
 OPENAI_API_KEY=sk-...
-OPENAI_BASE_URL=                # optional override
-OPENAI_MODELS=                  # optional comma-separated list of allowed models
+OPENAI_BASE_URL=                # optional base URL override
+OPENAI_MODELS=                  # optional model allowlist (comma-separated)
 ```
 
 Supported provider prefixes:
 
-| Prefix             | Provider                                           |
-| ------------------ | -------------------------------------------------- |
-| `OPENAI_`          | OpenAI                                             |
-| `ANTHROPIC_`       | Anthropic                                          |
-| `GOOGLE_`          | Google Gemini                                      |
-| `DEEPSEEK_`        | DeepSeek                                           |
-| `QWEN_`            | Alibaba Qwen                                       |
-| `KIMI_`            | Moonshot Kimi                                      |
+| Prefix             | Provider                                      |
+| ------------------ | --------------------------------------------- |
+| `OPENAI_`          | OpenAI                                        |
+| `AZURE_OPENAI_`    | Azure OpenAI                                  |
+| `ANTHROPIC_`       | Anthropic                                     |
+| `GOOGLE_`          | Google Gemini                                 |
+| `DEEPSEEK_`        | DeepSeek                                      |
+| `QWEN_`            | Alibaba Qwen                                  |
+| `KIMI_`            | Moonshot Kimi                                 |
 | `MINIMAX_`         | MiniMax (Anthropic-compatible endpoint by default) |
-| `GLM_`             | Zhipu GLM                                          |
-| `SILICONFLOW_`     | SiliconFlow                                        |
-| `DOUBAO_`          | Doubao (ByteDance)                                 |
-| `OPENROUTER_`      | OpenRouter                                         |
-| `GROK_`            | xAI Grok                                           |
-| `TENCENT_`         | Tencent Hunyuan                                    |
-| `TENCENT_HUNYUAN_` | Tencent Hunyuan                                    |
-| `XIAOMI_`          | Xiaomi MiMo                                        |
-| `MIMO_`            | Xiaomi MiMo                                        |
-| `OLLAMA_`          | Ollama (local)                                     |
-| `LEMONADE_`        | Lemonade (local)                                   |
+| `GLM_`             | Zhipu GLM                                     |
+| `SILICONFLOW_`     | SiliconFlow                                   |
+| `DOUBAO_`          | Doubao (ByteDance)                            |
+| `OPENROUTER_`      | OpenRouter                                    |
+| `GROK_`            | xAI Grok                                      |
+| `TENCENT_`         | Tencent Hunyuan                               |
+| `TENCENT_HUNYUAN_` | Tencent Hunyuan (alias)                       |
+| `XIAOMI_`          | Xiaomi MiMo                                   |
+| `MIMO_`            | Xiaomi MiMo (alias)                           |
+| `OLLAMA_`          | Ollama (local)                                |
+| `LEMONADE_`        | Lemonade (local)                              |
 
-## Local models via Ollama
+Azure OpenAI uses the deployment name as the model ID:
 
-No API key is needed. Set the base URL so OpenMAIC bypasses its SSRF check:
+```bash
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
+AZURE_OPENAI_MODELS=your-deployment-name
+```
+
+To connect another OpenAI-compatible LLM service, add a custom provider under **Settings → Model providers** and select the corresponding protocol type.
+
+## Local models (Ollama and Lemonade)
+
+Ollama and Lemonade do not require an API key. Put the local service base URL in the server configuration so it passes SSRF validation:
 
 ```bash
 OLLAMA_BASE_URL=http://localhost:11434/v1
+# LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
 
-Client-supplied localhost URLs are blocked in production, so this must be configured on the server.
+To limit available models, use `OLLAMA_MODELS` or `LEMONADE_MODELS` as a model allowlist.
 
 ## TTS providers
 
-Server-side TTS providers use `TTS_<PROVIDER>_API_KEY` and optional `TTS_<PROVIDER>_BASE_URL`.
+Server-side TTS providers use `TTS_<PROVIDER>_API_KEY` and optionally `TTS_<PROVIDER>_BASE_URL`.
 
 ```bash
 # Doubao TTS (Volcengine Seed-TTS, native MP3)
@@ -65,14 +79,15 @@ TTS_QWEN_BASE_URL=         # optional override
 TTS_OPENAI_API_KEY=
 TTS_OPENAI_BASE_URL=
 
-# VoxCPM2 (self-hosted TTS with voice cloning, see VoxCPM2 page)
+# VoxCPM2 (self-hosted TTS with voice cloning; see the dedicated VoxCPM2 page)
 TTS_VOXCPM_BASE_URL=http://localhost:8000
 ```
 
-Supported TTS prefixes are `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_VOXCPM_`, and `TTS_ELEVENLABS_`.
-For local Lemonade TTS, set `TTS_LEMONADE_BASE_URL` (no API key required).
+Supported TTS prefixes include `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_ELEVENLABS_`, `TTS_VOXCPM_`, and `TTS_LEMONADE_`. Local Lemonade TTS and VoxCPM2 do not require an API key. Browser-native TTS requires no server configuration.
 
-For VoxCPM2 (self-hosted TTS with voice cloning), see the dedicated [VoxCPM2](./voxcpm.mdx) page.
+Administrators can force-disable a TTS provider on the server with `TTS_<PROVIDER>_ENABLED=false`. See the dedicated [VoxCPM2](./voxcpm.mdx) section for self-hosted TTS and voice cloning.
+
+You can also add a custom OpenAI-compatible TTS provider in Settings by entering its Base URL, model, and voice. Custom providers are stored in client settings and cannot be registered through arbitrary `TTS_*` environment variables or YAML provider IDs.
 
 ## ASR (speech to text)
 
@@ -85,31 +100,71 @@ ASR_OPENAI_BASE_URL=       # optional override
 ASR_QWEN_API_KEY=
 ASR_QWEN_BASE_URL=         # optional override
 
-# Lemonade ASR (local, no key needed)
+# Azure ASR
+ASR_AZURE_API_KEY=
+ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
+
+# FunASR (local, no key required)
+ASR_FUNASR_BASE_URL=http://localhost:8000/v1
+
+# Lemonade ASR (local, no key required)
 ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
 
+Start the OpenAI-compatible FunASR service with `funasr-server --device cuda`. It accepts WAV uploads at `/v1/audio/transcriptions` and provides SenseVoiceSmall, Paraformer, and Fun-ASR-Nano through the model selector.
+
+Browser-native ASR requires no server configuration.
+
+You can also add a custom OpenAI-compatible ASR provider in Settings by entering its Base URL, model, and supported languages; this configuration is stored in client settings.
+
 ## Image generation providers
 
-Image providers use `IMAGE_<PROVIDER>_API_KEY` and optional `IMAGE_<PROVIDER>_BASE_URL`. Lemonade is local and does not require a key:
+Image generation providers use `IMAGE_<PROVIDER>_API_KEY` and optionally `IMAGE_<PROVIDER>_BASE_URL`. Supported prefixes include:
+
+`IMAGE_OPENAI_`, `IMAGE_SEEDREAM_`, `IMAGE_QWEN_IMAGE_`, `IMAGE_NANO_BANANA_`, `IMAGE_MINIMAX_`, `IMAGE_GROK_`, and `IMAGE_LEMONADE_`.
+
+Lemonade is a local service and does not require a key:
 
 ```bash
 IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
 
-## ACCESS_CODE — site-wide password
+ComfyUI Image does not require an API key and connects to `http://localhost:8188` by default. Enter the ComfyUI Base URL in Settings, and place workflow JSON exported in API format in OpenMAIC's `public/` directory. Use filenames matching `comfyui-*.json` or containing `workflow`; the Settings page discovers these files automatically and offers them as workflows. With Docker, add the workflow before building the image or mount an individual workflow file into `/app/public/` in the container. Because `comfyui-image` is not a server-managed provider, production deployments connecting to host-side ComfyUI must also set `ALLOW_LOCAL_NETWORKS=true`.
 
-For shared deployments (internal demos, classrooms), set an access code so visitors enter a password before seeing the app:
+## Video generation providers
+
+Video generation providers use `VIDEO_<PROVIDER>_API_KEY` and optionally `VIDEO_<PROVIDER>_BASE_URL`. Supported prefixes include:
+
+`VIDEO_SEEDANCE_`, `VIDEO_KLING_`, `VIDEO_VEO_`, `VIDEO_SORA_`, `VIDEO_MINIMAX_`, `VIDEO_GROK_`, and `VIDEO_HAPPYHORSE_`.
+
+## Document and media parsing
+
+The exact course-material formats depend on the selected parser. OpenMAIC currently supports text, PDF, Office documents, images, and some audio/video formats; supported formats and capabilities vary by provider.
 
 ```bash
-ACCESS_CODE=your-secret-code
+# MinerU self-hosted
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# Optional backend for self-hosted MinerU
+PDF_MINERU_BACKEND=pipeline
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+
+# AliDocMind (uses Alibaba Cloud AccessKey, not a separate API key)
+ALIDOCMIND_ACCESS_KEY_ID=
+ALIDOCMIND_ACCESS_KEY_SECRET=
+ALIDOCMIND_BASE_URL=       # optional override
 ```
 
-Visitors are prompted once and the code is stored in an HTTP-only cookie. Leave empty to disable.
+`unpdf` is built into OpenMAIC and supports basic PDF parsing. For Office documents, images, and material requiring OCR, table, formula, or layout analysis, select a compatible MinerU or AliDocMind provider.
+
+AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, BMP, and GIF. Audio and video material is currently supported only through AliDocMind: MP4, MOV, AVI, MKV, and WMV for video; MP3, WAV, and AAC for audio. M4A is not supported.
 
 ## Web search
 
-Configure Tavily, Bocha, or MiniMax:
+Configure Tavily, Bocha, Brave, Baidu, SearXNG, or MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -118,30 +173,87 @@ TAVILY_BASE_URL=           # optional override
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # optional override
 
+BAIDU_API_KEY=
+BAIDU_BASE_URL=https://qianfan.baidubce.com  # optional override
+
+# Self-hosted SearXNG, no API key required
+SEARXNG_BASE_URL=
+
 WEB_SEARCH_MINIMAX_API_KEY=
 WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # optional override
 ```
 
-The front-end exposes a toggle to enable search per generation.
+Brave and SearXNG do not require an API key. The frontend lets users choose whether to enable search for each generation. Grok web search is provided through the Grok LLM search tool, not a standalone web-search provider.
 
-## PDF parsing providers
+## ACCESS_CODE — site-wide password
 
-For PDFs with complex layouts, math, or tables, configure a server-side parser:
+For shared deployments such as internal demos or classrooms, set an access code so visitors must enter a password before they can see the app:
 
 ```bash
-# MinerU self-hosted
-PDF_MINERU_BASE_URL=http://localhost:8888
-
-# MinerU Cloud
-PDF_MINERU_CLOUD_API_KEY=
-PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+ACCESS_CODE=your-secret-code
 ```
 
-Without a server-side parser, OpenMAIC falls back to `unpdf`.
+Visitors are prompted only once; the password is stored in an HTTP-only cookie. Leave it empty to disable access control.
 
-## Using a YAML config file
+## Default model and model routing
 
-As an alternative to env vars, you can put configuration in `server-providers.yml` at the project root. The file is loaded on server start. Sections mirror the env-var categories:
+When the server API receives no client model, set the default with `DEFAULT_MODEL`. Use the format `provider:model-id`, for example:
+
+```bash
+DEFAULT_MODEL=openai:gpt-5.5
+```
+
+Use `MODEL_ROUTES` to choose models for individual generation stages. Unconfigured stages continue to resolve through the client model and `DEFAULT_MODEL`. Its value is a JSON object whose keys are generation stages and whose values can be model strings or objects containing `model` and `thinking`. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for the complete stage list and examples.
+
+## Feature flags
+
+Feature flags accept `true` or `1`; all other values are treated as disabled. `NEXT_PUBLIC_*` flags are injected into the client at build time, so changing them requires a rebuild:
+
+```bash
+# MAIC Editor (Pro mode)
+NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
+
+# Pi chat runtime
+NEXT_PUBLIC_PI_CHAT_ENABLED=true
+
+# Vocational education task engine (server-side flag)
+OPENMAIC_ENABLE_VOCATIONAL=true
+
+# Show the vocational education experimental switch
+NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=true
+
+# Show the video export entry point
+NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
+
+# Show the experimental PPTX import entry point
+NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+```
+
+PPTX import is still experimental, and its parsed output is not yet fully integrated into the classroom data flow. All `NEXT_PUBLIC_*` variables above are build-time flags. Docker deployments must also pass them as build args; setting them only as container runtime environment variables is not sufficient.
+
+## Other server options
+
+The following server options can also be configured with environment variables:
+
+```bash
+# Parallel scene-content generation; 0 or unset means sequential
+PARALLEL_SCENE_CONCURRENCY=3
+
+# Allow localhost and private-network addresses; self-hosted/private deployments only
+ALLOW_LOCAL_NETWORKS=true
+
+# Optional MP4 rendering service
+RENDER_SERVICE_URL=http://render-service:9000
+
+# Logging and reasoning
+LOG_LEVEL=info
+LOG_FORMAT=pretty
+LLM_THINKING_DISABLED=false
+```
+
+## Using a YAML configuration file
+
+In addition to environment variables, place configuration for providers registered in the code in `server-providers.yml` at the project root. The server loads it at startup, and its structure follows the environment variable categories:
 
 ```yaml title="server-providers.yml"
 providers:
@@ -149,8 +261,7 @@ providers:
     apiKey: sk-...
     baseUrl: https://api.openai.com/v1
     models:
-      - gpt-4o
-      - gpt-4o-mini
+      - gpt-5.5
   anthropic:
     apiKey: sk-ant-...
 
@@ -165,13 +276,23 @@ asr:
 pdf:
   mineru:
     baseUrl: http://localhost:8888
+  alidocmind:
+    accessKeyId: your-access-key-id
+    accessKeySecret: your-access-key-secret
+
+image:
+  seedream:
+    apiKey: ...
+
+video:
+  seedance:
+    apiKey: ...
 
 web-search:
   tavily:
     apiKey: tvly-...
-  minimax:
-    apiKey: sk-...
-    baseUrl: https://api.minimaxi.com
+  searxng:
+    baseUrl: http://localhost:8080
 ```
 
-Environment variables override matching YAML fields field-by-field. Keys map to provider IDs such as `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `tavily`, or `minimax`.
+Environment variables override matching YAML provider fields one by one. Keys must use provider IDs registered in the code, such as `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `seedream`, `seedance`, `tavily`, or `searxng`. Unknown IDs cannot register custom LLM providers here.

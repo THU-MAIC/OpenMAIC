@@ -40,7 +40,7 @@ const INTERACTIVE_HTML = `<!DOCTYPE html><html><head><meta charset="utf-8"></hea
 
 async function seedDatabase(page: import('@playwright/test').Page) {
   await page.addInitScript((settings) => {
-    localStorage.setItem('settings-storage', settings);
+    localStorage.setItem('maic:account:settings-storage', settings);
   }, SETTINGS_STORAGE);
 
   await page.goto('/', { waitUntil: 'networkidle' });

@@ -1,11 +1,14 @@
 'use client';
 
-import { useRef, type CSSProperties, type ReactNode } from 'react';
+import { useMemo, useRef, type CSSProperties, type ReactNode } from 'react';
 import { AnimatePresence } from 'motion/react';
 
 import type {
   PPTElement,
   PPTImageElement,
+  PPTShapeElement,
+  PPTTableElement,
+  PPTTextElement,
   PPTVideoElement,
   Slide,
   SlideBackground,
@@ -33,18 +36,43 @@ export interface SlideCanvasProps {
    * (e.g. 1) to skip auto-fit and render at slide-native dimensions.
    */
   scale?: number;
+  /** Percent of the container to use when auto-fitting the slide. */
+  canvasPercentage?: number;
+  /** Called with the computed fit scale when `scale` is omitted. */
+  onScaleChange?: (scale: number) => void;
   /** Override `slide.background`. */
   background?: SlideBackground;
   /** Optional play-time effects, all default off. */
   effects?: SlideEffects;
   /** Replace default <img> rendering for image elements. */
-  renderImage?: (element: PPTImageElement, resolvedSrc: string) => ReactNode;
+  renderImage?: (
+    element: PPTImageElement,
+    resolvedSrc: string,
+    defaultContent: ReactNode,
+  ) => ReactNode;
   /** Replace default <video> rendering for video elements. */
   renderVideo?: (element: PPTVideoElement) => ReactNode;
+  /** Replace the content node inside the shared text paint wrapper. */
+  renderText?: (element: PPTTextElement, defaultContent: ReactNode) => ReactNode;
+  /** Replace the static label node inside a Shape element. */
+  renderShapeLabel?: (element: PPTShapeElement, defaultContent: ReactNode) => ReactNode;
+  /** Replace the static content node inside a Table element. */
+  renderTable?: (element: PPTTableElement, defaultContent: ReactNode) => ReactNode;
+  /** Enable pointer interaction for video controls or custom video UI. */
+  videoInteractive?: boolean;
   /** Click handler invoked on any element. */
   onElementClick?: (element: PPTElement, event: React.MouseEvent) => void;
+  /**
+   * Prefix used for each element root DOM id. Hosts that layer DOM-measured
+   * overlays on top of the canvas can keep their existing id contract.
+   */
+  elementIdPrefix?: string;
   /** Class on the outer container. */
   className?: string;
+  /** Compositor-only offsets used by the editing surface during a move gesture. */
+  dragOffsets?: ReadonlyMap<string, { x: number; y: number }>;
+  /** Element ids omitted from rendering and effect targeting. */
+  hiddenElementIds?: readonly string[];
   /** Inline style on the outer container. */
   style?: CSSProperties;
   /**
@@ -72,16 +100,32 @@ export function SlideCanvas(props: SlideCanvasProps) {
   const effects = props.effects ?? ctx?.effects;
   const renderImage = props.renderImage ?? ctx?.renderImage;
   const renderVideo = props.renderVideo ?? ctx?.renderVideo;
+  const renderText = props.renderText;
+  const renderShapeLabel = props.renderShapeLabel;
+  const renderTable = props.renderTable;
+  const videoInteractive = props.videoInteractive ?? ctx?.videoInteractive;
   const onElementClick = props.onElementClick ?? ctx?.onElementClick;
-  const { className, style } = props;
+  const elementIdPrefix = props.elementIdPrefix ?? 'slide-element-';
+  const { className, dragOffsets, style } = props;
   const chrome = props.chrome ?? true;
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const elements = slide.elements;
+  const visibleElements = useMemo(() => {
+    if (!props.hiddenElementIds?.length) return elements;
+    const hidden = new Set(props.hiddenElementIds);
+    return elements.filter((element) => !hidden.has(element.id));
+  }, [elements, props.hiddenElementIds]);
+  const elementIndexById = useMemo(
+    () => new Map(elements.map((element, index) => [element.id, index + 1])),
+    [elements],
+  );
 
   const { viewportStyles, fitScale } = useViewportSize(canvasRef, {
     viewportSize: slide.viewportSize,
     viewportRatio: slide.viewportRatio,
+    canvasPercentage: props.canvasPercentage,
+    onScaleChange: scale === undefined ? props.onScaleChange : undefined,
   });
   const canvasScale = scale ?? fitScale;
 
@@ -91,16 +135,24 @@ export function SlideCanvas(props: SlideCanvasProps) {
   // Plain derivations: when this package is consumed in a React Compiler build
   // these are auto-memoized; otherwise the cost (O(elements) lookups) is trivial.
   const laserGeometry: PercentageGeometry | null = effects?.laser
-    ? findElementGeometry(elements, effects.laser.elementId, slide.viewportSize)
+    ? findElementGeometry(
+        visibleElements,
+        effects.laser.elementId,
+        slide.viewportSize,
+        slide.viewportRatio,
+      )
     : null;
 
   const zoomGeometry: PercentageGeometry | null = effects?.zoom
-    ? findElementGeometry(elements, effects.zoom.elementId, slide.viewportSize)
+    ? findElementGeometry(
+        visibleElements,
+        effects.zoom.elementId,
+        slide.viewportSize,
+        slide.viewportRatio,
+      )
     : null;
 
-  const highlightElement = effects?.highlight
-    ? (elements.find((el) => el.id === effects.highlight!.elementId) ?? null)
-    : null;
+  const highlights = effects?.highlights ?? (effects?.highlight ? [effects.highlight] : []);
 
   return (
     <div
@@ -161,24 +213,37 @@ export function SlideCanvas(props: SlideCanvasProps) {
             transform: `scale(${canvasScale})`,
           }}
         >
-          {elements.map((element, index) => (
+          {visibleElements.map((element) => (
             <SlideElement
               key={element.id}
               elementInfo={element}
-              elementIndex={index + 1}
+              elementIndex={elementIndexById.get(element.id) ?? 1}
               theme={slide.theme}
               renderImage={renderImage}
               renderVideo={renderVideo}
+              renderText={renderText}
+              renderShapeLabel={renderShapeLabel}
+              renderTable={renderTable}
+              videoInteractive={videoInteractive}
               onElementClick={onElementClick}
+              idPrefix={elementIdPrefix}
+              dragOffset={dragOffsets?.get(element.id)}
             />
           ))}
 
-          {highlightElement && (
-            <HighlightOverlay element={highlightElement} options={effects?.highlight} />
-          )}
+          {highlights.map((highlight) => {
+            const element = visibleElements.find((el) => el.id === highlight.elementId);
+            return element ? (
+              <HighlightOverlay key={highlight.elementId} element={element} options={highlight} />
+            ) : null;
+          })}
         </div>
 
-        <SpotlightOverlay options={effects?.spotlight} />
+        <SpotlightOverlay
+          options={effects?.spotlight}
+          elementIdPrefix={elementIdPrefix}
+          measurementKey={visibleElements}
+        />
 
         <div
           style={{

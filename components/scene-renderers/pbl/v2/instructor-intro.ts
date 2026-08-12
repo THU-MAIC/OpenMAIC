@@ -7,10 +7,11 @@
  * absent/blank so the caller can fall back to the role name.
  */
 import type { PBLRole } from '@/lib/pbl/v2/types';
+import { trimmedPBLText } from '@/lib/pbl/v2/readers';
 
 export function instructorIntroText(
   role?: Pick<PBLRole, 'description'> | null,
 ): string | undefined {
-  const text = role?.description?.trim();
+  const text = trimmedPBLText(role?.description);
   return text ? text : undefined;
 }

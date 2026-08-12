@@ -281,6 +281,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
             } else {
               switch (selectedProviderId) {
                 case 'openai-whisper':
+                case 'funasr-asr':
                 case 'lemonade-asr':
                   endpointPath = '/audio/transcriptions';
                   break;

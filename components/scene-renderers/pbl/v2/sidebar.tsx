@@ -32,7 +32,7 @@ import {
   Drama,
 } from 'lucide-react';
 import type { PBLProjectV2, PBLMicrotask, PBLMilestone } from '@/lib/pbl/v2/types';
-import { PBL_SIMULATOR_AGENT_ID } from '@/lib/pbl/v2/operations/progress';
+import { PBL_SIMULATOR_AGENT_ID } from '@/lib/pbl/v2/operations/kernel/progress';
 import { cn } from '@/lib/utils/cn';
 import { useI18n } from '@/lib/hooks/use-i18n';
 

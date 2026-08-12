@@ -1,6 +1,7 @@
 import { DSL_VERSION } from '@openmaic/dsl';
 import {
   BrowserDocumentStore,
+  HttpDocumentStore,
   type DocumentStore,
   type KVScope,
   type KVStore,
@@ -10,11 +11,13 @@ import { describe, expect, test, vi } from 'vitest';
 
 import {
   accessDocument,
+  migrateDocumentForVerification,
   type LegacyDocumentSnapshot,
   type LegacyDocumentStore,
 } from '@/lib/document-store/migration';
 import type { AppDocument } from '@/lib/document-store/persistence-types';
 import type { AppScene } from '@/lib/types/stage';
+import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 
 class MemoryKv implements KVStore {
   readonly values = new Map<string, unknown>();
@@ -155,6 +158,34 @@ function store(idb = new IDBFactory()): DocumentStore<AppScene> {
 }
 
 describe('legacy document migration', () => {
+  test('keeps the opaque outline outside the migration verification baseline', () => {
+    const outline = {
+      outlines: [],
+      generationComplete: true,
+      createdAt: 100,
+      updatedAt: 200,
+    };
+    const document: AppDocument = {
+      dslVersion: DSL_VERSION,
+      stage: { id: 'stage-1', name: 'Legacy', createdAt: 100, updatedAt: 200 },
+      scenes: [],
+      outline,
+    };
+    const migrateDsl = vi.fn((value: unknown) => {
+      const candidate = value as AppDocument;
+      return 'outline' in candidate
+        ? { ...candidate, stage: { ...candidate.stage, name: 'Corrupted' } }
+        : candidate;
+    });
+
+    const migrated = migrateDocumentForVerification(document, migrateDsl);
+
+    expect(migrateDsl).toHaveBeenCalledOnce();
+    expect(migrateDsl.mock.calls[0]![0]).not.toHaveProperty('outline');
+    expect(migrated).toEqual(document);
+    expect(migrated.outline).toBe(outline);
+  });
+
   test('returns null when neither store has a document', async () => {
     await expect(
       accessDocument('missing', {
@@ -187,6 +218,125 @@ describe('legacy document migration', () => {
     expect(await kv.get('editor-current-scene:stage-1', 'device')).toMatchObject({
       sceneId: 'scene-1',
     });
+    expect(await kv.get('document-migration:stage-1', 'device')).toMatchObject({
+      sourceUpdatedAt: 200,
+    });
+  });
+
+  test('uses the injected DSL migration to verify a fresh destination', async () => {
+    const migrateDsl = vi.fn((value: unknown) => ({
+      ...(value as AppDocument),
+      dslVersion: DSL_VERSION,
+    }));
+
+    await expect(
+      accessDocument('stage-1', {
+        store: store(),
+        kv: new MemoryKv(),
+        legacyStore: legacy(snapshot()),
+        lockManager: lockManager(),
+        migrateDsl,
+      }),
+    ).resolves.toMatchObject({
+      document: { dslVersion: DSL_VERSION, stage: { id: 'stage-1' } },
+      readOnlyLegacy: false,
+    });
+
+    expect(migrateDsl).toHaveBeenCalledOnce();
+    expect(migrateDsl.mock.calls[0]![0]).toMatchObject({ stage: { id: 'stage-1' } });
+  });
+
+  test('uses the injected DSL migration to verify an existing destination', async () => {
+    const documentStore = store();
+    const kv = new MemoryKv();
+    const destination: AppDocument = {
+      dslVersion: DSL_VERSION,
+      stage: { id: 'stage-1', name: 'Migrated', createdAt: 100, updatedAt: 200 },
+      scenes: [],
+      outline: {
+        outlines: [],
+        generationComplete: true,
+        createdAt: 100,
+        updatedAt: 200,
+      },
+    };
+    await documentStore.saveDocument(destination);
+    const migrateDsl = vi.fn((value: unknown) => {
+      const candidate = value as AppDocument;
+      return {
+        ...candidate,
+        dslVersion: DSL_VERSION,
+        stage: { ...candidate.stage, name: 'Migrated' },
+        scenes: [],
+      };
+    });
+
+    await expect(
+      accessDocument('stage-1', {
+        store: documentStore,
+        kv,
+        legacyStore: legacy(snapshot()),
+        lockManager: lockManager(),
+        migrateDsl,
+      }),
+    ).resolves.toMatchObject({ document: destination, readOnlyLegacy: false });
+
+    expect(migrateDsl).toHaveBeenCalledOnce();
+    expect(await kv.get('document-migration:stage-1', 'device')).toMatchObject({
+      sourceUpdatedAt: 200,
+    });
+  });
+
+  test('normalizes optional undefined members for an injected HTTP store', async () => {
+    const source = snapshot();
+    source.stage.description = undefined;
+    source.scenes[0]!.content = {
+      type: 'pbl',
+      projectConfig: {},
+      projectV2: {
+        roles: [],
+        milestones: [{ microtasks: [{ internalAssessment: undefined }] }],
+        submissions: [],
+        evaluations: [],
+        threads: [],
+        engagementEvents: [],
+      },
+    } as never;
+    const kv = new MemoryKv();
+    let persisted: AppDocument | null = null;
+    const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        persisted = JSON.parse(init.body as string) as AppDocument;
+        return new Response(null, { status: 204 });
+      }
+      if (persisted) return Response.json(persisted);
+      return Response.json(
+        { error: { code: 'DOCUMENT_NOT_FOUND', message: 'missing' } },
+        { status: 404 },
+      );
+    }) as typeof globalThis.fetch;
+    const documentStore = new HttpDocumentStore<AppScene>({
+      baseUrl: 'https://documents.test',
+      fetch,
+      validateScene: validateAppScene,
+      validateStage: validateAppStage,
+    });
+
+    const result = await accessDocument('stage-1', {
+      store: documentStore,
+      kv,
+      legacyStore: legacy(source),
+      lockManager: lockManager(),
+    });
+
+    expect(result.document?.stage).not.toHaveProperty('description');
+    expect(
+      (
+        persisted!.scenes[0]!.content as unknown as {
+          projectV2: { milestones: Array<{ microtasks: Array<Record<string, unknown>> }> };
+        }
+      ).projectV2.milestones[0]!.microtasks[0],
+    ).not.toHaveProperty('internalAssessment');
     expect(await kv.get('document-migration:stage-1', 'device')).toMatchObject({
       sourceUpdatedAt: 200,
     });

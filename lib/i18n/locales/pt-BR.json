@@ -76,6 +76,16 @@
     "videoRenderMp4": "Renderizar MP4",
     "videoDownloadZip": "Baixar ZIP do projeto",
     "videoServiceHint": "A renderização de MP4 requer o serviço de renderização. Baixe o ZIP para renderizar localmente.",
+    "videoBurnSubtitles": "Gravar legendas no vídeo",
+    "videoBurnSubtitlesDesc": "Desligado: exporte um vídeo limpo e adicione o arquivo de legenda no seu editor.",
+    "videoQuizCtaPrompt": "Quer experimentar um quiz interativo?",
+    "videoPblCtaPrompt": "Quer explorar a aprendizagem baseada em projetos?",
+    "videoCtaVisit": "Acesse",
+    "videoDownloadSubtitles": "Baixar legendas (.srt)",
+    "subtitlesCompiling": "Compilando legendas...",
+    "subtitlesSuccess": "Legendas baixadas",
+    "subtitlesEmpty": "Nenhuma narração para gerar legendas",
+    "subtitlesFailed": "Falha ao baixar legendas",
     "noSlides": "Não há slides para exportar",
     "noSlidesSkipped": "Este curso não tem slides — PPTX ignorado",
     "nothingToExport": "Nada para exportar"
@@ -202,6 +212,7 @@
       }
     },
     "text": {
+      "toolbar": "Barra de texto",
       "label": "Texto",
       "font": "Fonte",
       "fontDefault": "Padrão",
@@ -215,17 +226,99 @@
       "alignLeft": "Alinhar à esquerda",
       "alignCenter": "Centralizar",
       "alignRight": "Alinhar à direita",
-      "bullet": "Lista com marcadores"
+      "bullet": "Lista com marcadores",
+      "colorHex": "Código da cor"
+    },
+    "line": {
+      "toolbar": "Barra de linha",
+      "kind": "Tipo de linha",
+      "color": "Cor da linha",
+      "width": "Espessura da linha",
+      "style": "Estilo da linha",
+      "start": "Estilo inicial",
+      "end": "Estilo final",
+      "straight": "Reta",
+      "broken": "Linha quebrada",
+      "broken2": "Linha quebrada dupla",
+      "curve": "Curva",
+      "cubic": "Curva cúbica",
+      "solid": "Sólida",
+      "dashed": "Tracejada",
+      "dotted": "Pontilhada",
+      "none": "Nenhum",
+      "arrow": "Seta",
+      "dot": "Ponto"
     },
     "insert": {
+      "toolbar": "Barra de inserção",
       "textBox": "Caixa de texto",
+      "line": "Linha",
+      "linePresets": {
+        "straight": "Linha reta",
+        "dashed": "Linha tracejada",
+        "arrow": "Linha com seta",
+        "dashedArrow": "Linha tracejada com seta",
+        "dottedEnd": "Linha com ponta circular",
+        "broken": "Linha quebrada",
+        "doubleBroken": "Linha com quebra dupla",
+        "curve": "Curva",
+        "cubic": "Curva cúbica"
+      },
+      "table": "Tabela",
+      "formula": "Fórmula",
+      "chart": "Gráfico",
+      "chartBar": "Gráfico de barras",
+      "chartLine": "Gráfico de linhas",
+      "chartPie": "Gráfico de pizza",
+      "tableDimensions": "Tabela {{rows}} x {{columns}}",
       "dragToolbar": "Mover ferramentas de inserção",
       "dragToolbarKeyboard": "Mover ferramentas: pressione Enter ou Espaço e use as setas",
       "image": "Imagem",
       "imageDrop": "Arraste uma imagem ou clique para escolher um arquivo",
       "imageOr": "ou cole a URL de uma imagem",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "Inserir"
+      "imageInsert": "Inserir",
+      "video": "Vídeo",
+      "videoDrop": "Arraste um vídeo ou clique para escolher um arquivo",
+      "videoOr": "ou cole a URL de um vídeo",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "Inserir",
+      "audio": "Áudio",
+      "audioDrop": "Arraste um áudio ou clique para escolher um arquivo",
+      "audioOr": "ou cole a URL de um áudio",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "Inserir"
+    },
+    "asset": {
+      "drop": "Arraste um arquivo ou clique para escolher",
+      "orUrl": "ou cole a URL do arquivo",
+      "urlPlaceholder": "https://…",
+      "insert": "Inserir",
+      "invalidType": "Tipo de arquivo não compatível",
+      "readFailed": "Não foi possível ler o arquivo"
+    },
+    "latex": {
+      "toolbar": "Barra de fórmulas",
+      "editFormula": "Editar fórmula",
+      "dialog": "Editor de fórmulas",
+      "source": "Código-fonte LaTeX",
+      "preview": "Pré-visualização",
+      "symbols": "Símbolos",
+      "presets": "Fórmulas predefinidas",
+      "invalidSource": "O código-fonte LaTeX é inválido."
+    },
+    "video": {
+      "toolbar": "Barra de vídeo",
+      "poster": "Definir capa"
+    },
+    "audio": {
+      "toolbar": "Barra de áudio",
+      "preview": "Ouvir áudio",
+      "pause": "Pausar prévia",
+      "loop": "Repetir"
+    },
+    "table": {
+      "doubleClickToEdit": "Clique duas vezes para editar"
     },
     "nav": {
       "addSlide": "Adicionar slide",
@@ -248,14 +341,38 @@
       "toBack": "Enviar para trás"
     },
     "image": {
+      "toolbar": "Barra da imagem",
       "replace": "Substituir imagem",
       "flipH": "Inverter horizontalmente",
-      "flipV": "Inverter verticalmente"
+      "flipV": "Inverter verticalmente",
+      "crop": "Recortar imagem"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "Alinhamento horizontal",
+      "verticalAlignment": "Alinhamento vertical",
+      "selectAll": "Selecionar tudo",
+      "copy": "Copiar",
+      "cut": "Recortar",
+      "paste": "Colar",
+      "unlock": "Desbloquear",
+      "lock": "Bloquear",
+      "group": "Agrupar",
+      "ungroup": "Desagrupar",
+      "bringForward": "Trazer para frente",
+      "sendBackward": "Enviar para trás",
+      "alignTop": "Alinhar acima",
+      "alignMiddle": "Alinhar ao meio",
+      "alignBottom": "Alinhar abaixo"
     },
     "background": {
       "label": "Fundo",
       "solid": "Cor sólida",
-      "image": "Imagem"
+      "image": "Imagem",
+      "color": "Cor"
+    },
+    "common": {
+      "cancel": "Cancelar",
+      "confirm": "Confirmar"
     },
     "quiz": {
       "addQuestion": "Adicionar pergunta",
@@ -305,6 +422,7 @@
       "discussion": "Discussão"
     },
     "element": {
+      "toolbar": "Barra do elemento",
       "text": "Texto",
       "image": "Imagem",
       "shape": "Forma",
@@ -360,7 +478,8 @@
         "lead": "Descreva um bug nesta página interativa — por exemplo, um botão que não faz nada — e eu corrijo apenas isso, mantendo o resto.",
         "placeholder": "Descreva o bug desta página interativa…"
       },
-      "thinking": "Pensando…"
+      "thinking": "Pensando…",
+      "title": "Editar com IA"
     },
     "timeline": {
       "title": "Roteiro de narração",
@@ -453,6 +572,21 @@
       "notApplied": "Não aplicado",
       "applyFailed": "O editor não conseguiu aplicar a edição do elemento. Nada foi alterado.",
       "applyPartiallyFailed": "O editor não conseguiu aplicar uma ou mais edições de elementos. Outras edições podem ter sido aplicadas."
+    },
+    "roster": {
+      "title": "Elenco da sala",
+      "count": "{{count}} integrantes",
+      "editHint": "Clique em um integrante para editar",
+      "personaLabel": "Persona",
+      "personaPlaceholder": "Descreva a personalidade, o estilo de ensino e as tarefas do papel...",
+      "noPersona": "Nenhuma persona ainda",
+      "unnamed": "Sem título",
+      "teacherBadge": "Principal",
+      "moveUp": "Mover para cima",
+      "moveDown": "Mover para baixo",
+      "removeFromClass": "Remover da sala",
+      "aiClassmates": "Colegas de IA · {{count}}",
+      "addRole": "Adicionar papel"
     }
   },
   "stage": {
@@ -557,67 +691,7 @@
     "startRecording": "Iniciar gravação"
   },
   "pbl": {
-    "legacyFormat": "Esta cena PBL usa um formato antigo. Gere o curso novamente.",
     "emptyProject": "O projeto PBL ainda não foi gerado. Crie via geração de curso.",
-    "roleSelection": {
-      "title": "Escolha seu Papel",
-      "description": "Selecione um papel para começar a colaborar no projeto"
-    },
-    "workspace": {
-      "restart": "Reiniciar",
-      "confirmRestart": "Apagar todo o progresso?",
-      "confirm": "Confirmar",
-      "cancel": "Cancelar"
-    },
-    "issueboard": {
-      "title": "Quadro de Tarefas",
-      "noIssues": "Nenhuma tarefa ainda",
-      "statusDone": "Concluída",
-      "statusActive": "Ativa",
-      "statusPending": "Pendente"
-    },
-    "chat": {
-      "title": "Discussão do Projeto",
-      "currentIssue": "Tarefa Atual",
-      "mentionHint": "Use @question para perguntar, @judge para submeter à revisão",
-      "placeholder": "Digite uma mensagem...",
-      "send": "Enviar",
-      "issueCompleteMessage": "Tarefa \"{{completed}}\" concluída! Indo para a próxima: \"{{next}}\"",
-      "allCompleteMessage": "🎉 Todas as tarefas concluídas! Ótimo trabalho no projeto!"
-    },
-    "guide": {
-      "howItWorks": "Como funciona",
-      "help": "Ajuda",
-      "title": "Ajuda",
-      "step1": {
-        "title": "Passo 1: Escolha um Papel",
-        "desc": "Após o projeto ser gerado, selecione um papel da lista (papéis não-sistema marcados com 🟢)"
-      },
-      "step2": {
-        "title": "Passo 2: Conclua as Tarefas",
-        "desc": "Cada tarefa representa um objetivo de aprendizagem:",
-        "s1": {
-          "title": "Ver tarefa atual",
-          "desc": "Veja o título, descrição e responsável da tarefa"
-        },
-        "s2": {
-          "title": "Obter orientação",
-          "example": "@question Por onde devo começar?\n@question Como implemento esse recurso?",
-          "desc": "O Agente Perguntador faz perguntas guiadas e dá dicas (sem respostas diretas)"
-        },
-        "s3": {
-          "title": "Submeta seu trabalho",
-          "example": "@judge Terminei, por favor revise minhas anotações",
-          "desc": "O Agente Juiz avalia seu trabalho e dá feedback:",
-          "complete": "Avança automaticamente para a próxima tarefa",
-          "revision": "Melhore com base no feedback"
-        }
-      },
-      "step3": {
-        "title": "Passo 3: Conclua o Projeto",
-        "desc": "Quando todas as tarefas forem concluídas, o sistema exibe \"🎉 Projeto Concluído!\""
-      }
-    },
     "v2": {
       "hero": {
         "title": "Project-Based Learning",
@@ -859,7 +933,37 @@
     "searchPlaceholder": "Pesquisar cursos...",
     "searchAriaLabel": "Pesquisar cursos",
     "clearSearch": "Limpar",
-    "searchEmpty": "Nenhum curso corresponde à sua busca"
+    "searchEmpty": "Nenhum curso corresponde à sua busca",
+    "newFolderTitle": "Nova pasta",
+    "newFolderDesc": "Organize cursos por tópico para facilitar o acesso.",
+    "newFolderInline": "Nova pasta",
+    "folderNameLabel": "Nome da pasta",
+    "folderNamePlaceholder": "Ex: Matemática, Inglês, Cursos principais",
+    "folderNameHint": "Caracteres largos e estreitos são aceitos; espaços contam.",
+    "folderNameExists": "Já existe uma pasta com esse nome.",
+    "folderCountLimit": "Limite de pastas atingido.",
+    "folderWidth": "Largura {{width}}/{{max}}",
+    "folderCreate": "Criar",
+    "folderBadge": "Pasta",
+    "folderCourseCountUnit": "cursos",
+    "deleteFolderTitle": "Excluir pasta \"{{name}}\"",
+    "deleteFolderEmptyDesc": "Esta pasta está vazia. A exclusão não pode ser desfeita.",
+    "deleteFolderUngroupDesc": "Os cursos permanecem em \"Meus cursos\", apenas sem pasta.",
+    "moveToFolder": "Mover para pasta",
+    "moveToFolderLabel": "Mover para a pasta",
+    "ungrouped": "Sem pasta",
+    "searchResults": "Resultados da busca",
+    "folderCreateFailed": "Falha ao criar a pasta",
+    "folderRenameFailed": "Falha ao renomear a pasta",
+    "folderDeleteFailed": "Falha ao excluir a pasta",
+    "moveFailed": "Falha ao mover o curso",
+    "emptyFolderHint": "Esta pasta está vazia",
+    "emptyLibraryHint": "Nenhum curso ainda — crie um acima ou importe um curso.",
+    "folderNameEmpty": "O nome da pasta não pode estar vazio",
+    "deleteFolderOnly": "Excluir apenas a pasta",
+    "deleteFolderAndCourses": "Excluir pasta e {{count}} curso",
+    "deleteFolderAndCourses_other": "Excluir pasta e {{count}} cursos",
+    "deleteFolderConfirmRemove": "Isto remove a pasta e seus cursos, incluindo o histórico de chat."
   },
   "upload": {
     "pdfSizeLimit": "Suporta arquivos PDF de até 50 MB",
@@ -1065,6 +1169,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "Qwen",
       "kimi": "Kimi",
@@ -1082,13 +1187,15 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "Protocolo OpenAI",
       "azure": "Azure OpenAI",
       "anthropic": "Protocolo Claude",
-      "google": "Protocolo Gemini"
+      "google": "Protocolo Gemini",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "modelos",
     "modelSingular": "modelo",
@@ -1289,6 +1396,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "ASR Nativo do Navegador",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
+    "providerFunASRASR": "FunASR (Local)",
     "providerLemonadeASR": "Lemonade ASR (Local)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (Nativo)",
@@ -1607,11 +1715,16 @@
     "clearCacheButton": "Excluir Permanentemente Todos os Dados",
     "clearCacheSuccess": "Cache limpo. A página será atualizada em instantes",
     "clearCacheFailed": "Falha ao limpar o cache, tente novamente",
+    "clearCacheBlockedByOtherTabs": "Feche as outras abas do app e tente novamente.",
+    "persistUnavailable": "Suas alterações não estão sendo salvas porque o aplicativo não consegue acessar os dados armazenados. Se recarregar não resolver, limpe o cache local nas Configurações.",
+    "persistChangesLost": "O armazenamento voltou a funcionar, mas as alterações feitas enquanto ele estava indisponível não puderam ser salvas e foram substituídas pela última versão salva.",
     "webSearchSettings": "Busca na Web",
     "webSearchApiKey": "Chave de API de Busca",
     "webSearchApiKeyPlaceholder": "Digite sua chave de API de busca",
     "webSearchApiKeyPlaceholderServer": "Chave configurada no servidor, opcionalmente sobreponha",
     "webSearchApiKeyHint": "Obtenha uma chave de API com o provedor de busca selecionado",
+    "claudeSearchModel": "Modelo de busca",
+    "claudeSearchModelHint": "O modelo Claude que realiza as buscas na web e resume os resultados.",
     "webSearchApiKeyOptional": "A chave de API é opcional. Sem ela, será usada extração pública de páginas como alternativa.",
     "searxngServerOnlyNotice": "O SearXNG deve ser configurado no servidor. Defina a variável de ambiente SEARXNG_BASE_URL (ou a seção web-search em server-providers.yml). URLs de instância fornecidas pelo cliente não são aceitas.",
     "baiduSubSources": "Fontes do Baidu",

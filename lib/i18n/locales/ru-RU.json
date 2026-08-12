@@ -76,6 +76,16 @@
     "videoRenderMp4": "Рендерить MP4",
     "videoDownloadZip": "Скачать ZIP проекта",
     "videoServiceHint": "Для рендеринга MP4 нужен сервис рендеринга. Скачайте ZIP для локального рендеринга.",
+    "videoBurnSubtitles": "Встроить субтитры",
+    "videoBurnSubtitlesDesc": "Выключено: экспортируйте чистое видео и добавьте файл субтитров в своём редакторе.",
+    "videoQuizCtaPrompt": "Хотите пройти интерактивный тест?",
+    "videoPblCtaPrompt": "Хотите попробовать проектное обучение?",
+    "videoCtaVisit": "Посетите",
+    "videoDownloadSubtitles": "Скачать субтитры (.srt)",
+    "subtitlesCompiling": "Компиляция субтитров...",
+    "subtitlesSuccess": "Субтитры скачаны",
+    "subtitlesEmpty": "Нет закадрового текста для субтитров",
+    "subtitlesFailed": "Не удалось скачать субтитры",
     "noSlides": "Нет слайдов для экспорта",
     "noSlidesSkipped": "В этом курсе нет слайдов — PPTX пропущен",
     "nothingToExport": "Нет данных для экспорта"
@@ -217,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "Панель текста",
       "label": "Текст",
       "font": "Шрифт",
       "fontDefault": "По умолчанию",
@@ -230,17 +241,99 @@
       "alignLeft": "По левому краю",
       "alignCenter": "По центру",
       "alignRight": "По правому краю",
-      "bullet": "Маркированный список"
+      "bullet": "Маркированный список",
+      "colorHex": "Код цвета"
+    },
+    "line": {
+      "toolbar": "Панель линии",
+      "kind": "Тип линии",
+      "color": "Цвет линии",
+      "width": "Толщина линии",
+      "style": "Стиль линии",
+      "start": "Начало линии",
+      "end": "Конец линии",
+      "straight": "Прямая",
+      "broken": "Ломаная",
+      "broken2": "Двойная ломаная",
+      "curve": "Кривая",
+      "cubic": "Кубическая кривая",
+      "solid": "Сплошная",
+      "dashed": "Штриховая",
+      "dotted": "Пунктирная",
+      "none": "Нет",
+      "arrow": "Стрелка",
+      "dot": "Точка"
     },
     "insert": {
+      "toolbar": "Панель вставки",
       "textBox": "Текстовое поле",
+      "line": "Линия",
+      "linePresets": {
+        "straight": "Прямая линия",
+        "dashed": "Пунктирная линия",
+        "arrow": "Линия со стрелкой",
+        "dashedArrow": "Пунктирная линия со стрелкой",
+        "dottedEnd": "Линия с точкой на конце",
+        "broken": "Ломаная линия",
+        "doubleBroken": "Линия с двойным изгибом",
+        "curve": "Кривая",
+        "cubic": "Кубическая кривая"
+      },
+      "table": "Таблица",
+      "formula": "Формула",
+      "chart": "Диаграмма",
+      "chartBar": "Столбчатая диаграмма",
+      "chartLine": "Линейная диаграмма",
+      "chartPie": "Круговая диаграмма",
+      "tableDimensions": "Таблица {{rows}} x {{columns}}",
       "dragToolbar": "Переместить инструменты вставки",
       "dragToolbarKeyboard": "Переместить инструменты: нажмите Enter или пробел, затем используйте стрелки",
       "image": "Изображение",
       "imageDrop": "Перетащите изображение или нажмите, чтобы выбрать файл",
       "imageOr": "или вставьте URL изображения",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "Вставить"
+      "imageInsert": "Вставить",
+      "video": "Видео",
+      "videoDrop": "Перетащите видео или нажмите, чтобы выбрать файл",
+      "videoOr": "или вставьте URL видео",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "Вставить",
+      "audio": "Аудио",
+      "audioDrop": "Перетащите аудио или нажмите, чтобы выбрать файл",
+      "audioOr": "или вставьте URL аудио",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "Вставить"
+    },
+    "asset": {
+      "drop": "Перетащите файл или нажмите для выбора",
+      "orUrl": "или вставьте URL файла",
+      "urlPlaceholder": "https://…",
+      "insert": "Вставить",
+      "invalidType": "Неподдерживаемый тип файла",
+      "readFailed": "Не удалось прочитать файл"
+    },
+    "latex": {
+      "toolbar": "Панель формул",
+      "editFormula": "Редактировать формулу",
+      "dialog": "Редактор формул",
+      "source": "Исходный код LaTeX",
+      "preview": "Предпросмотр",
+      "symbols": "Символы",
+      "presets": "Готовые формулы",
+      "invalidSource": "Исходный код LaTeX недействителен."
+    },
+    "video": {
+      "toolbar": "Панель видео",
+      "poster": "Задать обложку"
+    },
+    "audio": {
+      "toolbar": "Панель аудио",
+      "preview": "Прослушать аудио",
+      "pause": "Приостановить прослушивание",
+      "loop": "Повтор"
+    },
+    "table": {
+      "doubleClickToEdit": "Дважды щелкните для редактирования"
     },
     "nav": {
       "addSlide": "Добавить слайд",
@@ -263,14 +356,38 @@
       "toBack": "На задний план"
     },
     "image": {
+      "toolbar": "Панель изображения",
       "replace": "Заменить изображение",
       "flipH": "Отразить по горизонтали",
-      "flipV": "Отразить по вертикали"
+      "flipV": "Отразить по вертикали",
+      "crop": "Обрезать изображение"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "Выравнивание по горизонтали",
+      "verticalAlignment": "Выравнивание по вертикали",
+      "selectAll": "Выбрать все",
+      "copy": "Копировать",
+      "cut": "Вырезать",
+      "paste": "Вставить",
+      "unlock": "Разблокировать",
+      "lock": "Заблокировать",
+      "group": "Сгруппировать",
+      "ungroup": "Разгруппировать",
+      "bringForward": "Переместить вперед",
+      "sendBackward": "Переместить назад",
+      "alignTop": "Выровнять по верхнему краю",
+      "alignMiddle": "Выровнять по центру",
+      "alignBottom": "Выровнять по нижнему краю"
     },
     "background": {
       "label": "Фон",
       "solid": "Сплошной цвет",
-      "image": "Изображение"
+      "image": "Изображение",
+      "color": "Цвет"
+    },
+    "common": {
+      "cancel": "Отмена",
+      "confirm": "Подтвердить"
     },
     "quiz": {
       "addQuestion": "Добавить вопрос",
@@ -320,6 +437,7 @@
       "discussion": "Обсуждение"
     },
     "element": {
+      "toolbar": "Панель элемента",
       "text": "Текст",
       "image": "Изображение",
       "shape": "Фигура",
@@ -375,7 +493,8 @@
         "lead": "Опишите ошибку на этой интерактивной странице — например, кнопку, которая не реагирует, — и я исправлю только её, сохранив всё остальное.",
         "placeholder": "Опишите ошибку на этой интерактивной странице…"
       },
-      "thinking": "Думаю…"
+      "thinking": "Думаю…",
+      "title": "Редактировать с ИИ"
     },
     "timeline": {
       "title": "Сценарий закадрового текста",
@@ -468,6 +587,21 @@
       "notApplied": "Не применено",
       "applyFailed": "Редактору не удалось применить изменение элемента. Ничего не изменено.",
       "applyPartiallyFailed": "Редактору не удалось применить одно или несколько изменений. Другие изменения могли быть применены."
+    },
+    "roster": {
+      "title": "Состав класса",
+      "count": "Участников: {{count}}",
+      "editHint": "Нажмите участника, чтобы редактировать",
+      "personaLabel": "Персона",
+      "personaPlaceholder": "Опишите характер роли, стиль преподавания и задачи...",
+      "noPersona": "Персона не задана",
+      "unnamed": "Без названия",
+      "teacherBadge": "Ведущий",
+      "moveUp": "Переместить вверх",
+      "moveDown": "Переместить вниз",
+      "removeFromClass": "Удалить из класса",
+      "aiClassmates": "AI-одноклассники · {{count}}",
+      "addRole": "Добавить роль"
     }
   },
   "classroomComplete": {
@@ -557,67 +691,7 @@
     "startRecording": "Начать запись"
   },
   "pbl": {
-    "legacyFormat": "Эта PBL-сцена использует устаревший формат. Пожалуйста, перегенерируйте курс.",
     "emptyProject": "PBL-проект ещё не создан. Создайте его через генерацию курса.",
-    "roleSelection": {
-      "title": "Выберите роль",
-      "description": "Выберите роль для совместной работы над проектом"
-    },
-    "workspace": {
-      "restart": "Перезапуск",
-      "confirmRestart": "Сбросить весь прогресс?",
-      "confirm": "Подтвердить",
-      "cancel": "Отмена"
-    },
-    "issueboard": {
-      "title": "Доска задач",
-      "noIssues": "Задач пока нет",
-      "statusDone": "Готово",
-      "statusActive": "Активна",
-      "statusPending": "В ожидании"
-    },
-    "chat": {
-      "title": "Обсуждение проекта",
-      "currentIssue": "Текущая задача",
-      "mentionHint": "Используйте @question для вопроса, @judge для проверки",
-      "placeholder": "Введите сообщение...",
-      "send": "Отправить",
-      "issueCompleteMessage": "Задача \"{{completed}}\" выполнена! Переход к следующей: \"{{next}}\"",
-      "allCompleteMessage": "🎉 Все задачи выполнены! Отличная работа над проектом!"
-    },
-    "guide": {
-      "howItWorks": "Как это работает",
-      "help": "Помощь",
-      "title": "Помощь",
-      "step1": {
-        "title": "Шаг 1: Выберите роль",
-        "desc": "После генерации проекта выберите роль из списка (не-системные роли отмечены 🟢)"
-      },
-      "step2": {
-        "title": "Шаг 2: Выполняйте задачи",
-        "desc": "Каждая задача — это учебное задание:",
-        "s1": {
-          "title": "Просмотрите задачу",
-          "desc": "Изучите заголовок, описание и исполнителя задачи"
-        },
-        "s2": {
-          "title": "Получите подсказки",
-          "example": "@question С чего начать?\n@question Как реализовать эту функцию?",
-          "desc": "Question Agent даёт наводящие вопросы и подсказки (не прямые ответы)"
-        },
-        "s3": {
-          "title": "Сдайте работу",
-          "example": "@judge Готово, проверьте мои заметки",
-          "desc": "Judge Agent оценивает вашу работу и даёт обратную связь:",
-          "complete": "Автоматический переход к следующей задаче",
-          "revision": "Доработайте по замечаниям"
-        }
-      },
-      "step3": {
-        "title": "Шаг 3: Завершите проект",
-        "desc": "Когда все задачи выполнены, система показывает \"🎉 Проект завершён!\""
-      }
-    },
     "v2": {
       "hero": {
         "title": "Проектное обучение · Project-Based Learning",
@@ -859,7 +933,37 @@
     "searchPlaceholder": "Поиск курсов...",
     "searchAriaLabel": "Поиск курсов",
     "clearSearch": "Очистить",
-    "searchEmpty": "Курсы не найдены"
+    "searchEmpty": "Курсы не найдены",
+    "newFolderTitle": "Новая папка",
+    "newFolderDesc": "Группируйте курсы по темам для удобного доступа.",
+    "newFolderInline": "Новая папка",
+    "folderNameLabel": "Название папки",
+    "folderNamePlaceholder": "Напр.: Математика, Английский, Профильные курсы",
+    "folderNameHint": "Широкие и узкие символы допустимы; пробелы учитываются.",
+    "folderNameExists": "Папка с таким названием уже существует.",
+    "folderCountLimit": "Достигнут предел количества папок.",
+    "folderWidth": "Ширина {{width}}/{{max}}",
+    "folderCreate": "Создать",
+    "folderBadge": "Папка",
+    "folderCourseCountUnit": "курсов",
+    "deleteFolderTitle": "Удалить папку «{{name}}»",
+    "deleteFolderEmptyDesc": "Эта папка пуста. Удаление необратимо.",
+    "deleteFolderUngroupDesc": "Курсы остаются в «Мои курсы», просто без папки.",
+    "moveToFolder": "Переместить в папку",
+    "moveToFolderLabel": "Переместить в папку",
+    "ungrouped": "Без папки",
+    "searchResults": "Результаты поиска",
+    "folderCreateFailed": "Не удалось создать папку",
+    "folderRenameFailed": "Не удалось переименовать папку",
+    "folderDeleteFailed": "Не удалось удалить папку",
+    "moveFailed": "Не удалось переместить курс",
+    "emptyFolderHint": "Эта папка пуста",
+    "emptyLibraryHint": "Курсов пока нет — создайте выше или импортируйте курс.",
+    "folderNameEmpty": "Название папки не может быть пустым",
+    "deleteFolderOnly": "Удалить только папку",
+    "deleteFolderAndCourses": "Удалить папку и {{count}} курс",
+    "deleteFolderAndCourses_other": "Удалить папку и {{count}} курсов",
+    "deleteFolderConfirmRemove": "Папка и её курсы (включая историю чата) будут удалены."
   },
   "upload": {
     "pdfSizeLimit": "Поддержка PDF до 50 МБ",
@@ -1065,6 +1169,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "Qwen",
       "kimi": "Kimi",
@@ -1082,13 +1187,15 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "Протокол OpenAI",
       "azure": "Azure OpenAI",
       "anthropic": "Протокол Claude",
-      "google": "Протокол Gemini"
+      "google": "Протокол Gemini",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "моделей",
     "modelSingular": "модель",
@@ -1289,6 +1396,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "Встроенный ASR браузера",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
+    "providerFunASRASR": "FunASR (Локальный)",
     "providerLemonadeASR": "Lemonade ASR (Локальный)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (встроенный)",
@@ -1607,11 +1715,16 @@
     "clearCacheButton": "Удалить все данные навсегда",
     "clearCacheSuccess": "Кэш очищен, страница скоро обновится",
     "clearCacheFailed": "Не удалось очистить кэш, попробуйте снова",
+    "clearCacheBlockedByOtherTabs": "Закройте другие вкладки приложения и попробуйте снова.",
+    "persistUnavailable": "Изменения не сохраняются: приложению не удаётся получить доступ к сохранённым данным. Если перезагрузка не помогает, очистите локальный кэш в настройках.",
+    "persistChangesLost": "Хранилище снова работает, но изменения, сделанные во время сбоя, сохранить не удалось — они заменены последней сохранённой версией.",
     "webSearchSettings": "Веб-поиск",
     "webSearchApiKey": "API-ключ поиска",
     "webSearchApiKeyPlaceholder": "Введите API-ключ поиска",
     "webSearchApiKeyPlaceholderServer": "Серверный ключ настроен, можно ввести свой",
     "webSearchApiKeyHint": "Получите API-ключ у выбранного поискового провайдера",
+    "claudeSearchModel": "Модель поиска",
+    "claudeSearchModelHint": "Модель Claude, которая выполняет веб-поиск и обобщает результаты.",
     "webSearchApiKeyOptional": "API-ключ необязателен. Без него будет использоваться парсинг публичной страницы.",
     "searxngServerOnlyNotice": "SearXNG должен быть настроен на сервере. Установите переменную окружения SEARXNG_BASE_URL (или раздел web-search в server-providers.yml). URL экземпляра от клиента не принимаются.",
     "baiduSubSources": "Источники поиска Baidu",

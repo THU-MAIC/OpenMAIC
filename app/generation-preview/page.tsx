@@ -19,9 +19,9 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   fetchSceneActions,
   fetchSceneContent,
-  generateAndStoreTTS,
+  generateTTSForScene,
 } from '@/lib/hooks/use-scene-generator';
-import { isAbortError } from '@/lib/generation/generation-retry';
+import { isAbortError } from '@openmaic/generation';
 import { FOREGROUND_SCENE_RETRY_OPTIONS } from './foreground-retry';
 import {
   loadImageMapping,
@@ -39,7 +39,7 @@ import {
 } from '@/lib/document/bundle';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import { nanoid } from 'nanoid';
-import type { Stage } from '@/lib/types/stage';
+import type { GeneratedAgentConfig, Stage } from '@/lib/types/stage';
 import type {
   SceneOutline,
   PdfImage,
@@ -520,6 +520,7 @@ function GenerationPreviewContent() {
               apiKey: wsConfig?.apiKey || undefined,
               baseUrl: wsProviderId === 'searxng' ? undefined : wsConfig?.baseUrl || undefined,
               baiduSubSources: wsProviderId === 'baidu' ? wsSettings.baiduSubSources : undefined,
+              claudeModelId: wsProviderId === 'claude' ? wsConfig?.modelId || undefined : undefined,
             }),
           ),
           signal,
@@ -866,11 +867,17 @@ function GenerationPreviewContent() {
           const agentData = await agentResp.json();
           if (!agentData.success) throw new Error(agentData.error || 'Agent generation failed');
 
-          // Save to IndexedDB and registry. The agent-profile LLM has already
-          // bound each agent's voice (from availableVoices); the fallback for an
-          // invalid/unavailable voice is applied later at the live TTS call.
-          const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
-          const savedIds = await saveGeneratedAgents(stage.id, agentData.agents);
+          // Embed the roster (including its voice binding) on the stage — it
+          // persists with the stage document via saveToStorage below — and
+          // mirror it into the in-memory registry. The agent-profile LLM has
+          // already bound each agent's voice (from availableVoices); the
+          // fallback for an invalid/unavailable voice is applied later at the
+          // live TTS call.
+          const generatedConfigs = agentData.agents as GeneratedAgentConfig[];
+          stage.generatedAgentConfigs = generatedConfigs;
+          const { applyGeneratedAgentsToRegistry } =
+            await import('@/lib/orchestration/registry/store');
+          const savedIds = applyGeneratedAgentsToRegistry(stage.id, generatedConfigs);
           settings.setSelectedAgentIds(savedIds);
           // Stage-derived, not a user choice — must not carry across classrooms.
           settings.setAgentSelectionIsUserSet(false);
@@ -1017,42 +1024,13 @@ function GenerationPreviewContent() {
           settings.ttsProvidersConfig?.[settings.ttsProviderId],
         )
       ) {
-        const speechActions = (firstScene.actions || []).filter(
-          (a: {
-            id: string;
-            type: string;
-            text?: string;
-          }): a is {
-            id: string;
-            type: 'speech';
-            text: string;
-            audioId?: string;
-          } => a.type === 'speech' && !!a.text,
+        const ttsResult = await generateTTSForScene(
+          firstScene,
+          languageDirective,
+          signal,
+          FOREGROUND_SCENE_RETRY_OPTIONS,
         );
-
-        let ttsFailCount = 0;
-        for (const action of speechActions) {
-          const audioId = `tts_${action.id}`;
-          action.audioId = audioId;
-          try {
-            await generateAndStoreTTS(
-              audioId,
-              action.text,
-              languageDirective,
-              signal,
-              FOREGROUND_SCENE_RETRY_OPTIONS,
-            );
-          } catch (err) {
-            if (isAbortError(err)) throw err;
-
-            log.warn(`[TTS] Failed for ${audioId}:`, err);
-            ttsFailCount++;
-          }
-        }
-
-        if (ttsFailCount > 0 && speechActions.length > 0) {
-          throw new Error(t('generation.speechFailed'));
-        }
+        if (!ttsResult.success) throw new Error(t('generation.speechFailed'));
       }
 
       // Add scene to store and navigate

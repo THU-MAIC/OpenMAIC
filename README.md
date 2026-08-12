@@ -33,7 +33,7 @@
 <p align="center">
   <a href="./README.md">English</a> | <a href="./README-zh.md">简体中文</a>
   <br/>
-  <a href="https://open.maic.chat/">Live Demo</a> · <a href="#-quick-start">Quick Start</a> · <a href="#lemonade-local-ai">Lemonade</a> · <a href="#-features">Features</a> · <a href="#-use-cases">Use Cases</a> · <a href="#-openclaw-integration">OpenClaw</a>
+  <a href="https://open.maic.chat/">Live Demo</a> · <a href="#-quick-start">Quick Start</a> · <a href="#lemonade-local-ai">Lemonade</a> · <a href="#funasr-local-asr">FunASR</a> · <a href="#-features">Features</a> · <a href="#-use-cases">Use Cases</a> · <a href="#-openclaw-integration">OpenClaw</a>
 </p>
 
 
@@ -115,6 +115,7 @@ GROK_API_KEY=xai-...
 OPENROUTER_API_KEY=sk-or-...
 TENCENT_API_KEY=sk-...
 XIAOMI_API_KEY=...
+# Or configure Amazon Bedrock with AWS credentials and BEDROCK_REGION.
 ```
 
 You can also configure providers via `server-providers.yml`:
@@ -130,9 +131,23 @@ providers:
       - YOUR-DEPLOYMENT-NAME
   anthropic:
     apiKey: sk-ant-...
+  bedrock:
+    models:
+      - us.anthropic.claude-sonnet-5
+      - us.anthropic.claude-opus-4-8
 ```
 
-Supported providers: **OpenAI**, **Azure OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), **Lemonade** (local LLM / image / TTS / ASR), and any OpenAI-compatible API.
+Supported providers: **OpenAI**, **Azure OpenAI**, **Anthropic**, **Amazon Bedrock**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), **Lemonade** (local LLM / image / TTS / ASR), **FunASR** (local ASR), and any OpenAI-compatible API.
+
+Amazon Bedrock quick example:
+
+```env
+BEDROCK_REGION=us-east-1
+BEDROCK_MODELS=us.anthropic.claude-sonnet-5,us.anthropic.claude-opus-4-8
+DEFAULT_MODEL=bedrock:us.anthropic.claude-sonnet-5
+```
+
+Bedrock uses AWS environment credentials or the AWS SDK credential provider chain. For temporary credentials, set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN`, or use an AWS profile / role available to the runtime.
 
 <a id="lemonade-local-ai"></a>
 
@@ -148,6 +163,28 @@ TTS_LEMONADE_BASE_URL=http://localhost:13305/v1
 ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
 IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
+
+<a id="funasr-local-asr"></a>
+
+### Optional: FunASR (Local Speech Recognition)
+
+OpenMAIC can transcribe locally through FunASR's OpenAI-compatible server. The built-in provider supports SenseVoiceSmall, Paraformer, and Fun-ASR-Nano and requires no API key.
+
+```bash
+python -m pip install torch torchaudio
+python -m pip install "funasr==1.4.0" fastapi uvicorn python-multipart
+# Add vLLM for Fun-ASR-Nano on NVIDIA GPUs
+python -m pip install vllm
+funasr-server --device cuda --model fun-asr-nano
+```
+
+Point OpenMAIC at the server:
+
+```env
+ASR_FUNASR_BASE_URL=http://localhost:8000/v1
+```
+
+Use `funasr-server --device cpu --model sensevoice` for a CPU-only setup. See the [FunASR deployment guide](https://github.com/modelscope/FunASR#deploy) for production options.
 
 OpenAI quick example:
 
@@ -303,6 +340,18 @@ Compose cannot attach `depends_on` to `openmaic` only when this optional profile
 is active without also affecting the default deployment. Startup therefore
 relies on the embedded route's retry-on-next-request behavior while PostgreSQL
 becomes healthy.
+
+Deleting or replacing an asset only drops its registry entry; the bytes behind
+it are reclaimed afterwards by an offline collector. **This deployment runs that
+collector by default**, so nothing has to be configured for asset storage to
+stop growing. A pass runs every `ASSET_COLLECTION_INTERVAL_MS` (default 15
+minutes) over bytes that have been unreferenced for longer than
+`ASSET_COLLECTION_GRACE_MS` (default 1 hour); the grace period is the retention
+window a user's deleted bytes actually get, so raise it deliberately. Set
+`ASSET_COLLECTION_ENABLED=0` to switch collection off in a process. A
+horizontally scaled deployment may leave it on in every instance — each blob row
+is locked and re-checked before its bytes go, so concurrent collectors serialize
+rather than race — or disable it everywhere and run its own.
 
 The embedded endpoint implements the package's
 [RuntimeStore HTTP contract](packages/@openmaic/storage/docs/runtime-http-contract.md)
@@ -747,7 +796,7 @@ OpenMAIC/
 
 ### Key Architecture
 
-- **Generation Pipeline** (`lib/generation/`) — Two-stage: outline generation → scene content generation
+- **Generation Pipeline** (`@openmaic/generation`) — Two-stage: outline generation → scene content generation
 - **Multi-Agent Orchestration** (`lib/orchestration/`) — LangGraph state machine managing agent turns and discussions
 - **Playback Engine** (`lib/playback/`) — State machine driving classroom playback and live interaction
 - **Action Engine** (`lib/action/`) — Executes 28+ action types (speech, whiteboard draw/text/shape/chart, spotlight, laser …)

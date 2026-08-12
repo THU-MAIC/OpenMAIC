@@ -46,7 +46,6 @@ const entries = {
   'elements/index': 'src/elements/index.ts',
   'types/index': 'src/types/index.ts',
   'snapshot/index': 'src/snapshot/index.ts',
-  'editing/index': 'src/editing/index.ts',
 };
 
 // ESM-only: @openmaic/dsl (kept external) is ESM-only, so a CJS renderer bundle

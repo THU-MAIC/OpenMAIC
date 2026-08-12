@@ -7,8 +7,20 @@ import {
   normalizeSlideWith,
   normalizeScene,
   normalizeStage,
+  normalizePBLProject,
+  isPBLProject,
+  validateScene,
 } from '@openmaic/dsl';
-import type { PPTElement, Slide, Scene, Stage, SlideContent, Action } from '@openmaic/dsl';
+import type {
+  PPTElement,
+  Slide,
+  Scene,
+  Stage,
+  SlideContent,
+  Action,
+  PBLProject,
+  PBLContent,
+} from '@openmaic/dsl';
 // JS codegen helper (build-only); vitest/esbuild resolves it at runtime.
 import { generateSchema } from '../scripts/gen-schema.mjs';
 
@@ -371,6 +383,163 @@ describe('document-level walkers', () => {
     expect(
       (out.whiteboard![0].elements[0] as Extract<PPTElement, { type: 'text' }>).defaultFontName,
     ).toBe(ELEMENT_DEFAULTS.text.defaultFontName);
+  });
+});
+
+describe('normalizePBLProject', () => {
+  const unseeded = {
+    title: 'Build a weather station',
+    description: 'Create a small weather station.',
+    learningObjective: 'Understand how sensors capture weather data.',
+    gains: ['Connect a sensor', 'Interpret readings'],
+    tags: ['science'],
+    language: 'en-US',
+    proficiency: 'beginner',
+    roles: [{ id: 'instructor', type: 'instructor', name: 'Instructor' }],
+    milestones: [
+      {
+        id: 'milestone-1',
+        title: 'Assembly',
+        order: 0,
+        microtasks: [
+          {
+            id: 'task-1',
+            title: 'Connect the sensor',
+            hints: [],
+            order: 0,
+          },
+        ],
+      },
+      {
+        id: 'milestone-2',
+        title: 'Analysis',
+        order: 1,
+        microtasks: [],
+      },
+    ],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+
+  it('fills every missing canonical seed, including thread seats', () => {
+    const out = normalizePBLProject(unseeded as unknown as PBLProject);
+    expect(out.uiPhase).toBe('hero');
+    expect(out.status).toBe('active');
+    expect(out.milestones.map((milestone) => milestone.status)).toEqual(['active', 'locked']);
+    expect(out.milestones[0].microtasks[0]).toMatchObject({ status: 'todo', assignee: 'user' });
+    expect(out.submissions).toEqual([]);
+    expect(out.evaluations).toEqual([]);
+    expect(out.engagementEvents).toEqual([]);
+    expect(out.threads).toEqual([{ agentId: 'instructor', messages: [] }]);
+  });
+
+  it('is pure and idempotent', () => {
+    const once = normalizePBLProject(unseeded as unknown as PBLProject);
+    const twice = normalizePBLProject(once);
+    expect(twice).toEqual(once);
+    expect(unseeded).not.toHaveProperty('uiPhase');
+  });
+
+  it('throws when design-authored fields are absent or status presence is mixed', () => {
+    const { roles: _roles, ...withoutRoles } = unseeded;
+    expect(() => normalizePBLProject(withoutRoles)).toThrow(/roles/);
+
+    // Optional design fields normalize cleanly when absent and stay absent.
+    const { learningObjective: _learningObjective, ...withoutObjective } = unseeded;
+    const normalizedWithoutObjective = normalizePBLProject(withoutObjective);
+    expect(normalizedWithoutObjective).not.toHaveProperty('learningObjective');
+    expect(isPBLProject(normalizedWithoutObjective)).toBe(true);
+    expect(() => normalizePBLProject({ ...unseeded, learningObjective: 42 })).toThrow(
+      /learningObjective/,
+    );
+
+    expect(() =>
+      normalizePBLProject({
+        ...unseeded,
+        milestones: [{ ...unseeded.milestones[0], status: 'active' }, unseeded.milestones[1]],
+      }),
+    ).toThrow(/milestones\[\]\.status/);
+
+    expect(() =>
+      normalizePBLProject({
+        ...unseeded,
+        milestones: [
+          {
+            ...unseeded.milestones[0],
+            microtasks: [
+              { ...unseeded.milestones[0].microtasks[0], status: 'todo' },
+              { ...unseeded.milestones[0].microtasks[0], id: 'task-2' },
+            ],
+          },
+          unseeded.milestones[1],
+        ],
+      }),
+    ).toThrow(/microtasks\[\]\.status/);
+  });
+
+  it('produces projects accepted by both the runtime guard and scene validator', () => {
+    const fullySeeded = {
+      ...unseeded,
+      uiPhase: 'workspace',
+      status: 'review',
+      milestones: unseeded.milestones.map((milestone, index) => ({
+        ...milestone,
+        status: index === 0 ? 'completed' : 'active',
+        microtasks: milestone.microtasks.map((microtask) => ({
+          ...microtask,
+          status: 'completed',
+          assignee: 'user',
+        })),
+      })),
+      submissions: [],
+      evaluations: [],
+      threads: [{ agentId: 'instructor', messages: [] }],
+      engagementEvents: [],
+    };
+
+    for (const input of [unseeded, fullySeeded]) {
+      const project = normalizePBLProject(input);
+      const scene = {
+        id: 'pbl-scene',
+        stageId: 'stage',
+        title: project.title,
+        order: 0,
+        type: 'pbl',
+        content: { type: 'pbl', projectV2: project },
+      };
+      expect(isPBLProject(project)).toBe(true);
+      expect(validateScene(scene)).toEqual({ valid: true });
+    }
+  });
+
+  it('throws on present-but-wrong-typed seeded fields', () => {
+    expect(() => normalizePBLProject({ ...unseeded, status: 42 } as unknown as PBLProject)).toThrow(
+      /status/,
+    );
+    expect(() =>
+      normalizePBLProject({ ...unseeded, submissions: {} } as unknown as PBLProject),
+    ).toThrow(/submissions/);
+    expect(() =>
+      normalizePBLProject({
+        ...unseeded,
+        threads: [{ agentId: 'instructor', messages: 'bad' }],
+      } as unknown as PBLProject),
+    ).toThrow(/messages/);
+  });
+
+  it('is wired into normalizeScene for PBL project payloads', () => {
+    const scene = {
+      id: 'pbl-scene',
+      stageId: 'stage',
+      title: 'Project',
+      order: 0,
+      type: 'pbl',
+      content: { type: 'pbl', projectV2: unseeded },
+    } as unknown as Scene<Action, PBLContent>;
+    const out = normalizeScene(scene);
+    if (out.content.type !== 'pbl') throw new Error('unreachable');
+    expect(out.content.projectV2?.uiPhase).toBe('hero');
+    expect(out.content.projectV2?.threads[0].messages).toEqual([]);
   });
 });
 

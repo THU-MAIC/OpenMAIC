@@ -1,21 +1,19 @@
 /**
  * Host adapter: apply L1 EditIntents from `edit_elements` through the existing
- * slide edit session as ONE undo entry.
- *
- * EditableSlideCanvas's `onElementsChange` is not mounted in the app yet; this
- * adapter speaks the same EditIntent vocabulary so the canvas can take over
- * later without changing the tool contract. Mixed per-id props cannot use
- * slide-ops `element.updateMany` (shared patch), so we fold updates into one
- * `commitContent(..., true)`.
+ * slide edit session as ONE editor transaction.
  *
  * Apply-time revalidation: the gate ran against a turn-start inventory; before
  * writing we re-check ids/locks/groups against live content and refuse the
  * whole batch if anything drifted (never partial apply).
  */
 
-import type { EditIntent } from '@openmaic/renderer/editing';
+import {
+  applyEditorTransaction,
+  createEditorTransaction,
+  type EditIntent,
+  type EditorOperation,
+} from '@openmaic/editor/core';
 import type { PPTElement, PPTShapeElement } from '@openmaic/dsl';
-import { produce } from 'immer';
 import { SHAPE_PATH_FORMULAS } from '@/configs/shapes';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
 import type { SlideContent } from '@/lib/types/stage';
@@ -44,114 +42,151 @@ export type ApplyEditElementsResult = { ok: true } | { ok: false; reason: string
 
 const MERGED_STYLE_PROPS = new Set(['outline', 'shadow', 'filters']);
 
-function assignElementProps(el: PPTElement, props: Record<string, unknown>): void {
-  const target = el as unknown as Record<string, unknown>;
-  for (const [key, value] of Object.entries(props)) {
-    const current = target[key];
+function mergedElementPatch(
+  element: PPTElement,
+  props: Partial<PPTElement>,
+): Record<string, unknown> {
+  const patch = { ...(props as Record<string, unknown>) };
+  const current = element as unknown as Record<string, unknown>;
+  for (const property of MERGED_STYLE_PROPS) {
+    const existing = current[property];
+    const update = patch[property];
     if (
-      MERGED_STYLE_PROPS.has(key) &&
-      current &&
-      typeof current === 'object' &&
-      !Array.isArray(current) &&
-      value &&
-      typeof value === 'object' &&
-      !Array.isArray(value)
+      existing &&
+      typeof existing === 'object' &&
+      !Array.isArray(existing) &&
+      update &&
+      typeof update === 'object' &&
+      !Array.isArray(update)
     ) {
-      target[key] = {
-        ...(current as Record<string, unknown>),
-        ...(value as Record<string, unknown>),
+      patch[property] = {
+        ...(existing as Record<string, unknown>),
+        ...(update as Record<string, unknown>),
       };
-    } else {
-      target[key] = value;
     }
   }
+  return patch;
 }
 
-/** Shape text-chrome keys are nested under `shape.text` (not top-level). */
-function applyPropsToElement(el: PPTElement, props: Partial<PPTElement>): void {
-  if (el.type === 'shape') {
-    const rest: Record<string, unknown> = {};
-    const textPatch: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(props as Record<string, unknown>)) {
-      if (SHAPE_TEXT_CHROME_PROPS.has(key)) {
-        textPatch[key] = value;
-      } else if (key === 'vAlign') {
-        textPatch.align = value;
-      } else {
-        rest[key] = value;
+/** Compile the agent's L1 vocabulary to editor operations without mutating content. */
+function compileAgentEditOperations(
+  content: SlideContent,
+  intents: EditIntent[],
+): EditorOperation[] {
+  let working = content;
+  const compiled: EditorOperation[] = [];
+
+  const append = (operations: EditorOperation[]) => {
+    if (operations.length === 0) return;
+    working = applyEditorTransaction(
+      working,
+      createEditorTransaction({ origin: 'system', history: 'neutral', operations }),
+    );
+    compiled.push(...operations);
+  };
+
+  const compileUpdate = (element: PPTElement, props: Partial<PPTElement>) => {
+    const patch = mergedElementPatch(element, props);
+    if (element.type === 'shape') {
+      const shape = element as PPTShapeElement;
+      const textPatch: Record<string, unknown> = {};
+      for (const key of Object.keys(patch)) {
+        if (SHAPE_TEXT_CHROME_PROPS.has(key)) {
+          textPatch[key] = patch[key];
+          delete patch[key];
+        } else if (key === 'vAlign') {
+          textPatch.align = patch[key];
+          delete patch[key];
+        }
       }
+
+      const operations: EditorOperation[] = [];
+      if ('gradient' in patch) {
+        operations.push({
+          type: 'element.removeProps',
+          elementId: shape.id,
+          propNames: ['pattern'],
+        });
+      } else if ('fill' in patch) {
+        operations.push({
+          type: 'element.removeProps',
+          elementId: shape.id,
+          propNames: ['pattern', 'gradient'],
+        });
+      }
+      if (('width' in patch || 'height' in patch) && shape.pathFormula) {
+        const formula = SHAPE_PATH_FORMULAS[shape.pathFormula];
+        if (formula) {
+          const width = typeof patch.width === 'number' ? patch.width : shape.width;
+          const height = typeof patch.height === 'number' ? patch.height : shape.height;
+          patch.viewBox = [width, height];
+          patch.path = formula.formula(
+            width,
+            height,
+            formula.editable ? (shape.keypoints ?? formula.defaultValue) : undefined,
+          );
+        }
+      }
+      if (Object.keys(textPatch).length > 0) {
+        patch.text = { ...shape.text, ...textPatch };
+      }
+      if (Object.keys(patch).length > 0) {
+        operations.push({
+          type: 'element.update',
+          elementId: shape.id,
+          patch: patch as Partial<PPTElement>,
+        });
+      }
+      append(operations);
+      return;
     }
-    const shape = el as PPTShapeElement;
-    if ('gradient' in rest) {
-      delete shape.pattern;
-    } else if ('fill' in rest) {
-      delete shape.pattern;
-      delete shape.gradient;
-    }
-    assignElementProps(el, rest);
-    if (('width' in rest || 'height' in rest) && shape.pathFormula) {
-      const formula = SHAPE_PATH_FORMULAS[shape.pathFormula];
-      if (formula) {
-        shape.viewBox = [shape.width, shape.height];
-        shape.path = formula.formula(
-          shape.width,
-          shape.height,
-          formula.editable ? (shape.keypoints ?? formula.defaultValue) : undefined,
+
+    if (element.type === 'table' && typeof patch.height === 'number') {
+      const nextHeight = patch.height;
+      if (element.data.length > 0) {
+        patch.cellMinHeight = Math.max(
+          36,
+          element.cellMinHeight + (nextHeight - element.height) / element.data.length,
         );
       }
-    }
-    if (Object.keys(textPatch).length > 0) {
-      shape.text = { ...shape.text, ...textPatch } as PPTShapeElement['text'];
-    }
-    return;
-  }
-  if (el.type === 'table' && 'height' in props) {
-    const oldHeight = el.height;
-    const oldCellMinHeight = el.cellMinHeight;
-    const oldRowHeights = el.rowHeights;
-    assignElementProps(el, props as Record<string, unknown>);
-    if (el.data.length > 0) {
-      el.cellMinHeight = Math.max(36, oldCellMinHeight + (el.height - oldHeight) / el.data.length);
-    }
-    if (oldRowHeights?.length && oldHeight > 0) {
-      const scale = el.height / oldHeight;
-      el.rowHeights = oldRowHeights.map((height) => height * scale);
-    }
-    return;
-  }
-  assignElementProps(el, props as Record<string, unknown>);
-}
-
-function applyIntentsToContent(content: SlideContent, intents: EditIntent[]): SlideContent {
-  return produce(content, (draft) => {
-    for (const intent of intents) {
-      if (intent.type === 'element.update') {
-        const el = draft.canvas.elements.find((e) => e.id === intent.id);
-        if (!el) continue;
-        applyPropsToElement(el, intent.props);
-      } else if (intent.type === 'element.updateMany') {
-        for (const u of intent.updates) {
-          const el = draft.canvas.elements.find((e) => e.id === u.id);
-          if (!el) continue;
-          applyPropsToElement(el, u.props as Partial<PPTElement>);
-        }
-      } else if (intent.type === 'element.removeProps') {
-        const el = draft.canvas.elements.find((e) => e.id === intent.id);
-        if (!el) continue;
-        const target = el as unknown as Record<string, unknown>;
-        for (const prop of intent.props) delete target[prop];
-      } else if (intent.type === 'text.updateContent') {
-        const el = draft.canvas.elements.find((element) => element.id === intent.id);
-        if (!el) continue;
-        if (intent.target === 'text' && el.type === 'text') {
-          el.content = intent.content;
-        } else if (intent.target === 'shape' && el.type === 'shape' && el.text) {
-          el.text.content = intent.content;
-        }
+      if (element.rowHeights?.length && element.height > 0) {
+        const scale = nextHeight / element.height;
+        patch.rowHeights = element.rowHeights.map((height) => height * scale);
       }
-      // Other EditIntent kinds are out of scope for this vertical.
     }
-  });
+
+    append([
+      { type: 'element.update', elementId: element.id, patch: patch as Partial<PPTElement> },
+    ]);
+  };
+
+  for (const intent of intents) {
+    const elements = working.canvas.elements;
+    if (intent.type === 'element.update') {
+      const element = elements.find((candidate) => candidate.id === intent.id);
+      if (element) compileUpdate(element, intent.props);
+    } else if (intent.type === 'element.updateMany') {
+      for (const update of intent.updates) {
+        const element = working.canvas.elements.find((candidate) => candidate.id === update.id);
+        if (element) compileUpdate(element, update.props);
+      }
+    } else if (intent.type === 'element.removeProps') {
+      if (elements.some((element) => element.id === intent.id)) {
+        append([{ type: 'element.removeProps', elementId: intent.id, propNames: intent.props }]);
+      }
+    } else if (intent.type === 'text.updateContent') {
+      const element = elements.find((candidate) => candidate.id === intent.id);
+      if (intent.target === 'text' && element?.type === 'text') {
+        append([{ type: 'text.updateContent', elementId: element.id, content: intent.content }]);
+      } else if (intent.target === 'shape' && element?.type === 'shape') {
+        append([
+          { type: 'shape.updateTextContent', elementId: element.id, content: intent.content },
+        ]);
+      }
+    }
+  }
+
+  return compiled;
 }
 
 /**
@@ -284,11 +319,16 @@ export function applyEditElementsIntents(
     }
   }
 
-  const next = applyIntentsToContent(present, intents);
+  const operations = compileAgentEditOperations(present, intents);
+  if (operations.length === 0) {
+    return { ok: false, reason: 'nothing changed (targets missing after revalidation)' };
+  }
+  const transaction = createEditorTransaction({ origin: 'agent', history: 'record', operations });
+  const next = applyEditorTransaction(present, transaction);
   if (next === present) {
     return { ok: false, reason: 'nothing changed (targets missing after revalidation)' };
   }
-  session.commitContent(next, true);
+  session.applyTransaction(transaction);
   return { ok: true };
 }
 

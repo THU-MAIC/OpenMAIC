@@ -8,6 +8,7 @@ let yamlOverride: string | null = null;
 const ENV_PREFIXES_TO_CLEAR = [
   'OPENAI',
   'AZURE_OPENAI',
+  'ATLASCLOUD',
   'ANTHROPIC',
   'GOOGLE',
   'DEEPSEEK',
@@ -25,6 +26,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'MIMO',
   'HY3',
   'OLLAMA',
+  'BEDROCK',
   'TTS_OPENAI',
   'TTS_AZURE',
   'TTS_GLM',
@@ -32,8 +34,10 @@ const ENV_PREFIXES_TO_CLEAR = [
   'TTS_DOUBAO',
   'TTS_ELEVENLABS',
   'TTS_MINIMAX',
+  'TTS_VOXCPM',
   'ASR_OPENAI',
   'ASR_QWEN',
+  'ASR_FUNASR',
   'PDF_UNPDF',
   'PDF_MINERU',
   'PDF_MINERU_CLOUD',
@@ -51,6 +55,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'VIDEO_GROK',
   'BOCHA',
   'WEB_SEARCH_MINIMAX',
+  'WEB_SEARCH_CLAUDE',
 ];
 
 function clearProviderEnv() {
@@ -58,6 +63,7 @@ function clearProviderEnv() {
     delete process.env[`${prefix}_API_KEY`];
     delete process.env[`${prefix}_BASE_URL`];
     delete process.env[`${prefix}_MODELS`];
+    delete process.env[`${prefix}_ENABLED`];
   }
   delete process.env.TAVILY_API_KEY;
   delete process.env.BOCHA_API_KEY;
@@ -65,6 +71,8 @@ function clearProviderEnv() {
   delete process.env.ALIDOCMIND_ACCESS_KEY_ID;
   delete process.env.ALIDOCMIND_ACCESS_KEY_SECRET;
   delete process.env.ALIDOCMIND_BASE_URL;
+  delete process.env.BEDROCK_REGION;
+  delete process.env.AWS_BEARER_TOKEN_BEDROCK;
 }
 
 vi.mock('fs', async (importOriginal) => {
@@ -273,6 +281,22 @@ providers:
       expect(providers.azure.models).toEqual(['course-gpt-4o', 'course-gpt-5']);
     });
 
+    it('maps Atlas Cloud env vars to the built-in OpenAI-compatible provider', async () => {
+      vi.stubEnv('ATLASCLOUD_API_KEY', 'sk-atlas');
+      vi.stubEnv('ATLASCLOUD_BASE_URL', 'https://api.atlascloud.ai/v1');
+      vi.stubEnv('ATLASCLOUD_MODELS', 'qwen/qwen3.5-flash,deepseek-ai/deepseek-v4-pro');
+      const { getServerProviders, resolveBaseUrl } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.atlascloud.models).toEqual([
+        'qwen/qwen3.5-flash',
+        'deepseek-ai/deepseek-v4-pro',
+      ]);
+      expect(resolveBaseUrl('atlascloud')).toBe('https://api.atlascloud.ai/v1');
+      expect((providers.atlascloud as Record<string, unknown>).apiKey).toBeUndefined();
+      expect((providers.atlascloud as Record<string, unknown>).baseUrl).toBeUndefined();
+    });
+
     it('maps Tencent Hunyuan and Xiaomi MiMo env prefixes to provider IDs', async () => {
       vi.stubEnv('TENCENT_HUNYUAN_API_KEY', 'sk-tencent');
       vi.stubEnv('TENCENT_HUNYUAN_MODELS', 'hy3-preview,hunyuan-2.0-instruct-20251111');
@@ -304,6 +328,45 @@ providers:
       const providers = getServerProviders();
 
       expect(providers.openai).toBeUndefined();
+    });
+
+    it('includes Bedrock from env without an API key', async () => {
+      vi.stubEnv('BEDROCK_REGION', 'us-east-1');
+      vi.stubEnv('BEDROCK_MODELS', ' us.anthropic.claude-sonnet-5 , us.anthropic.claude-opus-4-8 ');
+      const { getServerProviders, resolveApiKey, resolveBaseUrl } =
+        await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.bedrock).toEqual({
+        models: ['us.anthropic.claude-sonnet-5', 'us.anthropic.claude-opus-4-8'],
+      });
+      expect(resolveApiKey('bedrock')).toBe('');
+      expect(resolveBaseUrl('bedrock')).toBeUndefined();
+    });
+
+    it('does not enable Bedrock for whitespace-only region and models', async () => {
+      vi.stubEnv('BEDROCK_REGION', '   ');
+      vi.stubEnv('BEDROCK_MODELS', ' , ');
+      const { getServerProviders } = await import('@/lib/server/provider-config');
+
+      expect(getServerProviders().bedrock).toBeUndefined();
+    });
+
+    it('includes Bedrock from YAML with only models configured', async () => {
+      yamlOverride = `
+providers:
+  bedrock:
+    models:
+      - us.anthropic.claude-sonnet-5
+      - us.anthropic.claude-opus-4-8
+`;
+      const { getServerProviders } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.bedrock.models).toEqual([
+        'us.anthropic.claude-sonnet-5',
+        'us.anthropic.claude-opus-4-8',
+      ]);
     });
   });
 
@@ -364,6 +427,31 @@ providers:
       expect(resolveWebSearchApiKey('minimax', undefined)).toBe('minimax-env-key');
       expect(resolveWebSearchBaseUrl('minimax')).toBe('https://proxy.example.com/minimax');
       expect(getServerWebSearchProviders().minimax).toEqual({});
+    });
+
+    it('resolves Claude web search key, base URL, and pinned model from dedicated env vars', async () => {
+      vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'claude-env-key');
+      vi.stubEnv('WEB_SEARCH_CLAUDE_BASE_URL', 'https://proxy.example.com/anthropic');
+      vi.stubEnv('WEB_SEARCH_CLAUDE_MODELS', 'claude-sonnet-5,claude-opus-5');
+      const {
+        getServerWebSearchProviders,
+        resolveWebSearchApiKey,
+        resolveWebSearchBaseUrl,
+        resolveWebSearchModel,
+      } = await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchApiKey('claude', undefined)).toBe('claude-env-key');
+      expect(resolveWebSearchBaseUrl('claude')).toBe('https://proxy.example.com/anthropic');
+      // Server-pinned model (first entry) is authoritative over the client model.
+      expect(resolveWebSearchModel('claude', 'claude-haiku-4-5')).toBe('claude-sonnet-5');
+      expect(getServerWebSearchProviders().claude).toEqual({});
+    });
+
+    it('lets the client model win when no Claude model is pinned server-side', async () => {
+      const { resolveWebSearchModel } = await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchModel('claude', 'claude-opus-5')).toBe('claude-opus-5');
+      expect(resolveWebSearchModel('claude')).toBeUndefined();
     });
   });
 
@@ -534,6 +622,29 @@ pdf:
       const { isServerTTSProviderDisabled } = await import('@/lib/server/provider-config');
       expect(isServerTTSProviderDisabled('openai-tts')).toBe(true);
       expect(isServerTTSProviderDisabled('qwen-tts')).toBe(false);
+    });
+  });
+
+  describe('FunASR server configuration', () => {
+    it('activates the keyless provider from an env base URL', async () => {
+      vi.stubEnv('ASR_FUNASR_BASE_URL', 'http://localhost:8000/v1');
+      const { getServerASRProviders, resolveASRApiKey, resolveASRBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(getServerASRProviders()['funasr-asr']).toEqual({});
+      expect(resolveASRApiKey('funasr-asr')).toBe('');
+      expect(resolveASRBaseUrl('funasr-asr')).toBe('http://localhost:8000/v1');
+    });
+
+    it('activates the keyless provider from YAML and keeps server config authoritative', async () => {
+      yamlOverride = 'asr:\n  funasr-asr:\n    baseUrl: http://funasr.internal:8000/v1\n';
+      const { getServerASRProviders, resolveASRBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(getServerASRProviders()['funasr-asr']).toEqual({});
+      expect(resolveASRBaseUrl('funasr-asr', 'https://client.example.com/v1')).toBe(
+        'http://funasr.internal:8000/v1',
+      );
     });
   });
 

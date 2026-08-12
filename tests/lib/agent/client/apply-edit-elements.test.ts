@@ -1,9 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EditIntent } from '@openmaic/renderer/editing';
+import { applyEditorTransaction, type EditorTransaction } from '@openmaic/editor/core';
+import type { EditIntent } from '@openmaic/editor/react';
 import type { PPTElement } from '@openmaic/dsl';
 import type { SlideContent } from '@/lib/types/stage';
 
 const commitContent = vi.fn();
+let appliedContent: SlideContent | null = null;
+const applyTransaction = vi.fn((transaction: EditorTransaction) => {
+  if (!mockSession.history) throw new Error('missing test edit session');
+  appliedContent = applyEditorTransaction(mockSession.history.present, transaction);
+});
 const updateScene = vi.fn();
 
 vi.mock('@/components/edit/surfaces/slide/slide-edit-session', () => ({
@@ -13,6 +19,7 @@ vi.mock('@/components/edit/surfaces/slide/slide-edit-session', () => ({
       history: mockSession.history,
       gestureActive: mockSession.gestureActive,
       commitContent,
+      applyTransaction,
     }),
   },
 }));
@@ -62,9 +69,16 @@ function textEl(id: string, overrides: Partial<PPTElement> = {}): PPTElement {
   } as PPTElement;
 }
 
+function getAppliedContent(): SlideContent {
+  if (!appliedContent) throw new Error('expected an editor transaction to be applied');
+  return appliedContent;
+}
+
 describe('applyEditElementsIntents', () => {
   beforeEach(() => {
     commitContent.mockReset();
+    applyTransaction.mockReset();
+    appliedContent = null;
     updateScene.mockReset();
     mockSession.sceneId = null;
     mockSession.history = null;
@@ -100,7 +114,7 @@ describe('applyEditElementsIntents', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toMatch(/gone|unknown|missing/i);
-    expect(commitContent).not.toHaveBeenCalled();
+    expect(applyTransaction).not.toHaveBeenCalled();
   });
 
   it('refuses when a target is locked at apply time', async () => {
@@ -116,7 +130,7 @@ describe('applyEditElementsIntents', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toMatch(/locked/i);
-    expect(commitContent).not.toHaveBeenCalled();
+    expect(applyTransaction).not.toHaveBeenCalled();
   });
 
   it('refuses when a target element changed type after the gate ran', async () => {
@@ -147,7 +161,7 @@ describe('applyEditElementsIntents', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toMatch(/changed type/i);
-    expect(commitContent).not.toHaveBeenCalled();
+    expect(applyTransaction).not.toHaveBeenCalled();
   });
 
   it('allows apply when the gate-time element type still matches', async () => {
@@ -163,7 +177,7 @@ describe('applyEditElementsIntents', () => {
     );
 
     expect(result).toEqual({ ok: true });
-    expect(commitContent).toHaveBeenCalledTimes(1);
+    expect(applyTransaction).toHaveBeenCalledTimes(1);
   });
 
   it('refuses when a target changed after the gate inventory was captured', async () => {
@@ -184,7 +198,7 @@ describe('applyEditElementsIntents', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toMatch(/changed while the edit was being prepared/i);
-    expect(commitContent).not.toHaveBeenCalled();
+    expect(applyTransaction).not.toHaveBeenCalled();
   });
 
   it('refuses when a non-target element changed after the prompt inventory was captured', async () => {
@@ -207,7 +221,7 @@ describe('applyEditElementsIntents', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toMatch(/slide elements changed while the edit was being prepared/i);
-    expect(commitContent).not.toHaveBeenCalled();
+    expect(applyTransaction).not.toHaveBeenCalled();
   });
 
   it('detects concurrent shape vAlign changes through the gate fingerprint', async () => {
@@ -246,7 +260,7 @@ describe('applyEditElementsIntents', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toMatch(/changed while the edit was being prepared/i);
-    expect(commitContent).not.toHaveBeenCalled();
+    expect(applyTransaction).not.toHaveBeenCalled();
   });
 
   it('refuses while a canvas pointer gesture has uncommitted local state', async () => {
@@ -276,11 +290,33 @@ describe('applyEditElementsIntents', () => {
     ]);
 
     expect(result).toEqual({ ok: true });
-    expect(commitContent).toHaveBeenCalledTimes(1);
-    const next = commitContent.mock.calls[0][0] as SlideContent;
-    expect(commitContent.mock.calls[0][1]).toBe(true);
+    expect(applyTransaction).toHaveBeenCalledTimes(1);
+    const next = getAppliedContent();
+    expect(applyTransaction.mock.calls[0][0]).toMatchObject({ origin: 'agent', history: 'record' });
     expect(next.canvas.elements[0]).toMatchObject({ top: 10, defaultColor: '#00f' });
     expect(updateScene).not.toHaveBeenCalled();
+  });
+
+  it('submits a validated agent batch through the editor transaction API', async () => {
+    const { applyEditElementsIntents } = await import('@/lib/agent/client/apply-edit-elements');
+    mockSession.sceneId = 's1';
+    mockSession.history = { present: slideWith([textEl('a')]) };
+
+    const result = applyEditElementsIntents('s1', [
+      { type: 'element.update', id: 'a', props: { top: 10 } },
+    ]);
+
+    expect(result).toEqual({ ok: true });
+    expect(applyTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        origin: 'agent',
+        history: 'record',
+        operations: [
+          expect.objectContaining({ type: 'element.update', elementId: 'a', patch: { top: 10 } }),
+        ],
+      }),
+    );
+    expect(commitContent).not.toHaveBeenCalled();
   });
 
   it('applies text content and style intents in the same undo entry', async () => {
@@ -300,8 +336,8 @@ describe('applyEditElementsIntents', () => {
     ]);
 
     expect(result).toEqual({ ok: true });
-    expect(commitContent).toHaveBeenCalledTimes(1);
-    const next = commitContent.mock.calls[0][0] as SlideContent;
+    expect(applyTransaction).toHaveBeenCalledTimes(1);
+    const next = getAppliedContent();
     expect(next.canvas.elements[0]).toMatchObject({
       defaultColor: '#00f',
       content: '<p>Updated title</p>',
@@ -336,7 +372,7 @@ describe('applyEditElementsIntents', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toMatch(/changed type/i);
-    expect(commitContent).not.toHaveBeenCalled();
+    expect(applyTransaction).not.toHaveBeenCalled();
   });
 
   it('revalidates group cohesion for content-only edits', async () => {
@@ -385,7 +421,7 @@ describe('applyEditElementsIntents', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toMatch(/group.*missing.*group-b/i);
-    expect(commitContent).not.toHaveBeenCalled();
+    expect(applyTransaction).not.toHaveBeenCalled();
   });
 
   it('merges partial nested style patches without dropping existing values', async () => {
@@ -414,7 +450,7 @@ describe('applyEditElementsIntents', () => {
     ]);
 
     expect(result).toEqual({ ok: true });
-    const next = commitContent.mock.calls[0][0] as SlideContent;
+    const next = getAppliedContent();
     expect(next.canvas.elements[0]).toMatchObject({
       filters: { blur: '2px', contrast: '90%', brightness: '120%' },
     });
@@ -447,7 +483,7 @@ describe('applyEditElementsIntents', () => {
     ]);
 
     expect(result).toEqual({ ok: true });
-    const next = commitContent.mock.calls[0][0] as SlideContent;
+    const next = getAppliedContent();
     expect(next.canvas.elements[0]).toMatchObject({
       filters: { brightness: '120' },
     });
@@ -494,7 +530,7 @@ describe('applyEditElementsIntents', () => {
         { type: 'element.update', id: 'img1', props: { src: 'https://example.com/new.png' } },
       ]),
     ).toMatchObject({ ok: false });
-    expect(commitContent).not.toHaveBeenCalled();
+    expect(applyTransaction).not.toHaveBeenCalled();
   });
 
   it('clears higher-priority shape paints when applying a solid fill', async () => {
@@ -529,7 +565,7 @@ describe('applyEditElementsIntents', () => {
     ]);
 
     expect(result).toEqual({ ok: true });
-    const next = commitContent.mock.calls[0][0] as SlideContent;
+    const next = getAppliedContent();
     expect(next.canvas.elements[0]).toMatchObject({ fill: '#00f' });
     expect(next.canvas.elements[0]).not.toHaveProperty('pattern');
     expect(next.canvas.elements[0]).not.toHaveProperty('gradient');
@@ -560,7 +596,7 @@ describe('applyEditElementsIntents', () => {
     ]);
 
     expect(result).toEqual({ ok: true });
-    const next = commitContent.mock.calls[0][0] as SlideContent;
+    const next = getAppliedContent();
     expect(next.canvas.elements[0]).toMatchObject({ viewBox: [200, 120] });
     expect((next.canvas.elements[0] as { path: string }).path).not.toBe('old path');
   });
@@ -596,7 +632,7 @@ describe('applyEditElementsIntents', () => {
     ]);
 
     expect(result).toEqual({ ok: true });
-    const next = commitContent.mock.calls[0][0] as SlideContent;
+    const next = getAppliedContent();
     expect(next.canvas.elements[0]).toMatchObject({
       height: 160,
       cellMinHeight: 60,
@@ -616,7 +652,7 @@ describe('applyEditElementsIntents', () => {
     if (result.ok) return;
     expect(result.reason).toMatch(/session/i);
     expect(updateScene).not.toHaveBeenCalled();
-    expect(commitContent).not.toHaveBeenCalled();
+    expect(applyTransaction).not.toHaveBeenCalled();
   });
 
   it('maps shape text chrome onto shape.text instead of top-level', async () => {
@@ -648,7 +684,7 @@ describe('applyEditElementsIntents', () => {
     ]);
 
     expect(result).toEqual({ ok: true });
-    const next = commitContent.mock.calls[0][0] as SlideContent;
+    const next = getAppliedContent();
     const el = next.canvas.elements[0] as {
       defaultColor?: string;
       text?: { defaultColor?: string };
@@ -681,6 +717,6 @@ describe('applyEditElementsIntents', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toMatch(/no text label/i);
-    expect(commitContent).not.toHaveBeenCalled();
+    expect(applyTransaction).not.toHaveBeenCalled();
   });
 });

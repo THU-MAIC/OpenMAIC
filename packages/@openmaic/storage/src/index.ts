@@ -7,16 +7,66 @@
  * persists — the KV / asset primitives and their swappable backends. The
  * pluggable seam is the backend, not the database driver.
  *
- * The KV / asset primitives ship with browser backends (zero server) and their
- * primitive contracts; the `DocumentStore` adds the normalized document
- * aggregate (browser backend, migrate-on-read, validation gate). The HTTP
- * backend + reference server and the `RuntimeStore` follow in later parts (see
- * the tracking issue).
+ * `KVStore` ships a browser backend and an HTTP backend, proven equivalent by
+ * one shared contract suite, with one asymmetry: only its `account` scope has
+ * an HTTP backend, because `device` values never leave the device.
+ *
+ * The asset seam ships `BrowserAssetStore`: a global asset pool, in which an
+ * allocated `AssetId` names a registry entry and the registry names
+ * content-addressed bytes (#1007). Its byte table is embedded in the registry's
+ * IndexedDB database so writes, reference counting, and reclamation share one
+ * transaction, and its inline reclamation is what keeps them there. A server
+ * backend collects bytes offline instead, which lets its byte layer be
+ * pluggable — a column of the transactional store, or an object store keyed by
+ * content hash. The HTTP backend downloads bytes through authenticated fetches
+ * and mints object URLs locally.
  */
-export type { KVScope, KVStore } from './kv/types.js';
-export { DEFAULT_KV_SCOPE } from './kv/types.js';
+export type { DeviceSafeKVStore, KVScope, KVStore, LocalKVStore } from './kv/types.js';
+export { assertKVScope, DEFAULT_KV_SCOPE, KVScopeViolationError } from './kv/types.js';
 export { BrowserKVStore, type BrowserKVStoreOptions } from './kv/browser.js';
-export { BrowserAssetProvider, type BrowserAssetProviderOptions } from './asset/browser.js';
+export {
+  HttpAccountKV,
+  HttpKVStore,
+  HttpKVStoreError,
+  type AccountScope,
+  type HttpAccountKVOptions,
+  type HttpKVHeadersContext,
+  type HttpKVHeadersHook,
+  type HttpKVStoreOptions,
+} from './kv/http.js';
+export { BrowserAssetStore, type BrowserAssetStoreOptions } from './asset/browser-store.js';
+export {
+  HttpAssetStore,
+  HttpAssetStoreError,
+  type HttpAssetHeadersContext,
+  type HttpAssetHeadersHook,
+  type HttpAssetStoreOptions,
+} from './asset/http.js';
+export { newAssetId, toAssetId, type AssetId } from './asset/id.js';
+export {
+  AssetNotFoundError,
+  AssetQuotaExceededError,
+  DEFAULT_RENDERABLE_TYPES,
+  EXCLUDED_RENDERABLE_TYPES,
+  type AssetBytes,
+  type AssetIdentity,
+  type AssetPrincipal,
+  type AssetStore,
+} from './asset/types.js';
+export {
+  ASSET_PG_SCHEMA,
+  PgAssetStore,
+  ensureAssetSchema,
+  type PgAssetStoreOptions,
+} from './asset/pg.js';
+export { PgAssetByteStore } from './asset/pg-bytes.js';
+export {
+  AssetCollector,
+  DEFAULT_ASSET_COLLECTION_BATCH_SIZE,
+  DEFAULT_ASSET_COLLECTION_GRACE_MS,
+  type AssetCollectionPass,
+  type AssetCollectorOptions,
+} from './asset/collector.js';
 
 export {
   kvPersistStorage,

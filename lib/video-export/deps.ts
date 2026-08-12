@@ -24,6 +24,8 @@ import type {
   SceneType,
   PPTElement,
 } from '@openmaic/dsl';
+import type { PercentageGeometry } from './ir';
+import type { InteractiveHtmlFailure } from './interactive-static';
 
 /**
  * The compiler's scene input — the structural slice it reads. Deliberately
@@ -33,9 +35,21 @@ import type {
  * (slide/quiz/interactive/pbl) is structurally assignable to this, so callers
  * pass their scenes without casting; non-slide content simply lacks `canvas`.
  */
+export interface CompilerSceneContent {
+  type?: string;
+  canvas?: { elements?: PPTElement[] };
+  /** Quiz authored content; kept structural so the pure compiler needs no app types. */
+  questions?: readonly unknown[];
+  /** App-owned PBL payloads enter as unknown and are narrowed by the pure visual pass. */
+  projectV2?: unknown;
+  projectConfig?: unknown;
+  /** Embedded interactive HTML; prepared by the app-side adapter before compile. */
+  html?: string;
+}
+
 export type CompilerScene = SceneCore & {
   type: SceneType;
-  content?: { type?: string; canvas?: { elements?: PPTElement[] } };
+  content?: CompilerSceneContent;
 };
 
 /**
@@ -89,6 +103,67 @@ export interface AssetSource {
   audio(action: SpeechAction): AssetMeta | null;
   /** Media asset (image/video) for an element on a scene, or null when none. */
   media(elementId: string, scene: SceneCore): AssetMeta | null;
+}
+
+/** Prepared interactive HTML metadata exposed synchronously to the pure compiler. */
+export interface InteractiveHtmlMeta {
+  /** Stable id used by the asset plan and byte collector. */
+  id: string;
+  present: boolean;
+  /** SHA-256 of the exact packaged HTML, present only on success. */
+  contentHash?: string;
+  /** Stable failure category when `present` is false. */
+  failure?: InteractiveHtmlFailure;
+  /** Bounded, human-readable detail for the export report. */
+  message?: string;
+}
+
+/** Synchronous adapter over HTML that the app prepared before pure compilation. */
+export interface InteractiveHtmlSource {
+  html(scene: SceneCore): InteractiveHtmlMeta | null;
+}
+
+/**
+ * Geometry source — resolves a slide element's **rendered** percentage geometry
+ * (0–100 space) so spotlight/laser/video placement matches where the element
+ * actually paints, not just its authored box.
+ *
+ * The pure geometry helper ({@link findElementGeometry}) reads the element's
+ * authored `left/top/width/height` against a fixed 1000×562.5 base. That is the
+ * element's **outer box**, but the live overlays (and the slide-snapshot frame)
+ * measure the element's `.element-content` box — which differs for auto-sized
+ * text (horizontal text has `height:auto`) and its 10px content padding. So a
+ * spotlight placed on the authored box sits offset from the rendered text
+ * (issue #867 item 5). When the app can measure the real content box (an
+ * off-screen render), it supplies this probe; the geometry pass prefers it and
+ * falls back to the pure authored-box calc on a miss. Tests omit it entirely —
+ * the compiler stays pure and deterministic without it.
+ */
+export interface GeometryProbe {
+  /**
+   * The rendered content-box geometry (0–100) for an element on a scene, or
+   * null when it could not be measured (element absent / not a slide) — the
+   * caller then falls back to the authored-box calc.
+   */
+  contentGeometry(elementId: string, scene: SceneCore): PercentageGeometry | null;
+}
+
+/** Stable app-side layout facts consumed by the pure Quiz timing planner. */
+export interface QuizLayoutMeasurement {
+  /** Full static question-list content height at the target resolution. */
+  contentHeightPx: number;
+  /** Visible list viewport height at the target resolution. */
+  viewportHeightPx: number;
+  /** Target video frame height, used to scale the 720p scroll-speed baseline. */
+  frameHeightPx: number;
+}
+
+/**
+ * Synchronous Quiz layout dependency. The app measures all Quiz scenes before
+ * compile and exposes the resulting table through this pure lookup boundary.
+ */
+export interface QuizLayoutProbe {
+  measureQuestionList(scene: SceneCore): QuizLayoutMeasurement | null;
 }
 
 /** Compiler configuration — the determinism inputs recorded into the IR's `config`. */

@@ -2,7 +2,20 @@
 
 React component for rendering PPTist-style `Slide` JSON. Extracted from [OpenMAIC](https://github.com/THU-MAIC/OpenMAIC).
 
-> **v1 = read-only canvas.** Editing (selection, drag/resize, ProseMirror inline editor) is planned for v2.
+> `@openmaic/renderer` is the read-only canvas package. Editing lives in the
+> separate `@openmaic/editor` package, which depends on this renderer.
+
+## Migrating from 0.0.x
+
+Version `0.1.0` removes the experimental `@openmaic/renderer/editing` subpath.
+Install `@openmaic/editor` and migrate editing imports to its explicit layers:
+
+```ts
+import { EditableSlideCanvas } from '@openmaic/editor/react';
+import { EditableSlideCanvasWithUI } from '@openmaic/editor/ui';
+```
+
+Read-only rendering imports from `@openmaic/renderer` are unchanged.
 
 ## Install
 
@@ -77,11 +90,15 @@ The main read-only entry. Reads everything from props; zero global state.
 interface SlideCanvasProps {
   slide?: Slide;                       // required unless via <SlideRendererProvider>
   scale?: number;                      // omit = auto-fit container
+  canvasPercentage?: number;           // percent of the parent used by auto-fit
+  onScaleChange?: (scale) => void;     // computed auto-fit scale
   background?: SlideBackground;        // overrides slide.background
   effects?: SlideEffects;              // laser / spotlight / highlight / zoom, all default off
-  renderImage?: (el, src) => ReactNode;
+  renderImage?: (el, src, defaultContent) => ReactNode;
   renderVideo?: (el) => ReactNode;
+  videoInteractive?: boolean;           // defaults true; set false to disable video pointer interaction
   onElementClick?: (el, event) => void;
+  elementIdPrefix?: string;
   className?: string;
   style?: CSSProperties;
 }
@@ -110,13 +127,17 @@ The package's `BaseImageElement` and `BaseVideoElement` render plain `<img>` / `
 ```tsx
 <SlideCanvas
   slide={slide}
-  renderImage={(el, src) => (
+  renderImage={(el, src, defaultContent) => (
     src.startsWith('placeholder:')
       ? <MyPlaceholder taskId={src} />
-      : <img src={resolveCdnUrl(src)} alt="" style={{ width: '100%', height: '100%' }} />
+      : defaultContent
   )}
 />
 ```
+
+`defaultContent` is the renderer-prepared image, including clipping, filters,
+soft edges, and `colorMask`. The slot return value is authoritative: return
+`null` to intentionally hide the image.
 
 ### `<SlideRendererProvider>` + `useSlideContext()`
 

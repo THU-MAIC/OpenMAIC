@@ -41,13 +41,11 @@
  * persist).
  */
 
-import { streamText } from 'ai';
 import type { LanguageModel } from 'ai';
 
 import { createLogger } from '@/lib/logger';
-import { resolveThinkingProviderOptions } from '@/lib/ai/llm';
-import { withThinkingDisabled } from './runtime-thinking';
-import { buildVisionUserContent } from '@/lib/generation/prompt-formatters';
+import { streamLLM } from '@/lib/ai/llm';
+import { buildVisionUserContent } from '@openmaic/generation';
 import type { ThinkingConfig } from '@/lib/types/provider';
 
 import type {
@@ -58,13 +56,13 @@ import type {
   PBLProjectV2,
 } from '../types';
 import type { PBLSSEEvent } from '../api/sse';
-import { addEvaluation } from '../operations/evaluation';
-import { latestSubmissionForMicrotask } from '../operations/submission';
+import { addEvaluation } from '../operations/runtime/evaluation';
+import { latestSubmissionForMicrotask } from '../operations/runtime/submission';
 import {
   buildFinalEvalPrompt,
   buildMilestoneEvalPrompt,
   buildTaskEvalPrompt,
-} from '../operations/eval-prompts';
+} from '../operations/runtime/eval-prompts';
 import {
   normalizeOptionalString,
   normalizeScore,
@@ -73,8 +71,8 @@ import {
   parseEvaluationTail,
   sanitizeMilestoneEvaluationFeedback,
   stripEvaluationTail,
-} from '../operations/eval-tail-parser';
-import { normalizeActGoals } from '../operations/completion-stats';
+} from '../operations/runtime/eval-tail-parser';
+import { normalizeActGoals } from '../operations/runtime/completion-stats';
 
 const log = createLogger('PBL v2 Evaluator');
 
@@ -154,8 +152,8 @@ async function* runShared(args: RunSharedArgs): AsyncGenerator<PBLSSEEvent, void
   const isMilestone = kind === 'milestone';
   let lastSanitizedLength = 0;
   try {
-    const result = withThinkingDisabled(() =>
-      streamText({
+    const result = streamLLM(
+      {
         model: languageModel,
         system: systemPrompt,
         // Image submission on a vision-capable model → send the picture as a
@@ -173,11 +171,10 @@ async function* runShared(args: RunSharedArgs): AsyncGenerator<PBLSSEEvent, void
               ],
             }
           : { prompt: userPrompt }),
-        ...(thinkingConfig
-          ? { providerOptions: resolveThinkingProviderOptions(languageModel, thinkingConfig) }
-          : {}),
         ...(signal ? { abortSignal: signal } : {}),
-      }),
+      },
+      `pbl-v2-evaluator-${kind}`,
+      thinkingConfig,
     );
     for await (const part of result.fullStream) {
       switch (part.type) {

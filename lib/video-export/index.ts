@@ -22,14 +22,30 @@
 export * from './ir';
 export * from './deps';
 export * from './geometry';
+export * from './interactive-static';
+export * from './runtime-diagnostics';
 export { compileVideoTimeline, type CompileInput, type CompileDeps } from './compile';
 export { normalizeScenes, type NormalizeResult } from './passes/normalize';
 export { buildTimelineOptions } from './passes/probe';
 export { buildTimeline, type TimelineResult } from './passes/timeline';
-export { applyGeometry, resolveEffectGeometry, type GeometryResult } from './passes/geometry';
+export { applyVisuals, prepareQuizQuestionList, type VisualsResult } from './passes/visuals';
+export { applyInteractiveHtml, type InteractiveResult } from './passes/interactive';
+export { reflowQuizTimelines, type ReflowResult } from './passes/reflow';
+export {
+  applyGeometry,
+  resolveEffectGeometry,
+  resolveVideoPlacement,
+  type GeometryResult,
+} from './passes/geometry';
 export { planAssets, sanitizeFilenamePart, type AssetsResult } from './passes/assets';
-export { emitManifest, emitManifestJson } from './passes/emit';
+export {
+  emitManifest,
+  emitManifestJson,
+  VideoExportManifestSchema,
+  type VideoExportManifest,
+} from './passes/emit';
 export { toSrt, toVtt, usableCues } from './subtitles';
+export { splitCue, splitCues, splitCueText, textUnits } from './split-cue';
 export {
   emitHyperframes,
   assetUrl,
@@ -37,4 +53,15 @@ export {
   type EmitHyperframesOptions,
   type EmittedProject,
   type EmittedFile,
+  type VideoExportLabels,
+  type InteractiveFallbackLabels,
+  type EmittedVendorAsset,
+  type CoverCardLabels,
+  type VideoExportCta,
 } from './emit-hyperframes';
+export {
+  quizQuestionListCss,
+  renderQuizQuestionListSurface,
+  type QuizQuestionListContent,
+  type QuizQuestionListLabels,
+} from './emit-hyperframes/quiz-question-list';

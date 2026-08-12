@@ -1,0 +1,12 @@
+{
+  // The package build compiles `src` only, so the test tree is otherwise not
+  // type-checked from inside the package. Run this alongside the build
+  // typecheck so fixture probes and their `@ts-expect-error` guards stay live.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src", "test"],
+  "exclude": ["node_modules", "dist"]
+}

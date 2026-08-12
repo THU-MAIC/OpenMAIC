@@ -42,9 +42,11 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText, type LanguageModel } from 'ai';
 
-import { generatePBLV2Project, PlannerV2Error } from '@/lib/pbl/v2/agents/planner';
+import { callLLM } from '@/lib/ai/llm';
+import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { generatePBLV2ProjectSingleCall } from '@/lib/pbl/v2/agents/planner-single-call';
-import { parseJsonResponse } from '@/lib/generation/json-repair';
+import { PlannerV2Error } from '@/lib/pbl/v2/agents/planner-core';
+import { parseJsonResponse } from '@openmaic/generation';
 import { buildCompareHtml } from './compare-html';
 import type { PBLPlannerV2Input, PBLProjectV2 } from '@/lib/pbl/v2/types';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -455,8 +457,16 @@ function runVariant(
   thinkingConfig?: ThinkingConfig,
 ): Promise<PBLProjectV2> {
   return variant === 'single-call'
-    ? generatePBLV2ProjectSingleCall(input, model, undefined, thinkingConfig)
-    : generatePBLV2Project(input, model, undefined, thinkingConfig);
+    ? generatePBLV2ProjectSingleCall(input, async (system, prompt) => {
+        const result = await callLLM(
+          { model, system, prompt },
+          'pbl-v2-planner-single',
+          undefined,
+          thinkingConfig,
+        );
+        return result.text;
+      })
+    : generatePBLV2Project(input, model, callLLM, undefined, thinkingConfig);
 }
 
 async function runOne(

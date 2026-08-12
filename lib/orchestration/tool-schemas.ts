@@ -35,7 +35,7 @@ export function getActionDescriptions(allowedActions: string[]): string {
     wb_open:
       'Open the whiteboard for hand-drawn explanations, formulas, diagrams, or step-by-step derivations. Creates a new whiteboard if none exists. Call this before adding elements. Parameters: {}',
     wb_draw_text:
-      'Add text to the whiteboard. Use for writing formulas, steps, or key points. Parameters: { content: string, x: number, y: number, width?: number, height?: number, fontSize?: number, color?: string, elementId?: string }',
+      'Add text to the whiteboard. Use for writing steps or key points. Use wb_draw_latex for mathematical equations and scientific notation. Parameters: { content: string, x: number, y: number, width?: number, height?: number, fontSize?: number, color?: string, elementId?: string }',
     wb_draw_shape:
       'Add a shape to the whiteboard. Use for diagrams and visual explanations. Parameters: { shape: "rectangle"|"circle"|"triangle", x: number, y: number, width: number, height: number, fillColor?: string, elementId?: string }',
     wb_draw_chart:
@@ -55,7 +55,7 @@ export function getActionDescriptions(allowedActions: string[]): string {
     wb_delete:
       'Delete a specific element from the whiteboard by its ID. Use to remove an outdated, incorrect, or overlapping element without clearing the entire board. Parameters: { elementId: string }',
     wb_close:
-      'Close the whiteboard and return to the slide view. Always close after you finish drawing. Parameters: {}',
+      'Close the whiteboard and return to the slide view. Do not close merely because your own drawing is complete. Keep it open when the current instruction or a later classroom agent still needs the board. Close only when explicitly requested, or before returning to slide-only actions such as spotlight or laser. Parameters: {}',
     play_video:
       'Start playback of a video element on the current slide. Synchronous — blocks until the video finishes playing. Use a speech action before this to introduce the video. Parameters: { elementId: string }',
   };

@@ -76,6 +76,16 @@
     "videoRenderMp4": "算圖 MP4",
     "videoDownloadZip": "下載專案 ZIP",
     "videoServiceHint": "算圖 MP4 需要算圖服務。可下載 ZIP 在本機算圖。",
+    "videoBurnSubtitles": "燒錄字幕",
+    "videoBurnSubtitlesDesc": "關閉時匯出無字幕的乾淨影片，可在剪輯軟體中自行加入字幕檔。",
+    "videoQuizCtaPrompt": "想親自體驗互動測驗？",
+    "videoPblCtaPrompt": "想親自參與專題式學習？",
+    "videoCtaVisit": "前往",
+    "videoDownloadSubtitles": "下載字幕 (.srt)",
+    "subtitlesCompiling": "正在產生字幕…",
+    "subtitlesSuccess": "字幕已下載",
+    "subtitlesEmpty": "沒有可產生字幕的旁白",
+    "subtitlesFailed": "字幕下載失敗",
     "noSlides": "無可匯出的幻燈片",
     "noSlidesSkipped": "本課程無幻燈片，已跳過 PPTX",
     "nothingToExport": "沒有可匯出的內容"
@@ -217,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "文字工具列",
       "label": "文字",
       "font": "字型",
       "fontDefault": "預設",
@@ -230,17 +241,99 @@
       "alignLeft": "靠左對齊",
       "alignCenter": "置中對齊",
       "alignRight": "靠右對齊",
-      "bullet": "項目符號"
+      "bullet": "項目符號",
+      "colorHex": "顏色值"
+    },
+    "line": {
+      "toolbar": "線條工具列",
+      "kind": "線條類型",
+      "color": "線條顏色",
+      "width": "線寬",
+      "style": "線條樣式",
+      "start": "起點樣式",
+      "end": "終點樣式",
+      "straight": "直線",
+      "broken": "折線",
+      "broken2": "雙折線",
+      "curve": "曲線",
+      "cubic": "三次曲線",
+      "solid": "實線",
+      "dashed": "虛線",
+      "dotted": "點線",
+      "none": "無",
+      "arrow": "箭頭",
+      "dot": "圓點"
     },
     "insert": {
+      "toolbar": "插入工具列",
       "textBox": "文字方塊",
+      "line": "線條",
+      "linePresets": {
+        "straight": "直線",
+        "dashed": "虛線",
+        "arrow": "箭頭直線",
+        "dashedArrow": "虛線箭頭",
+        "dottedEnd": "圓點端點線",
+        "broken": "折線",
+        "doubleBroken": "雙折線",
+        "curve": "曲線",
+        "cubic": "三次曲線"
+      },
+      "table": "表格",
+      "formula": "公式",
+      "chart": "圖表",
+      "chartBar": "柱狀圖",
+      "chartLine": "折線圖",
+      "chartPie": "圓餅圖",
+      "tableDimensions": "{{rows}} x {{columns}} 表格",
       "dragToolbar": "拖動工具列",
       "dragToolbarKeyboard": "移動工具列：按 Enter 或空白鍵開始，再使用方向鍵移動",
       "image": "圖片",
       "imageDrop": "拖曳圖片或點按選擇檔案",
       "imageOr": "或貼上圖片網址",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "插入"
+      "imageInsert": "插入",
+      "video": "影片",
+      "videoDrop": "拖曳影片或點按選擇檔案",
+      "videoOr": "或貼上影片網址",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "插入",
+      "audio": "音訊",
+      "audioDrop": "拖曳音訊或點按選擇檔案",
+      "audioOr": "或貼上音訊網址",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "插入"
+    },
+    "asset": {
+      "drop": "拖入檔案或點擊選擇",
+      "orUrl": "或貼上檔案 URL",
+      "urlPlaceholder": "https://…",
+      "insert": "插入",
+      "invalidType": "不支援此檔案類型",
+      "readFailed": "無法讀取檔案"
+    },
+    "latex": {
+      "toolbar": "公式工具列",
+      "editFormula": "編輯公式",
+      "dialog": "公式編輯器",
+      "source": "LaTeX 原始碼",
+      "preview": "預覽",
+      "symbols": "常用符號",
+      "presets": "預設公式",
+      "invalidSource": "LaTeX 原始碼無效。"
+    },
+    "video": {
+      "toolbar": "影片工具列",
+      "poster": "設定封面"
+    },
+    "audio": {
+      "toolbar": "音訊工具列",
+      "preview": "試聽音訊",
+      "pause": "暫停試聽",
+      "loop": "循環播放"
+    },
+    "table": {
+      "doubleClickToEdit": "雙擊編輯"
     },
     "nav": {
       "addSlide": "新增投影片",
@@ -263,14 +356,38 @@
       "toBack": "移至最下層"
     },
     "image": {
+      "toolbar": "圖片工具列",
       "replace": "替換圖片",
       "flipH": "水平翻轉",
-      "flipV": "垂直翻轉"
+      "flipV": "垂直翻轉",
+      "crop": "裁剪圖片"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "水平對齊",
+      "verticalAlignment": "垂直對齊",
+      "selectAll": "全選",
+      "copy": "複製",
+      "cut": "剪下",
+      "paste": "貼上",
+      "unlock": "解鎖",
+      "lock": "鎖定",
+      "group": "群組",
+      "ungroup": "取消群組",
+      "bringForward": "上移一層",
+      "sendBackward": "下移一層",
+      "alignTop": "頂端對齊",
+      "alignMiddle": "垂直置中",
+      "alignBottom": "底端對齊"
     },
     "background": {
       "label": "背景",
       "solid": "純色",
-      "image": "圖片"
+      "image": "圖片",
+      "color": "顏色"
+    },
+    "common": {
+      "cancel": "取消",
+      "confirm": "確定"
     },
     "quiz": {
       "addQuestion": "新增題目",
@@ -320,6 +437,7 @@
       "discussion": "討論"
     },
     "element": {
+      "toolbar": "元素工具列",
       "text": "文字",
       "image": "圖片",
       "shape": "形狀",
@@ -375,7 +493,8 @@
       "sessionEmpty": "暫無歷史對話",
       "thinking": "思考中…",
       "reasoning": "思考過程",
-      "thought": "已思考"
+      "thought": "已思考",
+      "title": "用 AI 編輯"
     },
     "timeline": {
       "title": "講解腳本",
@@ -468,6 +587,21 @@
       "notApplied": "未套用",
       "applyFailed": "編輯器無法套用元素修改，未變更任何內容。",
       "applyPartiallyFailed": "編輯器未能套用一項或多項元素修改，其他修改可能已套用。"
+    },
+    "roster": {
+      "title": "課堂陣容",
+      "count": "{{count}} 位",
+      "editHint": "點擊一位展開編輯",
+      "personaLabel": "人設描述",
+      "personaPlaceholder": "描述角色的性格、教學風格與任務…",
+      "noPersona": "暫無人設",
+      "unnamed": "未命名",
+      "teacherBadge": "主講",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "removeFromClass": "移出課堂",
+      "aiClassmates": "AI 同學 · {{count}}",
+      "addRole": "新增角色"
     }
   },
   "whiteboard": {
@@ -542,67 +676,7 @@
     "startRecording": "開始錄音"
   },
   "pbl": {
-    "legacyFormat": "此PBL場景使用舊格式，請重新生成課程",
     "emptyProject": "PBL專案尚未生成，請透過課程生成建立",
-    "roleSelection": {
-      "title": "選擇你的角色",
-      "description": "選擇一個角色開始專案協作"
-    },
-    "workspace": {
-      "restart": "重新開始",
-      "confirmRestart": "確定重設進度？",
-      "confirm": "確定",
-      "cancel": "取消"
-    },
-    "issueboard": {
-      "title": "任務看板",
-      "noIssues": "暫無任務",
-      "statusDone": "已完成",
-      "statusActive": "進行中",
-      "statusPending": "待處理"
-    },
-    "chat": {
-      "title": "專案討論",
-      "currentIssue": "目前任務",
-      "mentionHint": "使用 @question 提問，@judge 提交評審",
-      "placeholder": "輸入訊息...",
-      "send": "傳送",
-      "issueCompleteMessage": "任務「{{completed}}」已完成！進入下一個任務：「{{next}}」",
-      "allCompleteMessage": "🎉 所有任務都已完成！專案做得很棒！"
-    },
-    "guide": {
-      "howItWorks": "如何參與專案",
-      "help": "使用說明",
-      "title": "使用說明",
-      "step1": {
-        "title": "第一步：選擇角色",
-        "desc": "專案生成後，從角色清單中選擇一個角色（標記為🟢的非系統角色）"
-      },
-      "step2": {
-        "title": "第二步：完成任務",
-        "desc": "每個任務代表一個學習目標：",
-        "s1": {
-          "title": "檢視目前任務",
-          "desc": "檢視任務的標題、描述、負責人"
-        },
-        "s2": {
-          "title": "取得指導",
-          "example": "@question 我應該從哪裡開始？\n@question 如何實現這個功能？",
-          "desc": "提問助手會提供引導性問題和提示（不直接給答案）"
-        },
-        "s3": {
-          "title": "提交作品",
-          "example": "@judge 我已經完成了，請檢查",
-          "desc": "評審助手會評估你的工作並給予回饋：",
-          "complete": "自動進入下一個任務",
-          "revision": "依據回饋改進"
-        }
-      },
-      "step3": {
-        "title": "第三步：完成專案",
-        "desc": "所有任務完成後，系統會顯示「🎉 專案已完成！」"
-      }
-    },
     "v2": {
       "hero": {
         "title": "專案實戰 · Project-Based Learning",
@@ -844,7 +918,37 @@
     "clearSearch": "清除",
     "searchAriaLabel": "搜尋課程",
     "searchEmpty": "沒有符合的課程",
-    "searchPlaceholder": "搜尋課程..."
+    "searchPlaceholder": "搜尋課程...",
+    "newFolderTitle": "新增資料夾",
+    "newFolderDesc": "依主題整理課程，方便存取。",
+    "newFolderInline": "新增資料夾",
+    "folderNameLabel": "資料夾名稱",
+    "folderNamePlaceholder": "例如：數學、英文、主修課程",
+    "folderNameHint": "全形、半形皆可；空格也計入。",
+    "folderNameExists": "已存在同名資料夾。",
+    "folderCountLimit": "已達資料夾數量上限。",
+    "folderWidth": "寬度 {{width}}/{{max}}",
+    "folderCreate": "建立",
+    "folderBadge": "資料夾",
+    "folderCourseCountUnit": "門課程",
+    "deleteFolderTitle": "刪除資料夾「{{name}}」",
+    "deleteFolderEmptyDesc": "這個資料夾是空的。刪除後無法復原。",
+    "deleteFolderUngroupDesc": "課程保留在「我的課程」，只是不再歸類。",
+    "moveToFolder": "移動到資料夾",
+    "moveToFolderLabel": "移動到資料夾",
+    "ungrouped": "未分類",
+    "searchResults": "搜尋結果",
+    "folderCreateFailed": "建立資料夾失敗",
+    "folderRenameFailed": "重新命名資料夾失敗",
+    "folderDeleteFailed": "刪除資料夾失敗",
+    "moveFailed": "移動課程失敗",
+    "emptyFolderHint": "這個資料夾是空的",
+    "emptyLibraryHint": "還沒有課程——在上方建立，或匯入一個課程。",
+    "folderNameEmpty": "資料夾名稱不能為空",
+    "deleteFolderOnly": "僅刪除資料夾",
+    "deleteFolderAndCourses": "刪除資料夾和 {{count}} 門課程",
+    "deleteFolderConfirmRemove": "將刪除資料夾及其課程（含聊天記錄），無法復原。",
+    "deleteFolderAndCourses_other": "刪除資料夾和 {{count}} 門課程"
   },
   "upload": {
     "pdfSizeLimit": "支援最大50MB的PDF檔案",
@@ -1050,6 +1154,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "通義千問",
       "kimi": "Kimi",
@@ -1067,13 +1172,15 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAI 協定",
       "azure": "Azure OpenAI",
       "anthropic": "Claude 協定",
-      "google": "Gemini 協定"
+      "google": "Gemini 協定",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "個模型",
     "modelSingular": "個模型",
@@ -1222,6 +1329,7 @@
     "providerBrowserNativeTTS": "瀏覽器原生 TTS",
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "瀏覽器原生 ASR",
+    "providerFunASRASR": "FunASR（本機）",
     "providerLemonadeASR": "Lemonade ASR（本機）",
     "providerAzureASR": "Azure STT（語音轉文字）",
     "providerQwenASR": "Qwen ASR（阿里雲百煉）",
@@ -1518,11 +1626,16 @@
     "clearCacheButton": "永久刪除所有資料",
     "clearCacheSuccess": "緩存已清空，頁面即將重新整理",
     "clearCacheFailed": "清空緩存失敗，請重試",
+    "clearCacheBlockedByOtherTabs": "請關閉其他開啟此應用程式的分頁，然後重試。",
+    "persistUnavailable": "變更未被儲存：應用程式無法存取已儲存的資料。若重新整理後仍未恢復，請至設定中清除本機快取。",
+    "persistChangesLost": "儲存已恢復，但在無法使用期間所做的變更未能儲存，已被上次儲存的版本覆蓋。",
     "webSearchSettings": "網路搜尋",
     "webSearchApiKey": "Tavily API Key",
     "webSearchApiKeyPlaceholder": "輸入你的 Tavily API Key",
     "webSearchApiKeyPlaceholderServer": "已設定服務端密鑰，選填覆蓋",
     "webSearchApiKeyHint": "從所選搜尋服務商取得 API Key，用於網路搜尋",
+    "claudeSearchModel": "搜尋模型",
+    "claudeSearchModelHint": "用於執行網路搜尋並總結結果的 Claude 模型。",
     "webSearchApiKeyOptional": "API Key 為可選項。未填寫時將透過公開頁面抓取獲取結果。",
     "searxngServerOnlyNotice": "SearXNG 須由伺服器端設定。請設定 SEARXNG_BASE_URL 環境變數（或在 server-providers.yml 的 web-search 區段中設定）。不接受用戶端自行填寫實例位址。",
     "baiduSubSources": "百度搜尋來源",

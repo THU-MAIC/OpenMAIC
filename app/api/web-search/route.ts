@@ -12,6 +12,7 @@ import {
   isServerConfiguredProvider,
   resolveServerWebSearchProviderId,
   resolveWebSearchApiKey,
+  resolveWebSearchModel,
 } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -20,7 +21,7 @@ import {
   SEARCH_QUERY_REWRITE_EXCERPT_LENGTH,
 } from '@/lib/server/search-query-builder';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
-import type { AICallFn } from '@/lib/generation/pipeline-types';
+import type { AICallFn } from '@openmaic/generation';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 import { resolveWebSearchRouteBaseUrl } from '@/lib/server/web-search-config';
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest) {
       apiKey: bodyApiKey,
       baseUrl: bodyBaseUrl,
       baiduSubSources,
+      claudeModelId,
     } = body as {
       query?: string;
       pdfText?: string;
@@ -45,6 +47,7 @@ export async function POST(req: NextRequest) {
       apiKey?: string;
       baseUrl?: string;
       baiduSubSources?: BaiduSubSources;
+      claudeModelId?: string;
     };
     query = requestQuery;
 
@@ -148,6 +151,11 @@ export async function POST(req: NextRequest) {
       apiKey,
       baseUrl,
       ...(providerId === 'baidu' && baiduSubSources ? { baiduSubSources } : {}),
+      // A server-pinned model (WEB_SEARCH_CLAUDE_MODELS) is authoritative over
+      // the client-selected one, matching how managed keys/base URLs behave.
+      ...(providerId === 'claude'
+        ? { claudeModelId: resolveWebSearchModel('claude', claudeModelId) }
+        : {}),
     });
     const context = formatSearchResultsAsContext(result);
 
@@ -180,6 +188,8 @@ function getWebSearchEnvKey(providerId: WebSearchProviderId): string {
       return 'BOCHA_API_KEY';
     case 'brave':
       return 'BRAVE_API_KEY';
+    case 'claude':
+      return 'WEB_SEARCH_CLAUDE_API_KEY';
     case 'minimax':
       return 'WEB_SEARCH_MINIMAX_API_KEY';
     case 'searxng':

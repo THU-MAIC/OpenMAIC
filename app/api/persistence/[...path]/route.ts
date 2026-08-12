@@ -1,6 +1,7 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 
+import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
 import { PgDocumentStore, ensureDocumentSchema } from '@openmaic/storage/document/pg';
 import { PgRuntimeStore, ensureSchema } from '@openmaic/storage/runtime/pg';
 import { createStorageHttpHandler } from '@openmaic/storage/server';
@@ -11,7 +12,9 @@ import {
 import { Pool } from 'pg';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
+import { lazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { authenticatePersistenceRequest } from '@/lib/persistence/server-auth';
+import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 
 export const runtime = 'nodejs';
 
@@ -43,13 +46,34 @@ async function createPersistenceHandler(
   try {
     await ensureSchema(queryable);
     await ensureDocumentSchema(queryable);
+    await ensureAssetSchema(queryable);
     const withTransaction = nodePostgresTransaction(queryable);
-    const runtimeStore = new PgRuntimeStore(queryable, { withTransaction });
+    // Deferred to first asset use: the asset backend is optional, so its
+    // misconfiguration (an invalid ASSET_S3_BUCKET, an unresolvable AWS SDK)
+    // must fail asset requests only, never this handler's initialization.
+    const byteStore = lazyAssetByteStore(process.env.ASSET_S3_BUCKET, queryable);
+    const runtimeStore = new PgRuntimeStore(queryable, {
+      withTransaction,
+      payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+    });
     const documentStore = new PgDocumentStore(queryable, {
       withTransaction,
       validateScene: validateAppScene,
       validateStage: validateAppStage,
     });
+    // The asset contract requires a server-derived principal; this development
+    // authenticator instead takes the partition key from a client-supplied header.
+    // Cross-principal isolation is therefore not in force: asset bytes are as
+    // reachable as documents and runtime records under this authenticator. Before
+    // asset routes carry anything that matters, production must replace
+    // authenticatePersistenceRequest with real session verification. See
+    // lib/persistence/server-auth.ts for the token's limits.
+    const assetStore = new PgAssetStore(queryable, { withTransaction, byteStore });
+    // Reclamation is not scheduled from here, and must not be: a route module
+    // has no once-per-process guarantee and no shutdown hook. AssetCollector
+    // runs from instrumentation.ts instead, over the byte store this same
+    // lib/persistence/asset-byte-store selection produces, so the collector
+    // always deletes through the layer the request path wrote through.
     return createStorageHttpHandler(runtimeStore, documentStore, {
       authenticate: authenticatePersistenceRequest,
       authorizeMerge: async () => false,
@@ -57,6 +81,8 @@ async function createPersistenceHandler(
       authorizeDocuments: async () => true,
       validateScene: validateAppScene,
       validateStage: validateAppStage,
+      payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      assetStore,
     });
   } catch (error) {
     await pool.end().catch(() => {});
@@ -113,11 +139,42 @@ function setHeaders(target: Headers, source: Record<string, string | number | st
   }
 }
 
+type ResponseCallback = () => void;
+
+function responseEncoding(encodingOrCallback?: BufferEncoding | ResponseCallback): BufferEncoding {
+  const encoding = typeof encodingOrCallback === 'string' ? encodingOrCallback : 'utf8';
+  if (!Buffer.isEncoding(encoding)) {
+    // Let Buffer produce Node's ERR_UNKNOWN_ENCODING TypeError.
+    Buffer.from('', encoding);
+  }
+  return encoding;
+}
+
+function responseCallback(
+  encodingOrCallback?: BufferEncoding | ResponseCallback,
+  callback?: ResponseCallback,
+): ResponseCallback | undefined {
+  return typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+}
+
+function suppressesResponseBody(request: Request, status: number): boolean {
+  return request.method === 'HEAD' || status === 204 || status === 205 || status === 304;
+}
+
 function runNodeHandler(handler: RequestListener, request: Request): Promise<Response> {
   return new Promise<Response>((resolve, reject) => {
     let status = 200;
     const headers = new Headers();
     let headersSent = false;
+    // Buffered as bytes rather than as a string. A handler may end with a
+    // `Uint8Array`, which `ServerResponse.end` accepts and which is not
+    // necessarily valid UTF-8; decoding it would replace every unpaired byte
+    // with U+FFFD and silently corrupt the response.
+    const body: Buffer[] = [];
+
+    const appendChunk = (chunk: string | Uint8Array, encoding: BufferEncoding) => {
+      body.push(typeof chunk === 'string' ? Buffer.from(chunk, encoding) : Buffer.from(chunk));
+    };
 
     const response = {
       get headersSent() {
@@ -135,21 +192,44 @@ function runNodeHandler(handler: RequestListener, request: Request): Promise<Res
         if (values) setHeaders(headers, values);
         return this;
       },
-      end(chunk?: string | Uint8Array) {
+      write(
+        chunk: string | Uint8Array,
+        encodingOrCallback?: BufferEncoding | ResponseCallback,
+        callback?: ResponseCallback,
+      ) {
+        // `write` is part of the `ServerResponse` surface this object claims to
+        // implement. Omitting it made any chunked handler a runtime TypeError
+        // that the `as unknown as ServerResponse` cast hid from the compiler.
         headersSent = true;
+        appendChunk(chunk, responseEncoding(encodingOrCallback));
+        const done = responseCallback(encodingOrCallback, callback);
+        if (done) process.nextTick(done);
+        return true;
+      },
+      end(
+        chunkOrCallback?: string | Uint8Array | ResponseCallback,
+        encodingOrCallback?: BufferEncoding | ResponseCallback,
+        callback?: ResponseCallback,
+      ) {
+        headersSent = true;
+        const chunk = typeof chunkOrCallback === 'function' ? undefined : chunkOrCallback;
+        const done =
+          typeof chunkOrCallback === 'function'
+            ? chunkOrCallback
+            : responseCallback(encodingOrCallback, callback);
+        if (chunk !== undefined) appendChunk(chunk, responseEncoding(encodingOrCallback));
         resolve(
           new Response(
-            chunk === undefined
+            suppressesResponseBody(request, status) || body.length === 0
               ? undefined
-              : typeof chunk === 'string'
-                ? chunk
-                : Buffer.from(chunk).toString(),
+              : Buffer.concat(body),
             {
               status,
               headers,
             },
           ),
         );
+        if (done) process.nextTick(done);
         return this;
       },
       destroy(error?: Error) {

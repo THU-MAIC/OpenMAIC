@@ -52,7 +52,7 @@ test.describe('#580 model-selection invariant', () => {
     );
     await page.addInitScript(
       (settings) => {
-        localStorage.setItem('settings-storage', settings);
+        localStorage.setItem('maic:account:settings-storage', settings);
       },
       createSettingsStorage({
         modelId: '',
@@ -98,7 +98,7 @@ test.describe('#580 model-selection invariant', () => {
     );
     await page.addInitScript(
       (settings) => {
-        localStorage.setItem('settings-storage', settings);
+        localStorage.setItem('maic:account:settings-storage', settings);
       },
       createSettingsStorage({
         modelId: '',

@@ -120,6 +120,7 @@ function normalizeProviderId(
 ): string | undefined {
   if (!provider) return undefined;
   if (provider === 'anthropic.messages' && modelId?.startsWith('MiniMax-')) return 'minimax';
+  if (provider === 'amazon-bedrock') return 'bedrock';
   if (provider in PROVIDERS) return provider;
   const prefix = provider.split('.')[0];
   return prefix in PROVIDERS ? prefix : undefined;
@@ -164,7 +165,9 @@ function buildThinkingProviderOptions(
         anthropic: options,
       });
 
-      if (mode === 'disabled') return buildAnthropicOptions({ thinking: { type: 'disabled' } });
+      if (mode === 'disabled' && thinking.toggleable !== false) {
+        return buildAnthropicOptions({ thinking: { type: 'disabled' } });
+      }
 
       if (thinking.control === 'toggle-budget' || thinking.control === 'budget-only') {
         const budget = pickThinkingBudget(thinking, config);
@@ -177,9 +180,6 @@ function buildThinkingProviderOptions(
       if (!effort) return undefined;
 
       if (thinking.anthropicThinking?.type === 'adaptive') {
-        // Some newly released Anthropic effort values can lag the local SDK
-        // schema. OpenAI-compatible transports still inject those at fetch time.
-        if (effort === 'xhigh') return undefined;
         return buildAnthropicOptions({
           thinking: { type: 'adaptive' },
           effort,
@@ -213,7 +213,12 @@ function buildThinkingProviderOptions(
 }
 
 /**
- * Resolve providerOptions for direct AI SDK calls that bypass callLLM/streamLLM.
+ * Resolve providerOptions the way callLLM / streamLLM resolve them internally.
+ *
+ * There are no production callers left: every server-side call goes through the
+ * wrappers (a lint rule enforces it), and they inject provider options
+ * themselves. Kept exported because it is the only way to inspect that mapping
+ * from the outside, which the SDK-integration tests do.
  */
 export function resolveThinkingProviderOptions(
   model: LanguageModel,
@@ -344,6 +349,17 @@ export async function callLLM<T extends GenerateTextParams>(
         generateText(injectedParams),
       );
 
+      // Record before validating: every attempt that got this far was billed,
+      // including one that fails validation below and one that is handed back
+      // after the retries are exhausted. Recording on the success path only
+      // would drop both.
+      //
+      // `usage` is the LAST step only; on a multi-step tool run (`stopWhen`)
+      // every earlier step would go unaccounted. `totalUsage` aggregates across
+      // steps and equals `usage` for a single-step call. Mirrors streamLLM,
+      // which already prefers the aggregate.
+      recordUsageSafe(result.totalUsage ?? result.usage, buildUsageMeta(params, source));
+
       // Validate result (only when retries are configured)
       if (validate && !validate(result.text)) {
         log.warn(
@@ -353,7 +369,6 @@ export async function callLLM<T extends GenerateTextParams>(
         continue;
       }
 
-      recordUsageSafe(result.usage, buildUsageMeta(params, source));
       return result;
     } catch (error) {
       lastError = error;

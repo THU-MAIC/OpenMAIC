@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('@/lib/generation/generation-pipeline', () => ({
+vi.mock('@openmaic/generation', () => ({
   generateSceneActions: vi.fn(async () => [{ type: 'speech', id: 'a1', title: 'hi', text: 'hi' }]),
 }));
 
@@ -8,9 +8,10 @@ import {
   makeRegenerateSceneActionsTool,
   type SceneContext,
 } from '@/lib/agent/tools/regenerate-scene-actions';
-import { generateSceneActions } from '@/lib/generation/generation-pipeline';
+import { generateSceneActions } from '@openmaic/generation';
 import type { SlideContent } from '@/lib/types/stage';
 import type { PPTElement, Slide } from '@openmaic/dsl';
+import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
 
 /** Minimal SceneOutline stub */
 const stubOutline = (id: string, title: string, order = 1) => ({
@@ -20,6 +21,21 @@ const stubOutline = (id: string, title: string, order = 1) => ({
   description: '',
   keyPoints: [],
   order,
+});
+
+const stubPblOutline = (id: string, title: string, order = 1) => ({
+  id,
+  type: 'pbl' as const,
+  title,
+  description: '',
+  keyPoints: [],
+  order,
+  pblConfig: {
+    projectTopic: title,
+    projectDescription: '',
+    targetSkills: [],
+    issueCount: 2,
+  },
 });
 
 /** Minimal SlideContent stub — runtime DSL shape with canvas wrapping elements */
@@ -90,6 +106,78 @@ describe('regenerate_scene_actions', () => {
     // Must NOT receive the raw canvas wrapper
     expect(passedContent).not.toHaveProperty('canvas');
     expect(passedContent).not.toHaveProperty('type');
+  });
+
+  it('upgrades legacy-only PBL content before calling the generator', async () => {
+    const content = structuredClone(legacyPBLSceneFixture.content);
+    if (content.type !== 'pbl') throw new Error('expected legacy PBL content');
+    const tool = makeRegenerateSceneActionsTool(
+      makeDeps('legacy-pbl', {
+        outline: stubPblOutline('legacy-pbl', legacyPBLSceneFixture.title),
+        allOutlines: [stubPblOutline('legacy-pbl', legacyPBLSceneFixture.title)],
+        content,
+      }),
+    );
+
+    await tool.execute('tc-legacy-pbl', { sceneId: 'legacy-pbl' });
+
+    expect(mockGen).toHaveBeenCalledOnce();
+    const [, passedContent] = mockGen.mock.lastCall ?? [];
+    expect(passedContent).toMatchObject({
+      type: 'pbl',
+      projectV2: { title: 'Community Garden Data Project' },
+    });
+  });
+
+  it('upgrades damaged hybrid PBL content from the usable legacy project', async () => {
+    const content = structuredClone(legacyPBLSceneFixture.content);
+    if (content.type !== 'pbl') throw new Error('expected legacy PBL content');
+    Reflect.set(content, 'projectV2', { title: 'broken' });
+    const tool = makeRegenerateSceneActionsTool(
+      makeDeps('damaged-hybrid-pbl', {
+        outline: stubPblOutline('damaged-hybrid-pbl', legacyPBLSceneFixture.title),
+        allOutlines: [stubPblOutline('damaged-hybrid-pbl', legacyPBLSceneFixture.title)],
+        content,
+      }),
+    );
+
+    await tool.execute('tc-damaged-hybrid-pbl', { sceneId: 'damaged-hybrid-pbl' });
+
+    expect(mockGen).toHaveBeenCalledOnce();
+    const [, passedContent] = mockGen.mock.lastCall ?? [];
+    expect(passedContent).toMatchObject({
+      type: 'pbl',
+      projectV2: {
+        title: 'Community Garden Data Project',
+        milestones: [{ title: 'Inspect the measurements' }, { title: 'Recommend a watering plan' }],
+      },
+    });
+    expect(passedContent).not.toMatchObject({ projectV2: { title: 'broken' } });
+  });
+
+  it('leaves a title-only legacy shell unnormalized for downstream empty handling', async () => {
+    const content = structuredClone(legacyPBLSceneFixture.content);
+    if (content.type !== 'pbl' || !content.projectConfig) {
+      throw new Error('expected legacy PBL content');
+    }
+    content.projectConfig.agents = [];
+    content.projectConfig.issueboard.issues = [];
+    content.projectConfig.issueboard.current_issue_id = null;
+    content.projectConfig.chat.messages = [];
+    content.projectConfig.selectedRole = null;
+    const tool = makeRegenerateSceneActionsTool(
+      makeDeps('title-only-pbl', {
+        outline: stubPblOutline('title-only-pbl', legacyPBLSceneFixture.title),
+        allOutlines: [stubPblOutline('title-only-pbl', legacyPBLSceneFixture.title)],
+        content,
+      }),
+    );
+
+    await tool.execute('tc-title-only-pbl', { sceneId: 'title-only-pbl' });
+
+    const [, passedContent] = mockGen.mock.lastCall ?? [];
+    expect(passedContent).toEqual(content);
+    expect(passedContent).not.toHaveProperty('projectV2');
   });
 
   it('includes the action count in the content text', async () => {

@@ -1,4 +1,4 @@
-import type { EditIntent } from '@openmaic/renderer/editing';
+import type { EditIntent } from '@openmaic/editor/core';
 import type { PPTElement } from '@openmaic/dsl';
 import sanitizeHtml from 'sanitize-html';
 import { isExactContentEditable } from './edit-elements-content-contract';

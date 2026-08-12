@@ -76,6 +76,16 @@
     "videoRenderMp4": "Render MP4",
     "videoDownloadZip": "Download project ZIP",
     "videoServiceHint": "MP4 rendering needs the render service. Download the ZIP to render locally.",
+    "videoBurnSubtitles": "Burn in subtitles",
+    "videoBurnSubtitlesDesc": "Off: export a clean video and add the subtitle file in your editor.",
+    "videoQuizCtaPrompt": "Want to try an interactive quiz?",
+    "videoPblCtaPrompt": "Want to explore project-based learning?",
+    "videoCtaVisit": "Visit",
+    "videoDownloadSubtitles": "Download subtitles (.srt)",
+    "subtitlesCompiling": "Compiling subtitles...",
+    "subtitlesSuccess": "Subtitles downloaded",
+    "subtitlesEmpty": "No narration to make subtitles from",
+    "subtitlesFailed": "Subtitle download failed",
     "noSlides": "No slides to export",
     "noSlidesSkipped": "No slides in this course — PPTX skipped",
     "nothingToExport": "Nothing to export"
@@ -217,6 +227,7 @@
       }
     },
     "text": {
+      "toolbar": "Text toolbar",
       "label": "Text",
       "font": "Font",
       "fontDefault": "Default",
@@ -230,17 +241,99 @@
       "alignLeft": "Align left",
       "alignCenter": "Align center",
       "alignRight": "Align right",
-      "bullet": "Bulleted list"
+      "bullet": "Bulleted list",
+      "colorHex": "Color value"
+    },
+    "line": {
+      "toolbar": "Line toolbar",
+      "kind": "Line type",
+      "color": "Line color",
+      "width": "Line width",
+      "style": "Line style",
+      "start": "Start marker",
+      "end": "End marker",
+      "straight": "Straight",
+      "broken": "Broken line",
+      "broken2": "Double broken line",
+      "curve": "Curve",
+      "cubic": "Cubic curve",
+      "solid": "Solid",
+      "dashed": "Dashed",
+      "dotted": "Dotted",
+      "none": "None",
+      "arrow": "Arrow",
+      "dot": "Dot"
     },
     "insert": {
+      "toolbar": "Insert toolbar",
       "textBox": "Text box",
+      "line": "Line",
+      "linePresets": {
+        "straight": "Straight line",
+        "dashed": "Dashed line",
+        "arrow": "Arrow line",
+        "dashedArrow": "Dashed arrow line",
+        "dottedEnd": "Dot end line",
+        "broken": "Broken line",
+        "doubleBroken": "Double broken line",
+        "curve": "Curve",
+        "cubic": "Cubic curve"
+      },
+      "table": "Table",
+      "formula": "Formula",
+      "chart": "Chart",
+      "chartBar": "Bar chart",
+      "chartLine": "Line chart",
+      "chartPie": "Pie chart",
+      "tableDimensions": "{{rows}} x {{columns}} Table",
       "dragToolbar": "Move insert tools",
       "dragToolbarKeyboard": "Move insert tools: press Enter or Space, then use the arrow keys",
       "image": "Image",
       "imageDrop": "Drop an image or click to choose a file",
       "imageOr": "or paste an image URL",
       "imageUrlPlaceholder": "https://…",
-      "imageInsert": "Insert"
+      "imageInsert": "Insert",
+      "video": "Video",
+      "videoDrop": "Drop a video or click to choose a file",
+      "videoOr": "or paste a video URL",
+      "videoUrlPlaceholder": "https://…",
+      "videoInsert": "Insert",
+      "audio": "Audio",
+      "audioDrop": "Drop audio or click to choose a file",
+      "audioOr": "or paste an audio URL",
+      "audioUrlPlaceholder": "https://…",
+      "audioInsert": "Insert"
+    },
+    "asset": {
+      "drop": "Drop a file or click to choose",
+      "orUrl": "or paste a file URL",
+      "urlPlaceholder": "https://…",
+      "insert": "Insert",
+      "invalidType": "Unsupported file type",
+      "readFailed": "Unable to read file"
+    },
+    "latex": {
+      "toolbar": "Formula toolbar",
+      "editFormula": "Edit formula",
+      "dialog": "Formula editor",
+      "source": "LaTeX source",
+      "preview": "Preview",
+      "symbols": "Symbols",
+      "presets": "Presets",
+      "invalidSource": "The LaTeX source is invalid."
+    },
+    "video": {
+      "toolbar": "Video toolbar",
+      "poster": "Set poster"
+    },
+    "audio": {
+      "toolbar": "Audio toolbar",
+      "preview": "Preview audio",
+      "pause": "Pause preview",
+      "loop": "Loop"
+    },
+    "table": {
+      "doubleClickToEdit": "Double-click to edit"
     },
     "nav": {
       "addSlide": "Add slide",
@@ -263,14 +356,38 @@
       "toBack": "Send to back"
     },
     "image": {
+      "toolbar": "Image toolbar",
       "replace": "Replace image",
       "flipH": "Flip horizontal",
-      "flipV": "Flip vertical"
+      "flipV": "Flip vertical",
+      "crop": "Crop image"
+    },
+    "contextMenu": {
+      "horizontalAlignment": "Horizontal alignment",
+      "verticalAlignment": "Vertical alignment",
+      "selectAll": "Select all",
+      "copy": "Copy",
+      "cut": "Cut",
+      "paste": "Paste",
+      "unlock": "Unlock",
+      "lock": "Lock",
+      "group": "Group",
+      "ungroup": "Ungroup",
+      "bringForward": "Bring forward",
+      "sendBackward": "Send backward",
+      "alignTop": "Align top",
+      "alignMiddle": "Align middle",
+      "alignBottom": "Align bottom"
     },
     "background": {
       "label": "Background",
       "solid": "Solid",
-      "image": "Image"
+      "image": "Image",
+      "color": "Color"
+    },
+    "common": {
+      "cancel": "Cancel",
+      "confirm": "Confirm"
     },
     "quiz": {
       "addQuestion": "Add question",
@@ -320,6 +437,7 @@
       "discussion": "Discussion"
     },
     "element": {
+      "toolbar": "Element toolbar",
       "text": "Text",
       "image": "Image",
       "shape": "Shape",
@@ -375,7 +493,8 @@
       "sessionEmpty": "No past conversations",
       "thinking": "Thinking…",
       "reasoning": "Reasoning",
-      "thought": "Thought for"
+      "thought": "Thought for",
+      "title": "Edit with AI"
     },
     "timeline": {
       "title": "Narration script",
@@ -468,6 +587,21 @@
       "notApplied": "Not applied",
       "applyFailed": "The editor could not apply the element edit. Nothing was changed.",
       "applyPartiallyFailed": "The editor could not apply one or more element edits. Other edits may have been applied."
+    },
+    "roster": {
+      "title": "Class roster",
+      "count": "{{count}} members",
+      "editHint": "Click a member to edit",
+      "personaLabel": "Persona",
+      "personaPlaceholder": "Describe the role personality, teaching style, and tasks...",
+      "noPersona": "No persona yet",
+      "unnamed": "Untitled",
+      "teacherBadge": "Lead",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "removeFromClass": "Remove from class",
+      "aiClassmates": "AI classmates · {{count}}",
+      "addRole": "Add role"
     }
   },
   "classroomComplete": {
@@ -557,67 +691,7 @@
     "startRecording": "Start recording"
   },
   "pbl": {
-    "legacyFormat": "This PBL scene uses a legacy format. Please regenerate the course.",
     "emptyProject": "PBL project has not been generated yet. Please create via course generation.",
-    "roleSelection": {
-      "title": "Choose Your Role",
-      "description": "Select a role to start collaborating on the project"
-    },
-    "workspace": {
-      "restart": "Restart",
-      "confirmRestart": "Reset all progress?",
-      "confirm": "Confirm",
-      "cancel": "Cancel"
-    },
-    "issueboard": {
-      "title": "Issue Board",
-      "noIssues": "No issues yet",
-      "statusDone": "Done",
-      "statusActive": "Active",
-      "statusPending": "Pending"
-    },
-    "chat": {
-      "title": "Project Discussion",
-      "currentIssue": "Current Issue",
-      "mentionHint": "Use @question to ask, @judge to submit for review",
-      "placeholder": "Type a message...",
-      "send": "Send",
-      "issueCompleteMessage": "Issue \"{{completed}}\" completed! Moving to next issue: \"{{next}}\"",
-      "allCompleteMessage": "🎉 All issues completed! Great work on the project!"
-    },
-    "guide": {
-      "howItWorks": "How it works",
-      "help": "Help",
-      "title": "Help",
-      "step1": {
-        "title": "Step 1: Choose a Role",
-        "desc": "After the project is generated, select a role from the list (non-system roles marked with 🟢)"
-      },
-      "step2": {
-        "title": "Step 2: Complete Issues",
-        "desc": "Each issue represents a learning task:",
-        "s1": {
-          "title": "View current Issue",
-          "desc": "Check the issue's title, description, and assignee"
-        },
-        "s2": {
-          "title": "Get guidance",
-          "example": "@question Where should I start?\n@question How do I implement this feature?",
-          "desc": "The Question Agent provides guiding questions and hints (no direct answers)"
-        },
-        "s3": {
-          "title": "Submit your work",
-          "example": "@judge I'm done, please check my Notes",
-          "desc": "The Judge Agent evaluates your work and gives feedback:",
-          "complete": "Automatically moves to the next issue",
-          "revision": "Improve based on feedback"
-        }
-      },
-      "step3": {
-        "title": "Step 3: Complete the Project",
-        "desc": "When all issues are done, the system displays \"🎉 Project Complete!\""
-      }
-    },
     "v2": {
       "hero": {
         "title": "Project-Based Learning",
@@ -859,7 +933,37 @@
     "searchPlaceholder": "Search courses...",
     "searchAriaLabel": "Search courses",
     "clearSearch": "Clear",
-    "searchEmpty": "No courses match your search"
+    "searchEmpty": "No courses match your search",
+    "newFolderTitle": "New folder",
+    "newFolderDesc": "Group courses by topic or use for easier access.",
+    "newFolderInline": "New folder…",
+    "folderNameLabel": "Folder name",
+    "folderNamePlaceholder": "e.g. Math, English, Major courses",
+    "folderNameHint": "CJK and Latin both OK; spaces count.",
+    "folderNameExists": "A folder with this name already exists",
+    "folderCountLimit": "Folder count limit reached",
+    "folderWidth": "Width {{width}}/{{max}}",
+    "folderCreate": "Create",
+    "folderBadge": "Folder",
+    "folderCourseCountUnit": "courses",
+    "deleteFolderTitle": "Delete folder \"{{name}}\"",
+    "deleteFolderEmptyDesc": "This folder is empty. Deletion cannot be undone.",
+    "deleteFolderUngroupDesc": "Courses stay in \"My courses\", just unfiled.",
+    "moveToFolder": "Move to folder",
+    "moveToFolderLabel": "Move to…",
+    "ungrouped": "Ungrouped",
+    "searchResults": "Search results",
+    "folderCreateFailed": "Failed to create folder",
+    "folderRenameFailed": "Failed to rename folder",
+    "folderDeleteFailed": "Failed to delete folder",
+    "moveFailed": "Failed to move course",
+    "emptyFolderHint": "This folder is empty",
+    "emptyLibraryHint": "No courses yet — create one above, or import a course.",
+    "folderNameEmpty": "Folder name cannot be empty",
+    "deleteFolderOnly": "Delete folder only",
+    "deleteFolderAndCourses": "Delete folder and {{count}} course",
+    "deleteFolderAndCourses_other": "Delete folder and {{count}} courses",
+    "deleteFolderConfirmRemove": "This removes the folder and its courses, including chat history."
   },
   "upload": {
     "pdfSizeLimit": "Supports PDF files up to 50MB",
@@ -1065,6 +1169,7 @@
       "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "Qwen",
       "kimi": "Kimi",
@@ -1082,13 +1187,15 @@
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
+      "claude": "Claude",
       "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAI Protocol",
       "azure": "Azure OpenAI",
       "anthropic": "Claude Protocol",
-      "google": "Gemini Protocol"
+      "google": "Gemini Protocol",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "models",
     "modelSingular": "model",
@@ -1289,6 +1396,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "Browser Native ASR",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
+    "providerFunASRASR": "FunASR (Local)",
     "providerLemonadeASR": "Lemonade ASR (Local)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (Built-in)",
@@ -1607,11 +1715,16 @@
     "clearCacheButton": "Permanently Delete All Data",
     "clearCacheSuccess": "Cache cleared, page will refresh shortly",
     "clearCacheFailed": "Failed to clear cache, please try again",
+    "clearCacheBlockedByOtherTabs": "Close other app tabs and retry.",
+    "persistUnavailable": "Your changes aren't being saved because the app can't access its stored data. If reloading doesn't help, clear the local cache in Settings.",
+    "persistChangesLost": "Storage is working again, but changes you made while it was unavailable could not be saved and have been replaced by the last saved version.",
     "webSearchSettings": "Web Search",
     "webSearchApiKey": "Search API Key",
     "webSearchApiKeyPlaceholder": "Enter your search API key",
     "webSearchApiKeyPlaceholderServer": "Server key configured, optionally override",
     "webSearchApiKeyHint": "Get an API key from the selected search provider",
+    "claudeSearchModel": "Search Model",
+    "claudeSearchModelHint": "The Claude model that runs web searches and summarizes results.",
     "webSearchApiKeyOptional": "API key is optional. Without one, public page scraping will be used as a fallback.",
     "searxngServerOnlyNotice": "SearXNG must be configured on the server. Set the SEARXNG_BASE_URL environment variable (or the web-search section in server-providers.yml). Client-supplied instance URLs are not accepted.",
     "baiduSubSources": "Baidu Search Sources",
