@@ -35,6 +35,9 @@ const log = createLogger('StageStore');
 /** Virtual scene ID used when the user navigates to a page still being generated */
 export const PENDING_SCENE_ID = '__pending__';
 
+/** Per-scene generation phase, surfaced in the sidebar while a scene builds. */
+export type SceneGenerationPhase = 'content' | 'actions' | 'tts';
+
 export type StageSceneLoadToken = number;
 
 let latestStageSceneLoadToken = 0;
@@ -201,6 +204,7 @@ function clearedStageState(state: Pick<StageState, 'generationEpoch'>) {
     currentGeneratingOrder: -1,
     failedOutlines: [],
     generatingOutlines: [],
+    generatingPhases: {},
   };
 }
 
@@ -290,6 +294,9 @@ interface StageState {
   generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error';
   currentGeneratingOrder: number;
   failedOutlines: SceneOutline[];
+  // Per-outline current phase (content|actions|tts); transient, drives the
+  // sidebar 3-dot indicator while a scene builds. Keyed by outline id.
+  generatingPhases: Record<string, SceneGenerationPhase>;
 
   // Actions
   setStage: (stage: Stage) => void;
@@ -314,6 +321,8 @@ interface StageState {
   addFailedOutline: (outline: SceneOutline) => void;
   clearFailedOutlines: () => void;
   retryFailedOutline: (outlineId: string) => void;
+  setGeneratingPhase: (outlineId: string, phase: SceneGenerationPhase) => void;
+  clearGeneratingPhases: () => void;
 
   // Getters
   getCurrentScene: () => Scene | null;
@@ -426,6 +435,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   generationStatus: 'idle' as const,
   currentGeneratingOrder: -1,
   failedOutlines: [],
+  generatingPhases: {},
 
   // Actions
   setStage: (stage) => {
@@ -741,6 +751,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     });
   },
 
+  setGeneratingPhase: (outlineId, phase) =>
+    set((s) => ({ generatingPhases: { ...s.generatingPhases, [outlineId]: phase } })),
+
+  clearGeneratingPhases: () => set({ generatingPhases: {} }),
+
   // Getters
   getCurrentScene: () => {
     const { scenes, currentSceneId } = get();
@@ -1001,6 +1016,9 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           generatingOutlines: generationComplete
             ? []
             : outlines.filter((o) => !migrated.some((s) => s.order === o.order)),
+          // Phases are transient; clear on load so a refresh mid-generation
+          // doesn't render a stale indicator (the resume loop re-populates).
+          generatingPhases: {},
           // `mode` is transient UI state, not persisted with the stage.
           // Reset to 'playback' on every load so SPA navigation between
           // classrooms doesn't carry Pro-mode state across — e.g. user

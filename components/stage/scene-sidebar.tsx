@@ -17,6 +17,8 @@ import { cn } from '@/lib/utils';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import { ThumbnailInteractive } from '@/components/slide-renderer/components/ThumbnailInteractive';
 import { useStageStore, useCanvasStore } from '@/lib/store';
+import { useSettingsStore } from '@/lib/store/settings';
+import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { SceneType, SlideContent, InteractiveContent } from '@/lib/types/stage';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
@@ -33,6 +35,18 @@ const DEFAULT_WIDTH = 220;
 const MIN_WIDTH = 170;
 const MAX_WIDTH = 400;
 
+/** Per-scene phase dots shown on the generating card.
+ * `long` = the label line under the dots; `short` = the dot tooltip. */
+const PHASE_DEFS_ALL = [
+  { key: 'content', long: 'generation.phaseContent', short: 'generation.phaseContentShort' },
+  { key: 'actions', long: 'generation.phaseActions', short: 'generation.phaseActionsShort' },
+  { key: 'tts', long: 'generation.phaseTts', short: 'generation.phaseTtsShort' },
+] as const;
+const PHASE_DEFS_NO_TTS = [
+  { key: 'content', long: 'generation.phaseContent', short: 'generation.phaseContentShort' },
+  { key: 'actions', long: 'generation.phaseActions', short: 'generation.phaseActionsShort' },
+] as const;
+
 export function SceneSidebar({
   collapsed,
   onCollapseChange,
@@ -42,8 +56,14 @@ export function SceneSidebar({
 }: SceneSidebarProps) {
   const { t } = useI18n();
   const router = useRouter();
-  const { scenes, currentSceneId, setCurrentSceneId, generatingOutlines, generationStatus } =
-    useStageStore();
+  const {
+    scenes,
+    currentSceneId,
+    setCurrentSceneId,
+    generatingOutlines,
+    generatingPhases,
+    generationStatus,
+  } = useStageStore();
   const failedOutlines = useStageStore.use.failedOutlines();
   const viewportSize = useCanvasStore.use.viewportSize();
   const viewportRatio = useCanvasStore.use.viewportRatio();
@@ -345,6 +365,23 @@ export function SceneSidebar({
               const isPaused = generationStatus === 'paused';
               const isActive = currentSceneId === PENDING_SCENE_ID;
 
+              // Per-scene content → actions → (tts) phase indicator.
+              const ttsSettings = useSettingsStore.getState();
+              const ttsOn =
+                ttsSettings.ttsEnabled &&
+                ttsSettings.ttsProviderId !== 'browser-native-tts' &&
+                isTTSProviderEnabled(
+                  ttsSettings.ttsProviderId,
+                  ttsSettings.ttsProvidersConfig?.[ttsSettings.ttsProviderId],
+                );
+              const phaseDefs = ttsOn ? PHASE_DEFS_ALL : PHASE_DEFS_NO_TTS;
+              const phase = generatingPhases[outline.id] ?? 'content';
+              const phaseIdx = Math.max(
+                0,
+                phaseDefs.findIndex((p) => p.key === phase),
+              );
+              const activePhase = phaseDefs[phaseIdx] ?? phaseDefs[0];
+
               return (
                 <div
                   key={`generating-${outline.id}`}
@@ -432,20 +469,25 @@ export function SceneSidebar({
                         </div>
                       ) : (
                         <>
-                          <div
-                            className={cn(
-                              'h-2 w-3/5 bg-gray-200 dark:bg-gray-700 rounded',
-                              !isPaused && 'animate-pulse',
-                            )}
-                          />
-                          <div
-                            className={cn(
-                              'h-1.5 w-2/5 bg-gray-200 dark:bg-gray-700 rounded',
-                              !isPaused && 'animate-pulse',
-                            )}
-                          />
+                          <div className="flex items-center gap-1.5">
+                            {phaseDefs.map((p, i) => (
+                              <span
+                                key={p.key}
+                                title={t(p.short)}
+                                className={cn(
+                                  'h-1.5 rounded-full transition-all duration-500',
+                                  i < phaseIdx
+                                    ? 'w-1.5 bg-blue-500/50'
+                                    : i === phaseIdx
+                                      ? 'w-2 bg-blue-500'
+                                      : 'w-1.5 bg-gray-300 dark:bg-gray-600',
+                                  !isPaused && i === phaseIdx && 'animate-pulse',
+                                )}
+                              />
+                            ))}
+                          </div>
                           <span className="text-[9px] font-medium text-gray-400 dark:text-gray-500 mt-0.5">
-                            {isPaused ? t('stage.paused') : t('stage.generating')}
+                            {isPaused ? t('stage.paused') : t(activePhase.long)}
                           </span>
                         </>
                       )}
