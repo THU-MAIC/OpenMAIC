@@ -1113,7 +1113,28 @@ describe('Quiz/PBL cover cards in a real browser', () => {
               expect(browserProof.arabicPromptDirection).toBe('rtl');
               expect(browserProof.joinedArabicWidth).toBeGreaterThan(0);
               expect(browserProof.zwnjArabicWidth).toBeGreaterThan(0);
-              expect(browserProof.joinedArabicWidth).not.toBe(browserProof.zwnjArabicWidth);
+              const shapingPrompt = page
+                .locator('.quiz-list-question')
+                .last()
+                .locator('.quiz-list-prompt');
+              const originalPrompt = await shapingPrompt.textContent();
+              let joinedArabic: Buffer;
+              let zwnjArabic: Buffer;
+              try {
+                await shapingPrompt.evaluate((node) => {
+                  node.textContent = 'العربية';
+                });
+                joinedArabic = await shapingPrompt.screenshot();
+                await shapingPrompt.evaluate((node) => {
+                  node.textContent = 'الع\u200Cربية';
+                });
+                zwnjArabic = await shapingPrompt.screenshot();
+              } finally {
+                await shapingPrompt.evaluate((node, text) => {
+                  node.textContent = text;
+                }, originalPrompt);
+              }
+              expect(joinedArabic.equals(zwnjArabic)).toBe(false);
             }
           } finally {
             page.off('request', recordFontRequest);
