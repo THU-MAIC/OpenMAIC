@@ -416,14 +416,154 @@ describe('classroom import media allocation', () => {
       allocations,
     );
 
-    expect(mappings[missingPath]).toBeUndefined();
-    expect(mappings[presentPath]).toMatch(/^ast_/);
+    expect(mappings.pathToId.get(missingPath)).toBeUndefined();
+    expect(mappings.pathToId.get(presentPath)).toMatch(/^ast_/);
     expect(put).toHaveBeenCalledTimes(1);
-    expect(allocations).toEqual([mappings[presentPath]]);
+    expect(allocations).toEqual([mappings.pathToId.get(presentPath)]);
     expect(mocks.audioPut).toHaveBeenCalledWith(
-      expect.objectContaining({ id: mappings[presentPath], stageId: 'imported-stage' }),
+      expect.objectContaining({
+        id: mappings.pathToId.get(presentPath),
+        stageId: 'imported-stage',
+      }),
     );
   });
+
+  it.each([
+    ['short ref first', ['audio/foo.mp3', 'audio/audio/foo.mp3.mp3']],
+    ['nested ref first', ['audio/audio/foo.mp3.mp3', 'audio/foo.mp3']],
+  ])('keeps ZIP paths and source refs in separate audio namespaces: %s', async (_case, paths) => {
+    const zip = new JSZip();
+    zip.file('audio/foo.mp3', 'short-ref-bytes');
+    zip.file('audio/audio/foo.mp3.mp3', 'nested-ref-bytes');
+    const mediaIndex = Object.fromEntries(
+      paths.map((path) => [
+        path,
+        {
+          type: 'audio' as const,
+          format: 'mp3',
+          sourceRef: path === 'audio/foo.mp3' ? 'foo' : 'audio/foo.mp3',
+        },
+      ]),
+    );
+    const manifest = {
+      formatVersion: 1,
+      exportedAt: new Date(0).toISOString(),
+      appVersion: 'test',
+      stage: { name: 'Imported', createdAt: 1, updatedAt: 1 },
+      agents: [],
+      scenes: [],
+      mediaIndex,
+    } as unknown as ClassroomManifest;
+
+    const mappings = await materializeImportedAudio(zip, manifest, 'imported-stage', 2);
+
+    expect(await poolText(mappings.pathToId.get('audio/foo.mp3')!)).toBe('short-ref-bytes');
+    expect(await poolText(mappings.pathToId.get('audio/audio/foo.mp3.mp3')!)).toBe(
+      'nested-ref-bytes',
+    );
+    expect(mappings.sourceRefToId.get('foo')).toBe(mappings.pathToId.get('audio/foo.mp3'));
+    expect(mappings.sourceRefToId.get('audio/foo.mp3')).toBe(
+      mappings.pathToId.get('audio/audio/foo.mp3.mp3'),
+    );
+  });
+
+  it.each([
+    ['lexical path first', ['audio/a.mp3', 'audio/z.mp3']],
+    ['lexical path last', ['audio/z.mp3', 'audio/a.mp3']],
+  ])(
+    'resolves duplicate audio source refs by ZIP path deterministically: %s',
+    async (_case, paths) => {
+      const zip = new JSZip();
+      zip.file('audio/a.mp3', 'lexical-winner');
+      zip.file('audio/z.mp3', 'later-path');
+      const manifest = {
+        formatVersion: 1,
+        exportedAt: new Date(0).toISOString(),
+        appVersion: 'test',
+        stage: { name: 'Imported', createdAt: 1, updatedAt: 1 },
+        agents: [],
+        scenes: [],
+        mediaIndex: Object.fromEntries(
+          paths.map((path) => [path, { type: 'audio', format: 'mp3', sourceRef: 'duplicate' }]),
+        ),
+      } as unknown as ClassroomManifest;
+
+      const mappings = await materializeImportedAudio(zip, manifest, 'imported-stage', 2);
+
+      expect(mappings.sourceRefToId.get('duplicate')).toBe(mappings.pathToId.get('audio/a.mp3'));
+      expect(await poolText(mappings.sourceRefToId.get('duplicate')!)).toBe('lexical-winner');
+    },
+  );
+
+  it('maps prototype-named aliases as strings without crossing path and source namespaces', async () => {
+    const zip = new JSZip();
+    const cases = [
+      ['audio/proto.mp3', '__proto__', 'proto-bytes'],
+      ['audio/ctor.mp3', 'constructor', 'constructor-bytes'],
+      ['audio/collision.mp3', 'audio/proto.mp3', 'collision-bytes'],
+    ] as const;
+    for (const [path, , bytes] of cases) zip.file(path, bytes);
+    const manifest = {
+      formatVersion: 1,
+      exportedAt: new Date(0).toISOString(),
+      appVersion: 'test',
+      stage: { name: 'Imported', createdAt: 1, updatedAt: 1 },
+      agents: [],
+      scenes: [],
+      mediaIndex: Object.fromEntries(
+        cases.map(([path, sourceRef]) => [path, { type: 'audio', format: 'mp3', sourceRef }]),
+      ),
+    } as unknown as ClassroomManifest;
+
+    const mappings = await materializeImportedAudio(zip, manifest, 'imported-stage', 2);
+
+    for (const [path, sourceRef, bytes] of cases) {
+      const pathId = mappings.pathToId.get(path);
+      const sourceId = mappings.sourceRefToId.get(sourceRef);
+      expect(typeof pathId).toBe('string');
+      expect(typeof sourceId).toBe('string');
+      expect(sourceId).toBe(pathId);
+      expect(await poolText(sourceId!)).toBe(bytes);
+    }
+    expect(mappings.sourceRefToId.get('audio/proto.mp3')).not.toBe(
+      mappings.pathToId.get('audio/proto.mp3'),
+    );
+  });
+
+  it.each([
+    ['forward', ['audio/z.mp3', 'audio/ä.mp3', 'audio/Ω.mp3']],
+    ['reverse', ['audio/Ω.mp3', 'audio/ä.mp3', 'audio/z.mp3']],
+  ])(
+    'uses locale-independent code-unit order for a three-way source alias: %s',
+    async (_case, paths) => {
+      const zip = new JSZip();
+      zip.file('audio/z.mp3', 'code-unit-winner');
+      zip.file('audio/ä.mp3', 'latin-diacritic');
+      zip.file('audio/Ω.mp3', 'greek');
+      const manifest = {
+        formatVersion: 1,
+        exportedAt: new Date(0).toISOString(),
+        appVersion: 'test',
+        stage: { name: 'Imported', createdAt: 1, updatedAt: 1 },
+        agents: [],
+        scenes: [],
+        mediaIndex: Object.fromEntries(
+          paths.map((path) => [path, { type: 'audio', format: 'mp3', sourceRef: 'duplicate' }]),
+        ),
+      } as unknown as ClassroomManifest;
+
+      const localeCompare = vi.spyOn(String.prototype, 'localeCompare').mockImplementation(() => {
+        throw new Error('host locale must not participate in alias ordering');
+      });
+      const mappings = await materializeImportedAudio(zip, manifest, 'imported-stage', 2).finally(
+        () => localeCompare.mockRestore(),
+      );
+      const winner = mappings.sourceRefToId.get('duplicate');
+
+      expect(winner).toBe(mappings.pathToId.get('audio/z.mp3'));
+      expect(await poolText(winner!)).toBe('code-unit-winner');
+    },
+  );
 
   it('re-derives nested refs with parameterized MIME metadata intact', () => {
     expect(mediaRefFromZipPath('media/nested/course/ref.svg', 'image/svg+xml; charset=utf-8')).toBe(

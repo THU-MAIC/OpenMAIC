@@ -30,6 +30,19 @@ export interface ImportedMediaMappings {
   posterByMediaRef: Record<string, string>;
 }
 
+export interface ImportedAudioMappings {
+  readonly pathToId: ReadonlyMap<string, string>;
+  readonly sourceRefToId: ReadonlyMap<string, string>;
+}
+
+type ImportedRefMapping = ReadonlyMap<string, unknown> | Readonly<Record<string, unknown>>;
+
+function mappedString(mapping: ImportedRefMapping, key: string): string | undefined {
+  const value =
+    mapping instanceof Map ? mapping.get(key) : (mapping as Readonly<Record<string, unknown>>)[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
 function rewriteImportedMediaRef(value: string, mapped: string | undefined): string | undefined {
   if (mapped) return mapped;
   if (isConcreteMediaAddress(value) || isGeneratedMediaPlaceholder(value)) return value;
@@ -84,6 +97,7 @@ function posterRefsForMedia(manifest: ClassroomManifest, mediaRef: string): stri
 export function rewriteImportedSlideMediaRefs(
   slide: Slide,
   mappings: ImportedMediaMappings,
+  audioRefToNewId: ImportedRefMapping = new Map(),
 ): Slide {
   const background =
     slide.background?.type === 'image' && slide.background.image
@@ -105,6 +119,11 @@ export function rewriteImportedSlideMediaRefs(
     elements: slide.elements.map((element) => {
       if (element.type === 'image') {
         const src = rewriteImportedMediaRef(element.src, mappings.refToNewId[element.src]) ?? '';
+        return src === element.src ? element : { ...element, src };
+      }
+      if (element.type === 'audio') {
+        const src =
+          rewriteImportedMediaRef(element.src, mappedString(audioRefToNewId, element.src)) ?? '';
         return src === element.src ? element : { ...element, src };
       }
       if (element.type !== 'video') return element;
@@ -151,9 +170,16 @@ export async function materializeImportedAudio(
   stageId: string,
   createdAt: number,
   allocatedIds: string[] = [],
-): Promise<Record<string, string>> {
-  const mappings: Record<string, string> = {};
-  for (const [zipPath, meta] of Object.entries(manifest.mediaIndex ?? {})) {
+): Promise<ImportedAudioMappings> {
+  const pathToId = new Map<string, string>();
+  const sourceRefToId = new Map<string, string>();
+  // Sorting makes malformed duplicate-sourceRef handling independent of JSON
+  // object insertion order: the lexicographically first ZIP path owns the
+  // source-ref alias, while every genuine ZIP path remains addressable.
+  const entries = Object.entries(manifest.mediaIndex ?? {}).sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
+  for (const [zipPath, meta] of entries) {
     if (meta.type !== 'audio' || meta.missing) continue;
     const zipEntry = zip.file(zipPath);
     if (!zipEntry) continue;
@@ -165,7 +191,15 @@ export async function materializeImportedAudio(
       voice: meta.voice,
     });
     allocatedIds.push(assetId);
-    mappings[zipPath] = assetId;
+    pathToId.set(zipPath, assetId);
+    const relativePath = zipPath.startsWith('audio/') ? zipPath.slice('audio/'.length) : zipPath;
+    const formatSuffix = meta.format ? `.${meta.format}` : undefined;
+    const sourceRef =
+      meta.sourceRef ??
+      (formatSuffix && relativePath.endsWith(formatSuffix)
+        ? relativePath.slice(0, -formatSuffix.length)
+        : relativePath.replace(/\.[^/.]+$/, ''));
+    if (!sourceRefToId.has(sourceRef)) sourceRefToId.set(sourceRef, assetId);
     const record: AudioFileRecord = {
       id: assetId,
       stageId,
@@ -177,7 +211,7 @@ export async function materializeImportedAudio(
     };
     await db.audioFiles.put(record);
   }
-  return mappings;
+  return { pathToId, sourceRefToId };
 }
 
 /** Allocate imported media into the browser-global pool and mirror it to Dexie. */
@@ -362,7 +396,7 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
         setPhase('writingMedia');
         toast.loading(t('import.writingMedia'), { id: toastId });
 
-        const audioRefToNewId = await materializeImportedAudio(
+        const audioMappings = await materializeImportedAudio(
           zip,
           manifest,
           newStageId,
@@ -414,7 +448,7 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
           scenes: manifest.scenes.map((mScene: ManifestScene, index: number) => {
             const newSceneId = nanoid();
             const actions = mScene.actions
-              ? rewriteAudioRefsToIds(mScene.actions, audioRefToNewId, {
+              ? rewriteAudioRefsToIds(mScene.actions, audioMappings.pathToId, {
                   agentIds: newAgentIds,
                   fallbackDiscussionAgentIndex,
                 })

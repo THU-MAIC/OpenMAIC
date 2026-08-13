@@ -1,25 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AssetManifestEntry } from '@openmaic/dsl';
 
 const mocks = vi.hoisted(() => ({
-  rows: [] as Array<{
-    id: string;
-    stageId: string;
-    blob: Blob;
-    mimeType?: string;
-    placeholderRef?: string;
-  }>,
+  rows: new Map<string, { id: string; stageId: string; blob: Blob; mimeType?: string }>(),
   poolResolve: vi.fn(),
   poolRelease: vi.fn(),
 }));
 
 vi.mock('@/lib/utils/database', () => ({
+  mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
   db: {
     mediaFiles: {
-      where: () => ({
-        equals: (stageId: string) => ({
-          toArray: async () => mocks.rows.filter((row) => row.stageId === stageId),
-        }),
-      }),
+      get: async (id: string) => mocks.rows.get(id),
     },
     audioFiles: { get: vi.fn() },
   },
@@ -31,9 +23,16 @@ vi.mock('@/lib/media/asset-pool', () => ({
 
 import { collectMediaFiles } from '@/lib/export/classroom-zip-utils';
 
+const entry = (ref: string): AssetManifestEntry => ({ ref, kind: 'image' });
+
+function seedRow(ref: string, blob: Blob, stageId = 'stage-1') {
+  const id = `${stageId}:${ref}`;
+  mocks.rows.set(id, { id, stageId, blob, mimeType: blob.type || 'image/png' });
+}
+
 describe('classroom ZIP media collection', () => {
   afterEach(() => {
-    mocks.rows.length = 0;
+    mocks.rows.clear();
     vi.clearAllMocks();
     vi.unstubAllGlobals();
   });
@@ -45,12 +44,7 @@ describe('classroom ZIP media collection', () => {
    */
   it('prefers pool bytes over a lagging compatibility row', async () => {
     const ref = 'ast_replaced_media';
-    mocks.rows.push({
-      id: `stage-1:${ref}`,
-      stageId: 'stage-1',
-      blob: new Blob(['stale-row-bytes'], { type: 'image/png' }),
-      mimeType: 'image/png',
-    });
+    seedRow(ref, new Blob(['stale-row-bytes'], { type: 'image/png' }));
     const poolUrl = 'blob:pool-current';
     mocks.poolResolve.mockResolvedValue(poolUrl);
     vi.stubGlobal(
@@ -61,7 +55,7 @@ describe('classroom ZIP media collection', () => {
       }),
     );
 
-    const collected = await collectMediaFiles('stage-1');
+    const collected = await collectMediaFiles('stage-1', [entry(ref)]);
 
     expect(collected).toHaveLength(1);
     expect(await collected[0].record.blob.text()).toBe('pool-current-bytes');
@@ -70,27 +64,17 @@ describe('classroom ZIP media collection', () => {
 
   it('falls back to the compatibility row when the pool misses', async () => {
     const ref = 'ast_pool_missing';
-    mocks.rows.push({
-      id: `stage-1:${ref}`,
-      stageId: 'stage-1',
-      blob: new Blob(['row-bytes'], { type: 'image/png' }),
-      mimeType: 'image/png',
-    });
+    seedRow(ref, new Blob(['row-bytes'], { type: 'image/png' }));
     mocks.poolResolve.mockResolvedValue(null);
 
-    const collected = await collectMediaFiles('stage-1');
+    const collected = await collectMediaFiles('stage-1', [entry(ref)]);
 
     expect(await collected[0].record.blob.text()).toBe('row-bytes');
   });
 
   it('treats a zero-byte pooled answer as a miss and ships the compatibility row', async () => {
     const ref = 'ast_pool_empty';
-    mocks.rows.push({
-      id: `stage-1:${ref}`,
-      stageId: 'stage-1',
-      blob: new Blob(['row-bytes'], { type: 'image/png' }),
-      mimeType: 'image/png',
-    });
+    seedRow(ref, new Blob(['row-bytes'], { type: 'image/png' }));
     const poolUrl = 'blob:pool-empty';
     mocks.poolResolve.mockResolvedValue(poolUrl);
     vi.stubGlobal(
@@ -101,7 +85,7 @@ describe('classroom ZIP media collection', () => {
       }),
     );
 
-    const collected = await collectMediaFiles('stage-1');
+    const collected = await collectMediaFiles('stage-1', [entry(ref)]);
 
     expect(await collected[0].record.blob.text()).toBe('row-bytes');
   });
@@ -109,17 +93,11 @@ describe('classroom ZIP media collection', () => {
   /**
    * The ZIP predates the `response.ok` validation the other export paths
    * added, and keeps that laxity: a non-OK response carrying a body is still
-   * shipped. Pinned here because the shared resolver expresses it as an option
-   * (`requireOk: false`) that would otherwise be tightenable without a failure.
+   * shipped. The shared resolver expresses this through `requireOk: false`.
    */
   it('ships a non-OK pool response body, as the ZIP always has', async () => {
     const ref = 'ast_pool_error_body';
-    mocks.rows.push({
-      id: `stage-1:${ref}`,
-      stageId: 'stage-1',
-      blob: new Blob(['row-bytes'], { type: 'image/png' }),
-      mimeType: 'image/png',
-    });
+    seedRow(ref, new Blob(['row-bytes'], { type: 'image/png' }));
     const poolUrl = 'blob:pool-error';
     mocks.poolResolve.mockResolvedValue(poolUrl);
     vi.stubGlobal(
@@ -130,61 +108,64 @@ describe('classroom ZIP media collection', () => {
       }),
     );
 
-    const collected = await collectMediaFiles('stage-1');
+    const collected = await collectMediaFiles('stage-1', [entry(ref)]);
 
     expect(await collected[0].record.blob.text()).toBe('error-body');
   });
 
   it('leaves legacy placeholder rows on their stored bytes', async () => {
-    mocks.rows.push({
-      id: 'stage-1:gen_img_1',
-      stageId: 'stage-1',
-      blob: new Blob(['legacy-bytes'], { type: 'image/png' }),
-      mimeType: 'image/png',
-    });
+    seedRow('gen_img_1', new Blob(['legacy-bytes'], { type: 'image/png' }));
     mocks.poolResolve.mockResolvedValue(null);
 
-    const collected = await collectMediaFiles('stage-1');
+    const collected = await collectMediaFiles('stage-1', [entry('gen_img_1')]);
 
     expect(await collected[0].record.blob.text()).toBe('legacy-bytes');
     expect(collected[0].zipPath).toBe('media/gen_img_1.png');
   });
 
-  it('ships each converted logical asset once, preferring the allocated-id mirror', async () => {
-    // A converted asset exists as two rows: the legacy gen_* row and the
-    // allocated-id compatibility mirror (placeholderRef retained). The ZIP
-    // must carry the mirror -- the document now references it -- and skip the
-    // legacy row, or importing the archive would materialize an unreferenced
-    // duplicate. Unconverted siblings keep their legacy rows.
-    mocks.rows.push(
-      {
-        id: 'stage-1:gen_img_1',
-        stageId: 'stage-1',
-        blob: new Blob(['legacy-bytes'], { type: 'image/png' }),
-        mimeType: 'image/png',
-      },
-      {
-        id: 'stage-1:ast_converted_1',
-        stageId: 'stage-1',
-        blob: new Blob(['mirror-bytes'], { type: 'image/png' }),
-        mimeType: 'image/png',
-        placeholderRef: 'gen_img_1',
-      },
-      {
-        id: 'stage-1:gen_vid_1',
-        stageId: 'stage-1',
-        blob: new Blob(['video-bytes'], { type: 'video/mp4' }),
-        mimeType: 'video/mp4',
-      },
+  it('collects a referenced asset whose bytes exist only in the pool', async () => {
+    // No compatibility row (never written, or pruned): the pre-manifest scan
+    // could not see this asset at all, but the document references it and the
+    // pool resolves it, so the archive must carry it.
+    const ref = 'ast_pool_only';
+    const poolUrl = 'blob:pool-only';
+    mocks.poolResolve.mockResolvedValue(poolUrl);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string) => {
+        if (input === poolUrl) {
+          return new Response(new Blob(['pool-only-bytes'], { type: 'image/webp' }));
+        }
+        throw new Error(`Unexpected fetch: ${input}`);
+      }),
     );
+
+    const collected = await collectMediaFiles('stage-1', [entry(ref)]);
+
+    expect(collected).toHaveLength(1);
+    expect(collected[0].zipPath).toBe(`media/${ref}.webp`);
+    expect(await collected[0].record.blob.text()).toBe('pool-only-bytes');
+  });
+
+  it('skips a referenced asset whose bytes resolve nowhere', async () => {
     mocks.poolResolve.mockResolvedValue(null);
 
-    const collected = await collectMediaFiles('stage-1');
+    const collected = await collectMediaFiles('stage-1', [entry('ast_nowhere')]);
 
-    expect(collected.map((entry) => entry.zipPath).sort()).toEqual([
-      'media/ast_converted_1.png',
-      'media/gen_vid_1.mp4',
-    ]);
-    expect(await collected[0].record.blob.text()).toBe('mirror-bytes');
+    expect(collected).toEqual([]);
+  });
+
+  it('never collects rows the manifest does not name (orphan exclusion)', async () => {
+    // The pre-manifest implementation scanned the whole table for the stage,
+    // so this orphan row would have ridden into the archive. The manifest
+    // drives collection now: a row no document reference names stays out.
+    seedRow('ast_orphan', new Blob(['orphan-bytes'], { type: 'image/png' }));
+    seedRow('ast_referenced', new Blob(['referenced-bytes'], { type: 'image/png' }));
+    mocks.poolResolve.mockResolvedValue(null);
+
+    const collected = await collectMediaFiles('stage-1', [entry('ast_referenced')]);
+
+    expect(collected).toHaveLength(1);
+    expect(collected[0].elementId).toBe('ast_referenced');
   });
 });

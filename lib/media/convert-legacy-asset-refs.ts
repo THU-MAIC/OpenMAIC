@@ -88,9 +88,10 @@ export interface LegacyAssetConversionDeps {
   /**
    * Write the post-conversion Dexie compatibility copy of a media row, keyed
    * by the ref the document now names. Without it the export/import
-   * round-trip breaks: collectMediaFiles derives ZIP references from row
-   * keys, so a converted document would point at media the export only knows
-   * by the old placeholder. Same double-write discipline as the audio path.
+   * round-trip breaks: collectMediaFiles reads rows by the compound key of
+   * the refs the asset manifest enumerates, so a converted document would
+   * point at media the export only knows by the old placeholder. Same
+   * double-write discipline as the audio path.
    */
   putMediaRecord(stageId: string, ref: string, record: MediaFileRecord): Promise<void>;
   /** Write the post-conversion Dexie compatibility copy of an audio row. */
@@ -497,10 +498,11 @@ export async function convertDocumentAssetRefs(
         // a mirror-write failure.
         assertContinuing();
         // Mirror the row under the allocated id, like the audio path and the
-        // generation write path: collectMediaFiles derives export references
-        // from row keys, so without the copy an exported manifest would name
-        // media the ZIP only knows by the old placeholder. The original ref
-        // stays on placeholderRef for reload reconciliation.
+        // generation write path: collectMediaFiles reads rows by the compound
+        // key of the refs the asset manifest enumerates, so without the copy
+        // an exported manifest would name media the ZIP only knows by the old
+        // placeholder. The original ref stays on placeholderRef for reload
+        // reconciliation.
         await resolvedDeps.putMediaRecord(stageId, assetId, {
           ...record,
           placeholderRef: record.placeholderRef ?? ref,
