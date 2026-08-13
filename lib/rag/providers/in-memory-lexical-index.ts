@@ -21,7 +21,12 @@ function filterMatches(
   filters: Readonly<Record<string, KnowledgeFilterValue>> | undefined,
 ): boolean {
   if (!filters) return true;
-  return Object.entries(filters).every(([key, value]) => chunk.metadata[key] === value);
+  return Object.entries(filters).every(([key, value]) => {
+    const metadataValue = chunk.metadata[key];
+    return Array.isArray(metadataValue)
+      ? typeof value === 'string' && metadataValue.includes(value)
+      : metadataValue === value;
+  });
 }
 
 function matchesScope(chunk: KnowledgeChunk, scope: KnowledgeScope): boolean {

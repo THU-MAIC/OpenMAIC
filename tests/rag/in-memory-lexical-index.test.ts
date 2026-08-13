@@ -123,6 +123,36 @@ describe('in-memory lexical index', () => {
     ).resolves.toHaveLength(2);
   });
 
+  it('matches string-list metadata filters by member within the explicit scope', async () => {
+    const index = new InMemoryLexicalIndex();
+    await index.replaceResourceVersion(
+      replacement([
+        chunk({
+          id: 'safety-tag',
+          text: 'shared procedure',
+          courseId: 'course-1',
+          metadata: { tags: ['safety', 'laboratory'] },
+        }),
+        chunk({
+          id: 'calibration-tag',
+          text: 'shared procedure',
+          courseId: 'course-1',
+          metadata: { tags: ['calibration'] },
+        }),
+      ]),
+    );
+
+    const hits = await index.query({
+      workspaceId: 'workspace-test',
+      courseId: 'course-1',
+      text: 'shared procedure',
+      topK: 5,
+      filters: { tags: 'safety' },
+    });
+
+    expect(hits.map((hit) => hit.chunk.id)).toEqual(['safety-tag']);
+  });
+
   it('orders score ties by chunk ID and deletes all chunks for a resource', async () => {
     const index = new InMemoryLexicalIndex();
     await index.replaceResourceVersion(

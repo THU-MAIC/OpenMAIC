@@ -112,6 +112,44 @@ describe('document RAG chunking', () => {
     expect(chunks[0]?.text).toBe('First\nSecond\nThird');
   });
 
+  it('does not project custom element names beginning with br as line breaks', () => {
+    const chunks = chunkDocumentArtifact(
+      {
+        metadata: {},
+        blocks: [
+          {
+            id: 'html-custom-element',
+            type: 'layout',
+            html: '<p>First<br-foo>Second<br>Third</p>',
+          },
+        ],
+        assets: [],
+      },
+      resource(),
+    );
+
+    expect(chunks[0]?.text).toBe('FirstSecond\nThird');
+  });
+
+  it('does not treat non-HTML whitespace as a br tag-name terminator', () => {
+    const chunks = chunkDocumentArtifact(
+      {
+        metadata: {},
+        blocks: [
+          {
+            id: 'html-non-breaking-space',
+            type: 'layout',
+            html: '<p>First<br\u00a0foo>Second<br>Third</p>',
+          },
+        ],
+        assets: [],
+      },
+      resource(),
+    );
+
+    expect(chunks[0]?.text).toBe('FirstSecond\nThird');
+  });
+
   it('does not split grapheme clusters when applying the chunk limit', () => {
     const chunks = chunkDocumentArtifact(
       {
@@ -125,7 +163,7 @@ describe('document RAG chunking', () => {
 
     expect(chunks.map((chunk) => chunk.text)).toEqual(['👩‍🔬', '👨‍🚀', 'é']);
     expect(chunks.every((chunk) => chunk.text.length > 0)).toBe(true);
-    expect(chunks[0]?.lineage.chunkPolicy.version).toContain('1.1.0');
+    expect(chunks[0]?.lineage.chunkPolicy.version).toBe('1.1.1:maxChars=1:unit=grapheme-cluster');
   });
 
   it(
