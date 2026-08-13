@@ -532,6 +532,18 @@ describe('OpenAI provider defaults', () => {
   });
 
   it('includes latest official Grok models with explicit output limits', () => {
+    expect(getProvider('grok')?.models[0]?.id).toBe('grok-4.6');
+    expect(getModelInfo('grok', 'grok-4.6')).toMatchObject({
+      id: 'grok-4.6',
+      name: 'Grok 4.6',
+      contextWindow: 500000,
+      outputWindow: 500000,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+      },
+    });
     expect(getModelInfo('grok', 'grok-4.5')).toMatchObject({
       id: 'grok-4.5',
       contextWindow: 500000,
@@ -551,6 +563,7 @@ describe('OpenAI provider defaults', () => {
 
   it.each([
     ['kimi', 'kimi-k3', { mode: 'enabled', effort: 'high' }, { reasoning_effort: 'high' }],
+    ['grok', 'grok-4.6', { mode: 'enabled', effort: 'xhigh' }, { reasoning_effort: 'xhigh' }],
     ['grok', 'grok-4.5', { mode: 'enabled', effort: 'medium' }, { reasoning_effort: 'medium' }],
     ['grok', 'grok-4.3', { mode: 'disabled', effort: 'none' }, { reasoning_effort: 'none' }],
     ['kimi', 'kimi-k2.6', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],

@@ -160,6 +160,7 @@ const anthropicFable5Effort: ThinkingCapability = {
 };
 
 const kimiK3Effort = effortCapability('openai', ['low', 'high', 'max'], 'max');
+const grok46Effort = effortCapability('openai', ['low', 'medium', 'high', 'xhigh'], 'high');
 const grok45Effort = effortCapability('openai', ['low', 'medium', 'high'], 'high');
 const grok43Effort = effortCapability('openai', ['none', 'low', 'medium', 'high'], 'none');
 
@@ -426,6 +427,7 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
     'medium',
   ),
 
+  [getModelMetadataKey('grok', 'grok-4.6')]: grok46Effort,
   [getModelMetadataKey('grok', 'grok-4.5')]: grok45Effort,
   [getModelMetadataKey('grok', 'grok-4.3')]: grok43Effort,
   [getModelMetadataKey('grok', 'grok-build-0.1')]: fixedThinkingCapability,

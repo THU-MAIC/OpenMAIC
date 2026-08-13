@@ -1234,6 +1234,22 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/grok.svg',
     models: [
       {
+        id: 'grok-4.6',
+        name: 'Grok 4.6',
+        contextWindow: 500000,
+        outputWindow: 500000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
         id: 'grok-4.5',
         name: 'Grok 4.5',
         contextWindow: 500000,
