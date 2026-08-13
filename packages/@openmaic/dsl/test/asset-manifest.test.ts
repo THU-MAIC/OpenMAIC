@@ -55,6 +55,7 @@ describe('enumerateAssetManifest — reference categories', () => {
           slideWith(
             [
               imageElement('img-1', 'ast_image'),
+              { id: 'aud-1', type: 'audio', src: 'ast_slide_audio' } as Slide['elements'][number],
               videoElement('vid-1', {
                 src: 'ast_video_src',
                 mediaRef: 'ast_video_ref',
@@ -86,6 +87,7 @@ describe('enumerateAssetManifest — reference categories', () => {
         ['ast_stage_wb', 'image'],
         ['ast_background', 'background'],
         ['ast_image', 'image'],
+        ['ast_slide_audio', 'audio'],
         ['ast_video_src', 'video'],
         ['ast_video_ref', 'video'],
         ['ast_poster', 'poster'],

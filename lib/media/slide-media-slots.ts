@@ -1,15 +1,16 @@
-import type { PPTImageElement, PPTVideoElement, Slide } from '@openmaic/dsl';
+import type { PPTAudioElement, PPTImageElement, PPTVideoElement, Slide } from '@openmaic/dsl';
 
 export type SlideMediaReferenceKind =
   | 'background-image'
   | 'image-src'
+  | 'audio-src'
   | 'video-src'
   | 'video-media-ref'
   | 'video-poster';
 
 export interface SlideMediaReferenceSlot {
   readonly kind: SlideMediaReferenceKind;
-  readonly element?: PPTImageElement | PPTVideoElement;
+  readonly element?: PPTImageElement | PPTVideoElement | PPTAudioElement;
   readonly elementIndex?: number;
   readonly read: () => string | undefined;
   readonly write: (value: string | undefined) => void;
@@ -42,6 +43,10 @@ export function* slideMediaReferenceSlots(
       yield elementSlot('image-src', element, elementIndex, 'src');
       continue;
     }
+    if (element.type === 'audio') {
+      yield elementSlot('audio-src', element, elementIndex, 'src');
+      continue;
+    }
     if (element.type !== 'video') continue;
     yield elementSlot('video-src', element, elementIndex, 'src');
     yield elementSlot('video-media-ref', element, elementIndex, 'mediaRef');
@@ -50,7 +55,7 @@ export function* slideMediaReferenceSlots(
 }
 
 function elementSlot<
-  T extends PPTImageElement | PPTVideoElement,
+  T extends PPTImageElement | PPTVideoElement | PPTAudioElement,
   K extends Extract<keyof T, 'src' | 'mediaRef' | 'poster'>,
 >(
   kind: SlideMediaReferenceKind,

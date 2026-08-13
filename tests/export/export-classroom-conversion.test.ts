@@ -297,6 +297,78 @@ describe('classroom ZIP export conversion snapshot', () => {
     expect(importedActions[0]).toMatchObject({ audioId: importedAudioId });
   });
 
+  it('round-trips pool-backed slide audio through the classroom ZIP', async () => {
+    const { getAssetPool } = await import('@/lib/media/asset-pool');
+    const { BrowserDocumentStore } = await import('@openmaic/storage');
+    const { buildClassroomExportZip } = await import('@/lib/export/use-export-classroom');
+    const { materializeImportedAudio, rewriteImportedSlideMediaRefs } =
+      await import('@/lib/import/use-import-classroom');
+    const { DSL_VERSION } = await import('@openmaic/dsl');
+    const pool = getAssetPool();
+    const sourceAudioId = await pool.put(new Blob(['slide-audio-bytes'], { type: 'audio/mpeg' }), {
+      contentType: 'audio/mpeg',
+      mediaType: 'audio',
+    });
+    const slide = {
+      id: 'slide-1',
+      elements: [{ id: 'audio-1', type: 'audio', src: sourceAudioId }],
+    };
+    const scene = {
+      id: 'scene-1',
+      stageId: 'stage-1',
+      type: 'slide',
+      title: 'Scene',
+      order: 0,
+      content: { type: 'slide', canvas: slide },
+    };
+    const stage = { id: 'stage-1', name: 'Course', createdAt: 100, updatedAt: 200 };
+    const store = new BrowserDocumentStore({
+      indexedDB: globalThis.indexedDB as unknown as IDBFactory,
+      dbName: 'maic-documents',
+      validateScene: () => ({ valid: true }),
+    });
+    await store.saveDocument({
+      dslVersion: DSL_VERSION,
+      stage,
+      scenes: [scene],
+    } as never);
+
+    const { zip } = await buildClassroomExportZip(stage as Stage, [scene] as Scene[], {
+      store,
+      kv: new MemoryKv(),
+      legacyStore: { read: async () => null, listStages: async () => [] },
+      lockManager: lockManager(),
+    });
+    const zipData = await JSZip.loadAsync(zip);
+    const manifest = JSON.parse(
+      await zipData.file('manifest.json')!.async('string'),
+    ) as ClassroomManifest;
+    const audioPath = `audio/${sourceAudioId}.mp3`;
+    expect(zipData.file(audioPath)).toBeDefined();
+    expect(await zipData.file(audioPath)!.async('string')).toBe('slide-audio-bytes');
+    expect(manifest.mediaIndex?.[audioPath]).toMatchObject({ type: 'audio' });
+
+    const audioMappings = await materializeImportedAudio(
+      zipData,
+      manifest,
+      'imported-1',
+      Date.now(),
+    );
+    const exportedContent = manifest.scenes[0].content;
+    expect(exportedContent.type).toBe('slide');
+    if (exportedContent.type !== 'slide') throw new Error('expected exported slide content');
+    const importedSlide = rewriteImportedSlideMediaRefs(
+      exportedContent.canvas,
+      { refToNewId: {}, posterRefToNewId: {}, posterByMediaRef: {} },
+      audioMappings.sourceRefToId,
+    );
+    const importedAudioId = audioMappings.sourceRefToId.get(sourceAudioId);
+    expect(importedAudioId).toMatch(/^ast_/);
+    expect(importedAudioId).not.toBe(sourceAudioId);
+    expect(importedSlide.elements[0]).toMatchObject({ type: 'audio', src: importedAudioId });
+    expect(await pool.exists?.(importedAudioId as never)).toBe(true);
+  });
+
   it('does not archive stage-whiteboard bytes the classroom format cannot reconstruct', async () => {
     const { getAssetPool } = await import('@/lib/media/asset-pool');
     const { BrowserDocumentStore } = await import('@openmaic/storage');

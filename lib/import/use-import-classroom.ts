@@ -467,7 +467,11 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
               mScene.content.type === 'slide'
                 ? {
                     ...mScene.content,
-                    canvas: rewriteImportedSlideMediaRefs(mScene.content.canvas, mediaMappings),
+                    canvas: rewriteImportedSlideMediaRefs(
+                      mScene.content.canvas,
+                      mediaMappings,
+                      audioMappings.sourceRefToId,
+                    ),
                   }
                 : mScene.content;
             return canonicalizeLegacyScene({
@@ -478,7 +482,7 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
               content,
               actions,
               whiteboards: mScene.whiteboards?.map((slide) =>
-                rewriteImportedSlideMediaRefs(slide, mediaMappings),
+                rewriteImportedSlideMediaRefs(slide, mediaMappings, audioMappings.sourceRefToId),
               ),
               multiAgent,
               createdAt: now,

@@ -96,7 +96,8 @@ type SlideMediaSlotKind =
   | 'image-src'
   | 'video-src'
   | 'video-media-ref'
-  | 'video-poster';
+  | 'video-poster'
+  | 'audio-src';
 
 interface SlideMediaSlot {
   readonly kind: SlideMediaSlotKind;
@@ -126,6 +127,12 @@ function* slideMediaSlots(
       if (element.src) yield { kind: 'image-src', elementIndex, ref: element.src };
       continue;
     }
+    if (element.type === 'audio') {
+      // Slide audio elements carry their own src; a manifest that skips them
+      // cannot archive their bytes.
+      if (element.src) yield { kind: 'audio-src', elementIndex, ref: element.src };
+      continue;
+    }
     if (element.type !== 'video') continue;
     if (element.src) yield { kind: 'video-src', elementIndex, ref: element.src };
     if (element.mediaRef) {
@@ -148,6 +155,8 @@ function manifestKind(slotKind: SlideMediaSlotKind): AssetKind {
       return 'video';
     case 'video-poster':
       return 'poster';
+    case 'audio-src':
+      return 'audio';
   }
 }
 
