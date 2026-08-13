@@ -32,4 +32,5 @@ export * from './validate.js';
 export * from './normalize.js';
 export * from './version.js';
 export * from './storage.js';
+export * from './asset-manifest.js';
 export * from './runtime.js';
