@@ -50,7 +50,13 @@ export function planQuizScriptFonts(surfaceMarkup: readonly string[]): QuizFontP
   const codePointsByScript = Object.fromEntries(
     SCRIPT_ORDER.map((script) => [script, visibleScriptCodePoints(surfaceMarkup, script)]),
   ) as Record<QuizScriptFont, { primary: number[]; extended: number[] }>;
-  const scripts = SCRIPT_ORDER.filter((script) => codePointsByScript[script].primary.length > 0);
+  const scripts = SCRIPT_ORDER.filter((script) => {
+    const codePoints = codePointsByScript[script];
+    // Arabic punctuation and elongation marks use Script=Common with
+    // Script_Extensions=Arabic. Cyrillic keeps the primary-character gate so
+    // inherited accents such as U+0301 on Latin text do not select its pack.
+    return script === 'arabic' ? codePoints.extended.length > 0 : codePoints.primary.length > 0;
+  });
   const measurementCss: string[] = [];
   const exportCss: string[] = [];
   const assets: { path: string; sourceUrl: string }[] = [];

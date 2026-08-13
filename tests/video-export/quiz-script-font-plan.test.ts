@@ -24,6 +24,18 @@ describe('Quiz script-font plan', () => {
     expect(planQuizScriptFonts(['<article>Cafe\u0301</article>']).scripts).toEqual([]);
   });
 
+  it.each(['Latin ؟ punctuation', '؟،؛ـ'])(
+    'selects Arabic for extension-only rendered markup: %s',
+    (markup) => {
+      const plan = planQuizScriptFonts([`<article>${markup}</article>`]);
+
+      expect(plan.scripts).toEqual(['arabic']);
+      expect(plan.assets.map(({ path }) => path)).toEqual([
+        'assets/fonts/noto-sans-arabic-arabic-400-normal.woff2',
+      ]);
+    },
+  );
+
   it('selects both Noto Sans Cyrillic subsets and their required load sample for Cyrillic markup', () => {
     const plan = planQuizScriptFonts(['<article>Решите уравнение Ёж</article>']);
 
