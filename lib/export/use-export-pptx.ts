@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 
 import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
-import { useMediaGenerationStore, isMediaPlaceholder } from '@/lib/store/media-generation';
+import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { Slide, PPTElementOutline, PPTElementShadow, PPTElementLink } from '@openmaic/dsl';
 import type { Scene, SlideContent } from '@/lib/types/stage';
@@ -389,31 +389,49 @@ export function resolvePptxMediaBinding(
   return { resolution, src: renderableMediaUrl(resolution) ?? '' };
 }
 
-export function exportMediaResolution(ref: string | undefined, stageId?: string) {
-  const tasks = useMediaGenerationStore.getState().tasks;
-  const task = ref
-    ? (tasks[ref] ??
-      Object.values(tasks).find(
-        (candidate) =>
-          candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
-      ))
-    : undefined;
-  const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
-  return resolvePptxMediaBinding(ref, effectiveTask).resolution;
+/**
+ * Resolve one media ref to an embeddable PPTX source through the shared
+ * resolver, so no export-element branch carries its own fallback chain.
+ *
+ * An opaque ref (allocated id or legacy placeholder) resolves pool-first via
+ * {@link resolveStoredBytes} -- then the compatibility row, then the task's
+ * resolved URL, every level gated on the media-resolution state machine -- and
+ * embeds as a data URL. A concrete address resolves to itself through the
+ * state machine and keeps the caller's legacy fetch path. Returns '' when no
+ * level yields a renderable source; the caller skips the element.
+ */
+async function resolvePptxEmbeddableSrc(
+  ref: string | undefined,
+  task: MediaTaskState | undefined,
+  stageId?: string,
+): Promise<string> {
+  if (!ref) return '';
+  if (!isConcreteMediaAddress(ref)) {
+    const stored = await resolveStoredBytes(ref, {
+      stageId,
+      resolutionGating: true,
+      loadCompatRow: true,
+      taskUrlFallback: true,
+      fetchPolicy: { requireOk: true, requireNonEmpty: false },
+    });
+    if (stored) return blobToDataUrl(stored);
+  }
+  const effectiveTask = task ?? lookupMediaTask(ref, stageId);
+  return renderableMediaUrl(resolvePptxMediaBinding(ref, effectiveTask).resolution) ?? '';
 }
 
-/** Resolve generated/allocated media without preventing the legacy source fetch fallback. */
-async function resolveStoredMediaBlob(ref: string, stageId?: string): Promise<Blob | null> {
-  // Pool first, then the Dexie compatibility row, then the task's resolved
-  // URL -- every level gated on the media-resolution state machine so an
-  // in-flight regeneration suppresses stale bytes.
-  return resolveStoredBytes(ref, {
-    stageId,
-    resolutionGating: true,
-    loadCompatRow: true,
-    taskUrlFallback: true,
-    fetchPolicy: { requireOk: true, requireNonEmpty: false },
-  });
+/** The media task governing a ref in this stage, when the caller did not supply one. */
+function lookupMediaTask(ref: string, stageId?: string): MediaTaskState | undefined {
+  // A concrete address is a network source, not a task key.
+  if (isConcreteMediaAddress(ref)) return undefined;
+  const tasks = useMediaGenerationStore.getState().tasks;
+  const task =
+    tasks[ref] ??
+    Object.values(tasks).find(
+      (candidate) =>
+        candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
+    );
+  return task && (!stageId || task.stageId === stageId) ? task : undefined;
 }
 
 // Exported for the round-trip integration test harness — the test wires its
@@ -451,11 +469,7 @@ export async function buildPptxBlob(
     if (slide.background) {
       const bg = slide.background;
       if (bg.type === 'image' && bg.image) {
-        let resolvedSrc = renderableMediaUrl(exportMediaResolution(bg.image.src, stageId));
-        if (!resolvedSrc) {
-          const stored = await resolveStoredMediaBlob(bg.image.src, stageId);
-          if (stored) resolvedSrc = await blobToDataUrl(stored);
-        }
+        const resolvedSrc = await resolvePptxEmbeddableSrc(bg.image.src, undefined, stageId);
         if (!resolvedSrc) {
           // Missing generated backgrounds stay empty instead of leaking an opaque ref to pptxgen.
         } else if (isSVGImage(resolvedSrc)) {
@@ -536,12 +550,9 @@ export async function buildPptxBlob(
 
       // ── IMAGE ──
       else if (el.type === 'image') {
-        // Resolve placeholder src → actual image data
-        let resolvedSrc = renderableMediaUrl(exportMediaResolution(el.src, stageId));
-        if (isMediaPlaceholder(el.src)) {
-          const stored = await resolveStoredMediaBlob(el.src, stageId);
-          if (stored) resolvedSrc = await blobToDataUrl(stored);
-        }
+        // Resolve the src through the shared stored-bytes resolver (opaque
+        // refs embed as data URLs; concrete addresses keep the fetch below).
+        let resolvedSrc = await resolvePptxEmbeddableSrc(el.src, undefined, stageId);
         if (!resolvedSrc) continue;
 
         // Fetch and convert to base64 for embedding in PPTX
@@ -1027,19 +1038,11 @@ export async function buildPptxBlob(
               )
             : undefined;
         const sourceRef = videoBinding?.sourceRef ?? el.src;
-        let resolvedSrc = renderableMediaUrl(
-          videoBinding
-            ? resolvePptxMediaBinding(sourceRef, videoBinding.task).resolution
-            : exportMediaResolution(sourceRef, stageId),
+        const resolvedSrc = await resolvePptxEmbeddableSrc(
+          sourceRef,
+          videoBinding?.task,
+          stageId,
         );
-        const mediaLookupKey =
-          sourceRef && !isConcreteMediaAddress(sourceRef) && isMediaPlaceholder(sourceRef)
-            ? sourceRef
-            : undefined;
-        if (mediaLookupKey) {
-          const stored = await resolveStoredMediaBlob(mediaLookupKey, stageId);
-          if (stored) resolvedSrc = await blobToDataUrl(stored);
-        }
 
         if (!resolvedSrc) continue;
 
@@ -1075,27 +1078,27 @@ export async function buildPptxBlob(
           if (el.type === 'video') {
             let coverBase64: string | undefined;
 
-            // 1. Try poster from element or media generation store
-            let posterUrl = videoBinding?.posterRef;
-            let posterBlob = posterUrl ? await resolveStoredMediaBlob(posterUrl, stageId) : null;
-            if (posterUrl && !posterBlob) {
-              posterUrl = renderableMediaUrl(
-                resolvePptxMediaBinding(posterUrl, videoBinding?.posterTask).resolution,
-              );
-            }
-            if (posterBlob) {
-              coverBase64 = await blobToDataUrl(posterBlob);
-            } else if (posterUrl) {
-              try {
-                const posterResp = await fetch(posterUrl);
-                if (!posterResp.ok) {
-                  log.warn(`Failed to fetch poster (HTTP ${posterResp.status}), skipping`);
-                } else {
-                  posterBlob = await posterResp.blob();
-                  coverBase64 = await blobToDataUrl(posterBlob);
+            // 1. Try the poster the element (or its generation task) names,
+            // resolved through the same shared chain as the media itself.
+            const posterSrc = await resolvePptxEmbeddableSrc(
+              videoBinding?.posterRef,
+              videoBinding?.posterTask,
+              stageId,
+            );
+            if (posterSrc) {
+              if (isBase64Image(posterSrc)) {
+                coverBase64 = posterSrc;
+              } else {
+                try {
+                  const posterResp = await fetch(posterSrc);
+                  if (!posterResp.ok) {
+                    log.warn(`Failed to fetch poster (HTTP ${posterResp.status}), skipping`);
+                  } else {
+                    coverBase64 = await blobToDataUrl(await posterResp.blob());
+                  }
+                } catch {
+                  // Poster fetch failed, fall through to video frame capture
                 }
-              } catch {
-                // Poster fetch failed, fall through to video frame capture
               }
             }
 
