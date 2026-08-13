@@ -37,8 +37,9 @@ export async function collectAudioFiles(
   const collected: CollectedAudio[] = [];
   for (const entry of entries) {
     const audioId = entry.ref;
-    // The pool answers first: after a stable-id regeneration whose mirror write
-    // failed, the row holds the superseded narration.
+    // The pool answers first: after a stable-id regeneration whose mirror
+    // write failed, the row holds the superseded narration. A ref whose bytes
+    // resolve nowhere ships nothing; the caller marks it missing.
     const blob = await resolveAudioBlob(audioId);
     // A row with no usable bytes -- an evicted row (empty blob, no pool
     // resolve) -- must not ship an empty audio file.
@@ -52,28 +53,19 @@ export async function collectAudioFiles(
 }
 
 /**
- * A same-id replacement commits the new bytes to the pool first; if the
- * compatibility write then fails, the task records
- * `MEDIA_COMPATIBILITY_STORE_LAGGED` and the document deliberately keeps the
- * same reference. Rendering and the other export paths resolve the pool, so the
- * ZIP must too -- otherwise it ships media the classroom no longer shows. The
- * ZIP predates the `response.ok` validation the other export paths added and
- * keeps that laxity, but a zero-byte pool answer is not usable bytes: the
- * compatibility row stays the fallback rather than shipping an empty file.
- */
-async function pooledBytesForRef(ref: string): Promise<Blob | null> {
-  return resolveStoredBytes(ref, {
-    fetchPolicy: { requireOk: false, requireNonEmpty: true },
-  });
-}
-
-/**
  * Collect the bytes of every media entry (image/video/poster/background) in
  * the asset manifest. Only referenced assets are archived: the pre-manifest
  * implementation scanned the whole `mediaFiles` table for the stage, which
- * swept rows no document element still references into the ZIP. A referenced
- * asset whose bytes exist only in the pool (its compatibility row was never
- * written or has been pruned) is still collected, with a synthesized record.
+ * swept rows no document element still references into the ZIP.
+ *
+ * Bytes come from the shared resolver, pool-first with the supplied
+ * compatibility record's blob as its legacy row-fallback level -- so a
+ * same-id replacement whose mirror write lagged
+ * (MEDIA_COMPATIBILITY_STORE_LAGGED) ships what the classroom renders, and a
+ * referenced asset whose bytes exist only in the pool is collected with a
+ * synthesized record. A failed row (error set, empty placeholder blob) yields
+ * no bytes and ships no empty file. The ZIP predates the response validation
+ * the other export paths added, so it keeps its historical lax fetch policy.
  */
 export async function collectMediaFiles(
   stageId: string,
@@ -83,21 +75,22 @@ export async function collectMediaFiles(
   for (const entry of entries) {
     const ref = entry.ref;
     const record = await db.mediaFiles.get(mediaFileKey(stageId, ref)).catch(() => undefined);
-    const pooled = await pooledBytesForRef(ref);
-    // Referenced but with bytes nowhere (pending generation, pruned): the
-    // archive simply lacks the file, as it did when no row existed.
-    if (!record && !pooled) continue;
+    const blob = await resolveStoredBytes(ref, {
+      record,
+      fetchPolicy: { requireOk: false, requireNonEmpty: true },
+    });
+    // Referenced but with bytes nowhere (pending generation, pruned, failed):
+    // the archive simply lacks the file, as it did when no row existed.
+    if (!blob) continue;
     const effective: MediaFileRecord = record
-      ? pooled
-        ? { ...record, blob: pooled }
-        : record
+      ? { ...record, blob }
       : {
           id: mediaFileKey(stageId, ref),
           stageId,
-          type: pooled!.type.startsWith('video/') ? 'video' : 'image',
-          blob: pooled!,
-          mimeType: pooled!.type,
-          size: pooled!.size,
+          type: blob.type.startsWith('video/') ? 'video' : 'image',
+          blob,
+          mimeType: blob.type,
+          size: blob.size,
           prompt: '',
           params: '',
           createdAt: 0,

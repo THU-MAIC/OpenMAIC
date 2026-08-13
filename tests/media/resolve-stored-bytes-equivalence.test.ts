@@ -2,9 +2,9 @@
  * Frozen-base differential harness for the shared stored-bytes resolver.
  *
  * The three export paths this branch collapses into `resolveStoredBytes` are
- * reproduced below **verbatim** as they stand at commit `e1578083` — the merge
- * base this branch was cut from, and (at the time of writing) still identical
- * to `main`, since no commit between the two touched these functions:
+ * reproduced below **verbatim** from their pre-#1116 implementations as of
+ * commit `e1578083`. They are preserved as the differential evidence for the
+ * shared resolver. This branch now sits on post-#1116 main at `1a151c4a`:
  *
  * - `pooledBytesForRef`            — `lib/export/classroom-zip-utils.ts`
  * - `resolveStoredMediaBlob` + `fetchBlob`
@@ -28,20 +28,33 @@
  * sequence, the arguments, and the results are unchanged, which is what a
  * caller can observe.
  *
- * Exactly one divergence is permitted, and it is asserted to occur exactly
- * where it is documented and nowhere else: a PPTX compatibility row whose
- * `blob` is missing threw a `TypeError` out of the frozen implementation and
- * falls through to the next byte source in the current one.
+ * Two precisely counted divergence classes are permitted:
  *
- * Scope, so this file is not mistaken for total coverage: it drives the three
- * real call sites and only those. Option combinations no call site uses --
- * `taskUrlFallback` without `resolutionGating`, most obviously -- are outside
- * it by construction and are covered by the targeted cases in
- * `resolve-stored-bytes.test.ts`. A change that is unobservable under all
- * three call sites' options (leaking the task into the gate, for instance)
- * does not red this file, and should not: it is unobservable in production
- * too. Nor does this file cover state that mutates mid-await; the supplied
- * row's `error` verdict timing is pinned by its own tests.
+ * - ZIP now passes its preloaded metadata row into the helper, moving the
+ *   compatibility-blob fallback that the historical caller performed after
+ *   `pooledBytesForRef` into the shared resolver. Thus, at this helper
+ *   boundary, a usable supplied row answers after a pool miss. This is a
+ *   relocation, not an archive behavior change; failed and empty rows are
+ *   deliberately excluded by the new call site.
+ * - A PPTX compatibility row whose `blob` is missing threw a `TypeError` out
+ *   of the frozen implementation and falls through to the next byte source in
+ *   the current one.
+ *
+ * Scope, so this file is not mistaken for total coverage: it drives the
+ * current option sets of the three real call sites and only those. Call-site
+ * behavior is additionally covered by the targeted export, video-export, and
+ * resolver suites; no separate caller-level differential machinery is
+ * duplicated here. ZIP's section includes the preloaded row
+ * matrix because that caller now passes `record`; it deliberately omits
+ * `stageId`, gating, CDN fallback, and task fallback because ZIP passes none of
+ * them. Option combinations no call site uses -- `taskUrlFallback` without
+ * `resolutionGating`, most obviously -- are outside it by construction and
+ * are covered by the targeted cases in `resolve-stored-bytes.test.ts`. A
+ * change that is unobservable under all three call sites' options (leaking the
+ * task into the gate, for instance) does not red this file, and should not: it
+ * is unobservable in production too. Nor does this file cover state that
+ * mutates mid-await; the supplied row's `error` verdict timing is pinned by
+ * its own tests.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -355,6 +368,10 @@ const recordCases: RecordCase[] = [
   },
 ];
 
+// ZIP loads by mediaFileKey(stageId, ref), so unlike the generic resolver and
+// video sections it cannot supply a non-compound compatibility-row id.
+const zipRecordCases = recordCases.filter((row) => row.name !== 'non-compound-id');
+
 const STAGES = ['stage-1', undefined] as const;
 
 // ─── Recording rig ──────────────────────────────────────────────────────────
@@ -412,25 +429,55 @@ describe('frozen-base differential harness', () => {
   });
 
   it('classroom ZIP: the shared resolver reproduces the frozen implementation', async () => {
+    const divergences: string[] = [];
     let compared = 0;
     for (const ref of REFS)
       for (const task of taskCases(ref))
         for (const pool of POOL_CASES)
-          for (const fetchMode of FETCH_CASES) {
-            arm(pool, fetchMode, task.tasks);
-            const before = await capture(() => frozenZip(ref));
-            arm(pool, fetchMode, task.tasks);
-            const after = await capture(() =>
-              resolveStoredBytes(ref, {
-                fetchPolicy: { requireOk: false, requireNonEmpty: true },
-              }),
-            );
-            expect(after, `ZIP ${ref} ${task.name} pool=${pool} fetch=${fetchMode}`).toEqual(
-              before,
-            );
-            compared++;
-          }
-    expect(compared).toBe(REFS.length * 9 * POOL_CASES.length * FETCH_CASES.length);
+          for (const fetchMode of FETCH_CASES)
+            for (const row of zipRecordCases) {
+              const label = `ZIP ${ref} ${task.name} pool=${pool} fetch=${fetchMode} row=${row.name}`;
+              const supplied = row.make(ref);
+              arm(pool, fetchMode, task.tasks);
+              const before = await capture(() => frozenZip(ref), supplied);
+              arm(pool, fetchMode, task.tasks);
+              const after = await capture(
+                () =>
+                  resolveStoredBytes(ref, {
+                    record: supplied,
+                    fetchPolicy: { requireOk: false, requireNonEmpty: true },
+                  }),
+                supplied,
+              );
+              compared++;
+              if (before.kind === 'null' && after.kind === 'bytes') {
+                // The compatibility fallback moved from the ZIP caller into
+                // the resolver. Only a usable, non-empty row may account for
+                // this helper-boundary divergence.
+                divergences.push(label);
+                expect(row.name, label).toBe('ok');
+                expect(after.identity, label).toBe('row-blob');
+                expect(after.calls, label).toEqual(before.calls);
+                continue;
+              }
+              expect(after, label).toEqual(before);
+            }
+    expect(compared).toBe(
+      REFS.length * 9 * POOL_CASES.length * FETCH_CASES.length * zipRecordCases.length,
+    );
+    // Every concrete ref bypasses the pool and reaches the supplied row. For
+    // each opaque ref, the row is reached on pool miss/throw (8 fetch-mode
+    // combinations), plus pool URL with the two rejected fetch outcomes
+    // (empty/throw). Exactly one ZIP row case carries usable non-empty bytes.
+    const concreteRefs = REFS.filter(isConcreteMediaAddress).length;
+    const opaqueRefs = REFS.length - concreteRefs;
+    const rowReachingOpaqueCases =
+      (POOL_CASES.length - 1) * FETCH_CASES.length + 1 * (FETCH_CASES.length - 2);
+    expect(divergences.length).toBe(
+      (concreteRefs * POOL_CASES.length * FETCH_CASES.length +
+        opaqueRefs * rowReachingOpaqueCases) *
+        9,
+    );
   });
 
   it('PPTX: the shared resolver reproduces the frozen implementation', async () => {

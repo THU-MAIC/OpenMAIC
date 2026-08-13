@@ -247,12 +247,19 @@ export async function createVideoTimelineDeps(input: {
   const audioIds = new Set(speechPairs.flatMap((pair) => (pair.audioId ? [pair.audioId] : [])));
   const audioById = new Map<string, AudioFileRecord>();
   for (const audioId of audioIds) {
+    // Bytes come only from the shared resolver: pool-first, so a stable-id
+    // regeneration whose mirror write failed (the row then holds the
+    // superseded narration) still exports what the classroom plays; the row's
+    // own blob is the resolver's legacy fallback. The row read here supplies
+    // duration/format/ossKey metadata for the compiler's sync lookups.
     const record = await db.audioFiles.get(audioId);
-    // A stable-id regeneration whose mirror write failed leaves the row on the
-    // superseded narration, so the pool answers first here too.
     const blob = await resolveAudioBlob(audioId);
-    if (record) audioById.set(audioId, blob ? { ...record, blob } : record);
-    else if (blob) audioById.set(audioId, { id: audioId, blob } as AudioFileRecord);
+    if (blob)
+      audioById.set(
+        audioId,
+        record ? { ...record, blob } : ({ id: audioId, blob } as AudioFileRecord),
+      );
+    else if (record) audioById.set(audioId, record);
   }
   // An unconverted document can carry narration only as a legacy URL: the
   // playback paths fall back to it, and the export must too, or a playable
