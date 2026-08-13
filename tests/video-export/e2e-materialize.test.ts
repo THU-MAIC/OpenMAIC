@@ -253,6 +253,11 @@ const QUIZ_PROJECT_FILES = [
   'LICENSES/Noto-Sans-KR-OFL-1.1.txt',
   'LICENSES/Noto-Sans-SC-OFL-1.1.txt',
 ].sort();
+const MIXED_SCRIPT_QUIZ_PROJECT_FILES = [
+  ...QUIZ_PROJECT_FILES,
+  'LICENSES/Noto-Sans-Arabic-OFL-1.1.txt',
+  'LICENSES/Noto-Sans-OFL-1.1.txt',
+].sort();
 
 const samples: MaterializedSample[] = [
   {
@@ -322,6 +327,8 @@ describe('Hyperframes materialized sample contract', () => {
     const legacyContent = byName.get('pbl-legacy')!.scenes[0]!.content as Record<string, unknown>;
 
     expect(JSON.stringify(byName.get('quiz')!.scenes)).toContain('a^2+b^2=c^2');
+    expect(JSON.stringify(byName.get('quiz')!.scenes)).toContain('Русский');
+    expect(JSON.stringify(byName.get('quiz')!.scenes)).toContain('العربية');
     expect(legacyContent).toHaveProperty('projectConfig');
     expect(legacyContent).not.toHaveProperty('projectV2');
     expect(byName.get('pbl-dense')).toMatchObject({ width: 854, height: 480 });
@@ -400,7 +407,11 @@ describe.skipIf(!OUT_DIR)('materialize a Hyperframes project for real-CLI E2E', 
       cpSync(gsapSrc, gsapDst);
 
       const expectedFiles = [
-        ...(sample.quizQuestionList ? QUIZ_PROJECT_FILES : COMPLETE_PROJECT_FILES),
+        ...(sample.name === 'quiz'
+          ? MIXED_SCRIPT_QUIZ_PROJECT_FILES
+          : sample.quizQuestionList
+            ? QUIZ_PROJECT_FILES
+            : COMPLETE_PROJECT_FILES),
         ...project.vendorAssets.map((asset) => asset.path),
       ].sort();
       expect(

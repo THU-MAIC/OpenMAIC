@@ -90,7 +90,7 @@ export function quizQuestionListCss(width: number): string {
   const scale = width / 1280;
   const px = (value: number): string => `${Math.max(1, Math.round(value * scale))}px`;
   return [
-    `.quiz-question-list { padding:5.2%;background:linear-gradient(145deg,#071426 0%,#102a43 56%,#133f4b 100%);font-family:Inter,"OpenMAIC Noto Sans SC","OpenMAIC Noto Sans KR",sans-serif; }`,
+    `.quiz-question-list { padding:5.2%;background:linear-gradient(145deg,#071426 0%,#102a43 56%,#133f4b 100%);font-family:"OpenMAIC Noto Sans Cyrillic","OpenMAIC Noto Sans Arabic",Inter,"OpenMAIC Noto Sans SC","OpenMAIC Noto Sans KR",sans-serif; }`,
     `.quiz-question-list * { overflow-wrap:anywhere; }`,
     `.quiz-list-shell { display:flex;width:min(88%,${px(1040)});height:100%;min-height:0;flex-direction:column;padding:${px(28)} ${px(34)};overflow:hidden;border:${px(1)} solid rgba(255,255,255,.13);border-radius:${px(28)};background:rgba(11,18,33,.9);box-shadow:0 ${px(30)} ${px(80)} rgba(0,0,0,.42);color:#f8fafc; }`,
     `.quiz-list-header { display:flex;flex:0 0 auto;align-items:center;gap:${px(12)};margin-bottom:${px(20)}; }`,

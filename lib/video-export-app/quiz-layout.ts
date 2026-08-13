@@ -15,6 +15,7 @@ import {
 import { INTER_FONT_FACE_CSS } from '@/lib/video-export/emit-hyperframes/inter-font';
 import { KATEX_MEASUREMENT_CSS } from '@/lib/video-export/emit-hyperframes/katex-assets';
 import { NOTO_CJK_MEASUREMENT_CSS } from '@/lib/video-export/emit-hyperframes/noto-cjk-assets';
+import { planQuizScriptFonts } from '@/lib/video-export/emit-hyperframes/quiz-script-font-plan';
 
 const RTL_LANGUAGES = new Set(['ar', 'fa', 'he', 'ur', 'ps', 'sd', 'ug', 'yi']);
 
@@ -40,27 +41,34 @@ export interface QuizQuestionListMeasurementSurface {
   css: string;
   width: number;
   height: number;
+  requiredFontLoads: readonly { family: string; text: string }[];
 }
 
 /** Prepare the exact emitted question markup, CSS, and embedded font faces. */
 export function createQuizQuestionListMeasurementSurface(
   input: MeasureQuizQuestionListInput,
 ): QuizQuestionListMeasurementSurface {
+  const html = renderQuizQuestionListSurface(
+    input.content,
+    input.labels,
+    direction(input.locale),
+    'quiz-layout-measurement-content',
+  );
+  const scriptFonts = planQuizScriptFonts([html]);
   return {
-    html: renderQuizQuestionListSurface(
-      input.content,
-      input.labels,
-      direction(input.locale),
-      'quiz-layout-measurement-content',
-    ),
+    html,
     css: [
       INTER_FONT_FACE_CSS,
       NOTO_CJK_MEASUREMENT_CSS,
       KATEX_MEASUREMENT_CSS,
+      scriptFonts.measurementCss,
       quizQuestionListCss(input.width),
-    ].join('\n'),
+    ]
+      .filter(Boolean)
+      .join('\n'),
     width: input.width,
     height: input.height,
+    requiredFontLoads: scriptFonts.requiredFontLoads,
   };
 }
 
@@ -118,6 +126,16 @@ export async function measureQuizQuestionList(
     document.body.append(host);
 
     if (!(await waitBeforeDeadline(document.fonts?.ready ?? Promise.resolve()))) return null;
+    if (input.requiredFontLoads.length > 0 && !document.fonts?.load) return null;
+    for (const font of input.requiredFontLoads) {
+      const family = font.family.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+      const loaded = Promise.resolve(document.fonts.load(`400 16px "${family}"`, font.text)).then(
+        (faces) => {
+          if (faces.length === 0) throw new Error('Selected Quiz font did not load');
+        },
+      );
+      if (!(await waitBeforeDeadline(loaded))) return null;
+    }
     let previous: QuizLayoutMeasurement | null = null;
     let stableReads = 0;
     for (let attempt = 0; attempt < 8; attempt += 1) {
