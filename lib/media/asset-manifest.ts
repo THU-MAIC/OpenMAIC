@@ -38,7 +38,9 @@ export async function buildStageAssetManifest(
         const row = await db.audioFiles.get(entry.ref).catch(() => undefined);
         if (row) audioRows.set(entry.ref, row);
       } else {
-        const row = await db.mediaFiles.get(mediaFileKey(stageId, entry.ref)).catch(() => undefined);
+        const row = await db.mediaFiles
+          .get(mediaFileKey(stageId, entry.ref))
+          .catch(() => undefined);
         if (row) mediaRows.set(entry.ref, row);
       }
     }),

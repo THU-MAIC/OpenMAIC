@@ -192,9 +192,7 @@ describe('enumerateAssetManifest — reference counts', () => {
     const document = documentWith([
       slideScene(
         'scene-1',
-        slideWith([
-          videoElement('vid-1', { src: 'ast_v', mediaRef: 'ast_v', poster: 'ast_p' }),
-        ]),
+        slideWith([videoElement('vid-1', { src: 'ast_v', mediaRef: 'ast_v', poster: 'ast_p' })]),
       ),
     ]);
 
@@ -280,7 +278,9 @@ describe('enumerateAssetManifest — metadata', () => {
   });
 
   it('leaves entries metadata-free when no lookup is supplied', () => {
-    const document = documentWith([slideScene('scene-1', slideWith([imageElement('i1', 'ast_img')]))]);
+    const document = documentWith([
+      slideScene('scene-1', slideWith([imageElement('i1', 'ast_img')])),
+    ]);
 
     expect(enumerateAssetManifest(document).entries).toEqual([{ ref: 'ast_img', kind: 'image' }]);
   });

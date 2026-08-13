@@ -179,7 +179,7 @@ describe('createVideoTimelineDeps — legacy URL audio fallback', () => {
 
   it('ingests a dangling pair through its URL and surfaces a present, probed narration asset', async () => {
     const legacyUrl = 'https://server.example.com/audio/legacy.mp3';
-        fetchMediaUrlMock.mockResolvedValue(
+    fetchMediaUrlMock.mockResolvedValue(
       new Response(new Blob(['narration'], { type: 'audio/mpeg' }), { status: 200 }),
     );
     // The duration probe needs a DOM audio element; this Node environment
@@ -210,7 +210,7 @@ describe('createVideoTimelineDeps — legacy URL audio fallback', () => {
 
   it('keeps a clip missing when the legacy URL will not fetch', async () => {
     const legacyUrl = 'https://server.example.com/audio/gone.mp3';
-        fetchMediaUrlMock.mockResolvedValue(new Response(null, { status: 404 }));
+    fetchMediaUrlMock.mockResolvedValue(new Response(null, { status: 404 }));
 
     const action = { id: 'a1', type: 'speech', text: 'Hello', audioUrl: legacyUrl };
     const scene = slideScene({ id: 'text_1', type: 'text' }, [action]);
@@ -342,7 +342,7 @@ describe('createVideoTimelineDeps — media ref bridge', () => {
   });
 
   it('plans a concrete src instead of a stale opaque mediaRef', async () => {
-        const concreteSrc = 'https://cdn.example/direct.mp4';
+    const concreteSrc = 'https://cdn.example/direct.mp4';
     const element = {
       id: ELEMENT_ID,
       type: 'video',
@@ -394,7 +394,7 @@ describe('createVideoTimelineDeps — media ref bridge', () => {
 
 describe('createVideoTimelineDeps — geometry probe', () => {
   it('pre-measures the content box of spotlight/laser/video targets and serves it', async () => {
-        const scene = slideScene({ id: 'text_1', type: 'text' }, [spotlight('text_1')]);
+    const scene = slideScene({ id: 'text_1', type: 'text' }, [spotlight('text_1')]);
 
     const deps = await createVideoTimelineDeps({ stage: { id: STAGE_ID }, scenes: [scene] });
 
@@ -411,7 +411,7 @@ describe('createVideoTimelineDeps — geometry probe', () => {
   });
 
   it('does not render a scene with no effect/video targets', async () => {
-        const scene = slideScene({ id: 'text_1', type: 'text' }, []);
+    const scene = slideScene({ id: 'text_1', type: 'text' }, []);
 
     const deps = await createVideoTimelineDeps({ stage: { id: STAGE_ID }, scenes: [scene] });
     expect(measureCalls).toHaveLength(0);

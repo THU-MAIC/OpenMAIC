@@ -33,7 +33,7 @@ import type {
   InteractiveHtmlSource,
   TimingProbe,
 } from '@/lib/video-export';
-import type { Scene, SlideContent } from '@/lib/types/stage';
+import type { Scene, SlideContent, Stage } from '@/lib/types/stage';
 import { enumerateAssetManifest } from '@openmaic/dsl';
 import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import { measureSlideElementGeometry, type MeasuredGeometry } from '@openmaic/renderer/snapshot';
@@ -203,7 +203,7 @@ function probeAudioDurationMs(blob: Blob): Promise<number | null> {
  * compiler's sync `videoDurationMs` is a table lookup.
  */
 export async function createVideoTimelineDeps(input: {
-  stage: { id: string };
+  stage: Pick<Stage, 'id' | 'whiteboard' | 'videoManifest'>;
   scenes: Scene[];
   /**
    * Skip the off-screen content-box geometry measurement (an off-screen React
@@ -311,7 +311,9 @@ export async function createVideoTimelineDeps(input: {
   const mediaByElementId = new Map<string, MediaFileRecord>();
   for (const entry of assetManifest.entries) {
     if (entry.kind === 'audio') continue;
-    const record = await db.mediaFiles.get(mediaFileKey(stage.id, entry.ref)).catch(() => undefined);
+    const record = await db.mediaFiles
+      .get(mediaFileKey(stage.id, entry.ref))
+      .catch(() => undefined);
     if (record) mediaByElementId.set(entry.ref, record);
   }
 

@@ -1038,11 +1038,7 @@ export async function buildPptxBlob(
               )
             : undefined;
         const sourceRef = videoBinding?.sourceRef ?? el.src;
-        const resolvedSrc = await resolvePptxEmbeddableSrc(
-          sourceRef,
-          videoBinding?.task,
-          stageId,
-        );
+        const resolvedSrc = await resolvePptxEmbeddableSrc(sourceRef, videoBinding?.task, stageId);
 
         if (!resolvedSrc) continue;
 

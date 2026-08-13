@@ -68,7 +68,13 @@ describe('buildStageAssetManifest', () => {
     const manifest = await buildStageAssetManifest(stage, [sceneWithImage('ast_image')], STAGE_ID);
 
     expect(manifest.entries).toEqual([
-      { ref: 'ast_image', kind: 'image', byteSize: 2048, mimeType: 'image/png', prompt: 'a diagram' },
+      {
+        ref: 'ast_image',
+        kind: 'image',
+        byteSize: 2048,
+        mimeType: 'image/png',
+        prompt: 'a diagram',
+      },
       {
         ref: 'ast_narration',
         kind: 'audio',
