@@ -1,10 +1,15 @@
 import type {
+  ChartType,
+  PPTChartElement,
   ShapePathFormulasKeys,
   PPTImageElement,
+  PPTLatexElement,
   PPTShapeElement,
+  PPTTableElement,
   PPTTextElement,
   Slide,
 } from '@openmaic/dsl';
+import type { LatexEditorResult } from '@openmaic/editor/ui';
 
 export interface ShapeSpec {
   viewBox: [number, number];
@@ -91,6 +96,80 @@ export function createDefaultImageElement(id: string, src: string): PPTImageElem
     rotate: 0,
     fixedRatio: true,
     src,
+  };
+}
+
+export function createDefaultLatexElement(id: string, result: LatexEditorResult): PPTLatexElement {
+  return {
+    id,
+    type: 'latex',
+    left: 160,
+    top: 160,
+    width: result.width,
+    height: result.height,
+    rotate: 0,
+    latex: result.latex,
+    html: result.html,
+    color: '#333333',
+    align: 'center',
+    fixedRatio: true,
+  };
+}
+
+/** Create a renderer-editor chart with data that is valid for every chart type. */
+export function createDefaultChartElement(id: string, chartType: ChartType): PPTChartElement {
+  return {
+    id,
+    type: 'chart',
+    left: 160,
+    top: 140,
+    width: 420,
+    height: 260,
+    rotate: 0,
+    chartType,
+    data: {
+      labels: ['A', 'B', 'C', 'D'],
+      legends: ['Series 1'],
+      series: [[24, 36, 28, 42]],
+    },
+    themeColors: ['#5b8def', '#8b5cf6', '#10b981', '#f59e0b'],
+    textColor: '#333333',
+    lineColor: '#d4d4d8',
+  };
+}
+
+/** Create an empty table with equal columns for the slide insert palette. */
+export function createDefaultTableElement(
+  id: string,
+  requestedRows: number,
+  requestedColumns: number,
+): PPTTableElement {
+  const rows = Math.max(1, Math.floor(requestedRows));
+  const columns = Math.max(1, Math.floor(requestedColumns));
+
+  return {
+    id,
+    type: 'table',
+    left: 120,
+    top: 120,
+    width: 360,
+    height: Math.max(120, rows * 36),
+    rotate: 0,
+    colWidths: Array.from({ length: columns }, () => 1 / columns),
+    cellMinHeight: 36,
+    data: Array.from({ length: rows }, (_, rowIndex) =>
+      Array.from({ length: columns }, (_, columnIndex) => ({
+        id: `${id}-cell-${rowIndex}-${columnIndex}`,
+        colspan: 1,
+        rowspan: 1,
+        text: '',
+      })),
+    ),
+    outline: {
+      width: 2,
+      color: '#eeece1',
+      style: 'solid',
+    },
   };
 }
 

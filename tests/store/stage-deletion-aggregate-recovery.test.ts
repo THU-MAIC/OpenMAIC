@@ -33,6 +33,7 @@ const { fakeStore, dbMock, prepareMock } = vi.hoisted(() => {
       }),
     },
     stageOutlines: { delete: vi.fn().mockResolvedValue(undefined) },
+    stageFolders: { delete: vi.fn().mockResolvedValue(undefined) },
     playbackState: { delete: vi.fn().mockResolvedValue(undefined) },
     mediaFiles: {
       where: () => ({ equals: () => ({ toArray: vi.fn().mockResolvedValue([]) }) }),

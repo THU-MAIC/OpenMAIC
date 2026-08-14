@@ -248,4 +248,22 @@ describe('toModelMessages', () => {
     expect(content[0].toolName).toBe('myTool');
     expect(content[0].output).toEqual({ type: 'text', value: 'result text' });
   });
+
+  it('encodes failed toolResult content as AI SDK error-text', () => {
+    const messages: PiMessage[] = [
+      {
+        role: 'toolResult',
+        toolCallId: 'call-error',
+        toolName: 'myTool',
+        content: [{ type: 'text', text: 'failure detail' }],
+        isError: true,
+        timestamp: 0,
+      },
+    ];
+
+    const result = toModelMessages(messages);
+    const content = (result[0] as { content: Array<Record<string, unknown>> }).content;
+
+    expect(content[0].output).toEqual({ type: 'error-text', value: 'failure detail' });
+  });
 });

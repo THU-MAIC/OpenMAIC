@@ -20,6 +20,7 @@ import {
 import type { Api, Model } from '@earendil-works/pi-ai';
 import { makeAllowlistGate } from './allowlist';
 import { makeQuotaHook } from './quota';
+import { hasLengthToolCallProvenance } from './stream-fn';
 import { V0_ALLOWLIST } from '../tools/registry';
 
 // pi needs *a* model object on state; the injected StreamFn ignores it and uses
@@ -59,7 +60,7 @@ export interface BuildAgentOptions {
 
 export function buildAgent(opts: BuildAgentOptions): Agent {
   const quotaHook = makeQuotaHook({ remaining: () => Number.MAX_SAFE_INTEGER });
-  return new Agent({
+  const agent = new Agent({
     streamFn: opts.streamFn,
     transformContext: opts.transformContext,
     convertToLlm: opts.convertToLlm,
@@ -74,16 +75,50 @@ export function buildAgent(opts: BuildAgentOptions): Agent {
     },
     beforeToolCall: makeAllowlistGate(opts.allowedToolNames ?? V0_ALLOWLIST),
     afterToolCall: async (context, signal) => {
-      const quotaResult = await quotaHook(context);
-      const requestResult = await opts.afterToolCall?.(context, signal);
-      if (!quotaResult && !requestResult) return undefined;
+      const markerIsError =
+        typeof context.result === 'object' &&
+        context.result !== null &&
+        Object.prototype.hasOwnProperty.call(context.result, 'isError') &&
+        (context.result as { isError?: unknown }).isError === true;
+      const baseIsError = context.isError || markerIsError;
+      const normalizedContext = baseIsError ? { ...context, isError: true } : context;
+      const quotaResult = await quotaHook(normalizedContext);
+      const requestResult = await opts.afterToolCall?.(normalizedContext, signal);
+      if (!quotaResult && !requestResult && !baseIsError) return undefined;
       return {
         ...quotaResult,
         ...requestResult,
+        isError: baseIsError || quotaResult?.isError === true || requestResult?.isError === true,
         terminate: quotaResult?.terminate === true || requestResult?.terminate === true,
       };
     },
   });
+
+  let terminalBarrierActive = false;
+  agent.subscribe((event) => {
+    if (
+      event.type === 'turn_end' &&
+      event.message.role === 'assistant' &&
+      event.message.stopReason === 'length' &&
+      hasLengthToolCallProvenance(event.message)
+    ) {
+      terminalBarrierActive = true;
+      agent.clearAllQueues();
+    } else if (event.type === 'agent_end') {
+      terminalBarrierActive = false;
+    }
+  });
+
+  const steer = agent.steer.bind(agent);
+  agent.steer = (message) => {
+    if (!terminalBarrierActive) steer(message);
+  };
+  const followUp = agent.followUp.bind(agent);
+  agent.followUp = (message) => {
+    if (!terminalBarrierActive) followUp(message);
+  };
+
+  return agent;
 }
 
 export function buildSystemPrompt(scene?: { id: string; title: string }): string {

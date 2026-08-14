@@ -8,10 +8,16 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
 const KEYS = [
+  'RENDER_RESOURCE_PROFILE',
   'RENDER_MAX_JOBS_PER_USER',
   'RENDER_MAX_CONCURRENCY',
   'RENDER_MAX_CONCURRENT_EXTRACTIONS',
   'PRODUCER_MAX_WORKERS',
+  'PRODUCER_LOW_MEMORY_MODE',
+  'PRODUCER_FORCE_SCREENSHOT',
+  'PRODUCER_BROWSER_GPU_MODE',
+  'PRODUCER_ENABLE_BROWSER_POOL',
+  'RENDER_REQUIRE_BEGINFRAME',
 ] as const;
 const originals = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
 
@@ -55,9 +61,9 @@ describe('config maxJobsPerUser', () => {
 });
 
 describe('config producerWorkers', () => {
-  it('defaults to producer auto-sizing when no explicit override is supplied', async () => {
+  it('defaults to one explicit worker in the standard profile', async () => {
     delete process.env.PRODUCER_MAX_WORKERS;
-    expect((await loadConfig()).producerWorkers).toBeUndefined();
+    expect((await loadConfig()).producerWorkers).toBe(1);
   });
 
   it('accepts an explicit single-worker profile without silently raising it', async () => {
@@ -65,13 +71,9 @@ describe('config producerWorkers', () => {
     expect((await loadConfig()).producerWorkers).toBe(1);
   });
 
-  it('ignores zero, negative, or non-numeric values', async () => {
+  it('rejects worker overrides that contradict the profile', async () => {
     process.env.PRODUCER_MAX_WORKERS = '0';
-    expect((await loadConfig()).producerWorkers).toBeUndefined();
-    process.env.PRODUCER_MAX_WORKERS = '-2';
-    expect((await loadConfig()).producerWorkers).toBeUndefined();
-    process.env.PRODUCER_MAX_WORKERS = 'many';
-    expect((await loadConfig()).producerWorkers).toBeUndefined();
+    await expect(loadConfig()).rejects.toThrow(/requires PRODUCER_MAX_WORKERS=1/);
   });
 });
 
@@ -84,11 +86,17 @@ describe('config latency-profile concurrency', () => {
     expect(config.maxConcurrentExtractions).toBe(1);
   });
 
-  it('allows an operator to opt into a higher-throughput profile', async () => {
+  it('rejects service concurrency that exceeds the selected profile', async () => {
     process.env.RENDER_MAX_CONCURRENCY = '2';
     process.env.RENDER_MAX_CONCURRENT_EXTRACTIONS = '2';
+    await expect(loadConfig()).rejects.toThrow(/requires RENDER_MAX_CONCURRENCY=1/);
+  });
+
+  it('selects the explicit low-memory profile', async () => {
+    process.env.RENDER_RESOURCE_PROFILE = 'low-memory';
     const config = await loadConfig();
-    expect(config.maxConcurrency).toBe(2);
-    expect(config.maxConcurrentExtractions).toBe(2);
+    expect(config.resourceProfile.name).toBe('low-memory');
+    expect(config.requireBeginFrame).toBe(false);
+    expect(config.producerWorkers).toBe(1);
   });
 });

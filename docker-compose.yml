@@ -6,9 +6,12 @@ services:
         # NEXT_PUBLIC_* values are compiled into the browser bundle. Leave them
         # empty unless the corresponding client feature is explicitly enabled;
         # persistence and other build-time flags can be supplied on the command line.
+        - ALLOWED_FRAME_ANCESTORS=${ALLOWED_FRAME_ANCESTORS:-}
         - NEXT_PUBLIC_PERSISTENCE=${NEXT_PUBLIC_PERSISTENCE:-}
         - NEXT_PUBLIC_PERSISTENCE_TOKEN=${NEXT_PUBLIC_PERSISTENCE_TOKEN:-}
         - NEXT_PUBLIC_MAIC_EDITOR_ENABLED=${NEXT_PUBLIC_MAIC_EDITOR_ENABLED:-}
+        - NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED=${NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED:-}
+        - NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED=${NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED:-}
         - NEXT_PUBLIC_PI_CHAT_ENABLED=${NEXT_PUBLIC_PI_CHAT_ENABLED:-}
         - NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=${NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI:-}
         - NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=${NEXT_PUBLIC_ENABLE_VIDEO_EXPORT:-}
@@ -83,23 +86,14 @@ services:
       - NET_ADMIN
     environment:
       - PORT=9000
-      # Keep the beginFrame-capable browser path available when producer decides
-      # the cgroup has enough memory. Under this service's 4 GiB limit producer's
-      # automatic low-memory profile safely selects screenshot capture + one
-      # worker instead of multiplying Chromium for unvalidated 1080p/4K renders.
-      - PRODUCER_BROWSER_GPU_MODE=hardware
+      # The standard CPU profile is explicit: BeginFrame, one producer worker,
+      # one render, and one extraction. Select low-memory explicitly instead of
+      # allowing producer to silently change capture mode from cgroup heuristics.
+      - RENDER_RESOURCE_PROFILE=${RENDER_RESOURCE_PROFILE:-standard}
       - PRODUCER_HEADLESS_SHELL_PATH=/usr/bin/chromium-headless-shell
       - RENDER_MAX_CONCURRENCY=1
       - RENDER_MAX_CONCURRENT_EXTRACTIONS=1
-      # Producer's browser pool shares a Chromium compositor across capture
-      # sessions. Keep it disabled so an operator who raises memory and opts into
-      # parallel capture gets independent browsers; the 4 GiB default resolves to
-      # one worker, so this does not multiply memory by itself.
-      - PRODUCER_ENABLE_BROWSER_POOL=false
-      # Leave producer workers unset: producer 0.7.60 applies its cgroup memory,
-      # CPU, small-job, low-memory, and capture-cost guards. Operators may opt
-      # into the measured 720p latency profile documented in the service README.
-      # Long compositions still need CDP headroom even with one adaptive worker.
+      # Long compositions still need CDP headroom even with one explicit worker.
       - PRODUCER_PUPPETEER_PROTOCOL_TIMEOUT_MS=900000
       # OpenMAIC's long slide exports currently exhaust producer's 15s static
       # verification budget and disable dedup anyway. Skip that guaranteed-lost
@@ -112,12 +106,12 @@ services:
       # RENDER_MAX_QUEUE cap. Set this >0 only with a trusted proxy supplying
       # per-user identity (see render-service/README.md).
       - RENDER_MAX_JOBS_PER_USER=0
-    # Bound RAM: each render (Chromium + FFmpeg + archive expansion) is memory
-    # heavy, and extraction is capped separately (RENDER_MAX_CONCURRENT_EXTRACTIONS).
-    # Raise for higher RENDER_MAX_CONCURRENCY / larger classrooms.
-    mem_limit: 4g
+    # Bound RAM: each render (Chromium + FFmpeg + archive expansion) is memory-heavy.
+    # The standard profile requires 10 GiB. For the explicit low-memory profile,
+    # set RENDER_RESOURCE_PROFILE=low-memory and RENDER_SERVICE_MEMORY_LIMIT=4g.
+    mem_limit: ${RENDER_SERVICE_MEMORY_LIMIT:-10g}
     # Chromium media/frame work can exceed Docker's 64 MiB default shared-memory
-    # mount. This is a ceiling inside the same 4 GiB cgroup, not eager allocation.
+    # mount. This is a ceiling inside the selected profile cgroup, not eager allocation.
     shm_size: 2gb
     networks:
       - render

@@ -48,4 +48,12 @@ describe('iframe sandbox safety', () => {
       expect(isDangerousSandbox(sandbox)).toBe(false);
     }
   });
+
+  test('video-export emitter keeps packaged interactive HTML in a null-origin sandbox', () => {
+    const sandboxes = extractSandboxValues('lib/video-export/emit-hyperframes/index.ts');
+    expect(sandboxes).toContain('allow-scripts');
+    for (const sandbox of sandboxes) {
+      expect(isDangerousSandbox(sandbox)).toBe(false);
+    }
+  });
 });

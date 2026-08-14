@@ -229,6 +229,28 @@ describe('thinking config normalization', () => {
     });
   });
 
+  it('models Grok 4.6 thinking as non-toggleable effort including xhigh', () => {
+    const thinking = getThinking('grok', 'grok-4.6');
+
+    expect(supportsConfigurableThinking(thinking)).toBe(true);
+    expect(thinking?.control).toBe('effort');
+    expect(thinking?.requestAdapter).toBe('openai');
+    expect(thinking?.toggleable).toBe(false);
+    expect(thinking?.effortValues).toEqual(['low', 'medium', 'high', 'xhigh']);
+    expect(getDefaultThinkingConfig(thinking)).toEqual({
+      mode: 'enabled',
+      effort: 'high',
+    });
+    expect(normalizeThinkingConfig(thinking, { mode: 'disabled' })).toEqual({
+      mode: 'enabled',
+      effort: 'low',
+    });
+    expect(normalizeThinkingConfig(thinking, { effort: 'xhigh' })).toEqual({
+      mode: 'enabled',
+      effort: 'xhigh',
+    });
+  });
+
   it('normalizes DeepSeek V4 thinking as high/max effort levels', () => {
     const thinking = getThinking('deepseek', 'deepseek-v4-pro');
 

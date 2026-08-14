@@ -10,16 +10,13 @@
 
 import fs from 'fs';
 import path from 'path';
-import type { PromptId, LoadedPrompt, PromptVariableDefaults, SnippetId } from './types';
+import type { PromptId, LoadedPrompt, SnippetId } from './types';
 import { createLogger } from '@/lib/logger';
+import {
+  loadSnippet as loadGenerationSnippet,
+  type SnippetId as GenerationSnippetId,
+} from '@openmaic/generation';
 const log = createLogger('PromptLoader');
-
-const PROMPT_VARIABLE_DEFAULTS = {
-  'pbl-actions': {
-    projectSummary:
-      '(No generated milestones are available; introduce the project topic without inventing any.)',
-  },
-} satisfies PromptVariableDefaults;
 
 /**
  * Get the prompts directory path
@@ -38,9 +35,9 @@ export function loadSnippet(snippetId: SnippetId): string {
   try {
     return fs.readFileSync(snippetPath, 'utf-8').trim();
   } catch {
-    // Fail loud rather than silently shipping `{{snippet:foo}}` to the LLM.
-    // A missing snippet is always a config/typo bug — surface at load time.
-    throw new Error(`Snippet not found: ${snippetId}`);
+    // App-only templates can reuse package-owned generation snippets without
+    // retaining a second on-disk copy.
+    return loadGenerationSnippet(snippetId as GenerationSnippetId);
   }
 }
 
@@ -125,17 +122,10 @@ export function interpolateVariables(template: string, variables: Record<string,
 }
 
 function applyPromptVariableDefaults(
-  promptId: PromptId,
+  _promptId: PromptId,
   variables: Record<string, unknown>,
 ): Record<string, unknown> {
-  const defaults = PROMPT_VARIABLE_DEFAULTS[promptId as keyof typeof PROMPT_VARIABLE_DEFAULTS];
-  if (!defaults) return variables;
-
-  const resolved = { ...variables };
-  for (const [key, value] of Object.entries(defaults)) {
-    if (resolved[key] === undefined) resolved[key] = value;
-  }
-  return resolved;
+  return variables;
 }
 
 /**

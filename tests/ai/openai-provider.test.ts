@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const openAiMock = vi.hoisted(() => ({
   chat: vi.fn((modelId: string) => ({ endpoint: 'chat', modelId })),
@@ -75,6 +75,7 @@ async function captureInjectedRequestBody(
 
 describe('OpenAI provider defaults', () => {
   beforeEach(() => {
+    vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'false');
     openAiMock.chat.mockClear();
     openAiMock.responses.mockClear();
     openAiMock.createOpenAI.mockReset();
@@ -85,6 +86,10 @@ describe('OpenAI provider defaults', () => {
     azureMock.model.mockClear();
     azureMock.createAzure.mockReset();
     azureMock.createAzure.mockReturnValue(azureMock.model);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it.each([
@@ -163,6 +168,220 @@ describe('OpenAI provider defaults', () => {
     expect(openAiMock.responses).toHaveBeenCalledWith('gpt-5.5');
     expect(openAiMock.chat).not.toHaveBeenCalled();
     expect(model).toEqual({ endpoint: 'responses', modelId: 'gpt-5.5' });
+  });
+
+  it('keeps the Responses API for a custom OpenAI base URL by default', () => {
+    getModel({
+      providerId: 'openai',
+      modelId: 'gpt-5.6-sol',
+      apiKey: 'sk-test',
+      baseUrl: 'https://relay.example/v1',
+    });
+
+    const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+      | { fetch?: typeof fetch }
+      | undefined;
+    expect(options?.fetch).toBeUndefined();
+    expect(openAiMock.responses).toHaveBeenCalledWith('gpt-5.6-sol');
+    expect(openAiMock.chat).not.toHaveBeenCalled();
+  });
+
+  it('routes a custom OpenAI base URL through Chat Completions when compatibility is enabled', () => {
+    vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'true');
+
+    getModel({
+      providerId: 'openai',
+      modelId: 'gpt-5.6-sol',
+      apiKey: 'sk-test',
+      baseUrl: 'https://relay.example/v1',
+    });
+
+    const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+      | { fetch?: typeof fetch }
+      | undefined;
+    expect(options?.fetch).toBeTypeOf('function');
+    expect(openAiMock.chat).toHaveBeenCalledWith('gpt-5.6-sol');
+    expect(openAiMock.responses).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'https://api.openai.com/v1/',
+    ' https://API.openai.com/v1 ',
+    'https://api.openai.com/v1?api-version=latest',
+  ])('does not enable compatibility for the official OpenAI base URL: %s', (baseUrl) => {
+    vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'true');
+
+    getModel({
+      providerId: 'openai',
+      modelId: 'gpt-5.6-sol',
+      apiKey: 'sk-test',
+      baseUrl,
+    });
+
+    const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+      | { fetch?: typeof fetch }
+      | undefined;
+    expect(options?.fetch).toBeUndefined();
+    expect(openAiMock.responses).toHaveBeenCalledWith('gpt-5.6-sol');
+    expect(openAiMock.chat).not.toHaveBeenCalled();
+  });
+
+  it('buffers custom OpenAI Chat streams for non-streaming SDK calls', async () => {
+    vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'true');
+    const originalFetch = globalThis.fetch;
+    const chunks = [
+      {
+        id: 'chatcmpl_test',
+        object: 'chat.completion.chunk',
+        created: 123,
+        model: 'gpt-5.6-sol',
+        choices: [
+          {
+            index: 0,
+            delta: {
+              role: 'assistant',
+              content: '{"elements":',
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_test',
+                  type: 'function',
+                  function: { name: 'buildSlide', arguments: '{"title":' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        id: 'chatcmpl_test',
+        object: 'chat.completion.chunk',
+        created: 123,
+        model: 'gpt-5.6-sol',
+        choices: [
+          {
+            index: 0,
+            delta: {
+              content: '[]}',
+              tool_calls: [
+                {
+                  index: 0,
+                  function: { name: 'buildSlide', arguments: '"Demo"}' },
+                },
+              ],
+            },
+            finish_reason: 'stop',
+          },
+          {
+            index: 1,
+            delta: { content: 'ignored secondary choice' },
+            finish_reason: 'length',
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
+      },
+    ];
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      const body = `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('')}data: [DONE]\n\n`;
+      return new Response(body, {
+        status: 200,
+        // Some relays send SSE data with this incorrect content type.
+        headers: { 'content-type': 'application/json', 'content-length': '1' },
+      });
+    });
+
+    try {
+      globalThis.fetch = fetchMock as typeof fetch;
+      getModel({
+        providerId: 'openai',
+        modelId: 'gpt-5.6-sol',
+        apiKey: 'sk-test',
+        baseUrl: 'https://relay.example/v1',
+      });
+
+      const lastCall = openAiMock.createOpenAI.mock.calls.at(-1);
+      const options = lastCall?.[0] as { fetch?: typeof fetch } | undefined;
+      const response = await options?.fetch?.('https://relay.example/v1/chat/completions', {
+        method: 'POST',
+        body: JSON.stringify({
+          model: 'gpt-5.6-sol',
+          messages: [],
+          stream: false,
+          stream_options: { include_usage: false, relay_option: 'preserve' },
+        }),
+      });
+      const request = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+      const body = await response?.json();
+
+      expect(request).toMatchObject({
+        stream: true,
+        stream_options: { include_usage: true, relay_option: 'preserve' },
+      });
+      expect(body.choices[0]).toMatchObject({
+        message: {
+          role: 'assistant',
+          content: '{"elements":[]}',
+          tool_calls: [
+            {
+              id: 'call_test',
+              type: 'function',
+              function: { name: 'buildSlide', arguments: '{"title":"Demo"}' },
+            },
+          ],
+        },
+        finish_reason: 'stop',
+      });
+      expect(body.usage.total_tokens).toBe(12);
+      expect(response?.headers.get('content-type')).toBe('application/json');
+      expect(response?.headers.get('content-length')).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('buffers SSE after preamble fields and preserves a missing finish reason', async () => {
+    vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'true');
+    const originalFetch = globalThis.fetch;
+    const chunk = {
+      id: 'chatcmpl_preamble',
+      object: 'chat.completion.chunk',
+      created: 123,
+      model: 'gpt-5.6-sol',
+      choices: [{ index: 0, delta: { role: 'assistant', content: 'ok' } }],
+    };
+    const fetchMock = vi.fn(async () => {
+      const body = `: ping\n\nevent: message\ndata: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`;
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    try {
+      globalThis.fetch = fetchMock as typeof fetch;
+      getModel({
+        providerId: 'openai',
+        modelId: 'gpt-5.6-sol',
+        apiKey: 'sk-test',
+        baseUrl: 'https://relay.example/v1',
+      });
+
+      const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+        | { fetch?: typeof fetch }
+        | undefined;
+      const response = await options?.fetch?.('https://relay.example/v1/chat/completions', {
+        method: 'POST',
+        body: JSON.stringify({ model: 'gpt-5.6-sol', messages: [], stream: false }),
+      });
+      const body = await response?.json();
+
+      expect(body.choices[0]).toMatchObject({
+        message: { role: 'assistant', content: 'ok' },
+        finish_reason: null,
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it('creates an Azure OpenAI model using the deployment name', () => {
@@ -313,6 +532,18 @@ describe('OpenAI provider defaults', () => {
   });
 
   it('includes latest official Grok models with explicit output limits', () => {
+    expect(getProvider('grok')?.models[0]?.id).toBe('grok-4.6');
+    expect(getModelInfo('grok', 'grok-4.6')).toMatchObject({
+      id: 'grok-4.6',
+      name: 'Grok 4.6',
+      contextWindow: 500000,
+      outputWindow: 500000,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+      },
+    });
     expect(getModelInfo('grok', 'grok-4.5')).toMatchObject({
       id: 'grok-4.5',
       contextWindow: 500000,
@@ -332,6 +563,7 @@ describe('OpenAI provider defaults', () => {
 
   it.each([
     ['kimi', 'kimi-k3', { mode: 'enabled', effort: 'high' }, { reasoning_effort: 'high' }],
+    ['grok', 'grok-4.6', { mode: 'enabled', effort: 'xhigh' }, { reasoning_effort: 'xhigh' }],
     ['grok', 'grok-4.5', { mode: 'enabled', effort: 'medium' }, { reasoning_effort: 'medium' }],
     ['grok', 'grok-4.3', { mode: 'disabled', effort: 'none' }, { reasoning_effort: 'none' }],
     ['kimi', 'kimi-k2.6', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],

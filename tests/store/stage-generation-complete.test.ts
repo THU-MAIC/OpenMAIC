@@ -45,7 +45,10 @@ vi.mock('@/lib/utils/stage-storage', () => ({
   },
 }));
 vi.mock('@/lib/utils/database', () => ({
-  db: { stageOutlines: { put: stageOutlinesPut, get: stageOutlinesGet } },
+  db: {
+    stageOutlines: { put: stageOutlinesPut, get: stageOutlinesGet },
+    stageFolders: { delete: vi.fn().mockResolvedValue(undefined) },
+  },
 }));
 
 import {

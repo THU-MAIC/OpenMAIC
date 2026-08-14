@@ -39,6 +39,7 @@
 
 ## 🗞️ News
 
+- **2026-08-14** — [v0.3.2 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.2) Video export hardening (deterministic Quiz/PBL covers, fidelity polish, interactive HTML capture, CPU resource profiles); server-backed persistence completed (full document cutover, one-command Postgres stack, incremental saves) plus the asset registry; the `@openmaic/generation` package; four new locales; Amazon Bedrock, Atlas Cloud, and Claude search providers; FunASR ASR. See [changelog](CHANGELOG.md).
 - **2026-07-21** — [v0.3.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.1) One-click MP4 video export; server-backed runtime storage with a Postgres reference server; direct slide manipulation in the editor (drag, resize, rotate, multi-select); smarter "Edit with AI" (validated JSON Patch edits, multi-session history); expanded Document Parsing (multi-format upload, audio/video extraction, AliDocMind, MinerU); new providers (Azure OpenAI, SearXNG, ComfyUI) and the GPT-5.6 model family; action-level playback navigation; SSRF hardening. See [changelog](CHANGELOG.md).
 - **2026-06-28** — [v0.3.0 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.0) Project-Based Learning (PBL) v2 with classroom UI; "Edit with AI" Pro-mode editor agent; the `@openmaic/*` SDK family (DSL/renderer/importer) published to npm; optional per-stage model routing; new models (GLM-5.2, Kimi K2.7 Code, Qwen3.7 Plus/Max); a vocational-learning task engine; Korean (ko-KR) locale; and relicensing from AGPL-3.0 to MIT. See [changelog](CHANGELOG.md).
 - **2026-06-02** — [v0.2.2 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.2) MAIC Editor (v0) Pro Mode for editing generated slides; editable outline before generation; offline-ready classroom export; new search providers (Brave/Baidu/Bocha/MiniMax) and Azure STT; new models (Claude Opus 4.8, MiniMax M3, Gemini 3.5 Flash); Traditional Chinese (zh-TW) and Brazilian Portuguese (pt-BR) locales. See [changelog](CHANGELOG.md).
@@ -340,6 +341,18 @@ Compose cannot attach `depends_on` to `openmaic` only when this optional profile
 is active without also affecting the default deployment. Startup therefore
 relies on the embedded route's retry-on-next-request behavior while PostgreSQL
 becomes healthy.
+
+Deleting or replacing an asset only drops its registry entry; the bytes behind
+it are reclaimed afterwards by an offline collector. **This deployment runs that
+collector by default**, so nothing has to be configured for asset storage to
+stop growing. A pass runs every `ASSET_COLLECTION_INTERVAL_MS` (default 15
+minutes) over bytes that have been unreferenced for longer than
+`ASSET_COLLECTION_GRACE_MS` (default 1 hour); the grace period is the retention
+window a user's deleted bytes actually get, so raise it deliberately. Set
+`ASSET_COLLECTION_ENABLED=0` to switch collection off in a process. A
+horizontally scaled deployment may leave it on in every instance — each blob row
+is locked and re-checked before its bytes go, so concurrent collectors serialize
+rather than race — or disable it everywhere and run its own.
 
 The embedded endpoint implements the package's
 [RuntimeStore HTTP contract](packages/@openmaic/storage/docs/runtime-http-contract.md)
@@ -678,7 +691,7 @@ Optional config in `~/.openclaw/openclaw.json`:
 - **Text-to-Speech** — Multiple voice providers with customizable voices
 - **Speech Recognition** — Talk to your AI teacher using your microphone
 - **Web Search** — Agents search the web for up-to-date information during class
-- **i18n** — Interface supports 7 languages: Chinese (Simplified & Traditional), English, Japanese, Russian, Arabic, and Portuguese (Brazil)
+- **i18n** — Interface supports 11 languages: Chinese (Simplified & Traditional), English, Japanese, Korean, Russian, Arabic, Portuguese (Brazil), Spanish (Mexico), French, and Vietnamese
 - **Dark Mode** — Easy on the eyes for late-night study sessions
 
 ---
@@ -784,7 +797,7 @@ OpenMAIC/
 
 ### Key Architecture
 
-- **Generation Pipeline** (`lib/generation/`) — Two-stage: outline generation → scene content generation
+- **Generation Pipeline** (`@openmaic/generation`) — Two-stage: outline generation → scene content generation
 - **Multi-Agent Orchestration** (`lib/orchestration/`) — LangGraph state machine managing agent turns and discussions
 - **Playback Engine** (`lib/playback/`) — State machine driving classroom playback and live interaction
 - **Action Engine** (`lib/action/`) — Executes 28+ action types (speech, whiteboard draw/text/shape/chart, spotlight, laser …)

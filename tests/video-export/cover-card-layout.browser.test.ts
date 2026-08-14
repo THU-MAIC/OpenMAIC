@@ -11,21 +11,37 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page, type Request } from '@playwright/test';
-import { compileVideoTimeline, emitHyperframes } from '@/lib/video-export';
-import type { CompilerScene, VideoExportCta } from '@/lib/video-export';
+import { compileVideoTimeline, emitHyperframes, prepareQuizQuestionList } from '@/lib/video-export';
+import type { CompilerScene, QuizLayoutProbe, VideoExportCta } from '@/lib/video-export';
 import { PBL_PANEL_DESIGN_BOX } from '@/lib/video-export/emit-hyperframes';
 import {
   getVideoExportCoverLabels,
   resolveVideoExportCta,
 } from '@/lib/video-export-app/cover-config';
+import {
+  createQuizQuestionListMeasurementSurface,
+  measureQuizQuestionList,
+} from '@/lib/video-export-app/quiz-layout';
 import type { Locale } from '@/lib/i18n';
 import { NO_ASSETS, NO_PROBE, speech } from './helpers';
+import {
+  QUIZ_SCROLL_LAYOUT_720P,
+  QUIZ_SCROLL_QUESTIONS,
+  QUIZ_SCROLL_TITLE,
+  quizScrollScene,
+} from './quiz-scroll-fixture';
 
 const REQUIRED = process.env.COVER_LAYOUT_BROWSER === '1';
 
 const FRAMES = {
   '720p': { width: 1280, height: 720 },
   '480p': { width: 854, height: 480 },
+} as const;
+
+const QUIZ_LIST_FRAMES = {
+  '720p': { width: 1280, height: 720 },
+  '1080p': { width: 1920, height: 1080 },
+  '4k': { width: 3840, height: 2160 },
 } as const;
 
 interface CoverContent {
@@ -188,6 +204,62 @@ function coverHtml(
     cta: options.cta,
     burnInSubtitles: options.burnInSubtitles === true,
   }).files.find((file) => file.path === 'index.html')!.content;
+}
+
+const LONG_QUIZ_QUESTIONS = QUIZ_SCROLL_QUESTIONS;
+
+function quizListHtml(
+  frame: { width: number; height: number },
+  questions: readonly unknown[],
+  measurement: { contentHeightPx: number; viewportHeightPx: number },
+): {
+  html: string;
+  scrollDistancePx: number;
+  timing: {
+    transitionStartMs: number;
+    transitionEndMs: number;
+    topHoldEndMs: number;
+    scrollEndMs: number;
+    bottomHoldEndMs: number;
+  };
+} {
+  const source = {
+    id: 'quiz-list',
+    stageId: 'stage',
+    title: QUIZ_SCROLL_TITLE,
+    order: 0,
+    type: 'quiz',
+    content: { type: 'quiz', questions },
+    actions: [speech('quiz-list-narration', 'Question-list narration')],
+  } as CompilerScene;
+  const probe: QuizLayoutProbe = {
+    measureQuestionList: () => ({ ...measurement, frameHeightPx: frame.height }),
+  };
+  const ir = compileVideoTimeline(
+    { stage: { id: 'stage', name: 'quiz-list-layout' }, scenes: [source] },
+    { timing: NO_PROBE, assets: NO_ASSETS, quizLayout: probe },
+  );
+  const visual = ir.scenes[0].visuals.find((item) => item.kind === 'quiz-question-list');
+  if (!visual || visual.kind !== 'quiz-question-list') throw new Error('Quiz list not planned');
+  return {
+    html: emitHyperframes(ir, {
+      ...frame,
+      locale: 'en-US',
+      labels: getVideoExportCoverLabels('en-US'),
+    }).files.find((file) => file.path === 'index.html')!.content,
+    scrollDistancePx: visual.scrollDistancePx,
+    timing: {
+      transitionStartMs: visual.startMs,
+      transitionEndMs: visual.startMs + visual.transitionDurationMs,
+      topHoldEndMs: visual.startMs + visual.transitionDurationMs + visual.topHoldDurationMs,
+      scrollEndMs:
+        visual.startMs +
+        visual.transitionDurationMs +
+        visual.topHoldDurationMs +
+        visual.scrollDurationMs,
+      bottomHoldEndMs: visual.startMs + visual.durationMs,
+    },
+  };
 }
 
 const GSAP = readFileSync(join(process.cwd(), 'public/vendor/gsap.min.js'), 'utf8');
@@ -580,6 +652,13 @@ describe('Quiz/PBL cover cards in a real browser', () => {
       await page.route('**/gsap.min.js', (route) =>
         route.fulfill({ body: GSAP, contentType: 'text/javascript' }),
       );
+      await page.route('**/*.woff2', (route) => {
+        const filename = new URL(route.request().url()).pathname.split('/').at(-1)!;
+        route.fulfill({
+          body: readFileSync(join(process.cwd(), 'public/vendor/video-export/fonts', filename)),
+          contentType: 'font/woff2',
+        });
+      });
     } catch (error) {
       if (REQUIRED) throw error;
     }
@@ -726,5 +805,298 @@ describe('Quiz/PBL cover cards in a real browser', () => {
       labels.pblCtaPrompt,
       `${labels.ctaVisit} ${DEFAULT_CTA.destination}`,
     ]);
+  });
+
+  for (const [name, frame] of Object.entries(QUIZ_LIST_FRAMES)) {
+    check(
+      `measures and reaches the real Quiz list bottom consistently at ${name}`,
+      async (page) => {
+        const initial = quizListHtml(frame, LONG_QUIZ_QUESTIONS, {
+          contentHeightPx: frame.height * 2,
+          viewportHeightPx: frame.height / 2,
+        });
+        await page.setViewportSize(frame);
+        await loadEmittedHtml(page, initial.html);
+
+        const reads = await page.evaluate(async () => {
+          const values: Array<{ contentHeightPx: number; viewportHeightPx: number }> = [];
+          for (let index = 0; index < 3; index += 1) {
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+            const content = document.querySelector<HTMLElement>('.quiz-list-content')!;
+            const viewport = document.querySelector<HTMLElement>('.quiz-list-viewport')!;
+            values.push({
+              contentHeightPx: Math.ceil(content.scrollHeight),
+              viewportHeightPx: Math.ceil(viewport.clientHeight),
+            });
+          }
+          return values;
+        });
+        expect(reads[1]).toEqual(reads[0]);
+        expect(reads[2]).toEqual(reads[0]);
+        expect(reads[0].contentHeightPx).toBeGreaterThan(reads[0].viewportHeightPx);
+
+        const resolved = quizListHtml(frame, LONG_QUIZ_QUESTIONS, reads[0]);
+        await loadEmittedHtml(page, resolved.html);
+        const geometry = await page.evaluate((distance) => {
+          const viewport = document.querySelector<HTMLElement>('.quiz-list-viewport')!;
+          const content = document.querySelector<HTMLElement>('.quiz-list-content')!;
+          const first = document.querySelector<HTMLElement>('.quiz-list-question')!;
+          const cards = document.querySelectorAll<HTMLElement>('.quiz-list-question');
+          const last = cards[cards.length - 1]!;
+          const viewportBox = viewport.getBoundingClientRect();
+          const firstTop = first.getBoundingClientRect().top;
+          const fontReady = document.fonts.check('16px KaTeX_Math');
+          const math = document.querySelector<HTMLElement>('.katex .mathnormal');
+          content.style.transform = `translateY(-${distance}px)`;
+          const lastBottom = last.getBoundingClientRect().bottom;
+          return {
+            firstOffsetPx: firstTop - viewportBox.top,
+            lastOffsetPx: lastBottom - viewportBox.bottom,
+            fontReady,
+            mathFontFamily: math ? getComputedStyle(math).fontFamily : '',
+            externalFontUrls: Array.from(document.styleSheets)
+              .flatMap((sheet) => {
+                try {
+                  return Array.from(sheet.cssRules, (rule) => rule.cssText);
+                } catch {
+                  return [];
+                }
+              })
+              .filter((rule) => /url\(["']?https?:\/\//.test(rule)),
+          };
+        }, resolved.scrollDistancePx);
+
+        expect(geometry.firstOffsetPx).toBeCloseTo(0, 0);
+        expect(Math.abs(geometry.lastOffsetPx)).toBeLessThanOrEqual(1);
+        expect(geometry.fontReady).toBe(true);
+        expect(geometry.mathFontFamily).toContain('KaTeX_Math');
+        expect(geometry.externalFontUrls).toEqual([]);
+      },
+    );
+  }
+
+  for (const blockedStep of ['fonts', 'animation-frame'] as const) {
+    check(`bounds Quiz measurement when ${blockedStep} never settles`, async (page) => {
+      const frame = QUIZ_LIST_FRAMES['720p'];
+      const fixture = quizScrollScene();
+      const surface = createQuizQuestionListMeasurementSurface({
+        content: {
+          title: fixture.title,
+          questions: prepareQuizQuestionList(fixture),
+        },
+        width: frame.width,
+        height: frame.height,
+        locale: 'en-US',
+        labels: getVideoExportCoverLabels('en-US'),
+      });
+      await page.setViewportSize(frame);
+      await page.goto(HARNESS_URL, { waitUntil: 'load' });
+
+      const result = await page.evaluate(
+        async ({ source, input, blocked }) => {
+          const measure = (0, eval)(`(${source})`) as (
+            value: typeof input,
+            timeoutMs?: number,
+          ) => Promise<unknown>;
+          const originalRaf = window.requestAnimationFrame;
+          if (blocked === 'fonts') {
+            Object.defineProperty(document, 'fonts', {
+              configurable: true,
+              value: { ready: new Promise<void>(() => {}) },
+            });
+          } else {
+            window.requestAnimationFrame = () => 0;
+          }
+
+          const outcome = await Promise.race([
+            measure(input, 40).then((value) => ({ settled: true, value })),
+            new Promise<{ settled: false; value: null }>((resolve) =>
+              setTimeout(() => resolve({ settled: false, value: null }), 250),
+            ),
+          ]);
+          const remainingHosts = document.querySelectorAll('#quiz-layout-measurement').length;
+
+          window.requestAnimationFrame = originalRaf;
+          if (blocked === 'fonts') {
+            delete (document as unknown as { fonts?: FontFaceSet }).fonts;
+          }
+          document.querySelector('#quiz-layout-measurement')?.remove();
+          return { ...outcome, remainingHosts };
+        },
+        { source: measureQuizQuestionList.toString(), input: surface, blocked: blockedStep },
+      );
+
+      expect(result).toEqual({ settled: true, value: null, remainingHosts: 0 });
+      const degraded = compileVideoTimeline(
+        { stage: { id: 'stage', name: 'deadline fallback' }, scenes: [fixture] },
+        {
+          timing: NO_PROBE,
+          assets: NO_ASSETS,
+          quizLayout: { measureQuestionList: () => result.value as null },
+        },
+      );
+      expect(degraded.scenes[0].visuals).not.toContainEqual(
+        expect.objectContaining({ kind: 'quiz-question-list' }),
+      );
+      expect(degraded.diagnostics).toContainEqual(
+        expect.objectContaining({ code: 'quiz-layout-unavailable', sceneId: fixture.id }),
+      );
+    });
+  }
+
+  check('runs the production Quiz measurer and emitted timeline end to end', async (page) => {
+    const frame = QUIZ_LIST_FRAMES['720p'];
+    const initial = quizListHtml(frame, LONG_QUIZ_QUESTIONS, {
+      contentHeightPx: frame.height * 2,
+      viewportHeightPx: frame.height / 2,
+    });
+    await page.setViewportSize(frame);
+    await loadEmittedHtml(page, initial.html);
+
+    const fixture = quizScrollScene();
+    const surface = createQuizQuestionListMeasurementSurface({
+      content: {
+        title: fixture.title,
+        questions: prepareQuizQuestionList(fixture),
+      },
+      width: frame.width,
+      height: frame.height,
+      locale: 'en-US',
+      labels: getVideoExportCoverLabels('en-US'),
+    });
+    const measureSource = measureQuizQuestionList.toString();
+    const measured = await page.evaluate(
+      async ({ source, input }) => {
+        try {
+          const measure = (0, eval)(`(${source})`) as (value: typeof input) => Promise<{
+            contentHeightPx: number;
+            viewportHeightPx: number;
+            frameHeightPx: number;
+          } | null>;
+          return {
+            value: await measure(input),
+            error: null,
+            remainingHosts: document.querySelectorAll('#quiz-layout-measurement').length,
+          };
+        } catch (error) {
+          return {
+            value: null,
+            error: error instanceof Error ? error.message : String(error),
+            remainingHosts: document.querySelectorAll('#quiz-layout-measurement').length,
+          };
+        }
+      },
+      { source: measureSource, input: surface },
+    );
+
+    expect(measured.error).toBeNull();
+    expect(measured.remainingHosts).toBe(0);
+    expect(measured.value).toEqual(QUIZ_SCROLL_LAYOUT_720P);
+    expect(surface.css).not.toMatch(/url\(["']?https?:\/\//);
+    expect(
+      await page.evaluate(() => document.fonts.check('16px "OpenMAIC Noto Sans SC"', '中文')),
+    ).toBe(true);
+    const cjkCoverage = await page.evaluate(async () => {
+      await Promise.all([
+        document.fonts.load('40px "OpenMAIC Noto Sans SC"', '漢字あア'),
+        document.fonts.load('40px "OpenMAIC Noto Sans KR"', '한글'),
+      ]);
+      const signature = (text: string, font: string): number => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 64;
+        const context = canvas.getContext('2d')!;
+        context.font = `40px ${font}`;
+        context.fillText(text, 0, 44);
+        let hash = 2_166_136_261;
+        for (const value of context.getImageData(0, 0, 256, 64).data) {
+          hash ^= value;
+          hash = Math.imul(hash, 16_777_619);
+        }
+        return hash >>> 0;
+      };
+      const covered = (text: string, family: string): boolean =>
+        signature(text, `"${family}", monospace`) !== signature(text, 'monospace');
+      return {
+        han: covered('漢字', 'OpenMAIC Noto Sans SC'),
+        kana: covered('あア', 'OpenMAIC Noto Sans SC'),
+        hangul: covered('한글', 'OpenMAIC Noto Sans KR'),
+      };
+    });
+    expect(cjkCoverage).toEqual({ han: true, kana: true, hangul: true });
+
+    const resolved = quizListHtml(frame, LONG_QUIZ_QUESTIONS, measured.value!);
+    await loadEmittedHtml(page, resolved.html);
+    const checkpoints = await page.evaluate((timing) => {
+      const timeline = (
+        window as typeof window & {
+          __timelines: Record<string, { time(value: number, suppressEvents?: boolean): unknown }>;
+        }
+      ).__timelines.openmaic;
+      const cover = document.querySelector<HTMLElement>('#scene-1-visual-1')!;
+      const list = document.querySelector<HTMLElement>('#scene-1-visual-2')!;
+      const content = document.querySelector<HTMLElement>('.quiz-list-content')!;
+      const viewport = document.querySelector<HTMLElement>('.quiz-list-viewport')!;
+      const first = document.querySelector<HTMLElement>('.quiz-list-question')!;
+      const cards = document.querySelectorAll<HTMLElement>('.quiz-list-question');
+      const last = cards[cards.length - 1]!;
+      const read = (timeMs: number) => {
+        timeline.time(timeMs / 1000, false);
+        const viewportBox = viewport.getBoundingClientRect();
+        return {
+          coverOpacity: Number(getComputedStyle(cover).opacity),
+          listOpacity: Number(getComputedStyle(list).opacity),
+          firstOffsetPx: first.getBoundingClientRect().top - viewportBox.top,
+          lastOffsetPx: last.getBoundingClientRect().bottom - viewportBox.bottom,
+          transform: getComputedStyle(content).transform,
+        };
+      };
+      return {
+        transitionMid: read((timing.transitionStartMs + timing.transitionEndMs) / 2),
+        topHoldEnd: read(timing.topHoldEndMs),
+        scrollQuarter: read(timing.topHoldEndMs + (timing.scrollEndMs - timing.topHoldEndMs) / 4),
+        scrollEnd: read(timing.scrollEndMs),
+        bottomHoldEnd: read(timing.bottomHoldEndMs),
+      };
+    }, resolved.timing);
+
+    expect(checkpoints.transitionMid.coverOpacity).toBeCloseTo(0.5, 1);
+    expect(checkpoints.transitionMid.listOpacity).toBeCloseTo(0.5, 1);
+    expect(checkpoints.topHoldEnd.firstOffsetPx).toBeCloseTo(0, 0);
+    expect(checkpoints.scrollQuarter.firstOffsetPx).toBeCloseTo(-resolved.scrollDistancePx / 4, 0);
+    expect(Math.abs(checkpoints.scrollEnd.lastOffsetPx)).toBeLessThanOrEqual(1);
+    expect(checkpoints.bottomHoldEnd.lastOffsetPx).toBeCloseTo(
+      checkpoints.scrollEnd.lastOffsetPx,
+      1,
+    );
+    expect(checkpoints.bottomHoldEnd.transform).toBe(checkpoints.scrollEnd.transform);
+  });
+
+  check('keeps a short Quiz list stationary when it fits', async (page) => {
+    const frame = QUIZ_LIST_FRAMES['720p'];
+    const shortQuestions = [
+      {
+        id: 'short',
+        type: 'short_answer',
+        question: 'Explain $x=2$.',
+      },
+    ];
+    const first = quizListHtml(frame, shortQuestions, {
+      contentHeightPx: 100,
+      viewportHeightPx: 100,
+    });
+    await page.setViewportSize(frame);
+    await loadEmittedHtml(page, first.html);
+    const measured = await page.evaluate(() => {
+      const content = document.querySelector<HTMLElement>('.quiz-list-content')!;
+      const viewport = document.querySelector<HTMLElement>('.quiz-list-viewport')!;
+      return {
+        contentHeightPx: Math.ceil(content.scrollHeight),
+        viewportHeightPx: Math.ceil(viewport.clientHeight),
+      };
+    });
+    const resolved = quizListHtml(frame, shortQuestions, measured);
+    expect(resolved.scrollDistancePx).toBe(0);
+    expect(resolved.html).not.toMatch(/tl\.to\('#scene-1-visual-2-content'/);
   });
 });

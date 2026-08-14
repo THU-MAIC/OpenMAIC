@@ -85,6 +85,24 @@ export function deriveSlideEditOperations(
     }
   });
 
+  // Renderer z-order is encoded by the element array. Property-only
+  // comparison misses a pure reorder, so derive the minimal sequence of
+  // absolute moves whenever the snapshot still contains the same IDs.
+  if (
+    prev.canvas.elements.length === next.canvas.elements.length &&
+    prev.canvas.elements.every((element) => nextById.has(element.id))
+  ) {
+    const workingIds = prev.canvas.elements.map((element) => element.id);
+    next.canvas.elements.forEach((element, index) => {
+      if (workingIds[index] === element.id) return;
+      const currentIndex = workingIds.indexOf(element.id);
+      if (currentIndex === -1) return;
+      workingIds.splice(currentIndex, 1);
+      workingIds.splice(index, 0, element.id);
+      ops.push({ type: 'element.reorder', elementId: element.id, index });
+    });
+  }
+
   const { patch: metaPatch } = changedKeys(
     prev.canvas as unknown as AnyRecord,
     next.canvas as unknown as AnyRecord,
@@ -116,8 +134,8 @@ export function commitSlideEdit(history: SlideEditHistory, next: SlideContent): 
 
   // Multi-element gesture = one undo step. Use the renderer's authoritative
   // snapshot as `present` rather than replaying derived ops onto it: the
-  // diff intentionally doesn't model reorder/animations, so a replay could
-  // silently diverge from what the renderer actually rendered.
+  // diff intentionally doesn't model animations, so a replay could silently
+  // diverge from what the renderer actually rendered.
   return {
     past: [...history.past, history.present].slice(-MAX_HISTORY),
     present: next,

@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 
-import { generateSceneOutlinesFromRequirements } from '@openmaic/generation';
+import {
+  buildCompleteScene,
+  generateSceneActions,
+  generateSceneContent,
+  generateSceneOutlinesFromRequirements,
+} from '@openmaic/generation';
+import { validateScene } from '@openmaic/dsl';
 
 function parseFlags(argv) {
   const values = new Map();
@@ -80,6 +86,24 @@ for (const outline of result.data.outlines) {
   }
 }
 
-console.log(JSON.stringify(result.data, null, 2));
+const slideOutline = result.data.outlines.find((outline) => outline.type === 'slide');
+if (!slideOutline) throw new Error('Outline generation returned no slide outline');
 
-// Part C: scene generation extends here
+const content = await generateSceneContent(slideOutline, aiCall, { logger });
+if (!content || !('elements' in content)) {
+  throw new Error('Slide content generation failed');
+}
+const actions = await generateSceneActions(slideOutline, content, aiCall, { logger });
+const scene = buildCompleteScene(slideOutline, content, actions, 'node-smoke-stage', {
+  sceneId: 'node-smoke-scene',
+});
+if (!scene) throw new Error('Slide scene assembly failed');
+
+const sceneValidation = validateScene(scene);
+if (!sceneValidation.valid) {
+  throw new Error(
+    `Generated scene failed DSL validation: ${JSON.stringify(sceneValidation.errors)}`,
+  );
+}
+
+console.log(JSON.stringify({ ...result.data, scene, sceneValidation }, null, 2));

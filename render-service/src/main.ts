@@ -21,7 +21,7 @@
  * `/src/server.ts` or `/public-server.js`. We use the producer as a library, so
  * the entrypoint is `main.ts` to avoid spawning that phantom server.
  */
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream } from 'node:fs';
 import { mkdir, stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { serve } from '@hono/node-server';
@@ -30,16 +30,20 @@ import { config } from './config.js';
 import { InMemoryJobStore } from './job-store.js';
 import { LocalDiskArtifactStore } from './artifact-store.js';
 import {
-  RenderManager,
+  RenderCoordinator,
   RenderRejectedError,
   makeProjectDir as defaultMakeProjectDir,
-} from './render-manager.js';
+} from './render-coordinator.js';
+import { InProcessExecutor } from './render-executor.js';
 import { InvalidProjectError, unzipProject as defaultUnzipProject } from './unzip.js';
 import { capBodyStream } from './capped-stream.js';
 import { Semaphore } from './semaphore.js';
 import type { JobStore } from './job-store.js';
 import type { ArtifactStore } from './artifact-store.js';
 import { isTerminal, type RenderOptions } from './types.js';
+import { collectRuntimeVersions } from './runtime-info.js';
+import { publicResourceProfile, validateResourceProfileStartup } from './resource-profile.js';
+import type { RuntimeVersions } from './types.js';
 
 /** Thrown inside the gated section for an oversized body (→ HTTP 413). */
 class UploadTooLargeError extends Error {}
@@ -50,13 +54,15 @@ class BadRequestError extends Error {}
 export interface AppDeps {
   jobs: JobStore;
   artifacts: ArtifactStore;
-  manager: RenderManager;
+  coordinator: RenderCoordinator;
   /** Bounds concurrent *buffering + extraction* (the whole RAM-heavy section). */
   extractionGate: Semaphore;
   /** Extract a validated archive into a dir. Overridable in tests. */
   unzipProject?: (zip: Uint8Array, destDir: string) => Promise<void>;
   /** Create a fresh per-render scratch dir. Overridable in tests. */
   makeProjectDir?: () => Promise<string>;
+  /** Runtime identity reported by health and copied into per-render metrics. */
+  runtimeVersions?: RuntimeVersions;
 }
 
 /** Parse + validate the multipart render options. Returns options or an error string. */
@@ -89,13 +95,19 @@ function parseOptions(form: FormData): RenderOptions | string {
  *     not held in RAM. This is what stops a near-cap burst from OOMing the box.
  */
 export function createApp(deps: AppDeps): Hono {
-  const { jobs, artifacts, manager, extractionGate } = deps;
+  const { jobs, artifacts, coordinator, extractionGate } = deps;
   const unzipProject = deps.unzipProject ?? defaultUnzipProject;
   const makeProjectDir = deps.makeProjectDir ?? defaultMakeProjectDir;
 
   const app = new Hono();
 
-  app.get('/health', (c) => c.json({ ok: true }));
+  app.get('/health', (c) =>
+    c.json({
+      ok: true,
+      resourceProfile: publicResourceProfile(config.resourceProfile),
+      versions: deps.runtimeVersions ?? null,
+    }),
+  );
 
   app.post('/render', async (c) => {
     // Reject an oversized body by declared length first (courtesy 413 for honest
@@ -115,7 +127,7 @@ export function createApp(deps: AppDeps): Hono {
     // (queue full / per-identity limit) never enters buffering or extraction.
     let reservation;
     try {
-      reservation = manager.reserve(identity);
+      reservation = coordinator.reserve(identity);
     } catch (error) {
       if (error instanceof RenderRejectedError) return c.json({ error: error.message }, 429);
       throw error;
@@ -164,12 +176,12 @@ export function createApp(deps: AppDeps): Hono {
         projectDir = await makeProjectDir();
         const bytes = new Uint8Array(await file.arrayBuffer());
         await unzipProject(bytes, projectDir);
-        return manager.submit(reservation, projectDir, options);
+        return coordinator.submit(reservation, projectDir, options);
       });
       return c.json({ jobId }, 202);
     } catch (error) {
-      manager.release(reservation);
-      if (projectDir) await manager.cleanupProject(projectDir);
+      coordinator.release(reservation);
+      if (projectDir) await coordinator.cleanupProject(projectDir);
       if (error instanceof UploadTooLargeError) return c.json({ error: error.message }, 413);
       if (error instanceof BadRequestError) return c.json({ error: error.message }, 400);
       if (error instanceof InvalidProjectError) return c.json({ error: error.message }, 400);
@@ -188,13 +200,14 @@ export function createApp(deps: AppDeps): Hono {
       currentStage: job.currentStage,
       framesRendered: job.framesRendered,
       totalFrames: job.totalFrames,
+      metrics: job.metrics,
       error: job.error,
       done: isTerminal(job.status),
     });
   });
 
   app.delete('/render/:jobId', async (c) => {
-    const ok = await manager.cancel(c.req.param('jobId'));
+    const ok = await coordinator.cancel(c.req.param('jobId'));
     if (!ok) return c.json({ error: 'Job not found' }, 404);
     return c.json({ cancelled: true });
   });
@@ -232,23 +245,27 @@ export function createApp(deps: AppDeps): Hono {
 /** Wire the production collaborators and start the server (skipped under tests). */
 async function main(): Promise<void> {
   const artifacts = new LocalDiskArtifactStore();
-  // Assigned after `jobs` so its reap callback can close over the manager.
+  validateResourceProfileStartup(config.resourceProfile);
+  const runtimeVersions = await collectRuntimeVersions();
+  const executor = new InProcessExecutor({ runtimeVersions });
+  // Assigned after `jobs` so its reap callback can close over the coordinator.
   // eslint-disable-next-line prefer-const
-  let manager: RenderManager;
+  let coordinator: RenderCoordinator;
   const jobs = new InMemoryJobStore(config.jobTtlMs, (record) => {
     // A reaped job's artifact + project dir go with it.
     void artifacts.remove(record.id);
-    void manager.cleanupProject(record.projectDir);
+    void coordinator.cleanupProject(record.projectDir);
   });
-  manager = new RenderManager(jobs, artifacts);
+  coordinator = new RenderCoordinator(executor, jobs, artifacts);
 
   const app = createApp({
     jobs,
     artifacts,
-    manager,
+    coordinator,
     // Bounds concurrent buffering + extraction so the per-archive RAM ceiling
     // can't stack across a burst of admitted requests.
     extractionGate: new Semaphore(config.maxConcurrentExtractions),
+    runtimeVersions,
   });
 
   // Ensure the scratch root exists before accepting work. On the documented
@@ -256,25 +273,20 @@ async function main(): Promise<void> {
   // makeProjectDir() would ENOENT. mktemp still creates a fresh subdir per job.
   await mkdir(config.tmpDir, { recursive: true }).catch(() => {});
 
-  if (config.requireBeginFrame) {
-    const headlessShellPath = process.env.PRODUCER_HEADLESS_SHELL_PATH;
-    if (!headlessShellPath || !existsSync(headlessShellPath)) {
-      throw new Error(
-        'RENDER_REQUIRE_BEGINFRAME=true requires an existing ' + 'PRODUCER_HEADLESS_SHELL_PATH.',
-      );
-    }
-  }
-
   serve({ fetch: app.fetch, port: config.port }, (info) => {
     console.log(
       `[render-service] listening on :${info.port} ` +
-        `(maxConcurrency=${config.maxConcurrency}, producerWorkers=${config.producerWorkers ?? 'auto'}, ` +
+        `(resourceProfile=${config.resourceProfile.name}, ` +
+        `requestedCaptureMode=${config.resourceProfile.requestedCaptureMode}, ` +
+        `maxConcurrency=${config.maxConcurrency}, producerWorkers=${config.producerWorkers}, ` +
         `browserGpuMode=${process.env.PRODUCER_BROWSER_GPU_MODE ?? 'producer-default'}, ` +
         `browserPool=${process.env.PRODUCER_ENABLE_BROWSER_POOL ?? 'producer-default'}, ` +
         `lowMemoryMode=${process.env.PRODUCER_LOW_MEMORY_MODE ?? 'auto'}, ` +
         `staticDedup=${process.env.HF_STATIC_DEDUP ?? 'producer-default'}, ` +
         `headlessShell=${process.env.PRODUCER_HEADLESS_SHELL_PATH ?? 'unset'}, ` +
-        `requireBeginFrame=${config.requireBeginFrame})`,
+        `requireBeginFrame=${config.requireBeginFrame}, ` +
+        `producer=${runtimeVersions.producer}, node=${runtimeVersions.node}, ` +
+        `chromium=${runtimeVersions.chromium}, ffmpeg=${runtimeVersions.ffmpeg})`,
     );
   });
 }

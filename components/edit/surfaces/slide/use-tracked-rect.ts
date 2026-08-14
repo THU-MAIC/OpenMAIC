@@ -28,11 +28,12 @@ const STABLE_FRAMES_BEFORE_IDLE = 20;
  * Tracks the on-screen rect of a rendered slide element.
  *
  * `#editable-element-{id}` is only a zero-size `absolute` wrapper (it carries
- * just a z-index); the geometry lives on its inner `.editable-element-{type}`
- * content root (text, image, shape, …), which has the real left/top/width/
- * height and inherits the viewport scale. So we resolve the wrapper by id, then
- * measure that child — measuring the wrapper itself would collapse to a 0x0
- * rect at the canvas origin.
+ * just a z-index); the geometry lives on its inner `.element-content` root
+ * (text, image, shape, …), which has the real left/top/width/height and
+ * inherits the viewport scale. Both the legacy editor and renderer expose this
+ * class, while only the legacy editor exposes `.editable-element-{type}`.
+ * Measuring the wrapper itself would collapse to a 0x0 rect at the canvas
+ * origin.
  *
  * Measurement is via getBoundingClientRect (one call already resolves canvas
  * scale, viewport offset and page scroll). A requestAnimationFrame loop drives
@@ -71,8 +72,7 @@ export function useTrackedRect(elementId: string): TrackedRect | null {
 
     const read = (): TrackedRect | null => {
       const wrapper = document.getElementById(`editable-element-${elementId}`);
-      // Every element type renders an `.editable-element-{type}` content root.
-      const node = wrapper?.querySelector<HTMLElement>('[class*="editable-element-"]') ?? null;
+      const node = wrapper?.querySelector<HTMLElement>('.element-content') ?? null;
       if (!node) return null;
       const r = node.getBoundingClientRect();
       return {
@@ -120,7 +120,7 @@ export function useTrackedRect(elementId: string): TrackedRect | null {
     arm();
 
     const wrapper = document.getElementById(`editable-element-${elementId}`);
-    const node = wrapper?.querySelector<HTMLElement>('[class*="editable-element-"]') ?? null;
+    const node = wrapper?.querySelector<HTMLElement>('.element-content') ?? null;
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(arm) : null;
     if (ro && node) ro.observe(node);
     window.addEventListener('scroll', arm, true);

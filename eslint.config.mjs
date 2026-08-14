@@ -161,19 +161,19 @@ const eslintConfig = defineConfig([
         },
         {
           selector:
-            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|(nanoid|jsonrepair)(\\/|$)|node:|\\.\\.?\\/).+/]',
+            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|(jsonrepair|katex|nanoid|partial-json)(\\/|$)|node:|\\.\\.?\\/).+/]',
           message:
             '@openmaic/generation may import only from @openmaic/dsl, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
         },
         {
           selector:
-            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|(nanoid|jsonrepair)(\\/|$)|node:|\\.\\.?\\/).+/]',
+            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|(jsonrepair|katex|nanoid|partial-json)(\\/|$)|node:|\\.\\.?\\/).+/]',
           message:
             '@openmaic/generation may re-export only from @openmaic/dsl, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
         },
         {
           selector:
-            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|(nanoid|jsonrepair)(\\/|$)|node:|\\.\\.?\\/).+/]',
+            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|(jsonrepair|katex|nanoid|partial-json)(\\/|$)|node:|\\.\\.?\\/).+/]',
           message:
             '@openmaic/generation may re-export only from @openmaic/dsl, approved leaf runtime dependencies, Node built-ins, or relative modules (./… or ../…).',
         },
@@ -486,6 +486,47 @@ const eslintConfig = defineConfig([
                 'lib/video-export must stay render-backend-agnostic (pure Node): no React / DOM / GSAP / framer-motion. The compiler emits the IR as data; the downstream Hyperframes emitter renders it.',
             },
           ],
+        },
+      ],
+    },
+  },
+  // Hyperframes emitter boundary. This subtree stays pure and backend-text-only:
+  // it may reach other video-export modules through one-level relatives, and it
+  // has one intentional app-module dependency on the existing pure Quiz math
+  // renderer so classroom and exported formulas cannot drift. Every other
+  // two-level escape is rejected.
+  {
+    files: ['lib/video-export/emit-hyperframes/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            'ImportDeclaration > Literal.source[value=/^(?!\\.\\/|\\.\\.\\/(?!\\.\\.\\/)|\\.\\.\\/\\.\\.\\/quiz\\/math-text$).+/]',
+          message:
+            'The Hyperframes emitter may import only in-module relatives (./… or one ../…) and the shared pure Quiz renderer ../../quiz/math-text.',
+        },
+        {
+          selector:
+            'ExportNamedDeclaration > Literal.source[value=/^(?!\\.\\/|\\.\\.\\/(?!\\.\\.\\/)|\\.\\.\\/\\.\\.\\/quiz\\/math-text$).+/]',
+          message:
+            'The Hyperframes emitter may re-export only in-module relatives (./… or one ../…) and ../../quiz/math-text.',
+        },
+        {
+          selector:
+            'ExportAllDeclaration > Literal.source[value=/^(?!\\.\\/|\\.\\.\\/(?!\\.\\.\\/)|\\.\\.\\/\\.\\.\\/quiz\\/math-text$).+/]',
+          message:
+            'The Hyperframes emitter may re-export only in-module relatives (./… or one ../…) and ../../quiz/math-text.',
+        },
+        {
+          selector: 'ImportExpression',
+          message:
+            'The Hyperframes emitter must not use dynamic import() — it bypasses the static import allowlist.',
+        },
+        {
+          selector: "CallExpression[callee.name='require']",
+          message:
+            'The Hyperframes emitter must not use require() — it bypasses the static import allowlist.',
         },
       ],
     },

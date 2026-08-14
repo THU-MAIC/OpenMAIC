@@ -27,8 +27,21 @@ import type {
 import { RuntimeAppendConflictError } from '../runtime/types.js';
 import type { Scene, Stage } from '@openmaic/dsl';
 import type { DocumentStore, SceneLike } from '../document/types.js';
+import type { AssetPrincipal, AssetStore } from '../asset/types.js';
+import { createAssetHttpHandler, type AssetHttpHandlerOptions } from './asset.js';
 import { createDocumentHttpHandler, type DocumentHttpHandlerOptions } from './document.js';
 import { assertMaxBodyBytes, DEFAULT_MAX_BODY_BYTES, readJsonObject } from './read-json.js';
+
+export {
+  createAssetHttpHandler,
+  DEFAULT_MAX_ASSET_BYTES,
+  DEFAULT_MAX_ASSET_META_BYTES,
+  DEFAULT_MAX_ASSET_PARTS,
+  DEFAULT_MAX_ASSET_REQUEST_BYTES,
+  type AssetHttpAuthenticate,
+  type AssetHttpAuthorize,
+  type AssetHttpHandlerOptions,
+} from './asset.js';
 
 export {
   createDocumentHttpHandler,
@@ -689,31 +702,65 @@ export function createRuntimeHttpHandler(
 export interface StorageHttpHandlerOptions
   extends
     RuntimeHttpHandlerOptions,
-    Pick<DocumentHttpHandlerOptions, 'authorizeDocuments' | 'validateScene' | 'validateStage'> {}
+    Pick<DocumentHttpHandlerOptions, 'authorizeDocuments' | 'validateScene' | 'validateStage'>,
+    Pick<
+      AssetHttpHandlerOptions,
+      | 'authorizeAssets'
+      | 'renderableTypes'
+      | 'maxRequestBytes'
+      | 'maxAssetBytes'
+      | 'maxMetaBytes'
+      | 'maxParts'
+    > {
+  /** When supplied, the composed handler exposes the `/assets` contract. */
+  assetStore?: AssetStore;
+}
 
 /**
- * Compose the runtime and author-document contracts into one request handler.
- * Existing runtime routing is delegated unchanged; `/documents` is dispatched
- * to the document handler and shares the same authentication hook.
+ * Compose the runtime, optional author-document, and optional asset contracts
+ * into one request handler. Existing runtime routing is delegated unchanged;
+ * the other handlers share its authentication hook.
  */
 export function createStorageHttpHandler<
   TScene extends SceneLike = Scene,
   TStage extends Stage = Stage,
 >(
   runtimeStore: RuntimeStore,
-  documentStore: DocumentStore<TScene, TStage>,
+  documentStore: DocumentStore<TScene, TStage> | undefined,
   options: StorageHttpHandlerOptions,
 ): RequestListener {
   const runtime = createRuntimeHttpHandler(runtimeStore, options);
-  const documents = createDocumentHttpHandler(documentStore, {
-    authenticate: options.authenticate,
-    ...(options.authorizeDocuments === undefined
-      ? {}
-      : { authorizeDocuments: options.authorizeDocuments }),
-    ...(options.validateScene === undefined ? {} : { validateScene: options.validateScene }),
-    ...(options.validateStage === undefined ? {} : { validateStage: options.validateStage }),
-    ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes }),
-  });
+  const documents =
+    documentStore === undefined
+      ? undefined
+      : createDocumentHttpHandler(documentStore, {
+          authenticate: options.authenticate,
+          ...(options.authorizeDocuments === undefined
+            ? {}
+            : { authorizeDocuments: options.authorizeDocuments }),
+          ...(options.validateScene === undefined ? {} : { validateScene: options.validateScene }),
+          ...(options.validateStage === undefined ? {} : { validateStage: options.validateStage }),
+          ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes }),
+        });
+  const assets =
+    options.assetStore === undefined
+      ? undefined
+      : createAssetHttpHandler(options.assetStore, {
+          authenticate: async (req) =>
+            (await options.authenticate(req)) as AssetPrincipal | undefined,
+          ...(options.authorizeAssets === undefined
+            ? {}
+            : { authorizeAssets: options.authorizeAssets }),
+          ...(options.renderableTypes === undefined
+            ? {}
+            : { renderableTypes: options.renderableTypes }),
+          ...(options.maxRequestBytes === undefined
+            ? {}
+            : { maxRequestBytes: options.maxRequestBytes }),
+          ...(options.maxAssetBytes === undefined ? {} : { maxAssetBytes: options.maxAssetBytes }),
+          ...(options.maxMetaBytes === undefined ? {} : { maxMetaBytes: options.maxMetaBytes }),
+          ...(options.maxParts === undefined ? {} : { maxParts: options.maxParts }),
+        });
   return (req, res) => {
     let pathname: string;
     try {
@@ -722,7 +769,18 @@ export function createStorageHttpHandler<
       runtime(req, res);
       return;
     }
-    if (pathname === '/documents' || pathname.startsWith('/documents/')) documents(req, res);
-    else runtime(req, res);
+    if (
+      documents !== undefined &&
+      (pathname === '/documents' || pathname.startsWith('/documents/'))
+    ) {
+      documents(req, res);
+    } else if (
+      assets !== undefined &&
+      (pathname === '/assets' || pathname.startsWith('/assets/'))
+    ) {
+      assets(req, res);
+    } else {
+      runtime(req, res);
+    }
   };
 }

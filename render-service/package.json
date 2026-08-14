@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
-    "@hyperframes/producer": "^0.7.58",
+    "@hyperframes/producer": "0.7.60",
     "fflate": "^0.8.2",
     "hono": "^4.6.14",
     "tsx": "^4.19.2"

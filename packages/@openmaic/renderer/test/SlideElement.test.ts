@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import type { PPTTextElement } from '../../dsl/src';
+import type { PPTAudioElement, PPTTextElement } from '../../dsl/src';
 import { SlideElement } from '../src/SlideElement';
 
 const textElement: PPTTextElement = {
@@ -15,6 +15,21 @@ const textElement: PPTTextElement = {
   content: '<p>Hello</p>',
   defaultFontName: 'Arial',
   defaultColor: '#111111',
+};
+
+const audioElement: PPTAudioElement = {
+  id: 'audio-1',
+  type: 'audio',
+  left: 24,
+  top: 32,
+  width: 240,
+  height: 64,
+  rotate: 0,
+  fixedRatio: true,
+  color: '#7c3aed',
+  loop: false,
+  autoplay: false,
+  src: 'lesson.mp3',
 };
 
 describe('SlideElement', () => {
@@ -45,5 +60,15 @@ describe('SlideElement', () => {
     expect(html).toContain('pointer-events:none');
     expect(html).toContain('class="slide-element-hit-target"');
     expect(html).not.toContain('pointer-events:auto');
+  });
+
+  it('routes Audio elements through the renderer content layer', () => {
+    const html = renderToStaticMarkup(
+      createElement(SlideElement, { elementInfo: audioElement, elementIndex: 3 }),
+    );
+
+    expect(html).toContain('base-element-audio');
+    expect(html).toContain('Play audio');
+    expect(html).not.toContain('lesson.mp3');
   });
 });

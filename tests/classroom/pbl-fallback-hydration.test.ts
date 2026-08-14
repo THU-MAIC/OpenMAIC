@@ -21,7 +21,10 @@ vi.mock('@/lib/pbl/v2/runtime/document-persistence', () => ({
   preparePBLScenesForDocumentPersistence: async (_stageId: string, scenes: Scene[]) => scenes,
 }));
 vi.mock('@/lib/utils/database', () => ({
-  db: { stageOutlines: { put: vi.fn(), get: vi.fn() } },
+  db: {
+    stageOutlines: { put: vi.fn(), get: vi.fn() },
+    stageFolders: { delete: vi.fn().mockResolvedValue(undefined) },
+  },
 }));
 
 import { transitionProjectUiPhase } from '@/lib/pbl/v2/operations/kernel/runtime-events';
