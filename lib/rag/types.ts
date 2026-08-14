@@ -8,10 +8,18 @@ export type KnowledgeMetadata = Readonly<Record<string, KnowledgeMetadataValue>>
 
 export type KnowledgeFilterValue = string | number | boolean;
 
-export type KnowledgeScope = {
+export type KnowledgeExactScope = {
   readonly workspaceId: string;
   readonly courseId?: string;
 };
+
+export type KnowledgeIndexScope =
+  | (KnowledgeExactScope & { readonly courseScope: 'exact' })
+  | {
+      readonly workspaceId: string;
+      readonly courseScope: 'all';
+      readonly courseId?: never;
+    };
 
 export type KnowledgeLocator = {
   readonly kind: 'document';
@@ -34,7 +42,7 @@ export type KnowledgeLineage = {
 
 export type KnowledgeResourceStatus = 'ready' | 'partial' | 'failed';
 
-export type KnowledgeResource = KnowledgeScope & {
+export type KnowledgeResource = KnowledgeExactScope & {
   readonly id: string;
   readonly resourceVersionId: string;
   readonly parentResourceId?: string;
@@ -48,7 +56,7 @@ export type KnowledgeResource = KnowledgeScope & {
   readonly metadata: KnowledgeMetadata;
 };
 
-export type KnowledgeChunk = KnowledgeScope & {
+export type KnowledgeChunk = KnowledgeExactScope & {
   readonly id: string;
   readonly resourceId: string;
   readonly resourceVersionId: string;
@@ -66,17 +74,17 @@ export type KnowledgeIndexCapabilities = {
   readonly metadataFilter: boolean;
 };
 
-export type KnowledgeIndexQuery = KnowledgeScope & {
+export type KnowledgeIndexQuery = KnowledgeIndexScope & {
   readonly text: string;
   readonly topK: number;
   readonly filters?: Readonly<Record<string, KnowledgeFilterValue>>;
 };
 
-export type KnowledgeIndexDeleteRequest = KnowledgeScope & {
+export type KnowledgeIndexDeleteRequest = KnowledgeIndexScope & {
   readonly resourceIds: readonly string[];
 };
 
-export type KnowledgeIndexReplaceRequest = KnowledgeScope & {
+export type KnowledgeIndexReplaceRequest = KnowledgeExactScope & {
   readonly resourceId: string;
   readonly resourceVersionId: string;
   readonly chunks: readonly KnowledgeChunk[];

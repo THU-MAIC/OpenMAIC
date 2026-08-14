@@ -72,6 +72,7 @@ describe('in-memory lexical index', () => {
 
     const hits = await index.query({
       workspaceId: 'workspace-test',
+      courseScope: 'exact',
       courseId: 'course-1',
       text: 'calibration procedure',
       topK: 1,
@@ -110,6 +111,7 @@ describe('in-memory lexical index', () => {
 
     const hits = await index.query({
       workspaceId: 'workspace-test',
+      courseScope: 'exact',
       courseId: 'course-1',
       text: 'new terminology',
       topK: 5,
@@ -119,7 +121,12 @@ describe('in-memory lexical index', () => {
     expect(hits.map((hit) => hit.chunk.id)).toEqual(['shared']);
 
     await expect(
-      index.query({ workspaceId: 'workspace-test', text: 'new terminology', topK: 5 }),
+      index.query({
+        workspaceId: 'workspace-test',
+        courseScope: 'all',
+        text: 'new terminology',
+        topK: 5,
+      }),
     ).resolves.toHaveLength(2);
   });
 
@@ -144,6 +151,7 @@ describe('in-memory lexical index', () => {
 
     const hits = await index.query({
       workspaceId: 'workspace-test',
+      courseScope: 'exact',
       courseId: 'course-1',
       text: 'shared procedure',
       topK: 5,
@@ -164,6 +172,7 @@ describe('in-memory lexical index', () => {
 
     const tiedHits = await index.query({
       workspaceId: 'workspace-test',
+      courseScope: 'exact',
       courseId: 'course-1',
       text: 'safety procedure',
       topK: 5,
@@ -172,12 +181,14 @@ describe('in-memory lexical index', () => {
 
     await index.delete({
       workspaceId: 'workspace-test',
+      courseScope: 'exact',
       courseId: 'course-1',
       resourceIds: ['resource-course-1'],
     });
     await expect(
       index.query({
         workspaceId: 'workspace-test',
+        courseScope: 'exact',
         courseId: 'course-1',
         text: 'safety procedure',
         topK: 5,
@@ -192,11 +203,18 @@ describe('in-memory lexical index', () => {
     );
 
     await expect(
-      index.query({ workspaceId: 'workspace-test', courseId: 'course-1', text: '   ', topK: 5 }),
+      index.query({
+        workspaceId: 'workspace-test',
+        courseScope: 'exact',
+        courseId: 'course-1',
+        text: '   ',
+        topK: 5,
+      }),
     ).resolves.toEqual([]);
     await expect(
       index.query({
         workspaceId: 'workspace-test',
+        courseScope: 'exact',
         courseId: 'course-1',
         text: 'searchable',
         topK: 0,
@@ -221,6 +239,7 @@ describe('in-memory lexical index', () => {
     try {
       hits = await index.query({
         workspaceId: 'workspace-test',
+        courseScope: 'exact',
         courseId: 'course-1',
         text: 'istanbul',
         topK: 1,
@@ -232,6 +251,31 @@ describe('in-memory lexical index', () => {
     expect(hits).toHaveLength(1);
   });
 
+  it('scores canonically equivalent Unicode text identically', async () => {
+    const index = new InMemoryLexicalIndex();
+    await index.replaceResourceVersion(
+      replacement([chunk({ id: 'cafe', text: 'café procedure', courseId: 'course-1' })]),
+    );
+
+    const composedHits = await index.query({
+      workspaceId: 'workspace-test',
+      courseScope: 'exact',
+      courseId: 'course-1',
+      text: 'café',
+      topK: 1,
+    });
+    const decomposedHits = await index.query({
+      workspaceId: 'workspace-test',
+      courseScope: 'exact',
+      courseId: 'course-1',
+      text: 'cafe\u0301',
+      topK: 1,
+    });
+
+    expect(decomposedHits).toEqual(composedHits);
+    expect(decomposedHits).toHaveLength(1);
+  });
+
   it('retrieves Chinese terms with character-level CJK tokens', async () => {
     const index = new InMemoryLexicalIndex();
     await index.replaceResourceVersion(
@@ -239,7 +283,13 @@ describe('in-memory lexical index', () => {
     );
 
     await expect(
-      index.query({ workspaceId: 'workspace-test', courseId: 'course-zh', text: '安全', topK: 1 }),
+      index.query({
+        workspaceId: 'workspace-test',
+        courseScope: 'exact',
+        courseId: 'course-zh',
+        text: '安全',
+        topK: 1,
+      }),
     ).resolves.toMatchObject([{ chunk: { id: 'zh' } }]);
   });
 });

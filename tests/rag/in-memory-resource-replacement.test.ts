@@ -84,6 +84,7 @@ describe('in-memory resource replacement', () => {
     await expect(
       index.query({
         workspaceId: 'workspace-test',
+        courseScope: 'exact',
         courseId: 'course-1',
         text: 'obsolete',
         topK: 5,
@@ -92,6 +93,7 @@ describe('in-memory resource replacement', () => {
     await expect(
       index.query({
         workspaceId: 'workspace-test',
+        courseScope: 'exact',
         courseId: 'course-1',
         text: 'revised',
         topK: 5,
@@ -110,6 +112,7 @@ describe('in-memory resource replacement', () => {
 
     const first = await index.query({
       workspaceId: 'workspace-test',
+      courseScope: 'exact',
       courseId: 'course-1',
       text: 'stable',
       topK: 1,
@@ -136,8 +139,65 @@ describe('in-memory resource replacement', () => {
     ).rejects.toThrow('does not match');
 
     await expect(
-      index.query({ workspaceId: 'workspace-test', courseId: 'course-1', text: 'stable', topK: 1 }),
+      index.query({
+        workspaceId: 'workspace-test',
+        courseScope: 'exact',
+        courseId: 'course-1',
+        text: 'stable',
+        topK: 1,
+      }),
     ).resolves.toMatchObject([{ chunk: { text: 'stable indexed text' } }]);
+  });
+
+  it('keeps the previous complete set when cloning a later chunk fails', async () => {
+    const index = new InMemoryLexicalIndex();
+    const original = chunk({ id: 'original', text: 'stable indexed text', courseId: 'course-1' });
+    await index.replaceResourceVersion(replacement([original]));
+
+    const firstReplacement = chunk({
+      id: 'first-replacement',
+      text: 'novelreplacement payload',
+      courseId: 'course-1',
+      resourceVersionId: 'resource-version-2',
+    });
+    const unclonableReplacement = new Proxy(
+      chunk({
+        id: 'unclonable-replacement',
+        text: 'novelreplacement payload',
+        courseId: 'course-1',
+        resourceVersionId: 'resource-version-2',
+      }),
+      {},
+    );
+
+    await expect(
+      index.replaceResourceVersion({
+        workspaceId: 'workspace-test',
+        courseId: 'course-1',
+        resourceId: original.resourceId,
+        resourceVersionId: 'resource-version-2',
+        chunks: [firstReplacement, unclonableReplacement],
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      index.query({
+        workspaceId: 'workspace-test',
+        courseScope: 'exact',
+        courseId: 'course-1',
+        text: 'stable',
+        topK: 5,
+      }),
+    ).resolves.toMatchObject([{ chunk: { id: 'original' } }]);
+    await expect(
+      index.query({
+        workspaceId: 'workspace-test',
+        courseScope: 'exact',
+        courseId: 'course-1',
+        text: 'novelreplacement',
+        topK: 5,
+      }),
+    ).resolves.toEqual([]);
   });
 
   it('removes the active set when a complete replacement has no chunks', async () => {
@@ -160,6 +220,7 @@ describe('in-memory resource replacement', () => {
     await expect(
       index.query({
         workspaceId: 'workspace-test',
+        courseScope: 'exact',
         courseId: 'course-1',
         text: 'temporary',
         topK: 1,

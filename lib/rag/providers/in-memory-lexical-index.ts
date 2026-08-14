@@ -1,19 +1,24 @@
 import type {
   KnowledgeChunk,
+  KnowledgeExactScope,
   KnowledgeFilterValue,
   KnowledgeHit,
   KnowledgeIndex,
   KnowledgeIndexDeleteRequest,
   KnowledgeIndexQuery,
   KnowledgeIndexReplaceRequest,
-  KnowledgeScope,
+  KnowledgeIndexScope,
 } from '../types';
 
 const TOKEN_PATTERN =
   /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]|[\p{L}\p{N}_]+/gu;
 
+function normalizeLexicalText(value: string): string {
+  return value.toLowerCase().normalize('NFC');
+}
+
 function tokenize(value: string): readonly string[] {
-  return value.toLowerCase().match(TOKEN_PATTERN) ?? [];
+  return normalizeLexicalText(value).match(TOKEN_PATTERN) ?? [];
 }
 
 function filterMatches(
@@ -29,14 +34,23 @@ function filterMatches(
   });
 }
 
-function matchesScope(chunk: KnowledgeChunk, scope: KnowledgeScope): boolean {
-  return (
-    chunk.workspaceId === scope.workspaceId &&
-    (scope.courseId === undefined || chunk.courseId === scope.courseId)
-  );
+function assertNever(value: never): never {
+  throw new TypeError(`Unexpected knowledge index scope: ${JSON.stringify(value)}`);
 }
 
-function matchesExactScope(chunk: KnowledgeChunk, scope: KnowledgeScope): boolean {
+function matchesScope(chunk: KnowledgeChunk, scope: KnowledgeIndexScope): boolean {
+  if (chunk.workspaceId !== scope.workspaceId) return false;
+  switch (scope.courseScope) {
+    case 'exact':
+      return chunk.courseId === scope.courseId;
+    case 'all':
+      return true;
+    default:
+      return assertNever(scope);
+  }
+}
+
+function matchesExactScope(chunk: KnowledgeChunk, scope: KnowledgeExactScope): boolean {
   return chunk.workspaceId === scope.workspaceId && chunk.courseId === scope.courseId;
 }
 
@@ -71,11 +85,12 @@ function validateReplacement(request: KnowledgeIndexReplaceRequest): void {
 }
 
 function lexicalScore(text: string, queryTokens: ReadonlySet<string>, phrase: string): number {
-  const chunkTokens = new Set(tokenize(text));
+  const normalizedText = normalizeLexicalText(text);
+  const chunkTokens = new Set(tokenize(normalizedText));
   const matchedTokens = Array.from(queryTokens).filter((token) => chunkTokens.has(token)).length;
   if (matchedTokens === 0) return 0;
   const coverage = matchedTokens / queryTokens.size;
-  const phraseBonus = text.toLowerCase().includes(phrase) ? 0.25 : 0;
+  const phraseBonus = normalizedText.includes(phrase) ? 0.25 : 0;
   return coverage + phraseBonus;
 }
 
@@ -120,18 +135,14 @@ export class InMemoryLexicalIndex implements KnowledgeIndex {
   async delete(request: KnowledgeIndexDeleteRequest): Promise<void> {
     const resources = new Set(request.resourceIds);
     for (const [chunkId, chunk] of this.chunks) {
-      if (
-        chunk.workspaceId === request.workspaceId &&
-        (request.courseId === undefined || chunk.courseId === request.courseId) &&
-        resources.has(chunk.resourceId)
-      ) {
+      if (matchesScope(chunk, request) && resources.has(chunk.resourceId)) {
         this.chunks.delete(chunkId);
       }
     }
   }
 
   async query(request: KnowledgeIndexQuery): Promise<readonly KnowledgeHit[]> {
-    const normalizedQuery = request.text.trim().toLowerCase();
+    const normalizedQuery = normalizeLexicalText(request.text.trim());
     const queryTokens = new Set(tokenize(normalizedQuery));
     if (!normalizedQuery || queryTokens.size === 0 || request.topK <= 0) return [];
 

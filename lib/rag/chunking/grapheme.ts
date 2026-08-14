@@ -35,6 +35,15 @@ export function splitGraphemeText(value: string, maxChars: number): GraphemeChun
       }
     }
 
+    if (pending.length === maxChars && !done) {
+      const lookahead = iterator.next();
+      if (lookahead.done) {
+        done = true;
+      } else {
+        pending.push(lookahead.value);
+      }
+    }
+
     if (pending.length === 0) break;
     if (done) {
       const finalChunk = trimGraphemeSegments(pending);

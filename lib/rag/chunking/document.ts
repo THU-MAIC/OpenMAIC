@@ -9,7 +9,7 @@ import { splitGraphemeText } from './grapheme';
 
 export const DOCUMENT_CHUNK_POLICY = {
   id: 'document-block',
-  version: '1.1.1',
+  version: '1.1.2',
   maxChars: 1200,
   maxCharsUnit: 'grapheme-cluster',
 } as const;
@@ -30,7 +30,7 @@ export type ResolvedDocumentChunkPolicy = {
 
 const HTML_LINE_BREAK_PATTERN = /<br(?=[ \t\n\f\r/>])(?:[^"'<>]|"[^"]*"|'[^']*')*\/?\s*>/gi;
 const HTML_BLOCK_END_TAG_PATTERN =
-  /<\/(?:address|article|aside|blockquote|dd|div|dl|dt|footer|h[1-6]|header|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)>/gi;
+  /<\/(?:address|article|aside|blockquote|dd|div|dl|dt|footer|h[1-6]|header|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)[ \t\n\f\r]*>/gi;
 class InvalidDocumentChunkPolicyError extends Error {
   readonly name = 'InvalidDocumentChunkPolicyError';
 

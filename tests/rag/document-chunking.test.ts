@@ -150,6 +150,53 @@ describe('document RAG chunking', () => {
     expect(chunks[0]?.text).toBe('FirstSecond\nThird');
   });
 
+  it('preserves text boundaries for HTML end tags with ASCII whitespace', () => {
+    const chunks = chunkDocumentArtifact(
+      {
+        metadata: {},
+        blocks: [
+          {
+            id: 'html-end-tag-whitespace',
+            type: 'layout',
+            html: '<p>First</p ><p>Second</p><ul><li>Third</li\t><li>Fourth</li></ul>',
+          },
+        ],
+        assets: [],
+      },
+      resource(),
+    );
+
+    expect(chunks[0]?.text).toBe('First\nSecond\nThird\nFourth');
+  });
+
+  it('keeps text in one chunk when it exactly fits the grapheme limit', () => {
+    const chunks = chunkDocumentArtifact(
+      {
+        metadata: {},
+        blocks: [{ id: 'exact-fit', type: 'text', text: 'abc d' }],
+        assets: [],
+      },
+      resource(),
+      { maxChars: 5 },
+    );
+
+    expect(chunks.map((chunk) => chunk.text)).toEqual(['abc d']);
+  });
+
+  it('still splits text that exceeds the grapheme limit by one', () => {
+    const chunks = chunkDocumentArtifact(
+      {
+        metadata: {},
+        blocks: [{ id: 'over-limit', type: 'text', text: 'abc de' }],
+        assets: [],
+      },
+      resource(),
+      { maxChars: 5 },
+    );
+
+    expect(chunks.map((chunk) => chunk.text)).toEqual(['abc', 'de']);
+  });
+
   it('does not split grapheme clusters when applying the chunk limit', () => {
     const chunks = chunkDocumentArtifact(
       {
@@ -163,7 +210,7 @@ describe('document RAG chunking', () => {
 
     expect(chunks.map((chunk) => chunk.text)).toEqual(['👩‍🔬', '👨‍🚀', 'é']);
     expect(chunks.every((chunk) => chunk.text.length > 0)).toBe(true);
-    expect(chunks[0]?.lineage.chunkPolicy.version).toBe('1.1.1:maxChars=1:unit=grapheme-cluster');
+    expect(chunks[0]?.lineage.chunkPolicy.version).toBe('1.1.2:maxChars=1:unit=grapheme-cluster');
   });
 
   it(

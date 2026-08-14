@@ -123,6 +123,56 @@ describe('document RAG ingestion', () => {
     expect(second.resource.resourceVersionId).not.toBe(first.resource.resourceVersionId);
   });
 
+  it('keeps the resource version stable across lineage property insertion order', async () => {
+    const first = await ingestDocumentForRag({
+      artifact: artifact(),
+      resource: { ...resource, extractor: { id: 'plain-text', version: '1.0.0' } },
+    });
+    const reordered = await ingestDocumentForRag({
+      artifact: artifact(),
+      resource: { ...resource, extractor: { version: '1.0.0', id: 'plain-text' } },
+    });
+
+    expect(reordered.resource.resourceVersionId).toBe(first.resource.resourceVersionId);
+  });
+
+  it('canonicalizes normalized indexed metadata in the resource version', async () => {
+    const first = await ingestDocumentForRag({
+      artifact: artifact(),
+      resource: {
+        ...resource,
+        metadata: {
+          workspaceId: 'legacy-workspace-a',
+          courseId: 'legacy-course-a',
+          chapterId: 'chapter-1',
+          tags: ['safety', 'laboratory'],
+        },
+      },
+    });
+    const reordered = await ingestDocumentForRag({
+      artifact: artifact(),
+      resource: {
+        ...resource,
+        metadata: {
+          tags: ['safety', 'laboratory'],
+          chapterId: 'chapter-1',
+          courseId: 'legacy-course-b',
+          workspaceId: 'legacy-workspace-b',
+        },
+      },
+    });
+    const changed = await ingestDocumentForRag({
+      artifact: artifact(),
+      resource: {
+        ...resource,
+        metadata: { chapterId: 'chapter-2', tags: ['safety', 'laboratory'] },
+      },
+    });
+
+    expect(reordered.resource.resourceVersionId).toBe(first.resource.resourceVersionId);
+    expect(changed.resource.resourceVersionId).not.toBe(first.resource.resourceVersionId);
+  });
+
   it('preserves an explicitly supplied empty course scope', async () => {
     const result = await ingestDocumentForRag({
       artifact: artifact(),

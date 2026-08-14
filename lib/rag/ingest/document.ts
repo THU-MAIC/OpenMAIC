@@ -78,20 +78,35 @@ function resourceLineage(
   };
 }
 
-function createResourceVersionId(input: DocumentResourceInput, lineage: KnowledgeLineage): string {
+function createResourceVersionId(
+  input: DocumentResourceInput,
+  lineage: KnowledgeLineage,
+  metadata: KnowledgeMetadata,
+): string {
+  const fingerprint = [
+    ['resource', input.id, input.workspaceId, input.courseId ?? null],
+    ['source', lineage.sourceHash],
+    ['extractor', lineage.extractor.id, lineage.extractor.version],
+    [
+      'transforms',
+      lineage.transforms.map((transform) => [transform.id, transform.version] as const),
+    ],
+    ['chunkPolicy', lineage.chunkPolicy.id, lineage.chunkPolicy.version],
+    ['metadata', Object.entries(metadata)],
+  ] as const;
   return `document-version:${createHash('sha256')
-    .update(
-      JSON.stringify([
-        { id: input.id, workspaceId: input.workspaceId, courseId: input.courseId },
-        lineage,
-      ]),
-    )
+    .update(JSON.stringify(fingerprint))
     .digest('hex')}`;
 }
 
 function normalizeResourceMetadata(metadata: KnowledgeMetadata): KnowledgeMetadata {
   const normalized: Record<string, string | number | boolean | readonly string[]> = {};
-  for (const [key, value] of Object.entries(metadata)) {
+  const entries = Object.entries(metadata).sort(([leftKey], [rightKey]) => {
+    if (leftKey < rightKey) return -1;
+    if (leftKey > rightKey) return 1;
+    return 0;
+  });
+  for (const [key, value] of entries) {
     if (key !== 'workspaceId' && key !== 'courseId') normalized[key] = value;
   }
   return normalized;
@@ -114,7 +129,8 @@ export async function ingestDocumentForRag(
   );
   const policy = resolveDocumentChunkPolicy(request.chunking, DOCUMENT_CHUNK_POLICY.version);
   const lineage = resourceLineage(request.resource, transformed.artifact, policy.version);
-  const resourceVersionId = createResourceVersionId(request.resource, lineage);
+  const metadata = normalizeResourceMetadata(request.resource.metadata ?? {});
+  const resourceVersionId = createResourceVersionId(request.resource, lineage, metadata);
   const artifact = withoutProviderRaw(transformed.artifact);
   const resource: DocumentKnowledgeResource = {
     id: request.resource.id,
@@ -131,7 +147,7 @@ export async function ingestDocumentForRag(
     contentHash: request.resource.contentHash,
     status: 'ready',
     lineage,
-    metadata: normalizeResourceMetadata(request.resource.metadata ?? {}),
+    metadata,
   };
   const chunks = chunkDocumentArtifact(transformed.artifact, resource, request.chunking);
   const diagnostics = [...transformed.diagnostics];

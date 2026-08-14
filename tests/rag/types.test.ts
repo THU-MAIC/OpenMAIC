@@ -76,7 +76,7 @@ describe('RAG domain contract', () => {
     };
 
     await expect(
-      index.query({ workspaceId: 'workspace-test', text: 'safety', topK: 3 }),
+      index.query({ workspaceId: 'workspace-test', courseScope: 'all', text: 'safety', topK: 3 }),
     ).resolves.toEqual([]);
   });
 });

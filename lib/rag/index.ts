@@ -11,12 +11,14 @@ export type { DocumentChunkingOptions } from './chunking';
 export type { DocumentKnowledgeResource } from './chunking';
 export type {
   KnowledgeChunk,
+  KnowledgeExactScope,
   KnowledgeFilterValue,
   KnowledgeHit,
   KnowledgeIndex,
   KnowledgeIndexCapabilities,
   KnowledgeIndexDeleteRequest,
   KnowledgeIndexReplaceRequest,
+  KnowledgeIndexScope,
   KnowledgeIndexQuery,
   KnowledgeLineage,
   KnowledgeLocator,
@@ -25,6 +27,5 @@ export type {
   KnowledgeModality,
   KnowledgeResource,
   KnowledgeResourceStatus,
-  KnowledgeScope,
   KnowledgeVersion,
 } from './types';
