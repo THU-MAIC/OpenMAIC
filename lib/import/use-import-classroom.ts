@@ -453,8 +453,17 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
           }),
         };
 
-        // The document is the commit point: one aggregate write under its per-stage lock.
-        await mutateDocument(newStageId, async (_existing, store) => store.saveDocument(document));
+        // The document is the commit point: one aggregate write under its
+        // per-stage lock. Wholesale replacement: the imported aggregate
+        // overwrites the whole document, so eager conversion of whatever
+        // currently sits there would allocate assets the import immediately
+        // replaces.
+        await mutateDocument(
+          newStageId,
+          async (_existing, store) => store.saveDocument(document),
+          {},
+          { mode: 'replace' },
+        );
         importCommitted = true;
         setPhase('done');
       } catch (error) {

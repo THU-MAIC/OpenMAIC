@@ -634,7 +634,9 @@ describe('media orchestrator asset write paths', () => {
     const before = structuredClone(mocks.document);
     const put = vi.spyOn(pool, 'put');
     const replace = vi.spyOn(pool, 'replace');
-    const release = vi.spyOn(pool, 'release');
+    // The existence probe is metadata-only now: exists(), not a lease's
+    // acquire/release pair.
+    const exists = vi.spyOn(pool, 'exists');
     serveImage('image-replaced');
     useMediaGenerationStore.setState({ tasks: { [assetId]: failedTask(assetId) } });
 
@@ -653,7 +655,7 @@ describe('media orchestrator asset write paths', () => {
       }),
     );
     expect(put).not.toHaveBeenCalled();
-    expect(release).toHaveBeenCalledWith(assetId);
+    expect(exists).toHaveBeenCalledWith(assetId);
     expect(await resolvedText(assetId)).toBe('image-replaced');
     expect(mocks.document).toEqual(before);
     expect(mocks.mediaDelete).not.toHaveBeenCalled();

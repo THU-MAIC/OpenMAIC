@@ -30,6 +30,27 @@
  */
 import type { ContentHash } from './blob.js';
 
+/**
+ * The response-header overrides a signed read URL must pin into its response.
+ *
+ * A redirect moves the byte response off the contract's read route, so the
+ * headers that route would have sent -- the relabelled media type, the fixed
+ * disposition for a non-renderable type, and the no-store cache posture -- must
+ * travel inside the signature instead. Object stores support exactly this as
+ * signed response-header overrides; a byte layer that cannot pin them has no
+ * signing capability, whatever else it can sign.
+ */
+export interface AssetSignedReadHeaders {
+  /** The served media type, after the renderable allowlist. */
+  contentType: string;
+  /** The fixed disposition for a non-renderable type; omitted when served inline. */
+  contentDisposition?: string;
+  /** The read route's cache posture, pinned so the redirect keeps it. */
+  cacheControl: string;
+  /** How long the signed URL stays valid, in seconds. */
+  expiresInSeconds: number;
+}
+
 export interface AssetByteStore {
   /**
    * Store bytes under their content hash.
@@ -59,4 +80,27 @@ export interface AssetByteStore {
    * all. Idempotent: deleting bytes that are absent succeeds.
    */
   delete(hash: ContentHash): Promise<void>;
+
+  /**
+   * Mint a short-lived signed read URL for the bytes stored under a hash.
+   *
+   * Optional, and deliberately absent from most implementations: it exists for
+   * the opt-in indirect byte egress described in the asset HTTP contract, where
+   * an authorized byte GET is answered with a redirect to this URL instead of
+   * the bytes. A byte layer backed by an object store implements it; one backed
+   * by a column of the transactional store does not.
+   *
+   * Signing MUST NOT read the bytes or check their existence -- the caller has
+   * already done the ownership-checked registry read, and an existence probe
+   * would make the URL's price vary with prior presence. The URL carries no
+   * credentials of the deployment's own; the signature is the credential, which
+   * is why `expiresInSeconds` must stay short.
+   *
+   * Returns `undefined` when the layer turns out not to sign after all -- the
+   * delegating-wrapper case, where a store that forwards to another layer
+   * learns only at call time that the inner layer has no signer. The caller
+   * falls back to a direct byte read, so a misconfigured deployment degrades
+   * rather than breaks.
+   */
+  signReadUrl?(hash: ContentHash, headers: AssetSignedReadHeaders): Promise<string | undefined>;
 }

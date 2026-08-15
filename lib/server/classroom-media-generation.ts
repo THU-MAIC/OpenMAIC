@@ -38,6 +38,18 @@ import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm
 
 const log = createLogger('ClassroomMedia');
 
+/**
+ * The classroom JSON payload is a pre-conversion transport, not a persisted
+ * DSL document. `audioUrl` is gone from the `SpeechAction` contract, but the
+ * file-based classroom store has no asset registry to allocate from, so the
+ * server still hands the client the serving URL beside the derived `audioId`.
+ * The app-side reference converter ingests the URL's bytes and rewrites the
+ * pair to one allocated asset id when the classroom is first fetched, before
+ * the document is persisted client-side; the URL never enters a stored
+ * document.
+ */
+type ServerTransportSpeechAction = SpeechAction & { audioUrl?: string };
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -258,9 +270,10 @@ export async function generateTTSForClassroom(
 
     for (const action of scene.actions) {
       if (action.type !== 'speech' || !(action as SpeechAction).text) continue;
-      const speechAction = action as SpeechAction;
-      // Server transport keeps derived ids and audioUrl playback priority;
-      // browser generation allocates pool ids. Unifying them is Part 2 step (c).
+      const speechAction = action as ServerTransportSpeechAction;
+      // Server transport emits the derived id plus the serving URL; the
+      // client-side converter collapses the pair into one pool asset on
+      // first load. Browser generation allocates pool ids directly.
       const audioId = `tts_s${sceneOrder}_${action.id}`;
 
       try {

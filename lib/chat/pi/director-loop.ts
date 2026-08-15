@@ -9,6 +9,7 @@ import type { ThinkingConfig } from '@/lib/types/provider';
 import { buildDirectorPrompt, buildUserPrompt, toHistoryMessages } from './prompts';
 import { createDirectorCompactionRuntime } from './director-compaction';
 import type { DirectorToolTraceEntry, SendEvent } from './types';
+import type { ChildRuntimeMode } from './child-runtime';
 import { buildCallAgentTool } from './tools/call-agent';
 import { buildCloseSessionTool } from './tools/close-session';
 import { buildCueUserTool } from './tools/cue-user';
@@ -56,6 +57,8 @@ export async function runPiDirectorLoop(opts: {
   maxActionsPerAgent: number;
   enableWhiteboardTools: boolean;
   enableWebSearch?: boolean;
+  childRuntimeMode?: ChildRuntimeMode;
+  enableNativeChildSpotlight?: boolean;
 }): Promise<void> {
   let totalAgents = 0;
   let totalActions = 0;
@@ -70,6 +73,24 @@ export async function runPiDirectorLoop(opts: {
   const maxDirectorToolCalls = Math.max(opts.maxAgentTurns * 3, opts.maxAgentTurns + 3);
   const piAgentResponses: AgentTurnSummary[] = [];
   const piWhiteboardLedger: WhiteboardActionRecord[] = [];
+  const requestStartCurrentScene = (() => {
+    const sceneId = opts.body.storeState.currentSceneId;
+    const scene = sceneId
+      ? opts.body.storeState.scenes.find((candidate) => candidate.id === sceneId)
+      : undefined;
+    if (!scene) return undefined;
+    const elementIds =
+      scene.content.type === 'slide'
+        ? scene.content.canvas.elements
+            .map((element) => element.id)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0)
+        : [];
+    return Object.freeze({
+      sceneId: scene.id,
+      sceneType: scene.content.type,
+      elementIds: Object.freeze(elementIds),
+    });
+  })();
   const getAgentTurnCount = (): number => piAgentResponses.length;
   const isTeachingSubstantiveTurn = (summary: AgentTurnSummary): boolean => {
     const agent = opts.agentConfigs.find((candidate) => candidate.id === summary.agentId);
@@ -162,6 +183,9 @@ export async function runPiDirectorLoop(opts: {
       getWhiteboardLedger: () => piWhiteboardLedger,
       maxActionsPerAgent: opts.maxActionsPerAgent,
       enableWhiteboardTools: opts.enableWhiteboardTools,
+      childRuntimeMode: opts.childRuntimeMode ?? 'legacy',
+      enableNativeChildSpotlight: opts.enableNativeChildSpotlight === true,
+      requestStartCurrentScene,
       isUserCued: () => userCued,
       isSessionClosed: () => sessionClosed,
       takeSceneEvidence: () => {

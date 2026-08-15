@@ -1,5 +1,6 @@
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DSL_VERSION } from '@openmaic/dsl';
 import { BrowserRuntimeStore, type KVStore, type RuntimeStore } from '@openmaic/storage';
 
 import type { ChatSession } from '@/lib/types/chat';
@@ -1638,7 +1639,7 @@ describe('database runtime chat integration', () => {
     ).toHaveLength(1);
 
     expect(exportedDocument).toMatchObject({
-      dslVersion: '0.1.0',
+      dslVersion: DSL_VERSION,
       stage: { id: stage.id, name: 'Legacy-only export' },
       scenes: [
         {
@@ -1853,7 +1854,7 @@ describe('database runtime chat integration', () => {
       {
         stage: { id: 'stage-document-backup', name: 'Aggregate backup' },
         outline: { generationComplete: true },
-        dslVersion: '0.1.0',
+        dslVersion: DSL_VERSION,
       },
     ]);
 
@@ -1862,7 +1863,7 @@ describe('database runtime chat integration', () => {
     await expect(documentStore.loadDocument('stage-document-backup')).resolves.toMatchObject({
       stage: { name: 'Aggregate backup' },
       outline: { generationComplete: true },
-      dslVersion: '0.1.0',
+      dslVersion: DSL_VERSION,
     });
   });
 

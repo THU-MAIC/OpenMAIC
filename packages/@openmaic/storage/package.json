@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/storage",
-  "version": "0.2.5",
+  "version": "0.4.0",
   "description": "The MAIC pluggable persistence layer: document / runtime / KV / asset primitives with browser and HTTP backends, depending only on @openmaic/dsl.",
   "type": "module",
   "main": "./dist/index.js",
@@ -96,15 +96,20 @@
     "@openmaic/dsl": "workspace:^"
   },
   "peerDependencies": {
-    "@aws-sdk/client-s3": "^3.0.0"
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/s3-request-presigner": "^3.0.0"
   },
   "peerDependenciesMeta": {
     "@aws-sdk/client-s3": {
+      "optional": true
+    },
+    "@aws-sdk/s3-request-presigner": {
       "optional": true
     }
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1048.0",
+    "@aws-sdk/s3-request-presigner": "^3.1048.0",
     "@electric-sql/pglite": "^0.3.14",
     "@types/pg": "^8.15.5",
     "fake-indexeddb": "^6.0.0",

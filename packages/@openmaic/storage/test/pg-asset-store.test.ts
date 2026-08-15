@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import type { AssetMeta, AssetRef, BinaryBlob, StorageProvider } from '@openmaic/dsl';
 import { contentHashOf, ObjectUrlCache, type ContentHash } from '../src/asset/blob.js';
-import type { AssetByteStore } from '../src/asset/byte-store.js';
+import type { AssetByteStore, AssetSignedReadHeaders } from '../src/asset/byte-store.js';
 import { AssetCollector } from '../src/asset/collector.js';
 import { __setAssetIdFactoryForTesting, type AssetId } from '../src/asset/id.js';
 import { PgAssetByteStore } from '../src/asset/pg-bytes.js';
@@ -827,5 +827,112 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     }
     expect(collectorError).toBeInstanceOf(Error);
     await expectNoDigestSubstring(String(collectorError), data);
+  });
+});
+
+describe('PgAssetStore indirect resolution with PGlite', () => {
+  let db: PGlite;
+
+  class SigningByteStore extends MemoryByteStore {
+    readonly signed: Array<{ hash: ContentHash; headers: AssetSignedReadHeaders }> = [];
+    decline = false;
+
+    async signReadUrl(
+      hash: ContentHash,
+      headers: AssetSignedReadHeaders,
+    ): Promise<string | undefined> {
+      this.signed.push({ hash, headers });
+      return this.decline ? undefined : 'https://objects.example/signed-url';
+    }
+  }
+
+  const request = (onLabel?: (mime: string) => void) => ({
+    label: (mime: string) => {
+      onLabel?.(mime);
+      return { contentType: 'application/octet-stream', contentDisposition: 'attachment' };
+    },
+    cacheControl: 'private, no-store',
+    expiresInSeconds: 60,
+  });
+
+  beforeEach(async () => {
+    db = new PGlite();
+    await db.waitReady;
+    await ensureAssetSchema(db);
+  });
+
+  afterEach(async () => {
+    __setAssetIdFactoryForTesting(null);
+    await db.close();
+  });
+
+  test('a byte store without a signer declines indirect resolution', async () => {
+    const store = new PgAssetStore(db, options(db, new MemoryByteStore()));
+    const id = await store.put(PRINCIPAL, blob('unsigned'));
+
+    await expect(store.resolveIndirect(PRINCIPAL, id, request())).resolves.toBeUndefined();
+  });
+
+  test('mints the signed URL from the same ownership-checked read', async () => {
+    const byteStore = new SigningByteStore();
+    const store = new PgAssetStore(db, options(db, byteStore));
+    const data = blob('indirect bytes');
+    const id = await store.put(PRINCIPAL, data, { contentType: 'image/png' });
+    const { contentHash } = await contentHashOf(data);
+    let labelled: string | undefined;
+
+    const result = await store.resolveIndirect(
+      PRINCIPAL,
+      id,
+      request((mime) => {
+        labelled = mime;
+      }),
+    );
+
+    expect(result).toEqual({ url: 'https://objects.example/signed-url', revision: 1 });
+    // The signer saw the entry's content hash and the merged headers: the
+    // label ran on the recorded media type inside the read.
+    expect(byteStore.signed).toHaveLength(1);
+    expect(byteStore.signed[0]?.hash).toBe(contentHash);
+    expect(byteStore.signed[0]?.headers).toEqual({
+      contentType: 'application/octet-stream',
+      contentDisposition: 'attachment',
+      cacheControl: 'private, no-store',
+      expiresInSeconds: 60,
+    });
+    expect(labelled).toBe('image/png');
+  });
+
+  test('unknown and foreign ids miss exactly as resolve does', async () => {
+    const byteStore = new SigningByteStore();
+    const store = new PgAssetStore(db, options(db, byteStore));
+    const id = await store.put(PRINCIPAL, blob('owned'));
+
+    await expect(store.resolveIndirect(PRINCIPAL, 'ast_absent', request())).resolves.toBeNull();
+    await expect(store.resolveIndirect(OTHER_PRINCIPAL, id, request())).resolves.toBeNull();
+    expect(byteStore.signed).toHaveLength(0);
+  });
+
+  test('a signer that declines at call time falls back to direct bytes', async () => {
+    const byteStore = new SigningByteStore();
+    byteStore.decline = true;
+    const store = new PgAssetStore(db, options(db, byteStore));
+    const id = await store.put(PRINCIPAL, blob('declined'));
+
+    await expect(store.resolveIndirect(PRINCIPAL, id, request())).resolves.toBeUndefined();
+  });
+
+  test('the reported revision follows replace', async () => {
+    const byteStore = new SigningByteStore();
+    const store = new PgAssetStore(db, options(db, byteStore));
+    const id = await store.put(PRINCIPAL, blob('first'));
+    await store.replace(PRINCIPAL, id, blob('second'));
+
+    await expect(store.resolveIndirect(PRINCIPAL, id, request())).resolves.toEqual({
+      url: 'https://objects.example/signed-url',
+      revision: 2,
+    });
+    const { contentHash } = await contentHashOf(blob('second'));
+    expect(byteStore.signed[0]?.hash).toBe(contentHash);
   });
 });

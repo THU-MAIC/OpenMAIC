@@ -18,7 +18,7 @@ import {
   type AssetConformanceServer,
   type AssetConformanceServerOptions,
 } from './asset-conformance-server.js';
-import { blobForObjectUrl } from './setup.js';
+import { blobForObjectUrl, objectUrlCount } from './setup.js';
 
 interface RawResponse {
   status: number;
@@ -956,6 +956,236 @@ describe('HttpAssetStore snapshot behavior', () => {
     expect(heads).toBe(2);
   });
 
+  test('a descriptor answer is followed with no deployment headers, and labels from the descriptor', async () => {
+    // Indirect egress for the packaged client: the byte GET asks for a
+    // descriptor, and the signed URL is fetched without any of the
+    // deployment's headers -- automatic redirect following would forward
+    // them to the object store's origin.
+    const seen: Array<{ method: string; url: string; headers: HeadersInit | undefined }> = [];
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      seen.push({ method, url, headers: init?.headers });
+      if (url === 'https://objects.example/signed') {
+        // The object store's answer: the pinned content type, no revision.
+        return new Response(new Blob(['signed-bytes'], { type: 'image/png' }), {
+          status: 200,
+          headers: { 'content-type': 'image/png' },
+        });
+      }
+      if (method === 'HEAD') {
+        return new Response(null, {
+          status: 200,
+          headers: { 'x-asset-revision': '7', 'content-type': 'image/png' },
+        });
+      }
+      return new Response(JSON.stringify({ url: 'https://objects.example/signed', revision: 7 }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/vnd.openmaic.asset-descriptor+json',
+          'x-asset-revision': '7',
+        },
+      });
+    });
+    const store = new HttpAssetStore({
+      baseUrl: 'https://assets.invalid',
+      fetch,
+      headers: () => ({ 'x-api-key': 'deployment-secret' }),
+    });
+    stores.push(store);
+
+    const url = await store.resolve('asset');
+    expect(url).not.toBeNull();
+    expect(blobForObjectUrl(url!)?.type).toBe('image/png');
+
+    const [byteGet, signedGet] = seen;
+    expect(byteGet?.method).toBe('GET');
+    // The descriptor is preferred, but bytes stay acceptable: a strict
+    // negotiating layer must never see a descriptor-only demand.
+    expect(new Headers(byteGet?.headers).get('accept')).toBe(
+      'application/vnd.openmaic.asset-descriptor+json, */*;q=0.9',
+    );
+    expect(signedGet?.url).toBe('https://objects.example/signed');
+    expect(new Headers(signedGet?.headers).get('x-api-key')).toBeNull();
+    expect(signedGet?.headers).toBeUndefined();
+
+    // The label came from the descriptor: a warm resolve revalidates against
+    // it and keeps the snapshot.
+    const again = await store.resolve('asset');
+    expect(again).toBe(url);
+    expect(seen[seen.length - 1]?.method).toBe('HEAD');
+  });
+
+  test('a redirect answer to the descriptor byte GET is never followed and fails closed', async () => {
+    // The descriptor GET is sent with redirect: 'manual', so a server that
+    // ignores the negotiation (or is misconfigured) and answers 302 is
+    // surfaced as the 3xx it is rather than followed -- following would
+    // forward the deployment's custom credential headers to the redirect
+    // target, and the target must never see them or a request.
+    const seen: Array<{ url: string; init: RequestInit | undefined }> = [];
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      seen.push({ url: String(input), init });
+      return new Response(null, {
+        status: 302,
+        headers: { location: 'https://objects.example/elsewhere' },
+      });
+    });
+    const store = new HttpAssetStore({
+      baseUrl: 'https://assets.invalid',
+      fetch,
+      headers: () => ({ 'x-learner-key': 'deployment-secret' }),
+    });
+    stores.push(store);
+
+    await expect(store.resolve('asset')).rejects.toMatchObject({
+      code: 'MALFORMED_RESPONSE',
+      status: 302,
+    });
+    // Exactly one request: the redirect target was never fetched, so nothing
+    // of the deployment's headers went anywhere.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.url).toBe('https://assets.invalid/assets/asset/content');
+    expect(seen[0]?.init?.redirect).toBe('manual');
+  });
+
+  test('a signed URL whose object is gone is a miss, not a malformed response', async () => {
+    // Reclamation landing between the mint and the fetch: the entry was owned
+    // and readable when the descriptor was issued, so the object store's 404
+    // confirming a missing object reports the same physical state a direct
+    // read reports as a miss. What a read means must not depend on the
+    // deployment's egress setting.
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      if (String(input) === 'https://objects.example/collected') {
+        return new Response(
+          '<?xml version="1.0" encoding="UTF-8"?>' +
+            '<Error><Code>NoSuchKey</Code>' +
+            '<Message>The specified key does not exist.</Message></Error>',
+          { status: 404, headers: { 'content-type': 'application/xml' } },
+        );
+      }
+      return new Response(
+        JSON.stringify({ url: 'https://objects.example/collected', revision: 7 }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/vnd.openmaic.asset-descriptor+json' },
+        },
+      );
+    });
+    const store = new HttpAssetStore({ baseUrl: 'https://assets.invalid', fetch });
+    stores.push(store);
+
+    await expect(store.resolve('asset')).resolves.toBeNull();
+  });
+
+  test.each([
+    // S3/MinIO name a wrong bucket with a code of their own, not NoSuchKey.
+    [
+      'an XML body naming another code',
+      '<?xml version="1.0" encoding="UTF-8"?><Error>' +
+        '<Code>NoSuchBucket</Code><Message>The specified bucket does not exist.</Message>' +
+        '</Error>',
+    ],
+    // A text body is not the documented XML error shape.
+    ['a plain-text body', 'NoSuchKey'],
+    ['an empty body', ''],
+  ])('a signed 404 with %s fails loud, never as a miss', async (_label, body) => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      if (String(input) === 'https://objects.example/failure') {
+        return new Response(body, { status: 404 });
+      }
+      return new Response(JSON.stringify({ url: 'https://objects.example/failure', revision: 7 }), {
+        status: 200,
+        headers: { 'content-type': 'application/vnd.openmaic.asset-descriptor+json' },
+      });
+    });
+    const store = new HttpAssetStore({ baseUrl: 'https://assets.invalid', fetch });
+    stores.push(store);
+
+    await expect(store.resolve('asset')).rejects.toMatchObject({
+      code: 'MALFORMED_RESPONSE',
+    });
+  });
+
+  test('a signed URL failing for any other reason stays a malformed response', async () => {
+    // A 403 is not a miss: with S3 it is what a missing object looks like when
+    // the signing identity lacks s3:ListBucket, and it is equally what a real
+    // credential fault looks like. Reporting it as a miss would hide the fault.
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      if (String(input) === 'https://objects.example/denied') {
+        return new Response('AccessDenied', { status: 403 });
+      }
+      return new Response(JSON.stringify({ url: 'https://objects.example/denied', revision: 7 }), {
+        status: 200,
+        headers: { 'content-type': 'application/vnd.openmaic.asset-descriptor+json' },
+      });
+    });
+    const store = new HttpAssetStore({ baseUrl: 'https://assets.invalid', fetch });
+    stores.push(store);
+
+    await expect(store.resolve('asset')).rejects.toMatchObject({ code: 'MALFORMED_RESPONSE' });
+  });
+
+  test('a malformed egress descriptor fails as MALFORMED_RESPONSE', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => {
+      return new Response(JSON.stringify({ url: 'https://objects.example/signed' }), {
+        status: 200,
+        headers: { 'content-type': 'application/vnd.openmaic.asset-descriptor+json' },
+      });
+    });
+    const store = new HttpAssetStore({ baseUrl: 'https://assets.invalid', fetch });
+    stores.push(store);
+
+    await expect(store.resolve('asset')).rejects.toMatchObject({
+      code: 'MALFORMED_RESPONSE',
+    });
+  });
+
+  test('a descriptor carrying a non-http(s) url fails as MALFORMED_RESPONSE without a follow-up request', async () => {
+    // Only an absolute http(s) URL may be fetched for the bytes. A descriptor
+    // naming anything else is malformed, and the signed fetch must never be
+    // issued against it.
+    for (const bad of ['not-a-url', 'ftp://objects.example/signed', '//objects.example/signed']) {
+      const seen: Array<{ url: string; init: RequestInit | undefined }> = [];
+      const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+        seen.push({ url: String(input), init });
+        return new Response(JSON.stringify({ url: bad, revision: 7 }), {
+          status: 200,
+          headers: { 'content-type': 'application/vnd.openmaic.asset-descriptor+json' },
+        });
+      });
+      const store = new HttpAssetStore({ baseUrl: 'https://assets.invalid', fetch });
+      stores.push(store);
+
+      await expect(store.resolve('asset')).rejects.toMatchObject({
+        code: 'MALFORMED_RESPONSE',
+      });
+      // Exactly one request: the descriptor GET. The invalid URL was never
+      // fetched.
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.url).toBe('https://assets.invalid/assets/asset/content');
+    }
+  });
+
+  test('a media type that merely begins with the descriptor type is served as bytes', async () => {
+    // Only the exact essence identifies a descriptor; a longer type naming a
+    // real payload must not be parsed as one.
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => {
+      return new Response(new Blob(['payload'], { type: 'text/plain' }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/vnd.openmaic.asset-descriptor+json-seq',
+          'x-asset-revision': '4',
+        },
+      });
+    });
+    const store = new HttpAssetStore({ baseUrl: 'https://assets.invalid', fetch });
+    stores.push(store);
+
+    const url = await store.resolve('asset');
+    expect(url).not.toBeNull();
+    expect(blobForObjectUrl(url!)?.type).toBe('application/vnd.openmaic.asset-descriptor+json-seq');
+  });
+
   test('an unclassifiable HEAD falls back to GET and is never treated as a miss', async () => {
     let requests = 0;
     const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
@@ -1042,5 +1272,214 @@ describe('asset handler construction', () => {
         maxMetaBytes: 10,
       }),
     ).toThrow(/multipart framing/);
+  });
+});
+
+describe('HttpAssetStore bounded exists fallback', () => {
+  test('exists() rejects within the probe timeout when the fallback GET stalls', async () => {
+    // An unclassifiable HEAD falls back to a full resolve; that fallback GET
+    // must be bounded like the probe, or a stalled persistence endpoint can
+    // hold migration/conversion indefinitely.
+    const stalledFetch = ((
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      if (init?.method === 'HEAD') return Promise.resolve(new Response(null, { status: 500 }));
+      // GET: hang until the caller's abort signal fires.
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () =>
+          reject(init.signal?.reason ?? new Error('aborted')),
+        );
+      });
+    }) as typeof fetch;
+    const store = new HttpAssetStore({
+      baseUrl: 'https://assets.test',
+      fetch: stalledFetch,
+      probeTimeoutMs: 30,
+    });
+
+    await expect(store.exists('ast_stalled')).rejects.toMatchObject({
+      code: 'HTTP_REQUEST_FAILED',
+    });
+  });
+
+  test('exists() still resolves through the bounded fallback GET when the HEAD is unclassifiable', async () => {
+    const fetchImpl = ((_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      if (init?.method === 'HEAD') return Promise.resolve(new Response(null, { status: 500 }));
+      return Promise.resolve(
+        new Response(new Blob(['bytes']), {
+          status: 200,
+          headers: { 'content-type': 'text/plain', 'x-asset-revision': 'rev-1' },
+        }),
+      );
+    }) as typeof fetch;
+    const store = new HttpAssetStore({ baseUrl: 'https://assets.test', fetch: fetchImpl });
+
+    await expect(store.exists('ast_present')).resolves.toBe(true);
+  });
+
+  test('exists() rejects within the probe deadline when the signed-object fetch stalls', async () => {
+    // The probe deadline must cover the descriptor's signed fetch too: a
+    // stalled object store cannot hold the check past the probe budget.
+    const seen: AbortSignal[] = [];
+    const fetchImpl = ((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      if (String(input) === 'https://objects.example/stalled-fetch') {
+        const signal = init?.signal;
+        seen.push(signal as AbortSignal);
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(signal.reason ?? new Error('aborted')));
+        });
+      }
+      // An unclassifiable HEAD (no x-error-code) forces the bounded fallback.
+      if (init?.method === 'HEAD') {
+        return Promise.resolve(new Response(null, { status: 500 }));
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ url: 'https://objects.example/stalled-fetch', revision: 7 }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/vnd.openmaic.asset-descriptor+json' },
+          },
+        ),
+      );
+    }) as typeof fetch;
+    const store = new HttpAssetStore({
+      baseUrl: 'https://assets.test',
+      fetch: fetchImpl,
+      probeTimeoutMs: 50,
+    });
+
+    const started = Date.now();
+    await expect(store.exists('ast_stalled_signed')).rejects.toMatchObject({
+      code: 'HTTP_REQUEST_FAILED',
+    });
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(seen[0]?.aborted).toBe(true);
+  });
+
+  test('exists() rejects within the probe deadline when the signed-object body stalls', async () => {
+    // Body parsing is part of the same absolute deadline: a signed response
+    // that never finishes its body cannot hold the check past the budget.
+    const seen: AbortSignal[] = [];
+    const fetchImpl = ((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      if (String(input) === 'https://objects.example/stalled-body') {
+        const signal = init?.signal;
+        seen.push(signal as AbortSignal);
+        return Promise.resolve(
+          new Response(
+            new ReadableStream({
+              pull() {
+                return new Promise((_resolve, reject) => {
+                  signal?.addEventListener(
+                    'abort',
+                    () => reject(signal.reason ?? new Error('aborted')),
+                    { once: true },
+                  );
+                });
+              },
+            }),
+            { status: 200, headers: { 'content-type': 'audio/mpeg' } },
+          ),
+        );
+      }
+      // An unclassifiable HEAD (no x-error-code) forces the bounded fallback.
+      if (init?.method === 'HEAD') {
+        return Promise.resolve(new Response(null, { status: 500 }));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ url: 'https://objects.example/stalled-body', revision: 7 }), {
+          status: 200,
+          headers: { 'content-type': 'application/vnd.openmaic.asset-descriptor+json' },
+        }),
+      );
+    }) as typeof fetch;
+    const store = new HttpAssetStore({
+      baseUrl: 'https://assets.test',
+      fetch: fetchImpl,
+      probeTimeoutMs: 50,
+    });
+
+    const started = Date.now();
+    await expect(store.exists('ast_stalled_body')).rejects.toMatchObject({
+      code: 'HTTP_REQUEST_FAILED',
+    });
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(seen[0]?.aborted).toBe(true);
+  });
+
+  test('exists() does not trust a 200 HEAD without a valid response identity', async () => {
+    // An auth wall or proxy landing page can answer 200 with an HTML body and
+    // no asset identity (no x-asset-revision / content-type). Trusting that
+    // 200 would report an unresolvable id as present, and the converter would
+    // drop a co-present legacy handle for bytes that do not exist. The probe
+    // must treat the identity-less success as unclassifiable and let the
+    // bounded byte read decide -- which refuses the same identity-less body.
+    const identityless = new Response('<!doctype html><title>Sign in</title>', {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+    });
+    const fetchImpl = ((_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      return Promise.resolve(
+        init?.method === 'HEAD'
+          ? identityless.clone()
+          : new Response('<!doctype html><title>Sign in</title>', {
+              status: 200,
+              headers: { 'content-type': 'text/html' },
+            }),
+      );
+    }) as typeof fetch;
+    const store = new HttpAssetStore({ baseUrl: 'https://assets.test', fetch: fetchImpl });
+
+    await expect(store.exists('ast_identityless')).rejects.toMatchObject({
+      code: 'MALFORMED_RESPONSE',
+    });
+  });
+
+  test('exists() resolves an identity-less 200 HEAD through the fallback when the bytes carry a real identity', async () => {
+    // The identity-less 200 is not proof, but it is not a miss either: the
+    // byte read confirms the asset genuinely resolves, and the probe answers
+    // present exactly as a matching warm HEAD would.
+    const fetchImpl = ((_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      if (init?.method === 'HEAD') {
+        return Promise.resolve(
+          new Response(null, {
+            status: 200,
+            headers: { 'content-type': 'text/html' },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(new Blob(['bytes']), {
+          status: 200,
+          headers: { 'content-type': 'text/plain', 'x-asset-revision': 'rev-1' },
+        }),
+      );
+    }) as typeof fetch;
+    const store = new HttpAssetStore({ baseUrl: 'https://assets.test', fetch: fetchImpl });
+
+    await expect(store.exists('ast_present')).resolves.toBe(true);
+  });
+
+  test('repeated exists() on an unclassifiable-HEAD endpoint leaves no object URLs minted', async () => {
+    // A probe that fell back through the byte read must not retain the fetched
+    // blob as an object URL: migration probes run per reference, and pinning
+    // every fetched blob would hold quota until store close.
+    const fetchImpl = ((_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      if (init?.method === 'HEAD') {
+        return Promise.resolve(new Response(null, { status: 500 }));
+      }
+      return Promise.resolve(
+        new Response(new Blob(['bytes']), {
+          status: 200,
+          headers: { 'content-type': 'text/plain', 'x-asset-revision': 'rev-1' },
+        }),
+      );
+    }) as typeof fetch;
+    const store = new HttpAssetStore({ baseUrl: 'https://assets.test', fetch: fetchImpl });
+
+    await expect(store.exists('ast_probe_1')).resolves.toBe(true);
+    await expect(store.exists('ast_probe_1')).resolves.toBe(true);
+    expect(objectUrlCount()).toBe(0);
   });
 });

@@ -252,25 +252,36 @@ function placeholderContent(scene: VideoTimelineScene, reason: string, reasonAtt
 }
 
 /** The base layer for one scene: snapshot, packaged frozen HTML, or placeholder. */
+function sceneBaseId(scene: VideoTimelineScene): string {
+  return `scene-${scene.index + 1}-base`;
+}
+
+function interactiveBaseContentId(scene: VideoTimelineScene): string {
+  return `${sceneBaseId(scene)}-content`;
+}
+
 function renderBase(scene: VideoTimelineScene, labels: VideoExportLabels): string {
   const start = sec(scene.startMs);
   const duration = sec(scene.durationMs);
-  const id = `scene-${scene.index + 1}-base`;
+  const id = sceneBaseId(scene);
   const clip = `id="${id}" class="clip" data-start="${start}" data-duration="${duration}" data-track-index="0"`;
   if (scene.base.kind === 'slide-snapshot' && scene.base.assetRef) {
     return `<img ${clip} src="${escapeHtml(assetUrl(scene.base.assetRef))}" alt="" style="position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain" />`;
   }
   if (scene.base.kind === 'visual-segments') return '';
   if (scene.base.kind === 'interactive-html' && scene.base.assetRef) {
+    const contentId = interactiveBaseContentId(scene);
     const fallback = placeholderContent(
       scene,
       labels.interactive.fallback,
       'data-interactive-fallback-reason',
     );
     return [
-      `<div ${clip} data-interactive-static-host data-scene-id="${escapeHtml(scene.id)}" data-ready-timeout-ms="${scene.base.readyTimeoutMs}" data-content-hash="${escapeHtml(scene.base.contentHash)}" style="position:absolute;inset:0;background:#0f172a">`,
-      `  <div data-interactive-fallback>${fallback}</div>`,
-      `  <iframe data-interactive-static-frame data-src="${escapeHtml(assetUrl(scene.base.assetRef))}" title="${escapeHtml(scene.title)}" sandbox="allow-scripts" style="position:absolute;inset:0;width:100%;height:100%;border:0;visibility:hidden;pointer-events:none;background:#fff"></iframe>`,
+      `<div ${clip} data-interactive-static-host data-scene-id="${escapeHtml(scene.id)}" data-ready-timeout-ms="${scene.base.readyTimeoutMs}" data-content-hash="${escapeHtml(scene.base.contentHash)}" style="position:absolute;inset:0">`,
+      `  <div id="${contentId}" data-interactive-static-visibility-wrapper style="position:absolute;inset:0;background:#0f172a;visibility:hidden;opacity:0">`,
+      `    <div data-interactive-fallback>${fallback}</div>`,
+      `    <iframe data-interactive-static-frame data-src="${escapeHtml(assetUrl(scene.base.assetRef))}" title="${escapeHtml(scene.title)}" sandbox="allow-scripts" style="position:absolute;inset:0;width:100%;height:100%;border:0;visibility:hidden;pointer-events:none;background:#fff"></iframe>`,
+      `  </div>`,
       `</div>`,
     ].join('\n');
   }
@@ -281,6 +292,20 @@ function renderBase(scene: VideoTimelineScene, labels: VideoExportLabels): strin
         ? (scene.base.reason ?? '')
         : '';
   return `<div ${clip}>${placeholderContent(scene, reason)}</div>`;
+}
+
+/**
+ * Screenshot capture in Hyperframes 0.7.x does not reliably apply a generic
+ * HTML clip's visibility window when that clip contains an iframe. Keep the
+ * framework-owned clip intact, but guard its visual contents with the same
+ * seek-safe timeline used by the rest of the emitted composition.
+ */
+function interactiveBaseVisibilityStatements(scene: VideoTimelineScene): string[] {
+  if (scene.base.kind !== 'interactive-html' || !scene.base.assetRef) return [];
+  const id = interactiveBaseContentId(scene);
+  const start = sec(scene.startMs);
+  const end = sec(scene.startMs + scene.durationMs);
+  return [`tl.set('#${id}',{autoAlpha:1},${start});`, `tl.set('#${id}',{autoAlpha:0},${end});`];
 }
 
 /** Parent-side readiness/fallback bridge for every packaged interactive iframe. */
@@ -1209,6 +1234,7 @@ export function emitHyperframes(
   for (const scene of ir.scenes) {
     sceneHtml.push(`<!-- scene ${scene.index + 1}: ${escapeHtml(scene.title)} -->`);
     sceneHtml.push(renderBase(scene, labels));
+    statements.push(...interactiveBaseVisibilityStatements(scene));
     const visuals = renderVisuals(
       scene,
       labels,

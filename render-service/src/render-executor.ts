@@ -128,6 +128,7 @@ export function buildRenderExecutionMetrics(
   const failure = observedFailureCapture(job);
   return {
     resourceProfile: config.resourceProfile.name,
+    capturePolicy: config.resourceProfile.capturePolicy,
     requestedCaptureMode: config.resourceProfile.requestedCaptureMode,
     actualCaptureMode:
       job.perfSummary?.drawElement?.mode ??

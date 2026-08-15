@@ -354,6 +354,18 @@ horizontally scaled deployment may leave it on in every instance — each blob r
 is locked and re-checked before its bytes go, so concurrent collectors serialize
 rather than race — or disable it everywhere and run its own.
 
+Asset byte egress is direct by default: the embedded route materializes the
+bytes in the response body. Setting `ASSET_BYTE_EGRESS=redirect` opts into
+**indirect** egress, under which a byte `GET` answers with a short-lived signed
+S3 URL when the byte layer can sign (S3 can; the PostgreSQL byte column cannot
+and falls back to direct bytes). Two object-store prerequisites make that safe:
+the bucket must allow this app's origin via CORS and expose `Content-Type` on
+the signed response, and the signing identity must hold `s3:ListBucket` on the
+bucket so a missing key answers `404 NoSuchKey` rather than `403` — a client can
+only read a reclaimed asset as a miss when the store confirms it by code. The
+tradeoffs this opts into are specified in the
+[asset HTTP contract](packages/@openmaic/storage/docs/asset-http-contract.md).
+
 The embedded endpoint implements the package's
 [RuntimeStore HTTP contract](packages/@openmaic/storage/docs/runtime-http-contract.md)
 and

@@ -63,7 +63,10 @@ describe('config maxJobsPerUser', () => {
 describe('config producerWorkers', () => {
   it('defaults to one explicit worker in the standard profile', async () => {
     delete process.env.PRODUCER_MAX_WORKERS;
-    expect((await loadConfig()).producerWorkers).toBe(1);
+    const config = await loadConfig();
+    expect(config.producerWorkers).toBe(1);
+    expect(config.resourceProfile.capturePolicy).toBe('prefer-beginframe');
+    expect(config.requireBeginFrame).toBe(false);
   });
 
   it('accepts an explicit single-worker profile without silently raising it', async () => {

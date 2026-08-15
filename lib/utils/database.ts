@@ -129,6 +129,13 @@ export interface AudioFileRecord {
   id: string; // Primary key (audioId)
   /** Stage ownership index. Absent on legacy rows; document walking remains their fallback. */
   stageId?: string;
+  /**
+   * The legacy derived id a compatibility mirror was written for. IndexedDB
+   * needs no schema bump for a non-indexed field; retry recovery reads it.
+   */
+  originAudioId?: string;
+  /** The legacy URL a compatibility mirror was fetched from, for retry recovery. */
+  originAudioUrl?: string;
   blob: Blob; // Audio binary data
   duration?: number; // Duration (seconds)
   format: string; // mp3, wav, etc.
@@ -763,11 +770,19 @@ export async function importDatabase(
       // Record the pre-import deletion state alongside the document pre-image:
       // a failed import rolls the document back, so it must roll this back too.
       const wasDeleted = isStageDeleted(document.stage.id);
-      await mutateDocument(document.stage.id, async (_existing, store) => {
-        const preImage = (await store.loadDocument(document.stage.id)) as AppDocument | null;
-        await store.saveDocument(document);
-        importedDocuments.push({ id: document.stage.id, preImage, wasDeleted });
-      });
+      // Wholesale replacement: the restored aggregate overwrites the whole
+      // document, so eager conversion of whatever currently sits there would
+      // allocate assets for content the restore immediately replaces.
+      await mutateDocument(
+        document.stage.id,
+        async (_existing, store) => {
+          const preImage = (await store.loadDocument(document.stage.id)) as AppDocument | null;
+          await store.saveDocument(document);
+          importedDocuments.push({ id: document.stage.id, preImage, wasDeleted });
+        },
+        {},
+        { mode: 'replace' },
+      );
       // Explicit document (re)creation: a backup may restore a stage deleted
       // earlier this session under the same id. Lift the deleted flag so later
       // edits of the restored document persist instead of being dropped. (The

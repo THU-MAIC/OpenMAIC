@@ -28,15 +28,13 @@ describe('rewriteAudioRefsToIds', () => {
   });
 
   test('skips speech actions without audioRef', () => {
-    const actions = [
-      { id: 'a1', type: 'speech' as const, text: 'Hello', audioUrl: 'https://example.com/a.mp3' },
-    ];
+    const actions = [{ id: 'a1', type: 'speech' as const, text: 'Hello' }];
     const result = rewriteAudioRefsToIds(actions, {});
     expect(result[0]).toMatchObject({
       type: 'speech',
       text: 'Hello',
-      audioUrl: 'https://example.com/a.mp3',
     });
+    expect(result[0]).not.toHaveProperty('audioId');
   });
 
   test('replaces discussion agentIndex with imported agentId', () => {
@@ -111,22 +109,23 @@ describe('actionsToManifest', () => {
     expect(result[1]).toMatchObject({ type: 'spotlight', elementId: 'el1' });
   });
 
-  test('preserves audioUrl when audioId is absent', () => {
+  test('a speech action without audioId exports no audio reference at all', () => {
+    // audioUrl is gone from the contract: the manifest carries only the zip
+    // path reference (audioRef), never a raw URL.
     const actions = [
       {
         id: 'act1',
         type: 'speech' as const,
         text: 'Hi',
-        audioUrl: 'https://cdn.example.com/hi.mp3',
       } as SpeechAction,
     ];
     const result = actionsToManifest(actions, new Map());
     expect(result[0]).toMatchObject({
       type: 'speech',
       text: 'Hi',
-      audioUrl: 'https://cdn.example.com/hi.mp3',
     });
     expect(result[0]).not.toHaveProperty('audioRef');
+    expect(result[0]).not.toHaveProperty('audioUrl');
   });
 
   test('converts discussion agentId to agentIndex', () => {

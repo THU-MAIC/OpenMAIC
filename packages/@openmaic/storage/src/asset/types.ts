@@ -15,6 +15,7 @@
  */
 import type { AssetMeta, AssetRef, BinaryBlob } from '@openmaic/dsl';
 
+import type { AssetSignedReadHeaders } from './byte-store.js';
 import type { AssetId } from './id.js';
 
 /**
@@ -233,6 +234,36 @@ export interface AssetStore {
     data: BinaryBlob,
     meta?: AssetMeta,
   ): Promise<number>;
+
+  /**
+   * Resolve an id to a short-lived signed byte URL instead of to the bytes.
+   *
+   * Optional, and only ever called by a server whose deployment opted into
+   * indirect byte egress; see the asset HTTP contract. Ownership and miss
+   * behavior are identical to {@link resolve}: the same ownership-checked read
+   * runs first, and the signed URL is minted only for an entry this principal
+   * holds, so opting in changes nothing about who may learn what a URL serves.
+   *
+   * Three outcomes rather than two, because the capability and the entry are
+   * independent questions:
+   *
+   * - `undefined` -- this store's byte layer cannot sign. The caller falls
+   *   back to {@link resolve} and answers with the bytes directly.
+   * - `null` -- a miss, exactly as {@link resolve} reports one.
+   * - an {@link AssetIndirectRead} -- the minted URL and the entry revision.
+   *
+   * The `request.label` callback runs **inside** the read transaction, on the
+   * recorded media type of the entry just read, so the headers pinned into the
+   * signature come from the same snapshot as the hash being signed. A pair of
+   * calls -- one to learn the type, one to sign -- would let a concurrent
+   * `replace` pin one revision's label onto another revision's bytes, which is
+   * the race the byte-response rule already forbids.
+   */
+  resolveIndirect?(
+    principal: AssetPrincipal,
+    ref: AssetRef,
+    request: AssetIndirectReadRequest,
+  ): Promise<AssetIndirectRead | null | undefined>;
 }
 
 /**
@@ -271,3 +302,44 @@ export interface AssetIdentity {
   /** The stored representation length, in bytes. */
   readonly byteLength: number;
 }
+
+/**
+ * What an indirect read asks the store to mint.
+ *
+ * The `label` callback is how the serving layer's renderable allowlist reaches
+ * the signature without the byte layer learning the allowlist: the store reads
+ * the entry, hands its recorded media type to `label`, and pins the returned
+ * overrides into the signed URL.
+ */
+export interface AssetIndirectReadRequest {
+  /** Compute the served response headers from the recorded media type. */
+  label(mime: string): Pick<AssetSignedReadHeaders, 'contentType' | 'contentDisposition'>;
+  /** The read route's cache posture, pinned into the signed response. */
+  cacheControl: string;
+  /** Signed URL lifetime in seconds. Short: the URL is a bearer credential. */
+  expiresInSeconds: number;
+}
+
+/**
+ * A signed byte URL minted for an authorized read.
+ *
+ * Carries the revision so the redirect response can report it exactly as the
+ * direct byte response would have. The byte length is not carried: a redirect
+ * has no body, so there is no `Content-Length` to reproduce, and the signed
+ * response reports its own.
+ */
+export interface AssetIndirectRead {
+  /** The short-lived signed URL the caller is redirected to. */
+  readonly url: string;
+  /** The registry entry revision, from the same read that minted the URL. */
+  readonly revision: number;
+}
+
+/**
+ * The vendor media type of an indirect-egress descriptor answer. A client
+ * asks for it through `Accept` -- a CORS-safelisted header, so the
+ * negotiation never adds a preflight -- and the server marks the descriptor
+ * response with it as `Content-Type`, so a stored asset can never parse as a
+ * descriptor.
+ */
+export const ASSET_DESCRIPTOR_MEDIA_TYPE = 'application/vnd.openmaic.asset-descriptor+json';

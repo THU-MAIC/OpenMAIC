@@ -86,9 +86,10 @@ services:
       - NET_ADMIN
     environment:
       - PORT=9000
-      # The standard CPU profile is explicit: BeginFrame, one producer worker,
-      # one render, and one extraction. Select low-memory explicitly instead of
-      # allowing producer to silently change capture mode from cgroup heuristics.
+      # The standard CPU profile prefers BeginFrame but permits producer's
+      # compatibility fallback (for example iframe GenUI). It still fixes one
+      # producer worker, one render, and one extraction. Select low-memory to
+      # force screenshot instead of relying on producer auto-selection.
       - RENDER_RESOURCE_PROFILE=${RENDER_RESOURCE_PROFILE:-standard}
       - PRODUCER_HEADLESS_SHELL_PATH=/usr/bin/chromium-headless-shell
       - RENDER_MAX_CONCURRENCY=1
@@ -107,9 +108,9 @@ services:
       # per-user identity (see render-service/README.md).
       - RENDER_MAX_JOBS_PER_USER=0
     # Bound RAM: each render (Chromium + FFmpeg + archive expansion) is memory-heavy.
-    # The standard profile requires 10 GiB. For the explicit low-memory profile,
+    # The standard profile requires 8 GiB. For the explicit low-memory profile,
     # set RENDER_RESOURCE_PROFILE=low-memory and RENDER_SERVICE_MEMORY_LIMIT=4g.
-    mem_limit: ${RENDER_SERVICE_MEMORY_LIMIT:-10g}
+    mem_limit: ${RENDER_SERVICE_MEMORY_LIMIT:-8g}
     # Chromium media/frame work can exceed Docker's 64 MiB default shared-memory
     # mount. This is a ceiling inside the selected profile cgroup, not eager allocation.
     shm_size: 2gb

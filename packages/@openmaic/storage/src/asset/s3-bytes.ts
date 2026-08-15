@@ -9,7 +9,7 @@
  * idempotently; no pending-object state is required.
  */
 import type { ContentHash } from './blob.js';
-import type { AssetByteStore } from './byte-store.js';
+import type { AssetByteStore, AssetSignedReadHeaders } from './byte-store.js';
 
 interface S3ObjectInput {
   Bucket: string;
@@ -19,6 +19,12 @@ interface S3ObjectInput {
 interface S3PutObjectInput extends S3ObjectInput {
   Body: Uint8Array;
   ContentLength: number;
+}
+
+interface S3GetObjectInput extends S3ObjectInput {
+  ResponseContentType?: string;
+  ResponseContentDisposition?: string;
+  ResponseCacheControl?: string;
 }
 
 interface S3GetObjectOutput {
@@ -31,8 +37,19 @@ export interface S3AssetByteStoreClient {
 
 export interface S3AssetByteStoreCommands {
   put(input: S3PutObjectInput): unknown;
-  get(input: S3ObjectInput): unknown;
+  get(input: S3GetObjectInput): unknown;
   delete(input: S3ObjectInput): unknown;
+}
+
+/**
+ * URL signing from the same SDK implementation as the client and commands.
+ *
+ * The seam mirrors `commands`: a test double binds its own signer, and a
+ * deployment that never enables indirect egress never resolves the optional
+ * presigner package at all.
+ */
+export interface S3AssetByteStoreSigner {
+  sign(client: S3AssetByteStoreClient, command: unknown, expiresInSeconds: number): Promise<string>;
 }
 
 export interface S3AssetByteStoreOptions {
@@ -47,17 +64,34 @@ export interface S3AssetByteStoreOptions {
    * double, or an SDK copy other than the one this package resolves.
    */
   commands?: S3AssetByteStoreCommands;
+  /**
+   * The URL signer, from the same SDK implementation as the client.
+   *
+   * Optional exactly as `commands` is: omitted, the store resolves
+   * `@aws-sdk/s3-request-presigner` on its first `signReadUrl` call, and a
+   * store that is never asked to sign never resolves it.
+   */
+  signer?: S3AssetByteStoreSigner;
   /** Bucket dedicated to content-hash-named asset objects. */
   bucket: string;
 }
 
 const AWS_S3_CLIENT_PACKAGE = '@aws-sdk/client-s3';
+const AWS_S3_PRESIGNER_PACKAGE = '@aws-sdk/s3-request-presigner';
 
 interface S3Sdk {
   S3Client: new (options: Record<string, never>) => S3AssetByteStoreClient;
   PutObjectCommand: new (input: S3PutObjectInput) => unknown;
-  GetObjectCommand: new (input: S3ObjectInput) => unknown;
+  GetObjectCommand: new (input: S3GetObjectInput) => unknown;
   DeleteObjectCommand: new (input: S3ObjectInput) => unknown;
+}
+
+interface S3PresignerSdk {
+  getSignedUrl(
+    client: S3AssetByteStoreClient,
+    command: unknown,
+    options: { expiresIn: number },
+  ): Promise<string>;
 }
 
 /**
@@ -72,6 +106,18 @@ async function importS3Sdk(): Promise<S3Sdk> {
   return (await import(/* webpackIgnore: true */ AWS_S3_CLIENT_PACKAGE)) as S3Sdk;
 }
 
+/**
+ * Resolve the optional request presigner from this package's resolution scope.
+ *
+ * Separate from `importS3Sdk` on purpose: the presigner is a second optional
+ * peer, and only `signReadUrl` needs it. Byte writes, reads, and deletes --
+ * including every deployment that never enables indirect egress -- must not
+ * resolve it, so this function is reached only from the signing path below.
+ */
+async function importS3Presigner(): Promise<S3PresignerSdk> {
+  return (await import(/* webpackIgnore: true */ AWS_S3_PRESIGNER_PACKAGE)) as S3PresignerSdk;
+}
+
 function sdkCommands(sdk: S3Sdk): S3AssetByteStoreCommands {
   return {
     put: (input) => new sdk.PutObjectCommand(input),
@@ -80,11 +126,27 @@ function sdkCommands(sdk: S3Sdk): S3AssetByteStoreCommands {
   };
 }
 
+function sdkSigner(sdk: S3PresignerSdk): S3AssetByteStoreSigner {
+  return {
+    sign: (client, command, expiresInSeconds) =>
+      sdk.getSignedUrl(client, command, { expiresIn: expiresInSeconds }),
+  };
+}
+
 function missingSdk(error: unknown): Error {
   return new Error(
     `@openmaic/storage: the S3 asset byte store requires the optional ${AWS_S3_CLIENT_PACKAGE} ` +
       'dependency, which could not be resolved. Install it, or construct the store with ' +
       'explicit `commands`.',
+    { cause: error },
+  );
+}
+
+function missingPresigner(error: unknown): Error {
+  return new Error(
+    `@openmaic/storage: signing S3 asset read URLs requires the optional ${AWS_S3_PRESIGNER_PACKAGE} ` +
+      'dependency, which could not be resolved. Install it, or construct the store with ' +
+      'an explicit `signer`.',
     { cause: error },
   );
 }
@@ -142,10 +204,14 @@ export class S3AssetByteStore implements AssetByteStore {
   /** Set once resolved, whether supplied by the caller or loaded from the SDK. */
   private resolvedCommands: S3AssetByteStoreCommands | undefined;
   private pendingCommands: Promise<S3AssetByteStoreCommands> | undefined;
+  /** Same resolution discipline as the commands: lazy, cached, never poisoning. */
+  private resolvedSigner: S3AssetByteStoreSigner | undefined;
+  private pendingSigner: Promise<S3AssetByteStoreSigner> | undefined;
 
   constructor(options: S3AssetByteStoreOptions) {
     this.client = options.client;
     this.resolvedCommands = options.commands;
+    this.resolvedSigner = options.signer;
     this.bucket = options.bucket;
   }
 
@@ -178,6 +244,34 @@ export class S3AssetByteStore implements AssetByteStore {
       },
     );
     this.pendingCommands = pending;
+    return pending;
+  }
+
+  /**
+   * The signer, resolved on first signing use and cached afterwards.
+   *
+   * Same rules as the commands above: never at module evaluation, never in the
+   * constructor, and never on a byte operation -- only `signReadUrl` reaches
+   * the optional presigner peer, so a deployment that keeps direct egress
+   * (the default) never resolves it. A failed resolution is not cached.
+   */
+  private signer(): Promise<S3AssetByteStoreSigner> {
+    const resolved = this.resolvedSigner;
+    if (resolved) return Promise.resolve(resolved);
+    if (this.pendingSigner) return this.pendingSigner;
+    const pending = importS3Presigner().then(
+      (sdk) => {
+        const signer = sdkSigner(sdk);
+        this.resolvedSigner = signer;
+        this.pendingSigner = undefined;
+        return signer;
+      },
+      (error: unknown) => {
+        if (this.pendingSigner === pending) this.pendingSigner = undefined;
+        throw missingPresigner(error);
+      },
+    );
+    this.pendingSigner = pending;
     return pending;
   }
 
@@ -222,6 +316,54 @@ export class S3AssetByteStore implements AssetByteStore {
       throw s3Failure('delete');
     }
   }
+
+  /**
+   * Mint a short-lived presigned GET URL for the object under a hash.
+   *
+   * The response-header overrides are signed into the URL, so the object
+   * store's own response carries the relabelled media type, the fixed
+   * disposition, and the read route's cache posture exactly as the direct
+   * byte response would have. Signing is local credential arithmetic: no
+   * request is made, and a hash naming no object signs exactly as readily as
+   * one that does -- the registry read above has already established both
+   * ownership and existence, and a probing store would make the cost of a
+   * read vary with prior presence.
+   */
+  async signReadUrl(
+    hash: ContentHash,
+    headers: AssetSignedReadHeaders,
+  ): Promise<string | undefined> {
+    // Resolved outside the try for the same reason as the write path: a
+    // missing optional dependency reports itself by name rather than being
+    // flattened into an opaque "sign failed".
+    const commands = await this.commands();
+    let signer: S3AssetByteStoreSigner;
+    try {
+      signer = await this.signer();
+    } catch {
+      // An unresolvable optional presigner means this layer cannot sign after
+      // all, which is a capability answer, not a failed read: decline, and the
+      // caller falls back to serving the bytes directly.
+      return undefined;
+    }
+    try {
+      return await signer.sign(
+        this.client,
+        commands.get({
+          Bucket: this.bucket,
+          Key: hash,
+          ResponseContentType: headers.contentType,
+          ...(headers.contentDisposition === undefined
+            ? {}
+            : { ResponseContentDisposition: headers.contentDisposition }),
+          ResponseCacheControl: headers.cacheControl,
+        }),
+        headers.expiresInSeconds,
+      );
+    } catch {
+      throw s3Failure('sign');
+    }
+  }
 }
 
-export type { AssetByteStore } from './byte-store.js';
+export type { AssetByteStore, AssetSignedReadHeaders } from './byte-store.js';

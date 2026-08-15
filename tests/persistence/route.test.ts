@@ -775,4 +775,516 @@ describe('embedded persistence route', () => {
     expect(response.headers.get('content-type')).toBe('text/plain');
     expect(new Uint8Array(await response.arrayBuffer())).toHaveLength(0);
   });
+
+  // Minimal storage mocks for the egress-wiring tests: every store and schema
+  // is stubbed, and createStorageHttpHandler only records its options.
+  const mockEgressWiring = (handlerOptions: unknown[], connectionString: string) => {
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
+      PgAssetByteStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.doMock('@openmaic/storage/server', () => ({
+      createStorageHttpHandler: vi.fn((_runtime: unknown, _document: unknown, options: unknown) => {
+        handlerOptions.push(options);
+        return (
+          _request: unknown,
+          response: { writeHead: (status: number) => void; end: () => void },
+        ) => {
+          response.writeHead(204);
+          response.end();
+        };
+      }),
+      DEFAULT_SIGNED_URL_TTL_SECONDS: 60,
+    }));
+    vi.stubEnv('DATABASE_URL', connectionString);
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+  };
+
+  const requestThroughRoute = async () => {
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    return handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/runtime/sessions', {
+        headers: { authorization: 'Bearer test-token' },
+      }),
+      { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never },
+    );
+  };
+
+  it('opts the asset handler into redirect egress only when ASSET_BYTE_EGRESS=redirect', async () => {
+    const handlerOptions: unknown[] = [];
+    mockEgressWiring(handlerOptions, 'postgres://egress-redirect-test');
+    vi.stubEnv('ASSET_BYTE_EGRESS', ' redirect ');
+
+    const response = await requestThroughRoute();
+
+    expect(response.status).toBe(204);
+    // The grace travels with the mode: enabling indirect egress without
+    // declaring the reclamation window it lives inside is not expressible.
+    expect((handlerOptions[0] as { byteEgress?: unknown }).byteEgress).toEqual({
+      mode: 'redirect',
+      collectionGraceMs: 60 * 60 * 1000,
+    });
+  });
+
+  it('degrades to direct egress with a warning when the collection grace is too short', async () => {
+    // A signed URL must never outlive its object: with the default 60-second
+    // lifetime, a grace below ten minutes can collect the object while the
+    // URL is still valid. The asset backend is optional, so the
+    // misconfiguration falls back to direct bytes instead of failing the
+    // shared handler.
+    const handlerOptions: unknown[] = [];
+    mockEgressWiring(handlerOptions, 'postgres://egress-grace-test');
+    vi.stubEnv('ASSET_BYTE_EGRESS', 'redirect');
+    vi.stubEnv('ASSET_COLLECTION_GRACE_MS', '30000');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const response = await requestThroughRoute();
+
+    expect(response.status).toBe(204);
+    expect((handlerOptions[0] as { byteEgress?: unknown }).byteEgress).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('ten times'));
+    warn.mockRestore();
+  });
+
+  it('treats an empty collection grace as unset, like the collector does', async () => {
+    const handlerOptions: unknown[] = [];
+    mockEgressWiring(handlerOptions, 'postgres://egress-empty-grace-test');
+    vi.stubEnv('ASSET_BYTE_EGRESS', 'redirect');
+    vi.stubEnv('ASSET_COLLECTION_GRACE_MS', '  ');
+
+    const response = await requestThroughRoute();
+
+    expect(response.status).toBe(204);
+    expect((handlerOptions[0] as { byteEgress?: unknown }).byteEgress).toEqual({
+      mode: 'redirect',
+      collectionGraceMs: 60 * 60 * 1000,
+    });
+  });
+
+  it('declares the grace the collector itself resolved to the handler', async () => {
+    // The handler checks its signed URL lifetime against this number, so it
+    // has to be the number the collector actually runs with.
+    const handlerOptions: unknown[] = [];
+    mockEgressWiring(handlerOptions, 'postgres://egress-shared-grace-test');
+    vi.stubEnv('ASSET_BYTE_EGRESS', 'redirect');
+    vi.stubEnv('ASSET_COLLECTION_GRACE_MS', '7200000');
+
+    const response = await requestThroughRoute();
+
+    expect(response.status).toBe(204);
+    expect((handlerOptions[0] as { byteEgress?: unknown }).byteEgress).toEqual({
+      mode: 'redirect',
+      collectionGraceMs: 7_200_000,
+    });
+  });
+
+  it('keeps redirect egress when an invalid grace resolves to the collector default', async () => {
+    // durationEnv warns and falls back to one hour for an unparseable value,
+    // so the deployment really is running a one-hour grace and redirect egress
+    // is safe. Reading the variable a second way here could disagree.
+    const handlerOptions: unknown[] = [];
+    mockEgressWiring(handlerOptions, 'postgres://egress-invalid-grace-test');
+    vi.stubEnv('ASSET_BYTE_EGRESS', 'redirect');
+    vi.stubEnv('ASSET_COLLECTION_GRACE_MS', 'soon');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const response = await requestThroughRoute();
+
+    expect(response.status).toBe(204);
+    expect((handlerOptions[0] as { byteEgress?: unknown }).byteEgress).toEqual({
+      mode: 'redirect',
+      collectionGraceMs: 60 * 60 * 1000,
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('ASSET_COLLECTION_GRACE_MS'));
+    warn.mockRestore();
+  });
+
+  it.each(['', 'direct'])('keeps byte egress direct for ASSET_BYTE_EGRESS=%j', async (value) => {
+    const handlerOptions: unknown[] = [];
+    mockEgressWiring(handlerOptions, `postgres://egress-default-${value || 'unset'}-test`);
+    vi.stubEnv('ASSET_BYTE_EGRESS', value);
+
+    const response = await requestThroughRoute();
+
+    expect(response.status).toBe(204);
+    expect((handlerOptions[0] as { byteEgress?: unknown }).byteEgress).toBeUndefined();
+  });
+
+  it('warns and keeps direct egress for an unrecognized ASSET_BYTE_EGRESS', async () => {
+    const handlerOptions: unknown[] = [];
+    mockEgressWiring(handlerOptions, 'postgres://egress-bogus-test');
+    vi.stubEnv('ASSET_BYTE_EGRESS', 'proxy');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const response = await requestThroughRoute();
+
+    expect(response.status).toBe(204);
+    expect((handlerOptions[0] as { byteEgress?: unknown }).byteEgress).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('ASSET_BYTE_EGRESS'));
+    warn.mockRestore();
+  });
+
+  it('forwards byte URL signing through the lazy byte store only when the layer supports it', async () => {
+    const assetOptions: unknown[] = [];
+    const signReadUrl = vi.fn().mockResolvedValue('https://objects.example/signed');
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
+      PgAssetByteStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {
+        constructor(_queryable: unknown, options: unknown) {
+          assetOptions.push(options);
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.doMock('@openmaic/storage/server', () => ({
+      createStorageHttpHandler: vi.fn(
+        () =>
+          (
+            _request: unknown,
+            response: { writeHead: (status: number) => void; end: () => void },
+          ) => {
+            response.writeHead(204);
+            response.end();
+          },
+      ),
+    }));
+    vi.doMock('@openmaic/storage/asset/s3-bytes', () => ({
+      loadS3AssetByteStore: vi.fn().mockResolvedValue({ signReadUrl }),
+    }));
+    vi.stubEnv('DATABASE_URL', 'postgres://egress-signing-forward-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    vi.stubEnv('ASSET_S3_BUCKET', 'asset-bucket');
+
+    const response = await requestThroughRoute();
+    expect(response.status).toBe(204);
+
+    const byteStore = (assetOptions[0] as { byteStore?: unknown }).byteStore as {
+      signReadUrl(hash: string, headers: unknown): Promise<unknown>;
+    };
+    const headers = {
+      contentType: 'image/png',
+      cacheControl: 'private, no-store',
+      expiresInSeconds: 60,
+    };
+    // The S3 layer signs, and the wrapper forwards hash and headers untouched.
+    await expect(byteStore.signReadUrl('sha256-x', headers)).resolves.toBe(
+      'https://objects.example/signed',
+    );
+    expect(signReadUrl).toHaveBeenCalledExactlyOnceWith('sha256-x', headers);
+  });
+
+  it('declines byte URL signing when the PostgreSQL byte layer has no signer', async () => {
+    const assetOptions: unknown[] = [];
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    // No signReadUrl on the PostgreSQL byte store: the wrapper must answer
+    // undefined rather than fail, so the handler falls back to direct bytes.
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
+      PgAssetByteStore: class {
+        read = vi.fn().mockResolvedValue(new Uint8Array([1]));
+      },
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {
+        constructor(_queryable: unknown, options: unknown) {
+          assetOptions.push(options);
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.doMock('@openmaic/storage/server', () => ({
+      createStorageHttpHandler: vi.fn(
+        () =>
+          (
+            _request: unknown,
+            response: { writeHead: (status: number) => void; end: () => void },
+          ) => {
+            response.writeHead(204);
+            response.end();
+          },
+      ),
+    }));
+    vi.stubEnv('DATABASE_URL', 'postgres://egress-signing-decline-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+
+    const response = await requestThroughRoute();
+    expect(response.status).toBe(204);
+
+    // With no bucket configured the layer is known to be PostgreSQL, so the
+    // wrapper does not advertise the method at all: resolveIndirect's
+    // feature-detect fails fast instead of taking a lock just to decline.
+    const byteStore = (assetOptions[0] as { byteStore?: unknown }).byteStore as {
+      signReadUrl?: (hash: string, headers: unknown) => Promise<unknown>;
+    };
+    expect(byteStore.signReadUrl).toBeUndefined();
+  });
+});
+
+describe('embedded persistence route -- real handler boundary', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.stubEnv('ASSET_S3_BUCKET', '');
+  });
+
+  // The composed path the mocked tests cannot see: the route's Fetch<->Node
+  // adapter, the real createStorageHttpHandler, and the egress option wiring,
+  // against an in-memory asset store.
+  // The route caches its handler per connection string in a process global that
+  // survives vi.resetModules, so every test here needs its own.
+  function wireRealHandler(
+    stores: unknown[],
+    signed?: string,
+    connectionString = 'postgres://boundary-test',
+  ) {
+    // Earlier tests register a canned 204 mock for the server module; the
+    // point of this test is the real handler, so un-mock it explicitly.
+    vi.doUnmock('@openmaic/storage/server');
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
+      PgAssetByteStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {
+        constructor(_queryable: unknown, _options: unknown) {
+          stores.push(this);
+        }
+        private entries = new Map<string, { bytes: Uint8Array; mime: string; revision: number }>();
+        async put(principal: { key: string }, data: Blob, meta?: { contentType?: string }) {
+          const id = `ast_mem_${this.entries.size + 1}`;
+          this.entries.set(`${principal.key}:${id}`, {
+            bytes: new Uint8Array(await data.arrayBuffer()),
+            mime: meta?.contentType ?? data.type ?? '',
+            revision: 1,
+          });
+          return id;
+        }
+        async identify(principal: { key: string }, ref: string) {
+          const entry = this.entries.get(`${principal.key}:${ref}`);
+          return entry
+            ? { mime: entry.mime, revision: entry.revision, byteLength: entry.bytes.byteLength }
+            : null;
+        }
+        async resolve(principal: { key: string }, ref: string) {
+          const entry = this.entries.get(`${principal.key}:${ref}`);
+          return entry ? { bytes: entry.bytes, mime: entry.mime, revision: entry.revision } : null;
+        }
+        // Present only when the test supplies a URL, mirroring a byte layer
+        // that can sign; absent otherwise, which is the PostgreSQL byte column.
+        resolveIndirect =
+          signed === undefined
+            ? undefined
+            : async (principal: { key: string }, ref: string) => {
+                const entry = this.entries.get(`${principal.key}:${ref}`);
+                // An empty URL stands for a layer that declines to sign after
+                // all, which must degrade to direct bytes.
+                if (entry === undefined) return null;
+                return signed === '' ? undefined : { url: signed, revision: entry.revision };
+              };
+        async remove() {}
+        async replace(principal: { key: string }, ref: string, data: Blob) {
+          const key = `${principal.key}:${ref}`;
+          const entry = this.entries.get(key);
+          if (!entry) return 0;
+          const revision = entry.revision + 1;
+          this.entries.set(key, {
+            bytes: new Uint8Array(await data.arrayBuffer()),
+            mime: entry.mime,
+            revision,
+          });
+          return revision;
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.stubEnv('DATABASE_URL', connectionString);
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+  }
+
+  const authed = (path: string, extraHeaders: Record<string, string> = {}) =>
+    new Request(`http://localhost/api/persistence${path}`, {
+      headers: { authorization: 'Bearer test-token', ...extraHeaders },
+    });
+
+  it('serves a stored asset through the real handler and route adapter', async () => {
+    const stores: Array<{
+      put(principal: { key: string }, data: Blob, meta?: { contentType?: string }): Promise<string>;
+    }> = [];
+    wireRealHandler(stores);
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const deps = { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never };
+
+    // First request initializes the handler and the store.
+    const first = await handlePersistenceRequest(authed('/runtime/sessions'), deps);
+    expect(first.status).not.toBe(500);
+    const store = stores[0]!;
+    const id = await store.put(
+      {
+        // The dev authenticator issues one shared asset principal for every
+        // request, so the stored entry must live under it to be readable.
+        key: 'shared',
+      },
+      new Blob(['real-bytes'], { type: 'text/plain' }),
+      {
+        contentType: 'image/png',
+      },
+    );
+
+    const response = await handlePersistenceRequest(
+      authed(`/assets/${id}/content`, { 'x-learner-key': 'anon:test' }),
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/png');
+    expect(response.headers.get('x-asset-revision')).toBe('1');
+    expect(Buffer.from(await response.arrayBuffer()).toString()).toBe('real-bytes');
+  });
+
+  // The rest of the egress matrix through the same composed path. Redirect mode
+  // has three answers and each is reachable only through real option wiring:
+  // the 302 for a consumer that did not ask, the descriptor for one that did,
+  // and direct bytes when the byte layer turns out not to sign.
+  async function storedAsset(name: string, signed: string | undefined, graceMs = '3600000') {
+    const stores: Array<{
+      put(principal: { key: string }, data: Blob, meta?: { contentType?: string }): Promise<string>;
+    }> = [];
+    wireRealHandler(stores, signed, `postgres://boundary-${name}`);
+    vi.stubEnv('ASSET_BYTE_EGRESS', 'redirect');
+    vi.stubEnv('ASSET_COLLECTION_GRACE_MS', graceMs);
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const deps = { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never };
+    const first = await handlePersistenceRequest(authed('/runtime/sessions'), deps);
+    expect(first.status).not.toBe(500);
+    const id = await stores[0]!.put(
+      {
+        // The dev authenticator issues one shared asset principal for every
+        // request, so the stored entry must live under it to be readable.
+        key: 'shared',
+      },
+      new Blob(['real-bytes'], { type: 'text/plain' }),
+      { contentType: 'image/png' },
+    );
+    return { id, deps, handlePersistenceRequest };
+  }
+
+  it('answers a redirect-egress byte GET with a 302 to the signed URL', async () => {
+    const { id, deps, handlePersistenceRequest } = await storedAsset(
+      'redirect',
+      'https://objects.example/signed',
+    );
+
+    const response = await handlePersistenceRequest(
+      authed(`/assets/${id}/content`, { 'x-learner-key': 'anon:test' }),
+      deps,
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('https://objects.example/signed');
+    expect(response.headers.get('x-asset-revision')).toBe('1');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+  });
+
+  it('answers a descriptor to a client that asks for one', async () => {
+    const { id, deps, handlePersistenceRequest } = await storedAsset(
+      'descriptor',
+      'https://objects.example/signed',
+    );
+
+    const response = await handlePersistenceRequest(
+      authed(`/assets/${id}/content`, {
+        'x-learner-key': 'anon:test',
+        accept: 'application/vnd.openmaic.asset-descriptor+json, */*;q=0.9',
+      }),
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe(
+      'application/vnd.openmaic.asset-descriptor+json',
+    );
+    expect(await response.json()).toEqual({
+      url: 'https://objects.example/signed',
+      revision: 1,
+    });
+  });
+
+  it('serves bytes directly when the byte layer declines to sign', async () => {
+    const { id, deps, handlePersistenceRequest } = await storedAsset('unsigned', '');
+
+    const response = await handlePersistenceRequest(
+      authed(`/assets/${id}/content`, { 'x-learner-key': 'anon:test' }),
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/png');
+    expect(Buffer.from(await response.arrayBuffer()).toString()).toBe('real-bytes');
+  });
+
+  it('serves bytes directly when a short grace degraded the configured egress', async () => {
+    // The route refused redirect egress at wiring time, so the composed handler
+    // never reaches the signer even though this byte layer has one.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { id, deps, handlePersistenceRequest } = await storedAsset(
+      'shortgrace',
+      'https://objects.example/signed',
+      '30000',
+    );
+
+    const response = await handlePersistenceRequest(
+      authed(`/assets/${id}/content`, { 'x-learner-key': 'anon:test' }),
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect(Buffer.from(await response.arrayBuffer()).toString()).toBe('real-bytes');
+    warn.mockRestore();
+  });
 });

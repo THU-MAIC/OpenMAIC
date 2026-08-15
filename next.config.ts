@@ -14,6 +14,13 @@ const nextConfig: NextConfig = {
     '@earendil-works/pi-ai',
     '@earendil-works/pi-agent-core',
     '@openmaic/generation',
+    // Optional peers of @openmaic/storage, reached through deliberately
+    // untraced dynamic imports. Externalizing keeps them out of the bundle,
+    // and the static anchor in lib/persistence/asset-byte-store.ts gets them
+    // traced into the standalone image -- without it, S3 mode and redirect
+    // egress cannot resolve their SDK in the shipped deployment.
+    '@aws-sdk/client-s3',
+    '@aws-sdk/s3-request-presigner',
   ],
   experimental: {
     proxyClientMaxBodySize: '200mb',
