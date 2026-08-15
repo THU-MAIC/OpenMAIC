@@ -106,17 +106,29 @@ export async function resolveStoredBytes(
       ? effectiveMediaTask(effectiveRef, stageId)
       : undefined;
   const gate = options.resolutionGating ? task : undefined;
+  // A SUPPLIED row's `error` verdict is taken here, before the pool is
+  // awaited, because that is where the pre-refactor caller took it: the row is
+  // a live object, so deciding after the await would let an `error` set (or
+  // cleared) while the pool lookup is pending change the answer. A row this
+  // function loads itself is judged when it is read, after the pool miss --
+  // also as before, since that read did not exist until then.
+  const suppliedRow = options.record && !options.record.error ? options.record : undefined;
 
   const pooled = await pooledBytes(effectiveRef, gate, options);
   if (pooled) return pooled;
 
-  const record =
-    options.record ??
-    (options.loadCompatRow && stageId
+  const record = options.record
+    ? suppliedRow
+    : options.loadCompatRow && stageId
       ? await db.mediaFiles.get(mediaFileKey(stageId, effectiveRef)).catch(() => undefined)
-      : undefined);
-  if (record && !record.error) {
-    const stored = await compatRowBytes(record, options);
+      : undefined;
+  // `suppliedRow` already carries the pre-await verdict, so it is NOT
+  // re-examined here -- re-reading `error` off the live object is exactly the
+  // late decision this snapshot exists to avoid. A row loaded above is judged
+  // now, when it was read.
+  const usableRow = options.record ? suppliedRow : record && !record.error ? record : undefined;
+  if (usableRow) {
+    const stored = await compatRowBytes(usableRow, options);
     if (stored) {
       // Gating off means `gate` is undefined and the resolved lease always
       // yields a URL, so this one check covers both caller shapes.

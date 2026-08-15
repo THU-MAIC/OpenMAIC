@@ -316,4 +316,54 @@ describe('shared stored-bytes resolution', () => {
     expect(await bytes?.text()).toBe('row-bytes');
     expect(mocks.withAssetUrl).toHaveBeenCalledWith('gen_img_7', expect.any(Function));
   });
+
+  /**
+   * The pre-refactor video path decided whether a SUPPLIED row was usable
+   * before it awaited the pool. The row is a live object, so taking that
+   * verdict after the await would let an `error` landing mid-lookup change
+   * which bytes the export ships.
+   */
+  it("takes a supplied row's error verdict before the pool lookup", async () => {
+    const record = {
+      id: 'stage-1:ast_img_1',
+      blob: new Blob(['row-bytes']),
+    } as unknown as MediaFileRecord;
+    mocks.withAssetUrl.mockImplementation(
+      async (_ref: string, use: (url: string | null) => Promise<Blob | null>) => {
+        (record as { error?: string }).error = 'MEDIA_TASK_FAILED';
+        return use(null);
+      },
+    );
+
+    const bytes = await resolveStoredBytes('ast_img_1', {
+      stageId: 'stage-1',
+      record,
+      fetchPolicy: STRICT,
+    });
+
+    expect(await bytes?.text()).toBe('row-bytes');
+  });
+
+  /** The same snapshot in the other direction: a clear mid-lookup is ignored too. */
+  it('keeps an errored supplied row excluded when the flag clears mid-lookup', async () => {
+    const record = {
+      id: 'stage-1:ast_img_1',
+      blob: new Blob(['row-bytes']),
+      error: 'MEDIA_TASK_FAILED',
+    } as unknown as MediaFileRecord;
+    mocks.withAssetUrl.mockImplementation(
+      async (_ref: string, use: (url: string | null) => Promise<Blob | null>) => {
+        delete (record as { error?: string }).error;
+        return use(null);
+      },
+    );
+
+    expect(
+      await resolveStoredBytes('ast_img_1', {
+        stageId: 'stage-1',
+        record,
+        fetchPolicy: STRICT,
+      }),
+    ).toBeNull();
+  });
 });
