@@ -484,6 +484,24 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
  * interleave and a settling cascade cannot expose another one's keep-window
  * (the warm-ghost retention in `loadFromStorage`) as already settled.
  */
+type WorkspaceStageCleanupTables = Pick<
+  typeof db,
+  'courseMetadata' | 'teacherVariants' | 'importJobs'
+>;
+
+/**
+ * The workspace tables are part of database v18. The runtime guard keeps the
+ * storage module compatible with focused tests and older injected database
+ * adapters that intentionally expose only the upstream core tables.
+ */
+function getWorkspaceStageCleanupTables(): WorkspaceStageCleanupTables | null {
+  const candidate = db as unknown as Partial<WorkspaceStageCleanupTables>;
+  if (!candidate.courseMetadata || !candidate.teacherVariants || !candidate.importJobs) {
+    return null;
+  }
+  return candidate as WorkspaceStageCleanupTables;
+}
+
 const inFlightStageDeletions = new Map<string, Promise<void>>();
 
 /**
@@ -630,15 +648,37 @@ async function performStageDeletion(stageId: string): Promise<void> {
             }
 
             // Migration retains legacy rows, but an explicit whole-stage deletion does not.
-            // Folder membership is device-local organization metadata; drop it too.
+            // Folder/workspace metadata is device-local organization data; drop
+            // the deleted course's rows while retaining detached import history.
+            const workspaceTables = getWorkspaceStageCleanupTables();
             await db.transaction(
               'rw',
-              [db.stages, db.scenes, db.stageOutlines, db.stageFolders],
+              [
+                db.stages,
+                db.scenes,
+                db.stageOutlines,
+                db.stageFolders,
+                ...(workspaceTables
+                  ? [
+                      workspaceTables.courseMetadata,
+                      workspaceTables.teacherVariants,
+                      workspaceTables.importJobs,
+                    ]
+                  : []),
+              ],
               async () => {
                 await db.stages.delete(stageId);
                 await db.scenes.where('stageId').equals(stageId).delete();
                 await db.stageOutlines.delete(stageId);
                 await db.stageFolders.delete(stageId);
+                if (workspaceTables) {
+                  await workspaceTables.courseMetadata.delete(stageId);
+                  await workspaceTables.teacherVariants.delete(stageId);
+                  await workspaceTables.importJobs
+                    .where('stageId')
+                    .equals(stageId)
+                    .modify({ stageId: undefined });
+                }
               },
             );
 

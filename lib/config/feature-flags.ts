@@ -18,7 +18,8 @@ function readBoolean(envValue: string | undefined): boolean {
  * state.
  */
 export function isMaicEditorEnabled(): boolean {
-  return readBoolean(process.env.NEXT_PUBLIC_MAIC_EDITOR_ENABLED);
+  const configured = process.env.NEXT_PUBLIC_MAIC_EDITOR_ENABLED;
+  return configured === undefined ? true : readBoolean(configured);
 }
 
 /**

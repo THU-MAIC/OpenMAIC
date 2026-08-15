@@ -11,7 +11,14 @@ export function ServerProvidersInit() {
   const fetchServerProviders = useSettingsStore((state) => state.fetchServerProviders);
 
   useEffect(() => {
-    fetchServerProviders();
+    if (navigator.onLine) {
+      void fetchServerProviders();
+      return;
+    }
+
+    const fetchWhenOnline = () => void fetchServerProviders();
+    window.addEventListener('online', fetchWhenOnline, { once: true });
+    return () => window.removeEventListener('online', fetchWhenOnline);
   }, [fetchServerProviders]);
 
   return null;

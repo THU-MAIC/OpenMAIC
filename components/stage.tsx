@@ -55,6 +55,7 @@ export function Stage({
   const editLock = useEditModeLock(stage?.id);
 
   const playbackRef = useRef<PlaybackChromeRootHandle>(null);
+  const initialEditRequestedRef = useRef(false);
 
   // Pro Switch handler. Edit→playback is a plain flip (PlaybackChromeRoot
   // will mount fresh; its engine effect re-inits). Playback→edit must
@@ -87,6 +88,16 @@ export function Stage({
     }
     setMode('edit');
   }, [editLock, mode, setMode]);
+
+  // The teacher workspace links to `?mode=edit` after creating an independent
+  // adaptation copy. Enter authoring once the first editable scene is ready;
+  // direct classroom links keep the normal playback experience.
+  useEffect(() => {
+    if (initialEditRequestedRef.current || mode === 'edit' || !isEditable) return;
+    if (new URLSearchParams(window.location.search).get('mode') !== 'edit') return;
+    initialEditRequestedRef.current = true;
+    void handleToggleEditMode();
+  }, [handleToggleEditMode, isEditable, mode]);
 
   // Auto-exit edit mode when the current scene becomes uneditable
   // (pending generation, no scenes, currently generating).
