@@ -864,7 +864,7 @@ describe('database runtime chat integration', () => {
     const { db } = await import('@/lib/utils/database');
     await db.open();
 
-    expect(db.verno).toBe(17);
+    expect(db.verno).toBe(18);
     expect([...db.backendDB().objectStoreNames]).not.toContain('chatStorageLocks');
     expect([...db.backendDB().objectStoreNames]).toContain('chatRestoreStaging');
   });
@@ -1381,6 +1381,55 @@ describe('database runtime chat integration', () => {
     await deleteStageWithRelatedData(stageId);
 
     await expect(db.mediaFiles.where('stageId').equals(stageId).count()).resolves.toBe(0);
+  });
+
+  it('deletes workspace metadata and unlinks import history with the stage cascade', async () => {
+    const { db, deleteStageWithRelatedData } = await import('@/lib/utils/database');
+    const stageId = 'stage-delete-workspace-data';
+    await db.stages.put({ id: stageId, name: 'Delete all', createdAt: 1_000, updatedAt: 2_000 });
+    await db.courseMetadata.put({
+      stageId,
+      title: 'Delete all',
+      kind: 'original',
+      domain: 'subject',
+      gradeBands: [],
+      tags: [],
+      source: { kind: 'legacy' },
+      offlineStatus: 'unchecked',
+      offlineIssueCount: 0,
+      favorite: false,
+      archived: false,
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    });
+    await db.teacherVariants.put({
+      stageId,
+      baseStageId: 'stage-delete-source',
+      rootStageId: 'stage-delete-source',
+      baseUpdatedAt: 900,
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    });
+    await db.importJobs.put({
+      id: 'stage-delete-job',
+      sourceType: 'zip',
+      sourceName: 'course.maic.zip',
+      status: 'completed',
+      progress: 100,
+      stageId,
+      offlineStatus: 'complete',
+      warnings: [],
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    });
+
+    await deleteStageWithRelatedData(stageId);
+
+    await expect(db.courseMetadata.get(stageId)).resolves.toBeUndefined();
+    await expect(db.teacherVariants.get(stageId)).resolves.toBeUndefined();
+    const retainedJob = await db.importJobs.get('stage-delete-job');
+    expect(retainedJob).toBeDefined();
+    expect(retainedJob?.stageId).toBeUndefined();
   });
 
   it('keeps the maintenance lock until a timed-out stage cascade actually settles', async () => {

@@ -5,6 +5,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useRouter } from 'next/navigation';
 import type { StageMode } from '@/lib/types/stage';
 import { HeaderControls } from './stage/header-controls';
+import { useStageStore } from '@/lib/store';
 
 interface HeaderProps {
   readonly currentSceneTitle: string;
@@ -16,15 +17,16 @@ interface HeaderProps {
 export function Header({ currentSceneTitle, mode, canEdit, onToggleEditMode }: HeaderProps) {
   const { t } = useI18n();
   const router = useRouter();
+  const stageId = useStageStore((state) => state.stage?.id);
 
   return (
     <>
       <header className="h-20 px-8 flex items-center justify-between z-10 bg-transparent gap-4">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <button
-            onClick={() => router.push('/')}
+            onClick={() => router.push(stageId ? `/courses/${stageId}` : '/')}
             className="shrink-0 p-2 rounded-lg text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-            title={t('generation.backToHome')}
+            title="返回课程详情"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>

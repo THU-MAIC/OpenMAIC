@@ -33,6 +33,11 @@ import type { ChatStorageOptions } from './chat-storage';
 import type { AppDocument } from '@/lib/document-store';
 import { BrowserKVStore } from '@openmaic/storage';
 import { clearAssetPool } from '@/lib/media/asset-pool';
+import type {
+  CourseMetadataRecord,
+  ImportJobRecord,
+  TeacherVariantRecord,
+} from '@/lib/workspace/types';
 
 const log = createLogger('Database');
 
@@ -286,7 +291,7 @@ export function mediaFileKey(stageId: string, elementId: string): string {
 // ==================== Database Definition ====================
 
 const DATABASE_NAME = 'MAIC-Database';
-const _DATABASE_VERSION = 17;
+const _DATABASE_VERSION = 18;
 
 /**
  * MAIC Database Instance
@@ -309,6 +314,12 @@ class MAICDatabase extends Dexie {
   agentEditSessions!: EntityTable<AgentEditSessionRecord, 'id'>;
   folders!: EntityTable<FolderRecord, 'id'>;
   stageFolders!: EntityTable<StageFolderMembership, 'stageId'>;
+  /** Workspace catalogue metadata; the lesson document remains in `stages`. */
+  courseMetadata!: EntityTable<CourseMetadataRecord, 'stageId'>;
+  /** Editable-copy lineage, keyed by the cloned stage id. */
+  teacherVariants!: EntityTable<TeacherVariantRecord, 'stageId'>;
+  /** Durable history for ZIP/folder/library imports. */
+  importJobs!: EntityTable<ImportJobRecord, 'id'>;
 
   constructor() {
     super(DATABASE_NAME);
@@ -552,6 +563,44 @@ class MAICDatabase extends Dexie {
       folders: 'id, order',
       stageFolders: 'stageId, folderId',
     });
+
+    // Version 18: Add the integrated-workspace catalogue without changing the
+    // document-store aggregate or v0.3.2's asset-pool ownership. Existing
+    // legacy stage mirrors receive conservative metadata so they immediately
+    // appear in the workspace; workspace import/copy flows create metadata with
+    // their course writes.
+    this.version(18)
+      .stores({
+        courseMetadata:
+          'stageId, kind, domain, subject, offlineStatus, favorite, archived, updatedAt, lastOpenedAt',
+        teacherVariants: 'stageId, baseStageId, rootStageId, updatedAt',
+        importJobs: 'id, status, sourceType, stageId, createdAt, updatedAt',
+      })
+      .upgrade(async (tx) => {
+        const stages = (await tx.table('stages').toArray()) as StageRecord[];
+        const metadata = tx.table('courseMetadata');
+        for (const stage of stages) {
+          const existing = await metadata.get(stage.id);
+          if (existing) continue;
+
+          await metadata.put({
+            stageId: stage.id,
+            title: stage.name || 'Untitled Course',
+            summary: stage.description,
+            kind: 'original',
+            domain: 'subject',
+            gradeBands: [],
+            tags: [],
+            source: { kind: 'legacy' },
+            offlineStatus: 'unchecked',
+            offlineIssueCount: 0,
+            favorite: false,
+            archived: false,
+            createdAt: stage.createdAt,
+            updatedAt: stage.updatedAt,
+          } satisfies CourseMetadataRecord);
+        }
+      });
   }
 }
 
@@ -972,6 +1021,10 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
             db.stageOutlines,
             db.generatedAgents,
             db.agentEditSessions,
+            db.stageFolders,
+            db.courseMetadata,
+            db.teacherVariants,
+            db.importJobs,
           ],
           async () => {
             await db.stages.delete(stageId);
@@ -982,6 +1035,12 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
             await db.stageOutlines.delete(stageId);
             await db.generatedAgents.where('stageId').equals(stageId).delete();
             await db.agentEditSessions.where('stageId').equals(stageId).delete();
+            await db.stageFolders.delete(stageId);
+            await db.courseMetadata.delete(stageId);
+            await db.teacherVariants.delete(stageId);
+            // Import history remains useful after a course is removed; only
+            // detach its now-invalid course link.
+            await db.importJobs.where('stageId').equals(stageId).modify({ stageId: undefined });
           },
         );
         // Learner-runtime data lives in a separate IndexedDB database, so it is

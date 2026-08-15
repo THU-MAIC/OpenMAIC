@@ -203,10 +203,10 @@
     "exitFullscreen": "離開全螢幕",
     "editCourse": "編輯課程",
     "doneEditing": "完成編輯",
-    "proModeDisabledHint": "此頁面無法編輯——開啟課程投影片以使用 Pro 模式編輯。"
+    "proModeDisabledHint": "本頁不支援備課編輯，請先開啟任一課程頁面。"
   },
   "edit": {
-    "proMode": "專業模式",
+    "proMode": "備課編輯",
     "undo": "復原",
     "redo": "重做",
     "delete": "刪除",

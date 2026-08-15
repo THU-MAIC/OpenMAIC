@@ -11,6 +11,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { ServerProvidersInit } from '@/components/server-providers-init';
 import { StorageHealthNotice } from '@/components/storage-health-notice';
 import { AccessCodeGuard } from '@/components/access-code-guard';
+import { OfflineBootstrap } from '@/components/offline/offline-bootstrap';
 
 // The UI font is loaded from @fontsource's stylesheet rather than next/font,
 // because only the stylesheet carries the per-subset `unicode-range`
@@ -28,9 +29,11 @@ import { AccessCodeGuard } from '@/components/access-code-guard';
 import '@fontsource-variable/inter';
 
 export const metadata: Metadata = {
-  title: 'OpenMAIC',
-  description:
-    'The open-source AI interactive classroom. Upload a PDF to instantly generate an immersive, multi-agent learning experience.',
+  title: {
+    default: 'OpenMAIC 教师课程工作台',
+    template: '%s · OpenMAIC',
+  },
+  description: '本机优先的 OpenMAIC 教师课程工作台：导入、整理、适配并离线打开互动课程。',
 };
 
 export default function RootLayout({
@@ -39,11 +42,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="zh-CN" suppressHydrationWarning>
       <body
         className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}
         suppressHydrationWarning
       >
+        <OfflineBootstrap />
         <ThemeProvider>
           <I18nProvider>
             <ServerProvidersInit />
