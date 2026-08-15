@@ -54,15 +54,23 @@ export interface ResolveStoredBytesOptions {
   readonly record?: MediaFileRecord;
   /**
    * Read the compatibility row from Dexie by compound key when no `record`
-   * was supplied. A failed read is treated as a missing row.
+   * was supplied. A failed read is treated as a missing row. Requires
+   * `stageId`: the row is keyed by `stageId:ref`, so with no stage this level
+   * is skipped entirely -- the same gate the pre-refactor callers applied.
    */
   readonly loadCompatRow?: boolean;
-  /** Allow the row's CDN URL (`ossKey`) as a byte source when its local blob is empty. */
+  /**
+   * Allow the row's CDN URL (`ossKey`) as a byte source when its local blob is
+   * empty. Applies to the compatibility level only, so it is inert unless a
+   * `record` was supplied or `loadCompatRow` found one.
+   */
   readonly compatRowCdnFallback?: boolean;
   /**
    * Final level: fetch the URL the media-resolution state machine resolves
    * from the ref's task, so generated media still exports when neither the
-   * pool nor the compatibility row holds its bytes.
+   * pool nor the compatibility row holds its bytes. Independent of
+   * `resolutionGating` -- the task is looked up for this level whether or not
+   * the earlier levels are gated.
    */
   readonly taskUrlFallback?: boolean;
   /**
@@ -87,9 +95,19 @@ export async function resolveStoredBytes(
 ): Promise<Blob | null> {
   const { stageId, fetchPolicy } = options;
   const effectiveRef = options.record ? mediaRefFromRecordId(options.record.id) : ref;
-  const task = options.resolutionGating ? effectiveMediaTask(effectiveRef, stageId) : undefined;
+  // Two independent concerns need the task: gating (which suppresses stale
+  // bytes) and the final URL fallback (which resolves the task's own address).
+  // Only the gating levels read it conditionally -- deriving it from
+  // `resolutionGating` alone would leave `taskUrlFallback` inert without it,
+  // which is not what the option promises and not what the pre-refactor
+  // callers did (their task lookup was unconditional).
+  const task =
+    options.resolutionGating || options.taskUrlFallback
+      ? effectiveMediaTask(effectiveRef, stageId)
+      : undefined;
+  const gate = options.resolutionGating ? task : undefined;
 
-  const pooled = await pooledBytes(effectiveRef, task, options);
+  const pooled = await pooledBytes(effectiveRef, gate, options);
   if (pooled) return pooled;
 
   const record =
@@ -100,9 +118,9 @@ export async function resolveStoredBytes(
   if (record && !record.error) {
     const stored = await compatRowBytes(record, options);
     if (stored) {
-      // Without gating the task is undefined and the resolved lease always
+      // Gating off means `gate` is undefined and the resolved lease always
       // yields a URL, so this one check covers both caller shapes.
-      const state = resolveMediaRef(effectiveRef, task, {
+      const state = resolveMediaRef(effectiveRef, gate, {
         status: 'resolved',
         url: 'dexie:media',
       });
@@ -148,7 +166,9 @@ async function compatRowBytes(
   record: MediaFileRecord,
   options: ResolveStoredBytesOptions,
 ): Promise<Blob | null> {
-  if (record.blob.size > 0) return record.blob;
+  // The blob is declared required, but the guard is the reason this function
+  // honors the module's "never throws" contract for a row that lost it.
+  if (record.blob && record.blob.size > 0) return record.blob;
   if (!options.compatRowCdnFallback || !record.ossKey) return null;
   return fetchBytes(record.ossKey, options.fetchPolicy);
 }
