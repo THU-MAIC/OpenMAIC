@@ -703,7 +703,7 @@ Optional config in `~/.openclaw/openclaw.json`:
 - **Text-to-Speech** — Multiple voice providers with customizable voices
 - **Speech Recognition** — Talk to your AI teacher using your microphone
 - **Web Search** — Agents search the web for up-to-date information during class
-- **i18n** — Interface supports 11 languages: Chinese (Simplified & Traditional), English, Japanese, Korean, Russian, Arabic, Portuguese (Brazil), Spanish (Mexico), French, and Vietnamese
+- **i18n** — Interface supports 12 locales across 11 languages: Simplified Chinese, Traditional Chinese, English, Japanese, Korean, Russian, Arabic, Portuguese (Brazil), Spanish (Mexico), French, Vietnamese, and German
 - **Dark Mode** — Easy on the eyes for late-night study sessions
 
 ---
@@ -778,7 +778,7 @@ OpenMAIC/
 │   ├── media/                  #   Image & video generation providers
 │   ├── export/                 #   PPTX & HTML export
 │   ├── hooks/                  #   React custom hooks (55+)
-│   ├── i18n/                   #   Internationalization (zh-CN, zh-TW, en-US, ja-JP, ru-RU, ar-SA, pt-BR)
+│   ├── i18n/                   #   Internationalization (zh-CN, zh-TW, en-US, ja-JP, ko-KR, ru-RU, ar-SA, pt-BR, es-MX, fr-FR, vi-VN, de-DE)
 │   └── ...                     #   prosemirror, storage, pdf, web-search, utils
 │
 ├── components/                 # React UI components
