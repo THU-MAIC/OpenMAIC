@@ -4,6 +4,43 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.2] - 2026-08-14
+
+### Features
+
+- **Video export hardening** — fidelity polish for spotlight geometry, video clips, formulas, and subtitles [#952](https://github.com/THU-MAIC/OpenMAIC/pull/952), deterministic Quiz/PBL cover cards [#995](https://github.com/THU-MAIC/OpenMAIC/pull/995), self-contained static interactive HTML capture [#1086](https://github.com/THU-MAIC/OpenMAIC/pull/1086), deterministic Quiz question-list scrolling [#1102](https://github.com/THU-MAIC/OpenMAIC/pull/1102), a stable RenderExecutor seam [#1104](https://github.com/THU-MAIC/OpenMAIC/pull/1104), explicit CPU resource profiles [#1105](https://github.com/THU-MAIC/OpenMAIC/pull/1105), and effective parallel capture in the render service [#1042](https://github.com/THU-MAIC/OpenMAIC/pull/1042)
+- **Server-backed persistence completion** — learner-data cutover: quiz + playback onto RuntimeStore [#955](https://github.com/THU-MAIC/OpenMAIC/pull/955); document-persistence cutover: stage/scene/outline onto DocumentStore [#965](https://github.com/THU-MAIC/OpenMAIC/pull/965); server-backed documents over an HTTP contract with a Postgres backend and one reference server [#979](https://github.com/THU-MAIC/OpenMAIC/pull/979); a one-command server-backed stack (compose profile + embedded API + docs) [#982](https://github.com/THU-MAIC/OpenMAIC/pull/982); dirty-set incremental saves with operation-level flush [#983](https://github.com/THU-MAIC/OpenMAIC/pull/983); settings/user-profile persistence through KVStore [#1001](https://github.com/THU-MAIC/OpenMAIC/pull/1001); the KV HTTP contract and clients promoted to main [#1020](https://github.com/THU-MAIC/OpenMAIC/pull/1020); learner whiteboard RuntimeStore foundation [#1075](https://github.com/THU-MAIC/OpenMAIC/pull/1075)
+- **Asset registry** — allocated asset ids over the content-addressed blob layer [#1024](https://github.com/THU-MAIC/OpenMAIC/pull/1024), unified media asset reference types [#1038](https://github.com/THU-MAIC/OpenMAIC/pull/1038), generated assets allocated through the registry [#1039](https://github.com/THU-MAIC/OpenMAIC/pull/1039), a server asset registry over a pluggable byte layer [#1077](https://github.com/THU-MAIC/OpenMAIC/pull/1077), and the asset backend wired into the app [#1089](https://github.com/THU-MAIC/OpenMAIC/pull/1089)
+- **`@openmaic/generation` package** — scaffolding with pipeline types and packaged prompt assets [#1063](https://github.com/THU-MAIC/OpenMAIC/pull/1063); outline generation [#1065](https://github.com/THU-MAIC/OpenMAIC/pull/1065) and scene generation + PBL single-call planning [#1087](https://github.com/THU-MAIC/OpenMAIC/pull/1087) moved into the package; the app consumes the package everywhere and `lib/generation` is deleted [#1090](https://github.com/THU-MAIC/OpenMAIC/pull/1090)
+- **SDK contract ownership** — interactive and PBL content kinds promoted into `@openmaic/dsl` [#1070](https://github.com/THU-MAIC/OpenMAIC/pull/1070), app consumes the contract's interactive/widget types [#1073](https://github.com/THU-MAIC/OpenMAIC/pull/1073) and PBL project types [#1079](https://github.com/THU-MAIC/OpenMAIC/pull/1079), and the renderer decouples its editing UI from the app [#1072](https://github.com/THU-MAIC/OpenMAIC/pull/1072)
+- Course folder grouping [#1005](https://github.com/THU-MAIC/OpenMAIC/pull/1005) (by @CXuPercy)
+- Local FunASR ASR provider [#1044](https://github.com/THU-MAIC/OpenMAIC/pull/1044)
+- Claude (`claude search`) as a web-search provider [#393](https://github.com/THU-MAIC/OpenMAIC/pull/393) (by @joseph-mpo-yeti)
+- Per-stage routing for `generate-classroom` instead of one model [#1048](https://github.com/THU-MAIC/OpenMAIC/pull/1048); evidence-aware Pi Director context runtime [#971](https://github.com/THU-MAIC/OpenMAIC/pull/971); optional playback canvas renderer [#958](https://github.com/THU-MAIC/OpenMAIC/pull/958)
+- Amazon Bedrock LLM provider [#538](https://github.com/THU-MAIC/OpenMAIC/pull/538) (by @littlebullGit), Atlas Cloud LLM provider [#948](https://github.com/THU-MAIC/OpenMAIC/pull/948) (by @binyangzhu000-sudo), latest Claude/Gemini/Kimi/Grok models [#993](https://github.com/THU-MAIC/OpenMAIC/pull/993), and Grok 4.6 [#1113](https://github.com/THU-MAIC/OpenMAIC/pull/1113)
+- French (fr-FR) locale [#1068](https://github.com/THU-MAIC/OpenMAIC/pull/1068) (by @momo2lajoie), Spanish (Mexico) locale [#942](https://github.com/THU-MAIC/OpenMAIC/pull/942) (by @davidmedel), Vietnamese (vi-VN) locale [#1025](https://github.com/THU-MAIC/OpenMAIC/pull/1025) (by @niitbeo), and 432 reviewed zh-TW translations [#526](https://github.com/THU-MAIC/OpenMAIC/pull/526) (by @alvinets)
+
+### Bug Fixes
+
+- Persistence: stop corrupting binary response bodies in the route adapter [#1088](https://github.com/THU-MAIC/OpenMAIC/pull/1088); omit undefined object fields at persistence boundaries [#992](https://github.com/THU-MAIC/OpenMAIC/pull/992); bind default fetch to globalThis in both HTTP store clients [#984](https://github.com/THU-MAIC/OpenMAIC/pull/984)
+- Chat: harden runtime sync, legacy migration, and record validation [#1050](https://github.com/THU-MAIC/OpenMAIC/pull/1050); add opt-in streaming chat compatibility [#990](https://github.com/THU-MAIC/OpenMAIC/pull/990)
+- Access code: refetch server providers after the code is accepted [#1081](https://github.com/THU-MAIC/OpenMAIC/pull/1081)
+- Render service: make parallel capture effective [#1042](https://github.com/THU-MAIC/OpenMAIC/pull/1042); keep the entrypoint LF so the image starts on Windows [#1027](https://github.com/THU-MAIC/OpenMAIC/pull/1027)
+- i18n: load every Inter subset so non-Latin text keeps the UI font [#1026](https://github.com/THU-MAIC/OpenMAIC/pull/1026); translate ASR provider names in the generation toolbar [#1028](https://github.com/THU-MAIC/OpenMAIC/pull/1028); localize Pro mode right rail labels [#1023](https://github.com/THU-MAIC/OpenMAIC/pull/1023)
+- Render whiteboard math via KaTeX instead of raw LaTeX text [#938](https://github.com/THU-MAIC/OpenMAIC/pull/938); keep arrowheads visible when toggling thumbnails [#1045](https://github.com/THU-MAIC/OpenMAIC/pull/1045)
+- AI: omit zero SiliconFlow thinking budget [#1035](https://github.com/THU-MAIC/OpenMAIC/pull/1035); harden shared Pi transport contracts [#1108](https://github.com/THU-MAIC/OpenMAIC/pull/1108)
+- Importer: handle custom shapes without paths [#1015](https://github.com/THU-MAIC/OpenMAIC/pull/1015)
+- Vocational mode: keep the toggle thumb within the track [#1032](https://github.com/THU-MAIC/OpenMAIC/pull/1032)
+- Editor packages: add npm provenance metadata [#1098](https://github.com/THU-MAIC/OpenMAIC/pull/1098)
+- Release: dedupe the published dsl and close two release-path blind spots [#1019](https://github.com/THU-MAIC/OpenMAIC/pull/1019); hand published versions to the marker job [#1076](https://github.com/THU-MAIC/OpenMAIC/pull/1076)
+
+### Other Changes
+
+- PBL: retire the v1 write path and dead UI, converge on v2 [#1060](https://github.com/THU-MAIC/OpenMAIC/pull/1060); split the planner core from the loop with an injectable LLM call path [#1069](https://github.com/THU-MAIC/OpenMAIC/pull/1069); pin single-call prompt goldens [#1071](https://github.com/THU-MAIC/OpenMAIC/pull/1071); route runtime agents through the shared LLM entry point [#1006](https://github.com/THU-MAIC/OpenMAIC/pull/1006)
+- Document transform pipeline foundation [#920](https://github.com/THU-MAIC/OpenMAIC/pull/920); choreography overlays driven from descriptors [#947](https://github.com/THU-MAIC/OpenMAIC/pull/947); single-source the generated agent roster on the stage document [#994](https://github.com/THU-MAIC/OpenMAIC/pull/994)
+- Publish validated package tarballs [#1040](https://github.com/THU-MAIC/OpenMAIC/pull/1040); publish storage and enforce version bumps [#998](https://github.com/THU-MAIC/OpenMAIC/pull/998); publish the OpenMAIC skill to ClawHub [#1056](https://github.com/THU-MAIC/OpenMAIC/pull/1056)
+- Docs refresh and synchronization [#996](https://github.com/THU-MAIC/OpenMAIC/pull/996); align the environment variable template [#1107](https://github.com/THU-MAIC/OpenMAIC/pull/1107); stabilize the Hyperframes lint command [#1097](https://github.com/THU-MAIC/OpenMAIC/pull/1097)
+
 ## [0.3.1] - 2026-07-21
 
 ### Features

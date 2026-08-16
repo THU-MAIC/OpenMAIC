@@ -4,7 +4,11 @@ import { Readable } from 'node:stream';
 import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
 import { PgDocumentStore, ensureDocumentSchema } from '@openmaic/storage/document/pg';
 import { PgRuntimeStore, ensureSchema } from '@openmaic/storage/runtime/pg';
-import { createStorageHttpHandler } from '@openmaic/storage/server';
+import {
+  createStorageHttpHandler,
+  DEFAULT_SIGNED_URL_TTL_SECONDS,
+  type AssetIndirectByteEgress,
+} from '@openmaic/storage/server';
 import {
   nodePostgresTransaction,
   type ConnectableQueryable,
@@ -13,6 +17,7 @@ import { Pool } from 'pg';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { lazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
+import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import { authenticatePersistenceRequest } from '@/lib/persistence/server-auth';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 
@@ -35,6 +40,50 @@ const handlerState = (globalState[HANDLER_STATE_KEY] ??= {});
 
 function jsonError(status: number, code: string, message: string): Response {
   return Response.json({ error: { code, message } }, { status });
+}
+
+/**
+ * ASSET_BYTE_EGRESS: set to `redirect` to answer asset byte GETs with a 302 to
+ * a short-lived signed URL, when the byte layer can sign (S3 can; the
+ * PostgreSQL byte column cannot, and falls back to direct bytes). Anything
+ * else, including unset and `direct`, keeps the default byte-for-byte
+ * behavior. The tradeoff this opts into -- the redirect target names the
+ * content hash -- is specified in the storage package's asset HTTP contract.
+ */
+function configuredAssetByteEgress(value: string | undefined): 'redirect' | undefined {
+  const raw = value?.trim().toLowerCase();
+  if (raw === 'redirect') return 'redirect';
+  if (raw === undefined || raw === '' || raw === 'direct') return undefined;
+  console.warn(`ASSET_BYTE_EGRESS=${value} is not recognized; using direct byte egress`);
+  return undefined;
+}
+
+/**
+ * Redirect egress and the collection grace must agree: a signed URL that
+ * outlives its object turns a valid read into an object-store error. The
+ * handler enforces that invariant itself, on the grace passed here, and this
+ * grace is resolved by the collector's own parser so both components run on one
+ * number.
+ *
+ * A grace too short for the default lifetime degrades to direct egress with a
+ * loud warning rather than failing initialization: the asset backend is
+ * optional, and its misconfiguration must never take document and runtime
+ * traffic down with it.
+ */
+function indirectEgressWithinGrace(
+  egress: 'redirect' | undefined,
+): AssetIndirectByteEgress | undefined {
+  if (egress !== 'redirect') return undefined;
+  const collectionGraceMs = resolveAssetCollectionGraceMs();
+  if (collectionGraceMs < DEFAULT_SIGNED_URL_TTL_SECONDS * 1000 * 10) {
+    console.warn(
+      `ASSET_BYTE_EGRESS=redirect requires ASSET_COLLECTION_GRACE_MS to be at least ten times ` +
+        `the signed URL lifetime (${DEFAULT_SIGNED_URL_TTL_SECONDS}s); got ${collectionGraceMs}ms. ` +
+        `Falling back to direct byte egress.`,
+    );
+    return undefined;
+  }
+  return { mode: 'redirect', collectionGraceMs };
 }
 
 async function createPersistenceHandler(
@@ -74,6 +123,9 @@ async function createPersistenceHandler(
     // runs from instrumentation.ts instead, over the byte store this same
     // lib/persistence/asset-byte-store selection produces, so the collector
     // always deletes through the layer the request path wrote through.
+    const byteEgress = indirectEgressWithinGrace(
+      configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
+    );
     return createStorageHttpHandler(runtimeStore, documentStore, {
       authenticate: authenticatePersistenceRequest,
       authorizeMerge: async () => false,
@@ -83,6 +135,7 @@ async function createPersistenceHandler(
       validateStage: validateAppStage,
       payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
       assetStore,
+      ...(byteEgress === undefined ? {} : { byteEgress }),
     });
   } catch (error) {
     await pool.end().catch(() => {});

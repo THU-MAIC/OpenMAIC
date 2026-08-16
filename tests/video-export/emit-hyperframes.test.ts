@@ -243,6 +243,54 @@ describe('emitHyperframes frozen interactive HTML', () => {
     expect(html).toContain('window.__openmaicVideoManifest.runtimeDiagnostics');
     expect(html).not.toContain('openmaic-runtime-diagnostics.json');
   });
+
+  it('keeps a later iframe visually inert outside its scene window', () => {
+    const guardedIr = compileVideoTimeline(
+      {
+        stage: { id: 'stage', name: 'Interactive clip visibility' },
+        scenes: [
+          slide('before-widget', [speech('before-widget-speech', 'Before the widget')]),
+          interactive(
+            'later-widget',
+            '<!doctype html><h1>Later widget</h1>',
+            [speech('later-widget-speech', 'The widget scene')],
+            1,
+          ),
+        ],
+      },
+      {
+        timing: NO_PROBE,
+        assets: NO_ASSETS,
+        interactive: stubInteractiveHtml({
+          'later-widget': {
+            id: 'interactive:later-widget',
+            present: true,
+            contentHash: 'c'.repeat(64),
+          },
+        }),
+      },
+    );
+    const guardedHtml = emitHyperframes(guardedIr, { width: 1280, height: 720 }).files.find(
+      (file) => file.path === 'index.html',
+    )!.content;
+    const widget = guardedIr.scenes[1];
+    const start = widget.startMs / 1000;
+    const end = (widget.startMs + widget.durationMs) / 1000;
+    const hostTag = guardedHtml.match(
+      /<div id="scene-2-base"[^>]*data-interactive-static-host[^>]*>/,
+    )?.[0];
+
+    expect(hostTag).toBeDefined();
+    expect(hostTag).not.toContain('background:');
+    expect(guardedHtml).toContain(
+      'id="scene-2-base-content" data-interactive-static-visibility-wrapper',
+    );
+    expect(guardedHtml).toMatch(
+      /id="scene-2-base-content"[^>]*style="[^"]*visibility:hidden;opacity:0[^"]*"/,
+    );
+    expect(guardedHtml).toContain(`tl.set('#scene-2-base-content',{autoAlpha:1},${start});`);
+    expect(guardedHtml).toContain(`tl.set('#scene-2-base-content',{autoAlpha:0},${end});`);
+  });
 });
 
 describe('emitHyperframes static Quiz/PBL cover cards', () => {

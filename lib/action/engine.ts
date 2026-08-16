@@ -15,6 +15,7 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { useMediaGenerationStore, type MediaTask } from '@/lib/store/media-generation';
 import type { AudioPlayer } from '@/lib/utils/audio-player';
+import type { LegacySpeechAction } from '@/lib/media/convert-legacy-asset-refs';
 import type {
   Action,
   SpotlightAction,
@@ -325,7 +326,9 @@ export class ActionEngine {
 
     return new Promise<void>((resolve) => {
       this.audioPlayer!.onEnded(() => resolve());
-      this.audioPlayer!.play(action.audioId || '', action.audioUrl)
+      // The legacy URL of an unconverted pair rides along as the fallback of
+      // last resort; converted documents carry no audioUrl.
+      this.audioPlayer!.play(action.audioId || '', (action as LegacySpeechAction).audioUrl)
         .then((audioStarted) => {
           if (!audioStarted) resolve();
         })

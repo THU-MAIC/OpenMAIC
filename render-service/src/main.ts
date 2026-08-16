@@ -277,6 +277,7 @@ async function main(): Promise<void> {
     console.log(
       `[render-service] listening on :${info.port} ` +
         `(resourceProfile=${config.resourceProfile.name}, ` +
+        `capturePolicy=${config.resourceProfile.capturePolicy}, ` +
         `requestedCaptureMode=${config.resourceProfile.requestedCaptureMode}, ` +
         `maxConcurrency=${config.maxConcurrency}, producerWorkers=${config.producerWorkers}, ` +
         `browserGpuMode=${process.env.PRODUCER_BROWSER_GPU_MODE ?? 'producer-default'}, ` +

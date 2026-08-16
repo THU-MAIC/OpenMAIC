@@ -22,6 +22,8 @@ import {
   AssetQuotaExceededError,
   type AssetBytes,
   type AssetIdentity,
+  type AssetIndirectRead,
+  type AssetIndirectReadRequest,
   type AssetPrincipal,
   type AssetStore,
 } from './types.js';
@@ -29,8 +31,15 @@ import { assertJsonValue, isLosslessJsonString } from '../runtime/json-value.js'
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
 export type { QueryResult, Queryable, WithTransaction } from '../runtime/pg.js';
-export type { AssetByteStore } from './byte-store.js';
-export type { AssetBytes, AssetIdentity, AssetPrincipal, AssetStore } from './types.js';
+export type { AssetByteStore, AssetSignedReadHeaders } from './byte-store.js';
+export type {
+  AssetBytes,
+  AssetIdentity,
+  AssetIndirectRead,
+  AssetIndirectReadRequest,
+  AssetPrincipal,
+  AssetStore,
+} from './types.js';
 export { AssetNotFoundError, AssetQuotaExceededError } from './types.js';
 
 export interface PgAssetStoreOptions {
@@ -338,6 +347,76 @@ export class PgAssetStore implements AssetStore {
     } catch {
       throw registryFailure('resolve');
     }
+  }
+
+  /**
+   * The indirect counterpart of {@link resolve}: same ownership-checked read,
+   * but the answer is a signed URL minted by the byte layer rather than the
+   * bytes. Returns `undefined` when the byte layer cannot sign, so the caller
+   * falls back to a direct read -- a byte column never gains a signer, and an
+   * object store only declines when its signing dependency is absent.
+   *
+   * No byte is read here, which is the point: the network cost of an
+   * object-store read moves off this path entirely. The shared blob-row lock
+   * is still taken for the read, keeping the hash being signed in the same
+   * snapshot as the entry that named it; the signing itself runs after the
+   * transaction closes, since credential resolution can wait on the network.
+   */
+  async resolveIndirect(
+    principal: AssetPrincipal,
+    ref: AssetRef,
+    request: AssetIndirectReadRequest,
+  ): Promise<AssetIndirectRead | null | undefined> {
+    const signReadUrl = this.byteStore.signReadUrl;
+    if (typeof signReadUrl !== 'function') return undefined;
+    if (!isLosslessJsonString(ref) || !isLosslessJsonString(principal.key)) return null;
+    // The coordinated read and the signing are deliberately separate steps.
+    // The read takes the shared blob-row lock so the hash, label and revision
+    // come from one snapshot; the signing happens after the transaction has
+    // closed, because a signer on refreshable credentials can wait on the
+    // network, and no database connection or lock may be held across that.
+    // What the URL names is already fixed by then, so signing cannot observe
+    // anything the read did not.
+    let read: { hash: ContentHash; mime: string; revision: number } | null;
+    try {
+      read = await this.transaction(async (queryable) => {
+        const result = await queryable.query<EntryRow>(
+          `SELECT content_hash, mime, revision
+             FROM asset_entries
+            WHERE id = $1 AND principal = $2`,
+          [ref, principal.key],
+        );
+        const entry = result.rows[0];
+        if (!entry) return null;
+        const locked = await queryable.query(
+          `SELECT 1
+             FROM asset_blobs
+            WHERE content_hash = $1
+            FOR SHARE`,
+          [entry.content_hash],
+        );
+        if (!locked.rows[0]) return null;
+        return {
+          hash: entry.content_hash,
+          mime: entry.mime,
+          revision: Number(entry.revision),
+        };
+      });
+    } catch {
+      throw registryFailure('resolve');
+    }
+    if (read === null) return null;
+    let url: string | undefined;
+    try {
+      url = await signReadUrl.call(this.byteStore, read.hash, {
+        ...request.label(read.mime),
+        cacheControl: request.cacheControl,
+        expiresInSeconds: request.expiresInSeconds,
+      });
+    } catch {
+      throw registryFailure('resolve');
+    }
+    return url === undefined ? undefined : { url, revision: read.revision };
   }
 
   async identify(principal: AssetPrincipal, ref: AssetRef): Promise<AssetIdentity | null> {

@@ -4,18 +4,19 @@ import { resolveResourceProfile, validateResourceProfileStartup } from '../src/r
 const GIB = 1024 ** 3;
 
 describe('resource profiles', () => {
-  it('resolves the standard profile to one BeginFrame worker and bounded service concurrency', () => {
+  it('resolves standard to prefer BeginFrame while allowing compatibility fallback', () => {
     const env: NodeJS.ProcessEnv = {};
     const profile = resolveResourceProfile(env);
 
     expect(profile).toMatchObject({
       name: 'standard',
+      capturePolicy: 'prefer-beginframe',
       requestedCaptureMode: 'beginframe',
-      requireBeginFrame: true,
+      requireBeginFrame: false,
       producerWorkers: 1,
       maxConcurrency: 1,
       maxConcurrentExtractions: 1,
-      minimumMemoryBytes: 10 * GIB,
+      minimumMemoryBytes: 8 * GIB,
     });
     expect(env).toMatchObject({
       PRODUCER_MAX_WORKERS: '1',
@@ -24,7 +25,7 @@ describe('resource profiles', () => {
       PRODUCER_BROWSER_GPU_MODE: 'software',
       PRODUCER_ENABLE_BROWSER_POOL: 'false',
       PRODUCER_EXPECTED_CHROMIUM_MAJOR: '151',
-      RENDER_REQUIRE_BEGINFRAME: 'true',
+      RENDER_REQUIRE_BEGINFRAME: 'false',
     });
   });
 
@@ -34,6 +35,7 @@ describe('resource profiles', () => {
 
     expect(profile).toMatchObject({
       name: 'low-memory',
+      capturePolicy: 'screenshot-only',
       requestedCaptureMode: 'screenshot',
       requireBeginFrame: false,
       producerWorkers: 1,
@@ -66,17 +68,23 @@ describe('resource profiles', () => {
         RENDER_MAX_CONCURRENCY: '2',
       }),
     ).toThrow(/requires RENDER_MAX_CONCURRENCY=1/);
+    expect(() =>
+      resolveResourceProfile({
+        RENDER_RESOURCE_PROFILE: 'standard',
+        RENDER_REQUIRE_BEGINFRAME: 'true',
+      }),
+    ).toThrow(/requires RENDER_REQUIRE_BEGINFRAME=false/);
   });
 
   it('fails before startup when memory is below the selected profile minimum', () => {
     const standard = resolveResourceProfile({ RENDER_RESOURCE_PROFILE: 'standard' });
     expect(() =>
       validateResourceProfileStartup(standard, {
-        memoryBytes: 8 * GIB,
+        memoryBytes: 7 * GIB,
         headlessShellPath: '/chromium-headless-shell',
         pathExists: () => true,
       }),
-    ).toThrow(/requires at least 10 GiB memory/);
+    ).toThrow(/requires at least 8 GiB memory/);
 
     const lowMemory = resolveResourceProfile({ RENDER_RESOURCE_PROFILE: 'low-memory' });
     expect(() => validateResourceProfileStartup(lowMemory, { memoryBytes: 3 * GIB })).toThrow(
@@ -88,7 +96,7 @@ describe('resource profiles', () => {
     const standard = resolveResourceProfile({ RENDER_RESOURCE_PROFILE: 'standard' });
     expect(() =>
       validateResourceProfileStartup(standard, {
-        memoryBytes: 10 * GIB,
+        memoryBytes: 8 * GIB,
         headlessShellPath: '/missing',
         pathExists: () => false,
       }),

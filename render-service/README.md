@@ -34,7 +34,7 @@ poll, then download. Job ids are opaque.
 | Var                                      | Default                     | Meaning                                                                                                                                                                                                                                                                                                                                                             |
 | ---------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PORT`                                   | `9000`                      | Listen port.                                                                                                                                                                                                                                                                                                                                                        |
-| `RENDER_RESOURCE_PROFILE`                | `standard`                  | `standard` requires BeginFrame and 10 GiB; `low-memory` requires screenshot capture and 4 GiB. Both fix one producer worker, one render, and one extraction.                                                                                                                                                                                                          |
+| `RENDER_RESOURCE_PROFILE`                | `standard`                  | `standard` prefers BeginFrame, permits producer compatibility fallback to screenshot, and requires 8 GiB; `low-memory` forces screenshot capture and requires 4 GiB. Both fix one producer worker, one render, and one extraction.                                                                                                                                     |
 | `RENDER_MAX_CONCURRENCY`                 | profile: `1`                | Must match the selected profile. Renders beyond the single execution slot queue FIFO.                                                                                                                                                                                                                                                                               |
 | `RENDER_MAX_CONCURRENT_EXTRACTIONS`      | profile: `1`                | Must match the selected profile; bounds archive expansion to one 512 MiB expanded archive at a time.                                                                                                                                                                                                                                                                |
 | `RENDER_MAX_JOBS_PER_USER`               | `1`                         | Active jobs allowed per client identity (0 disables the guard — see note below).                                                                                                                                                                                                                                                                                    |
@@ -53,7 +53,7 @@ poll, then download. Job ids are opaque.
 | `PRODUCER_MAX_WORKERS`                   | profile: `1`                | Explicit for both supported profiles so producer auto-sizing cannot raise the worker count.                                                                                                                                                                                                                                                                        |
 | `PRODUCER_ENABLE_BROWSER_POOL`           | profile: `false`            | Disabled because both supported profiles use one worker; no additional Chromium instances are admitted.                                                                                                                                                                                                                                                            |
 | `PRODUCER_HEADLESS_SHELL_PATH`           | `/usr/bin/chromium-headless-shell` (container) | Chromium **headless shell** executable used by producer's beginFrame resolver. Regular Chromium is not equivalent: it may resolve as beginFrame-capable and then reject `HeadlessExperimental.beginFrame`, causing a screenshot fallback.                                                                                                                                |
-| `RENDER_REQUIRE_BEGINFRAME`              | profile-controlled          | `standard` fails the job when producer reports anything except exactly `beginframe`; `low-memory` expects screenshot and does not require BeginFrame.                                                                                                                                                                                                                |
+| `RENDER_REQUIRE_BEGINFRAME`              | profile-controlled          | `false` for both supported profiles. `standard` requests BeginFrame but accepts producer compatibility fallback; `low-memory` forces screenshot. This internal compatibility knob must not be overridden independently.                                                                                                                                            |
 | `PRODUCER_PUPPETEER_PROTOCOL_TIMEOUT_MS` | `900000` (set in Compose)   | CDP timeout headroom for long frame ranges. The producer default of 300 seconds caused long jobs to fall back from four workers to two.                                                                                                                                                                                                                             |
 | `HF_STATIC_DEDUP`                        | `false` (set in Compose)    | Temporary OpenMAIC-export workaround: these long slide compositions currently exhaust producer's 15-second verification budget and disable dedup anyway. Skipping the doomed verification removes the fixed startup cost without changing frames.                                                                                                                   |
 | `RENDER_HOME`                            | `/app`                      | Writable home used after the entrypoint drops privileges. Producer font caches live under `$RENDER_HOME/.cache`, never `/root/.cache`.                                                                                                                                                                                                                              |
@@ -119,7 +119,7 @@ docker compose --profile video-export up --build
 ### Standalone (development)
 
 Requires Node 22, Chromium's old headless shell, and FFmpeg on `PATH`. The
-standard profile checks for 10 GiB of available host/cgroup memory before
+standard profile checks for 8 GiB of available host/cgroup memory before
 listening:
 
 ```bash
@@ -136,13 +136,12 @@ npm start
 ## Resource profiles
 
 The default `standard` CPU profile is the intended 1080p / 30 fps / standard
-quality path: BeginFrame is required, producer workers are fixed at one, and the
-service admits one render plus one archive extraction at a time. It requires at
-least 10 GiB of host/cgroup memory. A missing headless shell, insufficient
-memory, or a producer result whose actual mode is `screenshot`, mixed, or
-unknown fails clearly rather than completing under a different capture path.
-No host GPU is required or requested; Chromium uses its software/SwiftShader
-selector in the standard profile.
+quality path: it prefers BeginFrame, while allowing producer to select screenshot
+for compatibility-sensitive compositions such as iframe GenUI. Producer workers
+are fixed at one, and the service admits one render plus one archive extraction
+at a time. It requires at least 8 GiB of host/cgroup memory and an existing
+headless shell so ordinary compositions remain BeginFrame-eligible. No host GPU
+is required or requested; Chromium uses its software/SwiftShader selector.
 
 Use the safe `low-memory` profile only when BeginFrame latency is less important
 than a smaller memory ceiling. It fixes screenshot capture, one worker, one
@@ -155,10 +154,10 @@ docker compose --profile video-export up --build
 ```
 
 Both `/health` and `GET /render/:jobId` make the selection observable. Health
-reports the requested profile, capture mode, worker/concurrency bounds, minimum
+reports the capture policy, requested mode, worker/concurrency bounds, minimum
 memory, and observed Node, producer, Chromium, and FFmpeg versions. A completed
-or capture-mode-rejected job reports requested versus actual capture mode and
-worker count with the same version record.
+job reports requested versus actual capture mode and worker count with the same
+version record, so a standard-profile screenshot fallback remains explicit.
 
 The previous fixed 720p short-sample comparison that motivated these profiles was:
 

@@ -9,6 +9,12 @@ export interface AssetPoolStore {
   remove(ref: AssetRef): Promise<void>;
   replace(ref: AssetId, data: BinaryBlob, meta?: AssetMeta): Promise<void>;
   release(ref: AssetRef): Promise<void>;
+  /**
+   * Metadata-only existence probe. Optional for test doubles; production
+   * stores implement it with a HEAD (HTTP) or an entry lookup (browser), so
+   * migration-time checks never download bytes.
+   */
+  exists?(ref: AssetRef): Promise<boolean>;
   close(): Promise<void>;
 }
 

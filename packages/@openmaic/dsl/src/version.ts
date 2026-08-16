@@ -56,7 +56,7 @@
  * Changing it requires a package version increase that the dependents' caret
  * does not admit; see the module docstring.
  */
-export const DSL_VERSION = '0.1.0' as const;
+export const DSL_VERSION = '0.2.0' as const;
 
 export type DslVersion = typeof DSL_VERSION;
 
@@ -77,9 +77,8 @@ export const UNVERSIONED_DSL_VERSION = '0.0.0' as const;
  * The first shipped serialized-contract version — a **pinned literal**, not the
  * moving {@link DSL_VERSION}. Migration endpoints must be immutable: they name a
  * fixed point in the ladder, so they cannot reference `DSL_VERSION` (which moves
- * every time the shape changes). It equals `DSL_VERSION` today; the two diverge
- * the moment the first real shape change bumps `DSL_VERSION` and appends a step
- * from here.
+ * every time the shape changes). It diverged from `DSL_VERSION` when the first
+ * real shape change (the `audioUrl` abolition) appended a step from here.
  */
 export const INITIAL_DSL_VERSION = '0.1.0' as const;
 
@@ -159,6 +158,32 @@ export interface DslMigration {
 }
 
 /**
+ * The 0.1.0 → 0.2.0 step is deliberately a pure stamp: it changes no field.
+ *
+ * 0.2.0 removes `audioUrl` from the contract -- a raw URL bakes in the
+ * deployment that minted it and an expiry assumption, so it cannot travel
+ * with the document. But removing it from *data* is not a pure transform's
+ * job. The URL may be the only live handle for the narration (a dangling
+ * derived `audioId` beside it, or no `audioId` at all), and whether it is
+ * live is a reachability question only the app-side reference converter can
+ * answer, by checking local bytes and probing the URL. The ladder runs on
+ * every document read, before the converter ever sees the document, so a
+ * ladder entry that dropped `audioUrl` in any case would destroy a possibly
+ * live handle before the one component that can probe it gets the chance.
+ *
+ * What this means for documents the converter never reached: they are
+ * stamped 0.2.0 with any legacy `audioUrl` still present as inert data. No
+ * 0.2.0 consumer reads the field, and the converter removes it -- ingesting
+ * the bytes, or emptying the reference when the URL is dead -- the first
+ * time the app opens the document. A strict external validator that rejects
+ * unknown fields may refuse such a document in the meantime; that is the
+ * accepted cost of never dropping a live handle silently.
+ */
+function stampAudioUrlAbolition(doc: unknown): unknown {
+  return doc;
+}
+
+/**
  * Ordered migration ladder. Each entry's `to` is the next entry's `from`, and
  * the last entry's `to` is {@link DSL_VERSION} (both checked by a test). Every
  * `from` / `to` is a **pinned literal** — never the moving `DSL_VERSION`
@@ -168,14 +193,18 @@ export interface DslMigration {
  * The first entry stamps legacy (pre-`dslVersion`) documents up to
  * {@link INITIAL_DSL_VERSION}. It is intentionally a no-op *transform*: bringing
  * `Action` into the contract (#811) and adding validators (#817) did not alter
- * any serialized document, so the current on-disk shape already *is* 0.1.0. The
- * entry exists to wire the pipeline end to end and to give real documents a
- * version stamp to migrate forward from. When the serialized shape first
- * changes, bump {@link DSL_VERSION} *then* and append a real transform from
- * `INITIAL_DSL_VERSION` to the new pinned version.
+ * any serialized document, so the on-disk shape at that point already *was*
+ * 0.1.0. The entry exists to wire the pipeline end to end and to give real
+ * documents a version stamp to migrate forward from.
+ *
+ * The second entry stamps the 0.2.0 `audioUrl` abolition. It is a pure stamp
+ * like the first: only the app-side reference converter may remove the field,
+ * because only it can tell a live handle from a dead one -- see
+ * {@link stampAudioUrlAbolition}.
  */
 export const DSL_MIGRATIONS: readonly DslMigration[] = [
   { from: UNVERSIONED_DSL_VERSION, to: INITIAL_DSL_VERSION, migrate: (doc) => doc },
+  { from: INITIAL_DSL_VERSION, to: '0.2.0', migrate: stampAudioUrlAbolition },
 ];
 
 /**

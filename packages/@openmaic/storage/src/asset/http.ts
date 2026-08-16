@@ -3,6 +3,8 @@ import { assertHttpBaseUrl } from '../http/base-url.js';
 import { assertJsonValue } from '../runtime/json-value.js';
 import { ObjectUrlCache } from './blob.js';
 import type { AssetId } from './id.js';
+import { ASSET_DESCRIPTOR_MEDIA_TYPE } from './types.js';
+export { ASSET_DESCRIPTOR_MEDIA_TYPE };
 
 export interface HttpAssetHeadersContext {
   method: string;
@@ -22,6 +24,12 @@ export interface HttpAssetStoreOptions {
   headers?: HttpAssetHeadersHook;
   /** Passed through to fetch unchanged. */
   credentials?: RequestCredentials;
+  /**
+   * Timeout (ms) for metadata-only existence probes (`exists`) and their
+   * fallback resolution. Migration-time checks must never wait on a stalled
+   * persistence endpoint indefinitely; playback resolution is unaffected.
+   */
+  probeTimeoutMs?: number;
 }
 
 interface ErrorResponseBody {
@@ -32,6 +40,22 @@ interface ObjectUrlIdentity {
   revision: string;
   mediaType: string;
 }
+
+/**
+ * Outcome of a byte fetch that has not minted an object URL. `missing` is a
+ * confirmed miss (the byte layer declared the object absent); `retry` means
+ * the store's snapshot generation moved while the bytes were in flight, and
+ * the caller should re-read.
+ */
+type ByteFetchResult =
+  | {
+      readonly kind: 'bytes';
+      readonly status: number;
+      readonly identity: ObjectUrlIdentity;
+      readonly bytes: ArrayBuffer;
+    }
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'retry' };
 
 // These fixed filenames preserve part bytes under standards-conforming parsers. Neither filename
 // is read by this package or derived from caller data.
@@ -70,6 +94,52 @@ function normalizeHeaders(init: HeadersInit | undefined): Record<string, string>
 
 function malformed(status: number, message: string): HttpAssetStoreError {
   return new HttpAssetStoreError(status, 'MALFORMED_RESPONSE', message);
+}
+
+/** Whether a value is an absolute http(s) URL a client may fetch. */
+function isAbsoluteHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * One absolute-deadline budget for a bounded operation. Every request the
+ * operation issues -- descriptor GET, signed-object fetch, and the body reads
+ * attached to either -- carries the same signal, so a stalled persistence
+ * endpoint cannot hold the operation past the deadline no matter which step it
+ * stalls at. The timer is cleared with `settle()` once the operation ends.
+ */
+interface BoundedOperation {
+  readonly signal: AbortSignal;
+  settle(): void;
+}
+
+function startBoundedOperation(timeoutMs: number): BoundedOperation | null {
+  if (timeoutMs <= 0) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    settle: () => clearTimeout(timer),
+  };
+}
+
+/**
+ * The failure a bounded operation reports when its deadline fires mid-step.
+ * Stalled requests already surface as `HTTP_REQUEST_FAILED` through the fetch
+ * catch; a stalled body read must map the same way instead of masquerading as
+ * a malformed response.
+ */
+function deadlineFailure(): HttpAssetStoreError {
+  return new HttpAssetStoreError(
+    0,
+    'HTTP_REQUEST_FAILED',
+    '@openmaic/storage: asset HTTP request failed',
+  );
 }
 
 function localNotFound(): HttpAssetStoreError {
@@ -142,6 +212,27 @@ function containsBytes(haystack: Uint8Array, needle: Uint8Array): boolean {
   return false;
 }
 
+/**
+ * The error code of a failed signed-object-store response, or `null` when the
+ * body declares none.
+ *
+ * S3 and MinIO answer object errors with an XML document whose `<Code>` element
+ * names the condition (`<Error><Code>NoSuchKey</Code>...`). Only a declared
+ * code can confirm an absent object; a body that carries no code -- or that
+ * cannot be read at all -- leaves a `404` unclassifiable, and an
+ * unclassifiable byte-layer failure is never a miss.
+ */
+async function signedErrorCode(response: Response): Promise<string | null> {
+  let body: string;
+  try {
+    body = await response.text();
+  } catch {
+    return null;
+  }
+  const code = /<Code[^>]*>([^<]*)<\/Code>/.exec(body)?.[1]?.trim();
+  return code === undefined || code === '' ? null : code;
+}
+
 /** AssetStore client that downloads bytes and mints authenticated object URLs locally. */
 export class HttpAssetStore implements StorageProvider {
   private readonly baseUrl: string;
@@ -152,6 +243,7 @@ export class HttpAssetStore implements StorageProvider {
   private readonly identities = new Map<AssetRef, ObjectUrlIdentity>();
   private readonly inFlight = new Map<AssetRef, Promise<string | null>>();
   private readonly generations = new Map<AssetRef, number>();
+  private readonly probeTimeoutMs: number;
   private closed = false;
 
   constructor(options: HttpAssetStoreOptions) {
@@ -163,6 +255,7 @@ export class HttpAssetStore implements StorageProvider {
     this.fetchImpl = selectedFetch.bind(globalThis);
     this.headersHook = options.headers;
     this.credentials = options.credentials;
+    this.probeTimeoutMs = options.probeTimeoutMs ?? 15_000;
   }
 
   private generation(id: AssetRef): number {
@@ -194,7 +287,12 @@ export class HttpAssetStore implements StorageProvider {
     return headers;
   }
 
-  private async fetchResponse(method: string, path: string, body?: Blob): Promise<Response> {
+  private async fetchResponse(
+    method: string,
+    path: string,
+    body?: Blob,
+    signal?: AbortSignal,
+  ): Promise<Response> {
     if (this.closed) {
       throw new HttpAssetStoreError(
         0,
@@ -204,13 +302,29 @@ export class HttpAssetStore implements StorageProvider {
     }
     const headers = await this.headers(method, path, body !== undefined);
     if (body !== undefined) headers['content-type'] = body.type;
+    if (method === 'GET') {
+      // Ask for a descriptor answer on the byte read, while still accepting
+      // ordinary bytes: a redirect-egress server returns the signed URL in a
+      // JSON body, and a direct or non-signing one serves the bytes as
+      // before. Advertising only the descriptor would let a strict
+      // negotiating layer answer 406; the wildcard keeps bytes acceptable.
+      // Accept is CORS-safelisted, so the negotiation adds no preflight.
+      headers['accept'] = `${ASSET_DESCRIPTOR_MEDIA_TYPE}, */*;q=0.9`;
+    }
     try {
       return await this.fetchImpl(`${this.baseUrl}${path}`, {
         method,
         headers,
         ...(this.credentials === undefined ? {} : { credentials: this.credentials }),
         ...(method === 'GET' || method === 'HEAD' ? { cache: 'no-store' as RequestCache } : {}),
+        // The byte GET carries this request's deployment headers; if the server
+        // answers it with a redirect, following would forward those headers to
+        // the destination (only Authorization is stripped across origins). The
+        // GET is therefore never followed: a redirect answer is surfaced to the
+        // caller as the 3xx it is, and `get` treats any redirect as an error.
+        ...(method === 'GET' ? { redirect: 'manual' as RequestRedirect } : {}),
         ...(body === undefined ? {} : { body }),
+        ...(signal === undefined ? {} : { signal }),
       });
     } catch {
       throw new HttpAssetStoreError(
@@ -346,44 +460,197 @@ export class HttpAssetStore implements StorageProvider {
     return id;
   }
 
-  private async get(
+  /**
+   * Read an asset's bytes within an optional bounded operation, without
+   * minting an object URL. `get` mints from the returned bytes for playback;
+   * the existence probe reads and discards them, so a probe never pins a
+   * fetched blob in the URL cache.
+   */
+  private async fetchBytes(
     id: AssetRef,
     encoded: string,
-  ): Promise<{ url: string | null; retry: boolean }> {
+    bound?: BoundedOperation,
+  ): Promise<ByteFetchResult> {
     const generation = this.generation(id);
-    const response = await this.fetchResponse('GET', `/assets/${encoded}/content`);
+    const response = await this.fetchResponse(
+      'GET',
+      `/assets/${encoded}/content`,
+      undefined,
+      bound?.signal,
+    );
+    // A redirect answer to the descriptor byte GET means the server ignored the
+    // descriptor negotiation (or is misconfigured). The GET is sent with
+    // `redirect: 'manual'` above, so a 3xx surfaces here as itself rather than
+    // being followed -- following would forward this request's deployment
+    // headers to the redirect target. Browsers answer a manual redirect as an
+    // opaque-redirect response whose status is 0, so the type is part of the
+    // test; Node's fetch reports the real status. Either way the read fails
+    // closed, and the redirect target is never touched.
+    const redirectAnswer =
+      response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400);
+    if (redirectAnswer) {
+      throw malformed(
+        response.status,
+        '@openmaic/storage: asset byte GET answered with a redirect, which is never followed',
+      );
+    }
     if (!response.ok) {
       const error = await this.httpError(response);
       if (error.status === 404 && error.code === 'ASSET_NOT_FOUND') {
         this.identities.delete(id);
         await this.urls.invalidate(id);
-        return { url: null, retry: false };
+        return { kind: 'missing' };
       }
       throw error;
     }
-    const identity = responseIdentity(response);
-    if (response.status !== 200 || identity === null) {
-      throw malformed(
-        response.status,
-        '@openmaic/storage: asset byte response must carry content type and revision',
-      );
-    }
+    let identity: ObjectUrlIdentity | null = null;
     let bytes: ArrayBuffer;
-    try {
-      bytes = await response.arrayBuffer();
-    } catch {
-      throw malformed(response.status, '@openmaic/storage: asset byte response could not be read');
+    // Exact essence match, case-insensitive as media types are: a longer
+    // media type that merely begins with the reserved value is a legitimate
+    // payload type, not a descriptor.
+    const servedEssence = response.headers.get('content-type')?.split(';', 1)[0]?.trim();
+    if (servedEssence?.toLowerCase() === ASSET_DESCRIPTOR_MEDIA_TYPE) {
+      // Indirect egress, answered as a descriptor rather than a redirect.
+      // Following a 302 would forward this request's headers -- the
+      // deployment's custom credential headers included; only Authorization
+      // is stripped across origins -- to the object store. The descriptor
+      // carries the revision, and the bytes are fetched with no deployment
+      // headers at all.
+      let descriptor: unknown;
+      try {
+        descriptor = await response.json();
+      } catch {
+        if (bound?.signal.aborted) throw deadlineFailure();
+        throw malformed(
+          response.status,
+          '@openmaic/storage: asset egress descriptor could not be read',
+        );
+      }
+      const signedUrl =
+        typeof descriptor === 'object' && descriptor !== null && 'url' in descriptor
+          ? (descriptor as { url?: unknown }).url
+          : undefined;
+      const revision =
+        typeof descriptor === 'object' && descriptor !== null && 'revision' in descriptor
+          ? (descriptor as { revision?: unknown }).revision
+          : undefined;
+      if (
+        typeof signedUrl !== 'string' ||
+        signedUrl === '' ||
+        typeof revision !== 'number' ||
+        !Number.isSafeInteger(revision) ||
+        revision < 1
+      ) {
+        throw malformed(
+          response.status,
+          '@openmaic/storage: asset egress descriptor must carry a url and revision',
+        );
+      }
+      if (!isAbsoluteHttpUrl(signedUrl)) {
+        // Only an absolute http(s) URL may be fetched for the bytes; anything
+        // else is a malformed descriptor, and the follow-up request must never
+        // be issued against it.
+        throw malformed(
+          response.status,
+          '@openmaic/storage: asset egress descriptor must carry an absolute http(s) url',
+        );
+      }
+      let byteResponse: Response;
+      try {
+        byteResponse = await this.fetchImpl(signedUrl, {
+          cache: 'no-store',
+          credentials: 'omit',
+          ...(bound === undefined ? {} : { signal: bound.signal }),
+        });
+      } catch {
+        throw new HttpAssetStoreError(
+          0,
+          'HTTP_REQUEST_FAILED',
+          '@openmaic/storage: asset HTTP request failed',
+        );
+      }
+      if (byteResponse.status === 404) {
+        // A miss reported by the byte layer instead of by the registry is only
+        // a miss when the object store confirms it. The entry was owned and
+        // readable when the URL was minted, so the only way its bytes are gone
+        // is reclamation landing between the mint and this fetch -- the same
+        // physical state the direct path reports as a miss. But a bare 404 is
+        // equally what a wrong bucket, access point, or endpoint answers, under
+        // which the bytes still exist; only the store's declared error code can
+        // tell the two apart. Anything short of a confirmed missing object
+        // fails loud, so a service-level 404 never reads as a deleted asset.
+        const code = await signedErrorCode(byteResponse);
+        if (code === 'NoSuchKey') {
+          this.identities.delete(id);
+          await this.urls.invalidate(id);
+          return { kind: 'missing' };
+        }
+        throw malformed(
+          byteResponse.status,
+          '@openmaic/storage: asset signed URL answered 404 without confirming a missing object',
+        );
+      }
+      if (!byteResponse.ok) {
+        throw malformed(
+          byteResponse.status,
+          '@openmaic/storage: asset signed URL did not serve bytes',
+        );
+      }
+      const mediaType = byteResponse.headers.get('content-type');
+      if (mediaType === null || mediaType === '') {
+        throw malformed(
+          byteResponse.status,
+          '@openmaic/storage: asset byte response must carry content type and revision',
+        );
+      }
+      identity = { revision: String(revision), mediaType };
+      try {
+        bytes = await byteResponse.arrayBuffer();
+      } catch {
+        if (bound?.signal.aborted) throw deadlineFailure();
+        throw malformed(
+          byteResponse.status,
+          '@openmaic/storage: asset byte response could not be read',
+        );
+      }
+    } else {
+      identity = responseIdentity(response);
+      if (response.status !== 200 || identity === null) {
+        throw malformed(
+          response.status,
+          '@openmaic/storage: asset byte response must carry content type and revision',
+        );
+      }
+      try {
+        bytes = await response.arrayBuffer();
+      } catch {
+        if (bound?.signal.aborted) throw deadlineFailure();
+        throw malformed(
+          response.status,
+          '@openmaic/storage: asset byte response could not be read',
+        );
+      }
     }
-    if (this.generation(id) !== generation) return { url: null, retry: true };
+    if (this.generation(id) !== generation) return { kind: 'retry' };
+    return { kind: 'bytes', status: response.status, identity, bytes };
+  }
+
+  private async get(
+    id: AssetRef,
+    encoded: string,
+    bound?: BoundedOperation,
+  ): Promise<{ url: string | null; retry: boolean }> {
+    const generation = this.generation(id);
+    const fetched = await this.fetchBytes(id, encoded, bound);
+    if (fetched.kind === 'missing') return { url: null, retry: false };
+    if (fetched.kind === 'retry') return { url: null, retry: true };
+    const { identity, bytes, status } = fetched;
     const url = await this.urls.resolve(id, identity, async () => {
       let minted: string;
       try {
         minted = URL.createObjectURL(new Blob([bytes], { type: identity.mediaType }));
       } catch {
-        throw malformed(
-          response.status,
-          '@openmaic/storage: asset object URL could not be created',
-        );
+        throw malformed(status, '@openmaic/storage: asset object URL could not be created');
       }
       return { identity, url: minted };
     });
@@ -395,11 +662,41 @@ export class HttpAssetStore implements StorageProvider {
     return { url, retry: false };
   }
 
-  private async resolveFresh(id: AssetRef, encoded: string): Promise<string | null> {
+  /**
+   * Byte-level existence check: the GET a probe issues when the HEAD cannot
+   * classify the answer. Reads the bytes only to confirm they exist, then
+   * discards them -- a migration probe that cached an object URL per endpoint
+   * would pin every fetched blob until store close. A snapshot-generation
+   * change mid-fetch re-reads, like the resolve loop.
+   */
+  private async probeBytes(
+    id: AssetRef,
+    encoded: string,
+    bound: BoundedOperation,
+  ): Promise<boolean> {
+    while (true) {
+      const fetched = await this.fetchBytes(id, encoded, bound);
+      if (fetched.kind === 'bytes') return true;
+      if (fetched.kind === 'missing') return false;
+      // The store's snapshot generation moved while the bytes were in flight;
+      // re-read under the same absolute deadline.
+    }
+  }
+
+  private async resolveFresh(
+    id: AssetRef,
+    encoded: string,
+    bound?: BoundedOperation,
+  ): Promise<string | null> {
     while (true) {
       const known = this.identities.get(id);
       if (known !== undefined) {
-        const response = await this.fetchResponse('HEAD', `/assets/${encoded}/content`);
+        const response = await this.fetchResponse(
+          'HEAD',
+          `/assets/${encoded}/content`,
+          undefined,
+          bound?.signal,
+        );
         if (response.ok) {
           const identity = response.status === 200 ? responseIdentity(response) : null;
           if (identity !== null && sameIdentity(known, identity)) {
@@ -417,7 +714,7 @@ export class HttpAssetStore implements StorageProvider {
           // A HEAD error without a classifiable code falls back to GET.
         }
       }
-      const result = await this.get(id, encoded);
+      const result = await this.get(id, encoded, bound);
       if (!result.retry) return result.url;
     }
   }
@@ -446,6 +743,52 @@ export class HttpAssetStore implements StorageProvider {
     this.inFlight.delete(id);
     this.identities.delete(id);
     await this.urls.invalidate(id);
+  }
+
+  /**
+   * Metadata-only existence probe: a HEAD against the byte route first, then
+   * -- only when the HEAD cannot classify the answer -- a bounded byte read
+   * that is discarded, never a minted or retained object URL. Bounded by ONE
+   * absolute deadline that also covers the fallback read, including the
+   * descriptor read, the signed fetch, and the body parsing, so a stalled
+   * persistence endpoint cannot hold a migration-time check on any of its
+   * steps.
+   */
+  async exists(id: AssetRef): Promise<boolean> {
+    const encoded = addressableSegment(id);
+    if (encoded === null) return false;
+    const bound = startBoundedOperation(this.probeTimeoutMs);
+    if (!bound) throw deadlineFailure();
+    try {
+      const response = await this.fetchResponse(
+        'HEAD',
+        `/assets/${encoded}/content`,
+        undefined,
+        bound.signal,
+      );
+      if (response.ok) {
+        // A 200 is proof of existence only when it carries the response
+        // identity the byte route requires (revision plus content type): an
+        // auth wall or a redirect landing page can answer 200 without either,
+        // and trusting it would make a probe report an unresolvable id as
+        // present, dropping a co-present legacy handle for bytes that do not
+        // exist. An identity-less success is unclassifiable -- exactly like a
+        // status without a code -- and the bounded byte read decides, the way
+        // the warm path in `resolveFresh` refuses a HEAD that does not match a
+        // known identity.
+        if (response.status === 200 && responseIdentity(response) !== null) return true;
+      } else {
+        const code = response.headers.get('x-error-code');
+        if (response.status === 404 && code === 'ASSET_NOT_FOUND') return false;
+        if (code !== null) throw await this.httpError(response);
+      }
+      // An unclassifiable HEAD is not a definitive miss; the byte read
+      // decides. The fallback shares the probe's absolute deadline and never
+      // mints or retains an object URL.
+      return await this.probeBytes(id, encoded, bound);
+    } finally {
+      bound.settle();
+    }
   }
 
   async remove(id: AssetRef): Promise<void> {

@@ -34,6 +34,17 @@ vi.mock('@openmaic/renderer/snapshot', () => ({
   }),
 }));
 
+// The proxy-mediated URL fetch and the pool read are module-level seams; the
+// legacy-URL fallback tests drive them directly.
+const fetchMediaUrlMock = vi.fn();
+vi.mock('@/lib/media/fetch-media-url', () => ({
+  fetchMediaUrl: (...args: unknown[]) => fetchMediaUrlMock(...args),
+}));
+const resolveAudioBlobMock = vi.fn((..._args: unknown[]) => Promise.resolve(null));
+vi.mock('@/lib/media/resolve-audio-bytes', () => ({
+  resolveAudioBlob: (...args: unknown[]) => resolveAudioBlobMock(...args),
+}));
+
 import { createVideoTimelineDeps } from '@/lib/video-export-app/timeline-deps';
 import { resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
@@ -102,7 +113,73 @@ beforeEach(() => {
   mediaToArray.mockReset();
   audioGet.mockReset().mockImplementation(() => Promise.resolve(undefined));
   measureCalls.length = 0;
+  fetchMediaUrlMock.mockReset();
+  resolveAudioBlobMock.mockReset().mockImplementation(() => Promise.resolve(null));
   useMediaGenerationStore.setState({ tasks: {} });
+});
+
+/** A fake `<audio>` element whose metadata reports the given duration. */
+function fakeAudioElement(durationSec: number) {
+  const el = {
+    preload: '',
+    duration: durationSec,
+    onloadedmetadata: null as (() => void) | null,
+    onerror: null as (() => void) | null,
+    removeAttribute: (_name: string) => undefined,
+  };
+  Object.defineProperty(el, 'src', {
+    set(_value: string) {
+      queueMicrotask(() => el.onloadedmetadata?.());
+    },
+  });
+  return el;
+}
+
+describe('createVideoTimelineDeps — legacy URL audio fallback', () => {
+  it('ingests a dangling pair through its URL and surfaces a present, probed narration asset', async () => {
+    const legacyUrl = 'https://server.example.com/audio/legacy.mp3';
+    mediaToArray.mockResolvedValue([]);
+    fetchMediaUrlMock.mockResolvedValue(
+      new Response(new Blob(['narration'], { type: 'audio/mpeg' }), { status: 200 }),
+    );
+    // The duration probe needs a DOM audio element; this Node environment
+    // gets a fake reporting 2.5s.
+    vi.stubGlobal('document', { createElement: () => fakeAudioElement(2.5) });
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:probe');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+    const action = {
+      id: 'a1',
+      type: 'speech',
+      text: 'Hello',
+      audioId: 'tts_dangling',
+      audioUrl: legacyUrl,
+    };
+    const scene = slideScene({ id: 'text_1', type: 'text' }, [action]);
+
+    const deps = await createVideoTimelineDeps({ stage: { id: STAGE_ID }, scenes: [scene] });
+
+    expect(fetchMediaUrlMock).toHaveBeenCalledWith(legacyUrl, 15_000);
+    const meta = deps.assets.audio(action as never);
+    expect(meta?.present).toBe(true);
+    expect(meta?.format).toBe('mpeg');
+    expect(deps.timing.audioDurationMs(action as never)).toBe(2500);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps a clip missing when the legacy URL will not fetch', async () => {
+    const legacyUrl = 'https://server.example.com/audio/gone.mp3';
+    mediaToArray.mockResolvedValue([]);
+    fetchMediaUrlMock.mockResolvedValue(new Response(null, { status: 404 }));
+
+    const action = { id: 'a1', type: 'speech', text: 'Hello', audioUrl: legacyUrl };
+    const scene = slideScene({ id: 'text_1', type: 'text' }, [action]);
+
+    const deps = await createVideoTimelineDeps({ stage: { id: STAGE_ID }, scenes: [scene] });
+
+    expect(deps.assets.audio(action as never)).toBeNull();
+  });
 });
 
 describe('createVideoTimelineDeps — media ref bridge', () => {

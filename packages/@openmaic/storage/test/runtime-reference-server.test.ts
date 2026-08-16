@@ -2,6 +2,8 @@ import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http
 import { RUNTIME_DSL_VERSION } from '@openmaic/dsl';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, test, vi } from 'vitest';
+import type { AssetId } from '../src/asset/id.js';
+import type { AssetStore } from '../src/asset/types.js';
 import { BrowserRuntimeStore } from '../src/runtime/browser.js';
 import { HttpRuntimeStore } from '../src/runtime/http.js';
 import type { RuntimePayloadValidator, RuntimeStore } from '../src/runtime/types.js';
@@ -273,6 +275,64 @@ describe('reference HTTP handler principal capabilities', () => {
     await expect(response.json()).resolves.toMatchObject({
       error: { code: 'FORBIDDEN_LEARNER' },
     });
+  });
+});
+
+describe('reference server asset byte egress', () => {
+  const bytes = Buffer.from([1, 2, 3, 4]);
+
+  function signingAssetStore(): AssetStore {
+    return {
+      put: async () => 'ast_stub' as AssetId,
+      identify: async () => ({ mime: 'image/png', revision: 3, byteLength: bytes.byteLength }),
+      resolve: async () => ({ bytes, mime: 'image/png', revision: 3 }),
+      resolveIndirect: async () => ({ url: 'https://objects.example/signed', revision: 3 }),
+      remove: async () => undefined,
+      replace: async () => 4,
+    };
+  }
+
+  function queryable(): ConnectableQueryable {
+    const query = async () => ({ rows: [] });
+    return {
+      query,
+      connect: async () => ({ query, release: () => undefined }),
+    } as unknown as ConnectableQueryable;
+  }
+
+  async function requestAsset(byteEgress?: {
+    mode: 'redirect';
+    collectionGraceMs: number;
+  }): Promise<Response> {
+    const server = await createReferenceRuntimeServer(queryable(), {
+      assetStore: signingAssetStore(),
+      ...(byteEgress === undefined ? {} : { byteEgress }),
+    });
+    const handler = server.listeners('request')[0] as RequestListener;
+    return handlerFetch(handler, async () => 'Bearer learner-a')(
+      `${BASE_URL}/assets/ast_example/content`,
+      {
+        headers: { authorization: 'Bearer learner-a' },
+        redirect: 'manual',
+      },
+    );
+  }
+
+  test('forwards redirect egress through the composed reference server', async () => {
+    const response = await requestAsset({
+      mode: 'redirect',
+      collectionGraceMs: 60 * 60 * 1000,
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('https://objects.example/signed');
+  });
+
+  test('keeps direct byte egress when the reference server option is omitted', async () => {
+    const response = await requestAsset();
+
+    expect(response.status).toBe(200);
+    expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual(Array.from(bytes));
   });
 });
 

@@ -24,7 +24,7 @@ describe('render-service container contract', () => {
     expect(compose).toContain('PRODUCER_HEADLESS_SHELL_PATH=/usr/bin/chromium-headless-shell');
     expect(compose).toContain('PRODUCER_PUPPETEER_PROTOCOL_TIMEOUT_MS=900000');
     expect(compose).toContain('HF_STATIC_DEDUP=false');
-    expect(compose).toContain('mem_limit: ${RENDER_SERVICE_MEMORY_LIMIT:-10g}');
+    expect(compose).toContain('mem_limit: ${RENDER_SERVICE_MEMORY_LIMIT:-8g}');
   });
 
   it('configures a beginFrame-capable capture profile in the image', () => {

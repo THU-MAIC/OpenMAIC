@@ -51,6 +51,23 @@ describe('allocated audio byte resolution', () => {
     expect(await resolveAudioBlob('ast_missing')).toBeNull();
   });
 
+  it('treats a zero-byte pooled answer as no bytes and falls back to the row', async () => {
+    mocks.audioGet.mockResolvedValue({ id: 'ast_empty', blob: new Blob(['row-bytes']) });
+    mocks.poolResolve.mockResolvedValue('blob:pool-empty');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(new Blob([]))),
+    );
+
+    expect(await (await resolveAudioBlob('ast_empty'))?.text()).toBe('row-bytes');
+  });
+
+  it('treats a zero-byte stored row as no bytes', async () => {
+    mocks.audioGet.mockResolvedValue({ id: 'tts_empty', blob: new Blob([]) });
+
+    expect(await resolveAudioBlob('tts_empty')).toBeNull();
+  });
+
   it('does not consult the pool for a concrete address', async () => {
     mocks.audioGet.mockResolvedValue({ id: 'https://cdn/a.mp3', blob: new Blob(['served']) });
 

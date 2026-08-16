@@ -1,4 +1,9 @@
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { describe, expect, test } from 'vitest';
 import { contentHashOf } from '../src/asset/blob.js';
 import { S3AssetByteStore } from '../src/asset/s3-bytes.js';
@@ -122,5 +127,127 @@ describe('S3AssetByteStore commands and failures', () => {
       expect(thrown).toBeInstanceOf(Error);
       await expectNoDigestSubstring(String(thrown), data);
     }
+  });
+});
+
+describe('S3AssetByteStore URL signing', () => {
+  const headers = {
+    contentType: 'image/png',
+    contentDisposition: 'attachment',
+    cacheControl: 'private, no-store',
+    expiresInSeconds: 60,
+  };
+
+  test('signs a GET that pins the contract response headers', async () => {
+    const signed: Array<{ command: unknown; expiresInSeconds: number }> = [];
+    const store = new S3AssetByteStore({
+      client: new MemoryS3Client() as never,
+      commands,
+      signer: {
+        sign: async (_client, command, expiresInSeconds) => {
+          signed.push({ command, expiresInSeconds });
+          return 'https://objects.example/signed-url';
+        },
+      },
+      bucket: 'asset-signing',
+    });
+    const { contentHash } = await contentHashOf(new Blob(['signed bytes']));
+
+    const url = await store.signReadUrl(contentHash, headers);
+
+    expect(url).toBe('https://objects.example/signed-url');
+    expect(signed).toHaveLength(1);
+    const command = signed[0]!.command;
+    expect(command).toBeInstanceOf(GetObjectCommand);
+    const input = (command as GetObjectCommand).input;
+    // The object key is the content hash, and the served media type,
+    // disposition, and cache posture travel inside the signature.
+    expect(input).toMatchObject({
+      Bucket: 'asset-signing',
+      Key: contentHash,
+      ResponseContentType: 'image/png',
+      ResponseContentDisposition: 'attachment',
+      ResponseCacheControl: 'private, no-store',
+    });
+    expect(signed[0]!.expiresInSeconds).toBe(60);
+  });
+
+  test('omits the disposition override for an inline-served type', async () => {
+    let input: unknown;
+    const store = new S3AssetByteStore({
+      client: new MemoryS3Client() as never,
+      commands,
+      signer: {
+        sign: async (_client, command) => {
+          input = (command as GetObjectCommand).input;
+          return 'https://objects.example/signed-url';
+        },
+      },
+      bucket: 'asset-signing',
+    });
+    const { contentHash } = await contentHashOf(new Blob(['inline bytes']));
+
+    await store.signReadUrl(contentHash, {
+      contentType: 'image/png',
+      cacheControl: 'private, no-store',
+      expiresInSeconds: 30,
+    });
+
+    expect(input).toMatchObject({ ResponseContentType: 'image/png' });
+    expect(input).not.toHaveProperty('ResponseContentDisposition');
+  });
+
+  test('sanitizes signing failures so the digest cannot escape', async () => {
+    const data = new Blob(['secret signing bytes']);
+    const { contentHash } = await contentHashOf(data);
+    const store = new S3AssetByteStore({
+      client: new MemoryS3Client() as never,
+      commands,
+      signer: {
+        sign: async () => {
+          throw new Error(contentHash);
+        },
+      },
+      bucket: 'signing-failure',
+    });
+
+    let thrown: unknown;
+    try {
+      await store.signReadUrl(contentHash, headers);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect(String(thrown)).toMatch(/S3 asset byte sign failed/);
+    await expectNoDigestSubstring(String(thrown), data);
+  });
+
+  test('resolves the SDK and presigner lazily for a { client, bucket } store', async () => {
+    // Both optional peers installed, neither supplied: the store resolves them
+    // on its own. Presigning is local credential arithmetic, so a client with
+    // static credentials signs without any network access.
+    const client = new S3Client({
+      region: 'us-east-1',
+      credentials: { accessKeyId: 'test', secretAccessKey: 'test' },
+    });
+    const store = new S3AssetByteStore({ client: client as never, bucket: 'lazy-signing' });
+    const { contentHash } = await contentHashOf(new Blob(['lazy signed bytes']));
+
+    const url = await store.signReadUrl(contentHash, {
+      contentType: 'image/png',
+      contentDisposition: 'attachment',
+      cacheControl: 'private, no-store',
+      expiresInSeconds: 60,
+    });
+    expect(url).toBeDefined();
+
+    const signed = new URL(url!);
+    expect(signed.hostname).toBe('lazy-signing.s3.us-east-1.amazonaws.com');
+    expect(signed.pathname).toBe(`/${contentHash}`);
+    expect(signed.searchParams.get('response-content-type')).toBe('image/png');
+    expect(signed.searchParams.get('response-content-disposition')).toBe('attachment');
+    expect(signed.searchParams.get('response-cache-control')).toBe('private, no-store');
+    expect(signed.searchParams.get('X-Amz-Expires')).toBe('60');
+    expect(signed.searchParams.get('X-Amz-Signature')).toBeTruthy();
   });
 });

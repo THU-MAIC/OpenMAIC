@@ -39,6 +39,7 @@
 
 ## 🗞️ 动态
 
+- **2026-08-14** — [v0.3.2 发布！](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.2) 视频导出加固（确定性 Quiz/PBL 封面、保真度打磨、交互 HTML 捕获、CPU 资源配置）；服务端持久化完成（文档全量切换、一条命令 Postgres 栈、增量保存）并落地资产注册中心；新增 `@openmaic/generation` 包；四种新语言（fr-FR / es-MX / vi-VN 及 432 条审校 zh-TW）；新增 Amazon Bedrock / Atlas Cloud / Claude 搜索与 FunASR 语音识别。查看[更新日志](CHANGELOG.md)。
 - **2026-07-21** — [v0.3.1 发布！](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.1) 一键导出 MP4 课程视频；服务端课堂运行时存储（含 Postgres 参考服务）；编辑器直接操作幻灯片元素（拖拽、缩放、旋转、框选多选）；“Edit with AI”升级（校验式 JSON Patch 编辑、多会话历史）；文档解析扩展（多格式上传、音视频抽取、阿里 DocMind、MinerU）；新增 Azure OpenAI / SearXNG / ComfyUI 与 GPT-5.6 系列模型；动作级播放导航；SSRF 安全加固。查看[更新日志](CHANGELOG.md)。
 - **2026-06-28** — [v0.3.0 发布！](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.0) 项目式学习（PBL）v2 与课堂界面；“Edit with AI”专业模式编辑智能体；`@openmaic/*` SDK 系列（DSL/渲染器/导入器）发布至 npm；可选的分阶段模型路由；新增 GLM-5.2 / Kimi K2.7 Code / Qwen3.7 Plus·Max 等模型；职业学习任务引擎；新增韩语（ko-KR）；并将开源协议由 AGPL-3.0 调整为 MIT。查看[更新日志](CHANGELOG.md)。
 - **2026-06-02** — [v0.2.2 发布！](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.2) MAIC Editor（v0）专业模式，可轻量编辑生成的幻灯片；生成前可编辑大纲；交互课堂离线导出；新增 Brave/百度/博查/MiniMax 搜索与 Azure STT；新增 Claude Opus 4.8 / MiniMax M3 / Gemini 3.5 Flash 等模型；新增繁体中文（zh-TW）与巴西葡萄牙语（pt-BR）。查看[更新日志](CHANGELOG.md)。
@@ -602,7 +603,7 @@ cp -R /path/to/OpenMAIC/skills/openmaic ~/.openclaw/skills/openmaic
 - **语音合成（TTS）** — 多种语音服务商，支持自定义音色
 - **语音识别** — 通过麦克风与 AI 老师对话
 - **网络搜索** — 智能体在课堂中搜索网络获取最新信息
-- **国际化** — 界面支持 11 种语言：简体中文、繁体中文、英文、日文、韩文、俄文、阿拉伯文、葡萄牙文（巴西）、西班牙文（墨西哥）、法文、越南文
+- **国际化** — 界面支持 11 种语言、12 个区域设置：简体中文、繁体中文、英文、日文、韩文、俄文、阿拉伯文、葡萄牙文（巴西）、西班牙文（墨西哥）、法文、越南文、德文
 - **暗色模式** — 深夜学习更护眼
 
 ---
@@ -677,7 +678,7 @@ OpenMAIC/
 │   ├── media/                  #   图片 & 视频生成服务商
 │   ├── export/                 #   PPTX & HTML 导出
 │   ├── hooks/                  #   React 自定义 Hooks（55+）
-│   ├── i18n/                   #   国际化（zh-CN, zh-TW, en-US, ja-JP, ko-KR, ru-RU, ar-SA, pt-BR, es-MX, fr-FR, vi-VN）
+│   ├── i18n/                   #   国际化（zh-CN, zh-TW, en-US, ja-JP, ko-KR, ru-RU, ar-SA, pt-BR, es-MX, fr-FR, vi-VN, de-DE）
 │   └── ...                     #   prosemirror, storage, pdf, web-search, utils
 │
 ├── components/                 # React UI 组件

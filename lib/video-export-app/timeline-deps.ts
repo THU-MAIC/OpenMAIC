@@ -45,6 +45,7 @@ import {
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
+import { fetchMediaUrl } from '@/lib/media/fetch-media-url';
 
 /** Loaded source records, keyed for both metadata (compiler) and byte collection. */
 export interface VideoTimelineRecords {
@@ -222,13 +223,20 @@ export async function createVideoTimelineDeps(input: {
     : await prepareInteractiveHtmlScenes(scenes);
 
   // Audio: load only the records referenced by speech actions.
-  const audioIds = new Set<string>();
+  const speechPairs: Array<{ audioId?: string; audioUrl?: string }> = [];
   for (const scene of scenes) {
     for (const action of scene.actions ?? []) {
-      if (action.type === 'speech' && (action as SpeechAction).audioId) {
-        audioIds.add((action as SpeechAction).audioId!);
-      }
+      if (action.type !== 'speech') continue;
+      const speech = action as SpeechAction;
+      speechPairs.push({
+        audioId: speech.audioId || undefined,
+        audioUrl: (speech as { audioUrl?: string }).audioUrl || undefined,
+      });
     }
+  }
+  const audioIds = new Set<string>();
+  for (const pair of speechPairs) {
+    if (pair.audioId) audioIds.add(pair.audioId);
   }
   const audioById = new Map<string, AudioFileRecord>();
   for (const audioId of audioIds) {
@@ -239,6 +247,35 @@ export async function createVideoTimelineDeps(input: {
     if (record) audioById.set(audioId, blob ? { ...record, blob } : record);
     else if (blob) audioById.set(audioId, { id: audioId, blob } as AudioFileRecord);
   }
+  // An unconverted document can carry narration only as a legacy URL: the
+  // playback paths fall back to it, and the export must too, or a playable
+  // clip renders as missing. Fetched bytes are keyed by the URL itself, which
+  // the lookup below prefers exactly when no id resolves. A URL is fetched
+  // only when its action's id produced no usable bytes -- server-backed
+  // conversion deliberately retains these URLs, and fetching them anyway
+  // would double-download every clip.
+  const legacyAudioUrls = new Set<string>();
+  for (const pair of speechPairs) {
+    if (!pair.audioUrl) continue;
+    const record = pair.audioId ? audioById.get(pair.audioId) : undefined;
+    if (record && (record.blob?.size > 0 || record.ossKey)) continue;
+    legacyAudioUrls.add(pair.audioUrl);
+  }
+  await mapWithConcurrency([...legacyAudioUrls], PROBE_CONCURRENCY, async (url) => {
+    try {
+      const response = await fetchMediaUrl(url, 15_000);
+      if (!response.ok) return;
+      const blob = await response.blob();
+      audioById.set(url, {
+        id: url,
+        blob,
+        format: blob.type.split('/')[1] || 'mp3',
+        createdAt: 0,
+      } as AudioFileRecord);
+    } catch {
+      // An unfetchable legacy URL leaves the clip missing, as before.
+    }
+  });
 
   // Probe real audio durations from the local blobs up front, so the compiler's
   // sync `audioDurationMs` is an accurate table lookup rather than a text-length
@@ -325,14 +362,25 @@ export async function createVideoTimelineDeps(input: {
     if (ms !== null) videoDurationMsByElementId.set(elementId, ms);
   });
 
+  // The key a speech action's audio lives under: its id when that resolves,
+  // otherwise the retained legacy URL of an unconverted pair, otherwise the
+  // id again so a miss reports against the id rather than the URL.
+  const audioLookupKey = (action: SpeechAction): string | undefined => {
+    if (action.audioId && audioById.has(action.audioId)) return action.audioId;
+    const legacyUrl = (action as { audioUrl?: string }).audioUrl;
+    if (legacyUrl && audioById.has(legacyUrl)) return legacyUrl;
+    return action.audioId;
+  };
+
   const timing: TimingProbe = {
     audioDurationMs(action: SpeechAction): number | null {
-      if (!action.audioId) return null;
+      const key = audioLookupKey(action);
+      if (!key) return null;
       // Prefer the real probed duration; fall back to the stored TTS duration
       // (older records), then null (→ compiler estimates from text length).
-      const probed = audioDurationMsByAudioId.get(action.audioId);
+      const probed = audioDurationMsByAudioId.get(key);
       if (probed != null) return probed;
-      const record = audioById.get(action.audioId);
+      const record = audioById.get(key);
       if (!record || typeof record.duration !== 'number') return null;
       return Math.round(record.duration * 1000);
     },
@@ -344,12 +392,13 @@ export async function createVideoTimelineDeps(input: {
 
   const assets: AssetSource = {
     audio(action: SpeechAction): AssetMeta | null {
-      if (!action.audioId) return null;
-      const record = audioById.get(action.audioId);
-      if (!record) return { id: action.audioId, present: false };
-      const probed = audioDurationMsByAudioId.get(action.audioId);
+      const key = audioLookupKey(action);
+      if (!key) return null;
+      const record = audioById.get(key);
+      if (!record) return { id: key, present: false };
+      const probed = audioDurationMsByAudioId.get(key);
       return {
-        id: action.audioId,
+        id: key,
         mimeType: record.blob.type || undefined,
         format: record.format || 'mp3',
         durationMs:
