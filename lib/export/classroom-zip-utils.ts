@@ -5,6 +5,8 @@ import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
 import type { Scene } from '@/lib/types/stage';
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
+import { fetchMediaUrl } from '@/lib/media/fetch-media-url';
+import { mapWithConcurrency } from '@/lib/media/convert-legacy-asset-refs';
 import { withAssetUrl } from '@/lib/media/use-asset-url';
 
 // ─── Export: Collect Media ─────────────────────────────────────
@@ -35,11 +37,13 @@ export async function collectAudioFiles(scenes: Scene[]): Promise<CollectedAudio
     // The pool answers first: after a stable-id regeneration whose mirror write
     // failed, the row holds the superseded narration.
     const blob = await resolveAudioBlob(audioId);
-    if (record || blob) {
+    // A row with no usable bytes -- an evicted row (empty blob, no pool
+    // resolve) -- must not ship an empty audio file. It produces no zip
+    // path, so the URL rescue in collectLegacyAudioForExport sees the id as
+    // missing and fetches the live co-present URL instead.
+    if (blob && blob.size > 0) {
       const ext = record?.format || 'mp3';
-      const resolved = (
-        record ? { ...record, ...(blob ? { blob } : {}) } : { id: audioId, blob: blob! }
-      ) as AudioFileRecord;
+      const resolved = (record ? { ...record, blob } : { id: audioId, blob }) as AudioFileRecord;
       collected.push({ zipPath: `audio/${audioId}.${ext}`, record: resolved });
     }
   }
@@ -56,18 +60,40 @@ export async function collectAudioFiles(scenes: Scene[]): Promise<CollectedAudio
 async function pooledBytesForRef(ref: string): Promise<Blob | null> {
   if (isConcreteMediaAddress(ref)) return null;
   try {
-    return await withAssetUrl(ref, async (url) => (url ? fetch(url).then((r) => r.blob()) : null));
+    return await withAssetUrl(ref, async (url) => {
+      if (!url) return null;
+      const blob = await fetch(url).then((response) => response.blob());
+      // Zero-byte pool answers are not usable bytes: the compatibility row
+      // stays the fallback rather than shipping an empty media file.
+      return blob.size > 0 ? blob : null;
+    });
   } catch {
     // The compatibility row remains the fallback when pool access fails.
     return null;
   }
 }
 
+function mediaRefFromRow(record: MediaFileRecord): string {
+  return record.id.includes(':') ? record.id.split(':').slice(1).join(':') : record.id;
+}
+
 export async function collectMediaFiles(stageId: string): Promise<CollectedMedia[]> {
   const records = await db.mediaFiles.where('stageId').equals(stageId).toArray();
+  // A converted asset exists as two rows: the legacy row (keyed by the
+  // original gen_* placeholder) and the allocated-id compatibility mirror
+  // (placeholderRef retained). The document now references the mirror, so the
+  // ZIP must ship each logical asset once -- the mirror -- and skip the legacy
+  // row it mirrors: importing the archive would otherwise materialize an
+  // unreferenced duplicate and inflate the round trip. Audio avoids this by
+  // deriving its rows from the document's speech actions instead of
+  // enumerating the table.
+  const supersededLegacyRefs = new Set(
+    records.map(mediaRefFromRow).filter((ref) => records.some((row) => row.placeholderRef === ref)),
+  );
   const collected: CollectedMedia[] = [];
   for (const record of records) {
-    const elementId = record.id.includes(':') ? record.id.split(':').slice(1).join(':') : record.id;
+    const elementId = mediaRefFromRow(record);
+    if (supersededLegacyRefs.has(elementId)) continue;
     const ext = record.mimeType?.split('/')[1] || 'jpg';
     const pooled = await pooledBytesForRef(elementId);
     collected.push({
@@ -81,20 +107,89 @@ export async function collectMediaFiles(stageId: string): Promise<CollectedMedia
 
 // ─── Export: Action Serialization ──────────────────────────────
 
+/** Bytes fetched from a legacy audio URL during export, with its assigned archive path. */
+export interface LegacyAudioBlob {
+  zipPath: string;
+  blob: Blob;
+  format: string;
+}
+
+/**
+ * Fetch the legacy audio URLs no local row backs, so an unconverted
+ * document's narration still reaches the archive: the field itself never
+ * enters the manifest, so its bytes must. Cross-origin URLs go through the
+ * same-origin media proxy (CORS-locked exactly where an <audio> element
+ * would still play), unique URLs first, then a bounded concurrent fetch so a
+ * stalled endpoint costs one timeout rather than one per clip. URLs that
+ * will not fetch are skipped -- the same outcome the converter gives a dead
+ * URL.
+ */
+export async function collectLegacyAudioForExport(
+  scenes: readonly Scene[],
+  audioIdToPath: Map<string, string>,
+): Promise<{ audioUrlToPath: Map<string, string>; blobs: LegacyAudioBlob[] }> {
+  const uniqueLegacyUrls = new Set<string>();
+  for (const scene of scenes) {
+    for (const action of scene.actions ?? []) {
+      if (action.type !== 'speech') continue;
+      const legacyUrl = (action as { audioUrl?: string }).audioUrl;
+      if (!legacyUrl) continue;
+      const stampedId = (action as SpeechAction).audioId;
+      if (stampedId && audioIdToPath.has(stampedId)) continue;
+      uniqueLegacyUrls.add(legacyUrl);
+    }
+  }
+  const blobs: LegacyAudioBlob[] = [];
+  const audioUrlToPath = new Map<string, string>();
+  const fetched = await mapWithConcurrency([...uniqueLegacyUrls], 4, async (url) => {
+    try {
+      const response = await fetchMediaUrl(url, 15_000);
+      if (!response.ok) return { url, blob: null };
+      const blob = await response.blob();
+      // Zero-byte responses are not narration: skip the entry (the same
+      // outcome the converter gives an unusable URL) rather than archiving
+      // an empty file.
+      return { url, blob: blob.size > 0 ? blob : null };
+    } catch {
+      return { url, blob: null };
+    }
+  });
+  for (const { url, blob } of fetched) {
+    if (!blob) continue;
+    const format = blob.type.split('/')[1] || 'mp3';
+    const zipPath = `audio/legacy-${blobs.length + 1}.${format}`;
+    audioUrlToPath.set(url, zipPath);
+    blobs.push({ zipPath, blob, format });
+  }
+  return { audioUrlToPath, blobs };
+}
+
 export function actionsToManifest(
   actions: Action[],
   audioIdToPath: Map<string, string>,
   agentIdToIndex: Map<string, number> = new Map(),
+  audioUrlToPath: Map<string, string> = new Map(),
 ): ManifestAction[] {
   return actions.map((action) => {
     if (action.type === 'speech') {
       const speech = action as SpeechAction;
-      const { audioId, ...rest } = speech;
-      const audioRef = audioId ? audioIdToPath.get(audioId) : undefined;
+      // A legacy audioUrl never enters the manifest: the type is gone from
+      // the contract, but an unconverted document can still carry one at
+      // runtime, and a bare rest-spread would export it. Its bytes travel
+      // instead, fetched at export time and mapped to their own zip path.
+      const {
+        audioId,
+        audioUrl: _legacyAudioUrl,
+        ...rest
+      } = speech as SpeechAction & {
+        audioUrl?: string;
+      };
+      const audioRef =
+        (audioId ? audioIdToPath.get(audioId) : undefined) ??
+        (_legacyAudioUrl ? audioUrlToPath.get(_legacyAudioUrl) : undefined);
       return {
         ...rest,
         ...(audioRef ? { audioRef } : {}),
-        ...(speech.audioUrl ? { audioUrl: speech.audioUrl } : {}),
       } as ManifestAction;
     }
     if (action.type === 'discussion') {
@@ -115,6 +210,32 @@ export function actionsToManifest(
 interface RewriteManifestActionOptions {
   agentIds?: string[];
   fallbackDiscussionAgentIndex?: number;
+}
+
+/**
+ * Speech references that would dangle in the exported ZIP: an audioId with no
+ * archive row and no recovered fallback. A legacy audioUrl that WAS recovered
+ * travels under its own zip path (`actionsToManifest` maps the action to it),
+ * so the same narration must not also be flagged missing under a phantom
+ * `audio/${audioId}.mp3` path.
+ */
+export function collectMissingAudioRefs(
+  scenes: readonly Scene[],
+  audioIdToPath: Map<string, string>,
+  audioUrlToPath: Map<string, string>,
+): Array<{ audioId: string; missingPath: string }> {
+  const missing: Array<{ audioId: string; missingPath: string }> = [];
+  for (const scene of scenes) {
+    for (const action of scene.actions ?? []) {
+      if (action.type !== 'speech') continue;
+      const speech = action as SpeechAction & { audioUrl?: string };
+      const audioId = speech.audioId;
+      if (!audioId || audioIdToPath.has(audioId)) continue;
+      if (speech.audioUrl && audioUrlToPath.has(speech.audioUrl)) continue;
+      missing.push({ audioId, missingPath: `audio/${audioId}.mp3` });
+    }
+  }
+  return missing;
 }
 
 export function rewriteAudioRefsToIds(

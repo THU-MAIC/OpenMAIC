@@ -16,10 +16,7 @@
  * the row gone, or still referenced, and skips it. No distributed lock, leader
  * election, or advisory lock is needed here — please do not add one.
  */
-import {
-  AssetCollector,
-  DEFAULT_ASSET_COLLECTION_GRACE_MS,
-} from '@openmaic/storage/asset/collector';
+import { AssetCollector } from '@openmaic/storage/asset/collector';
 import { ensureAssetSchema } from '@openmaic/storage/asset/pg';
 import {
   nodePostgresTransaction,
@@ -27,6 +24,7 @@ import {
 } from '@openmaic/storage/server/reference';
 import { Pool } from 'pg';
 
+import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import { configuredS3Bucket, createAssetByteStore } from '@/lib/persistence/asset-byte-store';
 
 /**
@@ -112,14 +110,12 @@ export function startAssetCollectorSchedule(
     DEFAULT_ASSET_COLLECTION_INTERVAL_MS,
     1_000,
   );
-  const graceMs = durationEnv(
-    // ASSET_COLLECTION_GRACE_MS: how long bytes survive after their last
-    // reference goes. Defaults to the package's one hour. This is the retention
-    // window a user's deleted bytes actually get, so raise it deliberately.
-    'ASSET_COLLECTION_GRACE_MS',
-    DEFAULT_ASSET_COLLECTION_GRACE_MS,
-    0,
-  );
+  // ASSET_COLLECTION_GRACE_MS: how long bytes survive after their last
+  // reference goes. Defaults to the package's one hour. This is the retention
+  // window a user's deleted bytes actually get, so raise it deliberately.
+  // Shared with the persistence route, which needs the same number to enable
+  // indirect byte egress safely.
+  const graceMs = resolveAssetCollectionGraceMs();
 
   const pool = (deps.poolFactory ?? ((value) => new Pool({ connectionString: value, max: 2 })))(
     connectionString,

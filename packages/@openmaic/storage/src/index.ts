@@ -44,15 +44,19 @@ export {
 } from './asset/http.js';
 export { newAssetId, toAssetId, type AssetId } from './asset/id.js';
 export {
+  ASSET_DESCRIPTOR_MEDIA_TYPE,
   AssetNotFoundError,
   AssetQuotaExceededError,
   DEFAULT_RENDERABLE_TYPES,
   EXCLUDED_RENDERABLE_TYPES,
   type AssetBytes,
   type AssetIdentity,
+  type AssetIndirectRead,
+  type AssetIndirectReadRequest,
   type AssetPrincipal,
   type AssetStore,
 } from './asset/types.js';
+export type { AssetByteStore, AssetSignedReadHeaders } from './asset/byte-store.js';
 export {
   ASSET_PG_SCHEMA,
   PgAssetStore,
@@ -62,6 +66,7 @@ export {
 export { PgAssetByteStore } from './asset/pg-bytes.js';
 export {
   AssetCollector,
+  assertSignedUrlTtlWithinGrace,
   DEFAULT_ASSET_COLLECTION_BATCH_SIZE,
   DEFAULT_ASSET_COLLECTION_GRACE_MS,
   type AssetCollectionPass,

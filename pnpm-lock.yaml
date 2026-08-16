@@ -47,9 +47,15 @@ importers:
       '@assistant-ui/react-streamdown':
         specifier: ^0.3.3
         version: 0.3.4(@assistant-ui/react@0.14.23(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(immer@11.1.4)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(use-sync-external-store@1.6.0(react@19.2.3)))(@streamdown/code@1.1.1(react@19.2.3))(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      '@aws-sdk/client-s3':
+        specifier: ^3.1048.0
+        version: 3.1106.0
       '@aws-sdk/credential-providers':
         specifier: ^3.1045.0
         version: 3.1045.0
+      '@aws-sdk/s3-request-presigner':
+        specifier: ^3.1048.0
+        version: 3.1107.0
       '@base-ui/react':
         specifier: ^1.1.0
         version: 1.2.0(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -794,6 +800,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.1048.0
         version: 3.1048.0
+      '@aws-sdk/s3-request-presigner':
+        specifier: ^3.1048.0
+        version: 3.1107.0
       '@electric-sql/pglite':
         specifier: ^0.3.14
         version: 0.3.16
@@ -1412,6 +1421,10 @@ packages:
 
   '@aws-sdk/region-config-resolver@3.972.37':
     resolution: {integrity: sha512-O0mWXYkM1ASgX72KKW3zNG+pEvpmUG5yl6uykgA/p2xkVFi/SjUxwAZBv2ToqKba/TBwDU8tv2wL5Rq5ZTcdMg==}
+    engines: {node: '>=20.0.0'}
+
+  '@aws-sdk/s3-request-presigner@3.1107.0':
+    resolution: {integrity: sha512-/jlRXrrYLlVYmF33+ppCFMi8G+vYkt3LQZtwyVifDXBx66U1j1KqKstoGq6GXOQfb4I/gmojzACrrPU8eL37hw==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/signature-v4-multi-region@3.996.35':
@@ -14598,7 +14611,6 @@ snapshots:
       '@smithy/node-http-handler': 4.9.13
       '@smithy/types': 4.16.1
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/core@3.974.22':
     dependencies:
@@ -14948,6 +14960,15 @@ snapshots:
   '@aws-sdk/region-config-resolver@3.972.37':
     dependencies:
       '@aws-sdk/core': 3.975.3
+      tslib: 2.8.1
+
+  '@aws-sdk/s3-request-presigner@3.1107.0':
+    dependencies:
+      '@aws-sdk/core': 3.977.6
+      '@aws-sdk/signature-v4-multi-region': 3.996.43
+      '@aws-sdk/types': 3.974.2
+      '@smithy/core': 3.31.1
+      '@smithy/types': 4.16.1
       tslib: 2.8.1
 
   '@aws-sdk/signature-v4-multi-region@3.996.35':

@@ -12,7 +12,7 @@ export type AssetUrlLeaseState =
   | { readonly status: 'resolved'; readonly url: string }
   | { readonly status: 'missing' };
 
-type AssetPoolView = Pick<AssetPoolStore, 'invalidate' | 'resolve' | 'release'>;
+type AssetPoolView = Pick<AssetPoolStore, 'exists' | 'invalidate' | 'resolve' | 'release'>;
 interface OwnedResolution {
   owners: number;
   resolution: Promise<string | null>;
@@ -227,6 +227,9 @@ export async function assetRefExists(
   ref: string,
   pool: AssetPoolView = getAssetPool(),
 ): Promise<boolean> {
+  // Metadata-only when the store supports it: the resolve fallback downloads
+  // every probed byte, which a per-open migration check cannot afford.
+  if (typeof pool.exists === 'function') return pool.exists(ref);
   return withAssetUrl(ref, (url) => url !== null, pool);
 }
 

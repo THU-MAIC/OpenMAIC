@@ -3,6 +3,7 @@ import { contentHashOf, type ContentHash } from '../src/asset/blob.js';
 
 afterEach(() => {
   vi.doUnmock('@aws-sdk/client-s3');
+  vi.doUnmock('@aws-sdk/s3-request-presigner');
   vi.resetModules();
 });
 
@@ -109,4 +110,100 @@ test('an unresolvable SDK fails the first call by naming the optional dependency
     await expect(operation()).rejects.toThrow(/@aws-sdk\/client-s3/);
   }
   expect(send).not.toHaveBeenCalled();
+});
+
+test('loading the S3 byte-store module does not resolve the optional presigner', async () => {
+  const presignerModuleResolved = vi.fn();
+  vi.doMock('@aws-sdk/s3-request-presigner', () => {
+    presignerModuleResolved();
+    throw new Error('the presigner must stay unresolved until a URL is signed');
+  });
+
+  await expect(import('../src/asset/s3-bytes.js')).resolves.toHaveProperty('S3AssetByteStore');
+  expect(presignerModuleResolved).not.toHaveBeenCalled();
+});
+
+test('byte operations never resolve the presigner; only signing does', async () => {
+  vi.doMock('@aws-sdk/client-s3', () => ({
+    S3Client: class {},
+    PutObjectCommand: class {
+      constructor(readonly input: unknown) {}
+    },
+    GetObjectCommand: class {
+      constructor(readonly input: unknown) {}
+    },
+    DeleteObjectCommand: class {
+      constructor(readonly input: unknown) {}
+    },
+  }));
+  let presignerResolutions = 0;
+  let announceResolution!: () => void;
+  const resolutionSignal = new Promise<'resolved'>((resolve) => {
+    announceResolution = () => resolve('resolved');
+  });
+  vi.doMock('@aws-sdk/s3-request-presigner', () => {
+    presignerResolutions += 1;
+    announceResolution();
+    return {
+      getSignedUrl: async () => 'https://objects.example/signed-url',
+    };
+  });
+  const { S3AssetByteStore } = await import('../src/asset/s3-bytes.js');
+
+  const store = new S3AssetByteStore({
+    client: { send: async () => ({}) },
+    bucket: 'lazy-presigner',
+  });
+  const hash = await hashFor('unsigned bytes');
+
+  // Construction and every byte operation leave the presigner unresolved: a
+  // deployment that keeps direct egress -- the default -- never resolves it.
+  await store.write(hash, new TextEncoder().encode('unsigned bytes'));
+  await store.delete(hash);
+  await expect(quietFor(resolutionSignal)).resolves.toBe('quiet');
+  expect(presignerResolutions).toBe(0);
+
+  const url = await store.signReadUrl(hash, {
+    contentType: 'application/octet-stream',
+    cacheControl: 'private, no-store',
+    expiresInSeconds: 60,
+  });
+  expect(url).toBe('https://objects.example/signed-url');
+  expect(presignerResolutions).toBe(1);
+
+  // Cached: a second signing reuses the resolved presigner.
+  await store.signReadUrl(hash, {
+    contentType: 'application/octet-stream',
+    cacheControl: 'private, no-store',
+    expiresInSeconds: 60,
+  });
+  expect(presignerResolutions).toBe(1);
+});
+
+test('an unresolvable presigner declines signing, so the caller falls back to direct bytes', async () => {
+  // A byte layer that cannot sign answers "cannot sign", not a failed read:
+  // the contract's fallback is that the caller serves the bytes directly.
+  vi.doMock('@aws-sdk/s3-request-presigner', () => {
+    throw new Error('Cannot find module');
+  });
+  const { S3AssetByteStore } = await import('../src/asset/s3-bytes.js');
+
+  const store = new S3AssetByteStore({
+    client: { send: vi.fn() },
+    commands: {
+      put: () => ({}),
+      get: () => ({}),
+      delete: () => ({}),
+    },
+    bucket: 'no-presigner',
+  });
+  const hash = await hashFor('no presigner');
+
+  await expect(
+    store.signReadUrl(hash, {
+      contentType: 'application/octet-stream',
+      cacheControl: 'private, no-store',
+      expiresInSeconds: 60,
+    }),
+  ).resolves.toBeUndefined();
 });

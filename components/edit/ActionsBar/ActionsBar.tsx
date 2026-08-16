@@ -253,22 +253,23 @@ type TtsStatus = 'none' | 'ready' | 'generating' | 'error';
 function SpeechTtsBar({
   actionId,
   audioId,
+  audioUrl,
   audioInvalidated,
   sceneOrder,
   language,
   text,
-  audioUrl,
   refreshKey,
   regenerating,
   onGenerated,
 }: {
   actionId: string;
   audioId?: string;
+  /** The legacy URL of an unconverted pair: narration exists until conversion removes it. */
+  audioUrl?: string;
   audioInvalidated?: boolean;
   sceneOrder: number;
   language?: string;
   text: string;
-  audioUrl?: string;
   refreshKey?: number;
   regenerating?: boolean;
   onGenerated: (audioId: string) => Promise<void>;
@@ -313,17 +314,15 @@ function SpeechTtsBar({
     let alive = true;
     (async () => {
       try {
-        if (audioUrl) {
-          if (alive) setStatus('ready');
-          return;
-        }
         // A missing stamped id means "not generated" for new documents. Probe
         // the deterministic key only to preserve pre-allocation Dexie rows.
         const legacyId = lookupId
           ? undefined
           : await resolveLegacySpeechAudioId(sceneOrder, { id: actionId, audioInvalidated });
         const candidateId = lookupId ?? legacyId;
-        const has = candidateId ? await audioExists(candidateId) : false;
+        // An unconverted pair's legacy URL is narration that exists: the id
+        // lookup may find nothing while the URL is still live.
+        const has = (candidateId ? await audioExists(candidateId) : false) || !!audioUrl;
         if (alive) {
           setReadAudioId(has ? candidateId : undefined);
           setStatus((s) => (s === 'generating' ? s : has ? 'ready' : 'none'));
@@ -343,18 +342,18 @@ function SpeechTtsBar({
     return () => {
       alive = false;
     };
-  }, [lookupId, actionId, sceneOrder, audioUrl, audioInvalidated, refreshKey, regenerating]);
+  }, [lookupId, actionId, sceneOrder, audioInvalidated, audioUrl, refreshKey, regenerating]);
 
   useEffect(() => () => stopPreview(), [stopPreview]);
 
   const preview = async () => {
     stopPreview();
-    let src = audioUrl ?? null;
-    if (!src && readAudioId) {
-      src = await audioObjectUrl(readAudioId);
-      objUrlRef.current = src;
-    }
+    // The legacy URL of an unconverted pair is the narration when no pool or
+    // Dexie id resolved -- or when the resolved id turns out to have no local
+    // bytes, which is exactly the dangling-id case the URL survives for.
+    const src = (readAudioId ? await audioObjectUrl(readAudioId) : null) ?? audioUrl ?? null;
     if (!src) return;
+    objUrlRef.current = src;
     const a = new Audio(src);
     audioRef.current = a;
     a.addEventListener('ended', stopPreview);
@@ -434,12 +433,12 @@ function SpeechClip({
   index,
   actionId,
   audioId,
+  audioUrl,
   audioInvalidated,
   sceneOrder,
   language,
   autoFocus,
   ttsActive,
-  audioUrl,
   ttsRefresh,
   regenerating,
   onCommit,
@@ -457,12 +456,12 @@ function SpeechClip({
   index: number;
   actionId: string;
   audioId?: string;
+  audioUrl?: string;
   audioInvalidated?: boolean;
   sceneOrder: number;
   language?: string;
   autoFocus: boolean;
   ttsActive: boolean;
-  audioUrl?: string;
   ttsRefresh?: number;
   regenerating?: boolean;
   onCommit: (text: string) => void;
@@ -555,11 +554,11 @@ function SpeechClip({
         <SpeechTtsBar
           actionId={actionId}
           audioId={audioId}
+          audioUrl={audioUrl}
           audioInvalidated={audioInvalidated}
           sceneOrder={sceneOrder}
           language={language}
           text={val}
-          audioUrl={audioUrl}
           refreshKey={ttsRefresh}
           regenerating={regenerating}
           onGenerated={onGenerated}
@@ -1327,13 +1326,13 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                               index={si}
                               actionId={key}
                               audioId={(action as { audioId?: string }).audioId}
+                              audioUrl={(action as { audioUrl?: string }).audioUrl}
                               audioInvalidated={
                                 (action as { audioInvalidated?: boolean }).audioInvalidated
                               }
                               sceneOrder={sceneOrder}
                               language={language}
                               ttsActive={ttsActive}
-                              audioUrl={(action as { audioUrl?: string }).audioUrl}
                               ttsRefresh={ttsRefresh}
                               regenerating={regeneratingIds.has(key)}
                               autoFocus={key === focusId}

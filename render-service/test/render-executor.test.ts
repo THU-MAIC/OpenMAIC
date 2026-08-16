@@ -100,6 +100,7 @@ describe('InProcessExecutor', () => {
       },
       metrics: {
         resourceProfile: 'standard',
+        capturePolicy: 'prefer-beginframe',
         requestedCaptureMode: 'beginframe',
         actualCaptureMode: 'beginframe',
         requestedWorkers: 1,
@@ -197,6 +198,30 @@ describe('InProcessExecutor', () => {
       expect(result.failure.code).toBe('unsupported_capture_mode');
       expect(result.failure.message).toMatch(/beginFrame/i);
     }
+  });
+
+  it('accepts a screenshot fallback under the default prefer-beginframe policy', async () => {
+    const executor = new InProcessExecutor(
+      { runtimeVersions },
+      {
+        createJob(options) {
+          return createRenderJob(options);
+        },
+        async executeJob(job) {
+          setPerformance(job, 'screenshot');
+        },
+      },
+    );
+
+    await expect(executor.execute(request())).resolves.toMatchObject({
+      status: 'succeeded',
+      metrics: {
+        resourceProfile: 'standard',
+        capturePolicy: 'prefer-beginframe',
+        requestedCaptureMode: 'beginframe',
+        actualCaptureMode: 'screenshot',
+      },
+    });
   });
 
   it('does not treat request observability as actual mode on hard failure', async () => {

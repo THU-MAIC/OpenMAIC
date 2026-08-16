@@ -38,6 +38,9 @@ export {
   DEFAULT_MAX_ASSET_META_BYTES,
   DEFAULT_MAX_ASSET_PARTS,
   DEFAULT_MAX_ASSET_REQUEST_BYTES,
+  DEFAULT_SIGNED_URL_TTL_SECONDS,
+  type AssetByteEgress,
+  type AssetIndirectByteEgress,
   type AssetHttpAuthenticate,
   type AssetHttpAuthorize,
   type AssetHttpHandlerOptions,
@@ -711,6 +714,7 @@ export interface StorageHttpHandlerOptions
       | 'maxAssetBytes'
       | 'maxMetaBytes'
       | 'maxParts'
+      | 'byteEgress'
     > {
   /** When supplied, the composed handler exposes the `/assets` contract. */
   assetStore?: AssetStore;
@@ -760,6 +764,7 @@ export function createStorageHttpHandler<
           ...(options.maxAssetBytes === undefined ? {} : { maxAssetBytes: options.maxAssetBytes }),
           ...(options.maxMetaBytes === undefined ? {} : { maxMetaBytes: options.maxMetaBytes }),
           ...(options.maxParts === undefined ? {} : { maxParts: options.maxParts }),
+          ...(options.byteEgress === undefined ? {} : { byteEgress: options.byteEgress }),
         });
   return (req, res) => {
     let pathname: string;

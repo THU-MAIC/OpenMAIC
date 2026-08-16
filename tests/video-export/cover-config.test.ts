@@ -189,6 +189,11 @@ describe('getVideoExportCoverLabels', () => {
       pblCtaPrompt: 'Muốn khám phá học tập theo dự án?',
       ctaVisit: 'Ghé thăm',
     },
+    'de-DE': {
+      quizCtaPrompt: 'Möchtest du ein interaktives Quiz ausprobieren?',
+      pblCtaPrompt: 'Möchtest du projektbasiertes Lernen entdecken?',
+      ctaVisit: 'Besuche',
+    },
     'pt-BR': {
       quizCtaPrompt: 'Quer experimentar um quiz interativo?',
       pblCtaPrompt: 'Quer explorar a aprendizagem baseada em projetos?',

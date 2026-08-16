@@ -19,6 +19,12 @@ import type { RuntimeHttpPrincipal } from '@openmaic/storage/server';
 
 type PersistencePrincipal = RuntimeHttpPrincipal & Partial<Pick<AssetPrincipal, 'key'>>;
 
+/**
+ * The single asset partition for this deployment shape. Documents have no
+ * ownership partition; assets get the same treatment until real auth lands.
+ */
+const SHARED_ASSET_PRINCIPAL = 'shared';
+
 function singleHeader(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
@@ -37,7 +43,13 @@ export async function authenticatePersistenceRequest(
   if (!token || !authorization || !secureEqual(authorization, `Bearer ${token}`)) return undefined;
 
   const learnerKey = singleHeader(req.headers['x-learner-key']);
-  // The authenticated anonymous learner partition is also the required asset
-  // principal. Without `key`, the asset contract correctly denies all access.
-  return learnerKey ? { key: learnerKey, learnerKey } : {};
+  // Documents are stored without any ownership partition, so assets are
+  // stored under one shared principal to match: this authenticator provides
+  // no user isolation either way (the header is client-supplied), and a
+  // per-header asset partition only meant a converted document's assets
+  // became unreadable to every other browser the document was shared with.
+  // The learner key still partitions runtime sessions, which are genuinely
+  // per-learner state. Production replaces this module with real session
+  // verification and derives both from server-controlled claims.
+  return { key: SHARED_ASSET_PRINCIPAL, ...(learnerKey ? { learnerKey } : {}) };
 }
