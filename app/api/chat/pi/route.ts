@@ -7,7 +7,12 @@
 
 import { NextRequest } from 'next/server';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
-import { isPiChatEnabled, isPiWebSearchEnabled } from '@/lib/config/feature-flags';
+import {
+  isPiChatEnabled,
+  isPiNativeChildRuntimeEnabled,
+  isPiNativeChildSpotlightEnabled,
+  isPiWebSearchEnabled,
+} from '@/lib/config/feature-flags';
 import { createLogger } from '@/lib/logger';
 import {
   getPiMaxActionsPerAgent,
@@ -123,6 +128,8 @@ export async function POST(req: NextRequest) {
     const maxAgentTurns = getPiMaxAgentTurns(body);
     const maxActionsPerAgent = getPiMaxActionsPerAgent(body);
     const enableWhiteboardTools = body.config.piEnableWhiteboardTools === true;
+    const childRuntimeMode = isPiNativeChildRuntimeEnabled() ? 'native' : 'legacy';
+    const enableNativeChildSpotlight = isPiNativeChildSpotlightEnabled();
 
     log.info(
       `Pi request agents=${body.config.agentIds.join(', ')} messages=${body.messages.length} maxAgentTurns=${maxAgentTurns}`,
@@ -159,6 +166,8 @@ export async function POST(req: NextRequest) {
           maxActionsPerAgent,
           enableWhiteboardTools,
           enableWebSearch: isPiWebSearchEnabled(),
+          childRuntimeMode,
+          enableNativeChildSpotlight,
         });
 
         if (signal.aborted) {

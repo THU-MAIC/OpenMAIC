@@ -4,6 +4,8 @@ import {
   isMaicEditorEnabled,
   isPlaybackRendererEnabled,
   isPiChatEnabled,
+  isPiNativeChildRuntimeEnabled,
+  isPiNativeChildSpotlightEnabled,
   isPptxImportEnabled,
   isPiWebSearchEnabled,
   isVideoExportEnabled,
@@ -194,6 +196,34 @@ describe('isPiWebSearchEnabled', () => {
 
     process.env[flag] = 'yes';
     expect(isPiWebSearchEnabled()).toBe(false);
+  });
+});
+
+describe.each([
+  ['OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME', isPiNativeChildRuntimeEnabled],
+  ['OPENMAIC_ENABLE_PI_NATIVE_CHILD_SPOTLIGHT', isPiNativeChildSpotlightEnabled],
+])('%s', (flag, readFlag) => {
+  let original: string | undefined;
+
+  beforeEach(() => {
+    original = process.env[flag];
+  });
+
+  afterEach(() => {
+    if (original === undefined) delete process.env[flag];
+    else process.env[flag] = original;
+  });
+
+  it('is default-off and accepts only the standard true values', () => {
+    delete process.env[flag];
+    expect(readFlag()).toBe(false);
+
+    process.env[flag] = 'true';
+    expect(readFlag()).toBe(true);
+    process.env[flag] = '1';
+    expect(readFlag()).toBe(true);
+    process.env[flag] = 'yes';
+    expect(readFlag()).toBe(false);
   });
 });
 
