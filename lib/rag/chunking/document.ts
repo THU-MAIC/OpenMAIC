@@ -9,7 +9,7 @@ import { splitGraphemeText } from './grapheme';
 
 export const DOCUMENT_CHUNK_POLICY = {
   id: 'document-block',
-  version: '1.1.2',
+  version: '1.1.3',
   maxChars: 1200,
   maxCharsUnit: 'grapheme-cluster',
 } as const;
@@ -31,6 +31,10 @@ export type ResolvedDocumentChunkPolicy = {
 const HTML_LINE_BREAK_PATTERN = /<br(?=[ \t\n\f\r/>])(?:[^"'<>]|"[^"]*"|'[^']*')*\/?\s*>/gi;
 const HTML_BLOCK_END_TAG_PATTERN =
   /<\/(?:address|article|aside|blockquote|dd|div|dl|dt|footer|h[1-6]|header|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)[ \t\n\f\r]*>/gi;
+const HTML_BLOCK_START_TAG_PATTERN =
+  /<(?:address|article|aside|blockquote|dd|div|dl|dt|footer|h[1-6]|header|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)(?=[ \t\n\f\r/>])(?:[^"'<>]|"[^"]*"|'[^']*')*\/?\s*>/gi;
+const HTML_BLOCK_START_TAG_AT_END_PATTERN =
+  /<(?:address|article|aside|blockquote|dd|div|dl|dt|footer|h[1-6]|header|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)(?=[ \t\n\f\r/>])(?:[^"'<>]|"[^"]*"|'[^']*')*\/?\s*>[ \t]*$/i;
 class InvalidDocumentChunkPolicyError extends Error {
   readonly name = 'InvalidDocumentChunkPolicyError';
 
@@ -64,7 +68,13 @@ function blockText(block: DocumentBlock): string {
   if (!block.html) return '';
   const projectedHtml = block.html
     .replace(HTML_LINE_BREAK_PATTERN, '\n')
-    .replace(HTML_BLOCK_END_TAG_PATTERN, '\n');
+    .replace(HTML_BLOCK_END_TAG_PATTERN, '\n')
+    .replace(HTML_BLOCK_START_TAG_PATTERN, (_match, offset: number, source: string) => {
+      const before = source.slice(0, offset);
+      return /(?:^|\n)[ \t]*$/u.test(before) || HTML_BLOCK_START_TAG_AT_END_PATTERN.test(before)
+        ? ''
+        : '\n';
+    });
   return sanitizeHtml(projectedHtml, {
     allowedTags: [],
     allowedAttributes: {},

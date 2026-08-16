@@ -107,9 +107,23 @@ function normalizeResourceMetadata(metadata: KnowledgeMetadata): KnowledgeMetada
     return 0;
   });
   for (const [key, value] of entries) {
-    if (key !== 'workspaceId' && key !== 'courseId') normalized[key] = value;
+    if (key !== 'workspaceId' && key !== 'courseId') {
+      normalized[key] = Array.isArray(value) ? [...value] : value;
+    }
   }
   return normalized;
+}
+
+function hasTransformFailure(
+  artifact: DocumentArtifact,
+  diagnostics: readonly DocumentDiagnostic[],
+): boolean {
+  return (
+    (artifact.transforms ?? []).some((transform) => transform.status === 'failed') ||
+    [...diagnostics, ...(artifact.diagnostics ?? [])].some(
+      (diagnostic) => diagnostic.severity === 'error',
+    )
+  );
 }
 
 function withoutProviderRaw(artifact: DocumentArtifact): DocumentArtifact {
@@ -151,6 +165,7 @@ export async function ingestDocumentForRag(
   };
   const chunks = chunkDocumentArtifact(transformed.artifact, resource, request.chunking);
   const diagnostics = [...transformed.diagnostics];
+  const hasFailure = hasTransformFailure(transformed.artifact, diagnostics);
 
   if (chunks.length === 0) {
     diagnostics.push({
@@ -162,7 +177,7 @@ export async function ingestDocumentForRag(
 
   return {
     artifact,
-    resource: { ...resource, status: chunks.length > 0 ? 'ready' : 'partial' },
+    resource: { ...resource, status: chunks.length > 0 && !hasFailure ? 'ready' : 'partial' },
     chunks,
     diagnostics,
     metrics: transformed.metrics,

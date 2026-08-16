@@ -169,6 +169,25 @@ describe('document RAG chunking', () => {
     expect(chunks[0]?.text).toBe('First\nSecond\nThird\nFourth');
   });
 
+  it('preserves boundaries for HTML elements with omitted optional end tags', () => {
+    const chunks = chunkDocumentArtifact(
+      {
+        metadata: {},
+        blocks: [
+          {
+            id: 'html-optional-end-tags',
+            type: 'layout',
+            html: '<p>First<p>Second<ul><li>Third<li>Fourth</ul>',
+          },
+        ],
+        assets: [],
+      },
+      resource(),
+    );
+
+    expect(chunks[0]?.text).toBe('First\nSecond\nThird\nFourth');
+  });
+
   it('keeps text in one chunk when it exactly fits the grapheme limit', () => {
     const chunks = chunkDocumentArtifact(
       {
@@ -210,7 +229,7 @@ describe('document RAG chunking', () => {
 
     expect(chunks.map((chunk) => chunk.text)).toEqual(['👩‍🔬', '👨‍🚀', 'é']);
     expect(chunks.every((chunk) => chunk.text.length > 0)).toBe(true);
-    expect(chunks[0]?.lineage.chunkPolicy.version).toBe('1.1.2:maxChars=1:unit=grapheme-cluster');
+    expect(chunks[0]?.lineage.chunkPolicy.version).toBe('1.1.3:maxChars=1:unit=grapheme-cluster');
   });
 
   it(

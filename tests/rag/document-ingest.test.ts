@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import * as documentApi from '@/lib/document';
 import { ingestDocumentForRag } from '@/lib/rag';
-import type { DocumentArtifact } from '@/lib/document';
+import type { DocumentArtifact, DocumentTransform } from '@/lib/document';
 
 function artifact(): DocumentArtifact {
   return {
@@ -171,6 +172,61 @@ describe('document RAG ingestion', () => {
 
     expect(reordered.resource.resourceVersionId).toBe(first.resource.resourceVersionId);
     expect(changed.resource.resourceVersionId).not.toBe(first.resource.resourceVersionId);
+  });
+
+  it('detaches caller-owned metadata arrays after ingestion', async () => {
+    const tags = ['safety'];
+    const result = await ingestDocumentForRag({
+      artifact: artifact(),
+      resource: {
+        ...resource,
+        id: 'resource-metadata-alias',
+        metadata: { chapterId: 'chapter-1', tags },
+      },
+    });
+
+    tags.push('mutated-after-ingestion');
+
+    expect(result.resource.metadata.tags).toEqual(['safety']);
+    expect(result.chunks.map((chunk) => chunk.metadata.tags)).toEqual([['safety'], ['safety']]);
+  });
+
+  it('marks best-effort transform failures partial even when chunks remain', async () => {
+    const failing: DocumentTransform = {
+      id: 'failing-rag-transform',
+      displayName: 'Failing RAG transform',
+      version: '1.0.0',
+      capabilities: {},
+      apply() {
+        throw new Error('broken RAG transform');
+      },
+    };
+    const registrySpy = vi
+      .spyOn(documentApi, 'createDefaultDocumentTransformRegistry')
+      .mockReturnValue(new documentApi.DocumentTransformRegistry([failing]));
+
+    try {
+      const result = await ingestDocumentForRag({
+        artifact: artifact(),
+        resource: { ...resource, id: 'resource-best-effort-failure' },
+        transformOptions: { failurePolicy: 'best-effort' },
+      });
+
+      expect(result.chunks.length).toBeGreaterThan(0);
+      expect(result.resource.status).toBe('partial');
+      expect(result.artifact.transforms?.[0]).toMatchObject({
+        transformId: 'failing-rag-transform',
+        status: 'failed',
+      });
+      expect(result.diagnostics).toContainEqual(
+        expect.objectContaining({
+          severity: 'error',
+          message: expect.stringContaining('broken RAG transform'),
+        }),
+      );
+    } finally {
+      registrySpy.mockRestore();
+    }
   });
 
   it('preserves an explicitly supplied empty course scope', async () => {
