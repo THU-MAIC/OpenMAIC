@@ -11,6 +11,7 @@ import {
   isPiChatEnabled,
   isPiNativeChildRuntimeEnabled,
   isPiNativeChildSpotlightEnabled,
+  isPiNativeChildWebSearchEnabled,
   isPiWebSearchEnabled,
 } from '@/lib/config/feature-flags';
 import { createLogger } from '@/lib/logger';
@@ -130,6 +131,7 @@ export async function POST(req: NextRequest) {
     const enableWhiteboardTools = body.config.piEnableWhiteboardTools === true;
     const childRuntimeMode = isPiNativeChildRuntimeEnabled() ? 'native' : 'legacy';
     const enableNativeChildSpotlight = isPiNativeChildSpotlightEnabled();
+    const enableNativeChildWebSearch = isPiNativeChildWebSearchEnabled();
 
     log.info(
       `Pi request agents=${body.config.agentIds.join(', ')} messages=${body.messages.length} maxAgentTurns=${maxAgentTurns}`,
@@ -168,6 +170,7 @@ export async function POST(req: NextRequest) {
           enableWebSearch: isPiWebSearchEnabled(),
           childRuntimeMode,
           enableNativeChildSpotlight,
+          enableNativeChildWebSearch,
         });
 
         if (signal.aborted) {

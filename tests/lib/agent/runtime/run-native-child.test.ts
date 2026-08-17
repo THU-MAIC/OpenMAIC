@@ -8,6 +8,7 @@ import { Type } from 'typebox';
 import { describe, expect, it, vi } from 'vitest';
 import { runNativeChild } from '@/lib/agent/runtime/run-native-child';
 import { buildNativeSpotlightTool } from '@/lib/chat/pi/tools/native-spotlight';
+import { buildNativeWebSearchTool } from '@/lib/chat/pi/tools/web-search';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 
 const EMPTY_USAGE = {
@@ -500,6 +501,96 @@ describe('runNativeChild', () => {
     rejectSend(new Error('late dispatch rejection'));
     await Promise.resolve();
     expect(result).toMatchObject({ status: 'exhausted', dispatchedActionCount: 0 });
+  });
+
+  it('settles a pending Native Web Search at the Child deadline and ignores late settlement', async () => {
+    let rejectSearch!: (reason: Error) => void;
+    const pendingSearch = new Promise<never>((_resolve, reject) => {
+      rejectSearch = reject;
+    });
+    const searchResponses = vi.fn(() => pendingSearch);
+    const webSearch = buildNativeWebSearchTool({
+      resolveConfig: () => ({
+        providerId: 'responses',
+        apiKey: 'responses-key',
+        baseUrl: 'https://responses-proxy.test/v1',
+        model: 'search-model',
+      }),
+      searchResponses,
+    });
+    const result = await run({
+      streamFn: scriptedStream([call('search-1', 'web_search', { query: 'current fact' })]),
+      tools: [webSearch],
+      allowedToolNames: new Set(['web_search']),
+      timeoutMs: 10,
+    });
+
+    expect(searchResponses).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      status: 'exhausted',
+      stopReason: 'native_timeout',
+      attemptCount: 1,
+      executionCount: 1,
+      dispatchedActionCount: 0,
+      providerTransportCount: 1,
+    });
+    rejectSearch(new Error('late search rejection'));
+    await Promise.resolve();
+    expect(result).toMatchObject({ status: 'exhausted', stopReason: 'native_timeout' });
+  });
+
+  it('ignores a Native Web Search resolve that loses to the Child deadline', async () => {
+    type SearchResult = {
+      answer: string;
+      query: string;
+      responseTime: number;
+      sources: Array<{
+        title: string;
+        url: string;
+        content: string;
+        score: number;
+      }>;
+    };
+    let resolveSearch!: (value: SearchResult) => void;
+    const pendingSearch = new Promise<SearchResult>((resolve) => {
+      resolveSearch = resolve;
+    });
+    const searchResponses = vi.fn(() => pendingSearch);
+    const webSearch = buildNativeWebSearchTool({
+      resolveConfig: () => ({
+        providerId: 'responses',
+        apiKey: 'responses-key',
+        baseUrl: 'https://responses-proxy.test/v1',
+        model: 'search-model',
+      }),
+      searchResponses,
+    });
+    const result = await run({
+      streamFn: scriptedStream([call('search-1', 'web_search', { query: 'current fact' })]),
+      tools: [webSearch],
+      allowedToolNames: new Set(['web_search']),
+      timeoutMs: 10,
+    });
+
+    resolveSearch({
+      answer: 'Late answer.',
+      query: 'current fact',
+      responseTime: 0.1,
+      sources: [
+        { title: 'Late source', url: 'https://example.test/late', content: 'Late.', score: 1 },
+      ],
+    });
+    await Promise.resolve();
+
+    expect(searchResponses).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      status: 'exhausted',
+      stopReason: 'native_timeout',
+      attemptCount: 1,
+      executionCount: 1,
+      dispatchedActionCount: 0,
+      providerTransportCount: 1,
+    });
   });
 
   it('bounds a never-resolving visible-text delta callback with the same deadline', async () => {

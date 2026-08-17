@@ -71,6 +71,14 @@ export function isPiNativeChildSpotlightEnabled(): boolean {
 }
 
 /**
+ * Server-only capability gate for Native Child Web Search. This is independent
+ * from the Director Web Search flag and has no effect in the Legacy harness.
+ */
+export function isPiNativeChildWebSearchEnabled(): boolean {
+  return readBoolean(process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_WEB_SEARCH);
+}
+
+/**
  * Server-authoritative gate for the vocational task-engine generation path.
  * Default OFF. When disabled, requests that include taskEngineMode must
  * silently fall back to the ordinary standard / interactive generation paths.
