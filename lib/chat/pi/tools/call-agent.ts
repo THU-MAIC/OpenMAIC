@@ -17,7 +17,11 @@ import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestrati
 import type { ThinkingConfig } from '@/lib/types/provider';
 import type { ChildRuntimeMode } from '../child-runtime';
 import type { DirectorSceneEvidenceMetadata } from './read-scene';
-import { buildNativeWebSearchTool, type DirectorWebEvidenceMetadata } from './web-search';
+import {
+  buildNativeWebSearchTool,
+  type DirectorWebEvidenceMetadata,
+  type NativeWebSearchConfig,
+} from './web-search';
 import type { ParsedAction, StatelessChatRequest } from '@/lib/types/chat';
 import {
   buildChildPrompt,
@@ -543,7 +547,7 @@ export function buildCallAgentTool(opts: {
   enableWhiteboardTools: boolean;
   childRuntimeMode?: ChildRuntimeMode;
   enableNativeChildSpotlight?: boolean;
-  enableNativeChildWebSearch?: boolean;
+  nativeWebSearchConfig?: NativeWebSearchConfig;
   requestStartCurrentScene?: RequestStartCurrentScene;
   isUserCued?: () => boolean;
   isSessionClosed?: () => boolean;
@@ -735,9 +739,7 @@ export function buildCallAgentTool(opts: {
                 }),
               ]
             : []),
-          ...(opts.enableNativeChildWebSearch
-            ? [buildNativeWebSearchTool({ stageId: opts.body.storeState.stage?.id })]
-            : []),
+          buildNativeWebSearchTool({ config: opts.nativeWebSearchConfig }),
         ];
         const availableToolNames = nativeTools.map((tool) => tool.name);
         const sanitizeNativeDelta = createVisibleSpeechDeltaSanitizer();
@@ -769,7 +771,6 @@ export function buildCallAgentTool(opts: {
             history: toHistoryMessages(opts.body.messages),
             abortSignal: childAbort.signal,
             timeoutMs: 60_000,
-            maxToolCallAttempts: 4,
             maxProviderTransports: 5,
             onVisibleTextDelta: async (delta) => {
               const visibleDelta = sanitizeNativeDelta(delta);

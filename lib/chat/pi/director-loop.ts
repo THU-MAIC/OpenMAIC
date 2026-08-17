@@ -22,6 +22,7 @@ import {
   buildDirectorWebSearchTool,
   type DirectorWebEvidencePacket,
   type DirectorWebEvidenceMetadata,
+  type NativeWebSearchConfig,
 } from './tools/web-search';
 
 function formatWebEvidenceForDelegation(evidence: DirectorWebEvidencePacket): string {
@@ -59,7 +60,7 @@ export async function runPiDirectorLoop(opts: {
   enableWebSearch?: boolean;
   childRuntimeMode?: ChildRuntimeMode;
   enableNativeChildSpotlight?: boolean;
-  enableNativeChildWebSearch?: boolean;
+  nativeWebSearchConfig?: NativeWebSearchConfig;
 }): Promise<void> {
   let totalAgents = 0;
   let totalActions = 0;
@@ -186,7 +187,7 @@ export async function runPiDirectorLoop(opts: {
       enableWhiteboardTools: opts.enableWhiteboardTools,
       childRuntimeMode: opts.childRuntimeMode ?? 'legacy',
       enableNativeChildSpotlight: opts.enableNativeChildSpotlight === true,
-      enableNativeChildWebSearch: opts.enableNativeChildWebSearch === true,
+      nativeWebSearchConfig: opts.nativeWebSearchConfig,
       requestStartCurrentScene,
       isUserCued: () => userCued,
       isSessionClosed: () => sessionClosed,

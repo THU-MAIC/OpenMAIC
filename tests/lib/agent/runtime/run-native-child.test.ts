@@ -146,7 +146,6 @@ function run(options: Partial<Parameters<typeof runNativeChild>[0]> = {}) {
     tools: [tool],
     allowedToolNames: new Set(['demo']),
     timeoutMs: 1_000,
-    maxToolCallAttempts: 4,
     maxProviderTransports: 5,
     ...options,
   });
@@ -300,88 +299,33 @@ describe('runNativeChild', () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
-  it('classifies the fifth observation as over-budget without charging it', async () => {
-    const execute = vi.fn(async () => ({
-      content: [{ type: 'text' as const, text: 'must not execute' }],
-      details: {},
-    }));
-    const messages = [
-      ...Array.from({ length: 4 }, (_, index) => call(`unknown-${index + 1}`, 'not_registered')),
-      calls(
-        { id: 'unknown-1', name: 'not_registered', arguments: {} },
-        { id: 'later-same-batch', name: 'demo', arguments: { value: 1 } },
-      ),
-    ];
-    const result = await run({
-      streamFn: scriptedStream(messages),
-      tools: [demoTool(execute)],
-      allowedToolNames: new Set(['demo']),
-    });
-
-    expect(result).toMatchObject({
-      status: 'exhausted',
-      stopReason: 'native_tool_attempt_budget',
-      attemptCount: 4,
-      executionCount: 0,
-      dispatchedActionCount: 0,
-      providerTransportCount: 5,
-    });
-    expect(execute).not.toHaveBeenCalled();
-  });
-
-  it('does not charge execution when the fifth observation is itself authorized and valid', async () => {
-    const execute = vi.fn(async () => ({
-      content: [{ type: 'text' as const, text: 'must not execute' }],
-      details: {},
-    }));
-    const messages = [
-      ...Array.from({ length: 4 }, (_, index) => call(`unknown-${index + 1}`, 'not_registered')),
-      calls(
-        { id: 'fifth-valid', name: 'demo', arguments: { value: 1 } },
-        { id: 'later-same-batch', name: 'demo', arguments: { value: 2 } },
-      ),
-    ];
-    const result = await run({
-      streamFn: scriptedStream(messages),
-      tools: [demoTool(execute)],
-      allowedToolNames: new Set(['demo']),
-    });
-
-    expect(result).toMatchObject({
-      status: 'exhausted',
-      stopReason: 'native_tool_attempt_budget',
-      attemptCount: 4,
-      executionCount: 0,
-      dispatchedActionCount: 0,
-      providerTransportCount: 5,
-    });
-    expect(execute).not.toHaveBeenCalled();
-  });
-
-  it('does not impose a generic execution budget and continues after every admitted call', async () => {
+  it('executes more than four distinct legal calls in one batch without a generic tool budget', async () => {
     const execute = vi.fn(async () => ({
       content: [{ type: 'text' as const, text: 'ok' }],
       details: {},
     }));
     const result = await run({
       streamFn: scriptedStream([
-        call('call-1'),
-        call('call-2'),
-        call('call-3'),
-        call('call-4'),
-        text('continued after four executions'),
+        calls(
+          ...Array.from({ length: 5 }, (_, index) => ({
+            id: `call-${index + 1}`,
+            name: 'demo',
+            arguments: { value: index + 1 },
+          })),
+        ),
+        text('continued after five executions'),
       ]),
       tools: [demoTool(execute)],
     });
 
     expect(result).toMatchObject({
       status: 'completed',
-      visibleOutput: 'continued after four executions',
-      attemptCount: 4,
-      executionCount: 4,
-      providerTransportCount: 5,
+      visibleOutput: 'continued after five executions',
+      attemptCount: 5,
+      executionCount: 5,
+      providerTransportCount: 2,
     });
-    expect(execute).toHaveBeenCalledTimes(4);
+    expect(execute).toHaveBeenCalledTimes(5);
   });
 
   it('settles a never-resolving transport at the internal deadline', async () => {
@@ -510,13 +454,8 @@ describe('runNativeChild', () => {
     });
     const searchResponses = vi.fn(() => pendingSearch);
     const webSearch = buildNativeWebSearchTool({
-      resolveConfig: () => ({
-        providerId: 'responses',
-        apiKey: 'responses-key',
-        baseUrl: 'https://responses-proxy.test/v1',
-        model: 'search-model',
-      }),
-      searchResponses,
+      config: { providerId: 'tavily', apiKey: 'search-key' },
+      search: searchResponses,
     });
     const result = await run({
       streamFn: scriptedStream([call('search-1', 'web_search', { query: 'current fact' })]),
@@ -557,13 +496,8 @@ describe('runNativeChild', () => {
     });
     const searchResponses = vi.fn(() => pendingSearch);
     const webSearch = buildNativeWebSearchTool({
-      resolveConfig: () => ({
-        providerId: 'responses',
-        apiKey: 'responses-key',
-        baseUrl: 'https://responses-proxy.test/v1',
-        model: 'search-model',
-      }),
-      searchResponses,
+      config: { providerId: 'tavily', apiKey: 'search-key' },
+      search: searchResponses,
     });
     const result = await run({
       streamFn: scriptedStream([call('search-1', 'web_search', { query: 'current fact' })]),

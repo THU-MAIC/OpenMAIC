@@ -1,13 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { AgentTurnSummary } from '@/lib/orchestration/types';
 import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
+import type { NativeWebSearchConfig } from '@/lib/chat/pi/tools/web-search';
 
-const mocks = vi.hoisted(() => ({ streamLLM: vi.fn(), searchResponses: vi.fn() }));
+const mocks = vi.hoisted(() => ({ streamLLM: vi.fn(), searchWeb: vi.fn() }));
 vi.mock('@/lib/ai/llm', () => ({ streamLLM: mocks.streamLLM }));
-vi.mock('@/lib/web-search/responses-web-search', () => ({
-  searchWithResponsesWebSearch: mocks.searchResponses,
-}));
+vi.mock('@/lib/web-search', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/web-search')>();
+  return { ...actual, searchWeb: mocks.searchWeb };
+});
 
 import { buildCallAgentTool } from '@/lib/chat/pi/tools/call-agent';
 
@@ -17,6 +19,11 @@ const ZERO_USAGE = {
   inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 0 },
 };
 const resolvedModel = { provider: 'test.provider', modelId: 'shared-model' };
+const registeredSearchConfig: NativeWebSearchConfig = {
+  providerId: 'tavily',
+  apiKey: 'registered-search-key',
+  baseUrl: 'https://registered-search.test',
+};
 const teacher: AgentConfig = {
   id: 'teacher-1',
   name: 'Teacher',
@@ -143,7 +150,7 @@ function makeHarness(
       metadata: { query: string; retrievedAt: string; sourceCount: number };
     };
     spotlightEnabled?: boolean;
-    webSearchEnabled?: boolean;
+    nativeWebSearchConfig?: NativeWebSearchConfig;
     takeSceneEvidence?: () => ReturnType<typeof sceneEvidence> | undefined;
     takeWebEvidence?: () =>
       | {
@@ -188,7 +195,7 @@ function makeHarness(
     enableWhiteboardTools: true,
     childRuntimeMode: 'native',
     enableNativeChildSpotlight: options.spotlightEnabled ?? true,
-    enableNativeChildWebSearch: options.webSearchEnabled ?? false,
+    nativeWebSearchConfig: options.nativeWebSearchConfig,
     requestStartCurrentScene:
       options.requestStartCurrentScene ??
       ({
@@ -216,16 +223,7 @@ function transportMessages(index: number) {
 describe('Native Child production consumer', () => {
   beforeEach(() => {
     mocks.streamLLM.mockReset();
-    mocks.searchResponses.mockReset();
-    process.env.RESPONSES_WEB_SEARCH_API_KEY = 'responses-key';
-    process.env.RESPONSES_WEB_SEARCH_BASE_URL = 'https://responses-proxy.test/v1';
-    process.env.RESPONSES_WEB_SEARCH_MODEL = 'search-model';
-  });
-
-  afterEach(() => {
-    delete process.env.RESPONSES_WEB_SEARCH_API_KEY;
-    delete process.env.RESPONSES_WEB_SEARCH_BASE_URL;
-    delete process.env.RESPONSES_WEB_SEARCH_MODEL;
+    mocks.searchWeb.mockReset();
   });
 
   it('does not consume pending evidence for an invalid delegation', async () => {
@@ -288,7 +286,7 @@ describe('Native Child production consumer', () => {
     });
     expect(second.details).not.toHaveProperty('sceneEvidence');
     expect(second.details).not.toHaveProperty('webEvidence');
-    expect(second.details).toMatchObject({ availableToolNames: [] });
+    expect(second.details).toMatchObject({ availableToolNames: ['web_search'] });
     expect(takeSceneEvidence).toHaveBeenCalledTimes(2);
     expect(takeWebEvidence).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(mocks.streamLLM.mock.calls[0]?.[0])).toContain('current-element');
@@ -341,7 +339,7 @@ describe('Native Child production consumer', () => {
     expect(result).toMatchObject({
       details: {
         runtimeMode: 'native',
-        availableToolNames: ['spotlight'],
+        availableToolNames: ['spotlight', 'web_search'],
         text: 'This is the key idea.',
         sceneEvidence: [expect.objectContaining({ sceneId: 'scene-current' })],
         nativeChildRun: {
@@ -407,10 +405,15 @@ describe('Native Child production consumer', () => {
 
     const result = await execute(harness);
 
-    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toEqual({});
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).not.toHaveProperty(
+      'spotlight',
+    );
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toHaveProperty(
+      'web_search',
+    );
     expect(result).toMatchObject({
       details: {
-        availableToolNames: [],
+        availableToolNames: ['web_search'],
         sceneEvidence: [expect.objectContaining({ sceneId: 'scene-other' })],
       },
     });
@@ -423,11 +426,16 @@ describe('Native Child production consumer', () => {
 
     const result = await execute(harness);
 
-    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toEqual({});
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).not.toHaveProperty(
+      'spotlight',
+    );
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toHaveProperty(
+      'web_search',
+    );
     expect(result).toMatchObject({
       details: {
         runtimeMode: 'native',
-        availableToolNames: [],
+        availableToolNames: ['web_search'],
         nativeChildRun: { status: 'completed' },
       },
     });
@@ -466,10 +474,15 @@ describe('Native Child production consumer', () => {
 
     const result = await execute(harness);
 
-    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toEqual({});
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).not.toHaveProperty(
+      'spotlight',
+    );
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toHaveProperty(
+      'web_search',
+    );
     expect(result.details).toMatchObject({
       runtimeMode: 'native',
-      availableToolNames: [],
+      availableToolNames: ['web_search'],
     });
   });
 
@@ -485,8 +498,13 @@ describe('Native Child production consumer', () => {
     });
 
     const result = await execute(harness);
-    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toEqual({});
-    expect(result.details).toMatchObject({ availableToolNames: [] });
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).not.toHaveProperty(
+      'spotlight',
+    );
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toHaveProperty(
+      'web_search',
+    );
+    expect(result.details).toMatchObject({ availableToolNames: ['web_search'] });
   });
 
   it('does not instantiate or read the Legacy whiteboard shadow state', async () => {
@@ -505,7 +523,7 @@ describe('Native Child production consumer', () => {
     });
   });
 
-  it('keeps Director Web evidence as untrusted prompt data without a Child web_search tool', async () => {
+  it('keeps Director Web evidence as untrusted prompt data without configuring Child search', async () => {
     useResponses([[{ type: 'text-delta', text: 'Evidence-backed speech.' }, finish('stop')]]);
     const harness = makeHarness({
       webEvidence: {
@@ -524,12 +542,12 @@ describe('Native Child production consumer', () => {
       tools: Record<string, unknown>;
     };
     expect(JSON.stringify(firstPayload.messages)).toContain('https://example.test/source');
-    expect(firstPayload.tools).not.toHaveProperty('web_search');
+    expect(firstPayload.tools).toHaveProperty('web_search');
     expect(result.details).toMatchObject({ webEvidence: { query: 'current fact' } });
   });
 
   it('runs Native web_search in the same Child without classroom action accounting', async () => {
-    mocks.searchResponses.mockResolvedValue({
+    mocks.searchWeb.mockResolvedValue({
       answer: 'A current fact.',
       query: 'current fact',
       responseTime: 0.1,
@@ -547,7 +565,7 @@ describe('Native Child production consumer', () => {
       [{ type: 'text-delta', text: 'The current fact is supported.' }, finish('stop')],
     ]);
     const harness = makeHarness({
-      webSearchEnabled: true,
+      nativeWebSearchConfig: registeredSearchConfig,
       agent: { ...teacher, allowedActions: [] },
     });
 
@@ -559,7 +577,7 @@ describe('Native Child production consumer', () => {
     ) as { content?: Array<{ output?: { type?: string; value?: string } }> } | undefined;
 
     expect(firstPayload.tools).toHaveProperty('web_search');
-    expect(mocks.searchResponses).toHaveBeenCalledTimes(1);
+    expect(mocks.searchWeb).toHaveBeenCalledTimes(1);
     expect(toolMessage?.content?.[0]?.output?.type).toBe('text');
     expect(toolMessage?.content?.[0]?.output?.value).toContain('https://example.test/current');
     expect(harness.onActionDone).not.toHaveBeenCalled();
@@ -579,7 +597,7 @@ describe('Native Child production consumer', () => {
   });
 
   it('keeps Director evidence and Child search additive, isolated, and take-once', async () => {
-    mocks.searchResponses.mockResolvedValue({
+    mocks.searchWeb.mockResolvedValue({
       answer: 'First Child answer.',
       query: 'first child fact',
       responseTime: 0.1,
@@ -611,7 +629,7 @@ describe('Native Child production consumer', () => {
       },
     };
     const harness = makeHarness({
-      webSearchEnabled: true,
+      nativeWebSearchConfig: registeredSearchConfig,
       takeWebEvidence: () => {
         const evidence = pendingDirectorEvidence;
         pendingDirectorEvidence = undefined;
@@ -642,25 +660,22 @@ describe('Native Child production consumer', () => {
     expect(JSON.stringify(transportMessages(2))).not.toContain(
       'https://example.test/director-evidence',
     );
-    expect(mocks.searchResponses).toHaveBeenCalledTimes(1);
+    expect(mocks.searchWeb).toHaveBeenCalledTimes(1);
   });
 
   it('keeps not_configured as an error-text result and allows same-Child continuation', async () => {
-    delete process.env.RESPONSES_WEB_SEARCH_API_KEY;
-    delete process.env.RESPONSES_WEB_SEARCH_BASE_URL;
-    delete process.env.RESPONSES_WEB_SEARCH_MODEL;
     useResponses([
       [webSearchCall(), finish('tool-calls')],
       [{ type: 'text-delta', text: 'Search is unavailable right now.' }, finish('stop')],
     ]);
-    const harness = makeHarness({ webSearchEnabled: true });
+    const harness = makeHarness();
 
     const result = await execute(harness);
     const toolMessage = transportMessages(1).find(
       (message) => (message as { role?: string }).role === 'tool',
     ) as { content?: Array<{ output?: { type?: string } }> } | undefined;
 
-    expect(mocks.searchResponses).not.toHaveBeenCalled();
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
     expect(toolMessage?.content?.[0]?.output?.type).toBe('error-text');
     expect(result).toMatchObject({
       details: {
@@ -671,7 +686,7 @@ describe('Native Child production consumer', () => {
   });
 
   it('allows four searches and final speech on the fifth Child LLM transport', async () => {
-    mocks.searchResponses.mockImplementation(async ({ query }) => ({
+    mocks.searchWeb.mockImplementation(async ({ query }) => ({
       answer: `Answer for ${query}`,
       query,
       responseTime: 0.1,
@@ -691,12 +706,12 @@ describe('Native Child production consumer', () => {
       [webSearchCall('query 4', 'search-4'), finish('tool-calls')],
       [{ type: 'text-delta', text: 'Final sourced answer.' }, finish('stop')],
     ]);
-    const harness = makeHarness({ webSearchEnabled: true });
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig });
 
     const result = await execute(harness);
 
     expect(mocks.streamLLM).toHaveBeenCalledTimes(5);
-    expect(mocks.searchResponses).toHaveBeenCalledTimes(4);
+    expect(mocks.searchWeb).toHaveBeenCalledTimes(4);
     expect(harness.onActionDone).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       details: {
@@ -712,44 +727,51 @@ describe('Native Child production consumer', () => {
     });
   });
 
-  it('blocks a fifth search observation before handler entry', async () => {
-    mocks.searchResponses.mockResolvedValue({
-      answer: 'Answer',
-      query: 'query',
+  it('executes five distinct legal searches in one batch without a generic tool budget', async () => {
+    mocks.searchWeb.mockImplementation(async ({ query }) => ({
+      answer: `Answer for ${query}`,
+      query,
       responseTime: 0.1,
       sources: [
-        { title: 'Source', url: 'https://example.test/source', content: 'Evidence.', score: 1 },
+        {
+          title: `Source for ${query}`,
+          url: `https://example.test/${encodeURIComponent(query)}`,
+          content: 'Evidence.',
+          score: 1,
+        },
       ],
-    });
+    }));
     useResponses([
-      [webSearchCall('query 1', 'search-1'), finish('tool-calls')],
-      [webSearchCall('query 2', 'search-2'), finish('tool-calls')],
-      [webSearchCall('query 3', 'search-3'), finish('tool-calls')],
-      [webSearchCall('query 4', 'search-4'), finish('tool-calls')],
-      [webSearchCall('query 5', 'search-5'), finish('tool-calls')],
+      [
+        ...Array.from({ length: 5 }, (_, index) =>
+          webSearchCall(`query ${index + 1}`, `search-${index + 1}`),
+        ),
+        finish('tool-calls'),
+      ],
+      [{ type: 'text-delta', text: 'Five-source synthesis.' }, finish('stop')],
     ]);
-    const harness = makeHarness({ webSearchEnabled: true });
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig });
 
     const result = await execute(harness);
 
-    expect(mocks.searchResponses).toHaveBeenCalledTimes(4);
+    expect(mocks.searchWeb).toHaveBeenCalledTimes(5);
+    expect(mocks.streamLLM).toHaveBeenCalledTimes(2);
     expect(result).toMatchObject({
-      isError: true,
       details: {
+        text: 'Five-source synthesis.',
         nativeChildRun: {
-          status: 'exhausted',
-          stopReason: 'native_tool_attempt_budget',
-          attemptCount: 4,
-          executionCount: 4,
+          status: 'completed',
+          attemptCount: 5,
+          executionCount: 5,
           dispatchedActionCount: 0,
-          providerTransportCount: 5,
+          providerTransportCount: 2,
         },
       },
     });
   });
 
   it('does not treat search-only empty completion as action-only success', async () => {
-    mocks.searchResponses.mockResolvedValue({
+    mocks.searchWeb.mockResolvedValue({
       answer: 'Answer',
       query: 'current fact',
       responseTime: 0.1,
@@ -758,7 +780,7 @@ describe('Native Child production consumer', () => {
       ],
     });
     useResponses([[webSearchCall(), finish('tool-calls')], [finish('stop')]]);
-    const harness = makeHarness({ webSearchEnabled: true });
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig });
 
     const result = await execute(harness);
 
@@ -793,14 +815,14 @@ describe('Native Child production consumer', () => {
       [rawWebSearchCall(input), finish('tool-calls')],
       [{ type: 'text-delta', text: 'I cannot search without a query.' }, finish('stop')],
     ]);
-    const harness = makeHarness({ webSearchEnabled: true });
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig });
 
     const result = await execute(harness);
     const toolMessage = transportMessages(1).find(
       (message) => (message as { role?: string }).role === 'tool',
     ) as { content?: Array<{ output?: { type?: string } }> } | undefined;
 
-    expect(mocks.searchResponses).not.toHaveBeenCalled();
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
     expect(toolMessage?.content?.[0]?.output?.type).toBe('error-text');
     expect(result).toMatchObject({
       details: { nativeChildRun: { attemptCount: 1, executionCount: 0 } },
@@ -809,12 +831,12 @@ describe('Native Child production consumer', () => {
 
   it('keeps length plus parsed web_search terminal and side-effect-free', async () => {
     useResponses([[webSearchCall(), finish('length')]]);
-    const harness = makeHarness({ webSearchEnabled: true });
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig });
 
     const result = await execute(harness);
 
     expect(mocks.streamLLM).toHaveBeenCalledTimes(1);
-    expect(mocks.searchResponses).not.toHaveBeenCalled();
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       isError: true,
       details: {
@@ -830,7 +852,7 @@ describe('Native Child production consumer', () => {
   });
 
   it('terminates duplicate web_search IDs without replaying the search side effect', async () => {
-    mocks.searchResponses.mockResolvedValue({
+    mocks.searchWeb.mockResolvedValue({
       answer: 'Answer',
       query: 'current fact',
       responseTime: 0.1,
@@ -842,11 +864,11 @@ describe('Native Child production consumer', () => {
       [webSearchCall('current fact', 'same-id'), finish('tool-calls')],
       [webSearchCall('current fact again', 'same-id'), finish('tool-calls')],
     ]);
-    const harness = makeHarness({ webSearchEnabled: true });
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig });
 
     const result = await execute(harness);
 
-    expect(mocks.searchResponses).toHaveBeenCalledTimes(1);
+    expect(mocks.searchWeb).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       isError: true,
       details: {
@@ -863,23 +885,23 @@ describe('Native Child production consumer', () => {
   it('performs zero Child transport and zero search request when already aborted', async () => {
     const abortController = new AbortController();
     abortController.abort(new DOMException('request already cancelled', 'AbortError'));
-    const harness = makeHarness({ webSearchEnabled: true, abortController });
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig, abortController });
 
     await expect(execute(harness)).rejects.toMatchObject({ name: 'AbortError' });
     expect(mocks.streamLLM).not.toHaveBeenCalled();
-    expect(mocks.searchResponses).not.toHaveBeenCalled();
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
     expect(harness.events).toEqual([]);
     expect(harness.onActionDone).not.toHaveBeenCalled();
   });
 
   it('lets caller cancellation win while search is pending and starts no continuation', async () => {
     const abortController = new AbortController();
-    mocks.searchResponses.mockImplementation(() => new Promise(() => {}));
+    mocks.searchWeb.mockImplementation(() => new Promise(() => {}));
     useResponses([[webSearchCall(), finish('tool-calls')]]);
-    const harness = makeHarness({ webSearchEnabled: true, abortController });
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig, abortController });
 
     const pending = execute(harness);
-    await vi.waitFor(() => expect(mocks.searchResponses).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(mocks.searchWeb).toHaveBeenCalledTimes(1));
     abortController.abort(new DOMException('request cancelled', 'AbortError'));
 
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });

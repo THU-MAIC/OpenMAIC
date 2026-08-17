@@ -2,12 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { Value } from 'typebox/value';
 import { buildNativeWebSearchTool } from '@/lib/chat/pi/tools/web-search';
 
-const responsesConfig = () => ({
-  providerId: 'responses' as const,
-  apiKey: 'responses-key',
-  baseUrl: 'https://responses-proxy.test/v1',
-  model: 'search-model',
-});
+const registeredConfig = {
+  providerId: 'tavily' as const,
+  apiKey: 'registered-search-key',
+  baseUrl: 'https://registered-search.test',
+};
 
 function successResult() {
   return {
@@ -62,16 +61,15 @@ describe('Native Child web_search', () => {
   });
 
   it('stays registered without configuration and fails without an external request', async () => {
-    const searchResponses = vi.fn();
+    const search = vi.fn();
     const tool = buildNativeWebSearchTool({
-      resolveConfig: () => undefined,
-      searchResponses,
+      search,
       now: () => new Date('2026-08-15T00:00:00.000Z'),
     });
 
     const result = await tool.execute('search-1', { query: ' current fact ' });
 
-    expect(searchResponses).not.toHaveBeenCalled();
+    expect(search).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       isError: true,
       details: {
@@ -84,13 +82,10 @@ describe('Native Child web_search', () => {
   });
 
   it('returns bounded untrusted evidence and exact normalized HTTP(S) URLs', async () => {
-    const logCall = vi.fn();
-    const searchResponses = vi.fn(async () => successResult());
+    const search = vi.fn(async () => successResult());
     const tool = buildNativeWebSearchTool({
-      stageId: 'stage-1',
-      resolveConfig: responsesConfig,
-      searchResponses,
-      logCall,
+      config: registeredConfig,
+      search,
       now: () => new Date('2026-08-15T00:00:00.000Z'),
     });
 
@@ -100,7 +95,7 @@ describe('Native Child web_search', () => {
     expect(result).not.toHaveProperty('isError');
     expect(result.details).toMatchObject({
       status: 'ok',
-      provider: 'responses',
+      providerId: 'tavily',
       query: 'current fact',
       retrievedAt: '2026-08-15T00:00:00.000Z',
       sourceCount: 1,
@@ -108,20 +103,26 @@ describe('Native Child web_search', () => {
     });
     expect(text).toContain('https://example.test/current');
     expect(text).toContain('untrusted external data');
-    expect(searchResponses).toHaveBeenCalledWith(
-      expect.objectContaining({ query: 'current fact', maxResults: 3 }),
+    expect(search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'tavily',
+        query: 'current fact',
+        apiKey: 'registered-search-key',
+        baseUrl: 'https://registered-search.test',
+        maxResults: 3,
+      }),
     );
-    expect(logCall).toHaveBeenCalledWith(
-      expect.objectContaining({ stageId: 'stage-1', status: 'success' }),
-    );
+    const serializedResult = JSON.stringify(result);
+    expect(serializedResult).not.toContain('registered-search-key');
+    expect(serializedResult).not.toContain('registered-search.test');
   });
 
   it('does not accept Director evidence lifecycle callbacks at the Native boundary', async () => {
     const onSearchStart = vi.fn();
     const onEvidence = vi.fn();
     const tool = buildNativeWebSearchTool({
-      resolveConfig: responsesConfig,
-      searchResponses: vi.fn(async () => successResult()),
+      config: registeredConfig,
+      search: vi.fn(async () => successResult()),
       onSearchStart,
       onEvidence,
     } as unknown as Parameters<typeof buildNativeWebSearchTool>[0]);
@@ -134,30 +135,33 @@ describe('Native Child web_search', () => {
 
   it('fails closed for missing sources and ordinary search-service errors', async () => {
     const withoutSources = buildNativeWebSearchTool({
-      resolveConfig: responsesConfig,
-      searchResponses: vi.fn(async () => ({ ...successResult(), sources: [] })),
+      config: registeredConfig,
+      search: vi.fn(async () => ({ ...successResult(), sources: [] })),
     });
     const serviceTimeout = buildNativeWebSearchTool({
-      resolveConfig: responsesConfig,
-      searchResponses: vi.fn(async () => {
-        throw new Error('Responses Web Search timed out after 20000ms');
+      config: registeredConfig,
+      search: vi.fn(async () => {
+        throw new Error(
+          'Registered Web Search timed out at https://registered-search.test with registered-search-key',
+        );
       }),
     });
 
     await expect(
       withoutSources.execute('search-3', { query: 'current fact' }),
     ).resolves.toMatchObject({ isError: true, details: { status: 'insufficient_evidence' } });
-    await expect(
-      serviceTimeout.execute('search-4', { query: 'current fact' }),
-    ).resolves.toMatchObject({ isError: true, details: { status: 'error' } });
+    const failedResult = await serviceTimeout.execute('search-4', { query: 'current fact' });
+    expect(failedResult).toMatchObject({ isError: true, details: { status: 'error' } });
+    expect(JSON.stringify(failedResult)).not.toContain('registered-search-key');
+    expect(JSON.stringify(failedResult)).not.toContain('registered-search.test');
   });
 
   it('preserves caller cancellation instead of translating it into search_failed', async () => {
     const controller = new AbortController();
     let rejectSearch: ((reason?: unknown) => void) | undefined;
     const tool = buildNativeWebSearchTool({
-      resolveConfig: responsesConfig,
-      searchResponses: vi.fn(
+      config: registeredConfig,
+      search: vi.fn(
         () =>
           new Promise<never>((_resolve, reject) => {
             rejectSearch = reject;

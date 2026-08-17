@@ -11,7 +11,6 @@ import {
   isPiChatEnabled,
   isPiNativeChildRuntimeEnabled,
   isPiNativeChildSpotlightEnabled,
-  isPiNativeChildWebSearchEnabled,
   isPiWebSearchEnabled,
 } from '@/lib/config/feature-flags';
 import { createLogger } from '@/lib/logger';
@@ -26,6 +25,7 @@ import { resolveModel } from '@/lib/server/resolve-model';
 import { apiError } from '@/lib/server/api-response';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import type { StatelessChatRequest } from '@/lib/types/chat';
+import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 
 const log = createLogger('Pi Chat API');
 
@@ -131,7 +131,15 @@ export async function POST(req: NextRequest) {
     const enableWhiteboardTools = body.config.piEnableWhiteboardTools === true;
     const childRuntimeMode = isPiNativeChildRuntimeEnabled() ? 'native' : 'legacy';
     const enableNativeChildSpotlight = isPiNativeChildSpotlightEnabled();
-    const enableNativeChildWebSearch = isPiNativeChildWebSearchEnabled();
+    const nativeWebSearchConfig =
+      childRuntimeMode === 'native'
+        ? resolveClassroomWebSearchConfig({
+            webSearchProviderId: body.webSearchProviderId,
+            webSearchApiKey: body.webSearchApiKey,
+            webSearchModelId: body.webSearchModelId,
+            baiduSubSources: body.baiduSubSources,
+          })
+        : undefined;
 
     log.info(
       `Pi request agents=${body.config.agentIds.join(', ')} messages=${body.messages.length} maxAgentTurns=${maxAgentTurns}`,
@@ -170,7 +178,7 @@ export async function POST(req: NextRequest) {
           enableWebSearch: isPiWebSearchEnabled(),
           childRuntimeMode,
           enableNativeChildSpotlight,
-          enableNativeChildWebSearch,
+          nativeWebSearchConfig,
         });
 
         if (signal.aborted) {

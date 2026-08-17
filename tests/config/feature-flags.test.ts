@@ -6,7 +6,6 @@ import {
   isPiChatEnabled,
   isPiNativeChildRuntimeEnabled,
   isPiNativeChildSpotlightEnabled,
-  isPiNativeChildWebSearchEnabled,
   isPptxImportEnabled,
   isPiWebSearchEnabled,
   isVideoExportEnabled,
@@ -203,7 +202,6 @@ describe('isPiWebSearchEnabled', () => {
 describe.each([
   ['OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME', isPiNativeChildRuntimeEnabled],
   ['OPENMAIC_ENABLE_PI_NATIVE_CHILD_SPOTLIGHT', isPiNativeChildSpotlightEnabled],
-  ['OPENMAIC_ENABLE_PI_NATIVE_CHILD_WEB_SEARCH', isPiNativeChildWebSearchEnabled],
 ])('%s', (flag, readFlag) => {
   let original: string | undefined;
 
