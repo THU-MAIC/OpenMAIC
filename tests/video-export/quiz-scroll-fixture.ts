@@ -2,14 +2,14 @@ import type { Action } from '@openmaic/dsl';
 import type { CompilerScene, QuizLayoutMeasurement } from '@/lib/video-export';
 
 export const QUIZ_SCROLL_TITLE =
-  'Quiz：确定性导出与超长标题排版验证 SupercalifragilisticexpialidociousWithoutBreaks';
+  'Quiz：确定性导出与超长标题排版验证 — Русский والعربية — SupercalifragilisticexpialidociousWithoutBreaks';
 
 export const QUIZ_SCROLL_QUESTIONS: readonly unknown[] = Array.from({ length: 9 }, (_, index) => ({
   id: `long-${index + 1}`,
   type: index % 3 === 0 ? 'short_answer' : index % 2 === 0 ? 'multiple' : 'single',
   question:
     index % 2 === 0
-      ? `第 ${index + 1} 题：请结合公式 $a^2+b^2=c^2$ 解释这个较长的中文问题，并注意公式字体和多行排版保持稳定。`
+      ? `第 ${index + 1} 题：请结合公式 $a^2+b^2=c^2$ 解释这个较长的中文问题。Русский текст و العربية ظاهرة، مع الحفاظ على ثبات الخطوط وتعدد الأسطر。`
       : `Question ${index + 1}: choose the statement that correctly explains $\\sqrt{x^2}=|x|$ across a deliberately long Latin prompt.`,
   options: [
     { value: 'A', label: 'A concise option with $x^2$.' },
@@ -22,7 +22,7 @@ export const QUIZ_SCROLL_QUESTIONS: readonly unknown[] = Array.from({ length: 9 
 
 /** Chromium-pinned geometry for this exact shared fixture at 1280×720. */
 export const QUIZ_SCROLL_LAYOUT_720P: QuizLayoutMeasurement = {
-  contentHeightPx: 2170,
+  contentHeightPx: 2298,
   viewportHeightPx: 475,
   frameHeightPx: 720,
 };

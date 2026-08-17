@@ -48,6 +48,7 @@ import {
   renderQuizQuestionListSurface,
   type QuizQuestionListLabels,
 } from './quiz-question-list';
+import { planQuizScriptFonts, type QuizScriptFont } from './quiz-script-font-plan';
 
 /** A file in the emitted project: a relative path and its text content. */
 export interface EmittedFile {
@@ -483,12 +484,22 @@ function renderQuizQuestionList(
   // clips on one track, so the list owns track 3 (0=base/cover, 1=video,
   // 2=audio) while GSAP performs the resolved 600ms transition.
   const clip = visualClip(scene, visual, index, 'quiz-question-list', 3);
-  const contentId = `scene-${scene.index + 1}-visual-${index + 1}-content`;
   return [
     `<div ${clip}>`,
-    renderQuizQuestionListSurface(visual, labels, direction, contentId),
+    renderQuizQuestionListMarkup(scene, visual, index, labels, direction),
     `</div>`,
   ].join('\n');
+}
+
+function renderQuizQuestionListMarkup(
+  scene: VideoTimelineScene,
+  visual: QuizQuestionListVisual,
+  index: number,
+  labels: CoverCardLabels,
+  direction: 'ltr' | 'rtl',
+): string {
+  const contentId = `scene-${scene.index + 1}-visual-${index + 1}-content`;
+  return renderQuizQuestionListSurface(visual, labels, direction, contentId);
 }
 
 function quizQuestionListStatements(
@@ -1110,6 +1121,7 @@ function renderReadme(project: {
   labels: VideoExportLabels;
   cta: VideoExportCta | null;
   hasQuizQuestionList: boolean;
+  quizScriptFonts: readonly QuizScriptFont[];
 }): string {
   const seconds = (project.totalDurationMs / 1000).toFixed(1);
   const effectiveLabels = JSON.stringify(project.labels, null, 2);
@@ -1135,6 +1147,19 @@ function renderReadme(project: {
     ),
   );
   const labelsFence = '`'.repeat(Math.max(3, longestBacktickRun + 1));
+  const scriptFontEntries = [
+    project.quizScriptFonts.includes('cyrillic')
+      ? '- `LICENSES/Noto-Sans-OFL-1.1.txt` — license for the bundled deterministic Cyrillic faces.'
+      : '',
+    project.quizScriptFonts.includes('arabic')
+      ? '- `LICENSES/Noto-Sans-Arabic-OFL-1.1.txt` — license for the bundled deterministic Arabic face.'
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const scriptFontSummary = project.quizScriptFonts.length
+    ? `, ${project.quizScriptFonts.join(' and ')}`
+    : '';
   return `# ${project.stageName} — OpenMAIC video export
 
 Self-contained [Hyperframes](https://github.com/heygen-com/hyperframes) composition
@@ -1150,7 +1175,7 @@ folder — no network access, no CDN.
 - \`LICENSES/Inter-OFL-1.1.txt\` — license for the font embedded in \`index.html\`.
 ${
   project.hasQuizQuestionList
-    ? '- `assets/fonts` — 20 KaTeX faces plus deterministic Han/Kana and Hangul WOFF2 assets.\n- `LICENSES/KaTeX-MIT.txt` — license for the KaTeX renderer and math-font faces.\n- `LICENSES/Noto-Sans-SC-OFL-1.1.txt` — license for the bundled deterministic Han/Kana face.\n- `LICENSES/Noto-Sans-KR-OFL-1.1.txt` — license for the bundled deterministic Hangul face.'
+    ? `- \`assets/fonts\` — 20 KaTeX faces plus selected deterministic Quiz text WOFF2 assets.\n- \`LICENSES/KaTeX-MIT.txt\` — license for the KaTeX renderer and math-font faces.\n- \`LICENSES/Noto-Sans-SC-OFL-1.1.txt\` — license for the bundled deterministic Han/Kana face.\n- \`LICENSES/Noto-Sans-KR-OFL-1.1.txt\` — license for the bundled deterministic Hangul face.${scriptFontEntries ? `\n${scriptFontEntries}` : ''}`
     : ''
 }
 
@@ -1168,7 +1193,7 @@ Duration: ~${seconds}s at ${project.width}×${project.height}.
 The same manifest, emitter implementation, and complete effective options produce byte-identical HTML.
 ${
   project.hasQuizQuestionList
-    ? 'Quiz CJK (Han/Kana/Hangul), Latin, and math rendering is host-independent because the project bundles those exact faces.'
+    ? `Quiz question-list CJK (Han/Kana/Hangul), Latin${scriptFontSummary}, and math rendering is host-independent because the project bundles those exact faces.`
     : 'Local renders on different hosts do not guarantee identical non-Latin pixels because system fonts may differ.'
 }
 
@@ -1221,11 +1246,18 @@ export function emitHyperframes(
   };
   const cta = options.cta ?? null;
   const locale = options.locale ?? DEFAULT_LOCALE;
+  const quizDirection = isRtl(locale) ? 'rtl' : 'ltr';
   const totalSec = sec(ir.totalDurationMs);
   const hasInteractiveHtml = ir.scenes.some((scene) => scene.base.kind === 'interactive-html');
-  const hasQuizQuestionList = ir.scenes.some((scene) =>
-    scene.visuals.some((visual) => visual.kind === 'quiz-question-list'),
+  const quizQuestionListMarkup = ir.scenes.flatMap((scene) =>
+    scene.visuals.flatMap((visual, index) =>
+      visual.kind === 'quiz-question-list'
+        ? [renderQuizQuestionListMarkup(scene, visual, index, labels, quizDirection)]
+        : [],
+    ),
   );
+  const quizFontPlan = planQuizScriptFonts(quizQuestionListMarkup);
+  const hasQuizQuestionList = quizQuestionListMarkup.length > 0;
 
   const sceneHtml: string[] = [];
   const effectHtml: string[] = [];
@@ -1244,7 +1276,7 @@ export function emitHyperframes(
         burnInSubtitles: options.burnInSubtitles === true && ir.subtitles.length > 0,
       },
       cta,
-      isRtl(locale) ? 'rtl' : 'ltr',
+      quizDirection,
     );
     sceneHtml.push(...visuals.html);
     statements.push(...visuals.statements);
@@ -1280,7 +1312,9 @@ export function emitHyperframes(
 <title>${escapeHtml(ir.stage.name)} — OpenMAIC video</title>
 <style>
   ${INTER_FONT_FACE_CSS}${
-    hasQuizQuestionList ? `\n  ${NOTO_CJK_EXPORT_CSS}\n  ${KATEX_EXPORT_CSS}` : ''
+    hasQuizQuestionList
+      ? `\n  ${NOTO_CJK_EXPORT_CSS}\n  ${KATEX_EXPORT_CSS}${quizFontPlan.exportCss ? `\n  ${quizFontPlan.exportCss}` : ''}`
+      : ''
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #000; }
@@ -1330,6 +1364,7 @@ window.__openmaicInteractiveReady.then(function () {
             path: 'LICENSES/Noto-Sans-KR-OFL-1.1.txt',
             content: NOTO_SANS_KR_OFL_LICENSE,
           },
+          ...quizFontPlan.licenses,
         ]
       : []),
     { path: manifestPath, content: emitManifestJson(ir) },
@@ -1350,13 +1385,16 @@ window.__openmaicInteractiveReady.then(function () {
         labels,
         cta,
         hasQuizQuestionList,
+        quizScriptFonts: quizFontPlan.scripts,
       }),
     },
   ];
 
   return {
     files,
-    vendorAssets: hasQuizQuestionList ? [...NOTO_CJK_FONT_ASSETS, ...KATEX_FONT_ASSETS] : [],
+    vendorAssets: hasQuizQuestionList
+      ? [...NOTO_CJK_FONT_ASSETS, ...KATEX_FONT_ASSETS, ...quizFontPlan.assets]
+      : [],
     width,
     height,
     compositionId,

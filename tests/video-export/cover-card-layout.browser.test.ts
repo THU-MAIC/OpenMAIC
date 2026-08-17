@@ -262,6 +262,85 @@ function quizListHtml(
   };
 }
 
+const SCRIPT_FONT_MATRIX = [
+  {
+    name: 'Cyrillic',
+    locale: 'ru-RU' as Locale,
+    family: 'OpenMAIC Noto Sans Cyrillic',
+    text: 'Привет Ёж Ԁ',
+    expectedFontFiles: [
+      'noto-sans-cyrillic-400-normal.woff2',
+      'noto-sans-cyrillic-ext-400-normal.woff2',
+    ],
+  },
+  {
+    name: 'Arabic',
+    locale: 'ar-SA' as Locale,
+    family: 'OpenMAIC Noto Sans Arabic',
+    text: 'العربية',
+    expectedFontFiles: ['noto-sans-arabic-arabic-400-normal.woff2'],
+  },
+] as const;
+
+function scriptFontQuizSource(script: (typeof SCRIPT_FONT_MATRIX)[number]): CompilerScene {
+  return {
+    id: `quiz-script-${script.name.toLowerCase()}`,
+    stageId: 'stage',
+    title: `${script.name} visible Quiz`,
+    order: 0,
+    type: 'quiz',
+    content: {
+      type: 'quiz',
+      questions: Array.from({ length: 9 }, (_, index) => ({
+        id: `${script.name.toLowerCase()}-${index + 1}`,
+        type: 'single',
+        question:
+          script.name === 'Arabic'
+            ? `اقرأ النص ${script.text} ثم قارن العربية مع الع\u200Cربية.`
+            : `Прочитайте ${script.text} и выберите верный ответ.`,
+        options: [
+          { value: 'A', label: script.text },
+          { value: 'B', label: `Question ${index + 1}` },
+        ],
+      })),
+    },
+    actions: [speech(`script-${script.name}`, `${script.name} Quiz narration`)],
+  } as CompilerScene;
+}
+
+function scriptFontQuizHtml(
+  frame: { width: number; height: number },
+  script: (typeof SCRIPT_FONT_MATRIX)[number],
+  measurement: { contentHeightPx: number; viewportHeightPx: number },
+): { html: string; scrollEndMs: number; bottomHoldEndMs: number } {
+  const source = scriptFontQuizSource(script);
+  const ir = compileVideoTimeline(
+    { stage: { id: 'stage', name: `${script.name} Quiz` }, scenes: [source] },
+    {
+      timing: NO_PROBE,
+      assets: NO_ASSETS,
+      quizLayout: {
+        measureQuestionList: () => ({ ...measurement, frameHeightPx: frame.height }),
+      },
+    },
+  );
+  const visual = ir.scenes[0].visuals.find((item) => item.kind === 'quiz-question-list');
+  if (!visual || visual.kind !== 'quiz-question-list') throw new Error('Quiz list not planned');
+  return {
+    html: emitHyperframes(ir, {
+      ...frame,
+      locale: script.locale,
+      labels: getVideoExportCoverLabels(script.locale),
+    }).files.find((file) => file.path === 'index.html')!.content,
+    scrollEndMs:
+      visual.startMs +
+      visual.transitionDurationMs +
+      visual.topHoldDurationMs +
+      visual.scrollDurationMs,
+    bottomHoldEndMs: visual.startMs + visual.durationMs,
+  };
+}
+
 const GSAP = readFileSync(join(process.cwd(), 'public/vendor/gsap.min.js'), 'utf8');
 const HARNESS_URL = 'http://cover-layout.test/index.html';
 
@@ -875,6 +954,209 @@ describe('Quiz/PBL cover cards in a real browser', () => {
     );
   }
 
+  for (const script of SCRIPT_FONT_MATRIX) {
+    for (const frame of [QUIZ_LIST_FRAMES['720p'], QUIZ_LIST_FRAMES['1080p']]) {
+      check(
+        `keeps ${script.name} Quiz font measurement and emitted geometry deterministic at ${frame.width}x${frame.height}`,
+        async (page) => {
+          const source = scriptFontQuizSource(script);
+          const surface = createQuizQuestionListMeasurementSurface({
+            content: { title: source.title, questions: prepareQuizQuestionList(source) },
+            width: frame.width,
+            height: frame.height,
+            locale: script.locale,
+            labels: getVideoExportCoverLabels(script.locale),
+          });
+          const measurementFontRequests: string[] = [];
+          const emissionFontRequests: string[] = [];
+          let fontRequestPhase: 'measurement' | 'emission' = 'measurement';
+          const recordFontRequest = (request: Request) => {
+            if (request.resourceType() !== 'font') return;
+            (fontRequestPhase === 'measurement'
+              ? measurementFontRequests
+              : emissionFontRequests
+            ).push(request.url());
+          };
+          page.on('request', recordFontRequest);
+          try {
+            await page.setViewportSize(frame);
+            await page.goto(HARNESS_URL, { waitUntil: 'load' });
+            const measured = await page.evaluate(
+              async ({ source: measureSource, input }) => {
+                const measure = (0, eval)(`(${measureSource})`) as (
+                  value: typeof input,
+                ) => Promise<{ contentHeightPx: number; viewportHeightPx: number } | null>;
+                const first = await measure(input);
+                const second = await measure(input);
+                return {
+                  first,
+                  second,
+                  remainingHosts: document.querySelectorAll('#quiz-layout-measurement').length,
+                };
+              },
+              { source: measureQuizQuestionList.toString(), input: surface },
+            );
+
+            expect(measured.first).not.toBeNull();
+            expect(measured.second).toEqual(measured.first);
+            expect(measured.remainingHosts).toBe(0);
+            expect(
+              new Set(
+                measurementFontRequests
+                  .map((url) => new URL(url).pathname)
+                  .filter((path) => /noto-sans-(?:cyrillic|arabic)/.test(path)),
+              ),
+            ).toEqual(
+              new Set(script.expectedFontFiles.map((file) => `/vendor/video-export/fonts/${file}`)),
+            );
+
+            const emitted = scriptFontQuizHtml(frame, script, measured.first!);
+            fontRequestPhase = 'emission';
+            await loadEmittedHtml(page, emitted.html);
+            const browserProof = await page.evaluate(
+              async ({ family, text, arabic, scrollEndMs, bottomHoldEndMs }) => {
+                const loaded = await document.fonts.load(`40px "${family}"`, text);
+                const signature = (value: string, font: string): number => {
+                  const canvas = document.createElement('canvas');
+                  canvas.width = 320;
+                  canvas.height = 80;
+                  const context = canvas.getContext('2d')!;
+                  context.font = `40px ${font}`;
+                  context.fillText(value, 0, 56);
+                  let result = 0;
+                  for (const channel of context.getImageData(0, 0, 320, 80).data) {
+                    result = (result * 31 + channel) >>> 0;
+                  }
+                  return result;
+                };
+                const timeline = (
+                  window as typeof window & {
+                    __timelines: Record<
+                      string,
+                      { time(value: number, suppressEvents?: boolean): unknown }
+                    >;
+                  }
+                ).__timelines.openmaic;
+                const content = document.querySelector<HTMLElement>('.quiz-list-content')!;
+                const viewport = document.querySelector<HTMLElement>('.quiz-list-viewport')!;
+                const cards = document.querySelectorAll<HTMLElement>('.quiz-list-question');
+                const last = cards[cards.length - 1]!;
+                const lastOffsetAt = (timeMs: number) => {
+                  timeline.time(timeMs / 1000, false);
+                  return (
+                    last.getBoundingClientRect().bottom - viewport.getBoundingClientRect().bottom
+                  );
+                };
+                const joinedArabic = 'العربية';
+                const zwnjArabic = 'الع\u200Cربية';
+                const arabicPrompt = arabic
+                  ? Array.from(document.querySelectorAll<HTMLElement>('.quiz-list-prompt')).find(
+                      (node) => node.textContent?.includes(zwnjArabic),
+                    )
+                  : undefined;
+                const arabicTextNode = arabicPrompt
+                  ? Array.from(arabicPrompt.childNodes).find(
+                      (node) =>
+                        node.nodeType === Node.TEXT_NODE && node.textContent?.includes(zwnjArabic),
+                    )
+                  : undefined;
+                const rangeWidth = (value: string): number | null => {
+                  if (!arabicTextNode?.textContent) return null;
+                  const start = arabicTextNode.textContent.indexOf(value);
+                  if (start < 0) return null;
+                  const range = document.createRange();
+                  range.setStart(arabicTextNode, start);
+                  range.setEnd(arabicTextNode, start + value.length);
+                  return range.getBoundingClientRect().width;
+                };
+                const joinedArabicWidth = arabic ? rangeWidth(joinedArabic) : null;
+                const zwnjArabicWidth = arabic ? rangeWidth(zwnjArabic) : null;
+                return {
+                  selectedFaceCount: loaded.length,
+                  checked: document.fonts.check(`40px "${family}"`, text),
+                  covered:
+                    signature(text, `"${family}", monospace`) !== signature(text, 'monospace'),
+                  shellDirection: document.querySelector('.quiz-list-shell')?.getAttribute('dir'),
+                  promptDirections: Array.from(document.querySelectorAll('.quiz-list-prompt')).map(
+                    (node) => node.getAttribute('dir'),
+                  ),
+                  scrollEndOffsetPx: lastOffsetAt(scrollEndMs),
+                  bottomHoldOffsetPx: lastOffsetAt(bottomHoldEndMs),
+                  transform: getComputedStyle(content).transform,
+                  arabicPromptDirection: arabicPrompt
+                    ? getComputedStyle(arabicPrompt).direction
+                    : null,
+                  joinedArabicWidth,
+                  zwnjArabicWidth,
+                };
+              },
+              {
+                family: script.family,
+                text: script.text,
+                arabic: script.name === 'Arabic',
+                scrollEndMs: emitted.scrollEndMs,
+                bottomHoldEndMs: emitted.bottomHoldEndMs,
+              },
+            );
+
+            expect(browserProof.selectedFaceCount).toBeGreaterThan(0);
+            expect(browserProof.checked).toBe(true);
+            expect(browserProof.covered).toBe(true);
+            expect(browserProof.shellDirection).toBe(script.locale === 'ar-SA' ? 'rtl' : 'ltr');
+            expect(browserProof.promptDirections).toEqual(
+              expect.arrayContaining([expect.stringMatching(/^auto$/)]),
+            );
+            expect(Math.abs(browserProof.scrollEndOffsetPx)).toBeLessThanOrEqual(1);
+            expect(Math.abs(browserProof.bottomHoldOffsetPx)).toBeLessThanOrEqual(1);
+            expect(browserProof.transform).not.toBe('none');
+            if (script.name === 'Arabic') {
+              expect(browserProof.arabicPromptDirection).toBe('rtl');
+              expect(browserProof.joinedArabicWidth).toBeGreaterThan(0);
+              expect(browserProof.zwnjArabicWidth).toBeGreaterThan(0);
+              const shapingPrompt = page
+                .locator('.quiz-list-question')
+                .last()
+                .locator('.quiz-list-prompt');
+              const originalPrompt = await shapingPrompt.textContent();
+              let joinedArabic: Buffer;
+              let zwnjArabic: Buffer;
+              try {
+                await shapingPrompt.evaluate((node) => {
+                  node.textContent = 'العربية';
+                });
+                joinedArabic = await shapingPrompt.screenshot();
+                await shapingPrompt.evaluate((node) => {
+                  node.textContent = 'الع\u200Cربية';
+                });
+                zwnjArabic = await shapingPrompt.screenshot();
+              } finally {
+                await shapingPrompt.evaluate((node, text) => {
+                  node.textContent = text;
+                }, originalPrompt);
+              }
+              expect(joinedArabic.equals(zwnjArabic)).toBe(false);
+            }
+          } finally {
+            page.off('request', recordFontRequest);
+          }
+
+          expect(
+            new Set(
+              emissionFontRequests
+                .map((url) => new URL(url).pathname)
+                .filter((path) => /noto-sans-(?:cyrillic|arabic)/.test(path)),
+            ),
+          ).toEqual(new Set(script.expectedFontFiles.map((file) => `/assets/fonts/${file}`)));
+          expect(
+            [...measurementFontRequests, ...emissionFontRequests].every(
+              (url) => new URL(url).origin === 'http://cover-layout.test',
+            ),
+          ).toBe(true);
+        },
+      );
+    }
+  }
+
   for (const blockedStep of ['fonts', 'animation-frame'] as const) {
     check(`bounds Quiz measurement when ${blockedStep} never settles`, async (page) => {
       const frame = QUIZ_LIST_FRAMES['720p'];
@@ -943,6 +1225,112 @@ describe('Quiz/PBL cover cards in a real browser', () => {
       );
     });
   }
+
+  for (const fontLoadResult of ['reject', 'empty', 'pending'] as const) {
+    check(`falls back when a selected Quiz font load is ${fontLoadResult}`, async (page) => {
+      const frame = QUIZ_LIST_FRAMES['720p'];
+      const fixture = quizScrollScene();
+      const questions = prepareQuizQuestionList(fixture).map((question, index) =>
+        index === 0 ? { ...question, question: `Проверка: ${question.question}` } : question,
+      );
+      const surface = createQuizQuestionListMeasurementSurface({
+        content: { title: fixture.title, questions },
+        width: frame.width,
+        height: frame.height,
+        locale: 'ru-RU',
+        labels: getVideoExportCoverLabels('ru-RU'),
+      });
+      expect(surface.requiredFontLoads).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ family: 'OpenMAIC Noto Sans Cyrillic' }),
+        ]),
+      );
+      await page.setViewportSize(frame);
+      await page.goto(HARNESS_URL, { waitUntil: 'load' });
+
+      const result = await page.evaluate(
+        async ({ source, input, outcome }) => {
+          const measure = (0, eval)(`(${source})`) as (
+            value: typeof input,
+            timeoutMs?: number,
+          ) => Promise<unknown>;
+          const fonts = document.fonts;
+          const ownLoad = Object.getOwnPropertyDescriptor(fonts, 'load');
+          Object.defineProperty(fonts, 'load', {
+            configurable: true,
+            value: () => {
+              if (outcome === 'reject') return Promise.reject(new Error('font load failed'));
+              if (outcome === 'empty') return Promise.resolve([]);
+              return new Promise<FontFace[]>(() => {});
+            },
+          });
+
+          const measured = await Promise.race([
+            measure(input, 40).then((value) => ({ settled: true, value })),
+            new Promise<{ settled: false; value: null }>((resolve) =>
+              setTimeout(() => resolve({ settled: false, value: null }), 250),
+            ),
+          ]);
+          const remainingHosts = document.querySelectorAll('#quiz-layout-measurement').length;
+          if (ownLoad) Object.defineProperty(fonts, 'load', ownLoad);
+          else delete (fonts as unknown as { load?: unknown }).load;
+          document.querySelector('#quiz-layout-measurement')?.remove();
+          return { ...measured, remainingHosts };
+        },
+        {
+          source: measureQuizQuestionList.toString(),
+          input: surface,
+          outcome: fontLoadResult,
+        },
+      );
+
+      expect(result).toEqual({ settled: true, value: null, remainingHosts: 0 });
+    });
+  }
+
+  check('fails closed when visible script text is missing from the vendored cmap', async (page) => {
+    const frame = QUIZ_LIST_FRAMES['720p'];
+    await page.setViewportSize(frame);
+    await page.goto(HARNESS_URL, { waitUntil: 'load' });
+    for (const { character, family } of [
+      { character: '\u1d2b', family: 'OpenMAIC Noto Sans Cyrillic' },
+      { character: '\u1c89', family: 'OpenMAIC Noto Sans Cyrillic' },
+      { character: '\u0897', family: 'OpenMAIC Noto Sans Arabic' },
+    ]) {
+      const surface = createQuizQuestionListMeasurementSurface({
+        content: {
+          title: 'Unsupported script coverage',
+          questions: [
+            {
+              id: 'unsupported-script',
+              type: 'single',
+              question: `Missing glyph: ${character}`,
+              options: [],
+            },
+          ],
+        },
+        width: frame.width,
+        height: frame.height,
+        locale: 'en-US',
+        labels: getVideoExportCoverLabels('en-US'),
+      });
+      expect(surface.requiredFontLoads.at(-1)).toEqual({ family, text: character });
+
+      const result = await page.evaluate(
+        async ({ source, input }) => {
+          const measure = (0, eval)(`(${source})`) as (value: typeof input) => Promise<unknown>;
+          const value = await measure(input);
+          return {
+            value,
+            remainingHosts: document.querySelectorAll('#quiz-layout-measurement').length,
+          };
+        },
+        { source: measureQuizQuestionList.toString(), input: surface },
+      );
+
+      expect(result).toEqual({ value: null, remainingHosts: 0 });
+    }
+  });
 
   check('runs the production Quiz measurer and emitted timeline end to end', async (page) => {
     const frame = QUIZ_LIST_FRAMES['720p'];
