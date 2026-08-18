@@ -10,7 +10,14 @@ import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import type { Slide, PPTElementOutline, PPTElementShadow, PPTElementLink } from '@openmaic/dsl';
+import {
+  enumerateAssetManifest,
+  slideMediaSlotDescriptors,
+  type Slide,
+  type PPTElementOutline,
+  type PPTElementShadow,
+  type PPTElementLink,
+} from '@openmaic/dsl';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
 import { getElementRange, getLineElementPath, getTableSubThemeColor } from '@/lib/utils/element';
@@ -421,6 +428,53 @@ async function resolvePptxEmbeddableSrc(
   return renderableMediaUrl(resolvePptxMediaBinding(ref, effectiveTask).resolution) ?? '';
 }
 
+/**
+ * Derive the document-wide candidate set for PPTX media resolution through the
+ * standard manifest. The PPTX document is the ordered slide list it renders;
+ * speaker-note actions and non-rendered whiteboards are intentionally outside
+ * this media scope.
+ */
+export function derivePptxMediaReferenceSet(slides: readonly Slide[]): ReadonlySet<string> {
+  const scenes = slides.map(
+    (slide, index) =>
+      ({
+        id: `pptx-slide-${index}`,
+        stageId: 'pptx-export',
+        type: 'slide',
+        title: '',
+        order: index,
+        content: { type: 'slide', canvas: slide },
+      }) as Scene,
+  );
+  return new Set(enumerateAssetManifest({ stage: {}, scenes }).entries.map(({ ref }) => ref));
+}
+
+/**
+ * Pin the manifest and layout walks together. Element iteration remains
+ * necessary for coordinates, z-order and video binding selection; it may not
+ * introduce or omit a media role relative to the manifest.
+ */
+export function assertPptxMediaReferenceParity(
+  slides: readonly Slide[],
+  manifestRefs: ReadonlySet<string>,
+): void {
+  const layoutRefs = new Set<string>();
+  for (const slide of slides) {
+    for (const slot of slideMediaSlotDescriptors(slide)) {
+      if (slot.ref) layoutRefs.add(slot.ref);
+    }
+  }
+  const missingFromLayout = [...manifestRefs].filter((ref) => !layoutRefs.has(ref));
+  const missingFromManifest = [...layoutRefs].filter((ref) => !manifestRefs.has(ref));
+  if (missingFromLayout.length > 0 || missingFromManifest.length > 0) {
+    throw new Error(
+      `PPTX media manifest/layout mismatch: ` +
+        `manifest-only=${JSON.stringify(missingFromLayout)}, ` +
+        `layout-only=${JSON.stringify(missingFromManifest)}`,
+    );
+  }
+}
+
 // Exported for the round-trip integration test harness — the test wires its
 // own slides + ratios in and inspects the resulting PPTX bytes via JSZip.
 // The hook below is still the only intended runtime caller.
@@ -435,6 +489,20 @@ export async function buildPptxBlob(
 ): Promise<Blob> {
   const pptx = new pptxgen();
   const documentElements = slides.flatMap((slide) => slide.elements);
+  const manifestRefs = derivePptxMediaReferenceSet(slides);
+  assertPptxMediaReferenceParity(slides, manifestRefs);
+  const resolveManifestMedia = (
+    ref: string | undefined,
+    task: MediaTaskState | undefined,
+  ): Promise<string> => {
+    // A generated task may supply a concrete poster URL that is runtime
+    // metadata rather than a document ref. Preserve that established fallback;
+    // every document-owned ref must still come from the manifest.
+    if (ref && !manifestRefs.has(ref) && task?.objectUrl !== ref) {
+      throw new Error(`PPTX layout attempted to resolve a ref outside the asset manifest: ${ref}`);
+    }
+    return resolvePptxEmbeddableSrc(ref, task, stageId);
+  };
 
   // Set layout based on aspect ratio
   if (viewportRatio === 0.625) pptx.layout = 'LAYOUT_16x10';
@@ -456,7 +524,7 @@ export async function buildPptxBlob(
     if (slide.background) {
       const bg = slide.background;
       if (bg.type === 'image' && bg.image) {
-        const resolvedSrc = await resolvePptxEmbeddableSrc(bg.image.src, undefined, stageId);
+        const resolvedSrc = await resolveManifestMedia(bg.image.src, undefined);
         if (!resolvedSrc) {
           // Missing generated backgrounds stay empty instead of leaking an opaque ref to pptxgen.
         } else if (isSVGImage(resolvedSrc)) {
@@ -539,7 +607,7 @@ export async function buildPptxBlob(
       else if (el.type === 'image') {
         // Resolve the src through the shared stored-bytes resolver (opaque
         // refs embed as data URLs; concrete addresses keep the fetch below).
-        let resolvedSrc = await resolvePptxEmbeddableSrc(el.src, undefined, stageId);
+        let resolvedSrc = await resolveManifestMedia(el.src, undefined);
         if (!resolvedSrc) continue;
 
         // Fetch and convert to base64 for embedding in PPTX
@@ -1025,7 +1093,7 @@ export async function buildPptxBlob(
               )
             : undefined;
         const sourceRef = videoBinding?.sourceRef ?? el.src;
-        const resolvedSrc = await resolvePptxEmbeddableSrc(sourceRef, videoBinding?.task, stageId);
+        const resolvedSrc = await resolveManifestMedia(sourceRef, videoBinding?.task);
 
         if (!resolvedSrc) continue;
 
@@ -1063,10 +1131,9 @@ export async function buildPptxBlob(
 
             // 1. Try the poster the element (or its generation task) names,
             // resolved through the same shared chain as the media itself.
-            const posterSrc = await resolvePptxEmbeddableSrc(
+            const posterSrc = await resolveManifestMedia(
               videoBinding?.posterRef,
               videoBinding?.posterTask,
-              stageId,
             );
             if (posterSrc) {
               if (isBase64Image(posterSrc)) {

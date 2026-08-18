@@ -18,7 +18,11 @@ vi.mock('@/lib/media/asset-pool', () => ({
   getAssetPool: () => ({ resolve: mocks.poolResolve, release: mocks.poolRelease }),
 }));
 
-import { buildPptxBlob } from '@/lib/export/use-export-pptx';
+import {
+  assertPptxMediaReferenceParity,
+  buildPptxBlob,
+  derivePptxMediaReferenceSet,
+} from '@/lib/export/use-export-pptx';
 import { lookupMediaTask } from '@/lib/media/media-task-resolution';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 
@@ -89,6 +93,39 @@ describe('PPTX media fallback chains', () => {
   });
 
   afterEach(() => vi.unstubAllGlobals());
+
+  it('derives the complete layout media set from the manifest with exact walker parity', () => {
+    const slide = {
+      ...baseSlide({}),
+      background: { type: 'image', image: { src: 'background' } },
+      elements: [
+        { id: 'image', type: 'image', src: 'image' },
+        {
+          id: 'video',
+          type: 'video',
+          src: 'video-src',
+          mediaRef: 'video-ref',
+          poster: 'poster',
+        },
+        { id: 'audio', type: 'audio', src: 'audio' },
+      ],
+    } as unknown as Slide;
+
+    const manifestRefs = derivePptxMediaReferenceSet([slide]);
+
+    expect([...manifestRefs]).toEqual([
+      'background',
+      'image',
+      'video-src',
+      'video-ref',
+      'poster',
+      'audio',
+    ]);
+    expect(() => assertPptxMediaReferenceParity([slide], manifestRefs)).not.toThrow();
+    expect(() =>
+      assertPptxMediaReferenceParity([slide], new Set([...manifestRefs, 'manifest-only'])),
+    ).toThrow(/manifest-only/);
+  });
 
   it.each(['__proto__', 'constructor'])(
     'uses only an own task for the adversarial media ref %s',

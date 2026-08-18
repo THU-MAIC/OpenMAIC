@@ -244,7 +244,14 @@ export async function createVideoTimelineDeps(input: {
       });
     }
   }
-  const audioIds = new Set(speechPairs.flatMap((pair) => (pair.audioId ? [pair.audioId] : [])));
+  const speechAudioRefs = new Set(
+    speechPairs.flatMap((pair) => (pair.audioId ? [pair.audioId] : [])),
+  );
+  const audioIds = new Set(
+    assetManifest.entries
+      .filter((entry) => entry.kind === 'audio' && speechAudioRefs.has(entry.ref))
+      .map((entry) => entry.ref),
+  );
   const audioById = new Map<string, AudioFileRecord>();
   for (const audioId of audioIds) {
     // Bytes come only from the shared resolver: pool-first, so a stable-id

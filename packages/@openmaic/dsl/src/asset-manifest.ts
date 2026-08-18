@@ -2,11 +2,10 @@
  * Asset manifest — the standardized answer to "which assets does this document
  * reference?".
  *
- * ZIP and video export used to re-derive that set independently, and the ZIP
- * even derived it from a full scan of the local media tables, which swept
- * unreferenced rows into the archive. They now consume this enumeration; PPTX
- * walks slide elements directly but shares the same resolver and resolution
- * semantics. The manifest is the set of references a document *touches*,
+ * ZIP, PPTX, and video export used to re-derive that set independently, and
+ * the ZIP even derived it from a full scan of the local media tables, which
+ * swept unreferenced rows into the archive. They now consume this enumeration.
+ * The manifest is the set of references a document *touches*,
  * classified by role, with optional per-asset metadata layered on by the caller.
  *
  * An entry's `ref` is the reference exactly as the document holds it -- an
