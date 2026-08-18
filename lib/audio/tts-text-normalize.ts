@@ -11,13 +11,13 @@
  * - Pair-delimited math spans (`$$...$$` / `$...$`) are normalized only when the
  *   delimiters are paired AND the inner content looks like math. A lone/unpaired
  *   `$` (e.g. currency "$100") stays literal.
- * - Outside math spans, only unambiguous backslash laTeX command tokens are
+ * - Outside math spans, only unambiguous backslash LaTeX command tokens are
  *   translated (`\frac`, `\times`, `\cdot`, `\leq`, ...). Bare prose symbols
- *   (`+`, `-`, `%`, `×`, "3+4", "C++") are never rewritten.
- * - Ordinary prose with no math signal is returned byte-identical (no regression).
+ *   (`+`, `-`, `%`, `×`, "3+4", "C++") and stray backslashes are never rewritten,
+ *   so prose with no math signal stays byte-identical (R3).
  */
 
-/** Fractions: `\frac{num}{den}` -> "num 分之 den". Order matters: run before symbol passes. */
+/** Fractions: `\frac{num}{den}` -> "num 分之 den". Run before symbol passes. */
 const FRACTION_RE = /\\[a-z]*frac\??\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g;
 
 /** Unambiguous multiplication/division command tokens (also translated outside spans). */
@@ -26,7 +26,7 @@ const MUL_DIV_CMD_RE = /\\times|\\cdot|\\ast|\\div/g;
 /** Comparison command tokens (also translated outside spans). */
 const COMPARE_CMD_RE = /\\leq|\\leqslant|\\le|\\geq|\\geqslant|\\ge|\\neq|\\ne|\\approx|\\equiv/g;
 
-/** Greek/letters worth pronouncing; everything else backslashed that survives is dropped. */
+/** Greek/letters worth pronouncing. */
 const GREEK_CMD_RE =
   /\\alpha|\\beta|\\gamma|\\delta|\\epsilon|\\lambda|\\mu|\\pi|\\theta|\\sigma|\\omega|\\phi/g;
 
@@ -67,56 +67,10 @@ function exponentWord(inner: string): string {
 }
 
 /**
- * Convert raw LaTeX/ASCII math to a spoken, pronounceable form.
- *
- * Intended for the interior of a recognized math span, where bare math symbols
- * (`=`, `+`, `%`, ...) are meaningful and safe to translate.
+ * Translate unambiguous backslash LaTeX command tokens into spoken words.
+ * Shared by the math-span and bare-prose passes so the mapping lives in one place.
  */
-function speakMath(latex: string): string {
-  const out = latex
-    .replace(FRACTION_RE, '$1 分之 $2')
-    .replace(MUL_DIV_CMD_RE, (m) => (m === '\\div' ? '除以' : '乘以'))
-    .replace(COMPARE_CMD_RE, (m) => {
-      switch (m) {
-        case '\\leq':
-        case '\\leqslant':
-        case '\\le':
-          return '小于等于';
-        case '\\geq':
-        case '\\geqslant':
-        case '\\ge':
-          return '大于等于';
-        case '\\neq':
-        case '\\ne':
-          return '不等于';
-        default:
-          return '约等于';
-      }
-    })
-    .replace(GREEK_CMD_RE, (m) => GREEK_WORDS[m.slice(1)] ?? '')
-    .replace(SUPER_GROUP_RE, (_, inner: string) => exponentWord(inner))
-    .replace(SUPER_CHAR_RE, (_, c: string) => exponentWord(c))
-    .replace(SUB_GROUP_RE, (_, inner: string) => ` 下标 ${inner} `)
-    .replace(SUB_CHAR_RE, (_, c: string) => ` 下标 ${c} `)
-    .replace(SQRT_RE, '根号 $1')
-    .replace(NOISE_RE, ' ')
-    .replace(/%/g, '百分之')
-    .replace(/÷|×/g, (m) => (m === '÷' ? '除以' : '乘以'))
-    .replace(/≤/g, '小于等于')
-    .replace(/≥/g, '大于等于')
-    .replace(/≠/g, '不等于')
-    .replace(/=/g, '等于')
-    .replace(/\+/g, ' 加 ')
-    .replace(/-(?=[\d])/g, '减')
-    .replace(/\\(?!\s)/g, ' ')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-
-  return out;
-}
-
-/** Translate only unambiguous backslash LaTeX command tokens in ordinary prose. */
-function speakBareLatexCommands(text: string): string {
+function translateLatexCommands(text: string): string {
   return text
     .replace(FRACTION_RE, '$1 分之 $2')
     .replace(MUL_DIV_CMD_RE, (m) => (m === '\\div' ? '除以' : '乘以'))
@@ -137,13 +91,46 @@ function speakBareLatexCommands(text: string): string {
           return '约等于';
       }
     })
-    .replace(GREEK_CMD_RE, (m) => GREEK_WORDS[m.slice(1)] ?? '')
-    .replace(SQRT_RE, '根号 $1')
-    .replace(/\\(?!\s)/g, ' ')
-    .replace(/\s{2,}/g, ' ');
+    .replace(GREEK_CMD_RE, (m) => GREEK_WORDS[m.slice(1)] ?? '');
 }
 
-/** Heuristic: does a `$...$` interior look like math rather than prose/currency? */
+/**
+ * Convert the interior of a math span to a spoken, pronounceable form.
+ * Bare math symbols (`=`, `+`, `%`, `<`, ...) are meaningful here and are translated.
+ */
+function speakMath(latex: string): string {
+  const out = translateLatexCommands(latex)
+    .replace(SUPER_GROUP_RE, (_, inner: string) => exponentWord(inner))
+    .replace(SUPER_CHAR_RE, (_, c: string) => exponentWord(c))
+    .replace(SUB_GROUP_RE, (_, inner: string) => ` 下标 ${inner} `)
+    .replace(SUB_CHAR_RE, (_, c: string) => ` 下标 ${c} `)
+    .replace(SQRT_RE, '根号 $1')
+    .replace(NOISE_RE, ' ')
+    .replace(/%/g, '百分之')
+    .replace(/÷|×/g, (m) => (m === '÷' ? '除以' : '乘以'))
+    .replace(/≤/g, '小于等于')
+    .replace(/≥/g, '大于等于')
+    .replace(/≠/g, '不等于')
+    .replace(/</g, '小于 ')
+    .replace(/>/g, '大于 ')
+    .replace(/=/g, '等于')
+    .replace(/\+/g, ' 加 ')
+    .replace(/-(?=[\d])/g, '减')
+    .replace(/\\/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return out;
+}
+
+/** Translate only unambiguous backslash LaTeX command tokens in ordinary prose. */
+function speakBareLatexCommands(text: string): string {
+  // No blanket backslash strip here: prose with a stray `\` (e.g. `C:\Users`) stays
+  // byte-identical (R3). Recognized commands are consumed by translateLatexCommands/SQRT.
+  return translateLatexCommands(text).replace(SQRT_RE, '根号 $1');
+}
+
+/** Does a `$...$` interior look like math rather than prose/currency? */
 function looksLikeMath(inner: string): boolean {
   const text = inner.trim();
   if (!text) return false;
