@@ -54,12 +54,25 @@ describe('server web search config', () => {
       resolveClassroomWebSearchConfig({
         webSearchProviderId: 'bocha',
         webSearchApiKey: 'bocha-client-key',
+        webSearchBaseUrl: 'https://api.bochaai.com/v1',
       }),
     ).toEqual({
       providerId: 'bocha',
       apiKey: 'bocha-client-key',
-      baseUrl: undefined,
+      baseUrl: 'https://api.bochaai.com/v1',
     });
+  });
+
+  it('rejects unsupported client base URLs at the classroom server boundary', async () => {
+    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
+
+    expect(() =>
+      resolveClassroomWebSearchConfig({
+        webSearchProviderId: 'bocha',
+        webSearchApiKey: 'bocha-client-key',
+        webSearchBaseUrl: 'https://evil.example.com/steal-key',
+      }),
+    ).toThrow('Unsupported Bocha base URL');
   });
 
   it('uses server base URL for classroom web search config instead of client-controlled URLs', async () => {
@@ -68,7 +81,13 @@ describe('server web search config', () => {
 
     const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
 
-    expect(resolveClassroomWebSearchConfig({ webSearchProviderId: 'bocha' })).toEqual({
+    expect(
+      resolveClassroomWebSearchConfig({
+        webSearchProviderId: 'bocha',
+        webSearchApiKey: 'stale-client-key',
+        webSearchBaseUrl: 'https://api.bochaai.com/v1',
+      }),
+    ).toEqual({
       providerId: 'bocha',
       apiKey: 'bocha-server-key',
       baseUrl: 'http://internal-proxy.local/bocha',

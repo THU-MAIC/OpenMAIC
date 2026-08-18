@@ -341,12 +341,17 @@ describe('withPiWebSearchSettings', () => {
       {
         ...request,
         webSearchApiKey: 'stale-key',
+        webSearchBaseUrl: 'https://stale-search.test',
         webSearchModelId: 'stale-model',
       },
       {
         webSearchProviderId: 'baidu',
         webSearchProvidersConfig: {
-          baidu: { apiKey: 'baidu-key', baseUrl: '', enabled: true },
+          baidu: {
+            apiKey: 'baidu-key',
+            baseUrl: 'https://qianfan.baidubce.com',
+            enabled: true,
+          },
         } as Parameters<typeof withPiWebSearchSettings>[1]['webSearchProvidersConfig'],
         baiduSubSources: { webSearch: false, baike: true, scholar: false },
       },
@@ -355,6 +360,7 @@ describe('withPiWebSearchSettings', () => {
     expect(next).toMatchObject({
       webSearchProviderId: 'baidu',
       webSearchApiKey: 'baidu-key',
+      webSearchBaseUrl: 'https://qianfan.baidubce.com',
       baiduSubSources: { webSearch: false, baike: true, scholar: false },
     });
     expect(next).not.toHaveProperty('webSearchModelId');
@@ -367,6 +373,7 @@ describe('withPiWebSearchSettings', () => {
       {
         ...request,
         webSearchApiKey: 'stale-key',
+        webSearchBaseUrl: 'https://stale-search.test',
         webSearchModelId: 'stale-model',
         baiduSubSources: { webSearch: false, baike: true, scholar: true },
       },
@@ -386,6 +393,7 @@ describe('withPiWebSearchSettings', () => {
       webSearchProviderId: 'brave',
     });
     expect(next).not.toHaveProperty('webSearchApiKey');
+    expect(next).not.toHaveProperty('webSearchBaseUrl');
     expect(next).not.toHaveProperty('webSearchModelId');
     expect(next).not.toHaveProperty('baiduSubSources');
     expect(JSON.stringify(next)).not.toContain('stale-key');

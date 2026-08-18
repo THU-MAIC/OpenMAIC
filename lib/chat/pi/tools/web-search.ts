@@ -391,6 +391,7 @@ async function executeNativeWebSearch(
       apiKey: config.apiKey,
       maxResults: opts.params.maxResults ?? 5,
       baseUrl: config.baseUrl,
+      ...(opts.signal ? { signal: opts.signal } : {}),
       ...(config.baiduSubSources ? { baiduSubSources: config.baiduSubSources } : {}),
       ...(config.claudeModelId ? { claudeModelId: config.claudeModelId } : {}),
     });

@@ -398,6 +398,8 @@ export interface StatelessChatRequest {
   webSearchProviderId?: WebSearchProviderId;
   /** Selected provider credential only; server-managed credentials remain authoritative. */
   webSearchApiKey?: string;
+  /** Selected provider base URL only; validated server-side and ignored for managed providers. */
+  webSearchBaseUrl?: string;
   /** Selected Claude Web Search model only. */
   webSearchModelId?: string;
   /** Selected Baidu Web Search sub-sources only. */

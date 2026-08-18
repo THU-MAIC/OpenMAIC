@@ -160,6 +160,7 @@ export type ChatRequestTemplate = {
   piSessionBoundary?: PiSessionBoundaryContext;
   webSearchProviderId?: WebSearchProviderId;
   webSearchApiKey?: string;
+  webSearchBaseUrl?: string;
   webSearchModelId?: string;
   baiduSubSources?: BaiduSubSources;
 };
@@ -220,12 +221,16 @@ export function withPiWebSearchSettings<T extends ChatRequestTemplate>(
   const request = { ...requestTemplate };
   delete request.webSearchProviderId;
   delete request.webSearchApiKey;
+  delete request.webSearchBaseUrl;
   delete request.webSearchModelId;
   delete request.baiduSubSources;
   return {
     ...request,
     webSearchProviderId: providerId,
     ...(providerConfig?.apiKey ? { webSearchApiKey: providerConfig.apiKey } : {}),
+    ...(providerConfig?.baseUrl && !providerConfig.isServerConfigured && providerId !== 'searxng'
+      ? { webSearchBaseUrl: providerConfig.baseUrl }
+      : {}),
     ...(providerId === 'claude' && providerConfig?.modelId
       ? { webSearchModelId: providerConfig.modelId }
       : {}),

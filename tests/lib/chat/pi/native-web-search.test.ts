@@ -158,21 +158,27 @@ describe('Native Child web_search', () => {
 
   it('preserves caller cancellation instead of translating it into search_failed', async () => {
     const controller = new AbortController();
-    let rejectSearch: ((reason?: unknown) => void) | undefined;
+    let providerSignal: AbortSignal | undefined;
     const tool = buildNativeWebSearchTool({
       config: registeredConfig,
       search: vi.fn(
-        () =>
+        ({ signal }: { signal?: AbortSignal }) =>
           new Promise<never>((_resolve, reject) => {
-            rejectSearch = reject;
+            providerSignal = signal;
+            signal?.addEventListener(
+              'abort',
+              () => reject(signal.reason ?? new DOMException('Aborted', 'AbortError')),
+              { once: true },
+            );
           }),
       ),
     });
     const pending = tool.execute('search-5', { query: 'current fact' }, controller.signal);
 
+    expect(providerSignal).toBe(controller.signal);
     controller.abort(new DOMException('request cancelled', 'AbortError'));
-    rejectSearch?.(new Error('late provider rejection'));
 
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(providerSignal?.aborted).toBe(true);
   });
 });

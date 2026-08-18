@@ -38,6 +38,7 @@ const envNames = [
   'OPENMAIC_ENABLE_PI_NATIVE_CHILD_SPOTLIGHT',
   'OPENMAIC_ENABLE_PI_WEB_SEARCH',
   'TAVILY_API_KEY',
+  'TAVILY_BASE_URL',
   'RESPONSES_WEB_SEARCH_API_KEY',
   'RESPONSES_WEB_SEARCH_BASE_URL',
   'RESPONSES_WEB_SEARCH_MODEL',
@@ -61,7 +62,7 @@ function resultFrom(parts: Array<Record<string, unknown>>) {
   };
 }
 
-function makeRequest(): NextRequest {
+function makeRequest(overrides: Record<string, unknown> = {}): NextRequest {
   return new Request('http://localhost/api/chat/pi', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -124,6 +125,8 @@ function makeRequest(): NextRequest {
       model: 'test:model',
       webSearchProviderId: 'tavily',
       webSearchApiKey: 'toolbar-search-key',
+      webSearchBaseUrl: 'https://api.tavily.com/search',
+      ...overrides,
     }),
   }) as unknown as NextRequest;
 }
@@ -144,6 +147,7 @@ describe('PR2 Native Child route production wiring', () => {
     process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_SPOTLIGHT = 'true';
     delete process.env.OPENMAIC_ENABLE_PI_WEB_SEARCH;
     delete process.env.TAVILY_API_KEY;
+    delete process.env.TAVILY_BASE_URL;
     process.env.RESPONSES_WEB_SEARCH_API_KEY = 'responses-key';
     process.env.RESPONSES_WEB_SEARCH_BASE_URL = 'https://responses-proxy.test/v1';
     process.env.RESPONSES_WEB_SEARCH_MODEL = 'search-model';
@@ -342,21 +346,40 @@ describe('PR2 Native Child route production wiring', () => {
     }
   }, 15_000);
 
+  it('rejects an unsupported Toolbar Web Search base URL before starting the Pi loop', async () => {
+    const { POST } = await import('@/app/api/chat/pi/route');
+
+    const response = await POST(
+      makeRequest({ webSearchBaseUrl: 'https://evil.example.com/steal-key' }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toMatchObject({ error: expect.stringContaining('Unsupported Tavily base URL') });
+    expect(mocks.streamLLM).not.toHaveBeenCalled();
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
+  });
+
   it.each([
     {
       label: 'uses the selected client key for an unmanaged provider',
       serverApiKey: undefined,
+      serverBaseUrl: undefined,
       expectedApiKey: 'toolbar-search-key',
+      expectedBaseUrl: 'https://api.tavily.com/search',
     },
     {
       label: 'keeps the server-managed key authoritative over a conflicting client key',
       serverApiKey: 'server-search-key',
+      serverBaseUrl: 'http://internal-search.test/tavily',
       expectedApiKey: 'server-search-key',
+      expectedBaseUrl: 'http://internal-search.test/tavily',
     },
   ])(
     '$label through the real Native route and same-Child continuation',
     async (testCase) => {
       if (testCase.serverApiKey) process.env.TAVILY_API_KEY = testCase.serverApiKey;
+      if (testCase.serverBaseUrl) process.env.TAVILY_BASE_URL = testCase.serverBaseUrl;
       const directorResponses = [
         [
           toolCall('delegate-1', 'call_agent', {
@@ -409,8 +432,10 @@ describe('PR2 Native Child route production wiring', () => {
         expect.objectContaining({
           providerId: 'tavily',
           apiKey: testCase.expectedApiKey,
+          baseUrl: testCase.expectedBaseUrl,
           query: 'current fact',
           maxResults: 3,
+          signal: expect.any(AbortSignal),
         }),
       );
       expect(payloads).toHaveLength(4);

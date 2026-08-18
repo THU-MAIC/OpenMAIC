@@ -52,8 +52,9 @@ export async function searchWithSearxng(params: {
   query: string;
   maxResults?: number;
   baseUrl?: string;
+  signal?: AbortSignal;
 }): Promise<WebSearchResult> {
-  const { query: rawQuery, maxResults = 5, baseUrl } = params;
+  const { query: rawQuery, maxResults = 5, baseUrl, signal } = params;
   const query = normalizeWebSearchQuery(rawQuery);
 
   if (!baseUrl?.trim()) {
@@ -65,6 +66,7 @@ export async function searchWithSearxng(params: {
   const res = await proxyFetch(requestUrl, {
     method: 'GET',
     headers: SEARXNG_HEADERS,
+    ...(signal ? { signal } : {}),
   });
 
   if (!res.ok) {
