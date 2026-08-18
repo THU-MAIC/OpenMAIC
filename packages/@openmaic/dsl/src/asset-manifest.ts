@@ -23,6 +23,7 @@
  */
 import type { Action } from './action.js';
 import type { Slide } from './slides.js';
+import { slideMediaSlotDescriptors, type SlideMediaSlotKind } from './slide-media-slots.js';
 import { isSlideContent, type Scene, type SceneType, type Stage } from './stage.js';
 
 /** The role a referenced asset plays in the document. */
@@ -91,59 +92,6 @@ export interface EnumerateAssetManifestOptions {
   readonly metadata?: (ref: string, kind: AssetKind) => AssetManifestMetadata | undefined;
 }
 
-type SlideMediaSlotKind =
-  | 'background-image'
-  | 'image-src'
-  | 'video-src'
-  | 'video-media-ref'
-  | 'video-poster'
-  | 'audio-src';
-
-interface SlideMediaSlot {
-  readonly kind: SlideMediaSlotKind;
-  /** The owning element; absent for the slide background. */
-  readonly elementIndex?: number;
-  readonly ref: string;
-}
-
-/**
- * Yield the non-empty media references of one slide with their roles. This is
- * the read-only package counterpart of the app's mutable
- * `slideMediaReferenceSlots`; both cover background, image, audio, and all
- * video reference roles. It stays local so this package remains free of app
- * imports. Optional video slots contribute nothing when empty.
- */
-function* slideMediaSlots(
-  slide: Pick<Slide, 'background' | 'elements'>,
-): Generator<SlideMediaSlot> {
-  const background = slide.background?.type === 'image' ? slide.background.image : undefined;
-  if (background?.src) {
-    yield { kind: 'background-image', ref: background.src };
-  }
-
-  for (let elementIndex = 0; elementIndex < slide.elements.length; elementIndex += 1) {
-    const element = slide.elements[elementIndex];
-    if (element.type === 'image') {
-      if (element.src) yield { kind: 'image-src', elementIndex, ref: element.src };
-      continue;
-    }
-    if (element.type === 'audio') {
-      // Slide audio elements carry their own src; a manifest that skips them
-      // cannot archive their bytes.
-      if (element.src) yield { kind: 'audio-src', elementIndex, ref: element.src };
-      continue;
-    }
-    if (element.type !== 'video') continue;
-    if (element.src) yield { kind: 'video-src', elementIndex, ref: element.src };
-    if (element.mediaRef) {
-      yield { kind: 'video-media-ref', elementIndex, ref: element.mediaRef };
-    }
-    if (element.poster) {
-      yield { kind: 'video-poster', elementIndex, ref: element.poster };
-    }
-  }
-}
-
 function manifestKind(slotKind: SlideMediaSlotKind): AssetKind {
   switch (slotKind) {
     case 'background-image':
@@ -196,7 +144,8 @@ export function enumerateAssetManifest(
   };
 
   const visitSlide = (slide: Pick<Slide, 'background' | 'elements'>, scopeKey: string) => {
-    for (const slot of slideMediaSlots(slide)) {
+    for (const slot of slideMediaSlotDescriptors(slide)) {
+      if (!slot.ref) continue;
       // Structural positions, rather than user-controlled ids, make owners
       // collision-free even for documents whose scene or element ids repeat.
       const ownerKey =

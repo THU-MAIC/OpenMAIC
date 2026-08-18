@@ -31,6 +31,7 @@ nothing.
 | `validate.ts` | Pure, zero-dep structural validators — `validateStage` / `validateScene` / `validateAction` returning an error-collecting `ValidationResult`. |
 | `normalize.ts` | Pure, zero-dep defaulters — `normalizeElement` / `normalizeSlide` / `normalizeScene` / `normalizeStage` and the canonical `ELEMENT_DEFAULTS`. Fills required-field defaults, derives geometry, fails loud on malformed input; the repair counterpart to `validate*`. `normalizeSlideWith({ onInvalid: 'drop', onDropped })` builds a map-safe `normalizeSlide` variant so producers normalizing wild-world input (imported decks, model output) can degrade per element instead of failing the document; `normalizeSlide` itself stays unary (`slides.map(normalizeSlide)` keeps working). |
 | `asset-manifest.ts` | Pure document asset enumeration: `enumerateAssetManifest`, `AssetManifest`, entry kinds and optional caller-supplied metadata enrichment. |
+| `slide-media-slots.ts` | Canonical read-only role descriptors for every media-bearing slide slot. |
 | `version.ts`  | Serialized-contract version + migration registry: `DSL_VERSION`, the `DSL_MIGRATIONS` ladder, and the pure `migrate` / `dslVersionOf` / `needsMigration` runner. |
 
 ```ts
