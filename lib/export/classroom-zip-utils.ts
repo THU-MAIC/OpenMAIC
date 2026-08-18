@@ -1,5 +1,5 @@
 import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
-import type { ManifestAction } from './classroom-zip-types';
+import type { ManifestAction, MediaIndexEntry } from './classroom-zip-types';
 import { db, mediaFileKey } from '@/lib/utils/database';
 import type { AssetManifestEntry } from '@openmaic/dsl';
 import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
@@ -16,6 +16,8 @@ export interface CollectedAudio {
   zipPath: string;
   sourceRef: string;
   record: AudioFileRecord;
+  /** Canonical serialized MIME paired with `record.format` and `zipPath`. */
+  mimeType: string;
 }
 
 export interface CollectedMedia {
@@ -24,6 +26,29 @@ export interface CollectedMedia {
   sourceRef: string;
   record: MediaFileRecord;
   elementId: string;
+}
+
+/** Exact media-index metadata serialized for one collected narration asset. */
+export function collectedAudioMediaIndexEntry(file: CollectedAudio): MediaIndexEntry {
+  return {
+    type: 'audio',
+    sourceRef: file.sourceRef,
+    format: file.record.format,
+    mimeType: file.mimeType,
+    duration: file.record.duration,
+    voice: file.record.voice,
+  };
+}
+
+/** Exact media-index metadata serialized for one collected generated-media asset. */
+export function collectedMediaIndexEntry(file: CollectedMedia): MediaIndexEntry {
+  return {
+    type: 'generated',
+    sourceRef: file.sourceRef,
+    mimeType: file.record.mimeType,
+    size: file.record.size,
+    prompt: file.record.prompt,
+  };
 }
 
 const AUDIO_ARCHIVE_EXTENSIONS = new Set([
@@ -57,6 +82,13 @@ const MEDIA_ARCHIVE_EXTENSIONS = new Set([
  * Accept only one allowlisted filename suffix. Slashes, backslashes, dot
  * segments, parameters, and unknown values all fall back instead of entering
  * an archive path.
+ *
+ * Contract boundary: archive paths, extensions, and serialized MIME metadata
+ * are a mutually coherent, canonical function of authoritative kind metadata.
+ * This code does not inspect or transcode bytes and therefore does not promise
+ * that those labels describe the payload. A byte/kind mismatch is already-
+ * corrupt store state outside the export contract; runtime and renderer
+ * consumers likewise trust the kind metadata.
  */
 function canonicalArchiveExtension(
   extension: string | undefined,
@@ -92,8 +124,12 @@ export function mediaArchivePath(index: number, extension: string | undefined): 
   )}`;
 }
 
+export function mediaPosterArchiveMetadata() {
+  return canonicalArchiveMedia('image', {});
+}
+
 export function mediaPosterArchivePath(index: number): string {
-  const { extension } = canonicalArchiveMedia('image', {});
+  const { extension } = mediaPosterArchiveMetadata();
   return `media/asset-${index + 1}.poster.${extension}`;
 }
 
@@ -119,7 +155,8 @@ export async function collectAudioFiles(
     // resolve) -- must not ship an empty audio file.
     if (!blob || blob.size === 0) continue;
     const record = await db.audioFiles.get(audioId);
-    const { extension: ext } = canonicalArchiveMedia('audio', { extension: record?.format });
+    const canonical = canonicalArchiveMedia('audio', { extension: record?.format });
+    const ext = canonical.extension;
     const resolved = (
       record ? { ...record, blob, format: ext } : { id: audioId, blob, format: ext }
     ) as AudioFileRecord;
@@ -127,6 +164,7 @@ export async function collectAudioFiles(
       zipPath: audioArchivePath(index, ext),
       sourceRef: entry.ref,
       record: resolved,
+      mimeType: canonical.mimeType,
     });
   }
   return collected;
@@ -175,6 +213,9 @@ export async function collectMediaFiles(
           params: '',
           createdAt: 0,
         };
+    // The record kind is authoritative. Canonicalization makes the archive path
+    // and serialized MIME agree with it; it intentionally does not sniff or
+    // transcode `blob`, whose bytes may expose already-corrupt store state.
     const kind: MediaFileRecord['type'] = effective.type === 'video' ? 'video' : 'image';
     const canonical = canonicalArchiveMedia(kind, { mimeType: effective.mimeType });
     const normalized = { ...effective, type: kind, mimeType: canonical.mimeType };
@@ -196,6 +237,12 @@ export interface LegacyAudioBlob {
   zipPath: string;
   blob: Blob;
   format: string;
+  mimeType: string;
+}
+
+/** Exact media-index metadata serialized for one fetched legacy narration asset. */
+export function legacyAudioMediaIndexEntry(file: LegacyAudioBlob): MediaIndexEntry {
+  return { type: 'audio', format: file.format, mimeType: file.mimeType };
 }
 
 /**
@@ -240,10 +287,11 @@ export async function collectLegacyAudioForExport(
   });
   for (const { url, blob } of fetched) {
     if (!blob) continue;
-    const { extension: format } = canonicalArchiveMedia('audio', { mimeType: blob.type });
+    const canonical = canonicalArchiveMedia('audio', { mimeType: blob.type });
+    const format = canonical.extension;
     const zipPath = legacyAudioArchivePath(blobs.length, format);
     audioUrlToPath.set(url, zipPath);
-    blobs.push({ zipPath, blob, format });
+    blobs.push({ zipPath, blob, format, mimeType: canonical.mimeType });
   }
   return { audioUrlToPath, blobs };
 }

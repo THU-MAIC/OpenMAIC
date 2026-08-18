@@ -1,8 +1,21 @@
+/**
+ * Contract coverage: 6 metadata cases × 7 archive surfaces = 42 cells.
+ * Each classroom surface follows every end-to-end link it supports: canonical
+ * path, serialized metadata, and import-side kind/content-type coherence. The
+ * two planner surfaces additionally pin the exact path and kind metadata.
+ *
+ * The boundary is intentional: kind metadata is authoritative. Export does not
+ * inspect or transcode payload bytes, so this matrix validates coherent labels,
+ * not whether already-stored bytes match them. A byte/kind mismatch is corrupt
+ * store state outside the export contract, just as it is for runtime/renderers.
+ */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AssetManifestEntry } from '@openmaic/dsl';
+import type { MediaIndexEntry } from '@/lib/export/classroom-zip-types';
 import type { Scene } from '@/lib/types/stage';
-import type { ArchiveMediaKind } from '@/lib/video-export/archive-media';
+import { canonicalArchiveMedia, type ArchiveMediaKind } from '@/lib/video-export/archive-media';
 import type { AssetMeta } from '@/lib/video-export';
+import type { AssetPlanEntry } from '@/lib/video-export/ir';
 
 const mocks = vi.hoisted(() => ({
   audioRows: new Map<string, { id: string; blob: Blob; format: string }>(),
@@ -52,11 +65,15 @@ vi.mock('@/lib/media/convert-legacy-asset-refs', () => ({
 
 import {
   collectAudioFiles,
+  collectedAudioMediaIndexEntry,
+  collectedMediaIndexEntry,
   collectLegacyAudioForExport,
   collectMediaFiles,
+  mediaPosterArchiveMetadata,
   mediaPosterArchivePath,
+  legacyAudioMediaIndexEntry,
 } from '@/lib/export/classroom-zip-utils';
-import { importedMediaKind } from '@/lib/import/use-import-classroom';
+import { importedAudioContentType, importedMediaKind } from '@/lib/import/use-import-classroom';
 import {
   buildTimeline,
   buildTimelineOptions,
@@ -119,7 +136,7 @@ function legacyScene(url: string): Scene {
   return slide('legacy', [speech('speech', 'Narration', { audioUrl: url })]) as unknown as Scene;
 }
 
-function plannedPath(kind: 'audio' | 'video', meta: AssetMeta): string {
+function plannedEntry(kind: 'audio' | 'video', meta: AssetMeta): AssetPlanEntry {
   const scene =
     kind === 'audio'
       ? slide('scene', [speech('speech', 'Narration')])
@@ -130,7 +147,24 @@ function plannedPath(kind: 'audio' | 'video', meta: AssetMeta): string {
   const result = planAssets(source, timeline.scenes, assets);
   const planned = result.plan.entries.find((item) => item.kind === kind);
   if (!planned) throw new Error(`Missing ${kind} plan entry`);
-  return planned.path;
+  return planned;
+}
+
+function expectImportedMediaMetadata(mimeType: string, kind: 'image' | 'video'): void {
+  // materializeImportedMedia forwards the serialized MIME as pool contentType
+  // and derives mediaType through importedMediaKind.
+  expect(mimeType.startsWith(`${kind}/`)).toBe(true);
+  expect(importedMediaKind(mimeType)).toBe(kind);
+}
+
+function expectImportedAudioMetadata(metadata: MediaIndexEntry): void {
+  expect(metadata.type).toBe('audio');
+  expect(metadata.mimeType?.startsWith('audio/')).toBe(true);
+  expect(importedAudioContentType(metadata, '')).toBe(metadata.mimeType);
+  expect(canonicalArchiveMedia('audio', { extension: metadata.format })).toEqual({
+    extension: metadata.format,
+    mimeType: metadata.mimeType,
+  });
 }
 
 afterEach(() => {
@@ -143,6 +177,7 @@ describe('archive media coherence coverage matrix', () => {
   it.each(metadataCases)(
     'makes every archive surface canonical for $name metadata',
     async ({ name, value }) => {
+      let assertedCells = 0;
       for (const kind of ['image', 'video', 'audio'] as const) {
         const input = value(kind);
         const expected = expectedByKind[kind];
@@ -167,15 +202,20 @@ describe('archive media coherence coverage matrix', () => {
 
           const [collected] = await collectMediaFiles('stage', [entry(ref, kind)]);
           expect(collected.zipPath).toBe(`media/asset-1.${extension}`);
-          expect(collected.record.mimeType).toBe(
-            name === 'valid' ? input.mimeType : expected.fallbackMime,
-          );
-          expect(importedMediaKind(collected.record.mimeType)).toBe(kind);
+          const serializedMime = name === 'valid' ? input.mimeType : expected.fallbackMime;
+          const serialized = collectedMediaIndexEntry(collected);
+          expect(serialized.mimeType).toBe(serializedMime);
+          expectImportedMediaMetadata(serialized.mimeType!, kind);
+          assertedCells += 1;
 
           if (kind === 'video') {
+            const posterMetadata = mediaPosterArchiveMetadata();
             expect(collected.posterZipPath).toBe(mediaPosterArchivePath(0));
-            expect(collected.posterZipPath).toBe('media/asset-1.poster.jpg');
-            expect(importedMediaKind('image/jpeg')).toBe('image');
+            expect(collected.posterZipPath).toBe(
+              `media/asset-1.poster.${posterMetadata.extension}`,
+            );
+            expectImportedMediaMetadata(posterMetadata.mimeType, 'image');
+            assertedCells += 1;
           }
         }
 
@@ -188,24 +228,85 @@ describe('archive media coherence coverage matrix', () => {
           const [collected] = await collectAudioFiles([entry(ref, 'audio')]);
           expect(collected.zipPath).toBe(`audio/audio-1.${extension}`);
           expect(collected.record.format).toBe(extension);
+          expect(collected.mimeType).toBe(
+            name === 'valid' ? input.mimeType : expected.fallbackMime,
+          );
+          expectImportedAudioMetadata(collectedAudioMediaIndexEntry(collected));
+          assertedCells += 1;
 
           const url = `https://example.test/${encodeURIComponent(name)}`;
           mocks.fetchMediaUrl.mockResolvedValueOnce(new Response(blob, { status: 200 }));
           const legacy = await collectLegacyAudioForExport([legacyScene(url)], new Map());
           expect(legacy.blobs[0]?.zipPath).toBe(`audio/legacy-1.${extension}`);
           expect(legacy.blobs[0]?.format).toBe(extension);
+          expect(legacy.blobs[0]?.mimeType).toBe(
+            name === 'valid' ? input.mimeType : expected.fallbackMime,
+          );
+          expectImportedAudioMetadata(legacyAudioMediaIndexEntry(legacy.blobs[0]!));
+          assertedCells += 1;
         }
 
         if (kind === 'audio' || kind === 'video') {
-          const path = plannedPath(kind, {
+          const planned = plannedEntry(kind, {
             id: `${kind}-${name}`,
             present: true,
             mimeType: input.mimeType,
             format: input.extension,
           });
-          expect(path.endsWith(`.${extension}`)).toBe(true);
+          expect(planned).toMatchObject({
+            assetId: `${kind}-${name}`,
+            kind,
+            path:
+              kind === 'audio'
+                ? `audio/001-scene/speech-001.${extension}`
+                : `media/clip.${extension}`,
+            present: true,
+          });
+          expect(
+            canonicalArchiveMedia(kind, {
+              extension: input.extension,
+              mimeType: input.mimeType,
+            }),
+          ).toEqual({
+            extension,
+            mimeType: name === 'valid' ? input.mimeType : expected.fallbackMime,
+          });
+          assertedCells += 1;
         }
       }
+      expect(assertedCells).toBe(7);
     },
   );
+
+  it('trusts authoritative kind labels without inspecting or transcoding mismatched bytes', async () => {
+    // Boundary pin: this record is deliberately corrupt. Its authoritative kind
+    // says video while its payload was produced with image metadata. The export
+    // contract promises deterministic video labels, no crash, unchanged bytes,
+    // and import classification from serialized metadata -- never byte sniffing.
+    const ref = 'mismatched-video-record';
+    const imageBytes = new Blob(['actually-image-labelled'], { type: 'image/png' });
+    mocks.mediaRows.set(`stage:${ref}`, {
+      id: `stage:${ref}`,
+      stageId: 'stage',
+      type: 'video',
+      blob: imageBytes,
+      mimeType: 'image/png',
+      size: imageBytes.size,
+      prompt: '',
+      params: '',
+      createdAt: 0,
+    });
+    mocks.resolveStoredBytes.mockResolvedValueOnce(imageBytes);
+
+    const [collected] = await collectMediaFiles('stage', [entry(ref, 'video')]);
+
+    expect(collected.zipPath).toBe('media/asset-1.mp4');
+    expect(collected.record.type).toBe('video');
+    expect(collected.record.mimeType).toBe('video/mp4');
+    expect(collected.record.blob).toBe(imageBytes);
+    expect(collected.record.blob.type).toBe('image/png');
+    expect(await collected.record.blob.text()).toBe('actually-image-labelled');
+    const serialized = collectedMediaIndexEntry(collected);
+    expectImportedMediaMetadata(serialized.mimeType!, 'video');
+  });
 });

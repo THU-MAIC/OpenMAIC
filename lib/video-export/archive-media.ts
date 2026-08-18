@@ -71,6 +71,11 @@ const EXTENSION_BY_MIME: Readonly<Record<string, string>> = {
  * Normalize untrusted archive metadata against the authoritative media kind.
  * The returned extension and MIME are one inseparable pair: a valid hint must
  * belong to the kind's allowlist, and every other value falls back by kind.
+ *
+ * This is label coherence, not byte validation. Exporters deliberately neither
+ * inspect nor transcode payload bytes; like runtime and renderer consumers, they
+ * trust the authoritative kind metadata. Bytes that do not match that kind are
+ * already-corrupt store state outside the archive/export contract.
  */
 export function canonicalArchiveMedia(
   kind: ArchiveMediaKind,

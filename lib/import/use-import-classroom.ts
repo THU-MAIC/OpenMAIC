@@ -11,6 +11,7 @@ import {
   agentConfigFromManifest,
   type ClassroomManifest,
   type ManifestScene,
+  type MediaIndexEntry,
 } from '@/lib/export/classroom-zip-types';
 import { rewriteAudioRefsToIds } from '@/lib/export/classroom-zip-utils';
 import { createLogger } from '@/lib/logger';
@@ -33,6 +34,14 @@ export interface ImportedMediaMappings {
 export interface ImportedAudioMappings {
   readonly pathToId: ReadonlyMap<string, string>;
   readonly sourceRefToId: ReadonlyMap<string, string>;
+}
+
+/** Content type the importer writes for serialized narration metadata. */
+export function importedAudioContentType(
+  meta: Pick<MediaIndexEntry, 'mimeType' | 'format'>,
+  blobType: string,
+): string {
+  return meta.mimeType || blobType || `audio/${meta.format || 'mp3'}`;
 }
 
 type ImportedRefMapping = ReadonlyMap<string, unknown> | Readonly<Record<string, unknown>>;
@@ -197,7 +206,7 @@ export async function materializeImportedAudio(
     if (!zipEntry) continue;
     const blob = await zipEntry.async('blob');
     const assetId = await putAsset(blob, {
-      contentType: blob.type || `audio/${meta.format || 'mp3'}`,
+      contentType: importedAudioContentType(meta, blob.type),
       mediaType: 'audio',
       duration: meta.duration,
       voice: meta.voice,

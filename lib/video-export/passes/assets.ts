@@ -8,8 +8,10 @@
  * the browser-side implementation in the next phase (P1d); {@link AssetSource}
  * supplies just enough metadata (id, mime/format, presence) to build the plan.
  *
- * Deduplication is by `assetId`: the first reference owns the path, later
- * references reuse it and carry `dedupOf`. A referenced-but-absent asset is kept
+ * Deduplication is by (`assetId`, `kind`): the first same-kind reference owns
+ * the path, later same-kind references reuse it and carry `dedupOf`. A ref may
+ * legitimately identify both narration audio and video media, so ownership must
+ * not cross the kind boundary. A referenced-but-absent asset is kept
  * in the plan as `present: false` with a `skipped-media` diagnostic, so the
  * report shows the gap instead of hiding it.
  *
@@ -54,16 +56,17 @@ export function canonicalAssetExtension(kind: ArchiveMediaKind, meta: AssetMeta)
 class AssetPlanner {
   readonly entries: AssetPlanEntry[] = [];
   private readonly usedPaths = new Map<string, number>();
-  /** assetId → the first (owner) entry, whose path + presence every later ref inherits. */
-  private readonly owner = new Map<string, AssetPlanEntry>();
+  /** kind → assetId → first owner, whose path + presence later same-kind refs inherit. */
+  private readonly owners = new Map<AssetKind, Map<string, AssetPlanEntry>>();
 
   /**
    * Plan one asset reference. Returns the path it maps to and the *authoritative*
-   * presence for its `assetId`.
+   * presence for its (`assetId`, `kind`) identity.
    *
-   * Presence is a property of the asset id, not of an individual reference: the
-   * first reference to an id decides it, and every later reference (and the
-   * caller's segment) inherits that value. This keeps the plan internally
+   * Presence is a property of the kind-scoped asset id, not of an individual
+   * reference: the first reference to an id within one kind decides it, and every
+   * later same-kind reference (and the caller's segment) inherits that value.
+   * This keeps the plan internally
    * consistent even if an {@link AssetSource} returns inconsistent `present` for
    * the same id — otherwise a dedup entry could claim a different presence than
    * its owner.
@@ -74,7 +77,8 @@ class AssetPlanner {
     desiredPath: string,
     present: boolean,
   ): { path: string; present: boolean } {
-    const existing = this.owner.get(assetId);
+    const ownersForKind = this.owners.get(kind);
+    const existing = ownersForKind?.get(assetId);
     if (existing) {
       this.entries.push({
         assetId,
@@ -87,7 +91,8 @@ class AssetPlanner {
     }
     const path = this.unique(desiredPath);
     const entry: AssetPlanEntry = { assetId, kind, path, present };
-    this.owner.set(assetId, entry);
+    if (ownersForKind) ownersForKind.set(assetId, entry);
+    else this.owners.set(kind, new Map([[assetId, entry]]));
     this.entries.push(entry);
     return { path, present };
   }

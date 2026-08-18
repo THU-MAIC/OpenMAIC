@@ -17,10 +17,13 @@ import {
 } from './classroom-zip-types';
 import {
   collectAudioFiles,
+  collectedAudioMediaIndexEntry,
+  collectedMediaIndexEntry,
   collectMediaFiles,
   actionsToManifest,
   audioArchivePath,
   collectLegacyAudioForExport,
+  legacyAudioMediaIndexEntry,
 } from './classroom-zip-utils';
 import { createLogger } from '@/lib/logger';
 import { buildStageAssetManifest } from '@/lib/media/asset-manifest';
@@ -243,31 +246,13 @@ export async function buildClassroomExportZip(
     const mediaIndexEntries: Array<[string, MediaIndexEntry]> = [];
 
     for (const af of audioFiles) {
-      mediaIndexEntries.push([
-        af.zipPath,
-        {
-          type: 'audio',
-          sourceRef: af.sourceRef,
-          format: af.record.format,
-          duration: af.record.duration,
-          voice: af.record.voice,
-        },
-      ]);
+      mediaIndexEntries.push([af.zipPath, collectedAudioMediaIndexEntry(af)]);
     }
     for (const legacy of legacyAudioBlobs) {
-      mediaIndexEntries.push([legacy.zipPath, { type: 'audio', format: legacy.format }]);
+      mediaIndexEntries.push([legacy.zipPath, legacyAudioMediaIndexEntry(legacy)]);
     }
     for (const mf of mediaFiles) {
-      mediaIndexEntries.push([
-        mf.zipPath,
-        {
-          type: 'generated',
-          sourceRef: mf.sourceRef,
-          mimeType: mf.record.mimeType,
-          size: mf.record.size,
-          prompt: mf.record.prompt,
-        },
-      ]);
+      mediaIndexEntries.push([mf.zipPath, collectedMediaIndexEntry(mf)]);
     }
 
     // Referenced audio whose bytes resolved nowhere is reported as missing.
