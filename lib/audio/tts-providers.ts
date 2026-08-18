@@ -96,6 +96,7 @@ import type { TTSModelConfig } from './types';
 import { isCustomTTSProvider } from './types';
 import { TTS_PROVIDERS } from './constants';
 import { splitConcatenatedJsonObjects } from './json-stream';
+import { normalizeSpokenText } from './tts-text-normalize';
 import {
   VOXCPM_VLLM_MODEL_ID,
   VOXCPM_AUTO_VOICE_ID,
@@ -147,6 +148,12 @@ export async function generateTTS(
   text: string,
 ): Promise<TTSGenerationResult> {
   const provider = TTS_PROVIDERS[config.providerId as keyof typeof TTS_PROVIDERS];
+
+  // Normalize LaTeX/ASCII-math spans and unambiguous command tokens into spoken
+  // form before any provider reads the text (#394): the shared synthesis entry
+  // point used by both the HTTP route and server-side classroom generation, so
+  // narration / discussion / agent-bar / preview text is all covered here.
+  text = normalizeSpokenText(text);
 
   // Validate API key if required (only for built-in providers with known config)
   if (provider?.requiresApiKey && !config.apiKey) {
