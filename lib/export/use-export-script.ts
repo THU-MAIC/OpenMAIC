@@ -39,16 +39,17 @@ export function collectSceneScripts(scenes: Scene[]): SceneScript[] {
   for (const scene of scenes) {
     const parts: string[] = [];
     for (const action of scene.actions ?? []) {
-      if (action.type === 'speech') {
-        parts.push(action.text);
+      if (action.type === 'speech' && action.text.trim()) {
+        parts.push(action.text.trim());
       }
     }
-    if (parts.length === 0) continue;
+    const text = parts.join('\n');
+    if (!text) continue;
     scripts.push({
       sceneId: scene.id,
       sceneTitle: scene.title || `Slide ${scene.order}`,
       sceneOrder: scene.order,
-      text: parts.join('\n'),
+      text,
     });
   }
   return scripts;
@@ -85,7 +86,9 @@ export function buildDocHtml(stageName: string, scripts: SceneScript[]): string 
   for (const script of scripts) {
     if (!script.text) continue;
     body.push(`<h2>${escapeHtml(script.sceneTitle)}</h2>`);
-    for (const paragraph of script.text.split(/\n{2,}/)) {
+    for (const raw of script.text.split(/\n{2,}/)) {
+      const paragraph = raw.trim();
+      if (!paragraph) continue;
       body.push(`<p>${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`);
     }
   }
@@ -112,7 +115,7 @@ export function buildDocHtml(stageName: string, scripts: SceneScript[]): string 
  */
 export function buildScriptFileName(stageName: string, ext: 'md' | 'doc'): string {
   const cleaned = stageName
-    .replace(/[\\/:*?"<>|\p{C}]/gu, '')
+    .replace(/[\u0000-\u001f\u007f\u200b-\u200c\u200e-\u200f\ufeff\\/:*?"<>|]/gu, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '');

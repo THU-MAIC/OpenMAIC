@@ -56,6 +56,32 @@ describe('collectSceneScripts', () => {
     const scripts = collectSceneScripts([s]);
     expect(scripts[0]).toMatchObject({ sceneId: 'b', sceneTitle: 'Titled', sceneOrder: 3 });
   });
+
+  it('omits whitespace-only speech text and trims kept text', () => {
+    const wsOnly = scene({ id: 'a', title: 'WS', actions: [speechAction('a1', '   ')] });
+    expect(collectSceneScripts([wsOnly])).toEqual([]);
+
+    const trimmed = scene({
+      id: 'b',
+      title: 'Trim',
+      actions: [speechAction('a1', '  Hello  ')],
+    });
+    expect(collectSceneScripts([trimmed])).toEqual([
+      { sceneId: 'b', sceneTitle: 'Trim', sceneOrder: 1, text: 'Hello' },
+    ]);
+  });
+
+  it('skips scenes with undefined actions without crashing', () => {
+    const s = scene({ id: 'a', title: 'NoActions', actions: undefined });
+    expect(collectSceneScripts([s])).toEqual([]);
+  });
+
+  it('falls back to Slide N for empty scene titles', () => {
+    const s = scene({ id: 'a', title: '', order: 3, actions: [speechAction('a1', 'Hi')] });
+    expect(collectSceneScripts([s])).toEqual([
+      { sceneId: 'a', sceneTitle: 'Slide 3', sceneOrder: 3, text: 'Hi' },
+    ]);
+  });
 });
 
 describe('buildMarkdown', () => {
@@ -82,6 +108,20 @@ describe('buildMarkdown', () => {
     const md = buildMarkdown('C', [{ sceneId: 'a', sceneTitle: 'A', sceneOrder: 1, text: '' }]);
     expect(md).toBe('# C');
   });
+
+  it('filters whitespace-only paragraphs and collapses trailing blank lines', () => {
+    const md = buildMarkdown('C', [
+      { sceneId: 'a', sceneTitle: 'A', sceneOrder: 1, text: 'Hello\n\n   \n\nWorld' },
+    ]);
+    // The whitespace-only paragraph is dropped, so Hello and World are
+    // consecutive paragraphs with no blank filler between them.
+    expect(md).toBe('# C\n\n## A\n\nHello\n\nWorld');
+
+    const trailing = buildMarkdown('C', [
+      { sceneId: 'a', sceneTitle: 'A', sceneOrder: 1, text: 'Only.\n\n\n' },
+    ]);
+    expect(trailing).toBe('# C\n\n## A\n\nOnly.');
+  });
 });
 
 describe('buildDocHtml', () => {
@@ -103,6 +143,31 @@ describe('buildDocHtml', () => {
     expect(html).toContain('a&lt;b and c&gt;d &amp; more');
     expect(html).not.toContain('a<b');
   });
+
+  it('skips empty and whitespace-only paragraphs in HTML', () => {
+    const html = buildDocHtml('C', [
+      { sceneId: 'a', sceneTitle: 'A', sceneOrder: 1, text: 'Line one.\n\n   \n\nLine two.' },
+    ]);
+    expect(html).toContain('<p>Line one.</p>');
+    expect(html).toContain('<p>Line two.</p>');
+    expect(html).not.toContain('<p></p>');
+    expect(html).not.toContain('<p>   </p>');
+  });
+
+  it('does not emit a trailing empty paragraph for trailing newlines', () => {
+    const html = buildDocHtml('C', [
+      { sceneId: 'a', sceneTitle: 'A', sceneOrder: 1, text: 'A\n\n' },
+    ]);
+    expect(html).toContain('<p>A</p>');
+    expect(html).not.toContain('<p></p>');
+  });
+
+  it('renders single newlines inside a paragraph as <br>', () => {
+    const html = buildDocHtml('C', [
+      { sceneId: 'a', sceneTitle: 'A', sceneOrder: 1, text: 'Line one.\nLine two.' },
+    ]);
+    expect(html).toContain('<p>Line one.<br>Line two.</p>');
+  });
 });
 
 describe('buildScriptFileName', () => {
@@ -116,5 +181,14 @@ describe('buildScriptFileName', () => {
 
   it('collapses repeated hyphens and trims edges', () => {
     expect(buildScriptFileName('  A  B  ', 'md')).toBe('A-B-script.md');
+  });
+
+  it('preserves ZWJ emoji sequences as a single run in file names', () => {
+    expect(buildScriptFileName('Family 👨‍👩‍👧 Lesson', 'md')).toBe('Family-👨‍👩‍👧-Lesson-script.md');
+  });
+
+  it('strips control characters and falls back for all-illegal stems', () => {
+    expect(buildScriptFileName('A\u0000B', 'md')).toBe('AB-script.md');
+    expect(buildScriptFileName('???', 'doc')).toBe('script.doc');
   });
 });
