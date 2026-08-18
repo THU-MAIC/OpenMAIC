@@ -7,6 +7,7 @@ import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 import { fetchMediaUrl } from '@/lib/media/fetch-media-url';
 import { mapWithConcurrency } from '@/lib/media/convert-legacy-asset-refs';
+import { createLegacyUrlProbeBudget } from '@/lib/media/legacy-url-probe-budget';
 import { withAssetUrl } from '@/lib/media/use-asset-url';
 
 // ─── Export: Collect Media ─────────────────────────────────────
@@ -141,9 +142,12 @@ export async function collectLegacyAudioForExport(
   }
   const blobs: LegacyAudioBlob[] = [];
   const audioUrlToPath = new Map<string, string>();
+  const probeBudget = createLegacyUrlProbeBudget();
   const fetched = await mapWithConcurrency([...uniqueLegacyUrls], 4, async (url) => {
+    const timeoutMs = probeBudget.nextTimeoutMs();
+    if (timeoutMs === null) return { url, blob: null };
     try {
-      const response = await fetchMediaUrl(url, 15_000);
+      const response = await fetchMediaUrl(url, timeoutMs);
       if (!response.ok) return { url, blob: null };
       const blob = await response.blob();
       // Zero-byte responses are not narration: skip the entry (the same

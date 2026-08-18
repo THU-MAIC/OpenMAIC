@@ -46,6 +46,7 @@ import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 import { fetchMediaUrl } from '@/lib/media/fetch-media-url';
+import { createLegacyUrlProbeBudget } from '@/lib/media/legacy-url-probe-budget';
 
 /** Loaded source records, keyed for both metadata (compiler) and byte collection. */
 export interface VideoTimelineRecords {
@@ -261,9 +262,12 @@ export async function createVideoTimelineDeps(input: {
     if (record && (record.blob?.size > 0 || record.ossKey)) continue;
     legacyAudioUrls.add(pair.audioUrl);
   }
+  const legacyUrlProbeBudget = createLegacyUrlProbeBudget();
   await mapWithConcurrency([...legacyAudioUrls], PROBE_CONCURRENCY, async (url) => {
+    const timeoutMs = legacyUrlProbeBudget.nextTimeoutMs();
+    if (timeoutMs === null) return;
     try {
-      const response = await fetchMediaUrl(url, 15_000);
+      const response = await fetchMediaUrl(url, timeoutMs);
       if (!response.ok) return;
       const blob = await response.blob();
       audioById.set(url, {

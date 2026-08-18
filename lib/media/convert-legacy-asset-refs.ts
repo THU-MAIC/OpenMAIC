@@ -42,18 +42,22 @@
  * this converter never reached.
  */
 
-import type { AssetMeta, Slide } from '@openmaic/dsl';
-import { createLogger } from '@/lib/logger';
-import type { AppDocument } from '@/lib/document-store/persistence-types';
-import type { Action, SpeechAction } from '@/lib/types/action';
-import type { AppScene, Stage } from '@/lib/types/stage';
-import { makeScene } from '@/lib/types/stage';
-import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
-import { fetchMediaUrl } from './fetch-media-url';
-import { isGeneratedMediaPlaceholder } from './media-ref';
-import { slideMediaReferenceSlots } from './slide-media-slots';
+import type { AssetMeta, Slide } from "@openmaic/dsl";
+import { createLogger } from "@/lib/logger";
+import type { AppDocument } from "@/lib/document-store/persistence-types";
+import type { Action, SpeechAction } from "@/lib/types/action";
+import type { AppScene, Stage } from "@/lib/types/stage";
+import { makeScene } from "@/lib/types/stage";
+import type { AudioFileRecord, MediaFileRecord } from "@/lib/utils/database";
+import { fetchMediaUrl } from "./fetch-media-url";
+import { isGeneratedMediaPlaceholder } from "./media-ref";
+import { slideMediaReferenceSlots } from "./slide-media-slots";
+import {
+  createLegacyUrlProbeBudget,
+  LEGACY_URL_PROBE_TIMEOUT_MS,
+} from "./legacy-url-probe-budget";
 
-const log = createLogger('LegacyAssetConversion');
+const log = createLogger("LegacyAssetConversion");
 
 /**
  * The removed-from-contract field as stored documents and server classroom
@@ -72,9 +76,9 @@ export type { LegacySpeechAction };
  * connection never empties a reference that a later open could still convert.
  */
 export type LegacyUrlFetch =
-  | { readonly kind: 'ok'; readonly blob: Blob }
-  | { readonly kind: 'dead' }
-  | { readonly kind: 'unavailable' };
+  | { readonly kind: "ok"; readonly blob: Blob }
+  | { readonly kind: "dead" }
+  | { readonly kind: "unavailable" };
 
 export interface LegacyAssetConversionDeps {
   /** Ingest bytes into the asset pool; resolves to the allocated asset id. */
@@ -82,7 +86,10 @@ export interface LegacyAssetConversionDeps {
   /** Whether the pool already holds an entry for a ref (an allocated id). */
   assetRefExists(ref: string): Promise<boolean>;
   /** Legacy generated-media row for a `${stageId}:${ref}` placeholder. */
-  getMediaRecord(stageId: string, ref: string): Promise<MediaFileRecord | undefined>;
+  getMediaRecord(
+    stageId: string,
+    ref: string,
+  ): Promise<MediaFileRecord | undefined>;
   /** Legacy TTS row for an `audioId`. */
   getAudioRecord(audioId: string): Promise<AudioFileRecord | undefined>;
   /**
@@ -92,7 +99,11 @@ export interface LegacyAssetConversionDeps {
    * keys, so a converted document would point at media the export only knows
    * by the old placeholder. Same double-write discipline as the audio path.
    */
-  putMediaRecord(stageId: string, ref: string, record: MediaFileRecord): Promise<void>;
+  putMediaRecord(
+    stageId: string,
+    ref: string,
+    record: MediaFileRecord,
+  ): Promise<void>;
   /** Write the post-conversion Dexie compatibility copy of an audio row. */
   putAudioRecord(record: AudioFileRecord): Promise<void>;
   /**
@@ -116,7 +127,7 @@ export interface LegacyAssetConversionDeps {
    */
   removeAsset(ref: string): Promise<void>;
   /** Fetch (and thereby probe) a legacy `audioUrl`. */
-  fetchLegacyUrl(url: string): Promise<LegacyUrlFetch>;
+  fetchLegacyUrl(url: string, timeoutMs?: number): Promise<LegacyUrlFetch>;
 }
 
 /** Run each job through at most `limit` workers, preserving input order. */
@@ -132,18 +143,21 @@ export async function mapWithConcurrency<T, R>(
   // unconverted document never leaves siblings still committing effects.
   let failed = false;
   let failure: unknown;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length && !failed) {
-      const index = next;
-      next += 1;
-      try {
-        results[index] = await fn(items[index], index);
-      } catch (error) {
-        failed = true;
-        failure = error;
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (next < items.length && !failed) {
+        const index = next;
+        next += 1;
+        try {
+          results[index] = await fn(items[index], index);
+        } catch (error) {
+          failed = true;
+          failure = error;
+        }
       }
-    }
-  });
+    },
+  );
   await Promise.all(workers);
   if (failed) throw failure;
   return results;
@@ -157,9 +171,9 @@ export async function mapWithConcurrency<T, R>(
  * discards the result can roll them back instead of stranding them.
  */
 export class LegacyConversionAbortedError extends Error {
-  override readonly name = 'LegacyConversionAbortedError';
+  override readonly name = "LegacyConversionAbortedError";
   constructor(readonly allocatedIds: readonly string[]) {
-    super('legacy asset conversion aborted');
+    super("legacy asset conversion aborted");
   }
 }
 
@@ -196,7 +210,7 @@ export async function findLegacyMediaRecord(
   db: {
     mediaFiles: {
       get(key: string): Promise<MediaFileRecord | undefined>;
-      where(field: 'stageId'): {
+      where(field: "stageId"): {
         equals(stageId: string): {
           and(pred: (row: MediaFileRecord) => boolean): {
             first(): Promise<MediaFileRecord | undefined>;
@@ -212,9 +226,12 @@ export async function findLegacyMediaRecord(
 ): Promise<MediaFileRecord | undefined> {
   const exact = await db.mediaFiles.get(mediaFileKey(stageId, ref));
   const mirror = await db.mediaFiles
-    .where('stageId')
+    .where("stageId")
     .equals(stageId)
-    .and((row) => row.placeholderRef === ref && row.id !== mediaFileKey(stageId, ref))
+    .and(
+      (row) =>
+        row.placeholderRef === ref && row.id !== mediaFileKey(stageId, ref),
+    )
     .first();
   // A pool-backed mirror wins over the exact row: it is the retry's recovery
   // handle, and preferring the exact row would allocate a twin of it.
@@ -238,8 +255,8 @@ export async function rollbackConvertedAllocations(
 ): Promise<void> {
   if (allocatedIds.length === 0) return;
   const [{ removeAsset }, { db }] = await Promise.all([
-    import('./asset-pool'),
-    import('@/lib/utils/database'),
+    import("./asset-pool"),
+    import("@/lib/utils/database"),
   ]);
   for (const id of allocatedIds) {
     await removeAsset(id).catch(() => undefined);
@@ -257,7 +274,9 @@ export async function rollbackConvertedAllocations(
 export function isClassroomMediaUrl(ref: string | undefined): ref is string {
   if (!ref) return false;
   try {
-    return new URL(ref, 'http://local.invalid').pathname.startsWith('/api/classroom-media/');
+    return new URL(ref, "http://local.invalid").pathname.startsWith(
+      "/api/classroom-media/",
+    );
   } catch {
     return false;
   }
@@ -273,30 +292,37 @@ export function isClassroomMediaUrl(ref: string | undefined): ref is string {
  */
 export function containsClassroomMediaUrls(document: AppDocument): boolean {
   const slideContainsTransport = (slide: SlideLike): boolean =>
-    [...slideMediaReferenceSlots(slide)].some((slot) => isClassroomMediaUrl(slot.read()));
+    [...slideMediaReferenceSlots(slide)].some((slot) =>
+      isClassroomMediaUrl(slot.read()),
+    );
 
   if (document.stage.whiteboard?.some(slideContainsTransport)) return true;
-  if (Object.keys(document.stage.videoManifest ?? {}).some(isClassroomMediaUrl)) return true;
+  if (Object.keys(document.stage.videoManifest ?? {}).some(isClassroomMediaUrl))
+    return true;
   return document.scenes.some(
     (scene) =>
-      (scene.content.type === 'slide' && slideContainsTransport(scene.content.canvas)) ||
+      (scene.content.type === "slide" &&
+        slideContainsTransport(scene.content.canvas)) ||
       scene.whiteboards?.some(slideContainsTransport) === true ||
       // A speech action that still carries an audioUrl after conversion means
       // audio conversion did not complete; the URL is a transport handle the
       // converter rewrites, so it must not pass the completeness guard.
       scene.actions?.some(
-        (action) => action.type === 'speech' && Boolean((action as LegacySpeechAction).audioUrl),
+        (action) =>
+          action.type === "speech" &&
+          Boolean((action as LegacySpeechAction).audioUrl),
       ) === true,
   );
 }
 
 /** The default production wiring: Dexie legacy tables plus the app asset pool. */
 async function defaultDeps(): Promise<LegacyAssetConversionDeps> {
-  const [{ db, mediaFileKey }, { putAsset, removeAsset }, { assetRefExists }] = await Promise.all([
-    import('@/lib/utils/database'),
-    import('./asset-pool'),
-    import('./use-asset-url'),
-  ]);
+  const [{ db, mediaFileKey }, { putAsset, removeAsset }, { assetRefExists }] =
+    await Promise.all([
+      import("@/lib/utils/database"),
+      import("./asset-pool"),
+      import("./use-asset-url"),
+    ]);
   return {
     putAsset: (blob, meta) => putAsset(blob, meta),
     assetRefExists: (ref) => assetRefExists(ref),
@@ -312,8 +338,10 @@ async function defaultDeps(): Promise<LegacyAssetConversionDeps> {
       db.audioFiles
         .filter((row) => {
           if (row.stageId !== stageId) return false;
-          const idMatches = keys.audioId === undefined || row.originAudioId === keys.audioId;
-          const urlMatches = keys.audioUrl === undefined || row.originAudioUrl === keys.audioUrl;
+          const idMatches =
+            keys.audioId === undefined || row.originAudioId === keys.audioId;
+          const urlMatches =
+            keys.audioUrl === undefined || row.originAudioUrl === keys.audioUrl;
           return idMatches && urlMatches;
         })
         .first(),
@@ -325,17 +353,23 @@ async function defaultDeps(): Promise<LegacyAssetConversionDeps> {
         // play, and the proxy carries the SSRF guard and its response limit.
         // Bounded either way: conversion runs on the document load path, and
         // one stalled URL must not hold the document lock indefinitely.
-        const response = await fetchMediaUrl(url, 15_000);
-        if (response.ok) return { kind: 'ok', blob: await response.blob() };
+        const response = await fetchMediaUrl(
+          url,
+          timeoutMs ?? LEGACY_URL_PROBE_TIMEOUT_MS,
+        );
+        if (response.ok) return { kind: "ok", blob: await response.blob() };
         // Only definitive absence empties the reference. A 408 or 429 is
         // transient by definition, a 401 or 403 may clear on a credential
         // refresh, and any of them would make the deletion permanent for a
         // temporary condition.
         return {
-          kind: response.status === 404 || response.status === 410 ? 'dead' : 'unavailable',
+          kind:
+            response.status === 404 || response.status === 410
+              ? "dead"
+              : "unavailable",
         };
       } catch {
-        return { kind: 'unavailable' };
+        return { kind: "unavailable" };
       }
     },
   };
@@ -344,7 +378,7 @@ async function defaultDeps(): Promise<LegacyAssetConversionDeps> {
 function mediaMeta(record: MediaFileRecord, blob: Blob): AssetMeta {
   let params: unknown;
   try {
-    params = JSON.parse(record.params || '{}');
+    params = JSON.parse(record.params || "{}");
   } catch {
     params = {};
   }
@@ -353,13 +387,17 @@ function mediaMeta(record: MediaFileRecord, blob: Blob): AssetMeta {
     mediaType: record.type,
     prompt: record.prompt,
     params,
-    origin: 'legacy-mediaFiles',
+    origin: "legacy-mediaFiles",
   };
 }
 
-function audioFormat(blob: Blob, record: AudioFileRecord | undefined, fallback = 'mp3'): string {
+function audioFormat(
+  blob: Blob,
+  record: AudioFileRecord | undefined,
+  fallback = "mp3",
+): string {
   if (record?.format) return record.format;
-  const subtype = blob.type.split('/')[1];
+  const subtype = blob.type.split("/")[1];
   return subtype || fallback;
 }
 
@@ -371,23 +409,15 @@ function audioMeta(
   const voice = action.voice ?? record?.voice;
   return {
     contentType: blob.type || `audio/${audioFormat(blob, record)}`,
-    mediaType: 'audio',
+    mediaType: "audio",
     text: action.text,
     ...(voice ? { voice } : {}),
     ...(record?.duration !== undefined ? { duration: record.duration } : {}),
-    origin: record ? 'legacy-audioFiles' : 'legacy-audioUrl',
+    origin: record ? "legacy-audioFiles" : "legacy-audioUrl",
   };
 }
 
-type SlideLike = Pick<Slide, 'background' | 'elements'>;
-
-/**
- * Total wall-clock budget for legacy URL probes in one conversion pass. Each
- * probe is individually capped; this caps the aggregate, so a document full
- * of stalled URLs cannot hold the load path for (count / concurrency) times
- * the per-probe timeout.
- */
-const URL_PROBE_BUDGET_MS = 60_000;
+type SlideLike = Pick<Slide, "background" | "elements">;
 
 /**
  * Convert every legacy media reference in a loaded document to an allocated
@@ -408,14 +438,18 @@ export async function convertDocumentAssetRefs(
 ): Promise<LegacyAssetConversionResult> {
   const resolvedDeps = deps ?? (await defaultDeps());
   const stageId = document.stage.id;
-  // The URL probes are the only network-bound work here, and each is already
-  // individually capped, but a document full of stalled URLs would still
-  // multiply that cap by the clip count. One shared budget bounds the whole
-  // pass; what is left converts on a later open. Every probe -- including the
-  // ossKey recovery fetches -- routes through it, or several stalled CDN
-  // fetches could exceed the advertised aggregate conversion budget.
-  const urlProbeBudgetEndsAt = Date.now() + URL_PROBE_BUDGET_MS;
-  const withinUrlProbeBudget = (): boolean => Date.now() <= urlProbeBudgetEndsAt;
+  // All legacy URL reads share one wall-clock deadline. A worker receives its
+  // timeout immediately before its request starts, so requests queued after the
+  // deadline are skipped and the final in-flight request cannot outlive it.
+  const urlProbeBudget = createLegacyUrlProbeBudget();
+  const fetchLegacyUrlWithinBudget = async (
+    url: string,
+  ): Promise<LegacyUrlFetch> => {
+    const timeoutMs = urlProbeBudget.nextTimeoutMs();
+    return timeoutMs === null
+      ? { kind: "unavailable" }
+      : resolvedDeps.fetchLegacyUrl(url, timeoutMs);
+  };
   /**
    * Ids this pass freshly allocated. A caller may share the array to own the
    * rollback itself: any failure path -- liveness abort or an ordinary worker
@@ -426,7 +460,8 @@ export async function convertDocumentAssetRefs(
   // (a classroom load): a stale conversion must stop producing side effects
   // as soon as its result is known to be unwanted, not after the last fetch.
   const assertContinuing = (): void => {
-    if (shouldContinue && !shouldContinue()) throw new LegacyConversionAbortedError(allocatedIds);
+    if (shouldContinue && !shouldContinue())
+      throw new LegacyConversionAbortedError(allocatedIds);
   };
   // One allocation per logical legacy ref, shared across every slot, manifest
   // key, and speech action that names it -- they already shared one byte
@@ -441,14 +476,18 @@ export async function convertDocumentAssetRefs(
    * is anything transient, which keeps the reference for a later open.
    */
   type UrlOutcome =
-    | { readonly kind: 'allocated'; readonly assetId: string }
-    | { readonly kind: 'dead' }
-    | { readonly kind: 'unavailable' };
+    | { readonly kind: "allocated"; readonly assetId: string }
+    | { readonly kind: "dead" }
+    | { readonly kind: "unavailable" };
   /** Outcome of the URL-backed speech path, cached per dangling (id, url) pair. */
   const urlOutcomeByRef = new Map<string, Promise<UrlOutcome>>();
   /** Outcome of the classroom-media URL path, cached per URL. */
   const mediaUrlOutcomeByRef = new Map<string, Promise<UrlOutcome>>();
-  const report: LegacyAssetConversionReport = { converted: 0, emptied: 0, kept: 0 };
+  const report: LegacyAssetConversionReport = {
+    converted: 0,
+    emptied: 0,
+    kept: 0,
+  };
   let changed = false;
 
   /** Allocate (once) for a placeholder with local or CDN bytes; null when unusable. */
@@ -460,16 +499,17 @@ export async function convertDocumentAssetRefs(
       // A zero-length local blob with an ossKey is an evicted row: the CDN
       // copy is the live byte source, and export already treats it that way.
       let source: Blob | undefined;
-      const usable = !!record && !record.error && !!record.blob && record.blob.size > 0;
+      const usable =
+        !!record && !record.error && !!record.blob && record.blob.size > 0;
       if (usable) {
         source = record.blob.type
           ? record.blob
           : new Blob([record.blob], { type: record.mimeType });
-      } else if (record && record.ossKey && withinUrlProbeBudget()) {
-        const fetched = await resolvedDeps.fetchLegacyUrl(record.ossKey);
+      } else if (record && record.ossKey) {
+        const fetched = await fetchLegacyUrlWithinBudget(record.ossKey);
         // Zero-byte responses are not usable bytes: the row stays retryable
         // instead of allocating an empty asset.
-        if (fetched.kind === 'ok' && fetched.blob.size > 0) {
+        if (fetched.kind === "ok" && fetched.blob.size > 0) {
           source = fetched.blob.type
             ? fetched.blob
             : new Blob([fetched.blob], { type: record.mimeType });
@@ -489,7 +529,10 @@ export async function convertDocumentAssetRefs(
         report.converted += 1;
         return keyedRef;
       }
-      const assetId = await resolvedDeps.putAsset(source, mediaMeta(record, source));
+      const assetId = await resolvedDeps.putAsset(
+        source,
+        mediaMeta(record, source),
+      );
       allocatedIds.push(assetId);
       try {
         // Liveness is rechecked at the commit boundary: an abort between the
@@ -527,19 +570,20 @@ export async function convertDocumentAssetRefs(
     const inFlight = mediaUrlOutcomeByRef.get(url);
     if (inFlight) return inFlight;
     const pending = (async (): Promise<UrlOutcome> => {
-      if (!withinUrlProbeBudget()) return { kind: 'unavailable' };
-      const fetched = await resolvedDeps.fetchLegacyUrl(url);
-      if (fetched.kind !== 'ok') {
-        return fetched.kind === 'dead' ? { kind: 'dead' } : { kind: 'unavailable' };
+      const fetched = await fetchLegacyUrlWithinBudget(url);
+      if (fetched.kind !== "ok") {
+        return fetched.kind === "dead"
+          ? { kind: "dead" }
+          : { kind: "unavailable" };
       }
       // Zero-byte responses are not usable bytes: keep the reference and
       // retry on a later open rather than allocating an empty asset.
-      if (fetched.blob.size === 0) return { kind: 'unavailable' };
+      if (fetched.blob.size === 0) return { kind: "unavailable" };
       const isVideo = /\.(mp4|webm|mov)(\?|#|$)/i.test(url);
       const assetId = await resolvedDeps.putAsset(fetched.blob, {
         contentType: fetched.blob.type || undefined,
-        mediaType: isVideo ? 'video' : 'image',
-        origin: 'classroom-media-url',
+        mediaType: isVideo ? "video" : "image",
+        origin: "classroom-media-url",
       });
       allocatedIds.push(assetId);
       try {
@@ -549,12 +593,12 @@ export async function convertDocumentAssetRefs(
         await resolvedDeps.putMediaRecord(stageId, assetId, {
           id: `${stageId}:${assetId}`,
           stageId,
-          type: isVideo ? 'video' : 'image',
+          type: isVideo ? "video" : "image",
           blob: fetched.blob,
-          mimeType: fetched.blob.type || (isVideo ? 'video/mp4' : 'image/png'),
+          mimeType: fetched.blob.type || (isVideo ? "video/mp4" : "image/png"),
           size: fetched.blob.size,
-          prompt: '',
-          params: '{}',
+          prompt: "",
+          params: "{}",
           createdAt: Date.now(),
           placeholderRef: url,
         });
@@ -563,7 +607,7 @@ export async function convertDocumentAssetRefs(
         throw error;
       }
       report.converted += 1;
-      return { kind: 'allocated', assetId };
+      return { kind: "allocated", assetId };
     })();
     mediaUrlOutcomeByRef.set(url, pending);
     return pending;
@@ -584,9 +628,9 @@ export async function convertDocumentAssetRefs(
         // rather than persisting a deployment-specific address. A confirmed
         // dead URL is emptied (removed), never preserved or allocated.
         const outcome = await allocateUrlMediaRef(ref);
-        if (outcome.kind === 'allocated') {
+        if (outcome.kind === "allocated") {
           rewrites.push({ index, assetId: outcome.assetId });
-        } else if (outcome.kind === 'dead') {
+        } else if (outcome.kind === "dead") {
           removals.push(index);
           report.emptied += 1;
         } else {
@@ -623,11 +667,11 @@ export async function convertDocumentAssetRefs(
     existsMemo.set(ref, probe);
     return probe;
   };
-  const hasAllocatedShape = (ref: string): boolean => ref.startsWith('ast_');
+  const hasAllocatedShape = (ref: string): boolean => ref.startsWith("ast_");
 
   const convertSpeechAction = async (action: Action): Promise<Action> => {
     assertContinuing();
-    if (action.type !== 'speech') return action;
+    if (action.type !== "speech") return action;
     const speech = action as LegacySpeechAction;
     const audioId = speech.audioId || undefined;
     const audioUrl = speech.audioUrl || undefined;
@@ -641,7 +685,9 @@ export async function convertDocumentAssetRefs(
     // through to the dangling branch below as the live handle.
     const poolBacked =
       audioId !== undefined &&
-      (hasAllocatedShape(audioId) && audioUrl === undefined ? true : await existsOnce(audioId));
+      (hasAllocatedShape(audioId) && audioUrl === undefined
+        ? true
+        : await existsOnce(audioId));
     if (audioId && poolBacked) {
       // Already converted (pool-backed). Only a stale co-present URL remains
       // to drop; the id was confirmed resolvable above, so the URL is safe to
@@ -653,7 +699,9 @@ export async function convertDocumentAssetRefs(
       return next;
     }
 
-    const record = audioId ? await resolvedDeps.getAudioRecord(audioId) : undefined;
+    const record = audioId
+      ? await resolvedDeps.getAudioRecord(audioId)
+      : undefined;
     const recordHasBytes = !!record && record.blob.size > 0;
     // An evicted row (empty blob, live ossKey) still has its bytes on the CDN;
     // export already treats ossKey as the live source, and conversion does too.
@@ -665,7 +713,8 @@ export async function convertDocumentAssetRefs(
       // (id, url) pair when a URL is present: a mirror written for (id,
       // URL-A) must never be reused for (id, URL-B), whose narration it does
       // not hold.
-      const pairKey = audioUrl === undefined ? audioId : `${audioId}\u0000${audioUrl}`;
+      const pairKey =
+        audioUrl === undefined ? audioId : `${audioId}\u0000${audioUrl}`;
       const pendingAudio =
         allocationByRef.get(pairKey) ??
         (async (): Promise<string | null> => {
@@ -683,14 +732,20 @@ export async function convertDocumentAssetRefs(
             report.converted += 1;
             return mirrored.id;
           }
-          let source: Blob | undefined = recordHasBytes ? record.blob : undefined;
-          if (!source && record.ossKey && withinUrlProbeBudget()) {
-            const fetched = await resolvedDeps.fetchLegacyUrl(record.ossKey);
+          let source: Blob | undefined = recordHasBytes
+            ? record.blob
+            : undefined;
+          if (!source && record.ossKey) {
+            const fetched = await fetchLegacyUrlWithinBudget(record.ossKey);
             // Zero-byte responses are not usable bytes: keep the row retryable.
-            if (fetched.kind === 'ok' && fetched.blob.size > 0) source = fetched.blob;
+            if (fetched.kind === "ok" && fetched.blob.size > 0)
+              source = fetched.blob;
           }
           if (!source) return null;
-          const allocated = await resolvedDeps.putAsset(source, audioMeta(source, record, speech));
+          const allocated = await resolvedDeps.putAsset(
+            source,
+            audioMeta(source, record, speech),
+          );
           allocatedIds.push(allocated);
           try {
             // Liveness is rechecked at the commit boundary, like the media path.
@@ -743,7 +798,7 @@ export async function convertDocumentAssetRefs(
       // different urls are different logical references, and keying on the id
       // would reuse the first fetch's outcome for the second url -- assigning
       // the wrong bytes or propagating a dead outcome to a live URL.
-      const urlKey = `${audioId ?? ''}\u0000${audioUrl}`;
+      const urlKey = `${audioId ?? ""}\u0000${audioUrl}`;
       const pendingUrl =
         urlOutcomeByRef.get(urlKey) ??
         (async (): Promise<UrlOutcome> => {
@@ -756,18 +811,13 @@ export async function convertDocumentAssetRefs(
           });
           if (mirrored && (await existsOnce(mirrored.id))) {
             report.converted += 1;
-            return { kind: 'allocated', assetId: mirrored.id };
+            return { kind: "allocated", assetId: mirrored.id };
           }
-          if (!withinUrlProbeBudget()) {
-            // The document cannot wait for every stalled URL; the rest of
-            // this pass converts on a later open.
-            return { kind: 'unavailable' };
-          }
-          const fetched = await resolvedDeps.fetchLegacyUrl(audioUrl);
+          const fetched = await fetchLegacyUrlWithinBudget(audioUrl);
           // Zero-byte responses are not usable bytes: the pair stays
           // retryable and the URL remains the live fallback, never an
           // allocated empty asset.
-          if (fetched.kind === 'ok' && fetched.blob.size > 0) {
+          if (fetched.kind === "ok" && fetched.blob.size > 0) {
             const assetId = await resolvedDeps.putAsset(
               fetched.blob,
               audioMeta(fetched.blob, undefined, speech),
@@ -795,19 +845,24 @@ export async function convertDocumentAssetRefs(
               throw error;
             }
             report.converted += 1;
-            return { kind: 'allocated', assetId };
+            return { kind: "allocated", assetId };
           }
-          return fetched.kind === 'dead' ? { kind: 'dead' } : { kind: 'unavailable' };
+          return fetched.kind === "dead"
+            ? { kind: "dead" }
+            : { kind: "unavailable" };
         })();
       urlOutcomeByRef.set(urlKey, pendingUrl);
       const outcome = await pendingUrl;
-      if (outcome.kind === 'allocated') {
-        const next: LegacySpeechAction = { ...speech, audioId: outcome.assetId };
+      if (outcome.kind === "allocated") {
+        const next: LegacySpeechAction = {
+          ...speech,
+          audioId: outcome.assetId,
+        };
         delete next.audioUrl;
         changed = true;
         return next;
       }
-      if (outcome.kind === 'dead') {
+      if (outcome.kind === "dead") {
         // A URL that no longer resolves converts to NO asset and an emptied
         // reference: a dead URL is never carried into the new format.
         const next: LegacySpeechAction = { ...speech };
@@ -827,7 +882,9 @@ export async function convertDocumentAssetRefs(
   const stage = document.stage;
   let whiteboard = stage.whiteboard;
   if (whiteboard) {
-    const converted = await Promise.all(whiteboard.map((slide) => convertSlide(slide)));
+    const converted = await Promise.all(
+      whiteboard.map((slide) => convertSlide(slide)),
+    );
     if (converted.some((slide, index) => slide !== whiteboard![index])) {
       whiteboard = converted;
     }
@@ -836,7 +893,7 @@ export async function convertDocumentAssetRefs(
   const scenes: AppScene[] = [];
   for (const scene of document.scenes) {
     let nextScene = scene;
-    if (scene.content.type === 'slide') {
+    if (scene.content.type === "slide") {
       const canvas = await convertSlide(scene.content.canvas);
       if (canvas !== scene.content.canvas) {
         // Rebuild through makeScene so the discriminated union stays bound:
@@ -848,8 +905,12 @@ export async function convertDocumentAssetRefs(
       }
     }
     if (scene.whiteboards) {
-      const converted = await Promise.all(scene.whiteboards.map((slide) => convertSlide(slide)));
-      if (converted.some((slide, index) => slide !== scene.whiteboards![index])) {
+      const converted = await Promise.all(
+        scene.whiteboards.map((slide) => convertSlide(slide)),
+      );
+      if (
+        converted.some((slide, index) => slide !== scene.whiteboards![index])
+      ) {
         nextScene = { ...nextScene, whiteboards: converted };
       }
     }
@@ -860,10 +921,15 @@ export async function convertDocumentAssetRefs(
   // per scene would multiply the per-fetch timeout by the scene count when a
   // legacy endpoint stalls. The promise caches make concurrent conversion of
   // shared references safe.
-  const speechJobs: Array<{ sceneIndex: number; actionIndex: number; action: Action }> = [];
+  const speechJobs: Array<{
+    sceneIndex: number;
+    actionIndex: number;
+    action: Action;
+  }> = [];
   document.scenes.forEach((scene, sceneIndex) => {
     scene.actions?.forEach((action, actionIndex) => {
-      if (action.type === 'speech') speechJobs.push({ sceneIndex, actionIndex, action });
+      if (action.type === "speech")
+        speechJobs.push({ sceneIndex, actionIndex, action });
     });
   });
   const convertedSpeech = await mapWithConcurrency(speechJobs, 4, (job) =>
@@ -873,9 +939,9 @@ export async function convertDocumentAssetRefs(
     const converted = convertedSpeech[index];
     if (converted === job.action) continue;
     const scene = scenes[job.sceneIndex];
-    const actions = (scene.actions ?? document.scenes[job.sceneIndex].actions)?.map((action, i) =>
-      i === job.actionIndex ? converted : action,
-    );
+    const actions = (
+      scene.actions ?? document.scenes[job.sceneIndex].actions
+    )?.map((action, i) => (i === job.actionIndex ? converted : action));
     scenes[job.sceneIndex] = { ...scene, actions };
   }
 
@@ -897,12 +963,12 @@ export async function convertDocumentAssetRefs(
         }
       } else if (isClassroomMediaUrl(key)) {
         const outcome = await allocateUrlMediaRef(key);
-        if (outcome.kind === 'allocated') {
+        if (outcome.kind === "allocated") {
           nextManifest[outcome.assetId] = entry;
           manifestChanged = true;
           continue;
         }
-        if (outcome.kind === 'dead') {
+        if (outcome.kind === "dead") {
           report.emptied += 1;
           manifestChanged = true;
           continue;
