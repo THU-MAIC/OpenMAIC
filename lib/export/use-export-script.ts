@@ -11,7 +11,7 @@
  *
  * App-side / impure: store read, sonner toast, `saveAs` download.
  */
-import { useCallback, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { saveAs } from 'file-saver';
 import { toast } from 'sonner';
 
@@ -19,7 +19,6 @@ import { useStageStore } from '@/lib/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
 import type { Scene } from '@/lib/types/stage';
-import type { SpeechAction } from '@/lib/types/action';
 
 const log = createLogger('ExportScript');
 
@@ -41,7 +40,7 @@ export function collectSceneScripts(scenes: Scene[]): SceneScript[] {
     const parts: string[] = [];
     for (const action of scene.actions ?? []) {
       if (action.type === 'speech') {
-        parts.push((action as SpeechAction).text);
+        parts.push(action.text);
       }
     }
     if (parts.length === 0) continue;
@@ -122,28 +121,20 @@ export function buildScriptFileName(stageName: string, ext: 'md' | 'doc'): strin
 
 /** Shared export hook — exposes `exportScriptDoc()` and `exportScriptMd()`. */
 export function useExportScript() {
-  const [exporting, setExporting] = useState(false);
-  const exportingRef = useRef(false);
   const { t } = useI18n();
-
-  const scenes = useStageStore((s) => s.scenes);
-  const stage = useStageStore((s) => s.stage);
 
   const downloadScript = useCallback(
     (ext: 'md' | 'doc') => {
-      if (exportingRef.current) return;
-      if (scenes.length === 0) {
+      // Read state at click time: the download is user-triggered, so there is
+      // no need to subscribe the hook to the stage store on every render.
+      const scenes = useStageStore.getState().scenes;
+      const stage = useStageStore.getState().stage;
+      const scripts = collectSceneScripts(scenes);
+      if (scripts.length === 0) {
         toast.warning(t('export.nothingToExport'));
         return;
       }
-      exportingRef.current = true;
-      setExporting(true);
       try {
-        const scripts = collectSceneScripts(scenes);
-        if (scripts.length === 0) {
-          toast.warning(t('export.nothingToExport'));
-          return;
-        }
         const fileName = stage?.name || 'classroom';
         const content =
           ext === 'md' ? buildMarkdown(fileName, scripts) : buildDocHtml(fileName, scripts);
@@ -154,16 +145,12 @@ export function useExportScript() {
       } catch (error) {
         log.error(`Script export failed (${ext}):`, error);
         toast.error(t('export.exportFailed'));
-      } finally {
-        exportingRef.current = false;
-        setExporting(false);
       }
     },
-    [scenes, stage, t],
+    [t],
   );
 
   return {
-    exporting,
     exportScriptDoc: () => downloadScript('doc'),
     exportScriptMd: () => downloadScript('md'),
   };
