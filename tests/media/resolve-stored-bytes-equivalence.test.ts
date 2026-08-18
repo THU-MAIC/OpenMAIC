@@ -139,6 +139,45 @@ async function frozenPptx(ref: string, stageId?: string): Promise<Blob | null> {
   return resolved ? frozenFetchBlob(resolved) : null;
 }
 
+// NOT part of the frozen set: this is `frozenPptx` plus exactly the documented
+// blob-presence guard, used to pin the current behavior at that divergence.
+async function frozenPptxRepaired(ref: string, stageId?: string): Promise<Blob | null> {
+  const tasks = useMediaGenerationStore.getState().tasks;
+  const task =
+    tasks[ref] ??
+    Object.values(tasks).find(
+      (candidate) =>
+        candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
+    );
+  const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
+  if (!isConcreteMediaAddress(ref)) {
+    try {
+      const pooled = await withAssetUrl(ref, async (url) => {
+        if (!url) return null;
+        const state = resolveMediaRef(ref, effectiveTask, { status: 'resolved', url });
+        const resolved = renderableMediaUrl(state);
+        return resolved ? frozenFetchBlob(resolved) : null;
+      });
+      if (pooled) return pooled;
+    } catch {
+      // The compatibility row remains the fallback when pool access fails.
+    }
+  }
+  if (stageId) {
+    const record = await db.mediaFiles.get(mediaFileKey(stageId, ref)).catch(() => undefined);
+    if (record && !record.error && record.blob && record.blob.size > 0) {
+      const state = resolveMediaRef(ref, effectiveTask, {
+        status: 'resolved',
+        url: 'dexie:media',
+      });
+      if (state.kind === 'url') return record.blob;
+    }
+  }
+  const state = resolveMediaRef(ref, effectiveTask, MISSING_ASSET_LEASE);
+  const resolved = renderableMediaUrl(state);
+  return resolved ? frozenFetchBlob(resolved) : null;
+}
+
 // ─── Frozen @ e1578083 — lib/video-export-app/collect.ts ────────────────────
 
 async function frozenResolveBytes(
@@ -213,6 +252,7 @@ async function frozenVideo(
 
 const REFS = [
   'ast_opaque_1',
+  'ast_opaque_1:variant',
   'gen_img_1',
   'https://cdn.example.com/remote.png',
   'blob:local-object',
@@ -270,48 +310,48 @@ const taskCases = (ref: string): TaskCase[] => [
 const POOL_CASES = ['url', 'miss', 'throw'] as const;
 const FETCH_CASES = ['ok', 'not-ok', 'empty', 'throw'] as const;
 
-type RecordCase = { name: string; make: () => MediaFileRecord | undefined };
+type RecordCase = { name: string; make: (ref: string) => MediaFileRecord | undefined };
 
 const recordCases: RecordCase[] = [
   { name: 'absent', make: () => undefined },
   {
     name: 'ok',
-    make: () =>
-      ({ id: 'stage-1:ast_opaque_1', blob: new Blob(['row']) }) as unknown as MediaFileRecord,
+    make: (ref) =>
+      ({ id: `stage-1:${ref}`, blob: new Blob(['row']) }) as unknown as MediaFileRecord,
   },
   {
     name: 'errored',
-    make: () =>
+    make: (ref) =>
       ({
-        id: 'stage-1:ast_opaque_1',
+        id: `stage-1:${ref}`,
         blob: new Blob(['row']),
         error: 'FAILED',
       }) as unknown as MediaFileRecord,
   },
   {
     name: 'empty-blob',
-    make: () => ({ id: 'stage-1:ast_opaque_1', blob: new Blob([]) }) as unknown as MediaFileRecord,
+    make: (ref) => ({ id: `stage-1:${ref}`, blob: new Blob([]) }) as unknown as MediaFileRecord,
   },
   {
     name: 'empty-blob-with-oss',
-    make: () =>
+    make: (ref) =>
       ({
-        id: 'stage-1:ast_opaque_1',
+        id: `stage-1:${ref}`,
         blob: new Blob([]),
         ossKey: 'https://cdn.example.com/oss.png',
       }) as unknown as MediaFileRecord,
   },
   {
     name: 'blobless-with-oss',
-    make: () =>
+    make: (ref) =>
       ({
-        id: 'stage-1:ast_opaque_1',
+        id: `stage-1:${ref}`,
         ossKey: 'https://cdn.example.com/oss.png',
       }) as unknown as MediaFileRecord,
   },
   {
     name: 'non-compound-id',
-    make: () => ({ id: 'ast_opaque_1', blob: new Blob(['row']) }) as unknown as MediaFileRecord,
+    make: (ref) => ({ id: ref, blob: new Blob(['row']) }) as unknown as MediaFileRecord,
   },
 ];
 
@@ -403,7 +443,7 @@ describe('frozen-base differential harness', () => {
             for (const row of recordCases)
               for (const stageId of STAGES) {
                 const label = `PPTX ${ref} ${task.name} pool=${pool} fetch=${fetchMode} row=${row.name} stage=${stageId}`;
-                const loaded = row.make();
+                const loaded = row.make(ref);
                 arm(pool, fetchMode, task.tasks);
                 mocks.mediaGet.mockImplementation(async (key: string) => {
                   mocks.calls.push(`dexie:${key}`);
@@ -433,6 +473,13 @@ describe('frozen-base differential harness', () => {
                   expect(before.thrown, label).toBe('TypeError');
                   expect(row.name, label).toBe('blobless-with-oss');
                   expect(stageId, label).toBe('stage-1');
+                  arm(pool, fetchMode, task.tasks);
+                  mocks.mediaGet.mockImplementation(async (key: string) => {
+                    mocks.calls.push(`dexie:${key}`);
+                    return loaded;
+                  });
+                  const repaired = await capture(() => frozenPptxRepaired(ref, stageId), loaded);
+                  expect(after, label).toEqual(repaired);
                   expect(after.kind, label).not.toBe('throw');
                   continue;
                 }
@@ -445,12 +492,13 @@ describe('frozen-base differential harness', () => {
     // every such combination that actually reaches the row. The frozen PPTX
     // path returns pooled bytes before it ever reads the row, so those
     // combinations never touch the unguarded `record.blob.size`: pool `url`,
-    // one of the two non-concrete refs, a fetch outcome the frozen `fetchBlob`
+    // one of the three non-concrete refs, a fetch outcome the frozen `fetchBlob`
     // accepts (`ok` and `empty` alike -- it checks only `response.ok`), and any
     // task state that still resolves to a URL, which is all of them except
-    // `generating` and `pending`.
+    // `generating` and `pending`. There are three non-concrete refs now: both
+    // opaque base refs and the opaque ref carrying an additional colon.
     const bloblessStaged = REFS.length * 9 * POOL_CASES.length * FETCH_CASES.length;
-    const pooledBeforeRow = 2 * 1 * 2 * 7;
+    const pooledBeforeRow = 3 * 1 * 2 * 7;
     expect(divergences.length).toBe(bloblessStaged - pooledBeforeRow);
   });
 
@@ -463,7 +511,7 @@ describe('frozen-base differential harness', () => {
             for (const row of recordCases)
               for (const stageId of STAGES) {
                 const label = `VIDEO ${ref} ${task.name} pool=${pool} fetch=${fetchMode} row=${row.name} stage=${stageId}`;
-                const supplied = row.make();
+                const supplied = row.make(ref);
                 arm(pool, fetchMode, task.tasks);
                 const before = await capture(() => frozenVideo(ref, supplied, stageId), supplied);
                 arm(pool, fetchMode, task.tasks);
