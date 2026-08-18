@@ -261,7 +261,7 @@ export async function materializeImportedMedia(
         ? meta.sourceRef
         : mediaRefFromZipPath(zipPath, meta.mimeType);
     const mimeType = meta.mimeType || 'image/jpeg';
-    const type = mimeType.startsWith('video/') ? 'video' : 'image';
+    const type = importedMediaKind(mimeType);
     const posterEntry =
       type === 'video' ? zip.file(siblingPosterZipPath(zipPath, meta.mimeType)) : null;
     const posterBlob = posterEntry ? await posterEntry.async('blob') : undefined;
@@ -322,6 +322,11 @@ export async function materializeImportedMedia(
     }
   }
   return mappings;
+}
+
+/** Classification used for imported generated media after export normalization. */
+export function importedMediaKind(mimeType: string): 'image' | 'video' {
+  return mimeType.startsWith('video/') ? 'video' : 'image';
 }
 
 export type ImportPhase =

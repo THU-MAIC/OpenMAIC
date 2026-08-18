@@ -8,6 +8,7 @@ import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 import { fetchMediaUrl } from '@/lib/media/fetch-media-url';
 import { mapWithConcurrency } from '@/lib/media/convert-legacy-asset-refs';
 import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
+import { canonicalArchiveMedia } from '@/lib/video-export/archive-media';
 
 // ─── Export: Collect Media ─────────────────────────────────────
 
@@ -52,30 +53,6 @@ const MEDIA_ARCHIVE_EXTENSIONS = new Set([
   'webp',
 ]);
 
-const MIME_ARCHIVE_EXTENSIONS: Readonly<Record<string, string>> = {
-  'audio/aac': 'aac',
-  'audio/flac': 'flac',
-  'audio/mp4': 'mp4',
-  'audio/mpeg': 'mpeg',
-  'audio/ogg': 'ogg',
-  'audio/opus': 'opus',
-  'audio/wav': 'wav',
-  'audio/webm': 'webm',
-  'audio/x-m4a': 'm4a',
-  'audio/x-wav': 'wav',
-  'image/avif': 'avif',
-  'image/gif': 'gif',
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/svg+xml': 'svg',
-  'image/webp': 'webp',
-  'video/mp4': 'mp4',
-  'video/ogg': 'ogv',
-  'video/quicktime': 'mov',
-  'video/webm': 'webm',
-  'video/x-m4v': 'm4v',
-};
-
 /**
  * Accept only one allowlisted filename suffix. Slashes, backslashes, dot
  * segments, parameters, and unknown values all fall back instead of entering
@@ -89,31 +66,6 @@ function canonicalArchiveExtension(
   if (typeof extension !== 'string' || !/^[a-z0-9]+$/i.test(extension)) return fallback;
   const canonical = extension.toLowerCase();
   return allowed.has(canonical) ? canonical : fallback;
-}
-
-function extensionFromMimeType(mimeType: string | undefined): string | undefined {
-  if (typeof mimeType !== 'string' || mimeType !== mimeType.toLowerCase()) return undefined;
-  return MIME_ARCHIVE_EXTENSIONS[mimeType];
-}
-
-function canonicalAudioExtension(format: string | undefined): string {
-  return canonicalArchiveExtension(format, AUDIO_ARCHIVE_EXTENSIONS, 'mp3');
-}
-
-function canonicalAudioMimeExtension(mimeType: string | undefined): string {
-  return canonicalArchiveExtension(
-    extensionFromMimeType(mimeType),
-    AUDIO_ARCHIVE_EXTENSIONS,
-    'mp3',
-  );
-}
-
-function canonicalMediaExtension(mimeType: string | undefined, fallback: 'jpg' | 'mp4'): string {
-  return canonicalArchiveExtension(
-    extensionFromMimeType(mimeType),
-    MEDIA_ARCHIVE_EXTENSIONS,
-    fallback,
-  );
 }
 
 export function audioArchivePath(index: number, extension: string | undefined): string {
@@ -141,7 +93,8 @@ export function mediaArchivePath(index: number, extension: string | undefined): 
 }
 
 export function mediaPosterArchivePath(index: number): string {
-  return `media/asset-${index + 1}.poster.jpg`;
+  const { extension } = canonicalArchiveMedia('image', {});
+  return `media/asset-${index + 1}.poster.${extension}`;
 }
 
 /**
@@ -166,7 +119,7 @@ export async function collectAudioFiles(
     // resolve) -- must not ship an empty audio file.
     if (!blob || blob.size === 0) continue;
     const record = await db.audioFiles.get(audioId);
-    const ext = canonicalAudioExtension(record?.format);
+    const { extension: ext } = canonicalArchiveMedia('audio', { extension: record?.format });
     const resolved = (
       record ? { ...record, blob, format: ext } : { id: audioId, blob, format: ext }
     ) as AudioFileRecord;
@@ -222,15 +175,14 @@ export async function collectMediaFiles(
           params: '',
           createdAt: 0,
         };
-    const ext = canonicalMediaExtension(
-      effective.mimeType,
-      effective.type === 'video' ? 'mp4' : 'jpg',
-    );
+    const kind: MediaFileRecord['type'] = effective.type === 'video' ? 'video' : 'image';
+    const canonical = canonicalArchiveMedia(kind, { mimeType: effective.mimeType });
+    const normalized = { ...effective, type: kind, mimeType: canonical.mimeType };
     collected.push({
-      zipPath: mediaArchivePath(index, ext),
+      zipPath: mediaArchivePath(index, canonical.extension),
       posterZipPath: mediaPosterArchivePath(index),
       sourceRef: entry.ref,
-      record: effective,
+      record: normalized,
       elementId: ref,
     });
   }
@@ -288,7 +240,7 @@ export async function collectLegacyAudioForExport(
   });
   for (const { url, blob } of fetched) {
     if (!blob) continue;
-    const format = canonicalAudioMimeExtension(blob.type);
+    const { extension: format } = canonicalArchiveMedia('audio', { mimeType: blob.type });
     const zipPath = legacyAudioArchivePath(blobs.length, format);
     audioUrlToPath.set(url, zipPath);
     blobs.push({ zipPath, blob, format });

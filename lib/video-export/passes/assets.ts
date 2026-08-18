@@ -21,6 +21,7 @@
 import type { SpeechAction } from '@openmaic/dsl';
 import type { AssetSource, AssetMeta, CompilerScene } from '../deps';
 import type { AssetKind, AssetPlan, AssetPlanEntry, Diagnostic, VideoTimelineScene } from '../ir';
+import { canonicalArchiveMedia, type ArchiveMediaKind } from '../archive-media';
 
 export interface AssetsResult {
   scenes: VideoTimelineScene[];
@@ -41,42 +42,12 @@ export function sanitizeFilenamePart(value: string): string {
   return normalized.slice(0, 80) || 'scene';
 }
 
-/**
- * File extension for an asset from its `format`/`mimeType`, falling back per
- * kind. The result is sanitized to a bare, traversal-free extension token
- * (alphanumeric, lowercased) so a hostile `format` such as `../../escape` cannot
- * steer the planned zip path outside its directory — the ZIP-writing stage
- * receives only safe extensions.
- */
-function extension(meta: AssetMeta, fallback: string): string {
-  const raw = extensionRaw(meta, fallback);
-  const safe = raw
-    .toLowerCase()
-    .replace(/^\.+/, '')
-    .replace(/[^a-z0-9]/g, '');
-  return safe || fallback;
-}
-
-/** The unsanitized extension candidate from `format` / `mimeType` / fallback. */
-function extensionRaw(meta: AssetMeta, fallback: string): string {
-  if (meta.format) return meta.format.replace(/^\./, '');
-  const mime = meta.mimeType;
-  if (mime) {
-    const known: Record<string, string> = {
-      'audio/mpeg': 'mp3',
-      'audio/mp3': 'mp3',
-      'audio/wav': 'wav',
-      'audio/webm': 'weba',
-      'image/png': 'png',
-      'image/jpeg': 'jpg',
-      'video/mp4': 'mp4',
-      'video/webm': 'webm',
-    };
-    if (known[mime]) return known[mime];
-    const sub = mime.split('/')[1];
-    if (sub) return sub;
-  }
-  return fallback;
+/** Kind-scoped extension used by every audio/video path planned by this pass. */
+export function canonicalAssetExtension(kind: ArchiveMediaKind, meta: AssetMeta): string {
+  return canonicalArchiveMedia(kind, {
+    extension: meta.format,
+    mimeType: meta.mimeType,
+  }).extension;
 }
 
 /** Planner state: tracks used paths (for collision suffixes) and asset dedup. */
@@ -184,7 +155,7 @@ export function planAssets(
       const { path, present } = planner.plan(
         meta.id,
         'audio',
-        `audio/${sceneSlug}/speech-${String(speechSeq).padStart(3, '0')}.${extension(meta, 'mp3')}`,
+        `audio/${sceneSlug}/speech-${String(speechSeq).padStart(3, '0')}.${canonicalAssetExtension('audio', meta)}`,
         meta.present,
       );
       if (!present) {
@@ -232,7 +203,7 @@ export function planAssets(
       const { path, present } = planner.plan(
         meta.id,
         'video',
-        `media/${sanitizeFilenamePart(seg.elementId)}.${extension(meta, 'mp4')}`,
+        `media/${sanitizeFilenamePart(seg.elementId)}.${canonicalAssetExtension('video', meta)}`,
         meta.present,
       );
       if (!present) {

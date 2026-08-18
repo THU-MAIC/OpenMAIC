@@ -166,6 +166,6 @@ describe('planAssets — base frame & video', () => {
     );
     const path = res.scenes[0].videos[0].assetRef!;
     expect(path).not.toContain('..');
-    expect(path).toBe('media/clip.escape');
+    expect(path).toBe('media/clip.mp4');
   });
 });
