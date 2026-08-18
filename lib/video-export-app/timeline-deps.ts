@@ -244,13 +244,16 @@ export async function createVideoTimelineDeps(input: {
       });
     }
   }
-  const speechAudioRefs = new Set(
-    speechPairs.flatMap((pair) => (pair.audioId ? [pair.audioId] : [])),
+  const manifestAudioRefs = new Set(
+    assetManifest.entries.filter((entry) => entry.kind === 'audio').map((entry) => entry.ref),
   );
+  // The manifest gates membership, but speech traversal remains the ordering
+  // source. Slide-audio slots can make the same ref appear earlier in manifest
+  // order even though the timeline first consumes a different narration.
   const audioIds = new Set(
-    assetManifest.entries
-      .filter((entry) => entry.kind === 'audio' && speechAudioRefs.has(entry.ref))
-      .map((entry) => entry.ref),
+    speechPairs.flatMap((pair) =>
+      pair.audioId && manifestAudioRefs.has(pair.audioId) ? [pair.audioId] : [],
+    ),
   );
   const audioById = new Map<string, AudioFileRecord>();
   for (const audioId of audioIds) {

@@ -177,6 +177,44 @@ describe('createVideoTimelineDeps — legacy URL audio fallback', () => {
     vi.unstubAllGlobals();
   });
 
+  it('loads and probes narration in speech order when the manifest sees slide audio first', async () => {
+    const audioA = new Blob(['speech-a'], { type: 'audio/mpeg' });
+    const audioB = new Blob(['speech-b'], { type: 'audio/mpeg' });
+    const blobs = new Map([
+      ['ast_speech_a', audioA],
+      ['ast_speech_b', audioB],
+    ]);
+    const probeOrder: string[] = [];
+    audioGet.mockImplementation(async (id: string) => ({
+      id,
+      blob: blobs.get(id),
+      format: 'mp3',
+      createdAt: 0,
+    }));
+    resolveAudioBlobMock.mockImplementation(async (id: string) => blobs.get(id) ?? null);
+    vi.stubGlobal('document', { createElement: () => fakeAudioElement(1) });
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      probeOrder.push(blob === audioA ? 'ast_speech_a' : 'ast_speech_b');
+      return `blob:probe-${probeOrder.length}`;
+    });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const scene = slideScene({ id: 'slide-audio-b', type: 'audio', src: 'ast_speech_b' }, [
+      { id: 'speech-a', type: 'speech', text: 'A', audioId: 'ast_speech_a' },
+      { id: 'speech-b', type: 'speech', text: 'B', audioId: 'ast_speech_b' },
+    ]);
+
+    await createVideoTimelineDeps({ stage: { id: STAGE_ID }, scenes: [scene] });
+
+    expect(audioGet.mock.calls.map(([id]) => id)).toEqual(['ast_speech_a', 'ast_speech_b']);
+    expect(resolveAudioBlobMock.mock.calls.map(([id]) => id)).toEqual([
+      'ast_speech_a',
+      'ast_speech_b',
+    ]);
+    expect(probeOrder).toEqual(['ast_speech_a', 'ast_speech_b']);
+
+    vi.unstubAllGlobals();
+  });
+
   it('ingests a dangling pair through its URL and surfaces a present, probed narration asset', async () => {
     const legacyUrl = 'https://server.example.com/audio/legacy.mp3';
     fetchMediaUrlMock.mockResolvedValue(
