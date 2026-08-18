@@ -19,17 +19,129 @@ export interface CollectedAudio {
 
 export interface CollectedMedia {
   zipPath: string;
+  posterZipPath: string;
   sourceRef: string;
   record: MediaFileRecord;
   elementId: string;
 }
 
-export function audioArchivePath(index: number, extension: string): string {
-  return `audio/audio-${index + 1}.${extension}`;
+const AUDIO_ARCHIVE_EXTENSIONS = new Set([
+  'aac',
+  'flac',
+  'm4a',
+  'mp3',
+  'mp4',
+  'mpeg',
+  'ogg',
+  'opus',
+  'wav',
+  'webm',
+]);
+const MEDIA_ARCHIVE_EXTENSIONS = new Set([
+  'avif',
+  'gif',
+  'jpeg',
+  'jpg',
+  'm4v',
+  'mov',
+  'mp4',
+  'ogv',
+  'png',
+  'svg',
+  'webm',
+  'webp',
+]);
+
+const MIME_ARCHIVE_EXTENSIONS: Readonly<Record<string, string>> = {
+  'audio/aac': 'aac',
+  'audio/flac': 'flac',
+  'audio/mp4': 'mp4',
+  'audio/mpeg': 'mpeg',
+  'audio/ogg': 'ogg',
+  'audio/opus': 'opus',
+  'audio/wav': 'wav',
+  'audio/webm': 'webm',
+  'audio/x-m4a': 'm4a',
+  'audio/x-wav': 'wav',
+  'image/avif': 'avif',
+  'image/gif': 'gif',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/svg+xml': 'svg',
+  'image/webp': 'webp',
+  'video/mp4': 'mp4',
+  'video/ogg': 'ogv',
+  'video/quicktime': 'mov',
+  'video/webm': 'webm',
+  'video/x-m4v': 'm4v',
+};
+
+/**
+ * Accept only one allowlisted filename suffix. Slashes, backslashes, dot
+ * segments, parameters, and unknown values all fall back instead of entering
+ * an archive path.
+ */
+function canonicalArchiveExtension(
+  extension: string | undefined,
+  allowed: ReadonlySet<string>,
+  fallback: string,
+): string {
+  if (typeof extension !== 'string' || !/^[a-z0-9]+$/i.test(extension)) return fallback;
+  const canonical = extension.toLowerCase();
+  return allowed.has(canonical) ? canonical : fallback;
 }
 
-export function mediaArchivePath(index: number, extension: string): string {
-  return `media/asset-${index + 1}.${extension}`;
+function extensionFromMimeType(mimeType: string | undefined): string | undefined {
+  if (typeof mimeType !== 'string' || mimeType !== mimeType.toLowerCase()) return undefined;
+  return MIME_ARCHIVE_EXTENSIONS[mimeType];
+}
+
+function canonicalAudioExtension(format: string | undefined): string {
+  return canonicalArchiveExtension(format, AUDIO_ARCHIVE_EXTENSIONS, 'mp3');
+}
+
+function canonicalAudioMimeExtension(mimeType: string | undefined): string {
+  return canonicalArchiveExtension(
+    extensionFromMimeType(mimeType),
+    AUDIO_ARCHIVE_EXTENSIONS,
+    'mp3',
+  );
+}
+
+function canonicalMediaExtension(mimeType: string | undefined, fallback: 'jpg' | 'mp4'): string {
+  return canonicalArchiveExtension(
+    extensionFromMimeType(mimeType),
+    MEDIA_ARCHIVE_EXTENSIONS,
+    fallback,
+  );
+}
+
+export function audioArchivePath(index: number, extension: string | undefined): string {
+  return `audio/audio-${index + 1}.${canonicalArchiveExtension(
+    extension,
+    AUDIO_ARCHIVE_EXTENSIONS,
+    'mp3',
+  )}`;
+}
+
+export function legacyAudioArchivePath(index: number, extension: string | undefined): string {
+  return `audio/legacy-${index + 1}.${canonicalArchiveExtension(
+    extension,
+    AUDIO_ARCHIVE_EXTENSIONS,
+    'mp3',
+  )}`;
+}
+
+export function mediaArchivePath(index: number, extension: string | undefined): string {
+  return `media/asset-${index + 1}.${canonicalArchiveExtension(
+    extension,
+    MEDIA_ARCHIVE_EXTENSIONS,
+    'jpg',
+  )}`;
+}
+
+export function mediaPosterArchivePath(index: number): string {
+  return `media/asset-${index + 1}.poster.jpg`;
 }
 
 /**
@@ -54,8 +166,10 @@ export async function collectAudioFiles(
     // resolve) -- must not ship an empty audio file.
     if (!blob || blob.size === 0) continue;
     const record = await db.audioFiles.get(audioId);
-    const ext = record?.format || 'mp3';
-    const resolved = (record ? { ...record, blob } : { id: audioId, blob }) as AudioFileRecord;
+    const ext = canonicalAudioExtension(record?.format);
+    const resolved = (
+      record ? { ...record, blob, format: ext } : { id: audioId, blob, format: ext }
+    ) as AudioFileRecord;
     collected.push({
       zipPath: audioArchivePath(index, ext),
       sourceRef: entry.ref,
@@ -108,9 +222,13 @@ export async function collectMediaFiles(
           params: '',
           createdAt: 0,
         };
-    const ext = effective.mimeType?.split('/')[1] || 'jpg';
+    const ext = canonicalMediaExtension(
+      effective.mimeType,
+      effective.type === 'video' ? 'mp4' : 'jpg',
+    );
     collected.push({
       zipPath: mediaArchivePath(index, ext),
+      posterZipPath: mediaPosterArchivePath(index),
       sourceRef: entry.ref,
       record: effective,
       elementId: ref,
@@ -170,8 +288,8 @@ export async function collectLegacyAudioForExport(
   });
   for (const { url, blob } of fetched) {
     if (!blob) continue;
-    const format = blob.type.split('/')[1] || 'mp3';
-    const zipPath = `audio/legacy-${blobs.length + 1}.${format}`;
+    const format = canonicalAudioMimeExtension(blob.type);
+    const zipPath = legacyAudioArchivePath(blobs.length, format);
     audioUrlToPath.set(url, zipPath);
     blobs.push({ zipPath, blob, format });
   }

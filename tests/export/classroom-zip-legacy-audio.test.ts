@@ -193,4 +193,44 @@ describe('legacy audio URL export', () => {
     expect(new Set(collected.map(({ zipPath }) => zipPath)).size).toBe(refs.length);
     expect(collected.map(({ sourceRef }) => sourceRef)).toEqual(refs);
   });
+
+  it.each(['/../../evil', 'png/../x', '', undefined])(
+    're-exports imported audio format %s under a safe canonical path',
+    async (format) => {
+      const audioId = 'ast_imported_audio';
+      const { db } = await import('@/lib/utils/database');
+      (db.audioFiles.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: audioId,
+        stageId: 'stage-1',
+        blob: new Blob(['imported']),
+        format,
+        createdAt: 1,
+      });
+      resolveAudioBlobMock.mockResolvedValue(new Blob(['imported']));
+
+      const collected = await collectAudioFiles([{ ref: audioId, kind: 'audio' }]);
+
+      expect(collected[0]?.zipPath).toBe('audio/audio-1.mp3');
+      expect(collected[0]?.record.format).toBe('mp3');
+      expect(collected[0]?.zipPath).not.toMatch(/(?:\.\.|\\)/);
+    },
+  );
+
+  it.each(['audio//../../evil', 'audio/png/../x', ''])(
+    'uses the canonical fallback for malformed legacy narration MIME %s',
+    async (mimeType) => {
+      const url = 'https://server.example.com/audio/imported';
+      fetchMediaUrlMock.mockResolvedValue(
+        new Response(new Blob(['narration-bytes'], { type: mimeType }), { status: 200 }),
+      );
+
+      const { blobs } = await collectLegacyAudioForExport(
+        [sceneWithSpeech([{ id: 'a1', type: 'speech', text: 'Hi', audioUrl: url }])],
+        new Map(),
+      );
+
+      expect(blobs[0]?.zipPath).toBe('audio/legacy-1.mp3');
+      expect(blobs[0]?.format).toBe('mp3');
+    },
+  );
 });

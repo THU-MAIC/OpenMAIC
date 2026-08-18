@@ -310,7 +310,7 @@ export async function buildClassroomExportZip(
     for (const mf of mediaFiles) {
       zip.file(mf.zipPath, mf.record.blob);
       if (mf.record.poster) {
-        zip.file(mf.zipPath.replace(/\.\w+$/, '.poster.jpg'), mf.record.poster);
+        zip.file(mf.posterZipPath, mf.record.poster);
       }
     }
 

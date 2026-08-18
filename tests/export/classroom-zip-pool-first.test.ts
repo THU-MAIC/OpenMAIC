@@ -21,7 +21,13 @@ vi.mock('@/lib/media/asset-pool', () => ({
   getAssetPool: () => ({ resolve: mocks.poolResolve, release: mocks.poolRelease }),
 }));
 
-import { collectMediaFiles } from '@/lib/export/classroom-zip-utils';
+import {
+  audioArchivePath,
+  collectMediaFiles,
+  legacyAudioArchivePath,
+  mediaArchivePath,
+  mediaPosterArchivePath,
+} from '@/lib/export/classroom-zip-utils';
 
 const entry = (ref: string): AssetManifestEntry => ({ ref, kind: 'image' });
 
@@ -185,5 +191,33 @@ describe('classroom ZIP media collection', () => {
     expect(new Set(collected.map(({ zipPath }) => zipPath)).size).toBe(refs.length);
     expect(collected.map(({ sourceRef }) => sourceRef)).toEqual(refs);
     expect(collected.every(({ zipPath }) => !zipPath.includes('..'))).toBe(true);
+  });
+
+  it.each(['/../../evil', 'png/../x', '', undefined])(
+    'canonicalizes the untrusted archive extension %s at every path generator',
+    (extension) => {
+      expect(audioArchivePath(0, extension)).toBe('audio/audio-1.mp3');
+      expect(legacyAudioArchivePath(0, extension)).toBe('audio/legacy-1.mp3');
+      expect(mediaArchivePath(0, extension)).toBe('media/asset-1.jpg');
+      expect(mediaPosterArchivePath(0)).toBe('media/asset-1.poster.jpg');
+    },
+  );
+
+  it.each([
+    ['image//../../evil', 'media/asset-1.jpg'],
+    ['image/png/../x', 'media/asset-1.jpg'],
+    ['', 'media/asset-1.jpg'],
+    [undefined, 'media/asset-1.jpg'],
+  ])('re-exports imported media MIME %s under a safe canonical path', async (mimeType, path) => {
+    const ref = 'ast_imported_media';
+    seedRow(ref, new Blob(['imported']), 'stage-1');
+    mocks.rows.get(`stage-1:${ref}`)!.mimeType = mimeType;
+    mocks.poolResolve.mockResolvedValue(null);
+
+    const collected = await collectMediaFiles('stage-1', [entry(ref)]);
+
+    expect(collected[0]?.zipPath).toBe(path);
+    expect(collected[0]?.posterZipPath).toBe('media/asset-1.poster.jpg');
+    expect(collected[0]?.zipPath).not.toMatch(/(?:\.\.|\\)/);
   });
 });
