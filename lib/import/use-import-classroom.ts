@@ -256,7 +256,10 @@ export async function materializeImportedMedia(
     const zipEntry = zip.file(zipPath);
     if (!zipEntry) continue;
     const blob = await zipEntry.async('blob');
-    const oldRef = mediaRefFromZipPath(zipPath, meta.mimeType);
+    const oldRef =
+      typeof meta.sourceRef === 'string'
+        ? meta.sourceRef
+        : mediaRefFromZipPath(zipPath, meta.mimeType);
     const mimeType = meta.mimeType || 'image/jpeg';
     const type = mimeType.startsWith('video/') ? 'video' : 'image';
     const posterEntry =

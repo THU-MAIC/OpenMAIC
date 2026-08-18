@@ -19,8 +19,17 @@ export interface CollectedAudio {
 
 export interface CollectedMedia {
   zipPath: string;
+  sourceRef: string;
   record: MediaFileRecord;
   elementId: string;
+}
+
+export function audioArchivePath(index: number, extension: string): string {
+  return `audio/audio-${index + 1}.${extension}`;
+}
+
+export function mediaArchivePath(index: number, extension: string): string {
+  return `media/asset-${index + 1}.${extension}`;
 }
 
 /**
@@ -35,7 +44,7 @@ export async function collectAudioFiles(
   entries: readonly AssetManifestEntry[],
 ): Promise<CollectedAudio[]> {
   const collected: CollectedAudio[] = [];
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
     const audioId = entry.ref;
     // The pool answers first: after a stable-id regeneration whose mirror
     // write failed, the row holds the superseded narration. A ref whose bytes
@@ -47,7 +56,11 @@ export async function collectAudioFiles(
     const record = await db.audioFiles.get(audioId);
     const ext = record?.format || 'mp3';
     const resolved = (record ? { ...record, blob } : { id: audioId, blob }) as AudioFileRecord;
-    collected.push({ zipPath: `audio/${audioId}.${ext}`, sourceRef: entry.ref, record: resolved });
+    collected.push({
+      zipPath: audioArchivePath(index, ext),
+      sourceRef: entry.ref,
+      record: resolved,
+    });
   }
   return collected;
 }
@@ -72,7 +85,7 @@ export async function collectMediaFiles(
   entries: readonly AssetManifestEntry[],
 ): Promise<CollectedMedia[]> {
   const collected: CollectedMedia[] = [];
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
     const ref = entry.ref;
     const record = await db.mediaFiles.get(mediaFileKey(stageId, ref)).catch(() => undefined);
     const blob = await resolveStoredBytes(ref, {
@@ -96,7 +109,12 @@ export async function collectMediaFiles(
           createdAt: 0,
         };
     const ext = effective.mimeType?.split('/')[1] || 'jpg';
-    collected.push({ zipPath: `media/${ref}.${ext}`, record: effective, elementId: ref });
+    collected.push({
+      zipPath: mediaArchivePath(index, ext),
+      sourceRef: entry.ref,
+      record: effective,
+      elementId: ref,
+    });
   }
   return collected;
 }

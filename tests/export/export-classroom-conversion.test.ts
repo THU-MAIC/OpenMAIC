@@ -161,13 +161,16 @@ describe('classroom ZIP export conversion snapshot', () => {
     const exportedAudioRef = manifest.scenes[0].actions?.[0]?.audioRef;
     expect(exportedSrc).toBe(durableCanvas.elements[0].src);
     expect(exportedSrc).toMatch(/^ast_/);
-    expect(exportedAudioRef).toBe(`audio/${durableAction?.audioId}.mp3`);
+    expect(exportedAudioRef).toBe('audio/audio-1.mp3');
 
     // The archive carries the media under exactly the manifest's references,
     // and the mediaIndex covers them (no dangling handles).
-    expect(zipData.file(`media/${exportedSrc}.png`)).toBeDefined();
+    expect(zipData.file('media/asset-1.png')).toBeDefined();
     expect(zipData.file(exportedAudioRef!)).toBeDefined();
-    expect(manifest.mediaIndex?.[`media/${exportedSrc}.png`]).toMatchObject({ type: 'generated' });
+    expect(manifest.mediaIndex?.['media/asset-1.png']).toMatchObject({
+      type: 'generated',
+      sourceRef: exportedSrc,
+    });
     expect(manifest.mediaIndex?.[exportedAudioRef!]).toMatchObject({ type: 'audio' });
 
     // Round-trip: importing the ZIP materializes every entry into fresh
@@ -261,12 +264,18 @@ describe('classroom ZIP export conversion snapshot', () => {
     const manifest = JSON.parse(
       await zipData.file('manifest.json')!.async('string'),
     ) as ClassroomManifest;
-    const mediaPath = `media/${sharedRef}.png`;
-    const audioPath = `audio/${sharedRef}.mp3`;
+    const mediaPath = 'media/asset-1.png';
+    const audioPath = 'audio/audio-1.mp3';
     expect(zipData.file(mediaPath)).toBeDefined();
     expect(zipData.file(audioPath)).toBeDefined();
-    expect(manifest.mediaIndex?.[mediaPath]).toMatchObject({ type: 'generated' });
-    expect(manifest.mediaIndex?.[audioPath]).toMatchObject({ type: 'audio' });
+    expect(manifest.mediaIndex?.[mediaPath]).toMatchObject({
+      type: 'generated',
+      sourceRef: sharedRef,
+    });
+    expect(manifest.mediaIndex?.[audioPath]).toMatchObject({
+      type: 'audio',
+      sourceRef: sharedRef,
+    });
     expect(manifest.scenes[0].actions?.[0]).toMatchObject({ audioRef: audioPath });
 
     const audioMappings = await materializeImportedAudio(
@@ -343,7 +352,7 @@ describe('classroom ZIP export conversion snapshot', () => {
     const manifest = JSON.parse(
       await zipData.file('manifest.json')!.async('string'),
     ) as ClassroomManifest;
-    const audioPath = `audio/${sourceAudioId}.mp3`;
+    const audioPath = 'audio/audio-1.mp3';
     expect(zipData.file(audioPath)).toBeDefined();
     expect(await zipData.file(audioPath)!.async('string')).toBe('slide-audio-bytes');
     expect(manifest.mediaIndex?.[audioPath]).toMatchObject({ type: 'audio' });
@@ -410,8 +419,9 @@ describe('classroom ZIP export conversion snapshot', () => {
     ) as ClassroomManifest;
 
     expect(manifest.stage).not.toHaveProperty('whiteboard');
-    expect(manifest.mediaIndex).not.toHaveProperty(`media/${whiteboardAssetId}.png`);
-    expect(zipData.file(`media/${whiteboardAssetId}.png`)).toBeNull();
+    expect(Object.values(manifest.mediaIndex)).not.toContainEqual(
+      expect.objectContaining({ sourceRef: whiteboardAssetId }),
+    );
   });
 
   it('keeps unsaved scene edits while converting their references', async () => {
@@ -476,7 +486,7 @@ describe('classroom ZIP export conversion snapshot', () => {
     expect(manifest.scenes[0].title).toBe('Edited title');
     const exportedSrc = manifest.scenes[0].content.canvas.elements[0].src;
     expect(exportedSrc).toMatch(/^ast_/);
-    expect(zipData.file(`media/${exportedSrc}.png`)).toBeDefined();
+    expect(zipData.file('media/asset-1.png')).toBeDefined();
   });
 
   it('a successful export leaves no new pool entries or mirror rows behind', async () => {
@@ -600,7 +610,7 @@ describe('classroom ZIP export conversion snapshot', () => {
     };
     const exportedNewSrc = manifest.scenes[0].content.canvas.elements[1].src;
     expect(exportedNewSrc).toMatch(/^ast_/);
-    expect(zipData.file(`media/${exportedNewSrc}.png`)).toBeDefined();
+    expect(zipData.file('media/asset-1.png')).toBeDefined();
 
     // ...but its pool entry and compatibility mirror row were rolled back
     // once the ZIP captured the bytes: the durable document never referenced

@@ -120,7 +120,7 @@ describe('classroom ZIP media collection', () => {
     const collected = await collectMediaFiles('stage-1', [entry('gen_img_1')]);
 
     expect(await collected[0].record.blob.text()).toBe('legacy-bytes');
-    expect(collected[0].zipPath).toBe('media/gen_img_1.png');
+    expect(collected[0].zipPath).toBe('media/asset-1.png');
   });
 
   it('collects a referenced asset whose bytes exist only in the pool', async () => {
@@ -143,7 +143,7 @@ describe('classroom ZIP media collection', () => {
     const collected = await collectMediaFiles('stage-1', [entry(ref)]);
 
     expect(collected).toHaveLength(1);
-    expect(collected[0].zipPath).toBe(`media/${ref}.webp`);
+    expect(collected[0].zipPath).toBe('media/asset-1.webp');
     expect(await collected[0].record.blob.text()).toBe('pool-only-bytes');
   });
 
@@ -167,5 +167,23 @@ describe('classroom ZIP media collection', () => {
 
     expect(collected).toHaveLength(1);
     expect(collected[0].elementId).toBe('ast_referenced');
+  });
+
+  it('assigns distinct safe paths without interpolating adversarial source refs', async () => {
+    const refs = ['../evil', 'a/b', 'a/../collision', 'collision'];
+    for (const ref of refs) seedRow(ref, new Blob([ref], { type: 'image/png' }));
+    mocks.poolResolve.mockResolvedValue(null);
+
+    const collected = await collectMediaFiles('stage-1', refs.map(entry));
+
+    expect(collected.map(({ zipPath }) => zipPath)).toEqual([
+      'media/asset-1.png',
+      'media/asset-2.png',
+      'media/asset-3.png',
+      'media/asset-4.png',
+    ]);
+    expect(new Set(collected.map(({ zipPath }) => zipPath)).size).toBe(refs.length);
+    expect(collected.map(({ sourceRef }) => sourceRef)).toEqual(refs);
+    expect(collected.every(({ zipPath }) => !zipPath.includes('..'))).toBe(true);
   });
 });

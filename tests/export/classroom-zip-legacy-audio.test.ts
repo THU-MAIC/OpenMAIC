@@ -164,7 +164,33 @@ describe('legacy audio URL export', () => {
     const collected = await collectAudioFiles([{ ref: audioId, kind: 'audio' }]);
 
     expect(collected).toHaveLength(1);
-    expect(collected[0]?.zipPath).toBe(`audio/${audioId}.mp3`);
+    expect(collected[0]?.zipPath).toBe('audio/audio-1.mp3');
     expect(await collected[0]?.record.blob.text()).toBe('row-bytes');
+  });
+
+  it('assigns distinct safe paths without interpolating adversarial audio refs', async () => {
+    const refs = ['../evil', 'a/b', 'a/../collision', 'collision'];
+    const { db } = await import('@/lib/utils/database');
+    (db.audioFiles.get as ReturnType<typeof vi.fn>).mockImplementation(async (id: string) => ({
+      id,
+      stageId: 'stage-1',
+      blob: new Blob([id], { type: 'audio/mpeg' }),
+      format: 'mp3',
+      createdAt: 1,
+    }));
+    resolveAudioBlobMock.mockImplementation(
+      async (id: string) => new Blob([id], { type: 'audio/mpeg' }),
+    );
+
+    const collected = await collectAudioFiles(refs.map((ref) => ({ ref, kind: 'audio' })));
+
+    expect(collected.map(({ zipPath }) => zipPath)).toEqual([
+      'audio/audio-1.mp3',
+      'audio/audio-2.mp3',
+      'audio/audio-3.mp3',
+      'audio/audio-4.mp3',
+    ]);
+    expect(new Set(collected.map(({ zipPath }) => zipPath)).size).toBe(refs.length);
+    expect(collected.map(({ sourceRef }) => sourceRef)).toEqual(refs);
   });
 });

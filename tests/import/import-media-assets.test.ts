@@ -33,6 +33,7 @@ import {
   rewriteImportedSlideMediaRefs,
   rewriteImportedVideoManifest,
 } from '@/lib/import/use-import-classroom';
+import { rewriteAudioRefsToIds } from '@/lib/export/classroom-zip-utils';
 
 describe('classroom import media allocation', () => {
   let pool: BrowserAssetStore;
@@ -71,6 +72,94 @@ describe('classroom import media allocation', () => {
       await pool.release(ref);
     }
   }
+
+  it('round-trips adversarial refs through safe media and audio archive paths', async () => {
+    const refs = ['../evil', 'a/b', 'a/../collision', 'collision'];
+    const mediaPaths = refs.map((_, index) => `media/asset-${index + 1}.png`);
+    const audioPaths = refs.map((_, index) => `audio/audio-${index + 1}.mp3`);
+    const zip = new JSZip();
+    for (const [index, path] of mediaPaths.entries()) zip.file(path, `media-${refs[index]}`);
+    for (const [index, path] of audioPaths.entries()) zip.file(path, `audio-${refs[index]}`);
+
+    const slide = {
+      id: 'adversarial-slide',
+      background: { type: 'image', image: { src: refs[3] } },
+      elements: [
+        { id: 'image', type: 'image', src: refs[0] },
+        { id: 'video', type: 'video', src: refs[1], mediaRef: refs[1], poster: refs[2] },
+        ...refs.map((ref, index) => ({ id: `audio-${index}`, type: 'audio', src: ref })),
+      ],
+    } as unknown as Slide;
+    const manifest = {
+      formatVersion: 1,
+      exportedAt: new Date(0).toISOString(),
+      appVersion: 'test',
+      stage: { name: 'Imported', createdAt: 1, updatedAt: 1 },
+      agents: [],
+      scenes: [
+        {
+          type: 'slide',
+          title: 'Adversarial refs',
+          order: 0,
+          content: { type: 'slide', canvas: slide },
+          actions: refs.map((_, index) => ({
+            id: `speech-${index}`,
+            type: 'speech' as const,
+            text: `Speech ${index}`,
+            audioRef: audioPaths[index],
+          })),
+        },
+      ],
+      mediaIndex: Object.fromEntries([
+        ...mediaPaths.map((path, index) => [
+          path,
+          {
+            type: 'generated' as const,
+            sourceRef: refs[index],
+            mimeType: index === 1 ? 'video/mp4' : 'image/png',
+          },
+        ]),
+        ...audioPaths.map((path, index) => [
+          path,
+          { type: 'audio' as const, sourceRef: refs[index], format: 'mp3' },
+        ]),
+      ]),
+    } satisfies ClassroomManifest;
+
+    const mediaMappings = await materializeImportedMedia(zip, manifest, 'safe-stage', 2);
+    const audioMappings = await materializeImportedAudio(zip, manifest, 'safe-stage', 2);
+    const rewritten = rewriteImportedSlideMediaRefs(
+      slide,
+      mediaMappings,
+      audioMappings.sourceRefToId,
+    );
+    const rewrittenActions = rewriteAudioRefsToIds(
+      manifest.scenes[0].actions ?? [],
+      audioMappings.pathToId,
+    );
+    const mediaIds = refs.map((ref) => mediaMappings.refToNewId.get(ref));
+    const audioIds = refs.map((ref) => audioMappings.sourceRefToId.get(ref));
+
+    expect(new Set(mediaIds).size).toBe(refs.length);
+    expect(new Set(audioIds).size).toBe(refs.length);
+    expect(rewritten.background).toMatchObject({ image: { src: mediaIds[3] } });
+    expect(rewritten.elements[0]).toMatchObject({ src: mediaIds[0] });
+    expect(rewritten.elements[1]).toMatchObject({
+      src: mediaIds[1],
+      mediaRef: mediaIds[1],
+      poster: mediaIds[2],
+    });
+    refs.forEach((_, index) => {
+      expect(rewritten.elements[index + 2]).toMatchObject({ src: audioIds[index] });
+      expect(rewrittenActions[index]).toMatchObject({ audioId: audioIds[index] });
+    });
+    await Promise.all(
+      refs.map(async (ref, index) => {
+        expect(await poolText(mediaIds[index]!)).toBe(`media-${ref}`);
+        expect(await poolText(audioIds[index]!)).toBe(`audio-${ref}`);
+      }),
+    );
+  });
 
   it('re-mints colliding video and poster refs without changing the source assets', async () => {
     const sourceVideoId = await pool.put(new Blob(['source-video'], { type: 'video/mp4' }));

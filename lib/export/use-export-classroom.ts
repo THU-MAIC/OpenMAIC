@@ -19,6 +19,7 @@ import {
   collectAudioFiles,
   collectMediaFiles,
   actionsToManifest,
+  audioArchivePath,
   collectLegacyAudioForExport,
 } from './classroom-zip-utils';
 import { createLogger } from '@/lib/logger';
@@ -261,6 +262,7 @@ export async function buildClassroomExportZip(
         mf.zipPath,
         {
           type: 'generated',
+          sourceRef: mf.sourceRef,
           mimeType: mf.record.mimeType,
           size: mf.record.size,
           prompt: mf.record.prompt,
@@ -271,10 +273,10 @@ export async function buildClassroomExportZip(
     // Referenced audio whose bytes resolved nowhere is reported as missing.
     // Legacy audioUrl-only narration is outside the standardized manifest and
     // is handled by collectLegacyAudioForExport above.
-    for (const entry of audioEntries) {
+    for (const [index, entry] of audioEntries.entries()) {
       if (!audioIdToPath.has(entry.ref)) {
         mediaIndexEntries.push([
-          `audio/${entry.ref}.mp3`,
+          audioArchivePath(index, 'mp3'),
           {
             type: 'audio',
             sourceRef: entry.ref,
