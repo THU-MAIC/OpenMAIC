@@ -239,27 +239,33 @@ export async function buildClassroomExportZip(
     );
 
     // 8. Build mediaIndex
-    const mediaIndex: Record<string, MediaIndexEntry> = {};
+    const mediaIndexEntries: Array<[string, MediaIndexEntry]> = [];
 
     for (const af of audioFiles) {
-      mediaIndex[af.zipPath] = {
-        type: 'audio',
-        sourceRef: af.sourceRef,
-        format: af.record.format,
-        duration: af.record.duration,
-        voice: af.record.voice,
-      };
+      mediaIndexEntries.push([
+        af.zipPath,
+        {
+          type: 'audio',
+          sourceRef: af.sourceRef,
+          format: af.record.format,
+          duration: af.record.duration,
+          voice: af.record.voice,
+        },
+      ]);
     }
     for (const legacy of legacyAudioBlobs) {
-      mediaIndex[legacy.zipPath] = { type: 'audio', format: legacy.format };
+      mediaIndexEntries.push([legacy.zipPath, { type: 'audio', format: legacy.format }]);
     }
     for (const mf of mediaFiles) {
-      mediaIndex[mf.zipPath] = {
-        type: 'generated',
-        mimeType: mf.record.mimeType,
-        size: mf.record.size,
-        prompt: mf.record.prompt,
-      };
+      mediaIndexEntries.push([
+        mf.zipPath,
+        {
+          type: 'generated',
+          mimeType: mf.record.mimeType,
+          size: mf.record.size,
+          prompt: mf.record.prompt,
+        },
+      ]);
     }
 
     // Referenced audio whose bytes resolved nowhere is reported as missing.
@@ -267,13 +273,17 @@ export async function buildClassroomExportZip(
     // is handled by collectLegacyAudioForExport above.
     for (const entry of audioEntries) {
       if (!audioIdToPath.has(entry.ref)) {
-        mediaIndex[`audio/${entry.ref}.mp3`] = {
-          type: 'audio',
-          sourceRef: entry.ref,
-          missing: true,
-        };
+        mediaIndexEntries.push([
+          `audio/${entry.ref}.mp3`,
+          {
+            type: 'audio',
+            sourceRef: entry.ref,
+            missing: true,
+          },
+        ]);
       }
     }
+    const mediaIndex = Object.fromEntries(mediaIndexEntries);
 
     // 9. Assemble manifest
     const manifest: ClassroomManifest = {

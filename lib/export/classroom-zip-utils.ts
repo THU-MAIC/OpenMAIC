@@ -216,11 +216,14 @@ export function rewriteAudioRefsToIds(
   return actions.map((action) => {
     if (action.type === 'speech' && 'audioRef' in action) {
       const { audioRef, ...rest } = action;
-      const mapped = audioRef
-        ? audioRefMap instanceof Map
-          ? audioRefMap.get(audioRef)
-          : (audioRefMap as Readonly<Record<string, unknown>>)[audioRef]
-        : undefined;
+      const mapped =
+        typeof audioRef === 'string'
+          ? audioRefMap instanceof Map
+            ? audioRefMap.get(audioRef)
+            : Object.hasOwn(audioRefMap, audioRef)
+              ? (audioRefMap as Readonly<Record<string, unknown>>)[audioRef]
+              : undefined
+          : undefined;
       const audioId = typeof mapped === 'string' ? mapped : undefined;
       return {
         ...rest,

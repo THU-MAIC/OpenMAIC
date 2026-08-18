@@ -28,6 +28,34 @@ export interface VideoMediaTaskResolution<T extends MediaTaskLookupEntry> {
 
 type MediaTaskMatch<T extends MediaTaskLookupEntry> = readonly [key: string, task: T];
 
+/**
+ * Look up a media task without allowing inherited Object.prototype members to
+ * masquerade as direct hits. The placeholder fallback supports tasks that
+ * were re-keyed to an allocated asset id while retaining their document ref.
+ */
+export function lookupMediaTask<T extends MediaTaskLookupEntry>(
+  tasks: Readonly<Record<string, T>>,
+  ref: string | undefined,
+  stageId?: string,
+  placeholderFallback = true,
+): T | undefined {
+  if (!ref) return undefined;
+  // Own-property direct hit: AssetRef is an unconstrained string, so a ref can
+  // legitimately be "__proto__" or "constructor"; an inherited Object.prototype
+  // member must neither masquerade as a task nor shadow the placeholder
+  // fallback below.
+  const direct = Object.hasOwn(tasks, ref) ? tasks[ref] : undefined;
+  const task =
+    direct ??
+    (placeholderFallback
+      ? Object.values(tasks).find(
+          (candidate) =>
+            candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
+        )
+      : undefined);
+  return task && (!stageId || task.stageId === stageId) ? task : undefined;
+}
+
 /** Shared lookup for non-element media such as slide backgrounds. */
 export function resolveMediaTaskForRef<T extends MediaTaskLookupEntry>(
   tasks: Readonly<Record<string, T>>,
@@ -36,13 +64,8 @@ export function resolveMediaTaskForRef<T extends MediaTaskLookupEntry>(
   targetElementId?: string,
 ): T | undefined {
   if (!ref || !stageId || isConcreteMediaAddress(ref)) return undefined;
-  const targeted = targetElementId ? tasks[targetElementId] : undefined;
-  if (targeted?.stageId === stageId) return targeted;
-  const direct = tasks[ref];
-  if (direct?.stageId === stageId) return direct;
-  return Object.values(tasks).find(
-    (candidate) => candidate.stageId === stageId && candidate.placeholderRef === ref,
-  );
+  const targeted = lookupMediaTask(tasks, targetElementId, stageId, false);
+  return targeted ?? lookupMediaTask(tasks, ref, stageId);
 }
 
 export function mediaTaskRefForElement(element: PPTElement): string | undefined {
@@ -66,15 +89,14 @@ function matchMediaTaskForElement<T extends MediaTaskLookupEntry>(
   const ref = mediaTaskRefForElement(element);
   if (!ref || !stageId) return undefined;
 
-  const targeted = tasks[element.id];
-  if (targeted?.stageId === stageId) return [element.id, targeted];
+  const targeted = lookupMediaTask(tasks, element.id, stageId, false);
+  if (targeted) return [element.id, targeted];
 
-  const exact = tasks[ref];
-  if (exact) return exact.stageId === stageId ? [ref, exact] : undefined;
-
-  return Object.entries(tasks).find(
-    ([, candidate]) => candidate.stageId === stageId && candidate.placeholderRef === ref,
-  );
+  const task = lookupMediaTask(tasks, ref, stageId);
+  if (!task) return undefined;
+  if (Object.hasOwn(tasks, ref) && tasks[ref] === task) return [ref, task];
+  const fallbackKey = Object.entries(tasks).find(([, candidate]) => candidate === task)?.[0];
+  return fallbackKey ? [fallbackKey, task] : undefined;
 }
 
 /** Shared task lookup used by direct elements and resolved-slide consumers. */

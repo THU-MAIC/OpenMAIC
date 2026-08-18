@@ -31,7 +31,7 @@ import {
   resolveMediaRef,
   type MediaTaskState,
 } from '@/lib/media/resolve-media-ref';
-import { resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
+import { lookupMediaTask, resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
 
 const log = createLogger('ExportPPTX');
 
@@ -416,22 +416,9 @@ async function resolvePptxEmbeddableSrc(
     });
     if (stored) return blobToDataUrl(stored);
   }
-  const effectiveTask = task ?? lookupMediaTask(ref, stageId);
-  return renderableMediaUrl(resolvePptxMediaBinding(ref, effectiveTask).resolution) ?? '';
-}
-
-/** The media task governing a ref in this stage, when the caller did not supply one. */
-function lookupMediaTask(ref: string, stageId?: string): MediaTaskState | undefined {
-  // A concrete address is a network source, not a task key.
-  if (isConcreteMediaAddress(ref)) return undefined;
   const tasks = useMediaGenerationStore.getState().tasks;
-  const task =
-    tasks[ref] ??
-    Object.values(tasks).find(
-      (candidate) =>
-        candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
-    );
-  return task && (!stageId || task.stageId === stageId) ? task : undefined;
+  const effectiveTask = task ?? lookupMediaTask(tasks, ref, stageId);
+  return renderableMediaUrl(resolvePptxMediaBinding(ref, effectiveTask).resolution) ?? '';
 }
 
 // Exported for the round-trip integration test harness — the test wires its

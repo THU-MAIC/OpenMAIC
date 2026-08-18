@@ -19,6 +19,7 @@ vi.mock('@/lib/media/asset-pool', () => ({
 }));
 
 import { buildPptxBlob } from '@/lib/export/use-export-pptx';
+import { lookupMediaTask } from '@/lib/media/media-task-resolution';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 
 const PNG_BASE64 =
@@ -88,6 +89,72 @@ describe('PPTX media fallback chains', () => {
   });
 
   afterEach(() => vi.unstubAllGlobals());
+
+  it.each(['__proto__', 'constructor'])(
+    'uses only an own task for the adversarial media ref %s',
+    (ref) => {
+      expect(lookupMediaTask({}, ref)).toBeUndefined();
+      const task = {
+        elementId: ref,
+        type: 'image',
+        status: 'done',
+        prompt: ref,
+        params: {},
+        retryCount: 0,
+        stageId: 'stage-1',
+      } as const;
+      useMediaGenerationStore.setState({ tasks: Object.fromEntries([[ref, task]]) });
+
+      expect(lookupMediaTask(useMediaGenerationStore.getState().tasks, ref, 'stage-1')).toBe(task);
+    },
+  );
+
+  it.each(['__proto__', 'constructor'])(
+    'embeds task URL bytes for a re-keyed adversarial placeholder ref %s',
+    async (ref) => {
+      const taskUrl = `https://task.test/${encodeURIComponent(ref)}.png`;
+      const fetchSpy = vi.fn(async (url: string) =>
+        url === taskUrl
+          ? new Response(new Blob([PNG_BYTES], { type: 'image/png' }))
+          : new Response(null, { status: 404 }),
+      );
+      vi.stubGlobal('fetch', fetchSpy);
+      useMediaGenerationStore.setState({
+        tasks: {
+          [`ast_rekeyed_${ref}`]: {
+            elementId: `ast_rekeyed_${ref}`,
+            placeholderRef: ref,
+            objectUrl: taskUrl,
+            type: 'image',
+            status: 'done',
+            prompt: ref,
+            params: {},
+            retryCount: 0,
+            stageId: 'stage-1',
+          },
+        },
+      });
+      const slide = baseSlide({
+        id: 'image-1',
+        type: 'image',
+        src: ref,
+        left: 0,
+        top: 0,
+        width: 100,
+        height: 100,
+        rotate: 0,
+        fixedRatio: true,
+      });
+
+      const blob = await buildPptxBlob([slide], [sceneFor(slide)], 0.5625, 1000, 100, 1, 'stage-1');
+      const media = await pptxMediaBytes(blob);
+
+      expect(mocks.poolResolve).toHaveBeenCalledWith(ref);
+      expect(mocks.mediaGet).toHaveBeenCalledWith(`stage-1:${ref}`);
+      expect(fetchSpy).toHaveBeenCalledWith(taskUrl);
+      expect(media.some((bytes) => Buffer.from(bytes).equals(Buffer.from(PNG_BYTES)))).toBe(true);
+    },
+  );
 
   it('embeds a concrete video src when its opaque mediaRef cannot be resolved', async () => {
     const videoBytes = new TextEncoder().encode('direct-video-bytes');

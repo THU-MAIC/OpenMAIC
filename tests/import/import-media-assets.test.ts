@@ -151,8 +151,8 @@ describe('classroom import media allocation', () => {
     );
     const importedSlide = rewriteImportedSlideMediaRefs(slide, mappings);
     const importedManifest = rewriteImportedVideoManifest(manifest.stage.videoManifest, mappings);
-    const newVideoId = mappings.refToNewId[sourceVideoId];
-    const newPosterId = mappings.refToNewId[sourcePosterId];
+    const newVideoId = mappings.refToNewId.get(sourceVideoId)!;
+    const newPosterId = mappings.refToNewId.get(sourcePosterId)!;
 
     expect(newVideoId).not.toBe(sourceVideoId);
     expect(newPosterId).not.toBe(sourcePosterId);
@@ -206,6 +206,150 @@ describe('classroom import media allocation', () => {
     });
   });
 
+  it.each(['__proto__', 'constructor'])(
+    'round-trips the adversarial media ref %s through every generated-media alias map',
+    async (adversarialRef) => {
+      const zip = new JSZip();
+      const videoRef = adversarialRef;
+      const indexedPosterRef = `${adversarialRef}-indexed-poster`;
+      const videoPath = `media/${videoRef}.mp4`;
+      const indexedPosterPath = `media/${indexedPosterRef}.jpg`;
+      zip.file(videoPath, `video-${adversarialRef}`);
+      zip.file(videoPath.replace(/\.mp4$/, '.poster.jpg'), `sibling-${adversarialRef}`);
+      zip.file(indexedPosterPath, `poster-${adversarialRef}`);
+
+      const slide = {
+        id: `slide-${adversarialRef}`,
+        elements: [
+          {
+            id: `video-${adversarialRef}`,
+            type: 'video',
+            src: videoRef,
+            mediaRef: videoRef,
+            poster: indexedPosterRef,
+          },
+        ],
+      } as unknown as Slide;
+      const manifest = {
+        formatVersion: 1,
+        exportedAt: new Date(0).toISOString(),
+        appVersion: 'test',
+        stage: {
+          name: 'Imported',
+          createdAt: 1,
+          updatedAt: 1,
+          videoManifest: Object.fromEntries([
+            [videoRef, { type: 'video', prompt: adversarialRef }],
+          ]),
+        },
+        agents: [],
+        scenes: [
+          {
+            type: 'slide',
+            title: 'Scene',
+            order: 0,
+            content: { type: 'slide', canvas: slide },
+          },
+        ],
+        mediaIndex: Object.fromEntries([
+          [videoPath, { type: 'generated', mimeType: 'video/mp4' }],
+          [indexedPosterPath, { type: 'generated', mimeType: 'image/jpeg' }],
+        ]),
+      } satisfies ClassroomManifest;
+
+      const mappings = await materializeImportedMedia(zip, manifest, 'imported-stage', 2);
+      const rewrittenSlide = rewriteImportedSlideMediaRefs(slide, mappings);
+      const rewrittenManifest = rewriteImportedVideoManifest(
+        manifest.stage.videoManifest,
+        mappings,
+      );
+      const rewrittenVideo = rewrittenSlide.elements[0] as {
+        src: unknown;
+        mediaRef?: unknown;
+        poster?: unknown;
+      };
+
+      expect(typeof rewrittenVideo.src).toBe('string');
+      const rewrittenSrc = rewrittenVideo.src as string;
+      expect(rewrittenSrc).toBe(mappings.refToNewId.get(videoRef));
+      expect(rewrittenVideo.mediaRef).toBe(mappings.refToNewId.get(videoRef));
+      expect(rewrittenVideo.poster).toBe(mappings.posterRefToNewId.get(indexedPosterRef));
+      expect(mappings.posterByMediaRef.get(videoRef)).toBe(rewrittenVideo.poster);
+      expect(Object.keys(rewrittenManifest ?? {})).toEqual([rewrittenSrc]);
+      expect(await poolText(rewrittenSrc)).toBe(`video-${adversarialRef}`);
+      expect(await poolText(rewrittenVideo.poster as string)).toBe(`poster-${adversarialRef}`);
+
+      const posterZip = new JSZip();
+      const safeVideoRef = `safe-video-${adversarialRef}`;
+      const safeVideoPath = `media/${safeVideoRef}.mp4`;
+      const adversarialPosterPath = `media/${adversarialRef}.jpg`;
+      posterZip.file(safeVideoPath, `safe-video-${adversarialRef}`);
+      posterZip.file(safeVideoPath.replace(/\.mp4$/, '.poster.jpg'), `sibling-${adversarialRef}`);
+      posterZip.file(adversarialPosterPath, `adversarial-poster-${adversarialRef}`);
+      const posterSlide = {
+        id: `poster-slide-${adversarialRef}`,
+        elements: [
+          {
+            id: `poster-video-${adversarialRef}`,
+            type: 'video',
+            src: safeVideoRef,
+            mediaRef: safeVideoRef,
+            poster: adversarialRef,
+          },
+        ],
+      } as unknown as Slide;
+      const posterManifest = {
+        ...manifest,
+        stage: { ...manifest.stage, videoManifest: undefined },
+        scenes: [
+          {
+            type: 'slide',
+            title: 'Poster scene',
+            order: 0,
+            content: { type: 'slide', canvas: posterSlide },
+          },
+        ],
+        mediaIndex: Object.fromEntries([
+          [safeVideoPath, { type: 'generated', mimeType: 'video/mp4' }],
+          [adversarialPosterPath, { type: 'generated', mimeType: 'image/jpeg' }],
+        ]),
+      } satisfies ClassroomManifest;
+      const posterMappings = await materializeImportedMedia(
+        posterZip,
+        posterManifest,
+        'poster-stage',
+        3,
+      );
+      const rewrittenPosterVideo = rewriteImportedSlideMediaRefs(posterSlide, posterMappings)
+        .elements[0] as { poster?: unknown };
+
+      expect(rewrittenPosterVideo.poster).toBe(posterMappings.refToNewId.get(adversarialRef));
+      expect(rewrittenPosterVideo.poster).toBe(posterMappings.posterRefToNewId.get(adversarialRef));
+      expect(typeof rewrittenPosterVideo.poster).toBe('string');
+      expect(await poolText(rewrittenPosterVideo.poster as string)).toBe(
+        `adversarial-poster-${adversarialRef}`,
+      );
+    },
+  );
+
+  it('rejects non-string alias values before they reach imported media slots', () => {
+    const invalidMappings = {
+      refToNewId: new Map<string, unknown>([['source-image', { polluted: true }]]),
+      posterRefToNewId: new Map<string, unknown>(),
+      posterByMediaRef: new Map<string, unknown>(),
+    } as unknown as Parameters<typeof rewriteImportedSlideMediaRefs>[1];
+
+    const rewritten = rewriteImportedSlideMediaRefs(
+      {
+        id: 'invalid-alias',
+        elements: [{ id: 'image', type: 'image', src: 'source-image' }],
+      } as unknown as Slide,
+      invalidMappings,
+    );
+
+    expect(rewritten.elements[0]).toMatchObject({ src: '' });
+  });
+
   it('clears opaque unmapped refs while preserving mapped, generated, and concrete refs', () => {
     const rewritten = rewriteImportedSlideMediaRefs(
       {
@@ -242,9 +386,9 @@ describe('classroom import media allocation', () => {
         ],
       } as unknown as Slide,
       {
-        refToNewId: { 'source-image': 'ast_new_image' },
-        posterRefToNewId: {},
-        posterByMediaRef: {},
+        refToNewId: new Map([['source-image', 'ast_new_image']]),
+        posterRefToNewId: new Map(),
+        posterByMediaRef: new Map(),
       },
     );
 
@@ -272,9 +416,9 @@ describe('classroom import media allocation', () => {
           gen_vid_waiting: { type: 'video', prompt: 'generated' },
         },
         {
-          refToNewId: {},
-          posterRefToNewId: {},
-          posterByMediaRef: {},
+          refToNewId: new Map(),
+          posterRefToNewId: new Map(),
+          posterByMediaRef: new Map(),
         },
       ),
     ).toEqual({
@@ -304,7 +448,7 @@ describe('classroom import media allocation', () => {
             },
           ],
         } as unknown as Slide,
-        { refToNewId: {}, posterRefToNewId: {}, posterByMediaRef: {} },
+        { refToNewId: new Map(), posterRefToNewId: new Map(), posterByMediaRef: new Map() },
       );
 
       expect(rewritten.background).toMatchObject({ type: 'image', image: { src: address } });
@@ -340,12 +484,12 @@ describe('classroom import media allocation', () => {
         ],
       } as unknown as Slide,
       {
-        refToNewId: {
-          'source-video': 'ast_new_video',
-          'source-poster': 'ast_new_poster',
-        },
-        posterRefToNewId: {},
-        posterByMediaRef: {},
+        refToNewId: new Map([
+          ['source-video', 'ast_new_video'],
+          ['source-poster', 'ast_new_poster'],
+        ]),
+        posterRefToNewId: new Map(),
+        posterByMediaRef: new Map(),
       },
     );
 
@@ -378,9 +522,9 @@ describe('classroom import media allocation', () => {
           elements: [],
         } as unknown as Slide,
         {
-          refToNewId: mapping,
-          posterRefToNewId: {},
-          posterByMediaRef: {},
+          refToNewId: new Map(Object.entries(mapping)),
+          posterRefToNewId: new Map(),
+          posterByMediaRef: new Map(),
         },
       );
 

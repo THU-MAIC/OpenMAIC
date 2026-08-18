@@ -923,19 +923,19 @@ export async function convertDocumentAssetRefs(
   let videoManifest = stage.videoManifest;
   if (videoManifest) {
     let manifestChanged = false;
-    const nextManifest: typeof videoManifest = {};
+    const nextManifestEntries: Array<[string, (typeof videoManifest)[string]]> = [];
     for (const [key, entry] of Object.entries(videoManifest)) {
       if (isGeneratedMediaPlaceholder(key)) {
         const assetId = await allocateMediaRef(key);
         if (assetId) {
-          nextManifest[assetId] = entry;
+          nextManifestEntries.push([assetId, entry]);
           manifestChanged = true;
           continue;
         }
       } else if (isClassroomMediaUrl(key)) {
         const outcome = await allocateUrlMediaRef(key);
         if (outcome.kind === 'allocated') {
-          nextManifest[outcome.assetId] = entry;
+          nextManifestEntries.push([outcome.assetId, entry]);
           manifestChanged = true;
           continue;
         }
@@ -946,10 +946,10 @@ export async function convertDocumentAssetRefs(
         }
         report.kept += 1;
       }
-      nextManifest[key] = entry;
+      nextManifestEntries.push([key, entry]);
     }
     if (manifestChanged) {
-      videoManifest = nextManifest;
+      videoManifest = Object.fromEntries(nextManifestEntries);
       changed = true;
     }
   }

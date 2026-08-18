@@ -187,7 +187,7 @@ describe('classroom ZIP export conversion snapshot', () => {
       Date.now(),
       importedAllocations,
     );
-    const importedMediaId = mediaMappings.refToNewId[exportedSrc];
+    const importedMediaId = mediaMappings.refToNewId.get(exportedSrc);
     const importedAudioId = audioMappings.pathToId.get(exportedAudioRef!);
     expect(importedMediaId).toMatch(/^ast_/);
     expect(importedAudioId).toMatch(/^ast_/);
@@ -288,7 +288,7 @@ describe('classroom ZIP export conversion snapshot', () => {
       manifest.scenes[0].actions ?? [],
       audioMappings.pathToId,
     );
-    const importedMediaId = mediaMappings.refToNewId[sharedRef];
+    const importedMediaId = mediaMappings.refToNewId.get(sharedRef);
     const importedAudioId = audioMappings.pathToId.get(audioPath);
     expect(importedMediaId).toMatch(/^ast_/);
     expect(importedAudioId).toMatch(/^ast_/);
@@ -359,7 +359,7 @@ describe('classroom ZIP export conversion snapshot', () => {
     if (exportedContent.type !== 'slide') throw new Error('expected exported slide content');
     const importedSlide = rewriteImportedSlideMediaRefs(
       exportedContent.canvas,
-      { refToNewId: {}, posterRefToNewId: {}, posterByMediaRef: {} },
+      { refToNewId: new Map(), posterRefToNewId: new Map(), posterByMediaRef: new Map() },
       audioMappings.sourceRefToId,
     );
     const importedAudioId = audioMappings.sourceRefToId.get(sourceAudioId);
