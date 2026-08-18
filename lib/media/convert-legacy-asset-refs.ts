@@ -52,6 +52,10 @@ import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
 import { fetchMediaUrl } from './fetch-media-url';
 import { isGeneratedMediaPlaceholder } from './media-ref';
 import { slideMediaReferenceSlots } from './slide-media-slots';
+import {
+  createLegacyUrlProbeBudget,
+  LEGACY_URL_PROBE_TIMEOUT_MS,
+} from './legacy-url-probe-budget';
 
 const log = createLogger('LegacyAssetConversion');
 
@@ -116,7 +120,7 @@ export interface LegacyAssetConversionDeps {
    */
   removeAsset(ref: string): Promise<void>;
   /** Fetch (and thereby probe) a legacy `audioUrl`. */
-  fetchLegacyUrl(url: string): Promise<LegacyUrlFetch>;
+  fetchLegacyUrl(url: string, timeoutMs?: number): Promise<LegacyUrlFetch>;
 }
 
 /** Run each job through at most `limit` workers, preserving input order. */
@@ -325,7 +329,7 @@ async function defaultDeps(): Promise<LegacyAssetConversionDeps> {
         // play, and the proxy carries the SSRF guard and its response limit.
         // Bounded either way: conversion runs on the document load path, and
         // one stalled URL must not hold the document lock indefinitely.
-        const response = await fetchMediaUrl(url, 15_000);
+        const response = await fetchMediaUrl(url, timeoutMs ?? LEGACY_URL_PROBE_TIMEOUT_MS);
         if (response.ok) return { kind: 'ok', blob: await response.blob() };
         // Only definitive absence empties the reference. A 408 or 429 is
         // transient by definition, a 401 or 403 may clear on a credential
@@ -382,14 +386,6 @@ function audioMeta(
 type SlideLike = Pick<Slide, 'background' | 'elements'>;
 
 /**
- * Total wall-clock budget for legacy URL probes in one conversion pass. Each
- * probe is individually capped; this caps the aggregate, so a document full
- * of stalled URLs cannot hold the load path for (count / concurrency) times
- * the per-probe timeout.
- */
-const URL_PROBE_BUDGET_MS = 60_000;
-
-/**
  * Convert every legacy media reference in a loaded document to an allocated
  * asset id. The input document is never mutated; the side effects are pool
  * ingests and Dexie compatibility mirror writes.
@@ -408,14 +404,16 @@ export async function convertDocumentAssetRefs(
 ): Promise<LegacyAssetConversionResult> {
   const resolvedDeps = deps ?? (await defaultDeps());
   const stageId = document.stage.id;
-  // The URL probes are the only network-bound work here, and each is already
-  // individually capped, but a document full of stalled URLs would still
-  // multiply that cap by the clip count. One shared budget bounds the whole
-  // pass; what is left converts on a later open. Every probe -- including the
-  // ossKey recovery fetches -- routes through it, or several stalled CDN
-  // fetches could exceed the advertised aggregate conversion budget.
-  const urlProbeBudgetEndsAt = Date.now() + URL_PROBE_BUDGET_MS;
-  const withinUrlProbeBudget = (): boolean => Date.now() <= urlProbeBudgetEndsAt;
+  // All legacy URL reads share one wall-clock deadline. A worker receives its
+  // timeout immediately before its request starts, so requests queued after the
+  // deadline are skipped and the final in-flight request cannot outlive it.
+  const urlProbeBudget = createLegacyUrlProbeBudget();
+  const fetchLegacyUrlWithinBudget = async (url: string): Promise<LegacyUrlFetch> => {
+    const timeoutMs = urlProbeBudget.nextTimeoutMs();
+    return timeoutMs === null
+      ? { kind: 'unavailable' }
+      : resolvedDeps.fetchLegacyUrl(url, timeoutMs);
+  };
   /**
    * Ids this pass freshly allocated. A caller may share the array to own the
    * rollback itself: any failure path -- liveness abort or an ordinary worker
@@ -465,8 +463,8 @@ export async function convertDocumentAssetRefs(
         source = record.blob.type
           ? record.blob
           : new Blob([record.blob], { type: record.mimeType });
-      } else if (record && record.ossKey && withinUrlProbeBudget()) {
-        const fetched = await resolvedDeps.fetchLegacyUrl(record.ossKey);
+      } else if (record && record.ossKey) {
+        const fetched = await fetchLegacyUrlWithinBudget(record.ossKey);
         // Zero-byte responses are not usable bytes: the row stays retryable
         // instead of allocating an empty asset.
         if (fetched.kind === 'ok' && fetched.blob.size > 0) {
@@ -527,8 +525,7 @@ export async function convertDocumentAssetRefs(
     const inFlight = mediaUrlOutcomeByRef.get(url);
     if (inFlight) return inFlight;
     const pending = (async (): Promise<UrlOutcome> => {
-      if (!withinUrlProbeBudget()) return { kind: 'unavailable' };
-      const fetched = await resolvedDeps.fetchLegacyUrl(url);
+      const fetched = await fetchLegacyUrlWithinBudget(url);
       if (fetched.kind !== 'ok') {
         return fetched.kind === 'dead' ? { kind: 'dead' } : { kind: 'unavailable' };
       }
@@ -684,8 +681,8 @@ export async function convertDocumentAssetRefs(
             return mirrored.id;
           }
           let source: Blob | undefined = recordHasBytes ? record.blob : undefined;
-          if (!source && record.ossKey && withinUrlProbeBudget()) {
-            const fetched = await resolvedDeps.fetchLegacyUrl(record.ossKey);
+          if (!source && record.ossKey) {
+            const fetched = await fetchLegacyUrlWithinBudget(record.ossKey);
             // Zero-byte responses are not usable bytes: keep the row retryable.
             if (fetched.kind === 'ok' && fetched.blob.size > 0) source = fetched.blob;
           }
@@ -758,12 +755,7 @@ export async function convertDocumentAssetRefs(
             report.converted += 1;
             return { kind: 'allocated', assetId: mirrored.id };
           }
-          if (!withinUrlProbeBudget()) {
-            // The document cannot wait for every stalled URL; the rest of
-            // this pass converts on a later open.
-            return { kind: 'unavailable' };
-          }
-          const fetched = await resolvedDeps.fetchLegacyUrl(audioUrl);
+          const fetched = await fetchLegacyUrlWithinBudget(audioUrl);
           // Zero-byte responses are not usable bytes: the pair stays
           // retryable and the URL remains the live fallback, never an
           // allocated empty asset.
