@@ -35,7 +35,11 @@ jobs:
           fetch-depth: 0
 
       # Cheap bash-only check so a broken helper fails before pnpm install.
+      # Quiet annotations: the expected-failure case would otherwise paint
+      # the check with a fake ::error::.
       - name: Parallel runner self-test
+        env:
+          CI_PARALLEL_ANNOTATE: '0'
         run: |
           set -euo pipefail
           scripts/ci-run-parallel.sh ok 'true' ok2 'true'
@@ -240,20 +244,13 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
 
-      # OS libraries first, then the browser tarball. Do not wrap
-      # `install-deps` in `timeout`: killing apt-get leaves
-      # /var/lib/apt/lists/lock held and every retry fails immediately.
-      # Bound only the CDN download, which is what has stalled for 20+ minutes.
-      - name: Install Playwright OS deps
-        run: pnpm exec playwright install-deps chromium
-
+      # Browser tarball only. `install-deps` talks to Ubuntu apt; on this
+      # runner fleet that mirror has sat through the whole 15-minute job
+      # budget. ubuntu-latest already ships the libraries Chromium needs.
+      # Bound the Microsoft CDN download so a stall retries instead of hanging.
       - name: Install Playwright Chromium
         run: |
           set -euo pipefail
-          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
-            pnpm exec playwright install chromium
-            exit 0
-          fi
           for attempt in 1 2 3; do
             if timeout -k 10 240 pnpm exec playwright install chromium; then
               exit 0

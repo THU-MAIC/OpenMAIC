@@ -43,7 +43,11 @@ for idx in "${!pids[@]}"; do
     echo "::endgroup::"
   else
     status=$?
-    echo "::error::${name} failed with exit ${status}"
+    if [ "${CI_PARALLEL_ANNOTATE:-1}" != "0" ]; then
+      echo "::error::${name} failed with exit ${status}"
+    else
+      echo "${name} failed with exit ${status}"
+    fi
     echo "::group::${name} (failed)"
     cat "$log"
     echo "::endgroup::"
