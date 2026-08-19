@@ -450,6 +450,22 @@ export function derivePptxMediaReferenceSet(slides: readonly Slide[]): ReadonlyS
 }
 
 /**
+ * The manifest-guard predicate: is this ref foreign to the PPTX document's
+ * asset manifest, with no task ownership that would legitimate it? A generated
+ * task may supply concrete runtime URLs (its objectUrl, or the poster of an
+ * element without one) that are runtime metadata rather than document refs;
+ * every other ref the layout resolves must come from the manifest. Exported so
+ * the guard's foreign-ref rejection stays directly testable.
+ */
+export function isPptxManifestForeignRef(
+  ref: string | undefined,
+  manifestRefs: ReadonlySet<string>,
+  task: MediaTaskState | undefined,
+): boolean {
+  return !!ref && !manifestRefs.has(ref) && task?.objectUrl !== ref;
+}
+
+/**
  * Pin the manifest and layout walks together. Element iteration remains
  * necessary for coordinates, z-order and video binding selection; it may not
  * introduce or omit a media role relative to the manifest.
@@ -498,7 +514,7 @@ export async function buildPptxBlob(
     // A generated task may supply a concrete poster URL that is runtime
     // metadata rather than a document ref. Preserve that established fallback;
     // every document-owned ref must still come from the manifest.
-    if (ref && !manifestRefs.has(ref) && task?.objectUrl !== ref) {
+    if (isPptxManifestForeignRef(ref, manifestRefs, task)) {
       throw new Error(`PPTX layout attempted to resolve a ref outside the asset manifest: ${ref}`);
     }
     return resolvePptxEmbeddableSrc(ref, task, stageId);

@@ -131,8 +131,15 @@ export function resolveVideoMediaForElement<T extends MediaTaskLookupEntry>(
     ? undefined
     : resolveMediaTaskForElement(effectiveTasks, element, stageId);
   const posterRef = element.poster ?? task?.poster;
+  // A task-owned poster is carried as a binding whenever it is the effective
+  // poster. An element with no poster of its own falls back to the task's
+  // generated poster URL, so that URL must travel with a task binding for the
+  // manifest guard's task-ownership exemption to admit it; an opaque element
+  // poster ref keeps the task's runtime poster URL as its bytes fallback. A
+  // concrete explicit element poster stays element-owned and never borrows the
+  // task binding.
   const posterTask =
-    element.poster && !isConcreteMediaAddress(element.poster) && task?.poster
+    task?.poster && (!element.poster || !isConcreteMediaAddress(element.poster))
       ? ({ ...task, objectUrl: task.poster } as T & { readonly objectUrl: string })
       : undefined;
 
