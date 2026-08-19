@@ -136,6 +136,8 @@ export type ManifestAction = Omit<Action, 'audioId'> & {
 
 export interface MediaIndexEntry {
   type: 'audio' | 'image' | 'generated';
+  /** Original document ref; ZIP paths and refs are separate namespaces. */
+  sourceRef?: string;
   mimeType?: string;
   format?: string;
   duration?: number;

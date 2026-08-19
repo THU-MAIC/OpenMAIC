@@ -14,6 +14,7 @@ import {
   runPiSingleRequest,
   shouldAwaitPresentationAction,
   withPiInclassWhiteboardTools,
+  withPiWebSearchSettings,
   MANUAL_STOP_END_OPTIONS,
   takeSoftCloseRegistration,
 } from '@/components/chat/use-chat-sessions';
@@ -281,6 +282,122 @@ describe('withPiInclassWhiteboardTools', () => {
       piEnableWhiteboardTools: true,
     });
     expect(request.config).not.toHaveProperty('piEnableWhiteboardTools');
+  });
+});
+
+describe('withPiWebSearchSettings', () => {
+  const request = {
+    messages: [],
+    config: { agentIds: ['default-1'] },
+    apiKey: 'llm-key',
+    baseUrl: 'https://llm-provider.test',
+    model: 'llm:model',
+  } satisfies ChatRequestTemplate;
+
+  it('serializes only the selected Claude provider fields and keeps LLM fields separate', () => {
+    const next = withPiWebSearchSettings(
+      {
+        ...request,
+        baiduSubSources: { webSearch: false, baike: true, scholar: true },
+      },
+      {
+        webSearchProviderId: 'claude',
+        webSearchProvidersConfig: {
+          claude: {
+            apiKey: 'claude-search-key',
+            baseUrl: 'https://must-not-leak.test',
+            enabled: true,
+            requiresApiKey: true,
+            isServerConfigured: true,
+            modelId: 'claude-sonnet-5',
+          },
+          tavily: {
+            apiKey: 'non-selected-key',
+            baseUrl: 'https://non-selected.test',
+            enabled: true,
+          },
+        } as Parameters<typeof withPiWebSearchSettings>[1]['webSearchProvidersConfig'],
+        baiduSubSources: { webSearch: true, baike: false, scholar: true },
+      },
+    );
+
+    expect(next).toMatchObject({
+      apiKey: 'llm-key',
+      baseUrl: 'https://llm-provider.test',
+      model: 'llm:model',
+      webSearchProviderId: 'claude',
+      webSearchApiKey: 'claude-search-key',
+      webSearchModelId: 'claude-sonnet-5',
+    });
+    expect(next).not.toHaveProperty('webSearchProvidersConfig');
+    expect(next).not.toHaveProperty('webSearchBaseUrl');
+    expect(next).not.toHaveProperty('baiduSubSources');
+    expect(JSON.stringify(next)).not.toContain('must-not-leak.test');
+    expect(JSON.stringify(next)).not.toContain('non-selected-key');
+  });
+
+  it('serializes Baidu sub-sources only for the selected Baidu provider', () => {
+    const next = withPiWebSearchSettings(
+      {
+        ...request,
+        webSearchApiKey: 'stale-key',
+        webSearchBaseUrl: 'https://stale-search.test',
+        webSearchModelId: 'stale-model',
+      },
+      {
+        webSearchProviderId: 'baidu',
+        webSearchProvidersConfig: {
+          baidu: {
+            apiKey: 'baidu-key',
+            baseUrl: 'https://qianfan.baidubce.com',
+            enabled: true,
+          },
+        } as Parameters<typeof withPiWebSearchSettings>[1]['webSearchProvidersConfig'],
+        baiduSubSources: { webSearch: false, baike: true, scholar: false },
+      },
+    );
+
+    expect(next).toMatchObject({
+      webSearchProviderId: 'baidu',
+      webSearchApiKey: 'baidu-key',
+      webSearchBaseUrl: 'https://qianfan.baidubce.com',
+      baiduSubSources: { webSearch: false, baike: true, scholar: false },
+    });
+    expect(next).not.toHaveProperty('webSearchModelId');
+    expect(JSON.stringify(next)).not.toContain('stale-key');
+    expect(JSON.stringify(next)).not.toContain('stale-model');
+  });
+
+  it('removes stale selected-provider fields when the new provider has no key or model', () => {
+    const next = withPiWebSearchSettings(
+      {
+        ...request,
+        webSearchApiKey: 'stale-key',
+        webSearchBaseUrl: 'https://stale-search.test',
+        webSearchModelId: 'stale-model',
+        baiduSubSources: { webSearch: false, baike: true, scholar: true },
+      },
+      {
+        webSearchProviderId: 'brave',
+        webSearchProvidersConfig: {
+          brave: { apiKey: '', baseUrl: '', enabled: true },
+        } as Parameters<typeof withPiWebSearchSettings>[1]['webSearchProvidersConfig'],
+        baiduSubSources: { webSearch: true, baike: false, scholar: false },
+      },
+    );
+
+    expect(next).toMatchObject({
+      apiKey: 'llm-key',
+      baseUrl: 'https://llm-provider.test',
+      model: 'llm:model',
+      webSearchProviderId: 'brave',
+    });
+    expect(next).not.toHaveProperty('webSearchApiKey');
+    expect(next).not.toHaveProperty('webSearchBaseUrl');
+    expect(next).not.toHaveProperty('webSearchModelId');
+    expect(next).not.toHaveProperty('baiduSubSources');
+    expect(JSON.stringify(next)).not.toContain('stale-key');
+    expect(JSON.stringify(next)).not.toContain('stale-model');
   });
 });
 

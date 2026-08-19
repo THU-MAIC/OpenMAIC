@@ -25,6 +25,7 @@ import { resolveModel } from '@/lib/server/resolve-model';
 import { apiError } from '@/lib/server/api-response';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import type { StatelessChatRequest } from '@/lib/types/chat';
+import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 
 const log = createLogger('Pi Chat API');
 
@@ -130,6 +131,22 @@ export async function POST(req: NextRequest) {
     const enableWhiteboardTools = body.config.piEnableWhiteboardTools === true;
     const childRuntimeMode = isPiNativeChildRuntimeEnabled() ? 'native' : 'legacy';
     const enableNativeChildSpotlight = isPiNativeChildSpotlightEnabled();
+    let nativeWebSearchConfig: ReturnType<typeof resolveClassroomWebSearchConfig>;
+    try {
+      nativeWebSearchConfig =
+        childRuntimeMode === 'native'
+          ? resolveClassroomWebSearchConfig({
+              webSearchProviderId: body.webSearchProviderId,
+              webSearchApiKey: body.webSearchApiKey,
+              webSearchBaseUrl: body.webSearchBaseUrl,
+              webSearchModelId: body.webSearchModelId,
+              baiduSubSources: body.baiduSubSources,
+            })
+          : undefined;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid Web Search configuration';
+      return apiError('INVALID_REQUEST', 400, message);
+    }
 
     log.info(
       `Pi request agents=${body.config.agentIds.join(', ')} messages=${body.messages.length} maxAgentTurns=${maxAgentTurns}`,
@@ -168,6 +185,7 @@ export async function POST(req: NextRequest) {
           enableWebSearch: isPiWebSearchEnabled(),
           childRuntimeMode,
           enableNativeChildSpotlight,
+          nativeWebSearchConfig,
         });
 
         if (signal.aborted) {

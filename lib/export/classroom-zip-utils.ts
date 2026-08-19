@@ -1,95 +1,230 @@
 import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
-import type { ManifestAction } from './classroom-zip-types';
-import { db } from '@/lib/utils/database';
+import type { ManifestAction, MediaIndexEntry } from './classroom-zip-types';
+import { db, mediaFileKey } from '@/lib/utils/database';
+import type { AssetManifestEntry } from '@openmaic/dsl';
 import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
 import type { Scene } from '@/lib/types/stage';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 import { fetchMediaUrl } from '@/lib/media/fetch-media-url';
 import { mapWithConcurrency } from '@/lib/media/convert-legacy-asset-refs';
-import { mediaRefFromRecordId, resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
+import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
+import { canonicalArchiveMedia } from '@/lib/video-export/archive-media';
 
 // ─── Export: Collect Media ─────────────────────────────────────
 
 export interface CollectedAudio {
   zipPath: string;
+  sourceRef: string;
   record: AudioFileRecord;
+  /** Canonical serialized MIME paired with `record.format` and `zipPath`. */
+  mimeType: string;
 }
 
 export interface CollectedMedia {
   zipPath: string;
+  posterZipPath: string;
+  sourceRef: string;
   record: MediaFileRecord;
   elementId: string;
 }
 
-export async function collectAudioFiles(scenes: Scene[]): Promise<CollectedAudio[]> {
-  const audioIds = new Set<string>();
-  for (const scene of scenes) {
-    for (const action of scene.actions ?? []) {
-      if (action.type === 'speech' && (action as SpeechAction).audioId) {
-        audioIds.add((action as SpeechAction).audioId!);
-      }
-    }
-  }
+/** Exact media-index metadata serialized for one collected narration asset. */
+export function collectedAudioMediaIndexEntry(file: CollectedAudio): MediaIndexEntry {
+  return {
+    type: 'audio',
+    sourceRef: file.sourceRef,
+    format: file.record.format,
+    mimeType: file.mimeType,
+    duration: file.record.duration,
+    voice: file.record.voice,
+  };
+}
+
+/** Exact media-index metadata serialized for one collected generated-media asset. */
+export function collectedMediaIndexEntry(file: CollectedMedia): MediaIndexEntry {
+  return {
+    type: 'generated',
+    sourceRef: file.sourceRef,
+    mimeType: file.record.mimeType,
+    size: file.record.size,
+    prompt: file.record.prompt,
+  };
+}
+
+const AUDIO_ARCHIVE_EXTENSIONS = new Set([
+  'aac',
+  'flac',
+  'm4a',
+  'mp3',
+  'mp4',
+  'mpeg',
+  'ogg',
+  'opus',
+  'wav',
+  'webm',
+]);
+const MEDIA_ARCHIVE_EXTENSIONS = new Set([
+  'avif',
+  'gif',
+  'jpeg',
+  'jpg',
+  'm4v',
+  'mov',
+  'mp4',
+  'ogv',
+  'png',
+  'svg',
+  'webm',
+  'webp',
+]);
+
+/**
+ * Accept only one allowlisted filename suffix. Slashes, backslashes, dot
+ * segments, parameters, and unknown values all fall back instead of entering
+ * an archive path.
+ *
+ * Contract boundary: archive paths, extensions, and serialized MIME metadata
+ * are a mutually coherent, canonical function of authoritative kind metadata.
+ * This code does not inspect or transcode bytes and therefore does not promise
+ * that those labels describe the payload. A byte/kind mismatch is already-
+ * corrupt store state outside the export contract; runtime and renderer
+ * consumers likewise trust the kind metadata.
+ */
+function canonicalArchiveExtension(
+  extension: string | undefined,
+  allowed: ReadonlySet<string>,
+  fallback: string,
+): string {
+  if (typeof extension !== 'string' || !/^[a-z0-9]+$/i.test(extension)) return fallback;
+  const canonical = extension.toLowerCase();
+  return allowed.has(canonical) ? canonical : fallback;
+}
+
+export function audioArchivePath(index: number, extension: string | undefined): string {
+  return `audio/audio-${index + 1}.${canonicalArchiveExtension(
+    extension,
+    AUDIO_ARCHIVE_EXTENSIONS,
+    'mp3',
+  )}`;
+}
+
+export function legacyAudioArchivePath(index: number, extension: string | undefined): string {
+  return `audio/legacy-${index + 1}.${canonicalArchiveExtension(
+    extension,
+    AUDIO_ARCHIVE_EXTENSIONS,
+    'mp3',
+  )}`;
+}
+
+export function mediaArchivePath(index: number, extension: string | undefined): string {
+  return `media/asset-${index + 1}.${canonicalArchiveExtension(
+    extension,
+    MEDIA_ARCHIVE_EXTENSIONS,
+    'jpg',
+  )}`;
+}
+
+export function mediaPosterArchiveMetadata() {
+  return canonicalArchiveMedia('image', {});
+}
+
+export function mediaPosterArchivePath(index: number): string {
+  const { extension } = mediaPosterArchiveMetadata();
+  return `media/asset-${index + 1}.poster.${extension}`;
+}
+
+/**
+ * Collect the bytes of every audio entry selected by the classroom export.
+ * That set includes speech narration and reconstructable slide-audio refs, so
+ * no table scan runs here and an orphan audio row cannot ride into the archive.
+ * Bytes come only from the shared resolver (pool-first, with the
+ * compatibility-row fallback inside it); the row read here supplies the
+ * archive's format/duration/voice metadata.
+ */
+export async function collectAudioFiles(
+  entries: readonly AssetManifestEntry[],
+): Promise<CollectedAudio[]> {
   const collected: CollectedAudio[] = [];
-  for (const audioId of audioIds) {
-    const record = await db.audioFiles.get(audioId);
-    // The pool answers first: after a stable-id regeneration whose mirror write
-    // failed, the row holds the superseded narration.
+  for (const [index, entry] of entries.entries()) {
+    const audioId = entry.ref;
+    // The pool answers first: after a stable-id regeneration whose mirror
+    // write failed, the row holds the superseded narration. A ref whose bytes
+    // resolve nowhere ships nothing; the caller marks it missing.
     const blob = await resolveAudioBlob(audioId);
     // A row with no usable bytes -- an evicted row (empty blob, no pool
-    // resolve) -- must not ship an empty audio file. It produces no zip
-    // path, so the URL rescue in collectLegacyAudioForExport sees the id as
-    // missing and fetches the live co-present URL instead.
-    if (blob && blob.size > 0) {
-      const ext = record?.format || 'mp3';
-      const resolved = (record ? { ...record, blob } : { id: audioId, blob }) as AudioFileRecord;
-      collected.push({ zipPath: `audio/${audioId}.${ext}`, record: resolved });
-    }
+    // resolve) -- must not ship an empty audio file.
+    if (!blob || blob.size === 0) continue;
+    const record = await db.audioFiles.get(audioId);
+    const canonical = canonicalArchiveMedia('audio', { extension: record?.format });
+    const ext = canonical.extension;
+    const resolved = (
+      record ? { ...record, blob, format: ext } : { id: audioId, blob, format: ext }
+    ) as AudioFileRecord;
+    collected.push({
+      zipPath: audioArchivePath(index, ext),
+      sourceRef: entry.ref,
+      record: resolved,
+      mimeType: canonical.mimeType,
+    });
   }
   return collected;
 }
 
 /**
- * A same-id replacement commits the new bytes to the pool first; if the
- * compatibility write then fails, the task records
- * `MEDIA_COMPATIBILITY_STORE_LAGGED` and the document deliberately keeps the
- * same reference. Rendering and the other export paths resolve the pool, so the
- * ZIP must too -- otherwise it ships media the classroom no longer shows. The
- * ZIP predates the `response.ok` validation the other export paths added and
- * keeps that laxity, but a zero-byte pool answer is not usable bytes: the
- * compatibility row stays the fallback rather than shipping an empty file.
+ * Collect the bytes of every media entry (image/video/poster/background) in
+ * the asset manifest. Only referenced assets are archived: the pre-manifest
+ * implementation scanned the whole `mediaFiles` table for the stage, which
+ * swept rows no document element still references into the ZIP.
+ *
+ * Bytes come from the shared resolver, pool-first with the supplied
+ * compatibility record's blob as its legacy row-fallback level -- so a
+ * same-id replacement whose mirror write lagged
+ * (MEDIA_COMPATIBILITY_STORE_LAGGED) ships what the classroom renders, and a
+ * referenced asset whose bytes exist only in the pool is collected with a
+ * synthesized record. A failed row (error set, empty placeholder blob) yields
+ * no bytes and ships no empty file. The ZIP predates the response validation
+ * the other export paths added, so it keeps its historical lax fetch policy.
  */
-async function pooledBytesForRef(ref: string): Promise<Blob | null> {
-  return resolveStoredBytes(ref, {
-    fetchPolicy: { requireOk: false, requireNonEmpty: true },
-  });
-}
-
-export async function collectMediaFiles(stageId: string): Promise<CollectedMedia[]> {
-  const records = await db.mediaFiles.where('stageId').equals(stageId).toArray();
-  // A converted asset exists as two rows: the legacy row (keyed by the
-  // original gen_* placeholder) and the allocated-id compatibility mirror
-  // (placeholderRef retained). The document now references the mirror, so the
-  // ZIP must ship each logical asset once -- the mirror -- and skip the legacy
-  // row it mirrors: importing the archive would otherwise materialize an
-  // unreferenced duplicate and inflate the round trip. Audio avoids this by
-  // deriving its rows from the document's speech actions instead of
-  // enumerating the table.
-  const supersededLegacyRefs = new Set(
-    records
-      .map((row) => mediaRefFromRecordId(row.id))
-      .filter((ref) => records.some((row) => row.placeholderRef === ref)),
-  );
+export async function collectMediaFiles(
+  stageId: string,
+  entries: readonly AssetManifestEntry[],
+): Promise<CollectedMedia[]> {
   const collected: CollectedMedia[] = [];
-  for (const record of records) {
-    const elementId = mediaRefFromRecordId(record.id);
-    if (supersededLegacyRefs.has(elementId)) continue;
-    const ext = record.mimeType?.split('/')[1] || 'jpg';
-    const pooled = await pooledBytesForRef(elementId);
+  for (const [index, entry] of entries.entries()) {
+    const ref = entry.ref;
+    const record = await db.mediaFiles.get(mediaFileKey(stageId, ref)).catch(() => undefined);
+    const blob = await resolveStoredBytes(ref, {
+      record,
+      fetchPolicy: { requireOk: false, requireNonEmpty: true },
+    });
+    // Referenced but with bytes nowhere (pending generation, pruned, failed):
+    // the archive simply lacks the file, as it did when no row existed.
+    if (!blob) continue;
+    const effective: MediaFileRecord = record
+      ? { ...record, blob }
+      : {
+          id: mediaFileKey(stageId, ref),
+          stageId,
+          type: blob.type.startsWith('video/') ? 'video' : 'image',
+          blob,
+          mimeType: blob.type,
+          size: blob.size,
+          prompt: '',
+          params: '',
+          createdAt: 0,
+        };
+    // The record kind is authoritative. Canonicalization makes the archive path
+    // and serialized MIME agree with it; it intentionally does not sniff or
+    // transcode `blob`, whose bytes may expose already-corrupt store state.
+    const kind: MediaFileRecord['type'] = effective.type === 'video' ? 'video' : 'image';
+    const canonical = canonicalArchiveMedia(kind, { mimeType: effective.mimeType });
+    const normalized = { ...effective, type: kind, mimeType: canonical.mimeType };
     collected.push({
-      zipPath: `media/${elementId}.${ext}`,
-      record: pooled ? { ...record, blob: pooled } : record,
-      elementId,
+      zipPath: mediaArchivePath(index, canonical.extension),
+      posterZipPath: mediaPosterArchivePath(index),
+      sourceRef: entry.ref,
+      record: normalized,
+      elementId: ref,
     });
   }
   return collected;
@@ -102,6 +237,19 @@ export interface LegacyAudioBlob {
   zipPath: string;
   blob: Blob;
   format: string;
+  mimeType: string;
+  /** The legacy URL the narration was fetched from — its natural source ref. */
+  sourceRef: string;
+}
+
+/** Exact media-index metadata serialized for one fetched legacy narration asset. */
+export function legacyAudioMediaIndexEntry(file: LegacyAudioBlob): MediaIndexEntry {
+  return {
+    type: 'audio',
+    sourceRef: file.sourceRef,
+    format: file.format,
+    mimeType: file.mimeType,
+  };
 }
 
 /**
@@ -146,10 +294,11 @@ export async function collectLegacyAudioForExport(
   });
   for (const { url, blob } of fetched) {
     if (!blob) continue;
-    const format = blob.type.split('/')[1] || 'mp3';
-    const zipPath = `audio/legacy-${blobs.length + 1}.${format}`;
+    const canonical = canonicalArchiveMedia('audio', { mimeType: blob.type });
+    const format = canonical.extension;
+    const zipPath = legacyAudioArchivePath(blobs.length, format);
     audioUrlToPath.set(url, zipPath);
-    blobs.push({ zipPath, blob, format });
+    blobs.push({ zipPath, blob, format, mimeType: canonical.mimeType, sourceRef: url });
   }
   return { audioUrlToPath, blobs };
 }
@@ -202,41 +351,23 @@ interface RewriteManifestActionOptions {
   fallbackDiscussionAgentIndex?: number;
 }
 
-/**
- * Speech references that would dangle in the exported ZIP: an audioId with no
- * archive row and no recovered fallback. A legacy audioUrl that WAS recovered
- * travels under its own zip path (`actionsToManifest` maps the action to it),
- * so the same narration must not also be flagged missing under a phantom
- * `audio/${audioId}.mp3` path.
- */
-export function collectMissingAudioRefs(
-  scenes: readonly Scene[],
-  audioIdToPath: Map<string, string>,
-  audioUrlToPath: Map<string, string>,
-): Array<{ audioId: string; missingPath: string }> {
-  const missing: Array<{ audioId: string; missingPath: string }> = [];
-  for (const scene of scenes) {
-    for (const action of scene.actions ?? []) {
-      if (action.type !== 'speech') continue;
-      const speech = action as SpeechAction & { audioUrl?: string };
-      const audioId = speech.audioId;
-      if (!audioId || audioIdToPath.has(audioId)) continue;
-      if (speech.audioUrl && audioUrlToPath.has(speech.audioUrl)) continue;
-      missing.push({ audioId, missingPath: `audio/${audioId}.mp3` });
-    }
-  }
-  return missing;
-}
-
 export function rewriteAudioRefsToIds(
   actions: ManifestAction[],
-  audioRefMap: Record<string, string>,
+  audioRefMap: ReadonlyMap<string, unknown> | Readonly<Record<string, unknown>>,
   options: RewriteManifestActionOptions = {},
 ): Action[] {
   return actions.map((action) => {
     if (action.type === 'speech' && 'audioRef' in action) {
       const { audioRef, ...rest } = action;
-      const audioId = audioRef ? audioRefMap[audioRef] : undefined;
+      const mapped =
+        typeof audioRef === 'string'
+          ? audioRefMap instanceof Map
+            ? audioRefMap.get(audioRef)
+            : Object.hasOwn(audioRefMap, audioRef)
+              ? (audioRefMap as Readonly<Record<string, unknown>>)[audioRef]
+              : undefined
+          : undefined;
+      const audioId = typeof mapped === 'string' ? mapped : undefined;
       return {
         ...rest,
         ...(audioId ? { audioId } : {}),

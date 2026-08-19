@@ -17,7 +17,11 @@ import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestrati
 import type { ThinkingConfig } from '@/lib/types/provider';
 import type { ChildRuntimeMode } from '../child-runtime';
 import type { DirectorSceneEvidenceMetadata } from './read-scene';
-import type { DirectorWebEvidenceMetadata } from './web-search';
+import {
+  buildNativeWebSearchTool,
+  type DirectorWebEvidenceMetadata,
+  type NativeWebSearchConfig,
+} from './web-search';
 import type { ParsedAction, StatelessChatRequest } from '@/lib/types/chat';
 import {
   buildChildPrompt,
@@ -543,6 +547,7 @@ export function buildCallAgentTool(opts: {
   enableWhiteboardTools: boolean;
   childRuntimeMode?: ChildRuntimeMode;
   enableNativeChildSpotlight?: boolean;
+  nativeWebSearchConfig?: NativeWebSearchConfig;
   requestStartCurrentScene?: RequestStartCurrentScene;
   isUserCued?: () => boolean;
   isSessionClosed?: () => boolean;
@@ -723,16 +728,19 @@ export function buildCallAgentTool(opts: {
           agent.allowedActions.includes('spotlight') &&
           spotlightTargets.size > 0,
         );
-        const nativeTools = spotlightEnabled
-          ? [
-              buildNativeSpotlightTool({
-                agent,
-                messageId,
-                send: opts.send,
-                authorizedElementIds: spotlightTargets,
-              }),
-            ]
-          : [];
+        const nativeTools: AgentTool[] = [
+          ...(spotlightEnabled
+            ? [
+                buildNativeSpotlightTool({
+                  agent,
+                  messageId,
+                  send: opts.send,
+                  authorizedElementIds: spotlightTargets,
+                }),
+              ]
+            : []),
+          buildNativeWebSearchTool({ config: opts.nativeWebSearchConfig }),
+        ];
         const availableToolNames = nativeTools.map((tool) => tool.name);
         const sanitizeNativeDelta = createVisibleSpeechDeltaSanitizer();
         let nativeResult: Awaited<ReturnType<typeof runNativeChild>>;
@@ -756,13 +764,13 @@ export function buildCallAgentTool(opts: {
               scene: sceneEvidence?.content,
               web: webEvidence?.content,
               spotlightElementIds,
+              webSearchAvailable: availableToolNames.includes('web_search'),
             }),
             tools: nativeTools,
             allowedToolNames: new Set(availableToolNames),
             history: toHistoryMessages(opts.body.messages),
             abortSignal: childAbort.signal,
             timeoutMs: 60_000,
-            maxToolCallAttempts: 4,
             maxProviderTransports: 5,
             onVisibleTextDelta: async (delta) => {
               const visibleDelta = sanitizeNativeDelta(delta);

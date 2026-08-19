@@ -11,6 +11,7 @@ import {
   agentConfigFromManifest,
   type ClassroomManifest,
   type ManifestScene,
+  type MediaIndexEntry,
 } from '@/lib/export/classroom-zip-types';
 import { rewriteAudioRefsToIds } from '@/lib/export/classroom-zip-utils';
 import { createLogger } from '@/lib/logger';
@@ -25,13 +26,39 @@ import type { Stage } from '@/lib/types/stage';
 const log = createLogger('ImportClassroom');
 
 export interface ImportedMediaMappings {
-  refToNewId: Record<string, string>;
-  posterRefToNewId: Record<string, string>;
-  posterByMediaRef: Record<string, string>;
+  readonly refToNewId: ReadonlyMap<string, string>;
+  readonly posterRefToNewId: ReadonlyMap<string, string>;
+  readonly posterByMediaRef: ReadonlyMap<string, string>;
 }
 
-function rewriteImportedMediaRef(value: string, mapped: string | undefined): string | undefined {
+export interface ImportedAudioMappings {
+  readonly pathToId: ReadonlyMap<string, string>;
+  readonly sourceRefToId: ReadonlyMap<string, string>;
+}
+
+/** Content type the importer writes for serialized narration metadata. */
+export function importedAudioContentType(
+  meta: Pick<MediaIndexEntry, 'mimeType' | 'format'>,
+  blobType: string,
+): string {
+  return meta.mimeType || blobType || `audio/${meta.format || 'mp3'}`;
+}
+
+type ImportedRefMapping = ReadonlyMap<string, unknown> | Readonly<Record<string, unknown>>;
+
+function mappedString(mapping: ImportedRefMapping, key: string): string | undefined {
+  const value =
+    mapping instanceof Map
+      ? mapping.get(key)
+      : Object.hasOwn(mapping, key)
+        ? (mapping as Readonly<Record<string, unknown>>)[key]
+        : undefined;
+  return typeof value === 'string' ? value : undefined;
+}
+
+function rewriteImportedMediaRef(value: unknown, mapped: string | undefined): string | undefined {
   if (mapped) return mapped;
+  if (typeof value !== 'string') return undefined;
   if (isConcreteMediaAddress(value) || isGeneratedMediaPlaceholder(value)) return value;
   return undefined;
 }
@@ -84,6 +111,7 @@ function posterRefsForMedia(manifest: ClassroomManifest, mediaRef: string): stri
 export function rewriteImportedSlideMediaRefs(
   slide: Slide,
   mappings: ImportedMediaMappings,
+  audioRefToNewId: ImportedRefMapping = new Map(),
 ): Slide {
   const background =
     slide.background?.type === 'image' && slide.background.image
@@ -94,7 +122,7 @@ export function rewriteImportedSlideMediaRefs(
             src:
               rewriteImportedMediaRef(
                 slide.background.image.src,
-                mappings.refToNewId[slide.background.image.src],
+                mappedString(mappings.refToNewId, slide.background.image.src),
               ) ?? '',
           },
         }
@@ -104,23 +132,35 @@ export function rewriteImportedSlideMediaRefs(
     background,
     elements: slide.elements.map((element) => {
       if (element.type === 'image') {
-        const src = rewriteImportedMediaRef(element.src, mappings.refToNewId[element.src]) ?? '';
+        const src =
+          rewriteImportedMediaRef(element.src, mappedString(mappings.refToNewId, element.src)) ??
+          '';
+        return src === element.src ? element : { ...element, src };
+      }
+      if (element.type === 'audio') {
+        const src =
+          rewriteImportedMediaRef(element.src, mappedString(audioRefToNewId, element.src)) ?? '';
         return src === element.src ? element : { ...element, src };
       }
       if (element.type !== 'video') return element;
       const oldMediaRef = element.mediaRef || element.src || '';
       const src = element.src
-        ? (rewriteImportedMediaRef(element.src, mappings.refToNewId[element.src]) ?? '')
+        ? (rewriteImportedMediaRef(element.src, mappedString(mappings.refToNewId, element.src)) ??
+          '')
         : undefined;
       const mediaRef = element.mediaRef
-        ? rewriteImportedMediaRef(element.mediaRef, mappings.refToNewId[element.mediaRef])
+        ? rewriteImportedMediaRef(
+            element.mediaRef,
+            mappedString(mappings.refToNewId, element.mediaRef),
+          )
         : undefined;
       const poster = element.poster
         ? rewriteImportedMediaRef(
             element.poster,
-            mappings.posterRefToNewId[element.poster] ?? mappings.refToNewId[element.poster],
+            mappedString(mappings.posterRefToNewId, element.poster) ??
+              mappedString(mappings.refToNewId, element.poster),
           )
-        : mappings.posterByMediaRef[oldMediaRef];
+        : mappedString(mappings.posterByMediaRef, oldMediaRef);
       const rewritten = { ...element, ...(src !== undefined ? { src } : {}) };
       if (mediaRef) rewritten.mediaRef = mediaRef;
       else delete rewritten.mediaRef;
@@ -138,7 +178,7 @@ export function rewriteImportedVideoManifest(
   if (!manifest) return manifest;
   return Object.fromEntries(
     Object.entries(manifest).flatMap(([ref, entry]) => {
-      const rewritten = rewriteImportedMediaRef(ref, mappings.refToNewId[ref]);
+      const rewritten = rewriteImportedMediaRef(ref, mappedString(mappings.refToNewId, ref));
       return rewritten ? [[rewritten, entry] as const] : [];
     }),
   );
@@ -151,21 +191,36 @@ export async function materializeImportedAudio(
   stageId: string,
   createdAt: number,
   allocatedIds: string[] = [],
-): Promise<Record<string, string>> {
-  const mappings: Record<string, string> = {};
-  for (const [zipPath, meta] of Object.entries(manifest.mediaIndex ?? {})) {
+): Promise<ImportedAudioMappings> {
+  const pathToId = new Map<string, string>();
+  const sourceRefToId = new Map<string, string>();
+  // Sorting makes malformed duplicate-sourceRef handling independent of JSON
+  // object insertion order: the lexicographically first ZIP path owns the
+  // source-ref alias, while every genuine ZIP path remains addressable.
+  const entries = Object.entries(manifest.mediaIndex ?? {}).sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
+  for (const [zipPath, meta] of entries) {
     if (meta.type !== 'audio' || meta.missing) continue;
     const zipEntry = zip.file(zipPath);
     if (!zipEntry) continue;
     const blob = await zipEntry.async('blob');
     const assetId = await putAsset(blob, {
-      contentType: blob.type || `audio/${meta.format || 'mp3'}`,
+      contentType: importedAudioContentType(meta, blob.type),
       mediaType: 'audio',
       duration: meta.duration,
       voice: meta.voice,
     });
     allocatedIds.push(assetId);
-    mappings[zipPath] = assetId;
+    pathToId.set(zipPath, assetId);
+    const relativePath = zipPath.startsWith('audio/') ? zipPath.slice('audio/'.length) : zipPath;
+    const formatSuffix = meta.format ? `.${meta.format}` : undefined;
+    const sourceRef =
+      (typeof meta.sourceRef === 'string' ? meta.sourceRef : undefined) ??
+      (formatSuffix && relativePath.endsWith(formatSuffix)
+        ? relativePath.slice(0, -formatSuffix.length)
+        : relativePath.replace(/\.[^/.]+$/, ''));
+    if (!sourceRefToId.has(sourceRef)) sourceRefToId.set(sourceRef, assetId);
     const record: AudioFileRecord = {
       id: assetId,
       stageId,
@@ -177,7 +232,7 @@ export async function materializeImportedAudio(
     };
     await db.audioFiles.put(record);
   }
-  return mappings;
+  return { pathToId, sourceRefToId };
 }
 
 /** Allocate imported media into the browser-global pool and mirror it to Dexie. */
@@ -188,10 +243,13 @@ export async function materializeImportedMedia(
   createdAt: number,
   allocatedIds: string[] = [],
 ): Promise<ImportedMediaMappings> {
+  const refToNewId = new Map<string, string>();
+  const posterRefToNewId = new Map<string, string>();
+  const posterByMediaRef = new Map<string, string>();
   const mappings: ImportedMediaMappings = {
-    refToNewId: {},
-    posterRefToNewId: {},
-    posterByMediaRef: {},
+    refToNewId,
+    posterRefToNewId,
+    posterByMediaRef,
   };
 
   const imported: Array<{
@@ -207,9 +265,12 @@ export async function materializeImportedMedia(
     const zipEntry = zip.file(zipPath);
     if (!zipEntry) continue;
     const blob = await zipEntry.async('blob');
-    const oldRef = mediaRefFromZipPath(zipPath, meta.mimeType);
+    const oldRef =
+      typeof meta.sourceRef === 'string'
+        ? meta.sourceRef
+        : mediaRefFromZipPath(zipPath, meta.mimeType);
     const mimeType = meta.mimeType || 'image/jpeg';
-    const type = mimeType.startsWith('video/') ? 'video' : 'image';
+    const type = importedMediaKind(mimeType);
     const posterEntry =
       type === 'video' ? zip.file(siblingPosterZipPath(zipPath, meta.mimeType)) : null;
     const posterBlob = posterEntry ? await posterEntry.async('blob') : undefined;
@@ -219,7 +280,7 @@ export async function materializeImportedMedia(
       prompt: meta.prompt,
     });
     allocatedIds.push(assetId);
-    mappings.refToNewId[oldRef] = assetId;
+    refToNewId.set(oldRef, assetId);
 
     await db.mediaFiles.put({
       id: mediaFileKey(stageId, assetId),
@@ -243,8 +304,8 @@ export async function materializeImportedMedia(
     if (entry.type !== 'video' || !entry.posterBlob) continue;
     const oldPosterRefs = posterRefsForMedia(manifest, entry.oldRef);
     let posterAssetId = oldPosterRefs
-      .map((oldPosterRef) => mappings.refToNewId[oldPosterRef])
-      .find(Boolean);
+      .map((oldPosterRef) => mappedString(mappings.refToNewId, oldPosterRef))
+      .find((value): value is string => typeof value === 'string');
     if (!posterAssetId) {
       posterAssetId = await putAsset(entry.posterBlob, {
         contentType: entry.posterBlob.type || 'image/jpeg',
@@ -264,12 +325,17 @@ export async function materializeImportedMedia(
         createdAt,
       });
     }
-    mappings.posterByMediaRef[entry.oldRef] = posterAssetId;
+    posterByMediaRef.set(entry.oldRef, posterAssetId);
     for (const oldPosterRef of oldPosterRefs) {
-      mappings.posterRefToNewId[oldPosterRef] = posterAssetId;
+      posterRefToNewId.set(oldPosterRef, posterAssetId);
     }
   }
   return mappings;
+}
+
+/** Classification used for imported generated media after export normalization. */
+export function importedMediaKind(mimeType: string): 'image' | 'video' {
+  return mimeType.startsWith('video/') ? 'video' : 'image';
 }
 
 export type ImportPhase =
@@ -362,7 +428,7 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
         setPhase('writingMedia');
         toast.loading(t('import.writingMedia'), { id: toastId });
 
-        const audioRefToNewId = await materializeImportedAudio(
+        const audioMappings = await materializeImportedAudio(
           zip,
           manifest,
           newStageId,
@@ -414,7 +480,7 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
           scenes: manifest.scenes.map((mScene: ManifestScene, index: number) => {
             const newSceneId = nanoid();
             const actions = mScene.actions
-              ? rewriteAudioRefsToIds(mScene.actions, audioRefToNewId, {
+              ? rewriteAudioRefsToIds(mScene.actions, audioMappings.pathToId, {
                   agentIds: newAgentIds,
                   fallbackDiscussionAgentIndex,
                 })
@@ -433,7 +499,11 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
               mScene.content.type === 'slide'
                 ? {
                     ...mScene.content,
-                    canvas: rewriteImportedSlideMediaRefs(mScene.content.canvas, mediaMappings),
+                    canvas: rewriteImportedSlideMediaRefs(
+                      mScene.content.canvas,
+                      mediaMappings,
+                      audioMappings.sourceRefToId,
+                    ),
                   }
                 : mScene.content;
             return canonicalizeLegacyScene({
@@ -444,7 +514,7 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
               content,
               actions,
               whiteboards: mScene.whiteboards?.map((slide) =>
-                rewriteImportedSlideMediaRefs(slide, mediaMappings),
+                rewriteImportedSlideMediaRefs(slide, mediaMappings, audioMappings.sourceRefToId),
               ),
               multiAgent,
               createdAt: now,
