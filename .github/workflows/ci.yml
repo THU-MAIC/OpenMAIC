@@ -122,15 +122,23 @@ jobs:
             'tsc' 'npx tsc --noEmit' \
             'i18n' 'pnpm check:i18n-keys'
 
-      # Root vitest and the storage package suite are each ~1 minute and do not
-      # share a database or a working tree. The remaining workspace suites are
-      # a few seconds each and ride in a third lane.
-      - name: Unit tests
-        run: |
-          scripts/ci-run-parallel.sh \
-            'root' 'pnpm test' \
-            'storage' 'pnpm --filter @openmaic/storage run typecheck && pnpm --filter @openmaic/storage test' \
-            'workspace-packages' 'pnpm --filter @openmaic/importer test && pnpm --filter @openmaic/dsl test && pnpm --filter @openmaic/generation run typecheck && pnpm --filter @openmaic/generation test'
+      # Keep these sequential. Running root vitest alongside the storage
+      # package on a 4-core runner made 5s-timeout tests flake (CPU
+      # contention, not a product regression).
+      - name: Unit Tests
+        run: pnpm test
+
+      - name: Unit Tests (importer)
+        run: pnpm --filter @openmaic/importer test
+
+      - name: Unit Tests (dsl)
+        run: pnpm --filter @openmaic/dsl test
+
+      - name: TypeScript (generation)
+        run: pnpm --filter @openmaic/generation run typecheck
+
+      - name: Unit Tests (generation)
+        run: pnpm --filter @openmaic/generation test
 
       - name: Node consumer smoke (generation scene)
         shell: bash
@@ -160,6 +168,15 @@ jobs:
             --model smoke-model)"
           printf '%s\n' "$output"
           node -e 'const value = JSON.parse(process.argv[1]); if (!Array.isArray(value.outlines) || value.outlines.length === 0 || !value.scene || value.sceneValidation?.valid !== true) process.exit(1)' "$output"
+
+      # Covers the package's own test tree, which the root tsc reaches only by an
+      # incidental glob. The device-scope guard is written as `@ts-expect-error`
+      # probes in those tests, and a probe nothing type-checks proves nothing.
+      - name: TypeScript (storage, incl. tests)
+        run: pnpm --filter @openmaic/storage run typecheck
+
+      - name: Unit Tests (storage)
+        run: pnpm --filter @openmaic/storage test
 
   render-service:
     name: Render Service (typecheck + tests)
@@ -223,26 +240,28 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
 
-      # `--with-deps` is apt plus the browser tarball. On a cache hit the
-      # tarball is already present, so only the OS libraries need installing.
-      # `timeout` bounds a stalled CDN so a miss retries instead of hanging
-      # until the job budget expires.
-      - name: Install Playwright browsers
+      # OS libraries first, then the browser tarball. Do not wrap
+      # `install-deps` in `timeout`: killing apt-get leaves
+      # /var/lib/apt/lists/lock held and every retry fails immediately.
+      # Bound only the CDN download, which is what has stalled for 20+ minutes.
+      - name: Install Playwright OS deps
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Install Playwright Chromium
         run: |
           set -euo pipefail
           if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
-            pnpm exec playwright install-deps chromium
             pnpm exec playwright install chromium
             exit 0
           fi
           for attempt in 1 2 3; do
-            if timeout -k 10 180 pnpm exec playwright install chromium --with-deps; then
+            if timeout -k 10 240 pnpm exec playwright install chromium; then
               exit 0
             fi
-            echo "Playwright install attempt ${attempt} failed, retrying..."
+            echo "Playwright Chromium download attempt ${attempt} failed, retrying..."
             sleep 5
           done
-          echo "::error::Playwright browser install failed after 3 attempts."
+          echo "::error::Playwright Chromium download failed after 3 attempts."
           exit 1
 
       # Measures the emitted cover cards in Chromium. Lives with the unit tests
