@@ -145,19 +145,9 @@ function makeHarness(
   options: {
     evidence?: ReturnType<typeof sceneEvidence>;
     send?: (event: StatelessEvent) => Promise<void>;
-    webEvidence?: {
-      content: string;
-      metadata: { query: string; retrievedAt: string; sourceCount: number };
-    };
     spotlightEnabled?: boolean;
     nativeWebSearchConfig?: NativeWebSearchConfig;
     takeSceneEvidence?: () => ReturnType<typeof sceneEvidence> | undefined;
-    takeWebEvidence?: () =>
-      | {
-          content: string;
-          metadata: { query: string; retrievedAt: string; sourceCount: number };
-        }
-      | undefined;
     agent?: AgentConfig;
     requestStartCurrentScene?: {
       sceneId: string;
@@ -204,7 +194,6 @@ function makeHarness(
         elementIds: ['current-element'],
       } as const),
     takeSceneEvidence: options.takeSceneEvidence ?? (() => options.evidence),
-    takeWebEvidence: options.takeWebEvidence ?? (() => options.webEvidence),
   });
   return { events, summaries, onActionDone, tool };
 }
@@ -240,36 +229,18 @@ describe('Native Child production consumer', () => {
     expect(result.details).toMatchObject({ skipped: true, reason: 'invalid_agent_id' });
   });
 
-  it('consumes Scene and Web evidence once even when the first valid Child fails', async () => {
+  it('consumes Scene evidence once even when the first valid Child fails', async () => {
     useResponses([
       [finish('error')],
       [{ type: 'text-delta', text: 'Second delegation without stale evidence.' }, finish('stop')],
     ]);
     let pendingScene: ReturnType<typeof sceneEvidence> | undefined = sceneEvidence();
-    let pendingWeb:
-      | {
-          content: string;
-          metadata: { query: string; retrievedAt: string; sourceCount: number };
-        }
-      | undefined = {
-      content: 'Unique failed-turn source: https://example.test/consumed-once',
-      metadata: {
-        query: 'failed child evidence',
-        retrievedAt: '2026-08-12T00:00:00.000Z',
-        sourceCount: 1,
-      },
-    };
     const takeSceneEvidence = vi.fn(() => {
       const evidence = pendingScene;
       pendingScene = undefined;
       return evidence;
     });
-    const takeWebEvidence = vi.fn(() => {
-      const evidence = pendingWeb;
-      pendingWeb = undefined;
-      return evidence;
-    });
-    const harness = makeHarness({ takeSceneEvidence, takeWebEvidence });
+    const harness = makeHarness({ takeSceneEvidence });
 
     const first = await execute(harness);
     const second = await harness.tool.execute('delegate-2', {
@@ -281,22 +252,13 @@ describe('Native Child production consumer', () => {
       isError: true,
       details: {
         sceneEvidence: [expect.objectContaining({ sceneId: 'scene-current' })],
-        webEvidence: expect.objectContaining({ query: 'failed child evidence' }),
       },
     });
     expect(second.details).not.toHaveProperty('sceneEvidence');
-    expect(second.details).not.toHaveProperty('webEvidence');
     expect(second.details).toMatchObject({ availableToolNames: ['web_search'] });
     expect(takeSceneEvidence).toHaveBeenCalledTimes(2);
-    expect(takeWebEvidence).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(mocks.streamLLM.mock.calls[0]?.[0])).toContain('current-element');
-    expect(JSON.stringify(mocks.streamLLM.mock.calls[0]?.[0])).toContain(
-      'https://example.test/consumed-once',
-    );
     expect(JSON.stringify(mocks.streamLLM.mock.calls[1]?.[0])).not.toContain('current-element');
-    expect(JSON.stringify(mocks.streamLLM.mock.calls[1]?.[0])).not.toContain(
-      'https://example.test/consumed-once',
-    );
   });
 
   it('runs Spotlight and continuation in one Child through the shared OpenMAIC transport', async () => {
@@ -523,29 +485,6 @@ describe('Native Child production consumer', () => {
     });
   });
 
-  it('keeps Director Web evidence as untrusted prompt data without configuring Child search', async () => {
-    useResponses([[{ type: 'text-delta', text: 'Evidence-backed speech.' }, finish('stop')]]);
-    const harness = makeHarness({
-      webEvidence: {
-        content: 'Exact source: https://example.test/source',
-        metadata: {
-          query: 'current fact',
-          retrievedAt: '2026-08-12T00:00:00.000Z',
-          sourceCount: 1,
-        },
-      },
-    });
-
-    const result = await execute(harness);
-    const firstPayload = mocks.streamLLM.mock.calls[0]?.[0] as {
-      messages: Array<{ role: string; content: unknown }>;
-      tools: Record<string, unknown>;
-    };
-    expect(JSON.stringify(firstPayload.messages)).toContain('https://example.test/source');
-    expect(firstPayload.tools).toHaveProperty('web_search');
-    expect(result.details).toMatchObject({ webEvidence: { query: 'current fact' } });
-  });
-
   it('runs Native web_search in the same Child without classroom action accounting', async () => {
     mocks.searchWeb.mockResolvedValue({
       answer: 'A current fact.',
@@ -594,73 +533,6 @@ describe('Native Child production consumer', () => {
         },
       },
     });
-  });
-
-  it('keeps Director evidence and Child search additive, isolated, and take-once', async () => {
-    mocks.searchWeb.mockResolvedValue({
-      answer: 'First Child answer.',
-      query: 'first child fact',
-      responseTime: 0.1,
-      sources: [
-        {
-          title: 'First Child source',
-          url: 'https://example.test/first-child-only',
-          content: 'First Child evidence.',
-          score: 1,
-        },
-      ],
-    });
-    useResponses([
-      [webSearchCall('first child fact'), finish('tool-calls')],
-      [{ type: 'text-delta', text: 'First Child response.' }, finish('stop')],
-      [{ type: 'text-delta', text: 'Second Child response.' }, finish('stop')],
-    ]);
-    let pendingDirectorEvidence:
-      | {
-          content: string;
-          metadata: { query: string; retrievedAt: string; sourceCount: number };
-        }
-      | undefined = {
-      content: 'Director-only packet: https://example.test/director-evidence',
-      metadata: {
-        query: 'director fact',
-        retrievedAt: '2026-08-16T00:00:00.000Z',
-        sourceCount: 1,
-      },
-    };
-    const harness = makeHarness({
-      nativeWebSearchConfig: registeredSearchConfig,
-      takeWebEvidence: () => {
-        const evidence = pendingDirectorEvidence;
-        pendingDirectorEvidence = undefined;
-        return evidence;
-      },
-    });
-
-    const firstResult = await execute(harness);
-    await harness.tool.execute('delegate-2', {
-      agentId: teacher.id,
-      instruction: 'Give a separate response without stale search history.',
-    });
-
-    expect(JSON.stringify(transportMessages(0))).toContain(
-      'https://example.test/director-evidence',
-    );
-    expect(JSON.stringify(transportMessages(1))).toContain('https://example.test/first-child-only');
-    expect(firstResult.details).toMatchObject({
-      webEvidence: {
-        query: 'director fact',
-        retrievedAt: '2026-08-16T00:00:00.000Z',
-        sourceCount: 1,
-      },
-    });
-    expect(JSON.stringify(transportMessages(2))).not.toContain(
-      'https://example.test/first-child-only',
-    );
-    expect(JSON.stringify(transportMessages(2))).not.toContain(
-      'https://example.test/director-evidence',
-    );
-    expect(mocks.searchWeb).toHaveBeenCalledTimes(1);
   });
 
   it('keeps not_configured as an error-text result and allows same-Child continuation', async () => {
@@ -770,7 +642,7 @@ describe('Native Child production consumer', () => {
     });
   });
 
-  it('does not treat search-only empty completion as action-only success', async () => {
+  it('completes when a search continuation ends with an empty ordinary stop', async () => {
     mocks.searchWeb.mockResolvedValue({
       answer: 'Answer',
       query: 'current fact',
@@ -784,12 +656,12 @@ describe('Native Child production consumer', () => {
 
     const result = await execute(harness);
 
+    expect(result).not.toHaveProperty('isError');
     expect(result).toMatchObject({
-      isError: true,
       details: {
         nativeChildRun: {
-          status: 'failed',
-          stopReason: 'native_empty_response',
+          status: 'completed',
+          stopReason: 'stop',
           dispatchedActionCount: 0,
         },
       },

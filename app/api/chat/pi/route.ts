@@ -11,7 +11,6 @@ import {
   isPiChatEnabled,
   isPiNativeChildRuntimeEnabled,
   isPiNativeChildSpotlightEnabled,
-  isPiWebSearchEnabled,
 } from '@/lib/config/feature-flags';
 import { createLogger } from '@/lib/logger';
 import {
@@ -182,7 +181,6 @@ export async function POST(req: NextRequest) {
           maxAgentTurns,
           maxActionsPerAgent,
           enableWhiteboardTools,
-          enableWebSearch: isPiWebSearchEnabled(),
           childRuntimeMode,
           enableNativeChildSpotlight,
           nativeWebSearchConfig,

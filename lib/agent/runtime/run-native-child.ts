@@ -353,9 +353,6 @@ export async function runNativeChild(opts: RunNativeChildOptions): Promise<Nativ
       stopReason: finalAssistant?.errorMessage || 'native_child_failed',
     };
   }
-  if (!visibleOutput.trim() && dispatchedActionCount === 0) {
-    return { ...base, status: 'failed', stopReason: 'native_empty_response' };
-  }
   return {
     ...base,
     status: 'completed',

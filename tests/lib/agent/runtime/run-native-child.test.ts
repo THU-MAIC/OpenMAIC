@@ -206,10 +206,10 @@ describe('runNativeChild', () => {
     });
   });
 
-  it('fails a pure empty ordinary stop', async () => {
+  it('completes a pure empty ordinary stop', async () => {
     await expect(run({ streamFn: scriptedStream([text('')]) })).resolves.toMatchObject({
-      status: 'failed',
-      stopReason: 'native_empty_response',
+      status: 'completed',
+      stopReason: 'stop',
       dispatchedActionCount: 0,
     });
   });
@@ -224,8 +224,8 @@ describe('runNativeChild', () => {
         ],
       }),
     ).resolves.toMatchObject({
-      status: 'failed',
-      stopReason: 'native_empty_response',
+      status: 'completed',
+      stopReason: 'stop',
       visibleOutput: '',
     });
   });
@@ -237,8 +237,8 @@ describe('runNativeChild', () => {
         onVisibleTextDelta: () => '',
       }),
     ).resolves.toMatchObject({
-      status: 'failed',
-      stopReason: 'native_empty_response',
+      status: 'completed',
+      stopReason: 'stop',
       visibleOutput: '',
     });
   });

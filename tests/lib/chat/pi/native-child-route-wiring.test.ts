@@ -4,15 +4,11 @@ import type { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
   resolveModel: vi.fn(),
   streamLLM: vi.fn(),
-  searchResponses: vi.fn(),
   searchWeb: vi.fn(),
 }));
 
 vi.mock('@/lib/server/resolve-model', () => ({ resolveModel: mocks.resolveModel }));
 vi.mock('@/lib/ai/llm', () => ({ streamLLM: mocks.streamLLM }));
-vi.mock('@/lib/web-search/responses-web-search', () => ({
-  searchWithResponsesWebSearch: mocks.searchResponses,
-}));
 vi.mock('@/lib/web-search', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/web-search')>();
   return { ...actual, searchWeb: mocks.searchWeb };
@@ -36,12 +32,8 @@ const envNames = [
   'NEXT_PUBLIC_PI_CHAT_ENABLED',
   'OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME',
   'OPENMAIC_ENABLE_PI_NATIVE_CHILD_SPOTLIGHT',
-  'OPENMAIC_ENABLE_PI_WEB_SEARCH',
   'TAVILY_API_KEY',
   'TAVILY_BASE_URL',
-  'RESPONSES_WEB_SEARCH_API_KEY',
-  'RESPONSES_WEB_SEARCH_BASE_URL',
-  'RESPONSES_WEB_SEARCH_MODEL',
 ] as const;
 const originalEnv = new Map<string, string | undefined>();
 
@@ -145,15 +137,10 @@ describe('PR2 Native Child route production wiring', () => {
     process.env.NEXT_PUBLIC_PI_CHAT_ENABLED = 'true';
     process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME = 'true';
     process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_SPOTLIGHT = 'true';
-    delete process.env.OPENMAIC_ENABLE_PI_WEB_SEARCH;
     delete process.env.TAVILY_API_KEY;
     delete process.env.TAVILY_BASE_URL;
-    process.env.RESPONSES_WEB_SEARCH_API_KEY = 'responses-key';
-    process.env.RESPONSES_WEB_SEARCH_BASE_URL = 'https://responses-proxy.test/v1';
-    process.env.RESPONSES_WEB_SEARCH_MODEL = 'search-model';
     mocks.resolveModel.mockReset();
     mocks.streamLLM.mockReset();
-    mocks.searchResponses.mockReset();
     mocks.searchWeb.mockReset();
     mocks.resolveModel.mockResolvedValue({
       model: resolvedModel,
@@ -305,45 +292,34 @@ describe('PR2 Native Child route production wiring', () => {
     });
   }, 15_000);
 
-  it('keeps the Director flag independent while Native always inventories web_search', async () => {
+  it('keeps web_search exclusively in the Native Child inventory', async () => {
+    const directorResponses = [
+      [
+        toolCall('delegate-1', 'call_agent', {
+          agentId: 'teacher-1',
+          instruction: 'Answer briefly.',
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('cue-1', 'cue_user', { prompt: 'Any question?' }), finish('tool-calls')],
+    ];
+    const childResponses = [[{ type: 'text-delta', text: 'Brief answer.' }, finish('stop')]];
+    const payloads: Array<{ source: string; options: Record<string, unknown> }> = [];
+    mocks.streamLLM.mockImplementation((options, source) => {
+      payloads.push({ source, options });
+      const parts =
+        source === 'pi-chat-native-child' ? childResponses.shift() : directorResponses.shift();
+      return resultFrom(parts ?? [{ type: 'text-delta', text: 'unexpected' }, finish('stop')]);
+    });
+
     const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest());
+    await readSseEvents(response);
+    const directorPayload = payloads.find((payload) => payload.source === 'pi-chat-director');
+    const childPayload = payloads.find((payload) => payload.source === 'pi-chat-native-child');
 
-    for (const directorEnabled of [false, true] as const) {
-      if (directorEnabled) process.env.OPENMAIC_ENABLE_PI_WEB_SEARCH = 'true';
-      else delete process.env.OPENMAIC_ENABLE_PI_WEB_SEARCH;
-
-      const directorResponses = [
-        [
-          toolCall('delegate-1', 'call_agent', {
-            agentId: 'teacher-1',
-            instruction: 'Answer briefly.',
-          }),
-          finish('tool-calls'),
-        ],
-        [toolCall('cue-1', 'cue_user', { prompt: 'Any question?' }), finish('tool-calls')],
-      ];
-      const childResponses = [[{ type: 'text-delta', text: 'Brief answer.' }, finish('stop')]];
-      const payloads: Array<{ source: string; options: Record<string, unknown> }> = [];
-      mocks.streamLLM.mockReset();
-      mocks.streamLLM.mockImplementation((options, source) => {
-        payloads.push({ source, options });
-        const parts =
-          source === 'pi-chat-native-child' ? childResponses.shift() : directorResponses.shift();
-        return resultFrom(parts ?? [{ type: 'text-delta', text: 'unexpected' }, finish('stop')]);
-      });
-
-      const response = await POST(makeRequest());
-      await readSseEvents(response);
-      const directorPayload = payloads.find((payload) => payload.source === 'pi-chat-director');
-      const childPayload = payloads.find((payload) => payload.source === 'pi-chat-native-child');
-
-      if (directorEnabled) {
-        expect(directorPayload?.options.tools).toHaveProperty('web_search');
-      } else {
-        expect(directorPayload?.options.tools).not.toHaveProperty('web_search');
-      }
-      expect(childPayload?.options.tools).toHaveProperty('web_search');
-    }
+    expect(directorPayload?.options.tools).not.toHaveProperty('web_search');
+    expect(childPayload?.options.tools).toHaveProperty('web_search');
   }, 15_000);
 
   it('rejects an unsupported Toolbar Web Search base URL before starting the Pi loop', async () => {
