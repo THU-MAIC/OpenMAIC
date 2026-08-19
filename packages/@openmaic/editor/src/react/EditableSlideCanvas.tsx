@@ -128,6 +128,9 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
       !element.lock &&
       !hiddenElementIds?.includes(element.id),
   )?.id;
+  const hasActiveEditor = Boolean(
+    activeEditingTextId || activeEditingShapeId || activeEditingTableId,
+  );
   const textControllerRef = useRef<TextEditorController | null>(null);
   const tableEditorRef = useRef<RendererTableEditorController | null>(null);
   const textAutoSizeRef = useRef<TextAutoSizeController | null>(null);
@@ -171,7 +174,13 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
 
   const handleTextClick = useCallback(
     (element: PPTElement, event: ReactPointerEvent) => {
-      if (!textEditingEnabled || element.type !== 'text' || element.lock) return;
+      if (
+        !textEditingEnabled ||
+        (element.type !== 'text' && element.type !== 'shape') ||
+        element.lock ||
+        (element.type === 'shape' && isSemanticallyEmptyText(element.text?.content ?? ''))
+      )
+        return;
       pendingTextFocusPointRef.current = {
         elementId: element.id,
         left: event.clientX,
@@ -447,9 +456,15 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     (element: PPTShapeElement, defaultContent: ReactNode) => {
       if (activeEditingShapeId !== element.id)
         return renderShapeLabel?.(element, defaultContent) ?? defaultContent;
+      const pendingFocusPoint = pendingTextFocusPointRef.current;
+      const initialFocusPoint =
+        pendingFocusPoint?.elementId === element.id
+          ? { left: pendingFocusPoint.left, top: pendingFocusPoint.top }
+          : undefined;
       return (
         <RendererShapeLabelEditor
           element={element}
+          initialFocusPoint={initialFocusPoint}
           onContentChange={onTextContentChange}
           onFormatChange={onTextFormatChange}
           onControllerChange={handleTextEditorChange}
@@ -520,7 +535,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   const handleCanvasPointerDownCapture = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (creationActive) return;
-      if ((!activeEditingTextId && !activeEditingTableId) || event.button !== 0) return;
+      if (!hasActiveEditor || event.button !== 0) return;
       const target = event.target;
       if (
         target instanceof Element &&
@@ -532,7 +547,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
       }
       publishSelection(EMPTY_SELECTION);
     },
-    [activeEditingTableId, activeEditingTextId, creationActive, publishSelection],
+    [creationActive, hasActiveEditor, publishSelection],
   );
 
   return (
@@ -601,8 +616,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
               style={{
                 position: 'absolute',
                 inset: 0,
-                pointerEvents:
-                  activeEditingTextId || activeEditingTableId || creationActive ? 'none' : 'auto',
+                pointerEvents: hasActiveEditor || creationActive ? 'none' : 'auto',
                 touchAction: editingTouchAction,
               }}
             />

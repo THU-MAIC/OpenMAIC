@@ -28,6 +28,9 @@ function setNodeIndentMarkup(
   const nodeAttrs = {
     ...node.attrs,
     [indentKey]: indent,
+    // A toolbar indent adjustment takes over from an imported absolute CSS
+    // length and uses the editor's canonical em-based indent representation.
+    ...(indentKey === 'textIndent' ? { textIndentCss: '' } : null),
   };
 
   return tr.setNodeMarkup(pos, node.type, nodeAttrs, node.marks);
