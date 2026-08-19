@@ -3,11 +3,10 @@ import type { ManifestAction } from './classroom-zip-types';
 import { db } from '@/lib/utils/database';
 import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
 import type { Scene } from '@/lib/types/stage';
-import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 import { fetchMediaUrl } from '@/lib/media/fetch-media-url';
 import { mapWithConcurrency } from '@/lib/media/convert-legacy-asset-refs';
-import { withAssetUrl } from '@/lib/media/use-asset-url';
+import { mediaRefFromRecordId, resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
 
 // ─── Export: Collect Media ─────────────────────────────────────
 
@@ -55,26 +54,15 @@ export async function collectAudioFiles(scenes: Scene[]): Promise<CollectedAudio
  * compatibility write then fails, the task records
  * `MEDIA_COMPATIBILITY_STORE_LAGGED` and the document deliberately keeps the
  * same reference. Rendering and the other export paths resolve the pool, so the
- * ZIP must too — otherwise it ships media the classroom no longer shows.
+ * ZIP must too -- otherwise it ships media the classroom no longer shows. The
+ * ZIP predates the `response.ok` validation the other export paths added and
+ * keeps that laxity, but a zero-byte pool answer is not usable bytes: the
+ * compatibility row stays the fallback rather than shipping an empty file.
  */
 async function pooledBytesForRef(ref: string): Promise<Blob | null> {
-  if (isConcreteMediaAddress(ref)) return null;
-  try {
-    return await withAssetUrl(ref, async (url) => {
-      if (!url) return null;
-      const blob = await fetch(url).then((response) => response.blob());
-      // Zero-byte pool answers are not usable bytes: the compatibility row
-      // stays the fallback rather than shipping an empty media file.
-      return blob.size > 0 ? blob : null;
-    });
-  } catch {
-    // The compatibility row remains the fallback when pool access fails.
-    return null;
-  }
-}
-
-function mediaRefFromRow(record: MediaFileRecord): string {
-  return record.id.includes(':') ? record.id.split(':').slice(1).join(':') : record.id;
+  return resolveStoredBytes(ref, {
+    fetchPolicy: { requireOk: false, requireNonEmpty: true },
+  });
 }
 
 export async function collectMediaFiles(stageId: string): Promise<CollectedMedia[]> {
@@ -88,11 +76,13 @@ export async function collectMediaFiles(stageId: string): Promise<CollectedMedia
   // deriving its rows from the document's speech actions instead of
   // enumerating the table.
   const supersededLegacyRefs = new Set(
-    records.map(mediaRefFromRow).filter((ref) => records.some((row) => row.placeholderRef === ref)),
+    records
+      .map((row) => mediaRefFromRecordId(row.id))
+      .filter((ref) => records.some((row) => row.placeholderRef === ref)),
   );
   const collected: CollectedMedia[] = [];
   for (const record of records) {
-    const elementId = mediaRefFromRow(record);
+    const elementId = mediaRefFromRecordId(record.id);
     if (supersededLegacyRefs.has(elementId)) continue;
     const ext = record.mimeType?.split('/')[1] || 'jpg';
     const pooled = await pooledBytesForRef(elementId);

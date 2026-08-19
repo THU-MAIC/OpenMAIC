@@ -106,6 +106,35 @@ describe('classroom ZIP media collection', () => {
     expect(await collected[0].record.blob.text()).toBe('row-bytes');
   });
 
+  /**
+   * The ZIP predates the `response.ok` validation the other export paths
+   * added, and keeps that laxity: a non-OK response carrying a body is still
+   * shipped. Pinned here because the shared resolver expresses it as an option
+   * (`requireOk: false`) that would otherwise be tightenable without a failure.
+   */
+  it('ships a non-OK pool response body, as the ZIP always has', async () => {
+    const ref = 'ast_pool_error_body';
+    mocks.rows.push({
+      id: `stage-1:${ref}`,
+      stageId: 'stage-1',
+      blob: new Blob(['row-bytes'], { type: 'image/png' }),
+      mimeType: 'image/png',
+    });
+    const poolUrl = 'blob:pool-error';
+    mocks.poolResolve.mockResolvedValue(poolUrl);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string) => {
+        if (input === poolUrl) return new Response(new Blob(['error-body']), { status: 404 });
+        throw new Error(`Unexpected fetch: ${input}`);
+      }),
+    );
+
+    const collected = await collectMediaFiles('stage-1');
+
+    expect(await collected[0].record.blob.text()).toBe('error-body');
+  });
+
   it('leaves legacy placeholder rows on their stored bytes', async () => {
     mocks.rows.push({
       id: 'stage-1:gen_img_1',

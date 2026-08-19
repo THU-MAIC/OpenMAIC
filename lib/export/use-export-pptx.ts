@@ -22,8 +22,8 @@ import { createLogger } from '@/lib/logger';
 import { inlineHtmlAssets, createAssetFetcher } from './inline-assets';
 import type { FetchAsset } from './inline-assets';
 import { createProxiedFetch } from './proxied-fetch';
-import { db, mediaFileKey } from '@/lib/utils/database';
-import { withAssetUrl, type AssetUrlLeaseState } from '@/lib/media/use-asset-url';
+import type { AssetUrlLeaseState } from '@/lib/media/use-asset-url';
+import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
 import {
   MISSING_ASSET_LEASE,
   isConcreteMediaAddress,
@@ -370,15 +370,6 @@ function buildSpeakerNotes(scene: Scene): string {
   return parts.join('\n');
 }
 
-async function fetchBlob(url: string): Promise<Blob | null> {
-  try {
-    const response = await fetch(url);
-    return response.ok ? await response.blob() : null;
-  } catch {
-    return null;
-  }
-}
-
 async function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -413,40 +404,16 @@ export function exportMediaResolution(ref: string | undefined, stageId?: string)
 
 /** Resolve generated/allocated media without preventing the legacy source fetch fallback. */
 async function resolveStoredMediaBlob(ref: string, stageId?: string): Promise<Blob | null> {
-  const tasks = useMediaGenerationStore.getState().tasks;
-  const task =
-    tasks[ref] ??
-    Object.values(tasks).find(
-      (candidate) =>
-        candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
-    );
-  const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
-  if (!isConcreteMediaAddress(ref)) {
-    try {
-      const pooled = await withAssetUrl(ref, async (url) => {
-        if (!url) return null;
-        const state = resolveMediaRef(ref, effectiveTask, { status: 'resolved', url });
-        const resolved = renderableMediaUrl(state);
-        return resolved ? fetchBlob(resolved) : null;
-      });
-      if (pooled) return pooled;
-    } catch {
-      // The compatibility row remains the fallback when pool access fails.
-    }
-  }
-  if (stageId) {
-    const record = await db.mediaFiles.get(mediaFileKey(stageId, ref)).catch(() => undefined);
-    if (record && !record.error && record.blob.size > 0) {
-      const state = resolveMediaRef(ref, effectiveTask, {
-        status: 'resolved',
-        url: 'dexie:media',
-      });
-      if (state.kind === 'url') return record.blob;
-    }
-  }
-  const state = resolveMediaRef(ref, effectiveTask, MISSING_ASSET_LEASE);
-  const resolved = renderableMediaUrl(state);
-  return resolved ? fetchBlob(resolved) : null;
+  // Pool first, then the Dexie compatibility row, then the task's resolved
+  // URL -- every level gated on the media-resolution state machine so an
+  // in-flight regeneration suppresses stale bytes.
+  return resolveStoredBytes(ref, {
+    stageId,
+    resolutionGating: true,
+    loadCompatRow: true,
+    taskUrlFallback: true,
+    fetchPolicy: { requireOk: true, requireNonEmpty: false },
+  });
 }
 
 // Exported for the round-trip integration test harness — the test wires its

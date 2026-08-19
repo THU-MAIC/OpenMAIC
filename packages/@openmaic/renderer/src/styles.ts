@@ -16,6 +16,9 @@ export const SLIDE_RENDERER_STYLES = `
 .slide-renderer-prose p:last-child {
   margin-bottom: 0;
 }
+.slide-renderer-prose p:empty::before {
+  content: '\\00a0';
+}
 .slide-renderer-prose .katex-display {
   margin: 0 !important;
 }
