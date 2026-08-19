@@ -29,6 +29,7 @@ import {
   actionsToManifest,
   collectAudioFiles,
   collectLegacyAudioForExport,
+  legacyAudioMediaIndexEntry,
 } from '@/lib/export/classroom-zip-utils';
 import type { Scene } from '@/lib/types/stage';
 
@@ -63,6 +64,15 @@ describe('legacy audio URL export', () => {
     expect(blobs).toHaveLength(1);
     expect(blobs[0]?.zipPath).toBe('audio/legacy-1.mpeg');
     expect(await blobs[0]?.blob.text()).toBe('narration-bytes');
+    // The legacy URL itself is the natural source ref and travels with the
+    // fetched asset into the serialized media index.
+    expect(blobs[0]?.sourceRef).toBe(url);
+    expect(legacyAudioMediaIndexEntry(blobs[0]!)).toMatchObject({
+      type: 'audio',
+      sourceRef: url,
+      format: 'mpeg',
+      mimeType: 'audio/mpeg',
+    });
 
     const manifest = actionsToManifest(
       scenes[0].actions as never,

@@ -238,11 +238,18 @@ export interface LegacyAudioBlob {
   blob: Blob;
   format: string;
   mimeType: string;
+  /** The legacy URL the narration was fetched from — its natural source ref. */
+  sourceRef: string;
 }
 
 /** Exact media-index metadata serialized for one fetched legacy narration asset. */
 export function legacyAudioMediaIndexEntry(file: LegacyAudioBlob): MediaIndexEntry {
-  return { type: 'audio', format: file.format, mimeType: file.mimeType };
+  return {
+    type: 'audio',
+    sourceRef: file.sourceRef,
+    format: file.format,
+    mimeType: file.mimeType,
+  };
 }
 
 /**
@@ -291,7 +298,7 @@ export async function collectLegacyAudioForExport(
     const format = canonical.extension;
     const zipPath = legacyAudioArchivePath(blobs.length, format);
     audioUrlToPath.set(url, zipPath);
-    blobs.push({ zipPath, blob, format, mimeType: canonical.mimeType });
+    blobs.push({ zipPath, blob, format, mimeType: canonical.mimeType, sourceRef: url });
   }
   return { audioUrlToPath, blobs };
 }

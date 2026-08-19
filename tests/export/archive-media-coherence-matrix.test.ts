@@ -242,7 +242,12 @@ describe('archive media coherence coverage matrix', () => {
           expect(legacy.blobs[0]?.mimeType).toBe(
             name === 'valid' ? input.mimeType : expected.fallbackMime,
           );
-          expectImportedAudioMetadata(legacyAudioMediaIndexEntry(legacy.blobs[0]!));
+          // Legacy narration carries the URL it was fetched from as its source
+          // ref, so every audio surface preserves an explicit original ref.
+          expect(legacy.blobs[0]?.sourceRef).toBe(url);
+          const serializedLegacy = legacyAudioMediaIndexEntry(legacy.blobs[0]!);
+          expect(serializedLegacy.sourceRef).toBe(url);
+          expectImportedAudioMetadata(serializedLegacy);
           assertedCells += 1;
         }
 
