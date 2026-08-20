@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatSession } from '@/lib/types/chat';
 import {
   consumePiSessionBoundaryContext,
+  consumePiWhiteboardEvent,
   createPreviousLiveSessionContext,
   createPiSessionBoundaryContext,
   getPiSessionBoundaryContext,
@@ -18,6 +19,8 @@ import {
   MANUAL_STOP_END_OPTIONS,
   takeSoftCloseRegistration,
 } from '@/components/chat/use-chat-sessions';
+import { useCanvasStore } from '@/lib/store/canvas';
+import { useStageStore } from '@/lib/store/stage';
 import type { ChatRequestTemplate } from '@/components/chat/use-chat-sessions';
 import type { UIMessage } from 'ai';
 import type { ChatMessageMetadata } from '@/lib/types/chat';
@@ -531,5 +534,83 @@ describe('runPiSingleRequest', () => {
     expect(onIterationEnd).not.toHaveBeenCalled();
     expect(onResponseAccepted).toHaveBeenCalledOnce();
     expect(clearAfterError).toHaveBeenCalledWith('session-1', 'chat.error.streamInterrupted');
+  });
+});
+
+describe('Pi Native whiteboard Browser events', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    useStageStore.setState({ stage: { id: 'stage-1' } as never });
+    useCanvasStore.setState({
+      whiteboardOpen: false,
+      whiteboardManualVisibilityRevision: 2,
+      runtimeWhiteboardProjection: null,
+      runtimeWhiteboardProjectionGeneration: 0,
+    });
+  });
+
+  it('applies UI-only effects only to the current Stage and preserves later manual intent', () => {
+    const stage = useStageStore.getState().stage;
+    const signal = new AbortController().signal;
+
+    consumePiWhiteboardEvent(
+      {
+        kind: 'open',
+        stageId: 'stage-1',
+        manualVisibilityRevision: 2,
+      },
+      signal,
+    );
+    expect(useCanvasStore.getState().whiteboardOpen).toBe(true);
+
+    useCanvasStore.getState().setWhiteboardOpenManually(false);
+    consumePiWhiteboardEvent(
+      {
+        kind: 'open',
+        stageId: 'stage-1',
+        manualVisibilityRevision: 2,
+      },
+      signal,
+    );
+    consumePiWhiteboardEvent(
+      {
+        kind: 'close',
+        stageId: 'another-stage',
+        manualVisibilityRevision: 3,
+      },
+      signal,
+    );
+
+    expect(useCanvasStore.getState().whiteboardOpen).toBe(false);
+    expect(useStageStore.getState().stage).toBe(stage);
+  });
+
+  it('answers a current-Stage visibility query with the active Browser state', async () => {
+    useCanvasStore.setState({ whiteboardOpen: true });
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const controller = new AbortController();
+    consumePiWhiteboardEvent(
+      {
+        kind: 'visibility_query',
+        queryId: 'query-1',
+        stageId: 'stage-1',
+      },
+      controller.signal,
+    );
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenCalledWith('/api/chat/pi/whiteboard-visibility', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        queryId: 'query-1',
+        stageId: 'stage-1',
+        visibility: 'open',
+      }),
+      signal: controller.signal,
+    });
   });
 });

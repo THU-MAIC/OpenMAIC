@@ -39,6 +39,8 @@ import { isPiChatEnabled } from '@/lib/config/feature-flags';
 import type { CleanupSource } from '@/lib/playback/auto-resume';
 import { nanoid } from 'nanoid';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
+import { getPersistenceRequestHeaders } from '@/lib/persistence/bootstrap';
+import { refreshWhiteboardRuntimeProjection } from '@/lib/whiteboard/runtime/browser-projection';
 
 const log = createLogger('ChatSessions');
 const SOFT_CLOSE_TIMEOUT_MS = 15_000;
@@ -185,6 +187,8 @@ async function buildFreshAgentLoopStoreState(): Promise<AgentLoopStoreState> {
     currentSceneId: freshState.currentSceneId,
     mode: freshState.mode,
     whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
+    whiteboardManualVisibilityRevision:
+      useCanvasStore.getState().whiteboardManualVisibilityRevision,
     quizResults: didActiveSceneRemainUnchanged(
       stateBeforeQuizRead.scenes,
       stateBeforeQuizRead.currentSceneId,
@@ -379,9 +383,10 @@ export async function runPiSingleRequest(
   onResponseAccepted?: () => void,
 ): Promise<void> {
   const consumer = createConsumer(sessionId, controller, sessionType);
+  const persistenceHeaders = await getPersistenceRequestHeaders();
   const response = await fetch('/api/chat/pi', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...persistenceHeaders },
     body: JSON.stringify(requestTemplate),
     signal: controller.signal,
   });
@@ -447,6 +452,51 @@ export async function runPiSingleRequest(
     source: 'turn_complete',
   });
   onStopSessionRef.current?.({ sessionId, source: 'turn_complete' });
+}
+
+export async function respondToWhiteboardVisibilityQuery(
+  data: Extract<StatelessEvent, { type: 'whiteboard' }>['data'] & {
+    kind: 'visibility_query';
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  if (signal.aborted || useStageStore.getState().stage?.id !== data.stageId) return;
+  const headers = await getPersistenceRequestHeaders();
+  if (signal.aborted || useStageStore.getState().stage?.id !== data.stageId) return;
+  const visibility = useCanvasStore.getState().whiteboardOpen ? 'open' : 'closed';
+  const response = await fetch('/api/chat/pi/whiteboard-visibility', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({
+      queryId: data.queryId,
+      stageId: data.stageId,
+      visibility,
+    }),
+    signal,
+  });
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Whiteboard visibility response failed: ${response.status}`);
+  }
+}
+
+export function consumePiWhiteboardEvent(
+  data: Extract<StatelessEvent, { type: 'whiteboard' }>['data'],
+  signal: AbortSignal,
+): void {
+  if (signal.aborted || useStageStore.getState().stage?.id !== data.stageId) return;
+  if (data.kind === 'visibility_query') {
+    void respondToWhiteboardVisibilityQuery(data, signal).catch((error) => {
+      if (!signal.aborted) log.warn('Whiteboard visibility response failed', error);
+    });
+    return;
+  }
+  if (data.kind === 'projection') {
+    void refreshWhiteboardRuntimeProjection(data.stageId, data.lastSeq);
+    return;
+  }
+  const canvas = useCanvasStore.getState();
+  if (canvas.whiteboardManualVisibilityRevision !== data.manualVisibilityRevision) return;
+  canvas.setWhiteboardOpen(data.kind === 'open');
 }
 
 export function useChatSessions(options: UseChatSessionsOptions = {}) {
@@ -1067,6 +1117,10 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       let currentMessageId: string | null = null;
 
       const onEvent = (event: StatelessEvent) => {
+        if (event.type === 'whiteboard') {
+          consumePiWhiteboardEvent(event.data, controller.signal);
+          return;
+        }
         if (!currentBuffer) {
           currentBuffer = createBufferForSession(sessionId, sessionType);
         }

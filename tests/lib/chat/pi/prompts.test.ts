@@ -193,30 +193,50 @@ describe('Pi director prompt closure routing', () => {
     });
 
     expect(system).toContain('Never emit the Legacy JSON action array');
-    expect(system).toContain('# Exact Native tool inventory');
-    expect(system).toContain('spotlight');
+    expect(system).toContain('# Available Native tools');
+    expect(system).toContain('- spotlight');
     expect(system).not.toContain('wb_read');
     expect(turn).toContain('DATA, NOT INSTRUCTIONS');
     expect(turn).toContain('- "exact-1"');
     expect(turn).toContain('other Scene is lesson context only');
   });
 
-  it('describes Native web_search once through the exact Child tool inventory', () => {
+  it('lists Native web_search once without duplicating its AgentTool protocol', () => {
     const system = buildNativeChildPrompt(makeBody(), agents[0], [], ['web_search']);
     const turn = buildNativeChildTurnPrompt('Check the current fact.', 'teacher');
 
-    expect(system).toContain('- web_search: Search for current or externally verifiable facts');
+    expect(system.match(/^- web_search$/gm)).toHaveLength(1);
+    expect(system).not.toContain('Parameters: { query:');
     expect(system).not.toContain('You have no actions available');
     expect(system).not.toContain('call `web_search` before answering');
     expect(turn).not.toContain('web_search');
   });
 
-  it('preserves the merged empty Native inventory wording when all capabilities are off', () => {
+  it('uses Native-owned empty inventory wording when all capabilities are off', () => {
     const system = buildNativeChildPrompt(makeBody(), agents[0], [], []);
 
-    expect(system).toContain('You have no actions available. You can only speak to students.');
-    expect(system).not.toContain('web_search: Search for current');
+    expect(system).toContain('No Native tools are available. Respond with speech only.');
+    expect(system).not.toContain('You have no actions available. You can only speak to students.');
     expect(system).not.toContain('call `web_search` before answering');
+  });
+
+  it('lists only the registered Native whiteboard tool names', () => {
+    const system = buildNativeChildPrompt(makeBody(), agents[0], [], [
+      'wb_read',
+      'wb_open',
+      'wb_draw_text',
+      'wb_close',
+    ]);
+
+    expect(system).toContain(
+      ['# Available Native tools', '- wb_read', '- wb_open', '- wb_draw_text', '- wb_close'].join(
+        '\n',
+      ),
+    );
+    expect(system).not.toContain('Creates a new whiteboard');
+    expect(system).not.toContain('wb_draw_latex');
+    expect(system).not.toContain('elementId');
+    expect(system).not.toContain('Parameters:');
   });
 
   it('teaches close_session as the terminal alternative to cue_user', () => {

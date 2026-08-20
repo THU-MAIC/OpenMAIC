@@ -20,23 +20,38 @@ import {
 import { assertRuntimeStorageConfigurable, configureRuntimeStorage } from '@/lib/runtime/config';
 import { getLearnerKey } from '@/lib/runtime/learner-key';
 
-if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_PERSISTENCE === '1') {
-  const deviceKv = new BrowserKVStore();
-  let learnerKeyPromise: Promise<string> | undefined;
-  const learnerKey = (): Promise<string> =>
-    (learnerKeyPromise ??= getLearnerKey(deviceKv).catch((error) => {
+let deviceKv: BrowserKVStore | undefined;
+let learnerKeyPromise: Promise<string> | undefined;
+
+export function isBrowserPersistenceEnabled(): boolean {
+  return typeof window !== 'undefined' && process.env.NEXT_PUBLIC_PERSISTENCE === '1';
+}
+
+export function getPersistenceLearnerKey(): Promise<string> {
+  if (!isBrowserPersistenceEnabled()) {
+    return Promise.reject(new Error('Browser persistence is not enabled'));
+  }
+  return (learnerKeyPromise ??= getLearnerKey((deviceKv ??= new BrowserKVStore())).catch(
+    (error) => {
       learnerKeyPromise = undefined;
       throw error;
-    }));
+    },
+  ));
+}
 
+export async function getPersistenceRequestHeaders(): Promise<Record<string, string>> {
+  if (!isBrowserPersistenceEnabled()) return {};
+  const resolvedLearnerKey = await getPersistenceLearnerKey();
   const token = process.env.NEXT_PUBLIC_PERSISTENCE_TOKEN;
-  const headers = async (): Promise<Record<string, string>> => {
-    const resolvedLearnerKey = await learnerKey();
-    return {
-      'x-learner-key': resolvedLearnerKey,
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    };
+  return {
+    'x-learner-key': resolvedLearnerKey,
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
   };
+}
+
+if (isBrowserPersistenceEnabled()) {
+  const learnerKey = getPersistenceLearnerKey;
+  const headers = getPersistenceRequestHeaders;
 
   const runtimeOptions = {
     store: () =>

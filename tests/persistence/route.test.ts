@@ -119,7 +119,11 @@ describe('embedded persistence route', () => {
     const ensureAssetSchema = vi.fn().mockResolvedValue(undefined);
     const transaction = vi.fn();
     const nodePostgresTransaction = vi.fn(() => transaction);
-    const runtimeConstructions: Array<{ queryable: unknown; options: unknown }> = [];
+    const runtimeConstructions: Array<{
+      queryable: unknown;
+      options: unknown;
+      instance: unknown;
+    }> = [];
     const documentConstructions: Array<{ queryable: unknown; options: unknown }> = [];
     const byteConstructions: unknown[] = [];
     const assetConstructions: Array<{ queryable: unknown; options: unknown; instance: unknown }> =
@@ -130,7 +134,7 @@ describe('embedded persistence route', () => {
       ensureSchema,
       PgRuntimeStore: class {
         constructor(queryable: unknown, options: unknown) {
-          runtimeConstructions.push({ queryable, options });
+          runtimeConstructions.push({ queryable, options, instance: this });
         }
       },
     }));
@@ -218,6 +222,14 @@ describe('embedded persistence route', () => {
     expect((handlerOptions[0] as { assetStore?: unknown }).assetStore).toBe(
       assetConstructions[0]?.instance,
     );
+    const { getServerPersistenceProvider } = await import('@/lib/persistence/server-provider');
+    const secondPoolFactory = vi.fn();
+    const sharedProvider = await getServerPersistenceProvider(
+      'postgres://asset-wiring-test',
+      secondPoolFactory,
+    );
+    expect(sharedProvider.runtimeStore).toBe(runtimeConstructions[0]?.instance);
+    expect(secondPoolFactory).not.toHaveBeenCalled();
     expect(sdkModuleResolved).not.toHaveBeenCalled();
   });
 

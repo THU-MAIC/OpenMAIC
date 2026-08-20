@@ -19,6 +19,7 @@ import {
   type DirectorSceneEvidencePacket,
 } from './tools/read-scene';
 import type { NativeWebSearchConfig } from './tools/web-search';
+import type { WhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 
 function formatSceneEvidenceForDelegation(evidence: DirectorSceneEvidencePacket[]): string {
   return evidence.map((packet) => packet.content).join('\n\n');
@@ -40,6 +41,10 @@ export async function runPiDirectorLoop(opts: {
   childRuntimeMode?: ChildRuntimeMode;
   enableNativeChildSpotlight?: boolean;
   nativeWebSearchConfig?: NativeWebSearchConfig;
+  nativeWhiteboardService?: WhiteboardRuntimeService;
+  nativeWhiteboardStageId?: string;
+  nativeWhiteboardLearnerKey?: string;
+  requestStartManualVisibilityRevision?: number;
 }): Promise<void> {
   let totalAgents = 0;
   let totalActions = 0;
@@ -153,6 +158,10 @@ export async function runPiDirectorLoop(opts: {
       childRuntimeMode: opts.childRuntimeMode ?? 'legacy',
       enableNativeChildSpotlight: opts.enableNativeChildSpotlight === true,
       nativeWebSearchConfig: opts.nativeWebSearchConfig,
+      nativeWhiteboardService: opts.nativeWhiteboardService,
+      nativeWhiteboardStageId: opts.nativeWhiteboardStageId,
+      nativeWhiteboardLearnerKey: opts.nativeWhiteboardLearnerKey,
+      requestStartManualVisibilityRevision: opts.requestStartManualVisibilityRevision ?? 0,
       requestStartCurrentScene,
       isUserCued: () => userCued,
       isSessionClosed: () => sessionClosed,

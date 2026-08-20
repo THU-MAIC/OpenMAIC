@@ -36,6 +36,8 @@ import {
   type PiWhiteboardRuntimeState,
 } from './classroom-actions';
 import { buildNativeSpotlightTool } from './native-spotlight';
+import { buildNativeWhiteboardTools } from './native-whiteboard';
+import type { WhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 
 const CallAgentParams = Type.Object({
   agentId: Type.String({
@@ -544,6 +546,10 @@ export function buildCallAgentTool(opts: {
   childRuntimeMode?: ChildRuntimeMode;
   enableNativeChildSpotlight?: boolean;
   nativeWebSearchConfig?: NativeWebSearchConfig;
+  nativeWhiteboardService?: WhiteboardRuntimeService;
+  nativeWhiteboardStageId?: string;
+  nativeWhiteboardLearnerKey?: string;
+  requestStartManualVisibilityRevision?: number;
   requestStartCurrentScene?: RequestStartCurrentScene;
   isUserCued?: () => boolean;
   isSessionClosed?: () => boolean;
@@ -732,6 +738,20 @@ export function buildCallAgentTool(opts: {
                   authorizedElementIds: spotlightTargets,
                 }),
               ]
+            : []),
+          ...(opts.nativeWhiteboardService &&
+          opts.nativeWhiteboardStageId &&
+          opts.nativeWhiteboardLearnerKey
+            ? buildNativeWhiteboardTools({
+                agent,
+                messageId,
+                send: opts.send,
+                service: opts.nativeWhiteboardService,
+                stageId: opts.nativeWhiteboardStageId,
+                learnerKey: opts.nativeWhiteboardLearnerKey,
+                requestStartManualVisibilityRevision:
+                  opts.requestStartManualVisibilityRevision ?? 0,
+              })
             : []),
           buildNativeWebSearchTool({ config: opts.nativeWebSearchConfig }),
         ];

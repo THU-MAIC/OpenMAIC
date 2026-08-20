@@ -322,6 +322,8 @@ export interface StatelessChatRequest {
     currentSceneId: string | null;
     mode: StageMode;
     whiteboardOpen: boolean;
+    /** Browser-owned manual visibility revision captured for this request. */
+    whiteboardManualVisibilityRevision?: number;
     /**
      * Post-submit quiz state for the CURRENT scene, hydrated by the client
      * from localStorage when the active scene is a graded quiz. Lets the
@@ -447,6 +449,17 @@ export type StatelessEvent =
   | {
       type: 'thinking';
       data: { stage: 'director' | 'agent_loading'; agentId?: string };
+    }
+  | {
+      type: 'whiteboard';
+      data:
+        | { kind: 'visibility_query'; queryId: string; stageId: string }
+        | {
+            kind: 'open' | 'close';
+            stageId: string;
+            manualVisibilityRevision: number;
+          }
+        | { kind: 'projection'; stageId: string; lastSeq: number };
     }
   | { type: 'cue_user'; data: { fromAgentId?: string; prompt?: string } }
   | {
