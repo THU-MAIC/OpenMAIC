@@ -753,7 +753,7 @@ OpenMAIC/
 
 ## ⭐ Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=THU-MAIC/OpenMAIC&type=Date)](https://star-history.com/#THU-MAIC/OpenMAIC&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=THU-MAIC/OpenMAIC&type=Date)](https://star-history.dera.page/#THU-MAIC/OpenMAIC&type=Date)
 
 ---
 
