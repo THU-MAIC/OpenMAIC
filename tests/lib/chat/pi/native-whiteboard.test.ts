@@ -86,9 +86,9 @@ describe('Native RuntimeStore whiteboard tools', () => {
   it('rejects Legacy draw arguments that omit expectedLastSeq or add elementId', () => {
     const draw = build(service()).tools.find((tool) => tool.name === 'wb_draw_text')!;
 
-    expect(() =>
-      draw.prepareArguments?.({ content: 'Runtime authority', x: 10, y: 20 }),
-    ).toThrow('Native whiteboard arguments must match the strict schema.');
+    expect(() => draw.prepareArguments?.({ content: 'Runtime authority', x: 10, y: 20 })).toThrow(
+      'Native whiteboard arguments must match the strict schema.',
+    );
     expect(() =>
       draw.prepareArguments?.({
         expectedLastSeq: null,

@@ -221,12 +221,12 @@ describe('Pi director prompt closure routing', () => {
   });
 
   it('lists only the registered Native whiteboard tool names', () => {
-    const system = buildNativeChildPrompt(makeBody(), agents[0], [], [
-      'wb_read',
-      'wb_open',
-      'wb_draw_text',
-      'wb_close',
-    ]);
+    const system = buildNativeChildPrompt(
+      makeBody(),
+      agents[0],
+      [],
+      ['wb_read', 'wb_open', 'wb_draw_text', 'wb_close'],
+    );
 
     expect(system).toContain(
       ['# Available Native tools', '- wb_read', '- wb_open', '- wb_draw_text', '- wb_close'].join(
