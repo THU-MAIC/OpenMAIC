@@ -39,6 +39,7 @@ import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
+import { putAsset, removeAsset } from '@/lib/media/asset-pool';
 import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import { dedupeCourseMaterialFiles } from '@/lib/document/course-materials';
@@ -200,6 +201,9 @@ function HomePage() {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const thumbnailsRef = useRef<Record<string, Slide>>({});
+  // In-flight asset-pool ingests, keyed by course material id, so removing a
+  // file whose pool entry is still being allocated can still release it.
+  const pendingMaterialIngestsRef = useRef(new Map<string, Promise<string>>());
 
   const replaceThumbnails = (slides: Record<string, Slide>) => {
     const previous = thumbnailsRef.current;
@@ -463,6 +467,39 @@ function HomePage() {
     }
   };
 
+  // Ingest a selected file into the asset pool as soon as it is picked, so the
+  // material gets its allocated asset id at upload time (RFC #1153 part 0).
+  // The file still appears in the form immediately; the asset id is patched in
+  // when the pool entry lands. A failure only loses the pool entry — the
+  // source keeps working through the legacy blob-stash byte upload — so it is
+  // logged, not surfaced.
+  const ingestCourseMaterialIntoPool = (addition: SelectedCourseMaterial) => {
+    const ingest = putAsset(addition.file).then((assetId) => {
+      setForm((prev) =>
+        prev.courseMaterials.some((item) => item.id === addition.id)
+          ? {
+              ...prev,
+              courseMaterials: prev.courseMaterials.map((item) =>
+                item.id === addition.id ? { ...item, assetId } : item,
+              ),
+            }
+          : prev,
+      );
+      return assetId;
+    });
+    pendingMaterialIngestsRef.current.set(addition.id, ingest);
+    void ingest
+      .catch((error) => {
+        log.error(
+          `Failed to ingest course material "${addition.name}" into the asset pool:`,
+          error,
+        );
+      })
+      .finally(() => {
+        pendingMaterialIngestsRef.current.delete(addition.id);
+      });
+  };
+
   const addCourseMaterials = (files: File[]) => {
     setForm((prev) => {
       const dedupedFiles = dedupeCourseMaterialFiles(prev.courseMaterials, files);
@@ -477,6 +514,10 @@ function HomePage() {
         order: startOrder + index,
       }));
 
+      for (const addition of additions) {
+        ingestCourseMaterialIntoPool(addition);
+      }
+
       return additions.length > 0
         ? { ...prev, courseMaterials: [...prev.courseMaterials, ...additions] }
         : prev;
@@ -484,6 +525,20 @@ function HomePage() {
   };
 
   const removeCourseMaterial = (id: string) => {
+    const removed = form.courseMaterials.find((item) => item.id === id);
+    // Release the pool entry allocated for this file, mirroring the blob-stash
+    // cleanup: if the ingest is still in flight, release once it lands.
+    const release = removed?.assetId
+      ? Promise.resolve(removed.assetId)
+      : (pendingMaterialIngestsRef.current.get(id) ?? Promise.resolve(undefined));
+    void release
+      .then((assetId) => {
+        if (assetId) return removeAsset(assetId);
+      })
+      .catch((error) => {
+        log.error('Failed to release course material asset pool entry:', error);
+      });
+
     setForm((prev) => ({
       ...prev,
       courseMaterials: prev.courseMaterials
@@ -552,6 +607,9 @@ function HomePage() {
               }),
               order: index + 1,
               storageKey,
+              // The asset id was allocated at upload; new sessions carry it so
+              // a server-backed pool can extract by id instead of re-uploading.
+              assetId: item.assetId,
               providerId: pdfProviderId,
             });
           }

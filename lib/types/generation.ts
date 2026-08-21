@@ -41,6 +41,8 @@ export interface SelectedCourseMaterial {
   lastModified: number;
   type: string;
   order: number;
+  /** Allocated asset-pool id once the file has been ingested (part 0). */
+  assetId?: string;
 }
 
 export interface SessionDocumentSource {
@@ -51,6 +53,11 @@ export interface SessionDocumentSource {
   mimeType?: string;
   order: number;
   storageKey: string;
+  /**
+   * Allocated asset-pool id for this source. New sessions write it; legacy
+   * sessions carry only `storageKey` and keep working (back-compat).
+   */
+  assetId?: string;
   providerId?: string;
 }
 
