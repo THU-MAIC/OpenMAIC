@@ -64,9 +64,11 @@ export interface GenerationToolbarProps {
   onCourseMaterialRemove: (id: string) => void;
   onPdfError: (error: string | null) => void;
   /**
-   * When set, the course-material add/remove affordances are disabled (the
-   * parent freezes the set for the duration of generate-prep). The parent's
-   * handlers are inert under the same flag; this only mirrors it in the UI.
+   * When set, the course-material add/remove affordances, the extractor
+   * Select, and the web-search toggle are all disabled (the parent freezes the
+   * material set and the session inputs for the duration of generate-prep).
+   * The parent's handlers are inert under the same flag; this only mirrors it
+   * in the UI.
    */
   materialsLocked?: boolean;
 }
@@ -292,6 +294,7 @@ export function GenerationToolbar({
               <Select
                 value={pdfProviderId}
                 onValueChange={(v) => setPDFProvider(v as PDFProviderId)}
+                disabled={materialsLocked}
               >
                 <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
                   <SelectValue />
@@ -446,12 +449,14 @@ export function GenerationToolbar({
                   if (!selectedWebSearchAvailable) return;
                   onWebSearchChange(!webSearch);
                 }}
+                disabled={materialsLocked}
                 className={cn(
                   'w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all',
                   webSearch
                     ? 'bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800'
                     : 'border-border hover:bg-muted/50',
                   !selectedWebSearchAvailable && 'opacity-60',
+                  materialsLocked && 'opacity-60 cursor-not-allowed',
                 )}
               >
                 <Globe2

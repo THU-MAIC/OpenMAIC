@@ -526,6 +526,63 @@ describe('POST /api/extract-document (asset-id form)', () => {
     expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
   });
 
+  it('treats a known document provider that cannot extract the MIME as a hint and auto-selects by MIME type', async () => {
+    mocks.resolveServerAsset.mockResolvedValue({
+      status: 'resolved',
+      buffer: Buffer.from('hello from asset'),
+      mimeType: 'text/markdown',
+    });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'notes.md',
+      mimeType: 'text/markdown',
+      // unpdf is PDF-only; the JSON form must mirror multipart's hint
+      // semantics and let the shared path auto-select `plain-text`.
+      providerId: 'unpdf',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json).toMatchObject({
+      success: true,
+      data: {
+        text: 'hello from asset',
+        metadata: {
+          fileName: 'notes.md',
+          mimeType: 'text/markdown',
+          parser: 'plain-text',
+        },
+      },
+    });
+  });
+
+  it('keeps a generic 400 for a media MIME with a provider that cannot extract it', async () => {
+    mocks.resolveServerAsset.mockResolvedValue({
+      status: 'resolved',
+      buffer: Buffer.from('media bytes'),
+      mimeType: 'audio/mpeg',
+    });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'lecture.mp3',
+      mimeType: 'audio/mpeg',
+      // unpdf is a document-only provider; the media branch must stay
+      // pre-blocked with a generic message (never echoing the provider id).
+      providerId: 'unpdf',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+    expect(json.error).not.toContain('unpdf');
+    expect(json.error).not.toContain('lecture.mp3');
+  });
+
   it('returns a generic 500 on the JSON path when the provider extractor rejects', async () => {
     mocks.resolveServerAsset.mockResolvedValue({
       status: 'resolved',

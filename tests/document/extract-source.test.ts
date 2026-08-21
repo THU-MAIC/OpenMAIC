@@ -57,6 +57,28 @@ describe('shouldRetryWithByteUpload', () => {
     );
   });
 
+  it('does not retry a 403 INVALID_URL (the SSRF guard runs the same check on the byte form)', async () => {
+    await expect(shouldRetryWithByteUpload(errorResponse(403, 'INVALID_URL'))).resolves.toBe(false);
+  });
+
+  it('does not retry a 413 (the byte form enforces the same 50 MB cap on the same bytes)', async () => {
+    await expect(shouldRetryWithByteUpload(errorResponse(413, 'INVALID_REQUEST'))).resolves.toBe(
+      false,
+    );
+  });
+
+  it('retries a 401 UNAUTHENTICATED', async () => {
+    await expect(shouldRetryWithByteUpload(errorResponse(401, 'UNAUTHENTICATED'))).resolves.toBe(
+      true,
+    );
+  });
+
+  it('retries a 400 INVALID_REQUEST (it may be JSON-form-specific)', async () => {
+    await expect(shouldRetryWithByteUpload(errorResponse(400, 'INVALID_REQUEST'))).resolves.toBe(
+      true,
+    );
+  });
+
   it('retries a response whose body cannot be parsed', async () => {
     await expect(shouldRetryWithByteUpload(errorResponse(500))).resolves.toBe(true);
   });
@@ -112,6 +134,40 @@ describe('fetchExtractionResponse', () => {
     });
 
     expect(response.status).toBe(422);
+    expect(submitAssetIdForm).toHaveBeenCalledTimes(1);
+    expect(submitByteForm).not.toHaveBeenCalled();
+  });
+
+  it('does not retry with bytes when the asset-id form returns a 403 INVALID_URL (SSRF on the caller baseUrl)', async () => {
+    const submitAssetIdForm = vi.fn().mockResolvedValue(errorResponse(403, 'INVALID_URL'));
+    const submitByteForm = vi.fn().mockResolvedValue(byteResponse());
+    const logWarning = vi.fn();
+
+    const response = await fetchExtractionResponse({
+      serverBacked: true,
+      hasAssetId: true,
+      fetchers: { submitAssetIdForm, submitByteForm },
+      logWarning,
+    });
+
+    expect(response.status).toBe(403);
+    expect(submitAssetIdForm).toHaveBeenCalledTimes(1);
+    expect(submitByteForm).not.toHaveBeenCalled();
+  });
+
+  it('does not retry with bytes when the asset-id form returns a 413 (byte form repeats the same size check)', async () => {
+    const submitAssetIdForm = vi.fn().mockResolvedValue(errorResponse(413, 'INVALID_REQUEST'));
+    const submitByteForm = vi.fn().mockResolvedValue(byteResponse());
+    const logWarning = vi.fn();
+
+    const response = await fetchExtractionResponse({
+      serverBacked: true,
+      hasAssetId: true,
+      fetchers: { submitAssetIdForm, submitByteForm },
+      logWarning,
+    });
+
+    expect(response.status).toBe(413);
     expect(submitAssetIdForm).toHaveBeenCalledTimes(1);
     expect(submitByteForm).not.toHaveBeenCalled();
   });

@@ -39,15 +39,23 @@ export interface FetchExtractionResponseOptions {
  * upload fallback.
  *
  * The asset-id form is free to retry only when the failure provably happened
- * BEFORE extraction ran: a 404/401/503/413, a store-unavailable 500, or a
- * body that cannot be parsed. A `PARSE_FAILED` response (422 or 500) means the
+ * BEFORE extraction ran and the byte form could succeed: a 404/401/503, a
+ * store-unavailable 500, a body that cannot be parsed, or a 400 (a 400 may be
+ * JSON-form-specific). A `PARSE_FAILED` response (422 or 500) means the
  * extractor already ran and deterministically failed — retrying would re-run a
  * paid external extraction and bill the provider twice for the same input — so
- * that response must be surfaced to the user instead. Pure and testable: it
- * only inspects the response and never performs the fallback itself.
+ * that response must be surfaced to the user instead. Two deterministic
+ * pre-extraction failures are also surfaced without a retry because the byte
+ * form repeats them identically: a 403 `INVALID_URL` (the SSRF guard rejects
+ * the caller's baseUrl on both forms) and a 413 (the byte form enforces the
+ * same 50 MB cap on the same bytes). Pure and testable: it only inspects the
+ * response and never performs the fallback itself.
  */
 export async function shouldRetryWithByteUpload(response: Response): Promise<boolean> {
   if (response.ok) return false;
+  // A 413 repeats identically on the byte form (the same 50 MB cap runs on the
+  // same bytes), so it never retries — even if the body does not parse.
+  if (response.status === 413) return false;
   let body: { errorCode?: unknown } | null = null;
   try {
     body = (await response.clone().json()) as { errorCode?: unknown };
@@ -56,7 +64,11 @@ export async function shouldRetryWithByteUpload(response: Response): Promise<boo
     // treat the failure as pre-extraction and retry with the bytes.
     return true;
   }
-  return body?.errorCode !== 'PARSE_FAILED';
+  const errorCode = body?.errorCode;
+  // A 403 INVALID_URL is the SSRF guard rejecting the caller's baseUrl; the
+  // byte form runs the same check on the same baseUrl, so it fails identically.
+  if (response.status === 403 && errorCode === 'INVALID_URL') return false;
+  return errorCode !== 'PARSE_FAILED';
 }
 
 /**

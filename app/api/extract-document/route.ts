@@ -91,12 +91,14 @@ function supportsMimeType(
 
 /**
  * JSON-path-only pre-validation of a requested provider, run BEFORE the shared
- * extraction. Both checks answer a 400 with a generic static message that
- * never echoes the caller's provider id or MIME type, making the shared
- * path's echoing 400s unreachable from the asset-id form: the provider must
- * exist in the registry for the effective MIME type's path (media vs
- * document), and it must support the effective MIME type. The multipart byte
- * form is untouched and keeps its behavior exactly.
+ * extraction. The media branch stays pre-blocked, and so does an unknown
+ * document provider: both answer a 400 with a generic static message that
+ * never echoes the caller's provider id or MIME type, making the shared path's
+ * echoing 400s unreachable from the asset-id form. A known document provider
+ * that does not support the effective MIME type is NOT pre-blocked: it is a
+ * hint, exactly like multipart, and the shared `runExtraction` auto-selects a
+ * compatible provider (that path does not echo caller input). The multipart
+ * byte form is untouched and keeps its behavior exactly.
  */
 function validateJsonPathProvider(
   providerId: string | undefined,
@@ -114,8 +116,10 @@ function validateJsonPathProvider(
     }
     return null;
   }
-  const provider = getDocumentExtractorProvider(providerId);
-  if (!provider || !supportsMimeType(provider, mimeType)) {
+  // Document MIME: reject only a provider that does not exist in the document
+  // registry (the shared path would echo its id). A known provider that does
+  // not support the MIME passes through so `runExtraction` auto-selects.
+  if (!getDocumentExtractorProvider(providerId)) {
     return apiError(
       'INVALID_REQUEST',
       400,
@@ -548,9 +552,11 @@ export async function POST(req: NextRequest) {
       if (!mimeType) {
         return apiError('INVALID_REQUEST', 400, 'Unsupported course material type.');
       }
-      // JSON-path-only pre-validation: the requested provider must exist and
-      // support the effective MIME type. The shared path's echoing 400s for
-      // these cases are unreachable from the asset-id form (see
+      // JSON-path-only pre-validation: an unknown provider (or a provider that
+      // cannot handle a media MIME) is pre-blocked with a generic 400 — the
+      // shared path's echoing 400s for these cases are unreachable from the
+      // asset-id form. A known document provider that does not support the MIME
+      // is passed through as a hint, exactly like multipart (see
       // `validateJsonPathProvider`); multipart keeps its behavior exactly.
       const providerValidationError = validateJsonPathProvider(body.providerId, mimeType);
       if (providerValidationError) return providerValidationError;

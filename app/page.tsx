@@ -602,11 +602,27 @@ function HomePage() {
 
     setError(null);
 
-    // The material list is frozen for the duration of prep: `preparingGenerate`
-    // makes add/remove inert and disables the toolbar affordances, so the set
-    // cannot change under the session build below. Capture it at click time and
-    // build the session from this snapshot, never from live form state.
+    // The material list and the extractor provider config are frozen for the
+    // duration of prep: `preparingGenerate` makes add/remove inert and
+    // disables the toolbar affordances (including the extractor Select and the
+    // web-search toggle), so neither can change under the session build below.
+    // Capture both at click time and build the session from this snapshot,
+    // never from live form state or live store state.
     const frozenMaterials = [...form.courseMaterials].sort((a, b) => a.order - b.order);
+    const settingsSnapshot = useSettingsStore.getState();
+    const frozenPdfProviderId = settingsSnapshot.pdfProviderId;
+    const frozenPdfProviderConfig = settingsSnapshot.pdfProvidersConfig?.[
+      settingsSnapshot.pdfProviderId
+    ]
+      ? {
+          apiKey: settingsSnapshot.pdfProvidersConfig[settingsSnapshot.pdfProviderId].apiKey,
+          baseUrl: settingsSnapshot.pdfProvidersConfig[settingsSnapshot.pdfProviderId].baseUrl,
+          accessKeyId:
+            settingsSnapshot.pdfProvidersConfig[settingsSnapshot.pdfProviderId].accessKeyId,
+          accessKeySecret:
+            settingsSnapshot.pdfProvidersConfig[settingsSnapshot.pdfProviderId].accessKeySecret,
+        }
+      : undefined;
 
     // Flip the generating UI state BEFORE the drain so the click visibly does
     // something even when an ingest stalls.
@@ -661,18 +677,11 @@ function HomePage() {
         | { apiKey?: string; baseUrl?: string; accessKeyId?: string; accessKeySecret?: string }
         | undefined;
 
-      if (form.courseMaterials.length > 0) {
-        const settings = useSettingsStore.getState();
-        pdfProviderId = settings.pdfProviderId;
-        const providerCfg = settings.pdfProvidersConfig?.[settings.pdfProviderId];
-        if (providerCfg) {
-          pdfProviderConfig = {
-            apiKey: providerCfg.apiKey,
-            baseUrl: providerCfg.baseUrl,
-            accessKeyId: providerCfg.accessKeyId,
-            accessKeySecret: providerCfg.accessKeySecret,
-          };
-        }
+      if (frozenMaterials.length > 0) {
+        // The session is built from the click-time snapshot (frozen above),
+        // never from live store state.
+        pdfProviderId = frozenPdfProviderId;
+        pdfProviderConfig = frozenPdfProviderConfig;
 
         const storedDocumentKeys: string[] = [];
         try {
