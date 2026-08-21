@@ -43,6 +43,7 @@ import { putAsset, removeAsset } from '@/lib/media/asset-pool';
 import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import { dedupeCourseMaterialFiles } from '@/lib/document/course-materials';
+import { awaitPendingIngests, resolvedAssetIdForIngest } from '@/lib/document/extract-source';
 import type {
   SelectedCourseMaterial,
   SessionDocumentSource,
@@ -473,6 +474,11 @@ function HomePage() {
   // when the pool entry lands. A failure only loses the pool entry — the
   // source keeps working through the legacy blob-stash byte upload — so it is
   // logged, not surfaced.
+  //
+  // A tab closing mid-ingest can still orphan a pool entry: the browser gives
+  // no reliable release hook once the page tears down. Accepted — the
+  // material-library milestone of RFC #1153 brings visibility and management
+  // for such entries.
   const ingestCourseMaterialIntoPool = (addition: SelectedCourseMaterial) => {
     const ingest = putAsset(addition.file).then((assetId) => {
       setForm((prev) =>
@@ -487,40 +493,49 @@ function HomePage() {
       );
       return assetId;
     });
+    // The pending entry is the durable release handle for this pool entry and
+    // is intentionally NOT deleted when the ingest settles: deleting it inside
+    // the ingest's own settlement would race the state patch above (React
+    // commits it after this promise resolves), orphaning the entry if the user
+    // removes the file in that window. Only the removal path deletes it (see
+    // removeCourseMaterial), so an entry is always retrievable until the id
+    // has a durable holder. Entries for never-removed sources stay until the
+    // page unmounts — bounded by the files picked in one session.
     pendingMaterialIngestsRef.current.set(addition.id, ingest);
-    void ingest
-      .catch((error) => {
-        log.error(
-          `Failed to ingest course material "${addition.name}" into the asset pool:`,
-          error,
-        );
-      })
-      .finally(() => {
-        pendingMaterialIngestsRef.current.delete(addition.id);
-      });
+    void ingest.catch((error) => {
+      log.error(`Failed to ingest course material "${addition.name}" into the asset pool:`, error);
+    });
   };
 
   const addCourseMaterials = (files: File[]) => {
+    // Compute the additions before touching state: the ingest loop must not
+    // run inside the setForm updater, which React may invoke more than once —
+    // each replay would putAsset again and orphan an allocated id.
+    const dedupedFiles = dedupeCourseMaterialFiles(form.courseMaterials, files);
+    const startOrder = form.courseMaterials.length + 1;
+    const additions = dedupedFiles.map((file, index) => ({
+      id: nanoid(8),
+      file,
+      name: file.name,
+      size: file.size,
+      lastModified: file.lastModified,
+      type: file.type,
+      order: startOrder + index,
+    }));
+
+    for (const addition of additions) {
+      ingestCourseMaterialIntoPool(addition);
+    }
+
+    if (additions.length === 0) return;
     setForm((prev) => {
-      const dedupedFiles = dedupeCourseMaterialFiles(prev.courseMaterials, files);
-      const startOrder = prev.courseMaterials.length + 1;
-      const additions = dedupedFiles.map((file, index) => ({
-        id: nanoid(8),
-        file,
-        name: file.name,
-        size: file.size,
-        lastModified: file.lastModified,
-        type: file.type,
-        order: startOrder + index,
-      }));
-
-      for (const addition of additions) {
-        ingestCourseMaterialIntoPool(addition);
-      }
-
-      return additions.length > 0
-        ? { ...prev, courseMaterials: [...prev.courseMaterials, ...additions] }
-        : prev;
+      // Pure updater: drop any addition the latest state already carries (a
+      // replayed or superseded update), then append the rest.
+      const missing = additions.filter(
+        (addition) => !prev.courseMaterials.some((item) => item.id === addition.id),
+      );
+      if (missing.length === 0) return prev;
+      return { ...prev, courseMaterials: [...prev.courseMaterials, ...missing] };
     });
   };
 
@@ -537,6 +552,14 @@ function HomePage() {
       })
       .catch((error) => {
         log.error('Failed to release course material asset pool entry:', error);
+      })
+      .finally(() => {
+        // This removal path is the sole consumer of the pending entry: the
+        // pool entry has been released (or the ingest itself failed, leaving
+        // nothing to release), so the entry can go. Deleting it here — rather
+        // than in the ingest's own settlement — keeps it retrievable until
+        // the id has a durable holder.
+        pendingMaterialIngestsRef.current.delete(id);
       });
 
     setForm((prev) => ({
@@ -560,6 +583,13 @@ function HomePage() {
     setError(null);
 
     try {
+      // Await any upload-time ingests still in flight BEFORE building the
+      // session, so a resolved asset id lands in the session instead of being
+      // dropped when this page unmounts. A rejected ingest is fine: that
+      // source proceeds with its storageKey and the legacy byte path. No
+      // arbitrary timeout is added — the PUT is small compared to generation.
+      await awaitPendingIngests(pendingMaterialIngestsRef.current);
+
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
         requirement: form.requirement,
@@ -596,6 +626,14 @@ function HomePage() {
           for (const [index, item] of orderedMaterials.entries()) {
             const storageKey = await storeDocumentBlob(item.file);
             storedDocumentKeys.push(storageKey);
+            // The awaited ingests patched their asset ids into form state via
+            // setForm, which this closure may not reflect yet; read the settled
+            // value from the pending map so a just-resolved id still lands in
+            // the session regardless of React commit timing.
+            const settledAssetId = await resolvedAssetIdForIngest(
+              pendingMaterialIngestsRef.current,
+              item.id,
+            );
             documentSources.push({
               id: item.id,
               name: item.name,
@@ -609,7 +647,7 @@ function HomePage() {
               storageKey,
               // The asset id was allocated at upload; new sessions carry it so
               // a server-backed pool can extract by id instead of re-uploading.
-              assetId: item.assetId,
+              assetId: item.assetId ?? settledAssetId,
               providerId: pdfProviderId,
             });
           }

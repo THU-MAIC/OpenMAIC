@@ -18,7 +18,10 @@ import {
 import type { MediaArtifact } from '@/lib/document';
 import { normalizeDocumentMimeType, SUPPORTED_MEDIA_MIME_TYPES } from '@/lib/document/mime';
 import { createLogger } from '@/lib/logger';
-import { resolveServerAsset } from '@/lib/persistence/resolve-server-asset';
+import {
+  resolveServerAsset,
+  type ServerAssetResolution,
+} from '@/lib/persistence/resolve-server-asset';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
@@ -57,6 +60,17 @@ interface AssetIdExtractRequest extends ExtractRequestConfig {
   fileName?: string;
   mimeType?: string;
 }
+
+/** String-only fields the JSON path accepts; wrong types are a 400, not a 500. */
+const ASSET_ID_EXTRACT_STRING_FIELDS = [
+  'fileName',
+  'mimeType',
+  'providerId',
+  'apiKey',
+  'baseUrl',
+  'accessKeyId',
+  'accessKeySecret',
+] as const;
 
 /** Mutable logging context shared with the shared extraction helper. */
 interface ExtractLogState {
@@ -402,11 +416,33 @@ export async function POST(req: NextRequest) {
         return apiError('INVALID_REQUEST', 400, 'Invalid JSON body for asset-id extraction.');
       }
 
-      if (!body.assetId) {
+      // Validate the body's field types before use: a wrong-typed field is a
+      // malformed request, not a server error. The 400 stays generic — never
+      // echo the offending value back to the caller.
+      if (typeof body.assetId !== 'string' || body.assetId.length === 0) {
         return apiError('MISSING_REQUIRED_FIELD', 400, 'No asset id provided');
       }
+      for (const field of ASSET_ID_EXTRACT_STRING_FIELDS) {
+        const value = (body as unknown as Record<string, unknown>)[field];
+        if (value !== undefined && typeof value !== 'string') {
+          return apiError('INVALID_REQUEST', 400, 'Invalid request body for asset-id extraction');
+        }
+      }
 
-      const resolution = await resolveServerAsset(body.assetId, req.headers);
+      let resolution: ServerAssetResolution;
+      try {
+        resolution = await resolveServerAsset(body.assetId, req.headers);
+      } catch (error) {
+        // A failure from the server asset store (DB outage, registry failure)
+        // must not reach the client as raw `error.message`; log the real error
+        // server-side only and answer a fixed generic 500.
+        log.error('Failed to resolve course material asset from the server store:', error);
+        return apiError(
+          'INTERNAL_ERROR',
+          500,
+          'The server asset store is unavailable. Please try again later.',
+        );
+      }
       if (resolution.status === 'unconfigured') {
         return apiError(
           'INVALID_REQUEST',
@@ -425,7 +461,7 @@ export async function POST(req: NextRequest) {
         return apiError(
           'ASSET_NOT_FOUND',
           404,
-          `No course material asset found for asset id "${body.assetId}".`,
+          'No course material asset was found for the requested asset id.',
         );
       }
 
@@ -439,11 +475,7 @@ export async function POST(req: NextRequest) {
         fileName,
       });
       if (!mimeType) {
-        return apiError(
-          'INVALID_REQUEST',
-          400,
-          `Unsupported course material type for "${fileName}"`,
-        );
+        return apiError('INVALID_REQUEST', 400, 'Unsupported course material type.');
       }
       if (resolution.buffer.length > MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES) {
         return apiError(

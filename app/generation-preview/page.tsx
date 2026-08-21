@@ -33,6 +33,7 @@ import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { isAssetPoolServerBacked } from '@/lib/media/asset-pool-config';
 import { getPersistenceRequestHeaders } from '@/lib/persistence/bootstrap';
 import { resolveSessionDocumentSources } from '@/lib/document/session-sources';
+import { fetchExtractionResponse } from '@/lib/document/extract-source';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import {
   MAX_DOCUMENT_BUNDLE_FILES,
@@ -356,77 +357,89 @@ function GenerationPreviewContent() {
             ).providerConfig;
             const providerConfig = currentSession.pdfProviderConfig || legacySourceConfig;
 
-            let parseResponse: Response;
-            if (serverBacked && source.assetId) {
-              // Server-backed pool: extract by the asset id allocated at
-              // upload. The server resolves the original bytes from the server
-              // asset store, so no bytes cross the wire.
-              const persistenceHeaders = await getPersistenceRequestHeaders();
-              parseResponse = await fetch('/api/extract-document', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...persistenceHeaders },
-                body: JSON.stringify({
-                  assetId: source.assetId,
-                  fileName: source.name,
-                  mimeType: source.mimeType,
-                  providerId: providerId || undefined,
-                  apiKey: providerConfig?.apiKey?.trim() ? providerConfig.apiKey : undefined,
-                  baseUrl: providerConfig?.baseUrl?.trim() ? providerConfig.baseUrl : undefined,
+            // Per-source form selection: asset-id JSON first when the pool is
+            // server-backed and the source has an id, with a per-source
+            // fallback to the legacy byte upload if that form fails for any
+            // reason (see `fetchExtractionResponse`).
+            const parseResponse = await fetchExtractionResponse({
+              serverBacked,
+              hasAssetId: Boolean(source.assetId),
+              logWarning: (message, ...args) => log.warn(message, ...args),
+              fetchers: {
+                submitAssetIdForm: async () => {
+                  // Server-backed pool: extract by the asset id allocated at
+                  // upload. The server resolves the original bytes from the
+                  // server asset store, so no bytes cross the wire.
+                  const persistenceHeaders = await getPersistenceRequestHeaders();
+                  return fetch('/api/extract-document', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...persistenceHeaders },
+                    body: JSON.stringify({
+                      assetId: source.assetId,
+                      fileName: source.name,
+                      mimeType: source.mimeType,
+                      providerId: providerId || undefined,
+                      apiKey: providerConfig?.apiKey?.trim() ? providerConfig.apiKey : undefined,
+                      baseUrl: providerConfig?.baseUrl?.trim() ? providerConfig.baseUrl : undefined,
+                      // AliDocMind uses AK/SK instead of a single apiKey.
+                      accessKeyId: providerConfig?.accessKeyId?.trim()
+                        ? providerConfig.accessKeyId
+                        : undefined,
+                      accessKeySecret: providerConfig?.accessKeySecret?.trim()
+                        ? providerConfig.accessKeySecret
+                        : undefined,
+                    }),
+                    signal,
+                  });
+                },
+                submitByteForm: async () => {
+                  // Browser-backed pool (or a legacy storageKey-only session,
+                  // or a fallback after a failed asset-id form): the server
+                  // cannot resolve a browser-side asset, so upload the bytes
+                  // exactly as before.
+                  const documentBlob = await loadDocumentBlob(source.storageKey);
+                  if (!documentBlob) {
+                    throw new Error(t('generation.courseMaterialLoadFailed'));
+                  }
+
+                  if (!(documentBlob instanceof Blob) || documentBlob.size === 0) {
+                    log.error('Invalid course material blob:', {
+                      source: source.name,
+                      type: typeof documentBlob,
+                      size: documentBlob instanceof Blob ? documentBlob.size : 'N/A',
+                    });
+                    throw new Error(t('generation.courseMaterialLoadFailed'));
+                  }
+
+                  const documentFile = new File([documentBlob], source.name || 'document.pdf', {
+                    type: source.mimeType || documentBlob.type || 'application/pdf',
+                  });
+
+                  const parseFormData = new FormData();
+                  parseFormData.append('file', documentFile);
+                  if (providerId) parseFormData.append('providerId', providerId);
+                  if (providerConfig?.apiKey?.trim()) {
+                    parseFormData.append('apiKey', providerConfig.apiKey);
+                  }
+                  if (providerConfig?.baseUrl?.trim()) {
+                    parseFormData.append('baseUrl', providerConfig.baseUrl);
+                  }
                   // AliDocMind uses AK/SK instead of a single apiKey.
-                  accessKeyId: providerConfig?.accessKeyId?.trim()
-                    ? providerConfig.accessKeyId
-                    : undefined,
-                  accessKeySecret: providerConfig?.accessKeySecret?.trim()
-                    ? providerConfig.accessKeySecret
-                    : undefined,
-                }),
-                signal,
-              });
-            } else {
-              // Browser-backed pool (or a legacy storageKey-only session): the
-              // server cannot resolve a browser-side asset, so upload the
-              // bytes exactly as before.
-              const documentBlob = await loadDocumentBlob(source.storageKey);
-              if (!documentBlob) {
-                throw new Error(t('generation.courseMaterialLoadFailed'));
-              }
+                  if (providerConfig?.accessKeyId?.trim()) {
+                    parseFormData.append('accessKeyId', providerConfig.accessKeyId);
+                  }
+                  if (providerConfig?.accessKeySecret?.trim()) {
+                    parseFormData.append('accessKeySecret', providerConfig.accessKeySecret);
+                  }
 
-              if (!(documentBlob instanceof Blob) || documentBlob.size === 0) {
-                log.error('Invalid course material blob:', {
-                  source: source.name,
-                  type: typeof documentBlob,
-                  size: documentBlob instanceof Blob ? documentBlob.size : 'N/A',
-                });
-                throw new Error(t('generation.courseMaterialLoadFailed'));
-              }
-
-              const documentFile = new File([documentBlob], source.name || 'document.pdf', {
-                type: source.mimeType || documentBlob.type || 'application/pdf',
-              });
-
-              const parseFormData = new FormData();
-              parseFormData.append('file', documentFile);
-              if (providerId) parseFormData.append('providerId', providerId);
-              if (providerConfig?.apiKey?.trim()) {
-                parseFormData.append('apiKey', providerConfig.apiKey);
-              }
-              if (providerConfig?.baseUrl?.trim()) {
-                parseFormData.append('baseUrl', providerConfig.baseUrl);
-              }
-              // AliDocMind uses AK/SK instead of a single apiKey.
-              if (providerConfig?.accessKeyId?.trim()) {
-                parseFormData.append('accessKeyId', providerConfig.accessKeyId);
-              }
-              if (providerConfig?.accessKeySecret?.trim()) {
-                parseFormData.append('accessKeySecret', providerConfig.accessKeySecret);
-              }
-
-              parseResponse = await fetch('/api/extract-document', {
-                method: 'POST',
-                body: parseFormData,
-                signal,
-              });
-            }
+                  return fetch('/api/extract-document', {
+                    method: 'POST',
+                    body: parseFormData,
+                    signal,
+                  });
+                },
+              },
+            });
 
             if (!parseResponse.ok) {
               const errorData = await parseResponse.json();

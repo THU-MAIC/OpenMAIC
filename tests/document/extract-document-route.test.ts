@@ -222,13 +222,7 @@ describe('POST /api/extract-document', () => {
   });
 });
 
-async function postExtractDocumentByAssetId(input: {
-  assetId?: string;
-  fileName?: string;
-  mimeType?: string;
-  providerId?: string;
-  apiKey?: string;
-}) {
+async function postExtractDocumentByAssetId(input: Record<string, unknown>) {
   const { POST } = await import('@/app/api/extract-document/route');
   const request = new Request('http://localhost/api/extract-document', {
     method: 'POST',
@@ -342,7 +336,139 @@ describe('POST /api/extract-document (asset-id form)', () => {
       success: false,
       errorCode: 'ASSET_NOT_FOUND',
     });
-    expect(json.error).toContain('ast_missing');
+    // The response must stay generic — the caller-controlled asset id is not
+    // echoed back into the body.
+    expect(json.error).toContain('No course material asset');
+    expect(json.error).not.toContain('ast_missing');
+  });
+
+  it('returns 400 when the server asset store fails (generic 500 message, real error logged only)', async () => {
+    mocks.resolveServerAsset.mockRejectedValue(new Error('db connection refused'));
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'notes.txt',
+      mimeType: 'text/plain',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INTERNAL_ERROR',
+      error: 'The server asset store is unavailable. Please try again later.',
+    });
+    expect(json.error).not.toContain('db connection refused');
+  });
+
+  it('returns 400 for a wrong-typed asset id instead of 500', async () => {
+    const res = await postExtractDocumentByAssetId({
+      assetId: 123,
+      fileName: 'notes.txt',
+      mimeType: 'text/plain',
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: 'MISSING_REQUIRED_FIELD',
+    });
+    expect(mocks.resolveServerAsset).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for a wrong-typed mimeType instead of 500', async () => {
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'notes.txt',
+      mimeType: 42,
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+    expect(mocks.resolveServerAsset).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for a wrong-typed fileName instead of 500', async () => {
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: { not: 'a string' },
+      mimeType: 'text/plain',
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+    expect(mocks.resolveServerAsset).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for a wrong-typed provider config field instead of 500', async () => {
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'notes.txt',
+      mimeType: 'text/plain',
+      apiKey: ['not', 'a', 'string'],
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+    expect(mocks.resolveServerAsset).not.toHaveBeenCalled();
+  });
+
+  it('applies the SSRF guard to the JSON path baseUrl in production mode', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('ALLOW_LOCAL_NETWORKS', 'false');
+    mocks.resolveServerAsset.mockResolvedValue({
+      status: 'resolved',
+      buffer: Buffer.from('%PDF-1.4'),
+      mimeType: 'application/pdf',
+    });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'lesson.pdf',
+      mimeType: 'application/pdf',
+      providerId: 'mineru-cloud',
+      baseUrl: 'http://169.254.169.254/latest/meta-data/',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_URL',
+    });
+    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+  });
+
+  it('returns 413 when the resolved server asset exceeds the 50 MB cap', async () => {
+    mocks.resolveServerAsset.mockResolvedValue({
+      status: 'resolved',
+      buffer: Buffer.alloc(51 * 1024 * 1024),
+      mimeType: 'application/pdf',
+    });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_huge',
+      fileName: 'lesson.pdf',
+      mimeType: 'application/pdf',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(413);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+    expect(json.error).toContain('Maximum size is 50MB');
+    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
   });
 
   it('returns 503 when server persistence is not configured', async () => {
