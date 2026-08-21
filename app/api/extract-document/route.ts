@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import {
   isServerConfiguredProvider,
   resolveManagedAliDocMindCredentials,
@@ -89,6 +89,42 @@ function supportsMimeType(
   return provider.supportedMimeTypes.map((type) => type.toLowerCase()).includes(mimeType);
 }
 
+/**
+ * JSON-path-only pre-validation of a requested provider, run BEFORE the shared
+ * extraction. Both checks answer a 400 with a generic static message that
+ * never echoes the caller's provider id or MIME type, making the shared
+ * path's echoing 400s unreachable from the asset-id form: the provider must
+ * exist in the registry for the effective MIME type's path (media vs
+ * document), and it must support the effective MIME type. The multipart byte
+ * form is untouched and keeps its behavior exactly.
+ */
+function validateJsonPathProvider(
+  providerId: string | undefined,
+  mimeType: string,
+): NextResponse | null {
+  if (!providerId) return null;
+  if (SUPPORTED_MEDIA_MIME_TYPES.includes(mimeType)) {
+    const mediaProvider = getMediaExtractorProvider(providerId);
+    if (!mediaProvider || !mediaProvider.supportedMimeTypes.includes(mimeType)) {
+      return apiError(
+        'INVALID_REQUEST',
+        400,
+        'The requested extractor cannot process this course material.',
+      );
+    }
+    return null;
+  }
+  const provider = getDocumentExtractorProvider(providerId);
+  if (!provider || !supportsMimeType(provider, mimeType)) {
+    return apiError(
+      'INVALID_REQUEST',
+      400,
+      'The requested document extractor cannot process this course material.',
+    );
+  }
+  return null;
+}
+
 function isSelfHostedMinerUProvider(
   providerId: string,
 ): providerId is Extract<PDFProviderId, 'mineru'> {
@@ -161,11 +197,15 @@ function formatTimestamp(ms: number): string {
 /**
  * Run extractor selection and extraction over a normalized input. Shared by
  * the multipart byte form and the asset-id form so the two paths cannot drift.
+ * `isAssetIdForm` only switches the handful of messages that must stay generic
+ * on the asset-id form (no caller-controlled text echoed); multipart keeps its
+ * exact current messages.
  */
 async function runExtraction(
   source: ExtractSource,
   requestConfig: ExtractRequestConfig,
   logState: ExtractLogState,
+  isAssetIdForm: boolean,
 ) {
   const { fileName, fileSize, mimeType, buffer } = source;
 
@@ -223,12 +263,15 @@ async function runExtraction(
     const mediaText = mediaArtifactToText(mediaArtifact);
     // An artifact with no transcript, keyframes, or synopsis carries no usable
     // content. Returning empty text as 200 would silently generate from
-    // nothing — surface a parse error instead.
+    // nothing — surface a parse error instead. The asset-id form uses a
+    // generic static message so the caller-controlled file name is not echoed.
     if (!mediaText.trim()) {
       return apiError(
         'PARSE_FAILED',
         422,
-        `No transcript, keyframes, or synopsis could be extracted from "${fileName}".`,
+        isAssetIdForm
+          ? 'No transcript, keyframes, or synopsis could be extracted from this course material.'
+          : `No transcript, keyframes, or synopsis could be extracted from "${fileName}".`,
       );
     }
     const mediaResult: ParsedPdfContent = {
@@ -353,6 +396,10 @@ async function runExtraction(
 
 export async function POST(req: NextRequest) {
   const logState: ExtractLogState = {};
+  // Whether this request took the asset-id (JSON) form. The multipart byte
+  // form's observable behavior is frozen; a few JSON-path-only responses use
+  // this to stay generic (no caller input or raw extractor text echoed).
+  let isAssetIdForm = false;
   try {
     const contentType = req.headers.get('content-type') || '';
     let source: ExtractSource;
@@ -409,11 +456,20 @@ export async function POST(req: NextRequest) {
       // the server resolves the bytes from the server asset store. Only used
       // when the deployment's pool is server-backed; the browser-backed
       // client never sends this shape.
+      isAssetIdForm = true;
       let body: AssetIdExtractRequest;
       try {
         body = (await req.json()) as AssetIdExtractRequest;
       } catch {
         return apiError('INVALID_REQUEST', 400, 'Invalid JSON body for asset-id extraction.');
+      }
+
+      // A parsed JSON body that is not a plain object (null, array, string,
+      // number) must not fall through to field access — that would throw a raw
+      // TypeError before the first guard. It is a malformed request, not a
+      // server error; the message stays generic and static.
+      if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+        return apiError('INVALID_REQUEST', 400, 'Invalid request body for asset-id extraction');
       }
 
       // Validate the body's field types before use: a wrong-typed field is a
@@ -431,7 +487,11 @@ export async function POST(req: NextRequest) {
 
       let resolution: ServerAssetResolution;
       try {
-        resolution = await resolveServerAsset(body.assetId, req.headers);
+        resolution = await resolveServerAsset(
+          body.assetId,
+          req.headers,
+          MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES,
+        );
       } catch (error) {
         // A failure from the server asset store (DB outage, registry failure)
         // must not reach the client as raw `error.message`; log the real error
@@ -464,6 +524,17 @@ export async function POST(req: NextRequest) {
           'No course material asset was found for the requested asset id.',
         );
       }
+      if (resolution.status === 'too_large') {
+        // The asset store reported the recorded byte length above the cap
+        // before materializing the bytes; reject without ever reading them.
+        return apiError(
+          'INVALID_REQUEST',
+          413,
+          `Course material file is too large. Maximum size is ${Math.floor(
+            MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES / 1024 / 1024,
+          )}MB.`,
+        );
+      }
 
       // The client carries the original display name and normalized MIME type
       // in the session; the asset store records only the blob MIME type, so
@@ -477,6 +548,12 @@ export async function POST(req: NextRequest) {
       if (!mimeType) {
         return apiError('INVALID_REQUEST', 400, 'Unsupported course material type.');
       }
+      // JSON-path-only pre-validation: the requested provider must exist and
+      // support the effective MIME type. The shared path's echoing 400s for
+      // these cases are unreachable from the asset-id form (see
+      // `validateJsonPathProvider`); multipart keeps its behavior exactly.
+      const providerValidationError = validateJsonPathProvider(body.providerId, mimeType);
+      if (providerValidationError) return providerValidationError;
       if (resolution.buffer.length > MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES) {
         return apiError(
           'INVALID_REQUEST',
@@ -509,12 +586,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return await runExtraction(source, requestConfig, logState);
+    return await runExtraction(source, requestConfig, logState, isAssetIdForm);
   } catch (error) {
     log.error(
-      `Document extraction failed [provider=${logState.resolvedProviderId ?? 'unknown'}, file="${logState.fileName ?? 'unknown'}"]:`,
+      `Document extraction failed [provider=${logState.resolvedProviderId ?? 'unknown'}, file="${sanitizeLogValue(
+        logState.fileName ?? 'unknown',
+      )}"]:`,
       error,
     );
+    if (isAssetIdForm) {
+      // The asset-id form must not leak raw extractor internals to the caller
+      // (a provider outage, a malformed upstream response, …); answer a fixed
+      // generic message. Multipart keeps its current behavior exactly.
+      return apiError(
+        'PARSE_FAILED',
+        500,
+        'The course material could not be parsed. Please try again later.',
+      );
+    }
     return apiError('PARSE_FAILED', 500, error instanceof Error ? error.message : 'Unknown error');
   }
+}
+
+/** Strip line-breaking control characters from caller-controlled log values. */
+function sanitizeLogValue(value: string): string {
+  return value.replaceAll('\r', ' ').replaceAll('\n', ' ');
 }

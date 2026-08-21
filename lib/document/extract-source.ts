@@ -35,12 +35,39 @@ export interface FetchExtractionResponseOptions {
 }
 
 /**
+ * Whether a non-ok asset-id extraction response should trigger the legacy byte
+ * upload fallback.
+ *
+ * The asset-id form is free to retry only when the failure provably happened
+ * BEFORE extraction ran: a 404/401/503/413, a store-unavailable 500, or a
+ * body that cannot be parsed. A `PARSE_FAILED` response (422 or 500) means the
+ * extractor already ran and deterministically failed — retrying would re-run a
+ * paid external extraction and bill the provider twice for the same input — so
+ * that response must be surfaced to the user instead. Pure and testable: it
+ * only inspects the response and never performs the fallback itself.
+ */
+export async function shouldRetryWithByteUpload(response: Response): Promise<boolean> {
+  if (response.ok) return false;
+  let body: { errorCode?: unknown } | null = null;
+  try {
+    body = (await response.clone().json()) as { errorCode?: unknown };
+  } catch {
+    // Unparseable body: there is no error code to prove extraction ran, so
+    // treat the failure as pre-extraction and retry with the bytes.
+    return true;
+  }
+  return body?.errorCode !== 'PARSE_FAILED';
+}
+
+/**
  * Per-source decision between the asset-id JSON form and the legacy byte form.
  *
  * When a server-backed pool allocated an asset id for this source, try the
- * asset-id form first. If it fails for ANY reason — a non-ok response or a
- * thrown network error — log the failure and retry this source via the legacy
- * multipart byte upload before giving up. Only when the byte form is also
+ * asset-id form first. A pre-extraction failure (see
+ * `shouldRetryWithByteUpload`) or a thrown network error logs the failure and
+ * retries this source via the legacy multipart byte upload before giving up;
+ * a `PARSE_FAILED` response is surfaced as-is because the extractor already
+ * ran and the retry would re-bill it. Only when the byte form is also
  * unavailable (its fetcher throws because no bytes exist) does the caller
  * surface an error, so the user is only shown a failure once both forms have
  * failed. Browser-backed pools (or sources without an asset id) go straight to
@@ -53,9 +80,18 @@ export async function fetchExtractionResponse(
     try {
       const response = await options.fetchers.submitAssetIdForm();
       if (response.ok) return response;
+      if (await shouldRetryWithByteUpload(response)) {
+        options.logWarning(
+          `Asset-id extraction returned ${response.status}; falling back to byte upload.`,
+        );
+        return options.fetchers.submitByteForm();
+      }
+      // PARSE_FAILED: the extractor already ran and will fail identically on a
+      // byte retry, re-billing the provider. Surface the response unchanged.
       options.logWarning(
-        `Asset-id extraction returned ${response.status}; falling back to byte upload.`,
+        `Asset-id extraction returned ${response.status} PARSE_FAILED; surfacing the error without a byte retry.`,
       );
+      return response;
     } catch (error) {
       options.logWarning('Asset-id extraction failed; falling back to byte upload:', error);
     }
@@ -67,19 +103,79 @@ export async function fetchExtractionResponse(
 }
 
 /**
- * Await every upload-time ingest still in flight.
+ * Time budget for the pre-generation ingest drain. A stalled server-backed
+ * `put` must not hang the Generate click; after this budget the unsettled
+ * ingests are released (see `awaitPendingIngests`) and generation proceeds
+ * with those sources on the byte path.
+ */
+export const DEFAULT_INGEST_AWAIT_TIMEOUT_MS = 15_000;
+
+export interface AwaitPendingIngestsOptions {
+  /** Time budget for the batch; defaults to {@link DEFAULT_INGEST_AWAIT_TIMEOUT_MS}. */
+  timeoutMs?: number;
+  /**
+   * Invoked once per ingest that is still unsettled when the budget expires.
+   * The caller attaches a release (`removeAsset`) to the late-resolving
+   * promise: once the session is built without the id, no durable holder will
+   * ever exist for it.
+   */
+  onUnsettled?: (ingestId: string, ingest: Promise<string>) => void;
+}
+
+/**
+ * Await every upload-time ingest still in flight, bounded by a time budget.
  *
  * Used by the generate flow before it builds the generation session, so a
  * resolved asset id lands in the session instead of being dropped when the
  * page unmounts. Rejected ingests are awaited too — a rejected ingest only
  * means that source proceeds with its storageKey and the byte path.
+ *
+ * The await is bounded: a stalled server-backed PUT must not hang generation
+ * forever. When the budget expires, the ids of the still-unsettled ingests are
+ * returned (the caller skips them so the session sends those sources down the
+ * byte path) and each is handed to `onUnsettled` so the caller can attach a
+ * release to the late-resolving id. Returns an empty set when the whole batch
+ * settled in time.
  */
 export async function awaitPendingIngests(
   pendingIngests: ReadonlyMap<string, Promise<string>>,
-): Promise<void> {
-  const pending = [...pendingIngests.values()];
-  if (pending.length === 0) return;
-  await Promise.allSettled(pending);
+  options: AwaitPendingIngestsOptions = {},
+): Promise<Set<string>> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_INGEST_AWAIT_TIMEOUT_MS;
+  const entries = [...pendingIngests.entries()];
+  if (entries.length === 0) return new Set();
+
+  // Track which entries settle before the budget expires. Both branches mark
+  // the id so a late rejection cannot become an unhandled rejection.
+  const settledIds = new Set<string>();
+  for (const [id, ingest] of entries) {
+    void ingest.then(
+      () => settledIds.add(id),
+      () => settledIds.add(id),
+    );
+  }
+
+  let timedOut = false;
+  const timeout = new Promise<void>((resolve) => {
+    const handle = setTimeout(() => {
+      timedOut = true;
+      resolve();
+    }, timeoutMs);
+    void Promise.allSettled(entries.map(([, ingest]) => ingest)).finally(() =>
+      clearTimeout(handle),
+    );
+  });
+  await Promise.race([Promise.allSettled(entries.map(([, ingest]) => ingest)), timeout]);
+
+  if (!timedOut) return new Set();
+
+  const unsettled = new Set<string>();
+  for (const [id, ingest] of entries) {
+    if (settledIds.has(id)) continue;
+    unsettled.add(id);
+    options.onUnsettled?.(id, ingest);
+  }
+  return unsettled;
 }
 
 /**

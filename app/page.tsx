@@ -26,6 +26,7 @@ import {
   Atom,
   X,
   Presentation,
+  Loader2,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -43,7 +44,11 @@ import { putAsset, removeAsset } from '@/lib/media/asset-pool';
 import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import { dedupeCourseMaterialFiles } from '@/lib/document/course-materials';
-import { awaitPendingIngests, resolvedAssetIdForIngest } from '@/lib/document/extract-source';
+import {
+  awaitPendingIngests,
+  DEFAULT_INGEST_AWAIT_TIMEOUT_MS,
+  resolvedAssetIdForIngest,
+} from '@/lib/document/extract-source';
 import type {
   SelectedCourseMaterial,
   SessionDocumentSource,
@@ -177,6 +182,12 @@ function HomePage() {
 
   const [themeOpen, setThemeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // True while the Generate click drains upload-time ingests and builds the
+  // generation session. Doubles as the guard flag that freezes the course
+  // material set for the duration of prep and as the switch that disables the
+  // toolbar's add/remove affordances, so the session is always built from a
+  // set that cannot change under it.
+  const [preparingGenerate, setPreparingGenerate] = useState(false);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -508,6 +519,10 @@ function HomePage() {
   };
 
   const addCourseMaterials = (files: File[]) => {
+    // The set is frozen for the duration of generate-prep: adding is inert
+    // while `preparingGenerate` is set (the toolbar affordance is disabled
+    // via the same state), so nothing can slip into the set mid-prep.
+    if (preparingGenerate) return;
     // Compute the additions before touching state: the ingest loop must not
     // run inside the setForm updater, which React may invoke more than once —
     // each replay would putAsset again and orphan an allocated id.
@@ -540,6 +555,10 @@ function HomePage() {
   };
 
   const removeCourseMaterial = (id: string) => {
+    // The set is frozen for the duration of generate-prep: removing is inert
+    // while `preparingGenerate` is set (the toolbar affordance is disabled
+    // via the same state), so nothing can slip out of the set mid-prep.
+    if (preparingGenerate) return;
     const removed = form.courseMaterials.find((item) => item.id === id);
     // Release the pool entry allocated for this file, mirroring the blob-stash
     // cleanup: if the ingest is still in flight, release once it lands.
@@ -575,6 +594,7 @@ function HomePage() {
     // (requires a usable provider), and under the #580 invariant a usable
     // provider always has a concrete model. State A (no usable provider)
     // surfaces through the toolbar's single Configure-Provider affordance.
+    if (preparingGenerate) return;
     if (!form.requirement.trim()) {
       setError(t('upload.requirementRequired'));
       return;
@@ -582,13 +602,48 @@ function HomePage() {
 
     setError(null);
 
+    // The material list is frozen for the duration of prep: `preparingGenerate`
+    // makes add/remove inert and disables the toolbar affordances, so the set
+    // cannot change under the session build below. Capture it at click time and
+    // build the session from this snapshot, never from live form state.
+    const frozenMaterials = [...form.courseMaterials].sort((a, b) => a.order - b.order);
+
+    // Flip the generating UI state BEFORE the drain so the click visibly does
+    // something even when an ingest stalls.
+    setPreparingGenerate(true);
+    const unsettledIngestIds = new Set<string>();
     try {
-      // Await any upload-time ingests still in flight BEFORE building the
-      // session, so a resolved asset id lands in the session instead of being
-      // dropped when this page unmounts. A rejected ingest is fine: that
-      // source proceeds with its storageKey and the legacy byte path. No
-      // arbitrary timeout is added — the PUT is small compared to generation.
-      await awaitPendingIngests(pendingMaterialIngestsRef.current);
+      // Drain any in-flight ingests before building the session, so a resolved
+      // asset id lands in the session instead of being dropped when this page
+      // unmounts. The await is bounded (~15 s): on timeout, the unsettled
+      // sources proceed with their storageKey and the legacy byte path, and
+      // each late-resolving id is released since no durable holder will ever
+      // exist for it. A rejected ingest is fine: that source proceeds with its
+      // storageKey and the byte path. The drain loops until the pending map is
+      // stable — despite the freeze guard, an add that slipped in before the
+      // flag took effect is still drained (belt-and-braces).
+      const awaitedIngestIds = new Set<string>();
+      for (;;) {
+        const unawaited = [...pendingMaterialIngestsRef.current.entries()].filter(
+          ([id]) => !awaitedIngestIds.has(id),
+        );
+        if (unawaited.length === 0) break;
+        for (const [id] of unawaited) awaitedIngestIds.add(id);
+        const batchUnsettled = await awaitPendingIngests(new Map(unawaited), {
+          timeoutMs: DEFAULT_INGEST_AWAIT_TIMEOUT_MS,
+          onUnsettled: (ingestId, ingest) => {
+            unsettledIngestIds.add(ingestId);
+            // No durable holder will ever exist for a timed-out id (the
+            // session is built without it), so release it when it lands.
+            void ingest
+              .then((assetId) => (assetId ? removeAsset(assetId) : undefined))
+              .catch((error) => {
+                log.error('Failed to release timed-out course material asset pool entry:', error);
+              });
+          },
+        });
+        for (const id of batchUnsettled) unsettledIngestIds.add(id);
+      }
 
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
@@ -622,18 +677,17 @@ function HomePage() {
         const storedDocumentKeys: string[] = [];
         try {
           documentSources = [];
-          const orderedMaterials = [...form.courseMaterials].sort((a, b) => a.order - b.order);
-          for (const [index, item] of orderedMaterials.entries()) {
+          for (const [index, item] of frozenMaterials.entries()) {
             const storageKey = await storeDocumentBlob(item.file);
             storedDocumentKeys.push(storageKey);
             // The awaited ingests patched their asset ids into form state via
             // setForm, which this closure may not reflect yet; read the settled
             // value from the pending map so a just-resolved id still lands in
-            // the session regardless of React commit timing.
-            const settledAssetId = await resolvedAssetIdForIngest(
-              pendingMaterialIngestsRef.current,
-              item.id,
-            );
+            // the session regardless of React commit timing. A timed-out ingest
+            // is never awaited again — its source goes byte-path (no assetId).
+            const settledAssetId = unsettledIngestIds.has(item.id)
+              ? undefined
+              : await resolvedAssetIdForIngest(pendingMaterialIngestsRef.current, item.id);
             documentSources.push({
               id: item.id,
               name: item.name,
@@ -679,6 +733,10 @@ function HomePage() {
     } catch (err) {
       log.error('Error preparing generation:', err);
       setError(err instanceof Error ? err.message : t('upload.generateFailed'));
+    } finally {
+      // Unfreeze the set once prep settles (navigation unmounts this page, so
+      // this is normally a no-op on the way out).
+      setPreparingGenerate(false);
     }
   };
 
@@ -699,7 +757,7 @@ function HomePage() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
-      if (canGenerate) handleGenerate();
+      if (canGenerate && !preparingGenerate) handleGenerate();
     }
   };
 
@@ -897,6 +955,7 @@ function HomePage() {
                   onCourseMaterialsAdd={addCourseMaterials}
                   onCourseMaterialRemove={removeCourseMaterial}
                   onPdfError={setError}
+                  materialsLocked={preparingGenerate}
                 />
               </div>
 
@@ -929,16 +988,22 @@ function HomePage() {
               {/* Send button */}
               <button
                 onClick={handleGenerate}
-                disabled={!canGenerate}
+                disabled={!canGenerate || preparingGenerate}
                 className={cn(
                   'shrink-0 h-8 rounded-lg flex items-center justify-center gap-1.5 transition-all px-3',
-                  canGenerate
+                  canGenerate && !preparingGenerate
                     ? 'bg-primary text-primary-foreground hover:opacity-90 shadow-sm cursor-pointer'
                     : 'bg-muted text-muted-foreground/40 cursor-not-allowed',
                 )}
               >
-                <span className="text-xs font-medium">{t('toolbar.enterClassroom')}</span>
-                <ArrowUp className="size-3.5" />
+                <span className="text-xs font-medium">
+                  {preparingGenerate ? t('stage.generating') : t('toolbar.enterClassroom')}
+                </span>
+                {preparingGenerate ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <ArrowUp className="size-3.5" />
+                )}
               </button>
             </div>
           </div>

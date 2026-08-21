@@ -12,10 +12,12 @@
  * The id still exists client-side, it is just not usable as a server-side
  * reference.
  *
- * The resolution answers in four states so the route can map each to an honest
+ * The resolution answers in five states so the route can map each to an honest
  * HTTP status: not configured (no `DATABASE_URL`), unauthenticated (the
  * development persistence credential is missing or wrong), missing (no entry
- * under this id for this principal), or resolved.
+ * under this id for this principal), too large (the recorded byte length
+ * exceeds the caller-supplied cap, rejected before any bytes are read), or
+ * resolved.
  */
 import { AssetNotFoundError, toAssetId, type AssetPrincipal } from '@openmaic/storage';
 
@@ -26,11 +28,24 @@ export type ServerAssetResolution =
   | { status: 'resolved'; buffer: Buffer; mimeType: string }
   | { status: 'unconfigured' }
   | { status: 'unauthenticated' }
-  | { status: 'missing' };
+  | { status: 'missing' }
+  | { status: 'too_large' };
 
+/**
+ * Resolve an allocated asset id to its bytes for extraction.
+ *
+ * When `maxByteLength` is supplied, the store's identity read (`identify` —
+ * the same call HEAD uses, carrying the recorded byte length without reading
+ * the bytes) is consulted first: an asset whose recorded length exceeds the
+ * cap answers `too_large` WITHOUT ever materializing the bytes, so a
+ * multi-hundred-MB asset cannot be pulled into server memory just to be
+ * rejected. The caller keeps its post-resolve length check as a defensive
+ * backstop against a store whose recorded length disagrees with the bytes.
+ */
 export async function resolveServerAsset(
   assetId: string,
   headers: Headers,
+  maxByteLength?: number,
 ): Promise<ServerAssetResolution> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) return { status: 'unconfigured' };
@@ -51,7 +66,16 @@ export async function resolveServerAsset(
 
   try {
     const provider = await getServerPersistenceProvider(connectionString);
-    const resolved = await provider.assetStore.resolve(assetPrincipal, toAssetId(assetId));
+    const ref = toAssetId(assetId);
+    // Size check BEFORE materialization: `identify` reads only the registry
+    // row (recorded byte length), never the bytes, so an oversized asset is
+    // rejected without ever pulling it into server memory.
+    if (maxByteLength !== undefined) {
+      const identity = await provider.assetStore.identify(assetPrincipal, ref);
+      if (!identity) return { status: 'missing' };
+      if (identity.byteLength > maxByteLength) return { status: 'too_large' };
+    }
+    const resolved = await provider.assetStore.resolve(assetPrincipal, ref);
     if (!resolved) return { status: 'missing' };
     return { status: 'resolved', buffer: Buffer.from(resolved.bytes), mimeType: resolved.mime };
   } catch (error) {

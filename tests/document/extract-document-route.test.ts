@@ -281,7 +281,11 @@ describe('POST /api/extract-document (asset-id form)', () => {
         },
       },
     });
-    expect(mocks.resolveServerAsset).toHaveBeenCalledWith('ast_abc', expect.anything());
+    expect(mocks.resolveServerAsset).toHaveBeenCalledWith(
+      'ast_abc',
+      expect.anything(),
+      50 * 1024 * 1024,
+    );
   });
 
   it('passes the requested provider and its config through for asset-id extraction', async () => {
@@ -448,7 +452,7 @@ describe('POST /api/extract-document (asset-id form)', () => {
     expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
   });
 
-  it('returns 413 when the resolved server asset exceeds the 50 MB cap', async () => {
+  it('returns 413 when the resolved server asset exceeds the 50 MB cap (post-resolve backstop)', async () => {
     mocks.resolveServerAsset.mockResolvedValue({
       status: 'resolved',
       buffer: Buffer.alloc(51 * 1024 * 1024),
@@ -469,6 +473,84 @@ describe('POST /api/extract-document (asset-id form)', () => {
     });
     expect(json.error).toContain('Maximum size is 50MB');
     expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+    // The route passes its size cap to the resolver so the store can reject
+    // from the recorded length without ever materializing the bytes.
+    expect(mocks.resolveServerAsset).toHaveBeenCalledWith(
+      'ast_huge',
+      expect.anything(),
+      50 * 1024 * 1024,
+    );
+  });
+
+  it('returns 413 when the asset store reports an oversized asset before materializing it', async () => {
+    mocks.resolveServerAsset.mockResolvedValue({ status: 'too_large' });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_huge',
+      fileName: 'lesson.pdf',
+      mimeType: 'application/pdf',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(413);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+    expect(json.error).toContain('Maximum size is 50MB');
+    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for an unknown provider on the JSON path without echoing the provider id', async () => {
+    mocks.resolveServerAsset.mockResolvedValue({
+      status: 'resolved',
+      buffer: Buffer.from('hello'),
+      mimeType: 'text/plain',
+    });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'notes.txt',
+      mimeType: 'text/plain',
+      providerId: 'bogus-provider',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+    // Generic static message — the offending provider id is never echoed.
+    expect(json.error).not.toContain('bogus-provider');
+    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+  });
+
+  it('returns a generic 500 on the JSON path when the provider extractor rejects', async () => {
+    mocks.resolveServerAsset.mockResolvedValue({
+      status: 'resolved',
+      buffer: Buffer.from('%PDF-1.4'),
+      mimeType: 'application/pdf',
+    });
+    mocks.parseWithMinerUCloud.mockRejectedValue(new Error('upstream extractor exploded'));
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'lesson.pdf',
+      mimeType: 'application/pdf',
+      providerId: 'mineru-cloud',
+      apiKey: 'cloud-key',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'PARSE_FAILED',
+    });
+    // The raw extractor error message must not reach the caller on the JSON
+    // form; multipart keeps its current behavior.
+    expect(json.error).not.toContain('upstream extractor exploded');
   });
 
   it('returns 503 when server persistence is not configured', async () => {
@@ -529,6 +611,46 @@ describe('POST /api/extract-document (asset-id form)', () => {
 
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+    expect(mocks.resolveServerAsset).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for a JSON null body instead of 500 with raw internal text', async () => {
+    const { POST } = await import('@/app/api/extract-document/route');
+    const request = new Request('http://localhost/api/extract-document', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'null',
+    });
+
+    const res = await POST(request as unknown as NextRequest);
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+    // The raw V8 TypeError text must never reach the caller.
+    expect(json.error).not.toContain('TypeError');
+    expect(mocks.resolveServerAsset).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for a JSON array body instead of 500', async () => {
+    const { POST } = await import('@/app/api/extract-document/route');
+    const request = new Request('http://localhost/api/extract-document', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '[]',
+    });
+
+    const res = await POST(request as unknown as NextRequest);
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json).toMatchObject({
       success: false,
       errorCode: 'INVALID_REQUEST',
     });
