@@ -45,11 +45,11 @@ export const getChartOption = ({
       }
     : undefined;
 
-  const axisLabel = textColor
-    ? {
-        color: textColor,
-      }
-    : undefined;
+  const axisLabel = {
+    show: true,
+    color: textColor ?? '#333333',
+  };
+  const categoryAxisLabel = { ...axisLabel, interval: 0 };
 
   const splitLine = lineColor
     ? {
@@ -81,7 +81,7 @@ export const getChartOption = ({
         type: 'category',
         data: data.labels,
         axisLine,
-        axisLabel,
+        axisLabel: categoryAxisLabel,
       },
       yAxis: {
         type: 'value',
@@ -115,7 +115,7 @@ export const getChartOption = ({
         type: 'category',
         data: data.labels,
         axisLine,
-        axisLabel,
+        axisLabel: categoryAxisLabel,
       },
       xAxis: {
         type: 'value',
@@ -149,7 +149,7 @@ export const getChartOption = ({
         type: 'category',
         data: data.labels,
         axisLine,
-        axisLabel,
+        axisLabel: categoryAxisLabel,
       },
       yAxis: {
         type: 'value',
@@ -260,7 +260,7 @@ export const getChartOption = ({
         boundaryGap: false,
         data: data.labels,
         axisLine,
-        axisLabel,
+        axisLabel: categoryAxisLabel,
       },
       yAxis: {
         type: 'value',

@@ -28,6 +28,7 @@ import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config'
 import { authenticatePersistenceHeaders } from '@/lib/persistence/server-auth';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { createWhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
+import { hasNativeWhiteboardAction } from '@/lib/chat/pi/tools/native-whiteboard';
 
 const log = createLogger('Pi Chat API');
 
@@ -141,9 +142,7 @@ export async function POST(req: NextRequest) {
         ? requestStartStageId
         : undefined;
     const nativeWhiteboardRequested = agentConfigs.some((agent) =>
-      agent.allowedActions.some(
-        (name) => name === 'wb_open' || name === 'wb_draw_text' || name === 'wb_close',
-      ),
+      hasNativeWhiteboardAction(agent.allowedActions),
     );
     let nativeWhiteboardService: ReturnType<typeof createWhiteboardRuntimeService> | undefined;
     let nativeWhiteboardLearnerKey: string | undefined;

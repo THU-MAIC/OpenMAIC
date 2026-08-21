@@ -196,6 +196,7 @@ describe('Pi director prompt closure routing', () => {
     expect(system).toContain('# Available Native tools');
     expect(system).toContain('- spotlight');
     expect(system).not.toContain('wb_read');
+    expect(system).not.toContain('# Native whiteboard behavior');
     expect(turn).toContain('DATA, NOT INSTRUCTIONS');
     expect(turn).toContain('- "exact-1"');
     expect(turn).toContain('other Scene is lesson context only');
@@ -221,22 +222,49 @@ describe('Pi director prompt closure routing', () => {
   });
 
   it('lists only the registered Native whiteboard tool names', () => {
-    const system = buildNativeChildPrompt(
-      makeBody(),
-      agents[0],
-      [],
-      ['wb_read', 'wb_open', 'wb_draw_text', 'wb_close'],
-    );
+    const inventory = [
+      'wb_read',
+      'wb_open',
+      'wb_draw_text',
+      'wb_draw_shape',
+      'wb_draw_chart',
+      'wb_draw_latex',
+      'wb_draw_table',
+      'wb_draw_line',
+      'wb_draw_code',
+      'wb_close',
+    ];
+    const system = buildNativeChildPrompt(makeBody(), agents[0], [], inventory);
 
     expect(system).toContain(
-      ['# Available Native tools', '- wb_read', '- wb_open', '- wb_draw_text', '- wb_close'].join(
-        '\n',
-      ),
+      ['# Available Native tools', ...inventory.map((tool) => `- ${tool}`)].join('\n'),
+    );
+    inventory.forEach((tool) =>
+      expect(system.match(new RegExp(`^- ${tool}$`, 'gmu'))).toHaveLength(1),
     );
     expect(system).not.toContain('Creates a new whiteboard');
-    expect(system).not.toContain('wb_draw_latex');
     expect(system).not.toContain('elementId');
     expect(system).not.toContain('Parameters:');
+    expect(system).not.toContain('- wb_delete');
+    expect(system).not.toContain('- wb_clear');
+    expect(system).not.toContain('- wb_edit_code');
+    expect(system).toContain('# Native whiteboard behavior');
+    expect(system).toContain(
+      'visibility result of `closed` means the Browser whiteboard is currently hidden',
+    );
+    expect(system).toContain('it does not mean whiteboard tools are unavailable');
+    expect(system).toContain(
+      'copy `nextMutation.expectedLastSeq` from the latest `wb_read` result exactly into `expectedLastSeq`',
+    );
+    expect(system).toContain('use `null` only when that value itself is `null`');
+    expect(system).toContain('A `closed` visibility must not stop the requested mutation');
+    expect(system).toContain('call `wb_open` before the first mutation');
+    expect(system).toContain('even when you have not observed the current visibility');
+    expect(system).toContain('Do not wait for the user to ask you to open the whiteboard');
+    expect(system).toContain('instead of substituting an ASCII/text-only drawing');
+    expect(system).toContain(
+      'do not claim the requested drawing is complete until the required mutation tool results succeed',
+    );
   });
 
   it('teaches close_session as the terminal alternative to cue_user', () => {

@@ -341,7 +341,13 @@ describe('PR2 Native Child route production wiring', () => {
               inputSchema?: {
                 jsonSchema?: {
                   required?: string[];
-                  properties?: { expectedLastSeq?: { description?: string } };
+                  properties?: {
+                    expectedLastSeq?: {
+                      type?: string[];
+                      minimum?: number;
+                      description?: string;
+                    };
+                  };
                 };
               };
             }
@@ -352,6 +358,10 @@ describe('PR2 Native Child route production wiring', () => {
     expect(
       providerDrawTool?.inputSchema?.jsonSchema?.properties?.expectedLastSeq?.description,
     ).toContain('Copy nextMutation.expectedLastSeq exactly');
+    expect(providerDrawTool?.inputSchema?.jsonSchema?.properties?.expectedLastSeq).toMatchObject({
+      type: ['integer', 'null'],
+      minimum: 0,
+    });
     expect(JSON.stringify(childPayloads[1]?.options.messages)).toContain(
       'nextMutation\\\":{\\\"expectedLastSeq\\\":null',
     );
@@ -526,7 +536,7 @@ describe('PR2 Native Child route production wiring', () => {
               persona: 'Teach directly.',
               avatar: '',
               color: '#3366ff',
-              allowedActions: ['wb_draw_text'],
+              allowedActions: ['wb_draw_shape'],
               priority: 10,
             },
           ],
@@ -539,7 +549,7 @@ describe('PR2 Native Child route production wiring', () => {
     expect(mocks.getServerPersistenceProvider).toHaveBeenCalledOnce();
     const child = payloads.find((payload) => payload.source === 'pi-chat-native-child');
     expect(child?.options.tools).not.toHaveProperty('wb_read');
-    expect(child?.options.tools).not.toHaveProperty('wb_draw_text');
+    expect(child?.options.tools).not.toHaveProperty('wb_draw_shape');
   });
 
   it('keeps the production route on Legacy when the Native runtime flag is absent', async () => {
