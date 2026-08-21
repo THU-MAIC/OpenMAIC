@@ -335,11 +335,26 @@ describe('PR2 Native Child route production wiring', () => {
     expect(childPayloads[0]?.options.tools).not.toHaveProperty('wb_open');
     const providerDrawTool = (
       childPayloads[0]?.options.tools as
-        | Record<string, { inputSchema?: { jsonSchema?: { required?: string[] } } }>
+        | Record<
+            string,
+            {
+              inputSchema?: {
+                jsonSchema?: {
+                  required?: string[];
+                  properties?: { expectedLastSeq?: { description?: string } };
+                };
+              };
+            }
+          >
         | undefined
     )?.wb_draw_text;
     expect(providerDrawTool?.inputSchema?.jsonSchema?.required).toContain('expectedLastSeq');
-    expect(JSON.stringify(childPayloads[1]?.options.messages)).toContain('lastSeq\\\":null');
+    expect(
+      providerDrawTool?.inputSchema?.jsonSchema?.properties?.expectedLastSeq?.description,
+    ).toContain('Copy nextMutation.expectedLastSeq exactly');
+    expect(JSON.stringify(childPayloads[1]?.options.messages)).toContain(
+      'nextMutation\\\":{\\\"expectedLastSeq\\\":null',
+    );
     expect(JSON.stringify(childPayloads[2]?.options.messages)).toContain('committedSeq');
 
     expect(events).toContainEqual({

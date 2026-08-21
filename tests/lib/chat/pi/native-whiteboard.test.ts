@@ -4,6 +4,7 @@ import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildNativeWhiteboardTools } from '@/lib/chat/pi/tools/native-whiteboard';
+import { settleWhiteboardVisibility } from '@/lib/chat/pi/whiteboard-visibility';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 import {
   createWhiteboardRuntimeService,
@@ -24,7 +25,10 @@ const teacher: AgentConfig = {
   isDefault: true,
 };
 
-function build(service: WhiteboardRuntimeService, send = vi.fn(async () => {})) {
+function build(
+  service: WhiteboardRuntimeService,
+  send: Parameters<typeof buildNativeWhiteboardTools>[0]['send'] = vi.fn(async () => {}),
+) {
   return {
     send,
     tools: buildNativeWhiteboardTools({
@@ -83,8 +87,56 @@ describe('Native RuntimeStore whiteboard tools', () => {
     expect(readOnly).toEqual([]);
   });
 
+  it.each([null, 0] as const)(
+    'returns nextMutation.expectedLastSeq=%s without falsy coercion and keeps closed visibility non-blocking',
+    async (lastSeq) => {
+      const runtime = service({
+        read: vi.fn(async () => ({
+          sessionId: lastSeq === null ? null : 'runtime-session-1',
+          whiteboard:
+            lastSeq === null
+              ? null
+              : {
+                  id: 'runtime-board-1',
+                  viewportSize: 1000,
+                  viewportRatio: 0.5625,
+                  elements: [],
+                },
+          lastSeq,
+        })),
+      });
+      const send = vi.fn(async (event) => {
+        if (event.type === 'whiteboard' && event.data.kind === 'visibility_query') {
+          settleWhiteboardVisibility({
+            queryId: event.data.queryId,
+            stageId: event.data.stageId,
+            learnerKey: 'learner-1',
+            visibility: 'closed',
+          });
+        }
+      });
+      const read = build(runtime, send).tools.find((tool) => tool.name === 'wb_read')!;
+
+      await expect(read.execute('read-1', {})).resolves.toMatchObject({
+        details: {
+          durable: { lastSeq },
+          presentation: { visibility: 'closed' },
+          nextMutation: {
+            expectedLastSeq: lastSeq,
+            drawingAllowedWhenVisibilityClosed: true,
+          },
+        },
+      });
+    },
+  );
+
   it('rejects Legacy draw arguments that omit expectedLastSeq or add elementId', () => {
     const draw = build(service()).tools.find((tool) => tool.name === 'wb_draw_text')!;
+
+    expect(
+      (draw.parameters as { properties?: { expectedLastSeq?: { description?: string } } })
+        .properties?.expectedLastSeq?.description,
+    ).toContain('Copy nextMutation.expectedLastSeq exactly');
 
     expect(() => draw.prepareArguments?.({ content: 'Runtime authority', x: 10, y: 20 })).toThrow(
       'Native whiteboard arguments must match the strict schema.',
@@ -206,6 +258,47 @@ describe('Native RuntimeStore whiteboard tools', () => {
 
       const sessions = await store.listSessions('stage-1', 'learner-1');
       expect(sessions).toHaveLength(1);
+      await expect(store.listRecords(sessions[0]!.id)).resolves.toHaveLength(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects stale null when the authoritative sequence is zero', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    try {
+      const store = new BrowserRuntimeStore({
+        indexedDB: new IDBFactory(),
+        payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      });
+      const runtime = createWhiteboardRuntimeService({
+        store,
+        resolveLearnerKey: () => 'learner-1',
+        withMaintenanceLock: (work) => work(),
+      });
+      const draw = build(runtime).tools.find((tool) => tool.name === 'wb_draw_text')!;
+
+      await expect(
+        draw.execute('draw-first', {
+          expectedLastSeq: null,
+          content: 'first',
+          x: 10,
+          y: 20,
+        }),
+      ).resolves.toMatchObject({ details: { committedSeq: 0 } });
+      await expect(
+        draw.execute('draw-stale', {
+          expectedLastSeq: null,
+          content: 'must not commit',
+          x: 30,
+          y: 40,
+        }),
+      ).resolves.toMatchObject({
+        isError: true,
+        details: { code: 'STALE_STATE', actualLastSeq: 0 },
+      });
+
+      const sessions = await store.listSessions('stage-1', 'learner-1');
       await expect(store.listRecords(sessions[0]!.id)).resolves.toHaveLength(1);
     } finally {
       vi.unstubAllGlobals();

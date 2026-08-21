@@ -19,9 +19,13 @@ import { queryWhiteboardVisibility } from '../whiteboard-visibility';
 import type { SendEvent } from '../types';
 
 const EmptyParams = Type.Object({}, { additionalProperties: false });
+const ExpectedLastSeq = Type.Union([Type.Null(), Type.Integer({ minimum: 0 })], {
+  description:
+    'Copy nextMutation.expectedLastSeq exactly from the latest wb_read result. Use null only when that value is null.',
+});
 const NativeWhiteboardDrawTextParams = Type.Object(
   {
-    expectedLastSeq: Type.Union([Type.Null(), Type.Integer({ minimum: 0 })]),
+    expectedLastSeq: ExpectedLastSeq,
     content: Type.String({ minLength: 1, pattern: '\\S' }),
     x: Type.Number(),
     y: Type.Number(),
@@ -141,7 +145,7 @@ export function buildNativeWhiteboardTools(opts: {
       name: 'wb_read',
       label: 'Read whiteboard',
       description:
-        'Read the authoritative learner whiteboard and current best-effort Browser visibility before deciding whether to draw or change presentation.',
+        'Read the authoritative learner whiteboard and current best-effort Browser visibility. Copy nextMutation.expectedLastSeq exactly into the next mutation. Closed visibility never blocks durable drawing and does not require wb_open first.',
       parameters: EmptyParams,
       executionMode: 'sequential',
       prepareArguments: (args) => strictArguments<EmptyParams>(EmptyParams, args, new Set()),
@@ -162,6 +166,10 @@ export function buildNativeWhiteboardTools(opts: {
           const result = {
             durable: durableReadResult(state),
             presentation: { visibility },
+            nextMutation: {
+              expectedLastSeq: state.lastSeq,
+              drawingAllowedWhenVisibilityClosed: true,
+            },
           };
           return textResult(JSON.stringify(result), result);
         } catch (error) {
@@ -207,7 +215,7 @@ export function buildNativeWhiteboardTools(opts: {
       name: 'wb_draw_text',
       label: 'Draw whiteboard text',
       description:
-        'Append one text element to the authoritative learner whiteboard using the last sequence returned by wb_read.',
+        'Append one text element to the authoritative learner whiteboard using nextMutation.expectedLastSeq from the latest wb_read result. Drawing is allowed whether Browser visibility is open, closed, or unknown; this tool never changes visibility.',
       parameters: NativeWhiteboardDrawTextParams,
       executionMode: 'sequential',
       prepareArguments: (args) =>
