@@ -96,18 +96,23 @@ export function HeaderControls({
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
 
-  const canExport =
-    scenes.length > 0 &&
-    generatingOutlines.length === 0 &&
-    failedOutlines.length === 0 &&
-    Object.values(mediaTasks).every((task) => task.status === 'done' || task.status === 'failed');
-
   // Text-only readiness: narration script export doesn't depend on media
   // generation, so it should stay available while media tasks are still
   // pending — only the media-dependent exports (PPTX/Resource Pack/ZIP/Video)
-  // need the full `canExport` (media done/failed) gate below.
+  // need the additional media-readiness check `canExport` ANDs on below.
   const canExportText =
     scenes.length > 0 && generatingOutlines.length === 0 && failedOutlines.length === 0;
+  const canExport =
+    canExportText &&
+    Object.values(mediaTasks).every((task) => task.status === 'done' || task.status === 'failed');
+  // canExport already implies canExportText (it ANDs on top of it above), so
+  // the trigger's overall readiness is just canExportText.
+  const exportReady = canExportText;
+  const exportLabel = canExport
+    ? t('export.pptx')
+    : canExportText
+      ? t('export.textOnly')
+      : t('share.notReady');
 
   const handleClickOutside = useCallback(
     (e: MouseEvent) => {
@@ -263,33 +268,19 @@ export function HeaderControls({
       <div className="relative" ref={exportRef}>
         <button
           onClick={() => {
-            if ((canExport || canExportText) && !isExporting && !isExportingZip) {
+            if (exportReady && !isExporting && !isExportingZip) {
               setExportMenuOpen(!exportMenuOpen);
             }
           }}
-          disabled={!(canExport || canExportText) || isExporting || isExportingZip}
-          title={
-            canExport
-              ? isExporting || isExportingZip
-                ? t('export.exporting')
-                : t('export.pptx')
-              : canExportText
-                ? t('export.textOnly')
-                : t('share.notReady')
-          }
+          disabled={!exportReady || isExporting || isExportingZip}
+          title={isExporting || isExportingZip ? t('export.exporting') : exportLabel}
           className={cn(
             'shrink-0 p-2 rounded-full transition-all',
-            (canExport || canExportText) && !isExporting && !isExportingZip
+            exportReady && !isExporting && !isExportingZip
               ? 'text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm'
               : 'text-gray-300 dark:text-gray-600 cursor-not-allowed opacity-50',
           )}
-          aria-label={
-            canExport
-              ? t('export.pptx')
-              : canExportText
-                ? t('export.textOnly')
-                : t('share.notReady')
-          }
+          aria-label={exportLabel}
         >
           {isExporting || isExportingZip ? (
             <Loader2 className="w-4 h-4 animate-spin" />
