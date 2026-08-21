@@ -145,14 +145,23 @@ describe('buildMarkdown', () => {
     expect(md.match(/^#{1,2} /gm)?.length).toBe(2);
   });
 
-  it('strips leading # runs from scene/stage titles so they cannot masquerade as headings', () => {
+  it('escapes (not deletes) leading # runs so they render as literal text instead of a nested heading', () => {
     const md = buildMarkdown('# Already Hash', [
       { sceneId: 'a', sceneTitle: '## Also Hash', sceneOrder: 1, text: 'Body.' },
     ]);
-    expect(md).toContain('# Already Hash');
-    expect(md).not.toContain('# # Already Hash');
-    expect(md).toContain('## Also Hash');
-    expect(md).not.toContain('## ## Also Hash');
+    // The leading # is preserved as content (teachers can legitimately title
+    // something "#1 Introduction") but backslash-escaped so it can't be
+    // mistaken for heading syntax by a downstream Markdown renderer.
+    expect(md).toContain('# \\# Already Hash');
+    expect(md).toContain('## \\#\\# Also Hash');
+  });
+
+  it('preserves a leading # even when shielded by a newline the flattening step would otherwise expose unescaped', () => {
+    const md = buildMarkdown('C', [
+      { sceneId: 'a', sceneTitle: '\n# Injected', sceneOrder: 1, text: 'Body.' },
+    ]);
+    expect(md).toContain('## \\# Injected');
+    expect(md).not.toContain('## # Injected');
   });
 });
 

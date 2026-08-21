@@ -61,14 +61,22 @@ export function collectSceneScripts(
 
 /**
  * Neutralize a scene/stage title before it's interpolated into a Markdown
- * heading: flatten embedded newlines to spaces and strip leading `#` runs, so
- * a title cannot inject extra headings or corrupt document structure.
+ * heading: flatten embedded newlines to spaces, then backslash-escape a
+ * leading `#` run so it renders as literal text instead of Markdown heading
+ * syntax. Escaping (not stripping) preserves titles that legitimately start
+ * with `#` (e.g. "#1 Introduction") while still neutralizing the character's
+ * special meaning. Newlines are flattened before the leading-`#` check so a
+ * title like "\n# Injected" can't dodge the escape by shielding its `#`
+ * behind whitespace that a later `trim()` would otherwise re-expose.
  */
 function sanitizeMarkdownHeading(text: string): string {
-  return text
-    .replace(/\r?\n+/g, ' ')
-    .replace(/^#+\s*/, '')
-    .trim();
+  const flattened = text.replace(/\r?\n+/g, ' ').trim();
+  return flattened.replace(/^#+/, (hashes) =>
+    hashes
+      .split('')
+      .map((h) => `\\${h}`)
+      .join(''),
+  );
 }
 
 /** Serialize collected scripts as a Markdown document. */
