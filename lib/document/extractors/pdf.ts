@@ -56,6 +56,7 @@ function createPdfBackedDocumentExtractor(id: PDFProviderId): DocumentExtractorP
     displayName: pdfProvider.name,
     supportedMimeTypes: [...supportedMimeTypesForProvider(id)],
     capabilities: capabilitiesFromPdfProvider(pdfProvider, id),
+    version: '1',
     async extract(input: DocumentExtractorInput) {
       const config = {
         providerId: id,

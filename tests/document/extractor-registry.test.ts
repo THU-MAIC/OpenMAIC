@@ -3,11 +3,20 @@ import { describe, expect, it } from 'vitest';
 import {
   getDocumentExtractorProvider,
   getDocumentExtractorProviders,
+  getMediaExtractorProviders,
   selectDocumentExtractorProvider,
 } from '@/lib/document';
 import { PROVIDER_SUPPORTED_MIME_TYPES } from '@/lib/document/mime';
 
 describe('document extractor registry', () => {
+  it('declares a non-empty version on every registered document and media provider', () => {
+    const providers = [...getDocumentExtractorProviders(), ...getMediaExtractorProviders()];
+
+    expect(providers.length).toBeGreaterThan(0);
+    for (const provider of providers) {
+      expect(provider.version, `provider ${provider.id} must declare a version`).toBeTruthy();
+    }
+  });
   it('exposes existing PDF providers through the document extractor boundary', () => {
     const providers = getDocumentExtractorProviders();
 
