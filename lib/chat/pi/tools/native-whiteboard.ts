@@ -158,7 +158,7 @@ const NativeWhiteboardDrawCodeParams = Type.Object(
   {
     expectedLastSeq: ExpectedLastSeq,
     language: Type.String({ minLength: 1, pattern: '\\S' }),
-    code: Type.String(),
+    code: Type.String({ minLength: 1, pattern: '\\S' }),
     x: Type.Number(),
     y: Type.Number(),
     width: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
@@ -758,12 +758,17 @@ export function buildNativeWhiteboardTools(opts: NativeWhiteboardToolOptions): A
         description:
           'Append one line or arrow to the authoritative learner whiteboard using nextMutation.expectedLastSeq from the latest wb_read result.',
         parameters: NativeWhiteboardDrawLineParams,
-        prepare: (args) =>
-          strictArguments<NativeWhiteboardDrawLineParams>(
+        prepare: (args) => {
+          const params = strictArguments<NativeWhiteboardDrawLineParams>(
             NativeWhiteboardDrawLineParams,
             args,
             DRAW_LINE_KEYS,
-          ),
+          );
+          if (params.startX === params.endX && params.startY === params.endY) {
+            throw new Error('wb_draw_line requires distinct start and end points');
+          }
+          return params;
+        },
         createElement: (params, invocationDigest): PPTLineElement => {
           const left = Math.min(params.startX, params.endX);
           const top = Math.min(params.startY, params.endY);

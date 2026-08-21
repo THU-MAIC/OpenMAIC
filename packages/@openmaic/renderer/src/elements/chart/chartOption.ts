@@ -35,7 +35,10 @@ export const getChartOption = ({
 
   const axisLine = textColor ? { lineStyle: { color: textColor } } : undefined;
   const axisLabel = { show: true, color: textColor ?? '#333333' };
-  const categoryAxisLabel = { ...axisLabel, interval: 0 };
+  const categoryAxisLabel = {
+    ...axisLabel,
+    interval: data.labels.length <= 8 ? 0 : ('auto' as const),
+  };
   const splitLine = lineColor ? { lineStyle: { color: lineColor } } : {};
 
   if (!Array.isArray(data?.series) || data.series.length === 0) {

@@ -562,6 +562,42 @@ describe('Native RuntimeStore whiteboard tools', () => {
     expect(runtime.append).not.toHaveBeenCalled();
   });
 
+  it('rejects zero-length lines before append', () => {
+    const runtime = service();
+    const harness = build(runtime);
+    const line = harness.tools.find((tool) => tool.name === 'wb_draw_line')!;
+
+    expect(() =>
+      line.prepareArguments?.({
+        expectedLastSeq: null,
+        startX: 12,
+        startY: 34,
+        endX: 12,
+        endY: 34,
+      }),
+    ).toThrow('distinct start and end points');
+    expect(runtime.append).not.toHaveBeenCalled();
+    expect(harness.send).not.toHaveBeenCalled();
+  });
+
+  it.each(['', '\n', '   \t'])('rejects blank code %j before append', (code) => {
+    const runtime = service();
+    const harness = build(runtime);
+    const drawCode = harness.tools.find((tool) => tool.name === 'wb_draw_code')!;
+
+    expect(() =>
+      drawCode.prepareArguments?.({
+        expectedLastSeq: null,
+        language: 'python',
+        code,
+        x: 1,
+        y: 2,
+      }),
+    ).toThrow('strict schema');
+    expect(runtime.append).not.toHaveBeenCalled();
+    expect(harness.send).not.toHaveBeenCalled();
+  });
+
   it('rejects empty chart series, palettes, and radar labels before append', () => {
     const runtime = service();
     const chart = build(runtime).tools.find((tool) => tool.name === 'wb_draw_chart')!;

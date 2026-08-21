@@ -49,7 +49,10 @@ export const getChartOption = ({
     show: true,
     color: textColor ?? '#333333',
   };
-  const categoryAxisLabel = { ...axisLabel, interval: 0 };
+  const categoryAxisLabel = {
+    ...axisLabel,
+    interval: data.labels.length <= 8 ? 0 : ('auto' as const),
+  };
 
   const splitLine = lineColor
     ? {

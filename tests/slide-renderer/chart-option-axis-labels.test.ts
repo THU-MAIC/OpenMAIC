@@ -30,4 +30,23 @@ describe('Chart category axis labels', () => {
       expect(option.xAxis.axisLabel).toEqual({ show: true, color: '#333333' });
     },
   );
+
+  it.each(chartOptionFactories)('lets ECharts thin dense category labels', (getChartOption) => {
+    const labels = Array.from({ length: 20 }, (_, index) => `Category ${index + 1}`);
+    const option = getChartOption({
+      type: 'bar',
+      data: {
+        labels,
+        legends: ['Value'],
+        series: [labels.map((_, index) => index + 1)],
+      },
+      themeColors: ['#5b9bd5'],
+    }) as { xAxis: { axisLabel: Record<string, unknown> } };
+
+    expect(option.xAxis.axisLabel).toEqual({
+      show: true,
+      color: '#333333',
+      interval: 'auto',
+    });
+  });
 });
