@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   resolvePDFApiKey: vi.fn((_providerId: string, clientKey?: string) => clientKey || ''),
   resolvePDFBaseUrl: vi.fn((_providerId: string, clientBaseUrl?: string) => clientBaseUrl),
   parseWithMinerUCloud: vi.fn(),
+  resolveServerAsset: vi.fn(),
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -25,6 +26,10 @@ vi.mock('@/lib/server/provider-config', () => ({
 
 vi.mock('@/lib/pdf/mineru-cloud', () => ({
   parseWithMinerUCloud: mocks.parseWithMinerUCloud,
+}));
+
+vi.mock('@/lib/persistence/resolve-server-asset', () => ({
+  resolveServerAsset: mocks.resolveServerAsset,
 }));
 
 async function postExtractDocument(input: {
@@ -67,6 +72,7 @@ describe('POST /api/extract-document', () => {
         parser: 'mineru-cloud',
       },
     });
+    mocks.resolveServerAsset.mockReset();
     delete process.env.PDF_MINERU_BASE_URL;
     delete process.env.PDF_MINERU_API_KEY;
   });
@@ -213,5 +219,202 @@ describe('POST /api/extract-document', () => {
       expect.any(Buffer),
       'lesson.docx',
     );
+  });
+});
+
+async function postExtractDocumentByAssetId(input: {
+  assetId?: string;
+  fileName?: string;
+  mimeType?: string;
+  providerId?: string;
+  apiKey?: string;
+}) {
+  const { POST } = await import('@/app/api/extract-document/route');
+  const request = new Request('http://localhost/api/extract-document', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return POST(request as unknown as NextRequest);
+}
+
+describe('POST /api/extract-document (asset-id form)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    mocks.isServerConfiguredProvider.mockReturnValue(false);
+    mocks.resolvePDFApiKey.mockImplementation(
+      (_providerId: string, clientKey?: string) => clientKey || '',
+    );
+    mocks.resolvePDFBaseUrl.mockImplementation(
+      (_providerId: string, clientBaseUrl?: string) => clientBaseUrl,
+    );
+    mocks.parseWithMinerUCloud.mockReset();
+    mocks.parseWithMinerUCloud.mockResolvedValue({
+      text: 'cloud parsed text',
+      images: [],
+      metadata: {
+        pageCount: 1,
+        parser: 'mineru-cloud',
+      },
+    });
+    mocks.resolveServerAsset.mockReset();
+  });
+
+  it('extracts a resolved server asset through the document extractor', async () => {
+    mocks.resolveServerAsset.mockResolvedValue({
+      status: 'resolved',
+      buffer: Buffer.from('hello from asset'),
+      mimeType: 'text/plain',
+    });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'notes.txt',
+      mimeType: 'text/plain',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json).toMatchObject({
+      success: true,
+      data: {
+        text: 'hello from asset',
+        metadata: {
+          fileName: 'notes.txt',
+          mimeType: 'text/plain',
+          parser: 'plain-text',
+        },
+      },
+    });
+    expect(mocks.resolveServerAsset).toHaveBeenCalledWith('ast_abc', expect.anything());
+  });
+
+  it('passes the requested provider and its config through for asset-id extraction', async () => {
+    mocks.resolveServerAsset.mockResolvedValue({
+      status: 'resolved',
+      buffer: Buffer.from('%PDF-1.4'),
+      mimeType: 'application/pdf',
+    });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'lesson.pdf',
+      mimeType: 'application/pdf',
+      providerId: 'mineru-cloud',
+      apiKey: 'cloud-key',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json).toMatchObject({
+      success: true,
+      data: {
+        text: 'cloud parsed text',
+        metadata: {
+          parser: 'mineru-cloud',
+        },
+      },
+    });
+    expect(mocks.parseWithMinerUCloud).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'mineru-cloud',
+        apiKey: 'cloud-key',
+        baseUrl: undefined,
+      }),
+      expect.any(Buffer),
+      'lesson.pdf',
+    );
+  });
+
+  it('returns 404 when the asset id resolves to nothing', async () => {
+    mocks.resolveServerAsset.mockResolvedValue({ status: 'missing' });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_missing',
+      fileName: 'notes.txt',
+      mimeType: 'text/plain',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(404);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'ASSET_NOT_FOUND',
+    });
+    expect(json.error).toContain('ast_missing');
+  });
+
+  it('returns 503 when server persistence is not configured', async () => {
+    mocks.resolveServerAsset.mockResolvedValue({ status: 'unconfigured' });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'notes.txt',
+      mimeType: 'text/plain',
+    });
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+  });
+
+  it('returns 401 when the server persistence credential is missing', async () => {
+    mocks.resolveServerAsset.mockResolvedValue({ status: 'unauthenticated' });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'notes.txt',
+      mimeType: 'text/plain',
+    });
+
+    expect(res.status).toBe(401);
+    await expect(res.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: 'UNAUTHENTICATED',
+    });
+  });
+
+  it('returns 400 when no asset id is provided', async () => {
+    const res = await postExtractDocumentByAssetId({
+      fileName: 'notes.txt',
+      mimeType: 'text/plain',
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: 'MISSING_REQUIRED_FIELD',
+    });
+    expect(mocks.resolveServerAsset).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for a malformed JSON body', async () => {
+    const { POST } = await import('@/app/api/extract-document/route');
+    const request = new Request('http://localhost/api/extract-document', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{not json',
+    });
+
+    const res = await POST(request as unknown as NextRequest);
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+    expect(mocks.resolveServerAsset).not.toHaveBeenCalled();
+  });
+
+  it('does not consult the server asset store for the multipart byte form', async () => {
+    const res = await postExtractDocument({
+      file: new File(['hello'], 'notes.txt', { type: 'text/plain' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mocks.resolveServerAsset).not.toHaveBeenCalled();
   });
 });
