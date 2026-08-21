@@ -581,6 +581,33 @@ describe('classroom media URL conversion', () => {
     expect(containsClassroomMediaUrls(result.document)).toBe(true);
   });
 
+  test('a changed video manifest preserves adversarial ref keys through the conversion commit', async () => {
+    const { urlFetches, deps } = makeHarness();
+    const deadKey = 'https://server.example.com/api/classroom-media/c1/videos/dead.mp4';
+    urlFetches.set(deadKey, { kind: 'dead' });
+    const entries = [
+      ['__proto__', { prompt: 'proto' }],
+      ['constructor', { prompt: 'constructor' }],
+      [deadKey, { prompt: 'drop' }],
+    ] as const;
+    const doc = document({
+      stage: stage({
+        videoManifest: Object.fromEntries(entries) as unknown as Stage['videoManifest'],
+      }),
+    });
+
+    const result = await convertDocumentAssetRefs(doc, deps);
+
+    expect(result.changed).toBe(true);
+    expect(Object.keys(result.document.stage.videoManifest ?? {})).toEqual([
+      '__proto__',
+      'constructor',
+    ]);
+    expect(Object.hasOwn(result.document.stage.videoManifest ?? {}, '__proto__')).toBe(true);
+    expect(result.document.stage.videoManifest?.['__proto__']).toEqual({ prompt: 'proto' });
+    expect(result.document.stage.videoManifest?.constructor).toEqual({ prompt: 'constructor' });
+  });
+
   test('a transiently unavailable classroom media URL keeps the legacy slot untouched', async () => {
     const { pool, deps } = makeHarness();
     const doc = document({

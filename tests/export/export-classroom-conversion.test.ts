@@ -161,13 +161,16 @@ describe('classroom ZIP export conversion snapshot', () => {
     const exportedAudioRef = manifest.scenes[0].actions?.[0]?.audioRef;
     expect(exportedSrc).toBe(durableCanvas.elements[0].src);
     expect(exportedSrc).toMatch(/^ast_/);
-    expect(exportedAudioRef).toBe(`audio/${durableAction?.audioId}.mp3`);
+    expect(exportedAudioRef).toBe('audio/audio-1.mp3');
 
     // The archive carries the media under exactly the manifest's references,
     // and the mediaIndex covers them (no dangling handles).
-    expect(zipData.file(`media/${exportedSrc}.png`)).toBeDefined();
+    expect(zipData.file('media/asset-1.png')).toBeDefined();
     expect(zipData.file(exportedAudioRef!)).toBeDefined();
-    expect(manifest.mediaIndex?.[`media/${exportedSrc}.png`]).toMatchObject({ type: 'generated' });
+    expect(manifest.mediaIndex?.['media/asset-1.png']).toMatchObject({
+      type: 'generated',
+      sourceRef: exportedSrc,
+    });
     expect(manifest.mediaIndex?.[exportedAudioRef!]).toMatchObject({ type: 'audio' });
 
     // Round-trip: importing the ZIP materializes every entry into fresh
@@ -187,14 +190,238 @@ describe('classroom ZIP export conversion snapshot', () => {
       Date.now(),
       importedAllocations,
     );
-    const importedMediaId = mediaMappings.refToNewId[exportedSrc];
-    const importedAudioId = audioMappings[exportedAudioRef!];
+    const importedMediaId = mediaMappings.refToNewId.get(exportedSrc);
+    const importedAudioId = audioMappings.pathToId.get(exportedAudioRef!);
     expect(importedMediaId).toMatch(/^ast_/);
     expect(importedAudioId).toMatch(/^ast_/);
     expect(await pool.exists?.(importedMediaId as never)).toBe(true);
     expect(await pool.exists?.(importedAudioId as never)).toBe(true);
     expect(await db.mediaFiles.get(`imported-1:${importedMediaId}`)).toBeDefined();
-    expect(await db.audioFiles.get(importedAudioId)).toBeDefined();
+    expect(await db.audioFiles.get(importedAudioId!)).toBeDefined();
+  });
+
+  it('round-trips one opaque ref independently as image media and speech audio', async () => {
+    const { db } = await import('@/lib/utils/database');
+    const { getAssetPool } = await import('@/lib/media/asset-pool');
+    const { BrowserDocumentStore } = await import('@openmaic/storage');
+    const { buildClassroomExportZip } = await import('@/lib/export/use-export-classroom');
+    const { materializeImportedAudio, materializeImportedMedia, rewriteImportedSlideMediaRefs } =
+      await import('@/lib/import/use-import-classroom');
+    const { rewriteAudioRefsToIds } = await import('@/lib/export/classroom-zip-utils');
+    const { DSL_VERSION } = await import('@openmaic/dsl');
+    const pool = getAssetPool();
+    const sharedRef = await pool.put(new Blob(['shared-bytes'], { type: 'image/png' }), {
+      contentType: 'image/png',
+      mediaType: 'image',
+    });
+    const slide = {
+      id: 'slide-1',
+      elements: [{ id: 'image-1', type: 'image', src: sharedRef }],
+    };
+    const scene = {
+      id: 'scene-1',
+      stageId: 'stage-1',
+      type: 'slide',
+      title: 'Scene',
+      order: 0,
+      content: { type: 'slide', canvas: slide },
+      actions: [{ id: 'speech-1', type: 'speech', text: 'Shared', audioId: sharedRef }],
+    };
+    const stage = { id: 'stage-1', name: 'Course', createdAt: 100, updatedAt: 200 };
+    const store = new BrowserDocumentStore({
+      indexedDB: globalThis.indexedDB as unknown as IDBFactory,
+      dbName: 'maic-documents',
+      validateScene: () => ({ valid: true }),
+    });
+    await store.saveDocument({ dslVersion: DSL_VERSION, stage, scenes: [scene] } as never);
+    await db.mediaFiles.put({
+      id: `stage-1:${sharedRef}`,
+      stageId: 'stage-1',
+      type: 'image',
+      blob: new Blob(['image-row'], { type: 'image/png' }),
+      mimeType: 'image/png',
+      size: 9,
+      prompt: '',
+      params: '',
+      createdAt: 1,
+    });
+    await db.audioFiles.put({
+      id: sharedRef,
+      stageId: 'stage-1',
+      blob: new Blob(['audio-row'], { type: 'audio/mpeg' }),
+      format: 'mp3',
+      duration: 1,
+      createdAt: 1,
+    });
+
+    const { zip } = await buildClassroomExportZip(stage as Stage, [scene] as Scene[], {
+      store,
+      kv: new MemoryKv(),
+      legacyStore: { read: async () => null, listStages: async () => [] },
+      lockManager: lockManager(),
+    });
+    const zipData = await JSZip.loadAsync(zip);
+    const manifest = JSON.parse(
+      await zipData.file('manifest.json')!.async('string'),
+    ) as ClassroomManifest;
+    const mediaPath = 'media/asset-1.png';
+    const audioPath = 'audio/audio-1.mp3';
+    expect(zipData.file(mediaPath)).toBeDefined();
+    expect(zipData.file(audioPath)).toBeDefined();
+    expect(manifest.mediaIndex?.[mediaPath]).toMatchObject({
+      type: 'generated',
+      sourceRef: sharedRef,
+    });
+    expect(manifest.mediaIndex?.[audioPath]).toMatchObject({
+      type: 'audio',
+      sourceRef: sharedRef,
+    });
+    expect(manifest.scenes[0].actions?.[0]).toMatchObject({ audioRef: audioPath });
+
+    const audioMappings = await materializeImportedAudio(
+      zipData,
+      manifest,
+      'imported-cross-kind',
+      Date.now(),
+    );
+    const mediaMappings = await materializeImportedMedia(
+      zipData,
+      manifest,
+      'imported-cross-kind',
+      Date.now(),
+    );
+    const exportedContent = manifest.scenes[0].content;
+    if (exportedContent.type !== 'slide') throw new Error('expected slide content');
+    const importedSlide = rewriteImportedSlideMediaRefs(exportedContent.canvas, mediaMappings);
+    const importedActions = rewriteAudioRefsToIds(
+      manifest.scenes[0].actions ?? [],
+      audioMappings.pathToId,
+    );
+    const importedMediaId = mediaMappings.refToNewId.get(sharedRef);
+    const importedAudioId = audioMappings.pathToId.get(audioPath);
+    expect(importedMediaId).toMatch(/^ast_/);
+    expect(importedAudioId).toMatch(/^ast_/);
+    expect(importedMediaId).not.toBe(importedAudioId);
+    expect(importedSlide.elements[0]).toMatchObject({ src: importedMediaId });
+    expect(importedActions[0]).toMatchObject({ audioId: importedAudioId });
+  });
+
+  it('round-trips pool-backed slide audio through the classroom ZIP', async () => {
+    const { getAssetPool } = await import('@/lib/media/asset-pool');
+    const { BrowserDocumentStore } = await import('@openmaic/storage');
+    const { buildClassroomExportZip } = await import('@/lib/export/use-export-classroom');
+    const { materializeImportedAudio, rewriteImportedSlideMediaRefs } =
+      await import('@/lib/import/use-import-classroom');
+    const { DSL_VERSION } = await import('@openmaic/dsl');
+    const pool = getAssetPool();
+    const sourceAudioId = await pool.put(new Blob(['slide-audio-bytes'], { type: 'audio/mpeg' }), {
+      contentType: 'audio/mpeg',
+      mediaType: 'audio',
+    });
+    const slide = {
+      id: 'slide-1',
+      elements: [{ id: 'audio-1', type: 'audio', src: sourceAudioId }],
+    };
+    const scene = {
+      id: 'scene-1',
+      stageId: 'stage-1',
+      type: 'slide',
+      title: 'Scene',
+      order: 0,
+      content: { type: 'slide', canvas: slide },
+    };
+    const stage = { id: 'stage-1', name: 'Course', createdAt: 100, updatedAt: 200 };
+    const store = new BrowserDocumentStore({
+      indexedDB: globalThis.indexedDB as unknown as IDBFactory,
+      dbName: 'maic-documents',
+      validateScene: () => ({ valid: true }),
+    });
+    await store.saveDocument({
+      dslVersion: DSL_VERSION,
+      stage,
+      scenes: [scene],
+    } as never);
+
+    const { zip } = await buildClassroomExportZip(stage as Stage, [scene] as Scene[], {
+      store,
+      kv: new MemoryKv(),
+      legacyStore: { read: async () => null, listStages: async () => [] },
+      lockManager: lockManager(),
+    });
+    const zipData = await JSZip.loadAsync(zip);
+    const manifest = JSON.parse(
+      await zipData.file('manifest.json')!.async('string'),
+    ) as ClassroomManifest;
+    const audioPath = 'audio/audio-1.mp3';
+    expect(zipData.file(audioPath)).toBeDefined();
+    expect(await zipData.file(audioPath)!.async('string')).toBe('slide-audio-bytes');
+    expect(manifest.mediaIndex?.[audioPath]).toMatchObject({ type: 'audio' });
+
+    const audioMappings = await materializeImportedAudio(
+      zipData,
+      manifest,
+      'imported-1',
+      Date.now(),
+    );
+    const exportedContent = manifest.scenes[0].content;
+    expect(exportedContent.type).toBe('slide');
+    if (exportedContent.type !== 'slide') throw new Error('expected exported slide content');
+    const importedSlide = rewriteImportedSlideMediaRefs(
+      exportedContent.canvas,
+      { refToNewId: new Map(), posterRefToNewId: new Map(), posterByMediaRef: new Map() },
+      audioMappings.sourceRefToId,
+    );
+    const importedAudioId = audioMappings.sourceRefToId.get(sourceAudioId);
+    expect(importedAudioId).toMatch(/^ast_/);
+    expect(importedAudioId).not.toBe(sourceAudioId);
+    expect(importedSlide.elements[0]).toMatchObject({ type: 'audio', src: importedAudioId });
+    expect(await pool.exists?.(importedAudioId as never)).toBe(true);
+  });
+
+  it('does not archive stage-whiteboard bytes the classroom format cannot reconstruct', async () => {
+    const { getAssetPool } = await import('@/lib/media/asset-pool');
+    const { BrowserDocumentStore } = await import('@openmaic/storage');
+    const { buildClassroomExportZip } = await import('@/lib/export/use-export-classroom');
+    const { DSL_VERSION } = await import('@openmaic/dsl');
+    const pool = getAssetPool();
+    const whiteboardAssetId = await pool.put(
+      new Blob(['stage-whiteboard-bytes'], { type: 'image/png' }),
+      { contentType: 'image/png', mediaType: 'image' },
+    );
+    const stage = {
+      id: 'stage-1',
+      name: 'Course',
+      createdAt: 100,
+      updatedAt: 200,
+      whiteboard: [
+        {
+          id: 'stage-whiteboard',
+          elements: [{ id: 'whiteboard-image', type: 'image', src: whiteboardAssetId }],
+        },
+      ],
+    };
+    const store = new BrowserDocumentStore({
+      indexedDB: globalThis.indexedDB as unknown as IDBFactory,
+      dbName: 'maic-documents',
+      validateScene: () => ({ valid: true }),
+    });
+    await store.saveDocument({ dslVersion: DSL_VERSION, stage, scenes: [] } as never);
+
+    const { zip } = await buildClassroomExportZip(stage as Stage, [], {
+      store,
+      kv: new MemoryKv(),
+      legacyStore: { read: async () => null, listStages: async () => [] },
+      lockManager: lockManager(),
+    });
+    const zipData = await JSZip.loadAsync(zip);
+    const manifest = JSON.parse(
+      await zipData.file('manifest.json')!.async('string'),
+    ) as ClassroomManifest;
+
+    expect(manifest.stage).not.toHaveProperty('whiteboard');
+    expect(Object.values(manifest.mediaIndex)).not.toContainEqual(
+      expect.objectContaining({ sourceRef: whiteboardAssetId }),
+    );
   });
 
   it('keeps unsaved scene edits while converting their references', async () => {
@@ -259,7 +486,7 @@ describe('classroom ZIP export conversion snapshot', () => {
     expect(manifest.scenes[0].title).toBe('Edited title');
     const exportedSrc = manifest.scenes[0].content.canvas.elements[0].src;
     expect(exportedSrc).toMatch(/^ast_/);
-    expect(zipData.file(`media/${exportedSrc}.png`)).toBeDefined();
+    expect(zipData.file('media/asset-1.png')).toBeDefined();
   });
 
   it('a successful export leaves no new pool entries or mirror rows behind', async () => {
@@ -383,7 +610,7 @@ describe('classroom ZIP export conversion snapshot', () => {
     };
     const exportedNewSrc = manifest.scenes[0].content.canvas.elements[1].src;
     expect(exportedNewSrc).toMatch(/^ast_/);
-    expect(zipData.file(`media/${exportedNewSrc}.png`)).toBeDefined();
+    expect(zipData.file('media/asset-1.png')).toBeDefined();
 
     // ...but its pool entry and compatibility mirror row were rolled back
     // once the ZIP captured the bytes: the durable document never referenced

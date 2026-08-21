@@ -117,6 +117,17 @@ describe('exclusive asset ownership', () => {
     expect(exclusive).toBe(false);
   });
 
+  it('is not exclusive when duplicate user-controlled ids hide a second owner', async () => {
+    const duplicateOwners = documentWithOneOwner('stage-1');
+    duplicateOwners.scenes.push(structuredClone(duplicateOwners.scenes[0]));
+    mocks.loadDocument.mockResolvedValue(duplicateOwners);
+
+    const { exclusive, activePersistedRefs } = await proveExclusiveAssetOwnership(ASSET, 'stage-1');
+
+    expect(activePersistedRefs?.referenceCounts.get(ASSET)).toBe(2);
+    expect(exclusive).toBe(false);
+  });
+
   /**
    * A probe that could not be carried out proves nothing, so it must not be
    * read as "nobody else is editing".

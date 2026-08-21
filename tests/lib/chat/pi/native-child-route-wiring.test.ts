@@ -1,18 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
+import { BrowserRuntimeStore } from '@openmaic/storage';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
+
+import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 
 const mocks = vi.hoisted(() => ({
   resolveModel: vi.fn(),
   streamLLM: vi.fn(),
+  searchWeb: vi.fn(),
+  getServerPersistenceProvider: vi.fn(),
 }));
 
 vi.mock('@/lib/server/resolve-model', () => ({ resolveModel: mocks.resolveModel }));
 vi.mock('@/lib/ai/llm', () => ({ streamLLM: mocks.streamLLM }));
+vi.mock('@/lib/web-search', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/web-search')>();
+  return { ...actual, searchWeb: mocks.searchWeb };
+});
 vi.mock('@/lib/ai/providers', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/ai/providers')>();
   return { ...actual, isProviderKeyRequired: vi.fn(() => false) };
 });
 vi.mock('@/lib/live-mode', () => ({ isLiveMode: false }));
+vi.mock('@/lib/persistence/server-provider', () => ({
+  getServerPersistenceProvider: mocks.getServerPersistenceProvider,
+}));
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
@@ -27,7 +40,11 @@ const envNames = [
   'NEXT_PUBLIC_PI_CHAT_ENABLED',
   'OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME',
   'OPENMAIC_ENABLE_PI_NATIVE_CHILD_SPOTLIGHT',
-  'OPENMAIC_ENABLE_PI_WEB_SEARCH',
+  'TAVILY_API_KEY',
+  'TAVILY_BASE_URL',
+  'NEXT_PUBLIC_PERSISTENCE',
+  'DATABASE_URL',
+  'PERSISTENCE_DEV_TOKEN',
 ] as const;
 const originalEnv = new Map<string, string | undefined>();
 
@@ -48,10 +65,19 @@ function resultFrom(parts: Array<Record<string, unknown>>) {
   };
 }
 
-function makeRequest(): NextRequest {
+function makeRequest(
+  overrides: Record<string, unknown> = {},
+  headers: Record<string, string> = {
+    authorization: 'Bearer persistence-test-token',
+    'x-learner-key': 'learner-route-test',
+  },
+): NextRequest {
   return new Request('http://localhost/api/chat/pi', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...headers,
+    },
     body: JSON.stringify({
       messages: [
         {
@@ -109,6 +135,10 @@ function makeRequest(): NextRequest {
       },
       apiKey: '',
       model: 'test:model',
+      webSearchProviderId: 'tavily',
+      webSearchApiKey: 'toolbar-search-key',
+      webSearchBaseUrl: 'https://api.tavily.com/search',
+      ...overrides,
     }),
   }) as unknown as NextRequest;
 }
@@ -123,13 +153,23 @@ async function readSseEvents(response: Response) {
 
 describe('PR2 Native Child route production wiring', () => {
   beforeEach(() => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
     for (const name of envNames) originalEnv.set(name, process.env[name]);
     process.env.NEXT_PUBLIC_PI_CHAT_ENABLED = 'true';
     process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME = 'true';
     process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_SPOTLIGHT = 'true';
-    delete process.env.OPENMAIC_ENABLE_PI_WEB_SEARCH;
+    delete process.env.TAVILY_API_KEY;
+    delete process.env.TAVILY_BASE_URL;
     mocks.resolveModel.mockReset();
     mocks.streamLLM.mockReset();
+    mocks.searchWeb.mockReset();
+    mocks.getServerPersistenceProvider.mockReset();
+    mocks.getServerPersistenceProvider.mockResolvedValue({
+      runtimeStore: new BrowserRuntimeStore({
+        indexedDB: new IDBFactory(),
+        payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      }),
+    });
     mocks.resolveModel.mockResolvedValue({
       model: resolvedModel,
       apiKey: 'resolved-key',
@@ -146,6 +186,7 @@ describe('PR2 Native Child route production wiring', () => {
       else process.env[name] = value;
     }
     originalEnv.clear();
+    vi.unstubAllGlobals();
     vi.resetModules();
   });
 
@@ -198,7 +239,7 @@ describe('PR2 Native Child route production wiring', () => {
     );
     expect(JSON.stringify(childPayloads[0]?.options.messages)).toContain('evidence-element');
     expect(childPayloads[0]?.options.tools).toHaveProperty('spotlight');
-    expect(childPayloads[0]?.options.tools).not.toHaveProperty('web_search');
+    expect(childPayloads[0]?.options.tools).toHaveProperty('web_search');
     expect(JSON.stringify(childPayloads[1]?.options.messages)).toContain('spotlight-1');
     expect(JSON.stringify(childPayloads[1]?.options.messages)).toContain(
       'Spotlight was accepted for best-effort dispatch.',
@@ -224,7 +265,284 @@ describe('PR2 Native Child route production wiring', () => {
     });
   }, 15_000);
 
-  it('keeps the production route on the Legacy Child harness when both new flags are absent', async () => {
+  it('wires RuntimeStore WB inventory through the real route and completes an action-only Child', async () => {
+    process.env.NEXT_PUBLIC_PERSISTENCE = '1';
+    process.env.DATABASE_URL = 'postgres://shared-provider-test';
+    process.env.PERSISTENCE_DEV_TOKEN = 'persistence-test-token';
+    const directorResponses = [
+      [toolCall('read-1', 'read_scene', { sceneId: 'scene-current' }), finish('tool-calls')],
+      [
+        toolCall('delegate-1', 'call_agent', {
+          agentId: 'teacher-1',
+          instruction: 'Read the whiteboard, then add one concise label.',
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('cue-1', 'cue_user', { prompt: 'Continue?' }), finish('tool-calls')],
+    ];
+    const childResponses = [
+      [toolCall('wb-read-1', 'wb_read', {}), finish('tool-calls')],
+      [
+        toolCall('wb-draw-1', 'wb_draw_text', {
+          expectedLastSeq: null,
+          content: 'Runtime authority',
+          x: 80,
+          y: 100,
+        }),
+        finish('tool-calls'),
+      ],
+      [finish('stop')],
+    ];
+    const payloads: Array<{ source: string; options: Record<string, unknown> }> = [];
+    mocks.streamLLM.mockImplementation((options, source) => {
+      payloads.push({ source, options });
+      const parts =
+        source === 'pi-chat-native-child' ? childResponses.shift() : directorResponses.shift();
+      return resultFrom(parts ?? [finish('stop')]);
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(
+      makeRequest({
+        config: {
+          agentIds: ['teacher-1'],
+          piEnableWhiteboardTools: true,
+          agentConfigs: [
+            {
+              id: 'teacher-1',
+              name: 'Teacher',
+              role: 'teacher',
+              persona: 'Use the whiteboard directly.',
+              avatar: '',
+              color: '#3366ff',
+              allowedActions: ['wb_draw_text'],
+              priority: 10,
+            },
+          ],
+        },
+      }),
+    );
+    const events = await readSseEvents(response);
+
+    expect(response.status).toBe(200);
+    expect(mocks.getServerPersistenceProvider).toHaveBeenCalledWith(
+      'postgres://shared-provider-test',
+    );
+    const childPayloads = payloads.filter((payload) => payload.source === 'pi-chat-native-child');
+    expect(childPayloads).toHaveLength(3);
+    expect(childPayloads[0]?.options.tools).toHaveProperty('wb_read');
+    expect(childPayloads[0]?.options.tools).toHaveProperty('wb_draw_text');
+    expect(childPayloads[0]?.options.tools).not.toHaveProperty('wb_open');
+    const providerDrawTool = (
+      childPayloads[0]?.options.tools as
+        | Record<
+            string,
+            {
+              inputSchema?: {
+                jsonSchema?: {
+                  required?: string[];
+                  properties?: { expectedLastSeq?: { description?: string } };
+                };
+              };
+            }
+          >
+        | undefined
+    )?.wb_draw_text;
+    expect(providerDrawTool?.inputSchema?.jsonSchema?.required).toContain('expectedLastSeq');
+    expect(
+      providerDrawTool?.inputSchema?.jsonSchema?.properties?.expectedLastSeq?.description,
+    ).toContain('Copy nextMutation.expectedLastSeq exactly');
+    expect(JSON.stringify(childPayloads[1]?.options.messages)).toContain(
+      'nextMutation\\\":{\\\"expectedLastSeq\\\":null',
+    );
+    expect(JSON.stringify(childPayloads[2]?.options.messages)).toContain('committedSeq');
+
+    expect(events).toContainEqual({
+      type: 'whiteboard',
+      data: expect.objectContaining({
+        kind: 'visibility_query',
+        stageId: 'stage-1',
+      }),
+    });
+    expect(events).toContainEqual({
+      type: 'whiteboard',
+      data: { kind: 'projection', stageId: 'stage-1', lastSeq: 0 },
+    });
+    expect(
+      events.some((event) => event.type === 'action' && event.data?.actionName === 'wb_draw_text'),
+    ).toBe(false);
+    expect(events.find((event) => event.type === 'done')).toMatchObject({
+      data: { totalAgents: 1, totalActions: 1, agentHadContent: true },
+    });
+
+    const provider = await mocks.getServerPersistenceProvider.mock.results[0]?.value;
+    const sessions = await provider.runtimeStore.listSessions('stage-1', 'learner-route-test');
+    expect(sessions).toHaveLength(1);
+    const records = await provider.runtimeStore.listRecords(sessions[0]!.id);
+    expect(records).toHaveLength(1);
+    expect(records[0]?.seq).toBe(0);
+  }, 15_000);
+
+  it.each([
+    {
+      name: 'an invalid request-start Stage ID',
+      request: () =>
+        makeRequest({
+          storeState: {
+            stage: { id: '   ', name: 'Invalid Stage', createdAt: 1, updatedAt: 2 },
+            outlines: [],
+            scenes: [
+              {
+                id: 'scene-current',
+                stageId: '   ',
+                title: 'Current slide',
+                order: 1,
+                type: 'slide',
+                content: { type: 'slide', canvas: { elements: [] } },
+              },
+            ],
+            currentSceneId: 'scene-current',
+            mode: 'autonomous',
+            whiteboardOpen: false,
+          },
+          config: {
+            agentIds: ['teacher-1'],
+            piEnableWhiteboardTools: true,
+            agentConfigs: [
+              {
+                id: 'teacher-1',
+                name: 'Teacher',
+                role: 'teacher',
+                persona: 'Teach directly.',
+                avatar: '',
+                color: '#3366ff',
+                allowedActions: ['wb_draw_text'],
+                priority: 10,
+              },
+            ],
+          },
+        }),
+    },
+    {
+      name: 'a missing learner binding',
+      request: () =>
+        makeRequest(
+          {
+            config: {
+              agentIds: ['teacher-1'],
+              piEnableWhiteboardTools: true,
+              agentConfigs: [
+                {
+                  id: 'teacher-1',
+                  name: 'Teacher',
+                  role: 'teacher',
+                  persona: 'Teach directly.',
+                  avatar: '',
+                  color: '#3366ff',
+                  allowedActions: ['wb_draw_text'],
+                  priority: 10,
+                },
+              ],
+            },
+          },
+          { authorization: 'Bearer persistence-test-token' },
+        ),
+    },
+  ])('keeps the Native WB bundle absent for $name', async ({ request }) => {
+    process.env.NEXT_PUBLIC_PERSISTENCE = '1';
+    process.env.DATABASE_URL = 'postgres://shared-provider-test';
+    process.env.PERSISTENCE_DEV_TOKEN = 'persistence-test-token';
+    const directorResponses = [
+      [toolCall('read-1', 'read_scene', { sceneId: 'scene-current' }), finish('tool-calls')],
+      [
+        toolCall('delegate-1', 'call_agent', {
+          agentId: 'teacher-1',
+          instruction: 'Give one short explanation.',
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('cue-1', 'cue_user', { prompt: 'Continue?' }), finish('tool-calls')],
+    ];
+    const childResponses = [
+      [{ type: 'text-delta', text: 'No whiteboard capability.' }, finish('stop')],
+    ];
+    const payloads: Array<{ source: string; options: Record<string, unknown> }> = [];
+    mocks.streamLLM.mockImplementation((options, source) => {
+      payloads.push({ source, options });
+      const parts =
+        source === 'pi-chat-native-child' ? childResponses.shift() : directorResponses.shift();
+      return resultFrom(parts ?? [finish('stop')]);
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    await response.text();
+
+    expect(mocks.getServerPersistenceProvider).not.toHaveBeenCalled();
+    const child = payloads.find((payload) => payload.source === 'pi-chat-native-child');
+    expect(child?.options.tools).not.toHaveProperty('wb_read');
+    expect(child?.options.tools).not.toHaveProperty('wb_draw_text');
+  });
+
+  it('keeps Pi chat available without WB inventory when persistence initialization fails', async () => {
+    process.env.NEXT_PUBLIC_PERSISTENCE = '1';
+    process.env.DATABASE_URL = 'postgres://unavailable-provider-test';
+    process.env.PERSISTENCE_DEV_TOKEN = 'persistence-test-token';
+    mocks.getServerPersistenceProvider.mockRejectedValue(new Error('pool unavailable'));
+    const directorResponses = [
+      [toolCall('read-1', 'read_scene', { sceneId: 'scene-current' }), finish('tool-calls')],
+      [
+        toolCall('delegate-1', 'call_agent', {
+          agentId: 'teacher-1',
+          instruction: 'Give one short explanation.',
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('cue-1', 'cue_user', { prompt: 'Continue?' }), finish('tool-calls')],
+    ];
+    const childResponses = [
+      [{ type: 'text-delta', text: 'Whiteboard is unavailable.' }, finish('stop')],
+    ];
+    const payloads: Array<{ source: string; options: Record<string, unknown> }> = [];
+    mocks.streamLLM.mockImplementation((options, source) => {
+      payloads.push({ source, options });
+      const parts =
+        source === 'pi-chat-native-child' ? childResponses.shift() : directorResponses.shift();
+      return resultFrom(parts ?? [finish('stop')]);
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(
+      makeRequest({
+        config: {
+          agentIds: ['teacher-1'],
+          piEnableWhiteboardTools: true,
+          agentConfigs: [
+            {
+              id: 'teacher-1',
+              name: 'Teacher',
+              role: 'teacher',
+              persona: 'Teach directly.',
+              avatar: '',
+              color: '#3366ff',
+              allowedActions: ['wb_draw_text'],
+              priority: 10,
+            },
+          ],
+        },
+      }),
+    );
+    await response.text();
+
+    expect(response.status).toBe(200);
+    expect(mocks.getServerPersistenceProvider).toHaveBeenCalledOnce();
+    const child = payloads.find((payload) => payload.source === 'pi-chat-native-child');
+    expect(child?.options.tools).not.toHaveProperty('wb_read');
+    expect(child?.options.tools).not.toHaveProperty('wb_draw_text');
+  });
+
+  it('keeps the production route on Legacy when the Native runtime flag is absent', async () => {
     delete process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME;
     delete process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_SPOTLIGHT;
     const directorResponses = [
@@ -278,5 +596,155 @@ describe('PR2 Native Child route production wiring', () => {
     expect(events.find((event) => event.type === 'done')).toMatchObject({
       data: { totalAgents: 1, totalActions: 0, agentHadContent: true },
     });
+  }, 15_000);
+
+  it('keeps web_search exclusively in the Native Child inventory', async () => {
+    const directorResponses = [
+      [
+        toolCall('delegate-1', 'call_agent', {
+          agentId: 'teacher-1',
+          instruction: 'Answer briefly.',
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('cue-1', 'cue_user', { prompt: 'Any question?' }), finish('tool-calls')],
+    ];
+    const childResponses = [[{ type: 'text-delta', text: 'Brief answer.' }, finish('stop')]];
+    const payloads: Array<{ source: string; options: Record<string, unknown> }> = [];
+    mocks.streamLLM.mockImplementation((options, source) => {
+      payloads.push({ source, options });
+      const parts =
+        source === 'pi-chat-native-child' ? childResponses.shift() : directorResponses.shift();
+      return resultFrom(parts ?? [{ type: 'text-delta', text: 'unexpected' }, finish('stop')]);
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest());
+    await readSseEvents(response);
+    const directorPayload = payloads.find((payload) => payload.source === 'pi-chat-director');
+    const childPayload = payloads.find((payload) => payload.source === 'pi-chat-native-child');
+
+    expect(directorPayload?.options.tools).not.toHaveProperty('web_search');
+    expect(childPayload?.options.tools).toHaveProperty('web_search');
+  }, 15_000);
+
+  it('rejects an unsupported Toolbar Web Search base URL before starting the Pi loop', async () => {
+    const { POST } = await import('@/app/api/chat/pi/route');
+
+    const response = await POST(
+      makeRequest({ webSearchBaseUrl: 'https://evil.example.com/steal-key' }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toMatchObject({ error: expect.stringContaining('Unsupported Tavily base URL') });
+    expect(mocks.streamLLM).not.toHaveBeenCalled();
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
   });
+
+  it.each([
+    {
+      label: 'uses the selected client key for an unmanaged provider',
+      serverApiKey: undefined,
+      serverBaseUrl: undefined,
+      expectedApiKey: 'toolbar-search-key',
+      expectedBaseUrl: 'https://api.tavily.com/search',
+    },
+    {
+      label: 'keeps the server-managed key authoritative over a conflicting client key',
+      serverApiKey: 'server-search-key',
+      serverBaseUrl: 'http://internal-search.test/tavily',
+      expectedApiKey: 'server-search-key',
+      expectedBaseUrl: 'http://internal-search.test/tavily',
+    },
+  ])(
+    '$label through the real Native route and same-Child continuation',
+    async (testCase) => {
+      if (testCase.serverApiKey) process.env.TAVILY_API_KEY = testCase.serverApiKey;
+      if (testCase.serverBaseUrl) process.env.TAVILY_BASE_URL = testCase.serverBaseUrl;
+      const directorResponses = [
+        [
+          toolCall('delegate-1', 'call_agent', {
+            agentId: 'teacher-1',
+            instruction: 'Search for the current fact and answer with its exact source.',
+          }),
+          finish('tool-calls'),
+        ],
+        [toolCall('cue-1', 'cue_user', { prompt: 'Any question?' }), finish('tool-calls')],
+      ];
+      const childResponses = [
+        [
+          toolCall('search-1', 'web_search', { query: 'current fact', maxResults: 3 }),
+          finish('tool-calls'),
+        ],
+        [
+          { type: 'text-delta', text: 'Current fact: https://example.test/current' },
+          finish('stop'),
+        ],
+      ];
+      const payloads: Array<{ source: string; options: Record<string, unknown> }> = [];
+      mocks.searchWeb.mockResolvedValue({
+        answer: 'The current fact.',
+        query: 'current fact',
+        responseTime: 0.1,
+        sources: [
+          {
+            title: 'Exact source',
+            url: 'https://example.test/current',
+            content: 'Current evidence.',
+            score: 1,
+          },
+        ],
+      });
+      mocks.streamLLM.mockImplementation((options, source) => {
+        payloads.push({ source, options });
+        const parts =
+          source === 'pi-chat-native-child' ? childResponses.shift() : directorResponses.shift();
+        return resultFrom(parts ?? [{ type: 'text-delta', text: 'unexpected' }, finish('stop')]);
+      });
+
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest());
+      const events = await readSseEvents(response);
+
+      expect(response.status).toBe(200);
+      expect(mocks.resolveModel).toHaveBeenCalledTimes(1);
+      expect(mocks.searchWeb).toHaveBeenCalledTimes(1);
+      expect(mocks.searchWeb).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerId: 'tavily',
+          apiKey: testCase.expectedApiKey,
+          baseUrl: testCase.expectedBaseUrl,
+          query: 'current fact',
+          maxResults: 3,
+          signal: expect.any(AbortSignal),
+        }),
+      );
+      expect(payloads).toHaveLength(4);
+      expect(payloads.every((payload) => payload.options.model === resolvedModel)).toBe(true);
+      expect(payloads.map((payload) => payload.source)).toEqual([
+        'pi-chat-director',
+        'pi-chat-native-child',
+        'pi-chat-native-child',
+        'pi-chat-director',
+      ]);
+
+      const childPayloads = payloads.filter((payload) => payload.source === 'pi-chat-native-child');
+      expect(payloads[0]?.options.tools).not.toHaveProperty('web_search');
+      expect(childPayloads[0]?.options.tools).toHaveProperty('web_search');
+      expect(JSON.stringify(childPayloads[1]?.options.messages)).toContain('search-1');
+      expect(JSON.stringify(childPayloads[1]?.options.messages)).toContain(
+        'https://example.test/current',
+      );
+      expect(JSON.stringify(payloads)).not.toContain('toolbar-search-key');
+      expect(JSON.stringify(events)).not.toContain('toolbar-search-key');
+      expect(JSON.stringify(payloads)).not.toContain('server-search-key');
+      expect(JSON.stringify(events)).not.toContain('server-search-key');
+      expect(events.filter((event) => event.type === 'action')).toHaveLength(0);
+      expect(events.find((event) => event.type === 'done')).toMatchObject({
+        data: { totalAgents: 1, totalActions: 0, agentHadContent: true },
+      });
+    },
+    15_000,
+  );
 });

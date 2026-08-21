@@ -1,31 +1,24 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 
-import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
-import { PgDocumentStore, ensureDocumentSchema } from '@openmaic/storage/document/pg';
-import { PgRuntimeStore, ensureSchema } from '@openmaic/storage/runtime/pg';
 import {
   createStorageHttpHandler,
   DEFAULT_SIGNED_URL_TTL_SECONDS,
   type AssetIndirectByteEgress,
 } from '@openmaic/storage/server';
-import {
-  nodePostgresTransaction,
-  type ConnectableQueryable,
-} from '@openmaic/storage/server/reference';
-import { Pool } from 'pg';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
-import { lazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import { authenticatePersistenceRequest } from '@/lib/persistence/server-auth';
+import {
+  getServerPersistenceProvider,
+  type PersistencePoolFactory,
+} from '@/lib/persistence/server-provider';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 
 export const runtime = 'nodejs';
 
 const ROUTE_PREFIX = '/api/persistence';
-
-type PoolFactory = (connectionString: string) => Pool;
 
 interface PersistenceHandlerState {
   connectionString?: string;
@@ -88,64 +81,43 @@ function indirectEgressWithinGrace(
 
 async function createPersistenceHandler(
   connectionString: string,
-  poolFactory: PoolFactory,
+  poolFactory?: PersistencePoolFactory,
 ): Promise<RequestListener> {
-  const pool = poolFactory(connectionString);
-  const queryable = pool as unknown as ConnectableQueryable;
-  try {
-    await ensureSchema(queryable);
-    await ensureDocumentSchema(queryable);
-    await ensureAssetSchema(queryable);
-    const withTransaction = nodePostgresTransaction(queryable);
-    // Deferred to first asset use: the asset backend is optional, so its
-    // misconfiguration (an invalid ASSET_S3_BUCKET, an unresolvable AWS SDK)
-    // must fail asset requests only, never this handler's initialization.
-    const byteStore = lazyAssetByteStore(process.env.ASSET_S3_BUCKET, queryable);
-    const runtimeStore = new PgRuntimeStore(queryable, {
-      withTransaction,
-      payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
-    });
-    const documentStore = new PgDocumentStore(queryable, {
-      withTransaction,
-      validateScene: validateAppScene,
-      validateStage: validateAppStage,
-    });
-    // The asset contract requires a server-derived principal; this development
-    // authenticator instead takes the partition key from a client-supplied header.
-    // Cross-principal isolation is therefore not in force: asset bytes are as
-    // reachable as documents and runtime records under this authenticator. Before
-    // asset routes carry anything that matters, production must replace
-    // authenticatePersistenceRequest with real session verification. See
-    // lib/persistence/server-auth.ts for the token's limits.
-    const assetStore = new PgAssetStore(queryable, { withTransaction, byteStore });
-    // Reclamation is not scheduled from here, and must not be: a route module
-    // has no once-per-process guarantee and no shutdown hook. AssetCollector
-    // runs from instrumentation.ts instead, over the byte store this same
-    // lib/persistence/asset-byte-store selection produces, so the collector
-    // always deletes through the layer the request path wrote through.
-    const byteEgress = indirectEgressWithinGrace(
-      configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
-    );
-    return createStorageHttpHandler(runtimeStore, documentStore, {
-      authenticate: authenticatePersistenceRequest,
-      authorizeMerge: async () => false,
-      authorizeAdmin: async () => false,
-      authorizeDocuments: async () => true,
-      validateScene: validateAppScene,
-      validateStage: validateAppStage,
-      payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
-      assetStore,
-      ...(byteEgress === undefined ? {} : { byteEgress }),
-    });
-  } catch (error) {
-    await pool.end().catch(() => {});
-    throw error;
-  }
+  const { runtimeStore, documentStore, assetStore } = await getServerPersistenceProvider(
+    connectionString,
+    poolFactory,
+  );
+  // The asset contract requires a server-derived principal; this development
+  // authenticator instead takes the partition key from a client-supplied header.
+  // Cross-principal isolation is therefore not in force: asset bytes are as
+  // reachable as documents and runtime records under this authenticator. Before
+  // asset routes carry anything that matters, production must replace
+  // authenticatePersistenceRequest with real session verification. See
+  // lib/persistence/server-auth.ts for the token's limits.
+  // Reclamation is not scheduled from here, and must not be: a route module
+  // has no once-per-process guarantee and no shutdown hook. AssetCollector
+  // runs from instrumentation.ts instead, over the byte store this same
+  // lib/persistence/asset-byte-store selection produces, so the collector
+  // always deletes through the layer the request path wrote through.
+  const byteEgress = indirectEgressWithinGrace(
+    configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
+  );
+  return createStorageHttpHandler(runtimeStore, documentStore, {
+    authenticate: authenticatePersistenceRequest,
+    authorizeMerge: async () => false,
+    authorizeAdmin: async () => false,
+    authorizeDocuments: async () => true,
+    validateScene: validateAppScene,
+    validateStage: validateAppStage,
+    payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+    assetStore,
+    ...(byteEgress === undefined ? {} : { byteEgress }),
+  });
 }
 
 function getPersistenceHandler(
   connectionString: string,
-  poolFactory: PoolFactory,
+  poolFactory?: PersistencePoolFactory,
 ): Promise<RequestListener> {
   if (handlerState.handlerPromise && handlerState.connectionString === connectionString) {
     return handlerState.handlerPromise;
@@ -300,7 +272,7 @@ function runNodeHandler(handler: RequestListener, request: Request): Promise<Res
 }
 
 interface PersistenceRequestDeps {
-  poolFactory?: PoolFactory;
+  poolFactory?: PersistencePoolFactory;
 }
 
 export async function handlePersistenceRequest(
@@ -320,9 +292,8 @@ export async function handlePersistenceRequest(
   }
 
   try {
-    const poolFactory = deps.poolFactory ?? ((value) => new Pool({ connectionString: value }));
     return await runNodeHandler(
-      await getPersistenceHandler(connectionString, poolFactory),
+      await getPersistenceHandler(connectionString, deps.poolFactory),
       request,
     );
   } catch (error) {

@@ -2,9 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { AgentTurnSummary } from '@/lib/orchestration/types';
 import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
+import type { NativeWebSearchConfig } from '@/lib/chat/pi/tools/web-search';
 
-const mocks = vi.hoisted(() => ({ streamLLM: vi.fn() }));
+const mocks = vi.hoisted(() => ({ streamLLM: vi.fn(), searchWeb: vi.fn() }));
 vi.mock('@/lib/ai/llm', () => ({ streamLLM: mocks.streamLLM }));
+vi.mock('@/lib/web-search', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/web-search')>();
+  return { ...actual, searchWeb: mocks.searchWeb };
+});
 
 import { buildCallAgentTool } from '@/lib/chat/pi/tools/call-agent';
 
@@ -14,6 +19,11 @@ const ZERO_USAGE = {
   inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 0 },
 };
 const resolvedModel = { provider: 'test.provider', modelId: 'shared-model' };
+const registeredSearchConfig: NativeWebSearchConfig = {
+  providerId: 'tavily',
+  apiKey: 'registered-search-key',
+  baseUrl: 'https://registered-search.test',
+};
 const teacher: AgentConfig = {
   id: 'teacher-1',
   name: 'Teacher',
@@ -38,6 +48,24 @@ function spotlightCall(elementId = 'current-element', toolCallId = 'spotlight-1'
     toolCallId,
     toolName: 'spotlight',
     input: { elementId, dimOpacity: 0.5 },
+  };
+}
+
+function webSearchCall(query = 'current fact', toolCallId = 'search-1') {
+  return {
+    type: 'tool-call',
+    toolCallId,
+    toolName: 'web_search',
+    input: { query },
+  };
+}
+
+function rawWebSearchCall(input: unknown, toolCallId = 'search-invalid') {
+  return {
+    type: 'tool-call',
+    toolCallId,
+    toolName: 'web_search',
+    input,
   };
 }
 
@@ -117,18 +145,9 @@ function makeHarness(
   options: {
     evidence?: ReturnType<typeof sceneEvidence>;
     send?: (event: StatelessEvent) => Promise<void>;
-    webEvidence?: {
-      content: string;
-      metadata: { query: string; retrievedAt: string; sourceCount: number };
-    };
     spotlightEnabled?: boolean;
+    nativeWebSearchConfig?: NativeWebSearchConfig;
     takeSceneEvidence?: () => ReturnType<typeof sceneEvidence> | undefined;
-    takeWebEvidence?: () =>
-      | {
-          content: string;
-          metadata: { query: string; retrievedAt: string; sourceCount: number };
-        }
-      | undefined;
     agent?: AgentConfig;
     requestStartCurrentScene?: {
       sceneId: string;
@@ -137,6 +156,7 @@ function makeHarness(
     };
     body?: StatelessChatRequest;
     maxActionsPerAgent?: number;
+    abortController?: AbortController;
   } = {},
 ) {
   const agent = options.agent ?? teacher;
@@ -156,7 +176,7 @@ function makeHarness(
     onActionDone,
     thinkingConfig: { mode: 'disabled', enabled: false },
     maxOutputTokens: 384,
-    abortSignal: new AbortController().signal,
+    abortSignal: options.abortController?.signal ?? new AbortController().signal,
     maxAgentTurns: 3,
     getAgentTurnCount: () => summaries.length,
     getAgentResponses: () => summaries,
@@ -165,6 +185,7 @@ function makeHarness(
     enableWhiteboardTools: true,
     childRuntimeMode: 'native',
     enableNativeChildSpotlight: options.spotlightEnabled ?? true,
+    nativeWebSearchConfig: options.nativeWebSearchConfig,
     requestStartCurrentScene:
       options.requestStartCurrentScene ??
       ({
@@ -173,7 +194,6 @@ function makeHarness(
         elementIds: ['current-element'],
       } as const),
     takeSceneEvidence: options.takeSceneEvidence ?? (() => options.evidence),
-    takeWebEvidence: options.takeWebEvidence ?? (() => options.webEvidence),
   });
   return { events, summaries, onActionDone, tool };
 }
@@ -190,7 +210,10 @@ function transportMessages(index: number) {
 }
 
 describe('Native Child production consumer', () => {
-  beforeEach(() => mocks.streamLLM.mockReset());
+  beforeEach(() => {
+    mocks.streamLLM.mockReset();
+    mocks.searchWeb.mockReset();
+  });
 
   it('does not consume pending evidence for an invalid delegation', async () => {
     const takeSceneEvidence = vi.fn(() => sceneEvidence());
@@ -206,36 +229,18 @@ describe('Native Child production consumer', () => {
     expect(result.details).toMatchObject({ skipped: true, reason: 'invalid_agent_id' });
   });
 
-  it('consumes Scene and Web evidence once even when the first valid Child fails', async () => {
+  it('consumes Scene evidence once even when the first valid Child fails', async () => {
     useResponses([
       [finish('error')],
       [{ type: 'text-delta', text: 'Second delegation without stale evidence.' }, finish('stop')],
     ]);
     let pendingScene: ReturnType<typeof sceneEvidence> | undefined = sceneEvidence();
-    let pendingWeb:
-      | {
-          content: string;
-          metadata: { query: string; retrievedAt: string; sourceCount: number };
-        }
-      | undefined = {
-      content: 'Unique failed-turn source: https://example.test/consumed-once',
-      metadata: {
-        query: 'failed child evidence',
-        retrievedAt: '2026-08-12T00:00:00.000Z',
-        sourceCount: 1,
-      },
-    };
     const takeSceneEvidence = vi.fn(() => {
       const evidence = pendingScene;
       pendingScene = undefined;
       return evidence;
     });
-    const takeWebEvidence = vi.fn(() => {
-      const evidence = pendingWeb;
-      pendingWeb = undefined;
-      return evidence;
-    });
-    const harness = makeHarness({ takeSceneEvidence, takeWebEvidence });
+    const harness = makeHarness({ takeSceneEvidence });
 
     const first = await execute(harness);
     const second = await harness.tool.execute('delegate-2', {
@@ -247,22 +252,13 @@ describe('Native Child production consumer', () => {
       isError: true,
       details: {
         sceneEvidence: [expect.objectContaining({ sceneId: 'scene-current' })],
-        webEvidence: expect.objectContaining({ query: 'failed child evidence' }),
       },
     });
     expect(second.details).not.toHaveProperty('sceneEvidence');
-    expect(second.details).not.toHaveProperty('webEvidence');
-    expect(second.details).toMatchObject({ availableToolNames: [] });
+    expect(second.details).toMatchObject({ availableToolNames: ['web_search'] });
     expect(takeSceneEvidence).toHaveBeenCalledTimes(2);
-    expect(takeWebEvidence).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(mocks.streamLLM.mock.calls[0]?.[0])).toContain('current-element');
-    expect(JSON.stringify(mocks.streamLLM.mock.calls[0]?.[0])).toContain(
-      'https://example.test/consumed-once',
-    );
     expect(JSON.stringify(mocks.streamLLM.mock.calls[1]?.[0])).not.toContain('current-element');
-    expect(JSON.stringify(mocks.streamLLM.mock.calls[1]?.[0])).not.toContain(
-      'https://example.test/consumed-once',
-    );
   });
 
   it('runs Spotlight and continuation in one Child through the shared OpenMAIC transport', async () => {
@@ -305,7 +301,7 @@ describe('Native Child production consumer', () => {
     expect(result).toMatchObject({
       details: {
         runtimeMode: 'native',
-        availableToolNames: ['spotlight'],
+        availableToolNames: ['spotlight', 'web_search'],
         text: 'This is the key idea.',
         sceneEvidence: [expect.objectContaining({ sceneId: 'scene-current' })],
         nativeChildRun: {
@@ -371,10 +367,15 @@ describe('Native Child production consumer', () => {
 
     const result = await execute(harness);
 
-    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toEqual({});
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).not.toHaveProperty(
+      'spotlight',
+    );
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toHaveProperty(
+      'web_search',
+    );
     expect(result).toMatchObject({
       details: {
-        availableToolNames: [],
+        availableToolNames: ['web_search'],
         sceneEvidence: [expect.objectContaining({ sceneId: 'scene-other' })],
       },
     });
@@ -387,11 +388,16 @@ describe('Native Child production consumer', () => {
 
     const result = await execute(harness);
 
-    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toEqual({});
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).not.toHaveProperty(
+      'spotlight',
+    );
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toHaveProperty(
+      'web_search',
+    );
     expect(result).toMatchObject({
       details: {
         runtimeMode: 'native',
-        availableToolNames: [],
+        availableToolNames: ['web_search'],
         nativeChildRun: { status: 'completed' },
       },
     });
@@ -430,10 +436,15 @@ describe('Native Child production consumer', () => {
 
     const result = await execute(harness);
 
-    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toEqual({});
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).not.toHaveProperty(
+      'spotlight',
+    );
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toHaveProperty(
+      'web_search',
+    );
     expect(result.details).toMatchObject({
       runtimeMode: 'native',
-      availableToolNames: [],
+      availableToolNames: ['web_search'],
     });
   });
 
@@ -449,8 +460,13 @@ describe('Native Child production consumer', () => {
     });
 
     const result = await execute(harness);
-    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toEqual({});
-    expect(result.details).toMatchObject({ availableToolNames: [] });
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).not.toHaveProperty(
+      'spotlight',
+    );
+    expect((mocks.streamLLM.mock.calls[0]?.[0] as { tools?: object }).tools).toHaveProperty(
+      'web_search',
+    );
+    expect(result.details).toMatchObject({ availableToolNames: ['web_search'] });
   });
 
   it('does not instantiate or read the Legacy whiteboard shadow state', async () => {
@@ -469,27 +485,299 @@ describe('Native Child production consumer', () => {
     });
   });
 
-  it('keeps Director Web evidence as untrusted prompt data without a Child web_search tool', async () => {
-    useResponses([[{ type: 'text-delta', text: 'Evidence-backed speech.' }, finish('stop')]]);
-    const harness = makeHarness({
-      webEvidence: {
-        content: 'Exact source: https://example.test/source',
-        metadata: {
-          query: 'current fact',
-          retrievedAt: '2026-08-12T00:00:00.000Z',
-          sourceCount: 1,
+  it('runs Native web_search in the same Child without classroom action accounting', async () => {
+    mocks.searchWeb.mockResolvedValue({
+      answer: 'A current fact.',
+      query: 'current fact',
+      responseTime: 0.1,
+      sources: [
+        {
+          title: 'Exact source',
+          url: 'https://example.test/current',
+          content: 'Current evidence.',
+          score: 1,
         },
-      },
+      ],
+    });
+    useResponses([
+      [webSearchCall(), finish('tool-calls')],
+      [{ type: 'text-delta', text: 'The current fact is supported.' }, finish('stop')],
+    ]);
+    const harness = makeHarness({
+      nativeWebSearchConfig: registeredSearchConfig,
+      agent: { ...teacher, allowedActions: [] },
     });
 
     const result = await execute(harness);
-    const firstPayload = mocks.streamLLM.mock.calls[0]?.[0] as {
-      messages: Array<{ role: string; content: unknown }>;
-      tools: Record<string, unknown>;
-    };
-    expect(JSON.stringify(firstPayload.messages)).toContain('https://example.test/source');
-    expect(firstPayload.tools).not.toHaveProperty('web_search');
-    expect(result.details).toMatchObject({ webEvidence: { query: 'current fact' } });
+    const firstPayload = mocks.streamLLM.mock.calls[0]?.[0] as { tools: Record<string, unknown> };
+    const continuation = transportMessages(1);
+    const toolMessage = continuation.find(
+      (message) => (message as { role?: string }).role === 'tool',
+    ) as { content?: Array<{ output?: { type?: string; value?: string } }> } | undefined;
+
+    expect(firstPayload.tools).toHaveProperty('web_search');
+    expect(mocks.searchWeb).toHaveBeenCalledTimes(1);
+    expect(toolMessage?.content?.[0]?.output?.type).toBe('text');
+    expect(toolMessage?.content?.[0]?.output?.value).toContain('https://example.test/current');
+    expect(harness.onActionDone).not.toHaveBeenCalled();
+    expect(harness.events.some((event) => event.type === 'action')).toBe(false);
+    expect(result).toMatchObject({
+      details: {
+        availableToolNames: ['web_search'],
+        nativeChildRun: {
+          status: 'completed',
+          attemptCount: 1,
+          executionCount: 1,
+          dispatchedActionCount: 0,
+          providerTransportCount: 2,
+        },
+      },
+    });
+  });
+
+  it('keeps not_configured as an error-text result and allows same-Child continuation', async () => {
+    useResponses([
+      [webSearchCall(), finish('tool-calls')],
+      [{ type: 'text-delta', text: 'Search is unavailable right now.' }, finish('stop')],
+    ]);
+    const harness = makeHarness();
+
+    const result = await execute(harness);
+    const toolMessage = transportMessages(1).find(
+      (message) => (message as { role?: string }).role === 'tool',
+    ) as { content?: Array<{ output?: { type?: string } }> } | undefined;
+
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
+    expect(toolMessage?.content?.[0]?.output?.type).toBe('error-text');
+    expect(result).toMatchObject({
+      details: {
+        text: 'Search is unavailable right now.',
+        nativeChildRun: { status: 'completed', attemptCount: 1, executionCount: 1 },
+      },
+    });
+  });
+
+  it('allows four searches and final speech on the fifth Child LLM transport', async () => {
+    mocks.searchWeb.mockImplementation(async ({ query }) => ({
+      answer: `Answer for ${query}`,
+      query,
+      responseTime: 0.1,
+      sources: [
+        {
+          title: `Source for ${query}`,
+          url: `https://example.test/${encodeURIComponent(query)}`,
+          content: 'Evidence.',
+          score: 1,
+        },
+      ],
+    }));
+    useResponses([
+      [webSearchCall('query 1', 'search-1'), finish('tool-calls')],
+      [webSearchCall('query 2', 'search-2'), finish('tool-calls')],
+      [webSearchCall('query 3', 'search-3'), finish('tool-calls')],
+      [webSearchCall('query 4', 'search-4'), finish('tool-calls')],
+      [{ type: 'text-delta', text: 'Final sourced answer.' }, finish('stop')],
+    ]);
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig });
+
+    const result = await execute(harness);
+
+    expect(mocks.streamLLM).toHaveBeenCalledTimes(5);
+    expect(mocks.searchWeb).toHaveBeenCalledTimes(4);
+    expect(harness.onActionDone).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      details: {
+        text: 'Final sourced answer.',
+        nativeChildRun: {
+          status: 'completed',
+          attemptCount: 4,
+          executionCount: 4,
+          dispatchedActionCount: 0,
+          providerTransportCount: 5,
+        },
+      },
+    });
+  });
+
+  it('executes five distinct legal searches in one batch without a generic tool budget', async () => {
+    mocks.searchWeb.mockImplementation(async ({ query }) => ({
+      answer: `Answer for ${query}`,
+      query,
+      responseTime: 0.1,
+      sources: [
+        {
+          title: `Source for ${query}`,
+          url: `https://example.test/${encodeURIComponent(query)}`,
+          content: 'Evidence.',
+          score: 1,
+        },
+      ],
+    }));
+    useResponses([
+      [
+        ...Array.from({ length: 5 }, (_, index) =>
+          webSearchCall(`query ${index + 1}`, `search-${index + 1}`),
+        ),
+        finish('tool-calls'),
+      ],
+      [{ type: 'text-delta', text: 'Five-source synthesis.' }, finish('stop')],
+    ]);
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig });
+
+    const result = await execute(harness);
+
+    expect(mocks.searchWeb).toHaveBeenCalledTimes(5);
+    expect(mocks.streamLLM).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      details: {
+        text: 'Five-source synthesis.',
+        nativeChildRun: {
+          status: 'completed',
+          attemptCount: 5,
+          executionCount: 5,
+          dispatchedActionCount: 0,
+          providerTransportCount: 2,
+        },
+      },
+    });
+  });
+
+  it('completes when a search continuation ends with an empty ordinary stop', async () => {
+    mocks.searchWeb.mockResolvedValue({
+      answer: 'Answer',
+      query: 'current fact',
+      responseTime: 0.1,
+      sources: [
+        { title: 'Source', url: 'https://example.test/source', content: 'Evidence.', score: 1 },
+      ],
+    });
+    useResponses([[webSearchCall(), finish('tool-calls')], [finish('stop')]]);
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig });
+
+    const result = await execute(harness);
+
+    expect(result).not.toHaveProperty('isError');
+    expect(result).toMatchObject({
+      details: {
+        nativeChildRun: {
+          status: 'completed',
+          stopReason: 'stop',
+          dispatchedActionCount: 0,
+        },
+      },
+    });
+  });
+
+  it.each([
+    ['whitespace query', { query: ' \n\t ' }],
+    ['numeric query', { query: 1 }],
+    ['boolean query', { query: true }],
+    ['null query', { query: null }],
+    ['nested query', { query: { value: 'current fact' } }],
+    ['fractional maxResults', { query: 'current fact', maxResults: 1.5 }],
+    ['string maxResults', { query: 'current fact', maxResults: '3' }],
+    ['nested maxResults', { query: 'current fact', maxResults: { value: 3 } }],
+    ['inherited query', Object.create({ query: 'current fact' })],
+    [
+      'inherited extra input',
+      Object.assign(Object.create({ extra: true }), { query: 'current fact' }),
+    ],
+  ])('rejects %s before the Native search handler enters', async (_label, input) => {
+    useResponses([
+      [rawWebSearchCall(input), finish('tool-calls')],
+      [{ type: 'text-delta', text: 'I cannot search without a query.' }, finish('stop')],
+    ]);
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig });
+
+    const result = await execute(harness);
+    const toolMessage = transportMessages(1).find(
+      (message) => (message as { role?: string }).role === 'tool',
+    ) as { content?: Array<{ output?: { type?: string } }> } | undefined;
+
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
+    expect(toolMessage?.content?.[0]?.output?.type).toBe('error-text');
+    expect(result).toMatchObject({
+      details: { nativeChildRun: { attemptCount: 1, executionCount: 0 } },
+    });
+  });
+
+  it('keeps length plus parsed web_search terminal and side-effect-free', async () => {
+    useResponses([[webSearchCall(), finish('length')]]);
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig });
+
+    const result = await execute(harness);
+
+    expect(mocks.streamLLM).toHaveBeenCalledTimes(1);
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      isError: true,
+      details: {
+        nativeChildRun: {
+          status: 'exhausted',
+          stopReason: 'output_token_limit',
+          attemptCount: 0,
+          executionCount: 0,
+          providerTransportCount: 1,
+        },
+      },
+    });
+  });
+
+  it('terminates duplicate web_search IDs without replaying the search side effect', async () => {
+    mocks.searchWeb.mockResolvedValue({
+      answer: 'Answer',
+      query: 'current fact',
+      responseTime: 0.1,
+      sources: [
+        { title: 'Source', url: 'https://example.test/source', content: 'Evidence.', score: 1 },
+      ],
+    });
+    useResponses([
+      [webSearchCall('current fact', 'same-id'), finish('tool-calls')],
+      [webSearchCall('current fact again', 'same-id'), finish('tool-calls')],
+    ]);
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig });
+
+    const result = await execute(harness);
+
+    expect(mocks.searchWeb).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      isError: true,
+      details: {
+        nativeChildRun: {
+          status: 'exhausted',
+          stopReason: 'native_duplicate_tool_call',
+          attemptCount: 2,
+          executionCount: 1,
+        },
+      },
+    });
+  });
+
+  it('performs zero Child transport and zero search request when already aborted', async () => {
+    const abortController = new AbortController();
+    abortController.abort(new DOMException('request already cancelled', 'AbortError'));
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig, abortController });
+
+    await expect(execute(harness)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(mocks.streamLLM).not.toHaveBeenCalled();
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
+    expect(harness.events).toEqual([]);
+    expect(harness.onActionDone).not.toHaveBeenCalled();
+  });
+
+  it('lets caller cancellation win while search is pending and starts no continuation', async () => {
+    const abortController = new AbortController();
+    mocks.searchWeb.mockImplementation(() => new Promise(() => {}));
+    useResponses([[webSearchCall(), finish('tool-calls')]]);
+    const harness = makeHarness({ nativeWebSearchConfig: registeredSearchConfig, abortController });
+
+    const pending = execute(harness);
+    await vi.waitFor(() => expect(mocks.searchWeb).toHaveBeenCalledTimes(1));
+    abortController.abort(new DOMException('request cancelled', 'AbortError'));
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(mocks.streamLLM).toHaveBeenCalledTimes(1);
   });
 
   it('does not count a rejected Spotlight dispatch and returns error-text to the same Child', async () => {

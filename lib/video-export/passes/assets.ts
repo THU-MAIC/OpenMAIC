@@ -8,8 +8,10 @@
  * the browser-side implementation in the next phase (P1d); {@link AssetSource}
  * supplies just enough metadata (id, mime/format, presence) to build the plan.
  *
- * Deduplication is by `assetId`: the first reference owns the path, later
- * references reuse it and carry `dedupOf`. A referenced-but-absent asset is kept
+ * Deduplication is by (`assetId`, `kind`): the first same-kind reference owns
+ * the path, later same-kind references reuse it and carry `dedupOf`. A ref may
+ * legitimately identify both narration audio and video media, so ownership must
+ * not cross the kind boundary. A referenced-but-absent asset is kept
  * in the plan as `present: false` with a `skipped-media` diagnostic, so the
  * report shows the gap instead of hiding it.
  *
@@ -21,6 +23,7 @@
 import type { SpeechAction } from '@openmaic/dsl';
 import type { AssetSource, AssetMeta, CompilerScene } from '../deps';
 import type { AssetKind, AssetPlan, AssetPlanEntry, Diagnostic, VideoTimelineScene } from '../ir';
+import { canonicalArchiveMedia, type ArchiveMediaKind } from '../archive-media';
 
 export interface AssetsResult {
   scenes: VideoTimelineScene[];
@@ -41,58 +44,29 @@ export function sanitizeFilenamePart(value: string): string {
   return normalized.slice(0, 80) || 'scene';
 }
 
-/**
- * File extension for an asset from its `format`/`mimeType`, falling back per
- * kind. The result is sanitized to a bare, traversal-free extension token
- * (alphanumeric, lowercased) so a hostile `format` such as `../../escape` cannot
- * steer the planned zip path outside its directory — the ZIP-writing stage
- * receives only safe extensions.
- */
-function extension(meta: AssetMeta, fallback: string): string {
-  const raw = extensionRaw(meta, fallback);
-  const safe = raw
-    .toLowerCase()
-    .replace(/^\.+/, '')
-    .replace(/[^a-z0-9]/g, '');
-  return safe || fallback;
-}
-
-/** The unsanitized extension candidate from `format` / `mimeType` / fallback. */
-function extensionRaw(meta: AssetMeta, fallback: string): string {
-  if (meta.format) return meta.format.replace(/^\./, '');
-  const mime = meta.mimeType;
-  if (mime) {
-    const known: Record<string, string> = {
-      'audio/mpeg': 'mp3',
-      'audio/mp3': 'mp3',
-      'audio/wav': 'wav',
-      'audio/webm': 'weba',
-      'image/png': 'png',
-      'image/jpeg': 'jpg',
-      'video/mp4': 'mp4',
-      'video/webm': 'webm',
-    };
-    if (known[mime]) return known[mime];
-    const sub = mime.split('/')[1];
-    if (sub) return sub;
-  }
-  return fallback;
+/** Kind-scoped extension used by every audio/video path planned by this pass. */
+export function canonicalAssetExtension(kind: ArchiveMediaKind, meta: AssetMeta): string {
+  return canonicalArchiveMedia(kind, {
+    extension: meta.format,
+    mimeType: meta.mimeType,
+  }).extension;
 }
 
 /** Planner state: tracks used paths (for collision suffixes) and asset dedup. */
 class AssetPlanner {
   readonly entries: AssetPlanEntry[] = [];
   private readonly usedPaths = new Map<string, number>();
-  /** assetId → the first (owner) entry, whose path + presence every later ref inherits. */
-  private readonly owner = new Map<string, AssetPlanEntry>();
+  /** kind → assetId → first owner, whose path + presence later same-kind refs inherit. */
+  private readonly owners = new Map<AssetKind, Map<string, AssetPlanEntry>>();
 
   /**
    * Plan one asset reference. Returns the path it maps to and the *authoritative*
-   * presence for its `assetId`.
+   * presence for its (`assetId`, `kind`) identity.
    *
-   * Presence is a property of the asset id, not of an individual reference: the
-   * first reference to an id decides it, and every later reference (and the
-   * caller's segment) inherits that value. This keeps the plan internally
+   * Presence is a property of the kind-scoped asset id, not of an individual
+   * reference: the first reference to an id within one kind decides it, and every
+   * later same-kind reference (and the caller's segment) inherits that value.
+   * This keeps the plan internally
    * consistent even if an {@link AssetSource} returns inconsistent `present` for
    * the same id — otherwise a dedup entry could claim a different presence than
    * its owner.
@@ -103,7 +77,8 @@ class AssetPlanner {
     desiredPath: string,
     present: boolean,
   ): { path: string; present: boolean } {
-    const existing = this.owner.get(assetId);
+    const ownersForKind = this.owners.get(kind);
+    const existing = ownersForKind?.get(assetId);
     if (existing) {
       this.entries.push({
         assetId,
@@ -116,7 +91,8 @@ class AssetPlanner {
     }
     const path = this.unique(desiredPath);
     const entry: AssetPlanEntry = { assetId, kind, path, present };
-    this.owner.set(assetId, entry);
+    if (ownersForKind) ownersForKind.set(assetId, entry);
+    else this.owners.set(kind, new Map([[assetId, entry]]));
     this.entries.push(entry);
     return { path, present };
   }
@@ -184,7 +160,7 @@ export function planAssets(
       const { path, present } = planner.plan(
         meta.id,
         'audio',
-        `audio/${sceneSlug}/speech-${String(speechSeq).padStart(3, '0')}.${extension(meta, 'mp3')}`,
+        `audio/${sceneSlug}/speech-${String(speechSeq).padStart(3, '0')}.${canonicalAssetExtension('audio', meta)}`,
         meta.present,
       );
       if (!present) {
@@ -232,7 +208,7 @@ export function planAssets(
       const { path, present } = planner.plan(
         meta.id,
         'video',
-        `media/${sanitizeFilenamePart(seg.elementId)}.${extension(meta, 'mp4')}`,
+        `media/${sanitizeFilenamePart(seg.elementId)}.${canonicalAssetExtension('video', meta)}`,
         meta.present,
       );
       if (!present) {

@@ -88,9 +88,10 @@ export interface LegacyAssetConversionDeps {
   /**
    * Write the post-conversion Dexie compatibility copy of a media row, keyed
    * by the ref the document now names. Without it the export/import
-   * round-trip breaks: collectMediaFiles derives ZIP references from row
-   * keys, so a converted document would point at media the export only knows
-   * by the old placeholder. Same double-write discipline as the audio path.
+   * round-trip breaks: collectMediaFiles reads rows by the compound key of
+   * the refs the asset manifest enumerates, so a converted document would
+   * point at media the export only knows by the old placeholder. Same
+   * double-write discipline as the audio path.
    */
   putMediaRecord(stageId: string, ref: string, record: MediaFileRecord): Promise<void>;
   /** Write the post-conversion Dexie compatibility copy of an audio row. */
@@ -497,10 +498,11 @@ export async function convertDocumentAssetRefs(
         // a mirror-write failure.
         assertContinuing();
         // Mirror the row under the allocated id, like the audio path and the
-        // generation write path: collectMediaFiles derives export references
-        // from row keys, so without the copy an exported manifest would name
-        // media the ZIP only knows by the old placeholder. The original ref
-        // stays on placeholderRef for reload reconciliation.
+        // generation write path: collectMediaFiles reads rows by the compound
+        // key of the refs the asset manifest enumerates, so without the copy
+        // an exported manifest would name media the ZIP only knows by the old
+        // placeholder. The original ref stays on placeholderRef for reload
+        // reconciliation.
         await resolvedDeps.putMediaRecord(stageId, assetId, {
           ...record,
           placeholderRef: record.placeholderRef ?? ref,
@@ -575,6 +577,10 @@ export async function convertDocumentAssetRefs(
     const rewrites: Array<{ index: number; assetId: string }> = [];
     const removals: number[] = [];
     for (let index = 0; index < slots.length; index += 1) {
+      // Slide-audio refs use the audio compatibility store and metadata path;
+      // the dedicated pass below routes them through the same conversion as
+      // speech narration instead of misclassifying them as image/video media.
+      if (slots[index].kind === 'audio-src') continue;
       const ref = slots[index].read();
       if (isGeneratedMediaPlaceholder(ref)) {
         const assetId = await allocateMediaRef(ref);
@@ -824,10 +830,39 @@ export async function convertDocumentAssetRefs(
     return action;
   };
 
+  const convertSlideAudio = async <T extends SlideLike>(slide: T): Promise<T> => {
+    const sourceSlots = [...slideMediaReferenceSlots(slide)];
+    const rewrites: Array<{ index: number; ref: string | undefined }> = [];
+    for (let index = 0; index < sourceSlots.length; index += 1) {
+      const slot = sourceSlots[index];
+      if (slot.kind !== 'audio-src') continue;
+      const ref = slot.read();
+      if (!ref) continue;
+      const transportUrl = isClassroomMediaUrl(ref);
+      const pseudoAction = {
+        id: `slide-audio:${index}`,
+        type: 'speech',
+        text: '',
+        ...(transportUrl ? { audioUrl: ref } : { audioId: ref }),
+      } as unknown as Action;
+      const converted = (await convertSpeechAction(pseudoAction)) as LegacySpeechAction;
+      const convertedRef = converted.audioId ?? converted.audioUrl;
+      if (convertedRef !== ref) rewrites.push({ index, ref: convertedRef });
+    }
+    if (rewrites.length === 0) return slide;
+    const clone = structuredClone(slide);
+    const cloneSlots = [...slideMediaReferenceSlots(clone)];
+    for (const rewrite of rewrites) cloneSlots[rewrite.index].write(rewrite.ref);
+    return clone;
+  };
+
+  const convertAllSlideRefs = async <T extends SlideLike>(slide: T): Promise<T> =>
+    convertSlideAudio(await convertSlide(slide));
+
   const stage = document.stage;
   let whiteboard = stage.whiteboard;
   if (whiteboard) {
-    const converted = await Promise.all(whiteboard.map((slide) => convertSlide(slide)));
+    const converted = await Promise.all(whiteboard.map((slide) => convertAllSlideRefs(slide)));
     if (converted.some((slide, index) => slide !== whiteboard![index])) {
       whiteboard = converted;
     }
@@ -837,7 +872,7 @@ export async function convertDocumentAssetRefs(
   for (const scene of document.scenes) {
     let nextScene = scene;
     if (scene.content.type === 'slide') {
-      const canvas = await convertSlide(scene.content.canvas);
+      const canvas = await convertAllSlideRefs(scene.content.canvas);
       if (canvas !== scene.content.canvas) {
         // Rebuild through makeScene so the discriminated union stays bound:
         // a plain spread cannot prove the canvas lands on the slide member.
@@ -848,7 +883,9 @@ export async function convertDocumentAssetRefs(
       }
     }
     if (scene.whiteboards) {
-      const converted = await Promise.all(scene.whiteboards.map((slide) => convertSlide(slide)));
+      const converted = await Promise.all(
+        scene.whiteboards.map((slide) => convertAllSlideRefs(slide)),
+      );
       if (converted.some((slide, index) => slide !== scene.whiteboards![index])) {
         nextScene = { ...nextScene, whiteboards: converted };
       }
@@ -886,19 +923,19 @@ export async function convertDocumentAssetRefs(
   let videoManifest = stage.videoManifest;
   if (videoManifest) {
     let manifestChanged = false;
-    const nextManifest: typeof videoManifest = {};
+    const nextManifestEntries: Array<[string, (typeof videoManifest)[string]]> = [];
     for (const [key, entry] of Object.entries(videoManifest)) {
       if (isGeneratedMediaPlaceholder(key)) {
         const assetId = await allocateMediaRef(key);
         if (assetId) {
-          nextManifest[assetId] = entry;
+          nextManifestEntries.push([assetId, entry]);
           manifestChanged = true;
           continue;
         }
       } else if (isClassroomMediaUrl(key)) {
         const outcome = await allocateUrlMediaRef(key);
         if (outcome.kind === 'allocated') {
-          nextManifest[outcome.assetId] = entry;
+          nextManifestEntries.push([outcome.assetId, entry]);
           manifestChanged = true;
           continue;
         }
@@ -909,10 +946,10 @@ export async function convertDocumentAssetRefs(
         }
         report.kept += 1;
       }
-      nextManifest[key] = entry;
+      nextManifestEntries.push([key, entry]);
     }
     if (manifestChanged) {
-      videoManifest = nextManifest;
+      videoManifest = Object.fromEntries(nextManifestEntries);
       changed = true;
     }
   }

@@ -11,10 +11,9 @@ import {
   useImperativeHandle,
 } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { ScreenElement } from '@/components/slide-renderer/Editor/ScreenElement';
-import type { PPTElement } from '@openmaic/dsl';
+import type { PPTElement, Whiteboard } from '@openmaic/dsl';
 import { useI18n } from '@/lib/hooks/use-i18n';
 
 export type WhiteboardCanvasHandle = {
@@ -386,23 +385,22 @@ const InteractiveWhiteboardCanvas = forwardRef<
  * Whiteboard canvas with pan, zoom, auto-fit, and bounded viewport.
  */
 export type WhiteboardCanvasProps = {
+  whiteboard?: Whiteboard | null;
   onViewModifiedChange?: (modified: boolean) => void;
 };
 
 export const WhiteboardCanvas = forwardRef<WhiteboardCanvasHandle, WhiteboardCanvasProps>(
-  function WhiteboardCanvas({ onViewModifiedChange }, ref) {
+  function WhiteboardCanvas({ whiteboard, onViewModifiedChange }, ref) {
     const { t } = useI18n();
-    const stage = useStageStore.use.stage();
     const isClearing = useCanvasStore.use.whiteboardClearing();
     const containerRef = useRef<HTMLDivElement>(null);
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
-    const whiteboard = stage?.whiteboard?.[0];
     const rawElements = whiteboard?.elements;
     const elements = useMemo(() => rawElements ?? [], [rawElements]);
 
-    const canvasWidth = 1000;
-    const canvasHeight = 562.5;
+    const canvasWidth = whiteboard?.viewportSize ?? 1000;
+    const canvasHeight = canvasWidth * (whiteboard?.viewportRatio ?? 0.5625);
 
     const containerScale = useMemo(() => {
       if (containerSize.width === 0 || containerSize.height === 0) return 1;

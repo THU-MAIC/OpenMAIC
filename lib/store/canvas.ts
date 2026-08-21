@@ -4,6 +4,7 @@ import type { TextAttrs } from '@/lib/prosemirror/utils';
 import { defaultRichTextAttrs } from '@/lib/prosemirror/utils';
 import type { TextFormatPainter, ShapeFormatPainter, CreatingElement } from '@/lib/types/edit';
 import type { PercentageGeometry } from '@/lib/types/action';
+import type { Whiteboard } from '@openmaic/dsl';
 
 /**
  * Spotlight options
@@ -107,6 +108,13 @@ interface CanvasState {
   // ===== Whiteboard =====
   whiteboardOpen: boolean; // Whether whiteboard is open
   whiteboardClearing: boolean; // Whiteboard clear animation in progress
+  whiteboardManualVisibilityRevision: number;
+  runtimeWhiteboardProjection: {
+    stageId: string;
+    lastSeq: number | null;
+    whiteboard: Whiteboard | null;
+  } | null;
+  runtimeWhiteboardProjectionGeneration: number;
 
   // ===== Other =====
   thumbnailsFocus: boolean; // Whether left thumbnail area is focused
@@ -159,7 +167,15 @@ interface CanvasState {
 
   // ----- Whiteboard -----
   setWhiteboardOpen: (open: boolean) => void;
+  setWhiteboardOpenManually: (open: boolean) => void;
   setWhiteboardClearing: (clearing: boolean) => void;
+  beginRuntimeWhiteboardProjection: (stageId: string) => number;
+  setRuntimeWhiteboardProjection: (projection: {
+    stageId: string;
+    lastSeq: number | null;
+    whiteboard: Whiteboard | null;
+  }) => void;
+  clearRuntimeWhiteboardProjection: () => void;
 
   // ----- Other -----
   setThumbnailsFocus: (focus: boolean) => void;
@@ -233,6 +249,9 @@ const initialState = {
   // Whiteboard
   whiteboardOpen: false,
   whiteboardClearing: false,
+  whiteboardManualVisibilityRevision: 0,
+  runtimeWhiteboardProjection: null,
+  runtimeWhiteboardProjectionGeneration: 0,
 
   // Other: false,
   editorAreaFocus: false,
@@ -346,7 +365,28 @@ const useCanvasStoreBase = create<CanvasState>((set, get) => ({
   // ===== Whiteboard Actions =====
 
   setWhiteboardOpen: (open) => set({ whiteboardOpen: open }),
+  setWhiteboardOpenManually: (open) =>
+    set((state) => ({
+      whiteboardOpen: open,
+      whiteboardManualVisibilityRevision: state.whiteboardManualVisibilityRevision + 1,
+    })),
   setWhiteboardClearing: (clearing) => set({ whiteboardClearing: clearing }),
+  beginRuntimeWhiteboardProjection: (stageId) => {
+    const generation = get().runtimeWhiteboardProjectionGeneration + 1;
+    set((state) => ({
+      runtimeWhiteboardProjectionGeneration: generation,
+      ...(state.runtimeWhiteboardProjection?.stageId === stageId
+        ? {}
+        : { runtimeWhiteboardProjection: null }),
+    }));
+    return generation;
+  },
+  setRuntimeWhiteboardProjection: (projection) => set({ runtimeWhiteboardProjection: projection }),
+  clearRuntimeWhiteboardProjection: () =>
+    set((state) => ({
+      runtimeWhiteboardProjection: null,
+      runtimeWhiteboardProjectionGeneration: state.runtimeWhiteboardProjectionGeneration + 1,
+    })),
 
   // ===== Other Actions =====
 
@@ -469,11 +509,17 @@ const useCanvasStoreBase = create<CanvasState>((set, get) => ({
   // ===== Batch Operations =====
 
   resetCanvasState: () => {
+    const runtimeWhiteboardProjection = get().runtimeWhiteboardProjection;
+    const runtimeWhiteboardProjectionGeneration = get().runtimeWhiteboardProjectionGeneration;
+    const whiteboardManualVisibilityRevision = get().whiteboardManualVisibilityRevision;
     set({
       ...initialState,
       // Preserve viewport settings
       viewportSize: get().viewportSize,
       viewportRatio: get().viewportRatio,
+      runtimeWhiteboardProjection,
+      runtimeWhiteboardProjectionGeneration,
+      whiteboardManualVisibilityRevision,
     });
   },
 }));

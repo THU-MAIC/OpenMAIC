@@ -17,12 +17,16 @@ import {
 } from './classroom-zip-types';
 import {
   collectAudioFiles,
+  collectedAudioMediaIndexEntry,
+  collectedMediaIndexEntry,
   collectMediaFiles,
   actionsToManifest,
+  audioArchivePath,
   collectLegacyAudioForExport,
-  collectMissingAudioRefs,
+  legacyAudioMediaIndexEntry,
 } from './classroom-zip-utils';
 import { createLogger } from '@/lib/logger';
+import { buildStageAssetManifest } from '@/lib/media/asset-manifest';
 import {
   inlineHtmlAssets,
   createAssetFetcher,
@@ -156,12 +160,22 @@ export async function buildClassroomExportZip(
     // the in-memory stage already carries any lazily migrated voice fields).
     const agentConfigs = exportStage.generatedAgentConfigs ?? stage.generatedAgentConfigs ?? [];
 
-    // 4. Collect audio files from the converted scenes: their speech actions
-    // name the allocated ids, whose compatibility rows the conversion wrote.
-    const audioFiles = await collectAudioFiles(exportScenes);
+    // 4. Enumerate exactly the references in the converted export snapshot.
+    // Both collectors take their reference sets from this manifest, so orphan
+    // compatibility rows do not ride into the archive.
+    // Classroom ZIP v1 has never serialized Stage.whiteboard. Exclude those
+    // refs here: archiving their bytes would create an unreconstructable,
+    // permanently orphaned payload on import. Scene whiteboards remain part of
+    // the portable manifest and are still collected.
+    const assetManifest = await buildStageAssetManifest(exportStage, exportScenes, stage.id, {
+      includeStageWhiteboard: false,
+    });
+    const audioEntries = assetManifest.entries.filter((entry) => entry.kind === 'audio');
+    const mediaEntries = assetManifest.entries.filter((entry) => entry.kind !== 'audio');
 
-    // 5. Collect media files (generated images/videos)
-    const mediaFiles = await collectMediaFiles(stage.id);
+    // 5. Collect referenced audio and generated media.
+    const audioFiles = await collectAudioFiles(audioEntries);
+    const mediaFiles = await collectMediaFiles(stage.id, mediaEntries);
 
     // 6. Build audioId → zipPath mapping for manifest
     const audioIdToPath = new Map<string, string>();
@@ -229,37 +243,34 @@ export async function buildClassroomExportZip(
     );
 
     // 8. Build mediaIndex
-    const mediaIndex: Record<string, MediaIndexEntry> = {};
+    const mediaIndexEntries: Array<[string, MediaIndexEntry]> = [];
 
     for (const af of audioFiles) {
-      mediaIndex[af.zipPath] = {
-        type: 'audio',
-        format: af.record.format,
-        duration: af.record.duration,
-        voice: af.record.voice,
-      };
+      mediaIndexEntries.push([af.zipPath, collectedAudioMediaIndexEntry(af)]);
     }
     for (const legacy of legacyAudioBlobs) {
-      mediaIndex[legacy.zipPath] = { type: 'audio', format: legacy.format };
+      mediaIndexEntries.push([legacy.zipPath, legacyAudioMediaIndexEntry(legacy)]);
     }
     for (const mf of mediaFiles) {
-      mediaIndex[mf.zipPath] = {
-        type: 'generated',
-        mimeType: mf.record.mimeType,
-        size: mf.record.size,
-        prompt: mf.record.prompt,
-      };
+      mediaIndexEntries.push([mf.zipPath, collectedMediaIndexEntry(mf)]);
     }
 
-    // Check for missing audio references. A legacy audioUrl recovered by
-    // the pass above travels under its own zip path, so it is not missing.
-    for (const { missingPath } of collectMissingAudioRefs(
-      exportScenes,
-      audioIdToPath,
-      audioUrlToPath,
-    )) {
-      mediaIndex[missingPath] = { type: 'audio', missing: true };
+    // Referenced audio whose bytes resolved nowhere is reported as missing.
+    // Legacy audioUrl-only narration is outside the standardized manifest and
+    // is handled by collectLegacyAudioForExport above.
+    for (const [index, entry] of audioEntries.entries()) {
+      if (!audioIdToPath.has(entry.ref)) {
+        mediaIndexEntries.push([
+          audioArchivePath(index, 'mp3'),
+          {
+            type: 'audio',
+            sourceRef: entry.ref,
+            missing: true,
+          },
+        ]);
+      }
     }
+    const mediaIndex = Object.fromEntries(mediaIndexEntries);
 
     // 9. Assemble manifest
     const manifest: ClassroomManifest = {
@@ -284,7 +295,7 @@ export async function buildClassroomExportZip(
     for (const mf of mediaFiles) {
       zip.file(mf.zipPath, mf.record.blob);
       if (mf.record.poster) {
-        zip.file(mf.zipPath.replace(/\.\w+$/, '.poster.jpg'), mf.record.poster);
+        zip.file(mf.posterZipPath, mf.record.poster);
       }
     }
 

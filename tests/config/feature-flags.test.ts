@@ -7,7 +7,6 @@ import {
   isPiNativeChildRuntimeEnabled,
   isPiNativeChildSpotlightEnabled,
   isPptxImportEnabled,
-  isPiWebSearchEnabled,
   isVideoExportEnabled,
   isVocationalTaskEngineEnabled,
   resolveVocationalActive,
@@ -168,34 +167,6 @@ describe('isPiChatEnabled', () => {
 
     process.env[flag] = 'yes';
     expect(isPiChatEnabled()).toBe(false);
-  });
-});
-
-describe('isPiWebSearchEnabled', () => {
-  const flag = 'OPENMAIC_ENABLE_PI_WEB_SEARCH';
-  let original: string | undefined;
-
-  beforeEach(() => {
-    original = process.env[flag];
-  });
-
-  afterEach(() => {
-    if (original === undefined) delete process.env[flag];
-    else process.env[flag] = original;
-  });
-
-  it('defaults off and accepts only the standard true values', () => {
-    delete process.env[flag];
-    expect(isPiWebSearchEnabled()).toBe(false);
-
-    process.env[flag] = 'true';
-    expect(isPiWebSearchEnabled()).toBe(true);
-
-    process.env[flag] = '1';
-    expect(isPiWebSearchEnabled()).toBe(true);
-
-    process.env[flag] = 'yes';
-    expect(isPiWebSearchEnabled()).toBe(false);
   });
 });
 

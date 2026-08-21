@@ -95,6 +95,39 @@ describe('planAssets — audio', () => {
 });
 
 describe('planAssets — base frame & video', () => {
+  it('keeps ownership and presence separate when one ref is both narration audio and video', () => {
+    const res = plan(
+      [slide('s', [speech('a', 'Narration'), playVideo('v', 'clip')])],
+      { a: { id: 'shared-ref', present: false, format: 'mp3' } },
+      { clip: { id: 'shared-ref', present: true, format: 'mp4' } },
+      stubProbe({}, { v: 8_000 }),
+    );
+
+    const audioEntry = res.plan.entries.find((entry) => entry.kind === 'audio');
+    const videoEntry = res.plan.entries.find((entry) => entry.kind === 'video');
+    expect(audioEntry).toMatchObject({
+      assetId: 'shared-ref',
+      path: 'audio/001-s/speech-001.mp3',
+      present: false,
+    });
+    expect(videoEntry).toMatchObject({
+      assetId: 'shared-ref',
+      path: 'media/clip.mp4',
+      present: true,
+    });
+    expect(videoEntry).not.toHaveProperty('dedupOf');
+    expect(res.scenes[0].narration[0].audio).toMatchObject({
+      assetId: 'shared-ref',
+      present: false,
+    });
+    expect(res.scenes[0].narration[0].audio.assetRef).toBeUndefined();
+    expect(res.scenes[0].videos[0]).toMatchObject({
+      assetId: 'shared-ref',
+      assetRef: 'media/clip.mp4',
+      present: true,
+    });
+  });
+
   it('plans a base frame for a slide scene and stamps base.assetRef', () => {
     const res = plan([slide('s', [speech('a', '')])]);
     expect(res.scenes[0].base).toMatchObject({
@@ -166,6 +199,6 @@ describe('planAssets — base frame & video', () => {
     );
     const path = res.scenes[0].videos[0].assetRef!;
     expect(path).not.toContain('..');
-    expect(path).toBe('media/clip.escape');
+    expect(path).toBe('media/clip.mp4');
   });
 });

@@ -35,14 +35,13 @@ function secureEqual(left: string, right: string): boolean {
   return timingSafeEqual(leftDigest, rightDigest);
 }
 
-export async function authenticatePersistenceRequest(
-  req: IncomingMessage,
-): Promise<PersistencePrincipal | undefined> {
+function authenticatePersistenceCredentials(
+  authorization: string | undefined,
+  learnerKey: string | undefined,
+): PersistencePrincipal | undefined {
   const token = process.env.PERSISTENCE_DEV_TOKEN;
-  const authorization = singleHeader(req.headers.authorization);
   if (!token || !authorization || !secureEqual(authorization, `Bearer ${token}`)) return undefined;
 
-  const learnerKey = singleHeader(req.headers['x-learner-key']);
   // Documents are stored without any ownership partition, so assets are
   // stored under one shared principal to match: this authenticator provides
   // no user isolation either way (the header is client-supplied), and a
@@ -52,4 +51,20 @@ export async function authenticatePersistenceRequest(
   // per-learner state. Production replaces this module with real session
   // verification and derives both from server-controlled claims.
   return { key: SHARED_ASSET_PRINCIPAL, ...(learnerKey ? { learnerKey } : {}) };
+}
+
+export function authenticatePersistenceHeaders(headers: Headers): PersistencePrincipal | undefined {
+  return authenticatePersistenceCredentials(
+    headers.get('authorization') ?? undefined,
+    headers.get('x-learner-key') ?? undefined,
+  );
+}
+
+export async function authenticatePersistenceRequest(
+  req: IncomingMessage,
+): Promise<PersistencePrincipal | undefined> {
+  return authenticatePersistenceCredentials(
+    singleHeader(req.headers.authorization),
+    singleHeader(req.headers['x-learner-key']),
+  );
 }

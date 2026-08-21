@@ -159,7 +159,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
     // Whiteboard state (from canvas store so AI tools can open it)
     const whiteboardOpen = useCanvasStore.use.whiteboardOpen();
-    const setWhiteboardOpen = useCanvasStore.use.setWhiteboardOpen();
+    const setWhiteboardOpenManually = useCanvasStore.use.setWhiteboardOpenManually();
 
     // Selected agents from settings store (Zustand)
     const selectedAgentIds = useSettingsStore((s) => s.selectedAgentIds);
@@ -1157,7 +1157,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
     // whiteboard toggle
     const handleWhiteboardToggle = () => {
-      setWhiteboardOpen(!whiteboardOpen);
+      setWhiteboardOpenManually(!whiteboardOpen);
     };
 
     const isPresentationShortcutTarget = useCallback((target: EventTarget | null) => {
