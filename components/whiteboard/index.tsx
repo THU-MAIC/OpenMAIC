@@ -27,6 +27,8 @@ export function Whiteboard({ isOpen, onClose }: WhiteboardProps) {
   const stage = useStageStore.use.stage();
   const isClearing = useCanvasStore.use.whiteboardClearing();
   const clearingRef = useRef(false);
+  const previousStageIdRef = useRef<string | undefined>(undefined);
+  const wasOpenRef = useRef(isOpen);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [viewModified, setViewModified] = useState(false);
   const canvasRef = useRef<WhiteboardCanvasHandle>(null);
@@ -42,12 +44,20 @@ export function Whiteboard({ isOpen, onClose }: WhiteboardProps) {
   const elementCount = whiteboard?.elements?.length || 0;
 
   useEffect(() => {
-    if (!stage?.id) {
+    const stageId = stage?.id;
+    const stageChanged = previousStageIdRef.current !== stageId;
+    const opened = !wasOpenRef.current && isOpen;
+    previousStageIdRef.current = stageId;
+    wasOpenRef.current = isOpen;
+
+    if (!stageId) {
       useCanvasStore.getState().clearRuntimeWhiteboardProjection();
       return;
     }
-    void refreshWhiteboardRuntimeProjection(stage.id);
-  }, [stage?.id]);
+    if (stageChanged || opened) {
+      void refreshWhiteboardRuntimeProjection(stageId);
+    }
+  }, [isOpen, stage?.id]);
 
   useEffect(() => {
     if (runtimeAuthoritative) setHistoryOpen(false);

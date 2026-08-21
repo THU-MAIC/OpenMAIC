@@ -102,6 +102,21 @@ describe('Browser RuntimeStore whiteboard projection', () => {
     expect(useCanvasStore.getState().runtimeWhiteboardProjection).toBeNull();
   });
 
+  it('allows a later authoritative refetch after a transient read failure', async () => {
+    mocks.read
+      .mockRejectedValueOnce(new Error('temporary read failure'))
+      .mockResolvedValueOnce(runtimeState(1, 'recovered'));
+
+    await expect(refreshWhiteboardRuntimeProjection('stage-1')).resolves.toBe(false);
+    await expect(refreshWhiteboardRuntimeProjection('stage-1')).resolves.toBe(true);
+
+    expect(useCanvasStore.getState().runtimeWhiteboardProjection).toMatchObject({
+      stageId: 'stage-1',
+      lastSeq: 1,
+      whiteboard: { elements: [{ content: 'recovered' }] },
+    });
+  });
+
   it('does not regress an authoritative same-Stage projection to an empty Runtime fold', async () => {
     useCanvasStore.setState({
       runtimeWhiteboardProjection: {
