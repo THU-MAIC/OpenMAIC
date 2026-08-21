@@ -29,10 +29,12 @@ function scene(overrides: Partial<Scene> = {}): Scene {
   } as unknown as Scene;
 }
 
+const slideFallback = (order: number) => `Slide ${order}`;
+
 describe('collectSceneScripts', () => {
   it('omits scenes with no actions (T01)', () => {
     const scenes = [scene({ id: 'a', title: 'Empty', actions: [] })];
-    expect(collectSceneScripts(scenes)).toEqual([]);
+    expect(collectSceneScripts(scenes, slideFallback)).toEqual([]);
   });
 
   it('collects only speech text in action order (T02)', () => {
@@ -46,40 +48,48 @@ describe('collectSceneScripts', () => {
         { id: 'a4', type: 'wb_draw_text', content: 'board', x: 0, y: 0 },
       ],
     });
-    expect(collectSceneScripts([s])).toEqual([
+    expect(collectSceneScripts([s], slideFallback)).toEqual([
       { sceneId: 'a', sceneTitle: 'Mixed', sceneOrder: 1, text: 'First.\nSecond.' },
     ]);
   });
 
   it('uses scene title and preserves order (T03)', () => {
     const s = scene({ id: 'b', title: 'Titled', order: 3, actions: [speechAction('a1', 'Hi')] });
-    const scripts = collectSceneScripts([s]);
+    const scripts = collectSceneScripts([s], slideFallback);
     expect(scripts[0]).toMatchObject({ sceneId: 'b', sceneTitle: 'Titled', sceneOrder: 3 });
   });
 
   it('omits whitespace-only speech text and trims kept text', () => {
     const wsOnly = scene({ id: 'a', title: 'WS', actions: [speechAction('a1', '   ')] });
-    expect(collectSceneScripts([wsOnly])).toEqual([]);
+    expect(collectSceneScripts([wsOnly], slideFallback)).toEqual([]);
 
     const trimmed = scene({
       id: 'b',
       title: 'Trim',
       actions: [speechAction('a1', '  Hello  ')],
     });
-    expect(collectSceneScripts([trimmed])).toEqual([
+    expect(collectSceneScripts([trimmed], slideFallback)).toEqual([
       { sceneId: 'b', sceneTitle: 'Trim', sceneOrder: 1, text: 'Hello' },
     ]);
   });
 
   it('skips scenes with undefined actions without crashing', () => {
     const s = scene({ id: 'a', title: 'NoActions', actions: undefined });
-    expect(collectSceneScripts([s])).toEqual([]);
+    expect(collectSceneScripts([s], slideFallback)).toEqual([]);
   });
 
-  it('falls back to Slide N for empty scene titles', () => {
+  it('falls back to the provided fallback label for empty scene titles', () => {
     const s = scene({ id: 'a', title: '', order: 3, actions: [speechAction('a1', 'Hi')] });
-    expect(collectSceneScripts([s])).toEqual([
+    expect(collectSceneScripts([s], slideFallback)).toEqual([
       { sceneId: 'a', sceneTitle: 'Slide 3', sceneOrder: 3, text: 'Hi' },
+    ]);
+  });
+
+  it('invokes the fallback with the scene order and uses its return value verbatim', () => {
+    const s = scene({ id: 'a', title: '', order: 5, actions: [speechAction('a1', 'Hi')] });
+    const localizedFallback = (order: number) => `幻灯片 ${order}`;
+    expect(collectSceneScripts([s], localizedFallback)).toEqual([
+      { sceneId: 'a', sceneTitle: '幻灯片 5', sceneOrder: 5, text: 'Hi' },
     ]);
   });
 });
@@ -121,6 +131,28 @@ describe('buildMarkdown', () => {
       { sceneId: 'a', sceneTitle: 'A', sceneOrder: 1, text: 'Only.\n\n\n' },
     ]);
     expect(trailing).toBe('# C\n\n## A\n\nOnly.');
+  });
+
+  it('flattens embedded newlines in scene/stage titles so they cannot inject extra headings', () => {
+    const md = buildMarkdown('My\nCourse', [
+      { sceneId: 'a', sceneTitle: 'Evil\n# Injected Heading', sceneOrder: 1, text: 'Body.' },
+    ]);
+    expect(md).toContain('# My Course');
+    expect(md).toContain('## Evil # Injected Heading');
+    // Only the two legitimate headings (stage + scene) start a line -- the
+    // embedded "# Injected Heading" no longer begins its own line, so it
+    // cannot render as a heading.
+    expect(md.match(/^#{1,2} /gm)?.length).toBe(2);
+  });
+
+  it('strips leading # runs from scene/stage titles so they cannot masquerade as headings', () => {
+    const md = buildMarkdown('# Already Hash', [
+      { sceneId: 'a', sceneTitle: '## Also Hash', sceneOrder: 1, text: 'Body.' },
+    ]);
+    expect(md).toContain('# Already Hash');
+    expect(md).not.toContain('# # Already Hash');
+    expect(md).toContain('## Also Hash');
+    expect(md).not.toContain('## ## Also Hash');
   });
 });
 

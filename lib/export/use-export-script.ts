@@ -32,9 +32,13 @@ export interface SceneScript {
 
 /**
  * Collect each scene's narration: concatenate its `SpeechAction.text` values in
- * action order. Scenes with no speech text are omitted entirely.
+ * action order. Scenes with no speech text are omitted entirely. `slideFallback`
+ * supplies the locale-appropriate label for scenes with an empty title.
  */
-export function collectSceneScripts(scenes: Scene[]): SceneScript[] {
+export function collectSceneScripts(
+  scenes: Scene[],
+  slideFallback: (order: number) => string,
+): SceneScript[] {
   const scripts: SceneScript[] = [];
   for (const scene of scenes) {
     const parts: string[] = [];
@@ -47,7 +51,7 @@ export function collectSceneScripts(scenes: Scene[]): SceneScript[] {
     if (!text) continue;
     scripts.push({
       sceneId: scene.id,
-      sceneTitle: scene.title || `Slide ${scene.order}`,
+      sceneTitle: scene.title || slideFallback(scene.order),
       sceneOrder: scene.order,
       text,
     });
@@ -55,12 +59,24 @@ export function collectSceneScripts(scenes: Scene[]): SceneScript[] {
   return scripts;
 }
 
+/**
+ * Neutralize a scene/stage title before it's interpolated into a Markdown
+ * heading: flatten embedded newlines to spaces and strip leading `#` runs, so
+ * a title cannot inject extra headings or corrupt document structure.
+ */
+function sanitizeMarkdownHeading(text: string): string {
+  return text
+    .replace(/\r?\n+/g, ' ')
+    .replace(/^#+\s*/, '')
+    .trim();
+}
+
 /** Serialize collected scripts as a Markdown document. */
 export function buildMarkdown(stageName: string, scripts: SceneScript[]): string {
-  const lines = [`# ${stageName}`];
+  const lines = [`# ${sanitizeMarkdownHeading(stageName)}`];
   for (const script of scripts) {
     if (!script.text) continue;
-    lines.push('', `## ${script.sceneTitle}`, '');
+    lines.push('', `## ${sanitizeMarkdownHeading(script.sceneTitle)}`, '');
     const paragraphs = script.text
       .split(/\n{2,}/)
       .map((paragraph) => paragraph.replace(/\n/g, ' ').trim())
@@ -80,7 +96,15 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/** Serialize collected scripts as a Word-compatible `.doc` (HTML + Word MIME). */
+/**
+ * Serialize collected scripts as a Word-compatible `.doc` (HTML + Word MIME).
+ *
+ * Deliberate tradeoff, not an oversight: this is a minimal HTML document
+ * served as `application/msword`, not a real OOXML `.docx`. Word may show a
+ * file-format-mismatch warning on open. Chosen to keep the zero-new-runtime-
+ * dependency constraint from planning; a real `.docx` exporter (e.g. via the
+ * `docx` package) is a valid follow-up if a dependency becomes acceptable.
+ */
 export function buildDocHtml(stageName: string, scripts: SceneScript[]): string {
   const body: string[] = [`<h1>${escapeHtml(stageName)}</h1>`];
   for (const script of scripts) {
@@ -132,7 +156,7 @@ export function useExportScript() {
       // no need to subscribe the hook to the stage store on every render.
       const scenes = useStageStore.getState().scenes;
       const stage = useStageStore.getState().stage;
-      const scripts = collectSceneScripts(scenes);
+      const scripts = collectSceneScripts(scenes, (order) => t('export.slideFallback', { order }));
       if (scripts.length === 0) {
         toast.warning(t('export.nothingToExport'));
         return;

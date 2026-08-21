@@ -102,6 +102,13 @@ export function HeaderControls({
     failedOutlines.length === 0 &&
     Object.values(mediaTasks).every((task) => task.status === 'done' || task.status === 'failed');
 
+  // Text-only readiness: narration script export doesn't depend on media
+  // generation, so it should stay available while media tasks are still
+  // pending — only the media-dependent exports (PPTX/Resource Pack/ZIP/Video)
+  // need the full `canExport` (media done/failed) gate below.
+  const canExportText =
+    scenes.length > 0 && generatingOutlines.length === 0 && failedOutlines.length === 0;
+
   const handleClickOutside = useCallback(
     (e: MouseEvent) => {
       if (exportMenuOpen && exportRef.current && !exportRef.current.contains(e.target as Node)) {
@@ -256,25 +263,33 @@ export function HeaderControls({
       <div className="relative" ref={exportRef}>
         <button
           onClick={() => {
-            if (canExport && !isExporting && !isExportingZip) {
+            if ((canExport || canExportText) && !isExporting && !isExportingZip) {
               setExportMenuOpen(!exportMenuOpen);
             }
           }}
-          disabled={!canExport || isExporting || isExportingZip}
+          disabled={!(canExport || canExportText) || isExporting || isExportingZip}
           title={
             canExport
               ? isExporting || isExportingZip
                 ? t('export.exporting')
                 : t('export.pptx')
-              : t('share.notReady')
+              : canExportText
+                ? t('export.textOnly')
+                : t('share.notReady')
           }
           className={cn(
             'shrink-0 p-2 rounded-full transition-all',
-            canExport && !isExporting && !isExportingZip
+            (canExport || canExportText) && !isExporting && !isExportingZip
               ? 'text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm'
               : 'text-gray-300 dark:text-gray-600 cursor-not-allowed opacity-50',
           )}
-          aria-label={t('export.pptx')}
+          aria-label={
+            canExport
+              ? t('export.pptx')
+              : canExportText
+                ? t('export.textOnly')
+                : t('share.notReady')
+          }
         >
           {isExporting || isExportingZip ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -290,20 +305,26 @@ export function HeaderControls({
           <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[200px]">
             <button
               onClick={() => {
+                if (!canExport) return;
                 setExportMenuOpen(false);
                 exportPPTX();
               }}
-              className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5"
+              disabled={!canExport}
+              title={canExport ? undefined : t('export.mediaPending')}
+              className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
             >
               <FileDown className="w-4 h-4 text-gray-400 shrink-0" />
               <span>{t('export.pptx')}</span>
             </button>
             <button
               onClick={() => {
+                if (!canExport) return;
                 setExportMenuOpen(false);
                 exportResourcePack();
               }}
-              className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5"
+              disabled={!canExport}
+              title={canExport ? undefined : t('export.mediaPending')}
+              className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
             >
               <Package className="w-4 h-4 text-gray-400 shrink-0" />
               <div>
@@ -318,8 +339,9 @@ export function HeaderControls({
                 setExportMenuOpen(false);
                 exportClassroomZip();
               }}
-              disabled={isExportingZip}
-              className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5"
+              disabled={!canExport || isExportingZip}
+              title={canExport ? undefined : t('export.mediaPending')}
+              className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
             >
               <Archive className="w-4 h-4 text-gray-400 shrink-0" />
               <div>
@@ -362,10 +384,13 @@ export function HeaderControls({
             {videoExportEnabled && (
               <button
                 onClick={() => {
+                  if (!canExport) return;
                   setExportMenuOpen(false);
                   setVideoDialogOpen(true);
                 }}
-                className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5 border-t border-gray-200 dark:border-gray-700"
+                disabled={!canExport}
+                title={canExport ? undefined : t('export.mediaPending')}
+                className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5 border-t border-gray-200 dark:border-gray-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
               >
                 <Film className="w-4 h-4 text-gray-400 shrink-0" />
                 <div>
