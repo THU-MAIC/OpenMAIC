@@ -2,16 +2,16 @@
 
 /**
  * `useExportScript` — download the classroom narration script (the
- * `SpeechAction.text` per scene) as a Markdown or Word-compatible `.doc` file.
+ * `SpeechAction.text` per scene) as Markdown, Word-compatible `.doc`, or a
+ * genuine OOXML `.docx` file.
  *
  * Issue #413: teachers want the TTS narration text as a local document for
  * lesson prep/reference, not just the PPTX export. This is a pure client-side
- * collection + serialization + download — no slides, no media, no new runtime
- * dependencies (the `.doc` is a minimal HTML document with the Word MIME type).
+ * collection + serialization + download — no server route or media work.
  *
  * App-side / impure: store read, sonner toast, `saveAs` download.
  */
-import { useCallback } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { saveAs } from 'file-saver';
 import { toast } from 'sonner';
 
@@ -29,6 +29,14 @@ export interface SceneScript {
   sceneOrder: number;
   text: string;
 }
+
+export type ScriptFormat = 'md' | 'doc' | 'docx';
+
+export const SCRIPT_MIME_TYPES: Record<ScriptFormat, string> = {
+  md: 'text/markdown;charset=utf-8',
+  doc: 'application/msword;charset=utf-8',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
 
 /**
  * Collect each scene's narration: concatenate its `SpeechAction.text` values in
@@ -59,6 +67,11 @@ export function collectSceneScripts(
   return scripts;
 }
 
+/** Normalize CRLF and lone CR line endings for consistent cross-format output. */
+function normalizeLineEndings(value: string): string {
+  return value.replace(/\r\n?/g, '\n');
+}
+
 /**
  * Neutralize a scene/stage title before it's interpolated into a Markdown
  * heading: flatten embedded newlines to spaces, then backslash-escape a
@@ -70,7 +83,7 @@ export function collectSceneScripts(
  * behind whitespace that a later `trim()` would otherwise re-expose.
  */
 function sanitizeMarkdownHeading(text: string): string {
-  const flattened = text.replace(/\r?\n+/g, ' ').trim();
+  const flattened = text.replace(/[\r\n]+/g, ' ').trim();
   return flattened.replace(/^#+/, (hashes) =>
     hashes
       .split('')
@@ -85,7 +98,7 @@ export function buildMarkdown(stageName: string, scripts: SceneScript[]): string
   for (const script of scripts) {
     if (!script.text) continue;
     lines.push('', `## ${sanitizeMarkdownHeading(script.sceneTitle)}`, '');
-    const paragraphs = script.text
+    const paragraphs = normalizeLineEndings(script.text)
       .split(/\n{2,}/)
       .map((paragraph) => paragraph.replace(/\n/g, ' ').trim())
       .filter(Boolean);
@@ -107,18 +120,17 @@ function escapeHtml(value: string): string {
 /**
  * Serialize collected scripts as a Word-compatible `.doc` (HTML + Word MIME).
  *
- * Deliberate tradeoff, not an oversight: this is a minimal HTML document
- * served as `application/msword`, not a real OOXML `.docx`. Word may show a
- * file-format-mismatch warning on open. Chosen to keep the zero-new-runtime-
- * dependency constraint from planning; a real `.docx` exporter (e.g. via the
- * `docx` package) is a valid follow-up if a dependency becomes acceptable.
+ * Deliberate compatibility path, not an oversight: this is a minimal HTML
+ * document served as `application/msword`, not a real OOXML `.docx`. Some Word
+ * versions may show a file-format-mismatch warning, while this format remains
+ * useful to users who need a dependency-free legacy document.
  */
 export function buildDocHtml(stageName: string, scripts: SceneScript[]): string {
   const body: string[] = [`<h1>${escapeHtml(stageName)}</h1>`];
   for (const script of scripts) {
     if (!script.text) continue;
     body.push(`<h2>${escapeHtml(script.sceneTitle)}</h2>`);
-    for (const raw of script.text.split(/\n{2,}/)) {
+    for (const raw of normalizeLineEndings(script.text).split(/\n{2,}/)) {
       const paragraph = raw.trim();
       if (!paragraph) continue;
       body.push(`<p>${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`);
@@ -140,12 +152,55 @@ export function buildDocHtml(stageName: string, scripts: SceneScript[]): string 
   ].join('');
 }
 
+type DocxApi = Pick<typeof import('docx'), 'Document' | 'HeadingLevel' | 'Paragraph' | 'TextRun'>;
+
+/**
+ * Build the document model used by the browser-only DOCX serializer.
+ * `docx` is passed in rather than imported at module evaluation time so the
+ * normal classroom header does not eagerly load the OOXML library.
+ */
+export function buildDocxDocument(
+  stageName: string,
+  scripts: SceneScript[],
+  api: DocxApi,
+): InstanceType<DocxApi['Document']> {
+  const children = [new api.Paragraph({ text: stageName, heading: api.HeadingLevel.HEADING_1 })];
+
+  for (const script of scripts) {
+    if (!script.text) continue;
+    children.push(
+      new api.Paragraph({ text: script.sceneTitle, heading: api.HeadingLevel.HEADING_2 }),
+    );
+    for (const raw of normalizeLineEndings(script.text).split(/\n{2,}/)) {
+      const paragraph = raw.trim();
+      if (!paragraph) continue;
+      const lines = paragraph.split('\n');
+      children.push(
+        new api.Paragraph({
+          children: lines.map(
+            (line, index) => new api.TextRun({ text: line, break: index > 0 ? 1 : undefined }),
+          ),
+        }),
+      );
+    }
+  }
+
+  return new api.Document({ sections: [{ children }] });
+}
+
+/** Build a genuine OOXML DOCX blob using the browser-compatible `docx` package. */
+export async function buildDocxBlob(stageName: string, scripts: SceneScript[]): Promise<Blob> {
+  const api = await import('docx');
+  const document = buildDocxDocument(stageName, scripts, api);
+  return api.Packer.toBlob(document);
+}
+
 /**
  * Build a safe download file name: `<stem>-script.<ext>`. Illegal filename
  * characters are stripped, whitespace runs collapse to a single `-`, and an
  * empty stem falls back to `script`.
  */
-export function buildScriptFileName(stageName: string, ext: 'md' | 'doc'): string {
+export function buildScriptFileName(stageName: string, ext: ScriptFormat): string {
   const cleaned = stageName
     .replace(/[\u0000-\u001f\u007f\u200b-\u200c\u200e-\u200f\ufeff\\/:*?"<>|]/gu, '')
     .replace(/\s+/g, '-')
@@ -154,14 +209,16 @@ export function buildScriptFileName(stageName: string, ext: 'md' | 'doc'): strin
   return cleaned ? `${cleaned}-script.${ext}` : `script.${ext}`;
 }
 
-/** Shared export hook — exposes `exportScriptDoc()` and `exportScriptMd()`. */
+/** Shared export hook — exposes Markdown, compatibility DOC, and DOCX downloads. */
 export function useExportScript() {
   const { t } = useI18n();
+  const [exporting, setExporting] = useState(false);
+  const exportingRef = useRef(false);
 
   const downloadScript = useCallback(
-    (ext: 'md' | 'doc') => {
-      // Read state at click time: the download is user-triggered, so there is
-      // no need to subscribe the hook to the stage store on every render.
+    async (format: ScriptFormat) => {
+      if (exportingRef.current) return;
+
       const scenes = useStageStore.getState().scenes;
       const stage = useStageStore.getState().stage;
       const scripts = collectSceneScripts(scenes, (order) => t('export.slideFallback', { order }));
@@ -169,24 +226,51 @@ export function useExportScript() {
         toast.warning(t('export.nothingToExport'));
         return;
       }
+
+      const isAsync = format === 'docx';
+      if (isAsync) {
+        exportingRef.current = true;
+        setExporting(true);
+      }
+
       try {
         const fileName = stage?.name || 'classroom';
-        const content =
-          ext === 'md' ? buildMarkdown(fileName, scripts) : buildDocHtml(fileName, scripts);
-        const mime = ext === 'md' ? 'text/markdown' : 'application/msword';
-        const blob = new Blob([content], { type: `${mime};charset=utf-8` });
-        saveAs(blob, buildScriptFileName(fileName, ext));
+        let blob: Blob;
+        if (format === 'md') {
+          blob = new Blob([buildMarkdown(fileName, scripts)], {
+            type: SCRIPT_MIME_TYPES.md,
+          });
+        } else if (format === 'doc') {
+          blob = new Blob([buildDocHtml(fileName, scripts)], {
+            type: SCRIPT_MIME_TYPES.doc,
+          });
+        } else {
+          blob = await buildDocxBlob(fileName, scripts);
+          // Some Blob implementations inherit a generic type from the packer;
+          // normalize it before handing the file to the browser download API.
+          if (blob.type !== SCRIPT_MIME_TYPES.docx) {
+            blob = new Blob([blob], { type: SCRIPT_MIME_TYPES.docx });
+          }
+        }
+        saveAs(blob, buildScriptFileName(fileName, format));
         toast.success(t('export.exportSuccess'));
       } catch (error) {
-        log.error(`Script export failed (${ext}):`, error);
+        log.error(`Script export failed (${format}):`, error);
         toast.error(t('export.exportFailed'));
+      } finally {
+        if (isAsync) {
+          exportingRef.current = false;
+          setExporting(false);
+        }
       }
     },
     [t],
   );
 
   return {
-    exportScriptDoc: () => downloadScript('doc'),
-    exportScriptMd: () => downloadScript('md'),
+    exporting,
+    exportScriptDoc: () => void downloadScript('doc'),
+    exportScriptDocx: () => void downloadScript('docx'),
+    exportScriptMd: () => void downloadScript('md'),
   };
 }

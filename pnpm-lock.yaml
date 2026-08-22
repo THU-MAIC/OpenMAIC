@@ -188,6 +188,9 @@ importers:
       dexie:
         specifier: ^4.2.1
         version: 4.3.0
+      docx:
+        specifier: 9.4.1
+        version: 9.4.1
       echarts:
         specifier: ^6.0.0
         version: 6.0.0
@@ -8093,6 +8096,10 @@ packages:
     resolution: {integrity: sha512-yS+Q5i3hBf7GBkd4KG8a7eBNNWNGLTaEwwYWUijIYM7zrlYDM0BFXHjjPWlWZ1Rg7UaddZeIDmi9jF3HmqiQ2w==}
     engines: {node: '>=6.0.0'}
 
+  docx@9.4.1:
+    resolution: {integrity: sha512-N92hA8ZZ7DRlXG93gZa702snV316IFGNyp+TXD6KSJ7Wokj5NlqmpqgtOZ7/jXqkdSf03Qh35QzMfVPNWKqv3A==}
+    engines: {node: '>=10'}
+
   dom-accessibility-api@0.5.16:
     resolution: {integrity: sha512-X7BJ2yElsnOJ30pZF4uIIDfBEVgF4XEBxL9Bxhy6dnrm5hkzqmsWHGTiHqRiITNhMyFLyAiWndIJP7Z1NTteDg==}
 
@@ -13792,6 +13799,12 @@ packages:
   wsl-utils@0.3.1:
     resolution: {integrity: sha512-g/eziiSUNBSsdDJtCLB8bdYEUMj4jR7AGeUo96p/3dTafgjHhpF4RiCFPiRILwjQoDXx5MqkBr4fwWtR3Ky4Wg==}
     engines: {node: '>=20'}
+
+  xml@1.0.1:
+    resolution: {integrity: sha512-huCv9IH9Tcf95zuYCsQraZtWnJvBtLVE0QHMOs8bWyZAFZNDcYjsPq1nEx8jKA9y+Beo9v+7OBPRisQTjinQMw==}
+
+  xml-js@1.6.11:
+    resolution: {integrity: sha512-7rVi2KMfwfWFl+GpPg6m80IVMWXLRjO+PxTq7V2CDhoGak0wzYzFgUY2m4XJ47OGdXd8eLE8EmwfAmdjw7lC1g==}
 
   xml-formatter@3.6.7:
     resolution: {integrity: sha512-IsfFYJQuoDqtUlKhm4EzeoBOb+fQwzQVeyxxAQ0sThn/nFnQmyLPTplqq4yRhaOENH/tAyujD2TBfIYzUKB6hg==}
@@ -22006,6 +22019,15 @@ snapshots:
     dependencies:
       esutils: 2.0.3
 
+  docx@9.4.1:
+    dependencies:
+      '@types/node': 22.19.15
+      hash.js: 1.1.7
+      jszip: 3.10.1
+      nanoid: 5.1.14
+      xml: 1.0.1
+      xml-js: 1.6.11
+
   dom-accessibility-api@0.5.16: {}
 
   dom-accessibility-api@0.6.3: {}
@@ -29152,6 +29174,12 @@ snapshots:
     dependencies:
       is-wsl: 3.1.1
       powershell-utils: 0.1.0
+
+  xml@1.0.1: {}
+
+  xml-js@1.6.11:
+    dependencies:
+      sax: 1.6.0
 
   xml-formatter@3.6.7:
     dependencies:

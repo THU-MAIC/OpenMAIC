@@ -1,9 +1,12 @@
+import JSZip from 'jszip';
 import { describe, it, expect } from 'vitest';
 import {
   collectSceneScripts,
   buildMarkdown,
   buildDocHtml,
+  buildDocxBlob,
   buildScriptFileName,
+  SCRIPT_MIME_TYPES,
 } from '@/lib/export/use-export-script';
 import type { Scene } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
@@ -163,6 +166,29 @@ describe('buildMarkdown', () => {
     expect(md).toContain('## \\# Injected');
     expect(md).not.toContain('## # Injected');
   });
+
+  it('flattens lone carriage returns in stage and scene headings', () => {
+    const md = buildMarkdown('My\rCourse', [
+      { sceneId: 'a', sceneTitle: 'Scene\rTitle', sceneOrder: 1, text: 'Body.' },
+    ]);
+    expect(md).toContain('# My Course');
+    expect(md).toContain('## Scene Title');
+    expect(md).not.toContain('\r');
+  });
+
+  it('preserves paragraph boundaries across LF, CRLF, and lone CR narration', () => {
+    const md = buildMarkdown('C', [
+      {
+        sceneId: 'a',
+        sceneTitle: 'A',
+        sceneOrder: 1,
+        text: 'First line.\r\nSecond line.\r\n\r\nThird paragraph.\rFourth line.',
+      },
+    ]);
+    expect(md).toContain('First line. Second line.');
+    expect(md).toContain('First line. Second line.\n\nThird paragraph. Fourth line.');
+    expect(md).not.toContain('\r');
+  });
 });
 
 describe('buildDocHtml', () => {
@@ -208,6 +234,43 @@ describe('buildDocHtml', () => {
       { sceneId: 'a', sceneTitle: 'A', sceneOrder: 1, text: 'Line one.\nLine two.' },
     ]);
     expect(html).toContain('<p>Line one.<br>Line two.</p>');
+  });
+
+  it('normalizes CRLF and lone CR in HTML paragraphs', () => {
+    const html = buildDocHtml('C', [
+      {
+        sceneId: 'a',
+        sceneTitle: 'A',
+        sceneOrder: 1,
+        text: 'First.\r\nSecond.\r\n\r\nThird.\rFourth.',
+      },
+    ]);
+    expect(html).toContain('<p>First.<br>Second.</p>');
+    expect(html).toContain('<p>Third.<br>Fourth.</p>');
+    expect(html).not.toContain('\r');
+  });
+});
+
+describe('buildDocxBlob', () => {
+  it('produces a genuine OOXML document with headings and narration text', async () => {
+    const blob = await buildDocxBlob('My Course', [
+      { sceneId: 'a', sceneTitle: 'Intro', sceneOrder: 1, text: 'Hello world.\nSecond line.' },
+    ]);
+    expect(blob.size).toBeGreaterThan(0);
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    expect(zip.file('[Content_Types].xml')).not.toBeNull();
+    const documentXml = await zip.file('word/document.xml')?.async('text');
+    expect(documentXml).toContain('My Course');
+    expect(documentXml).toContain('Intro');
+    expect(documentXml).toContain('Hello world.');
+    expect(documentXml).toContain('Second line.');
+  });
+
+  it('uses the DOCX MIME and filename contract', () => {
+    expect(SCRIPT_MIME_TYPES.docx).toBe(
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    expect(buildScriptFileName('My Course', 'docx')).toBe('My-Course-script.docx');
   });
 });
 
