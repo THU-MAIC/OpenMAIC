@@ -108,6 +108,25 @@ describe('Native RuntimeStore whiteboard tools', () => {
     expect(readOnly).toEqual([]);
   });
 
+  it('injects the complete read/open/close control plane for an allowed mutation', () => {
+    const tools = buildNativeWhiteboardTools({
+      agent: { ...teacher, allowedActions: ['wb_draw_shape'] },
+      messageId: 'message-1',
+      send: vi.fn(),
+      service: service(),
+      stageId: 'stage-1',
+      learnerKey: 'learner-1',
+      requestStartManualVisibilityRevision: 0,
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual([
+      'wb_read',
+      'wb_open',
+      'wb_draw_shape',
+      'wb_close',
+    ]);
+  });
+
   it('tells every mutation tool to open first for a user-visible drawing', () => {
     const mutationTools = build(service()).tools.filter((tool) => tool.name.startsWith('wb_draw_'));
 

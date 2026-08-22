@@ -49,4 +49,23 @@ describe('Chart category axis labels', () => {
       interval: 'auto',
     });
   });
+
+  it.each(chartOptionFactories)(
+    'returns null for malformed legacy data before reading category labels',
+    (getChartOption) => {
+      const malformedData = [undefined, { legends: ['Value'], series: [[1]] }] as unknown as Array<
+        Parameters<typeof getChartOption>[0]['data']
+      >;
+
+      for (const data of malformedData) {
+        expect(
+          getChartOption({
+            type: 'bar',
+            data,
+            themeColors: ['#5b9bd5'],
+          }),
+        ).toBeNull();
+      }
+    },
+  );
 });

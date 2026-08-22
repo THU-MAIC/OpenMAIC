@@ -259,9 +259,16 @@ export const NATIVE_WHITEBOARD_ACTION_NAMES = [
   'wb_close',
 ] as const;
 const NATIVE_WHITEBOARD_ACTION_SET = new Set<string>(NATIVE_WHITEBOARD_ACTION_NAMES);
+const NATIVE_WHITEBOARD_MUTATION_ACTION_SET = new Set<string>(
+  NATIVE_WHITEBOARD_ACTION_NAMES.filter((action) => action !== 'wb_open' && action !== 'wb_close'),
+);
 
 export function hasNativeWhiteboardAction(actions: readonly string[]): boolean {
   return actions.some((action) => NATIVE_WHITEBOARD_ACTION_SET.has(action));
+}
+
+function hasNativeWhiteboardMutation(actions: readonly string[]): boolean {
+  return actions.some((action) => NATIVE_WHITEBOARD_MUTATION_ACTION_SET.has(action));
 }
 
 function strictArguments<T>(schema: TSchema, args: unknown, keys: ReadonlySet<string>): T {
@@ -485,6 +492,7 @@ function isNonEmptyRectangularMatrix(data: readonly (readonly string[])[]): bool
 export function buildNativeWhiteboardTools(opts: NativeWhiteboardToolOptions): AgentTool[] {
   const allowed = new Set(opts.agent.allowedActions);
   if (!hasNativeWhiteboardAction(opts.agent.allowedActions)) return [];
+  const hasMutation = hasNativeWhiteboardMutation(opts.agent.allowedActions);
 
   const tools: AgentTool[] = [
     {
@@ -560,7 +568,7 @@ export function buildNativeWhiteboardTools(opts: NativeWhiteboardToolOptions): A
     },
   });
 
-  if (allowed.has('wb_open')) tools.push(effectTool('wb_open'));
+  if (hasMutation || allowed.has('wb_open')) tools.push(effectTool('wb_open'));
 
   if (allowed.has('wb_draw_text')) {
     tools.push(
@@ -824,6 +832,6 @@ export function buildNativeWhiteboardTools(opts: NativeWhiteboardToolOptions): A
     );
   }
 
-  if (allowed.has('wb_close')) tools.push(effectTool('wb_close'));
+  if (hasMutation || allowed.has('wb_close')) tools.push(effectTool('wb_close'));
   return tools;
 }

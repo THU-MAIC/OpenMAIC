@@ -331,8 +331,9 @@ describe('PR2 Native Child route production wiring', () => {
     const childPayloads = payloads.filter((payload) => payload.source === 'pi-chat-native-child');
     expect(childPayloads).toHaveLength(3);
     expect(childPayloads[0]?.options.tools).toHaveProperty('wb_read');
+    expect(childPayloads[0]?.options.tools).toHaveProperty('wb_open');
     expect(childPayloads[0]?.options.tools).toHaveProperty('wb_draw_text');
-    expect(childPayloads[0]?.options.tools).not.toHaveProperty('wb_open');
+    expect(childPayloads[0]?.options.tools).toHaveProperty('wb_close');
     const providerDrawTool = (
       childPayloads[0]?.options.tools as
         | Record<

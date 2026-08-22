@@ -49,10 +49,6 @@ export const getChartOption = ({
     show: true,
     color: textColor ?? '#333333',
   };
-  const categoryAxisLabel = {
-    ...axisLabel,
-    interval: data.labels.length <= 8 ? 0 : ('auto' as const),
-  };
 
   const splitLine = lineColor
     ? {
@@ -63,9 +59,13 @@ export const getChartOption = ({
     : {};
 
   // Defensive check: ensure series is a non-empty array before processing
-  if (!Array.isArray(data?.series) || data.series.length === 0) {
+  if (!Array.isArray(data?.series) || data.series.length === 0 || !Array.isArray(data.labels)) {
     return null;
   }
+  const categoryAxisLabel = {
+    ...axisLabel,
+    interval: data.labels.length <= 8 ? 0 : ('auto' as const),
+  };
 
   const legend =
     data.series.length > 1

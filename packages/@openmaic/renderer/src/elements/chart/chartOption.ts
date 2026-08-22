@@ -35,15 +35,15 @@ export const getChartOption = ({
 
   const axisLine = textColor ? { lineStyle: { color: textColor } } : undefined;
   const axisLabel = { show: true, color: textColor ?? '#333333' };
+  const splitLine = lineColor ? { lineStyle: { color: lineColor } } : {};
+
+  if (!Array.isArray(data?.series) || data.series.length === 0 || !Array.isArray(data.labels)) {
+    return null;
+  }
   const categoryAxisLabel = {
     ...axisLabel,
     interval: data.labels.length <= 8 ? 0 : ('auto' as const),
   };
-  const splitLine = lineColor ? { lineStyle: { color: lineColor } } : {};
-
-  if (!Array.isArray(data?.series) || data.series.length === 0) {
-    return null;
-  }
 
   const legend = data.series.length > 1 ? { top: 'bottom' as const, textStyle } : undefined;
 
