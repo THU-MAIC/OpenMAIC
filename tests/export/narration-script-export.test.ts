@@ -3,7 +3,6 @@ import { describe, it, expect } from 'vitest';
 import {
   collectSceneScripts,
   buildMarkdown,
-  buildDocHtml,
   buildDocxBlob,
   buildScriptFileName,
   SCRIPT_MIME_TYPES,
@@ -191,66 +190,6 @@ describe('buildMarkdown', () => {
   });
 });
 
-describe('buildDocHtml', () => {
-  it('renders a minimal HTML document with h1/h2/p structure (T05)', () => {
-    const html = buildDocHtml('My Course', [
-      { sceneId: 'a', sceneTitle: 'Intro', sceneOrder: 1, text: 'Hello world.' },
-    ]);
-    expect(html).toContain('<!DOCTYPE html>');
-    expect(html).toContain('<meta charset="utf-8">');
-    expect(html).toContain('<h1>My Course</h1>');
-    expect(html).toContain('<h2>Intro</h2>');
-    expect(html).toContain('<p>Hello world.</p>');
-  });
-
-  it('escapes <, >, & in speech text so the HTML stays valid (T05)', () => {
-    const html = buildDocHtml('Math', [
-      { sceneId: 'a', sceneTitle: 'Inequality', sceneOrder: 1, text: 'a<b and c>d & more' },
-    ]);
-    expect(html).toContain('a&lt;b and c&gt;d &amp; more');
-    expect(html).not.toContain('a<b');
-  });
-
-  it('skips empty and whitespace-only paragraphs in HTML', () => {
-    const html = buildDocHtml('C', [
-      { sceneId: 'a', sceneTitle: 'A', sceneOrder: 1, text: 'Line one.\n\n   \n\nLine two.' },
-    ]);
-    expect(html).toContain('<p>Line one.</p>');
-    expect(html).toContain('<p>Line two.</p>');
-    expect(html).not.toContain('<p></p>');
-    expect(html).not.toContain('<p>   </p>');
-  });
-
-  it('does not emit a trailing empty paragraph for trailing newlines', () => {
-    const html = buildDocHtml('C', [
-      { sceneId: 'a', sceneTitle: 'A', sceneOrder: 1, text: 'A\n\n' },
-    ]);
-    expect(html).toContain('<p>A</p>');
-    expect(html).not.toContain('<p></p>');
-  });
-
-  it('renders single newlines inside a paragraph as <br>', () => {
-    const html = buildDocHtml('C', [
-      { sceneId: 'a', sceneTitle: 'A', sceneOrder: 1, text: 'Line one.\nLine two.' },
-    ]);
-    expect(html).toContain('<p>Line one.<br>Line two.</p>');
-  });
-
-  it('normalizes CRLF and lone CR in HTML paragraphs', () => {
-    const html = buildDocHtml('C', [
-      {
-        sceneId: 'a',
-        sceneTitle: 'A',
-        sceneOrder: 1,
-        text: 'First.\r\nSecond.\r\n\r\nThird.\rFourth.',
-      },
-    ]);
-    expect(html).toContain('<p>First.<br>Second.</p>');
-    expect(html).toContain('<p>Third.<br>Fourth.</p>');
-    expect(html).not.toContain('\r');
-  });
-});
-
 describe('buildDocxBlob', () => {
   it('produces a genuine OOXML document with headings and narration text', async () => {
     const blob = await buildDocxBlob('My Course', [
@@ -280,7 +219,7 @@ describe('buildScriptFileName', () => {
   });
 
   it('falls back to a default stem for an empty name', () => {
-    expect(buildScriptFileName('', 'doc')).toBe('script.doc');
+    expect(buildScriptFileName('', 'md')).toBe('script.md');
   });
 
   it('collapses repeated hyphens and trims edges', () => {
@@ -293,6 +232,6 @@ describe('buildScriptFileName', () => {
 
   it('strips control characters and falls back for all-illegal stems', () => {
     expect(buildScriptFileName('A\u0000B', 'md')).toBe('AB-script.md');
-    expect(buildScriptFileName('???', 'doc')).toBe('script.doc');
+    expect(buildScriptFileName('???', 'docx')).toBe('script.docx');
   });
 });

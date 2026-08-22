@@ -51,8 +51,6 @@
     "exportFailed": "Falha na exportação",
     "classroomZip": "Exportar ZIP da Sala",
     "classroomZipDesc": "Estrutura do curso + arquivos de mídia",
-    "scriptDoc": "Baixar roteiro (.doc)",
-    "scriptDocDesc": "Texto da narração como documento compatível com Word",
     "scriptMd": "Baixar roteiro (.md)",
     "scriptMdDesc": "Texto da narração como Markdown",
     "script": "Baixar roteiro",

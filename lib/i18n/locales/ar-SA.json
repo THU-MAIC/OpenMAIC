@@ -48,8 +48,6 @@
     "resourcePackDesc": "PPTX + صفحات تفاعلية",
     "classroomZip": "تصدير ملف الفصل ZIP",
     "classroomZipDesc": "هيكل المقرر + ملفات الوسائط",
-    "scriptDoc": "تنزيل النص (.doc)",
-    "scriptDocDesc": "نص السرد كمستند متوافق مع Word",
     "scriptMd": "تنزيل النص (.md)",
     "scriptMdDesc": "نص السرد بتنسيق Markdown",
     "script": "تنزيل النص",

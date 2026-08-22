@@ -51,8 +51,6 @@
     "exportFailed": "Échec de l’export",
     "classroomZip": "Exporter la classe en ZIP",
     "classroomZipDesc": "Structure du cours + fichiers média",
-    "scriptDoc": "Télécharger le script (.doc)",
-    "scriptDocDesc": "Texte de narration comme document compatible Word",
     "scriptMd": "Télécharger le script (.md)",
     "scriptMdDesc": "Texte de narration en Markdown",
     "script": "Télécharger le script",

@@ -51,8 +51,6 @@
     "exportFailed": "Ошибка экспорта",
     "classroomZip": "Экспорт ZIP класса",
     "classroomZipDesc": "Структура курса + медиафайлы",
-    "scriptDoc": "Скачать сценарий (.doc)",
-    "scriptDocDesc": "Текст озвучки как документ, совместимый с Word",
     "scriptMd": "Скачать сценарий (.md)",
     "scriptMdDesc": "Текст озвучки в Markdown",
     "script": "Скачать сценарий",

@@ -51,8 +51,6 @@
     "exportFailed": "Error al exportar",
     "classroomZip": "Exportar ZIP del aula",
     "classroomZipDesc": "Estructura del curso + archivos multimedia",
-    "scriptDoc": "Descargar guion (.doc)",
-    "scriptDocDesc": "Texto de narración como documento compatible con Word",
     "scriptMd": "Descargar guion (.md)",
     "scriptMdDesc": "Texto de narración como Markdown",
     "script": "Descargar guion",

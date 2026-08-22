@@ -51,8 +51,6 @@
     "exportFailed": "Export fehlgeschlagen",
     "classroomZip": "Kurs-ZIP exportieren",
     "classroomZipDesc": "Kursstruktur + Mediendateien",
-    "scriptDoc": "Skript herunterladen (.doc)",
-    "scriptDocDesc": "Erzähltext als Word-kompatibles Dokument",
     "scriptMd": "Skript herunterladen (.md)",
     "scriptMdDesc": "Erzähltext als Markdown",
     "script": "Skript herunterladen",

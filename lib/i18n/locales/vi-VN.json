@@ -51,8 +51,6 @@
     "exportFailed": "Xuất không thành công",
     "classroomZip": "Xuất lớp học dạng ZIP",
     "classroomZipDesc": "Cấu trúc bài học + tệp phương tiện",
-    "scriptDoc": "Tải kịch bản (.doc)",
-    "scriptDocDesc": "Văn bản tường thuật dưới dạng tài liệu tương thích Word",
     "scriptMd": "Tải kịch bản (.md)",
     "scriptMdDesc": "Văn bản tường thuật dưới dạng Markdown",
     "script": "Tải kịch bản",

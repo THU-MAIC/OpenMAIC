@@ -51,8 +51,6 @@
     "exportFailed": "导出失败",
     "classroomZip": "导出课堂 ZIP",
     "classroomZipDesc": "课程结构 + 媒体文件",
-    "scriptDoc": "下载演讲稿 (.doc)",
-    "scriptDocDesc": "以 Word 兼容文档导出语音播报文字",
     "scriptMd": "下载演讲稿 (.md)",
     "scriptMdDesc": "以 Markdown 导出语音播报文字",
     "script": "下载演讲稿",

@@ -51,8 +51,6 @@
     "exportFailed": "내보내기 실패",
     "classroomZip": "교실 ZIP 내보내기",
     "classroomZipDesc": "강좌 구조 + 미디어 파일",
-    "scriptDoc": "대본 다운로드 (.doc)",
-    "scriptDocDesc": "Word 호환 문서로 내레이션 텍스트",
     "scriptMd": "대본 다운로드 (.md)",
     "scriptMdDesc": "Markdown으로 내레이션 텍스트",
     "script": "대본 다운로드",

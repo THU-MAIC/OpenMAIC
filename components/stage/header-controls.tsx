@@ -88,12 +88,7 @@ export function HeaderControls({
   const mediaTasks = useMediaGenerationStore((s) => s.tasks);
   const { exporting: isExporting, exportPPTX, exportResourcePack } = useExportPPTX();
   const { exporting: isExportingZip, exportClassroomZip } = useExportClassroom();
-  const {
-    exporting: isExportingScript,
-    exportScriptDoc,
-    exportScriptDocx,
-    exportScriptMd,
-  } = useExportScript();
+  const { exporting: isExportingScript, exportScriptDocx, exportScriptMd } = useExportScript();
   const videoExportEnabled = isVideoExportEnabled();
   // Video render lives in a global store so its progress ring stays on the
   // export button even after the menu closes / scenes switch mid-render.
@@ -336,22 +331,6 @@ export function HeaderControls({
                   <div>{t('export.scriptMd')}</div>
                   <div className="text-[11px] text-gray-400 dark:text-gray-500">
                     {t('export.scriptMdDesc')}
-                  </div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!canExport || isExportingScript}
-                onSelect={exportScriptDoc}
-                className="cursor-pointer gap-2.5"
-              >
-                <NotebookText
-                  className="w-4 h-4 text-gray-400 dark:text-gray-500"
-                  aria-hidden="true"
-                />
-                <div>
-                  <div>{t('export.scriptDoc')}</div>
-                  <div className="text-[11px] text-gray-400 dark:text-gray-500">
-                    {t('export.scriptDocDesc')}
                   </div>
                 </div>
               </DropdownMenuItem>

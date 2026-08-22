@@ -51,8 +51,6 @@
     "exportFailed": "エクスポートに失敗しました",
     "classroomZip": "教室ZIPをエクスポート",
     "classroomZipDesc": "コース構造 + メディアファイル",
-    "scriptDoc": "スクリプトをダウンロード (.doc)",
-    "scriptDocDesc": "ナレーション文をWord互換ドキュメントとして",
     "scriptMd": "スクリプトをダウンロード (.md)",
     "scriptMdDesc": "ナレーション文をMarkdownとして",
     "script": "スクリプトをダウンロード",

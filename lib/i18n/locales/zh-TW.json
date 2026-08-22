@@ -51,8 +51,6 @@
     "exportFailed": "匯出失敗",
     "classroomZip": "匯出課堂 ZIP",
     "classroomZipDesc": "課程結構 + 媒體檔案",
-    "scriptDoc": "下載演講稿 (.doc)",
-    "scriptDocDesc": "以 Word 相容文件匯出語音播報文字",
     "scriptMd": "下載演講稿 (.md)",
     "scriptMdDesc": "以 Markdown 匯出語音播報文字",
     "script": "下載演講稿",
