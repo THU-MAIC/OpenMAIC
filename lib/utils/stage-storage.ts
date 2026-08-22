@@ -808,7 +808,10 @@ export async function resolveThumbnailMediaValue(
     blob = await withAssetUrl(ref, async (url) => {
       if (!url) return undefined;
       const response = await fetch(url);
-      return response.ok ? response.blob() : undefined;
+      const fetched = response.ok ? await response.blob() : undefined;
+      // Zero-byte pool answers are not usable bytes: fall back to the stored
+      // row (or no thumbnail) rather than minting an empty image.
+      return fetched && fetched.size > 0 ? fetched : undefined;
     });
   } catch {
     // Pool access is optional for the home-page compatibility thumbnail.

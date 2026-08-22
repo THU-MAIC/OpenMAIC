@@ -28,10 +28,25 @@ jobs:
   check:
     name: Lint, Typecheck & Unit Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Cheap bash-only check so a broken helper fails before pnpm install.
+      # Quiet annotations: the expected-failure case would otherwise paint
+      # the check with a fake ::error::.
+      - name: Parallel runner self-test
+        env:
+          CI_PARALLEL_ANNOTATE: '0'
+        run: |
+          set -euo pipefail
+          scripts/ci-run-parallel.sh ok 'true' ok2 'true'
+          if scripts/ci-run-parallel.sh ok 'true' bad 'exit 7'; then
+            echo 'ci-run-parallel.sh should have failed'
+            exit 1
+          fi
 
       - uses: pnpm/action-setup@v4
 
@@ -101,18 +116,19 @@ jobs:
           fi
           echo "Tracked package files match the commit under test."
 
-      - name: Prettier
-        run: pnpm check
+      # These four do not share state. Sequential they were ~2 minutes; the
+      # slowest (ESLint) is the new bound.
+      - name: Prettier, ESLint, TypeScript, i18n
+        run: |
+          scripts/ci-run-parallel.sh \
+            'prettier' 'pnpm check' \
+            'eslint' 'pnpm lint' \
+            'tsc' 'npx tsc --noEmit' \
+            'i18n' 'pnpm check:i18n-keys'
 
-      - name: ESLint
-        run: pnpm lint
-
-      - name: TypeScript
-        run: npx tsc --noEmit
-
-      - name: i18n Key Alignment
-        run: pnpm check:i18n-keys
-
+      # Keep these sequential. Running root vitest alongside the storage
+      # package on a 4-core runner made 5s-timeout tests flake (CPU
+      # contention, not a product regression).
       - name: Unit Tests
         run: pnpm test
 
@@ -169,6 +185,7 @@ jobs:
   render-service:
     name: Render Service (typecheck + tests)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     # The producer dep bundles puppeteer; skip its Chromium download — the unit
     # tests exercise the service's boundaries (unzip, admission, body caps) and
     # never launch a browser.
@@ -204,6 +221,7 @@ jobs:
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -216,8 +234,32 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Install Playwright browsers
-        run: pnpm exec playwright install chromium --with-deps
+      # Browser tarballs live under ~/.cache/ms-playwright. A cold download of
+      # Chromium from the Playwright CDN has sat for 20+ minutes on this runner
+      # fleet; a lockfile-keyed cache turns that into a restore.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+
+      # Browser tarball only. `install-deps` talks to Ubuntu apt; on this
+      # runner fleet that mirror has sat through the whole 15-minute job
+      # budget. ubuntu-latest already ships the libraries Chromium needs.
+      # Bound the Microsoft CDN download so a stall retries instead of hanging.
+      - name: Install Playwright Chromium
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if timeout -k 10 240 pnpm exec playwright install chromium; then
+              exit 0
+            fi
+            echo "Playwright Chromium download attempt ${attempt} failed, retrying..."
+            sleep 5
+          done
+          echo "::error::Playwright Chromium download failed after 3 attempts."
+          exit 1
 
       # Measures the emitted cover cards in Chromium. Lives with the unit tests
       # (it needs the compiler), but only this job has a browser, so it runs
@@ -263,6 +305,25 @@ jobs:
               exit 1
             fi
           done
+
+      # Incremental compilation artifacts only. Keyed on the lockfile plus
+      # next.config.ts so a dependency or webpack-rule change misses; source
+      # edits still reuse the restore-key prefix.
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('next.config.ts') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-
+
+      # Dedicated so a cold `next build` is not charged against Playwright's
+      # webServer readiness budget (120s). NEXT_PUBLIC_MAIC_EDITOR_ENABLED is a
+      # build-time flag and must be set here, not only on `pnpm start`.
+      - name: Build
+        run: pnpm build
+        env:
+          NEXT_PUBLIC_MAIC_EDITOR_ENABLED: 'true'
 
       - name: Run e2e tests
         run: pnpm exec playwright test

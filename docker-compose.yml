@@ -91,6 +91,12 @@ services:
       # producer worker, one render, and one extraction. Select low-memory to
       # force screenshot instead of relying on producer auto-selection.
       - RENDER_RESOURCE_PROFILE=${RENDER_RESOURCE_PROFILE:-standard}
+      - RENDER_CHUNK_EXECUTION=${RENDER_CHUNK_EXECUTION:-false}
+      - RENDER_CHUNK_COUNT=${RENDER_CHUNK_COUNT:-1}
+      - RENDER_CHUNK_WORKERS=${RENDER_CHUNK_WORKERS:-1}
+      - RENDER_MAX_PARALLEL_CHUNKS=${RENDER_MAX_PARALLEL_CHUNKS:-1}
+      - RENDER_CHUNK_SIZE_FRAMES=${RENDER_CHUNK_SIZE_FRAMES:-0}
+      - RENDER_TARGET_CHUNK_FRAMES=${RENDER_TARGET_CHUNK_FRAMES:-0}
       - PRODUCER_HEADLESS_SHELL_PATH=/usr/bin/chromium-headless-shell
       - RENDER_MAX_CONCURRENCY=1
       - RENDER_MAX_CONCURRENT_EXTRACTIONS=1

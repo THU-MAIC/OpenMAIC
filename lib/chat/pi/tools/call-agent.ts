@@ -3,6 +3,7 @@ import { Type, type Static } from 'typebox';
 import type { LanguageModel } from 'ai';
 import { nanoid } from 'nanoid';
 import { buildAgent } from '@/lib/agent/runtime/build-agent';
+import { runNativeChild } from '@/lib/agent/runtime/run-native-child';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
 import {
   createParserState,
@@ -14,18 +15,29 @@ import {
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestration/types';
 import type { ThinkingConfig } from '@/lib/types/provider';
+import type { ChildRuntimeMode } from '../child-runtime';
 import type { DirectorSceneEvidenceMetadata } from './read-scene';
-import type { DirectorWebEvidenceMetadata } from './web-search';
+import { buildNativeWebSearchTool, type NativeWebSearchConfig } from './web-search';
 import type { ParsedAction, StatelessChatRequest } from '@/lib/types/chat';
 import {
   buildChildPrompt,
   buildChildTurnPrompt,
+  buildNativeChildPrompt,
+  buildNativeChildTurnPrompt,
+  createVisibleSpeechDeltaSanitizer,
   extractLastAssistantText,
   sanitizeVisibleSpeech,
   toHistoryMessages,
 } from '../prompts';
 import type { SendEvent } from '../types';
-import { buildChildActionTools, createPiWhiteboardRuntimeState } from './classroom-actions';
+import {
+  buildChildActionTools,
+  createPiWhiteboardRuntimeState,
+  type PiWhiteboardRuntimeState,
+} from './classroom-actions';
+import { buildNativeSpotlightTool } from './native-spotlight';
+import { buildNativeWhiteboardTools } from './native-whiteboard';
+import type { WhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 
 const CallAgentParams = Type.Object({
   agentId: Type.String({
@@ -42,6 +54,12 @@ type RuntimeEvidenceAttachment<TMetadata> = {
   content: string;
   metadata: TMetadata;
 };
+
+export type RequestStartCurrentScene = Readonly<{
+  sceneId: string;
+  sceneType: string;
+  elementIds: readonly string[];
+}>;
 
 type ChildActionTool = ReturnType<typeof buildChildActionTools>[number];
 type ChildMessageEvent = {
@@ -73,6 +91,15 @@ function getAssistantTextDelta(event: ChildMessageEvent): string | null {
   if (!assistantEvent) return null;
   if (assistantEvent.type !== 'text_delta') return null;
   return assistantEvent.delta ?? '';
+}
+
+function abortChildError(...signals: Array<AbortSignal | undefined>): Error {
+  const aborted = signals.find((signal) => signal?.aborted);
+  if (aborted?.reason instanceof Error) return aborted.reason;
+  return new DOMException(
+    typeof aborted?.reason === 'string' ? aborted.reason : 'Operation aborted',
+    'AbortError',
+  );
 }
 
 async function emitTextDelta(opts: {
@@ -516,10 +543,17 @@ export function buildCallAgentTool(opts: {
   getWhiteboardLedger: () => WhiteboardActionRecord[];
   maxActionsPerAgent: number;
   enableWhiteboardTools: boolean;
+  childRuntimeMode?: ChildRuntimeMode;
+  enableNativeChildSpotlight?: boolean;
+  nativeWebSearchConfig?: NativeWebSearchConfig;
+  nativeWhiteboardService?: WhiteboardRuntimeService;
+  nativeWhiteboardStageId?: string;
+  nativeWhiteboardLearnerKey?: string;
+  requestStartManualVisibilityRevision?: number;
+  requestStartCurrentScene?: RequestStartCurrentScene;
   isUserCued?: () => boolean;
   isSessionClosed?: () => boolean;
   takeSceneEvidence?: () => RuntimeEvidenceAttachment<DirectorSceneEvidenceMetadata[]> | undefined;
-  takeWebEvidence?: () => RuntimeEvidenceAttachment<DirectorWebEvidenceMetadata> | undefined;
 }): AgentTool<typeof CallAgentParams> {
   // Loop-guard (model-agnostic): an empty/errored child turn used to bypass onAgentDone,
   // so the completed-turn count never advanced and the maxAgentTurns guard was defeated — a model
@@ -529,7 +563,11 @@ export function buildCallAgentTool(opts: {
   const maxAgentAttempts = Math.max(opts.maxAgentTurns * 3, opts.maxAgentTurns + 3);
   let consecutiveEmptyTurns = 0;
   let totalAgentAttempts = 0;
-  const whiteboardState = createPiWhiteboardRuntimeState(opts.body);
+  let whiteboardState: PiWhiteboardRuntimeState | undefined;
+  const getLegacyWhiteboardState = () => {
+    whiteboardState ??= createPiWhiteboardRuntimeState(opts.body);
+    return whiteboardState;
+  };
   return {
     name: 'call_agent',
     label: 'Call classroom agent',
@@ -625,12 +663,19 @@ export function buildCallAgentTool(opts: {
       // Take it before starting/building the child so any downstream failure cannot
       // leak the packet to a later agent.
       const sceneEvidence = opts.takeSceneEvidence?.();
-      const webEvidence = opts.takeWebEvidence?.();
 
       const childAbort = new AbortController();
-      const abortChild = () => childAbort.abort();
-      opts.abortSignal.addEventListener('abort', abortChild, { once: true });
-      signal?.addEventListener('abort', abortChild, { once: true });
+      const abortFromRequest = () => childAbort.abort(opts.abortSignal.reason);
+      const abortFromTool = () => childAbort.abort(signal?.reason);
+      if (opts.abortSignal.aborted) abortFromRequest();
+      else opts.abortSignal.addEventListener('abort', abortFromRequest, { once: true });
+      if (signal?.aborted) abortFromTool();
+      else signal?.addEventListener('abort', abortFromTool, { once: true });
+      if (childAbort.signal.aborted) {
+        opts.abortSignal.removeEventListener('abort', abortFromRequest);
+        signal?.removeEventListener('abort', abortFromTool);
+        throw abortChildError(opts.abortSignal, signal);
+      }
 
       const messageId = nanoid();
       let text = '';
@@ -663,6 +708,134 @@ export function buildCallAgentTool(opts: {
         },
       });
 
+      const childRuntimeMode = opts.childRuntimeMode ?? 'legacy';
+      if (childRuntimeMode === 'native') {
+        const capturedScene = opts.requestStartCurrentScene;
+        const hasMatchingCurrentSceneEvidence = Boolean(
+          capturedScene &&
+          capturedScene.sceneType === 'slide' &&
+          sceneEvidence?.metadata.some(
+            (metadata) =>
+              metadata.sceneId === capturedScene.sceneId && metadata.sceneType === 'slide',
+          ),
+        );
+        const spotlightElementIds = hasMatchingCurrentSceneEvidence
+          ? (capturedScene?.elementIds ?? [])
+          : [];
+        const spotlightTargets = new Set(spotlightElementIds);
+        const spotlightEnabled = Boolean(
+          opts.enableNativeChildSpotlight &&
+          agent.allowedActions.includes('spotlight') &&
+          spotlightTargets.size > 0,
+        );
+        const nativeTools: AgentTool[] = [
+          ...(spotlightEnabled
+            ? [
+                buildNativeSpotlightTool({
+                  agent,
+                  messageId,
+                  send: opts.send,
+                  authorizedElementIds: spotlightTargets,
+                }),
+              ]
+            : []),
+          ...(opts.nativeWhiteboardService &&
+          opts.nativeWhiteboardStageId &&
+          opts.nativeWhiteboardLearnerKey
+            ? buildNativeWhiteboardTools({
+                agent,
+                messageId,
+                send: opts.send,
+                service: opts.nativeWhiteboardService,
+                stageId: opts.nativeWhiteboardStageId,
+                learnerKey: opts.nativeWhiteboardLearnerKey,
+                requestStartManualVisibilityRevision:
+                  opts.requestStartManualVisibilityRevision ?? 0,
+              })
+            : []),
+          buildNativeWebSearchTool({ config: opts.nativeWebSearchConfig }),
+        ];
+        const availableToolNames = nativeTools.map((tool) => tool.name);
+        const sanitizeNativeDelta = createVisibleSpeechDeltaSanitizer();
+        let nativeResult: Awaited<ReturnType<typeof runNativeChild>>;
+        try {
+          nativeResult = await runNativeChild({
+            streamFn: createCallLlmStreamFn({
+              languageModel: opts.languageModel,
+              source: 'pi-chat-native-child',
+              thinkingConfig: opts.thinkingConfig,
+              maxOutputTokens: opts.maxOutputTokens,
+              abortSignal: childAbort.signal,
+            }),
+            systemPrompt: buildNativeChildPrompt(
+              opts.body,
+              agent,
+              opts.getAgentResponses(),
+              availableToolNames,
+              capturedScene,
+            ),
+            prompt: buildNativeChildTurnPrompt(params.instruction, agent.role, {
+              scene: sceneEvidence?.content,
+              spotlightElementIds,
+            }),
+            tools: nativeTools,
+            allowedToolNames: new Set(availableToolNames),
+            history: toHistoryMessages(opts.body.messages),
+            abortSignal: childAbort.signal,
+            timeoutMs: 60_000,
+            maxProviderTransports: 5,
+            onVisibleTextDelta: async (delta) => {
+              const visibleDelta = sanitizeNativeDelta(delta);
+              if (!visibleDelta) return '';
+              await opts.send({ type: 'text_delta', data: { content: visibleDelta, messageId } });
+              return visibleDelta;
+            },
+            onDispatchedAction: () => {
+              actionCount += 1;
+              opts.onActionDone();
+            },
+          });
+        } finally {
+          opts.abortSignal.removeEventListener('abort', abortFromRequest);
+          signal?.removeEventListener('abort', abortFromTool);
+        }
+        if (nativeResult.status === 'cancelled' || opts.abortSignal.aborted || signal?.aborted) {
+          throw abortChildError(opts.abortSignal, signal);
+        }
+
+        const finalText = nativeResult.visibleOutput.trim();
+        const isCompleted = nativeResult.status === 'completed';
+        consecutiveEmptyTurns = isCompleted ? 0 : consecutiveEmptyTurns + 1;
+        await opts.send({ type: 'agent_end', data: { messageId, agentId: agent.id } });
+        opts.onAgentDone({
+          agentId: agent.id,
+          agentName: agent.name,
+          contentPreview: finalText.slice(0, 300),
+          actionCount,
+          whiteboardActions,
+          actionWarnings: [],
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `${agent.name}: ${finalText || '(no visible response)'}`,
+            },
+          ],
+          details: {
+            agentId: agent.id,
+            agentName: agent.name,
+            text: finalText,
+            runtimeMode: childRuntimeMode,
+            availableToolNames,
+            nativeChildRun: nativeResult,
+            ...(sceneEvidence ? { sceneEvidence: sceneEvidence.metadata } : {}),
+          },
+          ...(isCompleted ? {} : { isError: true }),
+        };
+      }
+
       const childTools = buildChildActionTools({
         body: opts.body,
         agent,
@@ -675,7 +848,7 @@ export function buildCallAgentTool(opts: {
         },
         maxActionsPerAgent: opts.maxActionsPerAgent,
         enableWhiteboardTools: opts.enableWhiteboardTools,
-        whiteboardState,
+        whiteboardState: getLegacyWhiteboardState(),
       });
       const childToolsByName = new Map(childTools.map((tool) => [tool.name, tool]));
 
@@ -723,7 +896,6 @@ export function buildCallAgentTool(opts: {
         await child.prompt(
           buildChildTurnPrompt(params.instruction, agent.role, {
             scene: sceneEvidence?.content,
-            web: webEvidence?.content,
           }),
         );
         await child.waitForIdle();
@@ -735,8 +907,8 @@ export function buildCallAgentTool(opts: {
         childErrored = true;
       } finally {
         unsubscribe();
-        opts.abortSignal.removeEventListener('abort', abortChild);
-        signal?.removeEventListener('abort', abortChild);
+        opts.abortSignal.removeEventListener('abort', abortFromRequest);
+        signal?.removeEventListener('abort', abortFromTool);
       }
 
       await processParseResult({
@@ -800,7 +972,6 @@ export function buildCallAgentTool(opts: {
           text: finalText,
           actionWarnings,
           ...(sceneEvidence ? { sceneEvidence: sceneEvidence.metadata } : {}),
-          ...(webEvidence ? { webEvidence: webEvidence.metadata } : {}),
         },
       };
     },

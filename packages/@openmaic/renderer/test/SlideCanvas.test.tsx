@@ -84,6 +84,15 @@ describe('SlideCanvas', () => {
     expect(findRule('.slide-renderer-prose li')?.style.display).toBe('list-item');
   });
 
+  it('gives empty static paragraphs a line box', () => {
+    const { container } = render(<SlideCanvas slide={slide} scale={1} chrome={false} />);
+
+    expect(container.querySelector('style')?.textContent).toContain(
+      '.slide-renderer-prose p:empty::before',
+    );
+    expect(container.querySelector('style')?.textContent).toContain("content: '\\00a0';");
+  });
+
   it('does not render elements listed in hiddenElementIds', () => {
     const html = renderToStaticMarkup(
       createElement(SlideCanvas, {

@@ -50,6 +50,6 @@ describe('render-service container contract', () => {
     );
 
     const packageJson = read('package.json');
-    expect(packageJson).toContain('"@hyperframes/producer": "0.7.60"');
+    expect(packageJson).toContain('"@hyperframes/producer": "^0.7.107"');
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/editor",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Composable slide editing core, React surface, and UI for OpenMAIC.",
   "type": "module",
   "main": "./dist/core/index.js",

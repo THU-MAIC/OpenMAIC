@@ -12,6 +12,14 @@ function intEnv(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+function boundedIntEnv(name: string, fallback: number, maximum: number): number {
+  const value = intEnv(name, fallback);
+  if (value > maximum) {
+    throw new Error(`${name}=${value} exceeds the resource profile limit of ${maximum}`);
+  }
+  return value;
+}
+
 /**
  * Like {@link intEnv} but accepts 0 as a valid value (still rejects negatives /
  * non-numeric). Used for knobs where 0 has a distinct meaning — e.g. a per-user
@@ -22,6 +30,14 @@ function intEnvAllowZero(name: string, fallback: number): number {
   if (!raw) return fallback;
   const n = Number.parseInt(raw, 10);
   return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+function boolEnv(name: string, fallback: boolean): boolean {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (!raw) return fallback;
+  if (raw === 'true' || raw === '1' || raw === 'on') return true;
+  if (raw === 'false' || raw === '0' || raw === 'off') return false;
+  return fallback;
 }
 
 const MB = 1024 * 1024;
@@ -40,6 +56,23 @@ export const config = {
   maxConcurrentExtractions: resourceProfile.maxConcurrentExtractions,
   /** Explicit per-job worker count fixed by the selected resource profile. */
   producerWorkers: resourceProfile.producerWorkers,
+  /** Opt-in local plan → chunk → assemble path; HTTP contract remains unchanged. */
+  chunkExecutionEnabled: boolEnv('RENDER_CHUNK_EXECUTION', false),
+  chunkCount: intEnv('RENDER_CHUNK_COUNT', 1),
+  chunkWorkers: boundedIntEnv(
+    'RENDER_CHUNK_WORKERS',
+    resourceProfile.producerWorkers,
+    resourceProfile.maxChunkWorkers,
+  ),
+  maxParallelChunks: boundedIntEnv(
+    'RENDER_MAX_PARALLEL_CHUNKS',
+    1,
+    resourceProfile.maxParallelChunks,
+  ),
+  /** Optional fixed frame count for each planned chunk. */
+  chunkSizeFrames: intEnv('RENDER_CHUNK_SIZE_FRAMES', 0),
+  /** Optional target frame count used by the producer planner. */
+  targetChunkFrames: intEnv('RENDER_TARGET_CHUNK_FRAMES', 0),
   /** Explicit false guard so inherited env cannot turn screenshot fallback rejection back on. */
   requireBeginFrame: resourceProfile.requireBeginFrame,
   /** Active (queued+running) jobs allowed per client identity. 0 disables the guard. */

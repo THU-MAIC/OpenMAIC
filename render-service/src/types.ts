@@ -93,6 +93,15 @@ export interface RenderExecutionRequest {
   /** Wall-clock budget starting when execution begins. */
   deadlineMs: number;
   onProgress: (progress: RenderProgress) => void | Promise<void>;
+  /** Optional bounded local chunk execution requested by an internal caller. */
+  chunkExecution?: {
+    chunkCount?: number;
+    chunkWorkers?: number;
+    maxParallelChunks?: number;
+    chunkSizeFrames?: number;
+    targetChunkFrames?: number;
+    planDir?: string;
+  };
 }
 
 export type RenderExecutionResult =

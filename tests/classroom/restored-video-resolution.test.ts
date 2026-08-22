@@ -112,6 +112,21 @@ describe('restored classroom video resolution', () => {
     expect(binding.task).toMatchObject({ status: 'done', placeholderRef: legacyRef });
   });
 
+  it('carries the task poster binding when the element has no explicit poster', () => {
+    const task = {
+      ...lookupTask('done'),
+      objectUrl: 'blob:video',
+      poster: 'blob:generated-poster',
+    };
+
+    const binding = resolveVideoMediaForElement({ [legacyRef]: task }, videoElement(), stageId);
+
+    // The task-owned poster URL is the effective poster, and it travels with a
+    // task binding so the manifest guard's task-ownership exemption admits it.
+    expect(binding.posterRef).toBe('blob:generated-poster');
+    expect(binding.posterTask).toEqual({ ...task, objectUrl: 'blob:generated-poster' });
+  });
+
   it('keeps a concrete explicit poster ahead of a completed task poster', () => {
     const element = {
       ...videoElement(),

@@ -367,6 +367,19 @@ export class BrowserAssetStore implements StorageProvider {
   }
 
   /**
+   * Metadata-only existence probe: the registry entry lookup alone, with no
+   * blob read and no URL minted. This is what migration-time checks should
+   * use; resolve downloads and pins.
+   */
+  async exists(ref: AssetRef): Promise<boolean> {
+    this.assertOpen();
+    const entry = await this.tx('readonly', async ({ assets }) => {
+      return reqP<AssetEntry | undefined>(assets.get(ref));
+    });
+    return entry !== undefined;
+  }
+
+  /**
    * Replace the bytes behind an allocated id without changing that id.
    *
    * The digest is computed before the transaction. The blob write, registry

@@ -169,7 +169,7 @@ function TeacherCard({ agent, open, onToggle, onUpdate }: TeacherCardProps) {
 
   return (
     <div
-      className="mb-3"
+      className="mb-3 shrink-0"
       style={{
         borderRadius: 13,
         border: '1px solid #e9d8fb',
@@ -297,7 +297,7 @@ function ClassmateCard({
 
   return (
     <div
-      className="mb-[9px]"
+      className="mb-[9px] shrink-0"
       style={{
         borderRadius: 13,
         border: open ? `1px solid ${ringColor}66` : '1px solid #f0f0f2',

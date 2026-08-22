@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Action } from '@openmaic/dsl';
@@ -23,7 +23,7 @@ function projectDigest(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
-function compile(layoutProbe?: QuizLayoutProbe) {
+function compile(layoutProbe?: QuizLayoutProbe, visibleScriptText = '') {
   const quiz = {
     id: 'quiz',
     stageId: 'stage',
@@ -36,7 +36,7 @@ function compile(layoutProbe?: QuizLayoutProbe) {
         {
           id: 'single',
           type: 'single',
-          question: 'Which <script>bad()</script> value solves $x^2=4$?',
+          question: `Which <script>bad()</script> value solves $x^2=4$? ${visibleScriptText}`,
           options: [
             { value: 'A', label: '<img src=x onerror=bad()>' },
             { value: 'B', label: '$2$' },
@@ -99,6 +99,11 @@ describe('Quiz question-list Hyperframes emission', () => {
     expect(project.vendorAssets).toEqual([]);
     expect(html).not.toContain('assets/fonts/');
     expect(project.files.map((file) => file.path)).not.toContain('LICENSES/KaTeX-MIT.txt');
+    expect(
+      project.files
+        .map((file) => file.path)
+        .filter((path) => /Noto-Sans(?:-Arabic)?-OFL-1\.1\.txt$/.test(path)),
+    ).toEqual([]);
   });
 
   it('renders escaped static questions with shared math parsing and no learner controls/state', () => {
@@ -124,11 +129,22 @@ describe('Quiz question-list Hyperframes emission', () => {
     expect(html).toContain('url("assets/fonts/noto-sans-sc-chinese-simplified-400-normal.woff2")');
     expect(html).toContain('url("assets/fonts/noto-sans-kr-korean-400-normal.woff2")');
     expect(html).toContain(
-      'font-family:Inter,"OpenMAIC Noto Sans SC","OpenMAIC Noto Sans KR",sans-serif',
+      'font-family:"OpenMAIC Noto Sans Cyrillic","OpenMAIC Noto Sans Arabic",Inter,"OpenMAIC Noto Sans SC","OpenMAIC Noto Sans KR",sans-serif',
     );
   });
 
-  it('keeps emitted CSS, declared vendor assets, and committed font files closed and offline', () => {
+  it('keeps the committed script-font catalog complete and valid', () => {
+    const expected = [
+      'noto-sans-cyrillic-400-normal.woff2',
+      'noto-sans-cyrillic-ext-400-normal.woff2',
+      'noto-sans-arabic-arabic-400-normal.woff2',
+    ];
+    const publicNames = readdirSync(join(process.cwd(), 'public/vendor/video-export/fonts'));
+
+    expect(publicNames).toEqual(expect.arrayContaining(expected));
+  });
+
+  it('does not select Cyrillic or Arabic files for a Latin/CJK-only question list', () => {
     const project = emitHyperframes(compile(layout(1001, 401)), {
       width: 1280,
       height: 720,
@@ -140,14 +156,11 @@ describe('Quiz question-list Hyperframes emission', () => {
       (match) => match[1],
     );
     const declaredPaths = project.vendorAssets.map((asset) => asset.path);
-    const publicPaths = readdirSync(join(process.cwd(), 'public/vendor/video-export/fonts'))
-      .filter((name) => name.endsWith('.woff2'))
-      .map((name) => `assets/fonts/${name}`);
 
     expect(cssPaths).toHaveLength(new Set(cssPaths).size);
     expect(declaredPaths).toHaveLength(new Set(declaredPaths).size);
     expect(new Set(cssPaths)).toEqual(new Set(declaredPaths));
-    expect(new Set(publicPaths)).toEqual(new Set(declaredPaths));
+    expect(declaredPaths.filter((path) => /noto-sans-(?:cyrillic|arabic)/.test(path))).toEqual([]);
     expect(
       project.vendorAssets.every(
         ({ path, sourceUrl }) =>
@@ -162,17 +175,56 @@ describe('Quiz question-list Hyperframes emission', () => {
         'LICENSES/Noto-Sans-KR-OFL-1.1.txt',
       ]),
     );
+    expect(
+      project.files
+        .map((file) => file.path)
+        .filter((path) => /Noto-Sans(?:-Arabic)?-OFL-1\.1\.txt$/.test(path)),
+    ).toEqual([]);
   });
 
-  it('emits an identical complete project for repeated Quiz compilation', () => {
-    const options = {
+  it('selects only the mixed surface script assets, CSS, licenses, and README entries', () => {
+    const project = emitHyperframes(compile(layout(1001, 401), 'Привет, мир. مرحباً بالعالم.'), {
       width: 1280,
       height: 720,
       labels,
-    };
+    });
+    const html = project.files.find((file) => file.path === 'index.html')!.content;
+    const readme = project.files.find((file) => file.path === 'README.md')!.content;
+    const cssPaths = Array.from(
+      html.matchAll(/url\("(assets\/fonts\/[^"?]+\.woff2)"\)/g),
+      (match) => match[1],
+    );
+    const declaredPaths = project.vendorAssets.map((asset) => asset.path);
+    const scriptPaths = declaredPaths.filter((path) => /noto-sans-(?:cyrillic|arabic)/.test(path));
 
-    expect(projectDigest(emitHyperframes(compile(layout(1001, 401)), options))).toBe(
-      projectDigest(emitHyperframes(compile(layout(1001, 401)), options)),
+    expect(scriptPaths).toEqual([
+      'assets/fonts/noto-sans-cyrillic-400-normal.woff2',
+      'assets/fonts/noto-sans-cyrillic-ext-400-normal.woff2',
+      'assets/fonts/noto-sans-arabic-arabic-400-normal.woff2',
+    ]);
+    expect(new Set(cssPaths)).toEqual(new Set(declaredPaths));
+    expect(html).not.toMatch(/url\(["']?https?:/);
+    for (const asset of project.vendorAssets) {
+      const bytes = readFileSync(join(process.cwd(), 'public', asset.sourceUrl.slice(1)));
+      expect(bytes.subarray(0, 4)).toEqual(Buffer.from('wOF2'));
+    }
+    expect(project.files.map((file) => file.path)).toEqual(
+      expect.arrayContaining([
+        'LICENSES/Noto-Sans-OFL-1.1.txt',
+        'LICENSES/Noto-Sans-Arabic-OFL-1.1.txt',
+      ]),
+    );
+    expect(readme).toContain('Noto-Sans-OFL-1.1.txt');
+    expect(readme).toContain('Noto-Sans-Arabic-OFL-1.1.txt');
+    expect(readme).toContain('Quiz question-list CJK (Han/Kana/Hangul)');
+    expect(projectDigest(project)).toBe(
+      projectDigest(
+        emitHyperframes(compile(layout(1001, 401), 'Привет, мир. مرحباً بالعالم.'), {
+          width: 1280,
+          height: 720,
+          labels,
+        }),
+      ),
     );
   });
 });

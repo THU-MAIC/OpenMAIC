@@ -22,7 +22,25 @@ describe('embedded persistence development authentication', () => {
           'x-learner-key': 'anon:learner-1',
         }),
       ),
-    ).resolves.toEqual({ key: 'anon:learner-1', learnerKey: 'anon:learner-1' });
+    ).resolves.toEqual({ key: 'shared', learnerKey: 'anon:learner-1' });
+  });
+
+  it('shares one asset principal across learner keys, like the global documents', async () => {
+    const first = await authenticatePersistenceRequest(
+      request({ authorization: 'Bearer shared-secret', 'x-learner-key': 'anon:a' }),
+    );
+    const second = await authenticatePersistenceRequest(
+      request({ authorization: 'Bearer shared-secret', 'x-learner-key': 'anon:b' }),
+    );
+    expect(first?.key).toBe('shared');
+    expect(second?.key).toBe('shared');
+    expect(first?.learnerKey).not.toBe(second?.learnerKey);
+  });
+
+  it('issues the shared asset principal even without a learner key', async () => {
+    await expect(
+      authenticatePersistenceRequest(request({ authorization: 'Bearer shared-secret' })),
+    ).resolves.toEqual({ key: 'shared' });
   });
 
   it('rejects missing and incorrect bearer tokens', async () => {

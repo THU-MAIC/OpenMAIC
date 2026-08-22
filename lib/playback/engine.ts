@@ -34,6 +34,7 @@ import type {
   Effect,
 } from './types';
 import type { AudioPlayer } from '@/lib/utils/audio-player';
+import type { LegacySpeechAction } from '@/lib/media/convert-legacy-asset-refs';
 import { ActionEngine } from '@/lib/action/engine';
 import {
   resolvePlaybackCursor,
@@ -620,7 +621,9 @@ export class PlaybackEngine {
         const hasText = !!speechAction.text.trim();
 
         this.audioPlayer
-          .play(speechAction.audioId || '', speechAction.audioUrl)
+          // The legacy URL of an unconverted pair rides along as the
+          // fallback of last resort; converted documents carry no audioUrl.
+          .play(speechAction.audioId || '', (speechAction as LegacySpeechAction).audioUrl)
           .then((audioStarted) => {
             if (!this.isCurrentGeneration(generation)) return;
             if (!audioStarted) {

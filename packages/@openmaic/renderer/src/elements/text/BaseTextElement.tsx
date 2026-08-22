@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { PPTTextElement } from '@openmaic/dsl';
 import { useElementShadow } from '../shared/useElementShadow';
 import { ElementOutline } from '../shared/ElementOutline';
+import { preservesPlainTextLineBreaks } from '../../utils/richText';
 
 export interface BaseTextElementProps {
   elementInfo: PPTTextElement;
@@ -23,6 +24,7 @@ export function BaseTextElement({ elementInfo, target, renderContent }: BaseText
       style={{
         position: 'relative',
         pointerEvents: target === 'thumbnail' ? 'none' : undefined,
+        whiteSpace: preservesPlainTextLineBreaks(elementInfo.content) ? 'pre-line' : undefined,
       }}
       dangerouslySetInnerHTML={{ __html: elementInfo.content }}
     />

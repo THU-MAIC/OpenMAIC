@@ -11,6 +11,7 @@
     "sync:maic-importer": "node scripts/sync-maic-importer.mjs",
     "gen:video-export-katex": "node scripts/generate-video-export-katex.mjs",
     "gen:video-export-noto-cjk": "node scripts/generate-video-export-noto-cjk.mjs",
+    "gen:video-export-noto-script-fonts": "node scripts/generate-video-export-noto-script-fonts.mjs",
     "dev": "next dev",
     "build": "node scripts/assert-vendor-maic-importer.mjs && next build",
     "start": "next start",
@@ -96,6 +97,7 @@
     "es-module-lexer": "^2.0.0",
     "file-saver": "^2.0.5",
     "geist": "^1.7.0",
+    "graphemer": "1.4.0",
     "i18next": "^26.0.1",
     "i18next-resources-to-backend": "^1.2.1",
     "immer": "^11.1.3",
@@ -157,6 +159,8 @@
     "zustand": "^5.0.10"
   },
   "devDependencies": {
+    "@fontsource/noto-sans": "5.3.0",
+    "@fontsource/noto-sans-arabic": "5.3.0",
     "@playwright/test": "^1.58.2",
     "@rollup/plugin-commonjs": "^28.0.1",
     "@rollup/plugin-node-resolve": "^16.0.1",
@@ -173,6 +177,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.2",
     "fake-indexeddb": "^6.2.5",
+    "fontkit": "2.0.4",
     "gsap": "^3.15.0",
     "hyperframes": "0.7.60",
     "prettier": "3.8.1",

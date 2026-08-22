@@ -135,6 +135,16 @@ function validationFailure(message: string): AssetHttpError {
   return new AssetHttpError(400, 'VALIDATION_FAILED', message);
 }
 
+/** Whether a value is an absolute http(s) URL a client may fetch. */
+function isAbsoluteHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 /** Whether the caller asked for a descriptor answer over a redirect. */
 function requestsDescriptor(req: IncomingMessage): boolean {
   const accept = req.headers.accept;
@@ -620,6 +630,12 @@ async function route(
       if (indirect !== undefined) {
         if (typeof indirect.url !== 'string' || indirect.url === '') {
           throw new Error('@openmaic/storage: asset store returned a malformed signed URL');
+        }
+        if (!isAbsoluteHttpUrl(indirect.url)) {
+          // Only an absolute http(s) URL may be emitted as a signed object
+          // URL: anything else fails internally before a descriptor body or a
+          // Location header is produced, so a client never fetches it.
+          throw new Error('@openmaic/storage: asset store returned a non-http(s) signed URL');
         }
         if (!Number.isSafeInteger(indirect.revision) || indirect.revision < 1) {
           throw new Error('@openmaic/storage: asset store returned a malformed revision');

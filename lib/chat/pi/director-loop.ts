@@ -9,6 +9,7 @@ import type { ThinkingConfig } from '@/lib/types/provider';
 import { buildDirectorPrompt, buildUserPrompt, toHistoryMessages } from './prompts';
 import { createDirectorCompactionRuntime } from './director-compaction';
 import type { DirectorToolTraceEntry, SendEvent } from './types';
+import type { ChildRuntimeMode } from './child-runtime';
 import { buildCallAgentTool } from './tools/call-agent';
 import { buildCloseSessionTool } from './tools/close-session';
 import { buildCueUserTool } from './tools/cue-user';
@@ -17,26 +18,8 @@ import {
   type DirectorSceneEvidenceMetadata,
   type DirectorSceneEvidencePacket,
 } from './tools/read-scene';
-import {
-  buildDirectorWebSearchTool,
-  type DirectorWebEvidencePacket,
-  type DirectorWebEvidenceMetadata,
-} from './tools/web-search';
-
-function formatWebEvidenceForDelegation(evidence: DirectorWebEvidencePacket): string {
-  return [
-    `Query: ${evidence.query}`,
-    `Retrieved at: ${evidence.retrievedAt}`,
-    evidence.answer ? `Search answer: ${evidence.answer}` : '',
-    'Exact sources:',
-    ...evidence.sources.map(
-      (source, index) =>
-        `${index + 1}. ${source.title}\nURL: ${source.url}\nExcerpt: ${source.excerpt}`,
-    ),
-  ]
-    .filter(Boolean)
-    .join('\n');
-}
+import type { NativeWebSearchConfig } from './tools/web-search';
+import type { WhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 
 function formatSceneEvidenceForDelegation(evidence: DirectorSceneEvidencePacket[]): string {
   return evidence.map((packet) => packet.content).join('\n\n');
@@ -55,7 +38,13 @@ export async function runPiDirectorLoop(opts: {
   maxAgentTurns: number;
   maxActionsPerAgent: number;
   enableWhiteboardTools: boolean;
-  enableWebSearch?: boolean;
+  childRuntimeMode?: ChildRuntimeMode;
+  enableNativeChildSpotlight?: boolean;
+  nativeWebSearchConfig?: NativeWebSearchConfig;
+  nativeWhiteboardService?: WhiteboardRuntimeService;
+  nativeWhiteboardStageId?: string;
+  nativeWhiteboardLearnerKey?: string;
+  requestStartManualVisibilityRevision?: number;
 }): Promise<void> {
   let totalAgents = 0;
   let totalActions = 0;
@@ -65,11 +54,28 @@ export async function runPiDirectorLoop(opts: {
   let endReason: string | undefined;
   let directorToolCalls = 0;
   const pendingSceneEvidence = new Map<string, DirectorSceneEvidencePacket>();
-  let latestWebEvidence: DirectorWebEvidencePacket | undefined;
   const directorToolTrace: DirectorToolTraceEntry[] = [];
   const maxDirectorToolCalls = Math.max(opts.maxAgentTurns * 3, opts.maxAgentTurns + 3);
   const piAgentResponses: AgentTurnSummary[] = [];
   const piWhiteboardLedger: WhiteboardActionRecord[] = [];
+  const requestStartCurrentScene = (() => {
+    const sceneId = opts.body.storeState.currentSceneId;
+    const scene = sceneId
+      ? opts.body.storeState.scenes.find((candidate) => candidate.id === sceneId)
+      : undefined;
+    if (!scene) return undefined;
+    const elementIds =
+      scene.content.type === 'slide'
+        ? scene.content.canvas.elements
+            .map((element) => element.id)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0)
+        : [];
+    return Object.freeze({
+      sceneId: scene.id,
+      sceneType: scene.content.type,
+      elementIds: Object.freeze(elementIds),
+    });
+  })();
   const getAgentTurnCount = (): number => piAgentResponses.length;
   const isTeachingSubstantiveTurn = (summary: AgentTurnSummary): boolean => {
     const agent = opts.agentConfigs.find((candidate) => candidate.id === summary.agentId);
@@ -121,19 +127,6 @@ export async function runPiDirectorLoop(opts: {
         pendingSceneEvidence.set(evidence.details.sceneId, evidence);
       },
     }),
-    ...(opts.enableWebSearch
-      ? [
-          buildDirectorWebSearchTool({
-            stageId: opts.body.storeState.stage?.id,
-            onSearchStart: () => {
-              latestWebEvidence = undefined;
-            },
-            onEvidence: (evidence) => {
-              latestWebEvidence = evidence;
-            },
-          }),
-        ]
-      : []),
     buildCallAgentTool({
       body: opts.body,
       agentConfigs: opts.agentConfigs,
@@ -162,6 +155,14 @@ export async function runPiDirectorLoop(opts: {
       getWhiteboardLedger: () => piWhiteboardLedger,
       maxActionsPerAgent: opts.maxActionsPerAgent,
       enableWhiteboardTools: opts.enableWhiteboardTools,
+      childRuntimeMode: opts.childRuntimeMode ?? 'legacy',
+      enableNativeChildSpotlight: opts.enableNativeChildSpotlight === true,
+      nativeWebSearchConfig: opts.nativeWebSearchConfig,
+      nativeWhiteboardService: opts.nativeWhiteboardService,
+      nativeWhiteboardStageId: opts.nativeWhiteboardStageId,
+      nativeWhiteboardLearnerKey: opts.nativeWhiteboardLearnerKey,
+      requestStartManualVisibilityRevision: opts.requestStartManualVisibilityRevision ?? 0,
+      requestStartCurrentScene,
       isUserCued: () => userCued,
       isSessionClosed: () => sessionClosed,
       takeSceneEvidence: () => {
@@ -182,20 +183,6 @@ export async function runPiDirectorLoop(opts: {
           ),
         };
       },
-      takeWebEvidence: () => {
-        const evidence = latestWebEvidence;
-        latestWebEvidence = undefined;
-        if (!evidence) return undefined;
-        const metadata: DirectorWebEvidenceMetadata = {
-          query: evidence.query,
-          retrievedAt: evidence.retrievedAt,
-          sourceCount: evidence.sources.length,
-        };
-        return {
-          content: formatWebEvidenceForDelegation(evidence),
-          metadata,
-        };
-      },
     }),
     buildCloseSessionTool({
       closeSession,
@@ -213,9 +200,7 @@ export async function runPiDirectorLoop(opts: {
 
   const director = buildAgent({
     streamFn,
-    systemPrompt: buildDirectorPrompt(opts.body, opts.agentConfigs, opts.maxAgentTurns, {
-      enableWebSearch: opts.enableWebSearch,
-    }),
+    systemPrompt: buildDirectorPrompt(opts.body, opts.agentConfigs, opts.maxAgentTurns),
     tools,
     allowedToolNames: new Set(tools.map((tool) => tool.name)),
     history: toHistoryMessages(opts.body.messages, null),
@@ -224,7 +209,7 @@ export async function runPiDirectorLoop(opts: {
     afterToolCall: (context) => {
       directorToolCalls += 1;
       const evidenceStatus =
-        context.toolCall.name === 'read_scene' || context.toolCall.name === 'web_search'
+        context.toolCall.name === 'read_scene'
           ? (context.result.details as { status?: string } | undefined)?.status
           : undefined;
       const evidenceError = evidenceStatus !== undefined && evidenceStatus !== 'ok';

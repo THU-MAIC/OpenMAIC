@@ -247,7 +247,22 @@ async function main(): Promise<void> {
   const artifacts = new LocalDiskArtifactStore();
   validateResourceProfileStartup(config.resourceProfile);
   const runtimeVersions = await collectRuntimeVersions();
-  const executor = new InProcessExecutor({ runtimeVersions });
+  const executor = new InProcessExecutor({
+    runtimeVersions,
+    ...(config.chunkExecutionEnabled
+      ? {
+          chunkExecution: {
+            chunkCount: config.chunkCount,
+            chunkWorkers: config.chunkWorkers,
+            maxParallelChunks: config.maxParallelChunks,
+            ...(config.chunkSizeFrames > 0 ? { chunkSizeFrames: config.chunkSizeFrames } : {}),
+            ...(config.targetChunkFrames > 0
+              ? { targetChunkFrames: config.targetChunkFrames }
+              : {}),
+          },
+        }
+      : {}),
+  });
   // Assigned after `jobs` so its reap callback can close over the coordinator.
   // eslint-disable-next-line prefer-const
   let coordinator: RenderCoordinator;

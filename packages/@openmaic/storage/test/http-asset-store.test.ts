@@ -18,7 +18,7 @@ import {
   type AssetConformanceServer,
   type AssetConformanceServerOptions,
 } from './asset-conformance-server.js';
-import { blobForObjectUrl } from './setup.js';
+import { blobForObjectUrl, objectUrlCount } from './setup.js';
 
 interface RawResponse {
   status: number;
@@ -1140,6 +1140,32 @@ describe('HttpAssetStore snapshot behavior', () => {
     });
   });
 
+  test('a descriptor carrying a non-http(s) url fails as MALFORMED_RESPONSE without a follow-up request', async () => {
+    // Only an absolute http(s) URL may be fetched for the bytes. A descriptor
+    // naming anything else is malformed, and the signed fetch must never be
+    // issued against it.
+    for (const bad of ['not-a-url', 'ftp://objects.example/signed', '//objects.example/signed']) {
+      const seen: Array<{ url: string; init: RequestInit | undefined }> = [];
+      const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+        seen.push({ url: String(input), init });
+        return new Response(JSON.stringify({ url: bad, revision: 7 }), {
+          status: 200,
+          headers: { 'content-type': 'application/vnd.openmaic.asset-descriptor+json' },
+        });
+      });
+      const store = new HttpAssetStore({ baseUrl: 'https://assets.invalid', fetch });
+      stores.push(store);
+
+      await expect(store.resolve('asset')).rejects.toMatchObject({
+        code: 'MALFORMED_RESPONSE',
+      });
+      // Exactly one request: the descriptor GET. The invalid URL was never
+      // fetched.
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.url).toBe('https://assets.invalid/assets/asset/content');
+    }
+  });
+
   test('a media type that merely begins with the descriptor type is served as bytes', async () => {
     // Only the exact essence identifies a descriptor; a longer type naming a
     // real payload must not be parsed as one.
@@ -1246,5 +1272,214 @@ describe('asset handler construction', () => {
         maxMetaBytes: 10,
       }),
     ).toThrow(/multipart framing/);
+  });
+});
+
+describe('HttpAssetStore bounded exists fallback', () => {
+  test('exists() rejects within the probe timeout when the fallback GET stalls', async () => {
+    // An unclassifiable HEAD falls back to a full resolve; that fallback GET
+    // must be bounded like the probe, or a stalled persistence endpoint can
+    // hold migration/conversion indefinitely.
+    const stalledFetch = ((
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      if (init?.method === 'HEAD') return Promise.resolve(new Response(null, { status: 500 }));
+      // GET: hang until the caller's abort signal fires.
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () =>
+          reject(init.signal?.reason ?? new Error('aborted')),
+        );
+      });
+    }) as typeof fetch;
+    const store = new HttpAssetStore({
+      baseUrl: 'https://assets.test',
+      fetch: stalledFetch,
+      probeTimeoutMs: 30,
+    });
+
+    await expect(store.exists('ast_stalled')).rejects.toMatchObject({
+      code: 'HTTP_REQUEST_FAILED',
+    });
+  });
+
+  test('exists() still resolves through the bounded fallback GET when the HEAD is unclassifiable', async () => {
+    const fetchImpl = ((_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      if (init?.method === 'HEAD') return Promise.resolve(new Response(null, { status: 500 }));
+      return Promise.resolve(
+        new Response(new Blob(['bytes']), {
+          status: 200,
+          headers: { 'content-type': 'text/plain', 'x-asset-revision': 'rev-1' },
+        }),
+      );
+    }) as typeof fetch;
+    const store = new HttpAssetStore({ baseUrl: 'https://assets.test', fetch: fetchImpl });
+
+    await expect(store.exists('ast_present')).resolves.toBe(true);
+  });
+
+  test('exists() rejects within the probe deadline when the signed-object fetch stalls', async () => {
+    // The probe deadline must cover the descriptor's signed fetch too: a
+    // stalled object store cannot hold the check past the probe budget.
+    const seen: AbortSignal[] = [];
+    const fetchImpl = ((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      if (String(input) === 'https://objects.example/stalled-fetch') {
+        const signal = init?.signal;
+        seen.push(signal as AbortSignal);
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(signal.reason ?? new Error('aborted')));
+        });
+      }
+      // An unclassifiable HEAD (no x-error-code) forces the bounded fallback.
+      if (init?.method === 'HEAD') {
+        return Promise.resolve(new Response(null, { status: 500 }));
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ url: 'https://objects.example/stalled-fetch', revision: 7 }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/vnd.openmaic.asset-descriptor+json' },
+          },
+        ),
+      );
+    }) as typeof fetch;
+    const store = new HttpAssetStore({
+      baseUrl: 'https://assets.test',
+      fetch: fetchImpl,
+      probeTimeoutMs: 50,
+    });
+
+    const started = Date.now();
+    await expect(store.exists('ast_stalled_signed')).rejects.toMatchObject({
+      code: 'HTTP_REQUEST_FAILED',
+    });
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(seen[0]?.aborted).toBe(true);
+  });
+
+  test('exists() rejects within the probe deadline when the signed-object body stalls', async () => {
+    // Body parsing is part of the same absolute deadline: a signed response
+    // that never finishes its body cannot hold the check past the budget.
+    const seen: AbortSignal[] = [];
+    const fetchImpl = ((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      if (String(input) === 'https://objects.example/stalled-body') {
+        const signal = init?.signal;
+        seen.push(signal as AbortSignal);
+        return Promise.resolve(
+          new Response(
+            new ReadableStream({
+              pull() {
+                return new Promise((_resolve, reject) => {
+                  signal?.addEventListener(
+                    'abort',
+                    () => reject(signal.reason ?? new Error('aborted')),
+                    { once: true },
+                  );
+                });
+              },
+            }),
+            { status: 200, headers: { 'content-type': 'audio/mpeg' } },
+          ),
+        );
+      }
+      // An unclassifiable HEAD (no x-error-code) forces the bounded fallback.
+      if (init?.method === 'HEAD') {
+        return Promise.resolve(new Response(null, { status: 500 }));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ url: 'https://objects.example/stalled-body', revision: 7 }), {
+          status: 200,
+          headers: { 'content-type': 'application/vnd.openmaic.asset-descriptor+json' },
+        }),
+      );
+    }) as typeof fetch;
+    const store = new HttpAssetStore({
+      baseUrl: 'https://assets.test',
+      fetch: fetchImpl,
+      probeTimeoutMs: 50,
+    });
+
+    const started = Date.now();
+    await expect(store.exists('ast_stalled_body')).rejects.toMatchObject({
+      code: 'HTTP_REQUEST_FAILED',
+    });
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(seen[0]?.aborted).toBe(true);
+  });
+
+  test('exists() does not trust a 200 HEAD without a valid response identity', async () => {
+    // An auth wall or proxy landing page can answer 200 with an HTML body and
+    // no asset identity (no x-asset-revision / content-type). Trusting that
+    // 200 would report an unresolvable id as present, and the converter would
+    // drop a co-present legacy handle for bytes that do not exist. The probe
+    // must treat the identity-less success as unclassifiable and let the
+    // bounded byte read decide -- which refuses the same identity-less body.
+    const identityless = new Response('<!doctype html><title>Sign in</title>', {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+    });
+    const fetchImpl = ((_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      return Promise.resolve(
+        init?.method === 'HEAD'
+          ? identityless.clone()
+          : new Response('<!doctype html><title>Sign in</title>', {
+              status: 200,
+              headers: { 'content-type': 'text/html' },
+            }),
+      );
+    }) as typeof fetch;
+    const store = new HttpAssetStore({ baseUrl: 'https://assets.test', fetch: fetchImpl });
+
+    await expect(store.exists('ast_identityless')).rejects.toMatchObject({
+      code: 'MALFORMED_RESPONSE',
+    });
+  });
+
+  test('exists() resolves an identity-less 200 HEAD through the fallback when the bytes carry a real identity', async () => {
+    // The identity-less 200 is not proof, but it is not a miss either: the
+    // byte read confirms the asset genuinely resolves, and the probe answers
+    // present exactly as a matching warm HEAD would.
+    const fetchImpl = ((_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      if (init?.method === 'HEAD') {
+        return Promise.resolve(
+          new Response(null, {
+            status: 200,
+            headers: { 'content-type': 'text/html' },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(new Blob(['bytes']), {
+          status: 200,
+          headers: { 'content-type': 'text/plain', 'x-asset-revision': 'rev-1' },
+        }),
+      );
+    }) as typeof fetch;
+    const store = new HttpAssetStore({ baseUrl: 'https://assets.test', fetch: fetchImpl });
+
+    await expect(store.exists('ast_present')).resolves.toBe(true);
+  });
+
+  test('repeated exists() on an unclassifiable-HEAD endpoint leaves no object URLs minted', async () => {
+    // A probe that fell back through the byte read must not retain the fetched
+    // blob as an object URL: migration probes run per reference, and pinning
+    // every fetched blob would hold quota until store close.
+    const fetchImpl = ((_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      if (init?.method === 'HEAD') {
+        return Promise.resolve(new Response(null, { status: 500 }));
+      }
+      return Promise.resolve(
+        new Response(new Blob(['bytes']), {
+          status: 200,
+          headers: { 'content-type': 'text/plain', 'x-asset-revision': 'rev-1' },
+        }),
+      );
+    }) as typeof fetch;
+    const store = new HttpAssetStore({ baseUrl: 'https://assets.test', fetch: fetchImpl });
+
+    await expect(store.exists('ast_probe_1')).resolves.toBe(true);
+    await expect(store.exists('ast_probe_1')).resolves.toBe(true);
+    expect(objectUrlCount()).toBe(0);
   });
 });

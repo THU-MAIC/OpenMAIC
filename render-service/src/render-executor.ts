@@ -13,6 +13,7 @@ import {
   type RenderPerfSummary,
 } from '@hyperframes/producer';
 import { config } from './config.js';
+import { executeRenderChunks, type ChunkExecutionRequest } from './chunk-executor.js';
 import type {
   RenderExecutionMetrics,
   RenderExecutionRequest,
@@ -46,6 +47,8 @@ export interface InProcessExecutorOptions {
   workers?: number;
   requireBeginFrame?: boolean;
   runtimeVersions?: RuntimeVersions;
+  chunkExecutor?: typeof executeRenderChunks;
+  chunkExecution?: NonNullable<RenderExecutionRequest['chunkExecution']>;
 }
 
 const UNKNOWN_RUNTIME_VERSIONS: RuntimeVersions = {
@@ -166,6 +169,10 @@ export class InProcessExecutor implements RenderExecutor {
   private readonly workers: number | undefined;
   private readonly requireBeginFrame: boolean;
   private readonly runtimeVersions: RuntimeVersions;
+  private readonly chunkExecutor: typeof executeRenderChunks;
+  private readonly chunkExecution:
+    | NonNullable<RenderExecutionRequest['chunkExecution']>
+    | undefined;
 
   constructor(
     options: InProcessExecutorOptions = {},
@@ -174,6 +181,8 @@ export class InProcessExecutor implements RenderExecutor {
     this.workers = options.workers ?? config.producerWorkers;
     this.requireBeginFrame = options.requireBeginFrame ?? config.requireBeginFrame;
     this.runtimeVersions = options.runtimeVersions ?? UNKNOWN_RUNTIME_VERSIONS;
+    this.chunkExecutor = options.chunkExecutor ?? executeRenderChunks;
+    this.chunkExecution = options.chunkExecution;
   }
 
   async execute(request: RenderExecutionRequest): Promise<RenderExecutionResult> {
@@ -182,6 +191,96 @@ export class InProcessExecutor implements RenderExecutor {
         status: 'cancelled',
         failure: { code: 'cancelled', message: 'Render cancelled' },
       };
+    }
+
+    if (request.chunkExecution || this.chunkExecution) {
+      const abort = new AbortController();
+      let abortCause: 'cancelled' | 'deadline' | null = null;
+      const cancel = () => {
+        if (abortCause !== null) return;
+        abortCause = 'cancelled';
+        abort.abort();
+      };
+      request.signal.addEventListener('abort', cancel, { once: true });
+      const deadline = setTimeout(
+        () => {
+          if (abortCause !== null) return;
+          abortCause = 'deadline';
+          abort.abort();
+        },
+        Math.max(0, request.deadlineMs),
+      );
+      deadline.unref?.();
+      try {
+        const chunkRequest: ChunkExecutionRequest = {
+          projectDir: request.projectDir,
+          outputPath: request.outputPath,
+          options: request.options,
+          signal: abort.signal,
+          onProgress: request.onProgress,
+          runtimeVersions: {
+            node: this.runtimeVersions.node,
+            chromium: this.runtimeVersions.chromium,
+          },
+          ...this.chunkExecution,
+          ...request.chunkExecution,
+        };
+        const result = await this.chunkExecutor(chunkRequest);
+        const observedModes = [
+          ...new Set(result.chunks.map((chunk) => chunk.captureMode).filter(Boolean)),
+        ];
+        const actualCaptureMode =
+          observedModes.length === 1 ? observedModes[0]! : result.plan.captureMode;
+        const chunkMetrics: RenderExecutionMetrics = {
+          resourceProfile: config.resourceProfile.name,
+          capturePolicy: config.resourceProfile.capturePolicy,
+          requestedCaptureMode: config.resourceProfile.requestedCaptureMode,
+          actualCaptureMode,
+          requestedWorkers: config.producerWorkers,
+          actualWorkers: result.plan.chunkWorkers,
+          versions: this.runtimeVersions,
+        };
+        if (
+          this.requireBeginFrame &&
+          (observedModes.length !== 1 || actualCaptureMode !== 'beginframe')
+        ) {
+          return {
+            status: 'failed',
+            failure: {
+              code: 'unsupported_capture_mode',
+              message:
+                `Producer did not resolve beginFrame capture (actual=${result.plan.captureMode}). ` +
+                'Check PRODUCER_HEADLESS_SHELL_PATH and Chromium compatibility.',
+            },
+            metrics: chunkMetrics,
+          };
+        }
+        return {
+          status: 'succeeded',
+          performance: {
+            totalElapsedMs: result.totalElapsedMs,
+            stages: { ...result.stages },
+            workers: result.plan.chunkWorkers,
+            totalFrames: result.plan.totalFrames,
+          },
+          metrics: chunkMetrics,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (abortCause === 'deadline') {
+          return {
+            status: 'failed',
+            failure: { code: 'deadline_exceeded', message: 'Render exceeded the deadline' },
+          };
+        }
+        if (abortCause === 'cancelled') {
+          return { status: 'cancelled', failure: { code: 'cancelled', message } };
+        }
+        return { status: 'failed', failure: { code: 'execution_failed', message } };
+      } finally {
+        clearTimeout(deadline);
+        request.signal.removeEventListener('abort', cancel);
+      }
     }
 
     const abort = new AbortController();

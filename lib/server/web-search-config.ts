@@ -1,5 +1,6 @@
 import {
   resolveServerWebSearchProviderId,
+  isServerConfiguredProvider,
   resolveWebSearchApiKey,
   resolveWebSearchBaseUrl,
   resolveWebSearchModel,
@@ -86,6 +87,7 @@ export function resolveWebSearchRouteBaseUrl(
 export function resolveClassroomWebSearchConfig(input: {
   webSearchProviderId?: WebSearchProviderId;
   webSearchApiKey?: string;
+  webSearchBaseUrl?: string;
   webSearchModelId?: string;
   baiduSubSources?: BaiduSubSources;
 }):
@@ -108,7 +110,9 @@ export function resolveClassroomWebSearchConfig(input: {
   const apiKey = resolveWebSearchApiKey(providerId, input.webSearchApiKey);
   if (provider.requiresApiKey && !apiKey) return undefined;
 
-  const baseUrl = resolveWebSearchBaseUrl(providerId);
+  const managed = isServerConfiguredProvider('webSearch', providerId);
+  const clientBaseUrl = managed || providerId === 'searxng' ? undefined : input.webSearchBaseUrl;
+  const baseUrl = resolveWebSearchRouteBaseUrl(providerId, clientBaseUrl);
   if (provider.requiresBaseUrl && !baseUrl) return undefined;
 
   return {

@@ -139,6 +139,39 @@ describe('RendererTextEditor', () => {
     expect(onContentChange).not.toHaveBeenCalled();
   });
 
+  it.each(['text', 'shape'] as const)(
+    'keeps literal line breaks when saving a %s editor',
+    (target) => {
+      let controller: TextEditorController | null = null;
+      const onContentChange = vi.fn<(change: TextContentChange) => void>();
+      render(
+        <RendererTextEditor
+          elementId="txt"
+          target={target}
+          value={'First line\nSecond line'}
+          defaultColor="#000000"
+          defaultFontName="Inter"
+          onControllerChange={(next) => {
+            controller = next;
+          }}
+          onContentChange={onContentChange}
+        />,
+      );
+
+      act(() => controller?.execute({ command: 'insert', value: '!' }));
+      act(() => vi.advanceTimersByTime(300));
+
+      expect(onContentChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          intent: expect.objectContaining({
+            target,
+            content: expect.stringContaining('First line<br>Second line'),
+          }),
+        }),
+      );
+    },
+  );
+
   it('marks ProseMirror undo content as history-neutral and releases focus on unmount', () => {
     let controller: TextEditorController | null = null;
     const onControllerChange = vi.fn((next: TextEditorController | null) => {

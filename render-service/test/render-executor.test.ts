@@ -1,5 +1,5 @@
 import { createRenderJob, RenderCancelledError } from '@hyperframes/producer';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { InProcessExecutor } from '../src/render-executor.js';
 import type { RenderExecutionRequest, RuntimeVersions } from '../src/types.js';
 
@@ -59,6 +59,90 @@ function setPerformance(job: ReturnType<typeof createRenderJob>, captureMode = '
 }
 
 describe('InProcessExecutor', () => {
+  it('uses the bounded chunk executor without changing the executor contract', async () => {
+    const chunkExecutor = vi.fn(async (request) => ({
+      plan: {
+        schemaVersion: 1 as const,
+        planHash: 'plan-hash',
+        planDir: '/tmp/plan',
+        projectDir: request.projectDir,
+        projectHash: 'project-hash',
+        outputPath: request.outputPath,
+        options: request.options,
+        chunkCount: 2,
+        maxParallelChunks: 1,
+        chunkWorkers: 1,
+        totalFrames: 60,
+        fps: 30,
+        width: 1920,
+        height: 1080,
+        format: 'mp4' as const,
+        producerVersion: 'producer',
+        ffmpegVersion: 'ffmpeg',
+        nodeVersion: runtimeVersions.node,
+        chromiumVersion: runtimeVersions.chromium,
+        captureMode: 'beginframe',
+        assets: [],
+        fonts: [],
+        runtime: {},
+        chunks: [],
+      },
+      chunks: [
+        {
+          outputPath: '/tmp/chunk-0.mp4',
+          outputKind: 'file' as const,
+          framesEncoded: 30,
+          sha256: 'a',
+          durationMs: 10,
+          planHashMs: 1,
+          sessionBootMs: 1,
+          captureStageMs: 5,
+          encodeStageMs: 3,
+          workers: 1,
+          captureMode: 'beginframe' as const,
+          perfPath: '/tmp/chunk-0.mp4.perf.json',
+        },
+        {
+          outputPath: '/tmp/chunk-1.mp4',
+          outputKind: 'file' as const,
+          framesEncoded: 30,
+          sha256: 'b',
+          durationMs: 12,
+          planHashMs: 1,
+          sessionBootMs: 1,
+          captureStageMs: 6,
+          encodeStageMs: 4,
+          workers: 1,
+          captureMode: 'beginframe' as const,
+          perfPath: '/tmp/chunk-1.mp4.perf.json',
+        },
+      ],
+      assembly: { outputPath: request.outputPath, durationMs: 5, framesEncoded: 60, fileSize: 1 },
+      totalElapsedMs: 27,
+      stages: { planMs: 2, chunksMs: 20, assembleMs: 5 },
+    }));
+    const executor = new InProcessExecutor({
+      runtimeVersions,
+      chunkExecutor,
+      chunkExecution: { chunkCount: 2, chunkWorkers: 1, maxParallelChunks: 1 },
+    });
+
+    const result = await executor.execute(request());
+
+    expect(result).toMatchObject({
+      status: 'succeeded',
+      performance: { totalFrames: 60, workers: 1 },
+    });
+    expect(chunkExecutor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectDir: '/tmp/project',
+        chunkCount: 2,
+        chunkWorkers: 1,
+        maxParallelChunks: 1,
+      }),
+    );
+  });
+
   it('normalizes progress and maps producer performance into domain data', async () => {
     const progress = [];
     const executor = new InProcessExecutor(

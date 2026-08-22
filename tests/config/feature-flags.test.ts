@@ -4,8 +4,9 @@ import {
   isMaicEditorEnabled,
   isPlaybackRendererEnabled,
   isPiChatEnabled,
+  isPiNativeChildRuntimeEnabled,
+  isPiNativeChildSpotlightEnabled,
   isPptxImportEnabled,
-  isPiWebSearchEnabled,
   isVideoExportEnabled,
   isVocationalTaskEngineEnabled,
   resolveVocationalActive,
@@ -169,8 +170,10 @@ describe('isPiChatEnabled', () => {
   });
 });
 
-describe('isPiWebSearchEnabled', () => {
-  const flag = 'OPENMAIC_ENABLE_PI_WEB_SEARCH';
+describe.each([
+  ['OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME', isPiNativeChildRuntimeEnabled],
+  ['OPENMAIC_ENABLE_PI_NATIVE_CHILD_SPOTLIGHT', isPiNativeChildSpotlightEnabled],
+])('%s', (flag, readFlag) => {
   let original: string | undefined;
 
   beforeEach(() => {
@@ -182,18 +185,16 @@ describe('isPiWebSearchEnabled', () => {
     else process.env[flag] = original;
   });
 
-  it('defaults off and accepts only the standard true values', () => {
+  it('is default-off and accepts only the standard true values', () => {
     delete process.env[flag];
-    expect(isPiWebSearchEnabled()).toBe(false);
+    expect(readFlag()).toBe(false);
 
     process.env[flag] = 'true';
-    expect(isPiWebSearchEnabled()).toBe(true);
-
+    expect(readFlag()).toBe(true);
     process.env[flag] = '1';
-    expect(isPiWebSearchEnabled()).toBe(true);
-
+    expect(readFlag()).toBe(true);
     process.env[flag] = 'yes';
-    expect(isPiWebSearchEnabled()).toBe(false);
+    expect(readFlag()).toBe(false);
   });
 });
 

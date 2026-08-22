@@ -299,4 +299,39 @@ describe('searchWeb', () => {
       baseUrl: 'http://192.168.161.100:6060',
     });
   });
+
+  it('threads the caller AbortSignal through every registered provider adapter', async () => {
+    const signal = new AbortController().signal;
+    const result = { answer: '', sources: [], query: 'q', responseTime: 0.1 };
+    const cases: Array<{
+      providerId: Parameters<typeof searchWeb>[0]['providerId'];
+      adapter: ReturnType<typeof vi.fn>;
+      baseUrl?: string;
+    }> = [
+      { providerId: 'tavily', adapter: searchWithTavilyMock },
+      { providerId: 'bocha', adapter: searchWithBochaMock },
+      { providerId: 'brave', adapter: searchWithBraveMock },
+      { providerId: 'baidu', adapter: searchWithBaiduMock },
+      { providerId: 'claude', adapter: searchWithClaudeMock },
+      { providerId: 'minimax', adapter: searchWithMiniMaxMock },
+      { providerId: 'doubao', adapter: searchWithDoubaoMock },
+      {
+        providerId: 'searxng',
+        adapter: searchWithSearxngMock,
+        baseUrl: 'http://192.168.161.100:6060',
+      },
+    ];
+
+    for (const testCase of cases) {
+      testCase.adapter.mockResolvedValueOnce(result);
+      await searchWeb({
+        providerId: testCase.providerId,
+        query: 'q',
+        apiKey: 'key',
+        baseUrl: testCase.baseUrl,
+        signal,
+      });
+      expect(testCase.adapter).toHaveBeenLastCalledWith(expect.objectContaining({ signal }));
+    }
+  });
 });

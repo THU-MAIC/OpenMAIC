@@ -293,6 +293,29 @@ describe('asset byte egress', () => {
     expect(resolve).not.toHaveBeenCalled();
   });
 
+  test('a non-http(s) signed URL fails internally with 500 and emits no descriptor or Location', async () => {
+    // The handler must never emit a signed URL a client would fetch: anything
+    // that is not an absolute http(s) URL fails before a descriptor body or a
+    // Location header is produced.
+    for (const bad of ['not-a-url', 'ftp://objects.example/signed', '//objects.example/signed']) {
+      const indirect = vi.fn(async () => ({ url: bad, revision: 3 }));
+      const { url } = await serve(stubStore({ indirect }), { byteEgress: REDIRECT });
+
+      const redirect = await getBytes(url);
+      expect(redirect.status).toBe(500);
+      expect(redirect.headers.get('location')).toBeNull();
+      // The failure body must never carry the refused URL.
+      expect(await redirect.text()).not.toContain('objects.example');
+
+      const descriptor = await fetch(`${url}/assets/ast_example/content`, {
+        headers: { accept: 'application/vnd.openmaic.asset-descriptor+json' },
+      });
+      expect(descriptor.status).toBe(500);
+      expect(descriptor.headers.get('content-type')).toBe('application/json');
+      expect(await descriptor.text()).not.toContain('objects.example');
+    }
+  });
+
   test('a signed URL lifetime above the handler ceiling is rejected at construction', () => {
     expect(() =>
       createAssetHttpHandler(stubStore(), {
