@@ -46,6 +46,7 @@ import {
   Square,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ApiKeySecurityNotice } from './api-key-security-notice';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
@@ -369,6 +370,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           </div>
         ) : (
           <>
+            <ApiKeySecurityNotice />
             <div className={cn('grid gap-4', isDoubao ? 'grid-cols-3' : 'grid-cols-2')}>
               {isDoubao ? (
                 <>

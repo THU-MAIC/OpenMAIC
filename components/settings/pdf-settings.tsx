@@ -12,6 +12,7 @@ import type { PDFProviderId } from '@/lib/pdf/types';
 import { getFormatLabelsForProviders } from '@/lib/document/mime';
 import { CheckCircle2, Eye, EyeOff, Loader2, Zap, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ApiKeySecurityNotice } from './api-key-security-notice';
 
 /**
  * Get display label for feature
@@ -116,6 +117,7 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
           admin-owned and not overridable from the client. */}
       {!isServerConfigured && needsRemoteConfig && (
         <>
+          <ApiKeySecurityNotice />
           <div className="grid grid-cols-2 gap-4">
             {/* API Key — shown first for cloud, second for self-hosted */}
             {isCloud && (

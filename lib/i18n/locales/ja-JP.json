@@ -1219,6 +1219,7 @@
     "addProvider": "追加",
     "importFromClipboard": "クリップボードからインポート",
     "apiSecret": "APIキー",
+    "apiKeySecurityNotice": "Your API key will be sent to the server hosting this instance. Only enter it if you trust the deployment operator.",
     "apiHost": "ベースURL",
     "azureDeploymentHint": "上に Azure OpenAI エンドポイントを入力し、各 Azure デプロイ名をモデルとして追加してください。",
     "baseUrlRegion": {

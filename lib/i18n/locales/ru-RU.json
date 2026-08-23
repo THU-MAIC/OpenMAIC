@@ -1219,6 +1219,7 @@
     "addProvider": "Добавить",
     "importFromClipboard": "Импорт из буфера",
     "apiSecret": "API-ключ",
+    "apiKeySecurityNotice": "Your API key will be sent to the server hosting this instance. Only enter it if you trust the deployment operator.",
     "apiHost": "Base URL",
     "azureDeploymentHint": "Укажите конечную точку Azure OpenAI выше, затем добавьте имя каждого развертывания Azure как модель.",
     "baseUrlRegion": {

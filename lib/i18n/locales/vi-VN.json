@@ -1219,6 +1219,7 @@
     "addProvider": "Thêm",
     "importFromClipboard": "Nhập từ bộ nhớ tạm",
     "apiSecret": "Khóa API",
+    "apiKeySecurityNotice": "Your API key will be sent to the server hosting this instance. Only enter it if you trust the deployment operator.",
     "apiHost": "Địa chỉ gốc",
     "azureDeploymentHint": "Nhập địa chỉ endpoint Azure OpenAI ở trên, rồi thêm từng tên deployment của Azure như một model.",
     "baseUrlRegion": {

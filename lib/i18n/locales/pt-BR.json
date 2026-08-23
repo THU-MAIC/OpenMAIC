@@ -1219,6 +1219,7 @@
     "addProvider": "Adicionar",
     "importFromClipboard": "Importar da Área de Transferência",
     "apiSecret": "Chave de API",
+    "apiKeySecurityNotice": "Your API key will be sent to the server hosting this instance. Only enter it if you trust the deployment operator.",
     "apiHost": "URL Base",
     "azureDeploymentHint": "Informe o endpoint do Azure OpenAI acima e adicione cada nome de implantação do Azure como um modelo.",
     "baseUrlRegion": {

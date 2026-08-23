@@ -1219,6 +1219,7 @@
     "addProvider": "추가",
     "importFromClipboard": "클립보드에서 가져오기",
     "apiSecret": "API 키",
+    "apiKeySecurityNotice": "Your API key will be sent to the server hosting this instance. Only enter it if you trust the deployment operator.",
     "apiHost": "기본 URL",
     "azureDeploymentHint": "위에 Azure OpenAI 엔드포인트를 입력한 다음 각 Azure 배포 이름을 모델로 추가하세요.",
     "baseUrlRegion": {
