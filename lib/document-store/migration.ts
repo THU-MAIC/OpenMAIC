@@ -121,7 +121,26 @@ async function convertLoadedDocument(
       deps.convertAssetRefs ??
       (async (value: AppDocument) => {
         const { convertDocumentAssetRefs } = await import('@/lib/media/convert-legacy-asset-refs');
-        return (await convertDocumentAssetRefs(value, undefined, undefined, ledger)).document;
+        const converted = await convertDocumentAssetRefs(value, undefined, undefined, ledger);
+        // The inline base64 image converter (#1153 part 4) runs AFTER the
+        // legacy converter: the two are independent, and this order lets the
+        // gen-placeholder converter see its expected shapes first. A failure
+        // here degrades to the legacy-converted document rather than
+        // discarding the legacy pass's work — each converter is best-effort
+        // on its own.
+        try {
+          const { convertInlineImageAssets } =
+            await import('@/lib/media/convert-inline-image-assets');
+          return (await convertInlineImageAssets(converted.document, undefined, undefined, ledger))
+            .document;
+        } catch (inlineError) {
+          log.warn(
+            `Inline image conversion failed for document ${JSON.stringify(value.stage.id)}; ` +
+              'keeping the legacy-converted document',
+            inlineError,
+          );
+          return converted.document;
+        }
       });
     return await convert(document, ledger);
   } catch (error) {

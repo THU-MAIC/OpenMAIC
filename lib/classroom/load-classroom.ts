@@ -275,9 +275,10 @@ export async function fetchClassroomFromApi(
   // degrades to the app's lock-free route instead of silently no-op'ing the
   // cold load; the degraded pass still keeps its ledger+rollback discipline,
   // so a failed unlocked attempt leaves nothing behind.
-  const [{ mutateDocument }, converter] = await Promise.all([
+  const [{ mutateDocument }, converter, inlineConverter] = await Promise.all([
     import('@/lib/document-store'),
     import('@/lib/media/convert-legacy-asset-refs'),
+    import('@/lib/media/convert-inline-image-assets'),
   ]);
   try {
     return await mutateDocument(
@@ -300,19 +301,30 @@ export async function fetchClassroomFromApi(
             shouldConvert,
             allocated,
           );
+          // The inline base64 image converter (#1153 part 4) runs AFTER the
+          // legacy converter — the two are independent, and this order lets
+          // the gen-placeholder converter see its expected shapes first. Both
+          // share one allocation ledger, so a superseded or failed load rolls
+          // every fresh allocation back through the single rollback call.
+          const inlined = await inlineConverter.convertInlineImageAssets(
+            converted.document,
+            undefined,
+            shouldConvert,
+            allocated,
+          );
           // The converter rechecks liveness at its commit boundaries; this is
           // the final gate before the document write, so a load superseded in
           // the last window never commits side effects it cannot hand over.
           if (!shouldConvert()) {
             throw new converter.LegacyConversionAbortedError(allocated);
           }
-          if (converter.containsClassroomMediaUrls(converted.document)) {
+          if (converter.containsClassroomMediaUrls(inlined.document)) {
             throw new Error('server classroom media conversion was incomplete');
           }
-          await store.saveDocument(converted.document);
+          await store.saveDocument(inlined.document);
           return {
-            stage: converted.document.stage,
-            scenes: converted.document.scenes,
+            stage: inlined.document.stage,
+            scenes: inlined.document.scenes,
           };
         } catch (error) {
           // Every failure mode -- a liveness abort or an ordinary converter
