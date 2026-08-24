@@ -33,7 +33,10 @@ import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { isAssetPoolServerBacked } from '@/lib/media/asset-pool-config';
 import { getPersistenceRequestHeaders } from '@/lib/persistence/bootstrap';
 import { resolveSessionDocumentSources } from '@/lib/document/session-sources';
-import { fetchExtractionResponse } from '@/lib/document/extract-source';
+import {
+  fetchExtractionWithCache,
+  resolveExpectedExtractor,
+} from '@/lib/document/extraction-cache';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import {
   MAX_DOCUMENT_BUNDLE_FILES,
@@ -357,11 +360,19 @@ function GenerationPreviewContent() {
             ).providerConfig;
             const providerConfig = currentSession.pdfProviderConfig || legacySourceConfig;
 
-            // Per-source form selection: asset-id JSON first when the pool is
-            // server-backed and the source has an id, with a per-source
-            // fallback to the legacy byte upload if that form fails for any
-            // reason (see `fetchExtractionResponse`).
-            const parseResponse = await fetchExtractionResponse({
+            // The extractor the route is expected to run under, resolved
+            // client-side. It feeds the extraction-cache lookup, which must
+            // happen BEFORE the extract API is called: the cache key is
+            // (content digest × extractor identity), and on a hit the rebuilt
+            // parse result skips the paid extraction entirely.
+            const expectedExtractor = source.contentDigest
+              ? resolveExpectedExtractor(source.mimeType ?? 'application/pdf', providerId)
+              : null;
+
+            // Cache lookup first; on a miss this runs the extract API (asset-id
+            // JSON form with a per-source fallback to the legacy byte upload,
+            // see `fetchExtractionResponse`) and caches the result best-effort.
+            const { data: parseData } = await fetchExtractionWithCache({
               serverBacked,
               hasAssetId: Boolean(source.assetId),
               logWarning: (message, ...args) => log.warn(message, ...args),
@@ -439,17 +450,13 @@ function GenerationPreviewContent() {
                   });
                 },
               },
+              contentDigest: source.contentDigest,
+              extractorId: expectedExtractor?.extractorId,
+              extractorVersion: expectedExtractor?.extractorVersion,
+              sourceDocAssetId: source.assetId,
+              parseFailedMessage: t('generation.courseMaterialParseFailed'),
             });
-
-            if (!parseResponse.ok) {
-              const errorData = await parseResponse.json();
-              throw new Error(errorData.error || t('generation.courseMaterialParseFailed'));
-            }
-
-            const parseResult = await parseResponse.json();
-            if (!parseResult.success || !parseResult.data) {
-              throw new Error(t('generation.courseMaterialParseFailed'));
-            }
+            const parseResult = { success: true as const, data: parseData };
 
             const rawImages = parseResult.data.metadata?.pdfImages;
             const images = rawImages
