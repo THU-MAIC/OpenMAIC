@@ -278,11 +278,15 @@ function unionDerivations(
  * from `input.file` and stores that id, so the entry never points at the
  * caller's selection entry (whose lifecycle — part-0 removal, prep-timeout
  * release — releases it without the library's knowledge). A failed library
- * allocation skips the upsert entirely with one warn; the caller's upload is
- * unaffected. On a same-digest re-import the new library-owned id is
- * allocated FIRST, the entry is written to point at it, and only THEN is the
- * PREVIOUS library-owned allocation released best-effort (logged) — the entry
- * never names a released id mid-swap.
+ * allocation skips the upsert entirely with one warn. A failed entry WRITE
+ * (a kv.get/kv.set failure after a successful allocation) releases the fresh
+ * library-owned allocation best-effort (logged) so it is never orphaned — the
+ * entry cannot be pointing at it, since the write never completed. In both
+ * failure directions the caller's upload is unaffected. On a same-digest
+ * re-import the new library-owned id is allocated FIRST, the entry is written
+ * to point at it, and only THEN is the PREVIOUS library-owned allocation
+ * released best-effort (logged) — the entry never names a released id
+ * mid-swap.
  *
  * The optional `pool` is the test injection point; production omits it and
  * `putAsset` / `removeAsset` resolve the browser-wide pool.
@@ -343,8 +347,9 @@ export async function upsertMaterialLibraryEntry(
 
     // The swap, ordered so the entry never names a released id: the entry now
     // points at the NEW library-owned allocation, so the PREVIOUS one is
-    // released best-effort. A failure only orphans one registry entry
-    // (recoverable by re-importing) and is logged, never thrown.
+    // released best-effort. A superseded-release failure only orphans one
+    // registry entry (recoverable by re-importing) and is logged, never
+    // thrown.
     if (existing && isValidLibraryEntry(existing) && existing.assetId !== libraryAssetId) {
       await remove(existing.assetId).catch((error) => {
         log.warn(
@@ -354,11 +359,31 @@ export async function upsertMaterialLibraryEntry(
       });
     }
   } catch (error) {
+    // The fresh library-owned allocation never made it into an entry — the
+    // failure is a kv.get/kv.set (the superseded-release above has its own
+    // inline catch and cannot land here), so the entry cannot be pointing at
+    // the new id. Release it best-effort so a failed write does not orphan
+    // the allocation (review P3); the release is logged — its own warn when it
+    // fails, named inside the single upsert warn on the per-op path — and
+    // never thrown.
+    let releaseFailed = false;
+    try {
+      await remove(libraryAssetId);
+    } catch (releaseError) {
+      releaseFailed = true;
+      log.warn(
+        `Failed to release the fresh library-owned allocation ${libraryAssetId} for "${input.name}":`,
+        releaseError,
+      );
+    }
     if (isRouteLevelKVError(error)) {
       disableLibraryForWindow(error);
     } else {
       log.warn(
-        `Failed to upsert the material library entry for "${input.name}"; the upload is unaffected:`,
+        `Failed to upsert the material library entry for "${input.name}"; the upload is unaffected. ` +
+          `The fresh library-owned allocation ${libraryAssetId} was ${
+            releaseFailed ? 'NOT released' : 'released best-effort'
+          }.`,
         error,
       );
     }

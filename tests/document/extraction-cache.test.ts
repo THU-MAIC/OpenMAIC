@@ -79,6 +79,33 @@ function fixtureResult(): ParsedPdfContent {
   };
 }
 
+/** A document-extraction result with `count` images, for probe-batching tests. */
+function manyImageResult(count: number): ParsedPdfContent {
+  const imageSrcs = Array.from({ length: count }, (_, index) => {
+    const dataUrl = `data:image/png;base64,${Buffer.from(`img-${index + 1}`).toString('base64')}`;
+    return dataUrl;
+  });
+  return {
+    text: '# Many images',
+    images: imageSrcs,
+    metadata: {
+      pageCount: count,
+      parser: 'mineru',
+      fileName: 'many-images.pdf',
+      fileSize: 4096,
+      mimeType: 'application/pdf',
+      imageMapping: Object.fromEntries(imageSrcs.map((src, index) => [`img_${index + 1}`, src])),
+      pdfImages: imageSrcs.map((src, index) => ({
+        id: `img_${index + 1}`,
+        src,
+        pageNumber: index + 1,
+      })),
+      taskId: 'mineru-task-many',
+    },
+    tables: [],
+  };
+}
+
 /** A minimal in-memory KVStore with the same JSON round-trip semantics. */
 class FakeKV implements KVStore {
   private readonly entries = new Map<string, string>();
@@ -943,6 +970,94 @@ describe('lookupCachedExtraction', () => {
     expect(rebuilt).toBeNull();
     expect(harness.exists).toHaveBeenCalledWith('ast_test_1');
     expect(harness.resolve).toHaveBeenCalledTimes(1); // artifact only
+  });
+
+  it('probes every image existence with bounded concurrency on a many-image hit (O3)', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    const count = 24;
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      sourceDocAssetId: 'ast_source_doc',
+      result: manyImageResult(count),
+    });
+    // Track the probe concurrency: how many exists calls are in flight at once.
+    let inFlight = 0;
+    let maxInFlight = 0;
+    harness.exists.mockImplementation(async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+      return true;
+    });
+
+    const rebuilt = await lookupCachedExtraction({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      fetchImpl: makeFetch(harness),
+      imageMappingMode: 'asset-id',
+    });
+
+    expect(rebuilt).not.toBeNull();
+    // The happy path consults EVERY image asset — no probe is skipped.
+    expect(harness.exists).toHaveBeenCalledTimes(count);
+    // ... and the batch bound held: never more than 8 probes in flight.
+    expect(maxInFlight).toBeGreaterThan(1);
+    expect(maxInFlight).toBeLessThanOrEqual(8);
+  });
+
+  it('degrades a probe phase that outlives the aggregate budget to a miss, not a hang (O3)', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      sourceDocAssetId: 'ast_source_doc',
+      result: fixtureResult(),
+    });
+    // One image's existence probe never settles — a stalled persistence
+    // endpoint holding the HEAD open. Without an aggregate budget this would
+    // hold the hit path forever; with it, the phase degrades to a miss. The
+    // production default is the 15 s ingest-drain constant; the test injects
+    // a tiny budget so the degrade is observable without waiting 15 s.
+    harness.exists.mockImplementation(async (ref: string) => {
+      if (ref === 'ast_test_1') return new Promise<boolean>(() => undefined);
+      return true;
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const rebuilt = await lookupCachedExtraction({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      fetchImpl: makeFetch(harness),
+      imageMappingMode: 'asset-id',
+      assetProbeBudgetMs: 50,
+    });
+
+    // The hit resolved to a miss after the budget — it did not wait on the
+    // hanging probe — with exactly ONE warn naming the budget.
+    expect(rebuilt).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain('aggregate budget');
+    warn.mockRestore();
   });
 
   it('reports a miss when no record exists', async () => {

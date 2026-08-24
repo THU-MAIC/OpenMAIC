@@ -31,7 +31,10 @@ import type { AssetMeta } from '@openmaic/dsl';
 import { BrowserKVStore, HttpKVStore, HttpKVStoreError, type KVStore } from '@openmaic/storage';
 
 import type { FetchExtractionResponseOptions } from '@/lib/document/extract-source';
-import { fetchExtractionResponse } from '@/lib/document/extract-source';
+import {
+  DEFAULT_INGEST_AWAIT_TIMEOUT_MS,
+  fetchExtractionResponse,
+} from '@/lib/document/extract-source';
 import {
   getDocumentExtractorManifestEntry,
   getMediaExtractorManifestEntry,
@@ -48,8 +51,27 @@ import {
   isBrowserPersistenceEnabled,
 } from '@/lib/persistence/bootstrap';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
+import { mapWithConcurrency } from '@/lib/utils/concurrency';
 
 const log = createLogger('ExtractionCache');
+
+/**
+ * Concurrency bound for the asset-id existence probes (review P3/O3): a hit's
+ * per-image probes are identity reads (HEAD / registry lookup) that can run in
+ * parallel, so they are dispatched in batches of this size instead of one
+ * sequential round-trip per image.
+ */
+const ASSET_PROBE_CONCURRENCY = 8;
+
+/**
+ * Aggregate budget for the WHOLE probe phase of one hit, reused from the
+ * ingest drain (`DEFAULT_INGEST_AWAIT_TIMEOUT_MS`). Each probe has its own
+ * per-probe deadline, but N sequential probes would still cost N × deadline
+ * on a stalled pool; this budget caps the phase, and an exhausted budget
+ * degrades the hit to a miss (the real extraction runs) with one warn —
+ * consistent with the degrade-to-miss contract.
+ */
+const ASSET_PROBE_BUDGET_MS = DEFAULT_INGEST_AWAIT_TIMEOUT_MS;
 
 /** Key-prefix of every derivation record; bump the `v3` on a record-shape change. */
 export const EXTRACTION_CACHE_KEY_PREFIX = 'derived-extraction:v3';
@@ -799,6 +821,12 @@ export interface ExtractionCacheLookupOptions {
   /** Fetch implementation; defaults to the global one. Injectable for tests. */
   fetchImpl?: typeof fetch;
   /**
+   * Aggregate budget for the asset-id existence probe phase (review P3/O3),
+   * in milliseconds. Defaults to the 15 s ingest-drain constant; injectable
+   * so tests can drive a tiny budget instead of waiting the full 15 s.
+   */
+  assetProbeBudgetMs?: number;
+  /**
    * How the rebuilt result's `imageMapping` / `pdfImages` are expressed
    * (RFC #1153 part 2 section C). `'data-url'` (default) rebuilds image bytes
    * client-side exactly as a real extraction returns them. `'asset-id'` —
@@ -937,15 +965,47 @@ export async function lookupCachedExtraction(
     // record whose image assets all still exist serves a hit.
     const imagePayloads: string[] = [];
     if (assetIdMode) {
-      for (const image of record.images) {
-        const exists = await assetRefExists(image.assetId, options.pool);
-        if (!exists) {
+      // O3: the probes run with bounded concurrency (batches of 8) AND an
+      // aggregate budget. N sequential HEADs would cost N round-trips on every
+      // hit (and N × per-probe deadline on a stalled pool); batching keeps the
+      // healthy-path cost to ceil(N / 8) waves, and the budget caps the whole
+      // phase — an exhausted budget degrades this hit to a miss with ONE warn
+      // (the real extraction runs), so a stalled persistence endpoint cannot
+      // hold the hit path for N × per-probe timeout.
+      const assetProbeBudgetMs = options.assetProbeBudgetMs ?? ASSET_PROBE_BUDGET_MS;
+      let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+      const probeOutcome = await Promise.race([
+        mapWithConcurrency(record.images, ASSET_PROBE_CONCURRENCY, (image) =>
+          assetRefExists(image.assetId, options.pool),
+        ).then(
+          (results) => ({ status: 'done' as const, results }),
+          (error) => ({ status: 'error' as const, error }),
+        ),
+        new Promise<{ status: 'timeout' }>((resolve) => {
+          budgetTimer = setTimeout(() => resolve({ status: 'timeout' }), assetProbeBudgetMs);
+        }),
+      ]);
+      if (budgetTimer !== undefined) clearTimeout(budgetTimer);
+      if (probeOutcome.status === 'timeout') {
+        log.warn(
+          `Extraction cache miss for ${key}: image asset existence probes exceeded the ` +
+            `${assetProbeBudgetMs}ms aggregate budget; running the real extraction.`,
+        );
+        return null;
+      }
+      if (probeOutcome.status === 'error') {
+        // A probe transport failure degrades through the outer catch below
+        // (warn + miss), exactly like the other pool failures.
+        throw probeOutcome.error;
+      }
+      for (let i = 0; i < record.images.length; i++) {
+        if (!probeOutcome.results[i]) {
           log.warn(
-            `Extraction cache miss for ${key}: image asset ${image.assetId} no longer exists (reclaim = miss).`,
+            `Extraction cache miss for ${key}: image asset ${record.images[i]!.assetId} no longer exists (reclaim = miss).`,
           );
           return null;
         }
-        imagePayloads.push(image.assetId);
+        imagePayloads.push(record.images[i]!.assetId);
       }
     } else {
       for (const image of record.images) {

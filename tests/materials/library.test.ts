@@ -214,6 +214,55 @@ describe('material library — upsert by digest with a library-owned allocation'
     expect(kv.storedKeys()).toHaveLength(0);
   });
 
+  it('releases the fresh library-owned allocation when kv.set rejects (one warn, P3)', async () => {
+    vi.spyOn(kv, 'set').mockRejectedValueOnce(new Error('kv set failed'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      upsertMaterialLibraryEntry(
+        {
+          file: FILE_BYTES(),
+          contentDigest: DIGEST_A,
+          name: 'safety-checklist.pdf',
+          size: 2048,
+        },
+        harness.pool,
+      ),
+    ).resolves.toBeUndefined();
+
+    // The fresh library-owned allocation was released — a failed write must
+    // not orphan it (review P3) — and the entry was never written.
+    expect(harness.remove).toHaveBeenCalledWith('ast_lib_0');
+    expect(harness.blobs.has('ast_lib_0')).toBe(false);
+    expect(kv.storedKeys()).toHaveLength(0);
+    // The failure surfaced as exactly ONE warn (which logs the release).
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('releases the fresh library-owned allocation when kv.get rejects (one warn, P3)', async () => {
+    vi.spyOn(kv, 'get').mockRejectedValueOnce(new Error('kv get failed'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      upsertMaterialLibraryEntry(
+        {
+          file: FILE_BYTES(),
+          contentDigest: DIGEST_A,
+          name: 'safety-checklist.pdf',
+          size: 2048,
+        },
+        harness.pool,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(harness.remove).toHaveBeenCalledWith('ast_lib_0');
+    expect(harness.blobs.has('ast_lib_0')).toBe(false);
+    expect(kv.storedKeys()).toHaveLength(0);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
   it('preserves recorded derivation pointers across a same-digest refresh', async () => {
     await upsertMaterialLibraryEntry(
       {

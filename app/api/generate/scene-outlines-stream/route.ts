@@ -386,6 +386,15 @@ export async function POST(req: NextRequest) {
         resolvedImageMapping = Object.fromEntries(
           Object.entries(imageMapping).filter(([id]) => resolvedIds.has(id)),
         );
+        // Shift-in is IMPOSSIBLE here by construction (unlike the scene-content
+        // route's re-slice): `visionImages` — the ONLY attachments this route
+        // sends — IS the resolved slice, resolved once from the original
+        // `visionSlice` and never re-sliced, so a dropped image admits NO new
+        // image into the attachments; and `resolvedImageMapping` names only
+        // the resolved slice's ids, so the standard branch's `[see attached]`
+        // text matches the attachments exactly (images beyond the slice and
+        // no-src images keep plain descriptions because their mapping entries
+        // are stripped).
       } else {
         // Text-only mode: full descriptions
         availableImagesText = pdfImages.map((img) => formatImageDescription(img)).join('\n');

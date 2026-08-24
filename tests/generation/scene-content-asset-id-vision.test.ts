@@ -265,6 +265,169 @@ describe('scene-content route — asset-id image transport', () => {
     expect(body.content.elements[0].src).toBe('ast_mixed_1');
     expect(body.content.elements[1].src).toBe(dataUrl);
   });
+
+  test('multi-drop: refills the vision slice with RESOLVED candidates so no promise dangles (P2)', async () => {
+    vi.resetModules();
+    const dataUrlFor = (bytes: string) =>
+      `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`;
+    // 25 candidates (> MAX_VISION_IMAGES = 20); img_2, img_7 and img_15 are
+    // unresolvable. The old N3 filter dropped them and let the generator
+    // re-slice img_21..img_23 in UNRESOLVED; the refill must admit them WITH
+    // their resolution — every `[see attached]` promise has an attachment.
+    resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
+      images
+        .filter((image) => image.src !== 'ast_gone')
+        .map((image) => ({ ...image, src: dataUrlFor(`bytes-for-${image.id}`) })),
+    );
+    const ids = Array.from({ length: 25 }, (_, i) => `img_${i + 1}`);
+    const gone = new Set(['img_2', 'img_7', 'img_15']);
+    callLLMMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        elements: [
+          { type: 'image', src: 'img_1', left: 100, top: 100, width: 400, height: 300, rotate: 0 },
+        ],
+        remark: '',
+      }),
+    });
+
+    const { POST } = await import('@/app/api/generate/scene-content/route');
+    const response = await POST(
+      mockRequest({
+        outline: slideOutline(ids),
+        pdfImages: ids.map((id, index) => ({
+          id,
+          src: '',
+          pageNumber: index + 1,
+          width: 100,
+          height: 100,
+        })),
+        imageMapping: Object.fromEntries(
+          ids.map((id) => [id, gone.has(id) ? 'ast_gone' : `ast_${id}`]),
+        ),
+      }),
+    );
+    const body = await response.json();
+    expect(body.success).toBe(true);
+
+    const content = callLLMMock.mock.calls[0][0].messages[0].content;
+    const textPart = content.find((part: { type: string }) => part.type === 'text');
+    const text = textPart.text as string;
+    // The dropped ids are gone from the text entirely (no dangling mention).
+    // Word-boundary matched: `img_2` must not match inside the refilled
+    // `img_21`..`img_23`.
+    for (const id of gone) {
+      expect(text).not.toMatch(new RegExp(`\\b${id}\\b`));
+    }
+    // Exactly 20 `[see attached]` promises — one per attachment, no more.
+    expect(text.match(/\[see attached\]/g)).toHaveLength(20);
+    // Every attachment is the RESOLVED bytes of a surviving candidate, in
+    // generator order — including the REFILLED img_21..img_23 (which the old
+    // filter would have admitted unresolved).
+    const expectedResolved = ids.filter((id) => !gone.has(id)).slice(0, 20);
+    const imageParts = content.filter((part: { type: string }) => part.type === 'image');
+    expect(imageParts).toHaveLength(20);
+    imageParts.forEach((part: { image: string }, index: number) => {
+      expect(part.image).toBe(
+        Buffer.from(`bytes-for-${expectedResolved[index]}`).toString('base64'),
+      );
+    });
+    for (const refilled of ['img_21', 'img_22', 'img_23']) {
+      expect(text).toContain(`**${refilled}**`);
+      expect(text).toContain('[see attached]');
+    }
+    // The surviving element still resolves to its ALLOCATED id (B transport).
+    expect(body.content.elements[0].src).toBe('ast_img_1');
+  });
+
+  test('hallucinated reference to a DROPPED id removes the element (no dangling src, P3)', async () => {
+    vi.resetModules();
+    const dataUrlFor = (bytes: string) =>
+      `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`;
+    resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
+      images
+        .filter((image) => image.src !== 'ast_gone')
+        .map((image) => ({ ...image, src: dataUrlFor(`bytes-for-${image.id}`) })),
+    );
+    // The model hallucinates a reference to img_2, which the route dropped
+    // (its allocated id does not resolve server-side — a reclaimed asset).
+    callLLMMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        elements: [
+          { type: 'image', src: 'img_1', left: 100, top: 100, width: 400, height: 300, rotate: 0 },
+          { type: 'image', src: 'img_2', left: 100, top: 420, width: 400, height: 300, rotate: 0 },
+        ],
+        remark: '',
+      }),
+    });
+
+    const { POST } = await import('@/app/api/generate/scene-content/route');
+    const response = await POST(
+      mockRequest({
+        outline: slideOutline(['img_1', 'img_2']),
+        pdfImages: [
+          { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
+          { id: 'img_2', src: '', pageNumber: 2, width: 200, height: 100 },
+        ],
+        imageMapping: { img_1: 'ast_ok', img_2: 'ast_gone' },
+      }),
+    );
+    const body = await response.json();
+    expect(body.success).toBe(true);
+
+    // img_2 was STRIPPED from the mapping passed to the generator, so
+    // resolveImageIds takes the clean "no mapping → remove element" path
+    // instead of writing the dangling allocated id into src.
+    expect(body.content.elements).toHaveLength(1);
+    expect(body.content.elements[0].src).toBe('ast_ok');
+  });
+
+  test('browser-backed mode is unaffected: >cap data-URL images all keep their promises', async () => {
+    vi.resetModules();
+    const dataUrlFor = (bytes: string) =>
+      `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`;
+    // Data URLs pass through the resolver untouched — nothing can drop.
+    resolveVisionImagesMock.mockImplementation(
+      async (images: Array<{ id: string; src: string }>) => images,
+    );
+    const ids = Array.from({ length: 25 }, (_, i) => `img_${i + 1}`);
+    callLLMMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        elements: [
+          { type: 'image', src: 'img_1', left: 100, top: 100, width: 400, height: 300, rotate: 0 },
+        ],
+        remark: '',
+      }),
+    });
+
+    const { POST } = await import('@/app/api/generate/scene-content/route');
+    const response = await POST(
+      mockRequest({
+        outline: slideOutline(ids),
+        pdfImages: ids.map((id, index) => ({
+          id,
+          src: '',
+          pageNumber: index + 1,
+          width: 100,
+          height: 100,
+        })),
+        imageMapping: Object.fromEntries(ids.map((id) => [id, dataUrlFor(id)])),
+      }),
+    );
+    const body = await response.json();
+    expect(body.success).toBe(true);
+
+    const content = callLLMMock.mock.calls[0][0].messages[0].content;
+    const textPart = content.find((part: { type: string }) => part.type === 'text');
+    // The same 20 + 5 split as before part 2: 20 attached, 5 plain text.
+    expect((textPart.text as string).match(/\[see attached\]/g)).toHaveLength(20);
+    const imageParts = content.filter((part: { type: string }) => part.type === 'image');
+    expect(imageParts).toHaveLength(20);
+    imageParts.forEach((part: { image: string }, index: number) => {
+      expect(part.image).toBe(Buffer.from(ids[index]).toString('base64'));
+    });
+    // The element src is the data URL verbatim, exactly as before.
+    expect(body.content.elements[0].src).toBe(dataUrlFor('img_1'));
+  });
 });
 
 function mockRequest(body: {

@@ -12,6 +12,7 @@ import {
   applyOutlineFallbacks,
   generateSceneContent,
   buildVisionUserContent,
+  partitionImagesForVision,
 } from '@openmaic/generation';
 import type { AgentInfo } from '@openmaic/generation';
 import type {
@@ -27,7 +28,10 @@ import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
-import { resolveVisionImagesForPrompt } from '@/lib/persistence/resolve-vision-images';
+import {
+  resolveVisionImagesForPrompt,
+  type VisionPromptImage,
+} from '@/lib/persistence/resolve-vision-images';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 
 const log = createLogger('Scene Content API');
@@ -99,11 +103,14 @@ export async function POST(req: NextRequest) {
     const hasVision = !!modelInfo?.capabilities?.vision;
 
     // Vision-aware AI call function. On a server-backed transport the
-    // `imageMapping` values are allocated asset ids, so the vision srcs reach
-    // here as ids; N3 (below) has already filtered `assignedImages` to the
-    // resolvable set, so every id this resolution sees succeeds — the
-    // resolution drops nothing here, it only turns the surviving ids into the
-    // same bytes the base64 path would send (RFC #1153 part 2 B).
+    // `imageMapping` values are allocated asset ids; the N3 pre-resolution
+    // below has already resolved the vision slice's ids to bytes and stripped
+    // every unresolvable id from the mapping, so the srcs this closure sees
+    // are concrete data URLs and this resolution is a DEFENSIVE NO-OP — it
+    // passes concrete srcs through untouched (RFC #1153 part 2 B) and would
+    // only drop an id that still carried an allocated id, which the
+    // pre-resolution makes impossible. Kept so a package consumer that
+    // generates without pre-resolving still degrades cleanly.
     const aiCall = async (
       systemPrompt: string,
       userPrompt: string,
@@ -169,39 +176,55 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── N3: resolve the vision slice BEFORE prompt assembly ──
+    // ── N3: resolve-then-slice the vision candidates BEFORE prompt assembly ──
     // The prompt text and the multimodal attachments must be built from the
     // SAME resolved set: an image the server cannot resolve (a reclaimed
     // asset, a store failure) is dropped from BOTH — its `[see attached]`
     // text mention and its attachment — instead of leaving a dangling promise
-    // in the prompt. Per-image: one bad id never aborts the rest; slice order
-    // stays stable. The original `imageMapping` (allocated asset ids) is still
-    // passed to the generator so `resolveImageIds` writes the ALLOCATED ID
-    // into `PPTImageElement.src` (part 2 B) — the pre-resolution only decides
-    // which images survive into `assignedImages`; `generateSlideContent` then
-    // builds text and `visionImages` from the surviving set, and the aiCall
-    // below resolves those ids to bytes for the LLM message.
+    // in the prompt. The candidates are computed in the generator's OWN order
+    // (the shared `partitionImagesForVision` helper, so the route and the
+    // generator cannot drift) and resolved IN ORDER with refill until the cap
+    // is met or the candidates are exhausted: a drop admits the next image
+    // WITH its resolution, so the generator's re-slice (same helper, same
+    // cap) can never admit an image this route has not resolved (review P2).
+    // Every id the resolution drops is STRIPPED from the `imageMapping` (and
+    // `assignedImages`) passed onward, so a model-hallucinated reference to a
+    // dropped id takes the existing clean "no mapping → remove element" path
+    // in `resolveImageIds` instead of writing a dangling allocated id into
+    // `src` (review P3). The resolved slice is passed to the generator so
+    // `aiCall` does not re-resolve (its resolution is a defensive no-op).
+    let visionImageMapping: ImageMapping | undefined = imageMapping;
+    let resolvedVisionImages: VisionPromptImage[] | undefined;
     if (assignedImages && assignedImages.length > 0 && hasVision && imageMapping) {
-      const sorted = sortDocumentImagesForVision(assignedImages);
-      const visionSlice = sorted.filter((img) => imageMapping[img.id]).slice(0, MAX_VISION_IMAGES);
-      const resolvedVisionImages = await resolveVisionImagesForPrompt(
-        visionSlice.map((img) => ({
-          id: img.id,
-          src: imageMapping[img.id],
-          ...(img.width !== undefined ? { width: img.width } : {}),
-          ...(img.height !== undefined ? { height: img.height } : {}),
-        })),
-        req.headers,
-      );
-      const resolvedIds = new Set(resolvedVisionImages.map((img) => img.id));
-      // Drop unresolvable vision images from the assigned set so they produce
-      // NO text mention and NO attachment; images never promised an attachment
-      // (no mapping entry, or beyond the vision slice) stay as plain
-      // descriptions.
-      const visionSliceIds = new Set(visionSlice.map((img) => img.id));
-      assignedImages = assignedImages.filter(
-        (img) => !visionSliceIds.has(img.id) || resolvedIds.has(img.id),
-      );
+      const { withSrc } = partitionImagesForVision(assignedImages, imageMapping, MAX_VISION_IMAGES);
+      const resolved: VisionPromptImage[] = [];
+      const unresolvableIds = new Set<string>();
+      for (const candidate of withSrc) {
+        if (resolved.length >= MAX_VISION_IMAGES) break;
+        const attempted = await resolveVisionImagesForPrompt(
+          [
+            {
+              id: candidate.id,
+              src: imageMapping[candidate.id],
+              ...(candidate.width !== undefined ? { width: candidate.width } : {}),
+              ...(candidate.height !== undefined ? { height: candidate.height } : {}),
+            },
+          ],
+          req.headers,
+        );
+        if (attempted.length === 1) {
+          resolved.push(attempted[0]!);
+        } else {
+          unresolvableIds.add(candidate.id);
+        }
+      }
+      resolvedVisionImages = resolved;
+      if (unresolvableIds.size > 0) {
+        assignedImages = assignedImages.filter((img) => !unresolvableIds.has(img.id));
+        visionImageMapping = Object.fromEntries(
+          Object.entries(imageMapping).filter(([id]) => !unresolvableIds.has(id)),
+        );
+      }
     }
 
     // ── Media generation is handled client-side in parallel (media-orchestrator.ts) ──
@@ -218,9 +241,10 @@ export async function POST(req: NextRequest) {
 
     const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
-      imageMapping,
+      imageMapping: visionImageMapping,
       visionEnabled: hasVision,
       generatedMediaMapping,
+      resolvedVisionImages,
       agents,
       languageDirective,
       targetLanguage: userLocale || undefined,
