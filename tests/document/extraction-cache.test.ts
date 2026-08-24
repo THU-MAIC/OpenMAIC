@@ -1572,6 +1572,60 @@ describe('fetchExtractionWithCache', () => {
     ).rejects.toThrow('parse failed');
   });
 
+  it('throws the localized fallback for a non-JSON error body (proxy error page), not a SyntaxError', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    const assetIdForm = vi.fn(async () => {
+      return new Response('<html>502 Bad Gateway</html>', {
+        status: 502,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    });
+
+    await expect(
+      fetchExtractionWithCache({
+        serverBacked: true,
+        hasAssetId: true,
+        fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: assetIdForm },
+        logWarning: vi.fn(),
+        contentDigest: DIGEST,
+        domain: 'doc',
+        extractorId: 'mineru',
+        extractorVersion: '1',
+        kv,
+        pool: harness.pool,
+        parseFailedMessage: 'parse failed',
+      }),
+    ).rejects.toThrow('parse failed');
+  });
+
+  it('throws the localized fallback for a non-JSON success body, not a SyntaxError', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    const assetIdForm = vi.fn(async () => {
+      return new Response('not json at all', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' },
+      });
+    });
+
+    await expect(
+      fetchExtractionWithCache({
+        serverBacked: true,
+        hasAssetId: true,
+        fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: assetIdForm },
+        logWarning: vi.fn(),
+        contentDigest: DIGEST,
+        domain: 'doc',
+        extractorId: 'mineru',
+        extractorVersion: '1',
+        kv,
+        pool: harness.pool,
+        parseFailedMessage: 'parse failed',
+      }),
+    ).rejects.toThrow('parse failed');
+  });
+
   it('runs the real extraction without caching when no KV store is available', async () => {
     // No `kv` (and no injectable singleton in the Node test environment): the
     // KV resolution fails, which must disable caching only — the extraction

@@ -1151,15 +1151,21 @@ export async function fetchExtractionWithCache(
   }
 
   // 2. Real extraction (asset-id JSON form with the legacy byte fallback).
+  // Both body reads are guarded: a response that is not JSON at all (a proxy
+  // error page, a truncated body) must surface the localized fallback, not a
+  // raw SyntaxError.
   const response = await fetchExtractionResponse(options);
   if (!response.ok) {
-    const errorData = (await response.json()) as { error?: unknown } | null;
+    const errorData = (await response.json().catch(() => null)) as { error?: unknown } | null;
     throw new Error(
       typeof errorData?.error === 'string' ? errorData.error : options.parseFailedMessage,
     );
   }
-  const parsed = (await response.json()) as { success?: unknown; data?: unknown };
-  if (!parsed.success || !parsed.data) {
+  const parsed = (await response.json().catch(() => null)) as {
+    success?: unknown;
+    data?: unknown;
+  } | null;
+  if (!parsed?.success || !parsed.data) {
     throw new Error(options.parseFailedMessage);
   }
   const data = parsed.data as ParsedPdfContent;
