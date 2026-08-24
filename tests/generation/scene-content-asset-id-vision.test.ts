@@ -18,6 +18,16 @@ vi.mock('@/lib/persistence/resolve-vision-images', () => ({
   resolveVisionImagesForPrompt: resolveVisionImagesMock,
 }));
 
+// The route's resolve-with-refill phase budget reuses the shared 15 s ingest
+// constant; the hanging-store test injects a tiny budget through this mock so
+// the aggregate budget is observable without waiting 15 s (the same injection
+// the extraction-cache test uses for `assetProbeBudgetMs`). Every other test
+// in this file resolves its probes instantly, so the small budget never fires.
+vi.mock('@/lib/document/extract-source', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/document/extract-source')>();
+  return { ...actual, DEFAULT_INGEST_AWAIT_TIMEOUT_MS: 50 };
+});
+
 /**
  * Server-backed generation by allocated asset id (RFC #1153 part 2 B): the
  * client sends `imageMapping` as (image id → allocated asset id), the route
@@ -339,6 +349,75 @@ describe('scene-content route — asset-id image transport', () => {
     expect(body.content.elements[0].src).toBe('ast_img_1');
   });
 
+  test('all-unresolvable fast-fail: the consecutive-failure fuse stops probing after 3 and generation proceeds text-only (P2-r3)', async () => {
+    vi.resetModules();
+    // Every candidate unresolvable, INSTANTLY (a fast-failing store). Without
+    // a fuse the loop would churn through ALL 25 candidates sequentially (one
+    // probe + one warn each); the fuse must stop after 3 consecutive failures
+    // and degrade to text-only generation — never fail the request.
+    const { ids, pdfImages, imageMapping } = manyCandidateImages(25);
+    resolveVisionImagesMock.mockResolvedValue([]);
+    callLLMMock.mockResolvedValueOnce({
+      text: JSON.stringify({ elements: [], remark: '' }),
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const { POST } = await import('@/app/api/generate/scene-content/route');
+    const response = await POST(
+      mockRequest({ outline: slideOutline(ids), pdfImages, imageMapping }),
+    );
+    const body = await response.json();
+
+    expect(body.success).toBe(true);
+    // The fuse tripped after exactly 3 probes — the other 22 were never
+    // probed (no N-warn churn).
+    expect(resolveVisionImagesMock).toHaveBeenCalledTimes(3);
+    // Generation proceeded with an empty resolved set: text-only (the aiCall
+    // sees no vision images, so callLLM gets a plain `prompt`), no dangling
+    // `[see attached]` promise.
+    expect(callLLMMock).toHaveBeenCalledTimes(1);
+    const prompt = callLLMMock.mock.calls[0][0].prompt as string;
+    expect(prompt).not.toContain('[see attached]');
+    expect(callLLMMock.mock.calls[0][0].messages).toBeUndefined();
+    // ONE summary warn names the fuse (the per-candidate warns are collapsed).
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('consecutive-failure fuse');
+    warn.mockRestore();
+  });
+
+  test('hanging store: the aggregate resolution budget stops the phase within the bound, no hang (P2-r3)', async () => {
+    vi.resetModules();
+    // The store accepts the probe but never answers — a stalled database with
+    // no statement timeout. Each probe would otherwise hold the route until
+    // the platform cap; the aggregate phase budget (the mocked 50 ms below,
+    // the shared 15 s constant in production) must stop the phase within the
+    // bound and degrade to text-only generation.
+    const { ids, pdfImages, imageMapping } = manyCandidateImages(25);
+    resolveVisionImagesMock.mockImplementation(() => new Promise(() => undefined));
+    callLLMMock.mockResolvedValueOnce({
+      text: JSON.stringify({ elements: [], remark: '' }),
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const { POST } = await import('@/app/api/generate/scene-content/route');
+    const response = await POST(
+      mockRequest({ outline: slideOutline(ids), pdfImages, imageMapping }),
+    );
+    const body = await response.json();
+
+    expect(body.success).toBe(true);
+    // Only the FIRST candidate was probed before the budget fired.
+    expect(resolveVisionImagesMock).toHaveBeenCalledTimes(1);
+    expect(callLLMMock).toHaveBeenCalledTimes(1);
+    const prompt = callLLMMock.mock.calls[0][0].prompt as string;
+    expect(prompt).not.toContain('[see attached]');
+    expect(callLLMMock.mock.calls[0][0].messages).toBeUndefined();
+    // ONE summary warn names the budget.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('aggregate resolution budget');
+    warn.mockRestore();
+  });
+
   test('hallucinated reference to a DROPPED id removes the element (no dangling src, P3)', async () => {
     vi.resetModules();
     const dataUrlFor = (bytes: string) =>
@@ -465,5 +544,21 @@ function slideOutline(suggestedImageIds: string[] = ['img_1']): SceneOutline {
     keyPoints: ['Inspect', 'Calibrate'],
     order: 1,
     suggestedImageIds,
+  };
+}
+
+/** `count` assigned images with distinct allocated ids and page numbers. */
+function manyCandidateImages(count: number) {
+  const ids = Array.from({ length: count }, (_, i) => `img_${i + 1}`);
+  return {
+    ids,
+    pdfImages: ids.map((id, index) => ({
+      id,
+      src: '',
+      pageNumber: index + 1,
+      width: 100,
+      height: 100,
+    })),
+    imageMapping: Object.fromEntries(ids.map((id) => [id, `ast_${id}`])),
   };
 }

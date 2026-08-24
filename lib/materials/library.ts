@@ -280,13 +280,19 @@ function unionDerivations(
  * release — releases it without the library's knowledge). A failed library
  * allocation skips the upsert entirely with one warn. A failed entry WRITE
  * (a kv.get/kv.set failure after a successful allocation) releases the fresh
- * library-owned allocation best-effort (logged) so it is never orphaned — the
- * entry cannot be pointing at it, since the write never completed. In both
- * failure directions the caller's upload is unaffected. On a same-digest
- * re-import the new library-owned id is allocated FIRST, the entry is written
- * to point at it, and only THEN is the PREVIOUS library-owned allocation
- * released best-effort (logged) — the entry never names a released id
- * mid-swap.
+ * library-owned allocation best-effort (logged) so it is never orphaned —
+ * guarded by an ambiguous-commit re-read (review P3, round 3): an HTTP KV
+ * `set` whose response is lost (proxy/gateway timeout, connection reset) may
+ * have committed server-side while rejecting, so before releasing, the entry
+ * is re-read once; the allocation is released ONLY when the re-read shows the
+ * entry does NOT point at the new id, kept (log info) when it does — the write
+ * actually landed — and the release is SKIPPED with one warn when the re-read
+ * itself fails (leak-over-dangling: a leaked entry is recoverable by
+ * re-import, a dangling entry breaks `readMaterial`). In both failure
+ * directions the caller's upload is unaffected. On a same-digest re-import the
+ * new library-owned id is allocated FIRST, the entry is written to point at
+ * it, and only THEN is the PREVIOUS library-owned allocation released
+ * best-effort (logged) — the entry never names a released id mid-swap.
  *
  * The optional `pool` is the test injection point; production omits it and
  * `putAsset` / `removeAsset` resolve the browser-wide pool.
@@ -359,32 +365,72 @@ export async function upsertMaterialLibraryEntry(
       });
     }
   } catch (error) {
-    // The fresh library-owned allocation never made it into an entry — the
-    // failure is a kv.get/kv.set (the superseded-release above has its own
-    // inline catch and cannot land here), so the entry cannot be pointing at
-    // the new id. Release it best-effort so a failed write does not orphan
-    // the allocation (review P3); the release is logged — its own warn when it
-    // fails, named inside the single upsert warn on the per-op path — and
-    // never thrown.
-    let releaseFailed = false;
+    // Ambiguous-commit guard (review P3, round 3): the failure is a
+    // kv.get/kv.set (the superseded-release above has its own inline catch and
+    // cannot land here), but a `set` that REJECTED may still have committed
+    // server-side (a response lost to a proxy/gateway timeout or reset), so
+    // the entry MIGHT be pointing at the new id. Re-read the entry best-effort
+    // before deciding: release the fresh library-owned allocation ONLY when
+    // the read shows the entry does NOT point at it; when it does, the write
+    // actually landed — keep the allocation (log info); when the read itself
+    // fails, SKIP the release (leak-over-dangling, one warn — a leaked entry
+    // is recoverable by re-import, a dangling one breaks `readMaterial`).
+    // Never thrown in any direction.
+    let committed = false;
+    let readFailed = false;
+    let reReadError: unknown;
     try {
-      await remove(libraryAssetId);
-    } catch (releaseError) {
-      releaseFailed = true;
-      log.warn(
-        `Failed to release the fresh library-owned allocation ${libraryAssetId} for "${input.name}":`,
-        releaseError,
-      );
+      const after = await kv.get<MaterialLibraryEntry>(key, MATERIAL_LIBRARY_KV_SCOPE);
+      committed = after !== null && isValidLibraryEntry(after) && after.assetId === libraryAssetId;
+    } catch (readError) {
+      readFailed = true;
+      reReadError = readError;
     }
+
+    let releaseFailed = false;
+    let releaseError: unknown;
+    if (committed) {
+      log.info(
+        `The material library entry for "${input.name}" actually committed server-side despite the ` +
+          `failed upsert; keeping the library-owned allocation ${libraryAssetId} (the write landed).`,
+      );
+    } else if (!readFailed) {
+      // The re-read shows the entry does NOT point at the new id — release it
+      // best-effort so a failed write does not orphan the allocation (review
+      // P3); a failed release is logged, never thrown.
+      try {
+        await remove(libraryAssetId);
+      } catch (removeError) {
+        releaseFailed = true;
+        releaseError = removeError;
+      }
+    }
+
     if (isRouteLevelKVError(error)) {
       disableLibraryForWindow(error);
+    } else if (committed) {
+      log.warn(
+        `Failed to upsert the material library entry for "${input.name}"; the upload is unaffected. ` +
+          `The write actually committed server-side (response lost), so the fresh library-owned ` +
+          `allocation ${libraryAssetId} was KEPT.`,
+        error,
+      );
+    } else if (readFailed) {
+      log.warn(
+        `Failed to upsert the material library entry for "${input.name}"; the upload is unaffected. ` +
+          `The post-failure re-read of the entry also failed, so the fresh library-owned allocation ` +
+          `${libraryAssetId} was NOT released (leak-over-dangling: a leaked entry is recoverable by ` +
+          `re-import, a dangling one breaks readMaterial):`,
+        error,
+        reReadError,
+      );
     } else {
       log.warn(
         `Failed to upsert the material library entry for "${input.name}"; the upload is unaffected. ` +
           `The fresh library-owned allocation ${libraryAssetId} was ${
             releaseFailed ? 'NOT released' : 'released best-effort'
           }.`,
-        error,
+        ...(releaseFailed ? [error, releaseError] : [error]),
       );
     }
   }

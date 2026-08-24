@@ -28,6 +28,7 @@ import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
+import { DEFAULT_INGEST_AWAIT_TIMEOUT_MS } from '@/lib/document/extract-source';
 import {
   resolveVisionImagesForPrompt,
   type VisionPromptImage,
@@ -37,6 +38,24 @@ import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 const log = createLogger('Scene Content API');
 
 export const maxDuration = 300;
+
+/**
+ * Aggregate budget for the WHOLE resolve-with-refill phase, reused from the
+ * shared 15 s ingest-drain constant (the same constant the extraction cache's
+ * probe phase reuses). Each probe is an unbounded server-side store round trip
+ * (no statement timeout), so an all-fail phase must not churn every candidate
+ * sequentially: when the budget expires the phase STOPS and generation
+ * proceeds with whatever resolved so far (degrade, never fail).
+ */
+const VISION_RESOLUTION_BUDGET_MS = DEFAULT_INGEST_AWAIT_TIMEOUT_MS;
+
+/**
+ * Consecutive-failure fuse for the resolve-with-refill loop: after this many
+ * unresolvable/errored candidates IN A ROW the store is evidently down, so
+ * probing stops instead of churning the remaining candidates (one summary warn
+ * names the fuse). A resolved candidate resets the streak.
+ */
+const MAX_CONSECUTIVE_UNRESOLVABLE_VISION_IMAGES = 3;
 
 export async function POST(req: NextRequest) {
   let outlineTitle: string | undefined;
@@ -197,32 +216,96 @@ export async function POST(req: NextRequest) {
     let resolvedVisionImages: VisionPromptImage[] | undefined;
     if (assignedImages && assignedImages.length > 0 && hasVision && imageMapping) {
       const { withSrc } = partitionImagesForVision(assignedImages, imageMapping, MAX_VISION_IMAGES);
-      const resolved: VisionPromptImage[] = [];
-      const unresolvableIds = new Set<string>();
-      for (const candidate of withSrc) {
-        if (resolved.length >= MAX_VISION_IMAGES) break;
-        const attempted = await resolveVisionImagesForPrompt(
-          [
-            {
-              id: candidate.id,
-              src: imageMapping[candidate.id],
-              ...(candidate.width !== undefined ? { width: candidate.width } : {}),
-              ...(candidate.height !== undefined ? { height: candidate.height } : {}),
-            },
-          ],
-          req.headers,
+      // Bound the resolve-with-refill loop (review P2, round 3): the store may
+      // be down, and each probe is an unbounded server-side round trip, so an
+      // all-fail phase must not churn every candidate (and emit a warn per
+      // candidate) until the route's 300 s platform cap. Two stops, both
+      // degrading to "whatever resolved so far" — never failing the request:
+      // (a) an aggregate budget for the WHOLE phase (the shared 15 s ingest
+      // constant, raced against each probe so even ONE hanging probe cannot
+      // outlive it) and (b) a consecutive-failure fuse (3 unresolvable/errored
+      // candidates in a row → stop). When a stop fires, every candidate that
+      // did not resolve — unresolvable OR unprobed — is STRIPPED from the
+      // mapping, so the generator can never hand an unresolved allocated id to
+      // the defensive aiCall resolution (which would re-open the unbounded
+      // probe the stop just closed); ONE summary warn names the stop.
+      let phaseTimer: ReturnType<typeof setTimeout> | undefined;
+      const phaseBudget = new Promise<'__vision-resolution-budget-expired__'>((resolve) => {
+        phaseTimer = setTimeout(
+          () => resolve('__vision-resolution-budget-expired__'),
+          VISION_RESOLUTION_BUDGET_MS,
         );
+      });
+      const resolvedById = new Map<string, VisionPromptImage>();
+      let consecutiveUnresolvable = 0;
+      let stopReason: 'fuse' | 'budget' | null = null;
+      for (const candidate of withSrc) {
+        if (resolvedById.size >= MAX_VISION_IMAGES) break;
+        if (consecutiveUnresolvable >= MAX_CONSECUTIVE_UNRESOLVABLE_VISION_IMAGES) {
+          stopReason = 'fuse';
+          break;
+        }
+        let attempted: VisionPromptImage[] | '__vision-resolution-budget-expired__';
+        try {
+          attempted = await Promise.race([
+            resolveVisionImagesForPrompt(
+              [
+                {
+                  id: candidate.id,
+                  src: imageMapping[candidate.id],
+                  ...(candidate.width !== undefined ? { width: candidate.width } : {}),
+                  ...(candidate.height !== undefined ? { height: candidate.height } : {}),
+                },
+              ],
+              req.headers,
+            ),
+            phaseBudget,
+          ]);
+        } catch (error) {
+          // A throwing probe counts as an unresolvable candidate (an errored
+          // store must degrade, never fail the request).
+          log.error(
+            `Vision image resolution probe for "${candidate.id}" failed; treating it as unresolvable:`,
+            error,
+          );
+          attempted = [];
+        }
+        if (attempted === '__vision-resolution-budget-expired__') {
+          stopReason = 'budget';
+          break;
+        }
         if (attempted.length === 1) {
-          resolved.push(attempted[0]!);
+          resolvedById.set(attempted[0]!.id, attempted[0]!);
+          consecutiveUnresolvable = 0;
         } else {
-          unresolvableIds.add(candidate.id);
+          consecutiveUnresolvable += 1;
         }
       }
-      resolvedVisionImages = resolved;
-      if (unresolvableIds.size > 0) {
-        assignedImages = assignedImages.filter((img) => !unresolvableIds.has(img.id));
+      if (phaseTimer !== undefined) clearTimeout(phaseTimer);
+      resolvedVisionImages = [...resolvedById.values()];
+      // Every candidate that did not resolve — an unresolvable probe, OR an
+      // unprobed one when the fuse/budget stopped the phase — is stripped from
+      // the mapping and the assigned set, so the generator's re-slice (same
+      // helper, same cap) can never admit an image this route has not resolved
+      // (possibly all of them = text-only generation).
+      const droppedIds = new Set(
+        withSrc
+          .filter((candidate) => !resolvedById.has(candidate.id))
+          .map((candidate) => candidate.id),
+      );
+      if (droppedIds.size > 0) {
+        assignedImages = assignedImages.filter((img) => !droppedIds.has(img.id));
         visionImageMapping = Object.fromEntries(
-          Object.entries(imageMapping).filter(([id]) => !unresolvableIds.has(id)),
+          Object.entries(imageMapping).filter(([id]) => !droppedIds.has(id)),
+        );
+      }
+      if (stopReason !== null) {
+        log.warn(
+          `Stopped probing vision image candidates early: the ${
+            stopReason === 'fuse'
+              ? `consecutive-failure fuse (${MAX_CONSECUTIVE_UNRESOLVABLE_VISION_IMAGES} unresolvable in a row)`
+              : `${VISION_RESOLUTION_BUDGET_MS}ms aggregate resolution budget`
+          } fired; proceeding to generation with ${resolvedById.size} resolved image(s) and the rest dropped to text-only (degrade, not fail).`,
         );
       }
     }

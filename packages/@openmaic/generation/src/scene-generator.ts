@@ -613,8 +613,12 @@ async function generateSlideContent(
     // scene-content route pre-resolves the SAME `withSrc` candidates in this
     // order, so the slice below can never admit an image the route has not
     // resolved. `visionEnabled && imageMapping` off → every image is a plain
-    // text description, exactly as before.
-    const { visionSlice, textOnlySlice, noSrcImages } = partitionImagesForVision(
+    // text description listed in the ORIGINAL full vision-priority
+    // interleaved order (`sorted` — the pre-partition `sortedAssignedImages`
+    // order), NOT the slices-concatenated order, so a non-vision run with a
+    // mapping present (a non-vision model on a server-backed deployment) sees
+    // exactly the text ordering it saw before the partition refactor.
+    const { sorted, visionSlice, textOnlySlice, noSrcImages } = partitionImagesForVision(
       assignedImages,
       imageMapping,
       MAX_VISION_IMAGES,
@@ -646,9 +650,7 @@ async function generateSlideContent(
         );
       });
     } else {
-      assignedImagesText = [...visionSlice, ...textOnlySlice, ...noSrcImages]
-        .map((img) => formatImageDescription(img))
-        .join('\n');
+      assignedImagesText = sorted.map((img) => formatImageDescription(img)).join('\n');
     }
   }
 

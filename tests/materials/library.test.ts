@@ -263,6 +263,85 @@ describe('material library — upsert by digest with a library-owned allocation'
     warn.mockRestore();
   });
 
+  it('keeps the fresh allocation when a rejecting kv.set actually committed server-side (ambiguous commit, no release, info)', async () => {
+    // An HTTP KV PUT the server commits whose response is lost (proxy/gateway
+    // timeout, connection reset) rejects kv.set — the entry IS written. The
+    // ambiguous-commit re-read must detect it and NOT release the id the
+    // committed entry now names (releasing it would leave a dangling entry
+    // that breaks readMaterial).
+    const realSet = kv.set.bind(kv);
+    vi.spyOn(kv, 'set').mockImplementation(async (key, value, scope) => {
+      await realSet(key, value, scope);
+      throw new Error('kv set response lost');
+    });
+    // `log.info` emits through console.log.
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      upsertMaterialLibraryEntry(
+        {
+          file: FILE_BYTES(),
+          contentDigest: DIGEST_A,
+          name: 'safety-checklist.pdf',
+          size: 2048,
+        },
+        harness.pool,
+      ),
+    ).resolves.toBeUndefined();
+
+    // The entry committed and names the fresh allocation, which was KEPT.
+    const stored = await kv.get<MaterialLibraryEntry>(
+      materialLibraryKey(DIGEST_A),
+      MATERIAL_LIBRARY_KV_SCOPE,
+    );
+    expect(stored?.assetId).toBe('ast_lib_0');
+    expect(harness.remove).not.toHaveBeenCalled();
+    expect(harness.blobs.has('ast_lib_0')).toBe(true);
+    expect(kv.storedKeys()).toHaveLength(1);
+    // The keep decision is logged as info (the write actually landed).
+    expect(log.mock.calls.some((c) => String(c[0]).includes('actually committed'))).toBe(true);
+    warn.mockRestore();
+    log.mockRestore();
+  });
+
+  it('skips the release when the post-failure re-read ALSO fails (leak-over-dangling, one warn)', async () => {
+    // The upsert's pre-write get succeeds, the set rejects without committing,
+    // and the ambiguous-commit re-read fails too. The release must be SKIPPED
+    // (leak-over-dangling): a leaked pool entry is recoverable by re-import,
+    // while releasing an id a committed entry might name would create a
+    // dangling entry that breaks readMaterial.
+    const realGet = kv.get.bind(kv);
+    let getCalls = 0;
+    vi.spyOn(kv, 'get').mockImplementation((async (key: string, scope?: KVScope) => {
+      getCalls += 1;
+      if (getCalls === 2) throw new Error('kv get failed on re-read');
+      return realGet(key, scope);
+    }) as typeof kv.get);
+    vi.spyOn(kv, 'set').mockRejectedValueOnce(new Error('kv set failed'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      upsertMaterialLibraryEntry(
+        {
+          file: FILE_BYTES(),
+          contentDigest: DIGEST_A,
+          name: 'safety-checklist.pdf',
+          size: 2048,
+        },
+        harness.pool,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(harness.remove).not.toHaveBeenCalled();
+    expect(harness.blobs.has('ast_lib_0')).toBe(true);
+    expect(kv.storedKeys()).toHaveLength(0);
+    // ONE warn names the leak-over-dangling decision.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('leak-over-dangling');
+    warn.mockRestore();
+  });
+
   it('preserves recorded derivation pointers across a same-digest refresh', async () => {
     await upsertMaterialLibraryEntry(
       {
