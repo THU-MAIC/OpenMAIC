@@ -369,6 +369,89 @@ describe('inline image conversion with production wiring', () => {
     warnSpy.mockRestore();
   });
 
+  it('a classroom persisted with kept inline images converts them on the next open', async () => {
+    // First open: the content digest is unavailable (a non-secure context /
+    // older webview), so the birth pass keeps the inline image and persists
+    // the document with the data URL still inline — the exact state a
+    // transient digest failure, budget expiry, or oversized payload leaves.
+    const originalCrypto = globalThis.crypto;
+    vi.stubGlobal('crypto', {
+      getRandomValues: originalCrypto.getRandomValues.bind(originalCrypto),
+      randomUUID: originalCrypto.randomUUID.bind(originalCrypto),
+    } as unknown as Crypto);
+    const payload = {
+      stage: { id: 'classroom-1', name: 'Server Course', createdAt: 1, updatedAt: 2 },
+      scenes: [
+        {
+          id: 'scene-1',
+          stageId: 'classroom-1',
+          type: 'slide',
+          title: 'S',
+          order: 0,
+          content: {
+            type: 'slide',
+            canvas: {
+              id: 'c1',
+              elements: [
+                {
+                  id: 'el1',
+                  type: 'image',
+                  src: dataUrl('inline'),
+                  left: 0,
+                  top: 0,
+                  width: 100,
+                  height: 100,
+                },
+              ],
+            },
+          },
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string) => {
+        if (String(input) === '/api/classroom?id=classroom-1') {
+          return new Response(JSON.stringify({ success: true, classroom: payload }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        throw new Error(`Unexpected fetch: ${String(input)}`);
+      }),
+    );
+    const store = await documentStore();
+    const { fetchClassroomFromApi } = await import('@/lib/classroom/load-classroom');
+    const { getAssetPool } = await import('@/lib/media/asset-pool');
+    const { db } = await import('@/lib/utils/database');
+    const pool = getAssetPool();
+
+    const first = await fetchClassroomFromApi('classroom-1', () => true, accessDeps(store));
+    expect(first).not.toBeNull();
+    let committed = await store.loadDocument('classroom-1');
+    let src = (committed?.scenes[0].content as { canvas: { elements: { src: string }[] } }).canvas
+      .elements[0].src;
+    expect(src).toBe(dataUrl('inline'));
+    expect(await pool.exists?.(src as never)).toBe(false);
+
+    // Second open: the digest works again. The kept inline image must convert
+    // through the EXISTING-document path (the birth-only pass would have
+    // returned the committed document verbatim, forever), and the converted
+    // document must persist through the same save machinery.
+    vi.stubGlobal('crypto', originalCrypto);
+    const second = await fetchClassroomFromApi('classroom-1', () => true, accessDeps(store));
+    expect(second).not.toBeNull();
+    committed = await store.loadDocument('classroom-1');
+    src = (committed?.scenes[0].content as { canvas: { elements: { src: string }[] } }).canvas
+      .elements[0].src;
+    expect(src).toMatch(/^ast_/);
+    expect(await pool.exists?.(src as never)).toBe(true);
+    const row = await db.mediaFiles.get(`classroom-1:${src}`);
+    expect(await row?.blob.text()).toBe('inline');
+  });
+
   it('a superseded classroom load rolls the shared ledger back through the real helper', async () => {
     const { db } = await import('@/lib/utils/database');
     // The payload carries BOTH a legacy gen placeholder (owned by the #1101

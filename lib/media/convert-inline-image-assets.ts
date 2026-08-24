@@ -28,11 +28,13 @@
  *   an ASCII case-insensitive `base64` (the marker must be the FINAL
  *   parameter). The converter is CONSERVATIVE by design — when the grammar
  *   is anything but unambiguous it leaves the slot inline (`kept`) and never
- *   guesses a decode path: a `;base64` that is not the final parameter, a
- *   payload that decodes to zero bytes, or a payload whose raw text exceeds
- *   the 50 MB decode bound is kept, because the browser treats those shapes
- *   as percent-encoded or broken and converting them would rewrite a broken
- *   image into stored bytes.
+ *   guesses a decode path. A non-final `;base64` is not a broken image: the
+ *   browser still renders it (it percent-decodes the body and ignores the
+ *   stray parameter), so the slot stays inline because this converter never
+ *   guesses a decode path, not because the image is broken. The other kept
+ *   shapes have concrete reasons: zero decoded bytes are not an image, and a
+ *   payload whose ESTIMATED DECODED size exceeds the 50 MB decode bound is
+ *   pathological, not the target corpus.
  * - One allocation per unique decoded content, shared across every slot that
  *   names identical bytes. Two different encodings of the same bytes (base64
  *   vs percent-encoded, different MIME casing) also collapse: the memo key is
@@ -100,13 +102,16 @@ export const INLINE_IMAGE_CONVERSION_BUDGET_MS = DEFAULT_INGEST_AWAIT_TIMEOUT_MS
 export const INLINE_IMAGE_SLIDE_CONCURRENCY = 4;
 
 /**
- * Per-payload decode bound: an inline data URL whose raw payload text exceeds
- * the shared 50 MB extract cap (`MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES`) is
- * pathological, not the target corpus. It is kept inline WITHOUT decoding —
- * the gate is a pre-decode length check — so an oversized payload never
- * allocates multi-megabyte decode buffers.
+ * Per-payload decode bound, in DECODED BYTES: an inline data URL whose
+ * payload would decode past the shared 50 MB extract cap
+ * (`MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES`) is pathological, not the target
+ * corpus. It is kept inline WITHOUT decoding — the gate is a pre-decode size
+ * ESTIMATE — so an oversized payload never allocates multi-megabyte decode
+ * buffers. The same constant bounds the extract route's accepted bytes, so
+ * the converter's keep/convert decision and the generation route's
+ * accept/reject decision agree on the same quantity.
  */
-export const MAX_INLINE_IMAGE_PAYLOAD_BYTES = MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES;
+export const MAX_INLINE_IMAGE_DECODED_BYTES = MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES;
 
 /** Whether a slide media slot value is an inline image data URL — the only shape this converter rewrites. */
 export function isInlineImageDataUrl(ref: string | undefined): ref is string {
@@ -119,16 +124,42 @@ export interface DecodedInlineImage {
   readonly mimeType: string;
 }
 
+/** Parsed parts of an inline image data URL (the fetch-spec mediatype split). */
+interface ParsedInlineImageDataUrl {
+  mimeType: string;
+  params: string;
+  payload: string;
+}
+
+/** Split an inline image data URL into its mediatype parts and raw payload text. */
+function parseInlineImageDataUrl(src: string): ParsedInlineImageDataUrl | null {
+  const match = /^data:image\/([^;,]+)(?:;([^,]*))?,([\s\S]*)$/i.exec(src);
+  if (!match) return null;
+  return {
+    mimeType: `image/${match[1].toLowerCase()}`,
+    params: match[2] ?? '',
+    payload: match[3] ?? '',
+  };
+}
+
 /**
- * Raw payload text of an inline image data URL — everything after the first
- * comma, un-decoded. The pre-decode size gate measures this so an oversized
- * payload is kept before any decoding work happens. Returns `null` when the
- * value is not an inline image data URL.
+ * Estimated DECODED size of an inline image data URL's payload, computed
+ * before any decoding work so an oversized payload is kept without
+ * allocating decode buffers. A base64 payload scales the text length by 3/4
+ * (each quartet encodes three bytes; trailing padding encodes none and is
+ * excluded). A percent-encoded payload uses the raw text length as a safe
+ * upper bound (every `%XX` triple decodes to one byte). Returns `null` when
+ * the value is not an inline image data URL.
  */
-export function inlineImageDataUrlPayload(src: string): string | null {
-  const comma = src.indexOf(',');
-  if (!isInlineImageDataUrl(src) || comma < 0) return null;
-  return src.slice(comma + 1);
+export function estimateInlineImageDecodedBytes(src: string): number | null {
+  const parsed = parseInlineImageDataUrl(src);
+  if (!parsed) return null;
+  const mediatype = parsed.params ? `${parsed.mimeType};${parsed.params}` : parsed.mimeType;
+  if (/; *base64$/i.test(mediatype)) {
+    const padding = /=+$/.exec(parsed.payload)?.[0].length ?? 0;
+    return Math.floor(((parsed.payload.length - padding) * 3) / 4);
+  }
+  return parsed.payload.length;
 }
 
 /**
@@ -140,17 +171,16 @@ export function inlineImageDataUrlPayload(src: string): string | null {
  * The base64 marker follows the fetch spec's data-URL grammar: the body is
  * base64 exactly when the mediatype ends with `;` + zero or more SPACE + an
  * ASCII case-insensitive `base64`. The marker must be the FINAL parameter —
- * a `;base64` anywhere else is not a marker: the browser treats the body as
- * percent-encoded and the image is broken either way, so such a value is
- * conservatively kept (this converter slims, it never guesses a decode path
- * or converts a broken image).
+ * a `;base64` anywhere else is not a marker. Such a value is conservatively
+ * kept even though the browser still renders it (it percent-decodes the body
+ * and ignores the stray parameter): this converter slims data URLs it can
+ * decode unambiguously and never guesses a decode path — the slot stays
+ * inline because the marker is ambiguous, not because the image is broken.
  */
 export function decodeInlineImageDataUrl(src: string): DecodedInlineImage | null {
-  const match = /^data:image\/([^;,]+)(?:;([^,]*))?,([\s\S]*)$/i.exec(src);
-  if (!match) return null;
-  const mimeType = `image/${match[1].toLowerCase()}`;
-  const params = match[2] ?? '';
-  const payload = match[3] ?? '';
+  const parsed = parseInlineImageDataUrl(src);
+  if (!parsed) return null;
+  const { mimeType, params, payload } = parsed;
   try {
     const mediatype = params ? `${mimeType};${params}` : mimeType;
     // Fetch-spec marker (case-insensitive, space-tolerant, FINAL parameter).
@@ -315,6 +345,10 @@ export async function convertInlineImageAssets(
   const allocationByDigest = new Map<string, Promise<string | null>>();
   const report: InlineImageConversionReport = { converted: 0, ingested: 0, kept: 0 };
   let changed = false;
+  // Oversized payloads are counted per pass and reported with ONE aggregate
+  // warn (the old per-payload warn repeated on every open of a document that
+  // keeps them).
+  let oversizedPayloads = 0;
 
   /**
    * Probe whether a content digest can be computed at all. `crypto.subtle` —
@@ -346,17 +380,23 @@ export async function convertInlineImageAssets(
   /**
    * Allocate (once) for a content digest. Returns the allocated id, or `null`
    * when the ingest failed — the slot then stays inline. A failed attempt
-   * releases what it allocated and forgets the digest's memo entry, so a
-   * sibling slot naming the same bytes can retry rather than inheriting the
-   * failure forever.
+   * forgets the digest's memo entry — so a sibling slot naming the same
+   * bytes can retry rather than inheriting the failure forever — and
+   * releases anything the attempt allocated (a failed pool write allocated
+   * nothing; a failed mirror write releases the just-allocated id).
    */
   const allocateImage = (digest: string, blob: Blob, src: string): Promise<string | null> => {
     const inFlight = allocationByDigest.get(digest);
     if (inFlight) return inFlight;
     const pending = (async (): Promise<string | null> => {
-      const assetId = await resolvedDeps.putAsset(blob, imageMeta(blob));
-      allocatedIds.push(assetId);
+      let assetId: string | null = null;
       try {
+        // The pool write is inside the guarded region too: a transient pool
+        // error must clear the memo entry exactly like a mirror-write
+        // failure, so the NEXT slot naming the same bytes retries instead of
+        // inheriting the rejected promise for the rest of the pass.
+        assetId = await resolvedDeps.putAsset(blob, imageMeta(blob));
+        allocatedIds.push(assetId);
         // Liveness is rechecked at the commit boundary: an abort between the
         // allocation and its mirror compensates the allocation, exactly like
         // a mirror-write failure.
@@ -367,9 +407,11 @@ export async function convertInlineImageAssets(
           compatRecord(stageId, assetId, blob, src),
         );
       } catch (error) {
-        // Do not strand an allocation nothing references.
+        // Do not strand a memo entry (or an allocation) nothing references.
         allocationByDigest.delete(digest);
-        await resolvedDeps.removeAsset(assetId).catch(() => undefined);
+        if (assetId !== null) {
+          await resolvedDeps.removeAsset(assetId).catch(() => undefined);
+        }
         throw error;
       }
       report.ingested += 1;
@@ -396,16 +438,18 @@ export async function convertInlineImageAssets(
         report.kept += 1;
         continue;
       }
-      // Per-payload decode bound: a data URL whose raw payload text exceeds
-      // the shared 50 MB cap is pathological, not the target corpus. The gate
-      // is a pre-decode length check — the decoder is never invoked for it.
-      const payload = inlineImageDataUrlPayload(ref);
-      if (payload !== null && payload.length > MAX_INLINE_IMAGE_PAYLOAD_BYTES) {
+      // Per-payload decode bound, measured in DECODED bytes: a data URL whose
+      // payload would decode past the shared 50 MB cap is pathological, not
+      // the target corpus. The gate is a pre-decode size ESTIMATE — the
+      // decoder is never invoked for it — so an oversized payload never
+      // allocates multi-megabyte decode buffers.
+      const estimatedDecodedBytes = estimateInlineImageDecodedBytes(ref);
+      if (
+        estimatedDecodedBytes !== null &&
+        estimatedDecodedBytes > MAX_INLINE_IMAGE_DECODED_BYTES
+      ) {
+        oversizedPayloads += 1;
         report.kept += 1;
-        log.warn(
-          `Skipping oversized inline image payload for ${JSON.stringify(stageId)} ` +
-            `(${payload.length} chars > ${MAX_INLINE_IMAGE_PAYLOAD_BYTES}); staying inline`,
-        );
         continue;
       }
       if (!(await ensureDigestAvailable())) {
@@ -502,6 +546,17 @@ export async function convertInlineImageAssets(
       }
     }
     scenes.push(nextScene);
+  }
+
+  // One aggregate warn per pass for oversized payloads — the kept payloads
+  // never convert, so a per-payload warn would repeat on every open. A later
+  // open re-warns only while oversized payloads actually remain.
+  if (oversizedPayloads > 0) {
+    log.warn(
+      `Skipping ${oversizedPayloads} oversized inline image payload` +
+        `${oversizedPayloads === 1 ? '' : 's'} for ${JSON.stringify(stageId)} ` +
+        `(estimated decoded bytes > ${MAX_INLINE_IMAGE_DECODED_BYTES}); keeping them inline`,
+    );
   }
 
   if (!changed) return { document, changed: false, report, allocatedIds };

@@ -4,10 +4,11 @@ import type { AssetMeta } from '@openmaic/dsl';
 import {
   convertInlineImageAssets,
   decodeInlineImageDataUrl,
+  estimateInlineImageDecodedBytes,
   INLINE_IMAGE_SLIDE_CONCURRENCY,
   InlineImageConversionAbortedError,
   type InlineImageConversionDeps,
-  MAX_INLINE_IMAGE_PAYLOAD_BYTES,
+  MAX_INLINE_IMAGE_DECODED_BYTES,
 } from '@/lib/media/convert-inline-image-assets';
 import { buildStageAssetReclamationPlan } from '@/lib/media/reclaim-stage-assets';
 import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
@@ -101,13 +102,15 @@ describe('decodeInlineImageDataUrl', () => {
   test('decodes a percent-encoded UTF-8 payload to its exact bytes', () => {
     // Non-ASCII text proves the bytes are the true UTF-8 encoding, not the
     // UTF-16 code units of the decoded string.
-    const src = `data:image/svg+xml,${encodeURIComponent('<text>中文</text>')}`;
+    const src = `data:image/svg+xml,${encodeURIComponent('<text>déjà-vu ☃</text>')}`;
     const decoded = decodeInlineImageDataUrl(src);
     expect(decoded).not.toBeNull();
     expect(decoded?.mimeType).toBe('image/svg+xml');
-    expect(new TextDecoder().decode(decoded?.bytes)).toBe('<text>中文</text>');
-    // The byte length is the UTF-8 length (2 CJK chars = 6 bytes).
-    expect(decoded?.bytes.length).toBe('<text>'.length + 6 + '</text>'.length);
+    expect(new TextDecoder().decode(decoded?.bytes)).toBe('<text>déjà-vu ☃</text>');
+    // The byte length is the UTF-8 length, not the character count: 'é'/'à'
+    // are 2 bytes each and '☃' is 3, so the multi-byte payload proves the
+    // percent path preserves UTF-8 exactly.
+    expect(decoded?.bytes.length).toBe(new TextEncoder().encode('<text>déjà-vu ☃</text>').length);
   });
 
   test('tolerates whitespace inside a base64 payload', () => {
@@ -142,6 +145,19 @@ describe('decodeInlineImageDataUrl', () => {
     );
     expect(percent).not.toBeNull();
     expect(new TextDecoder().decode(percent?.bytes)).toBe('<svg/>');
+  });
+
+  test('estimateInlineImageDecodedBytes measures DECODED bytes, not text length', () => {
+    // Base64: text × 3/4, padding excluded (each quartet encodes 3 bytes).
+    expect(estimateInlineImageDecodedBytes(pngDataUrl('hello'))).toBe(5);
+    expect(estimateInlineImageDecodedBytes(`data:image/png;base64,${btoa('hello')}`)).toBe(5);
+    // 'AA==' is 4 text chars, 2 padding → 1 decoded byte.
+    expect(estimateInlineImageDecodedBytes('data:image/png;base64,AA==')).toBe(1);
+    // Percent-encoded: the raw text length is a safe upper bound on the
+    // decoded size (each `%XX` triple decodes to one byte).
+    expect(estimateInlineImageDecodedBytes('data:image/svg+xml,%3Csvg%2F%3E')).toBe(12);
+    // Non-inline values have no estimate.
+    expect(estimateInlineImageDecodedBytes('https://example.com/i.png')).toBeNull();
   });
 });
 
@@ -419,6 +435,35 @@ describe('inline base64 image conversion', () => {
     expect(pool.size).toBe(1);
   });
 
+  test('a failed putAsset forgets the memo entry so a sibling slot with the same bytes retries and converts', async () => {
+    const { pool, deps } = makeHarness();
+    let calls = 0;
+    const flakyPut: InlineImageConversionDeps['putAsset'] = async (blob, meta) => {
+      calls += 1;
+      if (calls === 1) throw new Error('pool down');
+      const id = `ast_test_${(allocationCounter += 1)}`;
+      pool.set(id, { blob, meta });
+      return id;
+    };
+    const src = pngDataUrl('same-bytes');
+    const doc = document({
+      scenes: [slideScene([], [imageElement(src, 'a'), imageElement(src, 'b')])],
+    });
+
+    const result = await convertInlineImageAssets(doc, { ...deps, putAsset: flakyPut });
+
+    // Slot 1's pool write failed; the memo entry was forgotten, so slot 2
+    // (identical bytes) retried instead of inheriting the rejected promise
+    // for the rest of the pass.
+    expect(result.changed).toBe(true);
+    expect(result.report.converted).toBe(1);
+    expect(result.report.ingested).toBe(1);
+    expect(result.report.kept).toBe(1);
+    expect(canvasElements(result.document)[0].src).toBe(src); // failed stays inline
+    expect(canvasElements(result.document)[1].src).toMatch(/^ast_test_/); // sibling retried
+    expect(pool.size).toBe(1);
+  });
+
   test('a compatibility-write failure releases the allocated id and leaves the slot inline', async () => {
     const { pool, deps } = makeHarness();
     const failingPutMedia: InlineImageConversionDeps['putMediaRecord'] = async () => {
@@ -553,6 +598,45 @@ describe('inline base64 image conversion', () => {
     expect(result.document).toBe(doc);
     expect(result.report.kept).toBe(1);
     expect(pool.size).toBe(0);
+  });
+
+  test('safe-direction marker shapes stay inline: never rewritten into a guessed decode', async () => {
+    const { pool, deps } = makeHarness();
+    const payload = btoa('never-decoded');
+    // Shapes whose fetch-spec handling differs from a naive base64 guess. The
+    // converter must leave each inline (the safe direction) rather than
+    // decode a body the browser treats differently:
+    // - leading space after `data:` (the spec strips it → base64; the
+    //   converter does not even recognize the value as an inline data URL);
+    // - trailing space after the `;base64` marker (the spec strips it →
+    //   base64; the converter's stray-token guard keeps it);
+    // - NBSP inside the marker (the spec percent-decodes; the stray-token
+    //   guard keeps it — never a base64 guess).
+    const shapes = [
+      `data: image/png;base64,${payload}`,
+      `data:image/png;base64 ,${payload}`,
+      `data:image/png;\u00a0base64,${payload}`,
+    ];
+    const doc = document({
+      scenes: [
+        slideScene(
+          [],
+          shapes.map((src, index) => imageElement(src, `el${index}`)),
+        ),
+      ],
+    });
+
+    const result = await convertInlineImageAssets(doc, deps);
+
+    expect(result.changed).toBe(false);
+    expect(result.document).toBe(doc);
+    expect(pool.size).toBe(0);
+    expect(canvasElements(result.document).map((el) => el.src)).toEqual(shapes);
+    // The two shapes the converter recognizes as inline are counted as kept;
+    // the leading-space shape is not even recognized as inline and is left
+    // untouched, uncounted.
+    expect(result.report.converted).toBe(0);
+    expect(result.report.kept).toBe(2);
   });
 
   test('an unavailable content digest degrades the pass to a no-op with one warn', async () => {
@@ -699,7 +783,11 @@ describe('inline base64 image conversion', () => {
         return bytesToHex(bytes);
       },
     };
-    const oversized = `data:image/png;base64,${'A'.repeat(MAX_INLINE_IMAGE_PAYLOAD_BYTES + 1)}`;
+    // Base64 text long enough that its DECODED size exceeds the 50 MB cap
+    // (the estimate scales text by 3/4, so the text must be ~4/3 × the cap).
+    const oversized = `data:image/png;base64,${'A'.repeat(
+      Math.ceil(((MAX_INLINE_IMAGE_DECODED_BYTES + 1) * 4) / 3),
+    )}`;
     const doc = document({ scenes: [slideScene([], [imageElement(oversized)])] });
 
     const result = await convertInlineImageAssets(doc, countingDeps);
@@ -710,6 +798,63 @@ describe('inline base64 image conversion', () => {
     expect(pool.size).toBe(0);
     // The pre-decode gate fired: no digest — and so no decode — was attempted.
     expect(digestCalls).toBe(0);
+  });
+
+  test('a payload whose raw text exceeds the cap but DECODES under it converts', async () => {
+    const { pool, deps } = makeHarness();
+    // Base64 text longer than MAX_INLINE_IMAGE_DECODED_BYTES (the old gate
+    // compared TEXT length, so it kept this) decodes to only ~3/4 of that —
+    // under the 50 MB byte cap — so the pre-decode DECODED-size estimate
+    // lets it through. The length is a multiple of 4 so atob accepts it.
+    const textLength = MAX_INLINE_IMAGE_DECODED_BYTES + 4;
+    const src = `data:image/png;base64,${'A'.repeat(textLength)}`;
+    const doc = document({ scenes: [slideScene([], [imageElement(src)])] });
+
+    const result = await convertInlineImageAssets(doc, {
+      ...deps,
+      // One unique payload: a length-addressed digest avoids hex-encoding the
+      // ~39 MB buffer the harness's byte digest would materialize.
+      digest: async (bytes) => `len:${bytes.length}`,
+    });
+
+    expect(result.changed).toBe(true);
+    expect(result.report.converted).toBe(1);
+    expect(result.report.ingested).toBe(1);
+    expect(result.report.kept).toBe(0);
+    expect(pool.size).toBe(1);
+    const [assetId] = [...pool.keys()];
+    expect(canvasElements(result.document)[0].src).toBe(assetId);
+    // 'A' is the base64 encoding of a zero byte: decoded size = text × 3/4.
+    expect(pool.get(assetId)?.blob.size).toBe((textLength * 3) / 4);
+  }, 30_000);
+
+  test('oversized payloads are reported with ONE aggregate warn per pass', async () => {
+    const { pool, deps } = makeHarness();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const oversized = `data:image/png;base64,${'A'.repeat(
+        Math.ceil(((MAX_INLINE_IMAGE_DECODED_BYTES + 1) * 4) / 3),
+      )}`;
+      const doc = document({
+        scenes: [slideScene([], [imageElement(oversized, 'a'), imageElement(oversized, 'b')])],
+      });
+
+      const result = await convertInlineImageAssets(doc, deps);
+
+      expect(result.changed).toBe(false);
+      expect(result.report.kept).toBe(2);
+      expect(pool.size).toBe(0);
+      // The old per-payload warn repeated once per oversized payload per open;
+      // the fix reports the whole pass in one aggregate message.
+      const oversizedWarns = warnSpy.mock.calls.filter((args) =>
+        String(args[0]).includes('oversized'),
+      );
+      expect(oversizedWarns).toHaveLength(1);
+      expect(String(oversizedWarns[0][0])).toContain('2 oversized inline image payloads');
+      expect(String(oversizedWarns[0][0])).toContain(String(MAX_INLINE_IMAGE_DECODED_BYTES));
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   test('whiteboard slides convert with bounded concurrency (batch 4)', async () => {
