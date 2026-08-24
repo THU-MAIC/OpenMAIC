@@ -1,4 +1,4 @@
-import type { TTSProviderId } from '@/lib/audio/types';
+import type { TTSProviderId, TTSVoiceInfo } from '@/lib/audio/types';
 import { isCustomTTSProvider } from '@/lib/audio/types';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
@@ -46,6 +46,29 @@ export type AgentVoiceOverrides = Record<string, AgentVoiceOverride>;
  * 3. If the list is empty, return null — the caller must skip TTS rather than
  *    silently falling back to browser-native (#665 symptom 4).
  */
+/**
+ * The gender an agent's voice should have.
+ *
+ * Prefers the profile's explicit `gender` field, which the generator emits with
+ * literal English values regardless of the course language. Falls back to
+ * parsing `voiceDesign.identity` for profiles generated before that field
+ * existed; that prose follows the course language, so the match is
+ * English-only and best-effort. Ambiguous or absent information returns
+ * undefined, which leaves the caller on its previous behaviour.
+ */
+export function inferAgentGender(agent: AgentConfig): 'male' | 'female' | undefined {
+  if (agent.gender === 'male' || agent.gender === 'female') return agent.gender;
+  if (agent.gender === 'neutral') return undefined;
+
+  const identity = agent.voiceDesign?.identity;
+  if (!identity) return undefined;
+  const text = identity.toLowerCase();
+  const female = /\b(female|woman|women|girl|lady)\b/.test(text);
+  const male = /\b(male|man|men|boy|gentleman)\b/.test(text);
+  if (female === male) return undefined;
+  return female ? 'female' : 'male';
+}
+
 export function resolveAgentVoice(
   agent: AgentConfig,
   agentIndex: number,
@@ -77,12 +100,22 @@ export function resolveAgentVoice(
   }
 
   // Fallback: deterministic pick among enabled providers (canonical order).
+  // Round-robin by index alone regularly gave a female-named agent a male
+  // voice, so narrow the pool to voices whose gender matches the one the
+  // generated voiceDesign states before indexing into it. Rotation is kept —
+  // the index still spreads agents across the matching voices — and a pool
+  // with no gender information behaves exactly as before.
   if (enabledProviders.length > 0) {
     const first = enabledProviders[0];
     if (first.voices.length > 0) {
+      const wanted = inferAgentGender(agent);
+      const pool = wanted
+        ? first.voices.filter((v) => v.gender === wanted || v.gender === 'neutral')
+        : [];
+      const voices = pool.length > 0 ? pool : first.voices;
       return {
         providerId: first.providerId,
-        voiceId: first.voices[agentIndex % first.voices.length].id,
+        voiceId: voices[agentIndex % voices.length].id,
       };
     }
   }
@@ -115,13 +148,13 @@ export function getServerVoiceList(
 export interface ModelVoiceGroup {
   modelId: string;
   modelName: string;
-  voices: Array<{ id: string; name: string; language?: string }>;
+  voices: Array<{ id: string; name: string; language?: string; gender?: TTSVoiceInfo['gender'] }>;
 }
 
 export interface ProviderWithVoices {
   providerId: TTSProviderId;
   providerName: string;
-  voices: Array<{ id: string; name: string; language?: string }>;
+  voices: Array<{ id: string; name: string; language?: string; gender?: TTSVoiceInfo['gender'] }>;
   modelGroups: ModelVoiceGroup[]; // voices grouped by model
 }
 
@@ -172,6 +205,7 @@ export function getEnabledProvidersWithVoices(
           id: v.id,
           name: v.name,
           language: v.language,
+          gender: v.gender,
         })),
         ...(providerId === VOXCPM_TTS_PROVIDER_ID
           ? visibleVoxCPMProfiles.map((profile) => ({

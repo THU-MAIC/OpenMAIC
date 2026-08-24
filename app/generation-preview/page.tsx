@@ -840,6 +840,11 @@ function GenerationPreviewContent() {
                 voiceId: v.id,
                 voiceName: v.name,
                 voiceLanguage: v.language,
+                // Without this the model has to infer gender from the id and
+                // display name, and several catalogues (MiniMax) name their
+                // voices in Chinese — so a female agent regularly got a male
+                // voice. The registry knows; pass it on.
+                voiceGender: v.gender,
               })),
             );
           };
