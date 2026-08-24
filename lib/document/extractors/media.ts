@@ -27,6 +27,7 @@ function createMediaBackedExtractor(id: MediaParseProviderId): MediaExtractorPro
     displayName: mp.name,
     supportedMimeTypes: [...mp.supportedMimeTypes],
     capabilities: capabilitiesFromMediaParseProvider(mp),
+    version: '1',
     async extract(input: MediaExtractorInput) {
       return parseMedia({
         buffer: input.buffer,

@@ -26,6 +26,7 @@ import {
   Atom,
   X,
   Presentation,
+  Loader2,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -39,9 +40,18 @@ import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
+import { putAsset, removeAsset } from '@/lib/media/asset-pool';
 import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
-import { dedupeCourseMaterialFiles } from '@/lib/document/course-materials';
+import {
+  courseMaterialFingerprint,
+  dedupeCourseMaterialFiles,
+} from '@/lib/document/course-materials';
+import {
+  awaitPendingIngests,
+  DEFAULT_INGEST_AWAIT_TIMEOUT_MS,
+  resolvedAssetIdForIngest,
+} from '@/lib/document/extract-source';
 import type {
   SelectedCourseMaterial,
   SessionDocumentSource,
@@ -175,6 +185,12 @@ function HomePage() {
 
   const [themeOpen, setThemeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // True while the Generate click drains upload-time ingests and builds the
+  // generation session. Doubles as the guard flag that freezes the course
+  // material set for the duration of prep and as the switch that disables the
+  // toolbar's add/remove affordances, so the session is always built from a
+  // set that cannot change under it.
+  const [preparingGenerate, setPreparingGenerate] = useState(false);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -200,6 +216,9 @@ function HomePage() {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const thumbnailsRef = useRef<Record<string, Slide>>({});
+  // In-flight asset-pool ingests, keyed by course material id, so removing a
+  // file whose pool entry is still being allocated can still release it.
+  const pendingMaterialIngestsRef = useRef(new Map<string, Promise<string>>());
 
   const replaceThumbnails = (slides: Record<string, Slide>) => {
     const previous = thumbnailsRef.current;
@@ -463,27 +482,114 @@ function HomePage() {
     }
   };
 
-  const addCourseMaterials = (files: File[]) => {
-    setForm((prev) => {
-      const dedupedFiles = dedupeCourseMaterialFiles(prev.courseMaterials, files);
-      const startOrder = prev.courseMaterials.length + 1;
-      const additions = dedupedFiles.map((file, index) => ({
-        id: nanoid(8),
-        file,
-        name: file.name,
-        size: file.size,
-        lastModified: file.lastModified,
-        type: file.type,
-        order: startOrder + index,
-      }));
+  // Ingest a selected file into the asset pool as soon as it is picked, so the
+  // material gets its allocated asset id at upload time (RFC #1153 part 0).
+  // The file still appears in the form immediately; the asset id is patched in
+  // when the pool entry lands. A failure only loses the pool entry — the
+  // source keeps working through the legacy blob-stash byte upload — so it is
+  // logged, not surfaced.
+  //
+  // A tab closing mid-ingest can still orphan a pool entry: the browser gives
+  // no reliable release hook once the page tears down. Accepted — the
+  // material-library milestone of RFC #1153 brings visibility and management
+  // for such entries.
+  const ingestCourseMaterialIntoPool = (addition: SelectedCourseMaterial) => {
+    const ingest = putAsset(addition.file).then((assetId) => {
+      setForm((prev) =>
+        prev.courseMaterials.some((item) => item.id === addition.id)
+          ? {
+              ...prev,
+              courseMaterials: prev.courseMaterials.map((item) =>
+                item.id === addition.id ? { ...item, assetId } : item,
+              ),
+            }
+          : prev,
+      );
+      return assetId;
+    });
+    // The pending entry is the durable release handle for this pool entry and
+    // is intentionally NOT deleted when the ingest settles: deleting it inside
+    // the ingest's own settlement would race the state patch above (React
+    // commits it after this promise resolves), orphaning the entry if the user
+    // removes the file in that window. Only the removal path deletes it (see
+    // removeCourseMaterial), so an entry is always retrievable until the id
+    // has a durable holder. Entries for never-removed sources stay until the
+    // page unmounts — bounded by the files picked in one session.
+    pendingMaterialIngestsRef.current.set(addition.id, ingest);
+    void ingest.catch((error) => {
+      log.error(`Failed to ingest course material "${addition.name}" into the asset pool:`, error);
+    });
+  };
 
-      return additions.length > 0
-        ? { ...prev, courseMaterials: [...prev.courseMaterials, ...additions] }
-        : prev;
+  const addCourseMaterials = (files: File[]) => {
+    // The set is frozen for the duration of generate-prep: adding is inert
+    // while `preparingGenerate` is set (the toolbar affordance is disabled
+    // via the same state), so nothing can slip into the set mid-prep.
+    if (preparingGenerate) return;
+    // Compute the additions before touching state: the ingest loop must not
+    // run inside the setForm updater, which React may invoke more than once —
+    // each replay would putAsset again and orphan an allocated id.
+    const dedupedFiles = dedupeCourseMaterialFiles(form.courseMaterials, files);
+    const startOrder = form.courseMaterials.length + 1;
+    const additions = dedupedFiles.map((file, index) => ({
+      id: nanoid(8),
+      file,
+      name: file.name,
+      size: file.size,
+      lastModified: file.lastModified,
+      type: file.type,
+      order: startOrder + index,
+    }));
+
+    for (const addition of additions) {
+      ingestCourseMaterialIntoPool(addition);
+    }
+
+    if (additions.length === 0) return;
+    setForm((prev) => {
+      // Pure updater: drop any addition the latest state already carries — by
+      // id (a replayed or superseded update) or by content fingerprint (two
+      // addCourseMaterials calls in one render batch both dedupe against the
+      // same stale closure list, so the same file could otherwise enter twice
+      // under two ids and ingest/extract twice) — then append the rest.
+      const missing = additions.filter((addition) => {
+        if (prev.courseMaterials.some((item) => item.id === addition.id)) return false;
+        return !prev.courseMaterials.some(
+          (item) => courseMaterialFingerprint(item) === courseMaterialFingerprint(addition),
+        );
+      });
+      if (missing.length === 0) return prev;
+      return { ...prev, courseMaterials: [...prev.courseMaterials, ...missing] };
     });
   };
 
   const removeCourseMaterial = (id: string) => {
+    // The set is frozen for the duration of generate-prep: removing is inert
+    // while `preparingGenerate` is set (the toolbar affordance is disabled
+    // via the same state), so nothing can slip out of the set mid-prep.
+    if (preparingGenerate) return;
+    const removed = form.courseMaterials.find((item) => item.id === id);
+    // Release the pool entry allocated for this file, mirroring the blob-stash
+    // cleanup: if the ingest is still in flight, release once it lands.
+    const release = removed?.assetId
+      ? Promise.resolve(removed.assetId)
+      : (pendingMaterialIngestsRef.current.get(id) ?? Promise.resolve(undefined));
+    void release
+      .then((assetId) => {
+        if (assetId) return removeAsset(assetId);
+      })
+      .catch((error) => {
+        log.error('Failed to release course material asset pool entry:', error);
+      })
+      .finally(() => {
+        // This removal path is the sole consumer of the pending entry: the
+        // pool entry has been released (or the ingest itself failed, leaving
+        // nothing to release), so the entry can go. Deleting it here — rather
+        // than in the ingest's own settlement — keeps it retrievable until
+        // the id has a durable holder.
+        pendingMaterialIngestsRef.current.delete(id);
+      });
+
     setForm((prev) => ({
       ...prev,
       courseMaterials: prev.courseMaterials
@@ -497,6 +603,7 @@ function HomePage() {
     // (requires a usable provider), and under the #580 invariant a usable
     // provider always has a concrete model. State A (no usable provider)
     // surfaces through the toolbar's single Configure-Provider affordance.
+    if (preparingGenerate) return;
     if (!form.requirement.trim()) {
       setError(t('upload.requirementRequired'));
       return;
@@ -504,7 +611,65 @@ function HomePage() {
 
     setError(null);
 
+    // The material list and the extractor provider config are frozen for the
+    // duration of prep: `preparingGenerate` makes add/remove inert and
+    // disables the toolbar affordances (including the extractor Select and the
+    // web-search toggle), so neither can change under the session build below.
+    // Capture both at click time and build the session from this snapshot,
+    // never from live form state or live store state.
+    const frozenMaterials = [...form.courseMaterials].sort((a, b) => a.order - b.order);
+    const settingsSnapshot = useSettingsStore.getState();
+    const frozenPdfProviderId = settingsSnapshot.pdfProviderId;
+    const frozenPdfProviderConfig = settingsSnapshot.pdfProvidersConfig?.[
+      settingsSnapshot.pdfProviderId
+    ]
+      ? {
+          apiKey: settingsSnapshot.pdfProvidersConfig[settingsSnapshot.pdfProviderId].apiKey,
+          baseUrl: settingsSnapshot.pdfProvidersConfig[settingsSnapshot.pdfProviderId].baseUrl,
+          accessKeyId:
+            settingsSnapshot.pdfProvidersConfig[settingsSnapshot.pdfProviderId].accessKeyId,
+          accessKeySecret:
+            settingsSnapshot.pdfProvidersConfig[settingsSnapshot.pdfProviderId].accessKeySecret,
+        }
+      : undefined;
+
+    // Flip the generating UI state BEFORE the drain so the click visibly does
+    // something even when an ingest stalls.
+    setPreparingGenerate(true);
+    const unsettledIngestIds = new Set<string>();
     try {
+      // Drain any in-flight ingests before building the session, so a resolved
+      // asset id lands in the session instead of being dropped when this page
+      // unmounts. The await is bounded (~15 s): on timeout, the unsettled
+      // sources proceed with their storageKey and the legacy byte path, and
+      // each late-resolving id is released since no durable holder will ever
+      // exist for it. A rejected ingest is fine: that source proceeds with its
+      // storageKey and the byte path. The drain loops until the pending map is
+      // stable — despite the freeze guard, an add that slipped in before the
+      // flag took effect is still drained (belt-and-braces).
+      const awaitedIngestIds = new Set<string>();
+      for (;;) {
+        const unawaited = [...pendingMaterialIngestsRef.current.entries()].filter(
+          ([id]) => !awaitedIngestIds.has(id),
+        );
+        if (unawaited.length === 0) break;
+        for (const [id] of unawaited) awaitedIngestIds.add(id);
+        const batchUnsettled = await awaitPendingIngests(new Map(unawaited), {
+          timeoutMs: DEFAULT_INGEST_AWAIT_TIMEOUT_MS,
+          onUnsettled: (ingestId, ingest) => {
+            unsettledIngestIds.add(ingestId);
+            // No durable holder will ever exist for a timed-out id (the
+            // session is built without it), so release it when it lands.
+            void ingest
+              .then((assetId) => (assetId ? removeAsset(assetId) : undefined))
+              .catch((error) => {
+                log.error('Failed to release timed-out course material asset pool entry:', error);
+              });
+          },
+        });
+        for (const id of batchUnsettled) unsettledIngestIds.add(id);
+      }
+
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
         requirement: form.requirement,
@@ -521,26 +686,26 @@ function HomePage() {
         | { apiKey?: string; baseUrl?: string; accessKeyId?: string; accessKeySecret?: string }
         | undefined;
 
-      if (form.courseMaterials.length > 0) {
-        const settings = useSettingsStore.getState();
-        pdfProviderId = settings.pdfProviderId;
-        const providerCfg = settings.pdfProvidersConfig?.[settings.pdfProviderId];
-        if (providerCfg) {
-          pdfProviderConfig = {
-            apiKey: providerCfg.apiKey,
-            baseUrl: providerCfg.baseUrl,
-            accessKeyId: providerCfg.accessKeyId,
-            accessKeySecret: providerCfg.accessKeySecret,
-          };
-        }
+      if (frozenMaterials.length > 0) {
+        // The session is built from the click-time snapshot (frozen above),
+        // never from live store state.
+        pdfProviderId = frozenPdfProviderId;
+        pdfProviderConfig = frozenPdfProviderConfig;
 
         const storedDocumentKeys: string[] = [];
         try {
           documentSources = [];
-          const orderedMaterials = [...form.courseMaterials].sort((a, b) => a.order - b.order);
-          for (const [index, item] of orderedMaterials.entries()) {
+          for (const [index, item] of frozenMaterials.entries()) {
             const storageKey = await storeDocumentBlob(item.file);
             storedDocumentKeys.push(storageKey);
+            // The awaited ingests patched their asset ids into form state via
+            // setForm, which this closure may not reflect yet; read the settled
+            // value from the pending map so a just-resolved id still lands in
+            // the session regardless of React commit timing. A timed-out ingest
+            // is never awaited again — its source goes byte-path (no assetId).
+            const settledAssetId = unsettledIngestIds.has(item.id)
+              ? undefined
+              : await resolvedAssetIdForIngest(pendingMaterialIngestsRef.current, item.id);
             documentSources.push({
               id: item.id,
               name: item.name,
@@ -552,6 +717,9 @@ function HomePage() {
               }),
               order: index + 1,
               storageKey,
+              // The asset id was allocated at upload; new sessions carry it so
+              // a server-backed pool can extract by id instead of re-uploading.
+              assetId: item.assetId ?? settledAssetId,
               providerId: pdfProviderId,
             });
           }
@@ -583,6 +751,10 @@ function HomePage() {
     } catch (err) {
       log.error('Error preparing generation:', err);
       setError(err instanceof Error ? err.message : t('upload.generateFailed'));
+    } finally {
+      // Unfreeze the set once prep settles (navigation unmounts this page, so
+      // this is normally a no-op on the way out).
+      setPreparingGenerate(false);
     }
   };
 
@@ -603,7 +775,7 @@ function HomePage() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
-      if (canGenerate) handleGenerate();
+      if (canGenerate && !preparingGenerate) handleGenerate();
     }
   };
 
@@ -801,6 +973,7 @@ function HomePage() {
                   onCourseMaterialsAdd={addCourseMaterials}
                   onCourseMaterialRemove={removeCourseMaterial}
                   onPdfError={setError}
+                  materialsLocked={preparingGenerate}
                 />
               </div>
 
@@ -833,16 +1006,22 @@ function HomePage() {
               {/* Send button */}
               <button
                 onClick={handleGenerate}
-                disabled={!canGenerate}
+                disabled={!canGenerate || preparingGenerate}
                 className={cn(
                   'shrink-0 h-8 rounded-lg flex items-center justify-center gap-1.5 transition-all px-3',
-                  canGenerate
+                  canGenerate && !preparingGenerate
                     ? 'bg-primary text-primary-foreground hover:opacity-90 shadow-sm cursor-pointer'
                     : 'bg-muted text-muted-foreground/40 cursor-not-allowed',
                 )}
               >
-                <span className="text-xs font-medium">{t('toolbar.enterClassroom')}</span>
-                <ArrowUp className="size-3.5" />
+                <span className="text-xs font-medium">
+                  {preparingGenerate ? t('stage.generating') : t('toolbar.enterClassroom')}
+                </span>
+                {preparingGenerate ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <ArrowUp className="size-3.5" />
+                )}
               </button>
             </div>
           </div>

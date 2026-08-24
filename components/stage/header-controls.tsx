@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   Archive,
   Download,
@@ -9,6 +9,7 @@ import {
   Loader2,
   Monitor,
   Moon,
+  NotebookText,
   Package,
   Settings,
   Sun,
@@ -20,6 +21,7 @@ import { useStageStore } from '@/lib/store';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
 import { useExportClassroom } from '@/lib/export/use-export-classroom';
+import { useExportScript } from '@/lib/export/use-export-script';
 import { isVideoExportEnabled } from '@/lib/config/feature-flags';
 import { useVideoRenderStore } from '@/lib/store/video-render';
 import { CircularProgress } from '@/components/ui/circular-progress';
@@ -30,6 +32,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -83,6 +88,7 @@ export function HeaderControls({
   const mediaTasks = useMediaGenerationStore((s) => s.tasks);
   const { exporting: isExporting, exportPPTX, exportResourcePack } = useExportPPTX();
   const { exporting: isExportingZip, exportClassroomZip } = useExportClassroom();
+  const { exporting: isExportingScript, exportScriptDocx, exportScriptMd } = useExportScript();
   const videoExportEnabled = isVideoExportEnabled();
   // Video render lives in a global store so its progress ring stays on the
   // export button even after the menu closes / scenes switch mid-render.
@@ -91,27 +97,16 @@ export function HeaderControls({
   );
   const videoRenderPercent = useVideoRenderStore((s) => s.percent);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
-  const exportRef = useRef<HTMLDivElement>(null);
 
+  // Keep the original full-generation gate for the export menu. Script files
+  // are text-only, but the latest review confirmed that this menu intentionally
+  // stays unavailable until all media tasks have completed or failed.
   const canExport =
     scenes.length > 0 &&
     generatingOutlines.length === 0 &&
     failedOutlines.length === 0 &&
     Object.values(mediaTasks).every((task) => task.status === 'done' || task.status === 'failed');
-
-  const handleClickOutside = useCallback(
-    (e: MouseEvent) => {
-      if (exportMenuOpen && exportRef.current && !exportRef.current.contains(e.target as Node)) {
-        setExportMenuOpen(false);
-      }
-    },
-    [exportMenuOpen],
-  );
-  useEffect(() => {
-    if (!exportMenuOpen) return;
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [exportMenuOpen, handleClickOutside]);
+  const exportLabel = canExport ? t('export.pptx') : t('share.notReady');
 
   const compact = variant === 'compact';
 
@@ -250,102 +245,131 @@ export function HeaderControls({
           Not a settings function so it does not belong inside the
           settings pill; kept as a separate sibling sitting between the
           Pro Switch and the right edge of the chrome. */}
-      <div className="relative" ref={exportRef}>
-        <button
-          onClick={() => {
-            if (canExport && !isExporting && !isExportingZip) {
-              setExportMenuOpen(!exportMenuOpen);
-            }
-          }}
-          disabled={!canExport || isExporting || isExportingZip}
-          title={
-            canExport
-              ? isExporting || isExportingZip
+      <DropdownMenu modal={false} open={exportMenuOpen} onOpenChange={setExportMenuOpen}>
+        <DropdownMenuTrigger asChild>
+          <button
+            disabled={!canExport || isExporting || isExportingZip || isExportingScript}
+            title={
+              isExporting || isExportingZip || isExportingScript
                 ? t('export.exporting')
-                : t('export.pptx')
-              : t('share.notReady')
-          }
-          className={cn(
-            'shrink-0 p-2 rounded-full transition-all',
-            canExport && !isExporting && !isExportingZip
-              ? 'text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm'
-              : 'text-gray-300 dark:text-gray-600 cursor-not-allowed opacity-50',
-          )}
-          aria-label={t('export.pptx')}
-        >
-          {isExporting || isExportingZip ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : videoRendering ? (
-            // Persistent ring: video render runs in the background; keep it
-            // visible on the button whether or not the menu is open.
-            <CircularProgress value={videoRenderPercent} size={20} className="text-primary" />
-          ) : (
-            <Download className="w-4 h-4" />
-          )}
-        </button>
-        {exportMenuOpen && (
-          <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[200px]">
-            <button
-              onClick={() => {
-                setExportMenuOpen(false);
-                exportPPTX();
-              }}
-              className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5"
-            >
-              <FileDown className="w-4 h-4 text-gray-400 shrink-0" />
-              <span>{t('export.pptx')}</span>
-            </button>
-            <button
-              onClick={() => {
-                setExportMenuOpen(false);
-                exportResourcePack();
-              }}
-              className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5"
-            >
-              <Package className="w-4 h-4 text-gray-400 shrink-0" />
-              <div>
-                <div>{t('export.resourcePack')}</div>
-                <div className="text-[11px] text-gray-400 dark:text-gray-500">
-                  {t('export.resourcePackDesc')}
-                </div>
+                : exportLabel
+            }
+            className={cn(
+              'shrink-0 p-2 rounded-full transition-all',
+              canExport && !isExporting && !isExportingZip && !isExportingScript
+                ? 'text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm'
+                : 'text-gray-300 dark:text-gray-600 cursor-not-allowed opacity-50',
+            )}
+            aria-label={exportLabel}
+          >
+            {isExporting || isExportingZip || isExportingScript ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : videoRendering ? (
+              // Persistent ring: video render runs in the background; keep it
+              // visible on the button whether or not the menu is open.
+              <CircularProgress value={videoRenderPercent} size={20} className="text-primary" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={8} className="min-w-[240px]">
+          <DropdownMenuItem
+            disabled={!canExport}
+            onSelect={exportPPTX}
+            className="cursor-pointer gap-2.5"
+            title={canExport ? undefined : t('export.mediaPending')}
+          >
+            <FileDown className="w-4 h-4 text-gray-400 shrink-0" />
+            <span>{t('export.pptx')}</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={!canExport}
+            onSelect={exportResourcePack}
+            className="cursor-pointer gap-2.5"
+            title={canExport ? undefined : t('export.mediaPending')}
+          >
+            <Package className="w-4 h-4 text-gray-400 shrink-0" />
+            <div>
+              <div>{t('export.resourcePack')}</div>
+              <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                {t('export.resourcePackDesc')}
               </div>
-            </button>
-            <button
-              onClick={() => {
-                setExportMenuOpen(false);
-                exportClassroomZip();
-              }}
-              disabled={isExportingZip}
-              className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5"
-            >
-              <Archive className="w-4 h-4 text-gray-400 shrink-0" />
-              <div>
-                <div>{t('export.classroomZip')}</div>
-                <div className="text-[11px] text-gray-400 dark:text-gray-500">
-                  {t('export.classroomZipDesc')}
-                </div>
+            </div>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={!canExport || isExportingZip}
+            onSelect={exportClassroomZip}
+            className="cursor-pointer gap-2.5"
+            title={canExport ? undefined : t('export.mediaPending')}
+          >
+            <Archive className="w-4 h-4 text-gray-400 shrink-0" />
+            <div>
+              <div>{t('export.classroomZip')}</div>
+              <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                {t('export.classroomZipDesc')}
               </div>
-            </button>
-            {videoExportEnabled && (
-              <button
-                onClick={() => {
-                  setExportMenuOpen(false);
-                  setVideoDialogOpen(true);
-                }}
-                className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5 border-t border-gray-200 dark:border-gray-700"
+            </div>
+          </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger
+              disabled={!canExport}
+              title={canExport ? undefined : t('export.mediaPending')}
+              className="cursor-pointer gap-2.5"
+            >
+              <NotebookText className="w-4 h-4 text-gray-400 shrink-0" aria-hidden="true" />
+              <span>{t('export.script')}</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="min-w-[240px]">
+              <DropdownMenuItem
+                disabled={!canExport || isExportingScript}
+                onSelect={exportScriptMd}
+                className="cursor-pointer gap-2.5"
               >
-                <Film className="w-4 h-4 text-gray-400 shrink-0" />
+                <NotebookText className="w-4 h-4 text-gray-400 shrink-0" aria-hidden="true" />
                 <div>
-                  <div>{t('export.video')}</div>
+                  <div>{t('export.scriptMd')}</div>
                   <div className="text-[11px] text-gray-400 dark:text-gray-500">
-                    {t('export.videoDesc')}
+                    {t('export.scriptMdDesc')}
                   </div>
                 </div>
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!canExport || isExportingScript}
+                onSelect={exportScriptDocx}
+                className="cursor-pointer gap-2.5"
+              >
+                <NotebookText
+                  className="w-4 h-4 text-gray-400 dark:text-gray-500"
+                  aria-hidden="true"
+                />
+                <div>
+                  <div>{t('export.scriptDocx')}</div>
+                  <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                    {t('export.scriptDocxDesc')}
+                  </div>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          {videoExportEnabled && (
+            <DropdownMenuItem
+              disabled={!canExport}
+              onSelect={() => setVideoDialogOpen(true)}
+              className="cursor-pointer gap-2.5 border-t border-gray-200 dark:border-gray-700"
+              title={canExport ? undefined : t('export.mediaPending')}
+            >
+              <Film className="w-4 h-4 text-gray-400 shrink-0" />
+              <div>
+                <div>{t('export.video')}</div>
+                <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                  {t('export.videoDesc')}
+                </div>
+              </div>
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       {videoExportEnabled && (

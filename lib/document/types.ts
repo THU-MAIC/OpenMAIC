@@ -35,6 +35,13 @@ export interface DocumentExtractorProvider {
   displayName: string;
   supportedMimeTypes: readonly string[];
   capabilities: DocumentExtractorCapabilities;
+  /**
+   * Provider version. Bump it whenever this provider's extraction output
+   * shape or quality changes; it is the version half of the
+   * (content identity, extractor identity) key under which extraction
+   * artifacts are derived and cached. Nothing consumes it yet.
+   */
+  version: string;
   extract(input: DocumentExtractorInput): Promise<DocumentArtifact>;
 }
 
@@ -65,6 +72,13 @@ export interface MediaExtractorProvider {
   displayName: string;
   supportedMimeTypes: string[];
   capabilities: MediaExtractorCapabilities;
+  /**
+   * Provider version. Bump it whenever this provider's extraction output
+   * shape or quality changes; it is the version half of the
+   * (content identity, extractor identity) key under which extraction
+   * artifacts are derived and cached. Nothing consumes it yet.
+   */
+  version: string;
   extract(input: MediaExtractorInput): Promise<MediaArtifact>;
 }
 

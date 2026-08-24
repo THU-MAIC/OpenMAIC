@@ -19,6 +19,7 @@ export const textDocumentExtractorProvider: DocumentExtractorProvider = {
   id: 'plain-text',
   displayName: 'Plain Text',
   supportedMimeTypes: TEXT_MIME_TYPES,
+  version: '1',
   capabilities: {
     text: true,
     images: false,
