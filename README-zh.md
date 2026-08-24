@@ -287,6 +287,39 @@ cp .env.example .env.local
 docker compose up --build
 ```
 
+#### 慢速网络 / 中国大陆构建加速
+
+Docker 构建支持两个可选参数。两者默认均为空，因此上面的标准命令仍会使用
+Alpine 和 npm 的上游软件源。
+
+- `ALPINE_MIRROR` 接收不带 `https://` 的 Alpine 镜像站主机名。
+- `NPM_REGISTRY` 接收完整的 npm registry URL。
+
+这些构建参数仅用于公共镜像地址。请勿在其中嵌入用户名、密码或访问令牌，因为
+Docker 可能把构建参数记录到镜像元数据或构建证明中。
+
+使用 Docker Compose：
+
+```bash
+ALPINE_MIRROR=mirrors.tuna.tsinghua.edu.cn \
+NPM_REGISTRY=https://registry.npmmirror.com \
+docker compose up --build
+```
+
+直接构建镜像：
+
+```bash
+docker build \
+  --build-arg ALPINE_MIRROR=mirrors.tuna.tsinghua.edu.cn \
+  --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
+  -t openmaic:local .
+```
+
+这些参数不会加速 Docker Hub 拉取，包括 Dockerfile frontend 和
+`node:22-alpine` 基础镜像。若这些步骤较慢，需要单独配置 Docker daemon 的
+registry mirror。同一个 BuildKit builder 会在常规缓存清理前跨构建复用 pnpm
+store；缓存只用于提升性能，不是正确完成构建的必要条件。
+
 ### 可选：MinerU（增强文档解析）
 
 [MinerU](https://github.com/opendatalab/MinerU) 提供更强的表格、公式和 OCR 解析能力。你可以使用 [MinerU 官方 API](https://mineru.net/) 或[自行部署](https://opendatalab.github.io/MinerU/quick_start/docker_deployment/)。

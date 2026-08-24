@@ -287,6 +287,42 @@ cp .env.example .env.local
 docker compose up --build
 ```
 
+#### Slow-network / China build acceleration
+
+Docker builds support two optional build arguments. Both are empty by default,
+so the standard command above keeps using the upstream Alpine and npm
+registries.
+
+- `ALPINE_MIRROR` is an Alpine mirror hostname without `https://`.
+- `NPM_REGISTRY` is a complete npm registry URL.
+
+Use public mirror endpoints only. Do not embed usernames, passwords, or access
+tokens in these build arguments because Docker may record them in image metadata
+or build provenance.
+
+With Docker Compose:
+
+```bash
+ALPINE_MIRROR=mirrors.tuna.tsinghua.edu.cn \
+NPM_REGISTRY=https://registry.npmmirror.com \
+docker compose up --build
+```
+
+For a direct image build:
+
+```bash
+docker build \
+  --build-arg ALPINE_MIRROR=mirrors.tuna.tsinghua.edu.cn \
+  --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
+  -t openmaic:local .
+```
+
+These arguments do not accelerate Docker Hub pulls, including the Dockerfile
+frontend and the `node:22-alpine` base image. Configure a Docker daemon registry
+mirror separately if those pulls are slow. The pnpm store cache is reused by the
+same BuildKit builder across builds, subject to normal cache garbage collection;
+the cache only improves performance and is not required for a correct build.
+
 ### Server-backed persistence (PostgreSQL)
 
 The `server-persistence` profile runs exactly two containers: the OpenMAIC app
