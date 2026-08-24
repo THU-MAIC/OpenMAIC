@@ -803,14 +803,20 @@ export async function lookupCachedExtraction(
   // window); every lookup is a miss without touching the store (one warn was
   // already logged per episode).
   if (isCacheDisabled()) return null;
-  const key = extractionCacheKey(
-    options.contentDigest,
-    options.extractorId,
-    options.extractorVersion,
-    await computeConfigFingerprint(options.baseUrl),
-    options.domain,
-  );
+  // The key is built INSIDE the guarded region below: a config-fingerprint
+  // computation failure (Web Crypto unavailable) is a lookup failure like any
+  // other and must degrade to a miss — never reject the caller's extraction
+  // (RFC #1153 part 1, M1). `undefined` until the key is built, so the catch
+  // below can still name the key when the failure comes after it.
+  let key: string | undefined;
   try {
+    key = extractionCacheKey(
+      options.contentDigest,
+      options.extractorId,
+      options.extractorVersion,
+      await computeConfigFingerprint(options.baseUrl),
+      options.domain,
+    );
     const record = await options.kv.get<DerivationRecord>(key, EXTRACTION_CACHE_KV_SCOPE);
     if (!record || !isValidDerivationRecord(record)) return null;
     // The key already pins the extractor identity; a record that disagrees is
@@ -913,10 +919,16 @@ export async function lookupCachedExtraction(
     // A KV or pool failure must never fail the user's extraction: degrade to a
     // miss and let the real extraction run. A route-level KV failure (the KV
     // route itself is gone) disables the cache for a bounded window (K5/L4).
+    // The same net catches a config-fingerprint failure, which happens BEFORE
+    // any KV traffic (M1): the lookup misses with a warn and the real
+    // extraction runs.
     if (isRouteLevelKVError(error)) {
       disableCacheForWindow(error);
     } else {
-      log.warn(`Extraction cache lookup failed for ${key}; running the real extraction:`, error);
+      log.warn(
+        `Extraction cache lookup failed${key !== undefined ? ` for ${key}` : ''}; running the real extraction:`,
+        error,
+      );
     }
     return null;
   }

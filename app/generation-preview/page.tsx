@@ -376,7 +376,20 @@ function GenerationPreviewContent() {
               source.mimeType && SUPPORTED_MEDIA_MIME_TYPES.includes(source.mimeType.toLowerCase())
                 ? 'media'
                 : 'doc';
-            const sourceConfigFingerprint = await computeConfigFingerprint(sourceBaseUrl);
+            // The config fingerprint feeds ONLY the in-run dedupe key below. A
+            // computation failure (Web Crypto unavailable) must never fail the
+            // extraction: the source falls back to un-deduped extraction, and
+            // the cache lookup/write paths recompute the fingerprint under
+            // their own degrade-to-miss guards (RFC #1153 part 1, M1).
+            let sourceConfigFingerprint: string | undefined;
+            try {
+              sourceConfigFingerprint = await computeConfigFingerprint(sourceBaseUrl);
+            } catch (error) {
+              log.warn(
+                'Config fingerprinting failed; skipping in-run dedupe for this source:',
+                error,
+              );
+            }
 
             // The extractor the route is expected to run under, resolved
             // client-side. It feeds the extraction-cache lookup, which must
@@ -485,7 +498,7 @@ function GenerationPreviewContent() {
             // config fingerprint) share ONE extraction; two same-byte files
             // never both pay, and per-source config differences never share.
             const parseData =
-              source.contentDigest && expectedExtractor
+              source.contentDigest && expectedExtractor && sourceConfigFingerprint
                 ? await deduplicateExtraction.run(
                     {
                       contentDigest: source.contentDigest,

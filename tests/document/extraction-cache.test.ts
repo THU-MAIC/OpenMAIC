@@ -618,6 +618,97 @@ describe('writeExtractionCache', () => {
     // Both entries reference the SAME artifact/image assets.
     expect(aliasRecord?.artifactAssetId).toBe(actualRecord?.artifactAssetId);
   });
+
+  it('abandons the write and releases its allocations when the config-fingerprint computation throws (M1)', async () => {
+    const digestSpy = vi
+      .spyOn(crypto.subtle, 'digest')
+      .mockRejectedValueOnce(new Error('Web Crypto unavailable'));
+    const kv = new FakeKV();
+    const harness = makePool();
+    try {
+      await writeExtractionCache({
+        kv,
+        pool: harness.pool,
+        contentDigest: DIGEST,
+        domain: 'doc',
+        extractorId: 'mineru',
+        extractorVersion: '1',
+        result: fixtureResult(),
+      });
+
+      // Best-effort: the write resolves (it never rejects the detached promise
+      // into the warn path), releases every asset it allocated before the key
+      // step, and writes no record.
+      expect(kv.storedKeys()).toEqual([]);
+      expect(harness.remove).toHaveBeenCalledWith('ast_test_0');
+      expect(harness.remove).toHaveBeenCalledWith('ast_test_1');
+      expect(harness.remove).toHaveBeenCalledWith('ast_test_2');
+      expect(harness.blobs.size).toBe(0);
+    } finally {
+      digestSpy.mockRestore();
+    }
+  });
+
+  it('supersedes an expired alias record without releasing the superseded record assets (M1)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    try {
+      const kv = new FakeKV();
+      const harness = makePool();
+      // Phase 1: MinerU Cloud ran for a mineru request — the alias record under
+      // the mineru key is a COPY of the actual-primary record (same assets).
+      await writeExtractionCache({
+        kv,
+        pool: harness.pool,
+        contentDigest: DIGEST,
+        domain: 'doc',
+        extractorId: 'mineru-cloud',
+        extractorVersion: '1',
+        aliasExtractor: { extractorId: 'mineru', extractorVersion: '1' },
+        result: fixtureResult(),
+      });
+      const aliasKey = managedKey(DIGEST, 'mineru', '1');
+      const superseded = await kv.get<DerivationRecord>(aliasKey, EXTRACTION_CACHE_KV_SCOPE);
+      expect(superseded).not.toBeNull();
+      const supersededAssetIds = [
+        superseded!.artifactAssetId,
+        ...superseded!.images.map((image) => image.assetId),
+      ];
+
+      // Phase 2: past the alias TTL, the same expected key is re-written by the
+      // CURRENT actual identity — the expired alias record is superseded.
+      vi.advanceTimersByTime(ALIAS_MAX_AGE_MS + 1);
+      await writeExtractionCache({
+        kv,
+        pool: harness.pool,
+        contentDigest: DIGEST,
+        domain: 'doc',
+        extractorId: 'mineru',
+        extractorVersion: '1',
+        result: fixtureResult(),
+      });
+
+      const after = await kv.get<DerivationRecord>(aliasKey, EXTRACTION_CACHE_KV_SCOPE);
+      expect(after?.extractorId).toBe('mineru');
+      expect(after?.aliases).toBeUndefined();
+      expect(after?.artifactAssetId).not.toBe(superseded!.artifactAssetId);
+      // The superseded alias record is a copy of the actual-primary record: its
+      // assets stay referenced under the actual-identity key (which the
+      // supersede must not touch), so no release calls may happen for them —
+      // and none happened at all (the fresh write kept its own allocations).
+      for (const assetId of supersededAssetIds) {
+        expect(harness.blobs.has(assetId)).toBe(true);
+      }
+      expect(harness.remove).not.toHaveBeenCalled();
+      const actualPrimary = await kv.get<DerivationRecord>(
+        managedKey(DIGEST, 'mineru-cloud', '1'),
+        EXTRACTION_CACHE_KV_SCOPE,
+      );
+      expect(actualPrimary?.artifactAssetId).toBe(superseded!.artifactAssetId);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('lookupCachedExtraction', () => {
@@ -949,6 +1040,40 @@ describe('lookupCachedExtraction', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('do not match'));
     warn.mockRestore();
   });
+
+  it('degrades to a miss when the config-fingerprint computation throws (M1)', async () => {
+    const digestSpy = vi
+      .spyOn(crypto.subtle, 'digest')
+      .mockRejectedValueOnce(new Error('Web Crypto unavailable'));
+    const kv = new FakeKV();
+    const harness = makePool();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      // The fingerprint is computed BEFORE any KV traffic: a failure there must
+      // resolve to a miss, never reject the caller's extraction.
+      await expect(
+        lookupCachedExtraction({
+          kv,
+          pool: harness.pool,
+          contentDigest: DIGEST,
+          domain: 'doc',
+          extractorId: 'mineru',
+          extractorVersion: '1',
+          fetchImpl: makeFetch(harness),
+        }),
+      ).resolves.toBeNull();
+      // The failure happened at the digest seam, before the store was touched.
+      expect(kv.storedKeys()).toEqual([]);
+      // The degrade is observable: one warn naming the miss and the cause.
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Extraction cache lookup failed; running the real extraction'),
+      );
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Web Crypto unavailable'));
+    } finally {
+      digestSpy.mockRestore();
+      warn.mockRestore();
+    }
+  });
 });
 
 describe('alias trust window (L1)', () => {
@@ -1060,6 +1185,126 @@ describe('alias trust window (L1)', () => {
     expect(second.cacheHit).toBe(true);
     expect(second.data).toEqual(selfHostResult);
     expect(assetIdForm).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats an alias record whose createdAt is "garbage" as stale (miss); the primary identity stays a hit', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    const kv = new FakeKV();
+    const harness = makePool();
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru-cloud',
+      extractorVersion: '1',
+      aliasExtractor: { extractorId: 'mineru', extractorVersion: '1' },
+      result: fixtureResult(),
+    });
+    // Corrupt the ALIAS record's creation time: an unparseable `createdAt`
+    // yields a NaN age, which callers must treat as STALE — an alias without a
+    // trustworthy creation time must never be honored.
+    const aliasKey = managedKey(DIGEST, 'mineru', '1');
+    const aliasRecord = await kv.get<DerivationRecord>(aliasKey, EXTRACTION_CACHE_KV_SCOPE);
+    expect(aliasRecord).not.toBeNull();
+    await kv.set(aliasKey, { ...aliasRecord!, createdAt: 'garbage' }, EXTRACTION_CACHE_KV_SCOPE);
+    const lookupOptions = (extractorId: string) => ({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc' as const,
+      extractorId,
+      extractorVersion: '1',
+      fetchImpl: makeFetch(harness),
+    });
+
+    // The alias is stale → miss, so the real extraction re-runs…
+    expect(await lookupCachedExtraction(lookupOptions('mineru'))).toBeNull();
+    // …and the primary identity is unaffected by its own record's alias copy.
+    expect(await lookupCachedExtraction(lookupOptions('mineru-cloud'))).not.toBeNull();
+  });
+
+  it('treats an alias record with no createdAt (undefined) as stale (miss); the primary identity stays a hit', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    const kv = new FakeKV();
+    const harness = makePool();
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru-cloud',
+      extractorVersion: '1',
+      aliasExtractor: { extractorId: 'mineru', extractorVersion: '1' },
+      result: fixtureResult(),
+    });
+    // Store the alias record WITHOUT a createdAt: `undefined` does not survive
+    // the KV JSON round-trip, which is exactly the shape a record with
+    // `createdAt: undefined` takes on disk. A missing creation time is a NaN
+    // age → stale, so the alias must miss.
+    const aliasKey = managedKey(DIGEST, 'mineru', '1');
+    const aliasRecord = await kv.get<DerivationRecord>(aliasKey, EXTRACTION_CACHE_KV_SCOPE);
+    expect(aliasRecord).not.toBeNull();
+    await kv.set(
+      aliasKey,
+      { ...aliasRecord!, createdAt: undefined as unknown as string },
+      EXTRACTION_CACHE_KV_SCOPE,
+    );
+    const lookupOptions = (extractorId: string) => ({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc' as const,
+      extractorId,
+      extractorVersion: '1',
+      fetchImpl: makeFetch(harness),
+    });
+
+    expect(await lookupCachedExtraction(lookupOptions('mineru'))).toBeNull();
+    expect(await lookupCachedExtraction(lookupOptions('mineru-cloud'))).not.toBeNull();
+  });
+
+  it('pins the documented residual: a future-dated alias createdAt stays a hit', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    const kv = new FakeKV();
+    const harness = makePool();
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru-cloud',
+      extractorVersion: '1',
+      aliasExtractor: { extractorId: 'mineru', extractorVersion: '1' },
+      result: fixtureResult(),
+    });
+    // A future-dated `createdAt` yields a NEGATIVE age → the alias is treated
+    // as fresh and stays a hit. Pinned as the documented residual (review
+    // round 3, L1): such a record is already inside the accepted shared-
+    // principal envelope, since whoever planted it could equally plant a
+    // permanent primary record.
+    const aliasKey = managedKey(DIGEST, 'mineru', '1');
+    const aliasRecord = await kv.get<DerivationRecord>(aliasKey, EXTRACTION_CACHE_KV_SCOPE);
+    expect(aliasRecord).not.toBeNull();
+    await kv.set(
+      aliasKey,
+      { ...aliasRecord!, createdAt: '2099-01-01T00:00:00Z' },
+      EXTRACTION_CACHE_KV_SCOPE,
+    );
+    const lookupOptions = (extractorId: string) => ({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc' as const,
+      extractorId,
+      extractorVersion: '1',
+      fetchImpl: makeFetch(harness),
+    });
+
+    expect(await lookupCachedExtraction(lookupOptions('mineru'))).not.toBeNull();
   });
 });
 
@@ -1355,6 +1600,53 @@ describe('fetchExtractionWithCache', () => {
     expect(outcome.cacheHit).toBe(false);
     expect(outcome.data).toEqual(fixtureResult());
     expect(assetIdForm).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs the real extraction when the config-fingerprint computation throws (M1)', async () => {
+    // The lookup's fingerprint computation throws (first digest call), so the
+    // lookup degrades to a miss and the real extraction runs. The write's own
+    // fingerprint call (second digest call) succeeds, so the successful result
+    // is cached — the fingerprint failure cost only the optimization, never
+    // the user's extraction.
+    const digestSpy = vi
+      .spyOn(crypto.subtle, 'digest')
+      .mockRejectedValueOnce(new Error('Web Crypto unavailable'));
+    const kv = new FakeKV();
+    const harness = makePool();
+    const assetIdForm = vi.fn(async () => {
+      return new Response(JSON.stringify({ success: true, data: fixtureResult() }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    try {
+      const outcome = await fetchExtractionWithCache({
+        serverBacked: true,
+        hasAssetId: true,
+        fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: assetIdForm },
+        logWarning: vi.fn(),
+        contentDigest: DIGEST,
+        domain: 'doc',
+        extractorId: 'mineru',
+        extractorVersion: '1',
+        kv,
+        pool: harness.pool,
+        fetchImpl: makeFetch(harness),
+        parseFailedMessage: 'parse failed',
+      });
+
+      expect(outcome.cacheHit).toBe(false);
+      expect(outcome.data).toEqual(fixtureResult());
+      expect(assetIdForm).toHaveBeenCalledTimes(1);
+      await outcome.cacheWrite;
+      // The write's own fingerprint (second digest call) succeeded: the
+      // derivation was cached, proving the lookup failure did not propagate.
+      await expect(
+        kv.get(managedKey(DIGEST, 'mineru', '1'), EXTRACTION_CACHE_KV_SCOPE),
+      ).resolves.not.toBeNull();
+    } finally {
+      digestSpy.mockRestore();
+    }
   });
 });
 
