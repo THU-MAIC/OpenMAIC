@@ -43,7 +43,10 @@ import { nanoid } from 'nanoid';
 import { putAsset, removeAsset } from '@/lib/media/asset-pool';
 import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
-import { dedupeCourseMaterialFiles } from '@/lib/document/course-materials';
+import {
+  courseMaterialFingerprint,
+  dedupeCourseMaterialFiles,
+} from '@/lib/document/course-materials';
 import {
   awaitPendingIngests,
   DEFAULT_INGEST_AWAIT_TIMEOUT_MS,
@@ -544,11 +547,17 @@ function HomePage() {
 
     if (additions.length === 0) return;
     setForm((prev) => {
-      // Pure updater: drop any addition the latest state already carries (a
-      // replayed or superseded update), then append the rest.
-      const missing = additions.filter(
-        (addition) => !prev.courseMaterials.some((item) => item.id === addition.id),
-      );
+      // Pure updater: drop any addition the latest state already carries — by
+      // id (a replayed or superseded update) or by content fingerprint (two
+      // addCourseMaterials calls in one render batch both dedupe against the
+      // same stale closure list, so the same file could otherwise enter twice
+      // under two ids and ingest/extract twice) — then append the rest.
+      const missing = additions.filter((addition) => {
+        if (prev.courseMaterials.some((item) => item.id === addition.id)) return false;
+        return !prev.courseMaterials.some(
+          (item) => courseMaterialFingerprint(item) === courseMaterialFingerprint(addition),
+        );
+      });
       if (missing.length === 0) return prev;
       return { ...prev, courseMaterials: [...prev.courseMaterials, ...missing] };
     });

@@ -313,10 +313,19 @@ async function runExtraction(
         requiredCapabilities: { text: true },
       });
   } catch (error) {
+    // With no provider hint and an unrecognized MIME, selection throws the
+    // extractor registry's interpolated message (it carries the caller's MIME
+    // type). The asset-id form must not echo caller-controlled input, so it
+    // answers this catch with a generic static message; multipart keeps the
+    // interpolated message byte-for-byte.
     return apiError(
       'INVALID_REQUEST',
       400,
-      error instanceof Error ? error.message : `Unsupported course material type "${mimeType}"`,
+      isAssetIdForm
+        ? 'The requested document extractor cannot process this course material.'
+        : error instanceof Error
+          ? error.message
+          : `Unsupported course material type "${mimeType}"`,
     );
   }
   logState.resolvedProviderId = provider.id;

@@ -50,6 +50,12 @@ export interface FetchExtractionResponseOptions {
  * the caller's baseUrl on both forms) and a 413 (the byte form enforces the
  * same 50 MB cap on the same bytes). Pure and testable: it only inspects the
  * response and never performs the fallback itself.
+ *
+ * One deliberate exception to the response-only rule lives one level up in
+ * `fetchExtractionResponse`: a thrown network error retries with the byte form
+ * even though the failure may have arrived while a paid extraction was already
+ * running server-side. That risks a rare double bill, but it is accepted —
+ * user success (still getting the extraction) wins over never billing twice.
  */
 export async function shouldRetryWithByteUpload(response: Response): Promise<boolean> {
   if (response.ok) return false;

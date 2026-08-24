@@ -90,6 +90,23 @@ describe('POST /api/extract-document', () => {
     });
   });
 
+  it("keeps the registry's interpolated MIME in the 400 for an unsupported MIME on the multipart byte form", async () => {
+    const probeMime = 'application/x-echo-probe';
+    const res = await postExtractDocument({
+      file: new File(['probe bytes'], 'probe.bin', { type: probeMime }),
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+    // Multipart is frozen: the extractor-selection error message (which
+    // carries the caller's MIME type) is returned verbatim.
+    expect(json.error).toContain(probeMime);
+  });
+
   it('returns 413 before extraction when the file exceeds the per-file size limit', async () => {
     const res = await postExtractDocument({
       file: new File([new Uint8Array(51 * 1024 * 1024)], 'large.pdf', {
@@ -346,7 +363,7 @@ describe('POST /api/extract-document (asset-id form)', () => {
     expect(json.error).not.toContain('ast_missing');
   });
 
-  it('returns 400 when the server asset store fails (generic 500 message, real error logged only)', async () => {
+  it('returns 500 when the server asset store fails (generic 500 message, real error logged only)', async () => {
     mocks.resolveServerAsset.mockRejectedValue(new Error('db connection refused'));
 
     const res = await postExtractDocumentByAssetId({
@@ -523,6 +540,33 @@ describe('POST /api/extract-document (asset-id form)', () => {
     });
     // Generic static message — the offending provider id is never echoed.
     expect(json.error).not.toContain('bogus-provider');
+    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+  });
+
+  it('answers an unsupported MIME with a generic 400 that never echoes the caller MIME type', async () => {
+    const probeMime = 'application/x-echo-probe';
+    mocks.resolveServerAsset.mockResolvedValue({
+      status: 'resolved',
+      buffer: Buffer.from('probe bytes'),
+      mimeType: 'application/octet-stream',
+    });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_probe',
+      fileName: 'probe.bin',
+      mimeType: probeMime,
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+    // With no provider hint, extractor selection throws the registry's
+    // interpolated message (which carries the caller's MIME type); the
+    // asset-id form must answer with a generic static message instead.
+    expect(json.error).not.toContain(probeMime);
     expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
   });
 
