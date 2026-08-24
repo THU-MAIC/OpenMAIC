@@ -50,6 +50,7 @@ import {
   MAX_DOCUMENT_BUNDLE_FILES,
   MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES,
   buildDocumentBundle,
+  type ParsedDocumentImage,
   type ParsedDocumentPart,
 } from '@/lib/document/bundle';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
@@ -82,6 +83,8 @@ type ParsedDocumentResponseImage = {
   description?: string;
   width?: number;
   height?: number;
+  /** Pool asset id of the image bytes (server-backed cache-hit rebuilds). */
+  assetId?: string;
 };
 
 function validateDocumentSources(
@@ -326,6 +329,13 @@ function GenerationPreviewContent() {
     // Use a local mutable copy so we can update it after document extraction
     let currentSession = generationSession;
 
+    // A server-backed asset pool can resolve bytes by allocated asset id; a
+    // browser-backed (self-deploy) pool cannot, so the client keeps the byte
+    // transport. The probe is read ONCE per run so a mid-run configuration
+    // change cannot split the bundle across the two forms (RFC #1153 part 0/1,
+    // and part 2's imageMapping transport decision rides the same probe).
+    const serverBacked = isAssetPoolServerBacked();
+
     setError(null);
     setCurrentStepIndex(0);
 
@@ -346,12 +356,6 @@ function GenerationPreviewContent() {
       if (hasPdfToAnalyze) {
         log.debug('=== Generation Preview: Extracting course material bundle ===');
         validateDocumentSources(documentSources, t);
-        // A server-backed asset pool can resolve the uploaded bytes by asset
-        // id; a browser-backed (self-deploy) pool cannot, so the client keeps
-        // uploading the bytes exactly as before. The probe is read once per
-        // run so a mid-run configuration change cannot split the bundle across
-        // the two forms.
-        const serverBacked = isAssetPoolServerBacked();
         const sortedDocumentSources = [...documentSources].sort((a, b) => a.order - b.order);
         // K3 (in-run dedupe): sources with the same content digest AND the same
         // expected extractor identity share ONE extraction, so two same-byte
@@ -408,6 +412,8 @@ function GenerationPreviewContent() {
             // Cache lookup first; on a miss this runs the extract API (asset-id
             // JSON form with a per-source fallback to the legacy byte upload,
             // see `fetchExtractionResponse`) and caches the result best-effort.
+            // The full outcome is kept — a server-backed run needs the
+            // best-effort cache write's derived image ids, not just the data.
             const runExtraction = () =>
               fetchExtractionWithCache({
                 serverBacked,
@@ -496,12 +502,19 @@ function GenerationPreviewContent() {
                 baseUrl: sourceBaseUrl,
                 sourceDocAssetId: source.assetId,
                 parseFailedMessage: t('generation.courseMaterialParseFailed'),
-              }).then((outcome) => outcome.data);
+                // Part 2 B: a server-backed deployment names images by their
+                // allocated pool asset ids, so a cache hit feeds generation by
+                // id instead of materializing image bytes client-side.
+                imageMappingMode: serverBacked ? 'asset-id' : 'data-url',
+              });
             // K3 (in-run dedupe): sources whose extraction cache key is
             // identical (same content digest + domain + expected extractor +
             // config fingerprint) share ONE extraction; two same-byte files
             // never both pay, and per-source config differences never share.
-            const parseData =
+            // The memo now carries the FULL outcome, so a deduplicated second
+            // source reaches the shared derivation's image asset ids through
+            // the winner's cacheWrite (part 2 B).
+            const extractionOutcome =
               source.contentDigest && expectedExtractor && sourceConfigFingerprint
                 ? await deduplicateExtraction.run(
                     {
@@ -514,7 +527,24 @@ function GenerationPreviewContent() {
                     runExtraction,
                   )
                 : await runExtraction();
+            const parseData = extractionOutcome.data;
 
+            // Part 2 B: on a server-backed deployment the extracted images are
+            // pool assets (part 1). A cache hit carries their ids on the
+            // rebuilt result; a fresh extraction's ids come from the
+            // best-effort cache write — awaited here because the session must
+            // name the images by id without materializing their bytes. When
+            // no ids are available (KV unavailable), the source falls back to
+            // the data-URL transport below — the routes accept both.
+            let imageAssetIds: Map<string, string> | undefined;
+            if (serverBacked && !extractionOutcome.cacheHit) {
+              const derived = await (extractionOutcome.cacheWrite ?? Promise.resolve([])).catch(
+                () => [],
+              );
+              if (derived.length > 0) {
+                imageAssetIds = new Map(derived.map((image) => [image.id, image.assetId]));
+              }
+            }
             const rawImages = parseData.metadata?.pdfImages;
             const images = rawImages
               ? rawImages.map((img: ParsedDocumentResponseImage) => ({
@@ -524,6 +554,8 @@ function GenerationPreviewContent() {
                   description: img.description,
                   width: img.width,
                   height: img.height,
+                  ...(img.assetId ? { assetId: img.assetId } : {}),
+                  ...(imageAssetIds?.get(img.id) ? { assetId: imageAssetIds.get(img.id) } : {}),
                 }))
               : ((parseData.images as string[] | undefined) ?? []).map((src, i) => ({
                   id: `img_${i + 1}`,
@@ -550,7 +582,17 @@ function GenerationPreviewContent() {
         );
 
         const bundle = buildDocumentBundle(parsedParts);
-        const imageStorageIds = await storeImages(bundle.images);
+        // Part 2 B/C: a server-backed deployment feeds generation by allocated
+        // asset id and skips IndexedDB materialization entirely. When no asset
+        // ids are available (a failed best-effort cache write, a legacy
+        // session), fall back to materializing base64 exactly as before — the
+        // routes accept both transports.
+        const assetMappedImages = bundle.images.filter(
+          (img): img is ParsedDocumentImage & { visionPriority: number; assetId: string } =>
+            !!img.assetId,
+        );
+        const materializeBytes = !serverBacked || assetMappedImages.length === 0;
+        const imageStorageIds = materializeBytes ? await storeImages(bundle.images) : [];
 
         const pdfImages: PdfImage[] = bundle.images.map((img, i) => ({
           id: img.id,
@@ -564,7 +606,10 @@ function GenerationPreviewContent() {
           sourceDocumentName: img.sourceDocumentName,
           sourceDocumentOrder: img.sourceDocumentOrder,
           visionPriority: img.visionPriority,
-          storageId: imageStorageIds[i],
+          // Server-backed images carry their pool asset id; browser-backed
+          // images carry their IndexedDB storage id (never both).
+          ...(img.assetId ? { assetId: img.assetId } : {}),
+          ...(materializeBytes ? { storageId: imageStorageIds[i] } : {}),
         }));
 
         // Update session with extracted document data
@@ -650,9 +695,20 @@ function GenerationPreviewContent() {
         activeSteps = getActiveSteps(currentSession);
       }
 
-      // Load imageMapping early (needed for both outline and scene generation)
+      // Load imageMapping early (needed for both outline and scene generation).
+      // The transport is decided once per run by the same probe as part 0/1
+      // (RFC #1153 part 2 B): a server-backed pool names images by their
+      // allocated asset ids (the extracted images are pool assets — part 1); a
+      // browser-backed pool materializes base64 data URLs exactly as before.
       let imageMapping: ImageMapping = {};
-      if (currentSession.imageStorageIds && currentSession.imageStorageIds.length > 0) {
+      const sessionImages = currentSession.pdfImages ?? [];
+      const assetMappedImages = sessionImages.filter(
+        (img): img is PdfImage & { assetId: string } => !!img.assetId,
+      );
+      if (serverBacked && assetMappedImages.length > 0) {
+        log.debug('Using asset-id imageMapping (server-backed pool)');
+        imageMapping = Object.fromEntries(assetMappedImages.map((img) => [img.id, img.assetId]));
+      } else if (currentSession.imageStorageIds && currentSession.imageStorageIds.length > 0) {
         log.debug('Loading images from IndexedDB');
         imageMapping = await loadImageMapping(currentSession.imageStorageIds);
       } else if (

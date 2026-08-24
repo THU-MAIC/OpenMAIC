@@ -53,6 +53,7 @@ import {
   resolvedAssetIdForIngest,
 } from '@/lib/document/extract-source';
 import { computeContentDigest } from '@/lib/document/extraction-cache';
+import { upsertMaterialLibraryEntry } from '@/lib/materials/library';
 import type {
   SelectedCourseMaterial,
   SessionDocumentSource,
@@ -549,6 +550,29 @@ function HomePage() {
             }
           : prev,
       );
+    });
+
+    // Material library manifest (RFC #1153 part 2): once BOTH the ingest's
+    // allocated asset id and the content digest have settled, upsert the
+    // library entry keyed by digest — same bytes re-imported refresh the same
+    // entry (`addedAt` bumped, `assetId` advanced to the newest allocation).
+    // Best-effort by contract: a KV failure never fails the upload, and the
+    // library entry is durable even after this pool entry is released later.
+    void Promise.all([ingest, contentDigest]).then(([assetId, digest]) => {
+      if (!digest) return;
+      void upsertMaterialLibraryEntry({
+        assetId,
+        contentDigest: digest,
+        name: addition.name,
+        mimeType:
+          normalizeDocumentMimeType({
+            mimeType: addition.file.type,
+            fileName: addition.file.name,
+          }) || undefined,
+        size: addition.size,
+      }).catch((error) => {
+        log.error(`Failed to record the material library entry for "${addition.name}":`, error);
+      });
     });
   };
 

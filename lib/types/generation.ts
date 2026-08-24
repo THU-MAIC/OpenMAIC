@@ -19,6 +19,13 @@ export interface PdfImage {
   pageNumber: number; // Page number in PDF
   description?: string; // Optional description for AI context
   storageId?: string; // Reference to IndexedDB (session_xxx_img_1)
+  /**
+   * Pool asset id of the image bytes. Present on server-backed deployments
+   * (RFC #1153 part 2 B): the extracted images are pool assets, so generation
+   * is fed by id and no IndexedDB bytes are materialized. Browser-backed
+   * images carry `storageId` instead — never both.
+   */
+  assetId?: string; // Allocated asset-pool id (server-backed transport)
   width?: number; // Image width (px or normalized)
   height?: number; // Image height (px or normalized)
   originalId?: string; // ID assigned by the extractor before bundle-level normalization

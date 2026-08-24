@@ -26,6 +26,7 @@ import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
+import { resolveVisionImagesForPrompt } from '@/lib/persistence/resolve-vision-images';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 
 const log = createLogger('Scene Content API');
@@ -103,6 +104,11 @@ export async function POST(req: NextRequest) {
       images?: Array<{ id: string; src: string }>,
     ): Promise<string> => {
       if (images?.length && hasVision) {
+        // Server-backed transport: `imageMapping` values are allocated asset
+        // ids, so the image srcs reach here as ids. Resolve them to the same
+        // bytes the base64 path would send BEFORE prompt assembly, keeping the
+        // vision prompt byte-identical in both modes (RFC #1153 part 2 B).
+        const resolvedImages = await resolveVisionImagesForPrompt(images, req.headers);
         const result = await callLLM(
           {
             model: languageModel,
@@ -110,7 +116,7 @@ export async function POST(req: NextRequest) {
             messages: [
               {
                 role: 'user' as const,
-                content: buildVisionUserContent(userPrompt, images),
+                content: buildVisionUserContent(userPrompt, resolvedImages),
               },
             ],
             maxOutputTokens: modelInfo?.outputWindow,

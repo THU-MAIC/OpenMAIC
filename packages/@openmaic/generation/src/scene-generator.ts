@@ -313,18 +313,25 @@ function isImageIdReference(value: string): boolean {
 }
 
 /**
- * Resolve image ID references in src field to actual base64 URLs
+ * Resolve image ID references in src field to the mapping's payload.
  *
  * AI generates: { type: "image", src: "img_1", ... }
- * This function replaces: { type: "image", src: "data:image/png;base64,...", ... }
+ * This function replaces: { type: "image", src: "<imageMapping[src]>", ... }
  *
  * Design rationale (Plan B):
  * - Simpler: AI only needs to know one field (src)
  * - Consistent: Generated JSON structure matches final PPTImageElement
  * - Intuitive: src is the image source, first as ID then as actual URL
  * - Less prompt complexity: No need to explain imageId vs src distinction
+ *
+ * The mapping VALUE is written verbatim, so the transport is decided entirely
+ * by the caller's `imageMapping` shape — no flag threading into this package
+ * (RFC #1153 part 2 B): a browser-backed mapping carries base64 data URLs and
+ * the element src becomes the data URL exactly as before; a server-backed
+ * mapping carries allocated pool asset ids and the element src becomes the
+ * asset id, which the renderer resolves through the pool registry.
  */
-function resolveImageIds(
+export function resolveImageIds(
   elements: GeneratedSlideData['elements'],
   imageMapping?: ImageMapping,
   generatedMediaMapping?: ImageMapping,
@@ -345,7 +352,7 @@ function resolveImageIds(
             log.warn(`No mapping for image ID: ${src}, removing element`);
             return null; // Remove invalid image elements
           }
-          log.debug(`Resolved image ID "${src}" to base64 URL`);
+          log.debug(`Resolved image ID "${src}" to its mapped source`);
           return { ...el, src: imageMapping[src] };
         }
 

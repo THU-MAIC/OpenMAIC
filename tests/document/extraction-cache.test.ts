@@ -20,6 +20,7 @@ import {
   type InRunExtractionKey,
 } from '@/lib/document/extraction-cache';
 import type { ExtractSourceFetchers } from '@/lib/document/extract-source';
+import { setMaterialLibraryKVForTests } from '@/lib/materials/library';
 import type { AssetPoolStore } from '@/lib/media/asset-pool-config';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 
@@ -31,6 +32,12 @@ let MANAGED_FP: string;
 
 beforeAll(async () => {
   MANAGED_FP = await computeConfigFingerprint();
+  // A working library KV for the best-effort derivation-pointer recording that
+  // `fetchExtractionWithCache` now performs: with the browser store unavailable
+  // in node, the library would otherwise warn per call and pollute the
+  // console.warn-count assertions in the K5 suite below. Installed for the
+  // whole file (entries accumulate harmlessly; no test reads the library).
+  setMaterialLibraryKVForTests(new FakeKV());
 });
 
 /** The full cache key for the stable (no baseUrl) config bucket, as callers use it. */
@@ -427,6 +434,97 @@ describe('writeExtractionCache', () => {
     expect(JSON.stringify(artifact)).not.toContain('data:image/');
   });
 
+  it('resolves to the derived images (extraction id → pool asset id) on success', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+
+    const derived = await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      sourceDocAssetId: 'ast_source_doc',
+      result: fixtureResult(),
+    });
+
+    // A server-backed caller awaits the write to learn the image asset ids
+    // without materializing image bytes (RFC #1153 part 2 B).
+    expect(derived.map((image) => image.id)).toEqual(['img_1', 'img_2']);
+    expect(derived.map((image) => image.assetId)).toEqual(['ast_test_0', 'ast_test_1']);
+  });
+
+  it('returns the ADOPTED record images when a same-key race supersedes the attempt (K3)', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+
+    const first = await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      result: fixtureResult(),
+    });
+    // A second write for the same key ingests its own assets, then adopts the
+    // existing record and releases them — the caller must receive the LIVE
+    // ids, not the released ones.
+    const second = await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      result: fixtureResult(),
+    });
+
+    expect(second).toEqual(first);
+    expect(second.map((image) => image.assetId)).toEqual(['ast_test_0', 'ast_test_1']);
+  });
+
+  it('resolves to an empty array when the write is skipped (route-level KV failure window)', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    resetExtractionCacheForTests();
+    // Force the route-level disable window so the write is skipped pre-ingest.
+    const routeFailure = new HttpKVStoreError(404, 'ROUTE_GONE', 'route gone');
+    // The window is module-internal; simulate by a failing kv.get path that is
+    // treated as route-level — see the K5 suite below for the real mechanism.
+    const failingKv: KVStore = {
+      get: async () => {
+        throw routeFailure;
+      },
+      set: async () => undefined,
+      remove: async () => undefined,
+      keys: async () => [],
+    };
+    // First write: the route-level failure disables the cache for a window.
+    await writeExtractionCache({
+      kv: failingKv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      result: fixtureResult(),
+    });
+    const skipped = await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      result: fixtureResult(),
+    });
+    expect(skipped).toEqual([]);
+    expect(harness.blobs.size).toBe(0);
+    resetExtractionCacheForTests();
+  });
+
   it('releases every allocated asset and writes no record when an image ingest fails', async () => {
     const kv = new FakeKV();
     const harness = makePool();
@@ -447,7 +545,7 @@ describe('writeExtractionCache', () => {
         sourceDocAssetId: 'ast_source_doc',
         result: fixtureResult(),
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual([]);
 
     expect(kv.storedKeys()).toEqual([]);
     expect(harness.remove).toHaveBeenCalledWith('ast_test_0');
@@ -747,6 +845,61 @@ describe('lookupCachedExtraction', () => {
       width: 640,
       height: 480,
     });
+  });
+
+  it('rebuilds by asset id in asset-id mode WITHOUT materializing image bytes (RFC #1153 part 2 C)', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    const original = fixtureResult();
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      sourceDocAssetId: 'ast_source_doc',
+      result: original,
+    });
+    const record = await kv.get<DerivationRecord>(
+      managedKey(DIGEST, 'mineru', '1'),
+      EXTRACTION_CACHE_KV_SCOPE,
+    );
+    expect(record?.images.map((image) => image.assetId)).toEqual(['ast_test_0', 'ast_test_1']);
+
+    const rebuilt = await lookupCachedExtraction({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      fetchImpl: makeFetch(harness),
+      imageMappingMode: 'asset-id',
+    });
+
+    expect(rebuilt).not.toBeNull();
+    // The image bytes were NOT fetched: only the artifact asset was resolved
+    // from the pool (data-url mode resolves artifact + every image).
+    expect(harness.resolve).toHaveBeenCalledTimes(1);
+    expect(harness.resolve).toHaveBeenCalledWith(record!.artifactAssetId);
+    // metadata.imageMapping maps img_N → the allocated asset id, and
+    // pdfImages carry the id on `assetId` with src left empty.
+    expect(rebuilt?.metadata?.imageMapping).toEqual({ img_1: 'ast_test_0', img_2: 'ast_test_1' });
+    expect(rebuilt?.metadata?.pdfImages?.[0]).toMatchObject({
+      id: 'img_1',
+      src: '',
+      assetId: 'ast_test_0',
+      description: 'Device overview',
+    });
+    expect(rebuilt?.metadata?.pdfImages?.[1]).toMatchObject({
+      id: 'img_2',
+      src: '',
+      assetId: 'ast_test_1',
+    });
+    expect(rebuilt?.images).toEqual([]);
+    // The text half is rebuilt exactly as a real extraction returns it.
+    expect(rebuilt?.text).toBe(original.text);
   });
 
   it('reports a miss when no record exists', async () => {
@@ -1347,6 +1500,51 @@ describe('fetchExtractionWithCache', () => {
     expect(spies.bytes).not.toHaveBeenCalled();
   });
 
+  it('feeds an asset-id imageMapping on a server-backed hit (RFC #1153 part 2 C)', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      sourceDocAssetId: 'ast_source_doc',
+      result: fixtureResult(),
+    });
+    const { fetchers, spies } = fetchersThatThrow();
+
+    const outcome = await fetchExtractionWithCache({
+      serverBacked: true,
+      hasAssetId: true,
+      fetchers,
+      logWarning: vi.fn(),
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      sourceDocAssetId: 'ast_source_doc',
+      kv,
+      pool: harness.pool,
+      fetchImpl: makeFetch(harness),
+      imageMappingMode: 'asset-id',
+      parseFailedMessage: 'parse failed',
+    });
+
+    expect(outcome.cacheHit).toBe(true);
+    // The cache hit names images by their pool asset ids directly — no image
+    // bytes were materialized client-side — so generation can be fed by id.
+    expect(outcome.data.metadata?.imageMapping).toEqual({
+      img_1: 'ast_test_0',
+      img_2: 'ast_test_1',
+    });
+    expect(outcome.data.metadata?.pdfImages?.[0]?.assetId).toBe('ast_test_0');
+    expect(outcome.data.images).toEqual([]);
+    expect(spies.assetId).not.toHaveBeenCalled();
+    expect(spies.bytes).not.toHaveBeenCalled();
+  });
+
   it('runs the real extraction on a miss and caches the result', async () => {
     const kv = new FakeKV();
     const harness = makePool();
@@ -1387,6 +1585,45 @@ describe('fetchExtractionWithCache', () => {
     await expect(
       kv.get(managedKey(DIGEST, 'mineru', '1'), EXTRACTION_CACHE_KV_SCOPE),
     ).resolves.not.toBeNull();
+  });
+
+  it('resolves the cacheWrite to the derived image asset ids on a miss (RFC #1153 part 2 B)', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    const assetIdForm = vi.fn(async () => {
+      return new Response(JSON.stringify({ success: true, data: fixtureResult() }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    const byteForm = vi.fn(async () => {
+      throw new Error('byte form must not be used');
+    });
+
+    const outcome = await fetchExtractionWithCache({
+      serverBacked: true,
+      hasAssetId: true,
+      fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: byteForm },
+      logWarning: vi.fn(),
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      sourceDocAssetId: 'ast_source_doc',
+      kv,
+      pool: harness.pool,
+      fetchImpl: makeFetch(harness),
+      imageMappingMode: 'asset-id',
+      parseFailedMessage: 'parse failed',
+    });
+
+    // A server-backed caller awaits the detached write to learn the image
+    // asset ids (extraction id → pool asset id) without materializing bytes.
+    const derived = await outcome.cacheWrite;
+    expect(derived).toEqual([
+      expect.objectContaining({ id: 'img_1', assetId: 'ast_test_0' }),
+      expect.objectContaining({ id: 'img_2', assetId: 'ast_test_1' }),
+    ]);
   });
 
   it('writes both keys when the actual extractor differs from the expected one, and hits via the expected key on re-import (K1)', async () => {

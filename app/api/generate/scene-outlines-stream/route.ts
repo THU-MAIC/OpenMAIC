@@ -38,6 +38,7 @@ import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
+import { resolveVisionImagesForPrompt } from '@/lib/persistence/resolve-vision-images';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 const log = createLogger('Outlines Stream');
 
@@ -334,17 +335,35 @@ export async function POST(req: NextRequest) {
         const textOnlySlice = allWithSrc.slice(MAX_VISION_IMAGES);
         const noSrcImages = sortedImages.filter((img) => !imageMapping[img.id]);
 
-        const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
+        // Server-backed transport: `imageMapping` values are allocated asset
+        // ids, so the vision srcs reach here as ids. Resolve them to the same
+        // bytes the base64 path would send BEFORE prompt assembly, keeping the
+        // vision prompt byte-identical in both modes (RFC #1153 part 2 B). An
+        // id the server cannot resolve is dropped here, so the placeholder
+        // text below never promises an image that will not be attached.
+        const resolvedVisionImages = await resolveVisionImagesForPrompt(
+          visionSlice.map((img) => ({
+            id: img.id,
+            src: imageMapping[img.id],
+            ...(img.width !== undefined ? { width: img.width } : {}),
+            ...(img.height !== undefined ? { height: img.height } : {}),
+          })),
+          req.headers,
+        );
+        const visionImageById = new Map(sortedImages.map((img) => [img.id, img] as const));
+        const visionDescriptions = resolvedVisionImages.map((img) =>
+          formatImagePlaceholder(visionImageById.get(img.id) ?? { ...img, pageNumber: 1, src: '' }),
+        );
         const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
           formatImageDescription(img),
         );
         availableImagesText = [...visionDescriptions, ...textDescriptions].join('\n');
 
-        visionImages = visionSlice.map((img) => ({
+        visionImages = resolvedVisionImages.map((img) => ({
           id: img.id,
-          src: imageMapping[img.id],
-          width: img.width,
-          height: img.height,
+          src: img.src,
+          ...(img.width !== undefined ? { width: img.width } : {}),
+          ...(img.height !== undefined ? { height: img.height } : {}),
         }));
       } else {
         // Text-only mode: full descriptions

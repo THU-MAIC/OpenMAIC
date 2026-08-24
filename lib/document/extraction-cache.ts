@@ -527,12 +527,21 @@ export interface ExtractionCacheWriteOptions {
  * KV failure disables the cache for a bounded window (K5/L4) — subsequent
  * writes are skipped BEFORE any asset is ingested, so a dead KV route costs no
  * putAsset-then-removeAsset churn.
+ *
+ * Resolves to the derived images (extraction id → pool asset id) when the
+ * write settled: this attempt's own images on success, the ADOPTED existing
+ * record's images when a same-key race superseded this attempt (K3), or an
+ * empty array when the write was skipped or failed. A server-backed caller can
+ * await the returned `cacheWrite` promise to learn the image asset ids without
+ * materializing image bytes client-side (RFC #1153 part 2 B).
  */
-export async function writeExtractionCache(options: ExtractionCacheWriteOptions): Promise<void> {
+export async function writeExtractionCache(
+  options: ExtractionCacheWriteOptions,
+): Promise<DerivedExtractionImage[]> {
   // K5: the KV route is unreachable (inside the disable window); skip the
   // write entirely BEFORE ingesting anything, so a dead backend costs no pool
   // churn.
-  if (isCacheDisabled()) return;
+  if (isCacheDisabled()) return [];
 
   const allocated: string[] = [];
   // Production ingests through the browser-wide pool seams; tests inject a
@@ -631,7 +640,9 @@ export async function writeExtractionCache(options: ExtractionCacheWriteOptions)
         `Extraction cache write for ${key} abandoned: an existing derivation record was adopted; ` +
           `${allocated.length} asset(s) allocated by this attempt were released.`,
       );
-      return;
+      // The adopted record's images are the LIVE asset ids a server-backed
+      // caller should use — this attempt's own ids were just released.
+      return existing.images;
     }
 
     const record: DerivationRecord = {
@@ -653,6 +664,7 @@ export async function writeExtractionCache(options: ExtractionCacheWriteOptions)
     if (aliasKey && aliasIdentity) {
       await writeAliasRecord(options.kv, aliasKey, aliasIdentity[0], record);
     }
+    return images;
   } catch (error) {
     if (isRouteLevelKVError(error)) {
       // The KV route itself is gone (K5): disable caching for a bounded
@@ -666,8 +678,9 @@ export async function writeExtractionCache(options: ExtractionCacheWriteOptions)
     }
     // Release every asset allocated in this partial attempt so the pool does
     // not accumulate orphans. The KV record was only written last, so nothing
-    // references the released ids.
+    // references the released ids. No live ids remain to hand back.
     await releaseAllocatedAssets(allocated, remove, 'a failed cache write');
+    return [];
   }
 }
 
@@ -785,18 +798,36 @@ export interface ExtractionCacheLookupOptions {
   baseUrl?: string;
   /** Fetch implementation; defaults to the global one. Injectable for tests. */
   fetchImpl?: typeof fetch;
+  /**
+   * How the rebuilt result's `imageMapping` / `pdfImages` are expressed
+   * (RFC #1153 part 2 section C). `'data-url'` (default) rebuilds image bytes
+   * client-side exactly as a real extraction returns them. `'asset-id'` —
+   * used by a server-backed deployment — rebuilds WITHOUT materializing image
+   * bytes: `metadata.imageMapping` maps `img_N` → the image's pool asset id
+   * and `metadata.pdfImages[].assetId` carries the same id, so a cache hit
+   * feeds generation by id instead of shipping bytes to the client. In
+   * `'asset-id'` mode the per-image byte reads are skipped entirely (the
+   * bytes are resolved server-side at prompt-assembly time), so a record
+   * whose image assets were reclaimed is still a hit for the text — the
+   * generation-time resolution reports the missing image then.
+   */
+  imageMappingMode?: 'data-url' | 'asset-id';
 }
 
 /**
  * Look up a cached extraction derivation and, on a hit, rebuild exactly the
- * parse result the page consumes (images back to data URLs).
+ * parse result the page consumes (images back to data URLs — or, in
+ * `'asset-id'` mode, images as their pool asset ids with no bytes
+ * materialized, per RFC #1153 part 2 C).
  *
  * Returns `null` on ANY inconsistency — no record, a record whose extractor
  * identity disagrees (and is not a recorded alias), an artifact or image asset
  * that does not resolve, bytes that cannot be read, a record whose image list
  * disagrees with the stored artifact's own image asset ids, or a KV/pool
  * transport failure — so the caller treats it as a miss and runs the real
- * extraction. A hit is logged so it is observable.
+ * extraction. (In `'asset-id'` mode the per-image byte reads are skipped, so
+ * only the artifact read and the record/artifact consistency check can miss.)
+ * A hit is logged so it is observable.
  */
 export async function lookupCachedExtraction(
   options: ExtractionCacheLookupOptions,
@@ -811,6 +842,10 @@ export async function lookupCachedExtraction(
   // (RFC #1153 part 1, M1). `undefined` until the key is built, so the catch
   // below can still name the key when the failure comes after it.
   let key: string | undefined;
+  // Asset-id mode (part 2 C): the rebuilt result names pool asset ids instead
+  // of image bytes, so the per-image byte reads below are skipped and the
+  // record's asset ids flow straight into the result.
+  const assetIdMode = options.imageMappingMode === 'asset-id';
   try {
     key = extractionCacheKey(
       options.contentDigest,
@@ -887,34 +922,45 @@ export async function lookupCachedExtraction(
       );
       return null;
     }
-    // Every image asset must resolve and be readable; a record naming a
-    // partially-reclaimed cache is a miss, and the real extraction re-derives.
-    const dataUrls: string[] = [];
-    for (const image of record.images) {
-      const dataUrl = await withAssetUrl(
-        image.assetId,
-        async (url) => {
-          if (!url) {
-            log.warn(
-              `Extraction cache miss for ${key}: image asset ${image.assetId} does not resolve.`,
-            );
-            return null;
-          }
-          return fetchBytesAsDataUrl(url, image.mimeType, fetchImpl);
-        },
-        options.pool,
-      );
-      if (!dataUrl) {
-        log.warn(
-          `Extraction cache miss for ${key}: image bytes for ${image.assetId} could not be read.`,
+    // Every image asset must resolve and be readable in data-url mode; a
+    // record naming a partially-reclaimed cache is a miss, and the real
+    // extraction re-derives. In asset-id mode (RFC #1153 part 2 C) the image
+    // bytes are deliberately NOT materialized client-side — the generation
+    // routes resolve the ids server-side at prompt-assembly time — so the
+    // per-image byte reads are skipped and the record's asset ids flow into
+    // the rebuilt result verbatim.
+    const imagePayloads: string[] = [];
+    if (assetIdMode) {
+      imagePayloads.push(...record.images.map((image) => image.assetId));
+    } else {
+      for (const image of record.images) {
+        const dataUrl = await withAssetUrl(
+          image.assetId,
+          async (url) => {
+            if (!url) {
+              log.warn(
+                `Extraction cache miss for ${key}: image asset ${image.assetId} does not resolve.`,
+              );
+              return null;
+            }
+            return fetchBytesAsDataUrl(url, image.mimeType, fetchImpl);
+          },
+          options.pool,
         );
-        return null;
+        if (!dataUrl) {
+          log.warn(
+            `Extraction cache miss for ${key}: image bytes for ${image.assetId} could not be read.`,
+          );
+          return null;
+        }
+        imagePayloads.push(dataUrl);
       }
-      dataUrls.push(dataUrl);
     }
-    const result = rebuildResult(artifact, record, dataUrls);
+    const result = rebuildResult(artifact, record, imagePayloads, assetIdMode);
     log.info(
-      `Extraction cache hit for ${key}: rebuilt ${record.images.length} image(s) from the pool.`,
+      `Extraction cache hit for ${key}: rebuilt ${record.images.length} image(s) ${
+        assetIdMode ? 'by asset id' : 'from the pool'
+      }.`,
     );
     return result;
   } catch (error) {
@@ -1010,11 +1056,21 @@ async function fetchBytesAsDataUrl(
   }
 }
 
-/** Rebuild the exact parse-result shape a real extraction returns. */
+/**
+ * Rebuild the exact parse-result shape a real extraction returns.
+ *
+ * In `assetIdMode` (RFC #1153 part 2 C) the payloads are pool asset ids, not
+ * data URLs: `metadata.imageMapping` maps `img_N` → asset id, each
+ * `metadata.pdfImages` entry carries the id on `assetId` (with `src` left
+ * empty — no image bytes were materialized), and the top-level `images` list
+ * is empty for the same reason. Browser-backed hits keep the data-URL shape
+ * byte-for-byte.
+ */
 function rebuildResult(
   artifact: StoredExtractionArtifact,
   record: DerivationRecord,
-  dataUrls: readonly string[],
+  imagePayloads: readonly string[],
+  assetIdMode = false,
 ): ParsedPdfContent {
   const metadata = {
     pageCount: artifact.metadata.pageCount ?? 0,
@@ -1028,14 +1084,15 @@ function rebuildResult(
   if (record.images.length > 0 || carriesImageShape) {
     metadata.imageMapping =
       record.images.length > 0
-        ? Object.fromEntries(record.images.map((image, index) => [image.id, dataUrls[index]!]))
+        ? Object.fromEntries(record.images.map((image, index) => [image.id, imagePayloads[index]!]))
         : {};
     metadata.pdfImages =
       record.images.length > 0
         ? record.images.map((image, index) => ({
             id: image.id,
-            src: dataUrls[index]!,
+            src: assetIdMode ? '' : imagePayloads[index]!,
             pageNumber: image.pageNumber ?? 1,
+            ...(assetIdMode && image.assetId ? { assetId: image.assetId } : {}),
             ...(image.description !== undefined ? { description: image.description } : {}),
             ...(image.width !== undefined ? { width: image.width } : {}),
             ...(image.height !== undefined ? { height: image.height } : {}),
@@ -1044,7 +1101,7 @@ function rebuildResult(
   }
   return {
     text: artifact.text,
-    images: [...dataUrls],
+    images: assetIdMode ? [] : [...imagePayloads],
     ...(artifact.tables !== undefined ? { tables: artifact.tables } : {}),
     ...(artifact.formulas !== undefined ? { formulas: artifact.formulas } : {}),
     ...(artifact.layout !== undefined ? { layout: artifact.layout } : {}),
@@ -1066,6 +1123,12 @@ export interface ExtractionFetchWithCacheOptions extends FetchExtractionResponse
   baseUrl?: string;
   /** Source-document pool asset id, recorded for lineage on the cache write. */
   sourceDocAssetId?: string;
+  /**
+   * How cache-rebuilt results express their images (`'data-url'` by default;
+   * `'asset-id'` on a server-backed deployment — see
+   * `ExtractionCacheLookupOptions.imageMappingMode`).
+   */
+  imageMappingMode?: 'data-url' | 'asset-id';
   /**
    * KV store for derivation records. Omitted in production, where the
    * browser-wide store is resolved lazily (and a resolution failure disables
@@ -1092,10 +1155,14 @@ export interface ExtractionFetchWithCacheResult {
   /**
    * The best-effort cache write, detached from the caller's result (L5). The
    * extraction result is returned WITHOUT waiting for the write; awaiting this
-   * promise is only for tests or observability. A page teardown mid-write can
-   * abandon the write — best-effort by contract.
+   * promise is only for tests, observability, or — on a server-backed
+   * deployment — learning the derived image asset ids without materializing
+   * image bytes (RFC #1153 part 2 B): it resolves to the derived images
+   * (extraction id → pool asset id), or an empty array when the write was
+   * skipped or failed. A page teardown mid-write can abandon the write —
+   * best-effort by contract.
    */
-  cacheWrite?: Promise<void>;
+  cacheWrite?: Promise<DerivedExtractionImage[]>;
 }
 
 /**
@@ -1146,8 +1213,19 @@ export async function fetchExtractionWithCache(
       extractorVersion: options.extractorVersion,
       baseUrl: options.baseUrl,
       fetchImpl: options.fetchImpl,
+      imageMappingMode: options.imageMappingMode,
     });
-    if (cached) return { data: cached, cacheHit: true };
+    if (cached) {
+      // The derivation exists (this hit proves it); point the material library
+      // entry at it by its key parts, best-effort.
+      recordMaterialDerivationBestEffort(
+        options.contentDigest,
+        options.domain ?? 'doc',
+        options.extractorId,
+        options.extractorVersion,
+      );
+      return { data: cached, cacheHit: true };
+    }
   }
 
   // 2. Real extraction (asset-id JSON form with the legacy byte fallback).
@@ -1201,18 +1279,56 @@ export async function fetchExtractionWithCache(
       ...(aliasExtractor ? { aliasExtractor } : {}),
       sourceDocAssetId: options.sourceDocAssetId,
       result: data,
-    }).catch((error) => {
-      // Defensive: `writeExtractionCache` already logs its own failures; this
-      // handler only guarantees the detached write can never surface as an
-      // unhandled rejection in the page's flow.
-      log.error(
-        'Failed to cache the extraction derivation; the extraction result is still returned:',
-        error,
-      );
-    });
+    })
+      .then((derivedImages) => {
+        // The derivation record now exists; point the material library entry at
+        // it by its key parts, best-effort. Runs detached like the write itself.
+        if (options.contentDigest) {
+          recordMaterialDerivationBestEffort(
+            options.contentDigest,
+            options.domain ?? 'doc',
+            actualExtractorId,
+            actualExtractorVersion,
+          );
+        }
+        return derivedImages;
+      })
+      .catch((error) => {
+        // Defensive: `writeExtractionCache` already logs its own failures; this
+        // handler only guarantees the detached write can never surface as an
+        // unhandled rejection in the page's flow, and hands back no live ids.
+        log.error(
+          'Failed to cache the extraction derivation; the extraction result is still returned:',
+          error,
+        );
+        return [];
+      });
     return { data, cacheHit: false, cacheWrite };
   }
   return { data, cacheHit: false };
+}
+
+/**
+ * Best-effort material-library pointer: append the extraction identity
+ * (domain × extractor@version) to the library entry for these bytes, so an
+ * agent consulting the entry can find the derivation record (and through it
+ * the derived image assets) by the key parts. Any failure is logged inside
+ * the library module and never affects the extraction flow.
+ */
+function recordMaterialDerivationBestEffort(
+  contentDigest: string,
+  domain: ExtractionCacheDomain,
+  extractorId: string,
+  extractorVersion: string,
+): void {
+  if (!contentDigest || !extractorId || !extractorVersion) return;
+  void import('@/lib/materials/library')
+    .then(({ recordMaterialDerivation }) =>
+      recordMaterialDerivation(contentDigest, { domain, extractorId, extractorVersion }),
+    )
+    .catch((error) => {
+      log.warn('Failed to record the material library derivation pointer:', error);
+    });
 }
 
 // ─── In-run extraction dedupe (RFC #1153 part 1, K3) ──────────────────────────
@@ -1246,16 +1362,18 @@ export interface InRunExtractionKey {
  * re-invokes instead of re-receiving the stale rejection. A per-run instance
  * is created once per generation run; the memoized promises live exactly as
  * long as the run.
+ *
+ * Generic over the extraction's result type: the page memoizes the full
+ * `fetchExtractionWithCache` outcome (data + best-effort cache write), so a
+ * deduplicated second source still reaches the shared derivation's image
+ * asset ids through the winner's `cacheWrite` (RFC #1153 part 2 B).
  */
 export function createExtractionDeduplicator(): {
-  run: (
-    key: InRunExtractionKey,
-    extraction: () => Promise<ParsedPdfContent>,
-  ) => Promise<ParsedPdfContent>;
+  run: <T>(key: InRunExtractionKey, extraction: () => Promise<T>) => Promise<T>;
 } {
-  const inflight = new Map<string, Promise<ParsedPdfContent>>();
+  const inflight = new Map<string, Promise<unknown>>();
   return {
-    run(key, extraction) {
+    run: <T>(key: InRunExtractionKey, extraction: () => Promise<T>): Promise<T> => {
       const memoKey = extractionCacheKey(
         key.contentDigest,
         key.extractorId,
@@ -1264,7 +1382,7 @@ export function createExtractionDeduplicator(): {
         key.domain,
       );
       const existing = inflight.get(memoKey);
-      if (existing) return existing;
+      if (existing) return existing as Promise<T>;
       const promise = extraction();
       inflight.set(memoKey, promise);
       // L3: a rejected shared promise must not poison later retries in the
