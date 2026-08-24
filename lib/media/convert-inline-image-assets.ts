@@ -23,6 +23,16 @@
  * - Only `data:image/*` values convert. Every other shape (allocated ids,
  *   `gen_*` placeholders, http(s), classroom-media transport URLs) is left
  *   untouched — the #1101 converter owns those.
+ * - Payload decoding follows the fetch spec's data-URL grammar: the body is
+ *   base64 exactly when the mediatype ends with `;` + zero or more SPACE +
+ *   an ASCII case-insensitive `base64` (the marker must be the FINAL
+ *   parameter). The converter is CONSERVATIVE by design — when the grammar
+ *   is anything but unambiguous it leaves the slot inline (`kept`) and never
+ *   guesses a decode path: a `;base64` that is not the final parameter, a
+ *   payload that decodes to zero bytes, or a payload whose raw text exceeds
+ *   the 50 MB decode bound is kept, because the browser treats those shapes
+ *   as percent-encoded or broken and converting them would rewrite a broken
+ *   image into stored bytes.
  * - One allocation per unique decoded content, shared across every slot that
  *   names identical bytes. Two different encodings of the same bytes (base64
  *   vs percent-encoded, different MIME casing) also collapse: the memo key is
@@ -37,11 +47,20 @@
  *   (the 15 s constant family — the same family the ingest path uses). When
  *   it expires, the conversions made so far are kept and the rest stay inline;
  *   idempotency makes the partial progress safe — the next open continues.
+ * - Bounded concurrency: whiteboard slides convert through the part-1
+ *   `mapWithConcurrency` at batch 4, so the decoded buffers of N slides never
+ *   coexist.
  * - A failed ingest (undecodable value, pool failure, compatibility-write
  *   failure) leaves that slot inline and releases what the failed attempt
  *   allocated, then continues with the next slot. Allocations a caller ends
  *   up discarding are released through the shared ledger/rollback accounting
  *   (the same `rollbackConvertedAllocations` the #1101 pass uses).
+ * - A content digest that is unavailable (a non-secure context or older
+ *   webview lacks `crypto.subtle`) degrades the whole pass to a no-op: the
+ *   document is returned unchanged and every inline slot is kept, with one
+ *   warn — a load that succeeded before this converter existed must keep
+ *   succeeding. A digest that fails mid-run on one image keeps that slot
+ *   inline and continues, exactly like a failed ingest.
  *
  * Idempotent: a converted document holds pool-backed allocated ids and no
  * `data:image/*` values, so re-running is a no-op that returns the input by
@@ -51,13 +70,15 @@
  * decode local bytes. It covers only documents this converter never reached.
  */
 
-import type { AssetMeta, Slide } from '@openmaic/dsl';
+import type { AssetMeta, Slide, Whiteboard } from '@openmaic/dsl';
 import { createLogger } from '@/lib/logger';
+import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation';
 import { DEFAULT_INGEST_AWAIT_TIMEOUT_MS } from '@/lib/document/extract-source';
 import type { AppDocument } from '@/lib/document-store/persistence-types';
 import type { AppScene, Stage } from '@/lib/types/stage';
 import { makeScene } from '@/lib/types/stage';
 import type { MediaFileRecord } from '@/lib/utils/database';
+import { mapWithConcurrency } from '@/lib/utils/concurrency';
 import { slideMediaReferenceSlots } from './slide-media-slots';
 
 const log = createLogger('InlineImageConversion');
@@ -71,6 +92,22 @@ const log = createLogger('InlineImageConversion');
  */
 export const INLINE_IMAGE_CONVERSION_BUDGET_MS = DEFAULT_INGEST_AWAIT_TIMEOUT_MS;
 
+/**
+ * Concurrency bound for converting whiteboard slides (the part-1
+ * `mapWithConcurrency` batch): at most this many slides decode/ingest at
+ * once, so the decoded buffers of N slides never coexist.
+ */
+export const INLINE_IMAGE_SLIDE_CONCURRENCY = 4;
+
+/**
+ * Per-payload decode bound: an inline data URL whose raw payload text exceeds
+ * the shared 50 MB extract cap (`MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES`) is
+ * pathological, not the target corpus. It is kept inline WITHOUT decoding —
+ * the gate is a pre-decode length check — so an oversized payload never
+ * allocates multi-megabyte decode buffers.
+ */
+export const MAX_INLINE_IMAGE_PAYLOAD_BYTES = MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES;
+
 /** Whether a slide media slot value is an inline image data URL — the only shape this converter rewrites. */
 export function isInlineImageDataUrl(ref: string | undefined): ref is string {
   return !!ref && /^data:image\//i.test(ref);
@@ -83,10 +120,30 @@ export interface DecodedInlineImage {
 }
 
 /**
+ * Raw payload text of an inline image data URL — everything after the first
+ * comma, un-decoded. The pre-decode size gate measures this so an oversized
+ * payload is kept before any decoding work happens. Returns `null` when the
+ * value is not an inline image data URL.
+ */
+export function inlineImageDataUrlPayload(src: string): string | null {
+  const comma = src.indexOf(',');
+  if (!isInlineImageDataUrl(src) || comma < 0) return null;
+  return src.slice(comma + 1);
+}
+
+/**
  * Decode a `data:image/*` URL to bytes. Handles both base64 payloads and
  * percent-encoded (UTF-8) payloads; returns `null` when the value is not
  * decodable, so a malformed value stays inline and retries on a later open
  * instead of being lost or allocated as garbage.
+ *
+ * The base64 marker follows the fetch spec's data-URL grammar: the body is
+ * base64 exactly when the mediatype ends with `;` + zero or more SPACE + an
+ * ASCII case-insensitive `base64`. The marker must be the FINAL parameter —
+ * a `;base64` anywhere else is not a marker: the browser treats the body as
+ * percent-encoded and the image is broken either way, so such a value is
+ * conservatively kept (this converter slims, it never guesses a decode path
+ * or converts a broken image).
  */
 export function decodeInlineImageDataUrl(src: string): DecodedInlineImage | null {
   const match = /^data:image\/([^;,]+)(?:;([^,]*))?,([\s\S]*)$/i.exec(src);
@@ -95,7 +152,14 @@ export function decodeInlineImageDataUrl(src: string): DecodedInlineImage | null
   const params = match[2] ?? '';
   const payload = match[3] ?? '';
   try {
-    if (params.split(';').includes('base64')) {
+    const mediatype = params ? `${mimeType};${params}` : mimeType;
+    // Fetch-spec marker (case-insensitive, space-tolerant, FINAL parameter).
+    const isBase64Payload = /; *base64$/i.test(mediatype);
+    // A `;base64` token that is not the final parameter is not a marker: keep
+    // the slot inline rather than decoding on a guess.
+    const hasStrayBase64Token = !isBase64Payload && /;\s*base64/i.test(mediatype);
+    if (hasStrayBase64Token) return null;
+    if (isBase64Payload) {
       // Base64 payload: atob yields one binary character per byte. Whitespace
       // is legal inside base64 data URLs (line-wrapped payloads) and must be
       // stripped before decoding.
@@ -253,6 +317,33 @@ export async function convertInlineImageAssets(
   let changed = false;
 
   /**
+   * Probe whether a content digest can be computed at all. `crypto.subtle` —
+   * and so the default sha-256 digest — exists only in secure contexts;
+   * non-secure contexts and older webviews lack it. Without a digest the
+   * within-run memo cannot be computed, so the pass degrades to a no-op (the
+   * document is returned unchanged and every inline slot is kept) instead of
+   * throwing where a pre-part-4 load succeeded. Probed lazily on the first
+   * inline slot; one warn covers the whole pass.
+   */
+  let digestProbed = false;
+  let digestUnavailable = false;
+  const ensureDigestAvailable = async (): Promise<boolean> => {
+    if (digestProbed) return !digestUnavailable;
+    digestProbed = true;
+    try {
+      await resolvedDeps.digest(new Uint8Array(0));
+      return true;
+    } catch {
+      digestUnavailable = true;
+      log.warn(
+        `Content digest unavailable for ${JSON.stringify(stageId)} (non-secure context or ` +
+          'older webview); keeping inline images inline for a later open',
+      );
+      return false;
+    }
+  };
+
+  /**
    * Allocate (once) for a content digest. Returns the allocated id, or `null`
    * when the ingest failed — the slot then stays inline. A failed attempt
    * releases what it allocated and forgets the digest's memo entry, so a
@@ -305,23 +396,48 @@ export async function convertInlineImageAssets(
         report.kept += 1;
         continue;
       }
-      const decoded = decodeInlineImageDataUrl(ref);
-      if (!decoded) {
+      // Per-payload decode bound: a data URL whose raw payload text exceeds
+      // the shared 50 MB cap is pathological, not the target corpus. The gate
+      // is a pre-decode length check — the decoder is never invoked for it.
+      const payload = inlineImageDataUrlPayload(ref);
+      if (payload !== null && payload.length > MAX_INLINE_IMAGE_PAYLOAD_BYTES) {
+        report.kept += 1;
+        log.warn(
+          `Skipping oversized inline image payload for ${JSON.stringify(stageId)} ` +
+            `(${payload.length} chars > ${MAX_INLINE_IMAGE_PAYLOAD_BYTES}); staying inline`,
+        );
+        continue;
+      }
+      if (!(await ensureDigestAvailable())) {
         report.kept += 1;
         continue;
       }
-      const digest = await resolvedDeps.digest(decoded.bytes);
-      let assetId: string | null;
+      const decoded = decodeInlineImageDataUrl(ref);
+      if (!decoded || decoded.bytes.length === 0) {
+        // Undecodable values, and payloads that decode to zero bytes (an
+        // empty data URL), are not usable bytes: keep the slot inline,
+        // allocate nothing, mirror no row.
+        report.kept += 1;
+        continue;
+      }
+      let assetId: string | null = null;
       try {
+        const digest = await resolvedDeps.digest(decoded.bytes);
         assetId = await allocateImage(
           digest,
           new Blob([decoded.bytes], { type: decoded.mimeType }),
           ref,
         );
-      } catch {
-        // A failed ingest leaves the slot inline; the attempt released what
-        // it allocated. Continue with the next slot — one pool hiccup must
-        // not stop the rest of the pass.
+      } catch (error) {
+        if (error instanceof InlineImageConversionAbortedError) {
+          // A superseded pass stops NOW: the abort is not a per-slot failure —
+          // digesting/allocating the remaining slots would defeat the
+          // liveness probe's purpose.
+          throw error;
+        }
+        // A failed digest or ingest leaves the slot inline; a failed attempt
+        // released what it allocated. Continue with the next slot — one
+        // hiccup must not stop the rest of the pass.
         assetId = null;
       }
       if (!assetId) {
@@ -344,9 +460,15 @@ export async function convertInlineImageAssets(
   const stage = document.stage;
   let whiteboard = stage.whiteboard;
   if (whiteboard) {
-    const converted = await Promise.all(whiteboard.map((slide) => convertSlide(slide)));
-    if (converted.some((slide, index) => slide !== whiteboard![index])) {
-      whiteboard = converted;
+    // Bounded concurrency (batch 4): decoded buffers for at most
+    // INLINE_IMAGE_SLIDE_CONCURRENCY slides coexist at once.
+    const converted = await mapWithConcurrency(
+      whiteboard,
+      INLINE_IMAGE_SLIDE_CONCURRENCY,
+      (slide) => convertSlide(slide),
+    );
+    if (converted.some((slide, index) => slide !== undefined && slide !== whiteboard![index])) {
+      whiteboard = converted.filter((slide): slide is Whiteboard => slide !== undefined);
     }
   }
 
@@ -365,9 +487,18 @@ export async function convertInlineImageAssets(
       }
     }
     if (scene.whiteboards) {
-      const converted = await Promise.all(scene.whiteboards.map((slide) => convertSlide(slide)));
-      if (converted.some((slide, index) => slide !== scene.whiteboards![index])) {
-        nextScene = { ...nextScene, whiteboards: converted };
+      const converted = await mapWithConcurrency(
+        scene.whiteboards,
+        INLINE_IMAGE_SLIDE_CONCURRENCY,
+        (slide) => convertSlide(slide),
+      );
+      if (
+        converted.some((slide, index) => slide !== undefined && slide !== scene.whiteboards![index])
+      ) {
+        nextScene = {
+          ...nextScene,
+          whiteboards: converted.filter((slide): slide is Slide => slide !== undefined),
+        };
       }
     }
     scenes.push(nextScene);

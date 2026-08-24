@@ -293,6 +293,82 @@ describe('inline image conversion with production wiring', () => {
     expect(again?.scenes[0]).toEqual(committed?.scenes[0]);
   });
 
+  it('a classroom load still returns the document when the content digest is unavailable', async () => {
+    // A non-secure context / older webview: `crypto.subtle` is undefined, so
+    // the default sha-256 digest cannot run. The inline pass must degrade to a
+    // no-op (everything kept, one warn) instead of throwing — a load that
+    // succeeded before the inline converter existed must keep succeeding.
+    const originalCrypto = globalThis.crypto;
+    vi.stubGlobal('crypto', {
+      getRandomValues: originalCrypto.getRandomValues.bind(originalCrypto),
+      randomUUID: originalCrypto.randomUUID.bind(originalCrypto),
+    } as unknown as Crypto);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const payload = {
+      stage: { id: 'classroom-1', name: 'Server Course', createdAt: 1, updatedAt: 2 },
+      scenes: [
+        {
+          id: 'scene-1',
+          stageId: 'classroom-1',
+          type: 'slide',
+          title: 'S',
+          order: 0,
+          content: {
+            type: 'slide',
+            canvas: {
+              id: 'c1',
+              elements: [
+                {
+                  id: 'el1',
+                  type: 'image',
+                  src: dataUrl('inline'),
+                  left: 0,
+                  top: 0,
+                  width: 100,
+                  height: 100,
+                },
+              ],
+            },
+          },
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string) => {
+        if (String(input) === '/api/classroom?id=classroom-1') {
+          return new Response(JSON.stringify({ success: true, classroom: payload }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        throw new Error(`Unexpected fetch: ${String(input)}`);
+      }),
+    );
+    const store = await documentStore();
+    const { fetchClassroomFromApi } = await import('@/lib/classroom/load-classroom');
+    const { getAssetPool } = await import('@/lib/media/asset-pool');
+    const pool = getAssetPool();
+
+    const result = await fetchClassroomFromApi('classroom-1', () => true, accessDeps(store));
+
+    // The load succeeds (null would be the pre-fix hard regression) and the
+    // document is persisted with the data URL still inline — nothing was
+    // converted, nothing was allocated.
+    expect(result).not.toBeNull();
+    const committed = await store.loadDocument('classroom-1');
+    const src = (committed?.scenes[0].content as { canvas: { elements: { src: string }[] } }).canvas
+      .elements[0].src;
+    expect(src).toBe(dataUrl('inline'));
+    expect(await pool.exists?.(src as never)).toBe(false);
+    expect(warnSpy.mock.calls.some((args) => String(args[0]).includes('digest unavailable'))).toBe(
+      true,
+    );
+    warnSpy.mockRestore();
+  });
+
   it('a superseded classroom load rolls the shared ledger back through the real helper', async () => {
     const { db } = await import('@/lib/utils/database');
     // The payload carries BOTH a legacy gen placeholder (owned by the #1101

@@ -4,7 +4,10 @@ import type { AssetMeta } from '@openmaic/dsl';
 import {
   convertInlineImageAssets,
   decodeInlineImageDataUrl,
+  INLINE_IMAGE_SLIDE_CONCURRENCY,
+  InlineImageConversionAbortedError,
   type InlineImageConversionDeps,
+  MAX_INLINE_IMAGE_PAYLOAD_BYTES,
 } from '@/lib/media/convert-inline-image-assets';
 import { buildStageAssetReclamationPlan } from '@/lib/media/reclaim-stage-assets';
 import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
@@ -117,6 +120,28 @@ describe('decodeInlineImageDataUrl', () => {
     expect(decodeInlineImageDataUrl('data:text/plain;base64,AAAA')).toBeNull();
     expect(decodeInlineImageDataUrl('data:image/png;base64,!!!not-base64!!!')).toBeNull();
     expect(decodeInlineImageDataUrl('https://example.com/i.png')).toBeNull();
+  });
+
+  test('the ;base64 marker follows the fetch spec: case- and space-tolerant, final parameter only', () => {
+    const payload = btoa('round-trip');
+    // Every casing/space variant the fetch spec accepts decodes as base64 and
+    // round-trips byte-exact.
+    for (const marker of [';base64', ';BASE64', ';BaSe64', '; base64', ';  base64']) {
+      const decoded = decodeInlineImageDataUrl(`data:image/png${marker},${payload}`);
+      expect(decoded).not.toBeNull();
+      expect(decoded?.mimeType).toBe('image/png');
+      expect(new TextDecoder().decode(decoded?.bytes)).toBe('round-trip');
+    }
+    // A ;base64 that is NOT the final parameter is not a marker: the browser
+    // percent-decodes the body and the image is broken either way, so the
+    // value is conservatively kept rather than decoded on a guess.
+    expect(decodeInlineImageDataUrl(`data:image/png;base64;charset=utf-8,${payload}`)).toBeNull();
+    // Percent-encoded without a marker still converts via the percent path.
+    const percent = decodeInlineImageDataUrl(
+      `data:image/png;charset=utf-8,${encodeURIComponent('<svg/>')}`,
+    );
+    expect(percent).not.toBeNull();
+    expect(new TextDecoder().decode(percent?.bytes)).toBe('<svg/>');
   });
 });
 
@@ -483,6 +508,235 @@ describe('inline base64 image conversion', () => {
     expect((convertedScene.whiteboards?.[0].elements[0] as { src: string }).src).toMatch(
       /^ast_test_/,
     );
+  });
+
+  test('fetch-spec ;base64 marker variants convert and round-trip byte-exact', async () => {
+    const { pool, deps } = makeHarness();
+    const payload = 'round-trip-bytes';
+    const variants = [
+      `data:image/png;base64,${btoa(payload)}`,
+      `data:image/png;BASE64,${btoa(payload)}`,
+      `data:image/png;BaSe64,${btoa(payload)}`,
+      `data:image/png; base64,${btoa(payload)}`,
+      `data:image/png;  base64,${btoa(payload)}`,
+    ];
+    const doc = document({
+      scenes: [
+        slideScene(
+          [],
+          variants.map((src, index) => imageElement(src, `el${index}`)),
+        ),
+      ],
+    });
+
+    const result = await convertInlineImageAssets(doc, deps);
+
+    // All five variants decode the same bytes → one allocation, five refs.
+    expect(result.changed).toBe(true);
+    expect(pool.size).toBe(1);
+    const [assetId] = [...pool.keys()];
+    expect(await pool.get(assetId)?.blob.text()).toBe(payload);
+    expect(canvasElements(result.document).map((el) => el.src)).toEqual(
+      variants.map(() => assetId),
+    );
+    expect(result.report.converted).toBe(5);
+  });
+
+  test('a ;base64 that is not the final parameter is kept, never converted', async () => {
+    const { pool, deps } = makeHarness();
+    const src = `data:image/png;base64;charset=utf-8,${btoa('not-this')}`;
+    const doc = document({ scenes: [slideScene([], [imageElement(src)])] });
+
+    const result = await convertInlineImageAssets(doc, deps);
+
+    expect(result.changed).toBe(false);
+    expect(result.document).toBe(doc);
+    expect(result.report.kept).toBe(1);
+    expect(pool.size).toBe(0);
+  });
+
+  test('an unavailable content digest degrades the pass to a no-op with one warn', async () => {
+    const { pool, deps } = makeHarness();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      // A non-secure context / older webview: crypto.subtle is undefined and
+      // the default digest throws TypeError on first use.
+      const unavailableDeps: InlineImageConversionDeps = {
+        ...deps,
+        digest: async () => {
+          throw new TypeError('crypto.subtle is undefined');
+        },
+      };
+      const doc = document({
+        scenes: [
+          slideScene([], [imageElement(pngDataUrl('a'), 'a'), imageElement(pngDataUrl('b'), 'b')]),
+        ],
+      });
+
+      const result = await convertInlineImageAssets(doc, unavailableDeps);
+
+      expect(result.changed).toBe(false);
+      expect(result.document).toBe(doc);
+      expect(result.report.converted).toBe(0);
+      expect(result.report.ingested).toBe(0);
+      expect(result.report.kept).toBe(2);
+      expect(result.allocatedIds).toEqual([]);
+      expect(pool.size).toBe(0);
+      const digestWarns = warnSpy.mock.calls.filter((args) =>
+        String(args[0]).includes('digest unavailable'),
+      );
+      expect(digestWarns).toHaveLength(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test('a mid-run digest failure keeps that slot inline and the pass continues', async () => {
+    const { pool, deps } = makeHarness();
+    const failingDigest: InlineImageConversionDeps['digest'] = async (bytes) => {
+      const hex = bytesToHex(bytes);
+      if (hex === bytesToHex(new TextEncoder().encode('boom'))) throw new Error('digest hiccup');
+      return hex;
+    };
+    const doc = document({
+      scenes: [
+        slideScene(
+          [],
+          [
+            imageElement(pngDataUrl('ok-1'), 'a'),
+            imageElement(pngDataUrl('boom'), 'b'),
+            imageElement(pngDataUrl('ok-2'), 'c'),
+          ],
+        ),
+      ],
+    });
+
+    const result = await convertInlineImageAssets(doc, { ...deps, digest: failingDigest });
+
+    expect(result.changed).toBe(true);
+    expect(result.report.converted).toBe(2);
+    expect(result.report.kept).toBe(1);
+    const srcs = canvasElements(result.document).map((el) => el.src);
+    expect(srcs[0]).toMatch(/^ast_test_/);
+    expect(srcs[1]).toBe(pngDataUrl('boom'));
+    expect(srcs[2]).toMatch(/^ast_test_/);
+    expect(pool.size).toBe(2);
+  });
+
+  test('zero-byte payloads stay inline: no allocation, no compatibility row', async () => {
+    const { pool, mediaRows, deps } = makeHarness();
+    const doc = document({
+      scenes: [
+        slideScene([], [imageElement('data:image/png;base64,'), imageElement('data:image/png,')]),
+      ],
+    });
+
+    const result = await convertInlineImageAssets(doc, deps);
+
+    expect(result.changed).toBe(false);
+    expect(result.document).toBe(doc);
+    expect(result.report.kept).toBe(2);
+    expect(pool.size).toBe(0);
+    expect(mediaRows.size).toBe(0);
+  });
+
+  test('an abort mid-pass stops the pass immediately and the ledger carries exactly the pre-abort allocations', async () => {
+    const { pool, deps } = makeHarness();
+    const ledger: string[] = [];
+    let digestCalls = 0;
+    let putAssetCalls = 0;
+    const countingDeps: InlineImageConversionDeps = {
+      ...deps,
+      digest: async (bytes) => {
+        digestCalls += 1;
+        return bytesToHex(bytes);
+      },
+      putAsset: async (blob, meta) => {
+        putAssetCalls += 1;
+        const id = `ast_test_${(allocationCounter += 1)}`;
+        pool.set(id, { blob, meta });
+        return id;
+      },
+    };
+    // Liveness holds for the slide-start check and slot 1's commit boundary,
+    // then fails at slot 2's commit boundary — after slot 2's bytes were
+    // ingested but before its mirror write.
+    let livenessCalls = 0;
+    const shouldContinue = () => ++livenessCalls < 3;
+    const doc = document({
+      scenes: [
+        slideScene(
+          [],
+          [
+            imageElement(pngDataUrl('one'), 'a'),
+            imageElement(pngDataUrl('two'), 'b'),
+            imageElement(pngDataUrl('three'), 'c'),
+          ],
+        ),
+      ],
+    });
+
+    await expect(
+      convertInlineImageAssets(doc, countingDeps, shouldContinue, ledger),
+    ).rejects.toThrow(InlineImageConversionAbortedError);
+
+    // Slot 3 was never touched: the abort stopped the pass immediately.
+    expect(digestCalls).toBe(3); // availability probe + slot 1 + slot 2
+    expect(putAssetCalls).toBe(2); // slot 1 + slot 2 (slot 2's putAsset precedes its commit check)
+    expect(ledger).toHaveLength(2); // exactly the pre-abort allocations
+    expect(pool.size).toBe(1); // slot 2's allocation was compensated on abort
+    // The input document is never mutated even by the aborted pass.
+    expect(canvasElements(doc)[0].src).toBe(pngDataUrl('one'));
+  });
+
+  test('an oversized inline payload is kept without decoding', async () => {
+    const { pool, deps } = makeHarness();
+    let digestCalls = 0;
+    const countingDeps: InlineImageConversionDeps = {
+      ...deps,
+      digest: async (bytes) => {
+        digestCalls += 1;
+        return bytesToHex(bytes);
+      },
+    };
+    const oversized = `data:image/png;base64,${'A'.repeat(MAX_INLINE_IMAGE_PAYLOAD_BYTES + 1)}`;
+    const doc = document({ scenes: [slideScene([], [imageElement(oversized)])] });
+
+    const result = await convertInlineImageAssets(doc, countingDeps);
+
+    expect(result.changed).toBe(false);
+    expect(result.document).toBe(doc);
+    expect(result.report.kept).toBe(1);
+    expect(pool.size).toBe(0);
+    // The pre-decode gate fired: no digest — and so no decode — was attempted.
+    expect(digestCalls).toBe(0);
+  });
+
+  test('whiteboard slides convert with bounded concurrency (batch 4)', async () => {
+    const { pool, deps } = makeHarness();
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const slowDigest: InlineImageConversionDeps['digest'] = async (bytes) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return bytesToHex(bytes);
+    };
+    const slides = Array.from({ length: 9 }, (_, index) => ({
+      id: `wb-${index}`,
+      elements: [imageElement(pngDataUrl(`img-${index}`), `el-${index}`)],
+    }));
+    const doc = document({
+      stage: stage({ whiteboard: slides as unknown as Stage['whiteboard'] }),
+    });
+
+    const result = await convertInlineImageAssets(doc, { ...deps, digest: slowDigest });
+
+    expect(result.changed).toBe(true);
+    expect(result.report.converted).toBe(9);
+    expect(pool.size).toBe(9);
+    expect(maxInFlight).toBeLessThanOrEqual(INLINE_IMAGE_SLIDE_CONCURRENCY);
   });
 });
 
