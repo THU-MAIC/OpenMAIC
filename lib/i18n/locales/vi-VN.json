@@ -227,13 +227,6 @@
       "interactive": "Trang tương tác",
       "pbl": "Học theo dự án"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "Một thẻ khác đang sửa bài học này",
-        "body": "Chỉ một thẻ được phép sửa để tránh xung đột nội dung. Hãy đóng thẻ kia (hoặc đợi nó hết phiên) trước khi vào chế độ sửa ở đây.",
-        "actionDismiss": "Đã hiểu"
-      }
-    },
     "text": {
       "toolbar": "Thanh công cụ chữ",
       "label": "Chữ",

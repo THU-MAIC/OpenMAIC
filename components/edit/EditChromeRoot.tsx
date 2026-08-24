@@ -29,14 +29,6 @@ interface EditChromeRootProps {
  * (settings pill + Pro Switch) that rides in CommandBar's right slot,
  * and the tabbed `RightRailTabs` (Edit with AI + 角色 roster).
  *
- * NOT owned here:
- * - `MultiTabEditConflictPrompt` — must mount even in playback mode so
- *   the lock-conflict dialog can be shown when entering edit mode is
- *   refused (mode is still 'playback' at that point).
- * - `useEditModeLock` — the lock is acquired by the Pro toggle in
- *   stage.tsx BEFORE the live session is torn down, so it can't live
- *   in a component that only mounts after the switch.
- *
  * `scene` is required (non-null). The parent gates mounting on
  * `mode === 'edit' && currentScene` to satisfy this contract.
  */

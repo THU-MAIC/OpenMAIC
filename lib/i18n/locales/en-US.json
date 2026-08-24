@@ -227,13 +227,6 @@
       "interactive": "Interactive",
       "pbl": "PBL"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "Another tab is editing this course",
-        "body": "Editing is locked to a single tab to avoid conflicting changes. Close the other tab (or wait for its session to time out) before entering edit mode here.",
-        "actionDismiss": "Got it"
-      }
-    },
     "text": {
       "toolbar": "Text toolbar",
       "label": "Text",

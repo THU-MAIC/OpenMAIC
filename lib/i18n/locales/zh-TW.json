@@ -227,13 +227,6 @@
       "interactive": "互動",
       "pbl": "PBL"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "另一個分頁正在編輯此課程",
-        "body": "編輯已鎖定至單一分頁，以避免衝突變更。請關閉其他分頁（或等待其工作階段逾時）後再進入編輯模式。",
-        "actionDismiss": "知道了"
-      }
-    },
     "text": {
       "label": "文字",
       "font": "字型",

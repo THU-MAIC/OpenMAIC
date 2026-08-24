@@ -545,8 +545,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   insertSceneAfter: (anchorSceneId, scene) => {
     // Pro mode slide management entry point — inserts after the anchor and
     // rebalances `order` so PPTX export / array position stay consistent.
-    // Edit mode is gated against active regeneration (see useEditModeLock),
-    // so rewriting `order` here is safe — no outline matcher is racing us.
+    // Regeneration is gated by the regen lease, so no outline matcher is
+    // racing us here; cross-tab `order` collisions are last-write-wins.
     const currentStage = get().stage;
     if (!currentStage || scene.stageId !== currentStage.id) {
       log.warn(

@@ -18,7 +18,17 @@ const teacher: AgentConfig = {
   persona: 'Teach clearly.',
   avatar: '',
   color: '#3366ff',
-  allowedActions: ['wb_open', 'wb_draw_text', 'wb_close'],
+  allowedActions: [
+    'wb_open',
+    'wb_draw_text',
+    'wb_draw_shape',
+    'wb_draw_chart',
+    'wb_draw_latex',
+    'wb_draw_table',
+    'wb_draw_line',
+    'wb_draw_code',
+    'wb_close',
+  ],
   priority: 10,
   createdAt: new Date('2026-01-01T00:00:00Z'),
   updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -73,7 +83,18 @@ function service(overrides: Partial<WhiteboardRuntimeService> = {}): WhiteboardR
 describe('Native RuntimeStore whiteboard tools', () => {
   it('uses actual allowedActions inventory and co-registers wb_read', () => {
     const names = build(service()).tools.map((tool) => tool.name);
-    expect(names).toEqual(['wb_read', 'wb_open', 'wb_draw_text', 'wb_close']);
+    expect(names).toEqual([
+      'wb_read',
+      'wb_open',
+      'wb_draw_text',
+      'wb_draw_shape',
+      'wb_draw_chart',
+      'wb_draw_latex',
+      'wb_draw_table',
+      'wb_draw_line',
+      'wb_draw_code',
+      'wb_close',
+    ]);
 
     const readOnly = buildNativeWhiteboardTools({
       agent: { ...teacher, allowedActions: [] },
@@ -85,6 +106,37 @@ describe('Native RuntimeStore whiteboard tools', () => {
       requestStartManualVisibilityRevision: 0,
     });
     expect(readOnly).toEqual([]);
+  });
+
+  it('injects the complete read/open/close control plane for an allowed mutation', () => {
+    const tools = buildNativeWhiteboardTools({
+      agent: { ...teacher, allowedActions: ['wb_draw_shape'] },
+      messageId: 'message-1',
+      send: vi.fn(),
+      service: service(),
+      stageId: 'stage-1',
+      learnerKey: 'learner-1',
+      requestStartManualVisibilityRevision: 0,
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual([
+      'wb_read',
+      'wb_open',
+      'wb_draw_shape',
+      'wb_close',
+    ]);
+  });
+
+  it('tells every mutation tool to open first for a user-visible drawing', () => {
+    const mutationTools = build(service()).tools.filter((tool) => tool.name.startsWith('wb_draw_'));
+
+    expect(mutationTools).toHaveLength(7);
+    for (const tool of mutationTools) {
+      expect(tool.description).toContain(
+        'For a user-visible drawing request, call wb_open before this tool',
+      );
+      expect(tool.description).toContain('this mutation tool never changes visibility itself');
+    }
   });
 
   it.each([null, 0] as const)(
@@ -116,27 +168,51 @@ describe('Native RuntimeStore whiteboard tools', () => {
         }
       });
       const read = build(runtime, send).tools.find((tool) => tool.name === 'wb_read')!;
+      const expectedLastSeqInstruction =
+        lastSeq === null
+          ? 'Set expectedLastSeq to JSON null exactly.'
+          : `Set expectedLastSeq to the JSON number ${lastSeq} exactly; do not use null.`;
+      const result = await read.execute('read-1', {});
 
-      await expect(read.execute('read-1', {})).resolves.toMatchObject({
+      expect(result).toMatchObject({
         details: {
           durable: { lastSeq },
           presentation: { visibility: 'closed' },
           nextMutation: {
             expectedLastSeq: lastSeq,
+            expectedLastSeqInstruction,
             drawingAllowedWhenVisibilityClosed: true,
           },
         },
       });
+      expect(result.content).toEqual([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining(expectedLastSeqInstruction),
+        }),
+      ]);
     },
   );
 
   it('rejects Legacy draw arguments that omit expectedLastSeq or add elementId', () => {
     const draw = build(service()).tools.find((tool) => tool.name === 'wb_draw_text')!;
+    const expectedLastSeqSchema = (
+      draw.parameters as {
+        properties?: {
+          expectedLastSeq?: { type?: string[]; minimum?: number; description?: string };
+        };
+      }
+    ).properties?.expectedLastSeq;
 
-    expect(
-      (draw.parameters as { properties?: { expectedLastSeq?: { description?: string } } })
-        .properties?.expectedLastSeq?.description,
-    ).toContain('Copy nextMutation.expectedLastSeq exactly');
+    expect(expectedLastSeqSchema).toMatchObject({ type: ['integer', 'null'], minimum: 0 });
+    expect(expectedLastSeqSchema?.description).toContain(
+      'Copy nextMutation.expectedLastSeq exactly',
+    );
+
+    const zeroSeq = { expectedLastSeq: 0, content: 'Runtime authority', x: 10, y: 20 };
+    const nullSeq = { expectedLastSeq: null, content: 'Runtime authority', x: 10, y: 20 };
+    expect(draw.prepareArguments?.(zeroSeq)).toBe(zeroSeq);
+    expect(draw.prepareArguments?.(nullSeq)).toBe(nullSeq);
 
     expect(() => draw.prepareArguments?.({ content: 'Runtime authority', x: 10, y: 20 })).toThrow(
       'Native whiteboard arguments must match the strict schema.',
@@ -150,6 +226,39 @@ describe('Native RuntimeStore whiteboard tools', () => {
         elementId: 'legacy-element',
       }),
     ).toThrow('Native whiteboard arguments must match the strict schema.');
+  });
+
+  it('keeps expectedLastSeq required and host-owned identity across every additive schema', () => {
+    const tools = build(service()).tools;
+    const samples: Record<string, Record<string, unknown>> = {
+      wb_draw_shape: { shape: 'rectangle', x: 1, y: 2, width: 30, height: 40 },
+      wb_draw_chart: {
+        chartType: 'bar',
+        x: 1,
+        y: 2,
+        width: 300,
+        height: 200,
+        data: { labels: ['A'], legends: ['Value'], series: [[1]] },
+      },
+      wb_draw_latex: { latex: 'x^2', x: 1, y: 2 },
+      wb_draw_table: { x: 1, y: 2, width: 300, height: 120, data: [['A']] },
+      wb_draw_line: { startX: 1, startY: 2, endX: 30, endY: 40 },
+      wb_draw_code: { language: 'python', code: 'print(1)', x: 1, y: 2 },
+    };
+
+    for (const [name, sample] of Object.entries(samples)) {
+      const tool = tools.find((candidate) => candidate.name === name)!;
+      expect(
+        (tool.parameters as { properties?: { expectedLastSeq?: { description?: string } } })
+          .properties?.expectedLastSeq?.description,
+      ).toContain('Copy nextMutation.expectedLastSeq exactly');
+      expect(() => tool.prepareArguments?.(sample)).toThrow('strict schema');
+      expect(() =>
+        tool.prepareArguments?.({ ...sample, expectedLastSeq: null, elementId: 'model-owned' }),
+      ).toThrow('strict schema');
+      const valid = { ...sample, expectedLastSeq: null };
+      expect(tool.prepareArguments?.(valid)).toBe(valid);
+    }
   });
 
   it('commits element_added, returns canonical post-state, and emits only a projection hint', async () => {
@@ -229,6 +338,353 @@ describe('Native RuntimeStore whiteboard tools', () => {
     });
   });
 
+  it('commits every remaining additive draw type through the existing element_added contract', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    try {
+      const store = new BrowserRuntimeStore({
+        indexedDB: new IDBFactory(),
+        payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      });
+      const runtime = createWhiteboardRuntimeService({
+        store,
+        resolveLearnerKey: () => 'learner-1',
+        withMaintenanceLock: (work) => work(),
+      });
+      const tools = build(runtime).tools;
+      const draws = [
+        {
+          name: 'wb_draw_shape',
+          params: {
+            shape: 'circle',
+            x: 40,
+            y: 50,
+            width: 120,
+            height: 120,
+            fillColor: '#123456',
+          },
+        },
+        {
+          name: 'wb_draw_chart',
+          params: {
+            chartType: 'bar',
+            x: 200,
+            y: 50,
+            width: 300,
+            height: 200,
+            data: { labels: ['A'], legends: ['Score'], series: [[3]] },
+          },
+        },
+        {
+          name: 'wb_draw_latex',
+          params: { latex: 'E = mc^2', x: 40, y: 220, color: '#111111' },
+        },
+        {
+          name: 'wb_draw_table',
+          params: {
+            x: 300,
+            y: 280,
+            width: 360,
+            height: 160,
+            data: [
+              ['Name', 'Value'],
+              ['A', '3'],
+            ],
+          },
+        },
+        {
+          name: 'wb_draw_line',
+          params: {
+            startX: 80,
+            startY: 450,
+            endX: 260,
+            endY: 500,
+            points: ['', 'arrow'],
+          },
+        },
+        {
+          name: 'wb_draw_code',
+          params: {
+            language: 'typescript',
+            code: 'const answer = 42;\nconsole.log(answer);',
+            x: 500,
+            y: 40,
+          },
+        },
+      ] as const;
+
+      for (let index = 0; index < draws.length; index += 1) {
+        const draw = draws[index]!;
+        const tool = tools.find((candidate) => candidate.name === draw.name)!;
+        const params = {
+          ...draw.params,
+          expectedLastSeq: index === 0 ? null : index - 1,
+        };
+        expect(tool.prepareArguments?.(params)).toBe(params);
+        await expect(tool.execute(`draw-${draw.name}`, params)).resolves.toMatchObject({
+          details: {
+            committedSeq: index,
+            lastSeq: index,
+            replayed: false,
+            dispatchedAction: true,
+            affected: { element: { type: draw.name.slice('wb_draw_'.length) } },
+          },
+        });
+      }
+
+      const state = await runtime.read('stage-1');
+      expect(state.whiteboard?.elements).toEqual([
+        expect.objectContaining({
+          type: 'shape',
+          left: 40,
+          top: 50,
+          width: 120,
+          height: 120,
+          viewBox: [1000, 1000],
+          path: 'M 500 0 A 500 500 0 1 1 499 0 Z',
+          fill: '#123456',
+          fixedRatio: false,
+        }),
+        expect.objectContaining({
+          type: 'chart',
+          left: 200,
+          top: 50,
+          width: 300,
+          height: 200,
+          chartType: 'bar',
+          data: { labels: ['A'], legends: ['Score'], series: [[3]] },
+          themeColors: ['#5b9bd5', '#ed7d31', '#a5a5a5', '#ffc000', '#4472c4'],
+        }),
+        expect.objectContaining({
+          type: 'latex',
+          left: 40,
+          top: 220,
+          width: 400,
+          height: 80,
+          latex: 'E = mc^2',
+          html: expect.stringContaining('katex'),
+          color: '#111111',
+          fixedRatio: true,
+        }),
+        expect.objectContaining({
+          type: 'table',
+          left: 300,
+          top: 280,
+          width: 360,
+          height: 160,
+          colWidths: [0.5, 0.5],
+          cellMinHeight: 36,
+          outline: { width: 2, style: 'solid', color: '#eeece1' },
+          data: [
+            [
+              expect.objectContaining({ colspan: 1, rowspan: 1, text: 'Name' }),
+              expect.objectContaining({ colspan: 1, rowspan: 1, text: 'Value' }),
+            ],
+            [
+              expect.objectContaining({ colspan: 1, rowspan: 1, text: 'A' }),
+              expect.objectContaining({ colspan: 1, rowspan: 1, text: '3' }),
+            ],
+          ],
+        }),
+        expect.objectContaining({
+          type: 'line',
+          left: 80,
+          top: 450,
+          width: 2,
+          start: [0, 0],
+          end: [180, 50],
+          style: 'solid',
+          color: '#333333',
+          points: ['', 'arrow'],
+        }),
+        expect.objectContaining({
+          type: 'code',
+          language: 'typescript',
+          left: 500,
+          top: 40,
+          width: 500,
+          height: 300,
+          showLineNumbers: true,
+          fontSize: 14,
+          lines: [
+            expect.objectContaining({ content: 'const answer = 42;' }),
+            expect.objectContaining({ content: 'console.log(answer);' }),
+          ],
+        }),
+      ]);
+      const table = state.whiteboard?.elements.find((element) => element.type === 'table');
+      const code = state.whiteboard?.elements.find((element) => element.type === 'code');
+      expect(table?.data.flat().map((cell) => cell.id)).toEqual([
+        expect.stringMatching(/^native-wb-table-cell:[0-9a-f]{64}:0:0$/u),
+        expect.stringMatching(/^native-wb-table-cell:[0-9a-f]{64}:0:1$/u),
+        expect.stringMatching(/^native-wb-table-cell:[0-9a-f]{64}:1:0$/u),
+        expect.stringMatching(/^native-wb-table-cell:[0-9a-f]{64}:1:1$/u),
+      ]);
+      expect(code?.lines.map((line) => line.id)).toEqual([
+        expect.stringMatching(/^native-wb-code-line:[0-9a-f]{64}:0$/u),
+        expect.stringMatching(/^native-wb-code-line:[0-9a-f]{64}:1$/u),
+      ]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects non-rectangular tables and model-supplied Native element identity', () => {
+    const runtime = service();
+    const table = build(runtime).tools.find((tool) => tool.name === 'wb_draw_table')!;
+    expect(() =>
+      table.prepareArguments?.({
+        expectedLastSeq: null,
+        x: 1,
+        y: 2,
+        width: 300,
+        height: 120,
+        data: [['A', 'B'], ['C']],
+      }),
+    ).toThrow('strict schema');
+    expect(() =>
+      table.prepareArguments?.({
+        expectedLastSeq: null,
+        x: 1,
+        y: 2,
+        width: 300,
+        height: 120,
+        data: [['A']],
+        elementId: 'model-owned-id',
+      }),
+    ).toThrow('strict schema');
+    expect(runtime.append).not.toHaveBeenCalled();
+  });
+
+  it('publishes a JSON Schema 2020-12 compatible fixed-length line marker array', () => {
+    const runtime = service();
+    const line = build(runtime).tools.find((tool) => tool.name === 'wb_draw_line')!;
+    const points = (
+      line.parameters as {
+        properties?: {
+          points?: { items?: unknown; minItems?: number; maxItems?: number };
+        };
+      }
+    ).properties?.points;
+
+    expect(points).toMatchObject({ minItems: 2, maxItems: 2 });
+    expect(Array.isArray(points?.items)).toBe(false);
+    expect(() =>
+      line.prepareArguments?.({
+        expectedLastSeq: null,
+        startX: 0,
+        startY: 0,
+        endX: 100,
+        endY: 100,
+        points: ['arrow'],
+      }),
+    ).toThrow('strict schema');
+    expect(runtime.append).not.toHaveBeenCalled();
+  });
+
+  it('rejects zero-length lines before append', () => {
+    const runtime = service();
+    const harness = build(runtime);
+    const line = harness.tools.find((tool) => tool.name === 'wb_draw_line')!;
+
+    expect(() =>
+      line.prepareArguments?.({
+        expectedLastSeq: null,
+        startX: 12,
+        startY: 34,
+        endX: 12,
+        endY: 34,
+      }),
+    ).toThrow('distinct start and end points');
+    expect(runtime.append).not.toHaveBeenCalled();
+    expect(harness.send).not.toHaveBeenCalled();
+  });
+
+  it.each(['', '\n', '   \t'])('rejects blank code %j before append', (code) => {
+    const runtime = service();
+    const harness = build(runtime);
+    const drawCode = harness.tools.find((tool) => tool.name === 'wb_draw_code')!;
+
+    expect(() =>
+      drawCode.prepareArguments?.({
+        expectedLastSeq: null,
+        language: 'python',
+        code,
+        x: 1,
+        y: 2,
+      }),
+    ).toThrow('strict schema');
+    expect(runtime.append).not.toHaveBeenCalled();
+    expect(harness.send).not.toHaveBeenCalled();
+  });
+
+  it('rejects empty chart series, palettes, and radar labels before append', () => {
+    const runtime = service();
+    const chart = build(runtime).tools.find((tool) => tool.name === 'wb_draw_chart')!;
+    const base = {
+      expectedLastSeq: null,
+      chartType: 'bar',
+      x: 1,
+      y: 2,
+      width: 300,
+      height: 200,
+      data: { labels: ['A'], legends: ['Value'], series: [[1]] },
+    };
+
+    expect(() => chart.prepareArguments?.({ ...base, data: { ...base.data, series: [] } })).toThrow(
+      'strict schema',
+    );
+    expect(() =>
+      chart.prepareArguments?.({ ...base, data: { ...base.data, series: [[]] } }),
+    ).toThrow('strict schema');
+    expect(() => chart.prepareArguments?.({ ...base, themeColors: [] })).toThrow('strict schema');
+    expect(() =>
+      chart.prepareArguments?.({
+        ...base,
+        chartType: 'radar',
+        data: { ...base.data, labels: [] },
+      }),
+    ).toThrow('strict schema');
+    expect(runtime.append).not.toHaveBeenCalled();
+  });
+
+  it('describes the existing bar and column orientation in the chart schema', () => {
+    const runtime = service();
+    const chart = build(runtime).tools.find((tool) => tool.name === 'wb_draw_chart')!;
+
+    expect(JSON.stringify(chart.parameters)).toContain(
+      'Use bar for vertical bars with category labels on the x-axis. Use column for horizontal bars with category labels on the y-axis.',
+    );
+  });
+
+  it('escapes model-authored table text before committing it', async () => {
+    const runtime = service();
+    const table = build(runtime).tools.find((tool) => tool.name === 'wb_draw_table')!;
+    const params = {
+      expectedLastSeq: null,
+      x: 1,
+      y: 2,
+      width: 300,
+      height: 120,
+      data: [['<svg/onload=x>']],
+    };
+
+    await table.execute('unsafe-table', params);
+
+    expect(runtime.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          operation: expect.objectContaining({
+            kind: 'element_added',
+            element: expect.objectContaining({
+              type: 'table',
+              data: [[expect.objectContaining({ text: '&lt;svg/onload=x&gt;' })]],
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
   it('exactly replays one logical draw without appending a second record', async () => {
     vi.stubGlobal('IDBKeyRange', IDBKeyRange);
     try {
@@ -255,6 +711,64 @@ describe('Native RuntimeStore whiteboard tools', () => {
       await expect(draw.execute('same-tool-call', params)).resolves.toMatchObject({
         details: { committedSeq: 0, replayed: true, dispatchedAction: true },
       });
+
+      const sessions = await store.listSessions('stage-1', 'learner-1');
+      expect(sessions).toHaveLength(1);
+      await expect(store.listRecords(sessions[0]!.id)).resolves.toHaveLength(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([
+    {
+      name: 'wb_draw_table',
+      params: { x: 10, y: 20, width: 300, height: 120, data: [['A', 'B']] },
+      nestedIds: (element: { data?: Array<Array<{ id: string }>> }) =>
+        element.data?.flat().map((cell) => cell.id),
+      idPattern: /^native-wb-table-cell:[0-9a-f]{64}:0:[01]$/u,
+    },
+    {
+      name: 'wb_draw_code',
+      params: { language: 'python', code: 'x = 1\nprint(x)', x: 10, y: 20 },
+      nestedIds: (element: { lines?: Array<{ id: string }> }) =>
+        element.lines?.map((line) => line.id),
+      idPattern: /^native-wb-code-line:[0-9a-f]{64}:[01]$/u,
+    },
+  ])('exactly replays $name with stable nested IDs and one record', async (testCase) => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    try {
+      const store = new BrowserRuntimeStore({
+        indexedDB: new IDBFactory(),
+        payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      });
+      const runtime = createWhiteboardRuntimeService({
+        store,
+        resolveLearnerKey: () => 'learner-1',
+        withMaintenanceLock: (work) => work(),
+      });
+      const draw = build(runtime).tools.find((tool) => tool.name === testCase.name)!;
+      const params = { ...testCase.params, expectedLastSeq: null };
+
+      await expect(draw.execute('same-nested-tool-call', params)).resolves.toMatchObject({
+        details: { committedSeq: 0, replayed: false, dispatchedAction: true },
+      });
+      const firstState = await runtime.read('stage-1');
+      const firstElement = firstState.whiteboard?.elements[0] as Parameters<
+        typeof testCase.nestedIds
+      >[0];
+      const firstIds = testCase.nestedIds(firstElement);
+
+      await expect(draw.execute('same-nested-tool-call', params)).resolves.toMatchObject({
+        details: { committedSeq: 0, replayed: true, dispatchedAction: true },
+      });
+      const replayedState = await runtime.read('stage-1');
+      const replayedElement = replayedState.whiteboard?.elements[0] as Parameters<
+        typeof testCase.nestedIds
+      >[0];
+      expect(testCase.nestedIds(replayedElement)).toEqual(firstIds);
+      expect(firstIds).toHaveLength(2);
+      firstIds?.forEach((id) => expect(id).toMatch(testCase.idPattern));
 
       const sessions = await store.listSessions('stage-1', 'learner-1');
       expect(sessions).toHaveLength(1);
@@ -521,9 +1035,16 @@ describe('Native RuntimeStore whiteboard tools', () => {
     const open = tools.find((tool) => tool.name === 'wb_open')!;
     const close = tools.find((tool) => tool.name === 'wb_close')!;
 
-    await expect(open.execute('open-1', {})).resolves.toMatchObject({
+    const openResult = await open.execute('open-1', {});
+    expect(openResult).toMatchObject({
       details: { actionName: 'wb_open', dispatchedAction: true },
     });
+    expect(openResult.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringMatching(/did not draw.*continue in the same Child.*wb_draw_\*/u),
+      }),
+    ]);
     await expect(close.execute('close-1', {})).resolves.toMatchObject({
       details: { actionName: 'wb_close', dispatchedAction: true },
     });

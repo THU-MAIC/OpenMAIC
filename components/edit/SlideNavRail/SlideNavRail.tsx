@@ -185,8 +185,8 @@ export function SlideNavRail() {
   const handleActivate = useCallback(
     (sceneId: string) => {
       if (sceneId === currentSceneId) return;
-      // Switching to a non-slide scene is fine — useEditModeLock will
-      // auto-exit Pro mode the moment the new scene is uneditable.
+      // Switching to a non-slide scene is fine — Stage's auto-exit
+      // effect drops Pro mode the moment the new scene is uneditable.
       setCurrentSceneId(sceneId);
     },
     [currentSceneId, setCurrentSceneId],

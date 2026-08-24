@@ -227,13 +227,6 @@
       "interactive": "Interactivo",
       "pbl": "ABP"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "Otra pestaña está editando este curso",
-        "body": "La edición está limitada a una sola pestaña para evitar cambios en conflicto. Cierra la otra pestaña (o espera a que su sesión expire) antes de entrar al modo de edición aquí.",
-        "actionDismiss": "Entendido"
-      }
-    },
     "text": {
       "toolbar": "Barra de texto",
       "label": "Texto",

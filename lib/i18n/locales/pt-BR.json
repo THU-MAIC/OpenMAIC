@@ -212,13 +212,6 @@
       "interactive": "Interativa",
       "pbl": "PBL"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "Outra aba está editando este curso",
-        "body": "A edição fica restrita a uma única aba para evitar alterações conflitantes. Feche a outra aba (ou aguarde a sessão dela expirar) antes de entrar no modo de edição aqui.",
-        "actionDismiss": "Entendi"
-      }
-    },
     "text": {
       "toolbar": "Barra de texto",
       "label": "Texto",

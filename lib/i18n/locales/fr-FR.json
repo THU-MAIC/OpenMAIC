@@ -227,13 +227,6 @@
       "interactive": "Interactif",
       "pbl": "Projet"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "Un autre onglet modifie déjà ce cours",
-        "body": "La modification est réservée à un seul onglet pour éviter les conflits. Fermez l’autre onglet, ou attendez l’expiration de sa session, avant de passer en mode édition ici.",
-        "actionDismiss": "Compris"
-      }
-    },
     "text": {
       "toolbar": "Barre de texte",
       "label": "Texte",

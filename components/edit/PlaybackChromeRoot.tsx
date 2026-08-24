@@ -71,7 +71,7 @@ interface PlaybackChromeRootProps {
   readonly onRetryOutline?: (outlineId: string) => Promise<void>;
   /** Whether the Pro Switch in Header should be enabled. */
   readonly canEnterProMode?: boolean;
-  /** Pro Switch click handler — parent coordinates editLock + teardown. */
+  /** Pro Switch click handler — parent coordinates teardown + mode flip. */
   readonly onEnterProMode?: () => void;
 }
 
@@ -1333,9 +1333,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
           {/* Header — playback only. The Pro Switch fires `onEnterProMode`
-            (passed by the parent Stage) which acquires the cross-tab
-            edit lock and then awaits our `teardown()` before flipping
-            mode to 'edit'. */}
+            (passed by the parent Stage) which awaits our `teardown()`
+            before the parent flips mode to 'edit'. */}
           {!isPresenting && (
             <Header
               currentSceneTitle={

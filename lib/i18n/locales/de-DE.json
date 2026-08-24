@@ -227,13 +227,6 @@
       "interactive": "Interaktiv",
       "pbl": "Projektbasiertes Lernen"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "Dieser Kurs wird in einem anderen Tab bearbeitet",
-        "body": "Um widersprüchliche Änderungen zu vermeiden, kann der Kurs nur in einem Tab bearbeitet werden. Schließe den anderen Tab (oder warte, bis dessen Sitzung abläuft), bevor du hier in den Bearbeitungsmodus wechselst.",
-        "actionDismiss": "Verstanden"
-      }
-    },
     "text": {
       "toolbar": "Textwerkzeuge",
       "label": "Text",

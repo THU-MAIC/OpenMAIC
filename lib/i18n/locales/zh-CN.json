@@ -227,13 +227,6 @@
       "interactive": "互动",
       "pbl": "PBL"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "另一个标签页正在编辑此课程",
-        "body": "编辑模式同一时间只允许一个标签页持有，避免变更冲突。请先关闭其他标签页（或等待对方会话超时），再在此进入编辑模式。",
-        "actionDismiss": "知道了"
-      }
-    },
     "text": {
       "toolbar": "文本工具栏",
       "label": "文本",
