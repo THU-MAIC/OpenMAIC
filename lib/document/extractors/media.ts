@@ -1,33 +1,26 @@
 import { parseMedia } from '@/lib/media-parse';
 import { MEDIA_PARSE_PROVIDERS } from '@/lib/media-parse/constants';
-import type { MediaParseProviderConfig, MediaParseProviderId } from '@/lib/media-parse/types';
-import type {
-  MediaExtractorCapabilities,
-  MediaExtractorInput,
-  MediaExtractorProvider,
-} from '../types';
+import type { MediaParseProviderId } from '@/lib/media-parse/types';
+import type { MediaExtractorInput, MediaExtractorProvider } from '../types';
+import { getMediaExtractorManifestEntry, type MediaExtractorManifestEntry } from './manifest';
 
-function capabilitiesFromMediaParseProvider(
-  provider: MediaParseProviderConfig,
-): MediaExtractorCapabilities {
-  const features = new Set(provider.features);
-  return {
-    transcript: features.has('transcript'),
-    keyframes: features.has('keyframes'),
-    synopsis: features.has('synopsis'),
-    ocr: features.has('ocr'),
-    async: true,
-  };
+/** The manifest entry backing a media provider, or a loud failure at module init. */
+function mediaManifestEntry(id: MediaParseProviderId): MediaExtractorManifestEntry {
+  const entry = getMediaExtractorManifestEntry(id);
+  if (!entry) {
+    throw new Error(`No media extractor manifest entry for provider "${id}"`);
+  }
+  return entry;
 }
 
 function createMediaBackedExtractor(id: MediaParseProviderId): MediaExtractorProvider {
-  const mp = MEDIA_PARSE_PROVIDERS[id];
   return {
-    id,
-    displayName: mp.name,
-    supportedMimeTypes: [...mp.supportedMimeTypes],
-    capabilities: capabilitiesFromMediaParseProvider(mp),
-    version: '1',
+    // Metadata comes from the browser-safe manifest — single source of truth
+    // for the extractor identity (RFC #1153 part 1); the implementation is
+    // attached here. `mediaManifestEntry` throws at module init if a
+    // MEDIA_PARSE_PROVIDERS entry ever lacks a manifest entry, and the
+    // registry sync test pins the reverse direction (no orphan entries).
+    ...mediaManifestEntry(id),
     async extract(input: MediaExtractorInput) {
       return parseMedia({
         buffer: input.buffer,

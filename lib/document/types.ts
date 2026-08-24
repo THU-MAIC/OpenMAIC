@@ -70,7 +70,12 @@ export interface MediaExtractorInput {
 export interface MediaExtractorProvider {
   id: MediaExtractorProviderId;
   displayName: string;
-  supportedMimeTypes: string[];
+  /**
+   * Readonly for parity with `DocumentExtractorProvider` and the browser-safe
+   * manifest entries the providers spread from (RFC #1153 part 1): nothing
+   * mutates the list, and the manifest must stay a plain-data mirror.
+   */
+  supportedMimeTypes: readonly string[];
   capabilities: MediaExtractorCapabilities;
   /**
    * Provider version. Bump it whenever this provider's extraction output

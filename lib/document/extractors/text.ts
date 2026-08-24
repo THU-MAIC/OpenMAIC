@@ -1,7 +1,6 @@
 import { DOCUMENT_MIME_TYPES } from '../mime';
 import type { DocumentExtractorProvider } from '../types';
-
-const TEXT_MIME_TYPES = [DOCUMENT_MIME_TYPES.txt, DOCUMENT_MIME_TYPES.markdown, 'text/x-markdown'];
+import { getDocumentExtractorManifestEntry } from './manifest';
 
 function textDecoderForBuffer(buffer: Buffer): TextDecoder {
   if (buffer.length >= 2) {
@@ -16,19 +15,10 @@ function textDecoderForBuffer(buffer: Buffer): TextDecoder {
 }
 
 export const textDocumentExtractorProvider: DocumentExtractorProvider = {
-  id: 'plain-text',
-  displayName: 'Plain Text',
-  supportedMimeTypes: TEXT_MIME_TYPES,
-  version: '1',
-  capabilities: {
-    text: true,
-    images: false,
-    tables: false,
-    formulas: false,
-    layout: false,
-    ocr: false,
-    async: false,
-  },
+  // Metadata comes from the browser-safe manifest — single source of truth for
+  // the extractor identity (RFC #1153 part 1); the implementation is attached
+  // here. The 'plain-text' entry is static and pinned by the registry sync test.
+  ...getDocumentExtractorManifestEntry('plain-text')!,
   async extract(input) {
     const text = textDecoderForBuffer(input.buffer).decode(input.buffer);
     const isMarkdown =

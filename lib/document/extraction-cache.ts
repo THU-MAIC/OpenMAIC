@@ -33,15 +33,12 @@ import { BrowserKVStore, HttpKVStore, HttpKVStoreError, type KVStore } from '@op
 import type { FetchExtractionResponseOptions } from '@/lib/document/extract-source';
 import { fetchExtractionResponse } from '@/lib/document/extract-source';
 import {
-  getDocumentExtractorProvider,
-  selectDocumentExtractorProvider,
-} from '@/lib/document/extractors/registry';
-import {
-  getMediaExtractorProvider,
-  selectMediaExtractorProvider,
-} from '@/lib/document/extractors/media-registry';
+  getDocumentExtractorManifestEntry,
+  getMediaExtractorManifestEntry,
+  selectDocumentExtractorManifestEntry,
+  selectMediaExtractorManifestEntry,
+} from '@/lib/document/extractors/manifest';
 import { SUPPORTED_MEDIA_MIME_TYPES } from '@/lib/document/mime';
-import type { MediaExtractorProviderId } from '@/lib/document/types';
 import { createLogger } from '@/lib/logger';
 import { putAsset, removeAsset } from '@/lib/media/asset-pool';
 import type { AssetPoolStore } from '@/lib/media/asset-pool-config';
@@ -220,6 +217,11 @@ export interface ExpectedExtractor {
  * auto-selects a different provider (e.g. self-hosted MinerU falling back to
  * MinerU Cloud), the lookup misses conservatively — correctness is preserved
  * and only the optimization is lost.
+ *
+ * Resolved against the browser-safe extractor MANIFEST (not the registry): the
+ * client pages must compute the expected identity without importing the
+ * provider implementations, and the manifest is pinned equal to the registries
+ * by `tests/document/extractor-registry.test.ts`.
  */
 export function resolveExpectedExtractor(
   mimeType: string,
@@ -229,24 +231,24 @@ export function resolveExpectedExtractor(
     const normalizedMimeType = mimeType.toLowerCase();
     if (SUPPORTED_MEDIA_MIME_TYPES.includes(normalizedMimeType)) {
       const requested = requestedProviderId
-        ? getMediaExtractorProvider(requestedProviderId as MediaExtractorProviderId)
+        ? getMediaExtractorManifestEntry(requestedProviderId)
         : undefined;
       const provider =
         requested && requested.supportedMimeTypes.includes(normalizedMimeType)
           ? requested
-          : selectMediaExtractorProvider({
+          : selectMediaExtractorManifestEntry({
               mimeType: normalizedMimeType,
               requiredCapabilities: { transcript: true },
             });
       return { extractorId: provider.id, extractorVersion: provider.version };
     }
     const requested = requestedProviderId
-      ? getDocumentExtractorProvider(requestedProviderId)
+      ? getDocumentExtractorManifestEntry(requestedProviderId)
       : undefined;
     const provider =
       requested && requested.supportedMimeTypes.includes(normalizedMimeType)
         ? requested
-        : selectDocumentExtractorProvider({
+        : selectDocumentExtractorManifestEntry({
             mimeType: normalizedMimeType,
             requiredCapabilities: { text: true },
           });
@@ -256,11 +258,11 @@ export function resolveExpectedExtractor(
   }
 }
 
-/** The declared version of a provider, from whichever registry holds it. */
+/** The declared version of a provider, from whichever manifest entry holds it. */
 export function extractorVersionFor(providerId: string): string | undefined {
   return (
-    getDocumentExtractorProvider(providerId)?.version ??
-    getMediaExtractorProvider(providerId as MediaExtractorProviderId)?.version
+    getDocumentExtractorManifestEntry(providerId)?.version ??
+    getMediaExtractorManifestEntry(providerId)?.version
   );
 }
 
