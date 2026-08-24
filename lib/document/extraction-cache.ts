@@ -1,18 +1,19 @@
 /**
  * Extraction derivation cache (RFC #1153 part 1).
  *
- * Extraction is treated as a pure derivation of (source bytes, extractor,
- * extractor version). After a successful document/media extraction the
- * structured artifact is stored in the asset pool as its own
- * `application/json` asset — inline image data stripped, each image's pool
- * asset id recorded in its place — and a single KV record per
- * (content digest, extractor identity, caller-supplied endpoint fingerprint)
- * indexes it: lineage and cache index in one entry. Re-importing the same
- * bytes (same or another course) then hits the cache instead of re-running the
- * paid extraction, provided the digest, the extractor id, the extractor
- * version AND the config fingerprint all match — a version bump is a miss that
- * re-derives, and so is a caller-supplied endpoint change (the residual
- * staleness that stays ACCEPTED is documented at `extractionCacheKey`).
+ * Extraction is treated as a pure derivation of (source bytes, derivation
+ * domain, extractor, extractor version, caller-supplied endpoint). After a
+ * successful document/media extraction the structured artifact is stored in
+ * the asset pool as its own `application/json` asset — inline image data
+ * stripped, each image's pool asset id recorded in its place — and a single KV
+ * record per (content digest, domain, extractor identity, caller-supplied
+ * endpoint fingerprint) indexes it: lineage and cache index in one entry.
+ * Re-importing the same bytes (same or another course) then hits the cache
+ * instead of re-running the paid extraction, provided the digest, the domain,
+ * the extractor id, the extractor version AND the config fingerprint all
+ * match — a version bump is a miss that re-derives, and so is a caller-supplied
+ * endpoint change (the residual staleness that stays ACCEPTED is documented at
+ * `extractionCacheKey`).
  *
  * Both halves are strictly best-effort from the caller's point of view:
  *
@@ -53,8 +54,30 @@ import type { ParsedPdfContent } from '@/lib/types/pdf';
 
 const log = createLogger('ExtractionCache');
 
-/** Key-prefix of every derivation record; bump the `v2` on a record-shape change. */
-export const EXTRACTION_CACHE_KEY_PREFIX = 'derived-extraction:v2';
+/** Key-prefix of every derivation record; bump the `v3` on a record-shape change. */
+export const EXTRACTION_CACHE_KEY_PREFIX = 'derived-extraction:v3';
+
+/**
+ * Which extraction path a derivation record belongs to. `alidocmind` exists in
+ * both the document and the media extractor registries at the same version, so
+ * the content identity alone cannot tell the two derivations apart: the same
+ * bytes extracted as a document and as media are different derivations and
+ * must not share a cache key (RFC #1153 part 1, L6). The domain is threaded
+ * from the call site — the page knows which path a source takes.
+ */
+export type ExtractionCacheDomain = 'doc' | 'media';
+
+/**
+ * How long an ALIAS-only validation of a derivation record stays trusted.
+ *
+ * A record hit under its own PRIMARY identity is permanent (exact match). A
+ * hit that validates ONLY via the `aliases` list is honored only while the
+ * record is younger than this: after it, the alias hit is treated as a miss,
+ * the real extraction runs, and the fresh write records the CURRENT actual
+ * identity as primary — so a deployment reconfigured server-side converges
+ * within the TTL (RFC #1153 part 1, L1).
+ */
+export const ALIAS_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * KV scope the derivation records live under. `account` is the right scope
@@ -109,9 +132,10 @@ export interface DerivationRecord {
 
 /**
  * The exact cache key: content identity (stable across uploads of the same
- * bytes) × extractor identity (id and version, so a version bump is a miss) ×
- * config fingerprint (see `computeConfigFingerprint`), so a caller-supplied
- * endpoint change misses instead of serving the old engine's output.
+ * bytes) × derivation domain (document vs media — L6) × extractor identity
+ * (id and version, so a version bump is a miss) × config fingerprint (see
+ * `computeConfigFingerprint`), so a caller-supplied endpoint change misses
+ * instead of serving the old engine's output.
  *
  * Residual staleness that stays ACCEPTED: an engine upgraded in place behind
  * the same endpoint, or an account change on the same endpoint — the extractor
@@ -123,23 +147,50 @@ export function extractionCacheKey(
   extractorId: string,
   extractorVersion: string,
   configFingerprint: string,
+  domain: ExtractionCacheDomain,
 ): string {
-  return `${EXTRACTION_CACHE_KEY_PREFIX}:${contentDigest}:${extractorId}@${extractorVersion}:cfg-${configFingerprint}`;
+  return `${EXTRACTION_CACHE_KEY_PREFIX}:${contentDigest}:${domain}:${extractorId}@${extractorVersion}:cfg-${configFingerprint}`;
 }
 
 /**
- * The config half of the cache key: `sha256(baseUrl ?? 'managed')` truncated
- * to 8 hex chars. Providers whose output depends on a caller-supplied endpoint
- * fingerprint that endpoint, so pointing it at a different engine misses;
- * in-repo providers (unpdf, plain-text) and managed/endpoint-less providers
- * share the constant `'managed'` bucket and keep stable keys.
+ * The config half of the cache key: `sha256(normalizedBaseUrl ?? 'managed')`
+ * truncated to 8 hex chars. The endpoint is normalized first — scheme and host
+ * lowercased, default ports (443 for https, 80 for http) stripped, trailing
+ * slashes stripped from the path — so trivially-equal spellings of the same
+ * endpoint (`https://host`, `https://Host/`, `https://host:443`) share one
+ * bucket instead of fragmenting the cache forever (RFC #1153 part 1, L2); a
+ * string that does not parse as a URL is hashed verbatim. Providers whose
+ * output depends on a caller-supplied endpoint fingerprint that endpoint, so
+ * pointing it at a different engine misses; in-repo providers (unpdf,
+ * plain-text) and managed/endpoint-less providers share the constant
+ * `'managed'` bucket and keep stable keys.
  */
 export async function computeConfigFingerprint(baseUrl?: string): Promise<string> {
-  const input = baseUrl ?? 'managed';
+  const input = normalizeEndpointForFingerprint(baseUrl ?? 'managed');
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0'))
     .join('')
     .slice(0, 8);
+}
+
+/**
+ * Normalize a caller-supplied endpoint for fingerprinting: lowercase the scheme
+ * and host, strip the scheme's default port, strip trailing slashes from the
+ * path, and keep the rest (port, query, hash) as written. An unparseable
+ * string is returned verbatim.
+ */
+function normalizeEndpointForFingerprint(baseUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return baseUrl;
+  }
+  const scheme = url.protocol.toLowerCase();
+  const defaultPort = scheme === 'https:' ? '443' : scheme === 'http:' ? '80' : undefined;
+  const port = defaultPort !== undefined && url.port === defaultPort ? '' : url.port;
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+  return `${scheme}//${url.hostname.toLowerCase()}${port ? `:${port}` : ''}${path}${url.search}${url.hash}`;
 }
 
 /**
@@ -244,17 +295,34 @@ function resolveConfiguredExtractionCacheKV(): KVStore {
   return new BrowserKVStore();
 }
 
-// ─── Session-wide degradation (RFC #1153 part 1, K5) ─────────────────────────
+// ─── Bounded degradation (RFC #1153 part 1, K5) ──────────────────────────────
 
 /**
- * Whether the cache is disabled for the rest of the session. Set once when the
- * KV backend answers with a route-level failure (the KV route itself is gone,
- * as with `NEXT_PUBLIC_PERSISTENCE=1` today): from then on every lookup is a
- * miss and every write is skipped WITHOUT ingesting assets, so the degradation
- * is quiet (one warn total) and cheap (no putAsset-then-removeAsset churn per
- * extraction). Transient failures (network blips) keep the per-op behavior.
+ * How long a route-level KV failure disables the cache. The disable is
+ * timestamped, NOT permanent: a transient route-level 404 (a deploy window, a
+ * proxy 404 during rollout) must not kill caching for the tab lifetime, so the
+ * cache re-probes the KV route once the window expires (RFC #1153 part 1, L4).
  */
-let cacheDisabledForSession = false;
+const CACHE_DISABLE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Module-level (tab-wide) cache disable, expressed as the epoch-ms instant the
+ * disable window ends; `0` means not disabled. Set once when the KV backend
+ * answers with a route-level failure (the KV route itself is gone, as with
+ * `NEXT_PUBLIC_PERSISTENCE=1` today): until the window expires every lookup is
+ * a miss and every write is skipped WITHOUT ingesting assets, so the
+ * degradation is quiet (one warn per disable episode) and cheap (no
+ * putAsset-then-removeAsset churn per extraction). The flag is shared across
+ * every generation run and every learner in the tab; after expiry a fresh
+ * route-level failure starts a new episode with its own single warn.
+ * Transient failures (network blips) keep the per-op behavior.
+ */
+let cacheDisabledUntilEpochMs = 0;
+
+/** Whether the cache is inside a disable window right now. */
+function isCacheDisabled(): boolean {
+  return cacheDisabledUntilEpochMs > Date.now();
+}
 
 /**
  * A route-level KV failure: an HTTP 404 that is NOT the store's legitimate
@@ -267,19 +335,52 @@ function isRouteLevelKVError(error: unknown): boolean {
   );
 }
 
-/** Disable the cache for the session, logging exactly ONE warn (the first). */
-function disableCacheForSession(error: unknown): void {
-  if (cacheDisabledForSession) return;
-  cacheDisabledForSession = true;
+/** Disable the cache for one window, logging exactly ONE warn per episode. */
+function disableCacheForWindow(error: unknown): void {
+  if (isCacheDisabled()) return;
+  cacheDisabledUntilEpochMs = Date.now() + CACHE_DISABLE_TTL_MS;
   log.warn(
-    'The extraction cache KV route is unreachable; disabling the extraction cache for this session:',
+    `The extraction cache KV route is unreachable; disabling the extraction cache for the next ${Math.round(
+      CACHE_DISABLE_TTL_MS / 60000,
+    )} minutes:`,
     error,
   );
 }
 
-/** Test-only: clear the session-wide disable flag between tests. */
+/** Test-only: clear the disable window between tests. */
 export function resetExtractionCacheForTests(): void {
-  cacheDisabledForSession = false;
+  cacheDisabledUntilEpochMs = 0;
+}
+
+// ─── Alias trust window (RFC #1153 part 1, L1) ───────────────────────────────
+
+/**
+ * Age of a derivation record in ms. A missing or unparseable `createdAt`
+ * yields `NaN`, which callers must treat as STALE — a record without a
+ * trustworthy creation time must never be honored via an alias.
+ */
+function recordAgeMs(record: { createdAt: string }): number {
+  return Date.now() - new Date(record.createdAt).getTime();
+}
+
+/**
+ * Whether an alias-only validation of this record is still trusted. ASYMMETRIC
+ * TRUST, on purpose: a hit under the record's own PRIMARY identity is
+ * permanent (exact match), but a hit that validates only via the `aliases`
+ * list is honored only while the record is younger than `ALIAS_MAX_AGE_MS`.
+ *
+ * The asymmetry exists because the client cannot observe server-managed config
+ * changes: a record written under actual `mineru-cloud@1` with alias
+ * `mineru@1` keeps serving cloud output forever after the operator configures
+ * server-managed self-host mineru — both phases fingerprint `'managed'`, so
+ * the keys match and the client never sees the new config. Expiry is the
+ * convergence mechanism: an expired alias hit degrades to a miss, the real
+ * extraction runs under the CURRENT identity, and the fresh write records that
+ * identity as primary — so a reconfigured deployment converges within the TTL,
+ * and a stable fallback deployment re-pays at most daily.
+ */
+function aliasStillTrusted(record: { createdAt: string }): boolean {
+  return recordAgeMs(record) <= ALIAS_MAX_AGE_MS;
 }
 
 /** Best-effort release of every asset a partial attempt allocated, logging rejected outcomes. */
@@ -395,6 +496,8 @@ export interface ExtractionCacheWriteOptions {
   pool?: AssetPoolStore;
   /** Content identity of the source bytes (the cache key's stable half). */
   contentDigest: string;
+  /** Which extraction path produced this result (`doc` vs `media` — L6). */
+  domain: ExtractionCacheDomain;
   /** The extractor identity that ACTUALLY ran (route-reported, when known). */
   extractorId: string;
   extractorVersion: string;
@@ -419,14 +522,15 @@ export interface ExtractionCacheWriteOptions {
  * caller's extraction, and releases every asset allocated in the partial
  * attempt. The KV record is deliberately written last, so a partial attempt
  * never leaves a record pointing at assets that failed to ingest. A route-level
- * KV failure disables the cache for the rest of the session (K5) — subsequent
+ * KV failure disables the cache for a bounded window (K5/L4) — subsequent
  * writes are skipped BEFORE any asset is ingested, so a dead KV route costs no
  * putAsset-then-removeAsset churn.
  */
 export async function writeExtractionCache(options: ExtractionCacheWriteOptions): Promise<void> {
-  // K5: the KV route is unreachable for this session; skip the write entirely
-  // BEFORE ingesting anything, so a dead backend costs no pool churn.
-  if (cacheDisabledForSession) return;
+  // K5: the KV route is unreachable (inside the disable window); skip the
+  // write entirely BEFORE ingesting anything, so a dead backend costs no pool
+  // churn.
+  if (isCacheDisabled()) return;
 
   const allocated: string[] = [];
   // Production ingests through the browser-wide pool seams; tests inject a
@@ -479,6 +583,7 @@ export async function writeExtractionCache(options: ExtractionCacheWriteOptions)
       options.extractorId,
       options.extractorVersion,
       configFingerprint,
+      options.domain,
     );
     const aliasIdentity = options.aliasExtractor ? [{ ...options.aliasExtractor }] : undefined;
     const aliasKey = options.aliasExtractor
@@ -487,18 +592,35 @@ export async function writeExtractionCache(options: ExtractionCacheWriteOptions)
           options.aliasExtractor.extractorId,
           options.aliasExtractor.extractorVersion,
           configFingerprint,
+          options.domain,
         )
       : undefined;
 
     // K3 (cross-tab): another tab may have written this derivation while this
     // attempt allocated its assets. Re-read the key before writing; a valid
     // record already present means this attempt is the loser — release every
-    // asset IT allocated and adopt the existing record. The get→set race window
-    // that remains is milliseconds; if it fires, the loser's assets orphan —
-    // accepted: eviction is part 2's material library, and the orphan is
-    // indistinguishable from any other never-referenced pool asset until then.
+    // asset IT allocated and adopt the existing record. The get→set race
+    // window that remains is milliseconds; if it fires, the loser's assets
+    // orphan — accepted: eviction is part 2's material library, and the orphan
+    // is indistinguishable from any other never-referenced pool asset until
+    // then.
+    //
+    // L1 exception: an existing record whose identity does NOT match the key's
+    // pinned identity is an alias record, and one older than the alias TTL is
+    // exactly the stale record the lookup just refused to serve — adopting it
+    // would re-poison the cache forever. Supersede it with this fresh write so
+    // a reconfigured deployment converges (a fresh alias is still adopted: the
+    // K1 × K3 race writes the same value either way).
     const existing = await options.kv.get<DerivationRecord>(key, EXTRACTION_CACHE_KV_SCOPE);
-    if (existing && isValidDerivationRecord(existing)) {
+    const existingIsExpiredAlias =
+      existing !== null &&
+      isValidDerivationRecord(existing) &&
+      !(
+        existing.extractorId === options.extractorId &&
+        existing.extractorVersion === options.extractorVersion
+      ) &&
+      !aliasStillTrusted(existing);
+    if (existing && isValidDerivationRecord(existing) && !existingIsExpiredAlias) {
       if (aliasKey && aliasIdentity) {
         await writeAliasRecord(options.kv, aliasKey, aliasIdentity[0], existing);
       }
@@ -531,9 +653,9 @@ export async function writeExtractionCache(options: ExtractionCacheWriteOptions)
     }
   } catch (error) {
     if (isRouteLevelKVError(error)) {
-      // The KV route itself is gone (K5): disable caching for the session and
-      // log one warn; future writes are skipped before any ingest.
-      disableCacheForSession(error);
+      // The KV route itself is gone (K5): disable caching for a bounded
+      // window and log one warn; future writes are skipped before any ingest.
+      disableCacheForWindow(error);
     } else {
       log.error(
         'Failed to cache the extraction derivation; the extraction result is still returned:',
@@ -653,6 +775,8 @@ export interface ExtractionCacheLookupOptions {
    */
   pool?: AssetPoolStore;
   contentDigest: string;
+  /** Which extraction path this lookup belongs to (`doc` vs `media` — L6). */
+  domain: ExtractionCacheDomain;
   extractorId: string;
   extractorVersion: string;
   /** Caller-supplied endpoint the provider is expected to run against; fingerprints the key. */
@@ -675,14 +799,16 @@ export interface ExtractionCacheLookupOptions {
 export async function lookupCachedExtraction(
   options: ExtractionCacheLookupOptions,
 ): Promise<ParsedPdfContent | null> {
-  // K5: a route-level KV failure disabled the cache for this session; every
-  // lookup is a miss without touching the store (one warn was already logged).
-  if (cacheDisabledForSession) return null;
+  // K5: a route-level KV failure disabled the cache (inside the disable
+  // window); every lookup is a miss without touching the store (one warn was
+  // already logged per episode).
+  if (isCacheDisabled()) return null;
   const key = extractionCacheKey(
     options.contentDigest,
     options.extractorId,
     options.extractorVersion,
     await computeConfigFingerprint(options.baseUrl),
+    options.domain,
   );
   try {
     const record = await options.kv.get<DerivationRecord>(key, EXTRACTION_CACHE_KV_SCOPE);
@@ -705,6 +831,20 @@ export async function lookupCachedExtraction(
         `Extraction cache miss for ${key}: recorded extractor ${record.extractorId}@` +
           `${record.extractorVersion} does not match the requested identity and is not a ` +
           `recorded alias for it.`,
+      );
+      return null;
+    }
+    // L1 (asymmetric trust): an exact (primary) match is permanent; a hit that
+    // validates ONLY via the aliases list is honored only while the record is
+    // younger than `ALIAS_MAX_AGE_MS` (see `aliasStillTrusted` for why). An
+    // expired alias hit is a miss: the real extraction runs and the fresh
+    // write records the CURRENT actual identity as primary, so a deployment
+    // reconfigured server-side converges within the TTL.
+    if (!matchesRequestedIdentity && !aliasStillTrusted(record)) {
+      log.warn(
+        `Extraction cache miss for ${key}: the recorded alias for ${options.extractorId}@` +
+          `${options.extractorVersion} is older than ${ALIAS_MAX_AGE_MS}ms; re-running the ` +
+          `extraction so the current actual identity becomes primary.`,
       );
       return null;
     }
@@ -772,9 +912,9 @@ export async function lookupCachedExtraction(
   } catch (error) {
     // A KV or pool failure must never fail the user's extraction: degrade to a
     // miss and let the real extraction run. A route-level KV failure (the KV
-    // route itself is gone) disables the cache for the session (K5).
+    // route itself is gone) disables the cache for a bounded window (K5/L4).
     if (isRouteLevelKVError(error)) {
-      disableCacheForSession(error);
+      disableCacheForWindow(error);
     } else {
       log.warn(`Extraction cache lookup failed for ${key}; running the real extraction:`, error);
     }
@@ -903,6 +1043,8 @@ function rebuildResult(
 export interface ExtractionFetchWithCacheOptions extends FetchExtractionResponseOptions {
   /** Content identity of the source bytes; absent for legacy sessions (no cache). */
   contentDigest?: string;
+  /** Which extraction path this source takes (`doc` vs `media` — L6). */
+  domain?: ExtractionCacheDomain;
   /** Extractor identity the extraction is expected to run under; see `resolveExpectedExtractor`. */
   extractorId?: string;
   extractorVersion?: string;
@@ -933,6 +1075,13 @@ export interface ExtractionFetchWithCacheResult {
   data: ParsedPdfContent;
   /** Whether this result was rebuilt from the derivation cache (no network extraction). */
   cacheHit: boolean;
+  /**
+   * The best-effort cache write, detached from the caller's result (L5). The
+   * extraction result is returned WITHOUT waiting for the write; awaiting this
+   * promise is only for tests or observability. A page teardown mid-write can
+   * abandon the write — best-effort by contract.
+   */
+  cacheWrite?: Promise<void>;
 }
 
 /**
@@ -943,9 +1092,13 @@ export interface ExtractionFetchWithCacheResult {
  * never called — `fetchers` are untouched. On a miss the wrapped
  * `fetchExtractionResponse` runs (asset-id form with the byte fallback, per
  * part 0) and the successful result is cached under the extractor that
- * ACTUALLY ran. Errors surface exactly as the page's current flow raises
- * them: a non-ok response throws its `error` string (or the localized
- * fallback), and a success without parse data throws the localized fallback.
+ * ACTUALLY ran. The cache write is FIRE-AND-FORGET: the result returns as soon
+ * as the extraction does, and `writeExtractionCache` runs detached — a page
+ * teardown mid-write can abandon the write (best-effort by contract), and the
+ * write can never gate or fail the user's result. Errors surface exactly as
+ * the page's current flow raises them: a non-ok response throws its `error`
+ * string (or the localized fallback), and a success without parse data throws
+ * the localized fallback.
  */
 export async function fetchExtractionWithCache(
   options: ExtractionFetchWithCacheOptions,
@@ -974,6 +1127,7 @@ export async function fetchExtractionWithCache(
       kv,
       pool: options.pool,
       contentDigest: options.contentDigest,
+      domain: options.domain ?? 'doc',
       extractorId: options.extractorId,
       extractorVersion: options.extractorVersion,
       baseUrl: options.baseUrl,
@@ -996,7 +1150,9 @@ export async function fetchExtractionWithCache(
   }
   const data = parsed.data as ParsedPdfContent;
 
-  // 3. Best-effort cache write. The key uses the extractor that ACTUALLY ran
+  // 3. Best-effort cache write, FIRE-AND-FORGET (L5): the result is returned
+  //    without awaiting the write sequence, so a stalled pool/KV never gates
+  //    the user's extraction. The key uses the extractor that ACTUALLY ran
   //    (reported as `parser` in the result metadata) plus its declared
   //    version, so a version bump is a cache miss that re-derives. When the
   //    actual key differs from the expected key the lookup used (e.g. a
@@ -1004,7 +1160,7 @@ export async function fetchExtractionWithCache(
   //    the SAME record is also stored under the expected key as an alias, so
   //    the next lookup under the expected key hits (K1). A failed write is
   //    logged and abandoned without failing this extraction; a route-level KV
-  //    failure disables the cache for the session (K5).
+  //    failure disables the cache for a bounded window (K5/L4).
   if (kv && options.contentDigest && options.extractorId && options.extractorVersion) {
     const actualExtractorId = data.metadata?.parser || options.extractorId;
     const actualExtractorVersion =
@@ -1014,39 +1170,62 @@ export async function fetchExtractionWithCache(
       actualExtractorVersion !== options.extractorVersion
         ? { extractorId: options.extractorId, extractorVersion: options.extractorVersion }
         : undefined;
-    await writeExtractionCache({
+    const cacheWrite = writeExtractionCache({
       kv,
       pool: options.pool,
       contentDigest: options.contentDigest,
+      domain: options.domain ?? 'doc',
       extractorId: actualExtractorId,
       extractorVersion: actualExtractorVersion,
       baseUrl: options.baseUrl,
       ...(aliasExtractor ? { aliasExtractor } : {}),
       sourceDocAssetId: options.sourceDocAssetId,
       result: data,
+    }).catch((error) => {
+      // Defensive: `writeExtractionCache` already logs its own failures; this
+      // handler only guarantees the detached write can never surface as an
+      // unhandled rejection in the page's flow.
+      log.error(
+        'Failed to cache the extraction derivation; the extraction result is still returned:',
+        error,
+      );
     });
+    return { data, cacheHit: false, cacheWrite };
   }
   return { data, cacheHit: false };
 }
 
 // ─── In-run extraction dedupe (RFC #1153 part 1, K3) ──────────────────────────
 
-/** The identity two sources share when their extractions are interchangeable. */
+/**
+ * The identity two sources share when their extractions are interchangeable.
+ * This is exactly the cache key minus the key prefix: content digest × domain
+ * × extractor identity × config fingerprint, so two sources that would land on
+ * different cache entries (e.g. the same digest under a different per-source
+ * baseUrl) never share one extraction (RFC #1153 part 1, L3).
+ */
 export interface InRunExtractionKey {
   contentDigest: string;
+  /** Which extraction path this source takes (`doc` vs `media` — L6). */
+  domain: ExtractionCacheDomain;
   extractorId: string;
   extractorVersion: string;
+  /** Config fingerprint of the source's provider endpoint (`computeConfigFingerprint`). */
+  configFingerprint: string;
 }
 
 /**
- * Per-run memoizer so sources with the SAME content digest AND the SAME
- * expected extractor identity share ONE extraction: within one generation run
- * the first same-digest source pays for the extraction and every other one
- * awaits the same in-flight promise, so two same-byte files never both pay.
- * Different digest or extractor identity → separate extractions (two bytes
- * that are equal under different extractors are legitimately different
- * derivations). A per-run instance is created once per generation run; the
- * memoized promises live exactly as long as the run.
+ * Per-run memoizer so sources whose extraction cache key is IDENTICAL share
+ * ONE extraction: within one generation run the first such source pays for the
+ * extraction and every other one awaits the same in-flight promise, so two
+ * same-byte files never both pay. The memo key is the full cache key (digest +
+ * domain + extractor identity + config fingerprint), so per-source config
+ * differences never collapse two derivations into one shared extraction — the
+ * dedupe identity is exactly the cache identity (L3). A rejected shared
+ * promise is removed from the memo, so a later retry within the same run
+ * re-invokes instead of re-receiving the stale rejection. A per-run instance
+ * is created once per generation run; the memoized promises live exactly as
+ * long as the run.
  */
 export function createExtractionDeduplicator(): {
   run: (
@@ -1057,11 +1236,25 @@ export function createExtractionDeduplicator(): {
   const inflight = new Map<string, Promise<ParsedPdfContent>>();
   return {
     run(key, extraction) {
-      const memoKey = `${key.contentDigest}|${key.extractorId}@${key.extractorVersion}`;
+      const memoKey = extractionCacheKey(
+        key.contentDigest,
+        key.extractorId,
+        key.extractorVersion,
+        key.configFingerprint,
+        key.domain,
+      );
       const existing = inflight.get(memoKey);
       if (existing) return existing;
       const promise = extraction();
       inflight.set(memoKey, promise);
+      // L3: a rejected shared promise must not poison later retries in the
+      // same run. Guarded so a settled handler can never remove a NEWER
+      // promise that reused the same memo slot.
+      promise.catch(() => {
+        if (inflight.get(memoKey) === promise) {
+          inflight.delete(memoKey);
+        }
+      });
       return promise;
     },
   };

@@ -34,10 +34,13 @@ import { isAssetPoolServerBacked } from '@/lib/media/asset-pool-config';
 import { getPersistenceRequestHeaders } from '@/lib/persistence/bootstrap';
 import { resolveSessionDocumentSources } from '@/lib/document/session-sources';
 import {
+  computeConfigFingerprint,
   createExtractionDeduplicator,
   fetchExtractionWithCache,
   resolveExpectedExtractor,
+  type ExtractionCacheDomain,
 } from '@/lib/document/extraction-cache';
+import { SUPPORTED_MEDIA_MIME_TYPES } from '@/lib/document/mime';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import {
   MAX_DOCUMENT_BUNDLE_FILES,
@@ -364,12 +367,23 @@ function GenerationPreviewContent() {
               }
             ).providerConfig;
             const providerConfig = currentSession.pdfProviderConfig || legacySourceConfig;
+            // The caller-supplied endpoint (fingerprinted into the cache key)
+            // and the derivation domain (L6: `alidocmind` exists in both the
+            // document and media registries at the same version, so the page —
+            // which knows which path a source takes — must discriminate them).
+            const sourceBaseUrl = providerConfig?.baseUrl?.trim() || undefined;
+            const sourceDomain: ExtractionCacheDomain =
+              source.mimeType && SUPPORTED_MEDIA_MIME_TYPES.includes(source.mimeType.toLowerCase())
+                ? 'media'
+                : 'doc';
+            const sourceConfigFingerprint = await computeConfigFingerprint(sourceBaseUrl);
 
             // The extractor the route is expected to run under, resolved
             // client-side. It feeds the extraction-cache lookup, which must
             // happen BEFORE the extract API is called: the cache key is
-            // (content digest × extractor identity), and on a hit the rebuilt
-            // parse result skips the paid extraction entirely.
+            // (content digest × domain × extractor identity × config
+            // fingerprint), and on a hit the rebuilt parse result skips the
+            // paid extraction entirely.
             const expectedExtractor = source.contentDigest
               ? resolveExpectedExtractor(source.mimeType ?? 'application/pdf', providerId)
               : null;
@@ -459,28 +473,32 @@ function GenerationPreviewContent() {
                   },
                 },
                 contentDigest: source.contentDigest,
+                domain: sourceDomain,
                 extractorId: expectedExtractor?.extractorId,
                 extractorVersion: expectedExtractor?.extractorVersion,
-                baseUrl: providerConfig?.baseUrl?.trim() || undefined,
+                baseUrl: sourceBaseUrl,
                 sourceDocAssetId: source.assetId,
                 parseFailedMessage: t('generation.courseMaterialParseFailed'),
               }).then((outcome) => outcome.data);
-            // K3 (in-run dedupe): same content digest + same expected extractor
-            // share ONE extraction; two same-byte files never both pay.
+            // K3 (in-run dedupe): sources whose extraction cache key is
+            // identical (same content digest + domain + expected extractor +
+            // config fingerprint) share ONE extraction; two same-byte files
+            // never both pay, and per-source config differences never share.
             const parseData =
               source.contentDigest && expectedExtractor
                 ? await deduplicateExtraction.run(
                     {
                       contentDigest: source.contentDigest,
+                      domain: sourceDomain,
                       extractorId: expectedExtractor.extractorId,
                       extractorVersion: expectedExtractor.extractorVersion,
+                      configFingerprint: sourceConfigFingerprint,
                     },
                     runExtraction,
                   )
                 : await runExtraction();
-            const parseResult = { success: true as const, data: parseData };
 
-            const rawImages = parseResult.data.metadata?.pdfImages;
+            const rawImages = parseData.metadata?.pdfImages;
             const images = rawImages
               ? rawImages.map((img: ParsedDocumentResponseImage) => ({
                   id: img.id,
@@ -490,7 +508,7 @@ function GenerationPreviewContent() {
                   width: img.width,
                   height: img.height,
                 }))
-              : ((parseResult.data.images as string[] | undefined) ?? []).map((src, i) => ({
+              : ((parseData.images as string[] | undefined) ?? []).map((src, i) => ({
                   id: `img_${i + 1}`,
                   src,
                   pageNumber: 1,
@@ -506,9 +524,9 @@ function GenerationPreviewContent() {
                 order: source.order,
                 providerId,
               },
-              text: parseResult.data.text as string,
-              rawTextLength: (parseResult.data.text as string).length,
-              pageCount: parseResult.data.metadata?.pageCount,
+              text: parseData.text as string,
+              rawTextLength: (parseData.text as string).length,
+              pageCount: parseData.metadata?.pageCount,
               images,
             };
           }),

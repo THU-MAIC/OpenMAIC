@@ -4,6 +4,7 @@ import type { AssetMeta, BinaryBlob } from '@openmaic/dsl';
 import { HttpKVStoreError, type KVStore, type KVScope } from '@openmaic/storage';
 
 import {
+  ALIAS_MAX_AGE_MS,
   computeConfigFingerprint,
   computeContentDigest,
   createExtractionDeduplicator,
@@ -15,6 +16,8 @@ import {
   resolveExpectedExtractor,
   writeExtractionCache,
   type DerivationRecord,
+  type ExtractionCacheDomain,
+  type InRunExtractionKey,
 } from '@/lib/document/extraction-cache';
 import type { ExtractSourceFetchers } from '@/lib/document/extract-source';
 import type { AssetPoolStore } from '@/lib/media/asset-pool-config';
@@ -31,8 +34,13 @@ beforeAll(async () => {
 });
 
 /** The full cache key for the stable (no baseUrl) config bucket, as callers use it. */
-function managedKey(digest: string, extractorId: string, extractorVersion: string): string {
-  return extractionCacheKey(digest, extractorId, extractorVersion, MANAGED_FP);
+function managedKey(
+  digest: string,
+  extractorId: string,
+  extractorVersion: string,
+  domain: ExtractionCacheDomain = 'doc',
+): string {
+  return extractionCacheKey(digest, extractorId, extractorVersion, MANAGED_FP, domain);
 }
 
 /** A document-extraction result in the exact shape the route returns today. */
@@ -191,14 +199,26 @@ describe('computeContentDigest', () => {
 });
 
 describe('extractionCacheKey', () => {
-  it('includes the content digest, the extractor id and version, and the config fingerprint', () => {
+  it('includes the content digest, the domain, the extractor id and version, and the config fingerprint', () => {
     const key = managedKey(DIGEST, 'mineru', '1');
 
-    expect(key).toBe(`derived-extraction:v2:${DIGEST}:mineru@1:cfg-${MANAGED_FP}`);
+    expect(key).toBe(`derived-extraction:v3:${DIGEST}:doc:mineru@1:cfg-${MANAGED_FP}`);
     expect(key).toContain(DIGEST);
+    expect(key).toContain(':doc:');
     expect(key).toContain('mineru');
     expect(key).toContain('@1');
     expect(key).toContain(`:cfg-${MANAGED_FP}`);
+  });
+
+  it('separates the document and media derivations of the same bytes (L6)', () => {
+    // `alidocmind` lives in both registries at version '1': a document and a
+    // media derivation of the same bytes must not share a key.
+    const doc = managedKey(DIGEST, 'alidocmind', '1', 'doc');
+    const media = managedKey(DIGEST, 'alidocmind', '1', 'media');
+
+    expect(doc).not.toBe(media);
+    expect(doc).toContain(':doc:');
+    expect(media).toContain(':media:');
   });
 
   it('produces a different key when the extractor version bumps', () => {
@@ -218,12 +238,14 @@ describe('extractionCacheKey', () => {
       'mineru',
       '1',
       await computeConfigFingerprint('https://a.example'),
+      'doc',
     );
     const atB = extractionCacheKey(
       DIGEST,
       'mineru',
       '1',
       await computeConfigFingerprint('https://b.example'),
+      'doc',
     );
 
     expect(atA).not.toBe(atB);
@@ -235,11 +257,48 @@ describe('extractionCacheKey', () => {
       'unpdf',
       '1',
       await computeConfigFingerprint(undefined),
+      'doc',
     );
-    const withExplicit = extractionCacheKey(DIGEST, 'unpdf', '1', MANAGED_FP);
+    const withExplicit = extractionCacheKey(DIGEST, 'unpdf', '1', MANAGED_FP, 'doc');
 
     expect(withUndefined).toBe(withExplicit);
     expect(withUndefined).toContain(`:cfg-${MANAGED_FP}`);
+  });
+});
+
+describe('computeConfigFingerprint', () => {
+  it('normalizes trivially-equal spellings of one endpoint into one fingerprint (L2)', async () => {
+    const variants = ['https://Host/', 'https://host', 'https://host:443'];
+    const fingerprints = await Promise.all(variants.map((url) => computeConfigFingerprint(url)));
+
+    expect(fingerprints[0]).toBe(fingerprints[1]);
+    expect(fingerprints[1]).toBe(fingerprints[2]);
+  });
+
+  it('keeps different paths on the same endpoint as different fingerprints (L2)', async () => {
+    const atA = await computeConfigFingerprint('https://host/a');
+    const atB = await computeConfigFingerprint('https://host/b');
+
+    expect(atA).not.toBe(atB);
+  });
+
+  it('strips a non-default port only when it is the scheme default (L2)', async () => {
+    const nonDefault = await computeConfigFingerprint('https://host:8080');
+    const bare = await computeConfigFingerprint('https://host');
+
+    expect(nonDefault).not.toBe(bare);
+  });
+
+  it('hashes an unparseable baseUrl verbatim (L2)', async () => {
+    const raw = 'not a url';
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+    const expected = Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, '0'),
+    )
+      .join('')
+      .slice(0, 8);
+
+    expect(await computeConfigFingerprint(raw)).toBe(expected);
   });
 });
 
@@ -290,6 +349,7 @@ describe('writeExtractionCache', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       sourceDocAssetId: 'ast_source_doc',
@@ -381,6 +441,7 @@ describe('writeExtractionCache', () => {
         kv,
         pool: harness.pool,
         contentDigest: DIGEST,
+        domain: 'doc',
         extractorId: 'mineru',
         extractorVersion: '1',
         sourceDocAssetId: 'ast_source_doc',
@@ -403,6 +464,7 @@ describe('writeExtractionCache', () => {
       kv: failingKv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       sourceDocAssetId: 'ast_source_doc',
@@ -426,6 +488,7 @@ describe('writeExtractionCache', () => {
       kv,
       pool: first.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       sourceDocAssetId: 'ast_source_doc',
@@ -441,6 +504,7 @@ describe('writeExtractionCache', () => {
       kv,
       pool: second.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       result: fixtureResult(),
@@ -463,6 +527,7 @@ describe('writeExtractionCache', () => {
       kv,
       pool: first.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru-cloud',
       extractorVersion: '1',
       result: fixtureResult(),
@@ -481,6 +546,7 @@ describe('writeExtractionCache', () => {
       kv,
       pool: loser.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru-cloud',
       extractorVersion: '1',
       aliasExtractor: { extractorId: 'mineru', extractorVersion: '1' },
@@ -514,6 +580,7 @@ describe('writeExtractionCache', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       result: fixtureResult(),
@@ -531,6 +598,7 @@ describe('writeExtractionCache', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru-cloud',
       extractorVersion: '1',
       aliasExtractor: { extractorId: 'mineru', extractorVersion: '1' },
@@ -561,6 +629,7 @@ describe('lookupCachedExtraction', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       sourceDocAssetId: 'ast_source_doc',
@@ -571,6 +640,7 @@ describe('lookupCachedExtraction', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       fetchImpl: makeFetch(harness),
@@ -597,6 +667,7 @@ describe('lookupCachedExtraction', () => {
         kv,
         pool: harness.pool,
         contentDigest: DIGEST,
+        domain: 'doc',
         extractorId: 'mineru',
         extractorVersion: '1',
         fetchImpl: makeFetch(harness),
@@ -611,6 +682,7 @@ describe('lookupCachedExtraction', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '2',
       sourceDocAssetId: 'ast_source_doc',
@@ -623,6 +695,7 @@ describe('lookupCachedExtraction', () => {
         kv,
         pool: harness.pool,
         contentDigest: DIGEST,
+        domain: 'doc',
         extractorId: 'mineru',
         extractorVersion: '1',
         fetchImpl: makeFetch(harness),
@@ -637,6 +710,7 @@ describe('lookupCachedExtraction', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       sourceDocAssetId: 'ast_source_doc',
@@ -651,6 +725,7 @@ describe('lookupCachedExtraction', () => {
         kv,
         pool: harness.pool,
         contentDigest: DIGEST,
+        domain: 'doc',
         extractorId: 'mineru',
         extractorVersion: '1',
         fetchImpl: makeFetch(harness),
@@ -665,6 +740,7 @@ describe('lookupCachedExtraction', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       sourceDocAssetId: 'ast_source_doc',
@@ -677,6 +753,7 @@ describe('lookupCachedExtraction', () => {
         kv,
         pool: harness.pool,
         contentDigest: DIGEST,
+        domain: 'doc',
         extractorId: 'mineru',
         extractorVersion: '1',
         fetchImpl: makeFetch(harness),
@@ -702,6 +779,7 @@ describe('lookupCachedExtraction', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'unpdf',
       extractorVersion: '1',
       result: imagesOnly,
@@ -711,6 +789,7 @@ describe('lookupCachedExtraction', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'unpdf',
       extractorVersion: '1',
       fetchImpl: makeFetch(harness),
@@ -741,6 +820,7 @@ describe('lookupCachedExtraction', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'alidocmind',
       extractorVersion: '1',
       result: media,
@@ -750,6 +830,7 @@ describe('lookupCachedExtraction', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'alidocmind',
       extractorVersion: '1',
       fetchImpl: makeFetch(harness),
@@ -782,6 +863,7 @@ describe('lookupCachedExtraction', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'plain-text',
       extractorVersion: '1',
       result: zeroImage,
@@ -791,6 +873,7 @@ describe('lookupCachedExtraction', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'plain-text',
       extractorVersion: '1',
       fetchImpl: makeFetch(harness),
@@ -812,6 +895,7 @@ describe('lookupCachedExtraction', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru-cloud',
       extractorVersion: '1',
       aliasExtractor: { extractorId: 'mineru', extractorVersion: '1' },
@@ -822,6 +906,7 @@ describe('lookupCachedExtraction', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       fetchImpl: makeFetch(harness),
@@ -838,6 +923,7 @@ describe('lookupCachedExtraction', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       result: fixtureResult(),
@@ -854,6 +940,7 @@ describe('lookupCachedExtraction', () => {
         kv,
         pool: harness.pool,
         contentDigest: DIGEST,
+        domain: 'doc',
         extractorId: 'mineru',
         extractorVersion: '1',
         fetchImpl: makeFetch(harness),
@@ -861,6 +948,118 @@ describe('lookupCachedExtraction', () => {
     ).resolves.toBeNull();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('do not match'));
     warn.mockRestore();
+  });
+});
+
+describe('alias trust window (L1)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('hits a fresh alias, misses an alias older than the TTL, and keeps primary hits permanent', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    const kv = new FakeKV();
+    const harness = makePool();
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru-cloud',
+      extractorVersion: '1',
+      aliasExtractor: { extractorId: 'mineru', extractorVersion: '1' },
+      result: fixtureResult(),
+    });
+    const lookupOptions = (extractorId: string) => ({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc' as const,
+      extractorId,
+      extractorVersion: '1',
+      fetchImpl: makeFetch(harness),
+    });
+
+    // A fresh alias hit is honored…
+    expect(await lookupCachedExtraction(lookupOptions('mineru'))).not.toBeNull();
+    // …and the primary hit is permanent from the start.
+    expect(await lookupCachedExtraction(lookupOptions('mineru-cloud'))).not.toBeNull();
+
+    // Past the TTL the alias is NO longer trusted — the lookup degrades to a
+    // miss so the real extraction re-runs under the current identity.
+    vi.advanceTimersByTime(ALIAS_MAX_AGE_MS + 1);
+    expect(await lookupCachedExtraction(lookupOptions('mineru'))).toBeNull();
+    // The PRIMARY hit stays permanent regardless of age.
+    expect(await lookupCachedExtraction(lookupOptions('mineru-cloud'))).not.toBeNull();
+  });
+
+  it('converges after expiry: the fresh write records the current actual identity as primary (L1)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    const kv = new FakeKV();
+    const harness = makePool();
+    // Phase 1: MinerU Cloud ran for a mineru request — cloud is the actual
+    // primary, mineru is the alias, both under the constant 'managed' bucket.
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru-cloud',
+      extractorVersion: '1',
+      aliasExtractor: { extractorId: 'mineru', extractorVersion: '1' },
+      result: fixtureResult(),
+    });
+    vi.advanceTimersByTime(ALIAS_MAX_AGE_MS + 1);
+
+    // Phase 2: the deployment configures server-managed self-host mineru; the
+    // route now reports parser `mineru`. The expired alias is a miss, the real
+    // extraction runs, and the fresh write records mineru as PRIMARY.
+    const selfHostResult: ParsedPdfContent = {
+      ...fixtureResult(),
+      metadata: { ...fixtureResult().metadata!, parser: 'mineru' },
+    };
+    const assetIdForm = vi.fn(async () => {
+      return new Response(JSON.stringify({ success: true, data: selfHostResult }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    const makeOptions = (): Parameters<typeof fetchExtractionWithCache>[0] => ({
+      serverBacked: true,
+      hasAssetId: true,
+      fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: assetIdForm },
+      logWarning: vi.fn(),
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      kv,
+      pool: harness.pool,
+      fetchImpl: makeFetch(harness),
+      parseFailedMessage: 'parse failed',
+    });
+
+    const first = await fetchExtractionWithCache(makeOptions());
+    expect(first.cacheHit).toBe(false);
+    await first.cacheWrite;
+
+    // The record under the expected key is now the self-host PRIMARY (the
+    // write superseded the expired alias record instead of adopting it).
+    const record = await kv.get<DerivationRecord>(
+      managedKey(DIGEST, 'mineru', '1'),
+      EXTRACTION_CACHE_KV_SCOPE,
+    );
+    expect(record?.extractorId).toBe('mineru');
+    expect(record?.aliases).toBeUndefined();
+
+    // The next lookup under the same expected key HITS the new primary — no
+    // second extraction.
+    const second = await fetchExtractionWithCache(makeOptions());
+    expect(second.cacheHit).toBe(true);
+    expect(second.data).toEqual(selfHostResult);
+    expect(assetIdForm).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -873,6 +1072,7 @@ describe('fetchExtractionWithCache', () => {
       kv,
       pool: harness.pool,
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       sourceDocAssetId: 'ast_source_doc',
@@ -886,6 +1086,7 @@ describe('fetchExtractionWithCache', () => {
       fetchers,
       logWarning: vi.fn(),
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       sourceDocAssetId: 'ast_source_doc',
@@ -920,6 +1121,7 @@ describe('fetchExtractionWithCache', () => {
       fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: byteForm },
       logWarning: vi.fn(),
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       sourceDocAssetId: 'ast_source_doc',
@@ -933,6 +1135,9 @@ describe('fetchExtractionWithCache', () => {
     expect(outcome.data).toEqual(fixtureResult());
     expect(assetIdForm).toHaveBeenCalledTimes(1);
     expect(byteForm).not.toHaveBeenCalled();
+    // The write is fire-and-forget (L5): the result returned before it
+    // finished, so await the detached write before asserting on it.
+    await outcome.cacheWrite;
     // The successful extraction was cached best-effort.
     await expect(
       kv.get(managedKey(DIGEST, 'mineru', '1'), EXTRACTION_CACHE_KV_SCOPE),
@@ -956,12 +1161,13 @@ describe('fetchExtractionWithCache', () => {
     const byteForm = vi.fn(async () => {
       throw new Error('byte form must not be used');
     });
-    const options = {
+    const options: Parameters<typeof fetchExtractionWithCache>[0] = {
       serverBacked: true,
       hasAssetId: true,
       fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: byteForm },
       logWarning: vi.fn(),
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       kv,
@@ -970,9 +1176,11 @@ describe('fetchExtractionWithCache', () => {
       parseFailedMessage: 'parse failed',
     };
 
-    // First import: mineru requested, mineru-cloud ran. Both keys are written.
+    // First import: mineru requested, mineru-cloud ran. Both keys are written
+    // (await the detached fire-and-forget write so the records exist below).
     const first = await fetchExtractionWithCache(options);
     expect(first.cacheHit).toBe(false);
+    await first.cacheWrite;
 
     const actualRecord = await kv.get<DerivationRecord>(
       managedKey(DIGEST, 'mineru-cloud', '1'),
@@ -1006,12 +1214,13 @@ describe('fetchExtractionWithCache', () => {
       });
     });
 
-    await fetchExtractionWithCache({
+    const outcome = await fetchExtractionWithCache({
       serverBacked: true,
       hasAssetId: true,
       fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: assetIdForm },
       logWarning: vi.fn(),
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       kv,
@@ -1019,6 +1228,7 @@ describe('fetchExtractionWithCache', () => {
       fetchImpl: makeFetch(harness),
       parseFailedMessage: 'parse failed',
     });
+    await outcome.cacheWrite;
 
     expect(kv.storedKeys()).toHaveLength(1);
     expect(kv.storedKeys()[0]).toContain(':mineru@1:');
@@ -1041,6 +1251,7 @@ describe('fetchExtractionWithCache', () => {
       fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: assetIdForm },
       logWarning: vi.fn(),
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       sourceDocAssetId: 'ast_source_doc',
@@ -1052,6 +1263,10 @@ describe('fetchExtractionWithCache', () => {
 
     expect(outcome.cacheHit).toBe(false);
     expect(outcome.data).toEqual(fixtureResult());
+    // The write fails internally but never fails the result; awaiting the
+    // detached write is deterministic because `writeExtractionCache` catches
+    // its own failures.
+    await outcome.cacheWrite;
     expect(kv.storedKeys()).toEqual([]);
   });
 
@@ -1075,6 +1290,7 @@ describe('fetchExtractionWithCache', () => {
         fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: assetIdForm },
         logWarning: vi.fn(),
         contentDigest: DIGEST,
+        domain: 'doc',
         extractorId: 'mineru',
         extractorVersion: '1',
         kv,
@@ -1101,6 +1317,7 @@ describe('fetchExtractionWithCache', () => {
         fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: assetIdForm },
         logWarning: vi.fn(),
         contentDigest: DIGEST,
+        domain: 'doc',
         extractorId: 'mineru',
         extractorVersion: '1',
         kv,
@@ -1128,6 +1345,7 @@ describe('fetchExtractionWithCache', () => {
       fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: assetIdForm },
       logWarning: vi.fn(),
       contentDigest: DIGEST,
+      domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
       pool: harness.pool,
@@ -1144,7 +1362,13 @@ describe('createExtractionDeduplicator', () => {
   it('shares ONE extraction across same-digest, same-extractor sources (K3)', async () => {
     const deduplicator = createExtractionDeduplicator();
     const extraction = vi.fn(async () => fixtureResult());
-    const key = { contentDigest: DIGEST, extractorId: 'mineru', extractorVersion: '1' };
+    const key: InRunExtractionKey = {
+      contentDigest: DIGEST,
+      domain: 'doc',
+      configFingerprint: MANAGED_FP,
+      extractorId: 'mineru',
+      extractorVersion: '1',
+    };
 
     const [first, second] = await Promise.all([
       deduplicator.run(key, extraction),
@@ -1163,17 +1387,114 @@ describe('createExtractionDeduplicator', () => {
 
     await Promise.all([
       deduplicator.run(
-        { contentDigest: DIGEST, extractorId: 'mineru', extractorVersion: '1' },
+        {
+          contentDigest: DIGEST,
+          domain: 'doc',
+          configFingerprint: MANAGED_FP,
+          extractorId: 'mineru',
+          extractorVersion: '1',
+        },
         mineru,
       ),
       deduplicator.run(
-        { contentDigest: DIGEST, extractorId: 'unpdf', extractorVersion: '1' },
+        {
+          contentDigest: DIGEST,
+          domain: 'doc',
+          configFingerprint: MANAGED_FP,
+          extractorId: 'unpdf',
+          extractorVersion: '1',
+        },
         unpdf,
       ),
     ]);
 
     expect(mineru).toHaveBeenCalledTimes(1);
     expect(unpdf).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not share extractions across different config fingerprints (L3)', async () => {
+    const deduplicator = createExtractionDeduplicator();
+    const extraction = vi.fn(async () => fixtureResult());
+    const fpA = await computeConfigFingerprint('https://a.example');
+    const fpB = await computeConfigFingerprint('https://b.example');
+
+    // Same digest + same extractor, but different per-source endpoints: the
+    // dedupe identity is the cache identity, so these are two derivations.
+    await Promise.all([
+      deduplicator.run(
+        {
+          contentDigest: DIGEST,
+          domain: 'doc',
+          extractorId: 'mineru',
+          extractorVersion: '1',
+          configFingerprint: fpA,
+        },
+        extraction,
+      ),
+      deduplicator.run(
+        {
+          contentDigest: DIGEST,
+          domain: 'doc',
+          extractorId: 'mineru',
+          extractorVersion: '1',
+          configFingerprint: fpB,
+        },
+        extraction,
+      ),
+    ]);
+
+    expect(extraction).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not share extractions across document and media domains (L6)', async () => {
+    const deduplicator = createExtractionDeduplicator();
+    const extraction = vi.fn(async () => fixtureResult());
+
+    await Promise.all([
+      deduplicator.run(
+        {
+          contentDigest: DIGEST,
+          domain: 'doc',
+          extractorId: 'alidocmind',
+          extractorVersion: '1',
+          configFingerprint: MANAGED_FP,
+        },
+        extraction,
+      ),
+      deduplicator.run(
+        {
+          contentDigest: DIGEST,
+          domain: 'media',
+          extractorId: 'alidocmind',
+          extractorVersion: '1',
+          configFingerprint: MANAGED_FP,
+        },
+        extraction,
+      ),
+    ]);
+
+    expect(extraction).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears the memo on a rejected extraction so a later retry re-invokes (L3)', async () => {
+    const deduplicator = createExtractionDeduplicator();
+    const key = {
+      contentDigest: DIGEST,
+      domain: 'doc' as const,
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      configFingerprint: MANAGED_FP,
+    };
+    const extraction = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('first attempt failed'))
+      .mockResolvedValueOnce(fixtureResult());
+
+    await expect(deduplicator.run(key, extraction)).rejects.toThrow('first attempt failed');
+    // The memo entry was dropped on rejection: the same key re-invokes instead
+    // of re-receiving the stale rejection.
+    await expect(deduplicator.run(key, extraction)).resolves.toEqual(fixtureResult());
+    expect(extraction).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -1202,6 +1523,7 @@ describe('degradation on a route-level KV failure (K5)', () => {
         fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: assetIdForm },
         logWarning: vi.fn(),
         contentDigest: DIGEST,
+        domain: 'doc',
         extractorId: 'mineru',
         extractorVersion: '1',
         kv,
@@ -1213,7 +1535,7 @@ describe('degradation on a route-level KV failure (K5)', () => {
     };
   }
 
-  it('disables caching for the session after the first route-level 404, without ingest churn (K5)', async () => {
+  it('disables caching for a bounded window after the first route-level 404, without ingest churn (K5)', async () => {
     const kv = new FakeKV();
     // A 404 that is NOT the store's legitimate key-not-found miss: the KV route
     // itself is gone (as with NEXT_PUBLIC_PERSISTENCE=1 today).
@@ -1225,10 +1547,12 @@ describe('degradation on a route-level KV failure (K5)', () => {
     const { options, assetIdForm } = makeOptions(kv, harness);
 
     // Source 1: the first route-level 404 disables the cache (ONE warn total).
-    await fetchExtractionWithCache(options);
+    const first = await fetchExtractionWithCache(options);
+    await first.cacheWrite;
     // Source 2: the disabled cache is skipped entirely — no lookup, no ingest,
     // no further warn.
-    await fetchExtractionWithCache(options);
+    const second = await fetchExtractionWithCache(options);
+    await second.cacheWrite;
 
     expect(assetIdForm).toHaveBeenCalledTimes(2);
     expect(kv.get).toHaveBeenCalledTimes(1);
@@ -1237,7 +1561,71 @@ describe('degradation on a route-level KV failure (K5)', () => {
     // No putAsset-then-removeAsset churn per extraction on the write path.
     expect(harness.put).not.toHaveBeenCalled();
     expect(harness.remove).not.toHaveBeenCalled();
-    // Exactly ONE warn: the session-disable, never one per source.
+    // Exactly ONE warn for the disable episode, never one per source.
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('re-probes the KV route once the disable window expires (L4)', async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = new FakeKV();
+      const getSpy = vi
+        .spyOn(kv, 'get')
+        .mockRejectedValue(new HttpKVStoreError(404, 'HTTP_ERROR', 'kv route not found'));
+      const harness = makePool();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const { options } = makeOptions(kv, harness);
+
+      // First probe: the route-level 404 disables the cache for one window.
+      const first = await fetchExtractionWithCache(options);
+      await first.cacheWrite;
+      // Inside the window: no further lookup touches the store.
+      const second = await fetchExtractionWithCache(options);
+      await second.cacheWrite;
+      expect(getSpy).toHaveBeenCalledTimes(1);
+
+      // The window expires: the next operation probes the KV route again.
+      vi.advanceTimersByTime(10 * 60 * 1000 + 1);
+      const third = await fetchExtractionWithCache(options);
+      await third.cacheWrite;
+
+      expect(getSpy).toHaveBeenCalledTimes(2);
+      // A second disable episode logs its own single warn.
+      expect(warn).toHaveBeenCalledTimes(2);
+      warn.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('disables the cache for a route-level 404 on the WRITE side too (K5)', async () => {
+    const kv = new FakeKV();
+    // Lookup and the pre-write re-read succeed (a normal miss); the KV record
+    // write itself answers a route-level 404 — the write side must disable the
+    // cache exactly like the lookup side.
+    vi.spyOn(kv, 'get').mockResolvedValue(null);
+    const setSpy = vi
+      .spyOn(kv, 'set')
+      .mockRejectedValue(new HttpKVStoreError(404, 'HTTP_ERROR', 'kv route not found'));
+    const harness = makePool();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { options, assetIdForm } = makeOptions(kv, harness);
+
+    // Source 1: the write hits the route-level 404 and disables the cache.
+    const first = await fetchExtractionWithCache(options);
+    expect(first.cacheHit).toBe(false);
+    await first.cacheWrite;
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    // The disabled write released the assets it allocated before failing.
+    expect(harness.remove).toHaveBeenCalled();
+
+    // Source 2: the disabled cache is skipped entirely — no lookup, no write.
+    const second = await fetchExtractionWithCache(options);
+    await second.cacheWrite;
+    expect(assetIdForm).toHaveBeenCalledTimes(2);
+    expect(setSpy).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
@@ -1249,8 +1637,10 @@ describe('degradation on a route-level KV failure (K5)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const { options } = makeOptions(kv, harness);
 
-    await fetchExtractionWithCache(options);
-    await fetchExtractionWithCache(options);
+    const first = await fetchExtractionWithCache(options);
+    await first.cacheWrite;
+    const second = await fetchExtractionWithCache(options);
+    await second.cacheWrite;
 
     // The cache is NOT disabled: each source still attempts the lookup (one
     // per-op warn per lookup) and the write path still runs (pre-write re-get
