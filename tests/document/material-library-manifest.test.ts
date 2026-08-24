@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -80,6 +81,11 @@ function importSpecifiers(source: string): string[] {
   while ((match = staticRe.exec(source)) !== null) specifiers.push(match[1]);
   const dynamicRe = /import\(\s*['"]([^'"]+)['"]\s*\)/g;
   while ((match = dynamicRe.exec(source)) !== null) specifiers.push(match[1]);
+  // `export … from '…'` re-exports are import-graph edges too: a server-only
+  // module re-exported through a client-reachable file would otherwise slip
+  // past the graph scan entirely and rely on `pnpm build` alone.
+  const reexportRe = /export\s+(?:type\s+)?(?:\*|\{[^}]*\})[^;]*?from\s+['"]([^'"]+)['"]/g;
+  while ((match = reexportRe.exec(source)) !== null) specifiers.push(match[1]);
   return specifiers;
 }
 
@@ -140,5 +146,22 @@ describe('material library manifest — browser-safe import graph', () => {
     expect(
       [...violations.entries()].map(([file, patterns]) => `${file}: ${patterns.join(', ')}`),
     ).toEqual([]);
+  });
+
+  it('descends into `export … from` re-export specifiers (a re-exported server-only module is still a violation)', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'material-library-manifest-'));
+    try {
+      const reexport = join(tmpDir, 'reexport.ts');
+      const poison = join(tmpDir, 'poison.ts');
+      // The forbidden dependency is reachable ONLY through an `export … from`
+      // re-export — the exact edge the re-export scan must follow.
+      writeFileSync(poison, `import sharp from 'sharp';\n`, 'utf8');
+      writeFileSync(reexport, `export * from './poison';\n`, 'utf8');
+
+      const violations = scanGraph(reexport);
+      expect([...violations.entries()].some(([file]) => file === poison)).toBe(true);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

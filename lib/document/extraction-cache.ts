@@ -42,7 +42,7 @@ import { SUPPORTED_MEDIA_MIME_TYPES } from '@/lib/document/mime';
 import { createLogger } from '@/lib/logger';
 import { putAsset, removeAsset } from '@/lib/media/asset-pool';
 import type { AssetPoolStore } from '@/lib/media/asset-pool-config';
-import { withAssetUrl } from '@/lib/media/use-asset-url';
+import { assetRefExists, withAssetUrl } from '@/lib/media/use-asset-url';
 import {
   getPersistenceRequestHeaders,
   isBrowserPersistenceEnabled,
@@ -806,10 +806,11 @@ export interface ExtractionCacheLookupOptions {
    * bytes: `metadata.imageMapping` maps `img_N` → the image's pool asset id
    * and `metadata.pdfImages[].assetId` carries the same id, so a cache hit
    * feeds generation by id instead of shipping bytes to the client. In
-   * `'asset-id'` mode the per-image byte reads are skipped entirely (the
-   * bytes are resolved server-side at prompt-assembly time), so a record
-   * whose image assets were reclaimed is still a hit for the text — the
-   * generation-time resolution reports the missing image then.
+   * `'asset-id'` mode the per-image BYTE reads are skipped (the bytes are
+   * resolved server-side at prompt-assembly time), but each image asset is
+   * still probed for EXISTENCE through the pool's identity seam — a record
+   * naming a reclaimed image is a miss (reclaim = miss, the same invariant
+   * data-url mode and part-1 K6 enforce), never a hit with dangling ids.
    */
   imageMappingMode?: 'data-url' | 'asset-id';
 }
@@ -825,8 +826,10 @@ export interface ExtractionCacheLookupOptions {
  * that does not resolve, bytes that cannot be read, a record whose image list
  * disagrees with the stored artifact's own image asset ids, or a KV/pool
  * transport failure — so the caller treats it as a miss and runs the real
- * extraction. (In `'asset-id'` mode the per-image byte reads are skipped, so
- * only the artifact read and the record/artifact consistency check can miss.)
+ * extraction. (In `'asset-id'` mode the per-image BYTE reads are skipped, so
+ * a hit costs the artifact read, the record/artifact consistency check, and
+ * a per-image EXISTENCE probe through the pool's identity seam — a record
+ * naming a reclaimed image is a miss there too.)
  * A hit is logged so it is observable.
  */
 export async function lookupCachedExtraction(
@@ -925,13 +928,25 @@ export async function lookupCachedExtraction(
     // Every image asset must resolve and be readable in data-url mode; a
     // record naming a partially-reclaimed cache is a miss, and the real
     // extraction re-derives. In asset-id mode (RFC #1153 part 2 C) the image
-    // bytes are deliberately NOT materialized client-side — the generation
-    // routes resolve the ids server-side at prompt-assembly time — so the
-    // per-image byte reads are skipped and the record's asset ids flow into
-    // the rebuilt result verbatim.
+    // BYTES are deliberately NOT materialized client-side — the generation
+    // routes resolve the ids server-side at prompt-assembly time — but the
+    // reclaim-is-miss invariant (part-1 K6) is mode-independent: each image
+    // asset is still probed for EXISTENCE through the pool seam (an identity
+    // read — HEAD / registry lookup — never a byte fetch), and a record
+    // naming a reclaimed image is a miss, exactly like data-url mode. Only a
+    // record whose image assets all still exist serves a hit.
     const imagePayloads: string[] = [];
     if (assetIdMode) {
-      imagePayloads.push(...record.images.map((image) => image.assetId));
+      for (const image of record.images) {
+        const exists = await assetRefExists(image.assetId, options.pool);
+        if (!exists) {
+          log.warn(
+            `Extraction cache miss for ${key}: image asset ${image.assetId} no longer exists (reclaim = miss).`,
+          );
+          return null;
+        }
+        imagePayloads.push(image.assetId);
+      }
     } else {
       for (const image of record.images) {
         const dataUrl = await withAssetUrl(

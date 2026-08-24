@@ -25,6 +25,7 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
+import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVisionImagesForPrompt } from '@/lib/persistence/resolve-vision-images';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
@@ -97,7 +98,12 @@ export async function POST(req: NextRequest) {
     // Detect vision capability
     const hasVision = !!modelInfo?.capabilities?.vision;
 
-    // Vision-aware AI call function
+    // Vision-aware AI call function. On a server-backed transport the
+    // `imageMapping` values are allocated asset ids, so the vision srcs reach
+    // here as ids; N3 (below) has already filtered `assignedImages` to the
+    // resolvable set, so every id this resolution sees succeeds — the
+    // resolution drops nothing here, it only turns the surviving ids into the
+    // same bytes the base64 path would send (RFC #1153 part 2 B).
     const aiCall = async (
       systemPrompt: string,
       userPrompt: string,
@@ -160,6 +166,41 @@ export async function POST(req: NextRequest) {
       const suggestedIds = new Set(effectiveOutline.suggestedImageIds);
       assignedImages = sortDocumentImagesForVision(
         pdfImages.filter((img) => suggestedIds.has(img.id)),
+      );
+    }
+
+    // ── N3: resolve the vision slice BEFORE prompt assembly ──
+    // The prompt text and the multimodal attachments must be built from the
+    // SAME resolved set: an image the server cannot resolve (a reclaimed
+    // asset, a store failure) is dropped from BOTH — its `[see attached]`
+    // text mention and its attachment — instead of leaving a dangling promise
+    // in the prompt. Per-image: one bad id never aborts the rest; slice order
+    // stays stable. The original `imageMapping` (allocated asset ids) is still
+    // passed to the generator so `resolveImageIds` writes the ALLOCATED ID
+    // into `PPTImageElement.src` (part 2 B) — the pre-resolution only decides
+    // which images survive into `assignedImages`; `generateSlideContent` then
+    // builds text and `visionImages` from the surviving set, and the aiCall
+    // below resolves those ids to bytes for the LLM message.
+    if (assignedImages && assignedImages.length > 0 && hasVision && imageMapping) {
+      const sorted = sortDocumentImagesForVision(assignedImages);
+      const visionSlice = sorted.filter((img) => imageMapping[img.id]).slice(0, MAX_VISION_IMAGES);
+      const resolvedVisionImages = await resolveVisionImagesForPrompt(
+        visionSlice.map((img) => ({
+          id: img.id,
+          src: imageMapping[img.id],
+          ...(img.width !== undefined ? { width: img.width } : {}),
+          ...(img.height !== undefined ? { height: img.height } : {}),
+        })),
+        req.headers,
+      );
+      const resolvedIds = new Set(resolvedVisionImages.map((img) => img.id));
+      // Drop unresolvable vision images from the assigned set so they produce
+      // NO text mention and NO attachment; images never promised an attachment
+      // (no mapping entry, or beyond the vision slice) stay as plain
+      // descriptions.
+      const visionSliceIds = new Set(visionSlice.map((img) => img.id));
+      assignedImages = assignedImages.filter(
+        (img) => !visionSliceIds.has(img.id) || resolvedIds.has(img.id),
       );
     }
 

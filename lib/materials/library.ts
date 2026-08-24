@@ -9,6 +9,15 @@
  * before generation never removes the library entry — the library is durable
  * memory of what the user imported; the pool-entry release stays as-is.
  *
+ * RFC §5 root model: each entry OWNS its reference. At upsert time the library
+ * allocates its OWN pool entry from the imported bytes (`putAsset` under
+ * library ownership — content addressing makes the second allocation
+ * physically free: the same blob, a new registry entry) and stores THAT id.
+ * The selection-entry lifecycle (part-0 removal, prep-timeout release) never
+ * touches the library's allocation, so `readMaterial` stays resolvable after
+ * removal and after a same-digest re-import swaps the id. Entry deletion — a
+ * later milestone — is what releases the library-owned allocation.
+ *
  * The two agent-facing atomic tools of RFC design §4 live here and are kept
  * pure and JSON-serializable in/out so a later agent-tool wrapper is trivial:
  *
@@ -35,6 +44,7 @@ import { BrowserKVStore, HttpKVStore, HttpKVStoreError, type KVStore } from '@op
 
 import { createLogger } from '@/lib/logger';
 import type { AssetPoolStore } from '@/lib/media/asset-pool-config';
+import { removeAsset, putAsset } from '@/lib/media/asset-pool';
 import { withAssetUrl } from '@/lib/media/use-asset-url';
 import {
   getPersistenceRequestHeaders,
@@ -70,14 +80,19 @@ export interface MaterialDerivationRef {
  * One library entry = the reviewable contract of RFC #1153 part 2.
  *
  * Keyed by `contentDigest` (same bytes re-imported = same entry). `assetId`
- * names the NEWEST allocation of those bytes, so a durable reference an agent
- * hands downstream stays resolvable even after the upload-time pool entry was
- * released; `addedAt` is the newest import instant. `derivations` are pointers
- * to the part-1 derivation records, appended once the extraction identity is
- * known — never a copy of their lineage.
+ * names the NEWEST **library-owned** allocation of those bytes: the library
+ * allocated it at upsert time with its own `putAsset`, so a durable reference
+ * an agent hands downstream stays resolvable even after the upload-time pool
+ * entry was released (part-0 removal, prep-timeout release). Only deleting the
+ * library entry — a later milestone — releases this allocation; a same-digest
+ * re-import swaps it for a fresh library-owned allocation and releases the
+ * previous one AFTER the entry points at the new id. `addedAt` is the newest
+ * import instant. `derivations` are pointers to the part-1 derivation
+ * records, appended once the extraction identity is known — never a copy of
+ * their lineage.
  */
 export interface MaterialLibraryEntry {
-  /** Pool asset id of the newest allocation of these bytes. */
+  /** Pool asset id of the NEWEST library-owned allocation of these bytes. */
   assetId: string;
   /** SHA-256 of the bytes (lowercase hex); the entry key. */
   contentDigest: string;
@@ -221,8 +236,8 @@ function isValidLibraryEntry(value: unknown): value is MaterialLibraryEntry {
 // ─── Write points ────────────────────────────────────────────────────────────
 
 export interface UpsertMaterialLibraryEntryInput {
-  /** Pool asset id of the newest allocation of these bytes. */
-  assetId: string;
+  /** The imported file bytes; the library allocates its OWN pool entry from them. */
+  file: Blob;
   /** SHA-256 of the bytes; the entry key. */
   contentDigest: string;
   /** Display name of the imported file. */
@@ -234,6 +249,23 @@ export interface UpsertMaterialLibraryEntryInput {
 }
 
 /**
+ * Union two derivation lists by their identity (domain × extractorId ×
+ * extractorVersion), preserving first-seen order. The merge-on-write pattern
+ * (N7) unions the freshly-read entry's derivations with the writer's own so a
+ * concurrent writer can never drop a pointer another writer appended.
+ */
+function unionDerivations(
+  left: readonly MaterialDerivationRef[] | undefined,
+  right: readonly MaterialDerivationRef[] | undefined,
+): MaterialDerivationRef[] {
+  const byIdentity = new Map<string, MaterialDerivationRef>();
+  for (const ref of [...(left ?? []), ...(right ?? [])]) {
+    byIdentity.set(`${ref.domain}:${ref.extractorId}:${ref.extractorVersion}`, ref);
+  }
+  return [...byIdentity.values()];
+}
+
+/**
  * Upsert one library entry keyed by `contentDigest` (the upload-time write
  * point, RFC #1153 part 2 section A). Same bytes re-imported = same entry:
  * `addedAt` is refreshed to now and `assetId` advanced to the newest
@@ -241,9 +273,23 @@ export interface UpsertMaterialLibraryEntryInput {
  * refresh. Best-effort by contract: a KV failure is logged and never fails
  * the caller's upload (a route-level KV failure disables the manifest for a
  * bounded window, mirroring part 1's cache degradation).
+ *
+ * Ownership (RFC §5 root model): the library allocates its OWN pool entry
+ * from `input.file` and stores that id, so the entry never points at the
+ * caller's selection entry (whose lifecycle — part-0 removal, prep-timeout
+ * release — releases it without the library's knowledge). A failed library
+ * allocation skips the upsert entirely with one warn; the caller's upload is
+ * unaffected. On a same-digest re-import the new library-owned id is
+ * allocated FIRST, the entry is written to point at it, and only THEN is the
+ * PREVIOUS library-owned allocation released best-effort (logged) — the entry
+ * never names a released id mid-swap.
+ *
+ * The optional `pool` is the test injection point; production omits it and
+ * `putAsset` / `removeAsset` resolve the browser-wide pool.
  */
 export async function upsertMaterialLibraryEntry(
   input: UpsertMaterialLibraryEntryInput,
+  pool?: AssetPoolStore,
 ): Promise<void> {
   if (isLibraryDisabled()) return;
   let kv: KVStore;
@@ -254,22 +300,59 @@ export async function upsertMaterialLibraryEntry(
     return;
   }
 
+  // The library-owned allocation, independent of the selection's upload-time
+  // entry. Content addressing makes it physically free (same blob, new
+  // registry entry); a failure skips the upsert — the upload is unaffected
+  // because the caller's own pool entry was already allocated separately.
+  const put = (data: Blob): Promise<string> => (pool ? pool.put(data) : putAsset(data));
+  const remove = (assetId: string): Promise<void> =>
+    pool ? pool.remove(assetId) : removeAsset(assetId);
+  let libraryAssetId: string;
+  try {
+    libraryAssetId = await put(input.file);
+  } catch (error) {
+    log.warn(
+      `Failed to allocate the library-owned pool entry for "${input.name}"; skipping the library upsert (the upload is unaffected):`,
+      error,
+    );
+    return;
+  }
+
   const key = materialLibraryKey(input.contentDigest);
   try {
+    // N7 merge-on-write: re-read once immediately before the set and merge
+    // with the freshly-read state, so two concurrent writers (a same-digest
+    // re-import racing a derivation record, or two imports) never drop each
+    // other's derivation pointers. The residual read→set last-writer window
+    // is milliseconds and accepted — the same class as the part-1 get→set
+    // acceptance.
     const existing = await kv.get<MaterialLibraryEntry>(key, MATERIAL_LIBRARY_KV_SCOPE);
     const entry: MaterialLibraryEntry = {
-      assetId: input.assetId,
+      assetId: libraryAssetId,
       contentDigest: input.contentDigest,
       name: input.name,
       ...(input.mimeType !== undefined ? { mimeType: input.mimeType } : {}),
       size: input.size,
       addedAt: new Date().toISOString(),
       // Preserve the derivation pointers across a same-digest re-import.
-      ...(existing && isValidLibraryEntry(existing) && existing.derivations
-        ? { derivations: existing.derivations }
+      ...(existing && isValidLibraryEntry(existing)
+        ? { derivations: unionDerivations(existing.derivations, undefined) }
         : {}),
     };
     await kv.set(key, entry, MATERIAL_LIBRARY_KV_SCOPE);
+
+    // The swap, ordered so the entry never names a released id: the entry now
+    // points at the NEW library-owned allocation, so the PREVIOUS one is
+    // released best-effort. A failure only orphans one registry entry
+    // (recoverable by re-importing) and is logged, never thrown.
+    if (existing && isValidLibraryEntry(existing) && existing.assetId !== libraryAssetId) {
+      await remove(existing.assetId).catch((error) => {
+        log.warn(
+          `Failed to release the superseded library-owned allocation ${existing.assetId} for "${input.name}":`,
+          error,
+        );
+      });
+    }
   } catch (error) {
     if (isRouteLevelKVError(error)) {
       disableLibraryForWindow(error);
@@ -289,6 +372,12 @@ export async function upsertMaterialLibraryEntry(
  * derivation records an agent can consult for derived images and lineage. A
  * duplicate identity is a no-op; a missing entry is skipped with a warn; a KV
  * failure is logged and ignored (best-effort, like every library write).
+ *
+ * N7 merge-on-write: the entry is re-read once immediately before the set and
+ * the derivations are UNIONED, so a concurrent same-digest upsert (which
+ * preserves derivations across the refresh) or another derivation record can
+ * never drop this pointer. The residual read→set last-writer window is
+ * milliseconds and accepted — the same class as the part-1 get→set acceptance.
  */
 export async function recordMaterialDerivation(
   contentDigest: string,
@@ -319,19 +408,9 @@ export async function recordMaterialDerivation(
       );
       return;
     }
-    const derivations = existing.derivations ?? [];
-    const alreadyRecorded = derivations.some(
-      (item) =>
-        item.domain === ref.domain &&
-        item.extractorId === ref.extractorId &&
-        item.extractorVersion === ref.extractorVersion,
-    );
-    if (alreadyRecorded) return;
-    await kv.set(
-      key,
-      { ...existing, derivations: [...derivations, { ...ref }] },
-      MATERIAL_LIBRARY_KV_SCOPE,
-    );
+    const merged = unionDerivations(existing.derivations, [ref]);
+    if (merged.length === (existing.derivations ?? []).length) return;
+    await kv.set(key, { ...existing, derivations: merged }, MATERIAL_LIBRARY_KV_SCOPE);
   } catch (error) {
     if (isRouteLevelKVError(error)) {
       disableLibraryForWindow(error);

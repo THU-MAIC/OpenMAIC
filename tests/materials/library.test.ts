@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { KVScope } from '@openmaic/storage';
 
@@ -49,30 +49,52 @@ class FakeKV {
   }
 }
 
-function makePool(): AssetPoolStore & { blobs: Map<string, Blob> } {
+interface FakePoolHarness {
+  pool: AssetPoolStore;
+  blobs: Map<string, Blob>;
+  put: ReturnType<typeof vi.fn>;
+  remove: ReturnType<typeof vi.fn>;
+}
+
+/** A fake pool whose `put` mints a NEW id per allocation (like the real store). */
+function makePool(): FakePoolHarness {
   const blobs = new Map<string, Blob>();
   let next = 0;
+  const put = vi.fn(async (data: Blob): Promise<string> => {
+    const id = `ast_lib_${next}`;
+    next += 1;
+    blobs.set(id, data);
+    return id;
+  });
+  const remove = vi.fn(async (ref: string): Promise<void> => {
+    blobs.delete(ref);
+  });
   const pool: AssetPoolStore = {
-    put: async (data: Blob) => {
-      const id = `ast_test_${next}`;
-      next += 1;
-      blobs.set(id, data);
-      return id;
-    },
+    put: put as AssetPoolStore['put'],
     resolve: async (ref: string) => (blobs.has(ref) ? `test://${ref}` : null),
     invalidate: async () => undefined,
-    remove: async (ref: string) => {
-      blobs.delete(ref);
-    },
+    remove: remove as AssetPoolStore['remove'],
     replace: async () => undefined,
     release: async () => undefined,
     close: async () => undefined,
   };
-  return Object.assign(pool, { blobs });
+  return { pool, blobs, put, remove };
+}
+
+/** A fetch implementation serving the fake pool's `test://<assetId>` URLs. */
+function makeFetch(harness: Pick<FakePoolHarness, 'blobs'>): typeof fetch {
+  return (async (input: RequestInfo | URL): Promise<Response> => {
+    const id = String(input).replace(/^test:\/\//, '');
+    const blob = harness.blobs.get(id);
+    return blob ? new Response(blob, { status: 200 }) : new Response('missing', { status: 404 });
+  }) as typeof fetch;
 }
 
 const DIGEST_A = 'a'.repeat(64);
 const DIGEST_B = 'b'.repeat(64);
+
+/** The imported file bytes the library allocates its OWN pool entry from. */
+const FILE_BYTES = () => new Blob(['library-owned bytes'], { type: 'application/pdf' });
 
 function entry(over: Partial<MaterialLibraryEntry>): MaterialLibraryEntry {
   return {
@@ -86,11 +108,13 @@ function entry(over: Partial<MaterialLibraryEntry>): MaterialLibraryEntry {
   };
 }
 
-describe('material library — upsert by digest', () => {
+describe('material library — upsert by digest with a library-owned allocation', () => {
   let kv: FakeKV;
+  let harness: FakePoolHarness;
 
   beforeEach(() => {
     kv = new FakeKV();
+    harness = makePool();
     setMaterialLibraryKVForTests(kv);
   });
 
@@ -98,37 +122,46 @@ describe('material library — upsert by digest', () => {
     resetMaterialLibraryForTests();
   });
 
-  it('mints one entry keyed by contentDigest', async () => {
-    await upsertMaterialLibraryEntry({
-      assetId: 'ast_lib_1',
-      contentDigest: DIGEST_A,
-      name: 'safety-checklist.pdf',
-      mimeType: 'application/pdf',
-      size: 2048,
-    });
+  it('mints one entry keyed by contentDigest, pointing at the LIBRARY-owned allocation', async () => {
+    await upsertMaterialLibraryEntry(
+      {
+        file: FILE_BYTES(),
+        contentDigest: DIGEST_A,
+        name: 'safety-checklist.pdf',
+        mimeType: 'application/pdf',
+        size: 2048,
+      },
+      harness.pool,
+    );
 
     const stored = await kv.get<MaterialLibraryEntry>(
       materialLibraryKey(DIGEST_A),
       MATERIAL_LIBRARY_KV_SCOPE,
     );
     expect(stored).toMatchObject({
-      assetId: 'ast_lib_1',
       contentDigest: DIGEST_A,
       name: 'safety-checklist.pdf',
       mimeType: 'application/pdf',
       size: 2048,
     });
+    // The entry names the library's OWN allocation (a fresh pool id), and the
+    // bytes it names actually exist in the pool.
+    expect(stored?.assetId).toBe('ast_lib_0');
+    expect(harness.blobs.has(stored!.assetId)).toBe(true);
     expect(typeof stored?.addedAt).toBe('string');
     expect(kv.storedKeys()).toHaveLength(1);
   });
 
-  it('re-importing the same bytes refreshes the SAME entry (no duplicate)', async () => {
-    await upsertMaterialLibraryEntry({
-      assetId: 'ast_lib_1',
-      contentDigest: DIGEST_A,
-      name: 'safety-checklist.pdf',
-      size: 2048,
-    });
+  it('re-importing the same bytes refreshes the SAME entry and releases the previous library allocation AFTER the swap', async () => {
+    await upsertMaterialLibraryEntry(
+      {
+        file: FILE_BYTES(),
+        contentDigest: DIGEST_A,
+        name: 'safety-checklist.pdf',
+        size: 2048,
+      },
+      harness.pool,
+    );
     const first = await kv.get<MaterialLibraryEntry>(
       materialLibraryKey(DIGEST_A),
       MATERIAL_LIBRARY_KV_SCOPE,
@@ -136,44 +169,75 @@ describe('material library — upsert by digest', () => {
     // Simulate the second import resolving a moment later with a new
     // allocation and an updated display name.
     await new Promise((resolve) => setTimeout(resolve, 5));
-    await upsertMaterialLibraryEntry({
-      assetId: 'ast_lib_2',
-      contentDigest: DIGEST_A,
-      name: 'safety-checklist-copy.pdf',
-      size: 2048,
-    });
+    await upsertMaterialLibraryEntry(
+      {
+        file: FILE_BYTES(),
+        contentDigest: DIGEST_A,
+        name: 'safety-checklist-copy.pdf',
+        size: 2048,
+      },
+      harness.pool,
+    );
 
     const refreshed = await kv.get<MaterialLibraryEntry>(
       materialLibraryKey(DIGEST_A),
       MATERIAL_LIBRARY_KV_SCOPE,
     );
-    expect(refreshed?.assetId).toBe('ast_lib_2');
+    expect(refreshed?.assetId).toBe('ast_lib_1');
     expect(refreshed?.name).toBe('safety-checklist-copy.pdf');
     // Same entry: one key, `addedAt` advanced.
     expect(kv.storedKeys()).toHaveLength(1);
     expect(new Date(refreshed!.addedAt).getTime()).toBeGreaterThan(
       new Date(first!.addedAt).getTime(),
     );
+    // The swap released the PREVIOUS library-owned allocation — after the
+    // entry already pointed at the new one — and the new one is alive.
+    expect(harness.remove).toHaveBeenCalledWith(first!.assetId);
+    expect(harness.blobs.has(first!.assetId)).toBe(false);
+    expect(harness.blobs.has(refreshed!.assetId)).toBe(true);
+  });
+
+  it('a failed library putAsset skips the upsert with the KV untouched (upload unaffected)', async () => {
+    harness.put.mockRejectedValueOnce(new Error('pool put failed'));
+
+    await expect(
+      upsertMaterialLibraryEntry(
+        {
+          file: FILE_BYTES(),
+          contentDigest: DIGEST_A,
+          name: 'safety-checklist.pdf',
+          size: 2048,
+        },
+        harness.pool,
+      ),
+    ).resolves.toBeUndefined();
+    expect(kv.storedKeys()).toHaveLength(0);
   });
 
   it('preserves recorded derivation pointers across a same-digest refresh', async () => {
-    await upsertMaterialLibraryEntry({
-      assetId: 'ast_lib_1',
-      contentDigest: DIGEST_A,
-      name: 'safety-checklist.pdf',
-      size: 2048,
-    });
+    await upsertMaterialLibraryEntry(
+      {
+        file: FILE_BYTES(),
+        contentDigest: DIGEST_A,
+        name: 'safety-checklist.pdf',
+        size: 2048,
+      },
+      harness.pool,
+    );
     await recordMaterialDerivation(DIGEST_A, {
       domain: 'doc',
       extractorId: 'mineru',
       extractorVersion: '1',
     });
-    await upsertMaterialLibraryEntry({
-      assetId: 'ast_lib_2',
-      contentDigest: DIGEST_A,
-      name: 'safety-checklist-copy.pdf',
-      size: 2048,
-    });
+    await upsertMaterialLibraryEntry(
+      {
+        file: FILE_BYTES(),
+        contentDigest: DIGEST_A,
+        name: 'safety-checklist-copy.pdf',
+        size: 2048,
+      },
+      harness.pool,
+    );
 
     const refreshed = await kv.get<MaterialLibraryEntry>(
       materialLibraryKey(DIGEST_A),
@@ -187,6 +251,57 @@ describe('material library — upsert by digest', () => {
 
 describe('material library — listMaterials', () => {
   let kv: FakeKV;
+  let harness: FakePoolHarness;
+
+  beforeEach(() => {
+    kv = new FakeKV();
+    harness = makePool();
+    setMaterialLibraryKVForTests(kv);
+  });
+
+  afterEach(() => {
+    resetMaterialLibraryForTests();
+  });
+
+  it('lists every entry, newest first by addedAt', async () => {
+    await upsertMaterialLibraryEntry(
+      { file: FILE_BYTES(), contentDigest: DIGEST_A, name: 'old.pdf', size: 10 },
+      harness.pool,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await upsertMaterialLibraryEntry(
+      { file: FILE_BYTES(), contentDigest: DIGEST_B, name: 'new.pdf', size: 20 },
+      harness.pool,
+    );
+
+    const listed = await listMaterials();
+    expect(listed.map((e) => e.name)).toEqual(['new.pdf', 'old.pdf']);
+    // Each entry names its own library-owned allocation, alive in the pool.
+    expect(listed[0]?.assetId).toBe('ast_lib_1');
+    expect(listed[1]?.assetId).toBe('ast_lib_0');
+    expect(harness.blobs.has(listed[0]!.assetId)).toBe(true);
+    expect(harness.blobs.has(listed[1]!.assetId)).toBe(true);
+  });
+
+  it('skips malformed entries instead of failing the list', async () => {
+    await upsertMaterialLibraryEntry(
+      { file: FILE_BYTES(), contentDigest: DIGEST_A, name: 'good.pdf', size: 10 },
+      harness.pool,
+    );
+    await kv.set(
+      materialLibraryKey(DIGEST_B),
+      { assetId: 'ast_bad', contentDigest: DIGEST_B }, // missing name/size/addedAt
+      MATERIAL_LIBRARY_KV_SCOPE,
+    );
+
+    const listed = await listMaterials();
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.name).toBe('good.pdf');
+  });
+});
+
+describe('material library — durability: the library owns its reference (RFC §5 root model)', () => {
+  let kv: FakeKV;
 
   beforeEach(() => {
     kv = new FakeKV();
@@ -197,43 +312,72 @@ describe('material library — listMaterials', () => {
     resetMaterialLibraryForTests();
   });
 
-  it('lists every entry, newest first by addedAt', async () => {
-    await upsertMaterialLibraryEntry({
-      assetId: 'ast_old',
-      contentDigest: DIGEST_A,
-      name: 'old.pdf',
-      size: 10,
-    });
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    await upsertMaterialLibraryEntry({
-      assetId: 'ast_new',
-      contentDigest: DIGEST_B,
-      name: 'new.pdf',
-      size: 20,
-    });
+  it('readMaterial still resolves AFTER the selection entry is removed (removal never touches the library allocation)', async () => {
+    const harness = makePool();
+    // The selection's upload-time pool entry (part 0): a DIFFERENT allocation
+    // of the same bytes, released by removeCourseMaterial.
+    const selectionAssetId = await harness.pool.put(FILE_BYTES());
 
-    const listed = await listMaterials();
-    expect(listed.map((e) => e.name)).toEqual(['new.pdf', 'old.pdf']);
-    expect(listed[0]?.assetId).toBe('ast_new');
-    expect(listed[1]?.assetId).toBe('ast_old');
-  });
-
-  it('skips malformed entries instead of failing the list', async () => {
-    await upsertMaterialLibraryEntry({
-      assetId: 'ast_good',
-      contentDigest: DIGEST_A,
-      name: 'good.pdf',
-      size: 10,
-    });
-    await kv.set(
-      materialLibraryKey(DIGEST_B),
-      { assetId: 'ast_bad', contentDigest: DIGEST_B }, // missing name/size/addedAt
+    await upsertMaterialLibraryEntry(
+      {
+        file: FILE_BYTES(),
+        contentDigest: DIGEST_A,
+        name: 'safety-checklist.pdf',
+        size: 2048,
+      },
+      harness.pool,
+    );
+    const stored = await kv.get<MaterialLibraryEntry>(
+      materialLibraryKey(DIGEST_A),
       MATERIAL_LIBRARY_KV_SCOPE,
     );
+    expect(stored?.assetId).not.toBe(selectionAssetId);
 
-    const listed = await listMaterials();
-    expect(listed).toHaveLength(1);
-    expect(listed[0]?.name).toBe('good.pdf');
+    // The selection lifecycle releases ONLY the selection's entry.
+    await harness.pool.remove(selectionAssetId);
+    expect(harness.blobs.has(selectionAssetId)).toBe(false);
+    expect(harness.blobs.has(stored!.assetId)).toBe(true);
+
+    // The library's reference stays resolvable — the docstring's durability
+    // claim is now true.
+    const result = await readMaterial(stored!.assetId, harness.pool, makeFetch(harness));
+    expect(result?.assetId).toBe(stored!.assetId);
+    expect(result?.size).toBe((FILE_BYTES() as Blob).size);
+  });
+
+  it('re-import swap: the previous library allocation is released, the entry names the live one', async () => {
+    const harness = makePool();
+    await upsertMaterialLibraryEntry(
+      {
+        file: FILE_BYTES(),
+        contentDigest: DIGEST_A,
+        name: 'safety-checklist.pdf',
+        size: 2048,
+      },
+      harness.pool,
+    );
+    await upsertMaterialLibraryEntry(
+      {
+        file: FILE_BYTES(),
+        contentDigest: DIGEST_A,
+        name: 'safety-checklist-copy.pdf',
+        size: 2048,
+      },
+      harness.pool,
+    );
+
+    const stored = await kv.get<MaterialLibraryEntry>(
+      materialLibraryKey(DIGEST_A),
+      MATERIAL_LIBRARY_KV_SCOPE,
+    );
+    expect(stored?.assetId).toBe('ast_lib_1');
+    // The superseded allocation is gone; the entry's allocation is live.
+    expect(harness.blobs.has('ast_lib_0')).toBe(false);
+    expect(harness.blobs.has(stored!.assetId)).toBe(true);
+    const result = await readMaterial(stored!.assetId, harness.pool, makeFetch(harness));
+    expect(result?.assetId).toBe(stored!.assetId);
+    // The released id no longer resolves.
+    await expect(readMaterial('ast_lib_0', harness.pool, makeFetch(harness))).resolves.toBeNull();
   });
 });
 
@@ -252,16 +396,9 @@ describe('material library — readMaterial via the pool seam', () => {
   it('returns the asset bytes as a data URL through the pool', async () => {
     const pool = makePool();
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const assetId = await pool.put(new Blob([bytes], { type: 'image/png' }));
-    // Serve the fake pool's `test://<assetId>` URLs, like the extraction-cache
-    // tests do.
-    const fetchImpl = (async (input: RequestInfo | URL): Promise<Response> => {
-      const id = String(input).replace(/^test:\/\//, '');
-      const blob = pool.blobs.get(id);
-      return blob ? new Response(blob, { status: 200 }) : new Response('missing', { status: 404 });
-    }) as typeof fetch;
+    const assetId = await pool.pool.put(new Blob([bytes], { type: 'image/png' }));
 
-    const result = await readMaterial(assetId, pool, fetchImpl);
+    const result = await readMaterial(assetId, pool.pool, makeFetch(pool));
     expect(result?.assetId).toBe(assetId);
     expect(result?.mimeType).toBe('image/png');
     expect(result?.size).toBe(4);
@@ -270,7 +407,7 @@ describe('material library — readMaterial via the pool seam', () => {
 
   it('returns null for an unresolvable asset id, never throws', async () => {
     const pool = makePool();
-    await expect(readMaterial('ast_does_not_exist', pool)).resolves.toBeNull();
+    await expect(readMaterial('ast_does_not_exist', pool.pool)).resolves.toBeNull();
   });
 });
 
@@ -294,7 +431,8 @@ describe('material library — KV-unavailable degradation', () => {
     await expect(listMaterials()).resolves.toEqual([]);
   });
 
-  it('upsert and derivation recording never throw on a failing KV', async () => {
+  it('upsert and derivation recording never throw on a failing KV (the library allocation is still attempted)', async () => {
+    const harness = makePool();
     setMaterialLibraryKVForTests({
       get: async () => {
         throw new Error('kv down');
@@ -307,12 +445,15 @@ describe('material library — KV-unavailable degradation', () => {
     });
 
     await expect(
-      upsertMaterialLibraryEntry({
-        assetId: 'ast_lib_1',
-        contentDigest: DIGEST_A,
-        name: 'x.pdf',
-        size: 1,
-      }),
+      upsertMaterialLibraryEntry(
+        {
+          file: FILE_BYTES(),
+          contentDigest: DIGEST_A,
+          name: 'x.pdf',
+          size: 1,
+        },
+        harness.pool,
+      ),
     ).resolves.toBeUndefined();
     await expect(
       recordMaterialDerivation(DIGEST_A, {
@@ -325,13 +466,17 @@ describe('material library — KV-unavailable degradation', () => {
 
   it('records derivation pointers and deduplicates identical identities', async () => {
     const kv = new FakeKV();
+    const harness = makePool();
     setMaterialLibraryKVForTests(kv);
-    await upsertMaterialLibraryEntry({
-      assetId: 'ast_lib_1',
-      contentDigest: DIGEST_A,
-      name: 'safety-checklist.pdf',
-      size: 2048,
-    });
+    await upsertMaterialLibraryEntry(
+      {
+        file: FILE_BYTES(),
+        contentDigest: DIGEST_A,
+        name: 'safety-checklist.pdf',
+        size: 2048,
+      },
+      harness.pool,
+    );
 
     await recordMaterialDerivation(DIGEST_A, {
       domain: 'doc',

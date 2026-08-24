@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
+import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation';
+
 const resolveServerAssetMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/persistence/resolve-server-asset', () => ({
@@ -36,7 +38,11 @@ describe('resolveVisionImagesForPrompt (RFC #1153 part 2 B)', () => {
     expect(resolved).toEqual([
       { id: 'img_1', src: `data:image/png;base64,${BASE64}`, width: 640, height: 480 },
     ]);
-    expect(resolveServerAssetMock).toHaveBeenCalledWith('ast_allocated_1', HEADERS);
+    expect(resolveServerAssetMock).toHaveBeenCalledWith(
+      'ast_allocated_1',
+      HEADERS,
+      MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES,
+    );
   });
 
   it('passes data URLs and concrete URLs through untouched', async () => {
@@ -64,6 +70,23 @@ describe('resolveVisionImagesForPrompt (RFC #1153 part 2 B)', () => {
       HEADERS,
     );
     expect(resolved).toEqual([]);
+  });
+
+  it('drops an OVERSIZED asset with the same warn-and-drop posture, passing the shared size cap (N5)', async () => {
+    resolveServerAssetMock.mockResolvedValue({ status: 'too_large' });
+
+    const resolved = await resolveVisionImagesForPrompt(
+      [{ id: 'img_1', src: 'ast_huge' }],
+      HEADERS,
+    );
+    expect(resolved).toEqual([]);
+    // The cap rides the same resolve call: the store's `identify` rejects the
+    // asset from its recorded length BEFORE any bytes are materialized.
+    expect(resolveServerAssetMock).toHaveBeenCalledWith(
+      'ast_huge',
+      HEADERS,
+      MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES,
+    );
   });
 
   it('drops the image on a store failure (no raw error text reaches the caller)', async () => {

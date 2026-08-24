@@ -325,6 +325,13 @@ export async function POST(req: NextRequest) {
     // Build prompt (same logic as generateSceneOutlinesFromRequirements)
     let availableImagesText = 'No images available';
     let visionImages: Array<{ id: string; src: string }> | undefined;
+    // N3: the RESOLVED slice, threaded into the standard buildOutlinePrompt
+    // branch below. The vision resolution drops images the server cannot
+    // resolve; the standard branch must rebuild its placeholder text from the
+    // same resolved set so a dropped image drops its text mention AND its
+    // attachment there too.
+    let resolvedPdfImages: PdfImage[] | undefined;
+    let resolvedImageMapping: ImageMapping | undefined;
 
     if (pdfImages && pdfImages.length > 0) {
       if (hasVision && imageMapping) {
@@ -350,6 +357,7 @@ export async function POST(req: NextRequest) {
           })),
           req.headers,
         );
+        const resolvedIds = new Set(resolvedVisionImages.map((img) => img.id));
         const visionImageById = new Map(sortedImages.map((img) => [img.id, img] as const));
         const visionDescriptions = resolvedVisionImages.map((img) =>
           formatImagePlaceholder(visionImageById.get(img.id) ?? { ...img, pageNumber: 1, src: '' }),
@@ -365,6 +373,19 @@ export async function POST(req: NextRequest) {
           ...(img.width !== undefined ? { width: img.width } : {}),
           ...(img.height !== undefined ? { height: img.height } : {}),
         }));
+
+        // N3: the standard branch (buildOutlinePrompt) rebuilds its own
+        // placeholder text from pdfImages × imageMapping — feed it the RESOLVED
+        // set: unresolvable vision images removed from the slice and a mapping
+        // naming only the resolved ids, so its `[see attached]` promises match
+        // the attachments this route attaches exactly.
+        const visionSliceIds = new Set(visionSlice.map((img) => img.id));
+        resolvedPdfImages = pdfImages.filter(
+          (img) => !visionSliceIds.has(img.id) || resolvedIds.has(img.id),
+        );
+        resolvedImageMapping = Object.fromEntries(
+          Object.entries(imageMapping).filter(([id]) => resolvedIds.has(id)),
+        );
       } else {
         // Text-only mode: full descriptions
         availableImagesText = pdfImages.map((img) => formatImageDescription(img)).join('\n');
@@ -385,11 +406,14 @@ export async function POST(req: NextRequest) {
     const taskEngineMode = resolveVocationalActive(requirements);
     // Standard outline generation is byte-identical to the package path. The
     // two app-only modes retain their own templates but share the same inputs.
+    // The standard branch receives the N3 RESOLVED slice (unresolvable vision
+    // images removed, mapping naming only resolved ids) so its placeholder
+    // text never promises an image this route will not attach.
     let prompts: { system: string; user: string } | null = buildOutlinePrompt(requirements, {
       pdfText,
-      pdfImages,
+      pdfImages: resolvedPdfImages ?? pdfImages,
       visionEnabled: hasVision,
-      imageMapping,
+      imageMapping: resolvedImageMapping ?? imageMapping,
       imageGenerationEnabled,
       videoGenerationEnabled,
       researchContext,

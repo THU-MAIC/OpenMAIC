@@ -20,10 +20,17 @@
  * an opaque id string. On a healthy deployment nothing drops and the two
  * modes produce identical prompts.
  *
+ * Size bound (N5): the same 50 MB cap the extract route enforces is passed
+ * to `resolveServerAsset`'s `maxByteLength`, so an oversized asset is
+ * rejected at `identify` — the registry's recorded length, before any bytes
+ * are materialized — and dropped with the same warn-and-drop posture as an
+ * unresolvable one.
+ *
  * Server-only module: it must never be imported from client code (the
  * `resolveServerAsset` dependency chain is Node-only).
  */
 import { createLogger } from '@/lib/logger';
+import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation';
 
 import { resolveServerAsset } from './resolve-server-asset';
 
@@ -62,7 +69,11 @@ export async function resolveVisionImagesForPrompt(
     }
     let resolution;
     try {
-      resolution = await resolveServerAsset(image.src, headers);
+      resolution = await resolveServerAsset(
+        image.src,
+        headers,
+        MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES,
+      );
     } catch (error) {
       // A store failure must never surface raw error text to the caller; log
       // server-side and drop the image so the prompt degrades gracefully.
@@ -70,6 +81,9 @@ export async function resolveVisionImagesForPrompt(
       continue;
     }
     if (resolution.status !== 'resolved') {
+      // Unresolvable and oversized images share the same posture: warn
+      // server-side and drop, so the prompt never names an image it cannot
+      // attach (N3) and never pulls an oversized asset into memory (N5).
       log.warn(
         `Vision image "${image.id}" does not resolve server-side (${resolution.status}); dropping it from the vision prompt.`,
       );

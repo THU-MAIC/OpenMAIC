@@ -143,6 +143,128 @@ describe('scene-content route — asset-id image transport', () => {
     );
     expect(body.content.elements[0].src).toBe(dataUrl);
   });
+
+  test('drops an unresolvable image from BOTH the prompt text and the attachments (N3)', async () => {
+    vi.resetModules();
+    // The pre-resolution drops img_2 (the server cannot resolve its id);
+    // img_1 resolves to bytes, data URLs pass through.
+    resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
+      images
+        .filter((image) => image.src !== 'ast_gone')
+        .map((image) => ({
+          ...image,
+          src: image.src.startsWith('data:')
+            ? image.src
+            : `data:image/png;base64,${Buffer.from(`bytes-for-${image.id}`).toString('base64')}`,
+        })),
+    );
+    callLLMMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        elements: [
+          {
+            type: 'image',
+            src: 'img_1',
+            left: 100,
+            top: 100,
+            width: 400,
+            height: 300,
+            rotate: 0,
+          },
+        ],
+        remark: '',
+      }),
+    });
+
+    const { POST } = await import('@/app/api/generate/scene-content/route');
+    const response = await POST(
+      mockRequest({
+        outline: slideOutline(['img_1', 'img_2']),
+        pdfImages: [
+          { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
+          { id: 'img_2', src: '', pageNumber: 2, width: 200, height: 100 },
+        ],
+        imageMapping: { img_1: 'ast_ok', img_2: 'ast_gone' },
+      }),
+    );
+    const body = await response.json();
+
+    expect(body.success).toBe(true);
+    // The prompt text promised `[see attached]` only for img_1 — img_2's
+    // text mention is gone with its attachment (no dangling promise).
+    const content = callLLMMock.mock.calls[0][0].messages[0].content;
+    const textPart = content.find((part: { type: string }) => part.type === 'text');
+    expect(textPart.text).toContain('img_1');
+    expect(textPart.text).toContain('[see attached]');
+    expect(textPart.text).not.toContain('img_2');
+    // Only img_1's bytes were attached.
+    const imageParts = content.filter((part: { type: string }) => part.type === 'image');
+    expect(imageParts).toHaveLength(1);
+    expect(imageParts[0].image).toBe(Buffer.from('bytes-for-img_1').toString('base64'));
+    // The surviving image still resolves to the ALLOCATED ID in the element
+    // src (part 2 B transport preserved).
+    expect(body.content.elements[0].src).toBe('ast_ok');
+  });
+
+  test('handles a MIXED imageMapping (allocated ids AND data URLs) in one request (N4)', async () => {
+    vi.resetModules();
+    const dataUrl = `data:image/png;base64,${Buffer.from('browser-bytes').toString('base64')}`;
+    resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
+      images.map((image) => ({
+        ...image,
+        src: image.src.startsWith('data:')
+          ? image.src
+          : `data:image/png;base64,${Buffer.from('resolved-bytes').toString('base64')}`,
+      })),
+    );
+    callLLMMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        elements: [
+          {
+            type: 'image',
+            src: 'img_1',
+            left: 100,
+            top: 100,
+            width: 400,
+            height: 300,
+            rotate: 0,
+          },
+          {
+            type: 'image',
+            src: 'img_2',
+            left: 100,
+            top: 420,
+            width: 400,
+            height: 300,
+            rotate: 0,
+          },
+        ],
+        remark: '',
+      }),
+    });
+
+    const { POST } = await import('@/app/api/generate/scene-content/route');
+    const response = await POST(
+      mockRequest({
+        outline: slideOutline(['img_1', 'img_2']),
+        pdfImages: [
+          { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
+          { id: 'img_2', src: dataUrl, pageNumber: 2, width: 200, height: 100 },
+        ],
+        imageMapping: { img_1: 'ast_mixed_1', img_2: dataUrl },
+      }),
+    );
+    const body = await response.json();
+
+    expect(body.success).toBe(true);
+    // The LLM received both images (id resolved, data URL passed through).
+    const content = callLLMMock.mock.calls[0][0].messages[0].content;
+    const imageParts = content.filter((part: { type: string }) => part.type === 'image');
+    expect(imageParts).toHaveLength(2);
+    // resolveImageIds writes each mapping value verbatim: the allocated id
+    // stays an id, the data URL stays a data URL — the renderer resolves both.
+    expect(body.content.elements[0].src).toBe('ast_mixed_1');
+    expect(body.content.elements[1].src).toBe(dataUrl);
+  });
 });
 
 function mockRequest(body: {
@@ -171,7 +293,7 @@ function mockRequest(body: {
   } as unknown as Parameters<typeof import('@/app/api/generate/scene-content/route').POST>[0];
 }
 
-function slideOutline(): SceneOutline {
+function slideOutline(suggestedImageIds: string[] = ['img_1']): SceneOutline {
   return {
     id: 'scene-slide',
     type: 'slide',
@@ -179,6 +301,6 @@ function slideOutline(): SceneOutline {
     description: 'Inspect the device before calibration.',
     keyPoints: ['Inspect', 'Calibrate'],
     order: 1,
-    suggestedImageIds: ['img_1'],
+    suggestedImageIds,
   };
 }

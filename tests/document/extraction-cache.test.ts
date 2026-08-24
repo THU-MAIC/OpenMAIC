@@ -120,6 +120,7 @@ interface FakePoolHarness {
   put: ReturnType<typeof vi.fn>;
   resolve: ReturnType<typeof vi.fn>;
   remove: ReturnType<typeof vi.fn>;
+  exists: ReturnType<typeof vi.fn>;
 }
 
 function makePool(): FakePoolHarness {
@@ -138,6 +139,7 @@ function makePool(): FakePoolHarness {
   const remove = vi.fn(async (ref: string): Promise<void> => {
     blobs.delete(ref);
   });
+  const exists = vi.fn(async (ref: string): Promise<boolean> => blobs.has(ref));
   const pool: AssetPoolStore = {
     put: put as AssetPoolStore['put'],
     resolve: resolve as AssetPoolStore['resolve'],
@@ -145,9 +147,10 @@ function makePool(): FakePoolHarness {
     remove: remove as AssetPoolStore['remove'],
     replace: vi.fn(async () => undefined),
     release: vi.fn(async () => undefined),
+    exists: exists as AssetPoolStore['exists'],
     close: vi.fn(async () => undefined),
   };
-  return { pool, blobs, put, resolve, remove };
+  return { pool, blobs, put, resolve, remove, exists };
 }
 
 /** A fetch implementation serving the fake pool's `test://<assetId>` URLs. */
@@ -879,10 +882,15 @@ describe('lookupCachedExtraction', () => {
     });
 
     expect(rebuilt).not.toBeNull();
-    // The image bytes were NOT fetched: only the artifact asset was resolved
-    // from the pool (data-url mode resolves artifact + every image).
+    // The image BYTES were NOT fetched: only the artifact asset was resolved
+    // from the pool (data-url mode resolves artifact + every image); each
+    // image asset was probed for EXISTENCE through the pool's identity seam
+    // (no byte fetch).
     expect(harness.resolve).toHaveBeenCalledTimes(1);
     expect(harness.resolve).toHaveBeenCalledWith(record!.artifactAssetId);
+    expect(harness.exists).toHaveBeenCalledTimes(2);
+    expect(harness.exists).toHaveBeenCalledWith('ast_test_0');
+    expect(harness.exists).toHaveBeenCalledWith('ast_test_1');
     // metadata.imageMapping maps img_N → the allocated asset id, and
     // pdfImages carry the id on `assetId` with src left empty.
     expect(rebuilt?.metadata?.imageMapping).toEqual({ img_1: 'ast_test_0', img_2: 'ast_test_1' });
@@ -900,6 +908,41 @@ describe('lookupCachedExtraction', () => {
     expect(rebuilt?.images).toEqual([]);
     // The text half is rebuilt exactly as a real extraction returns it.
     expect(rebuilt?.text).toBe(original.text);
+  });
+
+  it('reports a MISS in asset-id mode when an image asset was reclaimed (reclaim = miss, N6)', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      sourceDocAssetId: 'ast_source_doc',
+      result: fixtureResult(),
+    });
+    // Simulate a partially-reclaimed cache: one image asset's bytes are gone.
+    harness.blobs.delete('ast_test_1');
+
+    const rebuilt = await lookupCachedExtraction({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      domain: 'doc',
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      fetchImpl: makeFetch(harness),
+      imageMappingMode: 'asset-id',
+    });
+
+    // A dangling id is a miss, exactly like data-url mode — the real
+    // extraction re-derives instead of serving text with a silently missing
+    // image. The existence probe is an identity read, never a byte fetch.
+    expect(rebuilt).toBeNull();
+    expect(harness.exists).toHaveBeenCalledWith('ast_test_1');
+    expect(harness.resolve).toHaveBeenCalledTimes(1); // artifact only
   });
 
   it('reports a miss when no record exists', async () => {

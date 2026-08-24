@@ -226,6 +226,13 @@ function HomePage() {
   // from the settled promise just like the asset id (see
   // `resolvedAssetIdForIngest` for the commit-timing rationale).
   const pendingMaterialDigestsRef = useRef(new Map<string, Promise<string | undefined>>());
+  // Course-material ids whose ingest was ABANDONED: removed from the
+  // selection (the source file handle is gone) or released at prep-timeout
+  // because no durable holder would ever exist for the id. The material-library
+  // upsert skips these — minting would record bytes the user deliberately
+  // discarded (RFC #1153 part 2, N1). Written synchronously by the removal
+  // path and the prep-timeout drain, read by the upsert settlement below.
+  const abandonedMaterialIngestIdsRef = useRef(new Set<string>());
 
   const replaceThumbnails = (slides: Record<string, Slide>) => {
     const previous = thumbnailsRef.current;
@@ -555,13 +562,20 @@ function HomePage() {
     // Material library manifest (RFC #1153 part 2): once BOTH the ingest's
     // allocated asset id and the content digest have settled, upsert the
     // library entry keyed by digest — same bytes re-imported refresh the same
-    // entry (`addedAt` bumped, `assetId` advanced to the newest allocation).
-    // Best-effort by contract: a KV failure never fails the upload, and the
-    // library entry is durable even after this pool entry is released later.
-    void Promise.all([ingest, contentDigest]).then(([assetId, digest]) => {
+    // entry (`addedAt` bumped, `assetId` advanced). The library allocates its
+    // OWN pool entry from the file bytes and stores that id, so the entry
+    // stays resolvable after this selection's pool entry is released (N1,
+    // RFC §5 root model). The upsert must NOT fire for a material whose
+    // ingest was already abandoned — removed from the selection (the source
+    // file handle is gone) or released at prep-timeout — so it is gated on
+    // the same settlement as before AND on the abandoned set. Best-effort by
+    // contract: a KV failure or a failed library allocation never fails the
+    // upload.
+    void Promise.all([ingest, contentDigest]).then(([, digest]) => {
       if (!digest) return;
+      if (abandonedMaterialIngestIdsRef.current.has(addition.id)) return;
       void upsertMaterialLibraryEntry({
-        assetId,
+        file: addition.file,
         contentDigest: digest,
         name: addition.name,
         mimeType:
@@ -624,6 +638,11 @@ function HomePage() {
     // via the same state), so nothing can slip out of the set mid-prep.
     if (preparingGenerate) return;
     const removed = form.courseMaterials.find((item) => item.id === id);
+    // The source file handle is gone: the material-library upsert must not
+    // fire for this id once its ingest settles (N1). Mark it synchronously so
+    // the settlement closure — which runs after this handler returns — skips
+    // minting an entry for bytes the user deliberately discarded.
+    abandonedMaterialIngestIdsRef.current.add(id);
     // Release the pool entry allocated for this file, mirroring the blob-stash
     // cleanup: if the ingest is still in flight, release once it lands.
     const release = removed?.assetId
@@ -716,8 +735,11 @@ function HomePage() {
           timeoutMs: DEFAULT_INGEST_AWAIT_TIMEOUT_MS,
           onUnsettled: (ingestId, ingest) => {
             unsettledIngestIds.add(ingestId);
-            // No durable holder will ever exist for a timed-out id (the
-            // session is built without it), so release it when it lands.
+            // The ingest was abandoned: no durable holder will ever exist for
+            // its id, so release it when it lands — and mark it abandoned so
+            // the material-library upsert skips minting an entry for bytes
+            // the session deliberately discarded (N1).
+            abandonedMaterialIngestIdsRef.current.add(ingestId);
             void ingest
               .then((assetId) => (assetId ? removeAsset(assetId) : undefined))
               .catch((error) => {
