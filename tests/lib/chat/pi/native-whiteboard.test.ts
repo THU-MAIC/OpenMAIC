@@ -1077,6 +1077,58 @@ describe('Native RuntimeStore whiteboard tools', () => {
     }
   });
 
+  it('reports an exact draw replay after deletion without restoring the deleted element', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    try {
+      const store = new BrowserRuntimeStore({
+        indexedDB: new IDBFactory(),
+        payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      });
+      const runtime = createWhiteboardRuntimeService({
+        store,
+        resolveLearnerKey: () => 'learner-1',
+        withMaintenanceLock: (work) => work(),
+      });
+      const tools = build(runtime).tools;
+      const draw = tools.find((tool) => tool.name === 'wb_draw_text')!;
+      const deleteTool = tools.find((tool) => tool.name === 'wb_delete')!;
+      const drawParams = {
+        expectedLastSeq: null,
+        content: 'draw once',
+        x: 1,
+        y: 2,
+      };
+
+      const firstDraw = await draw.execute('draw-before-delete', drawParams);
+      expect(firstDraw).toMatchObject({
+        details: { committedSeq: 0, lastSeq: 0, replayed: false },
+      });
+      const element = (firstDraw.details as { affected: { element: { id: string; type: string } } })
+        .affected.element;
+      await deleteTool.execute('delete-drawn-element', {
+        expectedLastSeq: 0,
+        elementId: element.id,
+      });
+
+      await expect(draw.execute('draw-before-delete', drawParams)).resolves.toMatchObject({
+        details: {
+          committedSeq: 0,
+          lastSeq: 1,
+          replayed: true,
+          affected: { element: { id: element.id, type: element.type } },
+        },
+      });
+      await expect(runtime.read('stage-1')).resolves.toMatchObject({
+        lastSeq: 1,
+        whiteboard: { elements: [] },
+      });
+      const sessions = await store.listSessions('stage-1', 'learner-1');
+      await expect(store.listRecords(sessions[0]!.id)).resolves.toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('keeps missing and empty clear as zero-append, zero-projection successful no-ops', async () => {
     vi.stubGlobal('IDBKeyRange', IDBKeyRange);
     try {

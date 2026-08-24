@@ -630,7 +630,8 @@ function elementMutationTool<TParams extends ElementMutationParams>(
         opts,
         params.expectedLastSeq,
         payload,
-        (state) => {
+        (state, replayed) => {
+          if (replayed) return { element };
           const affected = state.whiteboard?.elements.find(
             (candidate) => candidate.id === element.id && candidate.type === element.type,
           );
