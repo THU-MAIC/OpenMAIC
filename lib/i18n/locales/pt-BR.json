@@ -1831,5 +1831,153 @@
     "title": "Digite o Código de Acesso",
     "placeholder": "Código de acesso",
     "error": "Código inválido. Tente novamente."
+  },
+  "learningReport": {
+    "title": "Relatório de Aprendizagem",
+    "back": "Voltar",
+    "loading": "Carregando seu relatório…",
+    "emptyState": "Nenhum curso ainda. Comece a aprender para ver seu relatório.",
+    "emptyStateCta": "Ir para os cursos",
+    "tabs": {
+      "overview": "Visão geral",
+      "stages": "Progresso",
+      "quiz": "Quiz",
+      "chat": "Conversa",
+      "achievements": "Conquistas"
+    },
+    "overview": {
+      "progress": "Progresso",
+      "quiz": "Quiz",
+      "chat": "Conversa",
+      "stageCount": "Cursos",
+      "started": "Iniciados",
+      "completed": "Concluídos",
+      "avgProgress": "Progresso médio",
+      "maxProgress": "Melhor progresso",
+      "quizAttempts": "Tentativas de quiz",
+      "avgScore": "Pontuação média",
+      "bestScore": "Melhor pontuação",
+      "perfect": "Notas máximas",
+      "sessions": "Sessões",
+      "qa": "Perguntas",
+      "lecture": "Aula",
+      "messages": "Mensagens"
+    },
+    "stages": {
+      "empty": "Nenhum progresso de curso ainda.",
+      "notStarted": "Não iniciado",
+      "scenePosition": "Cena {{position}} / {{total}}",
+      "quizBadge": "Quiz {{done}}/{{total}}",
+      "scoreBadge": "Média {{pct}}%",
+      "chatBadge": "{{count}} sessões"
+    },
+    "quiz": {
+      "empty": "Nenhuma resposta de quiz ainda."
+    },
+    "chat": {
+      "empty": "Nenhuma conversa ainda.",
+      "lecture": "Aula",
+      "qa": "Perguntas",
+      "discussion": "Discussão"
+    },
+    "ach": {
+      "summary": "Desbloqueadas {{earned}} / {{total}}",
+      "unlockedAt": "Desbloqueada em {{date}}",
+      "locked": "Ainda não desbloqueada",
+      "start": {
+        "title": "Decolagem",
+        "desc": "Comece qualquer curso"
+      },
+      "finish1": {
+        "title": "Curso Concluído",
+        "desc": "Conclua 1 curso"
+      },
+      "finish3": {
+        "title": "Realizado",
+        "desc": "Taxa de conclusão ≥ 80%"
+      },
+      "quiz1": {
+        "title": "Primeira Tentativa",
+        "desc": "Complete seu primeiro quiz"
+      },
+      "perfect": {
+        "title": "Perfeccionista",
+        "desc": "Tire nota máxima em um quiz"
+      },
+      "quiz80": {
+        "title": "Consistente",
+        "desc": "Média de quiz ≥ 80%"
+      },
+      "chat1": {
+        "title": "Quebra-gelo",
+        "desc": "Inicie sua primeira sessão"
+      },
+      "chat20": {
+        "title": "Curioso",
+        "desc": "20 sessões no total"
+      },
+      "msg100": {
+        "title": "Comunicativo",
+        "desc": "100 mensagens no total"
+      },
+      "create3": {
+        "title": "Criador de Cursos",
+        "desc": "Crie 3 cursos"
+      },
+      "content100": {
+        "title": "Fábrica de Conteúdo",
+        "desc": "Gere 100 cenas no total"
+      },
+      "finishAll": {
+        "title": "Finalizador",
+        "desc": "Conclua todos os seus cursos (≥ 3)"
+      },
+      "quiz10": {
+        "title": "Viajante de Quiz",
+        "desc": "Complete 10 quizzes no total"
+      },
+      "perfect3": {
+        "title": "Atirador Certeiro",
+        "desc": "Obtenha 3 notas máximas"
+      },
+      "qa10": {
+        "title": "Mente Curiosa",
+        "desc": "10 sessões de perguntas no total"
+      },
+      "lecture5": {
+        "title": "Ouvinte Atento",
+        "desc": "5 sessões de aula no total"
+      },
+      "discussion3": {
+        "title": "Debatedor",
+        "desc": "3 sessões de discussão no total"
+      },
+      "msg500": {
+        "title": "Eloquente",
+        "desc": "500 mensagens no total"
+      },
+      "pbl1": {
+        "title": "Construtor de Projetos",
+        "desc": "Experimente uma cena de PBL"
+      },
+      "interactive1": {
+        "title": "Explorador",
+        "desc": "Experimente uma cena interativa"
+      },
+      "multimodal": {
+        "title": "Completo",
+        "desc": "Experimente os 4 tipos de cena"
+      }
+    },
+    "views": {
+      "grid": "Grade",
+      "star": "Mapa estelar"
+    },
+    "groups": {
+      "course": "Cursos",
+      "quiz": "Quiz",
+      "chat": "Conversa",
+      "explore": "Explorar"
+    }
   }
 }

@@ -1831,5 +1831,179 @@
     "title": "Enter Access Code",
     "placeholder": "Access code",
     "error": "Invalid access code. Please try again."
+  },
+  "learningReport": {
+    "title": "Learning Report",
+    "back": "Back",
+    "loading": "Loading your report…",
+    "emptyState": "No courses yet. Start learning to see your report.",
+    "emptyStateCta": "Go to courses",
+    "tabs": {
+      "overview": "Overview",
+      "stages": "Progress",
+      "quiz": "Quiz",
+      "chat": "Chat",
+      "achievements": "Achievements"
+    },
+    "sections": {
+      "overviewSub": "A bird's-eye view of your learning",
+      "stagesSub": "Build and study progress per course",
+      "quizSub": "Quiz scores and attempt-by-attempt performance",
+      "chatSub": "Your interactions with the AI"
+    },
+    "sceneTypes": {
+      "slide": "Slides",
+      "quiz": "Quiz",
+      "pbl": "Project",
+      "interactive": "Interactive"
+    },
+    "overview": {
+      "progress": "Progress",
+      "quiz": "Quiz",
+      "chat": "Chat",
+      "scenes": "Content",
+      "stageCount": "Courses",
+      "started": "Started",
+      "completed": "Completed",
+      "avgProgress": "Avg. progress",
+      "maxProgress": "Best progress",
+      "quizAttempts": "Quiz attempts",
+      "quizStages": "Courses covered",
+      "avgScore": "Avg. score",
+      "bestScore": "Best score",
+      "perfect": "Perfect scores",
+      "sessions": "Sessions",
+      "qa": "Q&A",
+      "lecture": "Lecture",
+      "discussion": "Discussion",
+      "messages": "Messages",
+      "totalScenes": "Total scenes",
+      "lastActivity": "Last active",
+      "neverActive": "No activity yet"
+    },
+    "stages": {
+      "empty": "No course progress yet.",
+      "notStarted": "Not started",
+      "scenePosition": "Scene {{position}} / {{total}}",
+      "quizBadge": "Quiz {{done}}/{{total}}",
+      "scoreBadge": "Avg {{pct}}%",
+      "chatBadge": "{{count}} sessions",
+      "summaryStarted": "Started",
+      "summaryCompleted": "Completed",
+      "summaryScenes": "Total scenes"
+    },
+    "quiz": {
+      "empty": "No quiz submissions yet."
+    },
+    "chat": {
+      "empty": "No chat sessions yet.",
+      "lecture": "Lecture",
+      "qa": "Q&A",
+      "discussion": "Discussion",
+      "total": "Total sessions",
+      "messages": "Messages",
+      "completed": "Completed",
+      "active": "Active",
+      "interrupted": "Interrupted"
+    },
+    "ach": {
+      "summary": "Unlocked {{earned}} / {{total}}",
+      "unlockedAt": "Unlocked on {{date}}",
+      "locked": "Not unlocked yet",
+      "start": {
+        "title": "Liftoff",
+        "desc": "Start any course"
+      },
+      "finish1": {
+        "title": "Course Complete",
+        "desc": "Finish 1 course"
+      },
+      "finish3": {
+        "title": "Accomplished",
+        "desc": "Completion rate ≥ 80%"
+      },
+      "quiz1": {
+        "title": "First Try",
+        "desc": "Complete your first quiz"
+      },
+      "perfect": {
+        "title": "Perfectionist",
+        "desc": "Score full marks on a quiz"
+      },
+      "quiz80": {
+        "title": "Consistent",
+        "desc": "Average quiz score ≥ 80%"
+      },
+      "chat1": {
+        "title": "Icebreaker",
+        "desc": "Start your first session"
+      },
+      "chat20": {
+        "title": "Inquisitive",
+        "desc": "20 sessions in total"
+      },
+      "msg100": {
+        "title": "Talkative",
+        "desc": "100 messages in total"
+      },
+      "create3": {
+        "title": "Course Creator",
+        "desc": "Create 3 courses"
+      },
+      "content100": {
+        "title": "Content Factory",
+        "desc": "Generate 100 scenes in total"
+      },
+      "finishAll": {
+        "title": "Finisher",
+        "desc": "Complete all of your courses (≥ 3)"
+      },
+      "quiz10": {
+        "title": "Quiz Voyager",
+        "desc": "Complete 10 quizzes in total"
+      },
+      "perfect3": {
+        "title": "Sharpshooter",
+        "desc": "Get 3 perfect quiz scores"
+      },
+      "qa10": {
+        "title": "Curious Mind",
+        "desc": "10 Q&A sessions in total"
+      },
+      "lecture5": {
+        "title": "Attentive Listener",
+        "desc": "5 lecture sessions in total"
+      },
+      "discussion3": {
+        "title": "Debater",
+        "desc": "3 discussion sessions in total"
+      },
+      "msg500": {
+        "title": "Eloquent",
+        "desc": "500 messages in total"
+      },
+      "pbl1": {
+        "title": "Project Builder",
+        "desc": "Try a project-based learning scene"
+      },
+      "interactive1": {
+        "title": "Explorer",
+        "desc": "Try an interactive scene"
+      },
+      "multimodal": {
+        "title": "All-Rounder",
+        "desc": "Experience all 4 scene types"
+      }
+    },
+    "views": {
+      "grid": "Grid",
+      "star": "Star map"
+    },
+    "groups": {
+      "course": "Courses",
+      "quiz": "Quiz",
+      "chat": "Chat",
+      "explore": "Explore"
+    }
   }
 }
