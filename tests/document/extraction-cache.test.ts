@@ -1,16 +1,20 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { AssetMeta, BinaryBlob } from '@openmaic/dsl';
-import type { KVStore, KVScope } from '@openmaic/storage';
+import { HttpKVStoreError, type KVStore, type KVScope } from '@openmaic/storage';
 
 import {
+  computeConfigFingerprint,
   computeContentDigest,
+  createExtractionDeduplicator,
   EXTRACTION_CACHE_KV_SCOPE,
   extractionCacheKey,
   fetchExtractionWithCache,
   lookupCachedExtraction,
+  resetExtractionCacheForTests,
   resolveExpectedExtractor,
   writeExtractionCache,
+  type DerivationRecord,
 } from '@/lib/document/extraction-cache';
 import type { ExtractSourceFetchers } from '@/lib/document/extract-source';
 import type { AssetPoolStore } from '@/lib/media/asset-pool-config';
@@ -18,6 +22,18 @@ import type { ParsedPdfContent } from '@/lib/types/pdf';
 
 const PNG_1 = 'data:image/png;base64,AQID';
 const PNG_2 = 'data:image/png;base64,BAUG';
+
+/** Config fingerprint for providers without a caller-supplied endpoint (stable bucket). */
+let MANAGED_FP: string;
+
+beforeAll(async () => {
+  MANAGED_FP = await computeConfigFingerprint();
+});
+
+/** The full cache key for the stable (no baseUrl) config bucket, as callers use it. */
+function managedKey(digest: string, extractorId: string, extractorVersion: string): string {
+  return extractionCacheKey(digest, extractorId, extractorVersion, MANAGED_FP);
+}
 
 /** A document-extraction result in the exact shape the route returns today. */
 function fixtureResult(): ParsedPdfContent {
@@ -27,6 +43,9 @@ function fixtureResult(): ParsedPdfContent {
     metadata: {
       pageCount: 2,
       parser: 'mineru',
+      fileName: 'safety-checklist.pdf',
+      fileSize: 2048,
+      mimeType: 'application/pdf',
       imageMapping: { img_1: PNG_1, img_2: PNG_2 },
       pdfImages: [
         {
@@ -172,26 +191,55 @@ describe('computeContentDigest', () => {
 });
 
 describe('extractionCacheKey', () => {
-  it('includes the content digest and the extractor id and version', () => {
-    const key = extractionCacheKey(DIGEST, 'mineru', '1');
+  it('includes the content digest, the extractor id and version, and the config fingerprint', () => {
+    const key = managedKey(DIGEST, 'mineru', '1');
 
-    expect(key).toBe(`derived-extraction:v1:${DIGEST}:mineru@1`);
+    expect(key).toBe(`derived-extraction:v2:${DIGEST}:mineru@1:cfg-${MANAGED_FP}`);
     expect(key).toContain(DIGEST);
     expect(key).toContain('mineru');
     expect(key).toContain('@1');
+    expect(key).toContain(`:cfg-${MANAGED_FP}`);
   });
 
   it('produces a different key when the extractor version bumps', () => {
-    const v1 = extractionCacheKey(DIGEST, 'mineru', '1');
-    const v2 = extractionCacheKey(DIGEST, 'mineru', '2');
+    const v1 = managedKey(DIGEST, 'mineru', '1');
+    const v2 = managedKey(DIGEST, 'mineru', '2');
 
     expect(v1).not.toBe(v2);
   });
 
   it('produces a different key for a different extractor', () => {
-    expect(extractionCacheKey(DIGEST, 'unpdf', '1')).not.toBe(
-      extractionCacheKey(DIGEST, 'mineru', '1'),
+    expect(managedKey(DIGEST, 'unpdf', '1')).not.toBe(managedKey(DIGEST, 'mineru', '1'));
+  });
+
+  it('fingerprints a caller-supplied endpoint so a baseUrl change misses (K2)', async () => {
+    const atA = extractionCacheKey(
+      DIGEST,
+      'mineru',
+      '1',
+      await computeConfigFingerprint('https://a.example'),
     );
+    const atB = extractionCacheKey(
+      DIGEST,
+      'mineru',
+      '1',
+      await computeConfigFingerprint('https://b.example'),
+    );
+
+    expect(atA).not.toBe(atB);
+  });
+
+  it('keeps the key stable for the managed/default bucket across calls (K2)', async () => {
+    const withUndefined = extractionCacheKey(
+      DIGEST,
+      'unpdf',
+      '1',
+      await computeConfigFingerprint(undefined),
+    );
+    const withExplicit = extractionCacheKey(DIGEST, 'unpdf', '1', MANAGED_FP);
+
+    expect(withUndefined).toBe(withExplicit);
+    expect(withUndefined).toContain(`:cfg-${MANAGED_FP}`);
   });
 });
 
@@ -248,7 +296,7 @@ describe('writeExtractionCache', () => {
       result: fixtureResult(),
     });
 
-    const key = extractionCacheKey(DIGEST, 'mineru', '1');
+    const key = managedKey(DIGEST, 'mineru', '1');
     const record = await kv.get<{
       sourceDocAssetId?: string;
       extractorId: string;
@@ -370,6 +418,138 @@ describe('writeExtractionCache', () => {
     expect(harness.blobs.size).toBe(0);
     expect(kv.storedKeys()).toEqual([]);
   });
+
+  it('adopts an existing record and releases its own allocations on a same-key race (cross-tab, K3)', async () => {
+    const kv = new FakeKV();
+    const first = makePool();
+    await writeExtractionCache({
+      kv,
+      pool: first.pool,
+      contentDigest: DIGEST,
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      sourceDocAssetId: 'ast_source_doc',
+      result: fixtureResult(),
+    });
+    const key = managedKey(DIGEST, 'mineru', '1');
+    const original = await kv.get<DerivationRecord>(key, EXTRACTION_CACHE_KV_SCOPE);
+    expect(original).not.toBeNull();
+
+    // A second writer (fresh pool, fresh asset ids) races the same key.
+    const second = makePool();
+    await writeExtractionCache({
+      kv,
+      pool: second.pool,
+      contentDigest: DIGEST,
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      result: fixtureResult(),
+    });
+
+    // The existing record was adopted unchanged, and the loser's allocations
+    // were all released — no orphaned assets accumulate.
+    const after = await kv.get<DerivationRecord>(key, EXTRACTION_CACHE_KV_SCOPE);
+    expect(after?.artifactAssetId).toBe(original!.artifactAssetId);
+    expect(second.blobs.size).toBe(0);
+    expect(second.remove).toHaveBeenCalledTimes(3);
+    expect(kv.storedKeys()).toHaveLength(1);
+  });
+
+  it('writes an alias record for an existing record when racing a same-key write (K1 × K3)', async () => {
+    const kv = new FakeKV();
+    // Winner: actual mineru-cloud run with no alias expected.
+    const first = makePool();
+    await writeExtractionCache({
+      kv,
+      pool: first.pool,
+      contentDigest: DIGEST,
+      extractorId: 'mineru-cloud',
+      extractorVersion: '1',
+      result: fixtureResult(),
+    });
+    const winner = await kv.get<DerivationRecord>(
+      managedKey(DIGEST, 'mineru-cloud', '1'),
+      EXTRACTION_CACHE_KV_SCOPE,
+    );
+    expect(winner).not.toBeNull();
+
+    // Loser: same actual extractor, but a mineru lookup expected it — it must
+    // write the alias for the EXISTING record (declaring the expected alias)
+    // and release its own allocations.
+    const loser = makePool();
+    await writeExtractionCache({
+      kv,
+      pool: loser.pool,
+      contentDigest: DIGEST,
+      extractorId: 'mineru-cloud',
+      extractorVersion: '1',
+      aliasExtractor: { extractorId: 'mineru', extractorVersion: '1' },
+      result: fixtureResult(),
+    });
+
+    const aliasRecord = await kv.get<DerivationRecord>(
+      managedKey(DIGEST, 'mineru', '1'),
+      EXTRACTION_CACHE_KV_SCOPE,
+    );
+    expect(aliasRecord?.artifactAssetId).toBe(winner!.artifactAssetId);
+    expect(aliasRecord?.aliases).toEqual([{ extractorId: 'mineru', extractorVersion: '1' }]);
+    expect(loser.blobs.size).toBe(0);
+  });
+
+  it('logs rejected outcomes when releasing assets after a failed cache write (K6)', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    // Second image ingest fails; the catch path releases the first image, whose
+    // removal rejects — that rejection must be logged, never swallowed.
+    harness.put
+      .mockResolvedValueOnce('ast_test_0')
+      .mockRejectedValueOnce(new Error('second image put failed'));
+    harness.remove.mockImplementation(async (id: string) => {
+      if (id === 'ast_test_0') throw new Error('pool remove failed');
+      harness.blobs.delete(id);
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      result: fixtureResult(),
+    });
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Failed to release'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('ast_test_0'));
+    warn.mockRestore();
+  });
+
+  it('stores the same record value under both the actual key and the alias key (K1)', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      extractorId: 'mineru-cloud',
+      extractorVersion: '1',
+      aliasExtractor: { extractorId: 'mineru', extractorVersion: '1' },
+      result: fixtureResult(),
+    });
+
+    const actualKey = managedKey(DIGEST, 'mineru-cloud', '1');
+    const aliasKey = managedKey(DIGEST, 'mineru', '1');
+    const actualRecord = await kv.get<DerivationRecord>(actualKey, EXTRACTION_CACHE_KV_SCOPE);
+    const aliasRecord = await kv.get<DerivationRecord>(aliasKey, EXTRACTION_CACHE_KV_SCOPE);
+    expect(actualRecord).not.toBeNull();
+    expect(aliasRecord).not.toBeNull();
+    // Same value under both keys, and the record declares the alias identity so
+    // a lookup under the expected key validates.
+    expect(JSON.stringify(aliasRecord)).toBe(JSON.stringify(actualRecord));
+    expect(aliasRecord?.aliases).toEqual([{ extractorId: 'mineru', extractorVersion: '1' }]);
+    // Both entries reference the SAME artifact/image assets.
+    expect(aliasRecord?.artifactAssetId).toBe(actualRecord?.artifactAssetId);
+  });
 });
 
 describe('lookupCachedExtraction', () => {
@@ -463,9 +643,7 @@ describe('lookupCachedExtraction', () => {
       result: fixtureResult(),
     });
     // Simulate a partially reclaimed cache: the artifact bytes are gone.
-    const record = await kv.get<{ artifactAssetId: string }>(
-      extractionCacheKey(DIGEST, 'mineru', '1'),
-    );
+    const record = await kv.get<{ artifactAssetId: string }>(managedKey(DIGEST, 'mineru', '1'));
     harness.blobs.delete(record!.artifactAssetId);
 
     await expect(
@@ -512,7 +690,13 @@ describe('lookupCachedExtraction', () => {
     const imagesOnly: ParsedPdfContent = {
       text: 'Plain text',
       images: [PNG_1],
-      metadata: { pageCount: 1, parser: 'unpdf' },
+      metadata: {
+        pageCount: 1,
+        parser: 'unpdf',
+        fileName: 'legacy.pdf',
+        fileSize: 512,
+        mimeType: 'application/pdf',
+      },
     };
     await writeExtractionCache({
       kv,
@@ -536,6 +720,7 @@ describe('lookupCachedExtraction', () => {
     expect(rebuilt?.text).toBe('Plain text');
     expect(rebuilt?.images).toEqual([PNG_1]);
     expect(rebuilt?.metadata?.pdfImages).toEqual([{ id: 'img_1', src: PNG_1, pageNumber: 1 }]);
+    expect(rebuilt?.metadata?.imageMapping).toEqual({ img_1: PNG_1 });
   });
 
   it('round-trips a media-shaped result (no images) verbatim', async () => {
@@ -544,7 +729,13 @@ describe('lookupCachedExtraction', () => {
     const media: ParsedPdfContent = {
       text: '## Transcript\n\n[00:01] Hello world',
       images: [],
-      metadata: { pageCount: 0, parser: 'alidocmind' },
+      metadata: {
+        pageCount: 0,
+        parser: 'alidocmind',
+        fileName: 'lecture.mp4',
+        fileSize: 2048,
+        mimeType: 'video/mp4',
+      },
     };
     await writeExtractionCache({
       kv,
@@ -567,6 +758,109 @@ describe('lookupCachedExtraction', () => {
     expect(rebuilt).toEqual(media);
     // No images were ingested for a media artifact.
     expect(harness.remove).not.toHaveBeenCalled();
+  });
+
+  it("rebuilds a zero-image document hit with the route's empty image shape (K4)", async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    // The route's wire shape for a zero-image document: imageMapping/pdfImages
+    // are PRESENT and empty, alongside the route's fileName/fileSize/mimeType.
+    const zeroImage: ParsedPdfContent = {
+      text: '# Notes\n\nPlain text only.',
+      images: [],
+      metadata: {
+        pageCount: 1,
+        parser: 'plain-text',
+        fileName: 'notes.md',
+        fileSize: 42,
+        mimeType: 'text/markdown',
+        imageMapping: {},
+        pdfImages: [],
+      },
+    };
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      extractorId: 'plain-text',
+      extractorVersion: '1',
+      result: zeroImage,
+    });
+
+    const rebuilt = await lookupCachedExtraction({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      extractorId: 'plain-text',
+      extractorVersion: '1',
+      fetchImpl: makeFetch(harness),
+    });
+
+    expect(rebuilt).not.toBeNull();
+    // Field-for-field equal to the route response shape, empty image keys
+    // included.
+    expect(rebuilt).toEqual(zeroImage);
+    expect(rebuilt?.metadata?.imageMapping).toEqual({});
+    expect(rebuilt?.metadata?.pdfImages).toEqual([]);
+  });
+
+  it('hits via the alias key when the record declares the requested identity as an alias (K1)', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    const original = fixtureResult();
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      extractorId: 'mineru-cloud',
+      extractorVersion: '1',
+      aliasExtractor: { extractorId: 'mineru', extractorVersion: '1' },
+      result: original,
+    });
+
+    const rebuilt = await lookupCachedExtraction({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      fetchImpl: makeFetch(harness),
+    });
+
+    expect(rebuilt).not.toBeNull();
+    expect(rebuilt).toEqual(original);
+  });
+
+  it('treats a record whose image list disagrees with the artifact as a miss (K6)', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    await writeExtractionCache({
+      kv,
+      pool: harness.pool,
+      contentDigest: DIGEST,
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      result: fixtureResult(),
+    });
+    // Corrupt the record the way a truncated/tampered KV value would: one image
+    // entry dropped while the artifact still names both asset ids.
+    const key = managedKey(DIGEST, 'mineru', '1');
+    const record = await kv.get<DerivationRecord>(key, EXTRACTION_CACHE_KV_SCOPE);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await kv.set(key, { ...record!, images: [record!.images[0]!] }, EXTRACTION_CACHE_KV_SCOPE);
+
+    await expect(
+      lookupCachedExtraction({
+        kv,
+        pool: harness.pool,
+        contentDigest: DIGEST,
+        extractorId: 'mineru',
+        extractorVersion: '1',
+        fetchImpl: makeFetch(harness),
+      }),
+    ).resolves.toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('do not match'));
+    warn.mockRestore();
   });
 });
 
@@ -641,8 +935,93 @@ describe('fetchExtractionWithCache', () => {
     expect(byteForm).not.toHaveBeenCalled();
     // The successful extraction was cached best-effort.
     await expect(
-      kv.get(extractionCacheKey(DIGEST, 'mineru', '1'), EXTRACTION_CACHE_KV_SCOPE),
+      kv.get(managedKey(DIGEST, 'mineru', '1'), EXTRACTION_CACHE_KV_SCOPE),
     ).resolves.not.toBeNull();
+  });
+
+  it('writes both keys when the actual extractor differs from the expected one, and hits via the expected key on re-import (K1)', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    const base = fixtureResult();
+    const cloudResult: ParsedPdfContent = {
+      ...base,
+      metadata: { ...base.metadata!, parser: 'mineru-cloud' },
+    };
+    const assetIdForm = vi.fn(async () => {
+      return new Response(JSON.stringify({ success: true, data: cloudResult }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    const byteForm = vi.fn(async () => {
+      throw new Error('byte form must not be used');
+    });
+    const options = {
+      serverBacked: true,
+      hasAssetId: true,
+      fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: byteForm },
+      logWarning: vi.fn(),
+      contentDigest: DIGEST,
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      kv,
+      pool: harness.pool,
+      fetchImpl: makeFetch(harness),
+      parseFailedMessage: 'parse failed',
+    };
+
+    // First import: mineru requested, mineru-cloud ran. Both keys are written.
+    const first = await fetchExtractionWithCache(options);
+    expect(first.cacheHit).toBe(false);
+
+    const actualRecord = await kv.get<DerivationRecord>(
+      managedKey(DIGEST, 'mineru-cloud', '1'),
+      EXTRACTION_CACHE_KV_SCOPE,
+    );
+    const aliasRecord = await kv.get<DerivationRecord>(
+      managedKey(DIGEST, 'mineru', '1'),
+      EXTRACTION_CACHE_KV_SCOPE,
+    );
+    expect(actualRecord).not.toBeNull();
+    expect(aliasRecord).not.toBeNull();
+    // Same value under both keys (the alias names the same artifact/assets),
+    // and the record declares the expected identity as an alias.
+    expect(JSON.stringify(aliasRecord)).toBe(JSON.stringify(actualRecord));
+    expect(aliasRecord?.aliases).toEqual([{ extractorId: 'mineru', extractorVersion: '1' }]);
+
+    // Second import under the expected key hits — no second extraction.
+    const second = await fetchExtractionWithCache(options);
+    expect(second.cacheHit).toBe(true);
+    expect(second.data).toEqual(cloudResult);
+    expect(assetIdForm).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes a single entry when the actual extractor matches the expected one (K1 symmetric)', async () => {
+    const kv = new FakeKV();
+    const harness = makePool();
+    const assetIdForm = vi.fn(async () => {
+      return new Response(JSON.stringify({ success: true, data: fixtureResult() }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    await fetchExtractionWithCache({
+      serverBacked: true,
+      hasAssetId: true,
+      fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: assetIdForm },
+      logWarning: vi.fn(),
+      contentDigest: DIGEST,
+      extractorId: 'mineru',
+      extractorVersion: '1',
+      kv,
+      pool: harness.pool,
+      fetchImpl: makeFetch(harness),
+      parseFailedMessage: 'parse failed',
+    });
+
+    expect(kv.storedKeys()).toHaveLength(1);
+    expect(kv.storedKeys()[0]).toContain(':mineru@1:');
   });
 
   it('still returns the extraction result when the cache write fails', async () => {
@@ -758,5 +1137,127 @@ describe('fetchExtractionWithCache', () => {
     expect(outcome.cacheHit).toBe(false);
     expect(outcome.data).toEqual(fixtureResult());
     expect(assetIdForm).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createExtractionDeduplicator', () => {
+  it('shares ONE extraction across same-digest, same-extractor sources (K3)', async () => {
+    const deduplicator = createExtractionDeduplicator();
+    const extraction = vi.fn(async () => fixtureResult());
+    const key = { contentDigest: DIGEST, extractorId: 'mineru', extractorVersion: '1' };
+
+    const [first, second] = await Promise.all([
+      deduplicator.run(key, extraction),
+      deduplicator.run(key, extraction),
+    ]);
+
+    expect(extraction).toHaveBeenCalledTimes(1);
+    expect(first).toEqual(fixtureResult());
+    expect(second).toEqual(fixtureResult());
+  });
+
+  it('does not share extractions across different expected extractors (K3)', async () => {
+    const deduplicator = createExtractionDeduplicator();
+    const mineru = vi.fn(async () => fixtureResult());
+    const unpdf = vi.fn(async () => fixtureResult());
+
+    await Promise.all([
+      deduplicator.run(
+        { contentDigest: DIGEST, extractorId: 'mineru', extractorVersion: '1' },
+        mineru,
+      ),
+      deduplicator.run(
+        { contentDigest: DIGEST, extractorId: 'unpdf', extractorVersion: '1' },
+        unpdf,
+      ),
+    ]);
+
+    expect(mineru).toHaveBeenCalledTimes(1);
+    expect(unpdf).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('degradation on a route-level KV failure (K5)', () => {
+  afterEach(() => {
+    resetExtractionCacheForTests();
+  });
+
+  function makeOptions(
+    kv: KVStore,
+    harness: FakePoolHarness,
+  ): {
+    options: Parameters<typeof fetchExtractionWithCache>[0];
+    assetIdForm: ReturnType<typeof vi.fn>;
+  } {
+    const assetIdForm = vi.fn(async () => {
+      return new Response(JSON.stringify({ success: true, data: fixtureResult() }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    return {
+      options: {
+        serverBacked: true,
+        hasAssetId: true,
+        fetchers: { submitAssetIdForm: assetIdForm, submitByteForm: assetIdForm },
+        logWarning: vi.fn(),
+        contentDigest: DIGEST,
+        extractorId: 'mineru',
+        extractorVersion: '1',
+        kv,
+        pool: harness.pool,
+        fetchImpl: makeFetch(harness),
+        parseFailedMessage: 'parse failed',
+      },
+      assetIdForm,
+    };
+  }
+
+  it('disables caching for the session after the first route-level 404, without ingest churn (K5)', async () => {
+    const kv = new FakeKV();
+    // A 404 that is NOT the store's legitimate key-not-found miss: the KV route
+    // itself is gone (as with NEXT_PUBLIC_PERSISTENCE=1 today).
+    vi.spyOn(kv, 'get').mockRejectedValue(
+      new HttpKVStoreError(404, 'HTTP_ERROR', 'kv route not found'),
+    );
+    const harness = makePool();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { options, assetIdForm } = makeOptions(kv, harness);
+
+    // Source 1: the first route-level 404 disables the cache (ONE warn total).
+    await fetchExtractionWithCache(options);
+    // Source 2: the disabled cache is skipped entirely — no lookup, no ingest,
+    // no further warn.
+    await fetchExtractionWithCache(options);
+
+    expect(assetIdForm).toHaveBeenCalledTimes(2);
+    expect(kv.get).toHaveBeenCalledTimes(1);
+    // No record was ever written (the write path was skipped entirely).
+    expect(kv.storedKeys()).toEqual([]);
+    // No putAsset-then-removeAsset churn per extraction on the write path.
+    expect(harness.put).not.toHaveBeenCalled();
+    expect(harness.remove).not.toHaveBeenCalled();
+    // Exactly ONE warn: the session-disable, never one per source.
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('keeps per-op behavior for a transient (non-404) failure without disabling the cache (K5)', async () => {
+    const kv = new FakeKV();
+    vi.spyOn(kv, 'get').mockRejectedValue(new Error('network blip'));
+    const harness = makePool();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { options } = makeOptions(kv, harness);
+
+    await fetchExtractionWithCache(options);
+    await fetchExtractionWithCache(options);
+
+    // The cache is NOT disabled: each source still attempts the lookup (one
+    // per-op warn per lookup) and the write path still runs (pre-write re-get
+    // included) — transient errors keep the current per-op behavior.
+    expect(kv.get).toHaveBeenCalledTimes(4);
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(harness.put).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

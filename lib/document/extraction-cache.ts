@@ -6,11 +6,13 @@
  * structured artifact is stored in the asset pool as its own
  * `application/json` asset — inline image data stripped, each image's pool
  * asset id recorded in its place — and a single KV record per
- * (content digest, extractor identity) indexes it: lineage and cache index in
- * one entry. Re-importing the same bytes (same or another course) then hits
- * the cache instead of re-running the paid extraction, provided the digest,
- * the extractor id AND the extractor version all match — a version bump is a
- * miss that re-derives.
+ * (content digest, extractor identity, caller-supplied endpoint fingerprint)
+ * indexes it: lineage and cache index in one entry. Re-importing the same
+ * bytes (same or another course) then hits the cache instead of re-running the
+ * paid extraction, provided the digest, the extractor id, the extractor
+ * version AND the config fingerprint all match — a version bump is a miss that
+ * re-derives, and so is a caller-supplied endpoint change (the residual
+ * staleness that stays ACCEPTED is documented at `extractionCacheKey`).
  *
  * Both halves are strictly best-effort from the caller's point of view:
  *
@@ -25,7 +27,7 @@
  *   assets that failed to ingest.
  */
 import type { AssetMeta } from '@openmaic/dsl';
-import { BrowserKVStore, HttpKVStore, type KVStore } from '@openmaic/storage';
+import { BrowserKVStore, HttpKVStore, HttpKVStoreError, type KVStore } from '@openmaic/storage';
 
 import type { FetchExtractionResponseOptions } from '@/lib/document/extract-source';
 import { fetchExtractionResponse } from '@/lib/document/extract-source';
@@ -51,8 +53,8 @@ import type { ParsedPdfContent } from '@/lib/types/pdf';
 
 const log = createLogger('ExtractionCache');
 
-/** Key-prefix of every derivation record; bump the `v1` on a record-shape change. */
-export const EXTRACTION_CACHE_KEY_PREFIX = 'derived-extraction:v1';
+/** Key-prefix of every derivation record; bump the `v2` on a record-shape change. */
+export const EXTRACTION_CACHE_KEY_PREFIX = 'derived-extraction:v2';
 
 /**
  * KV scope the derivation records live under. `account` is the right scope
@@ -80,12 +82,25 @@ export interface DerivedExtractionImage {
 /**
  * One derivation record = lineage + cache index, stored as a single KV entry
  * per (content digest, extractor identity).
+ *
+ * Constraint for the future KV server backend (upstream #1000 part B): the KV
+ * and asset namespaces must be scoped per principal (the learner key), and a
+ * record must only reference assets its own principal wrote — otherwise a
+ * shared namespace turns one caller's write into another's trusted extraction.
  */
 export interface DerivationRecord {
   /** Source-document pool asset id whose extraction produced this derivation. */
   sourceDocAssetId?: string;
   extractorId: string;
   extractorVersion: string;
+  /**
+   * Extractor identities the lookup may legitimately use for this record
+   * besides `extractorId`. Set when the extractor that ACTUALLY ran differed
+   * from the one the lookup expected (e.g. self-host MinerU fell back to MinerU
+   * Cloud): the same record value is then stored under the expected key too, as
+   * an alias naming the same artifact/image assets (RFC #1153 part 1, K1).
+   */
+  aliases?: Array<{ extractorId: string; extractorVersion: string }>;
   /** Pool asset id of the stored artifact JSON (inline image data stripped). */
   artifactAssetId: string;
   images: DerivedExtractionImage[];
@@ -94,14 +109,37 @@ export interface DerivationRecord {
 
 /**
  * The exact cache key: content identity (stable across uploads of the same
- * bytes) × extractor identity (id and version, so a version bump is a miss).
+ * bytes) × extractor identity (id and version, so a version bump is a miss) ×
+ * config fingerprint (see `computeConfigFingerprint`), so a caller-supplied
+ * endpoint change misses instead of serving the old engine's output.
+ *
+ * Residual staleness that stays ACCEPTED: an engine upgraded in place behind
+ * the same endpoint, or an account change on the same endpoint — the extractor
+ * `version` field is the governance lever for in-repo providers, and part 2's
+ * material library brings manual eviction (RFC #1153 part 2).
  */
 export function extractionCacheKey(
   contentDigest: string,
   extractorId: string,
   extractorVersion: string,
+  configFingerprint: string,
 ): string {
-  return `${EXTRACTION_CACHE_KEY_PREFIX}:${contentDigest}:${extractorId}@${extractorVersion}`;
+  return `${EXTRACTION_CACHE_KEY_PREFIX}:${contentDigest}:${extractorId}@${extractorVersion}:cfg-${configFingerprint}`;
+}
+
+/**
+ * The config half of the cache key: `sha256(baseUrl ?? 'managed')` truncated
+ * to 8 hex chars. Providers whose output depends on a caller-supplied endpoint
+ * fingerprint that endpoint, so pointing it at a different engine misses;
+ * in-repo providers (unpdf, plain-text) and managed/endpoint-less providers
+ * share the constant `'managed'` bucket and keep stable keys.
+ */
+export async function computeConfigFingerprint(baseUrl?: string): Promise<string> {
+  const input = baseUrl ?? 'managed';
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 8);
 }
 
 /**
@@ -206,6 +244,62 @@ function resolveConfiguredExtractionCacheKV(): KVStore {
   return new BrowserKVStore();
 }
 
+// ─── Session-wide degradation (RFC #1153 part 1, K5) ─────────────────────────
+
+/**
+ * Whether the cache is disabled for the rest of the session. Set once when the
+ * KV backend answers with a route-level failure (the KV route itself is gone,
+ * as with `NEXT_PUBLIC_PERSISTENCE=1` today): from then on every lookup is a
+ * miss and every write is skipped WITHOUT ingesting assets, so the degradation
+ * is quiet (one warn total) and cheap (no putAsset-then-removeAsset churn per
+ * extraction). Transient failures (network blips) keep the per-op behavior.
+ */
+let cacheDisabledForSession = false;
+
+/**
+ * A route-level KV failure: an HTTP 404 that is NOT the store's legitimate
+ * "key not found" miss (which `HttpKVStore.get` maps to `null`). Such a 404
+ * means the KV route itself is unreachable, so no per-key retry can help.
+ */
+function isRouteLevelKVError(error: unknown): boolean {
+  return (
+    error instanceof HttpKVStoreError && error.status === 404 && error.code !== 'KEY_NOT_FOUND'
+  );
+}
+
+/** Disable the cache for the session, logging exactly ONE warn (the first). */
+function disableCacheForSession(error: unknown): void {
+  if (cacheDisabledForSession) return;
+  cacheDisabledForSession = true;
+  log.warn(
+    'The extraction cache KV route is unreachable; disabling the extraction cache for this session:',
+    error,
+  );
+}
+
+/** Test-only: clear the session-wide disable flag between tests. */
+export function resetExtractionCacheForTests(): void {
+  cacheDisabledForSession = false;
+}
+
+/** Best-effort release of every asset a partial attempt allocated, logging rejected outcomes. */
+async function releaseAllocatedAssets(
+  allocated: readonly string[],
+  remove: (assetId: string) => Promise<void>,
+  context: string,
+): Promise<void> {
+  const outcomes = await Promise.allSettled(allocated.map((assetId) => remove(assetId)));
+  for (let index = 0; index < outcomes.length; index += 1) {
+    const outcome = outcomes[index];
+    if (outcome.status === 'rejected') {
+      log.warn(
+        `Failed to release extraction-cache asset "${allocated[index]}" (${context}):`,
+        outcome.reason,
+      );
+    }
+  }
+}
+
 // ─── Data URL helpers (environment-agnostic: no DOM FileReader) ───────────────
 
 function dataUrlMimeType(src: string): string | undefined {
@@ -304,6 +398,15 @@ export interface ExtractionCacheWriteOptions {
   /** The extractor identity that ACTUALLY ran (route-reported, when known). */
   extractorId: string;
   extractorVersion: string;
+  /** Caller-supplied endpoint the provider ran against; fingerprints the key. */
+  baseUrl?: string;
+  /**
+   * When the extractor that ACTUALLY ran differs from the one the lookup used,
+   * also store the SAME record value under this expected identity — an alias
+   * naming the same artifact/image assets, so the next lookup under the
+   * expected key hits (RFC #1153 part 1, K1).
+   */
+  aliasExtractor?: { extractorId: string; extractorVersion: string };
   /** Source-document pool asset id, for lineage. */
   sourceDocAssetId?: string;
   /** The parse result the page consumes, exactly as a real extraction returns. */
@@ -315,9 +418,16 @@ export interface ExtractionCacheWriteOptions {
  * in that order. Any failure logs and abandons the write WITHOUT failing the
  * caller's extraction, and releases every asset allocated in the partial
  * attempt. The KV record is deliberately written last, so a partial attempt
- * never leaves a record pointing at assets that failed to ingest.
+ * never leaves a record pointing at assets that failed to ingest. A route-level
+ * KV failure disables the cache for the rest of the session (K5) — subsequent
+ * writes are skipped BEFORE any asset is ingested, so a dead KV route costs no
+ * putAsset-then-removeAsset churn.
  */
 export async function writeExtractionCache(options: ExtractionCacheWriteOptions): Promise<void> {
+  // K5: the KV route is unreachable for this session; skip the write entirely
+  // BEFORE ingesting anything, so a dead backend costs no pool churn.
+  if (cacheDisabledForSession) return;
+
   const allocated: string[] = [];
   // Production ingests through the browser-wide pool seams; tests inject a
   // fake pool. Injected or not, both surfaces share the same store.
@@ -363,30 +473,105 @@ export async function writeExtractionCache(options: ExtractionCacheWriteOptions)
     // material releases only its own source-doc entry (removeCourseMaterial)
     // and never cascades into this cache. Eviction and management of derived
     // entries belong to the material library milestone (RFC #1153 part 2).
+    const configFingerprint = await computeConfigFingerprint(options.baseUrl);
+    const key = extractionCacheKey(
+      options.contentDigest,
+      options.extractorId,
+      options.extractorVersion,
+      configFingerprint,
+    );
+    const aliasIdentity = options.aliasExtractor ? [{ ...options.aliasExtractor }] : undefined;
+    const aliasKey = options.aliasExtractor
+      ? extractionCacheKey(
+          options.contentDigest,
+          options.aliasExtractor.extractorId,
+          options.aliasExtractor.extractorVersion,
+          configFingerprint,
+        )
+      : undefined;
+
+    // K3 (cross-tab): another tab may have written this derivation while this
+    // attempt allocated its assets. Re-read the key before writing; a valid
+    // record already present means this attempt is the loser — release every
+    // asset IT allocated and adopt the existing record. The get→set race window
+    // that remains is milliseconds; if it fires, the loser's assets orphan —
+    // accepted: eviction is part 2's material library, and the orphan is
+    // indistinguishable from any other never-referenced pool asset until then.
+    const existing = await options.kv.get<DerivationRecord>(key, EXTRACTION_CACHE_KV_SCOPE);
+    if (existing && isValidDerivationRecord(existing)) {
+      if (aliasKey && aliasIdentity) {
+        await writeAliasRecord(options.kv, aliasKey, aliasIdentity[0], existing);
+      }
+      await releaseAllocatedAssets(allocated, remove, 'superseded by an existing record');
+      log.info(
+        `Extraction cache write for ${key} abandoned: an existing derivation record was adopted; ` +
+          `${allocated.length} asset(s) allocated by this attempt were released.`,
+      );
+      return;
+    }
+
     const record: DerivationRecord = {
       ...(options.sourceDocAssetId !== undefined
         ? { sourceDocAssetId: options.sourceDocAssetId }
         : {}),
       extractorId: options.extractorId,
       extractorVersion: options.extractorVersion,
+      ...(aliasIdentity ? { aliases: aliasIdentity } : {}),
       artifactAssetId,
       images,
       createdAt: new Date().toISOString(),
     };
-    await options.kv.set(
-      extractionCacheKey(options.contentDigest, options.extractorId, options.extractorVersion),
-      record,
-      EXTRACTION_CACHE_KV_SCOPE,
-    );
+    await options.kv.set(key, record, EXTRACTION_CACHE_KV_SCOPE);
+    // K1: the expected key is an alias naming the same artifact/image assets,
+    // so the next lookup under it hits. Best-effort and isolated on purpose:
+    // the primary record already references these assets, so an alias-write
+    // failure must NOT release them (that would orphan the primary record).
+    if (aliasKey && aliasIdentity) {
+      await writeAliasRecord(options.kv, aliasKey, aliasIdentity[0], record);
+    }
   } catch (error) {
-    log.error(
-      'Failed to cache the extraction derivation; the extraction result is still returned:',
-      error,
-    );
+    if (isRouteLevelKVError(error)) {
+      // The KV route itself is gone (K5): disable caching for the session and
+      // log one warn; future writes are skipped before any ingest.
+      disableCacheForSession(error);
+    } else {
+      log.error(
+        'Failed to cache the extraction derivation; the extraction result is still returned:',
+        error,
+      );
+    }
     // Release every asset allocated in this partial attempt so the pool does
     // not accumulate orphans. The KV record was only written last, so nothing
     // references the released ids.
-    await Promise.allSettled(allocated.map((assetId) => remove(assetId)));
+    await releaseAllocatedAssets(allocated, remove, 'a failed cache write');
+  }
+}
+
+/**
+ * Best-effort K1 alias write: store the record under the alias (expected) key.
+ * Ensures the record declares the alias identity so a lookup under the alias
+ * validates; a failure is logged and does NOT release assets — the primary
+ * record already references them.
+ */
+async function writeAliasRecord(
+  kv: KVStore,
+  aliasKey: string,
+  aliasIdentity: { extractorId: string; extractorVersion: string },
+  record: DerivationRecord,
+): Promise<void> {
+  try {
+    const aliases = record.aliases ?? [];
+    const alreadyDeclared = aliases.some(
+      (alias) =>
+        alias.extractorId === aliasIdentity.extractorId &&
+        alias.extractorVersion === aliasIdentity.extractorVersion,
+    );
+    const aliasRecord = alreadyDeclared
+      ? record
+      : { ...record, aliases: [...aliases, aliasIdentity] };
+    await kv.set(aliasKey, aliasRecord, EXTRACTION_CACHE_KV_SCOPE);
+  } catch (error) {
+    log.warn(`Failed to write the extraction-cache alias record under "${aliasKey}":`, error);
   }
 }
 
@@ -429,7 +614,14 @@ function stripInlineImages(
   const sourceMetadata = result.metadata ?? { pageCount: 0 };
   const metadata = omitKeys(sourceMetadata, ['imageMapping', 'pdfImages']);
   metadata.pageCount = sourceMetadata.pageCount ?? 0;
-  if (images.length > 0) {
+  // Shape parity with the route (RFC #1153 part 1, K4): a DOCUMENT result
+  // always carries imageMapping/pdfImages — `{}` / `[]` when it has no images —
+  // so the keys are preserved on the stored artifact when the source carried
+  // them (or when images exist). Media results never carry the keys and stay
+  // verbatim, exactly like the route's media shape.
+  const carriesImageShape =
+    images.length > 0 || 'imageMapping' in sourceMetadata || 'pdfImages' in sourceMetadata;
+  if (carriesImageShape) {
     metadata.imageMapping = Object.fromEntries(images.map((image) => [image.id, image.assetId]));
     metadata.pdfImages = images.map((image) => ({
       id: image.id,
@@ -463,6 +655,8 @@ export interface ExtractionCacheLookupOptions {
   contentDigest: string;
   extractorId: string;
   extractorVersion: string;
+  /** Caller-supplied endpoint the provider is expected to run against; fingerprints the key. */
+  baseUrl?: string;
   /** Fetch implementation; defaults to the global one. Injectable for tests. */
   fetchImpl?: typeof fetch;
 }
@@ -472,31 +666,45 @@ export interface ExtractionCacheLookupOptions {
  * parse result the page consumes (images back to data URLs).
  *
  * Returns `null` on ANY inconsistency — no record, a record whose extractor
- * identity disagrees, an artifact or image asset that does not resolve, bytes
- * that cannot be read, or a KV/pool transport failure — so the caller treats
- * it as a miss and runs the real extraction. A hit is logged so it is
- * observable.
+ * identity disagrees (and is not a recorded alias), an artifact or image asset
+ * that does not resolve, bytes that cannot be read, a record whose image list
+ * disagrees with the stored artifact's own image asset ids, or a KV/pool
+ * transport failure — so the caller treats it as a miss and runs the real
+ * extraction. A hit is logged so it is observable.
  */
 export async function lookupCachedExtraction(
   options: ExtractionCacheLookupOptions,
 ): Promise<ParsedPdfContent | null> {
+  // K5: a route-level KV failure disabled the cache for this session; every
+  // lookup is a miss without touching the store (one warn was already logged).
+  if (cacheDisabledForSession) return null;
   const key = extractionCacheKey(
     options.contentDigest,
     options.extractorId,
     options.extractorVersion,
+    await computeConfigFingerprint(options.baseUrl),
   );
   try {
     const record = await options.kv.get<DerivationRecord>(key, EXTRACTION_CACHE_KV_SCOPE);
     if (!record || !isValidDerivationRecord(record)) return null;
     // The key already pins the extractor identity; a record that disagrees is
-    // an inconsistency and must be treated as a miss, never trusted.
-    if (
-      record.extractorId !== options.extractorId ||
-      record.extractorVersion !== options.extractorVersion
-    ) {
+    // an inconsistency and must be treated as a miss, never trusted — unless
+    // the record explicitly declares the requested identity as an alias (K1:
+    // a self-host MinerU request that actually ran on MinerU Cloud stores the
+    // same record under the expected key, declaring itself an alias for it).
+    const matchesRequestedIdentity =
+      record.extractorId === options.extractorId &&
+      record.extractorVersion === options.extractorVersion;
+    const aliasedRequestedIdentity = (record.aliases ?? []).some(
+      (alias) =>
+        alias.extractorId === options.extractorId &&
+        alias.extractorVersion === options.extractorVersion,
+    );
+    if (!matchesRequestedIdentity && !aliasedRequestedIdentity) {
       log.warn(
         `Extraction cache miss for ${key}: recorded extractor ${record.extractorId}@` +
-          `${record.extractorVersion} does not match the requested identity.`,
+          `${record.extractorVersion} does not match the requested identity and is not a ` +
+          `recorded alias for it.`,
       );
       return null;
     }
@@ -518,6 +726,17 @@ export async function lookupCachedExtraction(
     );
     if (!artifact) {
       log.warn(`Extraction cache miss for ${key}: artifact bytes could not be read.`);
+      return null;
+    }
+    // K6 (integrity): the record's image list must match the stored artifact's
+    // own image asset ids. The record is the cache index, the artifact is the
+    // payload; on ANY inconsistency the spec mandates a miss, so a truncated or
+    // tampered record never yields a hit with silently shorter images.
+    if (!artifactImagesMatchRecord(artifact, record)) {
+      log.warn(
+        `Extraction cache miss for ${key}: the record's image assets do not match the ` +
+          `stored artifact's own image list.`,
+      );
       return null;
     }
     // Every image asset must resolve and be readable; a record naming a
@@ -552,15 +771,42 @@ export async function lookupCachedExtraction(
     return result;
   } catch (error) {
     // A KV or pool failure must never fail the user's extraction: degrade to a
-    // miss and let the real extraction run.
-    log.warn(`Extraction cache lookup failed for ${key}; running the real extraction:`, error);
+    // miss and let the real extraction run. A route-level KV failure (the KV
+    // route itself is gone) disables the cache for the session (K5).
+    if (isRouteLevelKVError(error)) {
+      disableCacheForSession(error);
+    } else {
+      log.warn(`Extraction cache lookup failed for ${key}; running the real extraction:`, error);
+    }
     return null;
   }
+}
+
+/** Whether the record's image asset ids equal the stored artifact's own list, in order. */
+function artifactImagesMatchRecord(
+  artifact: StoredExtractionArtifact,
+  record: DerivationRecord,
+): boolean {
+  const recordedAssetIds = record.images.map((image) => image.assetId);
+  return (
+    artifact.images.length === recordedAssetIds.length &&
+    artifact.images.every((assetId, index) => assetId === recordedAssetIds[index])
+  );
 }
 
 function isValidDerivationRecord(value: unknown): value is DerivationRecord {
   if (typeof value !== 'object' || value === null) return false;
   const record = value as Partial<DerivationRecord>;
+  const aliasesValid =
+    record.aliases === undefined ||
+    (Array.isArray(record.aliases) &&
+      record.aliases.every(
+        (alias) =>
+          typeof alias === 'object' &&
+          alias !== null &&
+          typeof alias.extractorId === 'string' &&
+          typeof alias.extractorVersion === 'string',
+      ));
   return (
     typeof record.extractorId === 'string' &&
     typeof record.extractorVersion === 'string' &&
@@ -572,7 +818,8 @@ function isValidDerivationRecord(value: unknown): value is DerivationRecord {
         image !== null &&
         typeof image.id === 'string' &&
         typeof image.assetId === 'string',
-    )
+    ) &&
+    aliasesValid
   );
 }
 
@@ -619,18 +866,27 @@ function rebuildResult(
     pageCount: artifact.metadata.pageCount ?? 0,
     ...omitKeys(artifact.metadata, ['imageMapping', 'pdfImages']),
   } as NonNullable<ParsedPdfContent['metadata']>;
-  if (record.images.length > 0) {
-    metadata.imageMapping = Object.fromEntries(
-      record.images.map((image, index) => [image.id, dataUrls[index]!]),
-    );
-    metadata.pdfImages = record.images.map((image, index) => ({
-      id: image.id,
-      src: dataUrls[index]!,
-      pageNumber: image.pageNumber ?? 1,
-      ...(image.description !== undefined ? { description: image.description } : {}),
-      ...(image.width !== undefined ? { width: image.width } : {}),
-      ...(image.height !== undefined ? { height: image.height } : {}),
-    }));
+  // Shape parity with the route (RFC #1153 part 1, K4): a document hit always
+  // carries imageMapping/pdfImages — `{}` / `[]` when the document has none —
+  // exactly like the route's document response. Media artifacts never carry the
+  // keys (the route's media shape omits them), so they stay absent.
+  const carriesImageShape = 'imageMapping' in artifact.metadata || 'pdfImages' in artifact.metadata;
+  if (record.images.length > 0 || carriesImageShape) {
+    metadata.imageMapping =
+      record.images.length > 0
+        ? Object.fromEntries(record.images.map((image, index) => [image.id, dataUrls[index]!]))
+        : {};
+    metadata.pdfImages =
+      record.images.length > 0
+        ? record.images.map((image, index) => ({
+            id: image.id,
+            src: dataUrls[index]!,
+            pageNumber: image.pageNumber ?? 1,
+            ...(image.description !== undefined ? { description: image.description } : {}),
+            ...(image.width !== undefined ? { width: image.width } : {}),
+            ...(image.height !== undefined ? { height: image.height } : {}),
+          }))
+        : [];
   }
   return {
     text: artifact.text,
@@ -650,6 +906,8 @@ export interface ExtractionFetchWithCacheOptions extends FetchExtractionResponse
   /** Extractor identity the extraction is expected to run under; see `resolveExpectedExtractor`. */
   extractorId?: string;
   extractorVersion?: string;
+  /** Caller-supplied provider endpoint; fingerprints the cache key (K2). */
+  baseUrl?: string;
   /** Source-document pool asset id, recorded for lineage on the cache write. */
   sourceDocAssetId?: string;
   /**
@@ -708,7 +966,9 @@ export async function fetchExtractionWithCache(
   }
 
   // 1. Client-side cache lookup, before the extract API. On a hit the rebuilt
-  //    parse result skips the paid extraction entirely.
+  //    parse result skips the paid extraction entirely. (When the session's KV
+  //    route failed, `lookupCachedExtraction` answers a miss without touching
+  //    the store — K5.)
   if (kv && options.contentDigest && options.extractorId && options.extractorVersion) {
     const cached = await lookupCachedExtraction({
       kv,
@@ -716,6 +976,7 @@ export async function fetchExtractionWithCache(
       contentDigest: options.contentDigest,
       extractorId: options.extractorId,
       extractorVersion: options.extractorVersion,
+      baseUrl: options.baseUrl,
       fetchImpl: options.fetchImpl,
     });
     if (cached) return { data: cached, cacheHit: true };
@@ -737,21 +998,71 @@ export async function fetchExtractionWithCache(
 
   // 3. Best-effort cache write. The key uses the extractor that ACTUALLY ran
   //    (reported as `parser` in the result metadata) plus its declared
-  //    version, so a version bump is a cache miss that re-derives. A failed
-  //    write is logged and abandoned without failing this extraction.
+  //    version, so a version bump is a cache miss that re-derives. When the
+  //    actual key differs from the expected key the lookup used (e.g. a
+  //    self-host MinerU request that the route fell back to MinerU Cloud on),
+  //    the SAME record is also stored under the expected key as an alias, so
+  //    the next lookup under the expected key hits (K1). A failed write is
+  //    logged and abandoned without failing this extraction; a route-level KV
+  //    failure disables the cache for the session (K5).
   if (kv && options.contentDigest && options.extractorId && options.extractorVersion) {
     const actualExtractorId = data.metadata?.parser || options.extractorId;
     const actualExtractorVersion =
       extractorVersionFor(actualExtractorId) || options.extractorVersion;
+    const aliasExtractor =
+      actualExtractorId !== options.extractorId ||
+      actualExtractorVersion !== options.extractorVersion
+        ? { extractorId: options.extractorId, extractorVersion: options.extractorVersion }
+        : undefined;
     await writeExtractionCache({
       kv,
       pool: options.pool,
       contentDigest: options.contentDigest,
       extractorId: actualExtractorId,
       extractorVersion: actualExtractorVersion,
+      baseUrl: options.baseUrl,
+      ...(aliasExtractor ? { aliasExtractor } : {}),
       sourceDocAssetId: options.sourceDocAssetId,
       result: data,
     });
   }
   return { data, cacheHit: false };
+}
+
+// ─── In-run extraction dedupe (RFC #1153 part 1, K3) ──────────────────────────
+
+/** The identity two sources share when their extractions are interchangeable. */
+export interface InRunExtractionKey {
+  contentDigest: string;
+  extractorId: string;
+  extractorVersion: string;
+}
+
+/**
+ * Per-run memoizer so sources with the SAME content digest AND the SAME
+ * expected extractor identity share ONE extraction: within one generation run
+ * the first same-digest source pays for the extraction and every other one
+ * awaits the same in-flight promise, so two same-byte files never both pay.
+ * Different digest or extractor identity → separate extractions (two bytes
+ * that are equal under different extractors are legitimately different
+ * derivations). A per-run instance is created once per generation run; the
+ * memoized promises live exactly as long as the run.
+ */
+export function createExtractionDeduplicator(): {
+  run: (
+    key: InRunExtractionKey,
+    extraction: () => Promise<ParsedPdfContent>,
+  ) => Promise<ParsedPdfContent>;
+} {
+  const inflight = new Map<string, Promise<ParsedPdfContent>>();
+  return {
+    run(key, extraction) {
+      const memoKey = `${key.contentDigest}|${key.extractorId}@${key.extractorVersion}`;
+      const existing = inflight.get(memoKey);
+      if (existing) return existing;
+      const promise = extraction();
+      inflight.set(memoKey, promise);
+      return promise;
+    },
+  };
 }
