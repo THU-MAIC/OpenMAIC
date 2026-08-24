@@ -7,7 +7,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { callLLM } from '@/lib/ai/llm';
+import { streamLLM } from '@/lib/ai/llm';
 import {
   applyOutlineFallbacks,
   generateSceneContent,
@@ -31,6 +31,14 @@ import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 const log = createLogger('Scene Content API');
 
 export const maxDuration = 300;
+
+async function readTextStream(stream: AsyncIterable<string>): Promise<string> {
+  let text = '';
+  for await (const chunk of stream) {
+    text += chunk;
+  }
+  return text;
+}
 
 export async function POST(req: NextRequest) {
   let outlineTitle: string | undefined;
@@ -103,7 +111,7 @@ export async function POST(req: NextRequest) {
       images?: Array<{ id: string; src: string }>,
     ): Promise<string> => {
       if (images?.length && hasVision) {
-        const result = await callLLM(
+        const result = streamLLM(
           {
             model: languageModel,
             system: systemPrompt,
@@ -117,12 +125,11 @@ export async function POST(req: NextRequest) {
             maxRetries: 0,
           },
           'scene-content',
-          undefined,
           thinkingConfig,
         );
-        return result.text;
+        return readTextStream(result.textStream);
       }
-      const result = await callLLM(
+      const result = streamLLM(
         {
           model: languageModel,
           system: systemPrompt,
@@ -131,10 +138,9 @@ export async function POST(req: NextRequest) {
           maxRetries: 0,
         },
         'scene-content',
-        undefined,
         thinkingConfig,
       );
-      return result.text;
+      return readTextStream(result.textStream);
     };
 
     // ── Apply fallbacks ──

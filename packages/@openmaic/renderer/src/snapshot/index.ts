@@ -196,7 +196,6 @@ export async function slideToPng(
     await nextFrame();
 
     if (process.env.NODE_ENV !== 'production') {
-      // eslint-disable-next-line no-console
       console.debug('[slideToPng] container ready', {
         innerHTMLLength: container.innerHTML.length,
         imgCount: container.querySelectorAll('img').length,
