@@ -2,9 +2,11 @@ import { NextRequest } from 'next/server';
 import { transcribeAudio } from '@/lib/audio/asr-providers';
 import {
   isServerConfiguredProvider,
+  isServerProviderDisabled,
   resolveASRApiKey,
   resolveASRBaseUrl,
   resolveASRModel,
+  resolveServerASRProviderId,
 } from '@/lib/server/provider-config';
 import type { ASRProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
@@ -33,10 +35,21 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Audio file is required');
     }
 
-    // providerId is required from the client — no server-side store to fall back to
-    const effectiveProviderId = providerId || ('openai-whisper' as ASRProviderId);
+    // Prefer an enabled operator-configured backend when the client omitted its
+    // selection. Never guess a vendor: fail loudly when no backend is enabled.
+    const effectiveProviderId =
+      providerId || (resolveServerASRProviderId() as ASRProviderId | undefined);
+    if (!effectiveProviderId) {
+      return apiError('MISSING_PROVIDER', 400, 'No enabled ASR provider is configured');
+    }
     resolvedProviderId = effectiveProviderId;
     resolvedModelId = modelId;
+
+    // Enforce server precedence: a force-disabled provider is off for everyone,
+    // regardless of any client key/selection — mirror the TTS contract (#665).
+    if (isServerProviderDisabled('asr', effectiveProviderId)) {
+      return apiError('PROVIDER_DISABLED', 403, 'This ASR provider is disabled by the server');
+    }
 
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
     const managed = isServerConfiguredProvider('asr', effectiveProviderId);

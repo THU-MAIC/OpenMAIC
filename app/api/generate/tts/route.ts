@@ -9,6 +9,7 @@
 
 import { NextRequest } from 'next/server';
 import { generateTTS, QwenTTSError, TTSRateLimitError } from '@/lib/audio/tts-providers';
+import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import {
   isServerConfiguredProvider,
@@ -102,6 +103,20 @@ export async function POST(req: NextRequest) {
 
     const apiKey = resolveTTSApiKey(ttsProviderId, managed ? undefined : ttsApiKey || undefined);
     const baseUrl = resolveTTSBaseUrl(ttsProviderId, clientBaseUrl);
+
+    // Pre-flight the same key requirement the library enforces: a keyed provider
+    // with no key (server config AND client-supplied key both absent) is a
+    // client contract violation, not a server failure. Return the image route's
+    // MISSING_API_KEY envelope instead of falling through to a 500
+    // GENERATION_FAILED. Unknown/custom providers keep their existing behavior.
+    const ttsProvider = TTS_PROVIDERS[ttsProviderId as keyof typeof TTS_PROVIDERS];
+    if (ttsProvider?.requiresApiKey && !apiKey) {
+      return apiError(
+        'MISSING_API_KEY',
+        400,
+        `No API key configured for TTS provider: ${ttsProviderId}`,
+      );
+    }
 
     // Build TTS config (managed providers may pin the model server-side)
     const qwenCloneVoice = ttsProviderId === 'qwen-tts' && isQwenCloneVoice(ttsVoice);

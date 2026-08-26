@@ -19,4 +19,12 @@ export async function register(): Promise<void> {
   const { startAssetCollectorSchedule } =
     await import('@/lib/persistence/asset-collector-schedule');
   startAssetCollectorSchedule();
+
+  // Warn-first boot-time validation of model routing config (MODEL_ROUTES,
+  // DEFAULT_MODEL, <PREFIX>_MODELS). Cheap and non-throwing: broken config
+  // surfaces here as [config] warnings instead of failing at request time.
+  // Imported dynamically so the Edge bundle never pulls in the fs/js-yaml
+  // backed provider config it reads.
+  const { validateServerConfig } = await import('@/lib/server/config-validation');
+  validateServerConfig();
 }

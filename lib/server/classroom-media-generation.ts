@@ -93,9 +93,14 @@ export async function generateMediaForClassroom(
   const requests = outlines.flatMap((o) => o.mediaGenerations ?? []);
   if (requests.length === 0) return {};
 
-  // Resolve providers
-  const imageProviderIds = Object.keys(getServerImageProviders());
-  const videoProviderIds = Object.keys(getServerVideoProviders());
+  // Resolve providers, excluding operator force-disabled ones (server
+  // precedence, #665 — mirror the TTS listing's disabled flag).
+  const imageProviderIds = Object.entries(getServerImageProviders())
+    .filter(([, info]) => !info.disabled)
+    .map(([id]) => id);
+  const videoProviderIds = Object.entries(getServerVideoProviders())
+    .filter(([, info]) => !info.disabled)
+    .map(([id]) => id);
 
   const mediaMap: Record<string, string> = {};
 

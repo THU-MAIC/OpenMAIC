@@ -18,6 +18,7 @@ import { NextRequest } from 'next/server';
 import { IMAGE_PROVIDERS, testImageConnectivity } from '@/lib/media/image-providers';
 import {
   isServerConfiguredProvider,
+  isServerProviderDisabled,
   resolveImageApiKey,
   resolveImageBaseUrl,
   resolveImageModel,
@@ -41,6 +42,11 @@ export async function POST(request: NextRequest) {
       resolveServerImageProviderId()) as ImageProviderId;
     if (!providerId) {
       return apiError('MISSING_PROVIDER', 400, 'No image provider configured');
+    }
+    // Enforce server precedence: a force-disabled provider is off for everyone,
+    // regardless of any client key/selection — mirror the TTS contract (#665).
+    if (isServerProviderDisabled('image', providerId)) {
+      return apiError('PROVIDER_DISABLED', 403, 'This image provider is disabled by the server');
     }
     const clientModel = request.headers.get('x-image-model')?.trim() || undefined;
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.

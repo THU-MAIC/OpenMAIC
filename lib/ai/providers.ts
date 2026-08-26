@@ -2307,6 +2307,33 @@ export function getModel(config: ModelConfig): ModelWithInfo {
 }
 
 /**
+ * Deprecation notice for bare model ids (no `provider:` prefix). parseModelString
+ * keeps defaulting them to `openai` for backward compatibility, but that fallback
+ * is deprecated: configs should write `provider:model` explicitly. Emitted only
+ * by the boot-time config validation for config-derived sites — never for
+ * request-derived strings, which would let clients drive log volume.
+ */
+export const BARE_MODEL_ID_DEPRECATION_MSG =
+  'bare model ids default to openai for backward compatibility; this fallback is deprecated — write provider:model';
+
+/** Bare model ids already surfaced, so the deprecation fires once per unique id. */
+const warnedBareModelIds = new Set<string>();
+
+/**
+ * Warn once per unique bare model id. `where` names the config site (e.g.
+ * `DEFAULT_MODEL` or a MODEL_ROUTES stage). Callers must pass only
+ * config-derived ids (the config surface is finite, so the dedupe set is
+ * bounded); request-derived strings must never reach this function.
+ */
+export function warnBareModelIdDeprecation(bareModelId: string, where?: string): boolean {
+  if (warnedBareModelIds.has(bareModelId)) return false;
+  warnedBareModelIds.add(bareModelId);
+  const context = where ? `${where}: ` : '';
+  console.warn(`[config] ${context}${BARE_MODEL_ID_DEPRECATION_MSG} (bare id "${bareModelId}")`);
+  return true;
+}
+
+/**
  * Parse model string in format "providerId:modelId" or just "modelId" (defaults to OpenAI)
  */
 export function parseModelString(modelString: string): {
@@ -2323,7 +2350,10 @@ export function parseModelString(modelString: string): {
     };
   }
 
-  // Default to OpenAI for backward compatibility
+  // Default to OpenAI for backward compatibility (deprecated; boot-time config
+  // validation warns for config-derived bare ids). Deliberately no warning
+  // here: this path is reachable with request-controlled strings, which must
+  // not drive logging or dedupe-set growth.
   return {
     providerId: 'openai',
     modelId: modelString,

@@ -49,18 +49,25 @@ describe('POST /api/web-search', () => {
     vi.unstubAllEnvs();
     delete process.env.TAVILY_API_KEY;
     delete process.env.TAVILY_BASE_URL;
+    delete process.env.TAVILY_ENABLED;
     delete process.env.BOCHA_API_KEY;
     delete process.env.BOCHA_BASE_URL;
+    delete process.env.BOCHA_ENABLED;
     delete process.env.BRAVE_API_KEY;
     delete process.env.BRAVE_BASE_URL;
+    delete process.env.BRAVE_ENABLED;
     delete process.env.BAIDU_API_KEY;
     delete process.env.BAIDU_BASE_URL;
+    delete process.env.BAIDU_ENABLED;
     delete process.env.WEB_SEARCH_MINIMAX_API_KEY;
     delete process.env.WEB_SEARCH_MINIMAX_BASE_URL;
+    delete process.env.WEB_SEARCH_MINIMAX_ENABLED;
     delete process.env.WEB_SEARCH_CLAUDE_API_KEY;
     delete process.env.WEB_SEARCH_CLAUDE_BASE_URL;
     delete process.env.WEB_SEARCH_CLAUDE_MODELS;
+    delete process.env.WEB_SEARCH_CLAUDE_ENABLED;
     delete process.env.SEARXNG_BASE_URL;
+    delete process.env.SEARXNG_ENABLED;
     mocks.searchWeb.mockReset();
     mocks.formatSearchResultsAsContext.mockClear();
     mocks.resolveModelFromRequest.mockReset();
@@ -335,4 +342,74 @@ describe('POST /api/web-search', () => {
       );
     },
   );
+
+  it('rejects a force-disabled provider with 403 PROVIDER_DISABLED even when it has a key', async () => {
+    vi.stubEnv('TAVILY_API_KEY', 'tvly-server-key');
+    vi.stubEnv('TAVILY_ENABLED', 'false');
+
+    const res = await postWebSearch({
+      query: 'test query',
+      providerId: 'tavily',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'PROVIDER_DISABLED',
+    });
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
+  });
+
+  it('force-off beats a client key: a disabled unmanaged provider still 403s', async () => {
+    vi.stubEnv('TAVILY_ENABLED', 'false');
+
+    const res = await postWebSearch({
+      query: 'test query',
+      providerId: 'tavily',
+      apiKey: 'tvly-client-key',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(json).toMatchObject({ success: false, errorCode: 'PROVIDER_DISABLED' });
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the operator backend when the client picks a disabled provider', async () => {
+    // Server has Bocha (enabled); the client asks for Tavily which is
+    // force-disabled and NOT server-configured. The server-preference override
+    // points at the enabled backend instead of failing the request.
+    vi.stubEnv('BOCHA_API_KEY', 'bocha-server-key');
+    vi.stubEnv('TAVILY_ENABLED', 'false');
+
+    const res = await postWebSearch({
+      query: 'test query',
+      providerId: 'tavily',
+    });
+
+    expect(res.status).toBe(200);
+    expect(mocks.searchWeb).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: 'bocha', apiKey: 'bocha-server-key' }),
+    );
+  });
+
+  it('403s a force-disabled server-configured provider even when the server has an enabled backend', async () => {
+    // Tavily is server-configured (key present) but force-disabled, so the
+    // server-preference override does NOT apply — the disabled provider itself
+    // is rejected rather than silently swapped.
+    vi.stubEnv('BOCHA_API_KEY', 'bocha-server-key');
+    vi.stubEnv('TAVILY_API_KEY', 'tvly-server-key');
+    vi.stubEnv('TAVILY_ENABLED', 'false');
+
+    const res = await postWebSearch({
+      query: 'test query',
+      providerId: 'tavily',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(json).toMatchObject({ success: false, errorCode: 'PROVIDER_DISABLED' });
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
+  });
 });
