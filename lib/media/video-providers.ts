@@ -81,14 +81,6 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     supportedResolutions: ['720p'],
     maxDuration: 8,
   },
-  sora: {
-    id: 'sora',
-    name: 'Sora',
-    requiresApiKey: true,
-    models: [],
-    supportedAspectRatios: ['16:9', '1:1', '9:16'],
-    maxDuration: 20,
-  },
   'minimax-video': {
     id: 'minimax-video',
     name: 'MiniMax Video',
