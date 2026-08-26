@@ -113,8 +113,23 @@ export async function applyWhiteboardRuntimeOperation(
     throw new WhiteboardRuntimeCodeLineNotFoundError(snapshot.elementId, missingLineId);
   }
 
+  const assertIntroducedLineIdsDoNotConflict = (
+    retainedLines: readonly CodeLine[],
+    introducedLines: readonly CodeLine[],
+  ): void => {
+    const retainedIds = new Set(retainedLines.map((line) => line.id));
+    const introducedIds = new Set<string>();
+    for (const line of introducedLines) {
+      if (retainedIds.has(line.id) || introducedIds.has(line.id)) {
+        throw new WhiteboardRuntimeCodeLineIdConflictError(snapshot.elementId, line.id);
+      }
+      introducedIds.add(line.id);
+    }
+  };
+
   let editedLines: CodeLine[];
   if ('lineId' in edit) {
+    assertIntroducedLineIdsDoNotConflict(lines, edit.lines);
     editedLines = [...lines];
     const referenceIndex = editedLines.findIndex((line) => line.id === edit.lineId);
     editedLines.splice(
@@ -131,15 +146,8 @@ export async function applyWhiteboardRuntimeOperation(
     const firstIndex = lines.findIndex((line) => line.id === edit.lineIds[0]);
     const replaced = new Set(edit.lineIds);
     editedLines = lines.filter((line) => !replaced.has(line.id));
+    assertIntroducedLineIdsDoNotConflict(editedLines, edit.lines);
     editedLines.splice(firstIndex, 0, ...edit.lines);
-  }
-
-  const resultingIds = new Set<string>();
-  for (const line of editedLines) {
-    if (resultingIds.has(line.id)) {
-      throw new WhiteboardRuntimeCodeLineIdConflictError(snapshot.elementId, line.id);
-    }
-    resultingIds.add(line.id);
   }
   const editedElement = { ...element, lines: editedLines };
   const normalizedElement = normalizeAndValidateWhiteboardElement(editedElement);

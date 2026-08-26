@@ -245,11 +245,13 @@ function validateElement(element: PPTElement): string | null {
   return schema ? validateSchema(element, schema, 'element') : 'unknown element type';
 }
 
-function validateIdentifierArray(value: unknown, label: string): asserts value is string[] {
+function validateCodeLineTargetIds(value: unknown, label: string): asserts value is string[] {
   if (!Array.isArray(value) || value.length === 0) throw new Error(`${label} must be non-empty`);
   const ids = new Set<string>();
   for (const id of value) {
-    if (!isSafeIdentifier(id)) throw new Error(`${label} contains an invalid id`);
+    // Existing CodeLine.id values are plain strings in the frozen DSL contract. Targets must
+    // remain able to address every line accepted by legacy import, including an empty ID.
+    if (typeof id !== 'string') throw new Error(`${label} contains an invalid id`);
     if (ids.has(id)) throw new Error(`${label} contains a duplicate id`);
     ids.add(id);
   }
@@ -480,18 +482,18 @@ export function validateWhiteboardRuntimePayload(
         if (!hasExactOwnKeys(edit, CODE_LINES_INSERT_EDIT_KEYS)) {
           throw new Error('edit is invalid');
         }
-        if (!isSafeIdentifier(edit.lineId)) throw new Error('lineId is invalid');
+        if (typeof edit.lineId !== 'string') throw new Error('lineId is invalid');
         validateCodeLines(edit.lines, 'edit.lines', { nonEmpty: true });
       } else if (edit.kind === 'delete_lines') {
         if (!hasExactOwnKeys(edit, CODE_LINES_DELETE_EDIT_KEYS)) {
           throw new Error('edit is invalid');
         }
-        validateIdentifierArray(edit.lineIds, 'edit.lineIds');
+        validateCodeLineTargetIds(edit.lineIds, 'edit.lineIds');
       } else if (edit.kind === 'replace_lines') {
         if (!hasExactOwnKeys(edit, CODE_LINES_REPLACE_EDIT_KEYS)) {
           throw new Error('edit is invalid');
         }
-        validateIdentifierArray(edit.lineIds, 'edit.lineIds');
+        validateCodeLineTargetIds(edit.lineIds, 'edit.lineIds');
         validateCodeLines(edit.lines, 'edit.lines', { nonEmpty: true });
       } else {
         throw new Error('edit kind is invalid');

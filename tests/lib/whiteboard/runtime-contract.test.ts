@@ -224,6 +224,25 @@ describe('whiteboard RuntimeStore payload contract', () => {
           ],
         },
       }),
+      operationPayload('edit:legacy-empty-insert-target', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: { kind: 'insert_after', lineId: '', lines: [{ id: 'host-empty-1', content: '' }] },
+      }),
+      operationPayload('edit:legacy-empty-delete-target', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: { kind: 'delete_lines', lineIds: [''] },
+      }),
+      operationPayload('edit:legacy-empty-replace-target', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: {
+          kind: 'replace_lines',
+          lineIds: [''],
+          lines: [{ id: 'host-empty-2', content: 'replacement' }],
+        },
+      }),
     ]) {
       expect(validateWhiteboardRuntimePayload(candidate)).toEqual({ valid: true });
     }

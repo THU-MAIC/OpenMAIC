@@ -11,6 +11,8 @@ import {
   type WhiteboardRuntimeService,
 } from '@/lib/whiteboard/runtime/store';
 import {
+  LEGACY_WHITEBOARD_SOURCE_KIND,
+  WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
   WhiteboardRuntimeCodeLineIdConflictError,
   WhiteboardRuntimeCodeLineNotFoundError,
   WhiteboardRuntimeElementTypeMismatchError,
@@ -829,6 +831,26 @@ describe('Native RuntimeStore whiteboard tools', () => {
         lineIds: ['L1'],
         content: 'replacement',
       },
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'insert_after',
+        lineId: '',
+        content: 'after legacy empty ID',
+      },
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'delete_lines',
+        lineIds: [''],
+      },
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'replace_lines',
+        lineIds: [''],
+        content: 'replace legacy empty IDs',
+      },
     ];
     for (const edit of validEdits) expect(editTool.prepareArguments?.(edit)).toBe(edit);
 
@@ -876,6 +898,128 @@ describe('Native RuntimeStore whiteboard tools', () => {
       expect(() => tool.prepareArguments?.(invalid)).toThrow('strict schema');
     }
     expect(runtime.append).not.toHaveBeenCalled();
+  });
+
+  it('edits a readable legacy code block whose persisted line IDs are empty', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    try {
+      const store = new BrowserRuntimeStore({
+        indexedDB: new IDBFactory(),
+        payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      });
+      const runtime = createWhiteboardRuntimeService({
+        store,
+        resolveLearnerKey: () => 'learner-1',
+        withMaintenanceLock: (work) => work(),
+      });
+      await runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: null,
+        payload: {
+          payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
+          operationId: 'legacy-import:empty-code-line-ids',
+          operation: {
+            kind: 'legacy_snapshot_imported',
+            source: {
+              kind: LEGACY_WHITEBOARD_SOURCE_KIND,
+              fingerprint: `sha256:${'1'.repeat(64)}`,
+            },
+            whiteboard: {
+              id: 'legacy-board',
+              viewportSize: 1000,
+              viewportRatio: 0.5625,
+              elements: [
+                {
+                  id: 'legacy-code',
+                  type: 'code',
+                  language: 'python',
+                  lines: [
+                    { id: '', content: 'first' },
+                    { id: '', content: 'second' },
+                  ],
+                  fileName: 'legacy.py',
+                  showLineNumbers: true,
+                  fontSize: 14,
+                  left: 10,
+                  top: 20,
+                  width: 480,
+                  height: 240,
+                  rotate: 0,
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      const edit = build(runtime).tools.find((tool) => tool.name === 'wb_edit_code')!;
+      await expect(
+        edit.execute('edit-after-empty-line-id', {
+          expectedLastSeq: 0,
+          elementId: 'legacy-code',
+          operation: 'insert_after',
+          lineId: '',
+          content: 'inserted',
+        }),
+      ).resolves.toMatchObject({
+        details: {
+          committedSeq: 1,
+          affected: {
+            targetLineIds: [''],
+            resultLineIds: [expect.stringMatching(/^native-wb-code-line:[0-9a-f]{64}:0$/u)],
+          },
+        },
+      });
+      await expect(runtime.read('stage-1')).resolves.toMatchObject({
+        lastSeq: 1,
+        whiteboard: {
+          elements: [
+            {
+              id: 'legacy-code',
+              lines: [
+                { id: '', content: 'first' },
+                { id: expect.stringMatching(/^native-wb-code-line:/u), content: 'inserted' },
+                { id: '', content: 'second' },
+              ],
+            },
+          ],
+        },
+      });
+
+      const replaceResult = await edit.execute('edit-replace-empty-line-ids', {
+        expectedLastSeq: 1,
+        elementId: 'legacy-code',
+        operation: 'replace_lines',
+        lineIds: [''],
+        content: 'replacement',
+      });
+      expect(replaceResult).toMatchObject({
+        details: {
+          committedSeq: 2,
+          affected: {
+            targetLineIds: [''],
+            resultLineIds: [expect.stringMatching(/^native-wb-code-line:[0-9a-f]{64}:0$/u)],
+          },
+        },
+      });
+      const final = await runtime.read('stage-1');
+      const finalCode = final.whiteboard?.elements[0];
+      expect(finalCode).toMatchObject({
+        id: 'legacy-code',
+        type: 'code',
+        lines: [
+          { id: expect.stringMatching(/^native-wb-code-line:/u), content: 'replacement' },
+          { id: expect.stringMatching(/^native-wb-code-line:/u), content: 'inserted' },
+        ],
+      });
+      if (finalCode?.type !== 'code') throw new Error('expected code element');
+      expect(finalCode.lines.every((line) => line.id.length > 0)).toBe(true);
+
+      const sessions = await store.listSessions('stage-1', 'learner-1');
+      await expect(store.listRecords(sessions[0]!.id)).resolves.toHaveLength(3);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('commits every code-line edit with stable host IDs and supports late exact replay', async () => {

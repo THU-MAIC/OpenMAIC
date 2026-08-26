@@ -181,6 +181,9 @@ const SafeWhiteboardIdentifier = Type.String({
   maxLength: 512,
   pattern: '^[^\\x00-\\x1f\\x7f\\u2028\\u2029]+$',
 });
+// CodeLine.id is a plain string in the persisted DSL contract. Keep target IDs compatible with
+// every readable legacy line while retaining strict host-owned IDs for newly written lines.
+const ExistingWhiteboardCodeLineId = Type.String();
 const NativeWhiteboardDeleteParams = Type.Object(
   {
     expectedLastSeq: ExpectedLastSeq,
@@ -199,7 +202,7 @@ const NativeWhiteboardEditCodeParams = Type.Union(
         expectedLastSeq: ExpectedLastSeq,
         elementId: SafeWhiteboardIdentifier,
         operation: Type.Literal('insert_after'),
-        lineId: SafeWhiteboardIdentifier,
+        lineId: ExistingWhiteboardCodeLineId,
         content: Type.String({ minLength: 1 }),
       },
       { additionalProperties: false },
@@ -209,7 +212,7 @@ const NativeWhiteboardEditCodeParams = Type.Union(
         expectedLastSeq: ExpectedLastSeq,
         elementId: SafeWhiteboardIdentifier,
         operation: Type.Literal('insert_before'),
-        lineId: SafeWhiteboardIdentifier,
+        lineId: ExistingWhiteboardCodeLineId,
         content: Type.String({ minLength: 1 }),
       },
       { additionalProperties: false },
@@ -219,7 +222,7 @@ const NativeWhiteboardEditCodeParams = Type.Union(
         expectedLastSeq: ExpectedLastSeq,
         elementId: SafeWhiteboardIdentifier,
         operation: Type.Literal('delete_lines'),
-        lineIds: Type.Array(SafeWhiteboardIdentifier, { minItems: 1, uniqueItems: true }),
+        lineIds: Type.Array(ExistingWhiteboardCodeLineId, { minItems: 1, uniqueItems: true }),
       },
       { additionalProperties: false },
     ),
@@ -228,7 +231,7 @@ const NativeWhiteboardEditCodeParams = Type.Union(
         expectedLastSeq: ExpectedLastSeq,
         elementId: SafeWhiteboardIdentifier,
         operation: Type.Literal('replace_lines'),
-        lineIds: Type.Array(SafeWhiteboardIdentifier, { minItems: 1, uniqueItems: true }),
+        lineIds: Type.Array(ExistingWhiteboardCodeLineId, { minItems: 1, uniqueItems: true }),
         content: Type.String({ minLength: 1 }),
       },
       { additionalProperties: false },
@@ -577,10 +580,18 @@ function codeLines(
   invocationDigest: string,
   reusableLineIds: readonly string[] = [],
 ): CodeLine[] {
-  return content.split('\n').map((lineContent, index) => ({
-    id: reusableLineIds[index] ?? `native-wb-code-line:${invocationDigest}:${index}`,
-    content: lineContent,
-  }));
+  return content.split('\n').map((lineContent, index) => {
+    const reusableLineId = reusableLineIds[index];
+    const canReuse =
+      reusableLineId !== undefined &&
+      reusableLineId.length > 0 &&
+      reusableLineId.length <= 512 &&
+      !/[\u0000-\u001f\u007f\u2028\u2029]/u.test(reusableLineId);
+    return {
+      id: canReuse ? reusableLineId : `native-wb-code-line:${invocationDigest}:${index}`,
+      content: lineContent,
+    };
+  });
 }
 
 function codeEditAffected(elementId: string, edit: WhiteboardCodeLinesEdit): MutationAffected {
