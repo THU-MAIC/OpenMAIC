@@ -427,6 +427,25 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
     'medium',
   ),
 
+  // OrcaRouter accepts the OpenRouter-style `reasoning` param on its
+  // OpenAI-compatible endpoint (live-verified), so its routed models reuse the
+  // openrouter thinking adapter.
+  [getModelMetadataKey('orcarouter', 'orcarouter/fusion')]: effortCapability(
+    'openrouter',
+    ['low', 'medium', 'high'],
+    'medium',
+  ),
+  [getModelMetadataKey('orcarouter', 'orcarouter/fusion-flash')]: effortCapability(
+    'openrouter',
+    ['low', 'medium', 'high'],
+    'medium',
+  ),
+  [getModelMetadataKey('orcarouter', 'orcarouter/fusion-mini')]: effortCapability(
+    'openrouter',
+    ['low', 'medium', 'high'],
+    'medium',
+  ),
+
   [getModelMetadataKey('grok', 'grok-4.6')]: grok46Effort,
   [getModelMetadataKey('grok', 'grok-4.5')]: grok45Effort,
   [getModelMetadataKey('grok', 'grok-4.3')]: grok43Effort,

@@ -19,6 +19,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'SILICONFLOW',
   'DOUBAO',
   'OPENROUTER',
+  'ORCAROUTER',
   'GROK',
   'TENCENT',
   'TENCENT_HUNYUAN',
@@ -271,6 +272,15 @@ providers:
         'deepseek/deepseek-v4-pro',
         'deepseek/deepseek-v4-flash',
       ]);
+    });
+
+    it('maps OrcaRouter env prefix to provider ID', async () => {
+      vi.stubEnv('ORCAROUTER_API_KEY', 'sk-orca-');
+      vi.stubEnv('ORCAROUTER_MODELS', 'orcarouter/fusion,orcarouter/fusion-flash');
+      const { getServerProviders } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.orcarouter.models).toEqual(['orcarouter/fusion', 'orcarouter/fusion-flash']);
     });
 
     it('maps Azure deployment names to the built-in provider', async () => {

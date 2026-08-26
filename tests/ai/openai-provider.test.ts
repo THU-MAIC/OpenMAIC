@@ -631,6 +631,12 @@ describe('OpenAI provider defaults', () => {
       { reasoning: { enabled: true, effort: 'high' } },
     ],
     [
+      'orcarouter',
+      'orcarouter/fusion',
+      { mode: 'enabled', effort: 'high' },
+      { reasoning: { enabled: true, effort: 'high' } },
+    ],
+    [
       'tencent-hunyuan',
       'hy3-preview',
       { mode: 'enabled', effort: 'high' },

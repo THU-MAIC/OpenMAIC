@@ -8,6 +8,7 @@
  * - Google Gemini (native)
  * - MiniMax (Anthropic-compatible, recommended by official)
  * - OpenAI-compatible providers (DeepSeek, Qwen, Kimi, GLM, SiliconFlow, Doubao, Tencent, Xiaomi, Lemonade, etc.)
+ * - Gateway providers (OpenRouter, OrcaRouter)
  *
  * Sources:
  * - https://platform.openai.com/docs/models
@@ -67,7 +68,12 @@ const log = createLogger('AIProviders');
 export type { ProviderId, ProviderConfig, ModelInfo, ModelConfig };
 
 /** Provider IDs whose logos are monochrome-dark and need `dark:invert` in dark mode */
-export const MONO_LOGO_PROVIDERS: ReadonlySet<string> = new Set(['openai', 'openrouter', 'ollama']);
+export const MONO_LOGO_PROVIDERS: ReadonlySet<string> = new Set([
+  'openai',
+  'openrouter',
+  'orcarouter',
+  'ollama',
+]);
 
 /**
  * Provider registry
@@ -1221,6 +1227,66 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         contextWindow: 1048576,
         outputWindow: 131072,
         capabilities: { streaming: true, tools: true, vision: false },
+      },
+    ],
+  },
+
+  orcarouter: {
+    id: 'orcarouter',
+    name: 'OrcaRouter',
+    type: 'openai',
+    defaultBaseUrl: 'https://api.orcarouter.ai/v1',
+    supportsModelDiscovery: true,
+    requiresApiKey: true,
+    icon: '/logos/orcarouter.svg',
+    models: [
+      {
+        id: 'orcarouter/fusion',
+        name: 'Fusion',
+        contextWindow: 1000000,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'orcarouter/fusion-flash',
+        name: 'Fusion Flash',
+        contextWindow: 200000,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'orcarouter/fusion-mini',
+        name: 'Fusion Mini',
+        contextWindow: 1000000,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
       },
     ],
   },

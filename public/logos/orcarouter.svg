@@ -1,0 +1,19 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<title>OrcaRouter</title>
+<g fill="#111">
+  <!-- Body -->
+  <path d="M96 256C96 176 168 120 256 120s160 56 160 136-72 136-160 136S96 336 96 256Z"/>
+  <!-- Nose -->
+  <path d="M96 256 56 232c-8-4-16 4-12 12v24c-4 8 4 16 12 12l40-24Z"/>
+  <!-- Dorsal fin -->
+  <path d="M252 124c6 36 20 64 44 84-20-4-36-20-44-84Z"/>
+  <!-- Tail -->
+  <path d="m416 256 48-28c8-4 16 4 12 12l-8 16 8 16c4 8-4 16-12 12l-48-28Z"/>
+</g>
+<g fill="#fff">
+  <!-- Eye patch -->
+  <ellipse cx="196" cy="244" rx="16" ry="12"/>
+  <!-- Belly -->
+  <path d="M176 312c20 16 52 24 80 24s60-8 80-24c-12 28-44 44-80 44s-68-16-80-44Z"/>
+</g>
+</svg>
