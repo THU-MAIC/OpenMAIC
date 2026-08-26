@@ -178,6 +178,18 @@ function loadYamlFile(filename: string): YamlData {
 // Env-var helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Normalize a configured model list the same way the env-var path does:
+ * trim whitespace and drop empty entries. The YAML path stores model arrays
+ * verbatim, so without this a garbage `models: [""]` would surface as a
+ * truthy pin (its first entry, an empty string). Returns undefined when
+ * nothing survives normalization ("no models configured").
+ */
+function normalizeModelList(models: string[] | undefined): string[] | undefined {
+  const parsed = models?.map((model) => model.trim()).filter(Boolean);
+  return parsed && parsed.length > 0 ? parsed : undefined;
+}
+
 function loadEnvSection(
   envMap: Record<string, string>,
   yamlSection: Record<string, Partial<ServerProviderEntry>> | undefined,
@@ -206,7 +218,7 @@ function loadEnvSection(
         result[id] = {
           apiKey: entry.apiKey || '',
           baseUrl: entry.baseUrl,
-          models: entry.models,
+          models: normalizeModelList(entry.models),
           proxy: entry.proxy,
         };
       }
@@ -668,6 +680,20 @@ export function resolveASRBaseUrl(providerId: string, clientBaseUrl?: string): s
   return resolveSectionBaseUrl('asr', providerId, clientBaseUrl);
 }
 
+/**
+ * Resolve the ASR model. When the operator pinned models server-side
+ * (`ASR_<PREFIX>_MODELS`), the allowlisted client choice wins and the first
+ * entry is the managed default; otherwise the client model wins.
+ */
+export function resolveASRModel(providerId: string, clientModel?: string): string | undefined {
+  const serverModels = getConfig().asr[providerId]?.models;
+  if (serverModels?.length) {
+    if (clientModel && serverModels.includes(clientModel)) return clientModel;
+    return serverModels[0];
+  }
+  return clientModel;
+}
+
 // ---------------------------------------------------------------------------
 // Public API — PDF
 // ---------------------------------------------------------------------------
@@ -711,6 +737,29 @@ export function resolveImageBaseUrl(
   return resolveSectionBaseUrl('image', providerId, clientBaseUrl);
 }
 
+/**
+ * Resolve the server-side default image provider, used when the client sends
+ * no provider preference: the first operator-configured image provider. Returns
+ * undefined when no image provider is configured at all (callers fail loud).
+ */
+export function resolveServerImageProviderId(): string | undefined {
+  return Object.keys(getConfig().image)[0];
+}
+
+/**
+ * Resolve the image model. When the operator pinned models server-side
+ * (`IMAGE_<PREFIX>_MODELS`), the allowlisted client choice wins and the first
+ * entry is the managed default; otherwise the client model wins.
+ */
+export function resolveImageModel(providerId: string, clientModel?: string): string | undefined {
+  const serverModels = getConfig().image[providerId]?.models;
+  if (serverModels?.length) {
+    if (clientModel && serverModels.includes(clientModel)) return clientModel;
+    return serverModels[0];
+  }
+  return clientModel;
+}
+
 // ---------------------------------------------------------------------------
 // Public API — Video Generation
 // ---------------------------------------------------------------------------
@@ -729,6 +778,29 @@ export function resolveVideoBaseUrl(
   clientBaseUrl?: string,
 ): string | undefined {
   return resolveSectionBaseUrl('video', providerId, clientBaseUrl);
+}
+
+/**
+ * Resolve the server-side default video provider, used when the client sends
+ * no provider preference: the first operator-configured video provider. Returns
+ * undefined when no video provider is configured at all (callers fail loud).
+ */
+export function resolveServerVideoProviderId(): string | undefined {
+  return Object.keys(getConfig().video)[0];
+}
+
+/**
+ * Resolve the video model. When the operator pinned models server-side
+ * (`VIDEO_<PREFIX>_MODELS`), the allowlisted client choice wins and the first
+ * entry is the managed default; otherwise the client model wins.
+ */
+export function resolveVideoModel(providerId: string, clientModel?: string): string | undefined {
+  const serverModels = getConfig().video[providerId]?.models;
+  if (serverModels?.length) {
+    if (clientModel && serverModels.includes(clientModel)) return clientModel;
+    return serverModels[0];
+  }
+  return clientModel;
 }
 
 // ---------------------------------------------------------------------------

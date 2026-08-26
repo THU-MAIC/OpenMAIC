@@ -7,7 +7,7 @@
  * POST /api/generate/image
  *
  * Headers:
- *   x-image-provider: ImageProviderId (default: 'seedream')
+ *   x-image-provider: ImageProviderId (optional, server-configured default)
  *   x-api-key: string (optional, server fallback)
  *   x-base-url: string (optional, server fallback)
  *
@@ -26,6 +26,8 @@ import {
   isServerConfiguredProvider,
   resolveImageApiKey,
   resolveImageBaseUrl,
+  resolveImageModel,
+  resolveServerImageProviderId,
 } from '@/lib/server/provider-config';
 import type { ImageProviderId, ImageGenerationOptions } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
@@ -49,12 +51,18 @@ export async function POST(request: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing prompt');
     }
 
-    const providerId = (request.headers.get('x-image-provider') || 'seedream') as ImageProviderId;
+    // The client may express no provider preference (empty header) — fall back
+    // to the first server-configured image provider, else fail loud.
+    const providerId = (request.headers.get('x-image-provider')?.trim() ||
+      resolveServerImageProviderId()) as ImageProviderId;
+    if (!providerId) {
+      return apiError('MISSING_PROVIDER', 400, 'No image provider configured');
+    }
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
     const managed = isServerConfiguredProvider('image', providerId);
     const clientApiKey = managed ? undefined : request.headers.get('x-api-key') || undefined;
     const clientBaseUrl = managed ? undefined : request.headers.get('x-base-url') || undefined;
-    const clientModel = request.headers.get('x-image-model') || undefined;
+    const clientModel = request.headers.get('x-image-model')?.trim() || undefined;
 
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
       const ssrfError = await validateUrlForSSRF(clientBaseUrl);
@@ -75,6 +83,21 @@ export async function POST(request: NextRequest) {
 
     const baseUrl = resolveImageBaseUrl(providerId, clientBaseUrl);
 
+    // A managed provider may pin its model list server-side
+    // (IMAGE_<PREFIX>_MODELS): an allowlisted client choice wins, otherwise the
+    // first pinned entry is the managed default; unmanaged providers use the
+    // client header directly.
+    const model = resolveImageModel(providerId, clientModel);
+    // Workflow-based providers (e.g. comfyui-image) have no model catalog and
+    // need no model; everyone else must resolve one.
+    if (!model && provider?.models && provider.models.length > 0) {
+      return apiError(
+        'MISSING_MODEL',
+        400,
+        `No model configured for image provider: ${providerId}`,
+      );
+    }
+
     // Resolve dimensions from aspect ratio if not explicitly set
     if (!body.width && !body.height && body.aspectRatio) {
       const dims = aspectRatioToDimensions(body.aspectRatio);
@@ -83,17 +106,17 @@ export async function POST(request: NextRequest) {
     }
 
     log.info(
-      `Generating image: provider=${providerId}, model=${clientModel || 'default'}, ` +
+      `Generating image: provider=${providerId}, model=${model || 'default'}, ` +
         `prompt="${body.prompt.slice(0, 80)}...", size=${body.width ?? 'auto'}x${body.height ?? 'auto'}`,
     );
 
-    const result = await generateImage({ providerId, apiKey, baseUrl, model: clientModel }, body);
+    const result = await generateImage({ providerId, apiKey, baseUrl, model }, body);
 
     void recordGenerationUsage({
       kind: 'image',
       unit: 'image',
       providerId,
-      modelId: clientModel,
+      modelId: model,
       quantity: 1,
     });
 
@@ -105,10 +128,7 @@ export async function POST(request: NextRequest) {
       log.warn(`Image blocked by content safety filter: ${message}`);
       return apiError('CONTENT_SENSITIVE', 400, message);
     }
-    log.error(
-      `Image generation failed [provider=${request.headers.get('x-image-provider') ?? 'seedream'}, model=${request.headers.get('x-image-model') ?? 'default'}]:`,
-      error,
-    );
+    log.error(`Image generation failed: ${message}`, error);
     return apiError('INTERNAL_ERROR', 500, message);
   }
 }

@@ -6,7 +6,7 @@
  * POST /api/verify-video-provider
  *
  * Headers:
- *   x-video-provider: VideoProviderId
+ *   x-video-provider: VideoProviderId (optional, server-configured default)
  *   x-video-model: string (optional)
  *   x-api-key: string (optional, server fallback)
  *   x-base-url: string (optional, server fallback)
@@ -20,6 +20,8 @@ import {
   isServerConfiguredProvider,
   resolveVideoApiKey,
   resolveVideoBaseUrl,
+  resolveVideoModel,
+  resolveServerVideoProviderId,
 } from '@/lib/server/provider-config';
 import type { VideoProviderId } from '@/lib/media/types';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -30,8 +32,12 @@ const log = createLogger('VerifyVideoProvider');
 
 export async function POST(request: NextRequest) {
   try {
-    const providerId = (request.headers.get('x-video-provider') || 'seedance') as VideoProviderId;
-    const model = request.headers.get('x-video-model') || undefined;
+    const providerId = (request.headers.get('x-video-provider')?.trim() ||
+      resolveServerVideoProviderId()) as VideoProviderId;
+    if (!providerId) {
+      return apiError('MISSING_PROVIDER', 400, 'No video provider configured');
+    }
+    const clientModel = request.headers.get('x-video-model')?.trim() || undefined;
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
     const managed = isServerConfiguredProvider('video', providerId);
     const clientApiKey = managed ? undefined : request.headers.get('x-api-key') || undefined;
@@ -51,6 +57,15 @@ export async function POST(request: NextRequest) {
       return apiError('MISSING_API_KEY', 400, 'No API key configured');
     }
 
+    const model = resolveVideoModel(providerId, clientModel);
+    if (!model) {
+      return apiError(
+        'MISSING_MODEL',
+        400,
+        `No model configured for video provider: ${providerId}`,
+      );
+    }
+
     const result = await testVideoConnectivity({
       providerId,
       apiKey,
@@ -64,10 +79,7 @@ export async function POST(request: NextRequest) {
 
     return apiSuccess({ message: result.message });
   } catch (err) {
-    log.error(
-      `Video provider verification failed [provider=${request.headers.get('x-video-provider') ?? 'seedance'}]:`,
-      err,
-    );
+    log.error(`Video provider verification failed: ${err}`, err);
     return apiError('INTERNAL_ERROR', 500, `Connectivity test error: ${err}`);
   }
 }

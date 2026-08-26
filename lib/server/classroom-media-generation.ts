@@ -21,8 +21,10 @@ import {
   getServerTTSProviders,
   resolveImageApiKey,
   resolveImageBaseUrl,
+  resolveImageModel,
   resolveVideoApiKey,
   resolveVideoBaseUrl,
+  resolveVideoModel,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
 } from '@/lib/server/provider-config';
@@ -112,7 +114,13 @@ export async function generateMediaForClassroom(
           log.warn(`No API key for image provider "${providerId}", skipping ${req.elementId}`);
           continue;
         }
-        const model = providerConfig?.models?.[0]?.id;
+        // No client model here — the server-side `IMAGE_<PREFIX>_MODELS` pin
+        // (first entry) is authoritative when set; otherwise fall back to the
+        // first catalog model so key-only deployments keep generating. This
+        // path is internal (no HTTP response to fail loud with), so the
+        // adapter's requireModel must stay a backstop, never the primary
+        // failure mode.
+        const model = resolveImageModel(providerId) ?? providerConfig?.models?.[0]?.id;
 
         const result = await generateImage(
           { providerId, apiKey, baseUrl: resolveImageBaseUrl(providerId), model },
@@ -152,8 +160,14 @@ export async function generateMediaForClassroom(
           log.warn(`No API key for video provider "${providerId}", skipping ${req.elementId}`);
           continue;
         }
+        // No client model here — the server-side `VIDEO_<PREFIX>_MODELS` pin
+        // (first entry) is authoritative when set; otherwise fall back to the
+        // first catalog model so key-only deployments keep generating. This
+        // path is internal (no HTTP response to fail loud with), so the
+        // adapter's requireModel must stay a backstop, never the primary
+        // failure mode.
         const providerConfig = VIDEO_PROVIDERS[providerId];
-        const model = providerConfig?.models?.[0]?.id;
+        const model = resolveVideoModel(providerId) ?? providerConfig?.models?.[0]?.id;
 
         const normalized = normalizeVideoOptions(providerId, {
           prompt: req.prompt,
