@@ -277,11 +277,13 @@ describe('shipped skill constraints', () => {
     expect(grounding).toContain('信息意识、计算思维');
   });
 
-  it('ships the promoted UbD, SEL, and learning-to-learn methods as official skills', async () => {
+  it('ships the promoted teaching methods as official skills', async () => {
     const loaded = await listSkills();
     const ubd = loaded.find((skill) => skill.id === 'understanding-by-design');
     const sel = loaded.find((skill) => skill.id === 'social-emotional-learning');
     const learning = loaded.find((skill) => skill.id === 'learning-to-learn');
+    const feynman = loaded.find((skill) => skill.id === 'feynman-learning');
+    const spiral = loaded.find((skill) => skill.id === 'spiral-curriculum');
 
     expect(ubd).toMatchObject({
       title: '理解本位设计（UbD）',
@@ -302,6 +304,21 @@ describe('shipped skill constraints', () => {
     });
     expect(learning?.content).toContain('/understanding-by-design');
     expect(learning?.content).toContain('/social-emotional-learning');
+
+    expect(feynman).toMatchObject({
+      title: '费曼学习法',
+      source: 'builtin',
+    });
+    expect(feynman?.content).toContain('学习者先讲，AI 后介入');
+    expect(feynman?.content).toContain('/learning-to-learn');
+
+    expect(spiral).toMatchObject({
+      title: '螺旋式课程设计',
+      source: 'builtin',
+    });
+    expect(spiral?.content).toContain('Revisit 不等于 Review');
+    expect(spiral?.content).toContain('/feynman-learning');
+    expect(spiral?.content).toContain('/curriculum-planner');
   });
 
   it('exposes the title only through frontmatter the loader actually reads', async () => {
