@@ -7,6 +7,7 @@ import {
   WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
   type LegacySnapshotImportedOperation,
   type WhiteboardElementAddedOperation,
+  type WhiteboardRuntimeOperationV1,
   type WhiteboardRuntimePayloadV1,
 } from '@/lib/whiteboard/runtime/types';
 import {
@@ -62,6 +63,31 @@ function textElement(id = 'text-added', content = 'learner text'): PPTElement {
   };
 }
 
+function codeElement(
+  id = 'code-1',
+  lines = [
+    { id: 'L1', content: 'const one = 1;' },
+    { id: 'L2', content: 'const two = 2;' },
+    { id: 'L3', content: 'return one + two;' },
+    { id: 'L4', content: '' },
+  ],
+): PPTElement {
+  return {
+    id,
+    type: 'code',
+    language: 'typescript',
+    lines,
+    fileName: 'example.ts',
+    showLineNumbers: true,
+    fontSize: 14,
+    left: 100,
+    top: 120,
+    width: 500,
+    height: 300,
+    rotate: 0,
+  };
+}
+
 function payload(overrides: Partial<LegacyPayload> = {}): LegacyPayload {
   return {
     payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
@@ -87,6 +113,13 @@ function elementPayload(
     operationId,
     operation: { kind: 'element_added', element },
   };
+}
+
+function operationPayload(
+  operationId: string,
+  operation: WhiteboardRuntimeOperationV1,
+): WhiteboardRuntimePayloadV1 {
+  return { payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION, operationId, operation };
 }
 
 function record(seq: number, value: WhiteboardRuntimePayloadV1 = payload()): RuntimeRecord {
@@ -136,6 +169,201 @@ describe('whiteboard RuntimeStore payload contract', () => {
             rotate: 0,
           },
         },
+      }).valid,
+    ).toBe(false);
+  });
+
+  it('does not narrow the frozen code-line contract for existing add/import operations', () => {
+    const legacyCode = codeElement('legacy-code', [
+      { id: '', content: 'first' },
+      { id: '', content: 'second' },
+    ]);
+    expect(
+      validateWhiteboardRuntimePayload(elementPayload('element-add:legacy-code', legacyCode)),
+    ).toEqual({ valid: true });
+    expect(
+      validateWhiteboardRuntimePayload(
+        payload({
+          operation: {
+            ...payload().operation,
+            whiteboard: board({ elements: [legacyCode] }),
+          },
+        }),
+      ),
+    ).toEqual({ valid: true });
+  });
+
+  it('accepts only exact destructive and line-edit operation shapes', () => {
+    for (const candidate of [
+      operationPayload('delete:one', { kind: 'element_deleted', elementId: 'text-1' }),
+      operationPayload('clear:one', { kind: 'elements_cleared' }),
+      operationPayload('edit:after', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: { kind: 'insert_after', lineId: 'L1', lines: [{ id: 'L1.5', content: '' }] },
+      }),
+      operationPayload('edit:before', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: { kind: 'insert_before', lineId: 'L2', lines: [{ id: 'L1.9', content: ' ' }] },
+      }),
+      operationPayload('edit:delete', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: { kind: 'delete_lines', lineIds: ['L1', 'L3'] },
+      }),
+      operationPayload('edit:replace', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: {
+          kind: 'replace_lines',
+          lineIds: ['L3', 'L1'],
+          lines: [
+            { id: 'host-1', content: '' },
+            { id: 'host-2', content: 'replacement' },
+          ],
+        },
+      }),
+      operationPayload('edit:legacy-empty-insert-target', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: { kind: 'insert_after', lineId: '', lines: [{ id: 'host-empty-1', content: '' }] },
+      }),
+      operationPayload('edit:legacy-empty-delete-target', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: { kind: 'delete_lines', lineIds: [''] },
+      }),
+      operationPayload('edit:legacy-empty-replace-target', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: {
+          kind: 'replace_lines',
+          lineIds: [''],
+          lines: [{ id: 'host-empty-2', content: 'replacement' }],
+        },
+      }),
+    ]) {
+      expect(validateWhiteboardRuntimePayload(candidate)).toEqual({ valid: true });
+    }
+
+    for (const candidate of [
+      operationPayload('delete:extra', {
+        kind: 'element_deleted',
+        elementId: 'text-1',
+        whiteboard: board(),
+      } as never),
+      operationPayload('clear:extra', { kind: 'elements_cleared', elementId: 'text-1' } as never),
+      operationPayload('edit:empty-targets', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: { kind: 'delete_lines', lineIds: [] },
+      }),
+      operationPayload('edit:duplicate-targets', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: { kind: 'delete_lines', lineIds: ['L1', 'L1'] },
+      }),
+      operationPayload('edit:empty-lines', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: { kind: 'insert_after', lineId: 'L1', lines: [] },
+      }),
+      operationPayload('edit:duplicate-lines', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: {
+          kind: 'replace_lines',
+          lineIds: ['L1'],
+          lines: [
+            { id: 'new', content: 'one' },
+            { id: 'new', content: 'two' },
+          ],
+        },
+      }),
+      operationPayload('edit:extra-line-key', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: {
+          kind: 'insert_before',
+          lineId: 'L1',
+          lines: [{ id: 'new', content: 'one', extra: true } as never],
+        },
+      }),
+      operationPayload('edit:unsafe-line', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: { kind: 'delete_lines', lineIds: ['unsafe\u0000line'] },
+      }),
+      operationPayload('edit:unsafe-new-line', {
+        kind: 'code_lines_edited',
+        elementId: 'code-1',
+        edit: { kind: 'insert_after', lineId: 'L1', lines: [{ id: '', content: 'new' }] },
+      }),
+    ]) {
+      expect(validateWhiteboardRuntimePayload(candidate).valid).toBe(false);
+    }
+  });
+
+  it('rejects non-enumerable line and target array entries instead of laundering them', () => {
+    const hiddenLines = [{ id: 'host-line', content: 'new' }];
+    Object.defineProperty(hiddenLines, '0', {
+      value: hiddenLines[0],
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
+    expect(
+      validateWhiteboardRuntimePayload(
+        operationPayload('edit:hidden-lines', {
+          kind: 'code_lines_edited',
+          elementId: 'code-1',
+          edit: { kind: 'insert_after', lineId: 'L1', lines: hiddenLines },
+        }),
+      ).valid,
+    ).toBe(false);
+
+    const hiddenLineIds = ['L1'];
+    Object.defineProperty(hiddenLineIds, '0', {
+      value: hiddenLineIds[0],
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
+    expect(
+      validateWhiteboardRuntimePayload(
+        operationPayload('edit:hidden-targets', {
+          kind: 'code_lines_edited',
+          elementId: 'code-1',
+          edit: { kind: 'delete_lines', lineIds: hiddenLineIds },
+        }),
+      ).valid,
+    ).toBe(false);
+  });
+
+  it('rejects inherited and symbol-key line edit fields', () => {
+    const inheritedEdit = Object.create({ kind: 'delete_lines', lineIds: ['L1'] });
+    expect(
+      validateWhiteboardRuntimePayload({
+        ...operationPayload('edit:inherited', {
+          kind: 'code_lines_edited',
+          elementId: 'code-1',
+          edit: { kind: 'delete_lines', lineIds: ['L1'] },
+        }),
+        operation: { kind: 'code_lines_edited', elementId: 'code-1', edit: inheritedEdit },
+      }).valid,
+    ).toBe(false);
+
+    const symbolEdit = { kind: 'delete_lines', lineIds: ['L1'] };
+    Object.defineProperty(symbolEdit, Symbol('hidden'), { value: true, enumerable: true });
+    expect(
+      validateWhiteboardRuntimePayload({
+        ...operationPayload('edit:symbol', {
+          kind: 'code_lines_edited',
+          elementId: 'code-1',
+          edit: { kind: 'delete_lines', lineIds: ['L1'] },
+        }),
+        operation: { kind: 'code_lines_edited', elementId: 'code-1', edit: symbolEdit },
       }).valid,
     ).toBe(false);
   });
@@ -437,6 +665,128 @@ describe('whiteboard RuntimeStore fold', () => {
         record(1, elementPayload('element-add:two')),
       ]),
     ).rejects.toThrow('WHITEBOARD_RUNTIME_ELEMENT_ALREADY_EXISTS');
+  });
+
+  it('deletes one element and clears all elements without changing board metadata', async () => {
+    const imported = payload({
+      operation: {
+        ...payload().operation,
+        whiteboard: board({
+          elements: [textElement('text-1'), codeElement()],
+          background: { type: 'solid', color: '#123456' },
+          script: 'preserve me',
+        }),
+      },
+    });
+    const deleted = await foldWhiteboardRuntimeRecords('session-1', [
+      record(0, imported),
+      record(1, operationPayload('delete:text', { kind: 'element_deleted', elementId: 'text-1' })),
+    ]);
+    expect(deleted.whiteboard).toMatchObject({
+      id: 'board-1',
+      background: { type: 'solid', color: '#123456' },
+      script: 'preserve me',
+      elements: [{ id: 'code-1' }],
+    });
+
+    const cleared = await foldWhiteboardRuntimeRecords('session-1', [
+      record(0, imported),
+      record(1, operationPayload('clear:all', { kind: 'elements_cleared' })),
+    ]);
+    expect(cleared.whiteboard).toEqual({ ...imported.operation.whiteboard, elements: [] });
+    expect(cleared.whiteboard).not.toBeNull();
+  });
+
+  it('matches Legacy line-edit ordering while preserving host replacement IDs and code metadata', async () => {
+    const imported = payload({
+      operation: {
+        ...payload().operation,
+        whiteboard: board({ elements: [codeElement()] }),
+      },
+    });
+    const edited = await foldWhiteboardRuntimeRecords('session-1', [
+      record(0, imported),
+      record(
+        1,
+        operationPayload('edit:noncontiguous', {
+          kind: 'code_lines_edited',
+          elementId: 'code-1',
+          edit: {
+            kind: 'replace_lines',
+            lineIds: ['L3', 'L1'],
+            lines: [
+              { id: 'host-A', content: '' },
+              { id: 'host-B', content: 'two' },
+              { id: 'host-C', content: 'three' },
+            ],
+          },
+        }),
+      ),
+    ]);
+    expect(edited.whiteboard?.elements[0]).toMatchObject({
+      id: 'code-1',
+      type: 'code',
+      language: 'typescript',
+      fileName: 'example.ts',
+      showLineNumbers: true,
+      fontSize: 14,
+      lines: [
+        { id: 'L2', content: 'const two = 2;' },
+        { id: 'L4', content: '' },
+        { id: 'host-A', content: '' },
+        { id: 'host-B', content: 'two' },
+        { id: 'host-C', content: 'three' },
+      ],
+    });
+  });
+
+  it('supports insert-before/after, delete-all, and fewer replacement lines', async () => {
+    const imported = payload({
+      operation: { ...payload().operation, whiteboard: board({ elements: [codeElement()] }) },
+    });
+    const result = await foldWhiteboardRuntimeRecords('session-1', [
+      record(0, imported),
+      record(
+        1,
+        operationPayload('edit:before', {
+          kind: 'code_lines_edited',
+          elementId: 'code-1',
+          edit: { kind: 'insert_before', lineId: 'L2', lines: [{ id: 'B', content: 'before' }] },
+        }),
+      ),
+      record(
+        2,
+        operationPayload('edit:after', {
+          kind: 'code_lines_edited',
+          elementId: 'code-1',
+          edit: { kind: 'insert_after', lineId: 'L2', lines: [{ id: 'A', content: 'after' }] },
+        }),
+      ),
+      record(
+        3,
+        operationPayload('edit:fewer', {
+          kind: 'code_lines_edited',
+          elementId: 'code-1',
+          edit: {
+            kind: 'replace_lines',
+            lineIds: ['L1', 'L2'],
+            lines: [{ id: 'replacement-only', content: '' }],
+          },
+        }),
+      ),
+      record(
+        4,
+        operationPayload('edit:delete-all', {
+          kind: 'code_lines_edited',
+          elementId: 'code-1',
+          edit: {
+            kind: 'delete_lines',
+            lineIds: ['replacement-only', 'B', 'A', 'L3', 'L4'],
+          },
+        }),
+      ),
+    ]);
+    expect(result.whiteboard?.elements[0]).toMatchObject({ type: 'code', lines: [] });
   });
 
   it('fails closed on conflicting duplicate, sequence, and session identity', async () => {

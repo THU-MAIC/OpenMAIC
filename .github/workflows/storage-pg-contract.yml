@@ -62,3 +62,6 @@ jobs:
             --outputFile.json="$STORAGE_VITEST_RESULTS"
           node scripts/assert-pg-contract-suites.mjs "$STORAGE_VITEST_RESULTS" \
             --baseline "$STORAGE_PG_BASELINE"
+
+      - name: Whiteboard RuntimeStore PostgreSQL app-domain contract
+        run: pnpm exec vitest run tests/lib/whiteboard/runtime-store.pg.test.ts
