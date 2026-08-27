@@ -58,13 +58,15 @@ export const HOST_AGENT_LIFECYCLE = {
    *     multiSelect?: boolean
    *   }
    *
-   * The user answers through the ordinary message channel (postUserMessage),
-   * which requeues the session for a new run; there is deliberately NO
+   * The user answers through a nonblank ordinary message (postUserMessage),
+   * which requeues the session for a new run; a textless material attachment
+   * stays queued behind the question. There is deliberately NO
    * answer-correlation id — the question is a UI affordance (a question card,
    * `components/workbench/chat/question-card.tsx`, plus the pinned panel above
-   * the composer), and the answer is simply the next user message, which is
-   * also what retires it. An old frontend that does not know this type ignores
-   * it (the chat fold's default case) and loses nothing but the affordance.
+   * the composer), and the answer is simply the next nonblank user message,
+   * which is also what retires it. An old frontend that does not know this
+   * type ignores it (the chat fold's default case) and loses nothing but the
+   * affordance.
    */
   userQuestion: 'user_question',
   /**

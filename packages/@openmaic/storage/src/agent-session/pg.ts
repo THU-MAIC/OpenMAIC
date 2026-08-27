@@ -470,6 +470,25 @@ export class PgAgentSessionStore
     const staleBefore = this.clock() - options.leaseTtlMs;
     const params: unknown[] = [staleBefore, workerId, options.maxAttempts + 1];
     const targeted = options.sessionId ? ` AND id = $${params.push(options.sessionId)}` : '';
+    // A successful ask_user is durable in the event log before the run settles.
+    // Textless user messages may carry newly attached materials, but they are
+    // not answers. Keep such work queued until a later nonblank user message
+    // answers or supersedes the question. This predicate is repeated after the
+    // row lock below; the locked check is the authority, while this one keeps
+    // fenced rows out of the optimistic candidate batch.
+    const askAdmission = `
+         AND (cancel_requested_at IS NOT NULL OR NOT EXISTS (
+           SELECT 1 FROM ${this.table('events')} question
+           WHERE question.session_id = ${this.table('sessions')}.id
+             AND question.type = '${AGENT_SESSION_LIFECYCLE.userQuestion}'
+             AND NOT EXISTS (
+               SELECT 1 FROM ${this.table('events')} answer
+               WHERE answer.session_id = question.session_id
+                 AND answer.seq > question.seq
+                 AND answer.type = '${AGENT_SESSION_LIFECYCLE.userMessage}'
+                 AND length(btrim(COALESCE(answer.data->>'text', ''))) > 0
+             )
+         ))`;
     const candidates = await this.queryable.query<{ id: string }>(
       `SELECT id FROM ${this.table('sessions')}
        WHERE deleted_at IS NULL
@@ -477,7 +496,7 @@ export class PgAgentSessionStore
               (status = 'running'
                AND (lease_heartbeat_at IS NULL OR lease_heartbeat_at < $1)
                AND (lease_worker_id IS NULL OR lease_worker_id <> $2)))
-         AND (attempt < $3 OR status = 'running')${targeted}
+         AND (attempt < $3 OR status = 'running')${askAdmission}${targeted}
        ORDER BY created_at LIMIT 5`,
       params,
     );
@@ -495,6 +514,7 @@ export class PgAgentSessionStore
                    AND (lease_heartbeat_at IS NULL OR lease_heartbeat_at < $2)
                    AND (lease_worker_id IS NULL OR lease_worker_id <> $3)))
              AND (attempt < $4 OR status = 'running')
+             ${askAdmission}
            FOR UPDATE`,
           [candidate.id, staleBefore, workerId, options.maxAttempts + 1],
         );
@@ -787,7 +807,25 @@ export class PgAgentSessionStore
       if (options.expectedOwnerId && parent.owner_id !== options.expectedOwnerId) {
         throw new AgentSessionAccessError(sessionId);
       }
-      const live = parent.status === 'running';
+      const pendingAsk = await tx.query<{ pending: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM ${this.table('events')} question
+           WHERE question.session_id = $1
+             AND question.type = $2
+             AND NOT EXISTS (
+               SELECT 1 FROM ${this.table('events')} answer
+               WHERE answer.session_id = question.session_id
+                 AND answer.seq > question.seq
+                 AND answer.type = $3
+                 AND length(btrim(COALESCE(answer.data->>'text', ''))) > 0
+             )
+         ) AS pending`,
+        [sessionId, AGENT_SESSION_LIFECYCLE.userQuestion, AGENT_SESSION_LIFECYCLE.userMessage],
+      );
+      // Once ask_user is durable, even a textual answer belongs to the next
+      // turn. Label it queued so the UI and wake drain do not promise a steer
+      // into the run whose terminal question it is answering.
+      const live = parent.status === 'running' && pendingAsk.rows[0]?.pending !== true;
       const delivery = live ? 'steer' : 'queued';
       const seq = await this.insertEvent(tx, sessionId, {
         ts: this.clock(),

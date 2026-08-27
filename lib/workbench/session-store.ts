@@ -752,17 +752,21 @@ function settleStreamingThinking(chat: ChatNode[], ts: number): ChatNode[] {
  * Retire every question card above a user message that is about to land.
  *
  * `ask_user` has no answer-correlation id on purpose (the answer is simply the
- * next message through `postUserMessage`), so this is the whole of what the log
- * can tell us: a user message BELOW a question card means that question has
- * been answered — by its buttons, by typing, or by ignoring it and saying
- * something else entirely. All three make the card history, and none of them
- * should leave live buttons on the timeline.
+ * next nonblank message through `postUserMessage`), so this is the whole of
+ * what the log can tell us: nonblank user text BELOW a question card means that
+ * question has been answered — by its buttons, by typing, or by ignoring it
+ * and saying something else entirely. All three make the card history, and
+ * none of them should leave live buttons on the timeline. A textless material
+ * attachment is queued context, not an answer.
  *
  * Being part of the fold rather than a component effect is what makes a cold
  * replay agree with the live session: a historical card is already answered
  * when it is first painted, so it never flashes as clickable.
  */
-function answerOpenQuestions(chat: ChatNode[]): ChatNode[] {
+function answerOpenQuestions(chat: ChatNode[], answerText: unknown): ChatNode[] {
+  // A textless user event is an implicit material attachment. It stays queued
+  // behind ask_user and must not make the durable question look answered.
+  if (!String(answerText ?? '').trim()) return chat;
   if (!chat.some((n) => n.kind === 'question' && !n.questionAnswered)) return chat;
   return chat.map((n) =>
     n.kind === 'question' && !n.questionAnswered ? { ...n, questionAnswered: true } : n,
@@ -972,7 +976,7 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       if (!openingAlreadyPainted) {
         const startCourseRefs = parseCourseRefs(data.courseRefs);
         next.chat = [
-          ...answerOpenQuestions(state.chat),
+          ...answerOpenQuestions(state.chat, startPrompt),
           {
             key: `${key}-u`,
             kind: 'user',
@@ -1071,7 +1075,11 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       // the message between steps — the quiet line sets that expectation.
       // `delivery: 'queued'` means the session was idle and the message drives
       // a new run; the bubble alone carries it (the header says the rest).
-      const steer = data.delivery === 'steer';
+      const messageText = String(data.text ?? '');
+      const blockedByQuestion =
+        !messageText.trim() &&
+        state.chat.some((node) => node.kind === 'question' && !node.questionAnswered);
+      const steer = data.delivery === 'steer' && !blockedByQuestion;
       // Two shapes exist in the durable log: structured {path, originalName}
       // and the first PR4 build's string form `materials/x.pdf (display name)`.
       const attachments = Array.isArray(data.materials)
@@ -1094,11 +1102,11 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       // session-level list of what the conversation is "about".
       const courseRefs = parseCourseRefs(data.courseRefs);
       next.chat = [
-        ...answerOpenQuestions(state.chat),
+        ...answerOpenQuestions(state.chat, messageText),
         {
           key,
           kind: 'user',
-          text: String(data.text ?? ''),
+          text: messageText,
           ...(attachments.length ? { materials: attachments } : {}),
           ...(elementRefs.length ? { elementRefs } : {}),
           ...(courseRefs.length ? { courseRefs } : {}),
@@ -1115,12 +1123,15 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
             ]
           : []),
       ];
+      // The attachment bubble is the durable pending receipt. No run is
+      // admitted while blockedByQuestion, so do not paint a thinking gap or
+      // claim that the current run will steer it.
       if (steer) {
         // The current step is still active (the side note says exactly that):
         // opening the gap bar over live streaming text would be a lie, so it
         // is ARMED and opens at the next step boundary instead.
         next.waitingArmed = true;
-      } else {
+      } else if (!blockedByQuestion) {
         next.generationOpen = true;
         openWaiting(next, `${key}-w`, event.ts);
       }

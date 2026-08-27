@@ -39,6 +39,13 @@ const toolResult = () =>
     toolName: 'finish',
     content: [{ type: 'text', text: 'Done' }],
   }) as unknown as AgentMessage;
+const askUserResult = () =>
+  ({
+    role: 'toolResult',
+    toolCallId: 'ask-1',
+    toolName: 'ask_user',
+    content: [{ type: 'text', text: 'Question sent.' }],
+  }) as unknown as AgentMessage;
 
 describe('planRunStart', () => {
   it('uses the original prompt on a first run', () => {
@@ -82,6 +89,19 @@ describe('planRunStart', () => {
         prompt: 'Start',
       }),
     ).toEqual({ kind: 'continue' });
+  });
+
+  it('prompts an answer after an ask checkpoint even when the claim is orphaned', () => {
+    const plan = planResume([user('Start'), askUserResult()]);
+    expect(plan.kind).toBe('already-complete');
+    expect(
+      planRunStart({
+        plan,
+        claimReason: 'orphaned',
+        pending: [{ text: 'Continue' }],
+        prompt: 'Start',
+      }),
+    ).toEqual({ kind: 'prompt', text: 'Continue' });
   });
 });
 

@@ -1231,6 +1231,26 @@ describe('user_question (the ask_user card)', () => {
     expect(contentOf(answered).at(-1)).toMatchObject({ kind: 'user', text: '算了，换个话题' });
   });
 
+  it('a textless material attachment stays pending behind the open question', () => {
+    const state = foldAll([
+      question({ question: 'Continue?', options: [{ id: 'yes', label: 'Yes' }] }),
+      ev('user_message', {
+        text: '',
+        delivery: 'queued',
+        materials: [{ materialId: 'material-1', originalName: 'notes.pdf' }],
+      }),
+    ]);
+
+    expect(state.chat.find((node) => node.kind === 'question')?.questionAnswered).toBeUndefined();
+    expect(contentOf(state).at(-1)).toMatchObject({
+      kind: 'user',
+      text: '',
+      materials: ['notes.pdf'],
+    });
+    expect(state.generationOpen).toBe(false);
+    expect(state.chat.some((node) => node.kind === 'waiting')).toBe(false);
+  });
+
   it('a second question is live while the first one is already answered', () => {
     const state = foldAll([
       ev('session_start', { prompt: 'p' }),

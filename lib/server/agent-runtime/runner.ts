@@ -791,6 +791,12 @@ export function planRunStart(input: {
     }
     return { kind: 'prompt', text: input.prompt };
   }
+  if (input.plan.kind === 'already-complete' && input.pending.length > 0) {
+    // A worker may die after the successful ask_user checkpoint but before
+    // finishSession. Once a nonblank answer clears the durable claim gate, the
+    // takeover is technically orphaned but semantically starts the next turn.
+    return { kind: 'prompt', text: composeFollowUpText(input.pending[0]!) };
+  }
   if (input.claimReason === 'queued' && input.pending.length > 0) {
     return { kind: 'prompt', text: composeFollowUpText(input.pending[0]!) };
   }
@@ -804,11 +810,15 @@ export function shouldTerminateAfterToolCall(toolName: string, isError: boolean)
 /** Make successful ask_user termination sticky across a mixed tool batch. */
 export function createAskUserTerminateLatch(): {
   shouldTerminate(toolName: string, isError: boolean): boolean;
+  isCommitted(): boolean;
 } {
   let committed = false;
   return {
     shouldTerminate(toolName, isError) {
       if (shouldTerminateAfterToolCall(toolName, isError)) committed = true;
+      return committed;
+    },
+    isCommitted() {
       return committed;
     },
   };
@@ -1238,8 +1248,15 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       source: 'agent-runtime',
       abortSignal: abort.signal,
     });
+    let questionEmitted = false;
     const askUserTool = buildAskUserTool({
-      onUserQuestion: (question) => emit(LIFECYCLE.userQuestion, question),
+      onUserQuestion: (question) => {
+        // Fence the live steer drain at the same instant the question enters
+        // the durable write chain. afterToolCall commits the terminal latch a
+        // moment later; either fact means no follow-up belongs in this run.
+        questionEmitted = true;
+        emit(LIFECYCLE.userQuestion, question);
+      },
     });
     // web_search is capability-registered: the tool exists in the toolset
     // exactly when this deployment has a working web-search backend. An
@@ -1505,6 +1522,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       return cursor.idle ? users : Math.max(0, users - 1);
     };
     const drainMessages = async (): Promise<number> => {
+      if (questionEmitted || askUserLatch.isCommitted()) return 0;
       // These reads deliberately avoid a shared transaction: a message added
       // between them is left for the next serialized drain, while the lease
       // snapshot prevents steering after ownership has already changed.
@@ -1668,6 +1686,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       for (;;) {
         await agent.waitForIdle();
         if (abort.signal.aborted) break;
+        if (questionEmitted || askUserLatch.isCommitted()) break;
         const before = steeredThisAttempt;
         const delivered = await requestDrain();
         if (abort.signal.aborted) break;

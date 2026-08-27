@@ -39,6 +39,26 @@ export function runAgentSessionStoreContract(
   makeStore: () => AgentSessionContractStore,
 ): void {
   describe(`AgentSessionStore contract: ${name}`, () => {
+    async function settleOnQuestion(store: AgentSessionContractStore): Promise<void> {
+      await store.createSession(makeAgentSessionInput());
+      const claim = await store.claimNextSession('ask-worker', 101, {
+        leaseTtlMs: 10_000,
+        maxAttempts: 3,
+      });
+      expect(claim).not.toBeNull();
+      await store.appendRunEvent('session-1', 'ask-worker', {
+        ts: 2,
+        attempt: claim!.attempt,
+        type: AGENT_SESSION_LIFECYCLE.userQuestion,
+        data: { question: 'Continue?' },
+      });
+      await store.finishSession('session-1', 'ask-worker', {
+        status: 'succeeded',
+        resetAttempt: true,
+        expectedAttempt: claim!.attempt,
+      });
+    }
+
     test('creates, reads, and lists sessions', async () => {
       const store = makeStore();
       const created = await store.createSession(
@@ -125,6 +145,73 @@ export function runAgentSessionStoreContract(
         status: 'succeeded',
         attempt: 0,
       });
+    });
+
+    test('keeps a material-only message queued behind an outstanding ask', async () => {
+      const store = makeStore();
+      await settleOnQuestion(store);
+
+      await store.postUserMessage('session-1', {
+        text: '',
+        materials: [{ materialId: 'material-1', originalName: 'notes.pdf' }],
+      });
+
+      expect(await store.getSession('session-1')).toMatchObject({ status: 'queued' });
+      await expect(
+        store.claimNextSession('material-worker', 102, {
+          leaseTtlMs: 10_000,
+          maxAttempts: 3,
+        }),
+      ).resolves.toBeNull();
+    });
+
+    test('an answer after queued material resumes the ask exactly once', async () => {
+      const store = makeStore();
+      await settleOnQuestion(store);
+      await store.postUserMessage('session-1', {
+        text: '',
+        materials: [{ materialId: 'material-1' }],
+      });
+      await store.postUserMessage('session-1', { text: 'Continue' });
+
+      const resumed = await store.claimNextSession('answer-worker', 102, {
+        leaseTtlMs: 10_000,
+        maxAttempts: 3,
+      });
+      expect(resumed).toMatchObject({ id: 'session-1', claimReason: 'queued' });
+      await expect(
+        store.claimNextSession('duplicate-worker', 103, {
+          leaseTtlMs: 10_000,
+          maxAttempts: 3,
+        }),
+      ).resolves.toBeNull();
+    });
+
+    test('a plain user message deterministically supersedes an outstanding ask', async () => {
+      const store = makeStore();
+      await settleOnQuestion(store);
+      await store.postUserMessage('session-1', { text: 'Ignore that; change the title instead.' });
+
+      const resumed = await store.claimNextSession('supersede-worker', 102, {
+        leaseTtlMs: 10_000,
+        maxAttempts: 3,
+      });
+      expect(resumed).toMatchObject({ id: 'session-1', claimReason: 'queued' });
+    });
+
+    test('a pending cancellation outranks the outstanding-ask claim fence', async () => {
+      const store = makeStore();
+      await settleOnQuestion(store);
+      await store.postUserMessage('session-1', { text: '', materials: [{ materialId: 'm1' }] });
+      await store.requestCancel('session-1');
+
+      await expect(
+        store.claimNextSession('cancel-worker', 102, {
+          leaseTtlMs: 10_000,
+          maxAttempts: 3,
+        }),
+      ).resolves.toBeNull();
+      expect(await store.getSession('session-1')).toMatchObject({ status: 'cancelled' });
     });
 
     test('appends ordered events and compacts only middle message updates on replay', async () => {
