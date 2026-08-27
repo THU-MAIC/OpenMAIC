@@ -3,8 +3,6 @@
 /**
  * "This classroom is hosted inside the workbench panel" — ambient context.
  *
- * NOTE (chat slice): ported as-is so the chat surface and its tests can run;
- * the sibling data-layer slice owns this module and supersedes this copy.
  */
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import type { WorkbenchMaterial } from './session-store';

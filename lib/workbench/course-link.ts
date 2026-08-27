@@ -7,17 +7,9 @@
  * What is left here is the fold's arithmetic and the one bridge from agent prose
  * to a course id — both genuinely pure, both worth testing without a DOM.
  *
- * NOTE (chat slice): ported as-is so the chat surface and its tests can run;
- * the sibling data-layer slice owns this module (and `workspace-panes.ts`,
- * which supplies `WORKSPACE_COURSE_PARAM`) and supersedes this copy.
  */
 
-/**
- * The workspace's own URL param for the course shown in the right pane. Defined
- * inline here so this module stays standalone; the workspace-panes slice owns
- * the authoritative constant.
- */
-const WORKSPACE_COURSE_PARAM = 'course';
+import { WORKSPACE_COURSE_PARAM } from './workspace-panes';
 
 /**
  * How many of one exchange's classroom cards are painted before the rest fold

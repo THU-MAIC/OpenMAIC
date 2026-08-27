@@ -12,8 +12,6 @@
  * store and no cap (`lib/workbench/composer-skills`). Do not "unify" the two;
  * they model different things.
  *
- * NOTE (chat slice): ported as-is so the chat surface and its tests can run;
- * the sibling data-layer slice owns this module and supersedes this copy.
  */
 
 import { tokenAtCaret } from './composer-tokens';

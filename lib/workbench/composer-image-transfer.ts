@@ -3,8 +3,6 @@
  * turning pasted or dropped images into uploads without hijacking ordinary
  * text paste.
  *
- * NOTE (chat slice): ported as-is so the chat surface can run; the sibling
- * data-layer slice owns this module and supersedes this copy.
  */
 interface ComposerTransferItem {
   kind: string;
