@@ -382,7 +382,7 @@ export function ClassroomSurface({
               </div>
             </div>
           ) : (
-            <Stage onRetryOutline={retrySingleOutline} />
+            <Stage classroomId={classroomId} onRetryOutline={retrySingleOutline} />
           )}
         </div>
       </MediaStageProvider>

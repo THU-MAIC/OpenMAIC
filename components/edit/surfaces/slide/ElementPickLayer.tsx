@@ -78,7 +78,8 @@ export function ElementPickLayer() {
   const dragRef = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
   const moveRafRef = useRef<number | null>(null);
 
-  const cueType = pickTarget?.cueType;
+  const cueTarget = pickTarget?.purpose === 'element-ref' ? null : pickTarget;
+  const cueType = cueTarget?.cueType;
   const elements = useMemo<ElementLite[]>(
     () =>
       (scene?.content as { canvas?: { elements?: ElementLite[] } } | undefined)?.canvas?.elements ??
@@ -87,7 +88,7 @@ export function ElementPickLayer() {
   );
   const currentBound =
     (
-      scene?.actions?.find((a) => a.id === pickTarget?.actionId) as
+      scene?.actions?.find((a) => a.id === cueTarget?.actionId) as
         | { elementId?: string }
         | undefined
     )?.elementId ?? '';
@@ -108,7 +109,7 @@ export function ElementPickLayer() {
   const bind = useCallback(
     (elementId: string) => {
       const pt = useCanvasStore.getState().pickTarget;
-      if (!pt) return;
+      if (!pt || pt.purpose === 'element-ref') return;
       const sc = useStageStore.getState().scenes.find((s) => s.id === pt.sceneId);
       if (sc) {
         // Bind by actionId — index-stale-safe against concurrent reorder/delete.
@@ -154,7 +155,7 @@ export function ElementPickLayer() {
       window.removeEventListener('scroll', onResize, true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pickTarget?.sceneId, pickTarget?.actionId, elements.length]);
+  }, [cueTarget?.sceneId, cueTarget?.actionId, elements.length]);
 
   useEffect(() => {
     if (!pickTarget) return;
@@ -182,9 +183,9 @@ export function ElementPickLayer() {
     [],
   );
 
-  if (!pickTarget) return null;
+  if (!cueTarget) return null;
 
-  const typeLabel = cueLabel(pickTarget.cueType, t);
+  const typeLabel = cueLabel(cueTarget.cueType, t);
 
   // Hit-test on mousemove, coalesced to one rAF per frame.
   const onCanvasMove = (e: React.MouseEvent) => {

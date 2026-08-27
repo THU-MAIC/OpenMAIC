@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { useCanvasStore, useStageStore } from '@/lib/store';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
-import { isCurrentSceneEditable } from '@/lib/edit/stage-mode';
+import { isCurrentSceneEditable, resolveStageChromeMode } from '@/lib/edit/stage-mode';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
 import type { SceneEditorSurface } from '@/lib/edit/scene-editor-surface';
 import type { SceneType } from '@/lib/types/stage';
@@ -85,6 +85,35 @@ describe('isCurrentSceneEditable', () => {
         hasCurrentScene: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe('workspace classroom chrome', () => {
+  const eligible = {
+    storedMode: 'playback' as const,
+    hosted: true,
+    workbenchShowingClassroom: true,
+    isEditable: true,
+    hasCurrentScene: true,
+    stageMatchesHost: true,
+    editorReady: true,
+    editorLoadFailed: false,
+  };
+
+  test('opens a hosted course in edit presentation even when the classroom store says playback', () => {
+    expect(resolveStageChromeMode(eligible)).toBe('edit');
+  });
+
+  test('Start Learning is the explicit hosted transition back to playback', () => {
+    expect(resolveStageChromeMode({ ...eligible, workbenchShowingClassroom: false })).toBe(
+      'playback',
+    );
+  });
+
+  test('standalone classrooms keep their own stored presentation', () => {
+    expect(resolveStageChromeMode({ ...eligible, hosted: false, storedMode: 'autonomous' })).toBe(
+      'autonomous',
+    );
   });
 });
 

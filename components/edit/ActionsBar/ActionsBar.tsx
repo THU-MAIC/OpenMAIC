@@ -1286,10 +1286,17 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                 dragRef.current = null;
                 setDragOver(null);
               };
-              const onPick = () =>
-                useCanvasStore
-                  .getState()
-                  .setPickTarget({ sceneId, actionId: key, cueType: action.type });
+              const onPick = () => {
+                const stageId = useStageStore.getState().stage?.id;
+                if (!stageId) return;
+                useCanvasStore.getState().setPickTarget({
+                  purpose: 'cue',
+                  stageId,
+                  sceneId,
+                  actionId: key,
+                  cueType: action.type,
+                });
+              };
               const dot = (
                 <NodeDot
                   action={action}
