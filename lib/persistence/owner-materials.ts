@@ -18,8 +18,9 @@
  * the owner's active source materials), streams its bytes into the asset
  * registry through a sha256 meter, then finalizes the row to `'ready'` with the
  * digest. A failed upload abandons the row; a process death leaves `uploading`
- * rows behind, which the next upload's 24-hour lazy sweep deletes (and its
- * caller best-effort removes the orphaned bytes).
+ * rows behind, which the next upload's 24-hour reclaim removes -- its asset
+ * entry first, then the reservation, so a crash mid-reclaim never loses the
+ * pointer to the bytes.
  */
 import type { Queryable } from '@openmaic/storage/document/pg';
 import {
@@ -72,7 +73,6 @@ export class MaterialQuotaExceededError extends Error {
   constructor(
     readonly quota: 'count' | 'bytes',
     readonly maximum: number,
-    readonly stale: Array<{ id: string; assetId: string }> = [],
   ) {
     super(
       quota === 'count'
@@ -208,30 +208,90 @@ export function publicMaterial(record: OwnerMaterialRecord): OwnerMaterialView {
 const STALE_UPLOAD_AGE_MS = 24 * 60 * 60 * 1_000;
 
 /**
+ * Per-owner advisory-lock key that serializes quota reservations.
+ *
+ * The key namespaces the owner's id so two concurrent uploads for the same
+ * owner queue behind the same transaction-scoped lock (see
+ * {@link registerOwnerMaterial}). It deliberately differs from the asset
+ * registry's own per-principal lock key: reserving a material and storing its
+ * bytes are separate transactions, so sharing a key would only couple them
+ * without adding safety.
+ */
+export function ownerMaterialQuotaLockKey(ownerId: string): string {
+  return `owner-materials:${ownerId}:quota`;
+}
+
+/**
+ * Reclaim uploads that crashed before finalize and are older than the sweep
+ * horizon.
+ *
+ * Order is load-bearing: each stale reservation's asset entry is removed
+ * first, and only then is the reservation deleted. Deleting the reservation
+ * first would lose the pointer to its bytes on a crash between the two, so the
+ * asset entry would keep consuming the owner's asset quota forever. A
+ * reservation whose asset removal throws is left in place (still quota-counted)
+ * and the next pass retries it.
+ *
+ * @param removeAsset Reclaims one recorded asset id; must resolve when the
+ *   entry is removed or confirmed already absent, and throw to keep the
+ *   reservation for the next pass.
+ */
+export async function reclaimStaleOwnerMaterialUploads(
+  queryable: Queryable,
+  ownerId: string,
+  removeAsset: (assetId: string) => Promise<void>,
+): Promise<void> {
+  const staleBefore = Date.now() - STALE_UPLOAD_AGE_MS;
+  const stale = await queryable.query<{ id: string; asset_id: string }>(
+    `SELECT id, asset_id
+       FROM owner_material
+      WHERE owner_id = $1
+        AND status = 'uploading'
+        AND created_at < $2`,
+    [ownerId, staleBefore],
+  );
+  for (const row of stale.rows) {
+    if (row.asset_id !== '') {
+      try {
+        await removeAsset(row.asset_id);
+      } catch {
+        // The asset entry is not confirmed gone; keep the reservation so the
+        // next pass retries with the pointer intact.
+        continue;
+      }
+    }
+    await queryable.query(
+      `DELETE FROM owner_material
+        WHERE id = $1 AND status = 'uploading'`,
+      [row.id],
+    );
+  }
+}
+
+/**
  * Reserve one uploading row under the owner's quota.
  *
- * Runs in a transaction: the 24-hour lazy sweep of stale `uploading` rows, the
- * quota check, and the INSERT are one unit, so concurrent uploads cannot
- * double-spend the owner's quota. Returns the swept stale rows so the caller
- * can best-effort delete their orphaned asset-registry bytes.
+ * Runs in a transaction that takes a transaction-scoped advisory lock keyed on
+ * the owner before the quota read. Under READ COMMITTED the aggregate quota
+ * query alone locks no row, so without the lock two concurrent uploads could
+ * both observe the same remaining slot or bytes and both insert, overshooting
+ * the configured boundary; the lock makes the read-check-insert one critical
+ * section per owner. Stale `uploading` rows from crashed uploads are reclaimed
+ * by the caller via {@link reclaimStaleOwnerMaterialUploads} before this call.
  */
 export async function registerOwnerMaterial(
   queryable: ConnectableQueryable,
   input: RegisterOwnerMaterialInput,
   limits: OwnerMaterialRegistrationLimits,
-): Promise<{ record: OwnerMaterialRecord; stale: Array<{ id: string; assetId: string }> }> {
-  const staleBefore = Date.now() - STALE_UPLOAD_AGE_MS;
+): Promise<OwnerMaterialRecord> {
   const withTransaction = nodePostgresTransaction(queryable);
   return withTransaction(async (tx) => {
-    const staleResult = await tx.query<RawOwnerMaterialRow>(
-      `DELETE FROM owner_material
-        WHERE owner_id = $1
-          AND status = 'uploading'
-          AND created_at < $2
-       RETURNING ${OWNER_MATERIAL_COLUMNS}`,
-      [input.ownerId, staleBefore],
-    );
-    const stale = staleResult.rows.map((row) => ({ id: row.id, assetId: row.asset_id }));
+    // hashtextextended is 64-bit (hashtext is 32-bit and could block unrelated
+    // owners on a collision); the lock is transaction-scoped and releases on
+    // commit or rollback.
+    await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+      ownerMaterialQuotaLockKey(input.ownerId),
+    ]);
 
     const usage = await tx.query<{ count: number | string; total_bytes: number | string }>(
       `SELECT COUNT(*)::text AS count,
@@ -243,10 +303,10 @@ export async function registerOwnerMaterial(
     const count = Number(usage.rows[0]?.count ?? 0);
     const totalBytes = Number(usage.rows[0]?.total_bytes ?? 0);
     if (count >= limits.maxCount) {
-      throw new MaterialQuotaExceededError('count', limits.maxCount, stale);
+      throw new MaterialQuotaExceededError('count', limits.maxCount);
     }
     if (totalBytes + input.bytes > limits.maxTotalBytes) {
-      throw new MaterialQuotaExceededError('bytes', limits.maxTotalBytes, stale);
+      throw new MaterialQuotaExceededError('bytes', limits.maxTotalBytes);
     }
 
     const inserted = await tx.query<RawOwnerMaterialRow>(
@@ -268,8 +328,35 @@ export async function registerOwnerMaterial(
         Date.now(),
       ],
     );
-    return { record: rowToRecord(inserted.rows[0]), stale };
+    return rowToRecord(inserted.rows[0]);
   });
+}
+
+/**
+ * Bind the asset-registry id onto a still-`uploading` reservation.
+ *
+ * The upload's bytes are stored in a separate transaction from the
+ * reservation, so this is a distinct durable step between the asset `put` and
+ * {@link finalizeOwnerMaterial}. Recording the id here -- not only inside
+ * finalize -- closes the crash window in which a committed asset entry had its
+ * id recorded nowhere: the stale-upload reclaim can now see the id and remove
+ * the bytes when it reclaims the reservation.
+ */
+export async function recordOwnerMaterialAsset(
+  queryable: Queryable,
+  materialId: string,
+  assetId: string,
+): Promise<void> {
+  const result = await queryable.query<{ id: string }>(
+    `UPDATE owner_material
+        SET asset_id = $2
+      WHERE id = $1
+        AND status = 'uploading'
+        AND deleted_at IS NULL
+      RETURNING id`,
+    [materialId, assetId],
+  );
+  if (!result.rows[0]) throw new Error(`material ${materialId} cannot record its asset id`);
 }
 
 /** Finalize a successfully stored object. Reserved bytes may only shrink. */

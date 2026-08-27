@@ -17,11 +17,14 @@
  *   `maxUploadBytes`, documents/images at `min(maxDocumentBytes,
  *   maxUploadBytes)` — both 413 when exceeded, checked on the declared
  *   `content-length` AND on the streamed body.
- * - Lifecycle: the upload reserves a quota-checked `uploading` row (429 when
- *   the owner's count or byte quota is exceeded), streams the bytes through a
- *   sha256 meter into the asset registry, and finalizes the row to `ready`
- *   with the digest. Failures abandon the reservation; crash leftovers are
- *   swept by the next upload's 24-hour lazy sweep.
+ * - Lifecycle: the upload reclaims crashed `uploading` leftovers older than
+ *   24 hours (their asset entries first, then the reservations), reserves a
+ *   quota-checked `uploading` row (429 when the owner's count or byte quota is
+ *   exceeded), streams the bytes through a sha256 meter into the asset
+ *   registry, records the returned asset id onto the reservation in its own
+ *   durable step, and finalizes the row to `ready` with the digest. Failures
+ *   abandon the reservation; crash leftovers are reclaimed by the next
+ *   upload's 24-hour sweep.
  * - Every response echoes the `x-request-id` header so the uploader can pair
  *   a failure with its log line.
  *
@@ -52,6 +55,8 @@ import {
   finalizeOwnerMaterial,
   MaterialQuotaExceededError,
   publicMaterial,
+  reclaimStaleOwnerMaterialUploads,
+  recordOwnerMaterialAsset,
   registerOwnerMaterial,
 } from '@/lib/persistence/owner-materials';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
@@ -228,6 +233,35 @@ export async function POST(req: NextRequest) {
       const reservedBytes =
         Number.isFinite(declaredBytes) && declaredBytes > 0 ? declaredBytes : uploadLimit;
 
+      // Reclaim uploads that crashed before finalize and are older than the
+      // 24-hour horizon. Each reservation's asset entry (recorded in its own
+      // durable step before finalize) is removed first; the reservation is
+      // deleted only after that, so a failure here keeps the reservation for
+      // the next pass instead of losing the pointer to its bytes.
+      phase = 'reclaim_stale_uploads';
+      await reclaimStaleOwnerMaterialUploads(
+        provider.pool as unknown as ConnectableQueryable,
+        ownerId,
+        async (assetId) => {
+          try {
+            await provider.assetStore.remove(principal, assetId);
+          } catch (error) {
+            console.warn(
+              'material stale asset removal failed; keeping its reservation for the next pass',
+              context({ assetId }),
+              error,
+            );
+            throw error;
+          }
+        },
+      ).catch((error) => {
+        console.warn(
+          'material stale-upload reclaim failed; retrying on the next upload',
+          context(),
+          error,
+        );
+      });
+
       phase = 'reserve_material';
       try {
         await registerOwnerMaterial(
@@ -249,9 +283,6 @@ export async function POST(req: NextRequest) {
         );
       } catch (error) {
         if (error instanceof MaterialQuotaExceededError) {
-          for (const stale of error.stale) {
-            await provider.assetStore.remove(principal, stale.assetId).catch(() => undefined);
-          }
           return reject(
             apiError('INVALID_REQUEST', 429, error.message),
             'quota_exceeded',
@@ -311,9 +342,10 @@ export async function POST(req: NextRequest) {
       }
 
       // Put the bytes into the asset registry, then bind the returned asset id
-      // onto the reserved row. The row stays `uploading` (hidden and
-      // quota-counted) until finalize; a crash leaves it for the 24-hour lazy
-      // sweep.
+      // onto the reserved row in its own durable step BEFORE finalize. A crash
+      // after the put commits but before finalize therefore leaves the id
+      // recorded, so the 24-hour reclaim can remove the bytes when it reclaims
+      // the stale reservation.
       const hash = createHash('sha256').update(bytes).digest('hex');
       let assetId: string | null = null;
       try {
@@ -321,6 +353,11 @@ export async function POST(req: NextRequest) {
           principal,
           new Blob([new Uint8Array(bytes)], { type: mime }),
           { contentType: mime },
+        );
+        await recordOwnerMaterialAsset(
+          provider.pool as unknown as ConnectableQueryable,
+          createdMaterialId,
+          assetId,
         );
         const row = await finalizeOwnerMaterial(
           provider.pool as unknown as ConnectableQueryable,

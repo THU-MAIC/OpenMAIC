@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   listSessionMaterials: vi.fn(),
   createSourceMaterial: vi.fn(),
   registerOwnerMaterial: vi.fn(),
+  recordOwnerMaterialAsset: vi.fn(),
+  reclaimStaleOwnerMaterialUploads: vi.fn(),
   finalizeOwnerMaterial: vi.fn(),
   abandonOwnerMaterial: vi.fn(),
   assetStore: {
@@ -50,6 +52,8 @@ vi.mock('@/lib/persistence/owner-materials', async (importOriginal) => {
   return {
     ...actual,
     registerOwnerMaterial: mocks.registerOwnerMaterial,
+    recordOwnerMaterialAsset: mocks.recordOwnerMaterialAsset,
+    reclaimStaleOwnerMaterialUploads: mocks.reclaimStaleOwnerMaterialUploads,
     finalizeOwnerMaterial: mocks.finalizeOwnerMaterial,
     abandonOwnerMaterial: mocks.abandonOwnerMaterial,
   };
@@ -102,10 +106,9 @@ beforeEach(() => {
   mocks.resolveRequestOwnerId.mockReturnValue('owner-1');
   mocks.resolveOwnedSession.mockResolvedValue({ id: SESSION_ID, ownerId: 'owner-1' });
   mocks.listSessionMaterials.mockResolvedValue([material()]);
-  mocks.registerOwnerMaterial.mockResolvedValue({
-    record: ownerMaterial(),
-    stale: [],
-  });
+  mocks.registerOwnerMaterial.mockResolvedValue(ownerMaterial());
+  mocks.recordOwnerMaterialAsset.mockResolvedValue(undefined);
+  mocks.reclaimStaleOwnerMaterialUploads.mockResolvedValue(undefined);
   mocks.finalizeOwnerMaterial.mockImplementation(async (_pool: unknown, id: string) =>
     ownerMaterial({ id }),
   );
@@ -232,6 +235,22 @@ describe('POST /api/materials', () => {
       '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
       'asset-1',
     );
+    // The upload reclaims crashed leftovers before reserving, and records the
+    // returned asset id onto the reservation in its own durable step BEFORE
+    // finalize, closing the crash window between put and finalize.
+    expect(mocks.reclaimStaleOwnerMaterialUploads).toHaveBeenCalledWith(
+      expect.anything(),
+      'owner-1',
+      expect.any(Function),
+    );
+    expect(mocks.recordOwnerMaterialAsset).toHaveBeenCalledWith(
+      expect.anything(),
+      body.materialId,
+      'asset-1',
+    );
+    const recordCall = mocks.recordOwnerMaterialAsset.mock.invocationCallOrder[0]!;
+    const finalizeCall = mocks.finalizeOwnerMaterial.mock.invocationCallOrder[0]!;
+    expect(recordCall).toBeLessThan(finalizeCall);
   });
 
   it('rejects an unsupported mime type with 415', async () => {
@@ -259,14 +278,14 @@ describe('POST /api/materials', () => {
     expect(mocks.finalizeOwnerMaterial).not.toHaveBeenCalled();
   });
 
-  it('answers 429 when the owner quota is exceeded and cleans stale bytes', async () => {
+  it('answers 429 when the owner quota is exceeded', async () => {
     const { MaterialQuotaExceededError } = await import('@/lib/persistence/owner-materials');
-    mocks.registerOwnerMaterial.mockRejectedValue(
-      new MaterialQuotaExceededError('bytes', 1024, [{ id: 'mat_stale', assetId: 'asset-stale' }]),
-    );
+    mocks.registerOwnerMaterial.mockRejectedValue(new MaterialQuotaExceededError('bytes', 1024));
     const response = await post(Buffer.from('hello'));
     expect(response.status).toBe(429);
-    expect(mocks.assetStore.remove).toHaveBeenCalledWith(expect.anything(), 'asset-stale');
+    // The reclaim of stale uploads is a separate pre-step; the quota rejection
+    // itself never touches the asset registry.
+    expect(mocks.assetStore.remove).not.toHaveBeenCalled();
   });
 
   it('abandons the reservation and answers 500 when the asset store fails', async () => {
@@ -274,6 +293,20 @@ describe('POST /api/materials', () => {
     const response = await post(Buffer.from('hello'));
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toMatchObject({ errorCode: 'INTERNAL_ERROR' });
+    expect(mocks.abandonOwnerMaterial).toHaveBeenCalled();
+  });
+
+  it('removes the stored asset and abandons the reservation when finalize fails after the asset id was recorded', async () => {
+    // The put committed and the asset id was durably recorded on the
+    // reservation; only finalize failed. The route must still clean up both
+    // the asset entry and the reservation (a hard crash between the two is the
+    // sweeper's job, covered by the persistence suite).
+    mocks.finalizeOwnerMaterial.mockRejectedValue(new Error('finalize failed'));
+    const response = await post(Buffer.from('hello'));
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toMatchObject({ errorCode: 'INTERNAL_ERROR' });
+    expect(mocks.recordOwnerMaterialAsset).toHaveBeenCalled();
+    expect(mocks.assetStore.remove).toHaveBeenCalledWith(expect.anything(), 'asset-1');
     expect(mocks.abandonOwnerMaterial).toHaveBeenCalled();
   });
 
