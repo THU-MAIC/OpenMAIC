@@ -36,7 +36,7 @@ export function Stage({
   // Editing is owner-only (the reference's classroom access fields). `isOwner`
   // is true and `readOnly` is false by default — the upstream single-user
   // assumption — so this gate is a no-op unless the stage-meta sidecar
-  // answered that the viewer neither owns nor bookmarked this course.
+  // answered that the viewer is not this course's owner.
   const isOwner = useStageStore((s) => s.isOwner);
   const readOnly = useStageStore((s) => s.readOnly);
   const canEditOwnedStage = isOwner && !readOnly;

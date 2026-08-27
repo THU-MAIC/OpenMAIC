@@ -46,7 +46,7 @@ OpenMAIC 1.0.0 introduces an agentic course-building workflow. Alongside the cla
 - **End-to-end course tools** — The agent can plan multi-lesson curricula; create folders and courses; read and atomically patch the stage DSL; generate, duplicate, reorder, and preview pages; edit decks and narration; import `.pptx` slides while preserving their layout; generate images and videos; and manage classroom rosters and voices. Voice registration is exposed only when a configured adapter supports cloning.
 - **Session materials with explicit trust boundaries** — The material upload API validates and persists supported files before documents, audio, and video move through a durable extraction lifecycle. Audio/video extraction can use a configured cloud provider or the optional local ffmpeg/ffprobe provider with server-side ASR. `fetch_url` accepts only URLs already introduced by the user or web search, then applies strict SSRF checks and stores extracted content as a session material.
 - **Provider-neutral server execution** — Server routes resolve image, video, ASR, TTS, search, and LLM configuration without sending provider credentials to the browser. Uniform `<CAP>_<PREFIX>_ENABLED=false` switches can force off served media and search capabilities, startup validation warns about bad model configuration, and unresolved model routes fail loudly instead of guessing a vendor.
-- **Fresh, capability-aware editing** — PostgreSQL triggers maintain monotonic per-stage and per-scene revision counters; freshness events and manifests let the workbench batch-refetch only changed scenes. Stage reads use the stage ID as a sharing capability, while writes remain owner-only. Folder routes and per-viewer stage metadata cover organization, publishing, bookmarks, and generation-complete state; sessions, materials, folders, and user skills remain scoped to a stable owner identity.
+- **Fresh, capability-aware editing** — PostgreSQL triggers maintain monotonic per-stage and per-scene revision counters; freshness events and manifests let the workbench batch-refetch only changed scenes. Stage reads use the stage ID as a sharing capability, while writes remain owner-only. Folder routes and per-viewer stage metadata cover organization, publishing, and generation-complete state; sessions, materials, folders, and user skills remain scoped to a stable owner identity.
 - **Pluggable persistence** — `@openmaic/storage` supplies document, learner-runtime, KV, asset, agent-session, material, and user-skill stores. The default remains a no-database browser deployment; HTTP and PostgreSQL backends add server persistence, with PostgreSQL or S3-backed asset bytes.
 
 > [!IMPORTANT]
@@ -547,7 +547,7 @@ PPTX import, editing, and style reuse. User-authored skills are stored per owner
 and can be created, read, and patched through the same runtime.
 
 The server-backed workbench also exposes owner-scoped folder routes and a
-per-viewer stage metadata sidecar for ownership, publication, bookmarks, and
+per-viewer stage metadata sidecar for ownership, publication, and
 generation-complete state. A stage ID acts as the capability for reading a
 non-deleted course, but stage mutations remain restricted to its owner. The
 material upload contract stores supported source bytes before lease-fenced

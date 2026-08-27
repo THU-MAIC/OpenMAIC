@@ -7,7 +7,7 @@
  * was published, whether generation completed, and (via `deleted_at`) the
  * tombstone. This module is the single resolver the viewer-facing routes
  * (`/api/stage-meta/:id`, `/api/stages/:id/status`, publish/unpublish,
- * generation-complete, bookmarks) go through.
+ * generation-complete) go through.
  */
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 

@@ -5,9 +5,8 @@
  *
  * The document seam is tenant-agnostic on purpose: it holds the stage, its
  * scenes and its outline, and says nothing about who is asking. The classroom
- * branches on exactly that — `isOwner` decides editable vs read-only,
- * `isBookmarked` drives the save CTA — so the content comes from the document
- * seam and these come from here.
+ * branches on exactly that — `isOwner` decides editable vs read-only — so the
+ * content comes from the document seam and these come from here.
  */
 
 /** What the sidecar had to say — as THREE outcomes, not two. */
@@ -18,7 +17,6 @@ export type StageMetaResult =
 
 export interface StageMetaView {
   isOwner: boolean;
-  isBookmarked: boolean;
   isPublic: boolean;
   publishedAt: number | null;
   generationComplete: boolean;
@@ -55,7 +53,6 @@ export async function fetchStageMeta(
       outcome: 'found',
       meta: {
         isOwner: body.isOwner === true,
-        isBookmarked: body.isBookmarked === true,
         isPublic: body.isPublic === true,
         publishedAt: typeof body.publishedAt === 'number' ? body.publishedAt : null,
         generationComplete: body.generationComplete === true,

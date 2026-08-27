@@ -75,10 +75,10 @@ export default function ClassroomDetailPage() {
       });
 
       // The stage-meta sidecar resolves the viewer-facing ownership facts the
-      // document seam does not carry — `isOwner` / `isBookmarked` decide
-      // read-only vs editable (see `stage-meta-client.ts`). Run it strictly
-      // AFTER the load applied its defaults so its answer wins, and fire it
-      // without blocking the render that already happened.
+      // document seam does not carry — `isOwner` decides read-only vs editable
+      // (see `stage-meta-client.ts`). Run it strictly AFTER the load applied
+      // its defaults so its answer wins, and fire it without blocking the
+      // render that already happened.
       if (isEffectCurrent()) {
         void fetchStageMeta(classroomId)
           .then((result) => {
@@ -86,11 +86,9 @@ export default function ClassroomDetailPage() {
             if (result.outcome === 'found') {
               noteStageOwnership(classroomId, true, {
                 isOwner: result.meta.isOwner,
-                isBookmarked: result.meta.isBookmarked,
               });
               useStageStore.getState().setViewerAccess({
                 isOwner: result.meta.isOwner,
-                isBookmarked: result.meta.isBookmarked,
               });
             } else if (result.outcome === 'unavailable') {
               // A silent sidecar is not "this is a stranger's course": record
