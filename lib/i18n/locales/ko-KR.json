@@ -467,11 +467,13 @@
       "discussionDesc": "질문을 던지고 발표자를 지정"
     },
     "tts": {
+      "cancelPreview": "미리듣기 취소",
       "preview": "미리듣기",
       "regenerate": "음성 다시 생성",
       "statusReady": "음성 있음",
       "statusNone": "음성 없음",
       "statusGenerating": "생성 중",
+      "stopPreview": "미리듣기 중지",
       "statusError": "실패"
     },
     "pick": {

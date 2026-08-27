@@ -540,11 +540,13 @@
       "discussionDesc": "اطرح سؤالاً وحدّد من يبدأ النقاش"
     },
     "tts": {
+      "cancelPreview": "إلغاء المعاينة",
       "preview": "معاينة",
       "regenerate": "إعادة توليد التعليق الصوتي",
       "statusReady": "مُصوّت",
       "statusNone": "غير مُصوّت",
       "statusGenerating": "جارٍ التوليد",
+      "stopPreview": "إيقاف المعاينة",
       "statusError": "فشل"
     },
     "pick": {

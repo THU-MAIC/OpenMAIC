@@ -540,11 +540,13 @@
       "discussionDesc": "Задать вопрос и выбрать, кто начнёт"
     },
     "tts": {
+      "cancelPreview": "Отменить",
       "preview": "Прослушать",
       "regenerate": "Сгенерировать озвучку заново",
       "statusReady": "Озвучено",
       "statusNone": "Не озвучено",
       "statusGenerating": "Генерация",
+      "stopPreview": "Остановить",
       "statusError": "Ошибка"
     },
     "pick": {

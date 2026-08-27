@@ -540,11 +540,13 @@
       "discussionDesc": "Pose a question, pick who starts it"
     },
     "tts": {
+      "cancelPreview": "Cancel preview",
       "preview": "Preview",
       "regenerate": "Regenerate voiceover",
       "statusReady": "Voiced",
       "statusNone": "Not voiced",
       "statusGenerating": "Generating",
+      "stopPreview": "Stop preview",
       "statusError": "Failed"
     },
     "pick": {

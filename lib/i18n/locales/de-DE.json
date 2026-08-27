@@ -540,11 +540,13 @@
       "discussionDesc": "Eine Frage stellen und auswählen, wer beginnt"
     },
     "tts": {
+      "cancelPreview": "Vorschau abbrechen",
       "preview": "Vorschau",
       "regenerate": "Vertonung neu erstellen",
       "statusReady": "Vertont",
       "statusNone": "Nicht vertont",
       "statusGenerating": "Wird erstellt",
+      "stopPreview": "Vorschau stoppen",
       "statusError": "Fehlgeschlagen"
     },
     "pick": {

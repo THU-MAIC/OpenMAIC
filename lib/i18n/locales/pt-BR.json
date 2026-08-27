@@ -525,11 +525,13 @@
       "discussionDesc": "Faça uma pergunta e escolha quem inicia"
     },
     "tts": {
+      "cancelPreview": "Cancelar prévia",
       "preview": "Pré-visualizar",
       "regenerate": "Regenerar narração",
       "statusReady": "Narrado",
       "statusNone": "Sem narração",
       "statusGenerating": "Gerando",
+      "stopPreview": "Parar prévia",
       "statusError": "Falhou"
     },
     "pick": {

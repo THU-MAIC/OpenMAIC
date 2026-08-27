@@ -540,11 +540,13 @@
       "discussionDesc": "Poser une question et choisir qui la lance"
     },
     "tts": {
+      "cancelPreview": "Annuler l'aperçu",
       "preview": "Écouter",
       "regenerate": "Régénérer la voix off",
       "statusReady": "Sonorisé",
       "statusNone": "Non sonorisé",
       "statusGenerating": "Génération",
+      "stopPreview": "Arrêter l'aperçu",
       "statusError": "Échec"
     },
     "pick": {

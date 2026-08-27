@@ -540,11 +540,13 @@
       "discussionDesc": "問いを投げかけ、発言者を指定"
     },
     "tts": {
+      "cancelPreview": "試聴をキャンセル",
       "preview": "試聴",
       "regenerate": "音声を再生成",
       "statusReady": "音声あり",
       "statusNone": "音声なし",
       "statusGenerating": "生成中",
+      "stopPreview": "試聴を停止",
       "statusError": "失敗"
     },
     "pick": {

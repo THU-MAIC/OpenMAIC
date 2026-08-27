@@ -68,6 +68,26 @@ export async function audioObjectUrl(audioId: string): Promise<string | null> {
 }
 
 /**
+ * Discard the cached audio for a speech line — its stamped audioId (the
+ * allocated pool identity, when present) and the legacy derived key — so the
+ * line reads as "not voiced" until regenerated. Called when the user edits a
+ * line's text: the cached audio is keyed by sceneOrder+actionId and the
+ * stamped id, not the text, so without this the stale blob would keep
+ * replaying for the new wording. Only the local Dexie compatibility copy is
+ * removed here; the pool bytes are reclaimed later by the document-truth
+ * sweep once the action no longer references them.
+ */
+export async function discardSpeechAudio(
+  sceneOrder: number,
+  action: { id?: string; audioId?: string },
+): Promise<void> {
+  if (!action.id) return;
+  const ids = new Set([speechAudioId(sceneOrder, action.id)]);
+  if (action.audioId) ids.add(action.audioId);
+  await db.audioFiles.bulkDelete([...ids]);
+}
+
+/**
  * The current audio id when it is pool-backed and provably owned by this stage
  * alone, so its bytes may be replaced in place; undefined otherwise.
  */

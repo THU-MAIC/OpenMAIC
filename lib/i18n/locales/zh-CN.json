@@ -540,11 +540,13 @@
       "discussionDesc": "抛出问题，指定发起同学"
     },
     "tts": {
+      "cancelPreview": "取消试听",
       "preview": "试听",
       "regenerate": "重新生成配音",
       "statusReady": "已配音",
       "statusNone": "未配音",
       "statusGenerating": "生成中",
+      "stopPreview": "停止试听",
       "statusError": "失败"
     },
     "pick": {

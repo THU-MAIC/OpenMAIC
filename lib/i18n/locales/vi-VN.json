@@ -540,11 +540,13 @@
       "discussionDesc": "Nêu một câu hỏi và chọn ai mở lời"
     },
     "tts": {
+      "cancelPreview": "Hủy xem trước",
       "preview": "Nghe thử",
       "regenerate": "Tạo lại giọng đọc",
       "statusReady": "Đã lồng tiếng",
       "statusNone": "Chưa lồng tiếng",
       "statusGenerating": "Đang tạo",
+      "stopPreview": "Dừng xem trước",
       "statusError": "Không thành công"
     },
     "pick": {

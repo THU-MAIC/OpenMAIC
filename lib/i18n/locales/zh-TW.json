@@ -468,11 +468,13 @@
       "discussionDesc": "提出問題，指定由誰發起"
     },
     "tts": {
+      "cancelPreview": "取消試聽",
       "preview": "試聽",
       "regenerate": "重新生成配音",
       "statusReady": "已配音",
       "statusNone": "未配音",
       "statusGenerating": "生成中",
+      "stopPreview": "停止試聽",
       "statusError": "失敗"
     },
     "pick": {

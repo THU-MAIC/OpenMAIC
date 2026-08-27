@@ -540,11 +540,13 @@
       "discussionDesc": "Plantea una pregunta y elige quién empieza"
     },
     "tts": {
+      "cancelPreview": "Cancelar vista previa",
       "preview": "Vista previa",
       "regenerate": "Regenerar voz",
       "statusReady": "Con voz",
       "statusNone": "Sin voz",
       "statusGenerating": "Generando",
+      "stopPreview": "Detener vista previa",
       "statusError": "Error"
     },
     "pick": {

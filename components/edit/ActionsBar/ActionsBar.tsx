@@ -1,8 +1,16 @@
 'use client';
 
 /**
- * ActionsBar — Pro-mode "narration script" bottom bar, a horizontal film-editing timeline
+ * ActionsBar — the "narration script" timeline: a horizontal film-editing strip
  * that is also a light editor for the scene's playback `actions`.
+ *
+ * This WAS the whole bottom bar. It is now the body of `EditDock`, which owns
+ * the surface (border, blur, fold) and the global edit bar above it; the
+ * timeline still renders its own header row — the row's controls and the body
+ * share one piece of state — and drives the dock's fold through `useEditDock`.
+ * Nothing about the timeline's own behaviour or geometry changed in the move.
+ * (The height-drag handle was removed per product decision: only the fold moves
+ * the dock's height, so the timeline no longer sizes itself.)
  *
  * The scene's `actions` ARE the timeline: walked left→right, each `speech`
  * becomes an editable clip block (one spoken line, numbered) and every non-speech
@@ -14,10 +22,11 @@
  * - speech clip text is editable inline (commit on blur);
  * - the header "Add action" pill opens ActionPicker to insert a new action;
  * - existing items drag to reorder; each card carries a delete button;
- * - clicking an element-bound cue arms canvas pick mode (useCanvasStore.pickTarget),
- *   so the target is chosen by clicking the element directly on the slide.
+ * - clicking an element-bound cue arms canvas pick mode (useCanvasStore.pickTarget
+ *   with purpose 'cue'), so the target is chosen by clicking the element directly
+ *   on the slide.
  *
- * Collapsible; height-resizable from the top edge; reactive to the stage store.
+ * Reactive to the stage store; collapse and height belong to the dock.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -30,9 +39,11 @@ import {
   Flag,
   FoldVertical,
   GripVertical,
+  Loader2,
   Play,
   Plus,
   RefreshCw,
+  Square,
   Trash2,
   UnfoldVertical,
   Volume2,
@@ -71,11 +82,13 @@ import {
   setDiscussionTopicById,
   setSpeechTextClearAudioById,
 } from './actions-edit';
+import { useEditDock } from '@/components/edit/EditDock/dock-context';
 import { ActionPicker } from './ActionPicker';
 import type { PickerType } from './picker-options';
 import {
   audioExists,
   audioObjectUrl,
+  discardSpeechAudio,
   regenerateSpeechAudio,
   resolveLegacySpeechAudioId,
   resolveSpeechAudioId,
@@ -86,6 +99,16 @@ const EMPTY_ELEMENTS: { id?: string; type: string; content?: string }[] = [];
 // Stable empty set for the "no lines regenerating" state (avoids re-allocating
 // on every reset and keeps a constant identity between batch runs).
 const NO_IDS: ReadonlySet<string> = new Set();
+
+/**
+ * Module-level single-flight controller for TTS preview: at most one
+ * SpeechTtsBar may be loading or playing at any moment, across every speech
+ * clip in the timeline. A bar registers its own `stop` handle when it starts a
+ * preview and clears it in `stopPreview` only when it is still the registered
+ * owner — so a stale stop (a superseded attempt, or an unmounted non-active
+ * bar) never kills the currently active preview.
+ */
+let activePreview: { stop: () => void } | null = null;
 
 /**
  * Clear the canvas spotlight/laser preview when a cue glyph unmounts while it is
@@ -106,10 +129,6 @@ function useClearCuePreviewOnUnmount() {
  */
 const INCOMPLETE_CLIP = 'border-dashed border-amber-400/70';
 
-const MIN_H = 168;
-const MAX_H = 520;
-const DEFAULT_H = 224;
-const LINE_H = 86; // height when collapsed to just the axis line of node icons (fits the chips)
 const AXIS_FROM_TOP = 20; // px from track top to the axis center (nodes hang below it)
 
 // Radix Select forbids an empty-string item value, so the discussion's
@@ -249,8 +268,11 @@ function MoveButtons({
 
 type TtsStatus = 'none' | 'ready' | 'generating' | 'error';
 
+/** TTS preview lifecycle: idle → loading (awaiting the blob URL) → playing → idle. */
+type PreviewPhase = 'idle' | 'loading' | 'playing';
+
 /** Audio status + preview / regenerate row, shown when managed TTS is on. */
-function SpeechTtsBar({
+export function SpeechTtsBar({
   actionId,
   audioId,
   audioUrl,
@@ -272,7 +294,13 @@ function SpeechTtsBar({
   text: string;
   refreshKey?: number;
   regenerating?: boolean;
-  onGenerated: (audioId: string) => Promise<void>;
+  /**
+   * Notification that regeneration succeeded. Carries the freshly allocated
+   * audioId so the caller can stamp it on the action: this tree allocates pool
+   * identities (the blob is stored under the returned id), so the id cannot be
+   * re-derived by the caller like the reference's deterministic key.
+   */
+  onGenerated: (audioId: string) => void;
 }) {
   const { t } = useI18n();
   const [status, setStatus] = useState<TtsStatus>('none');
@@ -290,6 +318,14 @@ function SpeechTtsBar({
     setPrevRegenerating(regenerating);
     if (regenerating) setBatchPending(true);
   }
+  // TTS preview state machine — local UI state for the preview button, kept
+  // apart from `status`/`effStatus` (audio availability + regeneration), which
+  // the playback lifecycle must not disturb.
+  const [previewPhase, setPreviewPhase] = useState<PreviewPhase>('idle');
+  // Generation token: every `stopPreview` (and every fresh `preview`) bumps it,
+  // so an in-flight `audioObjectUrl` await can tell it was superseded and drop
+  // its result — this is what kills the double-click double-Audio race.
+  const previewTokenRef = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objUrlRef = useRef<string | null>(null);
 
@@ -302,12 +338,19 @@ function SpeechTtsBar({
   }
 
   const stopPreview = useCallback(() => {
+    // Invalidate every in-flight `preview()` await — a newer click, a takeover
+    // by another bar, or an unmount all funnel through here.
+    previewTokenRef.current += 1;
+    // Only the registered owner clears the module-level handle: a stale stop
+    // from a superseded or unmounted bar must not kill the current preview.
+    if (activePreview?.stop === stopPreview) activePreview = null;
     audioRef.current?.pause();
     audioRef.current = null;
     if (objUrlRef.current) {
       URL.revokeObjectURL(objUrlRef.current);
       objUrlRef.current = null;
     }
+    setPreviewPhase('idle');
   }, []);
 
   useEffect(() => {
@@ -347,17 +390,42 @@ function SpeechTtsBar({
   useEffect(() => () => stopPreview(), [stopPreview]);
 
   const preview = async () => {
-    stopPreview();
+    // Global single-flight: stop whatever is loading/playing in ANY bar first.
+    // This also bumps the token, so this bar's own previous in-flight attempt
+    // is already invalidated by the time we capture the fresh token below.
+    activePreview?.stop();
+    const token = ++previewTokenRef.current;
+    setPreviewPhase('loading');
+    activePreview = { stop: stopPreview };
     // The legacy URL of an unconverted pair is the narration when no pool or
     // Dexie id resolved -- or when the resolved id turns out to have no local
     // bytes, which is exactly the dangling-id case the URL survives for.
     const src = (readAudioId ? await audioObjectUrl(readAudioId) : null) ?? audioUrl ?? null;
-    if (!src) return;
+    if (token !== previewTokenRef.current) {
+      // Superseded while loading (a newer click, a takeover, a stop): drop the
+      // result and revoke any blob URL we minted — the winner is in charge.
+      if (src && src.startsWith('blob:')) URL.revokeObjectURL(src);
+      return;
+    }
+    if (!src) {
+      stopPreview();
+      return;
+    }
     objUrlRef.current = src;
     const a = new Audio(src);
     audioRef.current = a;
     a.addEventListener('ended', stopPreview);
-    void a.play().catch(() => stopPreview());
+    a.addEventListener('error', stopPreview);
+    try {
+      await a.play();
+      // Stopped while play() was settling (e.g. a takeover in the gap): the
+      // stop already paused it, nothing more to do.
+      if (token !== previewTokenRef.current) return;
+      setPreviewPhase('playing');
+    } catch {
+      // Autoplay rejection etc. — treat like any other stop.
+      stopPreview();
+    }
   };
 
   const regenerate = async () => {
@@ -371,7 +439,7 @@ function SpeechTtsBar({
       );
       if (id) {
         setReadAudioId(id);
-        await onGenerated(id);
+        onGenerated(id);
         setStatus('ready');
       } else {
         setStatus('none');
@@ -397,6 +465,15 @@ function SpeechTtsBar({
   // clean generating → voiced transition with no intermediate flash.
   const effStatus: TtsStatus = regenerating || batchPending ? 'generating' : status;
   const s = STATUS[effStatus];
+  const previewLabel =
+    previewPhase === 'loading'
+      ? t('edit.tts.cancelPreview')
+      : previewPhase === 'playing'
+        ? t('edit.tts.stopPreview')
+        : t('edit.tts.preview');
+  // idle → Play; loading → spinner (click cancels the load); playing → Stop.
+  const PreviewIcon =
+    previewPhase === 'loading' ? Loader2 : previewPhase === 'playing' ? Square : Play;
 
   return (
     <div className="flex items-center gap-1 border-t border-border/60 px-2 py-1">
@@ -405,13 +482,18 @@ function SpeechTtsBar({
       <span className="ml-auto" />
       <button
         type="button"
-        onClick={preview}
+        onClick={previewPhase === 'idle' ? () => void preview() : stopPreview}
         disabled={effStatus !== 'ready'}
-        className="grid size-5 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
-        aria-label={t('edit.tts.preview')}
-        title={t('edit.tts.preview')}
+        className={cn(
+          'grid size-5 place-items-center rounded-md transition-colors disabled:opacity-30 disabled:hover:bg-transparent',
+          previewPhase === 'playing'
+            ? 'text-rose-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400'
+            : 'text-muted-foreground/60 hover:bg-muted hover:text-foreground',
+        )}
+        aria-label={previewLabel}
+        title={previewLabel}
       >
-        <Play className="size-3" />
+        <PreviewIcon className={cn('size-3', previewPhase === 'loading' && 'animate-spin')} />
       </button>
       <button
         type="button"
@@ -465,7 +547,7 @@ function SpeechClip({
   ttsRefresh?: number;
   regenerating?: boolean;
   onCommit: (text: string) => void;
-  onGenerated: (audioId: string) => Promise<void>;
+  onGenerated: (audioId: string) => void;
   onDelete: () => void;
   onMoveLeft: () => void;
   onMoveRight: () => void;
@@ -986,7 +1068,10 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     [selectedAgentIds, agentsRecord],
   );
 
-  const [lineMode, setLineMode] = useState(false); // collapse to just the axis line of node icons
+  // Collapsed = the dock's own fold, which this bar's title and its trailing
+  // toggle both drive. The timeline's collapsed form is its axis of node icons,
+  // so it reads `collapsed` rather than being hidden by the shell.
+  const { collapsed: lineMode, toggleCollapsed } = useEditDock();
   const [tip, setTip] = useState<TooltipState | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
@@ -1061,50 +1146,9 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     }
   }, [regenAll, sceneId, language, commit]);
 
-  // Height drag-resize (top edge).
-  const sectionRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const panViewport = (dir: -1 | 1) =>
     scrollRef.current?.scrollBy({ left: dir * 280, behavior: 'smooth' });
-  const [height, setHeight] = useState(DEFAULT_H);
-  const resizeRef = useRef<{
-    startY: number;
-    startH: number;
-    lastH: number;
-    pointerId: number;
-  } | null>(null);
-  const onResizeStart = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      const startH = sectionRef.current?.getBoundingClientRect().height ?? height;
-      resizeRef.current = { startY: e.clientY, startH, lastH: startH, pointerId: e.pointerId };
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId);
-      } catch {
-        /* best effort */
-      }
-      document.body.style.cursor = 'row-resize';
-    },
-    [height],
-  );
-  const onResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const d = resizeRef.current;
-    if (!d || e.pointerId !== d.pointerId) return;
-    const next = Math.min(MAX_H, Math.max(MIN_H, d.startH + (d.startY - e.clientY)));
-    d.lastH = next;
-    if (sectionRef.current) sectionRef.current.style.height = `${next}px`;
-  }, []);
-  const onResizeEnd = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const d = resizeRef.current;
-    if (!d || e.pointerId !== d.pointerId) return;
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      /* may already be released */
-    }
-    setHeight(d.lastH);
-    resizeRef.current = null;
-    document.body.style.cursor = '';
-  }, []);
 
   const newId = () =>
     typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `a-${Date.now()}`;
@@ -1152,102 +1196,94 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     return { action, index, key: (action.id ?? `a-${index}`) as string, speechIndex };
   });
 
-  return (
-    <section
-      ref={sectionRef}
-      style={{ height: lineMode ? LINE_H : height }}
-      className="relative flex flex-col border-t border-gray-100 bg-white/80 backdrop-blur-xl dark:border-gray-800 dark:bg-slate-900/80"
-    >
+  const header = (
+    <>
+      {/* The title is also the fold: it was a click target long before there was
+          a toggle beside it, so the cursor already knows this spot. */}
+      <button
+        type="button"
+        data-testid="edit-timeline-title"
+        onClick={toggleCollapsed}
+        className="flex shrink-0 items-center gap-2.5"
+      >
+        <span className="size-1.5 rounded-full bg-primary" />
+        <span className="text-[12px] font-medium tracking-[0.18em] text-foreground/80">
+          {t('edit.timeline.title')}
+        </span>
+      </button>
+
       {!lineMode && (
-        <div
-          onPointerDown={onResizeStart}
-          onPointerMove={onResizeMove}
-          onPointerUp={onResizeEnd}
-          onPointerCancel={onResizeEnd}
-          className="group absolute inset-x-0 top-0 z-10 h-1.5 cursor-row-resize touch-none transition-colors hover:bg-violet-400/30 active:bg-violet-500/50 dark:hover:bg-violet-500/30"
+        <button
+          type="button"
+          onClick={(e) => {
+            const slot = discussionPresent ? actions.length - 1 : actions.length;
+            setPickerAt({ slot, rect: e.currentTarget.getBoundingClientRect() });
+          }}
+          className="ml-1.5 inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
         >
-          <div className="absolute left-1/2 top-[3px] h-0.5 w-9 -translate-x-1/2 rounded-full bg-gray-300 transition-colors group-hover:bg-violet-400 dark:bg-gray-600 dark:group-hover:bg-violet-500" />
-        </div>
+          <Plus className="size-3" />
+          {t('edit.timeline.addAction')}
+          <ChevronDown className="size-3 opacity-70" />
+        </button>
       )}
 
-      <div className="flex h-10 shrink-0 items-center gap-2.5 px-6">
+      {!lineMode && ttsActive && (
         <button
           type="button"
-          onClick={() => setLineMode((v) => !v)}
-          className="flex items-center gap-2.5"
+          onClick={regenerateAllAudio}
+          disabled={regenAll}
+          title={t('edit.timeline.regenAllTts')}
+          aria-label={t('edit.timeline.regenAllTts')}
+          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground disabled:opacity-50"
         >
-          <span className="size-1.5 rounded-full bg-primary" />
-          <span className="text-[12px] font-medium tracking-[0.18em] text-foreground/80">
-            {t('edit.timeline.title')}
-          </span>
+          <RefreshCw className={cn('size-3', regenAll && 'animate-spin')} />
+          {t('edit.timeline.voiceAll')}
         </button>
+      )}
 
-        {!lineMode && (
+      <span className="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/60">
+        {t('edit.timeline.counts', { speech: speechCount, cue: cueCount })}
+      </span>
+      {/* pan the timeline viewport left/right */}
+      {!lineMode && (
+        <div className="flex shrink-0 items-center border-l border-gray-200/70 pl-1 dark:border-gray-700/60">
           <button
             type="button"
-            onClick={(e) => {
-              const slot = discussionPresent ? actions.length - 1 : actions.length;
-              setPickerAt({ slot, rect: e.currentTarget.getBoundingClientRect() });
-            }}
-            className="ml-3 inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
+            onClick={() => panViewport(-1)}
+            title={t('edit.timeline.panLeft')}
+            aria-label={t('edit.timeline.panLeft')}
+            className="grid size-7 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
           >
-            <Plus className="size-3" />
-            {t('edit.timeline.addAction')}
-            <ChevronDown className="size-3 opacity-70" />
+            <ChevronsLeft className="size-4" />
           </button>
-        )}
-
-        {!lineMode && ttsActive && (
           <button
             type="button"
-            onClick={regenerateAllAudio}
-            disabled={regenAll}
-            title={t('edit.timeline.regenAllTts')}
-            aria-label={t('edit.timeline.regenAllTts')}
-            className="ml-1.5 inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground disabled:opacity-50"
+            onClick={() => panViewport(1)}
+            title={t('edit.timeline.panRight')}
+            aria-label={t('edit.timeline.panRight')}
+            className="grid size-7 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
           >
-            <RefreshCw className={cn('size-3', regenAll && 'animate-spin')} />
-            {t('edit.timeline.voiceAll')}
+            <ChevronsRight className="size-4" />
           </button>
-        )}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        title={lineMode ? t('edit.timeline.expandTrack') : t('edit.timeline.collapseAxis')}
+        aria-label={lineMode ? t('edit.timeline.expandTrack') : t('edit.timeline.collapseAxis')}
+        className="ml-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+      >
+        {lineMode ? <UnfoldVertical className="size-4" /> : <FoldVertical className="size-4" />}
+      </button>
+    </>
+  );
 
-        <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground/60">
-          {t('edit.timeline.counts', { speech: speechCount, cue: cueCount })}
-        </span>
-        {/* pan the timeline viewport left/right */}
-        {!lineMode && (
-          <div className="ml-1 flex items-center border-l border-gray-200/70 pl-1 dark:border-gray-700/60">
-            <button
-              type="button"
-              onClick={() => panViewport(-1)}
-              title={t('edit.timeline.panLeft')}
-              aria-label={t('edit.timeline.panLeft')}
-              className="grid size-7 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <ChevronsLeft className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => panViewport(1)}
-              title={t('edit.timeline.panRight')}
-              aria-label={t('edit.timeline.panRight')}
-              className="grid size-7 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <ChevronsRight className="size-4" />
-            </button>
-          </div>
-        )}
-        <button
-          type="button"
-          onClick={() => setLineMode((v) => !v)}
-          title={lineMode ? t('edit.timeline.expandTrack') : t('edit.timeline.collapseAxis')}
-          aria-label={lineMode ? t('edit.timeline.expandTrack') : t('edit.timeline.collapseAxis')}
-          className="ml-1 grid size-7 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-        >
-          {lineMode ? <UnfoldVertical className="size-4" /> : <FoldVertical className="size-4" />}
-        </button>
-      </div>
-
+  return (
+    <>
+      {/* The timeline's own header row: what it is, what it can insert, how much
+          it holds, and its fold. Geometry unchanged from the standalone bar. */}
+      <div className="flex h-10 shrink-0 items-center gap-2 px-6">{header}</div>
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
         <div className="relative h-full min-w-max">
           {/* the timeline axis (top) — nodes hang below it; hidden when empty
@@ -1286,17 +1322,18 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                 dragRef.current = null;
                 setDragOver(null);
               };
-              const onPick = () => {
-                const stageId = useStageStore.getState().stage?.id;
-                if (!stageId) return;
-                useCanvasStore.getState().setPickTarget({
-                  purpose: 'cue',
-                  stageId,
-                  sceneId,
-                  actionId: key,
-                  cueType: action.type,
-                });
-              };
+              const onPick = () =>
+                useCanvasStore.getState().setPickTarget(
+                  useStageStore.getState().stage?.id
+                    ? {
+                        purpose: 'cue',
+                        stageId: useStageStore.getState().stage!.id,
+                        sceneId,
+                        actionId: key,
+                        cueType: action.type,
+                      }
+                    : null,
+                );
               const dot = (
                 <NodeDot
                   action={action}
@@ -1345,14 +1382,27 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                               autoFocus={key === focusId}
                               onFocused={() => setFocusId(null)}
                               onCommit={(text) => {
-                                // Editing invalidates the document reference but leaves the old
-                                // pool entry for the document-truth sweep introduced in part 3.
+                                // Editing the text invalidates any cached audio
+                                // (the blob is keyed by order+id and the stamped
+                                // audioId, not the text), so drop the stamped
+                                // fields and delete the blob — the line then
+                                // reads as un-voiced until regen.
+                                const prevAudioId = (action as { audioId?: string }).audioId;
                                 commit((cur) => setSpeechTextClearAudioById(cur, key, text));
-                                setTtsRefresh((n) => n + 1);
+                                // Re-check status only AFTER the blob is gone, so
+                                // the status row can't race the async delete and
+                                // briefly still read "voiced".
+                                void discardSpeechAudio(sceneOrder, {
+                                  id: key,
+                                  audioId: prevAudioId,
+                                }).finally(() => setTtsRefresh((n) => n + 1));
                               }}
-                              onGenerated={async (assetId) => {
+                              onGenerated={(assetId) => {
                                 commit((cur) => setAudioIdById(cur, key, assetId));
-                                await flushStageSave();
+                                // Stage persistence is debounced; flush so the
+                                // stamped reference is durable once the row
+                                // settles (pool bytes persist first, stamp last).
+                                void flushStageSave().catch(() => undefined);
                               }}
                               onDelete={() => {
                                 commit((cur) => removeById(cur, key));
@@ -1425,6 +1475,6 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
           onClose={() => setPickerAt(null)}
         />
       )}
-    </section>
+    </>
   );
 }
