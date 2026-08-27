@@ -226,4 +226,105 @@ describe('PgAgentSessionStore with PGlite', () => {
     expect(indexNames).toContain('spec_entries_type_idx');
     expect(indexNames).not.toContain('spec_session_entries_type_idx');
   });
+
+  test('onSessionEventAppended fires inside the append transaction for every writer role', async () => {
+    const seen: Array<{ seq: number; type: string; attempt: number; visible: boolean }> = [];
+    const hooked = new PgAgentSessionStore(db, {
+      ...optionsFor(db),
+      onSessionEventAppended: async (tx, event) => {
+        // The hook must observe its own row in the same transaction — that is
+        // what lets a host queue a NOTIFY that PostgreSQL only delivers at
+        // commit, exactly when the row becomes durable.
+        const row = await tx.query<{ type: string }>(
+          'SELECT type FROM agent_session_events WHERE session_id = $1 AND seq = $2',
+          [event.sessionId, event.seq],
+        );
+        seen.push({
+          seq: event.seq,
+          type: event.type,
+          attempt: event.attempt,
+          visible: !!row.rows[0],
+        });
+      },
+    });
+    await hooked.createSession(makeAgentSessionInput({ status: 'succeeded' }));
+    await hooked.appendUserMessage('session-1', {
+      text: 'queued',
+      delivery: 'queued',
+      clientRequestId: 'c1',
+    });
+    await hooked.postUserMessage('session-1', { text: 'Continue' });
+    await hooked.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
+    await hooked.appendRunEvent('session-1', 'worker-a', {
+      ts: 5,
+      attempt: 1,
+      type: 'message_update',
+      data: { text: 'delta' },
+    });
+    await hooked.appendControlEvent('session-1', { ts: 6, type: 'control', data: {} });
+
+    expect(seen.map((event) => event.type)).toEqual([
+      'user_message',
+      'user_message',
+      'message_update',
+      'control',
+    ]);
+    expect(seen.every((event) => event.visible)).toBe(true);
+    // Control-plane events store the current generation under the row lock;
+    // run events keep their own attempt.
+    expect(seen[2]).toMatchObject({ seq: 3, attempt: 1 });
+  });
+
+  test('a throwing onSessionEventAppended aborts the append (transactional NOTIFY semantics)', async () => {
+    const hooked = new PgAgentSessionStore(db, {
+      ...optionsFor(db),
+      onSessionEventAppended: async () => {
+        throw new Error('notify payload too large');
+      },
+    });
+    await hooked.createSession(makeAgentSessionInput());
+    await expect(
+      hooked.appendControlEvent('session-1', { ts: 1, type: 'control', data: {} }),
+    ).rejects.toThrow('notify payload too large');
+    expect(await hooked.lastEventSeq('session-1')).toBe(0);
+  });
+
+  test('onOwnerEventAppended and onCancelRequested fire on their transactions', async () => {
+    const ownerEvents: string[] = [];
+    const cancels: string[] = [];
+    const hooked = new PgAgentSessionStore(db, {
+      ...optionsFor(db),
+      onOwnerEventAppended: async (_tx, event) => {
+        ownerEvents.push(`${event.type}:${event.ownerId}:${event.sessionId}:${event.id}`);
+      },
+      onCancelRequested: async (_tx, sessionId) => {
+        cancels.push(sessionId);
+      },
+    });
+    await hooked.createSession(makeAgentSessionInput());
+    expect(ownerEvents).toEqual(['session_created:owner-a:session-1:1']);
+
+    await hooked.requestCancel('session-1');
+    expect(cancels).toEqual(['session-1']);
+    expect(ownerEvents).toEqual([
+      'session_created:owner-a:session-1:1',
+      'session_cancel_requested:owner-a:session-1:2',
+    ]);
+  });
+
+  test('onOwnerEventAppended rolls back with a failed projection, keeping the business write', async () => {
+    const hooked = new PgAgentSessionStore(db, {
+      ...optionsFor(db),
+      onOwnerEventAppended: async () => {
+        throw new Error('owner notify failed');
+      },
+    });
+    // The projection failure is logged and non-fatal: the session creation
+    // commits, the owner projection (and its queued NOTIFY) rolls back.
+    await expect(hooked.createSession(makeAgentSessionInput())).resolves.toMatchObject({
+      id: 'session-1',
+    });
+    expect(await hooked.getSession('session-1')).not.toBeNull();
+    expect(await hooked.readMaxId('owner-a')).toBe(BigInt(0));
+  });
 });

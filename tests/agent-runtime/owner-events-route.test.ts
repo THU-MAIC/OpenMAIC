@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   readOwnerSessionEventMaxId: vi.fn(),
   readOwnerSessionEventsAfter: vi.fn(),
   resolveRequestOwnerId: vi.fn(),
+  wake: undefined as undefined | (() => void),
+  unsubscribeWakeup: vi.fn(),
 }));
 
 vi.mock('@/lib/config/feature-flags', () => ({
@@ -21,6 +23,12 @@ vi.mock('@/lib/server/agent-runtime/store', () => ({
     readMaxId: mocks.readOwnerSessionEventMaxId,
     readAfter: mocks.readOwnerSessionEventsAfter,
   })),
+}));
+vi.mock('@/lib/server/agent-runtime/event-notify-bus', () => ({
+  subscribeAgentEventWakeup: vi.fn((_route, wake: () => void) => {
+    mocks.wake = wake;
+    return mocks.unsubscribeWakeup;
+  }),
 }));
 
 import {
@@ -55,6 +63,7 @@ async function readNonHeartbeatChunk(
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  mocks.wake = undefined;
   mocks.resolveRequestOwnerId.mockReturnValue('user:mine');
   mocks.readOwnerRetirement.mockResolvedValue(null);
   mocks.readOwnerSessionEventMaxId.mockResolvedValue(BigInt(0));
@@ -288,6 +297,33 @@ describe('GET owner session events', () => {
     await reader.cancel();
   });
 
+  it('forwards an owner event immediately on a wakeup, without waiting for the 30s poll', async () => {
+    const response = await call();
+    const reader = response.body!.getReader();
+    expect(await readChunk(reader)).toContain('event: caught_up');
+
+    mocks.readOwnerSessionEventsAfter.mockResolvedValueOnce([
+      {
+        id: '1',
+        ownerId: 'user:mine',
+        sessionId: 'session-live',
+        ts: 123,
+        type: 'session_status',
+        status: 'running',
+        attempt: 1,
+      },
+    ]);
+    // The LISTEN/NOTIFY wakeup fires the instant a durable owner projection
+    // commits. No timer advance: the frame must land on the wake alone, or
+    // the session list would still refresh on the 30s fallback clock.
+    mocks.wake?.();
+
+    expect(await readChunk(reader)).toContain('id: 1\nevent: session_status');
+    expect(mocks.readOwnerSessionEventsAfter).toHaveBeenCalledTimes(2);
+    await reader.cancel();
+    expect(mocks.unsubscribeWakeup).toHaveBeenCalledOnce();
+  });
+
   it('converges within the 30s polling interval', async () => {
     // Absolute time bound, not the imported constant: this test pins how FAST
     // the fallback converges. If the advance used the constant itself, a
@@ -318,6 +354,7 @@ describe('GET owner session events', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(delivered).toBe(true);
     expect(await fallbackFrame).toContain('id: 1\nevent: session_status');
+    expect(mocks.wake).toBeTypeOf('function'); // registered, deliberately never invoked
     await reader.cancel();
   });
 

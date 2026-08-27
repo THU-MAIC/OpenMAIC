@@ -469,6 +469,49 @@ export interface AgentSessionHooks {
       clientRequestId: string;
     },
   ) => Promise<void>;
+  /**
+   * Runs after a session event row is staged inside the append transaction,
+   * before COMMIT. The intended use is a lossy wakeup (e.g.
+   * `SELECT pg_notify(...)` on the same transaction handle): PostgreSQL
+   * delivers NOTIFY only at commit, so a reader wakes exactly when the row
+   * becomes durable, and a dropped notification degrades only latency —
+   * the reader's fallback poll still converges. A throwing hook aborts the
+   * append (reference material-event semantics: the notification rides the
+   * same transaction), so hosts should keep the hook non-throwing.
+   */
+  onSessionEventAppended?: (
+    transaction: AgentSessionTransaction,
+    event: {
+      sessionId: string;
+      seq: number;
+      type: string;
+      ts: number;
+      attempt: number;
+    },
+  ) => Promise<void> | void;
+  /**
+   * Runs after an owner projection row is staged, before COMMIT, inside the
+   * projection's SAVEPOINT: PG emits a queued NOTIFY only when the outer
+   * business transaction commits, and a failed projection rolls the
+   * notification back with it. A throwing hook fails the projection (logged,
+   * non-fatal — the business write still commits) exactly like the
+   * reference's in-savepoint notify.
+   */
+  onOwnerEventAppended?: (
+    transaction: AgentSessionTransaction,
+    event: PersistedOwnerSessionEvent,
+  ) => Promise<void> | void;
+  /**
+   * Runs inside the cancel transaction after the session row update and its
+   * owner projection, before COMMIT. The reference sends the same
+   * `{kind:'session'}` wakeup from `requestCancel` so a running session's
+   * runner (and its per-session SSE reader) aborts the instant the cancel
+   * becomes durable instead of waiting for the fallback poll.
+   */
+  onCancelRequested?: (
+    transaction: AgentSessionTransaction,
+    sessionId: string,
+  ) => Promise<void> | void;
 }
 
 /**

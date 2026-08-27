@@ -152,13 +152,17 @@ export function runAgentSessionStoreContract(
       expect(replay.events.map((event) => event.id)).toEqual([1, 2, 4, 5]);
     });
 
-    test('carries message_update compaction across page boundaries', async () => {
+    test('carries first-and-last message_update compaction across page boundaries', async () => {
       const store = makeStore();
       await store.createSession(makeAgentSessionInput());
-      // Reviewer repro: one non-update, a run of ten updates, then another
-      // non-update, read in pages of six. Page-local lag/lead used to keep the
-      // first and last update of each page (2,6,7,11) instead of the true run
-      // survivors (2,11).
+      // One non-update, a run of ten updates, then another non-update, read in
+      // pages of six. Compaction ranks each PAGE (not the whole remainder):
+      // the first row of a page has no left neighbour, so it is always kept —
+      // that is what lets a live SSE tail forward a delta the moment it lands
+      // (its `prev` is NULL at the page edge, so it can never be compacted
+      // away). The extra middle frames at a boundary (6, 7) are harmless: the
+      // workbench fold overwrites message_update text wholesale, and the last
+      // frame of each page still carries the full text (reference semantics).
       for (const [index, type] of [
         'before',
         ...Array.from({ length: 10 }, () => 'message_update'),
@@ -176,17 +180,42 @@ export function runAgentSessionStoreContract(
       // `scanned` counts the raw rows after the cursor (12 total), untouched by
       // the compaction window; the page itself still returns at most `limit`.
       expect(first.scanned).toBe(12);
-      expect(first.events.map((event) => event.id)).toEqual([1, 2]);
+      expect(first.events.map((event) => event.id)).toEqual([1, 2, 6]);
 
       const second = await store.readEventsAfterForReplay('session-1', 6, 6);
       expect(second.scanned).toBe(6);
-      expect(second.events.map((event) => event.id)).toEqual([11, 12]);
+      expect(second.events.map((event) => event.id)).toEqual([7, 11, 12]);
 
       expect(
         [...first.events, ...second.events]
           .filter((event) => event.type === 'message_update')
           .map((event) => event.id),
-      ).toEqual([2, 11]);
+      ).toEqual([2, 6, 7, 11]);
+    });
+
+    test('a live tail never starves: the first message_update after the cursor is always kept', async () => {
+      const store = makeStore();
+      await store.createSession(makeAgentSessionInput());
+      // The cursor sits ON a message_update (the previous poll forwarded it).
+      // A fresh burst of deltas arrives with no non-update neighbour on either
+      // side. Page-local compaction must still forward the first frame — the
+      // delta that proves the stream is alive — instead of compacting the
+      // whole burst away because the cursor row happens to be an update too.
+      for (const type of ['message_update', 'message_update', 'message_update']) {
+        await store.appendControlEvent('session-1', {
+          ts: 1,
+          type,
+          data: { text: 'delta' },
+        });
+      }
+      const tail = await store.readEventsAfterForReplay('session-1', 0, 500);
+      expect(tail.scanned).toBe(3);
+      expect(tail.events.map((event) => event.id)).toEqual([1, 3]);
+      // The first frame is never dropped, whatever the cursor row was: re-read
+      // with the cursor on event 1 (a message_update) and a second delta.
+      await store.appendControlEvent('session-1', { ts: 2, type: 'message_update', data: {} });
+      const next = await store.readEventsAfterForReplay('session-1', 1, 500);
+      expect(next.events.map((event) => event.id)).toEqual([2, 4]);
     });
 
     test('records control events with the current attempt generation', async () => {

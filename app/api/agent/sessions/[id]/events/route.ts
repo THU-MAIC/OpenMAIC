@@ -36,6 +36,7 @@ import type { NextRequest } from 'next/server';
 
 import { HOST_AGENT_LIFECYCLE as LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
+import { subscribeAgentEventWakeup } from '@/lib/server/agent-runtime/event-notify-bus';
 import { resolveRequestOwnerId } from '@/lib/server/agent-runtime/owner';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 
@@ -45,8 +46,9 @@ export const runtime = 'nodejs';
 // The 25s heartbeat prevents idle intermediaries from ending the stream early.
 export const maxDuration = 300;
 
-// Polling is the correctness mechanism because the storage package does not
-// expose LISTEN/NOTIFY. Terminal streams retain their longer backoff.
+// LISTEN/NOTIFY supplies low latency. Polling remains an explicit correctness
+// fallback for notifications lost during disconnects; terminal streams retain
+// their longer backoff.
 export const POLL_INTERVAL_MS = 5_000;
 // Terminal streams poll less often than active ones, but 10s is the ceiling.
 // The worst case is "session already terminal -> user steers": this is exactly
@@ -89,6 +91,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const encoder = new TextEncoder();
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let unsubscribeWakeup: (() => void) | null = null;
   // Hoisted so cancel() can stop an in-flight-then-scheduled poll, not just
   // the timer: after a client disconnect, `closed` makes every later poll a
   // no-op and `write` a dead end.
@@ -99,6 +102,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     pollTimer = null;
     heartbeatTimer = null;
+    unsubscribeWakeup?.();
+    unsubscribeWakeup = null;
   };
 
   const stream = new ReadableStream<Uint8Array>({
@@ -109,6 +114,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       let terminal = false;
       let consecutiveBacklogFailures = 0;
       let degradedCaughtUp = false;
+      let initializing = true;
+      let wakeDuringInitialization = false;
       let repollRequested = false;
       let pollInFlight: Promise<void> | null = null;
 
@@ -226,6 +233,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
       const requestPoll = (): Promise<void> => {
         if (closed) return Promise.resolve();
+        if (initializing) {
+          wakeDuringInitialization = true;
+          return Promise.resolve();
+        }
         if (pollInFlight) {
           repollRequested = true;
           return pollInFlight;
@@ -265,7 +276,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         if (closed) return;
         write(': ping\n\n');
       }, HEARTBEAT_INTERVAL_MS);
+      // Register before the initial read so a commit racing with backlog
+      // exhaustion cannot fall into the 5s fallback window. The callback is
+      // removed on every stream close path together with both timers.
+      unsubscribeWakeup = subscribeAgentEventWakeup({ kind: 'session', sessionId: id }, () => {
+        void requestPoll();
+      });
       await drainBacklog();
+      initializing = false;
+      if (wakeDuringInitialization) await requestPoll();
       tick();
     },
     cancel() {

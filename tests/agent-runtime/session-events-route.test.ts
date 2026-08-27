@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   readEventsAfterForReplay: vi.fn(),
   resolveRequestOwnerId: vi.fn(),
+  wake: undefined as undefined | (() => void),
+  unsubscribeWakeup: vi.fn(),
 }));
 
 vi.mock('@/lib/config/feature-flags', () => ({
@@ -19,6 +21,12 @@ vi.mock('@/lib/server/agent-runtime/store', () => ({
     getSession: mocks.getSession,
     readEventsAfterForReplay: mocks.readEventsAfterForReplay,
   })),
+}));
+vi.mock('@/lib/server/agent-runtime/event-notify-bus', () => ({
+  subscribeAgentEventWakeup: vi.fn((_route, wake: () => void) => {
+    mocks.wake = wake;
+    return mocks.unsubscribeWakeup;
+  }),
 }));
 
 import {
@@ -66,6 +74,7 @@ async function readNonHeartbeatChunk(
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  mocks.wake = undefined;
   mocks.getSession.mockResolvedValue({ id: 'session-1', ownerId: 'user:mine' });
   mocks.resolveRequestOwnerId.mockReturnValue('user:mine');
   mocks.readEventsAfterForReplay.mockResolvedValue({ events: [], scanned: 0 });
@@ -127,6 +136,27 @@ describe('GET per-session events', () => {
     expect(mocks.readEventsAfterForReplay).not.toHaveBeenCalled();
   });
 
+  it('forwards a delta immediately on a session wakeup, without waiting for the poll', async () => {
+    const response = await call();
+    const reader = response.body!.getReader();
+    expect(await readChunk(reader)).toBe(': replaying from event 0\n\n');
+    expect(await readChunk(reader)).toContain('event: caught_up');
+
+    mocks.readEventsAfterForReplay.mockResolvedValueOnce({
+      events: [{ id: 1, ts: 123, attempt: 1, type: 'message_update', data: { text: 'now' } }],
+      scanned: 1,
+    });
+    // The LISTEN/NOTIFY wakeup fires the instant a durable delta commits. No
+    // timer advance: the frame must land on the wake alone, or token-by-token
+    // streaming would still stall on the 5s fallback clock.
+    mocks.wake?.();
+
+    expect(await readChunk(reader)).toContain('id: 1\nevent: message_update');
+    expect(mocks.readEventsAfterForReplay).toHaveBeenCalledTimes(2);
+    await reader.cancel();
+    expect(mocks.unsubscribeWakeup).toHaveBeenCalledOnce();
+  });
+
   it('converges within the 5s polling interval', async () => {
     // Absolute time bound, not the imported constant: this test pins how FAST
     // the fallback converges. If the advance used the constant itself, a
@@ -151,6 +181,7 @@ describe('GET per-session events', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(delivered).toBe(true);
     expect(await fallbackFrame).toContain('id: 1\nevent: message_update');
+    expect(mocks.wake).toBeTypeOf('function'); // registered, deliberately never invoked
     await reader.cancel();
   });
 
