@@ -4,9 +4,9 @@
  *
  * The document seam returns a DOCUMENT: stage + scenes + outline, and nothing
  * about who is asking. The classroom branches on exactly that — `isOwner`
- * decides read-only vs editable, `isBookmarked` drives the save/subscribe CTA —
- * so the split is explicit: the document carries content, this sidecar carries
- * tenancy, and the client fetches both in parallel.
+ * decides read-only vs editable — so the split is explicit: the document
+ * carries content, this sidecar carries tenancy, and the client fetches both
+ * in parallel.
  *
  * ## Everything here is fail-closed on the tombstone
  *
@@ -25,11 +25,10 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
-import { hasStageBookmark } from '@/lib/persistence/stage-meta';
-import { getStageAccessDb, resolveStageAccess } from '@/lib/server/stage-access';
+import { resolveStageAccess } from '@/lib/server/stage-access';
 import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
 
-// Per-viewer and mutable on every publish/bookmark/delete: this response must
+// Per-viewer and mutable on every publish/unpublish/delete: this response must
 // never be cached, by Next or by anything in front of it.
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -55,13 +54,9 @@ export async function GET(req: NextRequest, { params }: Params) {
       // scope inside its write transactions).
       const isOwner = access.ownerId === ownerId;
 
-      const db = await getStageAccessDb();
-      const isBookmarked = await hasStageBookmark(db, ownerId, stageId);
-
       return NextResponse.json(
         {
           isOwner,
-          isBookmarked,
           isPublic: access.isPublic,
           publishedAt: access.publishedAt,
           generationComplete: access.generationComplete,

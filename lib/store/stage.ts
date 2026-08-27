@@ -296,7 +296,6 @@ interface StageState {
    * deliberately NOT persisted with the document.
    */
   isOwner: boolean;
-  isBookmarked: boolean;
   readOnly: boolean;
 
   /**
@@ -342,10 +341,10 @@ interface StageState {
   markGenerationCompleteIfDone: () => void;
   /**
    * Apply the stage-meta sidecar's per-viewer facts. `readOnly` follows the
-   * reference's classroom rule: a visitor who neither owns nor bookmarked the
-   * course gets a read-only classroom.
+   * reference's classroom rule: a visitor who is not the owner gets a
+   * read-only classroom.
    */
-  setViewerAccess: (access: { isOwner: boolean; isBookmarked: boolean }) => void;
+  setViewerAccess: (access: { isOwner: boolean }) => void;
   setGenerationStatus: (status: 'idle' | 'generating' | 'paused' | 'completed' | 'error') => void;
   setCurrentGeneratingOrder: (order: number) => void;
   bumpGenerationEpoch: () => void;
@@ -462,7 +461,6 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   generationComplete: false,
   outlineProducer: null,
   isOwner: true,
-  isBookmarked: false,
   readOnly: false,
   generationEpoch: 0,
   generationStatus: 'idle' as const,
@@ -765,8 +763,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     if (isDeckComplete({ outlines, scenes, failedOutlines })) get().setGenerationComplete(true);
   },
 
-  setViewerAccess: ({ isOwner, isBookmarked }) => {
-    set({ isOwner, isBookmarked, readOnly: !(isOwner || isBookmarked) });
+  setViewerAccess: ({ isOwner }) => {
+    set({ isOwner, readOnly: !isOwner });
   },
 
   setGenerationStatus: (generationStatus) => set({ generationStatus }),

@@ -93,7 +93,6 @@ import { GET as getStageStatus } from '@/app/api/stages/[id]/status/route';
 import { POST as postGenerationComplete } from '@/app/api/stages/[id]/generation-complete/route';
 import { POST as postPublish } from '@/app/api/stages/[id]/publish/route';
 import { POST as postUnpublish } from '@/app/api/stages/[id]/unpublish/route';
-import { POST as postBookmark } from '@/app/api/bookmarks/route';
 
 interface RouteCase {
   name: string;
@@ -316,18 +315,6 @@ const ROUTES: RouteCase[] = [
       ),
     happyStatus: 200,
   },
-  {
-    name: 'POST /api/bookmarks',
-    call: () =>
-      postBookmark(
-        new NextRequest('http://localhost/api/bookmarks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ stageId: STAGE_ID }),
-        }),
-      ),
-    happyStatus: 200,
-  },
 ];
 
 interface EnvState {
@@ -397,11 +384,10 @@ for (const state of STATES) {
       // Seed the folder the folder routes rename/delete/file against.
       void mocks.fakeStore.store.createFolder(FOLDER_ID, 'Seed folder');
 
-      // Stage-meta surfaces read/write `stage_meta` / `stage_bookmarks`
-      // through the server provider's pool. The stage belongs to the same
-      // owner the owner seam resolves (`owner-1`), so the access join answers
-      // an owned, live course and the bookmark queries answer empty. The
-      // owner-material upload lifecycle gets a ready row for its INSERT /
+      // Stage-meta surfaces read/write `stage_meta` through the server
+      // provider's pool. The stage belongs to the same owner the owner seam
+      // resolves (`owner-1`), so the access join answers an owned, live course.
+      // The owner-material upload lifecycle gets a ready row for its INSERT /
       // finalize statements.
       mocks.queryPool.connect.mockImplementation(async () => ({
         query: mocks.queryPool.query,
@@ -410,9 +396,6 @@ for (const state of STATES) {
       mocks.assetStore.put.mockResolvedValue('asset-1');
       mocks.assetStore.remove.mockResolvedValue(undefined);
       mocks.queryPool.query.mockImplementation(async (text: string) => {
-        if (text.includes('FROM stage_bookmarks') || text.includes('INSERT INTO stage_bookmarks')) {
-          return { rows: [] };
-        }
         if (text.includes('owner_material')) {
           return {
             rows: [

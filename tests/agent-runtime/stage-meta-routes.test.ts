@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   runtimeConfigured: true,
   resolveRequestOwnerId: vi.fn(),
   accessRow: null as Record<string, unknown> | null,
-  bookmarkRows: [] as unknown[],
   updatedRows: [] as unknown[],
 }));
 
@@ -19,9 +18,6 @@ vi.mock('@/lib/persistence/server-provider', () => ({
   getServerPersistenceProvider: async () => ({
     pool: {
       query: vi.fn(async (text: string) => {
-        if (text.includes('FROM stage_bookmarks') || text.includes('INSERT INTO stage_bookmarks')) {
-          return { rows: mocks.bookmarkRows };
-        }
         if (text.includes('UPDATE stage_meta')) {
           return { rows: mocks.updatedRows };
         }
@@ -44,7 +40,6 @@ import { GET as getStatus } from '@/app/api/stages/[id]/status/route';
 import { POST as postGenerationComplete } from '@/app/api/stages/[id]/generation-complete/route';
 import { POST as postPublish } from '@/app/api/stages/[id]/publish/route';
 import { POST as postUnpublish } from '@/app/api/stages/[id]/unpublish/route';
-import { POST as postBookmark } from '@/app/api/bookmarks/route';
 
 const STAGE_ID = 'stage-1';
 const stageMetaParams = (stageId: string) => ({ params: Promise.resolve({ stageId }) });
@@ -62,7 +57,6 @@ beforeEach(() => {
     meta_deleted_at: null,
     document_name: 'Course',
   };
-  mocks.bookmarkRows = [];
   mocks.updatedRows = [{ stage_id: STAGE_ID }];
 });
 
@@ -75,7 +69,6 @@ describe('GET /api/stage-meta/[stageId]', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       isOwner: true,
-      isBookmarked: false,
       isPublic: false,
       publishedAt: null,
       generationComplete: false,
@@ -83,14 +76,13 @@ describe('GET /api/stage-meta/[stageId]', () => {
     });
   });
 
-  it('reports a visitor as non-owner and bookmarked when they saved it', async () => {
+  it('reports a visitor as non-owner', async () => {
     mocks.accessRow!.meta_owner_id = 'someone-else';
-    mocks.bookmarkRows = [{ stage_id: STAGE_ID }];
     const response = await getStageMeta(
       new NextRequest(`http://localhost/api/stage-meta/${STAGE_ID}`),
       stageMetaParams(STAGE_ID),
     );
-    await expect(response.json()).resolves.toMatchObject({ isOwner: false, isBookmarked: true });
+    await expect(response.json()).resolves.toMatchObject({ isOwner: false });
   });
 
   it('answers 404 for an absent or tombstoned course', async () => {
@@ -208,49 +200,5 @@ describe('POST /api/stages/[id]/publish and unpublish', () => {
     );
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: 'login_required' });
-  });
-});
-
-describe('POST /api/bookmarks', () => {
-  it('bookmarks an existing course idempotently', async () => {
-    const response = await postBookmark(
-      new NextRequest('http://localhost/api/bookmarks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stageId: STAGE_ID }),
-      }),
-    );
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true });
-  });
-
-  it('rejects a missing stageId', async () => {
-    const response = await postBookmark(
-      new NextRequest('http://localhost/api/bookmarks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      }),
-    );
-    expect(response.status).toBe(400);
-  });
-
-  it('answers 404 when the course is absent or tombstoned', async () => {
-    mocks.accessRow = {
-      meta_owner_id: null,
-      meta_is_public: false,
-      meta_published_at: null,
-      meta_generation_complete: false,
-      meta_deleted_at: null,
-      document_name: null,
-    };
-    const response = await postBookmark(
-      new NextRequest('http://localhost/api/bookmarks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stageId: STAGE_ID }),
-      }),
-    );
-    expect(response.status).toBe(404);
   });
 });

@@ -20,8 +20,6 @@ export interface WorkspaceCourseLike {
   readonly id: string;
   readonly name?: string;
   readonly folderId?: string;
-  /** `false` = saved from Discover; `true`/absent = the user's own. */
-  readonly isOwner?: boolean;
 }
 
 export interface WorkspaceFolderLike {
@@ -88,32 +86,4 @@ export function groupCoursesByFolder<C extends WorkspaceCourseLike>(
     groups: folders.map((folder) => ({ folder, courses: byFolder.get(folder.id) ?? [] })),
     ungrouped,
   };
-}
-
-export interface OwnershipSplit<C> {
-  /** Courses the user authored — the ones manage actions may be offered on. */
-  readonly owned: readonly C[];
-  /** Courses saved from Discover. Not editable by this user. */
-  readonly favorites: readonly C[];
-}
-
-/**
- * Split "my courses" into authored and saved.
- *
- * Live mode serves BOTH through one bookmark-driven list, so only an explicit
- * `isOwner === false` marks a favorite. An absent flag (self-deploy, or a
- * server that has not been taught the field) counts as owned: withdrawing
- * rename/move because a signal is missing would be a regression, while
- * offering them on a favorite merely reproduces today's behaviour.
- */
-export function partitionByOwnership<C extends WorkspaceCourseLike>(
-  courses: readonly C[],
-): OwnershipSplit<C> {
-  const owned: C[] = [];
-  const favorites: C[] = [];
-  for (const course of courses) {
-    if (course.isOwner === false) favorites.push(course);
-    else owned.push(course);
-  }
-  return { owned, favorites };
 }

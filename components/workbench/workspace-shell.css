@@ -951,90 +951,7 @@
   line-height: 14px;
 }
 
-/* ── Saved courses, at the foot ───────────────────────────────────────────
-   The ownership boundary survives the move from section to drawer, and it is
-   still the rail's sharpest cut: everything above the rule you made, the
-   drawer below it you merely kept. Shut, it is one head; open, it takes its
-   height from the list above rather than floating over it. */
-.ws-drawer {
-  border-top: 1px solid var(--ws-line);
-  background: var(--ws-tint);
-}
-
-.ws-drawer-toggle {
-  border-radius: 8px;
-  transition: background-color 160ms var(--ws-ease);
-}
-
-/* The head sits on the drawer's own tint ground, so the rail's resting hover
-   tint would show nothing here: one step stronger. */
-.ws-drawer-toggle:hover {
-  background-color: var(--ws-tint-strong);
-}
-
-.ws-drawer-toggle:hover .ws-saved-title {
-  color: var(--ws-ink);
-}
-
-.ws-drawer-toggle:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 1px var(--ws-accent-thread);
-}
-
-/* The drawer head's title line: the prototype's savedhead register — a shade
-   under body size, semibold, never the uppercase label's wider tracking. */
-.ws-saved-title {
-  font-size: 11.5px;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: 0.02em;
-  color: var(--ws-ink-soft);
-}
-
-/* Count and the read-only rule, on the line that has room for them. The rule
-   governs every row in the drawer, so it is stated at rest rather than
-   discovered when a saved course refuses to be edited. */
-.ws-drawer-note {
-  font-size: 11px;
-  line-height: 1.25;
-  color: var(--ws-ink-mute);
-}
-
-/* Capped, so an open drawer can never take the whole rail: the list you were
-   reading stays on screen above it. */
-.ws-drawer-body {
-  max-height: 42vh;
-}
-
-/* Rows in the drawer sit on its tint ground, so the rail's own hover tint is
-   invisible there: they hover one step stronger, and the active row takes the
-   accent wash the prototype's saved rows take. */
-.ws-drawer .ws-row-wrap:hover .ws-row,
-.ws-drawer .ws-row-wrap:focus-within .ws-row {
-  background-color: var(--ws-tint-strong);
-}
-
-.ws-drawer .ws-row-active {
-  background-color: var(--ws-accent-wash);
-}
-
-/* The disclosure triangle. One glyph, rotated — never two icons swapped,
-   which is what makes a twisty read as mechanism instead of as a state
-   change that happened somewhere else. */
-.ws-twisty {
-  color: var(--ws-ink-mute);
-  transition: transform 180ms var(--ws-ease);
-}
-
-.ws-twisty-open {
-  transform: rotate(90deg);
-}
-
-.ws-twisty-up {
-  transform: rotate(180deg);
-}
-
-/* Folder / bookmark glyphs: present, never loud. */
+/* Folder glyphs: present, never loud. */
 .ws-glyph {
   color: var(--ws-ink-mute);
 }
@@ -1100,49 +1017,6 @@
    `space-y-px` list, whose own margin rule outranks a single class. */
 .ws-loose {
   padding-top: 10px;
-}
-
-/* ── Rail buttons ────────────────────────────────────────────────────── */
-.ws-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  color: var(--ws-ink-mute);
-  transition:
-    background-color 160ms var(--ws-ease),
-    color 160ms var(--ws-ease);
-}
-
-.ws-icon-btn:hover {
-  background-color: var(--ws-tint);
-  color: var(--ws-ink);
-}
-
-.ws-icon-btn:focus-visible {
-  outline: none;
-  color: var(--ws-ink);
-  box-shadow: 0 0 0 1px var(--ws-accent-thread);
-}
-
-.ws-search {
-  background-color: var(--ws-tint);
-  border: 1px solid transparent;
-  color: var(--ws-ink);
-  transition:
-    border-color 160ms var(--ws-ease),
-    box-shadow 160ms var(--ws-ease);
-}
-
-.ws-search::placeholder {
-  color: var(--ws-ink-mute);
-}
-
-.ws-search:focus-visible {
-  border-color: var(--ws-accent-thread);
-  box-shadow: 0 0 0 3px var(--ws-accent-wash);
 }
 
 /* Show-more / collapse — a plain line of quiet text belonging to the list it
@@ -1326,7 +1200,6 @@
 /* No transition on the rail's width: it is driven straight from the pointer,
    and easing a value that already tracks the cursor only adds lag. */
 @media (prefers-reduced-motion: reduce) {
-  .ws-twisty,
   .ws-row-wrap,
   .ws-row-trailing,
   .ws-navtab::after {

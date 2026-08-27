@@ -40,15 +40,6 @@ CREATE INDEX IF NOT EXISTS stage_meta_owner_idx ON stage_meta (owner_id, stage_i
 CREATE INDEX IF NOT EXISTS stage_meta_public_live_idx
   ON stage_meta (stage_id) WHERE is_public AND deleted_at IS NULL;
 
-CREATE TABLE IF NOT EXISTS stage_bookmarks (
-  owner_id TEXT NOT NULL,
-  stage_id TEXT NOT NULL,
-  created_at DOUBLE PRECISION NOT NULL,
-  PRIMARY KEY (owner_id, stage_id)
-);
-
-CREATE INDEX IF NOT EXISTS stage_bookmarks_stage_idx ON stage_bookmarks (stage_id);
-
 INSERT INTO stage_meta (stage_id, owner_id)
 SELECT id, owner_id
   FROM document_stages
@@ -169,30 +160,4 @@ export async function setStagePublished(
       WHERE stage_id = $1 AND deleted_at IS NULL`,
     [stageId, isPublic, publishedAt],
   );
-}
-
-/** Idempotent bookmark insert ("My Courses" collection). */
-export async function addStageBookmark(
-  queryable: Queryable,
-  ownerId: string,
-  stageId: string,
-): Promise<void> {
-  await queryable.query(
-    `INSERT INTO stage_bookmarks (owner_id, stage_id, created_at)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (owner_id, stage_id) DO NOTHING`,
-    [ownerId, stageId, Date.now()],
-  );
-}
-
-export async function hasStageBookmark(
-  queryable: Queryable,
-  ownerId: string,
-  stageId: string,
-): Promise<boolean> {
-  const result = await queryable.query<{ stage_id: string } & Record<string, unknown>>(
-    'SELECT stage_id FROM stage_bookmarks WHERE owner_id = $1 AND stage_id = $2 LIMIT 1',
-    [ownerId, stageId],
-  );
-  return result.rows.length === 1;
 }

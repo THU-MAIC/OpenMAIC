@@ -1835,8 +1835,7 @@
     "newSession": "新建对话",
     "sections": {
       "courses": "课程",
-      "sessions": "对话",
-      "favorites": "收藏"
+      "sessions": "对话"
     },
     "coursesEmpty": "还没有课程",
     "sessionsEmpty": "还没有对话",
@@ -1865,9 +1864,6 @@
       "cancelled": "已停止"
     },
     "backToWorkspace": "返回工作区",
-    "savedCourse": "收藏的课堂，只读",
-    "savedNote": "他人创建 · 只读",
-    "savedEmpty": "还没有收藏的课堂",
     "searchPlaceholder": "按名称筛选",
     "searchAria": "在{{section}}中搜索",
     "searchEmpty": "没有匹配的内容",
@@ -1908,7 +1904,6 @@
     "deleting": "删除中…",
     "deleteFailed": "删除失败，请重试",
     "tabsAria": "对话与课程",
-    "savedDrawerAria": "收藏的课堂",
     "courseTabsAria": "右栏标签页",
     "courseTabClose": "关闭标签页《{{name}}》",
     "courseTabRunning": "生成中",
