@@ -109,6 +109,26 @@ export function runAgentSessionStoreContract(
         claimSeq: 0,
       });
       expect(await store.heartbeat('session-1', 'worker-a')).toBe(true);
+      const messageSeq = await store.appendUserMessage('session-1', {
+        text: 'Opening prompt',
+        delivery: 'steer',
+      });
+      expect(await store.markUserMessageDelivered('session-1', 'worker-b', 1, messageSeq)).toBe(
+        false,
+      );
+      expect(await store.markUserMessageDelivered('session-1', 'worker-a', 2, messageSeq)).toBe(
+        false,
+      );
+      expect(await store.markUserMessageDelivered('session-1', 'worker-a', 1, messageSeq)).toBe(
+        true,
+      );
+      expect(await store.getSession('session-1')).toMatchObject({
+        deliveredUserMessageSeq: messageSeq,
+      });
+      expect(await store.markUserMessageDelivered('session-1', 'worker-a', 1, 0)).toBe(true);
+      expect(await store.getSession('session-1')).toMatchObject({
+        deliveredUserMessageSeq: messageSeq,
+      });
       expect(
         await store.appendRunEvent('session-1', 'worker-a', {
           ts: 2,
@@ -132,7 +152,7 @@ export function runAgentSessionStoreContract(
           type: AGENT_SESSION_LIFECYCLE.sessionStart,
           data: { ok: true },
         }),
-      ).toBe(1);
+      ).toBe(2);
       expect(await store.finishSession('session-1', 'worker-b', { status: 'failed' })).toBe(false);
       expect(
         await store.finishSession('session-1', 'worker-a', {
@@ -141,6 +161,9 @@ export function runAgentSessionStoreContract(
         }),
       ).toBe(true);
       expect(await store.heartbeat('session-1', 'worker-a')).toBe(false);
+      expect(await store.markUserMessageDelivered('session-1', 'worker-a', 1, messageSeq + 1)).toBe(
+        false,
+      );
       expect(await store.getSession('session-1')).toMatchObject({
         status: 'succeeded',
         attempt: 0,
@@ -356,6 +379,7 @@ export function runAgentSessionStoreContract(
       await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
       await store.finishSession('session-1', 'worker-a', { status: 'failed' });
       expect(await store.requeueSession('session-1')).toBe(true);
+      expect(await store.requeueSession('session-1')).toBe(false);
       expect(await store.getSession('session-1')).toMatchObject({ status: 'queued', attempt: 0 });
     });
 

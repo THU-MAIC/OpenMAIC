@@ -86,6 +86,7 @@ describe('runSession durable event ordering', () => {
         updatedAt: 1,
         claimReason: 'queued',
         claimSeq: 0,
+        deliveredUserMessageSeq: 0,
       },
     );
 

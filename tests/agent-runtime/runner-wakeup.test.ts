@@ -20,8 +20,9 @@ const mocks = vi.hoisted(() => {
   // (the runner passes WORKER_ID as its second argument) and hand it back
   // through getSession so `leaseMatches` sees a live, owned session.
   let workerId: string | undefined;
+  let deliveredUserMessageSeq = 0;
   const store = {
-    appendRunEvent: vi.fn(async (_id: string, worker: string) => {
+    appendRunEvent: vi.fn(async (_id: string, worker: string, _event?: { type?: string }) => {
       workerId = worker;
       return 1;
     }),
@@ -34,12 +35,17 @@ const mocks = vi.hoisted(() => {
             ownerId: 'owner-1',
             status: 'running',
             attempt: 1,
+            deliveredUserMessageSeq,
             lease: { workerId, workerPid: process.pid, heartbeatAt: Date.now() },
           }
         : null,
     ),
     hasSessionRunHistory: vi.fn(async () => false),
     heartbeat: vi.fn(async () => true),
+    markUserMessageDelivered: vi.fn(async (_id, _worker, _attempt, messageSeq: number) => {
+      deliveredUserMessageSeq = Math.max(deliveredUserMessageSeq, messageSeq);
+      return true;
+    }),
     getCancelRequestedAt: vi.fn(async () => null),
     isCancelRequested: vi.fn(async () => false),
     listUserMessages: vi.fn(
@@ -56,7 +62,14 @@ const mocks = vi.hoisted(() => {
     wake: undefined as undefined | (() => void),
     unsubscribeWakeup: vi.fn(),
   };
-  return { store, bus, resetWorker: () => (workerId = undefined) };
+  return {
+    store,
+    bus,
+    resetWorker: () => {
+      workerId = undefined;
+      deliveredUserMessageSeq = 0;
+    },
+  };
 });
 
 vi.mock('@/lib/server/agent-runtime/store', () => ({
@@ -198,13 +211,18 @@ const fake = vi.hoisted(() => {
       // which this harness never produces.
     }
 
-    async prompt(text: string): Promise<void> {
+    async prompt(input: unknown): Promise<void> {
       this.promptCalls += 1;
       // The prompt becomes the first user message of the conversation (real pi
       // behaviour) — folded into the entry tree via message_end so the
       // runner's post-settle undelivered-message check counts it as delivered.
-      this.state.messages.push({ role: 'user', content: text });
-      this.emitMessageEnd({ role: 'user', content: text });
+      const message = Array.isArray(input)
+        ? input[0]
+        : input && typeof input === 'object'
+          ? input
+          : { role: 'user', content: input };
+      this.state.messages.push(message);
+      this.emitMessageEnd(message as { role: string; content: unknown });
       await new Promise<void>((resolve) => {
         this.release = resolve;
       });
@@ -265,7 +283,8 @@ const SESSION = {
   createdAt: 1,
   updatedAt: 1,
   claimReason: 'queued' as const,
-  claimSeq: 0,
+  claimSeq: 1,
+  deliveredUserMessageSeq: 0,
 };
 
 async function waitForReady(): Promise<void> {
@@ -313,7 +332,7 @@ describe('runSession NOTIFY wakeup wiring', () => {
     mocks.bus.wake?.();
     await vi.waitFor(() => {
       expect(fake.current.instance?.steerCalls).toEqual([
-        { role: 'user', content: 'follow-up from the control plane' },
+        expect.objectContaining({ role: 'user', content: 'follow-up from the control plane' }),
       ]);
     });
     // The wake runs BOTH cheap point reads: the drain above and the cancel
@@ -325,7 +344,62 @@ describe('runSession NOTIFY wakeup wiring', () => {
     // go away with it.
     fake.current.instance?.releasePrompt();
     await run;
+    expect(mocks.store.markUserMessageDelivered).toHaveBeenCalledWith(
+      'session-wake',
+      expect.any(String),
+      1,
+      2,
+    );
+    expect(mocks.store.requeueSession).not.toHaveBeenCalled();
     expect(mocks.bus.unsubscribeWakeup).toHaveBeenCalledOnce();
+  });
+
+  it('delivers the durable opening message once and does not requeue after settlement', async () => {
+    mocks.store.listUserMessages.mockResolvedValue([
+      { seq: 1, ts: 1, text: 'Build a lesson', delivery: 'queued', materials: [] },
+    ]);
+
+    const run = runSession({ running: new Map(), shuttingDown: false }, SESSION);
+    await waitForReady();
+    fake.current.instance?.releasePrompt();
+    await run;
+
+    expect(mocks.store.markUserMessageDelivered).toHaveBeenCalledWith(
+      'session-wake',
+      expect.any(String),
+      1,
+      1,
+    );
+    expect(fake.current.instance?.promptCalls).toBe(1);
+    expect(mocks.store.requeueSession).not.toHaveBeenCalled();
+    expect(mocks.store.requeueForRetry).not.toHaveBeenCalled();
+  });
+
+  it('rescues exactly once when a message lands after the final drain', async () => {
+    const opening = { seq: 1, ts: 1, text: 'Build a lesson', delivery: 'queued', materials: [] };
+    const late = { seq: 2, ts: 2, text: 'One more change', delivery: 'steer', materials: [] };
+    mocks.store.listUserMessages.mockResolvedValue([opening]);
+    mocks.store.requeueSession.mockResolvedValueOnce(true).mockResolvedValue(false);
+
+    const run = runSession({ running: new Map(), shuttingDown: false }, SESSION);
+    await waitForReady();
+    mocks.store.appendRunEvent.mockImplementation(async (_id, _worker, event) => {
+      if (event?.type === 'session_end') {
+        mocks.store.listUserMessages.mockResolvedValue([opening, late]);
+      }
+      return 10;
+    });
+    fake.current.instance?.releasePrompt();
+    await run;
+
+    expect(mocks.store.markUserMessageDelivered).toHaveBeenCalledWith(
+      'session-wake',
+      expect.any(String),
+      1,
+      1,
+    );
+    expect(mocks.store.requeueSession).toHaveBeenCalledOnce();
+    expect(mocks.store.requeueForRetry).not.toHaveBeenCalled();
   });
 
   it('still unsubscribes when setup fails before the agent is built', async () => {

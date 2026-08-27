@@ -124,6 +124,7 @@ function makeMeta(overrides: Partial<ClaimedAgentSession> = {}): ClaimedAgentSes
     updatedAt: 1,
     claimReason: 'queued',
     claimSeq: 0,
+    deliveredUserMessageSeq: 0,
     ...overrides,
   };
 }

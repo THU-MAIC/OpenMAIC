@@ -337,20 +337,24 @@ export type UndeliveredRequeueAction = 'none' | 'reset' | 'retry';
 /** Classify undelivered work relative to the exact claim watermark. */
 export function planUndeliveredRequeue(input: {
   logged: { seq: number; ts: number }[];
-  handled: number;
+  deliveredThrough: number;
   claimSeq: number;
   atVerdict: boolean;
 }): UndeliveredRequeueAction {
-  const undelivered = input.logged.slice(input.handled);
+  const undelivered = input.logged.filter((message) => message.seq > input.deliveredThrough);
   if (undelivered.length === 0) return 'none';
   if (undelivered.some((message) => message.seq > input.claimSeq)) return 'reset';
   return input.atVerdict ? 'none' : 'retry';
 }
 
-export type RunStart = { kind: 'prompt'; text: string } | { kind: 'continue' };
+export type RunStart =
+  | { kind: 'prompt'; text: string; durableMessageSeq?: number }
+  | { kind: 'continue' };
 
 export interface FollowUpMessage {
   text: string;
+  /** Event-log sequence of the durable user message this frame consumes. */
+  durableMessageSeq?: number;
   materials?: Array<{
     materialId?: string;
     originalName?: string;
@@ -672,19 +676,18 @@ export function elementRefsPromptBlock(targets: readonly ResolvedElementRef[]): 
   ].join('\n');
 }
 
-/** Derive delivery from the immutable entry sequence, not in-memory state. */
-export function loggedMessageCursor(input: {
-  transcriptUserCount: number;
-  firstTranscriptUserText?: string;
-  loggedCount: number;
-  firstLoggedText?: string;
-  idleAttach?: boolean;
-}): { idle: boolean; delivered: number } {
-  const idle = input.idleAttach === true;
-  return {
-    idle,
-    delivered: idle ? input.transcriptUserCount : Math.max(0, input.transcriptUserCount - 1),
-  };
+const DURABLE_USER_MESSAGE_SEQ = 'openmaicDurableUserMessageSeq';
+
+/** Tag the exact durable message represented by a user transcript frame. */
+export function tagDurableUserMessage(message: AgentMessage, seq: number): AgentMessage {
+  return { ...message, [DURABLE_USER_MESSAGE_SEQ]: seq } as unknown as AgentMessage;
+}
+
+/** Recover a delivery tag from the finalized frame before advancing storage. */
+export function durableUserMessageSeq(message: AgentMessage): number | null {
+  if (message.role !== 'user') return null;
+  const value = (message as AgentMessage & Record<string, unknown>)[DURABLE_USER_MESSAGE_SEQ];
+  return Number.isSafeInteger(value) && Number(value) > 0 ? Number(value) : null;
 }
 
 /**
@@ -774,7 +777,12 @@ export function planRunStart(input: {
   idleAttach?: boolean;
 }): RunStart {
   if (input.plan.kind === 'start' && input.pending.length > 0 && input.idleAttach) {
-    return { kind: 'prompt', text: composeFollowUpText(input.pending[0]!) };
+    const opening = input.pending[0]!;
+    return {
+      kind: 'prompt',
+      text: composeFollowUpText(opening),
+      ...(opening.durableMessageSeq ? { durableMessageSeq: opening.durableMessageSeq } : {}),
+    };
   }
   if (input.plan.kind === 'start') {
     // A session created with opening context requeues its opening message as a
@@ -787,18 +795,33 @@ export function planRunStart(input: {
       return {
         kind: 'prompt',
         text: composeFollowUpText({ ...opening, text: input.prompt, materials: undefined }),
+        ...(opening.durableMessageSeq ? { durableMessageSeq: opening.durableMessageSeq } : {}),
       };
     }
-    return { kind: 'prompt', text: input.prompt };
+    return {
+      kind: 'prompt',
+      text: input.prompt,
+      ...(opening?.durableMessageSeq ? { durableMessageSeq: opening.durableMessageSeq } : {}),
+    };
   }
   if (input.plan.kind === 'already-complete' && input.pending.length > 0) {
     // A worker may die after the successful ask_user checkpoint but before
     // finishSession. Once a nonblank answer clears the durable claim gate, the
     // takeover is technically orphaned but semantically starts the next turn.
-    return { kind: 'prompt', text: composeFollowUpText(input.pending[0]!) };
+    const pending = input.pending[0]!;
+    return {
+      kind: 'prompt',
+      text: composeFollowUpText(pending),
+      ...(pending.durableMessageSeq ? { durableMessageSeq: pending.durableMessageSeq } : {}),
+    };
   }
   if (input.claimReason === 'queued' && input.pending.length > 0) {
-    return { kind: 'prompt', text: composeFollowUpText(input.pending[0]!) };
+    const pending = input.pending[0]!;
+    return {
+      kind: 'prompt',
+      text: composeFollowUpText(pending),
+      ...(pending.durableMessageSeq ? { durableMessageSeq: pending.durableMessageSeq } : {}),
+    };
   }
   return { kind: 'continue' };
 }
@@ -843,6 +866,7 @@ function toFollowUp(message: AgentSessionUserMessage): FollowUpMessage {
   );
   return {
     text: message.text,
+    durableMessageSeq: message.seq,
     ...(message.materials.length
       ? { materials: message.materials as FollowUpMessage['materials'] }
       : {}),
@@ -1013,24 +1037,17 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   const requeueIfUndelivered = async (why: string, atVerdict = false): Promise<void> => {
     try {
       const logged = await listAgentUserMessages(store, id);
-      const history = await loadEntryHistory();
-      const users = history.cursorMessages.filter((message) => message.role === 'user');
-      const handled = loggedMessageCursor({
-        transcriptUserCount: users.length,
-        firstTranscriptUserText:
-          typeof users[0]?.content === 'string' ? users[0].content : undefined,
-        loggedCount: logged.length,
-        firstLoggedText: logged[0]?.text,
-        idleAttach: meta.existingCourse,
-      }).delivered;
-      const action = planUndeliveredRequeue({ logged, handled, claimSeq, atVerdict });
+      const current = await store.getSession(id);
+      const deliveredThrough = current?.deliveredUserMessageSeq ?? 0;
+      const action = planUndeliveredRequeue({ logged, deliveredThrough, claimSeq, atVerdict });
+      const undelivered = logged.filter((message) => message.seq > deliveredThrough).length;
       if (action === 'reset' && (await store.requeueSession(id))) {
         log.info(
-          `session ${id}: ${logged.length - handled} fresh undelivered message(s) at ${why}; requeued with attempt reset`,
+          `session ${id}: ${undelivered} fresh undelivered message(s) at ${why}; requeued with attempt reset`,
         );
       } else if (action === 'retry' && (await store.requeueForRetry(id))) {
         log.info(
-          `session ${id}: ${logged.length - handled} stranded message(s) at ${why}; requeued preserving attempt`,
+          `session ${id}: ${undelivered} stranded message(s) at ${why}; requeued preserving attempt`,
         );
       }
     } catch (error) {
@@ -1175,32 +1192,25 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     };
 
     const loggedMessages = await listAgentUserMessages(store, id);
-    const historyUsers = recovery.cursorMessages.filter((message) => message.role === 'user');
-    const cursor = loggedMessageCursor({
-      transcriptUserCount: historyUsers.length,
-      firstTranscriptUserText:
-        typeof historyUsers[0]?.content === 'string' ? historyUsers[0].content : undefined,
-      loggedCount: loggedMessages.length,
-      firstLoggedText: loggedMessages[0]?.text,
-      idleAttach: meta.existingCourse,
-    });
-    const followUpsDelivered = cursor.delivered;
+    let deliveredThrough = meta.deliveredUserMessageSeq ?? 0;
     // Resolve the classrooms each pending message named against the owner's
     // library BEFORE the prompt is built: the run must be told the course's
     // current name (reference semantics), and the same resolved refs feed the
     // `session_start` receipt when the opening message is a durable message.
     const pending = await Promise.all(
-      loggedMessages.slice(followUpsDelivered).map(async (message) => {
-        const followUp = toFollowUp(message);
-        return followUp.courseRefs?.length
-          ? {
-              ...followUp,
-              courseRefs: await resolveCourseRefsForContext(meta.ownerId, followUp.courseRefs),
-            }
-          : followUp;
-      }),
+      loggedMessages
+        .filter((message) => message.seq > deliveredThrough)
+        .map(async (message) => {
+          const followUp = toFollowUp(message);
+          return followUp.courseRefs?.length
+            ? {
+                ...followUp,
+                courseRefs: await resolveCourseRefsForContext(meta.ownerId, followUp.courseRefs),
+              }
+            : followUp;
+        }),
     );
-    const idleAttach = cursor.idle;
+    const idleAttach = meta.existingCourse;
 
     if (plan.kind === 'already-complete' && pending.length === 0) {
       emit(LIFECYCLE.sessionEnd, {
@@ -1487,6 +1497,19 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         if (event.message.role === 'user') userFramesSeen += 1;
         enqueue(async () => {
           await entrySession!.appendMessage(event.message);
+          const deliveredSeq = durableUserMessageSeq(event.message);
+          if (deliveredSeq !== null) {
+            const marked = await store.markUserMessageDelivered(
+              id,
+              WORKER_ID,
+              attempt,
+              deliveredSeq,
+            );
+            if (!marked) {
+              throw new AgentSessionLeaseLostError(id, WORKER_ID, attempt);
+            }
+            deliveredThrough = Math.max(deliveredThrough, deliveredSeq);
+          }
           if (event.message.role === 'toolResult') {
             trackToolCallMessage(inFlightToolCalls, event.message);
           }
@@ -1516,11 +1539,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
 
     // Same-run steering needs a guard because steer() accepts a message before
     // its eventual message_end has reached the durable tree.
-    let steeredThisAttempt = 0;
-    const deliveredFollowUps = (): number => {
-      const users = agent.state.messages.filter((message) => message.role === 'user').length;
-      return cursor.idle ? users : Math.max(0, users - 1);
-    };
+    const acceptedMessageSeqs = new Set<number>();
     const drainMessages = async (): Promise<number> => {
       if (questionEmitted || askUserLatch.isCommitted()) return 0;
       // These reads deliberately avoid a shared transaction: a message added
@@ -1532,10 +1551,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         markLeaseLost();
         return 0;
       }
-      const handled = Math.max(deliveredFollowUps(), steeredThisAttempt);
       let delivered = 0;
-      for (const [index, message] of all.entries()) {
-        if (index < handled) continue;
+      for (const message of all) {
+        if (message.seq <= deliveredThrough || acceptedMessageSeqs.has(message.seq)) continue;
         const followUp = toFollowUp(message);
         // Same resolution as the start path: a steered message names its
         // classrooms on the durable event, and the model must be told the
@@ -1547,14 +1565,19 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
             }
           : followUp;
         const resolved = await resolveFollowUpElementContext(courseResolved);
-        agent.steer({
-          role: 'user',
-          content: composeFollowUpText(resolved),
-        } as unknown as AgentMessage);
+        agent.steer(
+          tagDurableUserMessage(
+            {
+              role: 'user',
+              content: composeFollowUpText(resolved),
+            } as unknown as AgentMessage,
+            message.seq,
+          ),
+        );
+        acceptedMessageSeqs.add(message.seq);
         delivered += 1;
       }
       if (delivered > 0) {
-        steeredThisAttempt = handled + delivered;
         log.info(`session ${id}: steered ${delivered} follow-up message(s)`);
       }
       return delivered;
@@ -1588,11 +1611,10 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     try {
       if (plannedStart.kind === 'prompt') {
         // A follow-up-driven prompt is already in the event log; here it
-        // enters the transcript. The bump keeps the 500ms poll from
-        // re-steering that same message before the transcript folds it
-        // (only relevant when the prompt came from `pending`).
-        if (plan.kind !== 'start' || pending.length > 0) {
-          steeredThisAttempt = followUpsDelivered + 1;
+        // enters the transcript. Track its exact sequence immediately so the
+        // wakeup poll cannot steer it again before the durable mark lands.
+        if (plannedStart.durableMessageSeq !== undefined) {
+          acceptedMessageSeqs.add(plannedStart.durableMessageSeq);
         }
         // ── Forced skill loading ─────────────────────────────────────────────
         //
@@ -1622,10 +1644,15 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
             }),
         });
         adoptPreload(preload, true);
-        if (preload.messages.length === 0) {
+        if (preload.messages.length === 0 && plannedStart.durableMessageSeq === undefined) {
           await agent.prompt(preload.text);
         } else {
-          await agent.prompt([preloadUserMessage(preload.text), ...preload.messages]);
+          const promptMessage = preloadUserMessage(preload.text);
+          const deliveredPrompt =
+            plannedStart.durableMessageSeq === undefined
+              ? promptMessage
+              : tagDurableUserMessage(promptMessage, plannedStart.durableMessageSeq);
+          await agent.prompt([deliveredPrompt, ...preload.messages]);
         }
       } else {
         // ── Resume repair ─────────────────────────────────────────────────────
@@ -1655,9 +1682,8 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         // of `user` messages in the transcript, and moving it would mark a
         // real user message delivered and drop it.
         const resumedTurnText =
-          followUpsDelivered > 0
-            ? (loggedMessages[followUpsDelivered - 1]?.text ?? meta.prompt)
-            : meta.prompt;
+          loggedMessages.findLast((message) => message.seq <= deliveredThrough)?.text ??
+          meta.prompt;
         const repair = await buildSkillPreload({
           text: resumedTurnText,
           skills: installedSkills,
@@ -1687,10 +1713,10 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         await agent.waitForIdle();
         if (abort.signal.aborted) break;
         if (questionEmitted || askUserLatch.isCommitted()) break;
-        const before = steeredThisAttempt;
+        const before = acceptedMessageSeqs.size;
         const delivered = await requestDrain();
         if (abort.signal.aborted) break;
-        if (delivered === 0 || steeredThisAttempt === before) break;
+        if (delivered === 0 || acceptedMessageSeqs.size === before) break;
       }
 
       // A tool call that was still in flight when the loop wound down has no

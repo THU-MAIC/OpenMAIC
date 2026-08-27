@@ -252,6 +252,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   existing_course     BOOLEAN NOT NULL DEFAULT FALSE,
   status              TEXT NOT NULL DEFAULT 'queued',
   attempt             INTEGER NOT NULL DEFAULT 0,
+  delivered_user_message_seq INTEGER NOT NULL DEFAULT 0,
   lease_worker_id     TEXT,
   lease_worker_pid    INTEGER,
   lease_heartbeat_at  BIGINT,
@@ -264,6 +265,9 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   CONSTRAINT agent_sessions_status_known
     CHECK (status IN ('queued','running','succeeded','failed','cancelled'))
 );
+
+ALTER TABLE agent_sessions
+  ADD COLUMN IF NOT EXISTS delivered_user_message_seq INTEGER NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS agent_sessions_status_live_idx
   ON agent_sessions (status, created_at) WHERE deleted_at IS NULL;

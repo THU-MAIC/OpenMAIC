@@ -86,6 +86,8 @@ export interface AgentSessionMeta {
   status: AgentSessionStatus;
   /** The consecutive-failure generation, incremented by every successful claim. */
   attempt: number;
+  /** Highest durable user-message event sequence appended to the run transcript. */
+  deliveredUserMessageSeq: number;
   createdAt: number;
   updatedAt: number;
   lease?: AgentSessionLease;
@@ -290,6 +292,13 @@ export interface AgentSessionStore {
     options: ClaimAgentSessionOptions,
   ): Promise<ClaimedAgentSession | null>;
   heartbeat(sessionId: string, workerId: string): Promise<boolean>;
+  /** Advance the durable delivery watermark under the active lease fence. */
+  markUserMessageDelivered(
+    sessionId: string,
+    workerId: string,
+    attempt: number,
+    messageSeq: number,
+  ): Promise<boolean>;
   assertActiveLease(
     sessionId: string,
     workerId: string,

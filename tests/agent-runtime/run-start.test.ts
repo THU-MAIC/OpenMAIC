@@ -7,9 +7,10 @@ import {
   composeCourseRefsText,
   composeFollowUpText,
   composeFollowUpTextWithElementRefs,
-  loggedMessageCursor,
+  durableUserMessageSeq,
   planRunStart,
   resolveCourseRefsForContext,
+  tagDurableUserMessage,
 } from '@/lib/server/agent-runtime/runner';
 import type { CourseRef } from '@/lib/workbench/course-refs';
 import type { ElementRef } from '@/lib/workbench/element-refs';
@@ -105,15 +106,10 @@ describe('planRunStart', () => {
   });
 });
 
-describe('loggedMessageCursor', () => {
-  it('accounts for the synthetic first prompt only on new sessions', () => {
-    expect(
-      loggedMessageCursor({ transcriptUserCount: 1, loggedCount: 1, idleAttach: true }),
-    ).toEqual({ idle: true, delivered: 1 });
-    expect(loggedMessageCursor({ transcriptUserCount: 1, loggedCount: 1 })).toEqual({
-      idle: false,
-      delivered: 0,
-    });
+describe('durable user-message delivery tags', () => {
+  it('round-trips the exact durable sequence on a user frame', () => {
+    expect(durableUserMessageSeq(tagDurableUserMessage(user('Open'), 7))).toBe(7);
+    expect(durableUserMessageSeq(assistant('Done'))).toBeNull();
   });
 });
 

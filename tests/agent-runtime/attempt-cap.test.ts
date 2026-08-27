@@ -39,7 +39,7 @@ describe('one knock, one redemption', () => {
     expect(
       planUndeliveredRequeue({
         logged: [message(1)],
-        handled: 1,
+        deliveredThrough: 1,
         claimSeq: 10,
         atVerdict: false,
       }),
@@ -50,7 +50,7 @@ describe('one knock, one redemption', () => {
     expect(
       planUndeliveredRequeue({
         logged: [message(11)],
-        handled: 0,
+        deliveredThrough: 0,
         claimSeq: 10,
         atVerdict: true,
       }),
@@ -58,8 +58,25 @@ describe('one knock, one redemption', () => {
   });
 
   it('preserves the chain for inherited work and stops at the verdict', () => {
-    const input = { logged: [message(9)], handled: 0, claimSeq: 10 };
+    const input = { logged: [message(9)], deliveredThrough: 0, claimSeq: 10 };
     expect(planUndeliveredRequeue({ ...input, atVerdict: false })).toBe('retry');
     expect(planUndeliveredRequeue({ ...input, atVerdict: true })).toBe('none');
+  });
+
+  it('does not rescue an opening message already delivered by the run', () => {
+    const input = { logged: [message(1)], deliveredThrough: 1, claimSeq: 1 };
+    expect(planUndeliveredRequeue({ ...input, atVerdict: false })).toBe('none');
+    expect(planUndeliveredRequeue({ ...input, atVerdict: false })).toBe('none');
+  });
+
+  it('rescues only a message beyond the final delivery watermark', () => {
+    expect(
+      planUndeliveredRequeue({
+        logged: [message(1), message(3)],
+        deliveredThrough: 1,
+        claimSeq: 1,
+        atVerdict: false,
+      }),
+    ).toBe('reset');
   });
 });

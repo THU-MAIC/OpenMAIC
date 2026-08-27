@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   existing_course     BOOLEAN NOT NULL DEFAULT FALSE,
   status              TEXT NOT NULL DEFAULT 'queued',
   attempt             INTEGER NOT NULL DEFAULT 0,
+  delivered_user_message_seq INTEGER NOT NULL DEFAULT 0,
   lease_worker_id     TEXT,
   lease_worker_pid    INTEGER,
   lease_heartbeat_at  BIGINT,
@@ -101,6 +102,9 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   CONSTRAINT agent_sessions_status_known
     CHECK (status IN ('queued','running','succeeded','failed','cancelled'))
 );
+
+ALTER TABLE agent_sessions
+  ADD COLUMN IF NOT EXISTS delivered_user_message_seq INTEGER NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS agent_sessions_status_live_idx
   ON agent_sessions (status, created_at) WHERE deleted_at IS NULL;
@@ -257,6 +261,7 @@ interface SessionRow extends Record<string, unknown> {
   existing_course: boolean;
   status: AgentSessionMeta['status'];
   attempt: number;
+  delivered_user_message_seq: number;
   lease_worker_id: string | null;
   lease_worker_pid: number | null;
   lease_heartbeat_at: number | string | null;
@@ -266,7 +271,7 @@ interface SessionRow extends Record<string, unknown> {
 }
 
 const SESSION_COLUMNS = `id, owner_id, prompt, stage_id, skill_id, origin,
-  existing_course, status, attempt, lease_worker_id, lease_worker_pid,
+  existing_course, status, attempt, delivered_user_message_seq, lease_worker_id, lease_worker_pid,
   lease_heartbeat_at, error, created_at, updated_at`;
 
 function epoch(value: Date | string): number {
@@ -293,6 +298,7 @@ function sessionMeta(row: SessionRow): AgentSessionMeta {
     existingCourse: row.existing_course,
     status: row.status,
     attempt: Number(row.attempt),
+    deliveredUserMessageSeq: Number(row.delivered_user_message_seq),
     createdAt: epoch(row.created_at),
     updatedAt: epoch(row.updated_at),
     ...(row.lease_worker_id
@@ -614,6 +620,23 @@ export class PgAgentSessionStore
        SET lease_heartbeat_at = $3, updated_at = now()
        WHERE id = $1 AND lease_worker_id = $2 AND deleted_at IS NULL RETURNING id`,
       [sessionId, workerId, this.clock()],
+    );
+    return result.rows.length > 0;
+  }
+
+  async markUserMessageDelivered(
+    sessionId: string,
+    workerId: string,
+    attempt: number,
+    messageSeq: number,
+  ): Promise<boolean> {
+    const result = await this.queryable.query<{ id: string }>(
+      `UPDATE ${this.table('sessions')}
+       SET delivered_user_message_seq = GREATEST(delivered_user_message_seq, $4),
+           updated_at = now()
+       WHERE id = $1 AND lease_worker_id = $2 AND attempt = $3
+         AND deleted_at IS NULL RETURNING id`,
+      [sessionId, workerId, attempt, messageSeq],
     );
     return result.rows.length > 0;
   }
