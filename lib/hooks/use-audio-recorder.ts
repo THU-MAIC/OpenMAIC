@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
+import { getASRServerDisabledError } from '@/lib/audio/asr-enablement';
 import { normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
 import { createLogger } from '@/lib/logger';
 
@@ -102,7 +103,15 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
       // Get current ASR configuration
       if (typeof window !== 'undefined') {
         const { useSettingsStore } = await import('@/lib/store/settings');
-        const { asrProviderId, asrLanguage } = useSettingsStore.getState();
+        const { asrProviderId, asrLanguage, asrProvidersConfig } = useSettingsStore.getState();
+
+        // Browser-native ASR never reaches the server route, so enforce the
+        // operator force-off locally before invoking the Web Speech API.
+        const serverDisabledError = getASRServerDisabledError(asrProvidersConfig[asrProviderId]);
+        if (serverDisabledError) {
+          onError?.(serverDisabledError);
+          return;
+        }
 
         // Use browser native ASR if configured
         if (asrProviderId === 'browser-native') {

@@ -175,7 +175,8 @@ describe('POST /api/extract-document', () => {
       errorCode: 'INVALID_REQUEST',
     });
     expect(json.error).toContain('DOCX extraction requires a configured MinerU document extractor');
-    expect(json.error).toContain('self-hosted MinerU base URL or a MinerU Cloud API key');
+    expect(json.error).toContain('no self-hosted MinerU base URL is configured');
+    expect(json.error).toContain('ALLOW_MINERU_CLOUD_FALLBACK');
   });
 
   it('allows MinerU Cloud PDF extraction with an API key and no base URL', async () => {
@@ -207,7 +208,31 @@ describe('POST /api/extract-document', () => {
     );
   });
 
-  it('falls back to MinerU Cloud for DOCX when self-hosted MinerU is unavailable and a cloud key is provided', async () => {
+  it('fails loudly instead of silently falling back to MinerU Cloud for DOCX when self-hosted MinerU is unavailable', async () => {
+    const res = await postExtractDocument({
+      file: new File(['not really docx'], 'lesson.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+      apiKey: 'cloud-key',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(422);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+    // The request selected self-hosted MinerU and a MinerU Cloud key is
+    // present, yet without the operator opt-in the cloud must not be used —
+    // the error names what was configured and what was unavailable.
+    expect(json.error).toContain('DOCX extraction requires a configured MinerU document extractor');
+    expect(json.error).toContain('no self-hosted MinerU base URL is configured');
+    expect(json.error).toContain('ALLOW_MINERU_CLOUD_FALLBACK');
+    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+  });
+
+  it('uses MinerU Cloud for DOCX only when the operator explicitly opts in via ALLOW_MINERU_CLOUD_FALLBACK', async () => {
+    vi.stubEnv('ALLOW_MINERU_CLOUD_FALLBACK', '1');
     const res = await postExtractDocument({
       file: new File(['not really docx'], 'lesson.docx', {
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

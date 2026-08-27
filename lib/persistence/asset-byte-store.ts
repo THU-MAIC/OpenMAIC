@@ -26,6 +26,20 @@ const S3_RESERVED_PREFIXES = ['xn--', 'sthree-', 'amzn-s3-demo-'];
 const S3_RESERVED_SUFFIXES = ['-s3alias', '--ol-s3', '.mrap', '--x-s3', '--table-s3'];
 
 /**
+ * The no-bucket byte layer widened with the transaction-pinned methods the
+ * registry and the collector duck-type on (`writeWith` / `readWith` /
+ * `deleteWith`). Without a bucket the layer is statically `PgAssetByteStore`,
+ * so the methods are always present; the widening exists so the wrapper's
+ * forwarding is type-checked against the real implementations rather than
+ * declared by hand.
+ */
+interface PgForwardedByteStore extends AssetByteStore {
+  writeWith: PgAssetByteStore['writeWith'];
+  readWith: PgAssetByteStore['readWith'];
+  deleteWith: PgAssetByteStore['deleteWith'];
+}
+
+/**
  * ASSET_S3_BUCKET: a valid bucket name opts asset bytes into S3. The optional
  * AWS SDK owns its standard region, credential, and endpoint configuration;
  * nothing here reads an AWS environment variable itself.
@@ -95,7 +109,7 @@ export function lazyAssetByteStore(
         throw error;
       },
     ));
-  const direct = {
+  const base = {
     write: async (hash, bytes) => (await resolve()).write(hash, bytes),
     read: async (hash) => (await resolve()).read(hash),
     delete: async (hash) => (await resolve()).delete(hash),
@@ -106,9 +120,33 @@ export function lazyAssetByteStore(
   // With no bucket configured the layer is known now, so the method is
   // simply absent. With a bucket, lazy validation is preserved: the wrapper
   // answers `undefined` when the resolved layer turns out not to sign.
-  if (!bucketValue?.trim()) return direct;
+  if (!bucketValue?.trim()) {
+    // No bucket means the layer is statically PgAssetByteStore, whose bytes
+    // live in the registry's own PostgreSQL. Its transaction-pinned
+    // writeWith/readWith/deleteWith MUST be forwarded: without them the
+    // registry's coordinatedWrite duck-type check fails and it falls back to
+    // the plain write on the byte store's own pooled connection, which blocks
+    // forever on the blob-row lock the registry transaction just took -- the
+    // self-deadlock. The layer is known now, so the methods are always
+    // present; nothing here is probed lazily.
+    const forwarded: PgForwardedByteStore = {
+      ...base,
+      writeWith: async (queryable, hash, bytes) =>
+        ((await resolve()) as PgAssetByteStore).writeWith(queryable, hash, bytes),
+      readWith: async (queryable, hash) =>
+        ((await resolve()) as PgAssetByteStore).readWith(queryable, hash),
+      deleteWith: async (queryable, hash) =>
+        ((await resolve()) as PgAssetByteStore).deleteWith(queryable, hash),
+    };
+    return forwarded;
+  }
   return {
-    ...direct,
+    ...base,
+    // S3 objects never live in the registry's database, so the registry may
+    // run the plain write inside its transaction (see
+    // AssetByteStore.writesOutsideRegistryDatabase). S3 has no transactional
+    // writer, so nothing is forwarded here, exactly as before.
+    writesOutsideRegistryDatabase: true as const,
     signReadUrl: async (hash, headers) => {
       const store = await resolve();
       return typeof store.signReadUrl === 'function' ? store.signReadUrl(hash, headers) : undefined;

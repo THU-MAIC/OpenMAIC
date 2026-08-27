@@ -107,6 +107,36 @@ describe('generateMediaForClassroom model fallback', () => {
     vi.useRealTimers();
   });
 
+  test('gracefully skips media when every configured provider is force-disabled', async () => {
+    vi.stubEnv('IMAGE_SEEDREAM_API_KEY', 'sk-seedream');
+    vi.stubEnv('IMAGE_SEEDREAM_ENABLED', 'false');
+    vi.stubEnv('VIDEO_SEEDANCE_API_KEY', 'sk-seedance');
+    vi.stubEnv('VIDEO_SEEDANCE_ENABLED', 'false');
+    vi.resetModules();
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const { generateMediaForClassroom } = await import('@/lib/server/classroom-media-generation');
+    const outlines = [
+      {
+        id: 'outline_disabled',
+        type: 'slide',
+        title: 'Scene',
+        description: 'd',
+        order: 1,
+        mediaGenerations: [
+          { type: 'image', prompt: 'image', elementId: 'gen_img_disabled' },
+          { type: 'video', prompt: 'video', elementId: 'gen_vid_disabled' },
+        ],
+      },
+    ] as unknown as SceneOutline[];
+
+    await expect(
+      generateMediaForClassroom(outlines, 'cls-disabled', 'http://localhost'),
+    ).resolves.toEqual({});
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   test('falls back to the first catalog image model when the server pins no models', async () => {
     // Key-only managed provider (no IMAGE_SEEDREAM_MODELS pin): the resolver
     // yields no model, so the classroom path must fall back to the first

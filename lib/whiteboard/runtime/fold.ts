@@ -1,13 +1,29 @@
-import { validateRuntimeRecord, type RuntimeRecord, type Whiteboard } from '@openmaic/dsl';
+import {
+  validateRuntimeRecord,
+  type CodeLine,
+  type RuntimeRecord,
+  type Whiteboard,
+} from '@openmaic/dsl';
 
 import {
+  WhiteboardRuntimeCodeLineIdConflictError,
+  WhiteboardRuntimeCodeLineNotFoundError,
+  WhiteboardRuntimeElementNotFoundError,
+  WhiteboardRuntimeElementTypeMismatchError,
+  WhiteboardRuntimeNoChangeError,
   type FoldedWhiteboardRuntimeDetails,
   type FoldedWhiteboardRuntimeState,
   type Sha256Digest,
   type WhiteboardRuntimeOperationV1,
   type WhiteboardRuntimePayloadV1,
 } from './types';
-import { assertWhiteboardRuntimePayload, cloneCanonicalJson, sha256Canonical } from './validate';
+import {
+  assertWhiteboardRuntimePayload,
+  canonicalJson,
+  cloneCanonicalJson,
+  normalizeAndValidateWhiteboardElement,
+  sha256Canonical,
+} from './validate';
 
 function immutableClone<T>(value: T): T {
   const cloned = cloneCanonicalJson(value);
@@ -41,23 +57,106 @@ export async function applyWhiteboardRuntimeOperation(
     return immutableClone(snapshot.whiteboard);
   }
 
-  if (current?.elements.some((element) => element.id === snapshot.element.id)) {
-    throw new Error('WHITEBOARD_RUNTIME_ELEMENT_ALREADY_EXISTS');
-  }
-  if (current === null) {
+  if (snapshot.kind === 'element_added') {
+    if (current?.elements.some((element) => element.id === snapshot.element.id)) {
+      throw new Error('WHITEBOARD_RUNTIME_ELEMENT_ALREADY_EXISTS');
+    }
+    if (current === null) {
+      return immutableClone({
+        id: await deriveRuntimeWhiteboardId(sessionId),
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [snapshot.element],
+        background: { type: 'solid', color: '#ffffff' },
+        animations: [],
+      });
+    }
     return immutableClone({
-      id: await deriveRuntimeWhiteboardId(sessionId),
-      viewportSize: 1000,
-      viewportRatio: 0.5625,
-      elements: [snapshot.element],
-      background: { type: 'solid', color: '#ffffff' },
-      animations: [],
+      ...current,
+      elements: [...current.elements, snapshot.element],
     });
   }
-  return immutableClone({
-    ...current,
-    elements: [...current.elements, snapshot.element],
-  });
+
+  if (snapshot.kind === 'elements_cleared') {
+    if (current === null) throw new WhiteboardRuntimeNoChangeError('whiteboard_missing');
+    if (current.elements.length === 0) {
+      throw new WhiteboardRuntimeNoChangeError('whiteboard_empty');
+    }
+    return immutableClone({ ...current, elements: [] });
+  }
+
+  if (current === null) {
+    throw new WhiteboardRuntimeElementNotFoundError(snapshot.elementId);
+  }
+  const elementIndex = current.elements.findIndex((element) => element.id === snapshot.elementId);
+  if (elementIndex === -1) {
+    throw new WhiteboardRuntimeElementNotFoundError(snapshot.elementId);
+  }
+
+  if (snapshot.kind === 'element_deleted') {
+    return immutableClone({
+      ...current,
+      elements: current.elements.filter((_element, index) => index !== elementIndex),
+    });
+  }
+
+  const element = current.elements[elementIndex]!;
+  if (element.type !== 'code') {
+    throw new WhiteboardRuntimeElementTypeMismatchError(snapshot.elementId, element.type);
+  }
+  const lines = [...element.lines];
+  const edit = snapshot.edit;
+  const targetLineIds = 'lineId' in edit ? [edit.lineId] : edit.lineIds;
+  const knownLineIds = new Set(lines.map((line) => line.id));
+  const missingLineId = targetLineIds.find((lineId) => !knownLineIds.has(lineId));
+  if (missingLineId !== undefined) {
+    throw new WhiteboardRuntimeCodeLineNotFoundError(snapshot.elementId, missingLineId);
+  }
+
+  const assertIntroducedLineIdsDoNotConflict = (
+    retainedLines: readonly CodeLine[],
+    introducedLines: readonly CodeLine[],
+  ): void => {
+    const retainedIds = new Set(retainedLines.map((line) => line.id));
+    const introducedIds = new Set<string>();
+    for (const line of introducedLines) {
+      if (retainedIds.has(line.id) || introducedIds.has(line.id)) {
+        throw new WhiteboardRuntimeCodeLineIdConflictError(snapshot.elementId, line.id);
+      }
+      introducedIds.add(line.id);
+    }
+  };
+
+  let editedLines: CodeLine[];
+  if ('lineId' in edit) {
+    assertIntroducedLineIdsDoNotConflict(lines, edit.lines);
+    editedLines = [...lines];
+    const referenceIndex = editedLines.findIndex((line) => line.id === edit.lineId);
+    editedLines.splice(
+      edit.kind === 'insert_after' ? referenceIndex + 1 : referenceIndex,
+      0,
+      ...edit.lines,
+    );
+  } else if (edit.kind === 'delete_lines') {
+    const deleted = new Set(edit.lineIds);
+    editedLines = lines.filter((line) => !deleted.has(line.id));
+  } else {
+    // Match the Legacy transition: anchor replacement at the first supplied target ID,
+    // remove all targets, then insert the host-supplied replacement lines exactly.
+    const firstIndex = lines.findIndex((line) => line.id === edit.lineIds[0]);
+    const replaced = new Set(edit.lineIds);
+    editedLines = lines.filter((line) => !replaced.has(line.id));
+    assertIntroducedLineIdsDoNotConflict(editedLines, edit.lines);
+    editedLines.splice(firstIndex, 0, ...edit.lines);
+  }
+  const editedElement = { ...element, lines: editedLines };
+  const normalizedElement = normalizeAndValidateWhiteboardElement(editedElement);
+  if (canonicalJson(normalizedElement) !== canonicalJson(editedElement)) {
+    throw new Error('WHITEBOARD_RUNTIME_CODE_ELEMENT_NOT_CANONICAL');
+  }
+  const elements = [...current.elements];
+  elements[elementIndex] = editedElement;
+  return immutableClone({ ...current, elements });
 }
 
 export async function foldWhiteboardRuntimeRecords(

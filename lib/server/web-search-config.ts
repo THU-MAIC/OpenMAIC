@@ -1,6 +1,7 @@
 import {
   resolveServerWebSearchProviderId,
   isServerConfiguredProvider,
+  isServerProviderDisabled,
   resolveWebSearchApiKey,
   resolveWebSearchBaseUrl,
   resolveWebSearchModel,
@@ -102,8 +103,13 @@ export function resolveClassroomWebSearchConfig(input: {
   const requestedProviderId = assertWebSearchProviderId(input.webSearchProviderId)
     ? input.webSearchProviderId
     : undefined;
+  // A force-disabled requested provider yields to the operator's server default
+  // (server precedence, #665); resolveServerWebSearchProviderId already skips
+  // disabled providers internally.
   const providerId =
-    requestedProviderId ?? (resolveServerWebSearchProviderId() as WebSearchProviderId | undefined);
+    (requestedProviderId && !isServerProviderDisabled('webSearch', requestedProviderId)
+      ? requestedProviderId
+      : undefined) ?? (resolveServerWebSearchProviderId() as WebSearchProviderId | undefined);
   if (!providerId) return undefined;
 
   const provider = WEB_SEARCH_PROVIDERS[providerId];

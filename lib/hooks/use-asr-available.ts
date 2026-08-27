@@ -36,6 +36,7 @@ export function useASRAvailable(): boolean {
   );
 
   const builtIn = ASR_PROVIDERS[asrProviderId as BuiltInASRProviderId];
+  if (providerConfig?.serverDisabled) return false;
   const requiresKey = builtIn ? builtIn.requiresApiKey : (providerConfig?.requiresApiKey ?? true);
   // Trim to match what the recorder actually sends — a whitespace-only key is
   // dropped at request time, so it must not count as configured here.

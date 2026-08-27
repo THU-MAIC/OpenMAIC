@@ -135,6 +135,17 @@ function isSelfHostedMinerUProvider(
   return providerId === 'mineru';
 }
 
+/**
+ * Operator opt-in for the MinerU Cloud fallback (default OFF). A self-hosted
+ * MinerU deployment must never silently hand documents to a third-party cloud;
+ * the MinerU Cloud fallback only happens when the operator explicitly enables
+ * it with `ALLOW_MINERU_CLOUD_FALLBACK=true`.
+ */
+function isMinerUCloudFallbackEnabled(): boolean {
+  const value = process.env.ALLOW_MINERU_CLOUD_FALLBACK;
+  return value === 'true' || value === '1';
+}
+
 function requestedTypeLabel(mimeType: string): string {
   if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
     return 'DOCX';
@@ -339,19 +350,29 @@ async function runExtraction(
       'mineru-cloud',
       cloudManaged ? undefined : requestConfig.apiKey || undefined,
     );
-    if (cloudProvider && supportsMimeType(cloudProvider, mimeType) && cloudApiKey) {
+    const cloudFallbackAvailable =
+      cloudProvider && supportsMimeType(cloudProvider, mimeType) && cloudApiKey;
+    // A self-hosted extractor must never silently substitute a third-party
+    // cloud: the MinerU Cloud fallback happens only under an explicit operator
+    // opt-in (ALLOW_MINERU_CLOUD_FALLBACK, default OFF). Otherwise the request
+    // fails loudly, naming what was configured (self-hosted MinerU) and what
+    // was unavailable (its base URL).
+    if (cloudFallbackAvailable && isMinerUCloudFallbackEnabled()) {
       provider = cloudProvider;
       managed = cloudManaged;
       clientBaseUrl = managed ? undefined : requestConfig.baseUrl || undefined;
       logState.resolvedProviderId = provider.id;
+    } else {
+      return apiError(
+        'INVALID_REQUEST',
+        422,
+        `${requestedTypeLabel(mimeType)} extraction requires a configured MinerU document extractor. ` +
+          `Self-hosted MinerU was selected, but no self-hosted MinerU base URL is configured, so it is ` +
+          `unavailable. Documents are not sent to MinerU Cloud automatically: configure a self-hosted MinerU ` +
+          `base URL in PDF provider settings, or set ALLOW_MINERU_CLOUD_FALLBACK=1 to explicitly allow the ` +
+          `MinerU Cloud fallback.`,
+      );
     }
-  }
-  if (isSelfHostedMinerUProvider(provider.id) && !managed && !clientBaseUrl) {
-    return apiError(
-      'INVALID_REQUEST',
-      422,
-      `${requestedTypeLabel(mimeType)} extraction requires a configured MinerU document extractor. Configure a self-hosted MinerU base URL or a MinerU Cloud API key in PDF provider settings.`,
-    );
   }
   if (clientBaseUrl && process.env.NODE_ENV === 'production') {
     const ssrfError = await validateUrlForSSRF(clientBaseUrl);

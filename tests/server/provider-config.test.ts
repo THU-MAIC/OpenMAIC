@@ -56,6 +56,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'BOCHA',
   'WEB_SEARCH_MINIMAX',
   'WEB_SEARCH_CLAUDE',
+  'WEB_SEARCH_DOUBAO',
 ];
 
 function clearProviderEnv() {
@@ -749,6 +750,180 @@ video:
       const { isServerTTSProviderDisabled } = await import('@/lib/server/provider-config');
       expect(isServerTTSProviderDisabled('openai-tts')).toBe(true);
       expect(isServerTTSProviderDisabled('qwen-tts')).toBe(false);
+    });
+  });
+
+  describe('per-capability force-disable (#665)', () => {
+    it('image: marks an env-configured provider as managed (no disabled flag)', async () => {
+      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-img');
+      const { getServerImageProviders } = await import('@/lib/server/provider-config');
+      expect(getServerImageProviders()['openai-image']).toEqual({});
+    });
+
+    it('image: force-disables via IMAGE_<P>_ENABLED=false even when it has a key', async () => {
+      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-img');
+      vi.stubEnv('IMAGE_OPENAI_ENABLED', 'false');
+      const { getServerImageProviders } = await import('@/lib/server/provider-config');
+      expect(getServerImageProviders()['openai-image']).toEqual({ disabled: true });
+    });
+
+    it('image: force-disables the keyless client-only ComfyUI provider via env', async () => {
+      vi.stubEnv('IMAGE_COMFYUI_ENABLED', 'false');
+      const { getServerImageProviders } = await import('@/lib/server/provider-config');
+      expect(getServerImageProviders()['comfyui-image']).toEqual({ disabled: true });
+    });
+
+    it('image: an _ENABLED=true value does NOT force-enable an unconfigured keyless provider', async () => {
+      vi.stubEnv('IMAGE_COMFYUI_ENABLED', 'true');
+      const { getServerImageProviders, resolveServerImageProviderId } =
+        await import('@/lib/server/provider-config');
+      // ComfyUI has no credential env, so a truthy _ENABLED must not conjure a
+      // configured/enabled entry out of thin air — it can only disable (#665).
+      expect(getServerImageProviders()['comfyui-image']).toBeUndefined();
+      expect(resolveServerImageProviderId()).toBeUndefined();
+    });
+
+    it('image: force-disables via YAML image.<id>.enabled: false', async () => {
+      yamlOverride = 'image:\n  seedream:\n    enabled: false\n';
+      const { getServerImageProviders } = await import('@/lib/server/provider-config');
+      expect(getServerImageProviders()['seedream']).toEqual({ disabled: true });
+    });
+
+    it('image: env ENABLED=true overrides a YAML disable', async () => {
+      yamlOverride = 'image:\n  openai-image:\n    enabled: false\n    apiKey: sk-yaml\n';
+      vi.stubEnv('IMAGE_OPENAI_ENABLED', 'true');
+      const { getServerImageProviders } = await import('@/lib/server/provider-config');
+      expect(getServerImageProviders()['openai-image']).toEqual({});
+    });
+
+    it('image: an empty IMAGE_<P>_ENABLED does NOT override a YAML disable', async () => {
+      yamlOverride = 'image:\n  openai-image:\n    enabled: false\n    apiKey: sk-yaml\n';
+      vi.stubEnv('IMAGE_OPENAI_ENABLED', '');
+      const { getServerImageProviders } = await import('@/lib/server/provider-config');
+      expect(getServerImageProviders()['openai-image']).toEqual({ disabled: true });
+    });
+
+    it('asr: force-disables a keyed provider via ASR_<P>_ENABLED=false even when it has a key', async () => {
+      vi.stubEnv('ASR_OPENAI_API_KEY', 'sk-asr');
+      vi.stubEnv('ASR_OPENAI_ENABLED', 'false');
+      const { getServerASRProviders } = await import('@/lib/server/provider-config');
+      expect(getServerASRProviders()['openai-whisper']).toEqual({ disabled: true });
+    });
+
+    it('asr: force-disables the client-only browser-native provider via env', async () => {
+      vi.stubEnv('ASR_BROWSER_NATIVE_ENABLED', 'false');
+      const { getServerASRProviders } = await import('@/lib/server/provider-config');
+      expect(getServerASRProviders()['browser-native']).toEqual({ disabled: true });
+    });
+
+    it('video: force-disables via VIDEO_<P>_ENABLED=false even when it has a key', async () => {
+      vi.stubEnv('VIDEO_GROK_API_KEY', 'xai-video');
+      vi.stubEnv('VIDEO_GROK_ENABLED', 'false');
+      const { getServerVideoProviders } = await import('@/lib/server/provider-config');
+      expect(getServerVideoProviders()['grok-video']).toEqual({ disabled: true });
+    });
+
+    it('video: force-disables via YAML video.<id>.enabled: false', async () => {
+      yamlOverride = 'video:\n  kling:\n    enabled: false\n    apiKey: sk-yaml\n';
+      const { getServerVideoProviders } = await import('@/lib/server/provider-config');
+      expect(getServerVideoProviders()['kling']).toEqual({ disabled: true });
+    });
+
+    it('web-search: force-disables a keyed provider via <P>_ENABLED=false even when it has a key', async () => {
+      vi.stubEnv('TAVILY_API_KEY', 'tvly-key');
+      vi.stubEnv('TAVILY_ENABLED', 'false');
+      const { getServerWebSearchProviders } = await import('@/lib/server/provider-config');
+      expect(getServerWebSearchProviders()['tavily']).toEqual({ disabled: true });
+    });
+
+    it('web-search: force-disables the keyless SearXNG provider via env', async () => {
+      vi.stubEnv('SEARXNG_BASE_URL', 'http://searxng.internal');
+      vi.stubEnv('SEARXNG_ENABLED', 'false');
+      const { getServerWebSearchProviders } = await import('@/lib/server/provider-config');
+      expect(getServerWebSearchProviders()['searxng']).toEqual({ disabled: true });
+    });
+
+    it('web-search: force-disables the built-in Doubao provider via its dedicated env', async () => {
+      vi.stubEnv('WEB_SEARCH_DOUBAO_ENABLED', 'false');
+      const { getServerWebSearchProviders } = await import('@/lib/server/provider-config');
+      expect(getServerWebSearchProviders().doubao).toEqual({ disabled: true });
+    });
+
+    it('isServerProviderDisabled reflects the per-section force-disable set', async () => {
+      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-img');
+      vi.stubEnv('IMAGE_OPENAI_ENABLED', 'false');
+      vi.stubEnv('VIDEO_GROK_ENABLED', 'false');
+      vi.stubEnv('ASR_OPENAI_ENABLED', 'false');
+      const { isServerProviderDisabled } = await import('@/lib/server/provider-config');
+      expect(isServerProviderDisabled('image', 'openai-image')).toBe(true);
+      expect(isServerProviderDisabled('image', 'seedream')).toBe(false);
+      expect(isServerProviderDisabled('video', 'grok-video')).toBe(true);
+      expect(isServerProviderDisabled('asr', 'openai-whisper')).toBe(true);
+      expect(isServerProviderDisabled('tts', 'openai-tts')).toBe(false);
+    });
+  });
+
+  describe('server defaults skip force-disabled providers (#665)', () => {
+    it('resolveServerImageProviderId skips a disabled provider', async () => {
+      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-1');
+      vi.stubEnv('IMAGE_GROK_API_KEY', 'sk-2');
+      vi.stubEnv('IMAGE_OPENAI_ENABLED', 'false');
+      const { resolveServerImageProviderId } = await import('@/lib/server/provider-config');
+      expect(resolveServerImageProviderId()).toBe('grok-image');
+    });
+
+    it('resolveServerImageProviderId returns undefined when every configured provider is disabled', async () => {
+      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-1');
+      vi.stubEnv('IMAGE_OPENAI_ENABLED', 'false');
+      const { resolveServerImageProviderId } = await import('@/lib/server/provider-config');
+      expect(resolveServerImageProviderId()).toBeUndefined();
+    });
+
+    it('resolveServerVideoProviderId skips a disabled provider', async () => {
+      vi.stubEnv('VIDEO_GROK_API_KEY', 'sk-1');
+      vi.stubEnv('VIDEO_KLING_API_KEY', 'sk-2');
+      vi.stubEnv('VIDEO_GROK_ENABLED', 'false');
+      const { resolveServerVideoProviderId } = await import('@/lib/server/provider-config');
+      expect(resolveServerVideoProviderId()).toBe('kling');
+    });
+
+    it('resolveServerASRProviderId skips a disabled provider', async () => {
+      vi.stubEnv('ASR_OPENAI_API_KEY', 'sk-1');
+      vi.stubEnv('ASR_QWEN_API_KEY', 'sk-2');
+      vi.stubEnv('ASR_OPENAI_ENABLED', 'false');
+      const { resolveServerASRProviderId } = await import('@/lib/server/provider-config');
+      expect(resolveServerASRProviderId()).toBe('qwen-asr');
+    });
+
+    it('web-search preference chain skips disabled providers', async () => {
+      vi.stubEnv('TAVILY_API_KEY', 'tvly');
+      vi.stubEnv('BOCHA_API_KEY', 'bocha');
+      vi.stubEnv('TAVILY_ENABLED', 'false');
+      const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
+      // Tavily is the preferred default but disabled ⇒ bocha is chosen.
+      expect(resolveServerWebSearchProviderId()).toBe('bocha');
+    });
+
+    it('web-search preference chain honors an enabled preferred provider', async () => {
+      vi.stubEnv('TAVILY_API_KEY', 'tvly');
+      vi.stubEnv('BOCHA_API_KEY', 'bocha');
+      const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
+      expect(resolveServerWebSearchProviderId()).toBe('tavily');
+    });
+
+    it('web-search preference chain skips a disabled client-preferred provider', async () => {
+      vi.stubEnv('TAVILY_API_KEY', 'tvly');
+      vi.stubEnv('BOCHA_API_KEY', 'bocha');
+      vi.stubEnv('TAVILY_ENABLED', 'false');
+      const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
+      expect(resolveServerWebSearchProviderId('tavily')).toBe('bocha');
+    });
+
+    it('web-search preference chain returns undefined when every configured provider is disabled', async () => {
+      vi.stubEnv('TAVILY_API_KEY', 'tvly');
+      vi.stubEnv('TAVILY_ENABLED', 'false');
+      const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
+      expect(resolveServerWebSearchProviderId()).toBeUndefined();
     });
   });
 

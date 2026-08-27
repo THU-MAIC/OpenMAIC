@@ -1,4 +1,4 @@
-import { normalizeElement, type PPTElement, type Whiteboard } from '@openmaic/dsl';
+import { normalizeElement, type CodeLine, type PPTElement, type Whiteboard } from '@openmaic/dsl';
 import sceneSchemaJson from '@openmaic/dsl/schema/scene.schema.json';
 import type { RuntimePayloadValidator } from '@openmaic/storage';
 
@@ -26,6 +26,13 @@ const REQUIRED_WHITEBOARD_KEYS = new Set(['id', 'viewportSize', 'viewportRatio',
 const PAYLOAD_KEYS = new Set(['payloadVersion', 'operationId', 'operation']);
 const LEGACY_OPERATION_KEYS = new Set(['kind', 'source', 'whiteboard']);
 const ELEMENT_ADDED_OPERATION_KEYS = new Set(['kind', 'element']);
+const ELEMENT_DELETED_OPERATION_KEYS = new Set(['kind', 'elementId']);
+const ELEMENTS_CLEARED_OPERATION_KEYS = new Set(['kind']);
+const CODE_LINES_EDITED_OPERATION_KEYS = new Set(['kind', 'elementId', 'edit']);
+const CODE_LINE_KEYS = new Set(['id', 'content']);
+const CODE_LINES_INSERT_EDIT_KEYS = new Set(['kind', 'lineId', 'lines']);
+const CODE_LINES_DELETE_EDIT_KEYS = new Set(['kind', 'lineIds']);
+const CODE_LINES_REPLACE_EDIT_KEYS = new Set(['kind', 'lineIds', 'lines']);
 const SOURCE_KEYS = new Set(['kind', 'fingerprint']);
 
 type JsonSchema = {
@@ -238,7 +245,40 @@ function validateElement(element: PPTElement): string | null {
   return schema ? validateSchema(element, schema, 'element') : 'unknown element type';
 }
 
-function normalizeAndValidateWhiteboardElement(value: unknown): PPTElement {
+function validateCodeLineTargetIds(value: unknown, label: string): asserts value is string[] {
+  if (!Array.isArray(value) || value.length === 0) throw new Error(`${label} must be non-empty`);
+  const ids = new Set<string>();
+  for (const id of value) {
+    // Existing CodeLine.id values are plain strings in the frozen DSL contract. Targets must
+    // remain able to address every line accepted by legacy import, including an empty ID.
+    if (typeof id !== 'string') throw new Error(`${label} contains an invalid id`);
+    if (ids.has(id)) throw new Error(`${label} contains a duplicate id`);
+    ids.add(id);
+  }
+}
+
+function validateCodeLines(
+  value: unknown,
+  label: string,
+  options: { nonEmpty: boolean },
+): asserts value is CodeLine[] {
+  if (!Array.isArray(value) || (options.nonEmpty && value.length === 0)) {
+    throw new Error(`${label} must be ${options.nonEmpty ? 'a non-empty array' : 'an array'}`);
+  }
+  const ids = new Set<string>();
+  for (const candidate of value) {
+    const line = objectValue(candidate);
+    if (!line || !hasExactOwnKeys(line, CODE_LINE_KEYS)) {
+      throw new Error(`${label} contains an invalid code line`);
+    }
+    if (!isSafeIdentifier(line.id)) throw new Error(`${label} contains an invalid line id`);
+    if (ids.has(line.id)) throw new Error(`${label} contains a duplicate line id`);
+    if (typeof line.content !== 'string') throw new Error(`${label} contains invalid content`);
+    ids.add(line.id);
+  }
+}
+
+export function normalizeAndValidateWhiteboardElement(value: unknown): PPTElement {
   assertLosslessJson(value, '$');
   const normalized = normalizeElement(value as PPTElement);
   if (!isSafeIdentifier(normalized.id)) throw new Error('invalid element id');
@@ -276,7 +316,7 @@ function assertLosslessJson(value: unknown, path: string, seen = new Set<object>
           throw new Error(`${path} has a non-index array property`);
         }
         const descriptor = Object.getOwnPropertyDescriptor(value, key);
-        if (descriptor?.get || descriptor?.set) {
+        if (!descriptor?.enumerable || descriptor.get || descriptor.set) {
           throw new Error(`${path}[${String(key)}] is not a plain data property`);
         }
       }
@@ -421,6 +461,42 @@ export function validateWhiteboardRuntimePayload(
       const normalized = normalizeAndValidateWhiteboardElement(operation.element);
       if (canonicalJson(normalized) !== canonicalJson(operation.element)) {
         throw new Error('element payload is not canonical');
+      }
+    } else if (operation.kind === 'element_deleted') {
+      if (!hasExactOwnKeys(operation, ELEMENT_DELETED_OPERATION_KEYS)) {
+        throw new Error('operation is invalid');
+      }
+      if (!isSafeIdentifier(operation.elementId)) throw new Error('elementId is invalid');
+    } else if (operation.kind === 'elements_cleared') {
+      if (!hasExactOwnKeys(operation, ELEMENTS_CLEARED_OPERATION_KEYS)) {
+        throw new Error('operation is invalid');
+      }
+    } else if (operation.kind === 'code_lines_edited') {
+      if (!hasExactOwnKeys(operation, CODE_LINES_EDITED_OPERATION_KEYS)) {
+        throw new Error('operation is invalid');
+      }
+      if (!isSafeIdentifier(operation.elementId)) throw new Error('elementId is invalid');
+      const edit = objectValue(operation.edit);
+      if (!edit) throw new Error('edit is invalid');
+      if (edit.kind === 'insert_after' || edit.kind === 'insert_before') {
+        if (!hasExactOwnKeys(edit, CODE_LINES_INSERT_EDIT_KEYS)) {
+          throw new Error('edit is invalid');
+        }
+        if (typeof edit.lineId !== 'string') throw new Error('lineId is invalid');
+        validateCodeLines(edit.lines, 'edit.lines', { nonEmpty: true });
+      } else if (edit.kind === 'delete_lines') {
+        if (!hasExactOwnKeys(edit, CODE_LINES_DELETE_EDIT_KEYS)) {
+          throw new Error('edit is invalid');
+        }
+        validateCodeLineTargetIds(edit.lineIds, 'edit.lineIds');
+      } else if (edit.kind === 'replace_lines') {
+        if (!hasExactOwnKeys(edit, CODE_LINES_REPLACE_EDIT_KEYS)) {
+          throw new Error('edit is invalid');
+        }
+        validateCodeLineTargetIds(edit.lineIds, 'edit.lineIds');
+        validateCodeLines(edit.lines, 'edit.lines', { nonEmpty: true });
+      } else {
+        throw new Error('edit kind is invalid');
       }
     } else {
       throw new Error('operation kind is invalid');

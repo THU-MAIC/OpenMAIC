@@ -21,6 +21,7 @@ import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import { generateVideo, normalizeVideoOptions } from '@/lib/media/video-providers';
 import {
   isServerConfiguredProvider,
+  isServerProviderDisabled,
   resolveVideoApiKey,
   resolveVideoBaseUrl,
   resolveVideoModel,
@@ -49,6 +50,11 @@ export async function POST(request: NextRequest) {
       resolveServerVideoProviderId()) as VideoProviderId;
     if (!providerId) {
       return apiError('MISSING_PROVIDER', 400, 'No video provider configured');
+    }
+    // Enforce server precedence: a force-disabled provider is off for everyone,
+    // regardless of any client key/selection — mirror the TTS contract (#665).
+    if (isServerProviderDisabled('video', providerId)) {
+      return apiError('PROVIDER_DISABLED', 403, 'This video provider is disabled by the server');
     }
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
     const managed = isServerConfiguredProvider('video', providerId);

@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 import { normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
+import { getASRServerDisabledError } from '@/lib/audio/asr-enablement';
 
 const log = createLogger('ASRSettings');
 
@@ -84,6 +85,15 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
       setASRResult('');
       setTestStatus('testing');
       setTestMessage('');
+
+      // Browser-native tests execute wholly in the client and therefore need
+      // the same server force-off guard as the normal recorder path.
+      const serverDisabledError = getASRServerDisabledError(providerConfig);
+      if (serverDisabledError) {
+        setTestStatus('error');
+        setTestMessage(serverDisabledError);
+        return;
+      }
 
       if (selectedProviderId === 'browser-native') {
         const SpeechRecognitionCtor =
