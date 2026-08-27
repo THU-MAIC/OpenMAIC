@@ -122,6 +122,7 @@ vi.mock('@/lib/store/canvas', () => ({
       activeElementIdList: () => ['text-1'],
       hiddenElementIdList: () => [],
       editingElementId: () => 'text-1',
+      canvasScale: () => 1,
       pickTarget: () => state.pickTarget,
       setActiveElementIdList: () => state.setActiveElementIdList,
       setEditingElementId: () => state.setEditingElementId,
