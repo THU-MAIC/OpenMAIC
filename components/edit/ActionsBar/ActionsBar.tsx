@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * ActionsBar — Pro-mode "讲解脚本" bottom bar, a horizontal film-editing timeline
+ * ActionsBar — Pro-mode "narration script" bottom bar, a horizontal film-editing timeline
  * that is also a light editor for the scene's playback `actions`.
  *
  * The scene's `actions` ARE the timeline: walked left→right, each `speech`
@@ -12,7 +12,7 @@
  *
  * Editing (persisted via useStageStore.updateScene → actions-edit ops):
  * - speech clip text is editable inline (commit on blur);
- * - the header "添加动作" pill opens ActionPicker to insert a new action;
+ * - the header "Add action" pill opens ActionPicker to insert a new action;
  * - existing items drag to reorder; each card carries a delete button;
  * - clicking an element-bound cue arms canvas pick mode (useCanvasStore.pickTarget),
  *   so the target is chosen by clicking the element directly on the slide.
@@ -165,7 +165,7 @@ function CueTooltip({ tip }: { tip: TooltipState }) {
 }
 
 // Native HTML5 drag snapshots the element's square bounding box, so a round
-// icon chip drags with white corners ("白边"). Suppress the ghost with a 1×1
+// icon chip drags with white corners ("white border"). Suppress the ghost with a 1×1
 // transparent image — the violet drop indicator carries the feedback instead.
 let blankDragImg: HTMLImageElement | null = null;
 function setBlankDragImage(e: React.DragEvent) {
@@ -249,7 +249,7 @@ function MoveButtons({
 
 type TtsStatus = 'none' | 'ready' | 'generating' | 'error';
 
-/** Audio status + 试听 / 重新生成 row, shown when managed TTS is on. */
+/** Audio status + preview / regenerate row, shown when managed TTS is on. */
 function SpeechTtsBar({
   actionId,
   audioId,
@@ -276,12 +276,12 @@ function SpeechTtsBar({
 }) {
   const { t } = useI18n();
   const [status, setStatus] = useState<TtsStatus>('none');
-  // Holds this line in 生成中 across a batch ("全部配音") run and — crucially —
-  // until its OWN audio re-check resolves, so it can't briefly flash back to
-  // 未配音 in the window between the batch clearing `regenerating` and the async
-  // audioExists effect landing. Latched on the rising edge of `regenerating`,
-  // cleared inside that re-check effect (which the batch always re-triggers via
-  // `refreshKey`).
+  // Holds this line in the generating state across a batch ("Voice all") run
+  // and — crucially — until its OWN audio re-check resolves, so it can't
+  // briefly flash back to not voiced in the window between the batch clearing
+  // `regenerating` and the async audioExists effect landing. Latched on the
+  // rising edge of `regenerating`, cleared inside that re-check effect (which
+  // the batch always re-triggers via `refreshKey`).
   const [batchPending, setBatchPending] = useState(false);
   const [prevRegenerating, setPrevRegenerating] = useState(regenerating);
   if (regenerating !== prevRegenerating) {
@@ -335,7 +335,7 @@ function SpeechTtsBar({
         // pre-batch check that resolves mid-batch must NOT clear it (adding
         // regenerating to the deps also cancels such a check at batch start via
         // the cleanup below). Runs even if the read threw, so the row can never
-        // wedge in 生成中.
+        // wedge in the generating state.
         if (alive && !regenerating) setBatchPending(false);
       }
     })();
@@ -390,11 +390,11 @@ function SpeechTtsBar({
     },
     error: { label: t('edit.tts.statusError'), cls: 'text-rose-500' },
   };
-  // A batch "全部配音" run drives this line's loading state from the parent
+  // A batch "Voice all" run drives this line's loading state from the parent
   // (regenerating) — independent of the local single-line status. `batchPending`
-  // extends 生成中 past the prop clearing, until this line's own audio re-check
-  // resolves to 已配音 / 未配音, so the batch end shows a clean 生成中 → 已配音
-  // transition with no intermediate flash.
+  // extends the generating state past the prop clearing, until this line's own
+  // audio re-check resolves to voiced / not voiced, so the batch end shows a
+  // clean generating → voiced transition with no intermediate flash.
   const effStatus: TtsStatus = regenerating || batchPending ? 'generating' : status;
   const s = STATUS[effStatus];
 
@@ -963,7 +963,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
         | undefined
     )?.canvas?.elements ?? EMPTY_ELEMENTS;
   const language = useStageStore((s) => s.stage?.languageDirective);
-  // Managed TTS on → speech clips show audio status + 试听 / 重新生成.
+  // Managed TTS on → speech clips show audio status + preview / regenerate.
   const ttsActive = useSettingsStore(
     (s) => s.ttsEnabled && s.ttsProviderId !== 'browser-native-tts',
   );
@@ -992,8 +992,8 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   const [focusId, setFocusId] = useState<string | null>(null);
   const [regenAll, setRegenAll] = useState(false);
   const [pickerAt, setPickerAt] = useState<{ slot: number; rect: DOMRect } | null>(null);
-  // Ids of speech lines currently being (re)generated by "全部配音", so each
-  // line's status row shows 生成中 for the duration of the batch.
+  // Ids of speech lines currently being (re)generated by "Voice all", so each
+  // line's status row shows the generating state for the duration of the batch.
   const [regeneratingIds, setRegeneratingIds] = useState<ReadonlySet<string>>(NO_IDS);
   const [ttsRefresh, setTtsRefresh] = useState(0); // bump → speech clips re-check audio status
   const reduce = useReducedMotion();
@@ -1056,7 +1056,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
       setRegeneratingIds(NO_IDS);
       // Always re-check every line's audio at batch end — even when nothing
       // synthesized — so each SpeechTtsBar resolves its status (and clears its
-      // batchPending flag) instead of getting stuck in 生成中.
+      // batchPending flag) instead of getting stuck in the generating state.
       setTtsRefresh((n) => n + 1);
     }
   }, [regenAll, sceneId, language, commit]);

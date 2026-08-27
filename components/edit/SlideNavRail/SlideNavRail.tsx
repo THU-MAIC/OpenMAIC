@@ -406,8 +406,8 @@ export function SlideNavRail() {
               title={t('generation.backToHome')}
               className="flex items-center gap-2 cursor-pointer rounded-lg px-1.5 -mx-1.5 py-1 -my-1 hover:bg-gray-100/80 dark:hover:bg-gray-800/60 active:scale-[0.97] transition-all duration-150"
             >
-              {/* 桌面客户端：Electron 标题栏已含品牌 icon + 名称，编辑栏不再重复展示；
-                  回主页由编辑栏 CommandBar 的返回箭头承担。 */}
+              {/* Desktop client: the Electron title bar already shows the brand icon + name, so the edit rail doesn't repeat it;
+                  returning home is handled by the edit bar's CommandBar back arrow. */}
               <img src={brand.logoSrc} alt={brand.productName} className="h-6 w-auto" />
             </button>
           )}

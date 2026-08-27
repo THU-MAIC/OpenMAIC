@@ -5,10 +5,10 @@
  * form resolves the same way:
  *
  * - 'home' — no workbench session attached: the plain classroom keeps its
- *   default 返回首页 arrow (`Header`'s fallback, `CommandBar`'s arrow).
+ *   default back-to-home arrow (`Header`'s fallback, `CommandBar`'s arrow).
  * - 'workbench-return' — full-screen playback (`workbenchOpen &&
  *   workbenchPlayback`): the canvas pager or preview toolbar stepped the
- *   workbench aside, so the classroom header's left slot hosts the 「返回工作台」control
+ *   workbench aside, so the classroom header's left slot hosts the back-to-workspace control
  *   (`WorkbenchReturnControl`) that brings the conversation back.
  * - 'hidden' — every other workbench-attached form (embedded panel /
  *   narrow-host overlay): the conversation is already beside or above the

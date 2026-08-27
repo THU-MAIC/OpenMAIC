@@ -110,7 +110,7 @@ export function Stage({
   const workbenchShowingClassroom = hosted && workbenchPanel.visible && !workbenchPlayback;
 
   // Single decision for the classroom chrome's top-left back affordance:
-  // plain classroom → home arrow; full-screen playback → 「返回工作台」;
+  // plain classroom → home arrow; full-screen playback → "Back to workspace";
   // every other hosted form (the workspace pane) → hidden (the conversation
   // and the navigation tree are already beside the classroom, and a home
   // arrow would exit the workspace). See lib/workbench/classroom-back-control.ts.
@@ -342,9 +342,11 @@ export function Stage({
 
   return (
     <div className="relative flex flex-1 overflow-hidden">
-      {/* 编辑态保护已移除（#1961 决策变更 2026-08-23）：agent 的新版本直接替换画布，
-          用户的键入数据由写路径的 veto/重试通道保护（见 lib/store/stage.ts），
-          不再有「agent 改过这一页」横幅与手动重载入口。 */}
+      {/* The edit-mode guard has been removed (#1961 decision change 2026-08-23): a
+          new agent version directly replaces the canvas; the user's typed data is
+          protected by the write-path veto/retry channel (see lib/store/stage.ts),
+          and there is no longer an "agent modified this page" banner or a manual
+          reload entry. */}
       {classroomChrome}
       {/* Full-screen playback steps the workspace aside; the return to the
           conversation lives in the classroom header's left slot (passed as

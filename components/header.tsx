@@ -17,7 +17,7 @@ interface HeaderProps {
   /** Replaces the default back-to-home arrow as the header's leftmost
       control. `PlaybackChromeRoot` passes the workbench's return control
       here while a session is attached and full-screen playback is on, so the
-      top-left back affordance becomes "返回工作台" instead of a home arrow
+      top-left back affordance becomes the back-to-workspace control instead of a home arrow
       (which would navigate away from the hosted classroom entirely). */
   readonly backControl?: ReactNode;
   /** Drops the back slot entirely (no `backControl`, no home arrow). The
