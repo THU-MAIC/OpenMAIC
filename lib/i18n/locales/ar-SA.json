@@ -1835,8 +1835,7 @@
     "newSession": "New chat",
     "sections": {
       "courses": "Courses",
-      "sessions": "Chats",
-      "favorites": "Saved"
+      "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
     "sessionsEmpty": "No chats yet",
@@ -1865,9 +1864,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "savedCourse": "Saved course, read-only",
-    "savedNote": "من إنشاء آخرين · للقراءة فقط",
-    "savedEmpty": "لا توجد دورات محفوظة بعد",
     "searchPlaceholder": "Filter by name",
     "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
@@ -1908,7 +1904,6 @@
     "deleting": "جارٍ الحذف…",
     "deleteFailed": "تعذر الحذف. حاول مرة أخرى.",
     "tabsAria": "Chats and courses",
-    "savedDrawerAria": "Saved courses",
     "courseTabsAria": "الدورات المفتوحة",
     "courseTabClose": "إغلاق التبويب: {{name}}",
     "courseTabRunning": "قيد التوليد",

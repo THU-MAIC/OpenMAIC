@@ -1820,8 +1820,7 @@
     "newSession": "新增對話",
     "sections": {
       "courses": "課程",
-      "sessions": "對話",
-      "favorites": "收藏"
+      "sessions": "對話"
     },
     "coursesEmpty": "還沒有課程",
     "sessionsEmpty": "還沒有對話",
@@ -1850,9 +1849,6 @@
       "cancelled": "已停止"
     },
     "backToWorkspace": "返回工作區",
-    "savedCourse": "收藏的課堂，唯讀",
-    "savedNote": "他人建立 · 唯讀",
-    "savedEmpty": "還沒有收藏的課堂",
     "searchPlaceholder": "依名稱篩選",
     "searchAria": "在{{section}}中搜尋",
     "searchEmpty": "沒有符合的內容",
@@ -1893,7 +1889,6 @@
     "deleting": "刪除中…",
     "deleteFailed": "刪除失敗，請重試",
     "tabsAria": "對話與課程",
-    "savedDrawerAria": "收藏的課堂",
     "courseTabsAria": "右欄標籤頁",
     "courseTabClose": "關閉標籤頁《{{name}}》",
     "courseTabRunning": "產生中",

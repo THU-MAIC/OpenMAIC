@@ -1835,8 +1835,7 @@
     "newSession": "New chat",
     "sections": {
       "courses": "Courses",
-      "sessions": "Chats",
-      "favorites": "Saved"
+      "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
     "sessionsEmpty": "No chats yet",
@@ -1865,9 +1864,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "savedCourse": "Saved course, read-only",
-    "savedNote": "他のユーザーが作成 · 読み取り専用",
-    "savedEmpty": "保存したコースはまだありません",
     "searchPlaceholder": "Filter by name",
     "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
@@ -1908,7 +1904,6 @@
     "deleting": "削除中…",
     "deleteFailed": "削除できませんでした。もう一度お試しください。",
     "tabsAria": "Chats and courses",
-    "savedDrawerAria": "Saved courses",
     "courseTabsAria": "開いているコース",
     "courseTabClose": "タブを閉じる：{{name}}",
     "courseTabRunning": "生成中",
