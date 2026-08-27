@@ -56,10 +56,14 @@ describe('agent runtime configuration predicate', () => {
 });
 
 describe('isMaicEditorEnabled', () => {
+  const PRO_FLAG = 'NEXT_PUBLIC_PRO_WORKBENCH_ENABLED';
   let original: string | undefined;
+  let originalPro: string | undefined;
 
   beforeEach(() => {
     original = process.env[FLAG];
+    originalPro = process.env[PRO_FLAG];
+    delete process.env[PRO_FLAG];
   });
 
   afterEach(() => {
@@ -67,6 +71,11 @@ describe('isMaicEditorEnabled', () => {
       delete process.env[FLAG];
     } else {
       process.env[FLAG] = original;
+    }
+    if (originalPro === undefined) {
+      delete process.env[PRO_FLAG];
+    } else {
+      process.env[PRO_FLAG] = originalPro;
     }
   });
 
@@ -93,6 +102,18 @@ describe('isMaicEditorEnabled', () => {
   it('returns false for an unrecognized string', () => {
     process.env[FLAG] = 'yes';
     expect(isMaicEditorEnabled()).toBe(false);
+  });
+
+  it('is implied by the Pro workbench flag when its own flag is unset', () => {
+    delete process.env[FLAG];
+    process.env[PRO_FLAG] = 'true';
+    expect(isMaicEditorEnabled()).toBe(true);
+  });
+
+  it('stays on under the Pro workbench flag even with its own flag set false', () => {
+    process.env[FLAG] = 'false';
+    process.env[PRO_FLAG] = 'true';
+    expect(isMaicEditorEnabled()).toBe(true);
   });
 });
 
