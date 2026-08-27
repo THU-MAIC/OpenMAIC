@@ -242,6 +242,47 @@ export function slimEventDataForLog(type: string, data: unknown): unknown {
   return data;
 }
 
+/**
+ * Capture a pi event at emission time. Pi mutates the shared partial message
+ * after every token, while durable writes run on an asynchronous ordered
+ * chain; retaining that object would make an earlier frame serialize a later
+ * state (or no reasoning at all).
+ */
+export function snapshotEventDataForLog(type: string, data: unknown): unknown {
+  const slimmed = slimEventDataForLog(type, data);
+  if (!slimmed || typeof slimmed !== 'object' || Array.isArray(slimmed)) return slimmed;
+  const source = slimmed as Record<string, unknown>;
+  const message = source.message;
+  if (!message || typeof message !== 'object' || Array.isArray(message)) return slimmed;
+  const messageSource = message as Record<string, unknown>;
+  const content = messageSource.content;
+  if (!Array.isArray(content)) return { ...source, message: { ...messageSource } };
+  return {
+    ...source,
+    message: {
+      ...messageSource,
+      content: content.map((block) =>
+        block && typeof block === 'object' && !Array.isArray(block)
+          ? { ...(block as Record<string, unknown>) }
+          : block,
+      ),
+    },
+  };
+}
+
+/** Empty start frames must not consume the 150 ms slot before the first delta. */
+export function hasRenderableAssistantUpdate(data: unknown): boolean {
+  const message = (data as { message?: { role?: string; content?: unknown[] } } | null)?.message;
+  if (message?.role !== 'assistant' || !Array.isArray(message.content)) return true;
+  return message.content.some((rawBlock) => {
+    if (!rawBlock || typeof rawBlock !== 'object' || Array.isArray(rawBlock)) return false;
+    const block = rawBlock as { type?: string; text?: string; thinking?: string };
+    if (block.type === 'thinking') return Boolean(String(block.thinking ?? '').trim());
+    if (block.type === 'text') return Boolean(String(block.text ?? '').trim());
+    return true;
+  });
+}
+
 /** The cap itself is a legal run; a claim after it is a verdict-only claim. */
 export function isOverAttemptCap(meta: { attempt: number }): boolean {
   return meta.attempt > config.maxAttempts;
@@ -462,12 +503,13 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   let thinkingEndEmitted = false;
 
   const appendEvent = (type: string, data: unknown, ts: number): void => {
+    const snapshot = snapshotEventDataForLog(type, data);
     enqueue(async () => {
       const seq = await store.appendRunEvent(id, WORKER_ID, {
         ts,
         attempt,
         type,
-        data: slimEventDataForLog(type, data),
+        data: snapshot,
       });
       if (seq === null) markLeaseLost();
     });
@@ -519,6 +561,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       }
     }
     if (type === 'message_update') {
+      if (!hasRenderableAssistantUpdate(data)) return;
       if (now - lastMessageUpdateAt < MESSAGE_UPDATE_MIN_INTERVAL_MS) return;
       lastMessageUpdateAt = now;
     }
