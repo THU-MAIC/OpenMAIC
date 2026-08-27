@@ -128,6 +128,15 @@ export async function fetchExtractionResponse(
  */
 export const DEFAULT_INGEST_AWAIT_TIMEOUT_MS = 15_000;
 
+/**
+ * UX bound for the home flow's Generate click, applied instead of
+ * {@link DEFAULT_INGEST_AWAIT_TIMEOUT_MS} to the classic generate-prep drain.
+ * Clicking Generate must not sit on in-flight ingests for the full server
+ * budget; sources that miss this cap proceed on the legacy byte path, which is
+ * exactly what the timeout fallback in `awaitPendingIngests` exists for.
+ */
+export const GENERATE_DRAIN_CAP_MS = 3_000;
+
 export interface AwaitPendingIngestsOptions {
   /** Time budget for the batch; defaults to {@link DEFAULT_INGEST_AWAIT_TIMEOUT_MS}. */
   timeoutMs?: number;

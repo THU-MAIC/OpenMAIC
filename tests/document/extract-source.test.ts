@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   awaitPendingIngests,
+  DEFAULT_INGEST_AWAIT_TIMEOUT_MS,
   fetchExtractionResponse,
+  GENERATE_DRAIN_CAP_MS,
   resolvedAssetIdForIngest,
   shouldRetryWithByteUpload,
 } from '@/lib/document/extract-source';
@@ -379,5 +381,15 @@ describe('resolvedAssetIdForIngest', () => {
   it('returns undefined for a rejected ingest', async () => {
     const map = new Map([['a', Promise.reject(new Error('put failed'))]]);
     await expect(resolvedAssetIdForIngest(map, 'a')).resolves.toBeUndefined();
+  });
+});
+
+describe('GENERATE_DRAIN_CAP_MS', () => {
+  it('caps the home Generate click ingest drain far below the server budget', () => {
+    // The approved UX bound: clicking Generate must not sit on in-flight
+    // ingests for the full server budget; sources that miss the cap proceed
+    // on the legacy byte path.
+    expect(GENERATE_DRAIN_CAP_MS).toBe(3_000);
+    expect(GENERATE_DRAIN_CAP_MS).toBeLessThan(DEFAULT_INGEST_AWAIT_TIMEOUT_MS);
   });
 });

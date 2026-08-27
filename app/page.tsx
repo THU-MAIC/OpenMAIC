@@ -49,7 +49,7 @@ import {
 } from '@/lib/document/course-materials';
 import {
   awaitPendingIngests,
-  DEFAULT_INGEST_AWAIT_TIMEOUT_MS,
+  GENERATE_DRAIN_CAP_MS,
   resolvedAssetIdForIngest,
 } from '@/lib/document/extract-source';
 import { computeContentDigest } from '@/lib/document/extraction-cache';
@@ -762,13 +762,15 @@ function HomePage() {
     try {
       // Drain any in-flight ingests before building the session, so a resolved
       // asset id lands in the session instead of being dropped when this page
-      // unmounts. The await is bounded (~15 s): on timeout, the unsettled
-      // sources proceed with their storageKey and the legacy byte path, and
-      // each late-resolving id is released since no durable holder will ever
-      // exist for it. A rejected ingest is fine: that source proceeds with its
-      // storageKey and the byte path. The drain loops until the pending map is
-      // stable — despite the freeze guard, an add that slipped in before the
-      // flag took effect is still drained (belt-and-braces).
+      // unmounts. The await is bounded by the GENERATE_DRAIN_CAP_MS UX cap
+      // (~3 s, not the server's 15 s budget: clicking Generate must not sit on
+      // ingests): on timeout, the unsettled sources proceed with their
+      // storageKey and the legacy byte path, and each late-resolving id is
+      // released since no durable holder will ever exist for it. A rejected
+      // ingest is fine: that source proceeds with its storageKey and the byte
+      // path. The drain loops until the pending map is stable — despite the
+      // freeze guard, an add that slipped in before the flag took effect is
+      // still drained (belt-and-braces).
       const awaitedIngestIds = new Set<string>();
       for (;;) {
         const unawaited = [...pendingMaterialIngestsRef.current.entries()].filter(
@@ -777,7 +779,7 @@ function HomePage() {
         if (unawaited.length === 0) break;
         for (const [id] of unawaited) awaitedIngestIds.add(id);
         const batchUnsettled = await awaitPendingIngests(new Map(unawaited), {
-          timeoutMs: DEFAULT_INGEST_AWAIT_TIMEOUT_MS,
+          timeoutMs: GENERATE_DRAIN_CAP_MS,
           onUnsettled: (ingestId, ingest) => {
             unsettledIngestIds.add(ingestId);
             // The ingest was abandoned: no durable holder will ever exist for
