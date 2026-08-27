@@ -57,6 +57,19 @@ let stageStorageModulePromise: Promise<typeof import('@/lib/utils/stage-storage'
 
 const DEPARTING_STAGE_RETRY_DELAY_MS = 100;
 
+const SAVE_DEBOUNCE_MS = 500;
+const SAVE_BACKOFF_MAX_MS = 30_000;
+let consecutiveFlushFailures = 0;
+
+function nextSaveDelayMs(): number {
+  if (consecutiveFlushFailures === 0) return SAVE_DEBOUNCE_MS;
+  return Math.min(SAVE_DEBOUNCE_MS * 2 ** consecutiveFlushFailures, SAVE_BACKOFF_MAX_MS);
+}
+
+function recordFlushOutcome(failed: boolean): void {
+  consecutiveFlushFailures = failed ? consecutiveFlushFailures + 1 : 0;
+}
+
 function pendingChangeKey(change: PendingChange): string {
   return change.kind === 'scene' ? `scene:${change.sceneId}` : change.kind;
 }
@@ -70,16 +83,21 @@ function resetPendingChanges(stageId: string | null = null): void {
   cancelScheduledSave();
   pendingChanges.clear();
   pendingStageId = stageId;
+  consecutiveFlushFailures = 0;
 }
 
 function schedulePendingSave(): void {
+  // Once a write has failed, keep the already-armed backoff timer. Streaming
+  // chat mutations are already represented by the dirty descriptor; rearming
+  // per delta would collapse the backoff to the base cadence or starve it.
+  if (consecutiveFlushFailures > 0 && saveTimer) return;
   cancelScheduledSave();
   saveTimer = setTimeout(() => {
     saveTimer = null;
     void flushStageSave().catch(() => {
       // flushStageSave logs once and retains the pending entries for retry.
     });
-  }, 500);
+  }, nextSaveDelayMs());
 }
 
 function markPendingChanges(stageId: string | undefined, ...changes: PendingChange[]): void {
@@ -1131,9 +1149,11 @@ function startFlushRound(): FlushRound | null {
           },
         });
       }
+      recordFlushOutcome(failedKeys.size > 0);
       return failedKeys;
     } catch (error) {
       log.error(`Failed to flush pending stage changes for ${stageId}:`, error);
+      recordFlushOutcome(true);
       throw error;
     } finally {
       flushInFlight = null;

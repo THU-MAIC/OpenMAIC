@@ -326,8 +326,40 @@ describe('incremental stage flush', () => {
 
     await flushStageSave();
     await vi.advanceTimersByTimeAsync(500);
+    expect(incrementalSave).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(500);
     expect(incrementalSave).toHaveBeenCalledTimes(2);
     expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'chats' }]);
+  });
+
+  it('coalesces streaming chat deltas behind the reference implementation retry cadence', async () => {
+    incrementalSave
+      .mockResolvedValueOnce({ failedChanges: [{ kind: 'chats' }] })
+      .mockResolvedValueOnce({ failedChanges: [] });
+    const base: ChatSession = {
+      id: 'chat-stream',
+      type: 'qa',
+      title: 'Streaming',
+      status: 'active',
+      messages: [],
+      config: { agentIds: [] },
+      toolCalls: [],
+      pendingToolCalls: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    useStageStore.getState().setChats([base]);
+    await flushStageSave();
+
+    for (let delta = 1; delta <= 64; delta += 1) {
+      useStageStore.getState().setChats([{ ...base, updatedAt: delta + 1 }]);
+    }
+    await vi.advanceTimersByTimeAsync(999);
+    expect(incrementalSave).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+
+    // Sixty-four deltas produce one retry, not one runtime/session/KV cycle per delta.
+    expect(incrementalSave).toHaveBeenCalledTimes(2);
   });
 
   it('clears document dirt but retains and retries chat dirt after a split full save', async () => {
