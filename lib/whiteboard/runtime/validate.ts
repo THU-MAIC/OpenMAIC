@@ -2,6 +2,7 @@ import { normalizeElement, type CodeLine, type PPTElement, type Whiteboard } fro
 import sceneSchemaJson from '@openmaic/dsl/schema/scene.schema.json';
 import type { RuntimePayloadValidator } from '@openmaic/storage';
 
+import { normalizeWhiteboardViewportRatio } from '@/lib/whiteboard/viewport';
 import {
   LEGACY_WHITEBOARD_SOURCE_KIND,
   WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
@@ -391,6 +392,10 @@ export function normalizeAndValidateLegacyWhiteboard(value: unknown): Whiteboard
   if (typeof board.viewportRatio !== 'number' || !Number.isFinite(board.viewportRatio)) {
     throw new Error('invalid whiteboard viewportRatio');
   }
+  // viewportRatio is height/width; normalize an inverted persisted value
+  // (> 1, i.e. 16:9 written as width/height) into the plausible band so an
+  // inverted ratio cannot be committed again.
+  const viewportRatio = normalizeWhiteboardViewportRatio(board.viewportRatio);
   if (!Array.isArray(board.elements)) throw new Error('invalid whiteboard elements');
   if (Object.hasOwn(board, 'background')) {
     const error = validateSchema(
@@ -418,7 +423,7 @@ export function normalizeAndValidateLegacyWhiteboard(value: unknown): Whiteboard
     ids.add(normalized.id);
     return normalized;
   });
-  return cloneCanonicalJson({ ...board, elements } as Whiteboard);
+  return cloneCanonicalJson({ ...board, elements, viewportRatio } as Whiteboard);
 }
 
 export function validateWhiteboardRuntimePayload(
@@ -451,7 +456,12 @@ export function validateWhiteboardRuntimePayload(
         throw new Error('source fingerprint is invalid');
       }
       const normalized = normalizeAndValidateLegacyWhiteboard(operation.whiteboard);
-      if (canonicalJson(normalized) !== canonicalJson(operation.whiteboard)) {
+      // A persisted payload may carry the un-normalized inverted viewportRatio
+      // (height/width written as width/height) that the fold repairs on read;
+      // compare against the ratio-normalized expectation so such records replay.
+      const whiteboard = operation.whiteboard as Record<string, unknown>;
+      const expected = { ...whiteboard, viewportRatio: normalized.viewportRatio };
+      if (canonicalJson(normalized) !== canonicalJson(expected)) {
         throw new Error('whiteboard payload is not canonical');
       }
     } else if (operation.kind === 'element_added') {

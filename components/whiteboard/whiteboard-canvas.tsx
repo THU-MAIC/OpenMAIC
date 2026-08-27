@@ -13,6 +13,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { ScreenElement } from '@/components/slide-renderer/Editor/ScreenElement';
+import { normalizeWhiteboardViewportRatio } from '@/lib/whiteboard/viewport';
 import type { PPTElement, Whiteboard } from '@openmaic/dsl';
 import { useI18n } from '@/lib/hooks/use-i18n';
 
@@ -400,7 +401,11 @@ export const WhiteboardCanvas = forwardRef<WhiteboardCanvasHandle, WhiteboardCan
     const elements = useMemo(() => rawElements ?? [], [rawElements]);
 
     const canvasWidth = whiteboard?.viewportSize ?? 1000;
-    const canvasHeight = canvasWidth * (whiteboard?.viewportRatio ?? 0.5625);
+    // viewportRatio is height/width; normalize into the plausible band so an
+    // inverted persisted ratio (16:9 written as width/height) can never render
+    // a sheet taller than it is wide, even if it bypassed the runtime repair.
+    const canvasHeight =
+      canvasWidth * normalizeWhiteboardViewportRatio(whiteboard?.viewportRatio ?? 0.5625);
 
     const containerScale = useMemo(() => {
       if (containerSize.width === 0 || containerSize.height === 0) return 1;

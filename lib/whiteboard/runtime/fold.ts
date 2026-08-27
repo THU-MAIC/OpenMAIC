@@ -5,6 +5,8 @@ import {
   type Whiteboard,
 } from '@openmaic/dsl';
 
+import { normalizeWhiteboardViewportRatio } from '@/lib/whiteboard/viewport';
+
 import {
   WhiteboardRuntimeCodeLineIdConflictError,
   WhiteboardRuntimeCodeLineNotFoundError,
@@ -54,7 +56,13 @@ export async function applyWhiteboardRuntimeOperation(
   const snapshot = immutableClone(operation);
   if (snapshot.kind === 'legacy_snapshot_imported') {
     if (current !== null) throw new Error('WHITEBOARD_RUNTIME_IMPORT_AFTER_STATE');
-    return immutableClone(snapshot.whiteboard);
+    const whiteboard = snapshot.whiteboard;
+    // viewportRatio is height/width; repair an inverted persisted value
+    // (> 1, i.e. 16:9 written as width/height) so the board projects landscape.
+    return immutableClone({
+      ...whiteboard,
+      viewportRatio: normalizeWhiteboardViewportRatio(whiteboard.viewportRatio),
+    });
   }
 
   if (snapshot.kind === 'element_added') {

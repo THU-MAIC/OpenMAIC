@@ -513,6 +513,16 @@ describe('whiteboard RuntimeStore payload contract', () => {
     });
   });
 
+  it('normalizes an inverted legacy viewportRatio into the plausible band', () => {
+    const normalized = normalizeAndValidateLegacyWhiteboard(board({ viewportRatio: 16 / 9 }));
+    // viewportRatio is height/width: the 16:9 landscape board must be 9/16.
+    expect(normalized.viewportRatio).toBe(9 / 16);
+    // height = width * ratio stays below width for the 1000px sheet.
+    expect(normalized.viewportSize * normalized.viewportRatio).toBeLessThan(
+      normalized.viewportSize,
+    );
+  });
+
   it('accepts generated-schema tuple constraints for a normalized shape', () => {
     const normalized = normalizeAndValidateLegacyWhiteboard(
       board({
@@ -640,6 +650,25 @@ describe('whiteboard RuntimeStore fold', () => {
       'text-2',
     ]);
     expect(Object.isFrozen(extended.whiteboard?.elements)).toBe(true);
+  });
+
+  it('repairs an inverted legacy viewportRatio when folding an import snapshot', async () => {
+    const result = await foldWhiteboardRuntimeRecords('session-1', [
+      record(
+        0,
+        payload({
+          operation: {
+            ...payload().operation,
+            whiteboard: board({ viewportRatio: 16 / 9 }),
+          },
+        }),
+      ),
+    ]);
+    expect(result.whiteboard?.viewportRatio).toBe(9 / 16);
+    // The projected 1000px sheet must stay landscape (not taller than wide).
+    expect(result.whiteboard!.viewportSize * result.whiteboard!.viewportRatio).toBeLessThan(
+      result.whiteboard!.viewportSize,
+    );
   });
 
   it('preserves a Legacy board for learner adds and rejects invalid ordering or duplicates', async () => {
