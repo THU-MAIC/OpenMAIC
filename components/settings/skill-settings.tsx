@@ -6,9 +6,8 @@
  * Lists the skills installed for the current account — built-in skills that
  * ship with the product and the owner's own skills created from chat history —
  * from the owner-scoped `GET /api/agent/skills` registry. The row layout and
- * the grouped list follow the downstream skill-settings dialog
- * (openmaic-live/components/workbench/skill-settings), which this surface
- * replaces with REAL endpoints only:
+ * the grouped list follow the reference skill-settings dialog, which this
+ * surface replaces with REAL endpoints only:
  *
  *  - every row opens a detail view (`SkillDetailDialog`) and offers a real
  *    Download action that hits `GET /api/skills/:id` and ships the zip the
