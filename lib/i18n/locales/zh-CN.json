@@ -1834,5 +1834,24 @@
     "title": "请输入访问码",
     "placeholder": "访问码",
     "error": "访问码错误，请重试。"
+  },
+  "agents": {
+    "roster": {
+      "title": "课堂阵容",
+      "count": "{{count}} 位",
+      "hint": "点击一位展开编辑",
+      "undo": "撤销",
+      "redo": "重做",
+      "lead": "主讲",
+      "classmates": "AI 同学",
+      "personaLabel": "人设描述",
+      "personaPlaceholder": "描述角色的性格、教学风格与任务…",
+      "noPersona": "暂无人设",
+      "unnamed": "未命名",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "remove": "移出课堂",
+      "add": "添加角色"
+    }
   }
 }

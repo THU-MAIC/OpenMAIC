@@ -1834,5 +1834,24 @@
     "title": "접근 코드 입력",
     "placeholder": "접근 코드",
     "error": "유효하지 않은 접근 코드입니다. 다시 시도해 주세요."
+  },
+  "agents": {
+    "roster": {
+      "title": "Classroom roster",
+      "count": "{{count}} members",
+      "hint": "Click one to edit",
+      "undo": "Undo",
+      "redo": "Redo",
+      "lead": "Lead",
+      "classmates": "AI classmates",
+      "personaLabel": "Persona",
+      "personaPlaceholder": "Describe the character's personality, teaching style and role…",
+      "noPersona": "No persona yet",
+      "unnamed": "Untitled",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "remove": "Remove from classroom",
+      "add": "Add character"
+    }
   }
 }

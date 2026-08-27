@@ -126,7 +126,7 @@ function PersonaEditor({ agentId, value, borderColor, onUpdate }: PersonaEditorP
   return (
     <div className="flex flex-col gap-1.5">
       <span style={{ fontSize: 11.5, fontWeight: 600, color: '#52525b', letterSpacing: '.01em' }}>
-        {t('edit.roster.personaLabel')}
+        {t('agents.roster.personaLabel')}
       </span>
       <textarea
         data-persona={agentId}
@@ -136,7 +136,7 @@ function PersonaEditor({ agentId, value, borderColor, onUpdate }: PersonaEditorP
         onBlur={handleBlur}
         rows={4}
         maxLength={PERSONA_MAX}
-        placeholder={t('edit.roster.personaPlaceholder')}
+        placeholder={t('agents.roster.personaPlaceholder')}
         className="resize-none rounded-[10px] bg-white px-3 py-2.5 outline-none focus:ring-1"
         style={{
           border: `1px solid ${borderColor}`,
@@ -165,7 +165,7 @@ interface TeacherCardProps {
 function TeacherCard({ agent, open, onToggle, onUpdate }: TeacherCardProps) {
   const { t } = useI18n();
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
-  const personaPreview = agent.persona?.slice(0, 40) || t('edit.roster.noPersona');
+  const personaPreview = agent.persona?.slice(0, 40) || t('agents.roster.noPersona');
 
   return (
     <div
@@ -202,10 +202,11 @@ function TeacherCard({ agent, open, onToggle, onUpdate }: TeacherCardProps) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <EditableName
-              value={agent.name || t('edit.roster.unnamed')}
+              value={agent.name || t('agents.roster.unnamed')}
               onCommit={(name) => onUpdate(agent.id, { name })}
               className="text-[13.5px] font-semibold text-[#27272a]"
             />
+            {/* Lead-teacher badge */}
             <span
               className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5"
               style={{
@@ -216,8 +217,7 @@ function TeacherCard({ agent, open, onToggle, onUpdate }: TeacherCardProps) {
                 color: '#5b1fa8',
               }}
             >
-              <span aria-hidden="true">👑</span>
-              {t('edit.roster.teacherBadge')}
+              👑 {t('agents.roster.lead')}
             </span>
           </div>
           <p
@@ -293,7 +293,7 @@ function ClassmateCard({
   const { t } = useI18n();
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const ringColor = agent.color || '#a1a1aa';
-  const personaPreview = agent.persona?.slice(0, 35) || t('edit.roster.noPersona');
+  const personaPreview = agent.persona?.slice(0, 35) || t('agents.roster.noPersona');
 
   return (
     <div
@@ -331,7 +331,7 @@ function ClassmateCard({
 
         <div className="min-w-0 flex-1">
           <EditableName
-            value={agent.name || t('edit.roster.unnamed')}
+            value={agent.name || t('agents.roster.unnamed')}
             onCommit={(name) => onUpdate(agent.id, { name })}
             className="block truncate text-[13.5px] font-semibold text-[#27272a]"
           />
@@ -348,7 +348,7 @@ function ClassmateCard({
         <div className="flex flex-col gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
-            aria-label={t('edit.roster.moveUp')}
+            aria-label={t('agents.roster.moveUp')}
             disabled={isFirst}
             onClick={onMoveUp}
             className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-25"
@@ -357,7 +357,7 @@ function ClassmateCard({
           </button>
           <button
             type="button"
-            aria-label={t('edit.roster.moveDown')}
+            aria-label={t('agents.roster.moveDown')}
             disabled={isLast}
             onClick={onMoveDown}
             className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-25"
@@ -413,7 +413,7 @@ function ClassmateCard({
               style={{ fontSize: 11.5, color: '#71717a' }}
             >
               <UserMinus style={{ width: 13, height: 13 }} />
-              {t('edit.roster.removeFromClass')}
+              {t('agents.roster.remove')}
             </button>
           </div>
         </div>
@@ -458,19 +458,17 @@ export function AgentRosterPanel() {
         className="flex shrink-0 items-baseline gap-1.5 px-4 pb-1.5"
         style={{ paddingTop: 14, paddingBottom: 6 }}
       >
-        <span style={{ fontSize: 13, fontWeight: 600, color: '#3f3f46' }}>
-          {t('edit.roster.title')}
-        </span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#3f3f46' }}>{t('agents.roster.title')}</span>
         <span style={{ fontSize: 11, color: '#a1a1aa', fontFamily: 'monospace' }}>
-          {t('edit.roster.count', { count: roster.length })}
+          {t('agents.roster.count', { count: roster.length })}
         </span>
         <span className="flex-1" />
-        <span style={{ fontSize: 11, color: '#a1a1aa' }}>{t('edit.roster.editHint')}</span>
+        <span style={{ fontSize: 11, color: '#a1a1aa' }}>{t('agents.roster.hint')}</span>
         {/* Undo/redo */}
         <button
           type="button"
-          title={t('edit.undo')}
-          aria-label={t('edit.undo')}
+          title={t('agents.roster.undo')}
+          aria-label={t('agents.roster.undo')}
           disabled={!history.canUndo}
           onClick={history.undo}
           className="ml-1 grid size-5 place-items-center rounded text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 disabled:pointer-events-none disabled:opacity-30"
@@ -479,8 +477,8 @@ export function AgentRosterPanel() {
         </button>
         <button
           type="button"
-          title={t('edit.redo')}
-          aria-label={t('edit.redo')}
+          title={t('agents.roster.redo')}
+          aria-label={t('agents.roster.redo')}
           disabled={!history.canRedo}
           onClick={history.redo}
           className="grid size-5 place-items-center rounded text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 disabled:pointer-events-none disabled:opacity-30"
@@ -514,7 +512,7 @@ export function AgentRosterPanel() {
                 whiteSpace: 'nowrap',
               }}
             >
-              {t('edit.roster.aiClassmates', { count: classmates.length })}
+              {t('agents.roster.classmates')} · {classmates.length}
             </span>
             <div className="flex-1 border-t" style={{ borderColor: '#f1f1f3' }} />
           </div>
@@ -561,7 +559,7 @@ export function AgentRosterPanel() {
           }}
         >
           <UserPlus style={{ width: 15, height: 15 }} />
-          {t('edit.roster.addRole')}
+          {t('agents.roster.add')}
         </button>
       </div>
     </div>

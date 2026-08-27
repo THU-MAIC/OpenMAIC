@@ -1834,5 +1834,24 @@
       "mid": "做得好，繼續保持！",
       "low": "不錯的開始，回顧一下再試一次。"
     }
+  },
+  "agents": {
+    "roster": {
+      "title": "課堂陣容",
+      "count": "{{count}} 位",
+      "hint": "點擊一位展開編輯",
+      "undo": "復原",
+      "redo": "重做",
+      "lead": "主講",
+      "classmates": "AI 同學",
+      "personaLabel": "人設描述",
+      "personaPlaceholder": "描述角色的性格、教學風格與任務…",
+      "noPersona": "暫無人設",
+      "unnamed": "未命名",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "remove": "移出課堂",
+      "add": "新增角色"
+    }
   }
 }

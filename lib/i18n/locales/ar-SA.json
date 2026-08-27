@@ -1834,5 +1834,24 @@
     "title": "أدخل رمز الوصول",
     "placeholder": "رمز الوصول",
     "error": "رمز الوصول غير صالح. يرجى المحاولة مرة أخرى."
+  },
+  "agents": {
+    "roster": {
+      "title": "Classroom roster",
+      "count": "{{count}} members",
+      "hint": "Click one to edit",
+      "undo": "Undo",
+      "redo": "Redo",
+      "lead": "Lead",
+      "classmates": "AI classmates",
+      "personaLabel": "Persona",
+      "personaPlaceholder": "Describe the character's personality, teaching style and role…",
+      "noPersona": "No persona yet",
+      "unnamed": "Untitled",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "remove": "Remove from classroom",
+      "add": "Add character"
+    }
   }
 }
