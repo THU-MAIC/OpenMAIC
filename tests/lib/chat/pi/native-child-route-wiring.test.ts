@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
+import type { RuntimeRecord } from '@openmaic/dsl';
 import { BrowserRuntimeStore } from '@openmaic/storage';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 
@@ -315,7 +316,7 @@ describe('PR2 Native Child route production wiring', () => {
               persona: 'Use the whiteboard directly.',
               avatar: '',
               color: '#3366ff',
-              allowedActions: ['wb_draw_text'],
+              allowedActions: ['wb_draw_text', 'wb_delete', 'wb_clear', 'wb_edit_code'],
               priority: 10,
             },
           ],
@@ -333,28 +334,37 @@ describe('PR2 Native Child route production wiring', () => {
     expect(childPayloads[0]?.options.tools).toHaveProperty('wb_read');
     expect(childPayloads[0]?.options.tools).toHaveProperty('wb_open');
     expect(childPayloads[0]?.options.tools).toHaveProperty('wb_draw_text');
+    expect(childPayloads[0]?.options.tools).toHaveProperty('wb_delete');
+    expect(childPayloads[0]?.options.tools).toHaveProperty('wb_clear');
+    expect(childPayloads[0]?.options.tools).toHaveProperty('wb_edit_code');
     expect(childPayloads[0]?.options.tools).toHaveProperty('wb_close');
-    const providerDrawTool = (
-      childPayloads[0]?.options.tools as
-        | Record<
-            string,
-            {
-              inputSchema?: {
-                jsonSchema?: {
-                  required?: string[];
-                  properties?: {
-                    expectedLastSeq?: {
-                      type?: string[];
-                      minimum?: number;
-                      description?: string;
-                    };
+    const providerTools = childPayloads[0]?.options.tools as
+      | Record<
+          string,
+          {
+            inputSchema?: {
+              jsonSchema?: {
+                type?: string;
+                anyOf?: unknown[];
+                required?: string[];
+                properties?: {
+                  expectedLastSeq?: {
+                    type?: string[];
+                    minimum?: number;
+                    description?: string;
                   };
                 };
               };
-            }
-          >
-        | undefined
-    )?.wb_draw_text;
+            };
+          }
+        >
+      | undefined;
+    for (const [toolName, tool] of Object.entries(providerTools ?? {})) {
+      expect(tool.inputSchema?.jsonSchema?.type, toolName).toBe('object');
+    }
+    const providerDrawTool = providerTools?.wb_draw_text;
+    const providerEditTool = providerTools?.wb_edit_code;
+    expect(providerEditTool?.inputSchema?.jsonSchema?.anyOf).toHaveLength(4);
     expect(providerDrawTool?.inputSchema?.jsonSchema?.required).toContain('expectedLastSeq');
     expect(
       providerDrawTool?.inputSchema?.jsonSchema?.properties?.expectedLastSeq?.description,
@@ -389,9 +399,124 @@ describe('PR2 Native Child route production wiring', () => {
     const provider = await mocks.getServerPersistenceProvider.mock.results[0]?.value;
     const sessions = await provider.runtimeStore.listSessions('stage-1', 'learner-route-test');
     expect(sessions).toHaveLength(1);
-    const records = await provider.runtimeStore.listRecords(sessions[0]!.id);
+    const records: RuntimeRecord[] = await provider.runtimeStore.listRecords(sessions[0]!.id);
     expect(records).toHaveLength(1);
     expect(records[0]?.seq).toBe(0);
+  }, 15_000);
+
+  it('executes wb_draw_text → wb_delete through the production route in one Child', async () => {
+    process.env.NEXT_PUBLIC_PERSISTENCE = '1';
+    process.env.DATABASE_URL = 'postgres://shared-provider-test';
+    process.env.PERSISTENCE_DEV_TOKEN = 'persistence-test-token';
+    const directorResponses = [
+      [toolCall('read-1', 'read_scene', { sceneId: 'scene-current' }), finish('tool-calls')],
+      [
+        toolCall('delegate-1', 'call_agent', {
+          agentId: 'teacher-1',
+          instruction: 'Draw one temporary label, then delete that exact label.',
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('cue-1', 'cue_user', { prompt: 'Continue?' }), finish('tool-calls')],
+    ];
+    const payloads: Array<{ source: string; options: Record<string, unknown> }> = [];
+    let childTransport = 0;
+    mocks.streamLLM.mockImplementation((options, source) => {
+      payloads.push({ source, options });
+      if (source !== 'pi-chat-native-child') {
+        return resultFrom(directorResponses.shift() ?? [finish('stop')]);
+      }
+      childTransport += 1;
+      if (childTransport === 1) {
+        return resultFrom([toolCall('wb-read-1', 'wb_read', {}), finish('tool-calls')]);
+      }
+      if (childTransport === 2) {
+        return resultFrom([
+          toolCall('wb-draw-1', 'wb_draw_text', {
+            expectedLastSeq: null,
+            content: 'Temporary Runtime label',
+            x: 80,
+            y: 100,
+          }),
+          finish('tool-calls'),
+        ]);
+      }
+      if (childTransport === 3) {
+        const elementId = JSON.stringify(options.messages).match(
+          /native-wb-element:[0-9a-f]{64}/u,
+        )?.[0];
+        expect(elementId).toBeDefined();
+        return resultFrom([
+          toolCall('wb-delete-1', 'wb_delete', {
+            expectedLastSeq: 0,
+            elementId,
+          }),
+          finish('tool-calls'),
+        ]);
+      }
+      return resultFrom([finish('stop')]);
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(
+      makeRequest({
+        config: {
+          agentIds: ['teacher-1'],
+          piEnableWhiteboardTools: true,
+          agentConfigs: [
+            {
+              id: 'teacher-1',
+              name: 'Teacher',
+              role: 'teacher',
+              persona: 'Use the whiteboard directly.',
+              avatar: '',
+              color: '#3366ff',
+              allowedActions: ['wb_draw_text', 'wb_delete'],
+              priority: 10,
+            },
+          ],
+        },
+      }),
+    );
+    const events = await readSseEvents(response);
+
+    expect(response.status).toBe(200);
+    const childPayloads = payloads.filter((payload) => payload.source === 'pi-chat-native-child');
+    expect(childPayloads).toHaveLength(4);
+    expect(JSON.stringify(childPayloads[2]?.options.messages)).toContain('wb-draw-1');
+    expect(JSON.stringify(childPayloads[2]?.options.messages)).toContain('committedSeq');
+    expect(JSON.stringify(childPayloads[3]?.options.messages)).toContain('wb-delete-1');
+    expect(JSON.stringify(childPayloads[3]?.options.messages)).toContain('elementId');
+
+    expect(
+      events.filter((event) => event.type === 'whiteboard' && event.data?.kind === 'projection'),
+    ).toEqual([
+      {
+        type: 'whiteboard',
+        data: { kind: 'projection', stageId: 'stage-1', lastSeq: 0 },
+      },
+      {
+        type: 'whiteboard',
+        data: { kind: 'projection', stageId: 'stage-1', lastSeq: 1 },
+      },
+    ]);
+    expect(events.filter((event) => event.type === 'action')).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'agent_start')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'agent_end')).toHaveLength(1);
+    expect(events.find((event) => event.type === 'done')).toMatchObject({
+      data: { totalAgents: 1, totalActions: 2, agentHadContent: true },
+    });
+
+    const provider = await mocks.getServerPersistenceProvider.mock.results[0]?.value;
+    const sessions = await provider.runtimeStore.listSessions('stage-1', 'learner-route-test');
+    expect(sessions).toHaveLength(1);
+    const records: RuntimeRecord[] = await provider.runtimeStore.listRecords(sessions[0]!.id);
+    expect(records.map((record) => record.seq)).toEqual([0, 1]);
+    expect(
+      records.map(
+        (record) => (record.payload as { operation?: { kind?: string } }).operation?.kind,
+      ),
+    ).toEqual(['element_added', 'element_deleted']);
   }, 15_000);
 
   it.each([

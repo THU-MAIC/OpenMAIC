@@ -1,4 +1,5 @@
 import type {
+  CodeLine,
   PPTChartElement,
   PPTCodeElement,
   PPTElement,
@@ -23,6 +24,14 @@ import {
 } from '@/lib/whiteboard/runtime/store';
 import {
   WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
+  WhiteboardRuntimeCodeLineIdConflictError,
+  WhiteboardRuntimeCodeLineNotFoundError,
+  WhiteboardRuntimeElementNotFoundError,
+  WhiteboardRuntimeElementTypeMismatchError,
+  WhiteboardRuntimeNoChangeError,
+  type FoldedWhiteboardRuntimeState,
+  type WhiteboardCodeLinesEdit,
+  type WhiteboardRuntimeOperationV1,
   type WhiteboardRuntimePayloadV1,
 } from '@/lib/whiteboard/runtime/types';
 import { queryWhiteboardVisibility } from '../whiteboard-visibility';
@@ -167,6 +176,69 @@ const NativeWhiteboardDrawCodeParams = Type.Object(
   },
   { additionalProperties: false },
 );
+const SafeWhiteboardIdentifier = Type.String({
+  minLength: 1,
+  maxLength: 512,
+  pattern: '^[^\\x00-\\x1f\\x7f\\u2028\\u2029]+$',
+});
+// CodeLine.id is a plain string in the persisted DSL contract. Keep target IDs compatible with
+// every readable legacy line while retaining strict host-owned IDs for newly written lines.
+const ExistingWhiteboardCodeLineId = Type.String();
+const NativeWhiteboardDeleteParams = Type.Object(
+  {
+    expectedLastSeq: ExpectedLastSeq,
+    elementId: SafeWhiteboardIdentifier,
+  },
+  { additionalProperties: false },
+);
+const NativeWhiteboardClearParams = Type.Object(
+  { expectedLastSeq: ExpectedLastSeq },
+  { additionalProperties: false },
+);
+const NativeWhiteboardEditCodeParams = Type.Union(
+  [
+    Type.Object(
+      {
+        expectedLastSeq: ExpectedLastSeq,
+        elementId: SafeWhiteboardIdentifier,
+        operation: Type.Literal('insert_after'),
+        lineId: ExistingWhiteboardCodeLineId,
+        content: Type.String({ minLength: 1 }),
+      },
+      { additionalProperties: false },
+    ),
+    Type.Object(
+      {
+        expectedLastSeq: ExpectedLastSeq,
+        elementId: SafeWhiteboardIdentifier,
+        operation: Type.Literal('insert_before'),
+        lineId: ExistingWhiteboardCodeLineId,
+        content: Type.String({ minLength: 1 }),
+      },
+      { additionalProperties: false },
+    ),
+    Type.Object(
+      {
+        expectedLastSeq: ExpectedLastSeq,
+        elementId: SafeWhiteboardIdentifier,
+        operation: Type.Literal('delete_lines'),
+        lineIds: Type.Array(ExistingWhiteboardCodeLineId, { minItems: 1, uniqueItems: true }),
+      },
+      { additionalProperties: false },
+    ),
+    Type.Object(
+      {
+        expectedLastSeq: ExpectedLastSeq,
+        elementId: SafeWhiteboardIdentifier,
+        operation: Type.Literal('replace_lines'),
+        lineIds: Type.Array(ExistingWhiteboardCodeLineId, { minItems: 1, uniqueItems: true }),
+        content: Type.String({ minLength: 1 }),
+      },
+      { additionalProperties: false },
+    ),
+  ],
+  { type: 'object' },
+);
 
 type EmptyParams = Static<typeof EmptyParams>;
 type NativeWhiteboardDrawTextParams = Static<typeof NativeWhiteboardDrawTextParams>;
@@ -176,6 +248,9 @@ type NativeWhiteboardDrawLatexParams = Static<typeof NativeWhiteboardDrawLatexPa
 type NativeWhiteboardDrawTableParams = Static<typeof NativeWhiteboardDrawTableParams>;
 type NativeWhiteboardDrawLineParams = Static<typeof NativeWhiteboardDrawLineParams>;
 type NativeWhiteboardDrawCodeParams = Static<typeof NativeWhiteboardDrawCodeParams>;
+type NativeWhiteboardDeleteParams = Static<typeof NativeWhiteboardDeleteParams>;
+type NativeWhiteboardClearParams = Static<typeof NativeWhiteboardClearParams>;
+type NativeWhiteboardEditCodeParams = Static<typeof NativeWhiteboardEditCodeParams>;
 
 const DRAW_TEXT_KEYS = new Set([
   'expectedLastSeq',
@@ -238,6 +313,16 @@ const DRAW_CODE_KEYS = new Set([
   'height',
   'fileName',
 ]);
+const DELETE_KEYS = new Set(['expectedLastSeq', 'elementId']);
+const CLEAR_KEYS = new Set(['expectedLastSeq']);
+const EDIT_CODE_KEYS = new Set([
+  'expectedLastSeq',
+  'elementId',
+  'operation',
+  'lineId',
+  'lineIds',
+  'content',
+]);
 
 const SHAPE_PATHS = {
   rectangle: 'M 0 0 L 1000 0 L 1000 1000 L 0 1000 Z',
@@ -256,6 +341,9 @@ export const NATIVE_WHITEBOARD_ACTION_NAMES = [
   'wb_draw_table',
   'wb_draw_line',
   'wb_draw_code',
+  'wb_delete',
+  'wb_clear',
+  'wb_edit_code',
   'wb_close',
 ] as const;
 const NATIVE_WHITEBOARD_ACTION_SET = new Set<string>(NATIVE_WHITEBOARD_ACTION_NAMES);
@@ -358,30 +446,26 @@ type NativeWhiteboardToolOptions = {
 };
 
 type ElementMutationParams = { expectedLastSeq: number | null };
+type MutationAffected = Record<string, unknown>;
 
-async function commitElementMutation(
+async function settleWhiteboardMutation(
   opts: NativeWhiteboardToolOptions,
   expectedLastSeq: number | null,
-  element: PPTElement,
-  invocationDigest: string,
+  payload: WhiteboardRuntimePayloadV1,
+  affectedFromCommittedState: (
+    state: FoldedWhiteboardRuntimeState,
+    replayed: boolean,
+  ) => MutationAffected | null,
   signal?: AbortSignal,
 ): Promise<AgentToolResult<unknown>> {
-  const payload: WhiteboardRuntimePayloadV1 = {
-    payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
-    operationId: `native-wb-operation:${invocationDigest}`,
-    operation: { kind: 'element_added', element },
-  };
-
   const committedResult = async (
     committedSeq: number,
-    state: Awaited<ReturnType<WhiteboardRuntimeService['read']>>,
+    state: FoldedWhiteboardRuntimeState,
     replayed: boolean,
   ): Promise<AgentToolResult<unknown>> => {
     if (signal?.aborted) throw abortReason(signal);
-    const affected = state.whiteboard?.elements.find(
-      (candidate) => candidate.id === element.id && candidate.type === element.type,
-    );
-    if (!affected || state.lastSeq === null) {
+    const affected = affectedFromCommittedState(state, replayed);
+    if (affected === null || state.lastSeq === null) {
       return failedResult(
         'WHITEBOARD_RUNTIME_POST_COMMIT_VERIFICATION_FAILED',
         'Whiteboard commit verification failed; the commit outcome may be uncertain. Read before any further mutation.',
@@ -399,7 +483,7 @@ async function commitElementMutation(
       committedSeq,
       lastSeq: state.lastSeq,
       replayed,
-      affected: { element: affected },
+      affected,
     };
     return textResult(JSON.stringify(result), { ...result, dispatchedAction: true });
   };
@@ -432,6 +516,38 @@ async function commitElementMutation(
         'Whiteboard session state violates the runtime invariant.',
       );
     }
+    if (error instanceof WhiteboardRuntimeElementNotFoundError) {
+      return failedResult('WHITEBOARD_ELEMENT_NOT_FOUND', error.message, {
+        elementId: error.elementId,
+      });
+    }
+    if (error instanceof WhiteboardRuntimeElementTypeMismatchError) {
+      return failedResult('WHITEBOARD_ELEMENT_TYPE_MISMATCH', error.message, {
+        elementId: error.elementId,
+        expectedType: error.expectedType,
+        actualType: error.actualType,
+      });
+    }
+    if (error instanceof WhiteboardRuntimeCodeLineNotFoundError) {
+      return failedResult('WHITEBOARD_CODE_LINE_NOT_FOUND', error.message, {
+        elementId: error.elementId,
+        lineId: error.lineId,
+      });
+    }
+    if (error instanceof WhiteboardRuntimeCodeLineIdConflictError) {
+      return failedResult('WHITEBOARD_CODE_LINE_ID_CONFLICT', error.message, {
+        elementId: error.elementId,
+        lineId: error.lineId,
+      });
+    }
+    if (error instanceof WhiteboardRuntimeNoChangeError) {
+      const result = {
+        noOp: true,
+        lastSeq: error.state?.lastSeq ?? expectedLastSeq,
+        affected: { cleared: false },
+      };
+      return textResult(JSON.stringify(result), result);
+    }
     try {
       const reconciled = await opts.service.reconcileOperation(opts.stageId, payload);
       if (signal?.aborted) throw abortReason(signal);
@@ -442,10 +558,51 @@ async function commitElementMutation(
       if (isAbort(reconciliationError, signal)) throw abortReason(signal);
     }
     return failedResult(
-      'WHITEBOARD_MUTATION_FAILED',
-      'Whiteboard mutation outcome could not be confirmed. Read before any further mutation.',
+      'WHITEBOARD_MUTATION_UNCERTAIN',
+      'Whiteboard mutation outcome could not be confirmed. Call wb_read before any further mutation.',
     );
   }
+}
+
+function runtimePayload(
+  invocationDigest: string,
+  operation: WhiteboardRuntimeOperationV1,
+): WhiteboardRuntimePayloadV1 {
+  return {
+    payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
+    operationId: `native-wb-operation:${invocationDigest}`,
+    operation,
+  };
+}
+
+function codeLines(
+  content: string,
+  invocationDigest: string,
+  reusableLineIds: readonly string[] = [],
+): CodeLine[] {
+  return content.split('\n').map((lineContent, index) => {
+    const reusableLineId = reusableLineIds[index];
+    const canReuse =
+      reusableLineId !== undefined &&
+      reusableLineId.length > 0 &&
+      reusableLineId.length <= 512 &&
+      !/[\u0000-\u001f\u007f\u2028\u2029]/u.test(reusableLineId);
+    return {
+      id: canReuse ? reusableLineId : `native-wb-code-line:${invocationDigest}:${index}`,
+      content: lineContent,
+    };
+  });
+}
+
+function codeEditAffected(elementId: string, edit: WhiteboardCodeLinesEdit): MutationAffected {
+  const targetLineIds = 'lineId' in edit ? [edit.lineId] : edit.lineIds;
+  const resultLineIds = 'lines' in edit ? edit.lines.map((line) => line.id) : [];
+  return {
+    elementId,
+    operation: edit.kind,
+    targetLineIds,
+    resultLineIds,
+  };
 }
 
 function elementMutationTool<TParams extends ElementMutationParams>(
@@ -479,7 +636,20 @@ function elementMutationTool<TParams extends ElementMutationParams>(
           'Whiteboard element construction failed; no mutation was accepted.',
         );
       }
-      return commitElementMutation(opts, params.expectedLastSeq, element, invocationDigest, signal);
+      const payload = runtimePayload(invocationDigest, { kind: 'element_added', element });
+      return settleWhiteboardMutation(
+        opts,
+        params.expectedLastSeq,
+        payload,
+        (state, replayed) => {
+          if (replayed) return { element };
+          const affected = state.whiteboard?.elements.find(
+            (candidate) => candidate.id === element.id && candidate.type === element.type,
+          );
+          return affected ? { element: affected } : null;
+        },
+        signal,
+      );
     },
   };
 }
@@ -830,6 +1000,112 @@ export function buildNativeWhiteboardTools(opts: NativeWhiteboardToolOptions): A
         }),
       }),
     );
+  }
+
+  if (allowed.has('wb_delete')) {
+    tools.push({
+      name: 'wb_delete',
+      label: 'Delete whiteboard element',
+      description:
+        'Delete exactly one element selected by elementId from the latest wb_read result. Copy nextMutation.expectedLastSeq exactly. This durable mutation works while the whiteboard is closed and never changes visibility.',
+      parameters: NativeWhiteboardDeleteParams,
+      executionMode: 'sequential',
+      prepareArguments: (args) =>
+        strictArguments<NativeWhiteboardDeleteParams>(
+          NativeWhiteboardDeleteParams,
+          args,
+          DELETE_KEYS,
+        ),
+      execute: async (toolCallId, rawParams, signal) => {
+        if (signal?.aborted) throw abortReason(signal);
+        const params = rawParams as NativeWhiteboardDeleteParams;
+        const invocationDigest = logicalInvocationDigest(opts.messageId, toolCallId);
+        return settleWhiteboardMutation(
+          opts,
+          params.expectedLastSeq,
+          runtimePayload(invocationDigest, {
+            kind: 'element_deleted',
+            elementId: params.elementId,
+          }),
+          () => ({ elementId: params.elementId }),
+          signal,
+        );
+      },
+    });
+  }
+
+  if (allowed.has('wb_clear')) {
+    tools.push({
+      name: 'wb_clear',
+      label: 'Clear whiteboard elements',
+      description:
+        'Remove all elements while preserving the authoritative whiteboard and its metadata. Copy nextMutation.expectedLastSeq exactly. A missing or already-empty board is a successful no-op with no projection, and this tool never changes visibility.',
+      parameters: NativeWhiteboardClearParams,
+      executionMode: 'sequential',
+      prepareArguments: (args) =>
+        strictArguments<NativeWhiteboardClearParams>(NativeWhiteboardClearParams, args, CLEAR_KEYS),
+      execute: async (toolCallId, rawParams, signal) => {
+        if (signal?.aborted) throw abortReason(signal);
+        const params = rawParams as NativeWhiteboardClearParams;
+        const invocationDigest = logicalInvocationDigest(opts.messageId, toolCallId);
+        return settleWhiteboardMutation(
+          opts,
+          params.expectedLastSeq,
+          runtimePayload(invocationDigest, { kind: 'elements_cleared' }),
+          () => ({ cleared: true }),
+          signal,
+        );
+      },
+    });
+  }
+
+  if (allowed.has('wb_edit_code')) {
+    tools.push({
+      name: 'wb_edit_code',
+      label: 'Edit whiteboard code lines',
+      description:
+        'Insert, delete, or replace lines in one code element using element and line IDs from the latest wb_read result. Copy nextMutation.expectedLastSeq exactly. Content may contain blank lines. This durable mutation works while closed and never changes visibility.',
+      parameters: NativeWhiteboardEditCodeParams,
+      executionMode: 'sequential',
+      prepareArguments: (args) =>
+        strictArguments<NativeWhiteboardEditCodeParams>(
+          NativeWhiteboardEditCodeParams,
+          args,
+          EDIT_CODE_KEYS,
+        ),
+      execute: async (toolCallId, rawParams, signal) => {
+        if (signal?.aborted) throw abortReason(signal);
+        const params = rawParams as NativeWhiteboardEditCodeParams;
+        const invocationDigest = logicalInvocationDigest(opts.messageId, toolCallId);
+        let edit: WhiteboardCodeLinesEdit;
+        if (params.operation === 'insert_after' || params.operation === 'insert_before') {
+          edit = {
+            kind: params.operation,
+            lineId: params.lineId,
+            lines: codeLines(params.content, invocationDigest),
+          };
+        } else if (params.operation === 'delete_lines') {
+          edit = { kind: params.operation, lineIds: params.lineIds };
+        } else {
+          edit = {
+            kind: params.operation,
+            lineIds: params.lineIds,
+            lines: codeLines(params.content, invocationDigest, params.lineIds),
+          };
+        }
+        return settleWhiteboardMutation(
+          opts,
+          params.expectedLastSeq,
+          runtimePayload(invocationDigest, {
+            kind: 'code_lines_edited',
+            elementId: params.elementId,
+            edit,
+          }),
+          () => codeEditAffected(params.elementId, edit),
+          signal,
+        );
+      },
+    });
   }
 
   if (hasMutation || allowed.has('wb_close')) tools.push(effectTool('wb_close'));

@@ -10,6 +10,13 @@ import {
   createWhiteboardRuntimeService,
   type WhiteboardRuntimeService,
 } from '@/lib/whiteboard/runtime/store';
+import {
+  LEGACY_WHITEBOARD_SOURCE_KIND,
+  WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
+  WhiteboardRuntimeCodeLineIdConflictError,
+  WhiteboardRuntimeCodeLineNotFoundError,
+  WhiteboardRuntimeElementTypeMismatchError,
+} from '@/lib/whiteboard/runtime/types';
 
 const teacher: AgentConfig = {
   id: 'teacher-1',
@@ -27,6 +34,9 @@ const teacher: AgentConfig = {
     'wb_draw_table',
     'wb_draw_line',
     'wb_draw_code',
+    'wb_delete',
+    'wb_clear',
+    'wb_edit_code',
     'wb_close',
   ],
   priority: 10,
@@ -93,6 +103,9 @@ describe('Native RuntimeStore whiteboard tools', () => {
       'wb_draw_table',
       'wb_draw_line',
       'wb_draw_code',
+      'wb_delete',
+      'wb_clear',
+      'wb_edit_code',
       'wb_close',
     ]);
 
@@ -108,9 +121,9 @@ describe('Native RuntimeStore whiteboard tools', () => {
     expect(readOnly).toEqual([]);
   });
 
-  it('injects the complete read/open/close control plane for an allowed mutation', () => {
+  it('injects the PR #1156 read/open/close control plane for a destructive-only inventory', () => {
     const tools = buildNativeWhiteboardTools({
-      agent: { ...teacher, allowedActions: ['wb_draw_shape'] },
+      agent: { ...teacher, allowedActions: ['wb_delete'] },
       messageId: 'message-1',
       send: vi.fn(),
       service: service(),
@@ -119,12 +132,7 @@ describe('Native RuntimeStore whiteboard tools', () => {
       requestStartManualVisibilityRevision: 0,
     });
 
-    expect(tools.map((tool) => tool.name)).toEqual([
-      'wb_read',
-      'wb_open',
-      'wb_draw_shape',
-      'wb_close',
-    ]);
+    expect(tools.map((tool) => tool.name)).toEqual(['wb_read', 'wb_open', 'wb_delete', 'wb_close']);
   });
 
   it('tells every mutation tool to open first for a user-visible drawing', () => {
@@ -778,6 +786,666 @@ describe('Native RuntimeStore whiteboard tools', () => {
     }
   });
 
+  it('exposes strict destructive/edit schemas without model-owned authority or identity', () => {
+    const runtime = service();
+    const tools = build(runtime).tools;
+    const deleteTool = tools.find((tool) => tool.name === 'wb_delete')!;
+    const clearTool = tools.find((tool) => tool.name === 'wb_clear')!;
+    const editTool = tools.find((tool) => tool.name === 'wb_edit_code')!;
+    expect(editTool.parameters).toMatchObject({
+      type: 'object',
+      anyOf: expect.arrayContaining([expect.objectContaining({ type: 'object' })]),
+    });
+    expect((editTool.parameters as { anyOf?: unknown[] }).anyOf).toHaveLength(4);
+
+    const validDelete = { expectedLastSeq: 0, elementId: 'element-1' };
+    const validClear = { expectedLastSeq: 0 };
+    expect(deleteTool.prepareArguments?.(validDelete)).toBe(validDelete);
+    expect(clearTool.prepareArguments?.(validClear)).toBe(validClear);
+
+    const validEdits = [
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'insert_after',
+        lineId: 'L1',
+        content: '\n',
+      },
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'insert_before',
+        lineId: 'L1',
+        content: 'before',
+      },
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'delete_lines',
+        lineIds: ['L1'],
+      },
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'replace_lines',
+        lineIds: ['L1'],
+        content: 'replacement',
+      },
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'insert_after',
+        lineId: '',
+        content: 'after legacy empty ID',
+      },
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'delete_lines',
+        lineIds: [''],
+      },
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'replace_lines',
+        lineIds: [''],
+        content: 'replace legacy empty IDs',
+      },
+    ];
+    for (const edit of validEdits) expect(editTool.prepareArguments?.(edit)).toBe(edit);
+
+    for (const invalid of [
+      { elementId: 'element-1' },
+      { ...validDelete, boardId: 'model-board' },
+      { ...validDelete, element: { id: 'model-element' } },
+      { expectedLastSeq: 0, stageId: 'model-stage' },
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'insert_after',
+        lineId: 'L1',
+        lineIds: ['L1'],
+        content: 'x',
+      },
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'delete_lines',
+        lineIds: ['L1', 'L1'],
+      },
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'delete_lines',
+        lineIds: ['L1'],
+        content: 'irrelevant',
+      },
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'replace_lines',
+        lineIds: ['L1'],
+        content: '',
+      },
+      {
+        expectedLastSeq: 0,
+        elementId: 'code-1\n',
+        operation: 'delete_lines',
+        lineIds: ['L1'],
+      },
+    ]) {
+      const tool = Object.hasOwn(invalid, 'operation') ? editTool : deleteTool;
+      expect(() => tool.prepareArguments?.(invalid)).toThrow('strict schema');
+    }
+    expect(runtime.append).not.toHaveBeenCalled();
+  });
+
+  it('edits a readable legacy code block whose persisted line IDs are empty', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    try {
+      const store = new BrowserRuntimeStore({
+        indexedDB: new IDBFactory(),
+        payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      });
+      const runtime = createWhiteboardRuntimeService({
+        store,
+        resolveLearnerKey: () => 'learner-1',
+        withMaintenanceLock: (work) => work(),
+      });
+      await runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: null,
+        payload: {
+          payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
+          operationId: 'legacy-import:empty-code-line-ids',
+          operation: {
+            kind: 'legacy_snapshot_imported',
+            source: {
+              kind: LEGACY_WHITEBOARD_SOURCE_KIND,
+              fingerprint: `sha256:${'1'.repeat(64)}`,
+            },
+            whiteboard: {
+              id: 'legacy-board',
+              viewportSize: 1000,
+              viewportRatio: 0.5625,
+              elements: [
+                {
+                  id: 'legacy-code',
+                  type: 'code',
+                  language: 'python',
+                  lines: [
+                    { id: '', content: 'first' },
+                    { id: '', content: 'second' },
+                  ],
+                  fileName: 'legacy.py',
+                  showLineNumbers: true,
+                  fontSize: 14,
+                  left: 10,
+                  top: 20,
+                  width: 480,
+                  height: 240,
+                  rotate: 0,
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      const edit = build(runtime).tools.find((tool) => tool.name === 'wb_edit_code')!;
+      await expect(
+        edit.execute('edit-after-empty-line-id', {
+          expectedLastSeq: 0,
+          elementId: 'legacy-code',
+          operation: 'insert_after',
+          lineId: '',
+          content: 'inserted',
+        }),
+      ).resolves.toMatchObject({
+        details: {
+          committedSeq: 1,
+          affected: {
+            targetLineIds: [''],
+            resultLineIds: [expect.stringMatching(/^native-wb-code-line:[0-9a-f]{64}:0$/u)],
+          },
+        },
+      });
+      await expect(runtime.read('stage-1')).resolves.toMatchObject({
+        lastSeq: 1,
+        whiteboard: {
+          elements: [
+            {
+              id: 'legacy-code',
+              lines: [
+                { id: '', content: 'first' },
+                { id: expect.stringMatching(/^native-wb-code-line:/u), content: 'inserted' },
+                { id: '', content: 'second' },
+              ],
+            },
+          ],
+        },
+      });
+
+      const replaceResult = await edit.execute('edit-replace-empty-line-ids', {
+        expectedLastSeq: 1,
+        elementId: 'legacy-code',
+        operation: 'replace_lines',
+        lineIds: [''],
+        content: 'replacement',
+      });
+      expect(replaceResult).toMatchObject({
+        details: {
+          committedSeq: 2,
+          affected: {
+            targetLineIds: [''],
+            resultLineIds: [expect.stringMatching(/^native-wb-code-line:[0-9a-f]{64}:0$/u)],
+          },
+        },
+      });
+      const final = await runtime.read('stage-1');
+      const finalCode = final.whiteboard?.elements[0];
+      expect(finalCode).toMatchObject({
+        id: 'legacy-code',
+        type: 'code',
+        lines: [
+          { id: expect.stringMatching(/^native-wb-code-line:/u), content: 'replacement' },
+          { id: expect.stringMatching(/^native-wb-code-line:/u), content: 'inserted' },
+        ],
+      });
+      if (finalCode?.type !== 'code') throw new Error('expected code element');
+      expect(finalCode.lines.every((line) => line.id.length > 0)).toBe(true);
+
+      const sessions = await store.listSessions('stage-1', 'learner-1');
+      await expect(store.listRecords(sessions[0]!.id)).resolves.toHaveLength(3);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('commits every code-line edit with stable host IDs and supports late exact replay', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    try {
+      const store = new BrowserRuntimeStore({
+        indexedDB: new IDBFactory(),
+        payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      });
+      const runtime = createWhiteboardRuntimeService({
+        store,
+        resolveLearnerKey: () => 'learner-1',
+        withMaintenanceLock: (work) => work(),
+      });
+      const tools = build(runtime).tools;
+      const draw = tools.find((tool) => tool.name === 'wb_draw_code')!;
+      const edit = tools.find((tool) => tool.name === 'wb_edit_code')!;
+
+      await draw.execute('draw-code-for-edit', {
+        expectedLastSeq: null,
+        language: 'python',
+        code: 'x = 1\nprint(x)',
+        fileName: 'example.py',
+        x: 10,
+        y: 20,
+        width: 480,
+        height: 240,
+      });
+      const initial = await runtime.read('stage-1');
+      const code = initial.whiteboard?.elements[0];
+      expect(code?.type).toBe('code');
+      if (code?.type !== 'code') throw new Error('expected code element');
+      const [firstLine, secondLine] = code.lines;
+
+      const insertResult = await edit.execute('edit-insert', {
+        expectedLastSeq: 0,
+        elementId: code.id,
+        operation: 'insert_after',
+        lineId: firstLine!.id,
+        content: 'doubled = x * 2\n',
+      });
+      expect(insertResult).toMatchObject({
+        details: {
+          committedSeq: 1,
+          affected: {
+            elementId: code.id,
+            operation: 'insert_after',
+            targetLineIds: [firstLine!.id],
+            resultLineIds: [
+              expect.stringMatching(/^native-wb-code-line:[0-9a-f]{64}:0$/u),
+              expect.stringMatching(/^native-wb-code-line:[0-9a-f]{64}:1$/u),
+            ],
+          },
+        },
+      });
+      const afterInsert = await runtime.read('stage-1');
+      const inserted = afterInsert.whiteboard?.elements[0];
+      if (inserted?.type !== 'code') throw new Error('expected code element');
+      const insertedIds = inserted.lines.slice(1, 3).map((line) => line.id);
+      expect(inserted.lines.map((line) => line.content)).toEqual([
+        'x = 1',
+        'doubled = x * 2',
+        '',
+        'print(x)',
+      ]);
+
+      const beforeResult = await edit.execute('edit-insert-before', {
+        expectedLastSeq: 1,
+        elementId: code.id,
+        operation: 'insert_before',
+        lineId: secondLine!.id,
+        content: '# display result',
+      });
+      const beforeLineId = (beforeResult.details as { affected: { resultLineIds: string[] } })
+        .affected.resultLineIds[0]!;
+      expect(beforeResult).toMatchObject({
+        details: {
+          committedSeq: 2,
+          affected: {
+            operation: 'insert_before',
+            targetLineIds: [secondLine!.id],
+            resultLineIds: [expect.stringMatching(/^native-wb-code-line:[0-9a-f]{64}:0$/u)],
+          },
+        },
+      });
+
+      const replaceParams = {
+        expectedLastSeq: 2,
+        elementId: code.id,
+        operation: 'replace_lines' as const,
+        lineIds: insertedIds,
+        content: 'doubled = x * 2',
+      };
+      await expect(edit.execute('edit-replace', replaceParams)).resolves.toMatchObject({
+        details: {
+          committedSeq: 3,
+          affected: {
+            operation: 'replace_lines',
+            targetLineIds: insertedIds,
+            resultLineIds: [insertedIds[0]],
+          },
+        },
+      });
+      await edit.execute('edit-delete', {
+        expectedLastSeq: 3,
+        elementId: code.id,
+        operation: 'delete_lines',
+        lineIds: [secondLine!.id],
+      });
+
+      const finalState = await runtime.read('stage-1');
+      const finalCode = finalState.whiteboard?.elements[0];
+      expect(finalCode).toMatchObject({
+        id: code.id,
+        type: 'code',
+        language: 'python',
+        fileName: 'example.py',
+        left: 10,
+        top: 20,
+        width: 480,
+        height: 240,
+        lines: [
+          { id: firstLine!.id, content: 'x = 1' },
+          { id: insertedIds[0], content: 'doubled = x * 2' },
+          { id: beforeLineId, content: '# display result' },
+        ],
+      });
+
+      await expect(edit.execute('edit-replace', replaceParams)).resolves.toMatchObject({
+        details: {
+          committedSeq: 3,
+          lastSeq: 4,
+          replayed: true,
+          affected: {
+            operation: 'replace_lines',
+            targetLineIds: insertedIds,
+            resultLineIds: [insertedIds[0]],
+          },
+        },
+      });
+      const sessions = await store.listSessions('stage-1', 'learner-1');
+      await expect(store.listRecords(sessions[0]!.id)).resolves.toHaveLength(5);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('settles delete replay before current-target validation and maps fresh target errors', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    try {
+      const store = new BrowserRuntimeStore({
+        indexedDB: new IDBFactory(),
+        payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      });
+      const runtime = createWhiteboardRuntimeService({
+        store,
+        resolveLearnerKey: () => 'learner-1',
+        withMaintenanceLock: (work) => work(),
+      });
+      const tools = build(runtime).tools;
+      const draw = tools.find((tool) => tool.name === 'wb_draw_text')!;
+      const deleteTool = tools.find((tool) => tool.name === 'wb_delete')!;
+      await draw.execute('draw-delete-target', {
+        expectedLastSeq: null,
+        content: 'delete me',
+        x: 1,
+        y: 2,
+      });
+      const elementId = (await runtime.read('stage-1')).whiteboard!.elements[0]!.id;
+      const params = { expectedLastSeq: 0, elementId };
+
+      await expect(deleteTool.execute('delete-target', params)).resolves.toMatchObject({
+        details: {
+          committedSeq: 1,
+          replayed: false,
+          affected: { elementId },
+          dispatchedAction: true,
+        },
+      });
+      await expect(deleteTool.execute('delete-target', params)).resolves.toMatchObject({
+        details: { committedSeq: 1, replayed: true, affected: { elementId } },
+      });
+      await expect(
+        deleteTool.execute('delete-stale-missing', { expectedLastSeq: 0, elementId }),
+      ).resolves.toMatchObject({
+        isError: true,
+        details: { code: 'STALE_STATE', actualLastSeq: 1 },
+      });
+      await expect(
+        deleteTool.execute('delete-fresh-missing', { expectedLastSeq: 1, elementId }),
+      ).resolves.toMatchObject({
+        isError: true,
+        details: { code: 'WHITEBOARD_ELEMENT_NOT_FOUND', elementId },
+      });
+      const sessions = await store.listSessions('stage-1', 'learner-1');
+      await expect(store.listRecords(sessions[0]!.id)).resolves.toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('reports an exact draw replay after deletion without restoring the deleted element', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    try {
+      const store = new BrowserRuntimeStore({
+        indexedDB: new IDBFactory(),
+        payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      });
+      const runtime = createWhiteboardRuntimeService({
+        store,
+        resolveLearnerKey: () => 'learner-1',
+        withMaintenanceLock: (work) => work(),
+      });
+      const tools = build(runtime).tools;
+      const draw = tools.find((tool) => tool.name === 'wb_draw_text')!;
+      const deleteTool = tools.find((tool) => tool.name === 'wb_delete')!;
+      const drawParams = {
+        expectedLastSeq: null,
+        content: 'draw once',
+        x: 1,
+        y: 2,
+      };
+
+      const firstDraw = await draw.execute('draw-before-delete', drawParams);
+      expect(firstDraw).toMatchObject({
+        details: { committedSeq: 0, lastSeq: 0, replayed: false },
+      });
+      const element = (firstDraw.details as { affected: { element: { id: string; type: string } } })
+        .affected.element;
+      await deleteTool.execute('delete-drawn-element', {
+        expectedLastSeq: 0,
+        elementId: element.id,
+      });
+
+      await expect(draw.execute('draw-before-delete', drawParams)).resolves.toMatchObject({
+        details: {
+          committedSeq: 0,
+          lastSeq: 1,
+          replayed: true,
+          affected: { element: { id: element.id, type: element.type } },
+        },
+      });
+      await expect(runtime.read('stage-1')).resolves.toMatchObject({
+        lastSeq: 1,
+        whiteboard: { elements: [] },
+      });
+      const sessions = await store.listSessions('stage-1', 'learner-1');
+      await expect(store.listRecords(sessions[0]!.id)).resolves.toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps missing and empty clear as zero-append, zero-projection successful no-ops', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    try {
+      const store = new BrowserRuntimeStore({
+        indexedDB: new IDBFactory(),
+        payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      });
+      const runtime = createWhiteboardRuntimeService({
+        store,
+        resolveLearnerKey: () => 'learner-1',
+        withMaintenanceLock: (work) => work(),
+      });
+      const { tools, send } = build(runtime);
+      const clear = tools.find((tool) => tool.name === 'wb_clear')!;
+      const draw = tools.find((tool) => tool.name === 'wb_draw_text')!;
+
+      await expect(
+        clear.execute('clear-missing', { expectedLastSeq: null }),
+      ).resolves.toMatchObject({
+        details: { noOp: true, lastSeq: null, affected: { cleared: false } },
+      });
+      expect(send).not.toHaveBeenCalled();
+
+      await draw.execute('draw-before-clear', {
+        expectedLastSeq: null,
+        content: 'temporary',
+        x: 1,
+        y: 2,
+      });
+      const clearParams = { expectedLastSeq: 0 };
+      await expect(clear.execute('clear-committed', clearParams)).resolves.toMatchObject({
+        details: {
+          committedSeq: 1,
+          replayed: false,
+          affected: { cleared: true },
+          dispatchedAction: true,
+        },
+      });
+      await expect(clear.execute('clear-committed', clearParams)).resolves.toMatchObject({
+        details: { committedSeq: 1, replayed: true, affected: { cleared: true } },
+      });
+      const beforeNoOpProjectionCount = vi.mocked(send).mock.calls.length;
+      const emptyNoOp = await clear.execute('clear-empty', { expectedLastSeq: 1 });
+      expect(emptyNoOp).toMatchObject({
+        details: { noOp: true, lastSeq: 1, affected: { cleared: false } },
+      });
+      expect(emptyNoOp.details).not.toHaveProperty('dispatchedAction');
+      expect(send).toHaveBeenCalledTimes(beforeNoOpProjectionCount);
+
+      const state = await runtime.read('stage-1');
+      expect(state).toMatchObject({ lastSeq: 1, whiteboard: { elements: [] } });
+      const sessions = await store.listSessions('stage-1', 'learner-1');
+      await expect(store.listRecords(sessions[0]!.id)).resolves.toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('maps edit target failures without reconciliation or projection', async () => {
+    const append = vi.fn(async () => {
+      throw new WhiteboardRuntimeCodeLineNotFoundError('code-1', 'missing-line');
+    });
+    const reconcileOperation = vi.fn();
+    const runtime = service({ append, reconcileOperation });
+    const { tools, send } = build(runtime);
+    const edit = tools.find((tool) => tool.name === 'wb_edit_code')!;
+
+    await expect(
+      edit.execute('edit-missing-line', {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'delete_lines',
+        lineIds: ['missing-line'],
+      }),
+    ).resolves.toMatchObject({
+      isError: true,
+      details: {
+        code: 'WHITEBOARD_CODE_LINE_NOT_FOUND',
+        elementId: 'code-1',
+        lineId: 'missing-line',
+      },
+    });
+    expect(append).toHaveBeenCalledOnce();
+    expect(reconcileOperation).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      error: new WhiteboardRuntimeElementTypeMismatchError('not-code', 'text'),
+      expected: {
+        code: 'WHITEBOARD_ELEMENT_TYPE_MISMATCH',
+        elementId: 'not-code',
+        expectedType: 'code',
+        actualType: 'text',
+      },
+    },
+    {
+      error: new WhiteboardRuntimeCodeLineIdConflictError('code-1', 'duplicate-line'),
+      expected: {
+        code: 'WHITEBOARD_CODE_LINE_ID_CONFLICT',
+        elementId: 'code-1',
+        lineId: 'duplicate-line',
+      },
+    },
+  ])('maps $expected.code as a definitive pre-commit edit error', async ({ error, expected }) => {
+    const append = vi.fn(async () => {
+      throw error;
+    });
+    const reconcileOperation = vi.fn();
+    const runtime = service({ append, reconcileOperation });
+    const { tools, send } = build(runtime);
+    const edit = tools.find((tool) => tool.name === 'wb_edit_code')!;
+
+    await expect(
+      edit.execute('edit-domain-error', {
+        expectedLastSeq: 0,
+        elementId: 'code-1',
+        operation: 'insert_after',
+        lineId: 'L1',
+        content: 'new line',
+      }),
+    ).resolves.toMatchObject({ isError: true, details: expected });
+    expect(append).toHaveBeenCalledOnce();
+    expect(reconcileOperation).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('uses the shared one-append/one-reconcile settlement for destructive mutations', async () => {
+    const append = vi.fn(async () => {
+      throw new Error('append response lost');
+    });
+    const reconcileOperation = vi.fn(async () => ({
+      status: 'exact' as const,
+      committedSeq: 7,
+      state: {
+        sessionId: 'runtime-session-1',
+        lastSeq: 9,
+        whiteboard: {
+          id: 'runtime-board-1',
+          viewportSize: 1000,
+          viewportRatio: 0.5625,
+          elements: [],
+        },
+      },
+    }));
+    const runtime = service({ append, reconcileOperation });
+    const { tools, send } = build(runtime);
+    const deleteTool = tools.find((tool) => tool.name === 'wb_delete')!;
+
+    await expect(
+      deleteTool.execute('delete-response-lost', {
+        expectedLastSeq: 6,
+        elementId: 'deleted-before-response',
+      }),
+    ).resolves.toMatchObject({
+      details: {
+        committedSeq: 7,
+        lastSeq: 9,
+        replayed: true,
+        affected: { elementId: 'deleted-before-response' },
+        dispatchedAction: true,
+      },
+    });
+    expect(append).toHaveBeenCalledOnce();
+    expect(reconcileOperation).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith({
+      type: 'whiteboard',
+      data: { kind: 'projection', stageId: 'stage-1', lastSeq: 9 },
+    });
+  });
+
   it('rejects stale null when the authoritative sequence is zero', async () => {
     vi.stubGlobal('IDBKeyRange', IDBKeyRange);
     try {
@@ -953,7 +1621,7 @@ describe('Native RuntimeStore whiteboard tools', () => {
     expect(reconcileOperation).toHaveBeenCalledOnce();
     expect(result).toMatchObject({
       isError: true,
-      details: { code: 'WHITEBOARD_MUTATION_FAILED' },
+      details: { code: 'WHITEBOARD_MUTATION_UNCERTAIN' },
       content: [
         expect.objectContaining({ text: expect.stringContaining('could not be confirmed') }),
       ],
