@@ -20,6 +20,7 @@ import type { Api, Model } from '@earendil-works/pi-ai';
 import { makeAllowlistGate } from './allowlist';
 import { makeQuotaHook } from './quota';
 import { hasLengthToolCallProvenance } from './stream-fn';
+import { withAgentToolTimeout } from './tool-timeout';
 
 // pi needs *a* model object on state; the injected StreamFn ignores it and uses
 // OpenMAIC's resolved model, so this is a metadata stub (high contextWindow so
@@ -71,7 +72,9 @@ export function buildAgent(opts: BuildAgentOptions): Agent {
     initialState: {
       systemPrompt: opts.systemPrompt,
       model: opts.model ?? STUB_MODEL,
-      tools: opts.tools,
+      // Every tool call is raced against a global execution timeout (and the
+      // caller's abort signal); see tool-timeout.ts.
+      tools: opts.tools.map((tool) => withAgentToolTimeout(tool)),
       // Seed prior turns so `agent.prompt(newMessage)` runs with the full
       // conversation in context — without this the agent is stateless per turn.
       ...(opts.history && opts.history.length > 0 ? { messages: opts.history } : {}),
