@@ -47,7 +47,7 @@ const SLIDE_ACTIONS = ['spotlight', 'laser', 'play_video'];
 const DEFAULT_AGENTS: Record<string, AgentConfig> = {
   'default-1': {
     id: 'default-1',
-    name: 'AI teacher',
+    name: 'AI Teacher',
     role: 'teacher',
     persona: `You are the lead teacher of this classroom. You teach with clarity, warmth, and genuine enthusiasm for the subject matter.
 
@@ -71,7 +71,7 @@ Tone: Professional yet approachable. Patient. Encouraging. You genuinely care ab
   },
   'default-2': {
     id: 'default-2',
-    name: 'AI助教',
+    name: 'AI Teaching Assistant',
     role: 'assistant',
     persona: `You are the teaching assistant. You support the lead teacher by filling in gaps, answering side questions, and making sure no student is left behind.
 
@@ -95,7 +95,7 @@ Tone: Friendly, warm, down-to-earth. Like a helpful older classmate who just "ge
   },
   'default-3': {
     id: 'default-3',
-    name: '显眼包',
+    name: 'Class Clown',
     role: 'student',
     persona: `You are the class clown — the student everyone notices. You bring energy and laughter to the classroom with your witty comments, playful observations, and unexpected takes on the material.
 
@@ -119,7 +119,7 @@ Tone: Playful, energetic, a little cheeky. You speak casually, like you're chatt
   },
   'default-4': {
     id: 'default-4',
-    name: '好奇宝宝',
+    name: 'Curious One',
     role: 'student',
     persona: `You are the endlessly curious student. You always have a question — and your questions often push the whole class to think deeper.
 
@@ -143,7 +143,7 @@ Tone: Eager, enthusiastic, occasionally puzzled. You speak with the excitement o
   },
   'default-5': {
     id: 'default-5',
-    name: '笔记员',
+    name: 'Note Taker',
     role: 'student',
     persona: `You are the dedicated note-taker of the class. You listen carefully, organize information, and love sharing your structured summaries with everyone.
 
@@ -167,7 +167,7 @@ Tone: Organized, helpful, slightly studious. You speak clearly and precisely. Wh
   },
   'default-6': {
     id: 'default-6',
-    name: '思考者',
+    name: 'Deep Thinker',
     role: 'student',
     persona: `You are the deep thinker of the class. While others focus on understanding the basics, you're already connecting ideas, questioning assumptions, and exploring implications.
 
@@ -192,23 +192,66 @@ Tone: Thoughtful, measured, intellectually curious. You pause before speaking. Y
 };
 
 /**
+ * Apply the active locale's name and persona to a built-in agent.
+ *
+ * The literal above keeps English text so the module stays readable and works
+ * before i18n has initialised; the shipped copy lives under
+ * `agents.defaults.<id>` in every locale file. Five of these six agents were
+ * previously named only in Chinese (`AI助教`, `显眼包`, `好奇宝宝`, `笔记员`,
+ * `思考者`), which every non-Chinese deployment displayed verbatim.
+ *
+ * Resolved on read rather than baked in at module load, so switching language
+ * re-reads it. A missing key falls back to the literal — a locale that has not
+ * translated these yet shows English rather than a raw key.
+ */
+function localizeAgent<T extends { id: string; name: string; persona: string }>(agent: T): T {
+  // Browser only. This module is imported by server routes too, and
+  // `@/lib/i18n` pulls in the react-i18next bindings — evaluating those during
+  // the server build fails with "createContext is not a function". Requiring it
+  // behind the guard keeps it off the server path entirely. Nothing is lost:
+  // server-side the persona is only ever an LLM prompt, and the teaching
+  // language is set by the course's language directive, not by which language
+  // the prompt happens to be written in.
+  if (typeof window === 'undefined') return agent;
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { getClientTranslation } = require('@/lib/i18n') as typeof import('@/lib/i18n');
+  const name = getClientTranslation(`agents.defaults.${agent.id}.name`);
+  const persona = getClientTranslation(`agents.defaults.${agent.id}.persona`);
+  return {
+    ...agent,
+    name: name.startsWith('agents.defaults.') ? agent.name : name,
+    persona: persona.startsWith('agents.defaults.') ? agent.persona : persona,
+  };
+}
+
+/**
  * Return the built-in default agents as lightweight AgentInfo objects
  * suitable for the generation pipeline (no UI-only fields like avatar/color).
  */
 export function getDefaultAgents(): AgentInfo[] {
-  return Object.values(DEFAULT_AGENTS).map((a) => ({
-    id: a.id,
-    name: a.name,
-    role: a.role,
-    persona: a.persona,
-  }));
+  return Object.values(DEFAULT_AGENTS)
+    .map(localizeAgent)
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      role: a.role,
+      persona: a.persona,
+    }));
+}
+
+/** The built-in agents with the active locale applied, keyed by id. */
+export function getLocalizedDefaultAgents(): Record<string, AgentConfig> {
+  return Object.fromEntries(
+    Object.entries(DEFAULT_AGENTS).map(([id, agent]) => [id, localizeAgent(agent)]),
+  );
 }
 
 export const useAgentRegistry = create<AgentRegistryState>()(
   persist(
     (set, get) => ({
       // Initialize with default agents so they're available on server
-      agents: { ...DEFAULT_AGENTS },
+      agents: getLocalizedDefaultAgents(),
 
       addAgent: (agent) =>
         set((state) => ({
@@ -235,8 +278,20 @@ export const useAgentRegistry = create<AgentRegistryState>()(
     }),
     {
       name: 'agent-registry-storage',
-      version: 11, // Bumped: add voiceOverrides field to AgentConfig
-      migrate: (persistedState: unknown) => persistedState,
+      version: 12, // Bumped: default agents' name/persona moved into i18n
+      migrate: (persistedState: unknown) => {
+        // Snapshots written before v12 hold the built-ins' hardcoded text —
+        // five of them named only in Chinese. Those entries were never
+        // user-authored, so replace them outright rather than migrating field
+        // by field. Anything the user added or edited is left untouched.
+        const state = persistedState as { agents?: Record<string, AgentConfig> } | null;
+        if (!state?.agents) return persistedState;
+        const agents = { ...state.agents };
+        for (const [id, fresh] of Object.entries(getLocalizedDefaultAgents())) {
+          if (agents[id]?.isDefault) agents[id] = fresh;
+        }
+        return { ...state, agents };
+      },
       // Generated agents are single-sourced on the stage document and rebuilt
       // from it on every classroom load — keep them out of the localStorage
       // snapshot entirely. The merge filter below stays as defense in depth
