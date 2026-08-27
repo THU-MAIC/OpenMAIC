@@ -30,6 +30,7 @@ export * from './pbl.js';
 export * from './action.js';
 export * from './validate.js';
 export * from './normalize.js';
+export * from './legacy-line-geometry.js';
 export * from './version.js';
 export * from './storage.js';
 export * from './asset-manifest.js';

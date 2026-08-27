@@ -15,6 +15,7 @@ import {
   needsRuntimeMigration,
   migrate,
   migrateRuntime,
+  stripLegacyLineGeometry,
 } from '@openmaic/dsl';
 
 describe('DSL_MIGRATIONS ladder invariants', () => {
@@ -363,6 +364,149 @@ describe('0.1.0 -> 0.2.0 ladder entry (audioUrl abolition)', () => {
     expect(input).toEqual(snapshot);
     expect(out.scenes[0].actions[0]).toBe(pair);
     expect(out.scenes[0].actions[1]).toBe(urlOnly);
+  });
+});
+
+describe('0.2.0 -> 0.3.0 ladder entry (legacy line geometry)', () => {
+  const lineEl = (extra: Record<string, unknown>) => ({
+    id: 'line-1',
+    type: 'line',
+    left: 10,
+    top: 20,
+    width: 100,
+    start: [0, 0],
+    end: [100, 0],
+    style: 'solid',
+    color: '#333333',
+    points: ['', ''],
+    ...extra,
+  });
+  const textEl = {
+    id: 'text-1',
+    type: 'text',
+    left: 0,
+    top: 0,
+    width: 50,
+    height: 30,
+    rotate: 15,
+    content: 'Hello',
+  };
+  const shapeEl = {
+    id: 'shape-1',
+    type: 'rect',
+    left: 0,
+    top: 0,
+    width: 40,
+    height: 40,
+  };
+  const tableEl = { id: 'table-1', type: 'table', left: 0, top: 0, width: 60 };
+  const quizScene = {
+    id: 's2',
+    stageId: 'st',
+    type: 'quiz',
+    title: 'Quiz',
+    order: 1,
+    content: { type: 'quiz', questions: [{ id: 'q1' }] },
+  };
+  const slideSceneWith = (elements: unknown[]) => ({
+    id: 's1',
+    stageId: 'st',
+    type: 'slide',
+    title: 'Scene',
+    order: 0,
+    content: { type: 'slide', canvas: { id: 'c1', elements } },
+  });
+  const docWithElements = (elements: unknown[], stamp?: string) => ({
+    stage: { id: 'st', name: 'Course', createdAt: 1, updatedAt: 2 },
+    scenes: [slideSceneWith(elements), quizScene],
+    ...(stamp ? { [DSL_VERSION_KEY]: stamp } : {}),
+  });
+  // scenes[0] is the slide scene by construction; the quiz scene needs no
+  // element access, so this localized cast stands in for the slide/quiz union.
+  const elementsOf = (doc: unknown): Record<string, unknown>[] =>
+    (
+      doc as {
+        scenes: { content: { canvas: { elements: Record<string, unknown>[] } } }[];
+      }
+    ).scenes[0].content.canvas.elements;
+
+  it('pins DSL_VERSION to the endpoint this entry introduced', () => {
+    expect(DSL_VERSION).toBe('0.3.0');
+  });
+
+  it('strips rotate/height from line elements only, in unversioned documents', () => {
+    const withRotate = lineEl({ id: 'l1', rotate: 45 });
+    const withHeight = lineEl({ id: 'l2', height: 30 });
+    const withBoth = lineEl({ id: 'l3', rotate: 45, height: 30 });
+    const clean = lineEl({ id: 'l4' });
+    const input = docWithElements([
+      withRotate,
+      withHeight,
+      withBoth,
+      clean,
+      textEl,
+      shapeEl,
+      tableEl,
+    ]);
+
+    const out = migrate(input) as ReturnType<typeof docWithElements>;
+    // envelope stamped to the new endpoint
+    expect(out[DSL_VERSION_KEY]).toBe('0.3.0');
+
+    const elements = elementsOf(out);
+    expect(elements[0]).toEqual({ ...lineEl({ id: 'l1' }) });
+    expect(elements[1]).toEqual({ ...lineEl({ id: 'l2' }) });
+    expect(elements[2]).toEqual({ ...lineEl({ id: 'l3' }) });
+    expect(elements[3]).toBe(clean);
+    // non-line elements are untouched — text/shape legitimately carry rotate/height
+    expect(elements[4]).toEqual(textEl);
+    expect(elements[5]).toEqual(shapeEl);
+    expect(elements[6]).toEqual(tableEl);
+    // the non-slide scene passes through untouched
+    expect(out.scenes[1]).toEqual(quizScene);
+  });
+
+  it('does not mutate its input and shares untouched subtrees', () => {
+    const dirty = lineEl({ id: 'l1', rotate: 45 });
+    const input = docWithElements([dirty, textEl], '0.2.0');
+    const snapshot = structuredClone(input);
+
+    const out = migrate(input) as ReturnType<typeof docWithElements>;
+    expect(input).toEqual(snapshot);
+    // untouched elements are shared by reference, only the dirty line is fresh
+    const elements = elementsOf(out);
+    expect(elements[0]).not.toBe(dirty);
+    expect(elements[1]).toBe(textEl);
+  });
+
+  it('lifts a document already stamped 0.2.0 and cleans it', () => {
+    const dirty = lineEl({ id: 'l1', rotate: 45, height: 30 });
+    const out = migrate(docWithElements([dirty], '0.2.0')) as ReturnType<typeof docWithElements>;
+    expect(out[DSL_VERSION_KEY]).toBe('0.3.0');
+    const [cleaned] = elementsOf(out);
+    expect(cleaned.rotate).toBeUndefined();
+    expect(cleaned.height).toBeUndefined();
+    expect(cleaned.type).toBe('line');
+  });
+
+  it('returns a document already stamped 0.3.0 by identity', () => {
+    const current = docWithElements([lineEl({ rotate: 45 })], '0.3.0');
+    expect(migrate(current)).toBe(current);
+  });
+
+  it('is idempotent across the ladder walk', () => {
+    const input = docWithElements([lineEl({ id: 'l1', rotate: 45 })]);
+    const once = migrate(input);
+    const twice = migrate(once);
+    expect(twice).toEqual(once);
+    expect(migrate(once)).toBe(once);
+  });
+
+  it('is a no-op by identity when there are no line elements', () => {
+    const clean = docWithElements([textEl, shapeEl, tableEl], '0.2.0');
+    expect(stripLegacyLineGeometry(clean)).toBe(clean);
+    expect(stripLegacyLineGeometry(42)).toBe(42);
+    expect(stripLegacyLineGeometry(null)).toBe(null);
   });
 });
 

@@ -19,6 +19,7 @@ import { canonicalizeLegacyScene, mutateDocument, type AppDocument } from '@/lib
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import type JSZip from 'jszip';
+import { stripLegacyLineGeometry } from '@openmaic/dsl';
 import type { Slide } from '@openmaic/dsl';
 import type { Stage } from '@/lib/types/stage';
 
@@ -509,6 +510,13 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
           }),
         };
 
+        // Imported legacy scenes never pass through the DSL migration ladder:
+        // the store stamps the current version on save, so a document written
+        // here reads as current forever. Strip the stray legacy line fields
+        // (rotate/height) at write time instead -- the 1.0.0 closed canvas
+        // schema would otherwise reject every patch_stage on this classroom.
+        const sanitizedDocument = stripLegacyLineGeometry(document) as AppDocument;
+
         // The document is the commit point: one aggregate write under its
         // per-stage lock. Wholesale replacement: the imported aggregate
         // overwrites the whole document, so eager conversion of whatever
@@ -516,7 +524,7 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
         // replaces.
         await mutateDocument(
           newStageId,
-          async (_existing, store) => store.saveDocument(document),
+          async (_existing, store) => store.saveDocument(sanitizedDocument),
           {},
           { mode: 'replace' },
         );
