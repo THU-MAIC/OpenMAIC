@@ -1843,7 +1843,15 @@
       "download": "下载",
       "detailFailed": "技能详情加载失败",
       "contentLabel": "正文",
-      "builtinDetailNote": "该技能随 OpenMAIC 提供。下载后可导入其他智能体工作台。"
+      "builtinDetailNote": "该技能随 OpenMAIC 提供。下载后可导入其他智能体工作台。",
+      "upload": "上传",
+      "uploading": "正在上传…",
+      "uploadFailed": "技能上传失败。请检查文件后重试。",
+      "delete": "删除",
+      "deleting": "正在删除…",
+      "deleteTitle": "删除技能？",
+      "deleteConfirm": "这会从你的账号中移除该技能，且无法撤销。",
+      "deleteFailed": "技能删除失败，请重试。"
     },
     "ttsBrowserNativeTimelineNotice": "浏览器内置 TTS 不支持编辑器时间轴的音频功能（试听、重新生成、全部配音）。切换到托管 TTS 提供方即可逐句生成和管理音频。",
     "alidocmindAccessKeyId": "AccessKey ID",

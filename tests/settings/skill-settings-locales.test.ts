@@ -46,6 +46,14 @@ const KEYS = [
   'settings.skills.detailFailed',
   'settings.skills.contentLabel',
   'settings.skills.builtinDetailNote',
+  'settings.skills.upload',
+  'settings.skills.uploading',
+  'settings.skills.uploadFailed',
+  'settings.skills.delete',
+  'settings.skills.deleting',
+  'settings.skills.deleteTitle',
+  'settings.skills.deleteConfirm',
+  'settings.skills.deleteFailed',
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- locale JSON traversal

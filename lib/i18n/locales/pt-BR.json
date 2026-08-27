@@ -1843,7 +1843,15 @@
       "download": "Baixar",
       "detailFailed": "Não foi possível carregar os detalhes do skill",
       "contentLabel": "Conteúdo",
-      "builtinDetailNote": "Este skill acompanha o OpenMAIC. Baixe-o para importar em outro espaço de trabalho de agente."
+      "builtinDetailNote": "Este skill acompanha o OpenMAIC. Baixe-o para importar em outro espaço de trabalho de agente.",
+      "upload": "Enviar",
+      "uploading": "Enviando…",
+      "uploadFailed": "Não foi possível enviar o skill. Verifique o arquivo e tente novamente.",
+      "delete": "Excluir",
+      "deleting": "Excluindo…",
+      "deleteTitle": "Excluir skill?",
+      "deleteConfirm": "Isso remove o skill da sua conta. Esta ação não pode ser desfeita.",
+      "deleteFailed": "Não foi possível excluir o skill. Tente novamente."
     },
     "ttsBrowserNativeTimelineNotice": "O TTS nativo do navegador não suporta os recursos de áudio da linha do tempo do editor (pré-visualizar, regenerar e narração em lote). Mude para um provedor de TTS gerenciado para gerar e gerenciar o áudio de cada linha.",
     "alidocmindAccessKeyId": "AccessKey ID",

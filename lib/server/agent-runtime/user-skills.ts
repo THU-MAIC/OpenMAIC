@@ -69,6 +69,11 @@ export async function createUserSkill(
   return store.create(ownerId, input);
 }
 
+export async function deleteUserSkill(ownerId: string, ref: string): Promise<void> {
+  const store = await getUserSkillStore();
+  return store.delete(ownerId, ref);
+}
+
 export async function patchUserSkill(
   ownerId: string,
   ref: string,

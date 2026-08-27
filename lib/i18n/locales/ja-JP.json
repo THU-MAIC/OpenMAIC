@@ -1843,7 +1843,15 @@
       "download": "ダウンロード",
       "detailFailed": "スキル詳細を読み込めませんでした",
       "contentLabel": "内容",
-      "builtinDetailNote": "このスキルは OpenMAIC に同梱されています。他のエージェントワークスペースにインポートするにはダウンロードしてください。"
+      "builtinDetailNote": "このスキルは OpenMAIC に同梱されています。他のエージェントワークスペースにインポートするにはダウンロードしてください。",
+      "upload": "アップロード",
+      "uploading": "アップロード中…",
+      "uploadFailed": "スキルをアップロードできませんでした。ファイルを確認して再試行してください。",
+      "delete": "削除",
+      "deleting": "削除中…",
+      "deleteTitle": "スキルを削除しますか？",
+      "deleteConfirm": "このスキルをアカウントから削除します。この操作は元に戻せません。",
+      "deleteFailed": "スキルを削除できませんでした。もう一度お試しください。"
     },
     "ttsBrowserNativeTimelineNotice": "ブラウザ内蔵 TTS はエディターのタイムライン音声機能（試聴・再生成・一括音声生成）に対応していません。マネージド TTS プロバイダーに切り替えると、行ごとの音声を生成・管理できます。",
     "alidocmindAccessKeyId": "AccessKey ID",

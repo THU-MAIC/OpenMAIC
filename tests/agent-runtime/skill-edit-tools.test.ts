@@ -32,6 +32,7 @@ import { buildSkillEditTools } from '@/lib/server/agent-runtime/skill-edit-tools
 import {
   applyUserSkillPatchOps,
   createUserSkill,
+  deleteUserSkill,
   findUserSkillByRef,
   patchUserSkill,
   USER_SKILL_CONTENT_MAX_BYTES,
@@ -334,6 +335,24 @@ describe('patchUserSkill (pg)', () => {
 });
 
 describe('read_skill returns the stored bytes', () => {
+  it('reports not-found after the owner soft-deletes the Skill', async () => {
+    const skill = await seed();
+    const { readSkill, patchSkill } = toolsForTest();
+    await deleteUserSkill(OWNER, skill.id);
+
+    const read = await readSkill.execute('call-read', { skillId: skill.id });
+    expect(read.isError).toBe(true);
+    expect(read.details.error).toBe('not-found');
+
+    const patch = await patchSkill.execute('call-patch', {
+      skillId: skill.id,
+      intent: 'change a deleted skill',
+      ops: [{ op: 'set', path: '/title', value: 'Gone' }],
+    });
+    expect(patch.isError).toBe(true);
+    expect(patch.details.error).toBe('not-found');
+  });
+
   it('omits the de-prioritisation preamble that SKILL.md carries', async () => {
     const skill = await seed();
     // What the agent sees through pi's read tool: wrapped and re-framed.

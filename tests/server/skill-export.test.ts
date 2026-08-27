@@ -10,6 +10,8 @@ import {
   buildUserSkillZip,
   isSafeSkillId,
   openClawSkillDir,
+  parseUserSkillMarkdown,
+  parseUserSkillZip,
 } from '@/lib/server/skill-export';
 
 function walkRelative(dir: string, base = dir): string[] {
@@ -54,12 +56,13 @@ describe('skill export zips', () => {
   });
 
   it('round-trips owner skill fields through valid YAML', async () => {
-    const zip = await buildUserSkillZip({
+    const fields = {
       name: 'my-teaching-style',
       title: 'Teaching style "quoted"',
       description: 'One-line description',
       content: '# Body\n\nStored instructions.',
-    });
+    };
+    const zip = await buildUserSkillZip(fields);
     const skillMd = await (await JSZip.loadAsync(zip))
       .file('my-teaching-style/SKILL.md')!
       .async('string');
@@ -70,5 +73,20 @@ describe('skill export zips', () => {
       description: 'One-line description',
     });
     expect(skillMd).toContain('Stored instructions.');
+    await expect(parseUserSkillZip(zip)).resolves.toEqual(fields);
+    expect(parseUserSkillMarkdown(skillMd)).toEqual(fields);
+  });
+
+  it('applies create_skill validation to imported owner skills', async () => {
+    const invalid =
+      '---\nname: builtin-handle\ntitle: Title\ndescription: Description\n---\n\nBody';
+    expect(() => parseUserSkillMarkdown(invalid)).toThrow(/must start with "my-"/);
+
+    const ambiguous = new JSZip();
+    ambiguous.file('one/SKILL.md', invalid);
+    ambiguous.file('two/SKILL.md', invalid);
+    await expect(
+      parseUserSkillZip(await ambiguous.generateAsync({ type: 'nodebuffer' })),
+    ).rejects.toThrow(/exactly one SKILL\.md/);
   });
 });

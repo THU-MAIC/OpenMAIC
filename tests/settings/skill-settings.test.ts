@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
     loading: false,
     error: null as string | null,
   },
+  reload: vi.fn(async () => {}),
 }));
 
 vi.mock('@/lib/hooks/use-i18n', () => ({
@@ -43,7 +44,7 @@ vi.mock('@/lib/workbench/agent-skills', () => ({
     skills: mocks.registry.skills,
     loading: mocks.registry.loading,
     error: mocks.registry.error,
-    reload: async () => {},
+    reload: mocks.reload,
   }),
   skillTitle: (skill: { name: string; title?: string | null }) => skill.title ?? undefined,
   agentSkillsErrorText: (snapshot: { error: string | null }, t: (key: string) => string) =>
@@ -82,6 +83,7 @@ afterEach(() => {
   mocks.registry.skills = [];
   mocks.registry.loading = false;
   mocks.registry.error = null;
+  mocks.reload.mockClear();
   for (const root of roots.splice(0)) act(() => root.unmount());
   document.body.replaceChildren();
   vi.unstubAllGlobals();
@@ -192,6 +194,71 @@ describe('owner-skill rows appear only for the owner', () => {
     const myGroup = host.querySelector('[data-testid="skill-settings-my-group"]');
     expect(myGroup!.textContent).toContain('settings.skills.emptyMySkills');
     expect(myGroup!.querySelector('[data-testid^="skill-settings-row-"]')).toBeNull();
+  });
+});
+
+describe('owner skill controls', () => {
+  it('confirms deletion, calls DELETE, refreshes, and removes the owner row', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+    mocks.registry.skills = [userSkill(), builtinSkill()];
+    const host = mount();
+
+    const remove = host.querySelector<HTMLButtonElement>(
+      '[data-testid="skill-settings-delete-my-demo"]',
+    );
+    expect(remove).not.toBeNull();
+    await act(async () => remove!.click());
+    expect(
+      document.body.querySelector('[data-testid="skill-settings-delete-dialog"]'),
+    ).not.toBeNull();
+
+    const confirm = document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="skill-settings-delete-confirm"]',
+    );
+    await act(async () => confirm!.click());
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/agent/skills/usk_1', { method: 'DELETE' });
+    expect(mocks.reload).toHaveBeenCalledTimes(1);
+    expect(host.querySelector('[data-testid="skill-settings-row-my-demo"]')).toBeNull();
+  });
+
+  it('uploads a file with POST, refreshes, and shows the returned owner skill', async () => {
+    const uploaded = userSkill({ id: 'usk_2', name: 'my-uploaded', title: 'Uploaded skill' });
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => ({
+      ok: true,
+      status: 201,
+      json: async () => uploaded,
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    mocks.registry.skills = [builtinSkill()];
+    const host = mount();
+    const input = host.querySelector<HTMLInputElement>(
+      '[data-testid="skill-settings-upload-input"]',
+    );
+    const file = new File(['skill zip bytes'], 'my-uploaded-skill.zip', {
+      type: 'application/zip',
+    });
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    await act(async () => input!.dispatchEvent(new Event('change', { bubbles: true })));
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('/api/agent/skills');
+    expect(init).toMatchObject({ method: 'POST' });
+    expect((init as RequestInit).body).toBeInstanceOf(FormData);
+    expect(mocks.reload).toHaveBeenCalledTimes(1);
+    expect(host.querySelector('[data-testid="skill-settings-row-my-uploaded"]')).not.toBeNull();
+  });
+
+  it('never renders delete controls on built-in rows', () => {
+    mocks.registry.skills = [builtinSkill()];
+    const host = mount();
+    const row = host.querySelector('[data-testid="skill-settings-row-stage-design"]');
+    expect(row!.querySelector('[data-testid^="skill-settings-delete-"]')).toBeNull();
+    expect(host.querySelector('[data-testid="skill-settings-delete-stage-design"]')).toBeNull();
   });
 });
 

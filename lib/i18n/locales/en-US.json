@@ -1843,7 +1843,15 @@
       "download": "Download",
       "detailFailed": "Could not load the skill details",
       "contentLabel": "Content",
-      "builtinDetailNote": "This skill ships with OpenMAIC. Download it to import into another agent workspace."
+      "builtinDetailNote": "This skill ships with OpenMAIC. Download it to import into another agent workspace.",
+      "upload": "Upload",
+      "uploading": "Uploading…",
+      "uploadFailed": "Could not upload the skill. Check the file and try again.",
+      "delete": "Delete",
+      "deleting": "Deleting…",
+      "deleteTitle": "Delete skill?",
+      "deleteConfirm": "This removes the skill from your account. This action cannot be undone.",
+      "deleteFailed": "Could not delete the skill. Please try again."
     },
     "ttsBrowserNativeTimelineNotice": "Browser-native TTS doesn't support the editor timeline's audio features (preview, regenerate, and bulk voiceover). Switch to a managed TTS provider to generate and manage per-line audio.",
     "alidocmindAccessKeyId": "AccessKey ID",

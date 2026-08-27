@@ -2,7 +2,8 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import JSZip from 'jszip';
-import { dump as dumpYaml } from 'js-yaml';
+import { dump as dumpYaml, load as loadYaml } from 'js-yaml';
+import { UserSkillError, validateUserSkillInput, type UserSkillFields } from '@openmaic/storage';
 
 export const openClawSkillDir = join(process.cwd(), 'skills', 'openmaic');
 export const builtinSkillsDir = join(process.cwd(), 'skills', 'agent-runtime');
@@ -56,6 +57,75 @@ export interface UserSkillContent {
   title: string;
   description: string;
   content: string;
+}
+
+export type UserSkillUpload = UserSkillFields & { name: string };
+
+export class UserSkillUploadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UserSkillUploadError';
+  }
+}
+
+/**
+ * Parse the canonical SKILL.md shape produced by `buildUserSkillZip` and run
+ * it through the exact same package-owned validation used by `create_skill`.
+ */
+export function parseUserSkillMarkdown(markdown: string): UserSkillUpload {
+  try {
+    const text = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    if (!text.startsWith('---\n')) {
+      throw new UserSkillUploadError('SKILL.md must begin with YAML frontmatter.');
+    }
+    const end = text.indexOf('\n---\n', 4);
+    if (end === -1) throw new UserSkillUploadError('SKILL.md frontmatter is not closed.');
+
+    const loaded = loadYaml(text.slice(4, end));
+    if (!loaded || typeof loaded !== 'object' || Array.isArray(loaded)) {
+      throw new UserSkillUploadError('SKILL.md frontmatter must be a YAML object.');
+    }
+    const frontmatter = loaded as Record<string, unknown>;
+    if (
+      typeof frontmatter.name !== 'string' ||
+      typeof frontmatter.title !== 'string' ||
+      typeof frontmatter.description !== 'string'
+    ) {
+      throw new UserSkillUploadError(
+        'SKILL.md frontmatter requires string name, title, and description fields.',
+      );
+    }
+    return validateUserSkillInput({
+      name: frontmatter.name,
+      title: frontmatter.title,
+      description: frontmatter.description,
+      content: text.slice(end + 5),
+    });
+  } catch (error) {
+    if (error instanceof UserSkillError || error instanceof UserSkillUploadError) throw error;
+    throw new UserSkillUploadError('SKILL.md frontmatter is not valid YAML.');
+  }
+}
+
+/** Read the single SKILL.md from an exported owner-skill zip. */
+export async function parseUserSkillZip(bytes: Buffer): Promise<UserSkillUpload> {
+  try {
+    const zip = await JSZip.loadAsync(bytes);
+    const skillFiles = Object.values(zip.files).filter(
+      (entry) => !entry.dir && /(^|\/)SKILL\.md$/.test(entry.name),
+    );
+    if (skillFiles.length !== 1) {
+      throw new UserSkillUploadError('The archive must contain exactly one SKILL.md file.');
+    }
+    const metadata = (skillFiles[0] as unknown as { _data?: { uncompressedSize?: number } })._data;
+    if ((metadata?.uncompressedSize ?? 0) > 70_000) {
+      throw new UserSkillUploadError('The archive SKILL.md is too large.');
+    }
+    return parseUserSkillMarkdown(await skillFiles[0]!.async('string'));
+  } catch (error) {
+    if (error instanceof UserSkillError || error instanceof UserSkillUploadError) throw error;
+    throw new UserSkillUploadError('The skill archive is not a valid zip file.');
+  }
 }
 
 /** Reconstruct the canonical SKILL.md shape from the package-owned row fields. */

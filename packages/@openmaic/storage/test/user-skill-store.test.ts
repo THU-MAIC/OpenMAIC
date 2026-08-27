@@ -111,6 +111,61 @@ describe('PgUserSkillStore with PGlite', () => {
     await expect(store.list(OWNER)).resolves.toHaveLength(1);
   });
 
+  test('soft-deletes only the owner row and excludes its tombstone from every read path', async () => {
+    const deleted = await store.create(OWNER, input('my-deleted'));
+    const kept = await store.create(OWNER, input('my-kept'));
+
+    await expect(store.delete(OWNER, deleted.id)).resolves.toBeUndefined();
+    await expect(store.find(deleted.id, OWNER)).resolves.toBeNull();
+    await expect(store.findByRef(OWNER, deleted.id)).resolves.toBeNull();
+    await expect(store.findByRef(OWNER, deleted.name)).resolves.toBeNull();
+    await expect(store.list(OWNER)).resolves.toEqual([kept]);
+
+    const row = await db.query<{ deleted_at: Date | null }>(
+      'SELECT deleted_at FROM agent_user_skill WHERE id = $1',
+      [deleted.id],
+    );
+    expect(row.rows[0]!.deleted_at).not.toBeNull();
+  });
+
+  test('delete makes absent, foreign and already-deleted refs indistinguishable', async () => {
+    const foreign = await store.create('owner-2', input('my-private'));
+    const mine = await store.create(OWNER, input('my-once'));
+    await store.delete(OWNER, mine.id);
+
+    for (const ref of [foreign.id, 'usk_missing', mine.id]) {
+      const caught = await store.delete(OWNER, ref).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(caught).toBeInstanceOf(UserSkillError);
+      expect((caught as UserSkillError).code).toBe('not-found');
+      expect((caught as UserSkillError).message).not.toContain('owner-2');
+    }
+    await expect(store.find(foreign.id, 'owner-2')).resolves.toEqual(foreign);
+  });
+
+  test('a deleted handle can be reused because uniqueness and quota count only live rows', async () => {
+    const first = await store.create(OWNER, input('my-reusable'));
+    await store.delete(OWNER, first.id);
+    const replacement = await store.create(OWNER, {
+      ...input('my-reusable'),
+      content: 'Replacement instructions',
+    });
+
+    expect(replacement.id).not.toBe(first.id);
+    await expect(store.findByRef(OWNER, 'my-reusable')).resolves.toEqual(replacement);
+    await expect(store.list(OWNER)).resolves.toEqual([replacement]);
+  });
+
+  test('patch sees a deleted Skill as not-found', async () => {
+    const skill = await store.create(OWNER, input('my-gone'));
+    await store.delete(OWNER, skill.id);
+    await expect(
+      store.patch(OWNER, skill.id, [{ op: 'set', path: '/title', value: 'Too late' }]),
+    ).rejects.toMatchObject({ code: 'not-found' });
+  });
+
   test('enforces the exact 50-Skill owner quota', async () => {
     for (let index = 0; index < USER_SKILL_LIMIT; index += 1) {
       await store.create(OWNER, input(`my-skill-${index}`));

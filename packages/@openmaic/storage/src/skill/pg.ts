@@ -313,6 +313,18 @@ export class PgUserSkillStore implements UserSkillStore {
     }
   }
 
+  async delete(ownerId: string, ref: string): Promise<void> {
+    const condition = refCondition(ref);
+    const deleted = await this.queryable.query<{ id: string }>(
+      `UPDATE ${this.table}
+          SET deleted_at = now(), updated_at = now()
+        WHERE ${condition.sql} AND owner_id = $2 AND deleted_at IS NULL
+        RETURNING id`,
+      [...condition.params, ownerId],
+    );
+    if (deleted.rows.length !== 1) throw skillNotFound(ref);
+  }
+
   async patch(
     ownerId: string,
     ref: string,

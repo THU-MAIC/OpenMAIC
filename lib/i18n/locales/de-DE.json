@@ -1843,7 +1843,15 @@
       "download": "Herunterladen",
       "detailFailed": "Die Skill-Details konnten nicht geladen werden",
       "contentLabel": "Inhalt",
-      "builtinDetailNote": "Dieser Skill ist in OpenMAIC enthalten. Lade ihn herunter, um ihn in einen anderen Agenten-Arbeitsbereich zu importieren."
+      "builtinDetailNote": "Dieser Skill ist in OpenMAIC enthalten. Lade ihn herunter, um ihn in einen anderen Agenten-Arbeitsbereich zu importieren.",
+      "upload": "Hochladen",
+      "uploading": "Wird hochgeladen…",
+      "uploadFailed": "Der Skill konnte nicht hochgeladen werden. Prüfe die Datei und versuche es erneut.",
+      "delete": "Löschen",
+      "deleting": "Wird gelöscht…",
+      "deleteTitle": "Skill löschen?",
+      "deleteConfirm": "Dadurch wird der Skill aus deinem Konto entfernt. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "deleteFailed": "Der Skill konnte nicht gelöscht werden. Versuche es erneut."
     },
     "ttsBrowserNativeTimelineNotice": "Browserintegrierte TTS unterstützt die Audiofunktionen der Editor-Zeitleiste nicht (Vorschau, erneute Generierung und Sammelvertonung). Wechsle zu einem verwalteten TTS-Anbieter, um Audio für einzelne Zeilen zu generieren und zu verwalten.",
     "alidocmindAccessKeyId": "AccessKey ID",

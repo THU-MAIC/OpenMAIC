@@ -18,14 +18,22 @@
  *    detail route, so their detail view shows what the registry already
  *    carries and never issues a request that would 404.
  *
- * There is deliberately NO upload or delete affordance here: this branch has
- * no server path that persists either operation (the skill store never writes
- * `deleted_at`), and the hard rule for this surface is that a visible control
- * must be actionable. Both are omitted until a real backend lands.
+ * Owner rows can also be deleted after confirmation, and exported zips or bare
+ * SKILL.md files can be uploaded through the owner-scoped registry endpoint.
  */
-import { useCallback, useEffect, useState } from 'react';
-import { Download, Loader2, Sparkles } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Download, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Dialog,
   DialogContent,
@@ -86,9 +94,11 @@ function SkillBadges({ skill }: { skill: AgentSkillInfo }) {
 function SkillRow({
   skill,
   onDetails,
+  onDelete,
 }: {
   skill: AgentSkillInfo;
   onDetails: (skill: AgentSkillInfo) => void;
+  onDelete?: (skill: AgentSkillInfo) => void;
 }) {
   const { t } = useI18n();
   const title = skillTitle(skill, t);
@@ -130,6 +140,18 @@ function SkillRow({
           {t('settings.skills.details')}
         </Button>
         <DownloadLink skill={skill} />
+        {onDelete ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+            data-testid={`skill-settings-delete-${skill.name}`}
+            onClick={() => onDelete(skill)}
+          >
+            <Trash2 className="size-3.5" />
+            {t('settings.skills.delete')}
+          </Button>
+        ) : null}
       </div>
     </div>
   );
@@ -141,12 +163,14 @@ function SkillGroup({
   emptyLabel,
   testId,
   onDetails,
+  onDelete,
 }: {
   label: string;
   skills: AgentSkillInfo[];
   emptyLabel: string;
   testId: string;
   onDetails: (skill: AgentSkillInfo) => void;
+  onDelete?: (skill: AgentSkillInfo) => void;
 }) {
   return (
     <div>
@@ -157,7 +181,9 @@ function SkillGroup({
         {skills.length === 0 ? (
           <p className="px-2 py-3 text-xs text-muted-foreground">{emptyLabel}</p>
         ) : (
-          skills.map((skill) => <SkillRow key={skill.id} skill={skill} onDetails={onDetails} />)
+          skills.map((skill) => (
+            <SkillRow key={skill.id} skill={skill} onDetails={onDetails} onDelete={onDelete} />
+          ))
         )}
       </section>
     </div>
@@ -314,15 +340,108 @@ export function SkillSettings() {
   const { t } = useI18n();
   const { skills, loading, error, reload } = useAgentSkills();
   const [detailSkill, setDetailSkill] = useState<AgentSkillInfo | null>(null);
+  const [deleteSkill, setDeleteSkill] = useState<AgentSkillInfo | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [actionError, setActionError] = useState<'deleteFailed' | 'uploadFailed' | null>(null);
+  const [hiddenSkillIds, setHiddenSkillIds] = useState<Set<string>>(() => new Set());
+  const [uploadedSkills, setUploadedSkills] = useState<AgentSkillInfo[]>([]);
+  const uploadRef = useRef<HTMLInputElement>(null);
 
-  const userSkills = skills.filter((skill) => skill.source === 'user');
-  const builtinSkills = skills.filter((skill) => skill.source === 'builtin');
+  const visibleSkills = [
+    ...skills,
+    ...uploadedSkills.filter((uploaded) => !skills.some((skill) => skill.id === uploaded.id)),
+  ].filter((skill) => !hiddenSkillIds.has(skill.id));
+  const userSkills = visibleSkills.filter((skill) => skill.source === 'user');
+  const builtinSkills = visibleSkills.filter((skill) => skill.source === 'builtin');
 
   const openDetails = useCallback((skill: AgentSkillInfo) => setDetailSkill(skill), []);
 
+  const confirmDelete = useCallback(async () => {
+    if (!deleteSkill || deleting) return;
+    setDeleting(true);
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/agent/skills/${encodeURIComponent(deleteSkill.id)}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error(`skill delete request failed: ${response.status}`);
+      setHiddenSkillIds((current) => new Set(current).add(deleteSkill.id));
+      setDeleteSkill(null);
+      if (detailSkill?.id === deleteSkill.id) setDetailSkill(null);
+      await reload().catch(() => {});
+    } catch {
+      setActionError('deleteFailed');
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteSkill, deleting, detailSkill?.id, reload]);
+
+  const uploadSkill = useCallback(
+    async (file: File) => {
+      setUploading(true);
+      setActionError(null);
+      try {
+        const form = new FormData();
+        form.set('file', file);
+        const response = await fetch('/api/agent/skills', { method: 'POST', body: form });
+        if (!response.ok) throw new Error(`skill upload request failed: ${response.status}`);
+        const uploaded = (await response.json()) as AgentSkillInfo;
+        setUploadedSkills((current) => [
+          ...current.filter((skill) => skill.id !== uploaded.id),
+          uploaded,
+        ]);
+        await reload().catch(() => {});
+      } catch {
+        setActionError('uploadFailed');
+      } finally {
+        setUploading(false);
+        if (uploadRef.current) uploadRef.current.value = '';
+      }
+    },
+    [reload],
+  );
+
   return (
     <div className="flex flex-col gap-4" data-testid="skill-settings-section">
-      <p className="text-xs text-muted-foreground">{t('settings.skills.description')}</p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs text-muted-foreground">{t('settings.skills.description')}</p>
+        <input
+          ref={uploadRef}
+          type="file"
+          accept=".zip,.md,text/markdown,application/zip"
+          className="sr-only"
+          data-testid="skill-settings-upload-input"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            if (file) void uploadSkill(file);
+          }}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 shrink-0 px-2.5 text-xs"
+          disabled={uploading}
+          data-testid="skill-settings-upload"
+          onClick={() => uploadRef.current?.click()}
+        >
+          {uploading ? (
+            <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+          ) : (
+            <Upload className="size-3.5" />
+          )}
+          {uploading ? t('settings.skills.uploading') : t('settings.skills.upload')}
+        </Button>
+      </div>
+
+      {actionError ? (
+        <p
+          data-testid="skill-settings-action-error"
+          className="rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-xs text-destructive"
+        >
+          {t(`settings.skills.${actionError}`)}
+        </p>
+      ) : null}
 
       {loading ? (
         <p
@@ -357,6 +476,7 @@ export function SkillSettings() {
             emptyLabel={t('settings.skills.emptyMySkills')}
             testId="skill-settings-my-group"
             onDetails={openDetails}
+            onDelete={setDeleteSkill}
           />
           <SkillGroup
             label={t('settings.skills.builtinSkills')}
@@ -369,6 +489,32 @@ export function SkillSettings() {
       )}
 
       <SkillDetailDialog skill={detailSkill} onClose={() => setDetailSkill(null)} />
+
+      <AlertDialog
+        open={deleteSkill !== null}
+        onOpenChange={(open) => !open && setDeleteSkill(null)}
+      >
+        <AlertDialogContent data-testid="skill-settings-delete-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('settings.skills.deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('settings.skills.deleteConfirm')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deleting}
+              data-testid="skill-settings-delete-confirm"
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDelete();
+              }}
+            >
+              {deleting ? t('settings.skills.deleting') : t('settings.skills.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -192,13 +192,13 @@ export function validateUserSkillInput(input: {
 
 // ── Editing ───────────────────────────────────────────────────────────────────
 //
-// Editing exists because the create path is create-only: a user who wants to
-// fix a sentence in a saved Skill has no other route than rewriting it under a
-// new handle. Three fields are editable and `name` deliberately is not — the
+// Editing exists because the create path is create-only. Three fields are
+// editable and `name` deliberately is not — the
 // handle is referenced by the session's `skillId`, by the SKILL.md read paths
 // recorded in the durable pi transcript, and by the partial unique index, so a
 // rename manufactures dangling references. Renaming means creating a new Skill.
-// Deletion is likewise absent: `deleted_at` stays unwritten by every code path.
+// Deletion is a tombstone instead: old ids remain unavailable, while the partial
+// unique index permits the owner to create a fresh row with the deleted handle.
 
 /** The JSON Pointers a patch op may address. `/name` is excluded by design. */
 export const USER_SKILL_EDITABLE_PATHS = ['/content', '/title', '/description'] as const;
@@ -563,6 +563,16 @@ export interface UserSkillStore {
     ownerId: string,
     input: { name: string; title: string; description: string; content: string },
   ): Promise<UserSkillRecord>;
+  /**
+   * Soft-delete one live Skill in the owner's partition.
+   *
+   * Missing, already-deleted and foreign references all reject with the same
+   * `not-found` error. The state transition is idempotent, but a retry after a
+   * successful delete observes the tombstone and therefore reports not-found.
+   * Because live-name uniqueness is enforced by a partial index, deletion frees
+   * the handle for a new row owned by the same user.
+   */
+  delete(ownerId: string, ref: string): Promise<void>;
   patch(
     ownerId: string,
     ref: string,

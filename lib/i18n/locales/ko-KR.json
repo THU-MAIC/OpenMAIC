@@ -1843,7 +1843,15 @@
       "download": "다운로드",
       "detailFailed": "스킬 상세를 불러오지 못했습니다",
       "contentLabel": "내용",
-      "builtinDetailNote": "이 스킬은 OpenMAIC에 포함되어 있습니다. 다른 에이전트 작업공간으로 가져오려면 다운로드하세요."
+      "builtinDetailNote": "이 스킬은 OpenMAIC에 포함되어 있습니다. 다른 에이전트 작업공간으로 가져오려면 다운로드하세요.",
+      "upload": "업로드",
+      "uploading": "업로드 중…",
+      "uploadFailed": "스킬을 업로드하지 못했습니다. 파일을 확인하고 다시 시도하세요.",
+      "delete": "삭제",
+      "deleting": "삭제 중…",
+      "deleteTitle": "스킬을 삭제할까요?",
+      "deleteConfirm": "계정에서 이 스킬을 삭제합니다. 이 작업은 되돌릴 수 없습니다.",
+      "deleteFailed": "스킬을 삭제하지 못했습니다. 다시 시도하세요."
     },
     "ttsBrowserNativeTimelineNotice": "브라우저 내장 TTS는 편집기 타임라인의 오디오 기능(미리듣기·다시 생성·전체 음성 생성)을 지원하지 않습니다. 관리형 TTS 공급자로 전환하면 줄별 오디오를 생성·관리할 수 있습니다.",
     "alidocmindAccessKeyId": "AccessKey ID",
