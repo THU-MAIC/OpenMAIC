@@ -1,24 +1,27 @@
-export type ClassroomExitDecision =
-  | { readonly kind: 'push'; readonly href: '/workspace' | '/' }
-  | { readonly kind: 'back' };
+export type ClassroomExitDecision = { readonly kind: 'push'; readonly href: '/workspace' | '/' };
 
 interface ClassroomExitContext {
   readonly searchParams: Pick<URLSearchParams, 'get'>;
-  readonly historyLength: number;
 }
 
 interface ClassroomExitRouter {
   readonly push: (href: string) => void;
-  readonly back: () => void;
 }
 
 /**
  * Resolve where a standalone classroom should exit without depending on
  * browser globals, so direct links and SSR callers get the same safe default.
+ *
+ * A classic classroom always exits to home. The previous history entry is
+ * often an entry-time flow (generation-preview) that is not a return target —
+ * backing into it shows a dead "no generation in progress" page — so browser
+ * history is never used for the classic arrow, which is labeled "back to
+ * home" anyway. Only workbench-attached classrooms get a different
+ * destination, via their explicit URL contract (`from=workspace` /
+ * `returnTo=home`).
  */
 export function resolveClassroomExit({
   searchParams,
-  historyLength,
 }: ClassroomExitContext): ClassroomExitDecision {
   // An explicit source wins over history: classroom state changes may push
   // intermediate entries onto the stack, while `from` survives refreshes and
@@ -27,12 +30,11 @@ export function resolveClassroomExit({
     return { kind: 'push', href: '/workspace' };
   }
   // Leaving Pro playback opens the ordinary classroom with an explicit home
-  // return contract. Browser history still contains the Pro workspace, so the
-  // generic `back()` fallback would otherwise contradict the home arrow.
+  // return contract. Browser history still contains the Pro workspace, so
+  // without this rule the home arrow would contradict the workspace link.
   if (searchParams.get('returnTo') === 'home') {
     return { kind: 'push', href: '/' };
   }
-  if (historyLength > 1) return { kind: 'back' };
   return { kind: 'push', href: '/' };
 }
 
@@ -41,13 +43,7 @@ export function exitClassroom(
   router: ClassroomExitRouter,
   searchParams: Pick<URLSearchParams, 'get'>,
 ): void {
-  const historyLength = typeof window === 'undefined' ? 0 : window.history.length;
-  const decision = resolveClassroomExit({ searchParams, historyLength });
-  if (decision.kind === 'back') {
-    router.back();
-    return;
-  }
-  router.push(decision.href);
+  router.push(resolveClassroomExit({ searchParams }).href);
 }
 
 export function classroomExitLabelKey(

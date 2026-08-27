@@ -71,7 +71,6 @@ export function Canvas(_props: CanvasProps) {
   );
 
   // Canvas UI state
-  const canvasScale = useCanvasStore.use.canvasScale();
   const activeElementIdList = useCanvasStore.use.activeElementIdList();
   const activeGroupElementId = useCanvasStore.use.activeGroupElementId();
   const handleElementId = useCanvasStore.use.handleElementId();
@@ -102,8 +101,14 @@ export function Canvas(_props: CanvasProps) {
     setElementList(newElements);
   }, [elements]);
 
-  // Viewport size and positioning
-  const { viewportStyles, dragViewport } = useViewportSize(canvasRef);
+  // Viewport size and positioning. Render with the hook's LOCAL fitScale (not
+  // the global store canvasScale): sibling canvases (crossfade-exiting pane,
+  // keep-alive tabs) write the shared store value, which could leave this
+  // canvas rendering a scale computed for another container until a seam drag
+  // forced a re-measure. The store is still written by the hook for
+  // out-of-tree consumers.
+  const { viewportStyles, dragViewport, fitScale } = useViewportSize(canvasRef);
+  const canvasScale = fitScale;
 
   // Initialize drop handler
   useDrop(canvasRef);
