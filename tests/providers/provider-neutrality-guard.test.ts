@@ -236,6 +236,11 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     ],
   ),
   ...groupedDebt(
+    'app/api/generate/voice/route.ts',
+    'Temporary: local-only voice deletion status remains in the neutral route.',
+    [['local', 3]],
+  ),
+  ...groupedDebt(
     'app/api/extract-document/route.ts',
     'Temporary: managed document-provider configuration and fallback policy remain in the route.',
     [

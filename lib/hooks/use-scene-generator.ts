@@ -28,7 +28,6 @@ import {
 import { resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
-import { putAsset, removeAsset, replaceAsset } from '@/lib/media/asset-pool';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
 import { toast } from 'sonner';
@@ -267,7 +266,7 @@ export async function generateAndStoreTTS(
   language?: string,
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<TTSApiResponse>,
-  replaceAssetId?: string,
+  existingAudioId?: string,
   stageId?: string,
   // Internal: an explicit voice that bypasses narrator binding resolution — used
   // to retry narration against the deterministic enabled-provider pick when the
@@ -424,7 +423,7 @@ export async function generateAndStoreTTS(
             language,
             signal,
             retryOptions,
-            replaceAssetId,
+            existingAudioId,
             stageId,
             undefined,
             fallbackHops + 1,
@@ -442,7 +441,7 @@ export async function generateAndStoreTTS(
               language,
               signal,
               retryOptions,
-              replaceAssetId,
+              existingAudioId,
               stageId,
               fallbackVoice,
               fallbackHops + 1,
@@ -471,50 +470,22 @@ export async function generateAndStoreTTS(
   // clip onto a timeline without re-decoding. null → leave undefined; the audio
   // still persists and plays.
   const duration = measureAudioDuration(bytes, data.format) ?? undefined;
-  // Crash-safety invariant: allocate and persist pool bytes first, keep the
-  // Part 2 Dexie compatibility copy second, and let the caller stamp audioId
-  // last. A failure therefore cannot leave an action pointing at missing data.
-  const assetMeta = {
-    contentType: blob.type,
-    mediaType: 'audio',
+  const audioId = existingAudioId ?? requestId;
+  await db.audioFiles.put({
+    id: audioId,
+    stageId,
+    blob,
+    duration,
+    format: data.format,
     text,
     voice: ttsVoice,
-    duration,
-    language,
-    provider: {
-      id: ttsProviderId,
-      model: ttsModelId,
-    },
-  } as const;
-  const assetId = replaceAssetId ?? (await putAsset(blob, assetMeta));
-  if (replaceAssetId) await replaceAsset(replaceAssetId, blob, assetMeta);
-  // Dexie remains a deliberate double-write until Part 3 converges exporters,
-  // playback, thumbnails, and import/export onto the shared asset pool.
-  try {
-    await db.audioFiles.put({
-      id: assetId,
-      stageId,
-      blob,
-      duration,
-      format: data.format,
-      text,
-      voice: ttsVoice,
-      createdAt: Date.now(),
-    });
-  } catch (error) {
-    if (!replaceAssetId) await removeAsset(assetId).catch(() => undefined);
-    throw error;
-  }
-  return assetId;
+    createdAt: Date.now(),
+  });
+  return audioId;
 }
 
 export async function removeFreshTtsAllocations(assetIds: readonly string[]): Promise<void> {
   for (const assetId of new Set(assetIds)) {
-    try {
-      await removeAsset(assetId);
-    } catch {
-      // Continue to the compatibility row and later allocations.
-    }
     await db.audioFiles.delete(assetId).catch(() => undefined);
   }
 }

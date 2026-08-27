@@ -49,7 +49,7 @@ describe.skipIf(!contractUrl)('owner material quota reservations on PostgreSQL',
     mime: 'application/pdf',
     bytes: 10,
     originalName: `${id}.pdf`,
-    assetId: '',
+    ossKey: `materials/owner-1/${id}`,
     extraction: { status: 'idle' },
   });
 
@@ -86,9 +86,9 @@ describe.skipIf(!contractUrl)('owner material quota reservations on PostgreSQL',
         FROM owner_material
        WHERE owner_id = $1 AND kind = 'source' AND deleted_at IS NULL`;
     const insertSql = `INSERT INTO owner_material
-        (id, owner_id, kind, mime, bytes, original_name, asset_id, sha256,
+        (id, owner_id, kind, mime, bytes, original_name, oss_key, sha256,
          status, extraction, created_at)
-      VALUES ($1, 'owner-1', 'source', 'application/pdf', 10, $2, 'asset-a',
+      VALUES ($1, 'owner-1', 'source', 'application/pdf', 10, $2, 'materials/owner-1/a',
               NULL, 'uploading', NULL, $3)`;
 
     const first = await pool.connect();

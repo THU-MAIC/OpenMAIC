@@ -8,7 +8,6 @@ import {
   finalizeOwnerMaterial,
   ownerMaterialQuotaLockKey,
   reclaimStaleOwnerMaterialUploads,
-  recordOwnerMaterialAsset,
   registerOwnerMaterial,
   type RegisterOwnerMaterialInput,
 } from '@/lib/persistence/owner-materials';
@@ -48,7 +47,7 @@ const input = (
   mime: 'application/pdf',
   bytes: 100,
   originalName: 'a.pdf',
-  assetId: '',
+  ossKey: 'materials/owner-1/mat_1',
   extraction: { status: 'idle' },
   ...overrides,
 });
@@ -59,7 +58,7 @@ async function insertRawUpload(
   row: {
     id: string;
     ownerId?: string;
-    assetId?: string;
+    ossKey?: string;
     bytes?: number;
     status?: string;
     createdAt?: number;
@@ -67,7 +66,7 @@ async function insertRawUpload(
 ): Promise<void> {
   await db.query(
     `INSERT INTO owner_material
-       (id, owner_id, kind, mime, bytes, original_name, asset_id, sha256,
+       (id, owner_id, kind, mime, bytes, original_name, oss_key, sha256,
         status, extraction, created_at)
      VALUES ($1, $2, 'source', 'application/pdf', $3, 'stale.pdf', $4, NULL,
              $5, NULL, $6)`,
@@ -75,7 +74,7 @@ async function insertRawUpload(
       row.id,
       row.ownerId ?? 'owner-1',
       row.bytes ?? 10,
-      row.assetId ?? '',
+      row.ossKey ?? '',
       row.status ?? 'uploading',
       row.createdAt ?? Date.now(),
     ],
@@ -84,7 +83,7 @@ async function insertRawUpload(
 
 async function rowById(db: PGlite, id: string): Promise<Record<string, unknown> | null> {
   const result = await db.query<Record<string, unknown>>(
-    'SELECT id, asset_id, status FROM owner_material WHERE id = $1',
+    'SELECT id, oss_key, status FROM owner_material WHERE id = $1',
     [id],
   );
   return result.rows[0] ?? null;
@@ -111,7 +110,7 @@ describe('owner material reservations', () => {
     });
     expect(record.id).toBe('mat_1');
     expect(record.status).toBe('uploading');
-    expect(record.assetId).toBe('');
+    expect(record.ossKey).toBe('materials/owner-1/mat_1');
 
     const lockStatement = pool.statements.findIndex((statement) =>
       statement.includes('pg_advisory_xact_lock(hashtextextended($1, 0))'),
@@ -155,67 +154,68 @@ describe('owner material reservations', () => {
     ).rejects.toMatchObject({ name: 'MaterialQuotaExceededError', quota: 'bytes', maximum: 100 });
   });
 
-  it('records the asset id on the uploading reservation before finalize', async () => {
+  it('keeps the object key on the reservation through finalize', async () => {
     const limits = { maxCount: 10, maxTotalBytes: 1_000 };
     await registerOwnerMaterial(pool as unknown as ConnectableQueryable, input(), limits);
-    await recordOwnerMaterialAsset(pool as unknown as ConnectableQueryable, 'mat_1', 'asset-abc');
     const before = await rowById(pool.db, 'mat_1');
-    expect(before).toMatchObject({ asset_id: 'asset-abc', status: 'uploading' });
+    expect(before).toMatchObject({ oss_key: 'materials/owner-1/mat_1', status: 'uploading' });
 
     const finalized = await finalizeOwnerMaterial(
       pool as unknown as ConnectableQueryable,
       'mat_1',
       100,
       '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
-      'asset-abc',
     );
     expect(finalized.status).toBe('ready');
-    expect(finalized.assetId).toBe('asset-abc');
+    expect(finalized.ossKey).toBe('materials/owner-1/mat_1');
   });
 
-  it('reclaims a crashed reservation and its recorded asset entry (crash between put and finalize)', async () => {
-    // Simulate the crash point: the put committed and the asset id was durably
-    // recorded on the still-uploading reservation, but finalize never ran.
-    await registerOwnerMaterial(pool as unknown as ConnectableQueryable, input(), {
-      maxCount: 10,
-      maxTotalBytes: 1_000,
-    });
-    await recordOwnerMaterialAsset(pool as unknown as ConnectableQueryable, 'mat_1', 'asset-crash');
+  it('reclaims a crashed reservation and its recorded byte object', async () => {
+    await registerOwnerMaterial(
+      pool as unknown as ConnectableQueryable,
+      input({
+        ossKey: 'materials/owner-1/mat-crash',
+      }),
+      {
+        maxCount: 10,
+        maxTotalBytes: 1_000,
+      },
+    );
     await pool.query('UPDATE owner_material SET created_at = $2 WHERE id = $1', [
       'mat_1',
       Date.now() - 25 * 60 * 60 * 1_000,
     ]);
 
-    const removeAsset = vi.fn(async (assetId: string) => {
-      // The reservation must still exist when its asset entry is removed: the
+    const deleteBytes = vi.fn(async (objectKey: string) => {
+      // The reservation must still exist when its byte object is removed: the
       // pointer is deleted only after the bytes are confirmed reclaimed.
       const stillPresent = await pool.db.query<{ id: string }>(
         'SELECT id FROM owner_material WHERE id = $1',
         ['mat_1'],
       );
       expect(stillPresent.rows).toHaveLength(1);
-      expect(assetId).toBe('asset-crash');
+      expect(objectKey).toBe('materials/owner-1/mat-crash');
     });
 
     await reclaimStaleOwnerMaterialUploads(
       pool as unknown as ConnectableQueryable,
       'owner-1',
-      removeAsset,
+      deleteBytes,
     );
 
-    expect(removeAsset).toHaveBeenCalledTimes(1);
-    expect(removeAsset).toHaveBeenCalledWith('asset-crash');
+    expect(deleteBytes).toHaveBeenCalledTimes(1);
+    expect(deleteBytes).toHaveBeenCalledWith('materials/owner-1/mat-crash');
     expect(await rowById(pool.db, 'mat_1')).toBeNull();
   });
 
-  it('keeps a stale reservation when its asset removal fails and retries on the next pass', async () => {
+  it('keeps a stale reservation when byte deletion fails and retries on the next pass', async () => {
     await insertRawUpload(pool.db, {
       id: 'mat_stale',
-      assetId: 'asset-stubborn',
+      ossKey: 'materials/owner-1/mat-stubborn',
       createdAt: Date.now() - 25 * 60 * 60 * 1_000,
     });
 
-    const removeAsset = vi
+    const deleteBytes = vi
       .fn()
       .mockRejectedValueOnce(new Error('registry unavailable'))
       .mockResolvedValue(undefined);
@@ -223,7 +223,7 @@ describe('owner material reservations', () => {
     await reclaimStaleOwnerMaterialUploads(
       pool as unknown as ConnectableQueryable,
       'owner-1',
-      removeAsset,
+      deleteBytes,
     );
     // First pass: removal failed, so the reservation stays for the next pass.
     expect(await rowById(pool.db, 'mat_stale')).not.toBeNull();
@@ -231,52 +231,52 @@ describe('owner material reservations', () => {
     await reclaimStaleOwnerMaterialUploads(
       pool as unknown as ConnectableQueryable,
       'owner-1',
-      removeAsset,
+      deleteBytes,
     );
-    expect(removeAsset).toHaveBeenCalledTimes(2);
+    expect(deleteBytes).toHaveBeenCalledTimes(2);
     expect(await rowById(pool.db, 'mat_stale')).toBeNull();
   });
 
-  it('deletes stale asset-less reservations without touching the registry', async () => {
+  it('deletes stale keyless reservations without touching the byte store', async () => {
     await insertRawUpload(pool.db, {
       id: 'mat_empty',
-      assetId: '',
+      ossKey: '',
       createdAt: Date.now() - 25 * 60 * 60 * 1_000,
     });
 
-    const removeAsset = vi.fn().mockResolvedValue(undefined);
+    const deleteBytes = vi.fn().mockResolvedValue(undefined);
     await reclaimStaleOwnerMaterialUploads(
       pool as unknown as ConnectableQueryable,
       'owner-1',
-      removeAsset,
+      deleteBytes,
     );
 
-    expect(removeAsset).not.toHaveBeenCalled();
+    expect(deleteBytes).not.toHaveBeenCalled();
     expect(await rowById(pool.db, 'mat_empty')).toBeNull();
   });
 
   it('leaves fresh uploads and ready rows alone', async () => {
-    await insertRawUpload(pool.db, { id: 'mat_fresh', assetId: 'asset-fresh' });
+    await insertRawUpload(pool.db, { id: 'mat_fresh', ossKey: 'materials/owner-1/fresh' });
     await insertRawUpload(pool.db, {
       id: 'mat_old_ready',
-      assetId: 'asset-ready',
+      ossKey: 'materials/owner-1/ready',
       status: 'ready',
       createdAt: Date.now() - 25 * 60 * 60 * 1_000,
     });
 
-    const removeAsset = vi.fn().mockResolvedValue(undefined);
+    const deleteBytes = vi.fn().mockResolvedValue(undefined);
     await reclaimStaleOwnerMaterialUploads(
       pool as unknown as ConnectableQueryable,
       'owner-1',
-      removeAsset,
+      deleteBytes,
     );
 
-    expect(removeAsset).not.toHaveBeenCalled();
+    expect(deleteBytes).not.toHaveBeenCalled();
     expect(await rowById(pool.db, 'mat_fresh')).toMatchObject({ status: 'uploading' });
     expect(await rowById(pool.db, 'mat_old_ready')).toMatchObject({ status: 'ready' });
   });
 
-  it('derives a per-owner lock key that does not collide with the asset registry key', () => {
+  it('derives a namespaced per-owner quota lock key', () => {
     expect(ownerMaterialQuotaLockKey('owner-1')).toBe('owner-materials:owner-1:quota');
     expect(ownerMaterialQuotaLockKey('owner-1')).not.toBe('owner-materials:owner-1');
   });

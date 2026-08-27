@@ -193,7 +193,7 @@ describe('uploaded material extraction lifecycle', () => {
         stored.set('ast_transcript', bytes);
         return 'ast_transcript';
       },
-      putAsset: async (_sessionId, bytes) => {
+      putBytes: async (_sessionId, bytes) => {
         stored.set('ast_frame', bytes);
         return 'ast_frame';
       },

@@ -1,16 +1,9 @@
 /**
  * Server-side resolution of a client-allocated asset id for extraction.
  *
- * The browser asset pool hands every uploaded course material an allocated
- * asset id at upload time. When the deployment's pool is server-backed
- * (`NEXT_PUBLIC_PERSISTENCE=1` bootstraps an `HttpAssetStore`), that id also
- * names an entry in the server asset store, and the extract route can resolve
- * the original bytes here instead of asking the client to re-upload them.
- *
- * A browser-backed (self-deploy) pool never reaches this module: the client
- * detects the mode with `isAssetPoolServerBacked` and keeps uploading bytes.
- * The id still exists client-side, it is just not usable as a server-side
- * reference.
+ * Compatibility read fallback for callers that already hold an allocated
+ * server asset id. New app flows do not allocate registry assets, but retained
+ * documents and SDK clients may still name an existing entry.
  *
  * The resolution answers in five states so the route can map each to an honest
  * HTTP status: not configured (no `DATABASE_URL`), unauthenticated (the

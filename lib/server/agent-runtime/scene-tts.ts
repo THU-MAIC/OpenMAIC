@@ -1,5 +1,3 @@
-import type { AssetStore } from '@openmaic/storage';
-
 import { DEFAULT_TTS_MODELS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { generateTTS, TTSRequestTimeoutError } from '@/lib/audio/tts-providers';
 import type { TTSProviderId } from '@/lib/audio/types';
@@ -12,7 +10,7 @@ import {
   resolveTTSBaseUrl,
   resolveTTSModel,
 } from '@/lib/server/provider-config';
-import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
+import { persistClassroomMediaBytes } from '@/lib/server/classroom-media-bytes';
 
 export interface SceneTtsSummary {
   available: boolean;
@@ -26,6 +24,7 @@ export interface SceneTtsInput {
   scene: Scene;
   force: boolean;
   roster?: readonly GeneratedAgentConfig[] | null;
+  baseUrl?: string;
   signal?: AbortSignal;
 }
 
@@ -43,11 +42,8 @@ function audioMime(format: string) {
   return format === 'wav' ? 'audio/wav' : format === 'ogg' ? 'audio/ogg' : 'audio/mpeg';
 }
 
-/** Server-configured, capability-aware narration synthesis into the asset registry. */
-export async function synthesizeSceneNarration(
-  input: SceneTtsInput,
-  assetStore?: Pick<AssetStore, 'put'>,
-): Promise<SceneTtsSummary> {
+/** Server-configured narration synthesis into the stage's classroom-media path. */
+export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<SceneTtsSummary> {
   const enabled = enabledProviderIds();
   const bound = narratorVoice(input.roster);
   const providerId = (
@@ -73,8 +69,6 @@ export async function synthesizeSceneNarration(
       DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
       voice,
     ) || '';
-  const store =
-    assetStore ?? (await getServerPersistenceProvider(process.env.DATABASE_URL ?? '')).assetStore;
   let generated = 0;
   let skipped = 0;
   const failed: string[] = [];
@@ -100,11 +94,14 @@ export async function synthesizeSceneNarration(
         speech.text,
       );
       if (input.signal?.aborted) throw new Error('aborted');
-      speech.audioId = await store.put(
-        { key: 'shared' },
-        new Blob([Buffer.from(audio.audio)], { type: audioMime(audio.format) }),
-        { contentType: audioMime(audio.format) },
-      );
+      speech.audioId = await persistClassroomMediaBytes({
+        stageId: input.scene.stageId,
+        bytes: Buffer.from(audio.audio),
+        mime: audioMime(audio.format),
+        prefix: `tts-${action.id}`,
+        baseUrl: input.baseUrl,
+        signal: input.signal,
+      });
       generated += 1;
     } catch (error) {
       if (input.signal?.aborted) throw error;

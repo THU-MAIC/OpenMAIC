@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   providers: vi.fn(),
   generate: vi.fn(),
-  put: vi.fn(),
+  persist: vi.fn(),
 }));
 
 vi.mock('@/lib/server/provider-config', () => ({
@@ -15,8 +15,8 @@ vi.mock('@/lib/server/provider-config', () => ({
 
 vi.mock('@/lib/audio/tts-providers', () => ({ generateTTS: mocks.generate }));
 
-vi.mock('@/lib/persistence/server-provider', () => ({
-  getServerPersistenceProvider: vi.fn(async () => ({ assetStore: { put: mocks.put } })),
+vi.mock('@/lib/server/classroom-media-bytes', () => ({
+  persistClassroomMediaBytes: mocks.persist,
 }));
 
 import { synthesizeSceneNarration } from '@/lib/server/agent-runtime/scene-tts';
@@ -43,19 +43,23 @@ describe('scene TTS capability routing', () => {
     });
     expect(summary).toMatchObject({ available: false, changed: false });
     expect(mocks.generate).not.toHaveBeenCalled();
-    expect(mocks.put).not.toHaveBeenCalled();
+    expect(mocks.persist).not.toHaveBeenCalled();
   });
 
-  it('stores generated narration bytes in the asset registry', async () => {
+  it('stores generated narration bytes in classroom media', async () => {
     mocks.providers.mockReturnValue({ 'configured-tts': {} });
     mocks.generate.mockResolvedValue({ audio: new Uint8Array([1, 2]), format: 'mp3' });
-    mocks.put.mockResolvedValue('ast_audio');
+    mocks.persist.mockResolvedValue(
+      'https://openmaic.test/api/classroom-media/stage-a/media/tts.mp3',
+    );
     const target = structuredClone(scene);
     const summary = await synthesizeSceneNarration({ scene: target, force: false });
     expect(summary).toMatchObject({ available: true, changed: true, generated: 1 });
-    expect(target.actions?.[0]).toMatchObject({ audioId: 'ast_audio' });
-    expect(mocks.put).toHaveBeenCalledWith({ key: 'shared' }, expect.any(Blob), {
-      contentType: 'audio/mpeg',
+    expect(target.actions?.[0]).toMatchObject({
+      audioId: 'https://openmaic.test/api/classroom-media/stage-a/media/tts.mp3',
     });
+    expect(mocks.persist).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: 'stage-a', mime: 'audio/mpeg' }),
+    );
   });
 });

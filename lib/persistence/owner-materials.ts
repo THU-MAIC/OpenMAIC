@@ -8,19 +8,18 @@
  * branch's agent-session materials stay session-scoped (the agent tools' list
  * surface); this table is the owner's durable library that the uploader feeds.
  *
- * Bytes live in the host's hash-addressed asset registry (the spec's neutral
- * replacement for the reference's OSS byte path): the row records the returned
- * asset id instead of an object key.
+ * Bytes live in the neutral material byte store. The row records its private
+ * object key, matching the reference metadata shape without vendor storage.
  *
  * ## Upload lifecycle
  *
  * An upload reserves a row with `status = 'uploading'` (quota-checked against
- * the owner's active source materials), streams its bytes into the asset
- * registry through a sha256 meter, then finalizes the row to `'ready'` with the
- * digest. A failed upload abandons the row; a process death leaves `uploading`
- * rows behind, which the next upload's 24-hour reclaim removes -- its asset
- * entry first, then the reservation, so a crash mid-reclaim never loses the
- * pointer to the bytes.
+ * the owner's active source materials), streams its bytes into the byte
+ * byte store through a sha256 meter, then finalizes the row to `'ready'` with
+ * the digest. A failed upload abandons the row; a process death leaves
+ * `uploading` rows behind, which the next upload's 24-hour reclaim removes --
+ * its object first, then the reservation, so a crash mid-reclaim never loses
+ * the pointer to the bytes.
  */
 import type { Queryable } from '@openmaic/storage/document/pg';
 import {
@@ -47,8 +46,8 @@ export interface OwnerMaterialRecord {
   mime: string | null;
   bytes: number;
   originalName: string | null;
-  /** Asset-registry id for the private bytes (the reference's `ossKey`). */
-  assetId: string;
+  /** Private material-byte-store object key. */
+  ossKey: string;
   /** Null only while status=uploading; finalized ready rows always carry a digest. */
   sha256: string | null;
   status: OwnerMaterialStatus;
@@ -96,7 +95,7 @@ export interface RegisterOwnerMaterialInput {
   mime?: string;
   bytes: number;
   originalName?: string;
-  assetId: string;
+  ossKey: string;
   extraction?: OwnerMaterialExtraction;
 }
 
@@ -109,7 +108,7 @@ CREATE TABLE IF NOT EXISTS owner_material (
   mime TEXT,
   bytes DOUBLE PRECISION NOT NULL,
   original_name TEXT,
-  asset_id TEXT NOT NULL,
+  oss_key TEXT NOT NULL,
   sha256 TEXT,
   status TEXT NOT NULL DEFAULT 'ready',
   extraction JSONB,
@@ -136,7 +135,7 @@ interface RawOwnerMaterialRow extends Record<string, unknown> {
   mime: string | null;
   bytes: number | string;
   original_name: string | null;
-  asset_id: string;
+  oss_key: string;
   sha256: string | null;
   status: string;
   extraction: unknown;
@@ -151,7 +150,7 @@ const OWNER_MATERIAL_COLUMNS = `id,
   mime,
   bytes,
   original_name,
-  asset_id,
+  oss_key,
   sha256,
   status,
   extraction,
@@ -167,7 +166,7 @@ function rowToRecord(row: RawOwnerMaterialRow): OwnerMaterialRecord {
     mime: row.mime,
     bytes: Number(row.bytes),
     originalName: row.original_name,
-    assetId: row.asset_id,
+    ossKey: row.oss_key,
     sha256: row.sha256,
     status: row.status as OwnerMaterialStatus,
     extraction: extractionOf(row.extraction),
@@ -212,10 +211,8 @@ const STALE_UPLOAD_AGE_MS = 24 * 60 * 60 * 1_000;
  *
  * The key namespaces the owner's id so two concurrent uploads for the same
  * owner queue behind the same transaction-scoped lock (see
- * {@link registerOwnerMaterial}). It deliberately differs from the asset
- * registry's own per-principal lock key: reserving a material and storing its
- * bytes are separate transactions, so sharing a key would only couple them
- * without adding safety.
+ * {@link registerOwnerMaterial}). Reserving metadata and storing bytes are
+ * separate operations; the lock protects the quota read-check-insert section.
  */
 export function ownerMaterialQuotaLockKey(ownerId: string): string {
   return `owner-materials:${ownerId}:quota`;
@@ -225,25 +222,25 @@ export function ownerMaterialQuotaLockKey(ownerId: string): string {
  * Reclaim uploads that crashed before finalize and are older than the sweep
  * horizon.
  *
- * Order is load-bearing: each stale reservation's asset entry is removed
+ * Order is load-bearing: each stale reservation's byte object is removed
  * first, and only then is the reservation deleted. Deleting the reservation
  * first would lose the pointer to its bytes on a crash between the two, so the
- * asset entry would keep consuming the owner's asset quota forever. A
- * reservation whose asset removal throws is left in place (still quota-counted)
+ * object would remain orphaned forever. A reservation whose byte deletion
+ * throws is left in place (still quota-counted)
  * and the next pass retries it.
  *
- * @param removeAsset Reclaims one recorded asset id; must resolve when the
- *   entry is removed or confirmed already absent, and throw to keep the
+ * @param deleteBytes Reclaims one recorded object key; must resolve when the
+ *   object is removed or confirmed already absent, and throw to keep the
  *   reservation for the next pass.
  */
 export async function reclaimStaleOwnerMaterialUploads(
   queryable: Queryable,
   ownerId: string,
-  removeAsset: (assetId: string) => Promise<void>,
+  deleteBytes: (ossKey: string) => Promise<void>,
 ): Promise<void> {
   const staleBefore = Date.now() - STALE_UPLOAD_AGE_MS;
-  const stale = await queryable.query<{ id: string; asset_id: string }>(
-    `SELECT id, asset_id
+  const stale = await queryable.query<{ id: string; oss_key: string }>(
+    `SELECT id, oss_key
        FROM owner_material
       WHERE owner_id = $1
         AND status = 'uploading'
@@ -251,11 +248,11 @@ export async function reclaimStaleOwnerMaterialUploads(
     [ownerId, staleBefore],
   );
   for (const row of stale.rows) {
-    if (row.asset_id !== '') {
+    if (row.oss_key !== '') {
       try {
-        await removeAsset(row.asset_id);
+        await deleteBytes(row.oss_key);
       } catch {
-        // The asset entry is not confirmed gone; keep the reservation so the
+        // The byte object is not confirmed gone; keep the reservation so the
         // next pass retries with the pointer intact.
         continue;
       }
@@ -312,7 +309,7 @@ export async function registerOwnerMaterial(
     const inserted = await tx.query<RawOwnerMaterialRow>(
       `INSERT INTO owner_material
          (id, owner_id, kind, derived_from, mime, bytes, original_name,
-          asset_id, sha256, status, extraction, created_at)
+          oss_key, sha256, status, extraction, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, 'uploading', $9::jsonb, $10)
        RETURNING ${OWNER_MATERIAL_COLUMNS}`,
       [
@@ -323,7 +320,7 @@ export async function registerOwnerMaterial(
         input.mime ?? null,
         input.bytes,
         input.originalName ?? null,
-        input.assetId,
+        input.ossKey,
         input.extraction ? JSON.stringify(input.extraction) : null,
         Date.now(),
       ],
@@ -332,50 +329,22 @@ export async function registerOwnerMaterial(
   });
 }
 
-/**
- * Bind the asset-registry id onto a still-`uploading` reservation.
- *
- * The upload's bytes are stored in a separate transaction from the
- * reservation, so this is a distinct durable step between the asset `put` and
- * {@link finalizeOwnerMaterial}. Recording the id here -- not only inside
- * finalize -- closes the crash window in which a committed asset entry had its
- * id recorded nowhere: the stale-upload reclaim can now see the id and remove
- * the bytes when it reclaims the reservation.
- */
-export async function recordOwnerMaterialAsset(
-  queryable: Queryable,
-  materialId: string,
-  assetId: string,
-): Promise<void> {
-  const result = await queryable.query<{ id: string }>(
-    `UPDATE owner_material
-        SET asset_id = $2
-      WHERE id = $1
-        AND status = 'uploading'
-        AND deleted_at IS NULL
-      RETURNING id`,
-    [materialId, assetId],
-  );
-  if (!result.rows[0]) throw new Error(`material ${materialId} cannot record its asset id`);
-}
-
 /** Finalize a successfully stored object. Reserved bytes may only shrink. */
 export async function finalizeOwnerMaterial(
   queryable: Queryable,
   materialId: string,
   bytes: number,
   sha256: string,
-  assetId: string,
 ): Promise<OwnerMaterialRecord> {
   const result = await queryable.query<RawOwnerMaterialRow>(
     `UPDATE owner_material
-        SET bytes = $2, sha256 = $3, status = 'ready', asset_id = $4
+        SET bytes = $2, sha256 = $3, status = 'ready'
       WHERE id = $1
         AND status = 'uploading'
         AND deleted_at IS NULL
         AND bytes >= $2
       RETURNING ${OWNER_MATERIAL_COLUMNS}`,
-    [materialId, bytes, sha256, assetId],
+    [materialId, bytes, sha256],
   );
   if (!result.rows[0]) throw new Error(`material ${materialId} cannot be finalized`);
   return rowToRecord(result.rows[0]);

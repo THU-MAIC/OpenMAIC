@@ -1,5 +1,8 @@
+import { createHash } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+
 import type { AgentTool } from '@earendil-works/pi-agent-core';
-import type { AssetStore } from '@openmaic/storage';
 import { Type, type Static } from 'typebox';
 
 import { generateVideo, normalizeVideoOptions, VIDEO_PROVIDERS } from '@/lib/media/video-providers';
@@ -19,9 +22,10 @@ import {
 } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
-import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { readResponseBodyWithLimit } from '@/lib/server/bounded-download';
+import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
+import { resolveMediaServingOrigin } from '@/lib/server/media-origin';
 import type { CourseToolDeps } from './course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import { errorResult, MEDIA_TOOL_ERROR_REASONS } from './media-tool-result';
@@ -73,6 +77,7 @@ type GenerateConfiguredVideo = (
 interface PersistVideoInput {
   result: VideoGenerationResult;
   stageId: string;
+  baseUrl?: string;
   signal: AbortSignal;
 }
 
@@ -83,12 +88,21 @@ interface PersistedVideo {
 
 type PersistGeneratedVideo = (input: PersistVideoInput) => Promise<PersistedVideo>;
 
-export interface GenerateVideoToolDeps extends Pick<CourseToolDeps, 'sessionId' | 'abortSignal'> {
+export interface GenerateVideoToolDeps extends Pick<
+  CourseToolDeps,
+  'sessionId' | 'baseUrl' | 'abortSignal'
+> {
   getConfiguredVideoProviders?: () => Record<string, { models?: string[]; disabled?: boolean }>;
   resolveVideoProviderConfig?: (providerId: VideoProviderId) => VideoGenerationConfig;
   generateConfiguredVideo?: GenerateConfiguredVideo;
   persistGeneratedVideo?: PersistGeneratedVideo;
   timeoutMs?: number;
+}
+
+function extensionForVideoMime(mime: string): string {
+  if (mime === 'video/webm') return 'webm';
+  if (mime === 'video/quicktime') return 'mov';
+  return 'mp4';
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -135,19 +149,19 @@ async function fetchGeneratedVideo(url: string, signal: AbortSignal): Promise<Re
 }
 
 /**
- * Video providers return hosted URLs only, including download URLs that may
- * expire. Materialize those bytes through the shared asset registry (the same
- * neutral surface `use_material_media` and `generate_image` use); the returned
- * id is the stable `src` the agent writes into a slide video element.
+ * Video providers return hosted URLs that may expire. Materialize those bytes
+ * through the same local classroom-media path as generate_image and classic mode.
  */
-export async function defaultPersistGeneratedVideo(
-  input: PersistVideoInput,
-  assetStore?: Pick<AssetStore, 'put'>,
-): Promise<PersistedVideo> {
-  throwIfAborted(input.signal);
+export async function defaultPersistGeneratedVideo({
+  result,
+  stageId,
+  baseUrl,
+  signal,
+}: PersistVideoInput): Promise<PersistedVideo> {
+  throwIfAborted(signal);
   let parsed: URL;
   try {
-    parsed = new URL(input.result.url);
+    parsed = new URL(result.url);
   } catch {
     throw new Error('Video provider returned an invalid URL');
   }
@@ -155,28 +169,26 @@ export async function defaultPersistGeneratedVideo(
     throw new Error(`Video provider returned an unsupported URL protocol: ${parsed.protocol}`);
   }
 
-  const response = await fetchGeneratedVideo(input.result.url, input.signal);
+  const response = await fetchGeneratedVideo(result.url, signal);
   if (!response.ok) throw new Error(`Generated video download failed: HTTP ${response.status}`);
   const mime = response.headers.get('content-type')?.split(';')[0]?.trim() || 'video/mp4';
   if (!mime.startsWith('video/')) {
     throw new Error(`Generated video download returned unexpected content type: ${mime}`);
   }
   const bytes = await readResponseBodyWithLimit(response, { maxBytes: MAX_GENERATED_VIDEO_BYTES });
-  throwIfAborted(input.signal);
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  throwIfAborted(signal);
 
-  const store =
-    assetStore ?? (await getServerPersistenceProvider(process.env.DATABASE_URL ?? '')).assetStore;
-  // Copy into a fresh ArrayBuffer-backed view: BlobPart requires an
-  // ArrayBuffer-backed typed array, and a caller-supplied Buffer may be backed
-  // by a pool or SharedArrayBuffer.
-  const src = await store.put(
-    { key: 'shared' },
-    new Blob([new Uint8Array(bytes)], { type: mime }),
-    { contentType: mime },
-  );
-  throwIfAborted(input.signal);
-  if (!src) throw new Error('Video storage returned an empty URL');
-  return { src, mime };
+  const mediaDir = path.join(CLASSROOMS_DIR, stageId, 'media');
+  const filename = `generated-${hash}.${extensionForVideoMime(mime)}`;
+  await fs.mkdir(mediaDir, { recursive: true });
+  throwIfAborted(signal);
+  await fs.writeFile(path.join(mediaDir, filename), bytes);
+  throwIfAborted(signal);
+  return {
+    src: `${resolveMediaServingOrigin(baseUrl)}/api/classroom-media/${stageId}/media/${filename}`,
+    mime,
+  };
 }
 
 /**
@@ -302,6 +314,7 @@ export function buildGenerateVideoTool(
         const stored = await persist({
           result,
           stageId,
+          baseUrl: deps.baseUrl,
           signal: ioSignal,
         });
         throwIfAborted(ioSignal);

@@ -1,6 +1,5 @@
 import {
   createMaterialId,
-  toAssetId,
   type ClaimedMaterialExtraction,
   type CompleteMaterialExtractionInput,
 } from '@openmaic/storage';
@@ -14,7 +13,6 @@ import {
   type MediaArtifact,
   type MediaExtractorProvider,
 } from '@/lib/document';
-import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import {
   getServerPDFProviders,
   resolvePDFApiKey,
@@ -23,7 +21,8 @@ import {
 } from '@/lib/server/provider-config';
 import {
   getAgentSessionMaterialStore,
-  materialPrincipal,
+  resolveSessionMaterialRawAsset,
+  storeSessionMaterialRawAsset,
 } from '@/lib/server/agent-runtime/session-materials';
 
 import { isTransientExtractionError, MaterialExtractionError } from './errors';
@@ -37,7 +36,7 @@ export interface MaterialExtractionExecutionDependencies {
   mediaProviders?: () => MediaExtractorProvider[];
   configuredProviderIds?: () => string[];
   putText?: (sessionId: string, text: Buffer) => Promise<string>;
-  putAsset?: (sessionId: string, bytes: Buffer, mime: string) => Promise<string>;
+  putBytes?: (sessionId: string, bytes: Buffer, mime: string) => Promise<string>;
   complete?: (input: CompleteMaterialExtractionInput) => Promise<boolean>;
 }
 
@@ -81,34 +80,17 @@ function extractorCandidates(
   );
 }
 
-async function defaultResolveSource(sessionId: string, assetId: string) {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) throw new Error('Agent runtime requires DATABASE_URL');
-  const provider = await getServerPersistenceProvider(connectionString);
-  const asset = await provider.assetStore.resolve(materialPrincipal(sessionId), toAssetId(assetId));
-  return asset ? { bytes: Buffer.from(asset.bytes), mime: asset.mime } : null;
+async function defaultResolveSource(sessionId: string, objectKey: string) {
+  return resolveSessionMaterialRawAsset(sessionId, objectKey);
 }
 
 async function defaultPutText(sessionId: string, text: Buffer): Promise<string> {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) throw new Error('Agent runtime requires DATABASE_URL');
-  const provider = await getServerPersistenceProvider(connectionString);
-  return provider.assetStore.put(
-    materialPrincipal(sessionId),
-    new Blob([new Uint8Array(text)], { type: 'text/markdown' }),
-    { contentType: 'text/markdown' },
-  );
+  const key = await storeSessionMaterialRawAsset(sessionId, text, 'text/markdown');
+  return key;
 }
 
-async function defaultPutAsset(sessionId: string, bytes: Buffer, mime: string): Promise<string> {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) throw new Error('Agent runtime requires DATABASE_URL');
-  const provider = await getServerPersistenceProvider(connectionString);
-  return provider.assetStore.put(
-    materialPrincipal(sessionId),
-    new Blob([new Uint8Array(bytes)], { type: mime }),
-    { contentType: mime },
-  );
+async function defaultPutBytes(sessionId: string, bytes: Buffer, mime: string): Promise<string> {
+  return storeSessionMaterialRawAsset(sessionId, bytes, mime);
 }
 
 /** Extract one lease-fenced source through the upstream extractor registry. */
@@ -165,12 +147,12 @@ export async function extractClaimedSessionMaterial(
       Buffer.from(text, 'utf8'),
     );
     const transcriptId = createMaterialId();
-    const putAsset = dependencies.putAsset ?? defaultPutAsset;
+    const putBytes = dependencies.putBytes ?? defaultPutBytes;
     const images = [];
     for (const asset of artifact.assets ?? []) {
       if (asset.type !== 'image' || !asset.data) continue;
       const bytes = Buffer.from(asset.data, 'base64');
-      const rawAssetId = await putAsset(source.sessionId, bytes, asset.mimeType ?? 'image/webp');
+      const rawAssetId = await putBytes(source.sessionId, bytes, asset.mimeType ?? 'image/webp');
       images.push({
         id: createMaterialId(),
         kind: 'image' as const,

@@ -122,6 +122,14 @@ export async function regenerateSpeechAudio(
   if (!text || !action.id) return null;
   const requestId = `tts_request_s${sceneOrder}_${action.id}`;
   const stageId = useStageStore.getState().stage?.id;
-  const replaceAssetId = await exclusivelyOwnedAudioId(action.audioId, stageId);
-  return generateAndStoreTTS(requestId, text, language, signal, undefined, replaceAssetId, stageId);
+  const existingAudioId = await exclusivelyOwnedAudioId(action.audioId, stageId);
+  return generateAndStoreTTS(
+    requestId,
+    text,
+    language,
+    signal,
+    undefined,
+    existingAudioId,
+    stageId,
+  );
 }

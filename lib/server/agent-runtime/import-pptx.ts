@@ -23,7 +23,6 @@ import type { OssUpload } from '@openmaic/importer';
 
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
-import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import type { Action, SpeechAction } from '@/lib/types/action';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene, SlideContent, Stage } from '@/lib/types/stage';
@@ -188,30 +187,14 @@ function mimeFromName(filename: string): string {
 }
 
 /**
- * Upload one media blob extracted from the deck. Bytes go through the shared
- * asset registry (the same neutral surface `use_material_media` and
- * `generate_image` use); the returned id is a stable `src`. A thrown upload
- * must not abort the deck parse: the importer treats a rejected callback as a
- * missing asset and still returns the slide, so the fallback is the original
- * data URL.
+ * Keep extracted deck media self-contained as data URLs. This is the neutral
+ * fallback from the reference; vendor object-storage upload is intentionally
+ * absent from the public repository.
  */
 export async function defaultUploadImportedMedia(blob: Blob, filename: string): Promise<string> {
   const buffer = Buffer.from(await blob.arrayBuffer());
   const mime = blob.type || mimeFromName(filename);
-  const dataUrl = `data:${mime};base64,${buffer.toString('base64')}`;
-  try {
-    const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
-    const src = await provider.assetStore.put(
-      { key: 'shared' },
-      new Blob([buffer], { type: mime }),
-      { contentType: mime },
-    );
-    if (src) return src;
-  } catch {
-    // A thrown upload must not abort the deck parse: the importer treats a
-    // rejected callback as a missing asset and still returns the slide.
-  }
-  return dataUrl;
+  return `data:${mime};base64,${buffer.toString('base64')}`;
 }
 
 export function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {

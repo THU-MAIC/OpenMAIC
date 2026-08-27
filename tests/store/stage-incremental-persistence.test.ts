@@ -13,7 +13,7 @@ vi.mock('@/lib/utils/stage-storage', () => ({
 }));
 
 import { flushStageSave, restorePendingStageChanges, useStageStore } from '@/lib/store/stage';
-import { clearAssetPool, getAssetPool, putAsset } from '@/lib/media/asset-pool';
+import { clearAssetPool, getAssetPool } from '@/lib/media/asset-pool';
 import type { ChatSession } from '@/lib/types/chat';
 import type { Scene, Stage } from '@/lib/types/stage';
 
@@ -105,7 +105,7 @@ describe('incremental stage flush', () => {
   it('keeps allocated bytes intact across scene deletion and undo', async () => {
     vi.useRealTimers();
     vi.stubGlobal('indexedDB', new IDBFactory());
-    const ref = await putAsset(new Blob(['undo-safe-media'], { type: 'image/png' }));
+    const ref = await getAssetPool().put(new Blob(['undo-safe-media'], { type: 'image/png' }));
     const deleted = scene('scene-media');
     if (deleted.content.type !== 'slide') throw new Error('Expected a slide scene');
     deleted.content.canvas.elements = [

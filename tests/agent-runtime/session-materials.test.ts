@@ -4,19 +4,15 @@
  * Drives the real `fetch_url` tool end-to-end over a PGlite-backed host: the
  * real session store registers the observed URL, the real trust gate admits
  * it, an injected fetch produces a page, and `createWebMaterial` persists the
- * markdown through the real asset registry (PgAssetStore + PgAssetByteStore)
- * and records the returned asset id on the material row — the neutral
- * counterpart of the reference's `ossKey` linkage. The round-trip is verified
- * by resolving the recorded asset id back to the exact bytes.
+ * markdown through the material byte store and records the object key on the
+ * material row. The round-trip is verified by reading that key back.
  */
 import { PGlite } from '@electric-sql/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
-import { PgAssetByteStore } from '@openmaic/storage/asset/pg-bytes';
 import { ensureAgentSessionSchema, PgAgentSessionStore } from '@openmaic/storage/agent-session/pg';
-import { toAssetId } from '@openmaic/storage';
 import type { Queryable } from '@openmaic/storage/asset/pg';
+import { setMaterialByteStoreForTests } from '@/lib/server/materials/bytes';
 
 const mocks = vi.hoisted(() => ({
   getAgentSessionStore: vi.fn(),
@@ -46,10 +42,15 @@ async function makeHost() {
   const db = new PGlite();
   await db.waitReady;
   await ensureAgentSessionSchema(db);
-  await ensureAssetSchema(db);
-  const assetStore = new PgAssetStore(db, {
-    withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),
-    byteStore: new PgAssetByteStore(db),
+  const bytes = new Map<string, Buffer>();
+  setMaterialByteStoreForTests({
+    put: async (key, body) => void bytes.set(key, Buffer.from(body as Uint8Array)),
+    get: async (key) => {
+      const value = bytes.get(key);
+      if (!value) throw new Error(`missing material bytes: ${key}`);
+      return value;
+    },
+    delete: async (key) => void bytes.delete(key),
   });
   const sessionStore = new PgAgentSessionStore(db, {
     withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),
@@ -57,9 +58,9 @@ async function makeHost() {
   dbCounter += 1;
   const connectionString = `postgres://roundtrip-${dbCounter}`;
   mocks.getAgentSessionStore.mockResolvedValue(sessionStore);
-  mocks.getServerPersistenceProvider.mockResolvedValue({ pool: db, assetStore });
+  mocks.getServerPersistenceProvider.mockResolvedValue({ pool: db });
   vi.stubEnv('DATABASE_URL', connectionString);
-  return { db, assetStore, sessionStore };
+  return { bytes, db, sessionStore };
 }
 
 beforeEach(() => {
@@ -68,8 +69,8 @@ beforeEach(() => {
 });
 
 describe('session materials persistence', () => {
-  it('persists a fetched page as a web material linking the asset id, and reads it back', async () => {
-    const { assetStore, sessionStore } = await makeHost();
+  it('persists a fetched page as a web material linking its object key, and reads it back', async () => {
+    const { bytes, sessionStore } = await makeHost();
     await sessionStore.createSession({ id: 'session-1', ownerId: 'owner-a', prompt: 'p' });
     // The trust gate admits only session-observed origins.
     await registerSessionUrls('session-1', ['https://example.com/article'], 'user');
@@ -105,16 +106,9 @@ describe('session materials persistence', () => {
       sourceUrl: 'https://example.com/article',
       textChars: markdown.length,
     });
-    expect(material?.textAssetId).toMatch(/^ast_/);
+    expect(material?.textAssetId).toMatch(/^materials\/session-1\/mat_[^/]+\/text\.md$/);
 
-    // The recorded asset id resolves to the exact stored bytes (hash-addressed
-    // registry linkage, the neutral counterpart of the reference ossKey).
-    const resolved = await assetStore.resolve(
-      { key: `session-materials:session-1` },
-      toAssetId(material!.textAssetId!),
-    );
-    expect(Buffer.from(resolved!.bytes).toString('utf8')).toBe(markdown);
-    expect(resolved!.mime).toBe('text/markdown');
+    expect(bytes.get(material!.textAssetId!)?.toString('utf8')).toBe(markdown);
 
     // The session listing shows the new material newest-first.
     const listed = await listSessionMaterials('session-1');
@@ -139,8 +133,8 @@ describe('session materials persistence', () => {
     expect(await listSessionMaterials('session-1')).toEqual([]);
   });
 
-  it('removes the stored asset when the material row cannot be created', async () => {
-    const { db } = await makeHost();
+  it('removes stored bytes when the material row cannot be created', async () => {
+    const { bytes } = await makeHost();
     // No session exists, so the material INSERT fails its FK — the adapter
     // must not leak the asset it just stored.
     const page = {
@@ -158,12 +152,7 @@ describe('session materials persistence', () => {
       name: 'AgentSessionMaterialError',
       code: 'session_missing',
     });
-    // No material row and no orphaned asset entry for the failed session.
-    const entries = await db.query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM asset_entries WHERE principal = $1`,
-      ['session-materials:session-missing'],
-    );
-    expect(entries.rows[0]!.n).toBe('0');
+    expect([...bytes.keys()]).toEqual([]);
   });
 
   it('delegates reads through the session-scoped store', async () => {

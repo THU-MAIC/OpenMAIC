@@ -9,12 +9,15 @@ import { MAX_GENERATED_VIDEO_BYTES } from '@/lib/server/agent-runtime/generate-v
 
 const mocks = vi.hoisted(() => ({
   recordGenerationUsage: vi.fn().mockResolvedValue(undefined),
+  mkdir: vi.fn().mockResolvedValue(undefined),
+  writeFile: vi.fn().mockResolvedValue(undefined),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('@/lib/server/usage-storage', () => ({
   recordGenerationUsage: mocks.recordGenerationUsage,
 }));
+vi.mock('node:fs', () => ({ promises: { mkdir: mocks.mkdir, writeFile: mocks.writeFile } }));
 vi.mock('@/lib/server/ssrf-guard', () => ({ validateUrlForSSRF: async () => null }));
 vi.mock('@/lib/logger', () => ({ createLogger: () => mocks.log }));
 
@@ -156,6 +159,7 @@ describe('generate_video tool', () => {
     expect(persistGeneratedVideo).toHaveBeenCalledWith({
       result: expect.objectContaining({ url: 'https://cdn.example.com/generated/lesson.webm' }),
       stageId: 'stage-owner',
+      baseUrl: undefined,
       signal: expect.any(AbortSignal),
     });
     // Success details are provider-neutral: no provider id leaks into the
@@ -175,7 +179,7 @@ describe('generate_video tool', () => {
     );
   });
 
-  it('materializes a provider download URL through the shared asset registry', async () => {
+  it('materializes a provider download URL through classroom media', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -184,32 +188,27 @@ describe('generate_video tool', () => {
         }),
       ),
     );
-    const put = vi.fn().mockResolvedValue('ast_provider-video');
     await expect(
-      defaultPersistGeneratedVideo(
-        {
-          result: {
-            url: 'https://cdn.example.com/generated/lesson.mov',
-            duration: 6,
-            width: 1280,
-            height: 720,
-          },
-          stageId: 'stage-owner',
-          signal: new AbortController().signal,
+      defaultPersistGeneratedVideo({
+        result: {
+          url: 'https://cdn.example.com/generated/lesson.mov',
+          duration: 6,
+          width: 1280,
+          height: 720,
         },
-        { put },
-      ),
+        stageId: 'stage-owner',
+        baseUrl: 'https://openmaic.test',
+        signal: new AbortController().signal,
+      }),
     ).resolves.toEqual({
-      src: 'ast_provider-video',
+      src: expect.stringMatching(
+        /^https:\/\/openmaic\.test\/api\/classroom-media\/stage-owner\/media\/generated-[a-f0-9]{64}\.mov$/,
+      ),
       mime: 'video/quicktime',
     });
-    expect(put).toHaveBeenCalledWith(
-      { key: 'shared' },
-      expect.objectContaining({
-        size: Buffer.from('real-video-bytes').length,
-        type: 'video/quicktime',
-      }),
-      { contentType: 'video/quicktime' },
+    expect(mocks.writeFile).toHaveBeenCalledWith(
+      expect.stringMatching(/\.mov$/),
+      Buffer.from('real-video-bytes'),
     );
   });
 
@@ -226,23 +225,19 @@ describe('generate_video tool', () => {
         }),
       ),
     );
-    const put = vi.fn();
     await expect(
-      defaultPersistGeneratedVideo(
-        {
-          result: {
-            url: 'https://cdn.example.com/generated/lesson.mp4',
-            duration: 5,
-            width: 1280,
-            height: 720,
-          },
-          stageId: 'stage-owner',
-          signal: new AbortController().signal,
+      defaultPersistGeneratedVideo({
+        result: {
+          url: 'https://cdn.example.com/generated/lesson.mp4',
+          duration: 5,
+          width: 1280,
+          height: 720,
         },
-        { put },
-      ),
+        stageId: 'stage-owner',
+        signal: new AbortController().signal,
+      }),
     ).rejects.toThrow(`Download exceeded the ${MAX_GENERATED_VIDEO_BYTES}-byte response limit`);
-    expect(put).not.toHaveBeenCalled();
+    expect(mocks.writeFile).not.toHaveBeenCalled();
   });
 
   it('fails loudly on provider errors without falling back', async () => {

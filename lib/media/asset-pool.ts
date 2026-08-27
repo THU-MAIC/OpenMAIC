@@ -1,7 +1,6 @@
 import '@/lib/persistence/bootstrap';
 
 import { BrowserAssetStore, toAssetId } from '@openmaic/storage';
-import type { AssetMeta } from '@openmaic/dsl';
 import {
   isAssetPoolServerBacked,
   registerAssetPoolStorageResetHook,
@@ -12,11 +11,7 @@ import {
   expectStageRealmPresenceBinding,
   releaseStageRealmPresenceBinding,
 } from './stage-realm-presence';
-import {
-  bindAssetReplacementChannel,
-  notifyAssetReplaced,
-  observeAssetReplacements,
-} from './asset-replacement-events';
+import { bindAssetReplacementChannel, observeAssetReplacements } from './asset-replacement-events';
 
 const ASSET_POOL_DATABASE_NAME = 'maic-asset-pool';
 let pool: AssetPoolStore | undefined;
@@ -85,16 +80,6 @@ export function getAssetPool(): AssetPoolStore {
     }
     return new BrowserAssetStore({ dbName: ASSET_POOL_DATABASE_NAME });
   })());
-}
-
-export function putAsset(blob: Blob, meta: AssetMeta = {}): Promise<string> {
-  return getAssetPool().put(blob, meta);
-}
-
-export async function replaceAsset(ref: string, blob: Blob, meta: AssetMeta = {}): Promise<void> {
-  const current = getAssetPool();
-  await current.replace(toAssetId(ref), blob, meta);
-  await notifyAssetReplaced(ref, current);
 }
 
 export function removeAsset(ref: string): Promise<void> {

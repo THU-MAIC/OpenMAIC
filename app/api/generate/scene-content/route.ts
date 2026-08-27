@@ -28,7 +28,6 @@ import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
-import { DEFAULT_INGEST_AWAIT_TIMEOUT_MS } from '@/lib/document/extract-source';
 import {
   resolveVisionImagesForPrompt,
   type VisionPromptImage,
@@ -47,7 +46,7 @@ export const maxDuration = 300;
  * sequentially: when the budget expires the phase STOPS and generation
  * proceeds with whatever resolved so far (degrade, never fail).
  */
-const VISION_RESOLUTION_BUDGET_MS = DEFAULT_INGEST_AWAIT_TIMEOUT_MS;
+const VISION_RESOLUTION_BUDGET_MS = 15_000;
 
 /**
  * Consecutive-failure fuse for the resolve-with-refill loop: after this many

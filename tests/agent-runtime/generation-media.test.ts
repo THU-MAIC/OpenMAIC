@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AgentSessionMaterial, AssetStore } from '@openmaic/storage';
+import type { AgentSessionMaterial } from '@openmaic/storage';
+
+const mocks = vi.hoisted(() => ({
+  persist: vi.fn(async () => 'https://openmaic.test/api/classroom-media/stage-a/media/image.png'),
+}));
+
+vi.mock('@/lib/server/classroom-media-bytes', () => ({
+  persistClassroomMediaBytes: mocks.persist,
+}));
 
 import { buildMaterialMediaTool } from '@/lib/server/agent-runtime/material-media';
 import { buildScenePreviewTools } from '@/lib/server/agent-runtime/scene-preview';
@@ -10,13 +18,11 @@ function textOf(result: unknown): string {
 }
 
 describe('generation media tools', () => {
-  it('promotes session-scoped media bytes through the asset registry', async () => {
-    const resolve = vi.fn(async () => ({
-      bytes: new Uint8Array([1, 2, 3]),
+  it('copies session-scoped media bytes into classroom media', async () => {
+    const readRawBytes = vi.fn(async () => ({
+      bytes: Buffer.from([1, 2, 3]),
       mime: 'image/png',
-      byteLength: 3,
     }));
-    const put = vi.fn(async () => 'ast_course_media');
     const material = {
       id: 'mat_image',
       sessionId: 'session-a',
@@ -33,17 +39,20 @@ describe('generation media tools', () => {
     const tool = buildMaterialMediaTool({
       sessionId: 'session-a',
       getMaterial: vi.fn(async (sessionId) => (sessionId === 'session-a' ? material : null)),
-      assetStore: { resolve, put } as unknown as AssetStore,
+      readRawBytes,
     });
-    const response = await tool.execute('promote', { materialId: material.id } as never);
-    expect(resolve).toHaveBeenCalledWith(
-      { key: 'session-materials:session-a' },
-      'ast_session_media',
+    const response = await tool.execute('promote', {
+      materialId: material.id,
+      stageId: 'stage-a',
+    } as never);
+    expect(readRawBytes).toHaveBeenCalledWith('session-a', 'ast_session_media');
+    expect(mocks.persist).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: 'stage-a', mime: 'image/png' }),
     );
-    expect(put).toHaveBeenCalledWith({ key: 'shared' }, expect.any(Blob), {
-      contentType: 'image/png',
+    expect(response.details).toMatchObject({
+      src: 'https://openmaic.test/api/classroom-media/stage-a/media/image.png',
+      mimeType: 'image/png',
     });
-    expect(response.details).toMatchObject({ src: 'ast_course_media', mimeType: 'image/png' });
   });
 
   it('renders only a page visible through the bound course store', async () => {

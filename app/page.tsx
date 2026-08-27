@@ -40,20 +40,12 @@ import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
-import { putAsset, removeAsset } from '@/lib/media/asset-pool';
 import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import {
   courseMaterialFingerprint,
   dedupeCourseMaterialFiles,
 } from '@/lib/document/course-materials';
-import {
-  awaitPendingIngests,
-  GENERATE_DRAIN_CAP_MS,
-  resolvedAssetIdForIngest,
-} from '@/lib/document/extract-source';
-import { computeContentDigest } from '@/lib/document/extraction-cache';
-import { upsertMaterialLibraryEntry } from '@/lib/materials/library';
 import type {
   SelectedCourseMaterial,
   SessionDocumentSource,
@@ -263,21 +255,6 @@ function HomePage() {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const thumbnailsRef = useRef<Record<string, Slide>>({});
-  // In-flight asset-pool ingests, keyed by course material id, so removing a
-  // file whose pool entry is still being allocated can still release it.
-  const pendingMaterialIngestsRef = useRef(new Map<string, Promise<string>>());
-  // In-flight content-digest computations, keyed the same way. The digest is
-  // the stable half of the extraction-cache key, so the session build reads it
-  // from the settled promise just like the asset id (see
-  // `resolvedAssetIdForIngest` for the commit-timing rationale).
-  const pendingMaterialDigestsRef = useRef(new Map<string, Promise<string | undefined>>());
-  // Course-material ids whose ingest was ABANDONED: removed from the
-  // selection (the source file handle is gone) or released at prep-timeout
-  // because no durable holder would ever exist for the id. The material-library
-  // upsert skips these — minting would record bytes the user deliberately
-  // discarded (RFC #1153 part 2, N1). Written synchronously by the removal
-  // path and the prep-timeout drain, read by the upsert settlement below.
-  const abandonedMaterialIngestIdsRef = useRef(new Set<string>());
 
   const replaceThumbnails = (slides: Record<string, Slide>) => {
     const previous = thumbnailsRef.current;
@@ -541,108 +518,11 @@ function HomePage() {
     }
   };
 
-  // Ingest a selected file into the asset pool as soon as it is picked, so the
-  // material gets its allocated asset id at upload time (RFC #1153 part 0).
-  // The file still appears in the form immediately; the asset id is patched in
-  // when the pool entry lands. A failure only loses the pool entry — the
-  // source keeps working through the legacy blob-stash byte upload — so it is
-  // logged, not surfaced.
-  //
-  // A tab closing mid-ingest can still orphan a pool entry: the browser gives
-  // no reliable release hook once the page tears down. Accepted — the
-  // material-library milestone of RFC #1153 brings visibility and management
-  // for such entries.
-  const ingestCourseMaterialIntoPool = (addition: SelectedCourseMaterial) => {
-    const ingest = putAsset(addition.file).then((assetId) => {
-      setForm((prev) =>
-        prev.courseMaterials.some((item) => item.id === addition.id)
-          ? {
-              ...prev,
-              courseMaterials: prev.courseMaterials.map((item) =>
-                item.id === addition.id ? { ...item, assetId } : item,
-              ),
-            }
-          : prev,
-      );
-      return assetId;
-    });
-    // The pending entry is the durable release handle for this pool entry and
-    // is intentionally NOT deleted when the ingest settles: deleting it inside
-    // the ingest's own settlement would race the state patch above (React
-    // commits it after this promise resolves), orphaning the entry if the user
-    // removes the file in that window. Only the removal path deletes it (see
-    // removeCourseMaterial), so an entry is always retrievable until the id
-    // has a durable holder. Entries for never-removed sources stay until the
-    // page unmounts — bounded by the files picked in one session.
-    pendingMaterialIngestsRef.current.set(addition.id, ingest);
-    void ingest.catch((error) => {
-      log.error(`Failed to ingest course material "${addition.name}" into the asset pool:`, error);
-    });
-
-    // Content identity: the SHA-256 of the file bytes, computed in parallel
-    // with the pool ingest (the file is already in memory for putAsset). It is
-    // the stable half of the extraction-cache key — two uploads of the same
-    // bytes get different allocated asset ids but the same digest. A digest
-    // failure only means the source skips the extraction cache (a conservative
-    // miss); it never blocks the upload or the extraction.
-    const contentDigest = computeContentDigest(addition.file).catch((error) => {
-      log.error(`Failed to compute the content digest for "${addition.name}":`, error);
-      return undefined;
-    });
-    pendingMaterialDigestsRef.current.set(addition.id, contentDigest);
-    void contentDigest.then((digest) => {
-      if (digest === undefined) return;
-      setForm((prev) =>
-        prev.courseMaterials.some((item) => item.id === addition.id)
-          ? {
-              ...prev,
-              courseMaterials: prev.courseMaterials.map((item) =>
-                item.id === addition.id ? { ...item, contentDigest: digest } : item,
-              ),
-            }
-          : prev,
-      );
-    });
-
-    // Material library manifest (RFC #1153 part 2): once BOTH the ingest's
-    // allocated asset id and the content digest have settled, upsert the
-    // library entry keyed by digest — same bytes re-imported refresh the same
-    // entry (`addedAt` bumped, `assetId` advanced). The library allocates its
-    // OWN pool entry from the file bytes and stores that id, so the entry
-    // stays resolvable after this selection's pool entry is released (N1,
-    // RFC §5 root model). The upsert must NOT fire for a material whose
-    // ingest was already abandoned — removed from the selection (the source
-    // file handle is gone) or released at prep-timeout — so it is gated on
-    // the same settlement as before AND on the abandoned set. Best-effort by
-    // contract: a KV failure or a failed library allocation never fails the
-    // upload.
-    void Promise.all([ingest, contentDigest]).then(([, digest]) => {
-      if (!digest) return;
-      if (abandonedMaterialIngestIdsRef.current.has(addition.id)) return;
-      void upsertMaterialLibraryEntry({
-        file: addition.file,
-        contentDigest: digest,
-        name: addition.name,
-        mimeType:
-          normalizeDocumentMimeType({
-            mimeType: addition.file.type,
-            fileName: addition.file.name,
-          }) || undefined,
-        size: addition.size,
-      }).catch((error) => {
-        log.error(`Failed to record the material library entry for "${addition.name}":`, error);
-      });
-    });
-  };
-
   const addCourseMaterials = (files: File[]) => {
     // The set is frozen for the duration of generate-prep: adding is inert
     // while `preparingGenerate` is set (the toolbar affordance is disabled
     // via the same state), so nothing can slip into the set mid-prep.
     if (preparingGenerate) return;
-    // Compute the additions before touching state: the ingest loop must not
-    // run inside the setForm updater, which React may invoke more than once —
-    // each replay would putAsset again and orphan an allocated id.
     const dedupedFiles = dedupeCourseMaterialFiles(form.courseMaterials, files);
     const startOrder = form.courseMaterials.length + 1;
     const additions = dedupedFiles.map((file, index) => ({
@@ -654,10 +534,6 @@ function HomePage() {
       type: file.type,
       order: startOrder + index,
     }));
-
-    for (const addition of additions) {
-      ingestCourseMaterialIntoPool(addition);
-    }
 
     if (additions.length === 0) return;
     setForm((prev) => {
@@ -682,36 +558,6 @@ function HomePage() {
     // while `preparingGenerate` is set (the toolbar affordance is disabled
     // via the same state), so nothing can slip out of the set mid-prep.
     if (preparingGenerate) return;
-    const removed = form.courseMaterials.find((item) => item.id === id);
-    // The source file handle is gone: the material-library upsert must not
-    // fire for this id once its ingest settles (N1). Mark it synchronously so
-    // the settlement closure — which runs after this handler returns — skips
-    // minting an entry for bytes the user deliberately discarded.
-    abandonedMaterialIngestIdsRef.current.add(id);
-    // Release the pool entry allocated for this file, mirroring the blob-stash
-    // cleanup: if the ingest is still in flight, release once it lands.
-    const release = removed?.assetId
-      ? Promise.resolve(removed.assetId)
-      : (pendingMaterialIngestsRef.current.get(id) ?? Promise.resolve(undefined));
-    void release
-      .then((assetId) => {
-        if (assetId) return removeAsset(assetId);
-      })
-      .catch((error) => {
-        log.error('Failed to release course material asset pool entry:', error);
-      })
-      .finally(() => {
-        // This removal path is the sole consumer of the pending entry: the
-        // pool entry has been released (or the ingest itself failed, leaving
-        // nothing to release), so the entry can go. Deleting it here — rather
-        // than in the ingest's own settlement — keeps it retrievable until
-        // the id has a durable holder.
-        pendingMaterialIngestsRef.current.delete(id);
-        // The content digest has no release to perform; drop its pending entry
-        // so a removed material cannot leak it into a later session build.
-        pendingMaterialDigestsRef.current.delete(id);
-      });
-
     setForm((prev) => ({
       ...prev,
       courseMaterials: prev.courseMaterials
@@ -755,48 +601,9 @@ function HomePage() {
         }
       : undefined;
 
-    // Flip the generating UI state BEFORE the drain so the click visibly does
-    // something even when an ingest stalls.
+    // Flip the generating UI state before material bytes are copied locally.
     setPreparingGenerate(true);
-    const unsettledIngestIds = new Set<string>();
     try {
-      // Drain any in-flight ingests before building the session, so a resolved
-      // asset id lands in the session instead of being dropped when this page
-      // unmounts. The await is bounded by the GENERATE_DRAIN_CAP_MS UX cap
-      // (~3 s, not the server's 15 s budget: clicking Generate must not sit on
-      // ingests): on timeout, the unsettled sources proceed with their
-      // storageKey and the legacy byte path, and each late-resolving id is
-      // released since no durable holder will ever exist for it. A rejected
-      // ingest is fine: that source proceeds with its storageKey and the byte
-      // path. The drain loops until the pending map is stable — despite the
-      // freeze guard, an add that slipped in before the flag took effect is
-      // still drained (belt-and-braces).
-      const awaitedIngestIds = new Set<string>();
-      for (;;) {
-        const unawaited = [...pendingMaterialIngestsRef.current.entries()].filter(
-          ([id]) => !awaitedIngestIds.has(id),
-        );
-        if (unawaited.length === 0) break;
-        for (const [id] of unawaited) awaitedIngestIds.add(id);
-        const batchUnsettled = await awaitPendingIngests(new Map(unawaited), {
-          timeoutMs: GENERATE_DRAIN_CAP_MS,
-          onUnsettled: (ingestId, ingest) => {
-            unsettledIngestIds.add(ingestId);
-            // The ingest was abandoned: no durable holder will ever exist for
-            // its id, so release it when it lands — and mark it abandoned so
-            // the material-library upsert skips minting an entry for bytes
-            // the session deliberately discarded (N1).
-            abandonedMaterialIngestIdsRef.current.add(ingestId);
-            void ingest
-              .then((assetId) => (assetId ? removeAsset(assetId) : undefined))
-              .catch((error) => {
-                log.error('Failed to release timed-out course material asset pool entry:', error);
-              });
-          },
-        });
-        for (const id of batchUnsettled) unsettledIngestIds.add(id);
-      }
-
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
         requirement: form.requirement,
@@ -825,19 +632,6 @@ function HomePage() {
           for (const [index, item] of frozenMaterials.entries()) {
             const storageKey = await storeDocumentBlob(item.file);
             storedDocumentKeys.push(storageKey);
-            // The awaited ingests patched their asset ids into form state via
-            // setForm, which this closure may not reflect yet; read the settled
-            // value from the pending map so a just-resolved id still lands in
-            // the session regardless of React commit timing. A timed-out ingest
-            // is never awaited again — its source goes byte-path (no assetId).
-            const settledAssetId = unsettledIngestIds.has(item.id)
-              ? undefined
-              : await resolvedAssetIdForIngest(pendingMaterialIngestsRef.current, item.id);
-            // Same for the content digest: read the settled value (undefined
-            // when the computation failed or never started) so the extraction
-            // cache key is available in the session even before the form patch
-            // commits. Digest is local and fast, so no time budget is needed.
-            const settledContentDigest = await pendingMaterialDigestsRef.current.get(item.id);
             documentSources.push({
               id: item.id,
               name: item.name,
@@ -849,12 +643,6 @@ function HomePage() {
               }),
               order: index + 1,
               storageKey,
-              // The asset id was allocated at upload; new sessions carry it so
-              // a server-backed pool can extract by id instead of re-uploading.
-              assetId: item.assetId ?? settledAssetId,
-              // Content identity of the bytes: the stable half of the
-              // extraction-cache key (RFC #1153 part 1).
-              contentDigest: item.contentDigest ?? settledContentDigest,
               providerId: pdfProviderId,
             });
           }

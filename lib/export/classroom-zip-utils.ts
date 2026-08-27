@@ -6,7 +6,7 @@ import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
 import type { Scene } from '@/lib/types/stage';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 import { fetchMediaUrl } from '@/lib/media/fetch-media-url';
-import { mapWithConcurrency } from '@/lib/media/convert-legacy-asset-refs';
+import { mapWithConcurrency } from '@/lib/utils/concurrency';
 import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
 import { canonicalArchiveMedia } from '@/lib/video-export/archive-media';
 
@@ -292,7 +292,9 @@ export async function collectLegacyAudioForExport(
       return { url, blob: null };
     }
   });
-  for (const { url, blob } of fetched) {
+  for (const result of fetched) {
+    if (!result) continue;
+    const { url, blob } = result;
     if (!blob) continue;
     const canonical = canonicalArchiveMedia('audio', { mimeType: blob.type });
     const format = canonical.extension;

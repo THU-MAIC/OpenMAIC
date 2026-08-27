@@ -5,8 +5,8 @@
  * is OWNER-scoped: it posts a file with no session id and expects the flat
  * `{ materialId, originalName, bytes, mime, extraction }` 201 view. This route
  * implements the reference's upload contract on the owner-scoped material
- * library (`lib/persistence/owner-materials.ts`) with the host's asset
- * registry for the bytes.
+ * library (`lib/persistence/owner-materials.ts`) with the neutral local
+ * material byte store.
  *
  * ## Upload contract (the reference's)
  *
@@ -18,11 +18,10 @@
  *   maxUploadBytes)` — both 413 when exceeded, checked on the declared
  *   `content-length` AND on the streamed body.
  * - Lifecycle: the upload reclaims crashed `uploading` leftovers older than
- *   24 hours (their asset entries first, then the reservations), reserves a
+ *   24 hours (their byte objects first, then the reservations), reserves a
  *   quota-checked `uploading` row (429 when the owner's count or byte quota is
- *   exceeded), streams the bytes through a sha256 meter into the asset
- *   registry, records the returned asset id onto the reservation in its own
- *   durable step, and finalizes the row to `ready` with the digest. Failures
+ *   exceeded), streams the bytes through a sha256 meter into the byte store,
+ *   and finalizes the row to `ready` with the digest. Failures
  *   abandon the reservation; crash leftovers are reclaimed by the next
  *   upload's 24-hour sweep.
  * - Every response echoes the `x-request-id` header so the uploader can pair
@@ -56,10 +55,10 @@ import {
   MaterialQuotaExceededError,
   publicMaterial,
   reclaimStaleOwnerMaterialUploads,
-  recordOwnerMaterialAsset,
   registerOwnerMaterial,
 } from '@/lib/persistence/owner-materials';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
+import { getMaterialByteStore } from '@/lib/server/materials/bytes';
 import {
   isWorkbenchMaterialMime,
   MEDIA_MIME_TYPES,
@@ -96,11 +95,6 @@ function materialFilename(req: NextRequest): string | null {
 function materialUploadRequestId(req: NextRequest): string {
   const upstream = req.headers.get('x-request-id')?.trim();
   return upstream && /^[A-Za-z0-9._:-]{1,128}$/.test(upstream) ? upstream : randomUUID();
-}
-
-/** The owner's asset-registry partition for uploaded material bytes. */
-function ownerMaterialPrincipal(ownerId: string) {
-  return { key: `owner-materials:${ownerId}` };
 }
 
 function parseLimit(raw: string | null): { limit?: number } | { invalid: true } {
@@ -222,9 +216,10 @@ export async function POST(req: NextRequest) {
       }
       const createdMaterialId = createMaterialId();
       materialId = createdMaterialId;
+      const ossKey = `materials/${ownerId}/${createdMaterialId}`;
 
       const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
-      const principal = ownerMaterialPrincipal(ownerId);
+      const byteStore = getMaterialByteStore();
 
       // Browsers send Content-Length for a File body. When an intermediary
       // strips it, reserve the per-file maximum so an unmeasured stream can
@@ -234,21 +229,20 @@ export async function POST(req: NextRequest) {
         Number.isFinite(declaredBytes) && declaredBytes > 0 ? declaredBytes : uploadLimit;
 
       // Reclaim uploads that crashed before finalize and are older than the
-      // 24-hour horizon. Each reservation's asset entry (recorded in its own
-      // durable step before finalize) is removed first; the reservation is
+      // 24-hour horizon. Each reservation's byte object is removed first; the reservation is
       // deleted only after that, so a failure here keeps the reservation for
       // the next pass instead of losing the pointer to its bytes.
       phase = 'reclaim_stale_uploads';
       await reclaimStaleOwnerMaterialUploads(
         provider.pool as unknown as ConnectableQueryable,
         ownerId,
-        async (assetId) => {
+        async (objectKey) => {
           try {
-            await provider.assetStore.remove(principal, assetId);
+            await byteStore.delete(objectKey);
           } catch (error) {
             console.warn(
-              'material stale asset removal failed; keeping its reservation for the next pass',
-              context({ assetId }),
+              'material stale byte deletion failed; keeping its reservation for the next pass',
+              context({ objectKey }),
               error,
             );
             throw error;
@@ -273,7 +267,7 @@ export async function POST(req: NextRequest) {
             mime,
             bytes: reservedBytes,
             originalName,
-            assetId: '',
+            ossKey,
             extraction: { status: 'idle' },
           },
           {
@@ -341,30 +335,19 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Put the bytes into the asset registry, then bind the returned asset id
-      // onto the reserved row in its own durable step BEFORE finalize. A crash
-      // after the put commits but before finalize therefore leaves the id
-      // recorded, so the 24-hour reclaim can remove the bytes when it reclaims
-      // the stale reservation.
+      // The object key is recorded by the reservation before bytes are stored.
+      // A crash after the write therefore leaves a durable pointer for the
+      // 24-hour reclaim, preserving delete-before-reservation-removal order.
       const hash = createHash('sha256').update(bytes).digest('hex');
-      let assetId: string | null = null;
+      let bytesStored = false;
       try {
-        assetId = await provider.assetStore.put(
-          principal,
-          new Blob([new Uint8Array(bytes)], { type: mime }),
-          { contentType: mime },
-        );
-        await recordOwnerMaterialAsset(
-          provider.pool as unknown as ConnectableQueryable,
-          createdMaterialId,
-          assetId,
-        );
+        await byteStore.put(ossKey, bytes, mime);
+        bytesStored = true;
         const row = await finalizeOwnerMaterial(
           provider.pool as unknown as ConnectableQueryable,
           createdMaterialId,
           bytes.byteLength,
           hash,
-          assetId,
         );
         const view = publicMaterial(row);
         const res = NextResponse.json(
@@ -382,13 +365,25 @@ export async function POST(req: NextRequest) {
         console.info('material upload completed', context({ status: 201 }));
         return res;
       } catch (error) {
-        if (assetId) {
-          await provider.assetStore.remove(principal, assetId).catch(() => undefined);
+        let bytesDeleted = !bytesStored;
+        if (bytesStored) {
+          try {
+            await byteStore.delete(ossKey);
+            bytesDeleted = true;
+          } catch (cleanupError) {
+            console.warn(
+              'material byte cleanup failed; keeping its reservation for stale reclaim',
+              context({ objectKey: ossKey }),
+              cleanupError,
+            );
+          }
         }
-        await abandonOwnerMaterial(
-          provider.pool as unknown as ConnectableQueryable,
-          createdMaterialId,
-        ).catch(() => undefined);
+        if (bytesDeleted) {
+          await abandonOwnerMaterial(
+            provider.pool as unknown as ConnectableQueryable,
+            createdMaterialId,
+          ).catch(() => undefined);
+        }
         throw error;
       }
     } catch (error) {

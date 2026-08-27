@@ -320,7 +320,7 @@ describe('stage asset reference and reclamation matrix', () => {
 
     await executeStageAssetReclamation(plan, null);
 
-    expect(mocks.removeAsset).toHaveBeenCalledTimes(plan.poolRefs.length);
+    expect(mocks.removeAsset).not.toHaveBeenCalled();
     expect(mocks.mediaRows).toEqual([
       { id: 'other-stage:foreign-course-ref', stageId: 'other-stage' },
     ]);
@@ -548,7 +548,7 @@ describe('stage asset reference and reclamation matrix', () => {
     );
   });
 
-  it('continues row cleanup after one pool removal fails', async () => {
+  it('cleans compatibility rows without touching the asset pool', async () => {
     const inventory = await loadStageAssetInventory(matrixDocument());
     const plan = buildStageAssetReclamationPlan(
       stageId,
@@ -560,7 +560,7 @@ describe('stage asset reference and reclamation matrix', () => {
 
     await executeStageAssetReclamation(plan, null);
 
-    expect(mocks.removeAsset).toHaveBeenCalledTimes(plan.poolRefs.length);
+    expect(mocks.removeAsset).not.toHaveBeenCalled();
     expect(mocks.mediaRows.every((row) => row.stageId !== stageId)).toBe(true);
     expect(mocks.audioRows.every((row) => row.stageId !== stageId)).toBe(true);
   });

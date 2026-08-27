@@ -8,7 +8,7 @@ import type { Scene } from '@/lib/types/stage';
 
 const mocks = vi.hoisted(() => ({
   providers: vi.fn(),
-  put: vi.fn(),
+  persist: vi.fn(),
 }));
 
 vi.mock('@/lib/server/provider-config', () => ({
@@ -18,8 +18,8 @@ vi.mock('@/lib/server/provider-config', () => ({
   resolveTTSModel: () => '',
 }));
 
-vi.mock('@/lib/persistence/server-provider', () => ({
-  getServerPersistenceProvider: vi.fn(async () => ({ assetStore: { put: mocks.put } })),
+vi.mock('@/lib/server/classroom-media-bytes', () => ({
+  persistClassroomMediaBytes: mocks.persist,
 }));
 
 const scene = {
@@ -68,9 +68,9 @@ function courseDoc(): CourseDocument {
 describe('TTS abort propagation and per-request timeout', () => {
   beforeEach(() => {
     mocks.providers.mockReset();
-    mocks.put.mockReset();
+    mocks.persist.mockReset();
     mocks.providers.mockReturnValue({ 'openai-tts': { disabled: false } });
-    mocks.put.mockResolvedValue('ast_audio');
+    mocks.persist.mockResolvedValue('https://openmaic.test/audio.mp3');
   });
 
   afterEach(() => {
@@ -93,7 +93,7 @@ describe('TTS abort propagation and per-request timeout', () => {
       expect(error).toBeInstanceOf(TTSRequestTimeoutError);
       expect(String(error)).toContain('timed out');
       expect(String(error)).toContain('Retry the tool call');
-      expect(mocks.put).not.toHaveBeenCalled();
+      expect(mocks.persist).not.toHaveBeenCalled();
       // The underlying request was aborted by the timeout bound.
       expect(captured).toHaveLength(1);
       expect(captured[0]?.aborted).toBe(true);
@@ -121,7 +121,7 @@ describe('TTS abort propagation and per-request timeout', () => {
 
     await expect(promise).rejects.toThrow(/aborted/i);
     expect(captured[0]?.aborted).toBe(true);
-    expect(mocks.put).not.toHaveBeenCalled();
+    expect(mocks.persist).not.toHaveBeenCalled();
     transport.mockRestore();
   });
 

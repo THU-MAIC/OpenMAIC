@@ -271,7 +271,7 @@ describe('browser scene generation retry wrappers', () => {
         }),
       );
 
-    const assetId = await generateAndStoreTTS(
+    const audioId = await generateAndStoreTTS(
       'tts_s2_action_1',
       'Hello class',
       'English',
@@ -279,20 +279,12 @@ describe('browser scene generation retry wrappers', () => {
       retryOptions,
     );
 
-    expect(assetId).toBe('ast_audio_allocated');
+    expect(audioId).toBe('tts_s2_action_1');
     expect(mockFetch).toHaveBeenCalledTimes(2);
-    expect(mocks.poolPut).toHaveBeenCalledWith(
-      expect.any(Blob),
-      expect.objectContaining({
-        contentType: 'audio/wav',
-        mediaType: 'audio',
-        text: 'Hello class',
-        voice: 'narrator',
-      }),
-    );
+    expect(mocks.poolPut).not.toHaveBeenCalled();
     expect(mocks.audioPut).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'ast_audio_allocated',
+        id: 'tts_s2_action_1',
         format: 'wav',
       }),
     );
@@ -329,7 +321,7 @@ describe('browser scene generation retry wrappers', () => {
         ...retryOptions,
         maxRetries: 0,
       }),
-    ).resolves.toBe('ast_audio_allocated');
+    ).resolves.toBe('request-fallback');
     expect(mockFetch).toHaveBeenCalledTimes(2);
     const firstBody = JSON.parse(String(mockFetch.mock.calls[0][1]?.body));
     const secondBody = JSON.parse(String(mockFetch.mock.calls[1][1]?.body));
@@ -341,7 +333,7 @@ describe('browser scene generation retry wrappers', () => {
     expect(mocks.toastWarning).toHaveBeenCalledOnce();
   });
 
-  it('does not write Dexie when pool allocation fails', async () => {
+  it('stores directly in Dexie without consulting the asset pool', async () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
     mockFetch.mockResolvedValue(
       jsonResponse(200, {
@@ -352,10 +344,9 @@ describe('browser scene generation retry wrappers', () => {
     );
     mocks.poolPut.mockRejectedValueOnce(new Error('pool unavailable'));
 
-    await expect(generateAndStoreTTS('request-1', 'Hello class')).rejects.toThrow(
-      'pool unavailable',
-    );
-    expect(mocks.audioPut).not.toHaveBeenCalled();
+    await expect(generateAndStoreTTS('request-1', 'Hello class')).resolves.toBe('request-1');
+    expect(mocks.poolPut).not.toHaveBeenCalled();
+    expect(mocks.audioPut).toHaveBeenCalledOnce();
   });
 
   it('does not report an allocated id when the compatibility write fails', async () => {
@@ -372,8 +363,8 @@ describe('browser scene generation retry wrappers', () => {
     await expect(generateAndStoreTTS('request-1', 'Hello class')).rejects.toThrow(
       'Dexie unavailable',
     );
-    expect(mocks.poolPut).toHaveBeenCalledOnce();
-    expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_audio_allocated');
+    expect(mocks.poolPut).not.toHaveBeenCalled();
+    expect(mocks.poolRemove).not.toHaveBeenCalled();
   });
 
   it('reclaims earlier allocations when partial scene synthesis fails', async () => {
@@ -407,8 +398,8 @@ describe('browser scene generation retry wrappers', () => {
     });
 
     expect(result).toMatchObject({ success: false, failedCount: 1 });
-    expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_first_audio');
-    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('ast_first_audio');
+    expect(mocks.poolRemove).not.toHaveBeenCalled();
+    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('tts_s1_speech-1');
     expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
   });
 
@@ -452,8 +443,8 @@ describe('browser scene generation retry wrappers', () => {
     releaseSibling();
     await expect(generating).rejects.toBe(abort);
 
-    expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_late_audio');
-    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('ast_late_audio');
+    expect(mocks.poolRemove).not.toHaveBeenCalled();
+    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('tts_s1_speech-2');
     expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
   });
 
@@ -479,11 +470,7 @@ describe('browser scene generation retry wrappers', () => {
     ).resolves.toBe('ast_stable_audio');
 
     expect(mocks.poolPut).not.toHaveBeenCalled();
-    expect(mocks.poolReplace).toHaveBeenCalledExactlyOnceWith(
-      'ast_stable_audio',
-      expect.any(Blob),
-      expect.objectContaining({ mediaType: 'audio', text: 'Updated class' }),
-    );
+    expect(mocks.poolReplace).not.toHaveBeenCalled();
     expect(mocks.audioPut).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ id: 'ast_stable_audio', format: 'wav' }),
     );

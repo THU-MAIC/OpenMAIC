@@ -5,16 +5,15 @@ import { MAX_REMOTE_IMAGE_BYTES } from '@/lib/server/bounded-download';
 
 const mocks = vi.hoisted(() => ({
   recordGenerationUsage: vi.fn().mockResolvedValue(undefined),
-  getServerPersistenceProvider: vi.fn(),
+  mkdir: vi.fn().mockResolvedValue(undefined),
+  writeFile: vi.fn().mockResolvedValue(undefined),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('@/lib/server/usage-storage', () => ({
   recordGenerationUsage: mocks.recordGenerationUsage,
 }));
-vi.mock('@/lib/persistence/server-provider', () => ({
-  getServerPersistenceProvider: mocks.getServerPersistenceProvider,
-}));
+vi.mock('node:fs', () => ({ promises: { mkdir: mocks.mkdir, writeFile: mocks.writeFile } }));
 vi.mock('@/lib/server/ssrf-guard', () => ({ validateUrlForSSRF: async () => null }));
 vi.mock('@/lib/logger', () => ({ createLogger: () => mocks.log }));
 
@@ -141,10 +140,9 @@ describe('generate_image tool', () => {
       height: 576,
     };
     const generateConfiguredImage = vi.fn().mockResolvedValue(generated);
-    const put = vi.fn().mockResolvedValue('ast_generated-image');
-    mocks.getServerPersistenceProvider.mockResolvedValue({ assetStore: { put } });
     const tool = buildGenerateImageTool({
       sessionId: 'session-owner',
+      baseUrl: 'https://openmaic.test',
       getConfiguredProviders: () => ({ 'openai-image': { models: ['gpt-image-1'] } }),
       resolveProviderConfig: () => ({
         providerId: 'openai-image',
@@ -183,16 +181,17 @@ describe('generate_image tool', () => {
         signal: expect.any(AbortSignal),
       }),
     );
-    expect(put).toHaveBeenCalledWith(
-      { key: 'shared' },
-      expect.objectContaining({ size: Buffer.from('real-image-bytes').length, type: 'image/png' }),
-      { contentType: 'image/png' },
+    expect(mocks.writeFile).toHaveBeenCalledWith(
+      expect.stringMatching(/stage-owner\/media\/generated-[a-f0-9]{64}\.png$/),
+      Buffer.from('real-image-bytes'),
     );
     // Success details are provider-neutral: no provider id leaks into the
     // transcript. The vendor choice stays in the server-side log, correlated
     // by the tool-call id.
     expect(result.details).toEqual({
-      src: 'ast_generated-image',
+      src: expect.stringMatching(
+        /^https:\/\/openmaic\.test\/api\/classroom-media\/stage-owner\/media\/generated-[a-f0-9]{64}\.png$/,
+      ),
       width: 1024,
       height: 576,
     });
@@ -211,21 +210,17 @@ describe('generate_image tool', () => {
       width: 1024,
       height: 576,
     };
-    const put = vi.fn();
     await expect(
-      defaultPersistGeneratedImage(
-        {
-          result: oversized,
-          stageId: 'stage-owner',
-          signal: new AbortController().signal,
-        },
-        { put },
-      ),
+      defaultPersistGeneratedImage({
+        result: oversized,
+        stageId: 'stage-owner',
+        signal: new AbortController().signal,
+      }),
     ).rejects.toThrow(`exceeds the ${MAX_REMOTE_IMAGE_BYTES}-byte limit`);
-    expect(put).not.toHaveBeenCalled();
+    expect(mocks.writeFile).not.toHaveBeenCalled();
   });
 
-  it('materializes a provider-hosted URL through the shared asset registry', async () => {
+  it('materializes a provider-hosted URL through classroom media', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -234,21 +229,17 @@ describe('generate_image tool', () => {
         }),
       ),
     );
-    const put = vi.fn().mockResolvedValue('ast_provider-image');
     await expect(
-      defaultPersistGeneratedImage(
-        {
-          result: { url: 'https://cdn.example.com/generated/photo.jpg', width: 1024, height: 576 },
-          stageId: 'stage-owner',
-          signal: new AbortController().signal,
-        },
-        { put },
-      ),
-    ).resolves.toBe('ast_provider-image');
-    expect(put).toHaveBeenCalledWith(
-      { key: 'shared' },
-      expect.objectContaining({ size: Buffer.from('real-image-bytes').length, type: 'image/jpeg' }),
-      { contentType: 'image/jpeg' },
+      defaultPersistGeneratedImage({
+        result: { url: 'https://cdn.example.com/generated/photo.jpg', width: 1024, height: 576 },
+        stageId: 'stage-owner',
+        baseUrl: 'https://openmaic.test',
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toMatch(/^https:\/\/openmaic\.test\/api\/classroom-media\/stage-owner\/media\//);
+    expect(mocks.writeFile).toHaveBeenCalledWith(
+      expect.stringMatching(/\.jpg$/),
+      Buffer.from('real-image-bytes'),
     );
   });
 
@@ -258,8 +249,6 @@ describe('generate_image tool', () => {
       width: 1024,
       height: 576,
     });
-    const put = vi.fn().mockResolvedValue('ast_generated-image');
-    mocks.getServerPersistenceProvider.mockResolvedValue({ assetStore: { put } });
     const tool = buildGenerateImageTool({
       sessionId: 'session-owner',
       // openai-image is force-disabled (`{ disabled: true }`); seedream is the

@@ -18,16 +18,6 @@ vi.mock('@/lib/persistence/resolve-vision-images', () => ({
   resolveVisionImagesForPrompt: resolveVisionImagesMock,
 }));
 
-// The route's resolve-with-refill phase budget reuses the shared 15 s ingest
-// constant; the hanging-store test injects a tiny budget through this mock so
-// the aggregate budget is observable without waiting 15 s (the same injection
-// the extraction-cache test uses for `assetProbeBudgetMs`). Every other test
-// in this file resolves its probes instantly, so the small budget never fires.
-vi.mock('@/lib/document/extract-source', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/document/extract-source')>();
-  return { ...actual, DEFAULT_INGEST_AWAIT_TIMEOUT_MS: 50 };
-});
-
 /**
  * Server-backed generation by allocated asset id (RFC #1153 part 2 B): the
  * client sends `imageMapping` as (image id → allocated asset id), the route
@@ -387,6 +377,7 @@ describe('scene-content route — asset-id image transport', () => {
 
   test('hanging store: the aggregate resolution budget stops the phase within the bound, no hang (P2-r3)', async () => {
     vi.resetModules();
+    vi.useFakeTimers();
     // The store accepts the probe but never answers — a stalled database with
     // no statement timeout. Each probe would otherwise hold the route until
     // the platform cap; the aggregate phase budget (the mocked 50 ms below,
@@ -400,9 +391,11 @@ describe('scene-content route — asset-id image transport', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     const { POST } = await import('@/app/api/generate/scene-content/route');
-    const response = await POST(
+    const responsePromise = POST(
       mockRequest({ outline: slideOutline(ids), pdfImages, imageMapping }),
     );
+    await vi.advanceTimersByTimeAsync(15_000);
+    const response = await responsePromise;
     const body = await response.json();
 
     expect(body.success).toBe(true);
@@ -416,6 +409,7 @@ describe('scene-content route — asset-id image transport', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toContain('aggregate resolution budget');
     warn.mockRestore();
+    vi.useRealTimers();
   });
 
   test('hallucinated reference to a DROPPED id removes the element (no dangling src, P3)', async () => {

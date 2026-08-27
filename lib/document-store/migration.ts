@@ -27,7 +27,6 @@ import type { AppDocument, AppDocumentOutline, AppStage } from './persistence-ty
 import { readGeneration } from './storage-generation';
 import { getDocumentStore } from './store';
 import { validateAppScene, validateAppStage } from './validators';
-import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
 
 export interface LegacyDocumentSnapshot {
   stage: StageRecord;
@@ -47,12 +46,8 @@ export interface DocumentMigrationDeps {
   lockManager?: LockManager | null;
   migrateDsl?: (document: unknown) => unknown;
   /**
-   * App-side legacy asset-reference converter (#1007 part 2, step c). Runs on
-   * every document this layer loads under the document lock, before the
-   * document is handed out or saved at the current DSL version: the pure DSL
-   * ladder cannot read local bytes or probe URLs, so ingesting legacy media
-   * bytes and collapsing `audioUrl`/`audioId` pairs happens here. Injectable
-   * for tests; the default wires Dexie legacy tables and the app asset pool.
+   * Optional converter injection for migration tests. Production leaves this
+   * seam inert and relies on reference-compatible read fallbacks.
    */
   convertAssetRefs?: AssetRefConverter;
   /** The mutation callback acquires the runtime shared epoch before writing. */
@@ -116,33 +111,9 @@ async function convertLoadedDocument(
   deps: DocumentMigrationDeps,
   ledger?: string[],
 ): Promise<AppDocument> {
+  if (!deps.convertAssetRefs) return document;
   try {
-    const convert =
-      deps.convertAssetRefs ??
-      (async (value: AppDocument) => {
-        const { convertDocumentAssetRefs } = await import('@/lib/media/convert-legacy-asset-refs');
-        const converted = await convertDocumentAssetRefs(value, undefined, undefined, ledger);
-        // The inline base64 image converter (#1153 part 4) runs AFTER the
-        // legacy converter: the two are independent, and this order lets the
-        // gen-placeholder converter see its expected shapes first. A failure
-        // here degrades to the legacy-converted document rather than
-        // discarding the legacy pass's work — each converter is best-effort
-        // on its own.
-        try {
-          const { convertInlineImageAssets } =
-            await import('@/lib/media/convert-inline-image-assets');
-          return (await convertInlineImageAssets(converted.document, undefined, undefined, ledger))
-            .document;
-        } catch (inlineError) {
-          log.warn(
-            `Inline image conversion failed for document ${JSON.stringify(value.stage.id)}; ` +
-              'keeping the legacy-converted document',
-            inlineError,
-          );
-          return converted.document;
-        }
-      });
-    return await convert(document, ledger);
+    return await deps.convertAssetRefs(document, ledger);
   } catch (error) {
     log.warn(
       `Legacy asset conversion failed for document ${JSON.stringify(document.stage.id)}; ` +
@@ -218,14 +189,6 @@ async function saveConvertedDocument(
     return converted;
   } catch (error) {
     if (error instanceof DocumentStorageGenerationChangedError) {
-      // A cross-tab clear raced the save: nothing was persisted, so every
-      // fresh allocation the pass made is an orphan. Roll them all back
-      // before the fatal error surfaces.
-      if (ledger && ledger.length > 0) {
-        const { rollbackConvertedAllocations } =
-          await import('@/lib/media/convert-legacy-asset-refs');
-        await rollbackConvertedAllocations(stageId, ledger);
-      }
       throw error;
     }
     // Best-effort: a readable document must not fail to open because the
@@ -244,11 +207,6 @@ async function saveConvertedDocument(
         'rolling back its allocations and retrying on the next open',
       error,
     );
-    if (ledger && ledger.length > 0) {
-      const { rollbackConvertedAllocations } =
-        await import('@/lib/media/convert-legacy-asset-refs');
-      await rollbackConvertedAllocations(stageId, ledger);
-    }
     return reloaded ?? existing;
   }
 }
@@ -521,29 +479,7 @@ async function migrateLocked(
 
   // Phase 3, shared lock: fence, reconcile, commit.
   return withRuntimeStorageSharedLock(async () => {
-    // Every exit rolls back the ledger entries the returned document does
-    // not reference: a null answer (a concurrent deletion, an epoch change)
-    // releases them all, and a reconciled or redone document keeps exactly
-    // what it uses. The full document ref set is the reference space, NOT
-    // just the renderable `referenced` set: a ref that appears only as a
-    // videoManifest key is still owned by the persisted manifest, and
-    // rolling its allocation back would leave the manifest naming an id
-    // whose bytes are gone.
-    const cleanup = async (finalDoc: AppDocument | null): Promise<void> => {
-      if (passLedger.length === 0) return;
-      const { rollbackConvertedAllocations } =
-        await import('@/lib/media/convert-legacy-asset-refs');
-      if (!finalDoc) {
-        await rollbackConvertedAllocations(stageId, passLedger);
-        return;
-      }
-      const documentRefs = collectStageAssetRefs(finalDoc, {
-        mediaRows: [],
-        audioRows: [],
-      }).document;
-      const orphans = passLedger.filter((id) => !documentRefs.has(id));
-      await rollbackConvertedAllocations(stageId, orphans);
-    };
+    const cleanup = async (_finalDoc: AppDocument | null): Promise<void> => undefined;
 
     const currentGeneration = await readGeneration(deps.kv);
     if (probe === null || currentGeneration !== probe.generation) {

@@ -164,7 +164,7 @@ describe('generateAndStoreTTS — pinned narrator fallback (bound == global)', (
       );
 
     await expect(generateAndStoreTTS('request-pinned-ghost', 'Hello class')).resolves.toBe(
-      'ast_audio_allocated',
+      'request-pinned-ghost',
     );
 
     // The broken clone was attempted, then the deterministic enabled pick was
@@ -204,7 +204,7 @@ describe('generateAndStoreTTS — pinned narrator fallback (bound == global)', (
     );
 
     await expect(generateAndStoreTTS('request-pinned-disabled', 'Hello class')).resolves.toBe(
-      'ast_audio_allocated',
+      'request-pinned-disabled',
     );
 
     // The unusable pinned voice was never sent; narration used the enabled pick.
