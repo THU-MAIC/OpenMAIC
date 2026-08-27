@@ -278,6 +278,8 @@
       "tableDimensions": "Tabela {{rows}} x {{columns}}",
       "dragToolbar": "Mover ferramentas de inserção",
       "dragToolbarKeyboard": "Mover ferramentas: pressione Enter ou Espaço e use as setas",
+      "collapseToolbar": "Recolher ferramentas de inserção",
+      "expandToolbar": "Expandir ferramentas de inserção",
       "image": "Imagem",
       "imageDrop": "Arraste uma imagem ou clique para escolher um arquivo",
       "imageOr": "ou cole a URL de uma imagem",

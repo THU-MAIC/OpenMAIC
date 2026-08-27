@@ -253,6 +253,8 @@
       "textBox": "文字框",
       "dragToolbar": "移動插入工具",
       "dragToolbarKeyboard": "移動插入工具：按 Enter 或 Space，然後使用方向鍵",
+      "collapseToolbar": "收合插入工具",
+      "expandToolbar": "展開插入工具",
       "image": "圖片",
       "imageDrop": "拖曳圖片或按一下選擇檔案",
       "imageOr": "或貼上圖片網址",

@@ -293,6 +293,8 @@
       "tableDimensions": "Tableau {{rows}} x {{columns}}",
       "dragToolbar": "Déplacer les outils d’insertion",
       "dragToolbarKeyboard": "Déplacer les outils d’insertion : appuyez sur Entrée ou Espace, puis utilisez les flèches",
+      "collapseToolbar": "Replier les outils d’insertion",
+      "expandToolbar": "Déplier les outils d’insertion",
       "image": "Image",
       "imageDrop": "Déposez une image ou cliquez pour choisir un fichier",
       "imageOr": "ou collez l’URL d’une image",

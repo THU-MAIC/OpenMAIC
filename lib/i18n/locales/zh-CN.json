@@ -293,6 +293,8 @@
       "tableDimensions": "{{rows}} x {{columns}} 表格",
       "dragToolbar": "拖动工具栏",
       "dragToolbarKeyboard": "移动工具栏：按回车或空格开始，再使用方向键移动",
+      "collapseToolbar": "收起插入工具",
+      "expandToolbar": "展开插入工具",
       "image": "图片",
       "imageDrop": "拖入图片或点击选择文件",
       "imageOr": "或粘贴图片 URL",

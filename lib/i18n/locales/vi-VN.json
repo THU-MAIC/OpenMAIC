@@ -293,6 +293,8 @@
       "tableDimensions": "Bảng {{rows}} x {{columns}}",
       "dragToolbar": "Di chuyển thanh chèn",
       "dragToolbarKeyboard": "Di chuyển thanh chèn: bấm Enter hoặc Space, rồi dùng các phím mũi tên",
+      "collapseToolbar": "Thu gọn công cụ chèn",
+      "expandToolbar": "Mở rộng công cụ chèn",
       "image": "Ảnh",
       "imageDrop": "Kéo ảnh vào đây hoặc bấm để chọn tệp",
       "imageOr": "hoặc dán địa chỉ ảnh",

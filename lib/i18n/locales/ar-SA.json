@@ -293,6 +293,8 @@
       "tableDimensions": "جدول {{rows}} x {{columns}}",
       "dragToolbar": "نقل أدوات الإدراج",
       "dragToolbarKeyboard": "نقل أدوات الإدراج: اضغط Enter أو مسافة، ثم استخدم مفاتيح الأسهم",
+      "collapseToolbar": "طي أدوات الإدراج",
+      "expandToolbar": "توسيع أدوات الإدراج",
       "image": "صورة",
       "imageDrop": "أفلِت صورة أو انقر لاختيار ملف",
       "imageOr": "أو الصق رابط صورة",

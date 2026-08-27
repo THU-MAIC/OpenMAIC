@@ -1,7 +1,7 @@
 'use client';
 
 import { motion, useMotionValue, useReducedMotion } from 'motion/react';
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { SceneEditorSurface, SurfaceState } from '@/lib/edit/scene-editor-surface';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
 import { NOOP_SURFACE } from '@/lib/edit/noop-surface';
@@ -98,10 +98,16 @@ export function EditShell({
   // around it stays mounted and consumes state via these props.
   const [state, setState] = useState<SurfaceState | null>(null);
   // The insert palette disappears on surfaces that do not expose insert
-  // items (Quiz, GenUI, etc.). Keep its offset in the persistent shell so a
-  // temporary unmount does not discard the author's chosen position.
+  // items (Quiz, GenUI, etc.). Keep its offset AND its fold in the persistent
+  // shell so a temporary unmount does not discard either of the author's
+  // choices about where the strip sits and whether it is open.
   const insertToolbarX = useMotionValue(0);
   const insertToolbarY = useMotionValue(0);
+  const [insertToolbarCollapsed, setInsertToolbarCollapsed] = useState(false);
+  const toggleInsertToolbarCollapsed = useCallback(
+    () => setInsertToolbarCollapsed((current) => !current),
+    [],
+  );
   const SurfaceComponent = surface.SurfaceComponent;
 
   return (
@@ -128,7 +134,13 @@ export function EditShell({
       >
         <SurfaceComponent />
         {state && state.insertItems.length > 0 && (
-          <FloatingInsertToolbar items={state.insertItems} x={insertToolbarX} y={insertToolbarY} />
+          <FloatingInsertToolbar
+            items={state.insertItems}
+            x={insertToolbarX}
+            y={insertToolbarY}
+            collapsed={insertToolbarCollapsed}
+            onToggleCollapsed={toggleInsertToolbarCollapsed}
+          />
         )}
         {state?.hasSelection && <FloatingToolbar actions={state.floatingActions} />}
         <HintRail hints={state?.hints} reserveSpace={scene.type === 'quiz'} />

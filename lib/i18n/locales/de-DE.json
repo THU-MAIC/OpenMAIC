@@ -293,6 +293,8 @@
       "tableDimensions": "Tabelle mit {{rows}} × {{columns}}",
       "dragToolbar": "Einfügewerkzeuge verschieben",
       "dragToolbarKeyboard": "Einfügewerkzeuge verschieben: Eingabe- oder Leertaste drücken, dann die Pfeiltasten verwenden",
+      "collapseToolbar": "Einfügewerkzeuge einklappen",
+      "expandToolbar": "Einfügewerkzeuge ausklappen",
       "image": "Bild",
       "imageDrop": "Bild hier ablegen oder zur Dateiauswahl klicken",
       "imageOr": "oder eine Bild-URL einfügen",

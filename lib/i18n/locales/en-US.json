@@ -293,6 +293,8 @@
       "tableDimensions": "{{rows}} x {{columns}} Table",
       "dragToolbar": "Move insert tools",
       "dragToolbarKeyboard": "Move insert tools: press Enter or Space, then use the arrow keys",
+      "collapseToolbar": "Collapse insert tools",
+      "expandToolbar": "Expand insert tools",
       "image": "Image",
       "imageDrop": "Drop an image or click to choose a file",
       "imageOr": "or paste an image URL",
