@@ -8,7 +8,7 @@ import {
   type PgAgentSessionStoreOptions,
   type Queryable,
 } from '../src/agent-session/pg.js';
-import { AgentSessionEntryTreeError } from '../src/agent-session/types.js';
+import { AgentSessionEntryTreeError, AGENT_SESSION_LIFECYCLE } from '../src/agent-session/types.js';
 import { runAgentSessionConcurrencyContract } from './agent-session-concurrency-contract.js';
 import { makeAgentSessionInput, runAgentSessionStoreContract } from './agent-session-contract.js';
 import { runAgentSessionUrlContract } from './agent-session-url-contract.js';
@@ -225,5 +225,66 @@ describe('PgAgentSessionStore with PGlite', () => {
     expect(indexNames).toContain('spec_sessions_owner_live_idx');
     expect(indexNames).toContain('spec_entries_type_idx');
     expect(indexNames).not.toContain('spec_session_entries_type_idx');
+  });
+
+  test('settles a cancel-requested stale-running session as cancelled on claim, never attempt N+1', async () => {
+    // The incident shape: a worker dies mid-run with the cancel request set;
+    // after the restart the claim scan must NOT re-lease the session for
+    // attempt 2 — it settles the pending cancel as `cancelled` instead.
+    let now = 1_000_000;
+    const clocked = new PgAgentSessionStore(db, {
+      ...optionsFor(db),
+      now: () => now,
+    });
+    await clocked.createSession(makeAgentSessionInput());
+    const first = await clocked.claimNextSession('worker-a', 101, {
+      leaseTtlMs: 10_000,
+      maxAttempts: 3,
+    });
+    expect(first).toMatchObject({ id: 'session-1', status: 'running', attempt: 1 });
+
+    await clocked.requestCancel('session-1');
+    now += 20_000; // The 10s lease is stale; the worker is gone.
+
+    const retry = await clocked.claimNextSession('worker-b', 102, {
+      leaseTtlMs: 10_000,
+      maxAttempts: 3,
+    });
+    expect(retry).toBeNull();
+
+    const meta = await clocked.getSession('session-1');
+    expect(meta).toMatchObject({ status: 'cancelled', attempt: 0 });
+    expect(meta?.lease).toBeUndefined();
+    expect(await clocked.isCancelRequested('session-1')).toBe(false);
+    const events = await clocked.readEventsAfter('session-1', 0);
+    expect(events.at(-1)).toMatchObject({ type: AGENT_SESSION_LIFECYCLE.sessionEnd });
+    expect((events.at(-1)?.data as { status?: unknown } | undefined)?.status).toBe('cancelled');
+  });
+
+  test('claim scan settles a cancel-requested session and still claims the next queued one', async () => {
+    const clocked = new PgAgentSessionStore(db, {
+      ...optionsFor(db),
+      now: () => 1_000_000,
+    });
+    await clocked.createSession(makeAgentSessionInput({ id: 'session-cancel' }));
+    await clocked.requestCancel('session-cancel');
+    await clocked.createSession(makeAgentSessionInput({ id: 'session-next', stageId: 'stage-2' }));
+    // Pin the scan order: the cancel-requested candidate must sort first.
+    await db.query(`UPDATE agent_sessions SET created_at = $2 WHERE id = $1`, [
+      'session-cancel',
+      new Date('2020-01-01T00:00:00Z'),
+    ]);
+    await db.query(`UPDATE agent_sessions SET created_at = $2 WHERE id = $1`, [
+      'session-next',
+      new Date('2021-01-01T00:00:00Z'),
+    ]);
+
+    const claim = await clocked.claimNextSession('worker-a', 101, {
+      leaseTtlMs: 10_000,
+      maxAttempts: 3,
+    });
+    // The scan keeps going after settling the cancel-requested candidate.
+    expect(claim?.id).toBe('session-next');
+    expect(await clocked.getSession('session-cancel')).toMatchObject({ status: 'cancelled' });
   });
 });

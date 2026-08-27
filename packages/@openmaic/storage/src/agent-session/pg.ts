@@ -477,8 +477,12 @@ export class PgAgentSessionStore
     );
     for (const candidate of candidates.rows) {
       const claimed = await this.transaction(async (tx) => {
-        const locked = await tx.query<{ status: string }>(
-          `SELECT status FROM ${this.table('sessions')}
+        const locked = await tx.query<{
+          status: string;
+          attempt: number;
+          cancel_requested_at: number | string | Date | null;
+        }>(
+          `SELECT status, attempt, cancel_requested_at FROM ${this.table('sessions')}
            WHERE id = $1 AND deleted_at IS NULL
              AND (status = 'queued' OR
                   (status = 'running'
@@ -491,6 +495,14 @@ export class PgAgentSessionStore
         const previous = locked.rows[0];
         if (!previous) return null;
         const now = this.clock();
+        // A cancel request is terminal: the session must never be re-leased
+        // for another attempt (a restart would otherwise resurrect a session
+        // the user already cancelled). Settle it as cancelled under the same
+        // lock the claim would have used, then keep scanning.
+        if (previous.cancel_requested_at !== null && previous.cancel_requested_at !== undefined) {
+          await this.settleCancelledAtClaim(tx, candidate.id, now, previous.attempt);
+          return null;
+        }
         // PostgreSQL evaluates every SET expression from the locked pre-update
         // row, so lease_worker_id still identifies the prior holder here.
         const updated = await tx.query<SessionRow>(
@@ -531,6 +543,43 @@ export class PgAgentSessionStore
       if (claimed) return claimed;
     }
     return null;
+  }
+
+  /**
+   * Terminal bookkeeping for a cancel-requested session the claim scan just
+   * encountered, mirroring what the runner's own cancel path does: the row
+   * settles as `cancelled` with the attempt reset and the cancel request
+   * cleared, the owner projection records the terminal status, and the event
+   * log receives a `session_end` frame so the stream shows the terminal
+   * transition even though no lease holder ever ran this attempt.
+   */
+  private async settleCancelledAtClaim(
+    tx: Queryable,
+    sessionId: string,
+    now: number,
+    attempt: number,
+  ): Promise<void> {
+    const result = await tx.query<SessionRow>(
+      `UPDATE ${this.table('sessions')}
+       SET status = 'cancelled', attempt = 0, error = NULL,
+           lease_worker_id = NULL, lease_worker_pid = NULL, lease_heartbeat_at = NULL,
+           cancel_requested_at = NULL, updated_at = now()
+       WHERE id = $1 AND deleted_at IS NULL AND cancel_requested_at IS NOT NULL
+       RETURNING ${SESSION_COLUMNS}`,
+      [sessionId],
+    );
+    const row = result.rows[0];
+    if (!row) return;
+    await this.appendProjection(
+      { type: 'session_status', sessionId, ts: now, status: 'cancelled', attempt: 0 },
+      tx,
+    );
+    await this.insertEvent(tx, sessionId, {
+      ts: now,
+      attempt,
+      type: AGENT_SESSION_LIFECYCLE.sessionEnd,
+      data: { status: 'cancelled' },
+    });
   }
 
   async heartbeat(sessionId: string, workerId: string): Promise<boolean> {

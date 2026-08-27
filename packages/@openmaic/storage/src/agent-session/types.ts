@@ -262,6 +262,11 @@ export interface AgentSessionStore {
    * Scan optimistically, then lock and recheck one candidate. The second
    * check is the authority: candidate snapshots are stale as soon as read.
    *
+   * A candidate with a pending cancel request is never leased: the scan
+   * settles it as `cancelled` (attempt reset, cancel cleared, terminal
+   * `session_end` event) and returns null for it, so a restart can never
+   * resurrect a session the user already cancelled.
+   *
    * Attempt charging is per takeover: queued claims and takeovers of an
    * abandoned (non-null stale) lease each consume one attempt, while takeovers
    * of a cleanly-released (null) lease consume none. Clean parks therefore

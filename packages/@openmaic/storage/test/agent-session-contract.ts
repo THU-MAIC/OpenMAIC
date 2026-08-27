@@ -241,6 +241,37 @@ export function runAgentSessionStoreContract(
       expect(await store.getSession('session-1')).toMatchObject({ status: 'queued', attempt: 0 });
     });
 
+    test('settles a cancel-requested queued session as cancelled on claim, never leasing it', async () => {
+      const store = makeStore();
+      await store.createSession(makeAgentSessionInput());
+      await store.requestCancel('session-1');
+      expect(await store.isCancelRequested('session-1')).toBe(true);
+
+      const claim = await store.claimNextSession('worker-a', 101, {
+        leaseTtlMs: 10_000,
+        maxAttempts: 3,
+      });
+      // The scan must not lease the session for another attempt: it settles
+      // the pending cancel under the claim lock and moves on.
+      expect(claim).toBeNull();
+
+      const meta = await store.getSession('session-1');
+      expect(meta).toMatchObject({ status: 'cancelled', attempt: 0 });
+      expect(meta?.lease).toBeUndefined();
+      expect(await store.isCancelRequested('session-1')).toBe(false);
+      // The event log carries the terminal frame and the owner projection
+      // records the terminal status, exactly like the runner's cancel path.
+      const events = await store.readEventsAfter('session-1', 0);
+      expect(events.at(-1)).toMatchObject({ type: AGENT_SESSION_LIFECYCLE.sessionEnd });
+      expect((events.at(-1)?.data as { status?: unknown } | undefined)?.status).toBe('cancelled');
+      const projection = await store.readAfter('owner-a', BigInt(0));
+      expect(projection.at(-1)).toMatchObject({
+        type: 'session_status',
+        status: 'cancelled',
+        attempt: 0,
+      });
+    });
+
     test('appends and reopens an entry tree with labels, paths, and leaf markers', async () => {
       const store = makeStore();
       await store.createSession(makeAgentSessionInput());
