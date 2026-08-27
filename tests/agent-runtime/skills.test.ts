@@ -1,10 +1,7 @@
 /**
  * Pi-native skill discovery/resume and the outline-constraint checker.
  *
- * Adapted from the reference product's suite: tests that pinned the deferred
- * course-toolset prompt (`COURSE_SYSTEM_PROMPT` / `DSL_TOOLS_PROMPT` /
- * `buildRunnerCoursePrompt`) and the deferred `checkScenesAgainstSkill` are
- * intentionally not ported in this slice.
+ * Adapted from the reference product's suite.
  */
 import {
   mkdirSync,
@@ -23,6 +20,7 @@ import { describe, expect, it } from 'vitest';
 import {
   availableSkillsPromptBlock,
   checkOutlineAgainstSkill,
+  checkScenesAgainstSkill,
   createNativeSkillReadTool,
   findSkill,
   listSkills,
@@ -213,6 +211,28 @@ describe('checkOutlineAgainstSkill', () => {
       allowedTypes: ['slide'],
     });
     expect(violations).toEqual(['scene types not allowed by the skill: pbl']);
+  });
+});
+
+describe('checkScenesAgainstSkill', () => {
+  it('projects persisted widget metadata and drops plan-only requirements', () => {
+    const violations = checkScenesAgainstSkill(
+      [
+        { order: 1, title: 'Opening', type: 'slide' },
+        {
+          order: 2,
+          title: 'Model',
+          type: 'interactive',
+          content: { widgetConfig: { type: 'simulation' } },
+        },
+      ],
+      {
+        sceneCount: { min: 3 },
+        requiredWidgetTypes: ['simulation'],
+        requiredWidgetOutlineFields: ['learningObjective'],
+      },
+    );
+    expect(violations).toEqual(['2 scenes, the skill requires at least 3']);
   });
 });
 

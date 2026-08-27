@@ -55,13 +55,20 @@ import {
 import type { RegisteredVoiceInfo } from '@/lib/audio/voice-catalog';
 import { buildSkillEditTools, SKILL_EDIT_TOOL_NAMES } from './skill-edit-tools';
 import { buildWebSearchTool, resolveWebSearchCapability, searchPromptBlock } from './web-search';
-import { buildSkillPreload, preloadUserMessage } from './skill-preload';
+import {
+  buildSkillPreload,
+  preloadConstraintTarget,
+  preloadUserMessage,
+  type SkillPreload,
+} from './skill-preload';
 import { listSessionMaterials, sessionMaterialsPromptBlock } from './session-materials';
 import {
   availableSkillsPromptBlock,
   createNativeSkillReadTool,
   findSkill,
   listSkills,
+  skillReadFromTranscript,
+  type LoadedSkill,
 } from './skills';
 import { registerSessionUrls } from './session-urls';
 import { buildScenePreviewTools } from './scene-preview';
@@ -83,6 +90,11 @@ import { subscribeAgentEventWakeup } from './event-notify-bus';
 import { getOwnerScopedDocumentStore } from './owner-scoped-documents';
 import { assertCurrentStageMutationActive } from './mutation-fence';
 import { inventorySlide } from './course-edit/apply';
+import {
+  buildPersonalHistoryTools,
+  createPersonalHistorySource,
+  PERSONAL_HISTORY_TOOL_NAMES,
+} from './personal-history-tools';
 
 const log = createLogger('AgentRunner');
 const WORKER_ID = `${randomUUID().slice(0, 8)}:${process.pid}`;
@@ -1132,15 +1144,25 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     if (meta.skillId && !requestedSkill) {
       throw new Error(`session skill "${meta.skillId}" is unavailable for its owner`);
     }
-    // NOTE: the reference runtime keeps an `activeSkill` pointer (an explicit
-    // API selection, else the last successfully-read SKILL.md, else what the
-    // turn NAMED via `preloadConstraintTarget`) that feeds the course toolset's
-    // `getActiveSkill` and the deferred `checkScenesAgainstSkill`. Both belong
-    // to the course-toolset slice; the preload below already delivers every
-    // chosen skill as a durable `read`, which is what activation is made of.
+    let activeSkill = requestedSkill ?? skillReadFromTranscript(historyMessages, installedSkills);
+    let userFramesSeen = 0;
+    let turnPinnedSkill: LoadedSkill | null = null;
+    let pinValidThrough = -1;
+    const pinnedForCurrentTurn = (): LoadedSkill | null =>
+      turnPinnedSkill && userFramesSeen <= pinValidThrough ? turnPinnedSkill : null;
     const skillReadTool = installedSkills.length
-      ? createNativeSkillReadTool(installedSkills, () => undefined)
+      ? createNativeSkillReadTool(installedSkills, (selected) => {
+          if (!requestedSkill && !pinnedForCurrentTurn()) activeSkill = selected;
+        })
       : null;
+
+    const adoptPreload = (preload: SkillPreload, deliversUserFrame: boolean): void => {
+      if (requestedSkill) return;
+      const target = preloadConstraintTarget(preload.requested);
+      turnPinnedSkill = target && target.constraints !== null ? target : null;
+      pinValidThrough = userFramesSeen + (deliversUserFrame ? 1 : 0);
+      if (target) activeSkill = target;
+    };
 
     const loggedMessages = await listAgentUserMessages(store, id);
     const historyUsers = recovery.cursorMessages.filter((message) => message.role === 'user');
@@ -1294,6 +1316,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       onCheckpoint: (info) => emit(LIFECYCLE.checkpoint, info),
       sessionId: id,
       abortSignal: abort.signal,
+      getActiveSkill: () => activeSkill,
     });
     const curriculumTools = buildCurriculumTools({
       store: ownerScopedStore,
@@ -1348,6 +1371,14 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       registeredVoices: sessionRegisteredVoices,
     });
     const voiceRegistrationEnabled = hasConfiguredVoiceRegistrationCapability();
+    const personalHistoryTools = buildPersonalHistoryTools(
+      meta.ownerId,
+      createPersonalHistorySource({
+        getDocumentStore: async () => ownerScopedStore,
+        getSessionStore: async () => store,
+      }),
+      id,
+    );
     const tools = assembleRunnerTools(
       [askUserTool],
       webSearchTools,
@@ -1376,6 +1407,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       materialTools,
       rosterTools,
       voiceCloneTools,
+      personalHistoryTools,
     );
     const askUserLatch = createAskUserTerminateLatch();
     let toolCalls = 0;
@@ -1404,6 +1436,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         ...scenePreviewTools.map((tool) => tool.name),
         ...CURRICULUM_ALLOWLIST,
         ...ROSTER_TOOL_NAMES,
+        ...PERSONAL_HISTORY_TOOL_NAMES,
         // register_voice is registered only when the deployment has a voice
         // registration backend, so the allowlist follows: clip_audio is always
         // available, register_voice only with a backend.
@@ -1434,6 +1467,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         if (event.message.role === 'assistant') {
           trackToolCallMessage(inFlightToolCalls, event.message);
         }
+        if (event.message.role === 'user') userFramesSeen += 1;
         enqueue(async () => {
           await entrySession!.appendMessage(event.message);
           if (event.message.role === 'toolResult') {
@@ -1569,6 +1603,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
               message: `skill "${skill.id}" not preloaded (${reason}); its location is named in the prompt instead`,
             }),
         });
+        adoptPreload(preload, true);
         if (preload.messages.length === 0) {
           await agent.prompt(preload.text);
         } else {
@@ -1619,6 +1654,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
               message: `skill "${skill.id}" not reloaded on resume (${reason}); its location is named in the transcript instead`,
             }),
         });
+        adoptPreload(repair, false);
         if (repair.messages.length > 0) {
           await agent.prompt(repair.messages);
         } else {

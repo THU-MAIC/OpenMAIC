@@ -5,6 +5,7 @@ import type { CourseDocument, CourseStore } from '@/lib/server/agent-runtime/cou
 import { buildDslCourseToolset } from '@/lib/server/agent-runtime/course-tools';
 import {
   buildGenerationTools,
+  collectUnresolvedMediaPlaceholders,
   filterKnownActions,
 } from '@/lib/server/agent-runtime/generation-tools';
 import type { Scene } from '@/lib/types/stage';
@@ -97,6 +98,52 @@ function deps(store: CourseStore, extra: Record<string, unknown> = {}) {
 }
 
 describe('generation and deck tools', () => {
+  it('reports active-skill diagnostics against the persisted stage after generation', async () => {
+    const current = state(document([]));
+    const onCheckpoint = vi.fn();
+    let calls = 0;
+    const generate = find(
+      buildGenerationTools(
+        deps(current.store, {
+          onCheckpoint,
+          getActiveSkill: () => ({
+            id: 'workshop-style',
+            name: 'workshop-style',
+            description: 'Workshop',
+            content: '# Workshop',
+            filePath: '/skills/workshop-style/SKILL.md',
+            constraints: { sceneCount: { min: 2 } },
+            source: 'builtin',
+          }),
+          aiCall: vi.fn(async () => {
+            calls += 1;
+            return calls === 1
+              ? JSON.stringify([{ id: 'q1', type: 'short_answer', question: 'Try it?' }])
+              : JSON.stringify([{ type: 'text', content: 'Narration' }]);
+          }),
+        }),
+      ),
+      'generate_scene',
+    );
+    const response = await generate.execute('call', {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Practice',
+      type: 'quiz',
+      brief: 'Try the idea',
+    } as never);
+    expect((response.content[0] as { text?: string } | undefined)?.text).toContain(
+      'SKILL CONSTRAINT CHECK',
+    );
+    expect(response.details).toMatchObject({
+      skill: 'workshop-style',
+      skillViolations: ['1 scenes, the skill requires at least 2'],
+    });
+    expect(onCheckpoint).toHaveBeenCalledWith(
+      expect.objectContaining({ skill: 'workshop-style', skillViolations: expect.any(Array) }),
+    );
+  });
+
   it('keeps an earlier page after a later page generation crashes', async () => {
     const current = state(document([]));
     let contentCalls = 0;
@@ -127,6 +174,44 @@ describe('generation and deck tools', () => {
     ).rejects.toThrow('mid-generation failure');
     expect(current.get()?.scenes.map(({ order, title }) => ({ order, title }))).toEqual([
       { order: 1, title: 'First' },
+    ]);
+  });
+
+  it('refuses destructive PBL type changes and unresolved generation media', async () => {
+    const pbl = slide('project', 1, 'Project') as Scene;
+    pbl.type = 'pbl';
+    pbl.content = { type: 'pbl', projectV2: { id: 'project' } } as never;
+    const current = state(document([pbl]));
+    const generate = find(buildGenerationTools(deps(current.store)), 'generate_scene');
+    const typeChange = await generate.execute('type-change', {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Replacement',
+      type: 'slide',
+      brief: 'Replace the project',
+    } as never);
+    expect(typeChange).toMatchObject({ isError: true, details: { blocked: 'pbl-type-change' } });
+    const badMedia = await generate.execute('bad-media', {
+      stageId: 'stage-test',
+      order: 2,
+      title: 'Media',
+      type: 'slide',
+      brief: 'Use media',
+      media: [{ src: 'image:pending', description: 'Pending image' }],
+    } as never);
+    expect(badMedia).toMatchObject({ isError: true, details: { error: 'media-placeholder-src' } });
+    expect(current.get()?.scenes).toHaveLength(1);
+  });
+
+  it('detects slide media placeholders without returning page bodies', () => {
+    const scene = slide('media', 1);
+    (scene.content as Extract<Scene['content'], { type: 'slide' }>).canvas.elements = [
+      { id: 'image-1', type: 'image', src: 'image:pending' },
+      { id: 'video-1', type: 'video', src: '', mediaRef: 'video:pending' },
+    ] as never;
+    expect(collectUnresolvedMediaPlaceholders(scene)).toEqual([
+      { elementId: 'image-1', type: 'image', placeholder: 'image:pending' },
+      { elementId: 'video-1', type: 'video', placeholder: 'video:pending' },
     ]);
   });
 

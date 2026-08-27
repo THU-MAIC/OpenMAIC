@@ -52,6 +52,7 @@ import {
   type GenerateVideoToolDeps,
 } from './generate-video';
 import type { SceneTtsInput, SceneTtsSummary } from './scene-tts';
+import type { LoadedSkill } from './skills';
 
 export type CourseDocument = MaicDocument<Scene, Stage>;
 export type CourseStore = DocumentStore<Scene, Stage> & DocumentFolderStore;
@@ -67,6 +68,10 @@ export interface CheckpointInfo {
   order?: number;
   title?: string;
   sceneType?: string;
+  /** Active skill whose persisted constraints were checked after this write. */
+  skill?: string;
+  /** Non-blocking structural diagnostics for the persisted stage. */
+  skillViolations?: string[];
 }
 
 export interface CourseToolDeps {
@@ -88,6 +93,8 @@ export interface CourseToolDeps {
   abortSignal?: AbortSignal;
   /** Test seam for the neutral TTS path. */
   synthesizeTts?: (input: SceneTtsInput) => Promise<SceneTtsSummary>;
+  /** Resolve the skill that owns structural diagnostics for the current turn. */
+  getActiveSkill?: () => LoadedSkill | null;
 }
 
 /**

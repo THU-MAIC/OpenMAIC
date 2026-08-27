@@ -818,8 +818,45 @@ export function checkOutlineAgainstSkill(
   return violations;
 }
 
-// NOTE: `checkScenesAgainstSkill` (the checker that runs against the PERSISTED
-// stage rather than a plan) is intentionally NOT ported in this slice. It
-// couples to the course toolset that lands in a later slice of the agent-tools
-// wave; `checkOutlineAgainstSkill` above keeps the pure, plan-shaped checker
-// exercised by tests.
+/** The persisted-scene fields needed by the constraint projection. */
+interface CheckableScene {
+  order: number;
+  type: string;
+  title: string;
+  content?: unknown;
+}
+
+/** Project persisted interactive widget metadata onto the outline checker shape. */
+function sceneAsCheckable(scene: CheckableScene): CheckableOutline {
+  const content = scene.content as
+    | { widgetType?: string; widgetConfig?: { type?: string } }
+    | undefined;
+  return {
+    order: scene.order,
+    type: scene.type,
+    title: scene.title,
+    ...(content?.widgetType || content?.widgetConfig?.type
+      ? { widgetType: content.widgetType ?? content.widgetConfig?.type }
+      : {}),
+  };
+}
+
+/**
+ * Check the real persisted pages against the active skill's structural
+ * constraints. This is diagnostic only: the agent receives violations and
+ * decides how to repair them; persistence is never rolled back by this check.
+ *
+ * `requiredWidgetOutlineFields` is plan-only and is deliberately omitted,
+ * because persisted scenes do not retain the skill's widget-outline draft.
+ */
+export function checkScenesAgainstSkill(
+  scenes: readonly CheckableScene[],
+  constraints: OutlineConstraints | null,
+): string[] {
+  if (!constraints) return [];
+  const { requiredWidgetOutlineFields: _planOnly, ...checkable } = constraints;
+  return checkOutlineAgainstSkill(
+    scenes.map(sceneAsCheckable),
+    Object.keys(checkable).length > 0 ? checkable : null,
+  );
+}

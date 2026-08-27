@@ -178,8 +178,30 @@ describe('every tool has a verb of its own', () => {
     ['ask_user', '向你确认'],
     ['web_search', '联网搜索'],
     ['fetch_url', '抓取网页'],
+    // Personal history.
+    ['search_classrooms', '搜索课堂'],
+    ['read_classroom', '读取课堂'],
+    ['search_chats', '搜索对话'],
+    ['read_chat', '读取对话'],
   ])('labels %s as %s', (toolName, label) => {
     expect(presentTool(toolNode({ toolName })).label).toBe(label);
+  });
+
+  it('summarizes history pagination without exposing its raw payload', () => {
+    expect(
+      presentTool(
+        toolNode({
+          toolName: 'search_chats',
+          toolArgs: { query: '语音', offset: 10, limit: 5 },
+          toolDetails: { total: 5, nextOffset: 15, hasMore: true },
+        }),
+      ),
+    ).toMatchObject({
+      label: '搜索对话',
+      subject: '语音',
+      hidePayload: true,
+      chips: [{ label: '5 条', tone: 'accent' }, { label: '11–15' }, { label: '还有下一页' }],
+    });
   });
 
   it('keeps the page verb when the order is known', () => {

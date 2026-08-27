@@ -7,8 +7,8 @@
  * the generic fallback. The retired `finish` tool is not shown.
  *
  * (Port note: the table is reconciled against THIS runtime's tool registry, not
- * the reference's — PPT-import, video/image and personal-history tools are not
- * registered upstream and have no rows. The folder/rename stage tools and the
+ * the reference's. PPT-import and video/image tools are not registered upstream
+ * and have no rows. The folder/rename stage tools and the
  * roster/voice-clone tools arrived on the integration base after this slice was
  * written and gained their rows with the folder-organisation and
  * roster/voice-registration tools.)
@@ -529,6 +529,42 @@ export function presentTool(
         chips,
         ...(failed
           ? { errorText: errorLine(t('workbench.tool.error.patchSkill'), node.toolResultText) }
+          : {}),
+      };
+    }
+
+    case 'search_classrooms':
+    case 'read_classroom':
+    case 'search_chats':
+    case 'read_chat': {
+      const labels: Record<string, string> = {
+        search_classrooms: t('workbench.tool.label.searchClassrooms'),
+        read_classroom: t('workbench.tool.label.readClassroom'),
+        search_chats: t('workbench.tool.label.searchChats'),
+        read_chat: t('workbench.tool.label.readChat'),
+      };
+      const count = num(d.total) ?? (Array.isArray(d.items) ? d.items.length : undefined);
+      const offset = num(d.offset) ?? num(args.offset) ?? 0;
+      const limit = num(d.limit) ?? num(args.limit);
+      const end = num(d.nextOffset) ?? (limit !== undefined ? offset + limit : undefined);
+      if (count !== undefined) {
+        chips.push({ label: t('workbench.tool.chip.records', { count }), tone: 'accent' });
+      }
+      if (end !== undefined && end > offset) chips.push({ label: `${offset + 1}–${end}` });
+      if (d.hasMore) chips.push({ label: t('workbench.tool.chip.moreResults') });
+      const recovery = str(d.recovery);
+      return {
+        icon: FileSearch,
+        label: labels[name]!,
+        subject: str(d.title) ?? str(args.query) ?? str(args.classroomId) ?? str(args.sessionId),
+        chips,
+        hidePayload: true,
+        ...(failed
+          ? {
+              errorText: recovery
+                ? `${errorLine(t('workbench.tool.error.historyRead'), node.toolResultText)}${t('workbench.tool.recoverySeparator')}${recovery}`
+                : errorLine(t('workbench.tool.error.historyRead'), node.toolResultText),
+            }
           : {}),
       };
     }
