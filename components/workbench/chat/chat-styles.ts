@@ -196,8 +196,12 @@ export const wbStyles = {
      * wash. It is a bookmark in the transcript ("the hand-over happened here"),
      * and the form two centimetres below it is the thing to read — so this must
      * not read as a second place to answer.
+     *
+     * No horizontal padding: it has no frame, so its text is on the column's own
+     * left edge like the agent's prose. `box` keeps its `px-3` because that is a
+     * bordered card's inner padding, and the CARD's edge is what lines up.
      */
-    summaryBox: 'group/question flex flex-col px-3 py-1',
+    summaryBox: 'group/question flex flex-col py-1',
     summaryPointer: 'font-normal text-[var(--wb-text-faint)]',
   },
   /**
@@ -334,6 +338,54 @@ export const wbStyles = {
   scrollToBottom:
     'absolute left-1/2 z-30 inline-flex -translate-x-1/2 cursor-pointer items-center gap-1 rounded-full border border-[var(--wb-line)] bg-[var(--wb-surface-raised)] px-2.5 py-1 text-[length:var(--wb-text-xs)] text-[var(--wb-text-muted)] shadow-sm transition-colors hover:text-[var(--wb-text)]',
 } as const;
+
+/**
+ * The chat column's horizontal gutter — the ONE inset between the pane's edge and
+ * both the transcript's text and the composer box's left border.
+ *
+ * It is a single class in a single place on purpose. It used to be written twice
+ * (once on the scroll viewport, once on the composer footer) and the two were
+ * expected to stay equal by hand.
+ */
+const WB_CHAT_GUTTER = 'px-3';
+
+/**
+ * THE one column class that decides where the transcript and the composer begin.
+ *
+ * Both regions used to write their own column out by hand: each carried its own
+ * `px-*` gutter AND its own `mx-auto w-full max-w-*` centering wrapper. Equal
+ * paddings were never enough, because the two columns center inside DIFFERENT
+ * containing blocks — the transcript's is a scroll container, whose content box
+ * is narrower than the composer footer's by the scrollbar's width. Writing the
+ * offsets out:
+ *
+ *   transcript text left = pad + (paneWidth - 2*pad - scrollbar - measure) / 2
+ *   composer box  left   = pad + (paneWidth - 2*pad            - measure) / 2
+ *
+ * the padding cancels out of the difference entirely and what is left is
+ * `-scrollbar/2`: the transcript sits half a scrollbar to the LEFT of the
+ * composer, at every padding value. That is why tuning the two `px-*` classes
+ * against each other could not fix it, and must not be tried again.
+ *
+ * So both regions now spend this ONE class — the transcript's content wrapper
+ * inside the scroll viewport (so the scrollbar stays on the pane's edge and the
+ * whole pane scrolls), and the composer's wrapper inside the footer — and the
+ * footer cancels the one remaining difference by reserving the MEASURED
+ * scrollbar width as `padding-right` (see `WorkbenchChat`). Both copies then
+ * center inside boxes of the same width, so the left edges are equal at every
+ * pane width and every scrollbar width, with no pair of numbers to keep equal
+ * by hand.
+ *
+ * `760px` is the reading measure of the text itself; the cap carries the gutter
+ * on top of it (760 + 2 * 12) so the measure stays exactly what it was.
+ *
+ * @param measured Full-width conversation. Beside the classroom the chat is the
+ *   flex leftover (min 400), so dragging the splitter moves the border instead
+ *   of a right-side gutter — there the column is the pane.
+ */
+export function chatColumn(measured: boolean): string {
+  return measured ? `mx-auto w-full max-w-[784px] ${WB_CHAT_GUTTER}` : WB_CHAT_GUTTER;
+}
 
 /**
  * Where the composer sits — the one rule that decides whether the transcript can

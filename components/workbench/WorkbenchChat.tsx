@@ -95,7 +95,7 @@ import {
 } from '@/lib/workbench/composer-keys';
 import { useDoubleEscapeStop } from './chat/composer-escape';
 import { useWorkbenchAutoscroll } from './chat/autoscroll';
-import { composerLayout, wbStyles as styles } from './chat/chat-styles';
+import { chatColumn, composerLayout, wbStyles as styles } from './chat/chat-styles';
 import { ChatTimeline } from './chat/chat-timeline';
 import { pendingQuestion } from './chat/question-card-state';
 import { QuestionForm } from './chat/question-form';
@@ -286,6 +286,22 @@ export function WorkbenchChat({
 
   const { scrollRef, contentRef, isNearBottom, scrollToBottom } =
     useWorkbenchAutoscroll(displayedChat);
+  // The transcript's column centers inside the scroll viewport, whose content box
+  // is narrower than the footer's by however much the scrollbar reserves — 0 with
+  // overlay scrollbars, ~15px classic. The footer pads its right by that MEASURED
+  // width, so both columns center inside boxes of the same width and their left
+  // edges are equal at every pane width. Measured, never assumed: guessing a
+  // scrollbar width is exactly the class of numeric fix that already failed here.
+  const [scrollbarWidth, setScrollbarWidth] = useState(0);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const readScrollbar = () => setScrollbarWidth(el.offsetWidth - el.clientWidth);
+    readScrollbar();
+    const observer = new ResizeObserver(readScrollbar);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [scrollRef, catchingUp, retainedTranscript]);
   // How to put a classroom on screen. There is deliberately no derived list of
   // "the classrooms this conversation is involved with" any more: a classroom is
   // picked per answer, and what an answer touched is a row in the transcript
@@ -721,10 +737,13 @@ export function WorkbenchChat({
     }
   }
 
-  // Full-width conversation uses a reading measure. Beside the classroom the
-  // chat is the flex leftover (min 400), so dragging the splitter moves the
-  // border instead of a right-side gutter.
-  const measure = effectivePanelOpen ? '' : 'mx-auto w-full max-w-[760px]';
+  // The transcript and the composer share ONE column class — see `chatColumn`.
+  // The scroll viewport stays full pane width so the scrollbar sits on the
+  // pane's edge, and the footer pads its right by the MEASURED scrollbar width
+  // (`scrollbarWidth` above), so both copies of the column center inside boxes
+  // of the same width: one shared class + one measured compensation, no pair of
+  // numbers to keep equal by hand.
+  const column = chatColumn(!effectivePanelOpen);
 
   return (
     <div
@@ -735,7 +754,11 @@ export function WorkbenchChat({
     >
       {/* Nothing the user has not read may sit under the composer: `composerLayout`
           is where that rule lives, and `data-composer` is it, visible. */}
-      <div className="relative flex min-h-0 flex-1 flex-col" data-composer={layout.mode}>
+      <div
+        className="relative flex min-h-0 flex-1 flex-col"
+        data-composer={layout.mode}
+        data-testid="workbench-chat-column"
+      >
         <div className="relative min-h-0 flex-1">
           {catchingUp && !retainedTranscript ? (
             <div
@@ -753,11 +776,11 @@ export function WorkbenchChat({
               data-testid="workbench-chat-scroll"
               aria-busy={catchingUp ? 'true' : undefined}
               inert={retainedTranscript ? true : undefined}
-              // The same horizontal inset as the composer footer (`px-3`), so
-              // the timeline's left edge lines up with the composer box's left
-              // edge instead of sitting to its right.
+              // Full pane width — the scrollbar belongs on the pane's edge. The
+              // column (gutter + measure) is on the content wrapper below, and
+              // the footer mirrors it against the measured scrollbar width.
               className={cn(
-                'h-full overflow-y-auto px-3 pt-3',
+                'h-full overflow-y-auto pt-3',
                 layout.scrollPadding,
                 retainedTranscript ? 'pointer-events-none select-none' : undefined,
               )}
@@ -766,7 +789,7 @@ export function WorkbenchChat({
                 ref={contentRef}
                 className={cn(
                   'min-h-full',
-                  measure,
+                  column,
                   showEmptyState ? 'flex flex-col items-center justify-center' : undefined,
                 )}
               >
@@ -816,10 +839,16 @@ export function WorkbenchChat({
 
         <footer
           data-testid="workbench-composer-footer"
-          className={cn('inset-x-0 z-20 px-3', layout.footer)}
+          className={cn('inset-x-0 z-20', layout.footer)}
+          // The transcript's copy of the column centers inside the scroll
+          // viewport's content box, which is narrower than this footer by the
+          // scrollbar. Reserve that MEASURED width here so both copies center
+          // inside boxes of the same width — left edges equal at every pane
+          // width, whatever the platform's scrollbar is (0 when overlay).
+          style={scrollbarWidth ? { paddingRight: scrollbarWidth } : undefined}
         >
           <div className={styles.composer.seamFade} aria-hidden="true" />
-          <div className={cn('pointer-events-auto relative', measure)}>
+          <div className={cn('pointer-events-auto relative', column)}>
             {/* The agent's open question, IN PLACE OF the composer rather than
                 stacked above it: there is nothing else to type while it waits,
                 and one surface with one focus beats two that both look live. The
