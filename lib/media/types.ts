@@ -14,7 +14,6 @@
  * - Seedance (ByteDance video generation)
  * - Kling (Kuaishou video generation)
  * - Veo (Google DeepMind video generation)
- * - Sora (OpenAI video generation)
  * - HappyHorse (Alibaba Cloud Model Studio video generation)
  *
  * HOW TO ADD A NEW PROVIDER:
@@ -192,7 +191,6 @@ export type VideoProviderId =
   | 'seedance'
   | 'kling'
   | 'veo'
-  | 'sora'
   | 'minimax-video'
   | 'grok-video'
   | 'happyhorse';
