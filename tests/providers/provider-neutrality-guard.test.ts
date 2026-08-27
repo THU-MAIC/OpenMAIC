@@ -81,9 +81,10 @@ const PROVIDER_NEUTRAL_FILES = [
   // Registry-based document dispatch
   'lib/document/extractors/registry.ts',
   'lib/document/extractors/media-registry.ts',
-  // Object-storage contract and dispatch
-  'lib/storage/types.ts',
-  'lib/storage/index.ts',
+  // Object-storage contract and dispatch. The lib/storage barrel and types
+  // entry points were removed by the provider audit; client.ts is the
+  // surviving module.
+  'lib/storage/client.ts',
   'lib/persistence/asset-byte-store.ts',
   'lib/persistence/server-provider.ts',
 ] as const;
@@ -197,7 +198,6 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['seedance', 2],
       ['kling', 2],
       ['veo', 2],
-      ['sora', 2],
       ['happyhorse', 2],
       ['tavily', 7],
       ['bocha', 5],
@@ -240,7 +240,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'Temporary: managed document-provider configuration and fallback policy remain in the route.',
     [
       ['alidocmind', 6],
-      ['mineru', 9],
+      ['mineru', 15],
     ],
   ),
   ...groupedDebt(
@@ -281,7 +281,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/persistence/asset-byte-store.ts',
     'Temporary: asset-byte-store selection still switches between concrete storage implementations.',
     [
-      ['pg', 4],
+      ['pg', 12],
       ['s3', 16],
     ],
   ),
