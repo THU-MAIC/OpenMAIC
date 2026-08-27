@@ -21,7 +21,7 @@
  * its object first, then the reservation, so a crash mid-reclaim never loses
  * the pointer to the bytes.
  */
-import type { Queryable } from '@openmaic/storage/document/pg';
+import { splitSqlStatements, type Queryable } from '@openmaic/storage/document/pg';
 import {
   nodePostgresTransaction,
   type ConnectableQueryable,
@@ -118,12 +118,23 @@ CREATE TABLE IF NOT EXISTS owner_material (
 
 CREATE INDEX IF NOT EXISTS owner_material_owner_created_idx
   ON owner_material (owner_id, created_at);
+
+-- Databases created before the byte-store model have this table without
+-- oss_key (they tracked an asset id instead); CREATE TABLE IF NOT EXISTS
+-- leaves such tables untouched, so the column must be added here. The ''
+-- default is the existing "no bytes recorded" sentinel the stale-upload
+-- sweeper already understands. The old NOT NULL asset_id column must also
+-- go, or its constraint rejects every insert of the new row shape.
+ALTER TABLE owner_material ADD COLUMN IF NOT EXISTS oss_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE owner_material DROP COLUMN IF EXISTS asset_id;
 `;
 
 export async function ensureOwnerMaterialSchema(queryable: Queryable): Promise<void> {
-  for (const sql of OWNER_MATERIAL_SCHEMA.split(';')) {
-    const statement = sql.trim();
-    if (statement !== '') await queryable.query(statement);
+  // splitSqlStatements skips `--` line comments (and quoted strings), so a
+  // semicolon in the migration's prose can never split a statement mid-text
+  // the way a plain `split(';')` does.
+  for (const statement of splitSqlStatements(OWNER_MATERIAL_SCHEMA)) {
+    await queryable.query(statement);
   }
 }
 

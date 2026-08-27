@@ -276,6 +276,63 @@ describe('owner material reservations', () => {
     expect(await rowById(pool.db, 'mat_old_ready')).toMatchObject({ status: 'ready' });
   });
 
+  it('upgrades a table created by the asset-id era schema', async () => {
+    const db = new PGlite();
+    await db.waitReady;
+    await db.query(`CREATE TABLE owner_material (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      derived_from TEXT,
+      mime TEXT,
+      bytes DOUBLE PRECISION NOT NULL,
+      original_name TEXT,
+      asset_id TEXT NOT NULL,
+      sha256 TEXT,
+      status TEXT NOT NULL DEFAULT 'ready',
+      extraction JSONB,
+      created_at DOUBLE PRECISION NOT NULL,
+      deleted_at DOUBLE PRECISION
+    )`);
+    // A real pre-existing deployment has rows: the legacy row must survive the
+    // upgrade, its dropped asset_id discarded and its oss_key backfilled with
+    // the '' "no bytes recorded" sentinel.
+    await db.query(
+      `INSERT INTO owner_material
+         (id, owner_id, kind, mime, bytes, original_name, asset_id, sha256,
+          status, extraction, created_at)
+       VALUES ($1, 'owner-1', 'source', 'application/pdf', 2048, 'legacy.pdf',
+               'legacy-asset-1', NULL, 'ready', NULL, $2)`,
+      ['mat_legacy', 1_600_000_000_000],
+    );
+    await ensureOwnerMaterialSchema(db);
+    // Idempotency on the real deployment shape: a second pass must be a clean
+    // no-op (ADD COLUMN IF NOT EXISTS / DROP COLUMN IF EXISTS), not a DDL error.
+    await ensureOwnerMaterialSchema(db);
+    const legacyRow = await db.query<{ oss_key: string; status: string }>(
+      'SELECT oss_key, status FROM owner_material WHERE id = $1',
+      ['mat_legacy'],
+    );
+    expect(legacyRow.rows[0]).toMatchObject({ oss_key: '', status: 'ready' });
+    const oldPool = new PGlitePool(db);
+    const record = await registerOwnerMaterial(
+      oldPool as unknown as ConnectableQueryable,
+      input(),
+      // The legacy row above already consumes bytes toward the quota; leave
+      // headroom so the post-upgrade reservation goes through.
+      { maxCount: 10, maxTotalBytes: 10_000 },
+    );
+    expect(record.status).toBe('uploading');
+    expect(record.ossKey).toBe('materials/owner-1/mat_1');
+    const columns = await db.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns WHERE table_name = 'owner_material'`,
+    );
+    const names = columns.rows.map((row) => row.column_name);
+    expect(names).toContain('oss_key');
+    expect(names).not.toContain('asset_id');
+    await oldPool.end();
+  });
+
   it('derives a namespaced per-owner quota lock key', () => {
     expect(ownerMaterialQuotaLockKey('owner-1')).toBe('owner-materials:owner-1:quota');
     expect(ownerMaterialQuotaLockKey('owner-1')).not.toBe('owner-materials:owner-1');
