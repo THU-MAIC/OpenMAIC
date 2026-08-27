@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AgentSessionMaterial } from '@openmaic/storage';
 
 const mocks = vi.hoisted(() => ({
-  persist: vi.fn(async () => 'https://openmaic.test/api/classroom-media/stage-a/media/image.png'),
+  persist: vi.fn(async () => '/api/classroom-media/stage-a/media/image.png'),
 }));
 
 vi.mock('@/lib/server/classroom-media-bytes', () => ({
@@ -50,7 +50,7 @@ describe('generation media tools', () => {
       expect.objectContaining({ stageId: 'stage-a', mime: 'image/png' }),
     );
     expect(response.details).toMatchObject({
-      src: 'https://openmaic.test/api/classroom-media/stage-a/media/image.png',
+      src: '/api/classroom-media/stage-a/media/image.png',
       mimeType: 'image/png',
     });
   });

@@ -3,7 +3,6 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
-import { resolveMediaServingOrigin } from '@/lib/server/media-origin';
 
 function extensionForMime(mime: string): string {
   const known: Record<string, string> = {
@@ -21,12 +20,25 @@ function extensionForMime(mime: string): string {
   return known[mime] ?? 'bin';
 }
 
+/**
+ * Persist raw media bytes under the stage's classroom-media path and return
+ * an origin-independent serving reference.
+ *
+ * The returned reference is a RELATIVE path (`/api/classroom-media/...`), not
+ * an absolute URL. This is the agent runtime's only byte-persist path: it runs
+ * with no HTTP request to derive an origin from, and the durable value must
+ * stay valid regardless of which origin serves the app. The browser resolves
+ * the relative path against the page origin (image/video `src`, narration
+ * `audioUrl` playback), and every server-side consumer of the reference reads
+ * the local file or fetches it relative to the same origin. Request-bearing
+ * routes that DO have an origin build absolute URLs through
+ * `resolveMediaServingOrigin` (`classroom-media-generation.ts`).
+ */
 export async function persistClassroomMediaBytes(input: {
   stageId: string;
   bytes: Buffer | Uint8Array;
   mime: string;
   prefix?: string;
-  baseUrl?: string;
   signal?: AbortSignal;
 }): Promise<string> {
   if (input.signal?.aborted) throw new Error('aborted');
@@ -37,5 +49,5 @@ export async function persistClassroomMediaBytes(input: {
   if (input.signal?.aborted) throw new Error('aborted');
   await fs.writeFile(path.join(mediaDir, filename), input.bytes);
   if (input.signal?.aborted) throw new Error('aborted');
-  return `${resolveMediaServingOrigin(input.baseUrl)}/api/classroom-media/${input.stageId}/media/${filename}`;
+  return `/api/classroom-media/${input.stageId}/media/${filename}`;
 }

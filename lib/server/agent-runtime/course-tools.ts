@@ -89,8 +89,6 @@ export interface CourseToolDeps {
   onCheckpoint: (info: CheckpointInfo) => void;
   /** The session id, recorded on the document as the producer reference. */
   sessionId?: string;
-  /** Request origin used to build local classroom-media URLs. */
-  baseUrl?: string;
   /** Cancel generation, preview, and synthesis when the run stops. */
   abortSignal?: AbortSignal;
   /** Test seam for the neutral TTS path. */
@@ -215,9 +213,7 @@ export function buildDslCourseToolset(
     buildGenerateImageTool(deps),
     ...(hasConfiguredVideoGeneration(deps) ? [buildGenerateVideoTool(deps)] : []),
     ...buildCourseAudioAndDeckTools(deps),
-    ...(deps.sessionId
-      ? [buildMaterialMediaTool({ sessionId: deps.sessionId, baseUrl: deps.baseUrl })]
-      : []),
+    ...(deps.sessionId ? [buildMaterialMediaTool({ sessionId: deps.sessionId })] : []),
     ...buildDslCourseTools(deps),
   ] as unknown as AgentTool<never, never>[];
   return markDocumentWritersSequential(withOwnerStageAuthorization(tools, deps));

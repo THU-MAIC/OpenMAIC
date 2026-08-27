@@ -2,7 +2,7 @@ import { DEFAULT_TTS_MODELS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/aud
 import { generateTTS, TTSRequestTimeoutError } from '@/lib/audio/tts-providers';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement';
-import type { SpeechAction } from '@/lib/types/action';
+import type { LegacySpeechAction, SpeechAction } from '@/lib/types/action';
 import type { GeneratedAgentConfig, Scene } from '@/lib/types/stage';
 import {
   getServerTTSProviders,
@@ -24,7 +24,6 @@ export interface SceneTtsInput {
   scene: Scene;
   force: boolean;
   roster?: readonly GeneratedAgentConfig[] | null;
-  baseUrl?: string;
   signal?: AbortSignal;
 }
 
@@ -94,14 +93,23 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
         speech.text,
       );
       if (input.signal?.aborted) throw new Error('aborted');
-      speech.audioId = await persistClassroomMediaBytes({
+      // The persisted reference is the RELATIVE classroom-media path (the
+      // agent runtime has no request origin; relative stays valid on any
+      // deployment origin — see classroom-media-bytes.ts). The browser's
+      // narration consumers (timeline status/preview, playback, exports)
+      // resolve a speech line through the legacy (audioId, audioUrl) pair:
+      // `audioId` alone is never resolvable to bytes client-side, while a
+      // present `audioUrl` marks the line voiced and is what the audio
+      // element / fetch fallback plays. Stamp the same relative path on both.
+      const audioId = await persistClassroomMediaBytes({
         stageId: input.scene.stageId,
         bytes: Buffer.from(audio.audio),
         mime: audioMime(audio.format),
         prefix: `tts-${action.id}`,
-        baseUrl: input.baseUrl,
         signal: input.signal,
       });
+      speech.audioId = audioId;
+      (speech as LegacySpeechAction).audioUrl = audioId;
       generated += 1;
     } catch (error) {
       if (input.signal?.aborted) throw error;

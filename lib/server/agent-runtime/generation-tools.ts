@@ -459,7 +459,6 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           scene: next,
           force: false,
           roster: doc.stage.generatedAgentConfigs,
-          baseUrl: deps.baseUrl,
           signal,
         });
         if (audio.changed) {

@@ -12,7 +12,6 @@ const Params = Type.Object({
 
 export interface MaterialMediaDeps {
   sessionId: string;
-  baseUrl?: string;
   getMaterial?: typeof getSessionMaterial;
   readRawBytes?: typeof resolveSessionMaterialRawAsset;
 }
@@ -62,7 +61,6 @@ export function buildMaterialMediaTool(deps: MaterialMediaDeps): AgentTool<never
         bytes: source.bytes,
         mime: source.mime,
         prefix: `material-${material.id}`,
-        baseUrl: deps.baseUrl,
         signal,
       });
       return {

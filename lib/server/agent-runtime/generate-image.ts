@@ -31,7 +31,6 @@ import {
   readResponseBodyWithLimit,
 } from '@/lib/server/bounded-download';
 import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
-import { resolveMediaServingOrigin } from '@/lib/server/media-origin';
 import type { CourseToolDeps } from './course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import { errorResult, MEDIA_TOOL_ERROR_REASONS } from './media-tool-result';
@@ -69,16 +68,12 @@ type GenerateConfiguredImage = (
 interface PersistImageInput {
   result: ImageGenerationResult;
   stageId: string;
-  baseUrl?: string;
   signal: AbortSignal;
 }
 
 type PersistGeneratedImage = (input: PersistImageInput) => Promise<string>;
 
-export interface GenerateImageToolDeps extends Pick<
-  CourseToolDeps,
-  'sessionId' | 'baseUrl' | 'abortSignal'
-> {
+export interface GenerateImageToolDeps extends Pick<CourseToolDeps, 'sessionId' | 'abortSignal'> {
   getConfiguredProviders?: typeof getServerImageProviders;
   resolveProviderConfig?: (providerId: ImageProviderId) => ImageGenerationConfig;
   generateConfiguredImage?: GenerateConfiguredImage;
@@ -155,11 +150,17 @@ async function imageBytes(
   return { bytes, mime };
 }
 
-/** Persist through the same local classroom-media path used by classic mode. */
+/**
+ * Persist through the same local classroom-media path used by classic mode,
+ * returning an origin-independent RELATIVE serving path. The agent runtime has
+ * no request to derive an origin from, and the durable value must stay valid
+ * regardless of the origin the app is served from; the browser resolves the
+ * relative path against the page origin. Classic request-bearing routes build
+ * absolute URLs through `resolveMediaServingOrigin` instead.
+ */
 export async function defaultPersistGeneratedImage({
   result,
   stageId,
-  baseUrl,
   signal,
 }: PersistImageInput): Promise<string> {
   const { bytes, mime } = await imageBytes(result, signal);
@@ -172,7 +173,7 @@ export async function defaultPersistGeneratedImage({
   throwIfAborted(signal);
   await fs.writeFile(path.join(mediaDir, filename), bytes);
   throwIfAborted(signal);
-  return `${resolveMediaServingOrigin(baseUrl)}/api/classroom-media/${stageId}/media/${filename}`;
+  return `/api/classroom-media/${stageId}/media/${filename}`;
 }
 
 /**
@@ -319,7 +320,7 @@ export function buildGenerateImageTool(
         });
         throwIfAborted(ioSignal);
 
-        const src = await persist({ result, stageId, baseUrl: deps.baseUrl, signal: ioSignal });
+        const src = await persist({ result, stageId, signal: ioSignal });
         throwIfAborted(ioSignal);
         void recordGenerationUsage({
           kind: 'image',

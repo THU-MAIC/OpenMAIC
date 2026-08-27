@@ -25,7 +25,6 @@ import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { readResponseBodyWithLimit } from '@/lib/server/bounded-download';
 import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
-import { resolveMediaServingOrigin } from '@/lib/server/media-origin';
 import type { CourseToolDeps } from './course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import { errorResult, MEDIA_TOOL_ERROR_REASONS } from './media-tool-result';
@@ -77,7 +76,6 @@ type GenerateConfiguredVideo = (
 interface PersistVideoInput {
   result: VideoGenerationResult;
   stageId: string;
-  baseUrl?: string;
   signal: AbortSignal;
 }
 
@@ -88,10 +86,7 @@ interface PersistedVideo {
 
 type PersistGeneratedVideo = (input: PersistVideoInput) => Promise<PersistedVideo>;
 
-export interface GenerateVideoToolDeps extends Pick<
-  CourseToolDeps,
-  'sessionId' | 'baseUrl' | 'abortSignal'
-> {
+export interface GenerateVideoToolDeps extends Pick<CourseToolDeps, 'sessionId' | 'abortSignal'> {
   getConfiguredVideoProviders?: () => Record<string, { models?: string[]; disabled?: boolean }>;
   resolveVideoProviderConfig?: (providerId: VideoProviderId) => VideoGenerationConfig;
   generateConfiguredVideo?: GenerateConfiguredVideo;
@@ -150,12 +145,15 @@ async function fetchGeneratedVideo(url: string, signal: AbortSignal): Promise<Re
 
 /**
  * Video providers return hosted URLs that may expire. Materialize those bytes
- * through the same local classroom-media path as generate_image and classic mode.
+ * through the same local classroom-media path as generate_image and classic
+ * mode, returning an origin-independent RELATIVE serving path: the agent
+ * runtime has no request to derive an origin from, and the durable value must
+ * stay valid regardless of the origin the app is served from (the browser
+ * resolves the relative path against the page origin).
  */
 export async function defaultPersistGeneratedVideo({
   result,
   stageId,
-  baseUrl,
   signal,
 }: PersistVideoInput): Promise<PersistedVideo> {
   throwIfAborted(signal);
@@ -186,7 +184,7 @@ export async function defaultPersistGeneratedVideo({
   await fs.writeFile(path.join(mediaDir, filename), bytes);
   throwIfAborted(signal);
   return {
-    src: `${resolveMediaServingOrigin(baseUrl)}/api/classroom-media/${stageId}/media/${filename}`,
+    src: `/api/classroom-media/${stageId}/media/${filename}`,
     mime,
   };
 }
@@ -314,7 +312,6 @@ export function buildGenerateVideoTool(
         const stored = await persist({
           result,
           stageId,
-          baseUrl: deps.baseUrl,
           signal: ioSignal,
         });
         throwIfAborted(ioSignal);

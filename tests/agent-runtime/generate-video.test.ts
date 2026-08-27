@@ -159,7 +159,6 @@ describe('generate_video tool', () => {
     expect(persistGeneratedVideo).toHaveBeenCalledWith({
       result: expect.objectContaining({ url: 'https://cdn.example.com/generated/lesson.webm' }),
       stageId: 'stage-owner',
-      baseUrl: undefined,
       signal: expect.any(AbortSignal),
     });
     // Success details are provider-neutral: no provider id leaks into the
@@ -197,12 +196,11 @@ describe('generate_video tool', () => {
           height: 720,
         },
         stageId: 'stage-owner',
-        baseUrl: 'https://openmaic.test',
         signal: new AbortController().signal,
       }),
     ).resolves.toEqual({
       src: expect.stringMatching(
-        /^https:\/\/openmaic\.test\/api\/classroom-media\/stage-owner\/media\/generated-[a-f0-9]{64}\.mov$/,
+        /^\/api\/classroom-media\/stage-owner\/media\/generated-[a-f0-9]{64}\.mov$/,
       ),
       mime: 'video/quicktime',
     });

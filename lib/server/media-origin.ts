@@ -19,6 +19,12 @@
  * the classroom-media route does not exist and every request is rejected.
  * That env stays available for its other legitimate uses (auth redirects
  * etc.) — it must simply never be used to build media URLs.
+ *
+ * The agent RUNTIME persist paths (`classroom-media-bytes.ts`,
+ * `generate-image.ts`, `generate-video.ts`) never call this resolver: they
+ * run without an HTTP request and persist origin-independent RELATIVE
+ * `/api/classroom-media/...` references instead, which stay valid no matter
+ * which origin serves the app.
  */
 import type { NextRequest } from 'next/server';
 
@@ -29,7 +35,9 @@ import type { NextRequest } from 'next/server';
  * background/agent-runner context with no origin captured yet, the only
  * same-origin-safe guess is this app's own localhost. Production deployments
  * always thread a real origin (request-derived, or persisted at session
- * creation), so this fallback only ever fires in dev/tests.
+ * creation), so this fallback only ever fires in dev/tests. The agent
+ * runtime's own persist paths do not use this resolver at all — they persist
+ * relative references (see the module comment).
  */
 export const LOCAL_MEDIA_ORIGIN = 'http://localhost:3000';
 

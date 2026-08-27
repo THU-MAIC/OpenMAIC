@@ -49,14 +49,18 @@ describe('scene TTS capability routing', () => {
   it('stores generated narration bytes in classroom media', async () => {
     mocks.providers.mockReturnValue({ 'configured-tts': {} });
     mocks.generate.mockResolvedValue({ audio: new Uint8Array([1, 2]), format: 'mp3' });
-    mocks.persist.mockResolvedValue(
-      'https://openmaic.test/api/classroom-media/stage-a/media/tts.mp3',
-    );
+    mocks.persist.mockResolvedValue('/api/classroom-media/stage-a/media/tts-speech-a-abc123.mp3');
     const target = structuredClone(scene);
     const summary = await synthesizeSceneNarration({ scene: target, force: false });
     expect(summary).toMatchObject({ available: true, changed: true, generated: 1 });
+    // The durable reference is the RELATIVE classroom-media path (origin-
+    // independent), stamped on both `audioId` and the legacy `audioUrl` pair
+    // the browser's narration consumers resolve (timeline status/preview,
+    // playback fetch, exports) — so agent-generated narration is voiced and
+    // playable on any deployment origin.
     expect(target.actions?.[0]).toMatchObject({
-      audioId: 'https://openmaic.test/api/classroom-media/stage-a/media/tts.mp3',
+      audioId: '/api/classroom-media/stage-a/media/tts-speech-a-abc123.mp3',
+      audioUrl: '/api/classroom-media/stage-a/media/tts-speech-a-abc123.mp3',
     });
     expect(mocks.persist).toHaveBeenCalledWith(
       expect.objectContaining({ stageId: 'stage-a', mime: 'audio/mpeg' }),

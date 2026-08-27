@@ -142,7 +142,6 @@ describe('generate_image tool', () => {
     const generateConfiguredImage = vi.fn().mockResolvedValue(generated);
     const tool = buildGenerateImageTool({
       sessionId: 'session-owner',
-      baseUrl: 'https://openmaic.test',
       getConfiguredProviders: () => ({ 'openai-image': { models: ['gpt-image-1'] } }),
       resolveProviderConfig: () => ({
         providerId: 'openai-image',
@@ -187,10 +186,12 @@ describe('generate_image tool', () => {
     );
     // Success details are provider-neutral: no provider id leaks into the
     // transcript. The vendor choice stays in the server-side log, correlated
-    // by the tool-call id.
+    // by the tool-call id. The persisted src is an origin-independent RELATIVE
+    // classroom-media path (the agent runtime has no request origin), which
+    // the browser resolves against the page origin.
     expect(result.details).toEqual({
       src: expect.stringMatching(
-        /^https:\/\/openmaic\.test\/api\/classroom-media\/stage-owner\/media\/generated-[a-f0-9]{64}\.png$/,
+        /^\/api\/classroom-media\/stage-owner\/media\/generated-[a-f0-9]{64}\.png$/,
       ),
       width: 1024,
       height: 576,
@@ -233,10 +234,9 @@ describe('generate_image tool', () => {
       defaultPersistGeneratedImage({
         result: { url: 'https://cdn.example.com/generated/photo.jpg', width: 1024, height: 576 },
         stageId: 'stage-owner',
-        baseUrl: 'https://openmaic.test',
         signal: new AbortController().signal,
       }),
-    ).resolves.toMatch(/^https:\/\/openmaic\.test\/api\/classroom-media\/stage-owner\/media\//);
+    ).resolves.toMatch(/^\/api\/classroom-media\/stage-owner\/media\//);
     expect(mocks.writeFile).toHaveBeenCalledWith(
       expect.stringMatching(/\.jpg$/),
       Buffer.from('real-image-bytes'),
