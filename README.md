@@ -11,6 +11,12 @@
 </p>
 
 <p align="center">
+  <a href="https://my.feishu.cn/wiki/UIfKw9Knti0LcKkTxDNcqlUrnzh"><img src="https://img.shields.io/badge/%F0%9F%93%98%20User%20Guide-1.0.0%20%C2%B7%20English-4F8EF7?style=for-the-badge" alt="1.0.0 User Guide (English)"/></a>
+  &nbsp;&nbsp;
+  <a href="https://lcn6dqn3m0yr.feishu.cn/wiki/CkQSwHFdzibQFvkGzwPcmUOfnXg"><img src="https://img.shields.io/badge/%F0%9F%93%99%20%E4%BD%93%E9%AA%8C%E6%8C%87%E5%8D%97-1.0.0%20%C2%B7%20%E4%B8%AD%E6%96%87-FF6B35?style=for-the-badge" alt="1.0.0 体验指南（中文）"/></a>
+</p>
+
+<p align="center">
   <a href="https://jcst.ict.ac.cn/en/article/doi/10.1007/s11390-025-6000-0"><img src="https://img.shields.io/badge/Paper-JCST'26-blue?style=flat-square" alt="Paper"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License: MIT"/></a>
   <a href="https://open.maic.chat/"><img src="https://img.shields.io/badge/Demo-Live-brightgreen?style=flat-square" alt="Live Demo"/></a>
@@ -37,12 +43,6 @@
 </p>
 
 ## 🎉 OpenMAIC 1.0.0 — Build courses with an agent
-
-<p align="center">
-  <a href="https://my.feishu.cn/wiki/UIfKw9Knti0LcKkTxDNcqlUrnzh"><img src="https://img.shields.io/badge/%F0%9F%93%98%20User%20Guide-1.0.0%20%C2%B7%20English-4F8EF7?style=for-the-badge" alt="1.0.0 User Guide (English)"/></a>
-  &nbsp;&nbsp;
-  <a href="https://lcn6dqn3m0yr.feishu.cn/wiki/CkQSwHFdzibQFvkGzwPcmUOfnXg"><img src="https://img.shields.io/badge/%F0%9F%93%99%20%E4%BD%93%E9%AA%8C%E6%8C%87%E5%8D%97-1.0.0%20%C2%B7%20%E4%B8%AD%E6%96%87-FF6B35?style=for-the-badge" alt="1.0.0 体验指南（中文）"/></a>
-</p>
 
 **One prompt in, a whole course out — and now you can steer.** Released August 27, 2026, OpenMAIC 1.0.0 adds an opt-in **Pro workbench** alongside the classic one-click generator: chat with an agent that plans your curriculum, builds and revises every page, and works straight from your materials.
 
