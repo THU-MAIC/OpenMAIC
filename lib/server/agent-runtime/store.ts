@@ -8,6 +8,7 @@ import { extractObservedUrls } from '@openmaic/storage';
 import type { Pool } from 'pg';
 
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
+import { notifyDurableAgentEvent } from './event-notify-bus';
 
 interface AgentSessionStoreState {
   connectionString?: string;
@@ -67,6 +68,17 @@ async function createAgentSessionStore(connectionString: string): Promise<PgAgen
         transaction,
       );
     },
+    // Wake the per-session SSE tail (and the running session's runner) in the
+    // SAME transaction as the durable append: PG emits NOTIFY only at commit,
+    // so the reader wakes exactly when the row becomes visible. Lossy by
+    // design — a dropped notification degrades only latency, never
+    // correctness, because every stream keeps its fallback poll.
+    onSessionEventAppended: (transaction, event): Promise<void> =>
+      notifyDurableAgentEvent(transaction, { kind: 'session', sessionId: event.sessionId }),
+    onOwnerEventAppended: (transaction, event): Promise<void> =>
+      notifyDurableAgentEvent(transaction, { kind: 'owner', ownerId: event.ownerId }),
+    onCancelRequested: (transaction, sessionId): Promise<void> =>
+      notifyDurableAgentEvent(transaction, { kind: 'session', sessionId }),
   });
   return store;
 }

@@ -42,10 +42,13 @@ describe.skipIf(!contractUrl)('session attempt budget takeovers', () => {
   });
 
   beforeEach(async () => {
+    // CASCADE absorbs every table that has since gained an FK to agent_sessions
+    // (agent_session_urls from the URL trust gate, agent_session_materials from
+    // the material store); the suite owns the whole database.
     await pool.query(
       `TRUNCATE agent_session_entries, agent_session_events,
                 agent_owner_session_events, agent_owner_session_event_counters,
-                agent_sessions`,
+                agent_sessions CASCADE`,
     );
     store = new PgAgentSessionStore(pool as Queryable, { withTransaction: transactionFor(pool) });
   });

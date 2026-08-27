@@ -75,6 +75,7 @@ import {
   type PendingToolCall,
 } from './tool-call-integrity';
 import { getAgentSessionStore } from './store';
+import { subscribeAgentEventWakeup } from './event-notify-bus';
 import { getOwnerScopedDocumentStore } from './owner-scoped-documents';
 
 const log = createLogger('AgentRunner');
@@ -594,6 +595,24 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   }, config.heartbeatIntervalMs);
   heartbeatTimer.unref?.();
 
+  // ── NOTIFY wakeup + low-frequency fallback ───────────────────────────────
+  //
+  // A user message (appendUserMessage/postUserMessage → insertEvent) and
+  // requestCancel each send a {kind:'session', sessionId} NOTIFY in the SAME
+  // transaction as their durable write. One shared subscription to that route
+  // wakes on both — a message and a cancel are indistinguishable at the route
+  // level, so each wake runs both cheap point reads (listUserMessages via the
+  // drain and isCancelRequested via the cancel check).
+  //
+  // Deliberately ONE subscription, not two: the bus fans out per route key,
+  // so two subscriptions to the same route would sit in the same subscriber
+  // set and both fire on every wake anyway — one subscribe/unsubscribe pair
+  // is also exactly one lifecycle pairing to get right (the timer-leak class
+  // the reference fixed). The wakeup is lossy by design (NOTIFY is not
+  // persisted; signals sent while the LISTEN connection is down are dropped),
+  // so the polls are not deleted — they are demoted to a 5s correctness
+  // backstop.
+  let drainOnWake: (() => void) | null = null;
   const checkCancel = (): void => {
     store
       .isCancelRequested(id)
@@ -605,6 +624,11 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       })
       .catch(() => {});
   };
+  const unsubscribeWakeup = subscribeAgentEventWakeup({ kind: 'session', sessionId: id }, () => {
+    checkCancel();
+    drainOnWake?.();
+  });
+
   const cancelPoll = setInterval(checkCancel, SESSION_WAKEUP_FALLBACK_MS);
   cancelPoll.unref?.();
 
@@ -990,6 +1014,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       });
       return drainInFlight;
     };
+    drainOnWake = requestDrain;
     const messagePoll = setInterval(() => void requestDrain(), SESSION_WAKEUP_FALLBACK_MS);
     messagePoll.unref?.();
 
@@ -1196,6 +1221,8 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   } finally {
     clearInterval(heartbeatTimer);
     clearInterval(cancelPoll);
+    unsubscribeWakeup();
+    drainOnWake = null;
     await flushAll(false);
     ctx.running.delete(id);
   }

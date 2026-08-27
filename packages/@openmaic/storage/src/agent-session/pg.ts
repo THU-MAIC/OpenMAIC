@@ -342,6 +342,9 @@ export class PgAgentSessionStore
   private readonly resolveOwnerHook: NonNullable<AgentSessionHooks['resolveFinalOwner']>;
   private readonly createdHook?: AgentSessionHooks['onSessionCreated'];
   private readonly messageHook?: AgentSessionHooks['onUserMessagePosted'];
+  private readonly sessionEventHook?: AgentSessionHooks['onSessionEventAppended'];
+  private readonly ownerEventHook?: AgentSessionHooks['onOwnerEventAppended'];
+  private readonly cancelHook?: AgentSessionHooks['onCancelRequested'];
 
   constructor(queryable: Queryable, options: PgAgentSessionStoreOptions) {
     if (typeof options?.withTransaction !== 'function') {
@@ -363,6 +366,9 @@ export class PgAgentSessionStore
     this.resolveOwnerHook = options.resolveFinalOwner ?? (async (_tx, ownerId) => ownerId);
     this.createdHook = options.onSessionCreated;
     this.messageHook = options.onUserMessagePosted;
+    this.sessionEventHook = options.onSessionEventAppended;
+    this.ownerEventHook = options.onOwnerEventAppended;
+    this.cancelHook = options.onCancelRequested;
   }
 
   private table(name: keyof AgentSessionTableNames): string {
@@ -624,7 +630,20 @@ export class PgAgentSessionStore
        FROM ${this.table('events')} WHERE session_id = $1 RETURNING seq`,
       [sessionId, event.ts, event.attempt, event.type, encodeJson(event.data, 'event data')],
     );
-    return Number(result.rows[0]!.seq);
+    const seq = Number(result.rows[0]!.seq);
+    // Transactional wakeup: the host queues a lossy NOTIFY on the SAME
+    // transaction, so the SSE tail and the runner wake exactly when this row
+    // commits. PG delivers NOTIFY only at commit, so no reader can observe
+    // the wakeup before the row is durable (reference material-event
+    // semantics).
+    await this.sessionEventHook?.(tx, {
+      sessionId,
+      seq,
+      type: event.type,
+      ts: event.ts,
+      attempt: event.attempt,
+    });
+    return seq;
   }
 
   async appendRunEvent(
@@ -793,6 +812,21 @@ export class PgAgentSessionStore
     afterSeq: number,
     limit = 500,
   ): Promise<{ events: PersistedAgentSessionEvent[]; scanned: number }> {
+    // Drops intermediate `message_update` tokens so a session that streamed
+    // tens of thousands of deltas does not ship them all to the browser on
+    // refresh — but keeps the FIRST and the LAST of each page: the last
+    // carries the full text, the first is what makes the live tail forward a
+    // delta the moment it lands (its `prev` is NULL at the page edge, so it
+    // can never be compacted away). The window functions rank the bounded
+    // PAGE, not the whole remainder of the log: the live tail polls this
+    // every couple of hundred milliseconds, and ranking the entire tail on
+    // each poll was the stream's biggest cost. A compaction judgment at a
+    // page edge sees no neighbour across the boundary and keeps the extra
+    // frame — a harmless middle frame the fold overwrites (reference
+    // semantics).
+    //
+    // `scanned` is the RAW page size before compaction, so the caller's
+    // pagination ("a full page means more log remains") stays exact.
     const result = await this.queryable.query<{
       seq: number;
       ts: number | string;
@@ -808,19 +842,9 @@ export class PgAgentSessionStore
            AND EXISTS (SELECT 1 FROM ${this.table('sessions')} s
                        WHERE s.id = $1 AND s.deleted_at IS NULL)
          ORDER BY e.seq LIMIT $3
-       ), span AS (
-         -- One extra row on each side of the page so lag/lead see the true
-         -- neighbors across page boundaries instead of NULL at the edges; the
-         -- anchor row (seq = $2) is the cursor's own row, discarded below.
-         SELECT e.seq, e.type
-         FROM ${this.table('events')} e
-         WHERE e.session_id = $1 AND e.seq >= $2
-           AND EXISTS (SELECT 1 FROM ${this.table('sessions')} s
-                       WHERE s.id = $1 AND s.deleted_at IS NULL)
-         ORDER BY e.seq LIMIT $4
        ), ranked AS (
          SELECT seq, lag(type) OVER (ORDER BY seq) AS prev_type,
-                lead(type) OVER (ORDER BY seq) AS next_type FROM span
+                lead(type) OVER (ORDER BY seq) AS next_type FROM page
        )
        SELECT p.seq, p.ts, p.attempt, p.type, p.data, p.scanned
        FROM page p INNER JOIN ranked r ON r.seq = p.seq
@@ -828,7 +852,7 @@ export class PgAgentSessionStore
           OR r.prev_type IS DISTINCT FROM 'message_update'
           OR r.next_type IS DISTINCT FROM 'message_update'
        ORDER BY p.seq`,
-      [sessionId, afterSeq, limit, limit + 2],
+      [sessionId, afterSeq, limit],
     );
     return {
       events: result.rows.map((row) => ({
@@ -901,6 +925,10 @@ export class PgAgentSessionStore
       );
       if (result.rows[0]) {
         await this.appendProjection({ type: 'session_cancel_requested', sessionId, ts }, tx);
+        // The session-route wakeup reaches the running session's runner (and
+        // its per-session SSE reader) at COMMIT, so an abort lands within
+        // milliseconds instead of on the fallback poll (reference semantics).
+        await this.cancelHook?.(tx, sessionId);
       }
     });
   }
@@ -1077,6 +1105,14 @@ export class PgAgentSessionStore
           encodeJson(data, 'owner event data'),
         ],
       );
+      // Stays inside the projection SAVEPOINT (reference semantics): a queued
+      // NOTIFY is emitted only when the outer mutation commits, and a failed
+      // projection rolls it back with the owner row.
+      await this.ownerEventHook?.(transaction, {
+        ...event,
+        id: String(counter.n),
+        ownerId: session.owner_id,
+      });
       await transaction.query(`RELEASE SAVEPOINT ${savepoint}`);
       return BigInt(counter.n);
     } catch (error) {

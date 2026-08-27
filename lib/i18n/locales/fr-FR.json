@@ -1941,7 +1941,7 @@
     "error": "Code d’accès invalide. Veuillez réessayer."
   },
   "proMode": {
-    "attach": "添加材料",
+    "attach": "Joindre un support",
     "mentionCourse": "引用课堂",
     "loadSkill": "加载 skill",
     "skillMenuTitle": "选择课程设计技能",

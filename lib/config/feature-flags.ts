@@ -38,9 +38,14 @@ export function isProWorkbenchEnabled(): boolean {
  * affordance in `Header`. The `StageMode` type union is unaffected so
  * existing code paths typecheck identically with the flag in either
  * state.
+ *
+ * Implied by the Pro workbench flag: the workbench IS Pro mode, and a
+ * workbench build without the editor toggle has no way to edit a course.
+ * The standalone flag remains for deployments that want the classroom
+ * editor without the workbench.
  */
 export function isMaicEditorEnabled(): boolean {
-  return readBoolean(process.env.NEXT_PUBLIC_MAIC_EDITOR_ENABLED);
+  return isProWorkbenchEnabled() || readBoolean(process.env.NEXT_PUBLIC_MAIC_EDITOR_ENABLED);
 }
 
 /**
