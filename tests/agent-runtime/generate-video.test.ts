@@ -9,12 +9,14 @@ import { MAX_GENERATED_VIDEO_BYTES } from '@/lib/server/agent-runtime/generate-v
 
 const mocks = vi.hoisted(() => ({
   recordGenerationUsage: vi.fn().mockResolvedValue(undefined),
+  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('@/lib/server/usage-storage', () => ({
   recordGenerationUsage: mocks.recordGenerationUsage,
 }));
 vi.mock('@/lib/server/ssrf-guard', () => ({ validateUrlForSSRF: async () => null }));
+vi.mock('@/lib/logger', () => ({ createLogger: () => mocks.log }));
 
 import {
   buildGenerateVideoTool,
@@ -136,7 +138,7 @@ describe('generate_video tool', () => {
     })) as {
       isError?: boolean;
       content: { text: string }[];
-      details: { src: string; mime: string; durationSec: number; provider: string };
+      details: { src: string; mime: string; durationSec: number };
     };
 
     expect(result.isError).toBeUndefined();
@@ -156,15 +158,20 @@ describe('generate_video tool', () => {
       stageId: 'stage-owner',
       signal: expect.any(AbortSignal),
     });
+    // Success details are provider-neutral: no provider id leaks into the
+    // transcript. The vendor choice stays in the server-side log, correlated
+    // by the tool-call id.
     expect(result.details).toEqual({
       src: 'ast_generated-video',
       mime: 'video/webm',
       durationSec: 5,
-      provider: 'seedance',
     });
     expect(result.content[0].text).toContain('autoplay and poster');
     expect(mocks.recordGenerationUsage).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'video', unit: 'second', quantity: 5 }),
+    );
+    expect(mocks.log.info).toHaveBeenCalledWith(
+      expect.stringMatching(/call-1[\s\S]*provider=seedance/),
     );
   });
 
@@ -250,9 +257,16 @@ describe('generate_video tool', () => {
       prompt: 'motion',
     })) as { isError?: boolean; content: { text: string }[]; details: Record<string, unknown> };
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('content rejected');
-    expect(result.details.reason).toBe('provider-or-storage-error');
+    // The raw provider message never reaches the transcript; it stays in the
+    // server-side log correlated by the tool-call id.
+    expect(result.content[0].text).toBe('Video generation failed.');
+    expect(result.content[0].text).not.toContain('content rejected');
+    expect(result.details).toEqual({ stageId: 'stage-owner', reason: 'provider-or-storage-error' });
     expect(generateConfiguredVideo).toHaveBeenCalledTimes(1);
+    expect(mocks.log.error).toHaveBeenCalledWith(
+      expect.stringMatching(/call-1[\s\S]*provider=seedance[\s\S]*content rejected/),
+      expect.any(Error),
+    );
   });
 
   it('fails loudly on timeout', async () => {
@@ -267,7 +281,7 @@ describe('generate_video tool', () => {
       prompt: 'motion',
     })) as { isError?: boolean; content: { text: string }[]; details: Record<string, unknown> };
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('timed out after 5ms');
+    expect(result.content[0].text).toContain('timed out');
     expect(result.details.reason).toBe('timeout');
   });
 
@@ -285,5 +299,86 @@ describe('generate_video tool', () => {
     );
     controller.abort();
     await expect(pending).rejects.toThrow('aborted');
+  });
+
+  it('does not register when the only configured provider is force-disabled', () => {
+    const deps = courseDeps({
+      getConfiguredVideoProviders: () => ({ seedance: { disabled: true } }),
+      resolveVideoProviderConfig: () => providerConfig,
+    });
+    // The capability gate resolves enabledness through the resolver: a
+    // force-disabled provider never registers the tool (#665).
+    expect(buildDslCourseToolset(deps).map((tool) => tool.name)).not.toContain('generate_video');
+    expect(buildCourseAllowlist(deps)).not.toContain('generate_video');
+  });
+
+  it('skips a force-disabled provider in the selector even when it has a key', async () => {
+    const generateConfiguredVideo = vi.fn().mockResolvedValue({
+      url: 'https://cdn.example.com/generated/lesson.webm',
+      duration: 5,
+      width: 1280,
+      height: 720,
+    });
+    const persistGeneratedVideo = vi.fn().mockResolvedValue({
+      src: 'ast_generated-video',
+      mime: 'video/webm',
+    });
+    const tool = buildGenerateVideoTool({
+      sessionId: 'session-owner',
+      // seedance is force-disabled; kling is the only enabled entry, so the
+      // selector must pick kling (#665).
+      getConfiguredVideoProviders: () => ({
+        seedance: { disabled: true, models: ['doubao-seedance-1-5-pro-251215'] },
+        kling: { models: ['kling-v1-6'] },
+      }),
+      resolveVideoProviderConfig: () => ({
+        providerId: 'kling',
+        apiKey: 'test-key',
+        baseUrl: 'https://api-beijing.klingai.com',
+        model: 'kling-v1-6',
+      }),
+      generateConfiguredVideo,
+      persistGeneratedVideo,
+    });
+
+    const result = (await tool.execute('call-1', {
+      stageId: 'stage-owner',
+      prompt: 'motion',
+    })) as { isError?: boolean };
+
+    expect(result.isError).toBeUndefined();
+    expect(generateConfiguredVideo).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: 'kling' }),
+      expect.anything(),
+    );
+  });
+
+  it('keeps provider identity and raw errors out of tool results (server log only)', async () => {
+    const generateConfiguredVideo = vi
+      .fn()
+      .mockRejectedValue(new Error('ark.cn-beijing.volces.com account suspended'));
+    const tool = buildGenerateVideoTool({
+      sessionId: 'session-owner',
+      getConfiguredVideoProviders: configured,
+      resolveVideoProviderConfig: () => providerConfig,
+      generateConfiguredVideo,
+    });
+
+    const result = (await tool.execute('call-1', {
+      stageId: 'stage-owner',
+      prompt: 'motion',
+    })) as { isError?: boolean; content: { text: string }[]; details: Record<string, unknown> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe('Video generation failed.');
+    expect(result.content[0].text).not.toContain('seedance');
+    expect(result.content[0].text).not.toContain('volces');
+    expect(result.details).toEqual({ stageId: 'stage-owner', reason: 'provider-or-storage-error' });
+    // The provider id and the raw exception stay in the server-side log,
+    // correlated by the tool-call id.
+    expect(mocks.log.error).toHaveBeenCalledWith(
+      expect.stringMatching(/call-1[\s\S]*provider=seedance[\s\S]*account suspended/),
+      expect.any(Error),
+    );
   });
 });

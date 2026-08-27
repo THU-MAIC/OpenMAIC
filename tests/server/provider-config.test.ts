@@ -927,6 +927,33 @@ video:
     });
   });
 
+  describe('enabledProviderIds resolver (#665)', () => {
+    it('returns only non-disabled entries of a capability listing', async () => {
+      const { enabledProviderIds } = await import('@/lib/server/provider-config');
+      expect(
+        enabledProviderIds({
+          'openai-image': { models: ['gpt-image-1'] },
+          seedream: { disabled: true },
+          'grok-image': {},
+        }),
+      ).toEqual(['openai-image', 'grok-image']);
+    });
+
+    it('keeps object-key order and drops nothing when nothing is disabled', async () => {
+      const { enabledProviderIds } = await import('@/lib/server/provider-config');
+      expect(enabledProviderIds({ a: {}, b: { models: [] }, c: { disabled: false } })).toEqual([
+        'a',
+        'b',
+        'c',
+      ]);
+    });
+
+    it('returns an empty list when every entry is force-disabled', async () => {
+      const { enabledProviderIds } = await import('@/lib/server/provider-config');
+      expect(enabledProviderIds({ a: { disabled: true }, b: { disabled: true } })).toEqual([]);
+    });
+  });
+
   describe('Qwen TTS resolution', () => {
     it('uses the provider default base URL when none is configured or supplied', async () => {
       const { resolveTTSBaseUrl } = await import('@/lib/server/provider-config');

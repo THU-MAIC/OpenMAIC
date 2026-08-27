@@ -10,17 +10,23 @@ import type {
   VideoProviderId,
 } from '@/lib/media/types';
 import {
+  enabledProviderIds,
   getServerVideoProviders,
+  isServerProviderDisabled,
   resolveVideoApiKey,
   resolveVideoBaseUrl,
   resolveVideoModel,
 } from '@/lib/server/provider-config';
+import { createLogger } from '@/lib/logger';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { readResponseBodyWithLimit } from '@/lib/server/bounded-download';
 import type { CourseToolDeps } from './course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
+import { errorResult, MEDIA_TOOL_ERROR_REASONS } from './media-tool-result';
+
+const log = createLogger('AgentGenerateVideo');
 
 export const GENERATE_VIDEO_TOOL_NAME = 'generate_video';
 // The longest provider poll budget is 15 minutes.
@@ -78,7 +84,7 @@ interface PersistedVideo {
 type PersistGeneratedVideo = (input: PersistVideoInput) => Promise<PersistedVideo>;
 
 export interface GenerateVideoToolDeps extends Pick<CourseToolDeps, 'sessionId' | 'abortSignal'> {
-  getConfiguredVideoProviders?: () => Record<string, unknown>;
+  getConfiguredVideoProviders?: () => Record<string, { models?: string[]; disabled?: boolean }>;
   resolveVideoProviderConfig?: (providerId: VideoProviderId) => VideoGenerationConfig;
   generateConfiguredVideo?: GenerateConfiguredVideo;
   persistGeneratedVideo?: PersistGeneratedVideo;
@@ -173,16 +179,18 @@ export async function defaultPersistGeneratedVideo(
   return { src, mime };
 }
 
-function errorResult(text: string, details: Record<string, unknown> = {}) {
-  return {
-    content: [{ type: 'text' as const, text }],
-    details,
-    isError: true,
-  };
-}
-
-function configuredProviderIds(configured: Record<string, unknown>): VideoProviderId[] {
-  return Object.keys(configured).filter((id): id is VideoProviderId => id in VIDEO_PROVIDERS);
+/**
+ * Enabled video provider ids from the listing: configured and not
+ * force-disabled (#665). The gate and the selector both resolve enabledness
+ * through {@link enabledProviderIds}, so an operator force-off is never
+ * registered or selected.
+ */
+function configuredProviderIds(
+  configured: Record<string, { models?: string[]; disabled?: boolean }>,
+): VideoProviderId[] {
+  return enabledProviderIds(configured).filter(
+    (id): id is VideoProviderId => id in VIDEO_PROVIDERS,
+  );
 }
 
 /** Server-side config resolution; the server `_MODELS` pin is authoritative. */
@@ -220,7 +228,7 @@ export function buildGenerateVideoTool(
     description:
       'Create a new video from a prompt, persist its provider-hosted result for the explicitly targeted course, and return a renderable src, mime and duration. Use the returned src in a later patch_stage set of an existing video element, or add a video element with patch_stage. Video elements also support autoplay and poster. This tool never edits a page itself.',
     parameters: GenerateVideoParams,
-    async execute(_toolCallId, params: Static<typeof GenerateVideoParams>, signal) {
+    async execute(toolCallId, params: Static<typeof GenerateVideoParams>, signal) {
       const callerSignal = signal ?? deps.abortSignal;
       throwIfAborted(callerSignal);
 
@@ -234,14 +242,28 @@ export function buildGenerateVideoTool(
         return !provider.requiresApiKey || !!resolveConfig(id).apiKey;
       });
       if (!providerId) {
+        log.warn(`[${toolCallId}] Video generation unavailable: no enabled server video provider`);
         return errorResult(
-          'Video generation is unavailable: no server video provider is configured.',
+          'Video generation is unavailable: no server video provider is available.',
           {
             stageId,
             sessionId: deps.sessionId,
-            provider: null,
+            reason: MEDIA_TOOL_ERROR_REASONS.noProvider,
           },
         );
+      }
+
+      // Defense in depth: the operator force-off is authoritative at the call
+      // boundary — even if a caller explicitly selects a disabled provider id,
+      // the call fails before any provider I/O (#665).
+      if (isServerProviderDisabled('video', providerId)) {
+        log.warn(
+          `[${toolCallId}] Video generation rejected: provider ${providerId} is force-disabled`,
+        );
+        return errorResult('Video generation is unavailable.', {
+          stageId,
+          reason: MEDIA_TOOL_ERROR_REASONS.providerDisabled,
+        });
       }
 
       const providerConfig = resolveConfig(providerId);
@@ -250,9 +272,15 @@ export function buildGenerateVideoTool(
       // resolution is authoritative, and a provider that expects an explicit
       // model errors here instead of silently defaulting.
       if ((VIDEO_PROVIDERS[providerId]?.models?.length ?? 0) > 0 && !model) {
+        log.warn(
+          `[${toolCallId}] Video generation unavailable: no model configured for provider ${providerId}`,
+        );
         return errorResult(
-          `Video generation is unavailable: no model is configured for provider ${providerId} on this server.`,
-          { stageId, provider: providerId, reason: 'missing-model' },
+          'Video generation is unavailable: no model is configured for the selected video provider on this server.',
+          {
+            stageId,
+            reason: MEDIA_TOOL_ERROR_REASONS.missingModel,
+          },
         );
       }
       const normalized = normalizeVideoOptions(providerId, {
@@ -285,6 +313,9 @@ export function buildGenerateVideoTool(
           modelId: model,
           quantity: result.duration,
         });
+        log.info(
+          `[${toolCallId}] Video generated: provider=${providerId}, model=${model ?? 'default'}, ${result.width}x${result.height}, ${result.duration}s`,
+        );
 
         return {
           content: [
@@ -297,26 +328,27 @@ export function buildGenerateVideoTool(
             src: stored.src,
             mime: stored.mime,
             ...(result.duration ? { durationSec: result.duration } : {}),
-            provider: providerId,
           },
         };
       } catch (error) {
         if (callerSignal?.aborted) throw new Error('aborted');
         if (isTimeout(ioSignal)) {
-          return errorResult(
-            `Video generation timed out after ${timeoutMs}ms (provider ${providerId}).`,
-            {
-              stageId,
-              provider: providerId,
-              reason: 'timeout',
-            },
+          log.warn(
+            `[${toolCallId}] Video generation timed out: provider=${providerId}, model=${model ?? 'default'}, timeoutMs=${timeoutMs}`,
           );
+          return errorResult('Video generation timed out after the configured server timeout.', {
+            stageId,
+            reason: MEDIA_TOOL_ERROR_REASONS.timeout,
+          });
         }
         const message = error instanceof Error ? error.message : String(error);
-        return errorResult(`Video generation failed with provider ${providerId}: ${message}`, {
+        log.error(
+          `[${toolCallId}] Video generation failed: provider=${providerId}, model=${model ?? 'default'}, error=${message}`,
+          error,
+        );
+        return errorResult('Video generation failed.', {
           stageId,
-          provider: providerId,
-          reason: 'provider-or-storage-error',
+          reason: MEDIA_TOOL_ERROR_REASONS.generationFailed,
         });
       }
     },

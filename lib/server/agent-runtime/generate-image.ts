@@ -10,11 +10,14 @@ import type {
   ImageProviderId,
 } from '@/lib/media/types';
 import {
+  enabledProviderIds,
   getServerImageProviders,
+  isServerProviderDisabled,
   resolveImageApiKey,
   resolveImageBaseUrl,
   resolveImageModel,
 } from '@/lib/server/provider-config';
+import { createLogger } from '@/lib/logger';
 import { resolveImageSize } from '@/lib/server/image-sizing';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
@@ -27,6 +30,9 @@ import {
 } from '@/lib/server/bounded-download';
 import type { CourseToolDeps } from './course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
+import { errorResult, MEDIA_TOOL_ERROR_REASONS } from './media-tool-result';
+
+const log = createLogger('AgentGenerateImage');
 
 export const GENERATE_IMAGE_TOOL_NAME = 'generate_image';
 export const GENERATE_IMAGE_TIMEOUT_MS = 300_000;
@@ -162,16 +168,17 @@ export async function defaultPersistGeneratedImage(
   return src;
 }
 
-function errorResult(text: string, details: Record<string, unknown> = {}) {
-  return {
-    content: [{ type: 'text' as const, text }],
-    details,
-    isError: true,
-  };
-}
-
-function selectProvider(configured: Record<string, { models?: string[] }>): ImageProviderId | null {
-  const ids = Object.keys(configured);
+/**
+ * Pick the image provider for this call: the operator's `DEFAULT_IMAGE_PROVIDER`
+ * when it names an enabled provider, otherwise the first enabled provider.
+ * Resolution goes through {@link enabledProviderIds}, so a force-disabled
+ * provider is never selected and `DEFAULT_IMAGE_PROVIDER` cannot bypass the
+ * force-off switch (#665).
+ */
+function selectProvider(
+  configured: Record<string, { models?: string[]; disabled?: boolean }>,
+): ImageProviderId | null {
+  const ids = enabledProviderIds(configured);
   const requested = process.env.DEFAULT_IMAGE_PROVIDER?.trim();
   if (requested) return ids.includes(requested) ? (requested as ImageProviderId) : null;
   return (ids[0] as ImageProviderId | undefined) ?? null;
@@ -198,7 +205,7 @@ export function buildGenerateImageTool(
     description:
       'Create a new image from a prompt, persist it with the explicitly targeted course media, and return a renderable src plus dimensions. Use the returned src in a later patch_stage set of an existing media element, or add an image element with patch_stage. This tool never edits a page itself.',
     parameters: GenerateImageParams,
-    async execute(_toolCallId, params: Static<typeof GenerateImageParams>, signal) {
+    async execute(toolCallId, params: Static<typeof GenerateImageParams>, signal) {
       const callerSignal = signal ?? deps.abortSignal;
       throwIfAborted(callerSignal);
 
@@ -212,26 +219,61 @@ export function buildGenerateImageTool(
       const providerId = selectProvider(providers);
       const requestedDefault = process.env.DEFAULT_IMAGE_PROVIDER?.trim();
       if (!providerId) {
+        if (requestedDefault) {
+          log.warn(
+            `[${toolCallId}] Image generation unavailable: requested default provider ${requestedDefault} is not enabled`,
+          );
+        } else {
+          log.warn(
+            `[${toolCallId}] Image generation unavailable: no enabled server image provider`,
+          );
+        }
         return errorResult(
           requestedDefault
-            ? `Image generation is unavailable: DEFAULT_IMAGE_PROVIDER=${requestedDefault} is not configured on this server.`
-            : 'Image generation is unavailable: no server image provider is configured.',
-          { stageId, sessionId: deps.sessionId, provider: requestedDefault ?? null },
+            ? 'Image generation is unavailable: the server default image provider is not available.'
+            : 'Image generation is unavailable: no server image provider is available.',
+          {
+            stageId,
+            sessionId: deps.sessionId,
+            reason: MEDIA_TOOL_ERROR_REASONS.noProvider,
+          },
         );
+      }
+
+      // Defense in depth: the operator force-off is authoritative at the call
+      // boundary — even if a caller explicitly selects a disabled provider id,
+      // the call fails before any provider I/O (#665).
+      if (isServerProviderDisabled('image', providerId)) {
+        log.warn(
+          `[${toolCallId}] Image generation rejected: provider ${providerId} is force-disabled`,
+        );
+        return errorResult('Image generation is unavailable.', {
+          stageId,
+          reason: MEDIA_TOOL_ERROR_REASONS.providerDisabled,
+        });
       }
 
       const provider = IMAGE_PROVIDERS[providerId];
       if (!provider) {
-        return errorResult(`Image generation is unavailable: unsupported provider ${providerId}.`, {
-          stageId,
-          provider: providerId,
-        });
+        log.error(
+          `[${toolCallId}] Image generation unavailable: unsupported provider ${providerId}`,
+        );
+        return errorResult(
+          'Image generation is unavailable: the selected provider is not supported by this server.',
+          {
+            stageId,
+            reason: MEDIA_TOOL_ERROR_REASONS.unsupportedProvider,
+          },
+        );
       }
       const providerConfig = resolveProviderConfig(providerId);
       if (provider.requiresApiKey && !providerConfig.apiKey) {
+        log.warn(
+          `[${toolCallId}] Image generation unavailable: no API key configured for provider ${providerId}`,
+        );
         return errorResult(
-          `Image generation is unavailable: no API key is configured for provider ${providerId}.`,
-          { stageId, provider: providerId },
+          'Image generation is unavailable: no API key is configured for the selected image provider.',
+          { stageId, reason: MEDIA_TOOL_ERROR_REASONS.missingApiKey },
         );
       }
 
@@ -242,9 +284,15 @@ export function buildGenerateImageTool(
       // default. Model-less providers (empty catalog, e.g. workflow-driven
       // runners) resolve their own target at call time.
       if ((provider.models?.length ?? 0) > 0 && !model) {
+        log.warn(
+          `[${toolCallId}] Image generation unavailable: no model configured for provider ${providerId}`,
+        );
         return errorResult(
-          `Image generation is unavailable: no model is configured for provider ${providerId} on this server.`,
-          { stageId, provider: providerId, reason: 'missing-model' },
+          'Image generation is unavailable: no model is configured for the selected image provider on this server.',
+          {
+            stageId,
+            reason: MEDIA_TOOL_ERROR_REASONS.missingModel,
+          },
         );
       }
 
@@ -273,6 +321,9 @@ export function buildGenerateImageTool(
           modelId: model,
           quantity: 1,
         });
+        log.info(
+          `[${toolCallId}] Image generated: provider=${providerId}, model=${model ?? 'default'}, ${result.width}x${result.height}`,
+        );
 
         return {
           content: [
@@ -285,22 +336,27 @@ export function buildGenerateImageTool(
             src,
             width: result.width,
             height: result.height,
-            provider: providerId,
           },
         };
       } catch (error) {
         if (callerSignal?.aborted) throw new Error('aborted');
         if (isTimeout(ioSignal)) {
-          return errorResult(
-            `Image generation timed out after ${deps.timeoutMs ?? GENERATE_IMAGE_TIMEOUT_MS}ms (provider ${providerId}).`,
-            { stageId, provider: providerId, reason: 'timeout' },
+          log.warn(
+            `[${toolCallId}] Image generation timed out: provider=${providerId}, model=${model ?? 'default'}, timeoutMs=${deps.timeoutMs ?? GENERATE_IMAGE_TIMEOUT_MS}`,
           );
+          return errorResult('Image generation timed out after the configured server timeout.', {
+            stageId,
+            reason: MEDIA_TOOL_ERROR_REASONS.timeout,
+          });
         }
         const message = error instanceof Error ? error.message : String(error);
-        return errorResult(`Image generation failed with provider ${providerId}: ${message}`, {
+        log.error(
+          `[${toolCallId}] Image generation failed: provider=${providerId}, model=${model ?? 'default'}, error=${message}`,
+          error,
+        );
+        return errorResult('Image generation failed.', {
           stageId,
-          provider: providerId,
-          reason: 'provider-or-storage-error',
+          reason: MEDIA_TOOL_ERROR_REASONS.generationFailed,
         });
       }
     },

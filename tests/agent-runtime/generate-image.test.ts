@@ -6,6 +6,7 @@ import { MAX_REMOTE_IMAGE_BYTES } from '@/lib/server/bounded-download';
 const mocks = vi.hoisted(() => ({
   recordGenerationUsage: vi.fn().mockResolvedValue(undefined),
   getServerPersistenceProvider: vi.fn(),
+  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('@/lib/server/usage-storage', () => ({
@@ -15,6 +16,7 @@ vi.mock('@/lib/persistence/server-provider', () => ({
   getServerPersistenceProvider: mocks.getServerPersistenceProvider,
 }));
 vi.mock('@/lib/server/ssrf-guard', () => ({ validateUrlForSSRF: async () => null }));
+vi.mock('@/lib/logger', () => ({ createLogger: () => mocks.log }));
 
 import {
   buildGenerateImageTool,
@@ -81,11 +83,11 @@ describe('generate_image tool', () => {
     };
 
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('no server image provider is configured');
+    expect(result.content[0].text).toContain('no server image provider is available');
     expect(result.details).toMatchObject({
       stageId: 'stage-owner',
       sessionId: 'session-owner',
-      provider: null,
+      reason: 'no-provider',
     });
   });
 
@@ -165,7 +167,7 @@ describe('generate_image tool', () => {
     )) as {
       isError?: boolean;
       content: { text: string }[];
-      details: { src: string; width: number; height: number; provider: string };
+      details: { src: string; width: number; height: number };
     };
 
     expect(result.isError).toBeUndefined();
@@ -186,15 +188,20 @@ describe('generate_image tool', () => {
       expect.objectContaining({ size: Buffer.from('real-image-bytes').length, type: 'image/png' }),
       { contentType: 'image/png' },
     );
+    // Success details are provider-neutral: no provider id leaks into the
+    // transcript. The vendor choice stays in the server-side log, correlated
+    // by the tool-call id.
     expect(result.details).toEqual({
       src: 'ast_generated-image',
       width: 1024,
       height: 576,
-      provider: 'openai-image',
     });
     expect(result.content[0].text).toContain(result.details.src);
     expect(mocks.recordGenerationUsage).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'image', quantity: 1 }),
+    );
+    expect(mocks.log.info).toHaveBeenCalledWith(
+      expect.stringMatching(/call-1[\s\S]*provider=openai-image/),
     );
   });
 
@@ -242,6 +249,102 @@ describe('generate_image tool', () => {
       { key: 'shared' },
       expect.objectContaining({ size: Buffer.from('real-image-bytes').length, type: 'image/jpeg' }),
       { contentType: 'image/jpeg' },
+    );
+  });
+
+  it('skips a force-disabled provider in the selector even when it has a key', async () => {
+    const generateConfiguredImage = vi.fn().mockResolvedValue({
+      base64: Buffer.from('real-image-bytes').toString('base64'),
+      width: 1024,
+      height: 576,
+    });
+    const put = vi.fn().mockResolvedValue('ast_generated-image');
+    mocks.getServerPersistenceProvider.mockResolvedValue({ assetStore: { put } });
+    const tool = buildGenerateImageTool({
+      sessionId: 'session-owner',
+      // openai-image is force-disabled (`{ disabled: true }`); seedream is the
+      // only enabled entry, so the selector must pick seedream (#665).
+      getConfiguredProviders: () => ({
+        'openai-image': { disabled: true, models: ['gpt-image-1'] },
+        seedream: { models: ['doubao-seedream-3-0-t2i-250415'] },
+      }),
+      resolveProviderConfig: () => ({
+        providerId: 'seedream',
+        apiKey: 'test-key',
+        baseUrl: 'https://ark.cn-beijing.volces.com',
+        model: 'doubao-seedream-3-0-t2i-250415',
+      }),
+      generateConfiguredImage,
+    });
+
+    const result = (await tool.execute(
+      'call-1',
+      { stageId: 'stage-owner', prompt: 'A microscope' },
+      undefined,
+    )) as { isError?: boolean };
+
+    expect(result.isError).toBeUndefined();
+    expect(generateConfiguredImage).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: 'seedream' }),
+      expect.anything(),
+    );
+  });
+
+  it('does not select a force-disabled provider via DEFAULT_IMAGE_PROVIDER', async () => {
+    vi.stubEnv('DEFAULT_IMAGE_PROVIDER', 'openai-image');
+    const generateConfiguredImage = vi.fn();
+    const tool = buildGenerateImageTool({
+      sessionId: 'session-owner',
+      // openai-image is configured but force-disabled; the env default names it,
+      // so the call must fail instead of using the disabled provider (#665).
+      getConfiguredProviders: () => ({ 'openai-image': { disabled: true } }),
+      generateConfiguredImage,
+    });
+
+    const result = (await tool.execute(
+      'call-1',
+      { stageId: 'stage-owner', prompt: 'A microscope' },
+      undefined,
+    )) as { isError?: boolean; content: { text: string }[]; details: Record<string, unknown> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('server default image provider is not available');
+    expect(result.details.reason).toBe('no-provider');
+    expect(generateConfiguredImage).not.toHaveBeenCalled();
+  });
+
+  it('keeps provider identity and raw errors out of tool results (server log only)', async () => {
+    const generateConfiguredImage = vi
+      .fn()
+      .mockRejectedValue(new Error('s3://internal-bucket-xyz quota exceeded'));
+    const tool = buildGenerateImageTool({
+      sessionId: 'session-owner',
+      getConfiguredProviders: () => ({ 'openai-image': { models: ['gpt-image-1'] } }),
+      resolveProviderConfig: () => ({
+        providerId: 'openai-image',
+        apiKey: 'test-key',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-image-1',
+      }),
+      generateConfiguredImage,
+    });
+
+    const result = (await tool.execute(
+      'call-1',
+      { stageId: 'stage-owner', prompt: 'A microscope' },
+      undefined,
+    )) as { isError?: boolean; content: { text: string }[]; details: Record<string, unknown> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe('Image generation failed.');
+    expect(result.content[0].text).not.toContain('openai-image');
+    expect(result.content[0].text).not.toContain('internal-bucket');
+    expect(result.details).toEqual({ stageId: 'stage-owner', reason: 'provider-or-storage-error' });
+    // The provider id and the raw exception stay in the server-side log,
+    // correlated by the tool-call id.
+    expect(mocks.log.error).toHaveBeenCalledWith(
+      expect.stringMatching(/call-1[\s\S]*provider=openai-image[\s\S]*internal-bucket/),
+      expect.any(Error),
     );
   });
 });
