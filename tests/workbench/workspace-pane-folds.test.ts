@@ -304,9 +304,12 @@ describe('fold placement', () => {
     expect(mini).toContain('direction="right"');
     expect(mini).toContain('onClick={onToggleCollapsed}');
     expect(mini).not.toContain('pro-nav-home-mini');
+    // The strip is the list of destinations, and saved courses are not one any
+    // more: the drawer is gone, so there is no glyph that opens it.
+    expect(mini).not.toContain('pro-nav-mini-saved');
 
     // Each destination glyph expands, and says so on top of naming its tab.
-    for (const glyph of ['pro-nav-mini-sessions', 'pro-nav-mini-courses', 'pro-nav-mini-saved']) {
+    for (const glyph of ['pro-nav-mini-sessions', 'pro-nav-mini-courses']) {
       const button = new RegExp(`data-testid="${glyph}"[\\s\\S]*?/>\\s*</button>`).exec(mini);
       expect(button, glyph).not.toBeNull();
       expect(button![0], glyph).toContain('expandLabel(');

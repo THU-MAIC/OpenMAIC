@@ -1835,8 +1835,7 @@
     "newSession": "New chat",
     "sections": {
       "courses": "Courses",
-      "sessions": "Chats",
-      "favorites": "Saved"
+      "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
     "sessionsEmpty": "No chats yet",
@@ -1865,9 +1864,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "savedCourse": "Saved course, read-only",
-    "savedNote": "다른 사용자가 제작 · 읽기 전용",
-    "savedEmpty": "저장한 코스가 없습니다",
     "searchPlaceholder": "Filter by name",
     "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
@@ -1908,7 +1904,6 @@
     "deleting": "삭제 중…",
     "deleteFailed": "삭제하지 못했습니다. 다시 시도해 주세요.",
     "tabsAria": "Chats and courses",
-    "savedDrawerAria": "Saved courses",
     "courseTabsAria": "열린 코스",
     "courseTabClose": "탭 닫기: {{name}}",
     "courseTabRunning": "생성 중",

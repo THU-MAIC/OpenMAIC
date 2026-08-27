@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  filterByName,
-  groupCoursesByFolder,
-  matchesQuery,
-  partitionByOwnership,
-} from '@/lib/workbench/workspace-tree';
+import { filterByName, groupCoursesByFolder, matchesQuery } from '@/lib/workbench/workspace-tree';
 
 describe('nav tree name filter', () => {
   it('matches case-insensitively on a substring', () => {
@@ -77,35 +72,5 @@ describe('nav tree folder grouping', () => {
       folders,
     );
     expect(tree.groups[0].courses.map((c) => c.id)).toEqual(['newest', 'older']);
-  });
-});
-
-describe('own vs favorited courses', () => {
-  it('splits an explicit non-owner out as a favorite', () => {
-    const split = partitionByOwnership([
-      { id: 'mine', isOwner: true },
-      { id: 'saved', isOwner: false },
-    ]);
-    expect(split.owned.map((c) => c.id)).toEqual(['mine']);
-    expect(split.favorites.map((c) => c.id)).toEqual(['saved']);
-  });
-
-  it('counts an absent flag as owned so a missing signal withdraws nothing', () => {
-    // Self-deploy / IndexedDB never populates isOwner; those courses are the
-    // user's own and must keep their rename/move affordances.
-    const split = partitionByOwnership([{ id: 'local' }]);
-    expect(split.owned.map((c) => c.id)).toEqual(['local']);
-    expect(split.favorites).toEqual([]);
-  });
-
-  it('preserves order inside each side of the split', () => {
-    const split = partitionByOwnership([
-      { id: 'a', isOwner: true },
-      { id: 'b', isOwner: false },
-      { id: 'c', isOwner: true },
-      { id: 'd', isOwner: false },
-    ]);
-    expect(split.owned.map((c) => c.id)).toEqual(['a', 'c']);
-    expect(split.favorites.map((c) => c.id)).toEqual(['b', 'd']);
   });
 });

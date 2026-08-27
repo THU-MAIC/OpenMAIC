@@ -1835,8 +1835,7 @@
     "newSession": "New chat",
     "sections": {
       "courses": "Courses",
-      "sessions": "Chats",
-      "favorites": "Saved"
+      "sessions": "Chats"
     },
     "coursesEmpty": "No courses yet",
     "sessionsEmpty": "No chats yet",
@@ -1865,9 +1864,6 @@
       "cancelled": "Stopped"
     },
     "backToWorkspace": "Back to workspace",
-    "savedCourse": "Saved course, read-only",
-    "savedNote": "Criados por outros · somente leitura",
-    "savedEmpty": "Nada salvo ainda",
     "searchPlaceholder": "Filter by name",
     "searchAria": "Search {{section}}",
     "searchEmpty": "No matches",
@@ -1908,7 +1904,6 @@
     "deleting": "Excluindo…",
     "deleteFailed": "Não foi possível excluir. Tente novamente.",
     "tabsAria": "Chats and courses",
-    "savedDrawerAria": "Saved courses",
     "courseTabsAria": "Cursos abertos",
     "courseTabClose": "Fechar aba: {{name}}",
     "courseTabRunning": "Gerando",

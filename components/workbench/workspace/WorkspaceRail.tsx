@@ -11,15 +11,11 @@
  *
  * Shape, deliberately:
  *  - TWO TABS over one body — chat and courses, a segmented control of two
- *    equal halves — and, under the courses tab only, a DRAWER pinned at the
- *    foot for saved courses. The three used to be stacked peer sections, which
- *    meant three heads, three counts and three resting windows competing for
- *    one column; only one of the three is ever the thing you came for. Tabs
- *    make the active list own the rail's height (`workspace-paging` re-tuned
- *    with it), and the drawer keeps saved courses one press away without
- *    spending a section on work you did not make. It is scoped to the courses
- *    tab because it is a drawer full of COURSES: at the foot of the chat list
- *    it was a shelf of the wrong kind of thing;
+ *    equal halves. The three used to be stacked peer sections, which meant
+ *    three heads, three counts and three resting windows competing for one
+ *    column; only one of the three is ever the thing you came for. Tabs make
+ *    the active list own the rail's height (`workspace-paging` re-tuned with
+ *    it);
  *  - the courses tab is ONE TREE, and only FOLDERS are containers in it. A
  *    course that is in no folder is a row at the tree's top level, under the
  *    folders — not a member of an "unfiled" group, which was a head, a count
@@ -53,9 +49,9 @@
  *
  * Collapsed, it becomes a 60px icon strip: an explicit expand button in the
  * header slot, a new-session button, one glyph per destination (which expands
- * the rail INTO that destination — the chat tab, the course tab, the open
- * drawer), and the utilities. The compact header is an action rather than a
- * second brand/home affordance, so the way back out is visible immediately.
+ * the rail INTO that destination — the chat tab, the course tab), and the
+ * utilities. The compact header is an action rather than a second brand/home
+ * affordance, so the way back out is visible immediately.
  *
  * It folds from its own header — the row with the wordmark and the PRO pill —
  * with the same `PaneFoldButton` the conversation and the classroom use. It used
@@ -78,9 +74,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Bookmark,
   Check,
-  ChevronDown,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -130,11 +124,7 @@ import {
   relativeBucket,
   type ProHomeSessionItem,
 } from '@/lib/workbench/pro-home-data';
-import {
-  filterByName,
-  groupCoursesByFolder,
-  partitionByOwnership,
-} from '@/lib/workbench/workspace-tree';
+import { filterByName, groupCoursesByFolder } from '@/lib/workbench/workspace-tree';
 import {
   EMPTY_PAGES,
   RAIL_INITIAL_ROWS,
@@ -243,7 +233,6 @@ export function WorkspaceRail({
   const foldersAvailable = workspaceFoldersAvailable();
 
   const coursesSection = useListSearch();
-  const savedSection = useListSearch();
   const sessionsSection = useListSearch();
 
   // The rail survives while the home surface is unmounted, so folder creation
@@ -405,13 +394,6 @@ export function WorkspaceRail({
     writeStored(RAIL_TAB_STORAGE_KEY, next);
   }, []);
 
-  /**
-   * Saved courses, at the foot. Collapsed on arrival and not remembered: it
-   * holds work you did not make, so it opens when you go looking for it and
-   * closes again with the session. Its own state, not a section's.
-   */
-  const [savedOpen, setSavedOpen] = useState(false);
-
   // Which folders are open. One set keyed by id, so adding a folder costs no
   // new state.
   const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(() => new Set());
@@ -446,16 +428,9 @@ export function WorkspaceRail({
   }, []);
 
   // ── The course tree ──────────────────────────────────────────────────
-  // Sorted once, ordered, then SPLIT BY OWNERSHIP, then filtered, then grouped.
-  //
-  // The split moved to the front of the pipeline in v10, and that is the whole
-  // structural change: saved courses used to be a subhead at the bottom of the
-  // courses list, so a course you made and a course you bookmarked shared one
-  // container, one search box and one count — and a saved course filed into one
-  // of your folders disappeared inside it. Ownership decides what a row can DO,
-  // so it decides which section a row is in. Folders now hold your work only;
-  // every saved course is in the saved section, filed or not, with its folder
-  // named on its meta line so filing still has a visible consequence.
+  // Sorted once, ordered, then filtered, then grouped. There is no ownership
+  // split to make first: the home/workspace listing is owner-scoped, so every
+  // course in it is the user's own and the whole list is one tree.
   const sortedCourses = useMemo(() => newestFirst(courses.classrooms), [courses.classrooms]);
   const orderedCourses = useMemo(
     () => applyCustomOrder(sortedCourses, courseOrder),
@@ -489,18 +464,11 @@ export function WorkspaceRail({
     },
     [onReloadSessions, onSessionDeleted, t],
   );
-  /** The two sections' populations, before either search box touches them. */
-  const { owned: allOwned, favorites: allSaved } = useMemo(
-    () => partitionByOwnership(orderedCourses),
-    [orderedCourses],
-  );
-
   const courseQuery = coursesSection.query;
   const searchingCourses = courseQuery.trim().length > 0;
-  const matchedOwned = useMemo(() => filterByName(allOwned, courseQuery), [allOwned, courseQuery]);
-  const matchedSaved = useMemo(
-    () => filterByName(allSaved, savedSection.query),
-    [allSaved, savedSection.query],
+  const matchedOwned = useMemo(
+    () => filterByName(orderedCourses, courseQuery),
+    [orderedCourses, courseQuery],
   );
   const tree = useMemo(
     () => groupCoursesByFolder(matchedOwned, courses.folders),
@@ -528,7 +496,7 @@ export function WorkspaceRail({
   // query was cleared. Adjusting state during render (React's own recipe for
   // "derived from a prop that changed") rather than in an effect, so the tree
   // never paints one frame with the stale window.
-  const querySignature = `${courseQuery.trim()}\u0000${savedSection.query.trim()}\u0000${sessionsSection.query.trim()}`;
+  const querySignature = `${courseQuery.trim()}\u0000${sessionsSection.query.trim()}`;
   const [pagedFor, setPagedFor] = useState(querySignature);
   if (pagedFor !== querySignature) {
     setPagedFor(querySignature);
@@ -630,14 +598,8 @@ export function WorkspaceRail({
    * carries a separate, unambiguous expand control, while these shortcuts keep
    * their more specific "expand into this section" behavior.
    */
-  const expandInto = (destination: RailTab | 'saved') => {
-    if (destination === 'saved') {
-      // The drawer lives under the courses tab now, so reaching it from the
-      // strip has to land on that tab too — otherwise this opens a drawer on a
-      // tab that does not render one.
-      selectTab('courses');
-      setSavedOpen(true);
-    } else selectTab(destination);
+  const expandInto = (destination: RailTab) => {
+    selectTab(destination);
     onToggleCollapsed();
   };
 
@@ -705,20 +667,6 @@ export function WorkspaceRail({
           >
             <BookOpen className="size-4" aria-hidden="true" />
           </button>
-          {/* The icon strip IS the list of destinations, so saved courses keep
-              their glyph here even though it is a drawer rather than a section —
-              this is the mark that opens it. */}
-          <button
-            type="button"
-            data-testid="pro-nav-mini-saved"
-            onClick={() => expandInto('saved')}
-            aria-label={expandLabel(t('workspace.sections.favorites'))}
-            title={expandLabel(t('workspace.sections.favorites'))}
-            aria-expanded={false}
-            className="ws-mini-btn"
-          >
-            <Bookmark className="size-4" aria-hidden="true" />
-          </button>
         </div>
         <div className="ws-seam-rail w-8 shrink-0" aria-hidden="true" />
         <div
@@ -736,16 +684,11 @@ export function WorkspaceRail({
     );
   }
 
-  const renderCourseRow = (
-    course: StageListItem,
-    siblings: readonly string[],
-    inSaved: boolean,
-  ) => {
-    const saved = course.isOwner === false;
+  const renderCourseRow = (course: StageListItem, siblings: readonly string[]) => {
     const label = course.name || t('workspace.untitledCourse');
     // Being renamed: the row IS the input, in place, at the row's own height.
     // Not a dialog — the thing being edited is the row you are looking at.
-    if (!inSaved && course.id === renamingCourseId) {
+    if (course.id === renamingCourseId) {
       return (
         <InlineNameRow
           key={course.id}
@@ -772,7 +715,6 @@ export function WorkspaceRail({
         dragging={drag.dragId === course.id}
         dropEdge={drag.indicator?.rowId === course.id ? drag.indicator.edge : null}
         onMove={(delta) => moveWithKeyboard('course', course.id, siblings, delta)}
-        statusLabel={saved ? t('workspace.savedCourse') : undefined}
         // The page count takes the same trailing slot as a folder's count.
         // On actionable rows the hover-only menu overlays this slot while the
         // count fades, so the resting layout never reserves an action column.
@@ -780,23 +722,20 @@ export function WorkspaceRail({
         metaTestId={`pro-nav-course-meta-${course.id}`}
         onClick={() => onOpenCourse(course.id)}
         trailing={
-          // Saved rows get none: the drawer stays read-only. Authored rows keep
-          // rename and one quiet destructive entry; filing is the tree's drag
+          // Rename and one quiet destructive entry; filing is the tree's drag
           // interaction, so it is not repeated behind a nested "move" path.
-          inSaved ? undefined : (
-            <WorkspaceRowMenu
-              testId={`pro-nav-course-more-${course.id}`}
-              label={label}
-              onRename={() => setRenamingCourseId(course.id)}
-              onDelete={() => onDeleteCourse(course.id)}
-            />
-          )
+          <WorkspaceRowMenu
+            testId={`pro-nav-course-more-${course.id}`}
+            label={label}
+            onRename={() => setRenamingCourseId(course.id)}
+            onDelete={() => onDeleteCourse(course.id)}
+          />
         }
       />
     );
   };
 
-  const renderCourseList = (list: readonly StageListItem[], listId: string, inSaved = false) => {
+  const renderCourseList = (list: readonly StageListItem[], listId: string) => {
     // The sibling sequence the keyboard move walks: the whole sub-list, not
     // just the rows currently inside the page window.
     const siblings = list.map((course) => course.id);
@@ -808,7 +747,7 @@ export function WorkspaceRail({
         pages={pagesFor(pages, listId)}
         onMore={() => openPage(listId, list, RAIL_INITIAL_ROWS)}
         onCollapse={() => collapsePage(listId)}
-        render={(course) => renderCourseRow(course, siblings, inSaved)}
+        render={(course) => renderCourseRow(course, siblings)}
       />
     );
   };
@@ -934,15 +873,11 @@ export function WorkspaceRail({
         </button>
       </div>
 
-      {/* ── Two tabs, one body, a drawer under the courses tab ────────────
+      {/* ── Two tabs, one body ───────────────────────────────────────────
           Chat and courses are both yours and both maintained, so they are two
           VIEWS OF ONE REGION rather than two stacked lists dividing one
           column between them — at rest the old shape gave each of them five
-          rows and spent the difference on heads. Saved courses are neither:
-          they are work you kept but did not make, so they are not a third
-          tab. The section is shut at the foot OF THE COURSES TAB, stating
-          the only two facts that decide whether you want it open — how many,
-          and whose. */}
+          rows and spent the difference on heads. */}
       <RailTabs
         active={tab}
         onSelect={selectTab}
@@ -1073,7 +1008,7 @@ export function WorkspaceRail({
           <RailList
             id="courses"
             title={t('workspace.sections.courses')}
-            count={allOwned.length}
+            count={orderedCourses.length}
             state={courses.state}
             emptyLabel={t('workspace.coursesEmpty')}
             onRetry={courses.reload}
@@ -1238,27 +1173,6 @@ export function WorkspaceRail({
         ) : null}
       </div>
 
-      {/* Saved courses belong to the courses tab, and only to it: it is a
-          drawer full of COURSES, so under the chat tab it was a shelf of the
-          wrong kind of thing at the foot of a list of chats. Rendered as a
-          flex child of the rail column rather than inside the tabpanel's
-          scroller, so it still borrows height from the list above instead of
-          scrolling away with it. */}
-      {tab === 'courses' ? (
-        <SavedDrawer
-          open={savedOpen}
-          onToggle={() => setSavedOpen((value) => !value)}
-          count={allSaved.length}
-          search={savedSection}
-        >
-          {savedSection.query.trim() && matchedSaved.length === 0 ? (
-            <RailEmpty label={t('workspace.searchEmpty')} />
-          ) : (
-            renderCourseList(matchedSaved, 'saved', true)
-          )}
-        </SavedDrawer>
-      ) : null}
-
       <RailUtilities />
 
       {resizeHandle}
@@ -1315,8 +1229,7 @@ interface ListSearch {
  * across to a population it was never typed against.
  *
  * Collapse used to live here too. It does not any more — the chat and course
- * lists are collapsed by choosing the OTHER tab, and saved courses by shutting
- * their drawer.
+ * lists are collapsed by choosing the OTHER tab.
  */
 function useListSearch(): ListSearch {
   const [query, setQuery] = useState('');
@@ -1698,100 +1611,6 @@ function RailList({
   );
 }
 
-/**
- * The drawer's own filter, on its own row above the rows it narrows. The two
- * tabbed lists are filtered by the findrow under the tab strip instead; this
- * collapsible field survives only in the saved-courses head, where a filter
- * that was always on would cost the shut drawer its one-line promise.
- */
-function RailSearchField({
-  id,
-  title,
-  search,
-}: {
-  readonly id: string;
-  readonly title: string;
-  readonly search: ListSearch;
-}) {
-  const { t } = useI18n();
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (search.searchOpen) inputRef.current?.focus();
-  }, [search.searchOpen]);
-
-  if (!search.searchOpen) return null;
-  return (
-    <div className="px-2 pb-1.5 pt-0.5">
-      <input
-        ref={inputRef}
-        data-testid={`pro-nav-search-input-${id}`}
-        value={search.query}
-        onChange={(event) => search.setQuery(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            search.closeSearch();
-          }
-        }}
-        placeholder={t('workspace.searchPlaceholder')}
-        aria-label={t('workspace.searchAria', { section: title })}
-        className="ws-search h-7 w-full rounded-md px-2 text-[12px] focus-visible:outline-none"
-      />
-    </div>
-  );
-}
-
-/**
- * The control that opens it.
- *
- * A 22px glyph in the drawer's own head for saved courses — the only
- * collapsible filter left, since the two tabbed lists are filtered by the
- * always-visible findrow under the tab strip. It never becomes one shared
- * "search" with no stated subject — the rail holds three populations, and a
- * filter that does not say which one it narrows is a lie. The label names the
- * list every time.
- */
-function RailSearchToggle({
-  id,
-  title,
-  search,
-  onOpen,
-}: {
-  readonly id: string;
-  readonly title: string;
-  readonly search: ListSearch;
-  /** Anything the surrounding container must do to make the input visible. */
-  readonly onOpen?: () => void;
-}) {
-  const { t } = useI18n();
-  const label = t('workspace.searchAria', { section: title });
-  return (
-    <button
-      type="button"
-      data-testid={`pro-nav-search-${id}`}
-      onClick={() => {
-        if (search.searchOpen) {
-          search.closeSearch();
-          return;
-        }
-        onOpen?.();
-        search.openSearch();
-      }}
-      aria-label={label}
-      aria-expanded={search.searchOpen}
-      title={label}
-      className="ws-icon-btn shrink-0"
-    >
-      {search.searchOpen ? (
-        <X className="size-3.5" aria-hidden="true" />
-      ) : (
-        <Search className="size-3.5" aria-hidden="true" />
-      )}
-    </button>
-  );
-}
-
 /* ── The tab switch ───────────────────────────────────────────────────── */
 
 export interface RailTabSpec {
@@ -1883,115 +1702,6 @@ function RailTabs({
         );
       })}
     </div>
-  );
-}
-
-/* ── Saved courses, at the foot of the courses tab ────────────────────── */
-
-/**
- * A drawer rather than a third tab, and rather than the peer section it was.
- *
- * Saved courses are not a third kind of your work — they are other people's,
- * read-only, and the one thing you do with them is open the drawer. Making it
- * a tab would put it on the same footing as the two lists you actually
- * maintain; leaving it a section cost the two of them a third of the rail's
- * height for a list of eight. So it is pinned at the foot, shut, stating the
- * two facts that decide whether you want it at all — how many, and whose.
- *
- * It is mounted by the courses tab ONLY. What is in here is courses, so at
- * the foot of the chat list it was a shelf of the wrong kind of thing — and
- * the saved courses it holds cannot be filed into the tree above it either,
- * which is exactly why they are down here instead of in it.
- *
- * Open, it takes height from the tab body above it (both are flex children of
- * one column, and this one is capped) rather than floating over it: a panel
- * that covers the list you were reading is a modal wearing a drawer's clothes.
- * Shut, it is one single-line head, which is the whole point.
- */
-function SavedDrawer({
-  open,
-  onToggle,
-  count,
-  search,
-  children,
-}: {
-  readonly open: boolean;
-  readonly onToggle: () => void;
-  readonly count: number;
-  readonly search: ListSearch;
-  readonly children: ReactNode;
-}) {
-  const { t } = useI18n();
-  const title = t('workspace.sections.favorites');
-
-  return (
-    <section
-      data-testid="pro-nav-section-saved"
-      aria-label={t('workspace.savedDrawerAria')}
-      data-open={open ? 'true' : 'false'}
-      className="ws-drawer flex shrink-0 flex-col"
-    >
-      {/* ONE line, the prototype's savedhead: bookmark, name, then the count
-          and the read-only rule inline — both are facts about the drawer as a
-          whole, and at 11px they fit the head row even at a narrow rail — and
-          the caret at the row's right edge. */}
-      <div className="flex items-center gap-1 pr-2">
-        <button
-          type="button"
-          data-testid="pro-nav-section-toggle-saved"
-          aria-expanded={open}
-          aria-controls="pro-nav-saved-body"
-          onClick={onToggle}
-          className="ws-drawer-toggle flex min-w-0 flex-1 items-center gap-[7px] py-2.5 pl-3.5 pr-1 text-left"
-        >
-          <Bookmark className="ws-glyph size-3.5 shrink-0" aria-hidden="true" />
-          <span className="ws-saved-title shrink-0">{title}</span>
-          <span className="ws-drawer-note flex min-w-0 items-center gap-1">
-            {count > 0 ? (
-              <>
-                <span className="shrink-0">{count}</span>
-                <span className="ws-meta-sep shrink-0" aria-hidden="true">
-                  ·
-                </span>
-                <span
-                  data-testid="pro-nav-section-note-saved"
-                  title={t('workspace.savedNote')}
-                  className="min-w-0 truncate"
-                >
-                  {t('workspace.savedNote')}
-                </span>
-              </>
-            ) : (
-              <span className="min-w-0 truncate">{t('workspace.savedEmpty')}</span>
-            )}
-          </span>
-          <ChevronDown
-            className={cn('ws-twisty ml-auto size-3 shrink-0', open && 'ws-twisty-up')}
-            aria-hidden="true"
-          />
-        </button>
-        <RailSearchToggle
-          id="saved"
-          title={title}
-          search={search}
-          // Filtering a shut drawer would narrow something nobody can see.
-          onOpen={() => {
-            if (!open) onToggle();
-          }}
-        />
-      </div>
-
-      {open ? (
-        <div
-          id="pro-nav-saved-body"
-          data-testid="pro-nav-saved-body"
-          className="ws-drawer-body min-h-0 overflow-y-auto px-2 pb-2"
-        >
-          <RailSearchField id="saved" title={title} search={search} />
-          <div className="space-y-px">{children}</div>
-        </div>
-      ) : null}
-    </section>
   );
 }
 

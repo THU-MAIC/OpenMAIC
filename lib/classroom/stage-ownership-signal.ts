@@ -17,7 +17,6 @@
 
 export interface StageAccessSignal {
   isOwner: boolean;
-  isBookmarked: boolean;
 }
 
 const stageOwnership = new Map<string, { resolved: boolean; access: StageAccessSignal | null }>();
@@ -57,7 +56,7 @@ export function getStageAccessSignal(stageId: string): StageAccessSignal | null 
  * enforces ownership.
  */
 export function resolveStageFallbackAccess(stageId: string): StageAccessSignal {
-  return getStageAccessSignal(stageId) ?? { isOwner: true, isBookmarked: false };
+  return getStageAccessSignal(stageId) ?? { isOwner: true };
 }
 
 /** Test hook: forget every recorded outcome. */
