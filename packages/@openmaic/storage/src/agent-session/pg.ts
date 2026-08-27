@@ -742,7 +742,12 @@ export class PgAgentSessionStore
 
   async postUserMessage(
     sessionId: string,
-    input: { text: string },
+    input: {
+      text: string;
+      materials?: unknown[];
+      elementRefs?: unknown[];
+      courseRefs?: unknown[];
+    },
     options: PostAgentUserMessageOptions = {},
   ): Promise<PostAgentUserMessageResult> {
     const clientRequestId = this.createId();
@@ -763,7 +768,14 @@ export class PgAgentSessionStore
         ts: this.clock(),
         attempt: 0,
         type: AGENT_SESSION_LIFECYCLE.userMessage,
-        data: { text: input.text, delivery, clientRequestId },
+        data: {
+          text: input.text,
+          delivery,
+          clientRequestId,
+          ...(input.materials?.length ? { materials: input.materials } : {}),
+          ...(input.elementRefs?.length ? { elementRefs: input.elementRefs } : {}),
+          ...(input.courseRefs?.length ? { courseRefs: input.courseRefs } : {}),
+        },
       });
       const row = await this.loadSession(tx, sessionId, false);
       // The hook is a deliberate veto point (reference semantics): a throw

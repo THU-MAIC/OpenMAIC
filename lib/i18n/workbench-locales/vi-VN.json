@@ -11,7 +11,7 @@
   "chat": {
     "stopFailed": "Không dừng được. Vui lòng thử lại.",
     "sendFailed": "Không gửi được. Vui lòng thử lại.",
-    "elementRefsNotAccepted": "Tham chiếu phần tử chưa được áp dụng trong lúc máy chủ đang triển khai. Vui lòng gửi lại sau ít phút.",
+    "elementRefsNotAccepted": "Máy chủ tạm thời không khả dụng. Vui lòng thử lại sau giây lát.",
     "jumpToBottom": "Xuống cuối",
     "interruptPlaceholder": "Thêm ghi chú rồi nhấn Enter để gửi",
     "continuePlaceholder": "Nói tiếp việc cần làm rồi nhấn Enter để gửi",

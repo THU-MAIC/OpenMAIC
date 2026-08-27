@@ -11,7 +11,7 @@
   "chat": {
     "stopFailed": "تعذّر الإيقاف. حاول مرة أخرى.",
     "sendFailed": "تعذّر الإرسال. حاول مرة أخرى.",
-    "elementRefsNotAccepted": "لم تُطبّق مراجع العناصر أثناء نشر الخادم. يُرجى إعادة الإرسال بعد قليل.",
+    "elementRefsNotAccepted": "الخادم غير متاح مؤقتًا. يُرجى إعادة المحاولة بعد قليل.",
     "jumpToBottom": "الانتقال إلى الأسفل",
     "interruptPlaceholder": "أضف ملاحظة ثم اضغط Enter للإرسال",
     "continuePlaceholder": "قل ما تريد فعله بعد ذلك ثم اضغط Enter للإرسال",

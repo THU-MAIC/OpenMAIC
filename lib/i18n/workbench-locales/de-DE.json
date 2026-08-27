@@ -11,7 +11,7 @@
   "chat": {
     "stopFailed": "Stoppen fehlgeschlagen. Bitte erneut versuchen.",
     "sendFailed": "Senden fehlgeschlagen. Bitte erneut versuchen.",
-    "elementRefsNotAccepted": "Die Elementverweise wurden während der Serverbereitstellung nicht übernommen. Bitte in Kürze erneut senden.",
+    "elementRefsNotAccepted": "Der Server ist vorübergehend nicht verfügbar. Bitte versuche es gleich noch einmal.",
     "jumpToBottom": "Nach unten springen",
     "interruptPlaceholder": "Hinweis ergänzen, dann Enter zum Senden",
     "continuePlaceholder": "Sag, was als Nächstes passieren soll, dann Enter zum Senden",

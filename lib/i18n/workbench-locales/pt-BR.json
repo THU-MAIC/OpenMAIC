@@ -11,7 +11,7 @@
   "chat": {
     "stopFailed": "Não foi possível parar. Tente novamente.",
     "sendFailed": "Não foi possível enviar. Tente novamente.",
-    "elementRefsNotAccepted": "As referências de elementos não foram aplicadas durante a implantação do servidor. Reenvie em instantes.",
+    "elementRefsNotAccepted": "O servidor está temporariamente indisponível. Tente novamente em instantes.",
     "jumpToBottom": "Ir para o fim",
     "interruptPlaceholder": "Acrescente uma observação e pressione Enter para enviar",
     "continuePlaceholder": "Diga o que vem agora e pressione Enter para enviar",

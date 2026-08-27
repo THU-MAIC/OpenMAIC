@@ -4,6 +4,9 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
   runtimeEnabled: true,
   createSession: vi.fn(),
+  postUserMessage: vi.fn(),
+  softDeleteSession: vi.fn(),
+  bindOwnerMaterialsToSession: vi.fn(),
   listSessionsByOwner: vi.fn(),
   resolveRequestOwnerId: vi.fn(),
   listSkills: vi.fn(),
@@ -30,8 +33,14 @@ vi.mock('@/lib/server/agent-runtime/skills', () => ({
 vi.mock('@/lib/server/agent-runtime/store', () => ({
   getAgentSessionStore: async () => ({
     createSession: mocks.createSession,
+    postUserMessage: mocks.postUserMessage,
+    softDeleteSession: mocks.softDeleteSession,
     listSessionsByOwner: mocks.listSessionsByOwner,
   }),
+}));
+vi.mock('@/lib/server/agent-runtime/session-materials', () => ({
+  bindOwnerMaterialsToSession: mocks.bindOwnerMaterialsToSession,
+  SessionMaterialBindingError: class SessionMaterialBindingError extends Error {},
 }));
 
 import { GET, POST } from '@/app/api/agent/sessions/route';
@@ -73,6 +82,9 @@ beforeEach(() => {
     status: 'queued',
   });
   mocks.listSessionsByOwner.mockResolvedValue([]);
+  mocks.postUserMessage.mockResolvedValue({ seq: 1, delivery: 'queued', requeued: true });
+  mocks.softDeleteSession.mockResolvedValue(true);
+  mocks.bindOwnerMaterialsToSession.mockResolvedValue([]);
 });
 
 describe('agent session collection route', () => {
@@ -100,6 +112,46 @@ describe('agent session collection route', () => {
     expect(response.status).toBe(202);
     expect(mocks.findSkill).toHaveBeenCalledWith('my-demo', 'anon:test');
     expect(mocks.createSession).toHaveBeenCalledWith(expect.objectContaining({ skillId: 'usk_1' }));
+  });
+
+  it('persists opening course mentions before queueing and returns the capability receipt', async () => {
+    const courseRefs = [{ kind: 'course', stageId: 'stage-2', title: 'Referenced course' }];
+    const response = await post({ prompt: 'Compare this', courseRefs });
+
+    expect(response.status).toBe(202);
+    expect(mocks.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'succeeded' }),
+    );
+    expect(mocks.postUserMessage).toHaveBeenCalledWith(
+      'session-1',
+      { text: 'Compare this', courseRefs },
+      { expectedOwnerId: 'anon:test' },
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      id: 'session-1',
+      status: 'queued',
+      courseRefs,
+    });
+  });
+
+  it('binds opening uploads before the first user message queues the runner', async () => {
+    mocks.bindOwnerMaterialsToSession.mockResolvedValue([
+      { materialId: 'material-1', originalName: 'notes.pdf', bytes: 42 },
+    ]);
+    const response = await post({ prompt: 'Read this', materialIds: ['material-1'] });
+
+    expect(response.status).toBe(202);
+    expect(mocks.bindOwnerMaterialsToSession).toHaveBeenCalledWith('session-1', 'anon:test', [
+      'material-1',
+    ]);
+    expect(mocks.postUserMessage).toHaveBeenCalledWith(
+      'session-1',
+      {
+        text: 'Read this',
+        materials: [{ materialId: 'material-1', originalName: 'notes.pdf', bytes: 42 }],
+      },
+      { expectedOwnerId: 'anon:test' },
+    );
   });
 
   it('rejects an explicit skill that matches neither id nor name', async () => {

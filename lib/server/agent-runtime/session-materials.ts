@@ -23,6 +23,7 @@ import {
   type AssetPrincipal,
   type ListAgentSessionMaterialsOptions,
 } from '@openmaic/storage';
+import { getReadyOwnerMaterials } from '@/lib/persistence/owner-materials';
 
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
@@ -36,6 +37,10 @@ interface AgentSessionMaterialStoreState {
 }
 
 const MATERIAL_STORE_STATE_KEY = Symbol.for('openmaic.agent-session-material.store');
+
+export class SessionMaterialBindingError extends Error {
+  override readonly name = 'SessionMaterialBindingError';
+}
 const globalState = globalThis as typeof globalThis & {
   [MATERIAL_STORE_STATE_KEY]?: AgentSessionMaterialStoreState;
 };
@@ -186,6 +191,66 @@ export async function createSourceMaterial(
     }
     throw error;
   }
+}
+
+/**
+ * Bind owner-library uploads to a session by copying their private bytes into
+ * the session asset partition and creating the material rows the agent reads.
+ * Rebinding the same id is idempotent.
+ */
+export async function bindOwnerMaterialsToSession(
+  sessionId: string,
+  ownerId: string,
+  materialIds: readonly string[],
+): Promise<Array<{ materialId: string; originalName?: string; mime?: string; bytes: number }>> {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error('Agent runtime requires DATABASE_URL');
+  const provider = await getServerPersistenceProvider(connectionString);
+  const records = await getReadyOwnerMaterials(provider.pool, ownerId, materialIds);
+  const byId = new Map(records.map((record) => [record.id, record]));
+  if (materialIds.some((id) => !byId.has(id))) {
+    throw new SessionMaterialBindingError('one or more materials are unavailable');
+  }
+  const store = await getAgentSessionMaterialStore();
+  const bound = [];
+  for (const id of materialIds) {
+    const record = byId.get(id)!;
+    if (!(await store.getMaterial(sessionId, id))) {
+      const source = await provider.assetStore.resolve(
+        { key: `owner-materials:${ownerId}` },
+        toAssetId(record.assetId),
+      );
+      if (!source) throw new SessionMaterialBindingError(`material ${id} bytes are unavailable`);
+      const rawAssetId = await provider.assetStore.put(
+        materialPrincipal(sessionId),
+        new Blob([new Uint8Array(source.bytes)], { type: record.mime ?? source.mime }),
+        { contentType: record.mime ?? source.mime },
+      );
+      try {
+        await store.createMaterial(sessionId, {
+          id,
+          kind: 'source',
+          title: record.originalName ?? id,
+          rawAssetId,
+          textChars: 0,
+        });
+      } catch (error) {
+        if (!(await store.getMaterial(sessionId, id))) {
+          await provider.assetStore
+            .remove(materialPrincipal(sessionId), rawAssetId)
+            .catch(() => undefined);
+          throw error;
+        }
+      }
+    }
+    bound.push({
+      materialId: id,
+      ...(record.originalName ? { originalName: record.originalName } : {}),
+      ...(record.mime ? { mime: record.mime } : {}),
+      bytes: record.bytes,
+    });
+  }
+  return bound;
 }
 
 /**

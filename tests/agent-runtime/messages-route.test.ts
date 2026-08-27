@@ -5,6 +5,7 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   postUserMessage: vi.fn(),
+  bindOwnerMaterialsToSession: vi.fn(),
 }));
 
 vi.mock('@/lib/config/feature-flags', () => ({
@@ -23,6 +24,10 @@ vi.mock('@/lib/server/agent-runtime/store', () => ({
     postUserMessage: mocks.postUserMessage,
   }),
 }));
+vi.mock('@/lib/server/agent-runtime/session-materials', () => ({
+  SessionMaterialBindingError: class SessionMaterialBindingError extends Error {},
+  bindOwnerMaterialsToSession: mocks.bindOwnerMaterialsToSession,
+}));
 
 import { POST } from '@/app/api/agent/sessions/[id]/messages/route';
 import { MAX_SESSION_TEXT_LENGTH } from '@/lib/server/agent-runtime/limits';
@@ -40,6 +45,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.getSession.mockResolvedValue({ id: 'session-1', ownerId: 'owner-1', status: 'succeeded' });
   mocks.postUserMessage.mockResolvedValue({ seq: 4, delivery: 'queued', requeued: true });
+  mocks.bindOwnerMaterialsToSession.mockResolvedValue([]);
 });
 
 describe('POST agent session message', () => {
@@ -56,7 +62,49 @@ describe('POST agent session message', () => {
     await expect(response.json()).resolves.toEqual({
       id: 'session-1',
       message: { seq: 4, text: 'Continue', delivery: 'queued' },
+      elementRefsAccepted: false,
+      courseRefsAccepted: false,
     });
+  });
+
+  it('persists course mentions and returns the capability receipt', async () => {
+    const courseRef = {
+      kind: 'course' as const,
+      stageId: 'course-1',
+      title: 'Physics',
+    };
+
+    const response = await call({ text: 'Update this course', courseRefs: [courseRef] });
+
+    expect(response.status).toBe(202);
+    expect(mocks.postUserMessage).toHaveBeenCalledWith(
+      'session-1',
+      { text: 'Update this course', courseRefs: [courseRef] },
+      { expectedOwnerId: 'owner-1' },
+    );
+    await expect(response.json()).resolves.toMatchObject({ courseRefsAccepted: true });
+  });
+
+  it('binds uploaded materials before posting the message the agent reads', async () => {
+    const material = {
+      materialId: 'mat-1',
+      originalName: 'notes.pdf',
+      mime: 'application/pdf',
+      bytes: 42,
+    };
+    mocks.bindOwnerMaterialsToSession.mockResolvedValue([material]);
+
+    const response = await call({ text: '', materialIds: ['mat-1'] });
+
+    expect(response.status).toBe(202);
+    expect(mocks.bindOwnerMaterialsToSession).toHaveBeenCalledWith('session-1', 'owner-1', [
+      'mat-1',
+    ]);
+    expect(mocks.postUserMessage).toHaveBeenCalledWith(
+      'session-1',
+      { text: '', materials: [material] },
+      { expectedOwnerId: 'owner-1' },
+    );
   });
 
   it('accepts a follow-up for a failed session', async () => {

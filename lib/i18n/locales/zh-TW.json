@@ -1811,7 +1811,7 @@
       "alreadyNamed": "已引用",
       "remove": "移除{{name}}",
       "pillHint": "这条消息引用了「{{name}}」",
-      "notAccepted": "引用的课堂未生效，服务端发布中，请稍后重发",
+      "notAccepted": "服務暫時不可用，請稍後重試。",
       "reference": "引用「{{name}}」",
       "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
     },

@@ -11,7 +11,7 @@
   "chat": {
     "stopFailed": "停止失敗，請重試",
     "sendFailed": "傳送失敗，請重試",
-    "elementRefsNotAccepted": "元素引用未生效，服務端發布中，請稍後重新傳送",
+    "elementRefsNotAccepted": "服務暫時不可用，請稍後重試。",
     "jumpToBottom": "回到底部",
     "interruptPlaceholder": "可以插話，Enter 傳送",
     "continuePlaceholder": "繼續說點什麼，Enter 傳送",

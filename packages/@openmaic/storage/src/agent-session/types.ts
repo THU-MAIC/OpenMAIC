@@ -141,6 +141,13 @@ export interface PostAgentUserMessageOptions {
   expectedOwnerId?: string;
 }
 
+export interface PostAgentUserMessageInput {
+  text: string;
+  materials?: unknown[];
+  elementRefs?: unknown[];
+  courseRefs?: unknown[];
+}
+
 /** A control-plane write was attempted through a retired or different owner. */
 export class AgentSessionAccessError extends Error {
   override readonly name = 'AgentSessionAccessError';
@@ -299,7 +306,7 @@ export interface AgentSessionStore {
    */
   postUserMessage(
     sessionId: string,
-    input: { text: string },
+    input: PostAgentUserMessageInput,
     options?: PostAgentUserMessageOptions,
   ): Promise<PostAgentUserMessageResult>;
   /**

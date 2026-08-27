@@ -12,8 +12,13 @@ import { apiError } from '@/lib/server/api-response';
 import { MAX_SESSION_TEXT_LENGTH } from '@/lib/server/agent-runtime/limits';
 import { findSkill, inferSkillIdFromPrompt, listSkills } from '@/lib/server/agent-runtime/skills';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
+import {
+  bindOwnerMaterialsToSession,
+  SessionMaterialBindingError,
+} from '@/lib/server/agent-runtime/session-materials';
 import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
 import { buildRequestOrigin, isValidClassroomId } from '@/lib/server/classroom-storage';
+import { decodeCourseRefs } from '@/lib/workbench/course-refs';
 
 export const runtime = 'nodejs';
 
@@ -23,6 +28,10 @@ interface CreateSessionBody {
   skill?: string;
   /** Attach to an already-built classroom instead of starting a new course. */
   existingCourse?: boolean;
+  /** Existing owner-library uploads to bind before the first run is queued. */
+  materialIds?: unknown;
+  /** Classrooms named on the opening message. */
+  courseRefs?: unknown;
 }
 
 export async function POST(req: NextRequest) {
@@ -57,6 +66,27 @@ export async function POST(req: NextRequest) {
       400,
       `prompt exceeds the ${MAX_SESSION_TEXT_LENGTH} character limit`,
     );
+  }
+  if (
+    body.materialIds !== undefined &&
+    (!Array.isArray(body.materialIds) || body.materialIds.some((id) => typeof id !== 'string'))
+  ) {
+    return apiError('INVALID_REQUEST', 400, 'materialIds must be an array of strings');
+  }
+  const materialIds = [...new Set(((body.materialIds ?? []) as string[]).map((id) => id.trim()))];
+  if (materialIds.length > 20 || materialIds.some((id) => !id)) {
+    return apiError('INVALID_REQUEST', 400, 'materialIds are invalid');
+  }
+  if (existingCourse && materialIds.length > 0) {
+    return apiError(
+      'INVALID_REQUEST',
+      400,
+      'existingCourse does not accept attachments; send them on the first message instead',
+    );
+  }
+  const decodedCourseRefs = decodeCourseRefs(body.courseRefs ?? []);
+  if (!decodedCourseRefs.ok) {
+    return apiError('INVALID_REQUEST', 400, decodedCourseRefs.error);
   }
 
   return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
@@ -105,6 +135,7 @@ export async function POST(req: NextRequest) {
     // ownership validation is deferred until a later slice consumes stageId —
     // the upstream document store has no owner partition yet.
     const store = await getAgentSessionStore();
+    const hasOpeningContext = materialIds.length > 0 || decodedCourseRefs.refs.length > 0;
     const meta = await store.createSession({
       ownerId,
       prompt,
@@ -112,10 +143,43 @@ export async function POST(req: NextRequest) {
       ...(skillId ? { skillId } : {}),
       existingCourse,
       origin: buildRequestOrigin(req),
-      ...(existingCourse ? { status: 'succeeded' as const } : {}),
+      // Keep the runner from claiming the session until its opening materials
+      // and references are durable. postUserMessage below atomically requeues it.
+      ...(existingCourse || hasOpeningContext ? { status: 'succeeded' as const } : {}),
     });
 
-    return NextResponse.json(meta, { status: 202, headers: responseHeaders });
+    if (!hasOpeningContext) {
+      return NextResponse.json(meta, { status: 202, headers: responseHeaders });
+    }
+
+    try {
+      const materials = materialIds.length
+        ? await bindOwnerMaterialsToSession(meta.id, ownerId, materialIds)
+        : [];
+      await store.postUserMessage(
+        meta.id,
+        {
+          text: prompt,
+          ...(materials.length ? { materials } : {}),
+          ...(decodedCourseRefs.refs.length ? { courseRefs: decodedCourseRefs.refs } : {}),
+        },
+        { expectedOwnerId: ownerId },
+      );
+      return NextResponse.json(
+        {
+          ...meta,
+          status: 'queued',
+          ...(decodedCourseRefs.refs.length ? { courseRefs: decodedCourseRefs.refs } : {}),
+        },
+        { status: 202, headers: responseHeaders },
+      );
+    } catch (error) {
+      await store.softDeleteSession(meta.id, ownerId).catch(() => false);
+      if (error instanceof SessionMaterialBindingError) {
+        return new Response('Not found', { status: 404, headers: responseHeaders });
+      }
+      throw error;
+    }
   });
 }
 

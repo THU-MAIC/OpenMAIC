@@ -11,7 +11,7 @@
   "chat": {
     "stopFailed": "Impossible d'arrêter. Veuillez réessayer.",
     "sendFailed": "Impossible d'envoyer. Veuillez réessayer.",
-    "elementRefsNotAccepted": "Les références d’éléments n’ont pas été prises en compte pendant le déploiement du serveur. Veuillez renvoyer dans un instant.",
+    "elementRefsNotAccepted": "Le serveur est temporairement indisponible. Veuillez réessayer dans un instant.",
     "jumpToBottom": "Aller en bas",
     "interruptPlaceholder": "Ajoutez une précision, puis Entrée pour envoyer",
     "continuePlaceholder": "Dites la suite, puis Entrée pour envoyer",

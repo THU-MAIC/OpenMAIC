@@ -1826,7 +1826,7 @@
       "alreadyNamed": "Already referenced",
       "remove": "Remove {{name}}",
       "pillHint": "This message references {{name}}",
-      "notAccepted": "The classroom you referenced did not take effect while the server is deploying. Please resend shortly.",
+      "notAccepted": "The server is temporarily unavailable. Please try again shortly.",
       "reference": "Reference {{name}}",
       "capped": "Showing the first {{count}} — keep typing to narrow it down"
     },

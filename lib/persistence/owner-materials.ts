@@ -318,3 +318,22 @@ export async function listOwnerMaterials(
   );
   return result.rows.map(rowToRecord);
 }
+
+/** Resolve selected ready materials without exposing another owner's rows. */
+export async function getReadyOwnerMaterials(
+  queryable: Queryable,
+  ownerId: string,
+  materialIds: readonly string[],
+): Promise<OwnerMaterialRecord[]> {
+  if (materialIds.length === 0) return [];
+  const result = await queryable.query<RawOwnerMaterialRow>(
+    `SELECT ${OWNER_MATERIAL_COLUMNS}
+       FROM owner_material
+      WHERE owner_id = $1
+        AND id = ANY($2::text[])
+        AND status = 'ready'
+        AND deleted_at IS NULL`,
+    [ownerId, [...materialIds]],
+  );
+  return result.rows.map(rowToRecord);
+}

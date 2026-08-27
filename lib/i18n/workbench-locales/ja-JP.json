@@ -11,7 +11,7 @@
   "chat": {
     "stopFailed": "停止できませんでした。もう一度お試しください。",
     "sendFailed": "送信できませんでした。もう一度お試しください。",
-    "elementRefsNotAccepted": "サーバーのデプロイ中のため、要素参照は反映されませんでした。しばらくしてから再送してください。",
+    "elementRefsNotAccepted": "サーバーは一時的に利用できません。しばらくしてからもう一度お試しください。",
     "jumpToBottom": "最下部へ",
     "interruptPlaceholder": "補足を入力し、Enter で送信",
     "continuePlaceholder": "次にしてほしいことを入力し、Enter で送信",

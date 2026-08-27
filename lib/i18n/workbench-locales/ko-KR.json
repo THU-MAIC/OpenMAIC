@@ -11,7 +11,7 @@
   "chat": {
     "stopFailed": "중지하지 못했습니다. 다시 시도해 주세요.",
     "sendFailed": "보내지 못했습니다. 다시 시도해 주세요.",
-    "elementRefsNotAccepted": "서버 배포 중이라 요소 참조가 적용되지 않았습니다. 잠시 후 다시 보내 주세요.",
+    "elementRefsNotAccepted": "서버를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
     "jumpToBottom": "맨 아래로",
     "interruptPlaceholder": "덧붙일 내용을 입력하고 Enter로 보내기",
     "continuePlaceholder": "다음에 할 일을 입력하고 Enter로 보내기",

@@ -39,8 +39,7 @@ export const workbenchEn = {
   chat: {
     stopFailed: 'Could not stop. Please try again.',
     sendFailed: 'Could not send. Please try again.',
-    elementRefsNotAccepted:
-      'Element references did not take effect while the server is deploying. Please resend shortly.',
+    elementRefsNotAccepted: 'The server is temporarily unavailable. Please try again shortly.',
     jumpToBottom: 'Jump to bottom',
     interruptPlaceholder: 'Add a note, then press Enter to send',
     continuePlaceholder: 'Say what to do next, then press Enter to send',
@@ -364,7 +363,7 @@ export const workbenchZh = {
   chat: {
     stopFailed: '停止失败，请重试',
     sendFailed: '发送失败，请重试',
-    elementRefsNotAccepted: '元素引用未生效，服务端发布中，请稍后重发',
+    elementRefsNotAccepted: '服务暂时不可用，请稍后重试。',
     jumpToBottom: '回到底部',
     interruptPlaceholder: '可以插话，回车发送',
     continuePlaceholder: '继续说点什么，回车发送',
