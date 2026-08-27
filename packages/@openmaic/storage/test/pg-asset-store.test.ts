@@ -157,6 +157,10 @@ function recordingTransactions(db: PGlite, statements: string[]): WithTransactio
 class MemoryByteStore implements AssetByteStore {
   readonly values = new Map<ContentHash, Uint8Array>();
   onWrite?: () => void;
+  // Bytes live in a process-local map, never in the registry's PostgreSQL, so
+  // the plain methods cannot contend for its row locks (see
+  // AssetByteStore.writesOutsideRegistryDatabase).
+  readonly writesOutsideRegistryDatabase = true as const;
 
   async write(hash: ContentHash, value: Uint8Array): Promise<void> {
     this.values.set(hash, new Uint8Array(value));
@@ -383,6 +387,9 @@ describe('PgAssetStore registry behavior with PGlite', () => {
   test('logical quota counts every principal entry and runs before byte writes', async () => {
     const writes: string[] = [];
     const observingBytes: AssetByteStore = {
+      // Out-of-registry, like the object store: the write is a counter, and
+      // nothing here can contend for the registry's row locks.
+      writesOutsideRegistryDatabase: true,
       write: async () => {
         writes.push('write');
       },
@@ -418,6 +425,10 @@ describe('PgAssetStore registry behavior with PGlite', () => {
   test('byte-layer quota errors collapse to generic registry failures', async () => {
     const internalDetail = 'internal byte-layer detail';
     const failingBytes: AssetByteStore = {
+      // The failure under test is a byte-layer failure, not the registry's
+      // coordination guard; declare the layer out-of-registry like an object
+      // store so the guard lets the write through.
+      writesOutsideRegistryDatabase: true,
       write: async () => {
         throw new AssetQuotaExceededError(internalDetail);
       },
@@ -478,8 +489,16 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     expect(existing).toEqual(fresh);
     // Blob row claimed, then bytes, then the entry. The byte write sits between
     // the two registry writes deliberately: it must follow the upsert that takes
-    // the blob row's lock, and precede the entry that references it.
-    expect(existing.map((sql) => sql.split(' ')[0])).toEqual(['INSERT', 'UPDATE', 'INSERT']);
+    // the blob row's lock, and precede the entry that references it. The write
+    // transaction also pins a lock-wait budget first, so a future
+    // lock-contention variant of a registry write fails loudly instead of
+    // hanging.
+    expect(existing.map((sql) => sql.split(' ')[0])).toEqual(['SET', 'INSERT', 'UPDATE', 'INSERT']);
+    // The bound is on the write transaction's lock waits, not a silent
+    // statement timeout: the wait that must fail loudly is the row-lock wait
+    // (the self-deadlock variant), while a long byte write is still allowed to
+    // run to completion.
+    expect(existing[0]).toContain('lock_timeout');
   });
 
   test('remove emits the same statements with and without another principal reference', async () => {
@@ -565,6 +584,84 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     });
     expect(await collector.collect()).toBe(0);
     expect(await layer.read(contentHash)).toEqual(bytes('crash window'));
+    await local.close();
+  });
+
+  test('a non-transactional byte layer that does not declare out-of-registry writes fails loudly instead of issuing a conflicting write', async () => {
+    // The deadlock configuration: a byte store without writeWith whose plain
+    // write could hit the same PostgreSQL as the registry. On a real pool the
+    // plain write would block forever on the blob-row lock this transaction
+    // just took; the guard must refuse the configuration up front, before any
+    // row is claimed, so the failure is a loud configuration error instead of
+    // a hang. PGlite cannot reproduce the hang (single connection), which is
+    // exactly why this must fail at the guard rather than at the database.
+    const local = new PGlite();
+    await local.waitReady;
+    await ensureAssetSchema(local);
+    let writes = 0;
+    const uncoordinated: AssetByteStore = {
+      // Deliberately no writeWith and no writesOutsideRegistryDatabase: this
+      // is the broken-wrapper shape that used to deadlock production.
+      write: async () => {
+        writes += 1;
+      },
+      read: async () => null,
+      delete: async () => undefined,
+    };
+    const registry = new PgAssetStore(local, options(local, uncoordinated));
+    const data = blob('self-deadlock');
+
+    let thrown: unknown;
+    try {
+      await registry.put(PRINCIPAL, data);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toContain('cannot coordinate byte writes with the registry');
+    // The guard fired before the transaction opened: no byte reached the byte
+    // store and no blob row was claimed.
+    expect(writes).toBe(0);
+    expect((await local.query('SELECT * FROM asset_blobs')).rows).toEqual([]);
+
+    // replace is refused the same way.
+    const id = await new PgAssetStore(local, options(local, new MemoryByteStore())).put(
+      PRINCIPAL,
+      blob('existing'),
+    );
+    const replacing = new PgAssetStore(local, options(local, uncoordinated));
+    await expect(replacing.replace(PRINCIPAL, id, data)).rejects.toThrow(
+      /cannot coordinate byte writes with the registry/,
+    );
+    await local.close();
+  });
+
+  test('a collector with a non-declaring non-transactional byte layer fails loudly instead of deadlocking', async () => {
+    // Same class of trap as the registry write guard, on the collector's
+    // delete: a plain delete on the layer's own connection while the
+    // collector's transaction holds the blob-row lock would block forever.
+    const local = new PGlite();
+    await local.waitReady;
+    await ensureAssetSchema(local);
+    const seed = new PgAssetStore(local, options(local, new MemoryByteStore()));
+    const id = await seed.put(PRINCIPAL, blob('collector deadlock'));
+    await seed.remove(PRINCIPAL, id);
+    await local.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+
+    const uncoordinated: AssetByteStore = {
+      // No deleteWith, no writesOutsideRegistryDatabase: the broken shape.
+      write: async () => undefined,
+      read: async () => null,
+      delete: async () => undefined,
+    };
+    const collector = new AssetCollector(local, uncoordinated, {
+      withTransaction: transactions(local),
+      graceMs: 0,
+      now: () => new Date('2026-01-01T00:00:00.000Z'),
+    });
+    await expect(collector.collect()).rejects.toThrow(
+      /cannot coordinate collection with the registry/,
+    );
     await local.close();
   });
 
@@ -733,6 +830,9 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     expect(await commonDigestEncodings(data)).toHaveLength(5);
 
     const digestFailureBytes: AssetByteStore = {
+      // Out-of-registry so the coordination guard does not mask the digest
+      // propagation under test.
+      writesOutsideRegistryDatabase: true,
       write: async () => {
         throw new Error(contentHash);
       },
@@ -804,6 +904,9 @@ describe('PgAssetStore registry behavior with PGlite', () => {
 
     await db.query('TRUNCATE asset_entries, asset_blobs');
     const collectorBytes: AssetByteStore = {
+      // Out-of-registry so the collector's deletion guard lets the failing
+      // delete through, keeping the digest propagation under test.
+      writesOutsideRegistryDatabase: true,
       write: async () => undefined,
       read: async () => null,
       delete: async () => {

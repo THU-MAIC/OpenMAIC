@@ -80,6 +80,17 @@ function collectorFailure(): Error {
   return new Error('@openmaic/storage: asset collection failed');
 }
 
+function collectorConfigurationFailure(): Error {
+  return new Error(
+    '@openmaic/storage: the asset byte store cannot coordinate collection with the registry. A ' +
+      'byte store without deleteWith() deletes on its own connection; if it deletes bytes in the ' +
+      'same PostgreSQL as the registry, that delete blocks forever on the blob-row lock the ' +
+      "collector's transaction just took (a self-deadlock PostgreSQL cannot detect). Provide a " +
+      'transaction-pinned deleteWith(), or declare writesOutsideRegistryDatabase: true when the ' +
+      "bytes genuinely live outside the registry's database (for example in an object store).",
+  );
+}
+
 /**
  * Re-runnable collector for the byte rows left behind by request operations.
  *
@@ -143,6 +154,17 @@ export class AssetCollector {
 
   /** Run one bounded pass and report both what it deleted and whether it filled its batch. */
   async collectPass(): Promise<AssetCollectionPass> {
+    // Refuse the self-deadlock configuration before any row is locked, mirroring
+    // the registry's write guard (see PgAssetStore.assertByteWriteIsCoordinatable):
+    // a layer without deleteWith() deletes on its own connection, which blocks
+    // forever on the blob-row lock this pass's transaction holds when those bytes
+    // live in the registry's own PostgreSQL.
+    if (
+      !hasTransactionalDeleter(this.byteStore) &&
+      this.byteStore.writesOutsideRegistryDatabase !== true
+    ) {
+      throw collectorConfigurationFailure();
+    }
     const cutoff = new Date(this.now().getTime() - this.graceMs).toISOString();
     let candidates;
     try {
@@ -188,6 +210,10 @@ export class AssetCollector {
           if (hasTransactionalDeleter(this.byteStore)) {
             await this.byteStore.deleteWith(queryable, candidate.content_hash);
           } else {
+            // Reachable only after the entry-point guard above: the layer either
+            // has deleteWith (handled by the branch above) or declared that its
+            // bytes live outside the registry's database, so this plain delete
+            // cannot contend for the blob-row lock this transaction holds.
             await this.byteStore.delete(candidate.content_hash);
           }
           await queryable.query('DELETE FROM asset_blobs WHERE content_hash = $1', [

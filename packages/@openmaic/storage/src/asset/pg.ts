@@ -9,6 +9,14 @@
  * that were actually stored. The byte write is unconditional, so both existence
  * paths emit the same statements.
  *
+ * The byte write itself must go through the transaction-pinned queryable
+ * (`writeWith`) whenever the bytes live in the registry's own PostgreSQL:
+ * written on the byte layer's own pooled connection while this transaction
+ * holds the blob-row lock, it would block on that lock forever -- a
+ * self-deadlock PostgreSQL cannot detect. A byte layer that cannot join the
+ * transaction must declare `writesOutsideRegistryDatabase`, or the registry
+ * refuses the configuration (see `assertByteWriteIsCoordinatable`).
+ *
  * Request paths never delete bytes; the offline collector is the only reclaimer.
  * `withTransaction` must pin all queries in its body to one freshly checked-out
  * transaction.
@@ -121,6 +129,23 @@ function hasTransactionalReader(store: AssetByteStore): store is TransactionalBy
   return 'readWith' in store && typeof store.readWith === 'function';
 }
 
+/**
+ * Bound on how long one registry write transaction may wait on a lock.
+ *
+ * Every registry lock wait in a healthy deployment is short: the blob-row
+ * claim serializes against the collector (a transaction per blob) or against a
+ * concurrent writer of the same content, and the principal quota lock waits
+ * only for a same-principal write already in flight. A wait that outlives this
+ * bound is a stuck transaction or a lock-contention bug, and must surface as a
+ * loud error rather than hang a request or an agent turn for as long as the
+ * holder stays stuck.
+ */
+const REGISTRY_WRITE_LOCK_TIMEOUT_SQL = `SET LOCAL lock_timeout = '30s'`;
+
+function registryConfigurationFailure(problem: string): Error {
+  return new Error(`@openmaic/storage: ${problem}`);
+}
+
 function registryFailure(operation: string): Error {
   return new Error(`@openmaic/storage: asset registry ${operation} failed`);
 }
@@ -176,6 +201,43 @@ export class PgAssetStore implements AssetStore {
     return this.transactionHook(body);
   }
 
+  /**
+   * A write transaction: the same fresh pinned connection as
+   * {@link transaction}, plus a lock-wait budget, so a future lock-contention
+   * variant of a registry write fails loudly instead of hanging.
+   */
+  private writeTransaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
+    return this.transactionHook(async (queryable) => {
+      await queryable.query(REGISTRY_WRITE_LOCK_TIMEOUT_SQL);
+      return body(queryable);
+    });
+  }
+
+  /**
+   * Refuse the self-deadlock configuration up front: a byte store that writes
+   * to the registry's own PostgreSQL but cannot join the registry's
+   * transaction would issue its byte write on a second pooled connection while
+   * this transaction holds the blob-row lock. That write blocks forever on the
+   * lock the transaction just took, and the transaction waits on the write --
+   * a deadlock PostgreSQL cannot detect, because one side is idle in
+   * transaction. A store either joins the transaction (`writeWith`) or
+   * declares that its bytes live outside the registry's database
+   * ({@link AssetByteStore.writesOutsideRegistryDatabase}); anything else is a
+   * configuration error, thrown here before any row is claimed.
+   */
+  private assertByteWriteIsCoordinatable(): void {
+    if (hasTransactionalWriter(this.byteStore)) return;
+    if (this.byteStore.writesOutsideRegistryDatabase === true) return;
+    throw registryConfigurationFailure(
+      'the asset byte store cannot coordinate byte writes with the registry. A byte store without ' +
+        'writeWith() writes on its own connection; if it writes to the same PostgreSQL as the ' +
+        'registry, that write blocks forever on the blob-row lock the registry transaction just ' +
+        'took (a self-deadlock PostgreSQL cannot detect). Provide a transaction-pinned writeWith(), ' +
+        'or declare writesOutsideRegistryDatabase: true when the bytes genuinely live outside the ' +
+        "registry's database (for example in an object store).",
+    );
+  }
+
   private async coordinatedWrite(
     queryable: Queryable,
     hash: ContentHash,
@@ -183,9 +245,16 @@ export class PgAssetStore implements AssetStore {
   ): Promise<void> {
     if (hasTransactionalWriter(this.byteStore)) {
       await this.byteStore.writeWith(queryable, hash, bytes);
-    } else {
-      await this.byteStore.write(hash, bytes);
+      return;
     }
+    if (this.byteStore.writesOutsideRegistryDatabase === true) {
+      await this.byteStore.write(hash, bytes);
+      return;
+    }
+    // Defense in depth: the entry-point check above should have refused this
+    // configuration before any transaction opened. Keep the guard here too so
+    // a future call path cannot fall into the deadlock silently.
+    this.assertByteWriteIsCoordinatable();
   }
 
   private readBytes(queryable: Queryable, hash: ContentHash): Promise<Uint8Array | null> {
@@ -273,6 +342,7 @@ export class PgAssetStore implements AssetStore {
   }
 
   async put(principal: AssetPrincipal, data: BinaryBlob, meta?: AssetMeta): Promise<AssetId> {
+    this.assertByteWriteIsCoordinatable();
     const storedMeta = meta ?? {};
     const encodedMeta = encodeMeta(storedMeta);
     const mime = storedMeta.contentType ?? data.type;
@@ -286,7 +356,7 @@ export class PgAssetStore implements AssetStore {
     }
 
     try {
-      await this.transaction(async (queryable) => {
+      await this.writeTransaction(async (queryable) => {
         // Inside the transaction, and before anything is written: a check on
         // the pool is already stale when it is acted on.
         await this.assertPutQuota(queryable, principal, bytes.byteLength);
@@ -444,7 +514,7 @@ export class PgAssetStore implements AssetStore {
   async remove(principal: AssetPrincipal, ref: AssetRef): Promise<void> {
     if (!isLosslessJsonString(ref) || !isLosslessJsonString(principal.key)) return;
     try {
-      await this.transaction(async (queryable) => {
+      await this.writeTransaction(async (queryable) => {
         const deleted = await queryable.query<HashRow>(
           `DELETE FROM asset_entries
             WHERE id = $1 AND principal = $2
@@ -482,8 +552,9 @@ export class PgAssetStore implements AssetStore {
     const replacementMime = storedMeta?.contentType ?? data.type;
     const { contentHash, bytes: buffer } = await contentHashOf(data);
     const bytes = byteView(buffer);
+    this.assertByteWriteIsCoordinatable();
     try {
-      return await this.transaction(async (queryable) => {
+      return await this.writeTransaction(async (queryable) => {
         await this.assertReplaceQuota(queryable, principal, ref, bytes.byteLength);
         const existing = await queryable.query<EntryRow>(
           `SELECT content_hash, mime, meta, revision

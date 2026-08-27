@@ -201,6 +201,14 @@ function isNotFound(error: unknown): boolean {
 export class S3AssetByteStore implements AssetByteStore {
   private readonly client: S3AssetByteStoreClient;
   private readonly bucket: string;
+  /**
+   * Objects live in the object store, never in the registry's own PostgreSQL,
+   * so the plain `write` / `read` / `delete` can never contend for the
+   * blob-row locks a registry transaction holds. This declaration is what lets
+   * the registry run the plain `write` inside its transaction when S3 backs
+   * the byte layer (see `AssetByteStore.writesOutsideRegistryDatabase`).
+   */
+  readonly writesOutsideRegistryDatabase = true as const;
   /** Set once resolved, whether supplied by the caller or loaded from the SDK. */
   private resolvedCommands: S3AssetByteStoreCommands | undefined;
   private pendingCommands: Promise<S3AssetByteStoreCommands> | undefined;
