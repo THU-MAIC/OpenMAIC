@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
-import { markStagePersistenceDirty, useStageStore } from '@/lib/store/stage';
+import { useStageStore } from '@/lib/store/stage';
 import { isSceneEditLocked } from '@/lib/edit/regen-lock';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -27,10 +27,7 @@ import {
 } from '@/lib/audio/voice-resolver';
 import { resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
-import {
-  generateMediaForOutlines,
-  reconcileCompletedMediaForScene,
-} from '@/lib/media/media-orchestrator';
+import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { putAsset, removeAsset, replaceAsset } from '@/lib/media/asset-pool';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
@@ -49,20 +46,6 @@ import {
 } from '@openmaic/generation';
 
 const log = createLogger('SceneGenerator');
-
-function addGeneratedScene(scene: Scene): void {
-  const state = useStageStore.getState();
-  if (!state.stage || scene.stageId !== state.stage.id) {
-    state.addScene(scene);
-    return;
-  }
-  const reconciled = reconcileCompletedMediaForScene(scene, state.stage);
-  if (reconciled.stage !== state.stage) {
-    useStageStore.setState({ stage: reconciled.stage });
-    markStagePersistenceDirty([{ kind: 'stage' }]);
-  }
-  useStageStore.getState().addScene(reconciled.scene);
-}
 
 interface SceneContentResult {
   success: boolean;
@@ -900,7 +883,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             }
 
             removeGeneratingOutline(outline.id);
-            addGeneratedScene(scene);
+            useStageStore.getState().addScene(scene);
             options.onSceneGenerated?.(scene, outline.order);
             previousSpeeches = actionsResult.previousSpeeches || [];
           } else {
@@ -1074,7 +1057,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         }
 
         removeGeneratingOutline();
-        addGeneratedScene(actionsResult.scene);
+        useStageStore.getState().addScene(actionsResult.scene);
 
         // Resume remaining generation if there are pending outlines
         if (store.getState().generatingOutlines.length > 0 && lastParamsRef.current) {
