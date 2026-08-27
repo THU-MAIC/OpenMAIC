@@ -753,8 +753,11 @@ export function WorkbenchChat({
               data-testid="workbench-chat-scroll"
               aria-busy={catchingUp ? 'true' : undefined}
               inert={retainedTranscript ? true : undefined}
+              // The same horizontal inset as the composer footer (`px-3`), so
+              // the timeline's left edge lines up with the composer box's left
+              // edge instead of sitting to its right.
               className={cn(
-                'h-full overflow-y-auto px-4 pt-3',
+                'h-full overflow-y-auto px-3 pt-3',
                 layout.scrollPadding,
                 retainedTranscript ? 'pointer-events-none select-none' : undefined,
               )}

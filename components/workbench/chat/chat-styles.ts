@@ -50,7 +50,7 @@ export const wbStyles = {
    * the app's shadcn variables (`--destructive` flips with `.dark`).
    */
   systemNotice: {
-    row: 'flex items-start gap-2 py-0.5 pl-0.5 data-[tone=error]:rounded-[var(--wb-radius-md)] data-[tone=error]:border data-[tone=error]:border-[var(--wb-danger-line)] data-[tone=error]:bg-[var(--wb-danger-soft)] data-[tone=error]:px-2.5 data-[tone=error]:py-2',
+    row: 'flex items-start gap-2 py-0.5 data-[tone=error]:rounded-[var(--wb-radius-md)] data-[tone=error]:border data-[tone=error]:border-[var(--wb-danger-line)] data-[tone=error]:bg-[var(--wb-danger-soft)] data-[tone=error]:px-2.5 data-[tone=error]:py-2',
     // Optically centered on the first line (13px glyph in a 17px line box)
     // rather than hung from its top edge.
     icon: 'mt-[2px] inline-flex shrink-0 items-center text-[var(--wb-text-faint)] data-[tone=error]:text-[var(--wb-danger)] data-[tone=success]:text-[var(--wb-success)]',

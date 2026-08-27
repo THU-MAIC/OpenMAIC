@@ -282,7 +282,7 @@ function ChatNodeView({
       // visual difference the rail has: prose floats, actions are boxed.
       // Streaming is quiet: no caret anywhere (PR walkthrough).
       return (
-        <div className="px-0.5 text-[var(--wb-text)]">
+        <div className="text-[var(--wb-text)]">
           <TextBlock text={node.text} streaming={node.streaming} />
         </div>
       );
