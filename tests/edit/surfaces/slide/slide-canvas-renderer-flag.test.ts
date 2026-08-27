@@ -68,6 +68,8 @@ vi.mock('@/components/slide-renderer/Editor/LaserPointerOverlay', () => ({
 
 vi.mock('@/lib/contexts/scene-context', () => ({
   SceneProvider: ({ children }: { children: ReactNode }) => children,
+  useSceneData: () => ({ sceneId: 'scene-1' }),
+  useSceneSelector: () => undefined,
 }));
 
 vi.mock('@/components/edit/surfaces/slide/AnchoredTextBar', () => ({

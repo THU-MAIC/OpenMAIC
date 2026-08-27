@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect } from 'react';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { useSyncCanvasViewportFromSlide } from '@/lib/store/sync-canvas-viewport';
 import { useSceneSelector } from '@/lib/contexts/scene-context';
 import { useKeyboardStore } from '@/lib/store/keyboard';
 import { useViewportSize } from './hooks/useViewportSize';
@@ -62,6 +63,7 @@ export interface CanvasProps {
 export function Canvas(_props: CanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  useSyncCanvasViewportFromSlide();
 
   // Subscribe to specific parts for performance optimization
   const elements = useSceneSelector<SlideContent, PPTElement[]>(
