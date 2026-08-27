@@ -27,6 +27,7 @@ async function captureInjectedRequestBody(
   providerId: ProviderId,
   modelId: string,
   thinkingConfig?: Record<string, unknown>,
+  baseUrl?: string,
 ) {
   const originalFetch = globalThis.fetch;
   const globalRecord = globalThis as Record<string, unknown>;
@@ -48,6 +49,7 @@ async function captureInjectedRequestBody(
       providerId,
       modelId,
       apiKey: 'sk-test',
+      baseUrl,
     });
 
     const lastCall = openAiMock.createOpenAI.mock.calls.at(-1);
@@ -649,6 +651,57 @@ describe('OpenAI provider defaults', () => {
       expect(body).toMatchObject(expected);
     },
   );
+
+  it('sends the driver route thinking toggle required by the custom OpenAI gateway', async () => {
+    const body = await captureInjectedRequestBody(
+      'openai',
+      'deepseek-v4-flash-vision-exp',
+      { enabled: true },
+      'https://gateway.example/v1',
+    );
+
+    expect(body).toMatchObject({
+      chat_template_kwargs: { thinking: true },
+    });
+    expect(body).not.toHaveProperty('reasoning_effort');
+    expect(body).not.toHaveProperty('enable_thinking');
+  });
+
+  it('recovers reasoning_content from a custom OpenAI gateway stream', async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(async () => {
+      const payload = {
+        choices: [{ index: 0, delta: { reasoning_content: 'Inspect the evidence' } }],
+      };
+      return new Response(`data: ${JSON.stringify(payload)}\n\ndata: [DONE]\n\n`, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    });
+
+    try {
+      globalThis.fetch = fetchMock as typeof fetch;
+      getModel({
+        providerId: 'openai',
+        modelId: 'deepseek-v4-flash-vision-exp',
+        apiKey: 'sk-test',
+        baseUrl: 'https://gateway.example/v1',
+      });
+      const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+        | { fetch?: typeof fetch }
+        | undefined;
+      const response = await options?.fetch?.('https://gateway.example/v1/chat/completions', {
+        method: 'POST',
+        body: JSON.stringify({ stream: true }),
+      });
+      const normalized = await response?.text();
+
+      expect(normalized).toContain('<think>Inspect the evidence');
+      expect(normalized).not.toContain('reasoning_content');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 
   it('omits a zero SiliconFlow thinking budget when thinking is disabled', async () => {
     const body = await captureInjectedRequestBody('siliconflow', 'deepseek-ai/DeepSeek-V3.2', {

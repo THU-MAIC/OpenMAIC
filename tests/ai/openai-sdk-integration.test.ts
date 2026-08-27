@@ -3,10 +3,78 @@ import { generateText, stepCountIs, streamText, tool } from 'ai';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
-import { resolveThinkingProviderOptions } from '@/lib/ai/llm';
+import { resolveThinkingProviderOptions, streamLLM } from '@/lib/ai/llm';
 import { getModel } from '@/lib/ai/providers';
 
 describe('OpenAI SDK integration', () => {
+  it('carries the custom gateway toggle in and reasoning_content back out', async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const chunks = [
+        {
+          id: 'chatcmpl-thinking',
+          object: 'chat.completion.chunk',
+          created: 1,
+          model: 'deepseek-v4-flash-vision-exp',
+          choices: [
+            {
+              index: 0,
+              delta: { reasoning_content: 'Inspect the evidence' },
+              finish_reason: null,
+            },
+          ],
+        },
+        {
+          id: 'chatcmpl-thinking',
+          object: 'chat.completion.chunk',
+          created: 1,
+          model: 'deepseek-v4-flash-vision-exp',
+          choices: [{ index: 0, delta: { content: 'Done' }, finish_reason: null }],
+        },
+        {
+          id: 'chatcmpl-thinking',
+          object: 'chat.completion.chunk',
+          created: 1,
+          model: 'deepseek-v4-flash-vision-exp',
+          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+        },
+      ];
+      return new Response(
+        `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('')}data: [DONE]\n\n`,
+        { headers: { 'content-type': 'text/event-stream' } },
+      );
+    }) as typeof globalThis.fetch;
+
+    try {
+      const { model } = getModel({
+        providerId: 'openai',
+        modelId: 'deepseek-v4-flash-vision-exp',
+        apiKey: 'sk-test',
+        baseUrl: 'https://gateway.example/v1',
+      });
+      const result = streamLLM(
+        { model, prompt: 'hi', maxRetries: 0 },
+        'agent-runtime-thinking-seam',
+        { enabled: true },
+      );
+      const parts: Array<Record<string, unknown>> = [];
+      for await (const part of result.fullStream) parts.push(part as Record<string, unknown>);
+
+      expect(requestBody).toMatchObject({
+        chat_template_kwargs: { thinking: true },
+      });
+      expect(parts).toContainEqual(
+        expect.objectContaining({ type: 'reasoning-delta', text: 'Inspect the evidence' }),
+      );
+      expect(parts).toContainEqual(expect.objectContaining({ type: 'text-delta', text: 'Done' }));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('accepts GPT-5.6 max reasoning effort and sends it to the Responses API', async () => {
     let requestBody: Record<string, unknown> | undefined;
     const fetchMock = async (_input: RequestInfo | URL, init?: RequestInit) => {
