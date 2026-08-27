@@ -11,6 +11,7 @@ import type { PersistedOwnerSessionEvent } from '@openmaic/storage';
 import type { NextRequest } from 'next/server';
 
 import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
+import { subscribeAgentEventWakeup } from '@/lib/server/agent-runtime/event-notify-bus';
 import { resolveRequestOwnerId } from '@/lib/server/agent-runtime/owner';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 
@@ -19,8 +20,8 @@ export const runtime = 'nodejs';
 // it. The 25s heartbeat keeps this sparse stream active through idle periods.
 export const maxDuration = 300;
 
-// Polling is the correctness mechanism because the storage package does not
-// expose LISTEN/NOTIFY.
+// LISTEN/NOTIFY supplies low latency. This is deliberately retained as a
+// correctness fallback because NOTIFY is lossy across listener disconnects.
 export const OWNER_EVENT_POLL_INTERVAL_MS = 30_000;
 export const SSE_HEARTBEAT_INTERVAL_MS = 25_000;
 export const OWNER_EVENT_REPLAY_LIMIT = 1_000;
@@ -55,6 +56,7 @@ export async function GET(req: NextRequest) {
   const encoder = new TextEncoder();
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let unsubscribeWakeup: (() => void) | null = null;
   let closed = false;
 
   const clearTimers = () => {
@@ -62,6 +64,8 @@ export async function GET(req: NextRequest) {
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     pollTimer = null;
     heartbeatTimer = null;
+    unsubscribeWakeup?.();
+    unsubscribeWakeup = null;
   };
 
   const stream = new ReadableStream<Uint8Array>({
@@ -74,6 +78,8 @@ export async function GET(req: NextRequest) {
       let degradedCaughtUp = false;
       let attachCursorChecked = false;
       let backlogSkippedForResync = false;
+      let initializing = true;
+      let wakeDuringInitialization = false;
       let repollRequested = false;
       let pollInFlight: Promise<void> | null = null;
 
@@ -227,12 +233,15 @@ export async function GET(req: NextRequest) {
         }
       };
 
-      // Timer reads enter the same serialized gate. If another read is
-      // requested while one is in flight, exactly one follow-up read runs
-      // after it settles; concurrent reads could duplicate frames or move the
-      // cursor backwards.
+      // Both timer and NOTIFY enter the same serialized gate. If a wakeup
+      // lands during a read, exactly one follow-up read runs after it settles;
+      // concurrent reads could duplicate frames or move the cursor backwards.
       const requestPoll = (): Promise<void> => {
         if (closed) return Promise.resolve();
+        if (initializing) {
+          wakeDuringInitialization = true;
+          return Promise.resolve();
+        }
         if (pollInFlight) {
           repollRequested = true;
           return pollInFlight;
@@ -290,7 +299,15 @@ export async function GET(req: NextRequest) {
           });
       }, SSE_HEARTBEAT_INTERVAL_MS);
 
+      // Register before the initial read so a commit racing with backlog
+      // exhaustion cannot fall into the 30s fallback window. The callback is
+      // removed on every stream close path together with both timers.
+      unsubscribeWakeup = subscribeAgentEventWakeup({ kind: 'owner', ownerId }, () => {
+        void requestPoll();
+      });
       await drainBacklog();
+      initializing = false;
+      if (wakeDuringInitialization) await requestPoll();
       tick();
     },
     cancel() {

@@ -86,6 +86,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Settings,
   Trash2,
   Upload,
   X,
@@ -97,6 +98,7 @@ import type { HomeDiscoveryState, useHomeDiscovery } from '@/lib/hooks/use-home-
 import { ProBadge } from '@/components/workbench/ProBadge';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { ThemeToggle } from '@/components/site-header/theme-toggle';
+import { SettingsDialog } from '@/components/settings';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -257,6 +259,8 @@ export function WorkspaceRail({
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   /** The folder whose delete has been asked for, and not yet answered. */
   const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(null);
+  /** The model/provider settings dialog, opened from the rail's foot cluster. */
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   /**
    * Commit a folder rename. Returns null when it landed and a readable message
@@ -675,10 +679,22 @@ export function WorkspaceRail({
           className="ws-utils flex shrink-0 flex-col items-center gap-0.5 py-2.5"
         >
           {/* 60px of width does not hold five controls, so at this size the
-              overflow is where everything but the two most-used entries
-              lives — including the locale switcher. */}
+              overflow is where everything but the most-used entries lives —
+              including the locale switcher. Settings stays on the surface: the
+              collapsed rail must not lose the one entry that configures the
+              providers the surface depends on. */}
           <RailOverflow testId="pro-rail-more-mini" mini withLanguage />
           <ThemeToggle />
+          <button
+            type="button"
+            data-testid="pro-nav-settings-mini"
+            onClick={() => setSettingsOpen(true)}
+            aria-label={t('settings.title')}
+            title={t('settings.title')}
+            className="ws-mini-btn"
+          >
+            <Settings className="size-4" aria-hidden="true" />
+          </button>
         </div>
       </nav>
     );
@@ -1173,9 +1189,20 @@ export function WorkspaceRail({
         ) : null}
       </div>
 
-      <RailUtilities />
+      <RailUtilities onOpenSettings={() => setSettingsOpen(true)} />
 
       {resizeHandle}
+
+      {/* The model/provider settings dialog — the same component the classic
+          home opens from its header pill. The rail owns the mount so the
+          trigger in the foot cluster stays one component away from its dialog,
+          like the folder-delete question below. */}
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={(next) => {
+          setSettingsOpen(next);
+        }}
+      />
 
       {/* Deleting a folder does something to the courses inside it, so it is
           asked as a question with that consequence stated — not the two-press
@@ -2028,11 +2055,18 @@ function SessionDot({ status }: { readonly status: ProHomeSessionItem['status'] 
  * daily; feedback and the community links are a press further, behind one
  * quiet ⋯, because a rail is navigation first and a settings bar second.
  *
+ * The settings entry lives here too, in the slot the removed saved-courses
+ * drawer left in this cluster (a product decision on this branch: the drawer
+ * could only ever render empty, and the model/provider dialog is the one
+ * surface-wide setting the workspace still needs). It is the same dialog the
+ * classic home opens from its header pill; the rail trigger owns its own
+ * mount.
+ *
  * The product ships no reusable notification bell (the only Bell in the tree
  * belongs to the community dialog), so there is nothing to cluster here for
  * notifications.
  */
-function RailUtilities() {
+function RailUtilities({ onOpenSettings }: { readonly onOpenSettings: () => void }) {
   const { t } = useI18n();
   return (
     <div className="shrink-0" data-testid="pro-rail-utilities">
@@ -2043,6 +2077,16 @@ function RailUtilities() {
       >
         <LanguageSwitcher />
         <ThemeToggle />
+        <button
+          type="button"
+          data-testid="pro-nav-settings"
+          onClick={onOpenSettings}
+          aria-label={t('settings.title')}
+          title={t('settings.title')}
+          className="ws-util-btn"
+        >
+          <Settings className="size-4" aria-hidden="true" />
+        </button>
       </div>
     </div>
   );

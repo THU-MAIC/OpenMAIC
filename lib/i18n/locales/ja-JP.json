@@ -1941,7 +1941,7 @@
     "error": "アクセスコードが正しくありません。もう一度お試しください。"
   },
   "proMode": {
-    "attach": "添加材料",
+    "attach": "教材を添付",
     "mentionCourse": "引用课堂",
     "loadSkill": "加载 skill",
     "skillMenuTitle": "选择课程设计技能",

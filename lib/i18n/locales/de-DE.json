@@ -1941,7 +1941,7 @@
     "error": "Ungültiger Zugangscode. Bitte versuche es erneut."
   },
   "proMode": {
-    "attach": "添加材料",
+    "attach": "Attach material",
     "mentionCourse": "引用课堂",
     "loadSkill": "加载 skill",
     "skillMenuTitle": "选择课程设计技能",

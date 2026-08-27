@@ -277,6 +277,17 @@ export interface ComposerMaterials {
 let materialsEnabledCache: boolean | null = null;
 let materialsProbe: Promise<boolean> | null = null;
 
+/**
+ * The server's answer, remembered for the life of the tab: whether the
+ * material upload path can actually serve a request.
+ *
+ * The branch substitution: the reference's probe reads `materialsEnabled`
+ * (its runtime answers `enabled && isAgentMaterialsEnabled()`). This port has
+ * no separate materials flag — the materials routes gate on the runtime
+ * itself, like the stages — so the probe reads the runtime's `enabled` field,
+ * which IS the upload action's precondition (`POST /api/materials` 404s when
+ * it is false).
+ */
 async function probeMaterialsEnabled(): Promise<boolean> {
   if (materialsEnabledCache !== null) return materialsEnabledCache;
   if (!materialsProbe) {
@@ -284,9 +295,7 @@ async function probeMaterialsEnabled(): Promise<boolean> {
       .then(async (response) => (response.ok ? ((await response.json()) as unknown) : null))
       .then((body) => {
         const enabled =
-          !!body &&
-          typeof body === 'object' &&
-          (body as { materialsEnabled?: unknown }).materialsEnabled === true;
+          !!body && typeof body === 'object' && (body as { enabled?: unknown }).enabled === true;
         materialsEnabledCache = enabled;
         return enabled;
       })

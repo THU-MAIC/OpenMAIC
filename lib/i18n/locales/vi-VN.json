@@ -1941,7 +1941,7 @@
     "error": "Mã truy cập không đúng. Vui lòng thử lại."
   },
   "proMode": {
-    "attach": "添加材料",
+    "attach": "Đính kèm tài liệu",
     "mentionCourse": "引用课堂",
     "loadSkill": "加载 skill",
     "skillMenuTitle": "选择课程设计技能",

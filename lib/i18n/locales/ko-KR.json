@@ -1941,7 +1941,7 @@
     "error": "유효하지 않은 접근 코드입니다. 다시 시도해 주세요."
   },
   "proMode": {
-    "attach": "添加材料",
+    "attach": "자료 첨부",
     "mentionCourse": "引用课堂",
     "loadSkill": "加载 skill",
     "skillMenuTitle": "选择课程设计技能",

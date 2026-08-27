@@ -32,9 +32,17 @@ export async function register(): Promise<void> {
   let extractionRunner:
     | import('@/lib/server/material-extraction/runner').MaterialExtractionRunnerHandle
     | undefined;
+  let stopAgentEventNotifyBus: (() => Promise<void>) | null = null;
   try {
     const { isAgentRuntimeConfigured } = await import('@/lib/config/feature-flags');
     if (isAgentRuntimeConfigured()) {
+      // One dedicated LISTEN connection per application instance. The HTTP
+      // SSE routes and the runner share its in-process fanout registry; it is
+      // not a pool client and never scales with the number of streams.
+      const { startAgentEventNotifyBus } =
+        await import('@/lib/server/agent-runtime/event-notify-bus');
+      const eventNotifyBus = startAgentEventNotifyBus();
+      stopAgentEventNotifyBus = () => eventNotifyBus.stop();
       // startAgentRunner only installs a timer. Store/schema initialization is
       // retained behind the store's lazy promise and never blocks register().
       const runtime = await import('@/lib/server/agent-runtime/runner');
@@ -60,6 +68,11 @@ export async function register(): Promise<void> {
         await runner?.stop();
       } catch (error) {
         console.error('[instrumentation] Agent runner drain failed', error);
+      }
+      try {
+        await stopAgentEventNotifyBus?.();
+      } catch (error) {
+        console.error('[instrumentation] Agent event notify bus drain failed', error);
       }
       try {
         await assetSchedule?.stop();
