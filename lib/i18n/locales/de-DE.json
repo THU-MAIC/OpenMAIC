@@ -1826,6 +1826,25 @@
       "capabilities": "Angebotene Funktionen",
       "offeredNote": "Von diesem Tarif angebotene Modelle. Wähle die gewünschten Modelle für die Generierungsleiste aus. Die Verfügbarkeit hängt von deiner Tarifstufe ab; nicht unterstützte Modelle führen bei der Generierung zu einem Fehler."
     },
+    "skills": {
+      "nav": "Skills",
+      "title": "Skill-Einstellungen",
+      "description": "Durchsuche die für dein Konto installierten Skills, sieh dir einen Skill an und lade ihn als zip herunter, um ihn zu teilen oder zu sichern.",
+      "mySkills": "Meine Skills",
+      "builtinSkills": "Eingebaute Skills",
+      "emptyMySkills": "Noch keine eigenen Skills — lass den Agenten in einem Chat einen aus dem Verlauf erstellen.",
+      "emptyBuiltinSkills": "Keine eingebauten Skills verfügbar.",
+      "listFailed": "Die Skill-Liste konnte nicht geladen werden",
+      "retry": "Erneut versuchen",
+      "badgeBuiltin": "Eingebaut",
+      "badgeOwner": "Mein Skill",
+      "badgeConstraints": "Einschränkungen",
+      "details": "Details",
+      "download": "Herunterladen",
+      "detailFailed": "Die Skill-Details konnten nicht geladen werden",
+      "contentLabel": "Inhalt",
+      "builtinDetailNote": "Dieser Skill ist in OpenMAIC enthalten. Lade ihn herunter, um ihn in einen anderen Agenten-Arbeitsbereich zu importieren."
+    },
     "ttsBrowserNativeTimelineNotice": "Browserintegrierte TTS unterstützt die Audiofunktionen der Editor-Zeitleiste nicht (Vorschau, erneute Generierung und Sammelvertonung). Wechsle zu einem verwalteten TTS-Anbieter, um Audio für einzelne Zeilen zu generieren und zu verwalten.",
     "alidocmindAccessKeyId": "AccessKey ID",
     "alidocmindAccessKeySecret": "AccessKey Secret"

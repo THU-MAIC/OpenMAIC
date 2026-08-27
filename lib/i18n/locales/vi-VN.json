@@ -1826,6 +1826,25 @@
       "capabilities": "Khả năng được cung cấp",
       "offeredNote": "Các model gói này cung cấp. Hãy chọn những model bạn muốn hiện trên thanh tạo bài — mức khả dụng tùy hạng gói của bạn, và model không được hỗ trợ sẽ báo lỗi lúc tạo bài."
     },
+    "skills": {
+      "nav": "Skill",
+      "title": "Cài đặt skill",
+      "description": "Duyệt các skill đã cài cho tài khoản của bạn, xem chi tiết một skill và tải xuống dưới dạng zip để chia sẻ hoặc sao lưu.",
+      "mySkills": "Skill của tôi",
+      "builtinSkills": "Skill tích hợp",
+      "emptyMySkills": "Bạn chưa có skill riêng — hãy nhờ agent trong hội thoại tạo một cái từ lịch sử.",
+      "emptyBuiltinSkills": "Không có skill tích hợp nào.",
+      "listFailed": "Không thể tải danh sách skill",
+      "retry": "Thử lại",
+      "badgeBuiltin": "Tích hợp",
+      "badgeOwner": "Skill của tôi",
+      "badgeConstraints": "Có ràng buộc",
+      "details": "Chi tiết",
+      "download": "Tải xuống",
+      "detailFailed": "Không thể tải chi tiết skill",
+      "contentLabel": "Nội dung",
+      "builtinDetailNote": "Skill này đi kèm với OpenMAIC. Tải xuống để nhập vào không gian làm việc của agent khác."
+    },
     "ttsBrowserNativeTimelineNotice": "Giọng đọc của trình duyệt không hỗ trợ các chức năng âm thanh trên dòng thời gian của trình sửa (nghe thử, tạo lại, lồng tiếng hàng loạt). Hãy chuyển sang một nhà cung cấp giọng đọc có quản lý để tạo và quản lý âm thanh theo từng dòng.",
     "alidocmindAccessKeyId": "AccessKey ID",
     "alidocmindAccessKeySecret": "AccessKey Secret"

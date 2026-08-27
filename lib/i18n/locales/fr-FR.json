@@ -1826,6 +1826,25 @@
       "capabilities": "Capacités proposées",
       "offeredNote": "Modèles proposés par ce forfait. Choisissez ceux que vous voulez voir dans la barre de génération : leur disponibilité dépend de votre niveau de forfait, et les modèles non pris en charge produiront une erreur au moment de la génération."
     },
+    "skills": {
+      "nav": "Skills",
+      "title": "Paramètres des skills",
+      "description": "Parcourez les skills installés pour votre compte, inspectez un skill et téléchargez-le en zip pour le partager ou le sauvegarder.",
+      "mySkills": "Mes skills",
+      "builtinSkills": "Skills intégrés",
+      "emptyMySkills": "Pas encore de skill à vous — demandez à l’agent d’en créer un depuis l’historique.",
+      "emptyBuiltinSkills": "Aucun skill intégré disponible.",
+      "listFailed": "Impossible de charger la liste des skills",
+      "retry": "Réessayer",
+      "badgeBuiltin": "Intégré",
+      "badgeOwner": "Mon skill",
+      "badgeConstraints": "Contraintes",
+      "details": "Détails",
+      "download": "Télécharger",
+      "detailFailed": "Impossible de charger les détails du skill",
+      "contentLabel": "Contenu",
+      "builtinDetailNote": "Ce skill est fourni avec OpenMAIC. Téléchargez-le pour l’importer dans un autre espace de travail d’agent."
+    },
     "ttsBrowserNativeTimelineNotice": "La synthèse vocale native du navigateur ne prend pas en charge les fonctions audio de la piste de l’éditeur (écoute, régénération et sonorisation groupée). Choisissez un fournisseur de synthèse vocale géré pour produire et gérer l’audio réplique par réplique.",
     "alidocmindAccessKeyId": "Identifiant de clé d’accès",
     "alidocmindAccessKeySecret": "Secret de clé d’accès"

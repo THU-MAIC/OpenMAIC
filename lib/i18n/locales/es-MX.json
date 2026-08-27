@@ -1826,6 +1826,25 @@
       "capabilities": "Capacidades ofrecidas",
       "offeredNote": "Modelos que ofrece este plan. Elige los que quieras en la barra de generación — la disponibilidad depende del nivel de tu plan, y los modelos no compatibles darán error al momento de generar."
     },
+    "skills": {
+      "nav": "Skills",
+      "title": "Ajustes de skills",
+      "description": "Explora los skills instalados en tu cuenta, inspecciona uno y descárgalo como zip para compartirlo o respaldarlo.",
+      "mySkills": "Mis skills",
+      "builtinSkills": "Skills integrados",
+      "emptyMySkills": "Aún no tienes skills propios: pide al agente en un chat que cree uno desde el historial.",
+      "emptyBuiltinSkills": "No hay skills integrados disponibles.",
+      "listFailed": "No se pudo cargar la lista de skills",
+      "retry": "Reintentar",
+      "badgeBuiltin": "Integrado",
+      "badgeOwner": "Mi skill",
+      "badgeConstraints": "Restricciones",
+      "details": "Detalles",
+      "download": "Descargar",
+      "detailFailed": "No se pudieron cargar los detalles del skill",
+      "contentLabel": "Contenido",
+      "builtinDetailNote": "Este skill viene incluido con OpenMAIC. Descárgalo para importarlo a otro espacio de trabajo de agente."
+    },
     "ttsBrowserNativeTimelineNotice": "El TTS nativo del navegador no admite las funciones de audio de la línea de tiempo del editor (vista previa, regenerar y voz en off masiva). Cambia a un proveedor de TTS administrado para generar y administrar el audio por línea.",
     "alidocmindAccessKeyId": "AccessKey ID",
     "alidocmindAccessKeySecret": "AccessKey Secret"

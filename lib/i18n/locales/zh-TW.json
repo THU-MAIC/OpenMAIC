@@ -1811,6 +1811,25 @@
       "capabilities": "套餐提供的能力",
       "offeredNote": "此方案提供的模型清單。請在生成介面選擇需要使用的模型——是否可用取決於你的方案檔位，不支援的模型會在生成時報錯。"
     },
+    "skills": {
+      "nav": "技能",
+      "title": "Skill 設定",
+      "description": "查看目前帳號已安裝的技能、檢視詳情，或下載為 zip 以便分享與備份。",
+      "mySkills": "我的技能",
+      "builtinSkills": "內建技能",
+      "emptyMySkills": "還沒有自己的技能——在對話裡讓 agent 從歷史建立一個。",
+      "emptyBuiltinSkills": "暫無內建技能。",
+      "listFailed": "技能列表載入失敗",
+      "retry": "重試",
+      "badgeBuiltin": "內建",
+      "badgeOwner": "我的技能",
+      "badgeConstraints": "含約束",
+      "details": "詳情",
+      "download": "下載",
+      "detailFailed": "技能詳情載入失敗",
+      "contentLabel": "正文",
+      "builtinDetailNote": "該技能隨 OpenMAIC 提供。下載後可匯入其他智能體工作台。"
+    },
     "ttsBrowserNativeTimelineNotice": "瀏覽器內建 TTS 不支援編輯器時間軸的音訊功能（試聽、重新生成、全部配音）。切換到受管 TTS 供應商即可逐句生成和管理音訊。",
     "alidocmindAccessKeyId": "AccessKey ID",
     "alidocmindAccessKeySecret": "AccessKey Secret"
