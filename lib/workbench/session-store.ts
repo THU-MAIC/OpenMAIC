@@ -954,16 +954,33 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       // receipt any later one does. Same untrusted-log rule as `user_message`
       // (drop mode), and same single source — a session-level list is never
       // consulted for this.
-      const startCourseRefs = parseCourseRefs(data.courseRefs);
-      next.chat = [
-        ...answerOpenQuestions(state.chat),
-        {
-          key: `${key}-u`,
-          kind: 'user',
-          text: String(data.prompt ?? ''),
-          ...(startCourseRefs.length ? { courseRefs: startCourseRefs } : {}),
-        },
-      ];
+      //
+      // A session created WITH opening context (materials or `@`-named
+      // classrooms) already has its message on the timeline: the create route
+      // persists it as a durable `user_message` — the very write that requeues
+      // the session — so the runner's `session_start` prompt would paint the
+      // same bubble twice. That durable message is the one true opening bubble
+      // (it carries the materials and courseRefs receipts); paint from
+      // `session_start` only when no such message precedes it. Sessions
+      // created without opening context have no durable message and still need
+      // this bubble. `session_start` fires only on the very first run, so a
+      // matching user node can only be that durable opening message.
+      const startPrompt = String(data.prompt ?? '');
+      const lastUser = [...state.chat].reverse().find((node) => node.kind === 'user');
+      const openingAlreadyPainted =
+        lastUser !== undefined && lastUser.kind === 'user' && lastUser.text === startPrompt;
+      if (!openingAlreadyPainted) {
+        const startCourseRefs = parseCourseRefs(data.courseRefs);
+        next.chat = [
+          ...answerOpenQuestions(state.chat),
+          {
+            key: `${key}-u`,
+            kind: 'user',
+            text: startPrompt,
+            ...(startCourseRefs.length ? { courseRefs: startCourseRefs } : {}),
+          },
+        ];
+      }
       // The first LLM call is now in flight — the gap indicator opens.
       openWaiting(next, `${key}-w`, event.ts);
       break;

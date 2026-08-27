@@ -154,6 +154,41 @@ describe('agent session collection route', () => {
     );
   });
 
+  it('persists the opening message exactly once, with materials and course refs intact', async () => {
+    const courseRefs = [{ kind: 'course', stageId: 'stage-2', title: 'Referenced course' }];
+    mocks.bindOwnerMaterialsToSession.mockResolvedValue([
+      { materialId: 'material-1', originalName: 'notes.pdf', bytes: 42 },
+    ]);
+    const response = await post({
+      prompt: 'Read this and compare',
+      materialIds: ['material-1'],
+      courseRefs,
+    });
+
+    expect(response.status).toBe(202);
+    // The create-with-opening-context flow must write the opening message as a
+    // durable `user_message` EXACTLY ONCE, carrying both the bound materials
+    // and the named classrooms — no second copy without the refs may exist.
+    expect(mocks.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'succeeded' }),
+    );
+    expect(mocks.postUserMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.postUserMessage).toHaveBeenCalledWith(
+      'session-1',
+      {
+        text: 'Read this and compare',
+        materials: [{ materialId: 'material-1', originalName: 'notes.pdf', bytes: 42 }],
+        courseRefs,
+      },
+      { expectedOwnerId: 'anon:test' },
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      id: 'session-1',
+      status: 'queued',
+      courseRefs,
+    });
+  });
+
   it('rejects an explicit skill that matches neither id nor name', async () => {
     const response = await post({ prompt: 'Build a course', skill: 'my-unknown' });
 

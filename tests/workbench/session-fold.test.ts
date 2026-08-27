@@ -75,6 +75,29 @@ describe('lifecycle events', () => {
     expect(state.chat[0]).toMatchObject({ kind: 'user', text: '给我讲讲光的折射' });
   });
 
+  it('does not paint the opening message twice when it is already a durable user_message', () => {
+    // A session created WITH opening context gets its message persisted as a
+    // durable `user_message` by the create route before the runner claims, so
+    // the runner's `session_start` must not paint a second bubble — the one
+    // true bubble is the durable message, receipt included.
+    const named = [{ kind: 'course', stageId: 'stage-a', title: '光的折射' }];
+    const state = foldAll([
+      ev('user_message', { text: '帮我在这门课程中增加内容', courseRefs: named }),
+      ev('session_start', { prompt: '帮我在这门课程中增加内容', workerId: 'w1' }),
+    ]);
+    expect(state.status).toBe('running');
+    const users = contentOf(state).filter((node) => node.kind === 'user');
+    expect(users).toHaveLength(1);
+    expect(users[0]).toMatchObject({ text: '帮我在这门课程中增加内容', courseRefs: named });
+  });
+
+  it('session_start still paints the opening bubble when no durable message preceded it', () => {
+    const state = foldAll([ev('session_start', { prompt: '做一门新课', workerId: 'w1' })]);
+    const users = contentOf(state).filter((node) => node.kind === 'user');
+    expect(users).toHaveLength(1);
+    expect(users[0]).toMatchObject({ text: '做一门新课' });
+  });
+
   it('session_resumed is one quiet system line', () => {
     const state = foldAll([
       ev('session_start', { prompt: 'p' }),

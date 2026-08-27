@@ -19,6 +19,7 @@ import { buildAgent } from '@/lib/agent/runtime/build-agent';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
 import { HOST_AGENT_LIFECYCLE as LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 import { createLogger } from '@/lib/logger';
+import { parseCourseRefs, type CourseRef } from '@/lib/workbench/course-refs';
 
 import { resolveAgentDriverModel } from './agent-driver-model';
 import { buildAskUserTool } from './ask-user';
@@ -340,6 +341,13 @@ export interface FollowUpMessage {
     mime?: string;
     bytes?: number;
   }>;
+  /**
+   * Classrooms the message named with `@`. The runner resolves each ref
+   * against the owner's own library before composing (see
+   * `resolveCourseRefsForContext`), so the model is told the course's CURRENT
+   * name rather than the snapshot the composer captured at pick time.
+   */
+  courseRefs?: readonly CourseRef[];
 }
 
 /** Derive delivery from the immutable entry sequence, not in-memory state. */
@@ -357,8 +365,44 @@ export function loggedMessageCursor(input: {
   };
 }
 
+/**
+ * The classrooms a message named, resolved against the owner's own library.
+ *
+ * The composer stores a SNAPSHOT title on the ref, which is right for the
+ * receipt the bubble shows but stale for the model: a renamed course would be
+ * described by its old name. Each ref is probed for ownership and the current
+ * name; a classroom that no longer resolves (missing, foreign, or tombstoned)
+ * degrades to the snapshot title — the user named it, so the model still
+ * learns which one — while the durable stageId stays the handle the course
+ * tools address.
+ */
+export async function resolveCourseRefsForContext(
+  ownerId: string,
+  refs: readonly CourseRef[],
+): Promise<CourseRef[]> {
+  const resolved: CourseRef[] = [];
+  for (const ref of refs) {
+    const probe = await probeStageAccess(ownerId, ref.stageId);
+    resolved.push({
+      kind: 'course',
+      stageId: ref.stageId,
+      title: probe.kind === 'owned' ? probe.stage.name : ref.title,
+    });
+  }
+  return resolved;
+}
+
+/** Append the named classrooms to a message the runner is about to deliver. */
+export function composeCourseRefsText(text: string, refs: readonly CourseRef[]): string {
+  if (refs.length === 0) return text;
+  const label = refs.length === 1 ? 'classroom' : 'classrooms';
+  const list = refs.map((ref) => `"${ref.title}" (${ref.stageId})`).join(', ');
+  return `${text}\n\n[The user named this ${label}: ${list}. Work on the named ${label} for this message.]`;
+}
+
 export function composeFollowUpText(message: FollowUpMessage): string {
-  if (!message.materials?.length) return message.text;
+  const text = composeCourseRefsText(message.text, message.courseRefs ?? []);
+  if (!message.materials?.length) return text;
   const list = message.materials
     .map((material) => {
       const id = material.materialId ?? 'attached material';
@@ -366,7 +410,7 @@ export function composeFollowUpText(message: FollowUpMessage): string {
       return `"${material.originalName ?? id}" (${mime}, ${material.bytes ?? 0} bytes)`;
     })
     .join(', ');
-  return `${message.text}\n\n[The user attached session material: ${list}. It is registered with this session; use use_material_media when it contains embeddable image, video, or audio bytes.]`;
+  return `${text}\n\n[The user attached session material: ${list}. It is registered with this session; use use_material_media when it contains embeddable image, video, or audio bytes.]`;
 }
 
 export function planRunStart(input: {
@@ -379,7 +423,18 @@ export function planRunStart(input: {
   if (input.plan.kind === 'start' && input.pending.length > 0 && input.idleAttach) {
     return { kind: 'prompt', text: composeFollowUpText(input.pending[0]!) };
   }
-  if (input.plan.kind === 'start') return { kind: 'prompt', text: input.prompt };
+  if (input.plan.kind === 'start') {
+    // A session created with opening context requeues its opening message as a
+    // durable `user_message` before the runner claims; `pending[0]` is that
+    // message. Its classrooms must reach the model, or the run would not know
+    // which classroom the user named. Nothing else changes: the raw prompt is
+    // still the base, and materials are already listed in the system block.
+    const opening = input.pending[0];
+    if (opening?.courseRefs?.length) {
+      return { kind: 'prompt', text: composeCourseRefsText(input.prompt, opening.courseRefs) };
+    }
+    return { kind: 'prompt', text: input.prompt };
+  }
   if (input.claimReason === 'queued' && input.pending.length > 0) {
     return { kind: 'prompt', text: composeFollowUpText(input.pending[0]!) };
   }
@@ -414,11 +469,15 @@ export interface RunContext {
 }
 
 function toFollowUp(message: AgentSessionUserMessage): FollowUpMessage {
+  // The durable event carries the refs the control plane persisted; the
+  // runner resolves them against the owner library before composing.
+  const courseRefs = parseCourseRefs(message.courseRefs);
   return {
     text: message.text,
     ...(message.materials.length
       ? { materials: message.materials as FollowUpMessage['materials'] }
       : {}),
+    ...(courseRefs.length ? { courseRefs } : {}),
   };
 }
 
@@ -746,7 +805,21 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       idleAttach: meta.existingCourse,
     });
     const followUpsDelivered = cursor.delivered;
-    const pending = loggedMessages.slice(followUpsDelivered).map(toFollowUp);
+    // Resolve the classrooms each pending message named against the owner's
+    // library BEFORE the prompt is built: the run must be told the course's
+    // current name (reference semantics), and the same resolved refs feed the
+    // `session_start` receipt when the opening message is a durable message.
+    const pending = await Promise.all(
+      loggedMessages.slice(followUpsDelivered).map(async (message) => {
+        const followUp = toFollowUp(message);
+        return followUp.courseRefs?.length
+          ? {
+              ...followUp,
+              courseRefs: await resolveCourseRefsForContext(meta.ownerId, followUp.courseRefs),
+            }
+          : followUp;
+      }),
+    );
     const idleAttach = cursor.idle;
 
     if (plan.kind === 'already-complete' && pending.length === 0) {
@@ -769,6 +842,10 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         workerId: WORKER_ID,
         pid: process.pid,
         prompt: meta.prompt,
+        // The opening message is durable with its classrooms (the create route
+        // requeues it before the runner can claim), so the start frame carries
+        // the same receipt any `user_message` does.
+        ...(pending[0]?.courseRefs?.length ? { courseRefs: pending[0].courseRefs } : {}),
       });
     } else {
       emit(LIFECYCLE.sessionResumed, {
@@ -1038,9 +1115,19 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       let delivered = 0;
       for (const [index, message] of all.entries()) {
         if (index < handled) continue;
+        const followUp = toFollowUp(message);
+        // Same resolution as the start path: a steered message names its
+        // classrooms on the durable event, and the model must be told the
+        // course's current name, not the pick-time snapshot.
+        const resolved = followUp.courseRefs?.length
+          ? {
+              ...followUp,
+              courseRefs: await resolveCourseRefsForContext(meta.ownerId, followUp.courseRefs),
+            }
+          : followUp;
         agent.steer({
           role: 'user',
-          content: composeFollowUpText(toFollowUp(message)),
+          content: composeFollowUpText(resolved),
         } as unknown as AgentMessage);
         delivered += 1;
       }

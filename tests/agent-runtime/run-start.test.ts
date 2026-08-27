@@ -1,12 +1,25 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { planResume } from '@/lib/server/agent-runtime/resume';
 import {
+  composeCourseRefsText,
   composeFollowUpText,
   loggedMessageCursor,
   planRunStart,
+  resolveCourseRefsForContext,
 } from '@/lib/server/agent-runtime/runner';
+import type { CourseRef } from '@/lib/workbench/course-refs';
+
+const mocks = vi.hoisted(() => ({
+  probeStageAccess: vi.fn(),
+}));
+
+vi.mock('@/lib/server/agent-runtime/curriculum-tools', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/lib/server/agent-runtime/curriculum-tools')>();
+  return { ...actual, probeStageAccess: mocks.probeStageAccess };
+});
 
 const user = (text: string) => ({ role: 'user', content: text }) as unknown as AgentMessage;
 const assistant = (text: string) =>
@@ -98,5 +111,64 @@ describe('composeFollowUpText', () => {
     expect(text).toContain('lecture.mp4');
     expect(text).toContain('video/mp4');
     expect(text).toContain('use use_material_media');
+  });
+});
+
+describe('courseRefs reach the run prompt', () => {
+  const ref = (stageId: string, title: string): CourseRef => ({ kind: 'course', stageId, title });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('composes the named classrooms into a follow-up message', () => {
+    const text = composeFollowUpText({
+      text: 'Add an example',
+      courseRefs: [ref('stage-1', '光的折射')],
+    });
+    expect(text).toContain('Add an example');
+    expect(text).toContain('光的折射');
+    expect(text).toContain('stage-1');
+  });
+
+  it('prompts a first run with the opening message plus its classrooms', () => {
+    const named = [ref('stage-1', '光的折射')];
+    expect(
+      planRunStart({
+        plan: planResume(null),
+        claimReason: 'queued',
+        pending: [{ text: 'Build a course', courseRefs: named }],
+        prompt: 'Build a course',
+      }),
+    ).toEqual({ kind: 'prompt', text: composeCourseRefsText('Build a course', named) });
+  });
+
+  it('keeps the raw prompt when the opening message named no classroom', () => {
+    expect(
+      planRunStart({
+        plan: planResume(null),
+        claimReason: 'queued',
+        pending: [{ text: 'Build a course' }],
+        prompt: 'Build a course',
+      }),
+    ).toEqual({ kind: 'prompt', text: 'Build a course' });
+  });
+
+  it('resolves refs to the current name and degrades an unresolved one', async () => {
+    mocks.probeStageAccess.mockImplementation(async (ownerId: string, stageId: string) =>
+      stageId === 'stage-1'
+        ? { kind: 'owned', stage: { stageId, name: 'Renamed classroom' } }
+        : { kind: 'missing' },
+    );
+
+    const resolved = await resolveCourseRefsForContext('owner-1', [
+      ref('stage-1', 'Old snapshot name'),
+      ref('stage-2', 'Gone classroom'),
+    ]);
+
+    expect(resolved).toEqual([
+      { kind: 'course', stageId: 'stage-1', title: 'Renamed classroom' },
+      { kind: 'course', stageId: 'stage-2', title: 'Gone classroom' },
+    ]);
   });
 });

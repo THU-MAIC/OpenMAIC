@@ -851,6 +851,7 @@ export class PgAgentSessionStore
         text: String(data.text ?? ''),
         delivery: String(data.delivery ?? ''),
         materials: Array.isArray(data.materials) ? data.materials : [],
+        ...(Array.isArray(data.courseRefs) ? { courseRefs: data.courseRefs } : {}),
       };
     });
   }

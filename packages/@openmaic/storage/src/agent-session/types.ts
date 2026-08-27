@@ -350,6 +350,8 @@ export interface AgentSessionUserMessage {
   text: string;
   delivery: string;
   materials: unknown[];
+  /** Classrooms the message named with `@`; the runner composes them into the run. */
+  courseRefs?: unknown[];
 }
 
 /** The durable stream has separate lease-bound and control-plane writers. */
