@@ -154,7 +154,15 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
       )}
 
       {/* The real classroom chrome. Course identity alone owns its lifecycle;
-          chat/session activity is deliberately absent from this boundary. */}
+          chat/session activity is deliberately absent from this boundary.
+
+          This provider is also the EDIT LOCK. Every way a classroom reaches
+          the right pane — the agent creating one mid-conversation, a restored
+          tab, a tab switch, a reload — comes through this one element, so the
+          lock is a property of the pane rather than a default each entry path
+          has to remember. `visible && !playback` is the whole rule: what the
+          classroom document or the stage store says about play/edit does not
+          participate. */}
       <div className="ws-classroom-body relative flex min-h-0 flex-1">
         <WorkbenchPanelProvider visible={!hidden} playback={playback}>
           <ClassroomSurface classroomId={courseId} variant="pane" />

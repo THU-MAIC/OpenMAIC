@@ -50,8 +50,16 @@ export interface StageChromeModeContext {
   storedMode: StageMode;
   /** Whether the classroom is mounted inside the workspace host. */
   hosted: boolean;
-  /** The workspace pane is visible and has not entered full-screen learning. */
+  /**
+   * The pane's edit lock (`WorkbenchPanelState.editPinned`): the pane is on
+   * screen and the user has not pressed Start Learning.
+   */
   workbenchShowingClassroom: boolean;
+  /**
+   * The user pressed Start Learning: the pane went full-screen and IS the
+   * learning surface. The single door out of the edit lock.
+   */
+  workbenchLearning: boolean;
   /** Owner and scene eligibility have both been resolved for this render. */
   isEditable: boolean;
   /** Prevents mounting an editor shell before a current scene exists. */
@@ -60,7 +68,7 @@ export interface StageChromeModeContext {
   stageMatchesHost: boolean;
   /** Editor-only side effects have registered their authoring surfaces. */
   editorReady: boolean;
-  /** Loading failed, so the classroom must remain usable in read-only mode. */
+  /** The editor chunk failed to load, so the edit chrome cannot mount. */
   editorLoadFailed: boolean;
 }
 
@@ -69,8 +77,19 @@ export type StageChromeResolution = StageMode | 'loading';
 /**
  * Resolve the chrome synchronously for the current host.
  *
- * A hosted classroom is edit-first: workspace visibility is the edit intent,
- * while Start Learning is represented by `workbenchShowingClassroom=false`.
+ * A hosted classroom is EDIT-LOCKED, not merely edit-first. Inside the
+ * workspace pane there is exactly one way to reach the learning chrome:
+ * `workbenchLearning`, which is the user pressing Start Learning. Every other
+ * input below only says how far along the edit chrome is — and an unready edit
+ * chrome resolves to the neutral `loading` shell, never to playback.
+ *
+ * That asymmetry is the whole fix. The learning chrome used to be the default
+ * branch, so any transient shortfall painted it: a course the agent had just
+ * created has no scenes for a beat, and the pane answered with the full
+ * playback chrome — speed control, play button, learner avatars, mic bar —
+ * then flipped to edit once the first scene landed. Readiness is now a
+ * spectrum between `loading` and `edit`; playback is not on it.
+ *
  * This deliberately does not round-trip through the transient stage-store
  * mode, so the first paint and course switches cannot inherit playback/edit
  * state from a previous course. Standalone classrooms retain their stored
@@ -78,13 +97,23 @@ export type StageChromeResolution = StageMode | 'loading';
  */
 export function resolveStageChromeMode(ctx: StageChromeModeContext): StageChromeResolution {
   if (!ctx.hosted) return ctx.storedMode;
+  // Start Learning, and nothing else, opens the learning chrome in the pane.
+  if (ctx.workbenchLearning) return 'playback';
   // During a course switch the shared store can briefly still contain the
   // previous course. Neither chrome may mount against that stale document.
   if (!ctx.stageMatchesHost) return 'loading';
-  if (!ctx.workbenchShowingClassroom || !ctx.isEditable || !ctx.hasCurrentScene) {
-    return 'playback';
-  }
-  if (ctx.editorLoadFailed) return 'playback';
+  // Folded away. The edit chrome drops (it holds editor resources for a pane
+  // nobody is looking at) but the learning chrome must NOT take its place
+  // behind the fold: unfolding would then cross-fade a full classroom's
+  // playback chrome out over the pane the user just reopened.
+  if (!ctx.workbenchShowingClassroom) return 'loading';
+  // Not editable YET (no scenes, the pending placeholder, no current scene
+  // resolved) — a stage of the load, not a request to learn.
+  if (!ctx.isEditable || !ctx.hasCurrentScene) return 'loading';
+  // The editor chunk did not arrive. The pane still refuses the learning
+  // chrome; `preloadEditor` drops its cached failure so the next mount of a
+  // hosted classroom retries the import.
+  if (ctx.editorLoadFailed) return 'loading';
   // Surface registration is intentionally non-reactive. Mounting edit before
   // preload resolves would strand EditShell on its NOOP fallback, so show a
   // neutral shell rather than flashing playback while the chunk arrives.

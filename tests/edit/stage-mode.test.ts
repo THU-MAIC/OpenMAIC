@@ -93,6 +93,7 @@ describe('workspace classroom chrome', () => {
     storedMode: 'playback' as const,
     hosted: true,
     workbenchShowingClassroom: true,
+    workbenchLearning: false,
     isEditable: true,
     hasCurrentScene: true,
     stageMatchesHost: true,
@@ -105,15 +106,64 @@ describe('workspace classroom chrome', () => {
   });
 
   test('Start Learning is the explicit hosted transition back to playback', () => {
-    expect(resolveStageChromeMode({ ...eligible, workbenchShowingClassroom: false })).toBe(
-      'playback',
-    );
+    expect(resolveStageChromeMode({ ...eligible, workbenchLearning: true })).toBe('playback');
   });
 
   test('standalone classrooms keep their own stored presentation', () => {
     expect(resolveStageChromeMode({ ...eligible, hosted: false, storedMode: 'autonomous' })).toBe(
       'autonomous',
     );
+  });
+
+  test('a hosted course that is not editable yet waits instead of showing playback', () => {
+    // The agent has just created the course: the document is in the store but
+    // no scene has materialised, so the edit chrome has nothing to mount on.
+    expect(resolveStageChromeMode({ ...eligible, isEditable: false, hasCurrentScene: false })).toBe(
+      'loading',
+    );
+  });
+
+  test('a failed editor chunk never falls back to the learning chrome', () => {
+    expect(resolveStageChromeMode({ ...eligible, editorLoadFailed: true })).toBe('loading');
+  });
+
+  test('a folded pane drops the editor without mounting playback behind the fold', () => {
+    expect(resolveStageChromeMode({ ...eligible, workbenchShowingClassroom: false })).toBe(
+      'loading',
+    );
+  });
+
+  test('playback is unreachable in a hosted pane without Start Learning', () => {
+    // Exhaustive over every other input: with `workbenchLearning` false, no
+    // combination of readiness, ownership or stored mode yields playback.
+    const booleans = [false, true];
+    for (const workbenchShowingClassroom of booleans) {
+      for (const isEditable of booleans) {
+        for (const hasCurrentScene of booleans) {
+          for (const stageMatchesHost of booleans) {
+            for (const editorReady of booleans) {
+              for (const editorLoadFailed of booleans) {
+                for (const storedMode of ['playback', 'edit', 'autonomous'] as const) {
+                  expect(
+                    resolveStageChromeMode({
+                      storedMode,
+                      hosted: true,
+                      workbenchLearning: false,
+                      workbenchShowingClassroom,
+                      isEditable,
+                      hasCurrentScene,
+                      stageMatchesHost,
+                      editorReady,
+                      editorLoadFailed,
+                    }),
+                  ).not.toBe('playback');
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   });
 });
 
