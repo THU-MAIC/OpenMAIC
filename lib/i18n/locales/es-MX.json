@@ -6,7 +6,8 @@
     "loading": "Cargando...",
     "errorPrefix": "Error: ",
     "loadingClassroom": "Cargando el aula...",
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "close": "Cerrar"
   },
   "home": {
     "slogan": "Aprendizaje generativo en un aula interactiva multiagente",
@@ -353,7 +354,10 @@
       "deckLabel": "Escenas",
       "moreActions": "Más acciones",
       "rename": "Renombrar",
-      "sceneIncomplete": "Esta página tiene contenido incompleto"
+      "sceneIncomplete": "Esta página tiene contenido incompleto",
+      "addPage": "Agregar página",
+      "nextPage": "Página siguiente",
+      "prevPage": "Página anterior"
     },
     "zorder": {
       "toFront": "Traer al frente",
@@ -550,7 +554,10 @@
       "expand": "Expandir",
       "collapse": "Contraer",
       "noElements": "No hay elementos localizables en esta diapositiva.",
-      "bindHint": "Haz clic en un elemento resaltado del lienzo para vincularlo"
+      "bindHint": "Haz clic en un elemento resaltado del lienzo para vincularlo",
+      "refCapHint": "Límite alcanzado: quita uno para cambiarlo · Esc para terminar",
+      "refHint": "Haz clic para agregar o quitar · Esc para terminar",
+      "refLead": "Referenciando elementos · {{count}}/{{max}}"
     },
     "regen": {
       "title": "Regenerar narración",
@@ -605,10 +612,18 @@
       "moveDown": "Mover abajo",
       "removeFromClass": "Quitar del aula",
       "aiClassmates": "Compañeros de IA · {{count}}",
-      "addRole": "Agregar rol"
+      "addRole": "Agregar rol",
+      "shortTitle": "Elenco"
     },
     "elementRef": {
-      "remove": "移除引用 {{label}}"
+      "remove": "移除引用 {{label}}",
+      "counts": "{{count}}/{{max}} referenciados",
+      "exitPicking": "Terminar selección",
+      "startPicking": "Referenciar elementos"
+    },
+    "dock": {
+      "elementRefHint": "Referencias de elementos: elige elementos para enviar con tu próximo mensaje",
+      "globalTools": "Herramientas globales"
     }
   },
   "classroomComplete": {

@@ -6,7 +6,8 @@
     "loading": "加载中...",
     "errorPrefix": "错误：",
     "loadingClassroom": "正在加载课堂...",
-    "retry": "重试"
+    "retry": "重试",
+    "close": "关闭"
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
@@ -353,7 +354,10 @@
       "deckLabel": "场景",
       "moreActions": "更多操作",
       "rename": "重命名",
-      "sceneIncomplete": "本页内容不完整"
+      "sceneIncomplete": "本页内容不完整",
+      "addPage": "新增页面",
+      "nextPage": "下一页",
+      "prevPage": "上一页"
     },
     "zorder": {
       "toFront": "置于顶层",
@@ -550,7 +554,10 @@
       "expand": "展开",
       "collapse": "折叠",
       "noElements": "这一页没有可定位的元素。",
-      "bindHint": "点画布上高亮的元素绑定"
+      "bindHint": "点画布上高亮的元素绑定",
+      "refCapHint": "已达上限，取消一个再换 · Esc 结束",
+      "refHint": "点击加入或取消 · Esc 结束",
+      "refLead": "引用元素 · {{count}}/{{max}}"
     },
     "regen": {
       "title": "重新生成讲解",
@@ -605,10 +612,18 @@
       "moveDown": "下移",
       "removeFromClass": "移出课堂",
       "aiClassmates": "AI 同学 · {{count}}",
-      "addRole": "添加角色"
+      "addRole": "添加角色",
+      "shortTitle": "阵容"
     },
     "elementRef": {
-      "remove": "移除引用 {{label}}"
+      "remove": "移除引用 {{label}}",
+      "counts": "已引用 {{count}}/{{max}}",
+      "exitPicking": "完成选取",
+      "startPicking": "引用元素"
+    },
+    "dock": {
+      "elementRefHint": "元素引用 —— 选中元素随下一条消息发给 Agent",
+      "globalTools": "全局工具"
     }
   },
   "classroomComplete": {

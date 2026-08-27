@@ -6,7 +6,8 @@
     "loading": "Đang tải…",
     "errorPrefix": "Lỗi: ",
     "loadingClassroom": "Đang tải lớp học...",
-    "retry": "Thử lại"
+    "retry": "Thử lại",
+    "close": "Đóng"
   },
   "home": {
     "slogan": "Học tập sinh tạo trong lớp học tương tác đa tác nhân",
@@ -353,7 +354,10 @@
       "deckLabel": "Các cảnh",
       "moreActions": "Thêm hành động",
       "rename": "Đổi tên",
-      "sceneIncomplete": "Trang này còn thiếu nội dung"
+      "sceneIncomplete": "Trang này còn thiếu nội dung",
+      "addPage": "Thêm trang",
+      "nextPage": "Trang sau",
+      "prevPage": "Trang trước"
     },
     "zorder": {
       "toFront": "Đưa lên trên cùng",
@@ -550,7 +554,10 @@
       "expand": "Mở rộng",
       "collapse": "Thu gọn",
       "noElements": "Slide này không có đối tượng nào để chọn.",
-      "bindHint": "Bấm vào một đối tượng đang nổi bật trên khung vẽ để gắn"
+      "bindHint": "Bấm vào một đối tượng đang nổi bật trên khung vẽ để gắn",
+      "refCapHint": "Đã đạt giới hạn — bỏ một phần tử để thay · Esc để kết thúc",
+      "refHint": "Nhấp để thêm hoặc bỏ · Esc để kết thúc",
+      "refLead": "Đang tham chiếu phần tử · {{count}}/{{max}}"
     },
     "regen": {
       "title": "Viết lại lời giảng",
@@ -605,10 +612,18 @@
       "moveDown": "Chuyển xuống",
       "removeFromClass": "Bỏ khỏi lớp",
       "aiClassmates": "Bạn học AI · {{count}}",
-      "addRole": "Thêm vai"
+      "addRole": "Thêm vai",
+      "shortTitle": "Danh sách nhân vật"
     },
     "elementRef": {
-      "remove": "移除引用 {{label}}"
+      "remove": "移除引用 {{label}}",
+      "counts": "Đã tham chiếu {{count}}/{{max}}",
+      "exitPicking": "Xong",
+      "startPicking": "Tham chiếu phần tử"
+    },
+    "dock": {
+      "elementRefHint": "Tham chiếu phần tử — chọn phần tử để gửi kèm tin nhắn tiếp theo",
+      "globalTools": "Công cụ chung"
     }
   },
   "classroomComplete": {

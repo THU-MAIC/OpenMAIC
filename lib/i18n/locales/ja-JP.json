@@ -6,7 +6,8 @@
     "loading": "読み込み中...",
     "errorPrefix": "エラー：",
     "loadingClassroom": "教室を読み込み中...",
-    "retry": "再試行"
+    "retry": "再試行",
+    "close": "閉じる"
   },
   "home": {
     "slogan": "マルチエージェント対話型教室で生成的に学ぶ",
@@ -353,7 +354,10 @@
       "deckLabel": "シーン",
       "moreActions": "その他の操作",
       "rename": "名前を変更",
-      "sceneIncomplete": "このページの内容が未完成です"
+      "sceneIncomplete": "このページの内容が未完成です",
+      "addPage": "ページを追加",
+      "nextPage": "次のページ",
+      "prevPage": "前のページ"
     },
     "zorder": {
       "toFront": "最前面へ移動",
@@ -550,7 +554,10 @@
       "expand": "展開",
       "collapse": "折りたたむ",
       "noElements": "このスライドには指定できる要素がありません。",
-      "bindHint": "キャンバス上のハイライト要素をクリックして紐付け"
+      "bindHint": "キャンバス上のハイライト要素をクリックして紐付け",
+      "refCapHint": "上限に達しました。1 つ解除して入れ替え · Esc で終了",
+      "refHint": "クリックで追加／解除 · Esc で終了",
+      "refLead": "要素を参照中 · {{count}}/{{max}}"
     },
     "regen": {
       "title": "ナレーションを再生成",
@@ -605,10 +612,18 @@
       "moveDown": "下へ移動",
       "removeFromClass": "クラスから削除",
       "aiClassmates": "AIクラスメイト · {{count}}",
-      "addRole": "役割を追加"
+      "addRole": "役割を追加",
+      "shortTitle": "編成"
     },
     "elementRef": {
-      "remove": "移除引用 {{label}}"
+      "remove": "移除引用 {{label}}",
+      "counts": "参照 {{count}}/{{max}}",
+      "exitPicking": "選択を終了",
+      "startPicking": "要素を参照"
+    },
+    "dock": {
+      "elementRefHint": "要素参照 — 次のメッセージと一緒に送る要素を選ぶ",
+      "globalTools": "全体ツール"
     }
   },
   "classroomComplete": {

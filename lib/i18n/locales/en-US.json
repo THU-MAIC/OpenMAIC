@@ -6,7 +6,8 @@
     "loading": "Loading...",
     "errorPrefix": "Error: ",
     "loadingClassroom": "Loading classroom...",
-    "retry": "Retry"
+    "retry": "Retry",
+    "close": "Close"
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
@@ -353,7 +354,10 @@
       "deckLabel": "Scenes",
       "moreActions": "More actions",
       "rename": "Rename",
-      "sceneIncomplete": "This page has incomplete content"
+      "sceneIncomplete": "This page has incomplete content",
+      "addPage": "Add page",
+      "nextPage": "Next page",
+      "prevPage": "Previous page"
     },
     "zorder": {
       "toFront": "Bring to front",
@@ -550,7 +554,10 @@
       "expand": "Expand",
       "collapse": "Collapse",
       "noElements": "No locatable elements on this slide.",
-      "bindHint": "Click a highlighted element on the canvas to bind"
+      "bindHint": "Click a highlighted element on the canvas to bind",
+      "refCapHint": "Limit reached — remove one to swap · Esc when done",
+      "refHint": "Click to add or remove · Esc when done",
+      "refLead": "Referencing elements · {{count}}/{{max}}"
     },
     "regen": {
       "title": "Regenerate narration",
@@ -605,10 +612,18 @@
       "moveDown": "Move down",
       "removeFromClass": "Remove from class",
       "aiClassmates": "AI classmates · {{count}}",
-      "addRole": "Add role"
+      "addRole": "Add role",
+      "shortTitle": "Roster"
     },
     "elementRef": {
-      "remove": "Remove reference {{label}}"
+      "remove": "Remove reference {{label}}",
+      "counts": "{{count}}/{{max}} referenced",
+      "exitPicking": "Done picking",
+      "startPicking": "Reference elements"
+    },
+    "dock": {
+      "elementRefHint": "Element references — pick elements to send with your next message",
+      "globalTools": "Global tools"
     }
   },
   "classroomComplete": {

@@ -6,7 +6,8 @@
     "loading": "Wird geladen...",
     "errorPrefix": "Fehler: ",
     "loadingClassroom": "Klassenzimmer wird geladen ...",
-    "retry": "Erneut versuchen"
+    "retry": "Erneut versuchen",
+    "close": "Schließen"
   },
   "home": {
     "slogan": "Generatives Lernen im interaktiven Lernraum mit mehreren KI-Agenten",
@@ -353,7 +354,10 @@
       "deckLabel": "Szenen",
       "moreActions": "Weitere Aktionen",
       "rename": "Umbenennen",
-      "sceneIncomplete": "Diese Seite enthält unvollständige Inhalte"
+      "sceneIncomplete": "Diese Seite enthält unvollständige Inhalte",
+      "addPage": "Seite hinzufügen",
+      "nextPage": "Next page",
+      "prevPage": "Previous page"
     },
     "zorder": {
       "toFront": "In den Vordergrund",
@@ -550,7 +554,10 @@
       "expand": "Ausklappen",
       "collapse": "Einklappen",
       "noElements": "Auf dieser Folie sind keine auswählbaren Elemente vorhanden.",
-      "bindHint": "Klicke zum Verknüpfen auf ein markiertes Element auf der Arbeitsfläche"
+      "bindHint": "Klicke zum Verknüpfen auf ein markiertes Element auf der Arbeitsfläche",
+      "refCapHint": "Grenze erreicht – eines entfernen zum Tauschen · Esc zum Beenden",
+      "refHint": "Klicken zum Hinzufügen oder Entfernen · Esc zum Beenden",
+      "refLead": "Elemente referenzieren · {{count}}/{{max}}"
     },
     "regen": {
       "title": "Sprechertext neu erstellen",
@@ -605,10 +612,18 @@
       "moveDown": "Nach unten",
       "removeFromClass": "Aus dem Kurs entfernen",
       "aiClassmates": "KI-Mitlernende · {{count}}",
-      "addRole": "Rolle hinzufügen"
+      "addRole": "Rolle hinzufügen",
+      "shortTitle": "Roster"
     },
     "elementRef": {
-      "remove": "移除引用 {{label}}"
+      "remove": "移除引用 {{label}}",
+      "counts": "{{count}}/{{max}} referenziert",
+      "exitPicking": "Auswahl beenden",
+      "startPicking": "Elemente referenzieren"
+    },
+    "dock": {
+      "elementRefHint": "Elementverweise – Elemente für die nächste Nachricht auswählen",
+      "globalTools": "Globale Werkzeuge"
     }
   },
   "classroomComplete": {

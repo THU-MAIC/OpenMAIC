@@ -6,7 +6,8 @@
     "loading": "Загрузка...",
     "errorPrefix": "Ошибка: ",
     "loadingClassroom": "Загрузка класса...",
-    "retry": "Повторить"
+    "retry": "Повторить",
+    "close": "Закрыть"
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
@@ -353,7 +354,10 @@
       "deckLabel": "Сцены",
       "moreActions": "Ещё действия",
       "rename": "Переименовать",
-      "sceneIncomplete": "Содержимое этой страницы не заполнено"
+      "sceneIncomplete": "Содержимое этой страницы не заполнено",
+      "addPage": "Добавить страницу",
+      "nextPage": "Следующая страница",
+      "prevPage": "Предыдущая страница"
     },
     "zorder": {
       "toFront": "На передний план",
@@ -550,7 +554,10 @@
       "expand": "Развернуть",
       "collapse": "Свернуть",
       "noElements": "На этом слайде нет элементов для выбора.",
-      "bindHint": "Нажмите на подсвеченный элемент на холсте для привязки"
+      "bindHint": "Нажмите на подсвеченный элемент на холсте для привязки",
+      "refCapHint": "Достигнут предел — уберите один, чтобы заменить · Esc — готово",
+      "refHint": "Нажмите, чтобы добавить или убрать · Esc — готово",
+      "refLead": "Ссылки на элементы · {{count}}/{{max}}"
     },
     "regen": {
       "title": "Сгенерировать закадровый текст заново",
@@ -605,10 +612,18 @@
       "moveDown": "Переместить вниз",
       "removeFromClass": "Удалить из класса",
       "aiClassmates": "AI-одноклассники · {{count}}",
-      "addRole": "Добавить роль"
+      "addRole": "Добавить роль",
+      "shortTitle": "Состав"
     },
     "elementRef": {
-      "remove": "移除引用 {{label}}"
+      "remove": "移除引用 {{label}}",
+      "counts": "Выбрано {{count}}/{{max}}",
+      "exitPicking": "Завершить выбор",
+      "startPicking": "Ссылка на элементы"
+    },
+    "dock": {
+      "elementRefHint": "Ссылки на элементы — выберите элементы для следующего сообщения",
+      "globalTools": "Общие инструменты"
     }
   },
   "classroomComplete": {

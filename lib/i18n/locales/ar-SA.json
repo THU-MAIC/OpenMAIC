@@ -6,7 +6,8 @@
     "loading": "جارٍ التحميل...",
     "errorPrefix": "خطأ: ",
     "loadingClassroom": "جارٍ تحميل الفصل...",
-    "retry": "إعادة المحاولة"
+    "retry": "إعادة المحاولة",
+    "close": "إغلاق"
   },
   "home": {
     "slogan": "التعلّم التوليدي في فصل تفاعلي متعدد الوكلاء",
@@ -353,7 +354,10 @@
       "deckLabel": "المشاهد",
       "moreActions": "إجراءات إضافية",
       "rename": "إعادة تسمية",
-      "sceneIncomplete": "محتوى هذه الصفحة غير مكتمل"
+      "sceneIncomplete": "محتوى هذه الصفحة غير مكتمل",
+      "addPage": "إضافة صفحة",
+      "nextPage": "الصفحة التالية",
+      "prevPage": "الصفحة السابقة"
     },
     "zorder": {
       "toFront": "إحضار إلى الأمام",
@@ -550,7 +554,10 @@
       "expand": "توسيع",
       "collapse": "طي",
       "noElements": "لا توجد عناصر يمكن تحديدها في هذه الشريحة.",
-      "bindHint": "انقر على عنصر مميز على اللوحة للربط"
+      "bindHint": "انقر على عنصر مميز على اللوحة للربط",
+      "refCapHint": "تم الوصول إلى الحد — أزل عنصرًا للاستبدال · Esc للإنهاء",
+      "refHint": "انقر للإضافة أو الإزالة · Esc للإنهاء",
+      "refLead": "الإشارة إلى العناصر · {{count}}/{{max}}"
     },
     "regen": {
       "title": "إعادة توليد السرد",
@@ -605,10 +612,18 @@
       "moveDown": "نقل لأسفل",
       "removeFromClass": "إزالة من الفصل",
       "aiClassmates": "زملاء AI · {{count}}",
-      "addRole": "إضافة دور"
+      "addRole": "إضافة دور",
+      "shortTitle": "التشكيلة"
     },
     "elementRef": {
-      "remove": "移除引用 {{label}}"
+      "remove": "移除引用 {{label}}",
+      "counts": "تمت الإشارة إلى {{count}}/{{max}}",
+      "exitPicking": "إنهاء التحديد",
+      "startPicking": "الإشارة إلى العناصر"
+    },
+    "dock": {
+      "elementRefHint": "مراجع العناصر — اختر عناصر لإرسالها مع رسالتك التالية",
+      "globalTools": "أدوات عامة"
     }
   },
   "classroomComplete": {

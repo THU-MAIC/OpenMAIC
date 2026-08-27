@@ -6,7 +6,8 @@
     "loading": "로딩 중...",
     "errorPrefix": "오류: ",
     "loadingClassroom": "강의실 불러오는 중...",
-    "retry": "다시 시도"
+    "retry": "다시 시도",
+    "close": "닫기"
   },
   "home": {
     "slogan": "멀티 에이전트 인터랙티브 교실에서 펼치는 생성형 학습",
@@ -353,7 +354,10 @@
       "deckLabel": "장면",
       "moreActions": "더 보기",
       "rename": "이름 바꾸기",
-      "sceneIncomplete": "이 페이지의 내용이 미완성입니다"
+      "sceneIncomplete": "이 페이지의 내용이 미완성입니다",
+      "addPage": "페이지 추가",
+      "nextPage": "다음 페이지",
+      "prevPage": "이전 페이지"
     },
     "cue": {
       "speech": "내레이션",
@@ -477,7 +481,10 @@
       "expand": "펼치기",
       "collapse": "접기",
       "noElements": "이 슬라이드에는 지정할 수 있는 요소가 없습니다.",
-      "bindHint": "캔버스에서 강조된 요소를 클릭하여 연결"
+      "bindHint": "캔버스에서 강조된 요소를 클릭하여 연결",
+      "refCapHint": "한도에 도달했습니다. 하나를 해제해 교체하세요 · Esc로 종료",
+      "refHint": "클릭해 추가하거나 해제 · Esc로 종료",
+      "refLead": "요소 참조 중 · {{count}}/{{max}}"
     },
     "regen": {
       "title": "내레이션 다시 생성",
@@ -605,10 +612,18 @@
       "moveDown": "아래로 이동",
       "removeFromClass": "수업에서 제거",
       "aiClassmates": "AI 반 친구 · {{count}}",
-      "addRole": "역할 추가"
+      "addRole": "역할 추가",
+      "shortTitle": "구성원"
     },
     "elementRef": {
-      "remove": "移除引用 {{label}}"
+      "remove": "移除引用 {{label}}",
+      "counts": "참조 {{count}}/{{max}}",
+      "exitPicking": "선택 완료",
+      "startPicking": "요소 참조"
+    },
+    "dock": {
+      "elementRefHint": "요소 참조 — 다음 메시지와 함께 보낼 요소 선택",
+      "globalTools": "전역 도구"
     }
   },
   "classroomComplete": {

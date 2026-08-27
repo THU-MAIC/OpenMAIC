@@ -6,7 +6,8 @@
     "loading": "Chargement…",
     "errorPrefix": "Erreur : ",
     "loadingClassroom": "Chargement de la classe…",
-    "retry": "Réessayer"
+    "retry": "Réessayer",
+    "close": "Fermer"
   },
   "home": {
     "slogan": "L’apprentissage génératif en classe interactive multi-agents",
@@ -353,7 +354,10 @@
       "deckLabel": "Scènes",
       "moreActions": "Autres actions",
       "rename": "Renommer",
-      "sceneIncomplete": "Le contenu de cette page est incomplet"
+      "sceneIncomplete": "Le contenu de cette page est incomplet",
+      "addPage": "Ajouter une page",
+      "nextPage": "Page suivante",
+      "prevPage": "Page précédente"
     },
     "zorder": {
       "toFront": "Mettre au premier plan",
@@ -550,7 +554,10 @@
       "expand": "Déplier",
       "collapse": "Replier",
       "noElements": "Aucun élément localisable sur cette diapositive.",
-      "bindHint": "Cliquez sur un élément mis en évidence du canevas pour l’associer"
+      "bindHint": "Cliquez sur un élément mis en évidence du canevas pour l’associer",
+      "refCapHint": "Limite atteinte — retirez-en un pour échanger · Échap pour terminer",
+      "refHint": "Cliquez pour ajouter ou retirer · Échap pour terminer",
+      "refLead": "Référencement d’éléments · {{count}}/{{max}}"
     },
     "regen": {
       "title": "Régénérer la narration",
@@ -605,10 +612,18 @@
       "moveDown": "Descendre",
       "removeFromClass": "Retirer de la classe",
       "aiClassmates": "Camarades IA · {{count}}",
-      "addRole": "Ajouter un rôle"
+      "addRole": "Ajouter un rôle",
+      "shortTitle": "Distribution"
     },
     "elementRef": {
-      "remove": "移除引用 {{label}}"
+      "remove": "移除引用 {{label}}",
+      "counts": "{{count}}/{{max}} référencés",
+      "exitPicking": "Terminer la sélection",
+      "startPicking": "Référencer des éléments"
+    },
+    "dock": {
+      "elementRefHint": "Références d’éléments — choisissez les éléments à joindre au prochain message",
+      "globalTools": "Outils globaux"
     }
   },
   "classroomComplete": {

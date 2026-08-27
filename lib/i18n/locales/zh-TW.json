@@ -6,7 +6,8 @@
     "loading": "載入中...",
     "errorPrefix": "错误：",
     "loadingClassroom": "正在加载课堂...",
-    "retry": "重试"
+    "retry": "重试",
+    "close": "關閉"
   },
   "home": {
     "slogan": "多智能體互動課室中的生成式學習",
@@ -302,7 +303,10 @@
       "deckLabel": "場景",
       "moreActions": "更多操作",
       "rename": "重新命名",
-      "sceneIncomplete": "此頁面內容不完整"
+      "sceneIncomplete": "此頁面內容不完整",
+      "addPage": "新增頁面",
+      "nextPage": "下一頁",
+      "prevPage": "上一頁"
     },
     "zorder": {
       "toFront": "移至最上層",
@@ -478,7 +482,10 @@
       "expand": "展開",
       "collapse": "收合",
       "noElements": "此頁面上沒有可定位的元素。",
-      "bindHint": "點選畫布上凸顯的元素以繫結"
+      "bindHint": "點選畫布上凸顯的元素以繫結",
+      "refCapHint": "已達上限，取消一個再換 · Esc 結束",
+      "refHint": "點擊加入或取消 · Esc 結束",
+      "refLead": "引用元素 · {{count}}/{{max}}"
     },
     "regen": {
       "title": "重新生成講稿",
@@ -533,7 +540,8 @@
       "moveDown": "下移",
       "removeFromClass": "移出課堂",
       "aiClassmates": "AI 同學 · {{count}}",
-      "addRole": "新增角色"
+      "addRole": "新增角色",
+      "shortTitle": "陣容"
     },
     "line": {
       "toolbar": "線條工具列",
@@ -608,7 +616,14 @@
       "confirm": "確定"
     },
     "elementRef": {
-      "remove": "移除引用 {{label}}"
+      "remove": "移除引用 {{label}}",
+      "counts": "已引用 {{count}}/{{max}}",
+      "exitPicking": "完成選取",
+      "startPicking": "引用元素"
+    },
+    "dock": {
+      "elementRefHint": "元素引用 —— 選取元素隨下一則訊息發給 Agent",
+      "globalTools": "全域工具"
     }
   },
   "whiteboard": {

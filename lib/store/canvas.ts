@@ -41,9 +41,7 @@ export type PickTarget =
       stageId: string;
       sceneId: string;
       ownerSessionId: string;
-    }
-  /** Compatibility for a timeline pick armed before the global dock shipped. */
-  | { purpose?: undefined; sceneId: string; actionId: string; cueType: string };
+    };
 
 /**
  * Canvas Store - Manages all UI state of the Canvas editor

@@ -50,8 +50,8 @@ export function SlideCanvas() {
       </SceneProvider>
       {!useRendererEditor && <AnchoredTextBar editingElementId={editingElementId} />}
       {!useRendererEditor && <AnchoredElementBar element={nonTextElement} />}
-      <ElementPickLayer />
       <ElementRefPinLayer />
+      <ElementPickLayer />
     </div>
   );
 }

@@ -6,7 +6,8 @@
     "loading": "Carregando...",
     "errorPrefix": "Erro: ",
     "loadingClassroom": "Carregando sala de aula...",
-    "retry": "Tentar novamente"
+    "retry": "Tentar novamente",
+    "close": "Fechar"
   },
   "home": {
     "slogan": "Aprendizagem Generativa em Sala de Aula Interativa Multi-Agente",
@@ -338,7 +339,10 @@
       "deckLabel": "Cenas",
       "moreActions": "Mais ações",
       "rename": "Renomear",
-      "sceneIncomplete": "Esta página tem conteúdo incompleto"
+      "sceneIncomplete": "Esta página tem conteúdo incompleto",
+      "addPage": "Adicionar página",
+      "nextPage": "Próxima página",
+      "prevPage": "Página anterior"
     },
     "zorder": {
       "toFront": "Trazer para a frente",
@@ -535,7 +539,10 @@
       "expand": "Expandir",
       "collapse": "Recolher",
       "noElements": "Nenhum elemento localizável neste slide.",
-      "bindHint": "Clique em um elemento destacado no canvas para vincular"
+      "bindHint": "Clique em um elemento destacado no canvas para vincular",
+      "refCapHint": "Limite atingido — remova um para trocar · Esc para concluir",
+      "refHint": "Clique para adicionar ou remover · Esc para concluir",
+      "refLead": "Referenciando elementos · {{count}}/{{max}}"
     },
     "regen": {
       "title": "Regenerar narração",
@@ -590,10 +597,18 @@
       "moveDown": "Mover para baixo",
       "removeFromClass": "Remover da sala",
       "aiClassmates": "Colegas de IA · {{count}}",
-      "addRole": "Adicionar papel"
+      "addRole": "Adicionar papel",
+      "shortTitle": "Elenco"
     },
     "elementRef": {
-      "remove": "移除引用 {{label}}"
+      "remove": "移除引用 {{label}}",
+      "counts": "{{count}}/{{max}} referenciados",
+      "exitPicking": "Concluir seleção",
+      "startPicking": "Referenciar elementos"
+    },
+    "dock": {
+      "elementRefHint": "Referências de elementos — escolha elementos para enviar na próxima mensagem",
+      "globalTools": "Ferramentas globais"
     }
   },
   "stage": {
