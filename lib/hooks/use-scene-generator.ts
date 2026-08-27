@@ -642,7 +642,7 @@ export async function generateTTSForScene(
 export interface UseSceneGeneratorOptions {
   onSceneGenerated?: (scene: Scene, index: number) => void;
   onSceneFailed?: (outline: SceneOutline, error: string) => void;
-  onPhaseChange?: (phase: 'content' | 'actions', outline: SceneOutline) => void;
+  onPhaseChange?: (phase: 'content' | 'actions' | 'tts', outline: SceneOutline) => void;
   onComplete?: () => void;
 }
 
@@ -770,13 +770,21 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         // outline id. Each promise resolves to a result and never rejects, so an
         // unexpected throw routes through the same mark-failed path as the serial
         // loop instead of taking sibling fetches down with it.
+        // Surface the current per-scene phase to the store (source of truth —
+        // drives the sidebar 3-dot indicator, since not all callers wire the
+        // callback) and to optional consumers.
+        const setPhase = (o: SceneOutline, phase: 'content' | 'actions' | 'tts') => {
+          store.getState().setGeneratingPhase(o.id, phase);
+          options.onPhaseChange?.(phase, o);
+        };
+
         const contentPromises = useParallelContent
           ? new Map(
               lazyBoundedMap(
                 pending,
                 parallelConcurrency,
                 async (outline): Promise<SceneContentResult> => {
-                  options.onPhaseChange?.('content', outline);
+                  setPhase(outline, 'content');
                   try {
                     return await fetchContent(outline);
                   } catch (err) {
@@ -815,7 +823,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               error: 'Content generation failed',
             };
           } else {
-            options.onPhaseChange?.('content', outline);
+            setPhase(outline, 'content');
             contentResult = await fetchContent(outline);
           }
 
@@ -846,7 +854,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           }
 
           // Step 2: Generate actions + assemble scene
-          options.onPhaseChange?.('actions', outline);
+          setPhase(outline, 'actions');
           const actionsResult = await fetchSceneActions(
             {
               outline: contentResult.effectiveOutline || outline,
@@ -874,6 +882,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
                 settings.ttsProvidersConfig?.[settings.ttsProviderId],
               )
             ) {
+              setPhase(outline, 'tts');
               const ttsResult = await generateTTSForScene(
                 scene,
                 params.languageDirective || params.stageInfo.language,
@@ -924,6 +933,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           } else {
             store.getState().setGenerationStatus('completed');
             store.getState().setGeneratingOutlines([]);
+            store.getState().clearGeneratingPhases();
             store.getState().setGenerationComplete(true);
             options.onComplete?.();
           }
@@ -1000,6 +1010,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
       try {
         // Step 1: Content
+        store.getState().setGeneratingPhase(outline.id, 'content');
         const contentResult = await fetchSceneContent(
           {
             outline,
@@ -1020,6 +1031,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         }
 
         // Step 2: Actions
+        store.getState().setGeneratingPhase(outline.id, 'actions');
         const sortedScenes = [...store.getState().scenes].sort((a, b) => a.order - b.order);
         const lastScene = sortedScenes[sortedScenes.length - 1];
         const previousSpeeches = lastScene
@@ -1057,6 +1069,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             settings.ttsProvidersConfig?.[settings.ttsProviderId],
           )
         ) {
+          store.getState().setGeneratingPhase(outline.id, 'tts');
           const ttsResult = await generateTTSForScene(
             actionsResult.scene,
             params.languageDirective || params.stageInfo.language,
