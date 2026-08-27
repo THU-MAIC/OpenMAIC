@@ -20,6 +20,7 @@ import {
   Table2,
   type LucideIcon,
 } from 'lucide-react';
+import { elementRefLabel } from '@/lib/workbench/element-refs';
 
 /** Translator fn (matches useI18n's `t`) — passed in so this module stays hook-free. */
 type TFn = (key: string, options?: Record<string, unknown>) => string;
@@ -122,23 +123,7 @@ export function cueLabel(type: string, t: TFn): string {
 /** Cue types that target a canvas element (so canvas pick mode applies). */
 export const ELEMENT_BOUND = new Set(['spotlight', 'laser', 'play_video']);
 
-const EL_TYPE_KEY: Record<string, string> = {
-  text: 'edit.element.text',
-  image: 'edit.element.image',
-  shape: 'edit.element.shape',
-  line: 'edit.element.line',
-  chart: 'edit.element.chart',
-  table: 'edit.element.table',
-  latex: 'edit.element.latex',
-  video: 'edit.element.video',
-  audio: 'edit.element.audio',
-  code: 'edit.element.code',
-};
-
 /** Human label for a slide element (localized type + a short content snippet). */
 export function elementLabel(el: { type: string; content?: string }, t: TFn): string {
-  const typeLabel = EL_TYPE_KEY[el.type] ? t(EL_TYPE_KEY[el.type]) : el.type;
-  const raw = (el.content ?? '').replace(/<[^>]+>/g, '').trim();
-  const snip = raw ? ` · ${raw.slice(0, 16)}${raw.length > 16 ? '…' : ''}` : '';
-  return `${typeLabel}${snip}`;
+  return elementRefLabel(el, t);
 }

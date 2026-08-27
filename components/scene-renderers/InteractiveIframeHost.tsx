@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
 import {
@@ -8,6 +8,62 @@ import {
   type IframePoolEntry,
 } from '@/lib/store/interactive-iframe-pool';
 import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
+import {
+  GENUI_LOGICAL_HEIGHT,
+  GENUI_LOGICAL_WIDTH,
+  fitGenUiViewport,
+} from '@/lib/interactive/logical-viewport';
+import { intersectClientBoxes } from '@/lib/edit/visible-client-rect';
+import { useCanvasStore } from '@/lib/store/canvas';
+import { useElementRefsStore } from '@/lib/store/element-refs';
+import { useI18n } from '@/lib/hooks/use-i18n';
+import {
+  ELEMENT_REF_SELECTOR_MAX,
+  ELEMENT_SNAPSHOT_MAX,
+  INTERACTIVE_OUTERHTML_MAX,
+  makeInteractiveElementRef,
+} from '@/lib/workbench/element-refs';
+
+type InteractivePickerMessage = {
+  __maicInteractive?: boolean;
+  kind?: string;
+  selector?: unknown;
+  outerHTML?: unknown;
+  text?: unknown;
+};
+
+/** Validate an untrusted iframe picker message and apply it to host-owned state. */
+export function handleInteractivePickerMessage(
+  sceneId: string,
+  data: InteractivePickerMessage | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): boolean {
+  if (!data || data.__maicInteractive !== true) return false;
+  const target = useCanvasStore.getState().pickTarget;
+  const armed = target?.purpose === 'element-ref' && target.sceneId === sceneId;
+  if (data.kind === 'element-picker-disarmed') {
+    if (armed) useCanvasStore.getState().setPickTarget(null);
+    return armed;
+  }
+  if (data.kind !== 'element-picked' || !armed) return false;
+  if (
+    typeof data.selector !== 'string' ||
+    typeof data.outerHTML !== 'string' ||
+    typeof data.text !== 'string'
+  ) {
+    return false;
+  }
+  const selector = data.selector.slice(0, ELEMENT_REF_SELECTOR_MAX);
+  const outerHTML = data.outerHTML.slice(0, INTERACTIVE_OUTERHTML_MAX);
+  const text = data.text.slice(0, ELEMENT_SNAPSHOT_MAX);
+  if (!selector.trim() || !outerHTML.trim()) return false;
+  const refsStore = useElementRefsStore.getState();
+  if (refsStore.ownerSessionId !== target.ownerSessionId) return false;
+  refsStore.toggle(
+    makeInteractiveElementRef(target.stageId, sceneId, { selector, outerHTML, text }, t),
+  );
+  return true;
+}
 
 /**
  * Stable host for interactive scene iframes (#619).
@@ -98,8 +154,20 @@ interface PooledIframeProps {
  * targetOrigin='*'.
  */
 function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
+  const { t } = useI18n();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const registerIframe = useWidgetIframeStore((s) => s.registerIframe);
+  const getSendMessage = useWidgetIframeStore((s) => s.getSendMessage);
+  const pickTarget = useCanvasStore.use.pickTarget();
+  const refs = useElementRefsStore.use.refs();
+  const armed = pickTarget?.purpose === 'element-ref' && pickTarget.sceneId === sceneId;
+  const selectors = useMemo(
+    () =>
+      refs.flatMap((ref) =>
+        ref.kind === 'interactive-element' && ref.sceneId === sceneId ? [ref.selector] : [],
+      ),
+    [refs, sceneId],
+  );
 
   // Register the postMessage callback for this scene (moved here from the
   // placeholder, since the iframe now lives in the host). Stable per scene:
@@ -111,6 +179,20 @@ function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
     registerIframe(sceneId, send);
     return () => registerIframe(sceneId, null);
   }, [sceneId, registerIframe]);
+
+  useEffect(() => {
+    const send = getSendMessage(sceneId);
+    if (!send) return;
+    send(armed ? 'element-picker:arm' : 'element-picker:disarm', {});
+    return () => {
+      if (armed) send('element-picker:disarm', {});
+    };
+  }, [armed, entry.srcDoc, getSendMessage, sceneId]);
+
+  useEffect(() => {
+    if (!armed) return;
+    getSendMessage(sceneId)?.('element-picker:sync', { selectors });
+  }, [armed, entry.srcDoc, getSendMessage, sceneId, selectors]);
 
   // Capture runtime errors the iframe's error shim posts out (see iframe.ts), so
   // the editor agent can diagnose a blank/broken page. Matched to THIS iframe by
@@ -126,17 +208,21 @@ function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
     const onMessage = (e: MessageEvent) => {
       if (e.source !== iframeRef.current?.contentWindow) return;
       const d = e.data as
-        | { __maicInteractive?: boolean; kind?: string; errorKind?: string; message?: unknown }
+        | (InteractivePickerMessage & { errorKind?: string; message?: unknown })
         | undefined;
-      if (!d || d.__maicInteractive !== true || d.kind !== 'runtime-error') return;
-      const kind = typeof d.errorKind === 'string' ? d.errorKind : 'error';
-      const msg = typeof d.message === 'string' ? d.message : String(d.message ?? '');
-      useSceneRuntimeErrors.getState().addError(sceneId, `[${kind}] ${msg}`);
+      if (!d || d.__maicInteractive !== true) return;
+      if (d.kind === 'runtime-error') {
+        const kind = typeof d.errorKind === 'string' ? d.errorKind : 'error';
+        const msg = typeof d.message === 'string' ? d.message : String(d.message ?? '');
+        useSceneRuntimeErrors.getState().addError(sceneId, `[${kind}] ${msg}`);
+        return;
+      }
+      handleInteractivePickerMessage(sceneId, d, t);
     };
     window.addEventListener('message', onMessage);
     iframeRef.current?.contentWindow?.postMessage({ __maicErrorReplayRequest: true }, '*');
     return () => window.removeEventListener('message', onMessage);
-  }, [sceneId, entry.srcDoc]);
+  }, [sceneId, entry.srcDoc, t]);
 
   // A content change reloads the iframe; drop the previous render's errors so the
   // captured set reflects the CURRENT page (e.g. after the agent applies a fix).
@@ -145,33 +231,55 @@ function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
   }, [sceneId, entry.srcDoc]);
 
   const rect = entry.rect;
+  const clip = entry.clip ?? rect;
+  const viewport = rect ? fitGenUiViewport(rect) : null;
+  const visibleViewport = viewport && clip ? intersectClientBoxes(viewport.box, clip) : null;
   // Require a real measured box before showing — a null or zero-size rect means
   // the slot hasn't laid out yet; showing then would flash a 0x0 iframe pinned
   // at the viewport origin.
-  const shown = visible && rect !== null && rect.width > 0 && rect.height > 0;
-  const style: CSSProperties = {
+  const shown =
+    visible &&
+    rect !== null &&
+    clip !== null &&
+    viewport !== null &&
+    visibleViewport !== null &&
+    visibleViewport.width > 0 &&
+    visibleViewport.height > 0 &&
+    rect.width > 0 &&
+    rect.height > 0;
+  const wrapStyle: CSSProperties = {
     position: 'fixed',
-    left: rect?.left ?? 0,
-    top: rect?.top ?? 0,
-    width: rect?.width ?? 0,
-    height: rect?.height ?? 0,
-    border: 0,
-    borderRadius: '0.5rem', // matches the canvas box's rounded-lg
+    left: visibleViewport?.left ?? 0,
+    top: visibleViewport?.top ?? 0,
+    width: visibleViewport?.width ?? 0,
+    height: visibleViewport?.height ?? 0,
     overflow: 'hidden',
+    borderRadius: '0.5rem',
     zIndex: 1,
-    // visibility (not display) — display:none can drop the document on re-show.
     visibility: shown ? 'visible' : 'hidden',
     pointerEvents: shown ? 'auto' : 'none',
   };
+  const iframeStyle: CSSProperties = {
+    position: 'absolute',
+    left: viewport && visibleViewport ? viewport.box.left - visibleViewport.left : 0,
+    top: viewport && visibleViewport ? viewport.box.top - visibleViewport.top : 0,
+    width: GENUI_LOGICAL_WIDTH,
+    height: GENUI_LOGICAL_HEIGHT,
+    border: 0,
+    transform: `scale(${viewport?.scale ?? 0})`,
+    transformOrigin: 'top left',
+  };
 
   return (
-    <iframe
-      ref={iframeRef}
-      srcDoc={entry.srcDoc}
-      src={entry.srcDoc ? undefined : entry.src}
-      style={style}
-      title={`Interactive Scene ${sceneId}`}
-      sandbox="allow-scripts allow-forms allow-popups"
-    />
+    <div style={wrapStyle}>
+      <iframe
+        ref={iframeRef}
+        srcDoc={entry.srcDoc}
+        src={entry.srcDoc ? undefined : entry.src}
+        style={iframeStyle}
+        title={`Interactive Scene ${sceneId}`}
+        sandbox="allow-scripts allow-forms allow-popups"
+      />
+    </div>
   );
 }

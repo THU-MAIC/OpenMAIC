@@ -3,7 +3,10 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ElementPickLayer } from '@/components/edit/surfaces/slide/ElementPickLayer';
-import { editableElementDomId } from '@/components/edit/surfaces/slide/renderer-element-dom';
+import {
+  editableElementDomId,
+  maicElementIdAttributes,
+} from '@/components/edit/surfaces/slide/renderer-element-dom';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
 import type { Scene } from '@/lib/types/stage';
@@ -67,6 +70,9 @@ describe('ElementPickLayer renderer DOM integration', () => {
 
     const rendererHost = document.createElement('div');
     rendererHost.id = editableElementDomId('title-1');
+    for (const [name, value] of Object.entries(maicElementIdAttributes('title-1'))) {
+      rendererHost.setAttribute(name, value);
+    }
     rendererHost.getBoundingClientRect = () =>
       ({ left: 0, top: 0, width: 1000, height: 562.5, right: 1000, bottom: 562.5 }) as DOMRect;
     const hitTarget = document.createElement('div');
@@ -78,12 +84,9 @@ describe('ElementPickLayer renderer DOM integration', () => {
     hitTarget.appendChild(paintNode);
     rendererHost.appendChild(hitTarget);
     document.body.appendChild(rendererHost);
-    const interactionTarget = document.createElement('div');
-    interactionTarget.dataset.selectElementId = 'title-1';
-    document.body.appendChild(interactionTarget);
     Object.defineProperty(document, 'elementsFromPoint', {
       configurable: true,
-      value: () => [interactionTarget],
+      value: () => [paintNode],
     });
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
