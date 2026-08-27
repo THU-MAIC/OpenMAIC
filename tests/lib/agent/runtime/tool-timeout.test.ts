@@ -21,6 +21,7 @@ import {
   resolveAgentToolTimeoutMs,
   withAgentToolTimeout,
 } from '@/lib/agent/runtime/tool-timeout';
+import { runStageMutation } from '@/lib/server/agent-runtime/mutation-fence';
 
 const Params = Type.Object({});
 
@@ -160,7 +161,7 @@ describe('withAgentToolTimeout', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('forwards in-flight updates but drops updates and results from a zombie tool', async () => {
+  it('forwards in-flight updates but drops updates and results from a timed-out tool', async () => {
     vi.useFakeTimers();
     const emit = vi.fn<AgentToolUpdateCallback>();
     const tool = withAgentToolTimeout(
@@ -180,13 +181,36 @@ describe('withAgentToolTimeout', () => {
     await vi.advanceTimersByTimeAsync(5_000);
     await settled;
     // Only the update emitted while the call was still in flight reached the
-    // agent loop; the zombie tool's post-settlement update is dropped.
+    // agent loop; the timed-out tool's post-settlement update is dropped.
     expect(emit).toHaveBeenCalledTimes(1);
     expect(emit).toHaveBeenCalledWith(result('progress'));
 
-    // The zombie's timer and result are both ignored after the race settled.
+    // The late timer and result are both ignored after the race settled.
     await vi.advanceTimersByTimeAsync(1_000);
     expect(emit).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('rejects a delayed durable mutation after the tool times out', async () => {
+    vi.useFakeTimers();
+    const durable: string[] = [];
+    const tool = withAgentToolTimeout(
+      makeTool(async (_id, _args, signal) => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 6_000));
+        await runStageMutation(signal, async () => {
+          durable.push('committed');
+        });
+        return result('late-result');
+      }),
+    );
+
+    const promise = tool.execute('call-1', {}, undefined);
+    const settled = expect(promise).rejects.toBeInstanceOf(AgentToolTimeoutError);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await settled;
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(durable).toEqual([]);
     expect(vi.getTimerCount()).toBe(0);
   });
 });

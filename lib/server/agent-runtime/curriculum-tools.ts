@@ -20,6 +20,7 @@ import { getServerPersistenceProvider } from '@/lib/persistence/server-provider'
 import type { CourseDocument, CourseStore } from './course-tools';
 import { folderIdForCall, stageIdForCall } from './course-stage';
 import { mergeStageOutline } from './course-outline-union';
+import { runStageMutation } from './mutation-fence';
 import { FOLDER_COUNT_LIMIT, validateFolderName } from '@/lib/utils/folder-name-validation';
 
 export { stageIdForCall } from './course-stage';
@@ -239,7 +240,9 @@ export function buildCurriculumTools(deps: CurriculumToolDeps): AgentTool<never,
           );
         }
         if (folderId) {
-          const moved = await deps.store.moveDocumentToFolder(stageId, folderId);
+          const moved = await runStageMutation(signal, () =>
+            deps.store.moveDocumentToFolder(stageId, folderId),
+          );
           if (signal?.aborted) throw new Error('aborted');
           if (!moved) {
             return toolResult(
@@ -297,10 +300,12 @@ export function buildCurriculumTools(deps: CurriculumToolDeps): AgentTool<never,
       // the owner scope in one transaction. A concurrent mint of the same id
       // is refused by the store's owner scope; the replay is sequential, so
       // the loadDocument pre-check above is the ordering guarantee.
-      await deps.store.saveDocument(document);
+      await runStageMutation(signal, () => deps.store.saveDocument(document));
       if (signal?.aborted) throw new Error('aborted');
       if (folderId) {
-        const moved = await deps.store.moveDocumentToFolder(stageId, folderId);
+        const moved = await runStageMutation(signal, () =>
+          deps.store.moveDocumentToFolder(stageId, folderId),
+        );
         if (signal?.aborted) throw new Error('aborted');
         if (!moved) {
           return toolResult(
@@ -346,10 +351,12 @@ export function buildCurriculumTools(deps: CurriculumToolDeps): AgentTool<never,
         );
       }
       try {
-        const created = await deps.store.createFolder(
-          folderIdForCall(deps.sessionId, callId),
-          name,
-          FOLDER_COUNT_LIMIT,
+        const created = await runStageMutation(signal, () =>
+          deps.store.createFolder(
+            folderIdForCall(deps.sessionId, callId),
+            name,
+            FOLDER_COUNT_LIMIT,
+          ),
         );
         if (signal?.aborted) throw new Error('aborted');
         if (!created.reused) {
@@ -384,7 +391,9 @@ export function buildCurriculumTools(deps: CurriculumToolDeps): AgentTool<never,
       const access = await deps.stageAccess(params.stageId);
       if (signal?.aborted) throw new Error('aborted');
       if (access.kind !== 'owned') return notYoursResult(`Stage "${params.stageId}"`);
-      const moved = await deps.store.moveDocumentToFolder(params.stageId, params.folderId);
+      const moved = await runStageMutation(signal, () =>
+        deps.store.moveDocumentToFolder(params.stageId, params.folderId),
+      );
       if (signal?.aborted) throw new Error('aborted');
       if (!moved) {
         return toolResult(
@@ -443,7 +452,7 @@ export function buildCurriculumTools(deps: CurriculumToolDeps): AgentTool<never,
         updatedAt: Date.now(),
         ...(description ? { description } : {}),
       };
-      await deps.store.saveDocument({ ...doc, stage: renamed });
+      await runStageMutation(signal, () => deps.store.saveDocument({ ...doc, stage: renamed }));
       if (signal?.aborted) throw new Error('aborted');
       deps.onCheckpoint?.({
         tool: 'rename_stage',

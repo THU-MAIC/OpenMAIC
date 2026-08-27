@@ -30,6 +30,7 @@ import type { Scene, SlideContent, Stage } from '@/lib/types/stage';
 import { stripTags } from './course-edit/apply';
 import { shiftCourseOrders } from './course-edit/tools';
 import type { CourseDocument, CourseToolDeps } from './course-tools';
+import { runStageMutation } from './mutation-fence';
 import { isPptxMaterial } from './pptx-mime';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import { getSessionMaterial, resolveSessionMaterialRawAsset } from './session-materials';
@@ -532,7 +533,7 @@ export function buildImportPptxTool(
           },
         } satisfies AppDocumentOutline,
       };
-      await deps.store.saveDocument(nextDoc);
+      await runStageMutation(signal, () => deps.store.saveDocument(nextDoc));
 
       const notesPages = scenes.filter((scene) =>
         (scene.actions ?? []).some((action) => action.type === 'speech'),

@@ -18,6 +18,7 @@ import type { Action } from '@/lib/types/action';
 import type { Scene } from '@/lib/types/stage';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import type { CourseToolDeps } from './course-tools';
+import { runStageMutation } from './mutation-fence';
 import { shiftCourseOrders } from './course-edit/tools';
 import { createGenerationAiCallFactory, sceneContentStage } from './generation-ai-call';
 import { synthesizeSceneNarration } from './scene-tts';
@@ -206,7 +207,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
       });
       if (!built) return result('Page assembly failed; nothing was written.', {}, true);
       const scene = built as Scene;
-      await deps.store.putScene(params.stageId, scene);
+      await runStageMutation(signal, () => deps.store.putScene(params.stageId, scene));
       deps.onCheckpoint({
         tool: 'generate_scene',
         stageId: params.stageId,
@@ -268,7 +269,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
       if (!actions.length)
         return result('No known actions were generated; the page was unchanged.', {}, true);
       const next = { ...scene, actions } as Scene;
-      await deps.store.putScene(params.stageId, next);
+      await runStageMutation(signal, () => deps.store.putScene(params.stageId, next));
       deps.onCheckpoint({
         tool: 'generate_actions',
         stageId: params.stageId,
@@ -285,7 +286,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           signal,
         });
         if (audio.changed) {
-          await deps.store.putScene(params.stageId, next);
+          await runStageMutation(signal, () => deps.store.putScene(params.stageId, next));
           deps.onCheckpoint({
             tool: 'generate_actions',
             stageId: params.stageId,
@@ -309,7 +310,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
     description:
       'Copy an existing page to a new position without actions. Replaying the same tool call is idempotent.',
     parameters: DuplicateParams,
-    async execute(callId, params) {
+    async execute(callId, params, signal) {
       const doc = await deps.store.loadDocument(params.stageId);
       if (!doc) return result('No course document yet. Call create_stage first.', {}, true);
       const scenes = [...doc.scenes].sort((a, b) => a.order - b.order);
@@ -344,11 +345,13 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
         createdAt: now,
         updatedAt: now,
       } as Scene;
-      await deps.store.saveDocument({
-        ...doc,
-        scenes: [...shifted.scenes, created].sort((a, b) => a.order - b.order),
-        outline: shifted.outline,
-      });
+      await runStageMutation(signal, () =>
+        deps.store.saveDocument({
+          ...doc,
+          scenes: [...shifted.scenes, created].sort((a, b) => a.order - b.order),
+          outline: shifted.outline,
+        }),
+      );
       deps.onCheckpoint({
         tool: 'duplicate_scene',
         stageId: params.stageId,

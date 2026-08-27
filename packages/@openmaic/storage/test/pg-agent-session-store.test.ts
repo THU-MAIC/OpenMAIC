@@ -8,7 +8,11 @@ import {
   type PgAgentSessionStoreOptions,
   type Queryable,
 } from '../src/agent-session/pg.js';
-import { AgentSessionEntryTreeError, AGENT_SESSION_LIFECYCLE } from '../src/agent-session/types.js';
+import {
+  AgentSessionEntryTreeError,
+  AgentSessionLeaseLostError,
+  AGENT_SESSION_LIFECYCLE,
+} from '../src/agent-session/types.js';
 import { runAgentSessionConcurrencyContract } from './agent-session-concurrency-contract.js';
 import { makeAgentSessionInput, runAgentSessionStoreContract } from './agent-session-contract.js';
 import { runAgentSessionUrlContract } from './agent-session-url-contract.js';
@@ -54,6 +58,24 @@ describe('PgAgentSessionStore with PGlite', () => {
     expect(() => new PgAgentSessionStore(db, {} as PgAgentSessionStoreOptions)).toThrow(
       /withTransaction.*fresh.*connection.*transaction/i,
     );
+  });
+
+  test('rejects a durable mutation after its lease attempt is superseded', async () => {
+    await db.query('CREATE TABLE mutation_probe (value TEXT NOT NULL)');
+    await store.createSession(makeAgentSessionInput());
+    await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
+    await store.finishSession('session-1', 'worker-a', { status: 'failed' });
+    await store.requeueForRetry('session-1');
+    await store.claimNextSession('worker-b', 202, { leaseTtlMs: 10_000, maxAttempts: 3 });
+
+    await expect(
+      db.transaction(async (tx: Queryable) => {
+        await store.assertActiveLease('session-1', 'worker-a', 1, tx);
+        await tx.query("INSERT INTO mutation_probe (value) VALUES ('stale')");
+      }),
+    ).rejects.toBeInstanceOf(AgentSessionLeaseLostError);
+    const rows = await db.query<{ value: string }>('SELECT value FROM mutation_probe');
+    expect(rows.rows).toEqual([]);
   });
 
   test('runs owner resolution before insertion and creation hook before commit', async () => {

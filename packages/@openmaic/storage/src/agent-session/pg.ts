@@ -598,6 +598,22 @@ export class PgAgentSessionStore
     return result.rows.length > 0;
   }
 
+  async assertActiveLease(
+    sessionId: string,
+    workerId: string,
+    attempt: number,
+    transaction: AgentSessionTransaction,
+  ): Promise<void> {
+    const result = await transaction.query<{ attempt: number }>(
+      `SELECT attempt FROM ${this.table('sessions')}
+       WHERE id = $1 AND lease_worker_id = $2 AND attempt = $3
+         AND cancel_requested_at IS NULL AND deleted_at IS NULL
+       FOR SHARE`,
+      [sessionId, workerId, attempt],
+    );
+    if (!result.rows[0]) throw new AgentSessionLeaseLostError(sessionId, workerId, attempt);
+  }
+
   async finishSession(
     sessionId: string,
     workerId: string,
@@ -612,8 +628,15 @@ export class PgAgentSessionStore
              lease_worker_pid = CASE WHEN $6::boolean THEN NULL ELSE lease_worker_pid END,
              lease_heartbeat_at = CASE WHEN $6::boolean THEN NULL ELSE lease_heartbeat_at END,
              attempt = CASE WHEN $7::boolean THEN 0 ELSE attempt END,
+             cancel_requested_at = CASE
+               WHEN $8::bigint IS NOT NULL AND cancel_requested_at = $8 THEN NULL
+               ELSE cancel_requested_at
+             END,
              updated_at = now()
-         WHERE id = $1 AND lease_worker_id = $2 AND deleted_at IS NULL RETURNING attempt`,
+         WHERE id = $1 AND lease_worker_id = $2 AND deleted_at IS NULL
+           AND ($8::bigint IS NULL OR cancel_requested_at = $8)
+           AND ($9::integer IS NULL OR attempt = $9)
+         RETURNING attempt`,
         [
           sessionId,
           workerId,
@@ -622,6 +645,8 @@ export class PgAgentSessionStore
           patch.error ?? null,
           release,
           patch.resetAttempt === true,
+          patch.consumeCancelRequestedAt ?? null,
+          patch.expectedAttempt ?? null,
         ],
       );
       const row = result.rows[0];
@@ -995,21 +1020,33 @@ export class PgAgentSessionStore
   }
 
   async isCancelRequested(sessionId: string): Promise<boolean> {
-    const result = await this.queryable.query<{ requested: boolean }>(
-      `SELECT cancel_requested_at IS NOT NULL AS requested FROM ${this.table('sessions')}
-       WHERE id = $1 AND deleted_at IS NULL`,
-      [sessionId],
-    );
-    return result.rows[0]?.requested === true;
+    return (await this.getCancelRequestedAt(sessionId)) !== null;
   }
 
-  async clearCancel(sessionId: string): Promise<void> {
-    await this.queryable.query(
-      `UPDATE ${this.table('sessions')}
-       SET cancel_requested_at = NULL, updated_at = now()
+  async getCancelRequestedAt(sessionId: string): Promise<number | null> {
+    const result = await this.queryable.query<{ requested_at: number | string | null }>(
+      `SELECT cancel_requested_at AS requested_at FROM ${this.table('sessions')}
        WHERE id = $1 AND deleted_at IS NULL`,
       [sessionId],
     );
+    const value = result.rows[0]?.requested_at;
+    return value === null || value === undefined ? null : Number(value);
+  }
+
+  async clearCancel(
+    sessionId: string,
+    workerId: string,
+    attempt: number,
+    expectedRequestedAt: number,
+  ): Promise<boolean> {
+    const result = await this.queryable.query<{ id: string }>(
+      `UPDATE ${this.table('sessions')}
+       SET cancel_requested_at = NULL, updated_at = now()
+       WHERE id = $1 AND lease_worker_id = $2 AND attempt = $3
+         AND cancel_requested_at = $4 AND deleted_at IS NULL RETURNING id`,
+      [sessionId, workerId, attempt, expectedRequestedAt],
+    );
+    return result.rows.length > 0;
   }
 
   async registerSessionUrls(

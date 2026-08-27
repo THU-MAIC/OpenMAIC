@@ -77,6 +77,7 @@ import {
 import { getAgentSessionStore } from './store';
 import { subscribeAgentEventWakeup } from './event-notify-bus';
 import { getOwnerScopedDocumentStore } from './owner-scoped-documents';
+import { assertCurrentStageMutationActive } from './mutation-fence';
 
 const log = createLogger('AgentRunner');
 const WORKER_ID = `${randomUUID().slice(0, 8)}:${process.pid}`;
@@ -448,6 +449,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   }
   let leaseLost = false;
   let cancelled = false;
+  let cancelRequestedAt: number | null = null;
   let chain: Promise<void> = Promise.resolve();
   let criticalWriteError: unknown;
   let entryWritesHealthy = true;
@@ -616,8 +618,12 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         'send a new message to retry';
       emit(LIFECYCLE.sessionEnd, { status: 'failed', error });
       await flushAll();
-      await store.finishSession(id, WORKER_ID, { status: 'failed', error });
-      await requeueIfUndelivered('over-cap verdict', true);
+      const settled = await store.finishSession(id, WORKER_ID, {
+        status: 'failed',
+        error,
+        expectedAttempt: attempt,
+      });
+      if (settled) await requeueIfUndelivered('over-cap verdict', true);
       return;
     } finally {
       await flushAll(false);
@@ -658,9 +664,10 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   let drainOnWake: (() => void) | null = null;
   const checkCancel = (): void => {
     store
-      .isCancelRequested(id)
-      .then((requested) => {
-        if (requested) {
+      .getCancelRequestedAt(id)
+      .then((requestedAt) => {
+        if (requestedAt !== null) {
+          cancelRequestedAt = requestedAt;
           cancelled = true;
           abort.abort();
         }
@@ -748,11 +755,12 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         note: 'entry history already terminal',
       });
       await flushAll();
-      await store.finishSession(id, WORKER_ID, {
+      const settled = await store.finishSession(id, WORKER_ID, {
         status: 'succeeded',
         resetAttempt: true,
+        expectedAttempt: attempt,
       });
-      await requeueIfUndelivered('early settle');
+      if (settled) await requeueIfUndelivered('early settle');
       return;
     }
 
@@ -814,7 +822,14 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // that carries them never persists a JSON-null key (reference semantics).
     // `getAgentSessionStore` above already guards on DATABASE_URL, so the
     // provider can only be reached with a configured connection string.
-    const ownerScopedStore = (await getOwnerScopedDocumentStore(meta.ownerId)) as CourseStore;
+    const ownerScopedStore = (await getOwnerScopedDocumentStore(
+      meta.ownerId,
+      async (transaction) => {
+        assertCurrentStageMutationActive();
+        await store.assertActiveLease(id, WORKER_ID, attempt, transaction);
+        assertCurrentStageMutationActive();
+      },
+    )) as CourseStore;
     // The owner probe is the tool layer's legality boundary: every course call
     // declares its stageId, and stageAccess resolves that stage against the
     // session owner (owned / foreign / missing / tombstoned) before the tool
@@ -1190,22 +1205,27 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         return;
       }
 
-      const settledCancelled = cancelled || (await store.isCancelRequested(id));
+      cancelRequestedAt ??= await store.getCancelRequestedAt(id);
+      const settledCancelled = cancelled || cancelRequestedAt !== null;
       if (settledCancelled) abort.abort();
       const error = !settledCancelled && loopError ? loopError : undefined;
       const status = settledCancelled ? 'cancelled' : error ? 'failed' : 'succeeded';
       emit(LIFECYCLE.sessionEnd, { status, toolCalls, ...(error ? { error } : {}) });
       await flushAll();
-      await store.finishSession(id, WORKER_ID, {
+      const settled = await store.finishSession(id, WORKER_ID, {
         status,
         ...(error ? { error } : {}),
         resetAttempt: status !== 'failed',
+        expectedAttempt: attempt,
+        ...(settledCancelled && cancelRequestedAt !== null
+          ? { consumeCancelRequestedAt: cancelRequestedAt }
+          : {}),
       });
-      // Clear only the cancel request included in the terminal verdict. A poll
-      // that observes a later request must not erase it with a stale verdict.
-      if (settledCancelled) {
-        await store.clearCancel(id);
-      } else {
+      if (!settled) {
+        markLeaseLost();
+        return;
+      }
+      if (!settledCancelled) {
         await requeueIfUndelivered('settle');
       }
       log.info(`session ${id} -> ${status} (attempt ${attempt}, ${toolCalls} tool calls)`);
@@ -1229,8 +1249,12 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
           emit(LIFECYCLE.sessionEnd, { status: 'failed', error: message });
         }
         await flushAll(false);
-        await store.finishSession(id, WORKER_ID, { status: 'failed', error: message });
-        await requeueIfUndelivered('run failure');
+        const settled = await store.finishSession(id, WORKER_ID, {
+          status: 'failed',
+          error: message,
+          expectedAttempt: attempt,
+        });
+        if (settled) await requeueIfUndelivered('run failure');
         log.error(`session ${id} failed`, error);
       }
     } finally {
@@ -1255,10 +1279,14 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         emit(LIFECYCLE.sessionEnd, { status: 'failed', error: message });
       }
       await flushAll(false).catch(() => {});
-      await store
-        .finishSession(id, WORKER_ID, { status: 'failed', error: message })
-        .catch(() => {});
-      await requeueIfUndelivered('setup failure');
+      const settled = await store
+        .finishSession(id, WORKER_ID, {
+          status: 'failed',
+          error: message,
+          expectedAttempt: attempt,
+        })
+        .catch(() => false);
+      if (settled) await requeueIfUndelivered('setup failure');
     }
     log.error(`session ${id} failed during setup`, error);
   } finally {

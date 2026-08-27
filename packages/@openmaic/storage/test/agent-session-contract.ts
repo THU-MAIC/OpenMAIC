@@ -254,13 +254,15 @@ export function runAgentSessionStoreContract(
     test('supports cancellation and distinct attended and unattended requeues', async () => {
       const store = makeStore();
       await store.createSession(makeAgentSessionInput());
+      await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
       await store.requestCancel('session-1');
       await store.requestCancel('session-1');
       expect(await store.isCancelRequested('session-1')).toBe(true);
-      await store.clearCancel('session-1');
+      const requestedAt = await store.getCancelRequestedAt('session-1');
+      expect(requestedAt).not.toBeNull();
+      await expect(store.clearCancel('session-1', 'worker-a', 1, requestedAt!)).resolves.toBe(true);
       expect(await store.isCancelRequested('session-1')).toBe(false);
 
-      await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
       await store.finishSession('session-1', 'worker-a', { status: 'failed', error: 'failure' });
       expect(await store.requeueForRetry('session-1')).toBe(true);
       expect(await store.getSession('session-1')).toMatchObject({ status: 'queued', attempt: 1 });
@@ -268,6 +270,32 @@ export function runAgentSessionStoreContract(
       await store.finishSession('session-1', 'worker-a', { status: 'failed' });
       expect(await store.requeueSession('session-1')).toBe(true);
       expect(await store.getSession('session-1')).toMatchObject({ status: 'queued', attempt: 0 });
+    });
+
+    test('a stale cancellation cleanup cannot erase a newer attempt request', async () => {
+      const store = makeStore();
+      await store.createSession(makeAgentSessionInput());
+      await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
+      await store.requestCancel('session-1');
+      const firstRequest = await store.getCancelRequestedAt('session-1');
+      expect(firstRequest).not.toBeNull();
+
+      await expect(
+        store.finishSession('session-1', 'worker-a', {
+          status: 'cancelled',
+          resetAttempt: true,
+          expectedAttempt: 1,
+          consumeCancelRequestedAt: firstRequest!,
+        }),
+      ).resolves.toBe(true);
+      await store.postUserMessage('session-1', { text: 'Run again' });
+      await store.claimNextSession('worker-b', 202, { leaseTtlMs: 10_000, maxAttempts: 3 });
+      await store.requestCancel('session-1');
+
+      await expect(store.clearCancel('session-1', 'worker-a', 1, firstRequest!)).resolves.toBe(
+        false,
+      );
+      expect(await store.isCancelRequested('session-1')).toBe(true);
     });
 
     test('settles a cancel-requested queued session as cancelled on claim, never leasing it', async () => {

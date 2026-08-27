@@ -9,6 +9,7 @@ import { createBlankScene } from './apply';
 import type { CourseToolDeps } from '../course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from '../course-stage';
 import { synthesizeSceneNarration } from '../scene-tts';
+import { runStageMutation } from '../mutation-fence';
 
 const Target = {
   stageId: Type.String({ description: COURSE_STAGE_ID_DESCRIPTION }),
@@ -120,7 +121,7 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
         );
       }
       if (summary.changed) {
-        await deps.store.putScene(params.stageId, scene);
+        await runStageMutation(signal, () => deps.store.putScene(params.stageId, scene));
         deps.onCheckpoint({
           tool: 'generate_tts',
           stageId: params.stageId,
@@ -146,7 +147,7 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
     label: 'Edit course pages',
     description: 'Retitle, insert, delete, or reorder pages without regenerating their content.',
     parameters: DeckParams,
-    async execute(_callId, params) {
+    async execute(_callId, params, signal) {
       const doc = await deps.store.loadDocument(params.stageId);
       if (!doc) return result('No course document yet. Call create_stage first.', {}, true);
       const scenes = [...doc.scenes].sort((a, b) => a.order - b.order);
@@ -161,11 +162,13 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
             ? { ...entry, title: next.title }
             : entry,
         );
-        await deps.store.saveDocument({
-          ...doc,
-          scenes: scenes.map((item) => (item.id === scene.id ? next : item)),
-          outline: nextOutline ? { ...outline, outlines: nextOutline } : doc.outline,
-        });
+        await runStageMutation(signal, () =>
+          deps.store.saveDocument({
+            ...doc,
+            scenes: scenes.map((item) => (item.id === scene.id ? next : item)),
+            outline: nextOutline ? { ...outline, outlines: nextOutline } : doc.outline,
+          }),
+        );
         deps.onCheckpoint({
           tool: 'edit_deck',
           stageId: params.stageId,
@@ -184,11 +187,13 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
           title: params.title?.trim() || `Page ${at}`,
           type: params.type ?? 'slide',
         });
-        await deps.store.saveDocument({
-          ...doc,
-          scenes: [...shifted.scenes, created].sort((a, b) => a.order - b.order),
-          outline: shifted.outline,
-        });
+        await runStageMutation(signal, () =>
+          deps.store.saveDocument({
+            ...doc,
+            scenes: [...shifted.scenes, created].sort((a, b) => a.order - b.order),
+            outline: shifted.outline,
+          }),
+        );
         deps.onCheckpoint({
           tool: 'edit_deck',
           stageId: params.stageId,
@@ -208,7 +213,9 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
           scenes.filter((item) => item.id !== scene.id),
           outline,
         );
-        await deps.store.saveDocument({ ...doc, scenes: next.scenes, outline: next.outline });
+        await runStageMutation(signal, () =>
+          deps.store.saveDocument({ ...doc, scenes: next.scenes, outline: next.outline }),
+        );
         deps.onCheckpoint({
           tool: 'edit_deck',
           stageId: params.stageId,
@@ -226,7 +233,9 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
       });
       ordered.push(...scenes.filter((scene) => byId.has(scene.id)));
       const next = renumberCourseOrders(ordered, outline);
-      await deps.store.saveDocument({ ...doc, scenes: next.scenes, outline: next.outline });
+      await runStageMutation(signal, () =>
+        deps.store.saveDocument({ ...doc, scenes: next.scenes, outline: next.outline }),
+      );
       deps.onCheckpoint({ tool: 'edit_deck', stageId: params.stageId, detail: 'reordered pages' });
       return result('Reordered pages.', {
         pages: next.scenes.map(({ id, order, title }) => ({ id, order, title })),

@@ -4,6 +4,7 @@ import type { Action } from '@/lib/types/action';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import { validateAppScene } from '@/lib/document-store/validators';
 import type { CourseDocument, CourseToolDeps } from './course-tools';
+import { runStageMutation } from './mutation-fence';
 import {
   applyJsonPointerEdit,
   applySlideEdit,
@@ -772,7 +773,7 @@ export function buildDslCourseTools(deps: CourseToolDeps): AgentTool<never, neve
     description:
       'Atomically patch ONE scene at /scenes/<order|sceneId>. Read source first. set/remove use JSON Pointers rooted at that exact scene source (/content/... or /actions/...); str_replace swaps one exact occurrence of oldText inside a string field at a pointer (all occurrences with replaceAll); add_element/delete_element preserve server-owned slide element identity. Any failed op or resulting validation error rejects the whole batch. Stage/page-list operations remain on edit_deck.',
     parameters: PATCH_COURSE_SCHEMA,
-    async execute(_id, params: PatchParams) {
+    async execute(_id, params: PatchParams, signal) {
       if (!params.intent.trim()) return toolResult('intent must not be blank', {}, true);
       const loaded = await loadCourse(deps, params.stageId);
       if ('error' in loaded) return toolResult(loaded.error, {}, true);
@@ -831,7 +832,7 @@ export function buildDslCourseTools(deps: CourseToolDeps): AgentTool<never, neve
         );
       }
       try {
-        await deps.store.putScene(loaded.stageId, next);
+        await runStageMutation(signal, () => deps.store.putScene(loaded.stageId, next));
       } catch (error) {
         return toolResult(
           `patch_stage could not persist the scene: ${error instanceof Error ? error.message : String(error)}`,

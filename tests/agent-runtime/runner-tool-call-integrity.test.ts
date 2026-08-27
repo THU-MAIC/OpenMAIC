@@ -143,6 +143,7 @@ function makeStore(meta: ClaimedAgentSession, options: { hasSessionRunHistory?: 
     getSession: vi.fn(async () => ({ ...meta, lease: { workerId: WORKER_ID } })),
     hasSessionRunHistory: vi.fn(async () => options.hasSessionRunHistory ?? false),
     heartbeat: vi.fn(async () => true),
+    getCancelRequestedAt: vi.fn(async () => null),
     isCancelRequested: vi.fn(async () => false),
     listUserMessages: vi.fn(async () => []),
     releaseLease: vi.fn(async () => undefined),

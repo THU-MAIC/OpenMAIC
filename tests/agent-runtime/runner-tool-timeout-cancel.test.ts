@@ -176,6 +176,7 @@ function makeStore(meta: ClaimedAgentSession, options: { cancelRequested?: () =>
     getSession: vi.fn(async () => ({ ...meta, lease: { workerId: WORKER_ID } })),
     hasSessionRunHistory: vi.fn(async () => false),
     heartbeat: vi.fn(async () => true),
+    getCancelRequestedAt: vi.fn(async () => (options.cancelRequested?.() ? 123 : null)),
     isCancelRequested: vi.fn(async () => options.cancelRequested?.() ?? false),
     listUserMessages: vi.fn(async () => []),
     releaseLease: vi.fn(async () => undefined),
@@ -324,9 +325,14 @@ describe('runner: cancel of a hung tool', () => {
     expect(store.finishSession).toHaveBeenCalledWith(
       SESSION_ID,
       WORKER_ID,
-      expect.objectContaining({ status: 'cancelled', resetAttempt: true }),
+      expect.objectContaining({
+        status: 'cancelled',
+        resetAttempt: true,
+        expectedAttempt: 1,
+        consumeCancelRequestedAt: 123,
+      }),
     );
-    expect(store.clearCancel).toHaveBeenCalledWith(SESSION_ID);
+    expect(store.clearCancel).not.toHaveBeenCalled();
     // The abort was delivered to the tool's in-flight work.
     expect(captured).toHaveLength(1);
     expect(captured[0]?.aborted).toBe(true);

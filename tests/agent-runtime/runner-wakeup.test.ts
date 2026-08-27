@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => {
     ),
     hasSessionRunHistory: vi.fn(async () => false),
     heartbeat: vi.fn(async () => true),
+    getCancelRequestedAt: vi.fn(async () => null),
     isCancelRequested: vi.fn(async () => false),
     listUserMessages: vi.fn(
       async (): Promise<
@@ -318,7 +319,7 @@ describe('runSession NOTIFY wakeup wiring', () => {
     // The wake runs BOTH cheap point reads: the drain above and the cancel
     // check — one shared subscription, two checks (reference semantics).
     expect(mocks.store.listUserMessages).toHaveBeenCalledWith('session-wake');
-    expect(mocks.store.isCancelRequested).toHaveBeenCalled();
+    expect(mocks.store.getCancelRequestedAt).toHaveBeenCalled();
 
     // Release the pending prompt and let the run settle; the subscription must
     // go away with it.

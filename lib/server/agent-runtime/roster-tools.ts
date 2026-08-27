@@ -45,6 +45,7 @@ import { enabledServerTTSProviderIds, resolveTTSApiKey } from '@/lib/server/prov
 import type { CheckpointInfo } from './course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import { markDocumentWritersSequential } from './course-tools';
+import { runStageMutation } from './mutation-fence';
 
 export type CourseDocument = MaicDocument<Scene, Stage>;
 export type CourseStore = DocumentStore<Scene, Stage>;
@@ -125,6 +126,7 @@ async function persistRoster(
   store: CourseStore,
   doc: CourseDocument,
   roster: GeneratedAgentConfig[],
+  signal?: AbortSignal,
 ): Promise<void> {
   const now = Date.now();
   const stage: Stage = {
@@ -133,11 +135,13 @@ async function persistRoster(
     agentIds: roster.map((agent) => agent.id),
     updatedAt: now,
   };
-  await store.saveDocument({
-    stage,
-    scenes: doc.scenes,
-    outline: doc.outline,
-  });
+  await runStageMutation(signal, () =>
+    store.saveDocument({
+      stage,
+      scenes: doc.scenes,
+      outline: doc.outline,
+    }),
+  );
 }
 
 // ── Tool parameter schemas ──────────────────────────────────────────────────
@@ -336,7 +340,7 @@ export function buildRosterTools(deps: RosterToolDeps): AgentTool<never, never>[
       });
 
       if (signal?.aborted) throw new Error('aborted');
-      await persistRoster(deps.store, doc, roster);
+      await persistRoster(deps.store, doc, roster, signal);
       deps.onCheckpoint({
         tool: 'set_roster',
         stageId,

@@ -14,6 +14,7 @@ vi.mock('@/lib/server/agent-runtime/store', () => ({
     getSession: vi.fn(async () => null),
     hasSessionRunHistory: vi.fn(async () => false),
     heartbeat: vi.fn(async () => true),
+    getCancelRequestedAt: vi.fn(async () => null),
     isCancelRequested: vi.fn(async () => false),
     listUserMessages: vi.fn(async () => []),
     releaseLease: mocks.releaseLease,

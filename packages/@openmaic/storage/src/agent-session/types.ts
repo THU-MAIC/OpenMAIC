@@ -128,6 +128,10 @@ export interface FinishAgentSessionPatch {
   releaseLease?: boolean;
   /** Clean endings reset the consecutive-failure chain when requested. */
   resetAttempt?: boolean;
+  /** Reject settlement if this claim generation is no longer current. */
+  expectedAttempt?: number;
+  /** Atomically consume exactly the cancellation request used for the verdict. */
+  consumeCancelRequestedAt?: number;
 }
 
 export interface PostAgentUserMessageResult {
@@ -286,6 +290,12 @@ export interface AgentSessionStore {
     options: ClaimAgentSessionOptions,
   ): Promise<ClaimedAgentSession | null>;
   heartbeat(sessionId: string, workerId: string): Promise<boolean>;
+  assertActiveLease(
+    sessionId: string,
+    workerId: string,
+    attempt: number,
+    transaction: AgentSessionTransaction,
+  ): Promise<void>;
   finishSession(
     sessionId: string,
     workerId: string,
@@ -293,8 +303,14 @@ export interface AgentSessionStore {
   ): Promise<boolean>;
   releaseLease(sessionId: string, workerId: string): Promise<void>;
   requestCancel(sessionId: string): Promise<void>;
+  getCancelRequestedAt(sessionId: string): Promise<number | null>;
   isCancelRequested(sessionId: string): Promise<boolean>;
-  clearCancel(sessionId: string): Promise<void>;
+  clearCancel(
+    sessionId: string,
+    workerId: string,
+    attempt: number,
+    expectedRequestedAt: number,
+  ): Promise<boolean>;
   /** An attended retry clears the consecutive-failure generation. */
   requeueSession(sessionId: string): Promise<boolean>;
   /** An unattended retry preserves the consecutive-failure generation. */

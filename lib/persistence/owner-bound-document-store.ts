@@ -31,11 +31,13 @@ export interface OwnerBoundDocumentStoreOptions {
   ownerId: string;
   validateScene: SceneValidator;
   validateStage: StageValidator;
+  /** Runner-only lease fence, evaluated inside every mutation transaction. */
+  mutationFence?: (queryable: Queryable) => Promise<void>;
 }
 
-type OwnershipMode = 'create' | 'mutate' | 'read' | 'delete';
+type OwnershipMode = 'create' | 'mutate' | 'read' | 'delete' | 'library';
 interface PendingOperation {
-  stageId: string;
+  stageId?: string;
   mode: OwnershipMode;
 }
 
@@ -137,7 +139,7 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
   }
 
   createFolder(folderId: string, name: string, limit?: number) {
-    return this.inner.createFolder(folderId, name, limit);
+    return this.tagged({ mode: 'library' }, () => this.inner.createFolder(folderId, name, limit));
   }
 
   listFolders(): Promise<DocumentFolder[]> {
@@ -145,22 +147,26 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
   }
 
   moveDocumentToFolder(stageId: string, folderId: string): Promise<boolean> {
-    return this.inner.moveDocumentToFolder(stageId, folderId);
+    return this.tagged({ stageId, mode: 'mutate' }, () =>
+      this.inner.moveDocumentToFolder(stageId, folderId),
+    );
   }
 
   renameFolder(id: string, name: string): Promise<DocumentFolder | null> {
-    return this.inner.renameFolder(id, name);
+    return this.tagged({ mode: 'library' }, () => this.inner.renameFolder(id, name));
   }
 
   deleteFolder(
     id: string,
     mode: 'ungroup' | 'remove',
   ): Promise<{ removedStageIds: string[] } | null> {
-    return this.inner.deleteFolder(id, mode);
+    return this.tagged({ mode: 'library' }, () => this.inner.deleteFolder(id, mode));
   }
 
   setStageFolder(stageId: string, folderId: string | null): Promise<boolean> {
-    return this.inner.setStageFolder(stageId, folderId);
+    return this.tagged({ stageId, mode: 'mutate' }, () =>
+      this.inner.setStageFolder(stageId, folderId),
+    );
   }
 }
 
@@ -177,7 +183,8 @@ export function createOwnerBoundDocumentStore<
       try {
         const queryable = queryableFor(client);
         const operation = pending.operation;
-        if (operation) {
+        if (operation && operation.mode !== 'read') await options.mutationFence?.(queryable);
+        if (operation?.stageId) {
           const lock = operation.mode === 'read' ? 'FOR SHARE' : 'FOR UPDATE';
           const result = await queryable.query<RawOwnershipRow>(
             `SELECT owner_id, deleted_at FROM stage_meta WHERE stage_id = $1 ${lock}`,
@@ -206,8 +213,9 @@ export function createOwnerBoundDocumentStore<
 
         const result = await body(queryable);
         if (operation?.mode === 'create') {
-          await claimStageMeta(queryable, operation.stageId, options.ownerId);
+          await claimStageMeta(queryable, operation.stageId!, options.ownerId);
         }
+        if (operation && operation.mode !== 'read') await options.mutationFence?.(queryable);
         await client.query('COMMIT');
         return result;
       } catch (error) {
