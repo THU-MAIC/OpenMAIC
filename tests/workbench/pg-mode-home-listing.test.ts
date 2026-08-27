@@ -101,6 +101,25 @@ function stagesResponse() {
   });
 }
 
+function foldersResponse() {
+  return new Response(JSON.stringify({ folders: [] }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+/** Route the mounted hook's owner-scoped listings: stages + folders. */
+function ownerListingsFetch() {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === '/api/stages') return stagesResponse();
+    if (url === '/api/folders') return foldersResponse();
+    throw new Error(`unexpected fetch: ${url}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
 describe('PG-mode home listing', () => {
   beforeEach(() => {
     discovery = null;
@@ -144,8 +163,7 @@ describe('PG-mode home listing', () => {
   });
 
   it('mounts the home library on the owner listing with no persistence warning', async () => {
-    const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValue(stagesResponse());
+    const fetchMock = ownerListingsFetch();
 
     const container = document.createElement('div');
     document.body.appendChild(container);

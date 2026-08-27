@@ -729,9 +729,10 @@ async function performStageDeletion(stageId: string): Promise<void> {
  * id and listings owner-only, so the home's course list must not ask for an
  * unscoped listing at all. `GET /api/stages` IS the owner listing — it resolves
  * the anonymous owner from the same cookie the workbench uses and returns that
- * owner's stage documents. Folders stay device-local (Dexie), so the same
- * membership overlay the local path applies keeps courses filed in this browser
- * grouped.
+ * owner's stage documents. Folders list through the owner-scoped
+ * `GET /api/folders` (see `listOwnerFoldersFromServer`), while membership stays
+ * device-local (Dexie), so the same membership overlay the local path applies
+ * keeps courses filed in this browser grouped.
  */
 async function listOwnerStagesFromServer(): Promise<StageListItem[]> {
   const res = await fetch('/api/stages', { credentials: 'include' });
@@ -1094,15 +1095,84 @@ export async function stageExists(stageId: string): Promise<boolean> {
 
 // ==================== Course Folders ====================
 //
-// Folders are device-local course-grouping metadata. They live in this Dexie
-// database (`folders` + `stageFolders` tables) and never touch the course
-// document aggregate owned by the `@openmaic/storage` DocumentStore. A course
-// with no `stageFolders` row (or one with `folderId === undefined`) is unfiled.
+// Folders are course-grouping metadata. Without server persistence they are
+// device-local, living in this Dexie database (`folders` + `stageFolders`
+// tables) and never touching the course document aggregate owned by the
+// `@openmaic/storage` DocumentStore. With server persistence on (`listStages`
+// reads `/api/stages`, the workspace rail's folder family writes
+// `/api/folders`), the folder list and every folder mutation go through the
+// same owner-scoped server store, so a folder created there is visible to the
+// very list that rendered the create action. A course with no `stageFolders`
+// row (or one with `folderId === undefined`) is unfiled.
+
+/** The wire shape of the owner-scoped folder routes (`/api/folders`). */
+type FolderRouteBody = {
+  readonly error?: { readonly code?: unknown; readonly message?: unknown };
+  readonly folder?: FolderRecord;
+  readonly folders?: readonly FolderRecord[];
+  readonly removedStageIds?: readonly string[];
+};
+
+/**
+ * Map a route refusal (`{ error: { code, message } }`) onto the shared
+ * `FolderNameError`, exactly like the local storage boundary throws — one
+ * error type for every dialog, whichever store refused the name.
+ */
+function folderRouteError(body: FolderRouteBody | null | undefined): Error {
+  const code = body?.error?.code;
+  const message = typeof body?.error?.message === 'string' ? body.error.message : undefined;
+  if (code === 'FOLDER_NAME_DUPLICATE') {
+    return new FolderNameError(message ?? 'A folder with this name already exists', 'duplicate');
+  }
+  if (code === 'FOLDER_NAME_TOO_LONG') {
+    return new FolderNameError(message ?? 'Folder name is too long', 'tooLong');
+  }
+  if (code === 'FOLDER_NAME_EMPTY') {
+    return new FolderNameError(message ?? 'Folder name must not be empty', 'empty');
+  }
+  if (code === 'FOLDER_LIMIT_REACHED') {
+    return new FolderNameError(message ?? 'Folder count limit reached', 'limit');
+  }
+  return new Error(message ?? 'folder request failed');
+}
+
+/** The owner-scoped routes return the reference's `FolderItem` (row + userKey). */
+function toFolderRecord(folder: FolderRecord): FolderRecord {
+  return {
+    id: folder.id,
+    name: folder.name,
+    order: folder.order,
+    createdAt: folder.createdAt,
+    updatedAt: folder.updatedAt,
+  };
+}
+
+/**
+ * PG mode: the owner-scoped folder listing — the same store the workspace
+ * rail's `/api/folders` family and the agent's `create_folder` tool write to.
+ * With server persistence on, a Dexie snapshot can never contain a
+ * server-created folder, so the list the sidebar renders must read the server
+ * or a created folder would not appear without a reload.
+ */
+async function listOwnerFoldersFromServer(): Promise<FolderRecord[]> {
+  const res = await fetch('/api/folders', { credentials: 'include' });
+  if (!res.ok) {
+    throw new Error(`Failed to list owner folders: HTTP ${res.status}`);
+  }
+  const body = (await res.json().catch(() => null)) as FolderRouteBody | null;
+  if (!body || !Array.isArray(body.folders)) {
+    throw new Error('Malformed /api/folders response: expected { folders: [...] }');
+  }
+  return body.folders.map(toFolderRecord);
+}
 
 /**
  * List all folders, ordered by their `order` field (ascending).
  */
 export async function listFolders(): Promise<FolderRecord[]> {
+  if (isBrowserPersistenceEnabled()) {
+    return await listOwnerFoldersFromServer();
+  }
   const folders = await db.folders.toArray();
   return folders.sort((a, b) => a.order - b.order);
 }
@@ -1124,12 +1194,37 @@ function assertFolderName(name: string, existing: FolderRecord[], currentId?: st
 }
 
 /**
+ * PG mode: create a folder through the owner-scoped route. The route re-checks
+ * duplicates and the count limit inside its owner-scoped transaction; its
+ * refusals map onto the same `FolderNameError` the local path throws, so the
+ * classic home and the workbench dialogs map one error type.
+ */
+async function createOwnerFolderFromServer(name: string): Promise<FolderRecord> {
+  const res = await fetch('/api/folders', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const body = (await res.json().catch(() => null)) as FolderRouteBody | null;
+  if (!res.ok) throw folderRouteError(body);
+  if (!body?.folder) {
+    throw new Error('Malformed /api/folders response: expected { folder: { ... } }');
+  }
+  return toFolderRecord(body.folder);
+}
+
+/**
  * Create a folder. `order` is placed after the current maximum so new folders
  * land at the end of the list. Validates the name (width + uniqueness) at the
  * storage boundary, with the read-check-write inside a read-write transaction
  * so two tabs cannot both pass the duplicate check before either write commits.
+ * With server persistence on, the create goes through `POST /api/folders` —
+ * the same store the workspace rail and this module's `listFolders` read.
  */
 export async function createFolder(name: string): Promise<FolderRecord> {
+  if (isBrowserPersistenceEnabled()) {
+    return await createOwnerFolderFromServer(name);
+  }
   const now = Date.now();
   return db.transaction('rw', db.folders, async () => {
     const existing = await db.folders.toArray();
@@ -1151,12 +1246,29 @@ export async function createFolder(name: string): Promise<FolderRecord> {
   });
 }
 
+/** PG mode: rename a folder through the owner-scoped route. */
+async function renameOwnerFolderFromServer(id: string, name: string): Promise<void> {
+  const res = await fetch(`/api/folders/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    throw folderRouteError((await res.json().catch(() => null)) as FolderRouteBody | null);
+  }
+}
+
 /**
  * Rename a folder. Validates the name (width + uniqueness excluding itself) at
  * the storage boundary, with the read-check-write inside a read-write
  * transaction so the UI invariant cannot be bypassed or raced across tabs.
+ * With server persistence on, the rename goes through `PATCH /api/folders/:id`.
  */
 export async function renameFolder(id: string, name: string): Promise<void> {
+  if (isBrowserPersistenceEnabled()) {
+    await renameOwnerFolderFromServer(id, name);
+    return;
+  }
   const now = Date.now();
   await db.transaction('rw', db.folders, async () => {
     const existing = await db.folders.toArray();
@@ -1171,6 +1283,24 @@ export async function renameFolder(id: string, name: string): Promise<void> {
 export type DeleteFolderMode = 'ungroup' | 'remove';
 
 /**
+ * PG mode: delete a folder through the owner-scoped route. `mode=remove`
+ * returns the captured member course ids, which this module then runs through
+ * the same `deleteStageData` cascade the local path uses, so both modes leave
+ * the server store and the device-side mirrors in the same state.
+ */
+async function deleteOwnerFolderFromServer(id: string, mode: DeleteFolderMode): Promise<void> {
+  const res = await fetch(`/api/folders/${encodeURIComponent(id)}?mode=${mode}`, {
+    method: 'DELETE',
+  });
+  const body = (await res.json().catch(() => null)) as FolderRouteBody | null;
+  if (!res.ok) throw folderRouteError(body);
+  if (mode === 'remove') {
+    const removedStageIds = body?.removedStageIds ?? [];
+    await Promise.all(removedStageIds.map((stageId) => deleteStageData(stageId)));
+  }
+}
+
+/**
  * Delete a folder.
  *
  * - `'ungroup'` (default): drop the folder; its courses become unfiled (their
@@ -1179,8 +1309,15 @@ export type DeleteFolderMode = 'ungroup' | 'remove';
  * - `'remove'`: drop the folder AND delete every course that was filed in it,
  *   running each through {@link deleteStageData} so the full deletion cascade
  *   (document, scenes, chats, runtime, mirrors) applies.
+ *
+ * With server persistence on, the delete goes through `DELETE /api/folders/:id`
+ * and the `remove` cascade deletes the returned member ids.
  */
 export async function deleteFolder(id: string, mode: DeleteFolderMode = 'ungroup'): Promise<void> {
+  if (isBrowserPersistenceEnabled()) {
+    await deleteOwnerFolderFromServer(id, mode);
+    return;
+  }
   // Atomically capture members, delete the folder row, and clear all membership
   // rows in ONE transaction BEFORE the course-deletion cascade. This makes the
   // folder invisible to `setStageFolder` (which checks folder existence in its
@@ -1208,6 +1345,14 @@ export async function deleteFolder(id: string, mode: DeleteFolderMode = 'ungroup
 /**
  * Move a course into a folder, or out of all folders when `folderId` is
  * `undefined`. Idempotent.
+ *
+ * Membership is device-local either way (the `stageFolders` overlay keeps
+ * courses filed in this browser even when the folders themselves live on the
+ * server), so only the destination's existence check differs between modes:
+ * locally the `folders` table is checked inside the same transaction, while
+ * with server persistence on the folder list came from `/api/folders` and the
+ * local table has no row for it — the id is trusted from the rendered tree,
+ * and the server re-checks existence on its own membership writes.
  */
 export async function setStageFolder(stageId: string, folderId: string | undefined): Promise<void> {
   const now = Date.now();
@@ -1218,8 +1363,10 @@ export async function setStageFolder(stageId: string, folderId: string | undefin
   // (folderId undefined) always succeeds — it just removes the membership.
   if (folderId !== undefined) {
     await db.transaction('rw', [db.folders, db.stageFolders], async () => {
-      const folder = await db.folders.get(folderId);
-      if (!folder) throw new Error(`Folder not found: ${folderId}`);
+      if (!isBrowserPersistenceEnabled()) {
+        const folder = await db.folders.get(folderId);
+        if (!folder) throw new Error(`Folder not found: ${folderId}`);
+      }
       await db.stageFolders.put({ stageId, folderId, updatedAt: now });
     });
   } else {
