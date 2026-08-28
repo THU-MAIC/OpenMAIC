@@ -30,9 +30,12 @@
  *     (`stage.whiteboard[*].elements`),
  *   - a **single Scene row** (its `content.canvas` and `whiteboards`),
  *   - a **single Stage row** (its `whiteboard`).
- * Quiz / widget / PBL and other scene kinds pass through untouched. Anything
- * that is not shaped as expected (a missing level, a non-array where an array
- * is expected, a non-object element) passes through untouched too: this is a
+ * Quiz / widget / PBL and other scene kinds pass through untouched: their
+ * `content.type` is not `'slide'`, so even a canvas-shaped app extension on
+ * them is out of scope (an absent `content.type` stays eligible — the
+ * dirty-line epoch predates schema enforcement). Anything else that is not
+ * shaped as expected (a missing level, a non-array where an array is
+ * expected, a non-object element) passes through untouched too: this is a
  * targeted cleanup, not a validator — it never throws and never invents shape.
  *
  * No runtime dependencies.
@@ -132,7 +135,13 @@ function stripSceneFields(scene: Raw): Raw | undefined {
 
   const content = scene.content;
   if (isObject(content)) {
-    const canvas = content.canvas;
+    // Gate on the slide discriminant so a non-slide scene kind carrying a
+    // canvas-shaped app extension is never touched. Legacy writes were not
+    // schema-checked either, so an absent discriminant stays eligible: the
+    // dirty-line epoch predates schema enforcement, and quiz / widget / PBL
+    // content always carries its own type.
+    const slideShaped = content.type === 'slide' || content.type === undefined;
+    const canvas = slideShaped ? content.canvas : undefined;
     if (isObject(canvas) && Array.isArray(canvas.elements)) {
       const nextElements = stripElementList(canvas.elements);
       if (nextElements !== undefined) {

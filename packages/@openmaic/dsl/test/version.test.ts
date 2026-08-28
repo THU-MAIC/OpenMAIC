@@ -641,6 +641,41 @@ describe('0.2.0 -> 0.3.0 ladder entry (legacy line geometry)', () => {
       stripLegacyLineGeometry({ scenes: [{ whiteboards: 42 }], stage: { whiteboard: 'nope' } }),
     ).toEqual({ scenes: [{ whiteboards: 42 }], stage: { whiteboard: 'nope' } });
   });
+
+  it('gates the canvas walk on the slide discriminant (non-slide kinds untouched)', () => {
+    const lineDirty = lineEl({ id: 'l1', rotate: 45 });
+    const quizWithCanvasExtension = {
+      ...quizScene,
+      content: {
+        type: 'quiz',
+        questions: [{ id: 'q1' }],
+        // hypothetical app-domain extension shaped like a slide canvas
+        canvas: { id: 'c-ext', elements: [lineDirty] },
+      },
+    };
+
+    // absent discriminant stays eligible: the dirty-line epoch predates
+    // schema enforcement
+    const untyped = {
+      id: 's3',
+      stageId: 'st',
+      type: 'slide',
+      order: 2,
+      content: { canvas: { id: 'c2', elements: [lineDirty] } },
+    };
+    const out = stripLegacyLineGeometry({
+      scenes: [quizWithCanvasExtension, untyped],
+    }) as unknown as {
+      scenes: [
+        { content: { canvas?: { elements: Record<string, unknown>[] } } },
+        { content: { canvas: { elements: Record<string, unknown>[] } } },
+      ];
+    };
+    // quiz content keeps its extension untouched — including the dirty line
+    expect(out.scenes[0].content.canvas!.elements[0]).toBe(lineDirty);
+    // untyped slide-shaped content is still cleaned
+    expect(out.scenes[1].content.canvas.elements[0]).toEqual(lineEl({ id: 'l1' }));
+  });
 });
 
 describe('migrate', () => {
