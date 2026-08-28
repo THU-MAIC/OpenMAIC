@@ -208,8 +208,8 @@ interface MockServerResponse {
   tts?: Record<string, { baseUrl?: string; disabled?: boolean }>;
   asr?: Record<string, { baseUrl?: string; disabled?: boolean }>;
   pdf?: Record<string, { baseUrl?: string }>;
-  image?: Record<string, { baseUrl?: string; disabled?: boolean }>;
-  video?: Record<string, { baseUrl?: string; disabled?: boolean }>;
+  image?: Record<string, { models?: string[]; baseUrl?: string; disabled?: boolean }>;
+  video?: Record<string, { models?: string[]; baseUrl?: string; disabled?: boolean }>;
   webSearch?: Record<string, { baseUrl?: string; disabled?: boolean }>;
 }
 
@@ -1119,6 +1119,23 @@ describe('fetchServerProviders — Image stale selection', () => {
     expect(store.getState().imageModelId).toBe('doubao-seedream-5-0-260128');
   });
 
+  it('applies server-pinned image models as custom models (replace built-ins)', async () => {
+    const store = await getStore();
+
+    mockServerResponse({
+      image: { seedream: { models: ['doubao-seedream-5.0-lite'] } },
+    });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().imageProvidersConfig.seedream).toMatchObject({
+      isServerConfigured: true,
+      customModels: [{ id: 'doubao-seedream-5.0-lite', name: 'doubao-seedream-5.0-lite' }],
+      replaceBuiltInModels: true,
+    });
+    expect(store.getState().imageProviderId).toBe('seedream');
+    expect(store.getState().imageModelId).toBe('doubao-seedream-5.0-lite');
+  });
+
   it('does not force-enable when provider is already set but generation was disabled', async () => {
     const store = await getStore();
 
@@ -1244,6 +1261,28 @@ describe('fetchServerProviders — Video stale selection', () => {
     expect(store.getState().videoModelId).toBe('doubao-seedance-2-0-260128');
     // Provider recovered but generation stays off — user enables manually
     expect(store.getState().videoGenerationEnabled).toBe(false);
+  });
+
+  it('applies server-pinned video models as custom models (replace built-ins)', async () => {
+    const store = await getStore();
+
+    mockServerResponse({
+      video: {
+        seedance: { models: ['doubao-seedance-2.0', 'doubao-seedance-1.5-pro'] },
+      },
+    });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().videoProvidersConfig.seedance).toMatchObject({
+      isServerConfigured: true,
+      customModels: [
+        { id: 'doubao-seedance-2.0', name: 'doubao-seedance-2.0' },
+        { id: 'doubao-seedance-1.5-pro', name: 'doubao-seedance-1.5-pro' },
+      ],
+      replaceBuiltInModels: true,
+    });
+    expect(store.getState().videoProviderId).toBe('seedance');
+    expect(store.getState().videoModelId).toBe('doubao-seedance-2.0');
   });
 });
 

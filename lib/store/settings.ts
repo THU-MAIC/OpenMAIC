@@ -1400,17 +1400,17 @@ export const useSettingsStore = create<SettingsState>()(
           try {
             const res = await fetch('/api/server-providers');
             if (!res.ok) return;
-            // Managed providers expose only their allowed model list (LLM/image)
-            // and presence (the "managed" flag) — never a base URL. Every
-            // capability section carries an optional `disabled` flag for
-            // admin/server-level force-off (#665).
+            // Managed providers expose only their allowed model list
+            // (LLM/image/video) and presence (the "managed" flag) — never a
+            // base URL. Every capability section carries an optional
+            // `disabled` flag for admin/server-level force-off (#665).
             const data = (await res.json()) as {
               providers: Record<string, { models?: string[] }>;
               tts: Record<string, { disabled?: boolean }>;
               asr: Record<string, { disabled?: boolean }>;
               pdf: Record<string, Record<string, never>>;
               image: Record<string, { models?: string[]; disabled?: boolean }>;
-              video: Record<string, { disabled?: boolean }>;
+              video: Record<string, { models?: string[]; disabled?: boolean }>;
               webSearch: Record<string, { disabled?: boolean }>;
               generation?: { parallelSceneConcurrency?: number };
             };
@@ -1555,10 +1555,14 @@ export const useSettingsStore = create<SettingsState>()(
               for (const [pid, info] of Object.entries(data.image)) {
                 const key = pid as ImageProviderId;
                 if (newImageConfig[key]) {
+                  const customModels = (info.models ?? []).map((id) => ({ id, name: id }));
                   newImageConfig[key] = {
                     ...newImageConfig[key],
                     isServerConfigured: !info.disabled,
                     serverDisabled: info.disabled === true,
+                    ...(customModels.length
+                      ? { customModels, replaceBuiltInModels: true }
+                      : { customModels: [], replaceBuiltInModels: false }),
                   };
                 }
               }
@@ -1581,10 +1585,14 @@ export const useSettingsStore = create<SettingsState>()(
                 for (const [pid, info] of Object.entries(data.video)) {
                   const key = pid as VideoProviderId;
                   if (newVideoConfig[key]) {
+                    const customModels = (info.models ?? []).map((id) => ({ id, name: id }));
                     newVideoConfig[key] = {
                       ...newVideoConfig[key],
                       isServerConfigured: !info.disabled,
                       serverDisabled: info.disabled === true,
+                      ...(customModels.length
+                        ? { customModels, replaceBuiltInModels: true }
+                        : { customModels: [], replaceBuiltInModels: false }),
                     };
                   }
                 }
@@ -1795,8 +1803,11 @@ export const useSettingsStore = create<SettingsState>()(
                   !newImageConfig[state.imageProviderId]?.isServerConfigured
                 ) {
                   autoImageProvider = serverImageIds[0];
-                  const models = IMAGE_PROVIDERS[autoImageProvider]?.models;
-                  if (models?.length) autoImageModel = models[0].id;
+                  const models = resolveMediaModels(
+                    IMAGE_PROVIDERS[autoImageProvider]?.models ?? [],
+                    newImageConfig[autoImageProvider],
+                  );
+                  autoImageModel = models[0]?.id;
                 }
                 if (serverImageIds.length > 0 && !state.imageGenerationEnabled) {
                   autoImageEnabled = true;
@@ -1812,8 +1823,11 @@ export const useSettingsStore = create<SettingsState>()(
                   !newVideoConfig[state.videoProviderId]?.isServerConfigured
                 ) {
                   autoVideoProvider = serverVideoIds[0];
-                  const models = VIDEO_PROVIDERS[autoVideoProvider]?.models;
-                  if (models?.length) autoVideoModel = models[0].id;
+                  const models = resolveMediaModels(
+                    VIDEO_PROVIDERS[autoVideoProvider]?.models ?? [],
+                    newVideoConfig[autoVideoProvider],
+                  );
+                  autoVideoModel = models[0]?.id;
                 }
                 if (serverVideoIds.length > 0 && !state.videoGenerationEnabled) {
                   autoVideoEnabled = true;
