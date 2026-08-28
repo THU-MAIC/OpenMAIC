@@ -25,8 +25,8 @@ import type {
 } from '../types';
 import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
+import { requireModel } from '../require-model';
 
-const DEFAULT_MODEL = 'kling-v2-6';
 const DEFAULT_BASE_URL = 'https://api-beijing.klingai.com';
 const POLL_INTERVAL_MS = 5_000;
 const MAX_POLL_ATTEMPTS = 120; // 10 minutes max
@@ -224,7 +224,7 @@ export async function generateWithKling(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
 ): Promise<VideoGenerationResult> {
-  const model = config.model || DEFAULT_MODEL;
+  const model = requireModel(config.model, 'Kling');
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
   const { accessKey, secretKey } = parseApiKey(config.apiKey);
   const token = generateJWT(accessKey, secretKey);

@@ -64,6 +64,17 @@ describe('visibility ownership + rect + active', () => {
     pool().mount('s1', { srcDoc: 'x' });
     pool().setRect('s1', { left: 1, top: 2, width: 3, height: 4 });
     expect(pool().entries['s1'].rect).toEqual({ left: 1, top: 2, width: 3, height: 4 });
+    expect(pool().entries['s1'].clip).toEqual({ left: 1, top: 2, width: 3, height: 4 });
+  });
+
+  test('setRect can clip smaller than the slot', () => {
+    pool().mount('s1', { srcDoc: 'x' });
+    pool().setRect(
+      's1',
+      { left: 0, top: 0, width: 1600, height: 900 },
+      { left: 0, top: 80, width: 1600, height: 500 },
+    );
+    expect(pool().entries['s1'].clip).toEqual({ left: 0, top: 80, width: 1600, height: 500 });
   });
 
   test('setActive records the active scene', () => {

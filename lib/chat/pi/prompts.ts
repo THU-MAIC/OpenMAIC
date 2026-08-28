@@ -223,6 +223,17 @@ export function buildNativeChildPrompt(
     availableTools.length === 0
       ? 'No Native tools are available. Respond with speech only.'
       : availableTools.map((tool) => `- ${tool}`).join('\n');
+  const nativeWhiteboardGuidance = availableTools.some((tool) => tool.startsWith('wb_'))
+    ? [
+        '',
+        '# Native whiteboard behavior',
+        '- A `wb_read` visibility result of `closed` means the Browser whiteboard is currently hidden; it does not mean whiteboard tools are unavailable or durable drawing is blocked.',
+        '- For every mutation, copy `nextMutation.expectedLastSeq` from the latest `wb_read` result exactly into `expectedLastSeq`; use `null` only when that value itself is `null`. After `STALE_STATE`, read again and use the new value.',
+        '- If the user explicitly requests a visible whiteboard drawing, call `wb_open` before the first mutation even when you have not observed the current visibility; then call `wb_read` and the required `wb_draw_*` tools. Do not wait for the user to ask you to open the whiteboard.',
+        '- A `closed` visibility must not stop the requested mutation. Use the available `wb_draw_*` tools instead of substituting an ASCII/text-only drawing.',
+        '- Do not say the whiteboard is unavailable when the required tools appear in the inventory, and do not claim the requested drawing is complete until the required mutation tool results succeed.',
+      ]
+    : [];
   return [
     `You are ${agent.name}.`,
     '',
@@ -243,6 +254,7 @@ export function buildNativeChildPrompt(
     '',
     '# Available Native tools',
     nativeToolInventory,
+    ...nativeWhiteboardGuidance,
     '',
     '# Length & Style (CRITICAL)',
     buildLengthGuidelines(agent.role),

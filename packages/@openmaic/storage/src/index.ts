@@ -83,11 +83,20 @@ export type {
   DocumentStore,
   MaicDocument,
   DocumentSummary,
+  DocumentFolder,
+  DocumentFolderStore,
   SceneLike,
   SceneValidator,
   StageValidator,
+  StageSceneManifest,
+  StageFreshnessManifest,
+  StageFreshnessManifestStore,
 } from './document/types.js';
-export { DocumentNotFoundError, DocumentVersionError } from './document/types.js';
+export {
+  DocumentFolderLimitError,
+  DocumentNotFoundError,
+  DocumentVersionError,
+} from './document/types.js';
 export { BrowserDocumentStore, type BrowserDocumentStoreOptions } from './document/browser.js';
 export {
   HttpDocumentStore,
@@ -100,6 +109,8 @@ export {
   PgDocumentStore,
   DOCUMENT_PG_SCHEMA,
   ensureDocumentSchema,
+  readStageFreshnessManifest,
+  splitSqlStatements,
   type PgDocumentStoreOptions,
 } from './document/pg.js';
 
@@ -113,6 +124,110 @@ export type {
 export { RuntimeAppendConflictError } from './runtime/types.js';
 export { BrowserRuntimeStore, type BrowserRuntimeStoreOptions } from './runtime/browser.js';
 
+export {
+  AGENT_SESSION_LIFECYCLE,
+  AGENT_SESSION_STATUSES,
+  AGENT_SESSION_URL_SOURCES,
+  OWNER_SESSION_EVENT_TYPES,
+  AgentSessionAccessError,
+  AgentSessionEntryTreeError,
+  AgentSessionLeaseLostError,
+  extractObservedUrls,
+  normalizeObservedUrl,
+  type AgentSessionClaimReason,
+  type AgentSessionCompactionEntry,
+  type AgentSessionCustomMessageEntry,
+  type AgentSessionEntry,
+  type AgentSessionEntryBase,
+  type AgentSessionEntryTree,
+  type AgentSessionEntryTreeHandle,
+  type AgentSessionEventLog,
+  type AgentSessionHooks,
+  type AgentSessionLabelEntry,
+  type AgentSessionLeafEntry,
+  type AgentSessionLease,
+  type AgentSessionLifecycleEventType,
+  type AgentSessionMessageEntry,
+  type AgentSessionMeta,
+  type AgentSessionStatus,
+  type AgentSessionStore,
+  type AgentSessionTransaction,
+  type AgentSessionUrlSource,
+  type AgentSessionUrlStore,
+  type AgentSessionUserMessage,
+  type ClaimedAgentSession,
+  type ClaimAgentSessionOptions,
+  type CreateAgentSessionInput,
+  type FinishAgentSessionPatch,
+  type NewAgentSessionEvent,
+  type NewOwnerSessionEvent,
+  type OwnerSessionEventProjection,
+  type OwnerSessionEventType,
+  type PersistedAgentSessionEvent,
+  type PersistedOwnerSessionEvent,
+  type PostAgentUserMessageOptions,
+  type PostAgentUserMessageResult,
+} from './agent-session/types.js';
+
 // Re-export the DSL-owned asset contract for convenience, so consumers can get
 // the interface and a backend from one import without reaching into the DSL.
 export type { AssetRef, AssetMeta, BinaryBlob, StorageProvider } from '@openmaic/dsl';
+
+export {
+  USER_SKILL_EDITABLE_PATHS,
+  USER_SKILL_LIMIT,
+  USER_SKILL_CONTENT_MAX_BYTES,
+  USER_SKILL_NAME_PATTERN,
+  UserSkillError,
+  applyOpsOnce,
+  applyUserSkillPatchOps,
+  hasUnpairedSurrogate,
+  normalizeUserSkillFields,
+  validateUserSkillFields,
+  validateUserSkillInput,
+  type AppliedUserSkillOp,
+  type UserSkillEditablePath,
+  type UserSkillErrorCode,
+  type UserSkillFields,
+  type UserSkillPatchOpInput,
+  type UserSkillPatchOutcome,
+  type UserSkillRecord,
+  type UserSkillStore,
+} from './skill/types.js';
+export {
+  DEFAULT_USER_SKILL_TABLE_NAMES,
+  PgUserSkillStore,
+  USER_SKILL_PG_SCHEMA,
+  ensureUserSkillSchema,
+  type PgUserSkillStoreOptions,
+  type UserSkillTableNames,
+} from './skill/pg.js';
+
+export {
+  AGENT_SESSION_MATERIAL_KINDS,
+  AgentSessionMaterialError,
+  createMaterialId,
+  isAgentSessionMaterialKind,
+  MATERIAL_EXTRACTION_STATUSES,
+  MAX_MATERIAL_EXTRACTION_RETRIES,
+  type AgentSessionMaterial,
+  type AgentSessionMaterialKind,
+  type AgentSessionMaterialStore,
+  type CreateAgentSessionMaterialInput,
+  type ListAgentSessionMaterialsOptions,
+  type MaterialExtractionStatus,
+  type MaterialExtractionState,
+  type MaterialExtractionStats,
+  type ClaimedMaterialExtraction,
+  type ClaimMaterialExtractionOptions,
+  type CompleteMaterialExtractionInput,
+  type MaterialExtractionFailureSettlement,
+} from './material/types.js';
+export {
+  AGENT_SESSION_MATERIAL_PG_SCHEMA,
+  DEFAULT_AGENT_SESSION_MATERIAL_TABLE_NAMES,
+  PgAgentSessionMaterialStore,
+  ensureAgentSessionMaterialSchema,
+  type AgentSessionMaterialTableNames,
+  type PgAgentSessionMaterialStoreOptions,
+} from './material/pg.js';

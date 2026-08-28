@@ -221,6 +221,24 @@ describe('resolveModel — per-stage resolution order', () => {
     expect(r.thinkingConfig).toEqual({ enabled: true, budgetTokens: 8000 });
   });
 
+  it('carries the agent driver thinking toggle onto its resolved connection', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'maic-agent-driver': {
+        model: 'openai:deepseek-v4-flash-vision-exp',
+        api: 'openai-completions',
+        thinking: { enabled: true },
+      },
+    });
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    const r = await resolveModel({ stage: 'maic-agent-driver' });
+
+    expect(r).toMatchObject({
+      providerId: 'openai',
+      modelId: 'deepseek-v4-flash-vision-exp',
+      thinkingConfig: { enabled: true },
+    });
+  });
+
   it('routed-without-thinking drops client thinking (routed model uses its default)', async () => {
     process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': 'deepseek:deepseek-v4-pro' });
     const { resolveModel } = await import('@/lib/server/resolve-model');

@@ -72,9 +72,10 @@ export function manifestAgentFromConfig(config: GeneratedAgentConfig): ManifestA
  */
 function sanitizeManifestVoiceConfig(value: unknown): AgentVoiceConfig | undefined {
   if (!value || typeof value !== 'object') return undefined;
-  const { providerId, voiceId } = value as Record<string, unknown>;
+  const { providerId, modelId, voiceId } = value as Record<string, unknown>;
   if (typeof providerId !== 'string' || typeof voiceId !== 'string') return undefined;
-  return { providerId, voiceId };
+  if (modelId !== undefined && typeof modelId !== 'string') return undefined;
+  return { providerId, ...(modelId ? { modelId } : {}), voiceId };
 }
 
 /** Same contract as {@link sanitizeManifestVoiceConfig}, for the 3-layer descriptor. */

@@ -1,0 +1,446 @@
+/**
+ * Workbench chat — scoped design tokens and prose skin.
+ *
+ * The visual system is the OpenPBL kimi-chat vocabulary
+ * (`openpbl/.../chat/chat-tokens.tailwind.css` + `text-block.tailwind.css`),
+ * re-rooted for a SINGLE-agent surface and mapped onto this app's shadcn
+ * semantic variables (`--background` / `--foreground` / `--primary` / …), so
+ * light/dark follow the app theme through `.dark` with no palette of its own.
+ *
+ * Everything is scoped under `.wbchat`: the tokens never leak into the rest of
+ * the product, and nothing outside the workbench reads them.
+ *
+ * Single-agent adjustments from the OpenPBL source, by design:
+ *  - no `data-agent` speaker colors (one agent talks here);
+ *  - the assistant's prose has no container (`.wb-prose` floats); only actions
+ *    (tool cards, thinking bars, skill bars) are boxed;
+ *  - "running" is a small spinner, never a breathing dot, in the timeline.
+ */
+@layer components {
+  .wbchat {
+    /* geometry */
+    --wb-radius-sm: 6px;
+    --wb-radius-md: 8px;
+    --wb-radius-full: 999px;
+    /* motion */
+    --wb-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --wb-duration-base: 160ms;
+    /* A fold moves geometry (a whole stack of cards' height), not just color,
+       so it gets a longer read than the 160ms base — same ease-out curve, so
+       the rhythm does not fork. */
+    --wb-duration-fold: 220ms;
+    /* type — the transcript is a reading surface: 14px body on a 23px line
+       box, metadata and code one step smaller. */
+    --wb-text-xs: 12px;
+    --wb-text-sm: 13px;
+    --wb-text-base: 14px;
+    --wb-h1: 22px;
+    --wb-h2: 20px;
+    --wb-h3: 18px;
+    --wb-prose-lh: 1.625;
+    --wb-code-lh: 21px;
+    /* Geometry of a collapsible bar row (tool call, thinking, skill). All bar
+       kinds read these instead of repeating numbers, so they cannot drift
+       apart visually. */
+    --wb-bar-min-h: 30px;
+    --wb-bar-pad-x: 11px;
+    --wb-bar-gap: 8px;
+    /* Headings carry hierarchy through size (600); inline <strong> carries
+       emphasis through weight (700). Inverted from Tailwind's defaults on
+       purpose — a 700 heading ties with every bold run beneath it and, in CJK,
+       reads as a solid block. */
+    --wb-weight-medium: 500;
+    --wb-weight-semibold: 700;
+    --wb-weight-heading: 600;
+    /* The Latin mono faces have no CJK coverage; name the CJK faces so a
+       Chinese character inside `inline code` falls back to a chosen face. */
+    --wb-font-mono:
+      var(--font-geist-mono), ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas,
+      'Noto Sans Mono CJK SC', 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei', monospace;
+    /* Inline-code chip strength, mixed from currentColor so one percentage
+       covers every surface the prose can land on. */
+    --wb-code-chip-mix: 7%;
+
+    /* colors — mapped to the app's shadcn semantic tokens */
+    --wb-surface: var(--card);
+    --wb-surface-raised: var(--popover);
+    --wb-surface-sunken: var(--muted);
+    --wb-line: var(--border);
+    --wb-text: var(--foreground);
+    --wb-text-muted: var(--muted-foreground);
+    --wb-text-faint: color-mix(in srgb, var(--muted-foreground) 62%, transparent);
+    --wb-accent: var(--primary);
+    --wb-accent-soft: color-mix(in srgb, var(--primary) 11%, transparent);
+    /* The accent hairline, for a card that is waiting on the user (the ask_user
+       question card). A FULL-strength primary frame ties with the user's own
+       solid bubble; this is the same soft/line pairing `--wb-danger-line` uses
+       for the failed tool card. */
+    --wb-accent-line: color-mix(in srgb, var(--primary) 42%, transparent);
+    --wb-danger: var(--destructive);
+    --wb-danger-soft: color-mix(in srgb, var(--destructive) 11%, transparent);
+    --wb-danger-line: color-mix(in srgb, var(--destructive) 45%, transparent);
+    /* shadcn has no success/warning pair; these two fixed hues are the whole
+       departure from the semantic palette. */
+    --wb-success: #059669;
+    --wb-warning: #d97706;
+    --wb-focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+
+    /* code surfaces (fixed, GitHub-flavored; dark overrides below) */
+    --wb-code-surface: #f3f5f8;
+    --wb-code-line: #e7eaee;
+    --wb-code-text: var(--wb-text);
+    --wb-code-muted: #6b7280;
+  }
+
+  /* Whole-pixel line boxes where the engine can compute them: 14 * 1.625 is
+     22.75px, and left fractional every baseline in a long answer sits off the
+     pixel grid. The probe is a `round()` the browser must actually resolve, so
+     the block is skipped exactly where the ratio above is needed. */
+  @supports (line-height: round(10px, 1px)) {
+    .wbchat {
+      --wb-prose-lh: round(calc(var(--wb-text-base) * 1.625), 1px);
+    }
+  }
+
+  .dark .wbchat {
+    --wb-code-chip-mix: 11%;
+    --wb-success: #34d399;
+    --wb-warning: #fbbf24;
+    --wb-code-surface: #0d1117;
+    --wb-code-line: #2d333b;
+    --wb-code-text: #c9cdd4;
+    --wb-code-muted: #9aa0a8;
+  }
+
+  /* The running status dot: one expanding ring, then gone. This is the ONLY
+     pulse in the timeline — the "everything is shimmering" failure mode is a
+     spinner or shimmer on every row. */
+  @keyframes wb-dot-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--wb-accent) 40%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 6px transparent;
+    }
+  }
+
+  @keyframes wb-think-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.55;
+    }
+  }
+
+  @keyframes wb-progress-tick {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes wb-wait-pulse {
+    0%,
+    100% {
+      opacity: 0.3;
+      transform: translateY(0);
+    }
+    50% {
+      opacity: 1;
+      transform: translateY(-2px);
+    }
+  }
+
+  /* The question form swapping in where the composer's input box was. A fade
+     with the smallest rise that still reads as a change of surface: the box is
+     not going anywhere, only its contents are. `motion-safe:` on the class means
+     reduced-motion gets the straight cut. */
+  @keyframes wb-form-fade {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+/* Assistant Markdown prose — floats with no container (single-agent surface:
+   the bubble frame is OpenPBL's speaker marker, and one agent needs none). The
+   rules style Streamdown's rendered contract (its `data-streamdown` node names
+   plus plain elements), because Streamdown's own Tailwind class names are not
+   guaranteed to exist in this app's generated utility set. */
+@layer components {
+  .wb-prose {
+    font-family: inherit;
+    font-size: var(--wb-text-base);
+    line-height: var(--wb-prose-lh);
+    color: var(--wb-text);
+    /* Standard break-only-when-it-doesn't-fit; the legacy alias shrinks
+       min-content width and shreds identifiers mid-token. */
+    overflow-wrap: break-word;
+    min-width: 0;
+    max-width: 100%;
+    /* Trims the sidebearing of fullwidth CJK punctuation so commas and
+       full stops do not leave a half-em hole. */
+    text-spacing-trim: space-first;
+  }
+
+  /* ---------- block rhythm ---------- */
+  .wb-prose > div > :first-child,
+  .wb-prose blockquote > :first-child,
+  .wb-prose li > :first-child {
+    margin-top: 0;
+  }
+  .wb-prose > div > :last-child,
+  .wb-prose blockquote > :last-child,
+  .wb-prose li > :last-child {
+    margin-bottom: 0;
+  }
+  .wb-prose p {
+    margin: 0 0 8px;
+    /* Avoids a one-word last line without the ragged right `balance` gives. */
+    text-wrap: pretty;
+  }
+
+  /* ---------- headings ---------- */
+  /* Ladder 22/20/18 against the 14px body, weight 600 — BELOW the 700 of
+     inline <strong>. Hierarchy comes from the size ladder; weight is reserved
+     for emphasis inside a paragraph. */
+  .wb-prose :is(h1, h2, h3, h4, h5, h6) {
+    margin: 0.85em 0 0.35em;
+    font-weight: var(--wb-weight-heading);
+    color: inherit;
+  }
+  .wb-prose h1 {
+    font-size: var(--wb-h1);
+    letter-spacing: -0.011em;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--wb-line);
+  }
+  .wb-prose h2 {
+    font-size: var(--wb-h2);
+    letter-spacing: -0.009em;
+  }
+  .wb-prose h3 {
+    font-size: var(--wb-h3);
+  }
+  .wb-prose h4 {
+    font-size: var(--wb-text-base);
+  }
+  .wb-prose h5 {
+    font-size: var(--wb-text-base);
+    color: color-mix(in srgb, currentColor 68%, transparent);
+  }
+  .wb-prose h6 {
+    font-size: var(--wb-text-sm);
+    color: color-mix(in srgb, currentColor 68%, transparent);
+  }
+  /* A heading that opens a section gets two body lines' worth of gap above
+     it, so the section break reads bigger than any gap inside the section. */
+  .wb-prose > div > :is(h1, h2) {
+    margin-top: calc(var(--wb-text-base) * 2);
+  }
+  .wb-prose > div > :is(h1, h2):first-child {
+    margin-top: 0;
+  }
+
+  /* ---------- inline emphasis ---------- */
+  /* Streamdown emits <span data-streamdown="strong">, not <strong> — without
+     this rule bold markup renders as plain text. */
+  .wb-prose :is([data-streamdown='strong'], strong, b) {
+    font-weight: var(--wb-weight-semibold);
+  }
+  .wb-prose :is(em, i) {
+    font-style: italic;
+  }
+  .wb-prose del {
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
+
+  /* ---------- lists ---------- */
+  .wb-prose :is(ul, ol) {
+    margin: 0 0 8px;
+    padding-left: 1.5em;
+  }
+  .wb-prose ul {
+    list-style: disc outside;
+  }
+  .wb-prose ol {
+    list-style: decimal outside;
+  }
+  .wb-prose li {
+    margin: 3px 0;
+    display: list-item;
+  }
+  .wb-prose li > :is(ul, ol) {
+    margin: 3px 0 0;
+  }
+  /* Markers are structure, not content: the faint ink stops a column of
+     bullets from competing with the sentences next to them. */
+  .wb-prose li::marker {
+    color: var(--wb-text-faint);
+  }
+  .wb-prose li > p {
+    margin: 0;
+  }
+  .wb-prose li > p + p {
+    margin-top: 6px;
+  }
+
+  /* ---------- rules and quotes ---------- */
+  .wb-prose hr {
+    height: 1px;
+    margin: 20px 0;
+    border: 0;
+    background: var(--wb-line);
+  }
+  .wb-prose blockquote {
+    margin: 12px 0;
+    padding: 1px 0 1px 12px;
+    /* No italic: CJK has no true italic face, so browsers synthesise a slant
+       that reads as a rendering fault. The bar and the muted ink carry it. */
+    border-left: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+    color: color-mix(in srgb, currentColor 76%, transparent);
+  }
+
+  /* ---------- tables ---------- */
+  .wb-prose div:has(> table) {
+    max-width: 100%;
+    margin: 12px 0;
+    overflow-x: auto;
+    border: 1px solid var(--wb-line);
+    border-radius: var(--wb-radius-md);
+  }
+  .wb-prose table {
+    width: 100%;
+    margin: 0;
+    border-collapse: collapse;
+    font-size: var(--wb-text-sm);
+    line-height: 1.5;
+  }
+  .wb-prose :is(th, td) {
+    padding: 7px 12px;
+    text-align: left;
+    vertical-align: top;
+    word-break: normal;
+    overflow-wrap: break-word;
+  }
+  .wb-prose th {
+    white-space: nowrap;
+    font-weight: var(--wb-weight-semibold);
+    color: color-mix(in srgb, currentColor 88%, transparent);
+    background: color-mix(in srgb, currentColor 4%, transparent);
+    border-bottom: 1px solid var(--wb-line);
+  }
+  .wb-prose tbody tr + tr > td {
+    border-top: 1px solid var(--wb-line);
+  }
+  .wb-prose td code {
+    padding: 0;
+    margin: 0;
+    background: none;
+  }
+
+  /* ---------- links ---------- */
+  .wb-prose a {
+    color: var(--wb-accent);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    text-decoration-color: color-mix(in srgb, var(--wb-accent) 38%, transparent);
+    transition: text-decoration-color var(--wb-duration-base) var(--wb-ease-out);
+  }
+  .wb-prose a:hover {
+    text-decoration-color: currentColor;
+  }
+
+  /* ---------- inline code ---------- */
+  /* Flat 13px in prose; em-relative only inside a heading, where a fixed size
+     would shout louder than the sentence around it. The chip is mixed from
+     currentColor because the same prose renders on surfaces with different
+     text colours. */
+  .wb-prose code {
+    font-family: var(--wb-font-mono);
+    font-size: var(--wb-text-sm);
+    /* Prose is not a code editor: `->` and `!=` must not fuse mid-sentence. */
+    font-variant-ligatures: none;
+    overflow-wrap: break-word;
+  }
+  .wb-prose :is(h1, h2, h3, h4) :not(pre) > code {
+    font-size: 0.9em;
+  }
+  .wb-prose :not(pre) > code {
+    padding: 0.12em 0.36em;
+    /* A hair of side bearing so the chip does not touch the CJK glyph. */
+    margin: 0 1px;
+    border-radius: 4px;
+    background: color-mix(in srgb, currentColor var(--wb-code-chip-mix), transparent);
+  }
+
+  /* ---------- fenced code (Streamdown code-block contract) ---------- */
+  .wb-prose div[data-streamdown='code-block'] {
+    position: relative;
+    margin: 12px 0;
+    overflow: hidden;
+    border: 1px solid var(--wb-code-line);
+    border-radius: var(--wb-radius-md);
+    background: var(--wb-code-surface);
+    color: var(--wb-code-text);
+  }
+  .wb-prose div[data-streamdown='code-block'] pre {
+    margin: 0;
+    padding: 12px 14px;
+    overflow-x: auto;
+    background: var(--wb-code-surface);
+    color: var(--wb-code-text);
+    font-family: var(--wb-font-mono);
+    font-size: var(--wb-text-sm);
+    line-height: var(--wb-code-lh);
+    tab-size: 4;
+  }
+  .wb-prose div[data-streamdown='code-block'] pre code {
+    padding: 0;
+    margin: 0;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+  }
+  .wb-prose div[data-streamdown='code-block-header'] {
+    color: var(--wb-code-muted);
+    font-family: var(--wb-font-mono);
+    font-size: var(--wb-text-xs);
+  }
+  .wb-prose div[data-streamdown='code-block-actions'] button {
+    color: var(--wb-code-muted);
+  }
+  /* A bare ``` fence that never reaches the highlighted block keeps the skin. */
+  .wb-prose :not(div[data-streamdown='code-block']) > pre {
+    margin: 12px 0;
+    padding: 12px 14px;
+    overflow-x: auto;
+    border: 1px solid var(--wb-code-line);
+    border-radius: var(--wb-radius-md);
+    background: var(--wb-code-surface);
+    color: var(--wb-code-text);
+    font-family: var(--wb-font-mono);
+    font-size: var(--wb-text-sm);
+    line-height: var(--wb-code-lh);
+  }
+  .wb-prose :not(div[data-streamdown='code-block']) > pre code {
+    padding: 0;
+    margin: 0;
+    background: none;
+    font: inherit;
+  }
+}

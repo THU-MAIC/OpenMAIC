@@ -1,6 +1,8 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
+/* Workbench chat (agent workbench surface): scoped .wbchat tokens + prose skin. */
+@import '../components/workbench/chat/workbench-chat.css';
 
 /* Streamdown (AI sidebar markdown) styles itself with Tailwind utilities —
    Tailwind must scan its dist so those classes get generated. */

@@ -9,27 +9,24 @@ import {
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
+import {
+  decideDocumentAccess,
+  parseDocumentAction,
+  type DocumentAccess,
+} from '@/lib/persistence/document-access';
+import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
 import { authenticatePersistenceRequest } from '@/lib/persistence/server-auth';
 import {
   getServerPersistenceProvider,
   type PersistencePoolFactory,
 } from '@/lib/persistence/server-provider';
+import { readStageMeta } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
+import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
 
 export const runtime = 'nodejs';
 
 const ROUTE_PREFIX = '/api/persistence';
-
-interface PersistenceHandlerState {
-  connectionString?: string;
-  handlerPromise?: Promise<RequestListener>;
-}
-
-const HANDLER_STATE_KEY = Symbol.for('openmaic.persistence-route.handler');
-const globalState = globalThis as typeof globalThis & {
-  [key: symbol]: PersistenceHandlerState | undefined;
-};
-const handlerState = (globalState[HANDLER_STATE_KEY] ??= {});
 
 function jsonError(status: number, code: string, message: string): Response {
   return Response.json({ error: { code, message } }, { status });
@@ -81,19 +78,25 @@ function indirectEgressWithinGrace(
 
 async function createPersistenceHandler(
   connectionString: string,
+  ownerId: string,
+  access: DocumentAccess,
   poolFactory?: PersistencePoolFactory,
 ): Promise<RequestListener> {
-  const { runtimeStore, documentStore, assetStore } = await getServerPersistenceProvider(
+  const { pool, runtimeStore, assetStore } = await getServerPersistenceProvider(
     connectionString,
     poolFactory,
   );
-  // The asset contract requires a server-derived principal; this development
-  // authenticator instead takes the partition key from a client-supplied header.
-  // Cross-principal isolation is therefore not in force: asset bytes are as
-  // reachable as documents and runtime records under this authenticator. Before
-  // asset routes carry anything that matters, production must replace
-  // authenticatePersistenceRequest with real session verification. See
-  // lib/persistence/server-auth.ts for the token's limits.
+  const documentStore = createOwnerBoundDocumentStore({
+    pool,
+    ownerId,
+    validateScene: validateAppScene,
+    validateStage: validateAppStage,
+  });
+  // Runtime and asset requests retain the development authenticator, which
+  // takes their partition key from a client-supplied header. Document requests
+  // use the server-resolved anonymous owner below. Before runtime or asset
+  // routes carry production data, their authenticator must also be replaced
+  // with real session verification.
   // Reclamation is not scheduled from here, and must not be: a route module
   // has no once-per-process guarantee and no shutdown hook. AssetCollector
   // runs from instrumentation.ts instead, over the byte store this same
@@ -103,10 +106,13 @@ async function createPersistenceHandler(
     configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
   );
   return createStorageHttpHandler(runtimeStore, documentStore, {
-    authenticate: authenticatePersistenceRequest,
+    authenticate: async (request) =>
+      request.url?.startsWith('/documents')
+        ? { learnerKey: ownerId }
+        : authenticatePersistenceRequest(request),
     authorizeMerge: async () => false,
     authorizeAdmin: async () => false,
-    authorizeDocuments: async () => true,
+    authorizeDocuments: async () => access === 'allow',
     validateScene: validateAppScene,
     validateStage: validateAppStage,
     payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
@@ -115,26 +121,9 @@ async function createPersistenceHandler(
   });
 }
 
-function getPersistenceHandler(
-  connectionString: string,
-  poolFactory?: PersistencePoolFactory,
-): Promise<RequestListener> {
-  if (handlerState.handlerPromise && handlerState.connectionString === connectionString) {
-    return handlerState.handlerPromise;
-  }
-
-  handlerState.connectionString = connectionString;
-  const initialization = createPersistenceHandler(connectionString, poolFactory).catch((error) => {
-    // Do not poison the singleton with a rejected promise. createPersistenceHandler
-    // has already closed its failed pool, and the next request gets a clean retry.
-    if (handlerState.handlerPromise === initialization) {
-      handlerState.handlerPromise = undefined;
-      handlerState.connectionString = undefined;
-    }
-    throw error;
-  });
-  handlerState.handlerPromise = initialization;
-  return initialization;
+function routeRelativePath(request: Request): string {
+  const pathname = new URL(request.url).pathname;
+  return pathname.startsWith(ROUTE_PREFIX) ? pathname.slice(ROUTE_PREFIX.length) || '/' : pathname;
 }
 
 function nodeRequest(request: Request): IncomingMessage {
@@ -291,15 +280,46 @@ export async function handlePersistenceRequest(
     );
   }
 
-  try {
-    return await runNodeHandler(
-      await getPersistenceHandler(connectionString, deps.poolFactory),
-      request,
-    );
-  } catch (error) {
-    console.error('Embedded persistence route initialization failed', error);
-    return jsonError(500, 'PERSISTENCE_INIT_FAILED', 'server persistence initialization failed');
-  }
+  return withRequestOwnerId(request, async (ownerId, responseHeaders) => {
+    try {
+      const path = routeRelativePath(request);
+      const action = parseDocumentAction(request.method, path);
+      let access: DocumentAccess = 'allow';
+      if (path === '/documents' || path.startsWith('/documents/')) {
+        const { pool } = await getServerPersistenceProvider(connectionString, deps.poolFactory);
+        const queryable = pool;
+        access = await decideDocumentAccess(
+          action,
+          ownerId,
+          (stageId) => readStageMeta(queryable, stageId),
+          (stageId) =>
+            pool
+              .query('SELECT 1 FROM document_stages WHERE id = $1', [stageId])
+              .then((result) => result.rows.length > 0),
+          (stageId) => readStageMeta(queryable, stageId),
+        );
+      }
+
+      const response =
+        access === 'not-found'
+          ? jsonError(404, 'DOCUMENT_NOT_FOUND', '@openmaic/storage: document not found')
+          : await runNodeHandler(
+              await createPersistenceHandler(connectionString, ownerId, access, deps.poolFactory),
+              request,
+            );
+      for (const [name, value] of responseHeaders.entries()) response.headers.append(name, value);
+      return response;
+    } catch (error) {
+      console.error('Embedded persistence route initialization failed', error);
+      const response = jsonError(
+        500,
+        'PERSISTENCE_INIT_FAILED',
+        'server persistence initialization failed',
+      );
+      for (const [name, value] of responseHeaders.entries()) response.headers.append(name, value);
+      return response;
+    }
+  });
 }
 
 export const GET = (request: Request) => handlePersistenceRequest(request);

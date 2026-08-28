@@ -14,6 +14,7 @@ import {
 } from './fold';
 import {
   WHITEBOARD_RUNTIME_KIND,
+  WhiteboardRuntimeNoChangeError,
   type AppendWhiteboardRecordInput,
   type AppendWhiteboardRecordResult,
   type FoldedWhiteboardRuntimeDetails,
@@ -219,7 +220,17 @@ export function createWhiteboardRuntimeService(
       if (payload.operation.kind === 'legacy_snapshot_imported' && before.lastSeq !== null) {
         throw new Error('WHITEBOARD_RUNTIME_IMPORT_AFTER_STATE');
       }
-      await applyWhiteboardRuntimeOperation(session.id, before.whiteboard, payload.operation);
+      try {
+        await applyWhiteboardRuntimeOperation(session.id, before.whiteboard, payload.operation);
+      } catch (error) {
+        if (error instanceof WhiteboardRuntimeNoChangeError) {
+          throw new WhiteboardRuntimeNoChangeError(
+            error.reason,
+            publicWhiteboardRuntimeState(before),
+          );
+        }
+        throw error;
+      }
 
       let appended: RuntimeRecord;
       try {

@@ -33,30 +33,28 @@ describe('persistence client bootstrap', () => {
     expect(assets.isAssetPoolStorageConfigured()).toBe(false);
   });
 
-  it('configures all HTTP stores and passes app validators through', async () => {
+  it('configures runtime and document HTTP stores without wiring the asset pool', async () => {
     vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
     vi.stubEnv('NEXT_PUBLIC_PERSISTENCE_TOKEN', 'test-dev-token');
     vi.stubGlobal('window', {});
     vi.stubGlobal('localStorage', memoryStorage());
 
-    const { HttpAssetStore, HttpDocumentStore } = await import('@openmaic/storage');
+    const { HttpDocumentStore } = await import('@openmaic/storage');
     const { HttpRuntimeStore } = await import('@openmaic/storage/runtime/http');
     // Importing either seam must structurally run bootstrap before the seam can
     // resolve its default store.
     const runtime = await import('@/lib/runtime/store');
     const documents = await import('@/lib/document-store');
-    const assets = await import('@/lib/media/asset-pool');
+    const assets = await import('@/lib/media/asset-pool-config');
 
     expect(runtime.isRuntimeStorageConfigured()).toBe(true);
     expect(documents.isDocumentStorageConfigured()).toBe(true);
-    expect(assets.isAssetPoolStorageConfigured()).toBe(true);
+    expect(assets.isAssetPoolStorageConfigured()).toBe(false);
 
     const runtimeStore = runtime.getRuntimeStore();
     const documentStore = documents.getDocumentStore();
-    const assetStore = assets.getAssetPool();
     expect(runtimeStore).toBeInstanceOf(HttpRuntimeStore);
     expect(documentStore).toBeInstanceOf(HttpDocumentStore);
-    expect(assetStore).toBeInstanceOf(HttpAssetStore);
 
     const documentInternals = documentStore as unknown as {
       validateSceneFn: unknown;
@@ -73,17 +71,8 @@ describe('persistence client bootstrap', () => {
     expect(new Headers(runtimeHeaders).get('authorization')).toBe('Bearer test-dev-token');
     expect(new Headers(runtimeHeaders).get('x-learner-key')).toMatch(/^anon:/);
 
-    const assetHeaders = await (
-      assetStore as unknown as {
-        headersHook: (context: { method: string; path: string }) => Promise<HeadersInit>;
-      }
-    ).headersHook({ method: 'GET', path: '/assets/example/content' });
-    expect(new Headers(assetHeaders).get('authorization')).toBe('Bearer test-dev-token');
-    expect(new Headers(assetHeaders).get('x-learner-key')).toMatch(/^anon:/);
-
     runtime.resetRuntimeStorageForTests();
     documents.resetDocumentStorageForTests();
-    assets.resetAssetPoolStorageForTests();
     expect(runtime.isRuntimeStorageConfigured()).toBe(false);
     expect(documents.isDocumentStorageConfigured()).toBe(false);
     expect(assets.isAssetPoolStorageConfigured()).toBe(false);
@@ -101,7 +90,7 @@ describe('persistence client bootstrap', () => {
     expect(assets.isAssetPoolStorageConfigured()).toBe(false);
   });
 
-  it('preflights both seams so a failure cannot partially configure bootstrap', async () => {
+  it('preflights both configured seams so a failure cannot partially configure bootstrap', async () => {
     vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
     vi.stubGlobal('window', {});
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

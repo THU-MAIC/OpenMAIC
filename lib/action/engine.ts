@@ -15,7 +15,7 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { useMediaGenerationStore, type MediaTask } from '@/lib/store/media-generation';
 import type { AudioPlayer } from '@/lib/utils/audio-player';
-import type { LegacySpeechAction } from '@/lib/media/convert-legacy-asset-refs';
+import type { LegacySpeechAction } from '@/lib/types/action';
 import type {
   Action,
   SpotlightAction,

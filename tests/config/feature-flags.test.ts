@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  isAgentRuntimeConfigured,
+  isAgentRuntimeEnabled,
   isEditorRendererEnabled,
   isMaicEditorEnabled,
   isPlaybackRendererEnabled,
@@ -15,11 +17,53 @@ import {
 
 const FLAG = 'NEXT_PUBLIC_MAIC_EDITOR_ENABLED';
 
+describe('agent runtime configuration predicate', () => {
+  const ENV_KEYS = ['OPENMAIC_AGENT_RUNTIME_ENABLED', 'DATABASE_URL'] as const;
+  const originals = new Map<string, string | undefined>();
+
+  beforeEach(() => {
+    for (const key of ENV_KEYS) {
+      originals.set(key, process.env[key]);
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of ENV_KEYS) {
+      const original = originals.get(key);
+      if (original === undefined) delete process.env[key];
+      else process.env[key] = original;
+    }
+    originals.clear();
+  });
+
+  it.each([
+    ['the flag is off with no DATABASE_URL', undefined, undefined, false, false],
+    ['the flag is off with DATABASE_URL set', undefined, 'postgres://runtime', false, false],
+    ['the flag is on with no DATABASE_URL', 'true', undefined, true, false],
+    ['the flag is on with a blank DATABASE_URL', 'true', '   ', true, false],
+    ['the flag is on with DATABASE_URL set', 'true', 'postgres://runtime', true, true],
+  ])(
+    '%s: enabled = %s, configured = %s',
+    (_case, runtimeFlag, databaseUrl, enabled, configured) => {
+      if (runtimeFlag !== undefined) process.env.OPENMAIC_AGENT_RUNTIME_ENABLED = runtimeFlag;
+      if (databaseUrl !== undefined) process.env.DATABASE_URL = databaseUrl;
+
+      expect(isAgentRuntimeEnabled()).toBe(enabled);
+      expect(isAgentRuntimeConfigured()).toBe(configured);
+    },
+  );
+});
+
 describe('isMaicEditorEnabled', () => {
+  const PRO_FLAG = 'NEXT_PUBLIC_PRO_WORKBENCH_ENABLED';
   let original: string | undefined;
+  let originalPro: string | undefined;
 
   beforeEach(() => {
     original = process.env[FLAG];
+    originalPro = process.env[PRO_FLAG];
+    delete process.env[PRO_FLAG];
   });
 
   afterEach(() => {
@@ -27,6 +71,11 @@ describe('isMaicEditorEnabled', () => {
       delete process.env[FLAG];
     } else {
       process.env[FLAG] = original;
+    }
+    if (originalPro === undefined) {
+      delete process.env[PRO_FLAG];
+    } else {
+      process.env[PRO_FLAG] = originalPro;
     }
   });
 
@@ -53,6 +102,18 @@ describe('isMaicEditorEnabled', () => {
   it('returns false for an unrecognized string', () => {
     process.env[FLAG] = 'yes';
     expect(isMaicEditorEnabled()).toBe(false);
+  });
+
+  it('is implied by the Pro workbench flag when its own flag is unset', () => {
+    delete process.env[FLAG];
+    process.env[PRO_FLAG] = 'true';
+    expect(isMaicEditorEnabled()).toBe(true);
+  });
+
+  it('stays on under the Pro workbench flag even with its own flag set false', () => {
+    process.env[FLAG] = 'false';
+    process.env[PRO_FLAG] = 'true';
+    expect(isMaicEditorEnabled()).toBe(true);
   });
 });
 

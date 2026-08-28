@@ -1,13 +1,14 @@
 'use client';
 
 import { ArrowLeft, Redo2, Undo2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import type { EditorCommand, SurfaceHistory } from '@/lib/edit/scene-editor-surface';
+import { classroomExitLabelKey, exitClassroom } from '@/lib/workbench/classroom-exit';
 
 interface CommandBarProps {
   readonly title: string;
@@ -35,13 +36,19 @@ interface CommandBarProps {
 export function CommandBar({ title, history, commands, trailing }: CommandBarProps) {
   const { t } = useI18n();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const exitLabel = t(classroomExitLabelKey(searchParams));
 
   return (
     <header className="flex h-20 shrink-0 items-center gap-3 border-b border-zinc-200/60 px-8 dark:border-zinc-800/60">
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {/* Back-to-home — mirrors playback Header's leftmost button so the
-            user has the same global-out affordance across modes. */}
-        <IconButton title={t('generation.backToHome')} onClick={() => router.push('/')}>
+        {/* Classroom exit mirrors playback Header's leftmost button so the
+            user has the same global-out affordance across standalone modes. */}
+        <IconButton
+          title={exitLabel}
+          aria-label={exitLabel}
+          onClick={() => exitClassroom(router, searchParams)}
+        >
           <ArrowLeft className="h-4 w-4" />
         </IconButton>
         {history && (

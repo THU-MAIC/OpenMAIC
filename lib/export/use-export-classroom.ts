@@ -85,73 +85,15 @@ export async function buildClassroomExportZip(
   const JSZip = (await import('jszip')).default;
   const zip = new JSZip();
 
-  // 1. Access the authoritative document first, so lazy conversion runs and
-  // persists allocated ids before the media tables are read.
+  // 1. Access the authoritative document and prepare the working scenes.
   const [freshDocument, documentScenes] = await Promise.all([
     accessDocument(stage.id, deps),
     preparePBLScenesForDocumentPersistence(stage.id, scenes),
   ]);
   const latestName = freshDocument.document?.stage.name || stage.name;
 
-  // 2. One export snapshot: the working state (intentional unsaved edits)
-  // with its legacy references converted in-memory to the same allocated ids
-  // the durable document now carries.
-  const ledger: string[] = [];
-  let exportStage = stage;
-  let exportScenes = documentScenes;
-  try {
-    const { convertDocumentAssetRefs } = await import('@/lib/media/convert-legacy-asset-refs');
-    const converted = await convertDocumentAssetRefs(
-      { stage, scenes: documentScenes },
-      undefined,
-      undefined,
-      ledger,
-    );
-    exportStage = converted.document.stage;
-    exportScenes = converted.document.scenes;
-  } catch (error) {
-    log.warn(
-      `Legacy asset conversion failed during export of ${JSON.stringify(stage.id)}; ` +
-        'falling back to the accessed document snapshot',
-      error,
-    );
-    // The fallback snapshot must not reference allocations the rollback
-    // removes, and the accessed document (converted, or untouched if the
-    // durable conversion also failed) is always consistent with the rows.
-    // The whole ledger is spent: clearing it keeps the later snapshot-only
-    // rollback a no-op instead of idempotently re-removing the same ids.
-    const { rollbackConvertedAllocations } = await import('@/lib/media/convert-legacy-asset-refs');
-    await rollbackConvertedAllocations(stage.id, ledger).catch(() => undefined);
-    ledger.length = 0;
-    if (freshDocument.document) {
-      exportStage = freshDocument.document.stage;
-      exportScenes = freshDocument.document.scenes;
-    }
-  }
-
-  // The export snapshot is ephemeral: it is never persisted, so every
-  // allocation the in-memory snapshot conversion made is unowned once the
-  // ZIP has captured its bytes -- or once the export fails anywhere
-  // downstream. The durable document was accessed and converted FIRST, so
-  // any reference the working state shares with it reused the durable
-  // allocation and never entered the ledger; rolling back the ledger entries
-  // the durable document does not reference leaves the durable document and
-  // its compatibility rows untouched.
-  const rollbackSnapshotOnlyAllocations = async (): Promise<void> => {
-    if (ledger.length === 0) return;
-    const { rollbackConvertedAllocations } = await import('@/lib/media/convert-legacy-asset-refs');
-    const { collectStageAssetRefs } = await import('@/lib/media/collect-stage-asset-refs');
-    const referenced = freshDocument.document
-      ? collectStageAssetRefs(freshDocument.document, {
-          mediaRows: [],
-          audioRows: [],
-        }).document
-      : new Set<string>();
-    const orphans = ledger.filter((id) => !referenced.has(id));
-    if (orphans.length > 0) {
-      await rollbackConvertedAllocations(stage.id, orphans).catch(() => undefined);
-    }
-  };
+  const exportStage = stage;
+  const exportScenes = documentScenes;
 
   let zipBlob: Blob;
   const aggregateReport: InlineReport = { inlined: [], failed: [] };
@@ -302,14 +244,8 @@ export async function buildClassroomExportZip(
     // 11. Generate
     zipBlob = await zip.generateAsync({ type: 'blob' });
   } catch (error) {
-    // A failure after conversion means the snapshot was never captured: its
-    // fresh allocations are unowned and must not strand.
-    await rollbackSnapshotOnlyAllocations();
     throw error;
   }
-  // The ZIP has captured every blob; the snapshot's fresh allocations are
-  // now unowned and released.
-  await rollbackSnapshotOnlyAllocations();
   const safeName = latestName.replace(/[\\/:*?"<>|]/g, '_') || 'classroom';
   return {
     zip: zipBlob,

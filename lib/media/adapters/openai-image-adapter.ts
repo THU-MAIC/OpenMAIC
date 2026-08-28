@@ -10,6 +10,7 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'gpt-image-2';
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
@@ -63,6 +64,7 @@ export async function generateWithOpenAIImage(
   options: ImageGenerationOptions,
 ): Promise<ImageGenerationResult> {
   const baseUrl = normalizeBaseUrl(config.baseUrl);
+  const model = requireModel(config.model, 'OpenAI Image');
   const width = options.width || 1024;
   const height = options.height || 1024;
 
@@ -73,7 +75,7 @@ export async function generateWithOpenAIImage(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify({
-      model: config.model || DEFAULT_MODEL,
+      model,
       prompt: options.prompt,
       n: 1,
       size: resolveSize(options),

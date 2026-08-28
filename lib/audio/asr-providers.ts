@@ -326,7 +326,7 @@ async function transcribeOpenAIWhisper(
 
   try {
     const result = await transcribe({
-      model: openai.transcription(config.modelId || 'gpt-4o-mini-transcribe'),
+      model: openai.transcription(config.modelId || ASR_PROVIDERS['openai-whisper'].defaultModelId),
       audio: audioData,
       providerOptions: {
         openai: {
@@ -368,7 +368,7 @@ async function transcribeQwenASR(
 
   // Build request body
   const requestBody: Record<string, unknown> = {
-    model: config.modelId || 'qwen3-asr-flash',
+    model: config.modelId || ASR_PROVIDERS['qwen-asr'].defaultModelId,
     input: {
       messages: [
         {

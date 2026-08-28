@@ -267,3 +267,133 @@ describe('validateUrlForSSRF', () => {
     );
   });
 });
+
+const STRICT_BLOCK_MESSAGE = 'Local/private/reserved network URLs are not allowed';
+
+describe('assertSafeIp', () => {
+  beforeEach(() => {
+    lookupMock.mockReset();
+  });
+
+  it('accepts globally routable unicast addresses', async () => {
+    const { assertSafeIp } = await import('@/lib/server/ssrf-guard');
+    expect(() => assertSafeIp('8.8.8.8')).not.toThrow();
+    expect(() => assertSafeIp('1.1.1.1')).not.toThrow();
+    expect(() => assertSafeIp('2606:4700:4700::1111')).not.toThrow();
+  });
+
+  it('rejects private and reserved IPv4 addresses', async () => {
+    const { assertSafeIp } = await import('@/lib/server/ssrf-guard');
+    for (const ip of [
+      '127.0.0.1',
+      '10.0.0.1',
+      '172.16.0.1',
+      '192.168.1.1',
+      '169.254.169.254',
+      '0.0.0.0',
+      '100.100.100.200',
+      '255.255.255.255',
+    ]) {
+      expect(() => assertSafeIp(ip)).toThrow(STRICT_BLOCK_MESSAGE);
+    }
+  });
+
+  it('rejects private, link-local and metadata IPv6 addresses', async () => {
+    const { assertSafeIp } = await import('@/lib/server/ssrf-guard');
+    for (const ip of [
+      '::1',
+      '::',
+      'fd00::1',
+      'fe80::1',
+      'fec0::1',
+      'fd00:ec2::254',
+      '2002:7f00:0001::', // 6to4 embedding 127.0.0.1
+    ]) {
+      expect(() => assertSafeIp(ip)).toThrow(STRICT_BLOCK_MESSAGE);
+    }
+  });
+
+  it('classifies IPv4-mapped IPv6 as IPv4 so ::ffff:127.0.0.1 cannot hide', async () => {
+    const { assertSafeIp } = await import('@/lib/server/ssrf-guard');
+    expect(() => assertSafeIp('::ffff:127.0.0.1')).toThrow(STRICT_BLOCK_MESSAGE);
+    expect(() => assertSafeIp('::ffff:8.8.8.8')).not.toThrow();
+  });
+
+  it('rejects ISATAP addresses that embed private IPv4 beneath a public IPv6 prefix', async () => {
+    const { assertSafeIp } = await import('@/lib/server/ssrf-guard');
+    expect(() => assertSafeIp('2001:4860:0:1:200:5efe:7f00:1')).toThrow(STRICT_BLOCK_MESSAGE);
+    expect(() => assertSafeIp('2001:4860:0:1:0:5efe:a00:1')).toThrow(STRICT_BLOCK_MESSAGE);
+    expect(() => assertSafeIp('2001:4860:0:1:200:5efe:808:808')).not.toThrow();
+  });
+
+  it('throws a classified error for unparseable input', async () => {
+    const { assertSafeIp, UnsafeNetworkTargetError } = await import('@/lib/server/ssrf-guard');
+    expect(() => assertSafeIp('not-an-ip')).toThrow(UnsafeNetworkTargetError);
+  });
+});
+
+describe('normalizeUrlForStrictFetch', () => {
+  beforeEach(() => {
+    lookupMock.mockReset();
+  });
+
+  it('returns a parsed URL for a safe http(s) URL', async () => {
+    const { normalizeUrlForStrictFetch } = await import('@/lib/server/ssrf-guard');
+    expect(normalizeUrlForStrictFetch('https://example.com/a?b=1').toString()).toBe(
+      'https://example.com/a?b=1',
+    );
+    expect(normalizeUrlForStrictFetch('http://example.com:80/').port).toBe('');
+  });
+
+  it('rejects non-http protocols, userinfo and unusual ports', async () => {
+    const { normalizeUrlForStrictFetch, UnsafeNetworkTargetError } =
+      await import('@/lib/server/ssrf-guard');
+    expect(() => normalizeUrlForStrictFetch('ftp://example.com')).toThrow(UnsafeNetworkTargetError);
+    expect(() => normalizeUrlForStrictFetch('file:///etc/passwd')).toThrow(
+      UnsafeNetworkTargetError,
+    );
+    expect(() => normalizeUrlForStrictFetch('https://user:pass@example.com')).toThrow(
+      UnsafeNetworkTargetError,
+    );
+    expect(() => normalizeUrlForStrictFetch('https://example.com:8443')).toThrow(
+      UnsafeNetworkTargetError,
+    );
+  });
+
+  it('rejects local and private IP literals without any DNS lookup', async () => {
+    const { normalizeUrlForStrictFetch } = await import('@/lib/server/ssrf-guard');
+    for (const url of [
+      'http://127.0.0.1',
+      'http://10.0.0.1',
+      'http://192.168.1.1',
+      'http://[::1]',
+      'http://[fd00::1]',
+      'http://[::ffff:127.0.0.1]',
+      // WHATWG parsing canonicalizes legacy decimal IPv4 spellings.
+      'http://2130706433',
+      'http://0x7f000001',
+    ]) {
+      expect(() => normalizeUrlForStrictFetch(url)).toThrow(STRICT_BLOCK_MESSAGE);
+    }
+    expect(lookupMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects local hostnames and cloud-metadata hosts', async () => {
+    const { normalizeUrlForStrictFetch } = await import('@/lib/server/ssrf-guard');
+    for (const url of [
+      'http://localhost',
+      'http://printer.local',
+      'http://metadata.google.internal',
+    ]) {
+      expect(() => normalizeUrlForStrictFetch(url)).toThrow(STRICT_BLOCK_MESSAGE);
+    }
+  });
+
+  it('accepts public hostnames and IP literals without DNS', async () => {
+    const { normalizeUrlForStrictFetch } = await import('@/lib/server/ssrf-guard');
+    expect(() => normalizeUrlForStrictFetch('https://example.com')).not.toThrow();
+    expect(() => normalizeUrlForStrictFetch('https://8.8.8.8')).not.toThrow();
+    expect(() => normalizeUrlForStrictFetch('https://[2606:4700:4700::1111]')).not.toThrow();
+    expect(lookupMock).not.toHaveBeenCalled();
+  });
+});

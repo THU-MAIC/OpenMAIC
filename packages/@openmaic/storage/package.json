@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/storage",
-  "version": "0.4.0",
+  "version": "0.26.0",
   "description": "The MAIC pluggable persistence layer: document / runtime / KV / asset primitives with browser and HTTP backends, depending only on @openmaic/dsl.",
   "type": "module",
   "main": "./dist/index.js",
@@ -34,6 +34,18 @@
     "./runtime/pg": {
       "types": "./dist/runtime/pg.d.ts",
       "import": "./dist/runtime/pg.js"
+    },
+    "./agent-session/pg": {
+      "types": "./dist/agent-session/pg.d.ts",
+      "import": "./dist/agent-session/pg.js"
+    },
+    "./skill/pg": {
+      "types": "./dist/skill/pg.d.ts",
+      "import": "./dist/skill/pg.js"
+    },
+    "./material/pg": {
+      "types": "./dist/material/pg.d.ts",
+      "import": "./dist/material/pg.js"
     },
     "./asset/pg": {
       "types": "./dist/asset/pg.d.ts",

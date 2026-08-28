@@ -20,7 +20,6 @@ import type {
 import type { SceneOutline } from '@/lib/types/generation';
 import type { VoiceDesign } from '@/lib/audio/voice-design';
 import type { UIMessage } from 'ai';
-import type { AgentEditSessionRecord } from '@/lib/agent/client/agent-edit-session-types';
 import { createLogger } from '@/lib/logger';
 import { beginStageRuntimeDeletionSafely, getRuntimeStore } from '@/lib/runtime/store';
 import type { RuntimeStore } from '@openmaic/storage';
@@ -176,6 +175,18 @@ export interface ChatSessionRecord {
   lastActionIndex?: number;
 }
 
+/** Compatibility-only shape for the retired editor right-rail table. The
+ * table remains in the Dexie schema so deleting a course can clean up rows
+ * created by older clients; no runtime writes or reads it anymore. */
+interface LegacyAgentEditSessionRecord {
+  id: string;
+  stageId: string;
+  title: string;
+  messages: unknown[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 /**
  * PlaybackState table - Playback state snapshot (at most one per stage)
  */
@@ -306,7 +317,7 @@ class MAICDatabase extends Dexie {
   generatedAgents!: EntityTable<GeneratedAgentRecord, 'id'>;
   voiceProfiles!: EntityTable<VoiceProfileRecord, 'id'>;
   autoVoiceCache!: EntityTable<AutoVoiceCacheRecord, 'voiceId'>;
-  agentEditSessions!: EntityTable<AgentEditSessionRecord, 'id'>;
+  agentEditSessions!: EntityTable<LegacyAgentEditSessionRecord, 'id'>;
   folders!: EntityTable<FolderRecord, 'id'>;
   stageFolders!: EntityTable<StageFolderMembership, 'stageId'>;
 

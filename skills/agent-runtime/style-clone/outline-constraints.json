@@ -1,0 +1,5 @@
+{
+  "$comment": "Structural constraints for the style-clone skill. Deliberately thin, and for a reason specific to this mode: the new course's page mix follows the content the user asked for, drawn in the SOURCE deck's layouts, which are not knowable when this file is written — a type-mix constraint here would fight the very content it is meant to carry. The only honest structural claims are that the course opens on a cover page (a slide) and that the runtime's generatable types are the same three as everywhere else. What this skill actually governs — that each page is a copy of a source layout with its content rewritten in place — is per-page and verified by reading the result, not by an outline check. See lib/server/agent-runtime/skills.ts.",
+  "allowedTypes": ["slide", "quiz", "interactive"],
+  "firstSceneType": "slide"
+}

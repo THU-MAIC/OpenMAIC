@@ -33,6 +33,16 @@ export interface LaserOptions {
   duration?: number; // Duration (milliseconds)
 }
 
+/** Canvas selection intent shared by the narration timeline and edit dock. */
+export type PickTarget =
+  | { purpose: 'cue'; stageId: string; sceneId: string; actionId: string; cueType: string }
+  | {
+      purpose: 'element-ref';
+      stageId: string;
+      sceneId: string;
+      ownerSessionId: string;
+    };
+
 /**
  * Canvas Store - Manages all UI state of the Canvas editor
  *
@@ -71,7 +81,7 @@ interface CanvasState {
   // user click an element to bind it to the given scene action (ActionsBar cue).
   // Keyed by actionId (not a positional index) so reorder/delete while armed
   // can't rebind the wrong action.
-  pickTarget: { sceneId: string; actionId: string; cueType: string } | null;
+  pickTarget: PickTarget | null;
 
   // ===== Canvas viewport state =====
   canvasScale: number; // Canvas actual zoom scale
@@ -195,7 +205,7 @@ interface CanvasState {
   clearHighlight: () => void;
   setLaser: (elementId: string, options?: LaserOptions) => void;
   clearLaser: () => void;
-  setPickTarget: (target: { sceneId: string; actionId: string; cueType: string } | null) => void;
+  setPickTarget: (target: PickTarget | null) => void;
   setZoom: (elementId: string, scale: number) => void;
   clearZoom: () => void;
   clearAllEffects: () => void;

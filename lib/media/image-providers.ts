@@ -222,3 +222,24 @@ export function aspectRatioToDimensions(
   if (!w || !h) return { width: maxWidth, height: Math.round((maxWidth * 9) / 16) };
   return { width: maxWidth, height: Math.round((maxWidth * h) / w) };
 }
+
+/**
+ * Scale a width/height pair up to a minimum pixel area while preserving the
+ * aspect ratio, rounding both edges up to a multiple of 8 (common provider
+ * alignment). A no-op for a non-positive floor or degenerate dimensions.
+ */
+export function applyMinPixelFloor(
+  width: number,
+  height: number,
+  minPixels: number,
+): { width: number; height: number } {
+  if (!(minPixels > 0) || width <= 0 || height <= 0) return { width, height };
+  const area = width * height;
+  if (area >= minPixels) return { width, height };
+
+  const scale = Math.sqrt(minPixels / area);
+  return {
+    width: Math.ceil((width * scale) / 8) * 8,
+    height: Math.ceil((height * scale) / 8) * 8,
+  };
+}

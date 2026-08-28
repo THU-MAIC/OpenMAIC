@@ -149,6 +149,18 @@ describe('resolveImageSrc (pure)', () => {
     expect(r.resolution).toEqual({ kind: 'placeholder' });
   });
 
+  it('renders an allocated asset id through the pool lease (RFC #1153 part 2)', () => {
+    // `resolveImageIds` writes the allocated pool asset id into
+    // `PPTImageElement.src` on server-backed deployments; the renderer already
+    // resolves opaque refs through the pool registry, so the resolved pool URL
+    // is what reaches the <img>.
+    const allocated = { ...PLACEHOLDER, src: 'ast_allocated_image_0001' };
+    const r = resolveImageSrc(allocated, STAGE, undefined, 'blob:pool-image');
+    expect(r.resolvedSrc).toBe('blob:pool-image');
+    expect(r.resolvedFromAsset).toBe(true);
+    expect(r.resolution).toEqual({ kind: 'url', url: 'blob:pool-image' });
+  });
+
   it('returns disabled for an unresolved placeholder when generation is off', () => {
     const r = resolveImageSrc(PLACEHOLDER, STAGE, undefined, null, true);
     expect(r.resolvedSrc).toBe('');

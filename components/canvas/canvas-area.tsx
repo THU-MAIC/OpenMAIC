@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Play } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,8 @@ import type { CanvasToolbarProps } from '@/components/canvas/canvas-toolbar';
 import type { Scene, StageMode } from '@/lib/types/stage';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { ClassroomCompletePageConnected } from '@/components/scene-renderers/classroom-complete';
+import { ContainBox } from '@/components/edit/ContainBox';
+import { useInWorkbenchPanel } from '@/lib/workbench/panel-context';
 
 interface CanvasAreaProps extends CanvasToolbarProps {
   readonly currentScene: Scene | null;
@@ -53,6 +55,7 @@ export function CanvasArea({
   onRetryGeneration,
 }: CanvasAreaProps) {
   const { t } = useI18n();
+  const inWorkbenchPanel = useInWorkbenchPanel();
   const showControls = mode === 'playback' && !whiteboardOpen;
   const showPlayHint =
     showControls &&
@@ -96,9 +99,11 @@ export function CanvasArea({
             : 'bg-gray-50/30 dark:bg-gray-900/30',
         )}
       >
-        <div
+        <StageViewport
+          workbench={inWorkbenchPanel}
+          interactive={currentScene?.type === 'interactive'}
           className={cn(
-            'aspect-[16/9] h-full max-h-full max-w-full bg-white dark:bg-gray-800 shadow-2xl rounded-lg overflow-hidden relative transition-all duration-700',
+            'bg-white dark:bg-gray-800 shadow-2xl rounded-lg overflow-hidden relative transition-all duration-700',
             showControls && !isLiveSession && currentScene?.type === 'slide' && 'cursor-pointer',
             currentScene?.type === 'interactive'
               ? 'shadow-blue-200/50 dark:shadow-blue-900/50 ring-1 ring-blue-900/5 dark:ring-blue-500/10'
@@ -242,7 +247,7 @@ export function CanvasArea({
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
+        </StageViewport>
       </div>
 
       {/* ── Canvas Toolbar — in document flow, only when not merged into roundtable ── */}
@@ -276,5 +281,44 @@ export function CanvasArea({
         />
       )}
     </div>
+  );
+}
+
+function StageViewport({
+  workbench,
+  interactive,
+  className,
+  onClick,
+  children,
+}: {
+  readonly workbench: boolean;
+  readonly interactive: boolean;
+  readonly className?: string;
+  readonly onClick?: (event: React.MouseEvent) => void;
+  readonly children: ReactNode;
+}) {
+  if (interactive) {
+    return (
+      <div className={cn('h-full w-full', className)} onClick={onClick}>
+        {children}
+      </div>
+    );
+  }
+  if (!workbench) {
+    return (
+      <div
+        className={cn('aspect-[16/9] h-full max-h-full max-w-full', className)}
+        onClick={onClick}
+      >
+        {children}
+      </div>
+    );
+  }
+  return (
+    <ContainBox fit="contain" className={className}>
+      <div className="relative h-full w-full" onClick={onClick}>
+        {children}
+      </div>
+    </ContainBox>
   );
 }

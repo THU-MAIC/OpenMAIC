@@ -15,6 +15,25 @@ export const FOLDER_NAME_MAX_WIDTH = 40;
 export const FOLDER_COUNT_LIMIT = 50;
 
 /**
+ * A folder-name rejection shared by the local (IndexedDB), server route and PG
+ * data layers (moved here so the server-side provider can throw the same typed
+ * error without pulling the Dexie store into a server bundle; `stage-storage.ts`
+ * re-exports it, keeping every import site intact).
+ *
+ * `kind` is the machine code the UI maps to a localized message — the same
+ * contract as {@link FolderNameValidationError} plus `duplicate` / `limit`.
+ */
+export class FolderNameError extends Error {
+  constructor(
+    message: string,
+    readonly kind: 'empty' | 'tooLong' | 'duplicate' | 'limit',
+  ) {
+    super(message);
+    this.name = 'FolderNameError';
+  }
+}
+
+/**
  * Full-width character ranges (CJK, Hangul, full-width/half-width forms, CJK
  * punctuation, kana). Hoisted to a module const so it is compiled once rather
  * than per character.

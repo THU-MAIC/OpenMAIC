@@ -6,6 +6,17 @@
  */
 import { promises as dns } from 'node:dns';
 import { isIP } from 'node:net';
+import ipaddr from 'ipaddr.js';
+
+const CLOUD_METADATA_HOSTNAMES = new Set(['metadata.google.internal']);
+const CLOUD_METADATA_ADDRESSES = new Set(['169.254.169.254', '100.100.100.200', 'fd00:ec2::254']);
+
+export class UnsafeNetworkTargetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnsafeNetworkTargetError';
+  }
+}
 
 function normalizeAddress(value: string): string {
   let normalized = value.trim().toLowerCase();
@@ -13,6 +24,62 @@ function normalizeAddress(value: string): string {
     normalized = normalized.slice(1, -1);
   }
   return normalized.replace(/\.+$/, '');
+}
+
+/**
+ * Assert that a connection address is globally routable unicast.
+ * IPv4-mapped IPv6 is classified as IPv4 so ::ffff:127.0.0.1 cannot hide.
+ */
+export function assertSafeIp(value: string): void {
+  const normalized = normalizeAddress(value);
+  let address: ipaddr.IPv4 | ipaddr.IPv6;
+  try {
+    address = ipaddr.parse(normalized);
+  } catch {
+    throw new UnsafeNetworkTargetError(`Unable to classify network address: ${value}`);
+  }
+  if (address.kind() === 'ipv6' && (address as ipaddr.IPv6).isIPv4MappedAddress()) {
+    address = (address as ipaddr.IPv6).toIPv4Address();
+  }
+  const canonical = address.toString().toLowerCase();
+  if (
+    CLOUD_METADATA_ADDRESSES.has(canonical) ||
+    isPrivateIP(canonical) ||
+    address.range() !== 'unicast'
+  ) {
+    throw new UnsafeNetworkTargetError('Local/private/reserved network URLs are not allowed');
+  }
+}
+
+/** Strict URL-layer validation for outbound material fetches (no DNS side effects). */
+export function normalizeUrlForStrictFetch(value: string): URL {
+  let parsed: URL;
+  try {
+    // WHATWG parsing canonicalizes legacy decimal/octal IPv4 spellings before checks.
+    parsed = new URL(value);
+  } catch {
+    throw new UnsafeNetworkTargetError('Invalid URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new UnsafeNetworkTargetError('Only HTTP(S) URLs are allowed');
+  }
+  if (parsed.username || parsed.password) {
+    throw new UnsafeNetworkTargetError('URLs containing userinfo are not allowed');
+  }
+  if (parsed.port && parsed.port !== '80' && parsed.port !== '443') {
+    throw new UnsafeNetworkTargetError('Only ports 80 and 443 are allowed');
+  }
+  const hostname = normalizeAddress(parsed.hostname);
+  if (
+    CLOUD_METADATA_HOSTNAMES.has(hostname) ||
+    hostname === 'localhost' ||
+    hostname.endsWith('.local')
+  ) {
+    throw new UnsafeNetworkTargetError('Local/private/reserved network URLs are not allowed');
+  }
+  // IP literals never invoke lookup in Node/undici, so this branch is mandatory.
+  if (isIP(hostname)) assertSafeIp(hostname);
+  return parsed;
 }
 
 function parseIPv4(ip: string): number[] | null {

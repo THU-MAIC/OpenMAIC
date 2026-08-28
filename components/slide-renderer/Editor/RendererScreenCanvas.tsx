@@ -13,6 +13,7 @@ import { retryMediaTask } from '@/lib/media/media-orchestrator';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
 import { mediaResolutionCanRetry, type MediaResolution } from '@/lib/media/resolve-media-ref';
+import { SCREEN_ELEMENT_ID_PREFIX } from '../element-dom';
 
 const log = createLogger('RendererScreenCanvas');
 
@@ -353,7 +354,7 @@ export function RendererScreenCanvas() {
       canvasPercentage={canvasPercentage}
       onScaleChange={handleScaleChange}
       effects={effects}
-      elementIdPrefix="screen-element-"
+      elementIdPrefix={SCREEN_ELEMENT_ID_PREFIX}
       renderImage={(element, _src, defaultContent) => (
         <PlaybackImageContent
           element={element}
