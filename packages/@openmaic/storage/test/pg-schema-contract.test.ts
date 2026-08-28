@@ -245,6 +245,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   id                  TEXT PRIMARY KEY,
   owner_id            TEXT NOT NULL,
   prompt              TEXT NOT NULL,
+  title               TEXT,
   stage_id            TEXT NOT NULL,
   active_stage_id     TEXT,
   skill_id            TEXT,
@@ -268,6 +269,9 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
 
 ALTER TABLE agent_sessions
   ADD COLUMN IF NOT EXISTS delivered_user_message_seq INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE agent_sessions
+  ADD COLUMN IF NOT EXISTS title TEXT;
 
 CREATE INDEX IF NOT EXISTS agent_sessions_status_live_idx
   ON agent_sessions (status, created_at) WHERE deleted_at IS NULL;
