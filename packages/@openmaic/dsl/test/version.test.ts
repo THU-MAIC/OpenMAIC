@@ -15,8 +15,8 @@ import {
   needsRuntimeMigration,
   migrate,
   migrateRuntime,
-  stripLegacyLineGeometry,
 } from '@openmaic/dsl';
+import { stripLegacyLineGeometry } from '../src/legacy-line-geometry.js';
 
 describe('DSL_MIGRATIONS ladder invariants', () => {
   it('is a contiguous chain ending at DSL_VERSION', () => {
@@ -507,6 +507,63 @@ describe('0.2.0 -> 0.3.0 ladder entry (legacy line geometry)', () => {
     expect(stripLegacyLineGeometry(clean)).toBe(clean);
     expect(stripLegacyLineGeometry(42)).toBe(42);
     expect(stripLegacyLineGeometry(null)).toBe(null);
+  });
+
+  it('strips dirty lines on interactive whiteboard slides too', () => {
+    const wbDirty = lineEl({ id: 'l1', rotate: 45 });
+    const wbClean = lineEl({ id: 'l2' });
+    const input = {
+      stage: { id: 'st', name: 'Course', createdAt: 1, updatedAt: 2 },
+      scenes: [
+        {
+          ...slideSceneWith([textEl]),
+          whiteboards: [{ id: 'wb-1', type: 'slide', elements: [wbDirty, wbClean] }],
+        },
+        quizScene,
+      ],
+    };
+
+    const out = migrate(input) as unknown as Record<string, unknown> & {
+      scenes: unknown[];
+    };
+    expect(out[DSL_VERSION_KEY]).toBe('0.3.0');
+    // localized cast: the slide/quiz scene union only matters for these paths
+    const scene = out.scenes[0] as {
+      content: { canvas: { elements: Record<string, unknown>[] } };
+      whiteboards?: { elements: Record<string, unknown>[] }[];
+    };
+    const [cleaned, kept] = scene.whiteboards![0].elements;
+    expect(cleaned).toEqual(lineEl({ id: 'l1' }));
+    // untouched whiteboard element is shared by reference
+    expect(kept).toBe(wbClean);
+    // the canvas had no dirty lines, so its subtree stays shared
+    expect(scene.content.canvas.elements[0]).toBe(textEl);
+    expect(out.scenes[1]).toEqual(quizScene);
+  });
+
+  it('cleans canvas and whiteboards of the same scene in one pass', () => {
+    const canvasDirty = lineEl({ id: 'l1', rotate: 45 });
+    const wbDirty = lineEl({ id: 'l2', height: 30 });
+    const input = {
+      stage: { id: 'st', name: 'Course', createdAt: 1, updatedAt: 2 },
+      scenes: [
+        {
+          ...slideSceneWith([canvasDirty]),
+          whiteboards: [{ id: 'wb-1', type: 'slide', elements: [wbDirty] }],
+        },
+      ],
+    };
+
+    const out = migrate(input) as {
+      [DSL_VERSION_KEY]: string;
+      scenes: {
+        content: { canvas: { elements: Record<string, unknown>[] } };
+        whiteboards?: { elements: Record<string, unknown>[] }[];
+      }[];
+    };
+    expect(out[DSL_VERSION_KEY]).toBe('0.3.0');
+    expect(out.scenes[0].content.canvas.elements[0]).toEqual(lineEl({ id: 'l1' }));
+    expect(out.scenes[0].whiteboards![0].elements[0]).toEqual(lineEl({ id: 'l2' }));
   });
 });
 
