@@ -833,7 +833,9 @@ export function buildDslCourseTools(deps: CourseToolDeps): AgentTool<never, neve
         );
       }
       try {
-        await runStageMutation(signal, () => putSceneBringingCurrent(deps.store, loaded.stageId, next));
+        await runStageMutation(signal, () =>
+          putSceneBringingCurrent(deps.store, loaded.stageId, next),
+        );
       } catch (error) {
         return toolResult(
           `patch_stage could not persist the scene: ${error instanceof Error ? error.message : String(error)}`,

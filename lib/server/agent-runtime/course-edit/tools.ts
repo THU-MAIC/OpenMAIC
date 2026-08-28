@@ -122,7 +122,9 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
         );
       }
       if (summary.changed) {
-        await runStageMutation(signal, () => putSceneBringingCurrent(deps.store, params.stageId, scene));
+        await runStageMutation(signal, () =>
+          putSceneBringingCurrent(deps.store, params.stageId, scene),
+        );
         deps.onCheckpoint({
           tool: 'generate_tts',
           stageId: params.stageId,
