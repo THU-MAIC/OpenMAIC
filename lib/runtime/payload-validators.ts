@@ -2,6 +2,9 @@ import { isChatMessageSkeleton, isQuizAttemptSkeleton } from '@openmaic/dsl';
 import type { RuntimePayloadValidator } from '@openmaic/storage';
 
 import { whiteboardRuntimePayloadValidator } from '@/lib/whiteboard/runtime/validate';
+import { validateStudentProfile } from '@/lib/zhongkao/profile';
+import { ZHONGKAO_RUNTIME_KINDS } from '@/lib/zhongkao/runtime-kinds';
+import { validateStudyAttempt } from '@/lib/zhongkao/study-attempt';
 
 const chat: RuntimePayloadValidator = (payload) =>
   isChatMessageSkeleton(payload)
@@ -29,9 +32,16 @@ const quizAttempt: RuntimePayloadValidator = (payload) =>
         ],
       };
 
+const zhongkaoStudentProfile: RuntimePayloadValidator = (payload) =>
+  validateStudentProfile(payload);
+
+const zhongkaoStudyAttempt: RuntimePayloadValidator = (payload) => validateStudyAttempt(payload);
+
 /** Complete app validator table. RuntimeStore options replace their defaults. */
 export const APP_RUNTIME_PAYLOAD_VALIDATORS = Object.freeze({
   chat,
   quizAttempt,
   whiteboard: whiteboardRuntimePayloadValidator,
+  [ZHONGKAO_RUNTIME_KINDS.studentProfile]: zhongkaoStudentProfile,
+  [ZHONGKAO_RUNTIME_KINDS.studyAttempt]: zhongkaoStudyAttempt,
 }) satisfies Readonly<Record<string, RuntimePayloadValidator>>;

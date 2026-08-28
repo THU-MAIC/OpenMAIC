@@ -526,6 +526,8 @@ describe('embedded persistence route', () => {
       'chat',
       'quizAttempt',
       'whiteboard',
+      'zhongkaoStudentProfile',
+      'zhongkaoStudyAttempt',
     ]);
   });
 
