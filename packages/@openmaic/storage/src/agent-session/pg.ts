@@ -22,6 +22,7 @@ import {
   type AgentSessionHooks,
   type AgentSessionMeta,
   type AgentSessionStore,
+  type AgentSessionTitleStore,
   type AgentSessionTransaction,
   type AgentSessionUrlSource,
   type AgentSessionUrlStore,
@@ -82,6 +83,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   id                  TEXT PRIMARY KEY,
   owner_id            TEXT NOT NULL,
   prompt              TEXT NOT NULL,
+  title               TEXT,
   stage_id            TEXT NOT NULL,
   active_stage_id     TEXT,
   skill_id            TEXT,
@@ -105,6 +107,9 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
 
 ALTER TABLE agent_sessions
   ADD COLUMN IF NOT EXISTS delivered_user_message_seq INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE agent_sessions
+  ADD COLUMN IF NOT EXISTS title TEXT;
 
 CREATE INDEX IF NOT EXISTS agent_sessions_status_live_idx
   ON agent_sessions (status, created_at) WHERE deleted_at IS NULL;
@@ -255,6 +260,7 @@ interface SessionRow extends Record<string, unknown> {
   id: string;
   owner_id: string;
   prompt: string;
+  title: string | null;
   stage_id: string;
   skill_id: string | null;
   origin: string | null;
@@ -270,7 +276,7 @@ interface SessionRow extends Record<string, unknown> {
   updated_at: Date | string;
 }
 
-const SESSION_COLUMNS = `id, owner_id, prompt, stage_id, skill_id, origin,
+const SESSION_COLUMNS = `id, owner_id, prompt, title, stage_id, skill_id, origin,
   existing_course, status, attempt, delivered_user_message_seq, lease_worker_id, lease_worker_pid,
   lease_heartbeat_at, error, created_at, updated_at`;
 
@@ -292,6 +298,7 @@ function sessionMeta(row: SessionRow): AgentSessionMeta {
     id: row.id,
     ownerId: row.owner_id,
     prompt: row.prompt,
+    ...(row.title !== null ? { title: row.title } : {}),
     stageId: row.stage_id,
     ...(row.skill_id ? { skillId: row.skill_id } : {}),
     ...(row.origin ? { origin: row.origin } : {}),
@@ -334,6 +341,7 @@ let savepointSerial = 0;
 export class PgAgentSessionStore
   implements
     AgentSessionStore,
+    AgentSessionTitleStore,
     AgentSessionEventLog,
     AgentSessionEntryTree,
     OwnerSessionEventProjection,
@@ -447,6 +455,21 @@ export class PgAgentSessionStore
       [ownerId],
     );
     return result.rows.map(sessionMeta);
+  }
+
+  async setManualSessionTitle(
+    sessionId: string,
+    ownerId: string,
+    title: string | null,
+  ): Promise<AgentSessionMeta | null> {
+    const result = await this.queryable.query<SessionRow>(
+      `UPDATE ${this.table('sessions')}
+       SET title = $3, updated_at = now()
+       WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+       RETURNING ${SESSION_COLUMNS}`,
+      [sessionId, ownerId, title],
+    );
+    return result.rows[0] ? sessionMeta(result.rows[0]) : null;
   }
 
   async softDeleteSession(sessionId: string, ownerId: string): Promise<boolean> {

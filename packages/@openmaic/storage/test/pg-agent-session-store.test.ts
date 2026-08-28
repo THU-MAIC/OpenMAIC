@@ -13,6 +13,7 @@ import {
   AgentSessionLeaseLostError,
   AGENT_SESSION_LIFECYCLE,
 } from '../src/agent-session/types.js';
+import type { AgentSessionTitleStore } from '../src/index.js';
 import { runAgentSessionConcurrencyContract } from './agent-session-concurrency-contract.js';
 import { makeAgentSessionInput, runAgentSessionStoreContract } from './agent-session-contract.js';
 import { runAgentSessionUrlContract } from './agent-session-url-contract.js';
@@ -52,6 +53,106 @@ describe('PgAgentSessionStore with PGlite', () => {
     expect(result.rows.map((row) => row.table_name)).toEqual(
       Object.values(DEFAULT_AGENT_SESSION_TABLE_NAMES).sort(),
     );
+  });
+
+  test('persists a manual title in session detail and owner lists', async () => {
+    await store.createSession(makeAgentSessionInput());
+    await db.query(`UPDATE agent_sessions SET updated_at = '2000-01-01T00:00:00Z' WHERE id = $1`, [
+      'session-1',
+    ]);
+    const titles: AgentSessionTitleStore = store;
+
+    await expect(titles.setManualSessionTitle('session-1', 'owner-a', 'Focused question')).resolves.toMatchObject({
+      id: 'session-1',
+      title: 'Focused question',
+    });
+    await expect(store.getSession('session-1')).resolves.toMatchObject({
+      title: 'Focused question',
+      updatedAt: expect.any(Number),
+    });
+    expect((await store.getSession('session-1'))!.updatedAt).toBeGreaterThan(
+      new Date('2000-01-01T00:00:00Z').getTime(),
+    );
+    await expect(store.listSessionsByOwner('owner-a')).resolves.toMatchObject([
+      { id: 'session-1', title: 'Focused question' },
+    ]);
+  });
+
+  test('clears a manual title without emitting a null title field', async () => {
+    await store.createSession(makeAgentSessionInput());
+    const titles: AgentSessionTitleStore = store;
+    await titles.setManualSessionTitle('session-1', 'owner-a', 'Temporary title');
+
+    await expect(titles.setManualSessionTitle('session-1', 'owner-a', null)).resolves.toMatchObject({
+      id: 'session-1',
+    });
+    expect(await store.getSession('session-1')).not.toHaveProperty('title');
+    expect((await store.listSessionsByOwner('owner-a'))[0]).not.toHaveProperty('title');
+  });
+
+  test('does not set a title for another owner session', async () => {
+    await store.createSession(makeAgentSessionInput());
+    const titles: AgentSessionTitleStore = store;
+
+    await expect(titles.setManualSessionTitle('session-1', 'owner-b', 'Unauthorized')).resolves.toBeNull();
+    expect(await store.getSession('session-1')).not.toHaveProperty('title');
+  });
+
+  test('does not set a title for a soft-deleted session', async () => {
+    await store.createSession(makeAgentSessionInput());
+    const titles: AgentSessionTitleStore = store;
+    await store.softDeleteSession('session-1', 'owner-a');
+
+    await expect(titles.setManualSessionTitle('session-1', 'owner-a', 'Gone')).resolves.toBeNull();
+  });
+
+  test('upgrades an old session schema with existing data intact', async () => {
+    const legacyTables = { sessions: 'legacy_sessions' };
+    await db.query(`
+      CREATE TABLE legacy_sessions (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        stage_id TEXT NOT NULL,
+        active_stage_id TEXT,
+        skill_id TEXT,
+        origin TEXT,
+        existing_course BOOLEAN NOT NULL DEFAULT FALSE,
+        status TEXT NOT NULL DEFAULT 'queued',
+        attempt INTEGER NOT NULL DEFAULT 0,
+        delivered_user_message_seq INTEGER NOT NULL DEFAULT 0,
+        lease_worker_id TEXT,
+        lease_worker_pid INTEGER,
+        lease_heartbeat_at BIGINT,
+        cancel_requested_at BIGINT,
+        error TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        deleted_at TIMESTAMPTZ
+      )
+    `);
+    await db.query(
+      `INSERT INTO legacy_sessions (id, owner_id, prompt, stage_id) VALUES ($1, $2, $3, $4)`,
+      ['legacy-1', 'owner-a', 'Existing prompt', 'stage-legacy'],
+    );
+
+    await ensureAgentSessionSchema(db, legacyTables);
+    const legacyStore = new PgAgentSessionStore(db, {
+      ...optionsFor(db),
+      tableNames: legacyTables,
+    });
+
+    await expect(legacyStore.getSession('legacy-1')).resolves.toMatchObject({
+      id: 'legacy-1',
+      prompt: 'Existing prompt',
+    });
+    expect(await legacyStore.getSession('legacy-1')).not.toHaveProperty('title');
+    await expect(
+      db.query<{ is_nullable: string }>(
+        `SELECT is_nullable FROM information_schema.columns
+         WHERE table_name = 'legacy_sessions' AND column_name = 'title'`,
+      ),
+    ).resolves.toMatchObject({ rows: [{ is_nullable: 'YES' }] });
   });
 
   test('requires a correctly pinned transaction hook', () => {

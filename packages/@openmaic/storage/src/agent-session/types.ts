@@ -78,6 +78,7 @@ export interface AgentSessionMeta {
   id: string;
   ownerId: string;
   prompt: string;
+  title?: string;
   /** The immutable stage with which the conversation was created. */
   stageId: string;
   skillId?: string;
@@ -339,6 +340,14 @@ export interface AgentSessionStore {
    * remain responsible for merging product tables outside this package.
    */
   mergeOwner(fromOwnerId: string, toOwnerId: string): Promise<number>;
+}
+
+export interface AgentSessionTitleStore {
+  setManualSessionTitle(
+    sessionId: string,
+    ownerId: string,
+    title: string | null,
+  ): Promise<AgentSessionMeta | null>;
 }
 
 export interface NewAgentSessionEvent {
