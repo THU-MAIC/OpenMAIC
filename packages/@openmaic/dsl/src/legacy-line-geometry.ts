@@ -15,19 +15,24 @@
  *
  * Semantics (mirroring the package's migration transforms):
  *   - **never mutates** its input; stripped elements are fresh objects and the
- *     enclosing scene / content / canvas are copied along the touched path,
+ *     enclosing objects are copied along the touched path,
  *   - **returns the input by identity** when nothing needs stripping, so
  *     callers can detect a no-op cheaply,
  *   - **shares** every untouched subtree by reference,
  *   - **idempotent**: stripping an already-clean document is a no-op.
  *
- * Both slide surfaces are walked: the scene canvas
- * (`scenes[*].content.canvas.elements`) and interactive whiteboard slides
- * (`scenes[*].whiteboards[*].elements`, which hang their `elements` directly
- * off the slide) — both were written by the same unchecked runtimes. Quiz /
- * widget / PBL and other scene kinds pass through untouched. Anything that is
- * not shaped as expected (a missing level, a non-array where an array is
- * expected, a non-object element) passes through untouched too: this is a
+ * Every line-element surface of every migratable envelope is walked (see
+ * `version.ts`: the migratable unit is deliberately envelope-agnostic):
+ *   - a **Stage aggregate** (`{ stage, scenes }`): each scene's canvas
+ *     (`scenes[*].content.canvas.elements`) and interactive whiteboard slides
+ *     (`scenes[*].whiteboards[*].elements`, which hang their `elements`
+ *     directly off the slide), plus the stage-level explainer boards
+ *     (`stage.whiteboard[*].elements`),
+ *   - a **single Scene row** (its `content.canvas` and `whiteboards`),
+ *   - a **single Stage row** (its `whiteboard`).
+ * Quiz / widget / PBL and other scene kinds pass through untouched. Anything
+ * that is not shaped as expected (a missing level, a non-array where an array
+ * is expected, a non-object element) passes through untouched too: this is a
  * targeted cleanup, not a validator — it never throws and never invents shape.
  *
  * No runtime dependencies.
@@ -48,60 +53,41 @@ function ownsAnyField(el: unknown, fields: readonly string[]): el is Raw {
 
 /**
  * Strip the stray legacy `rotate` / `height` fields from `type: 'line'`
- * elements anywhere under a document's slide surfaces:
- * `scenes[*].content.canvas.elements` and `scenes[*].whiteboards[*].elements`.
- * Pure: returns the input by identity when nothing needs stripping; fresh
- * objects along the touched path otherwise. See the module docstring for why
- * the strip is lossless and what passes through.
+ * elements on every slide surface of a Stage aggregate, a single Scene row, or
+ * a single Stage row (see the module docstring for the exact paths). Pure:
+ * returns the input by identity when nothing needs stripping; fresh objects
+ * along the touched path otherwise.
  */
 export function stripLegacyLineGeometry(doc: unknown): unknown {
-  if (!isObject(doc) || !Array.isArray(doc.scenes)) return doc;
+  if (!isObject(doc)) return doc;
+
+  // Single Scene row: slide surfaces hang off `content.canvas` / `whiteboards`.
+  const asScene = stripSceneFields(doc);
+  if (asScene !== undefined) return asScene;
+
+  // Single Stage row: explainer boards hang off `whiteboard`.
+  const asStage = stripStageFields(doc);
+  if (asStage !== undefined) return asStage;
+
+  // Stage aggregate: the scenes array, plus the embedded stage row whose
+  // explainer boards can carry the same stray fields.
+  if (!Array.isArray(doc.scenes)) return doc;
 
   let nextScenes: unknown[] | undefined;
-  doc.scenes.forEach((scene, sceneIndex) => {
+  (doc.scenes as unknown[]).forEach((scene, sceneIndex) => {
     if (!isObject(scene)) return;
-
-    let nextScene: Raw | undefined;
-
-    // The scene's main slide canvas.
-    const content = scene.content;
-    if (isObject(content)) {
-      const canvas = content.canvas;
-      if (isObject(canvas) && Array.isArray(canvas.elements)) {
-        const nextElements = stripElementList(canvas.elements);
-        if (nextElements !== undefined) {
-          nextScene = {
-            ...scene,
-            content: { ...content, canvas: { ...canvas, elements: nextElements } },
-          };
-        }
-      }
-    }
-
-    // Interactive whiteboard slides: same elements union, hanging directly off
-    // the slide instead of under `content.canvas`.
-    if (Array.isArray(scene.whiteboards)) {
-      let nextWhiteboards: unknown[] | undefined;
-      (scene.whiteboards as unknown[]).forEach((slide, slideIndex) => {
-        if (!isObject(slide) || !Array.isArray(slide.elements)) return;
-        const nextElements = stripElementList(slide.elements);
-        if (nextElements === undefined) return;
-        (nextWhiteboards ??= [...(scene.whiteboards as unknown[])])[slideIndex] = {
-          ...slide,
-          elements: nextElements,
-        };
-      });
-      if (nextWhiteboards !== undefined) {
-        nextScene = { ...(nextScene ?? scene), whiteboards: nextWhiteboards };
-      }
-    }
-
-    if (nextScene !== undefined) {
-      (nextScenes ??= [...(doc.scenes as unknown[])])[sceneIndex] = nextScene;
-    }
+    const nextScene = stripSceneFields(scene);
+    if (nextScene === undefined) return;
+    (nextScenes ??= [...(doc.scenes as unknown[])])[sceneIndex] = nextScene;
   });
-  if (nextScenes === undefined) return doc;
-  return { ...doc, scenes: nextScenes };
+
+  const nextStage = isObject(doc.stage) ? stripStageFields(doc.stage) : undefined;
+  if (nextScenes === undefined && nextStage === undefined) return doc;
+  return {
+    ...doc,
+    ...(nextScenes !== undefined ? { scenes: nextScenes } : {}),
+    ...(nextStage !== undefined ? { stage: nextStage } : {}),
+  };
 }
 
 /**
@@ -118,4 +104,62 @@ function stripElementList(elements: unknown[]): unknown[] | undefined {
     (nextElements ??= [...elements])[elementIndex] = stripped;
   });
   return nextElements;
+}
+
+/**
+ * Strip a list of slide-like objects (scene `whiteboards`, stage `whiteboard`):
+ * each entry hangs its `elements` directly off the object. Returns a fresh
+ * array when anything was stripped, `undefined` when the list is clean.
+ */
+function stripSlideList(slides: unknown[]): unknown[] | undefined {
+  let nextSlides: unknown[] | undefined;
+  slides.forEach((slide, slideIndex) => {
+    if (!isObject(slide) || !Array.isArray(slide.elements)) return;
+    const nextElements = stripElementList(slide.elements);
+    if (nextElements === undefined) return;
+    (nextSlides ??= [...slides])[slideIndex] = { ...slide, elements: nextElements };
+  });
+  return nextSlides;
+}
+
+/**
+ * Strip the slide surfaces of one scene-shaped row (main canvas under
+ * `content.canvas`, interactive whiteboard slides under `whiteboards`).
+ * Returns a fresh row when anything was stripped, `undefined` when clean.
+ */
+function stripSceneFields(scene: Raw): Raw | undefined {
+  let nextScene: Raw | undefined;
+
+  const content = scene.content;
+  if (isObject(content)) {
+    const canvas = content.canvas;
+    if (isObject(canvas) && Array.isArray(canvas.elements)) {
+      const nextElements = stripElementList(canvas.elements);
+      if (nextElements !== undefined) {
+        nextScene = {
+          ...scene,
+          content: { ...content, canvas: { ...canvas, elements: nextElements } },
+        };
+      }
+    }
+  }
+
+  if (Array.isArray(scene.whiteboards)) {
+    const nextWhiteboards = stripSlideList(scene.whiteboards as unknown[]);
+    if (nextWhiteboards !== undefined) {
+      nextScene = { ...(nextScene ?? scene), whiteboards: nextWhiteboards };
+    }
+  }
+
+  return nextScene;
+}
+
+/**
+ * Strip the explainer-board surface of one stage-shaped row (`whiteboard`).
+ * Returns a fresh row when anything was stripped, `undefined` when clean.
+ */
+function stripStageFields(stage: Raw): Raw | undefined {
+  if (!Array.isArray(stage.whiteboard)) return undefined;
+  const nextWhiteboard = stripSlideList(stage.whiteboard as unknown[]);
+  return nextWhiteboard === undefined ? undefined : { ...stage, whiteboard: nextWhiteboard };
 }

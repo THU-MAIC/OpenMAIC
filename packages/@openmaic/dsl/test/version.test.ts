@@ -565,6 +565,82 @@ describe('0.2.0 -> 0.3.0 ladder entry (legacy line geometry)', () => {
     expect(out.scenes[0].content.canvas.elements[0]).toEqual(lineEl({ id: 'l1' }));
     expect(out.scenes[0].whiteboards![0].elements[0]).toEqual(lineEl({ id: 'l2' }));
   });
+
+  it('strips dirty lines on the stage-level explainer boards (stage.whiteboard)', () => {
+    const boardDirty = lineEl({ id: 'l1', rotate: 45 });
+    const boardClean = lineEl({ id: 'l2' });
+    const input = {
+      stage: {
+        id: 'st',
+        name: 'Course',
+        createdAt: 1,
+        updatedAt: 2,
+        whiteboard: [{ id: 'wb-1', elements: [boardDirty, boardClean] }],
+      },
+      scenes: [slideSceneWith([textEl])],
+    };
+
+    const out = migrate(input) as unknown as {
+      [DSL_VERSION_KEY]: string;
+      stage: { whiteboard: { elements: Record<string, unknown>[] }[] };
+      scenes: { content: { canvas: { elements: Record<string, unknown>[] } } }[];
+    };
+    expect(out[DSL_VERSION_KEY]).toBe('0.3.0');
+    const [cleaned, kept] = out.stage.whiteboard[0].elements;
+    expect(cleaned).toEqual(lineEl({ id: 'l1' }));
+    expect(kept).toBe(boardClean);
+    // untouched scene canvas subtree stays shared
+    expect(out.scenes[0].content.canvas.elements[0]).toBe(textEl);
+  });
+
+  it('cleans a single Scene row envelope (no scenes array around it)', () => {
+    const dirty = lineEl({ id: 'l1', rotate: 45 });
+    const sceneRow = {
+      id: 's1',
+      stageId: 'st',
+      type: 'slide',
+      order: 0,
+      content: { type: 'slide', canvas: { id: 'c1', elements: [dirty, textEl] } },
+      [DSL_VERSION_KEY]: '0.2.0',
+    };
+
+    const out = migrate(sceneRow) as unknown as {
+      [DSL_VERSION_KEY]: string;
+      content: { canvas: { elements: Record<string, unknown>[] } };
+    };
+    expect(out[DSL_VERSION_KEY]).toBe('0.3.0');
+    expect(out.content.canvas.elements[0]).toEqual(lineEl({ id: 'l1' }));
+    expect(out.content.canvas.elements[1]).toBe(textEl);
+  });
+
+  it('cleans a single Stage row envelope (whiteboard explainer boards)', () => {
+    const boardDirty = lineEl({ id: 'l1', rotate: 45 });
+    const stageRow = {
+      id: 'st',
+      name: 'Course',
+      whiteboard: [{ id: 'wb-1', elements: [boardDirty] }],
+      [DSL_VERSION_KEY]: '0.2.0',
+    };
+
+    const out = migrate(stageRow) as unknown as {
+      [DSL_VERSION_KEY]: string;
+      whiteboard: { elements: Record<string, unknown>[] }[];
+    };
+    expect(out[DSL_VERSION_KEY]).toBe('0.3.0');
+    expect(out.whiteboard[0].elements[0]).toEqual(lineEl({ id: 'l1' }));
+  });
+
+  it('returns a Stage aggregate by identity when nothing on any surface is dirty', () => {
+    const input = {
+      stage: { id: 'st', name: 'Course', whiteboard: [{ id: 'wb-1', elements: [textEl] }] },
+      scenes: [slideSceneWith([textEl]), quizScene],
+    };
+    expect(stripLegacyLineGeometry(input)).toBe(input);
+    // malformed surfaces pass through instead of throwing
+    expect(
+      stripLegacyLineGeometry({ scenes: [{ whiteboards: 42 }], stage: { whiteboard: 'nope' } }),
+    ).toEqual({ scenes: [{ whiteboards: 42 }], stage: { whiteboard: 'nope' } });
+  });
 });
 
 describe('migrate', () => {
