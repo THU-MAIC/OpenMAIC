@@ -1,5 +1,4 @@
-/** Agent runtime control plane for reading one owned session. */
-import type { AgentSessionTitleStore } from '@openmaic/storage';
+/** Agent runtime control plane for reading and updating an owned session title. */
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -34,10 +33,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
     const { id } = await params;
     const store = await getAgentSessionStore();
-    const titleStore = store as AgentSessionTitleStore;
-    if (typeof titleStore.setManualSessionTitle !== 'function') {
-      return new Response('Not found', { status: 404, headers: responseHeaders });
-    }
 
     let body: { title?: unknown } | null;
     try {
@@ -58,7 +53,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return response;
     }
     const title = body.title?.trim().slice(0, 120) || null;
-    const meta = await titleStore.setManualSessionTitle(id, ownerId, title);
+    const meta = await store.setManualSessionTitle(id, ownerId, title);
     if (!meta) {
       return new Response('Not found', { status: 404, headers: responseHeaders });
     }
