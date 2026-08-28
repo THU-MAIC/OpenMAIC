@@ -1655,6 +1655,77 @@ describe('database runtime chat integration', () => {
     await expect(db.scenes.get(scene.id)).resolves.toEqual(scene);
   });
 
+  it('runs the DSL ladder over a legacy-only export instead of hand-stamping it', async () => {
+    vi.stubGlobal('navigator', {});
+    stubMemoryLocalStorage();
+    const runtimeStore = new BrowserRuntimeStore({
+      indexedDB: globalThis.indexedDB,
+      dbName: 'legacy-only-export-migrates',
+    });
+    const { db, exportDatabase } = await import('@/lib/utils/database');
+    const stage = {
+      id: 'stage-legacy-export-migrates',
+      name: 'Legacy-only export (migrates)',
+      createdAt: 1_000,
+      updatedAt: 2_000,
+      currentSceneId: 'scene-legacy-export-migrates',
+    };
+    const dirtyLine = {
+      id: 'line-dirty',
+      type: 'line' as const,
+      left: 10,
+      top: 20,
+      width: 100,
+      rotate: 45,
+      start: [0, 0],
+      end: [100, 0],
+      style: 'solid',
+      color: '#333333',
+      points: ['', ''],
+    };
+    const scene = {
+      id: 'scene-legacy-export-migrates',
+      stageId: stage.id,
+      type: 'slide' as const,
+      title: 'Legacy slide',
+      order: 0,
+      content: {
+        type: 'slide' as const,
+        canvas: { id: 'canvas-legacy', elements: [dirtyLine] } as never,
+      },
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    };
+    await db.stages.put(stage);
+    await db.scenes.put(scene);
+
+    const backup = await exportDatabase({ store: runtimeStore, learnerKey });
+    const exportedDocument = backup.documents.find((document) => document.stage.id === stage.id);
+    // the stamp reflects an actually-run migration: the stray rotate is gone
+    expect(exportedDocument).toMatchObject({
+      dslVersion: DSL_VERSION,
+      scenes: [
+        {
+          id: scene.id,
+          content: {
+            canvas: {
+              elements: [{ id: 'line-dirty', type: 'line', start: [0, 0] }],
+            },
+          },
+        },
+      ],
+    });
+    expect(exportedDocument!.scenes[0].content).toMatchObject({
+      canvas: { elements: [{ id: 'line-dirty', type: 'line' }] },
+    });
+    expect(
+      (exportedDocument!.scenes[0].content as { canvas: { elements: unknown[] } }).canvas
+        .elements[0],
+    ).not.toHaveProperty('rotate');
+    // the legacy rows themselves stay untouched (read-only fallback)
+    await expect(db.scenes.get(scene.id)).resolves.toEqual(scene);
+  });
+
   it('keeps unrelated document saves available for an unchanged read-only legacy snapshot', async () => {
     vi.stubGlobal('navigator', {});
     stubMemoryLocalStorage();

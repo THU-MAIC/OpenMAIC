@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable, type Table } from 'dexie';
-import { DSL_VERSION } from '@openmaic/dsl';
+import { migrate } from '@openmaic/dsl';
 import type {
   Scene,
   SceneType,
@@ -678,11 +678,15 @@ export async function exportDatabase(chatOptions: ChatStorageOptions = {}): Prom
           const snapshot = await getLegacyDocumentStore().read(stage.id);
           if (!snapshot) return null;
           const { stage: canonicalStage } = canonicalizeLegacyStage(snapshot.stage);
-          const document: AppDocument = {
+          // Leave the document unstamped and let the ladder stamp it: the
+          // stamp must be earned by actually running the migrations. A
+          // hand-assigned DSL_VERSION on a payload the ladder never walked
+          // reads as current on restore and permanently skips real payload
+          // transforms (the 0.3.0 legacy-line strip was the first).
+          const document: AppDocument = migrate({
             stage: canonicalStage,
             scenes: snapshot.scenes.map(canonicalizeLegacyScene).sort((a, b) => a.order - b.order),
-            dslVersion: DSL_VERSION,
-          };
+          }) as AppDocument;
           if (snapshot.outline) document.outline = canonicalizeLegacyOutline(snapshot.outline);
           return document;
         }),
