@@ -6,6 +6,7 @@ import {
   DEFAULT_SIGNED_URL_TTL_SECONDS,
   type AssetIndirectByteEgress,
 } from '@openmaic/storage/server';
+import type { RuntimeStore } from '@openmaic/storage';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
@@ -23,6 +24,7 @@ import {
 import { readStageMeta } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { isServerOnlyRuntimeKind } from '@/lib/zhongkao/runtime-kinds';
 
 export const runtime = 'nodejs';
 
@@ -30,6 +32,96 @@ const ROUTE_PREFIX = '/api/persistence';
 
 function jsonError(status: number, code: string, message: string): Response {
   return Response.json({ error: { code, message } }, { status });
+}
+
+function hiddenRuntimeResponse(): Response {
+  return jsonError(404, 'SESSION_NOT_FOUND', '@openmaic/storage: runtime session not found');
+}
+
+export function createClientVisibleRuntimeStore(store: RuntimeStore): RuntimeStore {
+  return new Proxy(store, {
+    get(target, property, receiver) {
+      if (property === 'createSession') {
+        return async (init: Parameters<RuntimeStore['createSession']>[0]) => {
+          if (isServerOnlyRuntimeKind(init.kind)) {
+            throw new Error('@openmaic/storage: runtime session not found');
+          }
+          return target.createSession(init);
+        };
+      }
+      if (property === 'getSession') {
+        return async (sessionId: string) => {
+          const session = await target.getSession(sessionId);
+          return session && !isServerOnlyRuntimeKind(session.kind) ? session : undefined;
+        };
+      }
+      if (property === 'listSessions') {
+        return async (stageId: string, learnerKey: string) =>
+          (await target.listSessions(stageId, learnerKey)).filter(
+            (session) => !isServerOnlyRuntimeKind(session.kind),
+          );
+      }
+      if (property === 'appendRecord') {
+        return async (
+          init: Parameters<RuntimeStore['appendRecord']>[0],
+          options?: Parameters<RuntimeStore['appendRecord']>[1],
+        ) => {
+          const session = await target.getSession(init.sessionId);
+          if (!session || isServerOnlyRuntimeKind(session.kind)) {
+            throw new Error('@openmaic/storage: runtime session not found');
+          }
+          return target.appendRecord(init, options);
+        };
+      }
+      if (property === 'setSessionStatus') {
+        return async (...args: Parameters<RuntimeStore['setSessionStatus']>): Promise<void> => {
+          const session = await target.getSession(args[0]);
+          if (!session || isServerOnlyRuntimeKind(session.kind)) {
+            throw new Error('@openmaic/storage: runtime session not found');
+          }
+          return target.setSessionStatus(...args);
+        };
+      }
+      if (property === 'deleteSession') {
+        return async (sessionId: string): Promise<void> => {
+          const session = await target.getSession(sessionId);
+          if (!session || isServerOnlyRuntimeKind(session.kind)) return;
+          return target.deleteSession(sessionId);
+        };
+      }
+      if (property === 'listRecords') {
+        return async (...args: Parameters<RuntimeStore['listRecords']>) => {
+          const session = await target.getSession(args[0]);
+          if (!session || isServerOnlyRuntimeKind(session.kind)) return [];
+          return target.listRecords(...args);
+        };
+      }
+      if (property === 'deleteLearnerRuntime') {
+        return async (stageId: string, learnerKey: string) => {
+          const sessions = await target.listSessions(stageId, learnerKey);
+          await Promise.all(
+            sessions
+              .filter((session) => !isServerOnlyRuntimeKind(session.kind))
+              .map((session) => target.deleteSession(session.id)),
+          );
+        };
+      }
+      const value = Reflect.get(target, property, receiver) as unknown;
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+async function requestsServerOnlyRuntimeCreation(request: Request): Promise<boolean> {
+  if (request.method !== 'POST' || routeRelativePath(request) !== '/runtime/sessions') {
+    return false;
+  }
+  try {
+    const body = (await request.clone().json()) as { kind?: unknown };
+    return isServerOnlyRuntimeKind(body?.kind);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -105,7 +197,7 @@ async function createPersistenceHandler(
   const byteEgress = indirectEgressWithinGrace(
     configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
   );
-  return createStorageHttpHandler(runtimeStore, documentStore, {
+  return createStorageHttpHandler(createClientVisibleRuntimeStore(runtimeStore), documentStore, {
     authenticate: async (request) =>
       request.url?.startsWith('/documents')
         ? { learnerKey: ownerId }
@@ -282,6 +374,11 @@ export async function handlePersistenceRequest(
 
   return withRequestOwnerId(request, async (ownerId, responseHeaders) => {
     try {
+      if (await requestsServerOnlyRuntimeCreation(request)) {
+        const response = hiddenRuntimeResponse();
+        for (const [name, value] of responseHeaders.entries()) response.headers.append(name, value);
+        return response;
+      }
       const path = routeRelativePath(request);
       const action = parseDocumentAction(request.method, path);
       let access: DocumentAccess = 'allow';

@@ -7,7 +7,7 @@ import {
   type QueryResult,
   type Queryable,
 } from '../src/runtime/pg.js';
-import type { RuntimeStore } from '../src/runtime/types.js';
+import { RuntimeAppendConflictError, type RuntimeStore } from '../src/runtime/types.js';
 import { makeRecordInit, makeSession, runRuntimeStoreContract } from './runtime-contract.js';
 
 function transactionOptions(db: PGlite): PgRuntimeStoreOptions {
@@ -175,6 +175,29 @@ describe('PgRuntimeStore Postgres behavior', () => {
     ]);
     expect(listed[0]).not.toHaveProperty('sceneId');
     expect(listed[1]).not.toHaveProperty('sceneId');
+  });
+
+  test('classifies an inactive expected-tail append as a typed conflict', async () => {
+    await store.createSession(makeSession());
+    const existing = await store.appendRecord(makeRecordInit('sess-1'));
+    await store.setSessionStatus('sess-1', 'completed', '2026-01-01T00:01:00.000Z');
+
+    let failure: unknown;
+    try {
+      await store.appendRecord(makeRecordInit('sess-1'), {
+        expectedLastSeq: existing.seq,
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(RuntimeAppendConflictError);
+    expect(failure).toMatchObject({
+      sessionId: 'sess-1',
+      expectedLastSeq: 0,
+      actualLastSeq: 0,
+    });
+    expect(await store.listRecords('sess-1')).toEqual([existing]);
   });
 
   test('rejects an unknown top-level record field that is explicitly undefined', async () => {

@@ -228,11 +228,24 @@ describe('zhongkao RuntimeStore adapter', () => {
     );
   });
 
-  it('keeps the two new kinds in the shared validator table', async () => {
+  it('does not route per-problem coach events through the long-lived session helper', () => {
+    expect(() =>
+      zhongkaoRuntimeSessionId(
+        ZHONGKAO_RUNTIME_KINDS.coachEvent as never,
+        'student-alpha',
+        'anon:fictional-device',
+      ),
+    ).toThrow('ZHONGKAO_RUNTIME_KIND_INVALID');
+  });
+
+  it('keeps all Zhongkao kinds in the shared validator table', async () => {
     expect(APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.studentProfile]).toBeTypeOf(
       'function',
     );
     expect(APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.studyAttempt]).toBeTypeOf(
+      'function',
+    );
+    expect(APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.coachEvent]).toBeTypeOf(
       'function',
     );
     const profile = createInitialStudentProfile({ profileId: 'student-alpha', createdAt: NOW });
@@ -241,6 +254,24 @@ describe('zhongkao RuntimeStore adapter', () => {
     ).toBe(true);
     expect(
       APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.studyAttempt]!(studyAttempt()).valid,
+    ).toBe(true);
+    expect(
+      APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.coachEvent]!({
+        schemaVersion: 1,
+        eventId: 'coach-event-alpha',
+        coachSessionId: 'coach-session-alpha',
+        profileId: 'student-alpha',
+        eventType: 'coach_started',
+        createdAt: NOW,
+        agentSessionId: 'agent-chat-alpha',
+        sourceUserMessageSeq: 1,
+        operationId: 'coach-operation-alpha',
+        operationFingerprint: 'a'.repeat(64),
+        subjectId: 'math',
+        knowledgePointIds: ['linear-equations'],
+        questionSource: { type: 'typed' },
+        questionText: 'Solve the fictional equation.',
+      }).valid,
     ).toBe(true);
   });
 });

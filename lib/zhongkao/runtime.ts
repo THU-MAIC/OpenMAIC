@@ -5,7 +5,7 @@ import { getLearnerKey } from '@/lib/runtime/learner-key';
 import { getRuntimeStore } from '@/lib/runtime/store';
 
 import { assertStudentProfile, type StudentProfile } from './profile';
-import { ZHONGKAO_RUNTIME_KINDS, type ZhongkaoRuntimeKind } from './runtime-kinds';
+import { ZHONGKAO_RUNTIME_KINDS, type ZhongkaoLongLivedRuntimeKind } from './runtime-kinds';
 import {
   assertStudyAttempt,
   STUDY_ATTEMPT_CONFLICT_CODE,
@@ -20,7 +20,7 @@ import {
 } from './validation';
 
 export { ZHONGKAO_RUNTIME_KINDS } from './runtime-kinds';
-export type { ZhongkaoRuntimeKind } from './runtime-kinds';
+export type { ZhongkaoLongLivedRuntimeKind, ZhongkaoRuntimeKind } from './runtime-kinds';
 
 export interface ZhongkaoRuntimeDeps {
   store?: RuntimeStore;
@@ -75,11 +75,14 @@ export function zhongkaoStageId(profileId: string): string {
 }
 
 export function zhongkaoRuntimeSessionId(
-  kind: ZhongkaoRuntimeKind,
+  kind: ZhongkaoLongLivedRuntimeKind,
   profileId: string,
   learnerKey: string,
 ): string {
-  if (!Object.values(ZHONGKAO_RUNTIME_KINDS).includes(kind)) {
+  if (
+    kind !== ZHONGKAO_RUNTIME_KINDS.studentProfile &&
+    kind !== ZHONGKAO_RUNTIME_KINDS.studyAttempt
+  ) {
     throw new Error('ZHONGKAO_RUNTIME_KIND_INVALID');
   }
   const stageId = zhongkaoStageId(profileId);
@@ -114,7 +117,7 @@ function assertSessionIdentity(
   session: RuntimeSession,
   expected: {
     id: string;
-    kind: ZhongkaoRuntimeKind;
+    kind: ZhongkaoLongLivedRuntimeKind;
     stageId: string;
     learnerKey: string;
   },
@@ -132,7 +135,7 @@ function assertSessionIdentity(
 
 async function selectSession(
   context: RuntimeContext,
-  kind: ZhongkaoRuntimeKind,
+  kind: ZhongkaoLongLivedRuntimeKind,
   profileId: string,
 ): Promise<RuntimeSession | undefined> {
   const stageId = zhongkaoStageId(profileId);
@@ -149,7 +152,7 @@ async function selectSession(
 
 async function ensureSession(
   context: RuntimeContext,
-  kind: ZhongkaoRuntimeKind,
+  kind: ZhongkaoLongLivedRuntimeKind,
   profileId: string,
 ): Promise<RuntimeSession> {
   const existing = await selectSession(context, kind, profileId);

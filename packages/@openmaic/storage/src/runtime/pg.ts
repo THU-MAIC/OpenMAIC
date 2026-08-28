@@ -451,6 +451,21 @@ export class PgRuntimeStore implements RuntimeStore {
             session = migrateSession(row);
             await this.persistSession(queryable, session);
           }
+          let rawLastSeq: number | undefined;
+          let actualLastSeq: number | null | undefined;
+          if (expectedLastSeq !== undefined) {
+            const last = await queryable.query<LastSeqRow>(
+              `SELECT COALESCE(MAX(seq), -1)::text AS last_seq
+                 FROM runtime_records
+                WHERE session_id = $1`,
+              [init.sessionId],
+            );
+            rawLastSeq = Number(last.rows[0]?.last_seq ?? -1);
+            actualLastSeq = rawLastSeq < 0 ? null : rawLastSeq;
+            if (session.status !== 'active' || expectedLastSeq !== actualLastSeq) {
+              throw new RuntimeAppendConflictError(init.sessionId, expectedLastSeq, actualLastSeq);
+            }
+          }
           if (session.status !== 'active') {
             throw new Error(
               `@openmaic/storage: cannot append to session ${JSON.stringify(init.sessionId)} ` +
@@ -461,17 +476,14 @@ export class PgRuntimeStore implements RuntimeStore {
           if (validator) {
             assertValid(validator(init.payload), `runtime record ${JSON.stringify(init.id)}`);
           }
-
-          const last = await queryable.query<LastSeqRow>(
-            `SELECT COALESCE(MAX(seq), -1)::text AS last_seq
-               FROM runtime_records
-              WHERE session_id = $1`,
-            [init.sessionId],
-          );
-          const rawLastSeq = Number(last.rows[0]?.last_seq ?? -1);
-          const actualLastSeq = rawLastSeq < 0 ? null : rawLastSeq;
-          if (expectedLastSeq !== undefined && expectedLastSeq !== actualLastSeq) {
-            throw new RuntimeAppendConflictError(init.sessionId, expectedLastSeq, actualLastSeq);
+          if (rawLastSeq === undefined) {
+            const last = await queryable.query<LastSeqRow>(
+              `SELECT COALESCE(MAX(seq), -1)::text AS last_seq
+                 FROM runtime_records
+                WHERE session_id = $1`,
+              [init.sessionId],
+            );
+            rawLastSeq = Number(last.rows[0]?.last_seq ?? -1);
           }
           const seq = rawLastSeq + 1;
           const record: RuntimeRecord<TPayload> = { ...init, seq };

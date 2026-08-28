@@ -1,0 +1,221 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  COACH_OPERATION_FINGERPRINT_LENGTH,
+  COACH_TRUSTED_MESSAGE_MAX_LENGTH,
+  coachEventFactsEqual,
+  validateCoachEvent,
+  type CoachEvent,
+} from '@/lib/zhongkao/coach-event';
+
+const NOW = '2026-08-28T08:00:00.000Z';
+const FINGERPRINT = 'a'.repeat(COACH_OPERATION_FINGERPRINT_LENGTH);
+
+function common(eventType: CoachEvent['eventType']) {
+  return {
+    schemaVersion: 1 as const,
+    eventId: `event-${eventType}`,
+    coachSessionId: 'coach-session-alpha',
+    profileId: 'student-alpha',
+    eventType,
+    createdAt: NOW,
+    agentSessionId: 'agent-chat-alpha',
+    operationId: `operation-${eventType}`,
+    operationFingerprint: FINGERPRINT,
+  };
+}
+
+const VALID_EVENTS: CoachEvent[] = [
+  {
+    ...common('coach_started'),
+    eventType: 'coach_started',
+    sourceUserMessageSeq: 1,
+    subjectId: 'math',
+    knowledgePointIds: ['linear-equations'],
+    questionSource: { type: 'typed' },
+    questionText: 'Solve the fictional equation.',
+  },
+  {
+    ...common('student_attempt_submitted'),
+    eventType: 'student_attempt_submitted',
+    phase: 'original',
+    sourceUserMessageSeq: 2,
+    studentResponse: 'x equals 4',
+  },
+  {
+    ...common('hint_requested'),
+    eventType: 'hint_requested',
+    phase: 'original',
+    sourceUserMessageSeq: 3,
+  },
+  {
+    ...common('hint_issued'),
+    eventType: 'hint_issued',
+    phase: 'original',
+    requestEventId: 'event-hint-requested',
+    hintNumber: 1,
+  },
+  {
+    ...common('full_solution_requested'),
+    eventType: 'full_solution_requested',
+    phase: 'original',
+    sourceUserMessageSeq: 4,
+  },
+  {
+    ...common('full_solution_revealed'),
+    eventType: 'full_solution_revealed',
+    phase: 'original',
+    requestEventId: 'event-full-solution-requested',
+  },
+  {
+    ...common('original_resolved'),
+    eventType: 'original_resolved',
+    attemptEventId: 'event-student-attempt-submitted',
+    outcome: 'incorrect',
+  },
+  {
+    ...common('transfer_question_assigned'),
+    eventType: 'transfer_question_assigned',
+    originalResolvedEventId: 'event-original-resolved',
+    transferQuestionId: 'transfer-alpha',
+    knowledgePointIds: ['linear-equations'],
+    validationRef: 'verified-generator-alpha',
+  },
+  {
+    ...common('transfer_answer_submitted'),
+    eventType: 'transfer_answer_submitted',
+    phase: 'transfer',
+    transferQuestionId: 'transfer-alpha',
+    sourceUserMessageSeq: 5,
+    studentResponse: 'x equals 7',
+  },
+  {
+    ...common('transfer_answer_evaluated'),
+    eventType: 'transfer_answer_evaluated',
+    transferQuestionId: 'transfer-alpha',
+    submissionEventId: 'event-transfer-answer-submitted',
+    outcome: 'correct',
+  },
+  {
+    ...common('study_attempts_projected'),
+    eventType: 'study_attempts_projected',
+    evaluationEventId: 'event-transfer-answer-evaluated',
+    projectionRef: 'projection-alpha',
+    projectionVersion: 1,
+  },
+  {
+    ...common('problem_abandoned'),
+    eventType: 'problem_abandoned',
+    sourceUserMessageSeq: 6,
+  },
+];
+
+describe('Coach event contract', () => {
+  it.each(VALID_EVENTS)('accepts closed $eventType payloads', (event) => {
+    expect(validateCoachEvent(event)).toEqual({ valid: true });
+  });
+
+  it.each([null, [], 'event', 1])('rejects non-object payload %j', (value) => {
+    expect(validateCoachEvent(value).valid).toBe(false);
+  });
+
+  it('requires a fixed lowercase SHA-256 operation fingerprint', () => {
+    const start = VALID_EVENTS[0]!;
+    for (const operationFingerprint of ['', 'a'.repeat(63), 'A'.repeat(64), 'z'.repeat(64)]) {
+      expect(validateCoachEvent({ ...start, operationFingerprint }).valid).toBe(false);
+    }
+  });
+
+  it('rejects unknown versions, event enums, timestamps, and extra fields', () => {
+    const start = VALID_EVENTS[0]!;
+    expect(validateCoachEvent({ ...start, schemaVersion: 2 }).valid).toBe(false);
+    expect(validateCoachEvent({ ...start, eventType: 'model_mastered' }).valid).toBe(false);
+    expect(validateCoachEvent({ ...start, createdAt: '2027-02-30T10:00:00.000Z' }).valid).toBe(
+      false,
+    );
+    expect(validateCoachEvent({ ...start, answerUnlocked: true }).valid).toBe(false);
+  });
+
+  it.each(['answerUnlocked', 'isIndependent', 'mastered', 'verifiedSource', 'answerKey', 'rubric'])(
+    'rejects forbidden derived field %s',
+    (field) => {
+      expect(validateCoachEvent({ ...VALID_EVENTS[0], [field]: true }).valid).toBe(false);
+    },
+  );
+
+  it('requires exact event-specific phase values', () => {
+    expect(validateCoachEvent({ ...VALID_EVENTS[1], phase: 'transfer' }).valid).toBe(false);
+    expect(validateCoachEvent({ ...VALID_EVENTS[4], phase: 'transfer' }).valid).toBe(false);
+    expect(validateCoachEvent({ ...VALID_EVENTS[8], phase: 'original' }).valid).toBe(false);
+    expect(validateCoachEvent({ ...VALID_EVENTS[2], phase: 'future' }).valid).toBe(false);
+  });
+
+  it('requires causal references on all server facts', () => {
+    for (const event of VALID_EVENTS.slice(3, 11)) {
+      const causalField =
+        event.eventType === 'hint_issued' || event.eventType === 'full_solution_revealed'
+          ? 'requestEventId'
+          : event.eventType === 'original_resolved'
+            ? 'attemptEventId'
+            : event.eventType === 'transfer_question_assigned'
+              ? 'originalResolvedEventId'
+              : event.eventType === 'transfer_answer_evaluated'
+                ? 'submissionEventId'
+                : event.eventType === 'study_attempts_projected'
+                  ? 'evaluationEventId'
+                  : undefined;
+      if (!causalField) continue;
+      const without = { ...event } as Record<string, unknown>;
+      delete without[causalField];
+      expect(validateCoachEvent(without).valid).toBe(false);
+    }
+  });
+
+  it('rejects invalid durable message seq and trusted text', () => {
+    const attempt = VALID_EVENTS[1]!;
+    const withoutSeq = { ...attempt } as Record<string, unknown>;
+    delete withoutSeq.sourceUserMessageSeq;
+    for (const value of [
+      withoutSeq,
+      { ...attempt, sourceUserMessageSeq: 0 },
+      { ...attempt, sourceUserMessageSeq: 1.5 },
+      { ...attempt, studentResponse: '   ' },
+      { ...attempt, studentResponse: ' padded ' },
+      { ...attempt, studentResponse: 'x'.repeat(COACH_TRUSTED_MESSAGE_MAX_LENGTH + 1) },
+    ]) {
+      expect(validateCoachEvent(value).valid).toBe(false);
+    }
+  });
+
+  it('rejects duplicate knowledge ids and unverified material embellishments', () => {
+    const start = VALID_EVENTS[0]!;
+    expect(validateCoachEvent({ ...start, knowledgePointIds: [] }).valid).toBe(false);
+    expect(
+      validateCoachEvent({
+        ...start,
+        knowledgePointIds: ['linear-equations', 'linear-equations'],
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateCoachEvent({
+        ...start,
+        questionSource: { type: 'material', materialId: 'fictional-material', verified: true },
+      }).valid,
+    ).toBe(false);
+  });
+
+  it('rejects invalid hint, outcome, question, and projection facts', () => {
+    expect(validateCoachEvent({ ...VALID_EVENTS[3], hintNumber: 4 }).valid).toBe(false);
+    expect(validateCoachEvent({ ...VALID_EVENTS[6], outcome: 'mastered' }).valid).toBe(false);
+    expect(validateCoachEvent({ ...VALID_EVENTS[8], transferQuestionId: '' }).valid).toBe(false);
+    expect(validateCoachEvent({ ...VALID_EVENTS[10], projectionVersion: 2 }).valid).toBe(false);
+  });
+
+  it('compares persisted facts independently of object key insertion order', () => {
+    const event = VALID_EVENTS[0]!;
+    const reordered = Object.fromEntries(Object.entries(event).toReversed()) as CoachEvent;
+    expect(coachEventFactsEqual(event, reordered)).toBe(true);
+    const changed = { ...event, questionText: 'Different question.' } as CoachEvent;
+    expect(coachEventFactsEqual(event, changed)).toBe(false);
+  });
+});

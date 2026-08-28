@@ -1,4 +1,5 @@
 import type { RequestListener } from 'node:http';
+import type { RuntimeStore } from '@openmaic/storage';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -528,6 +529,7 @@ describe('embedded persistence route', () => {
       'whiteboard',
       'zhongkaoStudentProfile',
       'zhongkaoStudyAttempt',
+      'zhongkaoCoachEvent',
     ]);
   });
 
@@ -1079,6 +1081,123 @@ describe('embedded persistence route', () => {
       signReadUrl?: (hash: string, headers: unknown) => Promise<unknown>;
     };
     expect(byteStore.signReadUrl).toBeUndefined();
+  });
+
+  it('rejects creation of the server-only coach runtime kind before storage dispatch', async () => {
+    vi.stubEnv('DATABASE_URL', 'postgres://server-only-create-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    const { POST } = await import('@/app/api/persistence/[...path]/route');
+
+    const response = await POST(
+      new Request('http://localhost/api/persistence/runtime/sessions', {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer test-token',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: 'coach-session-hidden',
+          kind: 'zhongkaoCoachEvent',
+          stageId: 'zhongkao-profile:student-alpha',
+          learnerKey: 'learner-alpha',
+          status: 'active',
+          createdAt: '2026-08-28T08:00:00.000Z',
+          updatedAt: '2026-08-28T08:00:00.000Z',
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: 'SESSION_NOT_FOUND',
+        message: '@openmaic/storage: runtime session not found',
+      },
+    });
+  });
+
+  it('filters server-only sessions and blocks their generic read/write lifecycle', async () => {
+    const coach = {
+      id: 'coach-session-hidden',
+      kind: 'zhongkaoCoachEvent',
+      stageId: 'stage-alpha',
+      learnerKey: 'learner-alpha',
+    };
+    const chat = {
+      id: 'chat-session-visible',
+      kind: 'chat',
+      stageId: 'stage-alpha',
+      learnerKey: 'learner-alpha',
+    };
+    const createSession = vi.fn(async (init: unknown) => init);
+    const appendRecord = vi.fn(async (init: unknown) => ({ ...(init as object), seq: 0 }));
+    const setSessionStatus = vi.fn(async () => undefined);
+    const deleteSession = vi.fn(async () => undefined);
+    const listRecords = vi.fn(async () => [{ id: 'internal-event' }]);
+    const backing = {
+      createSession,
+      getSession: vi.fn(async (id: string) =>
+        id === coach.id ? coach : id === chat.id ? chat : undefined,
+      ),
+      listSessions: vi.fn(async () => [coach, chat]),
+      setSessionStatus,
+      deleteSession,
+      appendRecord,
+      listRecords,
+      mergeLearner: vi.fn(async () => 0),
+      deleteLearnerRuntime: vi.fn(async () => undefined),
+      deleteStageRuntime: vi.fn(async () => undefined),
+      deleteAllRuntime: vi.fn(async () => undefined),
+    } as unknown as RuntimeStore;
+    const { createClientVisibleRuntimeStore } =
+      await import('@/app/api/persistence/[...path]/route');
+    const visible = createClientVisibleRuntimeStore(backing);
+
+    await expect(visible.getSession(coach.id)).resolves.toBeUndefined();
+    await expect(visible.getSession(chat.id)).resolves.toBe(chat);
+    await expect(visible.listSessions('stage-alpha', 'learner-alpha')).resolves.toEqual([chat]);
+    await expect(visible.listRecords(coach.id)).resolves.toEqual([]);
+    await expect(
+      visible.appendRecord({
+        id: 'forged-event',
+        sessionId: coach.id,
+        createdAt: '2026-08-28T08:00:00.000Z',
+        payload: {},
+      }),
+    ).rejects.toThrow('runtime session not found');
+    await expect(
+      visible.setSessionStatus(coach.id, 'completed', '2026-08-28T08:00:00.000Z'),
+    ).rejects.toThrow('runtime session not found');
+    await visible.deleteSession(coach.id);
+    expect(appendRecord).not.toHaveBeenCalled();
+    expect(setSessionStatus).not.toHaveBeenCalled();
+    expect(deleteSession).not.toHaveBeenCalledWith(coach.id);
+
+    await expect(
+      visible.createSession({
+        id: 'forged-coach',
+        kind: 'zhongkaoCoachEvent',
+        stageId: 'stage-alpha',
+        learnerKey: 'learner-alpha',
+        status: 'active',
+        createdAt: '2026-08-28T08:00:00.000Z',
+        updatedAt: '2026-08-28T08:00:00.000Z',
+      }),
+    ).rejects.toThrow('runtime session not found');
+    await visible.createSession({
+      id: 'new-chat',
+      kind: 'chat',
+      stageId: 'stage-alpha',
+      learnerKey: 'learner-alpha',
+      status: 'active',
+      createdAt: '2026-08-28T08:00:00.000Z',
+      updatedAt: '2026-08-28T08:00:00.000Z',
+    });
+    expect(createSession).toHaveBeenCalledOnce();
+
+    await visible.deleteLearnerRuntime('stage-alpha', 'learner-alpha');
+    expect(deleteSession).toHaveBeenCalledWith(chat.id);
+    expect(deleteSession).not.toHaveBeenCalledWith(coach.id);
   });
 });
 

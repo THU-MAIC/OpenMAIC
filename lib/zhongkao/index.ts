@@ -1,3 +1,7 @@
+export * from './coach-errors';
+export * from './coach-event';
+export * from './coach-policy';
+export * from './coach-state';
 export * from './curriculum';
 export * from './observed-field';
 export * from './profile';
