@@ -21,7 +21,7 @@ import { useStageStore } from '@/lib/store';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
 import { useExportClassroom } from '@/lib/export/use-export-classroom';
-import { useExportScript } from '@/lib/export/use-export-script';
+import { isScriptExportReady, useExportScript } from '@/lib/export/use-export-script';
 import { isVideoExportEnabled } from '@/lib/config/feature-flags';
 import { useVideoRenderStore } from '@/lib/store/video-render';
 import { CircularProgress } from '@/components/ui/circular-progress';
@@ -107,11 +107,7 @@ export function HeaderControls({
   // Keep the original full-generation gate for the export menu. Script files
   // are text-only, but the latest review confirmed that this menu intentionally
   // stays unavailable until all media tasks have completed or failed.
-  const canExport =
-    scenes.length > 0 &&
-    generatingOutlines.length === 0 &&
-    failedOutlines.length === 0 &&
-    Object.values(mediaTasks).every((task) => task.status === 'done' || task.status === 'failed');
+  const canExport = isScriptExportReady({ scenes, generatingOutlines, failedOutlines }, mediaTasks);
   const exportLabel = canExport ? t('export.pptx') : t('share.notReady');
 
   const compact = variant === 'compact';
