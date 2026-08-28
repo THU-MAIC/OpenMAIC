@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   setPlaybackOn: vi.fn(),
   startFirstMessage: vi.fn(),
   requestFullFetch: vi.fn(),
+  updateSessions: vi.fn(),
+  renameWorkbenchSession: vi.fn(),
   classroomMounts: 0,
   classroomProps: null as Record<string, unknown> | null,
   chatPaneProps: null as Record<string, unknown> | null,
@@ -30,6 +32,8 @@ const mocks = vi.hoisted(() => ({
     id: string;
     stageId: string;
     updatedAt: number;
+    title?: string | null;
+    prompt?: string;
     status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
   }[],
   sessionListState: 'ready' as 'loading' | 'ready' | 'error',
@@ -37,6 +41,7 @@ const mocks = vi.hoisted(() => ({
     onSessions: (rows: readonly { id: string; stageId: string; updatedAt: number }[]) => void;
     onState: (state: 'loading' | 'ready' | 'error') => void;
   },
+  ownerClient: null as null | { emitSessionStatus: (sessionId: string) => void },
   router: null as {
     push: (...args: unknown[]) => unknown;
     replace: (...args: unknown[]) => unknown;
@@ -66,7 +71,10 @@ const mocks = vi.hoisted(() => ({
     pages: {} as Record<number, unknown>,
     panelOpen: false,
     courseTitle: null as string | null,
+    sessionTitle: null as string | null,
+    sessionPrompt: null as string | null,
   },
+  setSessionTitle: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -77,16 +85,23 @@ vi.mock('@/lib/hooks/use-i18n', () => ({ useI18n: () => ({ t: (key: string) => k
 vi.mock('@/lib/hooks/use-home-discovery', () => ({
   useHomeDiscovery: () => mocks.courses,
 }));
-vi.mock('@/lib/workbench/session-store', () => ({
-  useWorkbenchStore: (selector: (state: Record<string, unknown>) => unknown) =>
-    selector({
-      ...mocks.store,
-      attach: mocks.attach,
-      detach: mocks.detach,
-      setPanelOpen: mocks.setPanelOpen,
-      setPlaybackOn: mocks.setPlaybackOn,
-    }),
-}));
+vi.mock('@/lib/workbench/session-store', () => {
+  const state = () => ({
+    ...mocks.store,
+    attach: mocks.attach,
+    detach: mocks.detach,
+    setPanelOpen: mocks.setPanelOpen,
+    setPlaybackOn: mocks.setPlaybackOn,
+    setSessionTitle: mocks.setSessionTitle,
+  });
+  return {
+    useWorkbenchStore: Object.assign(
+      (selector: (value: Record<string, unknown>) => unknown) => selector(state()),
+      { getState: state },
+    ),
+    renameWorkbenchSession: mocks.renameWorkbenchSession,
+  };
+});
 vi.mock('@/lib/store/stage', () => ({
   useStageStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({ isOwner: true }),
@@ -100,6 +115,8 @@ vi.mock('@/lib/workbench/first-message-session', () => ({
 }));
 vi.mock('@/lib/workbench/owner-session-client', () => ({
   OwnerSessionClient: class {
+    private sessions: typeof mocks.sessionRows = [];
+
     constructor(
       private readonly options: {
         onSessions: (rows: readonly { id: string; stageId: string; updatedAt: number }[]) => void;
@@ -108,12 +125,24 @@ vi.mock('@/lib/workbench/owner-session-client', () => ({
     ) {}
     start() {
       mocks.ownerOptions = this.options;
-      this.options.onSessions(mocks.sessionRows);
+      mocks.ownerClient = this;
+      this.sessions = mocks.sessionRows;
+      this.options.onSessions(this.sessions);
       this.options.onState(mocks.sessionListState);
     }
     stop() {}
     requestFullFetch = mocks.requestFullFetch;
-    updateSessions() {}
+    updateSessions(update: (sessions: typeof mocks.sessionRows) => typeof mocks.sessionRows) {
+      mocks.updateSessions(update);
+      this.sessions = update(this.sessions);
+      this.options.onSessions(this.sessions);
+    }
+    emitSessionStatus(sessionId: string) {
+      this.sessions = this.sessions.map((session) =>
+        session.id === sessionId ? { ...session, status: 'succeeded' as const } : session,
+      );
+      this.options.onSessions(this.sessions);
+    }
   },
 }));
 vi.mock('@/lib/workbench/pro-swap', () => ({ startProSwap: vi.fn() }));
@@ -209,15 +238,21 @@ beforeEach(() => {
   mocks.sessionRows = [];
   mocks.sessionListState = 'ready';
   mocks.ownerOptions = null;
+  mocks.ownerClient = null;
   mocks.store.sessionId = null;
   mocks.store.stageId = null;
   mocks.store.status = 'succeeded';
+  mocks.store.sessionTitle = null;
+  mocks.store.sessionPrompt = null;
   mocks.store.stageLinkStageIds = [];
   mocks.store.replayedStageLinkCount = 0;
   mocks.store.touchedStageIds = [];
   mocks.routerPush.mockClear();
   mocks.routerReplace.mockClear();
   mocks.requestFullFetch.mockClear();
+  mocks.updateSessions.mockClear();
+  mocks.renameWorkbenchSession.mockReset();
+  mocks.setSessionTitle.mockClear();
   mocks.startFirstMessage.mockReset();
   mocks.startFirstMessage.mockResolvedValue({
     sessionId: 'session-new',
@@ -786,5 +821,74 @@ describe('opening a course from a card in the conversation', () => {
     // a tab. With the cue gone the contract does not carry it, and nothing can
     // grow a conditional card off it again.
     expect(navigation()).not.toHaveProperty('openCourseIds');
+  });
+});
+
+describe('renaming a conversation from the workspace shell', () => {
+  const rename = () =>
+    mocks.railProps?.onRenameSession as (
+      sessionId: string,
+      title: string,
+    ) => Promise<string | null>;
+
+  const namedSession = (title: string | null = 'Old title') => ({
+    id: 'session-1',
+    stageId: 'stage-1',
+    prompt: 'Build a course',
+    title,
+    status: 'succeeded' as const,
+    createdAt: 1,
+    updatedAt: 9,
+  });
+
+  it('keeps a changed title in the owner snapshot through a later status event', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-1&course=stage-1');
+    mocks.store.sessionId = 'session-1';
+    mocks.store.sessionTitle = 'Old title';
+    mocks.store.sessionPrompt = 'Build a course';
+    mocks.sessionRows = [namedSession()];
+    mocks.renameWorkbenchSession.mockResolvedValue('New title');
+    await render();
+
+    await act(async () => {
+      await rename()('session-1', 'New title');
+    });
+    await act(async () => mocks.ownerClient?.emitSessionStatus('session-1'));
+
+    const session = (
+      mocks.railProps?.sessions as readonly { id: string; title?: string | null }[]
+    ).find((row) => row.id === 'session-1');
+    expect(session?.title).toBe('New title');
+    expect(mocks.updateSessions).toHaveBeenCalled();
+    expect(mocks.requestFullFetch).toHaveBeenCalledTimes(1);
+    expect(mocks.requestFullFetch).toHaveBeenLastCalledWith();
+  });
+
+  it('does not reconcile an unchanged title', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-1&course=stage-1');
+    mocks.store.sessionId = 'session-1';
+    mocks.sessionRows = [namedSession()];
+    await render();
+
+    await act(async () => {
+      await rename()('session-1', ' Old title ');
+    });
+
+    expect(mocks.renameWorkbenchSession).not.toHaveBeenCalled();
+    expect(mocks.requestFullFetch).not.toHaveBeenCalled();
+  });
+
+  it('does not reconcile a refused title', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-1&course=stage-1');
+    mocks.store.sessionId = 'session-1';
+    mocks.sessionRows = [namedSession()];
+    mocks.renameWorkbenchSession.mockRejectedValue(new Error('500'));
+    await render();
+
+    await act(async () => {
+      await rename()('session-1', 'New title');
+    });
+
+    expect(mocks.requestFullFetch).not.toHaveBeenCalled();
   });
 });

@@ -529,7 +529,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * which reads its own copy out of the session store.
    */
   const applySessionTitle = useCallback((sessionId: string, title: string | null) => {
-    setSessions((current) =>
+    ownerSessionClient.current?.updateSessions((current) =>
       current.map((session) => (session.id === sessionId ? { ...session, title } : session)),
     );
     if (useWorkbenchStore.getState().sessionId === sessionId) {
@@ -563,6 +563,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
         apply: (title) => applySessionTitle(sessionId, title),
         save: (title) => renameWorkbenchSession(sessionId, title),
       });
+      if (outcome === 'renamed') ownerSessionClient.current?.requestFullFetch();
       if (outcome !== 'failed') return null;
       const message = t('workspace.renameSessionFailed');
       toast.error(message);
