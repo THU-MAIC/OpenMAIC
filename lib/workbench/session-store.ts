@@ -398,6 +398,12 @@ export interface WorkbenchFold {
 export interface WorkbenchSessionState extends WorkbenchFold {
   sessionId: string | null;
   attached: boolean;
+  /**
+   * Changes whenever this client makes a title decision. A detail request
+   * captures it so an older response cannot overwrite a rename (including an
+   * explicit clear) made while that request was in flight.
+   */
+  sessionTitleRevision: number;
   /** True until the replayed backlog is exhausted; the UI says "catching up". */
   replaying: boolean;
   /**
@@ -455,6 +461,7 @@ export interface WorkbenchState extends WorkbenchSessionState {
   setSessionBootstrap: (input: {
     prompt?: string | null;
     title?: string | null;
+    expectedTitleRevision?: number;
     status?: SessionStatus;
     stageId?: string | null;
   }) => void;
@@ -506,6 +513,7 @@ export function createInitialSessionState(): WorkbenchSessionState {
     // ── Attachment ──────────────────────────────────────────────────────
     sessionId: null,
     attached: false,
+    sessionTitleRevision: 0,
     // Nothing is attached, so there is nothing to replay. It used to be `true`
     // here, which is only ever read as "keep the catch-up spinner up" — and with
     // no session nothing would ever turn it off again (the stream hook returns
@@ -1870,11 +1878,19 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     })),
   setError: (error) => set({ error }),
   setSessionPrompt: (sessionPrompt) => set({ sessionPrompt }),
-  setSessionTitle: (sessionTitle) => set({ sessionTitle }),
+  setSessionTitle: (sessionTitle) =>
+    set((state) => ({
+      sessionTitle,
+      sessionTitleRevision: state.sessionTitleRevision + 1,
+    })),
   setSessionBootstrap: (input) =>
     set((state) => ({
       ...(input.prompt !== undefined ? { sessionPrompt: input.prompt } : {}),
-      ...(input.title !== undefined ? { sessionTitle: input.title } : {}),
+      ...(input.title !== undefined &&
+      (input.expectedTitleRevision === undefined ||
+        input.expectedTitleRevision === state.sessionTitleRevision)
+        ? { sessionTitle: input.title }
+        : {}),
       ...(input.status && state.lastEventId === 0 ? { status: input.status } : {}),
       // Only ever FILLS the stage, never overwrites: the attach path knows it
       // first-hand when it has it, and a late meta response for a session the

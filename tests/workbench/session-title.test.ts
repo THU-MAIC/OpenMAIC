@@ -6,7 +6,7 @@
  * about which is showing (the pane header and the rail row). Both read the
  * derivation here; both write through `commitSessionRename`.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   commitSessionRename,
@@ -15,7 +15,12 @@ import {
   SESSION_TITLE_MAX_LENGTH,
   workbenchSessionTitle,
 } from '@/lib/workbench/session-title';
-import { foldEvents, type WorkbenchEvent, type WorkbenchFold } from '@/lib/workbench/session-store';
+import {
+  foldEvents,
+  useWorkbenchStore,
+  type WorkbenchEvent,
+  type WorkbenchFold,
+} from '@/lib/workbench/session-store';
 
 describe('what a conversation is called', () => {
   it('prefers the name the user gave it', () => {
@@ -115,6 +120,40 @@ describe('committing a rename', () => {
     });
     expect(outcome).toBe('unchanged');
     expect(save).not.toHaveBeenCalled();
+  });
+});
+
+describe('late session metadata after a local rename', () => {
+  afterEach(() => useWorkbenchStore.getState().detach());
+
+  it('keeps the newer local title while accepting the rest of the bootstrap', () => {
+    const store = useWorkbenchStore.getState();
+    store.attach('session-1', null);
+    const expectedTitleRevision = store.sessionTitleRevision;
+    store.setSessionTitle('新名字');
+
+    store.setSessionBootstrap({
+      prompt: '第一条消息',
+      title: '旧名字',
+      expectedTitleRevision,
+      stageId: 'stage-1',
+    });
+
+    const current = useWorkbenchStore.getState();
+    expect(current.sessionTitle).toBe('新名字');
+    expect(current.sessionPrompt).toBe('第一条消息');
+    expect(current.stageId).toBe('stage-1');
+  });
+
+  it('keeps an explicit clear when older metadata still contains a title', () => {
+    const store = useWorkbenchStore.getState();
+    store.attach('session-1', null);
+    const expectedTitleRevision = store.sessionTitleRevision;
+    store.setSessionTitle(null);
+
+    store.setSessionBootstrap({ prompt: '第一条消息', title: '旧名字', expectedTitleRevision });
+
+    expect(useWorkbenchStore.getState().sessionTitle).toBeNull();
   });
 });
 

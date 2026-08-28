@@ -112,6 +112,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
 
   useEffect(() => {
     if (!sessionId) return;
+    const expectedTitleRevision = useWorkbenchStore.getState().sessionTitleRevision;
     // The header title wants the prompt before the runner emits session_start
     // (a queued session can sit there a while), and a `?session=` deep link
     // arrives without the session's own stage — one meta fetch covers both.
@@ -135,6 +136,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
             // Always seeded, including as null: a session with no override must
             // clear whatever the previously attached one had.
             title: typeof meta.title === 'string' && meta.title ? meta.title : null,
+            expectedTitleRevision,
             ...(status ? { status } : {}),
             ...(typeof meta.stageId === 'string' && meta.stageId ? { stageId: meta.stageId } : {}),
           });
