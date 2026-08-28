@@ -62,7 +62,9 @@ describe('PgAgentSessionStore with PGlite', () => {
     ]);
     const titles: AgentSessionTitleStore = store;
 
-    await expect(titles.setManualSessionTitle('session-1', 'owner-a', 'Focused question')).resolves.toMatchObject({
+    await expect(
+      titles.setManualSessionTitle('session-1', 'owner-a', 'Focused question'),
+    ).resolves.toMatchObject({
       id: 'session-1',
       title: 'Focused question',
     });
@@ -83,9 +85,11 @@ describe('PgAgentSessionStore with PGlite', () => {
     const titles: AgentSessionTitleStore = store;
     await titles.setManualSessionTitle('session-1', 'owner-a', 'Temporary title');
 
-    await expect(titles.setManualSessionTitle('session-1', 'owner-a', null)).resolves.toMatchObject({
-      id: 'session-1',
-    });
+    await expect(titles.setManualSessionTitle('session-1', 'owner-a', null)).resolves.toMatchObject(
+      {
+        id: 'session-1',
+      },
+    );
     expect(await store.getSession('session-1')).not.toHaveProperty('title');
     expect((await store.listSessionsByOwner('owner-a'))[0]).not.toHaveProperty('title');
   });
@@ -94,7 +98,9 @@ describe('PgAgentSessionStore with PGlite', () => {
     await store.createSession(makeAgentSessionInput());
     const titles: AgentSessionTitleStore = store;
 
-    await expect(titles.setManualSessionTitle('session-1', 'owner-b', 'Unauthorized')).resolves.toBeNull();
+    await expect(
+      titles.setManualSessionTitle('session-1', 'owner-b', 'Unauthorized'),
+    ).resolves.toBeNull();
     expect(await store.getSession('session-1')).not.toHaveProperty('title');
   });
 
