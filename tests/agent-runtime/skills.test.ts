@@ -341,6 +341,77 @@ describe('shipped skill constraints', () => {
     expect(spiral?.content).toContain('/curriculum-planner');
   });
 
+  it('ships fact-check as an evidence-backed creation and review skill', async () => {
+    const all = await listSkills();
+    const factCheck = all.find((skill) => skill.id === 'fact-check');
+
+    expect(factCheck).toMatchObject({
+      name: 'fact-check',
+      title: '事实核查',
+      source: 'builtin',
+      constraints: null,
+    });
+    expect(factCheck?.description).toContain('事实性错误');
+    expect(factCheck?.description).toContain('deep-research');
+    expect(factCheck?.description).toContain('while creating or reviewing');
+    expect(availableSkillsPromptBlock(all)).toContain('<name>fact-check</name>');
+
+    for (const tool of [
+      'list_scenes',
+      'read_stage',
+      'list_materials',
+      'read_material',
+      'web_search',
+      'fetch_url',
+      'ask_user',
+      'pro-editing',
+      'stage-design',
+    ]) {
+      expect(factCheck?.content, tool).toContain(`\`${tool}\``);
+    }
+    expect(factCheck?.content).toContain('Do not verify every claim');
+    expect(factCheck?.content).toContain('Creating:');
+    expect(factCheck?.content).toContain('Reviewing:');
+    expect(factCheck?.content).toContain('After all pages exist');
+    expect(factCheck?.content).not.toContain('create_stage');
+    expect(factCheck?.content).not.toContain('page `brief`');
+    expect(factCheck?.content).toContain('user-uploaded materials');
+    expect(factCheck?.content).toContain('through `materialFacts`');
+    expect(factCheck?.content).toContain('do not edit the affected course content');
+    expect(factCheck?.content).toContain('appears in the choice card');
+    expect(factCheck?.content).toContain('even if the user previously authorized');
+    expect(factCheck?.content).toContain('Correct obvious');
+    expect(factCheck?.content).toContain('exact numbers, dates, counts');
+    expect(factCheck?.content).toContain('6–8 searches');
+    expect(factCheck?.content).toContain('3–8 useful findings');
+    expect(factCheck?.content).toContain('A. 明确事实错误');
+    expect(factCheck?.content).toContain('B. 表述不严谨');
+    expect(factCheck?.content).toContain('C. 需要核实');
+    expect(factCheck?.content).toContain('**1. 第 5 页｜测验解析｜知识混淆**');
+    expect(factCheck?.content).toContain('normal body-text size');
+    expect(factCheck?.content).toContain('exactly three bullets');
+    expect(factCheck?.content).toContain('原始表述');
+    expect(factCheck?.content).toContain('存在问题');
+    expect(factCheck?.content).toContain('修改建议');
+    expect(flat(factCheck?.content ?? '')).toContain('Do not repeat the same fact or quotation');
+    expect(factCheck?.content).toContain('finding numbers such as `1, 3`');
+    expect(factCheck?.content).not.toContain('F01');
+    expect(factCheck?.content).toContain('Do not pause the run');
+    expect(factCheck?.content).toContain('last action of the turn must be an `ask_user`');
+    expect(flat(factCheck?.content ?? '')).toContain('non-empty `options` array');
+    expect(factCheck?.content).toContain('fix_all');
+    expect(factCheck?.content).toContain('Do not patch before the answer');
+
+    const creationSection = factCheck?.content
+      .split('## While creating a course')[1]
+      ?.split('## When reviewing existing content')[0];
+    const flatCreationSection = flat(creationSection ?? '');
+    expect(flatCreationSection).toContain('`list_scenes`');
+    expect(flatCreationSection).toContain('`read_stage` using `detail:"text"`');
+    expect(flatCreationSection).toContain('`nextOffset`');
+    expect(flatCreationSection).toContain('visible text and narration');
+  });
+
   it('exposes the title only through frontmatter the loader actually reads', async () => {
     // The title comes from the file, not from a table in the loader: renaming a
     // skill's display name is an edit to its SKILL.md and nothing else.

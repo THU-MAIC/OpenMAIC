@@ -4,6 +4,7 @@ import type { Action } from '@/lib/types/action';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import { validateAppScene } from '@/lib/document-store/validators';
 import type { CourseDocument, CourseToolDeps } from './course-tools';
+import { putSceneBringingCurrent } from './document-writes';
 import { runStageMutation } from './mutation-fence';
 import {
   applyJsonPointerEdit,
@@ -832,7 +833,9 @@ export function buildDslCourseTools(deps: CourseToolDeps): AgentTool<never, neve
         );
       }
       try {
-        await runStageMutation(signal, () => deps.store.putScene(loaded.stageId, next));
+        await runStageMutation(signal, () =>
+          putSceneBringingCurrent(deps.store, loaded.stageId, next),
+        );
       } catch (error) {
         return toolResult(
           `patch_stage could not persist the scene: ${error instanceof Error ? error.message : String(error)}`,
