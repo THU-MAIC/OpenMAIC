@@ -96,7 +96,10 @@ import { useWorkspacePaneNavigation } from '@/lib/workbench/use-workspace-pane-n
 import { readCourseTabsMemory, writeCourseTabsMemory } from '@/lib/workbench/workspace-course-tabs';
 import {
   forgetWorkspaceSession,
+  readLastWorkspaceSessionId,
+  rememberWorkspaceHome,
   rememberWorkspaceSession,
+  validateRememberedWorkspaceSession,
 } from '@/lib/workbench/workspace-session-memory';
 import type { WorkbenchCourseSummary } from '@/lib/workbench/panel-context';
 import { useWorkbenchStore, type WorkbenchMaterial } from '@/lib/workbench/session-store';
@@ -190,9 +193,19 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const chatWidth = useChatWidth();
 
   const panes = navigation.panes;
+  const [rememberedResumeSessionId] = useState(() => {
+    const remembered = readLastWorkspaceSessionId();
+    return initialPanes.courseId === null && initialPanes.sessionId === remembered
+      ? remembered
+      : null;
+  });
   useEffect(() => {
-    if (panes.sessionId) rememberWorkspaceSession(panes.sessionId);
-  }, [panes.sessionId]);
+    if (panes.sessionId) {
+      rememberWorkspaceSession(panes.sessionId);
+    } else if (!panes.courseId) {
+      rememberWorkspaceHome();
+    }
+  }, [panes.courseId, panes.sessionId]);
   const collapse = usePaneCollapse();
   const [courseTabs, setCourseTabs] = useState(() => restoreCourseTabs(null, panes.courseId));
   const narrow = useNarrowViewport();
@@ -332,6 +345,25 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       client.stop();
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      sessionState !== 'ready' ||
+      !rememberedResumeSessionId ||
+      panes.sessionId !== rememberedResumeSessionId
+    ) {
+      return;
+    }
+    if (
+      validateRememberedWorkspaceSession(
+        rememberedResumeSessionId,
+        sessions.map((session) => session.id),
+      )
+    ) {
+      return;
+    }
+    navigation.replace({ sessionId: null, courseId: null });
+  }, [navigation, panes.sessionId, rememberedResumeSessionId, sessions, sessionState]);
 
   // ── Navigation ────────────────────────────────────────────────────────
   const goTo = useCallback(

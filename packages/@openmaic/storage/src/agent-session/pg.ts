@@ -775,6 +775,41 @@ export class PgAgentSessionStore
     });
   }
 
+  async pruneMessageUpdates(sessionId: string, messageEndSeq: number): Promise<number> {
+    const result = await this.queryable.query<{ seq: number }>(
+      `WITH completed_message AS (
+         SELECT message_end.seq AS end_seq, boundary.seq AS start_seq
+         FROM ${this.table('events')} message_end
+         JOIN LATERAL (
+           SELECT e.seq, e.type
+           FROM ${this.table('events')} e
+           WHERE e.session_id = message_end.session_id AND e.seq < message_end.seq
+             AND e.type IN ('message_start', 'message_end')
+           ORDER BY e.seq DESC LIMIT 1
+         ) boundary ON boundary.type = 'message_start'
+         WHERE message_end.session_id = $1 AND message_end.seq = $2
+           AND message_end.type = 'message_end'
+       ), message_events AS (
+         SELECT e.seq, e.type
+         FROM ${this.table('events')} e
+         INNER JOIN completed_message message
+           ON e.seq >= message.start_seq AND e.seq <= message.end_seq
+         WHERE e.session_id = $1
+       ), ranked AS (
+         SELECT seq, type, lag(type) OVER (ORDER BY seq) AS prev_type,
+                lead(type) OVER (ORDER BY seq) AS next_type
+         FROM message_events
+       )
+       DELETE FROM ${this.table('events')} e USING ranked r
+       WHERE e.session_id = $1 AND e.seq = r.seq AND e.seq < $2
+         AND r.type = 'message_update'
+         AND r.prev_type = 'message_update' AND r.next_type = 'message_update'
+       RETURNING e.seq`,
+      [sessionId, messageEndSeq],
+    );
+    return result.rows.length;
+  }
+
   async appendControlEvent(
     sessionId: string,
     event: Omit<NewAgentSessionEvent, 'attempt'>,

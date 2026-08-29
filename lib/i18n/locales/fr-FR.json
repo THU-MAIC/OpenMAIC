@@ -135,6 +135,22 @@
       "emptyAgentResponses": "Les agents n’ont renvoyé aucune réponse ; la discussion s’est arrêtée. Réessayez ou vérifiez les paramètres de votre modèle.",
       "streamInterrupted": "Le flux s’est interrompu de façon inattendue ; la discussion n’a pas abouti. Veuillez réessayer."
     },
+    "elementReference": {
+      "button": "Référencer la diapositive",
+      "unavailable": "Seule la diapositive PPT actuelle peut être référencée",
+      "instruction": "Cliquez sur un élément · Échap pour quitter",
+      "fallback": "Autres éléments de la diapositive ({{count}})",
+      "clear": "Retirer la référence à la diapositive",
+      "summary": {
+        "noText": "Sans texte",
+        "emptyContent": "Aucun contenu",
+        "code": "Code",
+        "line": "Ligne",
+        "imageMetadata": "Image (métadonnées uniquement)",
+        "videoMetadata": "Vidéo (métadonnées uniquement)",
+        "audioMetadata": "Audio (métadonnées uniquement)"
+      }
+    },
     "tabs": {
       "lecture": "Notes",
       "chat": "Discussion"
