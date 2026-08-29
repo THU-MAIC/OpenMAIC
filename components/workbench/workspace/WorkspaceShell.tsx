@@ -343,11 +343,15 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       const snapshot = [...next];
       sessionsRef.current = snapshot;
       setSessions(snapshot);
+      // Sparse owner events carry only their own field. A status publication
+      // therefore has no authority over the title it happens to copy from the
+      // client's current row; only a complete list snapshot may repair the
+      // attached header here. Local renames and title events use their explicit
+      // paths below.
+      if (source !== 'snapshot') return;
       const attachedId = useWorkbenchStore.getState().sessionId;
       const attached = snapshot.find((session) => session.id === attachedId);
-      if (attached) {
-        syncAttachedSessionTitle(attached.id, attached.title ?? null, source === 'snapshot');
-      }
+      if (attached) syncAttachedSessionTitle(attached.id, attached.title ?? null, true);
     },
     [],
   );
@@ -571,7 +575,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    */
   const renameSession = useCallback(
     (sessionId: string, raw: string): Promise<string | null> =>
-      sessionRenameQueue.run(sessionId, async () => {
+      sessionRenameQueue.run(sessionId, async (queued) => {
         const row = sessionsRef.current.find((session) => session.id === sessionId);
         const store = useWorkbenchStore.getState();
         const attached = store.sessionId === sessionId;
@@ -592,8 +596,15 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
             decision.client === null ||
             (ownerSessionClient.current === decision.client &&
               decision.client.isSessionTitleRevisionCurrent(sessionId, decision.revision)),
+          // A queued value that looks unchanged may be the user's explicit
+          // attempt to undo the still-ambiguous write ahead of it.
+          forceSave: queued,
         });
-        if (outcome === 'renamed') ownerSessionClient.current?.requestFullFetch();
+        // A failed write is still ambiguous at the transport boundary: the
+        // database may have committed before the response was lost, and an
+        // optimistic mutation may have hidden a newer snapshot while it was in
+        // flight. Reconcile every attempted change; unchanged input did no IO.
+        if (outcome !== 'unchanged') ownerSessionClient.current?.requestFullFetch();
         if (outcome !== 'failed') return null;
         const message = t('workspace.renameSessionFailed');
         toast.error(message);

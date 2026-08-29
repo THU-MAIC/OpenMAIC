@@ -63,13 +63,14 @@ export type SessionRenameOutcome = 'unchanged' | 'renamed' | 'failed';
  * so one refused rename never poisons the next turn.
  */
 export function createSessionRenameQueue(): {
-  run<T>(sessionId: string, task: () => Promise<T>): Promise<T>;
+  run<T>(sessionId: string, task: (queued: boolean) => Promise<T>): Promise<T>;
 } {
   const tails = new Map<string, Promise<void>>();
   return {
-    run<T>(sessionId: string, task: () => Promise<T>): Promise<T> {
-      const previous = tails.get(sessionId) ?? Promise.resolve();
-      const run = previous.then(task, task);
+    run<T>(sessionId: string, task: (queued: boolean) => Promise<T>): Promise<T> {
+      const predecessor = tails.get(sessionId);
+      const queued = predecessor !== undefined;
+      const run = (predecessor ?? Promise.resolve()).then(() => task(queued));
       const tail = run.then(
         () => undefined,
         () => undefined,
@@ -99,6 +100,7 @@ export async function commitSessionRename({
   apply,
   save,
   isCurrent = () => true,
+  forceSave = false,
 }: {
   readonly current: WorkbenchSessionNaming;
   readonly raw: string;
@@ -107,11 +109,13 @@ export async function commitSessionRename({
   readonly save: (title: string | null) => Promise<string | null>;
   /** False when another authoritative title decision arrived while PATCH was pending. */
   readonly isCurrent?: () => boolean;
+  /** Preserve an explicit decision queued behind a write whose outcome may still be ambiguous. */
+  readonly forceSave?: boolean;
 }): Promise<SessionRenameOutcome> {
   const next = normalizeSessionTitleInput(current, raw);
   const previous = current.title?.trim() || null;
   // Unchanged is not a rename; do not spend a round trip saying so.
-  if (next === previous) return 'unchanged';
+  if (!forceSave && next === previous) return 'unchanged';
   apply(next);
   try {
     const stored = await save(next);

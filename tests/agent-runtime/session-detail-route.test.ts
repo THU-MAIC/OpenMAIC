@@ -122,7 +122,7 @@ describe('PATCH agent session title', () => {
     expect(await response.text()).toBe('Not found');
   });
 
-  it.each(['missing', 'foreign', 'deleted'])('hides a %s session as not found', async () => {
+  it('hides any session rejected by the owner-scoped store as not found', async () => {
     mocks.setManualSessionTitle.mockResolvedValue(null);
 
     const response = await patch(JSON.stringify({ title: 'Hidden' }));

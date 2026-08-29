@@ -927,7 +927,7 @@ describe('renaming a conversation from the workspace shell', () => {
     expect(mocks.requestFullFetch).not.toHaveBeenCalled();
   });
 
-  it('does not reconcile a refused title', async () => {
+  it('reconciles a refused title in case the response was lost after commit', async () => {
     mocks.searchParams = new URLSearchParams('session=session-1&course=stage-1');
     mocks.store.sessionId = 'session-1';
     mocks.sessionRows = [namedSession()];
@@ -938,7 +938,8 @@ describe('renaming a conversation from the workspace shell', () => {
       await rename()('session-1', 'New title');
     });
 
-    expect(mocks.requestFullFetch).not.toHaveBeenCalled();
+    expect(mocks.requestFullFetch).toHaveBeenCalledTimes(1);
+    expect(mocks.requestFullFetch).toHaveBeenLastCalledWith();
   });
 
   it('finishes two same-session renames in submit order when the first one fails', async () => {
@@ -982,6 +983,43 @@ describe('renaming a conversation from the workspace shell', () => {
     ).find((row) => row.id === 'session-1');
     expect(session?.title).toBe('Title B');
     expect(mocks.store.sessionTitle).toBe('Title B');
+  });
+
+  it('persists a queued attempt to undo an in-flight rename even when the projection matches', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-1&course=stage-1');
+    mocks.store.sessionId = 'session-1';
+    mocks.store.sessionTitle = 'Old title';
+    mocks.store.sessionPrompt = 'Build a course';
+    mocks.sessionRows = [namedSession()];
+    const first = deferred<string | null>();
+    const second = deferred<string | null>();
+    mocks.renameWorkbenchSession
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    await render();
+
+    let renameA!: Promise<string | null>;
+    let restoreOld!: Promise<string | null>;
+    await act(async () => {
+      renameA = rename()('session-1', 'Title A');
+      await Promise.resolve();
+      mocks.ownerClient?.emitSessionTitle('session-1', 'Old title');
+      restoreOld = rename()('session-1', 'Old title');
+    });
+
+    await act(async () => {
+      first.resolve('Title A');
+      await renameA;
+      await Promise.resolve();
+    });
+    expect(mocks.renameWorkbenchSession).toHaveBeenCalledTimes(2);
+    expect(mocks.renameWorkbenchSession).toHaveBeenLastCalledWith('session-1', 'Old title');
+
+    await act(async () => {
+      second.resolve('Old title');
+      await restoreOld;
+    });
+    expect(mocks.store.sessionTitle).toBe('Old title');
   });
 
   it('rolls a refused second rename back to the first committed title', async () => {
@@ -1135,6 +1173,18 @@ describe('owner title projection in the workspace shell', () => {
       (mocks.railProps?.sessions as readonly { id: string; title?: string | null }[])[0]?.title,
     ).toBe('Recovered title');
     expect(mocks.setSessionTitle).toHaveBeenCalledWith('Recovered title');
+  });
+
+  it('does not let a sparse status publication overwrite a newer detail title', async () => {
+    mocks.sessionRows = [session('session-1', 'List title')];
+    await render();
+    mocks.store.sessionTitle = 'Detail title';
+    mocks.setSessionTitle.mockClear();
+
+    await act(async () => mocks.ownerClient?.emitSessionStatus('session-1'));
+
+    expect(mocks.setSessionTitle).not.toHaveBeenCalled();
+    expect(mocks.store.sessionTitle).toBe('Detail title');
   });
 
   it('advances the title revision for an equal-value full snapshot, but not a status update', async () => {

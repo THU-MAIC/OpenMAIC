@@ -339,7 +339,7 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM pg_constraint
     WHERE conrelid = 'agent_owner_session_events'::regclass
-      AND conname = 'agent_owner_session_events_type_known'
+      AND conname = 'agent_owner_session_events_type_known'::name
   ) OR NOT EXISTS (
     SELECT 1 FROM pg_constraint
     WHERE conrelid = 'agent_owner_session_events'::regclass
@@ -349,7 +349,7 @@ BEGIN
     IF EXISTS (
       SELECT 1 FROM pg_constraint
       WHERE conrelid = 'agent_owner_session_events'::regclass
-        AND conname = 'agent_owner_session_events_type_known'
+        AND conname = 'agent_owner_session_events_type_known'::name
     ) THEN
       ALTER TABLE agent_owner_session_events
         DROP CONSTRAINT agent_owner_session_events_type_known;

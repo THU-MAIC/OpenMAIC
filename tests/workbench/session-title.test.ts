@@ -159,6 +159,22 @@ describe('committing a rename', () => {
     expect(outcome).toBe('unchanged');
     expect(save).not.toHaveBeenCalled();
   });
+
+  it('preserves an explicit same-value decision queued behind an ambiguous write', async () => {
+    const applied: (string | null)[] = [];
+    const save = vi.fn(async () => '旧名字');
+    const outcome = await commitSessionRename({
+      current: { title: '旧名字', prompt: '帮我做一节课' },
+      raw: '旧名字',
+      apply: (title) => applied.push(title),
+      save,
+      forceSave: true,
+    });
+
+    expect(outcome).toBe('renamed');
+    expect(save).toHaveBeenCalledWith('旧名字');
+    expect(applied).toEqual(['旧名字', '旧名字']);
+  });
 });
 
 describe('late session metadata after a local rename', () => {

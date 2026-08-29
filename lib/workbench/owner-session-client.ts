@@ -234,11 +234,15 @@ export class OwnerSessionClient {
       this.malformedEventCount = 0;
       this.cursor = event.id;
       const reduced = reduceOwnerSessionEvent(this.sessions, event);
-      const ignoredStaleTitle =
+      const timestampStaleTitle =
         event.type === 'session_title' &&
         !reduced.needsFullFetch &&
         reduced.sessions === this.sessions;
-      if (!ignoredStaleTitle) {
+      // `updatedAt` also contains app-clock lifecycle writes, so a small clock
+      // skew can make a committed DB-clock title look old. A fresh list read
+      // distinguishes that case from a genuinely stale projection.
+      if (timestampStaleTitle) this.requestFullFetch();
+      if (!timestampStaleTitle) {
         this.journal.push(event);
         if (this.journal.length > OWNER_SESSION_JOURNAL_LIMIT) {
           this.journal.splice(0, this.journal.length - OWNER_SESSION_JOURNAL_LIMIT);
@@ -349,8 +353,18 @@ export class OwnerSessionClient {
         if (this.stopped || epoch !== this.epoch) return;
         let merged: readonly ProHomeSessionItem[] = newestFirst(snapshot).map((session) => {
           const mutation = this.titleMutations.get(session.id);
-          if (!mutation || mutation.revision === titleRevisions.get(session.id)) return session;
-          return { ...session, title: mutation.title };
+          if (!mutation) return session;
+          if (mutation.revision !== titleRevisions.get(session.id)) {
+            // This decision happened after the request began, so the response
+            // cannot contain it yet.
+            return { ...session, title: mutation.title };
+          }
+          // This request began after the local decision and its row is now the
+          // authoritative answer. Fence the still-pending PATCH settlement so
+          // a later network failure cannot roll this snapshot back.
+          this.titleDecisionRevisions.set(session.id, (this.titleMutationRevision += 1));
+          this.titleMutations.delete(session.id);
+          return session;
         });
         let needsFullFetch = false;
         for (const event of this.journal) {

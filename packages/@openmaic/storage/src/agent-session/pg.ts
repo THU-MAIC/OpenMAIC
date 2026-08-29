@@ -61,6 +61,11 @@ export const DEFAULT_AGENT_SESSION_TABLE_NAMES: Readonly<AgentSessionTableNames>
   urls: 'agent_session_urls',
 };
 
+const OWNER_EVENT_TYPE_CONSTRAINT_V2 = 'agent_owner_session_events_type_known_v2';
+// Long custom names can truncate the v1/v2 constraints to one PG identifier.
+// This impossible custom name shelters v2 while table names are substituted.
+const OWNER_EVENT_TYPE_CONSTRAINT_V2_SENTINEL = '__OPENMAIC_OWNER_EVENT_TYPE_KNOWN_V2__';
+
 export interface AgentSessionLogger {
   error(message: string, context: Record<string, unknown>, error: unknown): void;
 }
@@ -178,7 +183,7 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM pg_constraint
     WHERE conrelid = 'agent_owner_session_events'::regclass
-      AND conname = 'agent_owner_session_events_type_known'
+      AND conname = 'agent_owner_session_events_type_known'::name
   ) OR NOT EXISTS (
     SELECT 1 FROM pg_constraint
     WHERE conrelid = 'agent_owner_session_events'::regclass
@@ -188,7 +193,7 @@ BEGIN
     IF EXISTS (
       SELECT 1 FROM pg_constraint
       WHERE conrelid = 'agent_owner_session_events'::regclass
-        AND conname = 'agent_owner_session_events_type_known'
+        AND conname = 'agent_owner_session_events_type_known'::name
     ) THEN
       ALTER TABLE agent_owner_session_events
         DROP CONSTRAINT agent_owner_session_events_type_known;
@@ -254,9 +259,10 @@ function schemaFor(names: AgentSessionTableNames): string {
   // same replaceAll that re-keys their tables, so no separate prefix rewriting
   // is performed or needed.
   return AGENT_SESSION_PG_SCHEMA.replaceAll(
-    'agent_owner_session_event_counters',
-    names.ownerEventCounters,
+    OWNER_EVENT_TYPE_CONSTRAINT_V2,
+    OWNER_EVENT_TYPE_CONSTRAINT_V2_SENTINEL,
   )
+    .replaceAll('agent_owner_session_event_counters', names.ownerEventCounters)
     .replaceAll('agent_owner_session_events', names.ownerEvents)
     .replaceAll('agent_session_entries', names.entries)
     .replaceAll('agent_session_events', names.events)
@@ -276,7 +282,8 @@ function schemaFor(names: AgentSessionTableNames): string {
       `CREATE TABLE IF NOT EXISTS ${names.ownerEvents}`,
       `CREATE TABLE IF NOT EXISTS ${o}`,
     )
-    .replaceAll(`CREATE TABLE IF NOT EXISTS ${names.urls}`, `CREATE TABLE IF NOT EXISTS ${u}`);
+    .replaceAll(`CREATE TABLE IF NOT EXISTS ${names.urls}`, `CREATE TABLE IF NOT EXISTS ${u}`)
+    .replaceAll(OWNER_EVENT_TYPE_CONSTRAINT_V2_SENTINEL, OWNER_EVENT_TYPE_CONSTRAINT_V2);
 }
 
 /** Create all backend-owned tables when absent; existing schemas require migrations. */
@@ -499,7 +506,7 @@ export class PgAgentSessionStore
     return this.transaction(async (tx) => {
       const result = await tx.query<SessionRow>(
         `UPDATE ${this.table('sessions')}
-         SET title = $3, updated_at = now()
+         SET title = $3, updated_at = clock_timestamp()
          WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
          RETURNING ${SESSION_COLUMNS}`,
         [sessionId, ownerId, title],

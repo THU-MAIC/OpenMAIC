@@ -454,7 +454,7 @@ export interface WorkbenchState extends WorkbenchSessionState {
   setSessionPrompt: (prompt: string | null) => void;
   /**
    * The rename's optimistic write, and its rollback: the caller sets the new
-   * title, POSTs, and puts the old one back if the write is refused.
+   * title, PATCHes, and puts the old one back if the write is refused.
    */
   setSessionTitle: (title: string | null) => void;
   /** Seed title / stage / idle status from session meta before any events arrive. */
