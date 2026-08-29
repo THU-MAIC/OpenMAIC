@@ -139,6 +139,7 @@ function makeStore(meta: ClaimedAgentSession, options: { hasSessionRunHistory?: 
         return seq;
       },
     ),
+    pruneMessageUpdates: vi.fn(async () => 0),
     clearCancel: vi.fn(async () => undefined),
     finishSession: vi.fn(async () => true),
     getSession: vi.fn(async () => ({ ...meta, lease: { workerId: WORKER_ID } })),
@@ -283,6 +284,19 @@ describe('write-time settlement of interrupted tool calls', () => {
         (event.data?.message as { role?: string } | undefined)?.role === 'toolResult',
     );
     expect(toolResultEvents).toEqual([]);
+
+    const messageEndSeqs = store.appendRunEvent.mock.calls.flatMap((call, index) =>
+      call[2].type === 'message_end' ? [index + 1] : [],
+    );
+    expect(store.pruneMessageUpdates.mock.calls).toEqual(
+      messageEndSeqs.map((seq) => [SESSION_ID, seq]),
+    );
+    for (const [index, seq] of messageEndSeqs.entries()) {
+      const appendCallOrder = store.appendRunEvent.mock.invocationCallOrder[seq - 1]!;
+      expect(store.pruneMessageUpdates.mock.invocationCallOrder[index]).toBeGreaterThan(
+        appendCallOrder,
+      );
+    }
   });
 
   it('parks a shutdown-interrupted run with a durable receipt for the orphaned call', async () => {

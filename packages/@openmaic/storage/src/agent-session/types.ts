@@ -370,6 +370,8 @@ export interface AgentSessionEventLog {
     workerId: string,
     event: NewAgentSessionEvent,
   ): Promise<number | null>;
+  /** Keeps only the first and last frame in the update run before a completed message. */
+  pruneMessageUpdates(sessionId: string, messageEndSeq: number): Promise<number>;
   /**
    * Append a control-plane event without borrowing the runner's lease. The
    * stored attempt is the session's current generation, read under the session

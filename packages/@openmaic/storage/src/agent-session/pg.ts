@@ -775,6 +775,41 @@ export class PgAgentSessionStore
     });
   }
 
+  async pruneMessageUpdates(sessionId: string, messageEndSeq: number): Promise<number> {
+    const result = await this.queryable.query<{ seq: number }>(
+      `WITH RECURSIVE update_run(seq) AS (
+         SELECT previous.seq
+         FROM ${this.table('events')} message_end
+         JOIN LATERAL (
+           SELECT e.seq, e.type
+           FROM ${this.table('events')} e
+           WHERE e.session_id = message_end.session_id AND e.seq < message_end.seq
+           ORDER BY e.seq DESC LIMIT 1
+         ) previous ON previous.type = 'message_update'
+         WHERE message_end.session_id = $1 AND message_end.seq = $2
+           AND message_end.type = 'message_end'
+         UNION ALL
+         SELECT previous.seq
+         FROM update_run current
+         JOIN LATERAL (
+           SELECT e.seq, e.type
+           FROM ${this.table('events')} e
+           WHERE e.session_id = $1 AND e.seq < current.seq
+           ORDER BY e.seq DESC LIMIT 1
+         ) previous ON previous.type = 'message_update'
+       ), bounds AS (
+         SELECT min(seq) AS first_seq, max(seq) AS last_seq FROM update_run
+       )
+       DELETE FROM ${this.table('events')} e USING bounds
+       WHERE e.session_id = $1 AND e.type = 'message_update'
+         AND e.seq > bounds.first_seq AND e.seq < bounds.last_seq
+         AND e.seq < $2
+       RETURNING e.seq`,
+      [sessionId, messageEndSeq],
+    );
+    return result.rows.length;
+  }
+
   async appendControlEvent(
     sessionId: string,
     event: Omit<NewAgentSessionEvent, 'attempt'>,
