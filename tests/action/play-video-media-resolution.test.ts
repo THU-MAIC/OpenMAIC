@@ -106,4 +106,38 @@ describe('ActionEngine play_video media resolution', () => {
     await execution;
     engine.dispose();
   });
+
+  it('treats a deferred done-without-url task as pending and starts once hydrated', async () => {
+    const element = videoElement();
+    // Deferred restore state: done but byte-less until idle hydration lands.
+    useMediaGenerationStore.setState({
+      tasks: { [element.id]: mediaTask(element.id, 'done') },
+    });
+    const engine = new ActionEngine(actionStageStore(element));
+
+    const execution = engine.execute({
+      id: 'play-2',
+      type: 'play_video',
+      elementId: element.id,
+    });
+    await Promise.resolve();
+
+    // No <video> would exist yet, so playback must not start.
+    expect(useCanvasStore.getState().playingVideoElementId).not.toBe(element.id);
+
+    // Hydration supplies the bytes; the waiting action must start playback.
+    useMediaGenerationStore.setState((state) => ({
+      tasks: {
+        ...state.tasks,
+        [element.id]: { ...state.tasks[element.id], objectUrl: 'blob:hydrated' },
+      },
+    }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(useCanvasStore.getState().playingVideoElementId).toBe(element.id);
+    useCanvasStore.getState().pauseVideo();
+    await execution;
+    engine.dispose();
+  });
 });
