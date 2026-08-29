@@ -16,6 +16,7 @@ export const OWNER_SESSION_EVENT_TYPES = [
   'session_deleted',
   'session_active_stage',
   'session_cancel_requested',
+  'session_title',
 ] as const;
 
 export const SESSION_RECONCILE_MIN_MS = 60_000;
@@ -51,7 +52,11 @@ export interface OwnerEventSourceInit {
 interface OwnerSessionClientOptions {
   readonly fetchSessions: () => Promise<ProHomeSessionItem[]>;
   readonly createEventSource: (url: string, init?: OwnerEventSourceInit) => OwnerEventSource;
-  readonly onSessions: (sessions: readonly ProHomeSessionItem[]) => void;
+  readonly onSessions: (
+    sessions: readonly ProHomeSessionItem[],
+    source?: 'incremental' | 'snapshot',
+  ) => void;
+  readonly onSessionTitle?: (sessionId: string, title: string | null) => void;
   readonly onState: (state: SessionListState) => void;
   readonly onInitialized?: () => void;
   /**
@@ -93,14 +98,15 @@ function parseData(event: Event): unknown {
 
 function isOwnerSessionEvent(value: unknown): value is OwnerSessionEvent {
   if (!value || typeof value !== 'object') return false;
-  const event = value as Partial<OwnerSessionEvent>;
-  return (
+  const event = value as Record<string, unknown>;
+  const validBase =
     typeof event.type === 'string' &&
     (OWNER_SESSION_EVENT_TYPES as readonly string[]).includes(event.type) &&
     isDecimalCursor(event.id) &&
     typeof event.sessionId === 'string' &&
-    typeof event.ts === 'number'
-  );
+    typeof event.ts === 'number';
+  if (!validBase) return false;
+  return event.type !== 'session_title' || event.title === null || typeof event.title === 'string';
 }
 
 /**
@@ -126,6 +132,12 @@ export class OwnerSessionClient {
   private malformedEventCount = 0;
   private connectingSamples = 0;
   private streamDegraded = false;
+  private titleMutationRevision = 0;
+  private titleDecisionRevisions = new Map<string, number>();
+  private titleMutations = new Map<
+    string,
+    { readonly revision: number; readonly title: string | null }
+  >();
   private reconcileTimer: ReturnType<typeof setTimeout> | null = null;
   private streamHealthTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -155,6 +167,9 @@ export class OwnerSessionClient {
     this.malformedEventCount = 0;
     this.connectingSamples = 0;
     this.streamDegraded = false;
+    this.titleMutationRevision = 0;
+    this.titleDecisionRevisions.clear();
+    this.titleMutations.clear();
   }
 
   requestFullFetch(showLoading = false): void {
@@ -174,6 +189,24 @@ export class OwnerSessionClient {
     if (next === this.sessions) return;
     this.sessions = next;
     this.options.onSessions(next);
+  }
+
+  /** A local title decision that snapshots already in flight may not undo. */
+  updateSessionTitle(sessionId: string, title: string | null): number {
+    const revision = (this.titleMutationRevision += 1);
+    this.titleDecisionRevisions.set(sessionId, revision);
+    this.titleMutations.set(sessionId, {
+      revision,
+      title,
+    });
+    this.updateSessions((sessions) =>
+      sessions.map((session) => (session.id === sessionId ? { ...session, title } : session)),
+    );
+    return revision;
+  }
+
+  isSessionTitleRevisionCurrent(sessionId: string, revision: number): boolean {
+    return this.titleDecisionRevisions.get(sessionId) === revision;
   }
 
   private openStream(): void {
@@ -200,12 +233,23 @@ export class OwnerSessionClient {
       }
       this.malformedEventCount = 0;
       this.cursor = event.id;
-      this.journal.push(event);
-      if (this.journal.length > OWNER_SESSION_JOURNAL_LIMIT) {
-        this.journal.splice(0, this.journal.length - OWNER_SESSION_JOURNAL_LIMIT);
-        this.requestFullFetch();
-      }
       const reduced = reduceOwnerSessionEvent(this.sessions, event);
+      const ignoredStaleTitle =
+        event.type === 'session_title' &&
+        !reduced.needsFullFetch &&
+        reduced.sessions === this.sessions;
+      if (!ignoredStaleTitle) {
+        this.journal.push(event);
+        if (this.journal.length > OWNER_SESSION_JOURNAL_LIMIT) {
+          this.journal.splice(0, this.journal.length - OWNER_SESSION_JOURNAL_LIMIT);
+          this.requestFullFetch();
+        }
+        if (event.type === 'session_title') {
+          this.titleDecisionRevisions.set(event.sessionId, (this.titleMutationRevision += 1));
+          this.titleMutations.delete(event.sessionId);
+          this.options.onSessionTitle?.(event.sessionId, event.title);
+        }
+      }
       if (reduced.sessions !== this.sessions) {
         this.sessions = reduced.sessions;
         this.options.onSessions(this.sessions);
@@ -296,11 +340,18 @@ export class OwnerSessionClient {
     this.requestInFlight = true;
     const epoch = this.epoch;
     const snapshotCursor = this.cursor;
+    const titleRevisions = new Map(
+      [...this.titleMutations].map(([sessionId, mutation]) => [sessionId, mutation.revision]),
+    );
     void this.options
       .fetchSessions()
       .then((snapshot) => {
         if (this.stopped || epoch !== this.epoch) return;
-        let merged: readonly ProHomeSessionItem[] = newestFirst(snapshot);
+        let merged: readonly ProHomeSessionItem[] = newestFirst(snapshot).map((session) => {
+          const mutation = this.titleMutations.get(session.id);
+          if (!mutation || mutation.revision === titleRevisions.get(session.id)) return session;
+          return { ...session, title: mutation.title };
+        });
         let needsFullFetch = false;
         for (const event of this.journal) {
           if (compareDecimalCursor(event.id, snapshotCursor) <= 0) continue;
@@ -311,7 +362,7 @@ export class OwnerSessionClient {
         this.sessions = merged;
         this.journal = [];
         this.lastFullFetchFailed = false;
-        this.options.onSessions(merged);
+        this.options.onSessions(merged, 'snapshot');
         // Unconditionally authoritative: this snapshot is a full read of the
         // list, so it is correct even while the push channel is down. Gating
         // 'ready' on stream health left a dead stream + healthy REST stuck in

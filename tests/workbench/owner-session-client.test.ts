@@ -92,6 +92,40 @@ describe('owner session client', () => {
     client.stop();
   });
 
+  it.each([
+    { name: 'rename', title: 'New title' },
+    { name: 'clear', title: null },
+  ])(
+    'keeps a local title $name over an older in-flight snapshot when the queued repair fails',
+    async ({ title }) => {
+      const oldSnapshot = deferred<ProHomeSessionItem[]>();
+      const fetchSessions = vi
+        .fn<() => Promise<ProHomeSessionItem[]>>()
+        .mockResolvedValueOnce([{ ...row('succeeded', 100), title: 'Old title' }])
+        .mockReturnValueOnce(oldSnapshot.promise)
+        .mockRejectedValueOnce(new Error('queued repair failed'));
+      const updates: (readonly ProHomeSessionItem[])[] = [];
+      const client = new OwnerSessionClient({
+        fetchSessions,
+        createEventSource: () => new FakeEventSource(),
+        onSessions: (sessions) => updates.push(sessions),
+        onState: vi.fn(),
+      });
+
+      client.start();
+      await flushPromises();
+      client.requestFullFetch();
+      client.updateSessionTitle('session-1', title);
+      client.requestFullFetch();
+      oldSnapshot.resolve([{ ...row('succeeded', 150), title: 'Old title' }]);
+      await flushPromises();
+
+      expect(fetchSessions).toHaveBeenCalledTimes(3);
+      expect(updates.at(-1)?.[0]?.title).toBe(title);
+      client.stop();
+    },
+  );
+
   it('keeps bigint cursors as decimal strings and compares beyond Number precision', () => {
     expect.soft(compareDecimalCursor('90071992547409931', '90071992547409930')).toBe(1);
     expect.soft(compareDecimalCursor('90071992547409930', '90071992547409931')).toBe(-1);
@@ -135,6 +169,126 @@ describe('owner session client', () => {
     expect.soft(updates.at(-1)?.[0]?.status).toBe('succeeded');
     expect.soft(updates.at(-1)?.[0]?.updatedAt).toBe(500);
     expect.soft(fetchSessions).toHaveBeenCalledTimes(2);
+    client.stop();
+  });
+
+  it('replays a newer title event over a slow full snapshot and publishes the narrow callback', async () => {
+    const slowReconciliation = deferred<ProHomeSessionItem[]>();
+    const fetchSessions = vi
+      .fn<() => Promise<ProHomeSessionItem[]>>()
+      .mockResolvedValueOnce([{ ...row('running', 150), title: 'Before' }])
+      .mockReturnValueOnce(slowReconciliation.promise);
+    const source = new FakeEventSource();
+    const updates: (readonly ProHomeSessionItem[])[] = [];
+    const onSessionTitle = vi.fn();
+    const client = new OwnerSessionClient({
+      fetchSessions,
+      createEventSource: () => source,
+      onSessions: (sessions) => updates.push(sessions),
+      onSessionTitle,
+      onState: vi.fn(),
+    });
+
+    client.start();
+    await flushPromises();
+    client.requestFullFetch();
+    source.emit('session_title', {
+      id: '90071992547409932',
+      sessionId: 'session-1',
+      ts: 500,
+      phase: 'live',
+      type: 'session_title',
+      title: 'Newest title',
+    });
+    slowReconciliation.resolve([{ ...row('running', 200), title: 'Stale snapshot' }]);
+    await flushPromises();
+
+    expect(updates.at(-1)?.[0]).toMatchObject({ title: 'Newest title', updatedAt: 500 });
+    expect(onSessionTitle).toHaveBeenCalledWith('session-1', 'Newest title');
+    client.stop();
+  });
+
+  it('invalidates a pending local title decision when a newer owner title event is accepted', async () => {
+    const source = new FakeEventSource();
+    const client = new OwnerSessionClient({
+      fetchSessions: vi.fn(async () => [{ ...row('running', 150), title: 'Before' }]),
+      createEventSource: () => source,
+      onSessions: vi.fn(),
+      onState: vi.fn(),
+    });
+
+    client.start();
+    await flushPromises();
+    const revision = client.updateSessionTitle('session-1', 'Local title');
+    expect(client.isSessionTitleRevisionCurrent('session-1', revision)).toBe(true);
+
+    source.emit('session_title', {
+      id: '39',
+      sessionId: 'session-1',
+      ts: 500,
+      phase: 'live',
+      type: 'session_title',
+      title: 'Other tab title',
+    });
+
+    expect(client.isSessionTitleRevisionCurrent('session-1', revision)).toBe(false);
+    client.stop();
+  });
+
+  it('publishes a title event even when the attached row has not reached the list yet', async () => {
+    const source = new FakeEventSource();
+    const fetchSessions = vi.fn(async () => [] as ProHomeSessionItem[]);
+    const onSessionTitle = vi.fn();
+    const client = new OwnerSessionClient({
+      fetchSessions,
+      createEventSource: () => source,
+      onSessions: vi.fn(),
+      onSessionTitle,
+      onState: vi.fn(),
+    });
+
+    client.start();
+    await flushPromises();
+    source.emit('session_title', {
+      id: '40',
+      sessionId: 'session-not-listed',
+      ts: 500,
+      phase: 'live',
+      type: 'session_title',
+      title: 'Arrived first',
+    });
+    await flushPromises();
+
+    expect(onSessionTitle).toHaveBeenCalledWith('session-not-listed', 'Arrived first');
+    expect(fetchSessions).toHaveBeenCalledTimes(2);
+    client.stop();
+  });
+
+  it('does not publish an attached-title callback for a known stale projection', async () => {
+    const source = new FakeEventSource();
+    const onSessionTitle = vi.fn();
+    const client = new OwnerSessionClient({
+      fetchSessions: vi.fn(async () => [{ ...row('running', 500), title: 'Authoritative title' }]),
+      createEventSource: () => source,
+      onSessions: vi.fn(),
+      onSessionTitle,
+      onState: vi.fn(),
+    });
+
+    client.start();
+    await flushPromises();
+    const revision = client.updateSessionTitle('session-1', 'Local title');
+    source.emit('session_title', {
+      id: '41',
+      sessionId: 'session-1',
+      ts: 499,
+      phase: 'backlog',
+      type: 'session_title',
+      title: 'Stale title',
+    });
+
+    expect(onSessionTitle).not.toHaveBeenCalled();
+    expect(client.isSessionTitleRevisionCurrent('session-1', revision)).toBe(true);
     client.stop();
   });
 

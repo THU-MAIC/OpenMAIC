@@ -81,6 +81,10 @@ export type OwnerSessionEvent =
   | (OwnerSessionEventBase & {
       readonly type: 'session_active_stage';
       readonly activeStageId: string;
+    })
+  | (OwnerSessionEventBase & {
+      readonly type: 'session_title';
+      readonly title: string | null;
     });
 
 export interface OwnerSessionReduceResult {
@@ -112,12 +116,17 @@ export function reduceOwnerSessionEvent(
   }
 
   const current = sessions[index]!;
+  if (event.type === 'session_title' && event.ts < current.updatedAt) {
+    return { sessions, needsFullFetch: false };
+  }
   const changed: ProHomeSessionItem =
     event.type === 'session_status' || event.type === 'session_created'
       ? { ...current, status: event.status, updatedAt: event.ts }
       : event.type === 'session_active_stage'
         ? { ...current, stageId: event.activeStageId, updatedAt: event.ts }
-        : { ...current, updatedAt: event.ts };
+        : event.type === 'session_title'
+          ? { ...current, title: event.title, updatedAt: event.ts }
+          : { ...current, updatedAt: event.ts };
   const next = sessions.map((session, currentIndex) =>
     currentIndex === index ? changed : session,
   );

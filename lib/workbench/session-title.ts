@@ -58,6 +58,32 @@ export function normalizeSessionTitleInput(
 export type SessionRenameOutcome = 'unchanged' | 'renamed' | 'failed';
 
 /**
+ * Keep saves for one conversation in submit order while leaving unrelated
+ * conversations independent. Each tail is settled even when its task fails,
+ * so one refused rename never poisons the next turn.
+ */
+export function createSessionRenameQueue(): {
+  run<T>(sessionId: string, task: () => Promise<T>): Promise<T>;
+} {
+  const tails = new Map<string, Promise<void>>();
+  return {
+    run<T>(sessionId: string, task: () => Promise<T>): Promise<T> {
+      const previous = tails.get(sessionId) ?? Promise.resolve();
+      const run = previous.then(task, task);
+      const tail = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      tails.set(sessionId, tail);
+      void tail.then(() => {
+        if (tails.get(sessionId) === tail) tails.delete(sessionId);
+      });
+      return run;
+    },
+  };
+}
+
+/**
  * One rename, start to finish: write it everywhere it shows immediately, settle
  * on what the server actually stored, and put the old name back if the write is
  * refused.
@@ -72,12 +98,15 @@ export async function commitSessionRename({
   raw,
   apply,
   save,
+  isCurrent = () => true,
 }: {
   readonly current: WorkbenchSessionNaming;
   readonly raw: string;
   readonly apply: (title: string | null) => void;
   /** Resolves to the title the server stored — it caps the length. */
   readonly save: (title: string | null) => Promise<string | null>;
+  /** False when another authoritative title decision arrived while PATCH was pending. */
+  readonly isCurrent?: () => boolean;
 }): Promise<SessionRenameOutcome> {
   const next = normalizeSessionTitleInput(current, raw);
   const previous = current.title?.trim() || null;
@@ -85,10 +114,11 @@ export async function commitSessionRename({
   if (next === previous) return 'unchanged';
   apply(next);
   try {
-    apply(await save(next));
+    const stored = await save(next);
+    if (isCurrent()) apply(stored);
     return 'renamed';
   } catch {
-    apply(previous);
+    if (isCurrent()) apply(previous);
     return 'failed';
   }
 }

@@ -13,6 +13,16 @@ import { act, createElement, StrictMode, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+interface MockSessionRow {
+  readonly id: string;
+  readonly stageId: string;
+  readonly updatedAt: number;
+  readonly createdAt?: number;
+  readonly title?: string | null;
+  readonly prompt?: string;
+  readonly status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+}
+
 const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
   routerReplace: vi.fn(),
@@ -28,20 +38,18 @@ const mocks = vi.hoisted(() => ({
   classroomProps: null as Record<string, unknown> | null,
   chatPaneProps: null as Record<string, unknown> | null,
   searchParams: new URLSearchParams('course=stage-1'),
-  sessionRows: [] as readonly {
-    id: string;
-    stageId: string;
-    updatedAt: number;
-    title?: string | null;
-    prompt?: string;
-    status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
-  }[],
+  sessionRows: [] as readonly MockSessionRow[],
   sessionListState: 'ready' as 'loading' | 'ready' | 'error',
   ownerOptions: null as null | {
-    onSessions: (rows: readonly { id: string; stageId: string; updatedAt: number }[]) => void;
+    onSessions: (rows: readonly MockSessionRow[], source?: 'incremental' | 'snapshot') => void;
+    onSessionTitle?: (sessionId: string, title: string | null) => void;
     onState: (state: 'loading' | 'ready' | 'error') => void;
   },
-  ownerClient: null as null | { emitSessionStatus: (sessionId: string) => void },
+  ownerClient: null as null | {
+    emitSessionStatus: (sessionId: string) => void;
+    emitSessionTitle: (sessionId: string, title: string | null) => void;
+    reconcileSessions: (rows: readonly MockSessionRow[]) => void;
+  },
   router: null as {
     push: (...args: unknown[]) => unknown;
     replace: (...args: unknown[]) => unknown;
@@ -116,10 +124,13 @@ vi.mock('@/lib/workbench/first-message-session', () => ({
 vi.mock('@/lib/workbench/owner-session-client', () => ({
   OwnerSessionClient: class {
     private sessions: typeof mocks.sessionRows = [];
+    private titleRevision = 0;
+    private readonly titleRevisions = new Map<string, number>();
 
     constructor(
       private readonly options: {
-        onSessions: (rows: readonly { id: string; stageId: string; updatedAt: number }[]) => void;
+        onSessions: (rows: readonly MockSessionRow[], source?: 'incremental' | 'snapshot') => void;
+        onSessionTitle?: (sessionId: string, title: string | null) => void;
         onState: (state: 'loading' | 'ready' | 'error') => void;
       },
     ) {}
@@ -127,7 +138,7 @@ vi.mock('@/lib/workbench/owner-session-client', () => ({
       mocks.ownerOptions = this.options;
       mocks.ownerClient = this;
       this.sessions = mocks.sessionRows;
-      this.options.onSessions(this.sessions);
+      this.options.onSessions(this.sessions, 'snapshot');
       this.options.onState(mocks.sessionListState);
     }
     stop() {}
@@ -137,11 +148,36 @@ vi.mock('@/lib/workbench/owner-session-client', () => ({
       this.sessions = update(this.sessions);
       this.options.onSessions(this.sessions);
     }
+    updateSessionTitle(sessionId: string, title: string | null) {
+      mocks.updateSessions(sessionId, title);
+      const revision = (this.titleRevision += 1);
+      this.titleRevisions.set(sessionId, revision);
+      this.sessions = this.sessions.map((session) =>
+        session.id === sessionId ? { ...session, title } : session,
+      );
+      this.options.onSessions(this.sessions);
+      return revision;
+    }
+    isSessionTitleRevisionCurrent(sessionId: string, revision: number) {
+      return this.titleRevisions.get(sessionId) === revision;
+    }
     emitSessionStatus(sessionId: string) {
       this.sessions = this.sessions.map((session) =>
         session.id === sessionId ? { ...session, status: 'succeeded' as const } : session,
       );
       this.options.onSessions(this.sessions);
+    }
+    emitSessionTitle(sessionId: string, title: string | null) {
+      this.titleRevisions.set(sessionId, (this.titleRevision += 1));
+      this.options.onSessionTitle?.(sessionId, title);
+      this.sessions = this.sessions.map((session) =>
+        session.id === sessionId ? { ...session, title } : session,
+      );
+      this.options.onSessions(this.sessions);
+    }
+    reconcileSessions(rows: readonly MockSessionRow[]) {
+      this.sessions = rows;
+      this.options.onSessions(this.sessions, 'snapshot');
     }
   },
 }));
@@ -196,6 +232,16 @@ const render = async (node: ReactNode = createElement(WorkspaceShell)) => {
   root ??= createRoot(container);
   await act(async () => root?.render(node));
 };
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
 
 /** The draft-conversation capability the shell hands its chat pane, if any. */
 const draft = () =>
@@ -252,7 +298,10 @@ beforeEach(() => {
   mocks.requestFullFetch.mockClear();
   mocks.updateSessions.mockClear();
   mocks.renameWorkbenchSession.mockReset();
-  mocks.setSessionTitle.mockClear();
+  mocks.setSessionTitle.mockReset();
+  mocks.setSessionTitle.mockImplementation((title: string | null) => {
+    mocks.store.sessionTitle = title;
+  });
   mocks.startFirstMessage.mockReset();
   mocks.startFirstMessage.mockResolvedValue({
     sessionId: 'session-new',
@@ -890,5 +939,214 @@ describe('renaming a conversation from the workspace shell', () => {
     });
 
     expect(mocks.requestFullFetch).not.toHaveBeenCalled();
+  });
+
+  it('finishes two same-session renames in submit order when the first one fails', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-1&course=stage-1');
+    mocks.store.sessionId = 'session-1';
+    mocks.store.sessionTitle = 'Old title';
+    mocks.store.sessionPrompt = 'Build a course';
+    mocks.sessionRows = [namedSession()];
+    const first = deferred<string | null>();
+    const second = deferred<string | null>();
+    mocks.renameWorkbenchSession
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    await render();
+
+    let renameA!: Promise<string | null>;
+    let renameB!: Promise<string | null>;
+    await act(async () => {
+      renameA = rename()('session-1', 'Title A');
+      renameB = rename()('session-1', 'Title B');
+      await Promise.resolve();
+    });
+
+    expect(mocks.renameWorkbenchSession).toHaveBeenCalledTimes(1);
+    expect(mocks.renameWorkbenchSession).toHaveBeenLastCalledWith('session-1', 'Title A');
+
+    await act(async () => {
+      first.reject(new Error('500'));
+      await renameA;
+      await Promise.resolve();
+    });
+    expect(mocks.renameWorkbenchSession).toHaveBeenCalledTimes(2);
+    expect(mocks.renameWorkbenchSession).toHaveBeenLastCalledWith('session-1', 'Title B');
+
+    await act(async () => {
+      second.resolve('Title B');
+      await renameB;
+    });
+    const session = (
+      mocks.railProps?.sessions as readonly { id: string; title?: string | null }[]
+    ).find((row) => row.id === 'session-1');
+    expect(session?.title).toBe('Title B');
+    expect(mocks.store.sessionTitle).toBe('Title B');
+  });
+
+  it('rolls a refused second rename back to the first committed title', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-1&course=stage-1');
+    mocks.store.sessionId = 'session-1';
+    mocks.store.sessionTitle = 'Old title';
+    mocks.store.sessionPrompt = 'Build a course';
+    mocks.sessionRows = [namedSession()];
+    const first = deferred<string | null>();
+    const second = deferred<string | null>();
+    mocks.renameWorkbenchSession
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    await render();
+
+    let renameA!: Promise<string | null>;
+    let renameB!: Promise<string | null>;
+    await act(async () => {
+      renameA = rename()('session-1', 'Title A');
+      renameB = rename()('session-1', 'Title B');
+      await Promise.resolve();
+    });
+    expect(mocks.renameWorkbenchSession).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      first.resolve('Title A');
+      await renameA;
+      await Promise.resolve();
+    });
+    expect(mocks.renameWorkbenchSession).toHaveBeenLastCalledWith('session-1', 'Title B');
+
+    await act(async () => {
+      second.reject(new Error('500'));
+      await renameB;
+    });
+    const session = (
+      mocks.railProps?.sessions as readonly { id: string; title?: string | null }[]
+    ).find((row) => row.id === 'session-1');
+    expect(session?.title).toBe('Title A');
+    expect(mocks.store.sessionTitle).toBe('Title A');
+  });
+
+  it('does not settle a pending PATCH over a newer owner title event', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-1&course=stage-1');
+    mocks.store.sessionId = 'session-1';
+    mocks.store.sessionTitle = 'Old title';
+    mocks.store.sessionPrompt = 'Build a course';
+    mocks.sessionRows = [namedSession()];
+    const pending = deferred<string | null>();
+    mocks.renameWorkbenchSession.mockReturnValueOnce(pending.promise);
+    await render();
+
+    let localRename!: Promise<string | null>;
+    await act(async () => {
+      localRename = rename()('session-1', 'Local title');
+      await Promise.resolve();
+    });
+    await act(async () => mocks.ownerClient?.emitSessionTitle('session-1', 'Other tab title'));
+    await act(async () => {
+      pending.resolve('Local title');
+      await localRename;
+    });
+
+    const session = (
+      mocks.railProps?.sessions as readonly { id: string; title?: string | null }[]
+    ).find((row) => row.id === 'session-1');
+    expect(session?.title).toBe('Other tab title');
+    expect(mocks.store.sessionTitle).toBe('Other tab title');
+  });
+
+  it('does not roll a failed PATCH back over a newer owner title event', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-1&course=stage-1');
+    mocks.store.sessionId = 'session-1';
+    mocks.store.sessionTitle = 'Old title';
+    mocks.store.sessionPrompt = 'Build a course';
+    mocks.sessionRows = [namedSession()];
+    const pending = deferred<string | null>();
+    mocks.renameWorkbenchSession.mockReturnValueOnce(pending.promise);
+    await render();
+
+    let localRename!: Promise<string | null>;
+    await act(async () => {
+      localRename = rename()('session-1', 'Local title');
+      await Promise.resolve();
+    });
+    await act(async () => mocks.ownerClient?.emitSessionTitle('session-1', 'Other tab title'));
+    await act(async () => {
+      pending.reject(new Error('500'));
+      await localRename;
+    });
+
+    const session = (
+      mocks.railProps?.sessions as readonly { id: string; title?: string | null }[]
+    ).find((row) => row.id === 'session-1');
+    expect(session?.title).toBe('Other tab title');
+    expect(mocks.store.sessionTitle).toBe('Other tab title');
+  });
+});
+
+describe('owner title projection in the workspace shell', () => {
+  const session = (id: string, title: string | null) => ({
+    id,
+    stageId: `stage-${id}`,
+    prompt: `${id} prompt`,
+    title,
+    status: 'succeeded' as const,
+    createdAt: 1,
+    updatedAt: 9,
+  });
+
+  beforeEach(() => {
+    mocks.searchParams = new URLSearchParams('session=session-1');
+    mocks.store.sessionId = 'session-1';
+    mocks.store.sessionTitle = 'Attached title';
+  });
+
+  it('syncs a title event to the rail and attached header', async () => {
+    mocks.sessionRows = [session('session-1', 'Attached title')];
+    await render();
+    mocks.setSessionTitle.mockClear();
+
+    await act(async () => mocks.ownerClient?.emitSessionTitle('session-1', 'Event title'));
+
+    expect(
+      (mocks.railProps?.sessions as readonly { id: string; title?: string | null }[])[0]?.title,
+    ).toBe('Event title');
+    expect(mocks.setSessionTitle).toHaveBeenCalledWith('Event title');
+  });
+
+  it('advances the attached title revision for an authoritative clear already shown as empty', async () => {
+    mocks.store.sessionTitle = null;
+    mocks.sessionRows = [session('session-1', null)];
+    await render();
+    mocks.setSessionTitle.mockClear();
+
+    await act(async () => mocks.ownerClient?.emitSessionTitle('session-1', null));
+
+    expect(mocks.setSessionTitle).toHaveBeenCalledWith(null);
+  });
+
+  it('repairs the attached header from a full owner-list reconciliation', async () => {
+    mocks.sessionRows = [session('session-1', 'Attached title')];
+    await render();
+    mocks.setSessionTitle.mockClear();
+
+    await act(async () =>
+      mocks.ownerClient?.reconcileSessions([session('session-1', 'Recovered title')]),
+    );
+
+    expect(
+      (mocks.railProps?.sessions as readonly { id: string; title?: string | null }[])[0]?.title,
+    ).toBe('Recovered title');
+    expect(mocks.setSessionTitle).toHaveBeenCalledWith('Recovered title');
+  });
+
+  it('advances the title revision for an equal-value full snapshot, but not a status update', async () => {
+    mocks.store.sessionTitle = null;
+    mocks.sessionRows = [session('session-1', null)];
+    await render();
+    mocks.setSessionTitle.mockClear();
+
+    await act(async () => mocks.ownerClient?.emitSessionStatus('session-1'));
+    expect(mocks.setSessionTitle).not.toHaveBeenCalled();
+
+    await act(async () => mocks.ownerClient?.reconcileSessions([session('session-1', null)]));
+    expect(mocks.setSessionTitle).toHaveBeenCalledWith(null);
   });
 });

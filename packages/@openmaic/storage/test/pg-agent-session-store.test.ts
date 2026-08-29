@@ -94,6 +94,49 @@ describe('PgAgentSessionStore with PGlite', () => {
     expect((await store.listSessionsByOwner('owner-a'))[0]).not.toHaveProperty('title');
   });
 
+  test('projects manual title changes, including clear, through owner replay', async () => {
+    await store.createSession(makeAgentSessionInput());
+    const titles: AgentSessionTitleStore = store;
+
+    await titles.setManualSessionTitle('session-1', 'owner-a', 'Focused question');
+    await titles.setManualSessionTitle('session-1', 'owner-a', null);
+
+    await expect(store.readAfter('owner-a', BigInt(1))).resolves.toMatchObject([
+      { type: 'session_title', sessionId: 'session-1', title: 'Focused question' },
+      { type: 'session_title', sessionId: 'session-1', title: null },
+    ]);
+    const stored = await db.query<{ data: unknown }>(
+      `SELECT data FROM agent_owner_session_events
+       WHERE owner_id = 'owner-a' AND type = 'session_title' ORDER BY id`,
+    );
+    expect(stored.rows).toEqual([
+      { data: { title: 'Focused question' } },
+      { data: { title: null } },
+    ]);
+  });
+
+  test('keeps a manual title when its owner projection fails', async () => {
+    const logged: unknown[] = [];
+    const titles = new PgAgentSessionStore(db, {
+      ...optionsFor(db),
+      logger: { error: (...args) => logged.push(args) },
+    });
+    await titles.createSession(makeAgentSessionInput());
+    await db.query(
+      `ALTER TABLE agent_owner_session_events
+       ADD CONSTRAINT reject_title_projection CHECK (type <> 'session_title')`,
+    );
+
+    await expect(
+      titles.setManualSessionTitle('session-1', 'owner-a', 'Still committed'),
+    ).resolves.toMatchObject({ title: 'Still committed' });
+    await expect(titles.getSession('session-1')).resolves.toMatchObject({
+      title: 'Still committed',
+    });
+    expect(await titles.readMaxId('owner-a')).toBe(BigInt(1));
+    expect(logged).toHaveLength(1);
+  });
+
   test('does not set a title for another owner session', async () => {
     await store.createSession(makeAgentSessionInput());
     const titles: AgentSessionTitleStore = store;
@@ -159,6 +202,44 @@ describe('PgAgentSessionStore with PGlite', () => {
          WHERE table_name = 'legacy_sessions' AND column_name = 'title'`,
       ),
     ).resolves.toMatchObject({ rows: [{ is_nullable: 'YES' }] });
+  });
+
+  test('upgrades the closed owner-event constraint for custom table names idempotently', async () => {
+    await db.query(`
+      CREATE TABLE legacy_owner_events (
+        owner_id TEXT NOT NULL,
+        id BIGINT NOT NULL,
+        ts BIGINT NOT NULL,
+        session_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        status TEXT,
+        attempt INTEGER,
+        data JSONB NOT NULL,
+        PRIMARY KEY (owner_id, id),
+        CONSTRAINT legacy_owner_events_type_known CHECK (type IN
+          ('session_created','session_status','session_deleted',
+           'session_active_stage','session_cancel_requested'))
+      )
+    `);
+
+    const legacyTables = { ownerEvents: 'legacy_owner_events' };
+    await expect(ensureAgentSessionSchema(db, legacyTables)).resolves.toBeUndefined();
+    await expect(ensureAgentSessionSchema(db, legacyTables)).resolves.toBeUndefined();
+    await expect(
+      db.query(
+        `INSERT INTO legacy_owner_events
+           (owner_id, id, ts, session_id, type, status, attempt, data)
+         VALUES ('owner-a', 1, 1, 'session-1', 'session_title', NULL, NULL,
+                 '{"title":"Migrated"}'::jsonb)`,
+      ),
+    ).resolves.toBeDefined();
+    await expect(
+      db.query(
+        `INSERT INTO legacy_owner_events
+           (owner_id, id, ts, session_id, type, status, attempt, data)
+         VALUES ('owner-a', 2, 1, 'session-1', 'session_retry', NULL, NULL, '{}'::jsonb)`,
+      ),
+    ).rejects.toThrow();
   });
 
   test('requires a correctly pinned transaction hook', () => {

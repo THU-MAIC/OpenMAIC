@@ -104,7 +104,7 @@ import {
 import type { WorkbenchCourseSummary } from '@/lib/workbench/panel-context';
 import { useWorkbenchStore, type WorkbenchMaterial } from '@/lib/workbench/session-store';
 import { renameWorkbenchSession } from '@/lib/workbench/session-store';
-import { commitSessionRename } from '@/lib/workbench/session-title';
+import { commitSessionRename, createSessionRenameQueue } from '@/lib/workbench/session-title';
 import type { ElementRef } from '@/lib/workbench/element-refs';
 import type { CourseRef } from '@/lib/workbench/course-refs';
 import { useStageFreshnessSync, useWorkbenchStream } from '@/lib/workbench/use-workbench-session';
@@ -146,6 +146,16 @@ async function fetchSessions(): Promise<ProHomeSessionItem[]> {
   }
 }
 
+function syncAttachedSessionTitle(
+  sessionId: string,
+  title: string | null,
+  forceRevision = false,
+): void {
+  const store = useWorkbenchStore.getState();
+  if (store.sessionId !== sessionId || (!forceRevision && store.sessionTitle === title)) return;
+  store.setSessionTitle(title);
+}
+
 /**
  * Route seam: capture the deep link exactly once. Native History API writes
  * update Next's search-param readers, while the controller below keeps its own
@@ -166,14 +176,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const courses = useHomeDiscovery({ mode: 'discover-only' });
   const [sessions, setSessions] = useState<ProHomeSessionItem[]>(EMPTY_SESSIONS);
   /**
-   * The latest list, readable from a callback without making that callback a
-   * new function on every poll (the rail would then see a changed prop every
-   * few seconds for no reason). Synced in an effect, never during render.
+   * The latest list, readable from queued callbacks without waiting for React
+   * to commit another render. The owner publisher updates it before setState.
    */
   const sessionsRef = useRef(sessions);
-  useEffect(() => {
-    sessionsRef.current = sessions;
-  }, [sessions]);
   const [sessionState, setSessionState] = useState<HomeDiscoveryState>('loading');
   const [composerReset, setComposerReset] = useState(0);
   /**
@@ -187,6 +193,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    */
   const [newConversationRequested, setNewConversationRequested] = useState(false);
   const ownerSessionClient = useRef<OwnerSessionClient | null>(null);
+  const [sessionRenameQueue] = useState(createSessionRenameQueue);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const railWidth = useRailWidth(rootRef);
@@ -331,11 +338,26 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     ownerSessionClient.current?.requestFullFetch(showLoading);
   }, []);
 
+  const publishOwnerSessions = useCallback(
+    (next: readonly ProHomeSessionItem[], source?: 'incremental' | 'snapshot') => {
+      const snapshot = [...next];
+      sessionsRef.current = snapshot;
+      setSessions(snapshot);
+      const attachedId = useWorkbenchStore.getState().sessionId;
+      const attached = snapshot.find((session) => session.id === attachedId);
+      if (attached) {
+        syncAttachedSessionTitle(attached.id, attached.title ?? null, source === 'snapshot');
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     const client = new OwnerSessionClient({
       fetchSessions,
       createEventSource: (url) => new EventSource(url),
-      onSessions: (next) => setSessions([...next]),
+      onSessions: publishOwnerSessions,
+      onSessionTitle: (sessionId, title) => syncAttachedSessionTitle(sessionId, title, true),
       onState: setSessionState,
     });
     ownerSessionClient.current = client;
@@ -344,7 +366,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       ownerSessionClient.current = null;
       client.stop();
     };
-  }, []);
+  }, [publishOwnerSessions]);
 
   useEffect(() => {
     if (
@@ -529,12 +551,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * which reads its own copy out of the session store.
    */
   const applySessionTitle = useCallback((sessionId: string, title: string | null) => {
-    ownerSessionClient.current?.updateSessions((current) =>
-      current.map((session) => (session.id === sessionId ? { ...session, title } : session)),
-    );
-    if (useWorkbenchStore.getState().sessionId === sessionId) {
-      useWorkbenchStore.getState().setSessionTitle(title);
-    }
+    syncAttachedSessionTitle(sessionId, title, true);
+    const client = ownerSessionClient.current;
+    const revision = client?.updateSessionTitle(sessionId, title) ?? null;
+    return { client, revision };
   }, []);
 
   /**
@@ -550,26 +570,36 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * renames use.
    */
   const renameSession = useCallback(
-    async (sessionId: string, raw: string): Promise<string | null> => {
-      const row = sessionsRef.current.find((session) => session.id === sessionId);
-      const store = useWorkbenchStore.getState();
-      const attached = store.sessionId === sessionId;
-      const outcome = await commitSessionRename({
-        current: {
-          title: row?.title ?? (attached ? store.sessionTitle : null),
-          prompt: row?.prompt ?? (attached ? store.sessionPrompt : null),
-        },
-        raw,
-        apply: (title) => applySessionTitle(sessionId, title),
-        save: (title) => renameWorkbenchSession(sessionId, title),
-      });
-      if (outcome === 'renamed') ownerSessionClient.current?.requestFullFetch();
-      if (outcome !== 'failed') return null;
-      const message = t('workspace.renameSessionFailed');
-      toast.error(message);
-      return message;
-    },
-    [applySessionTitle, t],
+    (sessionId: string, raw: string): Promise<string | null> =>
+      sessionRenameQueue.run(sessionId, async () => {
+        const row = sessionsRef.current.find((session) => session.id === sessionId);
+        const store = useWorkbenchStore.getState();
+        const attached = store.sessionId === sessionId;
+        let decision: ReturnType<typeof applySessionTitle> | null = null;
+        const outcome = await commitSessionRename({
+          current: {
+            title: row?.title ?? (attached ? store.sessionTitle : null),
+            prompt: row?.prompt ?? (attached ? store.sessionPrompt : null),
+          },
+          raw,
+          apply: (title) => {
+            decision = applySessionTitle(sessionId, title);
+          },
+          save: (title) => renameWorkbenchSession(sessionId, title),
+          isCurrent: () =>
+            decision === null ||
+            decision.revision === null ||
+            decision.client === null ||
+            (ownerSessionClient.current === decision.client &&
+              decision.client.isSessionTitleRevisionCurrent(sessionId, decision.revision)),
+        });
+        if (outcome === 'renamed') ownerSessionClient.current?.requestFullFetch();
+        if (outcome !== 'failed') return null;
+        const message = t('workspace.renameSessionFailed');
+        toast.error(message);
+        return message;
+      }),
+    [applySessionTitle, sessionRenameQueue, t],
   );
 
   /**
@@ -717,6 +747,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     // the meta fetch otherwise — a `?session=` deep link has neither yet, and
     // the chat needs neither.
     attach(panes.sessionId, paneSessionStageId);
+    const attached = sessionsRef.current.find((session) => session.id === panes.sessionId);
+    if (attached) syncAttachedSessionTitle(attached.id, attached.title ?? null);
   }, [panes.sessionId, paneSessionStageId, attach, detach]);
 
   // Attachment is workspace-scoped view state. Clear it when the shell leaves

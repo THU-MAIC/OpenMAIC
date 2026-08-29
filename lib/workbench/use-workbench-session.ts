@@ -112,6 +112,8 @@ export function useWorkbenchStream(sessionId: string | null): void {
 
   useEffect(() => {
     if (!sessionId) return;
+    let active = true;
+    const isCurrent = () => active && useWorkbenchStore.getState().sessionId === sessionId;
     const expectedTitleRevision = useWorkbenchStore.getState().sessionTitleRevision;
     // The header title wants the prompt before the runner emits session_start
     // (a queued session can sit there a while), and a `?session=` deep link
@@ -119,9 +121,9 @@ export function useWorkbenchStream(sessionId: string | null): void {
     fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((meta) => {
-        // A switch to another session must not let this late response write
-        // the wrong prompt over it.
-        if (useWorkbenchStore.getState().sessionId !== sessionId) return;
+        // A switch away invalidates this attachment even if the user later
+        // returns to the same id before its old request settles.
+        if (!isCurrent()) return;
         if (meta && typeof meta.prompt === 'string') {
           const status =
             meta.status === 'queued' ||
@@ -152,9 +154,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
 
     let connected = false;
     let caughtUp = false;
-    let active = true;
     const backlog: WorkbenchEvent[] = [];
-    const isCurrent = () => active && useWorkbenchStore.getState().sessionId === sessionId;
     const markAttached = () => {
       if (connected || !isCurrent()) return;
       connected = true;

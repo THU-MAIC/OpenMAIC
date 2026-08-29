@@ -96,6 +96,44 @@ describe('committing a rename', () => {
     expect(applied).toEqual(['新名字', '旧名字']);
   });
 
+  it('does not settle over a newer authoritative title', async () => {
+    const applied: (string | null)[] = [];
+    let current = true;
+    const outcome = await commitSessionRename({
+      current: session,
+      raw: '本地名字',
+      apply: (title) => {
+        applied.push(title);
+        current = false;
+      },
+      save: async () => '服务端名字',
+      isCurrent: () => current,
+    });
+
+    expect(outcome).toBe('renamed');
+    expect(applied).toEqual(['本地名字']);
+  });
+
+  it('does not roll back over a newer authoritative title', async () => {
+    const applied: (string | null)[] = [];
+    let current = true;
+    const outcome = await commitSessionRename({
+      current: { title: '旧名字', prompt: '帮我做一节课' },
+      raw: '本地名字',
+      apply: (title) => {
+        applied.push(title);
+        current = false;
+      },
+      save: async () => {
+        throw new Error('500');
+      },
+      isCurrent: () => current,
+    });
+
+    expect(outcome).toBe('failed');
+    expect(applied).toEqual(['本地名字']);
+  });
+
   it('clears the override on an empty box, so the derived title comes back', async () => {
     const applied: (string | null)[] = [];
     const save = vi.fn(async () => null);

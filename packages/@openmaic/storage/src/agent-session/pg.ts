@@ -8,6 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
+import { splitSqlStatements } from '../document/pg.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 import {
   AGENT_SESSION_LIFECYCLE,
@@ -163,14 +164,48 @@ CREATE TABLE IF NOT EXISTS agent_owner_session_events (
   attempt    INTEGER,
   data       JSONB NOT NULL,
   PRIMARY KEY (owner_id, id),
-  CONSTRAINT agent_owner_session_events_type_known CHECK (type IN
+  CONSTRAINT agent_owner_session_events_type_known_v2 CHECK (type IN
     ('session_created','session_status','session_deleted',
-     'session_active_stage','session_cancel_requested')),
+     'session_active_stage','session_cancel_requested','session_title')),
   CONSTRAINT agent_owner_session_events_status_known CHECK (status IS NULL OR status IN
     ('queued','running','succeeded','failed','cancelled')),
   CONSTRAINT agent_owner_session_events_attempt_nonnegative
     CHECK (attempt IS NULL OR attempt >= 0)
 );
+
+DO $agent_session_owner_event_type_constraint$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'agent_owner_session_events'::regclass
+      AND conname = 'agent_owner_session_events_type_known'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'agent_owner_session_events'::regclass
+      AND conname = 'agent_owner_session_events_type_known_v2'
+  ) THEN
+    LOCK TABLE agent_owner_session_events IN ACCESS EXCLUSIVE MODE;
+    IF EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'agent_owner_session_events'::regclass
+        AND conname = 'agent_owner_session_events_type_known'
+    ) THEN
+      ALTER TABLE agent_owner_session_events
+        DROP CONSTRAINT agent_owner_session_events_type_known;
+    END IF;
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'agent_owner_session_events'::regclass
+        AND conname = 'agent_owner_session_events_type_known_v2'
+    ) THEN
+      ALTER TABLE agent_owner_session_events
+        ADD CONSTRAINT agent_owner_session_events_type_known_v2 CHECK (type IN
+          ('session_created','session_status','session_deleted',
+           'session_active_stage','session_cancel_requested','session_title'));
+    END IF;
+  END IF;
+END
+$agent_session_owner_event_type_constraint$;
 
 CREATE TABLE IF NOT EXISTS agent_session_urls (
   session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
@@ -250,9 +285,8 @@ export async function ensureAgentSessionSchema(
   tableNames?: Partial<AgentSessionTableNames>,
 ): Promise<void> {
   const schema = schemaFor(resolveTableNames(tableNames));
-  for (const sql of schema.split(';')) {
-    const statement = sql.trim();
-    if (statement !== '') await queryable.query(statement);
+  for (const statement of splitSqlStatements(schema)) {
+    await queryable.query(statement);
   }
 }
 
@@ -462,14 +496,23 @@ export class PgAgentSessionStore
     ownerId: string,
     title: string | null,
   ): Promise<AgentSessionMeta | null> {
-    const result = await this.queryable.query<SessionRow>(
-      `UPDATE ${this.table('sessions')}
-       SET title = $3, updated_at = now()
-       WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
-       RETURNING ${SESSION_COLUMNS}`,
-      [sessionId, ownerId, title],
-    );
-    return result.rows[0] ? sessionMeta(result.rows[0]) : null;
+    return this.transaction(async (tx) => {
+      const result = await tx.query<SessionRow>(
+        `UPDATE ${this.table('sessions')}
+         SET title = $3, updated_at = now()
+         WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+         RETURNING ${SESSION_COLUMNS}`,
+        [sessionId, ownerId, title],
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      const meta = sessionMeta(row);
+      await this.appendProjection(
+        { type: 'session_title', sessionId, title, ts: meta.updatedAt },
+        tx,
+      );
+      return meta;
+    });
   }
 
   async softDeleteSession(sessionId: string, ownerId: string): Promise<boolean> {
@@ -1307,7 +1350,7 @@ export class PgAgentSessionStore
       if (!counter) throw new Error(`cannot allocate owner event id for ${session.owner_id}`);
       const status = 'status' in event ? event.status : null;
       const attempt = 'attempt' in event ? event.attempt : null;
-      const data = {};
+      const data = event.type === 'session_title' ? { title: event.title } : {};
       await transaction.query(
         `INSERT INTO ${this.table('ownerEvents')}
           (owner_id, id, ts, session_id, type, status, attempt, data)
@@ -1382,6 +1425,13 @@ export class PgAgentSessionStore
           type: row.type,
           status: row.status!,
           attempt: Number(row.attempt ?? 0),
+        };
+      }
+      if (row.type === 'session_title') {
+        return {
+          ...base,
+          type: row.type,
+          title: decodedObject(row.data).title as string | null,
         };
       }
       return { ...base, type: row.type } as PersistedOwnerSessionEvent;
