@@ -304,6 +304,10 @@ Or manually:
 3. Set environment variables (at minimum one LLM API key)
 4. Deploy
 
+### RepoCloud Deployment
+
+[<img src="https://d16t0pc4846x52.cloudfront.net/deploylobe.svg" alt="Deploy on RepoCloud" height="32">](https://repocloud.io/details/OpenMAIC/)
+
 ### Docker Deployment
 
 ```bash
