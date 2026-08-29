@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { slimEventDataForLog } from '@/lib/server/agent-runtime/runner';
+import {
+  redactTerminalToolGateEventForLog,
+  slimEventDataForLog,
+} from '@/lib/server/agent-runtime/runner';
 
 describe('runner event-log payload slimming', () => {
   it('keeps only the terminal metadata needed from agent_end', () => {
@@ -155,5 +158,54 @@ describe('runner event-log payload slimming', () => {
       toolName: 'ask_user',
     });
     expect(source.args).toEqual({ large: true });
+  });
+
+  it('removes guarded model prose and raw execution errors before durable logging', () => {
+    const privateText = 'PRIVATE_ANSWER_OR_PROVIDER_ERROR_42';
+    const assistant = redactTerminalToolGateEventForLog('message_end', {
+      type: 'message_end',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: privateText }],
+        stopReason: 'error',
+        errorMessage: privateText,
+      },
+    });
+    const tool = redactTerminalToolGateEventForLog('tool_execution_end', {
+      type: 'tool_execution_end',
+      toolCallId: 'call-1',
+      toolName: 'zhongkao_coach_action',
+      result: {
+        content: [{ type: 'text', text: privateText }],
+        details: { privateText },
+      },
+      isError: true,
+    });
+    const sessionEnd = redactTerminalToolGateEventForLog('session_end', {
+      status: 'failed',
+      error: privateText,
+    });
+
+    expect(JSON.stringify({ assistant, tool, sessionEnd })).not.toContain(privateText);
+    expect(assistant).toMatchObject({
+      message: { role: 'assistant', content: [], stopReason: 'stop' },
+    });
+    expect(tool).toMatchObject({ result: { content: [] }, isError: true });
+    expect(sessionEnd).toEqual({ status: 'failed' });
+  });
+
+  it('preserves the server-authored terminal presentation message', () => {
+    const serverMessage = {
+      role: 'assistant',
+      provider: 'openmaic-server',
+      content: [{ type: 'text', text: '固定安全提示' }],
+      openmaicCoachTerminalPresentation: { correlation: 'server-only' },
+    };
+    expect(
+      redactTerminalToolGateEventForLog('message_end', {
+        type: 'message_end',
+        message: serverMessage,
+      }),
+    ).toEqual({ type: 'message_end', message: serverMessage });
   });
 });

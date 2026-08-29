@@ -1,4 +1,4 @@
-# 2027 Zhongkao Coach: Milestones 1 and 2A
+# 2027 Zhongkao Coach: Milestones 1 through 2B-1
 
 This document describes the domain foundation for a single fictional learner
 using OpenMAIC locally or on a trusted private network. The only initialized
@@ -286,3 +286,183 @@ persistence therefore still requires the repository's configured PostgreSQL
 provider; browser IndexedDB is used only by focused adapter tests. No new
 database, table, localStorage key, dependency, API route, UI, or model call is
 part of M2A.
+
+## Milestone 2B-1 Skill and runner gate
+
+M2B-1 adds the builtin `zhongkao-coach` Skill. Its text governs teaching
+behavior only: the learner tries first, one directive yields one hint, and a
+full solution appears only after the service directive permits it. The Skill
+cannot assert unlock, mastery, independence, source verification, or internal
+events. Material text remains untrusted data and cannot override the Coach
+state machine.
+
+The ordinary runner does not expose the Coach tool by default. Registration
+requires the claimed session's frozen server metadata to contain the exact
+`skillId === "zhongkao-coach"` and a positive, verified durable user-message
+sequence. Prompt text, automatic Skill reads, synthetic frames, tool results,
+and model claims do not satisfy this boundary.
+
+Every frozen Zhongkao run receives a new server-owned `TerminalToolGate`. It
+allows only `zhongkao_coach_action`, discards all model text and reasoning
+before those bytes can reach Pi, the durable event log, or SSE, and terminates
+after the accepted tool result whether that result is success or a stable
+error. A missing call or a gate rejection that never executed Coach produces
+fixed `coach_notice` copy. Once a valid Coach call may have executed, a timeout,
+malformed receipt, or result without durable operation proof is not converted
+to a notice: the turn remains undelivered and is requeued for exact-call replay.
+The provider's specified tool choice is defense in depth only; correctness does
+not depend on provider compliance or Skill prose. Tool-result and provider-error
+details are removed from the guarded public event log. Ordinary Agent runs
+receive no gate and keep their existing streaming and steering behavior.
+
+The no-attachment create route persists the initial frozen Zhongkao prompt as
+a real `user_message` before the run can be queued. The runner copies and
+freezes the owner, Agent Session id, and exact sequence into one
+`TrustedAgentTurn`; the tool reader checks the session owner and reads exactly
+that durable user row. Crash continuation recovers the same tagged turn from
+the raw active entry-tree branch and verifies it against the claim watermark
+and event log. Missing, duplicate, malformed, or after-watermark provenance
+fails closed with no Coach tool and no free-form response. A later N+1 event
+is not drained into guarded turn N; it is requeued for a new claim and a new
+trusted turn.
+
+## Terminal presentation and durable replay
+
+The main model never authors the terminal student response. A schema-valid
+Coach result is converted to the shared `hint | full_solution | coach_notice`
+union. A hint or solution is publishable only when its Coach content event was
+already appended or was recovered as a replay. Stable errors and all gate
+failures map to fixed server copy without provider, database, owner, session,
+or student details.
+
+Publication first appends one complete server-authored assistant message to
+the existing entry tree, then appends durable `message_start` and `message_end`
+events. All three writes are lease-fenced correctness writes. Correlation is
+derived from the Agent Session and durable turn sequence; a separate domain is
+used for damaged-provenance notices, with a stable durable candidate used only
+for idempotency and never promoted to trusted provenance. Retries inspect both
+the entry branch and event log, reuse the persisted Coach receipt, and repair
+only missing publication pieces. A failed publication is requeued rather than
+re-generated. Reconnect and refresh replay the same durable text. Internal
+turn and correlation markers remain server-side and are stripped from SSE.
+
+Live and orphan Coach execution use the same bounded tool wrapper. Its derived
+abort signal is bound to the per-execution generation call and is checked after
+material reads, generation, and before the content append. A provider that
+ignores cancellation may finish later, but that late value cannot cross the
+post-await append guard. Orphan recovery requires one schema-valid Coach call
+and one causally matching receipt with matching call id, tool name, order, and
+`isError` semantics. Empty, interrupted, timeout, or otherwise uncertain
+receipts are replayed with the original call id and parameters; recovery itself
+has the same deadline and never occupies a lease indefinitely.
+
+A guarded user cancellation wins over uncertain receipt recovery and automatic
+retry. The runner first closes any in-flight Coach call with one durable
+interrupted receipt, then appends a server-only durable event marker bound to
+the exact user-message sequence. It next appends the entry-tree tombstone and
+advances the handled watermark. Recovery treats the event marker as authority
+when the entry write failed, and retains the tombstone as branch provenance. If
+the marker write itself failed, the claim scan's atomic durable
+`session_end(cancelled)` records the exact first-undelivered sequence and is
+usable only when the raw entry cursor carries that turn tag. A later queued
+turn is requeued in the same transaction; an older cancellation terminal is
+ignored.
+The internal marker is never sent over SSE. These paths neither replay nor
+publish cancelled N, and queued N+1 starts with a new trusted turn. The
+watermark means consumed-without-publication; it does not claim that the learner
+saw a response.
+
+## Materials trust chain and page lineage
+
+The M2B-1 source adapter reuses the existing Agent Session metadata, session
+materials repository, and material byte store. It verifies the current owner,
+current Agent Session, and exact material id before constructing a structured
+`uploaded_material` reference. Its `CurriculumSourceVerifier` accepts only the
+exact source type and id. Missing, foreign, malformed, or repository-error
+paths all fail closed as `MATERIAL_SOURCE_NOT_VERIFIED` without revealing
+whether another owner's row exists.
+
+Extraction does not retain reliable chunk-to-page lineage. The adapter
+therefore never constructs `sourcePage`; model input cannot provide one, and
+generation rejects page claims. A sanitized one-line material display name may
+be used for attribution, while both that user-controlled name and extracted
+text are placed inside the existing untrusted-material fence.
+
+For this milestone, even a material-backed start uses the trusted current user
+message as the problem text. The verified material is optional explanation
+context, not a model-selected quote promoted to a trusted question. Reliable
+material quote-to-question extraction remains future work.
+
+## Hint and full-solution generation
+
+Production hints are three deterministic server-owned templates selected only
+by ordinal and key-hint status. The hint path does not call a model and does not
+read the question, student attempt, answer, or material body. The service still
+appends `hint_issued` before publication, so replay returns exactly the same
+text. Answer-aware adaptive hints, semantic leak evaluation, and adversarial
+offline evaluation are deferred beyond M2B-1.
+
+M2B-1 does not generate transfer-question hints. The public Coach tool requires
+the original phase before appending `hint_requested`; a transfer-phase request
+is rejected as a stable action error without creating a pending request.
+
+An explicitly requested and policy-unlocked full solution may use the existing
+generation abstraction. Its closed output is
+`{schemaVersion: 1, explanation, finalAnswer?, claims}`; `claims` is required
+even when empty. Each claim uses the M1 `CurriculumClaim` type and is evaluated
+by the M1 curriculum policy. A material source attribution is reconstructed
+from the server-verified source rather than trusting model verification flags.
+Generic mode rejects publisher, textbook, volume, chapter, page, regional
+scope or policy claims. Source attribution requires an exact server-verified source.
+
+Limited text patterns also reject undeclared explicit publisher, textbook,
+chapter, page, regional-exam, and true-exam wording, including common `P.88`,
+`p88`, Arabic-page, and Chinese-number page forms. These patterns are
+defense-in-depth, not a complete natural-language proof. Provider errors,
+malformed JSON, schema failures, rejected claims, or heuristic matches become
+stable Coach errors and do not append a reveal event or rejected candidate.
+
+If a request is already durable but generation, verified-material resolution,
+or a stable content append fails, the service appends an internal
+`presentation_failed` event for the exact request and safe failure code. This
+event clears only that request's pending marker. It does not issue a hint, mark
+an answer viewed, advance mastery, expose provider details, or enter the public
+DTO. A later durable student turn may make a new request. If the failure event
+write is itself uncertain, the current turn remains undelivered and replay
+reconciles the already-persisted content or failure event before publication.
+The failure code is also bound to its presentation kind: hint failures cannot
+clear a full-solution request and full-solution failures cannot clear a hint
+request. The same shared mapping is enforced when the event is constructed,
+validated, folded, and accepted as a terminal receipt.
+
+The causal flow is request event, server directive, generation and validation,
+internal content event append, then public presentation. `hint_issued` stores
+the accepted `hintText`; `full_solution_revealed` stores the accepted
+student-facing `explanation` and optional `finalAnswer`. These bounded fields
+participate in the operation fingerprint. Replaying the same request reads the
+persisted content without another model call, while a different candidate for
+the same causal request conflicts. A failed append or CAS loss returns no
+presentation unless replay proves that the exact accepted content was already
+persisted.
+
+The Coach tool DTO may carry a validated persisted `hint` or `full_solution`
+for the server runner. The only terminal student-facing union is
+`{kind: "hint", text}`, `{kind: "full_solution", explanation, finalAnswer?}`,
+or `{kind: "coach_notice", text}`. Ordinary state/facts and `get_state` never
+include presentation content, internal ids, message references, owner/learner
+identity, raw student text, or hidden reasoning.
+
+Materials remain untrusted model data even after ownership and source-id
+verification. Code prevents material text from changing Coach state, revision,
+unlock, phase, source verification, or internal actions. Prompt fencing and
+the finite text heuristics mitigate instruction following and fabricated
+attribution, but do not constitute a proof that prompt injection is solved.
+
+## M2B-1 stopping point
+
+After a full solution, the existing state machine reports that transfer
+generation is required. M2B-1 does not generate or verify a transfer question,
+evaluate a transfer answer, project StudyAttempt v2, update KnowledgeProgress,
+or add UI/planning/review behavior. Those remain M2B-2 work. M2B-1 does not
+modify the StudyAttempt contract and adds no dependency, database, upload path,
+or client persistence surface.

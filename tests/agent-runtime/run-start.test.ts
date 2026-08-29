@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,6 +13,8 @@ import {
   planRunStart,
   resolveCourseRefsForContext,
   tagDurableUserMessage,
+  terminalCoachNoticeReason,
+  trustedZhongkaoTurnForRun,
 } from '@/lib/server/agent-runtime/runner';
 import type { CourseRef } from '@/lib/workbench/course-refs';
 import type { ElementRef } from '@/lib/workbench/element-refs';
@@ -110,6 +114,101 @@ describe('durable user-message delivery tags', () => {
   it('round-trips the exact durable sequence on a user frame', () => {
     expect(durableUserMessageSeq(tagDurableUserMessage(user('Open'), 7))).toBe(7);
     expect(durableUserMessageSeq(assistant('Done'))).toBeNull();
+  });
+});
+
+describe('frozen Zhongkao Skill runner gate', () => {
+  const meta = (skillId?: string) => ({
+    id: 'agent-session-alpha',
+    ownerId: 'owner-alpha',
+    ...(skillId ? { skillId } : {}),
+  });
+
+  it('copies and freezes the exact durable turn for the frozen Zhongkao Skill', () => {
+    const source = meta('zhongkao-coach');
+    const turn = trustedZhongkaoTurnForRun(source, {
+      kind: 'prompt',
+      text: 'Fictional question',
+      durableMessageSeq: 7,
+    });
+    expect(turn).toEqual({
+      ownerId: 'owner-alpha',
+      agentSessionId: 'agent-session-alpha',
+      userMessageSeq: 7,
+    });
+    expect(Object.isFrozen(turn)).toBe(true);
+    source.id = 'mutated-session';
+    expect(turn?.agentSessionId).toBe('agent-session-alpha');
+  });
+
+  it.each([
+    ['ordinary Agent', meta(), { kind: 'prompt', text: '中考', durableMessageSeq: 7 }],
+    [
+      'other frozen Skill',
+      meta('stage-design'),
+      { kind: 'prompt', text: '中考', durableMessageSeq: 7 },
+    ],
+    ['no durable user turn', meta('zhongkao-coach'), { kind: 'prompt', text: 'synthetic' }],
+    ['crash continuation', meta('zhongkao-coach'), { kind: 'continue' }],
+  ] as const)('fails closed for %s', (_label, sessionMeta, start) => {
+    expect(trustedZhongkaoTurnForRun(sessionMeta, start)).toBeNull();
+  });
+
+  it('binds N independently from a later N+1 run', () => {
+    const frozen = meta('zhongkao-coach');
+    const turnN = trustedZhongkaoTurnForRun(frozen, {
+      kind: 'prompt',
+      text: 'turn N',
+      durableMessageSeq: 7,
+    });
+    const turnN1 = trustedZhongkaoTurnForRun(frozen, {
+      kind: 'prompt',
+      text: 'turn N+1',
+      durableMessageSeq: 8,
+    });
+    expect(turnN?.userMessageSeq).toBe(7);
+    expect(turnN1?.userMessageSeq).toBe(8);
+  });
+
+  it('binds a crash continuation only when exact durable provenance was recovered', () => {
+    expect(
+      trustedZhongkaoTurnForRun(meta('zhongkao-coach'), {
+        kind: 'continue',
+        durableMessageSeq: 7,
+      }),
+    ).toMatchObject({ userMessageSeq: 7 });
+    expect(trustedZhongkaoTurnForRun(meta('zhongkao-coach'), { kind: 'continue' })).toBeNull();
+  });
+
+  it('maps terminal gate states only to stable server notice reasons', () => {
+    expect(
+      terminalCoachNoticeReason({
+        status: 'blocked',
+        requiredToolName: 'zhongkao_coach_action',
+        signal: {
+          kind: 'terminal_tool_gate',
+          code: 'TERMINAL_TOOL_GATE_INVALID_REQUIRED_TOOL_ARGUMENTS',
+          requiredToolName: 'zhongkao_coach_action',
+        },
+      }),
+    ).toBe('COACH_TOOL_INPUT_INVALID');
+    expect(
+      terminalCoachNoticeReason({
+        status: 'completed',
+        requiredToolName: 'zhongkao_coach_action',
+        toolCallId: 'call-private',
+        isError: true,
+      }),
+    ).toBe('COACH_TOOL_RESULT_INVALID');
+  });
+
+  it('keeps the actual runner assembly and allowlist wired to the same gate', () => {
+    const source = readFileSync('lib/server/agent-runtime/runner.ts', 'utf8');
+    expect(source).toContain('const coachTools = trustedCoachTurn');
+    expect(source).toContain('createZhongkaoCoachActionTool({');
+    expect(source).toContain('...(coachTools.length ? [ZHONGKAO_COACH_TOOL_NAME] : [])');
+    expect(source).toContain('createTerminalToolGate({');
+    expect(source).toContain('terminalToolGate || questionEmitted');
   });
 });
 

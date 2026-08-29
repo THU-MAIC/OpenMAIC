@@ -1,7 +1,13 @@
 import { readFileSync } from 'node:fs';
 
 import type { AgentTool } from '@earendil-works/pi-agent-core';
-import { BrowserRuntimeStore, type RuntimeStore } from '@openmaic/storage';
+import type { AICallFn } from '@openmaic/generation';
+import {
+  BrowserRuntimeStore,
+  RuntimeAppendConflictError,
+  type RuntimeStore,
+} from '@openmaic/storage';
+import type { RuntimeRecordInit } from '@openmaic/dsl';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { Check } from 'typebox/value';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -16,10 +22,20 @@ import {
   type TrustedAgentTurn,
   type ZhongkaoCoachToolOutput,
 } from '@/lib/server/agent-runtime/zhongkao-coach-tool';
-import type { CoachServiceDeps } from '@/lib/server/zhongkao/coach-service';
+import {
+  assignVerifiedTransferQuestion,
+  recordOriginalResolved,
+  submitCoachAttempt,
+  type CoachServiceDeps,
+} from '@/lib/server/zhongkao/coach-service';
+import type { ZhongkaoMaterialSourceAdapter } from '@/lib/server/agent-runtime/zhongkao-material-source';
+import { deriveCoachEventId } from '@/lib/server/zhongkao/coach-runtime';
 import { resolveZhongkaoLearnerKeyFromOwnerId } from '@/lib/server/zhongkao/learner-identity';
+import type { CoachEvent } from '@/lib/zhongkao/coach-event';
 import { createInitialStudentProfile } from '@/lib/zhongkao/profile';
-import { saveStudentProfile } from '@/lib/zhongkao/runtime';
+import { CoachError } from '@/lib/zhongkao/coach-errors';
+import type { CurriculumSourceVerifier } from '@/lib/zhongkao/curriculum';
+import { saveStudentProfile, zhongkaoStageId } from '@/lib/zhongkao/runtime';
 
 const NOW = Date.parse('2026-08-28T08:00:00.000Z');
 
@@ -75,8 +91,24 @@ function toolFor(
   options: {
     turn?: TrustedAgentTurn;
     reader?: () => Promise<{ seq: number; text: string }>;
+    createGenerationCall?: (signal?: AbortSignal) => AICallFn;
+    generationCall?: AICallFn;
+    materialSource?: ZhongkaoMaterialSourceAdapter;
+    runtimeStore?: RuntimeStore;
+    beforeExecute?: () => Promise<void>;
   } = {},
 ): AgentTool<never, never> {
+  const generationCall =
+    options.generationCall ??
+    (async (systemPrompt) =>
+      systemPrompt.includes('full-solution')
+        ? JSON.stringify({
+            schemaVersion: 1,
+            explanation: 'Use inverse operations to isolate the unknown.',
+            finalAnswer: 'x = 4',
+            claims: [],
+          })
+        : JSON.stringify({ schemaVersion: 1, hint: 'Recall the inverse operation.' }));
   return createZhongkaoCoachActionTool({
     trustedTurn:
       options.turn ??
@@ -85,8 +117,11 @@ function toolFor(
         agentSessionId: h.deps.agentSessionId,
         userMessageSeq: seq,
       } satisfies TrustedAgentTurn),
-    runtimeStore: h.store,
+    runtimeStore: options.runtimeStore ?? h.store,
     readTrustedUserMessage: options.reader ?? (async () => ({ seq, text })),
+    createGenerationCall: options.createGenerationCall ?? (() => generationCall),
+    ...(options.materialSource ? { materialSource: options.materialSource } : {}),
+    ...(options.beforeExecute ? { beforeExecute: options.beforeExecute } : {}),
     now: h.now,
   });
 }
@@ -95,6 +130,7 @@ async function execute(
   tool: AgentTool<never, never>,
   toolCallId: string,
   params: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<{ output: ZhongkaoCoachToolOutput; raw: unknown }> {
   const raw = await (
     tool.execute as (
@@ -102,7 +138,7 @@ async function execute(
       value: Record<string, unknown>,
       signal?: AbortSignal,
     ) => Promise<unknown>
-  )(toolCallId, params, undefined);
+  )(toolCallId, params, signal);
   return {
     output: (raw as { details: ZhongkaoCoachToolOutput }).details,
     raw,
@@ -172,6 +208,7 @@ describe('Zhongkao coach TypeBox input boundary', () => {
     'isIndependent',
     'mastered',
     'verifiedSource',
+    'sourcePage',
   ])('rejects model-supplied trust field %s', (field) => {
     expect(Check(ZHONGKAO_COACH_ACTION_SCHEMA, { ...START_INPUT, [field]: 'forged' })).toBe(false);
   });
@@ -185,6 +222,46 @@ describe('Zhongkao coach TypeBox input boundary', () => {
     expect(Check(ZHONGKAO_COACH_ACTION_SCHEMA, input)).toBe(false);
     expect(Check(ZHONGKAO_COACH_ACTION_SCHEMA, { ...input, expectedRevision: -1 })).toBe(false);
     expect(Check(ZHONGKAO_COACH_ACTION_SCHEMA, { ...input, expectedRevision: 1.5 })).toBe(false);
+  });
+
+  it('accepts only a materialId for a material source and rejects it on typed input', () => {
+    expect(
+      Check(ZHONGKAO_COACH_ACTION_SCHEMA, {
+        ...START_INPUT,
+        questionSourceType: 'material',
+        materialId: 'mat_alpha',
+      }),
+    ).toBe(true);
+    expect(Check(ZHONGKAO_COACH_ACTION_SCHEMA, { ...START_INPUT, materialId: 'mat_alpha' })).toBe(
+      false,
+    );
+  });
+});
+
+describe('Zhongkao coach durable execution barrier', () => {
+  it('awaits the server barrier before reading the trusted turn or touching runtime state', async () => {
+    const h = harness();
+    const reader = vi.fn(async () => ({ seq: 1, text: '不应读取' }));
+    const beforeExecute = vi.fn(async () => {
+      throw new Error('ENTRY_APPEND_FAILED');
+    });
+    const tool = toolFor(h, 1, '不应读取', { reader, beforeExecute });
+
+    const result = await execute(tool, 'barrier-call', START_INPUT);
+
+    expect(beforeExecute).toHaveBeenCalledTimes(1);
+    expect(reader).not.toHaveBeenCalled();
+    expect(result.output).toMatchObject({
+      ok: false,
+      code: 'COACH_RUNTIME_UNAVAILABLE',
+      facts: { replayed: false, eventAppended: false },
+    });
+    expect(
+      await h.store.listSessions(
+        zhongkaoStageId('student-alpha'),
+        resolveZhongkaoLearnerKeyFromOwnerId(h.deps.ownerId),
+      ),
+    ).toHaveLength(0);
   });
 });
 
@@ -396,7 +473,664 @@ describe('Zhongkao coach immutable tool execution', () => {
     const first = await execute(hintTool, 'hint-one', input);
     const replay = await execute(hintTool, 'hint-two', { ...input, expectedRevision: 999 });
     expect(first.output.state?.original.hintsRequested).toBe(1);
+    expect(first.output.presentation).toEqual({
+      kind: 'hint',
+      text: '先把题目中的已知条件和要解决的问题分别列出来。',
+    });
     expect(replay.output.facts).toEqual({ replayed: true, eventAppended: false });
+    expect(replay.output.presentation).toEqual(first.output.presentation);
+  });
+
+  it('persists a deterministic hint before presentation without calling a text generator', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const created = await execute(toolFor(h, 1, 'Question'), 'start', START_INPUT);
+    const badCall = vi.fn(async () => '{"schemaVersion":1,"hint":"","state":"forged"}');
+    const issued = await execute(
+      toolFor(h, 2, 'Hint please', { generationCall: badCall }),
+      'hint-failed',
+      {
+        action: 'request_hint',
+        profileId: 'student-alpha',
+        coachSessionId: created.output.coachSessionId,
+        expectedRevision: 0,
+      },
+    );
+    expect(issued.output.presentation).toEqual({
+      kind: 'hint',
+      text: '先把题目中的已知条件和要解决的问题分别列出来。',
+    });
+    expect(badCall).not.toHaveBeenCalled();
+
+    const retried = await execute(toolFor(h, 2, 'Hint please'), 'hint-retry', {
+      action: 'request_hint',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: 999,
+    });
+    expect(retried.output.presentation).toEqual({
+      kind: 'hint',
+      text: '先把题目中的已知条件和要解决的问题分别列出来。',
+    });
+    const sessions = await h.store.listSessions(
+      'zhongkao-profile:student-alpha',
+      resolveZhongkaoLearnerKeyFromOwnerId(h.deps.ownerId),
+    );
+    const coach = sessions.find((candidate) => candidate.kind === 'zhongkaoCoachEvent')!;
+    const records = await h.store.listRecords(coach.id);
+    expect(records.map((record) => (record.payload as { eventType: string }).eventType)).toEqual([
+      'coach_started',
+      'hint_requested',
+      'hint_issued',
+    ]);
+    expect(records[2]?.payload).toMatchObject({
+      hintText: '先把题目中的已知条件和要解决的问题分别列出来。',
+    });
+  });
+
+  it('rejects transfer hints before creating a pending request', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const created = await execute(toolFor(h, 1, 'Question'), 'start', START_INPUT);
+    const attempted = await submitCoachAttempt(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: created.output.revision!,
+      message: { seq: 2, text: 'A fictional incorrect attempt.' },
+    });
+    const attempt = attempted.snapshot.records.at(-1)!.payload as CoachEvent;
+    const resolved = await recordOriginalResolved(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: attempted.snapshot.state.revision,
+      attemptEventId: attempt.eventId,
+      outcome: 'incorrect',
+    });
+    const resolution = resolved.snapshot.records.at(-1)!.payload as CoachEvent;
+    const assigned = await assignVerifiedTransferQuestion(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: resolved.snapshot.state.revision,
+      originalResolvedEventId: resolution.eventId,
+      transferQuestionId: 'transfer-question-alpha',
+      knowledgePointIds: ['linear-equations'],
+      validationRef: 'verified-generator-alpha',
+    });
+
+    const rejected = await execute(toolFor(h, 3, 'A transfer hint, please.'), 'transfer-hint', {
+      action: 'request_hint',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: assigned.snapshot.state.revision,
+    });
+
+    expect(rejected.output).toMatchObject({
+      ok: false,
+      code: 'COACH_ACTION_NOT_ALLOWED',
+      facts: { replayed: false, eventAppended: false },
+    });
+    expect(rejected.output).not.toHaveProperty('presentation');
+    const sessions = await h.store.listSessions(
+      'zhongkao-profile:student-alpha',
+      resolveZhongkaoLearnerKeyFromOwnerId(h.deps.ownerId),
+    );
+    const coach = sessions.find((candidate) => candidate.kind === 'zhongkaoCoachEvent')!;
+    const records = await h.store.listRecords(coach.id);
+    expect(records.map((record) => (record.payload as CoachEvent).eventType)).toEqual([
+      'coach_started',
+      'student_attempt_submitted',
+      'original_resolved',
+      'transfer_question_assigned',
+    ]);
+    expect(assigned.snapshot.state.transfer.pendingHintRequestEventId).toBeUndefined();
+  });
+
+  it('uses the trusted latest CAS revision to clear the exact pending hint', async () => {
+    const h = harness();
+    await seedProfile(h);
+    let injected = false;
+    const racingStore = new Proxy(h.store, {
+      get(target, property, receiver) {
+        if (property === 'appendRecord') {
+          return async (
+            init: RuntimeRecordInit,
+            options: Parameters<RuntimeStore['appendRecord']>[1],
+          ) => {
+            const event = init.payload as CoachEvent;
+            if (!injected && event.eventType === 'hint_issued') {
+              injected = true;
+              const operationId = `coach-op:v2:${'d'.repeat(64)}`;
+              const competing: CoachEvent = {
+                schemaVersion: 1,
+                eventId: deriveCoachEventId(operationId),
+                coachSessionId: event.coachSessionId,
+                profileId: event.profileId,
+                eventType: 'student_attempt_submitted',
+                createdAt: new Date(NOW + 90_000).toISOString(),
+                agentSessionId: event.agentSessionId,
+                sourceUserMessageSeq: 99,
+                operationId,
+                operationFingerprint: 'e'.repeat(64),
+                phase: 'original',
+                studentResponse: 'Concurrent fictional attempt.',
+              };
+              const appended = await target.appendRecord(
+                {
+                  id: competing.eventId,
+                  sessionId: init.sessionId,
+                  createdAt: competing.createdAt,
+                  subAnchor: competing.eventId,
+                  payload: competing,
+                },
+                { expectedLastSeq: options?.expectedLastSeq },
+              );
+              throw new RuntimeAppendConflictError(
+                init.sessionId,
+                options?.expectedLastSeq ?? null,
+                appended.seq,
+              );
+            }
+            return target.appendRecord(init, options);
+          };
+        }
+        const value = Reflect.get(target, property, receiver) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as RuntimeStore;
+    const created = await execute(
+      toolFor(h, 1, 'Question', { runtimeStore: racingStore }),
+      'start',
+      START_INPUT,
+    );
+    const result = await execute(
+      toolFor(h, 2, 'Hint please', { runtimeStore: racingStore }),
+      'hint',
+      {
+        action: 'request_hint',
+        profileId: 'student-alpha',
+        coachSessionId: created.output.coachSessionId,
+        expectedRevision: 0,
+      },
+    );
+    expect(result.output).toMatchObject({
+      ok: false,
+      code: 'COACH_SESSION_CONFLICT',
+      facts: { replayed: false, eventAppended: true },
+      state: { original: { attemptCount: 1, hintsIssued: 0 } },
+    });
+    expect(result.output).not.toHaveProperty('presentation');
+    expect(JSON.stringify(result.raw)).not.toContain(
+      '先把题目中的已知条件和要解决的问题分别列出来。',
+    );
+
+    const sessions = await h.store.listSessions(
+      'zhongkao-profile:student-alpha',
+      resolveZhongkaoLearnerKeyFromOwnerId(h.deps.ownerId),
+    );
+    const coach = sessions.find((candidate) => candidate.kind === 'zhongkaoCoachEvent')!;
+    const records = await h.store.listRecords(coach.id);
+    expect(records.map((record) => (record.payload as CoachEvent).eventType)).toEqual([
+      'coach_started',
+      'hint_requested',
+      'student_attempt_submitted',
+      'presentation_failed',
+    ]);
+
+    const next = await execute(toolFor(h, 3, 'Try the hint again.'), 'hint-retry', {
+      action: 'request_hint',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: result.output.revision,
+    });
+    expect(next.output).toMatchObject({
+      ok: true,
+      presentation: {
+        kind: 'hint',
+        text: '先把题目中的已知条件和要解决的问题分别列出来。',
+      },
+    });
+  });
+
+  it('persists and replays one full solution only after an unlocked explicit request', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const created = await execute(toolFor(h, 1, 'Solve 2x = 8.'), 'start', START_INPUT);
+    const firstAttempt = await execute(toolFor(h, 2, 'x = 3'), 'attempt-1', {
+      action: 'submit_attempt',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: 0,
+    });
+    const secondAttempt = await execute(toolFor(h, 3, 'x = 4'), 'attempt-2', {
+      action: 'submit_attempt',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: firstAttempt.output.revision,
+    });
+    const solutionTool = toolFor(h, 4, 'Please show the full explanation.');
+    const input = {
+      action: 'request_full_solution',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: secondAttempt.output.revision,
+    };
+    const revealed = await execute(solutionTool, 'solution-1', input);
+    const replay = await execute(solutionTool, 'solution-2', { ...input, expectedRevision: 999 });
+    expect(revealed.output).toMatchObject({
+      ok: true,
+      state: { original: { viewedFullAnswer: true } },
+      presentation: {
+        kind: 'full_solution',
+        explanation: 'Use inverse operations to isolate the unknown.',
+        finalAnswer: 'x = 4',
+      },
+      directive: 'GENERATE_TRANSFER_QUESTION',
+    });
+    expect(replay.output.presentation).toEqual(revealed.output.presentation);
+    expect(replay.output.facts).toEqual({ replayed: true, eventAppended: false });
+
+    const state = await execute(toolFor(h, 5, 'State only'), 'state', {
+      action: 'get_state',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+    });
+    expect(state.output).not.toHaveProperty('presentation');
+    expect(JSON.stringify(state.raw)).not.toContain(
+      'Use inverse operations to isolate the unknown.',
+    );
+  });
+
+  it('binds full-solution generation to the execution signal and drops a late provider result', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const created = await execute(toolFor(h, 1, 'Solve 2x = 8.'), 'start', START_INPUT);
+    const firstAttempt = await execute(toolFor(h, 2, 'x = 3'), 'attempt-1', {
+      action: 'submit_attempt',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: 0,
+    });
+    const secondAttempt = await execute(toolFor(h, 3, 'x = 4'), 'attempt-2', {
+      action: 'submit_attempt',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: firstAttempt.output.revision,
+    });
+
+    let resolveProvider!: (value: string) => void;
+    const providerResult = new Promise<string>((resolve) => {
+      resolveProvider = resolve;
+    });
+    const generationCall = vi.fn<AICallFn>(async () => providerResult);
+    const createGenerationCall = vi.fn((_signal?: AbortSignal): AICallFn => generationCall);
+    const controller = new AbortController();
+    const completion = execute(
+      toolFor(h, 4, 'Please show the full explanation.', { createGenerationCall }),
+      'solution-aborted',
+      {
+        action: 'request_full_solution',
+        profileId: 'student-alpha',
+        coachSessionId: created.output.coachSessionId,
+        expectedRevision: secondAttempt.output.revision,
+      },
+      controller.signal,
+    );
+    await vi.waitFor(() => expect(generationCall).toHaveBeenCalledTimes(1));
+    expect(createGenerationCall).toHaveBeenCalledWith(controller.signal);
+
+    controller.abort(new Error('tool timeout'));
+    resolveProvider(
+      JSON.stringify({
+        schemaVersion: 1,
+        explanation: 'This late explanation must never be persisted.',
+        finalAnswer: 'x = 4',
+        claims: [],
+      }),
+    );
+    const result = await completion;
+
+    expect(result.output).toMatchObject({
+      ok: false,
+      code: 'COACH_RUNTIME_UNAVAILABLE',
+      facts: { replayed: false, eventAppended: false },
+    });
+    expect(result.output).not.toHaveProperty('presentation');
+    const sessions = await h.store.listSessions(
+      'zhongkao-profile:student-alpha',
+      resolveZhongkaoLearnerKeyFromOwnerId(h.deps.ownerId),
+    );
+    const coach = sessions.find((candidate) => candidate.kind === 'zhongkaoCoachEvent')!;
+    const records = await h.store.listRecords(coach.id);
+    const eventTypes = records.map((record) => (record.payload as { eventType: string }).eventType);
+    expect(eventTypes).not.toContain('full_solution_revealed');
+    expect(eventTypes).not.toContain('presentation_failed');
+    expect(JSON.stringify(records)).not.toContain('This late explanation must never be persisted.');
+  });
+
+  it('persists and replays a safe generation failure, then allows a new request', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const created = await execute(toolFor(h, 1, 'Solve 2x = 8.'), 'start', START_INPUT);
+    const firstAttempt = await execute(toolFor(h, 2, 'x = 3'), 'attempt-1', {
+      action: 'submit_attempt',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: 0,
+    });
+    const secondAttempt = await execute(toolFor(h, 3, 'x = 4'), 'attempt-2', {
+      action: 'submit_attempt',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: firstAttempt.output.revision,
+    });
+    const privateProviderError = 'private-provider-detail-must-not-persist';
+    const generationCall = vi.fn<AICallFn>(async () =>
+      Promise.reject(new Error(privateProviderError)),
+    );
+    const failedTool = toolFor(h, 4, 'Please show the full explanation.', { generationCall });
+    const input = {
+      action: 'request_full_solution',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: secondAttempt.output.revision,
+    };
+
+    const failed = await execute(failedTool, 'solution-failed', input);
+    expect(failed.output).toMatchObject({
+      ok: false,
+      code: 'FULL_SOLUTION_GENERATION_FAILED',
+      facts: { replayed: false, eventAppended: true },
+    });
+    expect(failed.output).not.toHaveProperty('presentation');
+
+    const replay = await execute(failedTool, 'solution-failed-replay', {
+      ...input,
+      expectedRevision: 999,
+    });
+    expect(replay.output).toMatchObject({
+      ok: false,
+      code: 'FULL_SOLUTION_GENERATION_FAILED',
+      facts: { replayed: true, eventAppended: false },
+    });
+    expect(generationCall).toHaveBeenCalledTimes(1);
+
+    const retried = await execute(
+      toolFor(h, 5, 'Please try the full explanation again.'),
+      'solution-new-request',
+      {
+        ...input,
+        expectedRevision: failed.output.revision,
+      },
+    );
+    expect(retried.output).toMatchObject({
+      ok: true,
+      presentation: {
+        kind: 'full_solution',
+        explanation: 'Use inverse operations to isolate the unknown.',
+      },
+    });
+
+    const sessions = await h.store.listSessions(
+      'zhongkao-profile:student-alpha',
+      resolveZhongkaoLearnerKeyFromOwnerId(h.deps.ownerId),
+    );
+    const coach = sessions.find((candidate) => candidate.kind === 'zhongkaoCoachEvent')!;
+    const records = await h.store.listRecords(coach.id);
+    const failures = records
+      .map((record) => record.payload as { eventType: string; failureCode?: string })
+      .filter((event) => event.eventType === 'presentation_failed');
+    expect(failures).toEqual([
+      expect.objectContaining({ failureCode: 'FULL_SOLUTION_GENERATION_FAILED' }),
+    ]);
+    expect(JSON.stringify(records)).not.toContain(privateProviderError);
+  });
+
+  it('keeps facts false when the failure append response is lost and settles on replay', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const created = await execute(toolFor(h, 1, 'Solve 2x = 8.'), 'start', START_INPUT);
+    const firstAttempt = await execute(toolFor(h, 2, 'x = 3'), 'attempt-1', {
+      action: 'submit_attempt',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: 0,
+    });
+    const secondAttempt = await execute(toolFor(h, 3, 'x = 4'), 'attempt-2', {
+      action: 'submit_attempt',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: firstAttempt.output.revision,
+    });
+    const responseLossStore = new Proxy(h.store, {
+      get(target, property, receiver) {
+        if (property === 'appendRecord') {
+          return async (
+            init: RuntimeRecordInit,
+            options: Parameters<RuntimeStore['appendRecord']>[1],
+          ) => {
+            const record = await target.appendRecord(init, options);
+            if ((init.payload as { eventType?: string }).eventType === 'presentation_failed') {
+              throw new Error('simulated response loss');
+            }
+            return record;
+          };
+        }
+        const value = Reflect.get(target, property, receiver) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as RuntimeStore;
+    const generationCall = vi.fn<AICallFn>(async () =>
+      Promise.reject(new Error('private provider failure')),
+    );
+    const input = {
+      action: 'request_full_solution',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: secondAttempt.output.revision,
+    };
+
+    const uncertain = await execute(
+      toolFor(h, 4, 'Please show the full explanation.', {
+        generationCall,
+        runtimeStore: responseLossStore,
+      }),
+      'solution-response-lost',
+      input,
+    );
+    expect(uncertain.output).toMatchObject({
+      ok: false,
+      code: 'FULL_SOLUTION_GENERATION_FAILED',
+      facts: { replayed: false, eventAppended: false },
+    });
+
+    const replay = await execute(
+      toolFor(h, 4, 'Please show the full explanation.', { generationCall }),
+      'solution-response-lost-replay',
+      { ...input, expectedRevision: 999 },
+    );
+    expect(replay.output).toMatchObject({
+      ok: false,
+      code: 'FULL_SOLUTION_GENERATION_FAILED',
+      facts: { replayed: true, eventAppended: false },
+    });
+    expect(generationCall).toHaveBeenCalledTimes(1);
+
+    const sessions = await h.store.listSessions(
+      'zhongkao-profile:student-alpha',
+      resolveZhongkaoLearnerKeyFromOwnerId(h.deps.ownerId),
+    );
+    const coach = sessions.find((candidate) => candidate.kind === 'zhongkaoCoachEvent')!;
+    const records = await h.store.listRecords(coach.id);
+    expect(
+      records.filter(
+        (record) => (record.payload as { eventType: string }).eventType === 'presentation_failed',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('verifies material source through the server adapter and never accepts page input', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const materialSource: ZhongkaoMaterialSourceAdapter = {
+      resolve: vi.fn(async () => ({
+        materialId: 'mat_alpha',
+        displayName: '虚构数学材料',
+        source: { type: 'uploaded_material' as const, sourceId: 'mat_alpha' },
+        verifier: ((candidate) =>
+          candidate.type === 'uploaded_material' &&
+          candidate.sourceId === 'mat_alpha') satisfies CurriculumSourceVerifier,
+      })),
+    };
+    const started = await execute(
+      toolFor(h, 1, 'Typed trusted question remains authoritative.', { materialSource }),
+      'material-start',
+      {
+        ...START_INPUT,
+        questionSourceType: 'material',
+        materialId: 'mat_alpha',
+      },
+    );
+    expect(started.output.ok).toBe(true);
+    expect(materialSource.resolve).toHaveBeenCalledWith('mat_alpha');
+    expect(
+      Check(ZHONGKAO_COACH_ACTION_SCHEMA, {
+        ...START_INPUT,
+        questionSourceType: 'material',
+        materialId: 'mat_alpha',
+        sourcePage: 9,
+      }),
+    ).toBe(false);
+  });
+
+  it('fails a material start closed without creating a Coach event', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const failed = await execute(
+      toolFor(h, 1, 'Question', {
+        materialSource: {
+          resolve: vi.fn(async () =>
+            Promise.reject(new CoachError('MATERIAL_SOURCE_NOT_VERIFIED')),
+          ),
+        },
+      }),
+      'material-failed',
+      {
+        ...START_INPUT,
+        questionSourceType: 'material',
+        materialId: 'mat_foreign',
+      },
+    );
+    expect(failed.output).toMatchObject({ ok: false, code: 'MATERIAL_SOURCE_NOT_VERIFIED' });
+    expect(failed.output).not.toHaveProperty('presentation');
+  });
+
+  it('does not persist a failure code from the wrong presentation family', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const verifiedMaterial = {
+      materialId: 'mat_alpha',
+      displayName: '虚构数学材料',
+      source: { type: 'uploaded_material' as const, sourceId: 'mat_alpha' },
+      verifier: ((candidate) =>
+        candidate.type === 'uploaded_material' &&
+        candidate.sourceId === 'mat_alpha') satisfies CurriculumSourceVerifier,
+    };
+    const materialSource: ZhongkaoMaterialSourceAdapter = {
+      resolve: vi
+        .fn<ZhongkaoMaterialSourceAdapter['resolve']>()
+        .mockResolvedValueOnce(verifiedMaterial)
+        .mockRejectedValueOnce(new CoachError('HINT_CONTENT_INVALID')),
+    };
+    const started = await execute(
+      toolFor(h, 1, 'Solve 2x = 8.', { materialSource }),
+      'material-start-for-mismatch',
+      {
+        ...START_INPUT,
+        questionSourceType: 'material',
+        materialId: 'mat_alpha',
+      },
+    );
+    const firstAttempt = await execute(toolFor(h, 2, 'x = 3'), 'material-attempt-1', {
+      action: 'submit_attempt',
+      profileId: 'student-alpha',
+      coachSessionId: started.output.coachSessionId,
+      expectedRevision: started.output.revision,
+    });
+    const secondAttempt = await execute(toolFor(h, 3, 'x = 4'), 'material-attempt-2', {
+      action: 'submit_attempt',
+      profileId: 'student-alpha',
+      coachSessionId: started.output.coachSessionId,
+      expectedRevision: firstAttempt.output.revision,
+    });
+    const failed = await execute(
+      toolFor(h, 4, 'Please show the full explanation.', { materialSource }),
+      'material-solution-mismatched-failure',
+      {
+        action: 'request_full_solution',
+        profileId: 'student-alpha',
+        coachSessionId: started.output.coachSessionId,
+        expectedRevision: secondAttempt.output.revision,
+      },
+    );
+
+    expect(failed.output).toMatchObject({
+      ok: false,
+      code: 'HINT_CONTENT_INVALID',
+      facts: { replayed: false, eventAppended: false },
+    });
+    const sessions = await h.store.listSessions(
+      'zhongkao-profile:student-alpha',
+      resolveZhongkaoLearnerKeyFromOwnerId(h.deps.ownerId),
+    );
+    const coach = sessions.find((candidate) => candidate.kind === 'zhongkaoCoachEvent')!;
+    const records = await h.store.listRecords(coach.id);
+    expect(
+      records.filter(
+        (record) => (record.payload as { eventType: string }).eventType === 'presentation_failed',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('does not reread material content when issuing a deterministic hint', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const resolve = vi
+      .fn<ZhongkaoMaterialSourceAdapter['resolve']>()
+      .mockResolvedValueOnce({
+        materialId: 'mat_alpha',
+        displayName: 'Fictional material',
+        source: { type: 'uploaded_material', sourceId: 'mat_alpha' },
+        verifier: (candidate) =>
+          candidate.type === 'uploaded_material' && candidate.sourceId === 'mat_alpha',
+      })
+      .mockResolvedValueOnce({
+        materialId: 'mat_beta',
+        displayName: 'Different fictional material',
+        source: { type: 'uploaded_material', sourceId: 'mat_beta' },
+        verifier: (candidate) =>
+          candidate.type === 'uploaded_material' && candidate.sourceId === 'mat_beta',
+      });
+    const materialSource = { resolve };
+    const started = await execute(
+      toolFor(h, 1, 'Typed question.', { materialSource }),
+      'material-start',
+      {
+        ...START_INPUT,
+        questionSourceType: 'material',
+        materialId: 'mat_alpha',
+      },
+    );
+    const hint = await execute(toolFor(h, 2, 'Hint please.', { materialSource }), 'hint', {
+      action: 'request_hint',
+      profileId: 'student-alpha',
+      coachSessionId: started.output.coachSessionId,
+      expectedRevision: started.output.revision,
+    });
+    expect(hint.output.presentation).toEqual({
+      kind: 'hint',
+      text: '先把题目中的已知条件和要解决的问题分别列出来。',
+    });
+    expect(resolve).toHaveBeenCalledTimes(1);
   });
 
   it('does not call the bound reader for get_state', async () => {
@@ -461,11 +1195,11 @@ describe('Zhongkao coach immutable tool execution', () => {
     }
   });
 
-  it('keeps the tool absent from the runner and browser barrel', () => {
+  it('keeps internal actions out of the browser barrel while the runner uses frozen gating', () => {
     const runner = readFileSync('lib/server/agent-runtime/runner.ts', 'utf8');
     const barrel = readFileSync('lib/zhongkao/index.ts', 'utf8');
-    expect(runner).not.toContain('zhongkao_coach_action');
-    expect(runner).not.toContain('createZhongkaoCoachActionTool');
+    expect(runner).toContain("meta.skillId !== 'zhongkao-coach'");
+    expect(runner).toContain('createZhongkaoCoachActionTool');
     expect(barrel).not.toContain('coach-service');
     expect(barrel).not.toContain('recordHintIssued');
   });

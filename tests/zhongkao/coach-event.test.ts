@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  COACH_FINAL_ANSWER_MAX_LENGTH,
+  COACH_HINT_TEXT_MAX_LENGTH,
   COACH_OPERATION_FINGERPRINT_LENGTH,
+  COACH_SOLUTION_EXPLANATION_MAX_LENGTH,
   COACH_TRUSTED_MESSAGE_MAX_LENGTH,
   coachEventFactsEqual,
   validateCoachEvent,
@@ -54,6 +57,7 @@ const VALID_EVENTS: CoachEvent[] = [
     phase: 'original',
     requestEventId: 'event-hint-requested',
     hintNumber: 1,
+    hintText: 'Recall how inverse operations isolate the unknown.',
   },
   {
     ...common('full_solution_requested'),
@@ -66,6 +70,8 @@ const VALID_EVENTS: CoachEvent[] = [
     eventType: 'full_solution_revealed',
     phase: 'original',
     requestEventId: 'event-full-solution-requested',
+    explanation: 'Subtract and divide step by step to isolate the unknown.',
+    finalAnswer: 'x = 4',
   },
   {
     ...common('original_resolved'),
@@ -107,6 +113,14 @@ const VALID_EVENTS: CoachEvent[] = [
     ...common('problem_abandoned'),
     eventType: 'problem_abandoned',
     sourceUserMessageSeq: 6,
+  },
+  {
+    ...common('presentation_failed'),
+    eventType: 'presentation_failed',
+    phase: 'original',
+    presentationKind: 'hint',
+    requestEventId: 'event-hint-requested',
+    failureCode: 'HINT_GENERATION_FAILED',
   },
 ];
 
@@ -171,6 +185,50 @@ describe('Coach event contract', () => {
     }
   });
 
+  it('keeps presentation failure facts closed and server-owned', () => {
+    const failure = VALID_EVENTS.at(-1)!;
+    expect(validateCoachEvent({ ...failure, requestEventId: undefined }).valid).toBe(false);
+    expect(validateCoachEvent({ ...failure, presentationKind: 'answer' }).valid).toBe(false);
+    expect(validateCoachEvent({ ...failure, failureCode: 'PRIVATE_PROVIDER_ERROR' }).valid).toBe(
+      false,
+    );
+    expect(
+      validateCoachEvent({
+        ...failure,
+        phase: 'transfer',
+        presentationKind: 'full_solution',
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateCoachEvent({
+        ...failure,
+        presentationKind: 'hint',
+        failureCode: 'FULL_SOLUTION_GENERATION_FAILED',
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateCoachEvent({
+        ...failure,
+        presentationKind: 'full_solution',
+        failureCode: 'HINT_CONTENT_INVALID',
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateCoachEvent({
+        ...failure,
+        presentationKind: 'hint',
+        failureCode: 'COACH_RUNTIME_UNAVAILABLE',
+      }).valid,
+    ).toBe(true);
+    expect(
+      validateCoachEvent({
+        ...failure,
+        presentationKind: 'full_solution',
+        failureCode: 'MATERIAL_SOURCE_NOT_VERIFIED',
+      }).valid,
+    ).toBe(true);
+  });
+
   it('rejects invalid durable message seq and trusted text', () => {
     const attempt = VALID_EVENTS[1]!;
     const withoutSeq = { ...attempt } as Record<string, unknown>;
@@ -209,6 +267,26 @@ describe('Coach event contract', () => {
     expect(validateCoachEvent({ ...VALID_EVENTS[6], outcome: 'mastered' }).valid).toBe(false);
     expect(validateCoachEvent({ ...VALID_EVENTS[8], transferQuestionId: '' }).valid).toBe(false);
     expect(validateCoachEvent({ ...VALID_EVENTS[10], projectionVersion: 2 }).valid).toBe(false);
+  });
+
+  it('round-trips bounded presentation facts and rejects missing, padded, oversized, or hidden content', () => {
+    const hint = VALID_EVENTS[3]!;
+    const solution = VALID_EVENTS[5]!;
+    for (const value of [
+      { ...hint, hintText: undefined },
+      { ...hint, hintText: ' padded ' },
+      { ...hint, hintText: 'x'.repeat(COACH_HINT_TEXT_MAX_LENGTH + 1) },
+      { ...hint, hiddenReasoning: 'private' },
+      { ...solution, explanation: undefined },
+      { ...solution, explanation: 'x'.repeat(COACH_SOLUTION_EXPLANATION_MAX_LENGTH + 1) },
+      { ...solution, finalAnswer: ' ' },
+      { ...solution, finalAnswer: 'x'.repeat(COACH_FINAL_ANSWER_MAX_LENGTH + 1) },
+      { ...solution, hiddenReasoning: 'private' },
+    ]) {
+      expect(validateCoachEvent(value).valid).toBe(false);
+    }
+    expect(JSON.parse(JSON.stringify(hint))).toEqual(hint);
+    expect(JSON.parse(JSON.stringify(solution))).toEqual(solution);
   });
 
   it('compares persisted facts independently of object key insertion order', () => {

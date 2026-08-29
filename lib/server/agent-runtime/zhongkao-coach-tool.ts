@@ -1,4 +1,5 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
+import type { AICallFn } from '@openmaic/generation';
 import type { RuntimeStore } from '@openmaic/storage';
 import type { PgAgentSessionStore } from '@openmaic/storage/agent-session/pg';
 import { Type, type Static } from 'typebox';
@@ -9,6 +10,7 @@ import {
   getCoachProblemState,
   requestCoachFullSolution,
   requestCoachHint,
+  recordCoachPresentationFailure,
   startCoachProblem,
   submitCoachAttempt,
   submitCoachTransferAnswer,
@@ -16,35 +18,66 @@ import {
   type TrustedCoachUserMessage,
 } from '@/lib/server/zhongkao/coach-service';
 import type { CoachRuntimeSnapshot } from '@/lib/server/zhongkao/coach-runtime';
+import {
+  completeOriginalFullSolutionRequest,
+  completeOriginalHintRequest,
+  type CoachPresentation,
+} from '@/lib/server/zhongkao/coach-presentation';
 import { CoachError, isCoachError } from '@/lib/zhongkao/coach-errors';
+import { evaluateCurriculumClaim } from '@/lib/zhongkao/curriculum';
 import {
   COACH_MODEL_ACTIONS,
   allowedCoachActions,
   directiveForCoachState,
 } from '@/lib/zhongkao/coach-policy';
 import type { CoachState } from '@/lib/zhongkao/coach-state';
-import { COACH_TRUSTED_MESSAGE_MAX_LENGTH } from '@/lib/zhongkao/coach-event';
+import {
+  COACH_TRUSTED_MESSAGE_MAX_LENGTH,
+  assertCoachEvent,
+  isCoachPresentationFailureCodeForKind,
+  type CoachPresentationFailureCode,
+  type CoachPresentationKind,
+} from '@/lib/zhongkao/coach-event';
+import {
+  COACH_FULL_SOLUTION_PRESENTATION_SCHEMA,
+  COACH_HINT_PRESENTATION_SCHEMA,
+} from '@/lib/zhongkao/coach-public-presentation';
 
 import { listAgentUserMessages } from './user-messages';
+import type { ZhongkaoMaterialSourceAdapter } from './zhongkao-material-source';
 
 const CLOSED = { additionalProperties: false } as const;
 const IDENTIFIER = Type.String({ minLength: 1, maxLength: 128 });
 const EXPECTED_REVISION = Type.Integer({ minimum: 0 });
 
-const StartProblemSchema = Type.Object(
-  {
-    action: Type.Literal('start_problem'),
-    profileId: IDENTIFIER,
-    subjectId: IDENTIFIER,
-    knowledgePointIds: Type.Array(IDENTIFIER, {
-      minItems: 1,
-      maxItems: 32,
-      uniqueItems: true,
-    }),
-    questionSourceType: Type.Union([Type.Literal('typed'), Type.Literal('material')]),
-  },
-  CLOSED,
-);
+const StartProblemBase = {
+  action: Type.Literal('start_problem'),
+  profileId: IDENTIFIER,
+  subjectId: IDENTIFIER,
+  knowledgePointIds: Type.Array(IDENTIFIER, {
+    minItems: 1,
+    maxItems: 32,
+    uniqueItems: true,
+  }),
+} as const;
+
+const StartProblemSchema = Type.Union([
+  Type.Object(
+    {
+      ...StartProblemBase,
+      questionSourceType: Type.Literal('typed'),
+    },
+    CLOSED,
+  ),
+  Type.Object(
+    {
+      ...StartProblemBase,
+      questionSourceType: Type.Literal('material'),
+      materialId: IDENTIFIER,
+    },
+    CLOSED,
+  ),
+]);
 
 const GetStateSchema = Type.Object(
   {
@@ -95,6 +128,13 @@ const CoachErrorCodeSchema = Type.Union([
   Type.Literal('COACH_EVENT_CONFLICT'),
   Type.Literal('COACH_RUNTIME_UNAVAILABLE'),
   Type.Literal('MATERIAL_SOURCE_NOT_SUPPORTED'),
+  Type.Literal('MATERIAL_SOURCE_NOT_VERIFIED'),
+  Type.Literal('HINT_GENERATION_FAILED'),
+  Type.Literal('HINT_CONTENT_INVALID'),
+  Type.Literal('HINT_CONTENT_LEAKED'),
+  Type.Literal('FULL_SOLUTION_GENERATION_FAILED'),
+  Type.Literal('FULL_SOLUTION_CONTENT_INVALID'),
+  Type.Literal('COACH_GENERATION_UNAVAILABLE'),
 ]);
 
 const CoachActionSchema = Type.Union([
@@ -170,6 +210,11 @@ const PublicCoachStateSchema = Type.Object(
   CLOSED,
 );
 
+const CoachPresentationSchema = Type.Union([
+  COACH_HINT_PRESENTATION_SCHEMA,
+  COACH_FULL_SOLUTION_PRESENTATION_SCHEMA,
+]);
+
 export const ZHONGKAO_COACH_OUTPUT_SCHEMA = Type.Object(
   {
     ok: Type.Boolean(),
@@ -177,6 +222,7 @@ export const ZHONGKAO_COACH_OUTPUT_SCHEMA = Type.Object(
     coachSessionId: Type.Optional(IDENTIFIER),
     revision: Type.Optional(Type.Integer({ minimum: 0 })),
     state: Type.Optional(PublicCoachStateSchema),
+    presentation: Type.Optional(CoachPresentationSchema),
     facts: Type.Object(
       {
         replayed: Type.Boolean(),
@@ -190,7 +236,7 @@ export const ZHONGKAO_COACH_OUTPUT_SCHEMA = Type.Object(
   CLOSED,
 );
 
-type CoachToolParams = Static<typeof ZHONGKAO_COACH_ACTION_SCHEMA>;
+export type CoachToolParams = Static<typeof ZHONGKAO_COACH_ACTION_SCHEMA>;
 export type ZhongkaoCoachToolOutput = Static<typeof ZHONGKAO_COACH_OUTPUT_SCHEMA>;
 
 export interface TrustedAgentTurn {
@@ -204,6 +250,11 @@ export interface ZhongkaoCoachToolContext {
   trustedTurn: TrustedAgentTurn;
   runtimeStore: RuntimeStore;
   readTrustedUserMessage: () => Promise<TrustedCoachUserMessage>;
+  createGenerationCall?: (signal?: AbortSignal) => AICallFn;
+  /** @deprecated Tests may use this seam; production callers must bind the execution signal. */
+  generationCall?: AICallFn;
+  materialSource?: ZhongkaoMaterialSourceAdapter;
+  beforeExecute?: () => Promise<void>;
   now?: () => string;
 }
 
@@ -298,6 +349,7 @@ export function buildCoachToolSuccessOutput(
   snapshot: CoachRuntimeSnapshot,
   facts: { replayed: boolean; eventAppended: boolean },
   code?: CoachActionResult['code'],
+  presentation?: CoachPresentation,
 ): ZhongkaoCoachToolOutput {
   return validateOutput({
     ok: code === undefined,
@@ -305,6 +357,7 @@ export function buildCoachToolSuccessOutput(
     coachSessionId: snapshot.state.coachSessionId,
     revision: snapshot.state.revision,
     state: publicState(snapshot.state),
+    ...(presentation ? { presentation } : {}),
     facts,
     allowedActions: allowedCoachActions(snapshot.state),
     directive:
@@ -340,6 +393,83 @@ function errorResult(error: unknown) {
   return toolResult(buildCoachToolErrorOutput(error));
 }
 
+function presentationFailureCode(
+  error: unknown,
+  presentationKind: CoachPresentationKind,
+  signal?: AbortSignal,
+): CoachPresentationFailureCode | undefined {
+  if (signal?.aborted || !isCoachError(error)) return undefined;
+  return isCoachPresentationFailureCodeForKind(presentationKind, error.code)
+    ? error.code
+    : undefined;
+}
+
+function exactPresentationRequest(
+  snapshot: CoachRuntimeSnapshot,
+  turn: Readonly<TrustedAgentTurn>,
+  presentationKind: CoachPresentationKind,
+): { eventId: string; phase: 'original' | 'transfer' } {
+  const requestType = presentationKind === 'hint' ? 'hint_requested' : 'full_solution_requested';
+  const matches = snapshot.records.flatMap((record) => {
+    assertCoachEvent(record.payload);
+    const event = record.payload;
+    return event.eventType === requestType &&
+      event.agentSessionId === turn.agentSessionId &&
+      event.sourceUserMessageSeq === turn.userMessageSeq
+      ? [event]
+      : [];
+  });
+  if (matches.length !== 1) throw new CoachError('COACH_EVENT_CONFLICT');
+  const request = matches[0]!;
+  return { eventId: request.eventId, phase: request.phase };
+}
+
+async function settlePresentationFailure(input: {
+  deps: Parameters<typeof recordCoachPresentationFailure>[0];
+  requestSnapshot: CoachRuntimeSnapshot;
+  turn: Readonly<TrustedAgentTurn>;
+  presentationKind: CoachPresentationKind;
+  profileId: string;
+  coachSessionId: string;
+  error: unknown;
+  signal?: AbortSignal;
+}): Promise<
+  | {
+      failureCode: CoachPresentationFailureCode;
+      result: Awaited<ReturnType<typeof recordCoachPresentationFailure>>;
+    }
+  | undefined
+> {
+  const failureCode = presentationFailureCode(input.error, input.presentationKind, input.signal);
+  if (!failureCode) return undefined;
+  try {
+    const request = exactPresentationRequest(
+      input.requestSnapshot,
+      input.turn,
+      input.presentationKind,
+    );
+    const expectedRevision =
+      input.error instanceof CoachError &&
+      input.error.code === 'COACH_SESSION_CONFLICT' &&
+      input.error.latestRevision !== undefined
+        ? input.error.latestRevision
+        : input.requestSnapshot.state.revision;
+    const result = await recordCoachPresentationFailure(input.deps, {
+      profileId: input.profileId,
+      coachSessionId: input.coachSessionId,
+      expectedRevision,
+      phase: request.phase,
+      presentationKind: input.presentationKind,
+      requestEventId: request.eventId,
+      failureCode,
+    });
+    if (input.signal?.aborted) return undefined;
+    return { failureCode, result };
+  } catch {
+    return undefined;
+  }
+}
+
 export function createZhongkaoCoachActionTool(
   context: ZhongkaoCoachToolContext,
 ): AgentTool<never, never> {
@@ -351,31 +481,62 @@ export function createZhongkaoCoachActionTool(
       'Advance or inspect one deterministic Zhongkao tutoring problem. Student text is read from the bound durable user turn and is never supplied in this tool input.',
     parameters: ZHONGKAO_COACH_ACTION_SCHEMA,
     async execute(_toolCallId, params: CoachToolParams, signal) {
-      if (signal?.aborted) return errorResult(new Error('aborted'));
-      const deps = {
-        store: context.runtimeStore,
-        ownerId: turn.ownerId,
-        agentSessionId: turn.agentSessionId,
-        ...(context.now ? { now: context.now } : {}),
-      };
       try {
+        await context.beforeExecute?.();
+        if (signal?.aborted) return errorResult(new Error('aborted'));
+        const generationCall = context.createGenerationCall?.(signal) ?? context.generationCall;
+        const deps = {
+          store: context.runtimeStore,
+          ownerId: turn.ownerId,
+          agentSessionId: turn.agentSessionId,
+          ...(context.now ? { now: context.now } : {}),
+          ...(generationCall ? { generationCall } : {}),
+          ...(context.materialSource ? { materialSource: context.materialSource } : {}),
+          ...(signal ? { abortSignal: signal } : {}),
+        };
         if (params.action === 'get_state') {
           const snapshot = await getCoachProblemState(
             deps,
             params.profileId,
             params.coachSessionId,
           );
+          if (signal?.aborted) return errorResult(new Error('aborted'));
           return toolResult(
             buildCoachToolSuccessOutput(snapshot, { replayed: false, eventAppended: false }),
           );
         }
 
         const message = await context.readTrustedUserMessage();
+        if (signal?.aborted) return errorResult(new Error('aborted'));
         if (message.seq !== turn.userMessageSeq) throw new CoachError('COACH_INPUT_INVALID');
 
         let result: CoachActionResult;
         if (params.action === 'start_problem') {
-          result = await startCoachProblem(deps, { ...params, message });
+          let questionSource: { type: 'typed' } | { type: 'material'; materialId: string } = {
+            type: 'typed',
+          };
+          if (params.questionSourceType === 'material') {
+            const verified = await context.materialSource?.resolve(params.materialId);
+            if (signal?.aborted) return errorResult(new Error('aborted'));
+            const decision = verified
+              ? evaluateCurriculumClaim(
+                  'confirmed',
+                  { type: 'source_attribution', source: verified.source },
+                  verified.verifier,
+                )
+              : { allowed: false as const };
+            if (!verified || !decision.allowed || verified.materialId !== params.materialId) {
+              throw new CoachError('MATERIAL_SOURCE_NOT_VERIFIED');
+            }
+            questionSource = { type: 'material', materialId: verified.materialId };
+          }
+          result = await startCoachProblem(deps, {
+            profileId: params.profileId,
+            subjectId: params.subjectId,
+            knowledgePointIds: params.knowledgePointIds,
+            questionSource,
+            message,
+          });
         } else {
           const continuation = { ...params, message };
           switch (params.action) {
@@ -383,7 +544,12 @@ export function createZhongkaoCoachActionTool(
               result = await submitCoachAttempt(deps, continuation);
               break;
             case 'request_hint':
-              result = await requestCoachHint(deps, continuation);
+              result = await requestCoachHint(deps, {
+                ...continuation,
+                // M2B-1 publishes deterministic original-question hints only.
+                // Reject transfer hints before creating a pending request.
+                requiredPhase: 'original',
+              });
               break;
             case 'request_full_solution':
               result = await requestCoachFullSolution(deps, continuation);
@@ -397,13 +563,73 @@ export function createZhongkaoCoachActionTool(
           }
         }
         if (signal?.aborted) return errorResult(new Error('aborted'));
-        return toolResult(
-          buildCoachToolSuccessOutput(
-            result.snapshot,
-            { replayed: result.replayed, eventAppended: result.eventAppended },
-            result.code,
-          ),
-        );
+        let presentation: CoachPresentation | undefined;
+        let snapshot = result.snapshot;
+        let facts = { replayed: result.replayed, eventAppended: result.eventAppended };
+        let code = result.code;
+        if (params.action === 'request_hint' && result.code === undefined) {
+          try {
+            const completed = await completeOriginalHintRequest(deps, {
+              profileId: params.profileId,
+              coachSessionId: params.coachSessionId,
+              userMessageSeq: turn.userMessageSeq,
+            });
+            if (completed) {
+              snapshot = completed.snapshot;
+              presentation = completed.presentation;
+              facts = { replayed: completed.replayed, eventAppended: completed.eventAppended };
+            }
+          } catch (error) {
+            const failed = await settlePresentationFailure({
+              deps,
+              requestSnapshot: result.snapshot,
+              turn,
+              presentationKind: 'hint',
+              profileId: params.profileId,
+              coachSessionId: params.coachSessionId,
+              error,
+              signal,
+            });
+            if (!failed) throw error;
+            snapshot = failed.result.snapshot;
+            facts = {
+              replayed: failed.result.replayed,
+              eventAppended: failed.result.eventAppended,
+            };
+            code = failed.failureCode;
+          }
+        } else if (params.action === 'request_full_solution' && result.code === undefined) {
+          try {
+            const completed = await completeOriginalFullSolutionRequest(deps, {
+              profileId: params.profileId,
+              coachSessionId: params.coachSessionId,
+              userMessageSeq: turn.userMessageSeq,
+            });
+            snapshot = completed.snapshot;
+            presentation = completed.presentation;
+            facts = { replayed: completed.replayed, eventAppended: completed.eventAppended };
+          } catch (error) {
+            const failed = await settlePresentationFailure({
+              deps,
+              requestSnapshot: result.snapshot,
+              turn,
+              presentationKind: 'full_solution',
+              profileId: params.profileId,
+              coachSessionId: params.coachSessionId,
+              error,
+              signal,
+            });
+            if (!failed) throw error;
+            snapshot = failed.result.snapshot;
+            facts = {
+              replayed: failed.result.replayed,
+              eventAppended: failed.result.eventAppended,
+            };
+            code = failed.failureCode;
+          }
+        }
+        if (signal?.aborted) return errorResult(new Error('aborted'));
+        return toolResult(buildCoachToolSuccessOutput(snapshot, facts, code, presentation));
       } catch (error) {
         return errorResult(error);
       }

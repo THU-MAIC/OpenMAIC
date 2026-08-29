@@ -249,7 +249,7 @@ describe('PgAgentSessionStore with PGlite', () => {
     expect(indexNames).not.toContain('spec_session_entries_type_idx');
   });
 
-  test('settles a cancel-requested stale-running session as cancelled on claim, never attempt N+1', async () => {
+  test('records exact N cancellation and requeues pre-existing N+1 without leasing it in the same scan', async () => {
     // The incident shape: a worker dies mid-run with the cancel request set;
     // after the restart the claim scan must NOT re-lease the session for
     // attempt 2 — it settles the pending cancel as `cancelled` instead.
@@ -259,12 +259,14 @@ describe('PgAgentSessionStore with PGlite', () => {
       now: () => now,
     });
     await clocked.createSession(makeAgentSessionInput());
+    const turnN = await clocked.postUserMessage('session-1', { text: 'turn N' });
     const first = await clocked.claimNextSession('worker-a', 101, {
       leaseTtlMs: 10_000,
       maxAttempts: 3,
     });
     expect(first).toMatchObject({ id: 'session-1', status: 'running', attempt: 1 });
 
+    const turnNPlusOne = await clocked.postUserMessage('session-1', { text: 'turn N+1' });
     await clocked.requestCancel('session-1');
     now += 20_000; // The 10s lease is stale; the worker is gone.
 
@@ -275,12 +277,32 @@ describe('PgAgentSessionStore with PGlite', () => {
     expect(retry).toBeNull();
 
     const meta = await clocked.getSession('session-1');
-    expect(meta).toMatchObject({ status: 'cancelled', attempt: 0 });
+    expect(meta).toMatchObject({ status: 'queued', attempt: 0 });
     expect(meta?.lease).toBeUndefined();
+    expect(meta?.deliveredUserMessageSeq).toBe(0);
     expect(await clocked.isCancelRequested('session-1')).toBe(false);
     const events = await clocked.readEventsAfter('session-1', 0);
     expect(events.at(-1)).toMatchObject({ type: AGENT_SESSION_LIFECYCLE.sessionEnd });
-    expect((events.at(-1)?.data as { status?: unknown } | undefined)?.status).toBe('cancelled');
+    expect(events.at(-1)?.data).toMatchObject({
+      status: 'cancelled',
+      cancelledUserMessageSeq: turnN.seq,
+    });
+    expect((await clocked.listUserMessages('session-1')).map((message) => message.seq)).toEqual([
+      turnN.seq,
+      turnNPlusOne.seq,
+    ]);
+
+    const next = await clocked.claimNextSession('worker-c', 103, {
+      leaseTtlMs: 10_000,
+      maxAttempts: 3,
+    });
+    expect(next).toMatchObject({
+      id: 'session-1',
+      status: 'running',
+      claimReason: 'queued',
+      deliveredUserMessageSeq: 0,
+    });
+    expect(next?.claimSeq).toBeGreaterThanOrEqual(turnNPlusOne.seq);
   });
 
   test('claim scan settles a cancel-requested session and still claims the next queued one', async () => {

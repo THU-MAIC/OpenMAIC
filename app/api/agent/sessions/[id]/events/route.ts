@@ -39,6 +39,12 @@ import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { subscribeAgentEventWakeup } from '@/lib/server/agent-runtime/event-notify-bus';
 import { resolveRequestOwnerId } from '@/lib/server/agent-runtime/owner';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
+import {
+  isGuardedCoachCancelledTurnEventType,
+  redactClaimSettledCancellationForPublicEventData,
+  redactDurableUserMessageSeqForPublicEventData,
+} from '@/lib/server/agent-runtime/trusted-turn';
+import { redactCoachPresentationMarkerForPublicEventData } from '@/lib/server/agent-runtime/zhongkao-terminal-presentation';
 
 export const runtime = 'nodejs';
 // Self-hosted `next start` does not enforce maxDuration; it remains useful to
@@ -156,10 +162,22 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
       const writePage = (events: PersistedAgentSessionEvent[]) => {
         for (const event of events) {
+          if (isGuardedCoachCancelledTurnEventType(event.type)) {
+            cursor = event.id;
+            continue;
+          }
+          const publicEvent = {
+            ...event,
+            data: redactClaimSettledCancellationForPublicEventData(
+              redactDurableUserMessageSeqForPublicEventData(
+                redactCoachPresentationMarkerForPublicEventData(event.data),
+              ),
+            ),
+          };
           if (
             !write(
               `id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify({
-                ...event,
+                ...publicEvent,
                 // A degraded catch-up set `backlogDone` without draining, so
                 // events arriving while recovering are still history: keep
                 // labelling them backlog until the real signal goes out.

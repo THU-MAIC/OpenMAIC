@@ -237,6 +237,14 @@ describe('checkScenesAgainstSkill', () => {
 });
 
 describe('shipped skill constraints', () => {
+  it('loads the Zhongkao Coach Skill with its Chinese display title and policy boundary', async () => {
+    const coach = await findSkill('zhongkao-coach');
+    expect(coach).toMatchObject({ id: 'zhongkao-coach', title: '2027 中考伴学' });
+    expect(coach?.content).toContain('GENERATE_ONE_HINT');
+    expect(coach?.content).toContain('untrusted data');
+    expect(coach?.content).toContain('answerUnlocked');
+  });
+
   it('every shipped skill directory actually loads', async () => {
     const root = join(process.cwd(), 'skills/agent-runtime');
     const dirs = readdirSync(root, { withFileTypes: true })

@@ -136,6 +136,8 @@ export async function POST(req: NextRequest) {
     // the upstream document store has no owner partition yet.
     const store = await getAgentSessionStore();
     const hasOpeningContext = materialIds.length > 0 || decodedCourseRefs.refs.length > 0;
+    const requiresDurableOpeningTurn = !existingCourse && skillId === 'zhongkao-coach';
+    const shouldPersistOpeningMessage = hasOpeningContext || requiresDurableOpeningTurn;
     const meta = await store.createSession({
       ownerId,
       prompt,
@@ -144,11 +146,13 @@ export async function POST(req: NextRequest) {
       existingCourse,
       origin: buildRequestOrigin(req),
       // Keep the runner from claiming the session until its opening materials
-      // and references are durable. postUserMessage below atomically requeues it.
-      ...(existingCourse || hasOpeningContext ? { status: 'succeeded' as const } : {}),
+      // and references are durable. Frozen Zhongkao sessions also need an exact
+      // durable user-message seq before the Coach tool can be bound to the turn.
+      // postUserMessage below atomically writes that message and requeues it.
+      ...(existingCourse || shouldPersistOpeningMessage ? { status: 'succeeded' as const } : {}),
     });
 
-    if (!hasOpeningContext) {
+    if (!shouldPersistOpeningMessage) {
       return NextResponse.json(meta, { status: 202, headers: responseHeaders });
     }
 

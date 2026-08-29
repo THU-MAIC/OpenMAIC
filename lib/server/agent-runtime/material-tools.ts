@@ -133,7 +133,7 @@ const UNTRUSTED_MATERIAL_TAG = 'untrusted-material-content';
  * already contains it, which turns "cannot be forged" from a probabilistic
  * claim into a checked postcondition.
  */
-function untrustedMaterialBlock(verbatim: string): string {
+export function untrustedMaterialBlock(verbatim: string): string {
   let tag = `${UNTRUSTED_MATERIAL_TAG}-${randomBytes(8).toString('hex')}`;
   for (let attempt = 0; verbatim.includes(tag) && attempt < 4; attempt += 1) {
     tag = `${UNTRUSTED_MATERIAL_TAG}-${randomBytes(8).toString('hex')}`;

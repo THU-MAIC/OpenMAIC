@@ -14,10 +14,66 @@ export const COACH_EVENT_SCHEMA_VERSION = 1 as const;
 export const COACH_PROJECTION_VERSION = 1 as const;
 export const COACH_TRUSTED_MESSAGE_MAX_LENGTH = 12_000;
 export const COACH_OPERATION_FINGERPRINT_LENGTH = 64;
+export const COACH_HINT_TEXT_MAX_LENGTH = 1_200;
+export const COACH_SOLUTION_EXPLANATION_MAX_LENGTH = 12_000;
+export const COACH_FINAL_ANSWER_MAX_LENGTH = 2_000;
 
 export type CoachPhase = 'original' | 'transfer';
 export type CoachQuestionSource = { type: 'typed' } | { type: 'material'; materialId: string };
 export type CoachOutcome = 'correct' | 'partial' | 'incorrect';
+export type CoachPresentationKind = 'hint' | 'full_solution';
+export const COACH_PRESENTATION_FAILURE_CODES = [
+  'COACH_PROFILE_NOT_FOUND',
+  'HINT_GENERATION_FAILED',
+  'HINT_CONTENT_INVALID',
+  'HINT_CONTENT_LEAKED',
+  'FULL_SOLUTION_GENERATION_FAILED',
+  'FULL_SOLUTION_CONTENT_INVALID',
+  'COACH_GENERATION_UNAVAILABLE',
+  'MATERIAL_SOURCE_NOT_SUPPORTED',
+  'MATERIAL_SOURCE_NOT_VERIFIED',
+  'COACH_SESSION_CONFLICT',
+  'COACH_RUNTIME_UNAVAILABLE',
+] as const;
+export type CoachPresentationFailureCode = (typeof COACH_PRESENTATION_FAILURE_CODES)[number];
+
+const PRESENTATION_FAILURE_CODES_BY_KIND: Readonly<
+  Record<CoachPresentationKind, ReadonlySet<CoachPresentationFailureCode>>
+> = {
+  hint: new Set([
+    'HINT_GENERATION_FAILED',
+    'HINT_CONTENT_INVALID',
+    'HINT_CONTENT_LEAKED',
+    'COACH_SESSION_CONFLICT',
+    'COACH_RUNTIME_UNAVAILABLE',
+  ]),
+  full_solution: new Set([
+    'COACH_PROFILE_NOT_FOUND',
+    'FULL_SOLUTION_GENERATION_FAILED',
+    'FULL_SOLUTION_CONTENT_INVALID',
+    'COACH_GENERATION_UNAVAILABLE',
+    'MATERIAL_SOURCE_NOT_SUPPORTED',
+    'MATERIAL_SOURCE_NOT_VERIFIED',
+    'COACH_SESSION_CONFLICT',
+    'COACH_RUNTIME_UNAVAILABLE',
+  ]),
+};
+
+/** Keep durable presentation failures bound to the presentation they attempted. */
+export function isCoachPresentationFailureCodeForKind(
+  presentationKind: unknown,
+  failureCode: unknown,
+): failureCode is CoachPresentationFailureCode {
+  if (
+    (presentationKind !== 'hint' && presentationKind !== 'full_solution') ||
+    typeof failureCode !== 'string'
+  ) {
+    return false;
+  }
+  return PRESENTATION_FAILURE_CODES_BY_KIND[presentationKind].has(
+    failureCode as CoachPresentationFailureCode,
+  );
+}
 
 interface CoachEventBase {
   schemaVersion: typeof COACH_EVENT_SCHEMA_VERSION;
@@ -59,6 +115,7 @@ export interface HintIssuedEvent extends CoachEventBase {
   phase: CoachPhase;
   requestEventId: string;
   hintNumber: 1 | 2 | 3;
+  hintText: string;
 }
 
 export interface FullSolutionRequestedEvent extends CoachEventBase {
@@ -71,6 +128,16 @@ export interface FullSolutionRevealedEvent extends CoachEventBase {
   eventType: 'full_solution_revealed';
   phase: 'original';
   requestEventId: string;
+  explanation: string;
+  finalAnswer?: string;
+}
+
+export interface CoachPresentationFailedEvent extends CoachEventBase {
+  eventType: 'presentation_failed';
+  phase: CoachPhase;
+  presentationKind: CoachPresentationKind;
+  requestEventId: string;
+  failureCode: CoachPresentationFailureCode;
 }
 
 export interface OriginalResolvedEvent extends CoachEventBase {
@@ -121,6 +188,7 @@ export type CoachEvent =
   | HintIssuedEvent
   | FullSolutionRequestedEvent
   | FullSolutionRevealedEvent
+  | CoachPresentationFailedEvent
   | OriginalResolvedEvent
   | TransferQuestionAssignedEvent
   | TransferAnswerSubmittedEvent
@@ -137,6 +205,7 @@ export const COACH_EVENT_TYPES = [
   'hint_issued',
   'full_solution_requested',
   'full_solution_revealed',
+  'presentation_failed',
   'original_resolved',
   'transfer_question_assigned',
   'transfer_answer_submitted',
@@ -168,9 +237,22 @@ const EVENT_KEYS: Readonly<Record<CoachEventType, ReadonlySet<string>>> = {
   ]),
   student_attempt_submitted: new Set([...COMMON_KEYS, 'phase', 'studentResponse']),
   hint_requested: new Set([...COMMON_KEYS, 'phase']),
-  hint_issued: new Set([...COMMON_KEYS, 'phase', 'requestEventId', 'hintNumber']),
+  hint_issued: new Set([...COMMON_KEYS, 'phase', 'requestEventId', 'hintNumber', 'hintText']),
   full_solution_requested: new Set([...COMMON_KEYS, 'phase']),
-  full_solution_revealed: new Set([...COMMON_KEYS, 'phase', 'requestEventId']),
+  full_solution_revealed: new Set([
+    ...COMMON_KEYS,
+    'phase',
+    'requestEventId',
+    'explanation',
+    'finalAnswer',
+  ]),
+  presentation_failed: new Set([
+    ...COMMON_KEYS,
+    'phase',
+    'presentationKind',
+    'requestEventId',
+    'failureCode',
+  ]),
   original_resolved: new Set([...COMMON_KEYS, 'attemptEventId', 'outcome']),
   transfer_question_assigned: new Set([
     ...COMMON_KEYS,
@@ -254,6 +336,22 @@ function validateTrustedText(value: unknown, path: string, errors: DomainValidat
   }
 }
 
+function validatePresentationText(
+  value: unknown,
+  path: string,
+  maxLength: number,
+  errors: DomainValidationIssue[],
+): void {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    pushIssue(errors, path, 'expected non-empty presentation text');
+    return;
+  }
+  if (value !== value.trim()) pushIssue(errors, path, 'presentation text must be trimmed');
+  if (value.length > maxLength) {
+    pushIssue(errors, path, `presentation text exceeds ${maxLength}`);
+  }
+}
+
 function validateQuestionSource(
   value: unknown,
   path: string,
@@ -284,6 +382,16 @@ function validateOutcome(value: unknown, path: string, errors: DomainValidationI
 function validatePhase(value: unknown, path: string, errors: DomainValidationIssue[]): void {
   if (value !== 'original' && value !== 'transfer') {
     pushIssue(errors, path, 'unknown coach phase');
+  }
+}
+
+function validatePresentationFailureCode(
+  value: unknown,
+  path: string,
+  errors: DomainValidationIssue[],
+): void {
+  if (!(COACH_PRESENTATION_FAILURE_CODES as readonly unknown[]).includes(value)) {
+    pushIssue(errors, path, 'unknown presentation failure code');
   }
 }
 
@@ -344,11 +452,43 @@ export function validateCoachEvent(value: unknown): DomainValidationResult {
     if (value.hintNumber !== 1 && value.hintNumber !== 2 && value.hintNumber !== 3) {
       pushIssue(errors, '/hintNumber', 'hint number must be 1, 2, or 3');
     }
+    validatePresentationText(value.hintText, '/hintText', COACH_HINT_TEXT_MAX_LENGTH, errors);
   } else if (eventType === 'full_solution_requested') {
     if (value.phase !== 'original') pushIssue(errors, '/phase', 'original solution phase required');
   } else if (eventType === 'full_solution_revealed') {
     if (value.phase !== 'original') pushIssue(errors, '/phase', 'original solution phase required');
     validateIdentifier(value.requestEventId, '/requestEventId', errors);
+    validatePresentationText(
+      value.explanation,
+      '/explanation',
+      COACH_SOLUTION_EXPLANATION_MAX_LENGTH,
+      errors,
+    );
+    if (Object.hasOwn(value, 'finalAnswer')) {
+      validatePresentationText(
+        value.finalAnswer,
+        '/finalAnswer',
+        COACH_FINAL_ANSWER_MAX_LENGTH,
+        errors,
+      );
+    }
+  } else if (eventType === 'presentation_failed') {
+    validatePhase(value.phase, '/phase', errors);
+    if (value.presentationKind !== 'hint' && value.presentationKind !== 'full_solution') {
+      pushIssue(errors, '/presentationKind', 'unknown presentation kind');
+    }
+    if (value.presentationKind === 'full_solution' && value.phase !== 'original') {
+      pushIssue(errors, '/phase', 'full solution failure requires original phase');
+    }
+    validateIdentifier(value.requestEventId, '/requestEventId', errors);
+    validatePresentationFailureCode(value.failureCode, '/failureCode', errors);
+    if (
+      (value.presentationKind === 'hint' || value.presentationKind === 'full_solution') &&
+      (COACH_PRESENTATION_FAILURE_CODES as readonly unknown[]).includes(value.failureCode) &&
+      !isCoachPresentationFailureCodeForKind(value.presentationKind, value.failureCode)
+    ) {
+      pushIssue(errors, '/failureCode', 'failure code does not match presentation kind');
+    }
   } else if (eventType === 'original_resolved') {
     validateIdentifier(value.attemptEventId, '/attemptEventId', errors);
     validateOutcome(value.outcome, '/outcome', errors);

@@ -68,6 +68,7 @@ beforeEach(() => {
   const installed = [
     { id: 'custom-skill', name: 'custom-skill' },
     { id: 'usk_1', name: 'my-demo' },
+    { id: 'zhongkao-coach', name: 'zhongkao-coach' },
   ];
   mocks.listSkills.mockResolvedValue(installed);
   mocks.findSkill.mockImplementation(async (ref: string) => {
@@ -102,6 +103,68 @@ describe('agent session collection route', () => {
         origin: 'http://localhost',
       }),
     );
+    expect(mocks.createSession.mock.calls[0]![0]).not.toHaveProperty('status');
+    expect(mocks.postUserMessage).not.toHaveBeenCalled();
+  });
+
+  it('persists a frozen Zhongkao opening turn exactly once before queueing the first run', async () => {
+    const response = await post({
+      prompt: '我先尝试列出已知条件',
+      skill: 'zhongkao-coach',
+    });
+
+    expect(response.status).toBe(202);
+    expect(mocks.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerId: 'anon:test',
+        prompt: '我先尝试列出已知条件',
+        skillId: 'zhongkao-coach',
+        status: 'succeeded',
+      }),
+    );
+    expect(mocks.postUserMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.postUserMessage).toHaveBeenCalledWith(
+      'session-1',
+      { text: '我先尝试列出已知条件' },
+      { expectedOwnerId: 'anon:test' },
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      id: 'session-1',
+      status: 'queued',
+    });
+  });
+
+  it('uses the same durable opening-turn path when the frozen Zhongkao skill is inferred', async () => {
+    mocks.inferSkillIdFromPrompt.mockResolvedValue('zhongkao-coach');
+
+    const response = await post({ prompt: '/zhongkao-coach 给我一个小提示' });
+
+    expect(response.status).toBe(202);
+    expect(mocks.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skillId: 'zhongkao-coach',
+        status: 'succeeded',
+      }),
+    );
+    expect(mocks.postUserMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.postUserMessage).toHaveBeenCalledWith(
+      'session-1',
+      { text: '/zhongkao-coach 给我一个小提示' },
+      { expectedOwnerId: 'anon:test' },
+    );
+  });
+
+  it('tombstones a frozen Zhongkao session when its durable opening turn cannot be written', async () => {
+    mocks.postUserMessage.mockRejectedValue(new Error('event append failed'));
+
+    const response = await post({ prompt: '我的尝试', skill: 'zhongkao-coach' });
+
+    expect(response.status).toBe(500);
+    expect(mocks.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'succeeded', skillId: 'zhongkao-coach' }),
+    );
+    expect(mocks.postUserMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.softDeleteSession).toHaveBeenCalledWith('session-1', 'anon:test');
   });
 
   it('accepts a skill by its user-visible name and freezes the durable id, like the runner', async () => {

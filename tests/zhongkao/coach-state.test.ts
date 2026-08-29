@@ -69,6 +69,7 @@ function hintIssued(
     phase,
     requestEventId,
     hintNumber,
+    hintText: `Fictional hint ${hintNumber}`,
   };
 }
 
@@ -87,6 +88,24 @@ function solutionReveal(seq: number, requestEventId: string): CoachEvent {
     eventType: 'full_solution_revealed',
     phase: 'original',
     requestEventId,
+    explanation: 'Fictional persisted explanation.',
+  };
+}
+
+function presentationFailed(
+  seq: number,
+  requestEventId: string,
+  presentationKind: 'hint' | 'full_solution',
+  phase: CoachPhase = 'original',
+): CoachEvent {
+  return {
+    ...base('presentation_failed', seq),
+    eventType: 'presentation_failed',
+    phase,
+    presentationKind,
+    requestEventId,
+    failureCode:
+      presentationKind === 'hint' ? 'HINT_GENERATION_FAILED' : 'FULL_SOLUTION_GENERATION_FAILED',
   };
 }
 
@@ -243,6 +262,24 @@ describe('foldCoachEvents strict deterministic projection', () => {
     ).toThrow('COACH_EVENT_CONFLICT');
   });
 
+  it('clears only the exact failed hint request without advancing hint state', () => {
+    const requested = hintRequest(1, 'original', 2);
+    const failed = presentationFailed(2, requested.eventId, 'hint');
+    const next = hintRequest(3, 'original', 3);
+    const state = foldCoachEvents(records([start(), requested, failed, next]));
+    expect(state.original).toMatchObject({
+      hintRequestEventIds: [requested.eventId, next.eventId],
+      pendingHintRequestEventId: next.eventId,
+      hintsIssued: 0,
+      keyHintUsed: false,
+    });
+    expect(() =>
+      foldCoachEvents(
+        records([start(), requested, presentationFailed(2, 'wrong-request', 'hint')]),
+      ),
+    ).toThrow('COACH_EVENT_CONFLICT');
+  });
+
   it('isolates original and transfer hint counts and key-hint thresholds', () => {
     const events: CoachEvent[] = [start(), attempt(1, 2)];
     for (let hint = 1; hint <= 3; hint += 1) {
@@ -296,6 +333,29 @@ describe('foldCoachEvents strict deterministic projection', () => {
     expect(revealed.original.viewedFullAnswer).toBe(true);
     expect(revealed.original.pendingFullSolutionRequestEventId).toBeUndefined();
     expect(revealed.transfer.viewedFullAnswer).toBe(false);
+  });
+
+  it('clears a failed unlocked solution request without marking the answer viewed', () => {
+    const first = attempt(1, 2);
+    const second = attempt(2, 3);
+    const requested = solutionRequest(3, 4);
+    const failed = presentationFailed(4, requested.eventId, 'full_solution');
+    const next = solutionRequest(5, 5);
+    const state = foldCoachEvents(records([start(), first, second, requested, failed, next]));
+    expect(state.original.viewedFullAnswer).toBe(false);
+    expect(state.original.pendingFullSolutionRequestEventId).toBe(next.eventId);
+    expect(state.original.fullSolutionRequestEventIds).toEqual([requested.eventId, next.eventId]);
+    expect(() =>
+      foldCoachEvents(
+        records([
+          start(),
+          first,
+          second,
+          requested,
+          presentationFailed(4, 'wrong-request', 'full_solution'),
+        ]),
+      ),
+    ).toThrow('COACH_EVENT_CONFLICT');
   });
 
   it('rejects reveal without the current unlocked pending request', () => {

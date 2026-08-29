@@ -14,6 +14,7 @@ import {
   recordFullSolutionRevealed,
   recordHintIssued,
   recordOriginalResolved,
+  recordCoachPresentationFailure,
   recordStudyAttemptsProjected,
   recordTransferEvaluation,
   requestCoachFullSolution,
@@ -122,7 +123,7 @@ async function start(
     profileId: 'student-alpha',
     subjectId: overrides.subjectId ?? 'math',
     knowledgePointIds: overrides.knowledgePointIds ?? ['linear-equations'],
-    questionSourceType: 'typed',
+    questionSource: { type: 'typed' },
     message: userMessage,
   });
 }
@@ -401,6 +402,81 @@ describe('model action fingerprint replay', () => {
 });
 
 describe('causal service operations and phase isolation', () => {
+  it('durably clears a failed presentation request and permits a later student turn', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const created = await start(h);
+    const requested = await requestCoachHint(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.snapshot.state.coachSessionId,
+      expectedRevision: 0,
+      message: message(2, 'One small hint.'),
+    });
+    const request = lastEvent(requested);
+    const failed = await recordCoachPresentationFailure(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.snapshot.state.coachSessionId,
+      expectedRevision: requested.snapshot.state.revision,
+      phase: 'original',
+      presentationKind: 'hint',
+      requestEventId: request.eventId,
+      failureCode: 'HINT_GENERATION_FAILED',
+    });
+    const replay = await recordCoachPresentationFailure(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.snapshot.state.coachSessionId,
+      expectedRevision: 999,
+      phase: 'original',
+      presentationKind: 'hint',
+      requestEventId: request.eventId,
+      failureCode: 'HINT_GENERATION_FAILED',
+    });
+    expect(lastEvent(failed)).toMatchObject({
+      eventType: 'presentation_failed',
+      requestEventId: request.eventId,
+      failureCode: 'HINT_GENERATION_FAILED',
+    });
+    expect(failed.snapshot.state.original).toMatchObject({
+      hintsIssued: 0,
+      pendingHintRequestEventId: undefined,
+    });
+    expect(replay).toMatchObject({ replayed: true, eventAppended: false });
+
+    const next = await requestCoachHint(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.snapshot.state.coachSessionId,
+      expectedRevision: failed.snapshot.state.revision,
+      message: message(3, 'Please retry the hint.'),
+    });
+    expect(next.snapshot.state.original.pendingHintRequestEventId).toBe(lastEvent(next).eventId);
+    const recordsBeforeMismatchedFailure = await h.store.listRecords(next.snapshot.session.id);
+    await expect(
+      recordCoachPresentationFailure(h.deps, {
+        profileId: 'student-alpha',
+        coachSessionId: created.snapshot.state.coachSessionId,
+        expectedRevision: next.snapshot.state.revision,
+        phase: 'original',
+        presentationKind: 'hint',
+        requestEventId: lastEvent(next).eventId,
+        failureCode: 'FULL_SOLUTION_GENERATION_FAILED',
+      }),
+    ).rejects.toMatchObject({ code: 'COACH_INPUT_INVALID' });
+    expect(await h.store.listRecords(next.snapshot.session.id)).toHaveLength(
+      recordsBeforeMismatchedFailure.length,
+    );
+    await expect(
+      recordCoachPresentationFailure(h.deps, {
+        profileId: 'student-alpha',
+        coachSessionId: created.snapshot.state.coachSessionId,
+        expectedRevision: next.snapshot.state.revision,
+        phase: 'original',
+        presentationKind: 'hint',
+        requestEventId: 'missing-request',
+        failureCode: 'HINT_GENERATION_FAILED',
+      }),
+    ).rejects.toMatchObject({ code: 'COACH_ACTION_NOT_ALLOWED' });
+  });
+
   it('issues each hint from the exact pending request and replays by request id', async () => {
     const h = harness();
     await seedProfile(h);
@@ -417,12 +493,14 @@ describe('causal service operations and phase isolation', () => {
       coachSessionId: created.snapshot.state.coachSessionId,
       expectedRevision: requested.snapshot.state.revision,
       requestEventId: request.eventId,
+      hintText: 'Recall the inverse operation.',
     });
     const replay = await recordHintIssued(h.deps, {
       profileId: 'student-alpha',
       coachSessionId: created.snapshot.state.coachSessionId,
       expectedRevision: 999,
       requestEventId: request.eventId,
+      hintText: 'Recall the inverse operation.',
     });
     expect(issued.snapshot.state.original.hintsIssued).toBe(1);
     expect(replay).toMatchObject({ replayed: true, eventAppended: false });
@@ -430,8 +508,18 @@ describe('causal service operations and phase isolation', () => {
       recordHintIssued(h.deps, {
         profileId: 'student-alpha',
         coachSessionId: created.snapshot.state.coachSessionId,
+        expectedRevision: 999,
+        requestEventId: request.eventId,
+        hintText: 'A different replayed hint must conflict.',
+      }),
+    ).rejects.toMatchObject({ code: 'COACH_EVENT_CONFLICT' });
+    await expect(
+      recordHintIssued(h.deps, {
+        profileId: 'student-alpha',
+        coachSessionId: created.snapshot.state.coachSessionId,
         expectedRevision: issued.snapshot.state.revision,
         requestEventId: 'missing-request',
+        hintText: 'This must not persist.',
       }),
     ).rejects.toMatchObject({ code: 'COACH_ACTION_NOT_ALLOWED' });
   });
@@ -452,6 +540,7 @@ describe('causal service operations and phase isolation', () => {
       coachSessionId: ready.created.snapshot.state.coachSessionId,
       expectedRevision: requested.snapshot.state.revision,
       requestEventId: request.eventId,
+      hintText: 'Compare the corresponding quantities.',
     });
     expect(issued.snapshot.state.original.hintsIssued).toBe(0);
     expect(issued.snapshot.state.transfer.hintsIssued).toBe(1);
@@ -476,6 +565,7 @@ describe('causal service operations and phase isolation', () => {
         coachSessionId: created.snapshot.state.coachSessionId,
         expectedRevision: early.snapshot.state.revision,
         requestEventId: earlyRequest.eventId,
+        explanation: 'This locked explanation must not persist.',
       }),
     ).rejects.toMatchObject({ code: 'FULL_SOLUTION_REQUEST_REQUIRED' });
 
@@ -506,16 +596,29 @@ describe('causal service operations and phase isolation', () => {
       coachSessionId: created.snapshot.state.coachSessionId,
       expectedRevision: explicit.snapshot.state.revision,
       requestEventId: explicitRequest.eventId,
+      explanation: 'Use inverse operations twice to isolate the unknown.',
+      finalAnswer: 'x = 4',
     });
     const replay = await recordFullSolutionRevealed(h.deps, {
       profileId: 'student-alpha',
       coachSessionId: created.snapshot.state.coachSessionId,
       expectedRevision: 999,
       requestEventId: explicitRequest.eventId,
+      explanation: 'Use inverse operations twice to isolate the unknown.',
+      finalAnswer: 'x = 4',
     });
     expect(revealed.snapshot.state.original.viewedFullAnswer).toBe(true);
     expect(revealed.snapshot.state.transfer.viewedFullAnswer).toBe(false);
     expect(replay.replayed).toBe(true);
+    await expect(
+      recordFullSolutionRevealed(h.deps, {
+        profileId: 'student-alpha',
+        coachSessionId: created.snapshot.state.coachSessionId,
+        expectedRevision: 999,
+        requestEventId: explicitRequest.eventId,
+        explanation: 'A different replayed explanation must conflict.',
+      }),
+    ).rejects.toMatchObject({ code: 'COACH_EVENT_CONFLICT' });
   });
 
   it('ties resolution to an original attempt and conflicts on a second outcome', async () => {

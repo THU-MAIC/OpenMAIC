@@ -42,6 +42,15 @@ import {
   emitToolCallProviderOptions,
   type ToolCallProviderMetadata,
 } from './provider-metadata';
+import {
+  acceptTerminalToolGateCall,
+  getTerminalToolGateSnapshot,
+  markTerminalToolGateMissing,
+  markTerminalToolGateStreamFailed,
+  markTerminalToolGateStreamIncomplete,
+  markTerminalToolGateUnavailable,
+  type TerminalToolGate,
+} from './terminal-tool-gate';
 
 /**
  * Local re-implementation of pi-ai's `AssistantMessageEventStream` queue. pi
@@ -151,6 +160,15 @@ export interface CallLlmStreamFnOptions {
   source?: string;
   /** Optional abort signal forwarded to the underlying streamLLM call. */
   abortSignal?: AbortSignal;
+  /** Server-owned run-local boundary for a turn that must call one tool. */
+  terminalToolGate?: TerminalToolGate;
+}
+
+export interface PartMapperOptions {
+  /** Drop all model-authored text and reasoning blocks from the Pi event stream. */
+  suppressAssistantText?: boolean;
+  /** Return false to discard a parsed tool call before Pi can observe or execute it. */
+  acceptToolCall?: (toolCall: ToolCall) => boolean;
 }
 
 /**
@@ -168,6 +186,7 @@ export interface CallLlmStreamFnOptions {
 export function createPartMapper(
   partial: AssistantMessage,
   push: (event: AssistantMessageEvent) => void,
+  options: PartMapperOptions = {},
 ) {
   // A single "active" content block (text or thinking). Switching delta type, a
   // tool call, an explicit reasoning-end, or finalize closes it — so interleaved
@@ -188,6 +207,7 @@ export function createPartMapper(
   const handle = (part: Record<string, unknown>): void => {
     const type = part.type as string;
     if (type === 'text-delta' || type === 'text') {
+      if (options.suppressAssistantText) return;
       const delta = (part.text ?? part.delta ?? part.textDelta ?? '') as string;
       if (!delta) return;
       if (active?.kind !== 'text') {
@@ -201,6 +221,7 @@ export function createPartMapper(
       (partial.content[active.index] as TextContent).text = active.buf;
       push({ type: 'text_delta', contentIndex: active.index, delta, partial });
     } else if (type === 'reasoning-delta' || type === 'reasoning') {
+      if (options.suppressAssistantText) return;
       const delta = (part.text ?? part.delta ?? '') as string;
       if (!delta) return;
       if (active?.kind !== 'thinking') {
@@ -229,6 +250,7 @@ export function createPartMapper(
       const meta = captureToolCallMetadata(part as never);
       if (meta)
         (toolCall as { providerMetadata?: ToolCallProviderMetadata }).providerMetadata = meta;
+      if (options.acceptToolCall && !options.acceptToolCall(toolCall)) return;
       partial.content.push(toolCall);
       push({ type: 'toolcall_start', contentIndex: idx, partial });
       push({ type: 'toolcall_end', contentIndex: idx, toolCall, partial });
@@ -274,7 +296,13 @@ async function pump(
 
   stream.push({ type: 'start', partial });
 
-  const mapper = createPartMapper(partial, (event) => stream.push(event));
+  const terminalToolGate = opts.terminalToolGate;
+  const mapper = createPartMapper(partial, (event) => stream.push(event), {
+    suppressAssistantText: terminalToolGate?.suppressAssistantTextBeforeTool === true,
+    acceptToolCall: terminalToolGate
+      ? (toolCall) => acceptTerminalToolGateCall(terminalToolGate, toolCall, context.tools ?? [])
+      : undefined,
+  });
   let settled = false;
   let cleanupAbortListeners = () => {};
 
@@ -304,13 +332,13 @@ async function pump(
   const settleError = (reason: 'error' | 'aborted', error: unknown): boolean => {
     if (settled) return false;
     settled = true;
+    if (terminalToolGate) markTerminalToolGateStreamFailed(terminalToolGate, reason);
     mapper.finalize();
     removeExecutableToolCalls();
     partial.stopReason = reason;
-    partial.errorMessage = errorMessage(
-      error,
-      reason === 'aborted' ? 'Operation aborted' : 'LLM stream error',
-    );
+    partial.errorMessage = terminalToolGate
+      ? 'Required terminal tool flow did not complete.'
+      : errorMessage(error, reason === 'aborted' ? 'Operation aborted' : 'LLM stream error');
     cleanupAbortListeners();
     stream.push({ type: 'error', reason, error: partial });
     return true;
@@ -322,9 +350,25 @@ async function pump(
   ): boolean => {
     if (settled) return false;
 
-    const hasToolCall = partial.content.some((content) => content.type === 'toolCall');
+    let hasToolCall = partial.content.some((content) => content.type === 'toolCall');
     mapper.finalize();
     setUsage(totalUsage);
+
+    if (terminalToolGate) {
+      if (finishReason === 'length') {
+        markTerminalToolGateStreamIncomplete(terminalToolGate);
+        removeExecutableToolCalls();
+        hasToolCall = false;
+      } else {
+        const snapshot = getTerminalToolGateSnapshot(terminalToolGate);
+        if (snapshot.status === 'blocked') {
+          removeExecutableToolCalls();
+          hasToolCall = false;
+        } else if (!hasToolCall) {
+          markTerminalToolGateMissing(terminalToolGate);
+        }
+      }
+    }
 
     switch (finishReason) {
       case 'length':
@@ -341,6 +385,13 @@ async function pump(
         return settleError('error', `LLM stream finished with ${finishReason}`);
       case 'tool-calls':
         if (!hasToolCall) {
+          if (terminalToolGate) {
+            settled = true;
+            partial.stopReason = 'stop';
+            cleanupAbortListeners();
+            stream.push({ type: 'done', reason: 'stop', message: partial });
+            return true;
+          }
           return settleError(
             'error',
             'LLM stream reported tool-calls without a complete parsed tool call',
@@ -391,12 +442,26 @@ async function pump(
       return;
     }
 
+    if (terminalToolGate) {
+      const requiredToolAvailable = (context.tools ?? []).some(
+        (tool) => tool.name === terminalToolGate.requiredToolName,
+      );
+      if (!requiredToolAvailable) markTerminalToolGateUnavailable(terminalToolGate);
+      if (getTerminalToolGateSnapshot(terminalToolGate).status === 'blocked') {
+        settleFinish('stop', undefined);
+        return;
+      }
+    }
+
     const requestedMaxTokens = streamOptions?.maxTokens;
     const maxOutputTokens = opts.omitMaxOutputTokens
       ? undefined
       : opts.maxOutputTokens && requestedMaxTokens
         ? Math.min(opts.maxOutputTokens, requestedMaxTokens)
         : (requestedMaxTokens ?? opts.maxOutputTokens);
+    const modelTools = terminalToolGate
+      ? (context.tools ?? []).filter((tool) => tool.name === terminalToolGate.requiredToolName)
+      : (context.tools ?? []);
     const result = await streamLLM(
       {
         model: opts.languageModel,
@@ -407,8 +472,10 @@ async function pump(
             opts.languageModel.provider === 'kimi.chat' &&
             opts.languageModel.modelId === 'kimi-k3',
         }),
-        tools: toAiTools(context.tools ?? []),
-        toolChoice: 'auto',
+        tools: toAiTools(modelTools),
+        toolChoice: terminalToolGate
+          ? { type: 'tool', toolName: terminalToolGate.requiredToolName }
+          : 'auto',
         // pi's loop owns multi-step; one LLM turn per streamFn call.
         stopWhen: stepCountIs(1),
         maxOutputTokens,

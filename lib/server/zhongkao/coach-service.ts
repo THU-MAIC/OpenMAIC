@@ -3,11 +3,18 @@ import type { RuntimeRecord } from '@openmaic/dsl';
 import { CoachError, type CoachErrorCode } from '@/lib/zhongkao/coach-errors';
 import {
   COACH_PROJECTION_VERSION,
+  COACH_FINAL_ANSWER_MAX_LENGTH,
+  COACH_HINT_TEXT_MAX_LENGTH,
+  COACH_SOLUTION_EXPLANATION_MAX_LENGTH,
   COACH_TRUSTED_MESSAGE_MAX_LENGTH,
   assertCoachEvent,
+  isCoachPresentationFailureCodeForKind,
   type CoachEvent,
   type CoachOutcome,
   type CoachPhase,
+  type CoachPresentationFailureCode,
+  type CoachPresentationKind,
+  type CoachQuestionSource,
   type HintRequestedEvent,
   type TransferAnswerSubmittedEvent,
 } from '@/lib/zhongkao/coach-event';
@@ -83,6 +90,13 @@ function normalizedMessage(message: TrustedCoachUserMessage): TrustedCoachUserMe
     throw new CoachError('COACH_INPUT_INVALID');
   }
   return { seq: message.seq, text };
+}
+
+function normalizedPresentationText(value: string, maxLength: number): string {
+  if (typeof value !== 'string') throw new CoachError('COACH_INPUT_INVALID');
+  const text = value.trim();
+  if (!text || text.length > maxLength) throw new CoachError('COACH_INPUT_INVALID');
+  return text;
 }
 
 function normalizeKnowledgePointIds(ids: readonly string[]): string[] {
@@ -192,7 +206,7 @@ export async function startCoachProblem(
     profileId: string;
     subjectId: string;
     knowledgePointIds: readonly string[];
-    questionSourceType: 'typed' | 'material';
+    questionSource: CoachQuestionSource;
     message: TrustedCoachUserMessage;
   },
 ): Promise<CoachActionResult> {
@@ -200,9 +214,7 @@ export async function startCoachProblem(
   assertIdentifier(input.subjectId);
   assertIdentifier(deps.agentSessionId);
   const knowledgePointIds = normalizeKnowledgePointIds(input.knowledgePointIds);
-  if (input.questionSourceType === 'material') {
-    throw new CoachError('MATERIAL_SOURCE_NOT_SUPPORTED');
-  }
+  if (input.questionSource.type === 'material') assertIdentifier(input.questionSource.materialId);
   const message = normalizedMessage(input.message);
   const learnerKey = resolveZhongkaoLearnerKeyFromOwnerId(deps.ownerId);
   const profile = await loadStudentProfile(input.profileId, { store: deps.store, learnerKey });
@@ -212,7 +224,7 @@ export async function startCoachProblem(
     profileId: input.profileId,
     subjectId: input.subjectId,
     knowledgePointIds,
-    questionSource: { type: 'typed' },
+    questionSource: { ...input.questionSource },
     questionText: message.text,
     agentSessionId: deps.agentSessionId,
     sourceUserMessageSeq: message.seq,
@@ -265,13 +277,26 @@ export async function submitCoachAttempt(
 
 export async function requestCoachHint(
   deps: CoachServiceDeps,
-  input: CoachContinuationInput & { message: TrustedCoachUserMessage },
+  input: CoachContinuationInput & {
+    message: TrustedCoachUserMessage;
+    requiredPhase?: CoachPhase;
+  },
 ): Promise<CoachActionResult> {
   assertContinuation(input);
+  if (
+    input.requiredPhase !== undefined &&
+    input.requiredPhase !== 'original' &&
+    input.requiredPhase !== 'transfer'
+  ) {
+    throw new CoachError('COACH_INPUT_INVALID');
+  }
   const message = normalizedMessage(input.message);
   const operationId = modelOperationId(deps, input, message, 'request_hint');
   const observed = await loadCoachRuntime(deps, input.profileId, input.coachSessionId);
   const phase = phaseForHintOperation(observed, operationId);
+  if (input.requiredPhase !== undefined && phase !== input.requiredPhase) {
+    throw new CoachError('COACH_ACTION_NOT_ALLOWED');
+  }
   const operationFingerprint = createCoachOperationFingerprint({
     action: 'request_hint',
     coachSessionId: input.coachSessionId,
@@ -328,6 +353,61 @@ export async function requestCoachFullSolution(
   return result.snapshot.state.original.pendingFullSolutionRequestEventId === requestEventId
     ? result
     : { ...result, code: 'FULL_SOLUTION_LOCKED' };
+}
+
+export async function recordCoachPresentationFailure(
+  deps: CoachServiceDeps,
+  input: CoachContinuationInput & {
+    phase: CoachPhase;
+    presentationKind: CoachPresentationKind;
+    requestEventId: string;
+    failureCode: CoachPresentationFailureCode;
+  },
+): Promise<CoachActionResult> {
+  assertContinuation(input);
+  assertIdentifier(input.requestEventId);
+  if (!isCoachPresentationFailureCodeForKind(input.presentationKind, input.failureCode)) {
+    throw new CoachError('COACH_INPUT_INVALID');
+  }
+  const operationId = deriveCoachCausalOperationId({
+    coachSessionId: input.coachSessionId,
+    action: 'record_presentation_failure',
+    causalEventId: input.requestEventId,
+  });
+  const operationFingerprint = createCoachOperationFingerprint({
+    action: 'record_presentation_failure',
+    coachSessionId: input.coachSessionId,
+    phase: input.phase,
+    presentationKind: input.presentationKind,
+    requestEventId: input.requestEventId,
+    failureCode: input.failureCode,
+  });
+  return appendCoachRuntimeEvent(deps, {
+    ...input,
+    operationId,
+    operationFingerprint,
+    createEvent(metadata, snapshot) {
+      const request = eventById(snapshot, input.requestEventId);
+      const target = input.phase === 'original' ? snapshot.state.original : snapshot.state.transfer;
+      const requestMatches =
+        input.presentationKind === 'hint'
+          ? request?.eventType === 'hint_requested' &&
+            request.phase === input.phase &&
+            target.pendingHintRequestEventId === request.eventId
+          : input.phase === 'original' &&
+            request?.eventType === 'full_solution_requested' &&
+            snapshot.state.original.pendingFullSolutionRequestEventId === request.eventId;
+      if (!requestMatches) throw new CoachError('COACH_ACTION_NOT_ALLOWED');
+      return {
+        ...baseEvent(deps, input, metadata),
+        eventType: 'presentation_failed',
+        phase: input.phase,
+        presentationKind: input.presentationKind,
+        requestEventId: input.requestEventId,
+        failureCode: input.failureCode,
+      };
+    },
+  });
 }
 
 export async function submitCoachTransferAnswer(
@@ -414,10 +494,11 @@ function requireHintRequest(
 
 export async function recordHintIssued(
   deps: CoachServiceDeps,
-  input: CoachContinuationInput & { requestEventId: string },
+  input: CoachContinuationInput & { requestEventId: string; hintText: string },
 ): Promise<CoachActionResult> {
   assertContinuation(input);
   assertIdentifier(input.requestEventId);
+  const hintText = normalizedPresentationText(input.hintText, COACH_HINT_TEXT_MAX_LENGTH);
   const observed = await loadCoachRuntime(deps, input.profileId, input.coachSessionId);
   const request = requireHintRequest(observed, input.requestEventId);
   const operationId = deriveCoachCausalOperationId({
@@ -437,6 +518,7 @@ export async function recordHintIssued(
     phase: request.phase,
     requestEventId: request.eventId,
     hintNumber,
+    hintText,
   });
   return appendCoachRuntimeEvent(deps, {
     ...input,
@@ -455,6 +537,7 @@ export async function recordHintIssued(
         phase: current.phase,
         requestEventId: current.eventId,
         hintNumber,
+        hintText,
       };
     },
   });
@@ -462,10 +545,22 @@ export async function recordHintIssued(
 
 export async function recordFullSolutionRevealed(
   deps: CoachServiceDeps,
-  input: CoachContinuationInput & { requestEventId: string },
+  input: CoachContinuationInput & {
+    requestEventId: string;
+    explanation: string;
+    finalAnswer?: string;
+  },
 ): Promise<CoachActionResult> {
   assertContinuation(input);
   assertIdentifier(input.requestEventId);
+  const explanation = normalizedPresentationText(
+    input.explanation,
+    COACH_SOLUTION_EXPLANATION_MAX_LENGTH,
+  );
+  const finalAnswer =
+    input.finalAnswer === undefined
+      ? undefined
+      : normalizedPresentationText(input.finalAnswer, COACH_FINAL_ANSWER_MAX_LENGTH);
   const operationId = deriveCoachCausalOperationId({
     coachSessionId: input.coachSessionId,
     action: 'record_full_solution_revealed',
@@ -476,6 +571,8 @@ export async function recordFullSolutionRevealed(
     coachSessionId: input.coachSessionId,
     phase: 'original',
     requestEventId: input.requestEventId,
+    explanation,
+    ...(finalAnswer ? { finalAnswer } : {}),
   });
   return appendCoachRuntimeEvent(deps, {
     ...input,
@@ -498,6 +595,8 @@ export async function recordFullSolutionRevealed(
         eventType: 'full_solution_revealed',
         phase: 'original',
         requestEventId: request.eventId,
+        explanation,
+        ...(finalAnswer ? { finalAnswer } : {}),
       };
     },
   });

@@ -579,11 +579,11 @@ export class PgAgentSessionStore
 
   /**
    * Terminal bookkeeping for a cancel-requested session the claim scan just
-   * encountered, mirroring what the runner's own cancel path does: the row
-   * settles as `cancelled` with the attempt reset and the cancel request
-   * cleared, the owner projection records the terminal status, and the event
-   * log receives a `session_end` frame so the stream shows the terminal
-   * transition even though no lease holder ever ran this attempt.
+   * encountered. The exact first undelivered user turn is recorded in the
+   * `session_end`; the row settles as `cancelled` unless a later user turn was
+   * already queued, in which case the same transaction requeues it. This keeps
+   * stale-cancel recovery generic while ensuring the cancelled N and pending
+   * N+1 remain distinct without leasing either inside this scan.
    */
   private async settleCancelledAtClaim(
     tx: Queryable,
@@ -606,12 +606,32 @@ export class PgAgentSessionStore
       { type: 'session_status', sessionId, ts: now, status: 'cancelled', attempt: 0 },
       tx,
     );
+    const cancelledTurn = await tx.query<{
+      seq: number | string | null;
+      last_seq: number | string | null;
+    }>(
+      `SELECT MIN(seq) AS seq, MAX(seq) AS last_seq FROM ${this.table('events')}
+       WHERE session_id = $1 AND type = $2 AND seq > $3`,
+      [sessionId, AGENT_SESSION_LIFECYCLE.userMessage, Number(row.delivered_user_message_seq)],
+    );
+    const cancelledUserMessageSeq = Number(cancelledTurn.rows[0]?.seq ?? 0);
+    const lastUndeliveredUserMessageSeq = Number(cancelledTurn.rows[0]?.last_seq ?? 0);
     await this.insertEvent(tx, sessionId, {
       ts: now,
       attempt,
       type: AGENT_SESSION_LIFECYCLE.sessionEnd,
-      data: { status: 'cancelled' },
+      data: {
+        status: 'cancelled',
+        ...(Number.isSafeInteger(cancelledUserMessageSeq) && cancelledUserMessageSeq > 0
+          ? { cancelledUserMessageSeq }
+          : {}),
+      },
     });
+    // A later user turn may have arrived while N was still running. Cancel N,
+    // but leave N+1 claimable instead of stranding it in a cancelled session.
+    if (lastUndeliveredUserMessageSeq > cancelledUserMessageSeq) {
+      await this.requeueIn(tx, sessionId, true);
+    }
   }
 
   async heartbeat(sessionId: string, workerId: string): Promise<boolean> {

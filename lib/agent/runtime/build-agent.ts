@@ -20,6 +20,15 @@ import type { Api, Model } from '@earendil-works/pi-ai';
 import { makeAllowlistGate } from './allowlist';
 import { makeQuotaHook } from './quota';
 import { hasLengthToolCallProvenance } from './stream-fn';
+import {
+  completeTerminalToolGateCall,
+  getTerminalToolGateSnapshot,
+  markTerminalToolGateAfterHookFailed,
+  markTerminalToolGateNotExecuted,
+  markTerminalToolGateUnavailable,
+  terminalToolGateAllowsTool,
+  type TerminalToolGate,
+} from './terminal-tool-gate';
 import { withAgentToolTimeout } from './tool-timeout';
 
 // pi needs *a* model object on state; the injected StreamFn ignores it and uses
@@ -60,10 +69,30 @@ export interface BuildAgentOptions {
     context: AfterToolCallContext,
     signal?: AbortSignal,
   ) => Promise<AfterToolCallResult | undefined> | AfterToolCallResult | undefined;
+  /** Server-owned run-local boundary shared with `createCallLlmStreamFn`. */
+  terminalToolGate?: TerminalToolGate;
 }
 
 export function buildAgent(opts: BuildAgentOptions): Agent {
   const quotaHook = makeQuotaHook({ remaining: () => Number.MAX_SAFE_INTEGER });
+  const terminalToolGate = opts.terminalToolGate;
+  if (
+    terminalToolGate &&
+    (!opts.allowedToolNames.has(terminalToolGate.requiredToolName) ||
+      !opts.tools.some((tool) => tool.name === terminalToolGate.requiredToolName))
+  ) {
+    markTerminalToolGateUnavailable(terminalToolGate);
+  }
+
+  const allowlistGate = makeAllowlistGate(opts.allowedToolNames);
+  let terminalBarrierActive = false;
+  let guardedRunActive = false;
+  function commitTerminalBarrier(abort = false): void {
+    terminalBarrierActive = true;
+    agent.clearAllQueues();
+    if (abort) agent.abort();
+  }
+
   const agent = new Agent({
     streamFn: opts.streamFn,
     transformContext: opts.transformContext,
@@ -79,7 +108,18 @@ export function buildAgent(opts: BuildAgentOptions): Agent {
       // conversation in context — without this the agent is stateless per turn.
       ...(opts.history && opts.history.length > 0 ? { messages: opts.history } : {}),
     },
-    beforeToolCall: makeAllowlistGate(opts.allowedToolNames),
+    beforeToolCall: async (context) => {
+      if (
+        terminalToolGate &&
+        !terminalToolGateAllowsTool(terminalToolGate, context.toolCall.name)
+      ) {
+        return {
+          block: true,
+          reason: 'Tool execution was blocked by the terminal tool gate.',
+        };
+      }
+      return allowlistGate(context);
+    },
     afterToolCall: async (context, signal) => {
       const markerIsError =
         typeof context.result === 'object' &&
@@ -89,20 +129,48 @@ export function buildAgent(opts: BuildAgentOptions): Agent {
       const baseIsError = context.isError || markerIsError;
       const normalizedContext = baseIsError ? { ...context, isError: true } : context;
       const quotaResult = await quotaHook(normalizedContext);
-      const requestResult = await opts.afterToolCall?.(normalizedContext, signal);
-      if (!quotaResult && !requestResult && !baseIsError) return undefined;
+      let requestResult: AfterToolCallResult | undefined;
+      try {
+        requestResult = await opts.afterToolCall?.(normalizedContext, signal);
+      } catch (error) {
+        if (terminalToolGate && context.toolCall.name === terminalToolGate.requiredToolName) {
+          markTerminalToolGateAfterHookFailed(terminalToolGate, context.toolCall.id);
+          commitTerminalBarrier();
+          return {
+            ...quotaResult,
+            content: [],
+            details: {},
+            isError: true,
+            terminate: true,
+          };
+        }
+        throw error;
+      }
+      const finalIsError =
+        baseIsError || quotaResult?.isError === true || requestResult?.isError === true;
+      const isGateTool = context.toolCall.name === terminalToolGate?.requiredToolName;
+      const gateTerminates = isGateTool && terminalToolGate?.terminalAfterTool === true;
+      if (terminalToolGate && isGateTool) {
+        completeTerminalToolGateCall(terminalToolGate, context.toolCall.id, finalIsError);
+        if (gateTerminates) commitTerminalBarrier();
+      }
+      if (!quotaResult && !requestResult && !baseIsError && !gateTerminates) return undefined;
       return {
+        ...(terminalToolGate && isGateTool && finalIsError ? { content: [], details: {} } : {}),
         ...quotaResult,
         ...requestResult,
-        isError: baseIsError || quotaResult?.isError === true || requestResult?.isError === true,
-        terminate: quotaResult?.terminate === true || requestResult?.terminate === true,
+        isError: finalIsError,
+        terminate:
+          gateTerminates || quotaResult?.terminate === true || requestResult?.terminate === true,
       };
     },
   });
 
-  let terminalBarrierActive = false;
   agent.subscribe((event) => {
-    if (
+    if (event.type === 'agent_start' && terminalToolGate) {
+      guardedRunActive = true;
+      agent.clearAllQueues();
+    } else if (
       event.type === 'turn_end' &&
       event.message.role === 'assistant' &&
       event.message.stopReason === 'length' &&
@@ -110,18 +178,28 @@ export function buildAgent(opts: BuildAgentOptions): Agent {
     ) {
       terminalBarrierActive = true;
       agent.clearAllQueues();
+    } else if (terminalToolGate && event.type === 'message_end') {
+      const snapshot = getTerminalToolGateSnapshot(terminalToolGate);
+      if (snapshot.status === 'blocked') commitTerminalBarrier();
+    } else if (terminalToolGate && event.type === 'tool_execution_end') {
+      const snapshot = getTerminalToolGateSnapshot(terminalToolGate);
+      if (event.toolName === terminalToolGate.requiredToolName && snapshot.status === 'accepted') {
+        markTerminalToolGateNotExecuted(terminalToolGate);
+        commitTerminalBarrier(true);
+      }
     } else if (event.type === 'agent_end') {
       terminalBarrierActive = false;
+      guardedRunActive = false;
     }
   });
 
   const steer = agent.steer.bind(agent);
   agent.steer = (message) => {
-    if (!terminalBarrierActive) steer(message);
+    if (!terminalBarrierActive && !guardedRunActive) steer(message);
   };
   const followUp = agent.followUp.bind(agent);
   agent.followUp = (message) => {
-    if (!terminalBarrierActive) followUp(message);
+    if (!terminalBarrierActive && !guardedRunActive) followUp(message);
   };
 
   return agent;

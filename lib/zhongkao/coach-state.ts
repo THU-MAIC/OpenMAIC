@@ -311,6 +311,35 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
         state.original.viewedFullAnswer = true;
         break;
       }
+      case 'presentation_failed': {
+        if (event.presentationKind === 'hint') {
+          const request = referencedEvent(eventsById, event.requestEventId, 'hint_requested');
+          const target = phaseState(state, event.phase);
+          if (
+            request.phase !== event.phase ||
+            target.pendingHintRequestEventId !== request.eventId
+          ) {
+            conflict();
+          }
+          target.pendingHintRequestEventId = undefined;
+        } else {
+          const request = referencedEvent(
+            eventsById,
+            event.requestEventId,
+            'full_solution_requested',
+          );
+          if (
+            event.phase !== 'original' ||
+            request.phase !== 'original' ||
+            state.original.pendingFullSolutionRequestEventId !== request.eventId ||
+            state.original.viewedFullAnswer
+          ) {
+            conflict();
+          }
+          state.original.pendingFullSolutionRequestEventId = undefined;
+        }
+        break;
+      }
       case 'original_resolved': {
         const attempt = referencedEvent(
           eventsById,

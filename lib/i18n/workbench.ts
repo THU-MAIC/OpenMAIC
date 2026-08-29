@@ -153,6 +153,7 @@ export const workbenchEn = {
       'understanding-by-design': 'Understanding by Design (UbD)',
       vocational: 'Vocational training',
       'workshop-style': 'Interactive workshop',
+      'zhongkao-coach': '2027 Zhongkao coach',
     },
   },
   thinking: {
@@ -452,6 +453,7 @@ export const workbenchZh = {
       'understanding-by-design': '理解本位设计（UbD）',
       vocational: '职业实训',
       'workshop-style': '互动工作坊',
+      'zhongkao-coach': '2027 中考伴学',
     },
   },
   thinking: {

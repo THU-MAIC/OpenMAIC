@@ -34,6 +34,7 @@ import {
   POLL_INTERVAL_MS,
   TERMINAL_POLL_INTERVAL_MS,
 } from '@/app/api/agent/sessions/[id]/events/route';
+import { GUARDED_COACH_CANCELLED_TURN_EVENT } from '@/lib/server/agent-runtime/trusted-turn';
 
 const terminalEvent = {
   id: 4,
@@ -155,6 +156,103 @@ describe('GET per-session events', () => {
     expect(mocks.readEventsAfterForReplay).toHaveBeenCalledTimes(2);
     await reader.cancel();
     expect(mocks.unsubscribeWakeup).toHaveBeenCalledOnce();
+  });
+
+  it('redacts server-only Coach publication metadata from replay frames', async () => {
+    mocks.readEventsAfterForReplay.mockResolvedValueOnce({
+      events: [
+        {
+          id: 1,
+          ts: 123,
+          attempt: 1,
+          type: 'message_end',
+          data: {
+            type: 'message_end',
+            message: {
+              role: 'assistant',
+              content: [{ type: 'text', text: '先列出已知条件。' }],
+              openmaicDurableUserMessageSeq: 19,
+              openmaicCoachTerminalPresentation: {
+                schemaVersion: 1,
+                correlation: 'coach-turn-v1:server-only-correlation',
+                presentation: { kind: 'hint', text: '先列出已知条件。' },
+              },
+            },
+          },
+        },
+      ],
+      scanned: 1,
+    });
+
+    const response = await call();
+    const reader = response.body!.getReader();
+    await readChunk(reader);
+    const frame = await readChunk(reader);
+
+    expect(frame).toContain('先列出已知条件。');
+    expect(frame).not.toContain('openmaicCoachTerminalPresentation');
+    expect(frame).not.toContain('openmaicDurableUserMessageSeq');
+    expect(frame).not.toContain('server-only-correlation');
+    await reader.cancel();
+  });
+
+  it('skips internal guarded-cancellation markers while advancing the replay cursor', async () => {
+    mocks.readEventsAfterForReplay
+      .mockResolvedValueOnce({
+        events: [
+          {
+            id: 1,
+            ts: 123,
+            attempt: 1,
+            type: GUARDED_COACH_CANCELLED_TURN_EVENT,
+            data: { schemaVersion: 1, userMessageSeq: 19 },
+          },
+        ],
+        scanned: 500,
+      })
+      .mockResolvedValueOnce({ events: [{ ...resumedEvent, id: 2 }], scanned: 1 });
+
+    const response = await call();
+    const reader = response.body!.getReader();
+    expect(await readChunk(reader)).toBe(': replaying from event 0\n\n');
+    const publicFrame = await readChunk(reader);
+    const caughtUp = await readChunk(reader);
+
+    expect(publicFrame).toContain('id: 2\nevent: session_start');
+    expect(publicFrame).not.toContain(GUARDED_COACH_CANCELLED_TURN_EVENT);
+    expect(publicFrame).not.toContain('userMessageSeq');
+    expect(caughtUp).toContain('event: caught_up');
+    expect(caughtUp).toContain('"replayed":1');
+    expect(mocks.readEventsAfterForReplay.mock.calls.slice(0, 2)).toEqual([
+      ['session-1', 0, 500],
+      ['session-1', 1, 500],
+    ]);
+    await reader.cancel();
+  });
+
+  it('redacts the claim-scan cancelled turn sequence from the terminal SSE frame', async () => {
+    mocks.readEventsAfterForReplay.mockResolvedValueOnce({
+      events: [
+        {
+          id: 1,
+          ts: 123,
+          attempt: 1,
+          type: 'session_end',
+          data: { status: 'cancelled', cancelledUserMessageSeq: 19 },
+        },
+      ],
+      scanned: 1,
+    });
+
+    const response = await call();
+    const reader = response.body!.getReader();
+    await readChunk(reader);
+    const frame = await readChunk(reader);
+
+    expect(frame).toContain('"status":"cancelled"');
+    expect(frame).not.toContain('cancelledUserMessageSeq');
+    expect(frame).not.toContain('19');
+    await reader.cancel();
   });
 
   it('converges within the 5s polling interval', async () => {

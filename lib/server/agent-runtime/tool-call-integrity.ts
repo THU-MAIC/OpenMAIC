@@ -23,6 +23,20 @@ const INTERRUPTED_TEXT = JSON.stringify({
   message: 'This tool call was interrupted before a result was recorded.',
 });
 
+/** Identify only the server-authored placeholder that proves no real receipt was recorded. */
+export function isInterruptedToolResult(message: AgentMessage): boolean {
+  if (message.role !== 'toolResult' || message.isError !== true) return false;
+  const details = message.details;
+  return (
+    typeof details === 'object' &&
+    details !== null &&
+    !Array.isArray(details) &&
+    Object.keys(details).length === 2 &&
+    (details as Record<string, unknown>).ok === false &&
+    (details as Record<string, unknown>).error === 'interrupted'
+  );
+}
+
 /**
  * The entry-tree adapter surfaces a lease/attempt fence loss as a storage
  * error whose cause chain bottoms out in `AgentSessionLeaseLostError`. Walk

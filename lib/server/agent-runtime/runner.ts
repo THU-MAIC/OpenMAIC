@@ -17,11 +17,18 @@ import {
 
 import { buildAgent } from '@/lib/agent/runtime/build-agent';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
+import {
+  createTerminalToolGate,
+  getTerminalToolGateSnapshot,
+  type TerminalToolGateSnapshot,
+} from '@/lib/agent/runtime/terminal-tool-gate';
+import { withAgentToolTimeout } from '@/lib/agent/runtime/tool-timeout';
 import { HOST_AGENT_LIFECYCLE as LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 import { createLogger } from '@/lib/logger';
 import { parseCourseRefs, type CourseRef } from '@/lib/workbench/course-refs';
 import { parseElementRefs, type ElementRef } from '@/lib/workbench/element-refs';
 import type { Scene, SlideContent } from '@/lib/types/stage';
+import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
 import { resolveAgentDriverModel } from './agent-driver-model';
 import { buildAskUserTool } from './ask-user';
@@ -45,6 +52,7 @@ import {
 } from './fetch-url';
 import { assembleRunnerTools, buildRunnerCoursePrompt } from './runner-contract';
 import { buildMaterialTools, MATERIAL_TOOL_NAMES } from './material-tools';
+import { createGenerationAiCallFactory } from './generation-ai-call';
 import { buildRosterTools, ROSTER_TOOL_NAMES, ROSTER_TOOLS_PROMPT } from './roster-tools';
 import {
   buildVoiceCloneTools,
@@ -95,10 +103,45 @@ import {
   createPersonalHistorySource,
   PERSONAL_HISTORY_TOOL_NAMES,
 } from './personal-history-tools';
+import {
+  createAgentSessionCoachMessageReader,
+  createZhongkaoCoachActionTool,
+  ZHONGKAO_COACH_TOOL_NAME,
+  type TrustedAgentTurn,
+} from './zhongkao-coach-tool';
+import { createZhongkaoMaterialSourceAdapter } from './zhongkao-material-source';
+import {
+  buildCoachTerminalPresentation,
+  coachToolOutputCanSettle,
+  createCoachFallbackCorrelation,
+  createCoachPresentationCorrelation,
+  inspectCoachPresentationEventData,
+  inspectCoachPresentationPublication,
+  parseCoachAfterToolCallContext,
+  planCoachPresentationPublication,
+  recoverCoachToolPresentation,
+  recoverDurableCoachToolCall,
+} from './zhongkao-terminal-presentation';
+import {
+  buildGuardedCoachCancelledTurnEventData,
+  durableUserMessageSeq,
+  GUARDED_COACH_CANCELLED_TURN_EVENT,
+  guardedCoachCancelledTurnEventSeq,
+  inspectClaimSettledCancellation,
+  recoverTrustedUserMessageSeq,
+  tagDurableUserMessage,
+} from './trusted-turn';
+import type {
+  CoachTerminalNoticeReason,
+  CoachTerminalPresentation,
+} from '@/lib/zhongkao/coach-public-presentation';
+
+export { durableUserMessageSeq, tagDurableUserMessage } from './trusted-turn';
 
 const log = createLogger('AgentRunner');
 const WORKER_ID = `${randomUUID().slice(0, 8)}:${process.pid}`;
 const SESSION_WAKEUP_FALLBACK_MS = 5_000;
+const GUARDED_COACH_CANCELLED_TURN_ENTRY = 'openmaic.guarded-coach-cancelled-turn.v1';
 const MESSAGE_UPDATE_MIN_INTERVAL_MS = 150;
 
 /** The runner's always-registered tool; additional tools are capability-gated. */
@@ -288,6 +331,63 @@ export function snapshotEventDataForLog(type: string, data: unknown): unknown {
   };
 }
 
+function redactGuardedAgentMessage(message: unknown): unknown {
+  if (!message || typeof message !== 'object' || Array.isArray(message)) return message;
+  const source = message as Record<string, unknown>;
+  if (source.provider === 'openmaic-server') return { ...source };
+  if (source.role === 'toolResult') {
+    const redacted: Record<string, unknown> = { ...source, content: [] };
+    delete redacted.details;
+    return redacted;
+  }
+  if (source.role !== 'assistant') return { ...source };
+
+  const redacted = { ...source };
+  delete redacted.errorMessage;
+  if (redacted.stopReason === 'error' || redacted.stopReason === 'aborted') {
+    redacted.stopReason = 'stop';
+  }
+  if (Array.isArray(redacted.content)) {
+    redacted.content = redacted.content
+      .filter(
+        (block) =>
+          block !== null &&
+          typeof block === 'object' &&
+          !Array.isArray(block) &&
+          (block as { type?: unknown }).type === 'toolCall',
+      )
+      .map((block) => ({ ...(block as Record<string, unknown>) }));
+  }
+  return redacted;
+}
+
+/** Remove model/error payloads that are never public output for a guarded run. */
+export function redactTerminalToolGateEventForLog(type: string, data: unknown): unknown {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  const source = data as Record<string, unknown>;
+  const redacted: Record<string, unknown> = { ...source };
+
+  if (source.message !== undefined) {
+    redacted.message = redactGuardedAgentMessage(source.message);
+  }
+  if (Array.isArray(source.messages)) {
+    redacted.messages = source.messages.map(redactGuardedAgentMessage);
+  }
+  if (Array.isArray(source.toolResults)) {
+    redacted.toolResults = source.toolResults.map(redactGuardedAgentMessage);
+  }
+  if (type === 'tool_execution_end') {
+    redacted.result = { content: [] };
+  }
+  if (type === 'message_update') {
+    delete redacted.assistantMessageEvent;
+  }
+  if (type === LIFECYCLE.sessionEnd) {
+    delete redacted.error;
+  }
+  return redacted;
+}
+
 /** Empty start frames must not consume the 150 ms slot before the first delta. */
 export function hasRenderableAssistantUpdate(data: unknown): boolean {
   const message = (data as { message?: { role?: string; content?: unknown[] } } | null)?.message;
@@ -349,7 +449,7 @@ export function planUndeliveredRequeue(input: {
 
 export type RunStart =
   | { kind: 'prompt'; text: string; durableMessageSeq?: number }
-  | { kind: 'continue' };
+  | { kind: 'continue'; durableMessageSeq?: number };
 
 export interface FollowUpMessage {
   text: string;
@@ -676,20 +776,6 @@ export function elementRefsPromptBlock(targets: readonly ResolvedElementRef[]): 
   ].join('\n');
 }
 
-const DURABLE_USER_MESSAGE_SEQ = 'openmaicDurableUserMessageSeq';
-
-/** Tag the exact durable message represented by a user transcript frame. */
-export function tagDurableUserMessage(message: AgentMessage, seq: number): AgentMessage {
-  return { ...message, [DURABLE_USER_MESSAGE_SEQ]: seq } as unknown as AgentMessage;
-}
-
-/** Recover a delivery tag from the finalized frame before advancing storage. */
-export function durableUserMessageSeq(message: AgentMessage): number | null {
-  if (message.role !== 'user') return null;
-  const value = (message as AgentMessage & Record<string, unknown>)[DURABLE_USER_MESSAGE_SEQ];
-  return Number.isSafeInteger(value) && Number(value) > 0 ? Number(value) : null;
-}
-
 /**
  * The classrooms a message named, resolved against the owner's own library.
  *
@@ -826,6 +912,45 @@ export function planRunStart(input: {
   return { kind: 'continue' };
 }
 
+/** Bind the Coach tool only to a frozen Zhongkao Skill and one durable user turn. */
+export function trustedZhongkaoTurnForRun(
+  meta: Pick<ClaimedAgentSession, 'ownerId' | 'id' | 'skillId'>,
+  start: RunStart,
+): Readonly<TrustedAgentTurn> | null {
+  if (
+    meta.skillId !== 'zhongkao-coach' ||
+    !Number.isSafeInteger(start.durableMessageSeq) ||
+    Number(start.durableMessageSeq) < 1
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    ownerId: meta.ownerId,
+    agentSessionId: meta.id,
+    userMessageSeq: Number(start.durableMessageSeq),
+  });
+}
+
+/** Collapse generic gate state to one fixed, student-safe Coach notice class. */
+export function terminalCoachNoticeReason(
+  snapshot: TerminalToolGateSnapshot,
+): CoachTerminalNoticeReason {
+  if (snapshot.status === 'completed') return 'COACH_TOOL_RESULT_INVALID';
+  if (snapshot.status !== 'blocked') return 'NO_COACH_CALL';
+  switch (snapshot.signal.code) {
+    case 'TERMINAL_TOOL_GATE_REQUIRED_TOOL_UNAVAILABLE':
+      return 'COACH_TOOL_UNAVAILABLE';
+    case 'TERMINAL_TOOL_GATE_UNEXPECTED_TOOL_CALL':
+      return 'WRONG_TOOL_CALLED';
+    case 'TERMINAL_TOOL_GATE_INVALID_REQUIRED_TOOL_ARGUMENTS':
+      return 'COACH_TOOL_INPUT_INVALID';
+    case 'TERMINAL_TOOL_GATE_REQUIRED_TOOL_AFTER_HOOK_FAILED':
+      return 'COACH_AFTER_HOOK_FAILED';
+    default:
+      return 'NO_COACH_CALL';
+  }
+}
+
 export function shouldTerminateAfterToolCall(toolName: string, isError: boolean): boolean {
   return toolName === 'ask_user' && !isError;
 }
@@ -890,6 +1015,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   const id = meta.id;
   const attempt = meta.attempt;
   const claimSeq = meta.claimSeq;
+  const frozenZhongkaoSession = meta.skillId === 'zhongkao-coach';
   const abort = new AbortController();
   ctx.running.set(id, { abort });
 
@@ -903,10 +1029,16 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   let leaseLost = false;
   let cancelled = false;
   let cancelRequestedAt: number | null = null;
+  let deliveredThrough = meta.deliveredUserMessageSeq ?? 0;
   let chain: Promise<void> = Promise.resolve();
   let criticalWriteError: unknown;
   let entryWritesHealthy = true;
   let terminalFrameEmitted = false;
+  let guardedRecoveryInProgress = false;
+  let guardedSetupFailureTarget: { userMessageSeq: number; correlation: string } | null = null;
+  const guardedCancellationEventSeqs = new Set<number>();
+  const claimSettledCancellationSeqs = new Set<number>();
+  const legacyCancellationTerminalEventIds: number[] = [];
 
   const markLeaseLost = () => {
     leaseLost = true;
@@ -957,8 +1089,11 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   let thinkingEndPending = false;
   let thinkingEndEmitted = false;
 
-  const appendEvent = (type: string, data: unknown, ts: number): void => {
-    const snapshot = snapshotEventDataForLog(type, data);
+  const appendEvent = (type: string, data: unknown, ts: number, critical = false): void => {
+    const guardedData = frozenZhongkaoSession
+      ? redactTerminalToolGateEventForLog(type, data)
+      : data;
+    const snapshot = snapshotEventDataForLog(type, guardedData);
     enqueue(async () => {
       const seq = await store.appendRunEvent(id, WORKER_ID, {
         ts,
@@ -967,10 +1102,10 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         data: snapshot,
       });
       if (seq === null) markLeaseLost();
-    });
+    }, critical);
   };
 
-  const emit = (type: string, data: unknown): void => {
+  const emit = (type: string, data: unknown, critical = false): void => {
     if (!markRunEventEmitted(runEventEmitted, type)) {
       if (!tripwireViolated) {
         tripwireViolated = true;
@@ -1021,16 +1156,120 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       lastMessageUpdateAt = now;
     }
 
-    appendEvent(type, data, now);
+    appendEvent(type, data, now, critical);
     if (type === 'message_update' && thinkingEndPending && !thinkingEndEmitted) {
       thinkingEndPending = false;
       thinkingEndEmitted = true;
-      appendEvent(LIFECYCLE.thinkingEnd, {}, now);
+      appendEvent(LIFECYCLE.thinkingEnd, {}, now, critical);
     }
     if (endOwesThinkingEnd) {
       thinkingEndEmitted = true;
-      appendEvent(LIFECYCLE.thinkingEnd, {}, now);
+      appendEvent(LIFECYCLE.thinkingEnd, {}, now, critical);
     }
+  };
+
+  const coachPresentationEventCoverage = async (
+    correlation: string,
+    presentation: CoachTerminalPresentation,
+  ): Promise<{ start: boolean; end: boolean }> => {
+    let cursor = 0;
+    let start = false;
+    let end = false;
+    for (;;) {
+      const page = await store.readEventsAfter(id, cursor, 500);
+      for (const event of page) {
+        if (event.type !== 'message_start' && event.type !== 'message_end') continue;
+        const inspected = inspectCoachPresentationEventData(event.data, correlation);
+        if (inspected.status === 'conflict') {
+          throw new Error('Coach terminal presentation event state conflicted');
+        }
+        if (inspected.status !== 'published') continue;
+        if (JSON.stringify(inspected.presentation) !== JSON.stringify(presentation)) {
+          throw new Error('Coach terminal presentation event content conflicted');
+        }
+        if (event.type === 'message_start') start = true;
+        else end = true;
+      }
+      if (page.length < 500) return { start, end };
+      cursor = page[page.length - 1]!.id;
+    }
+  };
+
+  const loadGuardedCancellationEventSeqs = async (): Promise<void> => {
+    let cursor = 0;
+    for (;;) {
+      const page = await store.readEventsAfter(id, cursor, 500);
+      for (const event of page) {
+        const userMessageSeq = guardedCoachCancelledTurnEventSeq(event);
+        if (userMessageSeq !== null) guardedCancellationEventSeqs.add(userMessageSeq);
+        const claimCancellation = inspectClaimSettledCancellation(event);
+        if (claimCancellation.status === 'exact') {
+          claimSettledCancellationSeqs.add(claimCancellation.userMessageSeq);
+        } else if (claimCancellation.status === 'legacy') {
+          legacyCancellationTerminalEventIds.push(event.id);
+        }
+      }
+      if (page.length < 500) return;
+      cursor = page[page.length - 1]!.id;
+    }
+  };
+
+  const persistGuardedCancellationEvent = async (userMessageSeq: number): Promise<void> => {
+    if (guardedCancellationEventSeqs.has(userMessageSeq)) return;
+    // Do not let a failed entry-tree write suppress the authoritative event-log
+    // marker. Any queued receipt writes still settle before this ordering point.
+    await flushAll(false);
+    const seq = await store.appendRunEvent(id, WORKER_ID, {
+      ts: Date.now(),
+      attempt,
+      type: GUARDED_COACH_CANCELLED_TURN_EVENT,
+      data: buildGuardedCoachCancelledTurnEventData(userMessageSeq),
+    });
+    if (seq === null) {
+      markLeaseLost();
+      throw new AgentSessionLeaseLostError(id, WORKER_ID, attempt);
+    }
+    guardedCancellationEventSeqs.add(userMessageSeq);
+  };
+
+  /** Converge the entry tree and SSE replay log on one validated presentation. */
+  const publishCoachPresentation = async (input: {
+    presentation: CoachTerminalPresentation;
+    correlation: string;
+  }): Promise<void> => {
+    await flushAll();
+    const branch = await entrySession!.getBranch();
+    const cursorMessages = branch.flatMap((entry) =>
+      entry.type === 'message' ? [entry.message] : [],
+    );
+    const publication = planCoachPresentationPublication({
+      cursorMessages,
+      presentation: input.presentation,
+      correlation: input.correlation,
+    });
+    if (publication.kind === 'conflict') {
+      throw new Error('Coach terminal presentation transcript state conflicted');
+    }
+    if (publication.kind === 'append') {
+      await writeRequiredSessionEntry(async () => {
+        await entrySession!.appendMessage(publication.message);
+      }, markLeaseLost);
+      if (leaseLost) throw new AgentSessionLeaseLostError(id, WORKER_ID, attempt);
+    }
+
+    const coverage = await coachPresentationEventCoverage(
+      publication.correlation,
+      publication.presentation,
+    );
+    if (!coverage.start) {
+      emit('message_start', { type: 'message_start', message: publication.message }, true);
+    }
+    // A historical end without its start cannot create a replayable card. In
+    // that damaged state append a fresh end after the repaired start.
+    if (!coverage.start || !coverage.end) {
+      emit('message_end', { type: 'message_end', message: publication.message }, true);
+    }
+    await flushAll();
   };
 
   /** Every terminal exit checks whether a durable message lacked a consumer. */
@@ -1055,9 +1294,207 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     }
   };
 
+  const markGuardedUserMessageDelivered = async (userMessageSeq: number): Promise<void> => {
+    if (!Number.isSafeInteger(userMessageSeq) || userMessageSeq < 1 || userMessageSeq > claimSeq) {
+      throw new Error('Guarded Coach terminal handling lacks a claimed durable user turn.');
+    }
+    if (userMessageSeq <= deliveredThrough) return;
+    const marked = await store.markUserMessageDelivered(id, WORKER_ID, attempt, userMessageSeq);
+    if (!marked) {
+      markLeaseLost();
+      throw new AgentSessionLeaseLostError(id, WORKER_ID, attempt);
+    }
+    deliveredThrough = userMessageSeq;
+  };
+
+  const trySettleGuardedCancellation = async (
+    handledUserMessageSeq: number,
+    toolCalls: number,
+  ): Promise<boolean> => {
+    if (!frozenZhongkaoSession || leaseLost || ctx.shuttingDown) return false;
+    cancelRequestedAt ??= await store.getCancelRequestedAt(id);
+    if (cancelRequestedAt === null) return false;
+    cancelled = true;
+    abort.abort();
+    await persistGuardedCancellationEvent(handledUserMessageSeq);
+    const branch = await entrySession!.getBranch();
+    const tombstones = branch.filter(
+      (entry) =>
+        entry.type === 'custom' &&
+        entry.customType === GUARDED_COACH_CANCELLED_TURN_ENTRY &&
+        (entry.data as { userMessageSeq?: unknown } | undefined)?.userMessageSeq ===
+          handledUserMessageSeq,
+    );
+    if (tombstones.length > 1) {
+      throw new Error('Guarded Coach cancellation tombstone is ambiguous');
+    }
+    if (tombstones.length === 0) {
+      await writeRequiredSessionEntry(async () => {
+        await entrySession!.appendCustomEntry(GUARDED_COACH_CANCELLED_TURN_ENTRY, {
+          userMessageSeq: handledUserMessageSeq,
+        });
+      }, markLeaseLost);
+      if (leaseLost) throw new AgentSessionLeaseLostError(id, WORKER_ID, attempt);
+    }
+    await markGuardedUserMessageDelivered(handledUserMessageSeq);
+    if (!runEventEmitted) {
+      emit(LIFECYCLE.sessionResumed, {
+        workerId: WORKER_ID,
+        pid: process.pid,
+        attempt,
+        reason: 'guarded_cancel',
+        transcriptMessages: 0,
+        repairedToolCalls: [],
+      });
+    }
+    if (!terminalFrameEmitted) {
+      emit(LIFECYCLE.sessionEnd, { status: 'cancelled', toolCalls }, true);
+    }
+    await flushAll(false);
+    const settled = await store.finishSession(id, WORKER_ID, {
+      status: 'cancelled',
+      resetAttempt: true,
+      expectedAttempt: attempt,
+      consumeCancelRequestedAt: cancelRequestedAt,
+    });
+    if (!settled) {
+      markLeaseLost();
+      return true;
+    }
+    await requeueIfUndelivered('guarded cancellation');
+    return true;
+  };
+
+  const trySettleGuardedFailure = async (input: {
+    presentation: CoachTerminalPresentation;
+    correlation: string;
+    handledUserMessageSeq: number;
+    why: string;
+  }): Promise<boolean> => {
+    if (!frozenZhongkaoSession || leaseLost || tripwireViolated || ctx.shuttingDown) return false;
+    try {
+      if (!runEventEmitted) {
+        emit(LIFECYCLE.sessionResumed, {
+          workerId: WORKER_ID,
+          pid: process.pid,
+          attempt,
+          reason: 'guarded_failure',
+          transcriptMessages: 0,
+          repairedToolCalls: [],
+        });
+      }
+      await publishCoachPresentation({
+        presentation: input.presentation,
+        correlation: input.correlation,
+      });
+      await markGuardedUserMessageDelivered(input.handledUserMessageSeq);
+      emit(LIFECYCLE.sessionEnd, { status: 'succeeded', note: input.why }, true);
+      await flushAll();
+      const settled = await store.finishSession(id, WORKER_ID, {
+        status: 'succeeded',
+        resetAttempt: true,
+        expectedAttempt: attempt,
+      });
+      if (settled) await requeueIfUndelivered(input.why);
+      return settled;
+    } catch (error) {
+      if (isLeaseLostError(error)) markLeaseLost();
+      log.warn(`session ${id}: guarded terminal settlement failed`, error);
+      return false;
+    }
+  };
+
+  const parkGuardedFailureForRetry = async (why: string): Promise<void> => {
+    if (leaseLost) return;
+    const stableError = 'Guarded Coach terminal handling requires retry.';
+    emit(LIFECYCLE.sessionInterrupted, { reason: why, attempt });
+    await flushAll(false).catch(() => {});
+    const settled = await store
+      .finishSession(id, WORKER_ID, {
+        status: 'failed',
+        error: stableError,
+        expectedAttempt: attempt,
+      })
+      .catch(() => false);
+    if (settled) await store.requeueForRetry(id).catch(() => false);
+  };
+
+  const stopGuardedFailureAtAttemptLimit = async (why: string): Promise<void> => {
+    const stableError = 'Guarded Coach attempt limit reached without safe publication.';
+    if (!terminalFrameEmitted) {
+      emit(
+        LIFECYCLE.sessionEnd,
+        { status: 'failed', note: 'guarded Coach terminal unavailable' },
+        true,
+      );
+    }
+    await flushAll(false).catch(() => {});
+    const failed = await store
+      .finishSession(id, WORKER_ID, {
+        status: 'failed',
+        error: stableError,
+        expectedAttempt: attempt,
+      })
+      .catch(() => false);
+    if (failed) await requeueIfUndelivered(why, true);
+  };
+
+  let coachRuntimeStorePromise:
+    | Promise<Awaited<ReturnType<typeof getServerPersistenceProvider>>['runtimeStore']>
+    | undefined;
+  const resolveCoachRuntimeStore = () => {
+    coachRuntimeStorePromise ??= getServerPersistenceProvider(process.env.DATABASE_URL ?? '').then(
+      (provider) => provider.runtimeStore,
+    );
+    return coachRuntimeStorePromise;
+  };
+  const buildCoachToolForTurn = async (
+    trustedTurn: Readonly<TrustedAgentTurn>,
+    beforeExecute: () => Promise<void>,
+  ) =>
+    createZhongkaoCoachActionTool({
+      trustedTurn,
+      runtimeStore: await resolveCoachRuntimeStore(),
+      readTrustedUserMessage: createAgentSessionCoachMessageReader({ store, trustedTurn }),
+      createGenerationCall: (signal) =>
+        createGenerationAiCallFactory({ abortSignal: signal })('scene-content'),
+      materialSource: createZhongkaoMaterialSourceAdapter({
+        ownerId: meta.ownerId,
+        agentSessionId: id,
+        sessionStore: store,
+      }),
+      beforeExecute,
+    });
+
+  const fallbackUserMessageSeqForFailure = async (): Promise<number | null> => {
+    const delivered = meta.deliveredUserMessageSeq ?? 0;
+    if (!Number.isSafeInteger(delivered) || delivered < 0 || delivered > claimSeq) {
+      return null;
+    }
+    try {
+      const logged = await listAgentUserMessages(store, id);
+      const claimedPending = logged.find(
+        (message) => message.seq > delivered && message.seq <= claimSeq,
+      );
+      if (claimedPending !== undefined) {
+        return logged.filter((message) => message.seq === claimedPending.seq).length === 1
+          ? claimedPending.seq
+          : null;
+      }
+      return delivered > 0 && logged.filter((message) => message.seq === delivered).length === 1
+        ? delivered
+        : null;
+    } catch {
+      // Without an authoritative durable row there is no retry-stable
+      // correlation. Park the claim instead of publishing under a sentinel
+      // that could change to a real message seq on the next worker.
+      return null;
+    }
+  };
+
   // A verdict claim never executes the model. A message posted after the
   // claim still receives one attended redemption through the common check.
-  if (isOverAttemptCap(meta)) {
+  if (isOverAttemptCap(meta) && !frozenZhongkaoSession) {
     try {
       const error =
         `session failed ${config.maxAttempts} consecutive unattended attempts; ` +
@@ -1129,7 +1566,105 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   cancelPoll.unref?.();
 
   try {
+    guardedRecoveryInProgress = frozenZhongkaoSession;
     const recovery = await loadEntryHistory();
+    const loggedMessages = await listAgentUserMessages(store, id);
+    if (frozenZhongkaoSession) await loadGuardedCancellationEventSeqs();
+    const cancellationTombstoneSeqs = recovery.branch.flatMap((entry) => {
+      if (entry.type !== 'custom' || entry.customType !== GUARDED_COACH_CANCELLED_TURN_ENTRY) {
+        return [];
+      }
+      const seq = (entry.data as { userMessageSeq?: unknown } | undefined)?.userMessageSeq;
+      if (!Number.isSafeInteger(seq) || Number(seq) < 1) {
+        throw new Error('Guarded Coach cancellation tombstone is malformed');
+      }
+      return [Number(seq)];
+    });
+    if (new Set(cancellationTombstoneSeqs).size !== cancellationTombstoneSeqs.length) {
+      throw new Error('Guarded Coach cancellation tombstone is ambiguous');
+    }
+    const cancellationMarkerSeqs = new Set([
+      ...cancellationTombstoneSeqs,
+      ...guardedCancellationEventSeqs,
+    ]);
+    const cancellationProvenanceSeqs = new Set([
+      ...cancellationMarkerSeqs,
+      ...claimSettledCancellationSeqs,
+    ]);
+    const lastCursorUserMessageSeq = recovery.cursorMessages
+      .map(durableUserMessageSeq)
+      .findLast((seq): seq is number => seq !== null);
+    const firstUndelivered = loggedMessages.find((message) => message.seq > deliveredThrough);
+    for (const userMessageSeq of cancellationProvenanceSeqs) {
+      const matchingRows = loggedMessages.filter((message) => message.seq === userMessageSeq);
+      if (matchingRows.length !== 1 || userMessageSeq > claimSeq) {
+        throw new Error('Guarded Coach cancellation marker lacks exact durable provenance');
+      }
+    }
+    const unexpectedUndeliveredCancellation = [...cancellationProvenanceSeqs].some(
+      (seq) => seq > deliveredThrough && seq !== firstUndelivered?.seq,
+    );
+    if (unexpectedUndeliveredCancellation) {
+      throw new Error('Guarded Coach cancellation marker skipped an earlier durable turn');
+    }
+    const durableEventCancelledFirst =
+      firstUndelivered !== undefined && guardedCancellationEventSeqs.has(firstUndelivered.seq);
+    const entryTombstoneCancelledFirst =
+      firstUndelivered !== undefined && cancellationTombstoneSeqs.includes(firstUndelivered.seq);
+    const claimSettledCancelledFirst =
+      firstUndelivered !== undefined && claimSettledCancellationSeqs.has(firstUndelivered.seq);
+    const legacyCancelledFirst =
+      firstUndelivered !== undefined &&
+      legacyCancellationTerminalEventIds.some((eventId) => eventId > firstUndelivered.seq) &&
+      lastCursorUserMessageSeq === firstUndelivered.seq;
+    const deliveredCursorHasCancellationProof =
+      lastCursorUserMessageSeq !== undefined &&
+      lastCursorUserMessageSeq <= deliveredThrough &&
+      cancellationProvenanceSeqs.has(lastCursorUserMessageSeq);
+    if (
+      frozenZhongkaoSession &&
+      firstUndelivered !== undefined &&
+      legacyCancellationTerminalEventIds.some((eventId) => eventId > firstUndelivered.seq) &&
+      !legacyCancelledFirst &&
+      !deliveredCursorHasCancellationProof
+    ) {
+      throw new Error('Legacy claim cancellation lacks exact entry-tree provenance');
+    }
+    if (
+      frozenZhongkaoSession &&
+      claimSettledCancelledFirst &&
+      !durableEventCancelledFirst &&
+      lastCursorUserMessageSeq !== firstUndelivered?.seq
+    ) {
+      throw new Error('Claim-settled cancellation lacks exact entry-tree provenance');
+    }
+    if (
+      frozenZhongkaoSession &&
+      entryTombstoneCancelledFirst &&
+      !durableEventCancelledFirst &&
+      lastCursorUserMessageSeq !== firstUndelivered?.seq
+    ) {
+      throw new Error('Guarded Coach cancellation tombstone lacks exact entry-tree provenance');
+    }
+    const firstUndeliveredWasCancelled =
+      firstUndelivered !== undefined &&
+      (durableEventCancelledFirst ||
+        (entryTombstoneCancelledFirst && lastCursorUserMessageSeq === firstUndelivered.seq) ||
+        (claimSettledCancelledFirst && lastCursorUserMessageSeq === firstUndelivered.seq) ||
+        legacyCancelledFirst);
+    const recoveredCancellationUserMessageSeq =
+      frozenZhongkaoSession && firstUndelivered !== undefined && firstUndeliveredWasCancelled
+        ? firstUndelivered.seq
+        : null;
+    if (
+      recoveredCancellationUserMessageSeq !== null &&
+      recoveredCancellationUserMessageSeq > deliveredThrough
+    ) {
+      if (firstUndelivered?.seq !== recoveredCancellationUserMessageSeq) {
+        throw new Error('Guarded Coach cancellation tombstone skipped an earlier durable turn');
+      }
+      await markGuardedUserMessageDelivered(recoveredCancellationUserMessageSeq);
+    }
     const historyMessages = recovery.messages;
     const plan = planResume(historyMessages);
     const plannedMessages = plan.kind === 'start' ? [] : plan.messages;
@@ -1140,7 +1675,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // planResume may strip an incomplete suffix. Reflect the truncation in the
     // append-only tree before execution; missing tool results are repaired at
     // the read boundary and are deliberately never persisted.
-    if (retainedCount < historyMessages.length) {
+    if (retainedCount < historyMessages.length && recoveredCancellationUserMessageSeq === null) {
       const targetId = retainedCount > 0 ? recovery.contextEntryIds[retainedCount - 1]! : null;
       await writeRequiredSessionEntry(async () => {
         await entrySession!.moveTo(targetId);
@@ -1159,13 +1694,456 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       ]),
     ];
 
+    // Resolve the classrooms each pending message named against the owner's
+    // library BEFORE the prompt is built: the run must be told the course's
+    // current name (reference semantics), and the same resolved refs feed the
+    // `session_start` receipt when the opening message is a durable message.
+    const pending = await Promise.all(
+      loggedMessages
+        .filter(
+          (message) =>
+            message.seq > deliveredThrough && (!frozenZhongkaoSession || message.seq <= claimSeq),
+        )
+        .map(async (message) => {
+          const followUp = toFollowUp(message);
+          return followUp.courseRefs?.length
+            ? {
+                ...followUp,
+                courseRefs: await resolveCourseRefsForContext(meta.ownerId, followUp.courseRefs),
+              }
+            : followUp;
+        }),
+    );
+    const pendingUserMessageSeq = pending[0]?.durableMessageSeq;
+    const deliveredWatermarkValid =
+      Number.isSafeInteger(claimSeq) &&
+      claimSeq >= 0 &&
+      Number.isSafeInteger(deliveredThrough) &&
+      deliveredThrough >= 0 &&
+      deliveredThrough <= claimSeq &&
+      (deliveredThrough === 0 ||
+        loggedMessages.filter((message) => message.seq === deliveredThrough).length === 1);
+    if (frozenZhongkaoSession && !deliveredWatermarkValid) {
+      throw new Error('Guarded Coach delivery watermark lacks exact durable provenance');
+    }
+    const deliveredRecoveryUserMessageSeq =
+      Number.isSafeInteger(deliveredThrough) &&
+      deliveredThrough > 0 &&
+      deliveredThrough <= claimSeq &&
+      loggedMessages.filter((message) => message.seq === deliveredThrough).length === 1
+        ? deliveredThrough
+        : null;
+    const recoveryFallbackUserMessageSeq = pendingUserMessageSeq ?? deliveredRecoveryUserMessageSeq;
+    const queuedPendingUserMessageSeq =
+      meta.claimReason === 'queued' ? pendingUserMessageSeq : undefined;
+    const idleAttach = meta.existingCourse;
+    const recoveredTurn = frozenZhongkaoSession
+      ? recoverTrustedUserMessageSeq({
+          cursorMessages: recovery.cursorMessages,
+          loggedMessages,
+          claimSeq,
+        })
+      : null;
+    const recoveredTurnWasCancelled =
+      recoveredTurn?.ok === true &&
+      recoveredTurn.userMessageSeq === recoveredCancellationUserMessageSeq;
+    if (
+      frozenZhongkaoSession &&
+      recoveredTurn?.ok === true &&
+      !(
+        (deliveredThrough > 0 && recoveredTurn.userMessageSeq === deliveredThrough) ||
+        recoveredTurn.userMessageSeq === pendingUserMessageSeq
+      )
+    ) {
+      throw new Error('Guarded Coach recovered turn does not match the delivery frontier');
+    }
+    let recoveredCoach =
+      recoveredTurn?.ok === true && !recoveredTurnWasCancelled
+        ? recoverCoachToolPresentation({
+            cursorMessages: recovery.cursorMessages,
+            agentSessionId: id,
+            userMessageSeq: recoveredTurn.userMessageSeq,
+          })
+        : null;
+    if (
+      frozenZhongkaoSession &&
+      recoveredTurn?.ok === true &&
+      !recoveredTurnWasCancelled &&
+      recoveredCoach === null
+    ) {
+      const durableCall = recoverDurableCoachToolCall({
+        cursorMessages: recovery.cursorMessages,
+        userMessageSeq: recoveredTurn.userMessageSeq,
+      });
+      if (durableCall.status === 'invalid') {
+        throw new Error('Guarded Coach durable tool call recovery is ambiguous');
+      }
+      if (durableCall.status === 'recoverable') {
+        const callEntries = recovery.branch.filter((entry) => {
+          if (entry.type !== 'message' || entry.message.role !== 'assistant') return false;
+          const content = (entry.message as { content?: unknown }).content;
+          return (
+            Array.isArray(content) &&
+            content.some(
+              (part) =>
+                typeof part === 'object' &&
+                part !== null &&
+                (part as { type?: unknown }).type === 'toolCall' &&
+                (part as { id?: unknown }).id === durableCall.toolCallId &&
+                (part as { name?: unknown }).name === ZHONGKAO_COACH_TOOL_NAME,
+            )
+          );
+        });
+        if (callEntries.length !== 1) {
+          throw new Error('Guarded Coach durable tool call entry is ambiguous');
+        }
+        await writeRequiredSessionEntry(async () => {
+          await entrySession!.moveTo(callEntries[0]!.id);
+        }, markLeaseLost);
+        if (leaseLost) throw new AgentSessionLeaseLostError(id, WORKER_ID, attempt);
+
+        const trustedTurn = Object.freeze({
+          ownerId: meta.ownerId,
+          agentSessionId: id,
+          userMessageSeq: recoveredTurn.userMessageSeq,
+        });
+        const recoveryTool = withAgentToolTimeout(
+          await buildCoachToolForTurn(trustedTurn, async () => {
+            await flushAll();
+          }),
+        );
+        const result = await recoveryTool.execute(
+          durableCall.toolCallId,
+          durableCall.params as never,
+          abort.signal,
+        );
+        const parsed = parseCoachAfterToolCallContext({
+          toolCall: {
+            type: 'toolCall',
+            id: durableCall.toolCallId,
+            name: ZHONGKAO_COACH_TOOL_NAME,
+            arguments: durableCall.params,
+          },
+          result,
+        });
+        if (!parsed || !coachToolOutputCanSettle(parsed.params, parsed.output)) {
+          throw new Error('Guarded Coach recovered tool execution was not authoritative');
+        }
+        const resultMessage = {
+          role: 'toolResult',
+          toolCallId: durableCall.toolCallId,
+          toolName: ZHONGKAO_COACH_TOOL_NAME,
+          content: [{ type: 'text' as const, text: JSON.stringify(parsed.output) }],
+          details: parsed.output,
+          isError: !parsed.output.ok,
+          timestamp: Date.now(),
+        } as unknown as AgentMessage;
+        await writeRequiredSessionEntry(async () => {
+          await entrySession!.appendMessage(resultMessage);
+        }, markLeaseLost);
+        if (leaseLost) throw new AgentSessionLeaseLostError(id, WORKER_ID, attempt);
+        recoveredCoach = {
+          ...parsed,
+          presentation: buildCoachTerminalPresentation({
+            kind: 'tool_output',
+            output: parsed.output,
+          }),
+          correlation: createCoachPresentationCorrelation({
+            agentSessionId: id,
+            userMessageSeq: recoveredTurn.userMessageSeq,
+          }),
+        };
+      }
+    }
+
+    type RecoveryTerminal = {
+      userMessageSeq: number;
+      correlation: string;
+      presentation: CoachTerminalPresentation;
+      published: boolean;
+      complete: boolean;
+    };
+    const inspectRecoveryCorrelation = async (input: {
+      userMessageSeq: number;
+      correlation: string;
+      expectedPresentation?: CoachTerminalPresentation;
+    }): Promise<RecoveryTerminal> => {
+      const inspected = inspectCoachPresentationPublication(
+        recovery.cursorMessages,
+        input.correlation,
+      );
+      if (inspected.status === 'conflict') {
+        throw new Error('Coach terminal recovery publication conflicted');
+      }
+      if (
+        inspected.status === 'published' &&
+        input.expectedPresentation !== undefined &&
+        JSON.stringify(inspected.presentation) !== JSON.stringify(input.expectedPresentation)
+      ) {
+        throw new Error('Coach terminal recovery presentation conflicted');
+      }
+      const presentation =
+        inspected.status === 'published'
+          ? inspected.presentation
+          : (input.expectedPresentation ??
+            buildCoachTerminalPresentation({ kind: 'notice', reason: 'NO_COACH_CALL' }));
+      const coverage =
+        inspected.status === 'published'
+          ? await coachPresentationEventCoverage(input.correlation, presentation)
+          : { start: false, end: false };
+      return {
+        userMessageSeq: input.userMessageSeq,
+        correlation: input.correlation,
+        presentation,
+        published: inspected.status === 'published',
+        complete:
+          inspected.status === 'published' &&
+          coverage.start &&
+          coverage.end &&
+          deliveredThrough >= input.userMessageSeq,
+      };
+    };
+    const inspectAnyRecoveryForUserMessage = async (
+      userMessageSeq: number,
+      preferredCorrelation: 'turn' | 'fallback' = 'fallback',
+    ): Promise<RecoveryTerminal> => {
+      const turn = await inspectRecoveryCorrelation({
+        userMessageSeq,
+        correlation: createCoachPresentationCorrelation({
+          agentSessionId: id,
+          userMessageSeq,
+        }),
+      });
+      const fallback = await inspectRecoveryCorrelation({
+        userMessageSeq,
+        correlation: createCoachFallbackCorrelation({
+          agentSessionId: id,
+          fallbackUserMessageSeq: userMessageSeq,
+        }),
+      });
+      if (turn.published && fallback.published) {
+        throw new Error('Coach terminal recovery has multiple correlation domains');
+      }
+      if (turn.published) return turn;
+      if (fallback.published) return fallback;
+      return preferredCorrelation === 'turn' ? turn : fallback;
+    };
+
+    let recoveryTerminal: RecoveryTerminal | null = null;
+    if (frozenZhongkaoSession && recoveredCoach !== null && recoveredTurn?.ok === true) {
+      const fallbackRecovery = await inspectRecoveryCorrelation({
+        userMessageSeq: recoveredTurn.userMessageSeq,
+        correlation: createCoachFallbackCorrelation({
+          agentSessionId: id,
+          fallbackUserMessageSeq: recoveredTurn.userMessageSeq,
+        }),
+      });
+      if (fallbackRecovery.published) {
+        throw new Error('Coach terminal recovery has multiple correlation domains');
+      }
+      recoveryTerminal = await inspectRecoveryCorrelation({
+        userMessageSeq: recoveredTurn.userMessageSeq,
+        correlation: recoveredCoach.correlation,
+        expectedPresentation: recoveredCoach.presentation,
+      });
+    } else if (
+      frozenZhongkaoSession &&
+      plan.kind === 'start' &&
+      !recoveredTurnWasCancelled &&
+      deliveredRecoveryUserMessageSeq !== null
+    ) {
+      recoveryTerminal = await inspectAnyRecoveryForUserMessage(deliveredRecoveryUserMessageSeq);
+    } else if (
+      frozenZhongkaoSession &&
+      plan.kind === 'continue' &&
+      recoveredTurn?.ok === false &&
+      deliveredRecoveryUserMessageSeq !== null
+    ) {
+      recoveryTerminal = await inspectAnyRecoveryForUserMessage(deliveredRecoveryUserMessageSeq);
+    } else if (frozenZhongkaoSession && plan.kind === 'already-complete') {
+      if (recoveredTurn?.ok === true && !recoveredTurnWasCancelled) {
+        recoveryTerminal = await inspectAnyRecoveryForUserMessage(
+          recoveredTurn.userMessageSeq,
+          'turn',
+        );
+      } else if (pendingUserMessageSeq !== undefined) {
+        const pendingTerminal = await inspectAnyRecoveryForUserMessage(pendingUserMessageSeq);
+        if (pendingTerminal.published) {
+          recoveryTerminal = pendingTerminal;
+        } else if (deliveredRecoveryUserMessageSeq !== null) {
+          const previousTerminal = await inspectAnyRecoveryForUserMessage(
+            deliveredRecoveryUserMessageSeq,
+          );
+          recoveryTerminal = previousTerminal.complete ? null : previousTerminal;
+        } else {
+          recoveryTerminal = pendingTerminal;
+        }
+      } else if (deliveredRecoveryUserMessageSeq !== null) {
+        recoveryTerminal = await inspectAnyRecoveryForUserMessage(deliveredRecoveryUserMessageSeq);
+      }
+    }
+
+    if (
+      frozenZhongkaoSession &&
+      (plan.kind === 'start' || plan.kind === 'already-complete') &&
+      pendingUserMessageSeq !== undefined &&
+      recoveryTerminal !== null &&
+      recoveryTerminal.userMessageSeq !== pendingUserMessageSeq &&
+      recoveryTerminal.complete
+    ) {
+      const pendingTerminal = await inspectAnyRecoveryForUserMessage(pendingUserMessageSeq);
+      if (pendingTerminal.published) recoveryTerminal = pendingTerminal;
+    }
+
+    // Recover an incomplete N before N+1. Once N has the exact durable
+    // presentation, both replay frames, and its delivered watermark, a queued
+    // N+1 claim starts a fresh guarded run instead of replaying N forever.
+    const pendingBelongsToLaterTurn =
+      recoveryTerminal !== null &&
+      pendingUserMessageSeq !== undefined &&
+      pendingUserMessageSeq !== recoveryTerminal.userMessageSeq;
+    if (
+      frozenZhongkaoSession &&
+      recoveryTerminal !== null &&
+      (!pendingBelongsToLaterTurn || !recoveryTerminal.complete)
+    ) {
+      emit(LIFECYCLE.sessionResumed, {
+        workerId: WORKER_ID,
+        pid: process.pid,
+        attempt,
+        reason: 'crash',
+        transcriptMessages: modelMessages.length,
+        repairedToolCalls: repairedToolCallIds,
+      });
+      await publishCoachPresentation({
+        presentation: recoveryTerminal.presentation,
+        correlation: recoveryTerminal.correlation,
+      });
+      await markGuardedUserMessageDelivered(recoveryTerminal.userMessageSeq);
+      emit(
+        LIFECYCLE.sessionEnd,
+        {
+          status: 'succeeded',
+          note: 'guarded Coach turn already terminal',
+        },
+        true,
+      );
+      await flushAll();
+      const settled = await store.finishSession(id, WORKER_ID, {
+        status: 'succeeded',
+        resetAttempt: true,
+        expectedAttempt: attempt,
+      });
+      if (settled) await requeueIfUndelivered('Coach terminal recovery');
+      return;
+    }
+
+    if (frozenZhongkaoSession) {
+      const setupUsesFallbackCorrelation =
+        !recoveredTurnWasCancelled &&
+        plan.kind !== 'continue' &&
+        pendingUserMessageSeq === undefined &&
+        deliveredRecoveryUserMessageSeq !== null;
+      const setupUserMessageSeq =
+        queuedPendingUserMessageSeq ??
+        (recoveredTurnWasCancelled
+          ? (pendingUserMessageSeq ?? null)
+          : plan.kind === 'continue'
+            ? recoveredTurn?.ok === true
+              ? recoveredTurn.userMessageSeq
+              : null
+            : (pendingUserMessageSeq ?? deliveredRecoveryUserMessageSeq));
+      if (setupUserMessageSeq === null) {
+        throw new Error('Guarded Coach setup lacks exact durable turn provenance');
+      }
+      guardedSetupFailureTarget = {
+        userMessageSeq: setupUserMessageSeq,
+        correlation: setupUsesFallbackCorrelation
+          ? createCoachFallbackCorrelation({
+              agentSessionId: id,
+              fallbackUserMessageSeq: setupUserMessageSeq,
+            })
+          : createCoachPresentationCorrelation({
+              agentSessionId: id,
+              userMessageSeq: setupUserMessageSeq,
+            }),
+      };
+    }
+    guardedRecoveryInProgress = false;
+
+    if (frozenZhongkaoSession && isOverAttemptCap(meta)) {
+      const trustedVerdictUserMessageSeq =
+        queuedPendingUserMessageSeq ??
+        (recoveredTurnWasCancelled && pendingUserMessageSeq !== undefined
+          ? pendingUserMessageSeq
+          : pendingUserMessageSeq !== undefined &&
+              (plan.kind === 'start' || plan.kind === 'already-complete')
+            ? pendingUserMessageSeq
+            : recoveredTurn?.ok === true
+              ? recoveredTurn.userMessageSeq
+              : null);
+      const fallbackUserMessageSeq =
+        trustedVerdictUserMessageSeq ?? (await fallbackUserMessageSeqForFailure());
+      let settled = false;
+      if (fallbackUserMessageSeq !== null) {
+        try {
+          settled = await trySettleGuardedFailure({
+            presentation: buildCoachTerminalPresentation({
+              kind: 'notice',
+              reason: 'COACH_RUNTIME_UNAVAILABLE',
+            }),
+            correlation:
+              trustedVerdictUserMessageSeq !== null
+                ? createCoachPresentationCorrelation({
+                    agentSessionId: id,
+                    userMessageSeq: fallbackUserMessageSeq,
+                  })
+                : createCoachFallbackCorrelation({
+                    agentSessionId: id,
+                    fallbackUserMessageSeq,
+                  }),
+            handledUserMessageSeq: fallbackUserMessageSeq,
+            why: 'guarded Coach attempt limit',
+          });
+        } catch (error) {
+          log.warn(`session ${id}: guarded attempt-limit presentation failed`, error);
+        }
+      }
+      if (!settled) {
+        await stopGuardedFailureAtAttemptLimit('guarded Coach attempt-limit failure');
+      }
+      return;
+    }
+
+    if (
+      frozenZhongkaoSession &&
+      plan.kind === 'already-complete' &&
+      pending.length === 0 &&
+      recoveryTerminal === null
+    ) {
+      throw new Error('Guarded Coach terminal recovery lacks durable turn provenance');
+    }
+
+    if (plan.kind === 'already-complete' && pending.length === 0) {
+      emit(LIFECYCLE.sessionEnd, {
+        status: 'succeeded',
+        note: 'entry history already terminal',
+      });
+      await flushAll();
+      const settled = await store.finishSession(id, WORKER_ID, {
+        status: 'succeeded',
+        resetAttempt: true,
+        expectedAttempt: attempt,
+      });
+      if (settled) await requeueIfUndelivered('early settle');
+      return;
+    }
+
     // ── Skills ─────────────────────────────────────────────────────────────────
-    // The installed set (builtins + this owner's user-authored skills) is loaded
-    // once per run. An explicit API selection (the session's frozen `skillId`)
-    // is validated here rather than at claim time; an unavailable skill is a
-    // hard error. Automatic activation lives in the transcript: a successful pi
-    // `read` of SKILL.md. An explicit selection stays authoritative for this
-    // session rather than being silently replaced by a later model read.
+    // Recovery of a checkpointed Coach presentation above must not depend on
+    // unrelated runtime setup. Only a genuinely new/resumed model run reaches
+    // Skill loading, so a transient Skill-store failure cannot replace an
+    // accepted durable presentation with a different fallback message.
     const installedSkills = await listSkills(meta.ownerId);
     const requestedSkill = await findSkill(meta.skillId, meta.ownerId);
     if (meta.skillId && !requestedSkill) {
@@ -1191,42 +2169,6 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       if (target) activeSkill = target;
     };
 
-    const loggedMessages = await listAgentUserMessages(store, id);
-    let deliveredThrough = meta.deliveredUserMessageSeq ?? 0;
-    // Resolve the classrooms each pending message named against the owner's
-    // library BEFORE the prompt is built: the run must be told the course's
-    // current name (reference semantics), and the same resolved refs feed the
-    // `session_start` receipt when the opening message is a durable message.
-    const pending = await Promise.all(
-      loggedMessages
-        .filter((message) => message.seq > deliveredThrough)
-        .map(async (message) => {
-          const followUp = toFollowUp(message);
-          return followUp.courseRefs?.length
-            ? {
-                ...followUp,
-                courseRefs: await resolveCourseRefsForContext(meta.ownerId, followUp.courseRefs),
-              }
-            : followUp;
-        }),
-    );
-    const idleAttach = meta.existingCourse;
-
-    if (plan.kind === 'already-complete' && pending.length === 0) {
-      emit(LIFECYCLE.sessionEnd, {
-        status: 'succeeded',
-        note: 'entry history already terminal',
-      });
-      await flushAll();
-      const settled = await store.finishSession(id, WORKER_ID, {
-        status: 'succeeded',
-        resetAttempt: true,
-        expectedAttempt: attempt,
-      });
-      if (settled) await requeueIfUndelivered('early settle');
-      return;
-    }
-
     if (plan.kind === 'start' && (pending.length === 0 || !idleAttach)) {
       emit(LIFECYCLE.sessionStart, {
         workerId: WORKER_ID,
@@ -1250,14 +2192,6 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     }
 
     const driver = await resolveAgentDriverModel();
-    const streamFn = createCallLlmStreamFn({
-      languageModel: driver.connection.model,
-      maxOutputTokens: driver.wireMaxOutputTokens,
-      omitMaxOutputTokens: driver.wireMaxOutputTokens === undefined,
-      thinkingConfig: driver.connection.thinkingConfig,
-      source: 'agent-runtime',
-      abortSignal: abort.signal,
-    });
     let questionEmitted = false;
     const askUserTool = buildAskUserTool({
       onUserQuestion: (question) => {
@@ -1318,12 +2252,63 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     };
     const resolvedPending = await Promise.all(pending.map(resolveFollowUpElementContext));
     pending.splice(0, pending.length, ...resolvedPending);
-    const plannedStart = planRunStart({
+    let plannedStart = planRunStart({
       plan,
       claimReason: meta.claimReason,
       pending,
       prompt: meta.prompt,
       idleAttach,
+    });
+    if (
+      frozenZhongkaoSession &&
+      recoveredTurnWasCancelled &&
+      pending[0]?.durableMessageSeq !== undefined
+    ) {
+      plannedStart = {
+        kind: 'prompt',
+        text: pending[0].text,
+        durableMessageSeq: pending[0].durableMessageSeq,
+      };
+    } else if (frozenZhongkaoSession && plannedStart.kind === 'continue') {
+      if (recoveredTurn?.ok === true) {
+        plannedStart = { kind: 'continue', durableMessageSeq: recoveredTurn.userMessageSeq };
+      }
+    } else if (
+      frozenZhongkaoSession &&
+      plannedStart.kind === 'prompt' &&
+      plannedStart.durableMessageSeq !== undefined
+    ) {
+      const exactRows = loggedMessages.filter(
+        (message) => message.seq === plannedStart.durableMessageSeq,
+      );
+      if (plannedStart.durableMessageSeq > claimSeq || exactRows.length !== 1) {
+        plannedStart = { kind: 'prompt', text: plannedStart.text };
+      }
+    }
+    const plannedFallbackUserMessageSeq =
+      plannedStart.durableMessageSeq ?? recoveryFallbackUserMessageSeq;
+    const trustedCoachTurn = trustedZhongkaoTurnForRun(meta, plannedStart);
+    const handledCoachUserMessageSeq = frozenZhongkaoSession
+      ? (trustedCoachTurn?.userMessageSeq ?? plannedFallbackUserMessageSeq)
+      : null;
+    if (frozenZhongkaoSession && handledCoachUserMessageSeq === null) {
+      throw new Error('Guarded Coach run lacks a claimed durable user turn');
+    }
+    const terminalToolGate = frozenZhongkaoSession
+      ? createTerminalToolGate({
+          requiredToolName: ZHONGKAO_COACH_TOOL_NAME,
+          suppressAssistantTextBeforeTool: true,
+          terminalAfterTool: true,
+        })
+      : undefined;
+    const streamFn = createCallLlmStreamFn({
+      languageModel: driver.connection.model,
+      maxOutputTokens: driver.wireMaxOutputTokens,
+      omitMaxOutputTokens: driver.wireMaxOutputTokens === undefined,
+      thinkingConfig: driver.connection.thinkingConfig,
+      source: 'agent-runtime',
+      abortSignal: abort.signal,
+      ...(terminalToolGate ? { terminalToolGate } : {}),
     });
     // The owner probe is the tool layer's legality boundary: every course call
     // declares its stageId, and stageAccess resolves that stage against the
@@ -1406,6 +2391,13 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       }),
       id,
     );
+    const coachTools = trustedCoachTurn
+      ? [
+          await buildCoachToolForTurn(trustedCoachTurn, async () => {
+            await flushAll();
+          }),
+        ]
+      : [];
     const tools = assembleRunnerTools(
       [askUserTool],
       webSearchTools,
@@ -1435,9 +2427,12 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       rosterTools,
       voiceCloneTools,
       personalHistoryTools,
+      coachTools,
     );
     const askUserLatch = createAskUserTerminateLatch();
     let toolCalls = 0;
+    let capturedCoachPresentation: CoachTerminalPresentation | undefined;
+    let coachToolExecutionRequiresRecovery = false;
     const agent = buildAgent({
       streamFn,
       systemPrompt: buildRunnerCoursePrompt({
@@ -1464,14 +2459,37 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         ...CURRICULUM_ALLOWLIST,
         ...ROSTER_TOOL_NAMES,
         ...PERSONAL_HISTORY_TOOL_NAMES,
+        ...(coachTools.length ? [ZHONGKAO_COACH_TOOL_NAME] : []),
         // register_voice is registered only when the deployment has a voice
         // registration backend, so the allowlist follows: clip_audio is always
         // available, register_voice only with a backend.
         ...(voiceRegistrationEnabled ? VOICE_CLONE_TOOL_NAMES : ['clip_audio']),
       ]),
       ...(plan.kind === 'start' ? {} : { history: modelMessages }),
+      ...(terminalToolGate ? { terminalToolGate } : {}),
       afterToolCall: (toolContext) => {
         toolCalls += 1;
+        if (terminalToolGate && toolContext.toolCall.name === ZHONGKAO_COACH_TOOL_NAME) {
+          const parsed = parseCoachAfterToolCallContext(toolContext);
+          if (parsed) {
+            if (coachToolOutputCanSettle(parsed.params, parsed.output)) {
+              capturedCoachPresentation = buildCoachTerminalPresentation({
+                kind: 'tool_output',
+                output: parsed.output,
+              });
+            } else {
+              coachToolExecutionRequiresRecovery = true;
+            }
+            return {
+              content: [{ type: 'text', text: JSON.stringify(parsed.output) }],
+              details: parsed.output,
+              isError: !parsed.output.ok,
+              terminate: true,
+            };
+          }
+          coachToolExecutionRequiresRecovery = true;
+          return { content: [], details: {}, isError: true, terminate: true };
+        }
         if (askUserLatch.shouldTerminate(toolContext.toolCall.name, toolContext.isError)) {
           return { terminate: true };
         }
@@ -1498,7 +2516,10 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         enqueue(async () => {
           await entrySession!.appendMessage(event.message);
           const deliveredSeq = durableUserMessageSeq(event.message);
-          if (deliveredSeq !== null) {
+          // A guarded student turn is consumed only after its server-authored
+          // terminal presentation is durable. Until then, leave the user row
+          // pending so an uncertain tool receipt can be reclaimed verbatim.
+          if (deliveredSeq !== null && !frozenZhongkaoSession) {
             const marked = await store.markUserMessageDelivered(
               id,
               WORKER_ID,
@@ -1541,7 +2562,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // its eventual message_end has reached the durable tree.
     const acceptedMessageSeqs = new Set<number>();
     const drainMessages = async (): Promise<number> => {
-      if (questionEmitted || askUserLatch.isCommitted()) return 0;
+      if (terminalToolGate || questionEmitted || askUserLatch.isCommitted()) return 0;
       // These reads deliberately avoid a shared transaction: a message added
       // between them is left for the next serialized drain, while the lease
       // snapshot prevents steering after ownership has already changed.
@@ -1682,6 +2703,10 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         // of `user` messages in the transcript, and moving it would mark a
         // real user message delivered and drop it.
         const resumedTurnText =
+          (plannedStart.durableMessageSeq === undefined
+            ? undefined
+            : loggedMessages.find((message) => message.seq === plannedStart.durableMessageSeq)
+                ?.text) ??
           loggedMessages.findLast((message) => message.seq <= deliveredThrough)?.text ??
           meta.prompt;
         const repair = await buildSkillPreload({
@@ -1712,7 +2737,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       for (;;) {
         await agent.waitForIdle();
         if (abort.signal.aborted) break;
-        if (questionEmitted || askUserLatch.isCommitted()) break;
+        if (terminalToolGate || questionEmitted || askUserLatch.isCommitted()) break;
         const before = acceptedMessageSeqs.size;
         const delivered = await requestDrain();
         if (abort.signal.aborted) break;
@@ -1726,7 +2751,54 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       queueInterruptedToolResults();
       await flushAll();
 
-      const loopError = terminalLoopError(agent.state.messages, agent.state.errorMessage);
+      if (
+        terminalToolGate &&
+        (await trySettleGuardedCancellation(handledCoachUserMessageSeq!, toolCalls))
+      ) {
+        return;
+      }
+
+      if (terminalToolGate && coachToolExecutionRequiresRecovery) {
+        if (isOverAttemptCap(meta)) {
+          await stopGuardedFailureAtAttemptLimit('guarded Coach execution remained uncertain');
+        } else {
+          await parkGuardedFailureForRetry('Coach tool execution requires durable replay');
+        }
+        return;
+      }
+
+      if (terminalToolGate && !abort.signal.aborted && !leaseLost) {
+        const presentation =
+          capturedCoachPresentation ??
+          buildCoachTerminalPresentation({
+            kind: 'notice',
+            reason: terminalCoachNoticeReason(getTerminalToolGateSnapshot(terminalToolGate)),
+          });
+        const correlation = trustedCoachTurn
+          ? createCoachPresentationCorrelation({
+              agentSessionId: id,
+              userMessageSeq: trustedCoachTurn.userMessageSeq,
+            })
+          : createCoachFallbackCorrelation({
+              agentSessionId: id,
+              fallbackUserMessageSeq: handledCoachUserMessageSeq!,
+            });
+        await publishCoachPresentation({ presentation, correlation });
+        await markGuardedUserMessageDelivered(handledCoachUserMessageSeq!);
+      }
+
+      if (
+        terminalToolGate &&
+        (await trySettleGuardedCancellation(handledCoachUserMessageSeq!, toolCalls))
+      ) {
+        return;
+      }
+
+      // A guarded provider/model failure has already converged to fixed server
+      // copy. Do not re-expose the raw upstream error in session_end.
+      const loopError = terminalToolGate
+        ? undefined
+        : terminalLoopError(agent.state.messages, agent.state.errorMessage);
       const shutdown = ctx.shuttingDown && abort.signal.aborted && !cancelled;
       if (shutdown || tripwireViolated || (leaseLost && abort.signal.aborted)) {
         emit(LIFECYCLE.sessionInterrupted, {
@@ -1748,7 +2820,11 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       if (settledCancelled) abort.abort();
       const error = !settledCancelled && loopError ? loopError : undefined;
       const status = settledCancelled ? 'cancelled' : error ? 'failed' : 'succeeded';
-      emit(LIFECYCLE.sessionEnd, { status, toolCalls, ...(error ? { error } : {}) });
+      emit(
+        LIFECYCLE.sessionEnd,
+        { status, toolCalls, ...(error ? { error } : {}) },
+        terminalToolGate !== undefined,
+      );
       await flushAll();
       const settled = await store.finishSession(id, WORKER_ID, {
         status,
@@ -1771,7 +2847,19 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       queueInterruptedToolResults();
       if (isLeaseLostError(error)) markLeaseLost();
       const message = error instanceof Error ? error.message : String(error);
-      if (ctx.shuttingDown || leaseLost || tripwireViolated) {
+      if (frozenZhongkaoSession && handledCoachUserMessageSeq !== null) {
+        // Close any durable Coach call before appending the cancellation
+        // tombstone. The tombstone means consumed-without-publication; it must
+        // never leave a recoverable call behind it in the branch.
+        await flushAll(false);
+      }
+      if (
+        frozenZhongkaoSession &&
+        handledCoachUserMessageSeq !== null &&
+        (await trySettleGuardedCancellation(handledCoachUserMessageSeq, toolCalls))
+      ) {
+        log.info(`session ${id} -> cancelled (attempt ${attempt}, ${toolCalls} tool calls)`);
+      } else if (ctx.shuttingDown || leaseLost || tripwireViolated) {
         emit(LIFECYCLE.sessionInterrupted, {
           reason: tripwireViolated
             ? 'runner event-order tripwire'
@@ -1782,6 +2870,39 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         });
         await flushAll(false);
         if (!leaseLost) await store.releaseLease(id, WORKER_ID);
+      } else if (frozenZhongkaoSession && coachToolExecutionRequiresRecovery) {
+        if (isOverAttemptCap(meta)) {
+          await stopGuardedFailureAtAttemptLimit('guarded Coach execution remained uncertain');
+        } else {
+          await parkGuardedFailureForRetry('Coach tool execution requires durable replay');
+        }
+        log.error(`session ${id} guarded tool execution remained uncertain`, error);
+      } else if (frozenZhongkaoSession) {
+        const presentation =
+          capturedCoachPresentation ??
+          buildCoachTerminalPresentation({
+            kind: 'notice',
+            reason: 'COACH_RUNTIME_UNAVAILABLE',
+          });
+        const correlation = trustedCoachTurn
+          ? createCoachPresentationCorrelation({
+              agentSessionId: id,
+              userMessageSeq: trustedCoachTurn.userMessageSeq,
+            })
+          : createCoachFallbackCorrelation({
+              agentSessionId: id,
+              fallbackUserMessageSeq: handledCoachUserMessageSeq!,
+            });
+        const settled =
+          !terminalFrameEmitted &&
+          (await trySettleGuardedFailure({
+            presentation,
+            correlation,
+            handledUserMessageSeq: handledCoachUserMessageSeq!,
+            why: 'guarded Coach run failure',
+          }));
+        if (!settled) await parkGuardedFailureForRetry('Coach terminal handling retry');
+        log.error(`session ${id} guarded run failed`, error);
       } else {
         if (!terminalFrameEmitted) {
           emit(LIFECYCLE.sessionEnd, { status: 'failed', error: message });
@@ -1803,7 +2924,15 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   } catch (error) {
     if (isLeaseLostError(error)) markLeaseLost();
     const message = error instanceof Error ? error.message : String(error);
-    if (ctx.shuttingDown || leaseLost || tripwireViolated) {
+    const cancellationTarget =
+      guardedSetupFailureTarget?.userMessageSeq ??
+      (frozenZhongkaoSession ? await fallbackUserMessageSeqForFailure() : null);
+    if (
+      cancellationTarget !== null &&
+      (await trySettleGuardedCancellation(cancellationTarget, 0))
+    ) {
+      log.info(`session ${id} -> cancelled during guarded setup (attempt ${attempt})`);
+    } else if (ctx.shuttingDown || leaseLost || tripwireViolated) {
       if (tripwireViolated) {
         emit(LIFECYCLE.sessionInterrupted, {
           reason: 'runner event-order tripwire',
@@ -1812,6 +2941,27 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         await flushAll(false).catch(() => {});
       }
       if (!leaseLost) await store.releaseLease(id, WORKER_ID).catch(() => {});
+    } else if (frozenZhongkaoSession && guardedRecoveryInProgress) {
+      if (isOverAttemptCap(meta)) {
+        await stopGuardedFailureAtAttemptLimit('guarded Coach recovery attempt limit');
+      } else {
+        await parkGuardedFailureForRetry('Coach terminal recovery retry');
+      }
+    } else if (frozenZhongkaoSession && guardedSetupFailureTarget !== null) {
+      const settled =
+        !terminalFrameEmitted &&
+        (await trySettleGuardedFailure({
+          presentation: buildCoachTerminalPresentation({
+            kind: 'notice',
+            reason: 'COACH_RUNTIME_UNAVAILABLE',
+          }),
+          correlation: guardedSetupFailureTarget.correlation,
+          handledUserMessageSeq: guardedSetupFailureTarget.userMessageSeq,
+          why: 'guarded Coach setup failure',
+        }));
+      if (!settled) await parkGuardedFailureForRetry('Coach setup retry');
+    } else if (frozenZhongkaoSession) {
+      await parkGuardedFailureForRetry('Coach setup provenance retry');
     } else {
       if (!terminalFrameEmitted) {
         emit(LIFECYCLE.sessionEnd, { status: 'failed', error: message });
