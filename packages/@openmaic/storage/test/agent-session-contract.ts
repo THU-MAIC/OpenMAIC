@@ -307,6 +307,55 @@ export function runAgentSessionStoreContract(
       expect(after.events).toEqual(before.events);
     });
 
+    test('prunes every update run separated by reasoning and tool lifecycle events', async () => {
+      const store = makeStore();
+      await store.createSession(makeAgentSessionInput());
+      const updates = (prefix: string, count: number) =>
+        Array.from({ length: count }, (_, index) => ({
+          type: 'message_update',
+          data: {
+            message: {
+              role: 'assistant',
+              content: [{ type: 'text', text: `${prefix}-${index}` }],
+            },
+          },
+        }));
+      const frames = [
+        { type: 'message_start', data: { message: { role: 'assistant', content: [] } } },
+        ...updates('reasoning', 5),
+        { type: 'thinking_end', data: {} },
+        ...updates('answer', 4),
+        { type: 'tool_execution_start', data: { toolCallId: 'tool-1' } },
+        { type: 'tool_execution_end', data: { toolCallId: 'tool-1' } },
+        ...updates('after-tool', 3),
+        { type: 'message_end', data: { message: { role: 'assistant', content: [] } } },
+      ];
+      for (const [index, frame] of frames.entries()) {
+        await store.appendControlEvent('session-1', { ts: index + 1, ...frame });
+      }
+
+      const before = await store.readEventsAfterForReplay('session-1', 0);
+      expect(await store.pruneMessageUpdates('session-1', 17)).toBe(6);
+      expect(await store.pruneMessageUpdates('session-1', 17)).toBe(0);
+
+      const raw = await store.readEventsAfter('session-1', 0);
+      expect(raw.map((event) => [event.id, event.type])).toEqual([
+        [1, 'message_start'],
+        [2, 'message_update'],
+        [6, 'message_update'],
+        [7, 'thinking_end'],
+        [8, 'message_update'],
+        [11, 'message_update'],
+        [12, 'tool_execution_start'],
+        [13, 'tool_execution_end'],
+        [14, 'message_update'],
+        [16, 'message_update'],
+        [17, 'message_end'],
+      ]);
+      const after = await store.readEventsAfterForReplay('session-1', 0);
+      expect(after.events).toEqual(before.events);
+    });
+
     test('carries first-and-last message_update compaction across page boundaries', async () => {
       const store = makeStore();
       await store.createSession(makeAgentSessionInput());
