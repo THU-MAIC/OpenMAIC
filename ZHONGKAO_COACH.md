@@ -1,4 +1,4 @@
-# 2027 Zhongkao Coach: Milestones 1 through 2B-1
+# 2027 Zhongkao Coach: Milestones 1 through 2B-2A
 
 This document describes the domain foundation for a single fictional learner
 using OpenMAIC locally or on a trusted private network. The only initialized
@@ -228,8 +228,9 @@ Server facts form an explicit, validated chain:
 - `full_solution_revealed` cites the current unlocked original request;
 - `original_resolved` cites a real original attempt and records its outcome;
 - `transfer_question_assigned` cites the authoritative original resolution and
-  stores question id, knowledge-point ids, and a validation reference, but no
-  answer key or rubric;
+  stores the validated public question plus a server-only grading specification
+  and verification metadata. The private fields never enter folded public state,
+  a model tool result, or a terminal presentation;
 - `transfer_answer_evaluated` cites the one transfer submission and exact
   transfer question;
 - `study_attempts_projected` cites the evaluation and stores a deterministic
@@ -329,11 +330,12 @@ trusted turn.
 ## Terminal presentation and durable replay
 
 The main model never authors the terminal student response. A schema-valid
-Coach result is converted to the shared `hint | full_solution | coach_notice`
-union. A hint or solution is publishable only when its Coach content event was
+Coach result is converted to the shared
+`hint | full_solution | transfer_question | transfer_result | coach_notice`
+union. Generated content is publishable only when its Coach content event was
 already appended or was recovered as a replay. Stable errors and all gate
 failures map to fixed server copy without provider, database, owner, session,
-or student details.
+student, or private grading details.
 
 Publication first appends one complete server-authored assistant message to
 the existing entry tree, then appends durable `message_start` and `message_end`
@@ -445,12 +447,13 @@ the same causal request conflicts. A failed append or CAS loss returns no
 presentation unless replay proves that the exact accepted content was already
 persisted.
 
-The Coach tool DTO may carry a validated persisted `hint` or `full_solution`
-for the server runner. The only terminal student-facing union is
-`{kind: "hint", text}`, `{kind: "full_solution", explanation, finalAnswer?}`,
-or `{kind: "coach_notice", text}`. Ordinary state/facts and `get_state` never
-include presentation content, internal ids, message references, owner/learner
-identity, raw student text, or hidden reasoning.
+The Coach tool DTO may carry a validated persisted `hint`, `full_solution`,
+`transfer_question`, or `transfer_result` for the server runner. Transfer
+question presentation contains only its public id, supported type, question,
+optional public options, and difficulty. Transfer result presentation contains
+only `correct | incorrect` and matching fixed server copy. Ordinary state/facts
+never include internal ids, message references, owner/learner identity, raw
+student text, private grading data, verifier output, or hidden reasoning.
 
 Materials remain untrusted model data even after ownership and source-id
 verification. Code prevents material text from changing Coach state, revision,
@@ -458,7 +461,7 @@ unlock, phase, source verification, or internal actions. Prompt fencing and
 the finite text heuristics mitigate instruction following and fabricated
 attribution, but do not constitute a proof that prompt injection is solved.
 
-## M2B-1 stopping point
+## M2B-1 historical stopping point
 
 After a full solution, the existing state machine reports that transfer
 generation is required. M2B-1 does not generate or verify a transfer question,
@@ -466,3 +469,141 @@ evaluate a transfer answer, project StudyAttempt v2, update KnowledgeProgress,
 or add UI/planning/review behavior. Those remain M2B-2 work. M2B-1 does not
 modify the StudyAttempt contract and adds no dependency, database, upload path,
 or client persistence surface.
+
+## Milestone 2B-2A verified transfer question and deterministic evaluation
+
+M2B-2A implements only the transfer assignment and evaluation portion of the
+Coach lifecycle. It does not change `StudyAttempt`, project attempt records,
+update `KnowledgeProgress`, schedule reviews, add student UI, or complete a
+Coach session. M2B-2B owns projection and completion.
+
+### Supported transfer question contract
+
+The first version supports exactly four objectively gradable types:
+
+- `single_choice`;
+- `multiple_choice`;
+- `numeric`;
+- `exact_short_answer`.
+
+Proofs, essays, open explanations, subjective rubrics, multi-solution problems,
+symbolic algebra, and other tasks that require human or semantic grading are not
+accepted. An unsupported generated type fails with
+`TRANSFER_QUESTION_TYPE_UNSUPPORTED`; it is never presented as verified.
+
+A model may produce only a closed candidate containing schema version, type,
+student-facing question and options where applicable, an expected-answer shape,
+authorized knowledge-point ids, allowed difficulty, and typed curriculum claims.
+It cannot set a transfer question id, validation status, verification flag,
+grading specification, operation/event identity, mastery, or independence.
+Candidate lifecycle values are internal `candidate`, `rejected`, and `verified`:
+only the server may produce `verified`, and only a verified assignment may be
+persisted and presented. Candidate and rejected content is discarded rather
+than written to student transcript, public DTO, SSE, or a Coach assignment event.
+
+The public question and private grader are separate contracts. Public data is
+limited to schema version, server-derived `transferQuestionId`, supported type,
+question, public options, authorized knowledge-point ids, and difficulty. The
+server-only grading specification is a closed discriminated union: one correct
+option id, an exact set of correct option ids, a finite numeric value and bounded
+tolerance, or bounded normalized accepted strings. It contains no executable
+code, arbitrary regular expression, dynamic formula, or model explanation.
+The browser Zhongkao barrel does not export this private type.
+
+### Validation and independent verification
+
+Generation runs only while authoritative Coach state is active, the original
+problem is resolved, no transfer assignment exists, and the server directive is
+`GENERATE_TRANSFER_QUESTION`. A model action or argument cannot manufacture that
+state. The server derives a stable question id from the Coach session, original
+resolution event, and transfer schema version. Once assignment is durable, all
+retries and refreshes read that exact event; they do not generate a replacement.
+
+Each bounded attempt passes these gates in order:
+
+1. a closed structural validator checks type-specific fields, lengths, finite
+   numbers, option ids, exact answer shapes, and rejects extra fields;
+2. knowledge-point ids must be the original set or a strict authorized subset,
+   and difficulty must be one of the server-provided values (currently `same`);
+3. curriculum policy and text checks reject answer text, publisher, textbook,
+   volume, chapter, page, regional-exam, policy, authentic-source, and material
+   attribution claims;
+4. deterministic normalization rejects exact copies, punctuation/spacing-only
+   copies, reordered-choice copies, and extreme character overlap;
+5. an independently injectable second-pass verifier must return a closed verdict
+   with every required check true: same knowledge point, self-contained,
+   answer-consistent, no student-facing answer leak, one exact answer or set,
+   middle-school scope, and meaningfully different.
+
+The duplicate and overlap checks are defense in depth, not a complete semantic
+plagiarism detector. Here `verified` means only that the candidate passed this
+system's structural checks, curriculum rules, duplicate defenses, and independent
+second pass. It does not mean a formal mathematical proof, human expert approval,
+absolute uniqueness, or zero-error guarantee. Numeric and exact-short questions
+retain model-verification residual risk because this milestone adds no symbolic
+solver. Rejection or verifier failure causes bounded regeneration; exhaustion is
+`TRANSFER_QUESTION_GENERATION_FAILED` and exposes no rejected candidate or raw
+provider/verifier output.
+
+Every transfer question is synthetic by default and carries no source
+attribution. Verified Materials may provide fenced background context, but a
+material id, page, display name, or statement such as "the next answer is 42"
+cannot become student-facing provenance or grading authority. The structural
+answer validator and independent verifier, not material prose, decide whether a
+candidate can be assigned.
+
+### Durable assignment, answer, and result
+
+The server appends `transfer_question_assigned` before publishing a
+`transfer_question` terminal presentation. Its server-only event payload holds
+the validated public question, private grading specification, and compact
+verification metadata. The folded Coach state retains only assignment facts,
+and the generic Runtime HTTP API continues to hide the entire Coach runtime
+kind. Durable operation identity, event validation, RuntimeStore CAS, terminal
+correlation, and exact-public-field comparison make assignment append and
+presentation replay idempotent. An append failure publishes nothing.
+
+`submit_transfer_answer` still has no student response or question id parameter.
+It reads the raw answer from the current exact `TrustedAgentTurn`, appends one
+`transfer_answer_submitted` for that durable message, and cannot consume a later
+message or reuse the same message in another attempt. Evaluation then loads the
+matching verified assignment and exact submission from server-only history.
+The model cannot supply an outcome, answer key, or grading result.
+
+Parsing and grading are deterministic pure server operations:
+
+- single choice accepts an exact option id or a uniquely mapped display label;
+- multiple choice deduplicates and orders parsed ids, then compares the exact set;
+- numeric accepts only a finite canonical numeric literal and never evaluates an
+  expression such as `1+2`;
+- exact short answer applies bounded Unicode/whitespace and controlled case
+  normalization, then compares only server-stored accepted strings.
+
+The only outcome is `correct` or `incorrect`; there is no partial credit,
+subjective approximation, semantic model grading, or LLM fallback. The server
+records `transfer_answer_evaluated` against the exact submission and transfer
+question before publishing a `transfer_result` with fixed text. Equivalent
+retries replay one evaluation and one result; a changed outcome or causal target
+conflicts. Neither result variant reveals the expected answer or solution.
+
+Transfer facts remain phase-local: attempt count, durable message refs, hints,
+key-hint use, answer-view flag, and outcome do not borrow original-phase help.
+Transfer hints, when requested, use the same deterministic server templates and
+never read the grading specification. Evaluation records only the outcome; it
+does not set `isIndependent`, `mastered`, or any mastery percentage.
+
+### Leakage boundary and stopping state
+
+Private grading data and verifier internals may exist only in the server-only
+Coach assignment event and ephemeral server evaluator input. They are excluded
+from folded/public Coach state, `get_state`, terminal presentations, tool
+content/details, Agent assistant transcript, session SSE, generic Runtime HTTP,
+errors, logs, Skill context, and material prompts. Public presentation schemas
+are closed and copy only allowlisted fields; durable tool event logging strips
+guarded tool-result content and correlation metadata is removed before SSE.
+
+After evaluation, Coach status is `finalizing` and the directive is
+`PROJECT_STUDY_ATTEMPTS`. M2B-2A stops there: it does not call a StudyAttempt API,
+append `study_attempts_projected`, set `completed`, or update progress. M2B-2B
+will add StudyAttempt v2 projection, append the projection event, and only then
+permit the existing state machine to reach `completed`.

@@ -3,8 +3,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildCoachNotice,
+  COACH_TRANSFER_RESULT_MESSAGES,
   renderCoachTerminalPresentation,
   validateCoachTerminalPresentation,
+  type CoachTransferQuestionPresentation,
+  type CoachTransferResultPresentation,
 } from '@/lib/zhongkao/coach-public-presentation';
 import {
   buildCoachTerminalPresentation,
@@ -23,7 +26,10 @@ import {
 } from '@/lib/server/agent-runtime/zhongkao-terminal-presentation';
 import { tagDurableUserMessage } from '@/lib/server/agent-runtime/trusted-turn';
 import { interruptedToolResult } from '@/lib/server/agent-runtime/tool-call-integrity';
-import { ZHONGKAO_COACH_TOOL_NAME } from '@/lib/server/agent-runtime/zhongkao-coach-tool';
+import {
+  ZHONGKAO_COACH_TOOL_NAME,
+  type CoachToolParams,
+} from '@/lib/server/agent-runtime/zhongkao-coach-tool';
 
 const MODEL = {
   api: 'openai-completions',
@@ -37,6 +43,38 @@ const HINT_PARAMS = {
   coachSessionId: 'coach-1',
   expectedRevision: 2,
 } as const;
+
+const GET_STATE_PARAMS = {
+  action: 'get_state',
+  profileId: 'profile-1',
+  coachSessionId: 'coach-1',
+} as const;
+
+const SUBMIT_TRANSFER_PARAMS = {
+  action: 'submit_transfer_answer',
+  profileId: 'profile-1',
+  coachSessionId: 'coach-1',
+  expectedRevision: 2,
+} as const;
+
+const TRANSFER_QUESTION_PRESENTATION: CoachTransferQuestionPresentation = {
+  kind: 'transfer_question',
+  transferQuestionId: 'transfer-1',
+  type: 'single_choice',
+  question: '若 3x = 12，x 等于多少？',
+  options: [
+    { id: 'A', text: '2' },
+    { id: 'B', text: '3' },
+    { id: 'C', text: '4' },
+  ],
+  difficulty: 'same',
+};
+
+const TRANSFER_RESULT_PRESENTATION: CoachTransferResultPresentation = {
+  kind: 'transfer_result',
+  outcome: 'correct',
+  message: COACH_TRANSFER_RESULT_MESSAGES.correct,
+};
 
 function output(overrides: Record<string, unknown> = {}) {
   return {
@@ -153,6 +191,45 @@ describe('Coach terminal public presentation', () => {
     ).toBe(true);
   });
 
+  it('settles transfer presentations only for their exact action after durable proof', () => {
+    const persistedQuestion = output({ presentation: TRANSFER_QUESTION_PRESENTATION });
+    const persistedResult = output({ presentation: TRANSFER_RESULT_PRESENTATION });
+
+    expect(coachToolOutputCanSettle(GET_STATE_PARAMS, persistedQuestion)).toBe(true);
+    expect(coachToolOutputCanSettle(SUBMIT_TRANSFER_PARAMS, persistedResult)).toBe(true);
+    expect(
+      coachToolOutputCanSettle(
+        GET_STATE_PARAMS,
+        output({
+          presentation: TRANSFER_QUESTION_PRESENTATION,
+          facts: { replayed: false, eventAppended: false },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      coachToolOutputCanSettle(
+        SUBMIT_TRANSFER_PARAMS,
+        output({
+          presentation: TRANSFER_RESULT_PRESENTATION,
+          facts: { replayed: false, eventAppended: false },
+        }),
+      ),
+    ).toBe(false);
+    expect(coachToolOutputCanSettle(GET_STATE_PARAMS, persistedResult)).toBe(true);
+    expect(coachToolOutputCanSettle(SUBMIT_TRANSFER_PARAMS, persistedQuestion)).toBe(false);
+    expect(coachToolOutputCanSettle(GET_STATE_PARAMS, output())).toBe(true);
+    expect(coachToolOutputCanSettle(SUBMIT_TRANSFER_PARAMS, output())).toBe(false);
+    expect(
+      coachToolOutputCanSettle(
+        GET_STATE_PARAMS,
+        output({
+          presentation: TRANSFER_RESULT_PRESENTATION,
+          facts: { replayed: false, eventAppended: false },
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it('settles proven errors only for the matching action and presentation family', () => {
     const fullSolution = {
       action: 'request_full_solution',
@@ -194,7 +271,7 @@ describe('Coach terminal public presentation', () => {
     }
     expect(coachToolOutputCanSettle(fullSolution, provenError('FULL_SOLUTION_LOCKED'))).toBe(true);
 
-    const nonPresentationActions = [
+    const nonPresentationActions: CoachToolParams[] = [
       {
         action: 'start_problem',
         profileId: 'profile-1',
@@ -221,7 +298,7 @@ describe('Coach terminal public presentation', () => {
         coachSessionId: 'coach-1',
         expectedRevision: 2,
       },
-    ] as const;
+    ];
     for (const params of nonPresentationActions) {
       expect(coachToolOutputCanSettle(params, provenError('FULL_SOLUTION_GENERATION_FAILED'))).toBe(
         false,
@@ -238,38 +315,38 @@ describe('Coach terminal public presentation', () => {
         code,
         facts: { replayed: false, eventAppended: false },
       });
-    const materialStart = {
+    const materialStart: CoachToolParams = {
       action: 'start_problem',
       profileId: 'profile-1',
       subjectId: 'math',
       knowledgePointIds: ['linear-equations'],
       questionSourceType: 'material',
       materialId: 'material-1',
-    } as const;
-    const typedStart = {
+    };
+    const typedStart: CoachToolParams = {
       action: 'start_problem',
       profileId: 'profile-1',
       subjectId: 'math',
       knowledgePointIds: ['linear-equations'],
       questionSourceType: 'typed',
-    } as const;
-    const getState = {
+    };
+    const getState: CoachToolParams = {
       action: 'get_state',
       profileId: 'profile-1',
       coachSessionId: 'coach-1',
-    } as const;
-    const submitAttempt = {
+    };
+    const submitAttempt: CoachToolParams = {
       action: 'submit_attempt',
       profileId: 'profile-1',
       coachSessionId: 'coach-1',
       expectedRevision: 2,
-    } as const;
-    const submitTransfer = {
+    };
+    const submitTransfer: CoachToolParams = {
       action: 'submit_transfer_answer',
       profileId: 'profile-1',
       coachSessionId: 'coach-1',
       expectedRevision: 2,
-    } as const;
+    };
 
     expect(
       coachToolOutputCanSettle(materialStart, unprovenError('MATERIAL_SOURCE_NOT_VERIFIED')),
@@ -292,9 +369,27 @@ describe('Coach terminal public presentation', () => {
     expect(
       coachToolOutputCanSettle(submitTransfer, unprovenError('TRANSFER_QUESTION_REQUIRED')),
     ).toBe(true);
+    for (const code of [
+      'TRANSFER_QUESTION_GENERATION_FAILED',
+      'TRANSFER_QUESTION_INVALID',
+      'TRANSFER_QUESTION_TYPE_UNSUPPORTED',
+      'TRANSFER_QUESTION_NOT_VERIFIED',
+    ] as const) {
+      expect(coachToolOutputCanSettle(getState, unprovenError(code))).toBe(true);
+    }
+    for (const code of [
+      'TRANSFER_QUESTION_NOT_VERIFIED',
+      'TRANSFER_ANSWER_INVALID',
+      'TRANSFER_EVALUATION_FAILED',
+    ] as const) {
+      expect(coachToolOutputCanSettle(submitTransfer, unprovenError(code))).toBe(true);
+    }
+    expect(
+      coachToolOutputCanSettle(submitAttempt, unprovenError('TRANSFER_EVALUATION_FAILED')),
+    ).toBe(false);
   });
 
-  it('runtime-validates the closed hint, solution, and notice union', () => {
+  it('runtime-validates the closed hint, solution, transfer, and notice union', () => {
     expect(validateCoachTerminalPresentation({ kind: 'hint', text: '只提示一步' })).toEqual({
       kind: 'hint',
       text: '只提示一步',
@@ -306,6 +401,12 @@ describe('Coach terminal public presentation', () => {
         finalAnswer: '答案',
       }),
     ).toEqual({ kind: 'full_solution', explanation: '这是解析', finalAnswer: '答案' });
+    expect(validateCoachTerminalPresentation(TRANSFER_QUESTION_PRESENTATION)).toEqual(
+      TRANSFER_QUESTION_PRESENTATION,
+    );
+    expect(validateCoachTerminalPresentation(TRANSFER_RESULT_PRESENTATION)).toEqual(
+      TRANSFER_RESULT_PRESENTATION,
+    );
     expect(buildCoachNotice('NO_COACH_CALL').kind).toBe('coach_notice');
 
     expect(validateCoachTerminalPresentation({ kind: 'hint', text: ' padded ' })).toBeNull();
@@ -313,6 +414,38 @@ describe('Coach terminal public presentation', () => {
       validateCoachTerminalPresentation({ kind: 'hint', text: 'ok', ownerId: 'private' }),
     ).toBeNull();
     expect(validateCoachTerminalPresentation({ kind: 'coach_notice', text: '' })).toBeNull();
+    for (const secret of [
+      'expectedAnswer',
+      'acceptedAnswers',
+      'answerKey',
+      'correctOptionIds',
+      'tolerance',
+      'gradingSpec',
+      'verifierReason',
+    ]) {
+      expect(
+        validateCoachTerminalPresentation({
+          ...TRANSFER_QUESTION_PRESENTATION,
+          [secret]: 'PRIVATE-ANSWER-42',
+        }),
+      ).toBeNull();
+    }
+    expect(
+      validateCoachTerminalPresentation({
+        ...TRANSFER_RESULT_PRESENTATION,
+        message: COACH_TRANSFER_RESULT_MESSAGES.incorrect,
+      }),
+    ).toBeNull();
+    expect(
+      validateCoachTerminalPresentation({
+        ...TRANSFER_QUESTION_PRESENTATION,
+        options: [
+          TRANSFER_QUESTION_PRESENTATION.options[0],
+          { id: 'A', text: 'duplicate id' },
+          TRANSFER_QUESTION_PRESENTATION.options[2],
+        ],
+      }),
+    ).toBeNull();
   });
 
   it('preserves accepted hint and full-solution fields exactly', () => {
@@ -340,6 +473,27 @@ describe('Coach terminal public presentation', () => {
       finalAnswer: 'x = 2',
     });
     expect(renderCoachTerminalPresentation(solution)).toBe('先化简，再代入。\n\nx = 2');
+  });
+
+  it('copies and renders only public transfer fields with fixed result text', () => {
+    const question = buildCoachTerminalPresentation({
+      kind: 'tool_output',
+      output: output({ presentation: TRANSFER_QUESTION_PRESENTATION }),
+    });
+    const result = buildCoachTerminalPresentation({
+      kind: 'tool_output',
+      output: output({ presentation: TRANSFER_RESULT_PRESENTATION }),
+    });
+    expect(question).not.toBe(TRANSFER_QUESTION_PRESENTATION);
+    if (question.kind !== 'transfer_question' || question.type !== 'single_choice') {
+      throw new Error('unreachable');
+    }
+    expect(question.options).not.toBe(TRANSFER_QUESTION_PRESENTATION.options);
+    expect(renderCoachTerminalPresentation(question)).toBe(
+      '若 3x = 12，x 等于多少？\n\nA. 2\nB. 3\nC. 4',
+    );
+    if (result.kind !== 'transfer_result') throw new Error('unreachable');
+    expect(renderCoachTerminalPresentation(result)).toBe(COACH_TRANSFER_RESULT_MESSAGES.correct);
   });
 
   it('fails closed when presentation persistence is not proven', () => {
@@ -372,6 +526,9 @@ describe('Coach terminal public presentation', () => {
         /owner-private|session-private|call-private|provider exploded|raw database/i,
       );
     }
+    expect(buildCoachNotice('TRANSFER_QUESTION_NOT_VERIFIED')).toEqual(
+      buildCoachNotice('FULL_SOLUTION_GENERATION_FAILED'),
+    );
   });
 
   it('ignores presentation attached to an error and never accepts raw error text', () => {
@@ -805,6 +962,42 @@ describe('Coach durable publication', () => {
     });
     expect(retry.kind).toBe('already-published');
     if (retry.kind === 'already-published') expect(retry.message).toBe(first.message);
+  });
+
+  it('replays an identical transfer question and conflicts on any public field change', () => {
+    const correlation = createCoachPresentationCorrelation({
+      agentSessionId: 'session-transfer',
+      userMessageSeq: 4,
+    });
+    const first = planCoachPresentationPublication({
+      cursorMessages: [],
+      presentation: TRANSFER_QUESTION_PRESENTATION,
+      correlation,
+      model: MODEL,
+    });
+    if (first.kind !== 'append') throw new Error('unreachable');
+
+    expect(
+      planCoachPresentationPublication({
+        cursorMessages: [first.message],
+        presentation: structuredClone(TRANSFER_QUESTION_PRESENTATION),
+        correlation,
+      }).kind,
+    ).toBe('already-published');
+    expect(
+      planCoachPresentationPublication({
+        cursorMessages: [first.message],
+        presentation: {
+          ...TRANSFER_QUESTION_PRESENTATION,
+          options: [
+            TRANSFER_QUESTION_PRESENTATION.options[0],
+            { ...TRANSFER_QUESTION_PRESENTATION.options[1], text: 'PRIVATE-ANSWER-42' },
+            TRANSFER_QUESTION_PRESENTATION.options[2],
+          ],
+        },
+        correlation,
+      }),
+    ).toEqual({ kind: 'conflict', correlation });
   });
 
   it('fails closed on duplicate, mismatched, or tampered correlation records', () => {

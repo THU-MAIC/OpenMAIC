@@ -17,10 +17,14 @@ export const COACH_OPERATION_FINGERPRINT_LENGTH = 64;
 export const COACH_HINT_TEXT_MAX_LENGTH = 1_200;
 export const COACH_SOLUTION_EXPLANATION_MAX_LENGTH = 12_000;
 export const COACH_FINAL_ANSWER_MAX_LENGTH = 2_000;
+export const COACH_TRANSFER_QUESTION_MAX_LENGTH = 4_000;
+export const COACH_TRANSFER_OPTION_TEXT_MAX_LENGTH = 1_000;
+export const COACH_TRANSFER_ASSIGNMENT_SCHEMA_VERSION = 1 as const;
 
 export type CoachPhase = 'original' | 'transfer';
 export type CoachQuestionSource = { type: 'typed' } | { type: 'material'; materialId: string };
 export type CoachOutcome = 'correct' | 'partial' | 'incorrect';
+export type CoachTransferOutcome = Exclude<CoachOutcome, 'partial'>;
 export type CoachPresentationKind = 'hint' | 'full_solution';
 export const COACH_PRESENTATION_FAILURE_CODES = [
   'COACH_PROFILE_NOT_FOUND',
@@ -140,11 +144,26 @@ export interface CoachPresentationFailedEvent extends CoachEventBase {
   failureCode: CoachPresentationFailureCode;
 }
 
-export interface OriginalResolvedEvent extends CoachEventBase {
+interface OriginalResolvedEventBase extends CoachEventBase {
   eventType: 'original_resolved';
   attemptEventId: string;
-  outcome: CoachOutcome;
 }
+
+/** Legacy/server-graded resolution with an explicit original outcome. */
+export interface OriginalOutcomeResolvedEvent extends OriginalResolvedEventBase {
+  outcome: CoachOutcome;
+  fullSolutionEventId?: never;
+}
+
+/** Full-answer resolution records the reveal fact without inventing an outcome. */
+export interface OriginalFullSolutionResolvedEvent extends OriginalResolvedEventBase {
+  fullSolutionEventId: string;
+  outcome?: never;
+}
+
+export type OriginalResolvedEvent =
+  | OriginalOutcomeResolvedEvent
+  | OriginalFullSolutionResolvedEvent;
 
 export interface TransferQuestionAssignedEvent extends CoachEventBase {
   eventType: 'transfer_question_assigned';
@@ -152,6 +171,9 @@ export interface TransferQuestionAssignedEvent extends CoachEventBase {
   transferQuestionId: string;
   knowledgePointIds: readonly string[];
   validationRef: string;
+  assignmentSchemaVersion?: typeof COACH_TRANSFER_ASSIGNMENT_SCHEMA_VERSION;
+  /** Validated manually and intentionally opaque outside the server-only assignment path. */
+  assignmentPayload?: unknown;
 }
 
 export interface TransferAnswerSubmittedEvent extends CoachEventBase {
@@ -166,7 +188,7 @@ export interface TransferAnswerEvaluatedEvent extends CoachEventBase {
   eventType: 'transfer_answer_evaluated';
   transferQuestionId: string;
   submissionEventId: string;
-  outcome: CoachOutcome;
+  outcome: CoachTransferOutcome;
 }
 
 export interface StudyAttemptsProjectedEvent extends CoachEventBase {
@@ -253,13 +275,15 @@ const EVENT_KEYS: Readonly<Record<CoachEventType, ReadonlySet<string>>> = {
     'requestEventId',
     'failureCode',
   ]),
-  original_resolved: new Set([...COMMON_KEYS, 'attemptEventId', 'outcome']),
+  original_resolved: new Set([...COMMON_KEYS, 'attemptEventId', 'outcome', 'fullSolutionEventId']),
   transfer_question_assigned: new Set([
     ...COMMON_KEYS,
     'originalResolvedEventId',
     'transferQuestionId',
     'knowledgePointIds',
     'validationRef',
+    'assignmentSchemaVersion',
+    'assignmentPayload',
   ]),
   transfer_answer_submitted: new Set([
     ...COMMON_KEYS,
@@ -405,6 +429,364 @@ function validateFingerprint(value: unknown, errors: DomainValidationIssue[]): v
   }
 }
 
+const TRANSFER_QUESTION_TYPES = [
+  'single_choice',
+  'multiple_choice',
+  'numeric',
+  'exact_short_answer',
+] as const;
+
+const TRANSFER_DIFFICULTIES = ['slightly_easier', 'same', 'slightly_harder'] as const;
+
+const TRANSFER_VERIFICATION_CHECKS = [
+  'sameKnowledgePoint',
+  'selfContained',
+  'answerConsistent',
+  'answerNotLeaked',
+  'singleAnswerOrExactSet',
+  'middleSchoolScope',
+  'meaningfullyDifferent',
+] as const;
+
+function validateTrimmedText(
+  value: unknown,
+  path: string,
+  maxLength: number,
+  errors: DomainValidationIssue[],
+): void {
+  if (typeof value !== 'string' || value.length === 0 || value !== value.trim()) {
+    pushIssue(errors, path, 'expected non-empty trimmed text');
+    return;
+  }
+  if (value.length > maxLength) pushIssue(errors, path, `text exceeds ${maxLength}`);
+}
+
+function validateTransferOptions(
+  value: unknown,
+  path: string,
+  errors: DomainValidationIssue[],
+): readonly string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  const seenText = new Set<string>();
+  if (!Array.isArray(value) || value.length < 3 || value.length > 6) {
+    pushIssue(errors, path, 'expected 3 to 6 options');
+    return ids;
+  }
+  value.forEach((option, index) => {
+    const optionPath = `${path}/${index}`;
+    if (!isPlainRecord(option)) {
+      pushIssue(errors, optionPath, 'expected option object');
+      return;
+    }
+    rejectUnknownKeys(option, new Set(['id', 'text']), optionPath, errors);
+    if (validateIdentifier(option.id, `${optionPath}/id`, errors)) {
+      if (seen.has(option.id)) pushIssue(errors, `${optionPath}/id`, 'duplicate option id');
+      seen.add(option.id);
+      ids.push(option.id);
+    }
+    validateTrimmedText(
+      option.text,
+      `${optionPath}/text`,
+      COACH_TRANSFER_OPTION_TEXT_MAX_LENGTH,
+      errors,
+    );
+    if (typeof option.text === 'string') {
+      const normalizedText = option.text.normalize('NFKC').trim().replace(/\s+/gu, ' ');
+      if (seenText.has(normalizedText)) {
+        pushIssue(errors, `${optionPath}/text`, 'duplicate normalized option text');
+      }
+      seenText.add(normalizedText);
+    }
+  });
+  return ids;
+}
+
+function validateTransferPublicQuestion(
+  value: unknown,
+  path: string,
+  errors: DomainValidationIssue[],
+): readonly string[] {
+  let optionIds: readonly string[] = [];
+  if (!isPlainRecord(value)) {
+    pushIssue(errors, path, 'expected public transfer question object');
+    return optionIds;
+  }
+  rejectUnknownKeys(
+    value,
+    new Set([
+      'schemaVersion',
+      'transferQuestionId',
+      'type',
+      'question',
+      'options',
+      'knowledgePointIds',
+      'difficulty',
+    ]),
+    path,
+    errors,
+  );
+  if (value.schemaVersion !== 1) {
+    pushIssue(errors, `${path}/schemaVersion`, 'unsupported public question schema version');
+  }
+  validateIdentifier(value.transferQuestionId, `${path}/transferQuestionId`, errors);
+  if (!(TRANSFER_QUESTION_TYPES as readonly unknown[]).includes(value.type)) {
+    pushIssue(errors, `${path}/type`, 'unsupported transfer question type');
+  }
+  validateTrimmedText(
+    value.question,
+    `${path}/question`,
+    COACH_TRANSFER_QUESTION_MAX_LENGTH,
+    errors,
+  );
+  validateKnowledgePointIds(value.knowledgePointIds, `${path}/knowledgePointIds`, errors);
+  if (!(TRANSFER_DIFFICULTIES as readonly unknown[]).includes(value.difficulty)) {
+    pushIssue(errors, `${path}/difficulty`, 'unknown transfer question difficulty');
+  }
+
+  const choice = value.type === 'single_choice' || value.type === 'multiple_choice';
+  if (choice) {
+    optionIds = validateTransferOptions(value.options, `${path}/options`, errors);
+  } else if (Object.hasOwn(value, 'options')) {
+    pushIssue(errors, `${path}/options`, 'options are allowed only for choice questions');
+  }
+  return optionIds;
+}
+
+function validateAcceptedAnswers(
+  value: unknown,
+  path: string,
+  caseMode: unknown,
+  errors: DomainValidationIssue[],
+): void {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 16) {
+    pushIssue(errors, path, 'expected 1 to 16 accepted answers');
+    return;
+  }
+  const seen = new Set<string>();
+  value.forEach((answer, index) => {
+    const answerPath = `${path}/${index}`;
+    validateTrimmedText(answer, answerPath, 256, errors);
+    if (typeof answer !== 'string') return;
+    const normalized = answer.normalize('NFKC').trim().replace(/\s+/gu, ' ');
+    if (answer !== normalized) pushIssue(errors, answerPath, 'accepted answer must be normalized');
+    const comparable =
+      caseMode === 'ascii_case_insensitive'
+        ? normalized.replace(/[A-Z]/gu, (character) => character.toLowerCase())
+        : normalized;
+    if (seen.has(comparable)) pushIssue(errors, answerPath, 'duplicate accepted answer');
+    seen.add(comparable);
+  });
+}
+
+function validateTransferGradingSpec(
+  value: unknown,
+  path: string,
+  publicType: unknown,
+  publicOptionIds: readonly string[],
+  errors: DomainValidationIssue[],
+): void {
+  if (!isPlainRecord(value)) {
+    pushIssue(errors, path, 'expected private grading spec object');
+    return;
+  }
+  if (value.schemaVersion !== 1) {
+    pushIssue(errors, `${path}/schemaVersion`, 'unsupported grading spec schema version');
+  }
+  if (value.type !== publicType) {
+    pushIssue(errors, `${path}/type`, 'grading spec type must match public question type');
+  }
+  const optionIds = new Set(publicOptionIds);
+
+  const validateGradingOptionIds = (): void => {
+    if (!Array.isArray(value.optionIds)) {
+      pushIssue(errors, `${path}/optionIds`, 'expected ordered public option ids');
+      return;
+    }
+    value.optionIds.forEach((id, index) => {
+      validateIdentifier(id, `${path}/optionIds/${index}`, errors);
+    });
+    if (
+      value.optionIds.length !== publicOptionIds.length ||
+      value.optionIds.some((id, index) => id !== publicOptionIds[index])
+    ) {
+      pushIssue(errors, `${path}/optionIds`, 'grading option ids must match public option order');
+    }
+  };
+
+  if (value.type === 'single_choice') {
+    rejectUnknownKeys(
+      value,
+      new Set(['schemaVersion', 'type', 'optionIds', 'correctOptionId']),
+      path,
+      errors,
+    );
+    validateGradingOptionIds();
+    if (validateIdentifier(value.correctOptionId, `${path}/correctOptionId`, errors)) {
+      if (!optionIds.has(value.correctOptionId)) {
+        pushIssue(errors, `${path}/correctOptionId`, 'correct option is not in public options');
+      }
+    }
+    return;
+  }
+  if (value.type === 'multiple_choice') {
+    rejectUnknownKeys(
+      value,
+      new Set(['schemaVersion', 'type', 'optionIds', 'correctOptionIds']),
+      path,
+      errors,
+    );
+    validateGradingOptionIds();
+    if (!Array.isArray(value.correctOptionIds) || value.correctOptionIds.length === 0) {
+      pushIssue(errors, `${path}/correctOptionIds`, 'expected at least one correct option id');
+      return;
+    }
+    const seen = new Set<string>();
+    value.correctOptionIds.forEach((id, index) => {
+      const idPath = `${path}/correctOptionIds/${index}`;
+      if (validateIdentifier(id, idPath, errors)) {
+        if (seen.has(id)) pushIssue(errors, idPath, 'duplicate correct option id');
+        if (!optionIds.has(id))
+          pushIssue(errors, idPath, 'correct option is not in public options');
+        seen.add(id);
+      }
+    });
+    if (optionIds.size > 0 && seen.size >= optionIds.size) {
+      pushIssue(
+        errors,
+        `${path}/correctOptionIds`,
+        'multiple choice must include an incorrect option',
+      );
+    }
+    return;
+  }
+  if (value.type === 'numeric') {
+    rejectUnknownKeys(
+      value,
+      new Set(['schemaVersion', 'type', 'expectedNumericValue', 'tolerance']),
+      path,
+      errors,
+    );
+    if (
+      typeof value.expectedNumericValue !== 'number' ||
+      !Number.isFinite(value.expectedNumericValue)
+    ) {
+      pushIssue(errors, `${path}/expectedNumericValue`, 'expected a finite numeric answer');
+    }
+    if (value.tolerance !== 0 || !Number.isFinite(value.tolerance)) {
+      pushIssue(errors, `${path}/tolerance`, 'first-version numeric tolerance must be zero');
+    }
+    return;
+  }
+  if (value.type === 'exact_short_answer') {
+    rejectUnknownKeys(
+      value,
+      new Set(['schemaVersion', 'type', 'acceptedAnswers', 'caseMode']),
+      path,
+      errors,
+    );
+    validateAcceptedAnswers(
+      value.acceptedAnswers,
+      `${path}/acceptedAnswers`,
+      value.caseMode,
+      errors,
+    );
+    if (value.caseMode !== 'case_sensitive' && value.caseMode !== 'ascii_case_insensitive') {
+      pushIssue(errors, `${path}/caseMode`, 'unsupported short-answer case mode');
+    }
+    return;
+  }
+  pushIssue(errors, `${path}/type`, 'unsupported grading spec type');
+  rejectUnknownKeys(value, new Set(['schemaVersion', 'type']), path, errors);
+}
+
+function validateTransferVerification(
+  value: unknown,
+  path: string,
+  errors: DomainValidationIssue[],
+): void {
+  if (!isPlainRecord(value)) {
+    pushIssue(errors, path, 'expected verification object');
+    return;
+  }
+  rejectUnknownKeys(
+    value,
+    new Set(['schemaVersion', 'status', 'candidateFingerprint', 'verifierVersion', 'checks']),
+    path,
+    errors,
+  );
+  if (value.schemaVersion !== 1) {
+    pushIssue(errors, `${path}/schemaVersion`, 'unsupported verification schema version');
+  }
+  if (value.status !== 'verified') pushIssue(errors, `${path}/status`, 'verified status required');
+  if (
+    typeof value.candidateFingerprint !== 'string' ||
+    !/^[a-f0-9]{64}$/u.test(value.candidateFingerprint)
+  ) {
+    pushIssue(errors, `${path}/candidateFingerprint`, 'expected lowercase SHA-256 fingerprint');
+  }
+  if (value.verifierVersion !== 1) {
+    pushIssue(errors, `${path}/verifierVersion`, 'unsupported verifier version');
+  }
+  if (!isPlainRecord(value.checks)) {
+    pushIssue(errors, `${path}/checks`, 'expected verification checks object');
+    return;
+  }
+  rejectUnknownKeys(value.checks, new Set(TRANSFER_VERIFICATION_CHECKS), `${path}/checks`, errors);
+  for (const check of TRANSFER_VERIFICATION_CHECKS) {
+    if (value.checks[check] !== true) {
+      pushIssue(errors, `${path}/checks/${check}`, 'verified assignment requires a true check');
+    }
+  }
+}
+
+function validateTransferAssignmentExtension(
+  value: Record<string, unknown>,
+  errors: DomainValidationIssue[],
+): void {
+  const hasVersion = Object.hasOwn(value, 'assignmentSchemaVersion');
+  const hasPayload = Object.hasOwn(value, 'assignmentPayload');
+  if (hasVersion !== hasPayload) {
+    pushIssue(
+      errors,
+      '/assignmentPayload',
+      'assignment schema version and payload must be present together',
+    );
+    return;
+  }
+  if (!hasVersion) return;
+  if (value.assignmentSchemaVersion !== COACH_TRANSFER_ASSIGNMENT_SCHEMA_VERSION) {
+    pushIssue(errors, '/assignmentSchemaVersion', 'unsupported transfer assignment version');
+  }
+  if (!isPlainRecord(value.assignmentPayload)) {
+    pushIssue(errors, '/assignmentPayload', 'expected assignment payload object');
+    return;
+  }
+  const payload = value.assignmentPayload;
+  rejectUnknownKeys(
+    payload,
+    new Set(['publicQuestion', 'gradingSpec', 'verification']),
+    '/assignmentPayload',
+    errors,
+  );
+  const optionIds = validateTransferPublicQuestion(
+    payload.publicQuestion,
+    '/assignmentPayload/publicQuestion',
+    errors,
+  );
+  const publicType = isPlainRecord(payload.publicQuestion)
+    ? payload.publicQuestion.type
+    : undefined;
+  validateTransferGradingSpec(
+    payload.gradingSpec,
+    '/assignmentPayload/gradingSpec',
+    publicType,
+    optionIds,
+    errors,
+  );
+  validateTransferVerification(payload.verification, '/assignmentPayload/verification', errors);
+}
+
 export function validateCoachEvent(value: unknown): DomainValidationResult {
   const errors: DomainValidationIssue[] = [];
   if (!isPlainRecord(value)) {
@@ -491,12 +873,25 @@ export function validateCoachEvent(value: unknown): DomainValidationResult {
     }
   } else if (eventType === 'original_resolved') {
     validateIdentifier(value.attemptEventId, '/attemptEventId', errors);
-    validateOutcome(value.outcome, '/outcome', errors);
+    const hasOutcome = Object.hasOwn(value, 'outcome');
+    const hasFullSolution = Object.hasOwn(value, 'fullSolutionEventId');
+    if (hasOutcome === hasFullSolution) {
+      pushIssue(
+        errors,
+        '/outcome',
+        'original resolution requires exactly one of outcome or fullSolutionEventId',
+      );
+    }
+    if (hasOutcome) validateOutcome(value.outcome, '/outcome', errors);
+    if (hasFullSolution) {
+      validateIdentifier(value.fullSolutionEventId, '/fullSolutionEventId', errors);
+    }
   } else if (eventType === 'transfer_question_assigned') {
     validateIdentifier(value.originalResolvedEventId, '/originalResolvedEventId', errors);
     validateIdentifier(value.transferQuestionId, '/transferQuestionId', errors);
     validateKnowledgePointIds(value.knowledgePointIds, '/knowledgePointIds', errors);
     validateIdentifier(value.validationRef, '/validationRef', errors);
+    validateTransferAssignmentExtension(value, errors);
   } else if (eventType === 'transfer_answer_submitted') {
     if (value.phase !== 'transfer') pushIssue(errors, '/phase', 'transfer attempt phase required');
     validateIdentifier(value.transferQuestionId, '/transferQuestionId', errors);
@@ -504,7 +899,9 @@ export function validateCoachEvent(value: unknown): DomainValidationResult {
   } else if (eventType === 'transfer_answer_evaluated') {
     validateIdentifier(value.transferQuestionId, '/transferQuestionId', errors);
     validateIdentifier(value.submissionEventId, '/submissionEventId', errors);
-    validateOutcome(value.outcome, '/outcome', errors);
+    if (value.outcome !== 'correct' && value.outcome !== 'incorrect') {
+      pushIssue(errors, '/outcome', 'transfer outcome must be correct or incorrect');
+    }
   } else if (eventType === 'study_attempts_projected') {
     validateIdentifier(value.evaluationEventId, '/evaluationEventId', errors);
     validateIdentifier(value.projectionRef, '/projectionRef', errors);

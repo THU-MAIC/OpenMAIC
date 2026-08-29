@@ -19,8 +19,13 @@ import {
 } from '@/lib/server/zhongkao/coach-service';
 import type { CoachRuntimeSnapshot } from '@/lib/server/zhongkao/coach-runtime';
 import {
+  completePendingTransferAnswerEvaluation,
+  completeTransferAnswerEvaluation,
+  completeTransferQuestionGeneration,
+} from '@/lib/server/zhongkao/coach-transfer';
+import {
+  completeCoachHintRequest,
   completeOriginalFullSolutionRequest,
-  completeOriginalHintRequest,
   type CoachPresentation,
 } from '@/lib/server/zhongkao/coach-presentation';
 import { CoachError, isCoachError } from '@/lib/zhongkao/coach-errors';
@@ -41,6 +46,8 @@ import {
 import {
   COACH_FULL_SOLUTION_PRESENTATION_SCHEMA,
   COACH_HINT_PRESENTATION_SCHEMA,
+  COACH_TRANSFER_QUESTION_PRESENTATION_SCHEMA,
+  COACH_TRANSFER_RESULT_PRESENTATION_SCHEMA,
 } from '@/lib/zhongkao/coach-public-presentation';
 
 import { listAgentUserMessages } from './user-messages';
@@ -135,6 +142,12 @@ const CoachErrorCodeSchema = Type.Union([
   Type.Literal('FULL_SOLUTION_GENERATION_FAILED'),
   Type.Literal('FULL_SOLUTION_CONTENT_INVALID'),
   Type.Literal('COACH_GENERATION_UNAVAILABLE'),
+  Type.Literal('TRANSFER_QUESTION_GENERATION_FAILED'),
+  Type.Literal('TRANSFER_QUESTION_INVALID'),
+  Type.Literal('TRANSFER_QUESTION_TYPE_UNSUPPORTED'),
+  Type.Literal('TRANSFER_QUESTION_NOT_VERIFIED'),
+  Type.Literal('TRANSFER_ANSWER_INVALID'),
+  Type.Literal('TRANSFER_EVALUATION_FAILED'),
 ]);
 
 const CoachActionSchema = Type.Union([
@@ -213,6 +226,8 @@ const PublicCoachStateSchema = Type.Object(
 const CoachPresentationSchema = Type.Union([
   COACH_HINT_PRESENTATION_SCHEMA,
   COACH_FULL_SOLUTION_PRESENTATION_SCHEMA,
+  COACH_TRANSFER_QUESTION_PRESENTATION_SCHEMA,
+  COACH_TRANSFER_RESULT_PRESENTATION_SCHEMA,
 ]);
 
 export const ZHONGKAO_COACH_OUTPUT_SCHEMA = Type.Object(
@@ -251,8 +266,11 @@ export interface ZhongkaoCoachToolContext {
   runtimeStore: RuntimeStore;
   readTrustedUserMessage: () => Promise<TrustedCoachUserMessage>;
   createGenerationCall?: (signal?: AbortSignal) => AICallFn;
+  createTransferVerificationCall?: (signal?: AbortSignal) => AICallFn;
   /** @deprecated Tests may use this seam; production callers must bind the execution signal. */
   generationCall?: AICallFn;
+  /** @deprecated Tests may inject an independent deterministic verifier. */
+  transferVerificationCall?: AICallFn;
   materialSource?: ZhongkaoMaterialSourceAdapter;
   beforeExecute?: () => Promise<void>;
   now?: () => string;
@@ -485,24 +503,65 @@ export function createZhongkaoCoachActionTool(
         await context.beforeExecute?.();
         if (signal?.aborted) return errorResult(new Error('aborted'));
         const generationCall = context.createGenerationCall?.(signal) ?? context.generationCall;
+        const transferVerificationCall =
+          context.createTransferVerificationCall?.(signal) ?? context.transferVerificationCall;
         const deps = {
           store: context.runtimeStore,
           ownerId: turn.ownerId,
           agentSessionId: turn.agentSessionId,
           ...(context.now ? { now: context.now } : {}),
           ...(generationCall ? { generationCall } : {}),
+          ...(transferVerificationCall ? { transferVerificationCall } : {}),
           ...(context.materialSource ? { materialSource: context.materialSource } : {}),
           ...(signal ? { abortSignal: signal } : {}),
         };
         if (params.action === 'get_state') {
-          const snapshot = await getCoachProblemState(
+          const observed = await getCoachProblemState(
             deps,
             params.profileId,
             params.coachSessionId,
           );
           if (signal?.aborted) return errorResult(new Error('aborted'));
+          if (
+            observed.state.transfer.attemptCount === 1 &&
+            !observed.state.studyAttemptsProjected
+          ) {
+            const completed = await completePendingTransferAnswerEvaluation(deps, {
+              profileId: params.profileId,
+              coachSessionId: params.coachSessionId,
+            });
+            if (!completed) throw new CoachError('TRANSFER_EVALUATION_FAILED');
+            if (signal?.aborted) return errorResult(new Error('aborted'));
+            return toolResult(
+              buildCoachToolSuccessOutput(
+                completed.snapshot,
+                { replayed: completed.replayed, eventAppended: completed.eventAppended },
+                undefined,
+                completed.presentation,
+              ),
+            );
+          }
+          const shouldPresentTransferQuestion =
+            (observed.state.transfer.assigned && observed.state.transfer.attemptCount === 0) ||
+            (!observed.state.transfer.assigned &&
+              directiveForCoachState(observed.state) === 'GENERATE_TRANSFER_QUESTION');
+          if (shouldPresentTransferQuestion) {
+            const completed = await completeTransferQuestionGeneration(deps, {
+              profileId: params.profileId,
+              coachSessionId: params.coachSessionId,
+            });
+            if (signal?.aborted) return errorResult(new Error('aborted'));
+            return toolResult(
+              buildCoachToolSuccessOutput(
+                completed.snapshot,
+                { replayed: completed.replayed, eventAppended: completed.eventAppended },
+                undefined,
+                completed.presentation,
+              ),
+            );
+          }
           return toolResult(
-            buildCoachToolSuccessOutput(snapshot, { replayed: false, eventAppended: false }),
+            buildCoachToolSuccessOutput(observed, { replayed: false, eventAppended: false }),
           );
         }
 
@@ -544,12 +603,7 @@ export function createZhongkaoCoachActionTool(
               result = await submitCoachAttempt(deps, continuation);
               break;
             case 'request_hint':
-              result = await requestCoachHint(deps, {
-                ...continuation,
-                // M2B-1 publishes deterministic original-question hints only.
-                // Reject transfer hints before creating a pending request.
-                requiredPhase: 'original',
-              });
+              result = await requestCoachHint(deps, continuation);
               break;
             case 'request_full_solution':
               result = await requestCoachFullSolution(deps, continuation);
@@ -569,7 +623,7 @@ export function createZhongkaoCoachActionTool(
         let code = result.code;
         if (params.action === 'request_hint' && result.code === undefined) {
           try {
-            const completed = await completeOriginalHintRequest(deps, {
+            const completed = await completeCoachHintRequest(deps, {
               profileId: params.profileId,
               coachSessionId: params.coachSessionId,
               userMessageSeq: turn.userMessageSeq,
@@ -627,6 +681,15 @@ export function createZhongkaoCoachActionTool(
             };
             code = failed.failureCode;
           }
+        } else if (params.action === 'submit_transfer_answer' && result.code === undefined) {
+          const completed = await completeTransferAnswerEvaluation(deps, {
+            profileId: params.profileId,
+            coachSessionId: params.coachSessionId,
+            userMessageSeq: turn.userMessageSeq,
+          });
+          snapshot = completed.snapshot;
+          presentation = completed.presentation;
+          facts = { replayed: completed.replayed, eventAppended: completed.eventAppended };
         }
         if (signal?.aborted) return errorResult(new Error('aborted'));
         return toolResult(buildCoachToolSuccessOutput(snapshot, facts, code, presentation));

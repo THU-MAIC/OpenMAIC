@@ -124,6 +124,64 @@ const VALID_EVENTS: CoachEvent[] = [
   },
 ];
 
+const VERIFIED_TRANSFER_CHECKS = {
+  sameKnowledgePoint: true,
+  selfContained: true,
+  answerConsistent: true,
+  answerNotLeaked: true,
+  singleAnswerOrExactSet: true,
+  middleSchoolScope: true,
+  meaningfullyDifferent: true,
+} as const;
+
+function enrichedAssignment(
+  publicQuestion: Record<string, unknown>,
+  gradingSpec: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...VALID_EVENTS[7],
+    assignmentSchemaVersion: 1,
+    assignmentPayload: {
+      publicQuestion,
+      gradingSpec,
+      verification: {
+        schemaVersion: 1,
+        status: 'verified',
+        candidateFingerprint: 'b'.repeat(64),
+        verifierVersion: 1,
+        checks: VERIFIED_TRANSFER_CHECKS,
+      },
+    },
+  };
+}
+
+function choiceQuestion(type: 'single_choice' | 'multiple_choice') {
+  return {
+    schemaVersion: 1,
+    transferQuestionId: 'transfer-alpha',
+    type,
+    question: 'Choose the answer for this fictional transfer question.',
+    options: [
+      { id: 'option-a', text: 'Fictional option A' },
+      { id: 'option-b', text: 'Fictional option B' },
+      { id: 'option-c', text: 'Fictional option C' },
+    ],
+    knowledgePointIds: ['linear-equations'],
+    difficulty: 'same',
+  };
+}
+
+function openQuestion(type: 'numeric' | 'exact_short_answer') {
+  return {
+    schemaVersion: 1,
+    transferQuestionId: 'transfer-alpha',
+    type,
+    question: 'Give the answer for this fictional transfer question.',
+    knowledgePointIds: ['linear-equations'],
+    difficulty: 'same',
+  };
+}
+
 describe('Coach event contract', () => {
   it.each(VALID_EVENTS)('accepts closed $eventType payloads', (event) => {
     expect(validateCoachEvent(event)).toEqual({ valid: true });
@@ -183,6 +241,248 @@ describe('Coach event contract', () => {
       delete without[causalField];
       expect(validateCoachEvent(without).valid).toBe(false);
     }
+  });
+
+  it('accepts legacy outcome and full-solution resolutions but rejects both or neither', () => {
+    const legacy = VALID_EVENTS[6]!;
+    expect(validateCoachEvent(legacy).valid).toBe(true);
+
+    const fromFullSolution = { ...legacy } as Record<string, unknown>;
+    delete fromFullSolution.outcome;
+    fromFullSolution.fullSolutionEventId = 'event-full-solution-revealed';
+    expect(validateCoachEvent(fromFullSolution).valid).toBe(true);
+    expect(
+      validateCoachEvent({ ...legacy, fullSolutionEventId: 'event-full-solution-revealed' }).valid,
+    ).toBe(false);
+
+    const neither = { ...legacy } as Record<string, unknown>;
+    delete neither.outcome;
+    expect(validateCoachEvent(neither).valid).toBe(false);
+  });
+
+  it('keeps legacy assignments readable and accepts all four closed verified assignment branches', () => {
+    expect(validateCoachEvent(VALID_EVENTS[7])).toEqual({ valid: true });
+    const assignments = [
+      enrichedAssignment(choiceQuestion('single_choice'), {
+        schemaVersion: 1,
+        type: 'single_choice',
+        optionIds: ['option-a', 'option-b', 'option-c'],
+        correctOptionId: 'option-a',
+      }),
+      enrichedAssignment(choiceQuestion('multiple_choice'), {
+        schemaVersion: 1,
+        type: 'multiple_choice',
+        optionIds: ['option-a', 'option-b', 'option-c'],
+        correctOptionIds: ['option-a', 'option-c'],
+      }),
+      enrichedAssignment(openQuestion('numeric'), {
+        schemaVersion: 1,
+        type: 'numeric',
+        expectedNumericValue: 7,
+        tolerance: 0,
+      }),
+      enrichedAssignment(openQuestion('exact_short_answer'), {
+        schemaVersion: 1,
+        type: 'exact_short_answer',
+        acceptedAnswers: ['fictional answer', 'Fictional Answer'],
+        caseMode: 'case_sensitive',
+      }),
+    ];
+    for (const assignment of assignments) {
+      expect(validateCoachEvent(assignment)).toEqual({ valid: true });
+    }
+  });
+
+  it('requires assignment version and opaque payload together', () => {
+    expect(validateCoachEvent({ ...VALID_EVENTS[7], assignmentSchemaVersion: 1 }).valid).toBe(
+      false,
+    );
+    expect(validateCoachEvent({ ...VALID_EVENTS[7], assignmentPayload: {} }).valid).toBe(false);
+    expect(
+      validateCoachEvent({
+        ...enrichedAssignment(choiceQuestion('single_choice'), {
+          schemaVersion: 1,
+          type: 'single_choice',
+          optionIds: ['option-a', 'option-b', 'option-c'],
+          correctOptionId: 'option-a',
+        }),
+        assignmentSchemaVersion: 2,
+      }).valid,
+    ).toBe(false);
+  });
+
+  it('keeps every enriched assignment layer closed and server-verified', () => {
+    const valid = enrichedAssignment(choiceQuestion('single_choice'), {
+      schemaVersion: 1,
+      type: 'single_choice',
+      optionIds: ['option-a', 'option-b', 'option-c'],
+      correctOptionId: 'option-a',
+    });
+    const payload = valid.assignmentPayload as Record<string, unknown>;
+    const verification = payload.verification as Record<string, unknown>;
+    for (const value of [
+      { ...valid, assignmentPayload: { ...payload, hiddenAnswer: 'option-a' } },
+      {
+        ...valid,
+        assignmentPayload: {
+          ...payload,
+          publicQuestion: {
+            ...(payload.publicQuestion as Record<string, unknown>),
+            expectedAnswer: 'option-a',
+          },
+        },
+      },
+      {
+        ...valid,
+        assignmentPayload: {
+          ...payload,
+          gradingSpec: {
+            ...(payload.gradingSpec as Record<string, unknown>),
+            rubric: 'private rubric',
+          },
+        },
+      },
+      {
+        ...valid,
+        assignmentPayload: {
+          ...payload,
+          verification: { ...verification, status: 'candidate' },
+        },
+      },
+      {
+        ...valid,
+        assignmentPayload: {
+          ...payload,
+          verification: {
+            ...verification,
+            checks: { ...VERIFIED_TRANSFER_CHECKS, answerConsistent: false },
+          },
+        },
+      },
+      {
+        ...valid,
+        assignmentPayload: {
+          ...payload,
+          verification: { ...verification, verifierReasoning: 'hidden reasoning' },
+        },
+      },
+    ]) {
+      expect(validateCoachEvent(value).valid).toBe(false);
+    }
+  });
+
+  it('rejects inconsistent private answer keys and unsupported public question shapes', () => {
+    expect(
+      validateCoachEvent(
+        enrichedAssignment(choiceQuestion('single_choice'), {
+          schemaVersion: 1,
+          type: 'single_choice',
+          optionIds: ['option-a', 'option-b', 'option-c'],
+          correctOptionId: 'missing-option',
+        }),
+      ).valid,
+    ).toBe(false);
+    expect(
+      validateCoachEvent(
+        enrichedAssignment(
+          {
+            ...choiceQuestion('single_choice'),
+            options: [
+              { id: 'option-a', text: 'Same option' },
+              { id: 'option-b', text: 'Same   option' },
+              { id: 'option-c', text: 'Different option' },
+            ],
+          },
+          {
+            schemaVersion: 1,
+            type: 'single_choice',
+            optionIds: ['option-a', 'option-b', 'option-c'],
+            correctOptionId: 'option-a',
+          },
+        ),
+      ).valid,
+    ).toBe(false);
+    expect(
+      validateCoachEvent(
+        enrichedAssignment(choiceQuestion('single_choice'), {
+          schemaVersion: 1,
+          type: 'single_choice',
+          optionIds: ['option-b', 'option-a', 'option-c'],
+          correctOptionId: 'option-a',
+        }),
+      ).valid,
+    ).toBe(false);
+    expect(
+      validateCoachEvent(
+        enrichedAssignment(choiceQuestion('multiple_choice'), {
+          schemaVersion: 1,
+          type: 'multiple_choice',
+          optionIds: ['option-a', 'option-b', 'option-c'],
+          correctOptionIds: ['option-a', 'option-a'],
+        }),
+      ).valid,
+    ).toBe(false);
+    expect(
+      validateCoachEvent(
+        enrichedAssignment(openQuestion('numeric'), {
+          schemaVersion: 1,
+          type: 'numeric',
+          expectedNumericValue: Number.POSITIVE_INFINITY,
+          tolerance: 0,
+        }),
+      ).valid,
+    ).toBe(false);
+    expect(
+      validateCoachEvent(
+        enrichedAssignment(openQuestion('numeric'), {
+          schemaVersion: 1,
+          type: 'numeric',
+          expectedNumericValue: 7,
+          tolerance: 0.1,
+        }),
+      ).valid,
+    ).toBe(false);
+    expect(
+      validateCoachEvent(
+        enrichedAssignment(openQuestion('exact_short_answer'), {
+          schemaVersion: 1,
+          type: 'exact_short_answer',
+          acceptedAnswers: [],
+          caseMode: 'case_sensitive',
+        }),
+      ).valid,
+    ).toBe(false);
+    expect(
+      validateCoachEvent(
+        enrichedAssignment(openQuestion('exact_short_answer'), {
+          schemaVersion: 1,
+          type: 'exact_short_answer',
+          acceptedAnswers: ['Answer', 'answer'],
+          caseMode: 'ascii_case_insensitive',
+        }),
+      ).valid,
+    ).toBe(false);
+    expect(
+      validateCoachEvent(
+        enrichedAssignment(openQuestion('exact_short_answer'), {
+          schemaVersion: 1,
+          type: 'exact_short_answer',
+          acceptedAnswers: ['fictional answer'],
+          caseMode: 'semantic',
+        }),
+      ).valid,
+    ).toBe(false);
+    expect(
+      validateCoachEvent(
+        enrichedAssignment(
+          { ...openQuestion('numeric'), type: 'essay' },
+          {
+            schemaVersion: 1,
+            type: 'essay',
+          },
+        ),
+      ).valid,
+    ).toBe(false);
   });
 
   it('keeps presentation failure facts closed and server-owned', () => {
@@ -265,6 +565,8 @@ describe('Coach event contract', () => {
   it('rejects invalid hint, outcome, question, and projection facts', () => {
     expect(validateCoachEvent({ ...VALID_EVENTS[3], hintNumber: 4 }).valid).toBe(false);
     expect(validateCoachEvent({ ...VALID_EVENTS[6], outcome: 'mastered' }).valid).toBe(false);
+    expect(validateCoachEvent({ ...VALID_EVENTS[6], outcome: 'partial' }).valid).toBe(true);
+    expect(validateCoachEvent({ ...VALID_EVENTS[9], outcome: 'partial' }).valid).toBe(false);
     expect(validateCoachEvent({ ...VALID_EVENTS[8], transferQuestionId: '' }).valid).toBe(false);
     expect(validateCoachEvent({ ...VALID_EVENTS[10], projectionVersion: 2 }).valid).toBe(false);
   });

@@ -41,6 +41,13 @@ import {
   type CoachRuntimeWriteResult,
 } from './coach-runtime';
 import { resolveZhongkaoLearnerKeyFromOwnerId } from './learner-identity';
+import { evaluateTransferAnswer } from './transfer-answer-evaluator';
+import {
+  TRANSFER_ASSIGNMENT_SCHEMA_VERSION,
+  buildTransferAssignment,
+  extractVerifiedTransferAssignment,
+} from './transfer-assignment';
+import type { VerifiedTransferQuestion } from './transfer-question-private';
 
 export interface TrustedCoachUserMessage {
   seq: number;
@@ -60,6 +67,10 @@ export interface CoachContinuationInput {
   coachSessionId: string;
   expectedRevision: number;
 }
+
+type OriginalResolutionFacts =
+  | { attemptEventId: string; outcome: CoachOutcome; fullSolutionEventId?: never }
+  | { attemptEventId: string; fullSolutionEventId: string; outcome?: never };
 
 function assertIdentifier(value: string): void {
   const errors: DomainValidationIssue[] = [];
@@ -421,6 +432,10 @@ export async function submitCoachTransferAnswer(
   if (!observed.state.transfer.assigned || !transferQuestionId) {
     throw new CoachError('TRANSFER_QUESTION_REQUIRED');
   }
+  const observedAssignment = requireTransferAssignment(observed);
+  if (observedAssignment.event.transferQuestionId !== transferQuestionId) {
+    throw new CoachError('TRANSFER_EVALUATION_FAILED');
+  }
   const operationId = modelOperationId(deps, input, message, 'submit_transfer_answer');
   const operationFingerprint = createCoachOperationFingerprint({
     action: 'submit_transfer_answer',
@@ -436,7 +451,11 @@ export async function submitCoachTransferAnswer(
     operationFingerprint,
     createEvent(metadata, snapshot) {
       requireModelAction(snapshot, 'submit_transfer_answer');
-      if (snapshot.state.transfer.transferQuestionId !== transferQuestionId) {
+      const assignment = requireTransferAssignment(snapshot);
+      if (
+        snapshot.state.transfer.transferQuestionId !== transferQuestionId ||
+        assignment.event.transferQuestionId !== transferQuestionId
+      ) {
         throw new CoachError('COACH_EVENT_CONFLICT');
       }
       if (messageRefAlreadyAttempted(snapshot, deps.agentSessionId, message.seq)) {
@@ -604,21 +623,26 @@ export async function recordFullSolutionRevealed(
 
 export async function recordOriginalResolved(
   deps: CoachServiceDeps,
-  input: CoachContinuationInput & { attemptEventId: string; outcome: CoachOutcome },
+  input: CoachContinuationInput & OriginalResolutionFacts,
 ): Promise<CoachActionResult> {
   assertContinuation(input);
   assertIdentifier(input.attemptEventId);
-  assertOutcome(input.outcome);
+  const resolvesFromFullSolution = input.fullSolutionEventId !== undefined;
+  if (resolvesFromFullSolution) assertIdentifier(input.fullSolutionEventId);
+  else assertOutcome(input.outcome);
+  const causalEventId = resolvesFromFullSolution ? input.fullSolutionEventId : input.attemptEventId;
   const operationId = deriveCoachCausalOperationId({
     coachSessionId: input.coachSessionId,
     action: 'record_original_resolved',
-    causalEventId: input.attemptEventId,
+    causalEventId,
   });
   const operationFingerprint = createCoachOperationFingerprint({
     action: 'record_original_resolved',
     coachSessionId: input.coachSessionId,
     attemptEventId: input.attemptEventId,
-    outcome: input.outcome,
+    ...(resolvesFromFullSolution
+      ? { fullSolutionEventId: input.fullSolutionEventId }
+      : { outcome: input.outcome }),
   });
   return appendCoachRuntimeEvent(deps, {
     ...input,
@@ -633,6 +657,18 @@ export async function recordOriginalResolved(
       ) {
         throw new CoachError('STUDENT_ATTEMPT_REQUIRED');
       }
+      const fullSolution = resolvesFromFullSolution
+        ? eventById(snapshot, input.fullSolutionEventId)
+        : undefined;
+      if (
+        resolvesFromFullSolution &&
+        (!fullSolution ||
+          fullSolution.eventType !== 'full_solution_revealed' ||
+          fullSolution.phase !== 'original' ||
+          !snapshot.state.original.viewedFullAnswer)
+      ) {
+        throw new CoachError('COACH_ACTION_NOT_ALLOWED');
+      }
       if (snapshot.state.original.resolved || snapshot.state.status === 'abandoned') {
         throw new CoachError('COACH_ACTION_NOT_ALLOWED');
       }
@@ -640,7 +676,9 @@ export async function recordOriginalResolved(
         ...baseEvent(deps, input, metadata),
         eventType: 'original_resolved',
         attemptEventId: attempt.eventId,
-        outcome: input.outcome,
+        ...(resolvesFromFullSolution
+          ? { fullSolutionEventId: input.fullSolutionEventId }
+          : { outcome: input.outcome }),
       };
     },
   });
@@ -650,16 +688,27 @@ export async function assignVerifiedTransferQuestion(
   deps: CoachServiceDeps,
   input: CoachContinuationInput & {
     originalResolvedEventId: string;
-    transferQuestionId: string;
-    knowledgePointIds: readonly string[];
-    validationRef: string;
+    verifiedQuestion: VerifiedTransferQuestion;
   },
 ): Promise<CoachActionResult> {
   assertContinuation(input);
   assertIdentifier(input.originalResolvedEventId);
-  assertIdentifier(input.transferQuestionId);
-  assertIdentifier(input.validationRef);
-  const knowledgePointIds = normalizeKnowledgePointIds(input.knowledgePointIds);
+  const normalizedVerifiedQuestion: VerifiedTransferQuestion = {
+    ...input.verifiedQuestion,
+    publicQuestion: {
+      ...input.verifiedQuestion.publicQuestion,
+      knowledgePointIds: normalizeKnowledgePointIds(
+        input.verifiedQuestion.publicQuestion.knowledgePointIds,
+      ),
+    },
+  };
+  const assignment = buildTransferAssignment({
+    coachSessionId: input.coachSessionId,
+    originalResolvedEventId: input.originalResolvedEventId,
+    verifiedQuestion: normalizedVerifiedQuestion,
+  });
+  const transferQuestionId = assignment.publicQuestion.transferQuestionId;
+  const knowledgePointIds = normalizeKnowledgePointIds(assignment.publicQuestion.knowledgePointIds);
   const operationId = deriveCoachCausalOperationId({
     coachSessionId: input.coachSessionId,
     action: 'assign_verified_transfer_question',
@@ -669,9 +718,15 @@ export async function assignVerifiedTransferQuestion(
     action: 'assign_verified_transfer_question',
     coachSessionId: input.coachSessionId,
     originalResolvedEventId: input.originalResolvedEventId,
-    transferQuestionId: input.transferQuestionId,
+    transferQuestionId,
     knowledgePointIds,
-    validationRef: input.validationRef,
+    validationRef: assignment.validationRef,
+    assignmentSchemaVersion: TRANSFER_ASSIGNMENT_SCHEMA_VERSION,
+    assignmentPayload: {
+      publicQuestion: assignment.publicQuestion,
+      gradingSpec: assignment.gradingSpec,
+      verification: assignment.verification,
+    },
   });
   return appendCoachRuntimeEvent(deps, {
     ...input,
@@ -691,9 +746,15 @@ export async function assignVerifiedTransferQuestion(
         ...baseEvent(deps, input, metadata),
         eventType: 'transfer_question_assigned',
         originalResolvedEventId: resolution.eventId,
-        transferQuestionId: input.transferQuestionId,
+        transferQuestionId,
         knowledgePointIds,
-        validationRef: input.validationRef,
+        validationRef: assignment.validationRef,
+        assignmentSchemaVersion: TRANSFER_ASSIGNMENT_SCHEMA_VERSION,
+        assignmentPayload: {
+          publicQuestion: assignment.publicQuestion,
+          gradingSpec: assignment.gradingSpec,
+          verification: assignment.verification,
+        },
       };
     },
   });
@@ -705,20 +766,39 @@ function requireTransferSubmission(
 ): TransferAnswerSubmittedEvent {
   const submission = eventById(snapshot, submissionEventId);
   if (!submission || submission.eventType !== 'transfer_answer_submitted') {
-    throw new CoachError('COACH_ACTION_NOT_ALLOWED');
+    throw new CoachError('TRANSFER_EVALUATION_FAILED');
   }
   return submission;
 }
 
+function requireTransferAssignment(snapshot: CoachRuntimeSnapshot) {
+  const assignmentEventId = snapshot.state.transfer.assignmentEventId;
+  const assignment = assignmentEventId ? eventById(snapshot, assignmentEventId) : undefined;
+  if (!assignment || assignment.eventType !== 'transfer_question_assigned') {
+    throw new CoachError('TRANSFER_QUESTION_REQUIRED');
+  }
+  return { event: assignment, verified: extractVerifiedTransferAssignment(assignment) };
+}
+
 export async function recordTransferEvaluation(
   deps: CoachServiceDeps,
-  input: CoachContinuationInput & { submissionEventId: string; outcome: CoachOutcome },
+  input: CoachContinuationInput & { submissionEventId: string },
 ): Promise<CoachActionResult> {
   assertContinuation(input);
   assertIdentifier(input.submissionEventId);
-  assertOutcome(input.outcome);
   const observed = await loadCoachRuntime(deps, input.profileId, input.coachSessionId);
   const submission = requireTransferSubmission(observed, input.submissionEventId);
+  const assignment = requireTransferAssignment(observed);
+  if (
+    assignment.event.eventId !== observed.state.transfer.assignmentEventId ||
+    submission.transferQuestionId !== assignment.event.transferQuestionId
+  ) {
+    throw new CoachError('TRANSFER_EVALUATION_FAILED');
+  }
+  const evaluated = evaluateTransferAnswer(
+    assignment.verified.gradingSpec,
+    submission.studentResponse,
+  );
   const operationId = deriveCoachCausalOperationId({
     coachSessionId: input.coachSessionId,
     action: 'record_transfer_evaluation',
@@ -729,29 +809,47 @@ export async function recordTransferEvaluation(
     coachSessionId: input.coachSessionId,
     transferQuestionId: submission.transferQuestionId,
     submissionEventId: submission.eventId,
-    outcome: input.outcome,
+    outcome: evaluated.outcome,
   });
-  return appendCoachRuntimeEvent(deps, {
+  const result = await appendCoachRuntimeEvent(deps, {
     ...input,
     operationId,
     operationFingerprint,
     createEvent(metadata, snapshot) {
       const current = requireTransferSubmission(snapshot, submission.eventId);
+      const currentAssignment = requireTransferAssignment(snapshot);
+      const currentEvaluation = evaluateTransferAnswer(
+        currentAssignment.verified.gradingSpec,
+        current.studentResponse,
+      );
       if (
         snapshot.state.transfer.evaluationEventId !== undefined ||
-        current.transferQuestionId !== snapshot.state.transfer.transferQuestionId
+        current.transferQuestionId !== snapshot.state.transfer.transferQuestionId ||
+        current.transferQuestionId !== currentAssignment.event.transferQuestionId ||
+        currentEvaluation.outcome !== evaluated.outcome
       ) {
-        throw new CoachError('COACH_ACTION_NOT_ALLOWED');
+        throw new CoachError('TRANSFER_EVALUATION_FAILED');
       }
       return {
         ...baseEvent(deps, input, metadata),
         eventType: 'transfer_answer_evaluated',
         transferQuestionId: current.transferQuestionId,
         submissionEventId: current.eventId,
-        outcome: input.outcome,
+        outcome: evaluated.outcome,
       };
     },
   });
+  const persisted = eventById(result.snapshot, deriveCoachEventId(operationId));
+  if (
+    !persisted ||
+    persisted.eventType !== 'transfer_answer_evaluated' ||
+    persisted.submissionEventId !== submission.eventId ||
+    persisted.transferQuestionId !== submission.transferQuestionId ||
+    persisted.outcome !== evaluated.outcome
+  ) {
+    throw new CoachError('COACH_EVENT_CONFLICT');
+  }
+  return result;
 }
 
 export async function recordStudyAttemptsProjected(

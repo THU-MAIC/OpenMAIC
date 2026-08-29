@@ -24,12 +24,17 @@ import {
 } from '@/lib/server/agent-runtime/zhongkao-coach-tool';
 import {
   assignVerifiedTransferQuestion,
+  recordFullSolutionRevealed,
   recordOriginalResolved,
+  requestCoachFullSolution,
   submitCoachAttempt,
+  submitCoachTransferAnswer,
   type CoachServiceDeps,
 } from '@/lib/server/zhongkao/coach-service';
 import type { ZhongkaoMaterialSourceAdapter } from '@/lib/server/agent-runtime/zhongkao-material-source';
 import { deriveCoachEventId } from '@/lib/server/zhongkao/coach-runtime';
+import { deriveTransferQuestionId } from '@/lib/server/zhongkao/transfer-assignment';
+import type { VerifiedTransferQuestion } from '@/lib/server/zhongkao/transfer-question-private';
 import { resolveZhongkaoLearnerKeyFromOwnerId } from '@/lib/server/zhongkao/learner-identity';
 import type { CoachEvent } from '@/lib/zhongkao/coach-event';
 import { createInitialStudentProfile } from '@/lib/zhongkao/profile';
@@ -92,7 +97,9 @@ function toolFor(
     turn?: TrustedAgentTurn;
     reader?: () => Promise<{ seq: number; text: string }>;
     createGenerationCall?: (signal?: AbortSignal) => AICallFn;
+    createTransferVerificationCall?: (signal?: AbortSignal) => AICallFn;
     generationCall?: AICallFn;
+    transferVerificationCall?: AICallFn;
     materialSource?: ZhongkaoMaterialSourceAdapter;
     runtimeStore?: RuntimeStore;
     beforeExecute?: () => Promise<void>;
@@ -120,6 +127,12 @@ function toolFor(
     runtimeStore: options.runtimeStore ?? h.store,
     readTrustedUserMessage: options.reader ?? (async () => ({ seq, text })),
     createGenerationCall: options.createGenerationCall ?? (() => generationCall),
+    ...(options.createTransferVerificationCall
+      ? { createTransferVerificationCall: options.createTransferVerificationCall }
+      : {}),
+    ...(options.transferVerificationCall
+      ? { transferVerificationCall: options.transferVerificationCall }
+      : {}),
     ...(options.materialSource ? { materialSource: options.materialSource } : {}),
     ...(options.beforeExecute ? { beforeExecute: options.beforeExecute } : {}),
     now: h.now,
@@ -152,6 +165,45 @@ const START_INPUT = {
   knowledgePointIds: ['linear-equations'],
   questionSourceType: 'typed',
 } as const;
+
+function verifiedTransferQuestion(
+  coachSessionId: string,
+  originalResolvedEventId: string,
+): VerifiedTransferQuestion {
+  return {
+    validationStatus: 'verified',
+    validationRef: `transfer-validation:v1:${'b'.repeat(64)}`,
+    publicQuestion: {
+      schemaVersion: 1,
+      transferQuestionId: deriveTransferQuestionId({ coachSessionId, originalResolvedEventId }),
+      type: 'exact_short_answer',
+      question: 'Write the exact fictional transfer answer.',
+      knowledgePointIds: ['linear-equations'],
+      difficulty: 'same',
+    },
+    gradingSpec: {
+      schemaVersion: 1,
+      type: 'exact_short_answer',
+      acceptedAnswers: ['fictional transfer answer'],
+      caseMode: 'case_sensitive',
+    },
+    verification: {
+      schemaVersion: 1,
+      status: 'verified',
+      candidateFingerprint: 'a'.repeat(64),
+      verifierVersion: 1,
+      checks: {
+        sameKnowledgePoint: true,
+        selfContained: true,
+        answerConsistent: true,
+        answerNotLeaked: true,
+        singleAnswerOrExactSet: true,
+        middleSchoolScope: true,
+        meaningfullyDifferent: true,
+      },
+    },
+  };
+}
 
 describe('Zhongkao coach TypeBox input boundary', () => {
   it('accepts exactly the seven model actions', () => {
@@ -202,6 +254,10 @@ describe('Zhongkao coach TypeBox input boundary', () => {
     'attemptEventId',
     'submissionEventId',
     'evaluationEventId',
+    'outcome',
+    'correct',
+    'gradingSpec',
+    'expectedAnswer',
     'createdAt',
     'answerUnlocked',
     'viewedFullAnswer',
@@ -528,7 +584,7 @@ describe('Zhongkao coach immutable tool execution', () => {
     });
   });
 
-  it('rejects transfer hints before creating a pending request', async () => {
+  it('issues a deterministic transfer hint without reading the grading spec', async () => {
     const h = harness();
     await seedProfile(h);
     const created = await execute(toolFor(h, 1, 'Question'), 'start', START_INPUT);
@@ -552,24 +608,29 @@ describe('Zhongkao coach immutable tool execution', () => {
       coachSessionId: created.output.coachSessionId!,
       expectedRevision: resolved.snapshot.state.revision,
       originalResolvedEventId: resolution.eventId,
-      transferQuestionId: 'transfer-question-alpha',
-      knowledgePointIds: ['linear-equations'],
-      validationRef: 'verified-generator-alpha',
+      verifiedQuestion: verifiedTransferQuestion(
+        created.output.coachSessionId!,
+        resolution.eventId,
+      ),
     });
 
-    const rejected = await execute(toolFor(h, 3, 'A transfer hint, please.'), 'transfer-hint', {
+    const issued = await execute(toolFor(h, 3, 'A transfer hint, please.'), 'transfer-hint', {
       action: 'request_hint',
       profileId: 'student-alpha',
       coachSessionId: created.output.coachSessionId,
       expectedRevision: assigned.snapshot.state.revision,
     });
 
-    expect(rejected.output).toMatchObject({
-      ok: false,
-      code: 'COACH_ACTION_NOT_ALLOWED',
-      facts: { replayed: false, eventAppended: false },
+    expect(issued.output).toMatchObject({
+      ok: true,
+      facts: { replayed: false, eventAppended: true },
+      state: { transfer: { hintsIssued: 1, keyHintUsed: false } },
+      presentation: {
+        kind: 'hint',
+        text: '先把题目中的已知条件和要解决的问题分别列出来。',
+      },
     });
-    expect(rejected.output).not.toHaveProperty('presentation');
+    expect(JSON.stringify(issued.raw)).not.toContain('fictional transfer answer');
     const sessions = await h.store.listSessions(
       'zhongkao-profile:student-alpha',
       resolveZhongkaoLearnerKeyFromOwnerId(h.deps.ownerId),
@@ -581,8 +642,217 @@ describe('Zhongkao coach immutable tool execution', () => {
       'student_attempt_submitted',
       'original_resolved',
       'transfer_question_assigned',
+      'hint_requested',
+      'hint_issued',
     ]);
-    expect(assigned.snapshot.state.transfer.pendingHintRequestEventId).toBeUndefined();
+    expect(issued.output.state?.transfer.hintsIssued).toBe(1);
+  });
+
+  it('generates, replays, and deterministically evaluates one trusted transfer answer', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const created = await execute(toolFor(h, 1, 'Solve the fictional equation 2x = 8.'), 'start', {
+      ...START_INPUT,
+    });
+    const attempted = await submitCoachAttempt(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: created.output.revision!,
+      message: { seq: 2, text: 'x = 5' },
+    });
+    const attempt = attempted.snapshot.records.at(-1)!.payload as CoachEvent;
+    await recordOriginalResolved(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: attempted.snapshot.state.revision,
+      attemptEventId: attempt.eventId,
+      outcome: 'incorrect',
+    });
+
+    const generateCandidate = vi.fn<AICallFn>(async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        type: 'exact_short_answer',
+        question: 'Write in English the number that makes 3x = 18.',
+        expectedAnswer: { acceptedAnswers: ['six'] },
+        knowledgePointIds: ['linear-equations'],
+        difficulty: 'same',
+        claims: [{ type: 'generic_knowledge_point' }],
+      }),
+    );
+    const verifyCandidate = vi.fn<AICallFn>(async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        verdict: 'accept',
+        checks: {
+          sameKnowledgePoint: true,
+          selfContained: true,
+          answerConsistent: true,
+          answerNotLeaked: true,
+          singleAnswerOrExactSet: true,
+          middleSchoolScope: true,
+          meaningfullyDifferent: true,
+        },
+      }),
+    );
+    const stateTool = toolFor(h, 3, 'unused', {
+      generationCall: generateCandidate,
+      transferVerificationCall: verifyCandidate,
+    });
+    const question = await execute(stateTool, 'transfer-question', {
+      action: 'get_state',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+    });
+    expect(question.output).toMatchObject({
+      ok: true,
+      facts: { replayed: false, eventAppended: true },
+      state: { status: 'transfer_pending', transfer: { assigned: true, attemptCount: 0 } },
+      directive: 'WAIT_FOR_TRANSFER_ANSWER',
+      presentation: {
+        kind: 'transfer_question',
+        type: 'exact_short_answer',
+        question: 'Write in English the number that makes 3x = 18.',
+        difficulty: 'same',
+      },
+    });
+
+    const replay = await execute(stateTool, 'transfer-question-replay', {
+      action: 'get_state',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+    });
+    expect(replay.output).toMatchObject({
+      ok: true,
+      facts: { replayed: true, eventAppended: false },
+    });
+    expect(replay.output.presentation).toEqual(question.output.presentation);
+    expect(generateCandidate).toHaveBeenCalledTimes(1);
+    expect(verifyCandidate).toHaveBeenCalledTimes(1);
+
+    const result = await execute(toolFor(h, 3, 'six'), 'transfer-answer', {
+      action: 'submit_transfer_answer',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: question.output.revision,
+    });
+    expect(result.output).toMatchObject({
+      ok: true,
+      facts: { replayed: false, eventAppended: true },
+      state: {
+        status: 'finalizing',
+        transfer: { assigned: true, attemptCount: 1, evaluated: true },
+      },
+      directive: 'PROJECT_STUDY_ATTEMPTS',
+      presentation: {
+        kind: 'transfer_result',
+        outcome: 'correct',
+        message: '这道迁移题答对了。',
+      },
+    });
+
+    for (const raw of [question.raw, replay.raw, result.raw]) {
+      expect(JSON.stringify(raw)).not.toMatch(
+        /six|expectedAnswer|acceptedAnswers|gradingSpec|candidateFingerprint|verification|answerKey/iu,
+      );
+    }
+    const sessions = await h.store.listSessions(
+      'zhongkao-profile:student-alpha',
+      resolveZhongkaoLearnerKeyFromOwnerId(h.deps.ownerId),
+    );
+    const coach = sessions.find((candidate) => candidate.kind === 'zhongkaoCoachEvent')!;
+    const records = await h.store.listRecords(coach.id);
+    expect(records.map((record) => (record.payload as CoachEvent).eventType)).toEqual([
+      'coach_started',
+      'student_attempt_submitted',
+      'original_resolved',
+      'transfer_question_assigned',
+      'transfer_answer_submitted',
+      'transfer_answer_evaluated',
+    ]);
+    expect(sessions.map((session) => session.kind)).not.toContain('zhongkaoStudyAttempt');
+  });
+
+  it('reconciles a persisted transfer submission through get_state without reading the new turn', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const created = await execute(toolFor(h, 1, 'Question'), 'start-pending-transfer', START_INPUT);
+    const attempted = await submitCoachAttempt(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: created.output.revision!,
+      message: { seq: 2, text: 'A fictional incorrect attempt.' },
+    });
+    const attempt = attempted.snapshot.records.at(-1)!.payload as CoachEvent;
+    const resolved = await recordOriginalResolved(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: attempted.snapshot.state.revision,
+      attemptEventId: attempt.eventId,
+      outcome: 'incorrect',
+    });
+    const resolution = resolved.snapshot.records.at(-1)!.payload as CoachEvent;
+    const assigned = await assignVerifiedTransferQuestion(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: resolved.snapshot.state.revision,
+      originalResolvedEventId: resolution.eventId,
+      verifiedQuestion: verifiedTransferQuestion(
+        created.output.coachSessionId!,
+        resolution.eventId,
+      ),
+    });
+    await submitCoachTransferAnswer(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: assigned.snapshot.state.revision,
+      message: { seq: 3, text: 'fictional transfer answer' },
+    });
+
+    const reader = vi.fn(async () => ({ seq: 4, text: 'must not be read' }));
+    const recovered = await execute(
+      toolFor(h, 4, 'must not be read', { reader }),
+      'recover-pending-transfer',
+      {
+        action: 'get_state',
+        profileId: 'student-alpha',
+        coachSessionId: created.output.coachSessionId,
+      },
+    );
+    expect(reader).not.toHaveBeenCalled();
+    expect(recovered.output).toMatchObject({
+      ok: true,
+      facts: { replayed: false, eventAppended: true },
+      state: { status: 'finalizing', transfer: { attemptCount: 1, evaluated: true } },
+      directive: 'PROJECT_STUDY_ATTEMPTS',
+      presentation: {
+        kind: 'transfer_result',
+        outcome: 'correct',
+        message: '这道迁移题答对了。',
+      },
+    });
+    expect(JSON.stringify(recovered.raw)).not.toMatch(
+      /fictional transfer answer|acceptedAnswers|gradingSpec|verification/iu,
+    );
+
+    const replayReader = vi.fn(async () => ({ seq: 5, text: 'must not be read either' }));
+    const replayed = await execute(
+      toolFor(h, 5, 'must not be read either', { reader: replayReader }),
+      'replay-persisted-evaluation',
+      {
+        action: 'get_state',
+        profileId: 'student-alpha',
+        coachSessionId: created.output.coachSessionId,
+      },
+    );
+    expect(replayReader).not.toHaveBeenCalled();
+    expect(replayed.output).toMatchObject({
+      ok: true,
+      facts: { replayed: true, eventAppended: false },
+      state: { status: 'finalizing', transfer: { attemptCount: 1, evaluated: true } },
+      directive: 'PROJECT_STUDY_ATTEMPTS',
+      presentation: recovered.output.presentation,
+    });
   });
 
   it('uses the trusted latest CAS revision to clear the exact pending hint', async () => {
@@ -729,15 +999,152 @@ describe('Zhongkao coach immutable tool execution', () => {
     expect(replay.output.presentation).toEqual(revealed.output.presentation);
     expect(replay.output.facts).toEqual({ replayed: true, eventAppended: false });
 
-    const state = await execute(toolFor(h, 5, 'State only'), 'state', {
-      action: 'get_state',
-      profileId: 'student-alpha',
-      coachSessionId: created.output.coachSessionId,
+    const transferCandidate = vi.fn<AICallFn>(async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        type: 'numeric',
+        question: 'A number multiplied by 3 equals 15. What is the number?',
+        expectedAnswer: { expectedNumericValue: 5 },
+        knowledgePointIds: ['linear-equations'],
+        difficulty: 'same',
+        claims: [],
+      }),
+    );
+    const transferVerifier = vi.fn<AICallFn>(async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        verdict: 'accept',
+        checks: {
+          sameKnowledgePoint: true,
+          selfContained: true,
+          answerConsistent: true,
+          answerNotLeaked: true,
+          singleAnswerOrExactSet: true,
+          middleSchoolScope: true,
+          meaningfullyDifferent: true,
+        },
+      }),
+    );
+    const state = await execute(
+      toolFor(h, 5, 'State only', {
+        generationCall: transferCandidate,
+        transferVerificationCall: transferVerifier,
+      }),
+      'state',
+      {
+        action: 'get_state',
+        profileId: 'student-alpha',
+        coachSessionId: created.output.coachSessionId,
+      },
+    );
+    expect(state.output).toMatchObject({
+      ok: true,
+      facts: { replayed: false, eventAppended: true },
+      presentation: {
+        kind: 'transfer_question',
+        type: 'numeric',
+        question: 'A number multiplied by 3 equals 15. What is the number?',
+      },
     });
-    expect(state.output).not.toHaveProperty('presentation');
+    expect(transferCandidate).toHaveBeenCalledTimes(1);
+    expect(transferVerifier).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(state.raw)).not.toContain(
       'Use inverse operations to isolate the unknown.',
     );
+  });
+
+  it('repairs a reveal-only crash window through get_state before assigning transfer', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const created = await execute(
+      toolFor(h, 1, 'Solve 2x = 8.'),
+      'start-reveal-window',
+      START_INPUT,
+    );
+    const first = await submitCoachAttempt(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: created.output.revision!,
+      message: { seq: 2, text: 'x = 3' },
+    });
+    const second = await submitCoachAttempt(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: first.snapshot.state.revision,
+      message: { seq: 3, text: 'x = 5' },
+    });
+    const requested = await requestCoachFullSolution(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: second.snapshot.state.revision,
+      message: { seq: 4, text: 'Show the full solution.' },
+    });
+    const request = requested.snapshot.records.at(-1)!.payload as CoachEvent;
+    expect(request.eventType).toBe('full_solution_requested');
+    const revealed = await recordFullSolutionRevealed(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: requested.snapshot.state.revision,
+      requestEventId: request.eventId,
+      explanation: 'A durable fictional explanation.',
+      finalAnswer: 'x = 4',
+    });
+    expect(revealed.snapshot.state.original).toMatchObject({
+      viewedFullAnswer: true,
+      resolved: false,
+    });
+
+    const generateCandidate = vi.fn<AICallFn>(async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        type: 'numeric',
+        question: 'A number multiplied by 3 equals 15. What is the number?',
+        expectedAnswer: { expectedNumericValue: 5 },
+        knowledgePointIds: ['linear-equations'],
+        difficulty: 'same',
+        claims: [],
+      }),
+    );
+    const verifyCandidate = vi.fn<AICallFn>(async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        verdict: 'accept',
+        checks: {
+          sameKnowledgePoint: true,
+          selfContained: true,
+          answerConsistent: true,
+          answerNotLeaked: true,
+          singleAnswerOrExactSet: true,
+          middleSchoolScope: true,
+          meaningfullyDifferent: true,
+        },
+      }),
+    );
+    const recovered = await execute(
+      toolFor(h, 5, 'State only', {
+        generationCall: generateCandidate,
+        transferVerificationCall: verifyCandidate,
+      }),
+      'recover-reveal-window',
+      {
+        action: 'get_state',
+        profileId: 'student-alpha',
+        coachSessionId: created.output.coachSessionId,
+      },
+    );
+    expect(recovered.output).toMatchObject({
+      ok: true,
+      state: { original: { viewedFullAnswer: true, resolved: true } },
+      directive: 'WAIT_FOR_TRANSFER_ANSWER',
+      presentation: { kind: 'transfer_question', type: 'numeric' },
+    });
+    const records = await h.store.listRecords(revealed.snapshot.session.id);
+    expect(records.map((record) => (record.payload as CoachEvent).eventType).slice(-3)).toEqual([
+      'full_solution_revealed',
+      'original_resolved',
+      'transfer_question_assigned',
+    ]);
+    expect(records.at(-2)?.payload).not.toHaveProperty('outcome');
   });
 
   it('binds full-solution generation to the execution signal and drops a late provider result', async () => {

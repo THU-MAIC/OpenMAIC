@@ -372,6 +372,27 @@ function samePresentation(
   if (left.kind === 'coach_notice' && right.kind === 'coach_notice') {
     return left.text === right.text;
   }
+  if (left.kind === 'transfer_result' && right.kind === 'transfer_result') {
+    return left.outcome === right.outcome && left.message === right.message;
+  }
+  if (left.kind === 'transfer_question' && right.kind === 'transfer_question') {
+    if (
+      left.transferQuestionId !== right.transferQuestionId ||
+      left.type !== right.type ||
+      left.question !== right.question ||
+      left.difficulty !== right.difficulty
+    ) {
+      return false;
+    }
+    const leftChoice = 'options' in left;
+    const rightChoice = 'options' in right;
+    if (!leftChoice || !rightChoice) return !leftChoice && !rightChoice;
+    if (left.options.length !== right.options.length) return false;
+    return left.options.every(
+      (option, index) =>
+        option.id === right.options[index]?.id && option.text === right.options[index]?.text,
+    );
+  }
   return (
     left.kind === 'full_solution' &&
     right.kind === 'full_solution' &&
@@ -438,7 +459,14 @@ const STABLE_UNPROVEN_CODES_BY_ACTION: Readonly<
     'COACH_PROFILE_NOT_FOUND',
     'COACH_SESSION_NOT_FOUND',
   ]),
-  get_state: new Set(['COACH_INPUT_INVALID', 'COACH_SESSION_NOT_FOUND']),
+  get_state: new Set([
+    'COACH_INPUT_INVALID',
+    'COACH_SESSION_NOT_FOUND',
+    'TRANSFER_QUESTION_GENERATION_FAILED',
+    'TRANSFER_QUESTION_INVALID',
+    'TRANSFER_QUESTION_TYPE_UNSUPPORTED',
+    'TRANSFER_QUESTION_NOT_VERIFIED',
+  ]),
   submit_attempt: new Set([
     'COACH_INPUT_INVALID',
     'COACH_SESSION_NOT_FOUND',
@@ -462,6 +490,9 @@ const STABLE_UNPROVEN_CODES_BY_ACTION: Readonly<
     'COACH_SESSION_NOT_FOUND',
     'COACH_ACTION_NOT_ALLOWED',
     'TRANSFER_QUESTION_REQUIRED',
+    'TRANSFER_QUESTION_NOT_VERIFIED',
+    'TRANSFER_ANSWER_INVALID',
+    'TRANSFER_EVALUATION_FAILED',
     'COACH_MESSAGE_ALREADY_COUNTED',
   ]),
   abandon_problem: new Set([
@@ -502,12 +533,22 @@ export function coachToolOutputCanSettle(
   const operationProven = output.facts.eventAppended || output.facts.replayed;
   if (output.ok) {
     if (output.code !== undefined) return false;
-    if (params.action === 'get_state') return output.presentation === undefined;
+    if (params.action === 'get_state') {
+      return (
+        output.presentation === undefined ||
+        (operationProven &&
+          (output.presentation.kind === 'transfer_question' ||
+            output.presentation.kind === 'transfer_result'))
+      );
+    }
     if (params.action === 'request_hint') {
       return operationProven && output.presentation?.kind === 'hint';
     }
     if (params.action === 'request_full_solution') {
       return operationProven && output.presentation?.kind === 'full_solution';
+    }
+    if (params.action === 'submit_transfer_answer') {
+      return operationProven && output.presentation?.kind === 'transfer_result';
     }
     if (!operationProven) return false;
     return output.presentation === undefined;

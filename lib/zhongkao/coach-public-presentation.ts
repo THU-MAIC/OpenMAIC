@@ -5,6 +5,29 @@ import type { CoachErrorCode } from './coach-errors';
 
 const CLOSED = { additionalProperties: false } as const;
 const CANONICAL_TEXT_PATTERN = '^(?:\\S|\\S[\\s\\S]*\\S)$';
+const IDENTIFIER_PATTERN = '^[^\\s\\u0000-\\u001f\\u007f]{1,128}$';
+const IDENTIFIER = Type.String({ minLength: 1, maxLength: 128, pattern: IDENTIFIER_PATTERN });
+const TRANSFER_QUESTION_TEXT = Type.String({
+  minLength: 1,
+  maxLength: 4_000,
+  pattern: CANONICAL_TEXT_PATTERN,
+});
+const TRANSFER_DIFFICULTY = Type.Union([
+  Type.Literal('same'),
+  Type.Literal('slightly_easier'),
+  Type.Literal('slightly_harder'),
+]);
+const TRANSFER_OPTION_SCHEMA = Type.Object(
+  {
+    id: IDENTIFIER,
+    text: Type.String({ minLength: 1, maxLength: 1_000, pattern: CANONICAL_TEXT_PATTERN }),
+  },
+  CLOSED,
+);
+const TRANSFER_OPTIONS_SCHEMA = Type.Array(TRANSFER_OPTION_SCHEMA, {
+  minItems: 3,
+  maxItems: 6,
+});
 
 export const COACH_HINT_PRESENTATION_SCHEMA = Type.Object(
   {
@@ -49,15 +72,87 @@ export const COACH_NOTICE_PRESENTATION_SCHEMA = Type.Object(
   CLOSED,
 );
 
+const TransferQuestionPresentationBase = {
+  kind: Type.Literal('transfer_question'),
+  transferQuestionId: IDENTIFIER,
+  question: TRANSFER_QUESTION_TEXT,
+  difficulty: TRANSFER_DIFFICULTY,
+} as const;
+
+export const COACH_TRANSFER_QUESTION_PRESENTATION_SCHEMA = Type.Union([
+  Type.Object(
+    {
+      ...TransferQuestionPresentationBase,
+      type: Type.Literal('single_choice'),
+      options: TRANSFER_OPTIONS_SCHEMA,
+    },
+    CLOSED,
+  ),
+  Type.Object(
+    {
+      ...TransferQuestionPresentationBase,
+      type: Type.Literal('multiple_choice'),
+      options: TRANSFER_OPTIONS_SCHEMA,
+    },
+    CLOSED,
+  ),
+  Type.Object(
+    {
+      ...TransferQuestionPresentationBase,
+      type: Type.Literal('numeric'),
+    },
+    CLOSED,
+  ),
+  Type.Object(
+    {
+      ...TransferQuestionPresentationBase,
+      type: Type.Literal('exact_short_answer'),
+    },
+    CLOSED,
+  ),
+]);
+
+export const COACH_TRANSFER_RESULT_MESSAGES = Object.freeze({
+  correct: '这道迁移题答对了。',
+  incorrect: '这次迁移还没有答对，先把这次结果记录下来。',
+} as const);
+
+export const COACH_TRANSFER_RESULT_PRESENTATION_SCHEMA = Type.Union([
+  Type.Object(
+    {
+      kind: Type.Literal('transfer_result'),
+      outcome: Type.Literal('correct'),
+      message: Type.Literal(COACH_TRANSFER_RESULT_MESSAGES.correct),
+    },
+    CLOSED,
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal('transfer_result'),
+      outcome: Type.Literal('incorrect'),
+      message: Type.Literal(COACH_TRANSFER_RESULT_MESSAGES.incorrect),
+    },
+    CLOSED,
+  ),
+]);
+
 /** The only student-visible terminal payloads a guarded Coach turn may publish. */
 export const COACH_TERMINAL_PRESENTATION_SCHEMA = Type.Union([
   COACH_HINT_PRESENTATION_SCHEMA,
   COACH_FULL_SOLUTION_PRESENTATION_SCHEMA,
+  COACH_TRANSFER_QUESTION_PRESENTATION_SCHEMA,
+  COACH_TRANSFER_RESULT_PRESENTATION_SCHEMA,
   COACH_NOTICE_PRESENTATION_SCHEMA,
 ]);
 
 export type CoachHintPresentation = Static<typeof COACH_HINT_PRESENTATION_SCHEMA>;
 export type CoachFullSolutionPresentation = Static<typeof COACH_FULL_SOLUTION_PRESENTATION_SCHEMA>;
+export type CoachTransferQuestionPresentation = Static<
+  typeof COACH_TRANSFER_QUESTION_PRESENTATION_SCHEMA
+>;
+export type CoachTransferResultPresentation = Static<
+  typeof COACH_TRANSFER_RESULT_PRESENTATION_SCHEMA
+>;
 export type CoachNoticePresentation = Static<typeof COACH_NOTICE_PRESENTATION_SCHEMA>;
 export type CoachTerminalPresentation = Static<typeof COACH_TERMINAL_PRESENTATION_SCHEMA>;
 
@@ -90,6 +185,49 @@ export function validateCoachTerminalPresentation(
   if (presentation.kind === 'hint') return { kind: 'hint', text: presentation.text };
   if (presentation.kind === 'coach_notice') {
     return { kind: 'coach_notice', text: presentation.text };
+  }
+  if (presentation.kind === 'transfer_question') {
+    if (presentation.type === 'single_choice' || presentation.type === 'multiple_choice') {
+      const options = presentation.options;
+      const optionIds = options.map((option) => option.id);
+      const optionTexts = options.map((option) =>
+        option.text.normalize('NFKC').trim().replace(/\s+/gu, ' '),
+      );
+      if (
+        new Set(optionIds).size !== optionIds.length ||
+        new Set(optionTexts).size !== optionTexts.length
+      ) {
+        return null;
+      }
+      return {
+        kind: 'transfer_question',
+        transferQuestionId: presentation.transferQuestionId,
+        type: presentation.type,
+        question: presentation.question,
+        options: options.map((option) => ({ ...option })),
+        difficulty: presentation.difficulty,
+      };
+    }
+    return {
+      kind: 'transfer_question',
+      transferQuestionId: presentation.transferQuestionId,
+      type: presentation.type,
+      question: presentation.question,
+      difficulty: presentation.difficulty,
+    };
+  }
+  if (presentation.kind === 'transfer_result') {
+    return presentation.outcome === 'correct'
+      ? {
+          kind: 'transfer_result',
+          outcome: 'correct',
+          message: COACH_TRANSFER_RESULT_MESSAGES.correct,
+        }
+      : {
+          kind: 'transfer_result',
+          outcome: 'incorrect',
+          message: COACH_TRANSFER_RESULT_MESSAGES.incorrect,
+        };
   }
   return {
     kind: 'full_solution',
@@ -128,6 +266,11 @@ export function buildCoachNotice(reason: CoachTerminalNoticeReason): CoachNotice
     case 'FULL_SOLUTION_CONTENT_INVALID':
     case 'COACH_GENERATION_UNAVAILABLE':
     case 'COACH_RUNTIME_UNAVAILABLE':
+    case 'TRANSFER_QUESTION_GENERATION_FAILED':
+    case 'TRANSFER_QUESTION_INVALID':
+    case 'TRANSFER_QUESTION_TYPE_UNSUPPORTED':
+    case 'TRANSFER_QUESTION_NOT_VERIFIED':
+    case 'TRANSFER_EVALUATION_FAILED':
       text = GENERATION_NOTICE;
       break;
     case 'COACH_PROFILE_NOT_FOUND':
@@ -145,6 +288,14 @@ export function buildCoachNotice(reason: CoachTerminalNoticeReason): CoachNotice
 export function renderCoachTerminalPresentation(presentation: CoachTerminalPresentation): string {
   const validated = validateCoachTerminalPresentation(presentation);
   if (!validated) throw new Error('Invalid Coach terminal presentation');
+  if (validated.kind === 'transfer_question') {
+    const options =
+      validated.type === 'single_choice' || validated.type === 'multiple_choice'
+        ? validated.options.map((option) => `${option.id}. ${option.text}`).join('\n')
+        : undefined;
+    return options ? `${validated.question}\n\n${options}` : validated.question;
+  }
+  if (validated.kind === 'transfer_result') return validated.message;
   if (validated.kind === 'full_solution' && validated.finalAnswer !== undefined) {
     return `${validated.explanation}\n\n${validated.finalAnswer}`;
   }

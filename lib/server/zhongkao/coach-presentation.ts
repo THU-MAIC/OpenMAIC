@@ -8,6 +8,7 @@ import {
   getCoachProblemState,
   recordFullSolutionRevealed,
   recordHintIssued,
+  recordOriginalResolved,
   type CoachServiceDeps,
 } from '@/lib/server/zhongkao/coach-service';
 import type { CoachRuntimeSnapshot } from '@/lib/server/zhongkao/coach-runtime';
@@ -15,6 +16,8 @@ import { CoachError } from '@/lib/zhongkao/coach-errors';
 import type {
   CoachFullSolutionPresentation,
   CoachHintPresentation,
+  CoachTransferQuestionPresentation,
+  CoachTransferResultPresentation,
 } from '@/lib/zhongkao/coach-public-presentation';
 import {
   assertCoachEvent,
@@ -37,7 +40,11 @@ import {
 } from './coach-generation';
 import { resolveZhongkaoLearnerKeyFromOwnerId } from './learner-identity';
 
-export type CoachPresentation = CoachHintPresentation | CoachFullSolutionPresentation;
+export type CoachPresentation =
+  | CoachHintPresentation
+  | CoachFullSolutionPresentation
+  | CoachTransferQuestionPresentation
+  | CoachTransferResultPresentation;
 
 export interface CoachPresentationResult {
   snapshot: CoachRuntimeSnapshot;
@@ -85,10 +92,10 @@ function startEvent(snapshot: CoachRuntimeSnapshot) {
   return start;
 }
 
-function lastOriginalAttempt(snapshot: CoachRuntimeSnapshot): string | undefined {
+function lastOriginalAttempt(snapshot: CoachRuntimeSnapshot) {
   return events(snapshot)
     .filter((event) => event.eventType === 'student_attempt_submitted')
-    .at(-1)?.studentResponse;
+    .at(-1);
 }
 
 async function curriculumMode(
@@ -167,6 +174,28 @@ function persistedSolution(
     : undefined;
 }
 
+export async function ensureFullSolutionResolution(
+  deps: CoachPresentationDependencies,
+  snapshot: CoachRuntimeSnapshot,
+) {
+  if (snapshot.state.original.resolved) {
+    return { snapshot, replayed: true, eventAppended: false };
+  }
+  const reveals = events(snapshot).filter((event) => event.eventType === 'full_solution_revealed');
+  const reveal = reveals.length === 1 ? reveals[0] : undefined;
+  const attempt = lastOriginalAttempt(snapshot);
+  if (!reveal || reveal.eventType !== 'full_solution_revealed' || !attempt) {
+    throw new CoachError('COACH_EVENT_CONFLICT');
+  }
+  return recordOriginalResolved(deps, {
+    profileId: snapshot.state.profileId,
+    coachSessionId: snapshot.state.coachSessionId,
+    expectedRevision: snapshot.state.revision,
+    attemptEventId: attempt.eventId,
+    fullSolutionEventId: reveal.eventId,
+  });
+}
+
 function persistedFailure(
   snapshot: CoachRuntimeSnapshot,
   requestEventId: string,
@@ -182,9 +211,14 @@ function persistedFailure(
   return failures[0]?.eventType === 'presentation_failed' ? failures[0].failureCode : undefined;
 }
 
-export async function completeOriginalHintRequest(
+export async function completeCoachHintRequest(
   deps: CoachPresentationDependencies,
-  input: { profileId: string; coachSessionId: string; userMessageSeq: number },
+  input: {
+    profileId: string;
+    coachSessionId: string;
+    userMessageSeq: number;
+    requiredPhase?: 'original' | 'transfer';
+  },
 ): Promise<CoachPresentationResult | undefined> {
   const snapshot = await getCoachProblemState(deps, input.profileId, input.coachSessionId);
   throwIfAborted(deps.abortSignal);
@@ -194,18 +228,19 @@ export async function completeOriginalHintRequest(
     deps.agentSessionId,
     input.userMessageSeq,
   );
-  if (request.phase !== 'original') return undefined;
+  if (input.requiredPhase !== undefined && request.phase !== input.requiredPhase) return undefined;
   const replay = persistedHint(snapshot, request);
   if (replay) {
     return { snapshot, presentation: replay, replayed: true, eventAppended: false };
   }
   const failure = persistedFailure(snapshot, request.eventId, 'hint');
   if (failure) throw new CoachError(failure);
-  if (snapshot.state.original.pendingHintRequestEventId !== request.eventId) {
+  const phase = request.phase === 'original' ? snapshot.state.original : snapshot.state.transfer;
+  if (phase.pendingHintRequestEventId !== request.eventId) {
     throw new CoachError('COACH_ACTION_NOT_ALLOWED');
   }
 
-  const hintOrdinal = (snapshot.state.original.hintsIssued + 1) as 1 | 2 | 3;
+  const hintOrdinal = (phase.hintsIssued + 1) as 1 | 2 | 3;
   const generated = createDeterministicZhongkaoHint({
     hintOrdinal,
     isKeyHint: hintOrdinal === 3,
@@ -229,6 +264,13 @@ export async function completeOriginalHintRequest(
   };
 }
 
+export async function completeOriginalHintRequest(
+  deps: CoachPresentationDependencies,
+  input: { profileId: string; coachSessionId: string; userMessageSeq: number },
+): Promise<CoachPresentationResult | undefined> {
+  return completeCoachHintRequest(deps, { ...input, requiredPhase: 'original' });
+}
+
 export async function completeOriginalFullSolutionRequest(
   deps: CoachPresentationDependencies,
   input: { profileId: string; coachSessionId: string; userMessageSeq: number },
@@ -243,7 +285,13 @@ export async function completeOriginalFullSolutionRequest(
   );
   const replay = persistedSolution(snapshot, request);
   if (replay) {
-    return { snapshot, presentation: replay, replayed: true, eventAppended: false };
+    const resolved = await ensureFullSolutionResolution(deps, snapshot);
+    return {
+      snapshot: resolved.snapshot,
+      presentation: replay,
+      replayed: resolved.replayed,
+      eventAppended: resolved.eventAppended,
+    };
   }
   const failure = persistedFailure(snapshot, request.eventId, 'full_solution');
   if (failure) throw new CoachError(failure);
@@ -257,7 +305,7 @@ export async function completeOriginalFullSolutionRequest(
   const start = startEvent(snapshot);
   const material = await generationMaterial(deps, snapshot);
   throwIfAborted(deps.abortSignal);
-  const studentAttempt = lastOriginalAttempt(snapshot);
+  const originalAttempt = lastOriginalAttempt(snapshot);
   const mode = await curriculumMode(deps, snapshot);
   throwIfAborted(deps.abortSignal);
   const generated = await generateZhongkaoFullSolution(
@@ -266,7 +314,7 @@ export async function completeOriginalFullSolutionRequest(
       subjectId: snapshot.state.subjectId,
       knowledgePointIds: snapshot.state.knowledgePointIds,
       questionText: start.questionText,
-      ...(studentAttempt ? { studentAttempt } : {}),
+      ...(originalAttempt ? { studentAttempt: originalAttempt.studentResponse } : {}),
       curriculumMode: mode,
       ...(material ? { material } : {}),
     },
@@ -284,10 +332,11 @@ export async function completeOriginalFullSolutionRequest(
   throwIfAborted(deps.abortSignal);
   const presentation = persistedSolution(recorded.snapshot, request);
   if (!presentation) throw new CoachError('COACH_EVENT_CONFLICT');
+  const resolved = await ensureFullSolutionResolution(deps, recorded.snapshot);
   return {
-    snapshot: recorded.snapshot,
+    snapshot: resolved.snapshot,
     presentation,
-    replayed: recorded.replayed,
-    eventAppended: recorded.eventAppended,
+    replayed: recorded.replayed && resolved.replayed,
+    eventAppended: recorded.eventAppended || resolved.eventAppended,
   };
 }

@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 import {
+  recordFullSolutionRevealed,
   requestCoachFullSolution,
   requestCoachHint,
   startCoachProblem,
@@ -249,5 +250,120 @@ describe('Coach full-solution abort boundary', () => {
     expect(
       records.map((record) => (record.payload as { eventType: string }).eventType),
     ).not.toContain('full_solution_revealed');
+  });
+});
+
+describe('Coach full-solution resolution lifecycle', () => {
+  async function ready(h: Harness) {
+    await seedProfile(h);
+    const started = await startCoachProblem(h.deps, {
+      profileId: 'student-alpha',
+      subjectId: 'math',
+      knowledgePointIds: ['linear-equations'],
+      questionSource: { type: 'typed' },
+      message: { seq: 1, text: '虚构题目：解方程 2x = 8。' },
+    });
+    const first = await submitCoachAttempt(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: started.snapshot.state.coachSessionId,
+      expectedRevision: started.snapshot.state.revision,
+      message: { seq: 2, text: 'x = 3' },
+    });
+    const second = await submitCoachAttempt(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: started.snapshot.state.coachSessionId,
+      expectedRevision: first.snapshot.state.revision,
+      message: { seq: 3, text: 'x = 5' },
+    });
+    const requested = await requestCoachFullSolution(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: started.snapshot.state.coachSessionId,
+      expectedRevision: second.snapshot.state.revision,
+      message: { seq: 4, text: '请给出完整解析。' },
+    });
+    const request = requested.snapshot.records.at(-1)!.payload as CoachEvent;
+    if (request.eventType !== 'full_solution_requested') throw new Error('invalid fixture');
+    return { started, requested, request };
+  }
+
+  function generationCall(): AICallFn {
+    return vi.fn(async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        explanation: '先将等式两边同时除以 2。',
+        finalAnswer: 'x = 4',
+        claims: [],
+      }),
+    );
+  }
+
+  it('persists the reveal before a causal resolution with no invented outcome', async () => {
+    const h = harness();
+    const seeded = await ready(h);
+    const completed = await completeOriginalFullSolutionRequest(
+      { ...h.deps, generationCall: generationCall() },
+      {
+        profileId: 'student-alpha',
+        coachSessionId: seeded.started.snapshot.state.coachSessionId,
+        userMessageSeq: 4,
+      },
+    );
+    const events = completed.snapshot.records.map((record) => record.payload as CoachEvent);
+    expect(events.slice(-2).map((event) => event.eventType)).toEqual([
+      'full_solution_revealed',
+      'original_resolved',
+    ]);
+    const reveal = events.at(-2)!;
+    const resolution = events.at(-1)!;
+    expect(resolution).toMatchObject({
+      eventType: 'original_resolved',
+      fullSolutionEventId: reveal.eventId,
+    });
+    expect(resolution).not.toHaveProperty('outcome');
+    expect(completed.snapshot.state.original).toMatchObject({
+      viewedFullAnswer: true,
+      resolved: true,
+    });
+    expect(completed.snapshot.state.original).not.toHaveProperty('outcome');
+  });
+
+  it('repairs a persisted reveal whose causal resolution response was interrupted', async () => {
+    const h = harness();
+    const seeded = await ready(h);
+    const revealed = await recordFullSolutionRevealed(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: seeded.started.snapshot.state.coachSessionId,
+      expectedRevision: seeded.requested.snapshot.state.revision,
+      requestEventId: seeded.request.eventId,
+      explanation: '已持久化的虚构完整解析。',
+      finalAnswer: 'x = 4',
+    });
+    expect(revealed.snapshot.state.original).toMatchObject({
+      viewedFullAnswer: true,
+      resolved: false,
+    });
+    const provider = vi.fn<AICallFn>();
+    const repaired = await completeOriginalFullSolutionRequest(
+      { ...h.deps, generationCall: provider },
+      {
+        profileId: 'student-alpha',
+        coachSessionId: seeded.started.snapshot.state.coachSessionId,
+        userMessageSeq: 4,
+      },
+    );
+    expect(provider).not.toHaveBeenCalled();
+    expect(repaired).toMatchObject({
+      presentation: {
+        kind: 'full_solution',
+        explanation: '已持久化的虚构完整解析。',
+        finalAnswer: 'x = 4',
+      },
+      replayed: false,
+      eventAppended: true,
+      snapshot: { state: { original: { resolved: true } } },
+    });
+    expect(
+      repaired.snapshot.records.map((record) => (record.payload as CoachEvent).eventType).slice(-2),
+    ).toEqual(['full_solution_revealed', 'original_resolved']);
   });
 });

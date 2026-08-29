@@ -2,7 +2,11 @@ import type { RuntimeRecord } from '@openmaic/dsl';
 import { describe, expect, it } from 'vitest';
 
 import type { CoachEvent, CoachPhase } from '@/lib/zhongkao/coach-event';
-import { directiveForCoachState, isFullSolutionAvailable } from '@/lib/zhongkao/coach-policy';
+import {
+  allowedCoachActions,
+  directiveForCoachState,
+  isFullSolutionAvailable,
+} from '@/lib/zhongkao/coach-policy';
 import { foldCoachEvents } from '@/lib/zhongkao/coach-state';
 
 const EPOCH = Date.parse('2026-08-28T08:00:00.000Z');
@@ -118,15 +122,69 @@ function resolution(seq: number, attemptEventId: string): CoachEvent {
   };
 }
 
-function assignment(seq: number, originalResolvedEventId: string): CoachEvent {
+function assignment(
+  seq: number,
+  originalResolvedEventId: string,
+  knowledgePointIds: readonly string[] = ['linear-equations'],
+): CoachEvent {
   return {
     ...base('transfer_question_assigned', seq),
     eventType: 'transfer_question_assigned',
     originalResolvedEventId,
     transferQuestionId: 'transfer-alpha',
-    knowledgePointIds: ['linear-equations'],
+    knowledgePointIds,
     validationRef: 'verified-generator-alpha',
   };
+}
+
+function enrichedAssignment(
+  seq: number,
+  originalResolvedEventId: string,
+  overrides: {
+    outerTransferQuestionId?: string;
+    publicTransferQuestionId?: string;
+    outerKnowledgePointIds?: readonly string[];
+    publicKnowledgePointIds?: readonly string[];
+  } = {},
+): CoachEvent {
+  const outerTransferQuestionId = overrides.outerTransferQuestionId ?? 'transfer-alpha';
+  const outerKnowledgePointIds = overrides.outerKnowledgePointIds ?? ['linear-equations'];
+  return {
+    ...assignment(seq, originalResolvedEventId, outerKnowledgePointIds),
+    transferQuestionId: outerTransferQuestionId,
+    assignmentSchemaVersion: 1,
+    assignmentPayload: {
+      publicQuestion: {
+        schemaVersion: 1,
+        transferQuestionId: overrides.publicTransferQuestionId ?? outerTransferQuestionId,
+        type: 'numeric',
+        question: 'Give the numeric answer for this fictional transfer question.',
+        knowledgePointIds: overrides.publicKnowledgePointIds ?? outerKnowledgePointIds,
+        difficulty: 'same',
+      },
+      gradingSpec: {
+        schemaVersion: 1,
+        type: 'numeric',
+        expectedNumericValue: 7,
+        tolerance: 0,
+      },
+      verification: {
+        schemaVersion: 1,
+        status: 'verified',
+        candidateFingerprint: 'b'.repeat(64),
+        verifierVersion: 1,
+        checks: {
+          sameKnowledgePoint: true,
+          selfContained: true,
+          answerConsistent: true,
+          answerNotLeaked: true,
+          singleAnswerOrExactSet: true,
+          middleSchoolScope: true,
+          meaningfullyDifferent: true,
+        },
+      },
+    },
+  } as CoachEvent;
 }
 
 function transferSubmission(seq: number, messageSeq = seq + 1): CoachEvent {
@@ -376,12 +434,101 @@ describe('foldCoachEvents strict deterministic projection', () => {
     expect(() => foldCoachEvents(records(events))).toThrow('COACH_EVENT_CONFLICT');
   });
 
+  it('folds a causal full-solution resolution without inventing an original outcome', () => {
+    const first = attempt(1, 2);
+    const second = attempt(2, 3);
+    const requested = solutionRequest(3, 4);
+    const revealed = solutionReveal(4, requested.eventId);
+    const resolved: CoachEvent = {
+      ...base('original_resolved', 5),
+      eventType: 'original_resolved',
+      attemptEventId: second.eventId,
+      fullSolutionEventId: revealed.eventId,
+    };
+    const state = foldCoachEvents(records([start(), first, second, requested, revealed, resolved]));
+    expect(state.original).toMatchObject({
+      resolved: true,
+      viewedFullAnswer: true,
+      resolutionEventId: resolved.eventId,
+    });
+    expect(state.original).not.toHaveProperty('outcome');
+    expect(() =>
+      foldCoachEvents(
+        records([
+          start(),
+          first,
+          second,
+          requested,
+          revealed,
+          { ...resolved, fullSolutionEventId: 'missing-reveal' } as CoachEvent,
+        ]),
+      ),
+    ).toThrow('COACH_EVENT_CONFLICT');
+  });
+
   it('requires assignment to cite the authoritative resolution', () => {
     const originalAttempt = attempt(1, 2);
     const resolved = resolution(2, originalAttempt.eventId);
     expect(() =>
       foldCoachEvents(
         records([start(), originalAttempt, resolved, assignment(3, 'wrong-resolution')]),
+      ),
+    ).toThrow('COACH_EVENT_CONFLICT');
+  });
+
+  it('allows a non-empty transfer knowledge-point subset but rejects additions', () => {
+    const originalAttempt = attempt(1, 2);
+    const resolved = resolution(2, originalAttempt.eventId);
+    const started = {
+      ...start(),
+      knowledgePointIds: ['linear-equations', 'equation-transformations'],
+    } as CoachEvent;
+    const subset = assignment(3, resolved.eventId, ['linear-equations']);
+    expect(
+      foldCoachEvents(records([started, originalAttempt, resolved, subset])).transfer.assigned,
+    ).toBe(true);
+    expect(() =>
+      foldCoachEvents(
+        records([
+          started,
+          originalAttempt,
+          resolved,
+          assignment(3, resolved.eventId, ['linear-equations', 'quadratic-equations']),
+        ]),
+      ),
+    ).toThrow('COACH_EVENT_CONFLICT');
+  });
+
+  it('binds enriched public assignment ids and knowledge points to the outer event facts', () => {
+    const originalAttempt = attempt(1, 2);
+    const resolved = resolution(2, originalAttempt.eventId);
+    expect(
+      foldCoachEvents(
+        records([start(), originalAttempt, resolved, enrichedAssignment(3, resolved.eventId)]),
+      ).transfer.assigned,
+    ).toBe(true);
+    expect(() =>
+      foldCoachEvents(
+        records([
+          start(),
+          originalAttempt,
+          resolved,
+          enrichedAssignment(3, resolved.eventId, {
+            publicTransferQuestionId: 'other-transfer',
+          }),
+        ]),
+      ),
+    ).toThrow('COACH_EVENT_CONFLICT');
+    expect(() =>
+      foldCoachEvents(
+        records([
+          start(),
+          originalAttempt,
+          resolved,
+          enrichedAssignment(3, resolved.eventId, {
+            publicKnowledgePointIds: ['quadratic-equations'],
+          }),
+        ]),
       ),
     ).toThrow('COACH_EVENT_CONFLICT');
   });
@@ -418,8 +565,14 @@ describe('foldCoachEvents strict deterministic projection', () => {
   });
 
   it('completes only after evaluation and projection', () => {
-    expect(foldCoachEvents(records(completedEvents().slice(0, 5))).status).toBe('finalizing');
-    expect(foldCoachEvents(records(completedEvents().slice(0, 6))).status).toBe('finalizing');
+    const submitted = foldCoachEvents(records(completedEvents().slice(0, 5)));
+    expect(submitted.status).toBe('finalizing');
+    expect(allowedCoachActions(submitted)).toEqual(['get_state']);
+    expect(directiveForCoachState(submitted)).toBe('EVALUATE_TRANSFER_ANSWER');
+    const evaluated = foldCoachEvents(records(completedEvents().slice(0, 6)));
+    expect(evaluated.status).toBe('finalizing');
+    expect(allowedCoachActions(evaluated)).toEqual(['get_state']);
+    expect(directiveForCoachState(evaluated)).toBe('PROJECT_STUDY_ATTEMPTS');
     const completed = foldCoachEvents(records(completedEvents()));
     expect(completed.status).toBe('completed');
     expect(completed.studyAttemptsProjected).toBe(true);

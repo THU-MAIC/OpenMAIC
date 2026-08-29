@@ -35,6 +35,8 @@ import {
   deriveCoachStartOperationId,
   hashCoachMessageText,
 } from '@/lib/server/zhongkao/coach-runtime';
+import { deriveTransferQuestionId } from '@/lib/server/zhongkao/transfer-assignment';
+import type { VerifiedTransferQuestion } from '@/lib/server/zhongkao/transfer-question-private';
 import {
   ZHONGKAO_OWNER_DIGEST_LENGTH,
   ZHONGKAO_OWNER_LEARNER_PREFIX,
@@ -136,6 +138,49 @@ function lastEvent(result: { snapshot: { records: { payload: unknown }[] } }): C
   return result.snapshot.records.at(-1)!.payload as CoachEvent;
 }
 
+function verifiedTransferQuestion(
+  coachSessionId: string,
+  originalResolvedEventId: string,
+  question = 'Give the exact phrase transfer answer x equals 7.',
+): VerifiedTransferQuestion {
+  return {
+    validationStatus: 'verified',
+    validationRef: `transfer-validation:v1:${'b'.repeat(64)}`,
+    publicQuestion: {
+      schemaVersion: 1,
+      transferQuestionId: deriveTransferQuestionId({
+        coachSessionId,
+        originalResolvedEventId,
+      }),
+      type: 'exact_short_answer',
+      question,
+      knowledgePointIds: ['linear-equations'],
+      difficulty: 'same',
+    },
+    gradingSpec: {
+      schemaVersion: 1,
+      type: 'exact_short_answer',
+      acceptedAnswers: ['transfer answer x equals 7'],
+      caseMode: 'case_sensitive',
+    },
+    verification: {
+      schemaVersion: 1,
+      status: 'verified',
+      candidateFingerprint: 'a'.repeat(64),
+      verifierVersion: 1,
+      checks: {
+        sameKnowledgePoint: true,
+        selfContained: true,
+        answerConsistent: true,
+        answerNotLeaked: true,
+        singleAnswerOrExactSet: true,
+        middleSchoolScope: true,
+        meaningfullyDifferent: true,
+      },
+    },
+  };
+}
+
 async function readyForTransfer(h: Harness) {
   const created = await start(h);
   const attempted = await submitCoachAttempt(h.deps, {
@@ -158,9 +203,10 @@ async function readyForTransfer(h: Harness) {
     coachSessionId: created.snapshot.state.coachSessionId,
     expectedRevision: resolved.snapshot.state.revision,
     originalResolvedEventId: resolutionEvent.eventId,
-    transferQuestionId: 'transfer-question-alpha',
-    knowledgePointIds: ['linear-equations'],
-    validationRef: 'verified-generator-alpha',
+    verifiedQuestion: verifiedTransferQuestion(
+      created.snapshot.state.coachSessionId,
+      resolutionEvent.eventId,
+    ),
   });
   return { created, attempted, attemptEvent, resolved, resolutionEvent, assigned };
 }
@@ -669,9 +715,11 @@ describe('causal service operations and phase isolation', () => {
         coachSessionId: ready.created.snapshot.state.coachSessionId,
         expectedRevision: 999,
         originalResolvedEventId: ready.resolutionEvent.eventId,
-        transferQuestionId: 'different-transfer-question',
-        knowledgePointIds: ['linear-equations'],
-        validationRef: 'verified-generator-alpha',
+        verifiedQuestion: verifiedTransferQuestion(
+          ready.created.snapshot.state.coachSessionId,
+          ready.resolutionEvent.eventId,
+          'A conflicting verified transfer question.',
+        ),
       }),
     ).rejects.toMatchObject({ code: 'COACH_EVENT_CONFLICT' });
   });
@@ -692,17 +740,14 @@ describe('causal service operations and phase isolation', () => {
       coachSessionId: ready.created.snapshot.state.coachSessionId,
       expectedRevision: submitted.snapshot.state.revision,
       submissionEventId: submission.eventId,
-      outcome: 'correct',
     });
-    await expect(
-      recordTransferEvaluation(h.deps, {
-        profileId: 'student-alpha',
-        coachSessionId: ready.created.snapshot.state.coachSessionId,
-        expectedRevision: 999,
-        submissionEventId: submission.eventId,
-        outcome: 'incorrect',
-      }),
-    ).rejects.toMatchObject({ code: 'COACH_EVENT_CONFLICT' });
+    const replayedEvaluation = await recordTransferEvaluation(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: ready.created.snapshot.state.coachSessionId,
+      expectedRevision: 999,
+      submissionEventId: submission.eventId,
+    });
+    expect(replayedEvaluation).toMatchObject({ replayed: true, eventAppended: false });
     const evaluationEvent = lastEvent(evaluated);
     const projected = await recordStudyAttemptsProjected(h.deps, {
       profileId: 'student-alpha',

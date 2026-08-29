@@ -7,6 +7,7 @@ import {
   type CoachOutcome,
   type CoachPhase,
   type CoachQuestionSource,
+  type CoachTransferOutcome,
 } from './coach-event';
 import { isFullSolutionAvailable } from './coach-policy';
 
@@ -53,7 +54,7 @@ export interface CoachTransferState extends CoachPhaseState {
   transferQuestionId?: string;
   submissionEventIds: string[];
   evaluationEventId?: string;
-  outcome?: CoachOutcome;
+  outcome?: CoachTransferOutcome;
 }
 
 export interface CoachState {
@@ -97,6 +98,21 @@ function sameIdentifierSet(left: readonly string[], right: readonly string[]): b
   const orderedLeft = [...left].sort();
   const orderedRight = [...right].sort();
   return orderedLeft.every((value, index) => value === orderedRight[index]);
+}
+
+function isIdentifierSubset(candidate: readonly string[], allowed: readonly string[]): boolean {
+  const allowedIds = new Set(allowed);
+  return candidate.length > 0 && candidate.every((value) => allowedIds.has(value));
+}
+
+function enrichedAssignmentPublicFacts(
+  event: Extract<CoachEvent, { eventType: 'transfer_question_assigned' }>,
+): { transferQuestionId: string; knowledgePointIds: readonly string[] } | undefined {
+  if (event.assignmentSchemaVersion === undefined) return undefined;
+  const payload = event.assignmentPayload as {
+    publicQuestion: { transferQuestionId: string; knowledgePointIds: readonly string[] };
+  };
+  return payload.publicQuestion;
 }
 
 function emptyPhaseState(): CoachPhaseState {
@@ -346,17 +362,23 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
           event.attemptEventId,
           'student_attempt_submitted',
         );
+        const fullSolution =
+          event.fullSolutionEventId === undefined
+            ? undefined
+            : referencedEvent(eventsById, event.fullSolutionEventId, 'full_solution_revealed');
         if (
           attempt.phase !== 'original' ||
           !state.original.attemptEventIds.includes(attempt.eventId) ||
           state.original.resolved ||
-          state.original.pendingHintRequestEventId !== undefined
+          state.original.pendingHintRequestEventId !== undefined ||
+          (fullSolution !== undefined &&
+            (fullSolution.phase !== 'original' || !state.original.viewedFullAnswer))
         ) {
           conflict();
         }
         state.original.resolved = true;
         state.original.resolutionEventId = event.eventId;
-        state.original.outcome = event.outcome;
+        if (event.outcome !== undefined) state.original.outcome = event.outcome;
         break;
       }
       case 'transfer_question_assigned': {
@@ -365,11 +387,15 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
           event.originalResolvedEventId,
           'original_resolved',
         );
+        const publicQuestion = enrichedAssignmentPublicFacts(event);
         if (
           !state.original.resolved ||
           state.original.resolutionEventId !== resolution.eventId ||
           state.transfer.assigned ||
-          !sameIdentifierSet(state.knowledgePointIds, event.knowledgePointIds)
+          !isIdentifierSubset(event.knowledgePointIds, state.knowledgePointIds) ||
+          (publicQuestion !== undefined &&
+            (publicQuestion.transferQuestionId !== event.transferQuestionId ||
+              !sameIdentifierSet(publicQuestion.knowledgePointIds, event.knowledgePointIds)))
         ) {
           conflict();
         }

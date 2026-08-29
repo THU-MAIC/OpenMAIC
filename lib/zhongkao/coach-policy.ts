@@ -43,10 +43,9 @@ export function allowedCoachActions(state: CoachState): CoachModelAction[] {
 
   const actions: CoachModelAction[] = ['get_state'];
   if (state.transfer.assigned) {
-    if (state.transfer.attemptCount === 0) {
-      actions.push('submit_transfer_answer');
-      if (canRequestHint(state.transfer)) actions.push('request_hint');
-    }
+    if (state.transfer.attemptCount > 0) return actions;
+    actions.push('submit_transfer_answer');
+    if (canRequestHint(state.transfer)) actions.push('request_hint');
     actions.push('abandon_problem');
     return actions;
   }

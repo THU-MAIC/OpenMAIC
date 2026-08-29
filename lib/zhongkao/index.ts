@@ -8,3 +8,4 @@ export * from './profile';
 export * from './progress';
 export * from './runtime';
 export * from './study-attempt';
+export * from './transfer-question';
