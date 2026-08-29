@@ -135,6 +135,22 @@
       "emptyAgentResponses": "Die Agenten haben leere Antworten zurückgegeben; die Diskussion wurde beendet. Versuche es erneut oder prüfe deine Modelleinstellungen.",
       "streamInterrupted": "Der Stream wurde unerwartet beendet; die Diskussion konnte nicht abgeschlossen werden. Versuche es erneut."
     },
+    "elementReference": {
+      "button": "Folie referenzieren",
+      "unavailable": "Nur die aktuelle PPT-Folie kann referenziert werden",
+      "instruction": "Folienelement anklicken · Esc zum Beenden",
+      "fallback": "Weitere Folienelemente ({{count}})",
+      "clear": "Folienreferenz entfernen",
+      "summary": {
+        "noText": "Kein Text",
+        "emptyContent": "Kein Inhalt",
+        "code": "Code",
+        "line": "Linie",
+        "imageMetadata": "Bild (nur Metadaten)",
+        "videoMetadata": "Video (nur Metadaten)",
+        "audioMetadata": "Audio (nur Metadaten)"
+      }
+    },
     "tabs": {
       "lecture": "Notizen",
       "chat": "Chat"

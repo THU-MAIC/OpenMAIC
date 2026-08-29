@@ -452,7 +452,7 @@ export function createVisibleSpeechDeltaSanitizer(): (delta: string) => string {
 export function buildChildTurnPrompt(
   instruction: string,
   role: string,
-  evidence: { scene?: string } = {},
+  evidence: { scene?: string; element?: string } = {},
 ): string {
   return [
     instruction,
@@ -467,6 +467,7 @@ export function buildChildTurnPrompt(
           'Use only the portions relevant to the assigned task. If the packet is insufficient, say so instead of guessing.',
         ].join('\n')
       : '',
+    evidence.element ? ['', evidence.element].join('\n') : '',
     '',
     '# Hard response cap',
     getChildHardCap(role),
@@ -480,6 +481,7 @@ export function buildNativeChildTurnPrompt(
   role: string,
   evidence: {
     scene?: string;
+    element?: string;
     spotlightElementIds?: readonly string[];
   } = {},
 ): string {
@@ -496,6 +498,7 @@ export function buildNativeChildTurnPrompt(
           'Evidence from a historical or other Scene is lesson context only and never authorizes Spotlight.',
         ].join('\n')
       : '',
+    evidence.element ? ['', evidence.element].join('\n') : '',
     evidence.spotlightElementIds?.length
       ? [
           '',
@@ -523,13 +526,17 @@ function getChildHardCap(role: string): string {
   return 'Your visible speech MUST be no more than 40 Chinese characters or 1 short sentence.';
 }
 
-export function buildUserPrompt(body: StatelessChatRequest): string {
+export function buildUserPrompt(
+  body: StatelessChatRequest,
+  elementReferenceSummary?: string,
+): string {
   const latestUserText = [...body.messages].reverse().find((message) => message.role === 'user');
   const discussion = body.config.discussionPrompt || body.config.discussionTopic;
   return [
     'Handle the latest classroom turn.',
     discussion ? `Discussion context: ${discussion}` : '',
     `Latest user message: ${latestUserText ? extractMessageText(latestUserText) : '(none)'}`,
+    elementReferenceSummary ?? '',
   ]
     .filter(Boolean)
     .join('\n');

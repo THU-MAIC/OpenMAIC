@@ -135,6 +135,22 @@
       "emptyAgentResponses": "Các tác nhân trả về nội dung rỗng nên thảo luận đã dừng. Hãy thử lại hoặc kiểm tra cài đặt model.",
       "streamInterrupted": "Luồng dữ liệu dừng bất ngờ, thảo luận chưa hoàn tất. Vui lòng thử lại."
     },
+    "elementReference": {
+      "button": "Tham chiếu trang chiếu",
+      "unavailable": "Chỉ có thể tham chiếu trang PPT hiện tại",
+      "instruction": "Nhấp vào một phần tử · Esc để thoát",
+      "fallback": "Các phần tử khác ({{count}})",
+      "clear": "Xóa tham chiếu trang chiếu",
+      "summary": {
+        "noText": "Không có văn bản",
+        "emptyContent": "Không có nội dung",
+        "code": "Mã",
+        "line": "Đường",
+        "imageMetadata": "Hình ảnh (chỉ siêu dữ liệu)",
+        "videoMetadata": "Video (chỉ siêu dữ liệu)",
+        "audioMetadata": "Âm thanh (chỉ siêu dữ liệu)"
+      }
+    },
     "tabs": {
       "lecture": "Ghi chú",
       "chat": "Trò chuyện"

@@ -135,6 +135,22 @@
       "emptyAgentResponses": "智能体连续无响应,讨论已停止。请重新尝试或检查模型配置。",
       "streamInterrupted": "数据流意外中断,讨论未能完成。请重新尝试。"
     },
+    "elementReference": {
+      "button": "引用课件",
+      "unavailable": "仅可引用当前 PPT 页面",
+      "instruction": "点击一个课件元素 · Esc 退出",
+      "fallback": "其他课件元素（{{count}}）",
+      "clear": "取消课件引用",
+      "summary": {
+        "noText": "无文字",
+        "emptyContent": "无内容",
+        "code": "代码",
+        "line": "线条",
+        "imageMetadata": "图片（仅引用元数据）",
+        "videoMetadata": "视频（仅引用元数据）",
+        "audioMetadata": "音频（仅引用元数据）"
+      }
+    },
     "tabs": {
       "lecture": "笔记",
       "chat": "对话"

@@ -135,6 +135,22 @@
       "emptyAgentResponses": "Agents returned empty responses; discussion stopped. Try again or check your model settings.",
       "streamInterrupted": "Stream ended unexpectedly; discussion didn't complete. Please try again."
     },
+    "elementReference": {
+      "button": "Reference slide",
+      "unavailable": "Only the current PPT slide can be referenced",
+      "instruction": "Click a slide element · Esc to exit",
+      "fallback": "Other slide elements ({{count}})",
+      "clear": "Remove slide reference",
+      "summary": {
+        "noText": "No text",
+        "emptyContent": "No content",
+        "code": "Code",
+        "line": "Line",
+        "imageMetadata": "Image (metadata only)",
+        "videoMetadata": "Video (metadata only)",
+        "audioMetadata": "Audio (metadata only)"
+      }
+    },
     "tabs": {
       "lecture": "Notes",
       "chat": "Chat"

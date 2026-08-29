@@ -135,6 +135,22 @@
       "emptyAgentResponses": "에이전트가 빈 응답을 반환하여 토론이 중단되었습니다. 다시 시도하거나 모델 설정을 확인하세요.",
       "streamInterrupted": "스트림이 예기치 않게 종료되어 토론이 완료되지 않았습니다. 다시 시도해 주세요."
     },
+    "elementReference": {
+      "button": "슬라이드 참조",
+      "unavailable": "현재 PPT 슬라이드만 참조할 수 있습니다",
+      "instruction": "슬라이드 요소를 클릭하세요 · Esc로 종료",
+      "fallback": "기타 슬라이드 요소 ({{count}})",
+      "clear": "슬라이드 참조 제거",
+      "summary": {
+        "noText": "텍스트 없음",
+        "emptyContent": "콘텐츠 없음",
+        "code": "코드",
+        "line": "선",
+        "imageMetadata": "이미지 (메타데이터만)",
+        "videoMetadata": "비디오 (메타데이터만)",
+        "audioMetadata": "오디오 (메타데이터만)"
+      }
+    },
     "tabs": {
       "lecture": "노트",
       "chat": "채팅"

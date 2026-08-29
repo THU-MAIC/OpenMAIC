@@ -135,6 +135,22 @@
       "emptyAgentResponses": "エージェントが空の応答を返したため、ディスカッションを停止しました。再試行するかモデル設定をご確認ください。",
       "streamInterrupted": "ストリームが予期せず終了し、ディスカッションが完了しませんでした。再度お試しください。"
     },
+    "elementReference": {
+      "button": "スライドを参照",
+      "unavailable": "現在の PPT スライドのみ参照できます",
+      "instruction": "スライド要素をクリック · Esc で終了",
+      "fallback": "その他のスライド要素（{{count}}）",
+      "clear": "スライド参照を解除",
+      "summary": {
+        "noText": "テキストなし",
+        "emptyContent": "内容なし",
+        "code": "コード",
+        "line": "線",
+        "imageMetadata": "画像（メタデータのみ）",
+        "videoMetadata": "動画（メタデータのみ）",
+        "audioMetadata": "音声（メタデータのみ）"
+      }
+    },
     "tabs": {
       "lecture": "ノート",
       "chat": "チャット"
