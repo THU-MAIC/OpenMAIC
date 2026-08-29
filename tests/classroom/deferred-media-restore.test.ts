@@ -4,11 +4,25 @@ import {
   buildRestoredMediaTasks,
   collectPriorityMediaRefs,
   hydrateDeferredMediaTasks,
+  loadRestoredMediaTasksFromDB,
 } from '@/lib/classroom/load-classroom';
 import { resolveMediaRef } from '@/lib/media/resolve-media-ref';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
+import { useStageStore } from '@/lib/store/stage';
 import type { MediaFileRecord } from '@/lib/utils/database';
-import type { Scene } from '@/lib/types/stage';
+import type { Scene, Stage } from '@/lib/types/stage';
+
+const dbState = vi.hoisted(() => ({ records: [] as MediaFileRecord[] }));
+
+vi.mock('@/lib/utils/database', () => ({
+  db: {
+    mediaFiles: {
+      where: () => ({
+        equals: () => ({ toArray: () => Promise.resolve(dbState.records) }),
+      }),
+    },
+  },
+}));
 
 const stageId = 'stage-media';
 
@@ -382,5 +396,68 @@ describe('applyRestoredMediaTasks hydration liveness', () => {
 
     expect(URL.createObjectURL).not.toHaveBeenCalled();
     expect(useMediaGenerationStore.getState().tasks['gen_img_1']?.objectUrl).toBeUndefined();
+  });
+});
+
+describe('loadRestoredMediaTasksFromDB priority classification', () => {
+  function legacyVideoScene(id: string, videoRef: string): Scene {
+    return {
+      id,
+      stageId,
+      type: 'slide',
+      title: id,
+      order: 1,
+      content: {
+        type: 'slide',
+        canvas: {
+          id: `canvas-${id}`,
+          viewportSize: 1000,
+          viewportRatio: 0.5625,
+          theme: {
+            backgroundColor: '#fff',
+            themeColors: ['#000'],
+            fontColor: '#000',
+            fontName: 'Inter',
+          },
+          elements: [
+            {
+              id: `el-${id}`,
+              type: 'video',
+              src: videoRef,
+              left: 0,
+              top: 0,
+              width: 100,
+              height: 100,
+              rotate: 0,
+            } as never,
+          ],
+        },
+      },
+    };
+  }
+
+  it('hydrates the opening scene legacy video recovered by singleton binding', async () => {
+    // The persisted record is keyed by an allocated id with no placeholderRef;
+    // only the legacy singleton recovery binds it to the scene's gen_vid ref.
+    dbState.records = [
+      mediaRecord('asset_1', {
+        type: 'video',
+        mimeType: 'video/mp4',
+      }),
+    ];
+    useStageStore.setState({
+      stage: { id: stageId } as Stage,
+      scenes: [legacyVideoScene('scene-1', 'gen_vid_1')],
+      currentSceneId: 'scene-1',
+    });
+    try {
+      const restored = await loadRestoredMediaTasksFromDB(stageId);
+
+      expect(restored.deferred).toHaveLength(0);
+      expect(restored.tasks['asset_1']?.objectUrl).toMatch(/^blob:/);
+    } finally {
+      dbState.records = [];
+      useStageStore.setState({ stage: null, scenes: [], currentSceneId: null });
+    }
   });
 });

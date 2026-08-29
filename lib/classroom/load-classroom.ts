@@ -364,14 +364,26 @@ export async function loadRestoredMediaTasksFromDB(stageId: string): Promise<Res
     const priorityRefs = sameStage
       ? collectPriorityMediaRefs(state.scenes, state.currentSceneId)
       : new Set<string>();
+    // Legacy singleton video recovery assigns a placeholderRef at the end of
+    // the build (see withDocumentLegacyVideoRecovery), so classify against the
+    // recovered binding too — otherwise the opening scene's legacy video is
+    // deferred and stays pending until idle hydration reaches it. The metadata
+    // pass hydrates nothing, it only learns each record's effective ref.
+    const recoveredRefByElementId = new Map<string, string | undefined>(
+      Object.entries(buildRestoredMediaTasks(stageId, records, documentElements, () => false)).map(
+        ([key, task]) => [key, task.placeholderRef] as const,
+      ),
+    );
     const deferred: MediaFileRecord[] = [];
     const tasks = buildRestoredMediaTasks(stageId, records, documentElements, (record) => {
       const elementId = record.id.includes(':')
         ? record.id.split(':').slice(1).join(':')
         : record.id;
+      const recoveredRef = recoveredRefByElementId.get(elementId);
       const isPriority =
         priorityRefs.has(elementId) ||
-        (!!record.placeholderRef && priorityRefs.has(record.placeholderRef));
+        (!!record.placeholderRef && priorityRefs.has(record.placeholderRef)) ||
+        (!!recoveredRef && priorityRefs.has(recoveredRef));
       if (!isPriority) deferred.push(record);
       return isPriority;
     });
