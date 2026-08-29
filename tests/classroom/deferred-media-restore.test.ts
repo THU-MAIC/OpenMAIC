@@ -225,4 +225,58 @@ describe('hydrateDeferredMediaTasks', () => {
     expect(task?.stageId).toBe('stage-other');
     expect(task?.objectUrl).toBeUndefined();
   });
+
+  it('does not attach stale bytes to a task that regeneration restarted', async () => {
+    // A restarted task passes through pending/generating before it can be done
+    // again, so it still carries no objectUrl when the idle hydration fires.
+    useMediaGenerationStore.setState({
+      tasks: {
+        gen_img_1: {
+          elementId: 'gen_img_1',
+          type: 'image',
+          status: 'pending',
+          prompt: 'p',
+          params: {},
+          retryCount: 1,
+          stageId,
+        },
+      },
+    });
+
+    await hydrateDeferredMediaTasks(stageId, [mediaRecord('gen_img_1')]);
+
+    const task = useMediaGenerationStore.getState().tasks['gen_img_1'];
+    expect(task?.status).toBe('pending');
+    expect(task?.objectUrl).toBeUndefined();
+    expect(URL.revokeObjectURL).toHaveBeenCalled();
+  });
+
+  it('bounds idle scheduling with a timeout so a busy main thread cannot starve hydration', async () => {
+    useMediaGenerationStore.setState({
+      tasks: {
+        gen_img_1: {
+          elementId: 'gen_img_1',
+          type: 'image',
+          status: 'done',
+          prompt: 'p',
+          params: {},
+          retryCount: 0,
+          stageId,
+        },
+      },
+    });
+    const ric = vi.fn((cb: IdleRequestCallback) => {
+      cb({ didTimeout: true, timeRemaining: () => 0 });
+      return 1;
+    });
+    vi.stubGlobal('requestIdleCallback', ric);
+    try {
+      await hydrateDeferredMediaTasks(stageId, [mediaRecord('gen_img_1')]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(ric).toHaveBeenCalledWith(expect.any(Function), { timeout: expect.any(Number) });
+    expect(useMediaGenerationStore.getState().tasks['gen_img_1']?.objectUrl).toMatch(/^blob:/);
+  });
 });

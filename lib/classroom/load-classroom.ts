@@ -455,11 +455,14 @@ export function discardRestoredMediaTasks(restored: RestoredMediaTasks): void {
 /** Records hydrated per idle slice — a handful of `createObjectURL` calls. */
 const MEDIA_HYDRATION_CHUNK_SIZE = 4;
 
+/** Upper bound on one idle slice, so a busy main thread cannot starve hydration. */
+const MEDIA_HYDRATION_IDLE_TIMEOUT_MS = 1000;
+
 /** Yield to the browser between hydration chunks (idle callback when available). */
 function nextIdleSlice(): Promise<void> {
   return new Promise((resolve) => {
     if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(() => resolve());
+      requestIdleCallback(() => resolve(), { timeout: MEDIA_HYDRATION_IDLE_TIMEOUT_MS });
     } else {
       setTimeout(resolve, 0);
     }
@@ -471,7 +474,10 @@ function nextIdleSlice(): Promise<void> {
  * during the blocking load phase. Runs chunk-by-chunk at idle time. A record
  * whose task has since been replaced (classroom switch, regeneration, retry)
  * is skipped and its freshly minted URLs are revoked immediately, so a late
- * hydration can never leak URLs or overwrite another stage's task.
+ * hydration can never leak URLs or overwrite another stage's task. The
+ * `status !== 'done'` check is what catches in-flight replacements: only a
+ * deferred restore is `done` without an `objectUrl`, because regeneration and
+ * retry pass through `pending`/`generating` before they can complete.
  */
 export async function hydrateDeferredMediaTasks(
   stageId: string,
@@ -494,7 +500,12 @@ export async function hydrateDeferredMediaTasks(
       const tasks = { ...state.tasks };
       for (const entry of hydrated) {
         const existing = tasks[entry.elementId];
-        if (!existing || existing.stageId !== stageId || existing.objectUrl) {
+        if (
+          !existing ||
+          existing.stageId !== stageId ||
+          existing.status !== 'done' ||
+          existing.objectUrl
+        ) {
           URL.revokeObjectURL(entry.objectUrl);
           if (entry.poster) URL.revokeObjectURL(entry.poster);
           continue;
