@@ -327,16 +327,17 @@ export interface RestoredMediaTasks {
 
 /**
  * Media refs owned by the scene the classroom opens on (the persisted cursor,
- * else the first scene). Their blobs hydrate eagerly during load so the first
- * visible page paints its media immediately; every other record defers.
+ * else the first scene), plus the stage-level whiteboard — it stays open across
+ * standalone classroom switches, so its media can be visible before any scene
+ * is. Their blobs hydrate eagerly during load so the first visible page paints
+ * its media immediately; every other record defers.
  */
 export function collectPriorityMediaRefs(
   scenes: readonly Scene[],
   currentSceneId: string | null,
+  stageWhiteboard: readonly Pick<Slide, 'background' | 'elements'>[] = [],
 ): Set<string> {
   const refs = new Set<string>();
-  const scene = scenes.find((candidate) => candidate.id === currentSceneId) ?? scenes[0];
-  if (!scene) return refs;
   const collect = (slide: Pick<Slide, 'background' | 'elements'>) => {
     for (const slot of slideMediaReferenceSlots(slide)) {
       const ref = slot.read();
@@ -347,6 +348,9 @@ export function collectPriorityMediaRefs(
       if (slot.element) refs.add(slot.element.id);
     }
   };
+  for (const slide of stageWhiteboard) collect(slide);
+  const scene = scenes.find((candidate) => candidate.id === currentSceneId) ?? scenes[0];
+  if (!scene) return refs;
   if (scene.content.type === 'slide') collect(scene.content.canvas);
   for (const slide of scene.whiteboards ?? []) collect(slide);
   return refs;
@@ -362,7 +366,7 @@ export async function loadRestoredMediaTasksFromDB(stageId: string): Promise<Res
       ? collectDocumentMediaElements(state.stage, state.scenes)
       : [];
     const priorityRefs = sameStage
-      ? collectPriorityMediaRefs(state.scenes, state.currentSceneId)
+      ? collectPriorityMediaRefs(state.scenes, state.currentSceneId, state.stage?.whiteboard ?? [])
       : new Set<string>();
     // Legacy singleton video recovery assigns a placeholderRef at the end of
     // the build (see withDocumentLegacyVideoRecovery), so classify against the

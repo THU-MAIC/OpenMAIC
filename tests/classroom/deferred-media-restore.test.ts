@@ -138,6 +138,28 @@ describe('collectPriorityMediaRefs', () => {
     const refs = collectPriorityMediaRefs(scenes, null);
     expect(refs.has('https://cdn.example.com/a.png')).toBe(false);
   });
+
+  it('includes stage whiteboard media, which can stay visible across loads', () => {
+    const whiteboard = [
+      {
+        elements: [
+          {
+            id: 'wb-el-1',
+            type: 'image',
+            src: 'gen_img_wb',
+            left: 0,
+            top: 0,
+            width: 100,
+            height: 100,
+            rotate: 0,
+          } as never,
+        ],
+      },
+    ];
+    const refs = collectPriorityMediaRefs([], null, whiteboard);
+    expect(refs.has('gen_img_wb')).toBe(true);
+    expect(refs.has('wb-el-1')).toBe(true);
+  });
 });
 
 describe('hydrateDeferredMediaTasks', () => {
@@ -455,6 +477,44 @@ describe('loadRestoredMediaTasksFromDB priority classification', () => {
 
       expect(restored.deferred).toHaveLength(0);
       expect(restored.tasks['asset_1']?.objectUrl).toMatch(/^blob:/);
+    } finally {
+      dbState.records = [];
+      useStageStore.setState({ stage: null, scenes: [], currentSceneId: null });
+    }
+  });
+});
+
+describe('loadRestoredMediaTasksFromDB stage whiteboard priority', () => {
+  it('hydrates stage whiteboard media eagerly even when no scene uses it', async () => {
+    dbState.records = [mediaRecord('gen_img_wb')];
+    useStageStore.setState({
+      stage: {
+        id: stageId,
+        whiteboard: [
+          {
+            elements: [
+              {
+                id: 'wb-el-1',
+                type: 'image',
+                src: 'gen_img_wb',
+                left: 0,
+                top: 0,
+                width: 100,
+                height: 100,
+                rotate: 0,
+              } as never,
+            ],
+          },
+        ],
+      } as unknown as Stage,
+      scenes: [slideScene('scene-1', 'gen_img_other')],
+      currentSceneId: 'scene-1',
+    });
+    try {
+      const restored = await loadRestoredMediaTasksFromDB(stageId);
+
+      expect(restored.deferred).toHaveLength(0);
+      expect(restored.tasks['gen_img_wb']?.objectUrl).toMatch(/^blob:/);
     } finally {
       dbState.records = [];
       useStageStore.setState({ stage: null, scenes: [], currentSceneId: null });
