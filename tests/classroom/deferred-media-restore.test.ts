@@ -279,4 +279,59 @@ describe('hydrateDeferredMediaTasks', () => {
     expect(ric).toHaveBeenCalledWith(expect.any(Function), { timeout: expect.any(Number) });
     expect(useMediaGenerationStore.getState().tasks['gen_img_1']?.objectUrl).toMatch(/^blob:/);
   });
+
+  it('stops before minting any URL when the restore was superseded', async () => {
+    useMediaGenerationStore.setState({
+      tasks: {
+        gen_img_1: {
+          elementId: 'gen_img_1',
+          type: 'image',
+          status: 'done',
+          prompt: 'p',
+          params: {},
+          retryCount: 0,
+          stageId,
+        },
+      },
+    });
+
+    await hydrateDeferredMediaTasks(stageId, [mediaRecord('gen_img_1')], () => false);
+
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    expect(useMediaGenerationStore.getState().tasks['gen_img_1']?.objectUrl).toBeUndefined();
+  });
+
+  it('stops mid-loop once superseded, leaving later chunks untouched', async () => {
+    const refs = ['gen_img_1', 'gen_img_2', 'gen_img_3', 'gen_img_4', 'gen_img_5'];
+    useMediaGenerationStore.setState({
+      tasks: Object.fromEntries(
+        refs.map((ref) => [
+          ref,
+          {
+            elementId: ref,
+            type: 'image' as const,
+            status: 'done' as const,
+            prompt: 'p',
+            params: {},
+            retryCount: 0,
+            stageId,
+          },
+        ]),
+      ),
+    });
+    // Live for the first chunk (4 records), superseded before the second.
+    let checks = 0;
+
+    await hydrateDeferredMediaTasks(
+      stageId,
+      refs.map((ref) => mediaRecord(ref)),
+      () => ++checks <= 1,
+    );
+
+    const tasks = useMediaGenerationStore.getState().tasks;
+    for (const ref of refs.slice(0, 4)) {
+      expect(tasks[ref]?.objectUrl).toMatch(/^blob:/);
+    }
+    expect(tasks['gen_img_5']?.objectUrl).toBeUndefined();
+  });
 });

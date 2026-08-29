@@ -428,7 +428,17 @@ export function buildRestoredMediaTasks(
   return withDocumentLegacyVideoRecovery(restored, documentElements, stageId);
 }
 
+/**
+ * Monotonic token identifying the latest classroom restore. Applying a new
+ * restore (another classroom, or a reload of the same one) supersedes every
+ * earlier deferred hydration loop, which then stops before materializing more
+ * URLs — both to drop work for an abandoned classroom and to keep bytes read
+ * by an older load from reaching a newer load's tasks.
+ */
+let hydrationEpoch = 0;
+
 export function applyRestoredMediaTasks(restored: RestoredMediaTasks): void {
+  const epoch = ++hydrationEpoch;
   if (Object.keys(restored.tasks).length > 0) {
     useMediaGenerationStore.setState((state) => ({
       tasks: { ...state.tasks, ...restored.tasks },
@@ -437,7 +447,11 @@ export function applyRestoredMediaTasks(restored: RestoredMediaTasks): void {
   // Blob hydration continues off the load path; each deferred URL lands as an
   // in-place task update that media resolution picks up as pending → url.
   if (restored.deferred.length > 0) {
-    void hydrateDeferredMediaTasks(restored.stageId, restored.deferred).catch((error) => {
+    void hydrateDeferredMediaTasks(
+      restored.stageId,
+      restored.deferred,
+      () => epoch === hydrationEpoch,
+    ).catch((error) => {
       moduleLog.warn('Deferred media hydration failed:', error);
     });
   }
@@ -478,13 +492,21 @@ function nextIdleSlice(): Promise<void> {
  * `status !== 'done'` check is what catches in-flight replacements: only a
  * deferred restore is `done` without an `objectUrl`, because regeneration and
  * retry pass through `pending`/`generating` before they can complete.
+ *
+ * `isLive` gates the whole loop, not individual records: it is re-checked
+ * before each chunk is materialized, so a superseded restore (another
+ * classroom applied, or this stage reloaded — see `hydrationEpoch`) stops
+ * before minting URLs for records nobody will consume. Callers that omit it
+ * (tests) get an always-live loop.
  */
 export async function hydrateDeferredMediaTasks(
   stageId: string,
   records: readonly MediaFileRecord[],
+  isLive: () => boolean = () => true,
 ): Promise<void> {
   for (let start = 0; start < records.length; start += MEDIA_HYDRATION_CHUNK_SIZE) {
     await nextIdleSlice();
+    if (!isLive()) return;
     const chunk = records.slice(start, start + MEDIA_HYDRATION_CHUNK_SIZE);
     const hydrated = chunk.map((rec) => {
       const elementId = rec.id.includes(':') ? rec.id.split(':').slice(1).join(':') : rec.id;
