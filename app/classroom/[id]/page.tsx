@@ -61,7 +61,8 @@ export default function ClassroomDetailPage() {
             applyStageAndScenes: applyClassroomStageAndScenes,
           }),
         loadRestoredMediaTasks: defaultClassroomLoadDeps.loadRestoredMediaTasks,
-        applyRestoredMediaTasks: defaultClassroomLoadDeps.applyRestoredMediaTasks,
+        applyRestoredMediaTasks: (restored) =>
+          defaultClassroomLoadDeps.applyRestoredMediaTasks(restored, isCurrent),
         discardRestoredMediaTasks: defaultClassroomLoadDeps.discardRestoredMediaTasks,
         loadLegacyAgentFallbacks: defaultClassroomLoadDeps.loadLegacyAgentFallbacks,
         commitMigratedAgentConfigs: defaultClassroomLoadDeps.commitMigratedAgentConfigs,

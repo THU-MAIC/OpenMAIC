@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  applyRestoredMediaTasks,
   buildRestoredMediaTasks,
   collectPriorityMediaRefs,
   hydrateDeferredMediaTasks,
@@ -336,5 +337,50 @@ describe('hydrateDeferredMediaTasks', () => {
       expect(tasks[ref]?.objectUrl).toMatch(/^blob:/);
     }
     expect(tasks['gen_img_5']?.objectUrl).toBeUndefined();
+  });
+});
+
+describe('applyRestoredMediaTasks hydration liveness', () => {
+  function restoredWithDeferred(ref: string) {
+    return {
+      stageId,
+      tasks: {
+        [ref]: {
+          elementId: ref,
+          type: 'image' as const,
+          status: 'done' as const,
+          prompt: 'p',
+          params: {},
+          retryCount: 0,
+          stageId,
+        },
+      },
+      deferred: [mediaRecord(ref)],
+    };
+  }
+
+  const settleHydration = () =>
+    new Promise((resolve) => setTimeout(resolve, 0)).then(
+      () => new Promise((r) => setTimeout(r, 0)),
+    );
+
+  it('a newer restore supersedes an in-flight hydration', async () => {
+    applyRestoredMediaTasks(restoredWithDeferred('gen_img_1'), () => true);
+    // Even a restore with nothing to defer retires the earlier loop.
+    applyRestoredMediaTasks({ stageId, tasks: {}, deferred: [] }, () => true);
+
+    await settleHydration();
+
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    expect(useMediaGenerationStore.getState().tasks['gen_img_1']?.objectUrl).toBeUndefined();
+  });
+
+  it('stops hydrating once the owning classroom load is no longer current', async () => {
+    applyRestoredMediaTasks(restoredWithDeferred('gen_img_1'), () => false);
+
+    await settleHydration();
+
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    expect(useMediaGenerationStore.getState().tasks['gen_img_1']?.objectUrl).toBeUndefined();
   });
 });

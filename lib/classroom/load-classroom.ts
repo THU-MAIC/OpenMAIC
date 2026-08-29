@@ -441,7 +441,10 @@ export function buildRestoredMediaTasks(
  */
 let hydrationEpoch = 0;
 
-export function applyRestoredMediaTasks(restored: RestoredMediaTasks): void {
+export function applyRestoredMediaTasks(
+  restored: RestoredMediaTasks,
+  isLoadCurrent?: () => boolean,
+): void {
   const epoch = ++hydrationEpoch;
   if (Object.keys(restored.tasks).length > 0) {
     useMediaGenerationStore.setState((state) => ({
@@ -451,11 +454,12 @@ export function applyRestoredMediaTasks(restored: RestoredMediaTasks): void {
   // Blob hydration continues off the load path; each deferred URL lands as an
   // in-place task update that media resolution picks up as pending → url.
   if (restored.deferred.length > 0) {
-    void hydrateDeferredMediaTasks(
-      restored.stageId,
-      restored.deferred,
-      () => epoch === hydrationEpoch,
-    ).catch((error) => {
+    // Live only while this restore is both the latest applied one and still
+    // owned by the current classroom load: `isLoadCurrent` is the load token /
+    // effect-cleanup check, so navigation away stops the loop at the next idle
+    // boundary instead of minting URLs for a classroom nobody is watching.
+    const isLive = () => epoch === hydrationEpoch && (isLoadCurrent?.() ?? true);
+    void hydrateDeferredMediaTasks(restored.stageId, restored.deferred, isLive).catch((error) => {
       moduleLog.warn('Deferred media hydration failed:', error);
     });
   }
