@@ -83,10 +83,12 @@ export async function GET(
     const range = parseRangeHeader(req.headers.get('range'), stat.size);
 
     if (range.kind === 'unsatisfiable') {
+      // Never cache a range error: an immutable/public 416 would poison the
+      // media URL in shared and browser caches, breaking later valid requests.
       return new NextResponse(null, {
         status: 416,
         headers: {
-          ...CACHE_HEADERS,
+          'Cache-Control': 'no-store',
           'Content-Range': `bytes */${stat.size}`,
         },
       });

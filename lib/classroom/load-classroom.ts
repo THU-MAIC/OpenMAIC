@@ -341,6 +341,10 @@ export function collectPriorityMediaRefs(
     for (const slot of slideMediaReferenceSlots(slide)) {
       const ref = slot.read();
       if (ref && !isConcreteMediaAddress(ref)) refs.add(ref);
+      // Task lookup also binds by element id (see resolveMediaTaskForElement),
+      // so a record keyed `stage:<elementId>` belongs to the opening scene even
+      // when the slot carries a different opaque ref and no placeholderRef.
+      if (slot.element) refs.add(slot.element.id);
     }
   };
   if (scene.content.type === 'slide') collect(scene.content.canvas);

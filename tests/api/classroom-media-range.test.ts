@@ -109,6 +109,8 @@ describe('GET /api/classroom-media range support', () => {
 
     expect(res.status).toBe(416);
     expect(res.headers.get('Content-Range')).toBe(`bytes */${FILE_SIZE}`);
+    // A cached 416 would poison the media URL for later valid requests.
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
     expect(mocks.createReadStream).not.toHaveBeenCalled();
   });
 

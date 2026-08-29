@@ -106,19 +106,22 @@ describe('buildRestoredMediaTasks blob deferral', () => {
 });
 
 describe('collectPriorityMediaRefs', () => {
-  it('collects the media refs of the current scene', () => {
+  it('collects the media refs and element ids of the current scene', () => {
     const scenes = [slideScene('scene-1', 'gen_img_1'), slideScene('scene-2', 'gen_img_2')];
-    expect([...collectPriorityMediaRefs(scenes, 'scene-2')]).toEqual(['gen_img_2']);
+    // Element ids are included because task lookup also binds records keyed by
+    // element id (see resolveMediaTaskForElement).
+    expect([...collectPriorityMediaRefs(scenes, 'scene-2')]).toEqual(['gen_img_2', 'el-scene-2']);
   });
 
   it('falls back to the first scene when no cursor is set', () => {
     const scenes = [slideScene('scene-1', 'gen_img_1'), slideScene('scene-2', 'gen_img_2')];
-    expect([...collectPriorityMediaRefs(scenes, null)]).toEqual(['gen_img_1']);
+    expect([...collectPriorityMediaRefs(scenes, null)]).toEqual(['gen_img_1', 'el-scene-1']);
   });
 
   it('ignores concrete addresses (only generated refs need blob hydration)', () => {
     const scenes = [slideScene('scene-1', 'https://cdn.example.com/a.png')];
-    expect(collectPriorityMediaRefs(scenes, null).size).toBe(0);
+    const refs = collectPriorityMediaRefs(scenes, null);
+    expect(refs.has('https://cdn.example.com/a.png')).toBe(false);
   });
 });
 
