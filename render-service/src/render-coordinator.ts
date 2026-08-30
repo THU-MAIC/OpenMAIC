@@ -13,6 +13,7 @@ import type { ArtifactStore } from './artifact-store.js';
 import { config } from './config.js';
 import type { JobStore } from './job-store.js';
 import type { RenderExecutor } from './render-executor.js';
+import { Semaphore } from './semaphore.js';
 import type {
   RenderCancelledFailure,
   RenderExecutionResult,
@@ -60,6 +61,7 @@ export class RenderCoordinator {
   private readonly maxQueue: number;
   private readonly maxJobsPerUser: number;
   private readonly jobDeadlineMs: number;
+  private readonly executionGate: Semaphore;
 
   constructor(
     private readonly executor: RenderExecutor,
@@ -71,6 +73,12 @@ export class RenderCoordinator {
     this.maxQueue = options.maxQueue ?? config.maxQueue;
     this.maxJobsPerUser = options.maxJobsPerUser ?? config.maxJobsPerUser;
     this.jobDeadlineMs = options.jobDeadlineMs ?? config.jobDeadlineMs;
+    this.executionGate = new Semaphore(this.maxConcurrency);
+  }
+
+  /** Run Chromium-backed work within the service-wide execution budget. */
+  runWithExecutionSlot<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    return this.executionGate.run(task, signal);
   }
 
   /** Total jobs occupying the system: reserved + queued + running. */
@@ -204,24 +212,30 @@ export class RenderCoordinator {
     const outputPath = join(projectDir, 'output.mp4');
     try {
       await this.jobs.update(id, { status: 'running', currentStage: 'preparing' });
-      const result = await this.executor.execute({
-        projectDir,
-        outputPath,
-        options,
-        signal: abort.signal,
-        deadlineMs: this.jobDeadlineMs,
-        onProgress: async (progress) => {
-          await this.jobs.update(id, {
-            status: 'running',
-            progress: progress.progress,
-            currentStage: progress.stage,
-            ...(progress.framesRendered !== undefined
-              ? { framesRendered: progress.framesRendered }
-              : {}),
-            ...(progress.totalFrames !== undefined ? { totalFrames: progress.totalFrames } : {}),
-          });
-        },
-      });
+      const result = await this.runWithExecutionSlot(
+        () =>
+          this.executor.execute({
+            projectDir,
+            outputPath,
+            options,
+            signal: abort.signal,
+            deadlineMs: this.jobDeadlineMs,
+            onProgress: async (progress) => {
+              await this.jobs.update(id, {
+                status: 'running',
+                progress: progress.progress,
+                currentStage: progress.stage,
+                ...(progress.framesRendered !== undefined
+                  ? { framesRendered: progress.framesRendered }
+                  : {}),
+                ...(progress.totalFrames !== undefined
+                  ? { totalFrames: progress.totalFrames }
+                  : {}),
+              });
+            },
+          }),
+        abort.signal,
+      );
 
       if (result.status !== 'succeeded') {
         await this.finishNonSuccess(id, projectDir, result);
@@ -249,6 +263,13 @@ export class RenderCoordinator {
       });
     } catch (error) {
       await this.artifacts.remove(id).catch(() => {});
+      if (abort.signal.aborted) {
+        await this.finishNonSuccess(id, projectDir, {
+          status: 'cancelled',
+          failure: { code: 'cancelled', message: 'Render cancelled' },
+        });
+        return;
+      }
       const failure: RenderFailedFailure = {
         code: 'execution_failed',
         message: error instanceof Error ? error.message : String(error),

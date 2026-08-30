@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { PreviewGate } from '../src/preview-gate.js';
 import { PreviewTimeoutError, type PreviewRenderer } from '../src/preview-renderer.js';
+import type { RenderExecutor } from '../src/render-executor.js';
 import { Semaphore } from '../src/semaphore.js';
 import {
   createMemoryArtifactStore,
@@ -57,6 +58,22 @@ function previewRequest(payload: unknown = previewPayload(), identity = 'preview
   });
 }
 
+function deferred<T = void>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
+async function waitFor(check: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (check()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error('Timed out waiting for condition');
+}
+
 function appWith(
   previewRenderer: PreviewRenderer,
   previewGate = new PreviewGate(8, 2),
@@ -70,7 +87,6 @@ function appWith(
     artifacts,
     coordinator,
     extractionGate: options.extractionGate ?? new Semaphore(1),
-    executionGate: new Semaphore(1),
     previewGate,
     previewRenderer,
     previewDeadlineMs: options.previewDeadlineMs,
@@ -245,5 +261,127 @@ describe('POST /preview', () => {
     await held;
     const next = await app.fetch(previewRequest());
     expect(next.status).toBe(200);
+  });
+
+  it('cancels a stalled body read when the preview deadline expires', async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"version":'));
+      },
+      pull() {
+        return new Promise<void>(() => {});
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const request = new Request('http://test/preview', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+      duplex: 'half',
+    } as RequestInit);
+    const render = vi.fn<PreviewRenderer['render']>(async () => new Uint8Array([1]));
+    const app = appWith({ render }, new PreviewGate(8, 2), { previewDeadlineMs: 20 });
+
+    const started = Date.now();
+    const response = await app.fetch(request);
+
+    expect(response.status).toBe(504);
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(cancelled).toBe(true);
+    expect(render).not.toHaveBeenCalled();
+
+    const next = await app.fetch(previewRequest());
+    expect(next.status).toBe(200);
+  });
+
+  it('retains the extraction permit while the parsed payload is rendering', async () => {
+    const finishFirst = deferred();
+    let renderCalls = 0;
+    const app = appWith({
+      render: async () => {
+        renderCalls += 1;
+        if (renderCalls === 1) await finishFirst.promise;
+        return new Uint8Array([1]);
+      },
+    });
+
+    const first = app.fetch(previewRequest(previewPayload(), 'first'));
+    await waitFor(() => renderCalls === 1);
+
+    const bytes = new TextEncoder().encode(JSON.stringify(previewPayload()));
+    let offset = 0;
+    let pulls = 0;
+    const secondBody = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (offset >= bytes.byteLength) {
+          controller.close();
+          return;
+        }
+        const next = Math.min(offset + 32, bytes.byteLength);
+        controller.enqueue(bytes.slice(offset, next));
+        offset = next;
+      },
+    });
+    const secondRequest = new Request('http://test/preview', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-openmaic-client': 'second' },
+      body: secondBody,
+      duplex: 'half',
+    } as RequestInit);
+    await Promise.resolve();
+    const pullsBeforeFetch = pulls;
+    const second = app.fetch(secondRequest);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(renderCalls).toBe(1);
+    expect(pulls).toBe(pullsBeforeFetch);
+
+    finishFirst.resolve();
+    expect((await first).status).toBe(200);
+    expect((await second).status).toBe(200);
+    expect(renderCalls).toBe(2);
+  });
+
+  it('shares the Chromium execution limit with video renders', async () => {
+    const videoStarted = deferred();
+    const finishVideo = deferred();
+    const executor: RenderExecutor = {
+      async execute() {
+        videoStarted.resolve();
+        await finishVideo.promise;
+        return { status: 'succeeded' };
+      },
+    };
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore().store;
+    const coordinator = new RenderCoordinator(executor, jobs, artifacts, { maxConcurrency: 1 });
+    await coordinator.submit(
+      coordinator.reserve('video-user'),
+      '/tmp/openmaic-preview-route-video-test',
+      { fps: 30, quality: 'standard', format: 'mp4' },
+    );
+    await videoStarted.promise;
+
+    const render = vi.fn<PreviewRenderer['render']>(async () => new Uint8Array([1]));
+    const app = createApp({
+      jobs,
+      artifacts,
+      coordinator,
+      extractionGate: new Semaphore(1),
+      previewRenderer: { render },
+      previewDeadlineMs: 1_000,
+    });
+    const preview = app.fetch(previewRequest());
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(render).not.toHaveBeenCalled();
+
+    finishVideo.resolve();
+    expect((await preview).status).toBe(200);
+    expect(render).toHaveBeenCalledOnce();
   });
 });

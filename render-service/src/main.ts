@@ -68,8 +68,6 @@ export interface AppDeps {
   coordinator: RenderCoordinator;
   /** Bounds concurrent *buffering + extraction* (the whole RAM-heavy section). */
   extractionGate: Semaphore;
-  /** Bounds Chromium-backed synchronous previews. */
-  executionGate?: Semaphore;
   /** Independent preview admission, injectable for focused route tests. */
   previewGate?: PreviewGate;
   /** Render one validated persisted scene to PNG. */
@@ -147,7 +145,7 @@ function parsePreviewPayload(value: unknown): PreviewPayload | string {
 }
 
 /** Parse a byte-capped JSON body while preserving socket backpressure. */
-async function readPreviewPayload(c: Context): Promise<PreviewPayload> {
+async function readPreviewPayload(c: Context, signal: AbortSignal): Promise<PreviewPayload> {
   if (!c.req.header('content-type')?.toLowerCase().includes('application/json')) {
     throw new BadRequestError('Expected application/json');
   }
@@ -157,19 +155,23 @@ async function readPreviewPayload(c: Context): Promise<PreviewPayload> {
   let capped: ReturnType<typeof capBodyStream> | undefined;
   try {
     if (raw.body) {
-      capped = capBodyStream(raw.body, config.maxUploadBytes);
+      capped = capBodyStream(raw.body, config.maxUploadBytes, signal);
       const bounded = new Request(raw.url, {
         method: raw.method,
         headers: raw.headers,
         body: capped.stream,
+        signal,
         duplex: 'half',
       } as RequestInit);
       value = await bounded.json();
     } else {
+      signal.throwIfAborted();
       value = await c.req.json();
     }
   } catch {
     if (capped?.exceeded()) throw new UploadTooLargeError('Upload too large');
+    if (signal.aborted)
+      throw signal.reason ?? new PreviewTimeoutError('Preview exceeded the deadline');
     throw new BadRequestError('Expected valid JSON');
   }
 
@@ -213,7 +215,6 @@ export function createApp(deps: AppDeps): Hono {
   const makeProjectDir = deps.makeProjectDir ?? defaultMakeProjectDir;
   const previewRenderer = deps.previewRenderer ?? new ChromiumPreviewRenderer();
   const previewDeadlineMs = deps.previewDeadlineMs ?? config.previewDeadlineMs;
-  const executionGate = deps.executionGate ?? extractionGate;
   const previewGate =
     deps.previewGate ?? new PreviewGate(config.previewMaxInFlight, config.previewMaxPerUser);
 
@@ -331,17 +332,22 @@ export function createApp(deps: AppDeps): Hono {
     deadline.unref?.();
 
     try {
-      const payload = await extractionGate.run(() => readPreviewPayload(c), abort.signal);
-      const png = await executionGate.run(
-        () =>
-          previewRenderer.render({
-            scene: payload.scene,
-            stage: payload.stage,
-            viewport: payload.viewport,
-            signal: abort.signal,
-          }),
-        abort.signal,
-      );
+      // Keep the memory permit until the parsed scene has been rendered, so a
+      // burst cannot accumulate large expanded JSON objects while waiting for
+      // Chromium. The coordinator gate shares Chromium capacity with videos.
+      const png = await extractionGate.run(async () => {
+        const payload = await readPreviewPayload(c, abort.signal);
+        return coordinator.runWithExecutionSlot(
+          () =>
+            previewRenderer.render({
+              scene: payload.scene,
+              stage: payload.stage,
+              viewport: payload.viewport,
+              signal: abort.signal,
+            }),
+          abort.signal,
+        );
+      }, abort.signal);
       if (png.byteLength === 0) throw new Error('Preview renderer returned an empty image');
 
       const body = new Uint8Array(png.byteLength);
