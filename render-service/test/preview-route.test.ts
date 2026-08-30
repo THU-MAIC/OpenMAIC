@@ -57,7 +57,11 @@ function previewRequest(payload: unknown = previewPayload(), identity = 'preview
   });
 }
 
-function appWith(previewRenderer: PreviewRenderer, previewGate = new PreviewGate(8, 2)) {
+function appWith(
+  previewRenderer: PreviewRenderer,
+  previewGate = new PreviewGate(8, 2),
+  options: { extractionGate?: Semaphore; previewDeadlineMs?: number } = {},
+) {
   const jobs = createMemoryJobStore();
   const artifacts = createMemoryArtifactStore().store;
   const coordinator = new RenderCoordinator(succeedingExecutor, jobs, artifacts);
@@ -65,10 +69,11 @@ function appWith(previewRenderer: PreviewRenderer, previewGate = new PreviewGate
     jobs,
     artifacts,
     coordinator,
-    extractionGate: new Semaphore(1),
+    extractionGate: options.extractionGate ?? new Semaphore(1),
     executionGate: new Semaphore(1),
     previewGate,
     previewRenderer,
+    previewDeadlineMs: options.previewDeadlineMs,
   });
 }
 
@@ -211,5 +216,34 @@ describe('POST /preview', () => {
     }).fetch(previewRequest());
     expect(failed.status).toBe(500);
     await expect(failed.json()).resolves.toEqual({ error: 'Chromium launch failed' });
+  });
+
+  it('applies the deadline while waiting for an extraction permit', async () => {
+    const extractionGate = new Semaphore(1);
+    let releasePermit!: () => void;
+    const held = extractionGate.run(
+      () =>
+        new Promise<void>((resolve) => {
+          releasePermit = resolve;
+        }),
+    );
+    await Promise.resolve();
+
+    const render = vi.fn<PreviewRenderer['render']>(async () => new Uint8Array([1]));
+    const app = appWith({ render }, new PreviewGate(8, 2), {
+      extractionGate,
+      previewDeadlineMs: 20,
+    });
+    const started = Date.now();
+    const response = await app.fetch(previewRequest());
+
+    expect(response.status).toBe(504);
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(render).not.toHaveBeenCalled();
+
+    releasePermit();
+    await held;
+    const next = await app.fetch(previewRequest());
+    expect(next.status).toBe(200);
   });
 });

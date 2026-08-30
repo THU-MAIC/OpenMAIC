@@ -1,7 +1,9 @@
 /** Synchronous single-page preview rendering through Chromium. */
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SlideCanvas } from '@openmaic/renderer';
+import { build } from 'esbuild';
 import type {
   Action,
   InteractiveContent,
@@ -11,7 +13,7 @@ import type {
   SlideContent,
 } from '@openmaic/dsl';
 import puppeteer from 'puppeteer-core';
-import type { Browser } from 'puppeteer-core';
+import type { Browser, Frame, Page } from 'puppeteer-core';
 
 export type PreviewScene = Scene<
   Action,
@@ -57,41 +59,14 @@ function htmlDocument(body: string, scene: PreviewScene): string {
 }
 
 function slidePreviewMarkup(
-  scene: Extract<PreviewScene, { type: 'slide' }>,
+  _scene: Extract<PreviewScene, { type: 'slide' }>,
   viewport: PreviewViewport,
 ): string {
-  const canvas = scene.content.canvas;
-  const nativeWidth = canvas.viewportSize || 1000;
-  const nativeHeight = nativeWidth * (canvas.viewportRatio || 0.5625);
-  const scale = Math.min(viewport.width / nativeWidth, viewport.height / nativeHeight);
-  const renderedWidth = nativeWidth * scale;
-  const renderedHeight = nativeHeight * scale;
-
   return renderToStaticMarkup(
-    createElement(
-      'main',
-      {
-        style: {
-          width: `${viewport.width}px`,
-          height: `${viewport.height}px`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-          background: '#fff',
-        },
-      },
-      createElement(
-        'div',
-        { style: { width: `${renderedWidth}px`, height: `${renderedHeight}px` } },
-        createElement(SlideCanvas, {
-          slide: canvas,
-          scale,
-          chrome: false,
-          style: { width: `${renderedWidth}px`, height: `${renderedHeight}px` },
-        }),
-      ),
-    ),
+    createElement('div', {
+      id: 'preview-slide-root',
+      style: { width: `${viewport.width}px`, height: `${viewport.height}px` },
+    }),
   );
 }
 
@@ -187,6 +162,118 @@ function timeoutError(): PreviewTimeoutError {
   return new PreviewTimeoutError('Preview exceeded the deadline');
 }
 
+let slideClientBundle: Promise<string> | undefined;
+
+/** Bundle the browser-only SlideCanvas mount once per service process. */
+export function buildSlideClientBundle(): Promise<string> {
+  slideClientBundle ??= build({
+    stdin: {
+      sourcefile: 'preview-slide-client.js',
+      resolveDir: dirname(fileURLToPath(import.meta.url)),
+      contents: `
+        import React from 'react';
+        import { flushSync } from 'react-dom';
+        import { createRoot } from 'react-dom/client';
+        import { SlideCanvas } from '@openmaic/renderer';
+
+        const props = window.__OPENMAIC_PREVIEW_PROPS__;
+        const root = document.getElementById('preview-slide-root');
+        if (!props || !root) throw new Error('Preview slide mount data is missing');
+        const canvas = props.slide;
+        const nativeWidth = canvas.viewportSize || 1000;
+        const nativeHeight = nativeWidth * (canvas.viewportRatio || 0.5625);
+        const scale = Math.min(props.viewport.width / nativeWidth, props.viewport.height / nativeHeight);
+        const renderedWidth = nativeWidth * scale;
+        const renderedHeight = nativeHeight * scale;
+        const canvasNode = React.createElement(SlideCanvas, {
+          slide: canvas,
+          scale,
+          chrome: false,
+          style: { width: renderedWidth + 'px', height: renderedHeight + 'px' },
+        });
+        const frame = React.createElement('main', {
+          style: {
+            width: props.viewport.width + 'px',
+            height: props.viewport.height + 'px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            background: '#fff',
+          },
+        }, React.createElement('div', {
+          style: { width: renderedWidth + 'px', height: renderedHeight + 'px' },
+        }, canvasNode));
+        flushSync(() => createRoot(root).render(frame));
+        window.__OPENMAIC_PREVIEW_MOUNTED__ = true;
+      `,
+    },
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    target: 'chrome120',
+    write: false,
+  }).then((result) => {
+    const output = result.outputFiles[0];
+    if (!output) throw new Error('Failed to build the preview slide client');
+    return output.text;
+  });
+  return slideClientBundle;
+}
+
+type AssetDocument = Page | Frame;
+
+/** Wait for fonts, images, client effects, and layout mutations to settle. */
+export async function waitForDocumentAssets(document: AssetDocument): Promise<void> {
+  await document.evaluate(async () => {
+    await globalThis.document.fonts?.ready.catch(() => undefined);
+    await Promise.all(
+      Array.from(globalThis.document.images, (image) =>
+        image.complete
+          ? Promise.resolve()
+          : new Promise<void>((resolve) => {
+              image.addEventListener('load', () => resolve(), { once: true });
+              image.addEventListener('error', () => resolve(), { once: true });
+              setTimeout(resolve, 2_000);
+            }),
+      ),
+    );
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    await new Promise<void>((resolve) => {
+      let quietTimer = setTimeout(done, 100);
+      const maximumTimer = setTimeout(done, 2_000);
+      const observer = new MutationObserver(() => {
+        clearTimeout(quietTimer);
+        quietTimer = setTimeout(done, 100);
+      });
+      function done() {
+        clearTimeout(quietTimer);
+        clearTimeout(maximumTimer);
+        observer.disconnect();
+        resolve();
+      }
+      observer.observe(globalThis.document.documentElement, {
+        attributes: true,
+        childList: true,
+        subtree: true,
+      });
+    });
+  });
+}
+
+/** Wait for a srcDoc iframe and the assets inside its browsing context. */
+export async function waitForInteractiveFrame(page: Page): Promise<void> {
+  const iframe = await page.waitForSelector('iframe');
+  const frame = await iframe?.contentFrame();
+  if (!frame) throw new Error('Interactive preview iframe did not load');
+  await frame.waitForFunction(
+    () => location.href === 'about:srcdoc' && document.readyState === 'complete',
+  );
+  await waitForDocumentAssets(frame);
+}
+
 async function launchWithAbort(launch: Promise<Browser>, signal: AbortSignal): Promise<Browser> {
   let rejectAbort!: (error: PreviewTimeoutError) => void;
   const aborted = new Promise<never>((_resolve, reject) => {
@@ -237,6 +324,20 @@ export class ChromiumPreviewRenderer implements PreviewRenderer {
       });
       if (request.signal.aborted) throw timeoutError();
 
+      if (request.scene.type === 'slide') {
+        await page.evaluate(
+          (slide, viewport) => {
+            Object.assign(window, {
+              __OPENMAIC_PREVIEW_PROPS__: { slide, viewport },
+            });
+          },
+          request.scene.content.canvas,
+          request.viewport,
+        );
+        await page.addScriptTag({ content: await buildSlideClientBundle() });
+        await page.waitForFunction(() => '__OPENMAIC_PREVIEW_MOUNTED__' in window);
+      }
+
       const selected = await page.evaluate(
         (sceneId) => document.body.getAttribute('data-scene-id') === sceneId,
         request.scene.id,
@@ -245,21 +346,8 @@ export class ChromiumPreviewRenderer implements PreviewRenderer {
         throw new Error(`Requested scene was not found in the preview page (${request.scene.id})`);
       }
 
-      await page.evaluate(async () => {
-        await document.fonts?.ready.catch(() => undefined);
-        await Promise.all(
-          Array.from(document.images, (image) =>
-            image.complete
-              ? Promise.resolve()
-              : new Promise<void>((resolve) => {
-                  image.addEventListener('load', () => resolve(), { once: true });
-                  image.addEventListener('error', () => resolve(), { once: true });
-                  setTimeout(resolve, 2_000);
-                }),
-          ),
-        );
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      });
+      if (request.scene.type === 'interactive') await waitForInteractiveFrame(page);
+      else await waitForDocumentAssets(page);
       if (request.signal.aborted) throw timeoutError();
 
       const png = await page.screenshot({ type: 'png', optimizeForSpeed: true });

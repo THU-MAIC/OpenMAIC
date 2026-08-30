@@ -74,6 +74,8 @@ export interface AppDeps {
   previewGate?: PreviewGate;
   /** Render one validated persisted scene to PNG. */
   previewRenderer?: PreviewRenderer;
+  /** Preview wall-clock deadline, injectable for focused route tests. */
+  previewDeadlineMs?: number;
   /** Extract a validated archive into a dir. Overridable in tests. */
   unzipProject?: (zip: Uint8Array, destDir: string) => Promise<void>;
   /** Create a fresh per-render scratch dir. Overridable in tests. */
@@ -210,6 +212,7 @@ export function createApp(deps: AppDeps): Hono {
   const unzipProject = deps.unzipProject ?? defaultUnzipProject;
   const makeProjectDir = deps.makeProjectDir ?? defaultMakeProjectDir;
   const previewRenderer = deps.previewRenderer ?? new ChromiumPreviewRenderer();
+  const previewDeadlineMs = deps.previewDeadlineMs ?? config.previewDeadlineMs;
   const executionGate = deps.executionGate ?? extractionGate;
   const previewGate =
     deps.previewGate ?? new PreviewGate(config.previewMaxInFlight, config.previewMaxPerUser);
@@ -320,44 +323,48 @@ export function createApp(deps: AppDeps): Hono {
       throw error;
     }
 
-    try {
-      const payload = await extractionGate.run(() => readPreviewPayload(c));
-      const abort = new AbortController();
-      const deadline = setTimeout(() => abort.abort(), config.previewDeadlineMs);
-      deadline.unref?.();
+    const abort = new AbortController();
+    const deadline = setTimeout(
+      () => abort.abort(new PreviewTimeoutError('Preview exceeded the deadline')),
+      previewDeadlineMs,
+    );
+    deadline.unref?.();
 
-      try {
-        const png = await executionGate.run(() =>
+    try {
+      const payload = await extractionGate.run(() => readPreviewPayload(c), abort.signal);
+      const png = await executionGate.run(
+        () =>
           previewRenderer.render({
             scene: payload.scene,
             stage: payload.stage,
             viewport: payload.viewport,
             signal: abort.signal,
           }),
-        );
-        if (png.byteLength === 0) throw new Error('Preview renderer returned an empty image');
+        abort.signal,
+      );
+      if (png.byteLength === 0) throw new Error('Preview renderer returned an empty image');
 
-        const body = new Uint8Array(png.byteLength);
-        body.set(png);
-        return new Response(body.buffer, {
-          status: 200,
-          headers: {
-            'Content-Type': 'image/png',
-            'Content-Length': String(png.byteLength),
-          },
-        });
-      } finally {
-        clearTimeout(deadline);
-      }
+      const body = new Uint8Array(png.byteLength);
+      body.set(png);
+      return new Response(body.buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': 'image/png',
+          'Content-Length': String(png.byteLength),
+        },
+      });
     } catch (error) {
       if (error instanceof UploadTooLargeError) return c.json({ error: error.message }, 413);
       if (error instanceof BadRequestError) return c.json({ error: error.message }, 400);
-      if (error instanceof PreviewTimeoutError) return c.json({ error: error.message }, 504);
+      if (error instanceof PreviewTimeoutError || abort.signal.aborted) {
+        return c.json({ error: 'Preview exceeded the deadline' }, 504);
+      }
       return c.json(
         { error: error instanceof Error ? error.message : 'Preview rendering failed' },
         500,
       );
     } finally {
+      clearTimeout(deadline);
       release();
     }
   });
