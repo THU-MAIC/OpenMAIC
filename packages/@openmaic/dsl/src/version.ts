@@ -50,13 +50,15 @@
  * knows.
  */
 
+import { stripLegacyLineGeometry } from './legacy-line-geometry.js';
+
 /**
  * Current version of the serialized slide contract.
  *
  * Changing it requires a package version increase that the dependents' caret
  * does not admit; see the module docstring.
  */
-export const DSL_VERSION = '0.2.0' as const;
+export const DSL_VERSION = '0.3.0' as const;
 
 export type DslVersion = typeof DSL_VERSION;
 
@@ -184,6 +186,29 @@ function stampAudioUrlAbolition(doc: unknown): unknown {
 }
 
 /**
+ * The 0.2.0 → 0.3.0 step strips the stray `rotate` / `height` fields legacy
+ * runtimes could persist onto `line` elements -- the actual payload transform
+ * lives in {@link stripLegacyLineGeometry}.
+ *
+ * The contract omits both fields from `PPTLineElement`
+ * (`Omit<PPTBaseElement, 'height' | 'rotate'>`), but pre-versioning writes
+ * were never schema-checked, so stray fields survived into storage and
+ * exports. Since 1.0.0, `patch_stage` validates the whole scene canvas after
+ * every op against a closed schema (`validateSlideCanvas`,
+ * `additionalProperties: false`) whose `line` variant lists neither field, so
+ * a single legacy line element makes EVERY edit to its scene fail -- old
+ * classrooms open fine (import does not validate) and then reject their first
+ * agent edit. Stripping is lossless: line geometry is fully determined by
+ * `left` / `top` / `width` plus `start` / `end`, and no reader or writer uses
+ * `rotate` on a line element. Unlike the audioUrl abolition this is a real
+ * payload change, but a pure transform can own it: the fields are inert by
+ * contract, so dropping them can never lose a live handle.
+ */
+function stripLegacyLineRotateHeight(doc: unknown): unknown {
+  return stripLegacyLineGeometry(doc);
+}
+
+/**
  * Ordered migration ladder. Each entry's `to` is the next entry's `from`, and
  * the last entry's `to` is {@link DSL_VERSION} (both checked by a test). Every
  * `from` / `to` is a **pinned literal** — never the moving `DSL_VERSION`
@@ -201,10 +226,16 @@ function stampAudioUrlAbolition(doc: unknown): unknown {
  * like the first: only the app-side reference converter may remove the field,
  * because only it can tell a live handle from a dead one -- see
  * {@link stampAudioUrlAbolition}.
+ *
+ * The third entry is the ladder's first real payload transform: it strips the
+ * stray `rotate` / `height` fields legacy runtimes could persist onto `line`
+ * elements, which the 1.0.0 closed canvas schema rejects -- see
+ * {@link stripLegacyLineRotateHeight}.
  */
 export const DSL_MIGRATIONS: readonly DslMigration[] = [
   { from: UNVERSIONED_DSL_VERSION, to: INITIAL_DSL_VERSION, migrate: (doc) => doc },
   { from: INITIAL_DSL_VERSION, to: '0.2.0', migrate: stampAudioUrlAbolition },
+  { from: '0.2.0', to: '0.3.0', migrate: stripLegacyLineRotateHeight },
 ];
 
 /**

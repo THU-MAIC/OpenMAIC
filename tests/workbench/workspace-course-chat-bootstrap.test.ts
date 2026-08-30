@@ -151,6 +151,10 @@ import {
   CLASSROOM_COLLAPSED_STORAGE_KEY,
 } from '@/lib/workbench/workspace-panes';
 import { COURSE_TABS_STORAGE_KEY } from '@/lib/workbench/workspace-course-tabs';
+import {
+  LAST_WORKSPACE_SESSION_STORAGE_KEY,
+  readLastWorkspaceSessionId,
+} from '@/lib/workbench/workspace-session-memory';
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
@@ -242,6 +246,26 @@ afterEach(async () => {
   localStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe('a remembered workspace entry', () => {
+  it('forgets a missing session and replaces it with the workspace home', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-stale');
+    localStorage.setItem(LAST_WORKSPACE_SESSION_STORAGE_KEY, 'session-stale');
+
+    await render();
+
+    expect(mocks.routerReplace).toHaveBeenCalledWith('/workspace');
+    expect(readLastWorkspaceSessionId()).toBeNull();
+  });
+
+  it('does not treat an unremembered deep link as a stale resume', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-shared');
+
+    await render();
+
+    expect(mocks.routerReplace).not.toHaveBeenCalled();
+  });
 });
 
 describe('a course opened without a conversation', () => {

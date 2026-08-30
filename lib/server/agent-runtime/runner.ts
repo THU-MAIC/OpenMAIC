@@ -966,7 +966,17 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         type,
         data: snapshot,
       });
-      if (seq === null) markLeaseLost();
+      if (seq === null) {
+        markLeaseLost();
+        return;
+      }
+      if (type === 'message_end') {
+        try {
+          await store.pruneMessageUpdates(id, seq);
+        } catch (error) {
+          log.error(`session ${id}: message update prune failed`, error);
+        }
+      }
     });
   };
 

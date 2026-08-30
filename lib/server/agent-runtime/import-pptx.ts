@@ -39,6 +39,8 @@ export { isPptxMaterial, PPTX_MIME } from './pptx-mime';
 export const IMPORT_PPTX_TOOL_NAME = 'import_pptx';
 export const IMPORT_PPTX_REQUIREMENT_PREFIX = 'import_pptx:';
 export const MAX_IMPORT_SLIDES = 80;
+export const MAX_IMPORT_BYTES = 8 * 1024 * 1024;
+export const PARSE_PPTX_TIMEOUT_MS = 90_000;
 
 /** Next-step hint after import. Inspection and repair come before TTS. */
 export const AFTER_IMPORT_NEXT_STEP =
@@ -58,12 +60,25 @@ const ImportParams = Type.Object({
   ),
 });
 
+export interface ParsePptxWorker {
+  once(event: string, listener: (...args: unknown[]) => void): unknown;
+  terminate(): unknown;
+}
+
+export interface ParsePptxOptions {
+  upload?: OssUpload;
+  signal?: AbortSignal;
+  /** Parse deadline; tests may inject a shorter value. */
+  timeoutMs?: number;
+  Worker?: new (filename: string | URL, options?: { workerData?: unknown }) => ParsePptxWorker;
+}
+
 export interface ImportPptxToolDeps extends CourseToolDeps {
   getMaterial?: (sessionId: string, materialId: string) => Promise<AgentSessionMaterial | null>;
   readMaterialBytes?: (
     record: AgentSessionMaterial,
   ) => Promise<{ bytes: Buffer; mime: string } | null>;
-  parsePptx?: (buffer: ArrayBuffer, options?: { upload?: OssUpload }) => Promise<Slide[]>;
+  parsePptx?: (buffer: ArrayBuffer, options?: ParsePptxOptions) => Promise<Slide[]>;
   uploadImportedMedia?: OssUpload;
 }
 
@@ -230,26 +245,75 @@ async function rewriteDataUrls(value: unknown, upload: OssUpload): Promise<unkno
   return value;
 }
 
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+function parseTimeoutMessage(timeoutMs: number): string {
+  const label = timeoutMs % 1000 === 0 ? `${timeoutMs / 1000}s` : `${timeoutMs}ms`;
+  return `PowerPoint parse exceeded ${label}`;
+}
+
 /** Parse in a worker thread so DOM shims never land on the request process. */
 export async function parsePptxIsolated(
   buffer: ArrayBuffer,
-  options: { upload?: OssUpload } = {},
+  options: ParsePptxOptions = {},
 ): Promise<Slide[]> {
+  const signal = options.signal;
+  if (signal?.aborted) {
+    throw new Error('aborted');
+  }
   const workerFile = importerWorkerPath();
   if (!workerFile) {
     throw new Error('PPTX import worker is missing from the deployment.');
   }
   const copy = toArrayBuffer(new Uint8Array(buffer));
+  const WorkerImpl = options.Worker ?? Worker;
+  const timeoutMs = options.timeoutMs ?? PARSE_PPTX_TIMEOUT_MS;
   const slides = await new Promise<Slide[]>((resolve, reject) => {
-    const worker = new Worker(workerFile, { workerData: { buffer: copy } });
-    const fail = (error: unknown) => {
+    let worker: ParsePptxWorker;
+    try {
+      worker = new WorkerImpl(workerFile, { workerData: { buffer: copy } });
+    } catch (error) {
+      reject(asError(error));
+      return;
+    }
+
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const cleanup = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
       void worker.terminate();
-      reject(error instanceof Error ? error : new Error(String(error)));
     };
-    worker.once('message', (message: { slides?: Slide[]; error?: string }) => {
-      void worker.terminate();
-      if (message.error) fail(new Error(message.error));
-      else resolve(message.slides ?? []);
+
+    const finish = (apply: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      apply();
+    };
+
+    const fail = (error: unknown) => {
+      finish(() => reject(asError(error)));
+    };
+
+    const onAbort = () => fail(new Error('aborted'));
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => fail(new Error(parseTimeoutMessage(timeoutMs))), timeoutMs);
+    }
+
+    worker.once('message', (message: unknown) => {
+      const payload = message as { slides?: Slide[]; error?: string };
+      if (payload?.error) fail(new Error(payload.error));
+      else finish(() => resolve(payload?.slides ?? []));
     });
     worker.once('error', fail);
   });
@@ -259,7 +323,7 @@ export async function parsePptxIsolated(
 
 export async function parsePptxBuffer(
   buffer: ArrayBuffer,
-  options: { upload?: OssUpload } = {},
+  options: ParsePptxOptions = {},
 ): Promise<Slide[]> {
   return parsePptxIsolated(buffer, options);
 }
@@ -337,6 +401,20 @@ export function buildImportPptxTool(
         );
       }
 
+      const byteLength = raw.bytes.byteLength;
+      if (byteLength > MAX_IMPORT_BYTES) {
+        return toolResult(
+          `This PowerPoint (${record.title ?? record.id}) is too large to import (${byteLength} bytes; maximum is ${MAX_IMPORT_BYTES}). Ask the user to compress or split the file and upload again.`,
+          {
+            status: 'too_large',
+            materialId: record.id,
+            bytes: byteLength,
+            maxBytes: MAX_IMPORT_BYTES,
+          },
+          true,
+        );
+      }
+
       const digest = createHash('sha256').update(raw.bytes).digest('hex');
       const requirement = importRequirementFor({ id: record.id, sha256: digest });
       const legacyRequirement = `${IMPORT_PPTX_REQUIREMENT_PREFIX}${record.id}`;
@@ -406,7 +484,10 @@ export function buildImportPptxTool(
 
       let slides: Slide[];
       try {
-        slides = await parsePptx(arrayBuffer, { upload });
+        slides = await parsePptx(arrayBuffer, {
+          upload,
+          signal: signal ?? deps.abortSignal,
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (message === 'aborted') throw error;

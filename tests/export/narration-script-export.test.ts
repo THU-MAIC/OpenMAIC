@@ -5,6 +5,7 @@ import {
   buildMarkdown,
   buildDocxBlob,
   buildScriptFileName,
+  isScriptExportReady,
   SCRIPT_MIME_TYPES,
 } from '@/lib/export/use-export-script';
 import type { Scene } from '@/lib/types/stage';
@@ -32,6 +33,33 @@ function scene(overrides: Partial<Scene> = {}): Scene {
 }
 
 const slideFallback = (order: number) => `Slide ${order}`;
+
+describe('isScriptExportReady', () => {
+  const readyState = {
+    scenes: [scene()],
+    generatingOutlines: [],
+    failedOutlines: [],
+  };
+
+  it('allows export only after outline and media work reaches a terminal state', () => {
+    expect(
+      isScriptExportReady(readyState, {
+        complete: { status: 'done' },
+        unavailable: { status: 'failed' },
+      }),
+    ).toBe(true);
+  });
+
+  it.each([
+    ['no scenes', { ...readyState, scenes: [] }, {}],
+    ['an outline is generating', { ...readyState, generatingOutlines: [{}] }, {}],
+    ['an outline failed', { ...readyState, failedOutlines: [{}] }, {}],
+    ['media is pending', readyState, { image: { status: 'pending' } }],
+    ['media is generating', readyState, { video: { status: 'generating' } }],
+  ])('rejects export when %s', (_case, stageState, mediaTasks) => {
+    expect(isScriptExportReady(stageState, mediaTasks)).toBe(false);
+  });
+});
 
 describe('collectSceneScripts', () => {
   it('omits scenes with no actions (T01)', () => {

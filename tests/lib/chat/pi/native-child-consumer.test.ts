@@ -141,6 +141,23 @@ function sceneEvidence(sceneId = 'scene-current') {
   };
 }
 
+function elementReferenceEvidence(sceneId = 'scene-current', elementId = 'current-element') {
+  return {
+    content: `Selected element evidence: ${sceneId}/${elementId}`,
+    metadata: {
+      kind: 'slide_element' as const,
+      source: 'request_start_snapshot' as const,
+      sceneId,
+      elementId,
+      elementType: 'text' as const,
+      geometry: { left: 0, top: 0, width: 100, height: 40, rotate: 0 },
+      truncatedFields: [],
+      omittedItems: {},
+      content: { text: 'The key idea' },
+    },
+  };
+}
+
 function makeHarness(
   options: {
     evidence?: ReturnType<typeof sceneEvidence>;
@@ -148,6 +165,7 @@ function makeHarness(
     spotlightEnabled?: boolean;
     nativeWebSearchConfig?: NativeWebSearchConfig;
     takeSceneEvidence?: () => ReturnType<typeof sceneEvidence> | undefined;
+    elementReferenceEvidence?: ReturnType<typeof elementReferenceEvidence>;
     agent?: AgentConfig;
     requestStartCurrentScene?: {
       sceneId: string;
@@ -194,6 +212,7 @@ function makeHarness(
         elementIds: ['current-element'],
       } as const),
     takeSceneEvidence: options.takeSceneEvidence ?? (() => options.evidence),
+    elementReferenceEvidence: options.elementReferenceEvidence,
   });
   return { events, summaries, onActionDone, tool };
 }
@@ -215,9 +234,12 @@ describe('Native Child production consumer', () => {
     mocks.searchWeb.mockReset();
   });
 
-  it('does not consume pending evidence for an invalid delegation', async () => {
+  it('rejects an invalid delegation before starting a grounded Child', async () => {
     const takeSceneEvidence = vi.fn(() => sceneEvidence());
-    const harness = makeHarness({ takeSceneEvidence });
+    const harness = makeHarness({
+      takeSceneEvidence,
+      elementReferenceEvidence: elementReferenceEvidence(),
+    });
 
     const result = await harness.tool.execute('invalid-delegate', {
       agentId: 'missing-agent',
@@ -227,6 +249,105 @@ describe('Native Child production consumer', () => {
     expect(takeSceneEvidence).not.toHaveBeenCalled();
     expect(mocks.streamLLM).not.toHaveBeenCalled();
     expect(result.details).toMatchObject({ skipped: true, reason: 'invalid_agent_id' });
+  });
+
+  it('attaches the same request-scoped selected-element evidence to every Native delegation', async () => {
+    useResponses([
+      [{ type: 'text-delta', text: 'Grounded explanation.' }, finish('stop')],
+      [finish('stop')],
+    ]);
+    const packet = elementReferenceEvidence();
+    const harness = makeHarness({ elementReferenceEvidence: packet });
+
+    const first = await execute(harness);
+    const second = await execute(harness);
+
+    expect(JSON.stringify(transportMessages(0))).toContain(
+      'Selected element evidence: scene-current/current-element',
+    );
+    expect(JSON.stringify(transportMessages(1))).toContain(
+      'Selected element evidence: scene-current/current-element',
+    );
+    expect(first.details).toMatchObject({ elementReferenceEvidence: packet.metadata });
+    expect(second.details).toMatchObject({ elementReferenceEvidence: packet.metadata });
+    expect(first.details).not.toHaveProperty('groundedChildSucceeded');
+    expect(second.details).not.toHaveProperty('groundedChildSucceeded');
+  });
+
+  it('keeps a completed-empty selected-element turn in the ordinary Native lifecycle', async () => {
+    useResponses([[finish('stop')]]);
+    const harness = makeHarness({
+      elementReferenceEvidence: elementReferenceEvidence(),
+    });
+
+    const result = await execute(harness);
+
+    expect(result).not.toHaveProperty('isError');
+    expect(result.details).toMatchObject({
+      elementReferenceEvidence: expect.objectContaining({ elementId: 'current-element' }),
+    });
+    expect(result.details).not.toHaveProperty('groundedChildSucceeded');
+  });
+
+  it('authorizes only the same-scene selected element without read_scene evidence', async () => {
+    useResponses([
+      [spotlightCall('other-element'), finish('tool-calls')],
+      [{ type: 'text-delta', text: 'Explaining without that Spotlight.' }, finish('stop')],
+    ]);
+    const harness = makeHarness({
+      elementReferenceEvidence: elementReferenceEvidence(),
+      requestStartCurrentScene: {
+        sceneId: 'scene-current',
+        sceneType: 'slide',
+        elementIds: ['current-element', 'other-element'],
+      },
+    });
+
+    const result = await execute(harness);
+
+    expect(harness.events.some((event) => event.type === 'action')).toBe(false);
+    expect(result.details).toMatchObject({
+      elementReferenceEvidence: expect.objectContaining({ elementId: 'current-element' }),
+    });
+    expect(result.details).not.toHaveProperty('groundedChildSucceeded');
+  });
+
+  it('keeps cross-scene selected-element evidence fail-closed across Native delegations', async () => {
+    useResponses([
+      [{ type: 'text-delta', text: 'First grounded response.' }, finish('stop')],
+      [{ type: 'text-delta', text: 'Second grounded response.' }, finish('stop')],
+    ]);
+    const packet = elementReferenceEvidence('scene-other', 'other-element');
+    const harness = makeHarness({
+      elementReferenceEvidence: packet,
+      requestStartCurrentScene: {
+        sceneId: 'scene-current',
+        sceneType: 'slide',
+        elementIds: ['current-element', 'other-element'],
+      },
+    });
+
+    const first = await execute(harness);
+    const second = await harness.tool.execute('delegate-2', {
+      agentId: teacher.id,
+      instruction: 'Continue from the same selected element.',
+    });
+
+    expect(JSON.stringify(transportMessages(0))).toContain(
+      'Selected element evidence: scene-other/other-element',
+    );
+    expect(JSON.stringify(transportMessages(1))).toContain(
+      'Selected element evidence: scene-other/other-element',
+    );
+    expect(first.details).toMatchObject({
+      availableToolNames: ['web_search'],
+      elementReferenceEvidence: packet.metadata,
+    });
+    expect(second.details).toMatchObject({
+      availableToolNames: ['web_search'],
+      elementReferenceEvidence: packet.metadata,
+    });
+    expect(harness.events.some((event) => event.type === 'action')).toBe(false);
   });
 
   it('consumes Scene evidence once even when the first valid Child fails', async () => {
@@ -240,7 +361,10 @@ describe('Native Child production consumer', () => {
       pendingScene = undefined;
       return evidence;
     });
-    const harness = makeHarness({ takeSceneEvidence });
+    const harness = makeHarness({
+      takeSceneEvidence,
+      elementReferenceEvidence: elementReferenceEvidence(),
+    });
 
     const first = await execute(harness);
     const second = await harness.tool.execute('delegate-2', {
@@ -255,10 +379,20 @@ describe('Native Child production consumer', () => {
       },
     });
     expect(second.details).not.toHaveProperty('sceneEvidence');
-    expect(second.details).toMatchObject({ availableToolNames: ['web_search'] });
+    expect(second.details).toMatchObject({ availableToolNames: ['spotlight', 'web_search'] });
     expect(takeSceneEvidence).toHaveBeenCalledTimes(2);
-    expect(JSON.stringify(mocks.streamLLM.mock.calls[0]?.[0])).toContain('current-element');
-    expect(JSON.stringify(mocks.streamLLM.mock.calls[1]?.[0])).not.toContain('current-element');
+    expect(JSON.stringify(mocks.streamLLM.mock.calls[0]?.[0])).toContain(
+      'Scene evidence (sceneId=scene-current)',
+    );
+    expect(JSON.stringify(mocks.streamLLM.mock.calls[1]?.[0])).not.toContain(
+      'Scene evidence (sceneId=scene-current)',
+    );
+    expect(JSON.stringify(mocks.streamLLM.mock.calls[0]?.[0])).toContain(
+      'Selected element evidence: scene-current/current-element',
+    );
+    expect(JSON.stringify(mocks.streamLLM.mock.calls[1]?.[0])).toContain(
+      'Selected element evidence: scene-current/current-element',
+    );
   });
 
   it('runs Spotlight and continuation in one Child through the shared OpenMAIC transport', async () => {

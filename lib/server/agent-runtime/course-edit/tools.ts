@@ -5,6 +5,7 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import type { Scene } from '@/lib/types/stage';
 import { matchOutlineEntries } from '../course-outline-union';
+import { putSceneBringingCurrent } from '../document-writes';
 import { createBlankScene } from './apply';
 import type { CourseToolDeps } from '../course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from '../course-stage';
@@ -121,7 +122,9 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
         );
       }
       if (summary.changed) {
-        await runStageMutation(signal, () => deps.store.putScene(params.stageId, scene));
+        await runStageMutation(signal, () =>
+          putSceneBringingCurrent(deps.store, params.stageId, scene),
+        );
         deps.onCheckpoint({
           tool: 'generate_tts',
           stageId: params.stageId,

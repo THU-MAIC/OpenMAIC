@@ -135,6 +135,22 @@
       "emptyAgentResponses": "Los agentes devolvieron respuestas vacías; el debate se detuvo. Inténtalo de nuevo o revisa la configuración de tu modelo.",
       "streamInterrupted": "El streaming terminó inesperadamente; el debate no se completó. Inténtalo de nuevo."
     },
+    "elementReference": {
+      "button": "Referenciar diapositiva",
+      "unavailable": "Solo se puede referenciar la diapositiva PPT actual",
+      "instruction": "Haz clic en un elemento · Esc para salir",
+      "fallback": "Otros elementos de la diapositiva ({{count}})",
+      "clear": "Quitar referencia de diapositiva",
+      "summary": {
+        "noText": "Sin texto",
+        "emptyContent": "Sin contenido",
+        "code": "Código",
+        "line": "Línea",
+        "imageMetadata": "Imagen (solo metadatos)",
+        "videoMetadata": "Video (solo metadatos)",
+        "audioMetadata": "Audio (solo metadatos)"
+      }
+    },
     "tabs": {
       "lecture": "Notas",
       "chat": "Chat"

@@ -29,6 +29,11 @@ import { authenticatePersistenceHeaders } from '@/lib/persistence/server-auth';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { createWhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 import { hasNativeWhiteboardAction } from '@/lib/chat/pi/tools/native-whiteboard';
+import {
+  ELEMENT_REFERENCE_ACCEPTED_HEADER,
+  ElementReferenceValidationError,
+  resolveSlideElementReference,
+} from '@/lib/chat/pi/element-reference';
 
 const log = createLogger('Pi Chat API');
 
@@ -58,6 +63,16 @@ export async function POST(req: NextRequest) {
 
     if (!body.config || body.config.agentIds == null) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: config.agentIds');
+    }
+
+    let elementReference;
+    try {
+      elementReference = resolveSlideElementReference(body);
+    } catch (error) {
+      if (error instanceof ElementReferenceValidationError) {
+        return apiError('INVALID_REQUEST', 400, error.message);
+      }
+      throw error;
     }
 
     const agentIds = body.config.agentIds;
@@ -210,6 +225,7 @@ export async function POST(req: NextRequest) {
 
         await runPiDirectorLoop({
           body,
+          elementReference,
           agentConfigs,
           send,
           languageModel,
@@ -272,6 +288,7 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
+        ...(elementReference ? { [ELEMENT_REFERENCE_ACCEPTED_HEADER]: '1' } : {}),
       },
     });
   } catch (error) {

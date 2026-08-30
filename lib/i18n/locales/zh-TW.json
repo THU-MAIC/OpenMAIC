@@ -135,6 +135,22 @@
       "emptyAgentResponses": "智能體連續無回應,討論已停止。請重新嘗試或檢查模型設定。",
       "streamInterrupted": "資料串流意外中斷,討論未能完成。請重新嘗試。"
     },
+    "elementReference": {
+      "button": "引用課件",
+      "unavailable": "僅可引用目前的 PPT 頁面",
+      "instruction": "點選一個課件元素 · Esc 退出",
+      "fallback": "其他課件元素（{{count}}）",
+      "clear": "取消課件引用",
+      "summary": {
+        "noText": "無文字",
+        "emptyContent": "無內容",
+        "code": "程式碼",
+        "line": "線條",
+        "imageMetadata": "圖片（僅引用中繼資料）",
+        "videoMetadata": "影片（僅引用中繼資料）",
+        "audioMetadata": "音訊（僅引用中繼資料）"
+      }
+    },
     "tabs": {
       "lecture": "筆記",
       "chat": "對話"

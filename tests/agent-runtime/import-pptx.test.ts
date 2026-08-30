@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Slide } from '@openmaic/dsl';
 import type { AgentSessionMaterial } from '@openmaic/storage';
 
@@ -12,7 +12,9 @@ import {
 } from '@/lib/server/agent-runtime/course-tools';
 import {
   IMPORT_PPTX_TOOL_NAME,
+  MAX_IMPORT_BYTES,
   MAX_IMPORT_SLIDES,
+  PARSE_PPTX_TIMEOUT_MS,
   PPTX_MIME,
   parsePptxBuffer,
   parsePptxIsolated,
@@ -20,6 +22,7 @@ import {
   titleFromSlide,
   toArrayBuffer,
   isPptxMaterial,
+  type ParsePptxOptions,
 } from '@/lib/server/agent-runtime/import-pptx';
 import { installNodeXmlHttpRequest, NodeXMLHttpRequest } from '@/lib/server/agent-runtime/node-xhr';
 import { sessionMaterialsPromptBlock } from '@/lib/server/agent-runtime/session-materials';
@@ -148,9 +151,11 @@ async function runImport(
     signal?: AbortSignal;
     bytes?: Buffer;
     mime?: string;
+    parsePptx?: (buffer: ArrayBuffer, options?: ParsePptxOptions) => Promise<Slide[]>;
   },
 ) {
   const checkpoints: { tool: string; detail: string }[] = [];
+  const parsePptx = args.parsePptx ?? (async () => args.slides ?? [textSlide('s1', '<p>封面</p>')]);
   const tools = buildDslCourseToolset({
     stageAccess: async () => ({ kind: 'owned' as const }),
     store,
@@ -161,7 +166,7 @@ async function runImport(
       bytes: args.bytes ?? Buffer.from(`deck-${record.id}`),
       mime: args.mime ?? PPTX_MIME,
     }),
-    parsePptx: async () => args.slides ?? [textSlide('s1', '<p>封面</p>')],
+    parsePptx,
   });
   const tool = tools.find((item) => item.name === IMPORT_PPTX_TOOL_NAME);
   if (!tool) throw new Error('import_pptx missing');
@@ -547,6 +552,29 @@ describe('import_pptx tool', () => {
       }),
     ).rejects.toThrow('aborted');
   });
+
+  it('rejects an oversized pptx before parse and asks the user to compress or split it', async () => {
+    const parsePptx = vi.fn(async () => [textSlide('s1', '<p>封面</p>')]);
+    const { result } = await runImport(stageStore(), {
+      params: { materialId: 'mat_ppt' },
+      record: sourceRecord(),
+      bytes: Buffer.alloc(MAX_IMPORT_BYTES + 1),
+      parsePptx,
+    });
+    expect(result.isError).toBe(true);
+    expect(parsePptx).not.toHaveBeenCalled();
+    expect(result.details).toMatchObject({
+      status: 'too_large',
+      materialId: 'mat_ppt',
+      bytes: MAX_IMPORT_BYTES + 1,
+      maxBytes: MAX_IMPORT_BYTES,
+    });
+    const text = String(
+      result.content[0] && 'text' in result.content[0] ? result.content[0].text : '',
+    );
+    expect(text).toMatch(/too large/i);
+    expect(text).toMatch(/compress or split/i);
+  });
 });
 
 describe('session material prompt', () => {
@@ -585,6 +613,64 @@ describe('session material prompt', () => {
     ]);
     expect(pptx).toContain('import_pptx');
     expect(pptx).toContain('layout-preserving');
+  });
+});
+
+function hungWorkerHarness() {
+  const constructed: Array<{ terminate: ReturnType<typeof vi.fn> }> = [];
+  class HungWorker {
+    terminate = vi.fn(async () => 0);
+    constructor() {
+      constructed.push(this);
+    }
+    once() {
+      return this;
+    }
+  }
+  return { HungWorker, constructed };
+}
+
+describe('parsePptxIsolated bounds', () => {
+  it('exports a 90s parse timeout and an 8 MiB byte cap', () => {
+    expect(PARSE_PPTX_TIMEOUT_MS).toBe(90_000);
+    expect(MAX_IMPORT_BYTES).toBe(8 * 1024 * 1024);
+  });
+
+  it('rejects a hung worker when the parse timeout elapses and terminates it', async () => {
+    const { HungWorker, constructed } = hungWorkerHarness();
+    await expect(
+      parsePptxIsolated(new ArrayBuffer(8), { Worker: HungWorker, timeoutMs: 20 }),
+    ).rejects.toThrow(/parse exceeded 20ms/i);
+    expect(constructed).toHaveLength(1);
+    expect(constructed[0]?.terminate).toHaveBeenCalled();
+  });
+
+  it('does not start a worker when the signal is already aborted', async () => {
+    const { HungWorker, constructed } = hungWorkerHarness();
+    const abort = new AbortController();
+    abort.abort();
+    await expect(
+      parsePptxIsolated(new ArrayBuffer(8), {
+        Worker: HungWorker,
+        signal: abort.signal,
+        timeoutMs: 5_000,
+      }),
+    ).rejects.toThrow('aborted');
+    expect(constructed).toHaveLength(0);
+  });
+
+  it('terminates the worker when the parse is aborted', async () => {
+    const { HungWorker, constructed } = hungWorkerHarness();
+    const abort = new AbortController();
+    const pending = parsePptxIsolated(new ArrayBuffer(8), {
+      Worker: HungWorker,
+      signal: abort.signal,
+      timeoutMs: 5_000,
+    });
+    abort.abort();
+    await expect(pending).rejects.toThrow('aborted');
+    expect(constructed).toHaveLength(1);
+    expect(constructed[0]?.terminate).toHaveBeenCalled();
   });
 });
 

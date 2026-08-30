@@ -15,6 +15,7 @@ import { saveAs } from 'file-saver';
 import { toast } from 'sonner';
 
 import { useStageStore } from '@/lib/store';
+import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
 import type { Scene } from '@/lib/types/stage';
@@ -35,6 +36,29 @@ export const SCRIPT_MIME_TYPES: Record<ScriptFormat, string> = {
   md: 'text/markdown;charset=utf-8',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 };
+
+interface ScriptExportStageState {
+  scenes: readonly unknown[];
+  generatingOutlines: readonly unknown[];
+  failedOutlines: readonly unknown[];
+}
+
+interface ScriptExportMediaTask {
+  status: string;
+}
+
+/** Keep render-time and click-time narration export readiness in sync. */
+export function isScriptExportReady(
+  stageState: ScriptExportStageState,
+  mediaTasks: Record<string, ScriptExportMediaTask>,
+): boolean {
+  return (
+    stageState.scenes.length > 0 &&
+    stageState.generatingOutlines.length === 0 &&
+    stageState.failedOutlines.length === 0 &&
+    Object.values(mediaTasks).every((task) => task.status === 'done' || task.status === 'failed')
+  );
+}
 
 /**
  * Collect each scene's narration: concatenate its `SpeechAction.text` values in
@@ -177,8 +201,14 @@ export function useExportScript() {
     async (format: ScriptFormat) => {
       if (exportingRef.current) return;
 
-      const scenes = useStageStore.getState().scenes;
-      const stage = useStageStore.getState().stage;
+      const stageState = useStageStore.getState();
+      const mediaTasks = useMediaGenerationStore.getState().tasks;
+      if (!isScriptExportReady(stageState, mediaTasks)) {
+        toast.warning(t('share.notReady'));
+        return;
+      }
+
+      const { scenes, stage } = stageState;
       const scripts = collectSceneScripts(scenes, (order) => t('export.slideFallback', { order }));
       if (scripts.length === 0) {
         toast.warning(t('export.nothingToExport'));

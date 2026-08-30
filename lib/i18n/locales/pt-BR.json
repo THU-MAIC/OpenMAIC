@@ -135,6 +135,22 @@
       "emptyAgentResponses": "Os agentes retornaram respostas vazias; a discussão foi interrompida. Tente novamente ou verifique as configurações do modelo.",
       "streamInterrupted": "O fluxo de dados terminou inesperadamente; a discussão não foi concluída. Por favor, tente novamente."
     },
+    "elementReference": {
+      "button": "Referenciar slide",
+      "unavailable": "Apenas o slide PPT atual pode ser referenciado",
+      "instruction": "Clique em um elemento · Esc para sair",
+      "fallback": "Outros elementos do slide ({{count}})",
+      "clear": "Remover referência do slide",
+      "summary": {
+        "noText": "Sem texto",
+        "emptyContent": "Sem conteúdo",
+        "code": "Código",
+        "line": "Linha",
+        "imageMetadata": "Imagem (somente metadados)",
+        "videoMetadata": "Vídeo (somente metadados)",
+        "audioMetadata": "Áudio (somente metadados)"
+      }
+    },
     "tabs": {
       "lecture": "Anotações",
       "chat": "Conversa"
