@@ -11,9 +11,9 @@
 </p>
 
 <p align="center">
-  <a href="https://my.feishu.cn/wiki/UIfKw9Knti0LcKkTxDNcqlUrnzh"><img src="https://img.shields.io/badge/%F0%9F%93%98%20User%20Guide-v1.0.0%20%C2%B7%20English-4F8EF7?style=for-the-badge" alt="v1.0.0 User Guide (English)"/></a>
+  <a href="https://lcn6dqn3m0yr.feishu.cn/wiki/CkQSwHFdzibQFvkGzwPcmUOfnXg"><img src="https://img.shields.io/badge/%F0%9F%93%98%20User%20Guide-v1.0.0%20%C2%B7%20English-4F8EF7?style=for-the-badge" alt="v1.0.0 User Guide (English)"/></a>
   &nbsp;&nbsp;
-  <a href="https://lcn6dqn3m0yr.feishu.cn/wiki/CkQSwHFdzibQFvkGzwPcmUOfnXg"><img src="https://img.shields.io/badge/%F0%9F%93%99%20%E4%BD%93%E9%AA%8C%E6%8C%87%E5%8D%97-v1.0.0%20%C2%B7%20%E4%B8%AD%E6%96%87-FF6B35?style=for-the-badge" alt="v1.0.0 体验指南（中文）"/></a>
+  <a href="https://my.feishu.cn/wiki/UIfKw9Knti0LcKkTxDNcqlUrnzh"><img src="https://img.shields.io/badge/%F0%9F%93%99%20%E4%BD%93%E9%AA%8C%E6%8C%87%E5%8D%97-v1.0.0%20%C2%B7%20%E4%B8%AD%E6%96%87-FF6B35?style=for-the-badge" alt="v1.0.0 体验指南（中文）"/></a>
 </p>
 
 <p align="center">
@@ -143,14 +143,14 @@ You can also configure providers via `server-providers.yml`:
 ```yaml
 providers:
   openai:
-    apiKey: sk-...
+    apiKey: ***
   azure:
-    apiKey: ...
+    apiKey: ***
     baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
     models:
       - YOUR-DEPLOYMENT-NAME
   anthropic:
-    apiKey: sk-ant-...
+    apiKey: ***
   bedrock:
     models:
       - us.anthropic.claude-sonnet-5
@@ -356,7 +356,7 @@ and PostgreSQL. The persistence HTTP server is embedded in the app at
 
 ```bash
 cp .env.example .env.local
-printf '\nDATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic\nPERSISTENCE_DEV_TOKEN=openmaic-local-dev\n' >> .env.local
+printf '\nDATABASE_URL=postgres://openmaic:***@postgres:5432/openmaic\nPERSISTENCE_DEV_TOKEN=openmaic-local-dev\n' >> .env.local
 NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docker compose --profile server-persistence up --build
 ```
 
@@ -445,7 +445,7 @@ with the same PostgreSQL connection used by server-backed persistence:
 ```env
 NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=true
 OPENMAIC_AGENT_RUNTIME_ENABLED=true
-DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
+DATABASE_URL=postgres://openmaic:***@postgres:5432/openmaic
 MODEL_ROUTES='{"maic-agent-driver":{"model":"openai:gpt-5.5","api":"openai-completions"}}'
 ```
 
