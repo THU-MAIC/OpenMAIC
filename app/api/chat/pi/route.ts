@@ -32,7 +32,7 @@ import { hasNativeWhiteboardAction } from '@/lib/chat/pi/tools/native-whiteboard
 import {
   ELEMENT_REFERENCE_ACCEPTED_HEADER,
   ElementReferenceValidationError,
-  resolveSlideElementReference,
+  resolveElementReference,
 } from '@/lib/chat/pi/element-reference';
 
 const log = createLogger('Pi Chat API');
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
 
     let elementReference;
     try {
-      elementReference = resolveSlideElementReference(body);
+      elementReference = resolveElementReference(body);
     } catch (error) {
       if (error instanceof ElementReferenceValidationError) {
         return apiError('INVALID_REQUEST', 400, error.message);

@@ -136,11 +136,11 @@
       "streamInterrupted": "ストリームが予期せず終了し、ディスカッションが完了しませんでした。再度お試しください。"
     },
     "elementReference": {
-      "button": "スライドを参照",
-      "unavailable": "現在の PPT スライドのみ参照できます",
+      "button": "教材を参照",
+      "unavailable": "現在の PPT スライドまたは対応するインタラクティブコンポーネントのみ参照できます",
       "instruction": "スライド要素をクリック · Esc で終了",
       "fallback": "その他のスライド要素（{{count}}）",
-      "clear": "スライド参照を解除",
+      "clear": "教材の参照を解除",
       "summary": {
         "noText": "テキストなし",
         "emptyContent": "内容なし",

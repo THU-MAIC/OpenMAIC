@@ -136,11 +136,11 @@
       "streamInterrupted": "O fluxo de dados terminou inesperadamente; a discussão não foi concluída. Por favor, tente novamente."
     },
     "elementReference": {
-      "button": "Referenciar slide",
-      "unavailable": "Apenas o slide PPT atual pode ser referenciado",
+      "button": "Referenciar conteúdo do curso",
+      "unavailable": "Apenas o slide PPT atual ou um componente interativo compatível pode ser referenciado",
       "instruction": "Clique em um elemento · Esc para sair",
       "fallback": "Outros elementos do slide ({{count}})",
-      "clear": "Remover referência do slide",
+      "clear": "Remover referência do conteúdo do curso",
       "summary": {
         "noText": "Sem texto",
         "emptyContent": "Sem conteúdo",

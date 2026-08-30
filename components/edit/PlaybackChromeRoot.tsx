@@ -56,7 +56,11 @@ import {
 import { AlertTriangle } from 'lucide-react';
 import { VisuallyHidden } from 'radix-ui';
 import type { PPTElement } from '@openmaic/dsl';
-import type { SlideElementReference } from '@/lib/types/chat';
+import type { ElementReference } from '@/lib/types/chat';
+import type {
+  PlaybackInteractiveComponentPick,
+  PlaybackInteractivePickerState,
+} from '@/components/scene-renderers/InteractiveIframeHost';
 import { isPiChatEnabled } from '@/lib/config/feature-flags';
 import {
   getSlideElementPresentation,
@@ -64,18 +68,15 @@ import {
 } from '@/components/canvas/slide-element-pick-overlay';
 import { shouldClearDraftElementReference } from '@/components/chat/element-reference-receipt';
 
-type DraftSlideElementReference = {
-  reference: SlideElementReference;
+type DraftElementReference = {
+  reference: ElementReference;
   selectionVersion: number;
   sceneOrder?: number;
-  elementType: PPTElement['type'];
+  elementType: PPTElement['type'] | 'interactive';
   displaySummary: string;
 };
 
-type ElementReferenceSendSnapshot = Pick<
-  DraftSlideElementReference,
-  'reference' | 'selectionVersion'
->;
+type ElementReferenceSendSnapshot = Pick<DraftElementReference, 'reference' | 'selectionVersion'>;
 
 /**
  * Imperative handle exposed via `ref` so the parent (`Stage`) can tear
@@ -87,6 +88,10 @@ type ElementReferenceSendSnapshot = Pick<
 export interface PlaybackChromeRootHandle {
   /** Ends any active SSE session, stops the engine, cleans up TTS audio. */
   teardown: () => Promise<void>;
+  /** Receives one identity-only pick from the sibling Interactive iframe host. */
+  acceptInteractivePick: (pick: PlaybackInteractiveComponentPick) => boolean;
+  /** Mirrors iframe Escape into the playback-owned picker state. */
+  cancelElementPick: () => void;
 }
 
 interface PlaybackChromeRootProps {
@@ -101,6 +106,7 @@ interface PlaybackChromeRootProps {
   readonly hideHeader?: boolean;
   readonly hideHeaderGlobalControls?: boolean;
   readonly hideHeaderCourseActions?: boolean;
+  readonly onInteractivePickerChange?: (state: PlaybackInteractivePickerState | null) => void;
 }
 
 /**
@@ -122,6 +128,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       hideHeader,
       hideHeaderGlobalControls,
       hideHeaderCourseActions,
+      onInteractivePickerChange,
     },
     ref,
   ) {
@@ -141,17 +148,26 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
     const currentScene = getCurrentScene();
     const piChatEnabled = isPiChatEnabled();
-    const [elementPickActive, setElementPickActive] = useState(false);
+    const [elementPickActive, setElementPickActiveState] = useState(false);
+    const elementPickActiveRef = useRef(false);
+    const setElementPickActive = useCallback((next: boolean | ((active: boolean) => boolean)) => {
+      const resolved = typeof next === 'function' ? next(elementPickActiveRef.current) : next;
+      elementPickActiveRef.current = resolved;
+      setElementPickActiveState(resolved);
+    }, []);
     const [draftElementReference, setDraftElementReferenceState] =
-      useState<DraftSlideElementReference | null>(null);
-    const draftElementReferenceRef = useRef<DraftSlideElementReference | null>(null);
+      useState<DraftElementReference | null>(null);
+    const draftElementReferenceRef = useRef<DraftElementReference | null>(null);
     const elementReferenceSceneIdRef = useRef(currentSceneId);
     const selectionVersionRef = useRef(0);
     const pendingInterruptElementReferenceRef = useRef<ElementReferenceSendSnapshot | undefined>(
       undefined,
     );
+    const interactivePickHandlerRef = useRef<(pick: PlaybackInteractiveComponentPick) => boolean>(
+      () => false,
+    );
 
-    const setDraftElementReference = useCallback((next: DraftSlideElementReference | null) => {
+    const setDraftElementReference = useCallback((next: DraftElementReference | null) => {
       draftElementReferenceRef.current = next;
       setDraftElementReferenceState(next);
     }, []);
@@ -551,8 +567,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           discussionTTS.cleanup();
           resetSceneState();
         },
+        acceptInteractivePick: (pick) => interactivePickHandlerRef.current(pick),
+        cancelElementPick: () => setElementPickActive(false),
       }),
-      [discussionTTS, resetSceneState],
+      [discussionTTS, resetSceneState, setElementPickActive],
     );
 
     const clearPresentationIdleTimer = useCallback(() => {
@@ -1215,6 +1233,16 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       currentScene?.type === 'slide' &&
       currentScene.content.type === 'slide',
     );
+    const isHtmlBackedInteractiveScene = Boolean(
+      currentScene?.type === 'interactive' &&
+      currentScene.content.type === 'interactive' &&
+      typeof currentScene.content.html === 'string' &&
+      currentScene.content.html.trim().length > 0,
+    );
+    const canPickInteractiveComponent = Boolean(
+      showElementReference && !whiteboardOpen && isHtmlBackedInteractiveScene,
+    );
+    const canPickElement = canPickSlideElement || canPickInteractiveComponent;
 
     const handlePickElement = useCallback(
       (element: PPTElement) => {
@@ -1235,17 +1263,94 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         });
         setElementPickActive(false);
       },
-      [currentScene, currentSceneIndex, setDraftElementReference, t],
+      [currentScene, currentSceneIndex, setDraftElementReference, setElementPickActive, t],
     );
 
+    const handlePickInteractiveComponent = useCallback(
+      (pick: PlaybackInteractiveComponentPick): boolean => {
+        if (
+          !elementPickActiveRef.current ||
+          !canPickInteractiveComponent ||
+          currentScene?.type !== 'interactive' ||
+          currentScene.content.type !== 'interactive' ||
+          pick.sceneId !== currentScene.id
+        ) {
+          return false;
+        }
+        // Consume the owner-owned arm synchronously. The iframe host is a sibling
+        // projection and may still deliver a message from its previous render
+        // before React publishes the inactive state back to it.
+        setElementPickActive(false);
+        const selectionVersion = selectionVersionRef.current + 1;
+        selectionVersionRef.current = selectionVersion;
+        setDraftElementReference({
+          reference: {
+            kind: 'interactive_component',
+            sceneId: currentScene.id,
+            selector: pick.selector,
+          },
+          selectionVersion,
+          sceneOrder: currentSceneIndex >= 0 ? currentSceneIndex : currentScene.order,
+          elementType: 'interactive',
+          displaySummary: pick.selector,
+        });
+        return true;
+      },
+      [
+        canPickInteractiveComponent,
+        currentScene,
+        currentSceneIndex,
+        setDraftElementReference,
+        setElementPickActive,
+      ],
+    );
+    interactivePickHandlerRef.current = handlePickInteractiveComponent;
+
     const handleToggleElementPick = useCallback(() => {
-      if (!canPickSlideElement) return;
+      if (!canPickElement) return;
       setElementPickActive((active) => !active);
-    }, [canPickSlideElement]);
+    }, [canPickElement, setElementPickActive]);
 
     useEffect(() => {
-      if (whiteboardOpen || !canPickSlideElement) setElementPickActive(false);
-    }, [canPickSlideElement, whiteboardOpen]);
+      if (whiteboardOpen || !canPickElement) setElementPickActive(false);
+    }, [canPickElement, setElementPickActive, whiteboardOpen]);
+
+    useEffect(() => {
+      if (!onInteractivePickerChange) return;
+      if (
+        showElementReference &&
+        isHtmlBackedInteractiveScene &&
+        currentScene?.type === 'interactive'
+      ) {
+        const selectedSelector =
+          draftElementReference?.reference.kind === 'interactive_component' &&
+          draftElementReference.reference.sceneId === currentScene.id
+            ? draftElementReference.reference.selector
+            : undefined;
+        onInteractivePickerChange({
+          sceneId: currentScene.id,
+          active: canPickInteractiveComponent && elementPickActive,
+          selectedSelector,
+        });
+      } else {
+        onInteractivePickerChange(null);
+      }
+    }, [
+      canPickInteractiveComponent,
+      currentScene,
+      draftElementReference,
+      elementPickActive,
+      isHtmlBackedInteractiveScene,
+      onInteractivePickerChange,
+      showElementReference,
+    ]);
+
+    useEffect(
+      () => () => {
+        onInteractivePickerChange?.(null);
+      },
+      [onInteractivePickerChange],
+    );
 
     useEffect(() => {
       const previousSceneId = elementReferenceSceneIdRef.current;
@@ -1527,7 +1632,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               onStopDiscussion={handleStopDiscussion}
               onContinueDiscussion={handleContinueDiscussion}
               showElementReference={showElementReference}
-              canPickSlideElement={canPickSlideElement}
+              canPickSlideElement={canPickElement}
               elementPickActive={elementPickActive}
               onToggleElementPick={handleToggleElementPick}
               onPickElement={handlePickElement}
@@ -1703,7 +1808,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 onPresentationInteractionChange={setIsPresentationInteractionActive}
                 fullscreenContainerRef={stageRef}
                 showElementReference={showElementReference}
-                canPickSlideElement={canPickSlideElement}
+                canPickSlideElement={canPickElement}
                 elementPickActive={elementPickActive}
                 onToggleElementPick={handleToggleElementPick}
                 elementReferencePill={
@@ -1712,7 +1817,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                         sceneLabel: t('chat.lectureNotes.pageLabel', {
                           n: (draftElementReference.sceneOrder ?? 0) + 1,
                         }),
-                        elementType: getSlideElementTypeLabel(draftElementReference.elementType, t),
+                        elementType:
+                          draftElementReference.elementType === 'interactive'
+                            ? t('edit.sceneType.interactive')
+                            : getSlideElementTypeLabel(draftElementReference.elementType, t),
                         displaySummary: draftElementReference.displaySummary,
                       }
                     : undefined

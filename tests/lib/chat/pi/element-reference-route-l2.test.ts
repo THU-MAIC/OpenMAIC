@@ -98,6 +98,49 @@ function makeBody() {
   };
 }
 
+function makeInteractiveBody() {
+  const body = makeBody();
+  return {
+    ...body,
+    messages: [
+      {
+        ...body.messages[0],
+        parts: [
+          {
+            ...body.messages[0].parts[0],
+            text: 'What does this slider control and what is its source default?',
+          },
+        ],
+      },
+    ],
+    storeState: {
+      ...body.storeState,
+      scenes: [
+        {
+          id: 'scene-interactive',
+          stageId: 'stage-1',
+          title: 'Projectile simulation',
+          order: 0,
+          type: 'interactive',
+          content: {
+            type: 'interactive',
+            widgetType: 'simulation',
+            html: `<!doctype html><label for="angle-slider">Launch angle (degrees)</label>
+              <input id="angle-slider" name="angle" type="range" min="0" max="90" step="5" value="45">
+              <script>document.querySelector('#angle-slider').value = '70'</script>`,
+          },
+        },
+      ],
+      currentSceneId: 'scene-interactive',
+    },
+    elementReference: {
+      kind: 'interactive_component',
+      sceneId: 'scene-interactive',
+      selector: '#angle-slider',
+    },
+  };
+}
+
 function installAgentShell(
   legacyAnswer: string,
   nativeAnswer = 'Native grounded answer.',
@@ -329,6 +372,40 @@ describe('PPT element reference Route → Director → real call_agent L2', () =
     expect(stream).toContain('"type":"done"');
     expect(stream).not.toContain('"type":"error"');
   }, 15_000);
+
+  it.each([
+    { runtime: 'Legacy', native: false },
+    { runtime: 'Native', native: true },
+  ])(
+    'grounds one source-static Interactive component across repeated $runtime Child delegations',
+    async ({ native }) => {
+      if (native) process.env[nativeFlag] = 'true';
+      const answer = 'The slider source default is 45 degrees; current runtime state is unknown.';
+      installAgentShell(answer, answer, { delegations: 2 });
+      const { POST } = await import('@/app/api/chat/pi/route');
+
+      const response = await POST(makeRequest(makeInteractiveBody()));
+      const stream = await response.text();
+      const childPrompts = native ? mocks.nativeChildPrompts : mocks.legacyChildPrompts;
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBe('1');
+      expect(mocks.callAgentExecutions).toBe(2);
+      expect(mocks.directorPrompts.join('\n')).toContain('Launch angle (degrees)');
+      expect(mocks.directorPrompts.join('\n')).toContain('45');
+      expect(mocks.directorPrompts.join('\n')).not.toContain("value = '70'");
+      expect(childPrompts).toHaveLength(2);
+      for (const prompt of childPrompts) {
+        expect(prompt).toContain('"selector":"#angle-slider"');
+        expect(prompt).toContain('{"name":"value","value":"45"}');
+        expect(prompt).not.toContain("value = '70'");
+      }
+      expect(stream).toContain('source default is 45 degrees');
+      expect(stream).toContain('"type":"done"');
+      expect(stream).not.toContain('"type":"error"');
+    },
+    15_000,
+  );
 
   it('routes Chart series values through the Director summary and real Child evidence', async () => {
     installAgentShell('The values decrease from 180 to 88.');

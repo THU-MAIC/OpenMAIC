@@ -136,11 +136,11 @@
       "streamInterrupted": "Der Stream wurde unerwartet beendet; die Diskussion konnte nicht abgeschlossen werden. Versuche es erneut."
     },
     "elementReference": {
-      "button": "Folie referenzieren",
-      "unavailable": "Nur die aktuelle PPT-Folie kann referenziert werden",
+      "button": "Kursinhalt referenzieren",
+      "unavailable": "Nur die aktuelle PPT-Folie oder eine unterstützte interaktive Komponente kann referenziert werden",
       "instruction": "Folienelement anklicken · Esc zum Beenden",
       "fallback": "Weitere Folienelemente ({{count}})",
-      "clear": "Folienreferenz entfernen",
+      "clear": "Kursinhaltsreferenz entfernen",
       "summary": {
         "noText": "Kein Text",
         "emptyContent": "Kein Inhalt",

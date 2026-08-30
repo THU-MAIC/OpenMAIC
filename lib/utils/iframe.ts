@@ -106,11 +106,18 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
   if (window.__maicElementPickerInstalled) return;
   window.__maicElementPickerInstalled = true;
   var armed = false;
+  var mode = null;
   var selectors = [];
+  var selectedSelector = null;
+  var selectedHandle = null;
+  var invalidSelectedSelector = null;
   var root = null;
   var hoverBox = null;
+  var selectedBox = null;
   var candidate = null;
   var raf = null;
+  var stableIdPattern = /^[A-Za-z][A-Za-z0-9_-]{0,126}$/;
+  var excludedTags = { html:1, head:1, body:1, script:1, style:1, link:1, meta:1, noscript:1, template:1, iframe:1, canvas:1 };
   function emit(message) {
     try { window.parent.postMessage(message, '*'); } catch (e) {}
   }
@@ -152,6 +159,19 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
     }
     return parts.join(' > ') || tag;
   }
+  function playbackRootFor(element) {
+    var node = element;
+    while (node && node.nodeType === 1 && node !== document.documentElement) {
+      var tag = node.tagName.toLowerCase();
+      var id = node.getAttribute('id');
+      if (!excludedTags[tag] && id && stableIdPattern.test(id)) {
+        var selector = '#' + id;
+        if (unique(selector)) return node;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
   function ensureRoot() {
     if (root && root.isConnected) return;
     root = document.createElement('div');
@@ -160,7 +180,17 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
     hoverBox = document.createElement('div');
     hoverBox.style.cssText = 'display:none;position:absolute;border:2px solid #7c3aed;background:rgba(124,58,237,.10);box-sizing:border-box;border-radius:3px;pointer-events:none;';
     root.appendChild(hoverBox);
+    selectedBox = document.createElement('div');
+    selectedBox.setAttribute('data-maic-picker-selected', '');
+    selectedBox.style.cssText = 'display:none;position:absolute;border:3px solid #7c3aed;background:rgba(124,58,237,.10);box-sizing:border-box;border-radius:4px;box-shadow:0 0 0 1px rgba(255,255,255,.9);pointer-events:none;';
+    root.appendChild(selectedBox);
     (document.body || document.documentElement).appendChild(root);
+  }
+  function removeRoot() {
+    if (root) root.remove();
+    root = null;
+    hoverBox = null;
+    selectedBox = null;
   }
   function position(node, element) {
     var rect = element.getBoundingClientRect();
@@ -173,17 +203,39 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
     return !!(element && element.closest && element.closest('[data-maic-element-picker-overlay]'));
   }
   function selectable(element) {
-    return !!element && element !== document.documentElement && element !== document.body && !isOverlay(element);
+    return !!element && element.nodeType === 1 && element !== document.documentElement && element !== document.body && !isOverlay(element);
+  }
+  function eventElement(event) {
+    if (selectable(event.target)) return event.target;
+    return document.elementFromPoint(event.clientX, event.clientY);
+  }
+  function validateSelectedHandle() {
+    if (!selectedSelector || invalidSelectedSelector === selectedSelector || !selectedHandle) return null;
+    var matches = [];
+    try { matches = document.querySelectorAll(selectedSelector); } catch (e) {}
+    if (!selectedHandle.isConnected || matches.length !== 1 || matches[0] !== selectedHandle) {
+      invalidSelectedSelector = selectedSelector;
+      selectedHandle = null;
+      return null;
+    }
+    return selectedHandle;
   }
   function draw() {
     raf = null;
-    if (!armed) return;
+    if (!armed && !selectedSelector) { removeRoot(); return; }
     ensureRoot();
-    if (candidate && candidate.isConnected) {
+    if (armed && candidate && candidate.isConnected) {
       position(hoverBox, candidate);
       hoverBox.style.display = 'block';
     } else {
       hoverBox.style.display = 'none';
+    }
+    var selected = validateSelectedHandle();
+    if (selected) {
+      position(selectedBox, selected);
+      selectedBox.style.display = 'block';
+    } else {
+      selectedBox.style.display = 'none';
     }
     Array.prototype.slice.call(root.querySelectorAll('[data-maic-picker-pin]')).forEach(function (node) { node.remove(); });
     selectors.forEach(function (selector, index) {
@@ -199,13 +251,16 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
       badge.style.top = Math.max(0, rect.top + window.scrollY - 8) + 'px';
       root.appendChild(badge);
     });
+    if (selectedSelector && selectedHandle && invalidSelectedSelector !== selectedSelector) scheduleDraw();
   }
   function scheduleDraw() {
     if (raf == null) raf = window.requestAnimationFrame(draw);
   }
   function onPointerMove(event) {
-    var element = document.elementFromPoint(event.clientX, event.clientY);
-    candidate = selectable(element) ? element : null;
+    var element = eventElement(event);
+    candidate = mode === 'playback-stable-id'
+      ? playbackRootFor(element)
+      : (selectable(element) ? element : null);
     scheduleDraw();
   }
   function block(event) {
@@ -216,26 +271,46 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
   function onClick(event) {
     if (!armed) return;
     block(event);
-    var element = document.elementFromPoint(event.clientX, event.clientY);
-    if (!selectable(element)) return;
+    var target = eventElement(event);
+    var element = mode === 'playback-stable-id'
+      ? playbackRootFor(target)
+      : (selectable(target) ? target : null);
+    if (!element) return;
     candidate = element;
-    emit({
-      __maicInteractive: true,
-      kind: 'element-picked',
-      selector: selectorFor(element),
-      outerHTML: String(element.outerHTML || '').slice(0, 2048),
-      text: String(typeof element.innerText === 'string' ? element.innerText : '').slice(0, 200)
-    });
+    var selector = mode === 'playback-stable-id' ? '#' + element.id : selectorFor(element);
+    if (mode === 'playback-stable-id') {
+      selectedSelector = selector;
+      selectedHandle = element;
+      invalidSelectedSelector = null;
+      var pickedMode = mode;
+      // Playback selection is single-shot. Disarm locally before the parent
+      // projection returns, while retaining the exact clicked Element handle
+      // for the persistent outline.
+      disarm();
+      emit({ __maicInteractive: true, kind: 'element-picked', mode: pickedMode, selector: selector });
+    } else {
+      emit({
+        __maicInteractive: true,
+        kind: 'element-picked',
+        mode: mode,
+        selector: selector,
+        outerHTML: String(element.outerHTML || '').slice(0, 2048),
+        text: String(typeof element.innerText === 'string' ? element.innerText : '').slice(0, 200)
+      });
+    }
     scheduleDraw();
   }
   function onKey(event) {
     if (!armed || event.key !== 'Escape') return;
     event.preventDefault();
     event.stopImmediatePropagation();
+    var cancelledMode = mode;
     disarm();
-    emit({ __maicInteractive: true, kind: 'element-picker-disarmed' });
+    emit({ __maicInteractive: true, kind: 'element-picker-disarmed', mode: cancelledMode });
   }
-  function arm() {
+  function arm(nextMode) {
+    if (nextMode !== 'editor' && nextMode !== 'playback-stable-id') return;
+    mode = nextMode;
     if (armed) { scheduleDraw(); return; }
     armed = true;
     ensureRoot();
@@ -248,8 +323,9 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
     scheduleDraw();
   }
   function disarm() {
-    if (!armed) return;
+    if (!armed) { mode = null; return; }
     armed = false;
+    mode = null;
     candidate = null;
     window.removeEventListener('pointermove', onPointerMove, true);
     window.removeEventListener('click', onClick, true);
@@ -258,19 +334,29 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
     window.removeEventListener('scroll', scheduleDraw, true);
     window.removeEventListener('resize', scheduleDraw);
     if (raf != null) { window.cancelAnimationFrame(raf); raf = null; }
-    if (root) root.remove();
-    root = null;
-    hoverBox = null;
+    if (selectedSelector) scheduleDraw();
+    else removeRoot();
+  }
+  function syncSelectedSelector(nextSelector) {
+    if (nextSelector === selectedSelector) return;
+    selectedSelector = nextSelector;
+    selectedHandle = null;
+    invalidSelectedSelector = null;
   }
   window.addEventListener('message', function (event) {
     if (event.source !== window.parent) return;
     var data = event && event.data;
     if (!data || typeof data.type !== 'string') return;
-    if (data.type === 'element-picker:arm') arm();
+    if (data.type === 'element-picker:arm') arm(data.mode);
     else if (data.type === 'element-picker:disarm') disarm();
     else if (data.type === 'element-picker:sync') {
       selectors = Array.isArray(data.selectors) ? data.selectors.filter(function (item) { return typeof item === 'string'; }) : [];
-      if (armed) scheduleDraw();
+      syncSelectedSelector(typeof data.selectedSelector === 'string' ? data.selectedSelector : null);
+      if (armed || selectedSelector) scheduleDraw();
+      else {
+        if (raf != null) { window.cancelAnimationFrame(raf); raf = null; }
+        removeRoot();
+      }
     }
   });
 })();

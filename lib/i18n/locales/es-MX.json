@@ -136,11 +136,11 @@
       "streamInterrupted": "El streaming terminó inesperadamente; el debate no se completó. Inténtalo de nuevo."
     },
     "elementReference": {
-      "button": "Referenciar diapositiva",
-      "unavailable": "Solo se puede referenciar la diapositiva PPT actual",
+      "button": "Referenciar contenido del curso",
+      "unavailable": "Solo se puede referenciar la diapositiva PPT actual o un componente interactivo compatible",
       "instruction": "Haz clic en un elemento · Esc para salir",
       "fallback": "Otros elementos de la diapositiva ({{count}})",
-      "clear": "Quitar referencia de diapositiva",
+      "clear": "Quitar referencia del contenido del curso",
       "summary": {
         "noText": "Sin texto",
         "emptyContent": "Sin contenido",

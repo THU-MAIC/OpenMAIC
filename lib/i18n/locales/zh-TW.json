@@ -137,7 +137,7 @@
     },
     "elementReference": {
       "button": "引用課件",
-      "unavailable": "僅可引用目前的 PPT 頁面",
+      "unavailable": "僅可引用目前的 PPT 頁面或支援的互動元件",
       "instruction": "點選一個課件元素 · Esc 退出",
       "fallback": "其他課件元素（{{count}}）",
       "clear": "取消課件引用",

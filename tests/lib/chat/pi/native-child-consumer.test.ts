@@ -158,6 +158,26 @@ function elementReferenceEvidence(sceneId = 'scene-current', elementId = 'curren
   };
 }
 
+function interactiveElementReferenceEvidence() {
+  return {
+    content: 'Selected Interactive component evidence: scene-current/#control',
+    metadata: {
+      kind: 'interactive_component' as const,
+      source: 'request_start_snapshot' as const,
+      sceneId: 'scene-current',
+      selector: '#control',
+      component: {
+        tagName: 'input',
+        id: 'control',
+        attributes: [{ name: 'value', value: '45' }],
+        sourceMarkup: '<input id="control" value="45">',
+      },
+      truncatedFields: [],
+      omittedItems: {},
+    },
+  };
+}
+
 function makeHarness(
   options: {
     evidence?: ReturnType<typeof sceneEvidence>;
@@ -165,7 +185,9 @@ function makeHarness(
     spotlightEnabled?: boolean;
     nativeWebSearchConfig?: NativeWebSearchConfig;
     takeSceneEvidence?: () => ReturnType<typeof sceneEvidence> | undefined;
-    elementReferenceEvidence?: ReturnType<typeof elementReferenceEvidence>;
+    elementReferenceEvidence?:
+      | ReturnType<typeof elementReferenceEvidence>
+      | ReturnType<typeof interactiveElementReferenceEvidence>;
     agent?: AgentConfig;
     requestStartCurrentScene?: {
       sceneId: string;
@@ -339,6 +361,28 @@ describe('Native Child production consumer', () => {
     expect(JSON.stringify(transportMessages(1))).toContain(
       'Selected element evidence: scene-other/other-element',
     );
+    expect(first.details).toMatchObject({
+      availableToolNames: ['web_search'],
+      elementReferenceEvidence: packet.metadata,
+    });
+    expect(second.details).toMatchObject({
+      availableToolNames: ['web_search'],
+      elementReferenceEvidence: packet.metadata,
+    });
+    expect(harness.events.some((event) => event.type === 'action')).toBe(false);
+  });
+
+  it('never authorizes Spotlight from Interactive component evidence', async () => {
+    useResponses([
+      [{ type: 'text-delta', text: 'First static answer.' }, finish('stop')],
+      [{ type: 'text-delta', text: 'Second static answer.' }, finish('stop')],
+    ]);
+    const packet = interactiveElementReferenceEvidence();
+    const harness = makeHarness({ elementReferenceEvidence: packet });
+
+    const first = await execute(harness);
+    const second = await execute(harness);
+
     expect(first.details).toMatchObject({
       availableToolNames: ['web_search'],
       elementReferenceEvidence: packet.metadata,

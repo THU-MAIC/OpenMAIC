@@ -328,6 +328,7 @@ jobs:
         run: pnpm build
         env:
           NEXT_PUBLIC_MAIC_EDITOR_ENABLED: 'true'
+          NEXT_PUBLIC_PI_CHAT_ENABLED: 'true'
 
       - name: Run e2e tests
         run: pnpm exec playwright test

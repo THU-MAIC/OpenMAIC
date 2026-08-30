@@ -258,6 +258,80 @@ describe('POST /api/chat/pi model and thinking resolution', () => {
     );
   });
 
+  it('resolves an Interactive identity from source HTML before model resolution', async () => {
+    const body = makeBody();
+    body.storeState.scenes = [
+      {
+        id: 'scene-interactive',
+        stageId: 'stage-1',
+        title: 'Static control',
+        order: 0,
+        type: 'interactive',
+        content: {
+          type: 'interactive',
+          widgetType: 'simulation',
+          html: '<input id="control" type="range" min="0" max="10" value="4">',
+        },
+      } as never,
+    ];
+    body.storeState.currentSceneId = 'scene-interactive';
+    Object.assign(body, {
+      elementReference: {
+        kind: 'interactive_component',
+        sceneId: 'scene-interactive',
+        selector: '#control',
+      },
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+    await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBe('1');
+    expect(mocks.runPiDirectorLoop).toHaveBeenCalledWith(
+      expect.objectContaining({
+        elementReference: expect.objectContaining({
+          evidence: expect.objectContaining({
+            kind: 'interactive_component',
+            sceneId: 'scene-interactive',
+            selector: '#control',
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('rejects unresolved Interactive identities before resolving a model', async () => {
+    const body = makeBody();
+    body.storeState.scenes = [
+      {
+        id: 'scene-interactive',
+        stageId: 'stage-1',
+        title: 'Static control',
+        order: 0,
+        type: 'interactive',
+        content: { type: 'interactive', html: '<div id="other"></div>' },
+      } as never,
+    ];
+    body.storeState.currentSceneId = 'scene-interactive';
+    Object.assign(body, {
+      elementReference: {
+        kind: 'interactive_component',
+        sceneId: 'scene-interactive',
+        selector: '#runtime-only',
+      },
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBeNull();
+    expect(mocks.resolveModel).not.toHaveBeenCalled();
+    expect(mocks.runPiDirectorLoop).not.toHaveBeenCalled();
+  });
+
   it('rejects malformed or stale element references before resolving a model', async () => {
     const body = makeBody();
     Object.assign(body, {
