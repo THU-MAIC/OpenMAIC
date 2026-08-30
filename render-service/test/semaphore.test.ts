@@ -61,4 +61,21 @@ describe('Semaphore', () => {
     ]);
     expect(results).toEqual([1, 2, 3]);
   });
+
+  it('removes an aborted waiter without consuming the next permit', async () => {
+    const sem = new Semaphore(1);
+    const held = deferred();
+    const first = sem.run(() => held.promise);
+    await Promise.resolve();
+
+    const abort = new AbortController();
+    const stale = sem.run(async () => 'stale', abort.signal);
+    const next = sem.run(async () => 'next');
+    abort.abort(new Error('deadline'));
+
+    await expect(stale).rejects.toThrow('deadline');
+    held.resolve();
+    await first;
+    await expect(next).resolves.toBe('next');
+  });
 });

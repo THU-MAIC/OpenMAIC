@@ -8,14 +8,19 @@
  */
 export class Semaphore {
   private available: number;
-  private readonly waiters: Array<() => void> = [];
+  private readonly waiters: Array<{
+    resolve: () => void;
+    reject: (reason: unknown) => void;
+    signal?: AbortSignal;
+    onAbort?: () => void;
+  }> = [];
 
   constructor(permits: number) {
     this.available = Math.max(1, permits);
   }
 
-  async run<T>(task: () => Promise<T>): Promise<T> {
-    await this.acquire();
+  async run<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    await this.acquire(signal);
     try {
       return await task();
     } finally {
@@ -23,17 +28,34 @@ export class Semaphore {
     }
   }
 
-  private acquire(): Promise<void> {
+  private acquire(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return Promise.reject(signal.reason ?? new Error('Operation aborted'));
     if (this.available > 0) {
       this.available -= 1;
       return Promise.resolve();
     }
-    return new Promise((resolve) => this.waiters.push(resolve));
+    return new Promise((resolve, reject) => {
+      const waiter = { resolve, reject, signal, onAbort: undefined as (() => void) | undefined };
+      if (signal) {
+        waiter.onAbort = () => {
+          const index = this.waiters.indexOf(waiter);
+          if (index < 0) return;
+          this.waiters.splice(index, 1);
+          reject(signal.reason ?? new Error('Operation aborted'));
+        };
+        signal.addEventListener('abort', waiter.onAbort, { once: true });
+      }
+      this.waiters.push(waiter);
+    });
   }
 
   private release(): void {
     const next = this.waiters.shift();
-    if (next) next();
-    else this.available += 1;
+    if (next) {
+      if (next.signal && next.onAbort) {
+        next.signal.removeEventListener('abort', next.onAbort);
+      }
+      next.resolve();
+    } else this.available += 1;
   }
 }
