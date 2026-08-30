@@ -31,6 +31,14 @@ function normalizeAddress(value: string): string {
  * IPv4-mapped IPv6 is classified as IPv4 so ::ffff:127.0.0.1 cannot hide.
  */
 export function assertSafeIp(value: string): void {
+  // Self-hosted deployments can set ALLOW_LOCAL_NETWORKS=true to skip
+  // private-IP checks — same escape hatch validateUrlForSSRF already honors;
+  // without it the strict-fetch path (agent fetch_url) can never reach a
+  // local gateway even though the flag's own message says it should.
+  const allowLocal = process.env.ALLOW_LOCAL_NETWORKS;
+  if (allowLocal === 'true' || allowLocal === '1') {
+    return;
+  }
   const normalized = normalizeAddress(value);
   let address: ipaddr.IPv4 | ipaddr.IPv6;
   try {
@@ -66,14 +74,18 @@ export function normalizeUrlForStrictFetch(value: string): URL {
   if (parsed.username || parsed.password) {
     throw new UnsafeNetworkTargetError('URLs containing userinfo are not allowed');
   }
-  if (parsed.port && parsed.port !== '80' && parsed.port !== '443') {
+  // Self-hosted escape hatch, mirroring assertSafeIp: with
+  // ALLOW_LOCAL_NETWORKS set, local gateways on non-standard ports are
+  // legitimate fetch targets. Cloud metadata hostnames stay blocked.
+  const allowLocalEnv = process.env.ALLOW_LOCAL_NETWORKS;
+  const allowLocal = allowLocalEnv === 'true' || allowLocalEnv === '1';
+  if (!allowLocal && parsed.port && parsed.port !== '80' && parsed.port !== '443') {
     throw new UnsafeNetworkTargetError('Only ports 80 and 443 are allowed');
   }
   const hostname = normalizeAddress(parsed.hostname);
   if (
     CLOUD_METADATA_HOSTNAMES.has(hostname) ||
-    hostname === 'localhost' ||
-    hostname.endsWith('.local')
+    (!allowLocal && (hostname === 'localhost' || hostname.endsWith('.local')))
   ) {
     throw new UnsafeNetworkTargetError('Local/private/reserved network URLs are not allowed');
   }
