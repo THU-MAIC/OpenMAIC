@@ -275,6 +275,28 @@ describe('owner session event projection', () => {
     expect(cleared.sessions[0]).toEqual({ ...source[0], title: null, updatedAt: 400 });
   });
 
+  it('treats a title change as recent rail activity', () => {
+    const source = [
+      session('newer', { updatedAt: 250 }),
+      session('renamed', { title: 'Old title', updatedAt: 200 }),
+    ];
+    const result = reduceOwnerSessionEvent(
+      source,
+      event({
+        id: '45',
+        sessionId: 'renamed',
+        ts: 300,
+        phase: 'live',
+        type: 'session_title',
+        title: 'New title',
+      }),
+    );
+
+    expect(result.needsFullFetch).toBe(false);
+    expect(result.sessions.map((item) => item.id)).toEqual(['renamed', 'newer']);
+    expect(result.sessions[0]).toEqual({ ...source[1], title: 'New title', updatedAt: 300 });
+  });
+
   it.each([
     { relation: 'older than', eventTimestamp: 499 },
     { relation: 'from the same millisecond as', eventTimestamp: 500 },

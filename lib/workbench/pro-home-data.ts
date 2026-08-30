@@ -98,8 +98,9 @@ export interface OwnerSessionReduceResult {
  * Sparse events can update an existing row but cannot create one: prompt,
  * stageId and creation timestamps intentionally never enter the owner event
  * log. Any event for an unknown id therefore asks the IO layer for a complete
- * snapshot. Real transitions use their event timestamp as rail activity, so
- * heartbeats no longer reshuffle live rows between reconciliations.
+ * snapshot. Owner-visible transitions, including title changes, use their
+ * event timestamp as rail activity. Heartbeat-only updates affect order when
+ * the next full snapshot reconciles the row's generic updatedAt.
  */
 export function reduceOwnerSessionEvent(
   sessions: readonly ProHomeSessionItem[],
