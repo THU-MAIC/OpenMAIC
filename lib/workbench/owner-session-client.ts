@@ -210,6 +210,16 @@ export class OwnerSessionClient {
     return this.titleDecisionRevisions.get(sessionId) === revision;
   }
 
+  /**
+   * The local title decision a full owner snapshot has not confirmed yet.
+   * The wrapper is intentional: `null` is a real decision (clear the manual
+   * title), while a null return means this client has no decision to preserve.
+   */
+  getUnconfirmedSessionTitle(sessionId: string): { readonly title: string | null } | null {
+    const mutation = this.titleMutations.get(sessionId);
+    return mutation ? { title: mutation.title } : null;
+  }
+
   private openStream(): void {
     const epoch = this.epoch;
     const source = this.options.createEventSource('/api/agent/owner-events', { headers: {} });

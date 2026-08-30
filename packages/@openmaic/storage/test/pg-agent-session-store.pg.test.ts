@@ -166,8 +166,8 @@ describe.skipIf(!contractUrl)('PgAgentSessionStore with PostgreSQL 16', () => {
         ensureAgentSessionSchema(pool as Queryable, { ownerEvents }),
       ]);
       const readTypeConstraints = () =>
-        pool.query<{ oid: number; conname: string }>(
-          `SELECT oid, conname FROM pg_constraint
+        pool.query<{ oid: number; conname: string; convalidated: boolean }>(
+          `SELECT oid, conname, convalidated FROM pg_constraint
            WHERE conrelid = $1::regclass
              AND conname IN ($2::name, $3::name)
            ORDER BY conname`,
@@ -175,14 +175,18 @@ describe.skipIf(!contractUrl)('PgAgentSessionStore with PostgreSQL 16', () => {
         );
       const migrated = await readTypeConstraints();
       expect(migrated.rows).toEqual([
-        expect.objectContaining({ conname: currentConstraint, oid: expect.any(Number) }),
+        expect.objectContaining({
+          conname: currentConstraint,
+          convalidated: true,
+          oid: expect.any(Number),
+        }),
       ]);
       const constraintOid = migrated.rows[0]!.oid;
 
       await ensureAgentSessionSchema(pool as Queryable, { ownerEvents });
 
       await expect(readTypeConstraints()).resolves.toMatchObject({
-        rows: [{ oid: constraintOid, conname: currentConstraint }],
+        rows: [{ oid: constraintOid, conname: currentConstraint, convalidated: true }],
       });
     } finally {
       await pool.query(`DROP TABLE IF EXISTS ${ownerEvents}`);

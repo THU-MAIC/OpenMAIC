@@ -190,14 +190,6 @@ BEGIN
       AND conname = 'agent_owner_session_events_type_known_v2'
   ) THEN
     LOCK TABLE agent_owner_session_events IN ACCESS EXCLUSIVE MODE;
-    IF EXISTS (
-      SELECT 1 FROM pg_constraint
-      WHERE conrelid = 'agent_owner_session_events'::regclass
-        AND conname = 'agent_owner_session_events_type_known'::name
-    ) THEN
-      ALTER TABLE agent_owner_session_events
-        DROP CONSTRAINT agent_owner_session_events_type_known;
-    END IF;
     IF NOT EXISTS (
       SELECT 1 FROM pg_constraint
       WHERE conrelid = 'agent_owner_session_events'::regclass
@@ -206,11 +198,26 @@ BEGIN
       ALTER TABLE agent_owner_session_events
         ADD CONSTRAINT agent_owner_session_events_type_known_v2 CHECK (type IN
           ('session_created','session_status','session_deleted',
-           'session_active_stage','session_cancel_requested','session_title'));
+           'session_active_stage','session_cancel_requested','session_title'))
+        NOT VALID;
+    END IF;
+    IF EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'agent_owner_session_events'::regclass
+        AND conname = 'agent_owner_session_events_type_known'::name
+    ) THEN
+      ALTER TABLE agent_owner_session_events
+        DROP CONSTRAINT agent_owner_session_events_type_known;
     END IF;
   END IF;
 END
 $agent_session_owner_event_type_constraint$;
+
+-- Installing the superset above is a catalog-only operation while the short
+-- ACCESS EXCLUSIVE lock is held. Validate separately so PostgreSQL scans an
+-- existing projection table under VALIDATE CONSTRAINT's weaker lock instead.
+ALTER TABLE agent_owner_session_events
+  VALIDATE CONSTRAINT agent_owner_session_events_type_known_v2;
 
 CREATE TABLE IF NOT EXISTS agent_session_urls (
   session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,

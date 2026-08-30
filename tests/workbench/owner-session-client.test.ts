@@ -93,6 +93,23 @@ describe('owner session client', () => {
   });
 
   it.each([
+    { name: 'pending rename', title: 'Local title', settled: false },
+    { name: 'pending clear', title: null, settled: false },
+    { name: 'settled rename awaiting confirmation', title: 'Stored title', settled: true },
+  ])('exposes an unconfirmed $name without confusing clear with absence', ({ title, settled }) => {
+    const client = new OwnerSessionClient({
+      fetchSessions: vi.fn(async () => []),
+      createEventSource: () => new FakeEventSource(),
+      onSessions: vi.fn(),
+      onState: vi.fn(),
+    });
+
+    expect(client.getUnconfirmedSessionTitle('session-1')).toBeNull();
+    client.updateSessionTitle('session-1', title, settled);
+    expect(client.getUnconfirmedSessionTitle('session-1')).toEqual({ title });
+  });
+
+  it.each([
     { name: 'rename', title: 'New title' },
     { name: 'clear', title: null },
   ])(

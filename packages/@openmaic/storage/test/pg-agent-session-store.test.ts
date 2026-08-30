@@ -225,6 +225,19 @@ describe('PgAgentSessionStore with PGlite', () => {
     const legacyTables = { ownerEvents: 'legacy_owner_events' };
     await expect(ensureAgentSessionSchema(db, legacyTables)).resolves.toBeUndefined();
     await expect(ensureAgentSessionSchema(db, legacyTables)).resolves.toBeUndefined();
+    const constraints = await db.query<{ conname: string; convalidated: boolean }>(
+      `SELECT conname, convalidated FROM pg_constraint
+       WHERE conrelid = 'legacy_owner_events'::regclass
+         AND conname IN ('legacy_owner_events_type_known'::name,
+                         'agent_owner_session_events_type_known_v2')
+       ORDER BY conname`,
+    );
+    expect(constraints.rows).toEqual([
+      {
+        conname: 'agent_owner_session_events_type_known_v2',
+        convalidated: true,
+      },
+    ]);
     await expect(
       db.query(
         `INSERT INTO legacy_owner_events

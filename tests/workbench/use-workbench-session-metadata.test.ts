@@ -31,11 +31,19 @@ function jsonResponse(value: unknown): Response {
   return { ok: true, json: async () => value } as Response;
 }
 
-function Harness({ sessionId }: { readonly sessionId: string }) {
+function Harness({
+  sessionId,
+  seedTitle,
+}: {
+  readonly sessionId: string;
+  readonly seedTitle?: { readonly title: string | null };
+}) {
   const attach = useWorkbenchStore((state) => state.attach);
+  const setSessionTitle = useWorkbenchStore((state) => state.setSessionTitle);
   useLayoutEffect(() => {
     attach(sessionId, null);
-  }, [attach, sessionId]);
+    if (seedTitle) setSessionTitle(seedTitle.title);
+  }, [attach, seedTitle, sessionId, setSessionTitle]);
   useWorkbenchStream(sessionId);
   return null;
 }
@@ -149,4 +157,47 @@ describe('session detail bootstrap attachment lifetime', () => {
       stageId: 'stage-a',
     });
   });
+
+  it.each([
+    { name: 'rename', title: 'Pending title' },
+    { name: 'clear', title: null },
+  ])(
+    'keeps a pending $name seeded before the detail request while bootstrapping other metadata',
+    async ({ title }) => {
+      const detail = deferred<Response>();
+      vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockReturnValueOnce(detail.promise));
+
+      await act(async () =>
+        root.render(
+          createElement(Harness, {
+            sessionId: 'session-a',
+            seedTitle: { title },
+          }),
+        ),
+      );
+      expect(useWorkbenchStore.getState().sessionTitleRevision).toBe(1);
+
+      await act(async () => {
+        detail.resolve(
+          jsonResponse({
+            prompt: 'Current prompt',
+            title: 'Old title',
+            status: 'running',
+            stageId: 'stage-a',
+          }),
+        );
+        await detail.promise;
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(useWorkbenchStore.getState()).toMatchObject({
+        sessionId: 'session-a',
+        sessionPrompt: 'Current prompt',
+        sessionTitle: title,
+        status: 'running',
+        stageId: 'stage-a',
+      });
+    },
+  );
 });

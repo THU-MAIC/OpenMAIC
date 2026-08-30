@@ -133,12 +133,13 @@ export function useWorkbenchStream(sessionId: string | null): void {
             meta.status === 'cancelled'
               ? meta.status
               : undefined;
+          const detailTitle = typeof meta.title === 'string' && meta.title ? meta.title : null;
           useWorkbenchStore.getState().setSessionBootstrap({
             prompt: meta.prompt,
-            // Always seeded, including as null: a session with no override must
-            // clear whatever the previously attached one had.
-            title: typeof meta.title === 'string' && meta.title ? meta.title : null,
-            expectedTitleRevision,
+            // Detail is only the cold-start title source. Once the owner list,
+            // an owner event, or a local decision has seeded this attachment,
+            // a GET that overtook an uncommitted PATCH must not replace it.
+            ...(expectedTitleRevision === 0 ? { title: detailTitle, expectedTitleRevision } : {}),
             ...(status ? { status } : {}),
             ...(typeof meta.stageId === 'string' && meta.stageId ? { stageId: meta.stageId } : {}),
           });

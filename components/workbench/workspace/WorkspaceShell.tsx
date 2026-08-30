@@ -761,8 +761,21 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     // the meta fetch otherwise — a `?session=` deep link has neither yet, and
     // the chat needs neither.
     attach(panes.sessionId, paneSessionStageId);
+    // A rename can still be awaiting its PATCH (or the confirming list read)
+    // when the user leaves this chat and comes back. The detail GET started by
+    // the new attachment may overtake that PATCH, so preserve the client's
+    // unconfirmed decision even when the owner row has not reached the list.
+    // The object wrapper distinguishes a real clear (`title: null`) from no
+    // decision. Otherwise the owner row is the title bootstrap authority.
+    const mutation = ownerSessionClient.current?.getUnconfirmedSessionTitle(panes.sessionId);
     const attached = sessionsRef.current.find((session) => session.id === panes.sessionId);
-    if (attached) syncAttachedSessionTitle(attached.id, attached.title ?? null);
+    if (mutation) {
+      syncAttachedSessionTitle(panes.sessionId, mutation.title, true);
+    } else if (attached) {
+      // Force even an equal null: the revision records that an owner title
+      // source exists, so an older detail response cannot fill it back in.
+      syncAttachedSessionTitle(attached.id, attached.title ?? null, true);
+    }
   }, [panes.sessionId, paneSessionStageId, attach, detach]);
 
   // Attachment is workspace-scoped view state. Clear it when the shell leaves
