@@ -624,7 +624,6 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
           'transfer_answer_evaluated',
         );
         if (
-          state.original.assessment.status === 'unavailable' ||
           state.transfer.evaluationEventId !== evaluation.eventId ||
           state.studyAttemptsProjected
         ) {

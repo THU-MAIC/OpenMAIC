@@ -198,6 +198,31 @@ function latestRecordBySeq(records: readonly RuntimeRecord[]): RuntimeRecord | u
   return latest;
 }
 
+const STUDY_ATTEMPT_APPEND_MAX_ATTEMPTS = 5;
+const STUDY_ATTEMPT_READ_BACK_FAILED_CODE = 'ZHONGKAO_STUDY_ATTEMPT_READ_BACK_FAILED';
+
+function inspectStudyAttemptRecords(
+  records: readonly RuntimeRecord[],
+  expected: StudyAttempt,
+): { found: boolean; lastSeq: number | null } {
+  let found = false;
+  let lastSeq: number | null = null;
+  for (const record of records) {
+    const persisted = attemptFromRecord(record);
+    if (persisted.profileId !== expected.profileId) {
+      throw new Error('ZHONGKAO_RUNTIME_PROFILE_MISMATCH');
+    }
+    if (persisted.id === expected.id) {
+      if (!studyAttemptFactsEqual(persisted, expected)) {
+        throw new Error(STUDY_ATTEMPT_CONFLICT_CODE);
+      }
+      found = true;
+    }
+    if (lastSeq === null || record.seq > lastSeq) lastSeq = record.seq;
+  }
+  return { found, lastSeq };
+}
+
 export async function saveStudentProfile(
   profile: StudentProfile,
   deps: ZhongkaoRuntimeDeps = {},
@@ -259,13 +284,19 @@ export async function saveStudyAttempt(
     attempt.profileId,
   );
 
-  while (true) {
-    const records = await context.store.listRecords(session.id);
-    const duplicate = records.find((record) => attemptFromRecord(record).id === attempt.id);
-    if (duplicate) {
-      if (studyAttemptFactsEqual(attemptFromRecord(duplicate), attempt)) return;
-      throw new Error(STUDY_ATTEMPT_CONFLICT_CODE);
-    }
+  let lastConflict: RuntimeAppendConflictError | undefined;
+  for (
+    let appendAttempt = 0;
+    appendAttempt < STUDY_ATTEMPT_APPEND_MAX_ATTEMPTS;
+    appendAttempt += 1
+  ) {
+    const beforeAppend = inspectStudyAttemptRecords(
+      await context.store.listRecords(session.id),
+      attempt,
+    );
+    if (beforeAppend.found) return;
+
+    let appendError: unknown;
     try {
       await context.store.appendRecord(
         {
@@ -275,14 +306,28 @@ export async function saveStudyAttempt(
           subAnchor: attempt.id,
           payload: attempt,
         },
-        { expectedLastSeq: latestRecordBySeq(records)?.seq ?? null },
+        { expectedLastSeq: beforeAppend.lastSeq },
       );
-      return;
     } catch (error) {
-      if (error instanceof RuntimeAppendConflictError) continue;
-      throw error;
+      appendError = error;
     }
+
+    const afterAppend = inspectStudyAttemptRecords(
+      await context.store.listRecords(session.id),
+      attempt,
+    );
+    if (afterAppend.found) return;
+
+    if (appendError === undefined) {
+      throw new Error(STUDY_ATTEMPT_READ_BACK_FAILED_CODE);
+    }
+    if (!(appendError instanceof RuntimeAppendConflictError)) {
+      throw appendError;
+    }
+    lastConflict = appendError;
   }
+
+  throw lastConflict ?? new Error(STUDY_ATTEMPT_READ_BACK_FAILED_CODE);
 }
 
 export async function loadStudyAttempts(

@@ -22,6 +22,7 @@ import {
   type TrustedAgentTurn,
   type ZhongkaoCoachToolOutput,
 } from '@/lib/server/agent-runtime/zhongkao-coach-tool';
+import { completeOriginalAttemptAssessment } from '@/lib/server/zhongkao/coach-original-assessment';
 import {
   assignVerifiedTransferQuestion,
   recordFullSolutionRevealed,
@@ -204,6 +205,41 @@ function verifiedTransferQuestion(
       },
     },
   };
+}
+
+async function resolveAuthoritativeOriginal(
+  h: ToolHarness,
+  attempted: Awaited<ReturnType<typeof submitCoachAttempt>>,
+  candidate: Record<string, unknown>,
+) {
+  const attempt = attempted.snapshot.records.at(-1)?.payload as CoachEvent | undefined;
+  if (!attempt || attempt.eventType !== 'student_attempt_submitted') {
+    throw new Error('expected original attempt');
+  }
+  return completeOriginalAttemptAssessment(
+    {
+      ...h.deps,
+      generationCall: vi.fn<AICallFn>(async () => JSON.stringify(candidate)),
+      originalAssessmentVerificationCall: vi.fn<AICallFn>(async () =>
+        JSON.stringify({
+          schemaVersion: 1,
+          verdict: 'accept',
+          checks: {
+            objectiveType: true,
+            questionConsistent: true,
+            answerConsistent: true,
+            singleAnswerOrExactSet: true,
+            middleSchoolScope: true,
+          },
+        }),
+      ),
+    },
+    {
+      profileId: 'student-alpha',
+      coachSessionId: attempted.snapshot.state.coachSessionId,
+      attemptEventId: attempt.eventId,
+    },
+  );
 }
 
 describe('Zhongkao coach TypeBox input boundary', () => {
@@ -1067,15 +1103,12 @@ describe('Zhongkao coach immutable tool execution', () => {
       profileId: 'student-alpha',
       coachSessionId: created.output.coachSessionId!,
       expectedRevision: created.output.revision!,
-      message: { seq: 2, text: 'x = 5' },
+      message: { seq: 2, text: '4' },
     });
-    const attempt = attempted.snapshot.records.at(-1)!.payload as CoachEvent;
-    await recordOriginalResolved(h.deps, {
-      profileId: 'student-alpha',
-      coachSessionId: created.output.coachSessionId!,
-      expectedRevision: attempted.snapshot.state.revision,
-      attemptEventId: attempt.eventId,
-      outcome: 'incorrect',
+    await resolveAuthoritativeOriginal(h, attempted, {
+      schemaVersion: 1,
+      type: 'numeric',
+      expectedNumericValue: 4,
     });
 
     const generateCandidate = vi.fn<AICallFn>(async () =>
@@ -1149,10 +1182,10 @@ describe('Zhongkao coach immutable tool execution', () => {
       ok: true,
       facts: { replayed: false, eventAppended: true },
       state: {
-        status: 'finalizing',
+        status: 'completed',
         transfer: { assigned: true, attemptCount: 1, evaluated: true },
       },
-      directive: 'PROJECT_STUDY_ATTEMPTS',
+      directive: 'COMPLETED',
       presentation: {
         kind: 'transfer_result',
         outcome: 'correct',
@@ -1174,12 +1207,15 @@ describe('Zhongkao coach immutable tool execution', () => {
     expect(records.map((record) => (record.payload as CoachEvent).eventType)).toEqual([
       'coach_started',
       'student_attempt_submitted',
+      'original_assessment_prepared',
+      'original_attempt_evaluated',
       'original_resolved',
       'transfer_question_assigned',
       'transfer_answer_submitted',
       'transfer_answer_evaluated',
+      'study_attempts_projected',
     ]);
-    expect(sessions.map((session) => session.kind)).not.toContain('zhongkaoStudyAttempt');
+    expect(sessions.map((session) => session.kind)).toContain('zhongkaoStudyAttempt');
   });
 
   it('reconciles a persisted transfer submission through get_state without reading the new turn', async () => {
@@ -1190,15 +1226,12 @@ describe('Zhongkao coach immutable tool execution', () => {
       profileId: 'student-alpha',
       coachSessionId: created.output.coachSessionId!,
       expectedRevision: created.output.revision!,
-      message: { seq: 2, text: 'A fictional incorrect attempt.' },
+      message: { seq: 2, text: 'A fictional correct attempt.' },
     });
-    const attempt = attempted.snapshot.records.at(-1)!.payload as CoachEvent;
-    const resolved = await recordOriginalResolved(h.deps, {
-      profileId: 'student-alpha',
-      coachSessionId: created.output.coachSessionId!,
-      expectedRevision: attempted.snapshot.state.revision,
-      attemptEventId: attempt.eventId,
-      outcome: 'incorrect',
+    const resolved = await resolveAuthoritativeOriginal(h, attempted, {
+      schemaVersion: 1,
+      type: 'exact_short_answer',
+      acceptedAnswers: ['A fictional correct attempt.'],
     });
     const resolution = resolved.snapshot.records.at(-1)!.payload as CoachEvent;
     const assigned = await assignVerifiedTransferQuestion(h.deps, {
@@ -1232,8 +1265,8 @@ describe('Zhongkao coach immutable tool execution', () => {
     expect(recovered.output).toMatchObject({
       ok: true,
       facts: { replayed: false, eventAppended: true },
-      state: { status: 'finalizing', transfer: { attemptCount: 1, evaluated: true } },
-      directive: 'PROJECT_STUDY_ATTEMPTS',
+      state: { status: 'completed', transfer: { attemptCount: 1, evaluated: true } },
+      directive: 'COMPLETED',
       presentation: {
         kind: 'transfer_result',
         outcome: 'correct',
@@ -1258,8 +1291,8 @@ describe('Zhongkao coach immutable tool execution', () => {
     expect(replayed.output).toMatchObject({
       ok: true,
       facts: { replayed: true, eventAppended: false },
-      state: { status: 'finalizing', transfer: { attemptCount: 1, evaluated: true } },
-      directive: 'PROJECT_STUDY_ATTEMPTS',
+      state: { status: 'completed', transfer: { attemptCount: 1, evaluated: true } },
+      directive: 'COMPLETED',
       presentation: recovered.output.presentation,
     });
   });

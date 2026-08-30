@@ -158,6 +158,10 @@ const CoachErrorCodeSchema = Type.Union([
   Type.Literal('ORIGINAL_ASSESSMENT_NOT_VERIFIED'),
   Type.Literal('ORIGINAL_ATTEMPT_EVALUATION_FAILED'),
   Type.Literal('ORIGINAL_ATTEMPT_EVALUATION_CONFLICT'),
+  Type.Literal('STUDY_ATTEMPT_SOURCE_FACT_MISSING'),
+  Type.Literal('STUDY_ATTEMPT_PROJECTION_FAILED'),
+  Type.Literal('STUDY_ATTEMPT_PROJECTION_CONFLICT'),
+  Type.Literal('STUDY_ATTEMPT_PERSISTENCE_UNAVAILABLE'),
 ]);
 
 const CoachActionSchema = Type.Union([
@@ -617,10 +621,7 @@ export function createZhongkaoCoachActionTool(
               };
             }
           }
-          if (
-            observed.state.transfer.attemptCount === 1 &&
-            !observed.state.studyAttemptsProjected
-          ) {
+          if (observed.state.transfer.attemptCount === 1) {
             const completed = await completePendingTransferAnswerEvaluation(deps, {
               profileId: params.profileId,
               coachSessionId: params.coachSessionId,

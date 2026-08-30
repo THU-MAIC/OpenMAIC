@@ -12,7 +12,10 @@ export type ZhongkaoLongLivedRuntimeKind = Exclude<
   typeof ZHONGKAO_RUNTIME_KINDS.coachEvent
 >;
 
-const SERVER_ONLY_RUNTIME_KINDS: ReadonlySet<string> = new Set([ZHONGKAO_RUNTIME_KINDS.coachEvent]);
+const SERVER_ONLY_RUNTIME_KINDS: ReadonlySet<string> = new Set([
+  ZHONGKAO_RUNTIME_KINDS.studyAttempt,
+  ZHONGKAO_RUNTIME_KINDS.coachEvent,
+]);
 
 export function isServerOnlyRuntimeKind(kind: unknown): kind is string {
   return typeof kind === 'string' && SERVER_ONLY_RUNTIME_KINDS.has(kind);

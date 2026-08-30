@@ -379,6 +379,20 @@ export class BrowserRuntimeStore implements RuntimeStore {
       if (needsRuntimeMigration(row)) {
         session = migrateSession(row);
       }
+      // Assign the per-session monotonic `seq` inside the same transaction that
+      // inserts: the highest existing key in the session's range, plus one. A
+      // key cursor reads only the compound primary key — deserializing the
+      // whole previous record (payload included) to read one integer would be
+      // O(payload) for no benefit.
+      const records = tx.objectStore(RECORDS);
+      const last = await reqP(records.openKeyCursor(sessionRecordRange(init.sessionId), 'prev'));
+      const actualLastSeq = last ? (last.primaryKey as [string, number])[1] : null;
+      if (
+        expectedLastSeq !== undefined &&
+        (session.status !== 'active' || expectedLastSeq !== actualLastSeq)
+      ) {
+        throw new RuntimeAppendConflictError(init.sessionId, expectedLastSeq, actualLastSeq);
+      }
       if (session.status !== 'active') {
         throw new Error(
           `@openmaic/storage: cannot append to session ${JSON.stringify(init.sessionId)} with ` +
@@ -389,18 +403,6 @@ export class BrowserRuntimeStore implements RuntimeStore {
       const validator = this.validatorFor(session.kind);
       if (validator) {
         assertValid(validator(init.payload), `runtime record ${JSON.stringify(init.id)}`);
-      }
-
-      // Assign the per-session monotonic `seq` inside the same transaction that
-      // inserts: the highest existing key in the session's range, plus one. A
-      // key cursor reads only the compound primary key — deserializing the
-      // whole previous record (payload included) to read one integer would be
-      // O(payload) for no benefit.
-      const records = tx.objectStore(RECORDS);
-      const last = await reqP(records.openKeyCursor(sessionRecordRange(init.sessionId), 'prev'));
-      const actualLastSeq = last ? (last.primaryKey as [string, number])[1] : null;
-      if (expectedLastSeq !== undefined && expectedLastSeq !== actualLastSeq) {
-        throw new RuntimeAppendConflictError(init.sessionId, expectedLastSeq, actualLastSeq);
       }
       const seq = actualLastSeq === null ? 0 : actualLastSeq + 1;
       const record: RuntimeRecord<TPayload> = { ...init, seq };

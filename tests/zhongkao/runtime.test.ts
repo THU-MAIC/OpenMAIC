@@ -1,6 +1,10 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { BrowserRuntimeStore, type RuntimeStore } from '@openmaic/storage';
+import {
+  BrowserRuntimeStore,
+  RuntimeAppendConflictError,
+  type RuntimeStore,
+} from '@openmaic/storage';
 
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 import {
@@ -15,7 +19,7 @@ import {
 import { confirmObservedField } from '@/lib/zhongkao/observed-field';
 import { createInitialStudentProfile } from '@/lib/zhongkao/profile';
 
-import { NOW, studyAttempt } from './fixtures';
+import { evaluatedStudyAttemptV2, NOW, studyAttempt, unassessedStudyAttemptV2 } from './fixtures';
 
 const LATER = '2026-08-29T08:00:00.000Z';
 
@@ -45,6 +49,19 @@ function reverseRecordListing(store: RuntimeStore): RuntimeStore {
         return async (...args: Parameters<RuntimeStore['listRecords']>) =>
           (await target.listRecords(...args)).toReversed();
       }
+      const value = Reflect.get(target, property, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+function withAppendRecord(
+  store: RuntimeStore,
+  appendRecord: RuntimeStore['appendRecord'],
+): RuntimeStore {
+  return new Proxy(store, {
+    get(target, property, receiver) {
+      if (property === 'appendRecord') return appendRecord;
       const value = Reflect.get(target, property, receiver);
       return typeof value === 'function' ? value.bind(target) : value;
     },
@@ -204,6 +221,230 @@ describe('zhongkao RuntimeStore adapter', () => {
     await saveStudyAttempt(beta, { ...deps });
     await expect(loadStudyAttempts('student-alpha', { ...deps })).resolves.toEqual([alpha]);
     await expect(loadStudyAttempts('student-beta', { ...deps })).resolves.toEqual([beta]);
+  });
+
+  it('round-trips evaluated and unassessed v2 attempts through the server adapter', async () => {
+    const h = harness();
+    const deps = {
+      store: h.store,
+      learnerKey: 'anon:fictional-device',
+      now: h.now,
+      mintRecordId: h.nextId,
+    };
+    const evaluated = evaluatedStudyAttemptV2();
+    const unassessed = unassessedStudyAttemptV2();
+
+    await saveStudyAttempt(evaluated, deps);
+    await saveStudyAttempt(unassessed, { ...deps });
+
+    await expect(loadStudyAttempts(evaluated.profileId, { ...deps })).resolves.toEqual([
+      evaluated,
+      unassessed,
+    ]);
+  });
+
+  it('accepts legacy identical duplicate records without appending another copy', async () => {
+    const h = harness();
+    const deps = {
+      store: h.store,
+      learnerKey: 'anon:fictional-device',
+      now: h.now,
+      mintRecordId: h.nextId,
+    };
+    const attempt = studyAttempt({ id: 'legacy-identical-duplicate' });
+    await saveStudyAttempt(attempt, deps);
+    const sessionId = zhongkaoRuntimeSessionId(
+      ZHONGKAO_RUNTIME_KINDS.studyAttempt,
+      attempt.profileId,
+      deps.learnerKey,
+    );
+    await h.store.appendRecord(
+      {
+        id: 'legacy-identical-record',
+        sessionId,
+        createdAt: LATER,
+        subAnchor: attempt.id,
+        payload: attempt,
+      },
+      { expectedLastSeq: 0 },
+    );
+
+    await expect(saveStudyAttempt(attempt, { ...deps })).resolves.toBeUndefined();
+    await expect(h.store.listRecords(sessionId)).resolves.toHaveLength(2);
+  });
+
+  it('rejects any conflicting duplicate even when an earlier duplicate is identical', async () => {
+    const h = harness();
+    const deps = {
+      store: h.store,
+      learnerKey: 'anon:fictional-device',
+      now: h.now,
+      mintRecordId: h.nextId,
+    };
+    const attempt = studyAttempt({ id: 'mixed-legacy-duplicate' });
+    const conflicting = studyAttempt({
+      id: attempt.id,
+      questionSummary: 'A conflicting fictional legacy fact',
+    });
+    await saveStudyAttempt(attempt, deps);
+    const sessionId = zhongkaoRuntimeSessionId(
+      ZHONGKAO_RUNTIME_KINDS.studyAttempt,
+      attempt.profileId,
+      deps.learnerKey,
+    );
+    await h.store.appendRecord(
+      {
+        id: 'legacy-conflicting-record',
+        sessionId,
+        createdAt: LATER,
+        subAnchor: attempt.id,
+        payload: conflicting,
+      },
+      { expectedLastSeq: 0 },
+    );
+
+    await expect(saveStudyAttempt(attempt, { ...deps })).rejects.toThrow(
+      'ZHONGKAO_STUDY_ATTEMPT_CONFLICT',
+    );
+    await expect(h.store.listRecords(sessionId)).resolves.toHaveLength(2);
+  });
+
+  it('reads an appended attempt back before reporting persistence success', async () => {
+    const h = harness();
+    const listRecords = vi.spyOn(h.store, 'listRecords');
+    const attempt = studyAttempt({ id: 'read-back-required' });
+
+    await saveStudyAttempt(attempt, {
+      store: h.store,
+      learnerKey: 'anon:fictional-device',
+      now: h.now,
+      mintRecordId: h.nextId,
+    });
+
+    expect(listRecords).toHaveBeenCalledTimes(2);
+  });
+
+  it('accepts an uncertain append only when read-back proves the facts persisted', async () => {
+    const h = harness();
+    const appendRecord = vi.fn(
+      async (
+        init: Parameters<RuntimeStore['appendRecord']>[0],
+        options: Parameters<RuntimeStore['appendRecord']>[1] = {},
+      ) => {
+        await h.store.appendRecord(init, options);
+        throw new Error('simulated response loss after commit');
+      },
+    );
+    const attempt = studyAttempt({ id: 'uncertain-commit' });
+
+    await expect(
+      saveStudyAttempt(attempt, {
+        store: withAppendRecord(h.store, appendRecord as unknown as RuntimeStore['appendRecord']),
+        learnerKey: 'anon:fictional-device',
+        now: h.now,
+        mintRecordId: h.nextId,
+      }),
+    ).resolves.toBeUndefined();
+    expect(appendRecord).toHaveBeenCalledOnce();
+    await expect(
+      loadStudyAttempts(attempt.profileId, {
+        store: h.store,
+        learnerKey: 'anon:fictional-device',
+      }),
+    ).resolves.toEqual([attempt]);
+  });
+
+  it('re-reads after a CAS loss and retries against the new tail', async () => {
+    const h = harness();
+    const competing = studyAttempt({ id: 'competing-attempt' });
+    let calls = 0;
+    const appendRecord = vi.fn(
+      async (
+        init: Parameters<RuntimeStore['appendRecord']>[0],
+        options: Parameters<RuntimeStore['appendRecord']>[1] = {},
+      ) => {
+        calls += 1;
+        if (calls === 1) {
+          const winner = await h.store.appendRecord(
+            {
+              id: 'competing-record',
+              sessionId: init.sessionId,
+              createdAt: init.createdAt,
+              subAnchor: competing.id,
+              payload: competing,
+            },
+            options,
+          );
+          throw new RuntimeAppendConflictError(
+            init.sessionId,
+            options.expectedLastSeq ?? null,
+            winner.seq,
+          );
+        }
+        return h.store.appendRecord(init, options);
+      },
+    );
+    const attempt = studyAttempt({ id: 'cas-retry-attempt' });
+
+    await expect(
+      saveStudyAttempt(attempt, {
+        store: withAppendRecord(h.store, appendRecord as unknown as RuntimeStore['appendRecord']),
+        learnerKey: 'anon:fictional-device',
+        now: h.now,
+        mintRecordId: h.nextId,
+      }),
+    ).resolves.toBeUndefined();
+    expect(appendRecord).toHaveBeenCalledTimes(2);
+    await expect(
+      loadStudyAttempts(attempt.profileId, {
+        store: h.store,
+        learnerKey: 'anon:fictional-device',
+      }),
+    ).resolves.toEqual([competing, attempt]);
+  });
+
+  it('stops after five persistent CAS conflicts', async () => {
+    const h = harness();
+    const appendRecord = vi.fn(
+      async (
+        init: Parameters<RuntimeStore['appendRecord']>[0],
+        options: Parameters<RuntimeStore['appendRecord']>[1] = {},
+      ) => {
+        throw new RuntimeAppendConflictError(
+          init.sessionId,
+          options.expectedLastSeq ?? null,
+          options.expectedLastSeq ?? null,
+        );
+      },
+    );
+
+    await expect(
+      saveStudyAttempt(studyAttempt({ id: 'bounded-cas' }), {
+        store: withAppendRecord(h.store, appendRecord as unknown as RuntimeStore['appendRecord']),
+        learnerKey: 'anon:fictional-device',
+        now: h.now,
+        mintRecordId: h.nextId,
+      }),
+    ).rejects.toBeInstanceOf(RuntimeAppendConflictError);
+    expect(appendRecord).toHaveBeenCalledTimes(5);
+  });
+
+  it('fails closed when a resolved append is missing from read-back', async () => {
+    const h = harness();
+    const appendRecord = vi.fn(async (init: Parameters<RuntimeStore['appendRecord']>[0]) => ({
+      ...init,
+      seq: 0,
+    }));
+
+    await expect(
+      saveStudyAttempt(studyAttempt({ id: 'missing-read-back' }), {
+        store: withAppendRecord(h.store, appendRecord as unknown as RuntimeStore['appendRecord']),
+        learnerKey: 'anon:fictional-device',
+        now: h.now,
+        mintRecordId: h.nextId,
+      }),
+    ).rejects.toThrow('ZHONGKAO_STUDY_ATTEMPT_READ_BACK_FAILED');
+    expect(appendRecord).toHaveBeenCalledOnce();
   });
 
   it('uses encoded stable stage ids and rejects a conflicting attempt id', async () => {

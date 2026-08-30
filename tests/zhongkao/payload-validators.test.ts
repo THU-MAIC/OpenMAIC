@@ -5,7 +5,7 @@ import type { CoachStartedEvent } from '@/lib/zhongkao/coach-event';
 import { createInitialStudentProfile } from '@/lib/zhongkao/profile';
 import { ZHONGKAO_RUNTIME_KINDS } from '@/lib/zhongkao/runtime';
 
-import { NOW, studyAttempt } from './fixtures';
+import { evaluatedStudyAttemptV2, NOW, studyAttempt, unassessedStudyAttemptV2 } from './fixtures';
 
 describe('zhongkao runtime payload validators', () => {
   const coachEvent: CoachStartedEvent = {
@@ -55,6 +55,14 @@ describe('zhongkao runtime payload validators', () => {
       APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.studentProfile]!(malformed);
     expect(profileResult.valid).toBe(false);
     if (!profileResult.valid) expect(profileResult.errors[0]?.path).toBe('/grade/value');
+  });
+
+  it('validates both v2 variants through the shared RuntimeStore validator', () => {
+    const validator = APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.studyAttempt]!;
+    expect(validator(evaluatedStudyAttemptV2())).toEqual({ valid: true });
+    expect(validator(unassessedStudyAttemptV2())).toEqual({ valid: true });
+    expect(validator({ ...evaluatedStudyAttemptV2(), extra: true }).valid).toBe(false);
+    expect(validator({ ...unassessedStudyAttemptV2(), finalOutcome: 'correct' }).valid).toBe(false);
   });
 
   it('keeps all three Zhongkao runtime kinds one-to-one with their payloads', () => {

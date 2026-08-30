@@ -179,14 +179,6 @@ export function deriveCoachEventId(operationId: string): string {
   )}`;
 }
 
-export function deriveCoachProjectionRef(input: {
-  coachSessionId: string;
-  evaluationEventId: string;
-  projectionVersion: number;
-}): string {
-  return `coach-projection:v1:${digest('openmaic:zhongkao-coach-projection:v1', input)}`;
-}
-
 export function coachRuntimeSessionId(coachSessionId: string): string {
   assertIdentifier(coachSessionId);
   return `zhongkao-coach:${encodeURIComponent(coachSessionId)}`;

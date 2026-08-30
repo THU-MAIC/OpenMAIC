@@ -593,6 +593,25 @@ describe('Coach terminal public presentation', () => {
     );
   });
 
+  it('uses one fixed projection notice without exposing persistence internals', () => {
+    const reasons = [
+      'STUDY_ATTEMPT_SOURCE_FACT_MISSING',
+      'STUDY_ATTEMPT_PROJECTION_FAILED',
+      'STUDY_ATTEMPT_PROJECTION_CONFLICT',
+      'STUDY_ATTEMPT_PERSISTENCE_UNAVAILABLE',
+    ] as const;
+    const notices = reasons.map((reason) => buildCoachNotice(reason));
+
+    expect(new Set(notices.map((notice) => notice.text))).toHaveLength(1);
+    expect(notices[0]).toEqual({
+      kind: 'coach_notice',
+      text: '这次学习结果暂时未能安全保存。请稍后重试，不需要重新作答。',
+    });
+    expect(JSON.stringify(notices)).not.toMatch(
+      /projectionRef|StudyAttempt|RuntimeSession|learnerKey|SQL|raw database/iu,
+    );
+  });
+
   it('ignores presentation attached to an error and never accepts raw error text', () => {
     const presentation = buildCoachTerminalPresentation({
       kind: 'tool_output',

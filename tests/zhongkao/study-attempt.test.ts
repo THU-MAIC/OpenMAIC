@@ -4,7 +4,6 @@ import {
   isAssistedCorrectAttempt,
   isIndependentCorrectAttempt,
   validateStudyAttempt,
-  type StudyAttempt,
 } from '@/lib/zhongkao/study-attempt';
 
 import { studyAttempt } from './fixtures';
@@ -38,23 +37,23 @@ describe('StudyAttempt contract', () => {
   });
 
   it('rejects invalid dates, enums, schema versions, and numeric boundaries', () => {
-    const invalid: Partial<StudyAttempt> = {
-      schemaVersion: 2,
+    const invalid = {
       createdAt: 'not-a-date',
-      questionSourceType: 'unknown' as StudyAttempt['questionSourceType'],
-      attemptKind: 'unknown' as StudyAttempt['attemptKind'],
-      initialOutcome: 'unknown' as StudyAttempt['initialOutcome'],
-      finalOutcome: 'unknown' as StudyAttempt['finalOutcome'],
+      questionSourceType: 'unknown',
+      attemptKind: 'unknown',
+      initialOutcome: 'unknown',
+      finalOutcome: 'unknown',
       hintsUsed: -1,
       sourcePage: 0,
       durationSeconds: -0.1,
-      errorType: 'unknown' as StudyAttempt['errorType'],
+      errorType: 'unknown',
     };
-    const result = validateStudyAttempt(studyAttempt(invalid));
+    const result = validateStudyAttempt({ ...studyAttempt(), ...invalid });
     expect(result.valid).toBe(false);
     if (!result.valid) {
       expect(result.errors.length).toBeGreaterThanOrEqual(9);
     }
+    expect(validateStudyAttempt({ ...studyAttempt(), schemaVersion: 3 }).valid).toBe(false);
   });
 
   it('strictly derives independent correct from facts rather than a client flag', () => {

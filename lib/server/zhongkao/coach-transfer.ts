@@ -12,6 +12,7 @@ import { curriculumModeForSubject } from '@/lib/zhongkao/curriculum';
 import { loadStudentProfile } from '@/lib/zhongkao/runtime';
 
 import { resolveZhongkaoLearnerKeyFromOwnerId } from './learner-identity';
+import { ensureStudyAttemptsProjected } from './coach-projection';
 import {
   assignVerifiedTransferQuestion,
   getCoachProblemState,
@@ -220,8 +221,12 @@ function completedTransferEvaluation(
     !evaluation ||
     evaluation.eventType !== 'transfer_answer_evaluated' ||
     evaluation.transferQuestionId !== submission.transferQuestionId ||
-    evaluated.snapshot.state.status !== 'finalizing' ||
-    evaluated.snapshot.state.studyAttemptsProjected
+    (evaluated.snapshot.state.status !== 'finalizing' &&
+      evaluated.snapshot.state.status !== 'completed') ||
+    (evaluated.snapshot.state.status === 'finalizing' &&
+      evaluated.snapshot.state.studyAttemptsProjected) ||
+    (evaluated.snapshot.state.status === 'completed' &&
+      !evaluated.snapshot.state.studyAttemptsProjected)
   ) {
     throw new CoachError('TRANSFER_EVALUATION_FAILED');
   }
@@ -230,6 +235,22 @@ function completedTransferEvaluation(
     presentation: transferResultPresentation(evaluation.outcome),
     replayed: evaluated.replayed,
     eventAppended: evaluated.eventAppended,
+  };
+}
+
+async function projectCompletedTransferEvaluation(
+  deps: CoachTransferDependencies,
+  input: { profileId: string; coachSessionId: string },
+  evaluated: Awaited<ReturnType<typeof recordTransferEvaluation>>,
+  submission: Extract<CoachEvent, { eventType: 'transfer_answer_submitted' }>,
+): Promise<CoachTransferPresentationResult<CoachTransferResultPresentation>> {
+  const result = completedTransferEvaluation(evaluated, submission);
+  const projected = await ensureStudyAttemptsProjected(deps, input);
+  return {
+    snapshot: projected.snapshot,
+    presentation: result.presentation,
+    replayed: result.replayed && projected.replayed,
+    eventAppended: result.eventAppended || projected.eventAppended,
   };
 }
 
@@ -265,7 +286,7 @@ export async function completeTransferAnswerEvaluation(
     submissionEventId: submission.eventId,
   });
   throwIfAborted(deps.abortSignal);
-  return completedTransferEvaluation(evaluated, submission);
+  return projectCompletedTransferEvaluation(deps, input, evaluated, submission);
 }
 
 /**
@@ -292,7 +313,9 @@ export async function completePendingTransferAnswerEvaluation(
     throw new CoachError('TRANSFER_EVALUATION_FAILED');
   }
   if (snapshot.state.transfer.evaluationEventId !== undefined) {
-    return completedTransferEvaluation(
+    return projectCompletedTransferEvaluation(
+      deps,
+      input,
       { snapshot, replayed: true, eventAppended: false },
       submission,
     );
@@ -304,5 +327,5 @@ export async function completePendingTransferAnswerEvaluation(
     submissionEventId: submission.eventId,
   });
   throwIfAborted(deps.abortSignal);
-  return completedTransferEvaluation(evaluated, submission);
+  return projectCompletedTransferEvaluation(deps, input, evaluated, submission);
 }

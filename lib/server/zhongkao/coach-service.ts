@@ -37,7 +37,6 @@ import {
   deriveCoachCausalOperationId,
   deriveCoachEventId,
   deriveCoachModelOperationId,
-  deriveCoachProjectionRef,
   hashCoachMessageText,
   loadCoachRuntime,
   startCoachRuntime,
@@ -1126,15 +1125,11 @@ export async function recordTransferEvaluation(
 
 export async function recordStudyAttemptsProjected(
   deps: CoachServiceDeps,
-  input: CoachContinuationInput & { evaluationEventId: string },
+  input: CoachContinuationInput & { evaluationEventId: string; projectionRef: string },
 ): Promise<CoachActionResult> {
   assertContinuation(input);
   assertIdentifier(input.evaluationEventId);
-  const projectionRef = deriveCoachProjectionRef({
-    coachSessionId: input.coachSessionId,
-    evaluationEventId: input.evaluationEventId,
-    projectionVersion: COACH_PROJECTION_VERSION,
-  });
+  assertIdentifier(input.projectionRef);
   const operationId = deriveCoachCausalOperationId({
     coachSessionId: input.coachSessionId,
     action: 'record_study_attempts_projected',
@@ -1145,7 +1140,7 @@ export async function recordStudyAttemptsProjected(
     action: 'record_study_attempts_projected',
     coachSessionId: input.coachSessionId,
     evaluationEventId: input.evaluationEventId,
-    projectionRef,
+    projectionRef: input.projectionRef,
     projectionVersion: COACH_PROJECTION_VERSION,
   });
   return appendCoachRuntimeEvent(deps, {
@@ -1155,10 +1150,10 @@ export async function recordStudyAttemptsProjected(
     createEvent(metadata, snapshot) {
       const evaluation = eventById(snapshot, input.evaluationEventId);
       if (
-        snapshot.state.original.assessment.status === 'unavailable' ||
         !evaluation ||
         evaluation.eventType !== 'transfer_answer_evaluated' ||
         snapshot.state.transfer.evaluationEventId !== evaluation.eventId ||
+        snapshot.state.status !== 'finalizing' ||
         snapshot.state.studyAttemptsProjected
       ) {
         throw new CoachError('COACH_ACTION_NOT_ALLOWED');
@@ -1167,7 +1162,7 @@ export async function recordStudyAttemptsProjected(
         ...baseEvent(deps, input, metadata),
         eventType: 'study_attempts_projected',
         evaluationEventId: evaluation.eventId,
-        projectionRef,
+        projectionRef: input.projectionRef,
         projectionVersion: COACH_PROJECTION_VERSION,
       };
     },

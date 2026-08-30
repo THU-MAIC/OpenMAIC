@@ -1083,44 +1083,53 @@ describe('embedded persistence route', () => {
     expect(byteStore.signReadUrl).toBeUndefined();
   });
 
-  it('rejects creation of the server-only coach runtime kind before storage dispatch', async () => {
-    vi.stubEnv('DATABASE_URL', 'postgres://server-only-create-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
-    const { POST } = await import('@/app/api/persistence/[...path]/route');
+  it.each(['zhongkaoCoachEvent', 'zhongkaoStudyAttempt'] as const)(
+    'rejects creation of the server-only %s runtime kind before storage dispatch',
+    async (kind) => {
+      vi.stubEnv('DATABASE_URL', `postgres://server-only-create-${kind}-test`);
+      vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+      const { POST } = await import('@/app/api/persistence/[...path]/route');
 
-    const response = await POST(
-      new Request('http://localhost/api/persistence/runtime/sessions', {
-        method: 'POST',
-        headers: {
-          authorization: 'Bearer test-token',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          id: 'coach-session-hidden',
-          kind: 'zhongkaoCoachEvent',
-          stageId: 'zhongkao-profile:student-alpha',
-          learnerKey: 'learner-alpha',
-          status: 'active',
-          createdAt: '2026-08-28T08:00:00.000Z',
-          updatedAt: '2026-08-28T08:00:00.000Z',
+      const response = await POST(
+        new Request('http://localhost/api/persistence/runtime/sessions', {
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer test-token',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: 'server-only-session-hidden',
+            kind,
+            stageId: 'zhongkao-profile:student-alpha',
+            learnerKey: 'learner-alpha',
+            status: 'active',
+            createdAt: '2026-08-28T08:00:00.000Z',
+            updatedAt: '2026-08-28T08:00:00.000Z',
+          }),
         }),
-      }),
-    );
+      );
 
-    expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toEqual({
-      error: {
-        code: 'SESSION_NOT_FOUND',
-        message: '@openmaic/storage: runtime session not found',
-      },
-    });
-  });
+      expect(response.status).toBe(404);
+      await expect(response.json()).resolves.toEqual({
+        error: {
+          code: 'SESSION_NOT_FOUND',
+          message: '@openmaic/storage: runtime session not found',
+        },
+      });
+    },
+  );
 
   it('filters server-only sessions and blocks their generic read/write lifecycle', async () => {
     const privateAssessmentCanary = 'PRIVATE_ORIGINAL_ASSESSMENT_HTTP_CANARY_91KQ';
     const coach = {
       id: 'coach-session-hidden',
       kind: 'zhongkaoCoachEvent',
+      stageId: 'stage-alpha',
+      learnerKey: 'learner-alpha',
+    };
+    const studyAttempts = {
+      id: 'study-attempt-session-hidden',
+      kind: 'zhongkaoStudyAttempt',
       stageId: 'stage-alpha',
       learnerKey: 'learner-alpha',
     };
@@ -1146,9 +1155,15 @@ describe('embedded persistence route', () => {
     const backing = {
       createSession,
       getSession: vi.fn(async (id: string) =>
-        id === coach.id ? coach : id === chat.id ? chat : undefined,
+        id === coach.id
+          ? coach
+          : id === studyAttempts.id
+            ? studyAttempts
+            : id === chat.id
+              ? chat
+              : undefined,
       ),
-      listSessions: vi.fn(async () => [coach, chat]),
+      listSessions: vi.fn(async () => [coach, studyAttempts, chat]),
       setSessionStatus,
       deleteSession,
       appendRecord,
@@ -1163,11 +1178,17 @@ describe('embedded persistence route', () => {
     const visible = createClientVisibleRuntimeStore(backing);
 
     await expect(visible.getSession(coach.id)).resolves.toBeUndefined();
+    await expect(visible.getSession(studyAttempts.id)).resolves.toBeUndefined();
     await expect(visible.getSession(chat.id)).resolves.toBe(chat);
     await expect(visible.listSessions('stage-alpha', 'learner-alpha')).resolves.toEqual([chat]);
-    const hiddenRecords = await visible.listRecords(coach.id);
-    expect(hiddenRecords).toEqual([]);
-    expect(JSON.stringify(hiddenRecords)).not.toContain(privateAssessmentCanary);
+    const hiddenCoachRecords = await visible.listRecords(coach.id);
+    const hiddenStudyAttemptRecords = await visible.listRecords(studyAttempts.id);
+    expect(hiddenCoachRecords).toEqual([]);
+    expect(hiddenStudyAttemptRecords).toEqual([]);
+    expect(JSON.stringify([hiddenCoachRecords, hiddenStudyAttemptRecords])).not.toContain(
+      privateAssessmentCanary,
+    );
+    expect(listRecords).not.toHaveBeenCalled();
     await expect(
       visible.appendRecord({
         id: 'forged-event',
@@ -1176,25 +1197,89 @@ describe('embedded persistence route', () => {
         payload: {},
       }),
     ).rejects.toThrow('runtime session not found');
+    const commonAttempt = {
+      schemaVersion: 2,
+      coachSessionId: coach.id,
+      profileId: 'student-alpha',
+      createdAt: '2026-08-28T08:00:00.000Z',
+      subjectId: 'math',
+      knowledgePointIds: ['linear-equations'],
+      questionSummary: 'A fictional projected attempt',
+      questionSourceType: 'typed',
+      attemptKind: 'initial',
+      studentAttemptedBeforeHelp: true,
+      hintsUsed: 0,
+      usedKeyHint: false,
+      viewedFullAnswer: false,
+    };
+    const forgedStudyAttempts = [
+      {
+        ...commonAttempt,
+        id: 'existing-projected-attempt',
+        assessmentStatus: 'evaluated',
+        initialOutcome: 'correct',
+        finalOutcome: 'correct',
+      },
+      {
+        ...commonAttempt,
+        id: 'forged-unassessed-attempt',
+        assessmentStatus: 'unassessed',
+        unassessedReason: 'unsupported_question_type',
+      },
+      {
+        schemaVersion: 1,
+        id: 'forged-legacy-attempt',
+        profileId: 'student-alpha',
+        createdAt: '2026-08-28T08:00:00.000Z',
+        subjectId: 'math',
+        knowledgePointIds: ['linear-equations'],
+        questionSummary: 'A fictional legacy attempt',
+        questionSourceType: 'typed',
+        attemptKind: 'initial',
+        initialOutcome: 'correct',
+        finalOutcome: 'correct',
+        studentAttemptedBeforeHelp: true,
+        hintsUsed: 0,
+        usedKeyHint: false,
+        viewedFullAnswer: false,
+      },
+    ];
+    for (const [index, payload] of forgedStudyAttempts.entries()) {
+      await expect(
+        visible.appendRecord({
+          id: `forged-study-attempt-record-${index}`,
+          sessionId: studyAttempts.id,
+          createdAt: '2026-08-28T08:00:00.000Z',
+          payload,
+        }),
+      ).rejects.toThrow('runtime session not found');
+    }
     await expect(
       visible.setSessionStatus(coach.id, 'completed', '2026-08-28T08:00:00.000Z'),
     ).rejects.toThrow('runtime session not found');
+    await expect(
+      visible.setSessionStatus(studyAttempts.id, 'completed', '2026-08-28T08:00:00.000Z'),
+    ).rejects.toThrow('runtime session not found');
     await visible.deleteSession(coach.id);
+    await visible.deleteSession(studyAttempts.id);
     expect(appendRecord).not.toHaveBeenCalled();
     expect(setSessionStatus).not.toHaveBeenCalled();
     expect(deleteSession).not.toHaveBeenCalledWith(coach.id);
+    expect(deleteSession).not.toHaveBeenCalledWith(studyAttempts.id);
 
-    await expect(
-      visible.createSession({
-        id: 'forged-coach',
-        kind: 'zhongkaoCoachEvent',
-        stageId: 'stage-alpha',
-        learnerKey: 'learner-alpha',
-        status: 'active',
-        createdAt: '2026-08-28T08:00:00.000Z',
-        updatedAt: '2026-08-28T08:00:00.000Z',
-      }),
-    ).rejects.toThrow('runtime session not found');
+    for (const kind of ['zhongkaoCoachEvent', 'zhongkaoStudyAttempt']) {
+      await expect(
+        visible.createSession({
+          id: `forged-${kind}`,
+          kind,
+          stageId: 'stage-alpha',
+          learnerKey: 'learner-alpha',
+          status: 'active',
+          createdAt: '2026-08-28T08:00:00.000Z',
+          updatedAt: '2026-08-28T08:00:00.000Z',
+        }),
+      ).rejects.toThrow('runtime session not found');
+    }
     await visible.createSession({
       id: 'new-chat',
       kind: 'chat',
@@ -1209,6 +1294,7 @@ describe('embedded persistence route', () => {
     await visible.deleteLearnerRuntime('stage-alpha', 'learner-alpha');
     expect(deleteSession).toHaveBeenCalledWith(chat.id);
     expect(deleteSession).not.toHaveBeenCalledWith(coach.id);
+    expect(deleteSession).not.toHaveBeenCalledWith(studyAttempts.id);
   });
 });
 

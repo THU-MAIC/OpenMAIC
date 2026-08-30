@@ -1067,7 +1067,7 @@ describe('foldCoachEvents strict deterministic projection', () => {
     ).toThrow('COACH_EVENT_CONFLICT');
   });
 
-  it('rejects projection for an unavailable original until the unassessed StudyAttempt union exists', () => {
+  it('allows an unavailable original to complete after an unassessed projection', () => {
     const first = attempt(1, 2);
     const second = attempt(2, 3);
     const unavailable = originalAssessmentUnavailable(3);
@@ -1077,23 +1077,25 @@ describe('foldCoachEvents strict deterministic projection', () => {
     const assigned = assignment(7, resolved.eventId);
     const submitted = transferSubmission(8, 5);
     const evaluated = evaluation(9, submitted.eventId);
-    expect(() =>
-      foldCoachEvents(
-        records([
-          start(),
-          first,
-          second,
-          unavailable,
-          requested,
-          revealed,
-          resolved,
-          assigned,
-          submitted,
-          evaluated,
-          projection(10, evaluated.eventId),
-        ]),
-      ),
-    ).toThrow('COACH_EVENT_CONFLICT');
+    const completed = foldCoachEvents(
+      records([
+        start(),
+        first,
+        second,
+        unavailable,
+        requested,
+        revealed,
+        resolved,
+        assigned,
+        submitted,
+        evaluated,
+        projection(10, evaluated.eventId),
+      ]),
+    );
+    expect(completed).toMatchObject({
+      status: 'completed',
+      studyAttemptsProjected: true,
+    });
   });
 
   it('completes only after evaluation and projection', () => {

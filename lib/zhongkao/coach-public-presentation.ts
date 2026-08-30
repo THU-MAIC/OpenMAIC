@@ -177,6 +177,7 @@ const GENERATION_NOTICE = '这次内容暂时没有生成成功。请稍后重�
 const ASSESSMENT_UNAVAILABLE_NOTICE =
   '当前无法可靠自动判断这类作答是否正确。你仍可以继续尝试或请求提示；完整解析解锁后也可以继续学习。';
 const PROFILE_NOTICE = '当前还没有可用的中考伴学画像。请先完成伴学模式的基础设置。';
+const PROJECTION_NOTICE = '这次学习结果暂时未能安全保存。请稍后重试，不需要重新作答。';
 
 /** Runtime-check and copy a public payload before it crosses a durable boundary. */
 export function validateCoachTerminalPresentation(
@@ -282,6 +283,12 @@ export function buildCoachNotice(reason: CoachTerminalNoticeReason): CoachNotice
     case 'ORIGINAL_ATTEMPT_EVALUATION_FAILED':
     case 'ORIGINAL_ATTEMPT_EVALUATION_CONFLICT':
       text = GENERATION_NOTICE;
+      break;
+    case 'STUDY_ATTEMPT_SOURCE_FACT_MISSING':
+    case 'STUDY_ATTEMPT_PROJECTION_FAILED':
+    case 'STUDY_ATTEMPT_PROJECTION_CONFLICT':
+    case 'STUDY_ATTEMPT_PERSISTENCE_UNAVAILABLE':
+      text = PROJECTION_NOTICE;
       break;
     case 'COACH_PROFILE_NOT_FOUND':
       text = PROFILE_NOTICE;

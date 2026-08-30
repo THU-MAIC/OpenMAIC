@@ -754,6 +754,7 @@ describe('causal service operations and phase isolation', () => {
       coachSessionId: ready.created.snapshot.state.coachSessionId,
       expectedRevision: evaluated.snapshot.state.revision,
       evaluationEventId: evaluationEvent.eventId,
+      projectionRef: 'coach-projection:v1:test-runtime-projection',
     });
     const projectionEvent = lastEvent(projected);
     expect(projected.snapshot.state.status).toBe('completed');
@@ -771,6 +772,7 @@ describe('causal service operations and phase isolation', () => {
       coachSessionId: ready.created.snapshot.state.coachSessionId,
       expectedRevision: 999,
       evaluationEventId: evaluationEvent.eventId,
+      projectionRef: 'coach-projection:v1:test-runtime-projection',
     });
     expect(replay.replayed).toBe(true);
   });

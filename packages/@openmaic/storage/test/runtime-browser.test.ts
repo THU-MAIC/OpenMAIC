@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { RUNTIME_DSL_VERSION_KEY } from '@openmaic/dsl';
-import { BrowserRuntimeStore } from '../src/index.js';
+import { BrowserRuntimeStore, RuntimeAppendConflictError } from '../src/index.js';
 import { makeRecordInit, makeSession, runRuntimeStoreContract } from './runtime-contract.js';
 
 // Each store gets its own in-memory IndexedDB factory so contract cases stay
@@ -174,6 +174,29 @@ describe('BrowserRuntimeStore atomic append transition', () => {
       status: 'active',
       updatedAt: '2026-01-01T00:00:00.000Z',
     });
+  });
+
+  test('a supplied append precondition on an inactive session is a typed conflict', async () => {
+    const store = new BrowserRuntimeStore({ indexedDB: new IDBFactory() });
+    await store.createSession(makeSession());
+    const existing = await store.appendRecord(makeRecordInit('sess-1'));
+    await store.setSessionStatus('sess-1', 'completed', '2026-01-01T00:01:00.000Z');
+
+    let failure: unknown;
+    try {
+      await store.appendRecord(makeRecordInit('sess-1'), { expectedLastSeq: 0 });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(RuntimeAppendConflictError);
+    expect(failure).toMatchObject({
+      name: 'RuntimeAppendConflictError',
+      sessionId: 'sess-1',
+      expectedLastSeq: 0,
+      actualLastSeq: 0,
+    });
+    expect(await store.listRecords('sess-1')).toEqual([existing]);
   });
 });
 

@@ -11,12 +11,16 @@ import {
   type DomainValidationResult,
 } from './validation';
 
-export const STUDY_ATTEMPT_SCHEMA_VERSION = 1 as const;
+export const STUDY_ATTEMPT_SCHEMA_VERSION_V1 = 1 as const;
+export const STUDY_ATTEMPT_SCHEMA_VERSION_V2 = 2 as const;
+// Retained for callers that explicitly construct the legacy v1 contract.
+export const STUDY_ATTEMPT_SCHEMA_VERSION = STUDY_ATTEMPT_SCHEMA_VERSION_V1;
 export const STUDY_ATTEMPT_CONFLICT_CODE = 'ZHONGKAO_STUDY_ATTEMPT_CONFLICT' as const;
 
 export type QuestionSourceType = 'typed' | 'material' | 'diagnostic' | 'generated';
 export type AttemptKind = 'initial' | 'transfer' | 'review';
 export type AttemptOutcome = 'correct' | 'incorrect' | 'partial' | 'skipped';
+export type StudyAttemptUnassessedReason = 'unsupported_question_type';
 export type ErrorType =
   | 'concept'
   | 'method'
@@ -26,8 +30,7 @@ export type ErrorType =
   | 'careless'
   | 'time';
 
-export interface StudyAttempt {
-  schemaVersion: typeof STUDY_ATTEMPT_SCHEMA_VERSION;
+export interface StudyAttemptCommon {
   id: string;
   profileId: string;
   createdAt: string;
@@ -38,8 +41,6 @@ export interface StudyAttempt {
   sourceMaterialId?: string;
   sourcePage?: number;
   attemptKind: AttemptKind;
-  initialOutcome: AttemptOutcome;
-  finalOutcome: AttemptOutcome;
   studentAttemptedBeforeHelp: boolean;
   hintsUsed: number;
   usedKeyHint: boolean;
@@ -47,6 +48,33 @@ export interface StudyAttempt {
   errorType?: ErrorType;
   durationSeconds?: number;
 }
+
+export interface StudyAttemptV1 extends StudyAttemptCommon {
+  schemaVersion: typeof STUDY_ATTEMPT_SCHEMA_VERSION_V1;
+  initialOutcome: AttemptOutcome;
+  finalOutcome: AttemptOutcome;
+}
+
+export interface StudyAttemptV2Common extends StudyAttemptCommon {
+  schemaVersion: typeof STUDY_ATTEMPT_SCHEMA_VERSION_V2;
+  coachSessionId: string;
+}
+
+export interface EvaluatedStudyAttemptV2 extends StudyAttemptV2Common {
+  assessmentStatus: 'evaluated';
+  initialOutcome: AttemptOutcome;
+  finalOutcome: AttemptOutcome;
+}
+
+export type UnassessedStudyAttemptV2 = Omit<StudyAttemptV2Common, 'attemptKind'> & {
+  attemptKind: 'initial';
+  assessmentStatus: 'unassessed';
+  unassessedReason: StudyAttemptUnassessedReason;
+};
+
+export type StudyAttemptV2 = EvaluatedStudyAttemptV2 | UnassessedStudyAttemptV2;
+export type StudyAttempt = StudyAttemptV1 | StudyAttemptV2;
+export type EvaluatedStudyAttempt = StudyAttemptV1 | EvaluatedStudyAttemptV2;
 
 const QUESTION_SOURCE_TYPES = new Set<QuestionSourceType>([
   'typed',
@@ -56,6 +84,11 @@ const QUESTION_SOURCE_TYPES = new Set<QuestionSourceType>([
 ]);
 const ATTEMPT_KINDS = new Set<AttemptKind>(['initial', 'transfer', 'review']);
 const ATTEMPT_OUTCOMES = new Set<AttemptOutcome>(['correct', 'incorrect', 'partial', 'skipped']);
+const ASSESSMENT_STATUSES = new Set<StudyAttemptV2['assessmentStatus']>([
+  'evaluated',
+  'unassessed',
+]);
+const UNASSESSED_REASONS = new Set<StudyAttemptUnassessedReason>(['unsupported_question_type']);
 const ERROR_TYPES = new Set<ErrorType>([
   'concept',
   'method',
@@ -65,7 +98,7 @@ const ERROR_TYPES = new Set<ErrorType>([
   'careless',
   'time',
 ]);
-const STUDY_ATTEMPT_KEYS = new Set([
+const STUDY_ATTEMPT_COMMON_KEYS = [
   'schemaVersion',
   'id',
   'profileId',
@@ -77,14 +110,34 @@ const STUDY_ATTEMPT_KEYS = new Set([
   'sourceMaterialId',
   'sourcePage',
   'attemptKind',
-  'initialOutcome',
-  'finalOutcome',
   'studentAttemptedBeforeHelp',
   'hintsUsed',
   'usedKeyHint',
   'viewedFullAnswer',
   'errorType',
   'durationSeconds',
+] as const;
+const STUDY_ATTEMPT_V1_KEYS = new Set([
+  ...STUDY_ATTEMPT_COMMON_KEYS,
+  'initialOutcome',
+  'finalOutcome',
+]);
+const STUDY_ATTEMPT_V2_EVALUATED_KEYS = new Set([
+  ...STUDY_ATTEMPT_COMMON_KEYS,
+  'coachSessionId',
+  'assessmentStatus',
+  'initialOutcome',
+  'finalOutcome',
+]);
+const STUDY_ATTEMPT_V2_UNASSESSED_KEYS = new Set([
+  ...STUDY_ATTEMPT_COMMON_KEYS,
+  'coachSessionId',
+  'assessmentStatus',
+  'unassessedReason',
+]);
+const STUDY_ATTEMPT_V2_UNRESOLVED_KEYS = new Set([
+  ...STUDY_ATTEMPT_V2_EVALUATED_KEYS,
+  'unassessedReason',
 ]);
 
 function validateEnum<T extends string>(
@@ -110,13 +163,26 @@ export function validateStudyAttempt(value: unknown): DomainValidationResult {
     return { valid: false, errors: [{ path: '/', message: 'expected StudyAttempt object' }] };
   }
 
-  rejectUnknownKeys(value, STUDY_ATTEMPT_KEYS, '', errors);
+  const allowedKeys =
+    value.schemaVersion === STUDY_ATTEMPT_SCHEMA_VERSION_V1
+      ? STUDY_ATTEMPT_V1_KEYS
+      : value.schemaVersion === STUDY_ATTEMPT_SCHEMA_VERSION_V2 &&
+          value.assessmentStatus === 'evaluated'
+        ? STUDY_ATTEMPT_V2_EVALUATED_KEYS
+        : value.schemaVersion === STUDY_ATTEMPT_SCHEMA_VERSION_V2 &&
+            value.assessmentStatus === 'unassessed'
+          ? STUDY_ATTEMPT_V2_UNASSESSED_KEYS
+          : STUDY_ATTEMPT_V2_UNRESOLVED_KEYS;
+  rejectUnknownKeys(value, allowedKeys, '', errors);
   if (Object.hasOwn(value, 'isIndependent')) {
     pushIssue(errors, '/isIndependent', 'client-declared independence is forbidden');
   }
 
-  if (value.schemaVersion !== STUDY_ATTEMPT_SCHEMA_VERSION) {
-    pushIssue(errors, '/schemaVersion', `expected ${STUDY_ATTEMPT_SCHEMA_VERSION}`);
+  if (
+    value.schemaVersion !== STUDY_ATTEMPT_SCHEMA_VERSION_V1 &&
+    value.schemaVersion !== STUDY_ATTEMPT_SCHEMA_VERSION_V2
+  ) {
+    pushIssue(errors, '/schemaVersion', 'expected 1 or 2');
   }
   validateIdentifier(value.id, '/id', errors);
   validateIdentifier(value.profileId, '/profileId', errors);
@@ -165,8 +231,23 @@ export function validateStudyAttempt(value: unknown): DomainValidationResult {
   }
 
   validateEnum(value.attemptKind, ATTEMPT_KINDS, '/attemptKind', errors);
-  validateEnum(value.initialOutcome, ATTEMPT_OUTCOMES, '/initialOutcome', errors);
-  validateEnum(value.finalOutcome, ATTEMPT_OUTCOMES, '/finalOutcome', errors);
+  if (value.schemaVersion === STUDY_ATTEMPT_SCHEMA_VERSION_V1) {
+    validateEnum(value.initialOutcome, ATTEMPT_OUTCOMES, '/initialOutcome', errors);
+    validateEnum(value.finalOutcome, ATTEMPT_OUTCOMES, '/finalOutcome', errors);
+  } else if (value.schemaVersion === STUDY_ATTEMPT_SCHEMA_VERSION_V2) {
+    validateIdentifier(value.coachSessionId, '/coachSessionId', errors);
+    if (validateEnum(value.assessmentStatus, ASSESSMENT_STATUSES, '/assessmentStatus', errors)) {
+      if (value.assessmentStatus === 'evaluated') {
+        validateEnum(value.initialOutcome, ATTEMPT_OUTCOMES, '/initialOutcome', errors);
+        validateEnum(value.finalOutcome, ATTEMPT_OUTCOMES, '/finalOutcome', errors);
+      } else {
+        validateEnum(value.unassessedReason, UNASSESSED_REASONS, '/unassessedReason', errors);
+        if (value.attemptKind !== 'initial') {
+          pushIssue(errors, '/attemptKind', 'unassessed attempts must be initial');
+        }
+      }
+    }
+  }
   validateBoolean(value.studentAttemptedBeforeHelp, '/studentAttemptedBeforeHelp', errors);
   if (
     typeof value.hintsUsed !== 'number' ||
@@ -199,8 +280,8 @@ export function assertStudyAttempt(value: unknown): asserts value is StudyAttemp
 }
 
 export function studyAttemptFactsEqual(left: StudyAttempt, right: StudyAttempt): boolean {
-  return (
-    left.schemaVersion === right.schemaVersion &&
+  if (left.schemaVersion !== right.schemaVersion) return false;
+  const commonFactsEqual =
     left.id === right.id &&
     left.profileId === right.profileId &&
     left.createdAt === right.createdAt &&
@@ -214,19 +295,43 @@ export function studyAttemptFactsEqual(left: StudyAttempt, right: StudyAttempt):
     left.sourceMaterialId === right.sourceMaterialId &&
     left.sourcePage === right.sourcePage &&
     left.attemptKind === right.attemptKind &&
-    left.initialOutcome === right.initialOutcome &&
-    left.finalOutcome === right.finalOutcome &&
     left.studentAttemptedBeforeHelp === right.studentAttemptedBeforeHelp &&
     left.hintsUsed === right.hintsUsed &&
     left.usedKeyHint === right.usedKeyHint &&
     left.viewedFullAnswer === right.viewedFullAnswer &&
     left.errorType === right.errorType &&
-    left.durationSeconds === right.durationSeconds
+    left.durationSeconds === right.durationSeconds;
+  if (!commonFactsEqual) return false;
+
+  if (left.schemaVersion === STUDY_ATTEMPT_SCHEMA_VERSION_V1) {
+    if (right.schemaVersion !== STUDY_ATTEMPT_SCHEMA_VERSION_V1) return false;
+    return left.initialOutcome === right.initialOutcome && left.finalOutcome === right.finalOutcome;
+  }
+  if (right.schemaVersion !== STUDY_ATTEMPT_SCHEMA_VERSION_V2) return false;
+  if (
+    left.coachSessionId !== right.coachSessionId ||
+    left.assessmentStatus !== right.assessmentStatus
+  ) {
+    return false;
+  }
+  if (left.assessmentStatus === 'evaluated') {
+    if (right.assessmentStatus !== 'evaluated') return false;
+    return left.initialOutcome === right.initialOutcome && left.finalOutcome === right.finalOutcome;
+  }
+  if (right.assessmentStatus !== 'unassessed') return false;
+  return left.unassessedReason === right.unassessedReason;
+}
+
+export function isEvaluatedStudyAttempt(attempt: StudyAttempt): attempt is EvaluatedStudyAttempt {
+  return (
+    attempt.schemaVersion === STUDY_ATTEMPT_SCHEMA_VERSION_V1 ||
+    attempt.assessmentStatus === 'evaluated'
   );
 }
 
 export function isIndependentCorrectAttempt(attempt: StudyAttempt): boolean {
   return (
+    isEvaluatedStudyAttempt(attempt) &&
     attempt.finalOutcome === 'correct' &&
     (attempt.attemptKind === 'transfer' || attempt.attemptKind === 'review') &&
     attempt.studentAttemptedBeforeHelp &&
@@ -239,11 +344,16 @@ export function isIndependentCorrectAttempt(attempt: StudyAttempt): boolean {
 export const isIndependentCorrect = isIndependentCorrectAttempt;
 
 export function isIncorrectObservation(attempt: StudyAttempt): boolean {
-  return attempt.initialOutcome === 'incorrect' && attempt.studentAttemptedBeforeHelp;
+  return (
+    isEvaluatedStudyAttempt(attempt) &&
+    attempt.initialOutcome === 'incorrect' &&
+    attempt.studentAttemptedBeforeHelp
+  );
 }
 
 export function isAssistedCorrectAttempt(attempt: StudyAttempt): boolean {
   return (
+    isEvaluatedStudyAttempt(attempt) &&
     attempt.finalOutcome === 'correct' &&
     (!attempt.studentAttemptedBeforeHelp ||
       attempt.hintsUsed > 0 ||

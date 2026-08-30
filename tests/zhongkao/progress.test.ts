@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { deriveKnowledgeProgress } from '@/lib/zhongkao/progress';
 
-import { NOW, studyAttempt } from './fixtures';
+import { evaluatedStudyAttemptV2, NOW, studyAttempt, unassessedStudyAttemptV2 } from './fixtures';
 
 const input = {
   profileId: 'student-alpha',
@@ -182,6 +182,98 @@ describe('KnowledgeProgress derivation', () => {
       ],
     });
     expect(result.attempts).toBe(1);
+    expect(result.state).toBe('needs_observation');
+    expect(result.state).not.toBe('stable');
+  });
+
+  it('applies the existing outcome semantics to evaluated v2 attempts', () => {
+    const result = deriveKnowledgeProgress({
+      ...input,
+      attempts: [
+        evaluatedStudyAttemptV2({
+          id: 'v2-wrong',
+          attemptKind: 'initial',
+          initialOutcome: 'incorrect',
+          finalOutcome: 'incorrect',
+        }),
+        evaluatedStudyAttemptV2({
+          id: 'v2-independent',
+          createdAt: '2026-08-29T08:00:00.000Z',
+        }),
+        evaluatedStudyAttemptV2({
+          id: 'v2-hinted',
+          createdAt: '2026-08-30T08:00:00.000Z',
+          hintsUsed: 1,
+        }),
+      ],
+    });
+
+    expect(result.incorrectObservationCount).toBe(1);
+    expect(result.independentCorrectCount).toBe(1);
+    expect(result.assistedCorrectCount).toBe(1);
+    expect(result.state).toBe('needs_observation');
+  });
+
+  it('retains unassessed learning evidence without deriving correctness or mastery state', () => {
+    const unassessed = unassessedStudyAttemptV2();
+    const result = deriveKnowledgeProgress({ ...input, attempts: [unassessed] });
+
+    expect(result).toEqual({
+      ...input,
+      state: 'unobserved',
+      attempts: 1,
+      independentCorrectCount: 0,
+      assistedCorrectCount: 0,
+      incorrectObservationCount: 0,
+      evidenceAttemptIds: [unassessed.id],
+      lastAttemptAt: unassessed.createdAt,
+    });
+  });
+
+  it('does not let later unassessed attempts displace recent evaluated observations', () => {
+    const result = deriveKnowledgeProgress({
+      ...input,
+      attempts: [
+        evaluatedStudyAttemptV2({ id: 'evaluated-1' }),
+        evaluatedStudyAttemptV2({
+          id: 'evaluated-2',
+          createdAt: '2026-08-29T08:00:00.000Z',
+          attemptKind: 'review',
+        }),
+        unassessedStudyAttemptV2({
+          id: 'unassessed-1',
+          createdAt: '2026-08-30T08:00:00.000Z',
+        }),
+        unassessedStudyAttemptV2({
+          id: 'unassessed-2',
+          createdAt: '2026-08-31T08:00:00.000Z',
+        }),
+      ],
+    });
+
+    expect(result.attempts).toBe(4);
+    expect(result.independentCorrectCount).toBe(2);
+    expect(result.state).toBe('developing');
+  });
+
+  it('keeps original answer exposure separate from transfer independence', () => {
+    const result = deriveKnowledgeProgress({
+      ...input,
+      attempts: [
+        evaluatedStudyAttemptV2({
+          id: 'original-viewed',
+          attemptKind: 'initial',
+          viewedFullAnswer: true,
+        }),
+        evaluatedStudyAttemptV2({
+          id: 'transfer-independent',
+          createdAt: '2026-08-29T08:00:00.000Z',
+        }),
+      ],
+    });
+
+    expect(result.independentCorrectCount).toBe(1);
+    expect(result.assistedCorrectCount).toBe(1);
     expect(result.state).toBe('needs_observation');
     expect(result.state).not.toBe('stable');
   });

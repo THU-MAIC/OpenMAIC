@@ -1,5 +1,6 @@
 import {
   isAssistedCorrectAttempt,
+  isEvaluatedStudyAttempt,
   isIncorrectObservation,
   isIndependentCorrectAttempt,
   STUDY_ATTEMPT_CONFLICT_CODE,
@@ -58,19 +59,24 @@ function relevantAttempts(input: DeriveKnowledgeProgressInput): StudyAttempt[] {
 }
 
 function isValidObservation(attempt: StudyAttempt): boolean {
-  return attempt.studentAttemptedBeforeHelp && attempt.initialOutcome !== 'skipped';
+  return (
+    isEvaluatedStudyAttempt(attempt) &&
+    attempt.studentAttemptedBeforeHelp &&
+    attempt.initialOutcome !== 'skipped'
+  );
 }
 
 export function deriveKnowledgeProgress(input: DeriveKnowledgeProgressInput): KnowledgeProgress {
   const attempts = relevantAttempts(input);
-  const independentCorrectCount = attempts.filter(isIndependentCorrectAttempt).length;
-  const assistedCorrectCount = attempts.filter(isAssistedCorrectAttempt).length;
-  const incorrectObservationCount = attempts.filter(isIncorrectObservation).length;
-  const recentObservations = attempts.filter(isValidObservation).slice(-3);
+  const evaluatedAttempts = attempts.filter(isEvaluatedStudyAttempt);
+  const independentCorrectCount = evaluatedAttempts.filter(isIndependentCorrectAttempt).length;
+  const assistedCorrectCount = evaluatedAttempts.filter(isAssistedCorrectAttempt).length;
+  const incorrectObservationCount = evaluatedAttempts.filter(isIncorrectObservation).length;
+  const recentObservations = evaluatedAttempts.filter(isValidObservation).slice(-3);
   const recentIndependentCorrect = recentObservations.filter(isIndependentCorrectAttempt).length;
 
   let state: MasteryState;
-  if (attempts.length === 0) state = 'unobserved';
+  if (evaluatedAttempts.length === 0) state = 'unobserved';
   else if (recentIndependentCorrect >= 2) state = 'developing';
   else if (incorrectObservationCount >= 2) state = 'weak';
   else state = 'needs_observation';

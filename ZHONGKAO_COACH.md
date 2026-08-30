@@ -893,3 +893,188 @@ chain; an unassessed history must have the durable unavailable fact and the
 future explicit union variant. Transient and conflicting histories remain
 outside the projection boundary. `MISSING=0` is a hard gate, not permission to
 substitute heuristics, defaults, or new `AttemptOutcome` values.
+
+## Milestone 2B-2B durable StudyAttempt projection and completion
+
+M2B-2B closes the server-side learning-record workflow. It deterministically
+projects one original and one transfer `StudyAttempt` from authoritative Coach
+history, persists and reads both records back through the existing
+`RuntimeStore`, and only then appends `study_attempts_projected`. It adds no
+model action, database, dependency, UI, review scheduler, prompt, or generation
+step.
+
+### StudyAttempt v2 and v1 compatibility
+
+The public domain contract is now a versioned union:
+
+```text
+StudyAttempt = StudyAttemptV1 | StudyAttemptV2
+
+StudyAttemptV2 =
+  | EvaluatedStudyAttemptV2
+  | UnassessedStudyAttemptV2
+```
+
+`StudyAttemptV1` keeps `schemaVersion=1`, its existing fields, closed-key
+validation, outcome values, equality, persistence, and progress semantics. No
+v1 record is migrated, and v1 does not accept `coachSessionId`,
+`assessmentStatus`, or `unassessedReason`.
+
+Both v2 variants carry the common long-lived learning facts and a required,
+trimmed, bounded `coachSessionId`. The evaluated variant carries
+`assessmentStatus=evaluated` plus required `initialOutcome` and `finalOutcome`,
+and forbids `unassessedReason`. The unassessed variant carries
+`assessmentStatus=unassessed` and the closed durable reason
+`unsupported_question_type`, forbids both outcome fields, and is reachable only
+for `attemptKind=initial`. Transfer is always evaluated; an unassessed transfer
+or review record is invalid. Variant-forbidden fields are rejected even when a
+caller explicitly supplies them as `undefined`, and every variant remains
+closed to additional fields. `AttemptOutcome` is not expanded with an
+`unassessed` value.
+
+### Projection authority and source rules
+
+The projection boundary accepts raw durable Coach `RuntimeRecord` values, not a
+caller-constructed `CoachState`, outcome summary, or plain-object facts. It
+sorts records by durable sequence, validates every payload, folds the validated
+events, requires `finalizing`, and then proves all cited source events and
+profile/session relationships before constructing a plan. Missing, ambiguous,
+corrupt, transient, or conflicting facts fail closed with a stable projection
+error; they are never replaced by defaults.
+
+The executable four-class Source Matrix is:
+
+| Projection class | Original record | Original outcomes | Transfer record |
+| --- | --- | --- | --- |
+| A. objective + evaluated resolution | `evaluated`, `initial` | first authoritative evaluation; final outcome from the evaluation cited by the causal evaluated resolution | verified assignment plus deterministic evaluated submission |
+| B. objective + full-solution resolution | `evaluated`, `initial` | F1 first and last authoritative evaluations before resolution; reveal changes exposure only | verified assignment plus deterministic evaluated submission |
+| C. unavailable original + evaluated transfer | `unassessed`, `initial`, reason from durable unavailable fact | intentionally absent; never inferred as incorrect or skipped | verified assignment plus deterministic evaluated submission |
+| D. transfer | `evaluated`, `transfer` | one deterministic transfer evaluation supplies both initial and final outcome | same Coach session and authoritative transfer knowledge points |
+
+For every class, identifiers and summaries are deterministic derivations;
+profile, subject, knowledge-point, source, submission time, evaluation, and
+unavailable facts come from validated durable events; unavailable outcomes and
+fields without authoritative lineage remain intentionally absent. The matrix
+therefore retains `MISSING AUTHORITATIVE SOURCE = 0` without guessing. F1 never
+turns a full-solution reveal into `correct` or `skipped`, and original and
+transfer help exposure remain phase-local.
+
+### Deterministic identity and canonical projection
+
+Each Coach session can project one ordinal original record and one ordinal
+transfer record. Their IDs are domain-separated SHA-256 derivations of the
+Coach session, phase, and projection ordinal. Replays produce the same IDs;
+different sessions or phases produce different IDs. IDs do not depend on
+randomness, current time, chat identity, tool-call identity, or model output.
+
+Each v2 record has an explicit canonical serialization covering every persisted
+field, including the variant discriminator and reason or outcomes. Knowledge
+point ids are canonicalized before persistence. Optional absent values have a
+fixed representation, and no caller property-insertion order participates in
+the digest. The per-attempt fingerprint covers only long-lived learning facts.
+It excludes raw answers, grading specifications, answer keys, verifier output,
+expected revisions, provider data, and current time.
+
+`projectionRef` is a separate domain-separated SHA-256 derivation over the
+projection version, Coach session id, original attempt id and fingerprint, and
+transfer attempt id and fingerprint. A fact change changes the relevant
+fingerprint and projection reference; an expected revision or tool-call id does
+not.
+
+### StudyAttempt write authority
+
+The entire `zhongkaoStudyAttempt` runtime kind is server-only, like the Coach
+event kind. The generic browser persistence route cannot create its session,
+discover or list it, read its records, append evaluated or unassessed payloads,
+change its status, or delete it. This closes both v2 forgery and overwrite paths
+and also removes the unauthenticated legacy v1 write surface; the repository has
+no production browser-side StudyAttempt producer that requires that path.
+Server-owned projection continues to use the shared payload validator and the
+existing server `RuntimeStore` adapter.
+
+### Bounded CAS, read-back, and saga recovery
+
+Projection reuses the existing learner/profile partition:
+server owner authority derives `learnerKey`, `profileId` derives
+`zhongkaoStageId`, and the existing `zhongkaoStudyAttempt` session stores the
+append-only facts. The model and client never choose owner, learner, stage, or
+projection partition.
+
+For each deterministic attempt id, persistence follows three cases:
+
+1. missing: append with atomic expected-last-sequence CAS;
+2. present with canonically identical facts: return replay success;
+3. present with any different fact: fail with
+   `STUDY_ATTEMPT_PROJECTION_CONFLICT` and never overwrite or merge.
+
+CAS loss triggers a bounded reread-and-retry policy. An identical winning write
+is success, a conflicting winner is a stable conflict, and a still-missing
+record may retry only within the bound. Historical identical duplicate ids
+remain one logical M1 fact, but the projector does not intentionally create new
+raw duplicates. Every append, including an append whose response is uncertain,
+must be followed by an authoritative reread. Persistence succeeds only when
+read-back finds the deterministic id and exact canonical facts.
+
+The fixed saga order is:
+
+1. load, validate, and fold raw Coach records;
+2. build one deterministic projection plan;
+3. persist and read back the original attempt;
+4. persist and read back the transfer attempt;
+5. reread both and verify their fingerprints and `projectionRef` against the
+   unchanged plan;
+6. append the causal `study_attempts_projected` event;
+7. refold Coach history and confirm `completed`.
+
+The projected event is never written first. If original persistence fails, no
+projection event exists. If transfer persistence fails, the identical original
+remains and replays on retry. If both attempts persist but the projected event
+loses CAS or fails, both replay identically and the event is retried. If the
+event commits but the response crashes, retry verifies the completed projection
+instead of writing another logical attempt or projected event. No process-local
+mutex is used as a correctness boundary.
+
+Concurrent workers derive the same plan. CAS losers reread the winner and may
+continue only when it is identical. The converged result is one logical
+original, one logical transfer, one logical `study_attempts_projected` event,
+and one completed Coach state. Conflicting deterministic ids fail closed while
+the Coach remains `finalizing`.
+
+### Completed integrity and meaning
+
+`completed` is reachable only after the durable attempts have been verified and
+`study_attempts_projected` has committed. Its meaning is exactly: the Coach
+workflow's durable learning projection is complete. It does not mean mastered,
+stable, independently correct, ready for an exam, or exempt from review.
+
+A completed replay must reconstruct and verify the projected event,
+`projectionRef`, deterministic original and transfer ids, both persisted
+records, and both fingerprints. A missing or conflicting attempt after a
+completed event is corruption and fails closed; completed is not returned on
+the strength of the state label alone.
+
+An unsupported original may still complete the workflow. Its original v2
+record honestly remains unassessed with no outcomes, while its separately
+verified transfer record remains evaluated. Once both are persisted and the
+projection event commits, the Coach may become completed without claiming that
+the original response was correct or that the student has mastered the point.
+
+### Progress, privacy, and zero-LLM projection
+
+`KnowledgeProgress` treats v1 and evaluated v2 records through the same existing
+outcome logic. Unassessed v2 records contribute no incorrect observation,
+assisted correct, independent correct, recent evaluated observation, or mastery
+transition. Their learning/help facts remain durable evidence, but a knowledge
+point with only unassessed attempts remains `unobserved`. In particular,
+`isIndependentCorrectAttempt` always returns false for unassessed records, and a
+single independent transfer success still cannot produce `stable`.
+
+Projected records contain only bounded long-lived learning facts. They contain
+no raw original or transfer response, expected answer, accepted-answer list,
+option key, tolerance, private assessment, full-solution text, verifier output,
+hidden reasoning, source-material body, mastery flag, or client-declared
+independence. Projection, fingerprinting, persistence, recovery, completion,
+and terminal presentation have zero LLM dependency. The server triggers them
+automatically after transfer evaluation or during an authorized finalizing
+resume; no student answer is consumed again and no model action can mark a
+session complete or mastered.
