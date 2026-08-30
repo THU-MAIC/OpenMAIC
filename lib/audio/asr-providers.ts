@@ -318,9 +318,7 @@ async function transcribeCustomOpenAICompatibleASR(
 ): Promise<ASRTranscriptionResult> {
   const baseUrl = (config.baseUrl || '').replace(/\/$/, '');
   if (!baseUrl) {
-    throw new Error(
-      'Custom ASR provider requires a base URL (e.g. https://api.siliconflow.cn/v1)',
-    );
+    throw new Error('Custom ASR provider requires a base URL (e.g. https://api.siliconflow.cn/v1)');
   }
 
   // Build a Blob with a sensible content-type so the remote API can detect
