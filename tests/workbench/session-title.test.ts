@@ -6,21 +6,17 @@
  * about which is showing (the pane header and the rail row). Both read the
  * derivation here; both write through `commitSessionRename`.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   commitSessionRename,
   isDerivedSessionTitle,
   normalizeSessionTitleInput,
+  normalizeSessionTitleOverride,
   SESSION_TITLE_MAX_LENGTH,
   workbenchSessionTitle,
 } from '@/lib/workbench/session-title';
-import {
-  foldEvents,
-  useWorkbenchStore,
-  type WorkbenchEvent,
-  type WorkbenchFold,
-} from '@/lib/workbench/session-store';
+import { foldEvents, type WorkbenchEvent, type WorkbenchFold } from '@/lib/workbench/session-store';
 
 describe('what a conversation is called', () => {
   it('prefers the name the user gave it', () => {
@@ -50,6 +46,16 @@ describe('what a rename sends', () => {
     expect(normalizeSessionTitleInput(session, 'x'.repeat(400))).toHaveLength(
       SESSION_TITLE_MAX_LENGTH,
     );
+  });
+
+  it('uses the input maxLength budget without splitting a surrogate pair', () => {
+    expect(normalizeSessionTitleOverride(`${'x'.repeat(118)}😀`)).toBe(`${'x'.repeat(118)}😀`);
+    expect(normalizeSessionTitleOverride(`${'x'.repeat(119)}😀tail`)).toBe('x'.repeat(119));
+  });
+
+  it('makes PostgreSQL-invalid API text safe for storage and projection', () => {
+    expect(normalizeSessionTitleOverride(`Safe\ud83d title`)).toBe('Safe� title');
+    expect(normalizeSessionTitleOverride(`Safe\u0000 title`)).toBe('Safe� title');
   });
 
   it('reads an empty box as "clear the name", not as a blank title', () => {
@@ -102,25 +108,16 @@ describe('committing a rename', () => {
     ]);
   });
 
-  it('does not settle over a newer authoritative title', async () => {
-    const applied: (string | null)[] = [];
-    let current = true;
-    const outcome = await commitSessionRename({
-      current: session,
-      raw: '本地名字',
-      apply: (title) => {
-        applied.push(title);
-        current = false;
+  it.each([
+    { settlement: 'success', save: async () => '服务端名字', outcome: 'renamed' },
+    {
+      settlement: 'failure',
+      save: async () => {
+        throw new Error('500');
       },
-      save: async () => '服务端名字',
-      isCurrent: () => current,
-    });
-
-    expect(outcome).toBe('renamed');
-    expect(applied).toEqual(['本地名字']);
-  });
-
-  it('does not roll back over a newer authoritative title', async () => {
+      outcome: 'failed',
+    },
+  ])('does not apply a stale $settlement settlement', async ({ save, outcome: expected }) => {
     const applied: (string | null)[] = [];
     let current = true;
     const outcome = await commitSessionRename({
@@ -130,13 +127,11 @@ describe('committing a rename', () => {
         applied.push(title);
         current = false;
       },
-      save: async () => {
-        throw new Error('500');
-      },
+      save,
       isCurrent: () => current,
     });
 
-    expect(outcome).toBe('failed');
+    expect(outcome).toBe(expected);
     expect(applied).toEqual(['本地名字']);
   });
 
@@ -180,40 +175,6 @@ describe('committing a rename', () => {
     expect(outcome).toBe('renamed');
     expect(save).toHaveBeenCalledWith('旧名字');
     expect(applied).toEqual(['旧名字', '旧名字']);
-  });
-});
-
-describe('late session metadata after a local rename', () => {
-  afterEach(() => useWorkbenchStore.getState().detach());
-
-  it('keeps the newer local title while accepting the rest of the bootstrap', () => {
-    const store = useWorkbenchStore.getState();
-    store.attach('session-1', null);
-    const expectedTitleRevision = store.sessionTitleRevision;
-    store.setSessionTitle('新名字');
-
-    store.setSessionBootstrap({
-      prompt: '第一条消息',
-      title: '旧名字',
-      expectedTitleRevision,
-      stageId: 'stage-1',
-    });
-
-    const current = useWorkbenchStore.getState();
-    expect(current.sessionTitle).toBe('新名字');
-    expect(current.sessionPrompt).toBe('第一条消息');
-    expect(current.stageId).toBe('stage-1');
-  });
-
-  it('keeps an explicit clear when older metadata still contains a title', () => {
-    const store = useWorkbenchStore.getState();
-    store.attach('session-1', null);
-    const expectedTitleRevision = store.sessionTitleRevision;
-    store.setSessionTitle(null);
-
-    store.setSessionBootstrap({ prompt: '第一条消息', title: '旧名字', expectedTitleRevision });
-
-    expect(useWorkbenchStore.getState().sessionTitle).toBeNull();
   });
 });
 

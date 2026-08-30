@@ -128,6 +128,9 @@ const EMPTY_SESSIONS: ProHomeSessionItem[] = [];
  */
 const BOTH_PANES_MIN_PX = 1024;
 const SESSION_LIST_TIMEOUT_MS = 15_000;
+// A shell is replaceable navigation UI, not a persistence boundary. Keeping the
+// queue in this client module preserves one writer per session across remounts.
+const sessionRenameQueue = createSessionRenameQueue();
 
 async function fetchSessions(): Promise<ProHomeSessionItem[]> {
   const controller = new AbortController();
@@ -146,13 +149,9 @@ async function fetchSessions(): Promise<ProHomeSessionItem[]> {
   }
 }
 
-function syncAttachedSessionTitle(
-  sessionId: string,
-  title: string | null,
-  forceRevision = false,
-): void {
+function syncAttachedSessionTitle(sessionId: string, title: string | null): void {
   const store = useWorkbenchStore.getState();
-  if (store.sessionId !== sessionId || (!forceRevision && store.sessionTitle === title)) return;
+  if (store.sessionId !== sessionId) return;
   store.setSessionTitle(title);
 }
 
@@ -193,7 +192,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    */
   const [newConversationRequested, setNewConversationRequested] = useState(false);
   const ownerSessionClient = useRef<OwnerSessionClient | null>(null);
-  const [sessionRenameQueue] = useState(createSessionRenameQueue);
+  const shellGeneration = useRef(0);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const railWidth = useRailWidth(rootRef);
@@ -351,7 +350,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       if (source !== 'snapshot') return;
       const attachedId = useWorkbenchStore.getState().sessionId;
       const attached = snapshot.find((session) => session.id === attachedId);
-      if (attached) syncAttachedSessionTitle(attached.id, attached.title ?? null, true);
+      if (attached) syncAttachedSessionTitle(attached.id, attached.title ?? null);
     },
     [],
   );
@@ -361,12 +360,13 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       fetchSessions,
       createEventSource: (url) => new EventSource(url),
       onSessions: publishOwnerSessions,
-      onSessionTitle: (sessionId, title) => syncAttachedSessionTitle(sessionId, title, true),
+      onSessionTitle: syncAttachedSessionTitle,
       onState: setSessionState,
     });
     ownerSessionClient.current = client;
     client.start();
     return () => {
+      shellGeneration.current += 1;
       ownerSessionClient.current = null;
       client.stop();
     };
@@ -556,7 +556,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    */
   const applySessionTitle = useCallback(
     (sessionId: string, title: string | null, settled: boolean) => {
-      syncAttachedSessionTitle(sessionId, title, true);
+      syncAttachedSessionTitle(sessionId, title);
       const client = ownerSessionClient.current;
       const revision = client?.updateSessionTitle(sessionId, title, settled) ?? null;
       return { client, revision };
@@ -577,8 +577,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * renames use.
    */
   const renameSession = useCallback(
-    (sessionId: string, raw: string): Promise<string | null> =>
-      sessionRenameQueue.run(sessionId, async (queued) => {
+    (sessionId: string, raw: string): Promise<string | null> => {
+      const generation = shellGeneration.current;
+      const isOriginCurrent = () => shellGeneration.current === generation;
+      return sessionRenameQueue.run(sessionId, async (queued) => {
         const row = sessionsRef.current.find((session) => session.id === sessionId);
         const store = useWorkbenchStore.getState();
         const attached = store.sessionId === sessionId;
@@ -590,15 +592,19 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           },
           raw,
           apply: (title, settled) => {
+            if (!isOriginCurrent()) return;
             decision = applySessionTitle(sessionId, title, settled);
           },
           save: (title) => renameWorkbenchSession(sessionId, title),
-          isCurrent: () =>
-            decision === null ||
-            decision.revision === null ||
-            decision.client === null ||
-            (ownerSessionClient.current === decision.client &&
-              decision.client.isSessionTitleRevisionCurrent(sessionId, decision.revision)),
+          isCurrent: () => {
+            if (!isOriginCurrent() || !decision?.client || decision.revision === null) {
+              return false;
+            }
+            return (
+              ownerSessionClient.current === decision.client &&
+              decision.client.isSessionTitleRevisionCurrent(sessionId, decision.revision)
+            );
+          },
           // A queued value that looks unchanged may be the user's explicit
           // attempt to undo the still-ambiguous write ahead of it.
           forceSave: queued,
@@ -607,13 +613,16 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
         // database may have committed before the response was lost, and an
         // optimistic mutation may have hidden a newer snapshot while it was in
         // flight. Reconcile every attempted change; unchanged input did no IO.
-        if (outcome !== 'unchanged') ownerSessionClient.current?.requestFullFetch();
+        if (isOriginCurrent() && outcome !== 'unchanged') {
+          ownerSessionClient.current?.requestFullFetch();
+        }
         if (outcome !== 'failed') return null;
         const message = t('workspace.renameSessionFailed');
-        toast.error(message);
+        if (isOriginCurrent()) toast.error(message);
         return message;
-      }),
-    [applySessionTitle, sessionRenameQueue, t],
+      });
+    },
+    [applySessionTitle, t],
   );
 
   /**
@@ -770,11 +779,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     const mutation = ownerSessionClient.current?.getUnconfirmedSessionTitle(panes.sessionId);
     const attached = sessionsRef.current.find((session) => session.id === panes.sessionId);
     if (mutation) {
-      syncAttachedSessionTitle(panes.sessionId, mutation.title, true);
+      syncAttachedSessionTitle(panes.sessionId, mutation.title);
     } else if (attached) {
-      // Force even an equal null: the revision records that an owner title
+      // Apply even an equal null: the revision records that an owner title
       // source exists, so an older detail response cannot fill it back in.
-      syncAttachedSessionTitle(attached.id, attached.title ?? null, true);
+      syncAttachedSessionTitle(attached.id, attached.title ?? null);
     }
   }, [panes.sessionId, paneSessionStageId, attach, detach]);
 

@@ -15,6 +15,29 @@
 /** The longest name a conversation may be given. Mirrors the server's cap. */
 export const SESSION_TITLE_MAX_LENGTH = 120;
 
+/**
+ * Normalize one stored title override at the shared client/server boundary.
+ *
+ * HTML's `maxLength` and JavaScript's `slice` both count UTF-16 code units, so
+ * that remains the budget here. The `Array.from` pass replaces NUL and lone
+ * surrogates, which PostgreSQL TEXT / JSONB cannot store, without requiring a
+ * newer browser built-in; the final guard prevents the cap itself from cutting
+ * a valid surrogate pair in half.
+ */
+export function normalizeSessionTitleOverride(value: string | null): string | null {
+  if (value === null) return null;
+  const wellFormed = Array.from(value.trim(), (character) => {
+    const codeUnit = character.charCodeAt(0);
+    const unstorable =
+      codeUnit === 0 || (character.length === 1 && codeUnit >= 0xd800 && codeUnit <= 0xdfff);
+    return unstorable ? '\ufffd' : character;
+  }).join('');
+  const truncated = wellFormed.slice(0, SESSION_TITLE_MAX_LENGTH);
+  if (!truncated) return null;
+  const last = truncated.charCodeAt(truncated.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? truncated.slice(0, -1) || null : truncated;
+}
+
 export interface WorkbenchSessionNaming {
   /** The stored override, if the user named this conversation. */
   readonly title?: string | null;
@@ -50,7 +73,7 @@ export function normalizeSessionTitleInput(
   session: WorkbenchSessionNaming,
   raw: string,
 ): string | null {
-  const next = raw.trim().slice(0, SESSION_TITLE_MAX_LENGTH);
+  const next = normalizeSessionTitleOverride(raw);
   if (!next) return null;
   return isDerivedSessionTitle(session, next) ? null : next;
 }

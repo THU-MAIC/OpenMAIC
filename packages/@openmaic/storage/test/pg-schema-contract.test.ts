@@ -372,8 +372,20 @@ $agent_session_owner_event_type_constraint$;
 -- Installing the superset above is a catalog-only operation while the short
 -- ACCESS EXCLUSIVE lock is held. Validate separately so PostgreSQL scans an
 -- existing projection table under VALIDATE CONSTRAINT's weaker lock instead.
-ALTER TABLE agent_owner_session_events
-  VALIDATE CONSTRAINT agent_owner_session_events_type_known_v2;
+-- Once validated, later initializers avoid taking that table lock altogether.
+DO $agent_session_owner_event_type_validation$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'agent_owner_session_events'::regclass
+      AND conname = 'agent_owner_session_events_type_known_v2'
+      AND NOT convalidated
+  ) THEN
+    ALTER TABLE agent_owner_session_events
+      VALIDATE CONSTRAINT agent_owner_session_events_type_known_v2;
+  END IF;
+END
+$agent_session_owner_event_type_validation$;
 
 CREATE TABLE IF NOT EXISTS agent_session_urls (
   session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
@@ -473,17 +485,16 @@ function statementsOf(schema: string): string[] {
 }
 
 describe('agent-session owner-event constraint migration', () => {
-  it('installs the v2 constraint without a locked scan, then validates it separately', () => {
+  it('installs without a locked scan, then conditionally validates in a separate statement', () => {
     const statements = statementsOf(AGENT_SESSION_PG_SCHEMA);
     const installIndex = statements.findIndex((statement) =>
       statement.includes('$agent_session_owner_event_type_constraint$'),
     );
     const validationIndex = statements.findIndex((statement) =>
-      /ALTER TABLE agent_owner_session_events\s+VALIDATE CONSTRAINT agent_owner_session_events_type_known_v2/.test(
-        statement,
-      ),
+      statement.includes('$agent_session_owner_event_type_validation$'),
     );
     const install = statements[installIndex] ?? '';
+    const validation = statements[validationIndex] ?? '';
     const addIndex = install.indexOf('ADD CONSTRAINT agent_owner_session_events_type_known_v2');
     const notValidIndex = install.indexOf('NOT VALID', addIndex);
     const dropIndex = install.indexOf(
@@ -496,6 +507,10 @@ describe('agent-session owner-event constraint migration', () => {
     expect(notValidIndex).toBeGreaterThan(addIndex);
     expect(dropIndex).toBeGreaterThan(notValidIndex);
     expect(validationIndex).toBeGreaterThan(installIndex);
+    expect(validation).toContain('AND NOT convalidated');
+    expect(validation).toMatch(
+      /ALTER TABLE agent_owner_session_events\s+VALIDATE CONSTRAINT agent_owner_session_events_type_known_v2/,
+    );
   });
 });
 
@@ -574,9 +589,10 @@ describe.each(schemas)('$name is a pinned contract', ({ name, actual, expected, 
         /^DO \$agent_session_[a-z_]+_constraint\$/.test(sql) &&
         /LOCK TABLE [a-z0-9_]+ IN ACCESS EXCLUSIVE MODE/.test(sql) &&
         /IF NOT EXISTS/.test(sql);
-      const constraintValidation = /^ALTER TABLE [a-z0-9_]+\s+VALIDATE CONSTRAINT [a-z0-9_]+$/.test(
-        sql,
-      );
+      const constraintValidation =
+        /^DO \$agent_session_[a-z_]+_validation\$/.test(sql) &&
+        /AND NOT convalidated/.test(sql) &&
+        /VALIDATE CONSTRAINT [a-z0-9_]+/.test(sql);
       expect(
         /^CREATE (TABLE|INDEX|UNIQUE INDEX) IF NOT EXISTS /.test(sql) ||
           /^ALTER TABLE [a-z_]+\s+ADD COLUMN IF NOT EXISTS /.test(sql) ||

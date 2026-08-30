@@ -68,13 +68,12 @@ describe('PgAgentSessionStore with PGlite', () => {
       id: 'session-1',
       title: 'Focused question',
     });
-    await expect(store.getSession('session-1')).resolves.toMatchObject({
+    const detail = await store.getSession('session-1');
+    expect(detail).toMatchObject({
       title: 'Focused question',
       updatedAt: expect.any(Number),
     });
-    expect((await store.getSession('session-1'))!.updatedAt).toBeGreaterThan(
-      new Date('2000-01-01T00:00:00Z').getTime(),
-    );
+    expect(detail!.updatedAt).toBeGreaterThan(new Date('2000-01-01T00:00:00Z').getTime());
     await expect(store.listSessionsByOwner('owner-a')).resolves.toMatchObject([
       { id: 'session-1', title: 'Focused question' },
     ]);
@@ -191,11 +190,12 @@ describe('PgAgentSessionStore with PGlite', () => {
       tableNames: legacyTables,
     });
 
-    await expect(legacyStore.getSession('legacy-1')).resolves.toMatchObject({
+    const detail = await legacyStore.getSession('legacy-1');
+    expect(detail).toMatchObject({
       id: 'legacy-1',
       prompt: 'Existing prompt',
     });
-    expect(await legacyStore.getSession('legacy-1')).not.toHaveProperty('title');
+    expect(detail).not.toHaveProperty('title');
     await expect(
       db.query<{ is_nullable: string }>(
         `SELECT is_nullable FROM information_schema.columns
@@ -253,6 +253,36 @@ describe('PgAgentSessionStore with PGlite', () => {
          VALUES ('owner-a', 2, 1, 'session-1', 'session_retry', NULL, NULL, '{}'::jsonb)`,
       ),
     ).rejects.toThrow();
+  });
+
+  test('quotes a reserved custom owner-event table throughout its migration', async () => {
+    await db.query(`
+      CREATE TABLE "user" (
+        owner_id TEXT NOT NULL,
+        id BIGINT NOT NULL,
+        ts BIGINT NOT NULL,
+        session_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        status TEXT,
+        attempt INTEGER,
+        data JSONB NOT NULL,
+        PRIMARY KEY (owner_id, id),
+        CONSTRAINT user_type_known CHECK (type IN
+          ('session_created','session_status','session_deleted',
+           'session_active_stage','session_cancel_requested'))
+      )
+    `);
+
+    const custom = { ownerEvents: 'user', sessions: 'user_sessions' };
+    await expect(ensureAgentSessionSchema(db, custom)).resolves.toBeUndefined();
+    await expect(ensureAgentSessionSchema(db, custom)).resolves.toBeUndefined();
+    await expect(
+      db.query<{ convalidated: boolean }>(
+        `SELECT convalidated FROM pg_constraint
+         WHERE conrelid = '"user"'::regclass
+           AND conname = 'agent_owner_session_events_type_known_v2'`,
+      ),
+    ).resolves.toMatchObject({ rows: [{ convalidated: true }] });
   });
 
   test('requires a correctly pinned transaction hook', () => {

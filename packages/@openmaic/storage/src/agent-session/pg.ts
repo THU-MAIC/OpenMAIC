@@ -216,8 +216,20 @@ $agent_session_owner_event_type_constraint$;
 -- Installing the superset above is a catalog-only operation while the short
 -- ACCESS EXCLUSIVE lock is held. Validate separately so PostgreSQL scans an
 -- existing projection table under VALIDATE CONSTRAINT's weaker lock instead.
-ALTER TABLE agent_owner_session_events
-  VALIDATE CONSTRAINT agent_owner_session_events_type_known_v2;
+-- Once validated, later initializers avoid taking that table lock altogether.
+DO $agent_session_owner_event_type_validation$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'agent_owner_session_events'::regclass
+      AND conname = 'agent_owner_session_events_type_known_v2'
+      AND NOT convalidated
+  ) THEN
+    ALTER TABLE agent_owner_session_events
+      VALIDATE CONSTRAINT agent_owner_session_events_type_known_v2;
+  END IF;
+END
+$agent_session_owner_event_type_validation$;
 
 CREATE TABLE IF NOT EXISTS agent_session_urls (
   session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
@@ -275,6 +287,9 @@ function schemaFor(names: AgentSessionTableNames): string {
     .replaceAll('agent_session_events', names.events)
     .replaceAll('agent_session_urls', names.urls)
     .replaceAll('agent_sessions', names.sessions)
+    .replaceAll(`'${names.ownerEvents}'::regclass`, `'${o}'::regclass`)
+    .replaceAll(`LOCK TABLE ${names.ownerEvents} IN`, `LOCK TABLE ${o} IN`)
+    .replaceAll(`ALTER TABLE ${names.ownerEvents}\n`, `ALTER TABLE ${o}\n`)
     .replaceAll(`REFERENCES ${names.sessions}`, `REFERENCES ${s}`)
     .replaceAll(`ON ${names.sessions}`, `ON ${s}`)
     .replaceAll(`ON ${names.entries}`, `ON ${t}`)
@@ -293,7 +308,13 @@ function schemaFor(names: AgentSessionTableNames): string {
     .replaceAll(OWNER_EVENT_TYPE_CONSTRAINT_V2_SENTINEL, OWNER_EVENT_TYPE_CONSTRAINT_V2);
 }
 
-/** Create all backend-owned tables when absent; existing schemas require migrations. */
+/**
+ * Create all backend-owned tables when absent and apply their additive migrations.
+ *
+ * Call this on a queryable that is not already inside an explicit transaction.
+ * The owner-event constraint install and validation are separate statements so
+ * the install's ACCESS EXCLUSIVE lock is released before validation scans data.
+ */
 export async function ensureAgentSessionSchema(
   queryable: Queryable,
   tableNames?: Partial<AgentSessionTableNames>,
@@ -522,7 +543,7 @@ export class PgAgentSessionStore
       if (!row) return null;
       const meta = sessionMeta(row);
       await this.appendProjection(
-        { type: 'session_title', sessionId, title, ts: meta.updatedAt },
+        { type: 'session_title', sessionId, title: meta.title ?? null, ts: meta.updatedAt },
         tx,
       );
       return meta;

@@ -80,26 +80,21 @@ describe('GET one agent session', () => {
 });
 
 describe('PATCH agent session title', () => {
-  it('returns the persisted normalized title for its owner', async () => {
-    const response = await patch(JSON.stringify({ title: '  Focused question  ' }));
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get('set-cookie')).toContain('anonymous_id=test');
-    await expect(response.json()).resolves.toEqual({ title: 'Focused question' });
-  });
-
-  it.each([null, '   '])('clears a title when it receives %j', async (title) => {
+  it.each([
+    ['trim', '  Focused question  ', 'Focused question'],
+    ['explicit clear', null, null],
+    ['blank clear', '   ', null],
+    ['length cap', `  ${'x'.repeat(121)}  `, 'x'.repeat(120)],
+    ['surrogate-pair boundary', `${'x'.repeat(119)}😀tail`, 'x'.repeat(119)],
+    ['unpaired surrogate', `Safe\ud83d title`, 'Safe� title'],
+    ['NUL', `Safe\u0000 title`, 'Safe� title'],
+  ])('normalizes %s before persisting', async (_name, title, expected) => {
     const response = await patch(JSON.stringify({ title }));
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ title: null });
-  });
-
-  it('trims before applying the 120-character title limit', async () => {
-    const response = await patch(JSON.stringify({ title: `  ${'x'.repeat(121)}  ` }));
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ title: 'x'.repeat(120) });
+    expect(response.headers.get('set-cookie')).toContain('anonymous_id=test');
+    expect(mocks.setManualSessionTitle).toHaveBeenCalledWith('session-1', 'owner-1', expected);
+    await expect(response.json()).resolves.toEqual({ title: expected });
   });
 
   it.each([

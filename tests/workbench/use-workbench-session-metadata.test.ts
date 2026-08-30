@@ -125,20 +125,16 @@ describe('session detail bootstrap attachment lifetime', () => {
     });
   });
 
-  it('keeps an authoritative clear that arrives before an older detail response', async () => {
+  it('keeps an authoritative clear made while the detail request is in flight', async () => {
     const detail = deferred<Response>();
     vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockReturnValueOnce(detail.promise));
 
     await act(async () => root.render(createElement(Harness, { sessionId: 'session-a' })));
-    expect(useWorkbenchStore.getState().sessionTitle).toBeNull();
-
-    // An owner title event uses this same store decision, even when the visible
-    // value is already null, so the bootstrap revision must still advance.
     act(() => useWorkbenchStore.getState().setSessionTitle(null));
     await act(async () => {
       detail.resolve(
         jsonResponse({
-          prompt: 'Stale prompt',
+          prompt: 'Current prompt',
           title: 'Stale title',
           status: 'running',
           stageId: 'stage-a',
@@ -150,8 +146,7 @@ describe('session detail bootstrap attachment lifetime', () => {
     });
 
     expect(useWorkbenchStore.getState()).toMatchObject({
-      sessionId: 'session-a',
-      sessionPrompt: 'Stale prompt',
+      sessionPrompt: 'Current prompt',
       sessionTitle: null,
       status: 'running',
       stageId: 'stage-a',

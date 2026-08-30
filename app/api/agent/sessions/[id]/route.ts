@@ -6,6 +6,7 @@ import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { apiError } from '@/lib/server/api-response';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { normalizeSessionTitleOverride } from '@/lib/workbench/session-title';
 
 export const runtime = 'nodejs';
 
@@ -52,7 +53,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       responseHeaders.forEach((value, name) => response.headers.append(name, value));
       return response;
     }
-    const title = body.title?.trim().slice(0, 120) || null;
+    const title = normalizeSessionTitleOverride(body.title);
     const meta = await store.setManualSessionTitle(id, ownerId, title);
     if (!meta) {
       return new Response('Not found', { status: 404, headers: responseHeaders });

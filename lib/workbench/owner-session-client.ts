@@ -133,7 +133,6 @@ export class OwnerSessionClient {
   private connectingSamples = 0;
   private streamDegraded = false;
   private titleMutationRevision = 0;
-  private titleDecisionRevisions = new Map<string, number>();
   private titleMutations = new Map<
     string,
     { readonly revision: number; readonly title: string | null; readonly settled: boolean }
@@ -168,7 +167,6 @@ export class OwnerSessionClient {
     this.connectingSamples = 0;
     this.streamDegraded = false;
     this.titleMutationRevision = 0;
-    this.titleDecisionRevisions.clear();
     this.titleMutations.clear();
   }
 
@@ -194,7 +192,6 @@ export class OwnerSessionClient {
   /** A local title decision retained until a post-settlement snapshot confirms it. */
   updateSessionTitle(sessionId: string, title: string | null, settled: boolean): number {
     const revision = (this.titleMutationRevision += 1);
-    this.titleDecisionRevisions.set(sessionId, revision);
     this.titleMutations.set(sessionId, {
       revision,
       title,
@@ -207,7 +204,7 @@ export class OwnerSessionClient {
   }
 
   isSessionTitleRevisionCurrent(sessionId: string, revision: number): boolean {
-    return this.titleDecisionRevisions.get(sessionId) === revision;
+    return this.titleMutations.get(sessionId)?.revision === revision;
   }
 
   /**
@@ -255,8 +252,11 @@ export class OwnerSessionClient {
         reduced.sessions === this.sessions;
       // `updatedAt` also contains app-clock lifecycle writes, so a small clock
       // skew can make a committed DB-clock title look old. A fresh list read
-      // distinguishes that case from a genuinely stale projection.
-      if (timestampStaleTitle) this.requestFullFetch();
+      // distinguishes that case from a genuinely stale projection. A title
+      // hidden by a retained local decision likewise needs a read after the
+      // current one: if that read fails, the received event must not remain
+      // hidden until the minute-scale periodic reconciliation.
+      if (timestampStaleTitle || unconfirmedTitleMutation) this.requestFullFetch();
       if (!timestampStaleTitle) {
         this.journal.push(event);
         if (this.journal.length > OWNER_SESSION_JOURNAL_LIMIT) {
@@ -264,7 +264,6 @@ export class OwnerSessionClient {
           this.requestFullFetch();
         }
         if (event.type === 'session_title' && !unconfirmedTitleMutation) {
-          this.titleDecisionRevisions.set(event.sessionId, (this.titleMutationRevision += 1));
           this.titleMutations.delete(event.sessionId);
           this.options.onSessionTitle?.(event.sessionId, event.title);
         }
@@ -369,6 +368,7 @@ export class OwnerSessionClient {
       .fetchSessions()
       .then((snapshot) => {
         if (this.stopped || epoch !== this.epoch) return;
+        const snapshotSessionIds = new Set(snapshot.map((session) => session.id));
         let merged: readonly ProHomeSessionItem[] = newestFirst(snapshot).map((session) => {
           const mutation = this.titleMutations.get(session.id);
           if (!mutation) return session;
@@ -379,10 +379,17 @@ export class OwnerSessionClient {
           }
           // This request began after the PATCH settled, so its row is now the
           // authoritative answer and may retire the local decision.
-          this.titleDecisionRevisions.set(session.id, (this.titleMutationRevision += 1));
           this.titleMutations.delete(session.id);
           return session;
         });
+        for (const [sessionId, revision] of settledTitleRevisions) {
+          if (snapshotSessionIds.has(sessionId)) continue;
+          const mutation = this.titleMutations.get(sessionId);
+          if (!mutation?.settled || mutation.revision !== revision) continue;
+          // A successful full read that began after settlement is equally
+          // authoritative when the answer is "this session no longer exists".
+          this.titleMutations.delete(sessionId);
+        }
         let needsFullFetch = false;
         for (const event of this.journal) {
           if (compareDecimalCursor(event.id, snapshotCursor) <= 0) continue;

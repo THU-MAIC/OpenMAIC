@@ -193,6 +193,63 @@ describe.skipIf(!contractUrl)('PgAgentSessionStore with PostgreSQL 16', () => {
     }
   });
 
+  test('quotes a reserved custom owner-event table throughout its migration', async () => {
+    const ownerEvents = 'user';
+    const sessions = 'user_sessions';
+    await pool.query(`DROP TABLE IF EXISTS "${ownerEvents}"`);
+    await pool.query(`DROP TABLE IF EXISTS ${sessions}`);
+    try {
+      await pool.query(`
+        CREATE TABLE "${ownerEvents}" (
+          owner_id TEXT NOT NULL,
+          id BIGINT NOT NULL,
+          ts BIGINT NOT NULL,
+          session_id TEXT NOT NULL,
+          type TEXT NOT NULL,
+          status TEXT,
+          attempt INTEGER,
+          data JSONB NOT NULL,
+          PRIMARY KEY (owner_id, id),
+          CONSTRAINT user_type_known CHECK (type IN
+            ('session_created','session_status','session_deleted',
+             'session_active_stage','session_cancel_requested'))
+        )
+      `);
+
+      await ensureAgentSessionSchema(pool as Queryable, { ownerEvents, sessions });
+      await ensureAgentSessionSchema(pool as Queryable, { ownerEvents, sessions });
+
+      await expect(
+        pool.query<{ convalidated: boolean }>(
+          `SELECT convalidated FROM pg_constraint
+           WHERE conrelid = $1::regclass
+             AND conname = 'agent_owner_session_events_type_known_v2'`,
+          [`"${ownerEvents}"`],
+        ),
+      ).resolves.toMatchObject({ rows: [{ convalidated: true }] });
+    } finally {
+      await pool.query(`DROP TABLE IF EXISTS "${ownerEvents}"`);
+      await pool.query(`DROP TABLE IF EXISTS ${sessions}`);
+    }
+  });
+
+  test('skips the validation table lock once the v2 constraint is valid', async () => {
+    const blocker = await pool.connect();
+    const initializer = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('LOCK TABLE agent_owner_session_events IN SHARE MODE');
+      await initializer.query(`SET lock_timeout = '500ms'`);
+
+      await expect(ensureAgentSessionSchema(initializer as Queryable)).resolves.toBeUndefined();
+    } finally {
+      await initializer.query('RESET lock_timeout').catch(() => {});
+      initializer.release();
+      await blocker.query('ROLLBACK').catch(() => {});
+      blocker.release();
+    }
+  });
+
   test('beforeEach cleanup reaches FK-referencing tables the suite does not list', async () => {
     // Simulate the next store that references agent_sessions (the way the
     // material store did) without editing this suite: its table must be
