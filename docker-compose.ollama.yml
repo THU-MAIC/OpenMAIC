@@ -4,18 +4,10 @@
 #   cp .env.ollama-local.example .env.local
 #   docker compose -f docker-compose.yml -f docker-compose.ollama.yml --profile local-ollama up --build
 #
-# Ollama Cloud does not require this service. Use the base compose file with
-# .env.ollama-cloud.example instead.
+# The base `openmaic` service already loads `.env.local`, so this extension only
+# adds the Ollama service. Ollama Cloud does not require this extension; use the
+# base compose file with .env.ollama-cloud.example instead.
 services:
-  openmaic:
-    environment:
-      # The native cyberphysical adapter accepts OpenAI-compatible /v1 URLs and
-      # internally maps them to Ollama's native /api/chat endpoint.
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434/v1}
-      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-}
-      - OLLAMA_MODELS=${OLLAMA_MODELS:-gemma3:4b}
-
   ollama:
     image: ollama/ollama:latest
     profiles:
