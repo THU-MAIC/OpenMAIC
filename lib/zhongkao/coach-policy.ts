@@ -40,7 +40,9 @@ function canRequestHint(phase: CoachPhaseState): boolean {
 
 export function allowedCoachActions(state: CoachState): CoachModelAction[] {
   if (state.status === 'completed' || state.status === 'abandoned') return ['get_state'];
-  if (state.original.correctEvaluationEventId && !state.original.resolved) return ['get_state'];
+  if (state.original.authoritativeCorrectEvaluationEventId && !state.original.resolved) {
+    return ['get_state'];
+  }
 
   const actions: CoachModelAction[] = ['get_state'];
   if (state.transfer.assigned) {

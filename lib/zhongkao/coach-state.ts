@@ -2,13 +2,17 @@ import type { RuntimeRecord } from '@openmaic/dsl';
 
 import { CoachError } from './coach-errors';
 import {
+  COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION,
+  COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION_V2,
   assertCoachEvent,
   type CoachEvent,
+  type CoachOriginalAssessmentUnavailableReason,
   type CoachOutcome,
   type CoachPhase,
   type CoachQuestionSource,
   type CoachTransferOutcome,
 } from './coach-event';
+import { selectOriginalResolution } from './coach-original-resolution';
 import { isFullSolutionAvailable } from './coach-policy';
 
 export type CoachStatus =
@@ -41,12 +45,28 @@ export interface CoachPhaseState {
   viewedFullAnswer: boolean;
 }
 
+export type CoachOriginalAssessmentState =
+  | { status: 'pending' }
+  | { status: 'prepared'; assessmentEventId: string }
+  | {
+      status: 'unavailable';
+      unavailableEventId: string;
+      assessmentVersion: 1;
+      questionFingerprint: string;
+      reason: CoachOriginalAssessmentUnavailableReason;
+    };
+
 export interface CoachOriginalState extends CoachPhaseState {
   fullSolutionAvailable: boolean;
+  assessment: CoachOriginalAssessmentState;
+  /** Prepared-only compatibility projection; kept synchronized with assessment. */
   assessmentEventId?: string;
   evaluationEventIds: string[];
   evaluatedAttemptEventIds: string[];
+  /** Compatibility projection: set only when the latest evaluation is correct. */
   correctEvaluationEventId?: string;
+  /** Latest authoritative correct anywhere in the evaluated original history. */
+  authoritativeCorrectEvaluationEventId?: string;
   resolved: boolean;
   resolutionEventId?: string;
   resolutionKind?:
@@ -232,6 +252,7 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
         original: {
           ...emptyPhaseState(),
           fullSolutionAvailable: false,
+          assessment: { status: 'pending' },
           evaluationEventIds: [],
           evaluatedAttemptEventIds: [],
           resolved: false,
@@ -276,13 +297,34 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
       }
       case 'original_assessment_prepared': {
         if (
-          state.original.assessmentEventId !== undefined ||
+          state.original.assessment.status !== 'pending' ||
+          state.original.attemptCount === 0 ||
           state.original.evaluationEventIds.length > 0 ||
           state.original.resolved
         ) {
           conflict();
         }
+        state.original.assessment = { status: 'prepared', assessmentEventId: event.eventId };
         state.original.assessmentEventId = event.eventId;
+        break;
+      }
+      case 'original_assessment_unavailable': {
+        if (
+          state.original.assessment.status !== 'pending' ||
+          state.original.attemptCount === 0 ||
+          state.original.evaluationEventIds.length > 0 ||
+          state.original.resolved
+        ) {
+          conflict();
+        }
+        state.original.assessment = {
+          status: 'unavailable',
+          unavailableEventId: event.eventId,
+          assessmentVersion: event.assessmentVersion,
+          questionFingerprint: event.questionFingerprint,
+          reason: event.reason,
+        };
+        delete state.original.assessmentEventId;
         break;
       }
       case 'original_attempt_evaluated': {
@@ -299,6 +341,8 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
         const nextAttempt =
           state.original.attemptEventIds[state.original.evaluatedAttemptEventIds.length];
         if (
+          state.original.assessment.status !== 'prepared' ||
+          assessment.eventId !== state.original.assessment.assessmentEventId ||
           assessment.eventId !== state.original.assessmentEventId ||
           attempt.phase !== 'original' ||
           nextAttempt !== attempt.eventId ||
@@ -309,8 +353,12 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
         }
         state.original.evaluationEventIds.push(event.eventId);
         state.original.evaluatedAttemptEventIds.push(attempt.eventId);
-        if (event.outcome === 'correct') state.original.correctEvaluationEventId = event.eventId;
-        else delete state.original.correctEvaluationEventId;
+        if (event.outcome === 'correct') {
+          state.original.correctEvaluationEventId = event.eventId;
+          state.original.authoritativeCorrectEvaluationEventId = event.eventId;
+        } else {
+          delete state.original.correctEvaluationEventId;
+        }
         break;
       }
       case 'hint_requested': {
@@ -409,14 +457,49 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
       }
       case 'original_resolved': {
         if (
-          state.original.assessmentEventId !== undefined &&
+          state.original.assessment.status === 'prepared' &&
           state.original.evaluatedAttemptEventIds.length !== state.original.attemptEventIds.length
         ) {
           conflict();
         }
         let resolutionKind: NonNullable<CoachOriginalState['resolutionKind']>;
         let outcome: CoachOutcome | undefined;
-        if (event.resolutionSchemaVersion === 2) {
+        if (event.resolutionSchemaVersion === COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION) {
+          const decision = selectOriginalResolution([...eventsById.values()]);
+          if (event.resolutionKind === 'evaluated_attempt') {
+            const evaluation = referencedEvent(
+              eventsById,
+              event.evaluationEventId,
+              'original_attempt_evaluated',
+            );
+            if (
+              decision.kind !== 'evaluated_attempt' ||
+              decision.evaluationEventId !== evaluation.eventId ||
+              evaluation.outcome !== 'correct'
+            ) {
+              conflict();
+            }
+            resolutionKind = 'evaluated_attempt';
+            outcome = evaluation.outcome;
+            if (state.original.authoritativeCorrectEvaluationEventId !== evaluation.eventId) {
+              conflict();
+            }
+          } else {
+            const fullSolution = referencedEvent(
+              eventsById,
+              event.fullSolutionEventId,
+              'full_solution_revealed',
+            );
+            if (
+              decision.kind !== 'full_solution' ||
+              decision.fullSolutionEventId !== fullSolution.eventId
+            ) {
+              conflict();
+            }
+            resolutionKind = 'full_solution';
+          }
+        } else if (event.resolutionSchemaVersion === COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION_V2) {
+          if (state.original.assessment.status === 'unavailable') conflict();
           if (event.resolutionKind === 'evaluated_attempt') {
             const evaluation = referencedEvent(
               eventsById,
@@ -425,7 +508,7 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
             );
             if (
               evaluation.outcome !== 'correct' ||
-              state.original.correctEvaluationEventId !== evaluation.eventId ||
+              state.original.evaluationEventIds.at(-1) !== evaluation.eventId ||
               !state.original.evaluationEventIds.includes(evaluation.eventId) ||
               state.original.evaluatedAttemptEventIds.length !==
                 state.original.attemptEventIds.length
@@ -444,6 +527,8 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
             resolutionKind = 'full_solution';
           }
         } else {
+          if (state.original.assessment.status === 'unavailable') conflict();
+          if (event.attemptEventId === undefined) conflict();
           const attempt = referencedEvent(
             eventsById,
             event.attemptEventId,
@@ -539,6 +624,7 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
           'transfer_answer_evaluated',
         );
         if (
+          state.original.assessment.status === 'unavailable' ||
           state.transfer.evaluationEventId !== evaluation.eventId ||
           state.studyAttemptsProjected
         ) {

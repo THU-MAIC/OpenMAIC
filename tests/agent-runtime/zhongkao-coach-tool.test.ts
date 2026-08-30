@@ -25,12 +25,13 @@ import {
 import {
   assignVerifiedTransferQuestion,
   recordFullSolutionRevealed,
-  recordOriginalResolved,
+  recordOriginalAssessmentUnavailable,
   requestCoachFullSolution,
   submitCoachAttempt,
   submitCoachTransferAnswer,
   type CoachServiceDeps,
 } from '@/lib/server/zhongkao/coach-service';
+import { recordLegacyOriginalResolvedFixture as recordOriginalResolved } from '@/tests/fixtures/legacy-coach-resolution';
 import type { ZhongkaoMaterialSourceAdapter } from '@/lib/server/agent-runtime/zhongkao-material-source';
 import { deriveCoachEventId } from '@/lib/server/zhongkao/coach-runtime';
 import { deriveTransferQuestionId } from '@/lib/server/zhongkao/transfer-assignment';
@@ -568,6 +569,361 @@ describe('Zhongkao coach immutable tool execution', () => {
     ]);
   });
 
+  it('persists one unsupported authority, replays it privately, and remains coachable', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const questionCanary = 'PRIVATE_UNSUPPORTED_QUESTION_CANARY_8H2M';
+    const firstResponseCanary = 'PRIVATE_UNSUPPORTED_RESPONSE_CANARY_5K9P';
+    const secondResponseCanary = 'PRIVATE_UNSUPPORTED_RESPONSE_CANARY_6R4T';
+    const providerRawCanary = 'PRIVATE_UNSUPPORTED_PROVIDER_RAW_CANARY_3J8W';
+    const created = await execute(
+      toolFor(h, 1, `Explain this fictional argument. ${questionCanary}`),
+      'unsupported-start',
+      START_INPUT,
+    );
+    const generateUnsupported = vi.fn<AICallFn>(
+      async () =>
+        `${providerRawCanary}\n\`\`\`json\n${JSON.stringify({ schemaVersion: 1, type: 'unsupported' })}\n\`\`\``,
+    );
+    const shouldNotVerify = vi.fn<AICallFn>(async () => {
+      throw new Error('unsupported candidates must not reach the verifier');
+    });
+    const firstAttemptTool = toolFor(h, 2, firstResponseCanary, {
+      generationCall: generateUnsupported,
+      transferVerificationCall: shouldNotVerify,
+    });
+    const submitInput = {
+      action: 'submit_attempt',
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId,
+      expectedRevision: created.output.revision,
+    };
+
+    const first = await execute(firstAttemptTool, 'unsupported-attempt-first', submitInput);
+    const replay = await execute(firstAttemptTool, 'unsupported-attempt-replay', {
+      ...submitInput,
+      expectedRevision: 999,
+    });
+
+    expect(first.output).toMatchObject({
+      ok: false,
+      code: 'ORIGINAL_ASSESSMENT_UNAVAILABLE',
+      state: { original: { attemptCount: 1, resolved: false } },
+      facts: { replayed: false, eventAppended: true },
+    });
+    expect(replay.output).toMatchObject({
+      ok: false,
+      code: 'ORIGINAL_ASSESSMENT_UNAVAILABLE',
+      state: { original: { attemptCount: 1, resolved: false } },
+      facts: { replayed: true, eventAppended: false },
+    });
+    expect(generateUnsupported).toHaveBeenCalledTimes(2);
+    expect(shouldNotVerify).not.toHaveBeenCalled();
+
+    const getStateReader = vi.fn(async () => {
+      throw new Error('get_state must not read a new trusted turn');
+    });
+    const shouldNotRegenerate = vi.fn<AICallFn>(async () => {
+      throw new Error('durable unavailable must suppress assessment generation');
+    });
+    const state = await execute(
+      toolFor(h, 99, 'unused state text', {
+        reader: getStateReader,
+        generationCall: shouldNotRegenerate,
+        transferVerificationCall: shouldNotVerify,
+      }),
+      'unsupported-state',
+      {
+        action: 'get_state',
+        profileId: 'student-alpha',
+        coachSessionId: created.output.coachSessionId,
+      },
+    );
+    expect(state.output).toMatchObject({
+      ok: true,
+      state: { original: { attemptCount: 1, resolved: false } },
+      facts: { replayed: false, eventAppended: false },
+      directive: 'ASK_FOR_ATTEMPT',
+      allowedActions: [
+        'get_state',
+        'submit_attempt',
+        'request_hint',
+        'request_full_solution',
+        'abandon_problem',
+      ],
+    });
+    expect(state.output).not.toHaveProperty('code');
+    expect(state.output).not.toHaveProperty('presentation');
+    expect(getStateReader).not.toHaveBeenCalled();
+    expect(shouldNotRegenerate).not.toHaveBeenCalled();
+
+    const secondAttemptGeneration = vi.fn<AICallFn>(async () => {
+      throw new Error('a later attempt must reuse durable unavailable');
+    });
+    const second = await execute(
+      toolFor(h, 3, secondResponseCanary, {
+        generationCall: secondAttemptGeneration,
+        transferVerificationCall: shouldNotVerify,
+      }),
+      'unsupported-attempt-second',
+      {
+        action: 'submit_attempt',
+        profileId: 'student-alpha',
+        coachSessionId: created.output.coachSessionId,
+        expectedRevision: state.output.revision,
+      },
+    );
+    expect(second.output).toMatchObject({
+      ok: false,
+      code: 'ORIGINAL_ASSESSMENT_UNAVAILABLE',
+      state: { original: { attemptCount: 2, resolved: false } },
+      facts: { replayed: false, eventAppended: true },
+    });
+    expect(secondAttemptGeneration).not.toHaveBeenCalled();
+    expect(shouldNotVerify).not.toHaveBeenCalled();
+
+    const fullSolutionCall = vi.fn<AICallFn>(async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        explanation: 'A fictional complete explanation.',
+        finalAnswer: 'A presentation answer, not an assessment key.',
+        claims: [],
+      }),
+    );
+    const solution = await execute(
+      toolFor(h, 4, 'Show the full explanation.', { generationCall: fullSolutionCall }),
+      'unsupported-solution',
+      {
+        action: 'request_full_solution',
+        profileId: 'student-alpha',
+        coachSessionId: created.output.coachSessionId,
+        expectedRevision: second.output.revision,
+      },
+    );
+    expect(solution.output).toMatchObject({
+      ok: true,
+      state: { original: { viewedFullAnswer: true, resolved: true } },
+      presentation: {
+        kind: 'full_solution',
+        explanation: 'A fictional complete explanation.',
+        finalAnswer: 'A presentation answer, not an assessment key.',
+      },
+      directive: 'GENERATE_TRANSFER_QUESTION',
+    });
+    expect(fullSolutionCall).toHaveBeenCalledTimes(1);
+
+    const transferCandidate = vi.fn<AICallFn>(async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        type: 'numeric',
+        question: 'A number multiplied by 3 equals 15. What is the number?',
+        expectedAnswer: { expectedNumericValue: 5 },
+        knowledgePointIds: ['linear-equations'],
+        difficulty: 'same',
+        claims: [],
+      }),
+    );
+    const transferVerifier = vi.fn<AICallFn>(async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        verdict: 'accept',
+        checks: {
+          sameKnowledgePoint: true,
+          selfContained: true,
+          answerConsistent: true,
+          answerNotLeaked: true,
+          singleAnswerOrExactSet: true,
+          middleSchoolScope: true,
+          meaningfullyDifferent: true,
+        },
+      }),
+    );
+    const transferReader = vi.fn(async () => {
+      throw new Error('get_state must not read a new trusted turn');
+    });
+    const transfer = await execute(
+      toolFor(h, 100, 'unused transfer state text', {
+        reader: transferReader,
+        generationCall: transferCandidate,
+        transferVerificationCall: transferVerifier,
+      }),
+      'unsupported-transfer',
+      {
+        action: 'get_state',
+        profileId: 'student-alpha',
+        coachSessionId: created.output.coachSessionId,
+      },
+    );
+    expect(transfer.output).toMatchObject({
+      ok: true,
+      state: {
+        original: { resolved: true },
+        transfer: { assigned: true, attemptCount: 0, evaluated: false },
+      },
+      presentation: {
+        kind: 'transfer_question',
+        type: 'numeric',
+        question: 'A number multiplied by 3 equals 15. What is the number?',
+      },
+      directive: 'WAIT_FOR_TRANSFER_ANSWER',
+    });
+    expect(transferReader).not.toHaveBeenCalled();
+    expect(transferCandidate).toHaveBeenCalledTimes(1);
+    expect(transferVerifier).toHaveBeenCalledTimes(1);
+    expect(generateUnsupported).toHaveBeenCalledTimes(2);
+    expect(shouldNotVerify).not.toHaveBeenCalled();
+
+    const internalPattern =
+      /original_assessment_unavailable|unsupported_question_type|questionFingerprint|unavailableEventId|assessmentEventId|evaluationEventId|assessmentPayload|gradingSpec|verificationRef|operationFingerprint/u;
+    for (const result of [first, replay, state, second, solution, transfer]) {
+      const serialized = JSON.stringify(result.raw);
+      expect(Check(ZHONGKAO_COACH_OUTPUT_SCHEMA, result.output)).toBe(true);
+      expect(serialized).not.toContain(questionCanary);
+      expect(serialized).not.toContain(firstResponseCanary);
+      expect(serialized).not.toContain(secondResponseCanary);
+      expect(serialized).not.toContain(providerRawCanary);
+      expect(serialized).not.toMatch(internalPattern);
+      expect(result.output.state?.original).not.toHaveProperty('assessment');
+      expect(result.output.state?.original).not.toHaveProperty('outcome');
+    }
+
+    const sessions = await h.store.listSessions(
+      'zhongkao-profile:student-alpha',
+      resolveZhongkaoLearnerKeyFromOwnerId(h.deps.ownerId),
+    );
+    const coach = sessions.find((candidate) => candidate.kind === 'zhongkaoCoachEvent')!;
+    const records = await h.store.listRecords(coach.id);
+    const persisted = records.map((record) => record.payload as CoachEvent);
+    expect(JSON.stringify(persisted)).not.toContain(providerRawCanary);
+    expect(
+      persisted.filter((event) => event.eventType === 'original_assessment_unavailable'),
+    ).toHaveLength(1);
+    expect(
+      persisted.filter((event) => event.eventType === 'original_assessment_prepared'),
+    ).toHaveLength(0);
+    expect(
+      persisted.filter((event) => event.eventType === 'original_attempt_evaluated'),
+    ).toHaveLength(0);
+    expect(persisted.filter((event) => event.eventType === 'original_resolved')).toHaveLength(1);
+    expect(persisted.find((event) => event.eventType === 'original_resolved')).not.toHaveProperty(
+      'outcome',
+    );
+    expect(
+      persisted.filter((event) => event.eventType === 'transfer_question_assigned'),
+    ).toHaveLength(1);
+  });
+
+  it('keeps assessment provider failure transient and recovers it through get_state', async () => {
+    const h = harness();
+    await seedProfile(h);
+    const questionCanary = 'PRIVATE_TRANSIENT_QUESTION_CANARY_4D7N';
+    const responseCanary = 'PRIVATE_TRANSIENT_RESPONSE_CANARY_9C3V';
+    const created = await execute(
+      toolFor(h, 1, `What number solves 2x = 8? ${questionCanary}`),
+      'transient-start',
+      START_INPUT,
+    );
+    const failedGeneration = vi.fn<AICallFn>(async () => {
+      throw new Error('PRIVATE_ORIGINAL_PROVIDER_FAILURE');
+    });
+    const failedVerifier = vi.fn<AICallFn>(async () => {
+      throw new Error('verifier must not run without a valid candidate');
+    });
+    const failed = await execute(
+      toolFor(h, 2, responseCanary, {
+        generationCall: failedGeneration,
+        transferVerificationCall: failedVerifier,
+      }),
+      'transient-attempt',
+      {
+        action: 'submit_attempt',
+        profileId: 'student-alpha',
+        coachSessionId: created.output.coachSessionId,
+        expectedRevision: created.output.revision,
+      },
+    );
+    expect(failed.output).toMatchObject({
+      ok: false,
+      code: 'ORIGINAL_ASSESSMENT_GENERATION_FAILED',
+      state: { original: { attemptCount: 1, resolved: false } },
+      facts: { replayed: false, eventAppended: true },
+    });
+    expect(failedGeneration).toHaveBeenCalledTimes(2);
+    expect(failedVerifier).not.toHaveBeenCalled();
+
+    const sessions = await h.store.listSessions(
+      'zhongkao-profile:student-alpha',
+      resolveZhongkaoLearnerKeyFromOwnerId(h.deps.ownerId),
+    );
+    const coach = sessions.find((candidate) => candidate.kind === 'zhongkaoCoachEvent')!;
+    const beforeRecovery = await h.store.listRecords(coach.id);
+    expect(beforeRecovery.map((record) => (record.payload as CoachEvent).eventType)).toEqual([
+      'coach_started',
+      'student_attempt_submitted',
+    ]);
+
+    const validCandidate = vi.fn<AICallFn>(async () =>
+      JSON.stringify({ schemaVersion: 1, type: 'numeric', expectedNumericValue: 4 }),
+    );
+    const validVerifier = vi.fn<AICallFn>(async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        verdict: 'accept',
+        checks: {
+          objectiveType: true,
+          questionConsistent: true,
+          answerConsistent: true,
+          singleAnswerOrExactSet: true,
+          middleSchoolScope: true,
+        },
+      }),
+    );
+    const stateReader = vi.fn(async () => {
+      throw new Error('get_state must not read a new trusted turn');
+    });
+    const recovered = await execute(
+      toolFor(h, 99, 'unused state text', {
+        reader: stateReader,
+        generationCall: validCandidate,
+        transferVerificationCall: validVerifier,
+      }),
+      'transient-recovery',
+      {
+        action: 'get_state',
+        profileId: 'student-alpha',
+        coachSessionId: created.output.coachSessionId,
+      },
+    );
+    expect(recovered.output).toMatchObject({
+      ok: true,
+      state: { original: { attemptCount: 1, resolved: false } },
+      facts: { replayed: false, eventAppended: true },
+    });
+    expect(stateReader).not.toHaveBeenCalled();
+    expect(validCandidate).toHaveBeenCalledTimes(1);
+    expect(validVerifier).toHaveBeenCalledTimes(1);
+
+    const persisted = (await h.store.listRecords(coach.id)).map(
+      (record) => record.payload as CoachEvent,
+    );
+    expect(persisted.map((event) => event.eventType)).toEqual([
+      'coach_started',
+      'student_attempt_submitted',
+      'original_assessment_prepared',
+      'original_attempt_evaluated',
+    ]);
+    expect(
+      persisted.filter((event) => event.eventType === 'original_assessment_unavailable'),
+    ).toHaveLength(0);
+    const serialized = JSON.stringify([failed.raw, recovered.raw]);
+    expect(serialized).not.toContain('PRIVATE_ORIGINAL_PROVIDER_FAILURE');
+    expect(serialized).not.toContain(questionCanary);
+    expect(serialized).not.toContain(responseCanary);
+    expect(serialized).not.toMatch(
+      /assessmentPayload|assessmentEventId|evaluationEventId|gradingSpec|questionFingerprint|verificationRef|operationFingerprint/u,
+    );
+  });
+
   it('replays one hint request across toolCallIds', async () => {
     const h = harness();
     await seedProfile(h);
@@ -1024,11 +1380,17 @@ describe('Zhongkao coach immutable tool execution', () => {
       coachSessionId: created.output.coachSessionId,
       expectedRevision: 0,
     });
+    const unavailable = await recordOriginalAssessmentUnavailable(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: firstAttempt.output.revision!,
+      reason: 'unsupported_question_type',
+    });
     const secondAttempt = await execute(toolFor(h, 3, 'x = 4'), 'attempt-2', {
       action: 'submit_attempt',
       profileId: 'student-alpha',
       coachSessionId: created.output.coachSessionId,
-      expectedRevision: firstAttempt.output.revision,
+      expectedRevision: unavailable.snapshot.state.revision,
     });
     const solutionTool = toolFor(h, 4, 'Please show the full explanation.');
     const input = {
@@ -1126,10 +1488,16 @@ describe('Zhongkao coach immutable tool execution', () => {
       expectedRevision: first.snapshot.state.revision,
       message: { seq: 3, text: 'x = 5' },
     });
-    const requested = await requestCoachFullSolution(h.deps, {
+    const unavailable = await recordOriginalAssessmentUnavailable(h.deps, {
       profileId: 'student-alpha',
       coachSessionId: created.output.coachSessionId!,
       expectedRevision: second.snapshot.state.revision,
+      reason: 'unsupported_question_type',
+    });
+    const requested = await requestCoachFullSolution(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: unavailable.snapshot.state.revision,
       message: { seq: 4, text: 'Show the full solution.' },
     });
     const request = requested.snapshot.records.at(-1)!.payload as CoachEvent;
@@ -1210,11 +1578,17 @@ describe('Zhongkao coach immutable tool execution', () => {
       coachSessionId: created.output.coachSessionId,
       expectedRevision: 0,
     });
+    const unavailable = await recordOriginalAssessmentUnavailable(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: firstAttempt.output.revision!,
+      reason: 'unsupported_question_type',
+    });
     const secondAttempt = await execute(toolFor(h, 3, 'x = 4'), 'attempt-2', {
       action: 'submit_attempt',
       profileId: 'student-alpha',
       coachSessionId: created.output.coachSessionId,
-      expectedRevision: firstAttempt.output.revision,
+      expectedRevision: unavailable.snapshot.state.revision,
     });
 
     let resolveProvider!: (value: string) => void;
@@ -1277,11 +1651,17 @@ describe('Zhongkao coach immutable tool execution', () => {
       coachSessionId: created.output.coachSessionId,
       expectedRevision: 0,
     });
+    const unavailable = await recordOriginalAssessmentUnavailable(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: created.output.coachSessionId!,
+      expectedRevision: firstAttempt.output.revision!,
+      reason: 'unsupported_question_type',
+    });
     const secondAttempt = await execute(toolFor(h, 3, 'x = 4'), 'attempt-2', {
       action: 'submit_attempt',
       profileId: 'student-alpha',
       coachSessionId: created.output.coachSessionId,
-      expectedRevision: firstAttempt.output.revision,
+      expectedRevision: unavailable.snapshot.state.revision,
     });
     const privateProviderError = 'private-provider-detail-must-not-persist';
     const generationCall = vi.fn<AICallFn>(async () =>

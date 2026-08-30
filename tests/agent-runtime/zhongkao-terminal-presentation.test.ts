@@ -549,6 +549,27 @@ describe('Coach terminal public presentation', () => {
     expect(JSON.stringify(presentation)).not.toContain('unproven candidate');
   });
 
+  it('uses the fixed durable-unavailable notice without exposing assessment internals', () => {
+    const expected = {
+      kind: 'coach_notice' as const,
+      text: '当前无法可靠自动判断这类作答是否正确。你仍可以继续尝试或请求提示；完整解析解锁后也可以继续学习。',
+    };
+    expect(buildCoachNotice('ORIGINAL_ASSESSMENT_UNAVAILABLE')).toEqual(expected);
+    const presentation = buildCoachTerminalPresentation({
+      kind: 'tool_output',
+      output: output({
+        ok: false,
+        code: 'ORIGINAL_ASSESSMENT_UNAVAILABLE',
+        facts: { replayed: false, eventAppended: true },
+      }),
+    });
+    expect(presentation).toEqual(expected);
+    expect(renderCoachTerminalPresentation(presentation)).toBe(expected.text);
+    expect(JSON.stringify(presentation)).not.toMatch(
+      /unsupported_question_type|original_assessment_unavailable|questionFingerprint|unavailableEventId|gradingSpec|verificationRef/u,
+    );
+  });
+
   it('uses distinct fixed notices for required stable error categories', () => {
     const reasons = [
       'FULL_SOLUTION_LOCKED',

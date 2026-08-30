@@ -525,12 +525,17 @@ async function seedCommittedCoachAction(
     };
     accepted = await execute(targetSeq, '请给我一个提示。', params);
   } else {
-    const firstAttempt = await execute(2, 'x = 3', {
-      action: 'submit_attempt',
-      profileId: PROFILE_ID,
-      coachSessionId,
-      expectedRevision: started.revision!,
-    });
+    const firstAttempt = await execute(
+      2,
+      'x = 3',
+      {
+        action: 'submit_attempt',
+        profileId: PROFILE_ID,
+        coachSessionId,
+        expectedRevision: started.revision!,
+      },
+      async () => JSON.stringify({ schemaVersion: 1, type: 'unsupported' }),
+    );
     const secondAttempt = await execute(3, 'x = 4', {
       action: 'submit_attempt',
       profileId: PROFILE_ID,

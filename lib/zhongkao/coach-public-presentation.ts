@@ -174,6 +174,8 @@ const MATERIAL_NOTICE =
   '当前材料无法完成可信来源验证，因此这次不会猜测来源或答案。请换用可验证的材料后再试。';
 const CONFLICT_NOTICE = '伴学状态刚刚发生了变化。请同步当前状态后重试。';
 const GENERATION_NOTICE = '这次内容暂时没有生成成功。请稍后重试，我不会用未经确认的内容替代。';
+const ASSESSMENT_UNAVAILABLE_NOTICE =
+  '当前无法可靠自动判断这类作答是否正确。你仍可以继续尝试或请求提示；完整解析解锁后也可以继续学习。';
 const PROFILE_NOTICE = '当前还没有可用的中考伴学画像。请先完成伴学模式的基础设置。';
 
 /** Runtime-check and copy a public payload before it crosses a durable boundary. */
@@ -259,6 +261,9 @@ export function buildCoachNotice(reason: CoachTerminalNoticeReason): CoachNotice
     case 'COACH_MESSAGE_ALREADY_COUNTED':
       text = CONFLICT_NOTICE;
       break;
+    case 'ORIGINAL_ASSESSMENT_UNAVAILABLE':
+      text = ASSESSMENT_UNAVAILABLE_NOTICE;
+      break;
     case 'HINT_GENERATION_FAILED':
     case 'HINT_CONTENT_INVALID':
     case 'HINT_CONTENT_LEAKED':
@@ -271,7 +276,6 @@ export function buildCoachNotice(reason: CoachTerminalNoticeReason): CoachNotice
     case 'TRANSFER_QUESTION_TYPE_UNSUPPORTED':
     case 'TRANSFER_QUESTION_NOT_VERIFIED':
     case 'TRANSFER_EVALUATION_FAILED':
-    case 'ORIGINAL_ASSESSMENT_UNAVAILABLE':
     case 'ORIGINAL_ASSESSMENT_GENERATION_FAILED':
     case 'ORIGINAL_ASSESSMENT_INVALID':
     case 'ORIGINAL_ASSESSMENT_NOT_VERIFIED':

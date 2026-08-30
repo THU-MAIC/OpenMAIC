@@ -226,7 +226,9 @@ Server facts form an explicit, validated chain:
 
 - `hint_issued` cites the current unconsumed `hint_requested` in the same phase;
 - `full_solution_revealed` cites the current unlocked original request;
-- `original_resolved` cites a real original attempt and records its outcome;
+- legacy `original_resolved` cites an original attempt, while causal v2/v3
+  forms cite either an authoritative original evaluation or the exact full
+  solution reveal and never accept a model-supplied outcome;
 - `transfer_question_assigned` cites the authoritative original resolution and
   stores the validated public question plus a server-only grading specification
   and verification metadata. The private fields never enter folded public state,
@@ -686,36 +688,42 @@ resolution event.
 
 ### Causal resolution and future projection sources
 
-New production resolutions use `original_resolved` schema v2 and carry no
-freely supplied outcome. `resolutionKind=evaluated_attempt` cites an existing
-`original_attempt_evaluated` event and is allowed only when that event is
-`correct`. `resolutionKind=full_solution` cites the exact original
-`full_solution_revealed` event and records no correctness. Legacy resolution
-events remain readable for committed history, while new writes use the causal
-v2 forms.
+Committed M2B-2A.1 resolutions use `original_resolved` schema v2 and carry no
+freely supplied outcome. M2B-2A.2 keeps those histories readable and uses schema
+v3 for new writes so the stricter any-correct priority can be validated without
+retroactively changing v2 history. `resolutionKind=evaluated_attempt` cites an
+existing authoritative `correct` evaluation. `resolutionKind=full_solution`
+cites the exact original `full_solution_revealed` event and records no
+correctness.
 
 The future projection source rule is therefore deterministic:
 
 - `original.initialOutcome` comes from the first original submission's
   `original_attempt_evaluated.outcome`, which is also the earliest evaluation in
   authoritative event order;
-- for `resolutionKind=evaluated_attempt`, `original.finalOutcome` comes from the
-  referenced evaluation;
+- `original.finalOutcome` comes from the last original submission's
+  `original_attempt_evaluated.outcome` before original resolution; an
+  `evaluated_attempt` resolution cites the event-order latest authoritative
+  `correct` evaluation, which may precede a later `incorrect` evaluation in a
+  backlog that was submitted before assessment recovery;
 - a missing evaluation for the first original submission makes the session
   ineligible for projection rather than permitting an inferred value.
 
 This preserves histories such as `incorrect -> incorrect -> correct`: the first
-evaluation supplies the future initial outcome and the resolution's referenced
-correct evaluation supplies the future final outcome. Help facts remain separate
-evidence for exposure and independence; they never alter evaluator correctness.
+evaluation supplies the future initial outcome and the last evaluation supplies
+the future final outcome. It also handles a recovered `correct -> incorrect`
+backlog without conflating resolution priority with F1: the resolution cites the
+latest `correct`, while the last `incorrect` remains the future final outcome.
+Help facts remain separate evidence for exposure and independence; they never
+alter evaluator correctness.
 
 `StudyAttempt` v1 admits the enum value `skipped` but does not define it as
-"no final assessable submission after viewing a full solution." M2B-2A.1 does
-not invent that meaning. A full-solution resolution is neither `correct` nor
-`skipped`, even if the generated explanation includes a `finalAnswer`, and it
-remains `NOT_PROJECTABLE_YET`. Viewing a full answer affects future independence
-facts, not correctness. Only a later actual submission evaluated as correct
-could provide a correct outcome under a future lifecycle that permits it.
+"no final assessable submission after viewing a full solution." M2B-2A.1 did
+not invent that meaning and initially left this case `NOT_PROJECTABLE_YET`.
+M2B-2A.2 closes that ambiguity below by defining `finalOutcome` as the last
+authoritative submission evaluation, not as the reason the teaching phase
+ended. Viewing a full answer affects help exposure and independence facts, not
+correctness, and never changes an evaluated outcome to `correct` or `skipped`.
 
 ### Unsupported originals and current stopping point
 
@@ -731,3 +739,157 @@ Such a session still lacks a complete authoritative original outcome chain and
 therefore cannot claim complete StudyAttempt projection or projection-backed
 completion. M2B-2A.1 adds no model-writable eligibility flag and does not weaken
 this fail-closed boundary to make M2B-2B appear complete.
+
+## Milestone 2B-2A.2 original facts closure
+
+M2B-2A.2 defines the remaining executable semantics and durable source classes
+needed before StudyAttempt v2 projection can begin. It does not implement
+StudyAttempt v2, write a StudyAttempt, append `study_attempts_projected`, change
+`KnowledgeProgress`, or complete a Coach session.
+
+### Executable M1 outcome semantics and F1
+
+For an assessment-backed learning episode, M1 `initialOutcome` means the outcome
+of the first actual student submission that received an authoritative
+evaluation. M1 `finalOutcome` means the outcome of the last actual student
+submission that received an authoritative evaluation before the phase resolved.
+It is not a solved flag, completion status, resolution reason, or claim of
+mastery. A resolved episode may therefore have `finalOutcome=incorrect` when the
+student's last evaluated response was incorrect and the teaching phase later
+ended by revealing the full solution.
+
+The deterministic F1 selector applies that meaning to original Coach history:
+
+- use `state.original.attemptEventIds` as the authoritative submission order;
+- require one and only one `original_attempt_evaluated` event for every listed
+  submission, in the same order and against the same durable
+  `original_assessment_prepared` event;
+- set `initialOutcome` from the first matched evaluation;
+- set `finalOutcome` from the last matched evaluation before
+  `original_resolved`;
+- never sort by timestamps and never derive either outcome from hints, attempt
+  count, answer viewing, generated solution text, or transfer performance.
+
+For example, `incorrect -> hint -> incorrect -> full solution` projects
+`initialOutcome=incorrect`, `finalOutcome=incorrect`, and
+`viewedFullAnswer=true`. The reveal does not synthesize a third submission and
+does not overwrite either evaluation. An `evaluated_attempt` resolution must
+cite the event-order latest authoritative `correct` evaluation; that event need
+not be the final evaluation in a recovered backlog. A
+`full_solution` resolution cites only the reveal; F1 still obtains correctness
+exclusively from the complete evaluation chain. If a recovered backlog is
+`correct -> incorrect`, the resolution cites the first event as the latest
+authoritative `correct`, while F1 remains `initialOutcome=correct` and
+`finalOutcome=incorrect`.
+
+This rule does not assign a new meaning to `skipped`. It also does not expand
+`AttemptOutcome`: the closed M1 values remain `correct`, `incorrect`, `partial`,
+and `skipped`. Current deterministic original and transfer evaluators continue
+to emit only `correct` or `incorrect`.
+
+### Answer viewing and resolution priority
+
+`full_solution_revealed` changes `viewedFullAnswer` and the future independence
+classification only. Its `explanation` and optional `finalAnswer` are
+presentation facts, not assessment authority. A request without a persisted
+reveal does not count as answer viewing.
+
+Recovery must settle original facts in this order:
+
+1. drain every evaluation that can be produced from an already durable verified
+   assessment;
+2. if any completed evaluation is `correct`, append or replay the causal
+   `evaluated_attempt` resolution citing the event-order latest `correct`, even
+   when a reveal was already persisted;
+3. otherwise, when an authorized reveal exists, append or replay the causal
+   `full_solution` resolution;
+4. only after one authoritative original resolution may transfer assignment
+   proceed.
+
+The same priority applies to submit replay, `get_state`, full-solution replay,
+transfer generation, and crash recovery. No continuation may make a reveal-only
+window terminal by bypassing this settlement order.
+
+### Durable unavailable authority and transient failures
+
+An objectively unsupported original needs a durable server-owned fact rather
+than repeated inference from a returned error. The implemented
+`original_assessment_unavailable` fact binds the Coach session, assessment
+version, original-question fingerprint, and a closed unsupported reason through
+a deterministic server-owned operation identity. It is mutually exclusive with
+`original_assessment_prepared`, carries no candidate answer, verifier prose, raw
+provider error, or grading secret, and replays by deterministic causal identity.
+Once this fact is durable, retries do not regenerate an answer key for the same
+assessment version.
+
+Only a terminal, validated unsupported result may create that fact. Provider
+unavailability, aborts, malformed or rejected candidates, verifier failure,
+RuntimeStore failure, and unresolved CAS competition are transient failures.
+They must not be persisted as unsupported, must remain retryable, and must not
+authorize projection. A transient error is absence of a completed authority
+decision, not evidence that the question is unassessable.
+
+### Future unassessed union
+
+An unavailable original has no authoritative `initialOutcome` or
+`finalOutcome`, so neither field may be filled with `incorrect`, `skipped`, or a
+default. A future StudyAttempt v2 design must represent this with a closed
+discriminated union outside `AttemptOutcome`:
+
+- an assessed variant carries the F1 `initialOutcome` and `finalOutcome` backed
+  by the complete evaluation chain;
+- an unassessed variant carries the durable unavailable provenance and carries
+  no fabricated outcomes.
+
+The exact StudyAttempt v2 schema and persistence contract remain a later
+milestone. M2B-2A.2 establishes only the authoritative facts and source rules;
+it does not add the union to production domain types yet.
+
+### Facts-closure Source Matrix
+
+Legend: `P` means an authoritative persisted fact, `D` means a deterministic
+derivation from persisted facts, `O` means intentionally optional/undefined,
+`U` means intentionally unassessed, and `M` means a missing authoritative
+source. The four columns describe future StudyAttempt v2 records; M2B-2A.2 does
+not create those records.
+
+| Future StudyAttempt v2 field | A objective + evaluated resolution | B objective + full-solution resolution | C unavailable original + evaluated transfer | D transfer |
+| --- | --- | --- | --- | --- |
+| `schemaVersion` | D constant | D constant | D constant | D constant |
+| deterministic `id` | D from session/phase/version | D from session/phase/version | D from session/phase/version | D from session/phase/version |
+| `coachSessionId`, `profileId`, `subjectId` | P start | P start | P start | P start |
+| `knowledgePointIds` | P start | P start | P start | P verified assignment |
+| `questionSummary` | D bounded start text | D bounded start text | D bounded start text | D public verified question |
+| `questionSourceType` | D start source | D start source | D start source | D `generated` |
+| `sourceMaterialId` | P or O from start | P or O from start | P or O from start | O |
+| `sourcePage` | O | O | O | O |
+| `attemptKind` | D `initial` | D `initial` | D `initial` | D `transfer` |
+| `assessmentStatus` | D `evaluated` | D `evaluated` | D `unassessed` | D `evaluated` |
+| `initialOutcome` | D from first P evaluation | D from first P evaluation | U | D from P transfer evaluation |
+| `finalOutcome` | D from last P evaluation | D from last P evaluation; reveal ignored | U | D from P transfer evaluation |
+| `unassessedReason` | O | O | P unavailable reason | O |
+| `studentAttemptedBeforeHelp` | D causal order | D causal order | D causal order | D causal order |
+| `hintsUsed`, `usedKeyHint` | D phase events | D phase events | D phase events | D phase events |
+| `viewedFullAnswer` | D reveal fact | D true from reveal | D true from reveal | D false |
+| `createdAt` | P first submission time | P first submission time | P first submission time | P transfer submission time |
+| `errorType`, `durationSeconds` | O | O | O | O |
+
+All four reachable projection scenarios therefore contain no `M` entry:
+`MISSING AUTHORITATIVE SOURCE = 0`.
+Prepared evaluation backlogs, transient failures, corrupt histories, and legacy
+histories without the required facts remain outside the projection boundary;
+they fail closed rather than being represented with an invented field value.
+
+Transfer remains assessment-backed by its one durable submission and one
+deterministic `transfer_answer_evaluated` event, so its future
+`initialOutcome` and `finalOutcome` both come from that same evaluation. Original
+and transfer help exposure, hint counts, key-hint facts, and answer-viewing facts
+remain phase-local.
+
+Implementation of StudyAttempt v2 may resume only after its Projection Source
+Matrix contains zero `MISSING AUTHORITATIVE SOURCE` entries for every reachable
+history it intends to project. An assessed history must have the complete F1
+chain; an unassessed history must have the durable unavailable fact and the
+future explicit union variant. Transient and conflicting histories remain
+outside the projection boundary. `MISSING=0` is a hard gate, not permission to
+substitute heuristics, defaults, or new `AttemptOutcome` values.

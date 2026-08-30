@@ -13,7 +13,6 @@ import {
   assignVerifiedTransferQuestion,
   recordFullSolutionRevealed,
   recordHintIssued,
-  recordOriginalResolved,
   recordCoachPresentationFailure,
   recordStudyAttemptsProjected,
   recordTransferEvaluation,
@@ -25,6 +24,7 @@ import {
   type CoachServiceDeps,
   type TrustedCoachUserMessage,
 } from '@/lib/server/zhongkao/coach-service';
+import { recordLegacyOriginalResolvedFixture as recordOriginalResolved } from '@/tests/fixtures/legacy-coach-resolution';
 import {
   appendCoachRuntimeEvent,
   createCoachOperationFingerprint,

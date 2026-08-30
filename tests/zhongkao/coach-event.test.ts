@@ -172,6 +172,19 @@ function originalAssessmentEvent(): Extract<
   };
 }
 
+function originalAssessmentUnavailableEvent(): Extract<
+  CoachEvent,
+  { eventType: 'original_assessment_unavailable' }
+> {
+  return {
+    ...common('original_assessment_unavailable'),
+    eventType: 'original_assessment_unavailable',
+    assessmentVersion: 1,
+    questionFingerprint: 'c'.repeat(64),
+    reason: 'unsupported_question_type',
+  };
+}
+
 function originalEvaluationEvent(
   outcome: 'correct' | 'incorrect' = 'correct',
 ): Extract<CoachEvent, { eventType: 'original_attempt_evaluated' }> {
@@ -184,27 +197,25 @@ function originalEvaluationEvent(
   };
 }
 
-function evaluatedResolutionEvent(): Extract<
-  CoachEvent,
-  { eventType: 'original_resolved'; resolutionKind: 'evaluated_attempt' }
-> {
+function evaluatedResolutionEvent(
+  resolutionSchemaVersion: 2 | 3 = 2,
+): Extract<CoachEvent, { eventType: 'original_resolved'; resolutionKind: 'evaluated_attempt' }> {
   return {
     ...common('original_resolved'),
     eventType: 'original_resolved',
-    resolutionSchemaVersion: 2,
+    resolutionSchemaVersion,
     resolutionKind: 'evaluated_attempt',
     evaluationEventId: 'event-original-attempt-evaluated',
   };
 }
 
-function fullSolutionResolutionEvent(): Extract<
-  CoachEvent,
-  { eventType: 'original_resolved'; resolutionKind: 'full_solution' }
-> {
+function fullSolutionResolutionEvent(
+  resolutionSchemaVersion: 2 | 3 = 2,
+): Extract<CoachEvent, { eventType: 'original_resolved'; resolutionKind: 'full_solution' }> {
   return {
     ...common('original_resolved'),
     eventType: 'original_resolved',
-    resolutionSchemaVersion: 2,
+    resolutionSchemaVersion,
     resolutionKind: 'full_solution',
     fullSolutionEventId: 'event-full-solution-revealed',
   };
@@ -336,15 +347,34 @@ describe('Coach event contract', () => {
     expect(validateCoachEvent(neither).valid).toBe(false);
   });
 
-  it('accepts closed original assessment, evaluation, and v2 resolution events', () => {
+  it('accepts closed original assessment, evaluation, and v2/v3 resolution events', () => {
     for (const event of [
       originalAssessmentEvent(),
+      originalAssessmentUnavailableEvent(),
       originalEvaluationEvent('correct'),
       originalEvaluationEvent('incorrect'),
       evaluatedResolutionEvent(),
       fullSolutionResolutionEvent(),
+      evaluatedResolutionEvent(3),
+      fullSolutionResolutionEvent(3),
     ]) {
       expect(validateCoachEvent(event)).toEqual({ valid: true });
+    }
+  });
+
+  it('keeps original assessment unavailability minimal and closed', () => {
+    const unavailable = originalAssessmentUnavailableEvent();
+    expect(validateCoachEvent(unavailable)).toEqual({ valid: true });
+    for (const value of [
+      { ...unavailable, assessmentVersion: 2 },
+      { ...unavailable, questionFingerprint: 'C'.repeat(64) },
+      { ...unavailable, questionFingerprint: 'c'.repeat(63) },
+      { ...unavailable, reason: 'verification_exhausted' },
+      { ...unavailable, reason: 'provider_timeout' },
+      { ...unavailable, providerOutput: 'private provider output' },
+      { ...unavailable, gradingSpec: { expectedNumericValue: 4 } },
+    ]) {
+      expect(validateCoachEvent(value).valid).toBe(false);
     }
   });
 
@@ -408,11 +438,12 @@ describe('Coach event contract', () => {
     }
   });
 
-  it('keeps v2 original resolutions as closed causal branches without outcomes', () => {
+  it('keeps v2/v3 original resolutions as closed causal branches without outcomes', () => {
     const evaluated = evaluatedResolutionEvent();
     const fullSolution = fullSolutionResolutionEvent();
     for (const value of [
       { ...evaluated, resolutionSchemaVersion: 1 },
+      { ...evaluated, resolutionSchemaVersion: 4 },
       { ...evaluated, outcome: 'correct' },
       { ...evaluated, attemptEventId: 'event-student-attempt-submitted' },
       { ...evaluated, fullSolutionEventId: 'event-full-solution-revealed' },

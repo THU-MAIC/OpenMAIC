@@ -155,6 +155,16 @@ function originalAssessment(seq: number): CoachEvent {
   };
 }
 
+function originalAssessmentUnavailable(seq: number): CoachEvent {
+  return {
+    ...base('original_assessment_unavailable', seq),
+    eventType: 'original_assessment_unavailable',
+    assessmentVersion: 1,
+    questionFingerprint: 'c'.repeat(64),
+    reason: 'unsupported_question_type',
+  };
+}
+
 function originalEvaluation(
   seq: number,
   assessmentEventId: string,
@@ -170,21 +180,29 @@ function originalEvaluation(
   };
 }
 
-function evaluatedResolution(seq: number, evaluationEventId: string): CoachEvent {
+function evaluatedResolution(
+  seq: number,
+  evaluationEventId: string,
+  resolutionSchemaVersion: 2 | 3 = 2,
+): CoachEvent {
   return {
     ...base('original_resolved', seq),
     eventType: 'original_resolved',
-    resolutionSchemaVersion: 2,
+    resolutionSchemaVersion,
     resolutionKind: 'evaluated_attempt',
     evaluationEventId,
   };
 }
 
-function fullSolutionResolution(seq: number, fullSolutionEventId: string): CoachEvent {
+function fullSolutionResolution(
+  seq: number,
+  fullSolutionEventId: string,
+  resolutionSchemaVersion: 2 | 3 = 2,
+): CoachEvent {
   return {
     ...base('original_resolved', seq),
     eventType: 'original_resolved',
-    resolutionSchemaVersion: 2,
+    resolutionSchemaVersion,
     resolutionKind: 'full_solution',
     fullSolutionEventId,
   };
@@ -544,6 +562,51 @@ describe('foldCoachEvents strict deterministic projection', () => {
     ).toThrow('COACH_EVENT_CONFLICT');
   });
 
+  it('folds a closed unavailable assessment state and keeps the prepared compatibility field empty', () => {
+    const submitted = attempt(1, 2);
+    const unavailable = originalAssessmentUnavailable(2);
+    const state = foldCoachEvents(records([start(), submitted, unavailable]));
+    expect(state.original.assessment).toEqual({
+      status: 'unavailable',
+      unavailableEventId: unavailable.eventId,
+      assessmentVersion: 1,
+      questionFingerprint: 'c'.repeat(64),
+      reason: 'unsupported_question_type',
+    });
+    expect(state.original.assessmentEventId).toBeUndefined();
+    expect(state.original.evaluationEventIds).toEqual([]);
+  });
+
+  it('requires exactly one terminal assessment branch after an original attempt', () => {
+    const submitted = attempt(1, 2);
+    const prepared = originalAssessment(2);
+    const unavailable = originalAssessmentUnavailable(2);
+
+    expect(foldCoachEvents(records([start(), submitted, prepared])).original.assessment).toEqual({
+      status: 'prepared',
+      assessmentEventId: prepared.eventId,
+    });
+    expect(() => foldCoachEvents(records([start(), originalAssessmentUnavailable(1)]))).toThrow(
+      'COACH_EVENT_CONFLICT',
+    );
+    expect(() =>
+      foldCoachEvents(records([start(), submitted, prepared, originalAssessmentUnavailable(3)])),
+    ).toThrow('COACH_EVENT_CONFLICT');
+    expect(() =>
+      foldCoachEvents(records([start(), submitted, unavailable, originalAssessment(3)])),
+    ).toThrow('COACH_EVENT_CONFLICT');
+    expect(() =>
+      foldCoachEvents(
+        records([
+          start(),
+          submitted,
+          unavailable,
+          originalEvaluation(3, unavailable.eventId, submitted.eventId, 'correct'),
+        ]),
+      ),
+    ).toThrow('COACH_EVENT_CONFLICT');
+  });
+
   it('evaluates original attempts exactly once and in submission order', () => {
     const first = attempt(1, 2);
     const second = attempt(2, 3);
@@ -640,6 +703,10 @@ describe('foldCoachEvents strict deterministic projection', () => {
       second.eventId,
     ]);
     expect(exhaustedByIncorrect.original.correctEvaluationEventId).toBeUndefined();
+    expect(exhaustedByIncorrect.original.authoritativeCorrectEvaluationEventId).toBe(
+      firstCorrect.eventId,
+    );
+    expect(allowedCoachActions(exhaustedByIncorrect)).toEqual(['get_state']);
     expect(() =>
       foldCoachEvents(
         records([
@@ -671,6 +738,141 @@ describe('foldCoachEvents strict deterministic projection', () => {
       outcome: 'correct',
       correctEvaluationEventId: secondCorrect.eventId,
     });
+  });
+
+  it('uses v3 any-correct priority while preserving the committed v2 last-evaluation history', () => {
+    const first = attempt(1, 2);
+    const second = attempt(2, 3);
+    const prepared = originalAssessment(3);
+    const firstCorrect = originalEvaluation(4, prepared.eventId, first.eventId, 'correct');
+    const secondIncorrect = originalEvaluation(5, prepared.eventId, second.eventId, 'incorrect');
+    const requested = solutionRequest(6, 4);
+    const revealed = solutionReveal(7, requested.eventId);
+    const history = [
+      start(),
+      first,
+      second,
+      prepared,
+      firstCorrect,
+      secondIncorrect,
+      requested,
+      revealed,
+    ];
+
+    const legacyV2 = foldCoachEvents(
+      records([...history, fullSolutionResolution(8, revealed.eventId)]),
+    );
+    expect(legacyV2.original.resolutionKind).toBe('full_solution');
+
+    expect(() =>
+      foldCoachEvents(records([...history, fullSolutionResolution(8, revealed.eventId, 3)])),
+    ).toThrow('COACH_EVENT_CONFLICT');
+    const strictV3 = foldCoachEvents(
+      records([...history, evaluatedResolution(8, firstCorrect.eventId, 3)]),
+    );
+    expect(strictV3.original).toMatchObject({
+      resolutionKind: 'evaluated_attempt',
+      outcome: 'correct',
+      authoritativeCorrectEvaluationEventId: firstCorrect.eventId,
+    });
+    expect(strictV3.original.correctEvaluationEventId).toBeUndefined();
+  });
+
+  it('keeps an evaluated resolution authoritative when a pending reveal arrives later', () => {
+    const first = attempt(1, 2);
+    const second = attempt(2, 3);
+    const requested = solutionRequest(3, 4);
+    const prepared = originalAssessment(4);
+    const firstCorrect = originalEvaluation(5, prepared.eventId, first.eventId, 'correct');
+    const secondIncorrect = originalEvaluation(6, prepared.eventId, second.eventId, 'incorrect');
+    const resolved = evaluatedResolution(7, firstCorrect.eventId, 3);
+    const revealed = solutionReveal(8, requested.eventId);
+
+    const state = foldCoachEvents(
+      records([
+        start(),
+        first,
+        second,
+        requested,
+        prepared,
+        firstCorrect,
+        secondIncorrect,
+        resolved,
+        revealed,
+      ]),
+    );
+    expect(state.original).toMatchObject({
+      resolved: true,
+      resolutionEventId: resolved.eventId,
+      resolutionKind: 'evaluated_attempt',
+      authoritativeCorrectEvaluationEventId: firstCorrect.eventId,
+      viewedFullAnswer: true,
+      outcome: 'correct',
+    });
+    expect(state.original.correctEvaluationEventId).toBeUndefined();
+  });
+
+  it('allows v3 full-solution resolution only after every prepared attempt is incorrect', () => {
+    const first = attempt(1, 2);
+    const second = attempt(2, 3);
+    const prepared = originalAssessment(3);
+    const firstIncorrect = originalEvaluation(4, prepared.eventId, first.eventId, 'incorrect');
+    const secondIncorrect = originalEvaluation(5, prepared.eventId, second.eventId, 'incorrect');
+    const requested = solutionRequest(6, 4);
+    const revealed = solutionReveal(7, requested.eventId);
+    const resolved = fullSolutionResolution(8, revealed.eventId, 3);
+    expect(() =>
+      foldCoachEvents(
+        records([
+          start(),
+          first,
+          second,
+          prepared,
+          firstIncorrect,
+          secondIncorrect,
+          requested,
+          revealed,
+          evaluatedResolution(8, secondIncorrect.eventId, 3),
+        ]),
+      ),
+    ).toThrow('COACH_EVENT_CONFLICT');
+    const state = foldCoachEvents(
+      records([
+        start(),
+        first,
+        second,
+        prepared,
+        firstIncorrect,
+        secondIncorrect,
+        requested,
+        revealed,
+        resolved,
+      ]),
+    );
+    expect(state.original).toMatchObject({ resolved: true, resolutionKind: 'full_solution' });
+    expect(state.original.outcome).toBeUndefined();
+  });
+
+  it('allows unavailable plus reveal to resolve in v3 without inventing an evaluation', () => {
+    const first = attempt(1, 2);
+    const second = attempt(2, 3);
+    const unavailable = originalAssessmentUnavailable(3);
+    const requested = solutionRequest(4, 4);
+    const revealed = solutionReveal(5, requested.eventId);
+    const resolved = fullSolutionResolution(6, revealed.eventId, 3);
+    const state = foldCoachEvents(
+      records([start(), first, second, unavailable, requested, revealed, resolved]),
+    );
+    expect(state.original.assessment).toMatchObject({
+      status: 'unavailable',
+      reason: 'unsupported_question_type',
+    });
+    expect(state.original).toMatchObject({
+      resolved: true,
+      resolutionKind: 'full_solution',
+      evaluationEventIds: [],
+    });
+    expect(state.original.outcome).toBeUndefined();
   });
 
   it('requires original resolution to cite a real original attempt', () => {
@@ -865,6 +1067,35 @@ describe('foldCoachEvents strict deterministic projection', () => {
     ).toThrow('COACH_EVENT_CONFLICT');
   });
 
+  it('rejects projection for an unavailable original until the unassessed StudyAttempt union exists', () => {
+    const first = attempt(1, 2);
+    const second = attempt(2, 3);
+    const unavailable = originalAssessmentUnavailable(3);
+    const requested = solutionRequest(4, 4);
+    const revealed = solutionReveal(5, requested.eventId);
+    const resolved = fullSolutionResolution(6, revealed.eventId, 3);
+    const assigned = assignment(7, resolved.eventId);
+    const submitted = transferSubmission(8, 5);
+    const evaluated = evaluation(9, submitted.eventId);
+    expect(() =>
+      foldCoachEvents(
+        records([
+          start(),
+          first,
+          second,
+          unavailable,
+          requested,
+          revealed,
+          resolved,
+          assigned,
+          submitted,
+          evaluated,
+          projection(10, evaluated.eventId),
+        ]),
+      ),
+    ).toThrow('COACH_EVENT_CONFLICT');
+  });
+
   it('completes only after evaluation and projection', () => {
     const submitted = foldCoachEvents(records(completedEvents().slice(0, 5)));
     expect(submitted.status).toBe('finalizing');
@@ -899,5 +1130,21 @@ describe('foldCoachEvents strict deterministic projection', () => {
     expect(() => foldCoachEvents(records([start(), abandoned(1, 2), attempt(2, 3)]))).toThrow(
       'COACH_EVENT_CONFLICT',
     );
+  });
+
+  it('does not let a pending backlog hide an earlier correct from live action guards', () => {
+    const first = attempt(1, 2);
+    const second = attempt(2, 3);
+    const third = attempt(3, 4);
+    const prepared = originalAssessment(4);
+    const firstCorrect = originalEvaluation(5, prepared.eventId, first.eventId, 'correct');
+    const secondIncorrect = originalEvaluation(6, prepared.eventId, second.eventId, 'incorrect');
+    const pending = foldCoachEvents(
+      records([start(), first, second, third, prepared, firstCorrect, secondIncorrect]),
+    );
+
+    expect(pending.original.correctEvaluationEventId).toBeUndefined();
+    expect(pending.original.authoritativeCorrectEvaluationEventId).toBe(firstCorrect.eventId);
+    expect(allowedCoachActions(pending)).toEqual(['get_state']);
   });
 });

@@ -12,12 +12,12 @@ import {
   type CoachTransferDependencies,
 } from '@/lib/server/zhongkao/coach-transfer';
 import {
-  recordOriginalResolved,
   startCoachProblem,
   submitCoachAttempt,
   submitCoachTransferAnswer,
   type CoachServiceDeps,
 } from '@/lib/server/zhongkao/coach-service';
+import { recordLegacyOriginalResolvedFixture as recordOriginalResolved } from '@/tests/fixtures/legacy-coach-resolution';
 import { deriveTransferQuestionId } from '@/lib/server/zhongkao/transfer-assignment';
 import { resolveZhongkaoLearnerKeyFromOwnerId } from '@/lib/server/zhongkao/learner-identity';
 import type { CoachEvent } from '@/lib/zhongkao/coach-event';

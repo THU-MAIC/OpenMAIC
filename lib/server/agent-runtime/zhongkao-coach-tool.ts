@@ -569,19 +569,53 @@ export function createZhongkaoCoachActionTool(
           agentSessionId: turn.agentSessionId,
           ...(context.now ? { now: context.now } : {}),
           ...(generationCall ? { generationCall } : {}),
-          ...(transferVerificationCall ? { transferVerificationCall } : {}),
+          ...(transferVerificationCall
+            ? {
+                transferVerificationCall,
+                originalAssessmentVerificationCall: transferVerificationCall,
+              }
+            : {}),
           ...(context.materialSource ? { materialSource: context.materialSource } : {}),
           ...(signal ? { abortSignal: signal } : {}),
         };
         if (params.action === 'get_state') {
           let observed = await getCoachProblemState(deps, params.profileId, params.coachSessionId);
+          let recoveryFacts: { replayed: boolean; eventAppended: boolean } | undefined;
           if (signal?.aborted) return errorResult(new Error('aborted'));
-          if (observed.state.original.assessmentEventId) {
+          if (
+            observed.state.status !== 'abandoned' &&
+            observed.state.status !== 'completed' &&
+            !observed.state.original.resolved &&
+            observed.state.original.assessment.status === 'pending' &&
+            observed.state.original.attemptEventIds.length > 0
+          ) {
+            const assessed = await completeOriginalAttemptAssessment(deps, {
+              profileId: params.profileId,
+              coachSessionId: params.coachSessionId,
+              attemptEventId: observed.state.original.attemptEventIds[0]!,
+            });
+            observed = assessed.snapshot;
+            recoveryFacts = {
+              replayed: assessed.replayed,
+              eventAppended: assessed.eventAppended,
+            };
+          }
+          if (
+            observed.state.status !== 'abandoned' &&
+            observed.state.status !== 'completed' &&
+            observed.state.original.assessmentEventId
+          ) {
             const recovered = await recoverPreparedOriginalAssessment(deps, {
               profileId: params.profileId,
               coachSessionId: params.coachSessionId,
             });
-            if (recovered) observed = recovered.snapshot;
+            if (recovered) {
+              observed = recovered.snapshot;
+              recoveryFacts = {
+                replayed: (recoveryFacts?.replayed ?? true) && recovered.replayed,
+                eventAppended: (recoveryFacts?.eventAppended ?? false) || recovered.eventAppended,
+              };
+            }
           }
           if (
             observed.state.transfer.attemptCount === 1 &&
@@ -593,10 +627,16 @@ export function createZhongkaoCoachActionTool(
             });
             if (!completed) throw new CoachError('TRANSFER_EVALUATION_FAILED');
             if (signal?.aborted) return errorResult(new Error('aborted'));
+            const facts = recoveryFacts
+              ? {
+                  replayed: recoveryFacts.replayed && completed.replayed,
+                  eventAppended: recoveryFacts.eventAppended || completed.eventAppended,
+                }
+              : { replayed: completed.replayed, eventAppended: completed.eventAppended };
             return toolResult(
               buildCoachToolSuccessOutput(
                 completed.snapshot,
-                { replayed: completed.replayed, eventAppended: completed.eventAppended },
+                facts,
                 undefined,
                 completed.presentation,
               ),
@@ -612,17 +652,26 @@ export function createZhongkaoCoachActionTool(
               coachSessionId: params.coachSessionId,
             });
             if (signal?.aborted) return errorResult(new Error('aborted'));
+            const facts = recoveryFacts
+              ? {
+                  replayed: recoveryFacts.replayed && completed.replayed,
+                  eventAppended: recoveryFacts.eventAppended || completed.eventAppended,
+                }
+              : { replayed: completed.replayed, eventAppended: completed.eventAppended };
             return toolResult(
               buildCoachToolSuccessOutput(
                 completed.snapshot,
-                { replayed: completed.replayed, eventAppended: completed.eventAppended },
+                facts,
                 undefined,
                 completed.presentation,
               ),
             );
           }
           return toolResult(
-            buildCoachToolSuccessOutput(observed, { replayed: false, eventAppended: false }),
+            buildCoachToolSuccessOutput(
+              observed,
+              recoveryFacts ?? { replayed: false, eventAppended: false },
+            ),
           );
         }
 
@@ -701,6 +750,7 @@ export function createZhongkaoCoachActionTool(
               replayed: result.replayed && completed.replayed,
               eventAppended: result.eventAppended || completed.eventAppended,
             };
+            code = completed.code;
           } catch (error) {
             if (!isSettledOriginalAssessmentError(error)) throw error;
             snapshot = await getCoachProblemState(deps, params.profileId, params.coachSessionId);

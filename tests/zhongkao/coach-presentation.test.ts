@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 import {
   recordFullSolutionRevealed,
+  recordOriginalAssessmentUnavailable,
   requestCoachFullSolution,
   requestCoachHint,
   startCoachProblem,
@@ -275,10 +276,16 @@ describe('Coach full-solution resolution lifecycle', () => {
       expectedRevision: first.snapshot.state.revision,
       message: { seq: 3, text: 'x = 5' },
     });
-    const requested = await requestCoachFullSolution(h.deps, {
+    const unavailable = await recordOriginalAssessmentUnavailable(h.deps, {
       profileId: 'student-alpha',
       coachSessionId: started.snapshot.state.coachSessionId,
       expectedRevision: second.snapshot.state.revision,
+      reason: 'unsupported_question_type',
+    });
+    const requested = await requestCoachFullSolution(h.deps, {
+      profileId: 'student-alpha',
+      coachSessionId: started.snapshot.state.coachSessionId,
+      expectedRevision: unavailable.snapshot.state.revision,
       message: { seq: 4, text: '请给出完整解析。' },
     });
     const request = requested.snapshot.records.at(-1)!.payload as CoachEvent;

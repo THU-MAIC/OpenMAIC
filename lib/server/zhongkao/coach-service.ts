@@ -2,6 +2,9 @@ import type { RuntimeRecord } from '@openmaic/dsl';
 
 import { CoachError, type CoachErrorCode } from '@/lib/zhongkao/coach-errors';
 import {
+  COACH_ORIGINAL_ASSESSMENT_UNAVAILABLE_REASONS,
+  COACH_ORIGINAL_ASSESSMENT_VERSION,
+  COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION,
   COACH_PROJECTION_VERSION,
   COACH_FINAL_ANSWER_MAX_LENGTH,
   COACH_HINT_TEXT_MAX_LENGTH,
@@ -10,7 +13,7 @@ import {
   assertCoachEvent,
   isCoachPresentationFailureCodeForKind,
   type CoachEvent,
-  type CoachOutcome,
+  type CoachOriginalAssessmentUnavailableReason,
   type CoachPhase,
   type CoachStartedEvent,
   type CoachPresentationFailureCode,
@@ -19,6 +22,7 @@ import {
   type HintRequestedEvent,
   type TransferAnswerSubmittedEvent,
 } from '@/lib/zhongkao/coach-event';
+import { selectOriginalResolution } from '@/lib/zhongkao/coach-original-resolution';
 import { allowedCoachActions, type CoachModelAction } from '@/lib/zhongkao/coach-policy';
 import { loadStudentProfile } from '@/lib/zhongkao/runtime';
 import {
@@ -45,6 +49,7 @@ import { resolveZhongkaoLearnerKeyFromOwnerId } from './learner-identity';
 import { evaluateTransferAnswer } from './transfer-answer-evaluator';
 import {
   buildOriginalAssessmentPreparedFacts,
+  deriveOriginalQuestionFingerprint,
   extractVerifiedOriginalAssessment,
   type VerifiedOriginalAssessment,
 } from './original-assessment-private';
@@ -74,20 +79,14 @@ export interface CoachContinuationInput {
   expectedRevision: number;
 }
 
-type OriginalResolutionFacts =
-  | { attemptEventId: string; outcome: CoachOutcome; fullSolutionEventId?: never }
-  | { attemptEventId: string; fullSolutionEventId: string; outcome?: never };
-
 function assertIdentifier(value: string): void {
   const errors: DomainValidationIssue[] = [];
   validateIdentifier(value, '/id', errors);
   if (!finishValidation(errors).valid) throw new CoachError('COACH_INPUT_INVALID');
 }
 
-function assertOutcome(value: CoachOutcome): void {
-  if (value !== 'correct' && value !== 'partial' && value !== 'incorrect') {
-    throw new CoachError('COACH_INPUT_INVALID');
-  }
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new Error('aborted');
 }
 
 function assertContinuation(input: CoachContinuationInput): void {
@@ -505,6 +504,16 @@ export async function abandonCoachProblem(
     operationFingerprint,
     createEvent(metadata, snapshot) {
       requireModelAction(snapshot, 'abandon_problem');
+      const resolution = selectOriginalResolution(snapshot);
+      if (
+        !snapshot.state.original.resolved &&
+        (snapshot.state.original.viewedFullAnswer ||
+          snapshot.state.original.authoritativeCorrectEvaluationEventId !== undefined ||
+          resolution.kind === 'evaluated_attempt' ||
+          resolution.kind === 'full_solution')
+      ) {
+        throw new CoachError('COACH_ACTION_NOT_ALLOWED');
+      }
       return {
         ...baseEvent(deps, input, metadata),
         eventType: 'problem_abandoned',
@@ -666,7 +675,7 @@ export async function recordOriginalAssessmentPrepared(
         input.verifiedAssessment,
       );
       if (
-        snapshot.state.original.assessmentEventId !== undefined ||
+        snapshot.state.original.assessment.status !== 'pending' ||
         snapshot.state.original.resolved ||
         createCoachOperationFingerprint(currentFacts) !==
           createCoachOperationFingerprint(preparedFacts)
@@ -677,6 +686,75 @@ export async function recordOriginalAssessmentPrepared(
         ...baseEvent(deps, input, metadata),
         eventType: 'original_assessment_prepared',
         ...currentFacts,
+      };
+    },
+  });
+}
+
+export async function recordOriginalAssessmentUnavailable(
+  deps: CoachServiceDeps,
+  input: CoachContinuationInput & {
+    reason: CoachOriginalAssessmentUnavailableReason;
+    abortSignal?: AbortSignal;
+  },
+): Promise<CoachActionResult> {
+  assertContinuation(input);
+  throwIfAborted(input.abortSignal);
+  if (
+    !(COACH_ORIGINAL_ASSESSMENT_UNAVAILABLE_REASONS as readonly unknown[]).includes(input.reason)
+  ) {
+    throw new CoachError('COACH_INPUT_INVALID');
+  }
+  const observed = await loadCoachRuntime(deps, input.profileId, input.coachSessionId);
+  throwIfAborted(input.abortSignal);
+  const start = requireCoachStart(observed);
+  const questionFingerprint = deriveOriginalQuestionFingerprint({
+    subjectId: start.subjectId,
+    knowledgePointIds: start.knowledgePointIds,
+    questionText: start.questionText,
+    questionSource: start.questionSource,
+  });
+  const operationId = deriveCoachCausalOperationId({
+    coachSessionId: input.coachSessionId,
+    action: 'record_original_assessment_unavailable',
+    causalEventId: questionFingerprint,
+    version: COACH_ORIGINAL_ASSESSMENT_VERSION,
+  });
+  const operationFingerprint = createCoachOperationFingerprint({
+    action: 'record_original_assessment_unavailable',
+    marker: 'original-assessment-unavailable',
+    coachSessionId: input.coachSessionId,
+    assessmentVersion: COACH_ORIGINAL_ASSESSMENT_VERSION,
+    questionFingerprint,
+    reason: input.reason,
+  });
+  return appendCoachRuntimeEvent(deps, {
+    ...input,
+    operationId,
+    operationFingerprint,
+    createEvent(metadata, snapshot) {
+      throwIfAborted(input.abortSignal);
+      const currentStart = requireCoachStart(snapshot);
+      const currentFingerprint = deriveOriginalQuestionFingerprint({
+        subjectId: currentStart.subjectId,
+        knowledgePointIds: currentStart.knowledgePointIds,
+        questionText: currentStart.questionText,
+        questionSource: currentStart.questionSource,
+      });
+      if (
+        snapshot.state.original.assessment.status !== 'pending' ||
+        snapshot.state.original.attemptCount === 0 ||
+        snapshot.state.original.resolved ||
+        currentFingerprint !== questionFingerprint
+      ) {
+        throw new CoachError('COACH_EVENT_CONFLICT');
+      }
+      return {
+        ...baseEvent(deps, input, metadata),
+        eventType: 'original_assessment_unavailable',
+        assessmentVersion: COACH_ORIGINAL_ASSESSMENT_VERSION,
+        questionFingerprint,
+        reason: input.reason,
       };
     },
   });
@@ -794,13 +872,13 @@ export async function recordOriginalResolvedFromEvaluation(
     coachSessionId: input.coachSessionId,
     action: 'record_original_resolved_from_evaluation',
     causalEventId: input.evaluationEventId,
-    version: 2,
+    version: COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION,
   });
   const operationFingerprint = createCoachOperationFingerprint({
     action: 'record_original_resolved_from_evaluation',
     coachSessionId: input.coachSessionId,
     evaluationEventId: input.evaluationEventId,
-    resolutionSchemaVersion: 2,
+    resolutionSchemaVersion: COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION,
   });
   return appendCoachRuntimeEvent(deps, {
     ...input,
@@ -808,13 +886,13 @@ export async function recordOriginalResolvedFromEvaluation(
     operationFingerprint,
     createEvent(metadata, snapshot) {
       const evaluation = eventById(snapshot, input.evaluationEventId);
+      const decision = selectOriginalResolution(snapshot);
       if (
         !evaluation ||
         evaluation.eventType !== 'original_attempt_evaluated' ||
         evaluation.outcome !== 'correct' ||
-        snapshot.state.original.correctEvaluationEventId !== evaluation.eventId ||
-        snapshot.state.original.evaluatedAttemptEventIds.length !==
-          snapshot.state.original.attemptEventIds.length ||
+        decision.kind !== 'evaluated_attempt' ||
+        decision.evaluationEventId !== evaluation.eventId ||
         snapshot.state.original.resolved ||
         snapshot.state.original.pendingHintRequestEventId !== undefined
       ) {
@@ -823,7 +901,7 @@ export async function recordOriginalResolvedFromEvaluation(
       return {
         ...baseEvent(deps, input, metadata),
         eventType: 'original_resolved',
-        resolutionSchemaVersion: 2,
+        resolutionSchemaVersion: COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION,
         resolutionKind: 'evaluated_attempt',
         evaluationEventId: evaluation.eventId,
       };
@@ -841,13 +919,13 @@ export async function recordOriginalResolvedFromFullSolution(
     coachSessionId: input.coachSessionId,
     action: 'record_original_resolved_from_full_solution',
     causalEventId: input.fullSolutionEventId,
-    version: 2,
+    version: COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION,
   });
   const operationFingerprint = createCoachOperationFingerprint({
     action: 'record_original_resolved_from_full_solution',
     coachSessionId: input.coachSessionId,
     fullSolutionEventId: input.fullSolutionEventId,
-    resolutionSchemaVersion: 2,
+    resolutionSchemaVersion: COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION,
   });
   return appendCoachRuntimeEvent(deps, {
     ...input,
@@ -855,14 +933,14 @@ export async function recordOriginalResolvedFromFullSolution(
     operationFingerprint,
     createEvent(metadata, snapshot) {
       const reveal = eventById(snapshot, input.fullSolutionEventId);
+      const decision = selectOriginalResolution(snapshot);
       if (
         !reveal ||
         reveal.eventType !== 'full_solution_revealed' ||
         reveal.phase !== 'original' ||
         !snapshot.state.original.viewedFullAnswer ||
-        (snapshot.state.original.assessmentEventId !== undefined &&
-          snapshot.state.original.evaluatedAttemptEventIds.length !==
-            snapshot.state.original.attemptEventIds.length) ||
+        decision.kind !== 'full_solution' ||
+        decision.fullSolutionEventId !== reveal.eventId ||
         snapshot.state.original.resolved
       ) {
         throw new CoachError('COACH_ACTION_NOT_ALLOWED');
@@ -870,73 +948,9 @@ export async function recordOriginalResolvedFromFullSolution(
       return {
         ...baseEvent(deps, input, metadata),
         eventType: 'original_resolved',
-        resolutionSchemaVersion: 2,
+        resolutionSchemaVersion: COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION,
         resolutionKind: 'full_solution',
         fullSolutionEventId: reveal.eventId,
-      };
-    },
-  });
-}
-
-/** Legacy writer retained for committed M2A fixtures; production M2B paths use causal v2 writers. */
-export async function recordOriginalResolved(
-  deps: CoachServiceDeps,
-  input: CoachContinuationInput & OriginalResolutionFacts,
-): Promise<CoachActionResult> {
-  assertContinuation(input);
-  assertIdentifier(input.attemptEventId);
-  const resolvesFromFullSolution = input.fullSolutionEventId !== undefined;
-  if (resolvesFromFullSolution) assertIdentifier(input.fullSolutionEventId);
-  else assertOutcome(input.outcome);
-  const causalEventId = resolvesFromFullSolution ? input.fullSolutionEventId : input.attemptEventId;
-  const operationId = deriveCoachCausalOperationId({
-    coachSessionId: input.coachSessionId,
-    action: 'record_original_resolved',
-    causalEventId,
-  });
-  const operationFingerprint = createCoachOperationFingerprint({
-    action: 'record_original_resolved',
-    coachSessionId: input.coachSessionId,
-    attemptEventId: input.attemptEventId,
-    ...(resolvesFromFullSolution
-      ? { fullSolutionEventId: input.fullSolutionEventId }
-      : { outcome: input.outcome }),
-  });
-  return appendCoachRuntimeEvent(deps, {
-    ...input,
-    operationId,
-    operationFingerprint,
-    createEvent(metadata, snapshot) {
-      const attempt = eventById(snapshot, input.attemptEventId);
-      if (
-        !attempt ||
-        attempt.eventType !== 'student_attempt_submitted' ||
-        attempt.phase !== 'original'
-      ) {
-        throw new CoachError('STUDENT_ATTEMPT_REQUIRED');
-      }
-      const fullSolution = resolvesFromFullSolution
-        ? eventById(snapshot, input.fullSolutionEventId)
-        : undefined;
-      if (
-        resolvesFromFullSolution &&
-        (!fullSolution ||
-          fullSolution.eventType !== 'full_solution_revealed' ||
-          fullSolution.phase !== 'original' ||
-          !snapshot.state.original.viewedFullAnswer)
-      ) {
-        throw new CoachError('COACH_ACTION_NOT_ALLOWED');
-      }
-      if (snapshot.state.original.resolved || snapshot.state.status === 'abandoned') {
-        throw new CoachError('COACH_ACTION_NOT_ALLOWED');
-      }
-      return {
-        ...baseEvent(deps, input, metadata),
-        eventType: 'original_resolved',
-        attemptEventId: attempt.eventId,
-        ...(resolvesFromFullSolution
-          ? { fullSolutionEventId: input.fullSolutionEventId }
-          : { outcome: input.outcome }),
       };
     },
   });
@@ -1141,6 +1155,7 @@ export async function recordStudyAttemptsProjected(
     createEvent(metadata, snapshot) {
       const evaluation = eventById(snapshot, input.evaluationEventId);
       if (
+        snapshot.state.original.assessment.status === 'unavailable' ||
         !evaluation ||
         evaluation.eventType !== 'transfer_answer_evaluated' ||
         snapshot.state.transfer.evaluationEventId !== evaluation.eventId ||
