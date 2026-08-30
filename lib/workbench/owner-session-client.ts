@@ -136,7 +136,7 @@ export class OwnerSessionClient {
   private titleDecisionRevisions = new Map<string, number>();
   private titleMutations = new Map<
     string,
-    { readonly revision: number; readonly title: string | null }
+    { readonly revision: number; readonly title: string | null; readonly settled: boolean }
   >();
   private reconcileTimer: ReturnType<typeof setTimeout> | null = null;
   private streamHealthTimer: ReturnType<typeof setInterval> | null = null;
@@ -191,13 +191,14 @@ export class OwnerSessionClient {
     this.options.onSessions(next);
   }
 
-  /** A local title decision that snapshots already in flight may not undo. */
-  updateSessionTitle(sessionId: string, title: string | null): number {
+  /** A local title decision retained until a post-settlement snapshot confirms it. */
+  updateSessionTitle(sessionId: string, title: string | null, settled: boolean): number {
     const revision = (this.titleMutationRevision += 1);
     this.titleDecisionRevisions.set(sessionId, revision);
     this.titleMutations.set(sessionId, {
       revision,
       title,
+      settled,
     });
     this.updateSessions((sessions) =>
       sessions.map((session) => (session.id === sessionId ? { ...session, title } : session)),
@@ -234,6 +235,10 @@ export class OwnerSessionClient {
       this.malformedEventCount = 0;
       this.cursor = event.id;
       const reduced = reduceOwnerSessionEvent(this.sessions, event);
+      // PATCH responses and owner events travel independently. Until a read
+      // confirms the write, no event can safely retire its local decision.
+      const unconfirmedTitleMutation =
+        event.type === 'session_title' && this.titleMutations.has(event.sessionId);
       const timestampStaleTitle =
         event.type === 'session_title' &&
         !reduced.needsFullFetch &&
@@ -248,14 +253,15 @@ export class OwnerSessionClient {
           this.journal.splice(0, this.journal.length - OWNER_SESSION_JOURNAL_LIMIT);
           this.requestFullFetch();
         }
-        if (event.type === 'session_title') {
+        if (event.type === 'session_title' && !unconfirmedTitleMutation) {
           this.titleDecisionRevisions.set(event.sessionId, (this.titleMutationRevision += 1));
           this.titleMutations.delete(event.sessionId);
           this.options.onSessionTitle?.(event.sessionId, event.title);
         }
       }
-      if (reduced.sessions !== this.sessions) {
-        this.sessions = reduced.sessions;
+      const nextSessions = this.overlaySessionTitleMutations(reduced.sessions);
+      if (nextSessions !== this.sessions) {
+        this.sessions = nextSessions;
         this.options.onSessions(this.sessions);
       }
       if (reduced.needsFullFetch) this.requestFullFetch();
@@ -344,8 +350,10 @@ export class OwnerSessionClient {
     this.requestInFlight = true;
     const epoch = this.epoch;
     const snapshotCursor = this.cursor;
-    const titleRevisions = new Map(
-      [...this.titleMutations].map(([sessionId, mutation]) => [sessionId, mutation.revision]),
+    const settledTitleRevisions = new Map(
+      [...this.titleMutations]
+        .filter(([, mutation]) => mutation.settled)
+        .map(([sessionId, mutation]) => [sessionId, mutation.revision]),
     );
     void this.options
       .fetchSessions()
@@ -354,14 +362,13 @@ export class OwnerSessionClient {
         let merged: readonly ProHomeSessionItem[] = newestFirst(snapshot).map((session) => {
           const mutation = this.titleMutations.get(session.id);
           if (!mutation) return session;
-          if (mutation.revision !== titleRevisions.get(session.id)) {
-            // This decision happened after the request began, so the response
-            // cannot contain it yet.
+          if (!mutation.settled || mutation.revision !== settledTitleRevisions.get(session.id)) {
+            // The PATCH was unresolved when this request began, or a newer
+            // decision arrived afterwards, so the response cannot confirm it.
             return { ...session, title: mutation.title };
           }
-          // This request began after the local decision and its row is now the
-          // authoritative answer. Fence the still-pending PATCH settlement so
-          // a later network failure cannot roll this snapshot back.
+          // This request began after the PATCH settled, so its row is now the
+          // authoritative answer and may retire the local decision.
           this.titleDecisionRevisions.set(session.id, (this.titleMutationRevision += 1));
           this.titleMutations.delete(session.id);
           return session;
@@ -370,9 +377,11 @@ export class OwnerSessionClient {
         for (const event of this.journal) {
           if (compareDecimalCursor(event.id, snapshotCursor) <= 0) continue;
           const reduced = reduceOwnerSessionEvent(merged, event);
+          const titleOrderAmbiguous = event.type === 'session_title' && reduced.sessions === merged;
           merged = reduced.sessions;
-          needsFullFetch ||= reduced.needsFullFetch;
+          needsFullFetch ||= reduced.needsFullFetch || titleOrderAmbiguous;
         }
+        merged = this.overlaySessionTitleMutations(merged);
         this.sessions = merged;
         this.journal = [];
         this.lastFullFetchFailed = false;
@@ -397,6 +406,19 @@ export class OwnerSessionClient {
           this.runFullFetch();
         }
       });
+  }
+
+  private overlaySessionTitleMutations(
+    sessions: readonly ProHomeSessionItem[],
+  ): readonly ProHomeSessionItem[] {
+    let changed = false;
+    const next = sessions.map((session) => {
+      const mutation = this.titleMutations.get(session.id);
+      if (!mutation || mutation.title === session.title) return session;
+      changed = true;
+      return { ...session, title: mutation.title };
+    });
+    return changed ? next : sessions;
   }
 
   private scheduleReconciliation(): void {

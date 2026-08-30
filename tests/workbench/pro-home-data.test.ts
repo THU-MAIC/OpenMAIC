@@ -275,14 +275,17 @@ describe('owner session event projection', () => {
     expect(cleared.sessions[0]).toEqual({ ...source[0], title: null, updatedAt: 400 });
   });
 
-  it('ignores a title projection older than the matching owner snapshot', () => {
+  it.each([
+    { relation: 'older than', eventTimestamp: 499 },
+    { relation: 'from the same millisecond as', eventTimestamp: 500 },
+  ])('ignores a title projection $relation the matching owner snapshot', ({ eventTimestamp }) => {
     const source = [session('active', { title: 'Newest title', updatedAt: 500 })];
     const result = reduceOwnerSessionEvent(
       source,
       event({
         id: '45',
         sessionId: 'active',
-        ts: 499,
+        ts: eventTimestamp,
         phase: 'backlog',
         type: 'session_title',
         title: 'Stale title',

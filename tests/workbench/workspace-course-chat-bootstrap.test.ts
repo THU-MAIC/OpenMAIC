@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   startFirstMessage: vi.fn(),
   requestFullFetch: vi.fn(),
   updateSessions: vi.fn(),
+  updateSessionTitle: vi.fn(),
   renameWorkbenchSession: vi.fn(),
   classroomMounts: 0,
   classroomProps: null as Record<string, unknown> | null,
@@ -126,6 +127,7 @@ vi.mock('@/lib/workbench/owner-session-client', () => ({
     private sessions: typeof mocks.sessionRows = [];
     private titleRevision = 0;
     private readonly titleRevisions = new Map<string, number>();
+    private readonly titleMutations = new Map<string, { settled: boolean }>();
 
     constructor(
       private readonly options: {
@@ -148,10 +150,11 @@ vi.mock('@/lib/workbench/owner-session-client', () => ({
       this.sessions = update(this.sessions);
       this.options.onSessions(this.sessions);
     }
-    updateSessionTitle(sessionId: string, title: string | null) {
-      mocks.updateSessions(sessionId, title);
+    updateSessionTitle(sessionId: string, title: string | null, settled: boolean) {
+      mocks.updateSessionTitle(sessionId, title, settled);
       const revision = (this.titleRevision += 1);
       this.titleRevisions.set(sessionId, revision);
+      this.titleMutations.set(sessionId, { settled });
       this.sessions = this.sessions.map((session) =>
         session.id === sessionId ? { ...session, title } : session,
       );
@@ -168,7 +171,9 @@ vi.mock('@/lib/workbench/owner-session-client', () => ({
       this.options.onSessions(this.sessions);
     }
     emitSessionTitle(sessionId: string, title: string | null) {
+      if (this.titleMutations.has(sessionId)) return;
       this.titleRevisions.set(sessionId, (this.titleRevision += 1));
+      this.titleMutations.delete(sessionId);
       this.options.onSessionTitle?.(sessionId, title);
       this.sessions = this.sessions.map((session) =>
         session.id === sessionId ? { ...session, title } : session,
@@ -297,6 +302,7 @@ beforeEach(() => {
   mocks.routerReplace.mockClear();
   mocks.requestFullFetch.mockClear();
   mocks.updateSessions.mockClear();
+  mocks.updateSessionTitle.mockClear();
   mocks.renameWorkbenchSession.mockReset();
   mocks.setSessionTitle.mockReset();
   mocks.setSessionTitle.mockImplementation((title: string | null) => {
@@ -908,7 +914,13 @@ describe('renaming a conversation from the workspace shell', () => {
       mocks.railProps?.sessions as readonly { id: string; title?: string | null }[]
     ).find((row) => row.id === 'session-1');
     expect(session?.title).toBe('New title');
-    expect(mocks.updateSessions).toHaveBeenCalled();
+    expect(mocks.updateSessionTitle.mock.calls).toEqual([
+      ['session-1', 'New title', false],
+      ['session-1', 'New title', true],
+    ]);
+    expect(mocks.updateSessionTitle.mock.invocationCallOrder[1]).toBeLessThan(
+      mocks.requestFullFetch.mock.invocationCallOrder[0]!,
+    );
     expect(mocks.requestFullFetch).toHaveBeenCalledTimes(1);
     expect(mocks.requestFullFetch).toHaveBeenLastCalledWith();
   });
@@ -940,6 +952,13 @@ describe('renaming a conversation from the workspace shell', () => {
 
     expect(mocks.requestFullFetch).toHaveBeenCalledTimes(1);
     expect(mocks.requestFullFetch).toHaveBeenLastCalledWith();
+    expect(mocks.updateSessionTitle.mock.calls).toEqual([
+      ['session-1', 'New title', false],
+      ['session-1', 'Old title', true],
+    ]);
+    expect(mocks.updateSessionTitle.mock.invocationCallOrder[1]).toBeLessThan(
+      mocks.requestFullFetch.mock.invocationCallOrder[0]!,
+    );
   });
 
   it('finishes two same-session renames in submit order when the first one fails', async () => {
@@ -1062,7 +1081,7 @@ describe('renaming a conversation from the workspace shell', () => {
     expect(mocks.store.sessionTitle).toBe('Title A');
   });
 
-  it('does not settle a pending PATCH over a newer owner title event', async () => {
+  it('keeps a successful PATCH authoritative while an owner title event is uncorrelated', async () => {
     mocks.searchParams = new URLSearchParams('session=session-1&course=stage-1');
     mocks.store.sessionId = 'session-1';
     mocks.store.sessionTitle = 'Old title';
@@ -1086,11 +1105,11 @@ describe('renaming a conversation from the workspace shell', () => {
     const session = (
       mocks.railProps?.sessions as readonly { id: string; title?: string | null }[]
     ).find((row) => row.id === 'session-1');
-    expect(session?.title).toBe('Other tab title');
-    expect(mocks.store.sessionTitle).toBe('Other tab title');
+    expect(session?.title).toBe('Local title');
+    expect(mocks.store.sessionTitle).toBe('Local title');
   });
 
-  it('does not roll a failed PATCH back over a newer owner title event', async () => {
+  it('rolls back a failed PATCH while an owner title event is uncorrelated', async () => {
     mocks.searchParams = new URLSearchParams('session=session-1&course=stage-1');
     mocks.store.sessionId = 'session-1';
     mocks.store.sessionTitle = 'Old title';
@@ -1114,8 +1133,8 @@ describe('renaming a conversation from the workspace shell', () => {
     const session = (
       mocks.railProps?.sessions as readonly { id: string; title?: string | null }[]
     ).find((row) => row.id === 'session-1');
-    expect(session?.title).toBe('Other tab title');
-    expect(mocks.store.sessionTitle).toBe('Other tab title');
+    expect(session?.title).toBe('Old title');
+    expect(mocks.store.sessionTitle).toBe('Old title');
   });
 });
 

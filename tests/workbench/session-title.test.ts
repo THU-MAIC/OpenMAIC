@@ -68,32 +68,38 @@ describe('committing a rename', () => {
   const session = { title: null, prompt: '帮我做一节课' };
 
   it('writes it locally first, then settles on what the server stored', async () => {
-    const applied: (string | null)[] = [];
+    const applied: { title: string | null; settled: boolean }[] = [];
     const save = vi.fn(async () => '期末复习');
     const outcome = await commitSessionRename({
       current: session,
       raw: '期末复习课',
-      apply: (title) => applied.push(title),
+      apply: (title, settled) => applied.push({ title, settled }),
       save,
     });
     expect(outcome).toBe('renamed');
     expect(save).toHaveBeenCalledWith('期末复习课');
     // Optimistic value, then the server's — which can differ (it caps).
-    expect(applied).toEqual(['期末复习课', '期末复习']);
+    expect(applied).toEqual([
+      { title: '期末复习课', settled: false },
+      { title: '期末复习', settled: true },
+    ]);
   });
 
   it('puts the old name back when the write is refused', async () => {
-    const applied: (string | null)[] = [];
+    const applied: { title: string | null; settled: boolean }[] = [];
     const outcome = await commitSessionRename({
       current: { title: '旧名字', prompt: '帮我做一节课' },
       raw: '新名字',
-      apply: (title) => applied.push(title),
+      apply: (title, settled) => applied.push({ title, settled }),
       save: async () => {
         throw new Error('500');
       },
     });
     expect(outcome).toBe('failed');
-    expect(applied).toEqual(['新名字', '旧名字']);
+    expect(applied).toEqual([
+      { title: '新名字', settled: false },
+      { title: '旧名字', settled: true },
+    ]);
   });
 
   it('does not settle over a newer authoritative title', async () => {

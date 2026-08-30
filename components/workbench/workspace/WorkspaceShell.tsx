@@ -554,12 +554,15 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * rail row and — when this is the attached conversation — the pane header,
    * which reads its own copy out of the session store.
    */
-  const applySessionTitle = useCallback((sessionId: string, title: string | null) => {
-    syncAttachedSessionTitle(sessionId, title, true);
-    const client = ownerSessionClient.current;
-    const revision = client?.updateSessionTitle(sessionId, title) ?? null;
-    return { client, revision };
-  }, []);
+  const applySessionTitle = useCallback(
+    (sessionId: string, title: string | null, settled: boolean) => {
+      syncAttachedSessionTitle(sessionId, title, true);
+      const client = ownerSessionClient.current;
+      const revision = client?.updateSessionTitle(sessionId, title, settled) ?? null;
+      return { client, revision };
+    },
+    [],
+  );
 
   /**
    * Rename a conversation. ONE writer for both surfaces that offer it — the
@@ -586,8 +589,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
             prompt: row?.prompt ?? (attached ? store.sessionPrompt : null),
           },
           raw,
-          apply: (title) => {
-            decision = applySessionTitle(sessionId, title);
+          apply: (title, settled) => {
+            decision = applySessionTitle(sessionId, title, settled);
           },
           save: (title) => renameWorkbenchSession(sessionId, title),
           isCurrent: () =>

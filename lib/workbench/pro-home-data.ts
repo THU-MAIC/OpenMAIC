@@ -116,7 +116,9 @@ export function reduceOwnerSessionEvent(
   }
 
   const current = sessions[index]!;
-  if (event.type === 'session_title' && event.ts < current.updatedAt) {
+  // PostgreSQL timestamps lose sub-millisecond ordering when projected to JS.
+  // An equal timestamp is ambiguous, so the client reconciles it with a read.
+  if (event.type === 'session_title' && event.ts <= current.updatedAt) {
     return { sessions, needsFullFetch: false };
   }
   const changed: ProHomeSessionItem =

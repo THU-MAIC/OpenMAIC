@@ -91,8 +91,9 @@ export function createSessionRenameQueue(): {
  *
  * Here rather than in the component so the sequence — and especially the
  * rollback, the part nobody exercises by hand — is testable without a DOM. The
- * caller supplies `apply` (the surfaces showing this chat's name) and `save`
- * (the PATCH), which is what keeps the whole feature to a single writer.
+ * caller supplies `apply` (the surfaces showing this chat's name, plus whether
+ * the PATCH has settled) and `save` (the PATCH), which is what keeps the whole
+ * feature to a single writer.
  */
 export async function commitSessionRename({
   current,
@@ -104,7 +105,7 @@ export async function commitSessionRename({
 }: {
   readonly current: WorkbenchSessionNaming;
   readonly raw: string;
-  readonly apply: (title: string | null) => void;
+  readonly apply: (title: string | null, settled: boolean) => void;
   /** Resolves to the title the server stored — it caps the length. */
   readonly save: (title: string | null) => Promise<string | null>;
   /** False when another authoritative title decision arrived while PATCH was pending. */
@@ -116,13 +117,13 @@ export async function commitSessionRename({
   const previous = current.title?.trim() || null;
   // Unchanged is not a rename; do not spend a round trip saying so.
   if (!forceSave && next === previous) return 'unchanged';
-  apply(next);
+  apply(next, false);
   try {
     const stored = await save(next);
-    if (isCurrent()) apply(stored);
+    if (isCurrent()) apply(stored, true);
     return 'renamed';
   } catch {
-    if (isCurrent()) apply(previous);
+    if (isCurrent()) apply(previous, true);
     return 'failed';
   }
 }
