@@ -16,12 +16,21 @@
   "dependencies": {
     "@hono/node-server": "^1.13.7",
     "@hyperframes/producer": "^0.7.107",
+    "@openmaic/dsl": "0.11.0",
+    "@openmaic/renderer": "0.1.4",
     "fflate": "^0.8.2",
     "hono": "^4.6.14",
+    "motion": "^12.27.5",
+    "puppeteer-core": "^25.6.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "tailwindcss": "^4.1.18",
     "tsx": "^4.19.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "typescript": "^5.7.2",
     "vitest": "^4.1.10"
   },
