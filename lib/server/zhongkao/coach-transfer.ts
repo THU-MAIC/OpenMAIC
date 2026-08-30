@@ -26,8 +26,7 @@ import {
   type VerifiedTransferAssignment,
 } from './transfer-assignment';
 import { generateVerifiedTransferQuestion } from './transfer-question-generation';
-
-const ORIGINAL_CHOICE_LINE = /^\s*([A-F])[.)\uFF0E\uFF09\u3001:\uFF1A]\s*(\S(?:.*\S)?)\s*$/u;
+import { structuredOriginalQuestionFromText } from './original-question';
 
 export interface CoachTransferDependencies extends CoachServiceDeps {
   generationCall?: AICallFn;
@@ -63,31 +62,7 @@ function startEvent(snapshot: CoachRuntimeSnapshot) {
  * Extract only an unambiguous trailing A-F choice block. Ambiguous text stays
  * intact so similarity checks never gain invented option structure.
  */
-export function originalTransferQuestionFromText(questionText: string): {
-  question: string;
-  options?: { id: string; text: string }[];
-} {
-  const lines = questionText.replace(/\r\n?/gu, '\n').split('\n');
-  while (lines.length > 0 && lines.at(-1)?.trim().length === 0) lines.pop();
-
-  const reversedOptions: { id: string; text: string }[] = [];
-  let optionStart = lines.length;
-  while (optionStart > 0) {
-    const match = ORIGINAL_CHOICE_LINE.exec(lines[optionStart - 1]!);
-    if (!match) break;
-    reversedOptions.push({ id: match[1]!, text: match[2]! });
-    optionStart -= 1;
-  }
-
-  const options = reversedOptions.reverse();
-  const sequential =
-    options.length >= 3 &&
-    options.length <= 6 &&
-    options.every((option, index) => option.id === String.fromCharCode('A'.charCodeAt(0) + index));
-  const stem = lines.slice(0, optionStart).join('\n').trim();
-  if (!sequential || stem.length === 0) return { question: questionText };
-  return { question: stem, options };
-}
+export const originalTransferQuestionFromText = structuredOriginalQuestionFromText;
 
 function assignmentEvent(snapshot: CoachRuntimeSnapshot) {
   const eventId = snapshot.state.transfer.assignmentEventId;
@@ -178,7 +153,7 @@ export async function completeTransferQuestionGeneration(
     {
       transferQuestionId,
       subjectId: snapshot.state.subjectId,
-      originalQuestion: originalTransferQuestionFromText(original.questionText),
+      originalQuestion: structuredOriginalQuestionFromText(original.questionText),
       allowedKnowledgePointIds: snapshot.state.knowledgePointIds,
       curriculumMode,
       allowedDifficulties: ['same'],

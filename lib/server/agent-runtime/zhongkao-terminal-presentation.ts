@@ -513,6 +513,20 @@ function unprovenCoachErrorCanSettle(params: CoachToolParams, code: CoachOutputC
 }
 
 function provenCoachErrorCanSettle(params: CoachToolParams, code: CoachOutputCode): boolean {
+  if (
+    params.action === 'submit_attempt' &&
+    new Set<CoachOutputCode>([
+      'COACH_EVENT_CONFLICT',
+      'ORIGINAL_ASSESSMENT_UNAVAILABLE',
+      'ORIGINAL_ASSESSMENT_GENERATION_FAILED',
+      'ORIGINAL_ASSESSMENT_INVALID',
+      'ORIGINAL_ASSESSMENT_NOT_VERIFIED',
+      'ORIGINAL_ATTEMPT_EVALUATION_FAILED',
+      'ORIGINAL_ATTEMPT_EVALUATION_CONFLICT',
+    ]).has(code)
+  ) {
+    return true;
+  }
   if (params.action === 'request_hint') {
     return isCoachPresentationFailureCodeForKind('hint', code);
   }

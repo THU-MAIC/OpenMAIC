@@ -6,6 +6,10 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import {
+  completeOriginalAttemptAssessment,
+  recoverPreparedOriginalAssessment,
+} from '@/lib/server/zhongkao/coach-original-assessment';
+import {
   abandonCoachProblem,
   getCoachProblemState,
   requestCoachFullSolution,
@@ -148,6 +152,12 @@ const CoachErrorCodeSchema = Type.Union([
   Type.Literal('TRANSFER_QUESTION_NOT_VERIFIED'),
   Type.Literal('TRANSFER_ANSWER_INVALID'),
   Type.Literal('TRANSFER_EVALUATION_FAILED'),
+  Type.Literal('ORIGINAL_ASSESSMENT_UNAVAILABLE'),
+  Type.Literal('ORIGINAL_ASSESSMENT_GENERATION_FAILED'),
+  Type.Literal('ORIGINAL_ASSESSMENT_INVALID'),
+  Type.Literal('ORIGINAL_ASSESSMENT_NOT_VERIFIED'),
+  Type.Literal('ORIGINAL_ATTEMPT_EVALUATION_FAILED'),
+  Type.Literal('ORIGINAL_ATTEMPT_EVALUATION_CONFLICT'),
 ]);
 
 const CoachActionSchema = Type.Union([
@@ -398,6 +408,23 @@ export function buildCoachToolErrorOutput(error: unknown): ZhongkaoCoachToolOutp
   });
 }
 
+function buildCoachToolProvenErrorOutput(
+  snapshot: CoachRuntimeSnapshot,
+  facts: { replayed: boolean; eventAppended: boolean },
+  error: CoachError,
+): ZhongkaoCoachToolOutput {
+  return validateOutput({
+    ok: false,
+    code: error.code,
+    coachSessionId: snapshot.state.coachSessionId,
+    revision: snapshot.state.revision,
+    state: publicState(snapshot.state),
+    facts,
+    allowedActions: allowedCoachActions(snapshot.state),
+    directive: directiveForCoachState(snapshot.state),
+  });
+}
+
 function toolResult(output: ZhongkaoCoachToolOutput) {
   const validated = validateOutput(output);
   return {
@@ -440,6 +467,37 @@ function exactPresentationRequest(
   if (matches.length !== 1) throw new CoachError('COACH_EVENT_CONFLICT');
   const request = matches[0]!;
   return { eventId: request.eventId, phase: request.phase };
+}
+
+function exactOriginalAttempt(
+  snapshot: CoachRuntimeSnapshot,
+  turn: Readonly<TrustedAgentTurn>,
+): string {
+  const matches = snapshot.records.flatMap((record) => {
+    assertCoachEvent(record.payload);
+    const event = record.payload;
+    return event.eventType === 'student_attempt_submitted' &&
+      event.agentSessionId === turn.agentSessionId &&
+      event.sourceUserMessageSeq === turn.userMessageSeq
+      ? [event]
+      : [];
+  });
+  if (matches.length !== 1) throw new CoachError('COACH_EVENT_CONFLICT');
+  return matches[0]!.eventId;
+}
+
+const SETTLED_ORIGINAL_ASSESSMENT_ERRORS = new Set([
+  'COACH_EVENT_CONFLICT',
+  'ORIGINAL_ASSESSMENT_UNAVAILABLE',
+  'ORIGINAL_ASSESSMENT_GENERATION_FAILED',
+  'ORIGINAL_ASSESSMENT_INVALID',
+  'ORIGINAL_ASSESSMENT_NOT_VERIFIED',
+  'ORIGINAL_ATTEMPT_EVALUATION_FAILED',
+  'ORIGINAL_ATTEMPT_EVALUATION_CONFLICT',
+]);
+
+function isSettledOriginalAssessmentError(error: unknown): error is CoachError {
+  return isCoachError(error) && SETTLED_ORIGINAL_ASSESSMENT_ERRORS.has(error.code);
 }
 
 async function settlePresentationFailure(input: {
@@ -516,12 +574,15 @@ export function createZhongkaoCoachActionTool(
           ...(signal ? { abortSignal: signal } : {}),
         };
         if (params.action === 'get_state') {
-          const observed = await getCoachProblemState(
-            deps,
-            params.profileId,
-            params.coachSessionId,
-          );
+          let observed = await getCoachProblemState(deps, params.profileId, params.coachSessionId);
           if (signal?.aborted) return errorResult(new Error('aborted'));
+          if (observed.state.original.assessmentEventId) {
+            const recovered = await recoverPreparedOriginalAssessment(deps, {
+              profileId: params.profileId,
+              coachSessionId: params.coachSessionId,
+            });
+            if (recovered) observed = recovered.snapshot;
+          }
           if (
             observed.state.transfer.attemptCount === 1 &&
             !observed.state.studyAttemptsProjected
@@ -621,7 +682,31 @@ export function createZhongkaoCoachActionTool(
         let snapshot = result.snapshot;
         let facts = { replayed: result.replayed, eventAppended: result.eventAppended };
         let code = result.code;
-        if (params.action === 'request_hint' && result.code === undefined) {
+        if (params.action === 'submit_attempt' && result.code === undefined) {
+          const attemptEventId = exactOriginalAttempt(result.snapshot, turn);
+          try {
+            const completed = await completeOriginalAttemptAssessment(
+              {
+                ...deps,
+                originalAssessmentVerificationCall: transferVerificationCall ?? generationCall,
+              },
+              {
+                profileId: params.profileId,
+                coachSessionId: params.coachSessionId,
+                attemptEventId,
+              },
+            );
+            snapshot = completed.snapshot;
+            facts = {
+              replayed: result.replayed && completed.replayed,
+              eventAppended: result.eventAppended || completed.eventAppended,
+            };
+          } catch (error) {
+            if (!isSettledOriginalAssessmentError(error)) throw error;
+            snapshot = await getCoachProblemState(deps, params.profileId, params.coachSessionId);
+            return toolResult(buildCoachToolProvenErrorOutput(snapshot, facts, error));
+          }
+        } else if (params.action === 'request_hint' && result.code === undefined) {
           try {
             const completed = await completeCoachHintRequest(deps, {
               profileId: params.profileId,

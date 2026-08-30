@@ -308,6 +308,47 @@ describe('Coach terminal public presentation', () => {
     }
   });
 
+  it('settles original assessment failures only after a durable submit attempt', () => {
+    const submitAttempt: CoachToolParams = {
+      action: 'submit_attempt',
+      profileId: 'profile-1',
+      coachSessionId: 'coach-1',
+      expectedRevision: 2,
+    };
+    const codes = [
+      'ORIGINAL_ASSESSMENT_UNAVAILABLE',
+      'ORIGINAL_ASSESSMENT_GENERATION_FAILED',
+      'ORIGINAL_ASSESSMENT_INVALID',
+      'ORIGINAL_ASSESSMENT_NOT_VERIFIED',
+      'ORIGINAL_ATTEMPT_EVALUATION_FAILED',
+      'ORIGINAL_ATTEMPT_EVALUATION_CONFLICT',
+      'COACH_EVENT_CONFLICT',
+    ] as const;
+
+    for (const code of codes) {
+      const appended = output({
+        ok: false,
+        code,
+        facts: { replayed: false, eventAppended: true },
+      });
+      const replayed = output({
+        ok: false,
+        code,
+        facts: { replayed: true, eventAppended: false },
+      });
+      const unproven = output({
+        ok: false,
+        code,
+        facts: { replayed: false, eventAppended: false },
+      });
+
+      expect(coachToolOutputCanSettle(submitAttempt, appended), code).toBe(true);
+      expect(coachToolOutputCanSettle(submitAttempt, replayed), code).toBe(true);
+      expect(coachToolOutputCanSettle(submitAttempt, unproven), code).toBe(false);
+      expect(coachToolOutputCanSettle(GET_STATE_PARAMS, appended), code).toBe(false);
+    }
+  });
+
   it('settles unproven rejections only for the action that can emit them before a write', () => {
     const unprovenError = (code: string) =>
       output({

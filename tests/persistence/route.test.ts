@@ -1117,6 +1117,7 @@ describe('embedded persistence route', () => {
   });
 
   it('filters server-only sessions and blocks their generic read/write lifecycle', async () => {
+    const privateAssessmentCanary = 'PRIVATE_ORIGINAL_ASSESSMENT_HTTP_CANARY_91KQ';
     const coach = {
       id: 'coach-session-hidden',
       kind: 'zhongkaoCoachEvent',
@@ -1133,7 +1134,15 @@ describe('embedded persistence route', () => {
     const appendRecord = vi.fn(async (init: unknown) => ({ ...(init as object), seq: 0 }));
     const setSessionStatus = vi.fn(async () => undefined);
     const deleteSession = vi.fn(async () => undefined);
-    const listRecords = vi.fn(async () => [{ id: 'internal-event' }]);
+    const listRecords = vi.fn(async () => [
+      {
+        id: 'internal-event',
+        payload: {
+          eventType: 'original_assessment_prepared',
+          assessmentPayload: { gradingSpec: { acceptedAnswers: [privateAssessmentCanary] } },
+        },
+      },
+    ]);
     const backing = {
       createSession,
       getSession: vi.fn(async (id: string) =>
@@ -1156,7 +1165,9 @@ describe('embedded persistence route', () => {
     await expect(visible.getSession(coach.id)).resolves.toBeUndefined();
     await expect(visible.getSession(chat.id)).resolves.toBe(chat);
     await expect(visible.listSessions('stage-alpha', 'learner-alpha')).resolves.toEqual([chat]);
-    await expect(visible.listRecords(coach.id)).resolves.toEqual([]);
+    const hiddenRecords = await visible.listRecords(coach.id);
+    expect(hiddenRecords).toEqual([]);
+    expect(JSON.stringify(hiddenRecords)).not.toContain(privateAssessmentCanary);
     await expect(
       visible.appendRecord({
         id: 'forged-event',

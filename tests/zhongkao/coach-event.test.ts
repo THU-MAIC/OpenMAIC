@@ -134,6 +134,82 @@ const VERIFIED_TRANSFER_CHECKS = {
   meaningfullyDifferent: true,
 } as const;
 
+const VERIFIED_ORIGINAL_ASSESSMENT_CHECKS = {
+  objectiveType: true,
+  questionConsistent: true,
+  answerConsistent: true,
+  singleAnswerOrExactSet: true,
+  middleSchoolScope: true,
+} as const;
+
+function originalAssessmentEvent(): Extract<
+  CoachEvent,
+  { eventType: 'original_assessment_prepared' }
+> {
+  return {
+    ...common('original_assessment_prepared'),
+    eventType: 'original_assessment_prepared',
+    assessmentVersion: 1,
+    assessmentId: 'original-assessment-alpha',
+    questionFingerprint: 'c'.repeat(64),
+    questionType: 'numeric',
+    verificationRef: 'original-verification-alpha',
+    assessmentPayload: {
+      gradingSpec: {
+        schemaVersion: 1,
+        type: 'numeric',
+        expectedNumericValue: 4,
+        tolerance: 0,
+      },
+      verification: {
+        schemaVersion: 1,
+        status: 'verified',
+        candidateFingerprint: 'd'.repeat(64),
+        verifierVersion: 1,
+        checks: VERIFIED_ORIGINAL_ASSESSMENT_CHECKS,
+      },
+    },
+  };
+}
+
+function originalEvaluationEvent(
+  outcome: 'correct' | 'incorrect' = 'correct',
+): Extract<CoachEvent, { eventType: 'original_attempt_evaluated' }> {
+  return {
+    ...common('original_attempt_evaluated'),
+    eventType: 'original_attempt_evaluated',
+    assessmentEventId: 'event-original-assessment-prepared',
+    attemptEventId: 'event-student-attempt-submitted',
+    outcome,
+  };
+}
+
+function evaluatedResolutionEvent(): Extract<
+  CoachEvent,
+  { eventType: 'original_resolved'; resolutionKind: 'evaluated_attempt' }
+> {
+  return {
+    ...common('original_resolved'),
+    eventType: 'original_resolved',
+    resolutionSchemaVersion: 2,
+    resolutionKind: 'evaluated_attempt',
+    evaluationEventId: 'event-original-attempt-evaluated',
+  };
+}
+
+function fullSolutionResolutionEvent(): Extract<
+  CoachEvent,
+  { eventType: 'original_resolved'; resolutionKind: 'full_solution' }
+> {
+  return {
+    ...common('original_resolved'),
+    eventType: 'original_resolved',
+    resolutionSchemaVersion: 2,
+    resolutionKind: 'full_solution',
+    fullSolutionEventId: 'event-full-solution-revealed',
+  };
+}
+
 function enrichedAssignment(
   publicQuestion: Record<string, unknown>,
   gradingSpec: Record<string, unknown>,
@@ -258,6 +334,102 @@ describe('Coach event contract', () => {
     const neither = { ...legacy } as Record<string, unknown>;
     delete neither.outcome;
     expect(validateCoachEvent(neither).valid).toBe(false);
+  });
+
+  it('accepts closed original assessment, evaluation, and v2 resolution events', () => {
+    for (const event of [
+      originalAssessmentEvent(),
+      originalEvaluationEvent('correct'),
+      originalEvaluationEvent('incorrect'),
+      evaluatedResolutionEvent(),
+      fullSolutionResolutionEvent(),
+    ]) {
+      expect(validateCoachEvent(event)).toEqual({ valid: true });
+    }
+  });
+
+  it('keeps every original assessment layer closed and server-verified', () => {
+    const assessment = originalAssessmentEvent();
+    const payload = assessment.assessmentPayload as Record<string, unknown>;
+    const gradingSpec = payload.gradingSpec as Record<string, unknown>;
+    const verification = payload.verification as Record<string, unknown>;
+    for (const value of [
+      { ...assessment, expectedAnswer: 4 },
+      { ...assessment, questionType: 'essay' },
+      { ...assessment, assessmentPayload: { ...payload, expectedAnswer: 4 } },
+      {
+        ...assessment,
+        assessmentPayload: {
+          ...payload,
+          gradingSpec: { ...gradingSpec, rubric: 'private rubric' },
+        },
+      },
+      {
+        ...assessment,
+        assessmentPayload: {
+          ...payload,
+          verification: { ...verification, status: 'candidate' },
+        },
+      },
+      {
+        ...assessment,
+        assessmentPayload: {
+          ...payload,
+          verification: {
+            ...verification,
+            checks: { ...VERIFIED_ORIGINAL_ASSESSMENT_CHECKS, answerNotLeaked: true },
+          },
+        },
+      },
+      {
+        ...assessment,
+        assessmentPayload: {
+          ...payload,
+          verification: { ...verification, verifierReasoning: 'hidden reasoning' },
+        },
+      },
+    ]) {
+      expect(validateCoachEvent(value).valid).toBe(false);
+    }
+  });
+
+  it('limits original evaluations to exact causal refs and correct or incorrect', () => {
+    const evaluation = originalEvaluationEvent();
+    expect(validateCoachEvent({ ...evaluation, outcome: 'partial' }).valid).toBe(false);
+    expect(validateCoachEvent({ ...evaluation, outcome: 'skipped' }).valid).toBe(false);
+    expect(validateCoachEvent({ ...evaluation, studentResponse: 'private response' }).valid).toBe(
+      false,
+    );
+
+    for (const causalField of ['assessmentEventId', 'attemptEventId'] as const) {
+      const missing = { ...evaluation } as Record<string, unknown>;
+      delete missing[causalField];
+      expect(validateCoachEvent(missing).valid).toBe(false);
+    }
+  });
+
+  it('keeps v2 original resolutions as closed causal branches without outcomes', () => {
+    const evaluated = evaluatedResolutionEvent();
+    const fullSolution = fullSolutionResolutionEvent();
+    for (const value of [
+      { ...evaluated, resolutionSchemaVersion: 1 },
+      { ...evaluated, outcome: 'correct' },
+      { ...evaluated, attemptEventId: 'event-student-attempt-submitted' },
+      { ...evaluated, fullSolutionEventId: 'event-full-solution-revealed' },
+      { ...fullSolution, outcome: 'correct' },
+      { ...fullSolution, attemptEventId: 'event-student-attempt-submitted' },
+      { ...fullSolution, evaluationEventId: 'event-original-attempt-evaluated' },
+      { ...fullSolution, resolutionKind: 'model_decided' },
+    ]) {
+      expect(validateCoachEvent(value).valid).toBe(false);
+    }
+
+    const missingEvaluation = { ...evaluated } as Record<string, unknown>;
+    delete missingEvaluation.evaluationEventId;
+    expect(validateCoachEvent(missingEvaluation).valid).toBe(false);
+    const missingReveal = { ...fullSolution } as Record<string, unknown>;
+    delete missingReveal.fullSolutionEventId;
+    expect(validateCoachEvent(missingReveal).valid).toBe(false);
   });
 
   it('keeps legacy assignments readable and accepts all four closed verified assignment branches', () => {

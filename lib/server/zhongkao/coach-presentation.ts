@@ -8,7 +8,7 @@ import {
   getCoachProblemState,
   recordFullSolutionRevealed,
   recordHintIssued,
-  recordOriginalResolved,
+  recordOriginalResolvedFromFullSolution,
   type CoachServiceDeps,
 } from '@/lib/server/zhongkao/coach-service';
 import type { CoachRuntimeSnapshot } from '@/lib/server/zhongkao/coach-runtime';
@@ -38,6 +38,7 @@ import {
   generateZhongkaoFullSolution,
   type ZhongkaoGenerationMaterial,
 } from './coach-generation';
+import { recoverPreparedOriginalAssessment } from './coach-original-assessment';
 import { resolveZhongkaoLearnerKeyFromOwnerId } from './learner-identity';
 
 export type CoachPresentation =
@@ -178,22 +179,44 @@ export async function ensureFullSolutionResolution(
   deps: CoachPresentationDependencies,
   snapshot: CoachRuntimeSnapshot,
 ) {
-  if (snapshot.state.original.resolved) {
-    return { snapshot, replayed: true, eventAppended: false };
+  let current = snapshot;
+  let recoveryFacts: { replayed: boolean; eventAppended: boolean } | undefined;
+  if (
+    current.state.original.assessmentEventId !== undefined &&
+    current.state.original.evaluatedAttemptEventIds.length !==
+      current.state.original.attemptEventIds.length
+  ) {
+    const recovered = await recoverPreparedOriginalAssessment(deps, {
+      profileId: current.state.profileId,
+      coachSessionId: current.state.coachSessionId,
+    });
+    if (!recovered) throw new CoachError('COACH_EVENT_CONFLICT');
+    current = recovered.snapshot;
+    recoveryFacts = recovered;
   }
-  const reveals = events(snapshot).filter((event) => event.eventType === 'full_solution_revealed');
+  if (current.state.original.resolved) {
+    return {
+      snapshot: current,
+      replayed: recoveryFacts?.replayed ?? true,
+      eventAppended: recoveryFacts?.eventAppended ?? false,
+    };
+  }
+  const reveals = events(current).filter((event) => event.eventType === 'full_solution_revealed');
   const reveal = reveals.length === 1 ? reveals[0] : undefined;
-  const attempt = lastOriginalAttempt(snapshot);
-  if (!reveal || reveal.eventType !== 'full_solution_revealed' || !attempt) {
+  if (!reveal || reveal.eventType !== 'full_solution_revealed') {
     throw new CoachError('COACH_EVENT_CONFLICT');
   }
-  return recordOriginalResolved(deps, {
-    profileId: snapshot.state.profileId,
-    coachSessionId: snapshot.state.coachSessionId,
-    expectedRevision: snapshot.state.revision,
-    attemptEventId: attempt.eventId,
+  const resolved = await recordOriginalResolvedFromFullSolution(deps, {
+    profileId: current.state.profileId,
+    coachSessionId: current.state.coachSessionId,
+    expectedRevision: current.state.revision,
     fullSolutionEventId: reveal.eventId,
   });
+  return {
+    snapshot: resolved.snapshot,
+    replayed: (recoveryFacts?.replayed ?? true) && resolved.replayed,
+    eventAppended: (recoveryFacts?.eventAppended ?? false) || resolved.eventAppended,
+  };
 }
 
 function persistedFailure(

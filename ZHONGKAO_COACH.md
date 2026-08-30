@@ -1,4 +1,4 @@
-# 2027 Zhongkao Coach: Milestones 1 through 2B-2A
+# 2027 Zhongkao Coach: Milestones 1 through 2B-2A.1
 
 This document describes the domain foundation for a single fictional learner
 using OpenMAIC locally or on a trusted private network. The only initialized
@@ -607,3 +607,127 @@ After evaluation, Coach status is `finalizing` and the directive is
 append `study_attempts_projected`, set `completed`, or update progress. M2B-2B
 will add StudyAttempt v2 projection, append the projection event, and only then
 permit the existing state machine to reach `completed`.
+
+## Milestone 2B-2A.1 authoritative original assessment
+
+M2B-2B was blocked because the original phase had no complete authoritative
+source for future `original.initialOutcome` and `original.finalOutcome` fields.
+`student_attempt_submitted` durably stored the response but no correctness fact;
+legacy `original_resolved` either carried one outcome or cited a full-solution
+reveal without an outcome. With multiple submissions, that was insufficient to
+recover both the first and final results. Correctness cannot be inferred from
+attempt count, hints, key-hint use, answer viewing, or a transfer result.
+
+M2B-2A.1 adds only the missing assessment authority and causal facts. It does
+not change the `StudyAttempt` contract, write a `StudyAttempt`, build projection,
+append `study_attempts_projected`, update `KnowledgeProgress`, or complete the
+Coach session.
+
+### Objective-only private authority
+
+The first original-question authority supports exactly the same four objective
+types used by transfer grading:
+
+- `single_choice`;
+- `multiple_choice`;
+- `numeric`;
+- `exact_short_answer`.
+
+A typed original question is trusted learner input, not a trusted answer key.
+When the first original submission needs evaluation, the server lazily runs a
+bounded candidate generator, closed structural validation, and an independently
+injectable second-pass verifier. These stages receive the original question but
+never the student's response. A candidate may state only its supported type and
+answer-key fields; it cannot declare itself verified or supply an outcome. The
+server derives choice option ids, numeric tolerance, and short-answer case mode,
+then accepts only a closed private grading specification whose required verifier
+checks are all true.
+
+Here `verified` has deliberately limited meaning: the candidate passed this
+system's structural validation and independent consistency checks and may be
+used by its deterministic evaluator. It does not mean a formal mathematical
+proof, human-teacher approval, guaranteed uniqueness, absolute correctness, or
+zero residual model risk. An unsupported question, invalid candidate, exhausted
+generation, or failed verification produces a stable assessment error and never
+causes the server to guess an outcome.
+
+### Durable private assessment and deterministic evaluation
+
+A verified assessment is appended as `original_assessment_prepared` before any
+outcome is recorded. The server-only event binds its schema version,
+deterministic assessment id, original-question fingerprint, supported type,
+verification reference, private grading specification, and bounded verification
+metadata. Its identity derives from the Coach session, question fingerprint,
+and assessment version. Retries reuse the durable event; a competing assessment
+with different grading facts conflicts instead of replacing the answer key.
+
+The private specification is validated again when read and remains inside the
+hidden Coach event stream and ephemeral evaluator input. It is excluded from
+folded public state, model actions and results, tool details, terminal
+presentations, assistant transcript, SSE, Skill context, ordinary persistence
+HTTP access, and errors.
+
+For each original submission, the server reads the already persisted response
+and evaluates it with the same server-only grading-spec validation, option
+parsers, exact-set comparison, canonical numeric parser, and short-answer
+normalization used by transfer evaluation. Numeric input is never executed as an
+expression, and there is no LLM, rubric, embedding, or semantic-grading fallback.
+The result is exactly `correct` or `incorrect`.
+
+The durable `original_attempt_evaluated` event cites the exact assessment and
+submission. Evaluations are recorded in original-submission order, and one
+submission cannot acquire two different authoritative outcomes. Deterministic
+operation identities, fingerprints, replay checks, and RuntimeStore CAS recover
+after an append/response interruption and fail closed on conflicting facts.
+Before any full-solution resolution, an existing durable assessment must have
+evaluated every persisted original submission. The resolution path first drains
+that backlog, while both the service writer and state fold reject a bypassing
+resolution event.
+
+### Causal resolution and future projection sources
+
+New production resolutions use `original_resolved` schema v2 and carry no
+freely supplied outcome. `resolutionKind=evaluated_attempt` cites an existing
+`original_attempt_evaluated` event and is allowed only when that event is
+`correct`. `resolutionKind=full_solution` cites the exact original
+`full_solution_revealed` event and records no correctness. Legacy resolution
+events remain readable for committed history, while new writes use the causal
+v2 forms.
+
+The future projection source rule is therefore deterministic:
+
+- `original.initialOutcome` comes from the first original submission's
+  `original_attempt_evaluated.outcome`, which is also the earliest evaluation in
+  authoritative event order;
+- for `resolutionKind=evaluated_attempt`, `original.finalOutcome` comes from the
+  referenced evaluation;
+- a missing evaluation for the first original submission makes the session
+  ineligible for projection rather than permitting an inferred value.
+
+This preserves histories such as `incorrect -> incorrect -> correct`: the first
+evaluation supplies the future initial outcome and the resolution's referenced
+correct evaluation supplies the future final outcome. Help facts remain separate
+evidence for exposure and independence; they never alter evaluator correctness.
+
+`StudyAttempt` v1 admits the enum value `skipped` but does not define it as
+"no final assessable submission after viewing a full solution." M2B-2A.1 does
+not invent that meaning. A full-solution resolution is neither `correct` nor
+`skipped`, even if the generated explanation includes a `finalAnswer`, and it
+remains `NOT_PROJECTABLE_YET`. Viewing a full answer affects future independence
+facts, not correctness. Only a later actual submission evaluated as correct
+could provide a correct outcome under a future lifecycle that permits it.
+
+### Unsupported originals and current stopping point
+
+Open-ended, subjective, ambiguous, or otherwise unsupported originals are not
+coerced into one of the four objective types. `ORIGINAL_ASSESSMENT_UNAVAILABLE`
+settles that assessment attempt without exposing a candidate or private key. The
+Coach may continue its existing deterministic hints, unlock and show an
+authorized full solution, and continue to a separately verified transfer
+question; that teaching flow remains useful because transfer has its own grading
+authority.
+
+Such a session still lacks a complete authoritative original outcome chain and
+therefore cannot claim complete StudyAttempt projection or projection-backed
+completion. M2B-2A.1 adds no model-writable eligibility flag and does not weaken
+this fail-closed boundary to make M2B-2B appear complete.

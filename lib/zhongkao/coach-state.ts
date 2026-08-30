@@ -43,8 +43,17 @@ export interface CoachPhaseState {
 
 export interface CoachOriginalState extends CoachPhaseState {
   fullSolutionAvailable: boolean;
+  assessmentEventId?: string;
+  evaluationEventIds: string[];
+  evaluatedAttemptEventIds: string[];
+  correctEvaluationEventId?: string;
   resolved: boolean;
   resolutionEventId?: string;
+  resolutionKind?:
+    | 'legacy_outcome'
+    | 'legacy_full_solution'
+    | 'evaluated_attempt'
+    | 'full_solution';
   outcome?: CoachOutcome;
 }
 
@@ -138,6 +147,7 @@ function originalAcceptsStudentAction(state: CoachState): boolean {
     state.status !== 'abandoned' &&
     state.status !== 'completed' &&
     !state.original.resolved &&
+    state.original.correctEvaluationEventId === undefined &&
     !state.original.viewedFullAnswer &&
     !state.transfer.assigned
   );
@@ -222,6 +232,8 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
         original: {
           ...emptyPhaseState(),
           fullSolutionAvailable: false,
+          evaluationEventIds: [],
+          evaluatedAttemptEventIds: [],
           resolved: false,
         },
         transfer: {
@@ -260,6 +272,45 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
         state.original.attemptMessageRefs.push(ref);
         state.original.attemptEventIds.push(event.eventId);
         state.original.attemptCount += 1;
+        break;
+      }
+      case 'original_assessment_prepared': {
+        if (
+          state.original.assessmentEventId !== undefined ||
+          state.original.evaluationEventIds.length > 0 ||
+          state.original.resolved
+        ) {
+          conflict();
+        }
+        state.original.assessmentEventId = event.eventId;
+        break;
+      }
+      case 'original_attempt_evaluated': {
+        const assessment = referencedEvent(
+          eventsById,
+          event.assessmentEventId,
+          'original_assessment_prepared',
+        );
+        const attempt = referencedEvent(
+          eventsById,
+          event.attemptEventId,
+          'student_attempt_submitted',
+        );
+        const nextAttempt =
+          state.original.attemptEventIds[state.original.evaluatedAttemptEventIds.length];
+        if (
+          assessment.eventId !== state.original.assessmentEventId ||
+          attempt.phase !== 'original' ||
+          nextAttempt !== attempt.eventId ||
+          state.original.evaluatedAttemptEventIds.includes(attempt.eventId) ||
+          state.original.resolved
+        ) {
+          conflict();
+        }
+        state.original.evaluationEventIds.push(event.eventId);
+        state.original.evaluatedAttemptEventIds.push(attempt.eventId);
+        if (event.outcome === 'correct') state.original.correctEvaluationEventId = event.eventId;
+        else delete state.original.correctEvaluationEventId;
         break;
       }
       case 'hint_requested': {
@@ -357,28 +408,69 @@ export function foldCoachEvents(records: readonly RuntimeRecord[]): CoachState {
         break;
       }
       case 'original_resolved': {
-        const attempt = referencedEvent(
-          eventsById,
-          event.attemptEventId,
-          'student_attempt_submitted',
-        );
-        const fullSolution =
-          event.fullSolutionEventId === undefined
-            ? undefined
-            : referencedEvent(eventsById, event.fullSolutionEventId, 'full_solution_revealed');
         if (
-          attempt.phase !== 'original' ||
-          !state.original.attemptEventIds.includes(attempt.eventId) ||
-          state.original.resolved ||
-          state.original.pendingHintRequestEventId !== undefined ||
-          (fullSolution !== undefined &&
-            (fullSolution.phase !== 'original' || !state.original.viewedFullAnswer))
+          state.original.assessmentEventId !== undefined &&
+          state.original.evaluatedAttemptEventIds.length !== state.original.attemptEventIds.length
         ) {
+          conflict();
+        }
+        let resolutionKind: NonNullable<CoachOriginalState['resolutionKind']>;
+        let outcome: CoachOutcome | undefined;
+        if (event.resolutionSchemaVersion === 2) {
+          if (event.resolutionKind === 'evaluated_attempt') {
+            const evaluation = referencedEvent(
+              eventsById,
+              event.evaluationEventId,
+              'original_attempt_evaluated',
+            );
+            if (
+              evaluation.outcome !== 'correct' ||
+              state.original.correctEvaluationEventId !== evaluation.eventId ||
+              !state.original.evaluationEventIds.includes(evaluation.eventId) ||
+              state.original.evaluatedAttemptEventIds.length !==
+                state.original.attemptEventIds.length
+            ) {
+              conflict();
+            }
+            resolutionKind = 'evaluated_attempt';
+            outcome = evaluation.outcome;
+          } else {
+            const fullSolution = referencedEvent(
+              eventsById,
+              event.fullSolutionEventId,
+              'full_solution_revealed',
+            );
+            if (fullSolution.phase !== 'original' || !state.original.viewedFullAnswer) conflict();
+            resolutionKind = 'full_solution';
+          }
+        } else {
+          const attempt = referencedEvent(
+            eventsById,
+            event.attemptEventId,
+            'student_attempt_submitted',
+          );
+          const fullSolution =
+            event.fullSolutionEventId === undefined
+              ? undefined
+              : referencedEvent(eventsById, event.fullSolutionEventId, 'full_solution_revealed');
+          if (
+            attempt.phase !== 'original' ||
+            !state.original.attemptEventIds.includes(attempt.eventId) ||
+            (fullSolution !== undefined &&
+              (fullSolution.phase !== 'original' || !state.original.viewedFullAnswer))
+          ) {
+            conflict();
+          }
+          resolutionKind = fullSolution ? 'legacy_full_solution' : 'legacy_outcome';
+          outcome = event.outcome;
+        }
+        if (state.original.resolved || state.original.pendingHintRequestEventId !== undefined) {
           conflict();
         }
         state.original.resolved = true;
         state.original.resolutionEventId = event.eventId;
-        if (event.outcome !== undefined) state.original.outcome = event.outcome;
+        state.original.resolutionKind = resolutionKind;
+        if (outcome !== undefined) state.original.outcome = outcome;
         break;
       }
       case 'transfer_question_assigned': {

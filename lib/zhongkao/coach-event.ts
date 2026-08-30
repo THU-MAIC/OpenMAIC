@@ -20,6 +20,8 @@ export const COACH_FINAL_ANSWER_MAX_LENGTH = 2_000;
 export const COACH_TRANSFER_QUESTION_MAX_LENGTH = 4_000;
 export const COACH_TRANSFER_OPTION_TEXT_MAX_LENGTH = 1_000;
 export const COACH_TRANSFER_ASSIGNMENT_SCHEMA_VERSION = 1 as const;
+export const COACH_ORIGINAL_ASSESSMENT_VERSION = 1 as const;
+export const COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION = 2 as const;
 
 export type CoachPhase = 'original' | 'transfer';
 export type CoachQuestionSource = { type: 'typed' } | { type: 'material'; materialId: string };
@@ -108,6 +110,30 @@ export interface StudentAttemptSubmittedEvent extends CoachEventBase {
   sourceUserMessageSeq: number;
 }
 
+export type CoachObjectiveQuestionType =
+  | 'single_choice'
+  | 'multiple_choice'
+  | 'numeric'
+  | 'exact_short_answer';
+
+export interface OriginalAssessmentPreparedEvent extends CoachEventBase {
+  eventType: 'original_assessment_prepared';
+  assessmentVersion: typeof COACH_ORIGINAL_ASSESSMENT_VERSION;
+  assessmentId: string;
+  questionFingerprint: string;
+  questionType: CoachObjectiveQuestionType;
+  verificationRef: string;
+  /** Closed and validated again by the server-only assessment extractor. */
+  assessmentPayload: unknown;
+}
+
+export interface OriginalAttemptEvaluatedEvent extends CoachEventBase {
+  eventType: 'original_attempt_evaluated';
+  assessmentEventId: string;
+  attemptEventId: string;
+  outcome: CoachTransferOutcome;
+}
+
 export interface HintRequestedEvent extends CoachEventBase {
   eventType: 'hint_requested';
   phase: CoachPhase;
@@ -146,24 +172,51 @@ export interface CoachPresentationFailedEvent extends CoachEventBase {
 
 interface OriginalResolvedEventBase extends CoachEventBase {
   eventType: 'original_resolved';
-  attemptEventId: string;
 }
 
 /** Legacy/server-graded resolution with an explicit original outcome. */
 export interface OriginalOutcomeResolvedEvent extends OriginalResolvedEventBase {
+  attemptEventId: string;
   outcome: CoachOutcome;
   fullSolutionEventId?: never;
+  resolutionSchemaVersion?: never;
+  resolutionKind?: never;
+  evaluationEventId?: never;
 }
 
 /** Full-answer resolution records the reveal fact without inventing an outcome. */
 export interface OriginalFullSolutionResolvedEvent extends OriginalResolvedEventBase {
+  attemptEventId: string;
   fullSolutionEventId: string;
   outcome?: never;
+  resolutionSchemaVersion?: never;
+  resolutionKind?: never;
+  evaluationEventId?: never;
+}
+
+export interface OriginalEvaluatedAttemptResolvedEvent extends OriginalResolvedEventBase {
+  resolutionSchemaVersion: typeof COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION;
+  resolutionKind: 'evaluated_attempt';
+  evaluationEventId: string;
+  attemptEventId?: never;
+  outcome?: never;
+  fullSolutionEventId?: never;
+}
+
+export interface OriginalFullSolutionResolvedEventV2 extends OriginalResolvedEventBase {
+  resolutionSchemaVersion: typeof COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION;
+  resolutionKind: 'full_solution';
+  fullSolutionEventId: string;
+  attemptEventId?: never;
+  outcome?: never;
+  evaluationEventId?: never;
 }
 
 export type OriginalResolvedEvent =
   | OriginalOutcomeResolvedEvent
-  | OriginalFullSolutionResolvedEvent;
+  | OriginalFullSolutionResolvedEvent
+  | OriginalEvaluatedAttemptResolvedEvent
+  | OriginalFullSolutionResolvedEventV2;
 
 export interface TransferQuestionAssignedEvent extends CoachEventBase {
   eventType: 'transfer_question_assigned';
@@ -206,6 +259,8 @@ export interface ProblemAbandonedEvent extends CoachEventBase {
 export type CoachEvent =
   | CoachStartedEvent
   | StudentAttemptSubmittedEvent
+  | OriginalAssessmentPreparedEvent
+  | OriginalAttemptEvaluatedEvent
   | HintRequestedEvent
   | HintIssuedEvent
   | FullSolutionRequestedEvent
@@ -223,6 +278,8 @@ export type CoachEventType = CoachEvent['eventType'];
 export const COACH_EVENT_TYPES = [
   'coach_started',
   'student_attempt_submitted',
+  'original_assessment_prepared',
+  'original_attempt_evaluated',
   'hint_requested',
   'hint_issued',
   'full_solution_requested',
@@ -258,6 +315,21 @@ const EVENT_KEYS: Readonly<Record<CoachEventType, ReadonlySet<string>>> = {
     'questionText',
   ]),
   student_attempt_submitted: new Set([...COMMON_KEYS, 'phase', 'studentResponse']),
+  original_assessment_prepared: new Set([
+    ...COMMON_KEYS,
+    'assessmentVersion',
+    'assessmentId',
+    'questionFingerprint',
+    'questionType',
+    'verificationRef',
+    'assessmentPayload',
+  ]),
+  original_attempt_evaluated: new Set([
+    ...COMMON_KEYS,
+    'assessmentEventId',
+    'attemptEventId',
+    'outcome',
+  ]),
   hint_requested: new Set([...COMMON_KEYS, 'phase']),
   hint_issued: new Set([...COMMON_KEYS, 'phase', 'requestEventId', 'hintNumber', 'hintText']),
   full_solution_requested: new Set([...COMMON_KEYS, 'phase']),
@@ -275,7 +347,15 @@ const EVENT_KEYS: Readonly<Record<CoachEventType, ReadonlySet<string>>> = {
     'requestEventId',
     'failureCode',
   ]),
-  original_resolved: new Set([...COMMON_KEYS, 'attemptEventId', 'outcome', 'fullSolutionEventId']),
+  original_resolved: new Set([
+    ...COMMON_KEYS,
+    'attemptEventId',
+    'outcome',
+    'fullSolutionEventId',
+    'resolutionSchemaVersion',
+    'resolutionKind',
+    'evaluationEventId',
+  ]),
   transfer_question_assigned: new Set([
     ...COMMON_KEYS,
     'originalResolvedEventId',
@@ -446,6 +526,21 @@ const TRANSFER_VERIFICATION_CHECKS = [
   'singleAnswerOrExactSet',
   'middleSchoolScope',
   'meaningfullyDifferent',
+] as const;
+
+const ORIGINAL_ASSESSMENT_TYPES = [
+  'single_choice',
+  'multiple_choice',
+  'numeric',
+  'exact_short_answer',
+] as const;
+
+const ORIGINAL_ASSESSMENT_VERIFICATION_CHECKS = [
+  'objectiveType',
+  'questionConsistent',
+  'answerConsistent',
+  'singleAnswerOrExactSet',
+  'middleSchoolScope',
 ] as const;
 
 function validateTrimmedText(
@@ -787,6 +882,98 @@ function validateTransferAssignmentExtension(
   validateTransferVerification(payload.verification, '/assignmentPayload/verification', errors);
 }
 
+function validateOriginalAssessmentVerification(
+  value: unknown,
+  path: string,
+  errors: DomainValidationIssue[],
+): void {
+  if (!isPlainRecord(value)) {
+    pushIssue(errors, path, 'expected original assessment verification object');
+    return;
+  }
+  rejectUnknownKeys(
+    value,
+    new Set(['schemaVersion', 'status', 'candidateFingerprint', 'verifierVersion', 'checks']),
+    path,
+    errors,
+  );
+  if (value.schemaVersion !== 1) {
+    pushIssue(errors, `${path}/schemaVersion`, 'unsupported verification schema version');
+  }
+  if (value.status !== 'verified') pushIssue(errors, `${path}/status`, 'verified status required');
+  if (
+    typeof value.candidateFingerprint !== 'string' ||
+    !/^[a-f0-9]{64}$/u.test(value.candidateFingerprint)
+  ) {
+    pushIssue(errors, `${path}/candidateFingerprint`, 'expected lowercase SHA-256 fingerprint');
+  }
+  if (value.verifierVersion !== 1) {
+    pushIssue(errors, `${path}/verifierVersion`, 'unsupported verifier version');
+  }
+  if (!isPlainRecord(value.checks)) {
+    pushIssue(errors, `${path}/checks`, 'expected verification checks object');
+    return;
+  }
+  rejectUnknownKeys(
+    value.checks,
+    new Set(ORIGINAL_ASSESSMENT_VERIFICATION_CHECKS),
+    `${path}/checks`,
+    errors,
+  );
+  for (const check of ORIGINAL_ASSESSMENT_VERIFICATION_CHECKS) {
+    if (value.checks[check] !== true) {
+      pushIssue(errors, `${path}/checks/${check}`, 'verified assessment requires a true check');
+    }
+  }
+}
+
+function validateOriginalAssessmentExtension(
+  value: Record<string, unknown>,
+  errors: DomainValidationIssue[],
+): void {
+  if (value.assessmentVersion !== COACH_ORIGINAL_ASSESSMENT_VERSION) {
+    pushIssue(errors, '/assessmentVersion', 'unsupported original assessment version');
+  }
+  validateIdentifier(value.assessmentId, '/assessmentId', errors);
+  if (
+    typeof value.questionFingerprint !== 'string' ||
+    !/^[a-f0-9]{64}$/u.test(value.questionFingerprint)
+  ) {
+    pushIssue(errors, '/questionFingerprint', 'expected lowercase SHA-256 fingerprint');
+  }
+  if (!(ORIGINAL_ASSESSMENT_TYPES as readonly unknown[]).includes(value.questionType)) {
+    pushIssue(errors, '/questionType', 'unsupported original assessment type');
+  }
+  validateIdentifier(value.verificationRef, '/verificationRef', errors);
+  if (!isPlainRecord(value.assessmentPayload)) {
+    pushIssue(errors, '/assessmentPayload', 'expected original assessment payload object');
+    return;
+  }
+  const payload = value.assessmentPayload;
+  rejectUnknownKeys(
+    payload,
+    new Set(['gradingSpec', 'verification']),
+    '/assessmentPayload',
+    errors,
+  );
+  const optionIds =
+    isPlainRecord(payload.gradingSpec) && Array.isArray(payload.gradingSpec.optionIds)
+      ? payload.gradingSpec.optionIds.filter((item): item is string => typeof item === 'string')
+      : [];
+  validateTransferGradingSpec(
+    payload.gradingSpec,
+    '/assessmentPayload/gradingSpec',
+    value.questionType,
+    optionIds,
+    errors,
+  );
+  validateOriginalAssessmentVerification(
+    payload.verification,
+    '/assessmentPayload/verification',
+    errors,
+  );
+}
+
 export function validateCoachEvent(value: unknown): DomainValidationResult {
   const errors: DomainValidationIssue[] = [];
   if (!isPlainRecord(value)) {
@@ -826,6 +1013,14 @@ export function validateCoachEvent(value: unknown): DomainValidationResult {
   } else if (eventType === 'student_attempt_submitted') {
     if (value.phase !== 'original') pushIssue(errors, '/phase', 'original attempt phase required');
     validateTrustedText(value.studentResponse, '/studentResponse', errors);
+  } else if (eventType === 'original_assessment_prepared') {
+    validateOriginalAssessmentExtension(value, errors);
+  } else if (eventType === 'original_attempt_evaluated') {
+    validateIdentifier(value.assessmentEventId, '/assessmentEventId', errors);
+    validateIdentifier(value.attemptEventId, '/attemptEventId', errors);
+    if (value.outcome !== 'correct' && value.outcome !== 'incorrect') {
+      pushIssue(errors, '/outcome', 'original evaluation outcome must be correct or incorrect');
+    }
   } else if (eventType === 'hint_requested') {
     validatePhase(value.phase, '/phase', errors);
   } else if (eventType === 'hint_issued') {
@@ -872,19 +1067,54 @@ export function validateCoachEvent(value: unknown): DomainValidationResult {
       pushIssue(errors, '/failureCode', 'failure code does not match presentation kind');
     }
   } else if (eventType === 'original_resolved') {
-    validateIdentifier(value.attemptEventId, '/attemptEventId', errors);
-    const hasOutcome = Object.hasOwn(value, 'outcome');
-    const hasFullSolution = Object.hasOwn(value, 'fullSolutionEventId');
-    if (hasOutcome === hasFullSolution) {
-      pushIssue(
-        errors,
-        '/outcome',
-        'original resolution requires exactly one of outcome or fullSolutionEventId',
-      );
-    }
-    if (hasOutcome) validateOutcome(value.outcome, '/outcome', errors);
-    if (hasFullSolution) {
-      validateIdentifier(value.fullSolutionEventId, '/fullSolutionEventId', errors);
+    const versioned =
+      Object.hasOwn(value, 'resolutionSchemaVersion') ||
+      Object.hasOwn(value, 'resolutionKind') ||
+      Object.hasOwn(value, 'evaluationEventId');
+    if (versioned) {
+      if (value.resolutionSchemaVersion !== COACH_ORIGINAL_RESOLUTION_SCHEMA_VERSION) {
+        pushIssue(errors, '/resolutionSchemaVersion', 'unsupported original resolution version');
+      }
+      if (value.resolutionKind === 'evaluated_attempt') {
+        validateIdentifier(value.evaluationEventId, '/evaluationEventId', errors);
+        if (
+          Object.hasOwn(value, 'attemptEventId') ||
+          Object.hasOwn(value, 'outcome') ||
+          Object.hasOwn(value, 'fullSolutionEventId')
+        ) {
+          pushIssue(
+            errors,
+            '/resolutionKind',
+            'evaluated resolution accepts only evaluationEventId',
+          );
+        }
+      } else if (value.resolutionKind === 'full_solution') {
+        validateIdentifier(value.fullSolutionEventId, '/fullSolutionEventId', errors);
+        if (
+          Object.hasOwn(value, 'attemptEventId') ||
+          Object.hasOwn(value, 'outcome') ||
+          Object.hasOwn(value, 'evaluationEventId')
+        ) {
+          pushIssue(errors, '/resolutionKind', 'full solution resolution accepts only reveal ref');
+        }
+      } else {
+        pushIssue(errors, '/resolutionKind', 'unknown original resolution kind');
+      }
+    } else {
+      validateIdentifier(value.attemptEventId, '/attemptEventId', errors);
+      const hasOutcome = Object.hasOwn(value, 'outcome');
+      const hasFullSolution = Object.hasOwn(value, 'fullSolutionEventId');
+      if (hasOutcome === hasFullSolution) {
+        pushIssue(
+          errors,
+          '/outcome',
+          'legacy original resolution requires exactly one outcome or full solution ref',
+        );
+      }
+      if (hasOutcome) validateOutcome(value.outcome, '/outcome', errors);
+      if (hasFullSolution) {
+        validateIdentifier(value.fullSolutionEventId, '/fullSolutionEventId', errors);
+      }
     }
   } else if (eventType === 'transfer_question_assigned') {
     validateIdentifier(value.originalResolvedEventId, '/originalResolvedEventId', errors);

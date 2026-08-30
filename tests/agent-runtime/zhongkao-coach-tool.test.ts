@@ -487,15 +487,39 @@ describe('Zhongkao coach immutable tool execution', () => {
     expect(output).toMatchObject({ ok: false, code: 'COACH_EVENT_CONFLICT' });
   });
 
-  it('replays one submit across different toolCallIds and keeps the phase count at one', async () => {
+  it('replays one submit and keeps the private assessment alternative out of the public DTO', async () => {
     const h = harness();
     await seedProfile(h);
+    const privateCanary = 'PRIVATE_ORIGINAL_SPEC_ALTERNATIVE_7G4Q';
     const created = await execute(
-      toolFor(h, 1, 'Solve trusted fictional 2x = 8.'),
+      toolFor(h, 1, 'Give the exact fictional phrase requested by this test.'),
       'start-call',
       START_INPUT,
     );
-    const attemptTool = toolFor(h, 2, 'x equals 4');
+    const generateAssessment = vi.fn<AICallFn>(async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        type: 'exact_short_answer',
+        acceptedAnswers: ['visible correct answer', privateCanary],
+      }),
+    );
+    const verifyAssessment = vi.fn<AICallFn>(async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        verdict: 'accept',
+        checks: {
+          objectiveType: true,
+          questionConsistent: true,
+          answerConsistent: true,
+          singleAnswerOrExactSet: true,
+          middleSchoolScope: true,
+        },
+      }),
+    );
+    const attemptTool = toolFor(h, 2, 'visible correct answer', {
+      generationCall: generateAssessment,
+      transferVerificationCall: verifyAssessment,
+    });
     const input = {
       action: 'submit_attempt',
       profileId: 'student-alpha',
@@ -513,6 +537,35 @@ describe('Zhongkao coach immutable tool execution', () => {
       state: { original: { attemptCount: 1 } },
       facts: { replayed: true, eventAppended: false },
     });
+    expect(generateAssessment).toHaveBeenCalledTimes(1);
+    expect(verifyAssessment).toHaveBeenCalledTimes(1);
+
+    for (const result of [first, replay]) {
+      const envelope = result.raw as { content: unknown; details: unknown };
+      expect(Check(ZHONGKAO_COACH_OUTPUT_SCHEMA, result.output)).toBe(true);
+      expect(JSON.stringify(envelope.content)).not.toContain(privateCanary);
+      expect(JSON.stringify(envelope.details)).not.toContain(privateCanary);
+      expect(JSON.stringify(result.output.state)).not.toContain(privateCanary);
+      expect(JSON.stringify(result.output)).not.toMatch(
+        /assessmentPayload|assessmentEventId|evaluationEventId|gradingSpec|acceptedAnswers|candidateFingerprint|verificationRef/u,
+      );
+      expect(result.output.state?.original).not.toHaveProperty('outcome');
+    }
+
+    const sessions = await h.store.listSessions(
+      'zhongkao-profile:student-alpha',
+      resolveZhongkaoLearnerKeyFromOwnerId(h.deps.ownerId),
+    );
+    const coach = sessions.find((session) => session.kind === 'zhongkaoCoachEvent')!;
+    const records = await h.store.listRecords(coach.id);
+    expect(JSON.stringify(records)).toContain(privateCanary);
+    expect(records.map((record) => (record.payload as CoachEvent).eventType)).toEqual([
+      'coach_started',
+      'student_attempt_submitted',
+      'original_assessment_prepared',
+      'original_attempt_evaluated',
+      'original_resolved',
+    ]);
   });
 
   it('replays one hint request across toolCallIds', async () => {
