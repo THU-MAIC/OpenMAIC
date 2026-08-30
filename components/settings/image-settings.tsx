@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -19,6 +20,7 @@ import {
   Settings2,
   Trash2,
   RefreshCw,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ImageProviderId } from '@/lib/media/types';
@@ -35,6 +37,8 @@ interface WorkflowEntry {
 export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
   const { t } = useI18n();
 
+  const imageGenerationEnabled = useSettingsStore((s) => s.imageGenerationEnabled);
+  const setImageGenerationEnabled = useSettingsStore((s) => s.setImageGenerationEnabled);
   const imageModelId = useSettingsStore((state) => state.imageModelId);
   const imageProvidersConfig = useSettingsStore((state) => state.imageProvidersConfig);
   const _setImageModelId = useSettingsStore((state) => state.setImageModelId);
@@ -178,6 +182,27 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
 
   return (
     <div className="space-y-6 max-w-3xl">
+      {/* Global image generation toggle — #1288: was only auto-enabled on first run */}
+      <div className="flex items-center justify-between rounded-lg border border-border/60 bg-background px-3 py-2.5">
+        <div className="min-w-0 pr-3">
+          <p className="text-sm font-medium flex items-center gap-2">
+            <ImageIcon className="h-4 w-4 text-muted-foreground" />
+            {t('settings.imageGenerationEnabledLabel') !== 'settings.imageGenerationEnabledLabel'
+              ? t('settings.imageGenerationEnabledLabel')
+              : 'Enable image generation'}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {t('settings.imageGenerationEnabledHint') !== 'settings.imageGenerationEnabledHint'
+              ? t('settings.imageGenerationEnabledHint')
+              : 'When off, images are not generated for slides.'}
+          </p>
+        </div>
+        <Switch
+          checked={imageGenerationEnabled}
+          onCheckedChange={setImageGenerationEnabled}
+        />
+      </div>
+
       {/* Server-configured notice */}
       {isServerConfigured && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm text-blue-700 dark:text-blue-300">

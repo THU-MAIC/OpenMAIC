@@ -88,6 +88,8 @@ interface TTSSettingsProps {
 export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const { t, locale } = useI18n();
 
+  const ttsEnabled = useSettingsStore((state) => state.ttsEnabled);
+  const setTTSEnabled = useSettingsStore((state) => state.setTTSEnabled);
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const setTTSSpeed = useSettingsStore((state) => state.setTTSSpeed);
@@ -248,6 +250,25 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
 
   return (
     <div className={cn('space-y-6', isVoxCPM ? 'max-w-5xl' : 'max-w-3xl')}>
+      {/* Global TTS enable — #1288: was unreachable (only TtsConfigPopover set it, never mounted).
+          Expose it here so users can recover without clearing localStorage. */}
+      <div className="flex items-center justify-between rounded-lg border border-border/60 bg-background px-3 py-2.5">
+        <div className="min-w-0 pr-3">
+          <p className="text-sm font-medium flex items-center gap-2">
+            <Volume2 className="h-4 w-4 text-muted-foreground" />
+            {t('settings.ttsGlobalEnabledLabel') !== 'settings.ttsGlobalEnabledLabel'
+              ? t('settings.ttsGlobalEnabledLabel')
+              : 'Enable narration (TTS)'}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {t('settings.ttsGlobalEnabledHint') !== 'settings.ttsGlobalEnabledHint'
+              ? t('settings.ttsGlobalEnabledHint')
+              : 'When off, slides advance on a reading timer with no audio.'}
+          </p>
+        </div>
+        <Switch checked={ttsEnabled} onCheckedChange={setTTSEnabled} />
+      </div>
+
       {/* Browser-native TTS can't produce managed audio files, so the Pro-mode
           timeline's per-line audio (preview / regenerate / bulk voiceover) is
           unavailable on it — surface that when this provider is selected. */}

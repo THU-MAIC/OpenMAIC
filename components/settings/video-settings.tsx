@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -18,6 +19,7 @@ import {
   Plus,
   Settings2,
   Trash2,
+  Film,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { VideoProviderId } from '@/lib/media/types';
@@ -29,6 +31,8 @@ interface VideoSettingsProps {
 export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
   const { t } = useI18n();
 
+  const videoGenerationEnabled = useSettingsStore((s) => s.videoGenerationEnabled);
+  const setVideoGenerationEnabled = useSettingsStore((s) => s.setVideoGenerationEnabled);
   const videoModelId = useSettingsStore((state) => state.videoModelId);
   const videoProvidersConfig = useSettingsStore((state) => state.videoProvidersConfig);
   const setVideoProviderConfig = useSettingsStore((state) => state.setVideoProviderConfig);
@@ -140,6 +144,24 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
 
   return (
     <div className="space-y-6 max-w-3xl">
+      {/* Global video generation toggle — #1288: was only auto-enabled on first run */}
+      <div className="flex items-center justify-between rounded-lg border border-border/60 bg-background px-3 py-2.5">
+        <div className="min-w-0 pr-3">
+          <p className="text-sm font-medium flex items-center gap-2">
+            <Film className="h-4 w-4 text-muted-foreground" />
+            {t('settings.videoGenerationEnabledLabel') !== 'settings.videoGenerationEnabledLabel'
+              ? t('settings.videoGenerationEnabledLabel')
+              : 'Enable video generation'}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {t('settings.videoGenerationEnabledHint') !== 'settings.videoGenerationEnabledHint'
+              ? t('settings.videoGenerationEnabledHint')
+              : 'When off, videos are not generated for slides.'}
+          </p>
+        </div>
+        <Switch checked={videoGenerationEnabled} onCheckedChange={setVideoGenerationEnabled} />
+      </div>
+
       {/* Server-configured notice */}
       {isServerConfigured && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm text-blue-700 dark:text-blue-300">

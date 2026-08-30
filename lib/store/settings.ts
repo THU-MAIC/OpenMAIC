@@ -1743,6 +1743,20 @@ export const useSettingsStore = create<SettingsState>()(
               let autoVideoEnabled: boolean | undefined;
               let autoTtsEnabled: boolean | undefined;
 
+              // Server provider ids (filtered — disabled is force-off, not selectable)
+              const serverTtsIds = Object.entries(data.tts)
+                .filter(([, info]) => !info.disabled)
+                .map(([id]) => id) as TTSProviderId[];
+              const serverAsrIds = Object.entries(data.asr)
+                .filter(([, info]) => !info.disabled)
+                .map(([id]) => id) as ASRProviderId[];
+              const serverImageIds = Object.entries(data.image)
+                .filter(([, info]) => !info.disabled)
+                .map(([id]) => id) as ImageProviderId[];
+              const serverVideoIds = Object.entries(data.video || {})
+                .filter(([, info]) => !info.disabled)
+                .map(([id]) => id) as VideoProviderId[];
+
               if (!state.autoConfigApplied) {
                 // PDF: unpdf → mineru-cloud or mineru if server has it
                 if (state.pdfProviderId === 'unpdf') {
@@ -1754,10 +1768,6 @@ export const useSettingsStore = create<SettingsState>()(
                 }
 
                 // TTS: select first server provider if current is not server-configured.
-                // Skip server-disabled entries — they are force-off, not selectable.
-                const serverTtsIds = Object.entries(data.tts)
-                  .filter(([, info]) => !info.disabled)
-                  .map(([id]) => id) as TTSProviderId[];
                 if (
                   serverTtsIds.length > 0 &&
                   !newTTSConfig[state.ttsProviderId]?.isServerConfigured
@@ -1766,18 +1776,8 @@ export const useSettingsStore = create<SettingsState>()(
                   autoTtsVoice =
                     DEFAULT_TTS_VOICES[autoTtsProvider as BuiltInTTSProviderId] || 'default';
                 }
-                // Auto-enable TTS on first run when a server provider exists
-                // (mirrors image/video). No provider ⇒ stays off + CTA.
-                if (serverTtsIds.length > 0 && !state.ttsEnabled) {
-                  autoTtsEnabled = true;
-                }
 
-                // ASR: select first server provider if current is not
-                // server-configured. Skip server-disabled entries — they are
-                // force-off, not selectable.
-                const serverAsrIds = Object.entries(data.asr)
-                  .filter(([, info]) => !info.disabled)
-                  .map(([id]) => id) as ASRProviderId[];
+                // ASR: select first server provider if current is not server-configured.
                 if (
                   serverAsrIds.length > 0 &&
                   !newASRConfig[state.asrProviderId]?.isServerConfigured
@@ -1785,11 +1785,7 @@ export const useSettingsStore = create<SettingsState>()(
                   autoAsrProvider = serverAsrIds[0];
                 }
 
-                // Image: first server provider. Skip server-disabled entries —
-                // they are force-off, not selectable.
-                const serverImageIds = Object.entries(data.image)
-                  .filter(([, info]) => !info.disabled)
-                  .map(([id]) => id) as ImageProviderId[];
+                // Image: first server provider.
                 if (
                   serverImageIds.length > 0 &&
                   !newImageConfig[state.imageProviderId]?.isServerConfigured
@@ -1798,15 +1794,8 @@ export const useSettingsStore = create<SettingsState>()(
                   const models = IMAGE_PROVIDERS[autoImageProvider]?.models;
                   if (models?.length) autoImageModel = models[0].id;
                 }
-                if (serverImageIds.length > 0 && !state.imageGenerationEnabled) {
-                  autoImageEnabled = true;
-                }
 
-                // Video: first server provider. Skip server-disabled entries —
-                // they are force-off, not selectable.
-                const serverVideoIds = Object.entries(data.video || {})
-                  .filter(([, info]) => !info.disabled)
-                  .map(([id]) => id) as VideoProviderId[];
+                // Video: first server provider.
                 if (
                   serverVideoIds.length > 0 &&
                   !newVideoConfig[state.videoProviderId]?.isServerConfigured
@@ -1815,9 +1804,20 @@ export const useSettingsStore = create<SettingsState>()(
                   const models = VIDEO_PROVIDERS[autoVideoProvider]?.models;
                   if (models?.length) autoVideoModel = models[0].id;
                 }
-                if (serverVideoIds.length > 0 && !state.videoGenerationEnabled) {
-                  autoVideoEnabled = true;
-                }
+              }
+
+              // #1288 self-healing: re-evaluate global enable flags whenever a
+              // server provider exists, not only on first run (autoConfigApplied).
+              // Users who opened the app before configuring TTS/image/video on
+              // the server were permanently stuck at false with no recovery.
+              if (serverTtsIds.length > 0 && !state.ttsEnabled) {
+                autoTtsEnabled = true;
+              }
+              if (serverImageIds.length > 0 && !state.imageGenerationEnabled) {
+                autoImageEnabled = true;
+              }
+              if (serverVideoIds.length > 0 && !state.videoGenerationEnabled) {
+                autoVideoEnabled = true;
               }
 
               // (LLM first-load auto-select removed: the symmetric provider
