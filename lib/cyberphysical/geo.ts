@@ -90,13 +90,7 @@ function sanitizePointArray(value: unknown): GeoPoint[] | undefined {
   return points.length ? points : undefined;
 }
 
-const MOTION_STATES = new Set<AgentMotionState>([
-  'idle',
-  'moving',
-  'paused',
-  'arrived',
-  'offline',
-]);
+const MOTION_STATES = new Set<AgentMotionState>(['idle', 'moving', 'paused', 'arrived', 'offline']);
 
 export function parseAgentGeoTelemetry(value: unknown): AgentGeoTelemetry | null {
   if (!isRecord(value)) return null;
@@ -138,9 +132,7 @@ export function projectGeoPoint(point: GeoPoint, zoom: number): WorldPoint {
 
   return {
     x: ((longitude + 180) / 360) * worldSize,
-    y:
-      (0.5 - Math.log((1 + sinLatitude) / (1 - sinLatitude)) / (4 * Math.PI)) *
-      worldSize,
+    y: (0.5 - Math.log((1 + sinLatitude) / (1 - sinLatitude)) / (4 * Math.PI)) * worldSize,
   };
 }
 
