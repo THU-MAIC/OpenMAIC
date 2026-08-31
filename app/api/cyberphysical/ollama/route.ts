@@ -33,7 +33,10 @@ export async function POST(request: Request) {
   const telemetry = parseAgentGeoTelemetry(body?.telemetry);
 
   if (!telemetry) {
-    return NextResponse.json({ error: 'A valid AgentGeoTelemetry payload is required.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'A valid AgentGeoTelemetry payload is required.' },
+      { status: 400 },
+    );
   }
 
   const config = readOllamaConfig();
