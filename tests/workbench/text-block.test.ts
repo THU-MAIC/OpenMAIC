@@ -3,9 +3,39 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { parseHTML } from 'linkedom';
 import { describe, expect, it } from 'vitest';
 import { TextBlock } from '@/components/workbench/chat/text-block';
+import { I18nProvider } from '@/lib/hooks/use-i18n';
+import {
+  WorkbenchCourseNavigationProvider,
+  type WorkbenchCourseNavigation,
+} from '@/lib/workbench/panel-context';
 
 const renderText = (text: string, streaming = false) =>
   renderToStaticMarkup(createElement(TextBlock, { text, streaming }));
+
+const renderI18nText = (text: string) =>
+  renderToStaticMarkup(createElement(I18nProvider, null, createElement(TextBlock, { text })));
+
+const renderWorkspaceText = (
+  text: string,
+  lookupCourse: WorkbenchCourseNavigation['lookupCourse'] = () => null,
+) => {
+  const providerProps: React.ComponentProps<typeof WorkbenchCourseNavigationProvider> = {
+    navigation: {
+      activeCourseId: null,
+      courseOptions: [],
+      lookupCourse,
+      openCourse: () => undefined,
+    },
+    children: createElement(TextBlock, { text }),
+  };
+  return renderToStaticMarkup(
+    createElement(
+      I18nProvider,
+      null,
+      createElement(WorkbenchCourseNavigationProvider, providerProps),
+    ),
+  );
+};
 
 describe('Workbench assistant Markdown', () => {
   it.each([
@@ -77,6 +107,42 @@ $$`,
     expect(html).toContain('重点');
     expect(html).toContain('href="/docs"');
     expect(html).toContain('指南');
+  });
+
+  it('keeps a rich course label as an anchor outside the workspace', () => {
+    const document = parseHTML(renderI18nText('[Solving $x^2$](/classroom/stage-1)')).document;
+    const link = document.querySelector('a[href="/classroom/stage-1"]');
+
+    expect(link?.textContent).toContain('Solving');
+    expect(link?.querySelector('.katex')).not.toBeNull();
+    expect(document.querySelector('[data-testid="workbench-course-link-stage-1"]')).toBeNull();
+  });
+
+  it('keeps math in an unresolved workspace course label', () => {
+    const html = renderWorkspaceText('[Solving $x^2$](/classroom/stage-1)');
+    const document = parseHTML(html).document;
+    const link = document.querySelector('[data-testid="workbench-course-link-stage-1"]');
+
+    expect(link?.tagName).toBe('BUTTON');
+    expect(link?.textContent).toContain('Solving');
+    expect(link?.querySelector('.katex')).not.toBeNull();
+    expect(link?.querySelector('annotation')?.textContent).toBe('x^2');
+    expect(link?.getAttribute('aria-label')).toBeNull();
+    expect(link?.getAttribute('title')).toBeNull();
+  });
+
+  it('keeps the workspace course name ahead of a rich link label', () => {
+    const html = renderWorkspaceText('[Solving $x^2$](/classroom/stage-1)', () => ({
+      id: 'stage-1',
+      name: 'Limits course',
+      pageCount: 3,
+    }));
+    const document = parseHTML(html).document;
+    const link = document.querySelector('[data-testid="workbench-course-link-stage-1"]');
+
+    expect(link?.textContent).toContain('Limits course');
+    expect(link?.querySelector('.katex')).toBeNull();
+    expect(link?.getAttribute('aria-label')).toContain('Limits course');
   });
 
   it('preserves escaped currency next to single-dollar math', () => {

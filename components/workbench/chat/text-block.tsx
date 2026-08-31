@@ -59,7 +59,7 @@ const COMPONENTS = {
       <CourseLink
         courseId={courseId}
         variant="inline"
-        label={typeof children === 'string' ? children : undefined}
+        label={children}
         fallback={
           <a href={href} {...anchor}>
             {children}
