@@ -1838,7 +1838,9 @@ describe('TTS provider enablement (#665)', () => {
 
     const config = store.getState().imageProvidersConfig.seedream;
     expect(config.isServerConfigured).toBe(true);
-    expect(config.customModels).toEqual([{ id: 'doubao-seedream-5.0-lite', name: 'doubao-seedream-5.0-lite' }]);
+    expect(config.customModels).toEqual([
+      { id: 'doubao-seedream-5.0-lite', name: 'doubao-seedream-5.0-lite' },
+    ]);
     expect(config.replaceBuiltInModels).toBe(true);
   });
 
