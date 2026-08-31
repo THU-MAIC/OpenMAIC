@@ -143,14 +143,14 @@ You can also configure providers via `server-providers.yml`:
 ```yaml
 providers:
   openai:
-    apiKey: ***
+    apiKey: sk-...
   azure:
-    apiKey: ***
+    apiKey: ...
     baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
     models:
       - YOUR-DEPLOYMENT-NAME
   anthropic:
-    apiKey: ***
+    apiKey: sk-ant-...
   bedrock:
     models:
       - us.anthropic.claude-sonnet-5
@@ -356,7 +356,7 @@ and PostgreSQL. The persistence HTTP server is embedded in the app at
 
 ```bash
 cp .env.example .env.local
-printf '\nDATABASE_URL=postgres://openmaic:***@postgres:5432/openmaic\nPERSISTENCE_DEV_TOKEN=openmaic-local-dev\n' >> .env.local
+printf '\nDATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic\nPERSISTENCE_DEV_TOKEN=openmaic-local-dev\n' >> .env.local
 NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docker compose --profile server-persistence up --build
 ```
 
@@ -445,7 +445,7 @@ with the same PostgreSQL connection used by server-backed persistence:
 ```env
 NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=true
 OPENMAIC_AGENT_RUNTIME_ENABLED=true
-DATABASE_URL=postgres://openmaic:***@postgres:5432/openmaic
+DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
 MODEL_ROUTES='{"maic-agent-driver":{"model":"openai:gpt-5.5","api":"openai-completions"}}'
 ```
 

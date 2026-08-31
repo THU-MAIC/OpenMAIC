@@ -130,14 +130,14 @@ XIAOMI_API_KEY=...
 ```yaml
 providers:
   openai:
-    apiKey: ***
+    apiKey: sk-...
   azure:
-    apiKey: ***
+    apiKey: ...
     baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
     models:
       - YOUR-DEPLOYMENT-NAME
   anthropic:
-    apiKey: ***
+    apiKey: sk-ant-...
   bedrock:
     models:
       - us.anthropic.claude-sonnet-5
