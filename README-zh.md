@@ -92,7 +92,7 @@ https://github.com/user-attachments/assets/dbd013f6-9fab-43c5-a788-b47126cff7a8
 
 ### 环境要求
 
-- **Node.js** >= 20
+- **Node.js** >= 22.19
 - **pnpm** >= 10
 
 ### 1. 克隆 & 安装

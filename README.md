@@ -105,7 +105,7 @@ https://github.com/user-attachments/assets/b4ab35ac-f994-46b1-8957-e82fe87ff0e9
 
 ### Prerequisites
 
-- **Node.js** >= 20
+- **Node.js** >= 22.19
 - **pnpm** >= 10
 
 ### 1. Clone & Install
