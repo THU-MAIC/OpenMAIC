@@ -47,7 +47,7 @@ vi.mock('@/lib/server/agent-runtime/conversation-title-task', () => ({
   scheduleConversationTitle: mocks.scheduleConversationTitle,
 }));
 
-import { GET, maxDuration, POST } from '@/app/api/agent/sessions/route';
+import { GET, POST } from '@/app/api/agent/sessions/route';
 import { MAX_SESSION_TEXT_LENGTH } from '@/lib/server/agent-runtime/limits';
 
 function post(body: unknown, headers?: HeadersInit) {
@@ -92,10 +92,6 @@ beforeEach(() => {
 });
 
 describe('agent session collection route', () => {
-  it('allows the best-effort post-response title task up to 30 seconds', () => {
-    expect(maxDuration).toBe(30);
-  });
-
   it('creates a queued session and propagates a newly minted owner cookie', async () => {
     const response = await post({ prompt: ' Build a course ', skill: 'custom-skill' });
 

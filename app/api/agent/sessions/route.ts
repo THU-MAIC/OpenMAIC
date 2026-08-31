@@ -22,7 +22,6 @@ import { buildRequestOrigin, isValidClassroomId } from '@/lib/server/classroom-s
 import { decodeCourseRefs } from '@/lib/workbench/course-refs';
 
 export const runtime = 'nodejs';
-export const maxDuration = 30;
 
 interface CreateSessionBody {
   prompt?: string;

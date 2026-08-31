@@ -41,6 +41,18 @@ beforeEach(() => {
 });
 
 describe('conversation title task', () => {
+  it('keeps title scheduling failures out of the request path', () => {
+    mocks.after.mockImplementationOnce(() => {
+      throw new Error('waitUntil unavailable');
+    });
+
+    expect(() => scheduleConversationTitle('session-1', 'owner-1')).not.toThrow();
+    expect(mocks.logError).toHaveBeenCalledWith(
+      'session session-1: automatic title scheduling failed',
+      expect.any(Error),
+    );
+  });
+
   it('defers all work, then claims durable text before generating and guarded-committing', async () => {
     const order: string[] = [];
     mocks.getAgentSessionStore.mockImplementation(async () => {

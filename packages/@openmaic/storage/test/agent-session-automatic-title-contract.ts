@@ -53,6 +53,23 @@ export function runAgentSessionAutomaticTitleContract(
       );
     });
 
+    test('skips all-whitespace durable messages when choosing existing-course input', async () => {
+      const store = makeStore();
+      await store.createSession(
+        makeAgentSessionInput({
+          prompt: 'stage-1',
+          existingCourse: true,
+          titleState: 'pending',
+        }),
+      );
+      await store.postUserMessage('session-1', { text: '\t\n' });
+      await store.postUserMessage('session-1', { text: 'Explain the current lesson' });
+
+      await expect(store.claimAutomaticSessionTitle('session-1', 'owner-a')).resolves.toBe(
+        'Explain the current lesson',
+      );
+    });
+
     test('keeps an attachment-only existing-course session pending for later text', async () => {
       const store = makeStore();
       await store.createSession(
@@ -108,6 +125,17 @@ export function runAgentSessionAutomaticTitleContract(
       await expect(store.getSession('session-1')).resolves.toMatchObject({
         title: 'Generated title',
       });
+    });
+
+    test('does not let an empty automatic title consume the one-shot commit', async () => {
+      const store = makeStore();
+      await store.createSession(makeAgentSessionInput({ titleState: 'pending' }));
+      await store.claimAutomaticSessionTitle('session-1', 'owner-a');
+
+      await expect(store.setAutomaticSessionTitle('session-1', 'owner-a', '')).resolves.toBeNull();
+      await expect(
+        store.setAutomaticSessionTitle('session-1', 'owner-a', 'Generated title'),
+      ).resolves.toMatchObject({ title: 'Generated title' });
     });
 
     test('fences automatic commits by owner', async () => {

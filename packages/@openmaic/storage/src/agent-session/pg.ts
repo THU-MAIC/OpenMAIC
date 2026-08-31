@@ -624,7 +624,7 @@ export class PgAgentSessionStore
         const firstMessage = await tx.query<{ text: string }>(
           `SELECT data->>'text' AS text FROM ${this.table('events')}
            WHERE session_id = $1 AND type = $2
-             AND length(btrim(COALESCE(data->>'text', ''))) > 0
+             AND COALESCE(data->>'text', '') ~ '[^[:space:]]'
            ORDER BY seq LIMIT 1`,
           [sessionId, AGENT_SESSION_LIFECYCLE.userMessage],
         );
@@ -648,6 +648,7 @@ export class PgAgentSessionStore
     ownerId: string,
     title: string,
   ): Promise<AgentSessionMeta | null> {
+    if (title.trim() === '') return null;
     return this.transaction(async (tx) => {
       const result = await tx.query<SessionRow>(
         `UPDATE ${this.table('sessions')}

@@ -35,5 +35,9 @@ async function runConversationTitleTask(sessionId: string, ownerId: string): Pro
 }
 
 export function scheduleConversationTitle(sessionId: string, ownerId: string): void {
-  after(() => runConversationTitleTask(sessionId, ownerId));
+  try {
+    after(() => runConversationTitleTask(sessionId, ownerId));
+  } catch (error) {
+    log.error(`session ${sessionId}: automatic title scheduling failed`, error);
+  }
 }

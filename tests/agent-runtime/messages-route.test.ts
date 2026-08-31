@@ -33,7 +33,7 @@ vi.mock('@/lib/server/agent-runtime/conversation-title-task', () => ({
   scheduleConversationTitle: mocks.scheduleConversationTitle,
 }));
 
-import { maxDuration, POST } from '@/app/api/agent/sessions/[id]/messages/route';
+import { POST } from '@/app/api/agent/sessions/[id]/messages/route';
 import { MAX_SESSION_TEXT_LENGTH } from '@/lib/server/agent-runtime/limits';
 import { SessionMaterialBindingError } from '@/lib/server/agent-runtime/session-materials';
 
@@ -54,10 +54,6 @@ beforeEach(() => {
 });
 
 describe('POST agent session message', () => {
-  it('allows the best-effort post-response title task up to 30 seconds', () => {
-    expect(maxDuration).toBe(30);
-  });
-
   it('posts a trimmed message with an owner fence and returns its delivery', async () => {
     const response = await call({ text: ' Continue ' });
 

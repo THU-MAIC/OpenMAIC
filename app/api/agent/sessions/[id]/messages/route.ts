@@ -17,7 +17,6 @@ import {
 } from '@/lib/server/agent-runtime/session-materials';
 
 export const runtime = 'nodejs';
-export const maxDuration = 30;
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isAgentRuntimeConfigured()) {
