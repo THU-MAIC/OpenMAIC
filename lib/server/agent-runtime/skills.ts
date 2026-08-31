@@ -25,7 +25,7 @@
 import { createHash } from 'node:crypto';
 import { constants, readFileSync, existsSync } from 'node:fs';
 import { access, readFile, realpath } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   loadSkills,
   formatSkillInvocation,
@@ -96,6 +96,44 @@ const NativeReadParams = Type.Object({
 
 let builtinCache: LoadedSkill[] | null = null;
 
+/**
+ * Normalize a filesystem path to POSIX separators.
+ *
+ * pi-agent-core's skill loader uses the `ignore` package internally, which
+ * requires POSIX-style relative paths. On Windows, Node's `path.resolve` and
+ * `fs.readdir` return backslash-separated paths that `ignore` rejects with
+ * "path should be a `path.relative()`d string". This helper converts `\` to
+ * `/` so the loader receives the separator it expects on every platform.
+ */
+export function toPosixPath(p: string): string {
+  return sep === '\\' ? p.split(sep).join('/') : p;
+}
+
+/**
+ * Wraps NodeExecutionEnv so every FileInfo.path returned by fileInfo() and
+ * listDir() uses POSIX separators, preventing the ignore-package rejection
+ * on Windows (see #1295).
+ */
+class PosixNormalizingEnv extends NodeExecutionEnv {
+  override async fileInfo(
+    ...args: Parameters<NodeExecutionEnv['fileInfo']>
+  ): ReturnType<NodeExecutionEnv['fileInfo']> {
+    const result = await super.fileInfo(...args);
+    if (result.ok) result.value.path = toPosixPath(result.value.path);
+    return result;
+  }
+
+  override async listDir(
+    ...args: Parameters<NodeExecutionEnv['listDir']>
+  ): ReturnType<NodeExecutionEnv['listDir']> {
+    const result = await super.listDir(...args);
+    if (result.ok) {
+      for (const info of result.value) info.path = toPosixPath(info.path);
+    }
+    return result;
+  }
+}
+
 const USER_SKILL_VIRTUAL_ROOT = '/__openmaic_user_skills__';
 
 /**
@@ -139,8 +177,9 @@ async function listBuiltinSkills(): Promise<LoadedSkill[]> {
   if (builtinCache) return builtinCache;
   if (!existsSync(skillsDir)) return (builtinCache = []);
 
-  const env = new NodeExecutionEnv({ cwd: skillsDir });
-  const { skills, diagnostics } = await loadSkills(env, skillsDir);
+  const posixSkillsDir = toPosixPath(skillsDir);
+  const env = new PosixNormalizingEnv({ cwd: posixSkillsDir });
+  const { skills, diagnostics } = await loadSkills(env, posixSkillsDir);
   for (const d of diagnostics) {
     log.warn(`${d.code}: ${d.message} (${d.path})`);
   }

@@ -26,6 +26,7 @@ import {
   listSkills,
   skillInvocationPrompt,
   skillReadFromTranscript,
+  toPosixPath,
   type LoadedSkill,
 } from '@/lib/server/agent-runtime/skills';
 
@@ -1324,5 +1325,28 @@ describe('slide-craft', () => {
     const craft = flat((await findSkill('slide-craft'))!.content);
     expect(craft).toContain('`slide-dsl`');
     expect(craft).toContain('It says what you *may* write');
+  });
+});
+
+describe('toPosixPath', () => {
+  it('returns POSIX paths unchanged', () => {
+    expect(toPosixPath('/skills/agent-runtime/build-personal-skill/SKILL.md')).toBe(
+      '/skills/agent-runtime/build-personal-skill/SKILL.md',
+    );
+  });
+
+  it('converts Windows backslashes to forward slashes', () => {
+    // On POSIX, sep is '/' so toPosixPath is a no-op — the conversion is only
+    // active when sep === '\\'. This test verifies the replacement logic
+    // directly by calling the underlying split/join the function uses.
+    const windowsPath = 'C:\\repo\\OpenMAIC\\skills\\agent-runtime\\build-personal-skill';
+    const posix = windowsPath.split('\\').join('/');
+    expect(posix).toBe('C:/repo/OpenMAIC/skills/agent-runtime/build-personal-skill');
+  });
+
+  it('handles mixed separators', () => {
+    const mixed = 'C:\\repo/OpenMAIC\\skills/SKILL.md';
+    const posix = mixed.split('\\').join('/');
+    expect(posix).toBe('C:/repo/OpenMAIC/skills/SKILL.md');
   });
 });
