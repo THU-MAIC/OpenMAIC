@@ -41,7 +41,7 @@ describe('cyberphysical geospatial helpers', () => {
     expect(parsed?.state).toBe('moving');
   });
 
-  it('rejects invalid coordinates and caps route payload size', () => {
+  it('rejects invalid coordinates and caps route and trail payloads with the right edge', () => {
     expect(
       parseAgentGeoTelemetry({
         agentId: 'bad-agent',
@@ -49,16 +49,23 @@ describe('cyberphysical geospatial helpers', () => {
       }),
     ).toBeNull();
 
-    const route = Array.from({ length: MAX_ROUTE_POINTS + 50 }, (_, index) => ({
+    const points = Array.from({ length: MAX_ROUTE_POINTS + 50 }, (_, index) => ({
       latitude: 40,
       longitude: 116 + index / 100_000,
     }));
     const parsed = parseAgentGeoTelemetry({
       agentId: 'bounded-agent',
-      current: route[0],
-      route,
+      current: points[0],
+      route: points,
+      trail: points,
     });
 
     expect(parsed?.route).toHaveLength(MAX_ROUTE_POINTS);
+    expect(parsed?.route?.[0]).toEqual(points[0]);
+    expect(parsed?.route?.at(-1)).toEqual(points[MAX_ROUTE_POINTS - 1]);
+
+    expect(parsed?.trail).toHaveLength(MAX_ROUTE_POINTS);
+    expect(parsed?.trail?.[0]).toEqual(points[50]);
+    expect(parsed?.trail?.at(-1)).toEqual(points.at(-1));
   });
 });
