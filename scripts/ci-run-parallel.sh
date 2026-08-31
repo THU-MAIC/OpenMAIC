@@ -32,17 +32,16 @@ while [ "$#" -ge 2 ]; do
         app/cyberphysical/client.tsx
         components/cyberphysical/agent-map.tsx
         lib/cyberphysical/geo.ts
+        lib/cyberphysical/ollama.ts
         tests/cyberphysical/ollama.test.ts
       )
       pnpm exec prettier "${files[@]}" --write >"$log" 2>&1
       status=$?
       if [ "$status" -eq 0 ]; then
-        for file in "${files[@]}"; do
-          echo "FORMAT_CAPTURE_BEGIN:$file" >>"$log"
-          gzip -c "$file" | base64 -w0 >>"$log"
-          echo >>"$log"
-          echo "FORMAT_CAPTURE_END:$file" >>"$log"
-        done
+        echo >>"$log"
+        echo '--- PRETTIER DIFF START ---' >>"$log"
+        git --no-pager diff --no-ext-diff --unified=3 -- "${files[@]}" >>"$log"
+        echo '--- PRETTIER DIFF END ---' >>"$log"
       fi
       exit "$status"
     fi
