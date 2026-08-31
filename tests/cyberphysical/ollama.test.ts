@@ -9,9 +9,7 @@ import {
 
 describe('cyberphysical Ollama configuration', () => {
   it('maps local OpenAI-compatible URLs to the native chat endpoint', () => {
-    expect(buildOllamaChatUrl('http://localhost:11434/v1')).toBe(
-      'http://localhost:11434/api/chat',
-    );
+    expect(buildOllamaChatUrl('http://localhost:11434/v1')).toBe('http://localhost:11434/api/chat');
     expect(buildOllamaChatUrl('http://ollama:11434/api')).toBe('http://ollama:11434/api/chat');
   });
 
