@@ -180,7 +180,10 @@ export function CyberphysicalClient() {
           ...current,
           agentId: 'browser-agent',
           current: point,
-          trail: [...(current.source === 'browser-geolocation' ? current.trail ?? [] : []), point].slice(-200),
+          trail: [
+            ...(current.source === 'browser-geolocation' ? (current.trail ?? []) : []),
+            point,
+          ].slice(-200),
           route: current.destination ? [point, current.destination] : undefined,
           headingDeg: position.coords.heading ?? current.headingDeg,
           speedMps: position.coords.speed ?? current.speedMps,
@@ -208,7 +211,8 @@ export function CyberphysicalClient() {
   };
 
   const targetDistance = useMemo(
-    () => (telemetry.destination ? distanceMeters(telemetry.current, telemetry.destination) : undefined),
+    () =>
+      telemetry.destination ? distanceMeters(telemetry.current, telemetry.destination) : undefined,
     [telemetry.current, telemetry.destination],
   );
 
@@ -229,7 +233,9 @@ export function CyberphysicalClient() {
             </div>
             <div>
               <div className="text-sm font-semibold">{t('cyberphysical.title')}</div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">{t('cyberphysical.subtitle')}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                {t('cyberphysical.subtitle')}
+              </div>
             </div>
           </div>
           <div className="hidden items-center gap-2 text-xs text-slate-500 md:flex">
@@ -246,19 +252,27 @@ export function CyberphysicalClient() {
               <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-400">
                 <Route className="h-3.5 w-3.5" /> {t('cyberphysical.observabilityBadge')}
               </div>
-              <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">{t('cyberphysical.heroTitle')}</h1>
+              <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+                {t('cyberphysical.heroTitle')}
+              </h1>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
                 {t('cyberphysical.heroDescription')}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={simulationRunning ? stopDemo : runDemo}>
-                {simulationRunning ? <Square className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
+                {simulationRunning ? (
+                  <Square className="mr-2 h-4 w-4" />
+                ) : (
+                  <Play className="mr-2 h-4 w-4" />
+                )}
                 {simulationRunning ? t('cyberphysical.stopSimulation') : t('cyberphysical.runDemo')}
               </Button>
               <Button onClick={geolocationActive ? stopLocation : startLocation}>
                 <LocateFixed className="mr-2 h-4 w-4" />
-                {geolocationActive ? t('cyberphysical.stopLiveLocation') : t('cyberphysical.useBrowserLocation')}
+                {geolocationActive
+                  ? t('cyberphysical.stopLiveLocation')
+                  : t('cyberphysical.useBrowserLocation')}
               </Button>
             </div>
           </div>
@@ -272,9 +286,18 @@ export function CyberphysicalClient() {
           )}
 
           <div className="mt-5 grid gap-4 md:grid-cols-3">
-            <InfoCard title={t('cyberphysical.routeAwarenessTitle')} text={t('cyberphysical.routeAwarenessDescription')} />
-            <InfoCard title={t('cyberphysical.runtimeBridgeTitle')} text={t('cyberphysical.runtimeBridgeDescription')} />
-            <InfoCard title={t('cyberphysical.observeFirstTitle')} text={t('cyberphysical.observeFirstDescription')} />
+            <InfoCard
+              title={t('cyberphysical.routeAwarenessTitle')}
+              text={t('cyberphysical.routeAwarenessDescription')}
+            />
+            <InfoCard
+              title={t('cyberphysical.runtimeBridgeTitle')}
+              text={t('cyberphysical.runtimeBridgeDescription')}
+            />
+            <InfoCard
+              title={t('cyberphysical.observeFirstTitle')}
+              text={t('cyberphysical.observeFirstDescription')}
+            />
           </div>
         </section>
 
@@ -282,7 +305,9 @@ export function CyberphysicalClient() {
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.16em] text-slate-400">{t('cyberphysical.activeAgent')}</div>
+                <div className="text-xs uppercase tracking-[0.16em] text-slate-400">
+                  {t('cyberphysical.activeAgent')}
+                </div>
                 <div className="mt-1 flex items-center gap-2 text-lg font-semibold">
                   <Bot className="h-5 w-5 text-violet-500" /> {telemetry.agentId}
                 </div>
@@ -293,28 +318,63 @@ export function CyberphysicalClient() {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <Metric icon={<Gauge className="h-3.5 w-3.5" />} label={t('cyberphysical.speed')} value={metric(telemetry.speedMps, 'm/s')} />
-              <Metric icon={<Crosshair className="h-3.5 w-3.5" />} label={t('cyberphysical.toTarget')} value={targetDistance === undefined ? '—' : targetDistance >= 1000 ? `${(targetDistance / 1000).toFixed(2)} km` : `${Math.round(targetDistance)} m`} />
-              <Metric icon={<Navigation className="h-3.5 w-3.5" />} label={t('cyberphysical.heading')} value={metric(telemetry.headingDeg, '°', 0)} />
-              <Metric icon={<Activity className="h-3.5 w-3.5" />} label={t('cyberphysical.accuracy')} value={metric(telemetry.current.accuracy, 'm', 0)} />
+              <Metric
+                icon={<Gauge className="h-3.5 w-3.5" />}
+                label={t('cyberphysical.speed')}
+                value={metric(telemetry.speedMps, 'm/s')}
+              />
+              <Metric
+                icon={<Crosshair className="h-3.5 w-3.5" />}
+                label={t('cyberphysical.toTarget')}
+                value={
+                  targetDistance === undefined
+                    ? '—'
+                    : targetDistance >= 1000
+                      ? `${(targetDistance / 1000).toFixed(2)} km`
+                      : `${Math.round(targetDistance)} m`
+                }
+              />
+              <Metric
+                icon={<Navigation className="h-3.5 w-3.5" />}
+                label={t('cyberphysical.heading')}
+                value={metric(telemetry.headingDeg, '°', 0)}
+              />
+              <Metric
+                icon={<Activity className="h-3.5 w-3.5" />}
+                label={t('cyberphysical.accuracy')}
+                value={metric(telemetry.current.accuracy, 'm', 0)}
+              />
             </div>
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-3 text-sm font-semibold">{t('cyberphysical.position')}</div>
             <dl className="space-y-2 text-sm">
-              <Row label={t('cyberphysical.latitude')} value={formatCoordinate(telemetry.current.latitude)} />
-              <Row label={t('cyberphysical.longitude')} value={formatCoordinate(telemetry.current.longitude)} />
-              <Row label={t('cyberphysical.updated')} value={new Date(telemetry.updatedAt).toLocaleTimeString()} />
+              <Row
+                label={t('cyberphysical.latitude')}
+                value={formatCoordinate(telemetry.current.latitude)}
+              />
+              <Row
+                label={t('cyberphysical.longitude')}
+                value={formatCoordinate(telemetry.current.longitude)}
+              />
+              <Row
+                label={t('cyberphysical.updated')}
+                value={new Date(telemetry.updatedAt).toLocaleTimeString()}
+              />
             </dl>
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm font-semibold">{t('cyberphysical.bridgeTitle')}</div>
-              <span className={`h-2.5 w-2.5 rounded-full ${bridgeConnected ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`} />
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${bridgeConnected ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+              />
             </div>
-            <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{t('cyberphysical.bridgeDescription')}</p>
+            <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              {t('cyberphysical.bridgeDescription')}
+            </p>
             <div className="mt-3 rounded-xl bg-slate-950 p-3 font-mono text-[11px] leading-5 text-slate-200">
               <div className="text-slate-500">BroadcastChannel</div>
               <div className="break-all">{CYBERPHYSICAL_TELEMETRY_CHANNEL}</div>
@@ -340,7 +400,10 @@ function InfoCard({ title, text }: { title: string; text: string }) {
 function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-950">
-      <div className="flex items-center gap-1.5 text-xs text-slate-500">{icon}{label}</div>
+      <div className="flex items-center gap-1.5 text-xs text-slate-500">
+        {icon}
+        {label}
+      </div>
       <div className="mt-1 text-lg font-semibold">{value}</div>
     </div>
   );
