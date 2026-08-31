@@ -26,25 +26,6 @@ while [ "$#" -ge 2 ]; do
   names+=("$name")
   logs+=("$log")
   (
-    if [ "$name" = "prettier" ]; then
-      files=(
-        app/api/cyberphysical/ollama/route.ts
-        app/cyberphysical/client.tsx
-        components/cyberphysical/agent-map.tsx
-        lib/cyberphysical/geo.ts
-        lib/cyberphysical/ollama.ts
-        tests/cyberphysical/ollama.test.ts
-      )
-      pnpm exec prettier "${files[@]}" --write >"$log" 2>&1
-      status=$?
-      if [ "$status" -eq 0 ]; then
-        echo >>"$log"
-        echo '--- PRETTIER DIFF START ---' >>"$log"
-        git --no-pager diff --no-ext-diff --unified=3 -- "${files[@]}" >>"$log"
-        echo '--- PRETTIER DIFF END ---' >>"$log"
-      fi
-      exit "$status"
-    fi
     bash -c "$cmd" >"$log" 2>&1
   ) &
   pids+=("$!")
