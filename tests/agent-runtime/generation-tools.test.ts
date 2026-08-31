@@ -201,7 +201,9 @@ describe('generation and deck tools', () => {
       );
       const before = structuredClone(current.get());
       const originalLogFormat = process.env.LOG_FORMAT;
+      const originalLogLevel = process.env.LOG_LEVEL;
       process.env.LOG_FORMAT = 'json';
+      process.env.LOG_LEVEL = 'warn';
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
       try {
@@ -249,6 +251,8 @@ describe('generation and deck tools', () => {
         warn.mockRestore();
         if (originalLogFormat === undefined) delete process.env.LOG_FORMAT;
         else process.env.LOG_FORMAT = originalLogFormat;
+        if (originalLogLevel === undefined) delete process.env.LOG_LEVEL;
+        else process.env.LOG_LEVEL = originalLogLevel;
       }
     },
   );
