@@ -31,6 +31,7 @@ import {
   useWorkbenchStore,
   type WorkbenchEvent,
 } from '@/lib/workbench/session-store';
+import { applyMediaReadyFrame, parseMediaReadyFrame } from '@/lib/workbench/media-lifecycle';
 import {
   diffStageManifest,
   fetchScenesByIds,
@@ -177,6 +178,14 @@ export function useWorkbenchStream(sessionId: string | null): void {
       applyEvent(parsed);
       markAttached();
 
+      // Async media completion (generate_video's detached job) settles into
+      // the media generation store keyed by the placeholder ref — live frames
+      // here, replayed frames in finishReplay below.
+      if (parsed.type === LIFECYCLE.mediaReady) {
+        const frame = parseMediaReadyFrame(parsed.data);
+        if (frame) applyMediaReadyFrame(frame);
+      }
+
       // A checkpoint schedules the normal whole-document course sync. TTS
       // additionally folds its authoritative action array at tool completion,
       // so an already-mounted PlaybackEngine cannot retain the pre-TTS scene
@@ -209,6 +218,14 @@ export function useWorkbenchStream(sessionId: string | null): void {
         return;
       }
       applyEvents(compactReplayEvents(backlog));
+      // Replay the media_ready side effect too: a failed job never lands in
+      // the document, so without this fold a re-attached client would keep
+      // the placeholder's skeleton instead of the error state.
+      for (const event of backlog) {
+        if (event.type !== LIFECYCLE.mediaReady) continue;
+        const frame = parseMediaReadyFrame(event.data);
+        if (frame) applyMediaReadyFrame(frame);
+      }
       backlog.length = 0;
       // Record which stage links were historical in the same state transition
       // that exposes the fold. Opening a chat must not replay its old classroom
