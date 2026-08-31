@@ -190,11 +190,19 @@ describe('owner session event projection', () => {
         phase: 'live',
         type: 'session_cancel_requested',
       }),
+      event({
+        id: '90071992547409936',
+        sessionId: 'missing',
+        ts: 305,
+        phase: 'live',
+        type: 'session_title',
+        title: 'Generated title',
+      }),
     ];
 
     expect(
       unknownEvents.map((ownerEvent) => reduceOwnerSessionEvent([], ownerEvent).needsFullFetch),
-    ).toEqual([true, true, true, true, true]);
+    ).toEqual([true, true, true, true, true, true]);
   });
 
   it('removes a deleted row without disturbing its neighbours', () => {
@@ -236,6 +244,78 @@ describe('owner session event projection', () => {
       stageId: 'course-reassigned',
       updatedAt: 500,
     });
+  });
+
+  it('sets and clears a title through the owner projection', () => {
+    const source = [session('active', { title: 'Old title', updatedAt: 200 })];
+    const renamed = reduceOwnerSessionEvent(
+      source,
+      event({
+        id: '43',
+        sessionId: 'active',
+        ts: 300,
+        phase: 'live',
+        type: 'session_title',
+        title: 'New title',
+      }),
+    );
+    const cleared = reduceOwnerSessionEvent(
+      renamed.sessions,
+      event({
+        id: '44',
+        sessionId: 'active',
+        ts: 400,
+        phase: 'backlog',
+        type: 'session_title',
+        title: null,
+      }),
+    );
+
+    expect(renamed.sessions[0]).toEqual({ ...source[0], title: 'New title', updatedAt: 300 });
+    expect(cleared.sessions[0]).toEqual({ ...source[0], title: null, updatedAt: 400 });
+  });
+
+  it('treats a title change as recent rail activity', () => {
+    const source = [
+      session('newer', { updatedAt: 250 }),
+      session('renamed', { title: 'Old title', updatedAt: 200 }),
+    ];
+    const result = reduceOwnerSessionEvent(
+      source,
+      event({
+        id: '45',
+        sessionId: 'renamed',
+        ts: 300,
+        phase: 'live',
+        type: 'session_title',
+        title: 'New title',
+      }),
+    );
+
+    expect(result.needsFullFetch).toBe(false);
+    expect(result.sessions.map((item) => item.id)).toEqual(['renamed', 'newer']);
+    expect(result.sessions[0]).toEqual({ ...source[1], title: 'New title', updatedAt: 300 });
+  });
+
+  it.each([
+    { relation: 'older than', eventTimestamp: 499 },
+    { relation: 'from the same millisecond as', eventTimestamp: 500 },
+  ])('ignores a title projection $relation the matching owner snapshot', ({ eventTimestamp }) => {
+    const source = [session('active', { title: 'Newest title', updatedAt: 500 })];
+    const result = reduceOwnerSessionEvent(
+      source,
+      event({
+        id: '45',
+        sessionId: 'active',
+        ts: eventTimestamp,
+        phase: 'backlog',
+        type: 'session_title',
+        title: 'Stale title',
+      }),
+    );
+
+    expect(result).toEqual({ sessions: source, needsFullFetch: false });
+    expect(result.sessions).toBe(source);
   });
 
   it('treats degraded catch-up as non-authoritative and initializes only once after recovery', () => {
