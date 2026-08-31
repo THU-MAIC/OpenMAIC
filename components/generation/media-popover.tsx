@@ -66,9 +66,19 @@ const TABS: Array<{ id: TabId; icon: LucideIcon; label: string }> = [
 
 function providerModels<T extends { id: string; name: string }>(
   builtInModels: T[],
-  config?: { customModels?: T[]; replaceBuiltInModels?: boolean },
+  config?: {
+    customModels?: T[];
+    replaceBuiltInModels?: boolean;
+    serverModels?: string[];
+  },
 ): T[] {
   const customModels = config?.customModels || [];
+  if (config?.serverModels?.length) {
+    return config.serverModels.map((id) => {
+      const knownModel = [...builtInModels, ...customModels].find((model) => model.id === id);
+      return knownModel ?? ({ id, name: id } as T);
+    });
+  }
   if (config?.replaceBuiltInModels && customModels.length > 0) {
     return customModels;
   }
@@ -157,8 +167,10 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
 
           return {
             groupId: p.id,
-            groupName: p.name,
-            groupIcon: IMAGE_PROVIDER_ICONS[p.id],
+            groupName: imageProvidersConfig[p.id]?.serverDisplayName || p.name,
+            groupIcon: imageProvidersConfig[p.id]?.serverDisplayName
+              ? undefined
+              : IMAGE_PROVIDER_ICONS[p.id],
             available: true,
             // Map to a consistent format here
             items: items.map((m) => ({
@@ -176,8 +188,10 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
         .filter((p) => cfgOk(videoProvidersConfig, p.id, p.requiresApiKey))
         .map((p) => ({
           groupId: p.id,
-          groupName: p.name,
-          groupIcon: VIDEO_PROVIDER_ICONS[p.id],
+          groupName: videoProvidersConfig[p.id]?.serverDisplayName || p.name,
+          groupIcon: videoProvidersConfig[p.id]?.serverDisplayName
+            ? undefined
+            : VIDEO_PROVIDER_ICONS[p.id],
           available: true,
           items: providerModels(p.models, videoProvidersConfig[p.id]).map((m) => ({
             id: m.id,
