@@ -557,6 +557,28 @@ pdf:
       expect(resolveVideoBaseUrl('grok-video')).toBe('https://proxy.example.com/video');
     });
 
+    it('exposes server-pinned image models in getServerImageProviders', async () => {
+      vi.stubEnv('IMAGE_SEEDREAM_API_KEY', 'sk-seedream');
+      vi.stubEnv('IMAGE_SEEDREAM_MODELS', 'doubao-seedream-5.0-lite,doubao-seedream-5.0-pro');
+      const { getServerImageProviders } = await import('@/lib/server/provider-config');
+
+      const providers = getServerImageProviders();
+      expect(providers.seedream).toEqual({
+        models: ['doubao-seedream-5.0-lite', 'doubao-seedream-5.0-pro'],
+      });
+    });
+
+    it('exposes server-pinned video models in getServerVideoProviders', async () => {
+      vi.stubEnv('VIDEO_SEEDANCE_API_KEY', 'sk-seedance');
+      vi.stubEnv('VIDEO_SEEDANCE_MODELS', 'doubao-seedance-2-0,doubao-seedance-3-0');
+      const { getServerVideoProviders } = await import('@/lib/server/provider-config');
+
+      const providers = getServerVideoProviders();
+      expect(providers.seedance).toEqual({
+        models: ['doubao-seedance-2-0', 'doubao-seedance-3-0'],
+      });
+    });
+
     it('activates keyless image providers (lemonade) from a base URL alone', async () => {
       vi.stubEnv('IMAGE_LEMONADE_BASE_URL', 'http://localhost:13305/v1');
       const { getServerImageProviders, resolveImageApiKey, isServerConfiguredProvider } =
