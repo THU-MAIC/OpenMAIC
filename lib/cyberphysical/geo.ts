@@ -79,11 +79,15 @@ export function sanitizeGeoPoint(value: unknown): GeoPoint | null {
   };
 }
 
-function sanitizePointArray(value: unknown): GeoPoint[] | undefined {
+function sanitizePointArray(
+  value: unknown,
+  keep: 'oldest' | 'newest' = 'oldest',
+): GeoPoint[] | undefined {
   if (!Array.isArray(value)) return undefined;
 
-  const points = value
-    .slice(0, MAX_ROUTE_POINTS)
+  const bounded =
+    keep === 'newest' ? value.slice(-MAX_ROUTE_POINTS) : value.slice(0, MAX_ROUTE_POINTS);
+  const points = bounded
     .map(sanitizeGeoPoint)
     .filter((point): point is GeoPoint => point !== null);
 
@@ -101,7 +105,7 @@ export function parseAgentGeoTelemetry(value: unknown): AgentGeoTelemetry | null
 
   const destination = value.destination === null ? null : sanitizeGeoPoint(value.destination);
   const route = sanitizePointArray(value.route);
-  const trail = sanitizePointArray(value.trail);
+  const trail = sanitizePointArray(value.trail, 'newest');
   const headingDeg = finiteNumber(value.headingDeg);
   const speedMps = finiteNumber(value.speedMps);
   const requestedState = optionalString(value.state);
