@@ -26,6 +26,26 @@ while [ "$#" -ge 2 ]; do
   names+=("$name")
   logs+=("$log")
   (
+    if [ "$name" = "prettier" ]; then
+      files=(
+        app/api/cyberphysical/ollama/route.ts
+        app/cyberphysical/client.tsx
+        components/cyberphysical/agent-map.tsx
+        lib/cyberphysical/geo.ts
+        tests/cyberphysical/ollama.test.ts
+      )
+      pnpm exec prettier "${files[@]}" --write >"$log" 2>&1
+      status=$?
+      if [ "$status" -eq 0 ]; then
+        for file in "${files[@]}"; do
+          echo "FORMAT_CAPTURE_BEGIN:$file" >>"$log"
+          gzip -c "$file" | base64 -w0 >>"$log"
+          echo >>"$log"
+          echo "FORMAT_CAPTURE_END:$file" >>"$log"
+        done
+      fi
+      exit "$status"
+    fi
     bash -c "$cmd" >"$log" 2>&1
   ) &
   pids+=("$!")
