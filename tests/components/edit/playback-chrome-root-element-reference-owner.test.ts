@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   roundtableProps: undefined as Record<string, unknown> | undefined,
   canvasProps: undefined as Record<string, unknown> | undefined,
   piEnabled: true,
+  coursewareReferenceEnabled: true,
   topicActive: false,
   engineMode: 'idle' as 'idle' | 'playing' | 'paused',
   engineOptions: undefined as
@@ -340,7 +341,10 @@ vi.mock('@/lib/orchestration/registry/store', () => ({
     { getState: () => ({ getAgent: () => undefined }) },
   ),
 }));
-vi.mock('@/lib/config/feature-flags', () => ({ isPiChatEnabled: () => mocks.piEnabled }));
+vi.mock('@/lib/config/feature-flags', () => ({
+  isPiChatEnabled: () => mocks.piEnabled,
+  isCoursewareReferenceEnabled: () => mocks.coursewareReferenceEnabled,
+}));
 
 import {
   PlaybackChromeRoot,
@@ -358,6 +362,7 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
     mocks.roundtableProps = undefined;
     mocks.canvasProps = undefined;
     mocks.piEnabled = true;
+    mocks.coursewareReferenceEnabled = true;
     mocks.topicActive = false;
     mocks.engineMode = 'idle';
     mocks.engineOptions = undefined;
@@ -430,6 +435,32 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
     expect(container.querySelector('[data-testid="owner-pill"]')).toBeNull();
   });
 
+  it('consumes one PPT picker arm synchronously and rejects a stale second pick', async () => {
+    await renderOwner();
+    click('toggle-pick');
+
+    act(() => {
+      const onPickElement = mocks.canvasProps?.onPickElement as (element: unknown) => void;
+      onPickElement(textElement);
+      onPickElement(shapeElement);
+    });
+
+    expect(container.querySelector('[data-testid="owner-pill"]')?.textContent).toContain(
+      'Page 1 · Text · First grounded fact',
+    );
+    click('send');
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      'Explain this',
+      expect.objectContaining({
+        elementReference: {
+          kind: 'slide_element',
+          sceneId: 'scene-1',
+          elementId: 'text-1',
+        },
+      }),
+    );
+  });
+
   it('keeps a newer owner draft when an older request receipt arrives', async () => {
     await renderOwner();
     click('toggle-pick');
@@ -440,6 +471,7 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
       { onResponseAccepted: (response: Response) => void },
     ];
 
+    click('toggle-pick');
     act(() => {
       (mocks.canvasProps?.onPickElement as (element: unknown) => void)(shapeElement);
     });
@@ -495,6 +527,28 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
     click('send');
 
     expect(mocks.handleUserInterrupt).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    expect(mocks.sendMessage).toHaveBeenCalledWith('Explain this', undefined);
+  });
+
+  it('keeps Pi messaging available while the independent reference gate clears its UI state', async () => {
+    await renderOwner();
+    click('toggle-pick');
+    click('pick-text');
+    expect(container.querySelector('[data-testid="owner-pill"]')).not.toBeNull();
+
+    mocks.coursewareReferenceEnabled = false;
+    await rerenderOwner();
+
+    expect(mocks.roundtableProps).toMatchObject({
+      showElementReference: false,
+      canPickSlideElement: false,
+      elementPickActive: false,
+    });
+    expect(container.querySelector('[data-testid="toggle-pick"]')).toBeNull();
+    expect(container.querySelector('[data-testid="owner-pill"]')).toBeNull();
+
+    click('send');
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).toHaveBeenCalledWith('Explain this', undefined);
   });

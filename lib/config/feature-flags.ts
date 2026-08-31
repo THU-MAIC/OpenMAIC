@@ -74,6 +74,14 @@ export function isPiChatEnabled(): boolean {
 }
 
 /**
+ * Unified playback courseware-reference gate for PPT and Interactive scenes.
+ * Default OFF and independently disableable while Pi chat remains available.
+ */
+export function isCoursewareReferenceEnabled(): boolean {
+  return readBoolean(process.env.NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED);
+}
+
+/**
  * Server-only selector for the Pi Child execution harness. Default OFF keeps
  * the existing Legacy JSON-action Child runtime.
  */

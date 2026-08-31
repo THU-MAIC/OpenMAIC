@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 
 const PI_CHAT_FLAG = 'NEXT_PUBLIC_PI_CHAT_ENABLED';
+const COURSEWARE_REFERENCE_FLAG = 'NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED';
 let originalPiChatFlag: string | undefined;
+let originalCoursewareReferenceFlag: string | undefined;
 
 const mocks = vi.hoisted(() => ({
   resolveModel: vi.fn(),
@@ -89,7 +91,9 @@ function makeBody() {
 describe('POST /api/chat/pi model and thinking resolution', () => {
   beforeEach(() => {
     originalPiChatFlag = process.env[PI_CHAT_FLAG];
+    originalCoursewareReferenceFlag = process.env[COURSEWARE_REFERENCE_FLAG];
     process.env[PI_CHAT_FLAG] = 'true';
+    process.env[COURSEWARE_REFERENCE_FLAG] = 'true';
     vi.resetModules();
     mocks.resolveModel.mockReset();
     mocks.runPiDirectorLoop.mockReset();
@@ -108,6 +112,11 @@ describe('POST /api/chat/pi model and thinking resolution', () => {
       delete process.env[PI_CHAT_FLAG];
     } else {
       process.env[PI_CHAT_FLAG] = originalPiChatFlag;
+    }
+    if (originalCoursewareReferenceFlag === undefined) {
+      delete process.env[COURSEWARE_REFERENCE_FLAG];
+    } else {
+      process.env[COURSEWARE_REFERENCE_FLAG] = originalCoursewareReferenceFlag;
     }
   });
 
@@ -178,6 +187,36 @@ describe('POST /api/chat/pi model and thinking resolution', () => {
         maxOutputTokens: 4096,
       }),
     );
+  });
+
+  it('keeps ordinary Pi chat available but rejects references when their gate is disabled', async () => {
+    process.env[COURSEWARE_REFERENCE_FLAG] = 'false';
+    const { POST } = await import('@/app/api/chat/pi/route');
+
+    const ordinaryResponse = await POST(makeRequest(makeBody()));
+    await ordinaryResponse.text();
+    expect(ordinaryResponse.status).toBe(200);
+    expect(mocks.runPiDirectorLoop).toHaveBeenCalledOnce();
+
+    const referencedBody = makeBody();
+    Object.assign(referencedBody, {
+      elementReference: {
+        kind: 'slide_element',
+        sceneId: 'scene-1',
+        elementId: 'text-1',
+      },
+    });
+    const referencedResponse = await POST(makeRequest(referencedBody));
+
+    expect(referencedResponse.status).toBe(400);
+    await expect(referencedResponse.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+      error: 'Courseware references are disabled',
+    });
+    expect(referencedResponse.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBeNull();
+    expect(mocks.resolveModel).toHaveBeenCalledOnce();
+    expect(mocks.runPiDirectorLoop).toHaveBeenCalledOnce();
   });
 
   it('validates and resolves an element reference before model resolution, then returns a receipt', async () => {

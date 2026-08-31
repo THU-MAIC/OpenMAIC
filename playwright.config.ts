@@ -36,6 +36,7 @@ export default defineConfig({
       PORT: '3002',
       NEXT_PUBLIC_MAIC_EDITOR_ENABLED: 'true',
       NEXT_PUBLIC_PI_CHAT_ENABLED: 'true',
+      NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED: 'true',
     },
   },
 });

@@ -61,7 +61,7 @@ import type {
   PlaybackInteractiveComponentPick,
   PlaybackInteractivePickerState,
 } from '@/components/scene-renderers/InteractiveIframeHost';
-import { isPiChatEnabled } from '@/lib/config/feature-flags';
+import { isCoursewareReferenceEnabled, isPiChatEnabled } from '@/lib/config/feature-flags';
 import {
   getSlideElementPresentation,
   getSlideElementTypeLabel,
@@ -148,6 +148,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
     const currentScene = getCurrentScene();
     const piChatEnabled = isPiChatEnabled();
+    const coursewareReferenceEnabled = isCoursewareReferenceEnabled();
     const [elementPickActive, setElementPickActiveState] = useState(false);
     const elementPickActiveRef = useRef(false);
     const setElementPickActive = useCallback((next: boolean | ((active: boolean) => boolean)) => {
@@ -1226,7 +1227,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       ? scenes.length
       : scenes.findIndex((s) => s.id === currentSceneId);
     const totalScenesCount = scenes.length + (canAdvanceToPendingSlot ? 1 : 0);
-    const showElementReference = piChatEnabled && mode === 'playback';
+    const showElementReference = piChatEnabled && coursewareReferenceEnabled && mode === 'playback';
     const canPickSlideElement = Boolean(
       showElementReference &&
       !whiteboardOpen &&
@@ -1246,7 +1247,15 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
     const handlePickElement = useCallback(
       (element: PPTElement) => {
-        if (currentScene?.type !== 'slide' || currentScene.content.type !== 'slide') return;
+        if (
+          !elementPickActiveRef.current ||
+          !showElementReference ||
+          currentScene?.type !== 'slide' ||
+          currentScene.content.type !== 'slide'
+        ) {
+          return;
+        }
+        setElementPickActive(false);
         const selectionVersion = selectionVersionRef.current + 1;
         selectionVersionRef.current = selectionVersion;
         const { displaySummary } = getSlideElementPresentation(element, t);
@@ -1261,9 +1270,15 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           elementType: element.type,
           displaySummary,
         });
-        setElementPickActive(false);
       },
-      [currentScene, currentSceneIndex, setDraftElementReference, setElementPickActive, t],
+      [
+        currentScene,
+        currentSceneIndex,
+        setDraftElementReference,
+        setElementPickActive,
+        showElementReference,
+        t,
+      ],
     );
 
     const handlePickInteractiveComponent = useCallback(
@@ -1314,6 +1329,12 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     useEffect(() => {
       if (whiteboardOpen || !canPickElement) setElementPickActive(false);
     }, [canPickElement, setElementPickActive, whiteboardOpen]);
+
+    useEffect(() => {
+      if (showElementReference) return;
+      setElementPickActive(false);
+      setDraftElementReference(null);
+    }, [setDraftElementReference, setElementPickActive, showElementReference]);
 
     useEffect(() => {
       if (!onInteractivePickerChange) return;
@@ -1690,7 +1711,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 softCloseDeadline={softCloseDeadline}
                 isTopicPending={isTopicPending}
                 onMessageSend={async (msg) => {
-                  const draft = draftElementReferenceRef.current;
+                  const draft = showElementReference ? draftElementReferenceRef.current : null;
                   const elementReferenceSnapshot: ElementReferenceSendSnapshot | undefined = draft
                     ? {
                         reference: draft.reference,

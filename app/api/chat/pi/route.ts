@@ -8,6 +8,7 @@
 import { NextRequest } from 'next/server';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import {
+  isCoursewareReferenceEnabled,
   isPiChatEnabled,
   isPiNativeChildRuntimeEnabled,
   isPiNativeChildSpotlightEnabled,
@@ -63,6 +64,10 @@ export async function POST(req: NextRequest) {
 
     if (!body.config || body.config.agentIds == null) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: config.agentIds');
+    }
+
+    if (body.elementReference !== undefined && !isCoursewareReferenceEnabled()) {
+      return apiError('INVALID_REQUEST', 400, 'Courseware references are disabled');
     }
 
     let elementReference;
