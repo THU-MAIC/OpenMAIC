@@ -26,6 +26,7 @@ import {
   listSkills,
   skillInvocationPrompt,
   skillReadFromTranscript,
+  normalizeSkillFileInfo,
   toPosixPath,
   type LoadedSkill,
 } from '@/lib/server/agent-runtime/skills';
@@ -1336,9 +1337,6 @@ describe('toPosixPath', () => {
   });
 
   it('converts Windows backslashes to forward slashes', () => {
-    // On POSIX, sep is '/' so toPosixPath is a no-op — the conversion is only
-    // active when sep === '\\'. This test verifies the replacement logic
-    // directly by calling the underlying split/join the function uses.
     const windowsPath = 'C:\\repo\\OpenMAIC\\skills\\agent-runtime\\build-personal-skill';
     const posix = windowsPath.split('\\').join('/');
     expect(posix).toBe('C:/repo/OpenMAIC/skills/agent-runtime/build-personal-skill');
@@ -1348,5 +1346,59 @@ describe('toPosixPath', () => {
     const mixed = 'C:\\repo/OpenMAIC\\skills/SKILL.md';
     const posix = mixed.split('\\').join('/');
     expect(posix).toBe('C:/repo/OpenMAIC/skills/SKILL.md');
+  });
+});
+
+describe('normalizeSkillFileInfo', () => {
+  it('normalizes both path and name from a Windows-shaped FileInfo', () => {
+    const info = {
+      name: 'C:\\repo\\OpenMAIC\\skills\\agent-runtime\\quiz\\SKILL.md',
+      path: 'C:\\repo\\OpenMAIC\\skills\\agent-runtime\\quiz\\SKILL.md',
+      isFile: true,
+      isDirectory: false,
+      size: 1024,
+    };
+    const result = normalizeSkillFileInfo(info);
+    expect(result.path).toBe('C:/repo/OpenMAIC/skills/agent-runtime/quiz/SKILL.md');
+    expect(result.name).toBe('SKILL.md');
+  });
+
+  it('derives correct name from directory path with trailing separator', () => {
+    const info = {
+      name: 'C:\\repo\\skills\\quiz\\',
+      path: 'C:\\repo\\skills\\quiz\\',
+      isFile: false,
+      isDirectory: true,
+      size: 0,
+    };
+    const result = normalizeSkillFileInfo(info);
+    expect(result.path).toBe('C:/repo/skills/quiz/');
+    expect(result.name).toBe('quiz');
+  });
+
+  it('is a no-op for already-POSIX FileInfo', () => {
+    const info = { name: 'SKILL.md', path: '/skills/quiz/SKILL.md' };
+    const result = normalizeSkillFileInfo(info);
+    expect(result.name).toBe('SKILL.md');
+    expect(result.path).toBe('/skills/quiz/SKILL.md');
+  });
+
+  it('preserves additional properties on the FileInfo object', () => {
+    const info = { name: 'x', path: 'C:\\a\\x', isFile: true, size: 42 };
+    const result = normalizeSkillFileInfo(info);
+    expect(result.isFile).toBe(true);
+    expect(result.size).toBe(42);
+  });
+});
+
+describe('listSkills loads all built-in skills via normalizing env', () => {
+  it('returns at least one built-in skill with a valid SKILL.md', async () => {
+    const skills = await listSkills();
+    const builtins = skills.filter((s) => s.source === 'builtin');
+    expect(builtins.length).toBeGreaterThan(0);
+    for (const s of builtins) {
+      expect(s.content.length).toBeGreaterThan(0);
+      expect(s.id).toBeTruthy();
+    }
   });
 });

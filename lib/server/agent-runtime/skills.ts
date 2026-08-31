@@ -96,30 +96,24 @@ const NativeReadParams = Type.Object({
 
 let builtinCache: LoadedSkill[] | null = null;
 
-/**
- * Normalize a filesystem path to POSIX separators.
- *
- * pi-agent-core's skill loader uses the `ignore` package internally, which
- * requires POSIX-style relative paths. On Windows, Node's `path.resolve` and
- * `fs.readdir` return backslash-separated paths that `ignore` rejects with
- * "path should be a `path.relative()`d string". This helper converts `\` to
- * `/` so the loader receives the separator it expects on every platform.
- */
 export function toPosixPath(p: string): string {
   return sep === '\\' ? p.split(sep).join('/') : p;
 }
 
-/**
- * Wraps NodeExecutionEnv so every FileInfo.path returned by fileInfo() and
- * listDir() uses POSIX separators, preventing the ignore-package rejection
- * on Windows (see #1295).
- */
+export function normalizeSkillFileInfo<T extends { name: string; path: string }>(info: T): T {
+  const normalizedPath = info.path.replaceAll('\\', '/');
+  const withoutTrailing = normalizedPath.replace(/\/+$/, '');
+  const lastSep = withoutTrailing.lastIndexOf('/');
+  const name = withoutTrailing.slice(lastSep + 1);
+  return { ...info, name, path: normalizedPath };
+}
+
 class PosixNormalizingEnv extends NodeExecutionEnv {
   override async fileInfo(
     ...args: Parameters<NodeExecutionEnv['fileInfo']>
   ): ReturnType<NodeExecutionEnv['fileInfo']> {
     const result = await super.fileInfo(...args);
-    if (result.ok) result.value.path = toPosixPath(result.value.path);
+    if (result.ok) result.value = normalizeSkillFileInfo(result.value);
     return result;
   }
 
@@ -128,7 +122,7 @@ class PosixNormalizingEnv extends NodeExecutionEnv {
   ): ReturnType<NodeExecutionEnv['listDir']> {
     const result = await super.listDir(...args);
     if (result.ok) {
-      for (const info of result.value) info.path = toPosixPath(info.path);
+      result.value = result.value.map(normalizeSkillFileInfo);
     }
     return result;
   }
