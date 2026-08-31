@@ -1,5 +1,6 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { parseHTML } from 'linkedom';
 import { describe, expect, it } from 'vitest';
 import { TextBlock } from '@/components/workbench/chat/text-block';
 
@@ -67,7 +68,7 @@ Explanation`,
     expect(html).not.toContain('class="katex-display"');
   });
 
-  it.each(['$$$$x\ny\n$$$', '$$$x\ny\n$$$$'])(
+  it.each(['$$$$x\ny\n$$$', '$$$x\ny\n$$$$', '$$$$   tag\ny\n$$$$'])(
     'preserves a multiline longer dollar run literally: %s',
     (text) => {
       const html = renderText(text);
@@ -141,6 +142,19 @@ more$$`,
     expect(html).toContain('$inline$');
     expect(html).toContain('$$fenced$$');
     expect(html).not.toContain('class="katex"');
+  });
+
+  it.each([
+    ['an unfinished fence', ['```tex', '$$x'].join('\n')],
+    ['a closed fence', ['```tex', '$$x', '```'].join('\n')],
+  ])('does not complete math inside %s while streaming', (_case, text) => {
+    const streaming = parseHTML(renderText(text, true)).document;
+    const settled = parseHTML(renderText(text)).document;
+
+    expect(streaming.querySelector('code')?.textContent).toBe('$$x');
+    expect(settled.querySelector('code')?.textContent).toBe('$$x');
+    expect(streaming.querySelectorAll('.katex-display')).toHaveLength(0);
+    expect(settled.querySelectorAll('.katex-display')).toHaveLength(0);
   });
 
   it('preserves the default GFM table pipeline', () => {

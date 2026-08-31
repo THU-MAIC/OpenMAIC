@@ -86,7 +86,7 @@ function mathNodeValue(node: MarkdownNode): string {
 }
 
 function literalDollarBlock(node: MarkdownNode, openingFence: string, raw: string): MarkdownNode {
-  let value = openingFence;
+  let value = raw.match(/^\$+[^\S\r\n]*/)?.[0] ?? openingFence;
   if (typeof node.meta === 'string') value += node.meta;
   if (node.value) value += `\n${node.value}`;
 
@@ -203,6 +203,11 @@ const STREAMDOWN_PLUGINS = {
   math: createMathPlugin({ singleDollarTextMath: true }),
 } as const;
 
+// The normalizer above already keeps unfinished display math visible. Remend's
+// generic `$$` completion is container-unaware and can alter fenced code or add
+// a second formula outside a list/blockquote while a message is streaming.
+const REMEND = { katex: false } as const;
+
 // Table chrome (fullscreen/download) is workbench-irrelevant; the code block's
 // copy action stays.
 const CONTROLS = { table: false } as const;
@@ -247,6 +252,7 @@ export function TextBlock({ text, streaming = false }: { text: string; streaming
         mode={streaming ? 'streaming' : 'static'}
         remarkPlugins={REMARK_PLUGINS}
         plugins={STREAMDOWN_PLUGINS}
+        remend={REMEND}
         controls={CONTROLS}
         components={COMPONENTS}
         parseIncompleteMarkdown={streaming}

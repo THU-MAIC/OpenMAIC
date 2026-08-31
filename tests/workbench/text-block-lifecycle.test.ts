@@ -76,4 +76,18 @@ describe('Workbench assistant Markdown lifecycle', () => {
     const replay = mountText(incomplete, false);
     expect(live.host.innerHTML).toBe(replay.host.innerHTML);
   });
+
+  it.each([
+    ['a list', '- $$x\n  y'],
+    ['a blockquote', '> $$x\n> y'],
+  ])('does not add an empty formula to an unfinished display inside %s', (_case, text) => {
+    const live = mountText(text, true);
+    expect(live.host.querySelectorAll('.katex-display')).toHaveLength(1);
+
+    act(() => live.root.render(createElement(TextBlock, { text, streaming: false })));
+    const replay = mountText(text, false);
+
+    expect(live.host.querySelectorAll('.katex-display')).toHaveLength(1);
+    expect(live.host.innerHTML).toBe(replay.host.innerHTML);
+  });
 });
