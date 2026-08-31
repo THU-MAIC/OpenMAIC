@@ -1,24 +1,18 @@
 import { NextResponse } from 'next/server';
+import { callLLM } from '@/lib/ai/llm';
+import { getModel } from '@/lib/ai/providers';
 import { parseAgentGeoTelemetry, type AgentGeoTelemetry } from '@/lib/cyberphysical/geo';
 import { readOllamaConfig } from '@/lib/cyberphysical/ollama';
 
 const MAX_AI_ROUTE_POINTS = 20;
 const REQUEST_TIMEOUT_MS = 60_000;
 
-interface OllamaChatResponse {
-  model?: string;
-  message?: {
-    content?: string;
-  };
-  error?: string;
-}
-
 function compactTelemetry(telemetry: AgentGeoTelemetry) {
   return {
     agentId: telemetry.agentId,
     current: telemetry.current,
     destination: telemetry.destination ?? null,
-    route: telemetry.route?.slice(-MAX_AI_ROUTE_POINTS),
+    route: telemetry.route?.slice(0, MAX_AI_ROUTE_POINTS),
     trail: telemetry.trail?.slice(-MAX_AI_ROUTE_POINTS),
     headingDeg: telemetry.headingDeg,
     speedMps: telemetry.speedMps,
@@ -54,45 +48,25 @@ export async function POST(request: Request) {
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(config.chatUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        model: config.model,
-        stream: false,
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are a cyberphysical observability assistant. Analyze telemetry for route progress, anomalies, motion state, and operator-relevant observations. Be concise and evidence-based. This interface is telemetry-only: do not issue motor, actuator, navigation, or remote-control commands.',
-          },
-          {
-            role: 'user',
-            content: `Analyze this agent telemetry and summarize what the operator should notice:\n${JSON.stringify(compactTelemetry(telemetry))}`,
-          },
-        ],
-      }),
-      cache: 'no-store',
-      signal: controller.signal,
+    const { model } = getModel({
+      providerId: 'ollama',
+      modelId: config.model,
+      apiKey: config.apiKey ?? '',
+      baseUrl: config.baseUrl,
     });
 
-    const payload = (await response.json().catch(() => null)) as OllamaChatResponse | null;
-    if (!response.ok) {
-      const upstreamMessage = payload?.error?.trim();
-      return NextResponse.json(
-        {
-          error: upstreamMessage
-            ? `Ollama request failed: ${upstreamMessage}`
-            : `Ollama request failed with status ${response.status}.`,
-        },
-        { status: response.status >= 400 && response.status < 600 ? response.status : 502 },
-      );
-    }
+    const result = await callLLM(
+      {
+        model,
+        system:
+          'You are a cyberphysical observability assistant. Analyze telemetry for route progress, anomalies, motion state, and operator-relevant observations. Be concise and evidence-based. This interface is telemetry-only: do not issue motor, actuator, navigation, or remote-control commands.',
+        prompt: `Analyze this agent telemetry and summarize what the operator should notice:\n${JSON.stringify(compactTelemetry(telemetry))}`,
+        abortSignal: controller.signal,
+      },
+      'cyberphysical-ollama-telemetry',
+    );
 
-    const analysis = payload?.message?.content?.trim();
+    const analysis = result.text.trim();
     if (!analysis) {
       return NextResponse.json({ error: 'Ollama returned an empty analysis.' }, { status: 502 });
     }
@@ -100,11 +74,13 @@ export async function POST(request: Request) {
     return NextResponse.json({
       provider: 'ollama',
       deployment: config.deployment,
-      model: payload?.model || config.model,
+      model: config.model,
       analysis,
     });
   } catch (error) {
-    const timedOut = error instanceof Error && error.name === 'AbortError';
+    const timedOut =
+      controller.signal.aborted ||
+      (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError'));
     return NextResponse.json(
       {
         error: timedOut
