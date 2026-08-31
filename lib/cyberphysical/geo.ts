@@ -85,9 +85,7 @@ function sanitizePointArray(value: unknown, preserveNewest = false): GeoPoint[] 
   const bounded = preserveNewest
     ? value.slice(-MAX_ROUTE_POINTS)
     : value.slice(0, MAX_ROUTE_POINTS);
-  const points = bounded
-    .map(sanitizeGeoPoint)
-    .filter((point): point is GeoPoint => point !== null);
+  const points = bounded.map(sanitizeGeoPoint).filter((point): point is GeoPoint => point !== null);
 
   return points.length ? points : undefined;
 }
