@@ -112,15 +112,18 @@ export function useWorkbenchStream(sessionId: string | null): void {
 
   useEffect(() => {
     if (!sessionId) return;
+    let active = true;
+    const isCurrent = () => active && useWorkbenchStore.getState().sessionId === sessionId;
+    const expectedTitleRevision = useWorkbenchStore.getState().sessionTitleRevision;
     // The header title wants the prompt before the runner emits session_start
     // (a queued session can sit there a while), and a `?session=` deep link
     // arrives without the session's own stage — one meta fetch covers both.
     fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((meta) => {
-        // A switch to another session must not let this late response write
-        // the wrong prompt over it.
-        if (useWorkbenchStore.getState().sessionId !== sessionId) return;
+        // A switch away invalidates this attachment even if the user later
+        // returns to the same id before its old request settles.
+        if (!isCurrent()) return;
         if (meta && typeof meta.prompt === 'string') {
           const status =
             meta.status === 'queued' ||
@@ -130,11 +133,13 @@ export function useWorkbenchStream(sessionId: string | null): void {
             meta.status === 'cancelled'
               ? meta.status
               : undefined;
+          const detailTitle = typeof meta.title === 'string' && meta.title ? meta.title : null;
           useWorkbenchStore.getState().setSessionBootstrap({
             prompt: meta.prompt,
-            // Always seeded, including as null: a session with no override must
-            // clear whatever the previously attached one had.
-            title: typeof meta.title === 'string' && meta.title ? meta.title : null,
+            // Detail is only the cold-start title source. Once the owner list,
+            // an owner event, or a local decision has seeded this attachment,
+            // a GET that overtook an uncommitted PATCH must not replace it.
+            ...(expectedTitleRevision === 0 ? { title: detailTitle, expectedTitleRevision } : {}),
             ...(status ? { status } : {}),
             ...(typeof meta.stageId === 'string' && meta.stageId ? { stageId: meta.stageId } : {}),
           });
@@ -150,9 +155,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
 
     let connected = false;
     let caughtUp = false;
-    let active = true;
     const backlog: WorkbenchEvent[] = [];
-    const isCurrent = () => active && useWorkbenchStore.getState().sessionId === sessionId;
     const markAttached = () => {
       if (connected || !isCurrent()) return;
       connected = true;

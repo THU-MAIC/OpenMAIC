@@ -245,6 +245,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   id                  TEXT PRIMARY KEY,
   owner_id            TEXT NOT NULL,
   prompt              TEXT NOT NULL,
+  title               TEXT,
   stage_id            TEXT NOT NULL,
   active_stage_id     TEXT,
   skill_id            TEXT,
@@ -268,6 +269,9 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
 
 ALTER TABLE agent_sessions
   ADD COLUMN IF NOT EXISTS delivered_user_message_seq INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE agent_sessions
+  ADD COLUMN IF NOT EXISTS title TEXT;
 
 CREATE INDEX IF NOT EXISTS agent_sessions_status_live_idx
   ON agent_sessions (status, created_at) WHERE deleted_at IS NULL;
@@ -321,14 +325,67 @@ CREATE TABLE IF NOT EXISTS agent_owner_session_events (
   attempt    INTEGER,
   data       JSONB NOT NULL,
   PRIMARY KEY (owner_id, id),
-  CONSTRAINT agent_owner_session_events_type_known CHECK (type IN
+  CONSTRAINT agent_owner_session_events_type_known_v2 CHECK (type IN
     ('session_created','session_status','session_deleted',
-     'session_active_stage','session_cancel_requested')),
+     'session_active_stage','session_cancel_requested','session_title')),
   CONSTRAINT agent_owner_session_events_status_known CHECK (status IS NULL OR status IN
     ('queued','running','succeeded','failed','cancelled')),
   CONSTRAINT agent_owner_session_events_attempt_nonnegative
     CHECK (attempt IS NULL OR attempt >= 0)
 );
+
+DO $agent_session_owner_event_type_constraint$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'agent_owner_session_events'::regclass
+      AND conname = 'agent_owner_session_events_type_known'::name
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'agent_owner_session_events'::regclass
+      AND conname = 'agent_owner_session_events_type_known_v2'
+  ) THEN
+    LOCK TABLE agent_owner_session_events IN ACCESS EXCLUSIVE MODE;
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'agent_owner_session_events'::regclass
+        AND conname = 'agent_owner_session_events_type_known_v2'
+    ) THEN
+      ALTER TABLE agent_owner_session_events
+        ADD CONSTRAINT agent_owner_session_events_type_known_v2 CHECK (type IN
+          ('session_created','session_status','session_deleted',
+           'session_active_stage','session_cancel_requested','session_title'))
+        NOT VALID;
+    END IF;
+    IF EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'agent_owner_session_events'::regclass
+        AND conname = 'agent_owner_session_events_type_known'::name
+    ) THEN
+      ALTER TABLE agent_owner_session_events
+        DROP CONSTRAINT agent_owner_session_events_type_known;
+    END IF;
+  END IF;
+END
+$agent_session_owner_event_type_constraint$;
+
+-- Installing the superset above is a catalog-only operation while the short
+-- ACCESS EXCLUSIVE lock is held. Validate separately so PostgreSQL scans an
+-- existing projection table under VALIDATE CONSTRAINT's weaker lock instead.
+-- Once validated, later initializers avoid taking that table lock altogether.
+DO $agent_session_owner_event_type_validation$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'agent_owner_session_events'::regclass
+      AND conname = 'agent_owner_session_events_type_known_v2'
+      AND NOT convalidated
+  ) THEN
+    ALTER TABLE agent_owner_session_events
+      VALIDATE CONSTRAINT agent_owner_session_events_type_known_v2;
+  END IF;
+END
+$agent_session_owner_event_type_validation$;
 
 CREATE TABLE IF NOT EXISTS agent_session_urls (
   session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
@@ -427,6 +484,36 @@ function statementsOf(schema: string): string[] {
   return splitSqlStatements(schema);
 }
 
+describe('agent-session owner-event constraint migration', () => {
+  it('installs without a locked scan, then conditionally validates in a separate statement', () => {
+    const statements = statementsOf(AGENT_SESSION_PG_SCHEMA);
+    const installIndex = statements.findIndex((statement) =>
+      statement.includes('$agent_session_owner_event_type_constraint$'),
+    );
+    const validationIndex = statements.findIndex((statement) =>
+      statement.includes('$agent_session_owner_event_type_validation$'),
+    );
+    const install = statements[installIndex] ?? '';
+    const validation = statements[validationIndex] ?? '';
+    const addIndex = install.indexOf('ADD CONSTRAINT agent_owner_session_events_type_known_v2');
+    const notValidIndex = install.indexOf('NOT VALID', addIndex);
+    const dropIndex = install.indexOf(
+      'DROP CONSTRAINT agent_owner_session_events_type_known',
+      addIndex,
+    );
+
+    expect(installIndex).toBeGreaterThanOrEqual(0);
+    expect(addIndex).toBeGreaterThanOrEqual(0);
+    expect(notValidIndex).toBeGreaterThan(addIndex);
+    expect(dropIndex).toBeGreaterThan(notValidIndex);
+    expect(validationIndex).toBeGreaterThan(installIndex);
+    expect(validation).toContain('AND NOT convalidated');
+    expect(validation).toMatch(
+      /ALTER TABLE agent_owner_session_events\s+VALIDATE CONSTRAINT agent_owner_session_events_type_known_v2/,
+    );
+  });
+});
+
 const schemas = [
   {
     name: 'DOCUMENT_PG_SCHEMA',
@@ -494,10 +581,23 @@ describe.each(schemas)('$name is a pinned contract', ({ name, actual, expected, 
     for (const statement of statements) {
       // The splitter keeps leading `--` comment lines attached to the
       // statement that follows them; strip them before judging the DDL.
-      const sql = statement.replace(/^(--[^\n]*\n?)+/, '').trim();
+      const sql = statement
+        .trim()
+        .replace(/^(--[^\n]*\n?)+/, '')
+        .trim();
+      const localConstraintMigration =
+        /^DO \$agent_session_[a-z_]+_constraint\$/.test(sql) &&
+        /LOCK TABLE [a-z0-9_]+ IN ACCESS EXCLUSIVE MODE/.test(sql) &&
+        /IF NOT EXISTS/.test(sql);
+      const constraintValidation =
+        /^DO \$agent_session_[a-z_]+_validation\$/.test(sql) &&
+        /AND NOT convalidated/.test(sql) &&
+        /VALIDATE CONSTRAINT [a-z0-9_]+/.test(sql);
       expect(
         /^CREATE (TABLE|INDEX|UNIQUE INDEX) IF NOT EXISTS /.test(sql) ||
           /^ALTER TABLE [a-z_]+\s+ADD COLUMN IF NOT EXISTS /.test(sql) ||
+          localConstraintMigration ||
+          constraintValidation ||
           /^CREATE OR REPLACE FUNCTION /.test(sql) ||
           /^DROP TRIGGER IF EXISTS /.test(sql) ||
           // CREATE TRIGGER is made idempotent by the paired DROP TRIGGER IF
