@@ -95,6 +95,7 @@ import {
   createPersonalHistorySource,
   PERSONAL_HISTORY_TOOL_NAMES,
 } from './personal-history-tools';
+import { createGenerateSceneRetryBudget } from './generate-scene-retry-budget';
 
 const log = createLogger('AgentRunner');
 const WORKER_ID = `${randomUUID().slice(0, 8)}:${process.pid}`;
@@ -1457,6 +1458,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       personalHistoryTools,
     );
     const askUserLatch = createAskUserTerminateLatch();
+    const generateSceneRetryBudget = createGenerateSceneRetryBudget();
     let toolCalls = 0;
     const agent = buildAgent({
       streamFn,
@@ -1490,12 +1492,14 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         ...(voiceRegistrationEnabled ? VOICE_CLONE_TOOL_NAMES : ['clip_audio']),
       ]),
       ...(plan.kind === 'start' ? {} : { history: modelMessages }),
+      beforeToolCall: (toolContext) => generateSceneRetryBudget.beforeToolCall(toolContext),
       afterToolCall: (toolContext) => {
         toolCalls += 1;
+        const retryResult = generateSceneRetryBudget.afterToolCall(toolContext);
         if (askUserLatch.shouldTerminate(toolContext.toolCall.name, toolContext.isError)) {
-          return { terminate: true };
+          return { ...retryResult, terminate: true };
         }
-        return undefined;
+        return retryResult;
       },
     });
 

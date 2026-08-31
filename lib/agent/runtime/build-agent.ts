@@ -4,8 +4,8 @@
  * Stands up a pi `Agent` with:
  * - injected StreamFn (-> OpenMAIC connector),
  * - request-scoped tools supplied by the route,
- * - a caller-supplied `beforeToolCall` allowlist gate,
- * - a `afterToolCall` quota hook (v0 stub: unlimited).
+ * - the shared allowlist gate plus an optional request-scoped pre-call policy,
+ * - the shared quota hook (v0 stub: unlimited) plus an optional post-call policy.
  */
 import {
   Agent,
@@ -14,6 +14,8 @@ import {
   type AgentMessage,
   type AgentOptions,
   type AgentTool,
+  type BeforeToolCallContext,
+  type BeforeToolCallResult,
   type StreamFn,
 } from '@earendil-works/pi-agent-core';
 import type { Api, Model } from '@earendil-works/pi-ai';
@@ -55,6 +57,11 @@ export interface BuildAgentOptions {
   transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
   /** Optional Pi message conversion, required when a context transform emits custom roles. */
   convertToLlm?: AgentOptions['convertToLlm'];
+  /** Optional request-scoped policy applied after the shared allowlist gate. */
+  beforeToolCall?: (
+    context: BeforeToolCallContext,
+    signal?: AbortSignal,
+  ) => Promise<BeforeToolCallResult | undefined> | BeforeToolCallResult | undefined;
   /** Optional request-scoped hook composed with the shared quota hook. */
   afterToolCall?: (
     context: AfterToolCallContext,
@@ -64,6 +71,7 @@ export interface BuildAgentOptions {
 
 export function buildAgent(opts: BuildAgentOptions): Agent {
   const quotaHook = makeQuotaHook({ remaining: () => Number.MAX_SAFE_INTEGER });
+  const allowlistGate = makeAllowlistGate(opts.allowedToolNames);
   const agent = new Agent({
     streamFn: opts.streamFn,
     transformContext: opts.transformContext,
@@ -79,7 +87,11 @@ export function buildAgent(opts: BuildAgentOptions): Agent {
       // conversation in context — without this the agent is stateless per turn.
       ...(opts.history && opts.history.length > 0 ? { messages: opts.history } : {}),
     },
-    beforeToolCall: makeAllowlistGate(opts.allowedToolNames),
+    beforeToolCall: async (context, signal) => {
+      const allowlistResult = await allowlistGate(context);
+      if (allowlistResult?.block) return allowlistResult;
+      return opts.beforeToolCall?.(context, signal);
+    },
     afterToolCall: async (context, signal) => {
       const markerIsError =
         typeof context.result === 'object' &&

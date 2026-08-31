@@ -14,10 +14,16 @@
  *   while leaving the durable tree untouched, and reports the repaired id on
  *   the session_resumed event.
  */
-import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core';
+import type {
+  AfterToolCallContext,
+  AgentEvent,
+  AgentMessage,
+  BeforeToolCallContext,
+} from '@earendil-works/pi-agent-core';
 import { InMemorySessionRepo, Session } from '@earendil-works/pi-agent-core';
 import type { ClaimedAgentSession } from '@openmaic/storage';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BuildAgentOptions } from '@/lib/agent/runtime/build-agent';
 
 const mocks = vi.hoisted(() => ({
   randomUUID: vi.fn(() => 'runner-test-uuid'),
@@ -392,5 +398,58 @@ describe('read-time repair of an orphaned durable tool call', () => {
     expect(after.messages.map((message) => message.role)).toEqual(['user', 'assistant']);
     expect(after.messages[0]).toBe(seedUser);
     expect(after.messages[1]).toBe(seedAssistant);
+  });
+});
+
+describe('generate_scene retry policy wiring', () => {
+  it('installs a request-scoped budget that blocks a third consecutive failure target', async () => {
+    const meta = makeMeta();
+    const session = await makeEntryTree();
+    const store = makeStore(meta);
+    mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+
+    let options: BuildAgentOptions | undefined;
+    mocks.buildAgent.mockImplementation((agentOptions: BuildAgentOptions) => {
+      options = agentOptions;
+      return makeFakeAgent({});
+    });
+
+    await runSession({ running: new Map(), shuttingDown: false }, meta);
+
+    expect(options?.beforeToolCall).toBeTypeOf('function');
+    expect(options?.afterToolCall).toBeTypeOf('function');
+    const target = { stageId: 'stage-1', order: 2 };
+    const beforeContext = {
+      toolCall: { name: 'generate_scene' },
+      args: target,
+    } as BeforeToolCallContext;
+    const failedContext = {
+      toolCall: { name: 'generate_scene' },
+      args: target,
+      result: {
+        content: [{ type: 'text', text: 'generation failed' }],
+        details: { providerError: 'empty response' },
+      },
+      isError: true,
+    } as AfterToolCallContext;
+
+    expect(await options!.beforeToolCall!(beforeContext)).toBeUndefined();
+    expect(await options!.afterToolCall!(failedContext)).toMatchObject({
+      isError: true,
+      details: { generateSceneRetry: { failedAttempts: 1, exhausted: false } },
+    });
+    expect(await options!.beforeToolCall!(beforeContext)).toBeUndefined();
+    expect(await options!.afterToolCall!(failedContext)).toMatchObject({
+      isError: true,
+      details: { generateSceneRetry: { failedAttempts: 2, exhausted: true } },
+    });
+    expect(await options!.beforeToolCall!(beforeContext)).toMatchObject({ block: true });
+    expect(
+      await options!.beforeToolCall!({
+        ...beforeContext,
+        args: { ...target, order: 3 },
+      }),
+    ).toBeUndefined();
   });
 });

@@ -69,6 +69,7 @@ const DemoParams = Type.Object({ value: Type.Number() });
 
 function makeAgent(options: {
   tool?: AgentTool<typeof DemoParams>;
+  beforeToolCall?: Parameters<typeof buildAgent>[0]['beforeToolCall'];
   afterToolCall?: Parameters<typeof buildAgent>[0]['afterToolCall'];
   allowedToolNames?: ReadonlySet<string>;
 }) {
@@ -77,6 +78,7 @@ function makeAgent(options: {
     systemPrompt: 'system',
     tools: [options.tool ?? makeTool()],
     allowedToolNames: options.allowedToolNames ?? new Set(['demo']),
+    beforeToolCall: options.beforeToolCall,
     afterToolCall: options.afterToolCall,
   });
 }
@@ -112,6 +114,54 @@ describe('buildAgent shared transport lifecycle', () => {
     expect(execute).toHaveBeenCalledTimes(1);
     expect(mocks.streamLLM).toHaveBeenCalledTimes(2);
     expect(toolOutputType(1)).toBe('text');
+  });
+
+  it('lets a request-scoped pre-call policy block an allowed tool before execution', async () => {
+    const execute = vi.fn(async () => ({
+      content: [{ type: 'text' as const, text: 'must not run' }],
+      details: {},
+    }));
+    const beforeToolCall = vi.fn(() => ({ block: true, reason: 'request budget exhausted' }));
+    const afterToolCall = vi.fn();
+    useResponses([
+      [toolCall(), finish('tool-calls')],
+      [{ type: 'text-delta', text: 'acknowledged' }, finish('stop')],
+    ]);
+    const agent = makeAgent({
+      tool: makeTool(execute),
+      beforeToolCall,
+      afterToolCall,
+    });
+
+    await agent.prompt('start');
+
+    expect(beforeToolCall).toHaveBeenCalledTimes(1);
+    expect(execute).not.toHaveBeenCalled();
+    expect(afterToolCall).not.toHaveBeenCalled();
+    expect(toolOutputType(1)).toBe('error-text');
+  });
+
+  it('keeps the shared allowlist authoritative over request-scoped pre-call policies', async () => {
+    const execute = vi.fn(async () => ({
+      content: [{ type: 'text' as const, text: 'must not run' }],
+      details: {},
+    }));
+    const beforeToolCall = vi.fn();
+    useResponses([
+      [toolCall(), finish('tool-calls')],
+      [{ type: 'text-delta', text: 'acknowledged' }, finish('stop')],
+    ]);
+    const agent = makeAgent({
+      tool: makeTool(execute),
+      beforeToolCall,
+      allowedToolNames: new Set(),
+    });
+
+    await agent.prompt('start');
+
+    expect(beforeToolCall).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(toolOutputType(1)).toBe('error-text');
   });
 
   it('makes length plus parsed toolCall terminal and side-effect-free', async () => {
