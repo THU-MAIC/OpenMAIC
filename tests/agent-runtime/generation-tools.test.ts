@@ -200,31 +200,52 @@ describe('generation and deck tools', () => {
         'generate_scene',
       );
       const before = structuredClone(current.get());
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-      const response = await generate.execute('call', {
-        stageId: 'stage-test',
-        order: 1,
-        title: '  Replacement  ',
-        type,
-        brief: 'A replacement page',
-        ...(interactive ?? {}),
-      } as never);
+      try {
+        const response = await generate.execute('call', {
+          stageId: 'stage-test',
+          order: 1,
+          title: '  Replacement  ',
+          type,
+          brief: 'A replacement page',
+          ...(interactive ?? {}),
+        } as never);
 
-      const toolResult = response as { isError?: boolean; details: Record<string, unknown> };
-      expect(toolResult.isError).toBe(true);
-      expect(toolResult.details).toEqual({
-        error: 'invalid-model-output',
-        order: 1,
-        title: 'Replacement',
-        type,
-        sceneId: 'existing',
-      });
-      expect(JSON.stringify(response)).not.toContain(rawResponse);
-      expect(current.get()).toEqual(before);
-      expect(current.store.putScene).not.toHaveBeenCalled();
-      expect(current.store.saveDocument).not.toHaveBeenCalled();
-      expect(generateActions).not.toHaveBeenCalled();
-      expect(onCheckpoint).not.toHaveBeenCalled();
+        const toolResult = response as { isError?: boolean; details: Record<string, unknown> };
+        expect(toolResult.isError).toBe(true);
+        expect((response.content[0] as { text: string }).text).toBe(
+          'The model response could not be parsed into page content; nothing was written.',
+        );
+        expect(toolResult.details).toEqual({
+          error: 'invalid-model-output',
+          order: 1,
+          title: 'Replacement',
+          type,
+          sceneId: 'existing',
+        });
+        expect(JSON.stringify(response)).not.toContain(rawResponse);
+        expect(current.get()).toEqual(before);
+        expect(current.store.putScene).not.toHaveBeenCalled();
+        expect(current.store.saveDocument).not.toHaveBeenCalled();
+        expect(generateActions).not.toHaveBeenCalled();
+        expect(onCheckpoint).not.toHaveBeenCalled();
+
+        expect(warn).toHaveBeenCalledTimes(1);
+        const warning = JSON.parse(String(warn.mock.calls[0][0]));
+        expect(warning).toMatchObject({ level: 'WARN', tag: 'AgentGenerationTools' });
+        expect(JSON.parse(warning.message)).toEqual({
+          error: 'invalid-model-output',
+          stageId: 'stage-test',
+          order: 1,
+          title: 'Replacement',
+          type,
+          sceneId: 'existing',
+        });
+        expect(JSON.stringify(warn.mock.calls)).not.toContain(rawResponse);
+      } finally {
+        warn.mockRestore();
+      }
     },
   );
 
