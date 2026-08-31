@@ -334,8 +334,14 @@ export async function POST(req: NextRequest) {
       allowProceduralSkill: vocationalActive,
       ...(effectiveOutline.type === 'pbl'
         ? {
-            pblLoopFallback: (input) =>
-              generatePBLV2Project(input, languageModel, callLLM, { logger: log }, thinkingConfig),
+            pblLoopFallback: (input, systemPromptSuffix) =>
+              generatePBLV2Project(
+                input,
+                languageModel,
+                callLLM,
+                { logger: log, systemPromptSuffix },
+                thinkingConfig,
+              ),
           }
         : {}),
     });

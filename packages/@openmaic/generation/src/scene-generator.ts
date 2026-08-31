@@ -70,6 +70,25 @@ const INTERACTIVE_WIDGET_ACTIONS = [
   'widget_reveal',
 ];
 
+const VISUAL_QUALITY_CONTRACT = `## Unconditional Visual Quality Contract
+
+This contract applies regardless of course shape, selected skill, or visual style.
+
+- The persisted learner-facing result must pass visual inspection at 1280x720.
+- Responsive HTML must also pass at 768x720 and 390x844. Fixed slide canvases may scale proportionally, but their composition must remain fully visible.
+- Produce no document-level horizontal or vertical overflow. A deliberately scrollable region must use explicit overflow:auto or overflow:scroll and remain inside the viewport.
+- Keep every rendered element inside the visible canvas or viewport; no accidental off-screen, clipped, or overlapping content.
+- No text may clip or overflow its container. Shorten copy or enlarge/reflow the container instead of hiding overflow.
+- Interactive, quiz, and project UI body text must be at least 16 CSS px. Slide body text must be at least 24 px at a 1920x1080 reference size (12.5 units on the 1000x562.5 authoring canvas).
+- Interactive controls must have at least a 44x44 CSS px target and remain usable at every responsive viewport.
+- Before returning output, mentally check viewport bounds, text fit, readable type, and intended scrolling. Do not emit a layout that would fail any check.`;
+
+function withVisualQualityContract(systemPrompt: string): string {
+  return systemPrompt.includes(VISUAL_QUALITY_CONTRACT)
+    ? systemPrompt
+    : `${systemPrompt}\n\n${VISUAL_QUALITY_CONTRACT}`;
+}
+
 // ── Options interfaces for scene generation functions ──
 
 export interface SceneContentOptions {
@@ -106,8 +125,12 @@ export interface SceneContentOptions {
    * Only consumed by the slide branch alongside `editDirective`.
    */
   baselineContent?: GeneratedSlideContent;
-  /** Optional host fallback for the app-only loop planner. */
-  pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>;
+  /** Optional host fallback for the app-only loop planner. The package-owned
+   * quality suffix must be appended to every system prompt it emits. */
+  pblLoopFallback?: (
+    input: PBLPlannerV2Input,
+    visualQualitySystemSuffix: string,
+  ) => Promise<PBLProject>;
   logger?: GenerationLogger;
 }
 
@@ -760,7 +783,11 @@ async function generateSlideContent(
       `Return the full updated slide content in the same schema.`;
   }
 
-  const response = await aiCall(prompts.system, userPrompt, visionImages);
+  const response = await aiCall(
+    withVisualQualityContract(prompts.system),
+    userPrompt,
+    visionImages,
+  );
   const generatedData = parseJsonResponse<GeneratedSlideData>(response);
 
   if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {
@@ -866,7 +893,7 @@ async function generateQuizContent(
   }
 
   log.debug(`Generating quiz content for: ${outline.title}`);
-  const response = await aiCall(prompts.system, prompts.user);
+  const response = await aiCall(withVisualQualityContract(prompts.system), prompts.user);
   const generatedQuestions = parseJsonResponse<QuizQuestion[]>(response);
 
   if (!generatedQuestions || !Array.isArray(generatedQuestions)) {
@@ -976,7 +1003,10 @@ async function generatePBLSceneContent(
   languageDirective?: string,
   targetLanguage?: string,
   userRequirements?: UserRequirements,
-  pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>,
+  pblLoopFallback?: (
+    input: PBLPlannerV2Input,
+    visualQualitySystemSuffix: string,
+  ) => Promise<PBLProject>,
   log: GenerationLogger = noopGenerationLogger,
 ): Promise<GeneratedPBLContent | null> {
   const pblConfig = outline.pblConfig;
@@ -1004,7 +1034,11 @@ async function generatePBLSceneContent(
   };
 
   try {
-    const projectV2 = await generatePBLV2ProjectSingleCall(plannerInput, aiCall, { logger: log });
+    const qualityAiCall: AICallFn = (system, user, visionImages) =>
+      aiCall(withVisualQualityContract(system), user, visionImages);
+    const projectV2 = await generatePBLV2ProjectSingleCall(plannerInput, qualityAiCall, {
+      logger: log,
+    });
     log.info(
       `PBL v2 generated (single-call): ${projectV2.milestones.length} milestones, ${projectV2.roles.length} roles`,
     );
@@ -1029,7 +1063,7 @@ async function generatePBLSceneContent(
 
     if (pblLoopFallback && !skipLoopFallback) {
       try {
-        const projectV2 = await pblLoopFallback(plannerInput);
+        const projectV2 = await pblLoopFallback(plannerInput, VISUAL_QUALITY_CONTRACT);
         log.info(
           `PBL v2 generated (injected loop fallback): ${projectV2.milestones.length} milestones, ${projectV2.roles.length} roles`,
         );
@@ -1219,7 +1253,7 @@ export async function generateWidgetContent(
   }
 
   log.info(`Generating ${widgetType} widget for: ${outline.title}`);
-  const response = await aiCall(prompts.system, prompts.user);
+  const response = await aiCall(withVisualQualityContract(prompts.system), prompts.user);
   const html = extractHtml(response, log);
 
   if (!html) {

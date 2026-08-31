@@ -335,7 +335,7 @@ export function createApp(deps: AppDeps): Hono {
       // Keep the memory permit until the parsed scene has been rendered, so a
       // burst cannot accumulate large expanded JSON objects while waiting for
       // Chromium. The coordinator gate shares Chromium capacity with videos.
-      const png = await extractionGate.run(async () => {
+      const result = await extractionGate.run(async () => {
         const payload = await readPreviewPayload(c, abort.signal);
         return coordinator.runWithExecutionSlot(
           () =>
@@ -348,15 +348,19 @@ export function createApp(deps: AppDeps): Hono {
           abort.signal,
         );
       }, abort.signal);
-      if (png.byteLength === 0) throw new Error('Preview renderer returned an empty image');
+      if (result.png.byteLength === 0) throw new Error('Preview renderer returned an empty image');
 
-      const body = new Uint8Array(png.byteLength);
-      body.set(png);
+      const body = new Uint8Array(result.png.byteLength);
+      body.set(result.png);
       return new Response(body.buffer, {
         status: 200,
         headers: {
           'Content-Type': 'image/png',
-          'Content-Length': String(png.byteLength),
+          'Content-Length': String(result.png.byteLength),
+          'X-OpenMAIC-Layout-Diagnostics': Buffer.from(
+            JSON.stringify(result.diagnostics),
+            'utf8',
+          ).toString('base64url'),
         },
       });
     } catch (error) {

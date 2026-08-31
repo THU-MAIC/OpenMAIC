@@ -132,12 +132,15 @@ export async function generatePBLV2Project(
   // only when the outline gave no directive at all.
   const contentLanguage =
     project.languageDirective || 'Match the language of the outline content above.';
-  const systemPrompt = await buildPlannerSystemPrompt(
+  const baseSystemPrompt = await buildPlannerSystemPrompt(
     input,
     project.proficiency,
     contentLanguage,
     scenarioRoleplay,
   );
+  const systemPrompt = callbacks?.systemPromptSuffix?.trim()
+    ? `${baseSystemPrompt}\n\n${callbacks.systemPromptSuffix.trim()}`
+    : baseSystemPrompt;
 
   // Tool implementations. Each one validates its inputs, mutates
   // `project`, fires a progress event, and returns a small result the

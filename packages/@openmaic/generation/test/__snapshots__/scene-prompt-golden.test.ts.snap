@@ -319,7 +319,20 @@ const objectY = baseY - BOTTOM_MARGIN - (value / maxValue) * playableHeight;
 - [ ] **NO DUPLICATED HTML** - exactly ONE \`<!DOCTYPE html>\` tag
 - [ ] Simulation objects are visible and not hidden under UI overlays
 - [ ] **Visible animation: Objects visibly move/rotate when simulation runs**
-- [ ] **Animation is OBVIOUS, not subtle - user can tell simulation is running**",
+- [ ] **Animation is OBVIOUS, not subtle - user can tell simulation is running**
+
+## Unconditional Visual Quality Contract
+
+This contract applies regardless of course shape, selected skill, or visual style.
+
+- The persisted learner-facing result must pass visual inspection at 1280x720.
+- Responsive HTML must also pass at 768x720 and 390x844. Fixed slide canvases may scale proportionally, but their composition must remain fully visible.
+- Produce no document-level horizontal or vertical overflow. A deliberately scrollable region must use explicit overflow:auto or overflow:scroll and remain inside the viewport.
+- Keep every rendered element inside the visible canvas or viewport; no accidental off-screen, clipped, or overlapping content.
+- No text may clip or overflow its container. Shorten copy or enlarge/reflow the container instead of hiding overflow.
+- Interactive, quiz, and project UI body text must be at least 16 CSS px. Slide body text must be at least 24 px at a 1920x1080 reference size (12.5 units on the 1000x562.5 authoring canvas).
+- Interactive controls must have at least a 44x44 CSS px target and remain usable at every responsive viewport.
+- Before returning output, mentally check viewport bounds, text fit, readable type, and intended scrolling. Do not emit a layout that would fail any check.",
     "user": "Create a simulation widget for: Energy transfer
 
 ## Concept Overview
@@ -530,7 +543,20 @@ Do not include \`id\`, \`status\`, \`order\`, \`assignee\`, or timestamps — th
 "Build a Python CSV analyser", beginner → M1 "Read the data" (open CSV / inspect columns / spot quality issues), M2 "Clean and aggregate" (handle missing / group by month / sum revenue), M3 "Visualise and report" (plot trend / write 3-sentence summary). Small, sequential, one coherent outcome. NOT: "M1 Learn what a CSV is → M2 Learn grouping → M3 Review charts" — that's an outline, not a project.
 
 Now design the project and output the single JSON object.
-</content>",
+</content>
+
+## Unconditional Visual Quality Contract
+
+This contract applies regardless of course shape, selected skill, or visual style.
+
+- The persisted learner-facing result must pass visual inspection at 1280x720.
+- Responsive HTML must also pass at 768x720 and 390x844. Fixed slide canvases may scale proportionally, but their composition must remain fully visible.
+- Produce no document-level horizontal or vertical overflow. A deliberately scrollable region must use explicit overflow:auto or overflow:scroll and remain inside the viewport.
+- Keep every rendered element inside the visible canvas or viewport; no accidental off-screen, clipped, or overlapping content.
+- No text may clip or overflow its container. Shorten copy or enlarge/reflow the container instead of hiding overflow.
+- Interactive, quiz, and project UI body text must be at least 16 CSS px. Slide body text must be at least 24 px at a 1920x1080 reference size (12.5 units on the 1000x562.5 authoring canvas).
+- Interactive controls must have at least a 44x44 CSS px target and remain usable at every responsive viewport.
+- Before returning output, mentally check viewport bounds, text fit, readable type, and intended scrolling. Do not emit a layout that would fail any check.",
     "user": "Design the PBL project now. Output the single JSON object described in the system prompt — no prose, no code fences.
 
 Before output, verify it passes this exact structural validator:
@@ -687,7 +713,20 @@ Output a JSON array of question objects. Every question must have \`analysis\` a
     "points": 20
   }
 ]
-\`\`\`",
+\`\`\`
+
+## Unconditional Visual Quality Contract
+
+This contract applies regardless of course shape, selected skill, or visual style.
+
+- The persisted learner-facing result must pass visual inspection at 1280x720.
+- Responsive HTML must also pass at 768x720 and 390x844. Fixed slide canvases may scale proportionally, but their composition must remain fully visible.
+- Produce no document-level horizontal or vertical overflow. A deliberately scrollable region must use explicit overflow:auto or overflow:scroll and remain inside the viewport.
+- Keep every rendered element inside the visible canvas or viewport; no accidental off-screen, clipped, or overlapping content.
+- No text may clip or overflow its container. Shorten copy or enlarge/reflow the container instead of hiding overflow.
+- Interactive, quiz, and project UI body text must be at least 16 CSS px. Slide body text must be at least 24 px at a 1920x1080 reference size (12.5 units on the 1000x562.5 authoring canvas).
+- Interactive controls must have at least a 44x44 CSS px target and remain usable at every responsive viewport.
+- Before returning output, mentally check viewport bounds, text fit, readable type, and intended scrolling. Do not emit a layout that would fail any check.",
     "user": "Title: Dependency Injection Check
 Description: Check the core idea.
 Test Points: 1. Injected collaborators
@@ -1619,7 +1658,20 @@ Before outputting JSON, verify:
 
 ## Output Format
 
-Output valid JSON only. No explanations, no code blocks, no additional text.",
+Output valid JSON only. No explanations, no code blocks, no additional text.
+
+## Unconditional Visual Quality Contract
+
+This contract applies regardless of course shape, selected skill, or visual style.
+
+- The persisted learner-facing result must pass visual inspection at 1280x720.
+- Responsive HTML must also pass at 768x720 and 390x844. Fixed slide canvases may scale proportionally, but their composition must remain fully visible.
+- Produce no document-level horizontal or vertical overflow. A deliberately scrollable region must use explicit overflow:auto or overflow:scroll and remain inside the viewport.
+- Keep every rendered element inside the visible canvas or viewport; no accidental off-screen, clipped, or overlapping content.
+- No text may clip or overflow its container. Shorten copy or enlarge/reflow the container instead of hiding overflow.
+- Interactive, quiz, and project UI body text must be at least 16 CSS px. Slide body text must be at least 24 px at a 1920x1080 reference size (12.5 units on the 1000x562.5 authoring canvas).
+- Interactive controls must have at least a 44x44 CSS px target and remain usable at every responsive viewport.
+- Before returning output, mentally check viewport bounds, text fit, readable type, and intended scrolling. Do not emit a layout that would fail any check.",
     "user": "# Generation Requirements
 
 ## Scene Information

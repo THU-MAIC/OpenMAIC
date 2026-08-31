@@ -31,6 +31,78 @@ export interface PreviewViewport {
   deviceScaleFactor: number;
 }
 
+export interface LayoutRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface LayoutNodeSnapshot {
+  selector: string;
+  rect: LayoutRect;
+  clientWidth: number;
+  clientHeight: number;
+  scrollWidth: number;
+  scrollHeight: number;
+  fontSize: number;
+  /** Effective ancestor transform scale applied to the rendered glyphs. */
+  renderScale?: number;
+  containsText: boolean;
+  hasDirectText: boolean;
+  isIntentionalScroller: boolean;
+  insideIntentionalScroller: boolean;
+}
+
+export interface LayoutSnapshot {
+  viewport: Pick<PreviewViewport, 'width' | 'height'>;
+  document: {
+    scrollWidth: number;
+    scrollHeight: number;
+    clientWidth: number;
+    clientHeight: number;
+  };
+  minimumTextPx: number;
+  nodes: LayoutNodeSnapshot[];
+}
+
+export type LayoutIssue =
+  | {
+      code: 'document-overflow';
+      selector: 'html';
+      overflow: { x: number; y: number };
+    }
+  | {
+      code: 'element-outside-viewport';
+      selector: string;
+      rect: LayoutRect;
+    }
+  | {
+      code: 'text-overflow';
+      selector: string;
+      overflow: { x: number; y: number };
+    }
+  | {
+      code: 'small-text';
+      selector: string;
+      fontSize: number;
+      minimumTextPx: number;
+    };
+
+export interface LayoutDiagnostics {
+  version: 1;
+  viewport: Pick<PreviewViewport, 'width' | 'height'>;
+  pass: boolean;
+  document: LayoutSnapshot['document'];
+  issues: LayoutIssue[];
+  truncated: boolean;
+}
+
+export interface PreviewRenderResult {
+  png: Uint8Array;
+  diagnostics: LayoutDiagnostics;
+}
+
 export interface PreviewRequest {
   scene: PreviewScene;
   stage: PreviewStageContext;
@@ -39,7 +111,7 @@ export interface PreviewRequest {
 }
 
 export interface PreviewRenderer {
-  render(request: PreviewRequest): Promise<Uint8Array>;
+  render(request: PreviewRequest): Promise<PreviewRenderResult>;
 }
 
 export class PreviewTimeoutError extends Error {}
@@ -223,6 +295,208 @@ export function buildSlideClientBundle(): Promise<string> {
 
 type AssetDocument = Page | Frame;
 
+const MAX_LAYOUT_ISSUES = 20;
+const LAYOUT_TOLERANCE_PX = 1;
+
+/** Readability is judged in rendered screen pixels, not authored canvas units. */
+export function minimumTextPxForPreview(
+  _sceneType: PreviewScene['type'],
+  _viewport: PreviewViewport,
+): number {
+  return 16;
+}
+
+/** Apply the quality policy to serializable browser measurements. */
+export function analyzeLayoutSnapshot(snapshot: LayoutSnapshot): LayoutDiagnostics {
+  const issues: LayoutIssue[] = [];
+  const push = (issue: LayoutIssue) => {
+    if (issues.length < MAX_LAYOUT_ISSUES) issues.push(issue);
+  };
+  const documentOverflow = {
+    x: Math.max(0, snapshot.document.scrollWidth - snapshot.viewport.width),
+    y: Math.max(0, snapshot.document.scrollHeight - snapshot.viewport.height),
+  };
+  if (documentOverflow.x > LAYOUT_TOLERANCE_PX || documentOverflow.y > LAYOUT_TOLERANCE_PX) {
+    push({ code: 'document-overflow', selector: 'html', overflow: documentOverflow });
+  }
+
+  for (const node of snapshot.nodes) {
+    const outside =
+      node.rect.x < -LAYOUT_TOLERANCE_PX ||
+      node.rect.y < -LAYOUT_TOLERANCE_PX ||
+      node.rect.x + node.rect.width > snapshot.viewport.width + LAYOUT_TOLERANCE_PX ||
+      node.rect.y + node.rect.height > snapshot.viewport.height + LAYOUT_TOLERANCE_PX;
+    if (outside && !node.insideIntentionalScroller) {
+      push({ code: 'element-outside-viewport', selector: node.selector, rect: node.rect });
+    }
+    const textOverflow = {
+      x: Math.max(0, node.scrollWidth - node.clientWidth),
+      y: Math.max(0, node.scrollHeight - node.clientHeight),
+    };
+    if (
+      node.containsText &&
+      !node.isIntentionalScroller &&
+      !node.insideIntentionalScroller &&
+      (textOverflow.x > LAYOUT_TOLERANCE_PX || textOverflow.y > LAYOUT_TOLERANCE_PX)
+    ) {
+      push({ code: 'text-overflow', selector: node.selector, overflow: textOverflow });
+    }
+    const renderedFontSize = node.fontSize * (node.renderScale ?? 1);
+    if (node.hasDirectText && renderedFontSize < snapshot.minimumTextPx) {
+      push({
+        code: 'small-text',
+        selector: node.selector,
+        fontSize: Math.round(renderedFontSize * 100) / 100,
+        minimumTextPx: snapshot.minimumTextPx,
+      });
+    }
+  }
+
+  const totalIssueCount =
+    (documentOverflow.x > LAYOUT_TOLERANCE_PX || documentOverflow.y > LAYOUT_TOLERANCE_PX ? 1 : 0) +
+    snapshot.nodes.reduce((count, node) => {
+      const outside =
+        !node.insideIntentionalScroller &&
+        (node.rect.x < -LAYOUT_TOLERANCE_PX ||
+          node.rect.y < -LAYOUT_TOLERANCE_PX ||
+          node.rect.x + node.rect.width > snapshot.viewport.width + LAYOUT_TOLERANCE_PX ||
+          node.rect.y + node.rect.height > snapshot.viewport.height + LAYOUT_TOLERANCE_PX);
+      const overflow =
+        node.containsText &&
+        !node.isIntentionalScroller &&
+        !node.insideIntentionalScroller &&
+        (node.scrollWidth - node.clientWidth > LAYOUT_TOLERANCE_PX ||
+          node.scrollHeight - node.clientHeight > LAYOUT_TOLERANCE_PX);
+      const small =
+        node.hasDirectText && node.fontSize * (node.renderScale ?? 1) < snapshot.minimumTextPx;
+      return count + Number(outside) + Number(overflow) + Number(small);
+    }, 0);
+
+  return {
+    version: 1,
+    viewport: snapshot.viewport,
+    pass: totalIssueCount === 0,
+    document: snapshot.document,
+    issues,
+    truncated: totalIssueCount > issues.length,
+  };
+}
+
+/** Measure the current page or interactive iframe without leaking learner text. */
+export async function collectLayoutDiagnostics(
+  target: AssetDocument,
+  viewport: PreviewViewport,
+  minimumTextPx: number,
+): Promise<LayoutDiagnostics> {
+  const snapshot = await target.evaluate(
+    ({ width, height, minimumTextPx: minimum }) => {
+      const root = document.documentElement;
+      const body = document.body;
+      const nodes = Array.from(body.querySelectorAll<HTMLElement>('*')).flatMap((element) => {
+        if (!(element instanceof HTMLElement)) return [];
+        const style = getComputedStyle(element);
+        if (
+          style.display === 'none' ||
+          style.visibility === 'hidden' ||
+          Number(style.opacity) === 0
+        ) {
+          return [];
+        }
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return [];
+        const scaleX = element.offsetWidth > 0 ? rect.width / element.offsetWidth : 1;
+        const scaleY = element.offsetHeight > 0 ? rect.height / element.offsetHeight : 1;
+        const renderScale = Math.min(scaleX, scaleY);
+        const hasDirectText = Array.from(element.childNodes).some(
+          (node) => node.nodeType === Node.TEXT_NODE && Boolean(node.textContent?.trim()),
+        );
+        const containsText = Boolean(element.textContent?.trim());
+        let selector: string;
+        if (element.id) {
+          const escaped = globalThis.CSS?.escape
+            ? globalThis.CSS.escape(element.id)
+            : element.id.replace(/[^a-zA-Z0-9_-]/g, (character) => `\\${character}`);
+          selector = `#${escaped}`.slice(0, 180);
+        } else {
+          const parts: string[] = [];
+          let current: HTMLElement | null = element;
+          while (current && current !== body && parts.length < 4) {
+            const tag = current.tagName.toLowerCase();
+            const siblings = current.parentElement
+              ? Array.from(current.parentElement.children).filter(
+                  (child) => child.tagName === current!.tagName,
+                )
+              : [];
+            const suffix =
+              siblings.length > 1 ? `:nth-of-type(${siblings.indexOf(current) + 1})` : '';
+            parts.unshift(`${tag}${suffix}`);
+            current = current.parentElement;
+          }
+          selector = (parts.length ? `body>${parts.join('>')}` : 'body').slice(0, 180);
+        }
+        const isIntentionalScroller =
+          (/^(auto|scroll)$/.test(style.overflowX) &&
+            element.scrollWidth > element.clientWidth + 1) ||
+          (/^(auto|scroll)$/.test(style.overflowY) &&
+            element.scrollHeight > element.clientHeight + 1);
+        let insideIntentionalScroller = false;
+        let current: HTMLElement | null = element.parentElement;
+        while (current && current !== root && current !== body) {
+          const currentStyle = getComputedStyle(current);
+          const scrollsX =
+            /^(auto|scroll)$/.test(currentStyle.overflowX) &&
+            current.scrollWidth > current.clientWidth + 1;
+          const scrollsY =
+            /^(auto|scroll)$/.test(currentStyle.overflowY) &&
+            current.scrollHeight > current.clientHeight + 1;
+          if (scrollsX || scrollsY) {
+            insideIntentionalScroller = true;
+            break;
+          }
+          current = current.parentElement;
+        }
+        return [
+          {
+            selector,
+            rect: {
+              x: Math.round(rect.x * 100) / 100,
+              y: Math.round(rect.y * 100) / 100,
+              width: Math.round(rect.width * 100) / 100,
+              height: Math.round(rect.height * 100) / 100,
+            },
+            clientWidth: element.clientWidth,
+            clientHeight: element.clientHeight,
+            scrollWidth: element.scrollWidth,
+            scrollHeight: element.scrollHeight,
+            fontSize: Math.round((Number.parseFloat(style.fontSize) || 0) * 100) / 100,
+            renderScale:
+              Number.isFinite(renderScale) && renderScale > 0
+                ? Math.round(renderScale * 10_000) / 10_000
+                : 1,
+            containsText,
+            hasDirectText,
+            isIntentionalScroller,
+            insideIntentionalScroller,
+          },
+        ];
+      });
+      return {
+        viewport: { width, height },
+        document: {
+          scrollWidth: Math.max(root.scrollWidth, body.scrollWidth),
+          scrollHeight: Math.max(root.scrollHeight, body.scrollHeight),
+          clientWidth: root.clientWidth,
+          clientHeight: root.clientHeight,
+        },
+        minimumTextPx: minimum,
+        nodes,
+      };
+    },
+    { width: viewport.width, height: viewport.height, minimumTextPx },
+  );
+  return analyzeLayoutSnapshot(snapshot);
+}
+
 /** Wait for fonts, images, client effects, and layout mutations to settle. */
 export async function waitForDocumentAssets(document: AssetDocument): Promise<void> {
   await document.evaluate(async () => {
@@ -242,18 +516,25 @@ export async function waitForDocumentAssets(document: AssetDocument): Promise<vo
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
     await new Promise<void>((resolve) => {
-      let quietTimer = setTimeout(done, 100);
-      const maximumTimer = setTimeout(done, 2_000);
+      let quietTimer: ReturnType<typeof setTimeout>;
       const observer = new MutationObserver(() => {
         clearTimeout(quietTimer);
-        quietTimer = setTimeout(done, 100);
+        quietTimer = setTimeout(() => {
+          clearTimeout(maximumTimer);
+          observer.disconnect();
+          resolve();
+        }, 100);
       });
-      function done() {
+      const maximumTimer = setTimeout(() => {
         clearTimeout(quietTimer);
+        observer.disconnect();
+        resolve();
+      }, 2_000);
+      quietTimer = setTimeout(() => {
         clearTimeout(maximumTimer);
         observer.disconnect();
         resolve();
-      }
+      }, 100);
       observer.observe(globalThis.document.documentElement, {
         attributes: true,
         childList: true,
@@ -296,7 +577,7 @@ async function launchWithAbort(launch: Promise<Browser>, signal: AbortSignal): P
 }
 
 export class ChromiumPreviewRenderer implements PreviewRenderer {
-  async render(request: PreviewRequest): Promise<Uint8Array> {
+  async render(request: PreviewRequest): Promise<PreviewRenderResult> {
     if (request.signal.aborted) throw timeoutError();
 
     const executablePath =
@@ -350,8 +631,22 @@ export class ChromiumPreviewRenderer implements PreviewRenderer {
       else await waitForDocumentAssets(page);
       if (request.signal.aborted) throw timeoutError();
 
+      let diagnosticsTarget: AssetDocument = page;
+      if (request.scene.type === 'interactive') {
+        const iframe = await page.waitForSelector('iframe');
+        const frame = await iframe?.contentFrame();
+        if (!frame) throw new Error('Interactive preview iframe did not load');
+        diagnosticsTarget = frame;
+      }
+      const minimumTextPx = minimumTextPxForPreview(request.scene.type, request.viewport);
+      const diagnostics = await collectLayoutDiagnostics(
+        diagnosticsTarget,
+        request.viewport,
+        minimumTextPx,
+      );
+
       const png = await page.screenshot({ type: 'png', optimizeForSpeed: true });
-      return new Uint8Array(png);
+      return { png: new Uint8Array(png), diagnostics };
     } catch (error) {
       if (request.signal.aborted) throw timeoutError();
       throw error;

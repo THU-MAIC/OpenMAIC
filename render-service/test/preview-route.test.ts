@@ -58,6 +58,25 @@ function previewRequest(payload: unknown = previewPayload(), identity = 'preview
   });
 }
 
+function renderedPng(bytes: number[] = [1]) {
+  return {
+    png: new Uint8Array(bytes),
+    diagnostics: {
+      version: 1 as const,
+      viewport: { width: 1280, height: 720 },
+      pass: true,
+      document: {
+        scrollWidth: 1280,
+        scrollHeight: 720,
+        clientWidth: 1280,
+        clientHeight: 720,
+      },
+      issues: [],
+      truncated: false,
+    },
+  };
+}
+
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((next) => {
@@ -94,8 +113,41 @@ function appWith(
 }
 
 describe('POST /preview', () => {
+  it('returns bounded layout diagnostics beside the PNG', async () => {
+    const diagnostics = {
+      version: 1 as const,
+      viewport: { width: 1280, height: 720 },
+      pass: false,
+      document: { scrollWidth: 1280, scrollHeight: 744, clientWidth: 1280, clientHeight: 720 },
+      issues: [
+        {
+          code: 'document-overflow' as const,
+          selector: 'html',
+          overflow: { x: 0, y: 24 },
+        },
+      ],
+      truncated: false,
+    };
+    const render = vi.fn<PreviewRenderer['render']>(async () => ({
+      png: new Uint8Array([137, 80, 78, 71]),
+      diagnostics,
+    }));
+    const response = await appWith({ render }).fetch(previewRequest());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-openmaic-layout-diagnostics')).toBeTruthy();
+    expect(
+      JSON.parse(
+        Buffer.from(response.headers.get('x-openmaic-layout-diagnostics')!, 'base64url').toString(
+          'utf8',
+        ),
+      ),
+    ).toEqual(diagnostics);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([137, 80, 78, 71]));
+  });
+
   it('returns the rendered PNG synchronously', async () => {
-    const render = vi.fn<PreviewRenderer['render']>(async () => new Uint8Array([137, 80, 78, 71]));
+    const render = vi.fn<PreviewRenderer['render']>(async () => renderedPng([137, 80, 78, 71]));
     const response = await appWith({ render }).fetch(previewRequest());
 
     expect(response.status).toBe(200);
@@ -185,9 +237,7 @@ describe('POST /preview', () => {
     await Promise.resolve();
     const pullsBeforeFetch = pulls;
 
-    const response = await appWith({ render: async () => new Uint8Array([1]) }, gate).fetch(
-      request,
-    );
+    const response = await appWith({ render: async () => renderedPng() }, gate).fetch(request);
     expect(response.status).toBe(429);
     await expect(response.json()).resolves.toMatchObject({
       error: expect.stringContaining('preview queue is full'),
@@ -202,7 +252,7 @@ describe('POST /preview', () => {
       finish = resolve;
     });
     const app = appWith(
-      { render: async () => (await parked, new Uint8Array([1])) },
+      { render: async () => (await parked, renderedPng()) },
       new PreviewGate(8, 1),
     );
 
@@ -245,7 +295,7 @@ describe('POST /preview', () => {
     );
     await Promise.resolve();
 
-    const render = vi.fn<PreviewRenderer['render']>(async () => new Uint8Array([1]));
+    const render = vi.fn<PreviewRenderer['render']>(async () => renderedPng());
     const app = appWith({ render }, new PreviewGate(8, 2), {
       extractionGate,
       previewDeadlineMs: 20,
@@ -282,7 +332,7 @@ describe('POST /preview', () => {
       body,
       duplex: 'half',
     } as RequestInit);
-    const render = vi.fn<PreviewRenderer['render']>(async () => new Uint8Array([1]));
+    const render = vi.fn<PreviewRenderer['render']>(async () => renderedPng());
     const app = appWith({ render }, new PreviewGate(8, 2), { previewDeadlineMs: 20 });
 
     const started = Date.now();
@@ -304,7 +354,7 @@ describe('POST /preview', () => {
       render: async () => {
         renderCalls += 1;
         if (renderCalls === 1) await finishFirst.promise;
-        return new Uint8Array([1]);
+        return renderedPng();
       },
     });
 
@@ -366,7 +416,7 @@ describe('POST /preview', () => {
     );
     await videoStarted.promise;
 
-    const render = vi.fn<PreviewRenderer['render']>(async () => new Uint8Array([1]));
+    const render = vi.fn<PreviewRenderer['render']>(async () => renderedPng());
     const app = createApp({
       jobs,
       artifacts,

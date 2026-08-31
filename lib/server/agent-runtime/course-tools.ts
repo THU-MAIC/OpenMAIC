@@ -251,7 +251,7 @@ export const DSL_TOOLS_PROMPT = [
   'To fill an uploaded .pptx into an existing stage as appended pages with its original slides kept, read the `pptx-import` skill first (it carries the import-and-repair sequence) and use `import_pptx` after `create_stage` — never extract_material + generate_scene for a layout-preserving import. The stage keeps its own title; the PPT is content, not the classroom identity.',
   'When the page needs a new visual rather than an existing URL, call `generate_image` first, then apply its returned `src` with `patch_stage` set or add an image element; generate_image never edits the page.',
   'When a NEW page needs visuals, obtain every real src first by reusing material or calling generate_image / generate_video, then pass each image src with its description and dimensions in `generate_scene.media` so the content model sees the media while composing the page; media generation tools never edit the page.',
-  'Use use_material_media before placing session image, video, or audio bytes into a page. Use render_scene_preview selectively to inspect a persisted page when the render capability is available.',
+  'Use use_material_media before placing session image, video, or audio bytes into a page. When render_scene_preview is registered, every new or changed slide and interactive page must pass it at 1280x720, 768x720, and 390x844. Any failed or unavailable diagnostic means the page is not complete: repair it with patch_stage or generate_scene, then rerun every required viewport. Do not finish while any required preview is failing or unrun.',
 ].join(' ');
 
 /** Base runner identity/environment lines, shared by every runner prompt. */

@@ -1222,6 +1222,10 @@ describe('DSL course-tool wiring', () => {
     expect(DSL_TOOLS_PROMPT).toContain('/scenes/<1-based order|sceneId>');
     expect(DSL_TOOLS_PROMPT).toContain('Start with detail:"tree" to see structure');
     expect(DSL_TOOLS_PROMPT).toContain('prefer grep_stage over paging with offset');
+    expect(DSL_TOOLS_PROMPT).toContain('1280x720, 768x720, and 390x844');
+    expect(DSL_TOOLS_PROMPT).toContain(
+      'Do not finish while any required preview is failing or unrun',
+    );
   });
 });
 

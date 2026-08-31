@@ -77,8 +77,11 @@ export async function buildSceneFromOutline(
     logger: log,
     ...(languageModel
       ? {
-          pblLoopFallback: (input) =>
-            generatePBLV2Project(input, languageModel, callLLM, { logger: log }),
+          pblLoopFallback: (input, systemPromptSuffix) =>
+            generatePBLV2Project(input, languageModel, callLLM, {
+              logger: log,
+              systemPromptSuffix,
+            }),
         }
       : {}),
   });
