@@ -8,13 +8,6 @@ export interface OllamaConfig {
   deployment: OllamaDeployment;
 }
 
-interface OllamaEnv {
-  OLLAMA_BASE_URL?: string;
-  OLLAMA_MODEL?: string;
-  OLLAMA_MODELS?: string;
-  OLLAMA_API_KEY?: string;
-}
-
 export const DEFAULT_LOCAL_OLLAMA_BASE_URL = 'http://localhost:11434/v1';
 export const DEFAULT_LOCAL_OLLAMA_MODEL = 'gemma3:4b';
 export const DEFAULT_CLOUD_OLLAMA_MODEL = 'gpt-oss:120b';
@@ -56,7 +49,7 @@ export function buildOllamaChatUrl(baseUrl: string): string {
   return url.toString().replace(/\/$/, '');
 }
 
-function firstConfiguredModel(env: OllamaEnv): string | undefined {
+function firstConfiguredModel(env: Partial<NodeJS.ProcessEnv>): string | undefined {
   const explicit = env.OLLAMA_MODEL?.trim();
   if (explicit) return explicit;
 
@@ -65,7 +58,7 @@ function firstConfiguredModel(env: OllamaEnv): string | undefined {
     .find(Boolean);
 }
 
-export function readOllamaConfig(env: OllamaEnv = process.env): OllamaConfig {
+export function readOllamaConfig(env: Partial<NodeJS.ProcessEnv> = process.env): OllamaConfig {
   const baseUrl = env.OLLAMA_BASE_URL?.trim() || DEFAULT_LOCAL_OLLAMA_BASE_URL;
   const deployment: OllamaDeployment = isOllamaCloud(baseUrl) ? 'cloud' : 'local';
   const model =
