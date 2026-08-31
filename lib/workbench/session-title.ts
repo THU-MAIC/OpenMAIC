@@ -1,9 +1,9 @@
 /**
  * What a conversation is called.
  *
- * Two facts and one rule. The facts: `title`, the name the user gave it (an
- * override, stored on the session row), and `prompt`, the first message. The
- * rule: the override wins, otherwise the title is derived from what was asked —
+ * Two facts and one rule. The facts: `title`, the stored concise name (automatic
+ * or manually overridden), and `prompt`, the first message. The rule: the stored
+ * title wins, otherwise the title is derived from what was asked —
  * a conversation is named by its own question, never by whatever course happens
  * to be open beside it.
  *
@@ -12,7 +12,7 @@
  * in one place and not the other.
  */
 
-/** The longest name a conversation may be given. Mirrors the server's cap. */
+/** The longest stored conversation title. Mirrors the server's cap. */
 export const SESSION_TITLE_MAX_LENGTH = 120;
 
 /**
@@ -39,7 +39,7 @@ export function normalizeSessionTitleOverride(value: string | null): string | nu
 }
 
 export interface WorkbenchSessionNaming {
-  /** The stored override, if the user named this conversation. */
+  /** The stored automatic or manual title, if one exists. */
   readonly title?: string | null;
   /** The first message. */
   readonly prompt?: string | null;
@@ -138,8 +138,9 @@ export async function commitSessionRename({
 }): Promise<SessionRenameOutcome> {
   const next = normalizeSessionTitleInput(current, raw);
   const previous = current.title?.trim() || null;
-  // Unchanged is not a rename; do not spend a round trip saying so.
-  if (!forceSave && next === previous) return 'unchanged';
+  // Equal non-null titles need no round trip. An explicit clear still writes
+  // null so storage can record the user's manual title intent.
+  if (!forceSave && next !== null && next === previous) return 'unchanged';
   apply(next, false);
   try {
     const stored = await save(next);

@@ -149,6 +149,36 @@ describe('committing a rename', () => {
     expect(applied).toEqual([null, null]);
   });
 
+  it('persists an explicit clear when the stored title is already null', async () => {
+    const applied: (string | null)[] = [];
+    const save = vi.fn(async () => null);
+    const outcome = await commitSessionRename({
+      current: session,
+      raw: '  ',
+      apply: (title) => applied.push(title),
+      save,
+    });
+
+    expect(outcome).toBe('renamed');
+    expect(save).toHaveBeenCalledWith(null);
+    expect(applied).toEqual([null, null]);
+  });
+
+  it('persists manual intent when the prompt fallback is typed back unchanged', async () => {
+    const applied: (string | null)[] = [];
+    const save = vi.fn(async () => null);
+    const outcome = await commitSessionRename({
+      current: session,
+      raw: ' 帮我做一节课 ',
+      apply: (title) => applied.push(title),
+      save,
+    });
+
+    expect(outcome).toBe('renamed');
+    expect(save).toHaveBeenCalledWith(null);
+    expect(applied).toEqual([null, null]);
+  });
+
   it('spends no round trip when nothing changed', async () => {
     const save = vi.fn(async () => null);
     const outcome = await commitSessionRename({
