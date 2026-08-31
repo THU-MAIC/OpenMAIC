@@ -72,7 +72,10 @@ export function AgentMap({ telemetry, onDestinationChange, className }: AgentMap
   }, []);
 
   const worldSize = TILE_SIZE * 2 ** zoom;
-  const centerWorld = useMemo(() => projectGeoPoint(telemetry.current, zoom), [telemetry.current, zoom]);
+  const centerWorld = useMemo(
+    () => projectGeoPoint(telemetry.current, zoom),
+    [telemetry.current, zoom],
+  );
 
   const toScreen = (point: GeoPoint): WorldPoint => {
     const projected = projectGeoPoint(point, zoom);
@@ -248,10 +251,12 @@ export function AgentMap({ telemetry, onDestinationChange, className }: AgentMap
       >
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1.5">
-            <span className="h-2.5 w-5 rounded-full bg-sky-500" /> {t('cyberphysical.observedTrail')}
+            <span className="h-2.5 w-5 rounded-full bg-sky-500" />{' '}
+            {t('cyberphysical.observedTrail')}
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-0.5 w-5 border-t-2 border-dashed border-violet-600" /> {t('cyberphysical.plannedRoute')}
+            <span className="h-0.5 w-5 border-t-2 border-dashed border-violet-600" />{' '}
+            {t('cyberphysical.plannedRoute')}
           </span>
         </div>
         <span>
