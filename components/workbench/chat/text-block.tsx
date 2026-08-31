@@ -3,8 +3,9 @@
 /**
  * Assistant Markdown renderer for the workbench chat.
  *
- * Streamdown owns the parse and render; three things are added:
+ * Streamdown owns the parse and render; four things are added:
  *
+ *  - KaTeX math through Streamdown's stable math plugin configuration.
  *  - `remark-cjk-friendly` BEFORE `remark-gfm`, because CommonMark's emphasis
  *    flanking rules misfire next to fullwidth CJK punctuation — e.g. `**smart**`
  *    quotes otherwise reach the user with their asterisks on (the spike's S10
@@ -19,12 +20,17 @@
  *    link renders exactly as it did before, and outside `/workspace` — where
  *    there is no right pane — the pill falls back to the plain anchor.
  */
+import { createMathPlugin } from '@streamdown/math';
 import { Streamdown, defaultRemarkPlugins } from 'streamdown';
 import remarkCjkFriendly from 'remark-cjk-friendly';
 import { courseIdFromHref } from '@/lib/workbench/course-link';
 import { CourseLink } from './course-link';
 
 const REMARK_PLUGINS = [remarkCjkFriendly, ...Object.values(defaultRemarkPlugins)];
+
+const STREAMDOWN_PLUGINS = {
+  math: createMathPlugin({ singleDollarTextMath: true }),
+} as const;
 
 // Table chrome (fullscreen/download) is workbench-irrelevant; the code block's
 // copy action stays.
@@ -68,6 +74,7 @@ export function TextBlock({ text, streaming = false }: { text: string; streaming
           quietly. (Walkthrough verdict: the caret read as too heavy.) */}
       <Streamdown
         remarkPlugins={REMARK_PLUGINS}
+        plugins={STREAMDOWN_PLUGINS}
         controls={CONTROLS}
         components={COMPONENTS}
         parseIncompleteMarkdown={streaming}
