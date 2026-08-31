@@ -53,10 +53,17 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
 
   const currentConfig = videoProvidersConfig[selectedProviderId];
   const currentProvider = VIDEO_PROVIDERS[selectedProviderId];
-  const builtInModels = currentProvider?.models || [];
+  const builtInModels = useMemo(() => {
+    const registryModels = currentProvider?.models || [];
+    if (!currentConfig?.serverModels?.length) return registryModels;
+    const knownModels = [...registryModels, ...(currentConfig.customModels || [])];
+    return currentConfig.serverModels.map(
+      (id) => knownModels.find((model) => model.id === id) || { id, name: id },
+    );
+  }, [currentConfig?.customModels, currentConfig?.serverModels, currentProvider?.models]);
   const customModels = useMemo(
-    () => currentConfig?.customModels || [],
-    [currentConfig?.customModels],
+    () => (currentConfig?.serverModels?.length ? [] : currentConfig?.customModels || []),
+    [currentConfig?.customModels, currentConfig?.serverModels],
   );
   const isServerConfigured = !!currentConfig?.isServerConfigured;
 

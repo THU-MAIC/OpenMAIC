@@ -195,6 +195,41 @@ const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
   happyhorse: '/logos/qwen.svg',
 };
 
+type ServerMediaDisplayConfig = { serverDisplayName?: string } | undefined;
+
+function getImageProviderDisplayName(
+  providerId: ImageProviderId,
+  config: ServerMediaDisplayConfig,
+  t: (key: string) => string,
+): string {
+  return (
+    config?.serverDisplayName ||
+    t(`settings.${IMAGE_PROVIDER_NAMES[providerId]}`) ||
+    IMAGE_PROVIDERS[providerId]?.name
+  );
+}
+
+function getVideoProviderDisplayName(
+  providerId: VideoProviderId,
+  config: ServerMediaDisplayConfig,
+  t: (key: string) => string,
+): string {
+  return (
+    config?.serverDisplayName ||
+    t(`settings.${VIDEO_PROVIDER_NAMES[providerId]}`) ||
+    VIDEO_PROVIDERS[providerId]?.name
+  );
+}
+
+function getServerAwareIcon(
+  defaultIcon: string | undefined,
+  config: ServerMediaDisplayConfig,
+): string | undefined {
+  // A compatibility adapter must not retain the upstream vendor's logo after
+  // the operator gives it a different provider identity.
+  return config?.serverDisplayName ? undefined : defaultIcon;
+}
+
 interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -641,14 +676,18 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         );
       }
       case 'image': {
-        const imgProvider = IMAGE_PROVIDERS[selectedImageProviderId];
-        const imgIcon = IMAGE_PROVIDER_ICONS[selectedImageProviderId];
+        const imgConfig = imageProvidersConfig[selectedImageProviderId];
+        const imgName = getImageProviderDisplayName(selectedImageProviderId, imgConfig, t);
+        const imgIcon = getServerAwareIcon(
+          IMAGE_PROVIDER_ICONS[selectedImageProviderId],
+          imgConfig,
+        );
         return (
           <>
             {imgIcon ? (
               <img
                 src={imgIcon}
-                alt={imgProvider?.name}
+                alt={imgName}
                 className="w-8 h-8 rounded"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = 'none';
@@ -657,21 +696,23 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             ) : (
               <Box className="h-8 w-8 text-muted-foreground" />
             )}
-            <h2 className="text-lg font-semibold">
-              {t(`settings.${IMAGE_PROVIDER_NAMES[selectedImageProviderId]}`) || imgProvider?.name}
-            </h2>
+            <h2 className="text-lg font-semibold">{imgName}</h2>
           </>
         );
       }
       case 'video': {
-        const vidProvider = VIDEO_PROVIDERS[selectedVideoProviderId];
-        const vidIcon = VIDEO_PROVIDER_ICONS[selectedVideoProviderId];
+        const vidConfig = videoProvidersConfig[selectedVideoProviderId];
+        const vidName = getVideoProviderDisplayName(selectedVideoProviderId, vidConfig, t);
+        const vidIcon = getServerAwareIcon(
+          VIDEO_PROVIDER_ICONS[selectedVideoProviderId],
+          vidConfig,
+        );
         return (
           <>
             {vidIcon ? (
               <img
                 src={vidIcon}
-                alt={vidProvider?.name}
+                alt={vidName}
                 className="w-8 h-8 rounded"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = 'none';
@@ -680,9 +721,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             ) : (
               <Box className="h-8 w-8 text-muted-foreground" />
             )}
-            <h2 className="text-lg font-semibold">
-              {t(`settings.${VIDEO_PROVIDER_NAMES[selectedVideoProviderId]}`) || vidProvider?.name}
-            </h2>
+            <h2 className="text-lg font-semibold">{vidName}</h2>
           </>
         );
       }
@@ -943,8 +982,8 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               <ProviderListColumn
                 providers={Object.values(IMAGE_PROVIDERS).map((p) => ({
                   id: p.id,
-                  name: t(`settings.${IMAGE_PROVIDER_NAMES[p.id]}`) || p.name,
-                  icon: IMAGE_PROVIDER_ICONS[p.id],
+                  name: getImageProviderDisplayName(p.id, imageProvidersConfig[p.id], t),
+                  icon: getServerAwareIcon(IMAGE_PROVIDER_ICONS[p.id], imageProvidersConfig[p.id]),
                 }))}
                 configs={imageProvidersConfig}
                 selectedId={selectedImageProviderId}
@@ -966,8 +1005,8 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               <ProviderListColumn
                 providers={Object.values(VIDEO_PROVIDERS).map((p) => ({
                   id: p.id,
-                  name: t(`settings.${VIDEO_PROVIDER_NAMES[p.id]}`) || p.name,
-                  icon: VIDEO_PROVIDER_ICONS[p.id],
+                  name: getVideoProviderDisplayName(p.id, videoProvidersConfig[p.id], t),
+                  icon: getServerAwareIcon(VIDEO_PROVIDER_ICONS[p.id], videoProvidersConfig[p.id]),
                 }))}
                 configs={videoProvidersConfig}
                 selectedId={selectedVideoProviderId}

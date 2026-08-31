@@ -26,6 +26,8 @@ interface ServerProviderEntry {
   apiKey: string;
   baseUrl?: string;
   models?: string[];
+  /** Operator-facing label exposed to clients; credentials and base URLs remain server-only. */
+  displayName?: string;
   proxy?: string;
   /** Aliyun AccessKey ID (AliDocMind — uses AK/SK instead of a single apiKey). */
   accessKeyId?: string;
@@ -262,6 +264,7 @@ function loadEnvSection(
           apiKey: entry.apiKey || '',
           baseUrl: entry.baseUrl,
           models: normalizeModelList(entry.models),
+          displayName: entry.displayName?.trim() || undefined,
           proxy: entry.proxy,
         };
       }
@@ -279,12 +282,14 @@ function loadEnvSection(
           .map((m) => m.trim())
           .filter(Boolean)
       : undefined;
+    const envDisplayName = process.env[`${prefix}_DISPLAY_NAME`]?.trim() || undefined;
 
     if (result[providerId]) {
       // YAML entry exists — env vars override individual fields
       if (envApiKey) result[providerId].apiKey = envApiKey;
       if (envBaseUrl) result[providerId].baseUrl = envBaseUrl;
       if (envModels) result[providerId].models = envModels;
+      if (envDisplayName) result[providerId].displayName = envDisplayName;
       continue;
     }
 
@@ -299,6 +304,7 @@ function loadEnvSection(
       apiKey: envApiKey || '',
       baseUrl: envBaseUrl,
       models: envModels,
+      displayName: envDisplayName,
     };
   }
 
@@ -836,13 +842,15 @@ export function resolvePDFBaseUrl(providerId: string, clientBaseUrl?: string): s
  */
 export function getServerImageProviders(): Record<
   string,
-  { models?: string[]; disabled?: boolean }
+  { models?: string[]; displayName?: string; disabled?: boolean }
 > {
   const cfg = getConfig();
-  const result: Record<string, { models?: string[]; disabled?: boolean }> = {};
+  const result: Record<string, { models?: string[]; displayName?: string; disabled?: boolean }> =
+    {};
   for (const [id, entry] of Object.entries(cfg.image)) {
     result[id] = {};
     if (entry.models && entry.models.length > 0) result[id].models = entry.models;
+    if (entry.displayName) result[id].displayName = entry.displayName;
   }
   for (const id of cfg.disabled.image) result[id] = { disabled: true };
   return result;
@@ -890,13 +898,21 @@ export function resolveImageModel(providerId: string, clientModel?: string): str
 
 /**
  * Returns video providers the client must know about: server-managed providers
- * (presence = managed flag) plus operator force-disabled providers
+ * (allowed models and operator display name, never base URLs) plus operator force-disabled providers
  * (`{ disabled: true }`), mirroring the TTS listing — disable wins (#665).
  */
-export function getServerVideoProviders(): Record<string, { disabled?: boolean }> {
+export function getServerVideoProviders(): Record<
+  string,
+  { models?: string[]; displayName?: string; disabled?: boolean }
+> {
   const cfg = getConfig();
-  const result: Record<string, { disabled?: boolean }> = {};
-  for (const id of Object.keys(cfg.video)) result[id] = {};
+  const result: Record<string, { models?: string[]; displayName?: string; disabled?: boolean }> =
+    {};
+  for (const [id, entry] of Object.entries(cfg.video)) {
+    result[id] = {};
+    if (entry.models && entry.models.length > 0) result[id].models = entry.models;
+    if (entry.displayName) result[id].displayName = entry.displayName;
+  }
   for (const id of cfg.disabled.video) result[id] = { disabled: true };
   return result;
 }
