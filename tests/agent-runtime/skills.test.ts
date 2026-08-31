@@ -28,6 +28,7 @@ import {
   skillReadFromTranscript,
   type LoadedSkill,
 } from '@/lib/server/agent-runtime/skills';
+import { buildSkillPreload } from '@/lib/server/agent-runtime/skill-preload';
 
 const skill = (id: string): LoadedSkill => ({
   id,
@@ -247,6 +248,18 @@ describe('shipped skill constraints', () => {
     // it vanishes from discovery and from the picker while its file sits there
     // looking correct. Compare the directory listing against what loaded.
     expect([...(await listSkills()).map((s) => s.id)].sort()).toEqual([...dirs].sort());
+  });
+
+  it('loads design-pro as an explicit layer beside the course shape', async () => {
+    const loaded = await listSkills();
+    const preload = await buildSkillPreload({
+      text: '/vocational /design-pro teach safe equipment setup',
+      skills: loaded,
+      transcript: [],
+      model: { api: 'openai-completions', provider: 'openai', id: 'test-model' },
+    });
+
+    expect(preload.injected.map((skill) => skill.id)).toEqual(['vocational', 'design-pro']);
   });
 
   it('every shipped skill carries a display name', async () => {
