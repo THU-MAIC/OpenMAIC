@@ -890,13 +890,19 @@ export function resolveImageModel(providerId: string, clientModel?: string): str
 
 /**
  * Returns video providers the client must know about: server-managed providers
- * (presence = managed flag) plus operator force-disabled providers
- * (`{ disabled: true }`), mirroring the TTS listing — disable wins (#665).
+ * (allowed models only, no base URLs) plus operator force-disabled providers
+ * (`{ disabled: true }`), mirroring the image listing — disable wins (#665).
  */
-export function getServerVideoProviders(): Record<string, { disabled?: boolean }> {
+export function getServerVideoProviders(): Record<
+  string,
+  { models?: string[]; disabled?: boolean }
+> {
   const cfg = getConfig();
-  const result: Record<string, { disabled?: boolean }> = {};
-  for (const id of Object.keys(cfg.video)) result[id] = {};
+  const result: Record<string, { models?: string[]; disabled?: boolean }> = {};
+  for (const [id, entry] of Object.entries(cfg.video)) {
+    result[id] = {};
+    if (entry.models && entry.models.length > 0) result[id].models = entry.models;
+  }
   for (const id of cfg.disabled.video) result[id] = { disabled: true };
   return result;
 }
