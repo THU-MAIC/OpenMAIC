@@ -405,6 +405,59 @@ CREATE INDEX IF NOT EXISTS agent_session_materials_session_created_idx
 CREATE INDEX IF NOT EXISTS agent_session_materials_extraction_queue_idx
   ON agent_session_materials (created_at)
   WHERE kind = 'source' AND extraction_status IN ('pending','running');
+
+CREATE UNIQUE INDEX IF NOT EXISTS agent_session_materials_session_id_id_unique
+  ON agent_session_materials (session_id, id);
+
+-- Older schemas referenced derived_from by globally unique id only. Replace
+-- that FK atomically so a derivative can never reference or cascade from a
+-- source in another session. If legacy corruption exists, ADD CONSTRAINT
+-- fails and rolls the block back instead of silently accepting unsafe rows.
+DO $material_fk$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'agent_session_materials_derived_from_fkey'
+       AND conrelid = 'agent_session_materials'::regclass
+  ) THEN
+    ALTER TABLE agent_session_materials
+      DROP CONSTRAINT agent_session_materials_derived_from_fkey;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'agent_session_materials_derived_from_same_session_fkey'
+       AND conrelid = 'agent_session_materials'::regclass
+  ) THEN
+    ALTER TABLE agent_session_materials
+      ADD CONSTRAINT agent_session_materials_derived_from_same_session_fkey
+      FOREIGN KEY (session_id, derived_from)
+      REFERENCES agent_session_materials (session_id, id)
+      ON DELETE CASCADE;
+  END IF;
+END;
+$material_fk$;
+
+CREATE TABLE IF NOT EXISTS agent_session_material_write_claims (
+  id            TEXT PRIMARY KEY,
+  session_id    TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  material_id   TEXT NOT NULL,
+  material_kind TEXT NOT NULL,
+  derived_from  TEXT,
+  object_slot   TEXT NOT NULL,
+  object_key    TEXT NOT NULL,
+  state         TEXT NOT NULL DEFAULT 'claimed',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT agent_session_material_write_claims_kind_known CHECK (material_kind IN
+    ('source','extraction','transcript','audio-track','image','web')),
+  CONSTRAINT agent_session_material_write_claims_slot_known CHECK (object_slot IN ('text','raw')),
+  CONSTRAINT agent_session_material_write_claims_state_known CHECK (state IN ('claimed','staged'))
+);
+
+CREATE INDEX IF NOT EXISTS agent_session_material_write_claims_session_state_idx
+  ON agent_session_material_write_claims (session_id, state, created_at);
+
+CREATE INDEX IF NOT EXISTS agent_session_material_write_claims_session_object_idx
+  ON agent_session_material_write_claims (session_id, object_key);
 `;
 
 /** Records the statements an ensure function actually issues. */
@@ -499,6 +552,7 @@ describe.each(schemas)('$name is a pinned contract', ({ name, actual, expected, 
         /^CREATE (TABLE|INDEX|UNIQUE INDEX) IF NOT EXISTS /.test(sql) ||
           /^ALTER TABLE [a-z_]+\s+ADD COLUMN IF NOT EXISTS /.test(sql) ||
           /^CREATE OR REPLACE FUNCTION /.test(sql) ||
+          /^DO \$material_fk\$/.test(sql) ||
           /^DROP TRIGGER IF EXISTS /.test(sql) ||
           // CREATE TRIGGER is made idempotent by the paired DROP TRIGGER IF
           // EXISTS that precedes it in the same schema constant.

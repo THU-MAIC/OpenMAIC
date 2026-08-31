@@ -397,6 +397,74 @@ message as the problem text. The verified material is optional explanation
 context, not a model-selected quote promoted to a trusted question. Reliable
 material quote-to-question extraction remains future work.
 
+### M3A-1a material storage safety contract
+
+All new material byte-store keys use one domain-separated SHA-256 namespace.
+Owner, Agent Session, and material identifiers are hashed in distinct domains
+before they become path segments; raw identifiers, including anonymous owner
+ids containing `:`, never enter a new filesystem or object-store key. The
+logical key is portable across Windows and Linux and is passed unchanged through
+the neutral byte-store abstraction. Existing pre-v1 owner keys remain readable
+because their recorded key stays authoritative. Existing session keys remain
+readable only when their legacy session segment is portable; new writes always
+use the v1 namespace. Anonymous-owner keys containing `:` could not have been
+written by the Windows local store, so there is no readable Windows legacy
+object to migrate.
+
+An owner material id identifies one owner-library original. Binding does not
+reuse that id as the globally keyed `agent_session_materials.id`. Instead, the
+server deterministically derives a distinct snapshot id from the trusted Agent
+Session id plus owner material id, copies verified bytes into that session's
+independent namespace, and writes session-scoped metadata. Rebinding is
+idempotent, concurrent identical writes converge on the same snapshot, and two
+sessions never share backing bytes. Before copying, the server verifies the
+target session owner, owner-scoped ready row, byte length, and stored SHA-256.
+
+Owner deletion uses tombstone, byte deletion, then metadata purge. A byte or
+purge failure retains a non-visible tombstone with its object pointer so the
+same deletion can retry. Existing session snapshots remain readable after the
+owner original is deleted. Asset-era owner rows whose migration cannot recover
+a byte-store locator are never returned as ready materials; the server does not
+invent a replacement key.
+
+Every Session byte write first persists a write claim containing the Session,
+logical material, object slot, and expected canonical key. Publishing bytes
+then holds the same Session row lock that deletion must acquire. A publisher
+that entered first settles its durable claim before deletion can tombstone the
+Session; a deletion that entered first prevents both new claims and byte writes.
+If publishing fails after the backend may have accepted the bytes, its durable
+claim remains available to cleanup. Creating or finalizing material metadata
+after a tombstone cannot make the Session visible again.
+
+Agent Session deletion is synchronous and drainable: it tombstones the Session,
+loads object keys from both material rows and outstanding write claims, removes
+those objects, and only then purges the rows and claims. Repeating the normal
+delete operation is the recovery entry point after a cleanup failure. Clearing
+the independent Session prefix remains defense in depth for older unclaimed
+objects, but correctness for new writes comes from the durable claim and
+tombstone fence. Cleanup refuses a recorded object key outside the exact
+Session namespace, and derivatives are constrained to a source in the same
+Session at the database layer.
+
+Canonical object keys, owner/session hash namespaces, local paths, and provider
+diagnostics are server-only. Material HTTP responses, tools, durable tool
+results, and SSE replay use closed projections containing logical material ids
+and closed extraction error codes. Historical free-form extraction errors map
+to a generic failure code at read time. Internal storage lookup continues to use
+the recorded locator without exposing it as an asset id.
+
+The repository pins Prettier-managed source and configuration formats to LF in
+`.gitattributes`. This keeps a fresh Windows checkout stable even when the
+user's global `core.autocrlf` is true; Markdown and YAML remain governed by the
+existing Prettier ignore policy, so the change does not introduce a repository-
+wide normalization commit.
+
+This contract is sufficient for a future server-only reference containing
+`{ownerMaterialId, sha256, mimeType, byteLength}`: the owner material can be
+resolved directly, re-authorized, and digest-verified without an Agent Session
+copy. M3A-1a does not create that Exam reference, an Exam upload route, an Exam
+runtime, extraction, OCR, diagnosis, Progress writes, or UI.
+
 ## Hint and full-solution generation
 
 Production hints are three deterministic server-owned templates selected only

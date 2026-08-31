@@ -91,6 +91,40 @@ export class FetchUrlError extends Error {
   }
 }
 
+type FetchUrlToolFailurePhase = 'trust_check' | 'network' | 'storage';
+
+class FetchUrlToolBoundaryError extends Error {
+  override readonly name = 'FetchUrlToolBoundaryError';
+
+  constructor(readonly phase: Exclude<FetchUrlToolFailurePhase, 'network'>) {
+    super(`fetch_url failed: ${phase}`);
+  }
+}
+
+async function runFetchUrlToolOperation<T>(
+  operation: () => Promise<T>,
+  phase: FetchUrlToolFailurePhase,
+  signal?: AbortSignal,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (signal?.aborted) throw new Error('aborted');
+    if (error instanceof FetchUrlToolBoundaryError) throw error;
+    if (phase === 'network') {
+      const reason = error instanceof FetchUrlError ? error.reason : 'network';
+      throw new FetchUrlError(reason, `fetch_url failed: ${reason}`);
+    }
+    throw new FetchUrlToolBoundaryError(phase);
+  }
+}
+
+function publicFetchUrlToolError(error: unknown, signal?: AbortSignal): Error {
+  if (signal?.aborted) return new Error('aborted');
+  if (error instanceof FetchUrlError || error instanceof FetchUrlToolBoundaryError) return error;
+  return new FetchUrlError('network', 'fetch_url failed: network');
+}
+
 export interface ExtractedWebPage {
   sourceUrl: string;
   finalUrl: string;
@@ -622,64 +656,94 @@ export function buildFetchUrlTool(deps: FetchUrlToolDependencies): AgentTool<nev
       'needs its full content.',
     parameters: FETCH_URL_SCHEMA,
     execute: async (_callId, params: Static<typeof FETCH_URL_SCHEMA>, signal) => {
-      throwIfAborted(signal);
-      if (!(await urlAllowed(deps.sessionId, params.url))) {
-        const message =
-          'URL is not allowed: this URL is not on an origin previously seen in this session ' +
-          '(from a user message or web_search results). Ask the user to share a direct link, ' +
-          'or run web_search for that domain first.';
-        // NOT an error: this is the trust gate refusing a URL on purpose — a
-        // normal business answer with the exact remediation (ask the user /
-        // web_search first), the same non-error family as ask_user's guidance.
-        // The fetch simply must not happen; the refusal is the product's answer.
-        return {
-          content: [{ type: 'text' as const, text: message }],
-          details: { trusted: { status: 'url_not_in_session' as const } },
+      try {
+        throwIfAborted(signal);
+        if (
+          !(await runFetchUrlToolOperation(
+            () => urlAllowed(deps.sessionId, params.url),
+            'trust_check',
+            signal,
+          ))
+        ) {
+          const message =
+            'URL is not allowed: this URL is not on an origin previously seen in this session ' +
+            '(from a user message or web_search results). Ask the user to share a direct link, ' +
+            'or run web_search for that domain first.';
+          // NOT an error: this is the trust gate refusing a URL on purpose — a
+          // normal business answer with the exact remediation (ask the user /
+          // web_search first), the same non-error family as ask_user's guidance.
+          // The fetch simply must not happen; the refusal is the product's answer.
+          return {
+            content: [{ type: 'text' as const, text: message }],
+            details: { trusted: { status: 'url_not_in_session' as const } },
+          };
+        }
+        throwIfAborted(signal);
+        const page = await runFetchUrlToolOperation(
+          () =>
+            fetchUrl(params.url, {
+              signal,
+              isUrlAllowed: (url) =>
+                runFetchUrlToolOperation(
+                  () => urlAllowed(deps.sessionId, url),
+                  'trust_check',
+                  signal,
+                ),
+            }),
+          'network',
+          signal,
+        );
+        throwIfAborted(signal);
+        // Defense in depth for injected transports and future fetch engines:
+        // never persist or return content unless the URL actually reported as
+        // final is still within a session-observed origin.
+        if (
+          !(await runFetchUrlToolOperation(
+            () => urlAllowed(deps.sessionId, page.finalUrl),
+            'trust_check',
+            signal,
+          ))
+        ) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: 'URL is not allowed: the fetched page redirected to an origin that was not previously seen in this session.',
+              },
+            ],
+            details: { trusted: { status: 'url_not_in_session' as const } },
+          };
+        }
+        throwIfAborted(signal);
+        const record = await runFetchUrlToolOperation(
+          () => saveWebMaterial(deps.sessionId, page),
+          'storage',
+          signal,
+        );
+        throwIfAborted(signal);
+        const preview = page.markdown.slice(0, FETCH_PREVIEW_CHARS);
+        const nextOffset = preview.length < page.markdown.length ? preview.length : undefined;
+        const trusted = {
+          status: 'done' as const,
+          materialId: record.id,
+          fetchedAt: page.fetchedAt,
+          totalChars: page.markdown.length,
+          truncated: page.truncated,
+          ...(nextOffset !== undefined ? { nextOffset } : {}),
         };
-      }
-      throwIfAborted(signal);
-      const page = await fetchUrl(params.url, {
-        signal,
-        isUrlAllowed: (url) => urlAllowed(deps.sessionId, url),
-      });
-      throwIfAborted(signal);
-      // Defense in depth for injected transports and future fetch engines:
-      // never persist or return content unless the URL actually reported as
-      // final is still within a session-observed origin.
-      if (!(await urlAllowed(deps.sessionId, page.finalUrl))) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'URL is not allowed: the fetched page redirected to an origin that was not previously seen in this session.',
-            },
-          ],
-          details: { trusted: { status: 'url_not_in_session' as const } },
+        const untrusted = {
+          url: page.finalUrl,
+          title: page.title.slice(0, FETCH_TITLE_CHARS),
+          content: preview,
         };
+        const structured = { trusted, untrusted };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(structured, null, 2) }],
+          details: structured,
+        };
+      } catch (error) {
+        throw publicFetchUrlToolError(error, signal);
       }
-      throwIfAborted(signal);
-      const record = await saveWebMaterial(deps.sessionId, page);
-      throwIfAborted(signal);
-      const preview = page.markdown.slice(0, FETCH_PREVIEW_CHARS);
-      const nextOffset = preview.length < page.markdown.length ? preview.length : undefined;
-      const trusted = {
-        status: 'done' as const,
-        materialId: record.id,
-        fetchedAt: page.fetchedAt,
-        totalChars: page.markdown.length,
-        truncated: page.truncated,
-        ...(nextOffset !== undefined ? { nextOffset } : {}),
-      };
-      const untrusted = {
-        url: page.finalUrl,
-        title: page.title.slice(0, FETCH_TITLE_CHARS),
-        content: preview,
-      };
-      const structured = { trusted, untrusted };
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(structured, null, 2) }],
-        details: structured,
-      };
     },
   };
   return tool as unknown as AgentTool<never, never>;

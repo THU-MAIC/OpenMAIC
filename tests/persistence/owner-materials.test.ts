@@ -4,11 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 
 import {
+  abandonOwnerMaterial,
   ensureOwnerMaterialSchema,
   finalizeOwnerMaterial,
+  getReadyOwnerMaterial,
+  getReadyOwnerMaterials,
+  listOwnerMaterials,
   ownerMaterialQuotaLockKey,
   reclaimStaleOwnerMaterialUploads,
   registerOwnerMaterial,
+  renewOwnerMaterialUploadLease,
   type RegisterOwnerMaterialInput,
 } from '@/lib/persistence/owner-materials';
 
@@ -62,19 +67,22 @@ async function insertRawUpload(
     bytes?: number;
     status?: string;
     createdAt?: number;
+    sha256?: string | null;
   },
 ): Promise<void> {
   await db.query(
     `INSERT INTO owner_material
        (id, owner_id, kind, mime, bytes, original_name, oss_key, sha256,
         status, extraction, created_at)
-     VALUES ($1, $2, 'source', 'application/pdf', $3, 'stale.pdf', $4, NULL,
-             $5, NULL, $6)`,
+     VALUES ($1, $2, 'source', 'application/pdf', $3, 'stale.pdf', $4, $5,
+              $6, NULL, $7)`,
     [
       row.id,
       row.ownerId ?? 'owner-1',
       row.bytes ?? 10,
-      row.ossKey ?? '',
+      row.ossKey ??
+        (row.status === 'ready' ? `materials/${row.ownerId ?? 'owner-1'}/${row.id}` : ''),
+      row.sha256 === undefined ? (row.status === 'ready' ? 'a'.repeat(64) : null) : row.sha256,
       row.status ?? 'uploading',
       row.createdAt ?? Date.now(),
     ],
@@ -83,7 +91,7 @@ async function insertRawUpload(
 
 async function rowById(db: PGlite, id: string): Promise<Record<string, unknown> | null> {
   const result = await db.query<Record<string, unknown>>(
-    'SELECT id, oss_key, status FROM owner_material WHERE id = $1',
+    'SELECT id, oss_key, status, deleted_at FROM owner_material WHERE id = $1',
     [id],
   );
   return result.rows[0] ?? null;
@@ -162,12 +170,67 @@ describe('owner material reservations', () => {
 
     const finalized = await finalizeOwnerMaterial(
       pool as unknown as ConnectableQueryable,
+      'owner-1',
       'mat_1',
       100,
       '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
     );
     expect(finalized.status).toBe('ready');
     expect(finalized.ossKey).toBe('materials/owner-1/mat_1');
+  });
+
+  it('requires owner plus material id for finalize and abandon operations', async () => {
+    const limits = { maxCount: 10, maxTotalBytes: 1_000 };
+    await registerOwnerMaterial(pool as unknown as ConnectableQueryable, input(), limits);
+    await expect(
+      finalizeOwnerMaterial(
+        pool as unknown as ConnectableQueryable,
+        'owner-2',
+        'mat_1',
+        100,
+        'a'.repeat(64),
+      ),
+    ).rejects.toThrow('cannot be finalized');
+    expect(await rowById(pool.db, 'mat_1')).toMatchObject({ status: 'uploading' });
+
+    await abandonOwnerMaterial(pool as unknown as ConnectableQueryable, 'owner-2', 'mat_1');
+    expect(await rowById(pool.db, 'mat_1')).not.toBeNull();
+    await abandonOwnerMaterial(pool as unknown as ConnectableQueryable, 'owner-1', 'mat_1');
+    expect(await rowById(pool.db, 'mat_1')).toBeNull();
+  });
+
+  it('reads ready materials only through the matching owner partition', async () => {
+    await insertRawUpload(pool.db, {
+      id: 'mat_owner_a',
+      ownerId: 'owner-a',
+      status: 'ready',
+      createdAt: 10,
+    });
+    await insertRawUpload(pool.db, {
+      id: 'mat_owner_b',
+      ownerId: 'owner-b',
+      status: 'ready',
+      createdAt: 20,
+    });
+    await insertRawUpload(pool.db, {
+      id: 'mat_uploading',
+      ownerId: 'owner-a',
+      status: 'uploading',
+      createdAt: 30,
+    });
+
+    await expect(getReadyOwnerMaterial(pool.db, 'owner-a', 'mat_owner_a')).resolves.toMatchObject({
+      id: 'mat_owner_a',
+      ownerId: 'owner-a',
+    });
+    await expect(getReadyOwnerMaterial(pool.db, 'owner-b', 'mat_owner_a')).resolves.toBeNull();
+    await expect(getReadyOwnerMaterial(pool.db, 'owner-a', 'mat_uploading')).resolves.toBeNull();
+    await expect(
+      getReadyOwnerMaterials(pool.db, 'owner-a', ['mat_owner_b', 'mat_owner_a']),
+    ).resolves.toEqual([expect.objectContaining({ id: 'mat_owner_a' })]);
+    await expect(listOwnerMaterials(pool.db, 'owner-a')).resolves.toEqual([
+      expect.objectContaining({ id: 'mat_owner_a' }),
+    ]);
   });
 
   it('reclaims a crashed reservation and its recorded byte object', async () => {
@@ -208,6 +271,59 @@ describe('owner material reservations', () => {
     expect(await rowById(pool.db, 'mat_1')).toBeNull();
   });
 
+  it('fences finalize before deleting bytes from a claimed stale reservation', async () => {
+    await insertRawUpload(pool.db, {
+      id: 'mat_stale_race',
+      ossKey: 'materials/owner-1/mat-stale-race',
+      createdAt: Date.now() - 25 * 60 * 60 * 1_000,
+    });
+    const deleteBytes = vi.fn(async () => {
+      await expect(
+        finalizeOwnerMaterial(
+          pool as unknown as ConnectableQueryable,
+          'owner-1',
+          'mat_stale_race',
+          100,
+          'a'.repeat(64),
+        ),
+      ).rejects.toThrow('cannot be finalized');
+    });
+
+    await reclaimStaleOwnerMaterialUploads(
+      pool as unknown as ConnectableQueryable,
+      'owner-1',
+      deleteBytes,
+    );
+
+    expect(deleteBytes).toHaveBeenCalledOnce();
+    expect(await rowById(pool.db, 'mat_stale_race')).toBeNull();
+  });
+
+  it('renews a live upload before byte write and refuses a reclaimed reservation', async () => {
+    await insertRawUpload(pool.db, {
+      id: 'mat_live',
+      createdAt: Date.now() - 25 * 60 * 60 * 1_000,
+    });
+
+    await expect(
+      renewOwnerMaterialUploadLease(pool as unknown as ConnectableQueryable, 'owner-1', 'mat_live'),
+    ).resolves.toBe(true);
+    await reclaimStaleOwnerMaterialUploads(
+      pool as unknown as ConnectableQueryable,
+      'owner-1',
+      vi.fn(),
+    );
+    expect(await rowById(pool.db, 'mat_live')).not.toBeNull();
+
+    await pool.db.query('UPDATE owner_material SET deleted_at = $2 WHERE id = $1', [
+      'mat_live',
+      Date.now(),
+    ]);
+    await expect(
+      renewOwnerMaterialUploadLease(pool as unknown as ConnectableQueryable, 'owner-1', 'mat_live'),
+    ).resolves.toBe(false);
+  });
+
   it('keeps a stale reservation when byte deletion fails and retries on the next pass', async () => {
     await insertRawUpload(pool.db, {
       id: 'mat_stale',
@@ -226,7 +342,10 @@ describe('owner material reservations', () => {
       deleteBytes,
     );
     // First pass: removal failed, so the reservation stays for the next pass.
-    expect(await rowById(pool.db, 'mat_stale')).not.toBeNull();
+    expect(await rowById(pool.db, 'mat_stale')).toMatchObject({
+      status: 'uploading',
+      deleted_at: expect.any(Number),
+    });
 
     await reclaimStaleOwnerMaterialUploads(
       pool as unknown as ConnectableQueryable,
@@ -309,18 +428,26 @@ describe('owner material reservations', () => {
     // Idempotency on the real deployment shape: a second pass must be a clean
     // no-op (ADD COLUMN IF NOT EXISTS / DROP COLUMN IF EXISTS), not a DDL error.
     await ensureOwnerMaterialSchema(db);
-    const legacyRow = await db.query<{ oss_key: string; status: string }>(
-      'SELECT oss_key, status FROM owner_material WHERE id = $1',
-      ['mat_legacy'],
-    );
-    expect(legacyRow.rows[0]).toMatchObject({ oss_key: '', status: 'ready' });
+    const legacyRow = await db.query<{
+      oss_key: string;
+      status: string;
+      deleted_at: number | null;
+    }>('SELECT oss_key, status, deleted_at FROM owner_material WHERE id = $1', ['mat_legacy']);
+    expect(legacyRow.rows[0]).toMatchObject({
+      oss_key: '',
+      status: 'ready',
+      deleted_at: expect.any(Number),
+    });
     const oldPool = new PGlitePool(db);
+    await expect(listOwnerMaterials(oldPool, 'owner-1')).resolves.toEqual([]);
+    await expect(getReadyOwnerMaterial(oldPool, 'owner-1', 'mat_legacy')).resolves.toBeNull();
+    await expect(getReadyOwnerMaterials(oldPool, 'owner-1', ['mat_legacy'])).resolves.toEqual([]);
     const record = await registerOwnerMaterial(
       oldPool as unknown as ConnectableQueryable,
       input(),
-      // The legacy row above already consumes bytes toward the quota; leave
-      // headroom so the post-upgrade reservation goes through.
-      { maxCount: 10, maxTotalBytes: 10_000 },
+      // The unavailable legacy row is tombstoned and consumes neither the
+      // single count slot nor the exact byte allowance.
+      { maxCount: 1, maxTotalBytes: 100 },
     );
     expect(record.status).toBe('uploading');
     expect(record.ossKey).toBe('materials/owner-1/mat_1');

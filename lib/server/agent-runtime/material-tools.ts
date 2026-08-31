@@ -27,6 +27,7 @@ import { Type, type Static } from 'typebox';
 import {
   getSessionMaterial,
   listSessionMaterials,
+  publicMaterialExtractionView,
   resolveSessionMaterialText,
   getAgentSessionMaterialStore,
 } from './session-materials';
@@ -182,16 +183,15 @@ function publicMaterialOf(record: AgentSessionMaterial) {
     ...(record.sourceUrl ? { sourceUrl: record.sourceUrl } : {}),
     textChars: record.textChars,
     createdAt: record.createdAt,
-    extraction: record.extraction,
+    extraction: publicMaterialExtractionView(record.extraction),
   };
 }
 
 function extractionStateOf(record: AgentSessionMaterial) {
+  const extraction = publicMaterialExtractionView(record.extraction);
   const state = {
     materialId: record.id,
-    status: record.extraction.status,
-    ...(record.extraction.error ? { reason: record.extraction.error } : {}),
-    ...(record.extraction.stats ? { stats: record.extraction.stats } : {}),
+    ...extraction,
   };
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(state, null, 2) }],
@@ -565,12 +565,11 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
         }
         const materials = records.map((record) => ({
           materialId: record.id,
+          ...publicMaterialExtractionView(record.extraction),
           status: record.extraction.status,
           ...(record.extraction.status === 'idle'
             ? { nextAction: 'Call extract_material before waiting or reading.' }
             : {}),
-          ...(record.extraction.error ? { reason: record.extraction.error } : {}),
-          ...(record.extraction.stats ? { stats: record.extraction.stats } : {}),
         }));
         const requiresExtraction = materials.some((material) => material.status === 'idle');
         const complete = materials.every(

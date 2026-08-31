@@ -80,6 +80,7 @@ describe.skipIf(!contractUrl)('PgAgentSessionMaterialStore with PostgreSQL 16', 
     // ordering assertions flaky on ties (which resolve by id DESC instead).
     let tick = 0;
     const materialStore = new PgAgentSessionMaterialStore(pool as Queryable, {
+      withTransaction: transactionFor(pool),
       now: () => new Date(1_700_000_000_000 + (tick += 1_000)),
     });
     return {
@@ -88,6 +89,10 @@ describe.skipIf(!contractUrl)('PgAgentSessionMaterialStore with PostgreSQL 16', 
       createMaterial: materialStore.createMaterial.bind(materialStore),
       listMaterials: materialStore.listMaterials.bind(materialStore),
       getMaterial: materialStore.getMaterial.bind(materialStore),
+      deleteMaterial: materialStore.deleteMaterial.bind(materialStore),
+      getDeletedSessionMaterialsForCleanup:
+        materialStore.getDeletedSessionMaterialsForCleanup.bind(materialStore),
+      purgeDeletedSessionMaterials: materialStore.purgeDeletedSessionMaterials.bind(materialStore),
       enqueueExtraction: materialStore.enqueueExtraction.bind(materialStore),
       claimNextExtraction: materialStore.claimNextExtraction.bind(materialStore),
       heartbeatExtraction: materialStore.heartbeatExtraction.bind(materialStore),

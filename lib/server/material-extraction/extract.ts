@@ -20,9 +20,13 @@ import {
   resolveServerMediaExtractorConfig,
 } from '@/lib/server/provider-config';
 import {
+  discardSessionMaterialObjectWrite,
+  finalizeSessionMaterialObjectWrite,
   getAgentSessionMaterialStore,
+  removeSessionMaterialRawAsset,
   resolveSessionMaterialRawAsset,
   storeSessionMaterialRawAsset,
+  type SessionMaterialObjectWrite,
 } from '@/lib/server/agent-runtime/session-materials';
 
 import { isTransientExtractionError, MaterialExtractionError } from './errors';
@@ -35,9 +39,25 @@ export interface MaterialExtractionExecutionDependencies {
   providers?: () => DocumentExtractorProvider[];
   mediaProviders?: () => MediaExtractorProvider[];
   configuredProviderIds?: () => string[];
-  putText?: (sessionId: string, text: Buffer) => Promise<string>;
-  putBytes?: (sessionId: string, bytes: Buffer, mime: string) => Promise<string>;
+  putText?: (
+    sessionId: string,
+    text: Buffer,
+    material: {
+      id: string;
+      kind: 'extraction' | 'transcript';
+      derivedFrom: string;
+    },
+  ) => Promise<StoredSessionMaterialObject>;
+  putBytes?: (
+    sessionId: string,
+    bytes: Buffer,
+    mime: string,
+    material: { id: string; kind: 'image'; derivedFrom: string },
+  ) => Promise<StoredSessionMaterialObject>;
   complete?: (input: CompleteMaterialExtractionInput) => Promise<boolean>;
+  removeAsset?: (sessionId: string, assetId: string) => Promise<void>;
+  finalizeObjectWrite?: (write: SessionMaterialObjectWrite) => Promise<boolean>;
+  discardObjectWrite?: (write: SessionMaterialObjectWrite) => Promise<void>;
 }
 
 function artifactText(artifact: DocumentArtifact): string {
@@ -84,13 +104,76 @@ async function defaultResolveSource(sessionId: string, objectKey: string) {
   return resolveSessionMaterialRawAsset(sessionId, objectKey);
 }
 
-async function defaultPutText(sessionId: string, text: Buffer): Promise<string> {
-  const key = await storeSessionMaterialRawAsset(sessionId, text, 'text/markdown');
-  return key;
+export type StoredSessionMaterialObject = string | SessionMaterialObjectWrite;
+
+function objectKeyOf(stored: StoredSessionMaterialObject): string {
+  return typeof stored === 'string' ? stored : stored.objectKey;
 }
 
-async function defaultPutBytes(sessionId: string, bytes: Buffer, mime: string): Promise<string> {
-  return storeSessionMaterialRawAsset(sessionId, bytes, mime);
+async function putTextObject(
+  dependencies: MaterialExtractionExecutionDependencies,
+  source: ClaimedMaterialExtraction['material'],
+  materialId: string,
+  kind: 'extraction' | 'transcript',
+  text: Buffer,
+): Promise<StoredSessionMaterialObject> {
+  if (dependencies.putText) {
+    return dependencies.putText(source.sessionId, text, {
+      id: materialId,
+      kind,
+      derivedFrom: source.id,
+    });
+  }
+  return storeSessionMaterialRawAsset(source.sessionId, materialId, kind, text, 'text/markdown', {
+    derivedFrom: source.id,
+    objectSlot: 'text',
+  });
+}
+
+async function putRawObject(
+  dependencies: MaterialExtractionExecutionDependencies,
+  source: ClaimedMaterialExtraction['material'],
+  materialId: string,
+  bytes: Buffer,
+  mime: string,
+): Promise<StoredSessionMaterialObject> {
+  if (dependencies.putBytes) {
+    return dependencies.putBytes(source.sessionId, bytes, mime, {
+      id: materialId,
+      kind: 'image',
+      derivedFrom: source.id,
+    });
+  }
+  return storeSessionMaterialRawAsset(source.sessionId, materialId, 'image', bytes, mime, {
+    derivedFrom: source.id,
+  });
+}
+
+async function discardStoredObject(
+  stored: StoredSessionMaterialObject,
+  sessionId: string,
+  dependencies: MaterialExtractionExecutionDependencies,
+): Promise<void> {
+  if (typeof stored === 'string') {
+    await (dependencies.removeAsset ?? removeSessionMaterialRawAsset)(sessionId, stored);
+    return;
+  }
+  await (dependencies.discardObjectWrite ?? discardSessionMaterialObjectWrite)(stored);
+}
+
+async function finalizeStoredObjects(
+  stored: readonly StoredSessionMaterialObject[],
+  dependencies: MaterialExtractionExecutionDependencies,
+): Promise<boolean> {
+  for (const object of stored) {
+    if (
+      typeof object !== 'string' &&
+      !(await (dependencies.finalizeObjectWrite ?? finalizeSessionMaterialObjectWrite)(object))
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** Extract one lease-fenced source through the upstream extractor registry. */
@@ -116,7 +199,7 @@ export async function extractClaimedSessionMaterial(
       mimeType: raw.mime,
       config: resolveServerMediaExtractorConfig(),
     };
-    let selected: MediaExtractorProvider;
+    let selected: MediaExtractorProvider | undefined;
     let artifact: MediaArtifact;
     try {
       selected = await selectMediaExtractorProvider({
@@ -132,7 +215,10 @@ export async function extractClaimedSessionMaterial(
       throw new MaterialExtractionError(
         error instanceof Error ? error.message : String(error),
         isTransientExtractionError(error),
-        { cause: error },
+        {
+          cause: error,
+          ...(selected ? {} : { publicCode: 'MATERIAL_EXTRACTION_PROVIDER_UNAVAILABLE' as const }),
+        },
       );
     }
     const text = mediaArtifactText(artifact);
@@ -142,23 +228,51 @@ export async function extractClaimedSessionMaterial(
         false,
       );
     }
-    const textAssetId = await (dependencies.putText ?? defaultPutText)(
-      source.sessionId,
-      Buffer.from(text, 'utf8'),
-    );
     const transcriptId = createMaterialId();
-    const putBytes = dependencies.putBytes ?? defaultPutBytes;
-    const images = [];
-    for (const asset of artifact.assets ?? []) {
-      if (asset.type !== 'image' || !asset.data) continue;
-      const bytes = Buffer.from(asset.data, 'base64');
-      const rawAssetId = await putBytes(source.sessionId, bytes, asset.mimeType ?? 'image/webp');
-      images.push({
-        id: createMaterialId(),
-        kind: 'image' as const,
-        title: asset.description ?? `${source.title ?? 'media'}.${asset.id}.webp`,
-        rawAssetId,
-      });
+    const allocatedObjects: StoredSessionMaterialObject[] = [];
+    let textAssetId: string;
+    const images: Array<{
+      id: string;
+      kind: 'image';
+      title: string;
+      rawAssetId: string;
+    }> = [];
+    try {
+      const textObject = await putTextObject(
+        dependencies,
+        source,
+        transcriptId,
+        'transcript',
+        Buffer.from(text, 'utf8'),
+      );
+      allocatedObjects.push(textObject);
+      textAssetId = objectKeyOf(textObject);
+      for (const asset of artifact.assets ?? []) {
+        if (asset.type !== 'image' || !asset.data) continue;
+        const imageId = createMaterialId();
+        const bytes = Buffer.from(asset.data, 'base64');
+        const rawObject = await putRawObject(
+          dependencies,
+          source,
+          imageId,
+          bytes,
+          asset.mimeType ?? 'image/webp',
+        );
+        allocatedObjects.push(rawObject);
+        images.push({
+          id: imageId,
+          kind: 'image' as const,
+          title: asset.description ?? `${source.title ?? 'media'}.${asset.id}.webp`,
+          rawAssetId: objectKeyOf(rawObject),
+        });
+      }
+    } catch (error) {
+      await Promise.all(
+        allocatedObjects.map((stored) =>
+          discardStoredObject(stored, source.sessionId, dependencies).catch(() => undefined),
+        ),
+      );
+      throw error;
     }
     const store = dependencies.complete ? undefined : await getAgentSessionMaterialStore();
     const complete = dependencies.complete ?? store!.completeExtraction.bind(store);
@@ -173,9 +287,6 @@ export async function extractClaimedSessionMaterial(
         imageCount: images.length,
         durationSec: artifact.metadata.durationMs ? artifact.metadata.durationMs / 1000 : undefined,
         asrChunks: artifact.transcript?.length ?? 0,
-        ...(artifact.diagnostics?.length
-          ? { diagnostics: artifact.diagnostics.map((diagnostic) => diagnostic.message) }
-          : {}),
       },
       derived: [
         {
@@ -188,7 +299,17 @@ export async function extractClaimedSessionMaterial(
         ...images,
       ],
     });
-    if (!completed) throw new Error(`material extraction lease lost for ${source.id}`);
+    if (!completed) {
+      await Promise.all(
+        allocatedObjects.map((stored) =>
+          discardStoredObject(stored, source.sessionId, dependencies).catch(() => undefined),
+        ),
+      );
+      throw new Error(`material extraction lease lost for ${source.id}`);
+    }
+    if (!(await finalizeStoredObjects(allocatedObjects, dependencies))) {
+      throw new Error(`material extraction session deleted for ${source.id}`);
+    }
     return { materialId: transcriptId, text, extractorVersion };
   }
 
@@ -196,7 +317,11 @@ export async function extractClaimedSessionMaterial(
   const configuredIds =
     dependencies.configuredProviderIds?.() ?? Object.keys(getServerPDFProviders());
   const candidates = extractorCandidates(raw.mime, providers, configuredIds);
-  if (candidates.length === 0) throw new Error(`no document extractor supports ${raw.mime}`);
+  if (candidates.length === 0) {
+    throw new MaterialExtractionError(`no document extractor supports ${raw.mime}`, false, {
+      publicCode: 'MATERIAL_EXTRACTION_UNSUPPORTED',
+    });
+  }
 
   const errors: string[] = [];
   const failures: unknown[] = [];
@@ -232,8 +357,9 @@ export async function extractClaimedSessionMaterial(
 
   const text = artifactText(artifact);
   const bytes = Buffer.from(text, 'utf8');
-  const textAssetId = await (dependencies.putText ?? defaultPutText)(source.sessionId, bytes);
   const derivativeId = createMaterialId();
+  const textObject = await putTextObject(dependencies, source, derivativeId, 'extraction', bytes);
+  const textAssetId = objectKeyOf(textObject);
   const store = dependencies.complete ? undefined : await getAgentSessionMaterialStore();
   const complete = dependencies.complete ?? store!.completeExtraction.bind(store);
   const extractorVersion = `${selected.id}@${selected.version}`;
@@ -245,9 +371,6 @@ export async function extractClaimedSessionMaterial(
       chars: text.length,
       pages: artifact.metadata.pageCount ?? 0,
       imageCount: artifact.assets.filter((asset) => asset.type === 'image').length,
-      ...(artifact.diagnostics?.length
-        ? { diagnostics: artifact.diagnostics.map((diagnostic) => diagnostic.message) }
-        : {}),
     },
     derived: {
       id: derivativeId,
@@ -257,6 +380,12 @@ export async function extractClaimedSessionMaterial(
       textChars: text.length,
     },
   });
-  if (!completed) throw new Error(`material extraction lease lost for ${source.id}`);
+  if (!completed) {
+    await discardStoredObject(textObject, source.sessionId, dependencies).catch(() => undefined);
+    throw new Error(`material extraction lease lost for ${source.id}`);
+  }
+  if (!(await finalizeStoredObjects([textObject], dependencies))) {
+    throw new Error(`material extraction session deleted for ${source.id}`);
+  }
   return { materialId: derivativeId, text, extractorVersion };
 }

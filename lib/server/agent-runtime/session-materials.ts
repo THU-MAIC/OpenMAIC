@@ -9,22 +9,40 @@
  * `rawAssetId` field names remain as compatibility columns, but their values
  * are byte-store keys rather than registry ids.
  */
+import { createHash } from 'node:crypto';
+
 import {
   PgAgentSessionMaterialStore,
   ensureAgentSessionMaterialSchema,
 } from '@openmaic/storage/material/pg';
 import {
   createMaterialId,
+  isMaterialExtractionErrorCode,
   type AgentSessionMaterial,
+  type AgentSessionMaterialKind,
   type AgentSessionMeta,
+  type AgentSessionStore,
   type ListAgentSessionMaterialsOptions,
+  type MaterialExtractionState,
 } from '@openmaic/storage';
+import type { Queryable } from '@openmaic/storage/document/pg';
 import { getReadyOwnerMaterials } from '@/lib/persistence/owner-materials';
 
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
-import { getMaterialByteStore } from '@/lib/server/materials/bytes';
+import { getMaterialByteStore, type MaterialByteStore } from '@/lib/server/materials/bytes';
+import {
+  isLegacySessionMaterialObjectKey,
+  isSessionMaterialObjectKey,
+  legacySessionMaterialObjectPrefix,
+  sessionMaterialObjectKey,
+  sessionMaterialObjectPrefix,
+} from '@/lib/server/materials/object-keys';
+import {
+  verifyOwnerMaterialBytes,
+  type VerifiedOwnerMaterialAsset,
+} from '@/lib/server/materials/owner-assets';
 
-import { getAgentSessionStore } from './store';
+import { getAgentSessionStore, nodePostgresTransaction } from './store';
 import { isPptxMaterial } from './pptx-mime';
 import type { ExtractedWebPage } from './fetch-url';
 
@@ -38,6 +56,37 @@ const MATERIAL_STORE_STATE_KEY = Symbol.for('openmaic.agent-session-material.sto
 export class SessionMaterialBindingError extends Error {
   override readonly name = 'SessionMaterialBindingError';
 }
+
+export interface SessionMaterialBindingDependencies {
+  queryable?: Queryable;
+  byteStore?: MaterialByteStore;
+  sessionStore?: Pick<AgentSessionStore, 'getSession'>;
+  materialStore?: Pick<
+    PgAgentSessionMaterialStore,
+    | 'claimMaterialWrite'
+    | 'createMaterial'
+    | 'deleteMaterial'
+    | 'discardMaterialWrite'
+    | 'executeClaimedMaterialWrite'
+    | 'finalizeMaterialWrite'
+    | 'getMaterial'
+  >;
+}
+
+export interface SessionMaterialCleanupDependencies {
+  byteStore?: MaterialByteStore;
+  sessionStore?: Pick<AgentSessionStore, 'softDeleteSession'>;
+  materialStore?: Pick<
+    PgAgentSessionMaterialStore,
+    'getDeletedSessionMaterialsForCleanup' | 'purgeDeletedSessionMaterials'
+  > &
+    Partial<
+      Pick<
+        PgAgentSessionMaterialStore,
+        'getDeletedSessionMaterialWriteClaimsForCleanup' | 'purgeDeletedSessionMaterialWriteClaims'
+      >
+    >;
+}
 const globalState = globalThis as typeof globalThis & {
   [MATERIAL_STORE_STATE_KEY]?: AgentSessionMaterialStoreState;
 };
@@ -49,7 +98,7 @@ async function createMaterialStore(connectionString: string): Promise<PgAgentSes
   // schema (provisioned by getAgentSessionStore) must exist first — the same
   // dependency the URL trust-gate table has inside that schema.
   await ensureAgentSessionMaterialSchema(pool);
-  return new PgAgentSessionMaterialStore(pool);
+  return new PgAgentSessionMaterialStore(pool, { withTransaction: nodePostgresTransaction(pool) });
 }
 
 /**
@@ -78,12 +127,8 @@ export function getAgentSessionMaterialStore(): Promise<PgAgentSessionMaterialSt
   return initialization;
 }
 
-function sessionMaterialPrefix(sessionId: string): string {
-  return `materials/${sessionId}/`;
-}
-
 function sessionMaterialKey(sessionId: string, materialId: string, name: string): string {
-  return `${sessionMaterialPrefix(sessionId)}${materialId}/${name}`;
+  return sessionMaterialObjectKey(sessionId, materialId, name);
 }
 
 function rawObjectName(mime: string): string {
@@ -104,7 +149,123 @@ function rawObjectMime(key: string): string {
 }
 
 function isSessionMaterialKey(sessionId: string, key: string): boolean {
-  return key.startsWith(sessionMaterialPrefix(sessionId));
+  return (
+    isSessionMaterialObjectKey(sessionId, key) || isLegacySessionMaterialObjectKey(sessionId, key)
+  );
+}
+
+export interface SessionMaterialObjectWrite {
+  sessionId: string;
+  materialId: string;
+  objectKey: string;
+  claimId: string;
+}
+
+export interface SessionMaterialObjectWriteDependencies {
+  byteStore?: MaterialByteStore;
+  materialStore?: Pick<
+    PgAgentSessionMaterialStore,
+    | 'claimMaterialWrite'
+    | 'discardMaterialWrite'
+    | 'executeClaimedMaterialWrite'
+    | 'finalizeMaterialWrite'
+  >;
+}
+
+async function writeSessionMaterialObject(
+  input: {
+    sessionId: string;
+    materialId: string;
+    materialKind: AgentSessionMaterialKind;
+    derivedFrom?: string;
+    objectSlot: 'text' | 'raw';
+    objectKey: string;
+    bytes: Buffer;
+    mime: string;
+    existingMaterialTracksObject?: boolean;
+    preserveClaimOnFailure?: boolean;
+  },
+  dependencies: SessionMaterialObjectWriteDependencies = {},
+): Promise<SessionMaterialObjectWrite> {
+  if (!isSessionMaterialKey(input.sessionId, input.objectKey)) {
+    throw new Error('session material write requires its canonical session object key');
+  }
+  const store = dependencies.materialStore ?? (await getAgentSessionMaterialStore());
+  const byteStore = dependencies.byteStore ?? getMaterialByteStore();
+  const claim = await store.claimMaterialWrite(input.sessionId, {
+    materialId: input.materialId,
+    materialKind: input.materialKind,
+    ...(input.derivedFrom ? { derivedFrom: input.derivedFrom } : {}),
+    objectSlot: input.objectSlot,
+    objectKey: input.objectKey,
+  });
+  try {
+    const published = await store.executeClaimedMaterialWrite(claim.id, async () => {
+      try {
+        await byteStore.put(input.objectKey, input.bytes, input.mime);
+      } catch {
+        throw new Error('session material byte write failed');
+      }
+    });
+    if (!published) {
+      await store.discardMaterialWrite(input.sessionId, claim.id);
+      throw new Error('session material write rejected after session deletion');
+    }
+  } catch (error) {
+    if (input.existingMaterialTracksObject) {
+      await store.discardMaterialWrite(input.sessionId, claim.id).catch(() => undefined);
+    } else if (input.preserveClaimOnFailure) {
+      // Deterministic shared keys may belong to a concurrent successful writer.
+      // Retain this claim instead of deleting a winner's object.
+    } else {
+      const removed = await byteStore
+        .delete(input.objectKey)
+        .then(() => true)
+        .catch(() => false);
+      if (removed) {
+        await store.discardMaterialWrite(input.sessionId, claim.id).catch(() => undefined);
+      }
+    }
+    throw error;
+  }
+  return {
+    sessionId: input.sessionId,
+    materialId: input.materialId,
+    objectKey: input.objectKey,
+    claimId: claim.id,
+  };
+}
+
+export async function finalizeSessionMaterialObjectWrite(
+  write: SessionMaterialObjectWrite,
+  dependencies: SessionMaterialObjectWriteDependencies = {},
+): Promise<boolean> {
+  const store = dependencies.materialStore ?? (await getAgentSessionMaterialStore());
+  const finalized = await store.finalizeMaterialWrite(write.sessionId, write.claimId);
+  if (finalized) return true;
+  const byteStore = dependencies.byteStore ?? getMaterialByteStore();
+  await byteStore.delete(write.objectKey);
+  await store.discardMaterialWrite(write.sessionId, write.claimId);
+  return false;
+}
+
+export async function discardSessionMaterialObjectWrite(
+  write: SessionMaterialObjectWrite,
+  dependencies: SessionMaterialObjectWriteDependencies = {},
+): Promise<void> {
+  const byteStore = dependencies.byteStore ?? getMaterialByteStore();
+  await byteStore.delete(write.objectKey);
+  const store = dependencies.materialStore ?? (await getAgentSessionMaterialStore());
+  await store.discardMaterialWrite(write.sessionId, write.claimId);
+}
+
+/** One owner upload maps to a stable, globally distinct snapshot id per session. */
+export function boundSessionMaterialId(sessionId: string, ownerMaterialId: string): string {
+  const digest = createHash('sha256')
+    .update('openmaic:owner-material-session-snapshot:v1\0', 'utf8')
+    .update(JSON.stringify([sessionId, ownerMaterialId]), 'utf8')
+    .digest('hex');
+  return `mat_${digest}`;
 }
 
 /**
@@ -125,12 +286,21 @@ export async function createWebMaterial(
   const body = Buffer.from(page.markdown, 'utf8');
   const textObjectKey = sessionMaterialKey(sessionId, id, 'text.md');
   const byteStore = getMaterialByteStore();
-  // Initialize the row store before writing bytes, narrowing the non-atomic
-  // byte/metadata handoff to the two business writes themselves.
   const store = await getAgentSessionMaterialStore();
-  await byteStore.put(textObjectKey, body, 'text/markdown');
+  const write = await writeSessionMaterialObject(
+    {
+      sessionId,
+      materialId: id,
+      materialKind: 'web',
+      objectSlot: 'text',
+      objectKey: textObjectKey,
+      bytes: body,
+      mime: 'text/markdown',
+    },
+    { byteStore, materialStore: store },
+  );
   try {
-    return await store.createMaterial(sessionId, {
+    const created = await store.createMaterial(sessionId, {
       id,
       kind: 'web',
       title: page.title.slice(0, 180) || undefined,
@@ -138,6 +308,10 @@ export async function createWebMaterial(
       textAssetId: textObjectKey,
       textChars: page.markdown.length,
     });
+    if (!(await finalizeSessionMaterialObjectWrite(write, { byteStore, materialStore: store }))) {
+      throw new Error('session was deleted before the web material became visible');
+    }
+    return created;
   } catch (error) {
     // A database connection can fail after PostgreSQL committed the INSERT.
     // Verify absence before compensating; otherwise cleanup could delete the
@@ -145,9 +319,18 @@ export async function createWebMaterial(
     // preserve the object and let orphan reconciliation handle it rather than
     // risk creating a dangling row.
     const committed = await store.getMaterial(sessionId, id).catch(() => undefined);
-    if (committed) return committed;
+    if (committed) {
+      if (!(await finalizeSessionMaterialObjectWrite(write, { byteStore, materialStore: store }))) {
+        throw new Error('session was deleted before the web material became visible', {
+          cause: error,
+        });
+      }
+      return committed;
+    }
     if (committed === null) {
-      await byteStore.delete(textObjectKey).catch(() => undefined);
+      await discardSessionMaterialObjectWrite(write, { byteStore, materialStore: store }).catch(
+        () => undefined,
+      );
     }
     throw error;
   }
@@ -184,22 +367,46 @@ export async function createSourceMaterial(
   const rawObjectKey = sessionMaterialKey(sessionId, id, rawObjectName(input.mimeType));
   const byteStore = getMaterialByteStore();
   const store = await getAgentSessionMaterialStore();
-  await byteStore.put(rawObjectKey, body, input.mimeType);
+  const write = await writeSessionMaterialObject(
+    {
+      sessionId,
+      materialId: id,
+      materialKind: 'source',
+      objectSlot: 'raw',
+      objectKey: rawObjectKey,
+      bytes: body,
+      mime: input.mimeType,
+    },
+    { byteStore, materialStore: store },
+  );
   try {
-    return await store.createMaterial(sessionId, {
+    const created = await store.createMaterial(sessionId, {
       id,
       kind: 'source',
       title: input.filename,
       rawAssetId: rawObjectKey,
       textChars: 0,
     });
+    if (!(await finalizeSessionMaterialObjectWrite(write, { byteStore, materialStore: store }))) {
+      throw new Error('session was deleted before the source material became visible');
+    }
+    return created;
   } catch (error) {
     // Same ambiguous-commit discipline as createWebMaterial: only remove the
     // asset when the row is confirmed absent.
     const committed = await store.getMaterial(sessionId, id).catch(() => undefined);
-    if (committed) return committed;
+    if (committed) {
+      if (!(await finalizeSessionMaterialObjectWrite(write, { byteStore, materialStore: store }))) {
+        throw new Error('session was deleted before the source material became visible', {
+          cause: error,
+        });
+      }
+      return committed;
+    }
     if (committed === null) {
-      await byteStore.delete(rawObjectKey).catch(() => undefined);
+      await discardSessionMaterialObjectWrite(write, { byteStore, materialStore: store }).catch(
+        () => undefined,
+      );
     }
     throw error;
   }
@@ -214,53 +421,130 @@ export async function bindOwnerMaterialsToSession(
   sessionId: string,
   ownerId: string,
   materialIds: readonly string[],
+  dependencies: SessionMaterialBindingDependencies = {},
 ): Promise<Array<{ materialId: string; originalName?: string; mime?: string; bytes: number }>> {
   const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) throw new Error('Agent runtime requires DATABASE_URL');
-  const provider = await getServerPersistenceProvider(connectionString);
-  const records = await getReadyOwnerMaterials(provider.pool, ownerId, materialIds);
-  const byteStore = getMaterialByteStore();
+  if (!connectionString && (!dependencies.queryable || !dependencies.materialStore)) {
+    throw new Error('Agent runtime requires DATABASE_URL');
+  }
+  const sessionStore = dependencies.sessionStore ?? (await getAgentSessionStore());
+  const targetSession = await sessionStore.getSession(sessionId);
+  if (!targetSession || targetSession.ownerId !== ownerId) {
+    throw new SessionMaterialBindingError('target session is unavailable');
+  }
+  const queryable =
+    dependencies.queryable ?? (await getServerPersistenceProvider(connectionString!)).pool;
+  const records = await getReadyOwnerMaterials(queryable, ownerId, materialIds);
+  const byteStore = dependencies.byteStore ?? getMaterialByteStore();
   const byId = new Map(records.map((record) => [record.id, record]));
   if (materialIds.some((id) => !byId.has(id))) {
     throw new SessionMaterialBindingError('one or more materials are unavailable');
   }
-  const store = await getAgentSessionMaterialStore();
-  const bound = [];
+  const verified = new Map<string, VerifiedOwnerMaterialAsset>();
   for (const id of materialIds) {
-    const record = byId.get(id)!;
-    if (!(await store.getMaterial(sessionId, id))) {
-      let source: Buffer;
-      try {
-        source = await byteStore.get(record.ossKey);
-      } catch {
-        throw new SessionMaterialBindingError(`material ${id} bytes are unavailable`);
-      }
+    const asset = await verifyOwnerMaterialBytes(byId.get(id)!, byteStore);
+    if (!asset) throw new SessionMaterialBindingError(`material ${id} bytes are unavailable`);
+    verified.set(id, asset);
+  }
+  const store = dependencies.materialStore ?? (await getAgentSessionMaterialStore());
+  const bound: Array<{
+    materialId: string;
+    originalName?: string;
+    mime?: string;
+    bytes: number;
+  }> = [];
+  try {
+    for (const ownerMaterialId of materialIds) {
+      const asset = verified.get(ownerMaterialId)!;
+      const record = asset.record;
+      const materialId = boundSessionMaterialId(sessionId, ownerMaterialId);
       const mime = record.mime ?? 'application/octet-stream';
-      const rawObjectKey = sessionMaterialKey(sessionId, id, rawObjectName(mime));
-      await byteStore.put(rawObjectKey, source, mime);
-      try {
-        await store.createMaterial(sessionId, {
-          id,
-          kind: 'source',
-          title: record.originalName ?? id,
-          rawAssetId: rawObjectKey,
-          textChars: 0,
-        });
-      } catch (error) {
-        if (!(await store.getMaterial(sessionId, id))) {
-          await byteStore.delete(rawObjectKey).catch(() => undefined);
-          throw error;
+      const rawObjectKey = sessionMaterialKey(sessionId, materialId, rawObjectName(mime));
+      const existing = await store.getMaterial(sessionId, materialId);
+      if (existing) {
+        if (
+          existing.kind !== 'source' ||
+          existing.rawAssetId !== rawObjectKey ||
+          existing.derivedFrom !== null
+        ) {
+          throw new SessionMaterialBindingError('session material snapshot identity conflict');
+        }
+        const snapshotBytes = await byteStore.get(rawObjectKey).catch(() => null);
+        if (!snapshotBytes?.equals(asset.bytes)) {
+          const write = await writeSessionMaterialObject(
+            {
+              sessionId,
+              materialId,
+              materialKind: 'source',
+              objectSlot: 'raw',
+              objectKey: rawObjectKey,
+              bytes: asset.bytes,
+              mime,
+              existingMaterialTracksObject: true,
+            },
+            { byteStore, materialStore: store },
+          );
+          if (
+            !(await finalizeSessionMaterialObjectWrite(write, { byteStore, materialStore: store }))
+          ) {
+            throw new SessionMaterialBindingError(
+              'target session was deleted during snapshot repair',
+            );
+          }
+        }
+      } else {
+        const write = await writeSessionMaterialObject(
+          {
+            sessionId,
+            materialId,
+            materialKind: 'source',
+            objectSlot: 'raw',
+            objectKey: rawObjectKey,
+            bytes: asset.bytes,
+            mime,
+            preserveClaimOnFailure: true,
+          },
+          { byteStore, materialStore: store },
+        );
+        try {
+          await store.createMaterial(sessionId, {
+            id: materialId,
+            kind: 'source',
+            title: record.originalName ?? ownerMaterialId,
+            rawAssetId: rawObjectKey,
+            textChars: 0,
+          });
+        } catch (error) {
+          const committed = await store.getMaterial(sessionId, materialId).catch(() => undefined);
+          if (committed) {
+            if (committed.kind !== 'source' || committed.rawAssetId !== rawObjectKey) throw error;
+          } else if (committed === null) {
+            throw error;
+          } else {
+            throw error;
+          }
+        }
+        if (
+          !(await finalizeSessionMaterialObjectWrite(write, { byteStore, materialStore: store }))
+        ) {
+          throw new SessionMaterialBindingError('target session was deleted during snapshot bind');
         }
       }
+      bound.push({
+        materialId,
+        ...(record.originalName ? { originalName: record.originalName } : {}),
+        ...(record.mime ? { mime: record.mime } : {}),
+        bytes: record.bytes,
+      });
     }
-    bound.push({
-      materialId: id,
-      ...(record.originalName ? { originalName: record.originalName } : {}),
-      ...(record.mime ? { mime: record.mime } : {}),
-      bytes: record.bytes,
-    });
+    return bound;
+  } catch (error) {
+    // Previously committed items are valid independent snapshots and remain as
+    // retryable partial progress. Rolling them back can invalidate a concurrent
+    // bind that already returned the same deterministic snapshot id.
+    if (error instanceof SessionMaterialBindingError) throw error;
+    throw new SessionMaterialBindingError('material snapshot binding failed', { cause: error });
   }
-  return bound;
 }
 
 /**
@@ -274,8 +558,37 @@ export function publicMaterialView(record: AgentSessionMaterial): Record<string,
     ...(record.title ? { title: record.title } : {}),
     ...(record.sourceUrl ? { sourceUrl: record.sourceUrl } : {}),
     textChars: record.textChars,
-    extraction: record.extraction,
+    extraction: publicMaterialExtractionView(record.extraction),
     createdAt: record.createdAt,
+  };
+}
+
+/** Closed public projection; historical raw errors and provider diagnostics never cross the wire. */
+export function publicMaterialExtractionView(
+  extraction: MaterialExtractionState,
+): Record<string, unknown> {
+  const stats = extraction.stats;
+  const publicStats = stats
+    ? {
+        chars: stats.chars,
+        pages: stats.pages,
+        imageCount: stats.imageCount,
+        ...(stats.truncated === undefined ? {} : { truncated: stats.truncated }),
+        ...(stats.durationSec === undefined ? {} : { durationSec: stats.durationSec }),
+        ...(stats.asrChunks === undefined ? {} : { asrChunks: stats.asrChunks }),
+      }
+    : undefined;
+  return {
+    status: extraction.status,
+    attempts: extraction.attempts,
+    ...(extraction.error
+      ? {
+          errorCode: isMaterialExtractionErrorCode(extraction.error)
+            ? extraction.error
+            : 'MATERIAL_EXTRACTION_FAILED',
+        }
+      : {}),
+    ...(publicStats ? { stats: publicStats } : {}),
   };
 }
 
@@ -337,12 +650,35 @@ export async function resolveSessionMaterialText(
  */
 export async function storeSessionMaterialRawAsset(
   sessionId: string,
+  materialId: string,
+  materialKind: AgentSessionMaterialKind,
   bytes: Buffer,
   mime: string,
-): Promise<string> {
-  const key = sessionMaterialKey(sessionId, createMaterialId(), rawObjectName(mime));
-  await getMaterialByteStore().put(key, bytes, mime);
-  return key;
+  options: {
+    derivedFrom?: string;
+    objectSlot?: 'text' | 'raw';
+    dependencies?: SessionMaterialObjectWriteDependencies;
+  } = {},
+): Promise<SessionMaterialObjectWrite> {
+  const objectSlot = options.objectSlot ?? 'raw';
+  const key = sessionMaterialKey(
+    sessionId,
+    materialId,
+    objectSlot === 'text' ? 'text.md' : rawObjectName(mime),
+  );
+  return writeSessionMaterialObject(
+    {
+      sessionId,
+      materialId,
+      materialKind,
+      ...(options.derivedFrom ? { derivedFrom: options.derivedFrom } : {}),
+      objectSlot,
+      objectKey: key,
+      bytes,
+      mime,
+    },
+    options.dependencies,
+  );
 }
 
 /**
@@ -372,6 +708,58 @@ export async function removeSessionMaterialRawAsset(
 ): Promise<void> {
   if (!isSessionMaterialKey(sessionId, rawAssetId)) return;
   await getMaterialByteStore().delete(rawAssetId);
+}
+
+/**
+ * Retryable cleanup for one tombstoned, owner-matched session. Metadata remains
+ * as an inaccessible pointer until every byte object is confirmed absent.
+ */
+export async function cleanupDeletedSessionMaterials(
+  sessionId: string,
+  ownerId: string,
+  dependencies: SessionMaterialCleanupDependencies = {},
+): Promise<boolean> {
+  const store = dependencies.materialStore ?? (await getAgentSessionMaterialStore());
+  const materials = await store.getDeletedSessionMaterialsForCleanup(sessionId, ownerId);
+  if (materials === null) return false;
+  const claims = store.getDeletedSessionMaterialWriteClaimsForCleanup
+    ? await store.getDeletedSessionMaterialWriteClaimsForCleanup(sessionId, ownerId)
+    : [];
+  if (claims === null) return false;
+  const objectKeys = [
+    ...new Set(
+      [
+        ...materials.flatMap((material) => [material.textAssetId, material.rawAssetId]),
+        ...claims.map((claim) => claim.objectKey),
+      ].filter((key): key is string => Boolean(key)),
+    ),
+  ];
+  if (objectKeys.some((key) => !isSessionMaterialKey(sessionId, key))) {
+    throw new Error('session material cleanup encountered a foreign object key');
+  }
+  const byteStore = dependencies.byteStore ?? getMaterialByteStore();
+  for (const key of objectKeys) await byteStore.delete(key);
+  if (byteStore.deletePrefix) {
+    await byteStore.deletePrefix(sessionMaterialObjectPrefix(sessionId));
+    const legacyPrefix = legacySessionMaterialObjectPrefix(sessionId);
+    if (legacyPrefix) await byteStore.deletePrefix(legacyPrefix);
+  }
+  await store.purgeDeletedSessionMaterials(sessionId, ownerId);
+  if (store.purgeDeletedSessionMaterialWriteClaims) {
+    await store.purgeDeletedSessionMaterialWriteClaims(sessionId, ownerId);
+  }
+  return true;
+}
+
+/** Tombstone the owned session, then clean its independent material snapshot. */
+export async function deleteOwnedSessionWithMaterials(
+  sessionId: string,
+  ownerId: string,
+  dependencies: SessionMaterialCleanupDependencies = {},
+): Promise<boolean> {
+  const sessionStore = dependencies.sessionStore ?? (await getAgentSessionStore());
+  await sessionStore.softDeleteSession(sessionId, ownerId);
+  return cleanupDeletedSessionMaterials(sessionId, ownerId, dependencies);
 }
 
 /**

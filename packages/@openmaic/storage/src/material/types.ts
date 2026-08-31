@@ -3,15 +3,15 @@
  *
  * A material is the session-visible metadata row for one persisted piece of
  * content (today: a `web` page fetched by the host's `fetch_url` tool). The
- * bytes are not kept on this row — they are stored through the package's
- * hash-addressed asset registry/byte store and the row records the returned
- * asset ids (`textAssetId` for the extracted markdown, `rawAssetId` for the
- * optional raw download). The material id (`mat_` + Crockford base32 suffix)
- * is minted by {@link createMaterialId}.
+ * bytes are not kept on this row — they are stored through the host's neutral
+ * byte store and the row records server-only canonical object keys. The
+ * `textAssetId` / `rawAssetId` names are legacy compatibility columns, not
+ * public asset identifiers. The logical material id (`mat_` + Crockford
+ * base32 suffix) is minted by {@link createMaterialId}.
  *
  * Extraction is coordinated durably on source rows. Bytes continue to live in
  * the asset registry; the lifecycle only coordinates which worker may turn a
- * source asset into a text-bearing derivative.
+ * source object into a text-bearing derivative.
  */
 import { randomBytes } from 'node:crypto';
 
@@ -35,6 +35,11 @@ export function createMaterialId(): string {
   }
   if (bits > 0) encoded += CROCKFORD_BASE32[(value * 2 ** (5 - bits)) & 31];
   return `mat_${encoded}`;
+}
+
+/** Allocate an opaque token for one durable material byte-write claim. */
+export function createMaterialWriteClaimId(): string {
+  return createMaterialId().replace(/^mat_/, 'mwc_');
 }
 
 /**
@@ -67,17 +72,61 @@ export interface MaterialExtractionStats {
   pages: number;
   imageCount: number;
   truncated?: boolean;
-  diagnostics?: string[];
   durationSec?: number;
   asrChunks?: number;
+}
+
+export const MATERIAL_EXTRACTION_ERROR_CODES = [
+  'MATERIAL_EXTRACTION_FAILED',
+  'MATERIAL_EXTRACTION_UNSUPPORTED',
+  'MATERIAL_EXTRACTION_PROVIDER_UNAVAILABLE',
+  'MATERIAL_EXTRACTION_CANCELLED',
+] as const;
+
+export type MaterialExtractionErrorCode = (typeof MATERIAL_EXTRACTION_ERROR_CODES)[number];
+
+export function isMaterialExtractionErrorCode(
+  value: unknown,
+): value is MaterialExtractionErrorCode {
+  return (
+    typeof value === 'string' &&
+    (MATERIAL_EXTRACTION_ERROR_CODES as readonly string[]).includes(value)
+  );
 }
 
 export interface MaterialExtractionState {
   status: MaterialExtractionStatus;
   attempts: number;
-  error?: string;
+  error?: MaterialExtractionErrorCode;
   stats?: MaterialExtractionStats;
   extractorVersion?: string;
+}
+
+export const AGENT_SESSION_MATERIAL_WRITE_STATES = ['claimed', 'staged'] as const;
+
+export type AgentSessionMaterialWriteState = (typeof AGENT_SESSION_MATERIAL_WRITE_STATES)[number];
+
+export type AgentSessionMaterialObjectSlot = 'text' | 'raw';
+
+/** Durable provenance for one byte-store write that has not yet become a material row. */
+export interface AgentSessionMaterialWriteClaim {
+  id: string;
+  sessionId: string;
+  materialId: string;
+  materialKind: AgentSessionMaterialKind;
+  derivedFrom: string | null;
+  objectSlot: AgentSessionMaterialObjectSlot;
+  objectKey: string;
+  state: AgentSessionMaterialWriteState;
+  createdAt: string;
+}
+
+export interface CreateAgentSessionMaterialWriteClaimInput {
+  materialId: string;
+  materialKind: AgentSessionMaterialKind;
+  derivedFrom?: string;
+  objectSlot: AgentSessionMaterialObjectSlot;
+  objectKey: string;
 }
 
 export function isAgentSessionMaterialKind(value: unknown): value is AgentSessionMaterialKind {
@@ -94,9 +143,9 @@ export interface AgentSessionMaterial {
   title: string | null;
   /** The fetch's source URL; never a model-invented target. */
   sourceUrl: string | null;
-  /** Asset id (registry) of the extracted text/markdown bytes. */
+  /** Server-only canonical object key for the extracted text/markdown bytes. */
   textAssetId: string | null;
-  /** Optional asset id (registry) of the raw downloaded bytes. */
+  /** Optional server-only canonical object key for the raw bytes. */
   rawAssetId: string | null;
   /** Character count of the extracted text, for preview/paging decisions. */
   textChars: number;
@@ -190,6 +239,33 @@ export interface AgentSessionMaterialStore {
     options?: ListAgentSessionMaterialsOptions,
   ): Promise<AgentSessionMaterial[]>;
   getMaterial(sessionId: string, materialId: string): Promise<AgentSessionMaterial | null>;
+  /** Delete one active-session row for host-side byte-write compensation. */
+  deleteMaterial(sessionId: string, materialId: string): Promise<AgentSessionMaterial | null>;
+  /** Return null unless this exact owner owns a tombstoned session. */
+  getDeletedSessionMaterialsForCleanup(
+    sessionId: string,
+    ownerId: string,
+  ): Promise<AgentSessionMaterial[] | null>;
+  /** Purge rows only after the host confirms every recorded byte object is absent. */
+  purgeDeletedSessionMaterials(sessionId: string, ownerId: string): Promise<boolean>;
+  claimMaterialWrite(
+    sessionId: string,
+    input: CreateAgentSessionMaterialWriteClaimInput,
+  ): Promise<AgentSessionMaterialWriteClaim>;
+  /**
+   * Execute the byte-store publish while holding the session tombstone fence.
+   * A thrown callback rolls the claim back to `claimed` for deterministic cleanup.
+   */
+  executeClaimedMaterialWrite(claimId: string, write: () => Promise<void>): Promise<boolean>;
+  /** Remove a staged claim only when its active-session material row records the same key. */
+  finalizeMaterialWrite(sessionId: string, claimId: string): Promise<boolean>;
+  /** Remove a claim after the host has confirmed that its object is absent. */
+  discardMaterialWrite(sessionId: string, claimId: string): Promise<boolean>;
+  getDeletedSessionMaterialWriteClaimsForCleanup(
+    sessionId: string,
+    ownerId: string,
+  ): Promise<AgentSessionMaterialWriteClaim[] | null>;
+  purgeDeletedSessionMaterialWriteClaims(sessionId: string, ownerId: string): Promise<boolean>;
   enqueueExtraction(sessionId: string, materialId: string): Promise<boolean>;
   claimNextExtraction(
     workerId: string,
@@ -200,7 +276,7 @@ export interface AgentSessionMaterialStore {
   settleExtractionFailure(
     materialId: string,
     workerId: string,
-    error: string,
+    error: MaterialExtractionErrorCode,
     retryable: boolean,
   ): Promise<MaterialExtractionFailureSettlement | null>;
 }

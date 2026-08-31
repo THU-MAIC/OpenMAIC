@@ -3,7 +3,10 @@ import { describe, expect, test } from 'vitest';
 import type { AgentSessionMaterialStore } from '../src/material/types.js';
 import type { AgentSessionStore } from '../src/agent-session/types.js';
 
-export type AgentSessionMaterialContractStore = AgentSessionMaterialStore & {
+export type AgentSessionMaterialContractStore = Pick<
+  AgentSessionMaterialStore,
+  'createMaterial' | 'getMaterial' | 'listMaterials'
+> & {
   createSession: AgentSessionStore['createSession'];
 };
 
@@ -13,9 +16,9 @@ export type AgentSessionMaterialContractStore = AgentSessionMaterialStore & {
  * The anchor mirrors the reference: materials are minted with the `mat_` id
  * shape, every read is scoped by session id (a foreign or nonexistent id reads
  * as absent), and listing pages newest-first with a keyset `before` cursor.
- * The bytes are not part of this contract — the row records the byte-store
- * asset ids that the host persisted through the asset registry — so the
- * linkage is verified by round-tripping the recorded ids, not the bytes.
+ * The bytes are not part of this contract — the legacy-named linkage columns
+ * record server-only canonical object keys in the host's neutral byte store —
+ * so the linkage is verified by round-tripping those keys, not the bytes.
  */
 export function runAgentSessionMaterialContract(
   name: string,
@@ -47,8 +50,7 @@ export function runAgentSessionMaterialContract(
       });
       expect(new Date(material.createdAt).getTime()).toBeGreaterThan(0);
 
-      // The row is the linkage: the recorded asset ids resolve back to the
-      // exact values fetch_url persisted through the asset registry.
+      // The row is the linkage: the recorded object keys round-trip exactly.
       const read = await store.getMaterial('session-1', material.id);
       expect(read).toEqual(material);
     });

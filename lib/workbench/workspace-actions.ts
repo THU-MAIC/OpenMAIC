@@ -1,7 +1,7 @@
 'use server';
 
 import { cookies } from 'next/headers';
-import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
+import { deleteOwnedSessionWithMaterials } from '@/lib/server/agent-runtime/session-materials';
 
 /**
  * The anonymous identity cookie minted by the agent-runtime owner resolution
@@ -34,6 +34,5 @@ export async function deleteWorkspaceSession(id: string): Promise<{ deleted: boo
   const sessionId = id.trim();
   if (!sessionId) return { deleted: false };
   const ownerId = await currentOwnerId();
-  const store = await getAgentSessionStore();
-  return { deleted: await store.softDeleteSession(sessionId, ownerId) };
+  return { deleted: await deleteOwnedSessionWithMaterials(sessionId, ownerId) };
 }

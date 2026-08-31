@@ -14,6 +14,7 @@ import { findSkill, inferSkillIdFromPrompt, listSkills } from '@/lib/server/agen
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 import {
   bindOwnerMaterialsToSession,
+  deleteOwnedSessionWithMaterials,
   SessionMaterialBindingError,
 } from '@/lib/server/agent-runtime/session-materials';
 import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
@@ -178,7 +179,7 @@ export async function POST(req: NextRequest) {
         { status: 202, headers: responseHeaders },
       );
     } catch (error) {
-      await store.softDeleteSession(meta.id, ownerId).catch(() => false);
+      await deleteOwnedSessionWithMaterials(meta.id, ownerId).catch(() => false);
       if (error instanceof SessionMaterialBindingError) {
         return new Response('Not found', { status: 404, headers: responseHeaders });
       }

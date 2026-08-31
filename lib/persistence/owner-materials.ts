@@ -64,7 +64,7 @@ export interface OwnerMaterialView {
   mime?: string;
   bytes: number;
   originalName?: string;
-  extraction?: OwnerMaterialExtraction;
+  extraction?: Pick<OwnerMaterialExtraction, 'status'>;
   createdAt: string;
 }
 
@@ -126,6 +126,14 @@ CREATE INDEX IF NOT EXISTS owner_material_owner_created_idx
 -- sweeper already understands. The old NOT NULL asset_id column must also
 -- go, or its constraint rejects every insert of the new row shape.
 ALTER TABLE owner_material ADD COLUMN IF NOT EXISTS oss_key TEXT NOT NULL DEFAULT '';
+
+-- Asset-era rows have no authoritative byte-store locator after upgrade. Keep
+-- their metadata for owner-scoped cleanup, but remove them from ready/quota
+-- semantics instead of inventing an object key that could address other data.
+UPDATE owner_material
+   SET deleted_at = COALESCE(deleted_at, created_at)
+ WHERE status = 'ready' AND oss_key = '';
+
 ALTER TABLE owner_material DROP COLUMN IF EXISTS asset_id;
 `;
 
@@ -210,7 +218,7 @@ export function publicMaterial(record: OwnerMaterialRecord): OwnerMaterialView {
     ...(record.mime ? { mime: record.mime } : {}),
     bytes: record.bytes,
     ...(record.originalName ? { originalName: record.originalName } : {}),
-    ...(record.extraction ? { extraction: record.extraction } : {}),
+    ...(record.extraction ? { extraction: { status: record.extraction.status } } : {}),
     createdAt: new Date(record.createdAt).toISOString(),
   };
 }
@@ -233,12 +241,10 @@ export function ownerMaterialQuotaLockKey(ownerId: string): string {
  * Reclaim uploads that crashed before finalize and are older than the sweep
  * horizon.
  *
- * Order is load-bearing: each stale reservation's byte object is removed
- * first, and only then is the reservation deleted. Deleting the reservation
- * first would lose the pointer to its bytes on a crash between the two, so the
- * object would remain orphaned forever. A reservation whose byte deletion
- * throws is left in place (still quota-counted)
- * and the next pass retries it.
+ * Order is load-bearing: each stale reservation is first tombstoned with one
+ * conditional UPDATE. That fences a concurrent finalize while retaining the
+ * byte pointer. The byte object is then removed, followed by the tombstone. A
+ * byte deletion failure leaves the hidden pointer for the next retry.
  *
  * @param deleteBytes Reclaims one recorded object key; must resolve when the
  *   object is removed or confirmed already absent, and throw to keep the
@@ -251,12 +257,13 @@ export async function reclaimStaleOwnerMaterialUploads(
 ): Promise<void> {
   const staleBefore = Date.now() - STALE_UPLOAD_AGE_MS;
   const stale = await queryable.query<{ id: string; oss_key: string }>(
-    `SELECT id, oss_key
-       FROM owner_material
+    `UPDATE owner_material
+        SET deleted_at = COALESCE(deleted_at, $3)
       WHERE owner_id = $1
         AND status = 'uploading'
-        AND created_at < $2`,
-    [ownerId, staleBefore],
+        AND (deleted_at IS NOT NULL OR created_at < $2)
+      RETURNING id, oss_key`,
+    [ownerId, staleBefore, Date.now()],
   );
   for (const row of stale.rows) {
     if (row.oss_key !== '') {
@@ -270,8 +277,9 @@ export async function reclaimStaleOwnerMaterialUploads(
     }
     await queryable.query(
       `DELETE FROM owner_material
-        WHERE id = $1 AND status = 'uploading'`,
-      [row.id],
+        WHERE owner_id = $1 AND id = $2
+          AND status = 'uploading' AND deleted_at IS NOT NULL`,
+      [ownerId, row.id],
     );
   }
 }
@@ -340,22 +348,41 @@ export async function registerOwnerMaterial(
   });
 }
 
+/** Renew the upload reservation immediately before its byte-store write. */
+export async function renewOwnerMaterialUploadLease(
+  queryable: Queryable,
+  ownerId: string,
+  materialId: string,
+): Promise<boolean> {
+  const result = await queryable.query<{ id: string }>(
+    `UPDATE owner_material
+        SET created_at = $3
+      WHERE owner_id = $1 AND id = $2
+        AND status = 'uploading' AND deleted_at IS NULL
+      RETURNING id`,
+    [ownerId, materialId, Date.now()],
+  );
+  return result.rows.length > 0;
+}
+
 /** Finalize a successfully stored object. Reserved bytes may only shrink. */
 export async function finalizeOwnerMaterial(
   queryable: Queryable,
+  ownerId: string,
   materialId: string,
   bytes: number,
   sha256: string,
 ): Promise<OwnerMaterialRecord> {
   const result = await queryable.query<RawOwnerMaterialRow>(
     `UPDATE owner_material
-        SET bytes = $2, sha256 = $3, status = 'ready'
-      WHERE id = $1
+        SET bytes = $3, sha256 = $4, status = 'ready'
+      WHERE owner_id = $1
+        AND id = $2
         AND status = 'uploading'
         AND deleted_at IS NULL
-        AND bytes >= $2
+        AND bytes >= $3
       RETURNING ${OWNER_MATERIAL_COLUMNS}`,
-    [materialId, bytes, sha256],
+    [ownerId, materialId, bytes, sha256],
   );
   if (!result.rows[0]) throw new Error(`material ${materialId} cannot be finalized`);
   return rowToRecord(result.rows[0]);
@@ -364,14 +391,20 @@ export async function finalizeOwnerMaterial(
 /** Remove a failed reservation; crash leftovers are handled by the 24h lazy sweep. */
 export async function abandonOwnerMaterial(
   queryable: Queryable,
+  ownerId: string,
   materialId: string,
 ): Promise<void> {
-  await queryable.query(`DELETE FROM owner_material WHERE id = $1 AND status = 'uploading'`, [
-    materialId,
-  ]);
+  await queryable.query(
+    `DELETE FROM owner_material
+      WHERE owner_id = $1 AND id = $2 AND status = 'uploading'`,
+    [ownerId, materialId],
+  );
 }
 
-/** List the owner's ready library materials, newest first. */
+/**
+ * List the owner's readable ready materials, newest first. Asset-era rows are
+ * retained with an empty object-key sentinel, but remain unavailable here.
+ */
 export async function listOwnerMaterials(
   queryable: Queryable,
   ownerId: string,
@@ -379,7 +412,11 @@ export async function listOwnerMaterials(
   const result = await queryable.query<RawOwnerMaterialRow>(
     `SELECT ${OWNER_MATERIAL_COLUMNS}
        FROM owner_material
-      WHERE owner_id = $1 AND status = 'ready' AND deleted_at IS NULL
+      WHERE owner_id = $1
+        AND status = 'ready'
+        AND deleted_at IS NULL
+        AND oss_key <> ''
+        AND sha256 IS NOT NULL
       ORDER BY created_at DESC`,
     [ownerId],
   );
@@ -399,8 +436,62 @@ export async function getReadyOwnerMaterials(
       WHERE owner_id = $1
         AND id = ANY($2::text[])
         AND status = 'ready'
-        AND deleted_at IS NULL`,
+        AND deleted_at IS NULL
+        AND oss_key <> ''
+        AND sha256 IS NOT NULL`,
     [ownerId, [...materialIds]],
   );
   return result.rows.map(rowToRecord);
+}
+
+/** Resolve one ready owner material without exposing foreign, deleted, or uploading rows. */
+export async function getReadyOwnerMaterial(
+  queryable: Queryable,
+  ownerId: string,
+  materialId: string,
+): Promise<OwnerMaterialRecord | null> {
+  const result = await queryable.query<RawOwnerMaterialRow>(
+    `SELECT ${OWNER_MATERIAL_COLUMNS}
+       FROM owner_material
+      WHERE owner_id = $1
+        AND id = $2
+        AND status = 'ready'
+        AND deleted_at IS NULL
+        AND oss_key <> ''
+        AND sha256 IS NOT NULL
+      LIMIT 1`,
+    [ownerId, materialId],
+  );
+  return result.rows[0] ? rowToRecord(result.rows[0]) : null;
+}
+
+/** Tombstone one owned row while retaining its byte pointer for retryable cleanup. */
+export async function tombstoneOwnerMaterial(
+  queryable: Queryable,
+  ownerId: string,
+  materialId: string,
+): Promise<OwnerMaterialRecord | null> {
+  const result = await queryable.query<RawOwnerMaterialRow>(
+    `UPDATE owner_material
+        SET deleted_at = COALESCE(deleted_at, $3)
+      WHERE owner_id = $1 AND id = $2 AND status = 'ready'
+      RETURNING ${OWNER_MATERIAL_COLUMNS}`,
+    [ownerId, materialId, Date.now()],
+  );
+  return result.rows[0] ? rowToRecord(result.rows[0]) : null;
+}
+
+/** Purge a tombstone only after its byte object has been confirmed absent. */
+export async function purgeDeletedOwnerMaterial(
+  queryable: Queryable,
+  ownerId: string,
+  materialId: string,
+): Promise<boolean> {
+  const result = await queryable.query<{ id: string }>(
+    `DELETE FROM owner_material
+      WHERE owner_id = $1 AND id = $2 AND deleted_at IS NOT NULL
+      RETURNING id`,
+    [ownerId, materialId],
+  );
+  return result.rows.length > 0;
 }

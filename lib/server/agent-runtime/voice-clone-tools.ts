@@ -52,11 +52,14 @@ import {
   resolveTTSBaseUrl,
 } from '@/lib/server/provider-config';
 import {
+  discardSessionMaterialObjectWrite,
+  finalizeSessionMaterialObjectWrite,
   getAgentSessionMaterialStore,
   getSessionMaterial,
   removeSessionMaterialRawAsset,
   resolveSessionMaterialRawAsset,
   storeSessionMaterialRawAsset,
+  type SessionMaterialObjectWrite,
 } from './session-materials';
 
 const execFileAsync = promisify(execFile);
@@ -106,9 +109,17 @@ export interface VoiceCloneToolDependencies {
     rawAssetId: string,
   ) => Promise<{ bytes: Buffer; mime: string } | null>;
   /** Test seam; defaults to writing the bytes into the session's material asset partition. */
-  storeRawAsset?: (sessionId: string, bytes: Buffer, mime: string) => Promise<string>;
+  storeRawAsset?: (
+    sessionId: string,
+    bytes: Buffer,
+    mime: string,
+    material: { id: string; kind: 'audio-track' },
+  ) => Promise<string | SessionMaterialObjectWrite>;
   /** Test seam; defaults to removing a just-stored asset (write compensation). */
   removeRawAsset?: (sessionId: string, rawAssetId: string) => Promise<void>;
+  /** Test seams for exercising the durable write claim against an injected store. */
+  finalizeRawAssetWrite?: (write: SessionMaterialObjectWrite) => Promise<boolean>;
+  discardRawAssetWrite?: (write: SessionMaterialObjectWrite) => Promise<void>;
   /** Test seam; defaults to the session-scoped material store create. */
   createMaterial?: (
     sessionId: string,
@@ -237,11 +248,27 @@ function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new Error('aborted');
 }
 
+async function runVoiceToolOperation<T>(
+  operation: () => Promise<T>,
+  publicMessage: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch {
+    if (signal?.aborted) throw new Error('aborted');
+    throw new Error(publicMessage);
+  }
+}
+
+function voiceToolFailure(publicMessage: string): Error {
+  return new Error(publicMessage);
+}
+
 /** Build the owner- and session-scoped voice-cloning tools for the agent. */
 export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentTool<never, never>[] {
   const getMaterial = deps.getMaterial ?? getSessionMaterial;
   const readRawAsset = deps.readRawAsset ?? resolveSessionMaterialRawAsset;
-  const storeRawAsset = deps.storeRawAsset ?? storeSessionMaterialRawAsset;
   const removeRawAsset = deps.removeRawAsset ?? removeSessionMaterialRawAsset;
   const createMaterial =
     deps.createMaterial ??
@@ -279,7 +306,11 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
     execute: async (_callId, params, signal) => {
       validateClipRange(params.startSec, params.endSec);
       throwIfAborted(signal);
-      const source = await getMaterial(deps.sessionId, params.materialId);
+      const source = await runVoiceToolOperation(
+        () => getMaterial(deps.sessionId, params.materialId),
+        'clip_audio could not read the source material',
+        signal,
+      );
       throwIfAborted(signal);
       if (!source) {
         throw new Error('material does not exist or does not belong to this session owner');
@@ -287,7 +318,11 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
       if (!source.rawAssetId) {
         throw new Error('clip_audio requires an audio or video material');
       }
-      const raw = await readRawAsset(deps.sessionId, source.rawAssetId);
+      const raw = await runVoiceToolOperation(
+        () => readRawAsset(deps.sessionId, source.rawAssetId!),
+        'clip_audio could not read the source bytes',
+        signal,
+      );
       throwIfAborted(signal);
       if (!raw) throw new Error('material bytes are unavailable');
       if (!isAudioOrVideo(raw.mime)) {
@@ -295,27 +330,71 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
       }
 
       const sourceName = `${source.id}${sourceExtension(source) || extensionForMime(raw.mime)}`;
-      const wav = await clipAudio(raw.bytes, sourceName, params.startSec, params.endSec);
+      const wav = await runVoiceToolOperation(
+        () => clipAudio(raw.bytes, sourceName, params.startSec, params.endSec),
+        'clip_audio could not process the source media',
+        signal,
+      );
       // Enforces the exact 24 kHz mono PCM WAV contract and the 1–60 s bounds.
       const validated = validateReferenceAudio(wav);
       throwIfAborted(signal);
 
       const clipId = createMaterialId();
-      const rawAssetId = await storeRawAsset(deps.sessionId, wav, CLIP_MIME);
+      const stored = await runVoiceToolOperation(
+        () =>
+          deps.storeRawAsset
+            ? deps.storeRawAsset(deps.sessionId, wav, CLIP_MIME, {
+                id: clipId,
+                kind: 'audio-track',
+              })
+            : storeSessionMaterialRawAsset(deps.sessionId, clipId, 'audio-track', wav, CLIP_MIME),
+        'clip_audio could not store the clipped audio',
+        signal,
+      );
+      const rawObjectKey = typeof stored === 'string' ? stored : stored.objectKey;
+      const discardStored = async (): Promise<void> => {
+        if (typeof stored === 'string') {
+          await removeRawAsset(deps.sessionId, rawObjectKey);
+        } else {
+          await (deps.discardRawAssetWrite ?? discardSessionMaterialObjectWrite)(stored);
+        }
+      };
+      const finalizeStored = async (): Promise<boolean> =>
+        typeof stored === 'string'
+          ? true
+          : (deps.finalizeRawAssetWrite ?? finalizeSessionMaterialObjectWrite)(stored);
       try {
         await createMaterial(deps.sessionId, {
           id: clipId,
           kind: 'audio-track',
           title: `${source.title ?? source.id} clip`,
-          rawAssetId,
+          rawAssetId: rawObjectKey,
         });
-      } catch (error) {
-        await removeRawAsset(deps.sessionId, rawAssetId).catch(() => undefined);
-        throw error;
+      } catch {
+        const committed = await getMaterial(deps.sessionId, clipId).catch(() => undefined);
+        if (committed) {
+          if (committed.kind !== 'audio-track' || committed.rawAssetId !== rawObjectKey)
+            throw voiceToolFailure('clip_audio could not persist the clipped audio');
+        } else if (committed === null) {
+          await discardStored().catch(() => undefined);
+          throw voiceToolFailure('clip_audio could not persist the clipped audio');
+        } else {
+          // Preserve the object when the INSERT commit result cannot be read.
+          // Its durable write claim lets tombstone cleanup reconcile the object
+          // without risking a committed row that points at deleted bytes.
+          throw voiceToolFailure('clip_audio could not persist the clipped audio');
+        }
+      }
+      const finalized = await runVoiceToolOperation(
+        finalizeStored,
+        'clip_audio could not finalize the clipped audio',
+        signal,
+      );
+      if (!finalized) {
+        throw new Error('session was deleted before the voice clip became visible');
       }
       const result = {
         clipId,
-        rawAssetId,
         durationSeconds: validated.durationSeconds,
         mime: CLIP_MIME,
       };
@@ -340,7 +419,11 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
         throw new Error('deployment has no voice registration backend configured');
       }
       throwIfAborted(signal);
-      const clip = await getMaterial(deps.sessionId, params.clipId);
+      const clip = await runVoiceToolOperation(
+        () => getMaterial(deps.sessionId, params.clipId),
+        'register_voice could not read the reference clip',
+        signal,
+      );
       throwIfAborted(signal);
       if (!clip) {
         throw new Error('clip does not exist or does not belong to this session owner');
@@ -348,7 +431,11 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
       if (clip.kind !== 'audio-track' || !clip.rawAssetId) {
         throw new Error('clipId is not a voice-cloning reference clip');
       }
-      const raw = await readRawAsset(deps.sessionId, clip.rawAssetId);
+      const raw = await runVoiceToolOperation(
+        () => readRawAsset(deps.sessionId, clip.rawAssetId!),
+        'register_voice could not read the reference audio',
+        signal,
+      );
       throwIfAborted(signal);
       if (!raw) throw new Error('voice-cloning reference clip is unavailable or corrupt');
       if (!isAudioOrVideo(raw.mime)) {
@@ -372,14 +459,19 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
         .digest('hex');
       let pending = registrationCache.get(registrationKey);
       if (!pending) {
-        pending = adapter.registerVoice(
-          cfg,
-          {
-            voiceId: params.name.trim(),
-            referenceAudioBase64: raw.bytes.toString('base64'),
-            mimeType: CLIP_MIME,
-            refText: params.refText,
-          },
+        pending = runVoiceToolOperation(
+          () =>
+            adapter.registerVoice(
+              cfg,
+              {
+                voiceId: params.name.trim(),
+                referenceAudioBase64: raw.bytes.toString('base64'),
+                mimeType: CLIP_MIME,
+                refText: params.refText,
+              },
+              signal,
+            ),
+          'voice registration failed',
           signal,
         );
         registrationCache.set(registrationKey, pending);

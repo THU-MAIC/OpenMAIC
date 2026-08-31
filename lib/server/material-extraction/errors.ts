@@ -1,12 +1,17 @@
+import type { MaterialExtractionErrorCode } from '@openmaic/storage';
+
 /** An extraction failure whose retryability is known at the point of origin. */
 export class MaterialExtractionError extends Error {
+  readonly publicCode?: MaterialExtractionErrorCode;
+
   constructor(
     message: string,
     readonly retryable: boolean,
-    options?: ErrorOptions,
+    options?: ErrorOptions & { publicCode?: MaterialExtractionErrorCode },
   ) {
     super(message, options);
     this.name = 'MaterialExtractionError';
+    this.publicCode = options?.publicCode;
   }
 }
 
@@ -60,4 +65,15 @@ export function isTransientExtractionError(error: unknown): boolean {
     name === 'AbortError' ||
     /\b(?:timeout|timed out|network error|socket hang up|fetch failed)\b/i.test(message)
   );
+}
+
+/** Map arbitrary provider/runtime diagnostics to the only values persisted publicly. */
+export function materialExtractionErrorCode(error: unknown): MaterialExtractionErrorCode {
+  if (error instanceof MaterialExtractionError && error.publicCode) return error.publicCode;
+  if (error && typeof error === 'object' && (error as { name?: unknown }).name === 'AbortError') {
+    return 'MATERIAL_EXTRACTION_CANCELLED';
+  }
+  return isTransientExtractionError(error)
+    ? 'MATERIAL_EXTRACTION_PROVIDER_UNAVAILABLE'
+    : 'MATERIAL_EXTRACTION_FAILED';
 }

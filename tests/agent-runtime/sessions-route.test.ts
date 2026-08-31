@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   postUserMessage: vi.fn(),
   softDeleteSession: vi.fn(),
   bindOwnerMaterialsToSession: vi.fn(),
+  deleteOwnedSessionWithMaterials: vi.fn(),
   listSessionsByOwner: vi.fn(),
   resolveRequestOwnerId: vi.fn(),
   listSkills: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock('@/lib/server/agent-runtime/store', () => ({
 }));
 vi.mock('@/lib/server/agent-runtime/session-materials', () => ({
   bindOwnerMaterialsToSession: mocks.bindOwnerMaterialsToSession,
+  deleteOwnedSessionWithMaterials: mocks.deleteOwnedSessionWithMaterials,
   SessionMaterialBindingError: class SessionMaterialBindingError extends Error {},
 }));
 
@@ -86,6 +88,7 @@ beforeEach(() => {
   mocks.postUserMessage.mockResolvedValue({ seq: 1, delivery: 'queued', requeued: true });
   mocks.softDeleteSession.mockResolvedValue(true);
   mocks.bindOwnerMaterialsToSession.mockResolvedValue([]);
+  mocks.deleteOwnedSessionWithMaterials.mockResolvedValue(true);
 });
 
 describe('agent session collection route', () => {
@@ -164,7 +167,7 @@ describe('agent session collection route', () => {
       expect.objectContaining({ status: 'succeeded', skillId: 'zhongkao-coach' }),
     );
     expect(mocks.postUserMessage).toHaveBeenCalledTimes(1);
-    expect(mocks.softDeleteSession).toHaveBeenCalledWith('session-1', 'anon:test');
+    expect(mocks.deleteOwnedSessionWithMaterials).toHaveBeenCalledWith('session-1', 'anon:test');
   });
 
   it('accepts a skill by its user-visible name and freezes the durable id, like the runner', async () => {

@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureAgentSessionSchema, PgAgentSessionStore } from '@openmaic/storage/agent-session/pg';
 import type { Queryable } from '@openmaic/storage/asset/pg';
 import { setMaterialByteStoreForTests } from '@/lib/server/materials/bytes';
+import { sessionMaterialObjectKey } from '@/lib/server/materials/object-keys';
 
 const mocks = vi.hoisted(() => ({
   getAgentSessionStore: vi.fn(),
@@ -21,6 +22,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/server/agent-runtime/store', () => ({
   getAgentSessionStore: mocks.getAgentSessionStore,
+  nodePostgresTransaction:
+    (pool: PGlite) =>
+    <T>(body: (queryable: Queryable) => Promise<T>) =>
+      pool.transaction((tx: Queryable) => body(tx)),
 }));
 
 vi.mock('@/lib/persistence/server-provider', () => ({
@@ -106,7 +111,9 @@ describe('session materials persistence', () => {
       sourceUrl: 'https://example.com/article',
       textChars: markdown.length,
     });
-    expect(material?.textAssetId).toMatch(/^materials\/session-1\/mat_[^/]+\/text\.md$/);
+    expect(material?.textAssetId).toBe(
+      sessionMaterialObjectKey('session-1', trusted.materialId, 'text.md'),
+    );
 
     expect(bytes.get(material!.textAssetId!)?.toString('utf8')).toBe(markdown);
 

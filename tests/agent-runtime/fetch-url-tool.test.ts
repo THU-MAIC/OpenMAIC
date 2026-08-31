@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildFetchUrlTool,
   type ExtractedWebPage,
+  FetchUrlError,
   type FetchUrlOptions,
   type FetchUrlToolDependencies,
 } from '@/lib/server/agent-runtime/fetch-url';
@@ -190,15 +191,117 @@ describe('fetch_url tool', () => {
   });
 
   it('does not persist when the fetch fails', async () => {
+    const marker = 'materials/v1/sessions/ses_secret/mat_secret/raw.YXVkaW8vd2F2';
+    const diagnostic = `${marker} C:\\private\\student\\paper.pdf provider stderr`;
+    const rawError = new Error(diagnostic);
     const fetch = tool({
       isUrlAllowed: vi.fn().mockResolvedValue(true),
-      fetchUrl: vi.fn().mockRejectedValue(new Error('network down')),
+      fetchUrl: vi.fn().mockRejectedValue(rawError),
       saveWebMaterial: vi.fn(),
     });
 
-    await expect(
-      fetch.execute('call_1', { url: 'https://example.com/article' } as never, undefined),
-    ).rejects.toThrow('network down');
+    let failure: unknown;
+    try {
+      await fetch.execute('call_1', { url: 'https://example.com/article' } as never, undefined);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      name: 'FetchUrlError',
+      reason: 'network',
+      message: 'fetch_url failed: network',
+    });
+    expect((failure as Error).cause).toBeUndefined();
+    expect(String(failure)).not.toContain(marker);
+    expect(String(failure)).not.toContain('C:\\private\\student');
+    expect(JSON.stringify(failure)).not.toContain('provider stderr');
+  });
+
+  it.each([
+    ['blocked', 'fetch_url failed: blocked'],
+    ['empty', 'fetch_url failed: empty'],
+    ['unsupported_content_type', 'fetch_url failed: unsupported_content_type'],
+    ['network', 'fetch_url failed: network'],
+  ] as const)(
+    'preserves the closed %s reason without exposing diagnostics',
+    async (reason, message) => {
+      const diagnostic =
+        'materials/v1/sessions/ses_secret/mat_secret/raw.private C:\\private\\student\\paper.pdf provider stderr';
+      const rawError = new FetchUrlError(reason, diagnostic);
+      const fetch = tool({
+        isUrlAllowed: vi.fn().mockResolvedValue(true),
+        fetchUrl: vi.fn().mockRejectedValue(rawError),
+        saveWebMaterial: vi.fn(),
+      });
+
+      let failure: unknown;
+      try {
+        await fetch.execute(
+          'call_reason',
+          { url: 'https://example.com/article' } as never,
+          undefined,
+        );
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({ reason, message });
+      expect((failure as Error).cause).toBeUndefined();
+      expect(String(failure)).not.toContain('materials/v1/sessions/');
+      expect(String(failure)).not.toContain('C:\\private\\student');
+      expect(JSON.stringify(failure)).not.toContain('provider stderr');
+    },
+  );
+
+  it('closes storage and trust-check failures before they reach the tool result', async () => {
+    const diagnostic =
+      'materials/v1/sessions/ses_secret/mat_secret/raw.private C:\\private\\student\\paper.pdf';
+    const rawError = new Error(diagnostic);
+    const saveFailure = tool({
+      isUrlAllowed: vi.fn().mockResolvedValue(true),
+      fetchUrl: vi.fn().mockResolvedValue(page()),
+      saveWebMaterial: vi.fn().mockRejectedValue(rawError),
+    });
+    const trustFailure = tool({
+      isUrlAllowed: vi.fn().mockRejectedValue(rawError),
+      fetchUrl: vi.fn(),
+      saveWebMaterial: vi.fn(),
+    });
+    const redirectTrustFailure = tool({
+      isUrlAllowed: vi.fn().mockResolvedValueOnce(true).mockRejectedValueOnce(rawError),
+      fetchUrl: vi.fn(async (_url: string, options?: FetchUrlOptions) => {
+        await options!.isUrlAllowed!('https://example.com/redirect');
+        return page();
+      }),
+      saveWebMaterial: vi.fn(),
+    });
+    const finalTrustFailure = tool({
+      isUrlAllowed: vi.fn().mockResolvedValueOnce(true).mockRejectedValueOnce(rawError),
+      fetchUrl: vi.fn().mockResolvedValue(page()),
+      saveWebMaterial: vi.fn(),
+    });
+
+    for (const [candidate, message] of [
+      [saveFailure, 'fetch_url failed: storage'],
+      [trustFailure, 'fetch_url failed: trust_check'],
+      [redirectTrustFailure, 'fetch_url failed: trust_check'],
+      [finalTrustFailure, 'fetch_url failed: trust_check'],
+    ] as const) {
+      let failure: unknown;
+      try {
+        await candidate.execute(
+          'call_boundary',
+          { url: 'https://example.com/article' } as never,
+          undefined,
+        );
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({ message });
+      expect((failure as Error).cause).toBeUndefined();
+      expect(String(failure)).not.toContain('materials/v1/sessions/');
+      expect(String(failure)).not.toContain('C:\\private\\student');
+      expect(JSON.stringify(failure)).not.toContain(diagnostic);
+    }
   });
 
   it('rechecks the reported final URL and never persists an untrusted redirect result', async () => {

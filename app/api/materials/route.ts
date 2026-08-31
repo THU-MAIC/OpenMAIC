@@ -1,5 +1,6 @@
 /**
- * /api/materials — the workbench's material list and upload face.
+ * /api/materials — the workbench's material list and upload face. Session
+ * listing remains the default; `?scope=owner` lists the private owner library.
  *
  * The uploader (`uploadWorkbenchMaterial` in `lib/workbench/session-store.ts`)
  * is OWNER-scoped: it posts a file with no session id and expects the flat
@@ -18,7 +19,7 @@
  *   maxUploadBytes)` — both 413 when exceeded, checked on the declared
  *   `content-length` AND on the streamed body.
  * - Lifecycle: the upload reclaims crashed `uploading` leftovers older than
- *   24 hours (their byte objects first, then the reservations), reserves a
+ *   24 hours (atomically tombstone/fence, then bytes, then metadata), reserves a
  *   quota-checked `uploading` row (429 when the owner's count or byte quota is
  *   exceeded), streams the bytes through a sha256 meter into the byte store,
  *   and finalizes the row to `ready` with the digest. Failures
@@ -52,13 +53,18 @@ import {
 import {
   abandonOwnerMaterial,
   finalizeOwnerMaterial,
+  getReadyOwnerMaterial,
+  listOwnerMaterials,
   MaterialQuotaExceededError,
   publicMaterial,
   reclaimStaleOwnerMaterialUploads,
   registerOwnerMaterial,
+  renewOwnerMaterialUploadLease,
+  type OwnerMaterialRecord,
 } from '@/lib/persistence/owner-materials';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getMaterialByteStore } from '@/lib/server/materials/bytes';
+import { ownerMaterialObjectKey } from '@/lib/server/materials/object-keys';
 import {
   isWorkbenchMaterialMime,
   MEDIA_MIME_TYPES,
@@ -77,6 +83,24 @@ const MEDIA_MIME_SET = new Set<string>(MEDIA_MIME_TYPES);
 export const MAX_MATERIAL_LIST_LIMIT = 200;
 
 class MaterialPayloadTooLarge extends Error {}
+
+const MATERIAL_UPLOAD_LOG_CODES = new Set([
+  'MATERIAL_BYTE_INVALID_KEY',
+  'MATERIAL_BYTE_WRITE_FAILED',
+  'MATERIAL_BYTE_READ_FAILED',
+  'MATERIAL_BYTE_DELETE_FAILED',
+  'ENOENT',
+]);
+
+function materialUploadLogErrorCode(error: unknown): string {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+  return typeof code === 'string' && MATERIAL_UPLOAD_LOG_CODES.has(code)
+    ? code
+    : 'MATERIAL_UPLOAD_FAILED';
+}
 
 /** The `x-material-filename` header, sanitized to a bare file name. */
 function materialFilename(req: NextRequest): string | null {
@@ -111,7 +135,23 @@ export async function GET(req: NextRequest) {
   if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
 
   const url = new URL(req.url);
+  const scope = url.searchParams.get('scope');
   const sessionId = url.searchParams.get('sessionId')?.trim();
+  if (scope === 'owner') {
+    if (sessionId || url.searchParams.has('before') || url.searchParams.has('limit')) {
+      return apiError('INVALID_REQUEST', 400, 'owner scope does not accept session paging');
+    }
+    return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+      const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+      const materials = await listOwnerMaterials(provider.pool, ownerId);
+      return ownerJson(
+        { materials: materials.map((material) => publicMaterial(material)) },
+        200,
+        responseHeaders,
+      );
+    });
+  }
+  if (scope !== null) return apiError('INVALID_REQUEST', 400, 'unknown material scope');
   if (!sessionId) return apiError('MISSING_REQUIRED_FIELD', 400, 'sessionId is required');
 
   const parsedLimit = parseLimit(url.searchParams.get('limit'));
@@ -216,7 +256,7 @@ export async function POST(req: NextRequest) {
       }
       const createdMaterialId = createMaterialId();
       materialId = createdMaterialId;
-      const ossKey = `materials/${ownerId}/${createdMaterialId}`;
+      const ossKey = ownerMaterialObjectKey(ownerId, createdMaterialId);
 
       const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
       const byteStore = getMaterialByteStore();
@@ -242,8 +282,7 @@ export async function POST(req: NextRequest) {
           } catch (error) {
             console.warn(
               'material stale byte deletion failed; keeping its reservation for the next pass',
-              context({ objectKey }),
-              error,
+              context({ errorCode: materialUploadLogErrorCode(error) }),
             );
             throw error;
           }
@@ -251,8 +290,7 @@ export async function POST(req: NextRequest) {
       ).catch((error) => {
         console.warn(
           'material stale-upload reclaim failed; retrying on the next upload',
-          context(),
-          error,
+          context({ errorCode: materialUploadLogErrorCode(error) }),
         );
       });
 
@@ -297,6 +335,7 @@ export async function POST(req: NextRequest) {
         if (error instanceof MaterialPayloadTooLarge) {
           await abandonOwnerMaterial(
             provider.pool as unknown as ConnectableQueryable,
+            ownerId,
             createdMaterialId,
           ).catch(() => undefined);
           return reject(
@@ -308,6 +347,7 @@ export async function POST(req: NextRequest) {
         failureLogged = true;
         await abandonOwnerMaterial(
           provider.pool as unknown as ConnectableQueryable,
+          ownerId,
           createdMaterialId,
         ).catch(() => undefined);
         throw error;
@@ -315,6 +355,7 @@ export async function POST(req: NextRequest) {
       if (bytes.byteLength === 0) {
         await abandonOwnerMaterial(
           provider.pool as unknown as ConnectableQueryable,
+          ownerId,
           createdMaterialId,
         ).catch(() => undefined);
         return reject(
@@ -326,6 +367,7 @@ export async function POST(req: NextRequest) {
       if (bytes.byteLength > reservedBytes) {
         await abandonOwnerMaterial(
           provider.pool as unknown as ConnectableQueryable,
+          ownerId,
           createdMaterialId,
         ).catch(() => undefined);
         return reject(
@@ -335,20 +377,60 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // A request may spend a long time reading its body. Renew under the same
+      // row lock used by stale reclaim so an expired request can never write
+      // bytes after another request has tombstoned and purged its pointer.
+      const writeLease = await renewOwnerMaterialUploadLease(
+        provider.pool as unknown as ConnectableQueryable,
+        ownerId,
+        createdMaterialId,
+      );
+      if (!writeLease) throw new Error('material upload reservation is no longer active');
+
       // The object key is recorded by the reservation before bytes are stored.
       // A crash after the write therefore leaves a durable pointer for the
       // 24-hour reclaim, preserving delete-before-reservation-removal order.
       const hash = createHash('sha256').update(bytes).digest('hex');
       let bytesStored = false;
+      let safeToDeleteStoredBytes = true;
       try {
         await byteStore.put(ossKey, bytes, mime);
         bytesStored = true;
-        const row = await finalizeOwnerMaterial(
-          provider.pool as unknown as ConnectableQueryable,
-          createdMaterialId,
-          bytes.byteLength,
-          hash,
-        );
+        let row: OwnerMaterialRecord;
+        try {
+          row = await finalizeOwnerMaterial(
+            provider.pool as unknown as ConnectableQueryable,
+            ownerId,
+            createdMaterialId,
+            bytes.byteLength,
+            hash,
+          );
+          safeToDeleteStoredBytes = false;
+        } catch (finalizeError) {
+          let committed: OwnerMaterialRecord | null;
+          try {
+            committed = await getReadyOwnerMaterial(
+              provider.pool as unknown as ConnectableQueryable,
+              ownerId,
+              createdMaterialId,
+            );
+          } catch {
+            // The commit result is unknown. Preserve both bytes and the durable
+            // reservation pointer so a later read/reclaim can resolve it.
+            safeToDeleteStoredBytes = false;
+            throw finalizeError;
+          }
+          if (!committed) throw finalizeError;
+          safeToDeleteStoredBytes = false;
+          if (
+            committed.ossKey !== ossKey ||
+            committed.bytes !== bytes.byteLength ||
+            committed.sha256 !== hash
+          ) {
+            throw finalizeError;
+          }
+          row = committed;
+        }
         const view = publicMaterial(row);
         const res = NextResponse.json(
           {
@@ -366,28 +448,33 @@ export async function POST(req: NextRequest) {
         return res;
       } catch (error) {
         let bytesDeleted = !bytesStored;
-        if (bytesStored) {
+        if (bytesStored && safeToDeleteStoredBytes) {
           try {
             await byteStore.delete(ossKey);
             bytesDeleted = true;
           } catch (cleanupError) {
             console.warn(
               'material byte cleanup failed; keeping its reservation for stale reclaim',
-              context({ objectKey: ossKey }),
-              cleanupError,
+              context({ errorCode: materialUploadLogErrorCode(cleanupError) }),
             );
           }
         }
         if (bytesDeleted) {
           await abandonOwnerMaterial(
             provider.pool as unknown as ConnectableQueryable,
+            ownerId,
             createdMaterialId,
           ).catch(() => undefined);
         }
         throw error;
       }
     } catch (error) {
-      if (!failureLogged) console.error('material upload failed', context({ status: 500 }), error);
+      if (!failureLogged) {
+        console.error(
+          'material upload failed',
+          context({ status: 500, errorCode: materialUploadLogErrorCode(error) }),
+        );
+      }
       const res = apiError('INTERNAL_ERROR', 500, 'material upload failed');
       res.headers.set('x-request-id', requestId);
       for (const [key, value] of responseHeaders) res.headers.append(key, value);

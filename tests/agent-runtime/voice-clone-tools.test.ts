@@ -15,17 +15,40 @@
  * `audio-track` material.
  */
 import { spawnSync } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PGlite } from '@electric-sql/pglite';
 
 import type { AgentSessionMaterial } from '@openmaic/storage';
+import {
+  ensureAgentSessionSchema,
+  PgAgentSessionStore,
+  type Queryable,
+} from '@openmaic/storage/agent-session/pg';
+import {
+  ensureAgentSessionMaterialSchema,
+  PgAgentSessionMaterialStore,
+} from '@openmaic/storage/material/pg';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { VoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
 
 import {
   buildVoiceCloneTools,
+  type VoiceCloneToolDependencies,
   VOICE_CLONE_TOOL_NAMES,
 } from '@/lib/server/agent-runtime/voice-clone-tools';
+import { slimEventDataForLog } from '@/lib/server/agent-runtime/runner';
+import {
+  deleteOwnedSessionWithMaterials,
+  discardSessionMaterialObjectWrite,
+  finalizeSessionMaterialObjectWrite,
+  storeSessionMaterialRawAsset,
+} from '@/lib/server/agent-runtime/session-materials';
+import { LocalMaterialByteStore } from '@/lib/server/materials/bytes';
+import { sessionMaterialObjectKey } from '@/lib/server/materials/object-keys';
 
 // The CI unit-test runner has no ffmpeg; only the one end-to-end clip test
 // below needs the real binary, so it is skipped there and still runs locally.
@@ -250,7 +273,8 @@ describe('voice clone agent tools', () => {
     const adapter = fakeAdapter();
     mocks.getVoiceRegistrationAdapter.mockReturnValue(adapter);
     const wav = synthesizeVoiceCloneWav();
-    const clip = material({ rawAssetId: 'ast_clip' });
+    const canonicalKey = 'materials/v1/sessions/ses_secret/mat_secret/raw.YXVkaW8vd2F2';
+    const clip = material({ rawAssetId: canonicalKey });
     const getMaterial = vi.fn().mockResolvedValue(clip);
     const readRawAsset = vi.fn().mockResolvedValue({ bytes: wav, mime: 'audio/wav' });
     const register = tool(
@@ -269,6 +293,7 @@ describe('voice clone agent tools', () => {
     } as never);
 
     expect(getMaterial).toHaveBeenCalledWith('ses_1', 'mat_clip');
+    expect(readRawAsset).toHaveBeenCalledWith('ses_1', canonicalKey);
     expect(adapter.registerVoice).toHaveBeenCalledOnce();
     const [cfg, params] = adapter.registerVoice.mock.calls[0];
     expect(cfg).toEqual({
@@ -288,6 +313,7 @@ describe('voice clone agent tools', () => {
       name: 'Andrew Ng',
     });
     expect(duplicate.details).toEqual(result.details);
+    expect(JSON.stringify({ result, duplicate })).not.toContain(canonicalKey);
   });
 
   it('records the registered voice in the shared session registry (deduped)', async () => {
@@ -407,8 +433,9 @@ describe('voice clone agent tools', () => {
         material({ id: 'mat_source', kind: 'source', title: 'lecture.mp4', rawAssetId: 'ast_src' }),
       );
     const readRawAsset = vi.fn().mockResolvedValue({ bytes: sourceAudio, mime: 'video/mp4' });
-    const storeRawAsset = vi.fn().mockResolvedValue('ast_clip_new');
-    const createMaterial = vi.fn().mockResolvedValue(material({ rawAssetId: 'ast_clip_new' }));
+    const canonicalKey = 'materials/v1/sessions/ses_secret/mat_secret/raw.YXVkaW8vd2F2';
+    const storeRawAsset = vi.fn().mockResolvedValue(canonicalKey);
+    const createMaterial = vi.fn().mockResolvedValue(material({ rawAssetId: canonicalKey }));
     const clipAudio = vi.fn().mockResolvedValue(clipWav);
     const clip = tool(
       buildVoiceCloneTools({
@@ -428,30 +455,128 @@ describe('voice clone agent tools', () => {
     } as never);
 
     expect(clipAudio).toHaveBeenCalledWith(sourceAudio, 'mat_source.mp4', 1, 3);
-    expect(storeRawAsset).toHaveBeenCalledWith('ses_1', clipWav, 'audio/wav');
+    expect(storeRawAsset).toHaveBeenCalledWith('ses_1', clipWav, 'audio/wav', {
+      id: expect.stringMatching(/^mat_/),
+      kind: 'audio-track',
+    });
     expect(createMaterial).toHaveBeenCalledWith(
       'ses_1',
       expect.objectContaining({
         id: expect.stringMatching(/^mat_/),
         kind: 'audio-track',
-        rawAssetId: 'ast_clip_new',
+        rawAssetId: canonicalKey,
       }),
     );
-    expect(result.details).toMatchObject({
+    expect(result.details).toEqual({
       clipId: expect.stringMatching(/^mat_/),
-      rawAssetId: 'ast_clip_new',
       durationSeconds: 2,
       mime: 'audio/wav',
     });
+    expect(JSON.stringify(result)).not.toContain(canonicalKey);
+
+    const durableToolResult = slimEventDataForLog('message_end', {
+      type: 'message_end',
+      message: {
+        role: 'toolResult',
+        toolCallId: 'call_1',
+        toolName: 'clip_audio',
+        content: result.content,
+        details: result.details,
+        isError: false,
+        timestamp: 1_000,
+      },
+    });
+    const sseFrame = `event: message_end\ndata: ${JSON.stringify(durableToolResult)}\n\n`;
+    expect(sseFrame).not.toContain(canonicalKey);
+    expect(sseFrame).not.toMatch(/rawAssetId|materials\/v1\/sessions\//);
+  });
+
+  it('closes raw dependency diagnostics at every clip_audio failure boundary', async () => {
+    const canonicalKey = 'materials/v1/sessions/ses_secret/mat_secret/raw.private';
+    const diagnostic = `${canonicalKey} C:\\private\\student\\paper.pdf provider stderr`;
+    const rawFailure = () => new Error(diagnostic);
+    const base: VoiceCloneToolDependencies = {
+      sessionId: 'ses_1',
+      getMaterial: vi
+        .fn()
+        .mockResolvedValue(
+          material({ id: 'mat_source', kind: 'source', rawAssetId: 'ast_source' }),
+        ),
+      readRawAsset: vi.fn().mockResolvedValue({ bytes: sourceAudio, mime: 'audio/wav' }),
+      clipAudio: vi.fn().mockResolvedValue(synthesizeVoiceCloneWav(2)),
+      storeRawAsset: vi.fn().mockResolvedValue(canonicalKey),
+      createMaterial: vi.fn().mockResolvedValue(material({ rawAssetId: canonicalKey })),
+    };
+    const cases: Array<{
+      stage: string;
+      publicMessage: string;
+      overrides: Partial<VoiceCloneToolDependencies>;
+    }> = [
+      {
+        stage: 'source lookup',
+        publicMessage: 'clip_audio could not read the source material',
+        overrides: { getMaterial: vi.fn().mockRejectedValue(rawFailure()) },
+      },
+      {
+        stage: 'source byte read',
+        publicMessage: 'clip_audio could not read the source bytes',
+        overrides: { readRawAsset: vi.fn().mockRejectedValue(rawFailure()) },
+      },
+      {
+        stage: 'media processing',
+        publicMessage: 'clip_audio could not process the source media',
+        overrides: { clipAudio: vi.fn().mockRejectedValue(rawFailure()) },
+      },
+      {
+        stage: 'byte write',
+        publicMessage: 'clip_audio could not store the clipped audio',
+        overrides: { storeRawAsset: vi.fn().mockRejectedValue(rawFailure()) },
+      },
+      {
+        stage: 'durable finalize',
+        publicMessage: 'clip_audio could not finalize the clipped audio',
+        overrides: {
+          storeRawAsset: vi.fn().mockResolvedValue({
+            sessionId: 'ses_1',
+            materialId: 'mat_clip',
+            objectKey: canonicalKey,
+            claimId: 'claim_secret',
+          }),
+          finalizeRawAssetWrite: vi.fn().mockRejectedValue(rawFailure()),
+        },
+      },
+    ];
+
+    for (const fixture of cases) {
+      const clip = tool(buildVoiceCloneTools({ ...base, ...fixture.overrides }), 'clip_audio');
+      let failure: unknown;
+      try {
+        await clip.execute(`call_${fixture.stage}`, {
+          materialId: 'mat_source',
+          startSec: 0,
+          endSec: 2,
+        } as never);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure, fixture.stage).toMatchObject({ message: fixture.publicMessage });
+      expect(String(failure), fixture.stage).not.toContain(canonicalKey);
+      expect(String(failure), fixture.stage).not.toContain('C:\\private\\student');
+      expect(JSON.stringify(failure), fixture.stage).not.toContain(canonicalKey);
+      expect(JSON.stringify(failure), fixture.stage).not.toContain('provider stderr');
+    }
   });
 
   it('compensates the stored asset when the material row write fails', async () => {
     const getMaterial = vi
       .fn()
-      .mockResolvedValue(material({ id: 'mat_source', kind: 'source', rawAssetId: 'ast_src' }));
+      .mockResolvedValueOnce(material({ id: 'mat_source', kind: 'source', rawAssetId: 'ast_src' }))
+      .mockResolvedValueOnce(null);
     const readRawAsset = vi.fn().mockResolvedValue({ bytes: sourceAudio, mime: 'video/mp4' });
     const storeRawAsset = vi.fn().mockResolvedValue('ast_clip_new');
-    const createMaterial = vi.fn().mockRejectedValue(new Error('row write failed'));
+    const diagnostic =
+      'row write failed for materials/v1/sessions/ses_secret/mat_secret/raw.private at C:\\private\\student\\paper.pdf';
+    const createMaterial = vi.fn().mockRejectedValue(new Error(diagnostic));
     const removeRawAsset = vi.fn().mockResolvedValue(undefined);
     const clip = tool(
       buildVoiceCloneTools({
@@ -465,10 +590,175 @@ describe('voice clone agent tools', () => {
       }),
       'clip_audio',
     );
+    let failure: unknown;
+    try {
+      await clip.execute('call_1', {
+        materialId: 'mat_source',
+        startSec: 0,
+        endSec: 2,
+      } as never);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({ message: 'clip_audio could not persist the clipped audio' });
+    expect(String(failure)).not.toContain(diagnostic);
+    expect(removeRawAsset).toHaveBeenCalledWith('ses_1', 'ast_clip_new');
+  });
+
+  it('preserves a committed clip when the material insert result is ambiguous', async () => {
+    const getMaterial = vi
+      .fn()
+      .mockResolvedValueOnce(material({ id: 'mat_source', kind: 'source', rawAssetId: 'ast_src' }))
+      .mockImplementation(async (_sessionId: string, materialId: string) =>
+        material({ id: materialId, kind: 'audio-track', rawAssetId: 'ast_clip_new' }),
+      );
+    const removeRawAsset = vi.fn().mockResolvedValue(undefined);
+    const clip = tool(
+      buildVoiceCloneTools({
+        sessionId: 'ses_1',
+        getMaterial,
+        readRawAsset: vi.fn().mockResolvedValue({ bytes: sourceAudio, mime: 'video/mp4' }),
+        storeRawAsset: vi.fn().mockResolvedValue('ast_clip_new'),
+        createMaterial: vi.fn().mockRejectedValue(new Error('connection lost after commit')),
+        removeRawAsset,
+        clipAudio: vi.fn().mockResolvedValue(synthesizeVoiceCloneWav(2)),
+      }),
+      'clip_audio',
+    );
+
+    const result = await clip.execute('call_1', {
+      materialId: 'mat_source',
+      startSec: 0,
+      endSec: 2,
+    } as never);
+    expect(result.details).toEqual({
+      clipId: expect.stringMatching(/^mat_/),
+      durationSeconds: 2,
+      mime: 'audio/wav',
+    });
+    expect(JSON.stringify(result)).not.toContain('ast_clip_new');
+    expect(removeRawAsset).not.toHaveBeenCalled();
+  });
+
+  it('preserves clip bytes when the insert commit state cannot be queried', async () => {
+    const getMaterial = vi
+      .fn()
+      .mockResolvedValueOnce(material({ id: 'mat_source', kind: 'source', rawAssetId: 'ast_src' }))
+      .mockRejectedValueOnce(new Error('database unavailable'));
+    const removeRawAsset = vi.fn().mockResolvedValue(undefined);
+    const clip = tool(
+      buildVoiceCloneTools({
+        sessionId: 'ses_1',
+        getMaterial,
+        readRawAsset: vi.fn().mockResolvedValue({ bytes: sourceAudio, mime: 'video/mp4' }),
+        storeRawAsset: vi.fn().mockResolvedValue('ast_clip_new'),
+        createMaterial: vi.fn().mockRejectedValue(new Error('connection lost during insert')),
+        removeRawAsset,
+        clipAudio: vi.fn().mockResolvedValue(synthesizeVoiceCloneWav(2)),
+      }),
+      'clip_audio',
+    );
+
     await expect(
       clip.execute('call_1', { materialId: 'mat_source', startSec: 0, endSec: 2 } as never),
-    ).rejects.toThrow('row write failed');
-    expect(removeRawAsset).toHaveBeenCalledWith('ses_1', 'ast_clip_new');
+    ).rejects.toThrow('clip_audio could not persist the clipped audio');
+    expect(removeRawAsset).not.toHaveBeenCalled();
+  });
+
+  it('drains a durable voice write claim when session deletion wins before finalization', async () => {
+    const db = new PGlite();
+    const root = await mkdtemp(join(tmpdir(), 'openmaic-voice-race-'));
+    try {
+      await db.waitReady;
+      await ensureAgentSessionSchema(db);
+      await ensureAgentSessionMaterialSchema(db);
+      const sessions = new PgAgentSessionStore(db, {
+        withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),
+      });
+      const materials = new PgAgentSessionMaterialStore(db, {
+        withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),
+      });
+      const byteStore = new LocalMaterialByteStore(root);
+      const sessionId = 'session-voice-race';
+      await sessions.createSession({ id: sessionId, ownerId: 'owner-1', prompt: 'voice' });
+      await materials.createMaterial(sessionId, {
+        id: 'mat_source',
+        kind: 'source',
+        title: 'source.wav',
+        rawAssetId: sessionMaterialObjectKey(sessionId, 'mat_source', 'raw.YXVkaW8vd2F2'),
+      });
+
+      let releaseWriter!: () => void;
+      const writerReleased = new Promise<void>((resolve) => {
+        releaseWriter = resolve;
+      });
+      let stagedWrite!: Awaited<ReturnType<typeof storeSessionMaterialRawAsset>>;
+      let markStaged!: () => void;
+      const staged = new Promise<void>((resolve) => {
+        markStaged = resolve;
+      });
+      const writeDependencies = { byteStore, materialStore: materials };
+      const clip = tool(
+        buildVoiceCloneTools({
+          sessionId,
+          getMaterial: materials.getMaterial.bind(materials),
+          readRawAsset: vi.fn().mockResolvedValue({
+            bytes: sourceAudio,
+            mime: 'audio/wav',
+          }),
+          storeRawAsset: async (targetSessionId, bytes, mime, output) => {
+            stagedWrite = await storeSessionMaterialRawAsset(
+              targetSessionId,
+              output.id,
+              output.kind,
+              bytes,
+              mime,
+              { dependencies: writeDependencies },
+            );
+            markStaged();
+            await writerReleased;
+            return stagedWrite;
+          },
+          createMaterial: materials.createMaterial.bind(materials),
+          finalizeRawAssetWrite: (write) =>
+            finalizeSessionMaterialObjectWrite(write, writeDependencies),
+          discardRawAssetWrite: (write) =>
+            discardSessionMaterialObjectWrite(write, writeDependencies),
+          clipAudio: vi.fn().mockResolvedValue(synthesizeVoiceCloneWav(2)),
+        }),
+        'clip_audio',
+      );
+
+      const outcome = clip
+        .execute('call_voice_race', {
+          materialId: 'mat_source',
+          startSec: 0,
+          endSec: 2,
+        } as never)
+        .then(
+          (value) => ({ status: 'fulfilled' as const, value }),
+          (error: unknown) => ({ status: 'rejected' as const, error }),
+        );
+      await staged;
+      await expect(
+        deleteOwnedSessionWithMaterials(sessionId, 'owner-1', {
+          byteStore,
+          sessionStore: sessions,
+          materialStore: materials,
+        }),
+      ).resolves.toBe(true);
+      releaseWriter();
+
+      expect(await outcome).toMatchObject({ status: 'rejected' });
+      await expect(byteStore.get(stagedWrite.objectKey)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(
+        materials.getDeletedSessionMaterialWriteClaimsForCleanup(sessionId, 'owner-1'),
+      ).resolves.toEqual([]);
+      await expect(materials.getMaterial(sessionId, stagedWrite.materialId)).resolves.toBeNull();
+    } finally {
+      await db.close();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it.skipIf(!ffmpegAvailable)(

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { PGlite } from '@electric-sql/pglite';
+import {
+  ensureAgentSessionSchema,
+  PgAgentSessionStore,
+  type Queryable,
+} from '@openmaic/storage/agent-session/pg';
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -34,6 +40,8 @@ import {
   POLL_INTERVAL_MS,
   TERMINAL_POLL_INTERVAL_MS,
 } from '@/app/api/agent/sessions/[id]/events/route';
+import { buildVoiceCloneTools } from '@/lib/server/agent-runtime/voice-clone-tools';
+import { slimEventDataForLog } from '@/lib/server/agent-runtime/runner';
 import { GUARDED_COACH_CANCELLED_TURN_EVENT } from '@/lib/server/agent-runtime/trusted-turn';
 
 const terminalEvent = {
@@ -70,6 +78,26 @@ async function readNonHeartbeatChunk(
     const chunk = await readChunk(reader);
     if (chunk !== ': ping\n\n') return chunk;
   }
+}
+
+function voiceCloneWav(seconds = 1): Buffer {
+  const sampleRate = 24_000;
+  const dataBytes = sampleRate * seconds * 2;
+  const wav = Buffer.alloc(44 + dataBytes);
+  wav.write('RIFF', 0);
+  wav.writeUInt32LE(36 + dataBytes, 4);
+  wav.write('WAVE', 8);
+  wav.write('fmt ', 12);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(sampleRate, 24);
+  wav.writeUInt32LE(sampleRate * 2, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write('data', 36);
+  wav.writeUInt32LE(dataBytes, 40);
+  return wav;
 }
 
 beforeEach(() => {
@@ -194,6 +222,193 @@ describe('GET per-session events', () => {
     expect(frame).not.toContain('openmaicDurableUserMessageSeq');
     expect(frame).not.toContain('server-only-correlation');
     await reader.cancel();
+  });
+
+  it('replays a durable voice result without its internal canonical object key', async () => {
+    const canonicalMarker = 'materials/v1/sessions/ses_secret/mat_secret/raw.YXVkaW8vd2F2';
+    const createMaterial = vi.fn(async (_sessionId, input) => ({
+      id: input.id,
+      sessionId: 'session-1',
+      kind: input.kind,
+      title: input.title ?? null,
+      sourceUrl: null,
+      textAssetId: null,
+      rawAssetId: input.rawAssetId ?? null,
+      textChars: 0,
+      derivedFrom: null,
+      extraction: { status: 'done' as const, attempts: 0 },
+      createdAt: new Date(0).toISOString(),
+    }));
+    const clip = buildVoiceCloneTools({
+      sessionId: 'session-1',
+      getMaterial: vi.fn().mockResolvedValue({
+        id: 'mat_source',
+        sessionId: 'session-1',
+        kind: 'source',
+        title: 'source.wav',
+        sourceUrl: null,
+        textAssetId: null,
+        rawAssetId: 'internal-source-key',
+        textChars: 0,
+        derivedFrom: null,
+        extraction: { status: 'done', attempts: 0 },
+        createdAt: new Date(0).toISOString(),
+      }),
+      readRawAsset: vi.fn().mockResolvedValue({ bytes: Buffer.from('source'), mime: 'audio/wav' }),
+      clipAudio: vi.fn().mockResolvedValue(voiceCloneWav()),
+      storeRawAsset: vi.fn().mockResolvedValue(canonicalMarker),
+      createMaterial,
+    }).find((tool) => tool.name === 'clip_audio')!;
+    const toolResult = await clip.execute('call_voice', {
+      materialId: 'mat_source',
+      startSec: 0,
+      endSec: 1,
+    } as never);
+    expect(createMaterial).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ rawAssetId: canonicalMarker }),
+    );
+
+    const durableData = slimEventDataForLog('message_end', {
+      type: 'message_end',
+      message: {
+        role: 'toolResult',
+        toolCallId: 'call_voice',
+        toolName: 'clip_audio',
+        content: toolResult.content,
+        details: toolResult.details,
+        isError: false,
+        timestamp: 1_000,
+      },
+    });
+    expect(JSON.stringify(durableData)).not.toContain(canonicalMarker);
+    mocks.readEventsAfterForReplay.mockResolvedValueOnce({
+      events: [{ id: 1, ts: 123, attempt: 1, type: 'message_end', data: durableData }],
+      scanned: 1,
+    });
+
+    const response = await call();
+    const reader = response.body!.getReader();
+    await readChunk(reader);
+    const frame = await readChunk(reader);
+
+    expect(frame).toContain('clip_audio');
+    expect(frame).not.toContain(canonicalMarker);
+    expect(frame).not.toMatch(/rawAssetId|materials\/v1\/sessions\//);
+    await reader.cancel();
+  });
+
+  it('durably appends and replays a closed voice failure without locator diagnostics', async () => {
+    vi.useRealTimers();
+    const canonicalMarker = 'materials/v1/sessions/ses_secret/mat_secret/raw.YXVkaW8vd2F2';
+    const localPathMarker = 'C:\\private\\student\\paper.pdf';
+    const providerMarker = 'raw provider stderr canary';
+    const removeRawAsset = vi.fn().mockResolvedValue(undefined);
+    const getMaterial = vi.fn(async (_sessionId: string, materialId: string) =>
+      materialId === 'mat_source'
+        ? {
+            id: 'mat_source',
+            sessionId: 'session-1',
+            kind: 'source' as const,
+            title: 'source.wav',
+            sourceUrl: null,
+            textAssetId: null,
+            rawAssetId: 'internal-source-key',
+            textChars: 0,
+            derivedFrom: null,
+            extraction: { status: 'done' as const, attempts: 0 },
+            createdAt: new Date(0).toISOString(),
+          }
+        : null,
+    );
+    const clip = buildVoiceCloneTools({
+      sessionId: 'session-1',
+      getMaterial,
+      readRawAsset: vi.fn().mockResolvedValue({ bytes: Buffer.from('source'), mime: 'audio/wav' }),
+      clipAudio: vi.fn().mockResolvedValue(voiceCloneWav()),
+      storeRawAsset: vi.fn().mockResolvedValue(canonicalMarker),
+      removeRawAsset,
+      createMaterial: vi
+        .fn()
+        .mockRejectedValue(new Error(`${canonicalMarker} ${localPathMarker} ${providerMarker}`)),
+    }).find((candidate) => candidate.name === 'clip_audio')!;
+
+    let toolFailure: unknown;
+    try {
+      await clip.execute('call_voice_failure', {
+        materialId: 'mat_source',
+        startSec: 0,
+        endSec: 1,
+      } as never);
+    } catch (error) {
+      toolFailure = error;
+    }
+    expect(toolFailure).toMatchObject({
+      message: 'clip_audio could not persist the clipped audio',
+    });
+    expect((toolFailure as Error).cause).toBeUndefined();
+    expect(removeRawAsset).toHaveBeenCalledWith('session-1', canonicalMarker);
+
+    const durableData = slimEventDataForLog('tool_execution_end', {
+      type: 'tool_execution_end',
+      toolCallId: 'call_voice_failure',
+      toolName: 'clip_audio',
+      result: {
+        content: [{ type: 'text', text: (toolFailure as Error).message }],
+        details: {},
+      },
+      isError: true,
+    });
+
+    const db = new PGlite();
+    try {
+      await db.waitReady;
+      await ensureAgentSessionSchema(db);
+      const store = new PgAgentSessionStore(db, {
+        withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),
+      });
+      await store.createSession({
+        id: 'session-1',
+        ownerId: 'user:mine',
+        prompt: 'voice failure canary',
+      });
+      const claim = await store.claimNextSession('worker-canary', process.pid, {
+        leaseTtlMs: 10_000,
+        maxAttempts: 3,
+      });
+      expect(claim).not.toBeNull();
+      await expect(
+        store.appendRunEvent('session-1', 'worker-canary', {
+          ts: 123,
+          attempt: claim!.attempt,
+          type: 'tool_execution_end',
+          data: durableData,
+        }),
+      ).resolves.toBeTypeOf('number');
+
+      const persisted = await store.readEventsAfterForReplay('session-1', 0, 500);
+      const persistedJson = JSON.stringify(persisted);
+      expect(persistedJson).toContain('clip_audio could not persist the clipped audio');
+      expect(persistedJson).not.toContain(canonicalMarker);
+      expect(persistedJson).not.toContain(localPathMarker);
+      expect(persistedJson).not.toContain(providerMarker);
+      mocks.readEventsAfterForReplay.mockImplementation((sessionId, after, limit) =>
+        store.readEventsAfterForReplay(sessionId, after, limit),
+      );
+
+      const response = await call();
+      const reader = response.body!.getReader();
+      await readChunk(reader);
+      const frame = await readChunk(reader);
+
+      expect(frame).toContain('clip_audio could not persist the clipped audio');
+      expect(frame).not.toContain(canonicalMarker);
+      expect(frame).not.toContain(localPathMarker);
+      expect(frame).not.toContain(providerMarker);
+      await reader.cancel();
+    } finally {
+      await db.close();
+    }
   });
 
   it('skips internal guarded-cancellation markers while advancing the replay cursor', async () => {

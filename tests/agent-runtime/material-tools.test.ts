@@ -116,7 +116,9 @@ describe('material agent tools', () => {
     expect(result.details).toMatchObject({ materialId: 'mat_source', status: 'pending' });
   });
 
-  it('waits through running and reports each terminal material including failure reason', async () => {
+  it('waits through running and maps historical raw failures to a closed error code', async () => {
+    const privateDiagnostic =
+      'provider stderr C:\\private\\student\\paper.pdf materials/v1/sessions/secret/raw.pdf';
     const states = [
       material({
         id: 'mat_source',
@@ -126,7 +128,11 @@ describe('material agent tools', () => {
       material({
         id: 'mat_source',
         kind: 'source',
-        extraction: { status: 'failed', attempts: 0, error: 'extractor rejected input' },
+        extraction: {
+          status: 'failed',
+          attempts: 0,
+          error: privateDiagnostic,
+        } as unknown as AgentSessionMaterial['extraction'],
       }),
     ];
     const getMaterial = vi.fn(async () => states.shift()!);
@@ -147,9 +153,18 @@ describe('material agent tools', () => {
       complete: true,
       timedOut: false,
       materials: [
-        { materialId: 'mat_source', status: 'failed', reason: 'extractor rejected input' },
+        {
+          materialId: 'mat_source',
+          status: 'failed',
+          attempts: 0,
+          errorCode: 'MATERIAL_EXTRACTION_FAILED',
+        },
       ],
     });
+    expect(JSON.stringify(result)).not.toContain(privateDiagnostic);
+    expect(JSON.stringify(result)).not.toMatch(
+      /provider stderr|C:\\private|materials\/v1\/sessions/,
+    );
   });
 
   it('honours the wait bound and returns current per-material status', async () => {
