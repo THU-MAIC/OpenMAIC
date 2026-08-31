@@ -16,7 +16,11 @@ export function runAgentSessionAutomaticTitleContract(
   makeStore: () => AutomaticTitleContractStore,
   options: {
     genuineConcurrency: boolean;
-    writeLegacyManualClear: (sessionId: string, ownerId: string) => Promise<unknown>;
+    writeLegacyManualTitle: (
+      sessionId: string,
+      ownerId: string,
+      title: string | null,
+    ) => Promise<unknown>;
   },
 ): void {
   describe(`AgentSession automatic-title contract: ${name}`, () => {
@@ -209,29 +213,38 @@ export function runAgentSessionAutomaticTitleContract(
       expect(await store.getSession('session-1')).not.toHaveProperty('title');
     });
 
-    test.each(['before', 'during'] as const)(
-      'does not overwrite a legacy manual clear %s automatic generation',
-      async (timing) => {
-        const store = makeStore();
-        await store.createSession(makeAgentSessionInput({ titleState: 'pending' }));
+    test.each([
+      ['clear before generation', null, 'before'],
+      ['clear during generation', null, 'during'],
+      ['rename before generation', 'Legacy title', 'before'],
+      ['rename during generation', 'Legacy title', 'during'],
+    ] as const)('does not overwrite a legacy manual %s', async (_case, legacyTitle, timing) => {
+      const store = makeStore();
+      await store.createSession(makeAgentSessionInput({ titleState: 'pending' }));
 
-        if (timing === 'during') {
-          await expect(store.claimAutomaticSessionTitle('session-1', 'owner-a')).resolves.toBe(
-            'Build a short course',
-          );
-        }
-        expect(await store.getSession('session-1')).not.toHaveProperty('title');
+      if (timing === 'during') {
+        await expect(store.claimAutomaticSessionTitle('session-1', 'owner-a')).resolves.toBe(
+          'Build a short course',
+        );
+      }
+      expect(await store.getSession('session-1')).not.toHaveProperty('title');
 
-        // Pre-title-state processes write only the title and timestamp.
-        await options.writeLegacyManualClear('session-1', 'owner-a');
+      // Pre-title-state processes write only the title and timestamp.
+      await options.writeLegacyManualTitle('session-1', 'owner-a', legacyTitle);
 
-        await expect(store.claimAutomaticSessionTitle('session-1', 'owner-a')).resolves.toBeNull();
-        await expect(
-          store.setAutomaticSessionTitle('session-1', 'owner-a', 'Generated too late'),
-        ).resolves.toBeNull();
-        expect(await store.getSession('session-1')).not.toHaveProperty('title');
-      },
-    );
+      const expectLegacyTitle = async () => {
+        const meta = await store.getSession('session-1');
+        if (legacyTitle === null) expect(meta).not.toHaveProperty('title');
+        else expect(meta).toMatchObject({ title: legacyTitle });
+      };
+      await expectLegacyTitle();
+
+      await expect(store.claimAutomaticSessionTitle('session-1', 'owner-a')).resolves.toBeNull();
+      await expect(
+        store.setAutomaticSessionTitle('session-1', 'owner-a', 'Generated too late'),
+      ).resolves.toBeNull();
+      await expectLegacyTitle();
+    });
 
     test.skipIf(!options.genuineConcurrency)(
       'allows exactly one simultaneous automatic-title claim',

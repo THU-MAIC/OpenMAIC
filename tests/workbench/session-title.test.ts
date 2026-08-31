@@ -149,34 +149,20 @@ describe('committing a rename', () => {
     expect(applied).toEqual([null, null]);
   });
 
-  it('persists an explicit clear when the stored title is already null', async () => {
-    const applied: (string | null)[] = [];
+  it.each([
+    ['an empty input', '  '],
+    ['the unchanged prompt fallback', ' 帮我做一节课 '],
+  ])('does not turn %s into a manual clear when no override exists', async (_case, raw) => {
     const save = vi.fn(async () => null);
     const outcome = await commitSessionRename({
       current: session,
-      raw: '  ',
-      apply: (title) => applied.push(title),
+      raw,
+      apply: () => expect.unreachable('nothing should be written'),
       save,
     });
 
-    expect(outcome).toBe('renamed');
-    expect(save).toHaveBeenCalledWith(null);
-    expect(applied).toEqual([null, null]);
-  });
-
-  it('persists manual intent when the prompt fallback is typed back unchanged', async () => {
-    const applied: (string | null)[] = [];
-    const save = vi.fn(async () => null);
-    const outcome = await commitSessionRename({
-      current: session,
-      raw: ' 帮我做一节课 ',
-      apply: (title) => applied.push(title),
-      save,
-    });
-
-    expect(outcome).toBe('renamed');
-    expect(save).toHaveBeenCalledWith(null);
-    expect(applied).toEqual([null, null]);
+    expect(outcome).toBe('unchanged');
+    expect(save).not.toHaveBeenCalled();
   });
 
   it('spends no round trip when nothing changed', async () => {

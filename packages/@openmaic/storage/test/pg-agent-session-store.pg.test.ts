@@ -101,11 +101,11 @@ describe.skipIf(!contractUrl)('PgAgentSessionStore with PostgreSQL 16', () => {
   });
   runAgentSessionAutomaticTitleContract('PostgreSQL 16 (node-postgres)', () => store, {
     genuineConcurrency: true,
-    writeLegacyManualClear: (sessionId, ownerId) =>
+    writeLegacyManualTitle: (sessionId, ownerId, title) =>
       pool.query(
-        `UPDATE agent_sessions SET title = NULL, updated_at = clock_timestamp()
+        `UPDATE agent_sessions SET title = $3, updated_at = clock_timestamp()
          WHERE id = $1 AND owner_id = $2`,
-        [sessionId, ownerId],
+        [sessionId, ownerId, title],
       ),
   });
   runAgentSessionUrlContract('PostgreSQL 16 (node-postgres)', () => store);

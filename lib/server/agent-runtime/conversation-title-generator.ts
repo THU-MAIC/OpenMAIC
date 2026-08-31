@@ -2,6 +2,7 @@ import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import { getStageRoute } from '@/lib/server/model-routes';
 import { resolveModel } from '@/lib/server/resolve-model';
+import { sanitizeSessionTitleText } from '@/lib/workbench/session-title';
 import { resolveAgentDriverModel } from './agent-driver-model';
 
 const log = createLogger('conversation-title');
@@ -27,7 +28,9 @@ function normalizeTitleLine(line: string): string | null {
   const withoutPrefix = stripQuoteWrapper(line)
     .replace(/^(?:title|标题)\s*[:：]\s*/i, '')
     .trim();
-  const normalized = stripQuoteWrapper(withoutPrefix).replace(/\s+/g, ' ');
+  const normalized = sanitizeSessionTitleText(
+    stripQuoteWrapper(withoutPrefix).replace(/\s+/g, ' '),
+  );
 
   if (!normalized) return null;
   return capUnicode(normalized, MAX_TITLE_CHARACTERS);

@@ -125,6 +125,13 @@ describe('conversation title generator', () => {
     await expect(generate('讲讲数据结构')).resolves.toBe('数据 结构');
   });
 
+  it('makes generated titles safe for PostgreSQL text storage', async () => {
+    mocks.getStageRoute.mockReturnValue(undefined);
+    mocks.callLLM.mockResolvedValue({ text: 'Safe\u0000\ud83d title' });
+
+    await expect(generate('Name this conversation')).resolves.toBe('Safe�� title');
+  });
+
   it.each([
     ['English', '"Title: Project planning"', 'Project planning'],
     ['Chinese', '“标题：数据结构”', '数据结构'],

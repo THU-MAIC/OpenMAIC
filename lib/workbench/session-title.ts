@@ -15,6 +15,16 @@
 /** The longest stored conversation title. Mirrors the server's cap. */
 export const SESSION_TITLE_MAX_LENGTH = 120;
 
+/** Replace characters PostgreSQL TEXT / JSONB cannot store. */
+export function sanitizeSessionTitleText(value: string): string {
+  return Array.from(value, (character) => {
+    const codeUnit = character.charCodeAt(0);
+    const unstorable =
+      codeUnit === 0 || (character.length === 1 && codeUnit >= 0xd800 && codeUnit <= 0xdfff);
+    return unstorable ? '\ufffd' : character;
+  }).join('');
+}
+
 /**
  * Normalize one stored title override at the shared client/server boundary.
  *
@@ -26,12 +36,7 @@ export const SESSION_TITLE_MAX_LENGTH = 120;
  */
 export function normalizeSessionTitleOverride(value: string | null): string | null {
   if (value === null) return null;
-  const wellFormed = Array.from(value.trim(), (character) => {
-    const codeUnit = character.charCodeAt(0);
-    const unstorable =
-      codeUnit === 0 || (character.length === 1 && codeUnit >= 0xd800 && codeUnit <= 0xdfff);
-    return unstorable ? '\ufffd' : character;
-  }).join('');
+  const wellFormed = sanitizeSessionTitleText(value.trim());
   const truncated = wellFormed.slice(0, SESSION_TITLE_MAX_LENGTH);
   if (!truncated) return null;
   const last = truncated.charCodeAt(truncated.length - 1);
@@ -138,9 +143,7 @@ export async function commitSessionRename({
 }): Promise<SessionRenameOutcome> {
   const next = normalizeSessionTitleInput(current, raw);
   const previous = current.title?.trim() || null;
-  // Equal non-null titles need no round trip. An explicit clear still writes
-  // null so storage can record the user's manual title intent.
-  if (!forceSave && next !== null && next === previous) return 'unchanged';
+  if (!forceSave && next === previous) return 'unchanged';
   apply(next, false);
   try {
     const stored = await save(next);
