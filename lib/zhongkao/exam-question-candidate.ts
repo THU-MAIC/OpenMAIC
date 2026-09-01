@@ -13,6 +13,15 @@ import {
 } from './exam-document-artifact';
 import { EXAM_MAX_CANDIDATE_ARTIFACT_BYTES, EXAM_MAX_QUESTION_CANDIDATES } from './exam';
 import {
+  EXAM_QUESTION_MARKER_MAX_SECTION_LABEL_LENGTH,
+  examQuestionLocatorKey,
+  normalizeExamQuestionMarker,
+  sameExamQuestionTopLevel,
+  type ExamQuestionLocator,
+  type ExamQuestionSectionRef,
+  type NormalizedExamQuestionMarker,
+} from './exam-question-locator';
+import {
   finishValidation,
   isPlainRecord,
   pushIssue,
@@ -35,7 +44,7 @@ export const EXAM_QUESTION_SEGMENTATION_LIMITS = Object.freeze({
   maxDiagnostics: EXAM_MAX_QUESTION_CANDIDATES * 4 + 1,
   maxSourceSpansPerCandidate: EXAM_DOCUMENT_ARTIFACT_LIMITS.maxPages,
   maxQuestionTextBytes: 100_000,
-  maxSectionLabelLength: 160,
+  maxSectionLabelLength: EXAM_QUESTION_MARKER_MAX_SECTION_LABEL_LENGTH,
   maxRawLabelLength: 64,
   maxSerializedBytes: EXAM_MAX_CANDIDATE_ARTIFACT_BYTES,
 });
@@ -46,16 +55,12 @@ export type ExamQuestionSourceBlock = ExamDocumentBlockV1;
 export type ExamQuestionSourcePage = ExamDocumentPageV1;
 export type SegmentableExamDocumentArtifact = ExamDocumentArtifactV1;
 
-export interface ExamQuestionSectionRef {
-  normalizedId: string;
-  rawLabel: string;
-}
-
-export interface ExamQuestionLocator {
-  sectionPath: readonly ExamQuestionSectionRef[];
-  printedNumber: string;
-  subquestionPath: readonly string[];
-}
+export {
+  normalizeExamQuestionMarker,
+  type ExamQuestionLocator,
+  type ExamQuestionSectionRef,
+  type NormalizedExamQuestionMarker,
+} from './exam-question-locator';
 
 export interface ExamQuestionSourceSpan {
   pageNumber: number;
@@ -134,29 +139,6 @@ export interface ExamQuestionCandidatesArtifactV1 {
   needsReview: boolean;
 }
 
-export type NormalizedExamQuestionMarker =
-  | {
-      kind: 'section';
-      rawLabel: string;
-      normalizedSectionId: string;
-    }
-  | {
-      kind: 'question';
-      rawLabel: string;
-      printedNumber: string;
-    }
-  | {
-      kind: 'question_subquestion';
-      rawLabel: string;
-      printedNumber: string;
-      subquestionNumber: string;
-    }
-  | {
-      kind: 'subquestion';
-      rawLabel: string;
-      subquestionNumber: string;
-    };
-
 export class ExamQuestionCandidateError extends Error {
   constructor(
     readonly code:
@@ -196,13 +178,6 @@ const DIAGNOSTIC_CODES = new Set<ExamQuestionExtractionDiagnosticCode>([
   'excessive_structure_diagnostics',
   'low_text_coverage',
 ]);
-const SECTION_KIND =
-  /(?:选择题|填空题|解答题|计算题|证明题|作图题|综合题|阅读题|写作题|作文|判断题|简答题|实验题|应用题)/u;
-const SECTION_LINE = /^\s*([一二三四五六七八九十百]{1,4})\s*[、.]\s*(\S.*)\s*$/u;
-const COMBINED_LABEL = /^\s*([1-9]\d{0,2})\s*(?:[.、]\s*)?\(\s*([1-9]\d{0,2})\s*\)/u;
-const QUESTION_LABEL = /^\s*([1-9]\d{0,2})\s*([.、])(?!\d)/u;
-const SUBQUESTION_LABEL = /^\s*\(\s*([1-9]\d{0,2})\s*\)/u;
-const MATH_CONTINUATION = /^[+\-*/=<>≤≥×÷^%]/u;
 const SHA256 = /^[a-f0-9]{64}$/u;
 const SECTION_ID = /^section:[1-9]\d*$/u;
 const CANONICAL_NUMBER = /^[1-9]\d{0,2}$/u;
@@ -303,98 +278,6 @@ function fingerprint(domain: string, value: unknown): string {
 
 function utf8Length(value: string): number {
   return Buffer.byteLength(value, 'utf8');
-}
-
-function chineseSectionNumber(value: string): number | undefined {
-  const digit: Readonly<Record<string, number>> = {
-    一: 1,
-    二: 2,
-    三: 3,
-    四: 4,
-    五: 5,
-    六: 6,
-    七: 7,
-    八: 8,
-    九: 9,
-  };
-  if (value === '十') return 10;
-  if (value === '百') return 100;
-  const hundred = value.indexOf('百');
-  if (hundred >= 0) {
-    const hundreds = hundred === 0 ? 1 : digit[value[hundred - 1]!];
-    if (!hundreds) return undefined;
-    const remainder = value.slice(hundred + 1);
-    const tail = remainder.length === 0 ? 0 : chineseSectionNumber(remainder);
-    return tail === undefined ? undefined : hundreds * 100 + tail;
-  }
-  const ten = value.indexOf('十');
-  if (ten >= 0) {
-    const tens = ten === 0 ? 1 : digit[value[ten - 1]!];
-    const onesText = value.slice(ten + 1);
-    const ones = onesText.length === 0 ? 0 : digit[onesText];
-    if (!tens || ones === undefined) return undefined;
-    return tens * 10 + ones;
-  }
-  return digit[value];
-}
-
-function rawPrefix(raw: string, normalizedMatchLength: number): string {
-  return raw.slice(0, normalizedMatchLength).trim();
-}
-
-function hasMathContinuation(normalizedLine: string, matchLength: number): boolean {
-  return MATH_CONTINUATION.test(normalizedLine.slice(matchLength).trimStart());
-}
-
-/** Normalize only a bounded marker line. Source question text is never NFKC-normalized. */
-export function normalizeExamQuestionMarker(value: string): NormalizedExamQuestionMarker | null {
-  const rawLine = value.replace(/\r\n?/gu, '\n').split('\n', 1)[0] ?? '';
-  if (!rawLine.trim()) return null;
-  const markerPrefix = rawLine.slice(0, EXAM_QUESTION_SEGMENTATION_LIMITS.maxSectionLabelLength);
-  const line = markerPrefix.normalize('NFKC');
-  const section =
-    rawLine.length <= EXAM_QUESTION_SEGMENTATION_LIMITS.maxSectionLabelLength
-      ? SECTION_LINE.exec(line)
-      : null;
-  if (section && SECTION_KIND.test(section[2]!)) {
-    const number = chineseSectionNumber(section[1]!);
-    if (number !== undefined && number > 0) {
-      return {
-        kind: 'section',
-        rawLabel: rawLine.trim(),
-        normalizedSectionId: `section:${number}`,
-      };
-    }
-  }
-
-  const combined = COMBINED_LABEL.exec(line);
-  if (combined && !hasMathContinuation(line, combined[0].length)) {
-    return {
-      kind: 'question_subquestion',
-      rawLabel: rawPrefix(rawLine, combined[0].length),
-      printedNumber: String(Number(combined[1]!)),
-      subquestionNumber: String(Number(combined[2]!)),
-    };
-  }
-
-  const question = QUESTION_LABEL.exec(line);
-  if (question) {
-    return {
-      kind: 'question',
-      rawLabel: rawPrefix(rawLine, question[0].length),
-      printedNumber: String(Number(question[1]!)),
-    };
-  }
-
-  const subquestion = SUBQUESTION_LABEL.exec(line);
-  if (subquestion && !hasMathContinuation(line, subquestion[0].length)) {
-    return {
-      kind: 'subquestion',
-      rawLabel: rawPrefix(rawLine, subquestion[0].length),
-      subquestionNumber: String(Number(subquestion[1]!)),
-    };
-  }
-  return null;
 }
 
 function sourceUnits(rawArtifact: SegmentableExamDocumentArtifact): {
@@ -507,22 +390,6 @@ function sourceUnits(rawArtifact: SegmentableExamDocumentArtifact): {
     }
   }
   return { artifact: canonicalArtifact, units };
-}
-
-function locatorKey(locator: ExamQuestionLocator): string {
-  return JSON.stringify({
-    sectionPath: locator.sectionPath.map((section) => section.normalizedId),
-    printedNumber: locator.printedNumber,
-    subquestionPath: locator.subquestionPath,
-  });
-}
-
-function sameTopLevel(left: ExamQuestionLocator, right: ExamQuestionLocator): boolean {
-  return (
-    left.printedNumber === right.printedNumber &&
-    JSON.stringify(left.sectionPath.map((section) => section.normalizedId)) ===
-      JSON.stringify(right.sectionPath.map((section) => section.normalizedId))
-  );
 }
 
 function sourceText(units: readonly SourceUnit[]): string {
@@ -808,7 +675,7 @@ export function segmentExamQuestionCandidates(input: {
   const occurrence = new Map<string, number>();
   const draftIds: string[] = [];
   for (const draft of drafts) {
-    const key = locatorKey(draft.locator);
+    const key = examQuestionLocatorKey(draft.locator);
     const ordinalDiscriminator = (occurrence.get(key) ?? 0) + 1;
     occurrence.set(key, ordinalDiscriminator);
     draftIds.push(
@@ -828,7 +695,7 @@ export function segmentExamQuestionCandidates(input: {
   );
   const occurrenceCursor = new Map<string, number>();
   const candidates: ExamQuestionCandidateV1[] = drafts.map((draft, index) => {
-    const key = locatorKey(draft.locator);
+    const key = examQuestionLocatorKey(draft.locator);
     const ordinalDiscriminator = (occurrenceCursor.get(key) ?? 0) + 1;
     occurrenceCursor.set(key, ordinalDiscriminator);
     const candidateUnits = units.slice(draft.startUnit, draft.endUnit + 1);
@@ -891,7 +758,7 @@ export function segmentExamQuestionCandidates(input: {
 
   const firstCandidateForLocator = new Map<string, ExamQuestionCandidateV1[]>();
   for (const candidate of candidates) {
-    const key = locatorKey(candidate.locator);
+    const key = examQuestionLocatorKey(candidate.locator);
     const related = firstCandidateForLocator.get(key) ?? [];
     related.push(candidate);
     firstCandidateForLocator.set(key, related);
@@ -911,7 +778,7 @@ export function segmentExamQuestionCandidates(input: {
     | undefined;
   for (const candidate of candidates) {
     const value = Number(candidate.locator.printedNumber);
-    if (previousTop && sameTopLevel(previousTop.locator, candidate.locator)) continue;
+    if (previousTop && sameExamQuestionTopLevel(previousTop.locator, candidate.locator)) continue;
     if (
       previousTop &&
       JSON.stringify(previousTop.locator.sectionPath.map((section) => section.normalizedId)) ===
@@ -1360,7 +1227,7 @@ export function validateExamQuestionCandidatesArtifact(value: unknown): DomainVa
   const byId = new Map(validCandidates.map((candidate) => [candidate.candidateId, candidate]));
   const locatorGroups = new Map<string, ExamQuestionCandidateV1[]>();
   for (const candidate of validCandidates) {
-    const key = locatorKey(candidate.locator);
+    const key = examQuestionLocatorKey(candidate.locator);
     const group = locatorGroups.get(key) ?? [];
     group.push(candidate);
     locatorGroups.set(key, group);
@@ -1385,7 +1252,7 @@ export function validateExamQuestionCandidatesArtifact(value: unknown): DomainVa
       if (
         !parent ||
         parent.candidateKind !== 'group' ||
-        !sameTopLevel(parent.locator, candidate.locator)
+        !sameExamQuestionTopLevel(parent.locator, candidate.locator)
       ) {
         pushIssue(
           errors,

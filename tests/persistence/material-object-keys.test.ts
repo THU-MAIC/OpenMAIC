@@ -6,6 +6,8 @@ import {
   examQuestionCandidatesObjectKey,
   examSnapshotObjectKey,
   examSnapshotObjectPrefix,
+  examQuestionResponseMatchesObjectKey,
+  examStudentResponseCandidatesObjectKey,
   isExamSnapshotObjectKey,
   isLegacySessionMaterialObjectKey,
   isSessionMaterialObjectKey,
@@ -78,11 +80,36 @@ describe('material object key contract', () => {
     expect(() => assertPortableMaterialObjectKey(candidates)).not.toThrow();
   });
 
+  it('derives response artifacts in an Exam-owned namespace independent of uploaded documents', () => {
+    const responses = examStudentResponseCandidatesObjectKey('exam-alpha', 1);
+    const matching = examQuestionResponseMatchesObjectKey('exam-alpha', 1, 1);
+
+    expect(responses).toMatch(
+      /^materials\/v1\/exams\/exm_[a-f0-9]{64}\/response_capture_v1\/student_response_candidates_v1\.json$/,
+    );
+    expect(matching).toMatch(
+      /^materials\/v1\/exams\/exm_[a-f0-9]{64}\/response_capture_v1\/question_response_matches_v1\.json$/,
+    );
+    expect(responses).not.toContain('exam-alpha');
+    expect(matching).not.toContain('exam-alpha');
+    expect(isExamSnapshotObjectKey('exam-alpha', responses)).toBe(true);
+    expect(isExamSnapshotObjectKey('exam-alpha', matching)).toBe(true);
+    expect(isExamSnapshotObjectKey('exam-beta', responses)).toBe(false);
+    expect(() => assertPortableMaterialObjectKey(responses)).not.toThrow();
+    expect(() => assertPortableMaterialObjectKey(matching)).not.toThrow();
+  });
+
   it('rejects invalid Exam derivative versions', () => {
     expect(() => examDocumentArtifactObjectKey('exam', 'document', 0)).toThrow(
       'invalid exam artifact version',
     );
     expect(() => examQuestionCandidatesObjectKey('exam', 'document', 1, Number.NaN)).toThrow(
+      'invalid exam artifact version',
+    );
+    expect(() => examStudentResponseCandidatesObjectKey('exam', 0)).toThrow(
+      'invalid exam artifact version',
+    );
+    expect(() => examQuestionResponseMatchesObjectKey('exam', 1, Number.NaN)).toThrow(
       'invalid exam artifact version',
     );
   });

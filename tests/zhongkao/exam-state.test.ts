@@ -11,12 +11,26 @@ import type {
   ExamQuestionCandidatesExtractedEvent,
   ExamQuestionExtractionStartedEvent,
   ExamQuestionSegmentationStartedEvent,
+  ExamResponseCandidatesRecordedEvent,
+  ExamResponseMatchingCompletedEvent,
+  ExamStudentResponseCaptureStartedEvent,
 } from '@/lib/zhongkao/exam-event';
 import { foldExamEvents, toPublicExamSession } from '@/lib/zhongkao/exam-state';
 
 const NOW = '2026-08-31T08:00:00.000Z';
 const EXAM_ID = `exam:v1:${'a'.repeat(64)}`;
 const DOCUMENT_SET_FP = 'b'.repeat(64);
+const RESPONSE_PLAN = {
+  captureVersion: 1,
+  matchingVersion: 1,
+  segmentationVersion: 1,
+  questionCandidateArtifactRef: 'exam-question-candidates-v1',
+  sourceQuestionCandidateFingerprint: '2'.repeat(64),
+  inputSemanticFingerprint: '3'.repeat(64),
+  captureRef: 'exam-response-capture-v1',
+  responseArtifactRef: 'exam-response-artifact-v1',
+  matchingArtifactRef: 'exam-response-matching-v1',
+} as const;
 
 function fingerprint(seed: number): string {
   return seed.toString(16).padStart(64, '0');
@@ -174,6 +188,53 @@ function candidatesExtracted(
   };
 }
 
+function responseCaptureStarted(
+  seq: number,
+  overrides: Partial<ExamStudentResponseCaptureStartedEvent> = {},
+): ExamStudentResponseCaptureStartedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_student_response_capture_started',
+    ...RESPONSE_PLAN,
+    ...overrides,
+  };
+}
+
+function responseCandidatesRecorded(
+  seq: number,
+  overrides: Partial<ExamResponseCandidatesRecordedEvent> = {},
+): ExamResponseCandidatesRecordedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_response_candidates_recorded',
+    ...RESPONSE_PLAN,
+    artifactByteLength: 256,
+    artifactSha256: '4'.repeat(64),
+    responseCount: 5,
+    ...overrides,
+  };
+}
+
+function responseMatchingCompleted(
+  seq: number,
+  overrides: Partial<ExamResponseMatchingCompletedEvent> = {},
+): ExamResponseMatchingCompletedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_response_matching_completed',
+    ...RESPONSE_PLAN,
+    responseArtifactFingerprint: '4'.repeat(64),
+    artifactByteLength: 192,
+    artifactSha256: '5'.repeat(64),
+    responseCount: 5,
+    matchedCount: 3,
+    ambiguousCount: 1,
+    unmatchedCount: 1,
+    needsReview: true,
+    ...overrides,
+  };
+}
+
 function deleteRequested(seq: number): ExamEvent {
   return {
     ...base(seq),
@@ -216,6 +277,15 @@ function extractionEvents(): ExamEvent[] {
     documentExtracted(6),
     segmentationStarted(7),
     candidatesExtracted(8),
+  ];
+}
+
+function responseEvents(): ExamEvent[] {
+  return [
+    ...extractionEvents(),
+    responseCaptureStarted(9),
+    responseCandidatesRecorded(10),
+    responseMatchingCompleted(11),
   ];
 }
 
@@ -283,6 +353,94 @@ describe('Exam event fold', () => {
         },
       },
     });
+  });
+
+  it('folds response capture, candidate recording and deterministic matching in strict order', () => {
+    const state = foldExamEvents(records(responseEvents()));
+    expect(state.studentResponseCapture).toEqual({
+      status: 'matching_ready',
+      startedEventId: 'exam-event-9',
+      startedAt: responseCaptureStarted(9).createdAt,
+      ...RESPONSE_PLAN,
+      responseArtifact: {
+        eventId: 'exam-event-10',
+        createdAt: responseCandidatesRecorded(10).createdAt,
+        byteLength: 256,
+        sha256: '4'.repeat(64),
+        responseCount: 5,
+      },
+      matchingArtifact: {
+        eventId: 'exam-event-11',
+        createdAt: responseMatchingCompleted(11).createdAt,
+        byteLength: 192,
+        sha256: '5'.repeat(64),
+        responseCount: 5,
+        matchedCount: 3,
+        ambiguousCount: 1,
+        unmatchedCount: 1,
+        needsReview: true,
+      },
+    });
+  });
+
+  it('requires ready question candidates before response capture and preserves exact source binding', () => {
+    expect(() => foldExamEvents(records([...readyEvents(), responseCaptureStarted(5)]))).toThrow(
+      'EXAM_EVENT_CONFLICT',
+    );
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...extractionEvents(),
+          responseCaptureStarted(9, {
+            sourceQuestionCandidateFingerprint: '9'.repeat(64),
+          }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([...extractionEvents(), responseCaptureStarted(9, { segmentationVersion: 2 })]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+  });
+
+  it('rejects response stage skips, plan drift, duplicate starts and mismatched match counts', () => {
+    expect(() =>
+      foldExamEvents(records([...extractionEvents(), responseCandidatesRecorded(9)])),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([...extractionEvents(), responseCaptureStarted(9), responseMatchingCompleted(10)]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...extractionEvents(),
+          responseCaptureStarted(9),
+          responseCandidatesRecorded(10, { inputSemanticFingerprint: '9'.repeat(64) }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...extractionEvents(),
+          responseCaptureStarted(9),
+          { ...responseCaptureStarted(10), operationId: 'exam-operation-response-restart' },
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...extractionEvents(),
+          responseCaptureStarted(9),
+          responseCandidatesRecorded(10),
+          responseMatchingCompleted(11, { matchedCount: 4 }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
   });
 
   it('rejects extraction before intake, for a non-question document, or out of order', () => {
@@ -552,6 +710,43 @@ describe('public Exam projection', () => {
     });
     expect(JSON.stringify(summary.questionExtraction)).not.toMatch(
       /artifact|digest|sha256|fingerprint|event|operation|ref|objectKey|path/u,
+    );
+  });
+
+  it('exposes only response stage counts and always requires human review', () => {
+    expect(
+      toPublicExamSession(foldExamEvents(records(extractionEvents()))).studentResponseMatching,
+    ).toEqual({ status: 'not_started', needsReview: true });
+    expect(
+      toPublicExamSession(
+        foldExamEvents(records([...extractionEvents(), responseCaptureStarted(9)])),
+      ).studentResponseMatching,
+    ).toEqual({ status: 'capturing', needsReview: true });
+    expect(
+      toPublicExamSession(
+        foldExamEvents(
+          records([
+            ...extractionEvents(),
+            responseCaptureStarted(9),
+            responseCandidatesRecorded(10),
+          ]),
+        ),
+      ).studentResponseMatching,
+    ).toEqual({ status: 'capturing', responseCount: 5, needsReview: true });
+
+    const summary = toPublicExamSession(
+      foldExamEvents(records(responseEvents())),
+    ).studentResponseMatching;
+    expect(summary).toEqual({
+      status: 'matching_ready',
+      responseCount: 5,
+      matchedCount: 3,
+      ambiguousCount: 1,
+      unmatchedCount: 1,
+      needsReview: true,
+    });
+    expect(JSON.stringify(summary)).not.toMatch(
+      /answer|artifact|digest|sha256|fingerprint|event|operation|ref|objectKey|path/u,
     );
   });
 

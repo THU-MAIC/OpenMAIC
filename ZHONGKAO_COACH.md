@@ -1351,3 +1351,61 @@ It performs no answer matching, grading, diagnosis, KnowledgeProgress or
 StudyAttempt mutation, Coach behavior, or UI work. A later M3A-2B may consume
 verified candidates, while confirmation and semantic authority remain a later
 human-review milestone.
+
+## Milestone 3A-2B structured student responses and deterministic matching
+
+M3A-2B accepts one immutable set of manually entered response candidates for an
+Exam through the closed `numbered_text_v1` grammar. Each non-empty input line is
+either a recognized section heading or `<question label>=<one-line answer>`.
+Only the first equals sign is a delimiter, so `17(1)=x=2` preserves `x=2` as
+the answer. Blank answers are persisted as candidate facts with
+`answerStatus=blank`; blank never means incorrect or any other grading outcome.
+Answer text is retained exactly and is not case-folded, corrected, simplified,
+evaluated, unit-normalized, or sent to a model.
+
+Response labels and section headings use the same versioned locator parser as
+M3A-2A question candidates. A `StudentResponseCandidate` remains a candidate,
+not a confirmed student response. Its deterministic identity uses the Exam,
+capture version, normalized locator, and canonical duplicate ordinal. Input
+order does not change the semantic candidate set, while repeated locators are
+never deduplicated: every repeated entry remains visible as an ambiguity even
+when the repeated answer text is identical.
+
+Matching consumes only the owner-authorized, integrity-verified M3A-2A question
+candidate artifact. A section-qualified response requires exact normalized
+section, printed-number, and subquestion-path equality. Without section
+context, a response may match only when its printed number and subquestion path
+identify one leaf candidate across the entire Exam. A group with children
+cannot absorb a top-level response. Duplicate question locators, duplicate
+response locators, and every other non-unique structural result remain
+`ambiguous`; no acceptable candidate yields `unmatched`; exactly one acceptable leaf is
+`matched`. Confidence, question text, answer text, page order, array order,
+fuzzy distance, embeddings, and model inference never break a tie. `matched`
+means only a deterministic candidate-to-candidate locator relationship. It
+does not mean confirmed, correct, authoritative, or grading-ready.
+
+The response-candidate and question-response-match sets are separate canonical
+JSON artifacts in the private Exam namespace. A capture-start event durably
+records their deterministic plan before either object is written. Subsequent
+events record only bounded versions, opaque references, source fingerprints,
+integrity facts, and counts; raw answers never enter RuntimeStore events. Both
+artifacts are written to exact deterministic keys, read back, schema-checked,
+and bound to the exact question-candidate artifact digest and segmentation
+version. Retries recover deterministically from bytes-before-event and
+committed-response-loss failures, while different facts for the single v1
+capture conflict instead of overwriting history.
+
+Response capture and Exam deletion use the same per-Exam mutation lock. Delete
+removes both response derivatives in addition to snapshots and question
+extraction artifacts, including artifacts left by a partial capture. Public
+Exam detail exposes only capture status, matched/ambiguous/unmatched counts,
+and `needsReview=true`. Raw answers, locators, candidate ids, object keys,
+digests, fingerprints, operation ids, event ids, and RuntimeSession identities
+remain server-only. Dedicated resolvers exist for a future owner-authorized
+M3A-3 review workflow; M3A-2B adds no confirmation endpoint or UI.
+
+M3A-2B never reads the `student_response` snapshot or the `answer_key` snapshot.
+It performs no OCR, answer-key interpretation, grading, correctness inference,
+knowledge-point mapping, diagnosis, StudyAttempt write, KnowledgeProgress
+mutation, Coach behavior, LLM/provider/runner/Skill call, or dependency change.
+Human confirmation and review remain M3A-3 work.

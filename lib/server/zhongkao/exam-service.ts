@@ -40,8 +40,10 @@ import {
 import {
   examDocumentArtifactObjectKey,
   examQuestionCandidatesObjectKey,
+  examQuestionResponseMatchesObjectKey,
   examSnapshotObjectKey,
   examSnapshotObjectPrefix,
+  examStudentResponseCandidatesObjectKey,
 } from '@/lib/server/materials/object-keys';
 import {
   resolveOwnedReadyMaterialAssetsForSnapshot,
@@ -566,21 +568,34 @@ function deletedEvent(deps: ExamServiceDeps, snapshot: ExamRuntimeSnapshot): Exa
 
 function examDerivativeObjectKeys(snapshot: ExamRuntimeSnapshot): string[] {
   const extraction = snapshot.state.questionExtraction;
-  if (!extraction) return [];
-  const keys = [
-    examDocumentArtifactObjectKey(
-      snapshot.state.examSessionId,
-      extraction.examDocumentId,
-      extraction.extractionVersion,
-    ),
-  ];
-  if (extraction.segmentation) {
+  const keys: string[] = [];
+  if (extraction) {
     keys.push(
-      examQuestionCandidatesObjectKey(
+      examDocumentArtifactObjectKey(
         snapshot.state.examSessionId,
         extraction.examDocumentId,
         extraction.extractionVersion,
-        extraction.segmentation.segmentationVersion,
+      ),
+    );
+    if (extraction.segmentation) {
+      keys.push(
+        examQuestionCandidatesObjectKey(
+          snapshot.state.examSessionId,
+          extraction.examDocumentId,
+          extraction.extractionVersion,
+          extraction.segmentation.segmentationVersion,
+        ),
+      );
+    }
+  }
+  const capture = snapshot.state.studentResponseCapture;
+  if (capture) {
+    keys.push(
+      examStudentResponseCandidatesObjectKey(snapshot.state.examSessionId, capture.captureVersion),
+      examQuestionResponseMatchesObjectKey(
+        snapshot.state.examSessionId,
+        capture.captureVersion,
+        capture.matchingVersion,
       ),
     );
   }

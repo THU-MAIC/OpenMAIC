@@ -388,6 +388,56 @@ function expectedOperationFingerprint(event: ExamEvent): string {
         candidateCount: event.candidateCount,
         needsReview: event.needsReview,
       });
+    case 'exam_student_response_capture_started':
+      return createExamOperationFingerprint({
+        ...common,
+        captureVersion: event.captureVersion,
+        matchingVersion: event.matchingVersion,
+        segmentationVersion: event.segmentationVersion,
+        questionCandidateArtifactRef: event.questionCandidateArtifactRef,
+        sourceQuestionCandidateFingerprint: event.sourceQuestionCandidateFingerprint,
+        inputSemanticFingerprint: event.inputSemanticFingerprint,
+        captureRef: event.captureRef,
+        responseArtifactRef: event.responseArtifactRef,
+        matchingArtifactRef: event.matchingArtifactRef,
+      });
+    case 'exam_response_candidates_recorded':
+      return createExamOperationFingerprint({
+        ...common,
+        captureVersion: event.captureVersion,
+        matchingVersion: event.matchingVersion,
+        segmentationVersion: event.segmentationVersion,
+        questionCandidateArtifactRef: event.questionCandidateArtifactRef,
+        sourceQuestionCandidateFingerprint: event.sourceQuestionCandidateFingerprint,
+        inputSemanticFingerprint: event.inputSemanticFingerprint,
+        captureRef: event.captureRef,
+        responseArtifactRef: event.responseArtifactRef,
+        matchingArtifactRef: event.matchingArtifactRef,
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        responseCount: event.responseCount,
+      });
+    case 'exam_response_matching_completed':
+      return createExamOperationFingerprint({
+        ...common,
+        captureVersion: event.captureVersion,
+        matchingVersion: event.matchingVersion,
+        segmentationVersion: event.segmentationVersion,
+        questionCandidateArtifactRef: event.questionCandidateArtifactRef,
+        sourceQuestionCandidateFingerprint: event.sourceQuestionCandidateFingerprint,
+        inputSemanticFingerprint: event.inputSemanticFingerprint,
+        captureRef: event.captureRef,
+        responseArtifactRef: event.responseArtifactRef,
+        matchingArtifactRef: event.matchingArtifactRef,
+        responseArtifactFingerprint: event.responseArtifactFingerprint,
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        responseCount: event.responseCount,
+        matchedCount: event.matchedCount,
+        ambiguousCount: event.ambiguousCount,
+        unmatchedCount: event.unmatchedCount,
+        needsReview: event.needsReview,
+      });
     case 'exam_deleted':
       return createExamOperationFingerprint({
         ...common,

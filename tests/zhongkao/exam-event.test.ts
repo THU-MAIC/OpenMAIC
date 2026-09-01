@@ -5,7 +5,9 @@ import {
   EXAM_MAX_DOCUMENT_BYTES,
   EXAM_MAX_DOCUMENT_ARTIFACT_BYTES,
   EXAM_MAX_EXTRACTED_PAGES,
+  EXAM_MAX_MATCH_ARTIFACT_BYTES,
   EXAM_MAX_QUESTION_CANDIDATES,
+  EXAM_MAX_RESPONSE_ARTIFACT_BYTES,
   EXAM_MAX_TOTAL_BYTES,
 } from '@/lib/zhongkao/exam';
 import {
@@ -21,6 +23,17 @@ const EXAM_ID = `exam:v1:${'a'.repeat(64)}`;
 const PROFILE_ID = 'student-alpha';
 const REQUEST_FP = 'b'.repeat(64);
 const DOCUMENT_SET_FP = 'c'.repeat(64);
+const RESPONSE_PLAN = {
+  captureVersion: 1,
+  matchingVersion: 1,
+  segmentationVersion: 1,
+  questionCandidateArtifactRef: 'exam-question-candidates-v1',
+  sourceQuestionCandidateFingerprint: '2'.repeat(64),
+  inputSemanticFingerprint: '3'.repeat(64),
+  captureRef: 'exam-response-capture-v1',
+  responseArtifactRef: 'exam-response-artifact-v1',
+  matchingArtifactRef: 'exam-response-matching-v1',
+} as const;
 
 function fingerprint(seed: number): string {
   return seed.toString(16).padStart(64, '0');
@@ -145,6 +158,31 @@ function event(eventType: ExamEvent['eventType']): ExamEvent {
         artifactByteLength: 384,
         artifactSha256: '2'.repeat(64),
         candidateCount: 5,
+        needsReview: true,
+      };
+    case 'exam_student_response_capture_started':
+      return { ...base, eventType, ...RESPONSE_PLAN };
+    case 'exam_response_candidates_recorded':
+      return {
+        ...base,
+        eventType,
+        ...RESPONSE_PLAN,
+        artifactByteLength: 256,
+        artifactSha256: '4'.repeat(64),
+        responseCount: 5,
+      };
+    case 'exam_response_matching_completed':
+      return {
+        ...base,
+        eventType,
+        ...RESPONSE_PLAN,
+        responseArtifactFingerprint: '4'.repeat(64),
+        artifactByteLength: 192,
+        artifactSha256: '5'.repeat(64),
+        responseCount: 5,
+        matchedCount: 3,
+        ambiguousCount: 1,
+        unmatchedCount: 1,
         needsReview: true,
       };
     case 'exam_delete_requested':
@@ -308,6 +346,50 @@ describe('Exam event schema', () => {
         artifactByteLength: EXAM_MAX_CANDIDATE_ARTIFACT_BYTES + 1,
         candidateCount: EXAM_MAX_QUESTION_CANDIDATES + 1,
         needsReview: 'yes',
+      }).valid,
+    ).toBe(false);
+  });
+
+  it('validates closed response capture plans, bounded artifacts and exact summary counts', () => {
+    expect(
+      validateExamEvent({
+        ...event('exam_student_response_capture_started'),
+        responseArtifactRef: RESPONSE_PLAN.captureRef,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_response_candidates_recorded'),
+        artifactByteLength: EXAM_MAX_RESPONSE_ARTIFACT_BYTES + 1,
+        responseCount: EXAM_MAX_QUESTION_CANDIDATES + 1,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_response_matching_completed'),
+        artifactByteLength: EXAM_MAX_MATCH_ARTIFACT_BYTES + 1,
+        matchedCount: 4,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_response_matching_completed'),
+        needsReview: false,
+      }).valid,
+    ).toBe(false);
+  });
+
+  it('keeps raw answers and storage locators out of every response Runtime event', () => {
+    expect(
+      validateExamEvent({
+        ...event('exam_response_candidates_recorded'),
+        rawAnswerText: 'PRIVATE-STUDENT-ANSWER',
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_response_matching_completed'),
+        objectKey: 'materials/private/student_response_candidates_v1.json',
       }).valid,
     ).toBe(false);
   });

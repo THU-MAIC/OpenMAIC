@@ -410,7 +410,8 @@ async function resolveDocumentArtifactFromRuntime(
   return artifact;
 }
 
-async function resolveCandidatesFromRuntime(
+/** Resolve verified candidates while the caller already owns the per-Exam mutation lock. */
+export async function resolveExamQuestionCandidatesFromRuntime(
   deps: ExamServiceDeps,
   snapshot: ExamRuntimeSnapshot,
 ): Promise<ExamQuestionCandidatesArtifactV1> {
@@ -589,7 +590,7 @@ async function ensureCandidates(
   preparedArtifact?: ExamQuestionCandidatesArtifactV1,
 ): Promise<ExamRuntimeSnapshot> {
   if (snapshot.state.questionExtraction?.segmentation?.candidateArtifact) {
-    await resolveCandidatesFromRuntime(deps, snapshot);
+    await resolveExamQuestionCandidatesFromRuntime(deps, snapshot);
     return snapshot;
   }
   const artifact = preparedArtifact ?? segmentCandidatesInMemory(snapshot, documentArtifact);
@@ -615,7 +616,7 @@ async function ensureCandidates(
     candidatesExtractedEvent(deps, snapshot, bytes, artifact),
     'EXAM_QUESTION_SEGMENTATION_FAILED',
   );
-  await resolveCandidatesFromRuntime(deps, snapshot);
+  await resolveExamQuestionCandidatesFromRuntime(deps, snapshot);
   return snapshot;
 }
 
@@ -687,7 +688,7 @@ export async function resolveExamQuestionCandidates(
   return deps.withExamMutationLock(examSessionId, async () => {
     const snapshot = await loadExamRuntime(deps, examSessionId);
     if (snapshot.state.status !== 'ready_for_extraction') throw new ExamError('EXAM_NOT_FOUND');
-    return resolveCandidatesFromRuntime(deps, snapshot);
+    return resolveExamQuestionCandidatesFromRuntime(deps, snapshot);
   });
 }
 
@@ -700,7 +701,7 @@ export async function resolveExamQuestionExtraction(
     if (snapshot.state.status !== 'ready_for_extraction') throw new ExamError('EXAM_NOT_FOUND');
     return {
       documentArtifact: await resolveDocumentArtifactFromRuntime(deps, snapshot),
-      questionCandidates: await resolveCandidatesFromRuntime(deps, snapshot),
+      questionCandidates: await resolveExamQuestionCandidatesFromRuntime(deps, snapshot),
     };
   });
 }

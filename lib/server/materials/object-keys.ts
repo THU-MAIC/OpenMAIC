@@ -117,6 +117,28 @@ export function examQuestionCandidatesObjectKey(
   )}extraction_v${extractionVersion}/question_candidates_v${segmentationVersion}.json`;
 }
 
+export function examStudentResponseCandidatesObjectKey(
+  examSessionId: string,
+  captureVersion: number,
+): string {
+  assertArtifactVersion(captureVersion);
+  return `${examSnapshotObjectPrefix(
+    examSessionId,
+  )}response_capture_v${captureVersion}/student_response_candidates_v1.json`;
+}
+
+export function examQuestionResponseMatchesObjectKey(
+  examSessionId: string,
+  captureVersion: number,
+  matchingVersion: number,
+): string {
+  assertArtifactVersion(captureVersion);
+  assertArtifactVersion(matchingVersion);
+  return `${examSnapshotObjectPrefix(
+    examSessionId,
+  )}response_capture_v${captureVersion}/question_response_matches_v${matchingVersion}.json`;
+}
+
 export function isExamSnapshotObjectKey(examSessionId: string, key: string): boolean {
   return (
     isPortableMaterialObjectKey(key) && key.startsWith(examSnapshotObjectPrefix(examSessionId))

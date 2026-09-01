@@ -23,8 +23,14 @@ import {
   deriveExamQuestionCandidatesExtractedOperationId,
   deriveExamQuestionExtractionStartedOperationId,
   deriveExamQuestionSegmentationStartedOperationId,
+  deriveExamMatchingArtifactRef,
+  deriveExamResponseArtifactRef,
+  deriveExamResponseCandidatesRecordedOperationId,
+  deriveExamResponseCaptureRef,
+  deriveExamResponseMatchingCompletedOperationId,
   deriveExamSessionId,
   deriveExamSnapshotOperationId,
+  deriveExamStudentResponseCaptureStartedOperationId,
   examRuntimeSessionId,
   ensureExamRuntimeCreated,
   loadExamRuntime,
@@ -39,6 +45,9 @@ import type {
   ExamQuestionCandidatesExtractedEvent,
   ExamQuestionExtractionStartedEvent,
   ExamQuestionSegmentationStartedEvent,
+  ExamResponseCandidatesRecordedEvent,
+  ExamResponseMatchingCompletedEvent,
+  ExamStudentResponseCaptureStartedEvent,
 } from '@/lib/zhongkao/exam-event';
 import { zhongkaoStageId } from '@/lib/zhongkao/runtime';
 
@@ -318,6 +327,125 @@ function extractionEvents(
     ...candidateFacts,
   };
   return [started, document, segmentation, candidates];
+}
+
+function responseEvents(
+  created: ExamCreatedEvent,
+): [
+  ExamStudentResponseCaptureStartedEvent,
+  ExamResponseCandidatesRecordedEvent,
+  ExamResponseMatchingCompletedEvent,
+] {
+  const candidates = extractionEvents(created)[3];
+  const captureVersion = 1;
+  const matchingVersion = 1;
+  const segmentationVersion = candidates.segmentationVersion;
+  const sourceQuestionCandidateFingerprint = candidates.artifactSha256;
+  const captureRef = deriveExamResponseCaptureRef(
+    created.examSessionId,
+    captureVersion,
+    segmentationVersion,
+    sourceQuestionCandidateFingerprint,
+  );
+  const plan = {
+    captureVersion,
+    matchingVersion,
+    segmentationVersion,
+    questionCandidateArtifactRef: candidates.candidateArtifactRef,
+    sourceQuestionCandidateFingerprint,
+    inputSemanticFingerprint: 'd'.repeat(64),
+    captureRef,
+    responseArtifactRef: deriveExamResponseArtifactRef(captureRef),
+    matchingArtifactRef: deriveExamMatchingArtifactRef(captureRef, matchingVersion),
+  } as const;
+  const startedOperationId = deriveExamStudentResponseCaptureStartedOperationId(
+    created.examSessionId,
+    captureVersion,
+    segmentationVersion,
+    sourceQuestionCandidateFingerprint,
+  );
+  const started: ExamStudentResponseCaptureStartedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(startedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_student_response_capture_started',
+    createdAt: '2026-08-31T08:00:07.000Z',
+    operationId: startedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_student_response_capture_started',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...plan,
+    }),
+    ...plan,
+  };
+  const responseFacts = {
+    ...plan,
+    artifactByteLength: 256,
+    artifactSha256: 'e'.repeat(64),
+    responseCount: 5,
+  } as const;
+  const recordedOperationId = deriveExamResponseCandidatesRecordedOperationId(
+    created.examSessionId,
+    captureVersion,
+    segmentationVersion,
+    sourceQuestionCandidateFingerprint,
+  );
+  const recorded: ExamResponseCandidatesRecordedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(recordedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_response_candidates_recorded',
+    createdAt: '2026-08-31T08:00:08.000Z',
+    operationId: recordedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_response_candidates_recorded',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...responseFacts,
+    }),
+    ...responseFacts,
+  };
+  const matchFacts = {
+    ...plan,
+    responseArtifactFingerprint: recorded.artifactSha256,
+    artifactByteLength: 192,
+    artifactSha256: 'f'.repeat(64),
+    responseCount: recorded.responseCount,
+    matchedCount: 3,
+    ambiguousCount: 1,
+    unmatchedCount: 1,
+    needsReview: true as const,
+  };
+  const completedOperationId = deriveExamResponseMatchingCompletedOperationId(
+    created.examSessionId,
+    captureVersion,
+    matchingVersion,
+    segmentationVersion,
+    sourceQuestionCandidateFingerprint,
+  );
+  const completed: ExamResponseMatchingCompletedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(completedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_response_matching_completed',
+    createdAt: '2026-08-31T08:00:09.000Z',
+    operationId: completedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_response_matching_completed',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...matchFacts,
+    }),
+    ...matchFacts,
+  };
+  return [started, recorded, completed];
 }
 
 describe('Exam RuntimeStore adapter', () => {
@@ -617,6 +745,129 @@ describe('Exam RuntimeStore adapter', () => {
       revision: 6,
       questionExtraction: { status: 'question_candidates_ready' },
     });
+  });
+
+  it('derives, appends and replays one response capture and matching fact chain', async () => {
+    const backing = store();
+    const created = createdEvent();
+    await ensureExamRuntimeCreated({ store: backing, ownerId: OWNER_ID }, created);
+    await appendExamRuntimeEvent(
+      { store: backing, ownerId: OWNER_ID },
+      { event: snapshotEvent(created), expectedRevision: 0 },
+    );
+    await appendExamRuntimeEvent(
+      { store: backing, ownerId: OWNER_ID },
+      { event: completedEvent(created), expectedRevision: 1 },
+    );
+    for (const [index, event] of extractionEvents(created).entries()) {
+      await appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event, expectedRevision: index + 2 },
+      );
+    }
+
+    const responseChain = responseEvents(created);
+    for (const [index, event] of responseChain.entries()) {
+      const expectedRevision = index + 6;
+      const result = await appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event, expectedRevision },
+      );
+      expect(result).toMatchObject({ replayed: false, eventAppended: true });
+      const replay = await appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event, expectedRevision },
+      );
+      expect(replay).toMatchObject({ replayed: true, eventAppended: false });
+    }
+
+    const snapshot = await loadExamRuntime(
+      { store: backing, ownerId: OWNER_ID },
+      created.examSessionId,
+    );
+    expect(snapshot.state).toMatchObject({
+      revision: 9,
+      studentResponseCapture: {
+        status: 'matching_ready',
+        responseArtifact: { responseCount: 5 },
+        matchingArtifact: {
+          responseCount: 5,
+          matchedCount: 3,
+          ambiguousCount: 1,
+          unmatchedCount: 1,
+          needsReview: true,
+        },
+      },
+    });
+
+    const changed = {
+      ...responseChain[0],
+      inputSemanticFingerprint: '9'.repeat(64),
+    };
+    changed.operationFingerprint = createExamOperationFingerprint({
+      action: changed.eventType,
+      schemaVersion: changed.schemaVersion,
+      examSessionId: changed.examSessionId,
+      profileId: changed.profileId,
+      captureVersion: changed.captureVersion,
+      matchingVersion: changed.matchingVersion,
+      segmentationVersion: changed.segmentationVersion,
+      questionCandidateArtifactRef: changed.questionCandidateArtifactRef,
+      sourceQuestionCandidateFingerprint: changed.sourceQuestionCandidateFingerprint,
+      inputSemanticFingerprint: changed.inputSemanticFingerprint,
+      captureRef: changed.captureRef,
+      responseArtifactRef: changed.responseArtifactRef,
+      matchingArtifactRef: changed.matchingArtifactRef,
+    });
+    await expect(
+      appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event: changed, expectedRevision: 6 },
+      ),
+    ).rejects.toThrow('EXAM_EVENT_CONFLICT');
+  });
+
+  it('rejects forged deterministic response capture references before append', async () => {
+    const backing = store();
+    const created = createdEvent();
+    await ensureExamRuntimeCreated({ store: backing, ownerId: OWNER_ID }, created);
+    await appendExamRuntimeEvent(
+      { store: backing, ownerId: OWNER_ID },
+      { event: snapshotEvent(created), expectedRevision: 0 },
+    );
+    await appendExamRuntimeEvent(
+      { store: backing, ownerId: OWNER_ID },
+      { event: completedEvent(created), expectedRevision: 1 },
+    );
+    for (const [index, event] of extractionEvents(created).entries()) {
+      await appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event, expectedRevision: index + 2 },
+      );
+    }
+    const [started] = responseEvents(created);
+    const forged = { ...started, captureRef: 'forged-response-capture-ref' };
+    forged.operationFingerprint = createExamOperationFingerprint({
+      action: forged.eventType,
+      schemaVersion: forged.schemaVersion,
+      examSessionId: forged.examSessionId,
+      profileId: forged.profileId,
+      captureVersion: forged.captureVersion,
+      matchingVersion: forged.matchingVersion,
+      segmentationVersion: forged.segmentationVersion,
+      questionCandidateArtifactRef: forged.questionCandidateArtifactRef,
+      sourceQuestionCandidateFingerprint: forged.sourceQuestionCandidateFingerprint,
+      inputSemanticFingerprint: forged.inputSemanticFingerprint,
+      captureRef: forged.captureRef,
+      responseArtifactRef: forged.responseArtifactRef,
+      matchingArtifactRef: forged.matchingArtifactRef,
+    });
+    await expect(
+      appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event: forged, expectedRevision: 6 },
+      ),
+    ).rejects.toThrow('EXAM_EVENT_CONFLICT');
   });
 
   it('rejects forged derivative refs before append', async () => {

@@ -91,6 +91,37 @@ export function deriveExamCandidateArtifactRef(
   )}`;
 }
 
+export function deriveExamResponseCaptureRef(
+  examSessionId: string,
+  captureVersion: number,
+  segmentationVersion: number,
+  sourceQuestionCandidateFingerprint: string,
+): string {
+  return `exam-response-capture:v${EXAM_ID_VERSION}:${digest(
+    'openmaic:zhongkao-exam-response-capture:v1',
+    {
+      examSessionId,
+      captureVersion,
+      segmentationVersion,
+      sourceQuestionCandidateFingerprint,
+    },
+  )}`;
+}
+
+export function deriveExamResponseArtifactRef(captureRef: string): string {
+  return `exam-student-response-candidates:v${EXAM_ID_VERSION}:${digest(
+    'openmaic:zhongkao-exam-student-response-candidates:v1',
+    { captureRef },
+  )}`;
+}
+
+export function deriveExamMatchingArtifactRef(captureRef: string, matchingVersion: number): string {
+  return `exam-question-response-matches:v${EXAM_ID_VERSION}:${digest(
+    'openmaic:zhongkao-exam-question-response-matches:v1',
+    { captureRef, matchingVersion },
+  )}`;
+}
+
 export function examRuntimeSessionId(examSessionId: string): string {
   return `zhongkao-exam:${encodeURIComponent(examSessionId)}`;
 }
@@ -192,6 +223,50 @@ export function deriveExamQuestionCandidatesExtractedOperationId(
   });
 }
 
+export function deriveExamStudentResponseCaptureStartedOperationId(
+  examSessionId: string,
+  captureVersion: number,
+  segmentationVersion: number,
+  sourceQuestionCandidateFingerprint: string,
+): string {
+  return operationId('student-response-capture-started', {
+    examSessionId,
+    captureVersion,
+    segmentationVersion,
+    sourceQuestionCandidateFingerprint,
+  });
+}
+
+export function deriveExamResponseCandidatesRecordedOperationId(
+  examSessionId: string,
+  captureVersion: number,
+  segmentationVersion: number,
+  sourceQuestionCandidateFingerprint: string,
+): string {
+  return operationId('response-candidates-recorded', {
+    examSessionId,
+    captureVersion,
+    segmentationVersion,
+    sourceQuestionCandidateFingerprint,
+  });
+}
+
+export function deriveExamResponseMatchingCompletedOperationId(
+  examSessionId: string,
+  captureVersion: number,
+  matchingVersion: number,
+  segmentationVersion: number,
+  sourceQuestionCandidateFingerprint: string,
+): string {
+  return operationId('response-matching-completed', {
+    examSessionId,
+    captureVersion,
+    matchingVersion,
+    segmentationVersion,
+    sourceQuestionCandidateFingerprint,
+  });
+}
+
 export function deriveExamDeleteRequestedOperationId(examSessionId: string): string {
   return operationId('delete-requested', { schemaVersion: EXAM_SCHEMA_VERSION, examSessionId });
 }
@@ -208,6 +283,46 @@ function eventFromRecord(record: RuntimeRecord): ExamEvent {
   assertExamEvent(record.payload);
   assertDerivedExamEvent(record.payload);
   return record.payload;
+}
+
+type ExamResponsePlanEvent = Extract<
+  ExamEvent,
+  {
+    eventType:
+      | 'exam_student_response_capture_started'
+      | 'exam_response_candidates_recorded'
+      | 'exam_response_matching_completed';
+  }
+>;
+
+function responseCapturePlanFacts(event: ExamResponsePlanEvent) {
+  return {
+    captureVersion: event.captureVersion,
+    matchingVersion: event.matchingVersion,
+    segmentationVersion: event.segmentationVersion,
+    questionCandidateArtifactRef: event.questionCandidateArtifactRef,
+    sourceQuestionCandidateFingerprint: event.sourceQuestionCandidateFingerprint,
+    inputSemanticFingerprint: event.inputSemanticFingerprint,
+    captureRef: event.captureRef,
+    responseArtifactRef: event.responseArtifactRef,
+    matchingArtifactRef: event.matchingArtifactRef,
+  } as const;
+}
+
+function assertDerivedResponseCapturePlan(event: ExamResponsePlanEvent): void {
+  const captureRef = deriveExamResponseCaptureRef(
+    event.examSessionId,
+    event.captureVersion,
+    event.segmentationVersion,
+    event.sourceQuestionCandidateFingerprint,
+  );
+  if (
+    event.captureRef !== captureRef ||
+    event.responseArtifactRef !== deriveExamResponseArtifactRef(captureRef) ||
+    event.matchingArtifactRef !== deriveExamMatchingArtifactRef(captureRef, event.matchingVersion)
+  ) {
+    throw new ExamError('EXAM_EVENT_CONFLICT');
+  }
 }
 
 function assertDerivedExamEvent(event: ExamEvent): void {
@@ -424,6 +539,66 @@ function assertDerivedExamEvent(event: ExamEvent): void {
         artifactByteLength: event.artifactByteLength,
         artifactSha256: event.artifactSha256,
         candidateCount: event.candidateCount,
+        needsReview: event.needsReview,
+      });
+      break;
+    case 'exam_student_response_capture_started':
+      assertDerivedResponseCapturePlan(event);
+      expectedOperationId = deriveExamStudentResponseCaptureStartedOperationId(
+        event.examSessionId,
+        event.captureVersion,
+        event.segmentationVersion,
+        event.sourceQuestionCandidateFingerprint,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_student_response_capture_started',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...responseCapturePlanFacts(event),
+      });
+      break;
+    case 'exam_response_candidates_recorded':
+      assertDerivedResponseCapturePlan(event);
+      expectedOperationId = deriveExamResponseCandidatesRecordedOperationId(
+        event.examSessionId,
+        event.captureVersion,
+        event.segmentationVersion,
+        event.sourceQuestionCandidateFingerprint,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_response_candidates_recorded',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...responseCapturePlanFacts(event),
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        responseCount: event.responseCount,
+      });
+      break;
+    case 'exam_response_matching_completed':
+      assertDerivedResponseCapturePlan(event);
+      expectedOperationId = deriveExamResponseMatchingCompletedOperationId(
+        event.examSessionId,
+        event.captureVersion,
+        event.matchingVersion,
+        event.segmentationVersion,
+        event.sourceQuestionCandidateFingerprint,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_response_matching_completed',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...responseCapturePlanFacts(event),
+        responseArtifactFingerprint: event.responseArtifactFingerprint,
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        responseCount: event.responseCount,
+        matchedCount: event.matchedCount,
+        ambiguousCount: event.ambiguousCount,
+        unmatchedCount: event.unmatchedCount,
         needsReview: event.needsReview,
       });
       break;

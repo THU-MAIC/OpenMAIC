@@ -5,6 +5,7 @@ import {
   type PublicExamQuestionExtractionSummary,
   type PublicExamSession,
   type PublicExamStatus,
+  type PublicExamStudentResponseMatchingSummary,
 } from './exam';
 import { ExamError } from './exam-errors';
 import { assertExamEvent, type ExamCreatedDocument, type ExamEvent } from './exam-event';
@@ -69,6 +70,48 @@ export interface ExamQuestionExtractionState {
   segmentation?: ExamQuestionSegmentationState;
 }
 
+export type ExamStudentResponseCaptureStatus =
+  | 'capturing'
+  | 'response_candidates_ready'
+  | 'matching_ready';
+
+export interface ExamResponseCandidateArtifactFact {
+  eventId: string;
+  createdAt: string;
+  byteLength: number;
+  sha256: string;
+  responseCount: number;
+}
+
+export interface ExamResponseMatchingArtifactFact {
+  eventId: string;
+  createdAt: string;
+  byteLength: number;
+  sha256: string;
+  responseCount: number;
+  matchedCount: number;
+  ambiguousCount: number;
+  unmatchedCount: number;
+  needsReview: true;
+}
+
+export interface ExamStudentResponseCaptureState {
+  status: ExamStudentResponseCaptureStatus;
+  startedEventId: string;
+  startedAt: string;
+  captureVersion: number;
+  matchingVersion: number;
+  segmentationVersion: number;
+  questionCandidateArtifactRef: string;
+  sourceQuestionCandidateFingerprint: string;
+  inputSemanticFingerprint: string;
+  captureRef: string;
+  responseArtifactRef: string;
+  matchingArtifactRef: string;
+  responseArtifact?: ExamResponseCandidateArtifactFact;
+  matchingArtifact?: ExamResponseMatchingArtifactFact;
+}
+
 export interface ExamSessionState {
   schemaVersion: typeof EXAM_SCHEMA_VERSION;
   examSessionId: string;
@@ -82,6 +125,7 @@ export interface ExamSessionState {
   documentSetFingerprint: string;
   documents: ExamDocumentState[];
   questionExtraction?: ExamQuestionExtractionState;
+  studentResponseCapture?: ExamStudentResponseCaptureState;
   intakeCompletedEventId?: string;
   deleteRequestedEventId?: string;
   deletedEventId?: string;
@@ -112,6 +156,33 @@ function documentById(state: ExamSessionState, examDocumentId: string): ExamDocu
   const matches = state.documents.filter((document) => document.examDocumentId === examDocumentId);
   if (matches.length !== 1) conflict();
   return matches[0]!;
+}
+
+type ExamResponsePlanEvent = Extract<
+  ExamEvent,
+  {
+    eventType:
+      | 'exam_student_response_capture_started'
+      | 'exam_response_candidates_recorded'
+      | 'exam_response_matching_completed';
+  }
+>;
+
+function responsePlanMatches(
+  capture: ExamStudentResponseCaptureState,
+  event: ExamResponsePlanEvent,
+): boolean {
+  return (
+    event.captureVersion === capture.captureVersion &&
+    event.matchingVersion === capture.matchingVersion &&
+    event.segmentationVersion === capture.segmentationVersion &&
+    event.questionCandidateArtifactRef === capture.questionCandidateArtifactRef &&
+    event.sourceQuestionCandidateFingerprint === capture.sourceQuestionCandidateFingerprint &&
+    event.inputSemanticFingerprint === capture.inputSemanticFingerprint &&
+    event.captureRef === capture.captureRef &&
+    event.responseArtifactRef === capture.responseArtifactRef &&
+    event.matchingArtifactRef === capture.matchingArtifactRef
+  );
 }
 
 function assertRecordEnvelope(
@@ -310,6 +381,96 @@ export function foldExamEvents(records: readonly RuntimeRecord[]): ExamSessionSt
           };
           break;
         }
+        case 'exam_student_response_capture_started': {
+          const extraction = state.questionExtraction;
+          const segmentation = extraction?.segmentation;
+          const candidateArtifact = segmentation?.candidateArtifact;
+          if (
+            state.status !== 'ready_for_extraction' ||
+            extraction?.status !== 'question_candidates_ready' ||
+            !segmentation ||
+            !candidateArtifact ||
+            state.studentResponseCapture ||
+            event.segmentationVersion !== segmentation.segmentationVersion ||
+            event.questionCandidateArtifactRef !== segmentation.candidateArtifactRef ||
+            event.sourceQuestionCandidateFingerprint !== candidateArtifact.sha256 ||
+            event.captureRef === extraction.documentArtifactRef ||
+            event.captureRef === segmentation.candidateArtifactRef ||
+            event.responseArtifactRef === extraction.documentArtifactRef ||
+            event.responseArtifactRef === segmentation.candidateArtifactRef ||
+            event.matchingArtifactRef === extraction.documentArtifactRef ||
+            event.matchingArtifactRef === segmentation.candidateArtifactRef
+          ) {
+            conflict();
+          }
+          state.studentResponseCapture = {
+            status: 'capturing',
+            startedEventId: event.eventId,
+            startedAt: event.createdAt,
+            captureVersion: event.captureVersion,
+            matchingVersion: event.matchingVersion,
+            segmentationVersion: event.segmentationVersion,
+            questionCandidateArtifactRef: event.questionCandidateArtifactRef,
+            sourceQuestionCandidateFingerprint: event.sourceQuestionCandidateFingerprint,
+            inputSemanticFingerprint: event.inputSemanticFingerprint,
+            captureRef: event.captureRef,
+            responseArtifactRef: event.responseArtifactRef,
+            matchingArtifactRef: event.matchingArtifactRef,
+          };
+          break;
+        }
+        case 'exam_response_candidates_recorded': {
+          const capture = state.studentResponseCapture;
+          if (
+            state.status !== 'ready_for_extraction' ||
+            !capture ||
+            capture.status !== 'capturing' ||
+            capture.responseArtifact ||
+            !responsePlanMatches(capture, event)
+          ) {
+            conflict();
+          }
+          capture.status = 'response_candidates_ready';
+          capture.responseArtifact = {
+            eventId: event.eventId,
+            createdAt: event.createdAt,
+            byteLength: event.artifactByteLength,
+            sha256: event.artifactSha256,
+            responseCount: event.responseCount,
+          };
+          break;
+        }
+        case 'exam_response_matching_completed': {
+          const capture = state.studentResponseCapture;
+          if (
+            state.status !== 'ready_for_extraction' ||
+            !capture ||
+            capture.status !== 'response_candidates_ready' ||
+            !capture.responseArtifact ||
+            capture.matchingArtifact ||
+            !responsePlanMatches(capture, event) ||
+            event.responseArtifactFingerprint !== capture.responseArtifact.sha256 ||
+            event.responseCount !== capture.responseArtifact.responseCount ||
+            event.responseCount !==
+              event.matchedCount + event.ambiguousCount + event.unmatchedCount ||
+            event.needsReview !== true
+          ) {
+            conflict();
+          }
+          capture.status = 'matching_ready';
+          capture.matchingArtifact = {
+            eventId: event.eventId,
+            createdAt: event.createdAt,
+            byteLength: event.artifactByteLength,
+            sha256: event.artifactSha256,
+            responseCount: event.responseCount,
+            matchedCount: event.matchedCount,
+            ambiguousCount: event.ambiguousCount,
+            unmatchedCount: event.unmatchedCount,
+            needsReview: true,
+          };
+          break;
+        }
         case 'exam_delete_requested':
           if (
             (state.status !== 'intake_pending' && state.status !== 'ready_for_extraction') ||
@@ -365,6 +526,31 @@ function toPublicQuestionExtraction(
   };
 }
 
+function toPublicStudentResponseMatching(
+  capture: ExamStudentResponseCaptureState | undefined,
+): PublicExamStudentResponseMatchingSummary {
+  if (!capture) return { status: 'not_started', needsReview: true };
+  if (capture.status !== 'matching_ready') {
+    return {
+      status: 'capturing',
+      ...(capture.responseArtifact === undefined
+        ? {}
+        : { responseCount: capture.responseArtifact.responseCount }),
+      needsReview: true,
+    };
+  }
+  const artifact = capture.matchingArtifact;
+  if (!capture.responseArtifact || !artifact) conflict();
+  return {
+    status: 'matching_ready',
+    responseCount: artifact.responseCount,
+    matchedCount: artifact.matchedCount,
+    ambiguousCount: artifact.ambiguousCount,
+    unmatchedCount: artifact.unmatchedCount,
+    needsReview: true,
+  };
+}
+
 export function toPublicExamSession(state: ExamSessionState): PublicExamSession {
   if (state.status === 'deleted') throw new ExamError('EXAM_NOT_FOUND');
   return {
@@ -384,5 +570,6 @@ export function toPublicExamSession(state: ExamSessionState): PublicExamSession 
       snapshotStatus: document.snapshot === undefined ? 'pending' : 'snapshotted',
     })),
     questionExtraction: toPublicQuestionExtraction(state.questionExtraction),
+    studentResponseMatching: toPublicStudentResponseMatching(state.studentResponseCapture),
   };
 }
