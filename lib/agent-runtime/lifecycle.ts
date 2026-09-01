@@ -17,6 +17,23 @@ export interface StageLinkLifecycleData {
   url: string;
 }
 
+/**
+ * Payload of the `media_ready` lifecycle event: an asynchronous media
+ * generation job (started by the `generate_video` tool) settled.
+ */
+export interface MediaReadyLifecycleData {
+  /** The `gen_vid_<id>` placeholder the tool returned for the agent to patch onto an element. */
+  ref: string;
+  stageId: string;
+  status: 'done' | 'failed';
+  /** Server-relative renderable src (`/api/classroom-media/...`) when done. */
+  src?: string;
+  mime?: string;
+  durationSec?: number;
+  /** Stable provider-neutral code from MEDIA_TOOL_ERROR_REASONS when failed. */
+  errorCode?: string;
+}
+
 export const HOST_AGENT_LIFECYCLE = {
   sessionStart: 'session_start',
   sessionResumed: 'session_resumed',
@@ -102,6 +119,17 @@ export const HOST_AGENT_LIFECYCLE = {
    * and the existing first-page trigger already covers the one case where it is.
    */
   libraryChanged: 'library_changed',
+  /**
+   * An async media generation job settled. Emitted by the `generate_video`
+   * background job AFTER its tool call returned — possibly after the whole
+   * run ended — so it is written through the session-level control channel
+   * (`appendControlEvent`), never the lease-guarded run channel; the durable
+   * log therefore carries it and SSE clients receive/replay it like any other
+   * frame. `data` is {@link MediaReadyLifecycleData}. The workbench folds it
+   * into the media-generation store keyed by `ref`, which is how a video
+   * element still carrying the placeholder leaves its skeleton state.
+   */
+  mediaReady: 'media_ready',
 } as const;
 
 /** Every lifecycle event name the runner and control plane can write. */
