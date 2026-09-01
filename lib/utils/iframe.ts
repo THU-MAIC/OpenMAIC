@@ -1,4 +1,4 @@
-import { injectIntoDocumentHead } from './html-document';
+import { injectBeforeDocumentHeadEnd, injectIntoDocumentHead } from './html-document';
 
 /**
  * In-memory localStorage/sessionStorage shim, injected as the FIRST thing in the
@@ -287,21 +287,34 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
  */
 export function patchHtmlForIframe(html: string): string {
   const iframeCss = `<style data-iframe-patch>
-  html, body {
+  html {
     width: 100%;
     height: 100%;
+    max-height: 100%;
     margin: 0;
     padding: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
+    overflow: hidden !important;
   }
-  /* Fix min-h-screen: in iframes 100vh is the iframe height, which is correct,
-     but ensure body actually fills it */
-  body { min-height: 100vh; }
+  body {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    min-height: 0 !important;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+  }
 </style>`;
 
-  const injection =
-    '\n' + ERROR_CAPTURE_SHIM + '\n' + ELEMENT_PICKER_SHIM + '\n' + STORAGE_SHIM + '\n' + iframeCss;
+  // Runtime shims must execute before authored scripts. The viewport CSS has
+  // the opposite ordering requirement: place it after authored head styles so
+  // generated `html, body { overflow: auto }` rules cannot create two nested
+  // root scrollers whose measured height feeds back into responsive charts.
+  const shimInjection =
+    '\n' + ERROR_CAPTURE_SHIM + '\n' + ELEMENT_PICKER_SHIM + '\n' + STORAGE_SHIM;
+  const withShims = injectIntoDocumentHead(html, shimInjection);
 
-  return injectIntoDocumentHead(html, injection);
+  return injectBeforeDocumentHeadEnd(withShims, '\n' + iframeCss + '\n');
 }

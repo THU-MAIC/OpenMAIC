@@ -11,10 +11,11 @@ beforeEach(reset);
 
 describe('mount', () => {
   test('creates an entry with the given content', () => {
-    pool().mount('s1', { srcDoc: '<p>1</p>' });
+    pool().mount('s1', { srcDoc: '<p>1</p>', widgetType: 'code' });
     const e = pool().entries['s1'];
     expect(e).toBeDefined();
     expect(e.srcDoc).toBe('<p>1</p>');
+    expect(e.widgetType).toBe('code');
   });
 
   test('re-mounting with equal content keeps the entry (no reload)', () => {

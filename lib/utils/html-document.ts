@@ -40,3 +40,21 @@ export function injectIntoDocumentHead(html: string, injection: string): string 
 
   return `<head>${injection}</head>${html}`;
 }
+
+/** Inject markup at the end of the parsed head so it wins normal authored CSS. */
+export function injectBeforeDocumentHeadEnd(html: string, injection: string): string {
+  const document = parse(html, { sourceCodeLocationInfo: true });
+  const htmlElement = document.childNodes.find(
+    (node): node is DefaultTreeAdapterTypes.Element => isElement(node) && node.tagName === 'html',
+  );
+  const headElement = htmlElement?.childNodes.find(
+    (node): node is DefaultTreeAdapterTypes.Element => isElement(node) && node.tagName === 'head',
+  );
+  const explicitHeadEnd = headElement?.sourceCodeLocation?.endTag?.startOffset;
+  if (explicitHeadEnd !== undefined) return insertAt(html, explicitHeadEnd, injection);
+
+  // Documents without an explicit </head> need the parser-safe creation path.
+  // Keeping that fallback in one helper also preserves malformed/generated HTML
+  // instead of serializing and rewriting the whole document.
+  return injectIntoDocumentHead(html, injection);
+}
