@@ -20,8 +20,8 @@
   ],
   "sideEffects": false,
   "scripts": {
-    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && node scripts/gen-schema.mjs",
+    "clean": "rm -rf dist",
+    "build": "rm -rf dist && tsc -p tsconfig.json && node scripts/gen-schema.mjs",
     "build:schema": "node scripts/gen-schema.mjs",
     "dev": "tsc -p tsconfig.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
