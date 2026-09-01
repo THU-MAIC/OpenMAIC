@@ -81,6 +81,10 @@ export type OwnerSessionEvent =
   | (OwnerSessionEventBase & {
       readonly type: 'session_active_stage';
       readonly activeStageId: string;
+    })
+  | (OwnerSessionEventBase & {
+      readonly type: 'session_title';
+      readonly title: string | null;
     });
 
 export interface OwnerSessionReduceResult {
@@ -94,8 +98,9 @@ export interface OwnerSessionReduceResult {
  * Sparse events can update an existing row but cannot create one: prompt,
  * stageId and creation timestamps intentionally never enter the owner event
  * log. Any event for an unknown id therefore asks the IO layer for a complete
- * snapshot. Real transitions use their event timestamp as rail activity, so
- * heartbeats no longer reshuffle live rows between reconciliations.
+ * snapshot. Owner-visible transitions, including title changes, use their
+ * event timestamp as rail activity. Heartbeat-only updates affect order when
+ * the next full snapshot reconciles the row's generic updatedAt.
  */
 export function reduceOwnerSessionEvent(
   sessions: readonly ProHomeSessionItem[],
@@ -112,12 +117,19 @@ export function reduceOwnerSessionEvent(
   }
 
   const current = sessions[index]!;
+  // PostgreSQL timestamps lose sub-millisecond ordering when projected to JS.
+  // An equal timestamp is ambiguous, so the client reconciles it with a read.
+  if (event.type === 'session_title' && event.ts <= current.updatedAt) {
+    return { sessions, needsFullFetch: false };
+  }
   const changed: ProHomeSessionItem =
     event.type === 'session_status' || event.type === 'session_created'
       ? { ...current, status: event.status, updatedAt: event.ts }
       : event.type === 'session_active_stage'
         ? { ...current, stageId: event.activeStageId, updatedAt: event.ts }
-        : { ...current, updatedAt: event.ts };
+        : event.type === 'session_title'
+          ? { ...current, title: event.title, updatedAt: event.ts }
+          : { ...current, updatedAt: event.ts };
   const next = sessions.map((session, currentIndex) =>
     currentIndex === index ? changed : session,
   );
