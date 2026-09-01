@@ -79,9 +79,7 @@ export async function loadClassroomFromDocumentStore(
   const connectionString = process.env.DATABASE_URL?.trim();
   if (!connectionString) return null;
   try {
-    const { getServerPersistenceProvider } = await import(
-      '@/lib/persistence/server-provider'
-    );
+    const { getServerPersistenceProvider } = await import('@/lib/persistence/server-provider');
     const provider = await getServerPersistenceProvider(connectionString);
 
     const ownerRows = await provider.pool.query<{ owner_id: string | null }>(
