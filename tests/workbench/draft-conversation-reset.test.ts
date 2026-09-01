@@ -127,6 +127,7 @@ function driveARunningSession(): void {
   // non-vacuous while still exercising the historical stage-link baseline.
   store.setReplaying(true);
   store.setSessionBootstrap({ prompt: '给我做一门光的折射', title: '光的折射课' });
+  store.setSessionTitle('光的折射课');
   store.setAttached(true);
   store.setError('stream hiccup');
   store.setPlaybackOn(true);

@@ -8,6 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
+import { splitSqlStatements } from '../document/pg.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 import {
   AGENT_SESSION_LIFECYCLE,
@@ -22,6 +23,7 @@ import {
   type AgentSessionHooks,
   type AgentSessionMeta,
   type AgentSessionStore,
+  type AgentSessionTitleStore,
   type AgentSessionTransaction,
   type AgentSessionUrlSource,
   type AgentSessionUrlStore,
@@ -59,6 +61,11 @@ export const DEFAULT_AGENT_SESSION_TABLE_NAMES: Readonly<AgentSessionTableNames>
   urls: 'agent_session_urls',
 };
 
+const OWNER_EVENT_TYPE_CONSTRAINT_V2 = 'agent_owner_session_events_type_known_v2';
+// Long custom names can truncate the v1/v2 constraints to one PG identifier.
+// This impossible custom name shelters v2 while table names are substituted.
+const OWNER_EVENT_TYPE_CONSTRAINT_V2_SENTINEL = '__OPENMAIC_OWNER_EVENT_TYPE_KNOWN_V2__';
+
 export interface AgentSessionLogger {
   error(message: string, context: Record<string, unknown>, error: unknown): void;
 }
@@ -82,6 +89,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   id                  TEXT PRIMARY KEY,
   owner_id            TEXT NOT NULL,
   prompt              TEXT NOT NULL,
+  title               TEXT,
   stage_id            TEXT NOT NULL,
   active_stage_id     TEXT,
   skill_id            TEXT,
@@ -105,6 +113,9 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
 
 ALTER TABLE agent_sessions
   ADD COLUMN IF NOT EXISTS delivered_user_message_seq INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE agent_sessions
+  ADD COLUMN IF NOT EXISTS title TEXT;
 
 CREATE INDEX IF NOT EXISTS agent_sessions_status_live_idx
   ON agent_sessions (status, created_at) WHERE deleted_at IS NULL;
@@ -158,14 +169,67 @@ CREATE TABLE IF NOT EXISTS agent_owner_session_events (
   attempt    INTEGER,
   data       JSONB NOT NULL,
   PRIMARY KEY (owner_id, id),
-  CONSTRAINT agent_owner_session_events_type_known CHECK (type IN
+  CONSTRAINT agent_owner_session_events_type_known_v2 CHECK (type IN
     ('session_created','session_status','session_deleted',
-     'session_active_stage','session_cancel_requested')),
+     'session_active_stage','session_cancel_requested','session_title')),
   CONSTRAINT agent_owner_session_events_status_known CHECK (status IS NULL OR status IN
     ('queued','running','succeeded','failed','cancelled')),
   CONSTRAINT agent_owner_session_events_attempt_nonnegative
     CHECK (attempt IS NULL OR attempt >= 0)
 );
+
+DO $agent_session_owner_event_type_constraint$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'agent_owner_session_events'::regclass
+      AND conname = 'agent_owner_session_events_type_known'::name
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'agent_owner_session_events'::regclass
+      AND conname = 'agent_owner_session_events_type_known_v2'
+  ) THEN
+    LOCK TABLE agent_owner_session_events IN ACCESS EXCLUSIVE MODE;
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'agent_owner_session_events'::regclass
+        AND conname = 'agent_owner_session_events_type_known_v2'
+    ) THEN
+      ALTER TABLE agent_owner_session_events
+        ADD CONSTRAINT agent_owner_session_events_type_known_v2 CHECK (type IN
+          ('session_created','session_status','session_deleted',
+           'session_active_stage','session_cancel_requested','session_title'))
+        NOT VALID;
+    END IF;
+    IF EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'agent_owner_session_events'::regclass
+        AND conname = 'agent_owner_session_events_type_known'::name
+    ) THEN
+      ALTER TABLE agent_owner_session_events
+        DROP CONSTRAINT agent_owner_session_events_type_known;
+    END IF;
+  END IF;
+END
+$agent_session_owner_event_type_constraint$;
+
+-- Installing the superset above is a catalog-only operation while the short
+-- ACCESS EXCLUSIVE lock is held. Validate separately so PostgreSQL scans an
+-- existing projection table under VALIDATE CONSTRAINT's weaker lock instead.
+-- Once validated, later initializers avoid taking that table lock altogether.
+DO $agent_session_owner_event_type_validation$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'agent_owner_session_events'::regclass
+      AND conname = 'agent_owner_session_events_type_known_v2'
+      AND NOT convalidated
+  ) THEN
+    ALTER TABLE agent_owner_session_events
+      VALIDATE CONSTRAINT agent_owner_session_events_type_known_v2;
+  END IF;
+END
+$agent_session_owner_event_type_validation$;
 
 CREATE TABLE IF NOT EXISTS agent_session_urls (
   session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
@@ -214,14 +278,18 @@ function schemaFor(names: AgentSessionTableNames): string {
   // same replaceAll that re-keys their tables, so no separate prefix rewriting
   // is performed or needed.
   return AGENT_SESSION_PG_SCHEMA.replaceAll(
-    'agent_owner_session_event_counters',
-    names.ownerEventCounters,
+    OWNER_EVENT_TYPE_CONSTRAINT_V2,
+    OWNER_EVENT_TYPE_CONSTRAINT_V2_SENTINEL,
   )
+    .replaceAll('agent_owner_session_event_counters', names.ownerEventCounters)
     .replaceAll('agent_owner_session_events', names.ownerEvents)
     .replaceAll('agent_session_entries', names.entries)
     .replaceAll('agent_session_events', names.events)
     .replaceAll('agent_session_urls', names.urls)
     .replaceAll('agent_sessions', names.sessions)
+    .replaceAll(`'${names.ownerEvents}'::regclass`, `'${o}'::regclass`)
+    .replaceAll(`LOCK TABLE ${names.ownerEvents} IN`, `LOCK TABLE ${o} IN`)
+    .replaceAll(`ALTER TABLE ${names.ownerEvents}\n`, `ALTER TABLE ${o}\n`)
     .replaceAll(`REFERENCES ${names.sessions}`, `REFERENCES ${s}`)
     .replaceAll(`ON ${names.sessions}`, `ON ${s}`)
     .replaceAll(`ON ${names.entries}`, `ON ${t}`)
@@ -236,18 +304,24 @@ function schemaFor(names: AgentSessionTableNames): string {
       `CREATE TABLE IF NOT EXISTS ${names.ownerEvents}`,
       `CREATE TABLE IF NOT EXISTS ${o}`,
     )
-    .replaceAll(`CREATE TABLE IF NOT EXISTS ${names.urls}`, `CREATE TABLE IF NOT EXISTS ${u}`);
+    .replaceAll(`CREATE TABLE IF NOT EXISTS ${names.urls}`, `CREATE TABLE IF NOT EXISTS ${u}`)
+    .replaceAll(OWNER_EVENT_TYPE_CONSTRAINT_V2_SENTINEL, OWNER_EVENT_TYPE_CONSTRAINT_V2);
 }
 
-/** Create all backend-owned tables when absent; existing schemas require migrations. */
+/**
+ * Create all backend-owned tables when absent and apply their additive migrations.
+ *
+ * Call this on a queryable that is not already inside an explicit transaction.
+ * The owner-event constraint install and validation are separate statements so
+ * the install's ACCESS EXCLUSIVE lock is released before validation scans data.
+ */
 export async function ensureAgentSessionSchema(
   queryable: Queryable,
   tableNames?: Partial<AgentSessionTableNames>,
 ): Promise<void> {
   const schema = schemaFor(resolveTableNames(tableNames));
-  for (const sql of schema.split(';')) {
-    const statement = sql.trim();
-    if (statement !== '') await queryable.query(statement);
+  for (const statement of splitSqlStatements(schema)) {
+    await queryable.query(statement);
   }
 }
 
@@ -255,6 +329,7 @@ interface SessionRow extends Record<string, unknown> {
   id: string;
   owner_id: string;
   prompt: string;
+  title: string | null;
   stage_id: string;
   skill_id: string | null;
   origin: string | null;
@@ -270,7 +345,7 @@ interface SessionRow extends Record<string, unknown> {
   updated_at: Date | string;
 }
 
-const SESSION_COLUMNS = `id, owner_id, prompt, stage_id, skill_id, origin,
+const SESSION_COLUMNS = `id, owner_id, prompt, title, stage_id, skill_id, origin,
   existing_course, status, attempt, delivered_user_message_seq, lease_worker_id, lease_worker_pid,
   lease_heartbeat_at, error, created_at, updated_at`;
 
@@ -292,6 +367,7 @@ function sessionMeta(row: SessionRow): AgentSessionMeta {
     id: row.id,
     ownerId: row.owner_id,
     prompt: row.prompt,
+    ...(row.title !== null ? { title: row.title } : {}),
     stageId: row.stage_id,
     ...(row.skill_id ? { skillId: row.skill_id } : {}),
     ...(row.origin ? { origin: row.origin } : {}),
@@ -334,6 +410,7 @@ let savepointSerial = 0;
 export class PgAgentSessionStore
   implements
     AgentSessionStore,
+    AgentSessionTitleStore,
     AgentSessionEventLog,
     AgentSessionEntryTree,
     OwnerSessionEventProjection,
@@ -447,6 +524,30 @@ export class PgAgentSessionStore
       [ownerId],
     );
     return result.rows.map(sessionMeta);
+  }
+
+  async setManualSessionTitle(
+    sessionId: string,
+    ownerId: string,
+    title: string | null,
+  ): Promise<AgentSessionMeta | null> {
+    return this.transaction(async (tx) => {
+      const result = await tx.query<SessionRow>(
+        `UPDATE ${this.table('sessions')}
+         SET title = $3, updated_at = clock_timestamp()
+         WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+         RETURNING ${SESSION_COLUMNS}`,
+        [sessionId, ownerId, title],
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      const meta = sessionMeta(row);
+      await this.appendProjection(
+        { type: 'session_title', sessionId, title: meta.title ?? null, ts: meta.updatedAt },
+        tx,
+      );
+      return meta;
+    });
   }
 
   async softDeleteSession(sessionId: string, ownerId: string): Promise<boolean> {
@@ -1284,7 +1385,7 @@ export class PgAgentSessionStore
       if (!counter) throw new Error(`cannot allocate owner event id for ${session.owner_id}`);
       const status = 'status' in event ? event.status : null;
       const attempt = 'attempt' in event ? event.attempt : null;
-      const data = {};
+      const data = event.type === 'session_title' ? { title: event.title } : {};
       await transaction.query(
         `INSERT INTO ${this.table('ownerEvents')}
           (owner_id, id, ts, session_id, type, status, attempt, data)
@@ -1359,6 +1460,13 @@ export class PgAgentSessionStore
           type: row.type,
           status: row.status!,
           attempt: Number(row.attempt ?? 0),
+        };
+      }
+      if (row.type === 'session_title') {
+        return {
+          ...base,
+          type: row.type,
+          title: decodedObject(row.data).title as string | null,
         };
       }
       return { ...base, type: row.type } as PersistedOwnerSessionEvent;
