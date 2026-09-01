@@ -1,8 +1,13 @@
 import {
   EXAM_DISPLAY_NAME_MAX_LENGTH,
+  EXAM_DERIVATIVE_VERSION_MAX,
   EXAM_DOCUMENT_ROLES,
+  EXAM_MAX_CANDIDATE_ARTIFACT_BYTES,
+  EXAM_MAX_DOCUMENT_ARTIFACT_BYTES,
+  EXAM_MAX_EXTRACTED_PAGES,
   EXAM_MAX_DOCUMENTS,
   EXAM_MAX_DOCUMENT_BYTES,
+  EXAM_MAX_QUESTION_CANDIDATES,
   EXAM_MAX_TOTAL_BYTES,
   EXAM_TITLE_MAX_LENGTH,
   compareExamDocumentRoles,
@@ -69,6 +74,55 @@ export interface ExamIntakeCompletedEvent extends ExamEventBase {
   documentSetFingerprint: string;
 }
 
+export interface ExamQuestionExtractionStartedEvent extends ExamEventBase {
+  eventType: 'exam_question_extraction_started';
+  extractionVersion: number;
+  examDocumentId: string;
+  sourceSnapshotFingerprint: string;
+  extractorId: string;
+  extractorVersion: string;
+  normalizationVersion: string;
+  documentArtifactRef: string;
+}
+
+export interface ExamDocumentArtifactExtractedEvent extends ExamEventBase {
+  eventType: 'exam_document_artifact_extracted';
+  extractionVersion: number;
+  examDocumentId: string;
+  sourceSnapshotFingerprint: string;
+  extractorId: string;
+  extractorVersion: string;
+  normalizationVersion: string;
+  documentArtifactRef: string;
+  artifactByteLength: number;
+  artifactSha256: string;
+  pageCount: number;
+}
+
+export interface ExamQuestionSegmentationStartedEvent extends ExamEventBase {
+  eventType: 'exam_question_segmentation_started';
+  extractionVersion: number;
+  segmentationVersion: number;
+  examDocumentId: string;
+  sourceArtifactFingerprint: string;
+  documentArtifactRef: string;
+  candidateArtifactRef: string;
+}
+
+export interface ExamQuestionCandidatesExtractedEvent extends ExamEventBase {
+  eventType: 'exam_question_candidates_extracted';
+  extractionVersion: number;
+  segmentationVersion: number;
+  examDocumentId: string;
+  sourceArtifactFingerprint: string;
+  documentArtifactRef: string;
+  candidateArtifactRef: string;
+  artifactByteLength: number;
+  artifactSha256: string;
+  candidateCount: number;
+  needsReview: boolean;
+}
+
 export interface ExamDeleteRequestedEvent extends ExamEventBase {
   eventType: 'exam_delete_requested';
   documentSetFingerprint: string;
@@ -84,6 +138,10 @@ export type ExamEvent =
   | ExamCreatedEvent
   | ExamDocumentSnapshottedEvent
   | ExamIntakeCompletedEvent
+  | ExamQuestionExtractionStartedEvent
+  | ExamDocumentArtifactExtractedEvent
+  | ExamQuestionSegmentationStartedEvent
+  | ExamQuestionCandidatesExtractedEvent
   | ExamDeleteRequestedEvent
   | ExamDeletedEvent;
 
@@ -93,6 +151,10 @@ export const EXAM_EVENT_TYPES = [
   'exam_created',
   'exam_document_snapshotted',
   'exam_intake_completed',
+  'exam_question_extraction_started',
+  'exam_document_artifact_extracted',
+  'exam_question_segmentation_started',
+  'exam_question_candidates_extracted',
   'exam_delete_requested',
   'exam_deleted',
 ] as const satisfies readonly ExamEventType[];
@@ -124,6 +186,51 @@ const EVENT_KEYS: Readonly<Record<ExamEventType, ReadonlySet<string>>> = {
     'byteLength',
   ]),
   exam_intake_completed: new Set([...COMMON_KEYS, 'documentSetFingerprint']),
+  exam_question_extraction_started: new Set([
+    ...COMMON_KEYS,
+    'extractionVersion',
+    'examDocumentId',
+    'sourceSnapshotFingerprint',
+    'extractorId',
+    'extractorVersion',
+    'normalizationVersion',
+    'documentArtifactRef',
+  ]),
+  exam_document_artifact_extracted: new Set([
+    ...COMMON_KEYS,
+    'extractionVersion',
+    'examDocumentId',
+    'sourceSnapshotFingerprint',
+    'extractorId',
+    'extractorVersion',
+    'normalizationVersion',
+    'documentArtifactRef',
+    'artifactByteLength',
+    'artifactSha256',
+    'pageCount',
+  ]),
+  exam_question_segmentation_started: new Set([
+    ...COMMON_KEYS,
+    'extractionVersion',
+    'segmentationVersion',
+    'examDocumentId',
+    'sourceArtifactFingerprint',
+    'documentArtifactRef',
+    'candidateArtifactRef',
+  ]),
+  exam_question_candidates_extracted: new Set([
+    ...COMMON_KEYS,
+    'extractionVersion',
+    'segmentationVersion',
+    'examDocumentId',
+    'sourceArtifactFingerprint',
+    'documentArtifactRef',
+    'candidateArtifactRef',
+    'artifactByteLength',
+    'artifactSha256',
+    'candidateCount',
+    'needsReview',
+  ]),
   exam_delete_requested: new Set([...COMMON_KEYS, 'documentSetFingerprint']),
   exam_deleted: new Set([...COMMON_KEYS, 'documentSetFingerprint', 'deleteRequestEventId']),
 };
@@ -158,6 +265,55 @@ function validateByteLength(value: unknown, path: string, errors: DomainValidati
   }
   if ((value as number) > EXAM_MAX_DOCUMENT_BYTES) {
     pushIssue(errors, path, `byte length exceeds ${EXAM_MAX_DOCUMENT_BYTES}`);
+  }
+}
+
+function validateArtifactByteLength(
+  value: unknown,
+  path: string,
+  max: number,
+  errors: DomainValidationIssue[],
+): void {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    pushIssue(errors, path, 'expected positive safe artifact byte length');
+    return;
+  }
+  if ((value as number) > max) {
+    pushIssue(errors, path, `artifact byte length exceeds ${max}`);
+  }
+}
+
+function validatePositiveVersion(
+  value: unknown,
+  path: string,
+  errors: DomainValidationIssue[],
+): void {
+  if (
+    !Number.isSafeInteger(value) ||
+    (value as number) < 1 ||
+    (value as number) > EXAM_DERIVATIVE_VERSION_MAX
+  ) {
+    pushIssue(
+      errors,
+      path,
+      `expected integer version between 1 and ${EXAM_DERIVATIVE_VERSION_MAX}`,
+    );
+  }
+}
+
+function validateBoundedCount(
+  value: unknown,
+  path: string,
+  max: number,
+  allowZero: boolean,
+  errors: DomainValidationIssue[],
+): void {
+  if (
+    !Number.isSafeInteger(value) ||
+    (value as number) < (allowZero ? 0 : 1) ||
+    (value as number) > max
+  ) {
+    pushIssue(errors, path, `expected safe integer between ${allowZero ? 0 : 1} and ${max}`);
   }
 }
 
@@ -280,6 +436,67 @@ export function validateExamEvent(value: unknown): DomainValidationResult {
       validateByteLength(value.byteLength, '/byteLength', errors);
       break;
     case 'exam_intake_completed':
+      validateSha256(value.documentSetFingerprint, '/documentSetFingerprint', errors);
+      break;
+    case 'exam_question_extraction_started':
+      validatePositiveVersion(value.extractionVersion, '/extractionVersion', errors);
+      validateIdentifier(value.examDocumentId, '/examDocumentId', errors);
+      validateSha256(value.sourceSnapshotFingerprint, '/sourceSnapshotFingerprint', errors);
+      validateIdentifier(value.extractorId, '/extractorId', errors);
+      validateIdentifier(value.extractorVersion, '/extractorVersion', errors);
+      validateIdentifier(value.normalizationVersion, '/normalizationVersion', errors);
+      validateIdentifier(value.documentArtifactRef, '/documentArtifactRef', errors);
+      break;
+    case 'exam_document_artifact_extracted':
+      validatePositiveVersion(value.extractionVersion, '/extractionVersion', errors);
+      validateIdentifier(value.examDocumentId, '/examDocumentId', errors);
+      validateSha256(value.sourceSnapshotFingerprint, '/sourceSnapshotFingerprint', errors);
+      validateIdentifier(value.extractorId, '/extractorId', errors);
+      validateIdentifier(value.extractorVersion, '/extractorVersion', errors);
+      validateIdentifier(value.normalizationVersion, '/normalizationVersion', errors);
+      validateIdentifier(value.documentArtifactRef, '/documentArtifactRef', errors);
+      validateArtifactByteLength(
+        value.artifactByteLength,
+        '/artifactByteLength',
+        EXAM_MAX_DOCUMENT_ARTIFACT_BYTES,
+        errors,
+      );
+      validateSha256(value.artifactSha256, '/artifactSha256', errors);
+      validateBoundedCount(value.pageCount, '/pageCount', EXAM_MAX_EXTRACTED_PAGES, false, errors);
+      break;
+    case 'exam_question_segmentation_started':
+      validatePositiveVersion(value.extractionVersion, '/extractionVersion', errors);
+      validatePositiveVersion(value.segmentationVersion, '/segmentationVersion', errors);
+      validateIdentifier(value.examDocumentId, '/examDocumentId', errors);
+      validateSha256(value.sourceArtifactFingerprint, '/sourceArtifactFingerprint', errors);
+      validateIdentifier(value.documentArtifactRef, '/documentArtifactRef', errors);
+      validateIdentifier(value.candidateArtifactRef, '/candidateArtifactRef', errors);
+      break;
+    case 'exam_question_candidates_extracted':
+      validatePositiveVersion(value.extractionVersion, '/extractionVersion', errors);
+      validatePositiveVersion(value.segmentationVersion, '/segmentationVersion', errors);
+      validateIdentifier(value.examDocumentId, '/examDocumentId', errors);
+      validateSha256(value.sourceArtifactFingerprint, '/sourceArtifactFingerprint', errors);
+      validateIdentifier(value.documentArtifactRef, '/documentArtifactRef', errors);
+      validateIdentifier(value.candidateArtifactRef, '/candidateArtifactRef', errors);
+      validateArtifactByteLength(
+        value.artifactByteLength,
+        '/artifactByteLength',
+        EXAM_MAX_CANDIDATE_ARTIFACT_BYTES,
+        errors,
+      );
+      validateSha256(value.artifactSha256, '/artifactSha256', errors);
+      validateBoundedCount(
+        value.candidateCount,
+        '/candidateCount',
+        EXAM_MAX_QUESTION_CANDIDATES,
+        true,
+        errors,
+      );
+      if (typeof value.needsReview !== 'boolean') {
+        pushIssue(errors, '/needsReview', 'expected boolean');
+      }
+      break;
     case 'exam_delete_requested':
       validateSha256(value.documentSetFingerprint, '/documentSetFingerprint', errors);
       break;

@@ -1,6 +1,11 @@
 import type { RuntimeRecord } from '@openmaic/dsl';
 
-import { EXAM_SCHEMA_VERSION, type PublicExamSession, type PublicExamStatus } from './exam';
+import {
+  EXAM_SCHEMA_VERSION,
+  type PublicExamQuestionExtractionSummary,
+  type PublicExamSession,
+  type PublicExamStatus,
+} from './exam';
 import { ExamError } from './exam-errors';
 import { assertExamEvent, type ExamCreatedDocument, type ExamEvent } from './exam-event';
 
@@ -17,6 +22,53 @@ export interface ExamDocumentState extends ExamCreatedDocument {
   snapshot?: ExamDocumentSnapshotFact;
 }
 
+export type ExamQuestionExtractionStatus =
+  | 'extracting_document'
+  | 'document_artifact_ready'
+  | 'segmenting_questions'
+  | 'question_candidates_ready';
+
+export interface ExamDocumentArtifactFact {
+  eventId: string;
+  createdAt: string;
+  byteLength: number;
+  sha256: string;
+  pageCount: number;
+}
+
+export interface ExamQuestionCandidateArtifactFact {
+  eventId: string;
+  createdAt: string;
+  byteLength: number;
+  sha256: string;
+  candidateCount: number;
+  needsReview: boolean;
+}
+
+export interface ExamQuestionSegmentationState {
+  startedEventId: string;
+  startedAt: string;
+  segmentationVersion: number;
+  sourceArtifactFingerprint: string;
+  candidateArtifactRef: string;
+  candidateArtifact?: ExamQuestionCandidateArtifactFact;
+}
+
+export interface ExamQuestionExtractionState {
+  status: ExamQuestionExtractionStatus;
+  startedEventId: string;
+  startedAt: string;
+  extractionVersion: number;
+  examDocumentId: string;
+  sourceSnapshotFingerprint: string;
+  extractorId: string;
+  extractorVersion: string;
+  normalizationVersion: string;
+  documentArtifactRef: string;
+  documentArtifact?: ExamDocumentArtifactFact;
+  segmentation?: ExamQuestionSegmentationState;
+}
+
 export interface ExamSessionState {
   schemaVersion: typeof EXAM_SCHEMA_VERSION;
   examSessionId: string;
@@ -29,6 +81,7 @@ export interface ExamSessionState {
   requestFingerprint: string;
   documentSetFingerprint: string;
   documents: ExamDocumentState[];
+  questionExtraction?: ExamQuestionExtractionState;
   intakeCompletedEventId?: string;
   deleteRequestedEventId?: string;
   deletedEventId?: string;
@@ -151,6 +204,112 @@ export function foldExamEvents(records: readonly RuntimeRecord[]): ExamSessionSt
           state.status = 'ready_for_extraction';
           state.intakeCompletedEventId = event.eventId;
           break;
+        case 'exam_question_extraction_started': {
+          if (state.status !== 'ready_for_extraction' || state.questionExtraction) conflict();
+          const document = documentById(state, event.examDocumentId);
+          if (
+            document.role !== 'question_paper' ||
+            !document.snapshot ||
+            event.sourceSnapshotFingerprint !== document.snapshot.sha256
+          ) {
+            conflict();
+          }
+          state.questionExtraction = {
+            status: 'extracting_document',
+            startedEventId: event.eventId,
+            startedAt: event.createdAt,
+            extractionVersion: event.extractionVersion,
+            examDocumentId: event.examDocumentId,
+            sourceSnapshotFingerprint: event.sourceSnapshotFingerprint,
+            extractorId: event.extractorId,
+            extractorVersion: event.extractorVersion,
+            normalizationVersion: event.normalizationVersion,
+            documentArtifactRef: event.documentArtifactRef,
+          };
+          break;
+        }
+        case 'exam_document_artifact_extracted': {
+          const extraction = state.questionExtraction;
+          if (
+            state.status !== 'ready_for_extraction' ||
+            !extraction ||
+            extraction.status !== 'extracting_document' ||
+            event.extractionVersion !== extraction.extractionVersion ||
+            event.examDocumentId !== extraction.examDocumentId ||
+            event.sourceSnapshotFingerprint !== extraction.sourceSnapshotFingerprint ||
+            event.extractorId !== extraction.extractorId ||
+            event.extractorVersion !== extraction.extractorVersion ||
+            event.normalizationVersion !== extraction.normalizationVersion ||
+            event.documentArtifactRef !== extraction.documentArtifactRef
+          ) {
+            conflict();
+          }
+          extraction.status = 'document_artifact_ready';
+          extraction.documentArtifact = {
+            eventId: event.eventId,
+            createdAt: event.createdAt,
+            byteLength: event.artifactByteLength,
+            sha256: event.artifactSha256,
+            pageCount: event.pageCount,
+          };
+          break;
+        }
+        case 'exam_question_segmentation_started': {
+          const extraction = state.questionExtraction;
+          if (
+            state.status !== 'ready_for_extraction' ||
+            !extraction ||
+            extraction.status !== 'document_artifact_ready' ||
+            !extraction.documentArtifact ||
+            event.extractionVersion !== extraction.extractionVersion ||
+            event.examDocumentId !== extraction.examDocumentId ||
+            event.sourceArtifactFingerprint !== extraction.documentArtifact.sha256 ||
+            event.documentArtifactRef !== extraction.documentArtifactRef ||
+            event.candidateArtifactRef === extraction.documentArtifactRef ||
+            extraction.segmentation
+          ) {
+            conflict();
+          }
+          extraction.status = 'segmenting_questions';
+          extraction.segmentation = {
+            startedEventId: event.eventId,
+            startedAt: event.createdAt,
+            segmentationVersion: event.segmentationVersion,
+            sourceArtifactFingerprint: event.sourceArtifactFingerprint,
+            candidateArtifactRef: event.candidateArtifactRef,
+          };
+          break;
+        }
+        case 'exam_question_candidates_extracted': {
+          const extraction = state.questionExtraction;
+          const segmentation = extraction?.segmentation;
+          if (
+            state.status !== 'ready_for_extraction' ||
+            !extraction ||
+            extraction.status !== 'segmenting_questions' ||
+            !extraction.documentArtifact ||
+            !segmentation ||
+            segmentation.candidateArtifact ||
+            event.extractionVersion !== extraction.extractionVersion ||
+            event.segmentationVersion !== segmentation.segmentationVersion ||
+            event.examDocumentId !== extraction.examDocumentId ||
+            event.sourceArtifactFingerprint !== segmentation.sourceArtifactFingerprint ||
+            event.documentArtifactRef !== extraction.documentArtifactRef ||
+            event.candidateArtifactRef !== segmentation.candidateArtifactRef
+          ) {
+            conflict();
+          }
+          extraction.status = 'question_candidates_ready';
+          segmentation.candidateArtifact = {
+            eventId: event.eventId,
+            createdAt: event.createdAt,
+            byteLength: event.artifactByteLength,
+            sha256: event.artifactSha256,
+            candidateCount: event.candidateCount,
+            needsReview: event.needsReview,
+          };
+          break;
+        }
         case 'exam_delete_requested':
           if (
             (state.status !== 'intake_pending' && state.status !== 'ready_for_extraction') ||
@@ -184,6 +343,28 @@ export function foldExamEvents(records: readonly RuntimeRecord[]): ExamSessionSt
   return state;
 }
 
+function toPublicQuestionExtraction(
+  extraction: ExamQuestionExtractionState | undefined,
+): PublicExamQuestionExtractionSummary {
+  if (!extraction) return { status: 'not_started' };
+  if (extraction.status !== 'question_candidates_ready') {
+    return {
+      status: 'extracting_questions',
+      ...(extraction.documentArtifact === undefined
+        ? {}
+        : { pageCount: extraction.documentArtifact.pageCount }),
+    };
+  }
+  const candidateArtifact = extraction.segmentation?.candidateArtifact;
+  if (!extraction.documentArtifact || !candidateArtifact) conflict();
+  return {
+    status: 'question_candidates_ready',
+    pageCount: extraction.documentArtifact.pageCount,
+    candidateCount: candidateArtifact.candidateCount,
+    needsReview: candidateArtifact.needsReview,
+  };
+}
+
 export function toPublicExamSession(state: ExamSessionState): PublicExamSession {
   if (state.status === 'deleted') throw new ExamError('EXAM_NOT_FOUND');
   return {
@@ -202,5 +383,6 @@ export function toPublicExamSession(state: ExamSessionState): PublicExamSession 
       byteLength: document.byteLength,
       snapshotStatus: document.snapshot === undefined ? 'pending' : 'snapshotted',
     })),
+    questionExtraction: toPublicQuestionExtraction(state.questionExtraction),
   };
 }

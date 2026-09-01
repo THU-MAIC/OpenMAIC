@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   createExam: vi.fn(),
   getExam: vi.fn(),
   deleteExam: vi.fn(),
+  extractExamQuestionCandidates: vi.fn(),
 }));
 
 vi.mock('@/lib/config/feature-flags', () => ({
@@ -28,8 +29,13 @@ vi.mock('@/lib/server/zhongkao/exam-service', () => ({
   deleteExam: mocks.deleteExam,
 }));
 
+vi.mock('@/lib/server/zhongkao/exam-extraction-service', () => ({
+  extractExamQuestionCandidates: mocks.extractExamQuestionCandidates,
+}));
+
 import { POST } from '@/app/api/zhongkao/exams/route';
 import { DELETE, GET } from '@/app/api/zhongkao/exams/[examSessionId]/route';
+import { POST as POST_EXTRACT } from '@/app/api/zhongkao/exams/[examSessionId]/extract/route';
 
 const EXAM_SESSION_ID = `exam:v1:${'a'.repeat(64)}`;
 const NOW = '2026-08-31T08:00:00.000Z';
@@ -61,6 +67,7 @@ function publicExam(overrides: Partial<PublicExamSession> = {}): PublicExamSessi
     title: 'August mock exam',
     status: 'ready_for_extraction',
     createdAt: NOW,
+    questionExtraction: { status: 'not_started' },
     documents: [
       {
         examDocumentId: 'exam-document-question-paper',
@@ -117,6 +124,20 @@ function remove(examSessionId = EXAM_SESSION_ID) {
   );
 }
 
+function extract(body: unknown = {}, examSessionId = EXAM_SESSION_ID) {
+  return POST_EXTRACT(
+    new NextRequest(
+      `http://localhost/api/zhongkao/exams/${encodeURIComponent(examSessionId)}/extract`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    ),
+    params(examSessionId),
+  );
+}
+
 function allKeys(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(allKeys);
   if (typeof value !== 'object' || value === null) return [];
@@ -135,6 +156,17 @@ beforeEach(() => {
   mocks.createExam.mockReset().mockResolvedValue({ exam: publicExam(), replayed: false });
   mocks.getExam.mockReset().mockResolvedValue(publicExam());
   mocks.deleteExam.mockReset().mockResolvedValue('deleted');
+  mocks.extractExamQuestionCandidates.mockReset().mockResolvedValue({
+    exam: publicExam({
+      questionExtraction: {
+        status: 'question_candidates_ready',
+        pageCount: 2,
+        candidateCount: 12,
+        needsReview: false,
+      },
+    }),
+    replayed: false,
+  });
 });
 
 describe('POST /api/zhongkao/exams', () => {
@@ -332,5 +364,103 @@ describe('DELETE /api/zhongkao/exams/[examSessionId]', () => {
     expect(response.headers.get('set-cookie')).toContain('anonymous_id=exam-test');
     expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
     expect(mocks.deleteExam).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/zhongkao/exams/[examSessionId]/extract', () => {
+  it('runs the owner-authorized server extraction with a closed empty request', async () => {
+    const response = await extract();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('set-cookie')).toContain('anonymous_id=exam-test');
+    expect(mocks.defaultExamServiceDeps).toHaveBeenCalledWith('anon:exam-test');
+    expect(mocks.extractExamQuestionCandidates).toHaveBeenCalledWith(SERVICE_DEPS, EXAM_SESSION_ID);
+    expect(body.exam.questionExtraction).toEqual({
+      status: 'question_candidates_ready',
+      pageCount: 2,
+      candidateCount: 12,
+      needsReview: false,
+    });
+    expect(JSON.stringify(body)).not.toMatch(/objectKey|sha256|operationId|artifactRef|digest/);
+  });
+
+  it('also accepts a truly empty body and bounds malformed request bytes', async () => {
+    const empty = await POST_EXTRACT(
+      new NextRequest(
+        `http://localhost/api/zhongkao/exams/${encodeURIComponent(EXAM_SESSION_ID)}/extract`,
+        { method: 'POST' },
+      ),
+      params(),
+    );
+    expect(empty.status).toBe(200);
+
+    mocks.extractExamQuestionCandidates.mockClear();
+    mocks.defaultExamServiceDeps.mockClear();
+    const oversized = await POST_EXTRACT(
+      new NextRequest(
+        `http://localhost/api/zhongkao/exams/${encodeURIComponent(EXAM_SESSION_ID)}/extract`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ padding: 'x'.repeat(1_025) }),
+        },
+      ),
+      params(),
+    );
+    expect(oversized.status).toBe(400);
+
+    const invalidUtf8 = await POST_EXTRACT(
+      new NextRequest(
+        `http://localhost/api/zhongkao/exams/${encodeURIComponent(EXAM_SESSION_ID)}/extract`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: new Uint8Array([0xff, 0xfe]),
+        },
+      ),
+      params(),
+    );
+    expect(invalidUtf8.status).toBe(400);
+    expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
+    expect(mocks.extractExamQuestionCandidates).not.toHaveBeenCalled();
+  });
+
+  it('rejects client-selected extraction fields before service dispatch', async () => {
+    const response = await extract({ extractor: 'cloud', questionCount: 99 });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ errorCode: 'EXAM_INPUT_INVALID' });
+    expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
+    expect(mocks.extractExamQuestionCandidates).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed Exam ids and keeps the route behind the runtime gate', async () => {
+    const malformed = await extract({}, 'not-an-exam');
+    expect(malformed.status).toBe(404);
+    expect(await malformed.text()).toBe('Not found');
+    expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
+
+    mocks.resolveRequestOwnerId.mockClear();
+    mocks.runtimeConfigured = false;
+    const disabled = await extract();
+    expect(disabled.status).toBe(404);
+    expect(mocks.resolveRequestOwnerId).not.toHaveBeenCalled();
+  });
+
+  it('returns a closed parser failure without raw diagnostics or locators', async () => {
+    mocks.extractExamQuestionCandidates.mockRejectedValueOnce(
+      new ExamError('EXAM_DOCUMENT_EXTRACTION_FAILED'),
+    );
+    const response = await extract();
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      success: false,
+      errorCode: 'EXAM_DOCUMENT_EXTRACTION_FAILED',
+      error: 'exam document extraction failed',
+    });
+    expect(JSON.stringify(body)).not.toMatch(/unpdf|materials\/v1|C:\\|private/);
   });
 });

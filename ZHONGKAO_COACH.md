@@ -1269,3 +1269,85 @@ diagnosis, recommendation, StudyAttempt write, Progress mutation, Coach
 behavior, UI, upload system, production dependency, or LLM call. M3A-2 may
 consume only bytes returned by the verified server snapshot resolver and must
 define its own extraction and semantic-authority contracts.
+
+## Milestone 3A-2A text-native Exam question extraction
+
+M3A-2A reads only the verified immutable `question_paper` snapshot of a ready
+Exam. The first adapter accepts `application/pdf` and requires a usable native
+text layer. It opens the PDF with local `unpdf`/PDF.js, streams each page's text
+content, and reads one page at a time without ever materializing or merging all
+pages, so the PDF page index is
+the source of `pageNumber` and each page retains its own ordered text blocks.
+Page objects are cleaned up before the next page is read, and page, item, block,
+text, candidate, diagnostic, and serialized-byte limits are enforced. The
+adapter has no stable bounding-box, formula-node,
+table-node, or image-marker contract; those fields are omitted rather than
+fabricated. A PDF without enough extractable text fails with a stable
+text-extraction-unavailable error. There is no OCR, vision, cloud provider, or
+model fallback.
+
+### Versioned derivatives and recovery
+
+The raw Exam snapshot remains the only source authority. Extraction creates
+two separate Exam-owned JSON derivatives beneath the same hashed Exam/document
+namespace: a versioned document artifact and a separately versioned question
+candidate artifact. Both have closed schemas and deterministic canonical JSON.
+Neither large payload is stored in RuntimeStore events or exposed through the
+public Exam DTO.
+
+The event stream records an extraction plan before document bytes and a
+segmentation plan before candidate bytes. Each completed fact contains only
+bounded algorithm/version identifiers, opaque deterministic references,
+source fingerprints, byte length and SHA-256 integrity facts, plus page or
+candidate counts. Writes use deterministic exact keys, read back the object,
+and verify bytes and closed schema before appending completion. A retry after a
+bytes-before-event crash recomputes the deterministic result and requires an
+exact match. Once a completion fact exists, missing or changed bytes are
+corruption and are never silently regenerated.
+
+Extraction and deletion share the per-Exam mutation lock. Delete removes raw
+snapshots and every derivative key derivable from persisted plans before the
+Exam becomes deleted. A delete that linearizes first prevents extraction from
+writing; extraction that finishes first is fully reclaimed by the following
+delete. No deleted Exam can be restored by a late extraction event.
+
+### Artifact and candidate semantics
+
+`ExamDocumentArtifactV1` preserves source fingerprint, MIME type, actual page
+count, page order, page-local block order, and source text. Normalization is
+limited to stable Unicode, line-ending, and bounded whitespace handling that
+does not rewrite mathematical meaning. Page dimensions and bounding boxes are
+absent when the extractor does not supply a reliable coordinate contract.
+
+The deterministic segmenter detects section headings separately from question
+markers, normalizes full-width digits and punctuation for matching while
+retaining each raw label, and represents a locator as section path, printed
+number, and subquestion path. Parent questions with `(1)`, `(2)`, and similar
+children become a group plus leaf candidates; shared parent text remains
+traceable rather than being copied as invented child content. Every candidate
+has page/block source spans, and an active question may continue across pages.
+Candidate text is derived only from those spans.
+
+Duplicate normalized locators remain as separate ambiguous candidates; the
+system never chooses the first occurrence. Gaps, orphan subquestions, empty or
+oversized bodies, duplicate locators, and low text coverage produce closed
+structural diagnostics and qualitative confidence bands, not probabilities.
+The resulting records are `ExamQuestionCandidate` facts, not confirmed
+questions. They contain no correct answer, grading specification, knowledge
+point, difficulty, diagnosis, or student-performance conclusion.
+
+The dedicated extraction endpoint accepts either no body or the closed JSON
+object `{}` and lets
+the server select the question-paper document and frozen algorithms. Public
+Exam detail may expose only extraction status, page count, candidate count, and
+whether structural review is needed. Server-only resolvers reauthorize the
+owner/profile partition and verify derivative length, digest, schema, source
+fingerprint, and deterministic reference before returning structured data.
+There is no public raw artifact or candidate endpoint in this milestone.
+
+M3A-2A never resolves or reads `answer_key` or `student_response` bytes and
+never imports an Agent runner, Skill, `AICallFn`, model provider, or model SDK.
+It performs no answer matching, grading, diagnosis, KnowledgeProgress or
+StudyAttempt mutation, Coach behavior, or UI work. A later M3A-2B may consume
+verified candidates, while confirmation and semantic authority remain a later
+human-review milestone.

@@ -13,10 +13,16 @@ import {
   createExamDocumentSetFingerprint,
   createExamOperationFingerprint,
   createExamRequestFingerprint,
+  deriveExamCandidateArtifactRef,
   deriveExamCreatedOperationId,
+  deriveExamDocumentArtifactExtractedOperationId,
+  deriveExamDocumentArtifactRef,
   deriveExamDocumentId,
   deriveExamEventId,
   deriveExamIntakeCompletedOperationId,
+  deriveExamQuestionCandidatesExtractedOperationId,
+  deriveExamQuestionExtractionStartedOperationId,
+  deriveExamQuestionSegmentationStartedOperationId,
   deriveExamSessionId,
   deriveExamSnapshotOperationId,
   examRuntimeSessionId,
@@ -27,8 +33,12 @@ import { resolveZhongkaoLearnerKeyFromOwnerId } from '@/lib/server/zhongkao/lear
 import type {
   ExamCreatedDocument,
   ExamCreatedEvent,
+  ExamDocumentArtifactExtractedEvent,
   ExamDocumentSnapshottedEvent,
   ExamIntakeCompletedEvent,
+  ExamQuestionCandidatesExtractedEvent,
+  ExamQuestionExtractionStartedEvent,
+  ExamQuestionSegmentationStartedEvent,
 } from '@/lib/zhongkao/exam-event';
 import { zhongkaoStageId } from '@/lib/zhongkao/runtime';
 
@@ -165,6 +175,151 @@ function completedEvent(created: ExamCreatedEvent): ExamIntakeCompletedEvent {
   };
 }
 
+function extractionEvents(
+  created: ExamCreatedEvent,
+): [
+  ExamQuestionExtractionStartedEvent,
+  ExamDocumentArtifactExtractedEvent,
+  ExamQuestionSegmentationStartedEvent,
+  ExamQuestionCandidatesExtractedEvent,
+] {
+  const examDocumentId = created.documents[0]!.examDocumentId;
+  const extractionVersion = 1;
+  const segmentationVersion = 1;
+  const documentArtifactRef = deriveExamDocumentArtifactRef(
+    created.examSessionId,
+    examDocumentId,
+    extractionVersion,
+  );
+  const candidateArtifactRef = deriveExamCandidateArtifactRef(
+    created.examSessionId,
+    examDocumentId,
+    extractionVersion,
+    segmentationVersion,
+  );
+  const extractionFacts = {
+    extractionVersion,
+    examDocumentId,
+    sourceSnapshotFingerprint: created.documents[0]!.sourceSha256,
+    extractorId: 'unpdf',
+    extractorVersion: 'exam-pdf-text:v1',
+    normalizationVersion: 'exam-document-normalization:v1',
+    documentArtifactRef,
+  };
+  const startedOperationId = deriveExamQuestionExtractionStartedOperationId(
+    created.examSessionId,
+    examDocumentId,
+    extractionVersion,
+  );
+  const started: ExamQuestionExtractionStartedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(startedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_question_extraction_started',
+    createdAt: '2026-08-31T08:00:03.000Z',
+    operationId: startedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_question_extraction_started',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...extractionFacts,
+    }),
+    ...extractionFacts,
+  };
+  const documentFacts = {
+    ...extractionFacts,
+    artifactByteLength: 512,
+    artifactSha256: 'b'.repeat(64),
+    pageCount: 2,
+  };
+  const documentOperationId = deriveExamDocumentArtifactExtractedOperationId(
+    created.examSessionId,
+    examDocumentId,
+    extractionVersion,
+  );
+  const document: ExamDocumentArtifactExtractedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(documentOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_document_artifact_extracted',
+    createdAt: '2026-08-31T08:00:04.000Z',
+    operationId: documentOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_document_artifact_extracted',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...documentFacts,
+    }),
+    ...documentFacts,
+  };
+  const segmentationFacts = {
+    extractionVersion,
+    segmentationVersion,
+    examDocumentId,
+    sourceArtifactFingerprint: document.artifactSha256,
+    documentArtifactRef,
+    candidateArtifactRef,
+  };
+  const segmentationOperationId = deriveExamQuestionSegmentationStartedOperationId(
+    created.examSessionId,
+    examDocumentId,
+    extractionVersion,
+    segmentationVersion,
+  );
+  const segmentation: ExamQuestionSegmentationStartedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(segmentationOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_question_segmentation_started',
+    createdAt: '2026-08-31T08:00:05.000Z',
+    operationId: segmentationOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_question_segmentation_started',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...segmentationFacts,
+    }),
+    ...segmentationFacts,
+  };
+  const candidateFacts = {
+    ...segmentationFacts,
+    artifactByteLength: 384,
+    artifactSha256: 'c'.repeat(64),
+    candidateCount: 5,
+    needsReview: true,
+  };
+  const candidateOperationId = deriveExamQuestionCandidatesExtractedOperationId(
+    created.examSessionId,
+    examDocumentId,
+    extractionVersion,
+    segmentationVersion,
+  );
+  const candidates: ExamQuestionCandidatesExtractedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(candidateOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_question_candidates_extracted',
+    createdAt: '2026-08-31T08:00:06.000Z',
+    operationId: candidateOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_question_candidates_extracted',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...candidateFacts,
+    }),
+    ...candidateFacts,
+  };
+  return [started, document, segmentation, candidates];
+}
+
 describe('Exam RuntimeStore adapter', () => {
   it('derives stable partitioned Exam and document identities', () => {
     const learner = resolveZhongkaoLearnerKeyFromOwnerId(OWNER_ID);
@@ -190,6 +345,16 @@ describe('Exam RuntimeStore adapter', () => {
     );
     expect(deriveExamDocumentId(first, 'answer_key')).not.toBe(
       deriveExamDocumentId(first, 'question_paper'),
+    );
+    const documentId = deriveExamDocumentId(first, 'question_paper');
+    expect(deriveExamDocumentArtifactRef(first, documentId, 1)).toBe(
+      deriveExamDocumentArtifactRef(first, documentId, 1),
+    );
+    expect(deriveExamDocumentArtifactRef(first, documentId, 2)).not.toBe(
+      deriveExamDocumentArtifactRef(first, documentId, 1),
+    );
+    expect(deriveExamCandidateArtifactRef(first, documentId, 1, 1)).not.toBe(
+      deriveExamCandidateArtifactRef(first, documentId, 1, 2),
     );
   });
 
@@ -416,5 +581,76 @@ describe('Exam RuntimeStore adapter', () => {
     );
     expect(result).toMatchObject({ replayed: true, eventAppended: false });
     expect(result.snapshot.records).toHaveLength(2);
+  });
+
+  it('derives, appends and replays the complete extraction fact chain', async () => {
+    const backing = store();
+    const created = createdEvent();
+    await ensureExamRuntimeCreated({ store: backing, ownerId: OWNER_ID }, created);
+    await appendExamRuntimeEvent(
+      { store: backing, ownerId: OWNER_ID },
+      { event: snapshotEvent(created), expectedRevision: 0 },
+    );
+    await appendExamRuntimeEvent(
+      { store: backing, ownerId: OWNER_ID },
+      { event: completedEvent(created), expectedRevision: 1 },
+    );
+    const events = extractionEvents(created);
+    for (const [index, event] of events.entries()) {
+      const expectedRevision = index + 2;
+      const result = await appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event, expectedRevision },
+      );
+      expect(result).toMatchObject({ replayed: false, eventAppended: true });
+      const replay = await appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event, expectedRevision },
+      );
+      expect(replay).toMatchObject({ replayed: true, eventAppended: false });
+    }
+    const state = (
+      await loadExamRuntime({ store: backing, ownerId: OWNER_ID }, created.examSessionId)
+    ).state;
+    expect(state).toMatchObject({
+      status: 'ready_for_extraction',
+      revision: 6,
+      questionExtraction: { status: 'question_candidates_ready' },
+    });
+  });
+
+  it('rejects forged derivative refs before append', async () => {
+    const backing = store();
+    const created = createdEvent();
+    await ensureExamRuntimeCreated({ store: backing, ownerId: OWNER_ID }, created);
+    await appendExamRuntimeEvent(
+      { store: backing, ownerId: OWNER_ID },
+      { event: snapshotEvent(created), expectedRevision: 0 },
+    );
+    await appendExamRuntimeEvent(
+      { store: backing, ownerId: OWNER_ID },
+      { event: completedEvent(created), expectedRevision: 1 },
+    );
+    const [started] = extractionEvents(created);
+    const forged = { ...started, documentArtifactRef: 'forged-artifact-ref' };
+    forged.operationFingerprint = createExamOperationFingerprint({
+      action: forged.eventType,
+      schemaVersion: forged.schemaVersion,
+      examSessionId: forged.examSessionId,
+      profileId: forged.profileId,
+      extractionVersion: forged.extractionVersion,
+      examDocumentId: forged.examDocumentId,
+      sourceSnapshotFingerprint: forged.sourceSnapshotFingerprint,
+      extractorId: forged.extractorId,
+      extractorVersion: forged.extractorVersion,
+      normalizationVersion: forged.normalizationVersion,
+      documentArtifactRef: forged.documentArtifactRef,
+    });
+    await expect(
+      appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event: forged, expectedRevision: 2 },
+      ),
+    ).rejects.toThrow('EXAM_EVENT_CONFLICT');
   });
 });

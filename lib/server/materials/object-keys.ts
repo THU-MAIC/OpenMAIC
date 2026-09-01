@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { EXAM_DERIVATIVE_VERSION_MAX } from '@/lib/zhongkao/exam';
+
 const STORAGE_KEY_ROOT = 'materials/v1';
 const PORTABLE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
 const WINDOWS_RESERVED_SEGMENT = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
@@ -72,11 +74,47 @@ export function examSnapshotObjectPrefix(examSessionId: string): string {
   return `${STORAGE_KEY_ROOT}/exams/${safeMaterialStorageNamespace('exam', examSessionId)}/`;
 }
 
-export function examSnapshotObjectKey(examSessionId: string, examDocumentId: string): string {
+function examDocumentObjectPrefix(examSessionId: string, examDocumentId: string): string {
   return `${examSnapshotObjectPrefix(examSessionId)}${safeMaterialStorageNamespace(
     'examDocument',
     examDocumentId,
-  )}/raw`;
+  )}/`;
+}
+
+export function examSnapshotObjectKey(examSessionId: string, examDocumentId: string): string {
+  return `${examDocumentObjectPrefix(examSessionId, examDocumentId)}raw`;
+}
+
+function assertArtifactVersion(version: number): void {
+  if (!Number.isSafeInteger(version) || version < 1 || version > EXAM_DERIVATIVE_VERSION_MAX) {
+    throw new Error('invalid exam artifact version');
+  }
+}
+
+export function examDocumentArtifactObjectKey(
+  examSessionId: string,
+  examDocumentId: string,
+  extractionVersion: number,
+): string {
+  assertArtifactVersion(extractionVersion);
+  return `${examDocumentObjectPrefix(
+    examSessionId,
+    examDocumentId,
+  )}extraction_v${extractionVersion}/document_artifact_v1.json`;
+}
+
+export function examQuestionCandidatesObjectKey(
+  examSessionId: string,
+  examDocumentId: string,
+  extractionVersion: number,
+  segmentationVersion: number,
+): string {
+  assertArtifactVersion(extractionVersion);
+  assertArtifactVersion(segmentationVersion);
+  return `${examDocumentObjectPrefix(
+    examSessionId,
+    examDocumentId,
+  )}extraction_v${extractionVersion}/question_candidates_v${segmentationVersion}.json`;
 }
 
 export function isExamSnapshotObjectKey(examSessionId: string, key: string): boolean {

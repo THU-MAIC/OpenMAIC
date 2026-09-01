@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { EXAM_MAX_DOCUMENT_BYTES, EXAM_MAX_TOTAL_BYTES } from '@/lib/zhongkao/exam';
 import {
+  EXAM_MAX_CANDIDATE_ARTIFACT_BYTES,
+  EXAM_MAX_DOCUMENT_BYTES,
+  EXAM_MAX_DOCUMENT_ARTIFACT_BYTES,
+  EXAM_MAX_EXTRACTED_PAGES,
+  EXAM_MAX_QUESTION_CANDIDATES,
+  EXAM_MAX_TOTAL_BYTES,
+} from '@/lib/zhongkao/exam';
+import {
+  EXAM_EVENT_TYPES,
   assertExamEvent,
   validateExamEvent,
   type ExamCreatedEvent,
@@ -85,6 +93,60 @@ function event(eventType: ExamEvent['eventType']): ExamEvent {
         byteLength: 12,
       };
     case 'exam_intake_completed':
+      return { ...base, eventType, documentSetFingerprint: DOCUMENT_SET_FP };
+    case 'exam_question_extraction_started':
+      return {
+        ...base,
+        eventType,
+        extractionVersion: 1,
+        examDocumentId: 'exam-document-question',
+        sourceSnapshotFingerprint: 'd'.repeat(64),
+        extractorId: 'unpdf',
+        extractorVersion: 'exam-pdf-text:v1',
+        normalizationVersion: 'exam-document-normalization:v1',
+        documentArtifactRef: 'exam-document-artifact-v1',
+      };
+    case 'exam_document_artifact_extracted':
+      return {
+        ...base,
+        eventType,
+        extractionVersion: 1,
+        examDocumentId: 'exam-document-question',
+        sourceSnapshotFingerprint: 'd'.repeat(64),
+        extractorId: 'unpdf',
+        extractorVersion: 'exam-pdf-text:v1',
+        normalizationVersion: 'exam-document-normalization:v1',
+        documentArtifactRef: 'exam-document-artifact-v1',
+        artifactByteLength: 512,
+        artifactSha256: '1'.repeat(64),
+        pageCount: 2,
+      };
+    case 'exam_question_segmentation_started':
+      return {
+        ...base,
+        eventType,
+        extractionVersion: 1,
+        segmentationVersion: 1,
+        examDocumentId: 'exam-document-question',
+        sourceArtifactFingerprint: '1'.repeat(64),
+        documentArtifactRef: 'exam-document-artifact-v1',
+        candidateArtifactRef: 'exam-question-candidates-v1',
+      };
+    case 'exam_question_candidates_extracted':
+      return {
+        ...base,
+        eventType,
+        extractionVersion: 1,
+        segmentationVersion: 1,
+        examDocumentId: 'exam-document-question',
+        sourceArtifactFingerprint: '1'.repeat(64),
+        documentArtifactRef: 'exam-document-artifact-v1',
+        candidateArtifactRef: 'exam-question-candidates-v1',
+        artifactByteLength: 384,
+        artifactSha256: '2'.repeat(64),
+        candidateCount: 5,
+        needsReview: true,
+      };
     case 'exam_delete_requested':
       return { ...base, eventType, documentSetFingerprint: DOCUMENT_SET_FP };
     case 'exam_deleted':
@@ -98,13 +160,7 @@ function event(eventType: ExamEvent['eventType']): ExamEvent {
 }
 
 describe('Exam event schema', () => {
-  it.each([
-    'exam_created',
-    'exam_document_snapshotted',
-    'exam_intake_completed',
-    'exam_delete_requested',
-    'exam_deleted',
-  ] as const)('accepts the closed %s event', (eventType) => {
+  it.each(EXAM_EVENT_TYPES)('accepts the closed %s event', (eventType) => {
     expect(validateExamEvent(event(eventType))).toEqual({ valid: true });
     expect(() => assertExamEvent(event(eventType))).not.toThrow();
   });
@@ -112,6 +168,10 @@ describe('Exam event schema', () => {
   it('rejects unknown common and event-specific fields', () => {
     expect(validateExamEvent({ ...created(), learnerKey: 'private' }).valid).toBe(false);
     expect(validateExamEvent({ ...event('exam_intake_completed'), ready: true }).valid).toBe(false);
+    expect(
+      validateExamEvent({ ...event('exam_question_candidates_extracted'), objectKey: 'private' })
+        .valid,
+    ).toBe(false);
   });
 
   it('requires canonical role order and unique roles', () => {
@@ -216,5 +276,39 @@ describe('Exam event schema', () => {
     expect(validateExamEvent({ ...event('exam_document_snapshotted'), byteLength: 0 }).valid).toBe(
       false,
     );
+  });
+
+  it('validates extraction identities, integrity facts and bounded counts', () => {
+    expect(
+      validateExamEvent({ ...event('exam_question_extraction_started'), extractionVersion: 0 })
+        .valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_document_artifact_extracted'),
+        sourceSnapshotFingerprint: 'bad',
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_document_artifact_extracted'),
+        artifactByteLength: EXAM_MAX_DOCUMENT_ARTIFACT_BYTES + 1,
+        pageCount: EXAM_MAX_EXTRACTED_PAGES + 1,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_question_segmentation_started'),
+        candidateArtifactRef: '',
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_question_candidates_extracted'),
+        artifactByteLength: EXAM_MAX_CANDIDATE_ARTIFACT_BYTES + 1,
+        candidateCount: EXAM_MAX_QUESTION_CANDIDATES + 1,
+        needsReview: 'yes',
+      }).valid,
+    ).toBe(false);
   });
 });

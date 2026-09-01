@@ -38,6 +38,8 @@ import {
   type MaterialByteStore,
 } from '@/lib/server/materials/bytes';
 import {
+  examDocumentArtifactObjectKey,
+  examQuestionCandidatesObjectKey,
   examSnapshotObjectKey,
   examSnapshotObjectPrefix,
 } from '@/lib/server/materials/object-keys';
@@ -562,9 +564,37 @@ function deletedEvent(deps: ExamServiceDeps, snapshot: ExamRuntimeSnapshot): Exa
   };
 }
 
+function examDerivativeObjectKeys(snapshot: ExamRuntimeSnapshot): string[] {
+  const extraction = snapshot.state.questionExtraction;
+  if (!extraction) return [];
+  const keys = [
+    examDocumentArtifactObjectKey(
+      snapshot.state.examSessionId,
+      extraction.examDocumentId,
+      extraction.extractionVersion,
+    ),
+  ];
+  if (extraction.segmentation) {
+    keys.push(
+      examQuestionCandidatesObjectKey(
+        snapshot.state.examSessionId,
+        extraction.examDocumentId,
+        extraction.extractionVersion,
+        extraction.segmentation.segmentationVersion,
+      ),
+    );
+  }
+  return keys;
+}
+
 async function verifyDeleted(deps: ExamServiceDeps, snapshot: ExamRuntimeSnapshot): Promise<void> {
-  for (const document of snapshot.state.documents) {
-    const key = examSnapshotObjectKey(snapshot.state.examSessionId, document.examDocumentId);
+  const keys = [
+    ...snapshot.state.documents.map((document) =>
+      examSnapshotObjectKey(snapshot.state.examSessionId, document.examDocumentId),
+    ),
+    ...examDerivativeObjectKeys(snapshot),
+  ];
+  for (const key of keys) {
     try {
       await deps.byteStore.get(key);
       throw new ExamError('EXAM_DELETE_FAILED');
@@ -603,6 +633,9 @@ export async function deleteExam(
           examSnapshotObjectKey(snapshot.state.examSessionId, document.examDocumentId),
         );
       }
+      for (const key of examDerivativeObjectKeys(snapshot)) {
+        await deps.byteStore.delete(key);
+      }
       if (deps.byteStore.deletePrefix) {
         await deps.byteStore.deletePrefix(examSnapshotObjectPrefix(snapshot.state.examSessionId));
       }
@@ -635,24 +668,33 @@ export async function resolveExamDocumentSnapshot(
 ): Promise<ResolvedExamDocumentSnapshot> {
   return deps.withExamMutationLock(examSessionId, async () => {
     const snapshot = await loadExamRuntime(deps, examSessionId);
-    if (snapshot.state.status !== 'ready_for_extraction') throw new ExamError('EXAM_NOT_FOUND');
-    const matches = snapshot.state.documents.filter(
-      (document) => document.examDocumentId === examDocumentId,
-    );
-    if (matches.length !== 1 || !matches[0]!.snapshot) throw new ExamError('EXAM_NOT_FOUND');
-    const document = matches[0]!;
-    const bytes = await readAndVerify(deps, snapshot.state, document, false);
-    if (!bytes) throw new ExamError('EXAM_SNAPSHOT_INTEGRITY_FAILED');
-    return {
-      examSessionId,
-      examDocumentId,
-      role: document.role,
-      mimeType: document.mimeType,
-      byteLength: document.byteLength,
-      ...(document.displayName === undefined ? {} : { displayName: document.displayName }),
-      bytes,
-    };
+    return resolveExamDocumentSnapshotFromRuntime(deps, snapshot, examDocumentId);
   });
+}
+
+/** Read a verified snapshot while the caller already owns the per-Exam mutation lock. */
+export async function resolveExamDocumentSnapshotFromRuntime(
+  deps: ExamServiceDeps,
+  snapshot: ExamRuntimeSnapshot,
+  examDocumentId: string,
+): Promise<ResolvedExamDocumentSnapshot> {
+  if (snapshot.state.status !== 'ready_for_extraction') throw new ExamError('EXAM_NOT_FOUND');
+  const matches = snapshot.state.documents.filter(
+    (document) => document.examDocumentId === examDocumentId,
+  );
+  if (matches.length !== 1 || !matches[0]!.snapshot) throw new ExamError('EXAM_NOT_FOUND');
+  const document = matches[0]!;
+  const bytes = await readAndVerify(deps, snapshot.state, document, false);
+  if (!bytes) throw new ExamError('EXAM_SNAPSHOT_INTEGRITY_FAILED');
+  return {
+    examSessionId: snapshot.state.examSessionId,
+    examDocumentId,
+    role: document.role,
+    mimeType: document.mimeType,
+    byteLength: document.byteLength,
+    ...(document.displayName === undefined ? {} : { displayName: document.displayName }),
+    bytes,
+  };
 }
 
 export async function defaultExamServiceDeps(ownerId: string): Promise<ExamServiceDeps> {

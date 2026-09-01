@@ -4,9 +4,13 @@ import { describe, expect, it } from 'vitest';
 import { ExamError } from '@/lib/zhongkao/exam-errors';
 import type {
   ExamCreatedEvent,
+  ExamDocumentArtifactExtractedEvent,
   ExamDocumentSnapshottedEvent,
   ExamEvent,
   ExamIntakeCompletedEvent,
+  ExamQuestionCandidatesExtractedEvent,
+  ExamQuestionExtractionStartedEvent,
+  ExamQuestionSegmentationStartedEvent,
 } from '@/lib/zhongkao/exam-event';
 import { foldExamEvents, toPublicExamSession } from '@/lib/zhongkao/exam-state';
 
@@ -93,6 +97,83 @@ function completed(seq: number): ExamIntakeCompletedEvent {
   };
 }
 
+function extractionStarted(
+  seq: number,
+  overrides: Partial<ExamQuestionExtractionStartedEvent> = {},
+): ExamQuestionExtractionStartedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_question_extraction_started',
+    extractionVersion: 1,
+    examDocumentId: 'exam-document-question',
+    sourceSnapshotFingerprint: 'd'.repeat(64),
+    extractorId: 'unpdf',
+    extractorVersion: 'exam-pdf-text:v1',
+    normalizationVersion: 'exam-document-normalization:v1',
+    documentArtifactRef: 'exam-document-artifact-v1',
+    ...overrides,
+  };
+}
+
+function documentExtracted(
+  seq: number,
+  overrides: Partial<ExamDocumentArtifactExtractedEvent> = {},
+): ExamDocumentArtifactExtractedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_document_artifact_extracted',
+    extractionVersion: 1,
+    examDocumentId: 'exam-document-question',
+    sourceSnapshotFingerprint: 'd'.repeat(64),
+    extractorId: 'unpdf',
+    extractorVersion: 'exam-pdf-text:v1',
+    normalizationVersion: 'exam-document-normalization:v1',
+    documentArtifactRef: 'exam-document-artifact-v1',
+    artifactByteLength: 512,
+    artifactSha256: '1'.repeat(64),
+    pageCount: 2,
+    ...overrides,
+  };
+}
+
+function segmentationStarted(
+  seq: number,
+  overrides: Partial<ExamQuestionSegmentationStartedEvent> = {},
+): ExamQuestionSegmentationStartedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_question_segmentation_started',
+    extractionVersion: 1,
+    segmentationVersion: 1,
+    examDocumentId: 'exam-document-question',
+    sourceArtifactFingerprint: '1'.repeat(64),
+    documentArtifactRef: 'exam-document-artifact-v1',
+    candidateArtifactRef: 'exam-question-candidates-v1',
+    ...overrides,
+  };
+}
+
+function candidatesExtracted(
+  seq: number,
+  overrides: Partial<ExamQuestionCandidatesExtractedEvent> = {},
+): ExamQuestionCandidatesExtractedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_question_candidates_extracted',
+    extractionVersion: 1,
+    segmentationVersion: 1,
+    examDocumentId: 'exam-document-question',
+    sourceArtifactFingerprint: '1'.repeat(64),
+    documentArtifactRef: 'exam-document-artifact-v1',
+    candidateArtifactRef: 'exam-question-candidates-v1',
+    artifactByteLength: 384,
+    artifactSha256: '2'.repeat(64),
+    candidateCount: 5,
+    needsReview: true,
+    ...overrides,
+  };
+}
+
 function deleteRequested(seq: number): ExamEvent {
   return {
     ...base(seq),
@@ -128,6 +209,16 @@ function readyEvents(): ExamEvent[] {
   return [created(), snapshotted(1, 0), snapshotted(2, 1), snapshotted(3, 2), completed(4)];
 }
 
+function extractionEvents(): ExamEvent[] {
+  return [
+    ...readyEvents(),
+    extractionStarted(5),
+    documentExtracted(6),
+    segmentationStarted(7),
+    candidatesExtracted(8),
+  ];
+}
+
 describe('Exam event fold', () => {
   it('starts as intake_pending with immutable private declarations', () => {
     const state = foldExamEvents(records([created()]));
@@ -153,6 +244,110 @@ describe('Exam event fold', () => {
     expect(state.revision).toBe(4);
     expect(state.documents.every((document) => document.snapshot !== undefined)).toBe(true);
     expect(state.intakeCompletedEventId).toBe('exam-event-4');
+  });
+
+  it('folds the event-first document and candidate artifact plans in strict order', () => {
+    const state = foldExamEvents(records(extractionEvents()));
+    expect(state.status).toBe('ready_for_extraction');
+    expect(state.questionExtraction).toEqual({
+      status: 'question_candidates_ready',
+      startedEventId: 'exam-event-5',
+      startedAt: extractionStarted(5).createdAt,
+      extractionVersion: 1,
+      examDocumentId: 'exam-document-question',
+      sourceSnapshotFingerprint: 'd'.repeat(64),
+      extractorId: 'unpdf',
+      extractorVersion: 'exam-pdf-text:v1',
+      normalizationVersion: 'exam-document-normalization:v1',
+      documentArtifactRef: 'exam-document-artifact-v1',
+      documentArtifact: {
+        eventId: 'exam-event-6',
+        createdAt: documentExtracted(6).createdAt,
+        byteLength: 512,
+        sha256: '1'.repeat(64),
+        pageCount: 2,
+      },
+      segmentation: {
+        startedEventId: 'exam-event-7',
+        startedAt: segmentationStarted(7).createdAt,
+        segmentationVersion: 1,
+        sourceArtifactFingerprint: '1'.repeat(64),
+        candidateArtifactRef: 'exam-question-candidates-v1',
+        candidateArtifact: {
+          eventId: 'exam-event-8',
+          createdAt: candidatesExtracted(8).createdAt,
+          byteLength: 384,
+          sha256: '2'.repeat(64),
+          candidateCount: 5,
+          needsReview: true,
+        },
+      },
+    });
+  });
+
+  it('rejects extraction before intake, for a non-question document, or out of order', () => {
+    expect(() => foldExamEvents(records([created(), extractionStarted(1)]))).toThrow(
+      'EXAM_EVENT_CONFLICT',
+    );
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...readyEvents(),
+          extractionStarted(5, {
+            examDocumentId: 'exam-document-response',
+            sourceSnapshotFingerprint: 'e'.repeat(64),
+          }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() => foldExamEvents(records([...readyEvents(), documentExtracted(5)]))).toThrow(
+      'EXAM_EVENT_CONFLICT',
+    );
+    expect(() =>
+      foldExamEvents(records([...readyEvents(), extractionStarted(5), segmentationStarted(6)])),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+  });
+
+  it('rejects changed plan facts, restarts and mismatched artifact lineage', () => {
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...readyEvents(),
+          extractionStarted(5),
+          documentExtracted(6, { extractorVersion: 'changed:v2' }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...readyEvents(),
+          extractionStarted(5),
+          { ...extractionStarted(6), operationId: 'exam-operation-restart' },
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...readyEvents(),
+          extractionStarted(5),
+          documentExtracted(6),
+          segmentationStarted(7, { sourceArtifactFingerprint: '9'.repeat(64) }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...readyEvents(),
+          extractionStarted(5),
+          documentExtracted(6),
+          segmentationStarted(7),
+          candidatesExtracted(8, { candidateArtifactRef: 'another-ref' }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
   });
 
   it('requires exam_created as the first event', () => {
@@ -249,6 +444,14 @@ describe('Exam event fold', () => {
     expect(foldExamEvents(records([...readyEvents(), readyDelete])).status).toBe('deleting');
   });
 
+  it.each([1, 2, 3, 4] as const)('supports deletion after extraction stage %s', (stage) => {
+    const history = extractionEvents().slice(0, readyEvents().length + stage);
+    const request = deleteRequested(history.length);
+    const state = foldExamEvents(records([...history, request]));
+    expect(state.status).toBe('deleting');
+    expect(state.questionExtraction).toBeDefined();
+  });
+
   it('requires the exact delete request before the deleted terminal', () => {
     const request = deleteRequested(1);
     expect(foldExamEvents(records([created(), request, deleted(2, request.eventId)])).status).toBe(
@@ -327,6 +530,28 @@ describe('public Exam projection', () => {
     });
     expect(JSON.stringify(answerKey)).not.toMatch(
       /authoritative|verified|gradingSpec|correctAnswer|expectedAnswer/u,
+    );
+  });
+
+  it('exposes only a safe extraction summary for pending, in-progress and ready states', () => {
+    expect(toPublicExamSession(foldExamEvents(records(readyEvents()))).questionExtraction).toEqual({
+      status: 'not_started',
+    });
+    expect(
+      toPublicExamSession(
+        foldExamEvents(records([...readyEvents(), extractionStarted(5), documentExtracted(6)])),
+      ).questionExtraction,
+    ).toEqual({ status: 'extracting_questions', pageCount: 2 });
+
+    const summary = toPublicExamSession(foldExamEvents(records(extractionEvents())));
+    expect(summary.questionExtraction).toEqual({
+      status: 'question_candidates_ready',
+      pageCount: 2,
+      candidateCount: 5,
+      needsReview: true,
+    });
+    expect(JSON.stringify(summary.questionExtraction)).not.toMatch(
+      /artifact|digest|sha256|fingerprint|event|operation|ref|objectKey|path/u,
     );
   });
 

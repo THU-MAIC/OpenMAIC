@@ -17,6 +17,11 @@ export const EXAM_DISPLAY_NAME_MAX_LENGTH = 512;
 export const EXAM_MAX_DOCUMENTS = 3;
 export const EXAM_MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
 export const EXAM_MAX_TOTAL_BYTES = 50 * 1024 * 1024;
+export const EXAM_DERIVATIVE_VERSION_MAX = 9999;
+export const EXAM_MAX_DOCUMENT_ARTIFACT_BYTES = 12 * 1024 * 1024;
+export const EXAM_MAX_CANDIDATE_ARTIFACT_BYTES = 32 * 1024 * 1024;
+export const EXAM_MAX_EXTRACTED_PAGES = 200;
+export const EXAM_MAX_QUESTION_CANDIDATES = 500;
 
 export const EXAM_DOCUMENT_ROLES = ['question_paper', 'student_response', 'answer_key'] as const;
 
@@ -55,6 +60,17 @@ export interface ExamRequestSemanticFacts {
 
 export type PublicExamStatus = 'intake_pending' | 'ready_for_extraction' | 'deleting';
 export type PublicExamDocumentSnapshotStatus = 'pending' | 'snapshotted';
+export type PublicExamQuestionExtractionStatus =
+  | 'not_started'
+  | 'extracting_questions'
+  | 'question_candidates_ready';
+
+export interface PublicExamQuestionExtractionSummary {
+  status: PublicExamQuestionExtractionStatus;
+  pageCount?: number;
+  candidateCount?: number;
+  needsReview?: boolean;
+}
 
 export interface PublicExamDocument {
   examDocumentId: string;
@@ -74,6 +90,7 @@ export interface PublicExamSession {
   status: PublicExamStatus;
   createdAt: string;
   documents: readonly PublicExamDocument[];
+  questionExtraction: PublicExamQuestionExtractionSummary;
 }
 
 const CREATE_REQUEST_KEYS = new Set([

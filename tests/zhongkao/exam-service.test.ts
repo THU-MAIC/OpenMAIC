@@ -339,6 +339,55 @@ function expectedOperationFingerprint(event: ExamEvent): string {
         ...common,
         documentSetFingerprint: event.documentSetFingerprint,
       });
+    case 'exam_question_extraction_started':
+      return createExamOperationFingerprint({
+        ...common,
+        extractionVersion: event.extractionVersion,
+        examDocumentId: event.examDocumentId,
+        sourceSnapshotFingerprint: event.sourceSnapshotFingerprint,
+        extractorId: event.extractorId,
+        extractorVersion: event.extractorVersion,
+        normalizationVersion: event.normalizationVersion,
+        documentArtifactRef: event.documentArtifactRef,
+      });
+    case 'exam_document_artifact_extracted':
+      return createExamOperationFingerprint({
+        ...common,
+        extractionVersion: event.extractionVersion,
+        examDocumentId: event.examDocumentId,
+        sourceSnapshotFingerprint: event.sourceSnapshotFingerprint,
+        extractorId: event.extractorId,
+        extractorVersion: event.extractorVersion,
+        normalizationVersion: event.normalizationVersion,
+        documentArtifactRef: event.documentArtifactRef,
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        pageCount: event.pageCount,
+      });
+    case 'exam_question_segmentation_started':
+      return createExamOperationFingerprint({
+        ...common,
+        extractionVersion: event.extractionVersion,
+        segmentationVersion: event.segmentationVersion,
+        examDocumentId: event.examDocumentId,
+        sourceArtifactFingerprint: event.sourceArtifactFingerprint,
+        documentArtifactRef: event.documentArtifactRef,
+        candidateArtifactRef: event.candidateArtifactRef,
+      });
+    case 'exam_question_candidates_extracted':
+      return createExamOperationFingerprint({
+        ...common,
+        extractionVersion: event.extractionVersion,
+        segmentationVersion: event.segmentationVersion,
+        examDocumentId: event.examDocumentId,
+        sourceArtifactFingerprint: event.sourceArtifactFingerprint,
+        documentArtifactRef: event.documentArtifactRef,
+        candidateArtifactRef: event.candidateArtifactRef,
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        candidateCount: event.candidateCount,
+        needsReview: event.needsReview,
+      });
     case 'exam_deleted':
       return createExamOperationFingerprint({
         ...common,

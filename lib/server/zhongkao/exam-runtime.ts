@@ -68,6 +68,29 @@ export function deriveExamDocumentId(examSessionId: string, role: string): strin
   })}`;
 }
 
+export function deriveExamDocumentArtifactRef(
+  examSessionId: string,
+  examDocumentId: string,
+  extractionVersion: number,
+): string {
+  return `exam-document-artifact:v${EXAM_ID_VERSION}:${digest(
+    'openmaic:zhongkao-exam-document-artifact:v1',
+    { examSessionId, examDocumentId, extractionVersion },
+  )}`;
+}
+
+export function deriveExamCandidateArtifactRef(
+  examSessionId: string,
+  examDocumentId: string,
+  extractionVersion: number,
+  segmentationVersion: number,
+): string {
+  return `exam-question-candidates:v${EXAM_ID_VERSION}:${digest(
+    'openmaic:zhongkao-exam-question-candidates:v1',
+    { examSessionId, examDocumentId, extractionVersion, segmentationVersion },
+  )}`;
+}
+
 export function examRuntimeSessionId(examSessionId: string): string {
   return `zhongkao-exam:${encodeURIComponent(examSessionId)}`;
 }
@@ -114,6 +137,58 @@ export function deriveExamIntakeCompletedOperationId(
     schemaVersion: EXAM_SCHEMA_VERSION,
     examSessionId,
     documentSetFingerprint,
+  });
+}
+
+export function deriveExamQuestionExtractionStartedOperationId(
+  examSessionId: string,
+  examDocumentId: string,
+  extractionVersion: number,
+): string {
+  return operationId('question-extraction-started', {
+    examSessionId,
+    examDocumentId,
+    extractionVersion,
+  });
+}
+
+export function deriveExamDocumentArtifactExtractedOperationId(
+  examSessionId: string,
+  examDocumentId: string,
+  extractionVersion: number,
+): string {
+  return operationId('document-artifact-extracted', {
+    examSessionId,
+    examDocumentId,
+    extractionVersion,
+  });
+}
+
+export function deriveExamQuestionSegmentationStartedOperationId(
+  examSessionId: string,
+  examDocumentId: string,
+  extractionVersion: number,
+  segmentationVersion: number,
+): string {
+  return operationId('question-segmentation-started', {
+    examSessionId,
+    examDocumentId,
+    extractionVersion,
+    segmentationVersion,
+  });
+}
+
+export function deriveExamQuestionCandidatesExtractedOperationId(
+  examSessionId: string,
+  examDocumentId: string,
+  extractionVersion: number,
+  segmentationVersion: number,
+): string {
+  return operationId('question-candidates-extracted', {
+    examSessionId,
+    examDocumentId,
+    extractionVersion,
+    segmentationVersion,
   });
 }
 
@@ -209,6 +284,147 @@ function assertDerivedExamEvent(event: ExamEvent): void {
         examSessionId: event.examSessionId,
         profileId: event.profileId,
         documentSetFingerprint: event.documentSetFingerprint,
+      });
+      break;
+    case 'exam_question_extraction_started':
+      if (
+        event.documentArtifactRef !==
+        deriveExamDocumentArtifactRef(
+          event.examSessionId,
+          event.examDocumentId,
+          event.extractionVersion,
+        )
+      ) {
+        throw new ExamError('EXAM_EVENT_CONFLICT');
+      }
+      expectedOperationId = deriveExamQuestionExtractionStartedOperationId(
+        event.examSessionId,
+        event.examDocumentId,
+        event.extractionVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_question_extraction_started',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        extractionVersion: event.extractionVersion,
+        examDocumentId: event.examDocumentId,
+        sourceSnapshotFingerprint: event.sourceSnapshotFingerprint,
+        extractorId: event.extractorId,
+        extractorVersion: event.extractorVersion,
+        normalizationVersion: event.normalizationVersion,
+        documentArtifactRef: event.documentArtifactRef,
+      });
+      break;
+    case 'exam_document_artifact_extracted':
+      if (
+        event.documentArtifactRef !==
+        deriveExamDocumentArtifactRef(
+          event.examSessionId,
+          event.examDocumentId,
+          event.extractionVersion,
+        )
+      ) {
+        throw new ExamError('EXAM_EVENT_CONFLICT');
+      }
+      expectedOperationId = deriveExamDocumentArtifactExtractedOperationId(
+        event.examSessionId,
+        event.examDocumentId,
+        event.extractionVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_document_artifact_extracted',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        extractionVersion: event.extractionVersion,
+        examDocumentId: event.examDocumentId,
+        sourceSnapshotFingerprint: event.sourceSnapshotFingerprint,
+        extractorId: event.extractorId,
+        extractorVersion: event.extractorVersion,
+        normalizationVersion: event.normalizationVersion,
+        documentArtifactRef: event.documentArtifactRef,
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        pageCount: event.pageCount,
+      });
+      break;
+    case 'exam_question_segmentation_started':
+      if (
+        event.documentArtifactRef !==
+          deriveExamDocumentArtifactRef(
+            event.examSessionId,
+            event.examDocumentId,
+            event.extractionVersion,
+          ) ||
+        event.candidateArtifactRef !==
+          deriveExamCandidateArtifactRef(
+            event.examSessionId,
+            event.examDocumentId,
+            event.extractionVersion,
+            event.segmentationVersion,
+          )
+      ) {
+        throw new ExamError('EXAM_EVENT_CONFLICT');
+      }
+      expectedOperationId = deriveExamQuestionSegmentationStartedOperationId(
+        event.examSessionId,
+        event.examDocumentId,
+        event.extractionVersion,
+        event.segmentationVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_question_segmentation_started',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        extractionVersion: event.extractionVersion,
+        segmentationVersion: event.segmentationVersion,
+        examDocumentId: event.examDocumentId,
+        sourceArtifactFingerprint: event.sourceArtifactFingerprint,
+        documentArtifactRef: event.documentArtifactRef,
+        candidateArtifactRef: event.candidateArtifactRef,
+      });
+      break;
+    case 'exam_question_candidates_extracted':
+      if (
+        event.documentArtifactRef !==
+          deriveExamDocumentArtifactRef(
+            event.examSessionId,
+            event.examDocumentId,
+            event.extractionVersion,
+          ) ||
+        event.candidateArtifactRef !==
+          deriveExamCandidateArtifactRef(
+            event.examSessionId,
+            event.examDocumentId,
+            event.extractionVersion,
+            event.segmentationVersion,
+          )
+      ) {
+        throw new ExamError('EXAM_EVENT_CONFLICT');
+      }
+      expectedOperationId = deriveExamQuestionCandidatesExtractedOperationId(
+        event.examSessionId,
+        event.examDocumentId,
+        event.extractionVersion,
+        event.segmentationVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_question_candidates_extracted',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        extractionVersion: event.extractionVersion,
+        segmentationVersion: event.segmentationVersion,
+        examDocumentId: event.examDocumentId,
+        sourceArtifactFingerprint: event.sourceArtifactFingerprint,
+        documentArtifactRef: event.documentArtifactRef,
+        candidateArtifactRef: event.candidateArtifactRef,
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        candidateCount: event.candidateCount,
+        needsReview: event.needsReview,
       });
       break;
     case 'exam_delete_requested':

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assertPortableMaterialObjectKey,
+  examDocumentArtifactObjectKey,
+  examQuestionCandidatesObjectKey,
   examSnapshotObjectKey,
   examSnapshotObjectPrefix,
   isExamSnapshotObjectKey,
@@ -56,6 +58,33 @@ describe('material object key contract', () => {
     expect(first).not.toContain('exam-session-alpha');
     expect(first).not.toContain('exam-document-question-paper');
     expect(() => assertPortableMaterialObjectKey(first)).not.toThrow();
+  });
+
+  it('derives versioned Exam-owned extraction artifacts inside the document namespace', () => {
+    const documentArtifact = examDocumentArtifactObjectKey('exam-alpha', 'document-alpha', 1);
+    const candidates = examQuestionCandidatesObjectKey('exam-alpha', 'document-alpha', 1, 1);
+
+    expect(documentArtifact).toMatch(
+      /^materials\/v1\/exams\/exm_[a-f0-9]{64}\/doc_[a-f0-9]{64}\/extraction_v1\/document_artifact_v1\.json$/,
+    );
+    expect(candidates).toMatch(
+      /^materials\/v1\/exams\/exm_[a-f0-9]{64}\/doc_[a-f0-9]{64}\/extraction_v1\/question_candidates_v1\.json$/,
+    );
+    expect(documentArtifact).not.toContain('exam-alpha');
+    expect(candidates).not.toContain('document-alpha');
+    expect(isExamSnapshotObjectKey('exam-alpha', documentArtifact)).toBe(true);
+    expect(isExamSnapshotObjectKey('exam-alpha', candidates)).toBe(true);
+    expect(() => assertPortableMaterialObjectKey(documentArtifact)).not.toThrow();
+    expect(() => assertPortableMaterialObjectKey(candidates)).not.toThrow();
+  });
+
+  it('rejects invalid Exam derivative versions', () => {
+    expect(() => examDocumentArtifactObjectKey('exam', 'document', 0)).toThrow(
+      'invalid exam artifact version',
+    );
+    expect(() => examQuestionCandidatesObjectKey('exam', 'document', 1, Number.NaN)).toThrow(
+      'invalid exam artifact version',
+    );
   });
 
   it.each(['../outside', 'exam/../../outside', 'exam\\outside', 'CON', 'trailing.'])(
