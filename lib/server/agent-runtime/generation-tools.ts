@@ -42,6 +42,27 @@ const SceneParams = Type.Object({
     Type.Literal('interactive'),
     Type.Literal('pbl'),
   ]),
+  widgetType: Type.Optional(
+    Type.Union(
+      [
+        Type.Literal('simulation'),
+        Type.Literal('diagram'),
+        Type.Literal('code'),
+        Type.Literal('game'),
+        Type.Literal('visualization3d'),
+      ],
+      {
+        description:
+          'Interactive pages only: which widget to build. simulation = parameter explorer, diagram = flowchart/mindmap/hierarchy/system graph, code = programming challenge, game = quiz/puzzle/strategy/card/action, visualization3d = 3D scene. Defaults to simulation when omitted. procedural-skill stays gated behind task-engine mode and is not accepted here.',
+      },
+    ),
+  ),
+  widgetOutline: Type.Optional(
+    Type.Unknown({
+      description:
+        'Interactive pages only: widget configuration object matching widgetType (e.g. { concept, keyVariables } for simulation, { diagramType, nodes } for diagram, { language } for code, { gameType, challenge } for game, { visualizationType, objects } for visualization3d). Must be a plain object. Defaults to { concept: title } when widgetType is set; when only widgetOutline is set, widgetType defaults to simulation.',
+    }),
+  ),
   brief: Type.String({ minLength: 1 }),
   instruction: Type.Optional(Type.String()),
   materialFacts: Type.Optional(Type.Array(Type.String())),
@@ -206,7 +227,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
     name: 'generate_scene',
     label: 'Generate page',
     description:
-      'Generate and durably persist one page from an explicit title, type, and brief. Reusing an order replaces that page.',
+      'Generate and durably persist one page from an explicit title, type, and brief. Reusing an order replaces that page. Interactive pages accept widgetType (simulation/diagram/code/game/visualization3d) plus a matching widgetOutline object; both are rejected for other page types.',
     parameters: SceneParams,
     async execute(_callId, params, signal) {
       if (!Number.isInteger(params.order) || params.order < 1) {
@@ -253,6 +274,28 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           true,
         );
       }
+      if (
+        params.type !== 'interactive' &&
+        (params.widgetType !== undefined || params.widgetOutline !== undefined)
+      ) {
+        return result(
+          'generate_scene only accepts widgetType/widgetOutline for interactive pages.',
+          { error: 'widget-requires-interactive', type: params.type },
+          true,
+        );
+      }
+      if (
+        params.widgetOutline !== undefined &&
+        (typeof params.widgetOutline !== 'object' ||
+          params.widgetOutline === null ||
+          Array.isArray(params.widgetOutline))
+      ) {
+        return result(
+          'generate_scene needs widgetOutline to be an object matching widgetType.',
+          { error: 'invalid-widget-outline' },
+          true,
+        );
+      }
       const requestedMedia = params.media ?? [];
       if (requestedMedia.length > MAX_GENERATE_SCENE_MEDIA) {
         return result(
@@ -268,6 +311,18 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
         type: params.type,
         description: brief,
         keyPoints: params.materialFacts ?? [],
+        ...(params.type === 'interactive' &&
+        (params.widgetType !== undefined || params.widgetOutline !== undefined)
+          ? {
+              widgetType: params.widgetType ?? 'simulation',
+              // Mirror the generator fallback so a bare widgetType still generates.
+              widgetOutline: (params.widgetOutline as
+                | SceneOutline['widgetOutline']
+                | undefined) ?? {
+                concept: title,
+              },
+            }
+          : {}),
         ...(params.type === 'pbl'
           ? {
               pblConfig: {
