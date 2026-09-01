@@ -78,6 +78,7 @@ export interface AgentSessionMeta {
   id: string;
   ownerId: string;
   prompt: string;
+  title?: string;
   /** The immutable stage with which the conversation was created. */
   stageId: string;
   skillId?: string;
@@ -341,6 +342,14 @@ export interface AgentSessionStore {
   mergeOwner(fromOwnerId: string, toOwnerId: string): Promise<number>;
 }
 
+export interface AgentSessionTitleStore {
+  setManualSessionTitle(
+    sessionId: string,
+    ownerId: string,
+    title: string | null,
+  ): Promise<AgentSessionMeta | null>;
+}
+
 export interface NewAgentSessionEvent {
   ts: number;
   attempt: number;
@@ -417,6 +426,7 @@ export const OWNER_SESSION_EVENT_TYPES = [
   'session_status',
   'session_deleted',
   'session_cancel_requested',
+  'session_title',
 ] as const;
 
 export type OwnerSessionEventType = (typeof OWNER_SESSION_EVENT_TYPES)[number];
@@ -432,7 +442,8 @@ export type NewOwnerSessionEvent =
       status: AgentSessionStatus;
       attempt: number;
     })
-  | (OwnerSessionEventBase & { type: 'session_deleted' | 'session_cancel_requested' });
+  | (OwnerSessionEventBase & { type: 'session_deleted' | 'session_cancel_requested' })
+  | (OwnerSessionEventBase & { type: 'session_title'; title: string | null });
 
 export type PersistedOwnerSessionEvent = NewOwnerSessionEvent & {
   /** Decimal bigint text avoids rounding a replay cursor in JavaScript. */
