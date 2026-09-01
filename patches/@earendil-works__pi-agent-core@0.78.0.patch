@@ -1,0 +1,48 @@
+diff --git a/dist/harness/env/nodejs.js b/dist/harness/env/nodejs.js
+index 2c1610f8d2d7be30b01c15c3f92680afbcf1b663..6027b01f3e40b1d1c172b471adfb41a3391504a7 100644
+--- a/dist/harness/env/nodejs.js
++++ b/dist/harness/env/nodejs.js
+@@ -23,7 +23,7 @@ function fileInfoFromStats(path, stats) {
+     if (!kind)
+         return err(new FileError("invalid", "Unsupported file type", path));
+     return ok({
+-        name: path.replace(/\/+$/, "").split("/").pop() ?? path,
++        name: path.replace(/\/+$/, "").split(/[\\/]/).pop() ?? path,
+         path,
+         kind,
+         size: stats.size,
+diff --git a/dist/harness/skills.js b/dist/harness/skills.js
+index 5b94819ba70f183c190843107f3f69fca2200a21..5008a576535caa900f2734486705e069c63d7986 100644
+--- a/dist/harness/skills.js
++++ b/dist/harness/skills.js
+@@ -290,18 +290,26 @@ function joinEnvPath(base, child) {
+     return `${base.replace(/\/+$/, "")}/${child.replace(/^\/+/, "")}`;
+ }
+ function dirnameEnvPath(path) {
+-    const normalized = path.replace(/\/+$/, "");
++    // Windows compatibility: normalize backslash separators before scanning.
++    const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+     const slashIndex = normalized.lastIndexOf("/");
+     return slashIndex <= 0 ? "/" : normalized.slice(0, slashIndex);
+ }
+ function basenameEnvPath(path) {
+-    const normalized = path.replace(/\/+$/, "");
++    // Windows compatibility: normalize backslash separators before scanning.
++    const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+     const slashIndex = normalized.lastIndexOf("/");
+     return slashIndex === -1 ? normalized : normalized.slice(slashIndex + 1);
+ }
+ function relativeEnvPath(root, path) {
+-    const normalizedRoot = root.replace(/\/+$/, "");
+-    const normalizedPath = path.replace(/\/+$/, "");
++    // Windows compatibility: directory walks yield backslash-separated paths
++    // while callers may pass forward-slash roots. Normalize both sides to
++    // POSIX separators before comparing; without this the prefix test always
++    // fails on win32, the fallback returns an absolute path, and the `ignore`
++    // matcher throws ("path should be a path.relative()d string").
++    const toPosix = (value) => value.replace(/\\/g, "/");
++    const normalizedRoot = toPosix(root).replace(/\/+$/, "");
++    const normalizedPath = toPosix(path).replace(/\/+$/, "");
+     if (normalizedPath === normalizedRoot)
+         return "";
+     return normalizedPath.startsWith(`${normalizedRoot}/`)

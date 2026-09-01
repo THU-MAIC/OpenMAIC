@@ -275,6 +275,29 @@ export interface LLMRetryOptions {
 
 const DEFAULT_VALIDATE = (text: string) => text.trim().length > 0;
 
+/**
+ * Extract the Error.cause chain from an LLM call failure.
+ *
+ * The SDK wraps network/schema failures in high-level errors (e.g.
+ * "Failed to process successful response"), and the console logger prints
+ * only message/stack — without this the real trigger (ECONNRESET, a zod
+ * issue, a truncated body) never reaches server logs. Returns '' when the
+ * chain has a single link (the top-level message is then all there is).
+ */
+function describeCauseChain(error: unknown): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let current = error;
+  while (current instanceof Error && parts.length < 5 && !seen.has(current)) {
+    seen.add(current);
+    const status = (current as { statusCode?: unknown }).statusCode;
+    const statusSuffix = typeof status === 'number' ? ` (status ${status})` : '';
+    parts.push(`${current.name}: ${current.message}${statusSuffix}`);
+    current = current.cause;
+  }
+  return parts.length > 1 ? parts.join(' ← ') : '';
+}
+
 // ---------------------------------------------------------------------------
 // Usage capture
 //
@@ -372,6 +395,11 @@ export async function callLLM<T extends GenerateTextParams>(
       return result;
     } catch (error) {
       lastError = error;
+
+      const causeChain = describeCauseChain(error);
+      if (causeChain) {
+        log.warn(`[${source}] Failure cause chain: ${causeChain}`);
+      }
 
       if (attempt < maxAttempts) {
         log.warn(`[${source}] Call failed (attempt ${attempt}/${maxAttempts}), retrying...`, error);

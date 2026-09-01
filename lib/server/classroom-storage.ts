@@ -1,7 +1,10 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import type { NextRequest } from 'next/server';
+import { createLogger } from '@/lib/logger';
 import type { Scene, Stage } from '@/lib/types/stage';
+
+const log = createLogger('ClassroomStorage');
 
 export const CLASSROOMS_DIR = path.join(process.cwd(), 'data', 'classrooms');
 export const CLASSROOM_JOBS_DIR = path.join(process.cwd(), 'data', 'classroom-jobs');
@@ -55,6 +58,52 @@ export async function readClassroom(id: string): Promise<PersistedClassroomData 
       return null;
     }
     throw error;
+  }
+}
+
+/**
+ * Fallback read: load a classroom from the server DocumentStore (PostgreSQL).
+ *
+ * Pro workbench (agent-runtime) courses are persisted to the owner-bound
+ * `PgDocumentStore`, NOT to `data/classrooms/*.json`. The standalone
+ * `/classroom/{id}` page loads via `/api/classroom?id=` (JSON store only), so a
+ * Postgres-only course would 404 as "Classroom not found". This reads the
+ * course's owner from `document_stages` and loads through `forOwner(...)`,
+ * reusing `loadDocument`'s reassembly/migration. Returns `null` (never throws)
+ * when the course is absent or the store is unreachable, so callers degrade to
+ * 404 exactly like a JSON miss.
+ */
+export async function loadClassroomFromDocumentStore(
+  id: string,
+): Promise<{ stage: Stage; scenes: Scene[] } | null> {
+  const connectionString = process.env.DATABASE_URL?.trim();
+  if (!connectionString) return null;
+  try {
+    const { getServerPersistenceProvider } = await import(
+      '@/lib/persistence/server-provider'
+    );
+    const provider = await getServerPersistenceProvider(connectionString);
+
+    const ownerRows = await provider.pool.query<{ owner_id: string | null }>(
+      'SELECT owner_id FROM document_stages WHERE id = $1',
+      [id],
+    );
+    const owner = ownerRows.rows[0]?.owner_id ?? null;
+    const doc = owner
+      ? await provider.documentStore.forOwner(owner).loadDocument(id)
+      : await provider.documentStore.loadDocument(id);
+    if (!doc) return null;
+
+    return {
+      // ReassembleDocument yields the DSL stage/scene shapes; the classroom
+      // payload carries the app shapes, validated by the same validators that
+      // back the store, so the cast is a type-boundary only.
+      stage: doc.stage as unknown as Stage,
+      scenes: doc.scenes as unknown as Scene[],
+    };
+  } catch (error) {
+    log.warn(`DocumentStore classroom fallback failed for ${id}:`, error);
+    return null;
   }
 }
 

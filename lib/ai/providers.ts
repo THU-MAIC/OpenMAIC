@@ -1834,11 +1834,17 @@ function usesCustomOpenAIBaseUrl(baseUrl?: string): boolean {
 }
 
 function shouldUseOpenAIStreamingChatCompat(providerId: ProviderId, baseUrl?: string): boolean {
-  return (
-    providerId === 'openai' &&
-    usesCustomOpenAIBaseUrl(baseUrl) &&
-    process.env.OPENAI_COMPAT_USE_STREAMING_CHAT === 'true'
-  );
+  if (process.env.OPENAI_COMPAT_USE_STREAMING_CHAT !== 'true') return false;
+  // The `openai` slot becomes an OpenAI-compatible gateway whenever a custom
+  // base URL is configured; named compatible providers (deepseek, qwen, kimi,
+  // glm, ...) are OpenAI-compatible by definition. Both benefit from the same
+  // request/response seam: long non-streaming completions hold a silent HTTP
+  // connection for minutes, which NAT/firewall idle timers terminate — the
+  // request then dies with ECONNRESET or a truncated 200 body ("Failed to
+  // process successful response"). Streaming keeps bytes flowing, so
+  // inactivity-based connection killers never fire.
+  if (providerId === 'openai') return usesCustomOpenAIBaseUrl(baseUrl);
+  return PROVIDERS[providerId]?.type === 'openai';
 }
 
 function requestUrlString(input: RequestInfo | URL): string {
