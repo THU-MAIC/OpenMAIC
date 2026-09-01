@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/generation",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Pure generation pipeline contracts and packaged prompt assets for MAIC consumers.",
   "type": "module",
   "main": "./dist/index.js",
