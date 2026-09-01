@@ -245,6 +245,9 @@ importers:
       mathml2omml:
         specifier: workspace:*
         version: link:packages/mathml2omml
+      micromark-extension-math:
+        specifier: ^3.1.0
+        version: 3.1.0
       mitt:
         specifier: ^3.0.1
         version: 3.0.1

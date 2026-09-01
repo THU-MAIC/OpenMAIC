@@ -5,7 +5,8 @@
  *
  * Streamdown owns the parse and render; four things are added:
  *
- *  - KaTeX math through Streamdown's stable math plugin configuration.
+ *  - KaTeX math through Streamdown's stable math plugin configuration, with a
+ *    same-parser guard that keeps ordinary currency and shell dollars literal.
  *  - `remark-cjk-friendly` BEFORE `remark-gfm`, because CommonMark's emphasis
  *    flanking rules misfire next to fullwidth CJK punctuation — e.g. `**smart**`
  *    quotes otherwise reach the user with their asterisks on (the spike's S10
@@ -24,12 +25,19 @@ import { createMathPlugin } from '@streamdown/math';
 import { Streamdown, defaultRemarkPlugins } from 'streamdown';
 import remarkCjkFriendly from 'remark-cjk-friendly';
 import { courseIdFromHref } from '@/lib/workbench/course-link';
+import { remarkSelectiveSingleDollarMath } from '@/lib/workbench/markdown-math';
 import { CourseLink } from './course-link';
 
-const REMARK_PLUGINS = [remarkCjkFriendly, ...Object.values(defaultRemarkPlugins)];
+const REMARK_PLUGINS = [
+  remarkCjkFriendly,
+  remarkSelectiveSingleDollarMath,
+  ...Object.values(defaultRemarkPlugins),
+];
 
 const STREAMDOWN_PLUGINS = {
-  math: createMathPlugin({ singleDollarTextMath: true }),
+  // The official tokenizer handles `$$`; the Workbench extension validates
+  // single-dollar candidates before accepting them as math.
+  math: createMathPlugin({ singleDollarTextMath: false }),
 } as const;
 
 // remark-math already accepts an unterminated flow fence through EOF. Generic

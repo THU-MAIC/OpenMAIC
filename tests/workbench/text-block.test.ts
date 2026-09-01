@@ -153,6 +153,217 @@ $$`,
     expect(html).not.toContain('katex-error');
   });
 
+  it.each([
+    'Plans cost $5 and $10 per month.',
+    'Prices: $5 $10.',
+    'Prices: $5,$10.',
+    'Costs $5 + tax; $10 + tax.',
+    'Cost $5/month, or $10/year.',
+    'Cost $5/mo or $10/mo.',
+    '$5 / item, or $10 / pair',
+    'Set $HOME and $PATH before continuing.',
+    'echo $A$B',
+    'echo $LD_LIBRARY_PATH:$PATH',
+    'cd ${HOME}/$PROJECT',
+    'echo ${HOME}${PATH}',
+    'echo ${HOME}:${PATH}',
+    'echo ${FILE_NAME}.${EXT}',
+    'echo ${WIDTH}x${HEIGHT}',
+    'echo ${file}.${ext}',
+    'echo ${FOO:-0}${BAR}',
+    'echo $(date)$(whoami)',
+    'echo $(pwd)$HOME',
+    'echo $(date)${USER}',
+    'Use $OPENAI_API_KEY or $ANTHROPIC_API_KEY.',
+  ])('preserves ordinary dollar text in settled and streaming messages: %s', (text) => {
+    for (const streaming of [false, true]) {
+      const document = parseHTML(renderText(text, streaming)).document;
+
+      expect(document.querySelector('.wb-prose')?.textContent).toContain(text);
+      expect(document.querySelector('.katex')).toBeNull();
+    }
+  });
+
+  it.each([
+    ['Cost $5; formula $x^2$.', 'x^2'],
+    ['Cost $5; formula $X^2$.', 'X^2'],
+    ['Cost $5; formula $2x$.', '2x'],
+    ['Cost $5; formula $10^2$.', '10^2'],
+    ['Cost $5; formula ${x+1}$.', '{x+1}'],
+    ['Cost $5; formula $(x+1)$.', '(x+1)'],
+    ['Cost $5; formula $_x$.', '_x'],
+    ['Cost $5; formula $C^+$.', 'C^+'],
+    ['Set $HOME, then solve $x^2$.', 'x^2'],
+    ['$5 and $10 $x^2$', 'x^2'],
+    ['Prices $5 and $10; fees $2 and $3 $x^2$.', 'x^2'],
+    ['Cost $5 $x$', 'x'],
+    ['Cost $5,$x$', 'x'],
+    ['Cost $5!$x$', 'x'],
+  ])('keeps literal dollars from stealing a later formula delimiter: %s', (text, latex) => {
+    for (const streaming of [false, true]) {
+      const document = parseHTML(renderText(text, streaming)).document;
+
+      expect(document.querySelector('.wb-prose')?.textContent).toContain(
+        text.slice(0, text.indexOf(`$${latex}$`)),
+      );
+      expect(document.querySelectorAll('.katex')).toHaveLength(1);
+      expect(document.querySelector('annotation')?.textContent).toBe(latex);
+    }
+  });
+
+  it('recovers every formula after a literal dollar in the same message', () => {
+    const text = 'Cost $5; formula $x^2$. The ratio $a:b$ and $x ≠ 0$ still render as math.';
+
+    for (const streaming of [false, true]) {
+      const document = parseHTML(renderText(text, streaming)).document;
+
+      expect(document.querySelector('.wb-prose')?.textContent).toContain('Cost $5; formula');
+      expect(
+        Array.from(document.querySelectorAll('annotation'), (node) => node.textContent),
+      ).toEqual(['x^2', 'a:b', 'x ≠ 0']);
+    }
+  });
+
+  it('handles many literal dollar pairs before later formulas in one pass', () => {
+    const prices = Array.from(
+      { length: 400 },
+      (_, index) => `$${index + 1} and $${index + 2}`,
+    ).join('; ');
+    const text = `${prices}; formulas ` + '$2x$, ${x+1}$, and $(x+1)$.';
+    const document = parseHTML(renderText(text)).document;
+
+    expect(document.querySelector('.wb-prose')?.textContent).toContain('$1 and $2');
+    expect(document.querySelector('.wb-prose')?.textContent).toContain('$400 and $401');
+    expect(Array.from(document.querySelectorAll('annotation'), (node) => node.textContent)).toEqual(
+      ['2x', '{x+1}', '(x+1)'],
+    );
+  });
+
+  it('recovers math after currency inside a Markdown link label', () => {
+    const document = parseHTML(renderText('[Cost $5; solve $x^2$](https://example.com)')).document;
+    const link = document.querySelector('a');
+
+    expect(link?.textContent).toContain('Cost $5; solve');
+    expect(link?.querySelector('annotation')?.textContent).toBe('x^2');
+  });
+
+  it('restores Markdown structures swallowed by a rejected dollar candidate', () => {
+    const url = 'https://example.com/?a=$HOME&b=$PATH';
+    const text = `Cost $5; **bold**; \`echo $HOME\`; [docs](${url}); formula $x$.`;
+    const document = parseHTML(renderText(text)).document;
+
+    expect(document.querySelector('.wb-prose')?.textContent).toContain('Cost $5');
+    expect(document.querySelector('[data-streamdown="strong"]')?.textContent).toBe('bold');
+    expect(document.querySelector('code')?.textContent).toBe('echo $HOME');
+    expect(document.querySelector('a')?.getAttribute('href')).toBe(url);
+    expect(document.querySelector('annotation')?.textContent).toBe('x');
+  });
+
+  it.each([
+    '$x_i$',
+    '$x*y*z$',
+    '$α+β$',
+    '$x+β$',
+    '$-1$',
+    '$a,b$',
+    '$x, y$',
+    '$f(x)$',
+    String.raw`$f'(x)$`,
+    '$n!$',
+    String.raw`$x'$`,
+    String.raw`$θ'$`,
+    '$θ!$',
+    '$x^*$',
+    '$C^+$',
+    '$-x$',
+    '$-2x$',
+    '$2xy$',
+    '$xyz$',
+    '$τ$',
+    '$∞$',
+    '$x ≠ 0$',
+    '$a ± b$',
+    '$a:b$',
+    '$1:2$',
+    '$velocity = distance / time$',
+    String.raw`$\frac{a}{b}$`,
+    String.raw`$\text{速度}$`,
+  ])('preserves valid single-dollar math syntax: %s', (text) => {
+    const document = parseHTML(renderText(text)).document;
+
+    expect(document.querySelectorAll('.katex')).toHaveLength(1);
+    expect(document.querySelector('annotation')?.textContent).toBe(text.slice(1, -1));
+  });
+
+  it.each([
+    ['$ x $', 'x'],
+    ['$\nx\n$', 'x'],
+  ])('preserves micromark math padding semantics: %s', (text, latex) => {
+    for (const streaming of [false, true]) {
+      const document = parseHTML(renderText(text, streaming)).document;
+
+      expect(document.querySelectorAll('.katex')).toHaveLength(1);
+      expect(document.querySelector('annotation')?.textContent).toBe(latex);
+    }
+  });
+
+  it('keeps adjacent prose after a closed single-dollar formula', () => {
+    const document = parseHTML(renderText('the $n$th term')).document;
+
+    expect(document.querySelector('annotation')?.textContent).toBe('n');
+    expect(document.querySelector('.wb-prose')?.textContent).toContain('th term');
+  });
+
+  it('keeps a parenthesized formula before an adjacent prose suffix', () => {
+    const document = parseHTML(renderText('the $(n+1)$th term')).document;
+
+    expect(document.querySelector('annotation')?.textContent).toBe('(n+1)');
+    expect(document.querySelector('.wb-prose')?.textContent).toContain('th term');
+  });
+
+  it.each([
+    [String.raw`\\$x$`, true],
+    [String.raw`\\\$x$`, false],
+  ])('respects Markdown escape parity: %s', (text, rendersMath) => {
+    const document = parseHTML(renderText(text)).document;
+
+    expect(document.querySelector('.katex') !== null).toBe(rendersMath);
+  });
+
+  it('does not treat a backslash before the second dollar as an escaped math closer', () => {
+    const text = String.raw`$5 and \$10`;
+
+    for (const streaming of [false, true]) {
+      const document = parseHTML(renderText(text, streaming)).document;
+
+      expect(document.querySelector('.wb-prose')?.textContent).toContain('$5 and $10');
+      expect(document.querySelector('.katex')).toBeNull();
+    }
+  });
+
+  it('keeps dollar-prefixed query values inside a GFM autolink', () => {
+    const url = 'https://example.com/?a=$HOME&b=$PATH';
+    const document = parseHTML(renderText(url)).document;
+    const link = document.querySelector('a');
+
+    expect(link?.getAttribute('href')).toBe(url);
+    expect(link?.textContent).toBe(url);
+  });
+
+  it('does not add an escape inside incomplete inline code while streaming', () => {
+    const document = parseHTML(renderText('Use `$5 and $10', true)).document;
+
+    expect(document.querySelector('code')?.textContent).toBe('$5 and $10');
+  });
+
+  it('keeps delimiter offsets aligned when a message starts with a byte-order mark', () => {
+    const document = parseHTML(renderText('\uFEFFCost $5; formula $x^2$.')).document;
+
+    expect(document.querySelector('.wb-prose')?.textContent).toContain('Cost $5; formula');
+    expect(document.querySelectorAll('.katex')).toHaveLength(1);
+    expect(document.querySelector('annotation')?.textContent).toBe('x^2');
+  });
+
   it('leaves math delimiters inside inline and fenced code untouched', () => {
     const html = renderText(['Inline: `$inline$`', '', '```tex', '$$fenced$$', '```'].join('\n'));
 
@@ -184,5 +395,17 @@ $$`,
     expect(html).toContain('data-streamdown="table-cell"');
     expect(html).toContain('>A</th>');
     expect(html).toContain('>2</td>');
+  });
+
+  it('keeps currency literal and math rendered across GFM table cells', () => {
+    const document = parseHTML(
+      renderText(`| Price | Formula |
+| --- | --- |
+| $5 | $x$ |`),
+    ).document;
+
+    expect(document.querySelector('tbody')?.textContent).toContain('$5');
+    expect(document.querySelectorAll('tbody .katex')).toHaveLength(1);
+    expect(document.querySelector('tbody annotation')?.textContent).toBe('x');
   });
 });

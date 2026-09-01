@@ -111,6 +111,7 @@
     "lodash": "^4.17.21",
     "lucide-react": "^0.562.0",
     "mathml2omml": "workspace:*",
+    "micromark-extension-math": "^3.1.0",
     "mitt": "^3.0.1",
     "motion": "^12.27.5",
     "nanoid": "^5.1.6",
