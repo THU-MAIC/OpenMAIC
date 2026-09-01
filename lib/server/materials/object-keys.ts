@@ -139,6 +139,20 @@ export function examQuestionResponseMatchesObjectKey(
   )}response_capture_v${captureVersion}/question_response_matches_v${matchingVersion}.json`;
 }
 
+export function examHumanReviewObjectKey(
+  examSessionId: string,
+  responseCaptureVersion: number,
+  matchingVersion: number,
+  reviewVersion: number,
+): string {
+  assertArtifactVersion(responseCaptureVersion);
+  assertArtifactVersion(matchingVersion);
+  assertArtifactVersion(reviewVersion);
+  return `${examSnapshotObjectPrefix(
+    examSessionId,
+  )}response_capture_v${responseCaptureVersion}/matching_v${matchingVersion}/human_review_v${reviewVersion}/confirmed_review_facts_v1.json`;
+}
+
 export function isExamSnapshotObjectKey(examSessionId: string, key: string): boolean {
   return (
     isPortableMaterialObjectKey(key) && key.startsWith(examSnapshotObjectPrefix(examSessionId))

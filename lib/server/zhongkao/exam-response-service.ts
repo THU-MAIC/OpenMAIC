@@ -61,6 +61,10 @@ export interface ResolvedExamStudentResponses {
   questionResponseMatches: ExamQuestionResponseMatchesArtifactV1;
 }
 
+export interface ResolvedExamStudentResponsesFromRuntime extends ResolvedExamStudentResponses {
+  questionCandidates: ExamQuestionCandidatesArtifactV1;
+}
+
 interface ExamResponseCapturePlan {
   captureVersion: typeof EXAM_STUDENT_RESPONSE_CAPTURE_VERSION;
   matchingVersion: typeof EXAM_QUESTION_RESPONSE_MATCHING_VERSION;
@@ -729,6 +733,32 @@ export async function resolveExamQuestionResponseMatches(
   });
 }
 
+/** Resolve and revalidate all review sources while the caller owns the Exam mutation lock. */
+export async function resolveExamStudentResponsesFromRuntime(
+  deps: ExamServiceDeps,
+  snapshot: ExamRuntimeSnapshot,
+): Promise<ResolvedExamStudentResponsesFromRuntime> {
+  if (
+    snapshot.state.status !== 'ready_for_extraction' ||
+    snapshot.state.questionExtraction?.status !== 'question_candidates_ready' ||
+    snapshot.state.studentResponseCapture?.status !== 'matching_ready'
+  ) {
+    throw new ExamError('EXAM_RESPONSES_NOT_READY');
+  }
+  const questionCandidates = await resolveExamQuestionCandidatesFromRuntime(deps, snapshot);
+  const response = await resolveResponseCandidatesFromRuntime(deps, snapshot);
+  return {
+    questionCandidates,
+    responseCandidates: response.artifact,
+    questionResponseMatches: await resolveQuestionResponseMatchesFromRuntime(
+      deps,
+      snapshot,
+      questionCandidates,
+      response,
+    ),
+  };
+}
+
 export async function resolveExamStudentResponses(
   deps: ExamServiceDeps,
   examSessionId: string,
@@ -736,16 +766,10 @@ export async function resolveExamStudentResponses(
   return deps.withExamMutationLock(examSessionId, async () => {
     const snapshot = await loadExamRuntime(deps, examSessionId);
     if (snapshot.state.status !== 'ready_for_extraction') throw new ExamError('EXAM_NOT_FOUND');
-    const questionCandidates = await resolveExamQuestionCandidatesFromRuntime(deps, snapshot);
-    const response = await resolveResponseCandidatesFromRuntime(deps, snapshot);
+    const resolved = await resolveExamStudentResponsesFromRuntime(deps, snapshot);
     return {
-      responseCandidates: response.artifact,
-      questionResponseMatches: await resolveQuestionResponseMatchesFromRuntime(
-        deps,
-        snapshot,
-        questionCandidates,
-        response,
-      ),
+      responseCandidates: resolved.responseCandidates,
+      questionResponseMatches: resolved.questionResponseMatches,
     };
   });
 }

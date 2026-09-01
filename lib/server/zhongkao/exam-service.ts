@@ -39,6 +39,7 @@ import {
 } from '@/lib/server/materials/bytes';
 import {
   examDocumentArtifactObjectKey,
+  examHumanReviewObjectKey,
   examQuestionCandidatesObjectKey,
   examQuestionResponseMatchesObjectKey,
   examSnapshotObjectKey,
@@ -596,6 +597,17 @@ function examDerivativeObjectKeys(snapshot: ExamRuntimeSnapshot): string[] {
         snapshot.state.examSessionId,
         capture.captureVersion,
         capture.matchingVersion,
+      ),
+    );
+  }
+  const review = snapshot.state.humanReview;
+  if (review) {
+    keys.push(
+      examHumanReviewObjectKey(
+        snapshot.state.examSessionId,
+        review.responseCaptureVersion,
+        review.matchingVersion,
+        review.reviewVersion,
       ),
     );
   }

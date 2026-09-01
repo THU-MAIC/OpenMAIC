@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 
@@ -15,10 +16,16 @@ import {
   type ExamServiceDeps,
 } from '@/lib/server/zhongkao/exam-service';
 import {
+  appendExamRuntimeEvent,
   createExamOperationFingerprint,
   deriveExamDocumentId,
+  deriveExamEventId,
+  deriveExamHumanReviewArtifactRef,
+  deriveExamHumanReviewRef,
+  deriveExamHumanReviewStartedOperationId,
   deriveExamSessionId,
   examRuntimeSessionId,
+  loadExamRuntime,
 } from '@/lib/server/zhongkao/exam-runtime';
 import { resolveZhongkaoLearnerKeyFromOwnerId } from '@/lib/server/zhongkao/learner-identity';
 import {
@@ -26,8 +33,13 @@ import {
   type MaterialByteInput,
   type MaterialByteStore,
 } from '@/lib/server/materials/bytes';
-import { examSnapshotObjectKey } from '@/lib/server/materials/object-keys';
-import type { ExamEvent } from '@/lib/zhongkao/exam-event';
+import {
+  examHumanReviewObjectKey,
+  examSnapshotObjectKey,
+} from '@/lib/server/materials/object-keys';
+import type { ExamEvent, ExamHumanReviewStartedEvent } from '@/lib/zhongkao/exam-event';
+import { extractExamQuestionCandidates } from '@/lib/server/zhongkao/exam-extraction-service';
+import { captureExamStudentResponses } from '@/lib/server/zhongkao/exam-response-service';
 import { createInitialStudentProfile } from '@/lib/zhongkao/profile';
 import { saveStudentProfile, zhongkaoStageId } from '@/lib/zhongkao/runtime';
 import type { VerifiedOwnerMaterialAsset } from '@/lib/server/materials/owner-assets';
@@ -143,11 +155,11 @@ function ownerRecord(
 
 function source(
   materialId: string,
-  text: string,
+  body: string | Uint8Array,
   mimeType: string,
   originalName: string,
 ): VerifiedOwnerMaterialAsset {
-  const bytes = Buffer.from(text);
+  const bytes = Buffer.from(body);
   const record = ownerRecord(materialId, bytes, mimeType, originalName);
   return {
     record,
@@ -157,6 +169,20 @@ function source(
     mimeType,
     byteLength: bytes.byteLength,
   };
+}
+
+async function fictionalQuestionPdf(): Promise<Buffer> {
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const page = pdf.addPage([500, 700]);
+  page.drawText(
+    [
+      '1. Fictional algebra question with enough native text',
+      '2. Fictional geometry question with enough native text',
+    ].join('\n'),
+    { x: 36, y: 650, size: 12, lineHeight: 18, font },
+  );
+  return Buffer.from(await pdf.save());
 }
 
 function request(
@@ -437,6 +463,47 @@ function expectedOperationFingerprint(event: ExamEvent): string {
         ambiguousCount: event.ambiguousCount,
         unmatchedCount: event.unmatchedCount,
         needsReview: event.needsReview,
+      });
+    case 'exam_human_review_started':
+      return createExamOperationFingerprint({
+        ...common,
+        reviewVersion: event.reviewVersion,
+        questionExtractionVersion: event.questionExtractionVersion,
+        questionSegmentationVersion: event.questionSegmentationVersion,
+        responseCaptureVersion: event.responseCaptureVersion,
+        matchingVersion: event.matchingVersion,
+        questionCandidateArtifactRef: event.questionCandidateArtifactRef,
+        sourceQuestionCandidateFingerprint: event.sourceQuestionCandidateFingerprint,
+        responseArtifactRef: event.responseArtifactRef,
+        sourceResponseArtifactFingerprint: event.sourceResponseArtifactFingerprint,
+        matchingArtifactRef: event.matchingArtifactRef,
+        sourceMatchingArtifactFingerprint: event.sourceMatchingArtifactFingerprint,
+        decisionSemanticFingerprint: event.decisionSemanticFingerprint,
+        reviewArtifactRef: event.reviewArtifactRef,
+      });
+    case 'exam_human_review_completed':
+      return createExamOperationFingerprint({
+        ...common,
+        reviewVersion: event.reviewVersion,
+        questionExtractionVersion: event.questionExtractionVersion,
+        questionSegmentationVersion: event.questionSegmentationVersion,
+        responseCaptureVersion: event.responseCaptureVersion,
+        matchingVersion: event.matchingVersion,
+        questionCandidateArtifactRef: event.questionCandidateArtifactRef,
+        sourceQuestionCandidateFingerprint: event.sourceQuestionCandidateFingerprint,
+        responseArtifactRef: event.responseArtifactRef,
+        sourceResponseArtifactFingerprint: event.sourceResponseArtifactFingerprint,
+        matchingArtifactRef: event.matchingArtifactRef,
+        sourceMatchingArtifactFingerprint: event.sourceMatchingArtifactFingerprint,
+        decisionSemanticFingerprint: event.decisionSemanticFingerprint,
+        reviewArtifactRef: event.reviewArtifactRef,
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        confirmedQuestionCount: event.confirmedQuestionCount,
+        confirmedResponseCount: event.confirmedResponseCount,
+        confirmedMatchCount: event.confirmedMatchCount,
+        rejectedQuestionCount: event.rejectedQuestionCount,
+        rejectedResponseCount: event.rejectedResponseCount,
       });
     case 'exam_deleted':
       return createExamOperationFingerprint({
@@ -908,6 +975,7 @@ describe('Exam intake service', () => {
       byteLength: Buffer.byteLength('fictional answer key bytes'),
       snapshotStatus: 'snapshotted',
     });
+    expect(result.exam.humanReview).toEqual({ status: 'not_started' });
   });
 
   it('fails closed when a resolved snapshot is missing, corrupt or foreign', async () => {
@@ -1005,6 +1073,110 @@ describe('Exam deletion service', () => {
     }
     await expect(getExam(h.deps, result.exam.examSessionId)).rejects.toThrow('EXAM_NOT_FOUND');
     expect(await deleteExam(h.deps, result.exam.examSessionId)).toBe('already_deleted');
+  });
+
+  it('deletes an exact human-review key from started state without prefix deletion', async () => {
+    const h = await harness();
+    const questionBytes = await fictionalQuestionPdf();
+    h.sources.set(
+      MATERIAL_IDS.question_paper,
+      source(
+        MATERIAL_IDS.question_paper,
+        questionBytes,
+        'application/pdf',
+        'fictional-question.pdf',
+      ),
+    );
+    const result = await createExam(h.deps, request({ documents: allDocuments() }));
+    await extractExamQuestionCandidates(h.deps, result.exam.examSessionId);
+    await captureExamStudentResponses(h.deps, result.exam.examSessionId, {
+      format: 'numbered_text_v1',
+      text: '1=A\n2=',
+    });
+
+    const snapshot = await loadExamRuntime(h.deps, result.exam.examSessionId);
+    const extraction = snapshot.state.questionExtraction;
+    const segmentation = extraction?.segmentation;
+    const candidateArtifact = segmentation?.candidateArtifact;
+    const capture = snapshot.state.studentResponseCapture;
+    const responseArtifact = capture?.responseArtifact;
+    const matchingArtifact = capture?.matchingArtifact;
+    if (
+      !extraction ||
+      !segmentation ||
+      !candidateArtifact ||
+      !capture ||
+      !responseArtifact ||
+      !matchingArtifact
+    ) {
+      throw new Error('review source fixture is incomplete');
+    }
+    const reviewVersion = 1;
+    const upstreamPlan = {
+      reviewVersion,
+      questionExtractionVersion: extraction.extractionVersion,
+      questionSegmentationVersion: segmentation.segmentationVersion,
+      responseCaptureVersion: capture.captureVersion,
+      matchingVersion: capture.matchingVersion,
+      questionCandidateArtifactRef: segmentation.candidateArtifactRef,
+      sourceQuestionCandidateFingerprint: candidateArtifact.sha256,
+      responseArtifactRef: capture.responseArtifactRef,
+      sourceResponseArtifactFingerprint: responseArtifact.sha256,
+      matchingArtifactRef: capture.matchingArtifactRef,
+      sourceMatchingArtifactFingerprint: matchingArtifact.sha256,
+    } as const;
+    const plan = {
+      ...upstreamPlan,
+      decisionSemanticFingerprint: '9'.repeat(64),
+      reviewArtifactRef: deriveExamHumanReviewArtifactRef(
+        deriveExamHumanReviewRef({ examSessionId: result.exam.examSessionId, ...upstreamPlan }),
+      ),
+    };
+    const operationId = deriveExamHumanReviewStartedOperationId(
+      result.exam.examSessionId,
+      reviewVersion,
+    );
+    const started: ExamHumanReviewStartedEvent = {
+      schemaVersion: 1,
+      eventId: deriveExamEventId(operationId),
+      examSessionId: result.exam.examSessionId,
+      profileId: result.exam.profileId,
+      eventType: 'exam_human_review_started',
+      createdAt: '2026-08-31T09:00:00.000Z',
+      operationId,
+      operationFingerprint: createExamOperationFingerprint({
+        action: 'exam_human_review_started',
+        schemaVersion: 1,
+        examSessionId: result.exam.examSessionId,
+        profileId: result.exam.profileId,
+        ...plan,
+      }),
+      ...plan,
+    };
+    await appendExamRuntimeEvent(h.deps, {
+      event: started,
+      expectedRevision: snapshot.state.revision,
+    });
+
+    const reviewKey = examHumanReviewObjectKey(
+      result.exam.examSessionId,
+      capture.captureVersion,
+      capture.matchingVersion,
+      reviewVersion,
+    );
+    await h.byteStore.put(reviewKey, Buffer.from('{"fixture":true}'));
+    const byteStoreWithoutPrefix: MaterialByteStore = {
+      put: h.byteStore.put.bind(h.byteStore),
+      get: h.byteStore.get.bind(h.byteStore),
+      delete: h.byteStore.delete.bind(h.byteStore),
+    };
+
+    await expect(
+      deleteExam({ ...h.deps, byteStore: byteStoreWithoutPrefix }, result.exam.examSessionId),
+    ).resolves.toBe('deleted');
+    expect(h.byteStore.objects.has(reviewKey)).toBe(false);
+    expect(h.byteStore.deleteCalls).toContain(reviewKey);
+    expect(h.byteStore.deletePrefixCalls).toHaveLength(0);
   });
 
   it('recovers deletion after a midway byte failure', async () => {

@@ -7,6 +7,8 @@ import type {
   ExamDocumentArtifactExtractedEvent,
   ExamDocumentSnapshottedEvent,
   ExamEvent,
+  ExamHumanReviewCompletedEvent,
+  ExamHumanReviewStartedEvent,
   ExamIntakeCompletedEvent,
   ExamQuestionCandidatesExtractedEvent,
   ExamQuestionExtractionStartedEvent,
@@ -30,6 +32,21 @@ const RESPONSE_PLAN = {
   captureRef: 'exam-response-capture-v1',
   responseArtifactRef: 'exam-response-artifact-v1',
   matchingArtifactRef: 'exam-response-matching-v1',
+} as const;
+const HUMAN_REVIEW_PLAN = {
+  reviewVersion: 1,
+  questionExtractionVersion: 1,
+  questionSegmentationVersion: 1,
+  responseCaptureVersion: 1,
+  matchingVersion: 1,
+  questionCandidateArtifactRef: RESPONSE_PLAN.questionCandidateArtifactRef,
+  sourceQuestionCandidateFingerprint: RESPONSE_PLAN.sourceQuestionCandidateFingerprint,
+  responseArtifactRef: RESPONSE_PLAN.responseArtifactRef,
+  sourceResponseArtifactFingerprint: '4'.repeat(64),
+  matchingArtifactRef: RESPONSE_PLAN.matchingArtifactRef,
+  sourceMatchingArtifactFingerprint: '5'.repeat(64),
+  decisionSemanticFingerprint: '6'.repeat(64),
+  reviewArtifactRef: 'exam-human-review-artifact-v1',
 } as const;
 
 function fingerprint(seed: number): string {
@@ -235,6 +252,37 @@ function responseMatchingCompleted(
   };
 }
 
+function humanReviewStarted(
+  seq: number,
+  overrides: Partial<ExamHumanReviewStartedEvent> = {},
+): ExamHumanReviewStartedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_human_review_started',
+    ...HUMAN_REVIEW_PLAN,
+    ...overrides,
+  };
+}
+
+function humanReviewCompleted(
+  seq: number,
+  overrides: Partial<ExamHumanReviewCompletedEvent> = {},
+): ExamHumanReviewCompletedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_human_review_completed',
+    ...HUMAN_REVIEW_PLAN,
+    artifactByteLength: 224,
+    artifactSha256: '7'.repeat(64),
+    confirmedQuestionCount: 3,
+    confirmedResponseCount: 3,
+    confirmedMatchCount: 3,
+    rejectedQuestionCount: 2,
+    rejectedResponseCount: 2,
+    ...overrides,
+  };
+}
+
 function deleteRequested(seq: number): ExamEvent {
   return {
     ...base(seq),
@@ -287,6 +335,10 @@ function responseEvents(): ExamEvent[] {
     responseCandidatesRecorded(10),
     responseMatchingCompleted(11),
   ];
+}
+
+function reviewEvents(): ExamEvent[] {
+  return [...responseEvents(), humanReviewStarted(12), humanReviewCompleted(13)];
 }
 
 describe('Exam event fold', () => {
@@ -381,6 +433,126 @@ describe('Exam event fold', () => {
         needsReview: true,
       },
     });
+  });
+
+  it('folds human review from confirming to confirmed with immutable summary facts', () => {
+    const confirming = foldExamEvents(records([...responseEvents(), humanReviewStarted(12)]));
+    expect(confirming.humanReview).toEqual({
+      status: 'confirming',
+      startedEventId: 'exam-event-12',
+      startedAt: humanReviewStarted(12).createdAt,
+      ...HUMAN_REVIEW_PLAN,
+    });
+
+    const confirmed = foldExamEvents(records(reviewEvents()));
+    expect(confirmed.humanReview).toEqual({
+      status: 'confirmed',
+      startedEventId: 'exam-event-12',
+      startedAt: humanReviewStarted(12).createdAt,
+      ...HUMAN_REVIEW_PLAN,
+      reviewArtifact: {
+        eventId: 'exam-event-13',
+        createdAt: humanReviewCompleted(13).createdAt,
+        byteLength: 224,
+        sha256: '7'.repeat(64),
+        confirmedQuestionCount: 3,
+        confirmedResponseCount: 3,
+        confirmedMatchCount: 3,
+        rejectedQuestionCount: 2,
+        rejectedResponseCount: 2,
+      },
+    });
+  });
+
+  it('requires matching-ready sources and exact human-review plan bindings', () => {
+    expect(() => foldExamEvents(records([...extractionEvents(), humanReviewStarted(9)]))).toThrow(
+      'EXAM_EVENT_CONFLICT',
+    );
+    expect(() =>
+      foldExamEvents(
+        records([...responseEvents(), humanReviewStarted(12, { questionExtractionVersion: 2 })]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...responseEvents(),
+          humanReviewStarted(12, { sourceResponseArtifactFingerprint: '9'.repeat(64) }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...responseEvents(),
+          humanReviewStarted(12, { matchingArtifactRef: 'another-matching-ref' }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...responseEvents(),
+          humanReviewStarted(12),
+          humanReviewCompleted(13, {
+            confirmedQuestionCount: 2,
+            confirmedResponseCount: 2,
+            confirmedMatchCount: 2,
+          }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...responseEvents(),
+          humanReviewStarted(12),
+          humanReviewCompleted(13, { rejectedResponseCount: 1 }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+  });
+
+  it('rejects review stage skips, plan drift, restarts and invalid source-relative counts', () => {
+    expect(() => foldExamEvents(records([...responseEvents(), humanReviewCompleted(12)]))).toThrow(
+      'EXAM_EVENT_CONFLICT',
+    );
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...responseEvents(),
+          humanReviewStarted(12),
+          humanReviewCompleted(13, { decisionSemanticFingerprint: '9'.repeat(64) }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...responseEvents(),
+          humanReviewStarted(12),
+          { ...humanReviewStarted(13), operationId: 'exam-operation-review-restart' },
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...responseEvents(),
+          humanReviewStarted(12),
+          humanReviewCompleted(13, { confirmedResponseCount: 2 }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...responseEvents(),
+          humanReviewStarted(12),
+          humanReviewCompleted(13, { rejectedQuestionCount: 6 }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
   });
 
   it('requires ready question candidates before response capture and preserves exact source binding', () => {
@@ -610,6 +782,16 @@ describe('Exam event fold', () => {
     expect(state.questionExtraction).toBeDefined();
   });
 
+  it('supports deletion while human review is confirming and after it is confirmed', () => {
+    const confirmingHistory = [...responseEvents(), humanReviewStarted(12)];
+    expect(foldExamEvents(records([...confirmingHistory, deleteRequested(13)])).status).toBe(
+      'deleting',
+    );
+    expect(foldExamEvents(records([...reviewEvents(), deleteRequested(14)])).status).toBe(
+      'deleting',
+    );
+  });
+
   it('requires the exact delete request before the deleted terminal', () => {
     const request = deleteRequested(1);
     expect(foldExamEvents(records([created(), request, deleted(2, request.eventId)])).status).toBe(
@@ -747,6 +929,29 @@ describe('public Exam projection', () => {
     });
     expect(JSON.stringify(summary)).not.toMatch(
       /answer|artifact|digest|sha256|fingerprint|event|operation|ref|objectKey|path/u,
+    );
+  });
+
+  it('exposes only the safe human-review status and confirmed count summary', () => {
+    expect(toPublicExamSession(foldExamEvents(records(responseEvents()))).humanReview).toEqual({
+      status: 'not_started',
+    });
+    expect(
+      toPublicExamSession(foldExamEvents(records([...responseEvents(), humanReviewStarted(12)])))
+        .humanReview,
+    ).toEqual({ status: 'confirming' });
+
+    const summary = toPublicExamSession(foldExamEvents(records(reviewEvents()))).humanReview;
+    expect(summary).toEqual({
+      status: 'confirmed',
+      confirmedQuestionCount: 3,
+      confirmedResponseCount: 3,
+      confirmedMatchCount: 3,
+      rejectedQuestionCount: 2,
+      rejectedResponseCount: 2,
+    });
+    expect(JSON.stringify(summary)).not.toMatch(
+      /answer|artifact|digest|sha256|fingerprint|event|operation|ref|objectKey|path|decision/u,
     );
   });
 

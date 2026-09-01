@@ -19,6 +19,10 @@ import {
   deriveExamDocumentArtifactRef,
   deriveExamDocumentId,
   deriveExamEventId,
+  deriveExamHumanReviewArtifactRef,
+  deriveExamHumanReviewCompletedOperationId,
+  deriveExamHumanReviewRef,
+  deriveExamHumanReviewStartedOperationId,
   deriveExamIntakeCompletedOperationId,
   deriveExamQuestionCandidatesExtractedOperationId,
   deriveExamQuestionExtractionStartedOperationId,
@@ -41,6 +45,8 @@ import type {
   ExamCreatedEvent,
   ExamDocumentArtifactExtractedEvent,
   ExamDocumentSnapshottedEvent,
+  ExamHumanReviewCompletedEvent,
+  ExamHumanReviewStartedEvent,
   ExamIntakeCompletedEvent,
   ExamQuestionCandidatesExtractedEvent,
   ExamQuestionExtractionStartedEvent,
@@ -448,6 +454,86 @@ function responseEvents(
   return [started, recorded, completed];
 }
 
+function humanReviewEvents(
+  created: ExamCreatedEvent,
+): [ExamHumanReviewStartedEvent, ExamHumanReviewCompletedEvent] {
+  const candidates = extractionEvents(created)[3];
+  const [capture, response, matching] = responseEvents(created);
+  const reviewVersion = 1;
+  const upstreamPlan = {
+    reviewVersion,
+    questionExtractionVersion: candidates.extractionVersion,
+    questionSegmentationVersion: candidates.segmentationVersion,
+    responseCaptureVersion: capture.captureVersion,
+    matchingVersion: matching.matchingVersion,
+    questionCandidateArtifactRef: candidates.candidateArtifactRef,
+    sourceQuestionCandidateFingerprint: candidates.artifactSha256,
+    responseArtifactRef: response.responseArtifactRef,
+    sourceResponseArtifactFingerprint: response.artifactSha256,
+    matchingArtifactRef: matching.matchingArtifactRef,
+    sourceMatchingArtifactFingerprint: matching.artifactSha256,
+  } as const;
+  const reviewRefInput = { examSessionId: created.examSessionId, ...upstreamPlan };
+  const plan = {
+    ...upstreamPlan,
+    decisionSemanticFingerprint: '1'.repeat(64),
+    reviewArtifactRef: deriveExamHumanReviewArtifactRef(deriveExamHumanReviewRef(reviewRefInput)),
+  };
+  const startedOperationId = deriveExamHumanReviewStartedOperationId(
+    created.examSessionId,
+    reviewVersion,
+  );
+  const started: ExamHumanReviewStartedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(startedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_human_review_started',
+    createdAt: '2026-08-31T08:00:10.000Z',
+    operationId: startedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_human_review_started',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...plan,
+    }),
+    ...plan,
+  };
+  const completedFacts = {
+    ...plan,
+    artifactByteLength: 224,
+    artifactSha256: '2'.repeat(64),
+    confirmedQuestionCount: 3,
+    confirmedResponseCount: 3,
+    confirmedMatchCount: 3,
+    rejectedQuestionCount: 2,
+    rejectedResponseCount: 2,
+  };
+  const completedOperationId = deriveExamHumanReviewCompletedOperationId(
+    created.examSessionId,
+    reviewVersion,
+  );
+  const completed: ExamHumanReviewCompletedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(completedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_human_review_completed',
+    createdAt: '2026-08-31T08:00:11.000Z',
+    operationId: completedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_human_review_completed',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...completedFacts,
+    }),
+    ...completedFacts,
+  };
+  return [started, completed];
+}
+
 describe('Exam RuntimeStore adapter', () => {
   it('derives stable partitioned Exam and document identities', () => {
     const learner = resolveZhongkaoLearnerKeyFromOwnerId(OWNER_ID);
@@ -483,6 +569,30 @@ describe('Exam RuntimeStore adapter', () => {
     );
     expect(deriveExamCandidateArtifactRef(first, documentId, 1, 1)).not.toBe(
       deriveExamCandidateArtifactRef(first, documentId, 1, 2),
+    );
+    const reviewInput = {
+      examSessionId: first,
+      reviewVersion: 1,
+      questionExtractionVersion: 1,
+      questionSegmentationVersion: 1,
+      responseCaptureVersion: 1,
+      matchingVersion: 1,
+      questionCandidateArtifactRef: 'question-candidates-ref',
+      sourceQuestionCandidateFingerprint: 'a'.repeat(64),
+      responseArtifactRef: 'response-candidates-ref',
+      sourceResponseArtifactFingerprint: 'b'.repeat(64),
+      matchingArtifactRef: 'response-matches-ref',
+      sourceMatchingArtifactFingerprint: 'c'.repeat(64),
+    };
+    const reviewRef = deriveExamHumanReviewRef(reviewInput);
+    expect(reviewRef).toBe(deriveExamHumanReviewRef(reviewInput));
+    expect(reviewRef).not.toBe(deriveExamHumanReviewRef({ ...reviewInput, reviewVersion: 2 }));
+    expect(deriveExamHumanReviewArtifactRef(reviewRef)).not.toBe(reviewRef);
+    expect(deriveExamHumanReviewStartedOperationId(first, 1)).toBe(
+      deriveExamHumanReviewStartedOperationId(first, 1),
+    );
+    expect(deriveExamHumanReviewStartedOperationId(first, 1)).not.toBe(
+      deriveExamHumanReviewCompletedOperationId(first, 1),
     );
   });
 
@@ -823,6 +933,118 @@ describe('Exam RuntimeStore adapter', () => {
       appendExamRuntimeEvent(
         { store: backing, ownerId: OWNER_ID },
         { event: changed, expectedRevision: 6 },
+      ),
+    ).rejects.toThrow('EXAM_EVENT_CONFLICT');
+  });
+
+  it('derives, appends and replays one immutable human-review fact chain', async () => {
+    const backing = store();
+    const created = createdEvent();
+    await ensureExamRuntimeCreated({ store: backing, ownerId: OWNER_ID }, created);
+    await appendExamRuntimeEvent(
+      { store: backing, ownerId: OWNER_ID },
+      { event: snapshotEvent(created), expectedRevision: 0 },
+    );
+    await appendExamRuntimeEvent(
+      { store: backing, ownerId: OWNER_ID },
+      { event: completedEvent(created), expectedRevision: 1 },
+    );
+    for (const [index, event] of [
+      ...extractionEvents(created),
+      ...responseEvents(created),
+    ].entries()) {
+      await appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event, expectedRevision: index + 2 },
+      );
+    }
+
+    const [started, completed] = humanReviewEvents(created);
+    const forged = { ...started, reviewArtifactRef: 'forged-review-artifact-ref' };
+    forged.operationFingerprint = createExamOperationFingerprint({
+      action: forged.eventType,
+      schemaVersion: forged.schemaVersion,
+      examSessionId: forged.examSessionId,
+      profileId: forged.profileId,
+      reviewVersion: forged.reviewVersion,
+      questionExtractionVersion: forged.questionExtractionVersion,
+      questionSegmentationVersion: forged.questionSegmentationVersion,
+      responseCaptureVersion: forged.responseCaptureVersion,
+      matchingVersion: forged.matchingVersion,
+      questionCandidateArtifactRef: forged.questionCandidateArtifactRef,
+      sourceQuestionCandidateFingerprint: forged.sourceQuestionCandidateFingerprint,
+      responseArtifactRef: forged.responseArtifactRef,
+      sourceResponseArtifactFingerprint: forged.sourceResponseArtifactFingerprint,
+      matchingArtifactRef: forged.matchingArtifactRef,
+      sourceMatchingArtifactFingerprint: forged.sourceMatchingArtifactFingerprint,
+      decisionSemanticFingerprint: forged.decisionSemanticFingerprint,
+      reviewArtifactRef: forged.reviewArtifactRef,
+    });
+    await expect(
+      appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event: forged, expectedRevision: 9 },
+      ),
+    ).rejects.toThrow('EXAM_EVENT_CONFLICT');
+
+    for (const [index, event] of [started, completed].entries()) {
+      const expectedRevision = index + 9;
+      const result = await appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event, expectedRevision },
+      );
+      expect(result).toMatchObject({ replayed: false, eventAppended: true });
+      await expect(
+        appendExamRuntimeEvent({ store: backing, ownerId: OWNER_ID }, { event, expectedRevision }),
+      ).resolves.toMatchObject({ replayed: true, eventAppended: false });
+    }
+
+    const snapshot = await loadExamRuntime(
+      { store: backing, ownerId: OWNER_ID },
+      created.examSessionId,
+    );
+    expect(snapshot.state).toMatchObject({
+      revision: 11,
+      studentResponseCapture: { status: 'matching_ready' },
+      humanReview: {
+        status: 'confirmed',
+        reviewArtifact: {
+          confirmedQuestionCount: 3,
+          confirmedResponseCount: 3,
+          confirmedMatchCount: 3,
+          rejectedQuestionCount: 2,
+          rejectedResponseCount: 2,
+        },
+      },
+    });
+
+    const changed = {
+      ...started,
+      decisionSemanticFingerprint: '9'.repeat(64),
+    };
+    changed.operationFingerprint = createExamOperationFingerprint({
+      action: changed.eventType,
+      schemaVersion: changed.schemaVersion,
+      examSessionId: changed.examSessionId,
+      profileId: changed.profileId,
+      reviewVersion: changed.reviewVersion,
+      questionExtractionVersion: changed.questionExtractionVersion,
+      questionSegmentationVersion: changed.questionSegmentationVersion,
+      responseCaptureVersion: changed.responseCaptureVersion,
+      matchingVersion: changed.matchingVersion,
+      questionCandidateArtifactRef: changed.questionCandidateArtifactRef,
+      sourceQuestionCandidateFingerprint: changed.sourceQuestionCandidateFingerprint,
+      responseArtifactRef: changed.responseArtifactRef,
+      sourceResponseArtifactFingerprint: changed.sourceResponseArtifactFingerprint,
+      matchingArtifactRef: changed.matchingArtifactRef,
+      sourceMatchingArtifactFingerprint: changed.sourceMatchingArtifactFingerprint,
+      decisionSemanticFingerprint: changed.decisionSemanticFingerprint,
+      reviewArtifactRef: changed.reviewArtifactRef,
+    });
+    await expect(
+      appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event: changed, expectedRevision: 9 },
       ),
     ).rejects.toThrow('EXAM_EVENT_CONFLICT');
   });

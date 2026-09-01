@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertPortableMaterialObjectKey,
   examDocumentArtifactObjectKey,
+  examHumanReviewObjectKey,
   examQuestionCandidatesObjectKey,
   examSnapshotObjectKey,
   examSnapshotObjectPrefix,
@@ -99,6 +100,20 @@ describe('material object key contract', () => {
     expect(() => assertPortableMaterialObjectKey(matching)).not.toThrow();
   });
 
+  it('derives versioned human-review facts under the exact Exam response lineage', () => {
+    const review = examHumanReviewObjectKey('exam-alpha', 1, 2, 3);
+    expect(review).toMatch(
+      /^materials\/v1\/exams\/exm_[a-f0-9]{64}\/response_capture_v1\/matching_v2\/human_review_v3\/confirmed_review_facts_v1\.json$/,
+    );
+    expect(review).toBe(examHumanReviewObjectKey('exam-alpha', 1, 2, 3));
+    expect(review).not.toBe(examHumanReviewObjectKey('exam-alpha', 1, 2, 4));
+    expect(review).not.toBe(examHumanReviewObjectKey('exam-beta', 1, 2, 3));
+    expect(review).not.toContain('exam-alpha');
+    expect(isExamSnapshotObjectKey('exam-alpha', review)).toBe(true);
+    expect(isExamSnapshotObjectKey('exam-beta', review)).toBe(false);
+    expect(() => assertPortableMaterialObjectKey(review)).not.toThrow();
+  });
+
   it('rejects invalid Exam derivative versions', () => {
     expect(() => examDocumentArtifactObjectKey('exam', 'document', 0)).toThrow(
       'invalid exam artifact version',
@@ -110,6 +125,12 @@ describe('material object key contract', () => {
       'invalid exam artifact version',
     );
     expect(() => examQuestionResponseMatchesObjectKey('exam', 1, Number.NaN)).toThrow(
+      'invalid exam artifact version',
+    );
+    expect(() => examHumanReviewObjectKey('exam', 1, 1, 0)).toThrow(
+      'invalid exam artifact version',
+    );
+    expect(() => examHumanReviewObjectKey('exam', 1, Number.NaN, 1)).toThrow(
       'invalid exam artifact version',
     );
   });

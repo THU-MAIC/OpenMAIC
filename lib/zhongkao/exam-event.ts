@@ -5,6 +5,7 @@ import {
   EXAM_MAX_CANDIDATE_ARTIFACT_BYTES,
   EXAM_MAX_DOCUMENT_ARTIFACT_BYTES,
   EXAM_MAX_EXTRACTED_PAGES,
+  EXAM_MAX_HUMAN_REVIEW_ARTIFACT_BYTES,
   EXAM_MAX_MATCH_ARTIFACT_BYTES,
   EXAM_MAX_DOCUMENTS,
   EXAM_MAX_DOCUMENT_BYTES,
@@ -163,6 +164,37 @@ export interface ExamResponseMatchingCompletedEvent
   needsReview: true;
 }
 
+export interface ExamHumanReviewPlanFacts {
+  reviewVersion: number;
+  questionExtractionVersion: number;
+  questionSegmentationVersion: number;
+  responseCaptureVersion: number;
+  matchingVersion: number;
+  questionCandidateArtifactRef: string;
+  sourceQuestionCandidateFingerprint: string;
+  responseArtifactRef: string;
+  sourceResponseArtifactFingerprint: string;
+  matchingArtifactRef: string;
+  sourceMatchingArtifactFingerprint: string;
+  decisionSemanticFingerprint: string;
+  reviewArtifactRef: string;
+}
+
+export interface ExamHumanReviewStartedEvent extends ExamEventBase, ExamHumanReviewPlanFacts {
+  eventType: 'exam_human_review_started';
+}
+
+export interface ExamHumanReviewCompletedEvent extends ExamEventBase, ExamHumanReviewPlanFacts {
+  eventType: 'exam_human_review_completed';
+  artifactByteLength: number;
+  artifactSha256: string;
+  confirmedQuestionCount: number;
+  confirmedResponseCount: number;
+  confirmedMatchCount: number;
+  rejectedQuestionCount: number;
+  rejectedResponseCount: number;
+}
+
 export interface ExamDeleteRequestedEvent extends ExamEventBase {
   eventType: 'exam_delete_requested';
   documentSetFingerprint: string;
@@ -185,6 +217,8 @@ export type ExamEvent =
   | ExamStudentResponseCaptureStartedEvent
   | ExamResponseCandidatesRecordedEvent
   | ExamResponseMatchingCompletedEvent
+  | ExamHumanReviewStartedEvent
+  | ExamHumanReviewCompletedEvent
   | ExamDeleteRequestedEvent
   | ExamDeletedEvent;
 
@@ -201,6 +235,8 @@ export const EXAM_EVENT_TYPES = [
   'exam_student_response_capture_started',
   'exam_response_candidates_recorded',
   'exam_response_matching_completed',
+  'exam_human_review_started',
+  'exam_human_review_completed',
   'exam_delete_requested',
   'exam_deleted',
 ] as const satisfies readonly ExamEventType[];
@@ -214,6 +250,22 @@ const COMMON_KEYS = [
   'createdAt',
   'operationId',
   'operationFingerprint',
+] as const;
+
+const HUMAN_REVIEW_PLAN_KEYS = [
+  'reviewVersion',
+  'questionExtractionVersion',
+  'questionSegmentationVersion',
+  'responseCaptureVersion',
+  'matchingVersion',
+  'questionCandidateArtifactRef',
+  'sourceQuestionCandidateFingerprint',
+  'responseArtifactRef',
+  'sourceResponseArtifactFingerprint',
+  'matchingArtifactRef',
+  'sourceMatchingArtifactFingerprint',
+  'decisionSemanticFingerprint',
+  'reviewArtifactRef',
 ] as const;
 
 const EVENT_KEYS: Readonly<Record<ExamEventType, ReadonlySet<string>>> = {
@@ -323,6 +375,18 @@ const EVENT_KEYS: Readonly<Record<ExamEventType, ReadonlySet<string>>> = {
     'ambiguousCount',
     'unmatchedCount',
     'needsReview',
+  ]),
+  exam_human_review_started: new Set([...COMMON_KEYS, ...HUMAN_REVIEW_PLAN_KEYS]),
+  exam_human_review_completed: new Set([
+    ...COMMON_KEYS,
+    ...HUMAN_REVIEW_PLAN_KEYS,
+    'artifactByteLength',
+    'artifactSha256',
+    'confirmedQuestionCount',
+    'confirmedResponseCount',
+    'confirmedMatchCount',
+    'rejectedQuestionCount',
+    'rejectedResponseCount',
   ]),
   exam_delete_requested: new Set([...COMMON_KEYS, 'documentSetFingerprint']),
   exam_deleted: new Set([...COMMON_KEYS, 'documentSetFingerprint', 'deleteRequestEventId']),
@@ -526,6 +590,48 @@ function validateResponseCapturePlan(
   }
 }
 
+function validateHumanReviewPlan(
+  value: Record<string, unknown>,
+  errors: DomainValidationIssue[],
+): void {
+  validatePositiveVersion(value.reviewVersion, '/reviewVersion', errors);
+  validatePositiveVersion(value.questionExtractionVersion, '/questionExtractionVersion', errors);
+  validatePositiveVersion(
+    value.questionSegmentationVersion,
+    '/questionSegmentationVersion',
+    errors,
+  );
+  validatePositiveVersion(value.responseCaptureVersion, '/responseCaptureVersion', errors);
+  validatePositiveVersion(value.matchingVersion, '/matchingVersion', errors);
+  validateIdentifier(value.questionCandidateArtifactRef, '/questionCandidateArtifactRef', errors);
+  validateSha256(
+    value.sourceQuestionCandidateFingerprint,
+    '/sourceQuestionCandidateFingerprint',
+    errors,
+  );
+  validateIdentifier(value.responseArtifactRef, '/responseArtifactRef', errors);
+  validateSha256(
+    value.sourceResponseArtifactFingerprint,
+    '/sourceResponseArtifactFingerprint',
+    errors,
+  );
+  validateIdentifier(value.matchingArtifactRef, '/matchingArtifactRef', errors);
+  validateSha256(
+    value.sourceMatchingArtifactFingerprint,
+    '/sourceMatchingArtifactFingerprint',
+    errors,
+  );
+  validateSha256(value.decisionSemanticFingerprint, '/decisionSemanticFingerprint', errors);
+  validateIdentifier(value.reviewArtifactRef, '/reviewArtifactRef', errors);
+  if (
+    value.reviewArtifactRef === value.questionCandidateArtifactRef ||
+    value.reviewArtifactRef === value.responseArtifactRef ||
+    value.reviewArtifactRef === value.matchingArtifactRef
+  ) {
+    pushIssue(errors, '/reviewArtifactRef', 'human review artifact reference must be distinct');
+  }
+}
+
 export function validateExamEvent(value: unknown): DomainValidationResult {
   const errors: DomainValidationIssue[] = [];
   if (!isPlainRecord(value)) {
@@ -668,6 +774,54 @@ export function validateExamEvent(value: unknown): DomainValidationResult {
       }
       if (value.needsReview !== true) {
         pushIssue(errors, '/needsReview', 'response matching always requires review');
+      }
+      break;
+    }
+    case 'exam_human_review_started':
+      validateHumanReviewPlan(value, errors);
+      break;
+    case 'exam_human_review_completed': {
+      validateHumanReviewPlan(value, errors);
+      validateArtifactByteLength(
+        value.artifactByteLength,
+        '/artifactByteLength',
+        EXAM_MAX_HUMAN_REVIEW_ARTIFACT_BYTES,
+        errors,
+      );
+      validateSha256(value.artifactSha256, '/artifactSha256', errors);
+      for (const field of [
+        'confirmedQuestionCount',
+        'confirmedResponseCount',
+        'confirmedMatchCount',
+        'rejectedQuestionCount',
+        'rejectedResponseCount',
+      ] as const) {
+        validateBoundedCount(value[field], `/${field}`, EXAM_MAX_QUESTION_CANDIDATES, true, errors);
+      }
+      if (
+        Number.isSafeInteger(value.confirmedQuestionCount) &&
+        Number.isSafeInteger(value.rejectedQuestionCount) &&
+        (value.confirmedQuestionCount as number) + (value.rejectedQuestionCount as number) >
+          EXAM_MAX_QUESTION_CANDIDATES
+      ) {
+        pushIssue(errors, '/confirmedQuestionCount', 'question decisions exceed the candidate cap');
+      }
+      if (
+        Number.isSafeInteger(value.confirmedResponseCount) &&
+        Number.isSafeInteger(value.rejectedResponseCount) &&
+        (value.confirmedResponseCount as number) + (value.rejectedResponseCount as number) >
+          EXAM_MAX_QUESTION_CANDIDATES
+      ) {
+        pushIssue(errors, '/confirmedResponseCount', 'response decisions exceed the candidate cap');
+      }
+      if (
+        Number.isSafeInteger(value.confirmedMatchCount) &&
+        Number.isSafeInteger(value.confirmedQuestionCount) &&
+        Number.isSafeInteger(value.confirmedResponseCount) &&
+        ((value.confirmedMatchCount as number) !== (value.confirmedQuestionCount as number) ||
+          (value.confirmedMatchCount as number) !== (value.confirmedResponseCount as number))
+      ) {
+        pushIssue(errors, '/confirmedMatchCount', 'confirmed decision counts must agree');
       }
       break;
     }

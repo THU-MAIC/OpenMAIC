@@ -2,13 +2,19 @@ import type { RuntimeRecord } from '@openmaic/dsl';
 
 import {
   EXAM_SCHEMA_VERSION,
+  type PublicExamHumanReviewSummary,
   type PublicExamQuestionExtractionSummary,
   type PublicExamSession,
   type PublicExamStatus,
   type PublicExamStudentResponseMatchingSummary,
 } from './exam';
 import { ExamError } from './exam-errors';
-import { assertExamEvent, type ExamCreatedDocument, type ExamEvent } from './exam-event';
+import {
+  assertExamEvent,
+  type ExamCreatedDocument,
+  type ExamEvent,
+  type ExamHumanReviewPlanFacts,
+} from './exam-event';
 
 export type ExamSessionStatus = 'intake_pending' | 'ready_for_extraction' | 'deleting' | 'deleted';
 
@@ -112,6 +118,27 @@ export interface ExamStudentResponseCaptureState {
   matchingArtifact?: ExamResponseMatchingArtifactFact;
 }
 
+export type ExamHumanReviewStatus = 'confirming' | 'confirmed';
+
+export interface ExamHumanReviewArtifactFact {
+  eventId: string;
+  createdAt: string;
+  byteLength: number;
+  sha256: string;
+  confirmedQuestionCount: number;
+  confirmedResponseCount: number;
+  confirmedMatchCount: number;
+  rejectedQuestionCount: number;
+  rejectedResponseCount: number;
+}
+
+export interface ExamHumanReviewState extends ExamHumanReviewPlanFacts {
+  status: ExamHumanReviewStatus;
+  startedEventId: string;
+  startedAt: string;
+  reviewArtifact?: ExamHumanReviewArtifactFact;
+}
+
 export interface ExamSessionState {
   schemaVersion: typeof EXAM_SCHEMA_VERSION;
   examSessionId: string;
@@ -126,6 +153,7 @@ export interface ExamSessionState {
   documents: ExamDocumentState[];
   questionExtraction?: ExamQuestionExtractionState;
   studentResponseCapture?: ExamStudentResponseCaptureState;
+  humanReview?: ExamHumanReviewState;
   intakeCompletedEventId?: string;
   deleteRequestedEventId?: string;
   deletedEventId?: string;
@@ -182,6 +210,32 @@ function responsePlanMatches(
     event.captureRef === capture.captureRef &&
     event.responseArtifactRef === capture.responseArtifactRef &&
     event.matchingArtifactRef === capture.matchingArtifactRef
+  );
+}
+
+type ExamHumanReviewPlanEvent = Extract<
+  ExamEvent,
+  { eventType: 'exam_human_review_started' | 'exam_human_review_completed' }
+>;
+
+function humanReviewPlanMatches(
+  review: ExamHumanReviewState,
+  event: ExamHumanReviewPlanEvent,
+): boolean {
+  return (
+    event.reviewVersion === review.reviewVersion &&
+    event.questionExtractionVersion === review.questionExtractionVersion &&
+    event.questionSegmentationVersion === review.questionSegmentationVersion &&
+    event.responseCaptureVersion === review.responseCaptureVersion &&
+    event.matchingVersion === review.matchingVersion &&
+    event.questionCandidateArtifactRef === review.questionCandidateArtifactRef &&
+    event.sourceQuestionCandidateFingerprint === review.sourceQuestionCandidateFingerprint &&
+    event.responseArtifactRef === review.responseArtifactRef &&
+    event.sourceResponseArtifactFingerprint === review.sourceResponseArtifactFingerprint &&
+    event.matchingArtifactRef === review.matchingArtifactRef &&
+    event.sourceMatchingArtifactFingerprint === review.sourceMatchingArtifactFingerprint &&
+    event.decisionSemanticFingerprint === review.decisionSemanticFingerprint &&
+    event.reviewArtifactRef === review.reviewArtifactRef
   );
 }
 
@@ -471,6 +525,101 @@ export function foldExamEvents(records: readonly RuntimeRecord[]): ExamSessionSt
           };
           break;
         }
+        case 'exam_human_review_started': {
+          const extraction = state.questionExtraction;
+          const segmentation = extraction?.segmentation;
+          const candidateArtifact = segmentation?.candidateArtifact;
+          const capture = state.studentResponseCapture;
+          const responseArtifact = capture?.responseArtifact;
+          const matchingArtifact = capture?.matchingArtifact;
+          if (
+            state.status !== 'ready_for_extraction' ||
+            extraction?.status !== 'question_candidates_ready' ||
+            !segmentation ||
+            !candidateArtifact ||
+            capture?.status !== 'matching_ready' ||
+            !responseArtifact ||
+            !matchingArtifact ||
+            state.humanReview ||
+            event.questionExtractionVersion !== extraction.extractionVersion ||
+            event.questionSegmentationVersion !== segmentation.segmentationVersion ||
+            event.responseCaptureVersion !== capture.captureVersion ||
+            event.matchingVersion !== capture.matchingVersion ||
+            event.questionCandidateArtifactRef !== segmentation.candidateArtifactRef ||
+            event.sourceQuestionCandidateFingerprint !== candidateArtifact.sha256 ||
+            event.responseArtifactRef !== capture.responseArtifactRef ||
+            event.sourceResponseArtifactFingerprint !== responseArtifact.sha256 ||
+            event.matchingArtifactRef !== capture.matchingArtifactRef ||
+            event.sourceMatchingArtifactFingerprint !== matchingArtifact.sha256 ||
+            event.reviewArtifactRef === extraction.documentArtifactRef ||
+            event.reviewArtifactRef === segmentation.candidateArtifactRef ||
+            event.reviewArtifactRef === capture.captureRef ||
+            event.reviewArtifactRef === capture.responseArtifactRef ||
+            event.reviewArtifactRef === capture.matchingArtifactRef
+          ) {
+            conflict();
+          }
+          state.humanReview = {
+            status: 'confirming',
+            startedEventId: event.eventId,
+            startedAt: event.createdAt,
+            reviewVersion: event.reviewVersion,
+            questionExtractionVersion: event.questionExtractionVersion,
+            questionSegmentationVersion: event.questionSegmentationVersion,
+            responseCaptureVersion: event.responseCaptureVersion,
+            matchingVersion: event.matchingVersion,
+            questionCandidateArtifactRef: event.questionCandidateArtifactRef,
+            sourceQuestionCandidateFingerprint: event.sourceQuestionCandidateFingerprint,
+            responseArtifactRef: event.responseArtifactRef,
+            sourceResponseArtifactFingerprint: event.sourceResponseArtifactFingerprint,
+            matchingArtifactRef: event.matchingArtifactRef,
+            sourceMatchingArtifactFingerprint: event.sourceMatchingArtifactFingerprint,
+            decisionSemanticFingerprint: event.decisionSemanticFingerprint,
+            reviewArtifactRef: event.reviewArtifactRef,
+          };
+          break;
+        }
+        case 'exam_human_review_completed': {
+          const extraction = state.questionExtraction;
+          const candidateArtifact = extraction?.segmentation?.candidateArtifact;
+          const capture = state.studentResponseCapture;
+          const responseArtifact = capture?.responseArtifact;
+          const matchingArtifact = capture?.matchingArtifact;
+          const review = state.humanReview;
+          if (
+            state.status !== 'ready_for_extraction' ||
+            !candidateArtifact ||
+            capture?.status !== 'matching_ready' ||
+            !responseArtifact ||
+            !matchingArtifact ||
+            !review ||
+            review.status !== 'confirming' ||
+            review.reviewArtifact ||
+            !humanReviewPlanMatches(review, event) ||
+            event.confirmedQuestionCount !== event.confirmedResponseCount ||
+            event.confirmedQuestionCount !== event.confirmedMatchCount ||
+            event.confirmedQuestionCount + event.rejectedQuestionCount !==
+              candidateArtifact.candidateCount ||
+            event.rejectedResponseCount > responseArtifact.responseCount ||
+            event.confirmedResponseCount + event.rejectedResponseCount <
+              responseArtifact.responseCount
+          ) {
+            conflict();
+          }
+          review.status = 'confirmed';
+          review.reviewArtifact = {
+            eventId: event.eventId,
+            createdAt: event.createdAt,
+            byteLength: event.artifactByteLength,
+            sha256: event.artifactSha256,
+            confirmedQuestionCount: event.confirmedQuestionCount,
+            confirmedResponseCount: event.confirmedResponseCount,
+            confirmedMatchCount: event.confirmedMatchCount,
+            rejectedQuestionCount: event.rejectedQuestionCount,
+            rejectedResponseCount: event.rejectedResponseCount,
+          };
+          break;
+        }
         case 'exam_delete_requested':
           if (
             (state.status !== 'intake_pending' && state.status !== 'ready_for_extraction') ||
@@ -551,6 +700,23 @@ function toPublicStudentResponseMatching(
   };
 }
 
+function toPublicHumanReview(
+  review: ExamHumanReviewState | undefined,
+): PublicExamHumanReviewSummary {
+  if (!review) return { status: 'not_started' };
+  if (review.status === 'confirming') return { status: 'confirming' };
+  const artifact = review.reviewArtifact;
+  if (!artifact) conflict();
+  return {
+    status: 'confirmed',
+    confirmedQuestionCount: artifact.confirmedQuestionCount,
+    confirmedResponseCount: artifact.confirmedResponseCount,
+    confirmedMatchCount: artifact.confirmedMatchCount,
+    rejectedQuestionCount: artifact.rejectedQuestionCount,
+    rejectedResponseCount: artifact.rejectedResponseCount,
+  };
+}
+
 export function toPublicExamSession(state: ExamSessionState): PublicExamSession {
   if (state.status === 'deleted') throw new ExamError('EXAM_NOT_FOUND');
   return {
@@ -571,5 +737,6 @@ export function toPublicExamSession(state: ExamSessionState): PublicExamSession 
     })),
     questionExtraction: toPublicQuestionExtraction(state.questionExtraction),
     studentResponseMatching: toPublicStudentResponseMatching(state.studentResponseCapture),
+    humanReview: toPublicHumanReview(state.humanReview),
   };
 }

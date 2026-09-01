@@ -5,6 +5,7 @@ import {
   EXAM_MAX_DOCUMENT_BYTES,
   EXAM_MAX_DOCUMENT_ARTIFACT_BYTES,
   EXAM_MAX_EXTRACTED_PAGES,
+  EXAM_MAX_HUMAN_REVIEW_ARTIFACT_BYTES,
   EXAM_MAX_MATCH_ARTIFACT_BYTES,
   EXAM_MAX_QUESTION_CANDIDATES,
   EXAM_MAX_RESPONSE_ARTIFACT_BYTES,
@@ -33,6 +34,21 @@ const RESPONSE_PLAN = {
   captureRef: 'exam-response-capture-v1',
   responseArtifactRef: 'exam-response-artifact-v1',
   matchingArtifactRef: 'exam-response-matching-v1',
+} as const;
+const HUMAN_REVIEW_PLAN = {
+  reviewVersion: 1,
+  questionExtractionVersion: 1,
+  questionSegmentationVersion: 1,
+  responseCaptureVersion: 1,
+  matchingVersion: 1,
+  questionCandidateArtifactRef: RESPONSE_PLAN.questionCandidateArtifactRef,
+  sourceQuestionCandidateFingerprint: RESPONSE_PLAN.sourceQuestionCandidateFingerprint,
+  responseArtifactRef: RESPONSE_PLAN.responseArtifactRef,
+  sourceResponseArtifactFingerprint: '4'.repeat(64),
+  matchingArtifactRef: RESPONSE_PLAN.matchingArtifactRef,
+  sourceMatchingArtifactFingerprint: '5'.repeat(64),
+  decisionSemanticFingerprint: '6'.repeat(64),
+  reviewArtifactRef: 'exam-human-review-artifact-v1',
 } as const;
 
 function fingerprint(seed: number): string {
@@ -184,6 +200,21 @@ function event(eventType: ExamEvent['eventType']): ExamEvent {
         ambiguousCount: 1,
         unmatchedCount: 1,
         needsReview: true,
+      };
+    case 'exam_human_review_started':
+      return { ...base, eventType, ...HUMAN_REVIEW_PLAN };
+    case 'exam_human_review_completed':
+      return {
+        ...base,
+        eventType,
+        ...HUMAN_REVIEW_PLAN,
+        artifactByteLength: 224,
+        artifactSha256: '7'.repeat(64),
+        confirmedQuestionCount: 3,
+        confirmedResponseCount: 3,
+        confirmedMatchCount: 3,
+        rejectedQuestionCount: 2,
+        rejectedResponseCount: 2,
       };
     case 'exam_delete_requested':
       return { ...base, eventType, documentSetFingerprint: DOCUMENT_SET_FP };
@@ -390,6 +421,51 @@ describe('Exam event schema', () => {
       validateExamEvent({
         ...event('exam_response_matching_completed'),
         objectKey: 'materials/private/student_response_candidates_v1.json',
+      }).valid,
+    ).toBe(false);
+  });
+
+  it('validates closed human-review plans, artifact bounds and count projections', () => {
+    expect(
+      validateExamEvent({ ...event('exam_human_review_started'), reviewVersion: 0 }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_human_review_started'),
+        sourceMatchingArtifactFingerprint: 'bad',
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_human_review_started'),
+        reviewArtifactRef: HUMAN_REVIEW_PLAN.matchingArtifactRef,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_human_review_completed'),
+        artifactByteLength: EXAM_MAX_HUMAN_REVIEW_ARTIFACT_BYTES + 1,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_human_review_completed'),
+        confirmedMatchCount: 2,
+      }).valid,
+    ).toBe(false);
+  });
+
+  it('keeps raw review decisions, answers and storage locators out of review events', () => {
+    expect(
+      validateExamEvent({
+        ...event('exam_human_review_started'),
+        decisions: [{ responseText: 'PRIVATE-STUDENT-ANSWER' }],
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_human_review_completed'),
+        objectKey: 'materials/private/confirmed_review_facts_v1.json',
       }).valid,
     ).toBe(false);
   });

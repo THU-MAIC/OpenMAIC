@@ -1409,3 +1409,99 @@ It performs no OCR, answer-key interpretation, grading, correctness inference,
 knowledge-point mapping, diagnosis, StudyAttempt write, KnowledgeProgress
 mutation, Coach behavior, LLM/provider/runner/Skill call, or dependency change.
 Human confirmation and review remain M3A-3 work.
+
+## Milestone 3A-3 Human Confirmation Gate
+
+M3A-3 adds a dedicated owner-authorized review boundary after question
+extraction and deterministic response matching. An `ExamQuestionCandidate`, a
+`StudentResponseCandidate`, and a `QuestionResponseMatch` remain immutable
+machine or capture facts. High confidence, a unique match, and an observed
+blank never promote themselves to confirmed facts. Only one explicit,
+complete owner review POST can create the independent confirmed overlay.
+
+The review GET rebuilds its bundle from the validated Exam Runtime and the
+integrity-checked question, response, and matching artifacts on every request.
+It may show logical candidate ids, source spans, original question and answer
+text, structural diagnostics, and the effective confirmed overlay because it
+is an owner-only review surface. It never returns object keys, digests,
+RuntimeSession ids, events, operations, learner or owner partitions, or local
+paths. The ordinary Exam DTO exposes only `not_started`, `confirming`, or
+`confirmed` plus confirmed and rejected counts after completion.
+
+### Full-set decisions and provenance
+
+Review v1 accepts a closed, bounded full decision set. Every question
+candidate is explicitly resolved. A leaf may be confirmed, corrected and
+confirmed, or rejected; a group can only be explicitly rejected and remains
+context for its leaf children. Every response candidate is confirmed against
+one confirmed leaf, corrected and linked to one leaf, or rejected. Every
+confirmed question has exactly one confirmed response or one explicit
+`no_response` fact. No response can be reused, and final confirmed locators
+must be unique.
+
+Question and answer corrections are overlays. They preserve the source
+candidate id and never overwrite extracted text, raw captured answers, source
+spans, or the machine match. Corrected labels and optional section headings
+are parsed by the shared deterministic locator logic. Corrected text is stored
+exactly within fixed limits and is not normalized, simplified, evaluated, or
+rewritten by a model. Question provenance distinguishes
+`extracted_confirmed` from `owner_corrected`; answer provenance distinguishes
+`captured_confirmed`, `owner_corrected`, and `owner_no_response`.
+For a confirmed leaf with a group parent, the private confirmed fact also
+retains the parent's validated source id, locator, exact extracted text, and
+source spans as `extracted_confirmed` context. The parent remains non-gradable,
+but the confirmed-facts resolver therefore supplies the complete question
+context without bypassing the confirmation gate to reread raw candidates.
+
+`blank` means a response candidate exists and its empty answer field was
+explicitly confirmed. `no_response` means the owner explicitly confirmed that
+no response candidate was observed for that question. Neither is incorrect,
+skipped, zero points, or any other grading result. A unique deterministic
+candidate match confirmed by the owner records
+`deterministic_match_confirmed`. Selecting a target for an ambiguous or
+unmatched candidate records `owner_manual_link`; it is an explicit human
+assertion, not fuzzy inference. Rejected candidates remain present in their
+immutable source artifacts and have closed rejection reasons in the private
+review facts.
+
+### Confirmed facts, persistence, and recovery
+
+The private `ConfirmedExamReviewFactsV1` artifact binds the exact question
+extraction and segmentation versions, response capture version, matching
+version, all three source artifact references and SHA-256 facts, the review
+version, and a separate canonical human-decision fingerprint. Confirmed
+question, response, and relation ids are server-derived domain-separated
+hashes. The artifact contains the canonical decisions, confirmed facts, and
+rejections, but no correctness, score, answer-key, grading, knowledge-point,
+diagnosis, outcome, or mastery field.
+
+The event stream records `exam_human_review_started` before review artifact
+bytes. The started event contains only bounded versions, opaque references,
+source fingerprints, and the decision fingerprint. The service then writes
+canonical `confirmed_review_facts_v1.json` bytes to a deterministic private
+Exam key, reads them back, and verifies exact bytes before appending
+`exam_human_review_completed` with digest, length, and counts. Raw questions,
+answers, corrections, and decisions never enter RuntimeStore events.
+
+A retry after a started-event crash continues the same plan. A retry after
+artifact bytes but before the completed event verifies the deterministic
+bytes and appends completion. A retry after committed response loss returns
+the same confirmed summary. The same full decision set replays; a different
+decision set or changed source binding conflicts and never overwrites review
+v1. Review and deletion share the per-Exam mutation lock. Delete removes the
+review key as soon as a started plan exists, including a partial artifact left
+before completion, and no deleted Exam can be resurrected by late review work.
+
+The server-only `resolveConfirmedExamReviewFacts` function is the sole future
+M3B question, response, and relation authority. It reauthorizes the owner and
+profile partition, requires confirmed review state, verifies object length and
+digest, parses the closed schema, revalidates all current source bindings,
+recomputes deterministic ids and the complete overlay, and fails closed on
+any mismatch. M3B must not bypass this gate by selecting directly from raw
+question candidates, response candidates, or machine matches.
+
+M3A-3 does not read the `answer_key` snapshot or the `student_response`
+snapshot. It adds no answer-key extraction, OCR, vision, fuzzy matching,
+grading, correctness, score, knowledge mapping, diagnosis, ExamObservation,
+StudyAttempt or KnowledgeProgress mutation, Coach behavior, UI, LLM, provider,
+runner, Skill, production dependency, or database schema.

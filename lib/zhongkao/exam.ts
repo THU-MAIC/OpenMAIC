@@ -22,6 +22,7 @@ export const EXAM_MAX_DOCUMENT_ARTIFACT_BYTES = 12 * 1024 * 1024;
 export const EXAM_MAX_CANDIDATE_ARTIFACT_BYTES = 32 * 1024 * 1024;
 export const EXAM_MAX_RESPONSE_ARTIFACT_BYTES = 4 * 1024 * 1024;
 export const EXAM_MAX_MATCH_ARTIFACT_BYTES = 4 * 1024 * 1024;
+export const EXAM_MAX_HUMAN_REVIEW_ARTIFACT_BYTES = 4 * 1024 * 1024;
 export const EXAM_MAX_EXTRACTED_PAGES = 200;
 export const EXAM_MAX_QUESTION_CANDIDATES = 500;
 
@@ -88,6 +89,17 @@ export interface PublicExamStudentResponseMatchingSummary {
   needsReview: true;
 }
 
+export type PublicExamHumanReviewStatus = 'not_started' | 'confirming' | 'confirmed';
+
+export interface PublicExamHumanReviewSummary {
+  status: PublicExamHumanReviewStatus;
+  confirmedQuestionCount?: number;
+  confirmedResponseCount?: number;
+  confirmedMatchCount?: number;
+  rejectedQuestionCount?: number;
+  rejectedResponseCount?: number;
+}
+
 export interface PublicExamDocument {
   examDocumentId: string;
   role: ExamDocumentRole;
@@ -108,6 +120,7 @@ export interface PublicExamSession {
   documents: readonly PublicExamDocument[];
   questionExtraction: PublicExamQuestionExtractionSummary;
   studentResponseMatching: PublicExamStudentResponseMatchingSummary;
+  humanReview: PublicExamHumanReviewSummary;
 }
 
 const CREATE_REQUEST_KEYS = new Set([

@@ -5,7 +5,12 @@ import { RuntimeAppendConflictError, type RuntimeStore } from '@openmaic/storage
 
 import { EXAM_DOCUMENT_SCHEMA_VERSION, EXAM_SCHEMA_VERSION } from '@/lib/zhongkao/exam';
 import { ExamError } from '@/lib/zhongkao/exam-errors';
-import { assertExamEvent, type ExamCreatedEvent, type ExamEvent } from '@/lib/zhongkao/exam-event';
+import {
+  assertExamEvent,
+  type ExamCreatedEvent,
+  type ExamEvent,
+  type ExamHumanReviewPlanFacts,
+} from '@/lib/zhongkao/exam-event';
 import { foldExamEvents, type ExamSessionState } from '@/lib/zhongkao/exam-state';
 import { ZHONGKAO_RUNTIME_KINDS } from '@/lib/zhongkao/runtime-kinds';
 import { zhongkaoStageId } from '@/lib/zhongkao/runtime';
@@ -119,6 +124,24 @@ export function deriveExamMatchingArtifactRef(captureRef: string, matchingVersio
   return `exam-question-response-matches:v${EXAM_ID_VERSION}:${digest(
     'openmaic:zhongkao-exam-question-response-matches:v1',
     { captureRef, matchingVersion },
+  )}`;
+}
+
+export type ExamHumanReviewRefInput = {
+  examSessionId: string;
+} & Omit<ExamHumanReviewPlanFacts, 'decisionSemanticFingerprint' | 'reviewArtifactRef'>;
+
+export function deriveExamHumanReviewRef(input: ExamHumanReviewRefInput): string {
+  return `exam-human-review:v${EXAM_ID_VERSION}:${digest(
+    'openmaic:zhongkao-exam-human-review:v1',
+    input,
+  )}`;
+}
+
+export function deriveExamHumanReviewArtifactRef(reviewRef: string): string {
+  return `exam-confirmed-review-facts:v${EXAM_ID_VERSION}:${digest(
+    'openmaic:zhongkao-exam-confirmed-review-facts:v1',
+    { reviewRef },
   )}`;
 }
 
@@ -267,6 +290,20 @@ export function deriveExamResponseMatchingCompletedOperationId(
   });
 }
 
+export function deriveExamHumanReviewStartedOperationId(
+  examSessionId: string,
+  reviewVersion: number,
+): string {
+  return operationId('human-review-started', { examSessionId, reviewVersion });
+}
+
+export function deriveExamHumanReviewCompletedOperationId(
+  examSessionId: string,
+  reviewVersion: number,
+): string {
+  return operationId('human-review-completed', { examSessionId, reviewVersion });
+}
+
 export function deriveExamDeleteRequestedOperationId(examSessionId: string): string {
   return operationId('delete-requested', { schemaVersion: EXAM_SCHEMA_VERSION, examSessionId });
 }
@@ -321,6 +358,53 @@ function assertDerivedResponseCapturePlan(event: ExamResponsePlanEvent): void {
     event.responseArtifactRef !== deriveExamResponseArtifactRef(captureRef) ||
     event.matchingArtifactRef !== deriveExamMatchingArtifactRef(captureRef, event.matchingVersion)
   ) {
+    throw new ExamError('EXAM_EVENT_CONFLICT');
+  }
+}
+
+type ExamHumanReviewPlanEvent = Extract<
+  ExamEvent,
+  { eventType: 'exam_human_review_started' | 'exam_human_review_completed' }
+>;
+
+function humanReviewPlanFacts(event: ExamHumanReviewPlanEvent): ExamHumanReviewPlanFacts {
+  return {
+    reviewVersion: event.reviewVersion,
+    questionExtractionVersion: event.questionExtractionVersion,
+    questionSegmentationVersion: event.questionSegmentationVersion,
+    responseCaptureVersion: event.responseCaptureVersion,
+    matchingVersion: event.matchingVersion,
+    questionCandidateArtifactRef: event.questionCandidateArtifactRef,
+    sourceQuestionCandidateFingerprint: event.sourceQuestionCandidateFingerprint,
+    responseArtifactRef: event.responseArtifactRef,
+    sourceResponseArtifactFingerprint: event.sourceResponseArtifactFingerprint,
+    matchingArtifactRef: event.matchingArtifactRef,
+    sourceMatchingArtifactFingerprint: event.sourceMatchingArtifactFingerprint,
+    decisionSemanticFingerprint: event.decisionSemanticFingerprint,
+    reviewArtifactRef: event.reviewArtifactRef,
+  };
+}
+
+function humanReviewRefInput(event: ExamHumanReviewPlanEvent): ExamHumanReviewRefInput {
+  return {
+    examSessionId: event.examSessionId,
+    reviewVersion: event.reviewVersion,
+    questionExtractionVersion: event.questionExtractionVersion,
+    questionSegmentationVersion: event.questionSegmentationVersion,
+    responseCaptureVersion: event.responseCaptureVersion,
+    matchingVersion: event.matchingVersion,
+    questionCandidateArtifactRef: event.questionCandidateArtifactRef,
+    sourceQuestionCandidateFingerprint: event.sourceQuestionCandidateFingerprint,
+    responseArtifactRef: event.responseArtifactRef,
+    sourceResponseArtifactFingerprint: event.sourceResponseArtifactFingerprint,
+    matchingArtifactRef: event.matchingArtifactRef,
+    sourceMatchingArtifactFingerprint: event.sourceMatchingArtifactFingerprint,
+  };
+}
+
+function assertDerivedHumanReviewPlan(event: ExamHumanReviewPlanEvent): void {
+  const reviewRef = deriveExamHumanReviewRef(humanReviewRefInput(event));
+  if (event.reviewArtifactRef !== deriveExamHumanReviewArtifactRef(reviewRef)) {
     throw new ExamError('EXAM_EVENT_CONFLICT');
   }
 }
@@ -600,6 +684,41 @@ function assertDerivedExamEvent(event: ExamEvent): void {
         ambiguousCount: event.ambiguousCount,
         unmatchedCount: event.unmatchedCount,
         needsReview: event.needsReview,
+      });
+      break;
+    case 'exam_human_review_started':
+      assertDerivedHumanReviewPlan(event);
+      expectedOperationId = deriveExamHumanReviewStartedOperationId(
+        event.examSessionId,
+        event.reviewVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_human_review_started',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...humanReviewPlanFacts(event),
+      });
+      break;
+    case 'exam_human_review_completed':
+      assertDerivedHumanReviewPlan(event);
+      expectedOperationId = deriveExamHumanReviewCompletedOperationId(
+        event.examSessionId,
+        event.reviewVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_human_review_completed',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...humanReviewPlanFacts(event),
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        confirmedQuestionCount: event.confirmedQuestionCount,
+        confirmedResponseCount: event.confirmedResponseCount,
+        confirmedMatchCount: event.confirmedMatchCount,
+        rejectedQuestionCount: event.rejectedQuestionCount,
+        rejectedResponseCount: event.rejectedResponseCount,
       });
       break;
     case 'exam_delete_requested':
