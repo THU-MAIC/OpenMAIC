@@ -102,11 +102,17 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
   const requiresApiKey = currentProvider?.requiresApiKey ?? true;
 
   const handleApiKeyChange = (apiKey: string) => {
-    setImageProviderConfig(selectedProviderId, { apiKey });
+    setImageProviderConfig(selectedProviderId, {
+      apiKey,
+      ...(apiKey.trim() ? { enabled: true } : {}),
+    });
   };
 
   const handleBaseUrlChange = (baseUrl: string) => {
-    setImageProviderConfig(selectedProviderId, { baseUrl });
+    setImageProviderConfig(selectedProviderId, {
+      baseUrl,
+      ...(baseUrl.trim() ? { enabled: true } : {}),
+    });
   };
 
   const handleTest = async () => {
@@ -188,7 +194,11 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
             {t('settings.imageGenerationDisabledHint')}
           </p>
         </div>
-        <Switch checked={imageGenerationEnabled} onCheckedChange={setImageGenerationEnabled} />
+        <Switch
+          checked={imageGenerationEnabled}
+          onCheckedChange={setImageGenerationEnabled}
+          aria-label={t('settings.enableImageGeneration')}
+        />
       </div>
 
       {/* Server-configured notice */}

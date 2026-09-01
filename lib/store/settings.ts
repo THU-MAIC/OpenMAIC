@@ -466,12 +466,25 @@ function resolveMediaModels<T extends { id: string; name: string }>(
     : [...builtInModels, ...customModels];
 }
 
+function hasMediaCredential(value: string | undefined): boolean {
+  return !!value && value.trim().length > 0;
+}
+
 function isUsableMediaProvider(
   provider: { requiresApiKey: boolean } | undefined,
-  config: { apiKey?: string; enabled?: boolean; isServerConfigured?: boolean } | undefined,
+  config:
+    | {
+        apiKey?: string;
+        baseUrl?: string;
+        enabled?: boolean;
+        isServerConfigured?: boolean;
+      }
+    | undefined,
 ): boolean {
   if (!provider || config?.enabled === false) return false;
-  return !provider.requiresApiKey || !!config?.apiKey || !!config?.isServerConfigured;
+  if (config?.isServerConfigured) return true;
+  if (provider.requiresApiKey) return hasMediaCredential(config?.apiKey);
+  return hasMediaCredential(config?.baseUrl);
 }
 
 function shouldTurnOn(currentlyEnabled: boolean, usable: boolean): boolean {
@@ -1194,17 +1207,16 @@ export const useSettingsStore = create<SettingsState>()(
               ...state.imageProvidersConfig,
               [providerId]: mergedProvider,
             };
-            const hadImageCredential = !!(
-              state.imageProvidersConfig[providerId]?.apiKey ||
-              state.imageProvidersConfig[providerId]?.isServerConfigured
+            // Same usable-transition as TTS: empty -> usable turns the global
+            // flag on. A force-disabled provider (enabled: false) stays unused,
+            // and keyless providers (comfyui-image, lemonade) become usable
+            // from a baseUrl, not an API key.
+            const wasUsable = isUsableMediaProvider(
+              IMAGE_PROVIDERS[providerId],
+              state.imageProvidersConfig[providerId],
             );
-            const hasImageCredential = !!(
-              mergedProvider.apiKey || mergedProvider.isServerConfigured
-            );
-            const turnOnImage = shouldTurnOn(
-              state.imageGenerationEnabled,
-              !hadImageCredential && hasImageCredential,
-            );
+            const nowUsable = isUsableMediaProvider(IMAGE_PROVIDERS[providerId], mergedProvider);
+            const turnOnImage = shouldTurnOn(state.imageGenerationEnabled, !wasUsable && nowUsable);
             const base = {
               imageProvidersConfig,
               ...(turnOnImage ? { imageGenerationEnabled: true } : {}),
@@ -1272,17 +1284,12 @@ export const useSettingsStore = create<SettingsState>()(
               ...state.videoProvidersConfig,
               [providerId]: mergedProvider,
             };
-            const hadVideoCredential = !!(
-              state.videoProvidersConfig[providerId]?.apiKey ||
-              state.videoProvidersConfig[providerId]?.isServerConfigured
+            const wasUsable = isUsableMediaProvider(
+              VIDEO_PROVIDERS[providerId],
+              state.videoProvidersConfig[providerId],
             );
-            const hasVideoCredential = !!(
-              mergedProvider.apiKey || mergedProvider.isServerConfigured
-            );
-            const turnOnVideo = shouldTurnOn(
-              state.videoGenerationEnabled,
-              !hadVideoCredential && hasVideoCredential,
-            );
+            const nowUsable = isUsableMediaProvider(VIDEO_PROVIDERS[providerId], mergedProvider);
+            const turnOnVideo = shouldTurnOn(state.videoGenerationEnabled, !wasUsable && nowUsable);
             const base = {
               videoProvidersConfig,
               ...(turnOnVideo ? { videoGenerationEnabled: true } : {}),

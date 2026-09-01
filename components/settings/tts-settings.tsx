@@ -255,7 +255,11 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           <p className="text-sm font-medium">{t('settings.enableTTS')}</p>
           <p className="text-[11px] text-muted-foreground">{t('settings.ttsEnabledDescription')}</p>
         </div>
-        <Switch checked={ttsEnabled} onCheckedChange={setTTSEnabled} />
+        <Switch
+          checked={ttsEnabled}
+          onCheckedChange={setTTSEnabled}
+          aria-label={t('settings.enableTTS')}
+        />
       </div>
 
       {/* Browser-native TTS can't produce managed audio files, so the Pro-mode

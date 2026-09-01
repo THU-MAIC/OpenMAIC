@@ -64,11 +64,17 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
   const isServerConfigured = !!currentConfig?.isServerConfigured;
 
   const handleApiKeyChange = (apiKey: string) => {
-    setVideoProviderConfig(selectedProviderId, { apiKey });
+    setVideoProviderConfig(selectedProviderId, {
+      apiKey,
+      ...(apiKey.trim() ? { enabled: true } : {}),
+    });
   };
 
   const handleBaseUrlChange = (baseUrl: string) => {
-    setVideoProviderConfig(selectedProviderId, { baseUrl });
+    setVideoProviderConfig(selectedProviderId, {
+      baseUrl,
+      ...(baseUrl.trim() ? { enabled: true } : {}),
+    });
   };
 
   const handleTest = async () => {
@@ -150,7 +156,11 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
             {t('settings.videoGenerationDisabledHint')}
           </p>
         </div>
-        <Switch checked={videoGenerationEnabled} onCheckedChange={setVideoGenerationEnabled} />
+        <Switch
+          checked={videoGenerationEnabled}
+          onCheckedChange={setVideoGenerationEnabled}
+          aria-label={t('settings.enableVideoGeneration')}
+        />
       </div>
 
       {/* Server-configured notice */}
