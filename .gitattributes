@@ -1,3 +1,7 @@
+# Keep detected text files on LF across platforms so formatting checks see the
+# same contents on Windows, macOS, and Linux.
+* text=auto eol=lf
+
 # Shell scripts must keep LF endings even when checked out on Windows.
 #
 # With Git's default `core.autocrlf=true` on Windows, docker-entrypoint.sh is

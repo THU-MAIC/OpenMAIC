@@ -1466,7 +1466,7 @@ export const useSettingsStore = create<SettingsState>()(
               asr: Record<string, { disabled?: boolean }>;
               pdf: Record<string, Record<string, never>>;
               image: Record<string, { models?: string[]; disabled?: boolean }>;
-              video: Record<string, { disabled?: boolean }>;
+              video: Record<string, { models?: string[]; disabled?: boolean }>;
               webSearch: Record<string, { disabled?: boolean }>;
               generation?: { parallelSceneConcurrency?: number };
             };
@@ -1615,6 +1615,12 @@ export const useSettingsStore = create<SettingsState>()(
                     ...newImageConfig[key],
                     isServerConfigured: !info.disabled,
                     serverDisabled: info.disabled === true,
+                    ...(info.models?.length
+                      ? {
+                          customModels: info.models.map((id) => ({ id, name: id })),
+                          replaceBuiltInModels: true,
+                        }
+                      : {}),
                   };
                 }
               }
@@ -1641,6 +1647,12 @@ export const useSettingsStore = create<SettingsState>()(
                       ...newVideoConfig[key],
                       isServerConfigured: !info.disabled,
                       serverDisabled: info.disabled === true,
+                      ...(info.models?.length
+                        ? {
+                            customModels: info.models.map((id) => ({ id, name: id })),
+                            replaceBuiltInModels: true,
+                          }
+                        : {}),
                     };
                   }
                 }
