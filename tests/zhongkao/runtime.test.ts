@@ -18,6 +18,7 @@ import {
 } from '@/lib/zhongkao/runtime';
 import { confirmObservedField } from '@/lib/zhongkao/observed-field';
 import { createInitialStudentProfile } from '@/lib/zhongkao/profile';
+import { isServerOnlyRuntimeKind } from '@/lib/zhongkao/runtime-kinds';
 
 import { evaluatedStudyAttemptV2, NOW, studyAttempt, unassessedStudyAttemptV2 } from './fixtures';
 
@@ -469,14 +470,20 @@ describe('zhongkao RuntimeStore adapter', () => {
     );
   });
 
-  it('does not route per-problem coach events through the long-lived session helper', () => {
-    expect(() =>
-      zhongkaoRuntimeSessionId(
-        ZHONGKAO_RUNTIME_KINDS.coachEvent as never,
-        'student-alpha',
-        'anon:fictional-device',
-      ),
-    ).toThrow('ZHONGKAO_RUNTIME_KIND_INVALID');
+  it.each([ZHONGKAO_RUNTIME_KINDS.coachEvent, ZHONGKAO_RUNTIME_KINDS.examEvent])(
+    'does not route %s through the long-lived session helper',
+    (kind) => {
+      expect(() =>
+        zhongkaoRuntimeSessionId(kind as never, 'student-alpha', 'anon:fictional-device'),
+      ).toThrow('ZHONGKAO_RUNTIME_KIND_INVALID');
+    },
+  );
+
+  it('classifies Exam events as server-only without widening long-lived runtime helpers', () => {
+    expect(isServerOnlyRuntimeKind(ZHONGKAO_RUNTIME_KINDS.examEvent)).toBe(true);
+    expect(isServerOnlyRuntimeKind(ZHONGKAO_RUNTIME_KINDS.coachEvent)).toBe(true);
+    expect(isServerOnlyRuntimeKind(ZHONGKAO_RUNTIME_KINDS.studyAttempt)).toBe(true);
+    expect(isServerOnlyRuntimeKind(ZHONGKAO_RUNTIME_KINDS.studentProfile)).toBe(false);
   });
 
   it('keeps all Zhongkao kinds in the shared validator table', async () => {
@@ -489,6 +496,7 @@ describe('zhongkao RuntimeStore adapter', () => {
     expect(APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.coachEvent]).toBeTypeOf(
       'function',
     );
+    expect(APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.examEvent]).toBeTypeOf('function');
     const profile = createInitialStudentProfile({ profileId: 'student-alpha', createdAt: NOW });
     expect(
       APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.studentProfile]!(profile).valid,

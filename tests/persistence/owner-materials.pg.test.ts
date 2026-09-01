@@ -1,7 +1,12 @@
+import { createHash } from 'node:crypto';
+
 import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
+import {
+  nodePostgresTransaction,
+  type ConnectableQueryable,
+} from '@openmaic/storage/server/reference';
 
 import {
   ensureOwnerMaterialSchema,
@@ -10,8 +15,24 @@ import {
   registerOwnerMaterial,
   type RegisterOwnerMaterialInput,
 } from '@/lib/persistence/owner-materials';
+import type { MaterialByteStore } from '@/lib/server/materials/bytes';
+import { ownerMaterialObjectKey } from '@/lib/server/materials/object-keys';
+import {
+  deleteOwnedMaterial,
+  resolveOwnedReadyMaterialAssetsForSnapshot,
+} from '@/lib/server/materials/owner-assets';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
+const SNAPSHOT_MATERIAL_ID = `mat_${'0'.repeat(26)}`;
+const EXAM_MIME_TYPES = new Set(['application/pdf']);
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 /** Wait until some backend in this database is blocked on a lock. */
 async function waitForLockWaiter(pool: Pool): Promise<void> {
@@ -130,5 +151,64 @@ describe.skipIf(!contractUrl)('owner material quota reservations on PostgreSQL',
       first.release();
       second.release();
     }
+  });
+
+  it('holds the source row lock through byte verification before owner deletion can tombstone it', async () => {
+    const body = Buffer.from('authoritative exam source');
+    const objectKey = ownerMaterialObjectKey('owner-1', SNAPSHOT_MATERIAL_ID);
+    const objects = new Map([[objectKey, body]]);
+    const readStarted = deferred();
+    const releaseRead = deferred();
+    const byteStore: MaterialByteStore = {
+      put: async (key, value) => void objects.set(key, Buffer.from(value as Uint8Array)),
+      get: async (key) => {
+        const value = objects.get(key);
+        if (!value) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+        readStarted.resolve();
+        await releaseRead.promise;
+        return Buffer.from(value);
+      },
+      delete: async (key) => void objects.delete(key),
+    };
+    await pool.query(
+      `INSERT INTO owner_material
+         (id, owner_id, kind, mime, bytes, original_name, oss_key, sha256,
+          status, extraction, created_at)
+       VALUES ($1, 'owner-1', 'source', 'application/pdf', $2, 'paper.pdf', $3, $4,
+               'ready', '{"status":"idle"}'::jsonb, $5)`,
+      [
+        SNAPSHOT_MATERIAL_ID,
+        body.byteLength,
+        objectKey,
+        createHash('sha256').update(body).digest('hex'),
+        Date.now(),
+      ],
+    );
+
+    const snapshot = resolveOwnedReadyMaterialAssetsForSnapshot(
+      'owner-1',
+      [SNAPSHOT_MATERIAL_ID],
+      { allowedMimeTypes: EXAM_MIME_TYPES },
+      {
+        withTransaction: nodePostgresTransaction(pool as unknown as ConnectableQueryable),
+        byteStore,
+      },
+    );
+    await readStarted.promise;
+    const deletion = deleteOwnedMaterial('owner-1', SNAPSHOT_MATERIAL_ID, {
+      queryable: pool,
+      byteStore,
+    });
+    try {
+      await waitForLockWaiter(pool);
+    } finally {
+      releaseRead.resolve();
+    }
+    await expect(snapshot).resolves.toMatchObject({
+      ok: true,
+      assets: [{ ownerMaterialId: SNAPSHOT_MATERIAL_ID, bytes: body }],
+    });
+    await expect(deletion).resolves.toBe('deleted');
+    expect(objects.has(objectKey)).toBe(false);
   });
 });

@@ -1,0 +1,32 @@
+export const EXAM_ERROR_CODES = [
+  'EXAM_INPUT_INVALID',
+  'EXAM_PROFILE_NOT_FOUND',
+  'EXAM_SOURCE_NOT_FOUND',
+  'EXAM_SOURCE_UNAVAILABLE',
+  'EXAM_SOURCE_INTEGRITY_FAILED',
+  'EXAM_REQUEST_CONFLICT',
+  'EXAM_SNAPSHOT_FAILED',
+  'EXAM_SNAPSHOT_INTEGRITY_FAILED',
+  'EXAM_DOCUMENT_CONFLICT',
+  'EXAM_EVENT_CONFLICT',
+  'EXAM_SESSION_CONFLICT',
+  'EXAM_NOT_FOUND',
+  'EXAM_DELETE_FAILED',
+] as const;
+
+export type ExamErrorCode = (typeof EXAM_ERROR_CODES)[number];
+
+export class ExamError extends Error {
+  override readonly name = 'ExamError';
+
+  constructor(
+    readonly code: ExamErrorCode,
+    readonly latestRevision?: number,
+  ) {
+    super(code);
+  }
+}
+
+export function isExamError(value: unknown): value is ExamError {
+  return value instanceof ExamError;
+}

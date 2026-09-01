@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assertPortableMaterialObjectKey,
+  examSnapshotObjectKey,
+  examSnapshotObjectPrefix,
+  isExamSnapshotObjectKey,
   isLegacySessionMaterialObjectKey,
   isSessionMaterialObjectKey,
   ownerMaterialObjectKey,
@@ -34,6 +37,47 @@ describe('material object key contract', () => {
     expect(first).not.toBe(second);
     expect(first).not.toContain('owner-a');
     expect(first).not.toContain('mat_shared');
+  });
+
+  it('derives a deterministic isolated Exam snapshot namespace without disclosing ids', () => {
+    const first = examSnapshotObjectKey('exam-session-alpha', 'exam-document-question-paper');
+    const replay = examSnapshotObjectKey('exam-session-alpha', 'exam-document-question-paper');
+    const otherDocument = examSnapshotObjectKey(
+      'exam-session-alpha',
+      'exam-document-student-response',
+    );
+    const otherExam = examSnapshotObjectKey('exam-session-beta', 'exam-document-question-paper');
+
+    expect(first).toBe(replay);
+    expect(first).toMatch(/^materials\/v1\/exams\/exm_[a-f0-9]{64}\/doc_[a-f0-9]{64}\/raw$/);
+    expect(first.startsWith(examSnapshotObjectPrefix('exam-session-alpha'))).toBe(true);
+    expect(first).not.toBe(otherDocument);
+    expect(first).not.toBe(otherExam);
+    expect(first).not.toContain('exam-session-alpha');
+    expect(first).not.toContain('exam-document-question-paper');
+    expect(() => assertPortableMaterialObjectKey(first)).not.toThrow();
+  });
+
+  it.each(['../outside', 'exam/../../outside', 'exam\\outside', 'CON', 'trailing.'])(
+    'contains malicious Exam identities inside portable hashed namespaces: %s',
+    (identity) => {
+      const key = examSnapshotObjectKey(identity, identity);
+      expect(() => assertPortableMaterialObjectKey(key)).not.toThrow();
+      expect(isExamSnapshotObjectKey(identity, key)).toBe(true);
+      expect(key).not.toContain(identity);
+      expect(key).not.toMatch(/[\\:<>'"|?*]/);
+    },
+  );
+
+  it('rejects cross-Exam keys and traversal hidden behind a canonical Exam prefix', () => {
+    const first = examSnapshotObjectKey('exam-a', 'document-a');
+    const foreign = examSnapshotObjectKey('exam-b', 'document-a');
+    const traversal = first.replace(/\/[^/]+\/raw$/, '/../foreign/raw');
+
+    expect(isExamSnapshotObjectKey('exam-a', first)).toBe(true);
+    expect(isExamSnapshotObjectKey('exam-a', foreign)).toBe(false);
+    expect(traversal).toContain('/../');
+    expect(isExamSnapshotObjectKey('exam-a', traversal)).toBe(false);
   });
 
   it.each([

@@ -1,9 +1,15 @@
 import { createHash } from 'node:crypto';
 
 import type { Queryable } from '@openmaic/storage/document/pg';
+import type { WithTransaction } from '@openmaic/storage/runtime/pg';
+import {
+  nodePostgresTransaction,
+  type ConnectableQueryable,
+} from '@openmaic/storage/server/reference';
 
 import {
   getReadyOwnerMaterial,
+  getReadyOwnerMaterialsForSnapshot,
   purgeDeletedOwnerMaterial,
   tombstoneOwnerMaterial,
   type OwnerMaterialRecord,
@@ -28,6 +34,22 @@ interface OwnerMaterialAssetDependencies {
   byteStore?: MaterialByteStore;
 }
 
+export interface OwnerMaterialSnapshotSourceDependencies {
+  withTransaction?: WithTransaction;
+  byteStore?: MaterialByteStore;
+}
+
+export interface OwnerMaterialSnapshotSourceRequirements {
+  allowedMimeTypes: ReadonlySet<string>;
+}
+
+export type OwnerMaterialSnapshotSourceResult =
+  | { ok: true; assets: VerifiedOwnerMaterialAsset[] }
+  | {
+      ok: false;
+      reason: 'unavailable' | 'unsupported_mime' | 'integrity_failed';
+    };
+
 export function isOwnerMaterialId(value: string): boolean {
   return OWNER_MATERIAL_ID.test(value);
 }
@@ -37,6 +59,16 @@ async function ownerMaterialQueryable(override?: Queryable): Promise<Queryable> 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error('Agent runtime requires DATABASE_URL');
   return (await getServerPersistenceProvider(connectionString)).pool;
+}
+
+async function ownerMaterialSnapshotTransaction(
+  override?: WithTransaction,
+): Promise<WithTransaction> {
+  if (override) return override;
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error('Agent runtime requires DATABASE_URL');
+  const provider = await getServerPersistenceProvider(connectionString);
+  return nodePostgresTransaction(provider.pool as unknown as ConnectableQueryable);
 }
 
 export async function verifyOwnerMaterialBytes(
@@ -74,6 +106,67 @@ export async function resolveOwnedReadyMaterialAsset(
   const record = await getReadyOwnerMaterial(queryable, ownerId, materialId);
   if (!record) return null;
   return verifyOwnerMaterialBytes(record, dependencies.byteStore ?? getMaterialByteStore());
+}
+
+/**
+ * Capture owner-library source bytes for an immutable Exam snapshot.
+ *
+ * Unlike the ordinary resolver, this operation locks every selected metadata
+ * row in one transaction and keeps those locks through byte read + integrity
+ * verification. Owner deletion tombstones the same rows, so exactly one side
+ * wins: a prior tombstone is unavailable, while a prior snapshot read returns
+ * an authoritative in-memory copy that remains usable after the source is
+ * deleted. No storage error or object locator crosses this boundary.
+ */
+export async function resolveOwnedReadyMaterialAssetsForSnapshot(
+  ownerId: string,
+  materialIds: readonly string[],
+  requirements: OwnerMaterialSnapshotSourceRequirements,
+  dependencies: OwnerMaterialSnapshotSourceDependencies = {},
+): Promise<OwnerMaterialSnapshotSourceResult> {
+  const orderedIds = [...new Set(materialIds)].sort();
+  if (orderedIds.some((materialId) => !isOwnerMaterialId(materialId))) {
+    return { ok: false, reason: 'unavailable' };
+  }
+  if (orderedIds.length === 0) return { ok: true, assets: [] };
+
+  const withTransaction = await ownerMaterialSnapshotTransaction(dependencies.withTransaction);
+  const byteStore = dependencies.byteStore ?? getMaterialByteStore();
+  return withTransaction(async (transaction) => {
+    const records = await getReadyOwnerMaterialsForSnapshot(transaction, ownerId, orderedIds);
+    if (records.length !== orderedIds.length) return { ok: false, reason: 'unavailable' };
+
+    const assets: VerifiedOwnerMaterialAsset[] = [];
+    for (let index = 0; index < orderedIds.length; index += 1) {
+      const record = records[index];
+      if (!record || record.id !== orderedIds[index]) {
+        return { ok: false, reason: 'unavailable' };
+      }
+      if (!record.mime || !requirements.allowedMimeTypes.has(record.mime)) {
+        return { ok: false, reason: 'unsupported_mime' };
+      }
+
+      let bytes: Buffer;
+      try {
+        bytes = await byteStore.get(record.ossKey);
+      } catch {
+        return { ok: false, reason: 'unavailable' };
+      }
+      const digest = createHash('sha256').update(bytes).digest('hex');
+      if (bytes.byteLength !== record.bytes || digest !== record.sha256) {
+        return { ok: false, reason: 'integrity_failed' };
+      }
+      assets.push({
+        record,
+        bytes,
+        ownerMaterialId: record.id,
+        sha256: digest,
+        mimeType: record.mime,
+        byteLength: bytes.byteLength,
+      });
+    }
+    return { ok: true, assets };
+  });
 }
 
 /**

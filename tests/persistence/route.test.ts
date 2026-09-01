@@ -530,6 +530,7 @@ describe('embedded persistence route', () => {
       'zhongkaoStudentProfile',
       'zhongkaoStudyAttempt',
       'zhongkaoCoachEvent',
+      'zhongkaoExamEvent',
     ]);
   });
 
@@ -1083,7 +1084,7 @@ describe('embedded persistence route', () => {
     expect(byteStore.signReadUrl).toBeUndefined();
   });
 
-  it.each(['zhongkaoCoachEvent', 'zhongkaoStudyAttempt'] as const)(
+  it.each(['zhongkaoCoachEvent', 'zhongkaoStudyAttempt', 'zhongkaoExamEvent'] as const)(
     'rejects creation of the server-only %s runtime kind before storage dispatch',
     async (kind) => {
       vi.stubEnv('DATABASE_URL', `postgres://server-only-create-${kind}-test`);
@@ -1133,6 +1134,12 @@ describe('embedded persistence route', () => {
       stageId: 'stage-alpha',
       learnerKey: 'learner-alpha',
     };
+    const exam = {
+      id: 'exam-session-hidden',
+      kind: 'zhongkaoExamEvent',
+      stageId: 'stage-alpha',
+      learnerKey: 'learner-alpha',
+    };
     const chat = {
       id: 'chat-session-visible',
       kind: 'chat',
@@ -1159,11 +1166,13 @@ describe('embedded persistence route', () => {
           ? coach
           : id === studyAttempts.id
             ? studyAttempts
-            : id === chat.id
-              ? chat
-              : undefined,
+            : id === exam.id
+              ? exam
+              : id === chat.id
+                ? chat
+                : undefined,
       ),
-      listSessions: vi.fn(async () => [coach, studyAttempts, chat]),
+      listSessions: vi.fn(async () => [coach, studyAttempts, exam, chat]),
       setSessionStatus,
       deleteSession,
       appendRecord,
@@ -1179,20 +1188,31 @@ describe('embedded persistence route', () => {
 
     await expect(visible.getSession(coach.id)).resolves.toBeUndefined();
     await expect(visible.getSession(studyAttempts.id)).resolves.toBeUndefined();
+    await expect(visible.getSession(exam.id)).resolves.toBeUndefined();
     await expect(visible.getSession(chat.id)).resolves.toBe(chat);
     await expect(visible.listSessions('stage-alpha', 'learner-alpha')).resolves.toEqual([chat]);
     const hiddenCoachRecords = await visible.listRecords(coach.id);
     const hiddenStudyAttemptRecords = await visible.listRecords(studyAttempts.id);
+    const hiddenExamRecords = await visible.listRecords(exam.id);
     expect(hiddenCoachRecords).toEqual([]);
     expect(hiddenStudyAttemptRecords).toEqual([]);
-    expect(JSON.stringify([hiddenCoachRecords, hiddenStudyAttemptRecords])).not.toContain(
-      privateAssessmentCanary,
-    );
+    expect(hiddenExamRecords).toEqual([]);
+    expect(
+      JSON.stringify([hiddenCoachRecords, hiddenStudyAttemptRecords, hiddenExamRecords]),
+    ).not.toContain(privateAssessmentCanary);
     expect(listRecords).not.toHaveBeenCalled();
     await expect(
       visible.appendRecord({
         id: 'forged-event',
         sessionId: coach.id,
+        createdAt: '2026-08-28T08:00:00.000Z',
+        payload: {},
+      }),
+    ).rejects.toThrow('runtime session not found');
+    await expect(
+      visible.appendRecord({
+        id: 'forged-exam-event',
+        sessionId: exam.id,
         createdAt: '2026-08-28T08:00:00.000Z',
         payload: {},
       }),
@@ -1260,14 +1280,19 @@ describe('embedded persistence route', () => {
     await expect(
       visible.setSessionStatus(studyAttempts.id, 'completed', '2026-08-28T08:00:00.000Z'),
     ).rejects.toThrow('runtime session not found');
+    await expect(
+      visible.setSessionStatus(exam.id, 'completed', '2026-08-28T08:00:00.000Z'),
+    ).rejects.toThrow('runtime session not found');
     await visible.deleteSession(coach.id);
     await visible.deleteSession(studyAttempts.id);
+    await visible.deleteSession(exam.id);
     expect(appendRecord).not.toHaveBeenCalled();
     expect(setSessionStatus).not.toHaveBeenCalled();
     expect(deleteSession).not.toHaveBeenCalledWith(coach.id);
     expect(deleteSession).not.toHaveBeenCalledWith(studyAttempts.id);
+    expect(deleteSession).not.toHaveBeenCalledWith(exam.id);
 
-    for (const kind of ['zhongkaoCoachEvent', 'zhongkaoStudyAttempt']) {
+    for (const kind of ['zhongkaoCoachEvent', 'zhongkaoStudyAttempt', 'zhongkaoExamEvent']) {
       await expect(
         visible.createSession({
           id: `forged-${kind}`,
@@ -1295,6 +1320,7 @@ describe('embedded persistence route', () => {
     expect(deleteSession).toHaveBeenCalledWith(chat.id);
     expect(deleteSession).not.toHaveBeenCalledWith(coach.id);
     expect(deleteSession).not.toHaveBeenCalledWith(studyAttempts.id);
+    expect(deleteSession).not.toHaveBeenCalledWith(exam.id);
   });
 });
 

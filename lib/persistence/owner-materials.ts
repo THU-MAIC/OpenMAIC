@@ -444,6 +444,42 @@ export async function getReadyOwnerMaterials(
   return result.rows.map(rowToRecord);
 }
 
+/**
+ * Lock selected active source rows for an Exam snapshot read.
+ *
+ * The caller must invoke this inside a transaction and keep that transaction
+ * open until every recorded byte object has been read and verified. The row
+ * locks then serialize against {@link tombstoneOwnerMaterial}: a snapshot that
+ * obtains the rows first may finish capturing their bytes, while a tombstone
+ * that wins first makes the active-row predicates fail closed.
+ *
+ * IDs are de-duplicated and sorted before the query so concurrent multi-source
+ * snapshots acquire row locks in one stable order.
+ */
+export async function getReadyOwnerMaterialsForSnapshot(
+  queryable: Queryable,
+  ownerId: string,
+  materialIds: readonly string[],
+): Promise<OwnerMaterialRecord[]> {
+  const orderedIds = [...new Set(materialIds)].sort();
+  if (orderedIds.length === 0) return [];
+  const result = await queryable.query<RawOwnerMaterialRow>(
+    `SELECT ${OWNER_MATERIAL_COLUMNS}
+       FROM owner_material
+      WHERE owner_id = $1
+        AND id = ANY($2::text[])
+        AND kind = 'source'
+        AND status = 'ready'
+        AND deleted_at IS NULL
+        AND oss_key <> ''
+        AND sha256 IS NOT NULL
+      ORDER BY id
+      FOR UPDATE`,
+    [ownerId, orderedIds],
+  );
+  return result.rows.map(rowToRecord);
+}
+
 /** Resolve one ready owner material without exposing foreign, deleted, or uploading rows. */
 export async function getReadyOwnerMaterial(
   queryable: Queryable,

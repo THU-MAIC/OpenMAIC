@@ -4,12 +4,14 @@ const STORAGE_KEY_ROOT = 'materials/v1';
 const PORTABLE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
 const WINDOWS_RESERVED_SEGMENT = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 
-type MaterialIdentityDomain = 'owner' | 'session' | 'material';
+type MaterialIdentityDomain = 'owner' | 'session' | 'material' | 'exam' | 'examDocument';
 
 const DOMAIN_PREFIX: Record<MaterialIdentityDomain, string> = {
   owner: 'own',
   session: 'ses',
   material: 'mat',
+  exam: 'exm',
+  examDocument: 'doc',
 };
 
 /** Build a portable, non-reversible segment from a server-authoritative identity. */
@@ -64,6 +66,23 @@ export function ownerMaterialObjectKey(ownerId: string, materialId: string): str
     'owner',
     ownerId,
   )}/${safeMaterialStorageNamespace('material', materialId)}/raw`;
+}
+
+export function examSnapshotObjectPrefix(examSessionId: string): string {
+  return `${STORAGE_KEY_ROOT}/exams/${safeMaterialStorageNamespace('exam', examSessionId)}/`;
+}
+
+export function examSnapshotObjectKey(examSessionId: string, examDocumentId: string): string {
+  return `${examSnapshotObjectPrefix(examSessionId)}${safeMaterialStorageNamespace(
+    'examDocument',
+    examDocumentId,
+  )}/raw`;
+}
+
+export function isExamSnapshotObjectKey(examSessionId: string, key: string): boolean {
+  return (
+    isPortableMaterialObjectKey(key) && key.startsWith(examSnapshotObjectPrefix(examSessionId))
+  );
 }
 
 export function sessionMaterialObjectPrefix(sessionId: string): string {

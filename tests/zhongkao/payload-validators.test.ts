@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 import type { CoachStartedEvent } from '@/lib/zhongkao/coach-event';
+import type { ExamCreatedEvent } from '@/lib/zhongkao/exam-event';
 import { createInitialStudentProfile } from '@/lib/zhongkao/profile';
 import { ZHONGKAO_RUNTIME_KINDS } from '@/lib/zhongkao/runtime';
 
@@ -24,8 +25,31 @@ describe('zhongkao runtime payload validators', () => {
     questionSource: { type: 'typed' },
     questionText: 'Solve the fictional equation.',
   };
+  const examEvent: ExamCreatedEvent = {
+    schemaVersion: 1,
+    eventId: 'exam-event-alpha',
+    examSessionId: 'exam-session-alpha',
+    profileId: 'student-alpha',
+    eventType: 'exam_created',
+    createdAt: NOW,
+    operationId: 'exam-operation-alpha',
+    operationFingerprint: 'a'.repeat(64),
+    subjectId: 'math',
+    requestFingerprint: 'b'.repeat(64),
+    documentSetFingerprint: 'c'.repeat(64),
+    documents: [
+      {
+        examDocumentId: 'exam-document-question-paper',
+        role: 'question_paper',
+        ownerMaterialId: 'mat_00000000000000000000000000',
+        sourceSha256: 'd'.repeat(64),
+        mimeType: 'application/pdf',
+        byteLength: 42,
+      },
+    ],
+  };
 
-  it('validates StudentProfile, StudyAttempt, and CoachEvent payloads', () => {
+  it('validates StudentProfile, StudyAttempt, CoachEvent, and ExamEvent payloads', () => {
     const profile = createInitialStudentProfile({ profileId: 'student-alpha', createdAt: NOW });
     expect(APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.studentProfile]!(profile)).toEqual(
       {
@@ -36,6 +60,9 @@ describe('zhongkao runtime payload validators', () => {
       APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.studyAttempt]!(studyAttempt()),
     ).toEqual({ valid: true });
     expect(APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.coachEvent]!(coachEvent)).toEqual({
+      valid: true,
+    });
+    expect(APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.examEvent]!(examEvent)).toEqual({
       valid: true,
     });
   });
@@ -65,8 +92,12 @@ describe('zhongkao runtime payload validators', () => {
     expect(validator({ ...unassessedStudyAttemptV2(), finalOutcome: 'correct' }).valid).toBe(false);
   });
 
-  it('keeps all three Zhongkao runtime kinds one-to-one with their payloads', () => {
+  it('keeps all four Zhongkao runtime kinds one-to-one with their payloads', () => {
     const profile = createInitialStudentProfile({ profileId: 'student-alpha', createdAt: NOW });
+    const examValidator = APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.examEvent];
+    expect(examValidator).toBeTypeOf('function');
+    expect(examValidator!(profile).valid).toBe(false);
+    expect(examValidator!(coachEvent).valid).toBe(false);
     expect(APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.coachEvent]!(profile).valid).toBe(
       false,
     );
@@ -75,6 +106,15 @@ describe('zhongkao runtime payload validators', () => {
     ).toBe(false);
     expect(
       APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.studyAttempt]!(coachEvent).valid,
+    ).toBe(false);
+    expect(
+      APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.studentProfile]!(examEvent).valid,
+    ).toBe(false);
+    expect(
+      APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.studyAttempt]!(examEvent).valid,
+    ).toBe(false);
+    expect(
+      APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.coachEvent]!(examEvent).valid,
     ).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-# 2027 Zhongkao Coach: Milestones 1 through 2B-2A.1
+# 2027 Zhongkao Coach: Milestones 1 through M3A-1b
 
 This document describes the domain foundation for a single fictional learner
 using OpenMAIC locally or on a trusted private network. The only initialized
@@ -1146,3 +1146,126 @@ and terminal presentation have zero LLM dependency. The server triggers them
 automatically after transfer evaluation or during an authorized finalizing
 resume; no student answer is consumed again and no model action can mark a
 session complete or mastered.
+
+## Milestone 3A-1b immutable Exam intake
+
+M3A-1b introduces `ExamSession` as a long-lived domain that is separate from
+Coach events, StudyAttempt facts, Agent Session metadata, and
+KnowledgeProgress. Its only ready state is `ready_for_extraction`, meaning that
+the declared raw materials have been frozen and read back with matching byte
+lengths and SHA-256 digests. It does not mean that a PDF was parsed, a response
+was recognized, an answer was verified, grading occurred, or a diagnosis was
+produced.
+
+### Roles, identity, and authority
+
+An intake has exactly one `question_paper`, at most one `student_response`, and
+at most one `answer_key`, in that canonical order. These are user-declared
+document-role facts only. In particular, `answer_key` does not create a grading
+specification or authoritative answer, `student_response` does not confirm
+recognized student text, and `question_paper` does not confirm question
+structure or source attribution. M3A-1b performs no semantic read or model call
+over any document.
+
+The server derives the Exam id with a domain-separated SHA-256 digest over the
+owner-derived learner partition, profile id, bounded client request id, and
+Exam schema version. The client does not choose the owner, learner, stage,
+Exam-document ids, operation ids, event ids, object keys, digests, lengths, or
+status. Title is bounded display metadata and does not affect Exam identity;
+it does participate in the semantic request fingerprint, so replaying one
+request id with a changed title, subject, or document set is a conflict.
+Document order in the request does not affect identity or replay.
+
+The dedicated API reuses the trusted request owner, derives the learner key,
+and requires an existing profile in that partition before intake. Exam events
+use the server-only `zhongkaoExamEvent` RuntimeStore kind. This kind is
+deliberately excluded from the generic Zhongkao long-lived helper and from all
+generic persistence HTTP create, discovery, read, append, status, and delete
+surfaces. Only the dedicated Exam service and `POST/GET/DELETE
+/api/zhongkao/exams` routes can access it.
+
+### Immutable snapshots and intake saga
+
+Every source is re-resolved as an active, ready, same-owner source material.
+The source row is locked against deletion while the byte object is read and
+its actual length and SHA-256 digest are compared with durable metadata. A
+snapshot read that obtains the row lock first may finish from its captured
+buffer; a deletion that tombstones first makes a new intake fail closed.
+
+Snapshot objects use a separate non-reversible namespace:
+
+```text
+materials/v1/exams/exm_<sha256>/doc_<sha256>/raw
+```
+
+Raw owner, profile, Exam, material, title, and filename values never become
+path segments. Each `examDocumentId` is a deterministic digest of the Exam id,
+role, and document schema version. The intake sequence is fixed:
+
+1. authorize and verify every owner source;
+2. append `exam_created` as the immutable intake plan;
+3. write each deterministic snapshot key and read it back;
+4. append one `exam_document_snapshotted` fact per verified object;
+5. recheck every object and append `exam_intake_completed`.
+
+`exam_created` therefore precedes every new Exam byte. An existing matching
+object recovers a bytes-before-event crash without another write; an existing
+different object is a document conflict and is never overwritten. A durable
+snapshot event whose object is missing or different is integrity failure, not
+permission to recreate an authoritative fact. Replays resume one logical Exam,
+one deterministic object per declared role, and one deterministic operation
+per logical event. The RuntimeStore session remains active after intake so a
+later delete can append its lifecycle facts.
+
+A database advisory mutation lock serializes all intake and delete callbacks
+for one Exam. The advisory lock uses a small dedicated connection pool, so a
+callback can use the existing provider pool without exhausting that pool with
+its own outer locks. This prevents a stale intake writer from putting bytes
+after a delete sweep. RuntimeStore compare-and-append remains the durable event
+CAS; the byte store and RuntimeStore are intentionally joined by the
+recoverable saga rather than represented as one false cross-store transaction.
+
+### Independence, server resolver, and public data
+
+Exam snapshots are owned by the Exam lifecycle. They do not point at owner raw
+objects or Agent Session snapshots. Deleting the original OwnerMaterial or an
+Agent Session after intake cannot remove or invalidate a ready Exam. A future
+server pipeline may call the server-only Exam snapshot resolver, which reloads
+and folds the private history, checks owner/learner/profile partition facts,
+derives the exact key, reads the object, and verifies its digest and length.
+M3A-1b exposes no generic raw download route and sends no Exam bytes to an
+Agent, tool, SSE stream, transcript, Skill, extractor, or model.
+
+The public DTO contains only Exam/profile/subject identity, optional title,
+ingestion status, creation time, and per-document id, declared role, safe
+display name, MIME type, length, and snapshot status. It excludes owner and
+learner identities, owner material ids, client request ids, digests, object
+keys, filesystem paths, RuntimeSession ids, event or operation references,
+claims, leases, answer content, grading facts, and verification claims.
+
+### Delete, bounds, and stopping point
+
+Deletion appends `exam_delete_requested`, deletes every exact key derivable
+from the immutable plan (including bytes written before a missing snapshot
+event), optionally sweeps only that hashed Exam prefix, verifies absence, and
+then appends `exam_deleted` while completing the RuntimeStore session. A crash
+or byte-store failure leaves `deleting` and is retryable; repeated DELETE is
+idempotent. Private RuntimeStore history is retained and is never deleted as
+the first lifecycle step. Missing, foreign, malformed, and deleted Exam reads
+share not-found semantics, and public errors never contain locators, digests,
+paths, or raw causes.
+
+The first intake is limited to one to three supported documents, 50 MiB per
+document, and 50 MiB total. Supported storage MIME declarations are PDF, PNG,
+JPEG, WebP, and plain text; accepting bytes does not assert that a later
+extractor can recognize them. Existing owner-material quota accounting does
+not include independent Exam copies, so a unified cross-Exam storage quota is
+explicit follow-up work. The per-Exam caps close this milestone's unbounded
+single-request copy path without introducing a second quota database.
+
+M3A-1b adds no OCR, PDF or region extraction, question matching, response
+recognition, answer authority, grading, knowledge-point mapping, observation,
+diagnosis, recommendation, StudyAttempt write, Progress mutation, Coach
+behavior, UI, upload system, production dependency, or LLM call. M3A-2 may
+consume only bytes returned by the verified server snapshot resolver and must
+define its own extraction and semantic-authority contracts.
