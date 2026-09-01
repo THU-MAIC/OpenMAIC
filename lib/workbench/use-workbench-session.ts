@@ -31,6 +31,7 @@ import {
   useWorkbenchStore,
   type WorkbenchEvent,
 } from '@/lib/workbench/session-store';
+import { applyMediaReadyFrame, parseMediaReadyFrame } from '@/lib/workbench/media-lifecycle';
 import {
   diffStageManifest,
   fetchScenesByIds,
@@ -112,15 +113,18 @@ export function useWorkbenchStream(sessionId: string | null): void {
 
   useEffect(() => {
     if (!sessionId) return;
+    let active = true;
+    const isCurrent = () => active && useWorkbenchStore.getState().sessionId === sessionId;
+    const expectedTitleRevision = useWorkbenchStore.getState().sessionTitleRevision;
     // The header title wants the prompt before the runner emits session_start
     // (a queued session can sit there a while), and a `?session=` deep link
     // arrives without the session's own stage — one meta fetch covers both.
     fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((meta) => {
-        // A switch to another session must not let this late response write
-        // the wrong prompt over it.
-        if (useWorkbenchStore.getState().sessionId !== sessionId) return;
+        // A switch away invalidates this attachment even if the user later
+        // returns to the same id before its old request settles.
+        if (!isCurrent()) return;
         if (meta && typeof meta.prompt === 'string') {
           const status =
             meta.status === 'queued' ||
@@ -130,11 +134,13 @@ export function useWorkbenchStream(sessionId: string | null): void {
             meta.status === 'cancelled'
               ? meta.status
               : undefined;
+          const detailTitle = typeof meta.title === 'string' && meta.title ? meta.title : null;
           useWorkbenchStore.getState().setSessionBootstrap({
             prompt: meta.prompt,
-            // Always seeded, including as null: a session with no override must
-            // clear whatever the previously attached one had.
-            title: typeof meta.title === 'string' && meta.title ? meta.title : null,
+            // Detail is only the cold-start title source. Once the owner list,
+            // an owner event, or a local decision has seeded this attachment,
+            // a GET that overtook an uncommitted PATCH must not replace it.
+            ...(expectedTitleRevision === 0 ? { title: detailTitle, expectedTitleRevision } : {}),
             ...(status ? { status } : {}),
             ...(typeof meta.stageId === 'string' && meta.stageId ? { stageId: meta.stageId } : {}),
           });
@@ -150,9 +156,7 @@ export function useWorkbenchStream(sessionId: string | null): void {
 
     let connected = false;
     let caughtUp = false;
-    let active = true;
     const backlog: WorkbenchEvent[] = [];
-    const isCurrent = () => active && useWorkbenchStore.getState().sessionId === sessionId;
     const markAttached = () => {
       if (connected || !isCurrent()) return;
       connected = true;
@@ -173,6 +177,14 @@ export function useWorkbenchStream(sessionId: string | null): void {
       }
       applyEvent(parsed);
       markAttached();
+
+      // Async media completion (generate_video's detached job) settles into
+      // the media generation store keyed by the placeholder ref — live frames
+      // here, replayed frames in finishReplay below.
+      if (parsed.type === LIFECYCLE.mediaReady) {
+        const frame = parseMediaReadyFrame(parsed.data);
+        if (frame) applyMediaReadyFrame(frame);
+      }
 
       // A checkpoint schedules the normal whole-document course sync. TTS
       // additionally folds its authoritative action array at tool completion,
@@ -206,6 +218,14 @@ export function useWorkbenchStream(sessionId: string | null): void {
         return;
       }
       applyEvents(compactReplayEvents(backlog));
+      // Replay the media_ready side effect too: a failed job never lands in
+      // the document, so without this fold a re-attached client would keep
+      // the placeholder's skeleton instead of the error state.
+      for (const event of backlog) {
+        if (event.type !== LIFECYCLE.mediaReady) continue;
+        const frame = parseMediaReadyFrame(event.data);
+        if (frame) applyMediaReadyFrame(frame);
+      }
       backlog.length = 0;
       // Record which stage links were historical in the same state transition
       // that exposes the fold. Opening a chat must not replay its old classroom

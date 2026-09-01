@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import type { AgentTool } from '@earendil-works/pi-agent-core';
+import { nanoid } from 'nanoid';
 import { Type, type Static } from 'typebox';
 
 import { generateVideo, normalizeVideoOptions, VIDEO_PROVIDERS } from '@/lib/media/video-providers';
@@ -25,15 +26,25 @@ import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { readResponseBodyWithLimit } from '@/lib/server/bounded-download';
 import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
-import type { CourseToolDeps } from './course-tools';
+import {
+  HOST_AGENT_LIFECYCLE as LIFECYCLE,
+  type MediaReadyLifecycleData,
+} from '@/lib/agent-runtime/lifecycle';
+import type { Scene } from '@/lib/types/stage';
+import type { CourseStore, CourseToolDeps } from './course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import { errorResult, MEDIA_TOOL_ERROR_REASONS } from './media-tool-result';
+import { runStageMutation } from './mutation-fence';
+import { registerPendingMedia, setPendingMediaStage, settlePendingMedia } from './pending-media';
+import { getAgentSessionStore } from './store';
 
 const log = createLogger('AgentGenerateVideo');
 
 export const GENERATE_VIDEO_TOOL_NAME = 'generate_video';
 // The longest provider poll budget is 15 minutes.
 export const GENERATE_VIDEO_TIMEOUT_MS = 15 * 60_000;
+/** The completion patch is a handful of document writes; a minute is ample. */
+export const GENERATE_VIDEO_PATCH_TIMEOUT_MS = 60_000;
 export const MAX_GENERATED_VIDEO_BYTES = 200 * 1024 * 1024;
 
 export const GenerateVideoParams = Type.Object({
@@ -87,10 +98,27 @@ interface PersistedVideo {
 type PersistGeneratedVideo = (input: PersistVideoInput) => Promise<PersistedVideo>;
 
 export interface GenerateVideoToolDeps extends Pick<CourseToolDeps, 'sessionId' | 'abortSignal'> {
+  /**
+   * The document store for the detached background job's completion patch.
+   * It must be owner-bound but NOT fenced by the run lease: the job
+   * legitimately writes minutes after its run ended, when the lease is
+   * already released, so the runner wires a dedicated lease-free store here.
+   * Passing the shared run-fenced `store` would throw
+   * AgentSessionLeaseLostError on every post-run patch. Without it the job
+   * still generates and emits, but skips the patch.
+   */
+  backgroundStore?: CourseStore;
   getConfiguredVideoProviders?: () => Record<string, { models?: string[]; disabled?: boolean }>;
   resolveVideoProviderConfig?: (providerId: VideoProviderId) => VideoGenerationConfig;
   generateConfiguredVideo?: GenerateConfiguredVideo;
   persistGeneratedVideo?: PersistGeneratedVideo;
+  /**
+   * Completion channel for the background job. Defaults to appending the
+   * `media_ready` lifecycle event to the session's durable log through the
+   * session-level control channel (valid post-run, unlike the runner's
+   * lease-guarded `emit`).
+   */
+  emitMediaReady?: (sessionId: string, data: MediaReadyLifecycleData) => Promise<void> | void;
   timeoutMs?: number;
 }
 
@@ -102,11 +130,6 @@ function extensionForVideoMime(mime: string): string {
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new Error('aborted');
-}
-
-function combineSignals(primary: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-  const timeout = AbortSignal.timeout(timeoutMs);
-  return primary ? AbortSignal.any([primary, timeout]) : timeout;
 }
 
 function isTimeout(signal: AbortSignal): boolean {
@@ -224,6 +247,227 @@ export function hasConfiguredVideoGeneration(deps: Partial<GenerateVideoToolDeps
   });
 }
 
+/**
+ * Default completion channel: append `media_ready` to the session's durable
+ * event log through the session-level control channel. This deliberately does
+ * NOT go through the runner's `emit`: `appendRunEvent` is lease-guarded to a
+ * live run, while the background job routinely settles after its run ended.
+ * `appendControlEvent` writes the same log the SSE route replays and fires the
+ * transactional NOTIFY that wakes attached streams.
+ */
+async function defaultEmitMediaReady(
+  sessionId: string,
+  data: MediaReadyLifecycleData,
+): Promise<void> {
+  const store = await getAgentSessionStore();
+  const appended = await store.appendControlEvent(sessionId, {
+    ts: Date.now(),
+    type: LIFECYCLE.mediaReady,
+    data,
+  });
+  // appendControlEvent resolves null when the session row is gone: the frame
+  // is dropped silently by the store, so say so here.
+  if (appended === null) {
+    log.warn(`media_ready dropped for ${data.ref}: session ${sessionId} no longer exists`);
+  }
+}
+
+/**
+ * Emit one `media_ready` frame through the injected or default channel. A
+ * failed emit must never take the detached job down as an unhandled
+ * rejection; the registry entry and the document patch still stand.
+ */
+async function emitMediaReadyFrame(
+  deps: GenerateVideoToolDeps,
+  toolCallId: string,
+  data: MediaReadyLifecycleData,
+): Promise<void> {
+  const sessionId = deps.sessionId;
+  if (!sessionId) {
+    log.warn(`[${toolCallId}] media_ready skipped: the tool has no session id`);
+    return;
+  }
+  try {
+    await (deps.emitMediaReady ?? defaultEmitMediaReady)(sessionId, data);
+  } catch (error) {
+    log.error(`[${toolCallId}] media_ready emit failed for ${data.ref}`, error);
+  }
+}
+
+/**
+ * Swap a video placeholder for the concrete persisted src on the stored
+ * document: every slide video element whose `mediaRef` or `src` still equals
+ * the placeholder gets the server-hosted src. Same mutation discipline as the
+ * generation tools (`runStageMutation` + putScene). When no element
+ * references the placeholder anymore — the agent or the user changed or
+ * removed it meanwhile — the patch is skipped silently; the completion event
+ * still carries the src.
+ *
+ * Each candidate scene is re-read immediately before its write: the job runs
+ * minutes after the tool call, exactly when the user or a resumed run may be
+ * editing the same page, so the swap is always applied to the freshest scene
+ * rather than the candidate-list snapshot. The residual read→write window
+ * matches the stage edit API's own read-modify-write discipline.
+ */
+export async function patchStageVideoPlaceholder(
+  store: CourseStore,
+  stageId: string,
+  ref: string,
+  src: string,
+  signal?: AbortSignal,
+): Promise<number> {
+  const doc = await store.loadDocument(stageId);
+  if (!doc) return 0;
+  // A previously generated src of THIS stage (regeneration: the agent
+  // re-pointed mediaRef at a new job while the element still carries the
+  // last generated video, which would otherwise keep rendering it). Both
+  // the relative form this flow writes and the absolute form the classic
+  // pipeline persists are recognized; scoped to the stage's own media root
+  // so a user's pick copied from another stage is preserved.
+  const generatedPrefix = `/api/classroom-media/${stageId}/`;
+  const isReplaceableSrc = (value: unknown): boolean => {
+    if (value === undefined || value === '' || value === ref) return true;
+    if (typeof value !== 'string') return false;
+    if (value.startsWith(generatedPrefix)) return true;
+    try {
+      return new URL(value).pathname.startsWith(generatedPrefix);
+    } catch {
+      return false;
+    }
+  };
+  let patched = 0;
+  for (const candidate of doc.scenes) {
+    if (candidate.type !== 'slide') continue;
+    const scene = await store.getScene(stageId, candidate.id);
+    if (!scene || scene.type !== 'slide' || scene.content.type !== 'slide') continue;
+    const canvas = scene.content.canvas;
+    let touched = false;
+    const elements = canvas.elements.map((element) => {
+      if (
+        element.type === 'video' &&
+        (element.mediaRef === ref || element.src === ref) &&
+        // A user edit that already replaced the placeholder with their own
+        // concrete src wins.
+        isReplaceableSrc(element.src)
+      ) {
+        touched = true;
+        return { ...element, src };
+      }
+      return element;
+    });
+    if (!touched) continue;
+    const next = {
+      ...scene,
+      content: { ...scene.content, canvas: { ...canvas, elements } },
+    } as Scene;
+    await runStageMutation(signal, () => store.putScene(stageId, next));
+    patched += 1;
+  }
+  return patched;
+}
+
+interface VideoJobInput {
+  toolCallId: string;
+  ref: string;
+  stageId: string;
+  providerId: VideoProviderId;
+  providerConfig: VideoGenerationConfig;
+  model: string | undefined;
+  options: VideoGenerationOptions;
+  timeoutMs: number;
+  deps: GenerateVideoToolDeps;
+  callProvider: GenerateConfiguredVideo;
+  persist: PersistGeneratedVideo;
+}
+
+/**
+ * The detached submit → poll → download → persist → patch cycle.
+ *
+ * The job runs on its OWN timeout signal, deliberately NOT tied to the tool
+ * call's abortSignal anymore: a cancelled chat must not silently orphan a
+ * billable provider job (the classic orchestrator accepts the same caveat —
+ * a provider-side submit that already happened is never recalled). The cost
+ * is that a cancelled session's video still lands and patches the page.
+ */
+async function runVideoGenerationJob(input: VideoJobInput): Promise<void> {
+  const { deps, ref, stageId, toolCallId } = input;
+  const signal = AbortSignal.timeout(input.timeoutMs);
+  const emit = (data: MediaReadyLifecycleData): Promise<void> =>
+    emitMediaReadyFrame(deps, toolCallId, data);
+
+  try {
+    setPendingMediaStage(ref, 'submit');
+    const result = await awaitWithSignal(
+      input.callProvider(input.providerConfig, { ...input.options, signal }),
+      signal,
+    );
+    throwIfAborted(signal);
+    setPendingMediaStage(ref, 'persist');
+    const stored = await input.persist({ result, stageId, signal });
+    throwIfAborted(signal);
+
+    void recordGenerationUsage({
+      kind: 'video',
+      unit: 'second',
+      providerId: input.providerId,
+      modelId: input.model,
+      quantity: result.duration,
+    });
+    log.info(
+      `[${toolCallId}] Video generated: provider=${input.providerId}, model=${input.model ?? 'default'}, ${result.width}x${result.height}, ${result.duration}s`,
+    );
+
+    if (deps.backgroundStore) {
+      setPendingMediaStage(ref, 'patch');
+      try {
+        // The patch runs on its own short budget: the shared job signal may
+        // be nearly exhausted by the provider cycle, and a patch failure must
+        // not rebrand a persisted, downloadable asset as failed — the done
+        // frame's src still lets connected clients render it.
+        const patched = await patchStageVideoPlaceholder(
+          deps.backgroundStore,
+          stageId,
+          ref,
+          stored.src,
+          AbortSignal.timeout(GENERATE_VIDEO_PATCH_TIMEOUT_MS),
+        );
+        if (patched > 0) {
+          log.info(`[${toolCallId}] Patched ${ref} onto ${patched} page(s) of stage ${stageId}`);
+        }
+      } catch (error) {
+        log.error(`[${toolCallId}] Document patch failed for ${ref}`, error);
+      }
+    }
+
+    settlePendingMedia(ref, { status: 'done', src: stored.src, mime: stored.mime });
+    await emit({
+      ref,
+      stageId,
+      status: 'done',
+      src: stored.src,
+      mime: stored.mime,
+      ...(result.duration ? { durationSec: result.duration } : {}),
+    });
+  } catch (error) {
+    const reason = isTimeout(signal)
+      ? MEDIA_TOOL_ERROR_REASONS.timeout
+      : MEDIA_TOOL_ERROR_REASONS.generationFailed;
+    const message = error instanceof Error ? error.message : String(error);
+    if (reason === MEDIA_TOOL_ERROR_REASONS.timeout) {
+      log.warn(
+        `[${toolCallId}] Video generation timed out: provider=${input.providerId}, model=${input.model ?? 'default'}, timeoutMs=${input.timeoutMs}`,
+      );
+    } else {
+      log.error(
+        `[${toolCallId}] Video generation failed: provider=${input.providerId}, model=${input.model ?? 'default'}, error=${message}`,
+        error,
+      );
+    }
+    settlePendingMedia(ref, { status: 'failed', errorCode: reason });
+    await emit({ ref, stageId, status: 'failed', errorCode: reason });
+  }
+}
+
 export function buildGenerateVideoTool(
   deps: GenerateVideoToolDeps,
 ): AgentTool<typeof GenerateVideoParams, unknown> {
@@ -236,7 +480,7 @@ export function buildGenerateVideoTool(
     name: GENERATE_VIDEO_TOOL_NAME,
     label: 'Generate video',
     description:
-      'Create a new video from a prompt, persist its provider-hosted result for the explicitly targeted course, and return a renderable src, mime and duration. Use the returned src in a later patch_stage set of an existing video element, or add a video element with patch_stage. Video elements also support autoplay and poster. This tool never edits a page itself.',
+      'Start creating a new video from a prompt for the explicitly targeted course. Returns IMMEDIATELY with a placeholder ref (gen_vid_...): the video generates in the background (this can take minutes) and the page updates itself when it is ready. Right after this call, put the returned ref on a video element — patch_stage set mediaRef (or src) of an existing element, or add a new video element carrying it. Video elements also support autoplay and poster. Do not wait for the video and do not retry while a ref is pending. This tool never edits a page itself.',
     parameters: GenerateVideoParams,
     async execute(toolCallId, params: Static<typeof GenerateVideoParams>, signal) {
       const callerSignal = signal ?? deps.abortSignal;
@@ -300,67 +544,65 @@ export function buildGenerateVideoTool(
         ...(params.resolution ? { resolution: params.resolution } : {}),
         stageId,
       });
-      const timeoutMs = deps.timeoutMs ?? GENERATE_VIDEO_TIMEOUT_MS;
-      const ioSignal = combineSignals(callerSignal, timeoutMs);
 
-      try {
-        const result = await awaitWithSignal(
-          callProvider(providerConfig, { ...normalized, signal: ioSignal }),
-          ioSignal,
-        );
-        throwIfAborted(ioSignal);
-        const stored = await persist({
-          result,
+      // All validation passed: mint the placeholder (same `gen_vid_<id>`
+      // scheme the outline flow uses), register the job, detach it, and
+      // return. The provider cycle runs in the background; `media_ready`
+      // reports the outcome and the background job patches the persisted page.
+      const ref = `gen_vid_${nanoid(8)}`;
+      registerPendingMedia({
+        ref,
+        type: 'video',
+        stageId,
+        ...(deps.sessionId ? { sessionId: deps.sessionId } : {}),
+        provider: providerId,
+      });
+      void runVideoGenerationJob({
+        toolCallId,
+        ref,
+        stageId,
+        providerId,
+        providerConfig,
+        model,
+        options: normalized,
+        timeoutMs: deps.timeoutMs ?? GENERATE_VIDEO_TIMEOUT_MS,
+        deps,
+        callProvider,
+        persist,
+      }).catch((error) => {
+        // runVideoGenerationJob handles every expected failure itself; this is
+        // the last-resort guard against an unhandled rejection from a bug.
+        // Keep the handler synchronous and only call never-rejecting helpers
+        // (emitMediaReadyFrame catches internally): a throw here would become
+        // the very unhandled rejection this guard exists to contain.
+        log.error(`[${toolCallId}] Video generation job crashed for ${ref}`, error);
+        settlePendingMedia(ref, {
+          status: 'failed',
+          errorCode: MEDIA_TOOL_ERROR_REASONS.generationFailed,
+        });
+        // A crashed job never lands in the document, so without this frame
+        // the client would keep rendering the placeholder skeleton forever.
+        void emitMediaReadyFrame(deps, toolCallId, {
+          ref,
           stageId,
-          signal: ioSignal,
+          status: 'failed',
+          errorCode: MEDIA_TOOL_ERROR_REASONS.generationFailed,
         });
-        throwIfAborted(ioSignal);
+      });
 
-        void recordGenerationUsage({
-          kind: 'video',
-          unit: 'second',
-          providerId,
-          modelId: model,
-          quantity: result.duration,
-        });
-        log.info(
-          `[${toolCallId}] Video generated: provider=${providerId}, model=${model ?? 'default'}, ${result.width}x${result.height}, ${result.duration}s`,
-        );
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Generated video: src=${stored.src}, mime=${stored.mime}, duration=${result.duration}s. Use this src with patch_stage set or add a video element; set autoplay and poster as needed.`,
-            },
-          ],
-          details: {
-            src: stored.src,
-            mime: stored.mime,
-            ...(result.duration ? { durationSec: result.duration } : {}),
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Video generation started in the background (ref=${ref}). Patch this ref onto a video element's mediaRef (or src) with patch_stage NOW so the page shows a placeholder; the element updates automatically when the video is ready (a media_ready event reports the outcome). Do not block on it.`,
           },
-        };
-      } catch (error) {
-        if (callerSignal?.aborted) throw new Error('aborted');
-        if (isTimeout(ioSignal)) {
-          log.warn(
-            `[${toolCallId}] Video generation timed out: provider=${providerId}, model=${model ?? 'default'}, timeoutMs=${timeoutMs}`,
-          );
-          return errorResult('Video generation timed out after the configured server timeout.', {
-            stageId,
-            reason: MEDIA_TOOL_ERROR_REASONS.timeout,
-          });
-        }
-        const message = error instanceof Error ? error.message : String(error);
-        log.error(
-          `[${toolCallId}] Video generation failed: provider=${providerId}, model=${model ?? 'default'}, error=${message}`,
-          error,
-        );
-        return errorResult('Video generation failed.', {
+        ],
+        details: {
+          ref,
           stageId,
-          reason: MEDIA_TOOL_ERROR_REASONS.generationFailed,
-        });
-      }
+          status: 'generating',
+        },
+      };
     },
   };
 }
