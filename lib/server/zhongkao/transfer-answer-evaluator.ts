@@ -83,12 +83,12 @@ function parseMultipleChoice(
 
 const DECIMAL_NUMBER = /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:[eE]([+-]?\d+))?$/u;
 
-interface CanonicalDecimal {
+export interface TransferCanonicalDecimal {
   numericValue: number;
   canonicalValue: string;
 }
 
-function canonicalDecimal(rawAnswer: string): CanonicalDecimal | null {
+export function canonicalizeTransferDecimal(rawAnswer: string): TransferCanonicalDecimal | null {
   const input = normalizedInput(rawAnswer);
   if (!input || input.length > 128) return null;
   const match = DECIMAL_NUMBER.exec(input);
@@ -115,7 +115,7 @@ function canonicalDecimal(rawAnswer: string): CanonicalDecimal | null {
 }
 
 function parseNumeric(rawAnswer: string): TransferAnswerParseResult {
-  const parsed = canonicalDecimal(rawAnswer);
+  const parsed = canonicalizeTransferDecimal(rawAnswer);
   if (!parsed) return INVALID;
   return {
     ok: true,
@@ -171,8 +171,8 @@ export function evaluateTransferAnswer(
   } else if (spec.type === 'multiple_choice' && parsed.answer.type === 'multiple_choice') {
     correct = sameStringSet(parsed.answer.optionIds, spec.correctOptionIds);
   } else if (spec.type === 'numeric' && parsed.answer.type === 'numeric') {
-    const submitted = canonicalDecimal(rawAnswer);
-    const expected = canonicalDecimal(spec.expectedNumericValue.toString());
+    const submitted = canonicalizeTransferDecimal(rawAnswer);
+    const expected = canonicalizeTransferDecimal(spec.expectedNumericValue.toString());
     correct =
       submitted !== null &&
       expected !== null &&

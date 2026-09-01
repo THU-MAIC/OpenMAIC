@@ -2,11 +2,16 @@ import type { RuntimeRecord } from '@openmaic/dsl';
 import { describe, expect, it } from 'vitest';
 
 import { ExamError } from '@/lib/zhongkao/exam-errors';
+import { EXAM_OBJECTIVE_GRADING_ALGORITHM_VERSION } from '@/lib/zhongkao/exam';
 import type {
+  ExamAnswerKeyConfirmedEvent,
+  ExamAnswerKeyStartedEvent,
   ExamCreatedEvent,
   ExamDocumentArtifactExtractedEvent,
   ExamDocumentSnapshottedEvent,
   ExamEvent,
+  ExamGradingCompletedEvent,
+  ExamGradingStartedEvent,
   ExamHumanReviewCompletedEvent,
   ExamHumanReviewStartedEvent,
   ExamIntakeCompletedEvent,
@@ -47,6 +52,28 @@ const HUMAN_REVIEW_PLAN = {
   sourceMatchingArtifactFingerprint: '5'.repeat(64),
   decisionSemanticFingerprint: '6'.repeat(64),
   reviewArtifactRef: 'exam-human-review-artifact-v1',
+} as const;
+const ANSWER_KEY_PLAN = {
+  answerKeyVersion: 1,
+  reviewVersion: 1,
+  reviewArtifactRef: HUMAN_REVIEW_PLAN.reviewArtifactRef,
+  sourceReviewArtifactFingerprint: '7'.repeat(64),
+  answerKeySemanticFingerprint: '8'.repeat(64),
+  answerKeyRef: 'exam-answer-key-v1',
+  answerKeyArtifactRef: 'exam-answer-key-artifact-v1',
+} as const;
+const GRADING_PLAN = {
+  gradingVersion: 1,
+  gradingAlgorithmVersion: EXAM_OBJECTIVE_GRADING_ALGORITHM_VERSION,
+  reviewVersion: ANSWER_KEY_PLAN.reviewVersion,
+  reviewArtifactRef: ANSWER_KEY_PLAN.reviewArtifactRef,
+  sourceReviewArtifactFingerprint: ANSWER_KEY_PLAN.sourceReviewArtifactFingerprint,
+  answerKeyVersion: ANSWER_KEY_PLAN.answerKeyVersion,
+  answerKeyRef: ANSWER_KEY_PLAN.answerKeyRef,
+  answerKeyArtifactRef: ANSWER_KEY_PLAN.answerKeyArtifactRef,
+  sourceAnswerKeyArtifactFingerprint: '9'.repeat(64),
+  gradingRef: 'exam-grading-v1',
+  assessmentArtifactRef: 'exam-assessment-artifact-v1',
 } as const;
 
 function fingerprint(seed: number): string {
@@ -283,6 +310,66 @@ function humanReviewCompleted(
   };
 }
 
+function answerKeyStarted(
+  seq: number,
+  overrides: Partial<ExamAnswerKeyStartedEvent> = {},
+): ExamAnswerKeyStartedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_answer_key_started',
+    ...ANSWER_KEY_PLAN,
+    ...overrides,
+  };
+}
+
+function answerKeyConfirmed(
+  seq: number,
+  overrides: Partial<ExamAnswerKeyConfirmedEvent> = {},
+): ExamAnswerKeyConfirmedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_answer_key_confirmed',
+    ...ANSWER_KEY_PLAN,
+    artifactByteLength: 256,
+    artifactSha256: '9'.repeat(64),
+    entryCount: 3,
+    objectiveEntryCount: 2,
+    unassessedEntryCount: 1,
+    ...overrides,
+  };
+}
+
+function gradingStarted(
+  seq: number,
+  overrides: Partial<ExamGradingStartedEvent> = {},
+): ExamGradingStartedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_grading_started',
+    ...GRADING_PLAN,
+    ...overrides,
+  };
+}
+
+function gradingCompleted(
+  seq: number,
+  overrides: Partial<ExamGradingCompletedEvent> = {},
+): ExamGradingCompletedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_grading_completed',
+    ...GRADING_PLAN,
+    artifactByteLength: 192,
+    artifactSha256: 'a'.repeat(64),
+    assessmentCount: 3,
+    evaluatedCount: 2,
+    correctCount: 1,
+    incorrectCount: 1,
+    unassessedCount: 1,
+    ...overrides,
+  };
+}
+
 function deleteRequested(seq: number): ExamEvent {
   return {
     ...base(seq),
@@ -339,6 +426,14 @@ function responseEvents(): ExamEvent[] {
 
 function reviewEvents(): ExamEvent[] {
   return [...responseEvents(), humanReviewStarted(12), humanReviewCompleted(13)];
+}
+
+function answerKeyEvents(): ExamEvent[] {
+  return [...reviewEvents(), answerKeyStarted(14), answerKeyConfirmed(15)];
+}
+
+function gradingEvents(): ExamEvent[] {
+  return [...answerKeyEvents(), gradingStarted(16), gradingCompleted(17)];
 }
 
 describe('Exam event fold', () => {
@@ -462,6 +557,132 @@ describe('Exam event fold', () => {
         rejectedResponseCount: 2,
       },
     });
+  });
+
+  it('folds answer-key confirmation and deterministic grading with immutable counts', () => {
+    const confirming = foldExamEvents(records([...reviewEvents(), answerKeyStarted(14)]));
+    expect(confirming.answerKey).toEqual({
+      status: 'confirming',
+      startedEventId: 'exam-event-14',
+      startedAt: answerKeyStarted(14).createdAt,
+      ...ANSWER_KEY_PLAN,
+    });
+
+    const keyed = foldExamEvents(records(answerKeyEvents()));
+    expect(keyed.answerKey).toEqual({
+      status: 'confirmed',
+      startedEventId: 'exam-event-14',
+      startedAt: answerKeyStarted(14).createdAt,
+      ...ANSWER_KEY_PLAN,
+      answerKeyArtifact: {
+        eventId: 'exam-event-15',
+        createdAt: answerKeyConfirmed(15).createdAt,
+        byteLength: 256,
+        sha256: '9'.repeat(64),
+        entryCount: 3,
+        objectiveEntryCount: 2,
+        unassessedEntryCount: 1,
+      },
+    });
+
+    const grading = foldExamEvents(records([...answerKeyEvents(), gradingStarted(16)]));
+    expect(grading.grading).toEqual({
+      status: 'grading',
+      startedEventId: 'exam-event-16',
+      startedAt: gradingStarted(16).createdAt,
+      ...GRADING_PLAN,
+    });
+
+    const completed = foldExamEvents(records(gradingEvents()));
+    expect(completed.grading).toEqual({
+      status: 'completed',
+      startedEventId: 'exam-event-16',
+      startedAt: gradingStarted(16).createdAt,
+      ...GRADING_PLAN,
+      assessmentArtifact: {
+        eventId: 'exam-event-17',
+        createdAt: gradingCompleted(17).createdAt,
+        byteLength: 192,
+        sha256: 'a'.repeat(64),
+        assessmentCount: 3,
+        evaluatedCount: 2,
+        correctCount: 1,
+        incorrectCount: 1,
+        unassessedCount: 1,
+      },
+    });
+  });
+
+  it('requires confirmed review authority and exact full-set answer-key coverage', () => {
+    expect(() => foldExamEvents(records([...responseEvents(), answerKeyStarted(12)]))).toThrow(
+      'EXAM_EVENT_CONFLICT',
+    );
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...reviewEvents(),
+          answerKeyStarted(14, { sourceReviewArtifactFingerprint: '0'.repeat(64) }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() => foldExamEvents(records([...reviewEvents(), answerKeyConfirmed(14)]))).toThrow(
+      'EXAM_EVENT_CONFLICT',
+    );
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...reviewEvents(),
+          answerKeyStarted(14),
+          answerKeyConfirmed(15, {
+            entryCount: 2,
+            objectiveEntryCount: 1,
+            unassessedEntryCount: 1,
+          }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+  });
+
+  it('requires a verified key lineage and complete assessment partition', () => {
+    expect(() => foldExamEvents(records([...reviewEvents(), gradingStarted(14)]))).toThrow(
+      'EXAM_EVENT_CONFLICT',
+    );
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...answerKeyEvents(),
+          {
+            ...gradingStarted(16),
+            gradingAlgorithmVersion: 'exam-objective-grading:v2',
+          } as unknown as ExamEvent,
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...answerKeyEvents(),
+          gradingStarted(16, { sourceAnswerKeyArtifactFingerprint: '0'.repeat(64) }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() => foldExamEvents(records([...answerKeyEvents(), gradingCompleted(16)]))).toThrow(
+      'EXAM_EVENT_CONFLICT',
+    );
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...answerKeyEvents(),
+          gradingStarted(16),
+          gradingCompleted(17, {
+            evaluatedCount: 1,
+            correctCount: 1,
+            incorrectCount: 0,
+            unassessedCount: 2,
+          }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
   });
 
   it('requires matching-ready sources and exact human-review plan bindings', () => {
@@ -792,6 +1013,19 @@ describe('Exam event fold', () => {
     );
   });
 
+  it('supports deletion during partial and completed key/grading stages', () => {
+    for (const history of [
+      [...reviewEvents(), answerKeyStarted(14)],
+      answerKeyEvents(),
+      [...answerKeyEvents(), gradingStarted(16)],
+      gradingEvents(),
+    ]) {
+      expect(foldExamEvents(records([...history, deleteRequested(history.length)])).status).toBe(
+        'deleting',
+      );
+    }
+  });
+
   it('requires the exact delete request before the deleted terminal', () => {
     const request = deleteRequested(1);
     expect(foldExamEvents(records([created(), request, deleted(2, request.eventId)])).status).toBe(
@@ -952,6 +1186,33 @@ describe('public Exam projection', () => {
     });
     expect(JSON.stringify(summary)).not.toMatch(
       /answer|artifact|digest|sha256|fingerprint|event|operation|ref|objectKey|path|decision/u,
+    );
+  });
+
+  it('exposes only grading lifecycle and aggregate outcome counts', () => {
+    expect(toPublicExamSession(foldExamEvents(records(reviewEvents()))).grading).toEqual({
+      status: 'not_started',
+    });
+    expect(
+      toPublicExamSession(foldExamEvents(records([...reviewEvents(), answerKeyStarted(14)])))
+        .grading,
+    ).toEqual({ status: 'processing' });
+    expect(
+      toPublicExamSession(foldExamEvents(records([...answerKeyEvents(), gradingStarted(16)])))
+        .grading,
+    ).toEqual({ status: 'processing' });
+
+    const summary = toPublicExamSession(foldExamEvents(records(gradingEvents()))).grading;
+    expect(summary).toEqual({
+      status: 'completed',
+      assessmentCount: 3,
+      evaluatedCount: 2,
+      correctCount: 1,
+      incorrectCount: 1,
+      unassessedCount: 1,
+    });
+    expect(JSON.stringify(summary)).not.toMatch(
+      /answer|artifact|digest|sha256|fingerprint|event|operation|ref|objectKey|path|gradingSpec/u,
     );
   });
 

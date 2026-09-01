@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assertPortableMaterialObjectKey,
+  examAuthoritativeAnswerKeyObjectKey,
   examDocumentArtifactObjectKey,
   examHumanReviewObjectKey,
   examQuestionCandidatesObjectKey,
+  examQuestionAssessmentsObjectKey,
   examSnapshotObjectKey,
   examSnapshotObjectPrefix,
   examQuestionResponseMatchesObjectKey,
@@ -114,6 +116,28 @@ describe('material object key contract', () => {
     expect(() => assertPortableMaterialObjectKey(review)).not.toThrow();
   });
 
+  it('derives private answer-key and assessment artifacts inside one Exam namespace', () => {
+    const answerKey = examAuthoritativeAnswerKeyObjectKey('exam-alpha', 1);
+    const assessments = examQuestionAssessmentsObjectKey('exam-alpha', 1);
+
+    expect(answerKey).toMatch(
+      /^materials\/v1\/exams\/exm_[a-f0-9]{64}\/grading\/answer_key_v1\/authoritative_answer_key_v1\.json$/,
+    );
+    expect(assessments).toMatch(
+      /^materials\/v1\/exams\/exm_[a-f0-9]{64}\/grading\/grading_v1\/exam_question_assessments_v1\.json$/,
+    );
+    expect(answerKey).toBe(examAuthoritativeAnswerKeyObjectKey('exam-alpha', 1));
+    expect(assessments).toBe(examQuestionAssessmentsObjectKey('exam-alpha', 1));
+    expect(answerKey).not.toBe(examAuthoritativeAnswerKeyObjectKey('exam-beta', 1));
+    expect(assessments).not.toBe(examQuestionAssessmentsObjectKey('exam-beta', 1));
+    for (const key of [answerKey, assessments]) {
+      expect(key).not.toContain('exam-alpha');
+      expect(isExamSnapshotObjectKey('exam-alpha', key)).toBe(true);
+      expect(isExamSnapshotObjectKey('exam-beta', key)).toBe(false);
+      expect(() => assertPortableMaterialObjectKey(key)).not.toThrow();
+    }
+  });
+
   it('rejects invalid Exam derivative versions', () => {
     expect(() => examDocumentArtifactObjectKey('exam', 'document', 0)).toThrow(
       'invalid exam artifact version',
@@ -131,6 +155,12 @@ describe('material object key contract', () => {
       'invalid exam artifact version',
     );
     expect(() => examHumanReviewObjectKey('exam', 1, Number.NaN, 1)).toThrow(
+      'invalid exam artifact version',
+    );
+    expect(() => examAuthoritativeAnswerKeyObjectKey('exam', 0)).toThrow(
+      'invalid exam artifact version',
+    );
+    expect(() => examQuestionAssessmentsObjectKey('exam', Number.NaN)).toThrow(
       'invalid exam artifact version',
     );
   });

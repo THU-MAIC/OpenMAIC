@@ -2,6 +2,7 @@ import type { RuntimeRecord } from '@openmaic/dsl';
 
 import {
   EXAM_SCHEMA_VERSION,
+  type PublicExamGradingSummary,
   type PublicExamHumanReviewSummary,
   type PublicExamQuestionExtractionSummary,
   type PublicExamSession,
@@ -11,8 +12,10 @@ import {
 import { ExamError } from './exam-errors';
 import {
   assertExamEvent,
+  type ExamAnswerKeyPlanFacts,
   type ExamCreatedDocument,
   type ExamEvent,
+  type ExamGradingPlanFacts,
   type ExamHumanReviewPlanFacts,
 } from './exam-event';
 
@@ -139,6 +142,46 @@ export interface ExamHumanReviewState extends ExamHumanReviewPlanFacts {
   reviewArtifact?: ExamHumanReviewArtifactFact;
 }
 
+export type ExamAnswerKeyStatus = 'confirming' | 'confirmed';
+
+export interface ExamAnswerKeyArtifactFact {
+  eventId: string;
+  createdAt: string;
+  byteLength: number;
+  sha256: string;
+  entryCount: number;
+  objectiveEntryCount: number;
+  unassessedEntryCount: number;
+}
+
+export interface ExamAnswerKeyState extends ExamAnswerKeyPlanFacts {
+  status: ExamAnswerKeyStatus;
+  startedEventId: string;
+  startedAt: string;
+  answerKeyArtifact?: ExamAnswerKeyArtifactFact;
+}
+
+export type ExamGradingStatus = 'grading' | 'completed';
+
+export interface ExamAssessmentArtifactFact {
+  eventId: string;
+  createdAt: string;
+  byteLength: number;
+  sha256: string;
+  assessmentCount: number;
+  evaluatedCount: number;
+  correctCount: number;
+  incorrectCount: number;
+  unassessedCount: number;
+}
+
+export interface ExamGradingState extends ExamGradingPlanFacts {
+  status: ExamGradingStatus;
+  startedEventId: string;
+  startedAt: string;
+  assessmentArtifact?: ExamAssessmentArtifactFact;
+}
+
 export interface ExamSessionState {
   schemaVersion: typeof EXAM_SCHEMA_VERSION;
   examSessionId: string;
@@ -154,6 +197,8 @@ export interface ExamSessionState {
   questionExtraction?: ExamQuestionExtractionState;
   studentResponseCapture?: ExamStudentResponseCaptureState;
   humanReview?: ExamHumanReviewState;
+  answerKey?: ExamAnswerKeyState;
+  grading?: ExamGradingState;
   intakeCompletedEventId?: string;
   deleteRequestedEventId?: string;
   deletedEventId?: string;
@@ -236,6 +281,47 @@ function humanReviewPlanMatches(
     event.sourceMatchingArtifactFingerprint === review.sourceMatchingArtifactFingerprint &&
     event.decisionSemanticFingerprint === review.decisionSemanticFingerprint &&
     event.reviewArtifactRef === review.reviewArtifactRef
+  );
+}
+
+type ExamAnswerKeyPlanEvent = Extract<
+  ExamEvent,
+  { eventType: 'exam_answer_key_started' | 'exam_answer_key_confirmed' }
+>;
+
+function answerKeyPlanMatches(
+  answerKey: ExamAnswerKeyState,
+  event: ExamAnswerKeyPlanEvent,
+): boolean {
+  return (
+    event.answerKeyVersion === answerKey.answerKeyVersion &&
+    event.reviewVersion === answerKey.reviewVersion &&
+    event.reviewArtifactRef === answerKey.reviewArtifactRef &&
+    event.sourceReviewArtifactFingerprint === answerKey.sourceReviewArtifactFingerprint &&
+    event.answerKeySemanticFingerprint === answerKey.answerKeySemanticFingerprint &&
+    event.answerKeyRef === answerKey.answerKeyRef &&
+    event.answerKeyArtifactRef === answerKey.answerKeyArtifactRef
+  );
+}
+
+type ExamGradingPlanEvent = Extract<
+  ExamEvent,
+  { eventType: 'exam_grading_started' | 'exam_grading_completed' }
+>;
+
+function gradingPlanMatches(grading: ExamGradingState, event: ExamGradingPlanEvent): boolean {
+  return (
+    event.gradingVersion === grading.gradingVersion &&
+    event.gradingAlgorithmVersion === grading.gradingAlgorithmVersion &&
+    event.reviewVersion === grading.reviewVersion &&
+    event.reviewArtifactRef === grading.reviewArtifactRef &&
+    event.sourceReviewArtifactFingerprint === grading.sourceReviewArtifactFingerprint &&
+    event.answerKeyVersion === grading.answerKeyVersion &&
+    event.answerKeyRef === grading.answerKeyRef &&
+    event.answerKeyArtifactRef === grading.answerKeyArtifactRef &&
+    event.sourceAnswerKeyArtifactFingerprint === grading.sourceAnswerKeyArtifactFingerprint &&
+    event.gradingRef === grading.gradingRef &&
+    event.assessmentArtifactRef === grading.assessmentArtifactRef
   );
 }
 
@@ -620,6 +706,164 @@ export function foldExamEvents(records: readonly RuntimeRecord[]): ExamSessionSt
           };
           break;
         }
+        case 'exam_answer_key_started': {
+          const review = state.humanReview;
+          const reviewArtifact = review?.reviewArtifact;
+          const existingRefs = [
+            state.questionExtraction?.documentArtifactRef,
+            state.questionExtraction?.segmentation?.candidateArtifactRef,
+            state.studentResponseCapture?.captureRef,
+            state.studentResponseCapture?.responseArtifactRef,
+            state.studentResponseCapture?.matchingArtifactRef,
+            review?.reviewArtifactRef,
+          ].filter((value): value is string => value !== undefined);
+          if (
+            state.status !== 'ready_for_extraction' ||
+            review?.status !== 'confirmed' ||
+            !reviewArtifact ||
+            state.answerKey ||
+            state.grading ||
+            event.reviewVersion !== review.reviewVersion ||
+            event.reviewArtifactRef !== review.reviewArtifactRef ||
+            event.sourceReviewArtifactFingerprint !== reviewArtifact.sha256 ||
+            existingRefs.includes(event.answerKeyRef) ||
+            existingRefs.includes(event.answerKeyArtifactRef)
+          ) {
+            conflict();
+          }
+          state.answerKey = {
+            status: 'confirming',
+            startedEventId: event.eventId,
+            startedAt: event.createdAt,
+            answerKeyVersion: event.answerKeyVersion,
+            reviewVersion: event.reviewVersion,
+            reviewArtifactRef: event.reviewArtifactRef,
+            sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+            answerKeySemanticFingerprint: event.answerKeySemanticFingerprint,
+            answerKeyRef: event.answerKeyRef,
+            answerKeyArtifactRef: event.answerKeyArtifactRef,
+          };
+          break;
+        }
+        case 'exam_answer_key_confirmed': {
+          const review = state.humanReview;
+          const reviewArtifact = review?.reviewArtifact;
+          const answerKey = state.answerKey;
+          if (
+            state.status !== 'ready_for_extraction' ||
+            review?.status !== 'confirmed' ||
+            !reviewArtifact ||
+            !answerKey ||
+            answerKey.status !== 'confirming' ||
+            answerKey.answerKeyArtifact ||
+            !answerKeyPlanMatches(answerKey, event) ||
+            event.reviewVersion !== review.reviewVersion ||
+            event.reviewArtifactRef !== review.reviewArtifactRef ||
+            event.sourceReviewArtifactFingerprint !== reviewArtifact.sha256 ||
+            event.entryCount !== reviewArtifact.confirmedQuestionCount ||
+            event.entryCount !== event.objectiveEntryCount + event.unassessedEntryCount
+          ) {
+            conflict();
+          }
+          answerKey.status = 'confirmed';
+          answerKey.answerKeyArtifact = {
+            eventId: event.eventId,
+            createdAt: event.createdAt,
+            byteLength: event.artifactByteLength,
+            sha256: event.artifactSha256,
+            entryCount: event.entryCount,
+            objectiveEntryCount: event.objectiveEntryCount,
+            unassessedEntryCount: event.unassessedEntryCount,
+          };
+          break;
+        }
+        case 'exam_grading_started': {
+          const review = state.humanReview;
+          const reviewArtifact = review?.reviewArtifact;
+          const answerKey = state.answerKey;
+          const answerKeyArtifact = answerKey?.answerKeyArtifact;
+          const existingRefs = [
+            state.questionExtraction?.documentArtifactRef,
+            state.questionExtraction?.segmentation?.candidateArtifactRef,
+            state.studentResponseCapture?.captureRef,
+            state.studentResponseCapture?.responseArtifactRef,
+            state.studentResponseCapture?.matchingArtifactRef,
+            review?.reviewArtifactRef,
+            answerKey?.answerKeyRef,
+            answerKey?.answerKeyArtifactRef,
+          ].filter((value): value is string => value !== undefined);
+          if (
+            state.status !== 'ready_for_extraction' ||
+            review?.status !== 'confirmed' ||
+            !reviewArtifact ||
+            answerKey?.status !== 'confirmed' ||
+            !answerKeyArtifact ||
+            state.grading ||
+            event.reviewVersion !== review.reviewVersion ||
+            event.reviewArtifactRef !== review.reviewArtifactRef ||
+            event.sourceReviewArtifactFingerprint !== reviewArtifact.sha256 ||
+            event.answerKeyVersion !== answerKey.answerKeyVersion ||
+            event.answerKeyRef !== answerKey.answerKeyRef ||
+            event.answerKeyArtifactRef !== answerKey.answerKeyArtifactRef ||
+            event.sourceAnswerKeyArtifactFingerprint !== answerKeyArtifact.sha256 ||
+            existingRefs.includes(event.gradingRef) ||
+            existingRefs.includes(event.assessmentArtifactRef)
+          ) {
+            conflict();
+          }
+          state.grading = {
+            status: 'grading',
+            startedEventId: event.eventId,
+            startedAt: event.createdAt,
+            gradingVersion: event.gradingVersion,
+            gradingAlgorithmVersion: event.gradingAlgorithmVersion,
+            reviewVersion: event.reviewVersion,
+            reviewArtifactRef: event.reviewArtifactRef,
+            sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+            answerKeyVersion: event.answerKeyVersion,
+            answerKeyRef: event.answerKeyRef,
+            answerKeyArtifactRef: event.answerKeyArtifactRef,
+            sourceAnswerKeyArtifactFingerprint: event.sourceAnswerKeyArtifactFingerprint,
+            gradingRef: event.gradingRef,
+            assessmentArtifactRef: event.assessmentArtifactRef,
+          };
+          break;
+        }
+        case 'exam_grading_completed': {
+          const reviewArtifact = state.humanReview?.reviewArtifact;
+          const answerKeyArtifact = state.answerKey?.answerKeyArtifact;
+          const grading = state.grading;
+          if (
+            state.status !== 'ready_for_extraction' ||
+            !reviewArtifact ||
+            !answerKeyArtifact ||
+            !grading ||
+            grading.status !== 'grading' ||
+            grading.assessmentArtifact ||
+            !gradingPlanMatches(grading, event) ||
+            event.assessmentCount !== reviewArtifact.confirmedQuestionCount ||
+            event.assessmentCount !== answerKeyArtifact.entryCount ||
+            event.evaluatedCount !== event.correctCount + event.incorrectCount ||
+            event.assessmentCount !== event.evaluatedCount + event.unassessedCount ||
+            event.unassessedCount !== answerKeyArtifact.unassessedEntryCount ||
+            event.evaluatedCount !== answerKeyArtifact.objectiveEntryCount
+          ) {
+            conflict();
+          }
+          grading.status = 'completed';
+          grading.assessmentArtifact = {
+            eventId: event.eventId,
+            createdAt: event.createdAt,
+            byteLength: event.artifactByteLength,
+            sha256: event.artifactSha256,
+            assessmentCount: event.assessmentCount,
+            evaluatedCount: event.evaluatedCount,
+            correctCount: event.correctCount,
+            incorrectCount: event.incorrectCount,
+            unassessedCount: event.unassessedCount,
+          };
+          break;
+        }
         case 'exam_delete_requested':
           if (
             (state.status !== 'intake_pending' && state.status !== 'ready_for_extraction') ||
@@ -717,6 +961,24 @@ function toPublicHumanReview(
   };
 }
 
+function toPublicGrading(
+  answerKey: ExamAnswerKeyState | undefined,
+  grading: ExamGradingState | undefined,
+): PublicExamGradingSummary {
+  if (!answerKey && !grading) return { status: 'not_started' };
+  if (grading?.status !== 'completed') return { status: 'processing' };
+  const artifact = grading.assessmentArtifact;
+  if (!artifact || answerKey?.status !== 'confirmed' || !answerKey.answerKeyArtifact) conflict();
+  return {
+    status: 'completed',
+    assessmentCount: artifact.assessmentCount,
+    evaluatedCount: artifact.evaluatedCount,
+    correctCount: artifact.correctCount,
+    incorrectCount: artifact.incorrectCount,
+    unassessedCount: artifact.unassessedCount,
+  };
+}
+
 export function toPublicExamSession(state: ExamSessionState): PublicExamSession {
   if (state.status === 'deleted') throw new ExamError('EXAM_NOT_FOUND');
   return {
@@ -738,5 +1000,6 @@ export function toPublicExamSession(state: ExamSessionState): PublicExamSession 
     questionExtraction: toPublicQuestionExtraction(state.questionExtraction),
     studentResponseMatching: toPublicStudentResponseMatching(state.studentResponseCapture),
     humanReview: toPublicHumanReview(state.humanReview),
+    grading: toPublicGrading(state.answerKey, state.grading),
   };
 }

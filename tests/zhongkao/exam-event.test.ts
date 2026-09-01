@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  EXAM_MAX_ANSWER_KEY_ARTIFACT_BYTES,
+  EXAM_MAX_ASSESSMENT_ARTIFACT_BYTES,
   EXAM_MAX_CANDIDATE_ARTIFACT_BYTES,
   EXAM_MAX_DOCUMENT_BYTES,
   EXAM_MAX_DOCUMENT_ARTIFACT_BYTES,
   EXAM_MAX_EXTRACTED_PAGES,
   EXAM_MAX_HUMAN_REVIEW_ARTIFACT_BYTES,
   EXAM_MAX_MATCH_ARTIFACT_BYTES,
+  EXAM_OBJECTIVE_GRADING_ALGORITHM_VERSION,
   EXAM_MAX_QUESTION_CANDIDATES,
   EXAM_MAX_RESPONSE_ARTIFACT_BYTES,
   EXAM_MAX_TOTAL_BYTES,
@@ -49,6 +52,28 @@ const HUMAN_REVIEW_PLAN = {
   sourceMatchingArtifactFingerprint: '5'.repeat(64),
   decisionSemanticFingerprint: '6'.repeat(64),
   reviewArtifactRef: 'exam-human-review-artifact-v1',
+} as const;
+const ANSWER_KEY_PLAN = {
+  answerKeyVersion: 1,
+  reviewVersion: 1,
+  reviewArtifactRef: HUMAN_REVIEW_PLAN.reviewArtifactRef,
+  sourceReviewArtifactFingerprint: '7'.repeat(64),
+  answerKeySemanticFingerprint: '8'.repeat(64),
+  answerKeyRef: 'exam-answer-key-v1',
+  answerKeyArtifactRef: 'exam-answer-key-artifact-v1',
+} as const;
+const GRADING_PLAN = {
+  gradingVersion: 1,
+  gradingAlgorithmVersion: EXAM_OBJECTIVE_GRADING_ALGORITHM_VERSION,
+  reviewVersion: ANSWER_KEY_PLAN.reviewVersion,
+  reviewArtifactRef: ANSWER_KEY_PLAN.reviewArtifactRef,
+  sourceReviewArtifactFingerprint: ANSWER_KEY_PLAN.sourceReviewArtifactFingerprint,
+  answerKeyVersion: ANSWER_KEY_PLAN.answerKeyVersion,
+  answerKeyRef: ANSWER_KEY_PLAN.answerKeyRef,
+  answerKeyArtifactRef: ANSWER_KEY_PLAN.answerKeyArtifactRef,
+  sourceAnswerKeyArtifactFingerprint: '9'.repeat(64),
+  gradingRef: 'exam-grading-v1',
+  assessmentArtifactRef: 'exam-assessment-artifact-v1',
 } as const;
 
 function fingerprint(seed: number): string {
@@ -215,6 +240,34 @@ function event(eventType: ExamEvent['eventType']): ExamEvent {
         confirmedMatchCount: 3,
         rejectedQuestionCount: 2,
         rejectedResponseCount: 2,
+      };
+    case 'exam_answer_key_started':
+      return { ...base, eventType, ...ANSWER_KEY_PLAN };
+    case 'exam_answer_key_confirmed':
+      return {
+        ...base,
+        eventType,
+        ...ANSWER_KEY_PLAN,
+        artifactByteLength: 256,
+        artifactSha256: '9'.repeat(64),
+        entryCount: 3,
+        objectiveEntryCount: 2,
+        unassessedEntryCount: 1,
+      };
+    case 'exam_grading_started':
+      return { ...base, eventType, ...GRADING_PLAN };
+    case 'exam_grading_completed':
+      return {
+        ...base,
+        eventType,
+        ...GRADING_PLAN,
+        artifactByteLength: 192,
+        artifactSha256: 'a'.repeat(64),
+        assessmentCount: 3,
+        evaluatedCount: 2,
+        correctCount: 1,
+        incorrectCount: 1,
+        unassessedCount: 1,
       };
     case 'exam_delete_requested':
       return { ...base, eventType, documentSetFingerprint: DOCUMENT_SET_FP };
@@ -468,5 +521,85 @@ describe('Exam event schema', () => {
         objectKey: 'materials/private/confirmed_review_facts_v1.json',
       }).valid,
     ).toBe(false);
+  });
+
+  it('validates closed answer-key plans, private artifact bounds and complete key counts', () => {
+    expect(
+      validateExamEvent({ ...event('exam_answer_key_started'), answerKeyVersion: 0 }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_answer_key_started'),
+        sourceReviewArtifactFingerprint: 'bad',
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_answer_key_started'),
+        answerKeyArtifactRef: ANSWER_KEY_PLAN.answerKeyRef,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_answer_key_confirmed'),
+        artifactByteLength: EXAM_MAX_ANSWER_KEY_ARTIFACT_BYTES + 1,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_answer_key_confirmed'),
+        objectiveEntryCount: 1,
+      }).valid,
+    ).toBe(false);
+  });
+
+  it('validates grading lineage, artifact bounds and complete outcome counts', () => {
+    expect(validateExamEvent({ ...event('exam_grading_started'), gradingVersion: 0 }).valid).toBe(
+      false,
+    );
+    expect(
+      validateExamEvent({
+        ...event('exam_grading_started'),
+        gradingAlgorithmVersion: 'exam-objective-grading:v2',
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_grading_started'),
+        sourceAnswerKeyArtifactFingerprint: 'bad',
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_grading_started'),
+        assessmentArtifactRef: GRADING_PLAN.gradingRef,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_grading_completed'),
+        artifactByteLength: EXAM_MAX_ASSESSMENT_ARTIFACT_BYTES + 1,
+      }).valid,
+    ).toBe(false);
+    expect(validateExamEvent({ ...event('exam_grading_completed'), correctCount: 2 }).valid).toBe(
+      false,
+    );
+    expect(
+      validateExamEvent({ ...event('exam_grading_completed'), unassessedCount: 0 }).valid,
+    ).toBe(false);
+  });
+
+  it('keeps expected answers, responses, outcomes and storage locators out of grading events', () => {
+    for (const privateField of [
+      { expectedOptionId: 'A' },
+      { acceptedAnswers: ['PRIVATE-ANSWER'] },
+      { rawAnswerText: 'PRIVATE-STUDENT-ANSWER' },
+      { outcome: 'correct' },
+      { objectKey: 'materials/private/authoritative_answer_key_v1.json' },
+    ]) {
+      expect(validateExamEvent({ ...event('exam_grading_completed'), ...privateField }).valid).toBe(
+        false,
+      );
+    }
   });
 });

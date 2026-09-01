@@ -445,7 +445,8 @@ function artifactMatchesPlan(
   );
 }
 
-async function resolveConfirmedFromRuntime(
+/** Resolve confirmed facts while the caller already owns the per-Exam mutation lock. */
+export async function resolveConfirmedExamReviewFactsFromRuntime(
   deps: ExamServiceDeps,
   snapshot: ExamRuntimeSnapshot,
 ): Promise<ConfirmedExamReviewFactsV1> {
@@ -614,7 +615,7 @@ export async function getExamHumanReview(
     const sources = await verifiedSources(deps, snapshot);
     const confirmed =
       snapshot.state.humanReview?.status === 'confirmed'
-        ? await resolveConfirmedFromRuntime(deps, snapshot)
+        ? await resolveConfirmedExamReviewFactsFromRuntime(deps, snapshot)
         : undefined;
     return reviewBundle(snapshot, sources, confirmed);
   });
@@ -645,7 +646,7 @@ export async function confirmExamHumanReview(
       await putAndVerifyReviewArtifact(deps, snapshot, prepared.bytes);
       snapshot = await appendReviewEvent(deps, snapshot, completedEvent(deps, snapshot, prepared));
     }
-    const resolved = await resolveConfirmedFromRuntime(deps, snapshot);
+    const resolved = await resolveConfirmedExamReviewFactsFromRuntime(deps, snapshot);
     if (!serializeConfirmedExamReviewFacts(resolved).equals(prepared.bytes)) {
       throw new ExamError('EXAM_REVIEW_CONFLICT');
     }
@@ -663,6 +664,6 @@ export async function resolveConfirmedExamReviewFacts(
 ): Promise<ConfirmedExamReviewFactsV1> {
   return deps.withExamMutationLock(examSessionId, async () => {
     const snapshot = await loadExamRuntime(deps, examSessionId);
-    return resolveConfirmedFromRuntime(deps, snapshot);
+    return resolveConfirmedExamReviewFactsFromRuntime(deps, snapshot);
   });
 }

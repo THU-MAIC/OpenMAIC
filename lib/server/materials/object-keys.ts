@@ -153,6 +153,26 @@ export function examHumanReviewObjectKey(
   )}response_capture_v${responseCaptureVersion}/matching_v${matchingVersion}/human_review_v${reviewVersion}/confirmed_review_facts_v1.json`;
 }
 
+export function examAuthoritativeAnswerKeyObjectKey(
+  examSessionId: string,
+  answerKeyVersion: number,
+): string {
+  assertArtifactVersion(answerKeyVersion);
+  return `${examSnapshotObjectPrefix(
+    examSessionId,
+  )}grading/answer_key_v${answerKeyVersion}/authoritative_answer_key_v1.json`;
+}
+
+export function examQuestionAssessmentsObjectKey(
+  examSessionId: string,
+  gradingVersion: number,
+): string {
+  assertArtifactVersion(gradingVersion);
+  return `${examSnapshotObjectPrefix(
+    examSessionId,
+  )}grading/grading_v${gradingVersion}/exam_question_assessments_v1.json`;
+}
+
 export function isExamSnapshotObjectKey(examSessionId: string, key: string): boolean {
   return (
     isPortableMaterialObjectKey(key) && key.startsWith(examSnapshotObjectPrefix(examSessionId))

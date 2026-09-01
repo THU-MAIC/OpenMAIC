@@ -81,6 +81,7 @@ function publicExam(overrides: Partial<PublicExamSession> = {}): PublicExamSessi
     questionExtraction: { status: 'not_started' },
     studentResponseMatching: { status: 'not_started', needsReview: true },
     humanReview: { status: 'not_started' },
+    grading: { status: 'not_started' },
     documents: [
       {
         examDocumentId: 'exam-document-question-paper',

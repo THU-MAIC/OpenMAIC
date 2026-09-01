@@ -11,6 +11,7 @@ import {
 
 export const EXAM_SCHEMA_VERSION = 1 as const;
 export const EXAM_DOCUMENT_SCHEMA_VERSION = 1 as const;
+export const EXAM_OBJECTIVE_GRADING_ALGORITHM_VERSION = 'exam-objective-grading:v1' as const;
 export const EXAM_CLIENT_REQUEST_ID_MAX_LENGTH = 128;
 export const EXAM_TITLE_MAX_LENGTH = 200;
 export const EXAM_DISPLAY_NAME_MAX_LENGTH = 512;
@@ -23,6 +24,8 @@ export const EXAM_MAX_CANDIDATE_ARTIFACT_BYTES = 32 * 1024 * 1024;
 export const EXAM_MAX_RESPONSE_ARTIFACT_BYTES = 4 * 1024 * 1024;
 export const EXAM_MAX_MATCH_ARTIFACT_BYTES = 4 * 1024 * 1024;
 export const EXAM_MAX_HUMAN_REVIEW_ARTIFACT_BYTES = 4 * 1024 * 1024;
+export const EXAM_MAX_ANSWER_KEY_ARTIFACT_BYTES = 4 * 1024 * 1024;
+export const EXAM_MAX_ASSESSMENT_ARTIFACT_BYTES = 4 * 1024 * 1024;
 export const EXAM_MAX_EXTRACTED_PAGES = 200;
 export const EXAM_MAX_QUESTION_CANDIDATES = 500;
 
@@ -100,6 +103,17 @@ export interface PublicExamHumanReviewSummary {
   rejectedResponseCount?: number;
 }
 
+export type PublicExamGradingStatus = 'not_started' | 'processing' | 'completed';
+
+export interface PublicExamGradingSummary {
+  status: PublicExamGradingStatus;
+  assessmentCount?: number;
+  evaluatedCount?: number;
+  correctCount?: number;
+  incorrectCount?: number;
+  unassessedCount?: number;
+}
+
 export interface PublicExamDocument {
   examDocumentId: string;
   role: ExamDocumentRole;
@@ -121,6 +135,7 @@ export interface PublicExamSession {
   questionExtraction: PublicExamQuestionExtractionSummary;
   studentResponseMatching: PublicExamStudentResponseMatchingSummary;
   humanReview: PublicExamHumanReviewSummary;
+  grading: PublicExamGradingSummary;
 }
 
 const CREATE_REQUEST_KEYS = new Set([

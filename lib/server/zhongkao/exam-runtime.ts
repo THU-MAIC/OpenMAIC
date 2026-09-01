@@ -7,8 +7,10 @@ import { EXAM_DOCUMENT_SCHEMA_VERSION, EXAM_SCHEMA_VERSION } from '@/lib/zhongka
 import { ExamError } from '@/lib/zhongkao/exam-errors';
 import {
   assertExamEvent,
+  type ExamAnswerKeyPlanFacts,
   type ExamCreatedEvent,
   type ExamEvent,
+  type ExamGradingPlanFacts,
   type ExamHumanReviewPlanFacts,
 } from '@/lib/zhongkao/exam-event';
 import { foldExamEvents, type ExamSessionState } from '@/lib/zhongkao/exam-state';
@@ -142,6 +144,42 @@ export function deriveExamHumanReviewArtifactRef(reviewRef: string): string {
   return `exam-confirmed-review-facts:v${EXAM_ID_VERSION}:${digest(
     'openmaic:zhongkao-exam-confirmed-review-facts:v1',
     { reviewRef },
+  )}`;
+}
+
+export type ExamAnswerKeyRefInput = {
+  examSessionId: string;
+} & Omit<
+  ExamAnswerKeyPlanFacts,
+  'answerKeySemanticFingerprint' | 'answerKeyRef' | 'answerKeyArtifactRef'
+>;
+
+export function deriveExamAnswerKeyRef(input: ExamAnswerKeyRefInput): string {
+  return `exam-answer-key:v${EXAM_ID_VERSION}:${digest(
+    'openmaic:zhongkao-exam-answer-key:v1',
+    input,
+  )}`;
+}
+
+export function deriveExamAnswerKeyArtifactRef(answerKeyRef: string): string {
+  return `exam-authoritative-answer-key:v${EXAM_ID_VERSION}:${digest(
+    'openmaic:zhongkao-exam-authoritative-answer-key:v1',
+    { answerKeyRef },
+  )}`;
+}
+
+export type ExamGradingRefInput = {
+  examSessionId: string;
+} & Omit<ExamGradingPlanFacts, 'gradingRef' | 'assessmentArtifactRef'>;
+
+export function deriveExamGradingRef(input: ExamGradingRefInput): string {
+  return `exam-grading:v${EXAM_ID_VERSION}:${digest('openmaic:zhongkao-exam-grading:v1', input)}`;
+}
+
+export function deriveExamAssessmentArtifactRef(gradingRef: string): string {
+  return `exam-question-assessments:v${EXAM_ID_VERSION}:${digest(
+    'openmaic:zhongkao-exam-question-assessments:v1',
+    { gradingRef },
   )}`;
 }
 
@@ -304,6 +342,34 @@ export function deriveExamHumanReviewCompletedOperationId(
   return operationId('human-review-completed', { examSessionId, reviewVersion });
 }
 
+export function deriveExamAnswerKeyStartedOperationId(
+  examSessionId: string,
+  answerKeyVersion: number,
+): string {
+  return operationId('answer-key-started', { examSessionId, answerKeyVersion });
+}
+
+export function deriveExamAnswerKeyConfirmedOperationId(
+  examSessionId: string,
+  answerKeyVersion: number,
+): string {
+  return operationId('answer-key-confirmed', { examSessionId, answerKeyVersion });
+}
+
+export function deriveExamGradingStartedOperationId(
+  examSessionId: string,
+  gradingVersion: number,
+): string {
+  return operationId('grading-started', { examSessionId, gradingVersion });
+}
+
+export function deriveExamGradingCompletedOperationId(
+  examSessionId: string,
+  gradingVersion: number,
+): string {
+  return operationId('grading-completed', { examSessionId, gradingVersion });
+}
+
 export function deriveExamDeleteRequestedOperationId(examSessionId: string): string {
   return operationId('delete-requested', { schemaVersion: EXAM_SCHEMA_VERSION, examSessionId });
 }
@@ -405,6 +471,81 @@ function humanReviewRefInput(event: ExamHumanReviewPlanEvent): ExamHumanReviewRe
 function assertDerivedHumanReviewPlan(event: ExamHumanReviewPlanEvent): void {
   const reviewRef = deriveExamHumanReviewRef(humanReviewRefInput(event));
   if (event.reviewArtifactRef !== deriveExamHumanReviewArtifactRef(reviewRef)) {
+    throw new ExamError('EXAM_EVENT_CONFLICT');
+  }
+}
+
+type ExamAnswerKeyPlanEvent = Extract<
+  ExamEvent,
+  { eventType: 'exam_answer_key_started' | 'exam_answer_key_confirmed' }
+>;
+
+function answerKeyPlanFacts(event: ExamAnswerKeyPlanEvent): ExamAnswerKeyPlanFacts {
+  return {
+    answerKeyVersion: event.answerKeyVersion,
+    reviewVersion: event.reviewVersion,
+    reviewArtifactRef: event.reviewArtifactRef,
+    sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+    answerKeySemanticFingerprint: event.answerKeySemanticFingerprint,
+    answerKeyRef: event.answerKeyRef,
+    answerKeyArtifactRef: event.answerKeyArtifactRef,
+  };
+}
+
+function assertDerivedAnswerKeyPlan(event: ExamAnswerKeyPlanEvent): void {
+  const answerKeyRef = deriveExamAnswerKeyRef({
+    examSessionId: event.examSessionId,
+    answerKeyVersion: event.answerKeyVersion,
+    reviewVersion: event.reviewVersion,
+    reviewArtifactRef: event.reviewArtifactRef,
+    sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+  });
+  if (
+    event.answerKeyRef !== answerKeyRef ||
+    event.answerKeyArtifactRef !== deriveExamAnswerKeyArtifactRef(answerKeyRef)
+  ) {
+    throw new ExamError('EXAM_EVENT_CONFLICT');
+  }
+}
+
+type ExamGradingPlanEvent = Extract<
+  ExamEvent,
+  { eventType: 'exam_grading_started' | 'exam_grading_completed' }
+>;
+
+function gradingPlanFacts(event: ExamGradingPlanEvent): ExamGradingPlanFacts {
+  return {
+    gradingVersion: event.gradingVersion,
+    gradingAlgorithmVersion: event.gradingAlgorithmVersion,
+    reviewVersion: event.reviewVersion,
+    reviewArtifactRef: event.reviewArtifactRef,
+    sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+    answerKeyVersion: event.answerKeyVersion,
+    answerKeyRef: event.answerKeyRef,
+    answerKeyArtifactRef: event.answerKeyArtifactRef,
+    sourceAnswerKeyArtifactFingerprint: event.sourceAnswerKeyArtifactFingerprint,
+    gradingRef: event.gradingRef,
+    assessmentArtifactRef: event.assessmentArtifactRef,
+  };
+}
+
+function assertDerivedGradingPlan(event: ExamGradingPlanEvent): void {
+  const gradingRef = deriveExamGradingRef({
+    examSessionId: event.examSessionId,
+    gradingVersion: event.gradingVersion,
+    gradingAlgorithmVersion: event.gradingAlgorithmVersion,
+    reviewVersion: event.reviewVersion,
+    reviewArtifactRef: event.reviewArtifactRef,
+    sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+    answerKeyVersion: event.answerKeyVersion,
+    answerKeyRef: event.answerKeyRef,
+    answerKeyArtifactRef: event.answerKeyArtifactRef,
+    sourceAnswerKeyArtifactFingerprint: event.sourceAnswerKeyArtifactFingerprint,
+  });
+  if (
+    event.gradingRef !== gradingRef ||
+    event.assessmentArtifactRef !== deriveExamAssessmentArtifactRef(gradingRef)
+  ) {
     throw new ExamError('EXAM_EVENT_CONFLICT');
   }
 }
@@ -719,6 +860,74 @@ function assertDerivedExamEvent(event: ExamEvent): void {
         confirmedMatchCount: event.confirmedMatchCount,
         rejectedQuestionCount: event.rejectedQuestionCount,
         rejectedResponseCount: event.rejectedResponseCount,
+      });
+      break;
+    case 'exam_answer_key_started':
+      assertDerivedAnswerKeyPlan(event);
+      expectedOperationId = deriveExamAnswerKeyStartedOperationId(
+        event.examSessionId,
+        event.answerKeyVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_answer_key_started',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...answerKeyPlanFacts(event),
+      });
+      break;
+    case 'exam_answer_key_confirmed':
+      assertDerivedAnswerKeyPlan(event);
+      expectedOperationId = deriveExamAnswerKeyConfirmedOperationId(
+        event.examSessionId,
+        event.answerKeyVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_answer_key_confirmed',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...answerKeyPlanFacts(event),
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        entryCount: event.entryCount,
+        objectiveEntryCount: event.objectiveEntryCount,
+        unassessedEntryCount: event.unassessedEntryCount,
+      });
+      break;
+    case 'exam_grading_started':
+      assertDerivedGradingPlan(event);
+      expectedOperationId = deriveExamGradingStartedOperationId(
+        event.examSessionId,
+        event.gradingVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_grading_started',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...gradingPlanFacts(event),
+      });
+      break;
+    case 'exam_grading_completed':
+      assertDerivedGradingPlan(event);
+      expectedOperationId = deriveExamGradingCompletedOperationId(
+        event.examSessionId,
+        event.gradingVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_grading_completed',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...gradingPlanFacts(event),
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        assessmentCount: event.assessmentCount,
+        evaluatedCount: event.evaluatedCount,
+        correctCount: event.correctCount,
+        incorrectCount: event.incorrectCount,
+        unassessedCount: event.unassessedCount,
       });
       break;
     case 'exam_delete_requested':

@@ -1505,3 +1505,95 @@ snapshot. It adds no answer-key extraction, OCR, vision, fuzzy matching,
 grading, correctness, score, knowledge mapping, diagnosis, ExamObservation,
 StudyAttempt or KnowledgeProgress mutation, Coach behavior, UI, LLM, provider,
 runner, Skill, production dependency, or database schema.
+
+## Milestone 3B-1A authoritative manual answer key and deterministic grading
+
+M3B-1A is the first Exam milestone allowed to derive `correct`, `incorrect`,
+or `unassessed`. Its only question and student-response authority is the
+integrity-checked `ConfirmedExamReviewFactsV1` returned by the server-only
+confirmed-review resolver. Production grading does not read question,
+response, or match candidates directly and does not infer an answer from
+question text.
+
+The owner-authorized `POST /api/zhongkao/exams/{examSessionId}/answer-key`
+accepts one closed, complete manual key v1. Every confirmed question has
+exactly one entry: a supported objective grading decision or the explicit
+closed `unsupported_question_type` decision. Duplicate or omitted question
+ids reject the entire request. Entries are canonicalized independently of
+request order and bind the exact confirmed-review artifact, its version and
+fingerprint, and the final `confirmedQuestionId`; locator strings and source
+candidate ids are not grading identities.
+
+An accepted manual key has authority source `owner_confirmed_manual_key`. It
+is authoritative for deterministic grading inside this Exam, but it is not a
+verified official examination answer source. M3B-1A never reads an uploaded
+`answer_key` snapshot. A later answer-key extraction milestone may create
+candidates, but those candidates cannot acquire authority without a separate
+confirmation and provenance boundary.
+
+### Objective grading v1
+
+`exam-objective-grading:v1` supports only `single_choice`,
+`multiple_choice`, `numeric`, and `exact_short_answer`. It reuses the existing
+server-only Zhongkao grading-spec validation, choice comparison, exact decimal
+parsing, and bounded exact-answer normalization. Choice ids use a frozen
+canonical A-F universe without inspecting question text. Multiple-choice
+comparison is exact-set and order independent; the Exam v1 adapter also
+recognizes a compact sequence such as `AC` without changing the default Coach
+evaluator policy. Numeric keys are accepted as decimal strings only when they
+can be represented by the existing exact numeric contract without a lossy
+conversion. Expressions such as `1/2` or `1+2` are never executed. Exact short
+answers match only the owner-listed strings after the existing controlled
+Unicode, whitespace, and subject-owned case normalization.
+
+For an objective key, a confirmed text response is evaluated by that frozen
+deterministic algorithm. A confirmed `blank` or explicit `no_response` has no
+correctness meaning at the M3A-3 review layer, but once an authoritative
+objective key exists it deterministically evaluates as `incorrect` because no
+matching answer was supplied. An `unassessed` key remains unassessed regardless
+of response content and never produces correctness. There is no `skipped`
+inference, partial credit, score, fuzzy comparison, regex, semantic model
+grading, error-type inference, or knowledge-point mapping.
+
+### Private artifacts, events, and recovery
+
+The private `authoritative_answer_key_v1.json` artifact contains the canonical
+manual decisions, server-derived private grading specifications, exact source
+review binding, deterministic entry references, manual-authority provenance,
+and semantic fingerprint. Expected answers, accepted alternatives, numeric
+internals, and normalization policy stay in this server-only artifact. The
+separate `exam_question_assessments_v1.json` artifact binds the exact review,
+answer-key artifact and algorithm version and contains one closed evaluated or
+unassessed result for every confirmed question. It contains response and key
+entry references, never raw answer text or a score.
+
+The Exam stream appends `exam_answer_key_started` before key bytes and
+`exam_grading_started` before assessment bytes. Completed events record only
+versions, opaque references, source fingerprints, integrity facts, and counts;
+they never contain the manual key, private grading specs, raw student answers,
+or per-question outcomes. Both artifacts use deterministic private Exam keys,
+canonical serialization, immutable same-bytes replay, read-back length and
+SHA-256 verification, and closed-schema/source-binding validation.
+
+The same owner-authorized POST runs key confirmation and grading as one
+recoverable saga under the per-Exam mutation lock. Retries continue after a
+started-event crash, bytes-before-completed interruption, RuntimeStore CAS
+loss, or committed-response loss. A different v1 key conflicts and cannot
+overwrite prior facts. Exam deletion removes both exact artifact keys,
+including bytes left by a partial operation; delete/key and delete/grading
+races cannot resurrect a deleted Exam.
+
+Ordinary Exam detail exposes only grading status and aggregate evaluated,
+correct, incorrect, and unassessed counts. It does not expose expected answers,
+accepted-answer sets, raw responses, per-question outcomes, object keys,
+digests, operation ids, event ids, or RuntimeSession identities. Generic
+Runtime access remains blocked for the server-only Exam event kind. M3B-1A
+adds no LLM, provider, runner, Skill, OCR, vision, embedding, score,
+ExamObservation, StudyAttempt, KnowledgeProgress, Coach, UI, dependency, or
+database-schema change.
+
+Future M3B-2 code may consume question and response facts only through the
+confirmed-review resolver and correctness only through
+`resolveExamQuestionAssessments`. It must not re-grade raw responses, read a
+candidate answer key, ask a model to change an outcome, infer an error type, or
+update progress without the later explicit projection contract.

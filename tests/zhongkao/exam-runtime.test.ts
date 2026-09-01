@@ -8,11 +8,17 @@ import {
 } from '@openmaic/storage';
 
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
+import { EXAM_OBJECTIVE_GRADING_ALGORITHM_VERSION } from '@/lib/zhongkao/exam';
 import {
   appendExamRuntimeEvent,
   createExamDocumentSetFingerprint,
   createExamOperationFingerprint,
   createExamRequestFingerprint,
+  deriveExamAnswerKeyArtifactRef,
+  deriveExamAnswerKeyConfirmedOperationId,
+  deriveExamAnswerKeyRef,
+  deriveExamAnswerKeyStartedOperationId,
+  deriveExamAssessmentArtifactRef,
   deriveExamCandidateArtifactRef,
   deriveExamCreatedOperationId,
   deriveExamDocumentArtifactExtractedOperationId,
@@ -24,6 +30,10 @@ import {
   deriveExamHumanReviewRef,
   deriveExamHumanReviewStartedOperationId,
   deriveExamIntakeCompletedOperationId,
+  deriveExamGradingCompletedOperationId,
+  deriveExamGradingRef,
+  deriveExamGradingStartedOperationId,
+  type ExamGradingRefInput,
   deriveExamQuestionCandidatesExtractedOperationId,
   deriveExamQuestionExtractionStartedOperationId,
   deriveExamQuestionSegmentationStartedOperationId,
@@ -41,12 +51,16 @@ import {
 } from '@/lib/server/zhongkao/exam-runtime';
 import { resolveZhongkaoLearnerKeyFromOwnerId } from '@/lib/server/zhongkao/learner-identity';
 import type {
+  ExamAnswerKeyConfirmedEvent,
+  ExamAnswerKeyStartedEvent,
   ExamCreatedDocument,
   ExamCreatedEvent,
   ExamDocumentArtifactExtractedEvent,
   ExamDocumentSnapshottedEvent,
   ExamHumanReviewCompletedEvent,
   ExamHumanReviewStartedEvent,
+  ExamGradingCompletedEvent,
+  ExamGradingStartedEvent,
   ExamIntakeCompletedEvent,
   ExamQuestionCandidatesExtractedEvent,
   ExamQuestionExtractionStartedEvent,
@@ -534,6 +548,161 @@ function humanReviewEvents(
   return [started, completed];
 }
 
+function answerKeyEvents(
+  created: ExamCreatedEvent,
+  review: ExamHumanReviewCompletedEvent,
+): [ExamAnswerKeyStartedEvent, ExamAnswerKeyConfirmedEvent] {
+  const answerKeyVersion = 1;
+  const sourceFacts = {
+    answerKeyVersion,
+    reviewVersion: review.reviewVersion,
+    reviewArtifactRef: review.reviewArtifactRef,
+    sourceReviewArtifactFingerprint: review.artifactSha256,
+  } as const;
+  const answerKeyRef = deriveExamAnswerKeyRef({
+    examSessionId: created.examSessionId,
+    ...sourceFacts,
+  });
+  const plan = {
+    ...sourceFacts,
+    answerKeySemanticFingerprint: '3'.repeat(64),
+    answerKeyRef,
+    answerKeyArtifactRef: deriveExamAnswerKeyArtifactRef(answerKeyRef),
+  };
+  const startedOperationId = deriveExamAnswerKeyStartedOperationId(
+    created.examSessionId,
+    answerKeyVersion,
+  );
+  const started: ExamAnswerKeyStartedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(startedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_answer_key_started',
+    createdAt: '2026-08-31T08:00:12.000Z',
+    operationId: startedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_answer_key_started',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...plan,
+    }),
+    ...plan,
+  };
+  const completedFacts = {
+    ...plan,
+    artifactByteLength: 256,
+    artifactSha256: '4'.repeat(64),
+    entryCount: 3,
+    objectiveEntryCount: 2,
+    unassessedEntryCount: 1,
+  } as const;
+  const completedOperationId = deriveExamAnswerKeyConfirmedOperationId(
+    created.examSessionId,
+    answerKeyVersion,
+  );
+  const completed: ExamAnswerKeyConfirmedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(completedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_answer_key_confirmed',
+    createdAt: '2026-08-31T08:00:13.000Z',
+    operationId: completedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_answer_key_confirmed',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...completedFacts,
+    }),
+    ...completedFacts,
+  };
+  return [started, completed];
+}
+
+function gradingEvents(
+  created: ExamCreatedEvent,
+  review: ExamHumanReviewCompletedEvent,
+  answerKey: ExamAnswerKeyConfirmedEvent,
+): [ExamGradingStartedEvent, ExamGradingCompletedEvent] {
+  const gradingVersion = 1;
+  const sourceFacts = {
+    gradingVersion,
+    gradingAlgorithmVersion: 'exam-objective-grading:v1',
+    reviewVersion: review.reviewVersion,
+    reviewArtifactRef: review.reviewArtifactRef,
+    sourceReviewArtifactFingerprint: review.artifactSha256,
+    answerKeyVersion: answerKey.answerKeyVersion,
+    answerKeyRef: answerKey.answerKeyRef,
+    answerKeyArtifactRef: answerKey.answerKeyArtifactRef,
+    sourceAnswerKeyArtifactFingerprint: answerKey.artifactSha256,
+  } as const;
+  const gradingRef = deriveExamGradingRef({
+    examSessionId: created.examSessionId,
+    ...sourceFacts,
+  });
+  const plan = {
+    ...sourceFacts,
+    gradingRef,
+    assessmentArtifactRef: deriveExamAssessmentArtifactRef(gradingRef),
+  };
+  const startedOperationId = deriveExamGradingStartedOperationId(
+    created.examSessionId,
+    gradingVersion,
+  );
+  const started: ExamGradingStartedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(startedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_grading_started',
+    createdAt: '2026-08-31T08:00:14.000Z',
+    operationId: startedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_grading_started',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...plan,
+    }),
+    ...plan,
+  };
+  const completedFacts = {
+    ...plan,
+    artifactByteLength: 192,
+    artifactSha256: '5'.repeat(64),
+    assessmentCount: 3,
+    evaluatedCount: 2,
+    correctCount: 1,
+    incorrectCount: 1,
+    unassessedCount: 1,
+  } as const;
+  const completedOperationId = deriveExamGradingCompletedOperationId(
+    created.examSessionId,
+    gradingVersion,
+  );
+  const completed: ExamGradingCompletedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(completedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_grading_completed',
+    createdAt: '2026-08-31T08:00:15.000Z',
+    operationId: completedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_grading_completed',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...completedFacts,
+    }),
+    ...completedFacts,
+  };
+  return [started, completed];
+}
+
 describe('Exam RuntimeStore adapter', () => {
   it('derives stable partitioned Exam and document identities', () => {
     const learner = resolveZhongkaoLearnerKeyFromOwnerId(OWNER_ID);
@@ -593,6 +762,51 @@ describe('Exam RuntimeStore adapter', () => {
     );
     expect(deriveExamHumanReviewStartedOperationId(first, 1)).not.toBe(
       deriveExamHumanReviewCompletedOperationId(first, 1),
+    );
+
+    const answerKeyInput = {
+      examSessionId: first,
+      answerKeyVersion: 1,
+      reviewVersion: 1,
+      reviewArtifactRef: deriveExamHumanReviewArtifactRef(reviewRef),
+      sourceReviewArtifactFingerprint: 'd'.repeat(64),
+    };
+    const answerKeyRef = deriveExamAnswerKeyRef(answerKeyInput);
+    expect(answerKeyRef).toBe(deriveExamAnswerKeyRef(answerKeyInput));
+    expect(answerKeyRef).not.toBe(
+      deriveExamAnswerKeyRef({
+        ...answerKeyInput,
+        sourceReviewArtifactFingerprint: 'e'.repeat(64),
+      }),
+    );
+    expect(deriveExamAnswerKeyArtifactRef(answerKeyRef)).not.toBe(answerKeyRef);
+
+    const gradingInput = {
+      examSessionId: first,
+      gradingVersion: 1,
+      gradingAlgorithmVersion: EXAM_OBJECTIVE_GRADING_ALGORITHM_VERSION,
+      reviewVersion: answerKeyInput.reviewVersion,
+      reviewArtifactRef: answerKeyInput.reviewArtifactRef,
+      sourceReviewArtifactFingerprint: answerKeyInput.sourceReviewArtifactFingerprint,
+      answerKeyVersion: answerKeyInput.answerKeyVersion,
+      answerKeyRef,
+      answerKeyArtifactRef: deriveExamAnswerKeyArtifactRef(answerKeyRef),
+      sourceAnswerKeyArtifactFingerprint: 'f'.repeat(64),
+    } satisfies ExamGradingRefInput;
+    const gradingRef = deriveExamGradingRef(gradingInput);
+    expect(gradingRef).toBe(deriveExamGradingRef(gradingInput));
+    expect(gradingRef).not.toBe(
+      deriveExamGradingRef({
+        ...gradingInput,
+        gradingAlgorithmVersion: 'exam-objective-grading:v2',
+      } as unknown as ExamGradingRefInput),
+    );
+    expect(deriveExamAssessmentArtifactRef(gradingRef)).not.toBe(gradingRef);
+    expect(deriveExamAnswerKeyStartedOperationId(first, 1)).not.toBe(
+      deriveExamAnswerKeyConfirmedOperationId(first, 1),
+    );
+    expect(deriveExamGradingStartedOperationId(first, 1)).not.toBe(
+      deriveExamGradingCompletedOperationId(first, 1),
     );
   });
 
@@ -1047,6 +1261,107 @@ describe('Exam RuntimeStore adapter', () => {
         { event: changed, expectedRevision: 9 },
       ),
     ).rejects.toThrow('EXAM_EVENT_CONFLICT');
+  });
+
+  it('derives and enforces the answer-key and grading artifact lineage', async () => {
+    const backing = store();
+    const created = createdEvent();
+    await ensureExamRuntimeCreated({ store: backing, ownerId: OWNER_ID }, created);
+    const review = humanReviewEvents(created);
+    const baseChain = [
+      snapshotEvent(created),
+      completedEvent(created),
+      ...extractionEvents(created),
+      ...responseEvents(created),
+      ...review,
+    ];
+    for (const [index, event] of baseChain.entries()) {
+      await appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event, expectedRevision: index },
+      );
+    }
+
+    const answerKey = answerKeyEvents(created, review[1]);
+    const forgedKey = { ...answerKey[0], answerKeyRef: 'forged-answer-key-ref' };
+    forgedKey.operationFingerprint = createExamOperationFingerprint({
+      action: forgedKey.eventType,
+      schemaVersion: forgedKey.schemaVersion,
+      examSessionId: forgedKey.examSessionId,
+      profileId: forgedKey.profileId,
+      answerKeyVersion: forgedKey.answerKeyVersion,
+      reviewVersion: forgedKey.reviewVersion,
+      reviewArtifactRef: forgedKey.reviewArtifactRef,
+      sourceReviewArtifactFingerprint: forgedKey.sourceReviewArtifactFingerprint,
+      answerKeySemanticFingerprint: forgedKey.answerKeySemanticFingerprint,
+      answerKeyRef: forgedKey.answerKeyRef,
+      answerKeyArtifactRef: forgedKey.answerKeyArtifactRef,
+    });
+    await expect(
+      appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event: forgedKey, expectedRevision: 11 },
+      ),
+    ).rejects.toThrow('EXAM_EVENT_CONFLICT');
+
+    for (const [index, event] of answerKey.entries()) {
+      await expect(
+        appendExamRuntimeEvent(
+          { store: backing, ownerId: OWNER_ID },
+          { event, expectedRevision: index + 11 },
+        ),
+      ).resolves.toMatchObject({ replayed: false, eventAppended: true });
+    }
+
+    const grading = gradingEvents(created, review[1], answerKey[1]);
+    const forgedGrading = {
+      ...grading[0],
+      assessmentArtifactRef: 'forged-assessment-artifact-ref',
+    };
+    forgedGrading.operationFingerprint = createExamOperationFingerprint({
+      action: forgedGrading.eventType,
+      schemaVersion: forgedGrading.schemaVersion,
+      examSessionId: forgedGrading.examSessionId,
+      profileId: forgedGrading.profileId,
+      gradingVersion: forgedGrading.gradingVersion,
+      gradingAlgorithmVersion: forgedGrading.gradingAlgorithmVersion,
+      reviewVersion: forgedGrading.reviewVersion,
+      reviewArtifactRef: forgedGrading.reviewArtifactRef,
+      sourceReviewArtifactFingerprint: forgedGrading.sourceReviewArtifactFingerprint,
+      answerKeyVersion: forgedGrading.answerKeyVersion,
+      answerKeyRef: forgedGrading.answerKeyRef,
+      answerKeyArtifactRef: forgedGrading.answerKeyArtifactRef,
+      sourceAnswerKeyArtifactFingerprint: forgedGrading.sourceAnswerKeyArtifactFingerprint,
+      gradingRef: forgedGrading.gradingRef,
+      assessmentArtifactRef: forgedGrading.assessmentArtifactRef,
+    });
+    await expect(
+      appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event: forgedGrading, expectedRevision: 13 },
+      ),
+    ).rejects.toThrow('EXAM_EVENT_CONFLICT');
+
+    for (const [index, event] of grading.entries()) {
+      await expect(
+        appendExamRuntimeEvent(
+          { store: backing, ownerId: OWNER_ID },
+          { event, expectedRevision: index + 13 },
+        ),
+      ).resolves.toMatchObject({ replayed: false, eventAppended: true });
+    }
+    const snapshot = await loadExamRuntime(
+      { store: backing, ownerId: OWNER_ID },
+      created.examSessionId,
+    );
+    expect(snapshot.state).toMatchObject({
+      revision: 15,
+      answerKey: { status: 'confirmed', answerKeyArtifact: { entryCount: 3 } },
+      grading: {
+        status: 'completed',
+        assessmentArtifact: { assessmentCount: 3, correctCount: 1, incorrectCount: 1 },
+      },
+    });
   });
 
   it('rejects forged deterministic response capture references before append', async () => {

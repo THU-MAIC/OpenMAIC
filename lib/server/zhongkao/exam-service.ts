@@ -38,9 +38,11 @@ import {
   type MaterialByteStore,
 } from '@/lib/server/materials/bytes';
 import {
+  examAuthoritativeAnswerKeyObjectKey,
   examDocumentArtifactObjectKey,
   examHumanReviewObjectKey,
   examQuestionCandidatesObjectKey,
+  examQuestionAssessmentsObjectKey,
   examQuestionResponseMatchesObjectKey,
   examSnapshotObjectKey,
   examSnapshotObjectPrefix,
@@ -609,6 +611,18 @@ function examDerivativeObjectKeys(snapshot: ExamRuntimeSnapshot): string[] {
         review.matchingVersion,
         review.reviewVersion,
       ),
+    );
+  }
+  const answerKey = snapshot.state.answerKey;
+  if (answerKey) {
+    keys.push(
+      examAuthoritativeAnswerKeyObjectKey(snapshot.state.examSessionId, answerKey.answerKeyVersion),
+    );
+  }
+  const grading = snapshot.state.grading;
+  if (grading) {
+    keys.push(
+      examQuestionAssessmentsObjectKey(snapshot.state.examSessionId, grading.gradingVersion),
     );
   }
   return keys;

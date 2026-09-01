@@ -505,6 +505,70 @@ function expectedOperationFingerprint(event: ExamEvent): string {
         rejectedQuestionCount: event.rejectedQuestionCount,
         rejectedResponseCount: event.rejectedResponseCount,
       });
+    case 'exam_answer_key_started':
+      return createExamOperationFingerprint({
+        ...common,
+        answerKeyVersion: event.answerKeyVersion,
+        reviewVersion: event.reviewVersion,
+        reviewArtifactRef: event.reviewArtifactRef,
+        sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+        answerKeySemanticFingerprint: event.answerKeySemanticFingerprint,
+        answerKeyRef: event.answerKeyRef,
+        answerKeyArtifactRef: event.answerKeyArtifactRef,
+      });
+    case 'exam_answer_key_confirmed':
+      return createExamOperationFingerprint({
+        ...common,
+        answerKeyVersion: event.answerKeyVersion,
+        reviewVersion: event.reviewVersion,
+        reviewArtifactRef: event.reviewArtifactRef,
+        sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+        answerKeySemanticFingerprint: event.answerKeySemanticFingerprint,
+        answerKeyRef: event.answerKeyRef,
+        answerKeyArtifactRef: event.answerKeyArtifactRef,
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        entryCount: event.entryCount,
+        objectiveEntryCount: event.objectiveEntryCount,
+        unassessedEntryCount: event.unassessedEntryCount,
+      });
+    case 'exam_grading_started':
+      return createExamOperationFingerprint({
+        ...common,
+        gradingVersion: event.gradingVersion,
+        gradingAlgorithmVersion: event.gradingAlgorithmVersion,
+        reviewVersion: event.reviewVersion,
+        reviewArtifactRef: event.reviewArtifactRef,
+        sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+        answerKeyVersion: event.answerKeyVersion,
+        answerKeyRef: event.answerKeyRef,
+        answerKeyArtifactRef: event.answerKeyArtifactRef,
+        sourceAnswerKeyArtifactFingerprint: event.sourceAnswerKeyArtifactFingerprint,
+        gradingRef: event.gradingRef,
+        assessmentArtifactRef: event.assessmentArtifactRef,
+      });
+    case 'exam_grading_completed':
+      return createExamOperationFingerprint({
+        ...common,
+        gradingVersion: event.gradingVersion,
+        gradingAlgorithmVersion: event.gradingAlgorithmVersion,
+        reviewVersion: event.reviewVersion,
+        reviewArtifactRef: event.reviewArtifactRef,
+        sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+        answerKeyVersion: event.answerKeyVersion,
+        answerKeyRef: event.answerKeyRef,
+        answerKeyArtifactRef: event.answerKeyArtifactRef,
+        sourceAnswerKeyArtifactFingerprint: event.sourceAnswerKeyArtifactFingerprint,
+        gradingRef: event.gradingRef,
+        assessmentArtifactRef: event.assessmentArtifactRef,
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        assessmentCount: event.assessmentCount,
+        evaluatedCount: event.evaluatedCount,
+        correctCount: event.correctCount,
+        incorrectCount: event.incorrectCount,
+        unassessedCount: event.unassessedCount,
+      });
     case 'exam_deleted':
       return createExamOperationFingerprint({
         ...common,

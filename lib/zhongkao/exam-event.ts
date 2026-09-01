@@ -2,6 +2,8 @@ import {
   EXAM_DISPLAY_NAME_MAX_LENGTH,
   EXAM_DERIVATIVE_VERSION_MAX,
   EXAM_DOCUMENT_ROLES,
+  EXAM_MAX_ANSWER_KEY_ARTIFACT_BYTES,
+  EXAM_MAX_ASSESSMENT_ARTIFACT_BYTES,
   EXAM_MAX_CANDIDATE_ARTIFACT_BYTES,
   EXAM_MAX_DOCUMENT_ARTIFACT_BYTES,
   EXAM_MAX_EXTRACTED_PAGES,
@@ -9,6 +11,7 @@ import {
   EXAM_MAX_MATCH_ARTIFACT_BYTES,
   EXAM_MAX_DOCUMENTS,
   EXAM_MAX_DOCUMENT_BYTES,
+  EXAM_OBJECTIVE_GRADING_ALGORITHM_VERSION,
   EXAM_MAX_QUESTION_CANDIDATES,
   EXAM_MAX_RESPONSE_ARTIFACT_BYTES,
   EXAM_MAX_TOTAL_BYTES,
@@ -195,6 +198,58 @@ export interface ExamHumanReviewCompletedEvent extends ExamEventBase, ExamHumanR
   rejectedResponseCount: number;
 }
 
+export interface ExamAnswerKeyPlanFacts {
+  answerKeyVersion: number;
+  reviewVersion: number;
+  reviewArtifactRef: string;
+  sourceReviewArtifactFingerprint: string;
+  answerKeySemanticFingerprint: string;
+  answerKeyRef: string;
+  answerKeyArtifactRef: string;
+}
+
+export interface ExamAnswerKeyStartedEvent extends ExamEventBase, ExamAnswerKeyPlanFacts {
+  eventType: 'exam_answer_key_started';
+}
+
+export interface ExamAnswerKeyConfirmedEvent extends ExamEventBase, ExamAnswerKeyPlanFacts {
+  eventType: 'exam_answer_key_confirmed';
+  artifactByteLength: number;
+  artifactSha256: string;
+  entryCount: number;
+  objectiveEntryCount: number;
+  unassessedEntryCount: number;
+}
+
+export interface ExamGradingPlanFacts {
+  gradingVersion: number;
+  gradingAlgorithmVersion: typeof EXAM_OBJECTIVE_GRADING_ALGORITHM_VERSION;
+  reviewVersion: number;
+  reviewArtifactRef: string;
+  sourceReviewArtifactFingerprint: string;
+  answerKeyVersion: number;
+  answerKeyRef: string;
+  answerKeyArtifactRef: string;
+  sourceAnswerKeyArtifactFingerprint: string;
+  gradingRef: string;
+  assessmentArtifactRef: string;
+}
+
+export interface ExamGradingStartedEvent extends ExamEventBase, ExamGradingPlanFacts {
+  eventType: 'exam_grading_started';
+}
+
+export interface ExamGradingCompletedEvent extends ExamEventBase, ExamGradingPlanFacts {
+  eventType: 'exam_grading_completed';
+  artifactByteLength: number;
+  artifactSha256: string;
+  assessmentCount: number;
+  evaluatedCount: number;
+  correctCount: number;
+  incorrectCount: number;
+  unassessedCount: number;
+}
+
 export interface ExamDeleteRequestedEvent extends ExamEventBase {
   eventType: 'exam_delete_requested';
   documentSetFingerprint: string;
@@ -219,6 +274,10 @@ export type ExamEvent =
   | ExamResponseMatchingCompletedEvent
   | ExamHumanReviewStartedEvent
   | ExamHumanReviewCompletedEvent
+  | ExamAnswerKeyStartedEvent
+  | ExamAnswerKeyConfirmedEvent
+  | ExamGradingStartedEvent
+  | ExamGradingCompletedEvent
   | ExamDeleteRequestedEvent
   | ExamDeletedEvent;
 
@@ -237,6 +296,10 @@ export const EXAM_EVENT_TYPES = [
   'exam_response_matching_completed',
   'exam_human_review_started',
   'exam_human_review_completed',
+  'exam_answer_key_started',
+  'exam_answer_key_confirmed',
+  'exam_grading_started',
+  'exam_grading_completed',
   'exam_delete_requested',
   'exam_deleted',
 ] as const satisfies readonly ExamEventType[];
@@ -266,6 +329,30 @@ const HUMAN_REVIEW_PLAN_KEYS = [
   'sourceMatchingArtifactFingerprint',
   'decisionSemanticFingerprint',
   'reviewArtifactRef',
+] as const;
+
+const ANSWER_KEY_PLAN_KEYS = [
+  'answerKeyVersion',
+  'reviewVersion',
+  'reviewArtifactRef',
+  'sourceReviewArtifactFingerprint',
+  'answerKeySemanticFingerprint',
+  'answerKeyRef',
+  'answerKeyArtifactRef',
+] as const;
+
+const GRADING_PLAN_KEYS = [
+  'gradingVersion',
+  'gradingAlgorithmVersion',
+  'reviewVersion',
+  'reviewArtifactRef',
+  'sourceReviewArtifactFingerprint',
+  'answerKeyVersion',
+  'answerKeyRef',
+  'answerKeyArtifactRef',
+  'sourceAnswerKeyArtifactFingerprint',
+  'gradingRef',
+  'assessmentArtifactRef',
 ] as const;
 
 const EVENT_KEYS: Readonly<Record<ExamEventType, ReadonlySet<string>>> = {
@@ -387,6 +474,28 @@ const EVENT_KEYS: Readonly<Record<ExamEventType, ReadonlySet<string>>> = {
     'confirmedMatchCount',
     'rejectedQuestionCount',
     'rejectedResponseCount',
+  ]),
+  exam_answer_key_started: new Set([...COMMON_KEYS, ...ANSWER_KEY_PLAN_KEYS]),
+  exam_answer_key_confirmed: new Set([
+    ...COMMON_KEYS,
+    ...ANSWER_KEY_PLAN_KEYS,
+    'artifactByteLength',
+    'artifactSha256',
+    'entryCount',
+    'objectiveEntryCount',
+    'unassessedEntryCount',
+  ]),
+  exam_grading_started: new Set([...COMMON_KEYS, ...GRADING_PLAN_KEYS]),
+  exam_grading_completed: new Set([
+    ...COMMON_KEYS,
+    ...GRADING_PLAN_KEYS,
+    'artifactByteLength',
+    'artifactSha256',
+    'assessmentCount',
+    'evaluatedCount',
+    'correctCount',
+    'incorrectCount',
+    'unassessedCount',
   ]),
   exam_delete_requested: new Set([...COMMON_KEYS, 'documentSetFingerprint']),
   exam_deleted: new Set([...COMMON_KEYS, 'documentSetFingerprint', 'deleteRequestEventId']),
@@ -632,6 +741,59 @@ function validateHumanReviewPlan(
   }
 }
 
+function validateAnswerKeyPlan(
+  value: Record<string, unknown>,
+  errors: DomainValidationIssue[],
+): void {
+  validatePositiveVersion(value.answerKeyVersion, '/answerKeyVersion', errors);
+  validatePositiveVersion(value.reviewVersion, '/reviewVersion', errors);
+  validateIdentifier(value.reviewArtifactRef, '/reviewArtifactRef', errors);
+  validateSha256(value.sourceReviewArtifactFingerprint, '/sourceReviewArtifactFingerprint', errors);
+  validateSha256(value.answerKeySemanticFingerprint, '/answerKeySemanticFingerprint', errors);
+  validateIdentifier(value.answerKeyRef, '/answerKeyRef', errors);
+  validateIdentifier(value.answerKeyArtifactRef, '/answerKeyArtifactRef', errors);
+  if (
+    value.answerKeyRef === value.reviewArtifactRef ||
+    value.answerKeyArtifactRef === value.reviewArtifactRef ||
+    value.answerKeyArtifactRef === value.answerKeyRef
+  ) {
+    pushIssue(errors, '/answerKeyArtifactRef', 'answer-key references must be distinct');
+  }
+}
+
+function validateGradingPlan(
+  value: Record<string, unknown>,
+  errors: DomainValidationIssue[],
+): void {
+  validatePositiveVersion(value.gradingVersion, '/gradingVersion', errors);
+  if (value.gradingAlgorithmVersion !== EXAM_OBJECTIVE_GRADING_ALGORITHM_VERSION) {
+    pushIssue(errors, '/gradingAlgorithmVersion', 'unexpected grading algorithm version');
+  }
+  validatePositiveVersion(value.reviewVersion, '/reviewVersion', errors);
+  validateIdentifier(value.reviewArtifactRef, '/reviewArtifactRef', errors);
+  validateSha256(value.sourceReviewArtifactFingerprint, '/sourceReviewArtifactFingerprint', errors);
+  validatePositiveVersion(value.answerKeyVersion, '/answerKeyVersion', errors);
+  validateIdentifier(value.answerKeyRef, '/answerKeyRef', errors);
+  validateIdentifier(value.answerKeyArtifactRef, '/answerKeyArtifactRef', errors);
+  validateSha256(
+    value.sourceAnswerKeyArtifactFingerprint,
+    '/sourceAnswerKeyArtifactFingerprint',
+    errors,
+  );
+  validateIdentifier(value.gradingRef, '/gradingRef', errors);
+  validateIdentifier(value.assessmentArtifactRef, '/assessmentArtifactRef', errors);
+  const refs = [
+    value.reviewArtifactRef,
+    value.answerKeyRef,
+    value.answerKeyArtifactRef,
+    value.gradingRef,
+    value.assessmentArtifactRef,
+  ];
+  if (new Set(refs).size !== refs.length) {
+    pushIssue(errors, '/assessmentArtifactRef', 'grading references must be distinct');
+  }
+}
+
 export function validateExamEvent(value: unknown): DomainValidationResult {
   const errors: DomainValidationIssue[] = [];
   if (!isPlainRecord(value)) {
@@ -822,6 +984,72 @@ export function validateExamEvent(value: unknown): DomainValidationResult {
           (value.confirmedMatchCount as number) !== (value.confirmedResponseCount as number))
       ) {
         pushIssue(errors, '/confirmedMatchCount', 'confirmed decision counts must agree');
+      }
+      break;
+    }
+    case 'exam_answer_key_started':
+      validateAnswerKeyPlan(value, errors);
+      break;
+    case 'exam_answer_key_confirmed': {
+      validateAnswerKeyPlan(value, errors);
+      validateArtifactByteLength(
+        value.artifactByteLength,
+        '/artifactByteLength',
+        EXAM_MAX_ANSWER_KEY_ARTIFACT_BYTES,
+        errors,
+      );
+      validateSha256(value.artifactSha256, '/artifactSha256', errors);
+      for (const field of ['entryCount', 'objectiveEntryCount', 'unassessedEntryCount'] as const) {
+        validateBoundedCount(value[field], `/${field}`, EXAM_MAX_QUESTION_CANDIDATES, true, errors);
+      }
+      if (
+        Number.isSafeInteger(value.entryCount) &&
+        Number.isSafeInteger(value.objectiveEntryCount) &&
+        Number.isSafeInteger(value.unassessedEntryCount) &&
+        value.entryCount !==
+          (value.objectiveEntryCount as number) + (value.unassessedEntryCount as number)
+      ) {
+        pushIssue(errors, '/entryCount', 'answer-key counts must cover every entry');
+      }
+      break;
+    }
+    case 'exam_grading_started':
+      validateGradingPlan(value, errors);
+      break;
+    case 'exam_grading_completed': {
+      validateGradingPlan(value, errors);
+      validateArtifactByteLength(
+        value.artifactByteLength,
+        '/artifactByteLength',
+        EXAM_MAX_ASSESSMENT_ARTIFACT_BYTES,
+        errors,
+      );
+      validateSha256(value.artifactSha256, '/artifactSha256', errors);
+      for (const field of [
+        'assessmentCount',
+        'evaluatedCount',
+        'correctCount',
+        'incorrectCount',
+        'unassessedCount',
+      ] as const) {
+        validateBoundedCount(value[field], `/${field}`, EXAM_MAX_QUESTION_CANDIDATES, true, errors);
+      }
+      if (
+        Number.isSafeInteger(value.evaluatedCount) &&
+        Number.isSafeInteger(value.correctCount) &&
+        Number.isSafeInteger(value.incorrectCount) &&
+        value.evaluatedCount !== (value.correctCount as number) + (value.incorrectCount as number)
+      ) {
+        pushIssue(errors, '/evaluatedCount', 'evaluated count must equal outcome counts');
+      }
+      if (
+        Number.isSafeInteger(value.assessmentCount) &&
+        Number.isSafeInteger(value.evaluatedCount) &&
+        Number.isSafeInteger(value.unassessedCount) &&
+        value.assessmentCount !==
+          (value.evaluatedCount as number) + (value.unassessedCount as number)
+      ) {
+        pushIssue(errors, '/assessmentCount', 'grading counts must cover every assessment');
       }
       break;
     }
