@@ -336,12 +336,21 @@ async function transcribeCustomOpenAICompatibleASR(
     audioBlob = new Blob([arrayBuffer], { type: 'audio/webm' });
   }
 
+  // Most OpenAI-compatible transcription endpoints treat `model` as a
+  // required field.  Custom providers have no built-in default, so we
+  // require the caller to supply one and fail fast with a clear message
+  // rather than sending a request that will almost certainly return a 400.
+  if (!config.modelId?.trim()) {
+    throw new Error(
+      'Custom ASR provider requires a model ID (e.g. FunAudioLLM/SenseVoiceSmall). ' +
+        'Please set the model in the provider settings.',
+    );
+  }
+
   const formData = new FormData();
   // Use 'file' key — required by the OpenAI audio/transcriptions spec.
   formData.set('file', audioBlob, 'audio.webm');
-  if (config.modelId) {
-    formData.set('model', config.modelId);
-  }
+  formData.set('model', config.modelId);
   formData.set('response_format', 'json');
   if (config.language && config.language !== 'auto') {
     formData.set('language', config.language);

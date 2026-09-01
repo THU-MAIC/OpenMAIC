@@ -72,6 +72,7 @@ describe('Custom ASR provider (custom-asr-*)', () => {
       {
         providerId: 'custom-asr-myhost',
         baseUrl: 'http://localhost:9000/v1/',
+        modelId: 'whisper-1',
         apiKey: 'key',
       },
       webmBuffer(),
@@ -90,6 +91,7 @@ describe('Custom ASR provider (custom-asr-*)', () => {
       {
         providerId: 'custom-asr-siliconflow',
         baseUrl: 'https://api.siliconflow.cn/v1',
+        modelId: 'FunAudioLLM/SenseVoiceSmall',
         apiKey: ' sk-secret ',
       },
       webmBuffer(),
@@ -98,6 +100,22 @@ describe('Custom ASR provider (custom-asr-*)', () => {
     expect(mockFetch.mock.calls[0][1].headers).toEqual({
       Authorization: 'Bearer sk-secret',
     });
+  });
+
+  it('throws when no model ID is configured', async () => {
+    await expect(
+      transcribeAudio(
+        {
+          providerId: 'custom-asr-siliconflow',
+          baseUrl: 'https://api.siliconflow.cn/v1',
+          apiKey: 'sk-test',
+          // modelId intentionally omitted
+        },
+        webmBuffer(),
+      ),
+    ).rejects.toThrow(/requires a model ID/);
+
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('omits auth header when no API key is set', async () => {
@@ -110,6 +128,7 @@ describe('Custom ASR provider (custom-asr-*)', () => {
       {
         providerId: 'custom-asr-local',
         baseUrl: 'http://localhost:9000/v1',
+        modelId: 'whisper-1',
       },
       webmBuffer(),
     );
@@ -151,6 +170,7 @@ describe('Custom ASR provider (custom-asr-*)', () => {
       {
         providerId: 'custom-asr-siliconflow',
         baseUrl: 'https://api.siliconflow.cn/v1',
+        modelId: 'FunAudioLLM/SenseVoiceSmall',
         language: 'auto',
       },
       webmBuffer(),
@@ -172,6 +192,7 @@ describe('Custom ASR provider (custom-asr-*)', () => {
       {
         providerId: 'custom-asr-siliconflow',
         baseUrl: 'https://api.siliconflow.cn/v1',
+        modelId: 'FunAudioLLM/SenseVoiceSmall',
         apiKey: 'sk-test',
       },
       webmBuffer(),
@@ -193,6 +214,7 @@ describe('Custom ASR provider (custom-asr-*)', () => {
         {
           providerId: 'custom-asr-siliconflow',
           baseUrl: 'https://api.siliconflow.cn/v1',
+          modelId: 'FunAudioLLM/SenseVoiceSmall',
           apiKey: 'sk-bad',
         },
         webmBuffer(),
@@ -206,6 +228,7 @@ describe('Custom ASR provider (custom-asr-*)', () => {
         {
           providerId: 'custom-asr-siliconflow',
           baseUrl: '',
+          modelId: 'FunAudioLLM/SenseVoiceSmall',
           apiKey: 'sk-test',
         },
         webmBuffer(),
@@ -226,6 +249,7 @@ describe('Custom ASR provider (custom-asr-*)', () => {
       {
         providerId: 'custom-asr-siliconflow',
         baseUrl: 'https://api.siliconflow.cn/v1',
+        modelId: 'FunAudioLLM/SenseVoiceSmall',
         apiKey: 'sk-test',
       },
       audioBlob,
