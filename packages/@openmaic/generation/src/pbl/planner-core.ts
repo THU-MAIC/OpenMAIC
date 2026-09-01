@@ -28,6 +28,8 @@ export interface PlannerV2Callbacks {
    *  page to show "Adding milestone: X" etc. */
   onProgress?: (event: PlannerV2ProgressEvent) => void;
   logger?: GenerationLogger;
+  /** Package-owned policy appended to every planner system prompt. */
+  systemPromptSuffix?: string;
 }
 
 export type PlannerV2ProgressEvent =

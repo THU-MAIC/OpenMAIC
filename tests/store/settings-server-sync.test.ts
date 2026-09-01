@@ -208,8 +208,14 @@ interface MockServerResponse {
   tts?: Record<string, { baseUrl?: string; disabled?: boolean }>;
   asr?: Record<string, { baseUrl?: string; disabled?: boolean }>;
   pdf?: Record<string, { baseUrl?: string }>;
-  image?: Record<string, { baseUrl?: string; disabled?: boolean }>;
-  video?: Record<string, { baseUrl?: string; disabled?: boolean }>;
+  image?: Record<
+    string,
+    { baseUrl?: string; disabled?: boolean; displayName?: string; models?: string[] }
+  >;
+  video?: Record<
+    string,
+    { baseUrl?: string; disabled?: boolean; displayName?: string; models?: string[] }
+  >;
   webSearch?: Record<string, { baseUrl?: string; disabled?: boolean }>;
 }
 
@@ -995,6 +1001,27 @@ describe('fetchServerProviders — Image stale selection', () => {
     return useSettingsStore;
   }
 
+  it('syncs a managed image provider display name and replaces its model catalog', async () => {
+    const store = await getStore();
+    mockServerResponse({
+      image: {
+        seedream: {
+          displayName: 'Higgsfield',
+          models: ['gpt_image_2', 'nano_banana_flash'],
+        },
+      },
+    });
+
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().imageProvidersConfig.seedream).toMatchObject({
+      isServerConfigured: true,
+      serverDisplayName: 'Higgsfield',
+      serverModels: ['gpt_image_2', 'nano_banana_flash'],
+    });
+    expect(store.getState().imageModelId).toBe('gpt_image_2');
+  });
+
   it('clears imageProviderId and imageModelId when provider loses server config', async () => {
     const store = await getStore();
 
@@ -1156,6 +1183,27 @@ describe('fetchServerProviders — Video stale selection', () => {
     await useSettingsStore.persist.rehydrate();
     return useSettingsStore;
   }
+
+  it('syncs a managed video provider display name and replaces its model catalog', async () => {
+    const store = await getStore();
+    mockServerResponse({
+      video: {
+        seedance: {
+          displayName: 'Higgsfield',
+          models: ['kling3_0_turbo', 'seedance_2_0'],
+        },
+      },
+    });
+
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().videoProvidersConfig.seedance).toMatchObject({
+      isServerConfigured: true,
+      serverDisplayName: 'Higgsfield',
+      serverModels: ['kling3_0_turbo', 'seedance_2_0'],
+    });
+    expect(store.getState().videoModelId).toBe('kling3_0_turbo');
+  });
 
   it('clears videoProviderId and videoModelId when provider loses server config', async () => {
     const store = await getStore();

@@ -252,6 +252,27 @@ describe('PBL v2 Planner — error paths (no LLM needed)', () => {
       thinkingConfig,
     );
   });
+
+  it('appends the package-owned quality suffix to the loop planner system prompt', async () => {
+    const callLLM = vi.fn(async () => ({ finishReason: 'stop', steps: [] }));
+
+    await expect(
+      generatePBLV2Project(plannerInput(), {} as never, callLLM, {
+        systemPromptSuffix: '## Unconditional Visual Quality Contract\nKeep every page readable.',
+      }),
+    ).rejects.toBeInstanceOf(PlannerV2Error);
+
+    expect(callLLM).toHaveBeenCalledWith(
+      expect.objectContaining({
+        system: expect.stringContaining(
+          '## Unconditional Visual Quality Contract\nKeep every page readable.',
+        ),
+      }),
+      'pbl-v2-planner',
+      undefined,
+      undefined,
+    );
+  });
 });
 
 describe('PBL v2 Planner — completion gate', () => {

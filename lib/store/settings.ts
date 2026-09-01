@@ -166,6 +166,10 @@ export interface SettingsState {
       baseUrl: string;
       enabled: boolean;
       isServerConfigured?: boolean;
+      /** Operator-facing label for a server-managed compatibility adapter. */
+      serverDisplayName?: string;
+      /** Server-managed model allowlist, kept separate from user-defined custom models. */
+      serverModels?: string[];
       /** Admin/server-level force-off (server-providers.yml / env). Overrides `enabled`. */
       serverDisabled?: boolean;
       customModels?: Array<{ id: string; name: string }>;
@@ -183,6 +187,10 @@ export interface SettingsState {
       baseUrl: string;
       enabled: boolean;
       isServerConfigured?: boolean;
+      /** Operator-facing label for a server-managed compatibility adapter. */
+      serverDisplayName?: string;
+      /** Server-managed model allowlist, kept separate from user-defined custom models. */
+      serverModels?: string[];
       /** Admin/server-level force-off (server-providers.yml / env). Overrides `enabled`. */
       serverDisabled?: boolean;
       customModels?: Array<{ id: string; name: string }>;
@@ -457,9 +465,15 @@ function resolveSelectedLLMModel(
 
 function resolveMediaModels<T extends { id: string; name: string }>(
   builtInModels: T[],
-  config?: { customModels?: T[]; replaceBuiltInModels?: boolean },
+  config?: { customModels?: T[]; replaceBuiltInModels?: boolean; serverModels?: string[] },
 ): T[] {
   const customModels = config?.customModels ?? [];
+  if (config?.serverModels?.length) {
+    return config.serverModels.map((id) => {
+      const knownModel = [...builtInModels, ...customModels].find((model) => model.id === id);
+      return knownModel ?? ({ id, name: id } as T);
+    });
+  }
   return config?.replaceBuiltInModels && customModels.length > 0
     ? customModels
     : [...builtInModels, ...customModels];
@@ -1409,8 +1423,14 @@ export const useSettingsStore = create<SettingsState>()(
               tts: Record<string, { disabled?: boolean }>;
               asr: Record<string, { disabled?: boolean }>;
               pdf: Record<string, Record<string, never>>;
-              image: Record<string, { models?: string[]; disabled?: boolean }>;
-              video: Record<string, { disabled?: boolean }>;
+              image: Record<
+                string,
+                { models?: string[]; displayName?: string; disabled?: boolean }
+              >;
+              video: Record<
+                string,
+                { models?: string[]; displayName?: string; disabled?: boolean }
+              >;
               webSearch: Record<string, { disabled?: boolean }>;
               generation?: { parallelSceneConcurrency?: number };
             };
@@ -1549,6 +1569,8 @@ export const useSettingsStore = create<SettingsState>()(
                     ...newImageConfig[key],
                     isServerConfigured: false,
                     serverDisabled: false,
+                    serverDisplayName: undefined,
+                    serverModels: undefined,
                   };
                 }
               }
@@ -1559,6 +1581,8 @@ export const useSettingsStore = create<SettingsState>()(
                     ...newImageConfig[key],
                     isServerConfigured: !info.disabled,
                     serverDisabled: info.disabled === true,
+                    serverDisplayName: info.displayName,
+                    serverModels: info.models,
                   };
                 }
               }
@@ -1574,6 +1598,8 @@ export const useSettingsStore = create<SettingsState>()(
                     ...newVideoConfig[key],
                     isServerConfigured: false,
                     serverDisabled: false,
+                    serverDisplayName: undefined,
+                    serverModels: undefined,
                   };
                 }
               }
@@ -1585,6 +1611,8 @@ export const useSettingsStore = create<SettingsState>()(
                       ...newVideoConfig[key],
                       isServerConfigured: !info.disabled,
                       serverDisabled: info.disabled === true,
+                      serverDisplayName: info.displayName,
+                      serverModels: info.models,
                     };
                   }
                 }
@@ -1795,7 +1823,10 @@ export const useSettingsStore = create<SettingsState>()(
                   !newImageConfig[state.imageProviderId]?.isServerConfigured
                 ) {
                   autoImageProvider = serverImageIds[0];
-                  const models = IMAGE_PROVIDERS[autoImageProvider]?.models;
+                  const models = resolveMediaModels(
+                    IMAGE_PROVIDERS[autoImageProvider]?.models ?? [],
+                    newImageConfig[autoImageProvider],
+                  );
                   if (models?.length) autoImageModel = models[0].id;
                 }
                 if (serverImageIds.length > 0 && !state.imageGenerationEnabled) {
@@ -1812,7 +1843,10 @@ export const useSettingsStore = create<SettingsState>()(
                   !newVideoConfig[state.videoProviderId]?.isServerConfigured
                 ) {
                   autoVideoProvider = serverVideoIds[0];
-                  const models = VIDEO_PROVIDERS[autoVideoProvider]?.models;
+                  const models = resolveMediaModels(
+                    VIDEO_PROVIDERS[autoVideoProvider]?.models ?? [],
+                    newVideoConfig[autoVideoProvider],
+                  );
                   if (models?.length) autoVideoModel = models[0].id;
                 }
                 if (serverVideoIds.length > 0 && !state.videoGenerationEnabled) {

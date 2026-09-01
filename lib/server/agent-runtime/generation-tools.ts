@@ -32,6 +32,18 @@ import { isMediaPlaceholder } from '@/lib/store/media-generation';
 const MAX_GENERATE_SCENE_MEDIA = 8;
 const SUPPORTED_SCENE_TYPES = new Set(['slide', 'quiz', 'interactive', 'pbl']);
 
+/**
+ * LOCAL PATCH: agent-created stages have no languageDirective (create_stage
+ * cannot set one and patch_stage cannot reach stage fields), and an empty
+ * directive means the generator prompt carries NO language constraint at all
+ * — its Chinese-authored templates then leak 中文 UI labels into generated
+ * pages. A deployment-wide default fixes every workbench course at once; a
+ * real per-stage directive still wins when present.
+ */
+function stageLanguageDirective(stageValue: string | undefined): string {
+  return stageValue || process.env.OPENMAIC_DEFAULT_LANGUAGE_DIRECTIVE || '';
+}
+
 const SceneParams = Type.Object({
   stageId: Type.String({ description: COURSE_STAGE_ID_DESCRIPTION }),
   order: Type.Integer({ minimum: 1 }),
@@ -382,7 +394,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
       try {
         content = await generateSceneContent(outline, aiCallFor(sceneContentStage(params.type)), {
           agents,
-          languageDirective: doc.stage.languageDirective ?? '',
+          languageDirective: stageLanguageDirective(doc.stage.languageDirective),
           allowProceduralSkill: true,
           ...(assignedImages.length ? { assignedImages, imageMapping } : {}),
           ...(params.instruction ? { editDirective: params.instruction } : {}),
@@ -410,7 +422,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
       const actions = filterKnownActions(
         await actionGenerator(outline, content, aiCallFor('scene-actions'), {
           agents,
-          languageDirective: doc.stage.languageDirective ?? '',
+          languageDirective: stageLanguageDirective(doc.stage.languageDirective),
         }),
       );
       const built = buildCompleteScene(outline, content, actions, params.stageId, {
@@ -496,7 +508,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           {
             ctx: actionContext(doc.scenes, scene),
             agents: doc.stage.generatedAgentConfigs,
-            languageDirective: doc.stage.languageDirective ?? '',
+            languageDirective: stageLanguageDirective(doc.stage.languageDirective),
             userProfile: params.styleDirective,
           },
         ),

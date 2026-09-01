@@ -252,7 +252,7 @@ export const DSL_TOOLS_PROMPT = [
   'When the page needs a new visual rather than an existing URL, call `generate_image` first, then apply its returned `src` with `patch_stage` set or add an image element; generate_image never edits the page.',
   'When a NEW page needs visuals, obtain every real src first by reusing material or calling generate_image, then pass each image src with its description and dimensions in `generate_scene.media` so the content model sees the media while composing the page; media generation tools never edit the page.',
   'generate_video is asynchronous: it returns a `gen_vid_...` placeholder immediately and the video completes in the background. Patch the placeholder onto a video element with patch_stage right away; the page updates itself when the video is ready.',
-  'Use use_material_media before placing session image, video, or audio bytes into a page. Use render_scene_preview selectively to inspect a persisted page when the render capability is available.',
+  'Use use_material_media before placing session image, video, or audio bytes into a page. When render_scene_preview is registered, every new or changed slide and interactive page must pass it at 1280x720, 768x720, and 390x844. Any failed or unavailable diagnostic means the page is not complete: repair it with patch_stage or generate_scene, then rerun every required viewport. Do not finish while any required preview is failing or unrun.',
 ].join(' ');
 
 /** Base runner identity/environment lines, shared by every runner prompt. */

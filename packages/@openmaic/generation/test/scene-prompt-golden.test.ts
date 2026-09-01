@@ -40,5 +40,15 @@ it('pins representative system and user prompts for every scene kind', async () 
     targetLanguage: 'en-US',
   });
 
+  expect(Object.keys(captured).sort()).toEqual(['interactive', 'pbl', 'quiz', 'slide']);
+  for (const { system } of Object.values(captured)) {
+    expect(system).toContain('## Unconditional Visual Quality Contract');
+    expect(system).toContain('1280x720');
+    expect(system).toContain('768x720');
+    expect(system).toContain('390x844');
+    expect(system).toContain('no document-level horizontal or vertical overflow');
+    expect(system).toContain('No text may clip or overflow its container');
+  }
+
   expect(captured).toMatchSnapshot();
 });

@@ -38,6 +38,69 @@ function failure(sceneId: string, message: string) {
   };
 }
 
+interface PreviewLayoutDiagnostics {
+  version: 1;
+  viewport: { width: number; height: number };
+  pass: boolean;
+  document: {
+    scrollWidth: number;
+    scrollHeight: number;
+    clientWidth: number;
+    clientHeight: number;
+  };
+  issues: Array<{ code: string; selector: string }>;
+  truncated: boolean;
+}
+
+function isFiniteNonNegative(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function decodeLayoutDiagnostics(
+  response: Response,
+  expectedViewport: { width: number; height: number },
+): PreviewLayoutDiagnostics | undefined {
+  const encoded = response.headers.get('x-openmaic-layout-diagnostics');
+  if (!encoded) return undefined;
+  try {
+    const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as unknown;
+    if (typeof parsed !== 'object' || parsed === null) return undefined;
+    const candidate = parsed as Record<string, unknown>;
+    const viewport = candidate.viewport;
+    const document = candidate.document;
+    const issues = candidate.issues;
+    if (
+      candidate.version !== 1 ||
+      typeof candidate.pass !== 'boolean' ||
+      typeof candidate.truncated !== 'boolean' ||
+      typeof viewport !== 'object' ||
+      viewport === null ||
+      (viewport as { width?: unknown }).width !== expectedViewport.width ||
+      (viewport as { height?: unknown }).height !== expectedViewport.height ||
+      typeof document !== 'object' ||
+      document === null ||
+      !isFiniteNonNegative((document as { scrollWidth?: unknown }).scrollWidth) ||
+      !isFiniteNonNegative((document as { scrollHeight?: unknown }).scrollHeight) ||
+      !isFiniteNonNegative((document as { clientWidth?: unknown }).clientWidth) ||
+      !isFiniteNonNegative((document as { clientHeight?: unknown }).clientHeight) ||
+      !Array.isArray(issues) ||
+      !issues.every(
+        (issue) =>
+          typeof issue === 'object' &&
+          issue !== null &&
+          typeof (issue as { code?: unknown }).code === 'string' &&
+          typeof (issue as { selector?: unknown }).selector === 'string',
+      ) ||
+      candidate.pass !== (issues.length === 0 && candidate.truncated === false)
+    ) {
+      return undefined;
+    }
+    return parsed as PreviewLayoutDiagnostics;
+  } catch {
+    return undefined;
+  }
+}
+
 export function buildScenePreviewTools(deps: ScenePreviewDeps): AgentTool<never, never>[] {
   const service = deps.renderService ?? resolveRenderServiceUrl();
   if ('error' in service) return [];
@@ -45,7 +108,8 @@ export function buildScenePreviewTools(deps: ScenePreviewDeps): AgentTool<never,
     {
       name: 'render_scene_preview',
       label: 'Render page preview',
-      description: 'Render one persisted page to PNG for visual inspection.',
+      description:
+        'Render one persisted page to PNG with machine-readable layout diagnostics. Check 1280x720, 768x720, and 390x844 before accepting a generated page.',
       parameters: Params,
       async execute(_callId, params, signal) {
         if (signal?.aborted) return failure(params.sceneId, 'operation aborted');
@@ -81,13 +145,29 @@ export function buildScenePreviewTools(deps: ScenePreviewDeps): AgentTool<never,
           });
           if (!response.ok)
             return failure(scene.id, `render service returned HTTP ${response.status}`);
+          const diagnostics = decodeLayoutDiagnostics(response, viewport);
           const bytes = Buffer.from(await response.arrayBuffer());
           if (!bytes.length) return failure(scene.id, 'render service returned an empty image');
+          const qualityStatus = diagnostics ? (diagnostics.pass ? 'pass' : 'fail') : 'unverified';
+          const qualityFailed = qualityStatus !== 'pass';
           return {
             content: [
+              {
+                type: 'text' as const,
+                text: diagnostics
+                  ? `Layout diagnostics: ${JSON.stringify(diagnostics)}`
+                  : 'Preview quality check failed: diagnostics unavailable; repair cannot be verified.',
+              },
               { type: 'image' as const, data: bytes.toString('base64'), mimeType: 'image/png' },
             ],
-            details: { sceneId: scene.id, viewport, bytes: bytes.length },
+            details: {
+              sceneId: scene.id,
+              viewport,
+              bytes: bytes.length,
+              qualityStatus,
+              diagnostics,
+            },
+            ...(qualityFailed ? { isError: true } : {}),
           };
         } catch (error) {
           if (signal?.aborted) return failure(scene.id, 'operation aborted');

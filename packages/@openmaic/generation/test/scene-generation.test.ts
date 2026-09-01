@@ -143,6 +143,10 @@ describe('scene generation primitives', () => {
       pblLoopFallback: fallback,
     });
     expect(fallback).toHaveBeenCalledTimes(1);
+    expect(fallback).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.stringContaining('Unconditional Visual Quality Contract'),
+    );
     expect(content).toMatchObject({ projectV2: { title: 'Recovered project' } });
   });
 

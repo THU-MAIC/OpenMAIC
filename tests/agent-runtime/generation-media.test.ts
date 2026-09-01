@@ -56,7 +56,25 @@ describe('generation media tools', () => {
   });
 
   it('renders only a page visible through the bound course store', async () => {
-    const fetchPreview = vi.fn(async () => new Response(new Uint8Array([137, 80, 78, 71])));
+    const diagnostics = {
+      version: 1,
+      viewport: { width: 1280, height: 720 },
+      pass: false,
+      document: { scrollWidth: 1280, scrollHeight: 744, clientWidth: 1280, clientHeight: 720 },
+      issues: [{ code: 'document-overflow', selector: 'html', overflow: { x: 0, y: 24 } }],
+      truncated: false,
+    };
+    const fetchPreview = vi.fn(
+      async () =>
+        new Response(new Uint8Array([137, 80, 78, 71]), {
+          headers: {
+            'x-openmaic-layout-diagnostics': Buffer.from(
+              JSON.stringify(diagnostics),
+              'utf8',
+            ).toString('base64url'),
+          },
+        }),
+    );
     const ownedStore = {
       loadDocument: vi.fn(async () => ({
         stage: { id: 'stage-a', name: 'Stage A' },
@@ -84,7 +102,14 @@ describe('generation media tools', () => {
       stageId: 'stage-a',
       sceneId: 'scene-a',
     } as never);
-    expect(rendered.content[0]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+    expect(rendered.content).toContainEqual(
+      expect.objectContaining({ type: 'image', mimeType: 'image/png' }),
+    );
+    expect(rendered.content).toContainEqual(
+      expect.objectContaining({ type: 'text', text: expect.stringContaining('document-overflow') }),
+    );
+    expect(rendered.details).toMatchObject({ diagnostics });
+    expect(rendered).toMatchObject({ isError: true });
 
     const foreignStore = { loadDocument: vi.fn(async () => null) } as unknown as CourseStore;
     const [foreign] = buildScenePreviewTools({
@@ -114,5 +139,123 @@ describe('generation media tools', () => {
         renderService: { error: 'not_configured' },
       }),
     ).toEqual([]);
+  });
+
+  it('fails closed when the render service omits layout diagnostics', async () => {
+    const store = {
+      loadDocument: vi.fn(async () => ({
+        stage: { id: 'stage-a', name: 'Stage A' },
+        scenes: [
+          {
+            id: 'scene-a',
+            stageId: 'stage-a',
+            order: 1,
+            title: 'A',
+            type: 'slide',
+            content: { type: 'slide' },
+            actions: [],
+          },
+        ],
+      })),
+    } as unknown as CourseStore;
+    const [preview] = buildScenePreviewTools({
+      store,
+      stageAccess: async () => ({ kind: 'owned' as const }),
+      ownerId: 'user:u1',
+      renderService: { url: 'http://render.test' },
+      fetchPreview: vi.fn(
+        async () => new Response(new Uint8Array([137, 80, 78, 71])),
+      ) as typeof fetch,
+    });
+
+    const rendered = await preview!.execute('preview', {
+      stageId: 'stage-a',
+      sceneId: 'scene-a',
+    } as never);
+
+    expect(rendered).toMatchObject({ isError: true });
+    expect(textOf(rendered)).toContain('diagnostics unavailable');
+  });
+
+  it.each([
+    {
+      label: 'partial diagnostics',
+      diagnostics: { pass: true, issues: [] },
+    },
+    {
+      label: 'a stale viewport',
+      diagnostics: {
+        version: 1,
+        viewport: { width: 1280, height: 720 },
+        pass: true,
+        document: {
+          scrollWidth: 1280,
+          scrollHeight: 720,
+          clientWidth: 1280,
+          clientHeight: 720,
+        },
+        issues: [],
+        truncated: false,
+      },
+    },
+    {
+      label: 'an inconsistent passing result',
+      diagnostics: {
+        version: 1,
+        viewport: { width: 390, height: 844 },
+        pass: true,
+        document: {
+          scrollWidth: 390,
+          scrollHeight: 844,
+          clientWidth: 390,
+          clientHeight: 844,
+        },
+        issues: [{ code: 'small-text' }],
+        truncated: false,
+      },
+    },
+  ])('fails closed on $label', async ({ diagnostics }) => {
+    const store = {
+      loadDocument: vi.fn(async () => ({
+        stage: { id: 'stage-a', name: 'Stage A' },
+        scenes: [
+          {
+            id: 'scene-a',
+            stageId: 'stage-a',
+            order: 1,
+            title: 'A',
+            type: 'slide',
+            content: { type: 'slide' },
+            actions: [],
+          },
+        ],
+      })),
+    } as unknown as CourseStore;
+    const [preview] = buildScenePreviewTools({
+      store,
+      stageAccess: async () => ({ kind: 'owned' as const }),
+      ownerId: 'user:u1',
+      renderService: { url: 'http://render.test' },
+      fetchPreview: vi.fn(
+        async () =>
+          new Response(new Uint8Array([137, 80, 78, 71]), {
+            headers: {
+              'x-openmaic-layout-diagnostics': Buffer.from(
+                JSON.stringify(diagnostics),
+                'utf8',
+              ).toString('base64url'),
+            },
+          }),
+      ) as typeof fetch,
+    });
+
+    const rendered = await preview!.execute('preview', {
+      stageId: 'stage-a',
+      sceneId: 'scene-a',
+      viewport: { width: 390, height: 844 },
+    } as never);
+
+    expect(rendered).toMatchObject({ isError: true });
+    expect(textOf(rendered)).toContain('diagnostics unavailable');
   });
 });

@@ -64,6 +64,7 @@ function clearProviderEnv() {
     delete process.env[`${prefix}_API_KEY`];
     delete process.env[`${prefix}_BASE_URL`];
     delete process.env[`${prefix}_MODELS`];
+    delete process.env[`${prefix}_DISPLAY_NAME`];
     delete process.env[`${prefix}_ENABLED`];
   }
   delete process.env.TAVILY_API_KEY;
@@ -522,6 +523,30 @@ pdf:
   });
 
   describe('image and video provider metadata', () => {
+    it('exposes an operator display name and model catalog for a managed image provider', async () => {
+      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'image-key');
+      vi.stubEnv('IMAGE_OPENAI_DISPLAY_NAME', 'Higgsfield');
+      vi.stubEnv('IMAGE_OPENAI_MODELS', 'gpt_image_2,nano_banana_flash');
+      const { getServerImageProviders } = await import('@/lib/server/provider-config');
+
+      expect(getServerImageProviders()['openai-image']).toEqual({
+        displayName: 'Higgsfield',
+        models: ['gpt_image_2', 'nano_banana_flash'],
+      });
+    });
+
+    it('exposes an operator display name and model catalog for a managed video provider', async () => {
+      vi.stubEnv('VIDEO_SEEDANCE_API_KEY', 'video-key');
+      vi.stubEnv('VIDEO_SEEDANCE_DISPLAY_NAME', 'Higgsfield');
+      vi.stubEnv('VIDEO_SEEDANCE_MODELS', 'kling3_0_turbo,seedance_2_0');
+      const { getServerVideoProviders } = await import('@/lib/server/provider-config');
+
+      expect(getServerVideoProviders().seedance).toEqual({
+        displayName: 'Higgsfield',
+        models: ['kling3_0_turbo', 'seedance_2_0'],
+      });
+    });
+
     it('uses standard OpenAI env vars for OpenAI image generation fallback', async () => {
       vi.stubEnv('OPENAI_API_KEY', 'sk-openai');
       vi.stubEnv('OPENAI_BASE_URL', 'https://proxy.example.com/v1');

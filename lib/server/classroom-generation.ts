@@ -599,12 +599,12 @@ export async function generateClassroom(
               allowProceduralSkill: vocationalActive,
               ...(safeOutline.type === 'pbl'
                 ? {
-                    pblLoopFallback: (input) =>
+                    pblLoopFallback: (input, systemPromptSuffix) =>
                       generatePBLV2Project(
                         input,
                         contentCall.model,
                         callLLM,
-                        { logger: log },
+                        { logger: log, systemPromptSuffix },
                         contentCall.thinking,
                       ),
                   }
