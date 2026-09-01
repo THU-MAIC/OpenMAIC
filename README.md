@@ -37,7 +37,7 @@
 </p>
 
 <p align="center">
-  <a href="./README.md">English</a> | <a href="./README-zh.md">Simplified Chinese</a>
+  <a href="./README.md">English</a> | <a href="./README-zh.md">Simplified Chinese</a> | <a href="./README-ja.md">日本語</a>
   <br/>
   <a href="https://open.maic.chat/">Live Demo</a> · <a href="#-quick-start">Quick Start</a> · <a href="#lemonade-local-ai">Lemonade</a> · <a href="#funasr-local-asr">FunASR</a> · <a href="#-features">Features</a> · <a href="#-use-cases">Use Cases</a> · <a href="#-openclaw-integration">OpenClaw</a>
 </p>
