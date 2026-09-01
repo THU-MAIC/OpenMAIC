@@ -208,8 +208,8 @@ interface MockServerResponse {
   tts?: Record<string, { baseUrl?: string; disabled?: boolean }>;
   asr?: Record<string, { baseUrl?: string; disabled?: boolean }>;
   pdf?: Record<string, { baseUrl?: string }>;
-  image?: Record<string, { baseUrl?: string; disabled?: boolean }>;
-  video?: Record<string, { baseUrl?: string; disabled?: boolean }>;
+  image?: Record<string, { models?: string[]; baseUrl?: string; disabled?: boolean }>;
+  video?: Record<string, { models?: string[]; baseUrl?: string; disabled?: boolean }>;
   webSearch?: Record<string, { baseUrl?: string; disabled?: boolean }>;
 }
 
@@ -1827,5 +1827,49 @@ describe('TTS provider enablement (#665)', () => {
     mockServerResponse({ tts: {} });
     await store.getState().fetchServerProviders();
     expect(store.getState().ttsProvidersConfig['openai-tts'].serverDisabled).toBe(false);
+  });
+
+  it('applies server-pinned image models as customModels with replaceBuiltInModels', async () => {
+    const store = await getStore();
+    mockServerResponse({
+      image: { seedream: { models: ['doubao-seedream-5.0-lite'] } },
+    });
+    await store.getState().fetchServerProviders();
+
+    const config = store.getState().imageProvidersConfig.seedream;
+    expect(config.isServerConfigured).toBe(true);
+    expect(config.customModels).toEqual([
+      { id: 'doubao-seedream-5.0-lite', name: 'doubao-seedream-5.0-lite' },
+    ]);
+    expect(config.replaceBuiltInModels).toBe(true);
+  });
+
+  it('applies server-pinned video models as customModels with replaceBuiltInModels', async () => {
+    const store = await getStore();
+    mockServerResponse({
+      video: { seedance: { models: ['doubao-seedance-2-0', 'doubao-seedance-3-0'] } },
+    });
+    await store.getState().fetchServerProviders();
+
+    const config = store.getState().videoProvidersConfig.seedance;
+    expect(config.isServerConfigured).toBe(true);
+    expect(config.customModels).toEqual([
+      { id: 'doubao-seedance-2-0', name: 'doubao-seedance-2-0' },
+      { id: 'doubao-seedance-3-0', name: 'doubao-seedance-3-0' },
+    ]);
+    expect(config.replaceBuiltInModels).toBe(true);
+  });
+
+  it('does not set customModels when server reports no models for image provider', async () => {
+    const store = await getStore();
+    mockServerResponse({
+      image: { seedream: {} },
+    });
+    await store.getState().fetchServerProviders();
+
+    const config = store.getState().imageProvidersConfig.seedream;
+    expect(config.isServerConfigured).toBe(true);
+    expect(config.customModels).toBeUndefined();
+    expect(config.replaceBuiltInModels).toBeUndefined();
   });
 });
