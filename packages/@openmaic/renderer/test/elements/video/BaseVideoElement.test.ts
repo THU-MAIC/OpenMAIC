@@ -30,6 +30,7 @@ describe('BaseVideoElement', () => {
 
     expect(nativeMarkup).toContain('pointer-events:auto');
     expect(nativeMarkup).toContain('<video');
+    expect(nativeMarkup).toMatch(/<video[^>]*playsinline/i);
     expect(customMarkup).toContain('pointer-events:auto');
     expect(customMarkup).toContain('<button>Retry</button>');
   });
