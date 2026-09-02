@@ -18,6 +18,7 @@ type _SceneContentKeys = Assert<
     | 'imageMapping'
     | 'visionEnabled'
     | 'generatedMediaMapping'
+    | 'resolvedVisionImages'
     | 'agents'
     | 'languageDirective'
     | 'targetLanguage'

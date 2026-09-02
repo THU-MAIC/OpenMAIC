@@ -252,7 +252,7 @@ describe('manifest round-trip', () => {
       avatar: '/avatars/teacher.png',
       color: '#3b82f6',
       priority: 10,
-      voiceConfig: { providerId: 'some-tts', voiceId: 'voice-1' },
+      voiceConfig: { providerId: 'some-tts', modelId: 'model-1', voiceId: 'voice-1' },
       voiceDesign: { identity: 'adult narrator', texture: 'low and clear', delivery: 'measured' },
     };
 

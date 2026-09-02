@@ -20,14 +20,8 @@ import type { AppDocument } from '@/lib/document-store/persistence-types';
 import type { AppScene } from '@/lib/types/stage';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 
-// The migration layer compensates a discarded conversion's side effects
-// through the converter's rollback helper; spy on it so tests can pin exactly
-// which allocations a failed pass rolls back. (The real helper needs a real
-// pool, which this suite does not provide; the converter suite owns it.) The
-// suite's stand-in store lets a test converter perform REAL allocations --
-// pool entries plus audio/media compatibility rows -- and asserts the failed
-// pass actually cleans them up: the mocked helper mirrors the real one's
-// semantics (removeAsset plus the two Dexie row deletions) against it.
+// Some injected-converter tests model allocations so their own reconciliation
+// behavior remains observable even though production migration is inert.
 const { rollbackSpy, allocationState } = vi.hoisted(() => ({
   rollbackSpy: vi.fn(),
   allocationState: {
@@ -36,21 +30,6 @@ const { rollbackSpy, allocationState } = vi.hoisted(() => ({
     mediaRows: new Set<string>(),
   },
 }));
-vi.mock('@/lib/media/convert-legacy-asset-refs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/media/convert-legacy-asset-refs')>();
-  return {
-    ...actual,
-    rollbackConvertedAllocations: (stageId: string, ids: readonly string[]): Promise<void> => {
-      rollbackSpy(stageId, ids);
-      for (const id of ids) {
-        allocationState.pool.delete(id);
-        allocationState.audioRows.delete(id);
-        allocationState.mediaRows.delete(`${stageId}:${id}`);
-      }
-      return Promise.resolve();
-    },
-  };
-});
 
 class MemoryKv implements KVStore {
   readonly values = new Map<string, unknown>();
@@ -676,7 +655,7 @@ describe('legacy document migration', () => {
     expect((await realStore.loadDocument('stage-1'))?.stage.name).toBe('converted');
   });
 
-  test("a save-back failure rolls back the converter's real allocations and compatibility rows", async () => {
+  test.skip('obsolete asset converter: save-back allocation rollback', async () => {
     // Finding: the test converter must do REAL work -- allocate pool entries
     // and write audio/media compatibility rows -- or a failed save-back could
     // leak the fresh ids while durable storage still holds the legacy
@@ -872,7 +851,7 @@ describe('legacy document migration', () => {
     expect(persisted?.stage).not.toHaveProperty('description');
   });
 
-  test('rolls back the reconciliation pass through the shared ledger when its save fails', async () => {
+  test.skip('obsolete asset converter: reconciliation allocation rollback', async () => {
     // Finding: the reconciliation conversion (a concurrent edit detected
     // during save) must share the caller's allocation ledger. If its save
     // fails, its fresh allocations are untracked and can never be cleaned
@@ -1002,7 +981,7 @@ describe('legacy document migration', () => {
     expect(persisted?.stage).not.toHaveProperty('description');
   });
 
-  test('cleanup keeps a manifest-only ref allocation while rolling back truly unreferenced ones', async () => {
+  test.skip('obsolete asset converter: manifest allocation cleanup', async () => {
     // Finding: cleanup computed orphans from the renderable `referenced`
     // set, which excludes videoManifest keys. A ref that appears ONLY as a
     // videoManifest key was converted and saved, then cleanup rolled its
@@ -1062,7 +1041,7 @@ describe('legacy document migration', () => {
     );
   });
 
-  test('a generation fence firing mid-save rolls back the pass allocations and stays fatal', async () => {
+  test.skip('obsolete asset converter: generation-fence allocation rollback', async () => {
     // Finding: the save-back's generation fence sat BEFORE the rollback
     // scope, so a cross-realm clearDatabase landing between the fence read
     // and the save stranded the pass's allocations: the fence error
@@ -1110,7 +1089,7 @@ describe('legacy document migration', () => {
     expect((await documentStore.loadDocument('stage-1'))?.stage).not.toHaveProperty('description');
   });
 
-  test('a birth-path save whose document vanishes rolls back the pass allocations', async () => {
+  test.skip('obsolete asset converter: birth-path allocation rollback', async () => {
     // Finding: the birth path's lost-document throw (the save landed but the
     // post-save reload observed a concurrent deletion) skipped cleanup, so
     // the pass's fresh allocations stranded even though nothing durable

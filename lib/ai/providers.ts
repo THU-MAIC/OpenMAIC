@@ -1601,6 +1601,17 @@ function getCompatThinkingBodyParams(
   modelId: string,
   config: ThinkingConfig,
 ): Record<string, unknown> | undefined {
+  // This model is served through an OpenAI-compatible gateway even when the
+  // deployment uses the `openai` provider slot. The gateway's chat template
+  // toggle is neither OpenAI's `reasoning_effort` nor DeepSeek's native
+  // `thinking` object: it requires this exact vLLM template argument.
+  if (providerId === 'openai' && modelId === 'deepseek-v4-flash-vision-exp') {
+    const mode = getThinkingMode(config);
+    return mode === undefined
+      ? undefined
+      : { chat_template_kwargs: { thinking: mode === 'enabled' } };
+  }
+
   const capability = getCatalogThinkingCapability(providerId, modelId);
   if (!capability || capability.control === 'none') return undefined;
 
@@ -2074,15 +2085,16 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         name: config.providerId,
       };
 
-      if (useStreamingChatCompat) {
-        openaiOptions.fetch = fetchCustomOpenAIChat as typeof globalThis.fetch;
-      }
-
-      // For OpenAI-compatible providers (not native OpenAI), add a fetch
-      // wrapper that injects vendor-specific thinking params into the HTTP
-      // body. The thinking config is read from AsyncLocalStorage, set by
-      // callLLM / streamLLM at call time.
-      if (config.providerId !== 'openai') {
+      // A custom base URL makes the `openai` slot an OpenAI-compatible gateway,
+      // not the native OpenAI service. Give it the same request/response seam
+      // as named compatible providers: inject the gateway's thinking control
+      // and recover reasoning_content before the SDK schema can discard it.
+      const usesOpenAIResponses =
+        !useStreamingChatCompat && shouldUseOpenAIResponsesApi(config.providerId, config.modelId);
+      const usesCompatTransport =
+        config.providerId !== 'openai' ||
+        (usesCustomOpenAIBaseUrl(config.baseUrl) && !usesOpenAIResponses);
+      if (usesCompatTransport) {
         const providerId = config.providerId;
         const compatFetch = async (url: RequestInfo | URL, init?: RequestInit) => {
           // Read thinking config from globalThis (set by thinking-context.ts)
@@ -2125,7 +2137,9 @@ export function getModel(config: ModelConfig): ModelWithInfo {
               /* leave body as-is */
             }
           }
-          const response = await globalThis.fetch(url, init);
+          const response = useStreamingChatCompat
+            ? await fetchCustomOpenAIChat(url, init)
+            : await globalThis.fetch(url, init);
 
           // Recover reasoning that @ai-sdk/openai's chat schema drops: rewrite
           // streamed `reasoning_content` deltas into an inline <think> block
@@ -2186,17 +2200,14 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       }
 
       const openai = createOpenAI(openaiOptions);
-      model =
-        !useStreamingChatCompat && shouldUseOpenAIResponsesApi(config.providerId, config.modelId)
-          ? openai.responses(config.modelId)
-          : openai.chat(config.modelId);
-      // OpenAI-compatible providers (e.g. DeepSeek, Qwen) stream reasoning
+      model = usesOpenAIResponses ? openai.responses(config.modelId) : openai.chat(config.modelId);
+      // OpenAI-compatible providers (e.g. DeepSeek, Qwen), including a custom
+      // gateway configured through the `openai` slot, stream reasoning
       // either as a separate `reasoning_content` field (normalized to an inline
       // <think> block by compatFetch) or as native inline <think>.
       // Split it into first-class reasoning parts so the agent stream and UI can
-      // show a thinking panel and the answer text stays clean. Native OpenAI
-      // handles reasoning itself, so it is excluded.
-      if (config.providerId !== 'openai') {
+      // show a thinking panel and the answer text stays clean.
+      if (usesCompatTransport) {
         const middleware =
           config.providerId === 'kimi' && config.modelId === 'kimi-k3'
             ? [
@@ -2307,6 +2318,33 @@ export function getModel(config: ModelConfig): ModelWithInfo {
 }
 
 /**
+ * Deprecation notice for bare model ids (no `provider:` prefix). parseModelString
+ * keeps defaulting them to `openai` for backward compatibility, but that fallback
+ * is deprecated: configs should write `provider:model` explicitly. Emitted only
+ * by the boot-time config validation for config-derived sites — never for
+ * request-derived strings, which would let clients drive log volume.
+ */
+export const BARE_MODEL_ID_DEPRECATION_MSG =
+  'bare model ids default to openai for backward compatibility; this fallback is deprecated — write provider:model';
+
+/** Bare model ids already surfaced, so the deprecation fires once per unique id. */
+const warnedBareModelIds = new Set<string>();
+
+/**
+ * Warn once per unique bare model id. `where` names the config site (e.g.
+ * `DEFAULT_MODEL` or a MODEL_ROUTES stage). Callers must pass only
+ * config-derived ids (the config surface is finite, so the dedupe set is
+ * bounded); request-derived strings must never reach this function.
+ */
+export function warnBareModelIdDeprecation(bareModelId: string, where?: string): boolean {
+  if (warnedBareModelIds.has(bareModelId)) return false;
+  warnedBareModelIds.add(bareModelId);
+  const context = where ? `${where}: ` : '';
+  console.warn(`[config] ${context}${BARE_MODEL_ID_DEPRECATION_MSG} (bare id "${bareModelId}")`);
+  return true;
+}
+
+/**
  * Parse model string in format "providerId:modelId" or just "modelId" (defaults to OpenAI)
  */
 export function parseModelString(modelString: string): {
@@ -2323,7 +2361,10 @@ export function parseModelString(modelString: string): {
     };
   }
 
-  // Default to OpenAI for backward compatibility
+  // Default to OpenAI for backward compatibility (deprecated; boot-time config
+  // validation warns for config-derived bare ids). Deliberately no warning
+  // here: this path is reachable with request-controlled strings, which must
+  // not drive logging or dedupe-set growth.
   return {
     providerId: 'openai',
     modelId: modelString,

@@ -29,7 +29,8 @@ export function createWhiteboardAPI(store: StageStore) {
         const whiteboard: Whiteboard = {
           id: generateId('whiteboard'),
           viewportSize: 1000,
-          viewportRatio: 16 / 9,
+          // viewportRatio is height/width, so a 16:9 landscape sheet is 9/16.
+          viewportRatio: 9 / 16,
           elements: [],
           background: {
             type: 'solid',

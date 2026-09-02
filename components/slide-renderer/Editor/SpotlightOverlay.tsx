@@ -8,6 +8,7 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import type { SlideContent } from '@/lib/types/stage';
 import type { PPTElement } from '@openmaic/dsl';
 import { resolveMotionLayer } from './motion-descriptor-adapter';
+import { SCREEN_ELEMENT_ID_PREFIX } from '../element-dom';
 
 interface SpotlightRect {
   x: number;
@@ -32,7 +33,9 @@ interface SpotlightOverlayProps {
   domIdPrefix?: string;
 }
 
-export function SpotlightOverlay({ domIdPrefix = 'screen-element-' }: SpotlightOverlayProps = {}) {
+export function SpotlightOverlay({
+  domIdPrefix = SCREEN_ELEMENT_ID_PREFIX,
+}: SpotlightOverlayProps = {}) {
   const spotlightElementId = useCanvasStore.use.spotlightElementId();
   const spotlightOptions = useCanvasStore.use.spotlightOptions();
   const containerRef = useRef<HTMLDivElement>(null);

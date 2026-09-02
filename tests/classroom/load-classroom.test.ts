@@ -1097,17 +1097,21 @@ describe('discardRestoredMediaTasks', () => {
     const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
 
     discardRestoredMediaTasks({
-      image: {
-        elementId: 'image',
-        type: 'image',
-        status: 'done',
-        prompt: 'image',
-        params: {},
-        objectUrl: 'blob:image',
-        poster: 'blob:poster',
-        retryCount: 0,
-        stageId: 'stage-a',
+      stageId: 'stage-a',
+      tasks: {
+        image: {
+          elementId: 'image',
+          type: 'image',
+          status: 'done',
+          prompt: 'image',
+          params: {},
+          objectUrl: 'blob:image',
+          poster: 'blob:poster',
+          retryCount: 0,
+          stageId: 'stage-a',
+        },
       },
+      deferred: [],
     });
 
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:image');

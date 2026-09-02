@@ -100,6 +100,182 @@ const ERROR_CAPTURE_SHIM = `<script data-iframe-error-shim>
 })();
 </script>`;
 
+/** Dormant-by-default picker installed into generated interactive documents. */
+const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
+(function () {
+  if (window.__maicElementPickerInstalled) return;
+  window.__maicElementPickerInstalled = true;
+  var armed = false;
+  var selectors = [];
+  var root = null;
+  var hoverBox = null;
+  var candidate = null;
+  var raf = null;
+  function emit(message) {
+    try { window.parent.postMessage(message, '*'); } catch (e) {}
+  }
+  function cssEscape(value) {
+    if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(value);
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, function (char) { return '\\\\' + char; });
+  }
+  function unique(selector) {
+    try { return document.querySelectorAll(selector).length === 1; } catch (e) { return false; }
+  }
+  function selectorFor(element) {
+    if (element.id) {
+      var byId = '#' + cssEscape(element.id);
+      if (unique(byId)) return byId;
+    }
+    var tag = element.tagName.toLowerCase();
+    if (element.classList && element.classList.length) {
+      var classes = Array.prototype.slice.call(element.classList, 0, 3).map(cssEscape);
+      if (classes.length) {
+        var byClass = tag + '.' + classes.join('.');
+        if (unique(byClass)) return byClass;
+      }
+    }
+    var parts = [];
+    var node = element;
+    while (node && node.nodeType === 1 && node !== document.documentElement) {
+      var nodeTag = node.tagName.toLowerCase();
+      var parent = node.parentElement;
+      if (!parent) break;
+      var sameTag = Array.prototype.filter.call(parent.children, function (child) {
+        return child.tagName === node.tagName;
+      });
+      var part = nodeTag;
+      if (sameTag.length > 1) part += ':nth-of-type(' + (sameTag.indexOf(node) + 1) + ')';
+      parts.unshift(part);
+      var path = parts.join(' > ');
+      if (unique(path)) return path;
+      node = parent;
+    }
+    return parts.join(' > ') || tag;
+  }
+  function ensureRoot() {
+    if (root && root.isConnected) return;
+    root = document.createElement('div');
+    root.setAttribute('data-maic-element-picker-overlay', '');
+    root.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:2147483647;';
+    hoverBox = document.createElement('div');
+    hoverBox.style.cssText = 'display:none;position:absolute;border:2px solid #7c3aed;background:rgba(124,58,237,.10);box-sizing:border-box;border-radius:3px;pointer-events:none;';
+    root.appendChild(hoverBox);
+    (document.body || document.documentElement).appendChild(root);
+  }
+  function position(node, element) {
+    var rect = element.getBoundingClientRect();
+    node.style.left = (rect.left + window.scrollX) + 'px';
+    node.style.top = (rect.top + window.scrollY) + 'px';
+    node.style.width = rect.width + 'px';
+    node.style.height = rect.height + 'px';
+  }
+  function isOverlay(element) {
+    return !!(element && element.closest && element.closest('[data-maic-element-picker-overlay]'));
+  }
+  function selectable(element) {
+    return !!element && element !== document.documentElement && element !== document.body && !isOverlay(element);
+  }
+  function draw() {
+    raf = null;
+    if (!armed) return;
+    ensureRoot();
+    if (candidate && candidate.isConnected) {
+      position(hoverBox, candidate);
+      hoverBox.style.display = 'block';
+    } else {
+      hoverBox.style.display = 'none';
+    }
+    Array.prototype.slice.call(root.querySelectorAll('[data-maic-picker-pin]')).forEach(function (node) { node.remove(); });
+    selectors.forEach(function (selector, index) {
+      var element = null;
+      try { element = document.querySelector(selector); } catch (e) {}
+      if (!selectable(element)) return;
+      var badge = document.createElement('div');
+      badge.setAttribute('data-maic-picker-pin', '');
+      badge.textContent = String(index + 1);
+      badge.style.cssText = 'position:absolute;display:grid;place-items:center;width:20px;height:20px;border-radius:999px;background:#7c3aed;color:white;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.35);font:700 11px/1 system-ui,sans-serif;box-sizing:border-box;pointer-events:none;';
+      var rect = element.getBoundingClientRect();
+      badge.style.left = Math.max(0, rect.left + window.scrollX - 8) + 'px';
+      badge.style.top = Math.max(0, rect.top + window.scrollY - 8) + 'px';
+      root.appendChild(badge);
+    });
+  }
+  function scheduleDraw() {
+    if (raf == null) raf = window.requestAnimationFrame(draw);
+  }
+  function onPointerMove(event) {
+    var element = document.elementFromPoint(event.clientX, event.clientY);
+    candidate = selectable(element) ? element : null;
+    scheduleDraw();
+  }
+  function block(event) {
+    if (!armed) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+  function onClick(event) {
+    if (!armed) return;
+    block(event);
+    var element = document.elementFromPoint(event.clientX, event.clientY);
+    if (!selectable(element)) return;
+    candidate = element;
+    emit({
+      __maicInteractive: true,
+      kind: 'element-picked',
+      selector: selectorFor(element),
+      outerHTML: String(element.outerHTML || '').slice(0, 2048),
+      text: String(typeof element.innerText === 'string' ? element.innerText : '').slice(0, 200)
+    });
+    scheduleDraw();
+  }
+  function onKey(event) {
+    if (!armed || event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    disarm();
+    emit({ __maicInteractive: true, kind: 'element-picker-disarmed' });
+  }
+  function arm() {
+    if (armed) { scheduleDraw(); return; }
+    armed = true;
+    ensureRoot();
+    window.addEventListener('pointermove', onPointerMove, true);
+    window.addEventListener('click', onClick, true);
+    window.addEventListener('submit', block, true);
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('scroll', scheduleDraw, true);
+    window.addEventListener('resize', scheduleDraw);
+    scheduleDraw();
+  }
+  function disarm() {
+    if (!armed) return;
+    armed = false;
+    candidate = null;
+    window.removeEventListener('pointermove', onPointerMove, true);
+    window.removeEventListener('click', onClick, true);
+    window.removeEventListener('submit', block, true);
+    window.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('scroll', scheduleDraw, true);
+    window.removeEventListener('resize', scheduleDraw);
+    if (raf != null) { window.cancelAnimationFrame(raf); raf = null; }
+    if (root) root.remove();
+    root = null;
+    hoverBox = null;
+  }
+  window.addEventListener('message', function (event) {
+    if (event.source !== window.parent) return;
+    var data = event && event.data;
+    if (!data || typeof data.type !== 'string') return;
+    if (data.type === 'element-picker:arm') arm();
+    else if (data.type === 'element-picker:disarm') disarm();
+    else if (data.type === 'element-picker:sync') {
+      selectors = Array.isArray(data.selectors) ? data.selectors.filter(function (item) { return typeof item === 'string'; }) : [];
+      if (armed) scheduleDraw();
+    }
+  });
+})();
+</script>`;
+
 /**
  * Patch embedded HTML to display correctly inside an iframe.
  *
@@ -124,7 +300,8 @@ export function patchHtmlForIframe(html: string): string {
   body { min-height: 100vh; }
 </style>`;
 
-  const injection = '\n' + ERROR_CAPTURE_SHIM + '\n' + STORAGE_SHIM + '\n' + iframeCss;
+  const injection =
+    '\n' + ERROR_CAPTURE_SHIM + '\n' + ELEMENT_PICKER_SHIM + '\n' + STORAGE_SHIM + '\n' + iframeCss;
 
   return injectIntoDocumentHead(html, injection);
 }

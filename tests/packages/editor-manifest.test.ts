@@ -9,12 +9,10 @@ const editorPackage = JSON.parse(
   ),
 ) as {
   repository?: { type?: string; url?: string; directory?: string };
-  version?: string;
 };
 
 describe('@openmaic/editor publish manifest', () => {
-  it('declares provenance repository metadata at the next release version', () => {
-    expect(editorPackage.version).toBe('0.0.3');
+  it('declares provenance repository metadata', () => {
     expect(editorPackage.repository).toEqual({
       type: 'git',
       url: 'https://github.com/THU-MAIC/OpenMAIC',

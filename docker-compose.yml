@@ -3,6 +3,8 @@ services:
     build:
       context: .
       args:
+        - ALPINE_MIRROR=${ALPINE_MIRROR:-}
+        - NPM_REGISTRY=${NPM_REGISTRY:-}
         # NEXT_PUBLIC_* values are compiled into the browser bundle. Leave them
         # empty unless the corresponding client feature is explicitly enabled;
         # persistence and other build-time flags can be supplied on the command line.

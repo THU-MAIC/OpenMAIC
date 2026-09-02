@@ -1,42 +1,32 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 
-import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
-import { PgDocumentStore, ensureDocumentSchema } from '@openmaic/storage/document/pg';
-import { PgRuntimeStore, ensureSchema } from '@openmaic/storage/runtime/pg';
 import {
   createStorageHttpHandler,
   DEFAULT_SIGNED_URL_TTL_SECONDS,
   type AssetIndirectByteEgress,
 } from '@openmaic/storage/server';
-import {
-  nodePostgresTransaction,
-  type ConnectableQueryable,
-} from '@openmaic/storage/server/reference';
-import { Pool } from 'pg';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
-import { lazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
+import {
+  decideDocumentAccess,
+  parseDocumentAction,
+  type DocumentAccess,
+} from '@/lib/persistence/document-access';
+import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
 import { authenticatePersistenceRequest } from '@/lib/persistence/server-auth';
+import {
+  getServerPersistenceProvider,
+  type PersistencePoolFactory,
+} from '@/lib/persistence/server-provider';
+import { readStageMeta } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
+import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
 
 export const runtime = 'nodejs';
 
 const ROUTE_PREFIX = '/api/persistence';
-
-type PoolFactory = (connectionString: string) => Pool;
-
-interface PersistenceHandlerState {
-  connectionString?: string;
-  handlerPromise?: Promise<RequestListener>;
-}
-
-const HANDLER_STATE_KEY = Symbol.for('openmaic.persistence-route.handler');
-const globalState = globalThis as typeof globalThis & {
-  [key: symbol]: PersistenceHandlerState | undefined;
-};
-const handlerState = (globalState[HANDLER_STATE_KEY] ??= {});
 
 function jsonError(status: number, code: string, message: string): Response {
   return Response.json({ error: { code, message } }, { status });
@@ -88,81 +78,52 @@ function indirectEgressWithinGrace(
 
 async function createPersistenceHandler(
   connectionString: string,
-  poolFactory: PoolFactory,
+  ownerId: string,
+  access: DocumentAccess,
+  poolFactory?: PersistencePoolFactory,
 ): Promise<RequestListener> {
-  const pool = poolFactory(connectionString);
-  const queryable = pool as unknown as ConnectableQueryable;
-  try {
-    await ensureSchema(queryable);
-    await ensureDocumentSchema(queryable);
-    await ensureAssetSchema(queryable);
-    const withTransaction = nodePostgresTransaction(queryable);
-    // Deferred to first asset use: the asset backend is optional, so its
-    // misconfiguration (an invalid ASSET_S3_BUCKET, an unresolvable AWS SDK)
-    // must fail asset requests only, never this handler's initialization.
-    const byteStore = lazyAssetByteStore(process.env.ASSET_S3_BUCKET, queryable);
-    const runtimeStore = new PgRuntimeStore(queryable, {
-      withTransaction,
-      payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
-    });
-    const documentStore = new PgDocumentStore(queryable, {
-      withTransaction,
-      validateScene: validateAppScene,
-      validateStage: validateAppStage,
-    });
-    // The asset contract requires a server-derived principal; this development
-    // authenticator instead takes the partition key from a client-supplied header.
-    // Cross-principal isolation is therefore not in force: asset bytes are as
-    // reachable as documents and runtime records under this authenticator. Before
-    // asset routes carry anything that matters, production must replace
-    // authenticatePersistenceRequest with real session verification. See
-    // lib/persistence/server-auth.ts for the token's limits.
-    const assetStore = new PgAssetStore(queryable, { withTransaction, byteStore });
-    // Reclamation is not scheduled from here, and must not be: a route module
-    // has no once-per-process guarantee and no shutdown hook. AssetCollector
-    // runs from instrumentation.ts instead, over the byte store this same
-    // lib/persistence/asset-byte-store selection produces, so the collector
-    // always deletes through the layer the request path wrote through.
-    const byteEgress = indirectEgressWithinGrace(
-      configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
-    );
-    return createStorageHttpHandler(runtimeStore, documentStore, {
-      authenticate: authenticatePersistenceRequest,
-      authorizeMerge: async () => false,
-      authorizeAdmin: async () => false,
-      authorizeDocuments: async () => true,
-      validateScene: validateAppScene,
-      validateStage: validateAppStage,
-      payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
-      assetStore,
-      ...(byteEgress === undefined ? {} : { byteEgress }),
-    });
-  } catch (error) {
-    await pool.end().catch(() => {});
-    throw error;
-  }
+  const { pool, runtimeStore, assetStore } = await getServerPersistenceProvider(
+    connectionString,
+    poolFactory,
+  );
+  const documentStore = createOwnerBoundDocumentStore({
+    pool,
+    ownerId,
+    validateScene: validateAppScene,
+    validateStage: validateAppStage,
+  });
+  // Runtime and asset requests retain the development authenticator, which
+  // takes their partition key from a client-supplied header. Document requests
+  // use the server-resolved anonymous owner below. Before runtime or asset
+  // routes carry production data, their authenticator must also be replaced
+  // with real session verification.
+  // Reclamation is not scheduled from here, and must not be: a route module
+  // has no once-per-process guarantee and no shutdown hook. AssetCollector
+  // runs from instrumentation.ts instead, over the byte store this same
+  // lib/persistence/asset-byte-store selection produces, so the collector
+  // always deletes through the layer the request path wrote through.
+  const byteEgress = indirectEgressWithinGrace(
+    configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
+  );
+  return createStorageHttpHandler(runtimeStore, documentStore, {
+    authenticate: async (request) =>
+      request.url?.startsWith('/documents')
+        ? { learnerKey: ownerId }
+        : authenticatePersistenceRequest(request),
+    authorizeMerge: async () => false,
+    authorizeAdmin: async () => false,
+    authorizeDocuments: async () => access === 'allow',
+    validateScene: validateAppScene,
+    validateStage: validateAppStage,
+    payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+    assetStore,
+    ...(byteEgress === undefined ? {} : { byteEgress }),
+  });
 }
 
-function getPersistenceHandler(
-  connectionString: string,
-  poolFactory: PoolFactory,
-): Promise<RequestListener> {
-  if (handlerState.handlerPromise && handlerState.connectionString === connectionString) {
-    return handlerState.handlerPromise;
-  }
-
-  handlerState.connectionString = connectionString;
-  const initialization = createPersistenceHandler(connectionString, poolFactory).catch((error) => {
-    // Do not poison the singleton with a rejected promise. createPersistenceHandler
-    // has already closed its failed pool, and the next request gets a clean retry.
-    if (handlerState.handlerPromise === initialization) {
-      handlerState.handlerPromise = undefined;
-      handlerState.connectionString = undefined;
-    }
-    throw error;
-  });
-  handlerState.handlerPromise = initialization;
-  return initialization;
+function routeRelativePath(request: Request): string {
+  const pathname = new URL(request.url).pathname;
+  return pathname.startsWith(ROUTE_PREFIX) ? pathname.slice(ROUTE_PREFIX.length) || '/' : pathname;
 }
 
 function nodeRequest(request: Request): IncomingMessage {
@@ -300,7 +261,7 @@ function runNodeHandler(handler: RequestListener, request: Request): Promise<Res
 }
 
 interface PersistenceRequestDeps {
-  poolFactory?: PoolFactory;
+  poolFactory?: PersistencePoolFactory;
 }
 
 export async function handlePersistenceRequest(
@@ -319,16 +280,46 @@ export async function handlePersistenceRequest(
     );
   }
 
-  try {
-    const poolFactory = deps.poolFactory ?? ((value) => new Pool({ connectionString: value }));
-    return await runNodeHandler(
-      await getPersistenceHandler(connectionString, poolFactory),
-      request,
-    );
-  } catch (error) {
-    console.error('Embedded persistence route initialization failed', error);
-    return jsonError(500, 'PERSISTENCE_INIT_FAILED', 'server persistence initialization failed');
-  }
+  return withRequestOwnerId(request, async (ownerId, responseHeaders) => {
+    try {
+      const path = routeRelativePath(request);
+      const action = parseDocumentAction(request.method, path);
+      let access: DocumentAccess = 'allow';
+      if (path === '/documents' || path.startsWith('/documents/')) {
+        const { pool } = await getServerPersistenceProvider(connectionString, deps.poolFactory);
+        const queryable = pool;
+        access = await decideDocumentAccess(
+          action,
+          ownerId,
+          (stageId) => readStageMeta(queryable, stageId),
+          (stageId) =>
+            pool
+              .query('SELECT 1 FROM document_stages WHERE id = $1', [stageId])
+              .then((result) => result.rows.length > 0),
+          (stageId) => readStageMeta(queryable, stageId),
+        );
+      }
+
+      const response =
+        access === 'not-found'
+          ? jsonError(404, 'DOCUMENT_NOT_FOUND', '@openmaic/storage: document not found')
+          : await runNodeHandler(
+              await createPersistenceHandler(connectionString, ownerId, access, deps.poolFactory),
+              request,
+            );
+      for (const [name, value] of responseHeaders.entries()) response.headers.append(name, value);
+      return response;
+    } catch (error) {
+      console.error('Embedded persistence route initialization failed', error);
+      const response = jsonError(
+        500,
+        'PERSISTENCE_INIT_FAILED',
+        'server persistence initialization failed',
+      );
+      for (const [name, value] of responseHeaders.entries()) response.headers.append(name, value);
+      return response;
+    }
+  });
 }
 
 export const GET = (request: Request) => handlePersistenceRequest(request);

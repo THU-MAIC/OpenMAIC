@@ -7,6 +7,18 @@ describe('embedded persistence route', () => {
     vi.resetModules();
     vi.unstubAllEnvs();
     vi.stubEnv('ASSET_S3_BUCKET', '');
+    vi.doMock('@/lib/persistence/stage-meta', () => ({
+      ensureStageMetaSchema: vi.fn().mockResolvedValue(undefined),
+      readStageMeta: vi.fn().mockResolvedValue({
+        stageId: 'adapter-test',
+        ownerId: 'adapter-test-owner',
+        isPublic: false,
+        deletedAt: null,
+      }),
+    }));
+    vi.doMock('@/lib/persistence/owner-materials', () => ({
+      ensureOwnerMaterialSchema: vi.fn().mockResolvedValue(undefined),
+    }));
   });
 
   it('returns a clear 404 when DATABASE_URL is unset', async () => {
@@ -119,7 +131,11 @@ describe('embedded persistence route', () => {
     const ensureAssetSchema = vi.fn().mockResolvedValue(undefined);
     const transaction = vi.fn();
     const nodePostgresTransaction = vi.fn(() => transaction);
-    const runtimeConstructions: Array<{ queryable: unknown; options: unknown }> = [];
+    const runtimeConstructions: Array<{
+      queryable: unknown;
+      options: unknown;
+      instance: unknown;
+    }> = [];
     const documentConstructions: Array<{ queryable: unknown; options: unknown }> = [];
     const byteConstructions: unknown[] = [];
     const assetConstructions: Array<{ queryable: unknown; options: unknown; instance: unknown }> =
@@ -130,7 +146,7 @@ describe('embedded persistence route', () => {
       ensureSchema,
       PgRuntimeStore: class {
         constructor(queryable: unknown, options: unknown) {
-          runtimeConstructions.push({ queryable, options });
+          runtimeConstructions.push({ queryable, options, instance: this });
         }
       },
     }));
@@ -218,6 +234,14 @@ describe('embedded persistence route', () => {
     expect((handlerOptions[0] as { assetStore?: unknown }).assetStore).toBe(
       assetConstructions[0]?.instance,
     );
+    const { getServerPersistenceProvider } = await import('@/lib/persistence/server-provider');
+    const secondPoolFactory = vi.fn();
+    const sharedProvider = await getServerPersistenceProvider(
+      'postgres://asset-wiring-test',
+      secondPoolFactory,
+    );
+    expect(sharedProvider.runtimeStore).toBe(runtimeConstructions[0]?.instance);
+    expect(secondPoolFactory).not.toHaveBeenCalled();
     expect(sdkModuleResolved).not.toHaveBeenCalled();
   });
 

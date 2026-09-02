@@ -306,6 +306,13 @@ export interface DirectorState {
   whiteboardLedger: WhiteboardActionRecord[];
 }
 
+/** Browser-selected identity for one PPT element. Content is resolved by the Host. */
+export interface SlideElementReference {
+  kind: 'slide_element';
+  sceneId: string;
+  elementId: string;
+}
+
 /**
  * Request body for the stateless chat API
  * All state is sent from the client on each request
@@ -322,6 +329,8 @@ export interface StatelessChatRequest {
     currentSceneId: string | null;
     mode: StageMode;
     whiteboardOpen: boolean;
+    /** Browser-owned manual visibility revision captured for this request. */
+    whiteboardManualVisibilityRevision?: number;
     /**
      * Post-submit quiz state for the CURRENT scene, hydrated by the client
      * from localStorage when the active scene is a graded quiz. Lets the
@@ -342,6 +351,8 @@ export interface StatelessChatRequest {
       }>;
     };
   };
+  /** Optional Pi-only, identity-only reference to one slide element. */
+  elementReference?: SlideElementReference;
   /** Agent configuration */
   config: {
     agentIds: string[];
@@ -447,6 +458,17 @@ export type StatelessEvent =
   | {
       type: 'thinking';
       data: { stage: 'director' | 'agent_loading'; agentId?: string };
+    }
+  | {
+      type: 'whiteboard';
+      data:
+        | { kind: 'visibility_query'; queryId: string; stageId: string }
+        | {
+            kind: 'open' | 'close';
+            stageId: string;
+            manualVisibilityRevision: number;
+          }
+        | { kind: 'projection'; stageId: string; lastSeq: number };
     }
   | { type: 'cue_user'; data: { fromAgentId?: string; prompt?: string } }
   | {

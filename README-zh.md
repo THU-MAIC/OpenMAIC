@@ -11,6 +11,12 @@
 </p>
 
 <p align="center">
+  <a href="https://my.feishu.cn/wiki/UIfKw9Knti0LcKkTxDNcqlUrnzh"><img src="https://img.shields.io/badge/%F0%9F%93%99%20%E4%BD%93%E9%AA%8C%E6%8C%87%E5%8D%97-v1.0.0%20%C2%B7%20%E4%B8%AD%E6%96%87-FF6B35?style=for-the-badge" alt="v1.0.0 体验指南（中文）"/></a>
+  &nbsp;&nbsp;
+  <a href="https://lcn6dqn3m0yr.feishu.cn/wiki/CkQSwHFdzibQFvkGzwPcmUOfnXg"><img src="https://img.shields.io/badge/%F0%9F%93%98%20User%20Guide-v1.0.0%20%C2%B7%20English-4F8EF7?style=for-the-badge" alt="v1.0.0 User Guide (English)"/></a>
+</p>
+
+<p align="center">
   <a href="https://jcst.ict.ac.cn/en/article/doi/10.1007/s11390-025-6000-0"><img src="https://img.shields.io/badge/Paper-JCST'26-blue?style=flat-square" alt="Paper"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License: MIT"/></a>
   <a href="https://open.maic.chat/"><img src="https://img.shields.io/badge/Demo-Live-brightgreen?style=flat-square" alt="Live Demo"/></a>
@@ -86,7 +92,7 @@ https://github.com/user-attachments/assets/f4a2f1be-6615-4330-aea1-b86ccf42045e
 
 ### 环境要求
 
-- **Node.js** >= 20
+- **Node.js** >= 22.19
 - **pnpm** >= 10
 
 ### 1. 克隆 & 安装
@@ -287,6 +293,39 @@ cp .env.example .env.local
 docker compose up --build
 ```
 
+#### 慢速网络 / 中国大陆构建加速
+
+Docker 构建支持两个可选参数。两者默认均为空，因此上面的标准命令仍会使用
+Alpine 和 npm 的上游软件源。
+
+- `ALPINE_MIRROR` 接收不带 `https://` 的 Alpine 镜像站主机名。
+- `NPM_REGISTRY` 接收完整的 npm registry URL。
+
+这些构建参数仅用于公共镜像地址。请勿在其中嵌入用户名、密码或访问令牌，因为
+Docker 可能把构建参数记录到镜像元数据或构建证明中。
+
+使用 Docker Compose：
+
+```bash
+ALPINE_MIRROR=mirrors.tuna.tsinghua.edu.cn \
+NPM_REGISTRY=https://registry.npmmirror.com \
+docker compose up --build
+```
+
+直接构建镜像：
+
+```bash
+docker build \
+  --build-arg ALPINE_MIRROR=mirrors.tuna.tsinghua.edu.cn \
+  --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
+  -t openmaic:local .
+```
+
+这些参数不会加速 Docker Hub 拉取，包括 Dockerfile frontend 和
+`node:22-alpine` 基础镜像。若这些步骤较慢，需要单独配置 Docker daemon 的
+registry mirror。同一个 BuildKit builder 会在常规缓存清理前跨构建复用 pnpm
+store；缓存只用于提升性能，不是正确完成构建的必要条件。
+
 ### 服务端持久化（PostgreSQL）
 
 `server-persistence` profile 只跑两个容器：OpenMAIC 应用本体和 PostgreSQL。持久化 HTTP 服务内嵌在应用中（`/api/persistence`），没有独立的持久化服务。
@@ -322,7 +361,6 @@ NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docke
 docker compose --profile video-export up --build
 ```
 
-应用会通过 `RENDER_SERVICE_URL`（已在 `docker-compose.yml` 中预置）自动发现该服务，并启用一键 MP4 渲染。不启用该 profile 或未设置 `RENDER_SERVICE_URL` 时，导出会降级为下载项目 ZIP 供本地 CLI 渲染。独立部署与调优（`RENDER_MAX_CONCURRENCY` 等）参见 [`render-service/README.md`](render-service/README.md)。
 
 ### 可选：MinerU（增强文档解析）
 

@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
+import type { RuntimeRecord } from '@openmaic/dsl';
+import { BrowserRuntimeStore } from '@openmaic/storage';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
+
+import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 
 const mocks = vi.hoisted(() => ({
   resolveModel: vi.fn(),
   streamLLM: vi.fn(),
   searchWeb: vi.fn(),
+  getServerPersistenceProvider: vi.fn(),
 }));
 
 vi.mock('@/lib/server/resolve-model', () => ({ resolveModel: mocks.resolveModel }));
@@ -18,6 +24,9 @@ vi.mock('@/lib/ai/providers', async (importOriginal) => {
   return { ...actual, isProviderKeyRequired: vi.fn(() => false) };
 });
 vi.mock('@/lib/live-mode', () => ({ isLiveMode: false }));
+vi.mock('@/lib/persistence/server-provider', () => ({
+  getServerPersistenceProvider: mocks.getServerPersistenceProvider,
+}));
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
@@ -34,6 +43,9 @@ const envNames = [
   'OPENMAIC_ENABLE_PI_NATIVE_CHILD_SPOTLIGHT',
   'TAVILY_API_KEY',
   'TAVILY_BASE_URL',
+  'NEXT_PUBLIC_PERSISTENCE',
+  'DATABASE_URL',
+  'PERSISTENCE_DEV_TOKEN',
 ] as const;
 const originalEnv = new Map<string, string | undefined>();
 
@@ -54,10 +66,19 @@ function resultFrom(parts: Array<Record<string, unknown>>) {
   };
 }
 
-function makeRequest(overrides: Record<string, unknown> = {}): NextRequest {
+function makeRequest(
+  overrides: Record<string, unknown> = {},
+  headers: Record<string, string> = {
+    authorization: 'Bearer persistence-test-token',
+    'x-learner-key': 'learner-route-test',
+  },
+): NextRequest {
   return new Request('http://localhost/api/chat/pi', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...headers,
+    },
     body: JSON.stringify({
       messages: [
         {
@@ -133,6 +154,7 @@ async function readSseEvents(response: Response) {
 
 describe('PR2 Native Child route production wiring', () => {
   beforeEach(() => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
     for (const name of envNames) originalEnv.set(name, process.env[name]);
     process.env.NEXT_PUBLIC_PI_CHAT_ENABLED = 'true';
     process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME = 'true';
@@ -142,6 +164,13 @@ describe('PR2 Native Child route production wiring', () => {
     mocks.resolveModel.mockReset();
     mocks.streamLLM.mockReset();
     mocks.searchWeb.mockReset();
+    mocks.getServerPersistenceProvider.mockReset();
+    mocks.getServerPersistenceProvider.mockResolvedValue({
+      runtimeStore: new BrowserRuntimeStore({
+        indexedDB: new IDBFactory(),
+        payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+      }),
+    });
     mocks.resolveModel.mockResolvedValue({
       model: resolvedModel,
       apiKey: 'resolved-key',
@@ -158,6 +187,7 @@ describe('PR2 Native Child route production wiring', () => {
       else process.env[name] = value;
     }
     originalEnv.clear();
+    vi.unstubAllGlobals();
     vi.resetModules();
   });
 
@@ -235,6 +265,418 @@ describe('PR2 Native Child route production wiring', () => {
       data: { totalAgents: 1, totalActions: 1, agentHadContent: true },
     });
   }, 15_000);
+
+  it('wires RuntimeStore WB inventory through the real route and completes an action-only Child', async () => {
+    process.env.NEXT_PUBLIC_PERSISTENCE = '1';
+    process.env.DATABASE_URL = 'postgres://shared-provider-test';
+    process.env.PERSISTENCE_DEV_TOKEN = 'persistence-test-token';
+    const directorResponses = [
+      [toolCall('read-1', 'read_scene', { sceneId: 'scene-current' }), finish('tool-calls')],
+      [
+        toolCall('delegate-1', 'call_agent', {
+          agentId: 'teacher-1',
+          instruction: 'Read the whiteboard, then add one concise label.',
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('cue-1', 'cue_user', { prompt: 'Continue?' }), finish('tool-calls')],
+    ];
+    const childResponses = [
+      [toolCall('wb-read-1', 'wb_read', {}), finish('tool-calls')],
+      [
+        toolCall('wb-draw-1', 'wb_draw_text', {
+          expectedLastSeq: null,
+          content: 'Runtime authority',
+          x: 80,
+          y: 100,
+        }),
+        finish('tool-calls'),
+      ],
+      [finish('stop')],
+    ];
+    const payloads: Array<{ source: string; options: Record<string, unknown> }> = [];
+    mocks.streamLLM.mockImplementation((options, source) => {
+      payloads.push({ source, options });
+      const parts =
+        source === 'pi-chat-native-child' ? childResponses.shift() : directorResponses.shift();
+      return resultFrom(parts ?? [finish('stop')]);
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(
+      makeRequest({
+        config: {
+          agentIds: ['teacher-1'],
+          piEnableWhiteboardTools: true,
+          agentConfigs: [
+            {
+              id: 'teacher-1',
+              name: 'Teacher',
+              role: 'teacher',
+              persona: 'Use the whiteboard directly.',
+              avatar: '',
+              color: '#3366ff',
+              allowedActions: ['wb_draw_text', 'wb_delete', 'wb_clear', 'wb_edit_code'],
+              priority: 10,
+            },
+          ],
+        },
+      }),
+    );
+    const events = await readSseEvents(response);
+
+    expect(response.status).toBe(200);
+    expect(mocks.getServerPersistenceProvider).toHaveBeenCalledWith(
+      'postgres://shared-provider-test',
+    );
+    const childPayloads = payloads.filter((payload) => payload.source === 'pi-chat-native-child');
+    expect(childPayloads).toHaveLength(3);
+    expect(childPayloads[0]?.options.tools).toHaveProperty('wb_read');
+    expect(childPayloads[0]?.options.tools).toHaveProperty('wb_open');
+    expect(childPayloads[0]?.options.tools).toHaveProperty('wb_draw_text');
+    expect(childPayloads[0]?.options.tools).toHaveProperty('wb_delete');
+    expect(childPayloads[0]?.options.tools).toHaveProperty('wb_clear');
+    expect(childPayloads[0]?.options.tools).toHaveProperty('wb_edit_code');
+    expect(childPayloads[0]?.options.tools).toHaveProperty('wb_close');
+    const providerTools = childPayloads[0]?.options.tools as
+      | Record<
+          string,
+          {
+            inputSchema?: {
+              jsonSchema?: {
+                type?: string;
+                anyOf?: unknown[];
+                required?: string[];
+                properties?: {
+                  expectedLastSeq?: {
+                    type?: string[];
+                    minimum?: number;
+                    description?: string;
+                  };
+                };
+              };
+            };
+          }
+        >
+      | undefined;
+    for (const [toolName, tool] of Object.entries(providerTools ?? {})) {
+      expect(tool.inputSchema?.jsonSchema?.type, toolName).toBe('object');
+    }
+    const providerDrawTool = providerTools?.wb_draw_text;
+    const providerEditTool = providerTools?.wb_edit_code;
+    expect(providerEditTool?.inputSchema?.jsonSchema?.anyOf).toHaveLength(4);
+    expect(providerDrawTool?.inputSchema?.jsonSchema?.required).toContain('expectedLastSeq');
+    expect(
+      providerDrawTool?.inputSchema?.jsonSchema?.properties?.expectedLastSeq?.description,
+    ).toContain('Copy nextMutation.expectedLastSeq exactly');
+    expect(providerDrawTool?.inputSchema?.jsonSchema?.properties?.expectedLastSeq).toMatchObject({
+      type: ['integer', 'null'],
+      minimum: 0,
+    });
+    expect(JSON.stringify(childPayloads[1]?.options.messages)).toContain(
+      'nextMutation\\\":{\\\"expectedLastSeq\\\":null',
+    );
+    expect(JSON.stringify(childPayloads[2]?.options.messages)).toContain('committedSeq');
+
+    expect(events).toContainEqual({
+      type: 'whiteboard',
+      data: expect.objectContaining({
+        kind: 'visibility_query',
+        stageId: 'stage-1',
+      }),
+    });
+    expect(events).toContainEqual({
+      type: 'whiteboard',
+      data: { kind: 'projection', stageId: 'stage-1', lastSeq: 0 },
+    });
+    expect(
+      events.some((event) => event.type === 'action' && event.data?.actionName === 'wb_draw_text'),
+    ).toBe(false);
+    expect(events.find((event) => event.type === 'done')).toMatchObject({
+      data: { totalAgents: 1, totalActions: 1, agentHadContent: true },
+    });
+
+    const provider = await mocks.getServerPersistenceProvider.mock.results[0]?.value;
+    const sessions = await provider.runtimeStore.listSessions('stage-1', 'learner-route-test');
+    expect(sessions).toHaveLength(1);
+    const records: RuntimeRecord[] = await provider.runtimeStore.listRecords(sessions[0]!.id);
+    expect(records).toHaveLength(1);
+    expect(records[0]?.seq).toBe(0);
+  }, 15_000);
+
+  it('executes wb_draw_text → wb_delete through the production route in one Child', async () => {
+    process.env.NEXT_PUBLIC_PERSISTENCE = '1';
+    process.env.DATABASE_URL = 'postgres://shared-provider-test';
+    process.env.PERSISTENCE_DEV_TOKEN = 'persistence-test-token';
+    const directorResponses = [
+      [toolCall('read-1', 'read_scene', { sceneId: 'scene-current' }), finish('tool-calls')],
+      [
+        toolCall('delegate-1', 'call_agent', {
+          agentId: 'teacher-1',
+          instruction: 'Draw one temporary label, then delete that exact label.',
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('cue-1', 'cue_user', { prompt: 'Continue?' }), finish('tool-calls')],
+    ];
+    const payloads: Array<{ source: string; options: Record<string, unknown> }> = [];
+    let childTransport = 0;
+    mocks.streamLLM.mockImplementation((options, source) => {
+      payloads.push({ source, options });
+      if (source !== 'pi-chat-native-child') {
+        return resultFrom(directorResponses.shift() ?? [finish('stop')]);
+      }
+      childTransport += 1;
+      if (childTransport === 1) {
+        return resultFrom([toolCall('wb-read-1', 'wb_read', {}), finish('tool-calls')]);
+      }
+      if (childTransport === 2) {
+        return resultFrom([
+          toolCall('wb-draw-1', 'wb_draw_text', {
+            expectedLastSeq: null,
+            content: 'Temporary Runtime label',
+            x: 80,
+            y: 100,
+          }),
+          finish('tool-calls'),
+        ]);
+      }
+      if (childTransport === 3) {
+        const elementId = JSON.stringify(options.messages).match(
+          /native-wb-element:[0-9a-f]{64}/u,
+        )?.[0];
+        expect(elementId).toBeDefined();
+        return resultFrom([
+          toolCall('wb-delete-1', 'wb_delete', {
+            expectedLastSeq: 0,
+            elementId,
+          }),
+          finish('tool-calls'),
+        ]);
+      }
+      return resultFrom([finish('stop')]);
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(
+      makeRequest({
+        config: {
+          agentIds: ['teacher-1'],
+          piEnableWhiteboardTools: true,
+          agentConfigs: [
+            {
+              id: 'teacher-1',
+              name: 'Teacher',
+              role: 'teacher',
+              persona: 'Use the whiteboard directly.',
+              avatar: '',
+              color: '#3366ff',
+              allowedActions: ['wb_draw_text', 'wb_delete'],
+              priority: 10,
+            },
+          ],
+        },
+      }),
+    );
+    const events = await readSseEvents(response);
+
+    expect(response.status).toBe(200);
+    const childPayloads = payloads.filter((payload) => payload.source === 'pi-chat-native-child');
+    expect(childPayloads).toHaveLength(4);
+    expect(JSON.stringify(childPayloads[2]?.options.messages)).toContain('wb-draw-1');
+    expect(JSON.stringify(childPayloads[2]?.options.messages)).toContain('committedSeq');
+    expect(JSON.stringify(childPayloads[3]?.options.messages)).toContain('wb-delete-1');
+    expect(JSON.stringify(childPayloads[3]?.options.messages)).toContain('elementId');
+
+    expect(
+      events.filter((event) => event.type === 'whiteboard' && event.data?.kind === 'projection'),
+    ).toEqual([
+      {
+        type: 'whiteboard',
+        data: { kind: 'projection', stageId: 'stage-1', lastSeq: 0 },
+      },
+      {
+        type: 'whiteboard',
+        data: { kind: 'projection', stageId: 'stage-1', lastSeq: 1 },
+      },
+    ]);
+    expect(events.filter((event) => event.type === 'action')).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'agent_start')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'agent_end')).toHaveLength(1);
+    expect(events.find((event) => event.type === 'done')).toMatchObject({
+      data: { totalAgents: 1, totalActions: 2, agentHadContent: true },
+    });
+
+    const provider = await mocks.getServerPersistenceProvider.mock.results[0]?.value;
+    const sessions = await provider.runtimeStore.listSessions('stage-1', 'learner-route-test');
+    expect(sessions).toHaveLength(1);
+    const records: RuntimeRecord[] = await provider.runtimeStore.listRecords(sessions[0]!.id);
+    expect(records.map((record) => record.seq)).toEqual([0, 1]);
+    expect(
+      records.map(
+        (record) => (record.payload as { operation?: { kind?: string } }).operation?.kind,
+      ),
+    ).toEqual(['element_added', 'element_deleted']);
+  }, 15_000);
+
+  it.each([
+    {
+      name: 'an invalid request-start Stage ID',
+      request: () =>
+        makeRequest({
+          storeState: {
+            stage: { id: '   ', name: 'Invalid Stage', createdAt: 1, updatedAt: 2 },
+            outlines: [],
+            scenes: [
+              {
+                id: 'scene-current',
+                stageId: '   ',
+                title: 'Current slide',
+                order: 1,
+                type: 'slide',
+                content: { type: 'slide', canvas: { elements: [] } },
+              },
+            ],
+            currentSceneId: 'scene-current',
+            mode: 'autonomous',
+            whiteboardOpen: false,
+          },
+          config: {
+            agentIds: ['teacher-1'],
+            piEnableWhiteboardTools: true,
+            agentConfigs: [
+              {
+                id: 'teacher-1',
+                name: 'Teacher',
+                role: 'teacher',
+                persona: 'Teach directly.',
+                avatar: '',
+                color: '#3366ff',
+                allowedActions: ['wb_draw_text'],
+                priority: 10,
+              },
+            ],
+          },
+        }),
+    },
+    {
+      name: 'a missing learner binding',
+      request: () =>
+        makeRequest(
+          {
+            config: {
+              agentIds: ['teacher-1'],
+              piEnableWhiteboardTools: true,
+              agentConfigs: [
+                {
+                  id: 'teacher-1',
+                  name: 'Teacher',
+                  role: 'teacher',
+                  persona: 'Teach directly.',
+                  avatar: '',
+                  color: '#3366ff',
+                  allowedActions: ['wb_draw_text'],
+                  priority: 10,
+                },
+              ],
+            },
+          },
+          { authorization: 'Bearer persistence-test-token' },
+        ),
+    },
+  ])('keeps the Native WB bundle absent for $name', async ({ request }) => {
+    process.env.NEXT_PUBLIC_PERSISTENCE = '1';
+    process.env.DATABASE_URL = 'postgres://shared-provider-test';
+    process.env.PERSISTENCE_DEV_TOKEN = 'persistence-test-token';
+    const directorResponses = [
+      [toolCall('read-1', 'read_scene', { sceneId: 'scene-current' }), finish('tool-calls')],
+      [
+        toolCall('delegate-1', 'call_agent', {
+          agentId: 'teacher-1',
+          instruction: 'Give one short explanation.',
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('cue-1', 'cue_user', { prompt: 'Continue?' }), finish('tool-calls')],
+    ];
+    const childResponses = [
+      [{ type: 'text-delta', text: 'No whiteboard capability.' }, finish('stop')],
+    ];
+    const payloads: Array<{ source: string; options: Record<string, unknown> }> = [];
+    mocks.streamLLM.mockImplementation((options, source) => {
+      payloads.push({ source, options });
+      const parts =
+        source === 'pi-chat-native-child' ? childResponses.shift() : directorResponses.shift();
+      return resultFrom(parts ?? [finish('stop')]);
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    await response.text();
+
+    expect(mocks.getServerPersistenceProvider).not.toHaveBeenCalled();
+    const child = payloads.find((payload) => payload.source === 'pi-chat-native-child');
+    expect(child?.options.tools).not.toHaveProperty('wb_read');
+    expect(child?.options.tools).not.toHaveProperty('wb_draw_text');
+  });
+
+  it('keeps Pi chat available without WB inventory when persistence initialization fails', async () => {
+    process.env.NEXT_PUBLIC_PERSISTENCE = '1';
+    process.env.DATABASE_URL = 'postgres://unavailable-provider-test';
+    process.env.PERSISTENCE_DEV_TOKEN = 'persistence-test-token';
+    mocks.getServerPersistenceProvider.mockRejectedValue(new Error('pool unavailable'));
+    const directorResponses = [
+      [toolCall('read-1', 'read_scene', { sceneId: 'scene-current' }), finish('tool-calls')],
+      [
+        toolCall('delegate-1', 'call_agent', {
+          agentId: 'teacher-1',
+          instruction: 'Give one short explanation.',
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('cue-1', 'cue_user', { prompt: 'Continue?' }), finish('tool-calls')],
+    ];
+    const childResponses = [
+      [{ type: 'text-delta', text: 'Whiteboard is unavailable.' }, finish('stop')],
+    ];
+    const payloads: Array<{ source: string; options: Record<string, unknown> }> = [];
+    mocks.streamLLM.mockImplementation((options, source) => {
+      payloads.push({ source, options });
+      const parts =
+        source === 'pi-chat-native-child' ? childResponses.shift() : directorResponses.shift();
+      return resultFrom(parts ?? [finish('stop')]);
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(
+      makeRequest({
+        config: {
+          agentIds: ['teacher-1'],
+          piEnableWhiteboardTools: true,
+          agentConfigs: [
+            {
+              id: 'teacher-1',
+              name: 'Teacher',
+              role: 'teacher',
+              persona: 'Teach directly.',
+              avatar: '',
+              color: '#3366ff',
+              allowedActions: ['wb_draw_shape'],
+              priority: 10,
+            },
+          ],
+        },
+      }),
+    );
+    await response.text();
+
+    expect(response.status).toBe(200);
+    expect(mocks.getServerPersistenceProvider).toHaveBeenCalledOnce();
+    const child = payloads.find((payload) => payload.source === 'pi-chat-native-child');
+    expect(child?.options.tools).not.toHaveProperty('wb_read');
+    expect(child?.options.tools).not.toHaveProperty('wb_draw_shape');
+  });
 
   it('keeps the production route on Legacy when the Native runtime flag is absent', async () => {
     delete process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME;

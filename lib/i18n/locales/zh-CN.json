@@ -3,7 +3,11 @@
     "you": "你",
     "confirm": "确定",
     "cancel": "取消",
-    "loading": "加载中..."
+    "loading": "加载中...",
+    "errorPrefix": "错误：",
+    "loadingClassroom": "正在加载课堂...",
+    "retry": "重试",
+    "close": "关闭"
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
@@ -51,6 +55,14 @@
     "exportFailed": "导出失败",
     "classroomZip": "导出课堂 ZIP",
     "classroomZipDesc": "课程结构 + 媒体文件",
+    "scriptMd": "下载演讲稿 (.md)",
+    "scriptMdDesc": "以 Markdown 导出语音播报文字",
+    "script": "下载演讲稿",
+    "scriptDocx": "下载演讲稿 (.docx)",
+    "scriptDocxDesc": "真正的 Word DOCX 文档",
+    "slideFallback": "幻灯片 {{order}}",
+    "textOnly": "导出演讲稿",
+    "mediaPending": "等待媒体生成完成",
     "inlinePartial": "{{count}} 个外部资源未能打包，离线时课程可能无法正常显示。",
     "video": "导出视频",
     "videoDesc": "自包含 Hyperframes 工程（可渲染为 MP4）",
@@ -122,6 +134,22 @@
     "error": {
       "emptyAgentResponses": "智能体连续无响应,讨论已停止。请重新尝试或检查模型配置。",
       "streamInterrupted": "数据流意外中断,讨论未能完成。请重新尝试。"
+    },
+    "elementReference": {
+      "button": "引用课件",
+      "unavailable": "仅可引用当前 PPT 页面",
+      "instruction": "点击一个课件元素 · Esc 退出",
+      "fallback": "其他课件元素（{{count}}）",
+      "clear": "取消课件引用",
+      "summary": {
+        "noText": "无文字",
+        "emptyContent": "无内容",
+        "code": "代码",
+        "line": "线条",
+        "imageMetadata": "图片（仅引用元数据）",
+        "videoMetadata": "视频（仅引用元数据）",
+        "audioMetadata": "音频（仅引用元数据）"
+      }
     },
     "tabs": {
       "lecture": "笔记",
@@ -219,13 +247,6 @@
       "interactive": "互动",
       "pbl": "PBL"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "另一个标签页正在编辑此课程",
-        "body": "编辑模式同一时间只允许一个标签页持有，避免变更冲突。请先关闭其他标签页（或等待对方会话超时），再在此进入编辑模式。",
-        "actionDismiss": "知道了"
-      }
-    },
     "text": {
       "toolbar": "文本工具栏",
       "label": "文本",
@@ -288,6 +309,8 @@
       "tableDimensions": "{{rows}} x {{columns}} 表格",
       "dragToolbar": "拖动工具栏",
       "dragToolbarKeyboard": "移动工具栏：按回车或空格开始，再使用方向键移动",
+      "collapseToolbar": "收起插入工具",
+      "expandToolbar": "展开插入工具",
       "image": "图片",
       "imageDrop": "拖入图片或点击选择文件",
       "imageOr": "或粘贴图片 URL",
@@ -349,7 +372,10 @@
       "deckLabel": "场景",
       "moreActions": "更多操作",
       "rename": "重命名",
-      "sceneIncomplete": "本页内容不完整"
+      "sceneIncomplete": "本页内容不完整",
+      "addPage": "新增页面",
+      "nextPage": "下一页",
+      "prevPage": "上一页"
     },
     "zorder": {
       "toFront": "置于顶层",
@@ -532,11 +558,13 @@
       "discussionDesc": "抛出问题，指定发起同学"
     },
     "tts": {
+      "cancelPreview": "取消试听",
       "preview": "试听",
       "regenerate": "重新生成配音",
       "statusReady": "已配音",
       "statusNone": "未配音",
       "statusGenerating": "生成中",
+      "stopPreview": "停止试听",
       "statusError": "失败"
     },
     "pick": {
@@ -546,7 +574,10 @@
       "expand": "展开",
       "collapse": "折叠",
       "noElements": "这一页没有可定位的元素。",
-      "bindHint": "点画布上高亮的元素绑定"
+      "bindHint": "点画布上高亮的元素绑定",
+      "refCapHint": "已达上限，取消一个再换 · Esc 结束",
+      "refHint": "点击加入或取消 · Esc 结束",
+      "refLead": "引用元素 · {{count}}/{{max}}"
     },
     "regen": {
       "title": "重新生成讲解",
@@ -601,7 +632,18 @@
       "moveDown": "下移",
       "removeFromClass": "移出课堂",
       "aiClassmates": "AI 同学 · {{count}}",
-      "addRole": "添加角色"
+      "addRole": "添加角色",
+      "shortTitle": "阵容"
+    },
+    "elementRef": {
+      "remove": "移除引用 {{label}}",
+      "counts": "已引用 {{count}}/{{max}}",
+      "exitPicking": "完成选取",
+      "startPicking": "引用元素"
+    },
+    "dock": {
+      "elementRefHint": "元素引用 —— 选中元素随下一条消息发给 Agent",
+      "globalTools": "全局工具"
     }
   },
   "classroomComplete": {
@@ -963,7 +1005,10 @@
     "deleteFolderOnly": "仅删除文件夹",
     "deleteFolderAndCourses": "删除文件夹和 {{count}} 门课程",
     "deleteFolderConfirmRemove": "将删除文件夹及其课程（含聊天记录），不可恢复。",
-    "deleteFolderAndCourses_other": "删除文件夹和 {{count}} 门课程"
+    "deleteFolderAndCourses_other": "删除文件夹和 {{count}} 门课程",
+    "notFound": "找不到这门课程",
+    "notFoundDesc": "课程不存在，或已被删除。",
+    "backToHome": "返回首页"
   },
   "upload": {
     "pdfSizeLimit": "支持最大50MB的PDF文件",
@@ -1393,6 +1438,16 @@
     "voxcpmStopPreview": "停止试听",
     "voxcpmPreviewVoice": "试听音色",
     "voxcpmDeleteVoice": "删除音色",
+    "qwenCloneVoicesTitle": "Qwen TTS 克隆音色",
+    "qwenCloneRefText": "请输入与参考音频完全一致的逐字文本",
+    "qwenCloneRefAudioHint": "请使用 1–60 秒的干净人声，推荐 10–20 秒；音频会转换为 24 kHz 单声道 PCM WAV。",
+    "qwenCloneSaved": "Qwen 克隆音色已注册并保存",
+    "qwenCloneSaveFailed": "Qwen 克隆音色注册失败",
+    "qwenCloneUnsupported": "当前浏览器不支持录音，请改为上传音频文件。",
+    "qwenCloneSpeedHint": "克隆音色始终以 1× 语速合成。",
+    "qwenCloneDeleteWarning": "音色已从本地移除，但服务商端删除失败。",
+    "qwenCloneNarrationUnavailable": "指定音色不可用，旁白将改用其他可用音色。",
+    "qwenCloneDiscussionUnavailable": "指定音色不可用，讨论将改用其他可用音色。",
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "浏览器原生 ASR",
     "providerQwenASR": "Qwen ASR（阿里云百炼）",
@@ -1789,9 +1844,132 @@
       "capabilities": "套餐提供的能力",
       "offeredNote": "套餐提供的模型清单。请在生成界面选择需要使用的模型——是否可用取决于你的套餐档位，不支持的模型会在生成时报错。"
     },
+    "skills": {
+      "nav": "技能",
+      "title": "Skill 设置",
+      "description": "查看当前账号已安装的技能，查看详情，或下载为 zip 以便分享和备份。",
+      "mySkills": "我的技能",
+      "builtinSkills": "内置技能",
+      "emptyMySkills": "还没有自己的技能——在对话里让 agent 从历史创建一个。",
+      "emptyBuiltinSkills": "暂无内置技能。",
+      "listFailed": "技能列表加载失败",
+      "retry": "重试",
+      "badgeBuiltin": "内置",
+      "badgeOwner": "我的技能",
+      "badgeConstraints": "含约束",
+      "details": "详情",
+      "download": "下载",
+      "detailFailed": "技能详情加载失败",
+      "contentLabel": "正文",
+      "builtinDetailNote": "该技能随 OpenMAIC 提供。下载后可导入其他智能体工作台。",
+      "upload": "上传",
+      "uploading": "正在上传…",
+      "uploadFailed": "技能上传失败。请检查文件后重试。",
+      "delete": "删除",
+      "deleting": "正在删除…",
+      "deleteTitle": "删除技能？",
+      "deleteConfirm": "这会从你的账号中移除该技能，且无法撤销。",
+      "deleteFailed": "技能删除失败，请重试。"
+    },
     "ttsBrowserNativeTimelineNotice": "浏览器内置 TTS 不支持编辑器时间轴的音频功能（试听、重新生成、全部配音）。切换到托管 TTS 提供方即可逐句生成和管理音频。",
     "alidocmindAccessKeyId": "AccessKey ID",
     "alidocmindAccessKeySecret": "AccessKey Secret"
+  },
+  "workspace": {
+    "untitledCourse": "未命名课堂",
+    "sceneCount": "{{count}} 页",
+    "sceneCount_one": "{{count}} 页",
+    "sceneCount_other": "{{count}} 页",
+    "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkMore": "还有 {{count}} 节课堂",
+    "courseMention": {
+      "title": "为这条消息引用课堂",
+      "empty": "没有匹配的课堂",
+      "alreadyNamed": "已引用",
+      "remove": "移除{{name}}",
+      "pillHint": "这条消息引用了「{{name}}」",
+      "notAccepted": "服务暂时不可用，请稍后重试。",
+      "reference": "引用「{{name}}」",
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+    },
+    "heroTitle": "今天想创造点什么？",
+    "heroSubtitle": "说出你的想法，把它变成一段可以亲历的学习旅程",
+    "newSession": "新建对话",
+    "sections": {
+      "courses": "课程",
+      "sessions": "对话"
+    },
+    "coursesEmpty": "还没有课程",
+    "sessionsEmpty": "还没有对话",
+    "loading": "加载中",
+    "loadFailed": "加载失败",
+    "retry": "重试",
+    "untitledSession": "未命名对话",
+    "pagePosition": "第 {{index}} / {{total}} 页",
+    "exitPro": "退出 Pro",
+    "navAria": "工作区导航",
+    "homeAria": "返回首页",
+    "currentSession": "当前对话",
+    "startLearning": "开始学习",
+    "time": {
+      "justNow": "刚刚",
+      "minutesAgo": "{{count}} 分钟前",
+      "hoursAgo": "{{count}} 小时前",
+      "daysAgo": "{{count}} 天前"
+    },
+    "sessionStatus": {
+      "connecting": "连接中",
+      "queued": "排队中",
+      "running": "进行中",
+      "succeeded": "已就绪",
+      "failed": "需处理",
+      "cancelled": "已停止"
+    },
+    "backToWorkspace": "返回工作区",
+    "searchPlaceholder": "按名称筛选",
+    "searchAria": "在{{section}}中搜索",
+    "searchEmpty": "没有匹配的内容",
+    "showMore": "展示更多 {{count}}",
+    "showLess": "收起",
+    "utilitiesAria": "偏好设置与账号",
+    "resizeAria": "拖动调整侧栏宽度",
+    "chatPaneAria": "对话面板",
+    "classroomPaneAria": "课堂",
+    "collapseNav": "收起导航",
+    "expandNav": "展开导航",
+    "expandNavInto": "展开导航 · {{section}}",
+    "collapseChat": "收起对话",
+    "expandChat": "对话",
+    "collapseClassroom": "收起课堂",
+    "expandClassroom": "课堂",
+    "readOnlyBadge": "只读",
+    "noCourseTitle": "还没有打开课堂",
+    "noCourseHint": "点对话里的课堂链接打开，或在左侧列表里选一节；对话会一直在这儿",
+    "resizeChatAria": "拖动调整对话栏宽度",
+    "firstPageLanding": "第一页正在落库…",
+    "autoSaving": "自动保存中…",
+    "autoSaved": "已保存",
+    "collapsedTitle": "两侧面板都收起了",
+    "collapsedHint": "点左边的标签，把对话或课堂展开",
+    "moreUtilities": "更多",
+    "rowMore": "{{name}}的更多操作",
+    "folderDeleteHint": "文件夹里的课堂会回到列表顶层，不会被删除。",
+    "dropToUnfile": "放到这里移出文件夹",
+    "renameInvalid": "名称需为 1–120 个字符",
+    "renameForbidden": "这节课不是你创建的，不能重命名",
+    "renameGone": "课堂不存在或已被删除",
+    "renameSession": "重命名对话",
+    "renameSessionAria": "重命名对话“{{name}}”",
+    "renameSessionFailed": "重命名失败，请重试",
+    "delete": "删除",
+    "confirmDelete": "确认删除",
+    "deleting": "删除中…",
+    "deleteFailed": "删除失败，请重试",
+    "tabsAria": "对话与课程",
+    "courseTabsAria": "右栏标签页",
+    "courseTabClose": "关闭标签页《{{name}}》",
+    "courseTabRunning": "生成中",
+    "foldersUnavailable": "此版本不支持文件夹"
   },
   "profile": {
     "title": "个人资料",
@@ -1823,5 +2001,34 @@
     "title": "请输入访问码",
     "placeholder": "访问码",
     "error": "访问码错误，请重试。"
+  },
+  "proMode": {
+    "attach": "添加材料",
+    "mentionCourse": "引用课堂",
+    "loadSkill": "加载 skill",
+    "skillMenuTitle": "选择课程设计技能",
+    "skillsLoading": "正在加载 skill…",
+    "noSkillsAvailable": "暂无可用 skill",
+    "userSkillsGroup": "我的 Skill",
+    "builtinSkillsGroup": "内置 Skill",
+    "skillsLoadFailed": "Skill 加载失败，点击重试",
+    "retrySkills": "重试",
+    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+    "badgeAria": "专业模式",
+    "badgeEnter": "专业模式",
+    "badgeExit": "返回普通模式",
+    "launchPlaceholder": "描述你想创造的学习体验",
+    "launchSend": "开始构建"
+  },
+  "workbench": {
+    "tool": {
+      "label": {
+        "extractMaterial": null,
+        "waitMaterials": null
+      },
+      "error": {
+        "materialExtraction": null
+      }
+    }
   }
 }

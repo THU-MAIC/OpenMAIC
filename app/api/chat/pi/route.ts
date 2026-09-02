@@ -25,6 +25,15 @@ import { apiError } from '@/lib/server/api-response';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
+import { authenticatePersistenceHeaders } from '@/lib/persistence/server-auth';
+import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
+import { createWhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
+import { hasNativeWhiteboardAction } from '@/lib/chat/pi/tools/native-whiteboard';
+import {
+  ELEMENT_REFERENCE_ACCEPTED_HEADER,
+  ElementReferenceValidationError,
+  resolveSlideElementReference,
+} from '@/lib/chat/pi/element-reference';
 
 const log = createLogger('Pi Chat API');
 
@@ -54,6 +63,16 @@ export async function POST(req: NextRequest) {
 
     if (!body.config || body.config.agentIds == null) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: config.agentIds');
+    }
+
+    let elementReference;
+    try {
+      elementReference = resolveSlideElementReference(body);
+    } catch (error) {
+      if (error instanceof ElementReferenceValidationError) {
+        return apiError('INVALID_REQUEST', 400, error.message);
+      }
+      throw error;
     }
 
     const agentIds = body.config.agentIds;
@@ -130,6 +149,42 @@ export async function POST(req: NextRequest) {
     const enableWhiteboardTools = body.config.piEnableWhiteboardTools === true;
     const childRuntimeMode = isPiNativeChildRuntimeEnabled() ? 'native' : 'legacy';
     const enableNativeChildSpotlight = isPiNativeChildSpotlightEnabled();
+    const requestStartStageId = body.storeState.stage?.id;
+    const validRequestStartStageId =
+      typeof requestStartStageId === 'string' &&
+      requestStartStageId.length > 0 &&
+      requestStartStageId === requestStartStageId.trim()
+        ? requestStartStageId
+        : undefined;
+    const nativeWhiteboardRequested = agentConfigs.some((agent) =>
+      hasNativeWhiteboardAction(agent.allowedActions),
+    );
+    let nativeWhiteboardService: ReturnType<typeof createWhiteboardRuntimeService> | undefined;
+    let nativeWhiteboardLearnerKey: string | undefined;
+    if (
+      childRuntimeMode === 'native' &&
+      enableWhiteboardTools &&
+      nativeWhiteboardRequested &&
+      validRequestStartStageId &&
+      process.env.NEXT_PUBLIC_PERSISTENCE === '1' &&
+      process.env.DATABASE_URL &&
+      process.env.PERSISTENCE_DEV_TOKEN
+    ) {
+      const principal = authenticatePersistenceHeaders(req.headers);
+      const learnerKey = principal?.learnerKey;
+      if (learnerKey && learnerKey === learnerKey.trim()) {
+        try {
+          const provider = await getServerPersistenceProvider(process.env.DATABASE_URL);
+          nativeWhiteboardLearnerKey = learnerKey;
+          nativeWhiteboardService = createWhiteboardRuntimeService({
+            store: provider.runtimeStore,
+            resolveLearnerKey: () => learnerKey,
+          });
+        } catch {
+          log.warn('Native whiteboard capability unavailable: persistence initialization failed');
+        }
+      }
+    }
     let nativeWebSearchConfig: ReturnType<typeof resolveClassroomWebSearchConfig>;
     try {
       nativeWebSearchConfig =
@@ -170,6 +225,7 @@ export async function POST(req: NextRequest) {
 
         await runPiDirectorLoop({
           body,
+          elementReference,
           agentConfigs,
           send,
           languageModel,
@@ -184,6 +240,14 @@ export async function POST(req: NextRequest) {
           childRuntimeMode,
           enableNativeChildSpotlight,
           nativeWebSearchConfig,
+          nativeWhiteboardService,
+          nativeWhiteboardStageId: nativeWhiteboardService ? validRequestStartStageId : undefined,
+          nativeWhiteboardLearnerKey,
+          requestStartManualVisibilityRevision:
+            Number.isSafeInteger(body.storeState.whiteboardManualVisibilityRevision) &&
+            (body.storeState.whiteboardManualVisibilityRevision ?? -1) >= 0
+              ? body.storeState.whiteboardManualVisibilityRevision
+              : 0,
         });
 
         if (signal.aborted) {
@@ -224,6 +288,7 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
+        ...(elementReference ? { [ELEMENT_REFERENCE_ACCEPTED_HEADER]: '1' } : {}),
       },
     });
   } catch (error) {

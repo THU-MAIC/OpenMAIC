@@ -34,8 +34,8 @@ import type {
 } from '../types';
 import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
+import { requireModel } from '../require-model';
 
-const DEFAULT_MODEL = 'doubao-seedance-2-0-260128';
 const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
 const POLL_INTERVAL_MS = 5000;
 
@@ -142,7 +142,7 @@ export async function submitSeedanceTask(
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
 
   const body: Record<string, unknown> = {
-    model: config.model || DEFAULT_MODEL,
+    model: requireModel(config.model, 'Seedance'),
     content: [
       {
         type: 'text',

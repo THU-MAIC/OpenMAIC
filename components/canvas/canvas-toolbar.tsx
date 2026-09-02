@@ -15,6 +15,7 @@ import {
   Repeat,
   Maximize2,
   Minimize2,
+  Quote,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store';
@@ -54,6 +55,10 @@ export interface CanvasToolbarProps {
   readonly onToggleAutoPlay?: () => void;
   readonly playbackSpeed?: number;
   readonly onCycleSpeed?: () => void;
+  readonly showElementReference?: boolean;
+  readonly canPickSlideElement?: boolean;
+  readonly elementPickActive?: boolean;
+  readonly onToggleElementPick?: () => void;
 }
 
 /* Compact control button */
@@ -115,6 +120,10 @@ export function CanvasToolbar({
   onToggleAutoPlay,
   playbackSpeed = 1,
   onCycleSpeed,
+  showElementReference,
+  canPickSlideElement,
+  elementPickActive,
+  onToggleElementPick,
 }: CanvasToolbarProps) {
   const { t } = useI18n();
   const remainingSoftCloseSeconds = useSoftCloseCountdown(softCloseDeadline);
@@ -417,6 +426,34 @@ export function CanvasToolbar({
               <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-violet-500 dark:bg-violet-400 rounded-full" />
             )}
           </button>
+
+          {showElementReference && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleElementPick?.();
+              }}
+              disabled={!canPickSlideElement}
+              className={cn(
+                'relative flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-all',
+                elementPickActive
+                  ? 'bg-violet-500/15 text-violet-700 ring-1 ring-violet-400/40 dark:text-violet-300'
+                  : 'text-gray-500 hover:bg-gray-500/[0.08] dark:text-gray-400',
+                !canPickSlideElement && 'cursor-not-allowed opacity-35',
+              )}
+              aria-label={t('chat.elementReference.button')}
+              aria-pressed={elementPickActive}
+              title={
+                canPickSlideElement
+                  ? t('chat.elementReference.button')
+                  : t('chat.elementReference.unavailable')
+              }
+            >
+              <Quote className="h-3.5 w-3.5" />
+              <span>{t('chat.elementReference.button')}</span>
+            </button>
+          )}
         </div>
       </div>
 

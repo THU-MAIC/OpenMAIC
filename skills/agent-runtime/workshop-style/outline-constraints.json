@@ -1,0 +1,12 @@
+{
+  "$comment": "Structural constraints for the workshop-style skill. The style's claim is a concept-then-do cadence, so the checkable half is the hands-on share — expressed as a ratio rather than a slide ceiling so it holds at any course length, plus an absolute floor so a short workshop still contains real practice. Two things the prose requires cannot be checked here and are deliberately left to the agent: that the final page is an integrating project (the checker has no last-scene rule) and that narration is short and question-first (not structural — it rides in via keyPoints, the roster persona and per-page materialFacts). Rendered into the outline prompt AND checked against the model's output; violations come back to the agent as a tool-result diagnostic so it can re-plan. See lib/server/agent-runtime/skills.ts.",
+  "allowedTypes": ["slide", "quiz", "interactive"],
+  "firstSceneType": "slide",
+  "typeMix": [
+    { "type": "interactive", "min": 3, "minRatio": 0.4 },
+    { "type": "quiz", "min": 2 }
+  ],
+  "allowedWidgetTypes": ["simulation", "diagram", "code", "game", "visualization3d"],
+  "requiredWidgetOutlineFields": ["concept"],
+  "noConsecutiveSameWidgetType": true
+}

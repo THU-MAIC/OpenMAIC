@@ -9,7 +9,7 @@ This reference takes priority over the `accessCode` auto-shortcut in Phase 0: if
 ## Secondary-Development Rules
 
 1. **Read before edit.** Before changing any file, read it (and the symbols it imports) so the edit matches surrounding conventions. Do not paste large code blocks into chat — point the user at `file:line` entry points and let them read.
-2. **Toolchain is hard-required.** `pnpm@10.28.0` (root `packageManager`), Node `>=20.9` (`.nvmrc` pins `22`). Mismatched pnpm will fail install.
+2. **Toolchain is hard-required.** `pnpm@10.28.0` (root `packageManager`), Node `>=22.19.0` (`.nvmrc` pins `22`). Mismatched pnpm will fail install.
 3. **Forking and disabling CI are conditional, not defaults.** Decide per the user's intent — see Development Environment below — instead of reflexively forking every user.
 
 ## Development Environment (Same As Local Deployment)

@@ -82,6 +82,8 @@ export interface VoiceDesign {
  */
 export interface AgentVoiceConfig {
   providerId: string;
+  /** Model the voice was selected or enrolled for, when model-bound. */
+  modelId?: string;
   voiceId: string;
 }
 

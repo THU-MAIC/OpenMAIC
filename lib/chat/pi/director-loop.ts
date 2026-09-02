@@ -19,6 +19,8 @@ import {
   type DirectorSceneEvidencePacket,
 } from './tools/read-scene';
 import type { NativeWebSearchConfig } from './tools/web-search';
+import type { WhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
+import type { ResolvedSlideElementReference } from './element-reference';
 
 function formatSceneEvidenceForDelegation(evidence: DirectorSceneEvidencePacket[]): string {
   return evidence.map((packet) => packet.content).join('\n\n');
@@ -26,6 +28,7 @@ function formatSceneEvidenceForDelegation(evidence: DirectorSceneEvidencePacket[
 
 export async function runPiDirectorLoop(opts: {
   body: StatelessChatRequest;
+  elementReference?: ResolvedSlideElementReference;
   agentConfigs: AgentConfig[];
   send: SendEvent;
   languageModel: LanguageModel;
@@ -40,6 +43,10 @@ export async function runPiDirectorLoop(opts: {
   childRuntimeMode?: ChildRuntimeMode;
   enableNativeChildSpotlight?: boolean;
   nativeWebSearchConfig?: NativeWebSearchConfig;
+  nativeWhiteboardService?: WhiteboardRuntimeService;
+  nativeWhiteboardStageId?: string;
+  nativeWhiteboardLearnerKey?: string;
+  requestStartManualVisibilityRevision?: number;
 }): Promise<void> {
   let totalAgents = 0;
   let totalActions = 0;
@@ -49,6 +56,12 @@ export async function runPiDirectorLoop(opts: {
   let endReason: string | undefined;
   let directorToolCalls = 0;
   const pendingSceneEvidence = new Map<string, DirectorSceneEvidencePacket>();
+  const elementReferenceEvidence = opts.elementReference
+    ? Object.freeze({
+        content: opts.elementReference.childEvidence,
+        metadata: opts.elementReference.evidence,
+      })
+    : undefined;
   const directorToolTrace: DirectorToolTraceEntry[] = [];
   const maxDirectorToolCalls = Math.max(opts.maxAgentTurns * 3, opts.maxAgentTurns + 3);
   const piAgentResponses: AgentTurnSummary[] = [];
@@ -153,6 +166,10 @@ export async function runPiDirectorLoop(opts: {
       childRuntimeMode: opts.childRuntimeMode ?? 'legacy',
       enableNativeChildSpotlight: opts.enableNativeChildSpotlight === true,
       nativeWebSearchConfig: opts.nativeWebSearchConfig,
+      nativeWhiteboardService: opts.nativeWhiteboardService,
+      nativeWhiteboardStageId: opts.nativeWhiteboardStageId,
+      nativeWhiteboardLearnerKey: opts.nativeWhiteboardLearnerKey,
+      requestStartManualVisibilityRevision: opts.requestStartManualVisibilityRevision ?? 0,
       requestStartCurrentScene,
       isUserCued: () => userCued,
       isSessionClosed: () => sessionClosed,
@@ -174,6 +191,7 @@ export async function runPiDirectorLoop(opts: {
           ),
         };
       },
+      elementReferenceEvidence,
     }),
     buildCloseSessionTool({
       closeSession,
@@ -227,7 +245,7 @@ export async function runPiDirectorLoop(opts: {
   });
 
   try {
-    await director.prompt(buildUserPrompt(opts.body));
+    await director.prompt(buildUserPrompt(opts.body, opts.elementReference?.directorSummary));
     await director.waitForIdle();
   } finally {
     compactionRuntime.dispose();
