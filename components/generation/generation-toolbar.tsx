@@ -63,6 +63,14 @@ export interface GenerationToolbarProps {
   onCourseMaterialsAdd: (files: File[]) => void;
   onCourseMaterialRemove: (id: string) => void;
   onPdfError: (error: string | null) => void;
+  /**
+   * When set, the course-material add/remove affordances, the extractor
+   * Select, and the web-search toggle are all disabled (the parent freezes the
+   * material set and the session inputs for the duration of generate-prep).
+   * The parent's handlers are inert under the same flag; this only mirrors it
+   * in the UI.
+   */
+  materialsLocked?: boolean;
 }
 
 // ─── Component ───────────────────────────────────────────────
@@ -74,6 +82,7 @@ export function GenerationToolbar({
   onCourseMaterialsAdd,
   onCourseMaterialRemove,
   onPdfError,
+  materialsLocked = false,
 }: GenerationToolbarProps) {
   const { t } = useI18n();
   const currentProviderId = useSettingsStore((s) => s.providerId);
@@ -166,6 +175,9 @@ export function GenerationToolbar({
   }, [activeDocumentProviderIds, courseMaterials]);
 
   const handleFilesSelect = (incomingFiles: File[]) => {
+    // Belt-and-braces mirror of the parent's freeze guard: while generate-prep
+    // is running the material set must not change, whatever the UI state says.
+    if (materialsLocked) return;
     const supportedFiles = incomingFiles.filter((file) =>
       isMimeSupportedByProviders(
         { mimeType: file.type, fileName: file.name },
@@ -282,6 +294,7 @@ export function GenerationToolbar({
               <Select
                 value={pdfProviderId}
                 onValueChange={(v) => setPDFProvider(v as PDFProviderId)}
+                disabled={materialsLocked}
               >
                 <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
                   <SelectValue />
@@ -325,6 +338,7 @@ export function GenerationToolbar({
                 className="hidden"
                 accept={acceptForCurrentProvider}
                 multiple
+                disabled={materialsLocked}
                 onChange={(e) => {
                   const files = Array.from(e.target.files ?? []);
                   if (files.length > 0) handleFilesSelect(files);
@@ -334,20 +348,24 @@ export function GenerationToolbar({
               <div className="space-y-3">
                 <div
                   className={cn(
-                    'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors cursor-pointer',
+                    'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors',
                     isDragging
                       ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20'
                       : 'border-muted-foreground/20 hover:border-violet-300',
+                    materialsLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
                   )}
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => {
+                    if (!materialsLocked) fileInputRef.current?.click();
+                  }}
                   onDragOver={(e) => {
                     e.preventDefault();
-                    setIsDragging(true);
+                    if (!materialsLocked) setIsDragging(true);
                   }}
                   onDragLeave={() => setIsDragging(false)}
                   onDrop={(e) => {
                     e.preventDefault();
                     setIsDragging(false);
+                    if (materialsLocked) return;
                     const files = Array.from(e.dataTransfer.files ?? []);
                     if (files.length > 0) handleFilesSelect(files);
                   }}
@@ -388,7 +406,13 @@ export function GenerationToolbar({
                             </div>
                             <button
                               onClick={() => onCourseMaterialRemove(file.id)}
-                              className="size-6 rounded-full inline-flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+                              disabled={materialsLocked}
+                              className={cn(
+                                'size-6 rounded-full inline-flex items-center justify-center text-muted-foreground transition-colors',
+                                materialsLocked
+                                  ? 'cursor-not-allowed opacity-40'
+                                  : 'hover:bg-muted',
+                              )}
                               aria-label={t('toolbar.removeCourseMaterial')}
                             >
                               <X className="size-3.5" />
@@ -425,12 +449,14 @@ export function GenerationToolbar({
                   if (!selectedWebSearchAvailable) return;
                   onWebSearchChange(!webSearch);
                 }}
+                disabled={materialsLocked}
                 className={cn(
                   'w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all',
                   webSearch
                     ? 'bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800'
                     : 'border-border hover:bg-muted/50',
                   !selectedWebSearchAvailable && 'opacity-60',
+                  materialsLocked && 'opacity-60 cursor-not-allowed',
                 )}
               >
                 <Globe2

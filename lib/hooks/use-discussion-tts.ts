@@ -5,16 +5,25 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useBrowserTTS } from '@/lib/hooks/use-browser-tts';
 import {
   resolveAgentVoice,
+  resolveNarratorVoiceBinding,
   getSelectableProvidersWithVoices,
   type ResolvedVoice,
 } from '@/lib/audio/voice-resolver';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
-import { useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
+import { useAllVoiceProfiles } from '@/lib/audio/voxcpm-voices';
 import { resolveAgentVoiceOptions } from '@/lib/audio/agent-voice';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { isQwenCloneVoice, resolveTTSModelForVoice } from '@/lib/audio/constants';
+import { toast } from 'sonner';
+import {
+  isVoiceBindingUnavailable,
+  markVoiceBindingNoticeShown,
+  markVoiceBindingUnavailable,
+  trackAssignedVoiceBinding,
+} from '@/lib/audio/unavailable-voice-bindings';
 
 interface DiscussionTTSOptions {
   enabled: boolean;
@@ -30,10 +39,11 @@ interface QueueItem {
   providerId: TTSProviderId;
   modelId?: string;
   voiceId: string;
+  fallbackVoice?: ResolvedVoice;
 }
 
 export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: DiscussionTTSOptions) {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
@@ -43,7 +53,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
   const globalTtsProviderId = useSettingsStore((s) => s.ttsProviderId);
   const globalTtsVoice = useSettingsStore((s) => s.ttsVoice);
   const agentVoiceOverrides = useSettingsStore((s) => s.agentVoiceOverrides);
-  const { profiles: voxcpmProfiles } = useVoxCPMVoiceProfiles();
+  const { profiles: voiceProfiles } = useAllVoiceProfiles();
 
   const queueRef = useRef<QueueItem[]>([]);
   const isPlayingRef = useRef(false);
@@ -56,6 +66,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
   const onAudioStateChangeRef = useRef(onAudioStateChange);
   onAudioStateChangeRef.current = onAudioStateChange;
   const processQueueRef = useRef<() => void>(() => {});
+  const agentBindingKeysRef = useRef(new Map<string, string>());
 
   const {
     speak: browserSpeak,
@@ -110,7 +121,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       // lecture voice (below).
       const providers = getSelectableProvidersWithVoices(
         ttsProvidersConfig,
-        voxcpmProfiles,
+        voiceProfiles,
         browserVoices,
       );
       const firstVoice = (): ResolvedVoice | null =>
@@ -124,6 +135,15 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       const agent = agentId ? agents.find((a) => a.id === agentId) : undefined;
       if (!agent) return firstVoice();
 
+      const globalVoice = resolveNarratorVoiceBinding(
+        undefined,
+        {
+          providerId: globalTtsProviderId,
+          voiceId: globalTtsVoice,
+          modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
+        },
+        ttsProvidersConfig,
+      );
       // Teacher's voice = the global lecture selection, honored VERBATIM (incl.
       // its model) whenever that provider is enabled — identical to what the
       // pre-generated lecture sends (use-scene-generator), so lecture and
@@ -131,23 +151,52 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       // could swap the user's chosen voice. Only if the global provider is itself
       // disabled does the teacher fall back to an enabled provider.
       if (agent.role === 'teacher') {
-        if (isTTSProviderEnabled(globalTtsProviderId, ttsProvidersConfig[globalTtsProviderId])) {
-          return {
+        const resolved = resolveNarratorVoiceBinding(
+          agent.voiceConfig,
+          {
             providerId: globalTtsProviderId,
             voiceId: globalTtsVoice,
             modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
-          };
-        }
-        return firstVoice();
+          },
+          ttsProvidersConfig,
+        );
+        const preferred = isTTSProviderEnabled(
+          resolved.providerId,
+          ttsProvidersConfig[resolved.providerId],
+        )
+          ? resolved
+          : firstVoice();
+        return applyUnavailableBindingFallback(agent.id, preferred, globalVoice, firstVoice);
       }
 
       const index = agentIndexMap.current.get(agentId!) ?? 0;
-      return resolveAgentVoice(agent, index, providers, agentVoiceOverrides);
+      return applyUnavailableBindingFallback(
+        agent.id,
+        resolveAgentVoice(agent, index, providers, agentVoiceOverrides),
+        globalVoice,
+        firstVoice,
+      );
+
+      function applyUnavailableBindingFallback(
+        id: string,
+        preferred: ResolvedVoice | null,
+        fallback: ResolvedVoice,
+        getFirstVoice: () => ResolvedVoice | null,
+      ): ResolvedVoice | null {
+        if (!preferred) return null;
+        const previousKey = agentBindingKeysRef.current.get(id);
+        const key = trackAssignedVoiceBinding(previousKey, preferred);
+        agentBindingKeysRef.current.set(id, key);
+        if (!isVoiceBindingUnavailable(preferred)) return preferred;
+        return isTTSProviderEnabled(fallback.providerId, ttsProvidersConfig[fallback.providerId])
+          ? fallback
+          : getFirstVoice();
+      }
     },
     [
       agents,
       ttsProvidersConfig,
-      voxcpmProfiles,
+      voiceProfiles,
       browserVoices,
       globalTtsProviderId,
       globalTtsVoice,
@@ -208,9 +257,14 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         signal: controller.signal,
       });
 
-      if (!res.ok) throw new Error(`TTS API error: ${res.status}`);
-
       const data = await res.json();
+      if (!res.ok) {
+        const error = new Error(
+          typeof data.error === 'string' ? data.error : `TTS API error: ${res.status}`,
+        ) as Error & { errorCode?: string };
+        if (typeof data.errorCode === 'string') error.errorCode = data.errorCode;
+        throw error;
+      }
       if (!data.base64) throw new Error('No audio in response');
 
       const audioUrl = `data:audio/${data.format || 'mp3'};base64,${data.base64}`;
@@ -247,6 +301,28 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       onAudioStateChangeRef.current?.(item.agentId, 'playing');
       await audio.play();
     } catch (err) {
+      const cloneUnavailable =
+        err &&
+        typeof err === 'object' &&
+        (err as { errorCode?: unknown }).errorCode === 'QWEN_VC_VOICE_NOT_FOUND' &&
+        item.agentId &&
+        item.fallbackVoice;
+      if (cloneUnavailable) {
+        const unavailableKey = markVoiceBindingUnavailable({
+          providerId: item.providerId,
+          voiceId: item.voiceId,
+        });
+        if (markVoiceBindingNoticeShown(unavailableKey)) {
+          toast.warning(t('settings.qwenCloneDiscussionUnavailable'));
+        }
+        queueRef.current.unshift({
+          ...item,
+          providerId: item.fallbackVoice!.providerId,
+          modelId: item.fallbackVoice!.modelId,
+          voiceId: item.fallbackVoice!.voiceId,
+          fallbackVoice: undefined,
+        });
+      }
       if ((err as Error).name !== 'AbortError') {
         console.error('[DiscussionTTS] TTS generation failed:', err);
       }
@@ -258,7 +334,17 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         queueMicrotask(() => processQueueRef.current());
       }
     }
-  }, [agents, enabled, locale, ttsMuted, ttsVolume, ttsProvidersConfig, ttsSpeed, playbackSpeed]);
+  }, [
+    agents,
+    enabled,
+    locale,
+    t,
+    ttsMuted,
+    ttsVolume,
+    ttsProvidersConfig,
+    ttsSpeed,
+    playbackSpeed,
+  ]);
 
   processQueueRef.current = processQueue;
 
@@ -270,14 +356,35 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       const resolved = resolveVoiceForAgent(agentId);
       if (!resolved) return;
       const { providerId, modelId, voiceId } = resolved;
+      const effectiveModelId = resolveTTSModelForVoice(
+        providerId,
+        voiceId,
+        modelId ?? ttsProvidersConfig[providerId]?.modelId,
+      );
+      const fallbackVoice =
+        agentId && providerId === 'qwen-tts' && isQwenCloneVoice(voiceId)
+          ? resolveNarratorVoiceBinding(
+              undefined,
+              {
+                providerId: globalTtsProviderId,
+                voiceId: globalTtsVoice,
+                modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
+              },
+              ttsProvidersConfig,
+            )
+          : undefined;
       queueRef.current.push({
         messageId,
         partId,
         text: fullText,
         agentId,
         providerId,
-        modelId,
+        modelId: effectiveModelId,
         voiceId,
+        ...(fallbackVoice &&
+        (fallbackVoice.providerId !== providerId || fallbackVoice.voiceId !== voiceId)
+          ? { fallbackVoice }
+          : {}),
       });
 
       if (!isPlayingRef.current) {
@@ -286,7 +393,14 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         onAudioStateChangeRef.current?.(agentId, 'generating');
       }
     },
-    [enabled, ttsMuted, resolveVoiceForAgent],
+    [
+      enabled,
+      globalTtsProviderId,
+      globalTtsVoice,
+      resolveVoiceForAgent,
+      ttsMuted,
+      ttsProvidersConfig,
+    ],
   );
 
   const cleanup = useCallback(() => {

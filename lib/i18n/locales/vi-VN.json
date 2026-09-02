@@ -3,7 +3,11 @@
     "you": "Bạn",
     "confirm": "Xác nhận",
     "cancel": "Hủy",
-    "loading": "Đang tải…"
+    "loading": "Đang tải…",
+    "errorPrefix": "Lỗi: ",
+    "loadingClassroom": "Đang tải lớp học...",
+    "retry": "Thử lại",
+    "close": "Đóng"
   },
   "home": {
     "slogan": "Học tập sinh tạo trong lớp học tương tác đa tác nhân",
@@ -131,6 +135,22 @@
       "emptyAgentResponses": "Các tác nhân trả về nội dung rỗng nên thảo luận đã dừng. Hãy thử lại hoặc kiểm tra cài đặt model.",
       "streamInterrupted": "Luồng dữ liệu dừng bất ngờ, thảo luận chưa hoàn tất. Vui lòng thử lại."
     },
+    "elementReference": {
+      "button": "Tham chiếu trang chiếu",
+      "unavailable": "Chỉ có thể tham chiếu trang PPT hiện tại",
+      "instruction": "Nhấp vào một phần tử · Esc để thoát",
+      "fallback": "Các phần tử khác ({{count}})",
+      "clear": "Xóa tham chiếu trang chiếu",
+      "summary": {
+        "noText": "Không có văn bản",
+        "emptyContent": "Không có nội dung",
+        "code": "Mã",
+        "line": "Đường",
+        "imageMetadata": "Hình ảnh (chỉ siêu dữ liệu)",
+        "videoMetadata": "Video (chỉ siêu dữ liệu)",
+        "audioMetadata": "Âm thanh (chỉ siêu dữ liệu)"
+      }
+    },
     "tabs": {
       "lecture": "Ghi chú",
       "chat": "Trò chuyện"
@@ -227,13 +247,6 @@
       "interactive": "Trang tương tác",
       "pbl": "Học theo dự án"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "Một thẻ khác đang sửa bài học này",
-        "body": "Chỉ một thẻ được phép sửa để tránh xung đột nội dung. Hãy đóng thẻ kia (hoặc đợi nó hết phiên) trước khi vào chế độ sửa ở đây.",
-        "actionDismiss": "Đã hiểu"
-      }
-    },
     "text": {
       "toolbar": "Thanh công cụ chữ",
       "label": "Chữ",
@@ -296,6 +309,8 @@
       "tableDimensions": "Bảng {{rows}} x {{columns}}",
       "dragToolbar": "Di chuyển thanh chèn",
       "dragToolbarKeyboard": "Di chuyển thanh chèn: bấm Enter hoặc Space, rồi dùng các phím mũi tên",
+      "collapseToolbar": "Thu gọn công cụ chèn",
+      "expandToolbar": "Mở rộng công cụ chèn",
       "image": "Ảnh",
       "imageDrop": "Kéo ảnh vào đây hoặc bấm để chọn tệp",
       "imageOr": "hoặc dán địa chỉ ảnh",
@@ -357,7 +372,10 @@
       "deckLabel": "Các cảnh",
       "moreActions": "Thêm hành động",
       "rename": "Đổi tên",
-      "sceneIncomplete": "Trang này còn thiếu nội dung"
+      "sceneIncomplete": "Trang này còn thiếu nội dung",
+      "addPage": "Thêm trang",
+      "nextPage": "Trang sau",
+      "prevPage": "Trang trước"
     },
     "zorder": {
       "toFront": "Đưa lên trên cùng",
@@ -540,11 +558,13 @@
       "discussionDesc": "Nêu một câu hỏi và chọn ai mở lời"
     },
     "tts": {
+      "cancelPreview": "Hủy xem trước",
       "preview": "Nghe thử",
       "regenerate": "Tạo lại giọng đọc",
       "statusReady": "Đã lồng tiếng",
       "statusNone": "Chưa lồng tiếng",
       "statusGenerating": "Đang tạo",
+      "stopPreview": "Dừng xem trước",
       "statusError": "Không thành công"
     },
     "pick": {
@@ -554,7 +574,10 @@
       "expand": "Mở rộng",
       "collapse": "Thu gọn",
       "noElements": "Slide này không có đối tượng nào để chọn.",
-      "bindHint": "Bấm vào một đối tượng đang nổi bật trên khung vẽ để gắn"
+      "bindHint": "Bấm vào một đối tượng đang nổi bật trên khung vẽ để gắn",
+      "refCapHint": "Đã đạt giới hạn — bỏ một phần tử để thay · Esc để kết thúc",
+      "refHint": "Nhấp để thêm hoặc bỏ · Esc để kết thúc",
+      "refLead": "Đang tham chiếu phần tử · {{count}}/{{max}}"
     },
     "regen": {
       "title": "Viết lại lời giảng",
@@ -609,7 +632,18 @@
       "moveDown": "Chuyển xuống",
       "removeFromClass": "Bỏ khỏi lớp",
       "aiClassmates": "Bạn học AI · {{count}}",
-      "addRole": "Thêm vai"
+      "addRole": "Thêm vai",
+      "shortTitle": "Danh sách nhân vật"
+    },
+    "elementRef": {
+      "remove": "移除引用 {{label}}",
+      "counts": "Đã tham chiếu {{count}}/{{max}}",
+      "exitPicking": "Xong",
+      "startPicking": "Tham chiếu phần tử"
+    },
+    "dock": {
+      "elementRefHint": "Tham chiếu phần tử — chọn phần tử để gửi kèm tin nhắn tiếp theo",
+      "globalTools": "Công cụ chung"
     }
   },
   "classroomComplete": {
@@ -971,7 +1005,10 @@
     "deleteFolderOnly": "Chỉ xóa thư mục",
     "deleteFolderAndCourses": "Xóa thư mục và {{count}} bài học",
     "deleteFolderAndCourses_other": "Xóa thư mục và {{count}} bài học",
-    "deleteFolderConfirmRemove": "Thao tác này xóa thư mục cùng các bài học bên trong, gồm cả lịch sử trò chuyện."
+    "deleteFolderConfirmRemove": "Thao tác này xóa thư mục cùng các bài học bên trong, gồm cả lịch sử trò chuyện.",
+    "notFound": "Không tìm thấy khóa học",
+    "notFoundDesc": "Khóa học này không tồn tại hoặc đã bị xóa.",
+    "backToHome": "Về trang chủ"
   },
   "upload": {
     "pdfSizeLimit": "Nhận tệp PDF tối đa 50MB",
@@ -1402,6 +1439,16 @@
     "voxcpmStopPreview": "Dừng nghe thử",
     "voxcpmPreviewVoice": "Nghe thử giọng",
     "voxcpmDeleteVoice": "Xóa giọng",
+    "qwenCloneVoicesTitle": "Qwen TTS Cloned Voices",
+    "qwenCloneRefText": "Enter the verbatim transcript of the reference audio",
+    "qwenCloneRefAudioHint": "Use a clean 1–60 second voice sample. A 10–20 second sample is recommended; audio is converted to 24 kHz mono PCM WAV.",
+    "qwenCloneSaved": "Qwen cloned voice registered and saved",
+    "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
+    "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
+    "qwenCloneSpeedHint": "Cloned voices always synthesize at 1× speed.",
+    "qwenCloneDeleteWarning": "The voice was removed locally, but provider deletion failed.",
+    "qwenCloneNarrationUnavailable": "The assigned voice is unavailable. Narration will use another enabled voice instead.",
+    "qwenCloneDiscussionUnavailable": "The assigned voice is unavailable. Discussion will use another enabled voice instead.",
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "Nhận dạng giọng nói sẵn có của trình duyệt",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
@@ -1798,9 +1845,132 @@
       "capabilities": "Khả năng được cung cấp",
       "offeredNote": "Các model gói này cung cấp. Hãy chọn những model bạn muốn hiện trên thanh tạo bài — mức khả dụng tùy hạng gói của bạn, và model không được hỗ trợ sẽ báo lỗi lúc tạo bài."
     },
+    "skills": {
+      "nav": "Skill",
+      "title": "Cài đặt skill",
+      "description": "Duyệt các skill đã cài cho tài khoản của bạn, xem chi tiết một skill và tải xuống dưới dạng zip để chia sẻ hoặc sao lưu.",
+      "mySkills": "Skill của tôi",
+      "builtinSkills": "Skill tích hợp",
+      "emptyMySkills": "Bạn chưa có skill riêng — hãy nhờ agent trong hội thoại tạo một cái từ lịch sử.",
+      "emptyBuiltinSkills": "Không có skill tích hợp nào.",
+      "listFailed": "Không thể tải danh sách skill",
+      "retry": "Thử lại",
+      "badgeBuiltin": "Tích hợp",
+      "badgeOwner": "Skill của tôi",
+      "badgeConstraints": "Có ràng buộc",
+      "details": "Chi tiết",
+      "download": "Tải xuống",
+      "detailFailed": "Không thể tải chi tiết skill",
+      "contentLabel": "Nội dung",
+      "builtinDetailNote": "Skill này đi kèm với OpenMAIC. Tải xuống để nhập vào không gian làm việc của agent khác.",
+      "upload": "Tải lên",
+      "uploading": "Đang tải lên…",
+      "uploadFailed": "Không thể tải skill lên. Hãy kiểm tra tệp và thử lại.",
+      "delete": "Xóa",
+      "deleting": "Đang xóa…",
+      "deleteTitle": "Xóa skill?",
+      "deleteConfirm": "Thao tác này sẽ xóa skill khỏi tài khoản của bạn và không thể hoàn tác.",
+      "deleteFailed": "Không thể xóa skill. Vui lòng thử lại."
+    },
     "ttsBrowserNativeTimelineNotice": "Giọng đọc của trình duyệt không hỗ trợ các chức năng âm thanh trên dòng thời gian của trình sửa (nghe thử, tạo lại, lồng tiếng hàng loạt). Hãy chuyển sang một nhà cung cấp giọng đọc có quản lý để tạo và quản lý âm thanh theo từng dòng.",
     "alidocmindAccessKeyId": "AccessKey ID",
     "alidocmindAccessKeySecret": "AccessKey Secret"
+  },
+  "workspace": {
+    "untitledCourse": "未命名课堂",
+    "sceneCount": "{{count}} 页",
+    "sceneCount_one": "{{count}} 页",
+    "sceneCount_other": "{{count}} 页",
+    "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkMore": "还有 {{count}} 节课堂",
+    "courseMention": {
+      "title": "为这条消息引用课堂",
+      "empty": "没有匹配的课堂",
+      "alreadyNamed": "已引用",
+      "remove": "移除{{name}}",
+      "pillHint": "这条消息引用了「{{name}}」",
+      "notAccepted": "Máy chủ tạm thời không khả dụng. Vui lòng thử lại sau giây lát.",
+      "reference": "引用「{{name}}」",
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+    },
+    "heroTitle": "What will you create today?",
+    "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
+    "newSession": "New chat",
+    "sections": {
+      "courses": "Courses",
+      "sessions": "Chats"
+    },
+    "coursesEmpty": "No courses yet",
+    "sessionsEmpty": "No chats yet",
+    "loading": "Loading",
+    "loadFailed": "Couldn't load",
+    "retry": "Retry",
+    "untitledSession": "Untitled chat",
+    "pagePosition": "Page {{index}} of {{total}}",
+    "exitPro": "Exit Pro",
+    "navAria": "Workspace navigation",
+    "homeAria": "Back to home",
+    "currentSession": "Current chat",
+    "startLearning": "Bắt đầu học",
+    "time": {
+      "justNow": "Just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
+    },
+    "sessionStatus": {
+      "connecting": "Connecting",
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Ready",
+      "failed": "Needs attention",
+      "cancelled": "Stopped"
+    },
+    "backToWorkspace": "Back to workspace",
+    "searchPlaceholder": "Filter by name",
+    "searchAria": "Search {{section}}",
+    "searchEmpty": "No matches",
+    "showMore": "Show {{count}} more",
+    "showLess": "Show less",
+    "utilitiesAria": "Preferences and account",
+    "resizeAria": "Drag to resize the sidebar",
+    "chatPaneAria": "Chat panel",
+    "classroomPaneAria": "Classroom",
+    "collapseNav": "Collapse navigation",
+    "expandNav": "Expand navigation",
+    "expandNavInto": "Expand navigation · {{section}}",
+    "collapseChat": "Collapse conversation",
+    "expandChat": "Conversation",
+    "collapseClassroom": "Collapse classroom",
+    "expandClassroom": "Classroom",
+    "readOnlyBadge": "Read-only",
+    "noCourseTitle": "No course open",
+    "noCourseHint": "Open one from a course link in the conversation, or pick one from the list on the left — the conversation stays put",
+    "resizeChatAria": "Drag to resize the conversation pane",
+    "firstPageLanding": "The first page is landing…",
+    "autoSaving": "Đang tự động lưu…",
+    "autoSaved": "Đã lưu",
+    "collapsedTitle": "Both panes are collapsed",
+    "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
+    "moreUtilities": "More",
+    "rowMore": "Thao tác khác cho {{name}}",
+    "folderDeleteHint": "Các khoá học bên trong sẽ trở về cấp trên cùng, không bị xoá.",
+    "dropToUnfile": "Thả vào đây để đưa ra khỏi thư mục",
+    "renameInvalid": "Tên phải có từ 1 đến 120 ký tự",
+    "renameForbidden": "Bạn không tạo khoá học này nên không thể đổi tên",
+    "renameGone": "Khoá học không còn tồn tại",
+    "renameSession": "Đổi tên cuộc trò chuyện",
+    "renameSessionAria": "Đổi tên cuộc trò chuyện “{{name}}”",
+    "renameSessionFailed": "Đổi tên thất bại, vui lòng thử lại",
+    "delete": "Xóa",
+    "confirmDelete": "Xác nhận xóa",
+    "deleting": "Đang xóa…",
+    "deleteFailed": "Không thể xóa. Vui lòng thử lại.",
+    "tabsAria": "Chats and courses",
+    "courseTabsAria": "Open courses",
+    "courseTabClose": "Close tab: {{name}}",
+    "courseTabRunning": "Generating",
+    "foldersUnavailable": "Thư mục không khả dụng trong bản này"
   },
   "profile": {
     "title": "Trang cá nhân",
@@ -1832,5 +2002,34 @@
     "title": "Nhập mã truy cập",
     "placeholder": "Mã truy cập",
     "error": "Mã truy cập không đúng. Vui lòng thử lại."
+  },
+  "proMode": {
+    "attach": "Đính kèm tài liệu",
+    "mentionCourse": "引用课堂",
+    "loadSkill": "加载 skill",
+    "skillMenuTitle": "选择课程设计技能",
+    "skillsLoading": "正在加载 skill…",
+    "noSkillsAvailable": "暂无可用 skill",
+    "userSkillsGroup": "我的 Skill",
+    "builtinSkillsGroup": "内置 Skill",
+    "skillsLoadFailed": "Skill 加载失败，点击重试",
+    "retrySkills": "重试",
+    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+    "badgeAria": "Chế độ Pro",
+    "badgeEnter": "Chế độ Pro",
+    "badgeExit": "Quay lại chế độ cổ điển",
+    "launchPlaceholder": "Mô tả trải nghiệm học tập bạn muốn tạo",
+    "launchSend": "Bắt đầu tạo"
+  },
+  "workbench": {
+    "tool": {
+      "label": {
+        "extractMaterial": null,
+        "waitMaterials": null
+      },
+      "error": {
+        "materialExtraction": null
+      }
+    }
   }
 }

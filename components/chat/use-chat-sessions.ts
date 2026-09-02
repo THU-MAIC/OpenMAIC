@@ -12,6 +12,7 @@ import {
   type DirectorState,
   type PiSessionBoundaryContext,
   type StatelessEvent,
+  type SlideElementReference,
 } from '@/lib/types/chat';
 import type { DiscussionRequest } from '@/components/roundtable';
 import type { Action, SpotlightAction, DiscussionAction } from '@/lib/types/action';
@@ -165,7 +166,13 @@ export type ChatRequestTemplate = {
   webSearchBaseUrl?: string;
   webSearchModelId?: string;
   baiduSubSources?: BaiduSubSources;
+  elementReference?: SlideElementReference;
 };
+
+export interface ChatMessageSendOptions {
+  elementReference?: SlideElementReference;
+  onResponseAccepted?: (response: Response) => void;
+}
 
 /**
  * One fresh store-state snapshot for an outgoing chat request. Quiz results
@@ -380,7 +387,7 @@ export async function runPiSingleRequest(
   storeDirectorState: (sessionId: string, directorState?: DirectorState) => void,
   onStopSessionRef: { current?: ((payload: SessionCleanupPayload) => void) | undefined },
   t: (key: string) => string,
-  onResponseAccepted?: () => void,
+  onResponseAccepted?: (response: Response) => void,
 ): Promise<void> {
   const consumer = createConsumer(sessionId, controller, sessionType);
   const persistenceHeaders = await getPersistenceRequestHeaders();
@@ -397,7 +404,7 @@ export async function runPiSingleRequest(
   if (!response.body) {
     throw new Error('Pi chat response body is empty');
   }
-  onResponseAccepted?.();
+  onResponseAccepted?.(response);
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -1222,6 +1229,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       requestTemplate: ChatRequestTemplate,
       controller: AbortController,
       sessionType: SessionType,
+      onElementReferenceResponseAccepted?: (response: Response) => void,
     ): Promise<void> => {
       // Attach full configs for generated (non-default) agents so the server can use them.
       // The server-side registry only has default agents; generated agents exist only client-side.
@@ -1259,13 +1267,16 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           storeDirectorState,
           onStopSessionRef,
           t,
-          firstRequestContext
-            ? () => {
-                consumePiSessionBoundaryContext(
-                  piSessionBoundariesRef.current,
-                  sessionId,
-                  firstRequestContext,
-                );
+          firstRequestContext || onElementReferenceResponseAccepted
+            ? (response) => {
+                if (firstRequestContext) {
+                  consumePiSessionBoundaryContext(
+                    piSessionBoundariesRef.current,
+                    sessionId,
+                    firstRequestContext,
+                  );
+                }
+                onElementReferenceResponseAccepted?.(response);
               }
             : undefined,
         );
@@ -1714,7 +1725,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    * Send a message to the active session
    */
   const sendMessage = useCallback(
-    async (content: string): Promise<void> => {
+    async (content: string, options: ChatMessageSendOptions = {}): Promise<void> => {
       let sessionId = activeSessionId;
 
       // Interrupt active generation: abort stream and append "..." to the last agent message
@@ -1882,9 +1893,11 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             providerType: mc.providerType,
             thinkingConfig: mc.thinkingConfig,
             directorState: existingSession?.directorState,
+            ...(options.elementReference ? { elementReference: options.elementReference } : {}),
           },
           controller,
           sessionType,
+          options.onResponseAccepted,
         );
       } catch (error) {
         // Ignore AbortError — it's intentional (user interrupted)

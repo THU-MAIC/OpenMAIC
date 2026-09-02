@@ -20,6 +20,8 @@ export interface DocumentExtractorConfig {
   accessKeySecret?: string;
   /** Allow AliDocMind to use server env credentials (trusted context only). */
   allowEnvFallback?: boolean;
+  /** Skip image extraction when the caller needs text only. */
+  textOnly?: boolean;
 }
 
 export interface DocumentExtractorInput {
@@ -35,6 +37,13 @@ export interface DocumentExtractorProvider {
   displayName: string;
   supportedMimeTypes: readonly string[];
   capabilities: DocumentExtractorCapabilities;
+  /**
+   * Provider version. Bump it whenever this provider's extraction output
+   * shape or quality changes; it is the version half of the
+   * (content identity, extractor identity) key under which extraction
+   * artifacts are derived and cached. Nothing consumes it yet.
+   */
+  version: string;
   extract(input: DocumentExtractorInput): Promise<DocumentArtifact>;
 }
 
@@ -63,8 +72,22 @@ export interface MediaExtractorInput {
 export interface MediaExtractorProvider {
   id: MediaExtractorProviderId;
   displayName: string;
-  supportedMimeTypes: string[];
+  /**
+   * Readonly for parity with `DocumentExtractorProvider` and the browser-safe
+   * manifest entries the providers spread from (RFC #1153 part 1): nothing
+   * mutates the list, and the manifest must stay a plain-data mirror.
+   */
+  supportedMimeTypes: readonly string[];
   capabilities: MediaExtractorCapabilities;
+  /**
+   * Provider version. Bump it whenever this provider's extraction output
+   * shape or quality changes; it is the version half of the
+   * (content identity, extractor identity) key under which extraction
+   * artifacts are derived and cached. Nothing consumes it yet.
+   */
+  version: string;
+  /** Resolve optional runtime requirements before this provider is selected. */
+  availability?(input: MediaExtractorInput): Promise<{ available: boolean; reason?: string }>;
   extract(input: MediaExtractorInput): Promise<MediaArtifact>;
 }
 

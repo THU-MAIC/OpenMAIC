@@ -4,6 +4,7 @@ import * as React from 'react';
 import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
 
 import { cn } from '@/lib/utils';
+import { useFloatingLayerOwnerProps } from '@/components/ui/floating-layer-owner';
 import { CheckIcon, ChevronRightIcon } from 'lucide-react';
 
 function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
@@ -28,8 +29,17 @@ function DropdownMenuContent({
   sideOffset = 4,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  const ownerProps = useFloatingLayerOwnerProps();
+  // Pro popovers need to inherit the workspace shell's scoped tokens. Keep the
+  // ordinary document.body portal everywhere else so classic mode retains its
+  // existing positioning and visual defaults.
+  const workspaceRoot =
+    typeof document === 'undefined'
+      ? undefined
+      : (document.querySelector<HTMLElement>('.ws-root') ?? undefined);
+
   return (
-    <DropdownMenuPrimitive.Portal>
+    <DropdownMenuPrimitive.Portal container={workspaceRoot}>
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
@@ -38,6 +48,7 @@ function DropdownMenuContent({
           'data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ring-foreground/10 bg-popover text-popover-foreground min-w-32 rounded-md p-1 shadow-md ring-1 duration-100 z-50 max-h-(--radix-dropdown-menu-content-available-height) w-(--radix-dropdown-menu-trigger-width) origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto data-[state=closed]:overflow-hidden',
           className,
         )}
+        {...ownerProps}
         {...props}
       />
     </DropdownMenuPrimitive.Portal>
@@ -211,6 +222,7 @@ function DropdownMenuSubContent({
   className,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+  const ownerProps = useFloatingLayerOwnerProps();
   return (
     <DropdownMenuPrimitive.SubContent
       data-slot="dropdown-menu-sub-content"
@@ -218,6 +230,7 @@ function DropdownMenuSubContent({
         'data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ring-foreground/10 bg-popover text-popover-foreground min-w-[96px] rounded-md p-1 shadow-lg ring-1 duration-100 z-50 origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden',
         className,
       )}
+      {...ownerProps}
       {...props}
     />
   );

@@ -21,7 +21,7 @@ import { useStageStore } from '@/lib/store';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
 import { useExportClassroom } from '@/lib/export/use-export-classroom';
-import { useExportScript } from '@/lib/export/use-export-script';
+import { isScriptExportReady, useExportScript } from '@/lib/export/use-export-script';
 import { isVideoExportEnabled } from '@/lib/config/feature-flags';
 import { useVideoRenderStore } from '@/lib/store/video-render';
 import { CircularProgress } from '@/components/ui/circular-progress';
@@ -42,8 +42,11 @@ import type { StageMode } from '@/lib/types/stage';
 
 interface HeaderControlsProps {
   readonly mode?: StageMode;
+  readonly proModeActive?: boolean;
   readonly canEdit?: boolean;
   readonly onToggleEditMode?: () => void;
+  readonly showGlobalControls?: boolean;
+  readonly showCourseActions?: boolean;
   /**
    * `default` — the chunky h-9 pill used in the playback Stage Header.
    * `compact` — slightly tighter padding for embedding in CommandBar's
@@ -68,8 +71,11 @@ interface HeaderControlsProps {
  */
 export function HeaderControls({
   mode,
+  proModeActive,
   canEdit,
   onToggleEditMode,
+  showGlobalControls = true,
+  showCourseActions = true,
   variant = 'default',
 }: HeaderControlsProps) {
   const { t } = useI18n();
@@ -101,14 +107,27 @@ export function HeaderControls({
   // Keep the original full-generation gate for the export menu. Script files
   // are text-only, but the latest review confirmed that this menu intentionally
   // stays unavailable until all media tasks have completed or failed.
-  const canExport =
-    scenes.length > 0 &&
-    generatingOutlines.length === 0 &&
-    failedOutlines.length === 0 &&
-    Object.values(mediaTasks).every((task) => task.status === 'done' || task.status === 'failed');
+  const canExport = isScriptExportReady({ scenes, generatingOutlines, failedOutlines }, mediaTasks);
   const exportLabel = canExport ? t('export.pptx') : t('share.notReady');
 
   const compact = variant === 'compact';
+  const proChecked = proModeActive ?? mode === 'edit';
+
+  if (!showGlobalControls && !showCourseActions) {
+    return onToggleEditMode ? (
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+          {t('stage.proMode')}
+        </span>
+        <Switch
+          checked={proChecked}
+          onCheckedChange={onToggleEditMode}
+          disabled={!canEdit}
+          aria-label={proChecked ? t('stage.doneEditing') : t('stage.editCourse')}
+        />
+      </div>
+    ) : null;
+  }
 
   // Self-contained spacing so the control cluster is identical regardless of
   // host. The playback Header (`gap-4`) and the edit CommandBar's trailing
@@ -203,7 +222,7 @@ export function HeaderControls({
             'shrink-0 inline-flex items-center gap-2.5 rounded-full border shadow-sm transition-colors duration-200',
             'bg-white/60 dark:bg-gray-800/60 backdrop-blur-md',
             compact ? 'h-8 px-2.5' : 'h-9 px-3',
-            mode === 'edit'
+            proChecked
               ? 'border-violet-500/60 dark:border-violet-400/60'
               : 'border-gray-100/50 dark:border-gray-700/50',
             !canEdit && mode !== 'edit'
@@ -216,7 +235,7 @@ export function HeaderControls({
           title={
             !canEdit && mode !== 'edit'
               ? t('stage.proModeDisabledHint')
-              : mode === 'edit'
+              : proChecked
                 ? t('stage.doneEditing')
                 : t('stage.editCourse')
           }
@@ -224,7 +243,7 @@ export function HeaderControls({
           <span
             className={cn(
               'text-[11px] font-bold uppercase tracking-[0.14em] tabular-nums select-none transition-colors duration-200',
-              mode === 'edit'
+              proChecked
                 ? 'text-violet-600 dark:text-violet-300'
                 : 'text-gray-500 dark:text-gray-400',
             )}
@@ -232,10 +251,10 @@ export function HeaderControls({
             {t('edit.proMode')}
           </span>
           <Switch
-            checked={mode === 'edit'}
+            checked={proChecked}
             onCheckedChange={onToggleEditMode}
             disabled={!canEdit && mode !== 'edit'}
-            aria-label={mode === 'edit' ? t('stage.doneEditing') : t('stage.editCourse')}
+            aria-label={proChecked ? t('stage.doneEditing') : t('stage.editCourse')}
             className="data-[state=checked]:bg-violet-600 dark:data-[state=checked]:bg-violet-500"
           />
         </label>

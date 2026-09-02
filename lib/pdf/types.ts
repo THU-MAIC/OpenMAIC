@@ -35,6 +35,8 @@ export interface PDFParserConfig {
    * Off by default; enable only in a trusted server/dev/test context.
    */
   allowEnvFallback?: boolean;
+  /** Skip image extraction when the caller needs text only. */
+  textOnly?: boolean;
 }
 
 // Note: ParsedPdfContent is imported from @/lib/types/pdf to avoid duplication

@@ -69,7 +69,7 @@ describe('generated JSON Schema — Stage', () => {
     const voiced = {
       ...agent,
       id: 'gen-2',
-      voiceConfig: { providerId: 'tts', voiceId: 'v1' },
+      voiceConfig: { providerId: 'tts', modelId: 'model-1', voiceId: 'v1' },
       voiceDesign: { identity: 'adult narrator', texture: 'low', delivery: 'calm' },
     };
     expect(

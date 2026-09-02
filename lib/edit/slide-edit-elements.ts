@@ -1,3 +1,4 @@
+import katex from 'katex';
 import type {
   ChartType,
   PPTChartElement,
@@ -114,6 +115,26 @@ export function createDefaultLatexElement(id: string, result: LatexEditorResult)
     align: 'center',
     fixedRatio: true,
   };
+}
+
+/**
+ * Render LaTeX source to the KaTeX HTML snapshot a latex element persists in
+ * `html`. Mirrors the prod generation path (processLatexElements) and the
+ * whiteboard draw action (lib/action/engine.ts): display-mode block markup,
+ * never throw on bad TeX (KaTeX emits error markup instead). Returns null only
+ * on an unexpected renderer throw, so a write boundary can drop the snapshot
+ * rather than persist a stale one.
+ */
+export function renderLatexElementHtml(latex: string): string | null {
+  try {
+    return katex.renderToString(latex, {
+      throwOnError: false,
+      displayMode: true,
+      output: 'html',
+    });
+  } catch {
+    return null;
+  }
 }
 
 /** Create a renderer-editor chart with data that is valid for every chart type. */

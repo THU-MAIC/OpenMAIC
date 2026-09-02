@@ -3,7 +3,11 @@
     "you": "あなた",
     "confirm": "確認",
     "cancel": "キャンセル",
-    "loading": "読み込み中..."
+    "loading": "読み込み中...",
+    "errorPrefix": "エラー：",
+    "loadingClassroom": "教室を読み込み中...",
+    "retry": "再試行",
+    "close": "閉じる"
   },
   "home": {
     "slogan": "マルチエージェント対話型教室で生成的に学ぶ",
@@ -131,6 +135,22 @@
       "emptyAgentResponses": "エージェントが空の応答を返したため、ディスカッションを停止しました。再試行するかモデル設定をご確認ください。",
       "streamInterrupted": "ストリームが予期せず終了し、ディスカッションが完了しませんでした。再度お試しください。"
     },
+    "elementReference": {
+      "button": "スライドを参照",
+      "unavailable": "現在の PPT スライドのみ参照できます",
+      "instruction": "スライド要素をクリック · Esc で終了",
+      "fallback": "その他のスライド要素（{{count}}）",
+      "clear": "スライド参照を解除",
+      "summary": {
+        "noText": "テキストなし",
+        "emptyContent": "内容なし",
+        "code": "コード",
+        "line": "線",
+        "imageMetadata": "画像（メタデータのみ）",
+        "videoMetadata": "動画（メタデータのみ）",
+        "audioMetadata": "音声（メタデータのみ）"
+      }
+    },
     "tabs": {
       "lecture": "ノート",
       "chat": "チャット"
@@ -227,13 +247,6 @@
       "interactive": "インタラクティブ",
       "pbl": "PBL"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "別のタブでこのコースを編集中です",
-        "body": "編集モードは同時に 1 つのタブのみが保持できます。他のタブを閉じる（またはセッションがタイムアウトするのを待つ）してから、このタブで編集を開始してください。",
-        "actionDismiss": "了解"
-      }
-    },
     "text": {
       "toolbar": "テキストツールバー",
       "label": "テキスト",
@@ -296,6 +309,8 @@
       "tableDimensions": "{{rows}} x {{columns}} 表",
       "dragToolbar": "挿入ツールを移動",
       "dragToolbarKeyboard": "挿入ツールを移動：Enter または Space を押してから矢印キーで移動",
+      "collapseToolbar": "挿入ツールを折りたたむ",
+      "expandToolbar": "挿入ツールを展開",
       "image": "画像",
       "imageDrop": "画像をドロップまたはクリックして選択",
       "imageOr": "または画像 URL を貼り付け",
@@ -357,7 +372,10 @@
       "deckLabel": "シーン",
       "moreActions": "その他の操作",
       "rename": "名前を変更",
-      "sceneIncomplete": "このページの内容が未完成です"
+      "sceneIncomplete": "このページの内容が未完成です",
+      "addPage": "ページを追加",
+      "nextPage": "次のページ",
+      "prevPage": "前のページ"
     },
     "zorder": {
       "toFront": "最前面へ移動",
@@ -540,11 +558,13 @@
       "discussionDesc": "問いを投げかけ、発言者を指定"
     },
     "tts": {
+      "cancelPreview": "試聴をキャンセル",
       "preview": "試聴",
       "regenerate": "音声を再生成",
       "statusReady": "音声あり",
       "statusNone": "音声なし",
       "statusGenerating": "生成中",
+      "stopPreview": "試聴を停止",
       "statusError": "失敗"
     },
     "pick": {
@@ -554,7 +574,10 @@
       "expand": "展開",
       "collapse": "折りたたむ",
       "noElements": "このスライドには指定できる要素がありません。",
-      "bindHint": "キャンバス上のハイライト要素をクリックして紐付け"
+      "bindHint": "キャンバス上のハイライト要素をクリックして紐付け",
+      "refCapHint": "上限に達しました。1 つ解除して入れ替え · Esc で終了",
+      "refHint": "クリックで追加／解除 · Esc で終了",
+      "refLead": "要素を参照中 · {{count}}/{{max}}"
     },
     "regen": {
       "title": "ナレーションを再生成",
@@ -609,7 +632,18 @@
       "moveDown": "下へ移動",
       "removeFromClass": "クラスから削除",
       "aiClassmates": "AIクラスメイト · {{count}}",
-      "addRole": "役割を追加"
+      "addRole": "役割を追加",
+      "shortTitle": "編成"
+    },
+    "elementRef": {
+      "remove": "移除引用 {{label}}",
+      "counts": "参照 {{count}}/{{max}}",
+      "exitPicking": "選択を終了",
+      "startPicking": "要素を参照"
+    },
+    "dock": {
+      "elementRefHint": "要素参照 — 次のメッセージと一緒に送る要素を選ぶ",
+      "globalTools": "全体ツール"
     }
   },
   "classroomComplete": {
@@ -971,7 +1005,10 @@
     "deleteFolderOnly": "フォルダのみ削除",
     "deleteFolderAndCourses": "フォルダと {{count}} 件のコースを削除",
     "deleteFolderConfirmRemove": "フォルダとコース（チャット履歴を含む）が削除されます。",
-    "deleteFolderAndCourses_other": "フォルダと {{count}} 件のコースを削除"
+    "deleteFolderAndCourses_other": "フォルダと {{count}} 件のコースを削除",
+    "notFound": "コースが見つかりません",
+    "notFoundDesc": "このコースは存在しないか、すでに削除されています。",
+    "backToHome": "ホームに戻る"
   },
   "upload": {
     "pdfSizeLimit": "50MBまでのPDFファイルに対応しています",
@@ -1402,6 +1439,16 @@
     "voxcpmStopPreview": "試聴を停止",
     "voxcpmPreviewVoice": "音色を試聴",
     "voxcpmDeleteVoice": "音色を削除",
+    "qwenCloneVoicesTitle": "Qwen TTS Cloned Voices",
+    "qwenCloneRefText": "Enter the verbatim transcript of the reference audio",
+    "qwenCloneRefAudioHint": "Use a clean 1–60 second voice sample. A 10–20 second sample is recommended; audio is converted to 24 kHz mono PCM WAV.",
+    "qwenCloneSaved": "Qwen cloned voice registered and saved",
+    "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
+    "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
+    "qwenCloneSpeedHint": "Cloned voices always synthesize at 1× speed.",
+    "qwenCloneDeleteWarning": "The voice was removed locally, but provider deletion failed.",
+    "qwenCloneNarrationUnavailable": "The assigned voice is unavailable. Narration will use another enabled voice instead.",
+    "qwenCloneDiscussionUnavailable": "The assigned voice is unavailable. Discussion will use another enabled voice instead.",
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "ブラウザネイティブASR",
     "providerQwenASR": "Qwen ASR（Alibaba Cloud百錬）",
@@ -1798,9 +1845,132 @@
       "capabilities": "Capabilities offered",
       "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time."
     },
+    "skills": {
+      "nav": "スキル",
+      "title": "スキル設定",
+      "description": "アカウントにインストールされているスキルを閲覧し、詳細を確認して、zip としてダウンロードして共有・バックアップできます。",
+      "mySkills": "マイスキル",
+      "builtinSkills": "内蔵スキル",
+      "emptyMySkills": "まだ自分のスキルがありません——チャットでエージェントに履歴から作成させましょう。",
+      "emptyBuiltinSkills": "利用可能な内蔵スキルはありません。",
+      "listFailed": "スキル一覧を読み込めませんでした",
+      "retry": "再試行",
+      "badgeBuiltin": "内蔵",
+      "badgeOwner": "マイスキル",
+      "badgeConstraints": "制約あり",
+      "details": "詳細",
+      "download": "ダウンロード",
+      "detailFailed": "スキル詳細を読み込めませんでした",
+      "contentLabel": "内容",
+      "builtinDetailNote": "このスキルは OpenMAIC に同梱されています。他のエージェントワークスペースにインポートするにはダウンロードしてください。",
+      "upload": "アップロード",
+      "uploading": "アップロード中…",
+      "uploadFailed": "スキルをアップロードできませんでした。ファイルを確認して再試行してください。",
+      "delete": "削除",
+      "deleting": "削除中…",
+      "deleteTitle": "スキルを削除しますか？",
+      "deleteConfirm": "このスキルをアカウントから削除します。この操作は元に戻せません。",
+      "deleteFailed": "スキルを削除できませんでした。もう一度お試しください。"
+    },
     "ttsBrowserNativeTimelineNotice": "ブラウザ内蔵 TTS はエディターのタイムライン音声機能（試聴・再生成・一括音声生成）に対応していません。マネージド TTS プロバイダーに切り替えると、行ごとの音声を生成・管理できます。",
     "alidocmindAccessKeyId": "AccessKey ID",
     "alidocmindAccessKeySecret": "AccessKey Secret"
+  },
+  "workspace": {
+    "untitledCourse": "未命名课堂",
+    "sceneCount": "{{count}} 页",
+    "sceneCount_one": "{{count}} 页",
+    "sceneCount_other": "{{count}} 页",
+    "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkMore": "还有 {{count}} 节课堂",
+    "courseMention": {
+      "title": "为这条消息引用课堂",
+      "empty": "没有匹配的课堂",
+      "alreadyNamed": "已引用",
+      "remove": "移除{{name}}",
+      "pillHint": "这条消息引用了「{{name}}」",
+      "notAccepted": "サーバーは一時的に利用できません。しばらくしてからもう一度お試しください。",
+      "reference": "引用「{{name}}」",
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+    },
+    "heroTitle": "What will you create today?",
+    "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
+    "newSession": "New chat",
+    "sections": {
+      "courses": "Courses",
+      "sessions": "Chats"
+    },
+    "coursesEmpty": "No courses yet",
+    "sessionsEmpty": "No chats yet",
+    "loading": "Loading",
+    "loadFailed": "Couldn't load",
+    "retry": "Retry",
+    "untitledSession": "Untitled chat",
+    "pagePosition": "Page {{index}} of {{total}}",
+    "exitPro": "Exit Pro",
+    "navAria": "Workspace navigation",
+    "homeAria": "Back to home",
+    "currentSession": "Current chat",
+    "startLearning": "学習を開始",
+    "time": {
+      "justNow": "Just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
+    },
+    "sessionStatus": {
+      "connecting": "Connecting",
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Ready",
+      "failed": "Needs attention",
+      "cancelled": "Stopped"
+    },
+    "backToWorkspace": "Back to workspace",
+    "searchPlaceholder": "Filter by name",
+    "searchAria": "Search {{section}}",
+    "searchEmpty": "No matches",
+    "showMore": "Show {{count}} more",
+    "showLess": "Show less",
+    "utilitiesAria": "Preferences and account",
+    "resizeAria": "Drag to resize the sidebar",
+    "chatPaneAria": "Chat panel",
+    "classroomPaneAria": "Classroom",
+    "collapseNav": "Collapse navigation",
+    "expandNav": "Expand navigation",
+    "expandNavInto": "Expand navigation · {{section}}",
+    "collapseChat": "Collapse conversation",
+    "expandChat": "Conversation",
+    "collapseClassroom": "Collapse classroom",
+    "expandClassroom": "Classroom",
+    "readOnlyBadge": "Read-only",
+    "noCourseTitle": "No course open",
+    "noCourseHint": "会話内のコースリンクから開くか、左のリストから選んでください。会話はそのまま残ります",
+    "resizeChatAria": "Drag to resize the conversation pane",
+    "firstPageLanding": "The first page is landing…",
+    "autoSaving": "自動保存中…",
+    "autoSaved": "保存済み",
+    "collapsedTitle": "Both panes are collapsed",
+    "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
+    "moreUtilities": "More",
+    "rowMore": "{{name}}のその他の操作",
+    "folderDeleteHint": "フォルダー内のコースはトップレベルに戻ります。削除はされません。",
+    "dropToUnfile": "ここにドロップするとフォルダーから外れます",
+    "renameInvalid": "名前は 1〜120 文字で入力してください",
+    "renameForbidden": "このコースは自分が作成したものではないため、名前を変更できません",
+    "renameGone": "コースが存在しないか、すでに削除されています",
+    "renameSession": "チャットの名前を変更",
+    "renameSessionAria": "チャット「{{name}}」の名前を変更",
+    "renameSessionFailed": "名前の変更に失敗しました。再試行してください",
+    "delete": "削除",
+    "confirmDelete": "削除を確認",
+    "deleting": "削除中…",
+    "deleteFailed": "削除できませんでした。もう一度お試しください。",
+    "tabsAria": "Chats and courses",
+    "courseTabsAria": "開いているコース",
+    "courseTabClose": "タブを閉じる：{{name}}",
+    "courseTabRunning": "生成中",
+    "foldersUnavailable": "このビルドではフォルダーは利用できません"
   },
   "profile": {
     "title": "プロフィール",
@@ -1832,5 +2002,34 @@
     "title": "アクセスコードを入力",
     "placeholder": "アクセスコード",
     "error": "アクセスコードが正しくありません。もう一度お試しください。"
+  },
+  "proMode": {
+    "attach": "教材を添付",
+    "mentionCourse": "引用课堂",
+    "loadSkill": "加载 skill",
+    "skillMenuTitle": "选择课程设计技能",
+    "skillsLoading": "正在加载 skill…",
+    "noSkillsAvailable": "暂无可用 skill",
+    "userSkillsGroup": "我的 Skill",
+    "builtinSkillsGroup": "内置 Skill",
+    "skillsLoadFailed": "Skill 加载失败，点击重试",
+    "retrySkills": "重试",
+    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+    "badgeAria": "Pro モード",
+    "badgeEnter": "Pro モード",
+    "badgeExit": "通常モードに戻る",
+    "launchPlaceholder": "作りたい学習体験を描いてください",
+    "launchSend": "構築を開始"
+  },
+  "workbench": {
+    "tool": {
+      "label": {
+        "extractMaterial": null,
+        "waitMaterials": null
+      },
+      "error": {
+        "materialExtraction": null
+      }
+    }
   }
 }

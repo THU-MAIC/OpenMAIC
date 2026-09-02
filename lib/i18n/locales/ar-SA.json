@@ -3,7 +3,11 @@
     "you": "أنت",
     "confirm": "تأكيد",
     "cancel": "إلغاء",
-    "loading": "جارٍ التحميل..."
+    "loading": "جارٍ التحميل...",
+    "errorPrefix": "خطأ: ",
+    "loadingClassroom": "جارٍ تحميل الفصل...",
+    "retry": "إعادة المحاولة",
+    "close": "إغلاق"
   },
   "home": {
     "slogan": "التعلّم التوليدي في فصل تفاعلي متعدد الوكلاء",
@@ -131,6 +135,22 @@
       "emptyAgentResponses": "أعاد الوكلاء استجابات فارغة; توقف النقاش. حاول مرة أخرى أو راجع إعدادات النموذج.",
       "streamInterrupted": "انتهى تدفق البيانات بشكل غير متوقع; لم يكتمل النقاش. يرجى المحاولة مرة أخرى."
     },
+    "elementReference": {
+      "button": "الإشارة إلى الشريحة",
+      "unavailable": "يمكن الإشارة إلى شريحة PPT الحالية فقط",
+      "instruction": "انقر على عنصر في الشريحة · Esc للخروج",
+      "fallback": "عناصر أخرى في الشريحة ({{count}})",
+      "clear": "إزالة مرجع الشريحة",
+      "summary": {
+        "noText": "لا يوجد نص",
+        "emptyContent": "لا يوجد محتوى",
+        "code": "رمز",
+        "line": "خط",
+        "imageMetadata": "صورة (بيانات وصفية فقط)",
+        "videoMetadata": "فيديو (بيانات وصفية فقط)",
+        "audioMetadata": "صوت (بيانات وصفية فقط)"
+      }
+    },
     "tabs": {
       "lecture": "الملاحظات",
       "chat": "المحادثة"
@@ -227,13 +247,6 @@
       "interactive": "تفاعلي",
       "pbl": "PBL"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "علامة تبويب أخرى تحرّر هذه الدورة",
-        "body": "وضع التحرير محصور بعلامة تبويب واحدة في كل مرة لتجنب تعارض التغييرات. أغلق علامة التبويب الأخرى (أو انتظر انتهاء جلستها) قبل الدخول إلى وضع التحرير هنا.",
-        "actionDismiss": "حسناً"
-      }
-    },
     "text": {
       "toolbar": "شريط أدوات النص",
       "label": "نص",
@@ -296,6 +309,8 @@
       "tableDimensions": "جدول {{rows}} x {{columns}}",
       "dragToolbar": "نقل أدوات الإدراج",
       "dragToolbarKeyboard": "نقل أدوات الإدراج: اضغط Enter أو مسافة، ثم استخدم مفاتيح الأسهم",
+      "collapseToolbar": "طي أدوات الإدراج",
+      "expandToolbar": "توسيع أدوات الإدراج",
       "image": "صورة",
       "imageDrop": "أفلِت صورة أو انقر لاختيار ملف",
       "imageOr": "أو الصق رابط صورة",
@@ -357,7 +372,10 @@
       "deckLabel": "المشاهد",
       "moreActions": "إجراءات إضافية",
       "rename": "إعادة تسمية",
-      "sceneIncomplete": "محتوى هذه الصفحة غير مكتمل"
+      "sceneIncomplete": "محتوى هذه الصفحة غير مكتمل",
+      "addPage": "إضافة صفحة",
+      "nextPage": "الصفحة التالية",
+      "prevPage": "الصفحة السابقة"
     },
     "zorder": {
       "toFront": "إحضار إلى الأمام",
@@ -540,11 +558,13 @@
       "discussionDesc": "اطرح سؤالاً وحدّد من يبدأ النقاش"
     },
     "tts": {
+      "cancelPreview": "إلغاء المعاينة",
       "preview": "معاينة",
       "regenerate": "إعادة توليد التعليق الصوتي",
       "statusReady": "مُصوّت",
       "statusNone": "غير مُصوّت",
       "statusGenerating": "جارٍ التوليد",
+      "stopPreview": "إيقاف المعاينة",
       "statusError": "فشل"
     },
     "pick": {
@@ -554,7 +574,10 @@
       "expand": "توسيع",
       "collapse": "طي",
       "noElements": "لا توجد عناصر يمكن تحديدها في هذه الشريحة.",
-      "bindHint": "انقر على عنصر مميز على اللوحة للربط"
+      "bindHint": "انقر على عنصر مميز على اللوحة للربط",
+      "refCapHint": "تم الوصول إلى الحد — أزل عنصرًا للاستبدال · Esc للإنهاء",
+      "refHint": "انقر للإضافة أو الإزالة · Esc للإنهاء",
+      "refLead": "الإشارة إلى العناصر · {{count}}/{{max}}"
     },
     "regen": {
       "title": "إعادة توليد السرد",
@@ -609,7 +632,18 @@
       "moveDown": "نقل لأسفل",
       "removeFromClass": "إزالة من الفصل",
       "aiClassmates": "زملاء AI · {{count}}",
-      "addRole": "إضافة دور"
+      "addRole": "إضافة دور",
+      "shortTitle": "التشكيلة"
+    },
+    "elementRef": {
+      "remove": "移除引用 {{label}}",
+      "counts": "تمت الإشارة إلى {{count}}/{{max}}",
+      "exitPicking": "إنهاء التحديد",
+      "startPicking": "الإشارة إلى العناصر"
+    },
+    "dock": {
+      "elementRefHint": "مراجع العناصر — اختر عناصر لإرسالها مع رسالتك التالية",
+      "globalTools": "أدوات عامة"
     }
   },
   "classroomComplete": {
@@ -971,7 +1005,10 @@
     "deleteFolderOnly": "حذف المجلد فقط",
     "deleteFolderAndCourses": "حذف المجلد و {{count}} دورة",
     "deleteFolderConfirmRemove": "سيؤدي هذا إلى حذف المجلد ودوراته، بما في ذلك سجل الدردشة.",
-    "deleteFolderAndCourses_other": "حذف المجلد و {{count}} دورة"
+    "deleteFolderAndCourses_other": "حذف المجلد و {{count}} دورة",
+    "notFound": "لم يتم العثور على الدورة",
+    "notFoundDesc": "هذه الدورة غير موجودة أو تم حذفها.",
+    "backToHome": "العودة إلى الصفحة الرئيسية"
   },
   "upload": {
     "pdfSizeLimit": "يدعم ملفات PDF حتى 50 ميغابايت",
@@ -1402,6 +1439,16 @@
     "voxcpmStopPreview": "إيقاف المعاينة",
     "voxcpmPreviewVoice": "معاينة الصوت",
     "voxcpmDeleteVoice": "حذف الصوت",
+    "qwenCloneVoicesTitle": "Qwen TTS Cloned Voices",
+    "qwenCloneRefText": "Enter the verbatim transcript of the reference audio",
+    "qwenCloneRefAudioHint": "Use a clean 1–60 second voice sample. A 10–20 second sample is recommended; audio is converted to 24 kHz mono PCM WAV.",
+    "qwenCloneSaved": "Qwen cloned voice registered and saved",
+    "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
+    "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
+    "qwenCloneSpeedHint": "Cloned voices always synthesize at 1× speed.",
+    "qwenCloneDeleteWarning": "The voice was removed locally, but provider deletion failed.",
+    "qwenCloneNarrationUnavailable": "The assigned voice is unavailable. Narration will use another enabled voice instead.",
+    "qwenCloneDiscussionUnavailable": "The assigned voice is unavailable. Discussion will use another enabled voice instead.",
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "التعرّف على الكلام المدمج في المتصفح",
     "providerQwenASR": "Qwen ASR (سحابة علي بابا بايليان)",
@@ -1798,9 +1845,132 @@
       "capabilities": "Capabilities offered",
       "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time."
     },
+    "skills": {
+      "nav": "المهارات",
+      "title": "إعدادات المهارات",
+      "description": "تصفّح المهارات المثبّتة لحسابك، وافحص مهارة، ونزّلها كملف zip للمشاركة أو النسخ الاحتياطي.",
+      "mySkills": "مهاراتي",
+      "builtinSkills": "المهارات المدمجة",
+      "emptyMySkills": "لا مهارات خاصة بك بعد — اطلب من الوكيل في محادثة إنشاء واحدة من السجل.",
+      "emptyBuiltinSkills": "لا تتوفر مهارات مدمجة.",
+      "listFailed": "تعذّر تحميل قائمة المهارات",
+      "retry": "إعادة المحاولة",
+      "badgeBuiltin": "مدمجة",
+      "badgeOwner": "مهارتي",
+      "badgeConstraints": "قيود",
+      "details": "التفاصيل",
+      "download": "تنزيل",
+      "detailFailed": "تعذّر تحميل تفاصيل المهارة",
+      "contentLabel": "المحتوى",
+      "builtinDetailNote": "هذه المهارة مرفقة مع OpenMAIC. نزّلها لاستيرادها إلى مساحة عمل وكيل أخرى.",
+      "upload": "رفع",
+      "uploading": "جارٍ الرفع…",
+      "uploadFailed": "تعذّر رفع المهارة. تحقّق من الملف وحاول مرة أخرى.",
+      "delete": "حذف",
+      "deleting": "جارٍ الحذف…",
+      "deleteTitle": "حذف المهارة؟",
+      "deleteConfirm": "سيؤدي هذا إلى إزالة المهارة من حسابك، ولا يمكن التراجع عن هذا الإجراء.",
+      "deleteFailed": "تعذّر حذف المهارة. حاول مرة أخرى."
+    },
     "ttsBrowserNativeTimelineNotice": "لا يدعم تحويل النص إلى كلام المدمج في المتصفح ميزات الصوت في الخط الزمني للمحرر (المعاينة وإعادة التوليد والتعليق الصوتي الجماعي). بدّل إلى مزود TTS مُدار لتوليد صوت كل سطر وإدارته.",
     "alidocmindAccessKeyId": "AccessKey ID",
     "alidocmindAccessKeySecret": "AccessKey Secret"
+  },
+  "workspace": {
+    "untitledCourse": "未命名课堂",
+    "sceneCount": "{{count}} 页",
+    "sceneCount_one": "{{count}} 页",
+    "sceneCount_other": "{{count}} 页",
+    "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkMore": "还有 {{count}} 节课堂",
+    "courseMention": {
+      "title": "为这条消息引用课堂",
+      "empty": "没有匹配的课堂",
+      "alreadyNamed": "已引用",
+      "remove": "移除{{name}}",
+      "pillHint": "这条消息引用了「{{name}}」",
+      "notAccepted": "الخادم غير متاح مؤقتًا. يُرجى إعادة المحاولة بعد قليل.",
+      "reference": "引用「{{name}}」",
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+    },
+    "heroTitle": "What will you create today?",
+    "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
+    "newSession": "New chat",
+    "sections": {
+      "courses": "Courses",
+      "sessions": "Chats"
+    },
+    "coursesEmpty": "No courses yet",
+    "sessionsEmpty": "No chats yet",
+    "loading": "Loading",
+    "loadFailed": "Couldn't load",
+    "retry": "Retry",
+    "untitledSession": "Untitled chat",
+    "pagePosition": "Page {{index}} of {{total}}",
+    "exitPro": "Exit Pro",
+    "navAria": "Workspace navigation",
+    "homeAria": "Back to home",
+    "currentSession": "Current chat",
+    "startLearning": "ابدأ التعلم",
+    "time": {
+      "justNow": "Just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
+    },
+    "sessionStatus": {
+      "connecting": "Connecting",
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Ready",
+      "failed": "Needs attention",
+      "cancelled": "Stopped"
+    },
+    "backToWorkspace": "Back to workspace",
+    "searchPlaceholder": "Filter by name",
+    "searchAria": "Search {{section}}",
+    "searchEmpty": "No matches",
+    "showMore": "Show {{count}} more",
+    "showLess": "Show less",
+    "utilitiesAria": "Preferences and account",
+    "resizeAria": "Drag to resize the sidebar",
+    "chatPaneAria": "Chat panel",
+    "classroomPaneAria": "Classroom",
+    "collapseNav": "Collapse navigation",
+    "expandNav": "Expand navigation",
+    "expandNavInto": "Expand navigation · {{section}}",
+    "collapseChat": "Collapse conversation",
+    "expandChat": "Conversation",
+    "collapseClassroom": "Collapse classroom",
+    "expandClassroom": "Classroom",
+    "readOnlyBadge": "Read-only",
+    "noCourseTitle": "No course open",
+    "noCourseHint": "افتحها من رابط دورة في المحادثة، أو اختر واحدة من القائمة على اليسار — تبقى المحادثة كما هي",
+    "resizeChatAria": "Drag to resize the conversation pane",
+    "firstPageLanding": "The first page is landing…",
+    "autoSaving": "جارٍ الحفظ التلقائي…",
+    "autoSaved": "تم الحفظ",
+    "collapsedTitle": "Both panes are collapsed",
+    "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
+    "moreUtilities": "More",
+    "rowMore": "إجراءات أخرى لـ {{name}}",
+    "folderDeleteHint": "ستعود الدورات داخله إلى المستوى الأعلى، ولن يُحذف شيء.",
+    "dropToUnfile": "أفلِت هنا لإخراجه من المجلد",
+    "renameInvalid": "يجب أن يتكوّن الاسم من 1 إلى 120 حرفًا",
+    "renameForbidden": "هذه الدورة ليست من إنشائك، لذا لا يمكنك تغيير اسمها",
+    "renameGone": "هذه الدورة لم تعد موجودة",
+    "renameSession": "إعادة تسمية المحادثة",
+    "renameSessionAria": "إعادة تسمية المحادثة «{{name}}»",
+    "renameSessionFailed": "تعذّرت إعادة التسمية، حاول مرة أخرى",
+    "delete": "حذف",
+    "confirmDelete": "تأكيد الحذف",
+    "deleting": "جارٍ الحذف…",
+    "deleteFailed": "تعذر الحذف. حاول مرة أخرى.",
+    "tabsAria": "Chats and courses",
+    "courseTabsAria": "الدورات المفتوحة",
+    "courseTabClose": "إغلاق التبويب: {{name}}",
+    "courseTabRunning": "قيد التوليد",
+    "foldersUnavailable": "المجلدات غير متوفرة في هذا الإصدار"
   },
   "profile": {
     "title": "الملف الشخصي",
@@ -1832,5 +2002,34 @@
     "title": "أدخل رمز الوصول",
     "placeholder": "رمز الوصول",
     "error": "رمز الوصول غير صالح. يرجى المحاولة مرة أخرى."
+  },
+  "proMode": {
+    "attach": "إرفاق مواد",
+    "mentionCourse": "引用课堂",
+    "loadSkill": "加载 skill",
+    "skillMenuTitle": "选择课程设计技能",
+    "skillsLoading": "正在加载 skill…",
+    "noSkillsAvailable": "暂无可用 skill",
+    "userSkillsGroup": "我的 Skill",
+    "builtinSkillsGroup": "内置 Skill",
+    "skillsLoadFailed": "Skill 加载失败，点击重试",
+    "retrySkills": "重试",
+    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+    "badgeAria": "وضع Pro",
+    "badgeEnter": "وضع Pro",
+    "badgeExit": "العودة إلى الوضع العادي",
+    "launchPlaceholder": "صِف تجربة التعلم التي تريد إنشاءها",
+    "launchSend": "بدء الإنشاء"
+  },
+  "workbench": {
+    "tool": {
+      "label": {
+        "extractMaterial": null,
+        "waitMaterials": null
+      },
+      "error": {
+        "materialExtraction": null
+      }
+    }
   }
 }

@@ -50,6 +50,22 @@ async function waitForJob(
   throw new Error(`Timed out waiting for job ${id}`);
 }
 
+/**
+ * Project cleanup runs after the job reaches its terminal status, so a bare
+ * `access` right after `waitForJob` races the removal.
+ */
+async function waitForCleanup(path: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      await access(path);
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`Timed out waiting for ${path} to be removed`);
+}
+
 const renderOptions = { fps: 30, quality: 'standard', format: 'mp4' } as const;
 
 describe('RenderCoordinator through the RenderExecutor seam', () => {
@@ -114,7 +130,7 @@ describe('RenderCoordinator through the RenderExecutor seam', () => {
     expect(await coordinator.cancel(id)).toBe(true);
     const job = await waitForJob(jobs, id, (current) => current.status === 'cancelled');
     expect(job.failure).toEqual({ code: 'cancelled', message: 'Render cancelled' });
-    await expect(access(dir)).rejects.toThrow();
+    await waitForCleanup(dir);
   });
 
   it('keeps deadline failure classification from a replaceable executor', async () => {
@@ -138,7 +154,7 @@ describe('RenderCoordinator through the RenderExecutor seam', () => {
       failure: { code: 'deadline_exceeded' },
     });
     expect(artifacts.paths.has(id)).toBe(false);
-    await expect(access(dir)).rejects.toThrow();
+    await waitForCleanup(dir);
   });
 
   it('classifies unexpected executor errors and still performs cleanup', async () => {
@@ -156,6 +172,6 @@ describe('RenderCoordinator through the RenderExecutor seam', () => {
       error: 'executor unavailable',
       failure: { code: 'execution_failed', message: 'executor unavailable' },
     });
-    await expect(access(dir)).rejects.toThrow();
+    await waitForCleanup(dir);
   });
 });

@@ -3,7 +3,11 @@
     "you": "你",
     "confirm": "確定",
     "cancel": "取消",
-    "loading": "載入中..."
+    "loading": "載入中...",
+    "errorPrefix": "错误：",
+    "loadingClassroom": "正在加载课堂...",
+    "retry": "重试",
+    "close": "關閉"
   },
   "home": {
     "slogan": "多智能體互動課室中的生成式學習",
@@ -131,6 +135,22 @@
       "emptyAgentResponses": "智能體連續無回應,討論已停止。請重新嘗試或檢查模型設定。",
       "streamInterrupted": "資料串流意外中斷,討論未能完成。請重新嘗試。"
     },
+    "elementReference": {
+      "button": "引用課件",
+      "unavailable": "僅可引用目前的 PPT 頁面",
+      "instruction": "點選一個課件元素 · Esc 退出",
+      "fallback": "其他課件元素（{{count}}）",
+      "clear": "取消課件引用",
+      "summary": {
+        "noText": "無文字",
+        "emptyContent": "無內容",
+        "code": "程式碼",
+        "line": "線條",
+        "imageMetadata": "圖片（僅引用中繼資料）",
+        "videoMetadata": "影片（僅引用中繼資料）",
+        "audioMetadata": "音訊（僅引用中繼資料）"
+      }
+    },
     "tabs": {
       "lecture": "筆記",
       "chat": "對話"
@@ -227,13 +247,6 @@
       "interactive": "互動",
       "pbl": "PBL"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "另一個分頁正在編輯此課程",
-        "body": "編輯已鎖定至單一分頁，以避免衝突變更。請關閉其他分頁（或等待其工作階段逾時）後再進入編輯模式。",
-        "actionDismiss": "知道了"
-      }
-    },
     "text": {
       "label": "文字",
       "font": "字型",
@@ -256,6 +269,8 @@
       "textBox": "文字框",
       "dragToolbar": "移動插入工具",
       "dragToolbarKeyboard": "移動插入工具：按 Enter 或 Space，然後使用方向鍵",
+      "collapseToolbar": "收合插入工具",
+      "expandToolbar": "展開插入工具",
       "image": "圖片",
       "imageDrop": "拖曳圖片或按一下選擇檔案",
       "imageOr": "或貼上圖片網址",
@@ -306,7 +321,10 @@
       "deckLabel": "場景",
       "moreActions": "更多操作",
       "rename": "重新命名",
-      "sceneIncomplete": "此頁面內容不完整"
+      "sceneIncomplete": "此頁面內容不完整",
+      "addPage": "新增頁面",
+      "nextPage": "下一頁",
+      "prevPage": "上一頁"
     },
     "zorder": {
       "toFront": "移至最上層",
@@ -468,11 +486,13 @@
       "discussionDesc": "提出問題，指定由誰發起"
     },
     "tts": {
+      "cancelPreview": "取消試聽",
       "preview": "試聽",
       "regenerate": "重新生成配音",
       "statusReady": "已配音",
       "statusNone": "未配音",
       "statusGenerating": "生成中",
+      "stopPreview": "停止試聽",
       "statusError": "失敗"
     },
     "pick": {
@@ -482,7 +502,10 @@
       "expand": "展開",
       "collapse": "收合",
       "noElements": "此頁面上沒有可定位的元素。",
-      "bindHint": "點選畫布上凸顯的元素以繫結"
+      "bindHint": "點選畫布上凸顯的元素以繫結",
+      "refCapHint": "已達上限，取消一個再換 · Esc 結束",
+      "refHint": "點擊加入或取消 · Esc 結束",
+      "refLead": "引用元素 · {{count}}/{{max}}"
     },
     "regen": {
       "title": "重新生成講稿",
@@ -537,7 +560,8 @@
       "moveDown": "下移",
       "removeFromClass": "移出課堂",
       "aiClassmates": "AI 同學 · {{count}}",
-      "addRole": "新增角色"
+      "addRole": "新增角色",
+      "shortTitle": "陣容"
     },
     "line": {
       "toolbar": "線條工具列",
@@ -610,6 +634,16 @@
     "common": {
       "cancel": "取消",
       "confirm": "確定"
+    },
+    "elementRef": {
+      "remove": "移除引用 {{label}}",
+      "counts": "已引用 {{count}}/{{max}}",
+      "exitPicking": "完成選取",
+      "startPicking": "引用元素"
+    },
+    "dock": {
+      "elementRefHint": "元素引用 —— 選取元素隨下一則訊息發給 Agent",
+      "globalTools": "全域工具"
     }
   },
   "whiteboard": {
@@ -956,7 +990,10 @@
     "deleteFolderOnly": "僅刪除資料夾",
     "deleteFolderAndCourses": "刪除資料夾和 {{count}} 門課程",
     "deleteFolderConfirmRemove": "將刪除資料夾及其課程（含聊天記錄），無法復原。",
-    "deleteFolderAndCourses_other": "刪除資料夾和 {{count}} 門課程"
+    "deleteFolderAndCourses_other": "刪除資料夾和 {{count}} 門課程",
+    "notFound": "找不到這門課程",
+    "notFoundDesc": "課程不存在，或已被刪除。",
+    "backToHome": "返回首頁"
   },
   "upload": {
     "pdfSizeLimit": "支援最大50MB的PDF檔案",
@@ -1387,6 +1424,16 @@
     "voxcpmStopPreview": "停止預覽",
     "voxcpmPreviewVoice": "預覽聲音",
     "voxcpmDeleteVoice": "刪除聲音",
+    "qwenCloneVoicesTitle": "Qwen TTS 克隆音色",
+    "qwenCloneRefText": "請輸入與參考音訊完全一致的逐字稿",
+    "qwenCloneRefAudioHint": "請使用 1–60 秒的清晰人聲，建議 10–20 秒；音訊將轉換為 24 kHz 單聲道 PCM WAV。",
+    "qwenCloneSaved": "Qwen 克隆音色已註冊並儲存",
+    "qwenCloneSaveFailed": "Qwen 克隆音色註冊失敗",
+    "qwenCloneUnsupported": "此瀏覽器不支援錄音，請改為上傳音訊檔案。",
+    "qwenCloneSpeedHint": "克隆音色一律以 1× 語速合成。",
+    "qwenCloneDeleteWarning": "音色已從本機移除，但服務商端刪除失敗。",
+    "qwenCloneNarrationUnavailable": "指定音色不可用，旁白將改用其他可用音色。",
+    "qwenCloneDiscussionUnavailable": "指定音色不可用，討論將改用其他可用音色。",
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "瀏覽器原生 ASR",
     "providerFunASRASR": "FunASR（本機）",
@@ -1783,9 +1830,132 @@
       "capabilities": "套餐提供的能力",
       "offeredNote": "此方案提供的模型清單。請在生成介面選擇需要使用的模型——是否可用取決於你的方案檔位，不支援的模型會在生成時報錯。"
     },
+    "skills": {
+      "nav": "技能",
+      "title": "Skill 設定",
+      "description": "查看目前帳號已安裝的技能、檢視詳情，或下載為 zip 以便分享與備份。",
+      "mySkills": "我的技能",
+      "builtinSkills": "內建技能",
+      "emptyMySkills": "還沒有自己的技能——在對話裡讓 agent 從歷史建立一個。",
+      "emptyBuiltinSkills": "暫無內建技能。",
+      "listFailed": "技能列表載入失敗",
+      "retry": "重試",
+      "badgeBuiltin": "內建",
+      "badgeOwner": "我的技能",
+      "badgeConstraints": "含約束",
+      "details": "詳情",
+      "download": "下載",
+      "detailFailed": "技能詳情載入失敗",
+      "contentLabel": "正文",
+      "builtinDetailNote": "該技能隨 OpenMAIC 提供。下載後可匯入其他智能體工作台。",
+      "upload": "上傳",
+      "uploading": "正在上傳…",
+      "uploadFailed": "技能上傳失敗。請檢查檔案後重試。",
+      "delete": "刪除",
+      "deleting": "正在刪除…",
+      "deleteTitle": "刪除技能？",
+      "deleteConfirm": "這會從你的帳號中移除該技能，且無法復原。",
+      "deleteFailed": "技能刪除失敗，請重試。"
+    },
     "ttsBrowserNativeTimelineNotice": "瀏覽器內建 TTS 不支援編輯器時間軸的音訊功能（試聽、重新生成、全部配音）。切換到受管 TTS 供應商即可逐句生成和管理音訊。",
     "alidocmindAccessKeyId": "AccessKey ID",
     "alidocmindAccessKeySecret": "AccessKey Secret"
+  },
+  "workspace": {
+    "untitledCourse": "未命名课堂",
+    "sceneCount": "{{count}} 页",
+    "sceneCount_one": "{{count}} 页",
+    "sceneCount_other": "{{count}} 页",
+    "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkMore": "还有 {{count}} 节课堂",
+    "courseMention": {
+      "title": "为这条消息引用课堂",
+      "empty": "没有匹配的课堂",
+      "alreadyNamed": "已引用",
+      "remove": "移除{{name}}",
+      "pillHint": "这条消息引用了「{{name}}」",
+      "notAccepted": "服務暫時不可用，請稍後重試。",
+      "reference": "引用「{{name}}」",
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+    },
+    "heroTitle": "今天想創造點什麼？",
+    "heroSubtitle": "說出你的想法，把它變成一段可以親歷的學習旅程",
+    "newSession": "新增對話",
+    "sections": {
+      "courses": "課程",
+      "sessions": "對話"
+    },
+    "coursesEmpty": "還沒有課程",
+    "sessionsEmpty": "還沒有對話",
+    "loading": "載入中",
+    "loadFailed": "載入失敗",
+    "retry": "重試",
+    "untitledSession": "未命名對話",
+    "pagePosition": "第 {{index}} / {{total}} 頁",
+    "exitPro": "退出 Pro",
+    "navAria": "工作區導覽",
+    "homeAria": "返回首頁",
+    "currentSession": "目前對話",
+    "startLearning": "開始學習",
+    "time": {
+      "justNow": "剛剛",
+      "minutesAgo": "{{count}} 分鐘前",
+      "hoursAgo": "{{count}} 小時前",
+      "daysAgo": "{{count}} 天前"
+    },
+    "sessionStatus": {
+      "connecting": "連線中",
+      "queued": "排隊中",
+      "running": "進行中",
+      "succeeded": "已就緒",
+      "failed": "需處理",
+      "cancelled": "已停止"
+    },
+    "backToWorkspace": "返回工作區",
+    "searchPlaceholder": "依名稱篩選",
+    "searchAria": "在{{section}}中搜尋",
+    "searchEmpty": "沒有符合的內容",
+    "showMore": "顯示更多 {{count}}",
+    "showLess": "收合",
+    "utilitiesAria": "偏好設定與帳號",
+    "resizeAria": "拖曳調整側欄寬度",
+    "chatPaneAria": "對話面板",
+    "classroomPaneAria": "課堂",
+    "collapseNav": "收合導覽",
+    "expandNav": "展開導覽",
+    "expandNavInto": "展開導覽 · {{section}}",
+    "collapseChat": "收合對話",
+    "expandChat": "對話",
+    "collapseClassroom": "收合課堂",
+    "expandClassroom": "課堂",
+    "readOnlyBadge": "唯讀",
+    "noCourseTitle": "還沒有開啟課堂",
+    "noCourseHint": "點對話裡的課堂連結開啟，或在左側清單裡選一節；對話會一直在這兒",
+    "resizeChatAria": "拖曳調整對話欄寬度",
+    "firstPageLanding": "第一頁正在寫入…",
+    "autoSaving": "自動儲存中…",
+    "autoSaved": "已儲存",
+    "collapsedTitle": "兩側面板都收合了",
+    "collapsedHint": "點左邊的標籤，把對話或課堂展開",
+    "moreUtilities": "更多",
+    "rowMore": "{{name}}的更多操作",
+    "folderDeleteHint": "資料夾裡的課堂會回到列表最上層，不會被刪除。",
+    "dropToUnfile": "放到這裡移出資料夾",
+    "renameInvalid": "名稱需為 1–120 個字元",
+    "renameForbidden": "這節課不是你建立的，無法重新命名",
+    "renameGone": "課堂不存在或已被刪除",
+    "renameSession": "重新命名對話",
+    "renameSessionAria": "重新命名對話「{{name}}」",
+    "renameSessionFailed": "重新命名失敗，請重試",
+    "delete": "刪除",
+    "confirmDelete": "確認刪除",
+    "deleting": "刪除中…",
+    "deleteFailed": "刪除失敗，請重試",
+    "tabsAria": "對話與課程",
+    "courseTabsAria": "右欄標籤頁",
+    "courseTabClose": "關閉標籤頁《{{name}}》",
+    "courseTabRunning": "產生中",
+    "foldersUnavailable": "此版本不支援資料夾"
   },
   "profile": {
     "title": "個人資料",
@@ -1831,6 +2001,35 @@
       "high": "太棒了，你答對了！",
       "mid": "做得好，繼續保持！",
       "low": "不錯的開始，回顧一下再試一次。"
+    }
+  },
+  "proMode": {
+    "attach": "添加材料",
+    "mentionCourse": "引用课堂",
+    "loadSkill": "加载 skill",
+    "skillMenuTitle": "选择课程设计技能",
+    "skillsLoading": "正在加载 skill…",
+    "noSkillsAvailable": "暂无可用 skill",
+    "userSkillsGroup": "我的 Skill",
+    "builtinSkillsGroup": "内置 Skill",
+    "skillsLoadFailed": "Skill 加载失败，点击重试",
+    "retrySkills": "重试",
+    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+    "badgeAria": "專業模式",
+    "badgeEnter": "專業模式",
+    "badgeExit": "返回普通模式",
+    "launchPlaceholder": "描述你想創造的學習體驗",
+    "launchSend": "開始構建"
+  },
+  "workbench": {
+    "tool": {
+      "label": {
+        "extractMaterial": null,
+        "waitMaterials": null
+      },
+      "error": {
+        "materialExtraction": null
+      }
     }
   }
 }

@@ -55,3 +55,21 @@ export const succeedingExecutor: RenderExecutor = {
     return { status: 'succeeded' };
   },
 };
+
+/**
+ * An executor that parks every render until released, so submitted jobs hold
+ * their system slots open across the reserve → queued → running lifecycle.
+ */
+export function parkingExecutor(): { executor: RenderExecutor; releaseRenders: () => void } {
+  let releaseRenders!: () => void;
+  const parked = new Promise<void>((resolve) => {
+    releaseRenders = resolve;
+  });
+  const executor: RenderExecutor = {
+    async execute() {
+      await parked;
+      return { status: 'succeeded' };
+    },
+  };
+  return { executor, releaseRenders };
+}

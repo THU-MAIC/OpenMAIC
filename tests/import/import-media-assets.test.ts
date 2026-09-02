@@ -64,6 +64,10 @@ describe('classroom import media allocation', () => {
   });
 
   async function poolText(ref: string): Promise<string | null> {
+    const localRecord = [...mocks.mediaPut.mock.calls, ...mocks.audioPut.mock.calls]
+      .map(([record]) => record as { id?: string; blob?: Blob })
+      .find((record) => record.id === ref || record.id?.endsWith(`:${ref}`));
+    if (localRecord?.blob) return localRecord.blob.text();
     const url = await pool.resolve(ref);
     if (!url) return null;
     try {
@@ -650,8 +654,8 @@ describe('classroom import media allocation', () => {
     );
 
     expect(mappings.pathToId.get(missingPath)).toBeUndefined();
-    expect(mappings.pathToId.get(presentPath)).toMatch(/^ast_/);
-    expect(put).toHaveBeenCalledTimes(1);
+    expect(mappings.pathToId.get(presentPath)).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(put).not.toHaveBeenCalled();
     expect(allocations).toEqual([mappings.pathToId.get(presentPath)]);
     expect(mocks.audioPut).toHaveBeenCalledWith(
       expect.objectContaining({

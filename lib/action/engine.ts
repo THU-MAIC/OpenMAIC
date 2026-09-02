@@ -15,7 +15,7 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { useMediaGenerationStore, type MediaTask } from '@/lib/store/media-generation';
 import type { AudioPlayer } from '@/lib/utils/audio-player';
-import type { LegacySpeechAction } from '@/lib/media/convert-legacy-asset-refs';
+import type { LegacySpeechAction } from '@/lib/types/action';
 import type {
   Action,
   SpotlightAction,
@@ -151,6 +151,18 @@ export function resolveActionVideoMedia(
     if (element) return resolveVideoMediaForElement(tasks, element, stage?.id);
   }
   return undefined;
+}
+
+/**
+ * Renderer-aligned playability: a task is playable only once its bytes exist
+ * (`done` + objectUrl). A deferred restore is `done` without an objectUrl and
+ * the renderer still treats it as pending (`resolveMediaRef` maps it to
+ * 'pending'), so starting playback in that state would set
+ * playingVideoElementId while no <video> exists — and the later hydration
+ * would not retrigger play, leaving the action stuck until its timeout.
+ */
+function isPlayableVideoTask(task: MediaTask): boolean {
+  return task.status === 'done' && !!task.objectUrl;
 }
 
 // ==================== ActionEngine ====================
@@ -351,10 +363,11 @@ export class ActionEngine {
       );
     const binding = resolveBinding();
 
-    if (binding) {
-      const task = binding.task;
-      if (task && task.status !== 'done') {
-        // Wait for media to be ready (or fail)
+    if (binding?.task) {
+      // Wait while the task is not yet playable: pending/generating, or a
+      // deferred restore that is done but still byte-less.
+      if (!isPlayableVideoTask(binding.task) && binding.task.status !== 'failed') {
+        // Wait for media to be playable (or fail)
         await new Promise<void>((resolve) => {
           let unsubscribe = () => {};
           const finish = () => {
@@ -364,24 +377,24 @@ export class ActionEngine {
           };
           unsubscribe = useMediaGenerationStore.subscribe((state) => {
             const t = resolveActionVideoMedia(this.stageStore, state.tasks, action.elementId)?.task;
-            if (!t || t.status === 'done' || t.status === 'failed') {
+            if (!t || isPlayableVideoTask(t) || t.status === 'failed') {
               finish();
             }
           });
           options.signal?.addEventListener('abort', finish, { once: true });
           // Check again in case it resolved between getState and subscribe
           const current = resolveBinding()?.task;
-          if (!current || current.status === 'done' || current.status === 'failed') {
+          if (!current || isPlayableVideoTask(current) || current.status === 'failed') {
             finish();
           }
         });
 
         if (options.signal?.aborted) return;
+      }
 
-        // If failed, skip playback
-        if (resolveBinding()?.task?.status === 'failed') {
-          return;
-        }
+      // If failed, skip playback
+      if (resolveBinding()?.task?.status === 'failed') {
+        return;
       }
     }
 

@@ -133,9 +133,9 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
     // set the drag translates; `others` are the snap candidates (everything
     // NOT being dragged). Locked elements never move: even when selected they
     // are excluded from the translated set (selection keeps them for feedback)
-    // and stay in `others` as snap candidates. A 1-mover drag routes through
-    // `computeDragMove` for exact backward compatibility; N > 1 routes through
-    // the multi core.
+    // and stay in `others` as snap candidates. A lone box-model element routes
+    // through `computeDragMove`; a line or N > 1 elements route through the
+    // multi core, whose union geometry supports line ranges.
     const selectedSet = new Set(dragIds);
     const isMover = (o: PPTElement) => selectedSet.has(o.id) && !o.lock;
     const selectedElements = slide.elements.filter(isMover);
@@ -178,7 +178,7 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
           ? 'x'
           : 'y'
         : undefined;
-      if (isMulti) {
+      if (isMulti || el.type === 'line') {
         return computeMultiDragMove({
           handleElement: el,
           selected: selectedElements,

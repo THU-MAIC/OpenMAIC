@@ -14,6 +14,7 @@ import { BaseVideoElement } from '../components/element/VideoElement/BaseVideoEl
 import { BaseCodeElement } from '../components/element/CodeElement/BaseCodeElement';
 import { useSceneSelector } from '@/lib/contexts/scene-context';
 import type { SceneContent } from '@/lib/types/stage';
+import { maicElementIdAttributes, screenElementDomId } from '../element-dom';
 
 interface ScreenElementProps {
   readonly elementInfo: PPTElement;
@@ -59,7 +60,8 @@ export function ScreenElement({ elementInfo, elementIndex, animate }: ScreenElem
   return (
     <div
       className="screen-element"
-      id={`screen-element-${elementInfo.id}`}
+      id={screenElementDomId(elementInfo.id)}
+      {...maicElementIdAttributes(elementInfo.id)}
       style={{
         zIndex: elementIndex,
         color: theme.fontColor,

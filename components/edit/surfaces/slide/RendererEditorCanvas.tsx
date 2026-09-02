@@ -12,11 +12,13 @@ import { useResolvedSlide } from '@/components/slide-renderer/use-resolved-slide
 import { createElementId } from '@/lib/edit/element-id';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { useSyncCanvasViewportFromSlide } from '@/lib/store/sync-canvas-viewport';
 import { EDITABLE_ELEMENT_ID_PREFIX } from './renderer-element-dom';
 import { useSlideEditSession } from './slide-edit-session';
 import { useResolvedSlideContent } from './use-slide-surface';
 
 export function RendererEditorCanvas() {
+  useSyncCanvasViewportFromSlide();
   const { locale, t } = useI18n();
   const content = useResolvedSlideContent();
   const slide = useResolvedSlide(content.canvas);

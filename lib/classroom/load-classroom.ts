@@ -13,15 +13,21 @@ import {
   useStageStore,
   type StageSceneLoadToken,
 } from '@/lib/store/stage';
+import { resolveStageFallbackAccess } from '@/lib/classroom/stage-ownership-signal';
 import type { MediaFileRecord } from '@/lib/utils/database';
 import { unmarkStageDeleted } from '@/lib/utils/deleted-stages';
 import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
 import type { DocumentMigrationDeps } from '@/lib/document-store/migration';
-import { DSL_VERSION, type PPTElement } from '@openmaic/dsl';
+import type { PPTElement, Slide } from '@openmaic/dsl';
 import {
   collectDocumentMediaElements,
   withDocumentLegacyVideoRecovery,
 } from '@/lib/media/media-task-resolution';
+import { slideMediaReferenceSlots } from '@/lib/media/slide-media-slots';
+import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
+import { createLogger } from '@/lib/logger';
+
+const moduleLog = createLogger('ClassroomLoad');
 
 export interface ClassroomPayload {
   stage: Stage;
@@ -152,6 +158,9 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     }
 
     if (!isCurrent()) return;
+    // Metadata-only on the critical path: the default loader defers object-URL
+    // creation for non-priority blobs, so this await is a table read, not a
+    // full media hydration (the rest hydrates in the background after apply).
     const mediaTasks = await loadRestoredMediaTasks(classroomId);
     if (!isCurrent()) {
       discardRestoredMediaTasks(mediaTasks);
@@ -246,8 +255,8 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
 
 export async function fetchClassroomFromApi(
   classroomId: string,
-  shouldConvert: () => boolean = () => true,
-  deps: DocumentMigrationDeps = {},
+  _shouldConvert: () => boolean = () => true,
+  _deps: DocumentMigrationDeps = {},
 ): Promise<ClassroomPayload | null> {
   const res = await fetch(`/api/classroom?id=${encodeURIComponent(classroomId)}`);
   if (!res.ok) return null;
@@ -257,79 +266,7 @@ export async function fetchClassroomFromApi(
     classroom?: ClassroomPayload;
   };
   if (!json.success || !json.classroom) return null;
-  // A stale request must not enter the allocation/commit critical section:
-  // the caller discards this payload, so no side effects may be produced.
-  // The unconverted payload carries none, and the document load path retries
-  // conversion on the next open.
-  const payload = json.classroom;
-  if (!shouldConvert()) return payload;
-  // A server classroom payload is a pre-conversion transport: its speech
-  // actions still carry the serving URL beside a derived audioId, and its
-  // media bytes live behind that URL, not in any local store. Convert before
-  // the payload is applied or persisted, so the classroom is born with
-  // allocated asset ids and raw transport URLs never enter document storage.
-  // Conversion and the first document save share the per-stage lock, so
-  // simultaneous cold loads reuse the winner's committed document instead of
-  // allocating competing asset sets. When Web Locks are absent entirely (a
-  // non-secure context, an older browser, some webviews) the mutation
-  // degrades to the app's lock-free route instead of silently no-op'ing the
-  // cold load; the degraded pass still keeps its ledger+rollback discipline,
-  // so a failed unlocked attempt leaves nothing behind.
-  const [{ mutateDocument }, converter] = await Promise.all([
-    import('@/lib/document-store'),
-    import('@/lib/media/convert-legacy-asset-refs'),
-  ]);
-  try {
-    return await mutateDocument(
-      payload.stage.id,
-      async (existing, store) => {
-        if (existing) {
-          // The document already owns its media (a concurrent cold load, or a
-          // prior open). Reuse it verbatim; if it still carries transport
-          // URLs, conversion could not complete and the load must fail rather
-          // than apply or persist raw addresses.
-          if (converter.containsClassroomMediaUrls(existing)) return null;
-          return { stage: existing.stage, scenes: existing.scenes };
-        }
-
-        const allocated: string[] = [];
-        try {
-          const converted = await converter.convertDocumentAssetRefs(
-            { ...payload, dslVersion: DSL_VERSION },
-            undefined,
-            shouldConvert,
-            allocated,
-          );
-          // The converter rechecks liveness at its commit boundaries; this is
-          // the final gate before the document write, so a load superseded in
-          // the last window never commits side effects it cannot hand over.
-          if (!shouldConvert()) {
-            throw new converter.LegacyConversionAbortedError(allocated);
-          }
-          if (converter.containsClassroomMediaUrls(converted.document)) {
-            throw new Error('server classroom media conversion was incomplete');
-          }
-          await store.saveDocument(converted.document);
-          return {
-            stage: converted.document.stage,
-            scenes: converted.document.scenes,
-          };
-        } catch (error) {
-          // Every failure mode -- a liveness abort or an ordinary converter
-          // error -- rolls back the pass's fresh allocations, and the
-          // document was never saved, so nothing durable references them.
-          await converter.rollbackConvertedAllocations(payload.stage.id, allocated);
-          throw error;
-        }
-      },
-      deps,
-    );
-  } catch {
-    // Persisting the raw transport is never an acceptable fallback: the next
-    // cold load retries conversion once storage or the media endpoint
-    // recovers.
-    return null;
-  }
+  return json.classroom;
 }
 
 export function applyClassroomStageAndScenes(
@@ -353,6 +290,11 @@ export function applyClassroomStageAndScenes(
   // and persists normally.
   unmarkStageDeleted(stage.id);
   const nextScenes = [...scenes];
+  // A server fallback is a fresh classroom boundary. Never inherit access or
+  // producer state from whichever course previously occupied the singleton
+  // store; these defaults match an ordinary cold load (the stage-meta sidecar
+  // probe corrects them when it answers).
+  const access = resolveStageFallbackAccess(stage.id);
   useStageStore.setState((state) => ({
     stage,
     scenes: nextScenes,
@@ -360,6 +302,8 @@ export function applyClassroomStageAndScenes(
     chats: options.chats ?? [],
     chatSnapshot: options.chatSnapshot ?? { sessions: [], restoreMarker: null },
     generationComplete: false,
+    isOwner: access.isOwner,
+    readOnly: !access.isOwner,
     generationEpoch: state.generationEpoch + 1,
     mode: 'playback',
   }));
@@ -368,18 +312,88 @@ export function applyClassroomStageAndScenes(
   }
 }
 
-export async function loadRestoredMediaTasksFromDB(
-  stageId: string,
-): Promise<Record<string, MediaTask>> {
+/**
+ * Restored media state split by hydration phase. `tasks` is metadata-complete
+ * and applied before first paint; records in `deferred` have their blob object
+ * URLs materialized afterwards in the background (see
+ * `hydrateDeferredMediaTasks`), so entering a media-heavy classroom never waits
+ * on `URL.createObjectURL` for every restored blob.
+ */
+export interface RestoredMediaTasks {
+  readonly stageId: string;
+  readonly tasks: Record<string, MediaTask>;
+  readonly deferred: readonly MediaFileRecord[];
+}
+
+/**
+ * Media refs owned by the scene the classroom opens on (the persisted cursor,
+ * else the first scene), plus the stage-level whiteboard — it stays open across
+ * standalone classroom switches, so its media can be visible before any scene
+ * is. Their blobs hydrate eagerly during load so the first visible page paints
+ * its media immediately; every other record defers.
+ */
+export function collectPriorityMediaRefs(
+  scenes: readonly Scene[],
+  currentSceneId: string | null,
+  stageWhiteboard: readonly Pick<Slide, 'background' | 'elements'>[] = [],
+): Set<string> {
+  const refs = new Set<string>();
+  const collect = (slide: Pick<Slide, 'background' | 'elements'>) => {
+    for (const slot of slideMediaReferenceSlots(slide)) {
+      const ref = slot.read();
+      if (ref && !isConcreteMediaAddress(ref)) refs.add(ref);
+      // Task lookup also binds by element id (see resolveMediaTaskForElement),
+      // so a record keyed `stage:<elementId>` belongs to the opening scene even
+      // when the slot carries a different opaque ref and no placeholderRef.
+      if (slot.element) refs.add(slot.element.id);
+    }
+  };
+  for (const slide of stageWhiteboard) collect(slide);
+  const scene = scenes.find((candidate) => candidate.id === currentSceneId) ?? scenes[0];
+  if (!scene) return refs;
+  if (scene.content.type === 'slide') collect(scene.content.canvas);
+  for (const slide of scene.whiteboards ?? []) collect(slide);
+  return refs;
+}
+
+export async function loadRestoredMediaTasksFromDB(stageId: string): Promise<RestoredMediaTasks> {
   try {
     const { db } = await import('@/lib/utils/database');
     const records = await db.mediaFiles.where('stageId').equals(stageId).toArray();
     const state = useStageStore.getState();
-    const documentElements =
-      state.stage?.id === stageId ? collectDocumentMediaElements(state.stage, state.scenes) : [];
-    return buildRestoredMediaTasks(stageId, records, documentElements);
+    const sameStage = state.stage?.id === stageId;
+    const documentElements = sameStage
+      ? collectDocumentMediaElements(state.stage, state.scenes)
+      : [];
+    const priorityRefs = sameStage
+      ? collectPriorityMediaRefs(state.scenes, state.currentSceneId, state.stage?.whiteboard ?? [])
+      : new Set<string>();
+    // Legacy singleton video recovery assigns a placeholderRef at the end of
+    // the build (see withDocumentLegacyVideoRecovery), so classify against the
+    // recovered binding too — otherwise the opening scene's legacy video is
+    // deferred and stays pending until idle hydration reaches it. The metadata
+    // pass hydrates nothing, it only learns each record's effective ref.
+    const recoveredRefByElementId = new Map<string, string | undefined>(
+      Object.entries(buildRestoredMediaTasks(stageId, records, documentElements, () => false)).map(
+        ([key, task]) => [key, task.placeholderRef] as const,
+      ),
+    );
+    const deferred: MediaFileRecord[] = [];
+    const tasks = buildRestoredMediaTasks(stageId, records, documentElements, (record) => {
+      const elementId = record.id.includes(':')
+        ? record.id.split(':').slice(1).join(':')
+        : record.id;
+      const recoveredRef = recoveredRefByElementId.get(elementId);
+      const isPriority =
+        priorityRefs.has(elementId) ||
+        (!!record.placeholderRef && priorityRefs.has(record.placeholderRef)) ||
+        (!!recoveredRef && priorityRefs.has(recoveredRef));
+      if (!isPriority) deferred.push(record);
+      return isPriority;
+    });
+    return { stageId, tasks, deferred };
   } catch {
-    return {};
+    return { stageId, tasks: {}, deferred: [] };
   }
 }
 
@@ -387,6 +401,7 @@ export function buildRestoredMediaTasks(
   stageId: string,
   records: readonly MediaFileRecord[],
   documentElements: readonly PPTElement[] = [],
+  shouldHydrateBlob: (record: MediaFileRecord) => boolean = () => true,
 ): Record<string, MediaTask> {
   const restored: Record<string, MediaTask> = {};
   for (const rec of records) {
@@ -409,7 +424,14 @@ export function buildRestoredMediaTasks(
       continue;
     }
 
-    const blob = rec.blob.type ? rec.blob : new Blob([rec.blob], { type: rec.mimeType });
+    // A deferred record keeps its done status (so generation resume never
+    // re-runs it) but carries no objectUrl yet: media resolution treats a
+    // known task without bytes as pending and re-renders when background
+    // hydration fills the URL in.
+    const hydrate = shouldHydrateBlob(rec);
+    const objectUrl = hydrate
+      ? URL.createObjectURL(rec.blob.type ? rec.blob : new Blob([rec.blob], { type: rec.mimeType }))
+      : undefined;
     restored[elementId] = {
       elementId,
       placeholderRef: rec.placeholderRef,
@@ -417,8 +439,8 @@ export function buildRestoredMediaTasks(
       status: 'done',
       prompt: rec.prompt,
       params,
-      objectUrl: URL.createObjectURL(blob),
-      poster: rec.poster ? URL.createObjectURL(rec.poster) : undefined,
+      objectUrl,
+      poster: hydrate && rec.poster ? URL.createObjectURL(rec.poster) : undefined,
       retryCount: 0,
       stageId,
     };
@@ -426,17 +448,128 @@ export function buildRestoredMediaTasks(
   return withDocumentLegacyVideoRecovery(restored, documentElements, stageId);
 }
 
-export function applyRestoredMediaTasks(tasks: Record<string, MediaTask>): void {
-  if (Object.keys(tasks).length === 0) return;
-  useMediaGenerationStore.setState((state) => ({
-    tasks: { ...state.tasks, ...tasks },
-  }));
+/**
+ * Monotonic token identifying the latest classroom restore. Applying a new
+ * restore (another classroom, or a reload of the same one) supersedes every
+ * earlier deferred hydration loop, which then stops before materializing more
+ * URLs — both to drop work for an abandoned classroom and to keep bytes read
+ * by an older load from reaching a newer load's tasks.
+ */
+let hydrationEpoch = 0;
+
+export function applyRestoredMediaTasks(
+  restored: RestoredMediaTasks,
+  isLoadCurrent?: () => boolean,
+): void {
+  const epoch = ++hydrationEpoch;
+  if (Object.keys(restored.tasks).length > 0) {
+    useMediaGenerationStore.setState((state) => ({
+      tasks: { ...state.tasks, ...restored.tasks },
+    }));
+  }
+  // Blob hydration continues off the load path; each deferred URL lands as an
+  // in-place task update that media resolution picks up as pending → url.
+  if (restored.deferred.length > 0) {
+    // Live only while this restore is both the latest applied one and still
+    // owned by the current classroom load: `isLoadCurrent` is the load token /
+    // effect-cleanup check, so navigation away stops the loop at the next idle
+    // boundary instead of minting URLs for a classroom nobody is watching.
+    const isLive = () => epoch === hydrationEpoch && (isLoadCurrent?.() ?? true);
+    void hydrateDeferredMediaTasks(restored.stageId, restored.deferred, isLive).catch((error) => {
+      moduleLog.warn('Deferred media hydration failed:', error);
+    });
+  }
 }
 
-export function discardRestoredMediaTasks(tasks: Record<string, MediaTask>): void {
-  for (const task of Object.values(tasks)) {
+export function discardRestoredMediaTasks(restored: RestoredMediaTasks): void {
+  // Only eagerly hydrated tasks own object URLs; deferred records hold raw
+  // blobs and are dropped with nothing to revoke.
+  for (const task of Object.values(restored.tasks)) {
     if (task.objectUrl) URL.revokeObjectURL(task.objectUrl);
     if (task.poster) URL.revokeObjectURL(task.poster);
+  }
+}
+
+/** Records hydrated per idle slice — a handful of `createObjectURL` calls. */
+const MEDIA_HYDRATION_CHUNK_SIZE = 4;
+
+/** Upper bound on one idle slice, so a busy main thread cannot starve hydration. */
+const MEDIA_HYDRATION_IDLE_TIMEOUT_MS = 1000;
+
+/** Yield to the browser between hydration chunks (idle callback when available). */
+function nextIdleSlice(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(() => resolve(), { timeout: MEDIA_HYDRATION_IDLE_TIMEOUT_MS });
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
+}
+
+/**
+ * Materialize object URLs for restored media records whose blobs were deferred
+ * during the blocking load phase. Runs chunk-by-chunk at idle time. A record
+ * whose task has since been replaced (classroom switch, regeneration, retry)
+ * is skipped and its freshly minted URLs are revoked immediately, so a late
+ * hydration can never leak URLs or overwrite another stage's task. The
+ * `status !== 'done'` check is what catches in-flight replacements: only a
+ * deferred restore is `done` without an `objectUrl`, because regeneration and
+ * retry pass through `pending`/`generating` before they can complete.
+ *
+ * `isLive` gates the whole loop, not individual records: it is re-checked
+ * before each chunk is materialized, so a superseded restore (another
+ * classroom applied, or this stage reloaded — see `hydrationEpoch`) stops
+ * before minting URLs for records nobody will consume. Callers that omit it
+ * (tests) get an always-live loop.
+ */
+export async function hydrateDeferredMediaTasks(
+  stageId: string,
+  records: readonly MediaFileRecord[],
+  isLive: () => boolean = () => true,
+): Promise<void> {
+  for (let start = 0; start < records.length; start += MEDIA_HYDRATION_CHUNK_SIZE) {
+    await nextIdleSlice();
+    if (!isLive()) return;
+    const chunk = records.slice(start, start + MEDIA_HYDRATION_CHUNK_SIZE);
+    const hydrated = chunk.map((rec) => {
+      const elementId = rec.id.includes(':') ? rec.id.split(':').slice(1).join(':') : rec.id;
+      const blob = rec.blob.type ? rec.blob : new Blob([rec.blob], { type: rec.mimeType });
+      return {
+        elementId,
+        objectUrl: URL.createObjectURL(blob),
+        poster: rec.poster ? URL.createObjectURL(rec.poster) : undefined,
+      };
+    });
+    useMediaGenerationStore.setState((state) => {
+      let changed = false;
+      const tasks = { ...state.tasks };
+      for (const entry of hydrated) {
+        const existing = tasks[entry.elementId];
+        if (
+          !existing ||
+          existing.stageId !== stageId ||
+          existing.status !== 'done' ||
+          existing.objectUrl
+        ) {
+          URL.revokeObjectURL(entry.objectUrl);
+          if (entry.poster) URL.revokeObjectURL(entry.poster);
+          continue;
+        }
+        let poster = entry.poster;
+        if (poster && existing.poster) {
+          URL.revokeObjectURL(poster);
+          poster = undefined;
+        }
+        tasks[entry.elementId] = {
+          ...existing,
+          objectUrl: entry.objectUrl,
+          ...(poster ? { poster } : {}),
+        };
+        changed = true;
+      }
+      return changed ? { tasks } : state;
+    });
   }
 }
 

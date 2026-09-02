@@ -3,7 +3,11 @@
     "you": "Вы",
     "confirm": "Подтвердить",
     "cancel": "Отмена",
-    "loading": "Загрузка..."
+    "loading": "Загрузка...",
+    "errorPrefix": "Ошибка: ",
+    "loadingClassroom": "Загрузка класса...",
+    "retry": "Повторить",
+    "close": "Закрыть"
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
@@ -131,6 +135,22 @@
       "emptyAgentResponses": "Агенты вернули пустые ответы; обсуждение остановлено. Попробуйте ещё раз или проверьте настройки модели.",
       "streamInterrupted": "Поток данных неожиданно прервался; обсуждение не завершено. Попробуйте ещё раз."
     },
+    "elementReference": {
+      "button": "Сослаться на слайд",
+      "unavailable": "Можно сослаться только на текущий слайд PPT",
+      "instruction": "Нажмите на элемент слайда · Esc для выхода",
+      "fallback": "Другие элементы слайда ({{count}})",
+      "clear": "Удалить ссылку на слайд",
+      "summary": {
+        "noText": "Без текста",
+        "emptyContent": "Без содержимого",
+        "code": "Код",
+        "line": "Линия",
+        "imageMetadata": "Изображение (только метаданные)",
+        "videoMetadata": "Видео (только метаданные)",
+        "audioMetadata": "Аудио (только метаданные)"
+      }
+    },
     "tabs": {
       "lecture": "Заметки",
       "chat": "Чат"
@@ -227,13 +247,6 @@
       "interactive": "Интерактив",
       "pbl": "PBL"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "Этот курс уже редактируется в другой вкладке",
-        "body": "Редактирование возможно только в одной вкладке одновременно, чтобы избежать конфликтных изменений. Закройте другую вкладку (или дождитесь истечения её сеанса) перед входом в режим редактирования здесь.",
-        "actionDismiss": "Понятно"
-      }
-    },
     "text": {
       "toolbar": "Панель текста",
       "label": "Текст",
@@ -296,6 +309,8 @@
       "tableDimensions": "Таблица {{rows}} x {{columns}}",
       "dragToolbar": "Переместить инструменты вставки",
       "dragToolbarKeyboard": "Переместить инструменты: нажмите Enter или пробел, затем используйте стрелки",
+      "collapseToolbar": "Свернуть инструменты вставки",
+      "expandToolbar": "Развернуть инструменты вставки",
       "image": "Изображение",
       "imageDrop": "Перетащите изображение или нажмите, чтобы выбрать файл",
       "imageOr": "или вставьте URL изображения",
@@ -357,7 +372,10 @@
       "deckLabel": "Сцены",
       "moreActions": "Ещё действия",
       "rename": "Переименовать",
-      "sceneIncomplete": "Содержимое этой страницы не заполнено"
+      "sceneIncomplete": "Содержимое этой страницы не заполнено",
+      "addPage": "Добавить страницу",
+      "nextPage": "Следующая страница",
+      "prevPage": "Предыдущая страница"
     },
     "zorder": {
       "toFront": "На передний план",
@@ -540,11 +558,13 @@
       "discussionDesc": "Задать вопрос и выбрать, кто начнёт"
     },
     "tts": {
+      "cancelPreview": "Отменить",
       "preview": "Прослушать",
       "regenerate": "Сгенерировать озвучку заново",
       "statusReady": "Озвучено",
       "statusNone": "Не озвучено",
       "statusGenerating": "Генерация",
+      "stopPreview": "Остановить",
       "statusError": "Ошибка"
     },
     "pick": {
@@ -554,7 +574,10 @@
       "expand": "Развернуть",
       "collapse": "Свернуть",
       "noElements": "На этом слайде нет элементов для выбора.",
-      "bindHint": "Нажмите на подсвеченный элемент на холсте для привязки"
+      "bindHint": "Нажмите на подсвеченный элемент на холсте для привязки",
+      "refCapHint": "Достигнут предел — уберите один, чтобы заменить · Esc — готово",
+      "refHint": "Нажмите, чтобы добавить или убрать · Esc — готово",
+      "refLead": "Ссылки на элементы · {{count}}/{{max}}"
     },
     "regen": {
       "title": "Сгенерировать закадровый текст заново",
@@ -609,7 +632,18 @@
       "moveDown": "Переместить вниз",
       "removeFromClass": "Удалить из класса",
       "aiClassmates": "AI-одноклассники · {{count}}",
-      "addRole": "Добавить роль"
+      "addRole": "Добавить роль",
+      "shortTitle": "Состав"
+    },
+    "elementRef": {
+      "remove": "移除引用 {{label}}",
+      "counts": "Выбрано {{count}}/{{max}}",
+      "exitPicking": "Завершить выбор",
+      "startPicking": "Ссылка на элементы"
+    },
+    "dock": {
+      "elementRefHint": "Ссылки на элементы — выберите элементы для следующего сообщения",
+      "globalTools": "Общие инструменты"
     }
   },
   "classroomComplete": {
@@ -971,7 +1005,10 @@
     "deleteFolderOnly": "Удалить только папку",
     "deleteFolderAndCourses": "Удалить папку и {{count}} курс",
     "deleteFolderAndCourses_other": "Удалить папку и {{count}} курсов",
-    "deleteFolderConfirmRemove": "Папка и её курсы (включая историю чата) будут удалены."
+    "deleteFolderConfirmRemove": "Папка и её курсы (включая историю чата) будут удалены.",
+    "notFound": "Курс не найден",
+    "notFoundDesc": "Этот курс не существует или был удалён.",
+    "backToHome": "На главную"
   },
   "upload": {
     "pdfSizeLimit": "Поддержка PDF до 50 МБ",
@@ -1402,6 +1439,16 @@
     "voxcpmStopPreview": "Остановить прослушивание",
     "voxcpmPreviewVoice": "Прослушать голос",
     "voxcpmDeleteVoice": "Удалить голос",
+    "qwenCloneVoicesTitle": "Qwen TTS Cloned Voices",
+    "qwenCloneRefText": "Enter the verbatim transcript of the reference audio",
+    "qwenCloneRefAudioHint": "Use a clean 1–60 second voice sample. A 10–20 second sample is recommended; audio is converted to 24 kHz mono PCM WAV.",
+    "qwenCloneSaved": "Qwen cloned voice registered and saved",
+    "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
+    "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
+    "qwenCloneSpeedHint": "Cloned voices always synthesize at 1× speed.",
+    "qwenCloneDeleteWarning": "The voice was removed locally, but provider deletion failed.",
+    "qwenCloneNarrationUnavailable": "The assigned voice is unavailable. Narration will use another enabled voice instead.",
+    "qwenCloneDiscussionUnavailable": "The assigned voice is unavailable. Discussion will use another enabled voice instead.",
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "Встроенный ASR браузера",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
@@ -1798,9 +1845,132 @@
       "capabilities": "Capabilities offered",
       "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time."
     },
+    "skills": {
+      "nav": "Навыки",
+      "title": "Настройки навыков",
+      "description": "Просматривайте навыки, установленные для вашей учётной записи, изучайте навык и скачивайте его в виде zip для обмена или резервной копии.",
+      "mySkills": "Мои навыки",
+      "builtinSkills": "Встроенные навыки",
+      "emptyMySkills": "Своих навыков пока нет — попросите агента в чате создать один из истории.",
+      "emptyBuiltinSkills": "Встроенные навыки недоступны.",
+      "listFailed": "Не удалось загрузить список навыков",
+      "retry": "Повторить",
+      "badgeBuiltin": "Встроенный",
+      "badgeOwner": "Мой навык",
+      "badgeConstraints": "Ограничения",
+      "details": "Подробнее",
+      "download": "Скачать",
+      "detailFailed": "Не удалось загрузить сведения о навыке",
+      "contentLabel": "Содержимое",
+      "builtinDetailNote": "Этот навык поставляется с OpenMAIC. Скачайте его, чтобы импортировать в другое рабочее пространство агента.",
+      "upload": "Загрузить",
+      "uploading": "Загрузка…",
+      "uploadFailed": "Не удалось загрузить навык. Проверьте файл и повторите попытку.",
+      "delete": "Удалить",
+      "deleting": "Удаление…",
+      "deleteTitle": "Удалить навык?",
+      "deleteConfirm": "Навык будет удалён из вашей учётной записи. Это действие нельзя отменить.",
+      "deleteFailed": "Не удалось удалить навык. Повторите попытку."
+    },
     "ttsBrowserNativeTimelineNotice": "Встроенный в браузер TTS не поддерживает функции аудио на таймлайне редактора (прослушивание, повторная генерация и массовая озвучка). Переключитесь на управляемый TTS-провайдер, чтобы генерировать и управлять аудио для каждой строки.",
     "alidocmindAccessKeyId": "AccessKey ID",
     "alidocmindAccessKeySecret": "AccessKey Secret"
+  },
+  "workspace": {
+    "untitledCourse": "未命名课堂",
+    "sceneCount": "{{count}} 页",
+    "sceneCount_one": "{{count}} 页",
+    "sceneCount_other": "{{count}} 页",
+    "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkMore": "还有 {{count}} 节课堂",
+    "courseMention": {
+      "title": "为这条消息引用课堂",
+      "empty": "没有匹配的课堂",
+      "alreadyNamed": "已引用",
+      "remove": "移除{{name}}",
+      "pillHint": "这条消息引用了「{{name}}」",
+      "notAccepted": "Сервер временно недоступен. Повторите попытку чуть позже.",
+      "reference": "引用「{{name}}」",
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+    },
+    "heroTitle": "What will you create today?",
+    "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
+    "newSession": "New chat",
+    "sections": {
+      "courses": "Courses",
+      "sessions": "Chats"
+    },
+    "coursesEmpty": "No courses yet",
+    "sessionsEmpty": "No chats yet",
+    "loading": "Loading",
+    "loadFailed": "Couldn't load",
+    "retry": "Retry",
+    "untitledSession": "Untitled chat",
+    "pagePosition": "Page {{index}} of {{total}}",
+    "exitPro": "Exit Pro",
+    "navAria": "Workspace navigation",
+    "homeAria": "Back to home",
+    "currentSession": "Current chat",
+    "startLearning": "Начать обучение",
+    "time": {
+      "justNow": "Just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
+    },
+    "sessionStatus": {
+      "connecting": "Connecting",
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Ready",
+      "failed": "Needs attention",
+      "cancelled": "Stopped"
+    },
+    "backToWorkspace": "Back to workspace",
+    "searchPlaceholder": "Filter by name",
+    "searchAria": "Search {{section}}",
+    "searchEmpty": "No matches",
+    "showMore": "Show {{count}} more",
+    "showLess": "Show less",
+    "utilitiesAria": "Preferences and account",
+    "resizeAria": "Drag to resize the sidebar",
+    "chatPaneAria": "Chat panel",
+    "classroomPaneAria": "Classroom",
+    "collapseNav": "Collapse navigation",
+    "expandNav": "Expand navigation",
+    "expandNavInto": "Expand navigation · {{section}}",
+    "collapseChat": "Collapse conversation",
+    "expandChat": "Conversation",
+    "collapseClassroom": "Collapse classroom",
+    "expandClassroom": "Classroom",
+    "readOnlyBadge": "Read-only",
+    "noCourseTitle": "No course open",
+    "noCourseHint": "Откройте по ссылке на курс в переписке или выберите курс в списке слева — переписка останется на месте",
+    "resizeChatAria": "Drag to resize the conversation pane",
+    "firstPageLanding": "The first page is landing…",
+    "autoSaving": "Автосохранение…",
+    "autoSaved": "Сохранено",
+    "collapsedTitle": "Both panes are collapsed",
+    "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
+    "moreUtilities": "More",
+    "rowMore": "Другие действия для {{name}}",
+    "folderDeleteHint": "Курсы из папки вернутся на верхний уровень. Ничего не удаляется.",
+    "dropToUnfile": "Перетащите сюда, чтобы убрать из папки",
+    "renameInvalid": "Название должно содержать от 1 до 120 символов",
+    "renameForbidden": "Этот курс создан не вами, переименовать его нельзя",
+    "renameGone": "Такого курса больше нет",
+    "renameSession": "Переименовать чат",
+    "renameSessionAria": "Переименовать чат «{{name}}»",
+    "renameSessionFailed": "Не удалось переименовать, попробуйте ещё раз",
+    "delete": "Удалить",
+    "confirmDelete": "Подтвердить удаление",
+    "deleting": "Удаление…",
+    "deleteFailed": "Не удалось удалить. Повторите попытку.",
+    "tabsAria": "Chats and courses",
+    "courseTabsAria": "Открытые курсы",
+    "courseTabClose": "Закрыть вкладку: {{name}}",
+    "courseTabRunning": "Генерируется",
+    "foldersUnavailable": "Папки недоступны в этой сборке"
   },
   "profile": {
     "title": "Профиль",
@@ -1832,5 +2002,34 @@
     "title": "Введите код доступа",
     "placeholder": "Код доступа",
     "error": "Неверный код доступа. Попробуйте ещё раз."
+  },
+  "proMode": {
+    "attach": "Прикрепить материал",
+    "mentionCourse": "引用课堂",
+    "loadSkill": "加载 skill",
+    "skillMenuTitle": "选择课程设计技能",
+    "skillsLoading": "正在加载 skill…",
+    "noSkillsAvailable": "暂无可用 skill",
+    "userSkillsGroup": "我的 Skill",
+    "builtinSkillsGroup": "内置 Skill",
+    "skillsLoadFailed": "Skill 加载失败，点击重试",
+    "retrySkills": "重试",
+    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+    "badgeAria": "Pro-режим",
+    "badgeEnter": "Pro-режим",
+    "badgeExit": "Вернуться в обычный режим",
+    "launchPlaceholder": "Опишите учебный опыт, который хотите создать",
+    "launchSend": "Начать сборку"
+  },
+  "workbench": {
+    "tool": {
+      "label": {
+        "extractMaterial": null,
+        "waitMaterials": null
+      },
+      "error": {
+        "materialExtraction": null
+      }
+    }
   }
 }

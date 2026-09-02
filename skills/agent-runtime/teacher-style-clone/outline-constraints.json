@@ -1,0 +1,5 @@
+{
+  "$comment": "Structural constraints for the teacher-style-clone skill. Deliberately thin: style transfer constrains HOW pages speak, not what types they are — the honest structure is only 'a lecture opens with speech'. See lib/server/agent-runtime/skills.ts.",
+  "allowedTypes": ["slide", "quiz", "interactive"],
+  "firstSceneType": "slide"
+}

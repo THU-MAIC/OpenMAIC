@@ -52,7 +52,6 @@ const VIDEO_PROVIDER_ICONS: Record<string, string> = {
   seedance: '/logos/doubao.svg',
   kling: '/logos/kling.svg',
   veo: '/logos/gemini.svg',
-  sora: '/logos/openai.svg',
   'grok-video': '/logos/grok.svg',
 };
 
@@ -133,10 +132,15 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
 
   const cfgOk = useCallback(
     (
-      configs: Record<string, { apiKey?: string; isServerConfigured?: boolean }>,
+      configs: Record<
+        string,
+        { apiKey?: string; isServerConfigured?: boolean; serverDisabled?: boolean }
+      >,
       id: string,
       needsKey: boolean,
-    ) => !needsKey || !!configs[id]?.apiKey || !!configs[id]?.isServerConfigured,
+    ) =>
+      !configs[id]?.serverDisabled &&
+      (!needsKey || !!configs[id]?.apiKey || !!configs[id]?.isServerConfigured),
     [],
   );
 

@@ -140,6 +140,13 @@ export interface CallLlmStreamFnOptions {
   /** Resolved Vercel AI SDK model instance (from resolveModelFromRequest). */
   languageModel: LanguageModel;
   maxOutputTokens?: number;
+  /**
+   * When true, never send a max output tokens cap on the wire, even when pi
+   * supplies one via streamOptions.maxTokens. pi's per-call budget is an
+   * internal compaction estimate, not an API limit, so it must not become a
+   * hard max_tokens on the provider call.
+   */
+  omitMaxOutputTokens?: boolean;
   thinkingConfig?: ThinkingConfig;
   source?: string;
   /** Optional abort signal forwarded to the underlying streamLLM call. */
@@ -385,8 +392,9 @@ async function pump(
     }
 
     const requestedMaxTokens = streamOptions?.maxTokens;
-    const maxOutputTokens =
-      opts.maxOutputTokens && requestedMaxTokens
+    const maxOutputTokens = opts.omitMaxOutputTokens
+      ? undefined
+      : opts.maxOutputTokens && requestedMaxTokens
         ? Math.min(opts.maxOutputTokens, requestedMaxTokens)
         : (requestedMaxTokens ?? opts.maxOutputTokens);
     const result = await streamLLM(

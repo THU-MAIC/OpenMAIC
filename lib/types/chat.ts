@@ -306,6 +306,13 @@ export interface DirectorState {
   whiteboardLedger: WhiteboardActionRecord[];
 }
 
+/** Browser-selected identity for one PPT element. Content is resolved by the Host. */
+export interface SlideElementReference {
+  kind: 'slide_element';
+  sceneId: string;
+  elementId: string;
+}
+
 /**
  * Request body for the stateless chat API
  * All state is sent from the client on each request
@@ -344,6 +351,8 @@ export interface StatelessChatRequest {
       }>;
     };
   };
+  /** Optional Pi-only, identity-only reference to one slide element. */
+  elementReference?: SlideElementReference;
   /** Agent configuration */
   config: {
     agentIds: string[];
