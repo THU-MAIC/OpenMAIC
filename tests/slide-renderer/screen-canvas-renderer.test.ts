@@ -101,6 +101,50 @@ describe('PlaybackScreenCanvas', () => {
     expect(html).toContain('id="screen-element-title-1"');
   });
 
+  it('renders playback videos inline for mobile browsers', () => {
+    const videoContent: SlideContent = {
+      ...content,
+      canvas: {
+        ...content.canvas,
+        elements: [
+          {
+            id: 'video-1',
+            type: 'video',
+            left: 24,
+            top: 32,
+            width: 320,
+            height: 180,
+            rotate: 0,
+            src: 'video.mp4',
+            autoplay: false,
+          },
+        ],
+      },
+    };
+    const videoController: SceneDataController<SlideContent> = {
+      ...controller,
+      getSnapshot: () => videoContent,
+    };
+
+    for (const rendererEnabled of [false, true]) {
+      if (rendererEnabled) {
+        process.env[flag] = 'true';
+      } else {
+        delete process.env[flag];
+      }
+
+      const html = renderToStaticMarkup(
+        createElement(
+          TestSceneProvider,
+          { controller: videoController as SceneDataController },
+          createElement(PlaybackScreenCanvas),
+        ),
+      );
+
+      expect(html).toMatch(/<video[^>]*playsinline/i);
+    }
+  });
+
   it('renders an untracked generated placeholder as pending in renderer playback mode', () => {
     process.env[flag] = 'true';
     const imageContent: SlideContent = {

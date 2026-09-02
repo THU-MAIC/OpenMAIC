@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/importer",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A javascript tool for parsing .pptx file",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -20,8 +20,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "clean:dist": "rimraf dist",
-    "build": "rm -rf dist && rollup -c && tsc --emitDeclarationOnly",
+    "clean:dist": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && rollup -c && tsc --emitDeclarationOnly",
     "dev": "rollup -c -w",
     "lint": "eslint src --ext .js,.jsx,.ts,.tsx",
     "test": "vitest run",

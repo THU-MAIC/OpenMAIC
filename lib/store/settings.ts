@@ -40,6 +40,7 @@ import {
   isLLMProviderConfigured,
 } from '@/lib/store/settings-validation';
 import { createKVPersistStorage, purgeLegacyPersistKey } from '@/lib/store/kv-persist';
+import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 
 const log = createLogger('Settings');
 
@@ -465,12 +466,29 @@ function resolveMediaModels<T extends { id: string; name: string }>(
     : [...builtInModels, ...customModels];
 }
 
+function hasMediaCredential(value: string | undefined): boolean {
+  return !!value && value.trim().length > 0;
+}
+
 function isUsableMediaProvider(
   provider: { requiresApiKey: boolean } | undefined,
-  config: { apiKey?: string; enabled?: boolean; isServerConfigured?: boolean } | undefined,
+  config:
+    | {
+        apiKey?: string;
+        baseUrl?: string;
+        enabled?: boolean;
+        isServerConfigured?: boolean;
+      }
+    | undefined,
 ): boolean {
   if (!provider || config?.enabled === false) return false;
-  return !provider.requiresApiKey || !!config?.apiKey || !!config?.isServerConfigured;
+  if (config?.isServerConfigured) return true;
+  if (provider.requiresApiKey) return hasMediaCredential(config?.apiKey);
+  return hasMediaCredential(config?.baseUrl);
+}
+
+function shouldTurnOn(currentlyEnabled: boolean, usable: boolean): boolean {
+  return !currentlyEnabled && usable;
 }
 
 // Initialize default audio config
@@ -1104,12 +1122,13 @@ export const useSettingsStore = create<SettingsState>()(
 
         setTTSProviderConfig: (providerId, config) =>
           set((state) => {
+            const mergedProvider = {
+              ...state.ttsProvidersConfig[providerId],
+              ...config,
+            };
             const ttsProvidersConfig = {
               ...state.ttsProvidersConfig,
-              [providerId]: {
-                ...state.ttsProvidersConfig[providerId],
-                ...config,
-              },
+              [providerId]: mergedProvider,
             };
             // Disabling the active provider (e.g. removing a token plan) switches
             // the selection back to the always-available browser TTS so playback
@@ -1121,7 +1140,22 @@ export const useSettingsStore = create<SettingsState>()(
                 ttsVoice: 'default',
               };
             }
-            return { ttsProvidersConfig };
+            // Settings can configure a hosted provider after first-run auto-config
+            // has already run. The global flag has no control on that page, so
+            // becoming usable (empty -> key) must also turn narration on (#1288).
+            // Do not re-enable on later edits if the user turned the flag off.
+            const wasUsable = isTTSProviderEnabled(
+              providerId,
+              state.ttsProvidersConfig[providerId],
+            );
+            const nowUsable = isTTSProviderEnabled(providerId, mergedProvider);
+            const turnOnNarration =
+              providerId !== 'browser-native-tts' &&
+              shouldTurnOn(state.ttsEnabled, !wasUsable && nowUsable);
+            return {
+              ttsProvidersConfig,
+              ...(turnOnNarration ? { ttsEnabled: true } : {}),
+            };
           }),
 
         setASRProviderConfig: (providerId, config) =>
@@ -1173,7 +1207,20 @@ export const useSettingsStore = create<SettingsState>()(
               ...state.imageProvidersConfig,
               [providerId]: mergedProvider,
             };
-            const base = { imageProvidersConfig };
+            // Same usable-transition as TTS: empty -> usable turns the global
+            // flag on. A force-disabled provider (enabled: false) stays unused,
+            // and keyless providers (comfyui-image, lemonade) become usable
+            // from a baseUrl, not an API key.
+            const wasUsable = isUsableMediaProvider(
+              IMAGE_PROVIDERS[providerId],
+              state.imageProvidersConfig[providerId],
+            );
+            const nowUsable = isUsableMediaProvider(IMAGE_PROVIDERS[providerId], mergedProvider);
+            const turnOnImage = shouldTurnOn(state.imageGenerationEnabled, !wasUsable && nowUsable);
+            const base = {
+              imageProvidersConfig,
+              ...(turnOnImage ? { imageGenerationEnabled: true } : {}),
+            };
             if (state.imageProviderId === providerId) {
               // Disabling the active provider (e.g. removing a token plan) must
               // switch the selection away to the default, or generation paths
@@ -1237,7 +1284,16 @@ export const useSettingsStore = create<SettingsState>()(
               ...state.videoProvidersConfig,
               [providerId]: mergedProvider,
             };
-            const base = { videoProvidersConfig };
+            const wasUsable = isUsableMediaProvider(
+              VIDEO_PROVIDERS[providerId],
+              state.videoProvidersConfig[providerId],
+            );
+            const nowUsable = isUsableMediaProvider(VIDEO_PROVIDERS[providerId], mergedProvider);
+            const turnOnVideo = shouldTurnOn(state.videoGenerationEnabled, !wasUsable && nowUsable);
+            const base = {
+              videoProvidersConfig,
+              ...(turnOnVideo ? { videoGenerationEnabled: true } : {}),
+            };
             if (state.videoProviderId === providerId) {
               // Symmetric with image: disabling the active provider switches the
               // selection back to the default so nothing keeps pointing at a
