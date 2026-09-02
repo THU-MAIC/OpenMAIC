@@ -25,6 +25,7 @@ import { config } from './config.js';
 export const CHUNK_PLAN_SCHEMA_VERSION = 1 as const;
 export const DEFAULT_CHUNK_COUNT = 1;
 export const DEFAULT_CHUNK_WORKERS = 1;
+const SERIAL_CAPTURE_MIN_PARALLEL_FRAMES = String(Number.MAX_SAFE_INTEGER);
 
 export type ChunkFailureCode =
   | 'missing_chunk'
@@ -619,7 +620,11 @@ export async function createRenderPlan(
   await mkdir(planDir, { recursive: true });
   const dimensions = await readCompositionDimensions(projectDir);
   const previousWorkers = process.env.PRODUCER_MAX_WORKERS;
+  const previousMinParallelFrames = process.env.PRODUCER_MIN_PARALLEL_FRAMES;
   process.env.PRODUCER_MAX_WORKERS = String(chunkWorkers);
+  if (chunkWorkers === 1) {
+    process.env.PRODUCER_MIN_PARALLEL_FRAMES = SERIAL_CAPTURE_MIN_PARALLEL_FRAMES;
+  }
   let result: PlanResult;
   try {
     result = await (dependencies.plan ?? defaultDeps.plan)(
@@ -638,6 +643,8 @@ export async function createRenderPlan(
   } finally {
     if (previousWorkers === undefined) delete process.env.PRODUCER_MAX_WORKERS;
     else process.env.PRODUCER_MAX_WORKERS = previousWorkers;
+    if (previousMinParallelFrames === undefined) delete process.env.PRODUCER_MIN_PARALLEL_FRAMES;
+    else process.env.PRODUCER_MIN_PARALLEL_FRAMES = previousMinParallelFrames;
   }
   const resolvedChunkCount = result.chunkCount;
   const chunksJson = JSON.parse(
@@ -814,7 +821,14 @@ export async function executeRenderChunks(
   const plan = await createRenderPlan(request, dependencies);
   const planMs = Date.now() - planStartedAt;
   const previousWorkers = process.env.PRODUCER_MAX_WORKERS;
+  const previousMinParallelFrames = process.env.PRODUCER_MIN_PARALLEL_FRAMES;
   process.env.PRODUCER_MAX_WORKERS = String(plan.chunkWorkers);
+  if (plan.chunkWorkers === 1) {
+    // Producer's distributed renderChunk path does not accept an explicit
+    // worker count. Disable its two-worker minimum so the configured cap is
+    // also honored by forked chunk workers.
+    process.env.PRODUCER_MIN_PARALLEL_FRAMES = SERIAL_CAPTURE_MIN_PARALLEL_FRAMES;
+  }
   const results = new Array<ChunkResult>(plan.chunks.length);
   try {
     const chunksStartedAt = Date.now();
@@ -869,6 +883,8 @@ export async function executeRenderChunks(
   } finally {
     if (previousWorkers === undefined) delete process.env.PRODUCER_MAX_WORKERS;
     else process.env.PRODUCER_MAX_WORKERS = previousWorkers;
+    if (previousMinParallelFrames === undefined) delete process.env.PRODUCER_MIN_PARALLEL_FRAMES;
+    else process.env.PRODUCER_MIN_PARALLEL_FRAMES = previousMinParallelFrames;
   }
 }
 
