@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/editor",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Composable slide editing core, React surface, and UI for OpenMAIC.",
   "type": "module",
   "main": "./dist/core/index.js",
@@ -34,7 +34,7 @@
     "directory": "packages/@openmaic/editor"
   },
   "scripts": {
-    "build": "rm -rf dist && rollup -c && tsc --emitDeclarationOnly --declarationDir dist",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && rollup -c && tsc --emitDeclarationOnly --declarationDir dist",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "pnpm run build"
