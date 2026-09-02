@@ -1,6 +1,13 @@
 import { DEFAULT_TTS_MODELS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { generateTTS, TTSRequestTimeoutError } from '@/lib/audio/tts-providers';
 import type { TTSProviderId } from '@/lib/audio/types';
+import { getDeterministicVoiceId, type VoiceDesign } from '@/lib/audio/voice-design';
+import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
+import {
+  buildAutoVoxCPMVoicePrompt,
+  VOXCPM_AUTO_VOICE_ID,
+  VOXCPM_TTS_PROVIDER_ID,
+} from '@/lib/audio/voxcpm';
 import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement';
 import type { LegacySpeechAction, SpeechAction } from '@/lib/types/action';
 import type { GeneratedAgentConfig, Scene } from '@/lib/types/stage';
@@ -33,8 +40,63 @@ function enabledProviderIds(): TTSProviderId[] {
     .map(([id]) => id as TTSProviderId);
 }
 
-function narratorVoice(roster: SceneTtsInput['roster']) {
-  return roster?.find((agent) => agent.role === 'teacher' && agent.voiceConfig)?.voiceConfig;
+function narratorAgent(roster: SceneTtsInput['roster']) {
+  return roster?.find((agent) => agent.role === 'teacher' && agent.voiceConfig);
+}
+
+function effectiveVoiceDesign(agent: ReturnType<typeof narratorAgent>): VoiceDesign | undefined {
+  if (agent?.voiceDesign) return agent.voiceDesign;
+  const persona = agent?.persona?.trim();
+  return persona ? { identity: persona, texture: '', delivery: '' } : undefined;
+}
+
+async function resolveVoxCPMAutoVoiceOptions(params: {
+  providerId: TTSProviderId;
+  voice: string;
+  agent: ReturnType<typeof narratorAgent>;
+  baseUrl?: string;
+  apiKey: string;
+  modelId: string;
+  signal?: AbortSignal;
+}): Promise<Record<string, unknown> | undefined> {
+  if (params.providerId !== VOXCPM_TTS_PROVIDER_ID || params.voice !== VOXCPM_AUTO_VOICE_ID) {
+    return undefined;
+  }
+
+  const voicePrompt = buildAutoVoxCPMVoicePrompt({
+    agentName: params.agent?.name,
+    role: params.agent?.role,
+    persona: params.agent?.persona,
+    voiceDesign: params.agent?.voiceDesign,
+  });
+  const design = effectiveVoiceDesign(params.agent);
+  const adapter = getVoiceRegistrationAdapter(params.providerId);
+  if (!design || !params.baseUrl || !adapter?.supportsRegistration()) return { voicePrompt };
+
+  const config = {
+    baseUrl: params.baseUrl,
+    apiKey: params.apiKey,
+    model: params.modelId,
+  };
+  const voiceId = await getDeterministicVoiceId(design, {
+    providerId: params.providerId,
+    model: params.modelId,
+  });
+  if (await adapter.voiceExists(config, voiceId, params.signal)) {
+    return { registeredVoiceId: voiceId };
+  }
+
+  const clip = await adapter.bootstrapReferenceClip(config, { design }, params.signal);
+  const registeredVoiceId = await adapter.registerVoice(
+    config,
+    {
+      voiceId,
+      referenceAudioBase64: clip.referenceAudioBase64,
+      mimeType: clip.mimeType,
+    },
+    params.signal,
+  );
+  return { registeredVoiceId };
 }
 
 function audioMime(format: string) {
@@ -44,7 +106,8 @@ function audioMime(format: string) {
 /** Server-configured narration synthesis into the stage's classroom-media path. */
 export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<SceneTtsSummary> {
   const enabled = enabledProviderIds();
-  const bound = narratorVoice(input.roster);
+  const narrator = narratorAgent(input.roster);
+  const bound = narrator?.voiceConfig;
   const providerId = (
     bound?.providerId && enabled.includes(bound.providerId as TTSProviderId)
       ? bound.providerId
@@ -68,6 +131,16 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
       DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
       voice,
     ) || '';
+  const baseUrl = resolveTTSBaseUrl(providerId);
+  const providerOptions = await resolveVoxCPMAutoVoiceOptions({
+    providerId,
+    voice,
+    agent: narrator,
+    baseUrl,
+    apiKey,
+    modelId,
+    signal: input.signal,
+  });
   let generated = 0;
   let skipped = 0;
   const failed: string[] = [];
@@ -85,10 +158,11 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
           providerId,
           modelId,
           apiKey,
-          baseUrl: resolveTTSBaseUrl(providerId),
+          baseUrl,
           voice,
           speed: speech.speed,
           signal: input.signal,
+          ...(providerOptions ? { providerOptions } : {}),
         },
         speech.text,
       );
