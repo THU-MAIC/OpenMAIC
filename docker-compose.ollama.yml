@@ -1,0 +1,28 @@
+# Optional Ollama extension for the base OpenMAIC docker-compose.yml.
+#
+# Local Ollama:
+#   cp .env.ollama-local.example .env.local
+#   docker compose -f docker-compose.yml -f docker-compose.ollama.yml --profile local-ollama up --build
+#
+# The base `openmaic` service already loads `.env.local`, so this extension only
+# adds the Ollama service. Ollama Cloud does not require this extension; use the
+# base compose file with .env.ollama-cloud.example instead.
+services:
+  ollama:
+    image: ollama/ollama:latest
+    profiles:
+      - local-ollama
+    ports:
+      - '11434:11434'
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ['CMD', 'ollama', 'list']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  ollama-data:
