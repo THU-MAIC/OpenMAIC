@@ -19,8 +19,15 @@ function normalizeBaseUrl(baseUrl?: string): string {
   return (baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
 }
 
+// OpenAI's gpt-image models only accept fixed sizes (1024x1024, 1536x1024,
+// 1024x1536). Snap the requested dimensions to the nearest supported size by
+// aspect; the client scales the result to fit the slide.
 function resolveSize(options: ImageGenerationOptions): string {
-  return `${options.width || 1024}x${options.height || 1024}`;
+  const width = options.width || 1024;
+  const height = options.height || 1024;
+  if (width > height) return '1536x1024';
+  if (height > width) return '1024x1536';
+  return '1024x1024';
 }
 
 export async function testOpenAIImageConnectivity(
