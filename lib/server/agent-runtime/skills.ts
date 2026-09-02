@@ -25,7 +25,7 @@
 import { createHash } from 'node:crypto';
 import { constants, readFileSync, existsSync } from 'node:fs';
 import { access, readFile, realpath } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   loadSkills,
   formatSkillInvocation,
@@ -96,6 +96,38 @@ const NativeReadParams = Type.Object({
 
 let builtinCache: LoadedSkill[] | null = null;
 
+export function toPosixPath(p: string): string {
+  return sep === '\\' ? p.split(sep).join('/') : p;
+}
+
+export function normalizeSkillFileInfo<T extends { name: string; path: string }>(info: T): T {
+  const normalizedPath = info.path.replaceAll('\\', '/');
+  const withoutTrailing = normalizedPath.replace(/\/+$/, '');
+  const lastSep = withoutTrailing.lastIndexOf('/');
+  const name = withoutTrailing.slice(lastSep + 1);
+  return { ...info, name, path: normalizedPath };
+}
+
+class PosixNormalizingEnv extends NodeExecutionEnv {
+  override async fileInfo(
+    ...args: Parameters<NodeExecutionEnv['fileInfo']>
+  ): ReturnType<NodeExecutionEnv['fileInfo']> {
+    const result = await super.fileInfo(...args);
+    if (result.ok) result.value = normalizeSkillFileInfo(result.value);
+    return result;
+  }
+
+  override async listDir(
+    ...args: Parameters<NodeExecutionEnv['listDir']>
+  ): ReturnType<NodeExecutionEnv['listDir']> {
+    const result = await super.listDir(...args);
+    if (result.ok) {
+      result.value = result.value.map(normalizeSkillFileInfo);
+    }
+    return result;
+  }
+}
+
 const USER_SKILL_VIRTUAL_ROOT = '/__openmaic_user_skills__';
 
 /**
@@ -139,8 +171,9 @@ async function listBuiltinSkills(): Promise<LoadedSkill[]> {
   if (builtinCache) return builtinCache;
   if (!existsSync(skillsDir)) return (builtinCache = []);
 
-  const env = new NodeExecutionEnv({ cwd: skillsDir });
-  const { skills, diagnostics } = await loadSkills(env, skillsDir);
+  const posixSkillsDir = toPosixPath(skillsDir);
+  const env = new PosixNormalizingEnv({ cwd: posixSkillsDir });
+  const { skills, diagnostics } = await loadSkills(env, posixSkillsDir);
   for (const d of diagnostics) {
     log.warn(`${d.code}: ${d.message} (${d.path})`);
   }
