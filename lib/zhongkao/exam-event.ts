@@ -8,11 +8,13 @@ import {
   EXAM_MAX_DOCUMENT_ARTIFACT_BYTES,
   EXAM_MAX_EXTRACTED_PAGES,
   EXAM_MAX_HUMAN_REVIEW_ARTIFACT_BYTES,
+  EXAM_MAX_KNOWLEDGE_MAPPING_ARTIFACT_BYTES,
   EXAM_MAX_MATCH_ARTIFACT_BYTES,
   EXAM_MAX_DOCUMENTS,
   EXAM_MAX_DOCUMENT_BYTES,
   EXAM_OBJECTIVE_GRADING_ALGORITHM_VERSION,
   EXAM_MAX_QUESTION_CANDIDATES,
+  EXAM_MAX_OBSERVATION_ARTIFACT_BYTES,
   EXAM_MAX_RESPONSE_ARTIFACT_BYTES,
   EXAM_MAX_TOTAL_BYTES,
   EXAM_TITLE_MAX_LENGTH,
@@ -250,6 +252,74 @@ export interface ExamGradingCompletedEvent extends ExamEventBase, ExamGradingPla
   unassessedCount: number;
 }
 
+export interface ExamKnowledgeMappingPlanFacts {
+  mappingVersion: number;
+  subjectId: string;
+  reviewVersion: number;
+  reviewArtifactRef: string;
+  sourceReviewArtifactFingerprint: string;
+  sourceReviewSemanticFingerprint: string;
+  assessmentVersion: number;
+  assessmentArtifactRef: string;
+  sourceAssessmentArtifactFingerprint: string;
+  sourceAssessmentSemanticFingerprint: string;
+  mappingSemanticFingerprint: string;
+  mappingRef: string;
+  mappingArtifactRef: string;
+}
+
+export interface ExamKnowledgeMappingStartedEvent
+  extends ExamEventBase, ExamKnowledgeMappingPlanFacts {
+  eventType: 'exam_knowledge_mapping_started';
+}
+
+export interface ExamKnowledgeMappingConfirmedEvent
+  extends ExamEventBase, ExamKnowledgeMappingPlanFacts {
+  eventType: 'exam_knowledge_mapping_confirmed';
+  artifactByteLength: number;
+  artifactSha256: string;
+  entryCount: number;
+  mappedQuestionCount: number;
+  unmappedQuestionCount: number;
+}
+
+export interface ExamObservationProjectionPlanFacts {
+  observationVersion: number;
+  reviewVersion: number;
+  reviewArtifactRef: string;
+  sourceReviewArtifactFingerprint: string;
+  sourceReviewSemanticFingerprint: string;
+  assessmentVersion: number;
+  assessmentArtifactRef: string;
+  sourceAssessmentArtifactFingerprint: string;
+  sourceAssessmentSemanticFingerprint: string;
+  mappingVersion: number;
+  mappingRef: string;
+  mappingArtifactRef: string;
+  sourceMappingArtifactFingerprint: string;
+  sourceMappingSemanticFingerprint: string;
+  observationSemanticFingerprint: string;
+  observationRef: string;
+  observationArtifactRef: string;
+}
+
+export interface ExamObservationProjectionStartedEvent
+  extends ExamEventBase, ExamObservationProjectionPlanFacts {
+  eventType: 'exam_observation_projection_started';
+}
+
+export interface ExamObservationsProjectedEvent
+  extends ExamEventBase, ExamObservationProjectionPlanFacts {
+  eventType: 'exam_observations_projected';
+  artifactByteLength: number;
+  artifactSha256: string;
+  observationCount: number;
+  evaluatedCount: number;
+  correctCount: number;
+  incorrectCount: number;
+  unassessedCount: number;
+}
+
 export interface ExamDeleteRequestedEvent extends ExamEventBase {
   eventType: 'exam_delete_requested';
   documentSetFingerprint: string;
@@ -278,6 +348,10 @@ export type ExamEvent =
   | ExamAnswerKeyConfirmedEvent
   | ExamGradingStartedEvent
   | ExamGradingCompletedEvent
+  | ExamKnowledgeMappingStartedEvent
+  | ExamKnowledgeMappingConfirmedEvent
+  | ExamObservationProjectionStartedEvent
+  | ExamObservationsProjectedEvent
   | ExamDeleteRequestedEvent
   | ExamDeletedEvent;
 
@@ -300,6 +374,10 @@ export const EXAM_EVENT_TYPES = [
   'exam_answer_key_confirmed',
   'exam_grading_started',
   'exam_grading_completed',
+  'exam_knowledge_mapping_started',
+  'exam_knowledge_mapping_confirmed',
+  'exam_observation_projection_started',
+  'exam_observations_projected',
   'exam_delete_requested',
   'exam_deleted',
 ] as const satisfies readonly ExamEventType[];
@@ -353,6 +431,42 @@ const GRADING_PLAN_KEYS = [
   'sourceAnswerKeyArtifactFingerprint',
   'gradingRef',
   'assessmentArtifactRef',
+] as const;
+
+const KNOWLEDGE_MAPPING_PLAN_KEYS = [
+  'mappingVersion',
+  'subjectId',
+  'reviewVersion',
+  'reviewArtifactRef',
+  'sourceReviewArtifactFingerprint',
+  'sourceReviewSemanticFingerprint',
+  'assessmentVersion',
+  'assessmentArtifactRef',
+  'sourceAssessmentArtifactFingerprint',
+  'sourceAssessmentSemanticFingerprint',
+  'mappingSemanticFingerprint',
+  'mappingRef',
+  'mappingArtifactRef',
+] as const;
+
+const OBSERVATION_PROJECTION_PLAN_KEYS = [
+  'observationVersion',
+  'reviewVersion',
+  'reviewArtifactRef',
+  'sourceReviewArtifactFingerprint',
+  'sourceReviewSemanticFingerprint',
+  'assessmentVersion',
+  'assessmentArtifactRef',
+  'sourceAssessmentArtifactFingerprint',
+  'sourceAssessmentSemanticFingerprint',
+  'mappingVersion',
+  'mappingRef',
+  'mappingArtifactRef',
+  'sourceMappingArtifactFingerprint',
+  'sourceMappingSemanticFingerprint',
+  'observationSemanticFingerprint',
+  'observationRef',
+  'observationArtifactRef',
 ] as const;
 
 const EVENT_KEYS: Readonly<Record<ExamEventType, ReadonlySet<string>>> = {
@@ -492,6 +606,31 @@ const EVENT_KEYS: Readonly<Record<ExamEventType, ReadonlySet<string>>> = {
     'artifactByteLength',
     'artifactSha256',
     'assessmentCount',
+    'evaluatedCount',
+    'correctCount',
+    'incorrectCount',
+    'unassessedCount',
+  ]),
+  exam_knowledge_mapping_started: new Set([...COMMON_KEYS, ...KNOWLEDGE_MAPPING_PLAN_KEYS]),
+  exam_knowledge_mapping_confirmed: new Set([
+    ...COMMON_KEYS,
+    ...KNOWLEDGE_MAPPING_PLAN_KEYS,
+    'artifactByteLength',
+    'artifactSha256',
+    'entryCount',
+    'mappedQuestionCount',
+    'unmappedQuestionCount',
+  ]),
+  exam_observation_projection_started: new Set([
+    ...COMMON_KEYS,
+    ...OBSERVATION_PROJECTION_PLAN_KEYS,
+  ]),
+  exam_observations_projected: new Set([
+    ...COMMON_KEYS,
+    ...OBSERVATION_PROJECTION_PLAN_KEYS,
+    'artifactByteLength',
+    'artifactSha256',
+    'observationCount',
     'evaluatedCount',
     'correctCount',
     'incorrectCount',
@@ -794,6 +933,92 @@ function validateGradingPlan(
   }
 }
 
+function validateKnowledgeMappingPlan(
+  value: Record<string, unknown>,
+  errors: DomainValidationIssue[],
+): void {
+  validatePositiveVersion(value.mappingVersion, '/mappingVersion', errors);
+  validateIdentifier(value.subjectId, '/subjectId', errors);
+  validatePositiveVersion(value.reviewVersion, '/reviewVersion', errors);
+  validateIdentifier(value.reviewArtifactRef, '/reviewArtifactRef', errors);
+  validateSha256(value.sourceReviewArtifactFingerprint, '/sourceReviewArtifactFingerprint', errors);
+  validateSha256(value.sourceReviewSemanticFingerprint, '/sourceReviewSemanticFingerprint', errors);
+  validatePositiveVersion(value.assessmentVersion, '/assessmentVersion', errors);
+  validateIdentifier(value.assessmentArtifactRef, '/assessmentArtifactRef', errors);
+  validateSha256(
+    value.sourceAssessmentArtifactFingerprint,
+    '/sourceAssessmentArtifactFingerprint',
+    errors,
+  );
+  validateSha256(
+    value.sourceAssessmentSemanticFingerprint,
+    '/sourceAssessmentSemanticFingerprint',
+    errors,
+  );
+  validateSha256(value.mappingSemanticFingerprint, '/mappingSemanticFingerprint', errors);
+  validateIdentifier(value.mappingRef, '/mappingRef', errors);
+  validateIdentifier(value.mappingArtifactRef, '/mappingArtifactRef', errors);
+  const refs = [
+    value.reviewArtifactRef,
+    value.assessmentArtifactRef,
+    value.mappingRef,
+    value.mappingArtifactRef,
+  ];
+  if (new Set(refs).size !== refs.length) {
+    pushIssue(errors, '/mappingArtifactRef', 'knowledge-mapping references must be distinct');
+  }
+}
+
+function validateObservationProjectionPlan(
+  value: Record<string, unknown>,
+  errors: DomainValidationIssue[],
+): void {
+  validatePositiveVersion(value.observationVersion, '/observationVersion', errors);
+  validatePositiveVersion(value.reviewVersion, '/reviewVersion', errors);
+  validateIdentifier(value.reviewArtifactRef, '/reviewArtifactRef', errors);
+  validateSha256(value.sourceReviewArtifactFingerprint, '/sourceReviewArtifactFingerprint', errors);
+  validateSha256(value.sourceReviewSemanticFingerprint, '/sourceReviewSemanticFingerprint', errors);
+  validatePositiveVersion(value.assessmentVersion, '/assessmentVersion', errors);
+  validateIdentifier(value.assessmentArtifactRef, '/assessmentArtifactRef', errors);
+  validateSha256(
+    value.sourceAssessmentArtifactFingerprint,
+    '/sourceAssessmentArtifactFingerprint',
+    errors,
+  );
+  validateSha256(
+    value.sourceAssessmentSemanticFingerprint,
+    '/sourceAssessmentSemanticFingerprint',
+    errors,
+  );
+  validatePositiveVersion(value.mappingVersion, '/mappingVersion', errors);
+  validateIdentifier(value.mappingRef, '/mappingRef', errors);
+  validateIdentifier(value.mappingArtifactRef, '/mappingArtifactRef', errors);
+  validateSha256(
+    value.sourceMappingArtifactFingerprint,
+    '/sourceMappingArtifactFingerprint',
+    errors,
+  );
+  validateSha256(
+    value.sourceMappingSemanticFingerprint,
+    '/sourceMappingSemanticFingerprint',
+    errors,
+  );
+  validateSha256(value.observationSemanticFingerprint, '/observationSemanticFingerprint', errors);
+  validateIdentifier(value.observationRef, '/observationRef', errors);
+  validateIdentifier(value.observationArtifactRef, '/observationArtifactRef', errors);
+  const refs = [
+    value.reviewArtifactRef,
+    value.assessmentArtifactRef,
+    value.mappingRef,
+    value.mappingArtifactRef,
+    value.observationRef,
+    value.observationArtifactRef,
+  ];
+  if (new Set(refs).size !== refs.length) {
+    pushIssue(errors, '/observationArtifactRef', 'observation references must be distinct');
+  }
+}
+
 export function validateExamEvent(value: unknown): DomainValidationResult {
   const errors: DomainValidationIssue[] = [];
   if (!isPlainRecord(value)) {
@@ -1050,6 +1275,72 @@ export function validateExamEvent(value: unknown): DomainValidationResult {
           (value.evaluatedCount as number) + (value.unassessedCount as number)
       ) {
         pushIssue(errors, '/assessmentCount', 'grading counts must cover every assessment');
+      }
+      break;
+    }
+    case 'exam_knowledge_mapping_started':
+      validateKnowledgeMappingPlan(value, errors);
+      break;
+    case 'exam_knowledge_mapping_confirmed': {
+      validateKnowledgeMappingPlan(value, errors);
+      validateArtifactByteLength(
+        value.artifactByteLength,
+        '/artifactByteLength',
+        EXAM_MAX_KNOWLEDGE_MAPPING_ARTIFACT_BYTES,
+        errors,
+      );
+      validateSha256(value.artifactSha256, '/artifactSha256', errors);
+      for (const field of ['entryCount', 'mappedQuestionCount', 'unmappedQuestionCount'] as const) {
+        validateBoundedCount(value[field], `/${field}`, EXAM_MAX_QUESTION_CANDIDATES, true, errors);
+      }
+      if (
+        Number.isSafeInteger(value.entryCount) &&
+        Number.isSafeInteger(value.mappedQuestionCount) &&
+        Number.isSafeInteger(value.unmappedQuestionCount) &&
+        value.entryCount !==
+          (value.mappedQuestionCount as number) + (value.unmappedQuestionCount as number)
+      ) {
+        pushIssue(errors, '/entryCount', 'mapping counts must cover every entry');
+      }
+      break;
+    }
+    case 'exam_observation_projection_started':
+      validateObservationProjectionPlan(value, errors);
+      break;
+    case 'exam_observations_projected': {
+      validateObservationProjectionPlan(value, errors);
+      validateArtifactByteLength(
+        value.artifactByteLength,
+        '/artifactByteLength',
+        EXAM_MAX_OBSERVATION_ARTIFACT_BYTES,
+        errors,
+      );
+      validateSha256(value.artifactSha256, '/artifactSha256', errors);
+      for (const field of [
+        'observationCount',
+        'evaluatedCount',
+        'correctCount',
+        'incorrectCount',
+        'unassessedCount',
+      ] as const) {
+        validateBoundedCount(value[field], `/${field}`, EXAM_MAX_QUESTION_CANDIDATES, true, errors);
+      }
+      if (
+        Number.isSafeInteger(value.evaluatedCount) &&
+        Number.isSafeInteger(value.correctCount) &&
+        Number.isSafeInteger(value.incorrectCount) &&
+        value.evaluatedCount !== (value.correctCount as number) + (value.incorrectCount as number)
+      ) {
+        pushIssue(errors, '/evaluatedCount', 'evaluated count must equal outcome counts');
+      }
+      if (
+        Number.isSafeInteger(value.observationCount) &&
+        Number.isSafeInteger(value.evaluatedCount) &&
+        Number.isSafeInteger(value.unassessedCount) &&
+        value.observationCount !==
+          (value.evaluatedCount as number) + (value.unassessedCount as number)
+      ) {
+        pushIssue(errors, '/observationCount', 'projection counts must cover every observation');
       }
       break;
     }

@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { RUNTIME_DSL_VERSION_KEY } from '@openmaic/dsl';
-import { BrowserRuntimeStore, RuntimeAppendConflictError } from '../src/index.js';
+import {
+  BrowserRuntimeStore,
+  RuntimeAppendConflictError,
+  RuntimeSessionEnumerationCorruptError,
+} from '../src/index.js';
 import { makeRecordInit, makeSession, runRuntimeStoreContract } from './runtime-contract.js';
 
 // Each store gets its own in-memory IndexedDB factory so contract cases stay
@@ -201,6 +205,11 @@ describe('BrowserRuntimeStore atomic append transition', () => {
 });
 
 describe('BrowserRuntimeStore corrupt rows', () => {
+  const strictExamSelector = {
+    kinds: ['zhongkaoExamEvent'],
+    idPrefixes: ['zhongkao-exam:'],
+  } as const;
+
   test('a raw row missing its runtime stamp fails loud on read', async () => {
     const idb = new IDBFactory();
     const dbName = 'maic-runtime-unstamped';
@@ -285,6 +294,89 @@ describe('BrowserRuntimeStore corrupt rows', () => {
       'h2',
     ]);
     await expect(store.getSession('corrupt')).rejects.toThrow(/no unversioned epoch/);
+  });
+
+  test('strict listing returns selected valid sessions and distinguishes an empty partition', async () => {
+    const idb = new IDBFactory();
+    const dbName = 'maic-runtime-strict-valid';
+    const store = new BrowserRuntimeStore({ indexedDB: idb, dbName });
+    await store.createSession(
+      makeSession({ id: 'zhongkao-exam:later', kind: 'zhongkaoExamEvent' }),
+    );
+    await store.createSession(
+      makeSession({
+        id: 'zhongkao-exam:earlier',
+        kind: 'zhongkaoExamEvent',
+        createdAt: '2025-12-31T23:59:00.000Z',
+        updatedAt: '2025-12-31T23:59:00.000Z',
+      }),
+    );
+    await store.createSession(makeSession({ id: 'unrelated', kind: 'playback' }));
+
+    await expect(
+      store.listSessionsStrict('missing-stage', 'anon:device-1', strictExamSelector),
+    ).resolves.toEqual([]);
+    await expect(
+      store.listSessionsStrict('stage-1', 'anon:device-1', strictExamSelector),
+    ).resolves.toMatchObject([
+      { id: 'zhongkao-exam:earlier', kind: 'zhongkaoExamEvent' },
+      { id: 'zhongkao-exam:later', kind: 'zhongkaoExamEvent' },
+    ]);
+  });
+
+  test('strict listing throws typed corruption for a relevant malformed envelope only', async () => {
+    const idb = new IDBFactory();
+    const dbName = 'maic-runtime-strict-relevant-corrupt';
+    const store = new BrowserRuntimeStore({ indexedDB: idb, dbName });
+    await store.createSession(
+      makeSession({ id: 'zhongkao-exam:corrupt', kind: 'zhongkaoExamEvent' }),
+    );
+    await store.createSession(makeSession({ id: 'unrelated-corrupt', kind: 'playback' }));
+    await rewriteSessionRow(idb, dbName, 'zhongkao-exam:corrupt', (row) => {
+      row.status = 'paused';
+    });
+    await rewriteSessionRow(idb, dbName, 'unrelated-corrupt', (row) => {
+      row.status = 'paused';
+    });
+
+    expect(await store.listSessions('stage-1', 'anon:device-1')).toEqual([]);
+    const failure = await store
+      .listSessionsStrict('stage-1', 'anon:device-1', strictExamSelector)
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(RuntimeSessionEnumerationCorruptError);
+    expect(failure).toMatchObject({
+      code: 'RUNTIME_SESSION_ENUMERATION_CORRUPT',
+      stageId: 'stage-1',
+      learnerKey: 'anon:device-1',
+      sessionId: 'zhongkao-exam:corrupt',
+      sessionKind: 'zhongkaoExamEvent',
+    });
+
+    await store.deleteSession('zhongkao-exam:corrupt');
+    await expect(
+      store.listSessionsStrict('stage-1', 'anon:device-1', strictExamSelector),
+    ).resolves.toEqual([]);
+  });
+
+  test('an id-prefix sentinel detects a relevant session whose kind was corrupted', async () => {
+    const idb = new IDBFactory();
+    const dbName = 'maic-runtime-strict-kind-corrupt';
+    const store = new BrowserRuntimeStore({ indexedDB: idb, dbName });
+    await store.createSession(
+      makeSession({ id: 'zhongkao-exam:kind-corrupt', kind: 'zhongkaoExamEvent' }),
+    );
+    await rewriteSessionRow(idb, dbName, 'zhongkao-exam:kind-corrupt', (row) => {
+      row.kind = 'playback';
+    });
+
+    const failure = await store
+      .listSessionsStrict('stage-1', 'anon:device-1', strictExamSelector)
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(RuntimeSessionEnumerationCorruptError);
+    expect(failure).toMatchObject({
+      sessionId: 'zhongkao-exam:kind-corrupt',
+      sessionKind: 'playback',
+    });
   });
 });
 

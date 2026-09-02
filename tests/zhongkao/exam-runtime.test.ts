@@ -5,6 +5,7 @@ import {
   BrowserRuntimeStore,
   RuntimeAppendConflictError,
   type RuntimeStore,
+  type StrictRuntimeSessionStore,
 } from '@openmaic/storage';
 
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
@@ -24,6 +25,8 @@ import {
   deriveExamDocumentArtifactExtractedOperationId,
   deriveExamDocumentArtifactRef,
   deriveExamDocumentId,
+  deriveExamDeletedOperationId,
+  deriveExamDeleteRequestedOperationId,
   deriveExamEventId,
   deriveExamHumanReviewArtifactRef,
   deriveExamHumanReviewCompletedOperationId,
@@ -33,6 +36,14 @@ import {
   deriveExamGradingCompletedOperationId,
   deriveExamGradingRef,
   deriveExamGradingStartedOperationId,
+  deriveExamKnowledgeMappingArtifactRef,
+  deriveExamKnowledgeMappingConfirmedOperationId,
+  deriveExamKnowledgeMappingRef,
+  deriveExamKnowledgeMappingStartedOperationId,
+  deriveExamObservationArtifactRef,
+  deriveExamObservationProjectionRef,
+  deriveExamObservationProjectionStartedOperationId,
+  deriveExamObservationsProjectedOperationId,
   type ExamGradingRefInput,
   deriveExamQuestionCandidatesExtractedOperationId,
   deriveExamQuestionExtractionStartedOperationId,
@@ -47,6 +58,7 @@ import {
   deriveExamStudentResponseCaptureStartedOperationId,
   examRuntimeSessionId,
   ensureExamRuntimeCreated,
+  listProfileExamRuntimeSnapshots,
   loadExamRuntime,
 } from '@/lib/server/zhongkao/exam-runtime';
 import { resolveZhongkaoLearnerKeyFromOwnerId } from '@/lib/server/zhongkao/learner-identity';
@@ -55,6 +67,8 @@ import type {
   ExamAnswerKeyStartedEvent,
   ExamCreatedDocument,
   ExamCreatedEvent,
+  ExamDeletedEvent,
+  ExamDeleteRequestedEvent,
   ExamDocumentArtifactExtractedEvent,
   ExamDocumentSnapshottedEvent,
   ExamHumanReviewCompletedEvent,
@@ -62,6 +76,10 @@ import type {
   ExamGradingCompletedEvent,
   ExamGradingStartedEvent,
   ExamIntakeCompletedEvent,
+  ExamKnowledgeMappingConfirmedEvent,
+  ExamKnowledgeMappingStartedEvent,
+  ExamObservationProjectionStartedEvent,
+  ExamObservationsProjectedEvent,
   ExamQuestionCandidatesExtractedEvent,
   ExamQuestionExtractionStartedEvent,
   ExamQuestionSegmentationStartedEvent,
@@ -80,12 +98,54 @@ beforeAll(() => {
   vi.stubGlobal('IDBKeyRange', IDBKeyRange);
 });
 
+interface BrowserStoreHarness {
+  store: BrowserRuntimeStore;
+  indexedDB: IDBFactory;
+  dbName: string;
+}
+
+function browserStoreHarness(): BrowserStoreHarness {
+  const indexedDB = new IDBFactory();
+  const dbName = `exam-runtime-${Math.random()}`;
+  return {
+    store: new BrowserRuntimeStore({
+      indexedDB,
+      dbName,
+      payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+    }),
+    indexedDB,
+    dbName,
+  };
+}
+
 function store(): RuntimeStore {
-  return new BrowserRuntimeStore({
-    indexedDB: new IDBFactory(),
-    dbName: `exam-runtime-${Math.random()}`,
-    payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+  return browserStoreHarness().store;
+}
+
+async function rewriteSessionRow(
+  indexedDB: IDBFactory,
+  dbName: string,
+  sessionId: string,
+  rewrite: (row: Record<string, unknown>) => void,
+): Promise<void> {
+  const database = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(dbName);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
   });
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction('sessions', 'readwrite');
+    const sessions = transaction.objectStore('sessions');
+    const request = sessions.get(sessionId);
+    request.onsuccess = () => {
+      const row = request.result as Record<string, unknown>;
+      rewrite(row);
+      sessions.put(row);
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+  database.close();
 }
 
 function withAppend(
@@ -703,6 +763,179 @@ function gradingEvents(
   return [started, completed];
 }
 
+function knowledgeMappingEvents(
+  created: ExamCreatedEvent,
+  review: ExamHumanReviewCompletedEvent,
+  grading: ExamGradingCompletedEvent,
+): [ExamKnowledgeMappingStartedEvent, ExamKnowledgeMappingConfirmedEvent] {
+  const sourceFacts = {
+    mappingVersion: 1,
+    subjectId: created.subjectId,
+    reviewVersion: review.reviewVersion,
+    reviewArtifactRef: review.reviewArtifactRef,
+    sourceReviewArtifactFingerprint: review.artifactSha256,
+    sourceReviewSemanticFingerprint: review.decisionSemanticFingerprint,
+    assessmentVersion: 1,
+    assessmentArtifactRef: grading.assessmentArtifactRef,
+    sourceAssessmentArtifactFingerprint: grading.artifactSha256,
+    sourceAssessmentSemanticFingerprint: '6'.repeat(64),
+    mappingSemanticFingerprint: '7'.repeat(64),
+  } as const;
+  const mappingRef = deriveExamKnowledgeMappingRef({
+    mappingVersion: sourceFacts.mappingVersion,
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    subjectId: sourceFacts.subjectId,
+    sourceReviewSemanticFingerprint: sourceFacts.sourceReviewSemanticFingerprint,
+    sourceAssessmentSemanticFingerprint: sourceFacts.sourceAssessmentSemanticFingerprint,
+  });
+  const plan = {
+    ...sourceFacts,
+    mappingRef,
+    mappingArtifactRef: deriveExamKnowledgeMappingArtifactRef(mappingRef),
+  };
+  const startedOperationId = deriveExamKnowledgeMappingStartedOperationId(
+    created.examSessionId,
+    plan.mappingVersion,
+  );
+  const started: ExamKnowledgeMappingStartedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(startedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_knowledge_mapping_started',
+    createdAt: '2026-08-31T08:00:16.000Z',
+    operationId: startedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_knowledge_mapping_started',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...plan,
+    }),
+    ...plan,
+  };
+  const completedFacts = {
+    ...plan,
+    artifactByteLength: 160,
+    artifactSha256: '8'.repeat(64),
+    entryCount: 3,
+    mappedQuestionCount: 2,
+    unmappedQuestionCount: 1,
+  } as const;
+  const completedOperationId = deriveExamKnowledgeMappingConfirmedOperationId(
+    created.examSessionId,
+    plan.mappingVersion,
+  );
+  const completed: ExamKnowledgeMappingConfirmedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(completedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_knowledge_mapping_confirmed',
+    createdAt: '2026-08-31T08:00:17.000Z',
+    operationId: completedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_knowledge_mapping_confirmed',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...completedFacts,
+    }),
+    ...completedFacts,
+  };
+  return [started, completed];
+}
+
+function observationProjectionEvents(
+  created: ExamCreatedEvent,
+  mapping: ExamKnowledgeMappingConfirmedEvent,
+): [ExamObservationProjectionStartedEvent, ExamObservationsProjectedEvent] {
+  const sourceFacts = {
+    observationVersion: 1,
+    reviewVersion: mapping.reviewVersion,
+    reviewArtifactRef: mapping.reviewArtifactRef,
+    sourceReviewArtifactFingerprint: mapping.sourceReviewArtifactFingerprint,
+    sourceReviewSemanticFingerprint: mapping.sourceReviewSemanticFingerprint,
+    assessmentVersion: mapping.assessmentVersion,
+    assessmentArtifactRef: mapping.assessmentArtifactRef,
+    sourceAssessmentArtifactFingerprint: mapping.sourceAssessmentArtifactFingerprint,
+    sourceAssessmentSemanticFingerprint: mapping.sourceAssessmentSemanticFingerprint,
+    mappingVersion: mapping.mappingVersion,
+    mappingRef: mapping.mappingRef,
+    mappingArtifactRef: mapping.mappingArtifactRef,
+    sourceMappingArtifactFingerprint: mapping.artifactSha256,
+    sourceMappingSemanticFingerprint: mapping.mappingSemanticFingerprint,
+    observationSemanticFingerprint: '9'.repeat(64),
+  } as const;
+  const observationRef = deriveExamObservationProjectionRef({
+    observationVersion: sourceFacts.observationVersion,
+    examSessionId: created.examSessionId,
+    sourceAssessmentSemanticFingerprint: sourceFacts.sourceAssessmentSemanticFingerprint,
+    sourceMappingSemanticFingerprint: sourceFacts.sourceMappingSemanticFingerprint,
+  });
+  const plan = {
+    ...sourceFacts,
+    observationRef,
+    observationArtifactRef: deriveExamObservationArtifactRef(observationRef),
+  };
+  const startedOperationId = deriveExamObservationProjectionStartedOperationId(
+    created.examSessionId,
+    plan.mappingVersion,
+    plan.observationVersion,
+  );
+  const started: ExamObservationProjectionStartedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(startedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_observation_projection_started',
+    createdAt: '2026-08-31T08:00:18.000Z',
+    operationId: startedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_observation_projection_started',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...plan,
+    }),
+    ...plan,
+  };
+  const completedFacts = {
+    ...plan,
+    artifactByteLength: 192,
+    artifactSha256: 'a'.repeat(64),
+    observationCount: 2,
+    evaluatedCount: 1,
+    correctCount: 0,
+    incorrectCount: 1,
+    unassessedCount: 1,
+  } as const;
+  const completedOperationId = deriveExamObservationsProjectedOperationId(
+    created.examSessionId,
+    plan.mappingVersion,
+    plan.observationVersion,
+  );
+  const completed: ExamObservationsProjectedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(completedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_observations_projected',
+    createdAt: '2026-08-31T08:00:19.000Z',
+    operationId: completedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_observations_projected',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...completedFacts,
+    }),
+    ...completedFacts,
+  };
+  return [started, completed];
+}
+
 describe('Exam RuntimeStore adapter', () => {
   it('derives stable partitioned Exam and document identities', () => {
     const learner = resolveZhongkaoLearnerKeyFromOwnerId(OWNER_ID);
@@ -807,6 +1040,40 @@ describe('Exam RuntimeStore adapter', () => {
     );
     expect(deriveExamGradingStartedOperationId(first, 1)).not.toBe(
       deriveExamGradingCompletedOperationId(first, 1),
+    );
+
+    const mappingInput = {
+      mappingVersion: 1,
+      examSessionId: first,
+      profileId: PROFILE_ID,
+      subjectId: 'math',
+      sourceReviewSemanticFingerprint: '1'.repeat(64),
+      sourceAssessmentSemanticFingerprint: '2'.repeat(64),
+    };
+    const mappingRef = deriveExamKnowledgeMappingRef(mappingInput);
+    expect(mappingRef).toBe(deriveExamKnowledgeMappingRef(mappingInput));
+    expect(mappingRef).not.toBe(
+      deriveExamKnowledgeMappingRef({
+        ...mappingInput,
+        sourceAssessmentSemanticFingerprint: '3'.repeat(64),
+      }),
+    );
+    expect(deriveExamKnowledgeMappingArtifactRef(mappingRef)).not.toBe(mappingRef);
+
+    const observationInput = {
+      observationVersion: 1,
+      examSessionId: first,
+      sourceAssessmentSemanticFingerprint: '2'.repeat(64),
+      sourceMappingSemanticFingerprint: '4'.repeat(64),
+    };
+    const observationRef = deriveExamObservationProjectionRef(observationInput);
+    expect(observationRef).toBe(deriveExamObservationProjectionRef(observationInput));
+    expect(deriveExamObservationArtifactRef(observationRef)).not.toBe(observationRef);
+    expect(deriveExamKnowledgeMappingStartedOperationId(first, 1)).not.toBe(
+      deriveExamKnowledgeMappingConfirmedOperationId(first, 1),
+    );
+    expect(deriveExamObservationProjectionStartedOperationId(first, 1, 1)).not.toBe(
+      deriveExamObservationsProjectedOperationId(first, 1, 1),
     );
   });
 
@@ -1361,6 +1628,318 @@ describe('Exam RuntimeStore adapter', () => {
         status: 'completed',
         assessmentArtifact: { assessmentCount: 3, correctCount: 1, incorrectCount: 1 },
       },
+    });
+  });
+
+  it('derives and enforces mapping and observation source lineage', async () => {
+    const backing = store();
+    const created = createdEvent();
+    await ensureExamRuntimeCreated({ store: backing, ownerId: OWNER_ID }, created);
+    const review = humanReviewEvents(created);
+    const answerKey = answerKeyEvents(created, review[1]);
+    const grading = gradingEvents(created, review[1], answerKey[1]);
+    const baseChain = [
+      snapshotEvent(created),
+      completedEvent(created),
+      ...extractionEvents(created),
+      ...responseEvents(created),
+      ...review,
+      ...answerKey,
+      ...grading,
+    ];
+    for (const [index, event] of baseChain.entries()) {
+      await appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event, expectedRevision: index },
+      );
+    }
+
+    const mapping = knowledgeMappingEvents(created, review[1], grading[1]);
+    const forgedMapping = { ...mapping[0], mappingRef: 'forged-mapping-ref' };
+    forgedMapping.operationFingerprint = createExamOperationFingerprint({
+      action: forgedMapping.eventType,
+      schemaVersion: forgedMapping.schemaVersion,
+      examSessionId: forgedMapping.examSessionId,
+      profileId: forgedMapping.profileId,
+      mappingVersion: forgedMapping.mappingVersion,
+      subjectId: forgedMapping.subjectId,
+      reviewVersion: forgedMapping.reviewVersion,
+      reviewArtifactRef: forgedMapping.reviewArtifactRef,
+      sourceReviewArtifactFingerprint: forgedMapping.sourceReviewArtifactFingerprint,
+      sourceReviewSemanticFingerprint: forgedMapping.sourceReviewSemanticFingerprint,
+      assessmentVersion: forgedMapping.assessmentVersion,
+      assessmentArtifactRef: forgedMapping.assessmentArtifactRef,
+      sourceAssessmentArtifactFingerprint: forgedMapping.sourceAssessmentArtifactFingerprint,
+      sourceAssessmentSemanticFingerprint: forgedMapping.sourceAssessmentSemanticFingerprint,
+      mappingSemanticFingerprint: forgedMapping.mappingSemanticFingerprint,
+      mappingRef: forgedMapping.mappingRef,
+      mappingArtifactRef: forgedMapping.mappingArtifactRef,
+    });
+    await expect(
+      appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event: forgedMapping, expectedRevision: 15 },
+      ),
+    ).rejects.toThrow('EXAM_EVENT_CONFLICT');
+
+    for (const [index, event] of mapping.entries()) {
+      await appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event, expectedRevision: index + 15 },
+      );
+    }
+    const projection = observationProjectionEvents(created, mapping[1]);
+    const forgedProjection = {
+      ...projection[0],
+      observationRef: 'forged-observation-ref',
+    };
+    forgedProjection.operationFingerprint = createExamOperationFingerprint({
+      action: forgedProjection.eventType,
+      schemaVersion: forgedProjection.schemaVersion,
+      examSessionId: forgedProjection.examSessionId,
+      profileId: forgedProjection.profileId,
+      observationVersion: forgedProjection.observationVersion,
+      reviewVersion: forgedProjection.reviewVersion,
+      reviewArtifactRef: forgedProjection.reviewArtifactRef,
+      sourceReviewArtifactFingerprint: forgedProjection.sourceReviewArtifactFingerprint,
+      sourceReviewSemanticFingerprint: forgedProjection.sourceReviewSemanticFingerprint,
+      assessmentVersion: forgedProjection.assessmentVersion,
+      assessmentArtifactRef: forgedProjection.assessmentArtifactRef,
+      sourceAssessmentArtifactFingerprint: forgedProjection.sourceAssessmentArtifactFingerprint,
+      sourceAssessmentSemanticFingerprint: forgedProjection.sourceAssessmentSemanticFingerprint,
+      mappingVersion: forgedProjection.mappingVersion,
+      mappingRef: forgedProjection.mappingRef,
+      mappingArtifactRef: forgedProjection.mappingArtifactRef,
+      sourceMappingArtifactFingerprint: forgedProjection.sourceMappingArtifactFingerprint,
+      sourceMappingSemanticFingerprint: forgedProjection.sourceMappingSemanticFingerprint,
+      observationSemanticFingerprint: forgedProjection.observationSemanticFingerprint,
+      observationRef: forgedProjection.observationRef,
+      observationArtifactRef: forgedProjection.observationArtifactRef,
+    });
+    await expect(
+      appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event: forgedProjection, expectedRevision: 17 },
+      ),
+    ).rejects.toThrow('EXAM_EVENT_CONFLICT');
+
+    for (const [index, event] of projection.entries()) {
+      await appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event, expectedRevision: index + 17 },
+      );
+    }
+
+    const snapshot = await loadExamRuntime(
+      { store: backing, ownerId: OWNER_ID },
+      created.examSessionId,
+    );
+    expect(snapshot.state).toMatchObject({
+      revision: 19,
+      knowledgeMapping: {
+        status: 'confirmed',
+        mappingArtifact: { mappedQuestionCount: 2, unmappedQuestionCount: 1 },
+      },
+      observationProjection: {
+        status: 'completed',
+        observationArtifact: { observationCount: 2, incorrectCount: 1 },
+      },
+    });
+  });
+
+  it('requires strict session enumeration and maps unscoped listing failures', async () => {
+    const withoutStrict = new Proxy(store(), {
+      get(target, property, receiver) {
+        if (property === 'listSessionsStrict') return undefined;
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    await expect(
+      listProfileExamRuntimeSnapshots({ store: withoutStrict, ownerId: OWNER_ID }, PROFILE_ID),
+    ).rejects.toMatchObject({ code: 'EXAM_SESSION_CONFLICT' });
+
+    const unavailable = new Proxy(store(), {
+      get(target, property, receiver) {
+        if (property === 'listSessionsStrict') {
+          return async () => {
+            throw new Error('simulated enumeration outage');
+          };
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    await expect(
+      listProfileExamRuntimeSnapshots({ store: unavailable, ownerId: OWNER_ID }, PROFILE_ID),
+    ).rejects.toMatchObject({ code: 'EXAM_SESSION_CONFLICT' });
+  });
+
+  it('fails closed when ordinary Browser listing omits a relevant corrupt Exam envelope', async () => {
+    const harness = browserStoreHarness();
+    const created = createdEvent();
+    const deps = { store: harness.store, ownerId: OWNER_ID };
+    await ensureExamRuntimeCreated(deps, created);
+    await rewriteSessionRow(
+      harness.indexedDB,
+      harness.dbName,
+      examRuntimeSessionId(created.examSessionId),
+      (row) => {
+        row.createdAt = 'not-iso';
+      },
+    );
+
+    const learnerKey = resolveZhongkaoLearnerKeyFromOwnerId(OWNER_ID);
+    await expect(
+      harness.store.listSessions(zhongkaoStageId(PROFILE_ID), learnerKey),
+    ).resolves.toEqual([]);
+    await expect(listProfileExamRuntimeSnapshots(deps, PROFILE_ID)).rejects.toMatchObject({
+      code: 'EXAM_EVENT_CONFLICT',
+    });
+  });
+
+  it('keeps an Exam relevant by its reserved id prefix when its stored kind is damaged', async () => {
+    const harness = browserStoreHarness();
+    const created = createdEvent();
+    const deps = { store: harness.store, ownerId: OWNER_ID };
+    await ensureExamRuntimeCreated(deps, created);
+    await rewriteSessionRow(
+      harness.indexedDB,
+      harness.dbName,
+      examRuntimeSessionId(created.examSessionId),
+      (row) => {
+        row.kind = 'chat';
+      },
+    );
+
+    await expect(listProfileExamRuntimeSnapshots(deps, PROFILE_ID)).rejects.toMatchObject({
+      code: 'EXAM_EVENT_CONFLICT',
+    });
+  });
+
+  it('does not let out-of-scope or unrelated corrupt sessions block Exam evidence listing', async () => {
+    const relevant = browserStoreHarness();
+    const created = createdEvent();
+    await ensureExamRuntimeCreated({ store: relevant.store, ownerId: OWNER_ID }, created);
+    await rewriteSessionRow(
+      relevant.indexedDB,
+      relevant.dbName,
+      examRuntimeSessionId(created.examSessionId),
+      (row) => {
+        row.createdAt = 'not-iso';
+      },
+    );
+
+    await expect(
+      listProfileExamRuntimeSnapshots(
+        { store: relevant.store, ownerId: 'fictional-other-owner' },
+        PROFILE_ID,
+      ),
+    ).resolves.toEqual([]);
+    await expect(
+      listProfileExamRuntimeSnapshots({ store: relevant.store, ownerId: OWNER_ID }, 'student-beta'),
+    ).resolves.toEqual([]);
+
+    const unrelated = browserStoreHarness();
+    const learnerKey = resolveZhongkaoLearnerKeyFromOwnerId(OWNER_ID);
+    await unrelated.store.createSession({
+      id: 'unrelated-chat-session',
+      kind: 'chat',
+      stageId: zhongkaoStageId(PROFILE_ID),
+      learnerKey,
+      status: 'active',
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await rewriteSessionRow(
+      unrelated.indexedDB,
+      unrelated.dbName,
+      'unrelated-chat-session',
+      (row) => {
+        row.createdAt = 'not-iso';
+      },
+    );
+    await expect(
+      listProfileExamRuntimeSnapshots({ store: unrelated.store, ownerId: OWNER_ID }, PROFILE_ID),
+    ).resolves.toEqual([]);
+  });
+
+  it('lists only owner/profile scoped non-deleted Exam runtime snapshots', async () => {
+    const harness = browserStoreHarness();
+    const backing = harness.store;
+    const created = createdEvent();
+    const deps = { store: backing, ownerId: OWNER_ID };
+    const strictListing = vi.spyOn(backing as StrictRuntimeSessionStore, 'listSessionsStrict');
+    await ensureExamRuntimeCreated(deps, created);
+
+    await expect(listProfileExamRuntimeSnapshots(deps, PROFILE_ID)).resolves.toMatchObject([
+      { state: { examSessionId: created.examSessionId, profileId: PROFILE_ID } },
+    ]);
+    expect(strictListing).toHaveBeenCalledWith(
+      zhongkaoStageId(PROFILE_ID),
+      resolveZhongkaoLearnerKeyFromOwnerId(OWNER_ID),
+      {
+        kinds: ['zhongkaoExamEvent'],
+        idPrefixes: ['zhongkao-exam:'],
+      },
+    );
+    await expect(listProfileExamRuntimeSnapshots(deps, 'another-profile')).resolves.toEqual([]);
+    await expect(
+      listProfileExamRuntimeSnapshots({ store: backing, ownerId: 'another-owner' }, PROFILE_ID),
+    ).resolves.toEqual([]);
+
+    const requestedOperationId = deriveExamDeleteRequestedOperationId(created.examSessionId);
+    const requested: ExamDeleteRequestedEvent = {
+      schemaVersion: 1,
+      eventId: deriveExamEventId(requestedOperationId),
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      eventType: 'exam_delete_requested',
+      createdAt: '2026-08-31T08:00:20.000Z',
+      operationId: requestedOperationId,
+      operationFingerprint: createExamOperationFingerprint({
+        action: 'exam_delete_requested',
+        schemaVersion: 1,
+        examSessionId: created.examSessionId,
+        profileId: created.profileId,
+        documentSetFingerprint: created.documentSetFingerprint,
+      }),
+      documentSetFingerprint: created.documentSetFingerprint,
+    };
+    await appendExamRuntimeEvent(deps, { event: requested, expectedRevision: 0 });
+    const deletedOperationId = deriveExamDeletedOperationId(created.examSessionId);
+    const deleted: ExamDeletedEvent = {
+      schemaVersion: 1,
+      eventId: deriveExamEventId(deletedOperationId),
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      eventType: 'exam_deleted',
+      createdAt: '2026-08-31T08:00:21.000Z',
+      operationId: deletedOperationId,
+      operationFingerprint: createExamOperationFingerprint({
+        action: 'exam_deleted',
+        schemaVersion: 1,
+        examSessionId: created.examSessionId,
+        profileId: created.profileId,
+        documentSetFingerprint: created.documentSetFingerprint,
+        deleteRequestEventId: requested.eventId,
+      }),
+      documentSetFingerprint: created.documentSetFingerprint,
+      deleteRequestEventId: requested.eventId,
+    };
+    await appendExamRuntimeEvent(deps, { event: deleted, expectedRevision: 1 });
+    await expect(listProfileExamRuntimeSnapshots(deps, PROFILE_ID)).resolves.toEqual([]);
+
+    await rewriteSessionRow(
+      harness.indexedDB,
+      harness.dbName,
+      examRuntimeSessionId(created.examSessionId),
+      (row) => {
+        row.createdAt = 'not-iso';
+      },
+    );
+    await expect(listProfileExamRuntimeSnapshots(deps, PROFILE_ID)).rejects.toMatchObject({
+      code: 'EXAM_EVENT_CONFLICT',
     });
   });
 

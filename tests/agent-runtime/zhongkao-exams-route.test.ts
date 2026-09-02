@@ -82,6 +82,8 @@ function publicExam(overrides: Partial<PublicExamSession> = {}): PublicExamSessi
     studentResponseMatching: { status: 'not_started', needsReview: true },
     humanReview: { status: 'not_started' },
     grading: { status: 'not_started' },
+    knowledgeMapping: { status: 'not_started' },
+    observationProjection: { status: 'not_started' },
     documents: [
       {
         examDocumentId: 'exam-document-question-paper',
@@ -341,6 +343,15 @@ describe('GET /api/zhongkao/exams/[examSessionId]', () => {
       'correctAnswer',
       'expectedAnswer',
       'answers',
+      'knowledgePointIds',
+      'confirmedQuestionId',
+      'outcome',
+      'assessmentStatus',
+      'mappingSource',
+      'mappingRef',
+      'mappingArtifactRef',
+      'observationRef',
+      'observationArtifactRef',
     ];
 
     expect(response.status).toBe(200);

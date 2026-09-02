@@ -1597,3 +1597,124 @@ confirmed-review resolver and correctness only through
 `resolveExamQuestionAssessments`. It must not re-grade raw responses, read a
 candidate answer key, ask a model to change an outcome, infer an error type, or
 update progress without the later explicit projection contract.
+
+## Milestone 3B-2A confirmed knowledge mapping and Exam evidence
+
+M3B-2A adds one explicit owner-authorized knowledge mapping after human review
+and deterministic grading have completed. The closed full-set mapping request
+resolves every confirmed question as either `mapped` with one or more bounded,
+unique `knowledgePointIds`, or `unmapped` with a closed reason. Correctness,
+question text, response text, candidate confidence, and grading type never
+create a knowledge-point mapping. The client cannot submit an outcome,
+assessment status, profile, subject, mastery state, or error type.
+
+The only mapping authority is `owner_confirmed_manual_mapping`. It means the
+current owner explicitly selected these application-local identifiers for this
+Exam. The repository still has no complete official Zhongkao taxonomy catalog,
+so the mapping does not claim official curriculum membership, textbook
+membership, regional-exam scope, or expert verification. Existing identifier
+validation proves only that an id is non-empty, trimmed, bounded, control-safe,
+and unique within the entry. An `unmapped` decision remains an explicit fact;
+the system never invents an `unknown` knowledge-point id.
+
+### Confirmed Exam observations
+
+`ConfirmedExamObservationV1` is an independent domain fact, not a synthetic
+`StudyAttempt`. It never fabricates `attemptKind`, help exposure, prior-attempt,
+answer-view, independence, or Coach lifecycle facts. Each mapped confirmed
+question receives one deterministic observation bound to the exact confirmed
+review, question assessment, and confirmed mapping. An evaluated observation
+copies only `correct` or `incorrect` from `ExamQuestionAssessments`; an
+unassessed observation copies only the closed unsupported-question reason.
+Unmapped questions produce no Progress observation.
+
+Observation and occasion identities are server-derived domain-separated
+hashes. `observedAt` is the durable Exam creation time, not a retry or projection
+time. Every observation from one Exam uses the same Exam occasion identity.
+For one knowledge point, any number of incorrect questions in the same Exam
+therefore contributes exactly one negative occasion. A question mapped to two
+knowledge points can contribute to both, while a second incorrect question for
+either point in the same Exam does not create another occasion. A correct
+question in the same Exam never cancels an incorrect question.
+
+An authoritative Exam correct is useful observed evidence but is never an
+independent transfer or review correct. Exam correct observations cannot by
+themselves satisfy the two-independent-correct recovery rule or produce
+`developing` or `stable`. A mapped unassessed observation is retained for audit
+but supplies neither positive nor negative correctness evidence.
+
+### Progress evidence and conservative aggregation
+
+`ProgressEvidence` is a closed union of real `StudyAttempt` facts and confirmed
+Exam observations. The existing StudyAttempt schema, predicates, counting,
+partial/skipped behavior, and ordering remain unchanged. StudyAttempt-only
+calls to `deriveKnowledgeProgress` retain their existing output and semantics.
+The evidence-aware derivation groups only Exam observations by Exam occasion
+and knowledge point; it does not regroup StudyAttempts.
+
+One incorrect Exam occasion yields `needs_observation`, not `weak`. Two durable
+negative occasions, including one real StudyAttempt error plus one Exam error
+or errors from two separate Exams, may yield `weak`. Two recent independent
+Coach transfer/review successes can still move a weak point to `developing`.
+Ordinary Exam correct observations never impersonate that recovery evidence.
+`stable` remains reserved and is not automatically produced. Progress remains
+a pure projection over currently available evidence; no Exam event persists a
+weak, developing, stable, mastered, independent, score, or error-type claim.
+
+### Private artifacts, recovery, and deletion
+
+The canonical `confirmed_exam_knowledge_mapping_v1.json` artifact binds the
+Exam, profile, subject, confirmed-review fingerprint, assessment fingerprint,
+mapping version, manual authority, complete canonical decisions, and semantic
+fingerprint. The separate `confirmed_exam_observations_v1.json` artifact binds
+that mapping plus the exact review and assessment sources and contains the
+complete deterministic observation set. Both remain private Exam-owned
+artifacts with deterministic keys, closed schemas, immutable same-bytes replay,
+and read-back length, SHA-256, canonical-byte, source, identity, and coverage
+verification.
+
+The Exam stream records `exam_knowledge_mapping_started` before mapping bytes,
+then `exam_knowledge_mapping_confirmed`; observation projection records
+`exam_observation_projection_started` before observation bytes, then
+`exam_observations_projected`. Events contain only bounded versions, opaque
+references, source fingerprints, integrity facts, and counts. They never store
+knowledge-point arrays, per-question outcomes, raw questions, raw responses,
+answers, or private artifact contents. Retries recover from every started-event,
+bytes-before-completion, CAS, and committed-response-loss boundary. The same
+semantic v1 mapping replays, while different facts conflict instead of
+overwriting history.
+
+Mapping, projection, collection, and deletion use the existing per-Exam
+mutation boundary. Delete removes both new deterministic artifact keys,
+including partial bytes left after a started event. A deleting or deleted Exam
+does not participate in Progress, so recomputation removes its evidence and a
+late mapping or projection cannot resurrect it.
+
+Profile-wide collection stays server-only. It first loads the existing
+owner-scoped StudyAttempt stream, then requires strict Exam enumeration in the
+same learner/profile partition. The strict selector recognizes both the
+`zhongkaoExamEvent` kind and the reserved `zhongkao-exam:` session-id namespace,
+so damage to either field cannot silently hide an otherwise recognizable Exam.
+A malformed relevant envelope or native-row binding fails as
+`EXAM_EVENT_CONFLICT`; an unavailable strict capability or failed base
+enumeration fails as `EXAM_SESSION_CONFLICT`. Unrelated runtime kinds and other
+owner/profile partitions remain outside that authority scope.
+
+Every valid selected Exam history is folded before lifecycle filtering and
+every source-bound observation artifact is revalidated. Incomplete and deleting
+Exams contribute nothing, and only a valid folded deleted Exam is excluded;
+corruption never becomes deleted, unmapped, unassessed, or an empty observation
+set. The generic `RuntimeStore.listSessions` omission contract remains
+unchanged for its existing callers. StudyAttempt loading retains its canonical
+owner/profile session-id fallback to fail-loud direct reads. No parallel
+observation runtime or database schema is introduced.
+
+Ordinary Exam detail and the mapping POST expose only mapping/projection status
+and aggregate counts. Knowledge-point decisions, observations, outcomes,
+artifact locations, digests, event or operation references, owner and learner
+partitions, raw student responses, grading specifications, and answer-key facts
+remain private. M3B-2A adds no automatic knowledge mapping, error diagnosis,
+LLM, provider, embedding, OCR, vision, score, StudyAttempt write, Coach change,
+UI, production dependency, or database migration. A future M3B-2B may generate
+candidate mappings or error diagnoses, but no candidate can become trusted
+without a separate explicit human confirmation boundary.

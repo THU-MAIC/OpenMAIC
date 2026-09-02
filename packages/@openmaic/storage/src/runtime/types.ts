@@ -63,6 +63,38 @@ export class RuntimeAppendConflictError extends Error {
   }
 }
 
+/**
+ * Selects the session identities that an authoritative caller needs to
+ * enumerate completely. The two selectors are additive: a candidate is
+ * relevant when either its stored kind matches or its stored id starts with a
+ * listed prefix. Prefixes let an application retain relevance when corruption
+ * damages the kind field but leaves the application's session-id namespace.
+ */
+export interface RuntimeSessionStrictSelector {
+  readonly kinds?: readonly string[];
+  readonly idPrefixes?: readonly string[];
+}
+
+/** A relevant stored session could not be decoded as one valid runtime envelope. */
+export class RuntimeSessionEnumerationCorruptError extends Error {
+  override readonly name = 'RuntimeSessionEnumerationCorruptError';
+  readonly code = 'RUNTIME_SESSION_ENUMERATION_CORRUPT' as const;
+
+  constructor(
+    readonly stageId: string,
+    readonly learnerKey: string,
+    readonly sessionId: string | undefined,
+    readonly sessionKind: string | undefined,
+    cause?: unknown,
+  ) {
+    super(
+      `@openmaic/storage: corrupt relevant runtime session ${JSON.stringify(sessionId)} ` +
+        `while enumerating stage ${JSON.stringify(stageId)} and learner ${JSON.stringify(learnerKey)}`,
+      { cause },
+    );
+  }
+}
+
 /** Optional compare-and-swap guard against a session's current record tail. */
 export interface RuntimeTailOptions {
   /**
@@ -199,4 +231,18 @@ export interface RuntimeStore {
 
   /** Delete every runtime session and record. Idempotent and version-agnostic. */
   deleteAllRuntime(): Promise<void>;
+}
+
+/**
+ * Server-authority capability for fail-closed, relevance-scoped enumeration.
+ * It is deliberately separate from {@link RuntimeStore}: ordinary listings
+ * keep their documented poison-row omission semantics, and transports do not
+ * gain a new public route merely by implementing RuntimeStore.
+ */
+export interface StrictRuntimeSessionStore extends RuntimeStore {
+  listSessionsStrict(
+    stageId: string,
+    learnerKey: string,
+    selector: RuntimeSessionStrictSelector,
+  ): Promise<RuntimeSession[]>;
 }

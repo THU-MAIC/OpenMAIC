@@ -30,10 +30,11 @@ import type {
   RuntimeAppendOptions,
   RuntimePayloadValidator,
   RuntimeSessionInit,
-  RuntimeStore,
+  RuntimeSessionStrictSelector,
+  StrictRuntimeSessionStore,
   RuntimeTailOptions,
 } from './types.js';
-import { RuntimeAppendConflictError } from './types.js';
+import { RuntimeAppendConflictError, RuntimeSessionEnumerationCorruptError } from './types.js';
 
 const SESSIONS = 'sessions';
 const RECORDS = 'records';
@@ -136,12 +137,36 @@ function migrateSession(row: RuntimeSession): RuntimeSession {
   return needsRuntimeMigration(row) ? (migrateRuntime(row) as RuntimeSession) : row;
 }
 
+interface StrictCandidateMatch {
+  id: string | undefined;
+  kind: string | undefined;
+  byKind: boolean;
+  byIdPrefix: boolean;
+}
+
+function matchStrictCandidate(
+  row: unknown,
+  selector: RuntimeSessionStrictSelector,
+): StrictCandidateMatch {
+  const candidate =
+    typeof row === 'object' && row !== null ? (row as Record<string, unknown>) : undefined;
+  const id = typeof candidate?.id === 'string' ? candidate.id : undefined;
+  const kind = typeof candidate?.kind === 'string' ? candidate.kind : undefined;
+  return {
+    id,
+    kind,
+    byKind: kind !== undefined && (selector.kinds?.includes(kind) ?? false),
+    byIdPrefix:
+      id !== undefined && (selector.idPrefixes?.some((prefix) => id.startsWith(prefix)) ?? false),
+  };
+}
+
 /** Every record of one session: `seq` spans `[0, Infinity)` under its id. */
 function sessionRecordRange(sessionId: string): IDBKeyRange {
   return IDBKeyRange.bound([sessionId, 0], [sessionId, Infinity]);
 }
 
-export class BrowserRuntimeStore implements RuntimeStore {
+export class BrowserRuntimeStore implements StrictRuntimeSessionStore {
   private readonly idb: IDBFactory;
   private readonly dbName: string;
   private readonly payloadValidators: Record<string, RuntimePayloadValidator>;
@@ -290,6 +315,57 @@ export class BrowserRuntimeStore implements RuntimeStore {
     // order across offsets. `Date.parse` is safe here — both strings already
     // passed `isIsoTimestamp` at write time. Tie-break on `id` for a
     // deterministic listing.
+    return sessions.sort(
+      (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id),
+    );
+  }
+
+  async listSessionsStrict(
+    stageId: string,
+    learnerKey: string,
+    selector: RuntimeSessionStrictSelector,
+  ): Promise<RuntimeSession[]> {
+    const rows = await this.txRun([SESSIONS], 'readonly', (tx) =>
+      reqP<unknown[]>(
+        tx.objectStore(SESSIONS).index(SESSIONS_BY_STAGE_LEARNER).getAll([stageId, learnerKey]),
+      ),
+    );
+    const sessions: RuntimeSession[] = [];
+    for (const row of rows) {
+      const candidate = matchStrictCandidate(row, selector);
+      if (!candidate.byKind && !candidate.byIdPrefix) continue;
+      try {
+        const session = migrateSession(row as RuntimeSession);
+        assertValid(
+          validateRuntimeSession(session),
+          `stored runtime session ${JSON.stringify(candidate.id)}`,
+        );
+        if (session.stageId !== stageId || session.learnerKey !== learnerKey) {
+          throw new Error('@openmaic/storage: strict runtime session partition mismatch');
+        }
+        // An id-prefix match is the fallback that keeps a candidate relevant
+        // when its kind is damaged. If kinds were supplied, accepting that
+        // candidate under a different valid kind would recreate silent omission
+        // at the application filter immediately above this store.
+        if (
+          candidate.byIdPrefix &&
+          selector.kinds !== undefined &&
+          selector.kinds.length > 0 &&
+          !selector.kinds.includes(session.kind)
+        ) {
+          throw new Error('@openmaic/storage: strict runtime session kind mismatch');
+        }
+        sessions.push(session);
+      } catch (error) {
+        throw new RuntimeSessionEnumerationCorruptError(
+          stageId,
+          learnerKey,
+          candidate.id,
+          candidate.kind,
+          error,
+        );
+      }
+    }
     return sessions.sort(
       (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id),
     );

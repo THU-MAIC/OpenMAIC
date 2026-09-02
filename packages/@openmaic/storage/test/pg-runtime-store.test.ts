@@ -7,7 +7,11 @@ import {
   type QueryResult,
   type Queryable,
 } from '../src/runtime/pg.js';
-import { RuntimeAppendConflictError, type RuntimeStore } from '../src/runtime/types.js';
+import {
+  RuntimeAppendConflictError,
+  RuntimeSessionEnumerationCorruptError,
+  type RuntimeStore,
+} from '../src/runtime/types.js';
 import { makeRecordInit, makeSession, runRuntimeStoreContract } from './runtime-contract.js';
 
 function transactionOptions(db: PGlite): PgRuntimeStoreOptions {
@@ -89,6 +93,100 @@ describe('PgRuntimeStore Postgres behavior', () => {
     expect(() => new PgRuntimeStore(db, {} as PgRuntimeStoreOptions)).toThrow(
       /withTransaction.*fresh.*connection.*transaction/i,
     );
+  });
+
+  const strictExamSelector = {
+    kinds: ['zhongkaoExamEvent'],
+    idPrefixes: ['zhongkao-exam:'],
+  } as const;
+
+  test('strict listing returns selected valid sessions and distinguishes an empty partition', async () => {
+    await store.createSession(
+      makeSession({ id: 'zhongkao-exam:valid', kind: 'zhongkaoExamEvent' }),
+    );
+    await store.createSession(makeSession({ id: 'unrelated', kind: 'playback' }));
+
+    await expect(
+      store.listSessionsStrict('missing-stage', 'anon:device-1', strictExamSelector),
+    ).resolves.toEqual([]);
+    await expect(
+      store.listSessionsStrict('stage-1', 'anon:device-1', strictExamSelector),
+    ).resolves.toMatchObject([{ id: 'zhongkao-exam:valid', kind: 'zhongkaoExamEvent' }]);
+  });
+
+  test('strict listing throws typed corruption for a relevant malformed envelope only', async () => {
+    const relevant = await store.createSession(
+      makeSession({ id: 'zhongkao-exam:corrupt', kind: 'zhongkaoExamEvent' }),
+    );
+    const unrelated = await store.createSession(
+      makeSession({ id: 'unrelated-corrupt', kind: 'playback' }),
+    );
+    await db.query('UPDATE runtime_sessions SET status = $2, data = $3::jsonb WHERE id = $1', [
+      relevant.id,
+      'paused',
+      JSON.stringify({ ...relevant, status: 'paused' }),
+    ]);
+    await db.query('UPDATE runtime_sessions SET status = $2, data = $3::jsonb WHERE id = $1', [
+      unrelated.id,
+      'paused',
+      JSON.stringify({ ...unrelated, status: 'paused' }),
+    ]);
+
+    expect(await store.listSessions('stage-1', 'anon:device-1')).toEqual([]);
+    const failure = await store
+      .listSessionsStrict('stage-1', 'anon:device-1', strictExamSelector)
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(RuntimeSessionEnumerationCorruptError);
+    expect(failure).toMatchObject({
+      code: 'RUNTIME_SESSION_ENUMERATION_CORRUPT',
+      stageId: 'stage-1',
+      learnerKey: 'anon:device-1',
+      sessionId: 'zhongkao-exam:corrupt',
+      sessionKind: 'zhongkaoExamEvent',
+    });
+
+    await store.deleteSession(relevant.id);
+    await expect(
+      store.listSessionsStrict('stage-1', 'anon:device-1', strictExamSelector),
+    ).resolves.toEqual([]);
+  });
+
+  test.each([
+    ['id', 'different-id'],
+    ['stageId', 'different-stage'],
+    ['learnerKey', 'different-learner'],
+    ['kind', 'playback'],
+    ['status', 'completed'],
+    ['createdAt', '2026-01-02T00:00:00.000Z'],
+    ['updatedAt', '2026-01-02T00:00:00.000Z'],
+  ] as const)(
+    'strict listing detects a valid envelope whose %s disagrees with its relational column',
+    async (field, value) => {
+      const created = await store.createSession(
+        makeSession({ id: 'zhongkao-exam:mismatch', kind: 'zhongkaoExamEvent' }),
+      );
+      await db.query('UPDATE runtime_sessions SET data = $2::jsonb WHERE id = $1', [
+        created.id,
+        JSON.stringify({ ...created, [field]: value }),
+      ]);
+
+      await expect(
+        store.listSessionsStrict('stage-1', 'anon:device-1', strictExamSelector),
+      ).rejects.toBeInstanceOf(RuntimeSessionEnumerationCorruptError);
+    },
+  );
+
+  test('an id-prefix sentinel detects a relevant session whose stored kind is unexpected', async () => {
+    await store.createSession(makeSession({ id: 'zhongkao-exam:kind-corrupt', kind: 'playback' }));
+
+    const failure = await store
+      .listSessionsStrict('stage-1', 'anon:device-1', strictExamSelector)
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(RuntimeSessionEnumerationCorruptError);
+    expect(failure).toMatchObject({
+      sessionId: 'zhongkao-exam:kind-corrupt',
+      sessionKind: 'playback',
+    });
   });
 
   test.each([

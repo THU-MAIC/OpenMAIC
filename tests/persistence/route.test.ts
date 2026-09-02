@@ -1122,6 +1122,7 @@ describe('embedded persistence route', () => {
 
   it('filters server-only sessions and blocks their generic read/write lifecycle', async () => {
     const privateAssessmentCanary = 'PRIVATE_ORIGINAL_ASSESSMENT_HTTP_CANARY_91KQ';
+    const privateKnowledgeMappingCanary = 'PRIVATE_EXAM_KNOWLEDGE_MAPPING_HTTP_CANARY_4R7M';
     const coach = {
       id: 'coach-session-hidden',
       kind: 'zhongkaoCoachEvent',
@@ -1154,8 +1155,9 @@ describe('embedded persistence route', () => {
       {
         id: 'internal-event',
         payload: {
-          eventType: 'original_assessment_prepared',
+          eventType: 'exam_knowledge_mapping_confirmed',
           assessmentPayload: { gradingSpec: { acceptedAnswers: [privateAssessmentCanary] } },
+          knowledgePointIds: [privateKnowledgeMappingCanary],
         },
       },
     ]);
@@ -1200,6 +1202,9 @@ describe('embedded persistence route', () => {
     expect(
       JSON.stringify([hiddenCoachRecords, hiddenStudyAttemptRecords, hiddenExamRecords]),
     ).not.toContain(privateAssessmentCanary);
+    expect(
+      JSON.stringify([hiddenCoachRecords, hiddenStudyAttemptRecords, hiddenExamRecords]),
+    ).not.toContain(privateKnowledgeMappingCanary);
     expect(listRecords).not.toHaveBeenCalled();
     await expect(
       visible.appendRecord({
@@ -1214,7 +1219,10 @@ describe('embedded persistence route', () => {
         id: 'forged-exam-event',
         sessionId: exam.id,
         createdAt: '2026-08-28T08:00:00.000Z',
-        payload: {},
+        payload: {
+          eventType: 'exam_knowledge_mapping_confirmed',
+          knowledgePointIds: [privateKnowledgeMappingCanary],
+        },
       }),
     ).rejects.toThrow('runtime session not found');
     const commonAttempt = {

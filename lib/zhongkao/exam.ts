@@ -26,6 +26,8 @@ export const EXAM_MAX_MATCH_ARTIFACT_BYTES = 4 * 1024 * 1024;
 export const EXAM_MAX_HUMAN_REVIEW_ARTIFACT_BYTES = 4 * 1024 * 1024;
 export const EXAM_MAX_ANSWER_KEY_ARTIFACT_BYTES = 4 * 1024 * 1024;
 export const EXAM_MAX_ASSESSMENT_ARTIFACT_BYTES = 4 * 1024 * 1024;
+export const EXAM_MAX_KNOWLEDGE_MAPPING_ARTIFACT_BYTES = 4 * 1024 * 1024;
+export const EXAM_MAX_OBSERVATION_ARTIFACT_BYTES = 4 * 1024 * 1024;
 export const EXAM_MAX_EXTRACTED_PAGES = 200;
 export const EXAM_MAX_QUESTION_CANDIDATES = 500;
 
@@ -114,6 +116,21 @@ export interface PublicExamGradingSummary {
   unassessedCount?: number;
 }
 
+export type PublicExamKnowledgeMappingStatus = 'not_started' | 'processing' | 'confirmed';
+
+export interface PublicExamKnowledgeMappingSummary {
+  status: PublicExamKnowledgeMappingStatus;
+  mappedQuestionCount?: number;
+  unmappedQuestionCount?: number;
+}
+
+export type PublicExamObservationProjectionStatus = 'not_started' | 'processing' | 'completed';
+
+export interface PublicExamObservationProjectionSummary {
+  status: PublicExamObservationProjectionStatus;
+  observationCount?: number;
+}
+
 export interface PublicExamDocument {
   examDocumentId: string;
   role: ExamDocumentRole;
@@ -136,6 +153,8 @@ export interface PublicExamSession {
   studentResponseMatching: PublicExamStudentResponseMatchingSummary;
   humanReview: PublicExamHumanReviewSummary;
   grading: PublicExamGradingSummary;
+  knowledgeMapping: PublicExamKnowledgeMappingSummary;
+  observationProjection: PublicExamObservationProjectionSummary;
 }
 
 const CREATE_REQUEST_KEYS = new Set([

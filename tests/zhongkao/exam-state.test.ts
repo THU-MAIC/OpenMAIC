@@ -15,6 +15,10 @@ import type {
   ExamHumanReviewCompletedEvent,
   ExamHumanReviewStartedEvent,
   ExamIntakeCompletedEvent,
+  ExamKnowledgeMappingConfirmedEvent,
+  ExamKnowledgeMappingStartedEvent,
+  ExamObservationProjectionStartedEvent,
+  ExamObservationsProjectedEvent,
   ExamQuestionCandidatesExtractedEvent,
   ExamQuestionExtractionStartedEvent,
   ExamQuestionSegmentationStartedEvent,
@@ -74,6 +78,40 @@ const GRADING_PLAN = {
   sourceAnswerKeyArtifactFingerprint: '9'.repeat(64),
   gradingRef: 'exam-grading-v1',
   assessmentArtifactRef: 'exam-assessment-artifact-v1',
+} as const;
+const KNOWLEDGE_MAPPING_PLAN = {
+  mappingVersion: 1,
+  subjectId: 'math',
+  reviewVersion: HUMAN_REVIEW_PLAN.reviewVersion,
+  reviewArtifactRef: HUMAN_REVIEW_PLAN.reviewArtifactRef,
+  sourceReviewArtifactFingerprint: '7'.repeat(64),
+  sourceReviewSemanticFingerprint: HUMAN_REVIEW_PLAN.decisionSemanticFingerprint,
+  assessmentVersion: 1,
+  assessmentArtifactRef: GRADING_PLAN.assessmentArtifactRef,
+  sourceAssessmentArtifactFingerprint: 'a'.repeat(64),
+  sourceAssessmentSemanticFingerprint: 'b'.repeat(64),
+  mappingSemanticFingerprint: 'c'.repeat(64),
+  mappingRef: 'exam-knowledge-mapping-v1',
+  mappingArtifactRef: 'exam-knowledge-mapping-artifact-v1',
+} as const;
+const OBSERVATION_PROJECTION_PLAN = {
+  observationVersion: 1,
+  reviewVersion: KNOWLEDGE_MAPPING_PLAN.reviewVersion,
+  reviewArtifactRef: KNOWLEDGE_MAPPING_PLAN.reviewArtifactRef,
+  sourceReviewArtifactFingerprint: KNOWLEDGE_MAPPING_PLAN.sourceReviewArtifactFingerprint,
+  sourceReviewSemanticFingerprint: KNOWLEDGE_MAPPING_PLAN.sourceReviewSemanticFingerprint,
+  assessmentVersion: KNOWLEDGE_MAPPING_PLAN.assessmentVersion,
+  assessmentArtifactRef: KNOWLEDGE_MAPPING_PLAN.assessmentArtifactRef,
+  sourceAssessmentArtifactFingerprint: KNOWLEDGE_MAPPING_PLAN.sourceAssessmentArtifactFingerprint,
+  sourceAssessmentSemanticFingerprint: KNOWLEDGE_MAPPING_PLAN.sourceAssessmentSemanticFingerprint,
+  mappingVersion: KNOWLEDGE_MAPPING_PLAN.mappingVersion,
+  mappingRef: KNOWLEDGE_MAPPING_PLAN.mappingRef,
+  mappingArtifactRef: KNOWLEDGE_MAPPING_PLAN.mappingArtifactRef,
+  sourceMappingArtifactFingerprint: 'd'.repeat(64),
+  sourceMappingSemanticFingerprint: KNOWLEDGE_MAPPING_PLAN.mappingSemanticFingerprint,
+  observationSemanticFingerprint: 'e'.repeat(64),
+  observationRef: 'exam-observations-v1',
+  observationArtifactRef: 'exam-observations-artifact-v1',
 } as const;
 
 function fingerprint(seed: number): string {
@@ -370,6 +408,66 @@ function gradingCompleted(
   };
 }
 
+function knowledgeMappingStarted(
+  seq: number,
+  overrides: Partial<ExamKnowledgeMappingStartedEvent> = {},
+): ExamKnowledgeMappingStartedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_knowledge_mapping_started',
+    ...KNOWLEDGE_MAPPING_PLAN,
+    ...overrides,
+  };
+}
+
+function knowledgeMappingConfirmed(
+  seq: number,
+  overrides: Partial<ExamKnowledgeMappingConfirmedEvent> = {},
+): ExamKnowledgeMappingConfirmedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_knowledge_mapping_confirmed',
+    ...KNOWLEDGE_MAPPING_PLAN,
+    artifactByteLength: 160,
+    artifactSha256: 'd'.repeat(64),
+    entryCount: 3,
+    mappedQuestionCount: 2,
+    unmappedQuestionCount: 1,
+    ...overrides,
+  };
+}
+
+function observationProjectionStarted(
+  seq: number,
+  overrides: Partial<ExamObservationProjectionStartedEvent> = {},
+): ExamObservationProjectionStartedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_observation_projection_started',
+    ...OBSERVATION_PROJECTION_PLAN,
+    ...overrides,
+  };
+}
+
+function observationsProjected(
+  seq: number,
+  overrides: Partial<ExamObservationsProjectedEvent> = {},
+): ExamObservationsProjectedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_observations_projected',
+    ...OBSERVATION_PROJECTION_PLAN,
+    artifactByteLength: 192,
+    artifactSha256: 'f'.repeat(64),
+    observationCount: 2,
+    evaluatedCount: 1,
+    correctCount: 0,
+    incorrectCount: 1,
+    unassessedCount: 1,
+    ...overrides,
+  };
+}
+
 function deleteRequested(seq: number): ExamEvent {
   return {
     ...base(seq),
@@ -434,6 +532,14 @@ function answerKeyEvents(): ExamEvent[] {
 
 function gradingEvents(): ExamEvent[] {
   return [...answerKeyEvents(), gradingStarted(16), gradingCompleted(17)];
+}
+
+function mappingEvents(): ExamEvent[] {
+  return [...gradingEvents(), knowledgeMappingStarted(18), knowledgeMappingConfirmed(19)];
+}
+
+function observationEvents(): ExamEvent[] {
+  return [...mappingEvents(), observationProjectionStarted(20), observationsProjected(21)];
 }
 
 describe('Exam event fold', () => {
@@ -611,6 +717,102 @@ describe('Exam event fold', () => {
         unassessedCount: 1,
       },
     });
+  });
+
+  it('folds confirmed knowledge mapping and source-bound observation projection', () => {
+    const mapping = foldExamEvents(records(mappingEvents()));
+    expect(mapping.knowledgeMapping).toEqual({
+      status: 'confirmed',
+      startedEventId: 'exam-event-18',
+      startedAt: knowledgeMappingStarted(18).createdAt,
+      ...KNOWLEDGE_MAPPING_PLAN,
+      mappingArtifact: {
+        eventId: 'exam-event-19',
+        createdAt: knowledgeMappingConfirmed(19).createdAt,
+        byteLength: 160,
+        sha256: 'd'.repeat(64),
+        entryCount: 3,
+        mappedQuestionCount: 2,
+        unmappedQuestionCount: 1,
+      },
+    });
+
+    const projected = foldExamEvents(records(observationEvents()));
+    expect(projected.observationProjection).toEqual({
+      status: 'completed',
+      startedEventId: 'exam-event-20',
+      startedAt: observationProjectionStarted(20).createdAt,
+      ...OBSERVATION_PROJECTION_PLAN,
+      observationArtifact: {
+        eventId: 'exam-event-21',
+        createdAt: observationsProjected(21).createdAt,
+        byteLength: 192,
+        sha256: 'f'.repeat(64),
+        observationCount: 2,
+        evaluatedCount: 1,
+        correctCount: 0,
+        incorrectCount: 1,
+        unassessedCount: 1,
+      },
+    });
+  });
+
+  it('requires completed grading, exact source lineage, and complete mapping/projection counts', () => {
+    expect(() =>
+      foldExamEvents(records([...answerKeyEvents(), knowledgeMappingStarted(16)])),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...gradingEvents(),
+          knowledgeMappingStarted(18, {
+            sourceAssessmentArtifactFingerprint: '0'.repeat(64),
+          }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...gradingEvents(),
+          knowledgeMappingStarted(18),
+          knowledgeMappingConfirmed(19, {
+            entryCount: 2,
+            mappedQuestionCount: 1,
+            unmappedQuestionCount: 1,
+          }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([...gradingEvents(), knowledgeMappingStarted(18, { assessmentVersion: 2 })]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...mappingEvents(),
+          observationProjectionStarted(20, {
+            sourceMappingSemanticFingerprint: '0'.repeat(64),
+          }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([...mappingEvents(), observationProjectionStarted(20, { assessmentVersion: 2 })]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...mappingEvents(),
+          observationProjectionStarted(20),
+          observationsProjected(21, { observationCount: 1, unassessedCount: 0 }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
   });
 
   it('requires confirmed review authority and exact full-set answer-key coverage', () => {
@@ -1026,6 +1228,19 @@ describe('Exam event fold', () => {
     }
   });
 
+  it('supports deletion during partial and completed mapping/projection stages', () => {
+    for (const history of [
+      [...gradingEvents(), knowledgeMappingStarted(18)],
+      mappingEvents(),
+      [...mappingEvents(), observationProjectionStarted(20)],
+      observationEvents(),
+    ]) {
+      expect(foldExamEvents(records([...history, deleteRequested(history.length)])).status).toBe(
+        'deleting',
+      );
+    }
+  });
+
   it('requires the exact delete request before the deleted terminal', () => {
     const request = deleteRequested(1);
     expect(foldExamEvents(records([created(), request, deleted(2, request.eventId)])).status).toBe(
@@ -1213,6 +1428,44 @@ describe('public Exam projection', () => {
     });
     expect(JSON.stringify(summary)).not.toMatch(
       /answer|artifact|digest|sha256|fingerprint|event|operation|ref|objectKey|path|gradingSpec/u,
+    );
+  });
+
+  it('exposes only safe knowledge-mapping and observation aggregate summaries', () => {
+    const before = toPublicExamSession(foldExamEvents(records(gradingEvents())));
+    expect(before.knowledgeMapping).toEqual({ status: 'not_started' });
+    expect(before.observationProjection).toEqual({ status: 'not_started' });
+
+    const mapping = toPublicExamSession(
+      foldExamEvents(records([...gradingEvents(), knowledgeMappingStarted(18)])),
+    );
+    expect(mapping.knowledgeMapping).toEqual({ status: 'processing' });
+
+    const mapped = toPublicExamSession(foldExamEvents(records(mappingEvents())));
+    expect(mapped.knowledgeMapping).toEqual({
+      status: 'confirmed',
+      mappedQuestionCount: 2,
+      unmappedQuestionCount: 1,
+    });
+    expect(mapped.observationProjection).toEqual({ status: 'not_started' });
+
+    const projecting = toPublicExamSession(
+      foldExamEvents(records([...mappingEvents(), observationProjectionStarted(20)])),
+    );
+    expect(projecting.observationProjection).toEqual({ status: 'processing' });
+
+    const projected = toPublicExamSession(foldExamEvents(records(observationEvents())));
+    expect(projected.observationProjection).toEqual({
+      status: 'completed',
+      observationCount: 2,
+    });
+    expect(
+      JSON.stringify({
+        knowledgeMapping: projected.knowledgeMapping,
+        observationProjection: projected.observationProjection,
+      }),
+    ).not.toMatch(
+      /knowledgePoint|assessment|artifact|digest|sha256|fingerprint|event|operation|ref|objectKey|path/u,
     );
   });
 

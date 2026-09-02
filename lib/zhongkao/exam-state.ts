@@ -4,6 +4,8 @@ import {
   EXAM_SCHEMA_VERSION,
   type PublicExamGradingSummary,
   type PublicExamHumanReviewSummary,
+  type PublicExamKnowledgeMappingSummary,
+  type PublicExamObservationProjectionSummary,
   type PublicExamQuestionExtractionSummary,
   type PublicExamSession,
   type PublicExamStatus,
@@ -17,6 +19,8 @@ import {
   type ExamEvent,
   type ExamGradingPlanFacts,
   type ExamHumanReviewPlanFacts,
+  type ExamKnowledgeMappingPlanFacts,
+  type ExamObservationProjectionPlanFacts,
 } from './exam-event';
 
 export type ExamSessionStatus = 'intake_pending' | 'ready_for_extraction' | 'deleting' | 'deleted';
@@ -182,6 +186,46 @@ export interface ExamGradingState extends ExamGradingPlanFacts {
   assessmentArtifact?: ExamAssessmentArtifactFact;
 }
 
+export type ExamKnowledgeMappingStatus = 'mapping' | 'confirmed';
+
+export interface ExamKnowledgeMappingArtifactFact {
+  eventId: string;
+  createdAt: string;
+  byteLength: number;
+  sha256: string;
+  entryCount: number;
+  mappedQuestionCount: number;
+  unmappedQuestionCount: number;
+}
+
+export interface ExamKnowledgeMappingState extends ExamKnowledgeMappingPlanFacts {
+  status: ExamKnowledgeMappingStatus;
+  startedEventId: string;
+  startedAt: string;
+  mappingArtifact?: ExamKnowledgeMappingArtifactFact;
+}
+
+export type ExamObservationProjectionStatus = 'projecting' | 'completed';
+
+export interface ExamObservationArtifactFact {
+  eventId: string;
+  createdAt: string;
+  byteLength: number;
+  sha256: string;
+  observationCount: number;
+  evaluatedCount: number;
+  correctCount: number;
+  incorrectCount: number;
+  unassessedCount: number;
+}
+
+export interface ExamObservationProjectionState extends ExamObservationProjectionPlanFacts {
+  status: ExamObservationProjectionStatus;
+  startedEventId: string;
+  startedAt: string;
+  observationArtifact?: ExamObservationArtifactFact;
+}
+
 export interface ExamSessionState {
   schemaVersion: typeof EXAM_SCHEMA_VERSION;
   examSessionId: string;
@@ -199,6 +243,8 @@ export interface ExamSessionState {
   humanReview?: ExamHumanReviewState;
   answerKey?: ExamAnswerKeyState;
   grading?: ExamGradingState;
+  knowledgeMapping?: ExamKnowledgeMappingState;
+  observationProjection?: ExamObservationProjectionState;
   intakeCompletedEventId?: string;
   deleteRequestedEventId?: string;
   deletedEventId?: string;
@@ -322,6 +368,64 @@ function gradingPlanMatches(grading: ExamGradingState, event: ExamGradingPlanEve
     event.sourceAnswerKeyArtifactFingerprint === grading.sourceAnswerKeyArtifactFingerprint &&
     event.gradingRef === grading.gradingRef &&
     event.assessmentArtifactRef === grading.assessmentArtifactRef
+  );
+}
+
+type ExamKnowledgeMappingPlanEvent = Extract<
+  ExamEvent,
+  { eventType: 'exam_knowledge_mapping_started' | 'exam_knowledge_mapping_confirmed' }
+>;
+
+function knowledgeMappingPlanMatches(
+  mapping: ExamKnowledgeMappingState,
+  event: ExamKnowledgeMappingPlanEvent,
+): boolean {
+  return (
+    event.mappingVersion === mapping.mappingVersion &&
+    event.subjectId === mapping.subjectId &&
+    event.reviewVersion === mapping.reviewVersion &&
+    event.reviewArtifactRef === mapping.reviewArtifactRef &&
+    event.sourceReviewArtifactFingerprint === mapping.sourceReviewArtifactFingerprint &&
+    event.sourceReviewSemanticFingerprint === mapping.sourceReviewSemanticFingerprint &&
+    event.assessmentVersion === mapping.assessmentVersion &&
+    event.assessmentArtifactRef === mapping.assessmentArtifactRef &&
+    event.sourceAssessmentArtifactFingerprint === mapping.sourceAssessmentArtifactFingerprint &&
+    event.sourceAssessmentSemanticFingerprint === mapping.sourceAssessmentSemanticFingerprint &&
+    event.mappingSemanticFingerprint === mapping.mappingSemanticFingerprint &&
+    event.mappingRef === mapping.mappingRef &&
+    event.mappingArtifactRef === mapping.mappingArtifactRef
+  );
+}
+
+type ExamObservationProjectionPlanEvent = Extract<
+  ExamEvent,
+  {
+    eventType: 'exam_observation_projection_started' | 'exam_observations_projected';
+  }
+>;
+
+function observationProjectionPlanMatches(
+  projection: ExamObservationProjectionState,
+  event: ExamObservationProjectionPlanEvent,
+): boolean {
+  return (
+    event.observationVersion === projection.observationVersion &&
+    event.reviewVersion === projection.reviewVersion &&
+    event.reviewArtifactRef === projection.reviewArtifactRef &&
+    event.sourceReviewArtifactFingerprint === projection.sourceReviewArtifactFingerprint &&
+    event.sourceReviewSemanticFingerprint === projection.sourceReviewSemanticFingerprint &&
+    event.assessmentVersion === projection.assessmentVersion &&
+    event.assessmentArtifactRef === projection.assessmentArtifactRef &&
+    event.sourceAssessmentArtifactFingerprint === projection.sourceAssessmentArtifactFingerprint &&
+    event.sourceAssessmentSemanticFingerprint === projection.sourceAssessmentSemanticFingerprint &&
+    event.mappingVersion === projection.mappingVersion &&
+    event.mappingRef === projection.mappingRef &&
+    event.mappingArtifactRef === projection.mappingArtifactRef &&
+    event.sourceMappingArtifactFingerprint === projection.sourceMappingArtifactFingerprint &&
+    event.sourceMappingSemanticFingerprint === projection.sourceMappingSemanticFingerprint &&
+    event.observationSemanticFingerprint === projection.observationSemanticFingerprint &&
+    event.observationRef === projection.observationRef &&
+    event.observationArtifactRef === projection.observationArtifactRef
   );
 }
 
@@ -864,6 +968,202 @@ export function foldExamEvents(records: readonly RuntimeRecord[]): ExamSessionSt
           };
           break;
         }
+        case 'exam_knowledge_mapping_started': {
+          const review = state.humanReview;
+          const reviewArtifact = review?.reviewArtifact;
+          const grading = state.grading;
+          const assessmentArtifact = grading?.assessmentArtifact;
+          const existingRefs = [
+            state.questionExtraction?.documentArtifactRef,
+            state.questionExtraction?.segmentation?.candidateArtifactRef,
+            state.studentResponseCapture?.captureRef,
+            state.studentResponseCapture?.responseArtifactRef,
+            state.studentResponseCapture?.matchingArtifactRef,
+            review?.reviewArtifactRef,
+            state.answerKey?.answerKeyRef,
+            state.answerKey?.answerKeyArtifactRef,
+            grading?.gradingRef,
+            grading?.assessmentArtifactRef,
+          ].filter((value): value is string => value !== undefined);
+          if (
+            state.status !== 'ready_for_extraction' ||
+            review?.status !== 'confirmed' ||
+            !reviewArtifact ||
+            grading?.status !== 'completed' ||
+            !assessmentArtifact ||
+            state.knowledgeMapping ||
+            state.observationProjection ||
+            event.subjectId !== state.subjectId ||
+            event.reviewVersion !== review.reviewVersion ||
+            event.reviewArtifactRef !== review.reviewArtifactRef ||
+            event.sourceReviewArtifactFingerprint !== reviewArtifact.sha256 ||
+            event.sourceReviewSemanticFingerprint !== review.decisionSemanticFingerprint ||
+            event.assessmentVersion !== grading.gradingVersion ||
+            event.assessmentArtifactRef !== grading.assessmentArtifactRef ||
+            event.sourceAssessmentArtifactFingerprint !== assessmentArtifact.sha256 ||
+            existingRefs.includes(event.mappingRef) ||
+            existingRefs.includes(event.mappingArtifactRef)
+          ) {
+            conflict();
+          }
+          state.knowledgeMapping = {
+            status: 'mapping',
+            startedEventId: event.eventId,
+            startedAt: event.createdAt,
+            mappingVersion: event.mappingVersion,
+            subjectId: event.subjectId,
+            reviewVersion: event.reviewVersion,
+            reviewArtifactRef: event.reviewArtifactRef,
+            sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+            sourceReviewSemanticFingerprint: event.sourceReviewSemanticFingerprint,
+            assessmentVersion: event.assessmentVersion,
+            assessmentArtifactRef: event.assessmentArtifactRef,
+            sourceAssessmentArtifactFingerprint: event.sourceAssessmentArtifactFingerprint,
+            sourceAssessmentSemanticFingerprint: event.sourceAssessmentSemanticFingerprint,
+            mappingSemanticFingerprint: event.mappingSemanticFingerprint,
+            mappingRef: event.mappingRef,
+            mappingArtifactRef: event.mappingArtifactRef,
+          };
+          break;
+        }
+        case 'exam_knowledge_mapping_confirmed': {
+          const gradingArtifact = state.grading?.assessmentArtifact;
+          const mapping = state.knowledgeMapping;
+          if (
+            state.status !== 'ready_for_extraction' ||
+            !gradingArtifact ||
+            !mapping ||
+            mapping.status !== 'mapping' ||
+            mapping.mappingArtifact ||
+            state.observationProjection ||
+            !knowledgeMappingPlanMatches(mapping, event) ||
+            event.entryCount !== gradingArtifact.assessmentCount ||
+            event.entryCount !== event.mappedQuestionCount + event.unmappedQuestionCount
+          ) {
+            conflict();
+          }
+          mapping.status = 'confirmed';
+          mapping.mappingArtifact = {
+            eventId: event.eventId,
+            createdAt: event.createdAt,
+            byteLength: event.artifactByteLength,
+            sha256: event.artifactSha256,
+            entryCount: event.entryCount,
+            mappedQuestionCount: event.mappedQuestionCount,
+            unmappedQuestionCount: event.unmappedQuestionCount,
+          };
+          break;
+        }
+        case 'exam_observation_projection_started': {
+          const review = state.humanReview;
+          const reviewArtifact = review?.reviewArtifact;
+          const grading = state.grading;
+          const assessmentArtifact = grading?.assessmentArtifact;
+          const mapping = state.knowledgeMapping;
+          const mappingArtifact = mapping?.mappingArtifact;
+          const existingRefs = [
+            state.questionExtraction?.documentArtifactRef,
+            state.questionExtraction?.segmentation?.candidateArtifactRef,
+            state.studentResponseCapture?.captureRef,
+            state.studentResponseCapture?.responseArtifactRef,
+            state.studentResponseCapture?.matchingArtifactRef,
+            review?.reviewArtifactRef,
+            state.answerKey?.answerKeyRef,
+            state.answerKey?.answerKeyArtifactRef,
+            grading?.gradingRef,
+            grading?.assessmentArtifactRef,
+            mapping?.mappingRef,
+            mapping?.mappingArtifactRef,
+          ].filter((value): value is string => value !== undefined);
+          if (
+            state.status !== 'ready_for_extraction' ||
+            review?.status !== 'confirmed' ||
+            !reviewArtifact ||
+            grading?.status !== 'completed' ||
+            !assessmentArtifact ||
+            mapping?.status !== 'confirmed' ||
+            !mappingArtifact ||
+            state.observationProjection ||
+            event.reviewVersion !== mapping.reviewVersion ||
+            event.reviewArtifactRef !== mapping.reviewArtifactRef ||
+            event.sourceReviewArtifactFingerprint !== mapping.sourceReviewArtifactFingerprint ||
+            event.sourceReviewSemanticFingerprint !== mapping.sourceReviewSemanticFingerprint ||
+            event.assessmentVersion !== grading.gradingVersion ||
+            event.assessmentVersion !== mapping.assessmentVersion ||
+            event.assessmentArtifactRef !== mapping.assessmentArtifactRef ||
+            event.sourceAssessmentArtifactFingerprint !==
+              mapping.sourceAssessmentArtifactFingerprint ||
+            event.sourceAssessmentSemanticFingerprint !==
+              mapping.sourceAssessmentSemanticFingerprint ||
+            event.mappingVersion !== mapping.mappingVersion ||
+            event.mappingRef !== mapping.mappingRef ||
+            event.mappingArtifactRef !== mapping.mappingArtifactRef ||
+            event.sourceMappingArtifactFingerprint !== mappingArtifact.sha256 ||
+            event.sourceMappingSemanticFingerprint !== mapping.mappingSemanticFingerprint ||
+            existingRefs.includes(event.observationRef) ||
+            existingRefs.includes(event.observationArtifactRef)
+          ) {
+            conflict();
+          }
+          state.observationProjection = {
+            status: 'projecting',
+            startedEventId: event.eventId,
+            startedAt: event.createdAt,
+            observationVersion: event.observationVersion,
+            reviewVersion: event.reviewVersion,
+            reviewArtifactRef: event.reviewArtifactRef,
+            sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+            sourceReviewSemanticFingerprint: event.sourceReviewSemanticFingerprint,
+            assessmentVersion: event.assessmentVersion,
+            assessmentArtifactRef: event.assessmentArtifactRef,
+            sourceAssessmentArtifactFingerprint: event.sourceAssessmentArtifactFingerprint,
+            sourceAssessmentSemanticFingerprint: event.sourceAssessmentSemanticFingerprint,
+            mappingVersion: event.mappingVersion,
+            mappingRef: event.mappingRef,
+            mappingArtifactRef: event.mappingArtifactRef,
+            sourceMappingArtifactFingerprint: event.sourceMappingArtifactFingerprint,
+            sourceMappingSemanticFingerprint: event.sourceMappingSemanticFingerprint,
+            observationSemanticFingerprint: event.observationSemanticFingerprint,
+            observationRef: event.observationRef,
+            observationArtifactRef: event.observationArtifactRef,
+          };
+          break;
+        }
+        case 'exam_observations_projected': {
+          const gradingArtifact = state.grading?.assessmentArtifact;
+          const mappingArtifact = state.knowledgeMapping?.mappingArtifact;
+          const projection = state.observationProjection;
+          if (
+            state.status !== 'ready_for_extraction' ||
+            !gradingArtifact ||
+            !mappingArtifact ||
+            !projection ||
+            projection.status !== 'projecting' ||
+            projection.observationArtifact ||
+            !observationProjectionPlanMatches(projection, event) ||
+            event.observationCount !== mappingArtifact.mappedQuestionCount ||
+            event.evaluatedCount !== event.correctCount + event.incorrectCount ||
+            event.observationCount !== event.evaluatedCount + event.unassessedCount ||
+            event.correctCount > gradingArtifact.correctCount ||
+            event.incorrectCount > gradingArtifact.incorrectCount ||
+            event.unassessedCount > gradingArtifact.unassessedCount
+          ) {
+            conflict();
+          }
+          projection.status = 'completed';
+          projection.observationArtifact = {
+            eventId: event.eventId,
+            createdAt: event.createdAt,
+            byteLength: event.artifactByteLength,
+            sha256: event.artifactSha256,
+            observationCount: event.observationCount,
+            evaluatedCount: event.evaluatedCount,
+            correctCount: event.correctCount,
+            incorrectCount: event.incorrectCount,
+            unassessedCount: event.unassessedCount,
+          };
+          break;
+        }
         case 'exam_delete_requested':
           if (
             (state.status !== 'intake_pending' && state.status !== 'ready_for_extraction') ||
@@ -979,6 +1279,33 @@ function toPublicGrading(
   };
 }
 
+function toPublicKnowledgeMapping(
+  mapping: ExamKnowledgeMappingState | undefined,
+): PublicExamKnowledgeMappingSummary {
+  if (!mapping) return { status: 'not_started' };
+  if (mapping.status !== 'confirmed') return { status: 'processing' };
+  const artifact = mapping.mappingArtifact;
+  if (!artifact) conflict();
+  return {
+    status: 'confirmed',
+    mappedQuestionCount: artifact.mappedQuestionCount,
+    unmappedQuestionCount: artifact.unmappedQuestionCount,
+  };
+}
+
+function toPublicObservationProjection(
+  projection: ExamObservationProjectionState | undefined,
+): PublicExamObservationProjectionSummary {
+  if (!projection) return { status: 'not_started' };
+  if (projection.status !== 'completed') return { status: 'processing' };
+  const artifact = projection.observationArtifact;
+  if (!artifact) conflict();
+  return {
+    status: 'completed',
+    observationCount: artifact.observationCount,
+  };
+}
+
 export function toPublicExamSession(state: ExamSessionState): PublicExamSession {
   if (state.status === 'deleted') throw new ExamError('EXAM_NOT_FOUND');
   return {
@@ -1001,5 +1328,7 @@ export function toPublicExamSession(state: ExamSessionState): PublicExamSession 
     studentResponseMatching: toPublicStudentResponseMatching(state.studentResponseCapture),
     humanReview: toPublicHumanReview(state.humanReview),
     grading: toPublicGrading(state.answerKey, state.grading),
+    knowledgeMapping: toPublicKnowledgeMapping(state.knowledgeMapping),
+    observationProjection: toPublicObservationProjection(state.observationProjection),
   };
 }

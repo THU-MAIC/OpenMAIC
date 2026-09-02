@@ -28,19 +28,55 @@ beforeAll(() => {
   vi.stubGlobal('IDBKeyRange', IDBKeyRange);
 });
 
-function harness(): { store: RuntimeStore; nextId: () => string; now: () => string } {
+function harness(): {
+  store: RuntimeStore;
+  indexedDB: IDBFactory;
+  dbName: string;
+  nextId: () => string;
+  now: () => string;
+} {
+  const indexedDB = new IDBFactory();
+  const dbName = `zhongkao-runtime-${Math.random()}`;
   const store = new BrowserRuntimeStore({
-    indexedDB: new IDBFactory(),
-    dbName: `zhongkao-runtime-${Math.random()}`,
+    indexedDB,
+    dbName,
     payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
   });
   let id = 0;
   let seconds = 0;
   return {
     store,
+    indexedDB,
+    dbName,
     nextId: () => `record-${++id}`,
     now: () => new Date(Date.parse(NOW) + seconds++ * 1000).toISOString(),
   };
+}
+
+async function rewriteSessionRow(
+  indexedDB: IDBFactory,
+  dbName: string,
+  sessionId: string,
+  rewrite: (row: Record<string, unknown>) => void,
+): Promise<void> {
+  const database = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(dbName);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction('sessions', 'readwrite');
+    const sessions = transaction.objectStore('sessions');
+    const request = sessions.get(sessionId);
+    request.onsuccess = () => {
+      const row = request.result as Record<string, unknown>;
+      rewrite(row);
+      sessions.put(row);
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+  database.close();
 }
 
 function reverseRecordListing(store: RuntimeStore): RuntimeStore {
@@ -205,6 +241,32 @@ describe('zhongkao RuntimeStore adapter', () => {
       attempt,
       secondAttempt,
     ]);
+  });
+
+  it('fails closed when ordinary listing omits the canonical corrupt StudyAttempt session', async () => {
+    const h = harness();
+    const learnerKey = 'anon:fictional-device';
+    const deps = {
+      store: h.store,
+      learnerKey,
+      now: h.now,
+      mintRecordId: h.nextId,
+    };
+    const attempt = studyAttempt({ id: 'attempt-before-session-corruption' });
+    await saveStudyAttempt(attempt, deps);
+    const sessionId = zhongkaoRuntimeSessionId(
+      ZHONGKAO_RUNTIME_KINDS.studyAttempt,
+      attempt.profileId,
+      learnerKey,
+    );
+    await rewriteSessionRow(h.indexedDB, h.dbName, sessionId, (row) => {
+      row.createdAt = 'not-iso';
+    });
+
+    await expect(
+      h.store.listSessions(zhongkaoStageId(attempt.profileId), learnerKey),
+    ).resolves.toEqual([]);
+    await expect(loadStudyAttempts(attempt.profileId, deps)).rejects.toThrow(/createdAt/);
   });
 
   it('is idempotent for the same attempt and isolates profile ids', async () => {

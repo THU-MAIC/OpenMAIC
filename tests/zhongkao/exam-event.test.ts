@@ -75,6 +75,40 @@ const GRADING_PLAN = {
   gradingRef: 'exam-grading-v1',
   assessmentArtifactRef: 'exam-assessment-artifact-v1',
 } as const;
+const KNOWLEDGE_MAPPING_PLAN = {
+  mappingVersion: 1,
+  subjectId: 'math',
+  reviewVersion: 1,
+  reviewArtifactRef: HUMAN_REVIEW_PLAN.reviewArtifactRef,
+  sourceReviewArtifactFingerprint: '7'.repeat(64),
+  sourceReviewSemanticFingerprint: HUMAN_REVIEW_PLAN.decisionSemanticFingerprint,
+  assessmentVersion: 1,
+  assessmentArtifactRef: GRADING_PLAN.assessmentArtifactRef,
+  sourceAssessmentArtifactFingerprint: 'a'.repeat(64),
+  sourceAssessmentSemanticFingerprint: 'b'.repeat(64),
+  mappingSemanticFingerprint: 'c'.repeat(64),
+  mappingRef: 'exam-knowledge-mapping-v1',
+  mappingArtifactRef: 'exam-knowledge-mapping-artifact-v1',
+} as const;
+const OBSERVATION_PROJECTION_PLAN = {
+  observationVersion: 1,
+  reviewVersion: KNOWLEDGE_MAPPING_PLAN.reviewVersion,
+  reviewArtifactRef: KNOWLEDGE_MAPPING_PLAN.reviewArtifactRef,
+  sourceReviewArtifactFingerprint: KNOWLEDGE_MAPPING_PLAN.sourceReviewArtifactFingerprint,
+  sourceReviewSemanticFingerprint: KNOWLEDGE_MAPPING_PLAN.sourceReviewSemanticFingerprint,
+  assessmentVersion: KNOWLEDGE_MAPPING_PLAN.assessmentVersion,
+  assessmentArtifactRef: KNOWLEDGE_MAPPING_PLAN.assessmentArtifactRef,
+  sourceAssessmentArtifactFingerprint: KNOWLEDGE_MAPPING_PLAN.sourceAssessmentArtifactFingerprint,
+  sourceAssessmentSemanticFingerprint: KNOWLEDGE_MAPPING_PLAN.sourceAssessmentSemanticFingerprint,
+  mappingVersion: KNOWLEDGE_MAPPING_PLAN.mappingVersion,
+  mappingRef: KNOWLEDGE_MAPPING_PLAN.mappingRef,
+  mappingArtifactRef: KNOWLEDGE_MAPPING_PLAN.mappingArtifactRef,
+  sourceMappingArtifactFingerprint: 'd'.repeat(64),
+  sourceMappingSemanticFingerprint: KNOWLEDGE_MAPPING_PLAN.mappingSemanticFingerprint,
+  observationSemanticFingerprint: 'e'.repeat(64),
+  observationRef: 'exam-observations-v1',
+  observationArtifactRef: 'exam-observations-artifact-v1',
+} as const;
 
 function fingerprint(seed: number): string {
   return seed.toString(16).padStart(64, '0');
@@ -266,6 +300,34 @@ function event(eventType: ExamEvent['eventType']): ExamEvent {
         assessmentCount: 3,
         evaluatedCount: 2,
         correctCount: 1,
+        incorrectCount: 1,
+        unassessedCount: 1,
+      };
+    case 'exam_knowledge_mapping_started':
+      return { ...base, eventType, ...KNOWLEDGE_MAPPING_PLAN };
+    case 'exam_knowledge_mapping_confirmed':
+      return {
+        ...base,
+        eventType,
+        ...KNOWLEDGE_MAPPING_PLAN,
+        artifactByteLength: 160,
+        artifactSha256: 'd'.repeat(64),
+        entryCount: 3,
+        mappedQuestionCount: 2,
+        unmappedQuestionCount: 1,
+      };
+    case 'exam_observation_projection_started':
+      return { ...base, eventType, ...OBSERVATION_PROJECTION_PLAN };
+    case 'exam_observations_projected':
+      return {
+        ...base,
+        eventType,
+        ...OBSERVATION_PROJECTION_PLAN,
+        artifactByteLength: 192,
+        artifactSha256: 'f'.repeat(64),
+        observationCount: 2,
+        evaluatedCount: 1,
+        correctCount: 0,
         incorrectCount: 1,
         unassessedCount: 1,
       };
@@ -600,6 +662,46 @@ describe('Exam event schema', () => {
       expect(validateExamEvent({ ...event('exam_grading_completed'), ...privateField }).valid).toBe(
         false,
       );
+    }
+  });
+
+  it('validates closed mapping and observation source chains with exact aggregate counts', () => {
+    expect(
+      validateExamEvent({
+        ...event('exam_knowledge_mapping_started'),
+        sourceAssessmentSemanticFingerprint: 'bad',
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_knowledge_mapping_confirmed'),
+        mappedQuestionCount: 1,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_observation_projection_started'),
+        sourceMappingSemanticFingerprint: 'bad',
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_observations_projected'),
+        correctCount: 1,
+      }).valid,
+    ).toBe(false);
+  });
+
+  it('keeps mappings, outcomes, observations and storage locators out of Runtime events', () => {
+    for (const privateField of [
+      { entries: [{ confirmedQuestionId: 'q-1', knowledgePointIds: ['private-kp'] }] },
+      { observations: [{ outcome: 'incorrect' }] },
+      { outcome: 'incorrect' },
+      { objectKey: 'materials/private/confirmed_exam_observations_v1.json' },
+    ]) {
+      expect(
+        validateExamEvent({ ...event('exam_observations_projected'), ...privateField }).valid,
+      ).toBe(false);
     }
   });
 });

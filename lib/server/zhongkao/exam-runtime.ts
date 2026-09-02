@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
 
 import type { RuntimeRecord, RuntimeSession } from '@openmaic/dsl';
-import { RuntimeAppendConflictError, type RuntimeStore } from '@openmaic/storage';
+import {
+  RuntimeAppendConflictError,
+  RuntimeSessionEnumerationCorruptError,
+  type RuntimeStore,
+  type StrictRuntimeSessionStore,
+} from '@openmaic/storage';
 
 import { EXAM_DOCUMENT_SCHEMA_VERSION, EXAM_SCHEMA_VERSION } from '@/lib/zhongkao/exam';
 import { ExamError } from '@/lib/zhongkao/exam-errors';
@@ -12,6 +17,8 @@ import {
   type ExamEvent,
   type ExamGradingPlanFacts,
   type ExamHumanReviewPlanFacts,
+  type ExamKnowledgeMappingPlanFacts,
+  type ExamObservationProjectionPlanFacts,
 } from '@/lib/zhongkao/exam-event';
 import { foldExamEvents, type ExamSessionState } from '@/lib/zhongkao/exam-state';
 import { ZHONGKAO_RUNTIME_KINDS } from '@/lib/zhongkao/runtime-kinds';
@@ -20,6 +27,7 @@ import { zhongkaoStageId } from '@/lib/zhongkao/runtime';
 import { resolveZhongkaoLearnerKeyFromOwnerId } from './learner-identity';
 
 const EXAM_ID_VERSION = 1 as const;
+const EXAM_RUNTIME_SESSION_PREFIX = 'zhongkao-exam:';
 
 export interface ExamRuntimeDeps {
   store: RuntimeStore;
@@ -183,8 +191,54 @@ export function deriveExamAssessmentArtifactRef(gradingRef: string): string {
   )}`;
 }
 
+export interface ExamKnowledgeMappingRefInput {
+  mappingVersion: number;
+  examSessionId: string;
+  profileId: string;
+  subjectId: string;
+  sourceReviewSemanticFingerprint: string;
+  sourceAssessmentSemanticFingerprint: string;
+}
+
+export function deriveExamKnowledgeMappingRef(input: ExamKnowledgeMappingRefInput): string {
+  return `exam-knowledge-mapping:v${input.mappingVersion}:${digest(
+    'openmaic:zhongkao-exam-knowledge-mapping:v1',
+    input,
+  )}`;
+}
+
+export function deriveExamKnowledgeMappingArtifactRef(mappingRef: string): string {
+  return `exam-confirmed-knowledge-mapping:v${EXAM_ID_VERSION}:${digest(
+    'openmaic:zhongkao-confirmed-exam-knowledge-mapping-artifact:v1',
+    { mappingRef },
+  )}`;
+}
+
+export interface ExamObservationProjectionRefInput {
+  observationVersion: number;
+  examSessionId: string;
+  sourceAssessmentSemanticFingerprint: string;
+  sourceMappingSemanticFingerprint: string;
+}
+
+export function deriveExamObservationProjectionRef(
+  input: ExamObservationProjectionRefInput,
+): string {
+  return `exam-observations:v${input.observationVersion}:${digest(
+    'openmaic:zhongkao-confirmed-exam-observations:v1',
+    input,
+  )}`;
+}
+
+export function deriveExamObservationArtifactRef(observationRef: string): string {
+  return `exam-confirmed-observations:v${EXAM_ID_VERSION}:${digest(
+    'openmaic:zhongkao-confirmed-exam-observations-artifact:v1',
+    { observationRef },
+  )}`;
+}
+
 export function examRuntimeSessionId(examSessionId: string): string {
-  return `zhongkao-exam:${encodeURIComponent(examSessionId)}`;
+  return `${EXAM_RUNTIME_SESSION_PREFIX}${encodeURIComponent(examSessionId)}`;
 }
 
 export function createExamRequestFingerprint(facts: unknown): string {
@@ -370,6 +424,44 @@ export function deriveExamGradingCompletedOperationId(
   return operationId('grading-completed', { examSessionId, gradingVersion });
 }
 
+export function deriveExamKnowledgeMappingStartedOperationId(
+  examSessionId: string,
+  mappingVersion: number,
+): string {
+  return operationId('knowledge-mapping-started', { examSessionId, mappingVersion });
+}
+
+export function deriveExamKnowledgeMappingConfirmedOperationId(
+  examSessionId: string,
+  mappingVersion: number,
+): string {
+  return operationId('knowledge-mapping-confirmed', { examSessionId, mappingVersion });
+}
+
+export function deriveExamObservationProjectionStartedOperationId(
+  examSessionId: string,
+  mappingVersion: number,
+  observationVersion: number,
+): string {
+  return operationId('observation-projection-started', {
+    examSessionId,
+    mappingVersion,
+    observationVersion,
+  });
+}
+
+export function deriveExamObservationsProjectedOperationId(
+  examSessionId: string,
+  mappingVersion: number,
+  observationVersion: number,
+): string {
+  return operationId('observations-projected', {
+    examSessionId,
+    mappingVersion,
+    observationVersion,
+  });
+}
+
 export function deriveExamDeleteRequestedOperationId(examSessionId: string): string {
   return operationId('delete-requested', { schemaVersion: EXAM_SCHEMA_VERSION, examSessionId });
 }
@@ -545,6 +637,94 @@ function assertDerivedGradingPlan(event: ExamGradingPlanEvent): void {
   if (
     event.gradingRef !== gradingRef ||
     event.assessmentArtifactRef !== deriveExamAssessmentArtifactRef(gradingRef)
+  ) {
+    throw new ExamError('EXAM_EVENT_CONFLICT');
+  }
+}
+
+type ExamKnowledgeMappingPlanEvent = Extract<
+  ExamEvent,
+  { eventType: 'exam_knowledge_mapping_started' | 'exam_knowledge_mapping_confirmed' }
+>;
+
+function knowledgeMappingPlanFacts(
+  event: ExamKnowledgeMappingPlanEvent,
+): ExamKnowledgeMappingPlanFacts {
+  return {
+    mappingVersion: event.mappingVersion,
+    subjectId: event.subjectId,
+    reviewVersion: event.reviewVersion,
+    reviewArtifactRef: event.reviewArtifactRef,
+    sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+    sourceReviewSemanticFingerprint: event.sourceReviewSemanticFingerprint,
+    assessmentVersion: event.assessmentVersion,
+    assessmentArtifactRef: event.assessmentArtifactRef,
+    sourceAssessmentArtifactFingerprint: event.sourceAssessmentArtifactFingerprint,
+    sourceAssessmentSemanticFingerprint: event.sourceAssessmentSemanticFingerprint,
+    mappingSemanticFingerprint: event.mappingSemanticFingerprint,
+    mappingRef: event.mappingRef,
+    mappingArtifactRef: event.mappingArtifactRef,
+  };
+}
+
+function assertDerivedKnowledgeMappingPlan(event: ExamKnowledgeMappingPlanEvent): void {
+  const mappingRef = deriveExamKnowledgeMappingRef({
+    mappingVersion: event.mappingVersion,
+    examSessionId: event.examSessionId,
+    profileId: event.profileId,
+    subjectId: event.subjectId,
+    sourceReviewSemanticFingerprint: event.sourceReviewSemanticFingerprint,
+    sourceAssessmentSemanticFingerprint: event.sourceAssessmentSemanticFingerprint,
+  });
+  if (
+    event.mappingRef !== mappingRef ||
+    event.mappingArtifactRef !== deriveExamKnowledgeMappingArtifactRef(mappingRef)
+  ) {
+    throw new ExamError('EXAM_EVENT_CONFLICT');
+  }
+}
+
+type ExamObservationProjectionPlanEvent = Extract<
+  ExamEvent,
+  {
+    eventType: 'exam_observation_projection_started' | 'exam_observations_projected';
+  }
+>;
+
+function observationProjectionPlanFacts(
+  event: ExamObservationProjectionPlanEvent,
+): ExamObservationProjectionPlanFacts {
+  return {
+    observationVersion: event.observationVersion,
+    reviewVersion: event.reviewVersion,
+    reviewArtifactRef: event.reviewArtifactRef,
+    sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+    sourceReviewSemanticFingerprint: event.sourceReviewSemanticFingerprint,
+    assessmentVersion: event.assessmentVersion,
+    assessmentArtifactRef: event.assessmentArtifactRef,
+    sourceAssessmentArtifactFingerprint: event.sourceAssessmentArtifactFingerprint,
+    sourceAssessmentSemanticFingerprint: event.sourceAssessmentSemanticFingerprint,
+    mappingVersion: event.mappingVersion,
+    mappingRef: event.mappingRef,
+    mappingArtifactRef: event.mappingArtifactRef,
+    sourceMappingArtifactFingerprint: event.sourceMappingArtifactFingerprint,
+    sourceMappingSemanticFingerprint: event.sourceMappingSemanticFingerprint,
+    observationSemanticFingerprint: event.observationSemanticFingerprint,
+    observationRef: event.observationRef,
+    observationArtifactRef: event.observationArtifactRef,
+  };
+}
+
+function assertDerivedObservationProjectionPlan(event: ExamObservationProjectionPlanEvent): void {
+  const observationRef = deriveExamObservationProjectionRef({
+    observationVersion: event.observationVersion,
+    examSessionId: event.examSessionId,
+    sourceAssessmentSemanticFingerprint: event.sourceAssessmentSemanticFingerprint,
+    sourceMappingSemanticFingerprint: event.sourceMappingSemanticFingerprint,
+  });
+  if (
+    event.observationRef !== observationRef ||
+    event.observationArtifactRef !== deriveExamObservationArtifactRef(observationRef)
   ) {
     throw new ExamError('EXAM_EVENT_CONFLICT');
   }
@@ -930,6 +1110,76 @@ function assertDerivedExamEvent(event: ExamEvent): void {
         unassessedCount: event.unassessedCount,
       });
       break;
+    case 'exam_knowledge_mapping_started':
+      assertDerivedKnowledgeMappingPlan(event);
+      expectedOperationId = deriveExamKnowledgeMappingStartedOperationId(
+        event.examSessionId,
+        event.mappingVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_knowledge_mapping_started',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...knowledgeMappingPlanFacts(event),
+      });
+      break;
+    case 'exam_knowledge_mapping_confirmed':
+      assertDerivedKnowledgeMappingPlan(event);
+      expectedOperationId = deriveExamKnowledgeMappingConfirmedOperationId(
+        event.examSessionId,
+        event.mappingVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_knowledge_mapping_confirmed',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...knowledgeMappingPlanFacts(event),
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        entryCount: event.entryCount,
+        mappedQuestionCount: event.mappedQuestionCount,
+        unmappedQuestionCount: event.unmappedQuestionCount,
+      });
+      break;
+    case 'exam_observation_projection_started':
+      assertDerivedObservationProjectionPlan(event);
+      expectedOperationId = deriveExamObservationProjectionStartedOperationId(
+        event.examSessionId,
+        event.mappingVersion,
+        event.observationVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_observation_projection_started',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...observationProjectionPlanFacts(event),
+      });
+      break;
+    case 'exam_observations_projected':
+      assertDerivedObservationProjectionPlan(event);
+      expectedOperationId = deriveExamObservationsProjectedOperationId(
+        event.examSessionId,
+        event.mappingVersion,
+        event.observationVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_observations_projected',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...observationProjectionPlanFacts(event),
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        observationCount: event.observationCount,
+        evaluatedCount: event.evaluatedCount,
+        correctCount: event.correctCount,
+        incorrectCount: event.incorrectCount,
+        unassessedCount: event.unassessedCount,
+      });
+      break;
     case 'exam_delete_requested':
       expectedOperationId = deriveExamDeleteRequestedOperationId(event.examSessionId);
       expectedOperationFingerprint = createExamOperationFingerprint({
@@ -1052,6 +1302,56 @@ export async function loadExamRuntime(
   const snapshot = currentSnapshot(session, records);
   if (snapshot.state.examSessionId !== examSessionId) throw new ExamError('EXAM_NOT_FOUND');
   return snapshot;
+}
+
+export async function listProfileExamRuntimeSnapshots(
+  deps: ExamRuntimeDeps,
+  profileId: string,
+): Promise<ExamRuntimeSnapshot[]> {
+  const learnerKey = resolveZhongkaoLearnerKeyFromOwnerId(deps.ownerId);
+  const strictStore = deps.store as Partial<StrictRuntimeSessionStore>;
+  if (typeof strictStore.listSessionsStrict !== 'function') {
+    throw new ExamError('EXAM_SESSION_CONFLICT');
+  }
+
+  let sessions: RuntimeSession[];
+  try {
+    sessions = await strictStore.listSessionsStrict.call(
+      deps.store,
+      zhongkaoStageId(profileId),
+      learnerKey,
+      {
+        kinds: [ZHONGKAO_RUNTIME_KINDS.examEvent],
+        idPrefixes: [EXAM_RUNTIME_SESSION_PREFIX],
+      },
+    );
+  } catch (error) {
+    if (error instanceof RuntimeSessionEnumerationCorruptError) {
+      throw new ExamError('EXAM_EVENT_CONFLICT');
+    }
+    throw new ExamError('EXAM_SESSION_CONFLICT');
+  }
+  const snapshots: ExamRuntimeSnapshot[] = [];
+
+  for (const session of sessions) {
+    if (session.kind !== ZHONGKAO_RUNTIME_KINDS.examEvent) continue;
+    assertSessionOwner(session, learnerKey);
+    const records = await deps.store.listRecords(session.id);
+    if (records.length === 0) throw new ExamError('EXAM_EVENT_CONFLICT');
+    const snapshot = currentSnapshot(session, records);
+    if (snapshot.state.profileId !== profileId) throw new ExamError('EXAM_EVENT_CONFLICT');
+    if (snapshot.state.status !== 'deleted') snapshots.push(snapshot);
+  }
+
+  return snapshots.toSorted((left, right) => {
+    const createdOrder = Date.parse(left.state.createdAt) - Date.parse(right.state.createdAt);
+    if (createdOrder !== 0) return createdOrder;
+    return left.state.examSessionId < right.state.examSessionId
+      ? -1
+      : left.state.examSessionId > right.state.examSessionId
+        ? 1
+        : 0;
+  });
 }
 
 export async function ensureExamRuntimeCreated(

@@ -5,6 +5,8 @@ import {
   examAuthoritativeAnswerKeyObjectKey,
   examDocumentArtifactObjectKey,
   examHumanReviewObjectKey,
+  examKnowledgeMappingObjectKey,
+  examObservationsObjectKey,
   examQuestionCandidatesObjectKey,
   examQuestionAssessmentsObjectKey,
   examSnapshotObjectKey,
@@ -138,6 +140,28 @@ describe('material object key contract', () => {
     }
   });
 
+  it('derives private mapping and observation artifacts inside one Exam namespace', () => {
+    const mapping = examKnowledgeMappingObjectKey('exam-alpha', 1);
+    const observations = examObservationsObjectKey('exam-alpha', 1, 1);
+
+    expect(mapping).toMatch(
+      /^materials\/v1\/exams\/exm_[a-f0-9]{64}\/knowledge\/mapping_v1\/confirmed_exam_knowledge_mapping_v1\.json$/,
+    );
+    expect(observations).toMatch(
+      /^materials\/v1\/exams\/exm_[a-f0-9]{64}\/knowledge\/mapping_v1\/observations_v1\/confirmed_exam_observations_v1\.json$/,
+    );
+    expect(mapping).toBe(examKnowledgeMappingObjectKey('exam-alpha', 1));
+    expect(observations).toBe(examObservationsObjectKey('exam-alpha', 1, 1));
+    expect(mapping).not.toBe(examKnowledgeMappingObjectKey('exam-beta', 1));
+    expect(observations).not.toBe(examObservationsObjectKey('exam-beta', 1, 1));
+    for (const key of [mapping, observations]) {
+      expect(key).not.toContain('exam-alpha');
+      expect(isExamSnapshotObjectKey('exam-alpha', key)).toBe(true);
+      expect(isExamSnapshotObjectKey('exam-beta', key)).toBe(false);
+      expect(() => assertPortableMaterialObjectKey(key)).not.toThrow();
+    }
+  });
+
   it('rejects invalid Exam derivative versions', () => {
     expect(() => examDocumentArtifactObjectKey('exam', 'document', 0)).toThrow(
       'invalid exam artifact version',
@@ -163,16 +187,26 @@ describe('material object key contract', () => {
     expect(() => examQuestionAssessmentsObjectKey('exam', Number.NaN)).toThrow(
       'invalid exam artifact version',
     );
+    expect(() => examKnowledgeMappingObjectKey('exam', 0)).toThrow('invalid exam artifact version');
+    expect(() => examObservationsObjectKey('exam', 1, Number.NaN)).toThrow(
+      'invalid exam artifact version',
+    );
   });
 
   it.each(['../outside', 'exam/../../outside', 'exam\\outside', 'CON', 'trailing.'])(
     'contains malicious Exam identities inside portable hashed namespaces: %s',
     (identity) => {
-      const key = examSnapshotObjectKey(identity, identity);
-      expect(() => assertPortableMaterialObjectKey(key)).not.toThrow();
-      expect(isExamSnapshotObjectKey(identity, key)).toBe(true);
-      expect(key).not.toContain(identity);
-      expect(key).not.toMatch(/[\\:<>'"|?*]/);
+      const keys = [
+        examSnapshotObjectKey(identity, identity),
+        examKnowledgeMappingObjectKey(identity, 1),
+        examObservationsObjectKey(identity, 1, 1),
+      ];
+      for (const key of keys) {
+        expect(() => assertPortableMaterialObjectKey(key)).not.toThrow();
+        expect(isExamSnapshotObjectKey(identity, key)).toBe(true);
+        expect(key).not.toContain(identity);
+        expect(key).not.toMatch(/[\\:<>'"|?*]/);
+      }
     },
   );
 

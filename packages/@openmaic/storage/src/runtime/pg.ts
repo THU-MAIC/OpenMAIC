@@ -32,10 +32,11 @@ import type {
   RuntimeAppendOptions,
   RuntimePayloadValidator,
   RuntimeSessionInit,
-  RuntimeStore,
+  RuntimeSessionStrictSelector,
+  StrictRuntimeSessionStore,
   RuntimeTailOptions,
 } from './types.js';
-import { RuntimeAppendConflictError } from './types.js';
+import { RuntimeAppendConflictError, RuntimeSessionEnumerationCorruptError } from './types.js';
 import { assertJsonValue, isLosslessJsonString } from './json-value.js';
 
 export interface QueryResult<TRow extends Record<string, unknown> = Record<string, unknown>> {
@@ -142,6 +143,16 @@ interface StoredJsonRow extends Record<string, unknown> {
   data: unknown;
 }
 
+interface StoredSessionRow extends StoredJsonRow {
+  id: unknown;
+  stage_id: unknown;
+  learner_key: unknown;
+  kind: unknown;
+  status: unknown;
+  created_at: unknown;
+  updated_at: unknown;
+}
+
 interface LastSeqRow extends Record<string, unknown> {
   last_seq: string | number;
 }
@@ -192,6 +203,39 @@ function migrateSession(row: RuntimeSession): RuntimeSession {
   return needsRuntimeMigration(row) ? (migrateRuntime(row) as RuntimeSession) : row;
 }
 
+function matchesStrictSelector(
+  id: string | undefined,
+  kind: string | undefined,
+  selector: RuntimeSessionStrictSelector,
+): { byKind: boolean; byIdPrefix: boolean } {
+  return {
+    byKind: kind !== undefined && (selector.kinds?.includes(kind) ?? false),
+    byIdPrefix:
+      id !== undefined && (selector.idPrefixes?.some((prefix) => id.startsWith(prefix)) ?? false),
+  };
+}
+
+function assertStoredSessionColumnsMatch(
+  row: StoredSessionRow,
+  decoded: Record<string, unknown>,
+): void {
+  const duplicatedFields = [
+    ['id', row.id, decoded.id],
+    ['stage_id/stageId', row.stage_id, decoded.stageId],
+    ['learner_key/learnerKey', row.learner_key, decoded.learnerKey],
+    ['kind', row.kind, decoded.kind],
+    ['status', row.status, decoded.status],
+    ['created_at/createdAt', row.created_at, decoded.createdAt],
+    ['updated_at/updatedAt', row.updated_at, decoded.updatedAt],
+  ] as const;
+  const mismatch = duplicatedFields.find(([, column, envelope]) => column !== envelope);
+  if (mismatch) {
+    throw new Error(
+      `@openmaic/storage: stored runtime session column ${mismatch[0]} disagrees with data`,
+    );
+  }
+}
+
 function isUniqueViolation(error: unknown): boolean {
   return (
     typeof error === 'object' &&
@@ -222,7 +266,7 @@ function isRetryableAppendError(error: unknown): boolean {
   return code === '23505' || code === '40001' || code === '40P01';
 }
 
-export class PgRuntimeStore implements RuntimeStore {
+export class PgRuntimeStore implements StrictRuntimeSessionStore {
   private readonly queryable: Queryable;
   private readonly transactionHook: WithTransaction;
   private readonly payloadValidators: Record<string, RuntimePayloadValidator>;
@@ -358,6 +402,59 @@ export class PgRuntimeStore implements RuntimeStore {
         sessions.push(session);
       } catch {
         // Listings omit corrupt rows; direct reads remain fail-loud.
+      }
+    }
+    return sessions.sort(
+      (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id),
+    );
+  }
+
+  async listSessionsStrict(
+    stageId: string,
+    learnerKey: string,
+    selector: RuntimeSessionStrictSelector,
+  ): Promise<RuntimeSession[]> {
+    if (!isPgQueryableKey(stageId) || !isPgQueryableKey(learnerKey)) return [];
+    const result = await this.queryable.query<StoredSessionRow>(
+      `SELECT id, stage_id, learner_key, kind, status, created_at, updated_at, data
+         FROM runtime_sessions
+        WHERE stage_id = $1 AND learner_key = $2`,
+      [stageId, learnerKey],
+    );
+    const sessions: RuntimeSession[] = [];
+    for (const row of result.rows) {
+      const sessionId = typeof row.id === 'string' ? row.id : undefined;
+      const sessionKind = typeof row.kind === 'string' ? row.kind : undefined;
+      const matched = matchesStrictSelector(sessionId, sessionKind, selector);
+      if (!matched.byKind && !matched.byIdPrefix) continue;
+      try {
+        const decoded = decodeJson<unknown>(row.data);
+        if (!isPlainObject(decoded)) {
+          throw new Error('@openmaic/storage: stored runtime session data must be a plain object');
+        }
+        assertStoredSessionColumnsMatch(row, decoded as Record<string, unknown>);
+        const session = migrateSession(decoded as RuntimeSession);
+        assertValid(
+          validateRuntimeSession(session),
+          `stored runtime session ${JSON.stringify(sessionId)}`,
+        );
+        if (
+          matched.byIdPrefix &&
+          selector.kinds !== undefined &&
+          selector.kinds.length > 0 &&
+          !selector.kinds.includes(session.kind)
+        ) {
+          throw new Error('@openmaic/storage: strict runtime session kind mismatch');
+        }
+        sessions.push(session);
+      } catch (error) {
+        throw new RuntimeSessionEnumerationCorruptError(
+          stageId,
+          learnerKey,
+          sessionId,
+          sessionKind,
+          error,
+        );
       }
     }
     return sessions.sort(

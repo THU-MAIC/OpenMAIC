@@ -116,12 +116,17 @@ export {
 
 export type {
   RuntimeStore,
+  StrictRuntimeSessionStore,
   RuntimeSessionInit,
+  RuntimeSessionStrictSelector,
   RuntimePayloadValidator,
   RuntimeAppendOptions,
   RuntimeTailOptions,
 } from './runtime/types.js';
-export { RuntimeAppendConflictError } from './runtime/types.js';
+export {
+  RuntimeAppendConflictError,
+  RuntimeSessionEnumerationCorruptError,
+} from './runtime/types.js';
 export { BrowserRuntimeStore, type BrowserRuntimeStoreOptions } from './runtime/browser.js';
 
 export {

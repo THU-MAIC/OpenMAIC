@@ -173,6 +173,28 @@ export function examQuestionAssessmentsObjectKey(
   )}grading/grading_v${gradingVersion}/exam_question_assessments_v1.json`;
 }
 
+export function examKnowledgeMappingObjectKey(
+  examSessionId: string,
+  mappingVersion: number,
+): string {
+  assertArtifactVersion(mappingVersion);
+  return `${examSnapshotObjectPrefix(
+    examSessionId,
+  )}knowledge/mapping_v${mappingVersion}/confirmed_exam_knowledge_mapping_v1.json`;
+}
+
+export function examObservationsObjectKey(
+  examSessionId: string,
+  mappingVersion: number,
+  observationVersion: number,
+): string {
+  assertArtifactVersion(mappingVersion);
+  assertArtifactVersion(observationVersion);
+  return `${examSnapshotObjectPrefix(
+    examSessionId,
+  )}knowledge/mapping_v${mappingVersion}/observations_v${observationVersion}/confirmed_exam_observations_v1.json`;
+}
+
 export function isExamSnapshotObjectKey(examSessionId: string, key: string): boolean {
   return (
     isPortableMaterialObjectKey(key) && key.startsWith(examSnapshotObjectPrefix(examSessionId))
