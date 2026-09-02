@@ -11,9 +11,29 @@ const onwarn = (warning) => {
   console.warn(`(!) ${warning.message}`);
 };
 
+// Windows fix: plugins like @rollup/plugin-commonjs synthesize virtual modules
+// (e.g. for `import.meta.url` in the emscripten jpegxr glue) whose content embeds
+// a raw absolute path like `export default 'C:\Users\...'`. The backslashes are
+// invalid escape sequences in strict mode, so rollup fails to parse the module.
+// Escape them and normalize to forward slashes before rollup parses the module.
+const fixWindowsPathStrings = () => ({
+  name: 'fix-windows-path-strings',
+  transform(code) {
+    if (!code.includes('\\')) return null;
+    let changed = false;
+    const fixed = code.replace(/export default '([^'\n]*)'/g, (match, raw) => {
+      if (!raw.includes('\\')) return match;
+      changed = true;
+      return `export default ${JSON.stringify(raw.replaceAll('\\', '/'))}`;
+    });
+    return changed ? { code: fixed, map: null } : null;
+  },
+});
+
 const plugins = [
   nodeResolve({ browser: true, preferBuiltins: false }),
   commonjs(),
+  fixWindowsPathStrings(),
   json(),
   typescript({ tsconfig: './tsconfig.json' }),
   terser(),
