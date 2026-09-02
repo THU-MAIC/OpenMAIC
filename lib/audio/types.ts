@@ -86,6 +86,7 @@ export type BuiltInTTSProviderId =
   | 'qwen-tts'
   | 'voxcpm-tts'
   | 'doubao-tts'
+  | 'merouter-tts'
   | 'elevenlabs-tts'
   | 'minimax-tts'
   | 'lemonade-tts'

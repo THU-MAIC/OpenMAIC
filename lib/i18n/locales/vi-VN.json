@@ -1392,6 +1392,7 @@
     "providerQwenTTS": "Qwen TTS (Alibaba Cloud Bailian)",
     "providerVoxCPMTTS": "VoxCPM2",
     "providerDoubaoTTS": "Doubao TTS 2.0 (Volcengine)",
+    "providerMeRouterTTS": "MeRouter Seed TTS 2.0",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerLemonadeTTS": "Lemonade TTS (Cục bộ)",

@@ -904,6 +904,32 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     supportedFormats: ['mp3'],
     speedRange: { min: 0.5, max: 2.0, default: 1.0 },
   },
+
+  /**
+   * OpenAI-compatible MeRouter gateway. The deployment must set the base URL
+   * and key server-side with TTS_MEROUTER_*; no credential is bundled here.
+   */
+  'merouter-tts': {
+    id: 'merouter-tts',
+    name: 'MeRouter Seed TTS 2.0',
+    requiresApiKey: true,
+    defaultBaseUrl: '',
+    icon: '/logos/doubao.svg',
+    models: [{ id: 'seed-tts-2.0', name: 'Seed TTS 2.0' }],
+    defaultModelId: 'seed-tts-2.0',
+    // This voice has been verified against the MeRouter Seed TTS endpoint.
+    voices: [
+      {
+        id: 'zh_female_vv_uranus_bigtts',
+        name: 'Vivi 2.0',
+        language: 'zh-CN',
+        gender: 'female',
+      },
+    ],
+    supportedFormats: ['mp3'],
+    speedRange: { min: 0.5, max: 2.0, default: 1.0 },
+  },
+
   'elevenlabs-tts': {
     id: 'elevenlabs-tts',
     name: 'ElevenLabs TTS',
@@ -1340,6 +1366,7 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'qwen-tts': 'Cherry',
   'voxcpm-tts': VOXCPM_AUTO_VOICE_ID,
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
+  'merouter-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'minimax-tts': 'female-yujie',
   'lemonade-tts': 'af_heart',
@@ -1353,6 +1380,7 @@ export const DEFAULT_TTS_MODELS: Record<BuiltInTTSProviderId, string> = {
   'qwen-tts': 'qwen3-tts-flash',
   'voxcpm-tts': VOXCPM_VLLM_MODEL_ID,
   'doubao-tts': '',
+  'merouter-tts': 'seed-tts-2.0',
   'elevenlabs-tts': 'eleven_multilingual_v2',
   'minimax-tts': 'speech-2.8-hd',
   'lemonade-tts': 'kokoro-v1',

@@ -35,6 +35,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'TTS_ELEVENLABS',
   'TTS_MINIMAX',
   'TTS_VOXCPM',
+  'TTS_MEROUTER',
   'ASR_OPENAI',
   'ASR_QWEN',
   'ASR_FUNASR',
@@ -730,6 +731,14 @@ video:
       vi.stubEnv('TTS_OPENAI_API_KEY', 'sk-tts');
       const { getServerTTSProviders } = await import('@/lib/server/provider-config');
       expect(getServerTTSProviders()['openai-tts']).toEqual({});
+    });
+
+    it('registers MeRouter Seed TTS from its dedicated server-only env prefix', async () => {
+      vi.stubEnv('TTS_MEROUTER_API_KEY', 'sk-merouter');
+      vi.stubEnv('TTS_MEROUTER_BASE_URL', 'https://gateway.example.test/v1');
+      vi.stubEnv('TTS_MEROUTER_MODELS', 'seed-tts-2.0');
+      const { getServerTTSProviders } = await import('@/lib/server/provider-config');
+      expect(getServerTTSProviders()['merouter-tts']).toEqual({});
     });
 
     it('force-disables a provider via TTS_<P>_ENABLED=false even when it has a key', async () => {

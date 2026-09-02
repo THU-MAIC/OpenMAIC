@@ -1392,6 +1392,7 @@
     "providerQwenTTS": "Qwen TTS（阿里云百炼）",
     "providerVoxCPMTTS": "VoxCPM2",
     "providerDoubaoTTS": "豆包 TTS 2.0（火山引擎）",
+    "providerMeRouterTTS": "MeRouter Seed TTS 2.0",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerLemonadeTTS": "Lemonade TTS（本地）",

@@ -219,6 +219,7 @@ export async function generateTTS(
   try {
     switch (config.providerId) {
       case 'openai-tts':
+      case 'merouter-tts':
         return await generateOpenAITTS(config, text, signal);
 
       case 'azure-tts':
@@ -276,7 +277,10 @@ async function generateOpenAITTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = config.baseUrl || TTS_PROVIDERS['openai-tts'].defaultBaseUrl;
+  const provider =
+    TTS_PROVIDERS[config.providerId as keyof typeof TTS_PROVIDERS] ?? TTS_PROVIDERS['openai-tts'];
+  const baseUrl = config.baseUrl || provider.defaultBaseUrl;
+  const providerName = config.providerId === 'merouter-tts' ? 'MeRouter Seed TTS' : 'OpenAI TTS';
 
   // Use gpt-4o-mini-tts for best quality and intelligent realtime applications
   const response = await fetch(`${baseUrl}/audio/speech`, {
@@ -286,7 +290,7 @@ async function generateOpenAITTS(
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
-      model: config.modelId || 'gpt-4o-mini-tts',
+      model: config.modelId || provider.defaultModelId || 'gpt-4o-mini-tts',
       input: text,
       voice: config.voice,
       speed: config.speed || 1.0,
@@ -295,9 +299,9 @@ async function generateOpenAITTS(
   });
 
   if (!response.ok) {
-    throwIfTtsRateLimited('OpenAI', response.status);
+    throwIfTtsRateLimited(providerName, response.status);
     const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(`OpenAI TTS API error: ${error.error?.message || response.statusText}`);
+    throw new Error(`${providerName} API error: ${error.error?.message || response.statusText}`);
   }
 
   const arrayBuffer = await response.arrayBuffer();

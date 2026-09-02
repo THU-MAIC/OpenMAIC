@@ -515,6 +515,7 @@ const getDefaultAudioConfig = () => ({
       providerOptions: { backend: DEFAULT_VOXCPM_BACKEND },
     },
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: true },
+    'merouter-tts': { apiKey: '', baseUrl: '', modelId: 'seed-tts-2.0', enabled: true },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: true },
     'minimax-tts': { apiKey: '', baseUrl: '', modelId: 'speech-2.8-hd', enabled: true },
     'lemonade-tts': {

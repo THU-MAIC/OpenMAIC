@@ -29,6 +29,7 @@ const TTS_PROVIDER_NAME_KEYS: Record<string, string> = {
   'qwen-tts': 'settings.providerQwenTTS',
   'voxcpm-tts': 'settings.providerVoxCPMTTS',
   'doubao-tts': 'settings.providerDoubaoTTS',
+  'merouter-tts': 'settings.providerMeRouterTTS',
   'elevenlabs-tts': 'settings.providerElevenLabsTTS',
   'minimax-tts': 'settings.providerMiniMaxTTS',
   'lemonade-tts': 'settings.providerLemonadeTTS',
