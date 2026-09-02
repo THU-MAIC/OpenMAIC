@@ -7,7 +7,10 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { generateWithOpenRouterImage } from '@/lib/media/adapters/openrouter-image-adapter';
+import {
+  generateWithOpenRouterImage,
+  openRouterBaseUrl,
+} from '@/lib/media/adapters/openrouter-image-adapter';
 import { generateWithOpenRouterVideo } from '@/lib/media/adapters/openrouter-video-adapter';
 
 afterEach(() => {
@@ -126,5 +129,26 @@ describe('OpenRouter video adapter', () => {
     const assertion = expect(promise).rejects.toThrow(/failed: content policy/i);
     await vi.advanceTimersByTimeAsync(15_000);
     await assertion;
+  });
+});
+
+describe('openRouterBaseUrl', () => {
+  it('trims a pasted endpoint back to the API root', () => {
+    // The settings field is labelled "Base URL" but reads like a request URL,
+    // so pasting the full endpoint is the natural mistake; untrimmed it built
+    // `/api/v1/images/images` and 404'd.
+    expect(openRouterBaseUrl('https://openrouter.ai/api/v1/images')).toBe(
+      'https://openrouter.ai/api/v1',
+    );
+    expect(openRouterBaseUrl('https://openrouter.ai/api/v1/videos')).toBe(
+      'https://openrouter.ai/api/v1',
+    );
+    expect(openRouterBaseUrl('https://openrouter.ai/api/v1/')).toBe('https://openrouter.ai/api/v1');
+    expect(openRouterBaseUrl('https://openrouter.ai/api/v1')).toBe('https://openrouter.ai/api/v1');
+    expect(openRouterBaseUrl(undefined)).toBe('https://openrouter.ai/api/v1');
+    // A self-hosted proxy whose path merely contains the word must survive.
+    expect(openRouterBaseUrl('https://proxy.internal/images/api/v1')).toBe(
+      'https://proxy.internal/images/api/v1',
+    );
   });
 });

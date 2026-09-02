@@ -28,7 +28,7 @@ import type {
 } from '../types';
 import { runPolledTask, type PollResult } from '../polled-task';
 import { requireModel } from '../require-model';
-import { OPENROUTER_DEFAULT_BASE_URL, openRouterHeaders } from './openrouter-image-adapter';
+import { openRouterBaseUrl, openRouterHeaders } from './openrouter-image-adapter';
 
 const POLL_INTERVAL_MS = 10_000; // 10 seconds
 const MAX_POLL_ATTEMPTS = 60; // 10 minutes max
@@ -154,17 +154,21 @@ async function pollVideoJob(
 }
 
 /**
- * Lightweight connectivity test — lists the video catalog. Costs nothing and
- * never starts a job.
+ * Lightweight connectivity test — reads the key's own metadata. Costs nothing
+ * and never starts a job.
+ *
+ * Deliberately NOT the `/videos/models` catalog: that answers 200
+ * unauthenticated, so probing it would report success for an invalid key.
+ * `GET /key` is the cheapest endpoint that actually rejects a bad key.
  */
 export async function testOpenRouterVideoConnectivity(
   config: VideoGenerationConfig,
 ): Promise<{ success: boolean; message: string }> {
-  const baseUrl = config.baseUrl || OPENROUTER_DEFAULT_BASE_URL;
+  const baseUrl = openRouterBaseUrl(config.baseUrl);
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/videos/models`, {
+    response = await fetch(`${baseUrl}/key`, {
       method: 'GET',
       redirect: 'manual',
       headers: openRouterHeaders(config.apiKey),
@@ -200,7 +204,7 @@ export async function generateWithOpenRouterVideo(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
 ): Promise<VideoGenerationResult> {
-  const baseUrl = config.baseUrl || OPENROUTER_DEFAULT_BASE_URL;
+  const baseUrl = openRouterBaseUrl(config.baseUrl);
   const model = requireModel(config.model, 'OpenRouter Video');
 
   return runPolledTask<VideoGenerationResult>({

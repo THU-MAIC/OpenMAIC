@@ -41,6 +41,19 @@ function getDimensions(aspectRatio?: string): { width: number; height: number } 
   }
 }
 
+/**
+ * Normalise a user-entered base URL to the API root.
+ *
+ * The settings field is labelled "Base URL" but reads like a request URL, so
+ * pasting the full endpoint (`.../api/v1/images`) is the natural mistake — and
+ * it silently builds `.../api/v1/images/images`, which 404s. Trim a trailing
+ * slash and a trailing `/images` or `/videos` so both forms work.
+ */
+export function openRouterBaseUrl(baseUrl?: string): string {
+  const raw = baseUrl?.trim() || OPENROUTER_DEFAULT_BASE_URL;
+  return raw.replace(/\/+$/, '').replace(/\/(images|videos)$/, '');
+}
+
 export function openRouterHeaders(apiKey: string): Record<string, string> {
   return {
     'Content-Type': 'application/json',
@@ -55,17 +68,21 @@ interface OpenRouterImageResponse {
 }
 
 /**
- * Lightweight connectivity test — lists the image catalog. Costs nothing and
- * never triggers a generation.
+ * Lightweight connectivity test — reads the key's own metadata. Costs nothing
+ * and never triggers a generation.
+ *
+ * Deliberately NOT the `/images/models` catalog: that answers 200
+ * unauthenticated, so probing it would report success for an invalid key.
+ * `GET /key` is the cheapest endpoint that actually rejects a bad key.
  */
 export async function testOpenRouterImageConnectivity(
   config: ImageGenerationConfig,
 ): Promise<{ success: boolean; message: string }> {
-  const baseUrl = config.baseUrl || OPENROUTER_DEFAULT_BASE_URL;
+  const baseUrl = openRouterBaseUrl(config.baseUrl);
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/images/models`, {
+    response = await fetch(`${baseUrl}/key`, {
       method: 'GET',
       redirect: 'manual',
       headers: openRouterHeaders(config.apiKey),
@@ -101,7 +118,7 @@ export async function generateWithOpenRouterImage(
   config: ImageGenerationConfig,
   options: ImageGenerationOptions,
 ): Promise<ImageGenerationResult> {
-  const baseUrl = config.baseUrl || OPENROUTER_DEFAULT_BASE_URL;
+  const baseUrl = openRouterBaseUrl(config.baseUrl);
   const model = requireModel(config.model, 'OpenRouter Image');
 
   const body: Record<string, unknown> = { model, prompt: options.prompt, n: 1 };
