@@ -404,7 +404,13 @@ export function useQwenVoiceProfiles() {
 
   const deleteVoice = useCallback(
     async (id: string, request: VoiceRegistrationRequestConfig) => {
-      const vendorDeleted = await deleteRegisteredVoice('qwen-tts', id, request);
+      const profile = await db.voiceProfiles.get(id);
+      // Imported entries are references to voices already owned by the Qwen
+      // account. Removing them from this browser must never delete them upstream.
+      const vendorDeleted =
+        profile?.kind === 'imported'
+          ? false
+          : await deleteRegisteredVoice('qwen-tts', id, request);
       if (!vendorDeleted) {
         console.warn('[QwenVoiceProfiles] Provider deletion failed; removing local profile');
       }
@@ -416,7 +422,44 @@ export function useQwenVoiceProfiles() {
     [refresh],
   );
 
-  return { profiles, loading, refresh, addCloneVoice, deleteVoice };
+  /** Import pre-existing Qwen account voices without requiring reference audio. */
+  const syncRemoteVoices = useCallback(
+    async (request: VoiceRegistrationRequestConfig): Promise<number> => {
+      const res = await fetch('/api/generate/voice/qwen-pool', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        voices?: Array<{ id?: unknown }>;
+        error?: unknown;
+      };
+      if (!res.ok) {
+        throw new Error(typeof data.error === 'string' ? data.error : 'Failed to load Qwen voices');
+      }
+      const ids = [...new Set((data.voices || []).flatMap((voice) =>
+        typeof voice.id === 'string' && voice.id.trim() ? [voice.id.trim()] : [],
+      ))];
+      const existing = await db.voiceProfiles.bulkGet(ids);
+      const now = Date.now();
+      const imported = ids.filter((id, index) => !existing[index]).map((id) => ({
+        id,
+        providerId: 'qwen-tts',
+        kind: 'imported' as const,
+        name: id,
+        referenceAudioName: 'Imported from Qwen',
+        createdAt: now,
+        updatedAt: now,
+      }));
+      if (imported.length > 0) await db.voiceProfiles.bulkPut(imported);
+      await refresh();
+      notifyVoiceProfilesChanged();
+      return imported.length;
+    },
+    [refresh],
+  );
+
+  return { profiles, loading, refresh, addCloneVoice, deleteVoice, syncRemoteVoices };
 }
 
 export async function getVoxCPMProviderOptions(
