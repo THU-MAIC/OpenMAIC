@@ -20,9 +20,11 @@ import type { RenderCoordinatorOptions } from '../src/render-coordinator.js';
 import type { RenderExecutor } from '../src/render-executor.js';
 import { Semaphore } from '../src/semaphore.js';
 import type { RenderJobRecord } from '../src/types.js';
+import { waitUntil } from './support/async.js';
 import {
   createMemoryArtifactStore,
   createMemoryJobStore,
+  parkingExecutor,
   succeedingExecutor,
 } from './support/fakes.js';
 
@@ -85,34 +87,17 @@ async function waitForPoll(
   jobId: string,
   status: RenderJobRecord['status'],
 ): Promise<Record<string, unknown>> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  return waitUntil(async () => {
     const response = await app.fetch(new Request(`http://test/render/${jobId}`));
     const body = (await response.json()) as Record<string, unknown>;
-    if (body.status === status) return body;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  throw new Error(`Timed out waiting for ${jobId} to reach ${status}`);
+    return body.status === status ? body : null;
+  }, `${jobId} to reach ${status}`);
 }
 
 async function healthBody(app: ReturnType<typeof createApp>): Promise<Record<string, unknown>> {
   const response = await app.fetch(new Request('http://test/health'));
   expect(response.status).toBe(200);
   return (await response.json()) as Record<string, unknown>;
-}
-
-/** An executor that parks every render until released, holding slots open. */
-function parkingExecutor() {
-  let releaseRenders!: () => void;
-  const parked = new Promise<void>((resolve) => {
-    releaseRenders = resolve;
-  });
-  const executor: RenderExecutor = {
-    async execute() {
-      await parked;
-      return { status: 'succeeded' };
-    },
-  };
-  return { executor, releaseRenders };
 }
 
 describe('POST /render buffering/extraction bound', () => {
@@ -365,6 +350,16 @@ describe('render HTTP contract through a replaceable executor', () => {
 });
 
 describe('admission observability (429 reason + /health accepting)', () => {
+  it('keeps /health aggregate-only: exact key set, boolean accepting', async () => {
+    const { app } = testApp(succeedingExecutor);
+    const body = await healthBody(app);
+    // Pinning the exact key set: any new field (queue depths, per-identity
+    // data) must be a deliberate, reviewed change — identity keys are client
+    // IPs behind a trusted proxy, so they must never reach this response.
+    expect(Object.keys(body).sort()).toEqual(['accepting', 'ok', 'resourceProfile', 'versions']);
+    expect(typeof body.accepting).toBe('boolean');
+  });
+
   it('labels a queue-full 429 with reason and flips /health accepting', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'render-route-queue-full-'));
     scratch.push(dir);

@@ -50,6 +50,13 @@ class UploadTooLargeError extends Error {}
 /** Thrown inside the gated section for a malformed request (→ HTTP 400). */
 class BadRequestError extends Error {}
 
+/** 429 body for an admission rejection: the prose plus its machine code, if any. */
+function rejectionBody(error: RenderRejectedError): { error: string; reason?: string } {
+  // Spread-omission keeps reason-less rejections (internal invariants) from
+  // serializing `"reason": undefined` into the body.
+  return { error: error.message, ...(error.reason ? { reason: error.reason } : {}) };
+}
+
 /** Collaborators the app depends on; injectable so the routes are testable. */
 export interface AppDeps {
   jobs: JobStore;
@@ -104,9 +111,8 @@ export function createApp(deps: AppDeps): Hono {
   app.get('/health', (c) =>
     c.json({
       ok: true,
-      // Aggregate-only admission signal: the coordinator deliberately exposes
-      // a bare boolean — no queue-depth numbers, and never per-identity data
-      // (its keys are client IPs under TRUST_PROXY_HEADERS=true).
+      // Aggregate-only by design — the full rationale lives on
+      // RenderCoordinator#accepting (never queue depths or per-identity data).
       accepting: coordinator.accepting,
       resourceProfile: publicResourceProfile(config.resourceProfile),
       versions: deps.runtimeVersions ?? null,
@@ -133,14 +139,7 @@ export function createApp(deps: AppDeps): Hono {
     try {
       reservation = coordinator.reserve(identity);
     } catch (error) {
-      // The spread-omission keeps reason-less rejections from serializing
-      // `"reason": undefined` into the body.
-      if (error instanceof RenderRejectedError) {
-        return c.json(
-          { error: error.message, ...(error.reason ? { reason: error.reason } : {}) },
-          429,
-        );
-      }
+      if (error instanceof RenderRejectedError) return c.json(rejectionBody(error), 429);
       throw error;
     }
 
@@ -196,12 +195,7 @@ export function createApp(deps: AppDeps): Hono {
       if (error instanceof UploadTooLargeError) return c.json({ error: error.message }, 413);
       if (error instanceof BadRequestError) return c.json({ error: error.message }, 400);
       if (error instanceof InvalidProjectError) return c.json({ error: error.message }, 400);
-      if (error instanceof RenderRejectedError) {
-        return c.json(
-          { error: error.message, ...(error.reason ? { reason: error.reason } : {}) },
-          429,
-        );
-      }
+      if (error instanceof RenderRejectedError) return c.json(rejectionBody(error), 429);
       throw error;
     }
   });

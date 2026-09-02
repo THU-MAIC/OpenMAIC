@@ -15,10 +15,11 @@
  */
 import { describe, it, expect } from 'vitest';
 import { RenderCoordinator, RenderRejectedError } from '../src/render-coordinator.js';
-import type { RenderExecutor } from '../src/render-executor.js';
+import { waitUntil } from './support/async.js';
 import {
   createMemoryArtifactStore,
   createMemoryJobStore,
+  parkingExecutor,
   succeedingExecutor,
 } from './support/fakes.js';
 
@@ -39,15 +40,6 @@ async function captureRejection(fn: () => unknown): Promise<RenderRejectedError>
     return error as RenderRejectedError;
   }
   throw new Error('expected fn to throw RenderRejectedError');
-}
-
-/** Poll until cond() holds (bounded), so async job completion can settle. */
-async function until(cond: () => boolean | Promise<boolean>): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (await cond()) return;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  expect(await cond()).toBe(true);
 }
 
 describe('RenderCoordinator admission control', () => {
@@ -160,16 +152,7 @@ describe('RenderCoordinator admission control', () => {
   it('accepting flips false once inSystem reaches maxQueue and back true when jobs finish', async () => {
     // An executor that parks until released, so submitted jobs hold their
     // system slots open across the reserve → queued → running lifecycle.
-    let releaseRenders!: () => void;
-    const parked = new Promise<void>((resolve) => {
-      releaseRenders = resolve;
-    });
-    const executor: RenderExecutor = {
-      async execute() {
-        await parked;
-        return { status: 'succeeded' };
-      },
-    };
+    const { executor, releaseRenders } = parkingExecutor();
     const jobs = createMemoryJobStore();
     const m = new RenderCoordinator(executor, jobs, createMemoryArtifactStore().store, {
       maxQueue: 2,
@@ -194,7 +177,10 @@ describe('RenderCoordinator admission control', () => {
     releaseRenders();
     // Both jobs drain through the (already-resolved) parked executor; once the
     // system is empty the coordinator accepts again.
-    await until(async () => (await jobs.list()).every((job) => job.status === 'succeeded'));
+    await waitUntil(
+      async () => ((await jobs.list()).every((job) => job.status === 'succeeded') ? true : null),
+      'all jobs to drain to succeeded',
+    );
     expect(m.accepting).toBe(true);
   });
 });
