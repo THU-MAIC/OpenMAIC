@@ -70,7 +70,7 @@ https://github.com/user-attachments/assets/8f3f1e5f-1468-4e93-8054-afeeea683a61
 >
 > OpenMAIC ships a standard [SKILL.md](skills/openmaic/SKILL.md)-format skill package. Beyond [OpenClaw](https://github.com/openclaw/openclaw), it also works with agent workbenches such as Codex, DeepSeek, and WorkBuddy. With OpenClaw you can generate classrooms directly from Feishu, Slack, Discord, Telegram, and 20+ messaging apps.
 >
-> 1. OpenClaw: `clawhub install openmaic` or just ask your Claw *"install OpenMAIC skill"*; other workbenches: copy `skills/openmaic/` into the agent's skills directory
+> 1. OpenClaw: `clawhub install openmaic` or just ask your Claw *"install OpenMAIC skill"*; other workbenches: import the `skills/openmaic/` folder (or its zip) from the repo into the workbench
 > 2. Pick a mode:
 >    - **Hosted mode** — Get an access code at [open.maic.chat](https://open.maic.chat/), no local setup needed
 >    - **Self-hosted** — The skill walks you through clone, config, and startup step by step
@@ -650,11 +650,7 @@ Every step asks for your confirmation first. No black-box automation.
 clawhub install openmaic
 ```
 
-Or, in other agent workbenches such as Codex, DeepSeek, or WorkBuddy, copy the skill package into the workbench's skills directory:
-
-```bash
-cp -R skills/openmaic /path/to/your-agent/skills/openmaic
-```
+Or, in other agent workbenches such as Codex, DeepSeek, or WorkBuddy, import the `skills/openmaic/` folder from the repo (or its zipped archive) into the workbench to use it:
 
 </td></tr></table>
 

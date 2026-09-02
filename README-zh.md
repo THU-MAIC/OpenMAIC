@@ -70,7 +70,7 @@ https://github.com/user-attachments/assets/f4a2f1be-6615-4330-aea1-b86ccf42045e
 >
 > OpenMAIC 提供标准的 [SKILL.md](skills/openmaic/SKILL.md) 格式技能包，除 [OpenClaw](https://github.com/openclaw/openclaw) 外，也支持 Codex、DeepSeek、WorkBuddy 等 Agent 工作台。在 OpenClaw 中你可以直接在飞书、Slack、Discord、Telegram 等 20+ 聊天应用中生成课堂。
 >
-> 1. OpenClaw：`clawhub install openmaic`，或者直接跟你的 Claw 说 *"安装 OpenMAIC skill"*；其他工作台：把 `skills/openmaic/` 复制到对应 Agent 的 skills 目录即可
+> 1. OpenClaw：`clawhub install openmaic`，或者直接跟你的 Claw 说 *"安装 OpenMAIC skill"*；其他工作台：把仓库中的 `skills/openmaic/` 文件夹（或打包后的 zip）导入对应智能体工作台即可使用
 > 2. 选一种模式：
 >    - **托管模式** — 在 [open.maic.chat](https://open.maic.chat/) 获取访问码，无需本地部署
 >    - **本地部署** — Skill 会引导你逐步完成 clone、配置和启动
@@ -587,11 +587,7 @@ OpenMAIC 的技能包（`skills/openmaic/`）采用标准 SKILL.md 格式，可�
 clawhub install openmaic
 ```
 
-或在 Codex、DeepSeek、WorkBuddy 等其他 Agent 工作台中，把技能包复制到对应的 skills 目录：
-
-```bash
-cp -R skills/openmaic /path/to/your-agent/skills/openmaic
-```
+或在 Codex、DeepSeek、WorkBuddy 等其他 Agent 工作台中，把仓库中的 `skills/openmaic/` 文件夹（或打包后的 zip）导入对应智能体工作台即可使用：
 
 </td></tr></table>
 
