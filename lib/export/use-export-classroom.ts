@@ -17,12 +17,16 @@ import {
 } from './classroom-zip-types';
 import {
   collectAudioFiles,
+  collectedAudioMediaIndexEntry,
+  collectedMediaIndexEntry,
   collectMediaFiles,
   actionsToManifest,
+  audioArchivePath,
   collectLegacyAudioForExport,
-  collectMissingAudioRefs,
+  legacyAudioMediaIndexEntry,
 } from './classroom-zip-utils';
 import { createLogger } from '@/lib/logger';
+import { buildStageAssetManifest } from '@/lib/media/asset-manifest';
 import {
   inlineHtmlAssets,
   createAssetFetcher,
@@ -81,73 +85,15 @@ export async function buildClassroomExportZip(
   const JSZip = (await import('jszip')).default;
   const zip = new JSZip();
 
-  // 1. Access the authoritative document first, so lazy conversion runs and
-  // persists allocated ids before the media tables are read.
+  // 1. Access the authoritative document and prepare the working scenes.
   const [freshDocument, documentScenes] = await Promise.all([
     accessDocument(stage.id, deps),
     preparePBLScenesForDocumentPersistence(stage.id, scenes),
   ]);
   const latestName = freshDocument.document?.stage.name || stage.name;
 
-  // 2. One export snapshot: the working state (intentional unsaved edits)
-  // with its legacy references converted in-memory to the same allocated ids
-  // the durable document now carries.
-  const ledger: string[] = [];
-  let exportStage = stage;
-  let exportScenes = documentScenes;
-  try {
-    const { convertDocumentAssetRefs } = await import('@/lib/media/convert-legacy-asset-refs');
-    const converted = await convertDocumentAssetRefs(
-      { stage, scenes: documentScenes },
-      undefined,
-      undefined,
-      ledger,
-    );
-    exportStage = converted.document.stage;
-    exportScenes = converted.document.scenes;
-  } catch (error) {
-    log.warn(
-      `Legacy asset conversion failed during export of ${JSON.stringify(stage.id)}; ` +
-        'falling back to the accessed document snapshot',
-      error,
-    );
-    // The fallback snapshot must not reference allocations the rollback
-    // removes, and the accessed document (converted, or untouched if the
-    // durable conversion also failed) is always consistent with the rows.
-    // The whole ledger is spent: clearing it keeps the later snapshot-only
-    // rollback a no-op instead of idempotently re-removing the same ids.
-    const { rollbackConvertedAllocations } = await import('@/lib/media/convert-legacy-asset-refs');
-    await rollbackConvertedAllocations(stage.id, ledger).catch(() => undefined);
-    ledger.length = 0;
-    if (freshDocument.document) {
-      exportStage = freshDocument.document.stage;
-      exportScenes = freshDocument.document.scenes;
-    }
-  }
-
-  // The export snapshot is ephemeral: it is never persisted, so every
-  // allocation the in-memory snapshot conversion made is unowned once the
-  // ZIP has captured its bytes -- or once the export fails anywhere
-  // downstream. The durable document was accessed and converted FIRST, so
-  // any reference the working state shares with it reused the durable
-  // allocation and never entered the ledger; rolling back the ledger entries
-  // the durable document does not reference leaves the durable document and
-  // its compatibility rows untouched.
-  const rollbackSnapshotOnlyAllocations = async (): Promise<void> => {
-    if (ledger.length === 0) return;
-    const { rollbackConvertedAllocations } = await import('@/lib/media/convert-legacy-asset-refs');
-    const { collectStageAssetRefs } = await import('@/lib/media/collect-stage-asset-refs');
-    const referenced = freshDocument.document
-      ? collectStageAssetRefs(freshDocument.document, {
-          mediaRows: [],
-          audioRows: [],
-        }).document
-      : new Set<string>();
-    const orphans = ledger.filter((id) => !referenced.has(id));
-    if (orphans.length > 0) {
-      await rollbackConvertedAllocations(stage.id, orphans).catch(() => undefined);
-    }
-  };
+  const exportStage = stage;
+  const exportScenes = documentScenes;
 
   let zipBlob: Blob;
   const aggregateReport: InlineReport = { inlined: [], failed: [] };
@@ -156,12 +102,22 @@ export async function buildClassroomExportZip(
     // the in-memory stage already carries any lazily migrated voice fields).
     const agentConfigs = exportStage.generatedAgentConfigs ?? stage.generatedAgentConfigs ?? [];
 
-    // 4. Collect audio files from the converted scenes: their speech actions
-    // name the allocated ids, whose compatibility rows the conversion wrote.
-    const audioFiles = await collectAudioFiles(exportScenes);
+    // 4. Enumerate exactly the references in the converted export snapshot.
+    // Both collectors take their reference sets from this manifest, so orphan
+    // compatibility rows do not ride into the archive.
+    // Classroom ZIP v1 has never serialized Stage.whiteboard. Exclude those
+    // refs here: archiving their bytes would create an unreconstructable,
+    // permanently orphaned payload on import. Scene whiteboards remain part of
+    // the portable manifest and are still collected.
+    const assetManifest = await buildStageAssetManifest(exportStage, exportScenes, stage.id, {
+      includeStageWhiteboard: false,
+    });
+    const audioEntries = assetManifest.entries.filter((entry) => entry.kind === 'audio');
+    const mediaEntries = assetManifest.entries.filter((entry) => entry.kind !== 'audio');
 
-    // 5. Collect media files (generated images/videos)
-    const mediaFiles = await collectMediaFiles(stage.id);
+    // 5. Collect referenced audio and generated media.
+    const audioFiles = await collectAudioFiles(audioEntries);
+    const mediaFiles = await collectMediaFiles(stage.id, mediaEntries);
 
     // 6. Build audioId → zipPath mapping for manifest
     const audioIdToPath = new Map<string, string>();
@@ -229,37 +185,34 @@ export async function buildClassroomExportZip(
     );
 
     // 8. Build mediaIndex
-    const mediaIndex: Record<string, MediaIndexEntry> = {};
+    const mediaIndexEntries: Array<[string, MediaIndexEntry]> = [];
 
     for (const af of audioFiles) {
-      mediaIndex[af.zipPath] = {
-        type: 'audio',
-        format: af.record.format,
-        duration: af.record.duration,
-        voice: af.record.voice,
-      };
+      mediaIndexEntries.push([af.zipPath, collectedAudioMediaIndexEntry(af)]);
     }
     for (const legacy of legacyAudioBlobs) {
-      mediaIndex[legacy.zipPath] = { type: 'audio', format: legacy.format };
+      mediaIndexEntries.push([legacy.zipPath, legacyAudioMediaIndexEntry(legacy)]);
     }
     for (const mf of mediaFiles) {
-      mediaIndex[mf.zipPath] = {
-        type: 'generated',
-        mimeType: mf.record.mimeType,
-        size: mf.record.size,
-        prompt: mf.record.prompt,
-      };
+      mediaIndexEntries.push([mf.zipPath, collectedMediaIndexEntry(mf)]);
     }
 
-    // Check for missing audio references. A legacy audioUrl recovered by
-    // the pass above travels under its own zip path, so it is not missing.
-    for (const { missingPath } of collectMissingAudioRefs(
-      exportScenes,
-      audioIdToPath,
-      audioUrlToPath,
-    )) {
-      mediaIndex[missingPath] = { type: 'audio', missing: true };
+    // Referenced audio whose bytes resolved nowhere is reported as missing.
+    // Legacy audioUrl-only narration is outside the standardized manifest and
+    // is handled by collectLegacyAudioForExport above.
+    for (const [index, entry] of audioEntries.entries()) {
+      if (!audioIdToPath.has(entry.ref)) {
+        mediaIndexEntries.push([
+          audioArchivePath(index, 'mp3'),
+          {
+            type: 'audio',
+            sourceRef: entry.ref,
+            missing: true,
+          },
+        ]);
+      }
     }
+    const mediaIndex = Object.fromEntries(mediaIndexEntries);
 
     // 9. Assemble manifest
     const manifest: ClassroomManifest = {
@@ -284,21 +237,15 @@ export async function buildClassroomExportZip(
     for (const mf of mediaFiles) {
       zip.file(mf.zipPath, mf.record.blob);
       if (mf.record.poster) {
-        zip.file(mf.zipPath.replace(/\.\w+$/, '.poster.jpg'), mf.record.poster);
+        zip.file(mf.posterZipPath, mf.record.poster);
       }
     }
 
     // 11. Generate
     zipBlob = await zip.generateAsync({ type: 'blob' });
   } catch (error) {
-    // A failure after conversion means the snapshot was never captured: its
-    // fresh allocations are unowned and must not strand.
-    await rollbackSnapshotOnlyAllocations();
     throw error;
   }
-  // The ZIP has captured every blob; the snapshot's fresh allocations are
-  // now unowned and released.
-  await rollbackSnapshotOnlyAllocations();
   const safeName = latestName.replace(/[\\/:*?"<>|]/g, '_') || 'classroom';
   return {
     zip: zipBlob,

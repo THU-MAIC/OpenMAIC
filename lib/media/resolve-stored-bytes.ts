@@ -1,6 +1,7 @@
 import { db, mediaFileKey, type MediaFileRecord } from '@/lib/utils/database';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { withAssetUrl } from './use-asset-url';
+import { lookupMediaTask } from './media-task-resolution';
 import {
   MISSING_ASSET_LEASE,
   isConcreteMediaAddress,
@@ -202,11 +203,5 @@ async function fetchBytes(url: string, policy: StoredBytesFetchPolicy): Promise<
  */
 function effectiveMediaTask(ref: string, stageId: string | undefined): MediaTaskState | undefined {
   const tasks = useMediaGenerationStore.getState().tasks;
-  const task =
-    tasks[ref] ??
-    Object.values(tasks).find(
-      (candidate) =>
-        candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
-    );
-  return task && (!stageId || task.stageId === stageId) ? task : undefined;
+  return lookupMediaTask(tasks, ref, stageId);
 }

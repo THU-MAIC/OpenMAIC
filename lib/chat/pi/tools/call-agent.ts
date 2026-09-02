@@ -17,7 +17,7 @@ import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestrati
 import type { ThinkingConfig } from '@/lib/types/provider';
 import type { ChildRuntimeMode } from '../child-runtime';
 import type { DirectorSceneEvidenceMetadata } from './read-scene';
-import type { DirectorWebEvidenceMetadata } from './web-search';
+import { buildNativeWebSearchTool, type NativeWebSearchConfig } from './web-search';
 import type { ParsedAction, StatelessChatRequest } from '@/lib/types/chat';
 import {
   buildChildPrompt,
@@ -36,6 +36,9 @@ import {
   type PiWhiteboardRuntimeState,
 } from './classroom-actions';
 import { buildNativeSpotlightTool } from './native-spotlight';
+import { buildNativeWhiteboardTools } from './native-whiteboard';
+import type { WhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
+import type { SlideElementEvidence } from '../element-reference';
 
 const CallAgentParams = Type.Object({
   agentId: Type.String({
@@ -48,10 +51,10 @@ const CallAgentParams = Type.Object({
 
 type CallAgentParams = Static<typeof CallAgentParams>;
 
-type RuntimeEvidenceAttachment<TMetadata> = {
+type RuntimeEvidenceAttachment<TMetadata> = Readonly<{
   content: string;
-  metadata: TMetadata;
-};
+  metadata: Readonly<TMetadata>;
+}>;
 
 export type RequestStartCurrentScene = Readonly<{
   sceneId: string;
@@ -543,11 +546,16 @@ export function buildCallAgentTool(opts: {
   enableWhiteboardTools: boolean;
   childRuntimeMode?: ChildRuntimeMode;
   enableNativeChildSpotlight?: boolean;
+  nativeWebSearchConfig?: NativeWebSearchConfig;
+  nativeWhiteboardService?: WhiteboardRuntimeService;
+  nativeWhiteboardStageId?: string;
+  nativeWhiteboardLearnerKey?: string;
+  requestStartManualVisibilityRevision?: number;
   requestStartCurrentScene?: RequestStartCurrentScene;
   isUserCued?: () => boolean;
   isSessionClosed?: () => boolean;
   takeSceneEvidence?: () => RuntimeEvidenceAttachment<DirectorSceneEvidenceMetadata[]> | undefined;
-  takeWebEvidence?: () => RuntimeEvidenceAttachment<DirectorWebEvidenceMetadata> | undefined;
+  elementReferenceEvidence?: RuntimeEvidenceAttachment<SlideElementEvidence>;
 }): AgentTool<typeof CallAgentParams> {
   // Loop-guard (model-agnostic): an empty/errored child turn used to bypass onAgentDone,
   // so the completed-turn count never advanced and the maxAgentTurns guard was defeated — a model
@@ -653,11 +661,30 @@ export function buildCallAgentTool(opts: {
         };
       }
 
-      // Evidence is request-scoped and belongs to exactly one valid child delegation.
-      // Take it before starting/building the child so any downstream failure cannot
-      // leak the packet to a later agent.
+      // read_scene evidence remains pending/take-once. Selected-element evidence is
+      // immutable request context and is attached to every valid child delegation,
+      // including retries and handoffs after an earlier child failure.
       const sceneEvidence = opts.takeSceneEvidence?.();
-      const webEvidence = opts.takeWebEvidence?.();
+      const elementReferenceEvidence = opts.elementReferenceEvidence;
+      const capturedScene = opts.requestStartCurrentScene;
+      const hasMatchingCurrentSceneEvidence = Boolean(
+        capturedScene &&
+        capturedScene.sceneType === 'slide' &&
+        sceneEvidence?.metadata.some(
+          (metadata) =>
+            metadata.sceneId === capturedScene.sceneId && metadata.sceneType === 'slide',
+        ),
+      );
+      const spotlightElementIds = hasMatchingCurrentSceneEvidence
+        ? [...(capturedScene?.elementIds ?? [])]
+        : [];
+      if (
+        capturedScene &&
+        elementReferenceEvidence?.metadata.sceneId === capturedScene.sceneId &&
+        !spotlightElementIds.includes(elementReferenceEvidence.metadata.elementId)
+      ) {
+        spotlightElementIds.push(elementReferenceEvidence.metadata.elementId);
+      }
 
       const childAbort = new AbortController();
       const abortFromRequest = () => childAbort.abort(opts.abortSignal.reason);
@@ -705,34 +732,39 @@ export function buildCallAgentTool(opts: {
 
       const childRuntimeMode = opts.childRuntimeMode ?? 'legacy';
       if (childRuntimeMode === 'native') {
-        const capturedScene = opts.requestStartCurrentScene;
-        const hasMatchingCurrentSceneEvidence = Boolean(
-          capturedScene &&
-          capturedScene.sceneType === 'slide' &&
-          sceneEvidence?.metadata.some(
-            (metadata) =>
-              metadata.sceneId === capturedScene.sceneId && metadata.sceneType === 'slide',
-          ),
-        );
-        const spotlightElementIds = hasMatchingCurrentSceneEvidence
-          ? (capturedScene?.elementIds ?? [])
-          : [];
         const spotlightTargets = new Set(spotlightElementIds);
         const spotlightEnabled = Boolean(
           opts.enableNativeChildSpotlight &&
           agent.allowedActions.includes('spotlight') &&
           spotlightTargets.size > 0,
         );
-        const nativeTools = spotlightEnabled
-          ? [
-              buildNativeSpotlightTool({
+        const nativeTools: AgentTool[] = [
+          ...(spotlightEnabled
+            ? [
+                buildNativeSpotlightTool({
+                  agent,
+                  messageId,
+                  send: opts.send,
+                  authorizedElementIds: spotlightTargets,
+                }),
+              ]
+            : []),
+          ...(opts.nativeWhiteboardService &&
+          opts.nativeWhiteboardStageId &&
+          opts.nativeWhiteboardLearnerKey
+            ? buildNativeWhiteboardTools({
                 agent,
                 messageId,
                 send: opts.send,
-                authorizedElementIds: spotlightTargets,
-              }),
-            ]
-          : [];
+                service: opts.nativeWhiteboardService,
+                stageId: opts.nativeWhiteboardStageId,
+                learnerKey: opts.nativeWhiteboardLearnerKey,
+                requestStartManualVisibilityRevision:
+                  opts.requestStartManualVisibilityRevision ?? 0,
+              })
+            : []),
+          buildNativeWebSearchTool({ config: opts.nativeWebSearchConfig }),
+        ];
         const availableToolNames = nativeTools.map((tool) => tool.name);
         const sanitizeNativeDelta = createVisibleSpeechDeltaSanitizer();
         let nativeResult: Awaited<ReturnType<typeof runNativeChild>>;
@@ -754,7 +786,7 @@ export function buildCallAgentTool(opts: {
             ),
             prompt: buildNativeChildTurnPrompt(params.instruction, agent.role, {
               scene: sceneEvidence?.content,
-              web: webEvidence?.content,
+              element: elementReferenceEvidence?.content,
               spotlightElementIds,
             }),
             tools: nativeTools,
@@ -762,7 +794,6 @@ export function buildCallAgentTool(opts: {
             history: toHistoryMessages(opts.body.messages),
             abortSignal: childAbort.signal,
             timeoutMs: 60_000,
-            maxToolCallAttempts: 4,
             maxProviderTransports: 5,
             onVisibleTextDelta: async (delta) => {
               const visibleDelta = sanitizeNativeDelta(delta);
@@ -811,7 +842,11 @@ export function buildCallAgentTool(opts: {
             availableToolNames,
             nativeChildRun: nativeResult,
             ...(sceneEvidence ? { sceneEvidence: sceneEvidence.metadata } : {}),
-            ...(webEvidence ? { webEvidence: webEvidence.metadata } : {}),
+            ...(elementReferenceEvidence
+              ? {
+                  elementReferenceEvidence: elementReferenceEvidence.metadata,
+                }
+              : {}),
           },
           ...(isCompleted ? {} : { isError: true }),
         };
@@ -830,6 +865,9 @@ export function buildCallAgentTool(opts: {
         maxActionsPerAgent: opts.maxActionsPerAgent,
         enableWhiteboardTools: opts.enableWhiteboardTools,
         whiteboardState: getLegacyWhiteboardState(),
+        ...(elementReferenceEvidence
+          ? { authorizedSpotlightElementIds: new Set(spotlightElementIds) }
+          : {}),
       });
       const childToolsByName = new Map(childTools.map((tool) => [tool.name, tool]));
 
@@ -877,7 +915,7 @@ export function buildCallAgentTool(opts: {
         await child.prompt(
           buildChildTurnPrompt(params.instruction, agent.role, {
             scene: sceneEvidence?.content,
-            web: webEvidence?.content,
+            element: elementReferenceEvidence?.content,
           }),
         );
         await child.waitForIdle();
@@ -954,7 +992,11 @@ export function buildCallAgentTool(opts: {
           text: finalText,
           actionWarnings,
           ...(sceneEvidence ? { sceneEvidence: sceneEvidence.metadata } : {}),
-          ...(webEvidence ? { webEvidence: webEvidence.metadata } : {}),
+          ...(elementReferenceEvidence
+            ? {
+                elementReferenceEvidence: elementReferenceEvidence.metadata,
+              }
+            : {}),
         },
       };
     },

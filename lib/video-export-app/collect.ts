@@ -37,7 +37,7 @@ import {
 } from '@/lib/media/resolve-media-ref';
 import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
 import { slideMediaReferenceSlots } from '@/lib/media/slide-media-slots';
-import { resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
+import { lookupMediaTask, resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
 
 export interface CollectOptions {
   /** Slide-snapshot render width in px (frame height follows the slide ratio). Default 1920. */
@@ -218,14 +218,7 @@ async function resolveGeneratedMedia(
       backgroundSlot.write(url);
     } else {
       const tasks = useMediaGenerationStore.getState().tasks;
-      const task =
-        tasks[backgroundRef] ??
-        Object.values(tasks).find(
-          (candidate) =>
-            candidate.placeholderRef === backgroundRef &&
-            (!stageId || candidate.stageId === stageId),
-        );
-      const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
+      const effectiveTask = lookupMediaTask(tasks, backgroundRef, stageId);
       if (!renderableMediaUrl(resolveMediaRef(backgroundRef, effectiveTask))) {
         backgroundSlot.write('');
       }
@@ -267,13 +260,7 @@ async function resolveGeneratedMedia(
     const record = mediaByElementId.get(ref);
     const bytes = await resolveMediaBytesWithFallback(ref, record, stageId);
     if (!bytes) {
-      const task =
-        tasks[ref] ??
-        Object.values(tasks).find(
-          (candidate) =>
-            candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
-        );
-      const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
+      const effectiveTask = lookupMediaTask(tasks, ref, stageId);
       if (!renderableMediaUrl(resolveMediaRef(ref, effectiveTask))) element.src = '';
       continue;
     }

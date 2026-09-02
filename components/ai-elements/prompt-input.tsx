@@ -1018,10 +1018,9 @@ interface SpeechRecognitionErrorEvent extends Event {
   error: string;
 }
 
-// Window.SpeechRecognition / webkitSpeechRecognition are declared globally by
-// @assistant-ui/core's speech adapter; we deliberately do NOT re-augment them
-// here (an `any` re-declaration conflicts with that typing). The local
-// `SpeechRecognition` interface above is the richer instance shape we use.
+// Window.SpeechRecognition / webkitSpeechRecognition have minimal constructor
+// declarations in types/web-speech.d.ts. The local `SpeechRecognition`
+// interface above is the richer instance shape this component consumes.
 
 export type PromptInputSpeechButtonProps = ComponentProps<typeof PromptInputButton> & {
   textareaRef?: RefObject<HTMLTextAreaElement | null>;

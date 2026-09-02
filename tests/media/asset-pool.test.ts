@@ -61,7 +61,7 @@ describe('getAssetPool', () => {
     const indexedDB = new IDBFactory();
     vi.stubGlobal('indexedDB', indexedDB);
     vi.resetModules();
-    const { AssetPoolDeletionDeferredError, clearAssetPool, getAssetPool, putAsset } =
+    const { AssetPoolDeletionDeferredError, clearAssetPool, getAssetPool } =
       await import('@/lib/media/asset-pool');
     const first = getAssetPool();
     await first.put(new Blob(['old'], { type: 'text/plain' }));
@@ -73,7 +73,7 @@ describe('getAssetPool', () => {
 
     await expect(clearAssetPool()).rejects.toBeInstanceOf(AssetPoolDeletionDeferredError);
     const blockedPut = Promise.race([
-      putAsset(new Blob(['blocked'], { type: 'text/plain' })),
+      getAssetPool().put(new Blob(['blocked'], { type: 'text/plain' })),
       new Promise<string>((_resolve, reject) => {
         setTimeout(() => reject(new Error('putAsset hung behind the pending delete.')), 100);
       }),
@@ -84,7 +84,7 @@ describe('getAssetPool', () => {
     await expect(clearAssetPool()).resolves.toBeUndefined();
     const fresh = getAssetPool();
     expect(fresh).not.toBe(first);
-    await expect(putAsset(new Blob(['new'], { type: 'text/plain' }))).resolves.toMatch(/^ast_/);
+    await expect(fresh.put(new Blob(['new'], { type: 'text/plain' }))).resolves.toMatch(/^ast_/);
     await fresh.close();
   });
 

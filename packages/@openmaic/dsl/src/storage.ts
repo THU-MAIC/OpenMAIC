@@ -7,8 +7,11 @@
  * indirection is what keeps a document portable: a raw URL would bake in a
  * particular provider and an expiry assumption, so it cannot travel with the
  * document to another runtime. `@openmaic/renderer` already consumes resolved
- * URLs via its media slots; `@openmaic/exporter` will consume the set of refs a
- * document touches as its asset manifest.
+ * URLs via its media slots; the set of refs a document touches, with per-asset
+ * metadata, is enumerated as its asset manifest by `./asset-manifest.ts`.
+ * ZIP and video consume that enumeration; PPTX walks slide elements directly
+ * while sharing the same resolver and resolution semantics. The reserved
+ * future `@openmaic/exporter` package can build on the same contract.
  *
  * The DSL owns only the minimal `put` / `resolve` / `remove` interface.
  * Concrete backends — IndexedDB + object URLs in the browser, object storage /

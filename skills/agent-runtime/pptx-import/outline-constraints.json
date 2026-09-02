@@ -1,0 +1,5 @@
+{
+  "$comment": "pptx-import rarely plans new pages — the deck comes from import_pptx. Constraints only bind if the agent later plans inserted pages: keep the imported opening as a slide, allow quiz/interactive extensions, never cap length.",
+  "allowedTypes": ["slide", "quiz", "interactive"],
+  "firstSceneType": "slide"
+}

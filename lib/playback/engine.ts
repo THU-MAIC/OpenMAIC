@@ -34,7 +34,7 @@ import type {
   Effect,
 } from './types';
 import type { AudioPlayer } from '@/lib/utils/audio-player';
-import type { LegacySpeechAction } from '@/lib/media/convert-legacy-asset-refs';
+import type { LegacySpeechAction } from '@/lib/types/action';
 import { ActionEngine } from '@/lib/action/engine';
 import {
   resolvePlaybackCursor,

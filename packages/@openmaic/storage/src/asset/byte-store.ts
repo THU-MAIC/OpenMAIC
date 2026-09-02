@@ -103,4 +103,27 @@ export interface AssetByteStore {
    * rather than breaks.
    */
   signReadUrl?(hash: ContentHash, headers: AssetSignedReadHeaders): Promise<string | undefined>;
+
+  /**
+   * Declares that this layer's plain `write` / `read` / `delete` operate on
+   * storage other than the registry's own PostgreSQL, so they can never
+   * contend for the blob-row locks a registry transaction holds.
+   *
+   * A layer whose bytes live in the registry's own database MUST NOT declare
+   * this. Its plain `write` runs on the layer's own pooled connection; called
+   * from inside a registry write transaction -- after the transaction has
+   * claimed the blob row -- that write blocks forever on the lock the
+   * transaction itself just took, a self-deadlock PostgreSQL cannot detect
+   * (one side is idle in transaction). Such a layer MUST instead provide a
+   * `writeWith` (and `deleteWith`) that performs the byte operation on the
+   * transaction-pinned queryable, which is what the registry and the offline
+   * collector use to coordinate with the transaction.
+   *
+   * A layer without `writeWith` / `deleteWith` MUST set this flag, or the
+   * registry refuses to coordinate byte writes with it rather than risk the
+   * deadlock. Object stores and other layers whose bytes genuinely live
+   * outside the registry's database set it; the in-registry PostgreSQL byte
+   * column does not.
+   */
+  readonly writesOutsideRegistryDatabase?: true;
 }

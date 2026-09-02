@@ -1,0 +1,3 @@
+{
+  "$comment": "pro-editing operates on a course that already exists: the edit loop reads and patches persisted pages and does not run outline generation, so there is no outline structure for the checker to enforce, and any structural floor would wrongly constrain a rebuild the user never asked for. This file deliberately carries no constraint fields; it is kept only as the written record of that decision — the constraint file itself is optional (stage-design and curriculum-planner ship without one). See lib/server/agent-runtime/skills.ts."
+}

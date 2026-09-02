@@ -9,6 +9,7 @@ vi.stubGlobal('fetch', fetchMock);
 const config: VideoGenerationConfig = {
   providerId: 'happyhorse',
   apiKey: 'test-key',
+  model: 'happyhorse-1.0-t2v',
 };
 
 describe('HappyHorse video adapter', () => {

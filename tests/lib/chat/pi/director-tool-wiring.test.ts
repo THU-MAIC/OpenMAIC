@@ -1,8 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { buildDirectorPrompt } from '@/lib/chat/pi/prompts';
 import { buildReadSceneTool } from '@/lib/chat/pi/tools/read-scene';
-import { buildDirectorWebSearchTool } from '@/lib/chat/pi/tools/web-search';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 
 const teacher: AgentConfig = {
@@ -102,7 +101,7 @@ function makeBody(question: string): StatelessChatRequest {
   } as StatelessChatRequest;
 }
 
-describe('Pi Director scene and web tool wiring', () => {
+describe('Pi Director scene tool wiring', () => {
   it('can resolve a question whose evidence exists only on the next slide', async () => {
     const body = makeBody('下一页才会讲到的对称轴是什么？');
     const prompt = buildDirectorPrompt(body, [teacher], 4);
@@ -120,54 +119,5 @@ describe('Pi Director scene and web tool wiring', () => {
       revision: '88',
       source: 'request_start_snapshot',
     });
-  });
-
-  it('uses sourced web evidence for a latest World Cup result boundary', async () => {
-    const body = makeBody('最新一届世界杯决赛结果是什么？');
-    const prompt = buildDirectorPrompt(body, [teacher], 4);
-    const searchResponses = vi.fn(async () => ({
-      answer: 'Verified current result.',
-      query: 'latest World Cup final result',
-      responseTime: 0.2,
-      sources: [
-        {
-          title: 'Official result',
-          url: 'https://example.test/official-world-cup-result',
-          content: 'Official match result.',
-          score: 1,
-        },
-      ],
-    }));
-    const tool = buildDirectorWebSearchTool({
-      resolveConfig: () => ({
-        providerId: 'responses',
-        apiKey: 'test-key',
-        baseUrl: 'https://responses-proxy.test/v1',
-        model: 'search-model',
-      }),
-      searchResponses,
-      now: () => new Date('2026-07-21T08:00:00.000Z'),
-    });
-
-    const result = await tool.execute('search-latest', {
-      query: 'latest World Cup final result',
-    });
-    const text = result.content[0]?.type === 'text' ? result.content[0].text : '';
-
-    expect(prompt).toContain('current, recent, or externally verifiable information');
-    expect(searchResponses).toHaveBeenCalledOnce();
-    expect(text).toContain('https://example.test/official-world-cup-result');
-    expect(text).toContain('retrievedAt=2026-07-21T08:00:00.000Z');
-  });
-
-  it('keeps ordinary course questions on the scene path instead of the web path', () => {
-    const prompt = buildDirectorPrompt(
-      makeBody('二次函数顶点式中的 h 和 k 分别表示什么？'),
-      [teacher],
-      4,
-    );
-
-    expect(prompt).toContain('Do not call `web_search` for ordinary course-content questions');
-    expect(prompt).toContain('call `read_scene` with the exact sceneId');
   });
 });

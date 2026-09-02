@@ -11,11 +11,18 @@ export function resetPlainJsonDocumentWritesForTests(): void {
   wrappers = new WeakMap();
 }
 
-export function withPlainJsonDocumentWrites(
-  store: DocumentStore<AppScene, AppStage>,
-): DocumentStore<AppScene, AppStage> {
+/**
+ * Wrap a document store so every write strips undefined-valued members before
+ * persisting (the agent tools' boundary). The wrapper is a Proxy over the
+ * underlying store, so capabilities the `DocumentStore` interface does not
+ * declare (such as the PG store's `readFreshnessManifest`) fall through to the
+ * store itself; the generic return type keeps them visible to callers.
+ */
+export function withPlainJsonDocumentWrites<TStore extends DocumentStore<AppScene, AppStage>>(
+  store: TStore,
+): TStore {
   const existing = wrappers.get(store);
-  if (existing) return existing;
+  if (existing) return existing as TStore;
 
   const methods: DocumentStore<AppScene, AppStage> = {
     saveDocument(document) {
@@ -43,7 +50,7 @@ export function withPlainJsonDocumentWrites(
       return store.deleteScene(stageId, sceneId);
     },
   };
-  const facade = Object.create(Object.getPrototypeOf(store)) as DocumentStore<AppScene, AppStage>;
+  const facade = Object.create(Object.getPrototypeOf(store)) as TStore;
   Object.defineProperties(facade, Object.getOwnPropertyDescriptors(methods));
   const wrapper = new Proxy(facade, {
     get(target, property, receiver) {
@@ -55,5 +62,5 @@ export function withPlainJsonDocumentWrites(
   });
   wrappers.set(store, wrapper);
   wrappers.set(wrapper, wrapper);
-  return wrapper;
+  return wrapper as TStore;
 }

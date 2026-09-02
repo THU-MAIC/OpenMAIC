@@ -15,14 +15,38 @@
  * suspenders caller share one in-flight import.
  */
 let editorReady: Promise<void> | null = null;
+let editorLoaded = false;
+
+/**
+ * Whether the editor chunk is ALREADY registered, answered synchronously.
+ *
+ * The workspace pane is edit-locked, so a remount there (a course switch, a
+ * reopened tab) must be able to resolve straight to the edit chrome during
+ * render. Waiting for `preloadEditor()` to resolve again would cost a paint of
+ * the neutral loading shell for an import that finished long ago.
+ */
+export function isEditorPreloaded(): boolean {
+  return editorLoaded;
+}
 
 export function preloadEditor(): Promise<void> {
   if (!editorReady) {
-    editorReady = Promise.all([
+    const attempt = Promise.all([
       import('@/app/editor-fonts'),
       import('@/components/edit/surfaces/slide'),
       import('@/components/edit/surfaces/quiz'),
-    ]).then(() => undefined);
+    ]).then(() => {
+      editorLoaded = true;
+    });
+    editorReady = attempt;
+    // A cached REJECTION would be permanent, and the edit-locked pane has no
+    // learning chrome to fall back to — it would sit on the neutral shell for
+    // the rest of the session. Forget the failed attempt so the next hosted
+    // classroom retries the import. The extra handler only clears the cache;
+    // the rejection itself still reaches whoever awaited `attempt`.
+    attempt.catch(() => {
+      if (editorReady === attempt) editorReady = null;
+    });
   }
   return editorReady;
 }

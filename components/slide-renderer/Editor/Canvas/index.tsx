@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect } from 'react';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { useSyncCanvasViewportFromSlide } from '@/lib/store/sync-canvas-viewport';
 import { useSceneSelector } from '@/lib/contexts/scene-context';
 import { useKeyboardStore } from '@/lib/store/keyboard';
 import { useViewportSize } from './hooks/useViewportSize';
@@ -62,6 +63,7 @@ export interface CanvasProps {
 export function Canvas(_props: CanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  useSyncCanvasViewportFromSlide();
 
   // Subscribe to specific parts for performance optimization
   const elements = useSceneSelector<SlideContent, PPTElement[]>(
@@ -69,7 +71,6 @@ export function Canvas(_props: CanvasProps) {
   );
 
   // Canvas UI state
-  const canvasScale = useCanvasStore.use.canvasScale();
   const activeElementIdList = useCanvasStore.use.activeElementIdList();
   const activeGroupElementId = useCanvasStore.use.activeGroupElementId();
   const handleElementId = useCanvasStore.use.handleElementId();
@@ -100,8 +101,14 @@ export function Canvas(_props: CanvasProps) {
     setElementList(newElements);
   }, [elements]);
 
-  // Viewport size and positioning
-  const { viewportStyles, dragViewport } = useViewportSize(canvasRef);
+  // Viewport size and positioning. Render with the hook's LOCAL fitScale (not
+  // the global store canvasScale): sibling canvases (crossfade-exiting pane,
+  // keep-alive tabs) write the shared store value, which could leave this
+  // canvas rendering a scale computed for another container until a seam drag
+  // forced a re-measure. The store is still written by the hook for
+  // out-of-tree consumers.
+  const { viewportStyles, dragViewport, fitScale } = useViewportSize(canvasRef);
+  const canvasScale = fitScale;
 
   // Initialize drop handler
   useDrop(canvasRef);

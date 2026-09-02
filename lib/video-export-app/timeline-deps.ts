@@ -33,10 +33,11 @@ import type {
   InteractiveHtmlSource,
   TimingProbe,
 } from '@/lib/video-export';
-import type { Scene, SlideContent } from '@/lib/types/stage';
+import type { Scene, SlideContent, Stage } from '@/lib/types/stage';
+import { enumerateAssetManifest } from '@openmaic/dsl';
 import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import { measureSlideElementGeometry, type MeasuredGeometry } from '@openmaic/renderer/snapshot';
-import { db, type AudioFileRecord, type MediaFileRecord } from '@/lib/utils/database';
+import { db, mediaFileKey, type AudioFileRecord, type MediaFileRecord } from '@/lib/utils/database';
 import {
   emptyPreparedInteractiveHtmlSet,
   prepareInteractiveHtmlScenes,
@@ -202,7 +203,7 @@ function probeAudioDurationMs(blob: Blob): Promise<number | null> {
  * compiler's sync `videoDurationMs` is a table lookup.
  */
 export async function createVideoTimelineDeps(input: {
-  stage: { id: string };
+  stage: Pick<Stage, 'id' | 'whiteboard' | 'videoManifest'>;
   scenes: Scene[];
   /**
    * Skip the off-screen content-box geometry measurement (an off-screen React
@@ -222,6 +223,15 @@ export async function createVideoTimelineDeps(input: {
     ? emptyPreparedInteractiveHtmlSet()
     : await prepareInteractiveHtmlScenes(scenes);
 
+  // The standardized asset manifest names exactly the media references this
+  // document holds. Video compilation consumes audio only through speech
+  // actions, so narration ids come from the speech pairs below; slide-audio
+  // elements are renderable document assets but never timeline audio clips.
+  // The media load no longer scans the table -- a row no document reference
+  // names (an orphan) was never reachable through the scene-scoped bridge
+  // anyway, and now is not even read.
+  const assetManifest = enumerateAssetManifest({ stage, scenes });
+
   // Audio: load only the records referenced by speech actions.
   const speechPairs: Array<{ audioId?: string; audioUrl?: string }> = [];
   for (const scene of scenes) {
@@ -234,18 +244,32 @@ export async function createVideoTimelineDeps(input: {
       });
     }
   }
-  const audioIds = new Set<string>();
-  for (const pair of speechPairs) {
-    if (pair.audioId) audioIds.add(pair.audioId);
-  }
+  const manifestAudioRefs = new Set(
+    assetManifest.entries.filter((entry) => entry.kind === 'audio').map((entry) => entry.ref),
+  );
+  // The manifest gates membership, but speech traversal remains the ordering
+  // source. Slide-audio slots can make the same ref appear earlier in manifest
+  // order even though the timeline first consumes a different narration.
+  const audioIds = new Set(
+    speechPairs.flatMap((pair) =>
+      pair.audioId && manifestAudioRefs.has(pair.audioId) ? [pair.audioId] : [],
+    ),
+  );
   const audioById = new Map<string, AudioFileRecord>();
   for (const audioId of audioIds) {
+    // Bytes come only from the shared resolver: pool-first, so a stable-id
+    // regeneration whose mirror write failed (the row then holds the
+    // superseded narration) still exports what the classroom plays; the row's
+    // own blob is the resolver's legacy fallback. The row read here supplies
+    // duration/format/ossKey metadata for the compiler's sync lookups.
     const record = await db.audioFiles.get(audioId);
-    // A stable-id regeneration whose mirror write failed leaves the row on the
-    // superseded narration, so the pool answers first here too.
     const blob = await resolveAudioBlob(audioId);
-    if (record) audioById.set(audioId, blob ? { ...record, blob } : record);
-    else if (blob) audioById.set(audioId, { id: audioId, blob } as AudioFileRecord);
+    if (blob)
+      audioById.set(
+        audioId,
+        record ? { ...record, blob } : ({ id: audioId, blob } as AudioFileRecord),
+      );
+    else if (record) audioById.set(audioId, record);
   }
   // An unconverted document can carry narration only as a legacy URL: the
   // playback paths fall back to it, and the export must too, or a playable
@@ -291,14 +315,16 @@ export async function createVideoTimelineDeps(input: {
     if (ms !== null) audioDurationMsByAudioId.set(audioId, ms);
   });
 
-  // Media: all generated media for this stage, keyed by media ref (`gen_vid_…` /
-  // `gen_img_…` — the stored `stageId:` prefix stripped), NOT the slide element
-  // id that `play_video` actions target.
-  const mediaRecords = await db.mediaFiles.where('stageId').equals(stage.id).toArray();
+  // Media: the records of every media ref the manifest names, keyed by that
+  // ref (`gen_vid_…` / allocated id -- the stored `stageId:` prefix stripped),
+  // NOT the slide element id that `play_video` actions target.
   const mediaByElementId = new Map<string, MediaFileRecord>();
-  for (const record of mediaRecords) {
-    const elementId = record.id.includes(':') ? record.id.split(':').slice(1).join(':') : record.id;
-    mediaByElementId.set(elementId, record);
+  for (const entry of assetManifest.entries) {
+    if (entry.kind === 'audio') continue;
+    const record = await db.mediaFiles
+      .get(mediaFileKey(stage.id, entry.ref))
+      .catch(() => undefined);
+    if (record) mediaByElementId.set(entry.ref, record);
   }
 
   // Bridge slide element `.id` → media ref, so a `play_video`/media lookup by the

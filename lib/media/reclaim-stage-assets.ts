@@ -1,4 +1,3 @@
-import { removeAsset } from './asset-pool';
 import {
   collectStageAssetRefs,
   loadSurvivingDocumentAssetRefs,
@@ -7,10 +6,7 @@ import {
   type StageAudioRow,
   type StageMediaRow,
 } from './collect-stage-asset-refs';
-import { createLogger } from '@/lib/logger';
 import { db, type AudioFileRecord, type MediaFileRecord } from '@/lib/utils/database';
-
-const log = createLogger('StageAssetReclamation');
 
 /**
  * Transitional reclamation policy until document-truth mark-and-sweep lands:
@@ -92,14 +88,8 @@ export async function executeStageAssetReclamation(
 
   const liveRefs = await loadSurvivingDocumentAssetRefs();
 
-  for (const ref of plan.poolRefs) {
-    if (liveRefs === null || liveRefs.has(ref)) continue;
-    try {
-      await removeAsset(ref);
-    } catch (error) {
-      log.warn(`Failed to reclaim asset ${ref} for stage ${plan.stageId}:`, error);
-    }
-  }
+  // Registry reclamation is intentionally unwired. Only stage-owned local
+  // compatibility rows are removed.
   if (plan.mediaRowIds.length > 0) {
     await db.mediaFiles.bulkDelete([...plan.mediaRowIds]);
   }

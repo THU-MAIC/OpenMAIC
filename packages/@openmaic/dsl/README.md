@@ -30,12 +30,53 @@ nothing.
 | `guards.ts`   | Pure discriminant type-guards (`isTextElement`, …) and `PPT_ELEMENT_TYPES`. |
 | `validate.ts` | Pure, zero-dep structural validators — `validateStage` / `validateScene` / `validateAction` returning an error-collecting `ValidationResult`. |
 | `normalize.ts` | Pure, zero-dep defaulters — `normalizeElement` / `normalizeSlide` / `normalizeScene` / `normalizeStage` and the canonical `ELEMENT_DEFAULTS`. Fills required-field defaults, derives geometry, fails loud on malformed input; the repair counterpart to `validate*`. `normalizeSlideWith({ onInvalid: 'drop', onDropped })` builds a map-safe `normalizeSlide` variant so producers normalizing wild-world input (imported decks, model output) can degrade per element instead of failing the document; `normalizeSlide` itself stays unary (`slides.map(normalizeSlide)` keeps working). |
+| `asset-manifest.ts` | Pure document asset enumeration: `enumerateAssetManifest`, `AssetManifest`, entry kinds and optional caller-supplied metadata enrichment. |
+| `slide-media-slots.ts` | Canonical read-only role descriptors for every media-bearing slide slot. |
 | `version.ts`  | Serialized-contract version + migration registry: `DSL_VERSION`, the `DSL_MIGRATIONS` ladder, and the pure `migrate` / `dslVersionOf` / `needsMigration` runner. |
 
 ```ts
 import type { Slide, PPTElement, Action } from '@openmaic/dsl';
 import { isTextElement, DSL_VERSION, SYNC_ACTIONS } from '@openmaic/dsl';
 ```
+
+## Asset manifest (0.10)
+
+`enumerateAssetManifest(document, options?)` is the standard, IO-free answer to
+which asset references a stage document touches. It walks stage whiteboards,
+scene canvases, scene whiteboards, speech actions, and video-manifest keys. It
+recognizes slide backgrounds; image, audio, and video sources; video
+`mediaRef`s and posters; and speech `audioId`s.
+
+```ts
+import {
+  enumerateAssetManifest,
+  type AssetManifest,
+  type AssetManifestMetadata,
+} from '@openmaic/dsl';
+
+const manifest: AssetManifest = enumerateAssetManifest(document, {
+  metadata(ref, kind): AssetManifestMetadata | undefined {
+    return metadataAlreadyKnownByTheCaller(ref, kind);
+  },
+});
+```
+
+`manifest.entries` contains one entry per distinct `(ref, kind)` pair in
+first-occurrence document order. If one ref appears in several roles, each role
+gets its own entry; the first occurrence of each pair fixes its deterministic
+ordering slot without losing ownership information.
+Optional metadata (`byteSize`, `mimeType`, `durationSeconds`, `voice`, and
+`prompt`) is copied from the callback once per distinct `(ref, kind)` pair. The enumerator
+itself performs no IO and never mutates the document. The callback is an
+explicit caller boundary: it may consult caller-owned state, but it must not
+mutate the document.
+
+`manifest.referenceCounts` counts logical owners, not raw slots. A video
+element using the same ref in both `src` and `mediaRef` is one owner; its poster
+is separate. Owner keys use traversal positions rather than user-controlled
+scene, slide, element, or action IDs, so duplicate IDs do not collapse distinct
+owners. Consumers deciding whether bytes may be replaced in place should use
+these counts instead of rebuilding an ID-keyed walk.
 
 ## Runtime layer (schema + validators + normalizers)
 

@@ -56,7 +56,7 @@ describe('EditableSlideCanvas text rendering', () => {
     );
   });
 
-  it('injects ProseMirror list styles when used without the UI wrapper', () => {
+  it('injects the shared renderer prose layout rules for ProseMirror', () => {
     const { container } = render(
       <EditableSlideCanvas
         slide={slide}
@@ -69,8 +69,13 @@ describe('EditableSlideCanvas text rendering', () => {
     );
 
     expect(
-      [...container.querySelectorAll('style')].some((style) =>
-        style.textContent?.includes('.renderer-prosemirror-editor ul {'),
+      [...container.querySelectorAll('style')].some(
+        (style) =>
+          style.textContent?.includes('.renderer-prosemirror-editor .ProseMirror p {') &&
+          style.textContent?.includes(
+            '.renderer-prosemirror-editor .ProseMirror p:empty::before {',
+          ) &&
+          style.textContent?.includes('.renderer-prosemirror-editor .ProseMirror ul {'),
       ),
     ).toBe(true);
   });

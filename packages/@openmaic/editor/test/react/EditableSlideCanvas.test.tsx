@@ -1042,6 +1042,48 @@ describe('EditableSlideCanvas', () => {
     expect(onCh).not.toHaveBeenCalled();
   });
 
+  it('dragging the stroke of a selected line moves the whole line', () => {
+    const onCh = vi.fn();
+    const lineSlide = {
+      ...slide,
+      elements: [
+        {
+          id: 'line1',
+          type: 'line',
+          left: 10,
+          top: 10,
+          start: [0, 0],
+          end: [50, 50],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lineSlide}
+        scale={1}
+        selection={{ elementIds: ['line1'], primaryId: 'line1' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={onCh}
+        snapping={false}
+      />,
+    );
+
+    const lineHit = findLineHit(container);
+    expect(lineHit.getAttribute('data-element-id')).toBe('line1');
+    fireEvent.pointerDown(lineHit, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(lineHit, { pointerId: 1, clientX: 50, clientY: 40 });
+    fireEvent.pointerUp(lineHit, { pointerId: 1, clientX: 50, clientY: 40 });
+
+    expect(onCh).toHaveBeenCalledTimes(1);
+    expect(onCh).toHaveBeenCalledWith([
+      { type: 'element.update', id: 'line1', props: { left: 50, top: 40 } },
+    ]);
+  });
+
   it('the line blocker still consumes the pointer when onSelectionChange is absent', () => {
     // Even with no selection callback, the blocker must block fall-through: a
     // pointer-down over a line that overlaps a box must not move the box.

@@ -377,6 +377,7 @@ export function applyGeneratedAgentsToRegistry(
         ? {
             voiceConfig: {
               providerId: voiceConfig.providerId,
+              ...(voiceConfig.modelId ? { modelId: voiceConfig.modelId } : {}),
               voiceId: voiceConfig.voiceId,
             },
           }

@@ -60,7 +60,7 @@ describe('openai-image-adapter', () => {
     });
 
     const result = await generateWithOpenAIImage(
-      { providerId: 'openai-image', apiKey: 'sk-test' },
+      { providerId: 'openai-image', apiKey: 'sk-test', model: 'gpt-image-2' },
       { prompt: 'inline result' },
     );
 
@@ -79,7 +79,7 @@ describe('openai-image-adapter', () => {
 
     await expect(
       generateWithOpenAIImage(
-        { providerId: 'openai-image', apiKey: 'sk-test' },
+        { providerId: 'openai-image', apiKey: 'sk-test', model: 'gpt-image-2' },
         { prompt: 'bad request' },
       ),
     ).rejects.toThrow('OpenAI image generation failed (400): bad request');

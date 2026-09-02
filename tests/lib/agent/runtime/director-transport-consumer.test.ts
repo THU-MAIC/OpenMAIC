@@ -145,7 +145,6 @@ describe('Director shared Pi transport consumer', () => {
       maxAgentTurns: 2,
       maxActionsPerAgent: 1,
       enableWhiteboardTools: false,
-      enableWebSearch: false,
     });
 
     expect(mocks.streamLLM).toHaveBeenCalledTimes(2);
@@ -212,7 +211,6 @@ describe('Director shared Pi transport consumer', () => {
       maxAgentTurns: 2,
       maxActionsPerAgent: 1,
       enableWhiteboardTools: false,
-      enableWebSearch: false,
     });
 
     expect(mocks.streamLLM).toHaveBeenCalledTimes(2);

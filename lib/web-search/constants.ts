@@ -89,8 +89,14 @@ export const CLAUDE_WEB_SEARCH_MODELS: ReadonlyArray<{ id: string; name: string 
 
 export function isWebSearchProviderConfigured(
   provider: WebSearchProviderConfig,
-  cfg?: { apiKey?: string; baseUrl?: string; isServerConfigured?: boolean },
+  cfg?: {
+    apiKey?: string;
+    baseUrl?: string;
+    isServerConfigured?: boolean;
+    serverDisabled?: boolean;
+  },
 ): boolean {
+  if (cfg?.serverDisabled) return false;
   if (cfg?.isServerConfigured) return true;
   // SearXNG base URLs are operator-managed only; client settings must not count.
   if (provider.id === 'searxng') return false;
@@ -106,9 +112,11 @@ function isWebSearchConfigUsable(
     baseUrl?: string;
     isServerConfigured?: boolean;
     requiresApiKey?: boolean;
+    serverDisabled?: boolean;
   },
 ): boolean {
   if (!cfg) return false;
+  if (cfg.serverDisabled) return false;
   if (cfg.isServerConfigured) return true;
 
   const provider = WEB_SEARCH_PROVIDERS[providerId];
@@ -126,7 +134,13 @@ export function buildWebSearchFallbackOrder(
   config: Partial<
     Record<
       WebSearchProviderId,
-      { apiKey?: string; baseUrl?: string; isServerConfigured?: boolean; requiresApiKey?: boolean }
+      {
+        apiKey?: string;
+        baseUrl?: string;
+        isServerConfigured?: boolean;
+        requiresApiKey?: boolean;
+        serverDisabled?: boolean;
+      }
     >
   >,
 ): WebSearchProviderId[] {

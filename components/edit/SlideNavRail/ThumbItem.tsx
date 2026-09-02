@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useRef, useState } from 'react';
 import { Reorder } from 'motion/react';
 import { MoreHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,7 @@ import {
 import { SceneThumbnailContent } from '@/components/stage/scene-thumbnail-content';
 import { SCENE_CREATION_ENABLED } from '@/lib/edit/scene-creation-enabled';
 import { sceneHasIssues } from '@/lib/edit/content-validation';
+import { useNearViewport } from '@/lib/hooks/use-near-viewport';
 import type { Scene } from '@/lib/types/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
@@ -275,26 +276,3 @@ function ThumbItemComponent({
  * read-only inside Pro mode (no auto-exit on click).
  */
 export const ThumbItem = memo(ThumbItemComponent);
-
-/**
- * Cheap "near viewport" IntersectionObserver so off-screen thumbs
- * skip the live ThumbnailSlide render (which mounts a downscaled
- * slide-renderer scene). Items within 200px of the viewport remain
- * eager so scrolling feels instant.
- */
-function useNearViewport(ref: React.RefObject<Element | null>) {
-  const [visible, setVisible] = useState(true);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof IntersectionObserver === 'undefined') return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) setVisible(e.isIntersecting);
-      },
-      { root: null, rootMargin: '200px 0px', threshold: 0 },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [ref]);
-  return visible;
-}

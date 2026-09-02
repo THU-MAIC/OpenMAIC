@@ -8,6 +8,7 @@ import { Type } from 'typebox';
 import { describe, expect, it, vi } from 'vitest';
 import { runNativeChild } from '@/lib/agent/runtime/run-native-child';
 import { buildNativeSpotlightTool } from '@/lib/chat/pi/tools/native-spotlight';
+import { buildNativeWebSearchTool } from '@/lib/chat/pi/tools/web-search';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 
 const EMPTY_USAGE = {
@@ -145,7 +146,6 @@ function run(options: Partial<Parameters<typeof runNativeChild>[0]> = {}) {
     tools: [tool],
     allowedToolNames: new Set(['demo']),
     timeoutMs: 1_000,
-    maxToolCallAttempts: 4,
     maxProviderTransports: 5,
     ...options,
   });
@@ -206,10 +206,10 @@ describe('runNativeChild', () => {
     });
   });
 
-  it('fails a pure empty ordinary stop', async () => {
+  it('completes a pure empty ordinary stop', async () => {
     await expect(run({ streamFn: scriptedStream([text('')]) })).resolves.toMatchObject({
-      status: 'failed',
-      stopReason: 'native_empty_response',
+      status: 'completed',
+      stopReason: 'stop',
       dispatchedActionCount: 0,
     });
   });
@@ -224,8 +224,8 @@ describe('runNativeChild', () => {
         ],
       }),
     ).resolves.toMatchObject({
-      status: 'failed',
-      stopReason: 'native_empty_response',
+      status: 'completed',
+      stopReason: 'stop',
       visibleOutput: '',
     });
   });
@@ -237,8 +237,8 @@ describe('runNativeChild', () => {
         onVisibleTextDelta: () => '',
       }),
     ).resolves.toMatchObject({
-      status: 'failed',
-      stopReason: 'native_empty_response',
+      status: 'completed',
+      stopReason: 'stop',
       visibleOutput: '',
     });
   });
@@ -299,88 +299,33 @@ describe('runNativeChild', () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
-  it('classifies the fifth observation as over-budget without charging it', async () => {
-    const execute = vi.fn(async () => ({
-      content: [{ type: 'text' as const, text: 'must not execute' }],
-      details: {},
-    }));
-    const messages = [
-      ...Array.from({ length: 4 }, (_, index) => call(`unknown-${index + 1}`, 'not_registered')),
-      calls(
-        { id: 'unknown-1', name: 'not_registered', arguments: {} },
-        { id: 'later-same-batch', name: 'demo', arguments: { value: 1 } },
-      ),
-    ];
-    const result = await run({
-      streamFn: scriptedStream(messages),
-      tools: [demoTool(execute)],
-      allowedToolNames: new Set(['demo']),
-    });
-
-    expect(result).toMatchObject({
-      status: 'exhausted',
-      stopReason: 'native_tool_attempt_budget',
-      attemptCount: 4,
-      executionCount: 0,
-      dispatchedActionCount: 0,
-      providerTransportCount: 5,
-    });
-    expect(execute).not.toHaveBeenCalled();
-  });
-
-  it('does not charge execution when the fifth observation is itself authorized and valid', async () => {
-    const execute = vi.fn(async () => ({
-      content: [{ type: 'text' as const, text: 'must not execute' }],
-      details: {},
-    }));
-    const messages = [
-      ...Array.from({ length: 4 }, (_, index) => call(`unknown-${index + 1}`, 'not_registered')),
-      calls(
-        { id: 'fifth-valid', name: 'demo', arguments: { value: 1 } },
-        { id: 'later-same-batch', name: 'demo', arguments: { value: 2 } },
-      ),
-    ];
-    const result = await run({
-      streamFn: scriptedStream(messages),
-      tools: [demoTool(execute)],
-      allowedToolNames: new Set(['demo']),
-    });
-
-    expect(result).toMatchObject({
-      status: 'exhausted',
-      stopReason: 'native_tool_attempt_budget',
-      attemptCount: 4,
-      executionCount: 0,
-      dispatchedActionCount: 0,
-      providerTransportCount: 5,
-    });
-    expect(execute).not.toHaveBeenCalled();
-  });
-
-  it('does not impose a generic execution budget and continues after every admitted call', async () => {
+  it('executes more than four distinct legal calls in one batch without a generic tool budget', async () => {
     const execute = vi.fn(async () => ({
       content: [{ type: 'text' as const, text: 'ok' }],
       details: {},
     }));
     const result = await run({
       streamFn: scriptedStream([
-        call('call-1'),
-        call('call-2'),
-        call('call-3'),
-        call('call-4'),
-        text('continued after four executions'),
+        calls(
+          ...Array.from({ length: 5 }, (_, index) => ({
+            id: `call-${index + 1}`,
+            name: 'demo',
+            arguments: { value: index + 1 },
+          })),
+        ),
+        text('continued after five executions'),
       ]),
       tools: [demoTool(execute)],
     });
 
     expect(result).toMatchObject({
       status: 'completed',
-      visibleOutput: 'continued after four executions',
-      attemptCount: 4,
-      executionCount: 4,
-      providerTransportCount: 5,
+      visibleOutput: 'continued after five executions',
+      attemptCount: 5,
+      executionCount: 5,
+      providerTransportCount: 2,
     });
-    expect(execute).toHaveBeenCalledTimes(4);
+    expect(execute).toHaveBeenCalledTimes(5);
   });
 
   it('settles a never-resolving transport at the internal deadline', async () => {
@@ -500,6 +445,86 @@ describe('runNativeChild', () => {
     rejectSend(new Error('late dispatch rejection'));
     await Promise.resolve();
     expect(result).toMatchObject({ status: 'exhausted', dispatchedActionCount: 0 });
+  });
+
+  it('settles a pending Native Web Search at the Child deadline and ignores late settlement', async () => {
+    let rejectSearch!: (reason: Error) => void;
+    const pendingSearch = new Promise<never>((_resolve, reject) => {
+      rejectSearch = reject;
+    });
+    const searchResponses = vi.fn(() => pendingSearch);
+    const webSearch = buildNativeWebSearchTool({
+      config: { providerId: 'tavily', apiKey: 'search-key' },
+      search: searchResponses,
+    });
+    const result = await run({
+      streamFn: scriptedStream([call('search-1', 'web_search', { query: 'current fact' })]),
+      tools: [webSearch],
+      allowedToolNames: new Set(['web_search']),
+      timeoutMs: 10,
+    });
+
+    expect(searchResponses).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      status: 'exhausted',
+      stopReason: 'native_timeout',
+      attemptCount: 1,
+      executionCount: 1,
+      dispatchedActionCount: 0,
+      providerTransportCount: 1,
+    });
+    rejectSearch(new Error('late search rejection'));
+    await Promise.resolve();
+    expect(result).toMatchObject({ status: 'exhausted', stopReason: 'native_timeout' });
+  });
+
+  it('ignores a Native Web Search resolve that loses to the Child deadline', async () => {
+    type SearchResult = {
+      answer: string;
+      query: string;
+      responseTime: number;
+      sources: Array<{
+        title: string;
+        url: string;
+        content: string;
+        score: number;
+      }>;
+    };
+    let resolveSearch!: (value: SearchResult) => void;
+    const pendingSearch = new Promise<SearchResult>((resolve) => {
+      resolveSearch = resolve;
+    });
+    const searchResponses = vi.fn(() => pendingSearch);
+    const webSearch = buildNativeWebSearchTool({
+      config: { providerId: 'tavily', apiKey: 'search-key' },
+      search: searchResponses,
+    });
+    const result = await run({
+      streamFn: scriptedStream([call('search-1', 'web_search', { query: 'current fact' })]),
+      tools: [webSearch],
+      allowedToolNames: new Set(['web_search']),
+      timeoutMs: 10,
+    });
+
+    resolveSearch({
+      answer: 'Late answer.',
+      query: 'current fact',
+      responseTime: 0.1,
+      sources: [
+        { title: 'Late source', url: 'https://example.test/late', content: 'Late.', score: 1 },
+      ],
+    });
+    await Promise.resolve();
+
+    expect(searchResponses).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      status: 'exhausted',
+      stopReason: 'native_timeout',
+      attemptCount: 1,
+      executionCount: 1,
+      dispatchedActionCount: 0,
+      providerTransportCount: 1,
+    });
   });
 
   it('bounds a never-resolving visible-text delta callback with the same deadline', async () => {

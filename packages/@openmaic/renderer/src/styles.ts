@@ -8,37 +8,50 @@
  * `--paragraphSpace` CSS variable. List rules restore semantic markers that
  * host resets such as Tailwind Preflight remove.
  */
-export const SLIDE_RENDERER_STYLES = `
-.slide-renderer-prose p {
+/**
+ * Generates the reset rules that define rich-text geometry inside a slide.
+ *
+ * Both the static renderer and the ProseMirror editor need these exact rules:
+ * keeping the selector configurable lets them share one layout contract while
+ * retaining their different DOM roots.
+ */
+export function createTextProseStyles(selector: string): string {
+  return `
+${selector} p {
   margin-top: 0;
   margin-bottom: var(--paragraphSpace, 0);
 }
-.slide-renderer-prose p:last-child {
+${selector} p:last-child {
   margin-bottom: 0;
 }
-.slide-renderer-prose p:empty::before {
+${selector} p:empty::before {
   content: '\\00a0';
 }
-.slide-renderer-prose .katex-display {
+${selector} .katex-display {
   margin: 0 !important;
 }
-.slide-renderer-prose ul {
+${selector} ul {
   list-style-position: outside !important;
   padding-inline-start: 1.5rem !important;
 }
-.slide-renderer-prose ul:not([style*="list-style-type"]) {
+${selector} ul:not([style*="list-style-type"]) {
   list-style-type: disc !important;
 }
-.slide-renderer-prose ol {
+${selector} ol {
   list-style-position: outside !important;
   padding-inline-start: 1.5rem !important;
 }
-.slide-renderer-prose ol:not([style*="list-style-type"]) {
+${selector} ol:not([style*="list-style-type"]) {
   list-style-type: decimal !important;
 }
-.slide-renderer-prose li {
+${selector} li {
   display: list-item !important;
 }
+`;
+}
+
+export const SLIDE_RENDERER_STYLES = `
+${createTextProseStyles('.slide-renderer-prose')}
 /* Table cell inner container — matches the classroom (Vue) .cell-text design:
    tight base line-height, and a small spacing between adjacent <p> siblings
    so multi-paragraph cells don't collapse into a single visual block. The

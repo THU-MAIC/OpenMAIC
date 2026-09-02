@@ -21,10 +21,7 @@ const EMPTY_USAGE = {
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
-type InternalTerminalCause =
-  | 'native_duplicate_tool_call'
-  | 'native_tool_attempt_budget'
-  | 'native_provider_transport_budget';
+type InternalTerminalCause = 'native_duplicate_tool_call' | 'native_provider_transport_budget';
 
 export interface NativeChildRunResult {
   status: 'completed' | 'failed' | 'exhausted' | 'cancelled';
@@ -45,7 +42,6 @@ export interface RunNativeChildOptions {
   history?: AgentMessage[];
   abortSignal?: AbortSignal;
   timeoutMs: number;
-  maxToolCallAttempts: number;
   maxProviderTransports: number;
   onVisibleTextDelta?: (delta: string) => Promise<string> | string;
   onDispatchedAction?: () => void;
@@ -194,9 +190,6 @@ export async function runNativeChild(opts: RunNativeChildOptions): Promise<Nativ
   if (!Number.isFinite(opts.timeoutMs) || opts.timeoutMs <= 0) {
     throw new Error('runNativeChild requires a positive finite timeoutMs');
   }
-  if (!Number.isInteger(opts.maxToolCallAttempts) || opts.maxToolCallAttempts <= 0) {
-    throw new Error('runNativeChild requires a positive maxToolCallAttempts');
-  }
   if (!Number.isInteger(opts.maxProviderTransports) || opts.maxProviderTransports <= 0) {
     throw new Error('runNativeChild requires a positive maxProviderTransports');
   }
@@ -271,10 +264,6 @@ export async function runNativeChild(opts: RunNativeChildOptions): Promise<Nativ
       return;
     }
     if (event.type === 'tool_execution_start') {
-      if (attemptCount >= opts.maxToolCallAttempts) {
-        claimInternalTerminal('native_tool_attempt_budget');
-        return;
-      }
       attemptCount += 1;
       if (seenToolCallIds.has(event.toolCallId)) {
         claimInternalTerminal('native_duplicate_tool_call');
@@ -363,9 +352,6 @@ export async function runNativeChild(opts: RunNativeChildOptions): Promise<Nativ
       status: 'failed',
       stopReason: finalAssistant?.errorMessage || 'native_child_failed',
     };
-  }
-  if (!visibleOutput.trim() && dispatchedActionCount === 0) {
-    return { ...base, status: 'failed', stopReason: 'native_empty_response' };
   }
   return {
     ...base,

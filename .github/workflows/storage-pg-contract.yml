@@ -14,6 +14,7 @@ jobs:
   storage-pg-contract:
     name: Storage Contract (PostgreSQL 16)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:16
@@ -61,3 +62,6 @@ jobs:
             --outputFile.json="$STORAGE_VITEST_RESULTS"
           node scripts/assert-pg-contract-suites.mjs "$STORAGE_VITEST_RESULTS" \
             --baseline "$STORAGE_PG_BASELINE"
+
+      - name: Whiteboard RuntimeStore PostgreSQL app-domain contract
+        run: pnpm exec vitest run tests/lib/whiteboard/runtime-store.pg.test.ts

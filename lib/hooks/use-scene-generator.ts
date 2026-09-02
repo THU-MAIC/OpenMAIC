@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
-import { markStagePersistenceDirty, useStageStore } from '@/lib/store/stage';
+import { useStageStore } from '@/lib/store/stage';
 import { isSceneEditLocked } from '@/lib/edit/regen-lock';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -19,14 +19,25 @@ import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { measureAudioDuration } from '@/lib/audio/audio-duration';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { resolveAgentVoiceOptions, pickNarratorAgent } from '@/lib/audio/agent-voice';
-import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import {
-  generateMediaForOutlines,
-  reconcileCompletedMediaForScene,
-} from '@/lib/media/media-orchestrator';
-import { putAsset, removeAsset, replaceAsset } from '@/lib/media/asset-pool';
+  getEnabledProvidersWithVoices,
+  resolveDeterministicFallbackVoice,
+  resolveNarratorVoiceBinding,
+  type ResolvedVoice,
+} from '@/lib/audio/voice-resolver';
+import { resolveTTSModelForVoice } from '@/lib/audio/constants';
+import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
+import { toast } from 'sonner';
+import { getClientTranslation } from '@/lib/i18n';
+import {
+  isVoiceBindingUnavailable,
+  markVoiceBindingNoticeShown,
+  markVoiceBindingUnavailable,
+  voiceBindingKey,
+} from '@/lib/audio/unavailable-voice-bindings';
 import {
   isAbortError,
   withGenerationRetry,
@@ -34,20 +45,6 @@ import {
 } from '@openmaic/generation';
 
 const log = createLogger('SceneGenerator');
-
-function addGeneratedScene(scene: Scene): void {
-  const state = useStageStore.getState();
-  if (!state.stage || scene.stageId !== state.stage.id) {
-    state.addScene(scene);
-    return;
-  }
-  const reconciled = reconcileCompletedMediaForScene(scene, state.stage);
-  if (reconciled.stage !== state.stage) {
-    useStageStore.setState({ stage: reconciled.stage });
-    markStagePersistenceDirty([{ kind: 'stage' }]);
-  }
-  useStageStore.getState().addScene(reconciled.scene);
-}
 
 interface SceneContentResult {
   success: boolean;
@@ -254,6 +251,14 @@ interface TTSApiResponse {
   details?: string;
 }
 
+// A dead narrator voice is retried at most once against a DIFFERENT voice (the
+// global voice when the binding differs from it, or the deterministic
+// enabled-provider pick when bound == global). This bounds the total
+// /api/generate/tts attempts to 2 per call and guarantees the
+// QWEN_VC_VOICE_NOT_FOUND retry cannot loop a chain of dead voices
+// (bound-dead → global-dead → deterministic-dead → …) forever.
+const MAX_NARRATOR_VOICE_FALLBACK_HOPS = 1;
+
 /** Generate TTS for one speech action and return its allocated asset reference. */
 export async function generateAndStoreTTS(
   requestId: string,
@@ -261,65 +266,192 @@ export async function generateAndStoreTTS(
   language?: string,
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<TTSApiResponse>,
-  replaceAssetId?: string,
+  existingAudioId?: string,
   stageId?: string,
+  // Internal: an explicit voice that bypasses narrator binding resolution — used
+  // to retry narration against the deterministic enabled-provider pick when the
+  // pinned narrator voice (bound == global) turns out to be unusable.
+  overrideVoice?: ResolvedVoice,
+  // Internal: number of narrator voice-fallback hops already taken. Guards the
+  // QWEN_VC_VOICE_NOT_FOUND retry so a chain of dead voices can never loop
+  // /api/generate/tts beyond a single fallback hop.
+  fallbackHops = 0,
 ): Promise<string | null> {
   const settings = useSettingsStore.getState();
-  if (settings.ttsProviderId === 'browser-native-tts') return null;
-  // Don't server-generate against a disabled/unconfigured provider (#665).
-  if (
-    !isTTSProviderEnabled(
-      settings.ttsProviderId,
-      settings.ttsProvidersConfig?.[settings.ttsProviderId],
-    )
-  )
-    return null;
+  // A generated roster's explicit voice binding is the course voice source of truth.
+  // Global settings remain the fallback for classrooms without a binding.
+  const teacher = pickNarratorAgent(useAgentRegistry.getState().listAgents());
+  const globalProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
+  const boundVoice = teacher?.voiceConfig;
+  const boundKey = boundVoice ? voiceBindingKey(boundVoice) : undefined;
+  // The narrator pin makes boundVoice == the global voice. That equality must
+  // not defeat the unavailable-binding fallbacks: when the pinned voice is
+  // unusable (provider disabled, or the clone deleted server-side), fall back
+  // to the deterministic enabled-provider pick with a single non-fatal notice
+  // instead of throwing (QWEN_VC_VOICE_NOT_FOUND) or silently skipping.
+  const globalDiffers =
+    !!boundVoice &&
+    (boundVoice.providerId !== settings.ttsProviderId || boundVoice.voiceId !== settings.ttsVoice);
+  const fallbackForUnusablePin = (): ResolvedVoice | null => {
+    if (!boundVoice) return null;
+    const key = voiceBindingKey(boundVoice);
+    markVoiceBindingUnavailable(boundVoice);
+    if (markVoiceBindingNoticeShown(key)) {
+      toast.warning(getClientTranslation('settings.qwenCloneNarrationUnavailable'));
+    }
+    return resolveDeterministicFallbackVoice(
+      getEnabledProvidersWithVoices(settings.ttsProvidersConfig),
+      0,
+    );
+  };
 
-  const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
+  let resolvedVoice =
+    overrideVoice ??
+    resolveNarratorVoiceBinding(
+      boundVoice && isVoiceBindingUnavailable(boundVoice) ? undefined : boundVoice,
+      {
+        providerId: settings.ttsProviderId,
+        modelId: globalProviderConfig?.modelId,
+        voiceId: settings.ttsVoice,
+      },
+      settings.ttsProvidersConfig,
+    );
+
+  // Pinned narrator (bound == global) whose provider became disabled:
+  // resolveNarratorVoiceBinding falls back to the global voice, which is the
+  // same broken provider — swap in the deterministic enabled-provider pick
+  // instead of silently skipping narration below.
+  if (
+    boundVoice &&
+    !globalDiffers &&
+    !isTTSProviderEnabled(
+      resolvedVoice.providerId,
+      settings.ttsProvidersConfig?.[resolvedVoice.providerId],
+    )
+  ) {
+    resolvedVoice = fallbackForUnusablePin() ?? resolvedVoice;
+  }
+
+  const ttsProviderId = resolvedVoice.providerId;
+  const ttsVoice = resolvedVoice.voiceId;
+  const ttsProviderConfig = settings.ttsProvidersConfig?.[ttsProviderId];
+  const ttsModelId = resolveTTSModelForVoice(
+    ttsProviderId,
+    ttsVoice,
+    resolvedVoice.modelId ?? ttsProviderConfig?.modelId,
+  );
+
+  if (ttsProviderId === 'browser-native-tts') return null;
+  // Don't server-generate against a disabled/unconfigured provider (#665).
+  if (!isTTSProviderEnabled(ttsProviderId, ttsProviderConfig)) return null;
+
   // Narration is the teacher's voice — resolve it from the teacher agent profile
   // through the single resolver (registers + references by id for stable timbre).
-  const teacher = pickNarratorAgent(useAgentRegistry.getState().listAgents());
   const providerOptions = await resolveAgentVoiceOptions(teacher, {
-    providerId: settings.ttsProviderId,
-    providerConfig: ttsProviderConfig,
-    voiceId: settings.ttsVoice,
+    providerId: ttsProviderId,
+    providerConfig: { ...ttsProviderConfig, modelId: ttsModelId },
+    voiceId: ttsVoice,
     language,
   });
-  const data = await withGenerationRetry(
-    async () => {
-      const response = await fetch('/api/generate/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          audioId: requestId,
-          ttsProviderId: settings.ttsProviderId,
-          ttsModelId: ttsProviderConfig?.modelId,
-          ttsVoice: settings.ttsVoice,
-          ttsSpeed: settings.ttsSpeed,
-          ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-          // Managed providers resolve their base URL server-side; only send the
-          // client's own base URL (custom providers).
-          ttsBaseUrl:
-            ttsProviderConfig?.baseUrl || ttsProviderConfig?.customDefaultBaseUrl || undefined,
-          ttsProviderOptions: providerOptions,
-        }),
-        signal,
-      });
+  let data: TTSApiResponse;
+  try {
+    data = await withGenerationRetry(
+      async () => {
+        const response = await fetch('/api/generate/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text,
+            audioId: requestId,
+            ttsProviderId,
+            ttsModelId,
+            ttsVoice,
+            ttsSpeed: settings.ttsSpeed,
+            ttsApiKey: ttsProviderConfig?.apiKey || undefined,
+            // Managed providers resolve their base URL server-side; only send the
+            // client's own base URL (custom providers).
+            ttsBaseUrl:
+              ttsProviderConfig?.baseUrl || ttsProviderConfig?.customDefaultBaseUrl || undefined,
+            ttsProviderOptions: providerOptions,
+          }),
+          signal,
+        });
 
-      const data = (await readJsonResponse(response)) as TTSApiResponse;
-      if (!response.ok) {
-        throw createHttpError(response, data, 'TTS request failed');
+        const data = (await readJsonResponse(response)) as TTSApiResponse;
+        if (!response.ok) {
+          throw createHttpError(response, data, 'TTS request failed');
+        }
+        return data;
+      },
+      {
+        label: `tts "${requestId}"`,
+        shouldRetryResult: (result) => !result.success || !result.base64 || !result.format,
+        ...retryOptions,
+        signal,
+      },
+    );
+  } catch (error) {
+    const errorCode =
+      error && typeof error === 'object' && 'errorCode' in error
+        ? (error as { errorCode?: unknown }).errorCode
+        : undefined;
+    // Recover from a missing clone only when the attempt that just failed used
+    // the bound binding itself: marking it unavailable makes the resolver fall
+    // back to the global voice, a DIFFERENT voice. When the failure is already
+    // on the global voice (or on the deterministic pick), retrying would hit
+    // the same dead voice — fall through and surface the error instead of
+    // hot-looping /api/generate/tts (bound-dead → global-dead → …). The
+    // fallbackHops bound keeps even pathological chains at a single hop.
+    if (
+      errorCode === 'QWEN_VC_VOICE_NOT_FOUND' &&
+      boundKey &&
+      boundVoice &&
+      fallbackHops < MAX_NARRATOR_VOICE_FALLBACK_HOPS
+    ) {
+      if (voiceBindingKey(resolvedVoice) === boundKey) {
+        markVoiceBindingUnavailable(boundVoice);
+        if (markVoiceBindingNoticeShown(boundKey)) {
+          toast.warning(getClientTranslation('settings.qwenCloneNarrationUnavailable'));
+        }
+        if (globalDiffers) {
+          // The binding is a voice distinct from the global one: retry with the
+          // binding marked unavailable, which makes the resolver fall back to the
+          // global voice.
+          return generateAndStoreTTS(
+            requestId,
+            text,
+            language,
+            signal,
+            retryOptions,
+            existingAudioId,
+            stageId,
+            undefined,
+            fallbackHops + 1,
+          );
+        }
+        // Bound == global (pinned narrator): a retry would hit the same missing
+        // clone, so fall back to the deterministic enabled-provider pick once.
+        // (mark/notice were applied above; the helper's repeat is idempotent.)
+        if (!overrideVoice) {
+          const fallbackVoice = fallbackForUnusablePin();
+          if (fallbackVoice) {
+            return generateAndStoreTTS(
+              requestId,
+              text,
+              language,
+              signal,
+              retryOptions,
+              existingAudioId,
+              stageId,
+              fallbackVoice,
+              fallbackHops + 1,
+            );
+          }
+        }
       }
-      return data;
-    },
-    {
-      label: `tts "${requestId}"`,
-      shouldRetryResult: (result) => !result.success || !result.base64 || !result.format,
-      ...retryOptions,
-      signal,
-    },
-  );
+    }
+    throw error;
+  }
   if (!data.success || !data.base64 || !data.format) {
     const err = new Error(
       data.details || data.error || 'TTS request failed: invalid response payload',
@@ -338,50 +470,22 @@ export async function generateAndStoreTTS(
   // clip onto a timeline without re-decoding. null → leave undefined; the audio
   // still persists and plays.
   const duration = measureAudioDuration(bytes, data.format) ?? undefined;
-  // Crash-safety invariant: allocate and persist pool bytes first, keep the
-  // Part 2 Dexie compatibility copy second, and let the caller stamp audioId
-  // last. A failure therefore cannot leave an action pointing at missing data.
-  const assetMeta = {
-    contentType: blob.type,
-    mediaType: 'audio',
-    text,
-    voice: settings.ttsVoice,
+  const audioId = existingAudioId ?? requestId;
+  await db.audioFiles.put({
+    id: audioId,
+    stageId,
+    blob,
     duration,
-    language,
-    provider: {
-      id: settings.ttsProviderId,
-      model: ttsProviderConfig?.modelId,
-    },
-  } as const;
-  const assetId = replaceAssetId ?? (await putAsset(blob, assetMeta));
-  if (replaceAssetId) await replaceAsset(replaceAssetId, blob, assetMeta);
-  // Dexie remains a deliberate double-write until Part 3 converges exporters,
-  // playback, thumbnails, and import/export onto the shared asset pool.
-  try {
-    await db.audioFiles.put({
-      id: assetId,
-      stageId,
-      blob,
-      duration,
-      format: data.format,
-      text,
-      voice: settings.ttsVoice,
-      createdAt: Date.now(),
-    });
-  } catch (error) {
-    if (!replaceAssetId) await removeAsset(assetId).catch(() => undefined);
-    throw error;
-  }
-  return assetId;
+    format: data.format,
+    text,
+    voice: ttsVoice,
+    createdAt: Date.now(),
+  });
+  return audioId;
 }
 
 export async function removeFreshTtsAllocations(assetIds: readonly string[]): Promise<void> {
   for (const assetId of new Set(assetIds)) {
-    try {
-      await removeAsset(assetId);
-    } catch {
-      // Continue to the compatibility row and later allocations.
-    }
     await db.audioFiles.delete(assetId).catch(() => undefined);
   }
 }
@@ -750,7 +854,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             }
 
             removeGeneratingOutline(outline.id);
-            addGeneratedScene(scene);
+            useStageStore.getState().addScene(scene);
             options.onSceneGenerated?.(scene, outline.order);
             previousSpeeches = actionsResult.previousSpeeches || [];
           } else {
@@ -924,7 +1028,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         }
 
         removeGeneratingOutline();
-        addGeneratedScene(actionsResult.scene);
+        useStageStore.getState().addScene(actionsResult.scene);
 
         // Resume remaining generation if there are pending outlines
         if (store.getState().generatingOutlines.length > 0 && lastParamsRef.current) {

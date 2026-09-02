@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatSession } from '@/lib/types/chat';
 import {
   consumePiSessionBoundaryContext,
+  consumePiWhiteboardEvent,
   createPreviousLiveSessionContext,
   createPiSessionBoundaryContext,
   getPiSessionBoundaryContext,
@@ -14,9 +15,12 @@ import {
   runPiSingleRequest,
   shouldAwaitPresentationAction,
   withPiInclassWhiteboardTools,
+  withPiWebSearchSettings,
   MANUAL_STOP_END_OPTIONS,
   takeSoftCloseRegistration,
 } from '@/components/chat/use-chat-sessions';
+import { useCanvasStore } from '@/lib/store/canvas';
+import { useStageStore } from '@/lib/store/stage';
 import type { ChatRequestTemplate } from '@/components/chat/use-chat-sessions';
 import type { UIMessage } from 'ai';
 import type { ChatMessageMetadata } from '@/lib/types/chat';
@@ -284,6 +288,122 @@ describe('withPiInclassWhiteboardTools', () => {
   });
 });
 
+describe('withPiWebSearchSettings', () => {
+  const request = {
+    messages: [],
+    config: { agentIds: ['default-1'] },
+    apiKey: 'llm-key',
+    baseUrl: 'https://llm-provider.test',
+    model: 'llm:model',
+  } satisfies ChatRequestTemplate;
+
+  it('serializes only the selected Claude provider fields and keeps LLM fields separate', () => {
+    const next = withPiWebSearchSettings(
+      {
+        ...request,
+        baiduSubSources: { webSearch: false, baike: true, scholar: true },
+      },
+      {
+        webSearchProviderId: 'claude',
+        webSearchProvidersConfig: {
+          claude: {
+            apiKey: 'claude-search-key',
+            baseUrl: 'https://must-not-leak.test',
+            enabled: true,
+            requiresApiKey: true,
+            isServerConfigured: true,
+            modelId: 'claude-sonnet-5',
+          },
+          tavily: {
+            apiKey: 'non-selected-key',
+            baseUrl: 'https://non-selected.test',
+            enabled: true,
+          },
+        } as Parameters<typeof withPiWebSearchSettings>[1]['webSearchProvidersConfig'],
+        baiduSubSources: { webSearch: true, baike: false, scholar: true },
+      },
+    );
+
+    expect(next).toMatchObject({
+      apiKey: 'llm-key',
+      baseUrl: 'https://llm-provider.test',
+      model: 'llm:model',
+      webSearchProviderId: 'claude',
+      webSearchApiKey: 'claude-search-key',
+      webSearchModelId: 'claude-sonnet-5',
+    });
+    expect(next).not.toHaveProperty('webSearchProvidersConfig');
+    expect(next).not.toHaveProperty('webSearchBaseUrl');
+    expect(next).not.toHaveProperty('baiduSubSources');
+    expect(JSON.stringify(next)).not.toContain('must-not-leak.test');
+    expect(JSON.stringify(next)).not.toContain('non-selected-key');
+  });
+
+  it('serializes Baidu sub-sources only for the selected Baidu provider', () => {
+    const next = withPiWebSearchSettings(
+      {
+        ...request,
+        webSearchApiKey: 'stale-key',
+        webSearchBaseUrl: 'https://stale-search.test',
+        webSearchModelId: 'stale-model',
+      },
+      {
+        webSearchProviderId: 'baidu',
+        webSearchProvidersConfig: {
+          baidu: {
+            apiKey: 'baidu-key',
+            baseUrl: 'https://qianfan.baidubce.com',
+            enabled: true,
+          },
+        } as Parameters<typeof withPiWebSearchSettings>[1]['webSearchProvidersConfig'],
+        baiduSubSources: { webSearch: false, baike: true, scholar: false },
+      },
+    );
+
+    expect(next).toMatchObject({
+      webSearchProviderId: 'baidu',
+      webSearchApiKey: 'baidu-key',
+      webSearchBaseUrl: 'https://qianfan.baidubce.com',
+      baiduSubSources: { webSearch: false, baike: true, scholar: false },
+    });
+    expect(next).not.toHaveProperty('webSearchModelId');
+    expect(JSON.stringify(next)).not.toContain('stale-key');
+    expect(JSON.stringify(next)).not.toContain('stale-model');
+  });
+
+  it('removes stale selected-provider fields when the new provider has no key or model', () => {
+    const next = withPiWebSearchSettings(
+      {
+        ...request,
+        webSearchApiKey: 'stale-key',
+        webSearchBaseUrl: 'https://stale-search.test',
+        webSearchModelId: 'stale-model',
+        baiduSubSources: { webSearch: false, baike: true, scholar: true },
+      },
+      {
+        webSearchProviderId: 'brave',
+        webSearchProvidersConfig: {
+          brave: { apiKey: '', baseUrl: '', enabled: true },
+        } as Parameters<typeof withPiWebSearchSettings>[1]['webSearchProvidersConfig'],
+        baiduSubSources: { webSearch: true, baike: false, scholar: false },
+      },
+    );
+
+    expect(next).toMatchObject({
+      apiKey: 'llm-key',
+      baseUrl: 'https://llm-provider.test',
+      model: 'llm:model',
+      webSearchProviderId: 'brave',
+    });
+    expect(next).not.toHaveProperty('webSearchApiKey');
+    expect(next).not.toHaveProperty('webSearchBaseUrl');
+    expect(next).not.toHaveProperty('webSearchModelId');
+    expect(next).not.toHaveProperty('baiduSubSources');
+    expect(JSON.stringify(next)).not.toContain('stale-key');
+    expect(JSON.stringify(next)).not.toContain('stale-model');
+  });
+});
+
 describe('retireLiveRequestResources', () => {
   it('retires resources immediately but waits for an in-flight action to settle', async () => {
     const controller = new AbortController();
@@ -414,5 +534,83 @@ describe('runPiSingleRequest', () => {
     expect(onIterationEnd).not.toHaveBeenCalled();
     expect(onResponseAccepted).toHaveBeenCalledOnce();
     expect(clearAfterError).toHaveBeenCalledWith('session-1', 'chat.error.streamInterrupted');
+  });
+});
+
+describe('Pi Native whiteboard Browser events', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    useStageStore.setState({ stage: { id: 'stage-1' } as never });
+    useCanvasStore.setState({
+      whiteboardOpen: false,
+      whiteboardManualVisibilityRevision: 2,
+      runtimeWhiteboardProjection: null,
+      runtimeWhiteboardProjectionGeneration: 0,
+    });
+  });
+
+  it('applies UI-only effects only to the current Stage and preserves later manual intent', () => {
+    const stage = useStageStore.getState().stage;
+    const signal = new AbortController().signal;
+
+    consumePiWhiteboardEvent(
+      {
+        kind: 'open',
+        stageId: 'stage-1',
+        manualVisibilityRevision: 2,
+      },
+      signal,
+    );
+    expect(useCanvasStore.getState().whiteboardOpen).toBe(true);
+
+    useCanvasStore.getState().setWhiteboardOpenManually(false);
+    consumePiWhiteboardEvent(
+      {
+        kind: 'open',
+        stageId: 'stage-1',
+        manualVisibilityRevision: 2,
+      },
+      signal,
+    );
+    consumePiWhiteboardEvent(
+      {
+        kind: 'close',
+        stageId: 'another-stage',
+        manualVisibilityRevision: 3,
+      },
+      signal,
+    );
+
+    expect(useCanvasStore.getState().whiteboardOpen).toBe(false);
+    expect(useStageStore.getState().stage).toBe(stage);
+  });
+
+  it('answers a current-Stage visibility query with the active Browser state', async () => {
+    useCanvasStore.setState({ whiteboardOpen: true });
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const controller = new AbortController();
+    consumePiWhiteboardEvent(
+      {
+        kind: 'visibility_query',
+        queryId: 'query-1',
+        stageId: 'stage-1',
+      },
+      controller.signal,
+    );
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenCalledWith('/api/chat/pi/whiteboard-visibility', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        queryId: 'query-1',
+        stageId: 'stage-1',
+        visibility: 'open',
+      }),
+      signal: controller.signal,
+    });
   });
 });

@@ -276,6 +276,8 @@ export function buildChildActionTools(opts: {
   maxActionsPerAgent: number;
   enableWhiteboardTools: boolean;
   whiteboardState?: PiWhiteboardRuntimeState;
+  /** Present only for a selected-element-grounded turn. */
+  authorizedSpotlightElementIds?: ReadonlySet<string>;
 }): AgentTool[] {
   const currentScene = opts.body.storeState.currentSceneId
     ? opts.body.storeState.scenes.find((scene) => scene.id === opts.body.storeState.currentSceneId)
@@ -336,6 +338,26 @@ export function buildChildActionTools(opts: {
     parameters,
     executionMode: 'sequential',
     execute: async (_toolCallId, params) => {
+      if (
+        name === 'spotlight' &&
+        opts.authorizedSpotlightElementIds &&
+        !opts.authorizedSpotlightElementIds.has((params as SpotlightParams).elementId)
+      ) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Action spotlight skipped because the element is not authorized by request-scoped evidence.',
+            },
+          ],
+          details: {
+            skipped: true,
+            reason: 'spotlight_element_not_authorized',
+            actionName: name,
+            elementId: (params as SpotlightParams).elementId,
+          },
+        };
+      }
       if (name === 'wb_open' && whiteboardState.open) {
         return {
           content: [

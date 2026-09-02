@@ -29,7 +29,7 @@ import {
   actionsToManifest,
   collectAudioFiles,
   collectLegacyAudioForExport,
-  collectMissingAudioRefs,
+  legacyAudioMediaIndexEntry,
 } from '@/lib/export/classroom-zip-utils';
 import type { Scene } from '@/lib/types/stage';
 
@@ -64,6 +64,15 @@ describe('legacy audio URL export', () => {
     expect(blobs).toHaveLength(1);
     expect(blobs[0]?.zipPath).toBe('audio/legacy-1.mpeg');
     expect(await blobs[0]?.blob.text()).toBe('narration-bytes');
+    // The legacy URL itself is the natural source ref and travels with the
+    // fetched asset into the serialized media index.
+    expect(blobs[0]?.sourceRef).toBe(url);
+    expect(legacyAudioMediaIndexEntry(blobs[0]!)).toMatchObject({
+      type: 'audio',
+      sourceRef: url,
+      format: 'mpeg',
+      mimeType: 'audio/mpeg',
+    });
 
     const manifest = actionsToManifest(
       scenes[0].actions as never,
@@ -109,65 +118,6 @@ describe('legacy audio URL export', () => {
     expect(manifest[0]).not.toHaveProperty('audioUrl');
   });
 
-  it('does not flag a recovered legacy audioUrl as missing (the archive carries it)', async () => {
-    // Finding: the missing-audio pass checked only audioIdToPath, so a
-    // dangling audioId whose audioUrl WAS recovered produced a valid
-    // recovered entry PLUS a false missing:true entry for the same narration.
-    const url = 'https://server.example.com/audio/recovered.mp3';
-    fetchMediaUrlMock.mockResolvedValue(
-      new Response(new Blob(['narration-bytes'], { type: 'audio/mpeg' }), { status: 200 }),
-    );
-    const action = {
-      id: 'a1',
-      type: 'speech',
-      text: 'Hi',
-      audioId: 'tts_dangling',
-      audioUrl: url,
-    };
-    const scenes = [sceneWithSpeech([action])];
-
-    const { audioUrlToPath } = await collectLegacyAudioForExport(scenes, new Map());
-
-    expect(collectMissingAudioRefs(scenes, new Map(), audioUrlToPath)).toEqual([]);
-  });
-
-  it('flags a dangling audioId whose legacy URL could not be recovered', async () => {
-    const url = 'https://server.example.com/audio/gone.mp3';
-    fetchMediaUrlMock.mockResolvedValue(new Response(null, { status: 404 }));
-    const action = {
-      id: 'a1',
-      type: 'speech',
-      text: 'Hi',
-      audioId: 'tts_dangling',
-      audioUrl: url,
-    };
-    const scenes = [sceneWithSpeech([action])];
-
-    const { audioUrlToPath } = await collectLegacyAudioForExport(scenes, new Map());
-
-    expect(collectMissingAudioRefs(scenes, new Map(), audioUrlToPath)).toEqual([
-      { audioId: 'tts_dangling', missingPath: 'audio/tts_dangling.mp3' },
-    ]);
-  });
-
-  it('flags a bare dangling audioId with no legacy URL', () => {
-    const action = { id: 'a1', type: 'speech', text: 'Hi', audioId: 'tts_bare' };
-    const scenes = [sceneWithSpeech([action])];
-
-    expect(collectMissingAudioRefs(scenes, new Map(), new Map())).toEqual([
-      { audioId: 'tts_bare', missingPath: 'audio/tts_bare.mp3' },
-    ]);
-  });
-
-  it('skips an audioId that already has bytes in the archive', () => {
-    const action = { id: 'a1', type: 'speech', text: 'Hi', audioId: 'ast_have' };
-    const scenes = [sceneWithSpeech([action])];
-
-    expect(
-      collectMissingAudioRefs(scenes, new Map([['ast_have', 'audio/ast_have.mp3']]), new Map()),
-    ).toEqual([]);
-  });
-
   it('an evicted row with no usable bytes produces no zip path, so the live URL is rescued', async () => {
     // Finding: collectAudioFiles included a row whenever `record` was
     // truthy, even when its blob was empty and the pool resolve came back
@@ -193,19 +143,17 @@ describe('legacy audio URL export', () => {
     const scenes = [sceneWithSpeech([action])];
 
     // No empty audio entry is collected for the evicted row...
-    const collected = await collectAudioFiles(scenes);
+    const collected = await collectAudioFiles([{ ref: audioId, kind: 'audio' }]);
     expect(collected).toHaveLength(0);
 
     // ...so the id is missing from the archive map and the URL rescue
     // fetches the live narration instead of being skipped.
     const audioIdToPath = new Map(collected.map((c) => [c.record.id, c.zipPath]));
-    const { audioUrlToPath, blobs } = await collectLegacyAudioForExport(scenes, audioIdToPath);
+    const { blobs } = await collectLegacyAudioForExport(scenes, audioIdToPath);
     expect(fetchMediaUrlMock).toHaveBeenCalledWith(url, 15_000);
     expect(blobs).toHaveLength(1);
     expect(blobs[0]?.zipPath).toBe('audio/legacy-1.mpeg');
     expect(await blobs[0]?.blob.text()).toBe('url-bytes');
-    // The rescued narration is not flagged missing under a phantom path.
-    expect(collectMissingAudioRefs(scenes, audioIdToPath, audioUrlToPath)).toEqual([]);
   });
 
   it('a row with usable row bytes still ships even when the pool resolve is empty', async () => {
@@ -222,12 +170,77 @@ describe('legacy audio URL export', () => {
       createdAt: 1,
     });
     resolveAudioBlobMock.mockResolvedValue(new Blob(['row-bytes'], { type: 'audio/mpeg' }));
-    const scenes = [sceneWithSpeech([{ id: 'a1', type: 'speech', text: 'Hi', audioId }])];
 
-    const collected = await collectAudioFiles(scenes);
+    const collected = await collectAudioFiles([{ ref: audioId, kind: 'audio' }]);
 
     expect(collected).toHaveLength(1);
-    expect(collected[0]?.zipPath).toBe(`audio/${audioId}.mp3`);
+    expect(collected[0]?.zipPath).toBe('audio/audio-1.mp3');
     expect(await collected[0]?.record.blob.text()).toBe('row-bytes');
   });
+
+  it('assigns distinct safe paths without interpolating adversarial audio refs', async () => {
+    const refs = ['../evil', 'a/b', 'a/../collision', 'collision'];
+    const { db } = await import('@/lib/utils/database');
+    (db.audioFiles.get as ReturnType<typeof vi.fn>).mockImplementation(async (id: string) => ({
+      id,
+      stageId: 'stage-1',
+      blob: new Blob([id], { type: 'audio/mpeg' }),
+      format: 'mp3',
+      createdAt: 1,
+    }));
+    resolveAudioBlobMock.mockImplementation(
+      async (id: string) => new Blob([id], { type: 'audio/mpeg' }),
+    );
+
+    const collected = await collectAudioFiles(refs.map((ref) => ({ ref, kind: 'audio' })));
+
+    expect(collected.map(({ zipPath }) => zipPath)).toEqual([
+      'audio/audio-1.mp3',
+      'audio/audio-2.mp3',
+      'audio/audio-3.mp3',
+      'audio/audio-4.mp3',
+    ]);
+    expect(new Set(collected.map(({ zipPath }) => zipPath)).size).toBe(refs.length);
+    expect(collected.map(({ sourceRef }) => sourceRef)).toEqual(refs);
+  });
+
+  it.each(['/../../evil', 'png/../x', '', undefined])(
+    're-exports imported audio format %s under a safe canonical path',
+    async (format) => {
+      const audioId = 'ast_imported_audio';
+      const { db } = await import('@/lib/utils/database');
+      (db.audioFiles.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: audioId,
+        stageId: 'stage-1',
+        blob: new Blob(['imported']),
+        format,
+        createdAt: 1,
+      });
+      resolveAudioBlobMock.mockResolvedValue(new Blob(['imported']));
+
+      const collected = await collectAudioFiles([{ ref: audioId, kind: 'audio' }]);
+
+      expect(collected[0]?.zipPath).toBe('audio/audio-1.mp3');
+      expect(collected[0]?.record.format).toBe('mp3');
+      expect(collected[0]?.zipPath).not.toMatch(/(?:\.\.|\\)/);
+    },
+  );
+
+  it.each(['audio//../../evil', 'audio/png/../x', ''])(
+    'uses the canonical fallback for malformed legacy narration MIME %s',
+    async (mimeType) => {
+      const url = 'https://server.example.com/audio/imported';
+      fetchMediaUrlMock.mockResolvedValue(
+        new Response(new Blob(['narration-bytes'], { type: mimeType }), { status: 200 }),
+      );
+
+      const { blobs } = await collectLegacyAudioForExport(
+        [sceneWithSpeech([{ id: 'a1', type: 'speech', text: 'Hi', audioUrl: url }])],
+        new Map(),
+      );
+
+      expect(blobs[0]?.zipPath).toBe('audio/legacy-1.mp3');
+      expect(blobs[0]?.format).toBe('mp3');
+    },
+  );
 });

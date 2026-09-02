@@ -3,7 +3,11 @@
     "you": "Vous",
     "confirm": "Confirmer",
     "cancel": "Annuler",
-    "loading": "Chargement…"
+    "loading": "Chargement…",
+    "errorPrefix": "Erreur : ",
+    "loadingClassroom": "Chargement de la classe…",
+    "retry": "Réessayer",
+    "close": "Fermer"
   },
   "home": {
     "slogan": "L’apprentissage génératif en classe interactive multi-agents",
@@ -51,6 +55,14 @@
     "exportFailed": "Échec de l’export",
     "classroomZip": "Exporter la classe en ZIP",
     "classroomZipDesc": "Structure du cours + fichiers média",
+    "scriptMd": "Télécharger le script (.md)",
+    "scriptMdDesc": "Texte de narration en Markdown",
+    "script": "Télécharger le script",
+    "scriptDocx": "Télécharger le script (.docx)",
+    "scriptDocxDesc": "Document Word authentique au format DOCX",
+    "slideFallback": "Diapositive {{order}}",
+    "textOnly": "Exporter le script",
+    "mediaPending": "En attente de la fin de la génération des médias",
     "inlinePartial": "Ressources externes non intégrées : {{count}}. Le cours risque de mal s’afficher hors ligne.",
     "video": "Exporter la vidéo",
     "videoDesc": "Projet Hyperframes autonome (à rendre en MP4)",
@@ -122,6 +134,22 @@
     "error": {
       "emptyAgentResponses": "Les agents n’ont renvoyé aucune réponse ; la discussion s’est arrêtée. Réessayez ou vérifiez les paramètres de votre modèle.",
       "streamInterrupted": "Le flux s’est interrompu de façon inattendue ; la discussion n’a pas abouti. Veuillez réessayer."
+    },
+    "elementReference": {
+      "button": "Référencer la diapositive",
+      "unavailable": "Seule la diapositive PPT actuelle peut être référencée",
+      "instruction": "Cliquez sur un élément · Échap pour quitter",
+      "fallback": "Autres éléments de la diapositive ({{count}})",
+      "clear": "Retirer la référence à la diapositive",
+      "summary": {
+        "noText": "Sans texte",
+        "emptyContent": "Aucun contenu",
+        "code": "Code",
+        "line": "Ligne",
+        "imageMetadata": "Image (métadonnées uniquement)",
+        "videoMetadata": "Vidéo (métadonnées uniquement)",
+        "audioMetadata": "Audio (métadonnées uniquement)"
+      }
     },
     "tabs": {
       "lecture": "Notes",
@@ -219,13 +247,6 @@
       "interactive": "Interactif",
       "pbl": "Projet"
     },
-    "multiTab": {
-      "conflict": {
-        "title": "Un autre onglet modifie déjà ce cours",
-        "body": "La modification est réservée à un seul onglet pour éviter les conflits. Fermez l’autre onglet, ou attendez l’expiration de sa session, avant de passer en mode édition ici.",
-        "actionDismiss": "Compris"
-      }
-    },
     "text": {
       "toolbar": "Barre de texte",
       "label": "Texte",
@@ -288,6 +309,8 @@
       "tableDimensions": "Tableau {{rows}} x {{columns}}",
       "dragToolbar": "Déplacer les outils d’insertion",
       "dragToolbarKeyboard": "Déplacer les outils d’insertion : appuyez sur Entrée ou Espace, puis utilisez les flèches",
+      "collapseToolbar": "Replier les outils d’insertion",
+      "expandToolbar": "Déplier les outils d’insertion",
       "image": "Image",
       "imageDrop": "Déposez une image ou cliquez pour choisir un fichier",
       "imageOr": "ou collez l’URL d’une image",
@@ -349,7 +372,10 @@
       "deckLabel": "Scènes",
       "moreActions": "Autres actions",
       "rename": "Renommer",
-      "sceneIncomplete": "Le contenu de cette page est incomplet"
+      "sceneIncomplete": "Le contenu de cette page est incomplet",
+      "addPage": "Ajouter une page",
+      "nextPage": "Page suivante",
+      "prevPage": "Page précédente"
     },
     "zorder": {
       "toFront": "Mettre au premier plan",
@@ -532,11 +558,13 @@
       "discussionDesc": "Poser une question et choisir qui la lance"
     },
     "tts": {
+      "cancelPreview": "Annuler l'aperçu",
       "preview": "Écouter",
       "regenerate": "Régénérer la voix off",
       "statusReady": "Sonorisé",
       "statusNone": "Non sonorisé",
       "statusGenerating": "Génération",
+      "stopPreview": "Arrêter l'aperçu",
       "statusError": "Échec"
     },
     "pick": {
@@ -546,7 +574,10 @@
       "expand": "Déplier",
       "collapse": "Replier",
       "noElements": "Aucun élément localisable sur cette diapositive.",
-      "bindHint": "Cliquez sur un élément mis en évidence du canevas pour l’associer"
+      "bindHint": "Cliquez sur un élément mis en évidence du canevas pour l’associer",
+      "refCapHint": "Limite atteinte — retirez-en un pour échanger · Échap pour terminer",
+      "refHint": "Cliquez pour ajouter ou retirer · Échap pour terminer",
+      "refLead": "Référencement d’éléments · {{count}}/{{max}}"
     },
     "regen": {
       "title": "Régénérer la narration",
@@ -601,7 +632,18 @@
       "moveDown": "Descendre",
       "removeFromClass": "Retirer de la classe",
       "aiClassmates": "Camarades IA · {{count}}",
-      "addRole": "Ajouter un rôle"
+      "addRole": "Ajouter un rôle",
+      "shortTitle": "Distribution"
+    },
+    "elementRef": {
+      "remove": "移除引用 {{label}}",
+      "counts": "{{count}}/{{max}} référencés",
+      "exitPicking": "Terminer la sélection",
+      "startPicking": "Référencer des éléments"
+    },
+    "dock": {
+      "elementRefHint": "Références d’éléments — choisissez les éléments à joindre au prochain message",
+      "globalTools": "Outils globaux"
     }
   },
   "classroomComplete": {
@@ -963,7 +1005,10 @@
     "newFolderInline": "Nouveau dossier",
     "newFolderTitle": "Nouveau dossier",
     "searchResults": "Résultats de recherche",
-    "ungrouped": "Non classés"
+    "ungrouped": "Non classés",
+    "notFound": "Cours introuvable",
+    "notFoundDesc": "Ce cours n’existe pas ou a été supprimé.",
+    "backToHome": "Retour à l’accueil"
   },
   "upload": {
     "pdfSizeLimit": "Accepte les fichiers PDF jusqu’à 50 Mo",
@@ -1393,6 +1438,16 @@
     "voxcpmStopPreview": "Arrêter l’écoute",
     "voxcpmPreviewVoice": "Écouter la voix",
     "voxcpmDeleteVoice": "Supprimer la voix",
+    "qwenCloneVoicesTitle": "Qwen TTS Cloned Voices",
+    "qwenCloneRefText": "Enter the verbatim transcript of the reference audio",
+    "qwenCloneRefAudioHint": "Use a clean 1–60 second voice sample. A 10–20 second sample is recommended; audio is converted to 24 kHz mono PCM WAV.",
+    "qwenCloneSaved": "Qwen cloned voice registered and saved",
+    "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
+    "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
+    "qwenCloneSpeedHint": "Cloned voices always synthesize at 1× speed.",
+    "qwenCloneDeleteWarning": "The voice was removed locally, but provider deletion failed.",
+    "qwenCloneNarrationUnavailable": "The assigned voice is unavailable. Narration will use another enabled voice instead.",
+    "qwenCloneDiscussionUnavailable": "The assigned voice is unavailable. Discussion will use another enabled voice instead.",
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "Reconnaissance vocale native du navigateur",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
@@ -1789,9 +1844,132 @@
       "capabilities": "Capacités proposées",
       "offeredNote": "Modèles proposés par ce forfait. Choisissez ceux que vous voulez voir dans la barre de génération : leur disponibilité dépend de votre niveau de forfait, et les modèles non pris en charge produiront une erreur au moment de la génération."
     },
+    "skills": {
+      "nav": "Skills",
+      "title": "Paramètres des skills",
+      "description": "Parcourez les skills installés pour votre compte, inspectez un skill et téléchargez-le en zip pour le partager ou le sauvegarder.",
+      "mySkills": "Mes skills",
+      "builtinSkills": "Skills intégrés",
+      "emptyMySkills": "Pas encore de skill à vous — demandez à l’agent d’en créer un depuis l’historique.",
+      "emptyBuiltinSkills": "Aucun skill intégré disponible.",
+      "listFailed": "Impossible de charger la liste des skills",
+      "retry": "Réessayer",
+      "badgeBuiltin": "Intégré",
+      "badgeOwner": "Mon skill",
+      "badgeConstraints": "Contraintes",
+      "details": "Détails",
+      "download": "Télécharger",
+      "detailFailed": "Impossible de charger les détails du skill",
+      "contentLabel": "Contenu",
+      "builtinDetailNote": "Ce skill est fourni avec OpenMAIC. Téléchargez-le pour l’importer dans un autre espace de travail d’agent.",
+      "upload": "Importer",
+      "uploading": "Importation…",
+      "uploadFailed": "Impossible d’importer le skill. Vérifiez le fichier et réessayez.",
+      "delete": "Supprimer",
+      "deleting": "Suppression…",
+      "deleteTitle": "Supprimer le skill ?",
+      "deleteConfirm": "Ce skill sera supprimé de votre compte. Cette action est irréversible.",
+      "deleteFailed": "Impossible de supprimer le skill. Veuillez réessayer."
+    },
     "ttsBrowserNativeTimelineNotice": "La synthèse vocale native du navigateur ne prend pas en charge les fonctions audio de la piste de l’éditeur (écoute, régénération et sonorisation groupée). Choisissez un fournisseur de synthèse vocale géré pour produire et gérer l’audio réplique par réplique.",
     "alidocmindAccessKeyId": "Identifiant de clé d’accès",
     "alidocmindAccessKeySecret": "Secret de clé d’accès"
+  },
+  "workspace": {
+    "untitledCourse": "未命名课堂",
+    "sceneCount": "{{count}} 页",
+    "sceneCount_one": "{{count}} 页",
+    "sceneCount_other": "{{count}} 页",
+    "courseLinkHint": "在右侧打开《{{name}}》",
+    "courseLinkMore": "还有 {{count}} 节课堂",
+    "courseMention": {
+      "title": "为这条消息引用课堂",
+      "empty": "没有匹配的课堂",
+      "alreadyNamed": "已引用",
+      "remove": "移除{{name}}",
+      "pillHint": "这条消息引用了「{{name}}」",
+      "notAccepted": "Le serveur est temporairement indisponible. Veuillez réessayer dans un instant.",
+      "reference": "引用「{{name}}」",
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+    },
+    "heroTitle": "What will you create today?",
+    "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
+    "newSession": "New chat",
+    "sections": {
+      "courses": "Courses",
+      "sessions": "Chats"
+    },
+    "coursesEmpty": "No courses yet",
+    "sessionsEmpty": "No chats yet",
+    "loading": "Loading",
+    "loadFailed": "Couldn't load",
+    "retry": "Retry",
+    "untitledSession": "Untitled chat",
+    "pagePosition": "Page {{index}} of {{total}}",
+    "exitPro": "Exit Pro",
+    "navAria": "Workspace navigation",
+    "homeAria": "Back to home",
+    "currentSession": "Current chat",
+    "startLearning": "Commencer à apprendre",
+    "time": {
+      "justNow": "Just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
+    },
+    "sessionStatus": {
+      "connecting": "Connecting",
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Ready",
+      "failed": "Needs attention",
+      "cancelled": "Stopped"
+    },
+    "backToWorkspace": "Back to workspace",
+    "searchPlaceholder": "Filter by name",
+    "searchAria": "Search {{section}}",
+    "searchEmpty": "No matches",
+    "showMore": "Show {{count}} more",
+    "showLess": "Show less",
+    "utilitiesAria": "Preferences and account",
+    "resizeAria": "Drag to resize the sidebar",
+    "chatPaneAria": "Chat panel",
+    "classroomPaneAria": "Classroom",
+    "collapseNav": "Collapse navigation",
+    "expandNav": "Expand navigation",
+    "expandNavInto": "Expand navigation · {{section}}",
+    "collapseChat": "Collapse conversation",
+    "expandChat": "Conversation",
+    "collapseClassroom": "Collapse classroom",
+    "expandClassroom": "Classroom",
+    "readOnlyBadge": "Read-only",
+    "noCourseTitle": "No course open",
+    "noCourseHint": "Open one from a course link in the conversation, or pick one from the list on the left — the conversation stays put",
+    "resizeChatAria": "Drag to resize the conversation pane",
+    "firstPageLanding": "The first page is landing…",
+    "autoSaving": "Enregistrement automatique…",
+    "autoSaved": "Enregistré",
+    "collapsedTitle": "Both panes are collapsed",
+    "collapsedHint": "Use the tabs on the left to bring the conversation or the classroom back",
+    "moreUtilities": "More",
+    "rowMore": "Plus d’actions pour {{name}}",
+    "folderDeleteHint": "Les cours qu’il contient retournent au niveau supérieur. Rien n’est supprimé.",
+    "dropToUnfile": "Déposez ici pour sortir du dossier",
+    "renameInvalid": "Le nom doit contenir de 1 à 120 caractères",
+    "renameForbidden": "Vous n’avez pas créé ce cours, vous ne pouvez pas le renommer",
+    "renameGone": "Ce cours n’existe plus",
+    "renameSession": "Renommer la conversation",
+    "renameSessionAria": "Renommer la conversation « {{name}} »",
+    "renameSessionFailed": "Échec du renommage, réessayez",
+    "delete": "Supprimer",
+    "confirmDelete": "Confirmer la suppression",
+    "deleting": "Suppression…",
+    "deleteFailed": "Suppression impossible. Réessayez.",
+    "tabsAria": "Chats and courses",
+    "courseTabsAria": "Open courses",
+    "courseTabClose": "Close tab: {{name}}",
+    "courseTabRunning": "Generating",
+    "foldersUnavailable": "Les dossiers ne sont pas disponibles dans cette version"
   },
   "profile": {
     "title": "Profil",
@@ -1823,5 +2001,34 @@
     "title": "Saisissez le code d’accès",
     "placeholder": "Code d’accès",
     "error": "Code d’accès invalide. Veuillez réessayer."
+  },
+  "proMode": {
+    "attach": "Joindre un support",
+    "mentionCourse": "引用课堂",
+    "loadSkill": "加载 skill",
+    "skillMenuTitle": "选择课程设计技能",
+    "skillsLoading": "正在加载 skill…",
+    "noSkillsAvailable": "暂无可用 skill",
+    "userSkillsGroup": "我的 Skill",
+    "builtinSkillsGroup": "内置 Skill",
+    "skillsLoadFailed": "Skill 加载失败，点击重试",
+    "retrySkills": "重试",
+    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+    "badgeAria": "Mode Pro",
+    "badgeEnter": "Mode Pro",
+    "badgeExit": "Revenir au mode classique",
+    "launchPlaceholder": "Décrivez l'expérience d'apprentissage que vous souhaitez créer",
+    "launchSend": "Lancer la création"
+  },
+  "workbench": {
+    "tool": {
+      "label": {
+        "extractMaterial": null,
+        "waitMaterials": null
+      },
+      "error": {
+        "materialExtraction": null
+      }
+    }
   }
 }
