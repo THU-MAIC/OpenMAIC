@@ -1308,6 +1308,15 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         assertCurrentStageMutationActive();
       },
     )) as CourseStore;
+    // The detached media jobs' document store: same owner binding and write
+    // boundary as the run's store, but fenced only by the stage-mutation
+    // discipline, NOT by the run lease. A background generate_video job
+    // legitimately patches the document minutes after its run ended, when
+    // the lease is already released; wiring the run's store there would make
+    // every post-run patch throw AgentSessionLeaseLostError.
+    const mediaJobStore = (await getOwnerScopedDocumentStore(meta.ownerId, async () => {
+      assertCurrentStageMutationActive();
+    })) as CourseStore;
     const resolveFollowUpElementContext = async (
       message: FollowUpMessage,
     ): Promise<FollowUpMessage> => {
@@ -1349,6 +1358,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // (course-tools.ts).
     const dslTools = buildDslCourseToolset({
       store: ownerScopedStore,
+      backgroundStore: mediaJobStore,
       stageAccess,
       onCheckpoint: (info) => emit(LIFECYCLE.checkpoint, info),
       sessionId: id,

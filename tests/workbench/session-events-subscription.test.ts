@@ -35,6 +35,14 @@ describe('workbench SSE subscription', () => {
     expect(WORKBENCH_EVENT_TYPES).toContain(LIFECYCLE.userQuestion);
   });
 
+  it('subscribes to media_ready, the async media completion lifecycle event', () => {
+    // generate_video settles in a detached background job and reports through
+    // this frame; an unsubscribed name would be dropped by the browser before
+    // the fold could see it (same failure mode as the first user_question).
+    expect(LIFECYCLE.mediaReady).toBe('media_ready');
+    expect(WORKBENCH_EVENT_TYPES).toContain('media_ready');
+  });
+
   it('still subscribes to the legacy course_link name for pre-rename transcripts', () => {
     // A native EventSource drops a named frame unless a listener is registered
     // for that exact name. Historical session logs contain `course_link`
