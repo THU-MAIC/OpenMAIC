@@ -60,7 +60,7 @@ export function CourseLink({
    * workspace's own name for the course wins when it has one — the rail, the
    * tab and this link must not disagree about what a course is called.
    */
-  readonly label?: string;
+  readonly label?: React.ReactNode;
   /**
    * What to render with no workspace around us: the classic workbench hosts
    * this same timeline and has no right pane to open anything into, so an
@@ -74,12 +74,19 @@ export function CourseLink({
   if (!navigation) return <>{fallback ?? label ?? courseId}</>;
 
   const summary = navigation.lookupCourse(courseId);
-  const name = summary?.name || label || t('workspace.untitledCourse');
+  const fallbackName = t('workspace.untitledCourse');
+  const name = summary?.name || label || fallbackName;
   const pageCount = summary?.pageCount ?? null;
   // One sentence, whatever the pane is currently showing — the press is the
   // same in every case, so describing it three ways only invited the reader to
   // look for a difference that is not there.
-  const hint = t('workspace.courseLinkHint', { name });
+  const richLabel = label != null && typeof label !== 'string';
+  // Rich labels carry their own accessible content (including KaTeX MathML).
+  // Do not replace it with an inaccurate "untitled" accessible name.
+  const hint =
+    richLabel && !summary?.name
+      ? undefined
+      : t('workspace.courseLinkHint', { name: summary?.name || label || fallbackName });
 
   return (
     <button
