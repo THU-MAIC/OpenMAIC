@@ -94,6 +94,27 @@ async function waitForPoll(
   throw new Error(`Timed out waiting for ${jobId} to reach ${status}`);
 }
 
+async function healthBody(app: ReturnType<typeof createApp>): Promise<Record<string, unknown>> {
+  const response = await app.fetch(new Request('http://test/health'));
+  expect(response.status).toBe(200);
+  return (await response.json()) as Record<string, unknown>;
+}
+
+/** An executor that parks every render until released, holding slots open. */
+function parkingExecutor() {
+  let releaseRenders!: () => void;
+  const parked = new Promise<void>((resolve) => {
+    releaseRenders = resolve;
+  });
+  const executor: RenderExecutor = {
+    async execute() {
+      await parked;
+      return { status: 'succeeded' };
+    },
+  };
+  return { executor, releaseRenders };
+}
+
 describe('POST /render buffering/extraction bound', () => {
   it('reports the selected profile and observed runtime versions from health', async () => {
     const jobs = createMemoryJobStore();
@@ -340,5 +361,67 @@ describe('render HTTP contract through a replaceable executor', () => {
     const missing = await app.fetch(new Request('http://test/render/missing/download'));
     expect(missing.status).toBe(404);
     await expect(missing.json()).resolves.toEqual({ error: 'Job not found' });
+  });
+});
+
+describe('admission observability (429 reason + /health accepting)', () => {
+  it('labels a queue-full 429 with reason and flips /health accepting', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'render-route-queue-full-'));
+    scratch.push(dir);
+    const { executor, releaseRenders } = parkingExecutor();
+    const { app } = testApp(executor, {
+      coordinator: { maxQueue: 1, maxJobsPerUser: 0 },
+      makeProjectDir: async () => dir,
+    });
+
+    // Empty system: health reports we're accepting, aggregates only.
+    await expect(healthBody(app)).resolves.toMatchObject({ ok: true, accepting: true });
+
+    // One admitted render fills the entire global cap and parks there.
+    const first = await app.fetch(renderRequest(4096, 'user-a'));
+    expect(first.status).toBe(202);
+    const { jobId } = (await first.json()) as { jobId: string };
+    await expect(healthBody(app)).resolves.toMatchObject({ accepting: false });
+
+    // A second render from a DIFFERENT identity is still refused — the global
+    // cap fired, not the per-user guard — and the 429 body says so.
+    const second = await app.fetch(renderRequest(4096, 'user-b'));
+    expect(second.status).toBe(429);
+    await expect(second.json()).resolves.toEqual({
+      error: 'The render queue is full; try again shortly.',
+      reason: 'queue_full',
+    });
+
+    // Once the parked render finishes, capacity — and the flag — come back.
+    releaseRenders();
+    await waitForPoll(app, jobId, 'succeeded');
+    await expect(healthBody(app)).resolves.toMatchObject({ accepting: true });
+  });
+
+  it('labels a per-identity 429 with reason (queue itself has room)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'render-route-per-identity-'));
+    scratch.push(dir);
+    const { executor, releaseRenders } = parkingExecutor();
+    const { app } = testApp(executor, {
+      coordinator: { maxQueue: 20, maxJobsPerUser: 1 },
+      makeProjectDir: async () => dir,
+    });
+
+    const first = await app.fetch(renderRequest(4096, 'solo'));
+    expect(first.status).toBe(202);
+    const { jobId } = (await first.json()) as { jobId: string };
+
+    // Same identity again: the system still has queue room (and health stays
+    // accepting) — only this identity's own slot is exhausted.
+    await expect(healthBody(app)).resolves.toMatchObject({ accepting: true });
+    const second = await app.fetch(renderRequest(4096, 'solo'));
+    expect(second.status).toBe(429);
+    await expect(second.json()).resolves.toEqual({
+      error: 'A render is already in progress (limit 1).',
+      reason: 'per_identity_limit',
+    });
+
+    releaseRenders();
+    await waitForPoll(app, jobId, 'succeeded');
   });
 });

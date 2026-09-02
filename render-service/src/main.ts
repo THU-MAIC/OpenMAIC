@@ -13,7 +13,7 @@
  *   GET    /render/:jobId          → { status, progress, currentStage, done, ... }
  *   GET    /render/:jobId/download → stream MP4 (or 302 to a presigned URL)
  *   DELETE /render/:jobId          → cancel
- *   GET    /health                 → { ok: true }
+ *   GET    /health                 → { ok: true, accepting: boolean, ... }
  *
  * NOTE: this file must NOT be named `server.ts`. `@hyperframes/producer`'s main
  * module auto-starts its own bundled HTTP server (on PRODUCER_PORT, default
@@ -104,6 +104,10 @@ export function createApp(deps: AppDeps): Hono {
   app.get('/health', (c) =>
     c.json({
       ok: true,
+      // Aggregate-only admission signal: the coordinator deliberately exposes
+      // a bare boolean — no queue-depth numbers, and never per-identity data
+      // (its keys are client IPs under TRUST_PROXY_HEADERS=true).
+      accepting: coordinator.accepting,
       resourceProfile: publicResourceProfile(config.resourceProfile),
       versions: deps.runtimeVersions ?? null,
     }),
@@ -129,7 +133,14 @@ export function createApp(deps: AppDeps): Hono {
     try {
       reservation = coordinator.reserve(identity);
     } catch (error) {
-      if (error instanceof RenderRejectedError) return c.json({ error: error.message }, 429);
+      // The spread-omission keeps reason-less rejections from serializing
+      // `"reason": undefined` into the body.
+      if (error instanceof RenderRejectedError) {
+        return c.json(
+          { error: error.message, ...(error.reason ? { reason: error.reason } : {}) },
+          429,
+        );
+      }
       throw error;
     }
 
@@ -185,7 +196,12 @@ export function createApp(deps: AppDeps): Hono {
       if (error instanceof UploadTooLargeError) return c.json({ error: error.message }, 413);
       if (error instanceof BadRequestError) return c.json({ error: error.message }, 400);
       if (error instanceof InvalidProjectError) return c.json({ error: error.message }, 400);
-      if (error instanceof RenderRejectedError) return c.json({ error: error.message }, 429);
+      if (error instanceof RenderRejectedError) {
+        return c.json(
+          { error: error.message, ...(error.reason ? { reason: error.reason } : {}) },
+          429,
+        );
+      }
       throw error;
     }
   });
