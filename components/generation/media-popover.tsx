@@ -28,6 +28,7 @@ import { resolveASRProviderName } from '@/lib/audio/provider-display';
 import { useSettingsStore } from '@/lib/store/settings';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
+import { useOpenRouterModels } from '@/lib/media/use-openrouter-models';
 import { CUSTOM_ASR_DEFAULT_LANGUAGES } from '@/lib/audio/constants';
 import { ASR_PROVIDERS, getASRSupportedLanguages } from '@/lib/audio/constants';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
@@ -146,16 +147,35 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     [],
   );
 
+  // The OpenRouter groups list every model OpenRouter hosts, not the registry
+  // seed — the same live catalog the settings picker shows. Fetched only once
+  // the provider is actually usable so an unconfigured install makes no call.
+  const { models: openRouterImageModels } = useOpenRouterModels(
+    'image',
+    cfgOk(imageProvidersConfig, 'openrouter-image', true),
+    IMAGE_PROVIDERS['openrouter-image'].models,
+    imageProvidersConfig['openrouter-image']?.apiKey,
+    imageProvidersConfig['openrouter-image']?.baseUrl,
+  );
+  const { models: openRouterVideoModels } = useOpenRouterModels(
+    'video',
+    cfgOk(videoProvidersConfig, 'openrouter-video', true),
+    VIDEO_PROVIDERS['openrouter-video'].models,
+    videoProvidersConfig['openrouter-video']?.apiKey,
+    videoProvidersConfig['openrouter-video']?.baseUrl,
+  );
+
   // ─── Grouped select data (only available providers) ───
   const imageGroups = useMemo(
     () =>
       Object.values(IMAGE_PROVIDERS)
         .filter((p) => cfgOk(imageProvidersConfig, p.id, p.requiresApiKey))
         .map((p) => {
+          const catalog = p.id === 'openrouter-image' ? openRouterImageModels : p.models;
           const items =
             p.id === 'comfyui-image'
               ? comfyWorkflows
-              : providerModels(p.models, imageProvidersConfig[p.id]);
+              : providerModels(catalog, imageProvidersConfig[p.id]);
 
           return {
             groupId: p.id,
@@ -169,7 +189,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
             })),
           };
         }),
-    [cfgOk, imageProvidersConfig, comfyWorkflows],
+    [cfgOk, imageProvidersConfig, comfyWorkflows, openRouterImageModels],
   );
 
   const videoGroups = useMemo(
@@ -181,12 +201,15 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
           groupName: p.name,
           groupIcon: VIDEO_PROVIDER_ICONS[p.id],
           available: true,
-          items: providerModels(p.models, videoProvidersConfig[p.id]).map((m) => ({
+          items: providerModels(
+            p.id === 'openrouter-video' ? openRouterVideoModels : p.models,
+            videoProvidersConfig[p.id],
+          ).map((m) => ({
             id: m.id,
             name: m.name,
           })),
         })),
-    [cfgOk, videoProvidersConfig],
+    [cfgOk, videoProvidersConfig, openRouterVideoModels],
   );
 
   // ASR: built-in + custom providers
