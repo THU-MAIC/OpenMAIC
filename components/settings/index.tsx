@@ -163,6 +163,7 @@ const IMAGE_PROVIDER_NAMES: Record<ImageProviderId, string> = {
   'minimax-image': 'providerMiniMaxImage',
   'grok-image': 'providerGrokImage',
   'comfyui-image': 'providerComfyUIImage',
+  'openrouter-image': 'providerOpenRouterImage',
   lemonade: 'providerLemonadeImage',
 };
 
@@ -174,6 +175,7 @@ const IMAGE_PROVIDER_ICONS: Record<ImageProviderId, string> = {
   'minimax-image': '/logos/minimax.svg',
   'grok-image': '/logos/grok.svg',
   'comfyui-image': '/logos/comfyui.svg',
+  'openrouter-image': '/logos/openrouter.svg',
   lemonade: '/logos/lemonade.svg',
 };
 
@@ -183,6 +185,7 @@ const VIDEO_PROVIDER_NAMES: Record<VideoProviderId, string> = {
   veo: 'providerVeo',
   'minimax-video': 'providerMiniMaxVideo',
   'grok-video': 'providerGrokVideo',
+  'openrouter-video': 'providerOpenRouterVideo',
   happyhorse: 'providerHappyHorse',
 };
 
@@ -192,6 +195,7 @@ const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
   veo: '/logos/gemini.svg',
   'minimax-video': '/logos/minimax.svg',
   'grok-video': '/logos/grok.svg',
+  'openrouter-video': '/logos/openrouter.svg',
   happyhorse: '/logos/qwen.svg',
 };
 

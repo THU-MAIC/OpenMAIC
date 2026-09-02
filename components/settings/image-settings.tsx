@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
+import { useOpenRouterModels } from '@/lib/media/use-openrouter-models';
 import {
   Loader2,
   CheckCircle2,
@@ -90,7 +91,15 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
 
   const currentConfig = imageProvidersConfig[selectedProviderId];
   const currentProvider = IMAGE_PROVIDERS[selectedProviderId];
-  const builtInModels = currentProvider?.models || [];
+  // OpenRouter's catalog is fetched live so the picker is never a curated
+  // shortlist; every other provider keeps its registry list.
+  const { models: builtInModels } = useOpenRouterModels(
+    'image',
+    selectedProviderId === 'openrouter-image',
+    currentProvider?.models || [],
+    currentConfig?.apiKey,
+    currentConfig?.baseUrl,
+  );
   const customModels = useMemo(
     () => currentConfig?.customModels || [],
     [currentConfig?.customModels],

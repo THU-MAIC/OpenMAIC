@@ -47,12 +47,14 @@ const IMAGE_PROVIDER_ICONS: Record<string, string> = {
   'nano-banana': '/logos/gemini.svg',
   'grok-image': '/logos/grok.svg',
   'comfyui-image': '/logos/comfyui.svg',
+  'openrouter-image': '/logos/openrouter.svg',
 };
 const VIDEO_PROVIDER_ICONS: Record<string, string> = {
   seedance: '/logos/doubao.svg',
   kling: '/logos/kling.svg',
   veo: '/logos/gemini.svg',
   'grok-video': '/logos/grok.svg',
+  'openrouter-video': '/logos/openrouter.svg',
 };
 
 type TabId = 'image' | 'video' | 'tts' | 'asr';
