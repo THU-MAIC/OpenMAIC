@@ -31,6 +31,23 @@ function interactiveScene(html?: string): Extract<PreviewScene, { type: 'interac
 }
 
 describe('preview payload semantic validation', () => {
+  it('accepts a background-only slide canvas', () => {
+    expect(
+      previewabilityError(
+        slideScene({
+          background: { type: 'solid', color: '#ffffff' },
+          elements: [],
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it('rejects a slide canvas with neither elements nor a background', () => {
+    expect(previewabilityError(slideScene({ elements: [] }))).toBe(
+      'Slide canvas has no renderable elements',
+    );
+  });
+
   it('rejects every non-data slide media class across the exact DSL slots', () => {
     const scene = slideScene({
       background: { type: 'image', image: { src: 'https://example.test/background.png' } },

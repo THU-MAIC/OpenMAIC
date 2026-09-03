@@ -136,7 +136,7 @@ export function previewabilityError(scene: PreviewScene): string | undefined {
   if (scene.type === 'slide') {
     if (
       !Array.isArray(scene.content.canvas.elements) ||
-      scene.content.canvas.elements.length === 0
+      (scene.content.canvas.elements.length === 0 && !scene.content.canvas.background)
     ) {
       return 'Slide canvas has no renderable elements';
     }
