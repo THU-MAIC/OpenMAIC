@@ -30,6 +30,8 @@ import type { AlignmentLineProps } from '@/lib/types/edit';
 import type { ContextmenuItem } from './EditableElement';
 import type { SlideContent } from '@/lib/types/stage';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
+import { createTextElementAtCanvasPoint } from '@/lib/edit/slide-edit-elements';
+import { createElementId } from '@/lib/edit/element-id';
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -140,6 +142,7 @@ export function Canvas(_props: CanvasProps) {
 
   // Create element from selection
   const { insertElementFromCreateSelection } = useInsertFromCreateSelection(viewportRef);
+  const { addElement, pasteElement, selectAllElements, deleteAllElements } = useCanvasOperations();
 
   // Click on blank canvas area: clear active elements
   const handleClickBlankArea = (e: React.MouseEvent) => {
@@ -165,20 +168,29 @@ export function Canvas(_props: CanvasProps) {
     }
   };
 
-  // Double-click blank area to insert text
-  const handleDblClick = (_e: React.MouseEvent) => {
+  // Double-click blank area to insert a ready-to-edit text box at the click point.
+  const handleDblClick = (e: React.MouseEvent) => {
     if (activeElementIdList.length || creatingElement || creatingCustomShape) return;
     if (!viewportRef.current) return;
 
-    const _viewportRect = viewportRef.current.getBoundingClientRect();
-    // TODO: implement createTextElement (use _viewportRect + e.pageX/Y + canvasScale)
+    // Only treat double-click as blank-area when the event target isn't inside an element node
+    const target = e.target as HTMLElement;
+    if (target.closest('.editable-element')) return;
+
+    const viewportRect = viewportRef.current.getBoundingClientRect();
+    const textElement = createTextElementAtCanvasPoint(
+      createElementId('text'),
+      { x: e.clientX, y: e.clientY },
+      { left: viewportRect.left, top: viewportRect.top },
+      canvasScale,
+    );
+
+    addElement(textElement);
   };
 
   const openLinkDialog = () => {
     setLinkDialogVisible(true);
   };
-
-  const { pasteElement, selectAllElements, deleteAllElements } = useCanvasOperations();
 
   const contextmenus = (): ContextmenuItem[] => {
     return [

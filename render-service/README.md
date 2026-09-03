@@ -24,10 +24,28 @@ poll, then download. Job ids are opaque.
 | `GET /render/:jobId`          | status/progress plus actual capture, worker, profile, and runtime metrics            |
 | `GET /render/:jobId/download` | stream the MP4 (or `302` to a presigned URL) once `succeeded`                        |
 | `DELETE /render/:jobId`       | cancel a queued/running job                                                          |
-| `GET /health`                 | selected resource profile and observed producer/runtime versions                    |
+| `GET /health`                 | resource profile, observed runtime versions, and whether renders are being admitted |
 
 `status` is one of `queued | running | succeeded | failed | cancelled`;
 `progress` is `0..1`.
+
+### Admission: 429s and `/health`
+
+Admission rejections are machine-readable. `POST /render` answers `429` with a
+JSON body `{ error, reason }` where `reason` is one of:
+
+- `queue_full` — the deployment-wide cap `RENDER_MAX_QUEUE` (reserved + queued +
+  running jobs) is exhausted; back off and retry.
+- `per_identity_limit` — this client identity already holds
+  `RENDER_MAX_JOBS_PER_USER` active renders.
+
+`GET /health` reports `accepting: boolean` — whether the queue cap currently has
+room for another job — so callers and load balancers can shed traffic before
+probing with a real render. The flag is deliberately aggregate-only: no queue
+depths or occupancy counts, and never any per-identity data. Identity keys are
+client IPs when the service runs behind `TRUST_PROXY_HEADERS=true`, so exposing
+the per-identity map would publish the IP address of everyone currently
+rendering.
 
 ## Environment
 
@@ -78,12 +96,14 @@ overwrites those headers); otherwise all callers share one `direct` identity, so
 the default directly-exposed Compose topology can't be gamed by spoofing
 forwarding headers.
 
-> **Per-user guard vs. shared identity.** When identity can't be trusted (no
-> reverse proxy → everyone is `direct`), a `RENDER_MAX_JOBS_PER_USER` of 1 would
-> throttle the _whole deployment_ to one render at a time. The default Compose
-> therefore sets `RENDER_MAX_JOBS_PER_USER=0` (guard off) and relies on
-> `RENDER_MAX_CONCURRENCY` + `RENDER_MAX_QUEUE`. Enable the per-user guard only
-> behind a trusted proxy that supplies a real per-user identity.
+> **Per-user guard vs. shared identity.** Without `TRUST_PROXY_HEADERS=true`
+> every caller collapses into one shared `direct` identity bucket, so any
+> _nonzero_ `RENDER_MAX_JOBS_PER_USER` throttles the whole deployment to that
+> many concurrent renders — not just one user. This is why the default
+> `docker-compose.yml` sets `RENDER_MAX_JOBS_PER_USER=0` (guard off) and relies
+> on `RENDER_MAX_CONCURRENCY` + `RENDER_MAX_QUEUE` (see the comment beside that
+> variable in the Compose file). Enable the per-user guard only behind a trusted
+> proxy that supplies a real per-user identity.
 
 ## Security / isolation
 

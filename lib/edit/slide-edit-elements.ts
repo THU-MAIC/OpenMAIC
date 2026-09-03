@@ -43,6 +43,32 @@ export function createDefaultTextElement(id: string): PPTTextElement {
   };
 }
 
+export function createTextElementAtCanvasPoint(
+  id: string,
+  point: { x: number; y: number },
+  viewportOrigin: { left: number; top: number },
+  canvasScale = 1,
+): PPTTextElement {
+  const width = 300;
+  const height = 60;
+  const left = (point.x - viewportOrigin.left) / canvasScale;
+  const top = (point.y - viewportOrigin.top) / canvasScale;
+
+  return {
+    id,
+    type: 'text',
+    left,
+    top,
+    width,
+    height,
+    rotate: 0,
+    content: '<p style="text-align: center"><br></p>',
+    defaultFontName: 'Inter',
+    defaultColor: '#333',
+    lineHeight: 1.4,
+  };
+}
+
 export function createDefaultShapeElement(id: string, spec?: ShapeSpec): PPTShapeElement {
   const viewBox = spec?.viewBox ?? ([260, 140] as [number, number]);
   // Picked shapes tend to be square (200x200) in the shape pool — scale to

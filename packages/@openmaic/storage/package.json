@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/storage",
-  "version": "0.28.0",
+  "version": "0.28.1",
   "description": "The MAIC pluggable persistence layer: document / runtime / KV / asset primitives with browser and HTTP backends, depending only on @openmaic/dsl.",
   "type": "module",
   "main": "./dist/index.js",
@@ -79,8 +79,8 @@
   ],
   "sideEffects": false,
   "scripts": {
-    "clean": "rm -rf dist",
-    "build": "rm -rf dist && tsc -p tsconfig.json",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "vitest run",
