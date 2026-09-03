@@ -115,6 +115,12 @@ services:
       # RENDER_MAX_QUEUE cap. Set this >0 only with a trusted proxy supplying
       # per-user identity (see render-service/README.md).
       - RENDER_MAX_JOBS_PER_USER=0
+      - RENDER_PREVIEW_TIMEOUT_MS=${RENDER_PREVIEW_TIMEOUT_MS:-20000}
+      - RENDER_PREVIEW_MAX_IN_FLIGHT=${RENDER_PREVIEW_MAX_IN_FLIGHT:-8}
+      # Preview identity comes through the same shared `direct` bucket in this
+      # topology, so a nonzero per-user preview limit would throttle the whole
+      # deployment. Enable it only behind a trusted identity-supplying proxy.
+      - RENDER_PREVIEW_MAX_PER_USER=0
     # Bound RAM: each render (Chromium + FFmpeg + archive expansion) is memory-heavy.
     # The standard profile requires 8 GiB. For the explicit low-memory profile,
     # set RENDER_RESOURCE_PROFILE=low-memory and RENDER_SERVICE_MEMORY_LIMIT=4g.
