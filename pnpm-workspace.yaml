@@ -2,3 +2,6 @@ packages:
   - "packages/*"
   - "packages/@openmaic/*"
   - "!packages/docs" # standalone docs sub-app: own lockfile, build, deploy
+
+# Windows 下用 Git Bash 执行构建脚本（脚本里用了 rm 等 POSIX 命令）
+scriptShell: "E:\\新建文件夹 (2)\\Git\\bin\\bash.exe"

@@ -1835,7 +1835,11 @@ function usesCustomOpenAIBaseUrl(baseUrl?: string): boolean {
 
 function shouldUseOpenAIStreamingChatCompat(providerId: ProviderId, baseUrl?: string): boolean {
   return (
-    providerId === 'openai' &&
+    // 'grok' added: relays (custom base URL) with long non-streaming generations
+    // hit gateway idle timeouts (~5 min 504). Streaming upstream keeps bytes
+    // flowing so the gateway never cuts the connection; the SSE is buffered
+    // back into a normal JSON response client-side.
+    (providerId === 'openai' || providerId === 'grok') &&
     usesCustomOpenAIBaseUrl(baseUrl) &&
     process.env.OPENAI_COMPAT_USE_STREAMING_CHAT === 'true'
   );
