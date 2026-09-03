@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { PreviewScene } from '../src/preview-renderer.js';
 import {
+  MAX_INTERACTIVE_HTML_DEPTH,
+  MAX_INTERACTIVE_HTML_ELEMENTS,
   countNonSelfContainedSlideMediaReferences,
   findNonSelfContainedInteractiveReferences,
   previewabilityError,
@@ -46,6 +48,18 @@ describe('preview payload semantic validation', () => {
     expect(previewabilityError(slideScene({ elements: [] }))).toBe(
       'Slide canvas has no renderable elements',
     );
+  });
+
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['an object without type', {}],
+  ])('rejects %s slide canvas elements without throwing', (_name, element) => {
+    const scene = slideScene({ elements: [element] });
+
+    expect(() => previewabilityError(scene)).not.toThrow();
+    expect(previewabilityError(scene)).toContain('/content/canvas/elements/0');
+    expect(() => countNonSelfContainedSlideMediaReferences(scene)).not.toThrow();
   });
 
   it('rejects every non-data slide media class across the exact DSL slots', () => {
@@ -159,5 +173,31 @@ describe('preview payload semantic validation', () => {
     ).toBeUndefined();
     expect(previewabilityError(interactiveScene())).toContain('non-empty embedded HTML');
     expect(previewabilityError(interactiveScene('   '))).toContain('non-empty embedded HTML');
+  });
+
+  it('rejects interactive HTML beyond the DOM depth ceiling', () => {
+    const nestingDepth = MAX_INTERACTIVE_HTML_DEPTH + 1;
+    expect(nestingDepth).toBeGreaterThan(MAX_INTERACTIVE_HTML_DEPTH);
+    const html = `${'<i>'.repeat(nestingDepth)}content${'</i>'.repeat(nestingDepth)}`;
+
+    expect(() => findNonSelfContainedInteractiveReferences(html)).toThrow(
+      `maximum DOM depth of ${MAX_INTERACTIVE_HTML_DEPTH}`,
+    );
+    expect(previewabilityError(interactiveScene(html))).toContain(
+      `maximum DOM depth of ${MAX_INTERACTIVE_HTML_DEPTH}`,
+    );
+  });
+
+  it('rejects interactive HTML beyond the element-count ceiling', () => {
+    const elementCount = MAX_INTERACTIVE_HTML_ELEMENTS + 1;
+    expect(elementCount).toBeGreaterThan(MAX_INTERACTIVE_HTML_ELEMENTS);
+    const html = '<!doctype html><body>' + '<i></i>'.repeat(elementCount) + '</body>';
+
+    expect(() => findNonSelfContainedInteractiveReferences(html)).toThrow(
+      `maximum element count of ${MAX_INTERACTIVE_HTML_ELEMENTS}`,
+    );
+    expect(previewabilityError(interactiveScene(html))).toContain(
+      `maximum element count of ${MAX_INTERACTIVE_HTML_ELEMENTS}`,
+    );
   });
 });

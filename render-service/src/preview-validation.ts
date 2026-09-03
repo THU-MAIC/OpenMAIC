@@ -11,6 +11,37 @@ interface HtmlNode {
   value?: string;
 }
 
+interface CanvasElementShape {
+  type: string;
+}
+
+export const MAX_INTERACTIVE_HTML_DEPTH = 256;
+export const MAX_INTERACTIVE_HTML_ELEMENTS = 10_000;
+
+class InteractiveHtmlLimitError extends Error {}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isCanvasElementShape(value: unknown): value is CanvasElementShape {
+  return isRecord(value) && typeof value.type === 'string' && value.type.trim().length > 0;
+}
+
+/** Return a structural scene error the upstream DSL validator does not yet catch. */
+export function invalidSlideCanvasElementError(scene: unknown): string | undefined {
+  if (!isRecord(scene) || scene.type !== 'slide') return undefined;
+  const content = scene.content;
+  if (!isRecord(content)) return undefined;
+  const canvas = content.canvas;
+  if (!isRecord(canvas) || !Array.isArray(canvas.elements)) return undefined;
+
+  const invalidIndex = canvas.elements.findIndex((element) => !isCanvasElementShape(element));
+  return invalidIndex === -1
+    ? undefined
+    : `Invalid scene at /content/canvas/elements/${invalidIndex}: canvas element must be an object with a non-empty type`;
+}
+
 function isDataUrl(value: string | undefined): boolean {
   return /^data:/i.test(value?.trim() ?? '');
 }
@@ -24,6 +55,15 @@ function isSelfContainedCssUrl(value: string): boolean {
 export function countNonSelfContainedSlideMediaReferences(
   scene: Extract<PreviewScene, { type: 'slide' }>,
 ): number {
+  // previewabilityError reports malformed entries. Keep this exported counter
+  // total and non-throwing as defense in depth for direct callers.
+  if (
+    !Array.isArray(scene.content.canvas.elements) ||
+    !scene.content.canvas.elements.every(isCanvasElementShape)
+  ) {
+    return 0;
+  }
+
   let count = 0;
   for (const slot of slideMediaSlotDescriptors(scene.content.canvas)) {
     if (slot.ref === undefined) continue;
@@ -122,18 +162,56 @@ export function findNonSelfContainedInteractiveReferences(html: string): string[
         else rejectUnlessData(value);
       }
     }
-
-    for (const child of node.childNodes ?? []) visit(child);
-    if (node.content) visit(node.content);
   };
 
-  visit(parse(html, { scriptingEnabled: true }) as unknown as HtmlNode);
+  const root = parse(html, { scriptingEnabled: true }) as unknown as HtmlNode;
+  const pending: Array<{ node: HtmlNode; ancestorElementDepth: number }> = [
+    { node: root, ancestorElementDepth: 0 },
+  ];
+  let elementCount = 0;
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current) break;
+
+    const isElement = current.node.tagName !== undefined;
+    const elementDepth = current.ancestorElementDepth + (isElement ? 1 : 0);
+    if (isElement) {
+      if (elementDepth > MAX_INTERACTIVE_HTML_DEPTH) {
+        throw new InteractiveHtmlLimitError(
+          `Interactive HTML exceeds the maximum DOM depth of ${MAX_INTERACTIVE_HTML_DEPTH}`,
+        );
+      }
+      elementCount += 1;
+      if (elementCount > MAX_INTERACTIVE_HTML_ELEMENTS) {
+        throw new InteractiveHtmlLimitError(
+          `Interactive HTML exceeds the maximum element count of ${MAX_INTERACTIVE_HTML_ELEMENTS}`,
+        );
+      }
+    }
+
+    visit(current.node);
+
+    // Preserve the recursive walk's child-before-template-content order without
+    // spreading an adversarially wide child list into function arguments.
+    if (current.node.content) {
+      pending.push({ node: current.node.content, ancestorElementDepth: elementDepth });
+    }
+    const children = current.node.childNodes ?? [];
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      const child = children[index];
+      if (child) pending.push({ node: child, ancestorElementDepth: elementDepth });
+    }
+  }
+
   return rejected;
 }
 
 /** Return an actionable 422 message when a valid scene cannot be faithfully previewed. */
 export function previewabilityError(scene: PreviewScene): string | undefined {
   if (scene.type === 'slide') {
+    const invalidElement = invalidSlideCanvasElementError(scene);
+    if (invalidElement) return invalidElement;
     if (
       !Array.isArray(scene.content.canvas.elements) ||
       (scene.content.canvas.elements.length === 0 && !scene.content.canvas.background)
@@ -151,7 +229,13 @@ export function previewabilityError(scene: PreviewScene): string | undefined {
     if (typeof html !== 'string' || !html.trim()) {
       return 'Interactive scene requires non-empty embedded HTML for previewing';
     }
-    const rejected = findNonSelfContainedInteractiveReferences(html);
+    let rejected: string[];
+    try {
+      rejected = findNonSelfContainedInteractiveReferences(html);
+    } catch (error) {
+      if (error instanceof InteractiveHtmlLimitError) return error.message;
+      throw error;
+    }
     if (rejected.length > 0) {
       return `Interactive HTML is not self-contained: ${rejected.length} resource reference(s) must be inline or use data: URLs`;
     }

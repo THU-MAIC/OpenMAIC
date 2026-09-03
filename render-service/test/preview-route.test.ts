@@ -1,6 +1,10 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { PreviewGate } from '../src/preview-gate.js';
 import { PreviewTimeoutError, type PreviewRenderer } from '../src/preview-renderer.js';
+import {
+  MAX_INTERACTIVE_HTML_DEPTH,
+  MAX_INTERACTIVE_HTML_ELEMENTS,
+} from '../src/preview-validation.js';
 import type { RenderExecutor } from '../src/render-executor.js';
 import { Semaphore } from '../src/semaphore.js';
 import {
@@ -162,6 +166,36 @@ describe('POST /preview', () => {
   });
 
   it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['missing-type', {}],
+  ])('rejects a $name canvas element with HTTP 400, never 500', async (_name, element) => {
+    const payload = {
+      ...previewPayload(),
+      scene: {
+        ...previewPayload().scene,
+        content: {
+          ...previewPayload().scene.content,
+          canvas: { ...previewPayload().scene.content.canvas, elements: [element] },
+        },
+      },
+    };
+    // JSON.stringify canonicalizes an undefined array slot to null. The unit
+    // test exercises the exact in-memory undefined value as well.
+    const request = previewRequest(payload);
+    const render = vi.fn<PreviewRenderer['render']>();
+
+    const response = await appWith({ render }).fetch(request);
+
+    expect(response.status).toBe(400);
+    expect(response.status).not.toBe(500);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining('/content/canvas/elements/0'),
+    });
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  it.each([
     {
       name: 'an empty slide canvas',
       payload: {
@@ -226,6 +260,44 @@ describe('POST /preview', () => {
     const response = await appWith({ render }).fetch(previewRequest(payload));
     expect(response.status).toBe(422);
     await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining(error) });
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: 'DOM depth',
+      limit: MAX_INTERACTIVE_HTML_DEPTH,
+      fixtureSize: MAX_INTERACTIVE_HTML_DEPTH + 1,
+      html: `${'<i>'.repeat(MAX_INTERACTIVE_HTML_DEPTH + 1)}content${'</i>'.repeat(MAX_INTERACTIVE_HTML_DEPTH + 1)}`,
+    },
+    {
+      name: 'element count',
+      limit: MAX_INTERACTIVE_HTML_ELEMENTS,
+      fixtureSize: MAX_INTERACTIVE_HTML_ELEMENTS + 1,
+      html:
+        '<!doctype html><body>' +
+        '<i></i>'.repeat(MAX_INTERACTIVE_HTML_ELEMENTS + 1) +
+        '</body>',
+    },
+  ])('rejects interactive HTML beyond the $name ceiling with HTTP 422', async (testCase) => {
+    expect(testCase.fixtureSize).toBeGreaterThan(testCase.limit);
+    const payload = {
+      ...previewPayload(),
+      scene: {
+        ...previewPayload().scene,
+        type: 'interactive',
+        content: { type: 'interactive', html: testCase.html },
+      },
+    };
+    const render = vi.fn<PreviewRenderer['render']>();
+
+    const response = await appWith({ render }).fetch(previewRequest(payload));
+
+    expect(response.status).toBe(422);
+    expect(response.status).not.toBe(500);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining(`maximum ${testCase.name} of ${testCase.limit}`),
+    });
     expect(render).not.toHaveBeenCalled();
   });
 

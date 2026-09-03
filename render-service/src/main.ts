@@ -50,7 +50,10 @@ import {
   type PreviewStageContext,
   type PreviewViewport,
 } from './preview-renderer.js';
-import { previewabilityError } from './preview-validation.js';
+import {
+  invalidSlideCanvasElementError,
+  previewabilityError,
+} from './preview-validation.js';
 import type { JobStore } from './job-store.js';
 import type { ArtifactStore } from './artifact-store.js';
 import { isTerminal, type RenderOptions } from './types.js';
@@ -115,6 +118,8 @@ function parsePreviewPayload(value: unknown): PreviewPayload | string {
     const issue = sceneValidation.errors[0];
     return issue ? `Invalid scene at ${issue.path || '/'}: ${issue.message}` : 'Invalid scene';
   }
+  const invalidCanvasElement = invalidSlideCanvasElementError(value.scene);
+  if (invalidCanvasElement) return invalidCanvasElement;
   const scene = value.scene as PreviewScene;
 
   if (!isRecord(value.stage)) return 'Invalid stage context';
