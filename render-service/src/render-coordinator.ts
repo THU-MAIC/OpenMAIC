@@ -21,8 +21,27 @@ import type {
   RenderOptions,
 } from './types.js';
 
-/** Thrown when admission control rejects a submission (mapped to HTTP 429). */
-export class RenderRejectedError extends Error {}
+/**
+ * Machine-readable admission-rejection code, surfaced as `reason` on HTTP 429
+ * responses so clients can react to backpressure without parsing prose.
+ */
+export type RenderRejectionReason = 'queue_full' | 'per_identity_limit';
+
+/**
+ * Thrown when admission control rejects a submission (mapped to HTTP 429).
+ *
+ * `reason` is set when a rejection comes from an admission cap
+ * ({@link RenderRejectionReason}) and left undefined for internal invariants
+ * that have no client-facing remedy.
+ */
+export class RenderRejectedError extends Error {
+  constructor(
+    message: string,
+    readonly reason?: RenderRejectionReason,
+  ) {
+    super(message);
+  }
+}
 
 function planPathForProject(dir: string): string {
   return join(
@@ -78,16 +97,33 @@ export class RenderCoordinator {
     return this.pending + this.queue.length + this.running;
   }
 
-  /** Claim an admission slot before buffering or extracting the archive. */
+  /**
+   * Whether the system currently has room for another job (queue below the
+   * global cap). Exposed for `/health` as a deliberate aggregate-only signal:
+   * no occupancy counts, and never per-identity state — identity keys are
+   * client IPs when the service runs behind a trusted proxy, so publishing
+   * them would leak the list of active users' addresses.
+   */
+  get accepting(): boolean {
+    return this.inSystem < this.maxQueue;
+  }
+
+  /**
+   * Claim an admission slot before buffering or extracting the archive.
+   * Throws {@link RenderRejectedError} with reason `queue_full` once the
+   * global cap is reached, or `per_identity_limit` when this identity already
+   * holds `maxJobsPerUser` active jobs.
+   */
   reserve(identity: string): Reservation {
     if (this.inSystem >= this.maxQueue) {
-      throw new RenderRejectedError('The render queue is full; try again shortly.');
+      throw new RenderRejectedError('The render queue is full; try again shortly.', 'queue_full');
     }
     if (this.maxJobsPerUser > 0) {
       const active = this.activeByIdentity.get(identity) ?? 0;
       if (active >= this.maxJobsPerUser) {
         throw new RenderRejectedError(
           `A render is already in progress (limit ${this.maxJobsPerUser}).`,
+          'per_identity_limit',
         );
       }
     }
