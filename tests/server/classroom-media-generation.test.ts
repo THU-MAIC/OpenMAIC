@@ -108,6 +108,10 @@ describe('generateMediaForClassroom model fallback', () => {
   });
 
   test('gracefully skips media when every configured provider is force-disabled', async () => {
+    // The generic key enables OpenAI's image fallback. This test owns only the
+    // explicitly force-disabled providers below, so keep shell credentials out
+    // of its provider set (and out of fetch-mock failure output).
+    vi.stubEnv('OPENAI_API_KEY', '');
     vi.stubEnv('IMAGE_SEEDREAM_API_KEY', 'sk-seedream');
     vi.stubEnv('IMAGE_SEEDREAM_ENABLED', 'false');
     vi.stubEnv('VIDEO_SEEDANCE_API_KEY', 'sk-seedance');
