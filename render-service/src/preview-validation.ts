@@ -15,6 +15,11 @@ function isDataUrl(value: string | undefined): boolean {
   return /^data:/i.test(value?.trim() ?? '');
 }
 
+function isSelfContainedCssUrl(value: string): boolean {
+  const trimmed = value.trim();
+  return isDataUrl(trimmed) || trimmed.startsWith('#');
+}
+
 /** Count slide media slots that cannot load inside the isolated preview page. */
 export function countNonSelfContainedSlideMediaReferences(
   scene: Extract<PreviewScene, { type: 'slide' }>,
@@ -90,17 +95,22 @@ export function findNonSelfContainedInteractiveReferences(html: string): string[
   const rejectUnlessData = (value: string) => {
     if (!isDataUrl(value)) rejected.push(value.trim());
   };
+  const rejectUnlessSelfContainedCssUrl = (value: string) => {
+    if (!isSelfContainedCssUrl(value)) rejected.push(value.trim());
+  };
 
   const visit = (node: HtmlNode): void => {
     const tagName = node.tagName?.toLowerCase();
     const attrs = attributes(node);
 
     const style = attrs.get('style');
-    if (style !== undefined) cssUrls(style).forEach(rejectUnlessData);
+    if (style !== undefined) cssUrls(style).forEach(rejectUnlessSelfContainedCssUrl);
 
     if (tagName === 'style') {
       for (const child of node.childNodes ?? []) {
-        if (typeof child.value === 'string') cssUrls(child.value).forEach(rejectUnlessData);
+        if (typeof child.value === 'string') {
+          cssUrls(child.value).forEach(rejectUnlessSelfContainedCssUrl);
+        }
       }
     } else if (tagName === 'link') {
       const href = attrs.get('href');

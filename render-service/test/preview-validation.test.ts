@@ -76,6 +76,10 @@ describe('preview payload semantic validation', () => {
     ['non-data srcset candidate', '<img srcset="data:image/png;base64,AA== 1x, /image@2x.png 2x">'],
     ['CSS url in a style attribute', '<div style="background:url(/background.png)"></div>'],
     [
+      'HTTPS CSS url in a style attribute',
+      '<div style="background:url(https://cdn.example.test/background.png)"></div>',
+    ],
+    [
       'CSS url in a style element',
       '<style>@font-face { src: url(https://cdn.example.test/font.woff2) }</style>',
     ],
@@ -105,6 +109,23 @@ describe('preview payload semantic validation', () => {
       <audio src="data:audio/mpeg;base64,AA=="></audio>
       <iframe></iframe><iframe src="data:text/html,ready"></iframe>
       <embed src="data:text/html,ready"><object href="data:text/plain,ready"></object>
+    </body></html>`;
+
+    expect(findNonSelfContainedInteractiveReferences(html)).toEqual([]);
+    expect(previewabilityError(interactiveScene(html))).toBeUndefined();
+  });
+
+  it('accepts fragment-only CSS URLs that reference inline SVG definitions', () => {
+    const html = `<!doctype html><html><head>
+      <style>.clipped { clip-path: url('#clip') }</style>
+    </head><body>
+      <svg aria-hidden="true">
+        <defs>
+          <filter id="shadow"><feDropShadow dx="1" dy="1" stdDeviation="1"></feDropShadow></filter>
+          <clipPath id="clip"><circle cx="50" cy="50" r="40"></circle></clipPath>
+        </defs>
+      </svg>
+      <div class="clipped" style="filter: url(#shadow)"></div>
     </body></html>`;
 
     expect(findNonSelfContainedInteractiveReferences(html)).toEqual([]);

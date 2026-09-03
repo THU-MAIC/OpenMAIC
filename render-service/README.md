@@ -67,9 +67,11 @@ semantic checks, it renders immediately or fails with `capacity_busy`.
 only); network, blob:, and relative references are rejected. Slide media must
 use `data:` URLs, and interactive scenes must contain embedded HTML whose
 resource references are inline or `data:` URLs. Non-self-contained inputs fail
-with `422` instead of returning a misleading PNG. End-to-end fidelity for
-persisted scenes arrives with caller-side preparation, which is tracked
-separately.
+with `422` instead of returning a misleading PNG. Detection is best-effort:
+some exotic external constructs (for example, `object data`, `track src`, and
+CSS `@import`) may pass validation; self-contained scenes are the caller's
+responsibility, and end-to-end fidelity for persisted scenes arrives with
+caller-side preparation (tracked separately).
 
 ## Environment
 
