@@ -774,6 +774,9 @@ async function generateQwenTTS(
     }
   }
 
+  // Qwen3 uses `rate` from -500 to 500: 1.0x maps to 0, 2.0x to 500,
+  // and 0.5x to -250.
+  const rate = Math.round(((config.speed || 1.0) - 1.0) * 500);
   const modelId = resolveTTSModelForVoice('qwen-tts', config.voice, config.modelId);
   const response = await fetch(`${baseUrl}/services/aigc/multimodal-generation/generation`, {
     method: 'POST',
@@ -788,6 +791,7 @@ async function generateQwenTTS(
         voice: config.voice,
         language_type: 'Chinese', // Default to Chinese, can be made configurable
       },
+      parameters: { rate },
     }),
     signal,
   });

@@ -749,6 +749,12 @@ export function resolveTTSModel(
           ? normalizedClientModel
           : pinnedCatalogModel;
       }
+      // A persisted VC model must never be used for a catalog voice, even
+      // when this provider is not server-pinned. Keep an explicitly selected
+      // catalog model, but repair the stale VC sentinel to the catalog default.
+      if (normalizedClientModel === vcModel) {
+        return TTS_PROVIDERS['qwen-tts'].defaultModelId;
+      }
     }
 
     const allowedModels = new Set([...pinnedModels, vcModel]);
