@@ -81,7 +81,9 @@ const ERROR_MESSAGES: Record<QwenVoiceCloneErrorCode, string> = {
 
 export function qwenVoiceCloneErrorMessage(error: QwenVoiceCloneError): string {
   const vendorDetail = error.vendorMessage?.trim();
-  return vendorDetail ? `${ERROR_MESSAGES[error.code]} ${vendorDetail}` : ERROR_MESSAGES[error.code];
+  return vendorDetail
+    ? `${ERROR_MESSAGES[error.code]} ${vendorDetail}`
+    : ERROR_MESSAGES[error.code];
 }
 
 function isUnknownVoiceResponse(body: QwenResponse): boolean {
@@ -309,8 +311,13 @@ export async function listQwenVoices(
         ...(typeof entry.gmt_create === 'string' ? { createdAt: entry.gmt_create } : {}),
       });
     }
-    const total = typeof body.output?.total_count === 'number' ? body.output.total_count : undefined;
-    if (page.length === 0 || (total !== undefined && voices.length >= total) || page.length < pageSize) {
+    const total =
+      typeof body.output?.total_count === 'number' ? body.output.total_count : undefined;
+    if (
+      page.length === 0 ||
+      (total !== undefined && voices.length >= total) ||
+      page.length < pageSize
+    ) {
       break;
     }
   }
@@ -399,9 +406,10 @@ export async function downloadAudio(
   // DashScope may return either the legacy `dashscope-result-*` host or a
   // region/account-sharded `dashscope-*` OSS host for synthesized audio.
   // Keep the allowlist narrow to DashScope-owned OSS virtual-host names.
-  const trustedHost = /^dashscope(?:-result)?-[a-z0-9-]+\.oss-[a-z]{2}-[a-z0-9-]+\.aliyuncs\.com$/u.test(
-    url.hostname,
-  );
+  const trustedHost =
+    /^dashscope(?:-result)?-[a-z0-9-]+\.oss-[a-z]{2}-[a-z0-9-]+\.aliyuncs\.com$/u.test(
+      url.hostname,
+    );
   let trustedCustomEndpoint = false;
   if (effectiveBaseUrl) {
     try {

@@ -6,7 +6,11 @@ import {
   resolveTTSApiKey,
   resolveTTSBaseUrl,
 } from '@/lib/server/provider-config';
-import { listQwenVoices, QwenVoiceCloneError, qwenVoiceCloneErrorMessage } from '@/lib/audio/qwen-voice-clone';
+import {
+  listQwenVoices,
+  QwenVoiceCloneError,
+  qwenVoiceCloneErrorMessage,
+} from '@/lib/audio/qwen-voice-clone';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
@@ -27,7 +31,8 @@ export async function POST(req: NextRequest) {
       if (ssrfError) return apiError('INVALID_URL', 403, ssrfError);
     }
     const apiKey = resolveTTSApiKey('qwen-tts', managed ? undefined : body.ttsApiKey?.trim());
-    if (!apiKey) return apiError('MISSING_API_KEY', 400, 'No API key configured for TTS provider: qwen-tts');
+    if (!apiKey)
+      return apiError('MISSING_API_KEY', 400, 'No API key configured for TTS provider: qwen-tts');
     const baseUrl = resolveTTSBaseUrl('qwen-tts', clientBaseUrl);
     const voices = await listQwenVoices({
       apiKey,
@@ -39,6 +44,10 @@ export async function POST(req: NextRequest) {
     if (error instanceof QwenVoiceCloneError) {
       return apiError(error.code, error.httpStatus || 502, qwenVoiceCloneErrorMessage(error));
     }
-    return apiError('GENERATION_FAILED', 500, error instanceof Error ? error.message : String(error));
+    return apiError(
+      'GENERATION_FAILED',
+      500,
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }

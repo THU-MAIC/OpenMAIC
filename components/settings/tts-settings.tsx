@@ -1458,7 +1458,9 @@ function QwenVoiceCloneManager() {
                 />
               ))}
               {catalogVoices.length === 0 && (
-                <div className="px-4 py-8 text-center text-sm text-muted-foreground/60">未找到匹配的官方音色</div>
+                <div className="px-4 py-8 text-center text-sm text-muted-foreground/60">
+                  未找到匹配的官方音色
+                </div>
               )}
               {profiles.length > 0 && (
                 <>
@@ -1466,17 +1468,17 @@ function QwenVoiceCloneManager() {
                     我的复刻音色
                   </div>
                   {profiles.map((profile) => (
-                  <VoiceProfileRow
-                    key={profile.id}
-                    icon={<FileAudio className="h-4 w-4" />}
-                    title={profile.name}
-                    badge={profile.kind === 'imported' ? 'Qwen 导入' : t('settings.voxcpmClone')}
-                    detail={profile.referenceAudioName || profile.id}
-                    kind="clone"
-                    previewing={previewingVoiceId === profile.id}
-                    onPreview={() => handlePreview(profile.id, true)}
-                    onDelete={() => handleDelete(profile.id)}
-                  />
+                    <VoiceProfileRow
+                      key={profile.id}
+                      icon={<FileAudio className="h-4 w-4" />}
+                      title={profile.name}
+                      badge={profile.kind === 'imported' ? 'Qwen 导入' : t('settings.voxcpmClone')}
+                      detail={profile.referenceAudioName || profile.id}
+                      kind="clone"
+                      previewing={previewingVoiceId === profile.id}
+                      onPreview={() => handlePreview(profile.id, true)}
+                      onDelete={() => handleDelete(profile.id)}
+                    />
                   ))}
                 </>
               )}

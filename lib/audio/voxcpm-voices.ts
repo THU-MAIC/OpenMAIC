@@ -408,9 +408,7 @@ export function useQwenVoiceProfiles() {
       // Imported entries are references to voices already owned by the Qwen
       // account. Removing them from this browser must never delete them upstream.
       const vendorDeleted =
-        profile?.kind === 'imported'
-          ? false
-          : await deleteRegisteredVoice('qwen-tts', id, request);
+        profile?.kind === 'imported' ? false : await deleteRegisteredVoice('qwen-tts', id, request);
       if (!vendorDeleted) {
         console.warn('[QwenVoiceProfiles] Provider deletion failed; removing local profile');
       }
@@ -437,20 +435,26 @@ export function useQwenVoiceProfiles() {
       if (!res.ok) {
         throw new Error(typeof data.error === 'string' ? data.error : 'Failed to load Qwen voices');
       }
-      const ids = [...new Set((data.voices || []).flatMap((voice) =>
-        typeof voice.id === 'string' && voice.id.trim() ? [voice.id.trim()] : [],
-      ))];
+      const ids = [
+        ...new Set(
+          (data.voices || []).flatMap((voice) =>
+            typeof voice.id === 'string' && voice.id.trim() ? [voice.id.trim()] : [],
+          ),
+        ),
+      ];
       const existing = await db.voiceProfiles.bulkGet(ids);
       const now = Date.now();
-      const imported = ids.filter((id, index) => !existing[index]).map((id) => ({
-        id,
-        providerId: 'qwen-tts',
-        kind: 'imported' as const,
-        name: id,
-        referenceAudioName: 'Imported from Qwen',
-        createdAt: now,
-        updatedAt: now,
-      }));
+      const imported = ids
+        .filter((id, index) => !existing[index])
+        .map((id) => ({
+          id,
+          providerId: 'qwen-tts',
+          kind: 'imported' as const,
+          name: id,
+          referenceAudioName: 'Imported from Qwen',
+          createdAt: now,
+          updatedAt: now,
+        }));
       if (imported.length > 0) await db.voiceProfiles.bulkPut(imported);
       await refresh();
       notifyVoiceProfilesChanged();
