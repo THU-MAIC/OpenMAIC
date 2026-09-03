@@ -177,7 +177,7 @@ describe('POST /preview', () => {
       error: 'no renderable elements',
     },
     {
-      name: 'a slide with an unresolved asset reference',
+      name: 'a slide with a non-data asset reference',
       payload: {
         ...previewPayload(),
         scene: {
@@ -191,7 +191,7 @@ describe('POST /preview', () => {
           },
         },
       },
-      error: '1 unresolved asset reference',
+      error: 'Scene is not self-contained: 1 slide media reference(s) must use data: URLs',
     },
     {
       name: 'URL-only interactive content',
@@ -218,7 +218,8 @@ describe('POST /preview', () => {
           },
         },
       },
-      error: 'external HTTP(S) dependency',
+      error:
+        'Interactive HTML is not self-contained: 1 resource reference(s) must be inline or use data: URLs',
     },
   ])('maps $name to HTTP 422 before rendering', async ({ payload, error }) => {
     const render = vi.fn<PreviewRenderer['render']>();

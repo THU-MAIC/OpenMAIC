@@ -382,15 +382,20 @@ function forceKillBrowser(browser: Browser): void {
   }
 }
 
-async function closeBrowserBounded(browser: Browser): Promise<void> {
+export async function closeBrowserBounded(browser: Browser): Promise<void> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
   await Promise.race([
     browser.close().catch(() => {}),
     new Promise<void>((resolve) => {
-      timeout = setTimeout(resolve, BROWSER_CLOSE_GRACE_MS);
+      timeout = setTimeout(() => {
+        timedOut = true;
+        resolve();
+      }, BROWSER_CLOSE_GRACE_MS);
     }),
   ]);
   if (timeout) clearTimeout(timeout);
+  if (timedOut) forceKillBrowser(browser);
 }
 
 async function launchWithAbort(launch: Promise<Browser>, signal: AbortSignal): Promise<Browser> {

@@ -26,7 +26,7 @@ describe('render-service container contract', () => {
     expect(compose).toContain('HF_STATIC_DEDUP=false');
     expect(compose).toContain('RENDER_PREVIEW_TIMEOUT_MS=${RENDER_PREVIEW_TIMEOUT_MS:-20000}');
     expect(compose).toContain('RENDER_PREVIEW_MAX_IN_FLIGHT=${RENDER_PREVIEW_MAX_IN_FLIGHT:-8}');
-    expect(compose).toContain('RENDER_PREVIEW_MAX_PER_USER=0');
+    expect(compose).toContain('RENDER_PREVIEW_MAX_PER_USER=${RENDER_PREVIEW_MAX_PER_USER:-2}');
     expect(compose).toContain('mem_limit: ${RENDER_SERVICE_MEMORY_LIMIT:-8g}');
   });
 
@@ -76,7 +76,7 @@ describe('render-service container contract', () => {
       'preview_per_user_limit',
       'capacity_busy',
       'reflects the render queue only',
-      'requires a self-contained scene',
+      'requires fully self-contained scenes',
     ]) {
       expect(readme).toContain(expected);
     }

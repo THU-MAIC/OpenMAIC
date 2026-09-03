@@ -90,8 +90,8 @@ export const config = {
   previewDeadlineMs: intEnv('RENDER_PREVIEW_TIMEOUT_MS', 20 * 1000),
   /** Total previews admitted at once (buffering + waiting + executing). */
   previewMaxInFlight: intEnv('RENDER_PREVIEW_MAX_IN_FLIGHT', 8),
-  /** Per-identity concurrent preview cap; 0 disables the per-user check. */
-  previewMaxPerUser: intEnvAllowZero('RENDER_PREVIEW_MAX_PER_USER', 0),
+  /** Per-owner concurrent preview cap; 0 disables the per-owner check. */
+  previewMaxPerUser: intEnvAllowZero('RENDER_PREVIEW_MAX_PER_USER', 2),
   /** Max JSON request size for a synchronous preview (bytes). */
   previewMaxJsonBytes: intEnv('RENDER_PREVIEW_MAX_JSON_BYTES', 32 * MB),
   /** Root dir for unzipped projects and rendered outputs. */

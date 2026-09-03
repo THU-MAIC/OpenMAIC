@@ -63,13 +63,13 @@ Previews share the service's single Chromium execution slot with video renders,
 but never wait in the video queue. Once a preview has passed its body and
 semantic checks, it renders immediately or fails with `capacity_busy`.
 
-`POST /preview` requires a self-contained scene. Slide asset references must be
-resolved to concrete URLs before submission, interactive scenes must contain
-embedded HTML, and that HTML must not reference absolute HTTP(S) script, style,
-image, audio, or video dependencies. The isolated container cannot fetch remote
-dependencies, so these inputs fail with `422` instead of returning a misleading
-PNG. End-to-end caller-side preparation comparable to video export is tracked
-as follow-up work and is not part of this endpoint contract yet.
+`/preview` requires fully self-contained scenes (inline code and data: URLs
+only); network, blob:, and relative references are rejected. Slide media must
+use `data:` URLs, and interactive scenes must contain embedded HTML whose
+resource references are inline or `data:` URLs. Non-self-contained inputs fail
+with `422` instead of returning a misleading PNG. End-to-end fidelity for
+persisted scenes arrives with caller-side preparation, which is tracked
+separately.
 
 ## Environment
 
@@ -85,7 +85,7 @@ as follow-up work and is not part of this endpoint contract yet.
 | `RENDER_JOB_DEADLINE_MS`                 | `2700000`                   | Hard per-job wall-clock deadline; overruns are aborted and marked **failed**.                                                                                                                                                                                                                                                                                       |
 | `RENDER_PREVIEW_TIMEOUT_MS`              | `20000`                     | Hard wall-clock deadline for a synchronous preview, including body parsing and Chromium cleanup.                                                                                                                                                                                                                                                                   |
 | `RENDER_PREVIEW_MAX_IN_FLIGHT`           | `8`                         | Maximum admitted previews across buffering and execution.                                                                                                                                                                                                                                                                                                          |
-| `RENDER_PREVIEW_MAX_PER_USER`            | `0`                         | Concurrent previews per client identity; 0 disables the guard (see the shared-identity note below).                                                                                                                                                                                                                                                                |
+| `RENDER_PREVIEW_MAX_PER_USER`            | `2`                         | Concurrent previews per owner identity; 0 disables the guard for deployments whose preview callers do not supply an owner identity (see note below).                                                                                                                                                                                                                |
 | `RENDER_PREVIEW_MAX_JSON_BYTES`          | `33554432`                  | Maximum preview JSON body size (32 MiB), enforced on declared length and streamed bytes independently of the ZIP upload cap.                                                                                                                                                                                                                                        |
 | `RENDER_CHUNK_EXECUTION`                 | `false`                     | Opt in to the bounded local `plan -> renderChunk -> assemble` executor. The HTTP API stays unchanged.                                                                                                                                                                                                                                                               |
 | `RENDER_CHUNK_COUNT`                     | `1`                         | Number of deterministic closed-GOP chunks planned for a render when chunk execution is enabled.                                                                                                                                                                                                                                                                    |
@@ -131,9 +131,12 @@ forwarding headers.
 > `docker-compose.yml` sets `RENDER_MAX_JOBS_PER_USER=0` (guard off) and relies
 > on `RENDER_MAX_CONCURRENCY` + `RENDER_MAX_QUEUE` (see the comment beside that
 > variable in the Compose file). Enable the per-user guard only behind a trusted
-> proxy that supplies a real per-user identity. The same trap applies to
-> `RENDER_PREVIEW_MAX_PER_USER`, which also defaults to 0: a nonzero value under
-> shared identity throttles previews for the entire deployment, not one user.
+> proxy that supplies a real per-user identity.
+>
+> Preview callers are different: the app sends the durable session owner id in
+> `x-openmaic-client`, so `RENDER_PREVIEW_MAX_PER_USER` stays enabled and
+> defaults to 2. Set it to 0 only for deployments that call `/preview` without
+> an owner identity.
 
 ## Security / isolation
 

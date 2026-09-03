@@ -69,7 +69,7 @@ describe('config preview admission', () => {
     const config = await loadConfig();
     expect(config.previewDeadlineMs).toBe(20_000);
     expect(config.previewMaxInFlight).toBe(8);
-    expect(config.previewMaxPerUser).toBe(0);
+    expect(config.previewMaxPerUser).toBe(2);
     expect(config.previewMaxJsonBytes).toBe(32 * 1024 * 1024);
   });
 

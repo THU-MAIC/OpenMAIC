@@ -6,6 +6,7 @@ import {
   PreviewTimeoutError,
   buildSlideClientBundle,
   buildPreviewHtml,
+  closeBrowserBounded,
   injectInteractiveStorageShim,
   mountSlideClient,
   type PreviewScene,
@@ -15,6 +16,7 @@ import {
 const originalExecutable = process.env.PRODUCER_HEADLESS_SHELL_PATH;
 
 afterEach(() => {
+  vi.useRealTimers();
   if (originalExecutable === undefined) delete process.env.PRODUCER_HEADLESS_SHELL_PATH;
   else process.env.PRODUCER_HEADLESS_SHELL_PATH = originalExecutable;
 });
@@ -193,5 +195,22 @@ describe('preview renderer browser readiness', () => {
     expect(launch.mock.calls[0]?.[0]).toMatchObject({ protocolTimeout: 1_040 });
     expect(kill).toHaveBeenCalledWith('SIGKILL');
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('force-kills Chromium when the bounded browser close times out', async () => {
+    vi.useFakeTimers();
+    const kill = vi.fn();
+    const close = vi.fn(() => new Promise<void>(() => {}));
+    const browser = { close, process: () => ({ kill }) } as unknown as Browser;
+
+    const closing = closeBrowserBounded(browser);
+    expect(close).toHaveBeenCalledOnce();
+    expect(kill).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(250);
+    await closing;
+
+    expect(kill).toHaveBeenCalledOnce();
+    expect(kill).toHaveBeenCalledWith('SIGKILL');
   });
 });
