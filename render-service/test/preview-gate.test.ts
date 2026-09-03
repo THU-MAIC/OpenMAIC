@@ -6,7 +6,14 @@ describe('PreviewGate', () => {
     const gate = new PreviewGate(1, 0);
     const release = gate.acquire('alice');
     expect(() => gate.acquire('bob')).toThrow(PreviewRejectedError);
-    expect(() => gate.acquire('bob')).toThrow(/preview queue is full/i);
+    try {
+      gate.acquire('bob');
+    } catch (error) {
+      expect(error).toMatchObject({
+        message: expect.stringMatching(/preview queue is full/i),
+        reason: 'preview_queue_full',
+      });
+    }
 
     release();
     expect(() => gate.acquire('bob')).not.toThrow();
@@ -15,7 +22,14 @@ describe('PreviewGate', () => {
   it('enforces an independent per-identity cap', () => {
     const gate = new PreviewGate(8, 1);
     const releaseAlice = gate.acquire('alice');
-    expect(() => gate.acquire('alice')).toThrow(/Too many concurrent previews \(limit 1\)/);
+    try {
+      gate.acquire('alice');
+    } catch (error) {
+      expect(error).toMatchObject({
+        message: expect.stringMatching(/Too many concurrent previews \(limit 1\)/),
+        reason: 'preview_per_user_limit',
+      });
+    }
 
     const releaseBob = gate.acquire('bob');
     expect(() => gate.acquire('bob')).toThrow(PreviewRejectedError);

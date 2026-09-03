@@ -91,7 +91,9 @@ export const config = {
   /** Total previews admitted at once (buffering + waiting + executing). */
   previewMaxInFlight: intEnv('RENDER_PREVIEW_MAX_IN_FLIGHT', 8),
   /** Per-identity concurrent preview cap; 0 disables the per-user check. */
-  previewMaxPerUser: intEnvAllowZero('RENDER_PREVIEW_MAX_PER_USER', 2),
+  previewMaxPerUser: intEnvAllowZero('RENDER_PREVIEW_MAX_PER_USER', 0),
+  /** Max JSON request size for a synchronous preview (bytes). */
+  previewMaxJsonBytes: intEnv('RENDER_PREVIEW_MAX_JSON_BYTES', 32 * MB),
   /** Root dir for unzipped projects and rendered outputs. */
   tmpDir: process.env.PRODUCER_TMP_PROJECT_DIR || '/tmp/openmaic-renders',
 

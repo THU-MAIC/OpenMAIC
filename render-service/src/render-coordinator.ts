@@ -100,6 +100,21 @@ export class RenderCoordinator {
     return this.executionGate.run(task, signal);
   }
 
+  /** Run work only when an execution slot is available now; never queue. */
+  tryRunWithExecutionSlot<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> | undefined {
+    signal?.throwIfAborted();
+    const release = this.executionGate.tryAcquire();
+    if (!release) return undefined;
+    return (async () => {
+      try {
+        signal?.throwIfAborted();
+        return await task();
+      } finally {
+        release();
+      }
+    })();
+  }
+
   /** Total jobs occupying the system: reserved + queued + running. */
   private get inSystem(): number {
     return this.pending + this.queue.length + this.running;
@@ -247,31 +262,27 @@ export class RenderCoordinator {
     const { id, projectDir } = record;
     const outputPath = join(projectDir, 'output.mp4');
     try {
-      await this.jobs.update(id, { status: 'running', currentStage: 'preparing' });
-      const result = await this.runWithExecutionSlot(
-        () =>
-          this.executor.execute({
-            projectDir,
-            outputPath,
-            options,
-            signal: abort.signal,
-            deadlineMs: this.jobDeadlineMs,
-            onProgress: async (progress) => {
-              await this.jobs.update(id, {
-                status: 'running',
-                progress: progress.progress,
-                currentStage: progress.stage,
-                ...(progress.framesRendered !== undefined
-                  ? { framesRendered: progress.framesRendered }
-                  : {}),
-                ...(progress.totalFrames !== undefined
-                  ? { totalFrames: progress.totalFrames }
-                  : {}),
-              });
-            },
-          }),
-        abort.signal,
-      );
+      const result = await this.runWithExecutionSlot(async () => {
+        await this.jobs.update(id, { status: 'running', currentStage: 'preparing' });
+        return this.executor.execute({
+          projectDir,
+          outputPath,
+          options,
+          signal: abort.signal,
+          deadlineMs: this.jobDeadlineMs,
+          onProgress: async (progress) => {
+            await this.jobs.update(id, {
+              status: 'running',
+              progress: progress.progress,
+              currentStage: progress.stage,
+              ...(progress.framesRendered !== undefined
+                ? { framesRendered: progress.framesRendered }
+                : {}),
+              ...(progress.totalFrames !== undefined ? { totalFrames: progress.totalFrames } : {}),
+            });
+          },
+        });
+      }, abort.signal);
 
       if (result.status !== 'succeeded') {
         await this.finishNonSuccess(id, projectDir, result);

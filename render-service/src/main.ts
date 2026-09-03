@@ -44,11 +44,13 @@ import { PreviewGate, PreviewRejectedError } from './preview-gate.js';
 import {
   ChromiumPreviewRenderer,
   PreviewTimeoutError,
+  buildSlideClientBundle,
   type PreviewRenderer,
   type PreviewScene,
   type PreviewStageContext,
   type PreviewViewport,
 } from './preview-renderer.js';
+import { previewabilityError } from './preview-validation.js';
 import type { JobStore } from './job-store.js';
 import type { ArtifactStore } from './artifact-store.js';
 import { isTerminal, type RenderOptions } from './types.js';
@@ -60,9 +62,11 @@ import type { RuntimeVersions } from './types.js';
 class UploadTooLargeError extends Error {}
 /** Thrown inside the gated section for a malformed request (→ HTTP 400). */
 class BadRequestError extends Error {}
+/** Thrown for a valid payload whose scene cannot produce a faithful preview (→ HTTP 422). */
+class UnprocessablePreviewError extends Error {}
 
 /** 429 body for an admission rejection: the prose plus its machine code, if any. */
-function rejectionBody(error: RenderRejectedError): { error: string; reason?: string } {
+function rejectionBody(error: Error & { reason?: string }): { error: string; reason?: string } {
   // Spread-omission keeps reason-less rejections (internal invariants) from
   // serializing `"reason": undefined` into the body.
   return { error: error.message, ...(error.reason ? { reason: error.reason } : {}) };
@@ -81,6 +85,8 @@ export interface AppDeps {
   previewRenderer?: PreviewRenderer;
   /** Preview wall-clock deadline, injectable for focused route tests. */
   previewDeadlineMs?: number;
+  /** Preview JSON byte ceiling, injectable for focused route tests. */
+  previewMaxJsonBytes?: number;
   /** Extract a validated archive into a dir. Overridable in tests. */
   unzipProject?: (zip: Uint8Array, destDir: string) => Promise<void>;
   /** Create a fresh per-render scratch dir. Overridable in tests. */
@@ -151,8 +157,12 @@ function parsePreviewPayload(value: unknown): PreviewPayload | string {
   };
 }
 
-/** Parse a byte-capped JSON body while preserving socket backpressure. */
-async function readPreviewPayload(c: Context, signal: AbortSignal): Promise<PreviewPayload> {
+/** Buffer and parse a byte-capped JSON body while preserving socket backpressure. */
+async function readPreviewPayload(
+  c: Context,
+  signal: AbortSignal,
+  maxJsonBytes: number,
+): Promise<unknown> {
   if (!c.req.header('content-type')?.toLowerCase().includes('application/json')) {
     throw new BadRequestError('Expected application/json');
   }
@@ -162,7 +172,7 @@ async function readPreviewPayload(c: Context, signal: AbortSignal): Promise<Prev
   let capped: ReturnType<typeof capBodyStream> | undefined;
   try {
     if (raw.body) {
-      capped = capBodyStream(raw.body, config.maxUploadBytes, signal);
+      capped = capBodyStream(raw.body, maxJsonBytes, signal);
       const bounded = new Request(raw.url, {
         method: raw.method,
         headers: raw.headers,
@@ -182,9 +192,7 @@ async function readPreviewPayload(c: Context, signal: AbortSignal): Promise<Prev
     throw new BadRequestError('Expected valid JSON');
   }
 
-  const payload = parsePreviewPayload(value);
-  if (typeof payload === 'string') throw new BadRequestError(payload);
-  return payload;
+  return value;
 }
 
 /** Parse + validate the multipart render options. Returns options or an error string. */
@@ -222,6 +230,7 @@ export function createApp(deps: AppDeps): Hono {
   const makeProjectDir = deps.makeProjectDir ?? defaultMakeProjectDir;
   const previewRenderer = deps.previewRenderer ?? new ChromiumPreviewRenderer();
   const previewDeadlineMs = deps.previewDeadlineMs ?? config.previewDeadlineMs;
+  const previewMaxJsonBytes = deps.previewMaxJsonBytes ?? config.previewMaxJsonBytes;
   const previewGate =
     deps.previewGate ?? new PreviewGate(config.previewMaxInFlight, config.previewMaxPerUser);
 
@@ -321,7 +330,7 @@ export function createApp(deps: AppDeps): Hono {
 
   app.post('/preview', async (c) => {
     const declared = Number(c.req.header('content-length') ?? '0');
-    if (Number.isFinite(declared) && declared > config.maxUploadBytes) {
+    if (Number.isFinite(declared) && declared > previewMaxJsonBytes) {
       return c.json({ error: 'Upload too large' }, 413);
     }
 
@@ -330,34 +339,50 @@ export function createApp(deps: AppDeps): Hono {
     try {
       release = previewGate.acquire(identity);
     } catch (error) {
-      if (error instanceof PreviewRejectedError) return c.json({ error: error.message }, 429);
+      if (error instanceof PreviewRejectedError) return c.json(rejectionBody(error), 429);
       throw error;
     }
 
-    const abort = new AbortController();
+    const deadlineAbort = new AbortController();
     const deadline = setTimeout(
-      () => abort.abort(new PreviewTimeoutError('Preview exceeded the deadline')),
+      () => deadlineAbort.abort(new PreviewTimeoutError('Preview exceeded the deadline')),
       previewDeadlineMs,
     );
     deadline.unref?.();
+    // The Fetch request signal is backed by the Node request's close event, so
+    // disconnecting clients abort body reads and Chromium work immediately.
+    const signal = AbortSignal.any([c.req.raw.signal, deadlineAbort.signal]);
 
     try {
-      // Keep the memory permit until the parsed scene has been rendered, so a
-      // burst cannot accumulate large expanded JSON objects while waiting for
-      // Chromium. The coordinator gate shares Chromium capacity with videos.
-      const png = await extractionGate.run(async () => {
-        const payload = await readPreviewPayload(c, abort.signal);
-        return coordinator.runWithExecutionSlot(
-          () =>
-            previewRenderer.render({
-              scene: payload.scene,
-              stage: payload.stage,
-              viewport: payload.viewport,
-              signal: abort.signal,
-            }),
-          abort.signal,
+      // The extraction permit covers only byte buffering + JSON parse. A parsed
+      // scene is bounded by previewMaxJsonBytes times the parser's expansion,
+      // and PreviewGate bounds live parsed scenes to previewMaxInFlight.
+      const value = await extractionGate.run(
+        () => readPreviewPayload(c, signal, previewMaxJsonBytes),
+        signal,
+      );
+      const payload = parsePreviewPayload(value);
+      if (typeof payload === 'string') throw new BadRequestError(payload);
+      const unpreviewable = previewabilityError(payload.scene);
+      if (unpreviewable) throw new UnprocessablePreviewError(unpreviewable);
+      const execution = coordinator.tryRunWithExecutionSlot(
+        () =>
+          previewRenderer.render({
+            scene: payload.scene,
+            stage: payload.stage,
+            viewport: payload.viewport,
+            signal,
+            deadlineMs: previewDeadlineMs,
+          }),
+        signal,
+      );
+      if (!execution) {
+        throw new PreviewRejectedError(
+          'Preview capacity is busy with another render; retry shortly.',
+          'capacity_busy',
         );
-      }, abort.signal);
+      }
+      const png = await execution;
       if (png.byteLength === 0) throw new Error('Preview renderer returned an empty image');
 
       const body = new Uint8Array(png.byteLength);
@@ -372,7 +397,11 @@ export function createApp(deps: AppDeps): Hono {
     } catch (error) {
       if (error instanceof UploadTooLargeError) return c.json({ error: error.message }, 413);
       if (error instanceof BadRequestError) return c.json({ error: error.message }, 400);
-      if (error instanceof PreviewTimeoutError || abort.signal.aborted) {
+      if (error instanceof UnprocessablePreviewError) {
+        return c.json({ error: error.message }, 422);
+      }
+      if (error instanceof PreviewRejectedError) return c.json(rejectionBody(error), 429);
+      if (error instanceof PreviewTimeoutError || deadlineAbort.signal.aborted) {
         return c.json({ error: 'Preview exceeded the deadline' }, 504);
       }
       return c.json(
@@ -467,6 +496,10 @@ async function main(): Promise<void> {
     void coordinator.cleanupProject(record.projectDir);
   });
   coordinator = new RenderCoordinator(executor, jobs, artifacts);
+
+  // Build the browser mount off the request path so the first preview does not
+  // pay the cold esbuild cost while holding admission and execution permits.
+  await buildSlideClientBundle();
 
   const app = createApp({
     jobs,

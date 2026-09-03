@@ -23,6 +23,7 @@
     "fflate": "^0.8.2",
     "hono": "^4.6.14",
     "motion": "^12.27.5",
+    "parse5": "^8.0.1",
     "puppeteer-core": "^25.6.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",

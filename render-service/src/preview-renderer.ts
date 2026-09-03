@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { build } from 'esbuild';
+import { parse, type DefaultTreeAdapterTypes } from 'parse5';
 import type {
   Action,
   InteractiveContent,
@@ -36,6 +37,7 @@ export interface PreviewRequest {
   stage: PreviewStageContext;
   viewport: PreviewViewport;
   signal: AbortSignal;
+  deadlineMs: number;
 }
 
 export interface PreviewRenderer {
@@ -43,6 +45,9 @@ export interface PreviewRenderer {
 }
 
 export class PreviewTimeoutError extends Error {}
+
+const PREVIEW_PROTOCOL_TIMEOUT_BUFFER_MS = 1_000;
+const BROWSER_CLOSE_GRACE_MS = 250;
 
 function escapeAttribute(value: string): string {
   return value
@@ -56,6 +61,78 @@ function htmlDocument(body: string, scene: PreviewScene): string {
   return `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}</style></head>
 <body data-scene-id="${escapeAttribute(scene.id)}">${body}</body></html>`;
+}
+
+function isElement(
+  node: DefaultTreeAdapterTypes.ChildNode,
+): node is DefaultTreeAdapterTypes.Element {
+  return !node.nodeName.startsWith('#');
+}
+
+function insertAt(html: string, offset: number, injection: string): string {
+  return html.slice(0, offset) + injection + html.slice(offset);
+}
+
+/** Inject markup first in the parsed head without importing app-side code. */
+function injectIntoDocumentHead(html: string, injection: string): string {
+  const document = parse(html, { sourceCodeLocationInfo: true });
+  const htmlElement = document.childNodes.find(
+    (node): node is DefaultTreeAdapterTypes.Element => isElement(node) && node.tagName === 'html',
+  );
+  const headElement = htmlElement?.childNodes.find(
+    (node): node is DefaultTreeAdapterTypes.Element => isElement(node) && node.tagName === 'head',
+  );
+  const explicitHeadEnd = headElement?.sourceCodeLocation?.startTag?.endOffset;
+  if (explicitHeadEnd !== undefined) return insertAt(html, explicitHeadEnd, injection);
+
+  const firstHeadChildOffset = headElement?.childNodes.reduce<number | undefined>((first, node) => {
+    const offset = node.sourceCodeLocation?.startOffset;
+    if (offset === undefined) return first;
+    return first === undefined ? offset : Math.min(first, offset);
+  }, undefined);
+  if (firstHeadChildOffset !== undefined) return insertAt(html, firstHeadChildOffset, injection);
+
+  const explicitHtmlEnd = htmlElement?.sourceCodeLocation?.startTag?.endOffset;
+  if (explicitHtmlEnd !== undefined) {
+    return insertAt(html, explicitHtmlEnd, `<head>${injection}</head>`);
+  }
+
+  const doctype = document.childNodes.find((node) => node.nodeName === '#documentType');
+  const doctypeEnd = doctype?.sourceCodeLocation?.endOffset;
+  if (doctypeEnd !== undefined) return insertAt(html, doctypeEnd, `<head>${injection}</head>`);
+  return `<head>${injection}</head>${html}`;
+}
+
+/**
+ * Standalone counterpart of the app's `patchHtmlForIframe` storage behavior.
+ * The sandbox intentionally omits allow-same-origin, so real Web Storage can
+ * throw SecurityError; install in-memory stores before authored scripts run.
+ */
+const STORAGE_SHIM = `<script data-preview-storage-shim>
+(function () {
+  function makeStore() {
+    var data = Object.create(null);
+    return {
+      getItem: function (k) { k = String(k); return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
+      setItem: function (k, v) { data[String(k)] = String(v); },
+      removeItem: function (k) { delete data[String(k)]; },
+      clear: function () { data = Object.create(null); },
+      key: function (i) { var keys = Object.keys(data); return i < keys.length ? keys[i] : null; },
+      get length() { return Object.keys(data).length; }
+    };
+  }
+  ['localStorage', 'sessionStorage'].forEach(function (name) {
+    var ok = false;
+    try { var store = window[name]; if (store) { store.getItem('__probe__'); ok = true; } } catch (error) { ok = false; }
+    if (!ok) {
+      try { Object.defineProperty(window, name, { value: makeStore(), configurable: true }); } catch (error) {}
+    }
+  });
+})();
+</script>`;
+
+export function injectInteractiveStorageShim(html: string): string {
+  return injectIntoDocumentHead(html, `\n${STORAGE_SHIM}\n`);
 }
 
 function slidePreviewMarkup(
@@ -78,7 +155,7 @@ function interactivePreviewMarkup(
   return renderToStaticMarkup(
     createElement('iframe', {
       title: scene.title,
-      srcDoc: scene.content.html,
+      srcDoc: injectInteractiveStorageShim(scene.content.html),
       sandbox: 'allow-scripts allow-forms allow-modals',
       style: { width: `${viewport.width}px`, height: `${viewport.height}px`, border: 0 },
     }),
@@ -158,15 +235,13 @@ export function buildPreviewHtml(
   return htmlDocument(markup, scene);
 }
 
-function timeoutError(): PreviewTimeoutError {
-  return new PreviewTimeoutError('Preview exceeded the deadline');
-}
-
 let slideClientBundle: Promise<string> | undefined;
+type SlideBundleBuilder = typeof build;
 
 /** Bundle the browser-only SlideCanvas mount once per service process. */
-export function buildSlideClientBundle(): Promise<string> {
-  slideClientBundle ??= build({
+export function buildSlideClientBundle(builder: SlideBundleBuilder = build): Promise<string> {
+  if (slideClientBundle) return slideClientBundle;
+  const candidate = builder({
     stdin: {
       sourcefile: 'preview-slide-client.js',
       resolveDir: dirname(fileURLToPath(import.meta.url)),
@@ -218,6 +293,11 @@ export function buildSlideClientBundle(): Promise<string> {
     if (!output) throw new Error('Failed to build the preview slide client');
     return output.text;
   });
+  const retryable = candidate.catch((error: unknown) => {
+    if (slideClientBundle === retryable) slideClientBundle = undefined;
+    throw error;
+  });
+  slideClientBundle = retryable;
   return slideClientBundle;
 }
 
@@ -274,30 +354,96 @@ export async function waitForInteractiveFrame(page: Page): Promise<void> {
   await waitForDocumentAssets(frame);
 }
 
-async function launchWithAbort(launch: Promise<Browser>, signal: AbortSignal): Promise<Browser> {
-  let rejectAbort!: (error: PreviewTimeoutError) => void;
+function abortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error('Preview aborted');
+}
+
+async function raceWithAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) throw abortError(signal);
+  let rejectAbort!: (error: Error) => void;
   const aborted = new Promise<never>((_resolve, reject) => {
     rejectAbort = reject;
   });
-  const onAbort = () => rejectAbort(timeoutError());
+  const onAbort = () => rejectAbort(abortError(signal));
   signal.addEventListener('abort', onAbort, { once: true });
 
   try {
-    return await Promise.race([launch, aborted]);
-  } catch (error) {
-    if (signal.aborted) {
-      void launch.then((browser) => browser.close()).catch(() => {});
-      throw timeoutError();
-    }
-    throw error;
+    return await Promise.race([operation, aborted]);
   } finally {
     signal.removeEventListener('abort', onAbort);
   }
 }
 
+function forceKillBrowser(browser: Browser): void {
+  try {
+    browser.process()?.kill('SIGKILL');
+  } catch {
+    // The process may already have exited; bounded close below remains best effort.
+  }
+}
+
+async function closeBrowserBounded(browser: Browser): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    browser.close().catch(() => {}),
+    new Promise<void>((resolve) => {
+      timeout = setTimeout(resolve, BROWSER_CLOSE_GRACE_MS);
+    }),
+  ]);
+  if (timeout) clearTimeout(timeout);
+}
+
+async function launchWithAbort(launch: Promise<Browser>, signal: AbortSignal): Promise<Browser> {
+  try {
+    return await raceWithAbort(launch, signal);
+  } catch (error) {
+    if (signal.aborted) {
+      void launch
+        .then(async (browser) => {
+          forceKillBrowser(browser);
+          await closeBrowserBounded(browser);
+        })
+        .catch(() => {});
+    }
+    throw error;
+  }
+}
+
+/** Mount the slide client while surfacing synchronous in-page crashes immediately. */
+export async function mountSlideClient(page: Page, bundle: string): Promise<void> {
+  let rejectPageError!: (error: Error) => void;
+  const pageError = new Promise<never>((_resolve, reject) => {
+    rejectPageError = reject;
+  });
+  const onPageError = (error: unknown) =>
+    rejectPageError(error instanceof Error ? error : new Error(String(error)));
+  page.on('pageerror', onPageError);
+  try {
+    await Promise.race([
+      (async () => {
+        await page.addScriptTag({ content: bundle });
+        await page.waitForFunction(() => '__OPENMAIC_PREVIEW_MOUNTED__' in window);
+      })(),
+      pageError,
+    ]);
+  } finally {
+    page.off('pageerror', onPageError);
+  }
+}
+
+export interface ChromiumPreviewRendererOptions {
+  browserLauncher?: Pick<typeof puppeteer, 'launch'>;
+}
+
 export class ChromiumPreviewRenderer implements PreviewRenderer {
+  private readonly browserLauncher: Pick<typeof puppeteer, 'launch'>;
+
+  constructor(options: ChromiumPreviewRendererOptions = {}) {
+    this.browserLauncher = options.browserLauncher ?? puppeteer;
+  }
+
   async render(request: PreviewRequest): Promise<Uint8Array> {
-    if (request.signal.aborted) throw timeoutError();
+    if (request.signal.aborted) throw abortError(request.signal);
 
     const executablePath =
       process.env.PRODUCER_HEADLESS_SHELL_PATH || process.env.PUPPETEER_EXECUTABLE_PATH;
@@ -306,58 +452,63 @@ export class ChromiumPreviewRenderer implements PreviewRenderer {
     }
 
     const browser = await launchWithAbort(
-      puppeteer.launch({
+      this.browserLauncher.launch({
         executablePath,
         headless: true,
+        protocolTimeout: request.deadlineMs + PREVIEW_PROTOCOL_TIMEOUT_BUFFER_MS,
         args: ['--no-sandbox', '--disable-dev-shm-usage'],
       }),
       request.signal,
     );
-    const closeOnAbort = () => void browser.close();
+    const closeOnAbort = () => forceKillBrowser(browser);
     request.signal.addEventListener('abort', closeOnAbort, { once: true });
 
     try {
-      const page = await browser.newPage();
-      await page.setViewport(request.viewport);
-      await page.setContent(buildPreviewHtml(request.scene, request.stage, request.viewport), {
-        waitUntil: 'domcontentloaded',
-      });
-      if (request.signal.aborted) throw timeoutError();
+      return await raceWithAbort(
+        (async () => {
+          const page = await browser.newPage();
+          await page.setViewport(request.viewport);
+          await page.setContent(buildPreviewHtml(request.scene, request.stage, request.viewport), {
+            waitUntil: 'domcontentloaded',
+          });
 
-      if (request.scene.type === 'slide') {
-        await page.evaluate(
-          (slide, viewport) => {
-            Object.assign(window, {
-              __OPENMAIC_PREVIEW_PROPS__: { slide, viewport },
-            });
-          },
-          request.scene.content.canvas,
-          request.viewport,
-        );
-        await page.addScriptTag({ content: await buildSlideClientBundle() });
-        await page.waitForFunction(() => '__OPENMAIC_PREVIEW_MOUNTED__' in window);
-      }
+          if (request.scene.type === 'slide') {
+            await page.evaluate(
+              (slide, viewport) => {
+                Object.assign(window, {
+                  __OPENMAIC_PREVIEW_PROPS__: { slide, viewport },
+                });
+              },
+              request.scene.content.canvas,
+              request.viewport,
+            );
+            await mountSlideClient(page, await buildSlideClientBundle());
+          }
 
-      const selected = await page.evaluate(
-        (sceneId) => document.body.getAttribute('data-scene-id') === sceneId,
-        request.scene.id,
+          const selected = await page.evaluate(
+            (sceneId) => document.body.getAttribute('data-scene-id') === sceneId,
+            request.scene.id,
+          );
+          if (!selected) {
+            throw new Error(
+              `Requested scene was not found in the preview page (${request.scene.id})`,
+            );
+          }
+
+          if (request.scene.type === 'interactive') await waitForInteractiveFrame(page);
+          else await waitForDocumentAssets(page);
+
+          const png = await page.screenshot({ type: 'png', optimizeForSpeed: true });
+          return new Uint8Array(png);
+        })(),
+        request.signal,
       );
-      if (!selected) {
-        throw new Error(`Requested scene was not found in the preview page (${request.scene.id})`);
-      }
-
-      if (request.scene.type === 'interactive') await waitForInteractiveFrame(page);
-      else await waitForDocumentAssets(page);
-      if (request.signal.aborted) throw timeoutError();
-
-      const png = await page.screenshot({ type: 'png', optimizeForSpeed: true });
-      return new Uint8Array(png);
     } catch (error) {
-      if (request.signal.aborted) throw timeoutError();
+      if (request.signal.aborted) throw abortError(request.signal);
       throw error;
     } finally {
       request.signal.removeEventListener('abort', closeOnAbort);
-      await browser.close().catch(() => {});
+      await closeBrowserBounded(browser);
     }
   }
 }

@@ -1,5 +1,17 @@
+export type PreviewRejectionReason =
+  | 'preview_queue_full'
+  | 'preview_per_user_limit'
+  | 'capacity_busy';
+
 /** Thrown when admission control rejects a preview (mapped to HTTP 429). */
-export class PreviewRejectedError extends Error {}
+export class PreviewRejectedError extends Error {
+  constructor(
+    message: string,
+    readonly reason: PreviewRejectionReason,
+  ) {
+    super(message);
+  }
+}
 
 /** Independent admission control for synchronous single-page previews. */
 export class PreviewGate {
@@ -17,12 +29,18 @@ export class PreviewGate {
    */
   acquire(identity: string): () => void {
     if (this.inFlight >= this.maxInFlight) {
-      throw new PreviewRejectedError('The preview queue is full; try again shortly.');
+      throw new PreviewRejectedError(
+        'The preview queue is full; try again shortly.',
+        'preview_queue_full',
+      );
     }
 
     const active = this.activeByIdentity.get(identity) ?? 0;
     if (this.maxPerUser > 0 && active >= this.maxPerUser) {
-      throw new PreviewRejectedError(`Too many concurrent previews (limit ${this.maxPerUser}).`);
+      throw new PreviewRejectedError(
+        `Too many concurrent previews (limit ${this.maxPerUser}).`,
+        'preview_per_user_limit',
+      );
     }
 
     this.inFlight += 1;

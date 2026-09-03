@@ -28,6 +28,21 @@ export class Semaphore {
     }
   }
 
+  /**
+   * Claim an immediately available permit without joining the FIFO queue.
+   * Returns an idempotent release function, or undefined when capacity is busy.
+   */
+  tryAcquire(): (() => void) | undefined {
+    if (this.available <= 0) return undefined;
+    this.available -= 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.release();
+    };
+  }
+
   private acquire(signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) return Promise.reject(signal.reason ?? new Error('Operation aborted'));
     if (this.available > 0) {

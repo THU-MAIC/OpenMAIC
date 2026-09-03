@@ -40,7 +40,7 @@ function previewPayload() {
             fontColor: '#111',
             fontName: 'Inter',
           },
-          elements: [],
+          elements: [{ id: 'text-1', type: 'text', content: 'Preview' }],
         },
       },
       actions: [],
@@ -77,7 +77,11 @@ async function waitFor(check: () => boolean): Promise<void> {
 function appWith(
   previewRenderer: PreviewRenderer,
   previewGate = new PreviewGate(8, 2),
-  options: { extractionGate?: Semaphore; previewDeadlineMs?: number } = {},
+  options: {
+    extractionGate?: Semaphore;
+    previewDeadlineMs?: number;
+    previewMaxJsonBytes?: number;
+  } = {},
 ) {
   const jobs = createMemoryJobStore();
   const artifacts = createMemoryArtifactStore().store;
@@ -90,6 +94,7 @@ function appWith(
     previewGate,
     previewRenderer,
     previewDeadlineMs: options.previewDeadlineMs,
+    previewMaxJsonBytes: options.previewMaxJsonBytes,
   });
 }
 
@@ -156,11 +161,101 @@ describe('POST /preview', () => {
     expect(render).not.toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      name: 'an empty slide canvas',
+      payload: {
+        ...previewPayload(),
+        scene: {
+          ...previewPayload().scene,
+          content: {
+            ...previewPayload().scene.content,
+            canvas: { ...previewPayload().scene.content.canvas, elements: [] },
+          },
+        },
+      },
+      error: 'no renderable elements',
+    },
+    {
+      name: 'a slide with an unresolved asset reference',
+      payload: {
+        ...previewPayload(),
+        scene: {
+          ...previewPayload().scene,
+          content: {
+            ...previewPayload().scene.content,
+            canvas: {
+              ...previewPayload().scene.content.canvas,
+              elements: [{ id: 'image-1', type: 'image', src: 'asset_opaque_1' }],
+            },
+          },
+        },
+      },
+      error: '1 unresolved asset reference',
+    },
+    {
+      name: 'URL-only interactive content',
+      payload: {
+        ...previewPayload(),
+        scene: {
+          ...previewPayload().scene,
+          type: 'interactive',
+          content: { type: 'interactive', url: '/widget.html' },
+        },
+      },
+      error: 'non-empty embedded HTML',
+    },
+    {
+      name: 'interactive HTML with an external dependency',
+      payload: {
+        ...previewPayload(),
+        scene: {
+          ...previewPayload().scene,
+          type: 'interactive',
+          content: {
+            type: 'interactive',
+            html: '<!doctype html><script src="https://cdn.example.test/game.js"></script>',
+          },
+        },
+      },
+      error: 'external HTTP(S) dependency',
+    },
+  ])('maps $name to HTTP 422 before rendering', async ({ payload, error }) => {
+    const render = vi.fn<PreviewRenderer['render']>();
+    const response = await appWith({ render }).fetch(previewRequest(payload));
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining(error) });
+    expect(render).not.toHaveBeenCalled();
+  });
+
   it('rejects a declared oversized body with HTTP 413', async () => {
     const render = vi.fn<PreviewRenderer['render']>();
     const request = previewRequest();
-    request.headers.set('content-length', String(301 * 1024 * 1024));
+    request.headers.set('content-length', String(33 * 1024 * 1024));
     const response = await appWith({ render }).fetch(request);
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({ error: 'Upload too large' });
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  it('caps streamed preview JSON independently of the ZIP upload limit', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('x'.repeat(65)));
+        controller.close();
+      },
+    });
+    const request = new Request('http://test/preview', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+      duplex: 'half',
+    } as RequestInit);
+    const render = vi.fn<PreviewRenderer['render']>();
+    const response = await appWith({ render }, new PreviewGate(8, 0), {
+      previewMaxJsonBytes: 64,
+    }).fetch(request);
 
     expect(response.status).toBe(413);
     await expect(response.json()).resolves.toEqual({ error: 'Upload too large' });
@@ -191,6 +286,7 @@ describe('POST /preview', () => {
     expect(response.status).toBe(429);
     await expect(response.json()).resolves.toMatchObject({
       error: expect.stringContaining('preview queue is full'),
+      reason: 'preview_queue_full',
     });
     expect(pulls).toBe(pullsBeforeFetch);
     release();
@@ -212,9 +308,14 @@ describe('POST /preview', () => {
     const other = app.fetch(previewRequest(previewPayload(), 'bob'));
 
     expect(rejected.status).toBe(429);
+    await expect(rejected.json()).resolves.toMatchObject({
+      reason: 'preview_per_user_limit',
+    });
+    const otherResponse = await other;
+    expect(otherResponse.status).toBe(429);
+    await expect(otherResponse.json()).resolves.toMatchObject({ reason: 'capacity_busy' });
     finish();
     expect((await first).status).toBe(200);
-    expect((await other).status).toBe(200);
   });
 
   it('maps renderer deadlines to 504 and other failures to 500', async () => {
@@ -297,7 +398,7 @@ describe('POST /preview', () => {
     expect(next.status).toBe(200);
   });
 
-  it('retains the extraction permit while the parsed payload is rendering', async () => {
+  it('releases the extraction permit after parsing and never queues for execution', async () => {
     const finishFirst = deferred();
     let renderCalls = 0;
     const app = appWith({
@@ -336,17 +437,18 @@ describe('POST /preview', () => {
     const pullsBeforeFetch = pulls;
     const second = app.fetch(secondRequest);
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    const secondResponse = await second;
     expect(renderCalls).toBe(1);
-    expect(pulls).toBe(pullsBeforeFetch);
+    expect(pulls).toBeGreaterThan(pullsBeforeFetch);
+    expect(secondResponse.status).toBe(429);
+    await expect(secondResponse.json()).resolves.toMatchObject({ reason: 'capacity_busy' });
 
     finishFirst.resolve();
     expect((await first).status).toBe(200);
-    expect((await second).status).toBe(200);
-    expect(renderCalls).toBe(2);
+    expect(renderCalls).toBe(1);
   });
 
-  it('shares the Chromium execution limit with video renders', async () => {
+  it('fast-rejects when a video render holds the shared Chromium execution limit', async () => {
     const videoStarted = deferred();
     const finishVideo = deferred();
     const executor: RenderExecutor = {
@@ -359,7 +461,7 @@ describe('POST /preview', () => {
     const jobs = createMemoryJobStore();
     const artifacts = createMemoryArtifactStore().store;
     const coordinator = new RenderCoordinator(executor, jobs, artifacts, { maxConcurrency: 1 });
-    await coordinator.submit(
+    const videoId = await coordinator.submit(
       coordinator.reserve('video-user'),
       '/tmp/openmaic-preview-route-video-test',
       { fps: 30, quality: 'standard', format: 'mp4' },
@@ -375,13 +477,47 @@ describe('POST /preview', () => {
       previewRenderer: { render },
       previewDeadlineMs: 1_000,
     });
-    const preview = app.fetch(previewRequest());
+    const started = Date.now();
+    const preview = await app.fetch(previewRequest());
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(Date.now() - started).toBeLessThan(500);
     expect(render).not.toHaveBeenCalled();
+    expect(preview.status).toBe(429);
+    await expect(preview.json()).resolves.toMatchObject({ reason: 'capacity_busy' });
 
     finishVideo.resolve();
-    expect((await preview).status).toBe(200);
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if ((await jobs.get(videoId))?.status === 'succeeded') break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect((await jobs.get(videoId))?.status).toBe('succeeded');
+    expect((await app.fetch(previewRequest())).status).toBe(200);
     expect(render).toHaveBeenCalledOnce();
+  });
+
+  it('aborts rendering and releases admission when the client disconnects', async () => {
+    const rendering = deferred();
+    let calls = 0;
+    const render = vi.fn<PreviewRenderer['render']>(async ({ signal }) => {
+      calls += 1;
+      if (calls > 1) return new Uint8Array([1]);
+      rendering.resolve();
+      return new Promise<Uint8Array>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    });
+    const app = appWith({ render }, new PreviewGate(1, 0));
+    const disconnected = new AbortController();
+    const request = previewRequest();
+    const abortableRequest = new Request(request, { signal: disconnected.signal });
+    const responsePromise = app.fetch(abortableRequest);
+    await rendering.promise;
+
+    disconnected.abort(new Error('client disconnected'));
+    const response = await responsePromise;
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: 'client disconnected' });
+
+    expect((await app.fetch(previewRequest())).status).toBe(200);
   });
 });

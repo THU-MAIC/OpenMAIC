@@ -78,4 +78,18 @@ describe('Semaphore', () => {
     await first;
     await expect(next).resolves.toBe('next');
   });
+
+  it('tryAcquire never queues and returns an idempotent release', async () => {
+    const sem = new Semaphore(1);
+    const release = sem.tryAcquire();
+    expect(release).toBeTypeOf('function');
+    expect(sem.tryAcquire()).toBeUndefined();
+
+    release?.();
+    release?.();
+    const next = sem.tryAcquire();
+    expect(next).toBeTypeOf('function');
+    expect(sem.tryAcquire()).toBeUndefined();
+    next?.();
+  });
 });

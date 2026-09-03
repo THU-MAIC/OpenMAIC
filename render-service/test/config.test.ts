@@ -21,6 +21,7 @@ const KEYS = [
   'RENDER_PREVIEW_TIMEOUT_MS',
   'RENDER_PREVIEW_MAX_IN_FLIGHT',
   'RENDER_PREVIEW_MAX_PER_USER',
+  'RENDER_PREVIEW_MAX_JSON_BYTES',
 ] as const;
 const originals = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
 
@@ -68,17 +69,20 @@ describe('config preview admission', () => {
     const config = await loadConfig();
     expect(config.previewDeadlineMs).toBe(20_000);
     expect(config.previewMaxInFlight).toBe(8);
-    expect(config.previewMaxPerUser).toBe(2);
+    expect(config.previewMaxPerUser).toBe(0);
+    expect(config.previewMaxJsonBytes).toBe(32 * 1024 * 1024);
   });
 
   it('accepts explicit overrides and zero to disable the per-user cap', async () => {
     process.env.RENDER_PREVIEW_TIMEOUT_MS = '15000';
     process.env.RENDER_PREVIEW_MAX_IN_FLIGHT = '4';
     process.env.RENDER_PREVIEW_MAX_PER_USER = '0';
+    process.env.RENDER_PREVIEW_MAX_JSON_BYTES = '1048576';
     const config = await loadConfig();
     expect(config.previewDeadlineMs).toBe(15_000);
     expect(config.previewMaxInFlight).toBe(4);
     expect(config.previewMaxPerUser).toBe(0);
+    expect(config.previewMaxJsonBytes).toBe(1_048_576);
   });
 });
 
