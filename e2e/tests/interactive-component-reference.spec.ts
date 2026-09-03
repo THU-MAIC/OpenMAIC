@@ -79,9 +79,44 @@ async function seedDatabase(page: import('@playwright/test').Page) {
   );
 }
 
-test('the global courseware entry selects one scaled source-authored component', async ({
+test('the global courseware entry selects one scaled source-authored component and clears it after acceptance', async ({
   page,
 }) => {
+  await page.route('**/api/chat/pi', async (route) => {
+    const messageId = 'e2e-interactive-reference-answer';
+    const events = [
+      {
+        type: 'agent_start',
+        data: {
+          messageId,
+          agentId: 'default-1',
+          agentName: 'Teacher',
+        },
+      },
+      {
+        type: 'text_delta',
+        data: { messageId, content: 'The referenced component was accepted.' },
+      },
+      {
+        type: 'agent_end',
+        data: { messageId, agentId: 'default-1' },
+      },
+      {
+        type: 'done',
+        data: { totalActions: 0, totalAgents: 1, agentHadContent: true },
+      },
+    ];
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'X-OpenMAIC-Element-Reference-Accepted': '1',
+      },
+      body: events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''),
+    });
+  });
+
   await seedDatabase(page);
   const classroom = new ClassroomPage(page);
   await classroom.goto(TEST_STAGE_ID);
@@ -162,7 +197,34 @@ test('the global courseware entry selects one scaled source-authored component',
     })
     .toEqual({ alignedX: true, moved: true });
 
-  await page.getByRole('button', { name: 'Remove courseware reference' }).click();
+  await test.info().attach('selected component reference', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+
+  const requestPromise = page.waitForRequest('**/api/chat/pi');
+  // The component click leaves focus inside the iframe. Return focus to the
+  // playback document so its text-input shortcut receives the key event.
+  await page.getByRole('heading', { name: 'Slider experiment' }).click();
+  await page.keyboard.press('T');
+  const input = page.getByPlaceholder('Type your message...', { exact: true });
+  await expect(input).toBeVisible();
+  await input.fill('What is the authored value of this component?');
+  await input.press('Enter');
+
+  const request = await requestPromise;
+  expect(request.postDataJSON()).toMatchObject({
+    elementReference: {
+      kind: 'interactive_component',
+      sceneId: SCENE_ID,
+      selector: '#angle-slider',
+    },
+  });
   await expect(pill).toBeHidden();
   await expect(selectedOutline).toBeHidden();
+
+  await test.info().attach('accepted response cleanup', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
 });

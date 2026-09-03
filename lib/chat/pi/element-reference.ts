@@ -34,6 +34,26 @@ const CHART_LABEL_LIMIT = 100;
 const CHART_LEGEND_LIMIT = 20;
 const CHART_SERIES_LIMIT = 20;
 const CHART_POINT_LIMIT = 100;
+
+/**
+ * Ceiling on the source document handed to the HTML parser. INTERACTIVE_PACKET_LIMIT
+ * bounds only what reaches the model; parsing, deep-cloning, walking the text, and
+ * serializing the selected subtree all scale with the authored document, so the work
+ * is bounded here — before parseHTML — instead of only at the output.
+ *
+ * Measured with String#length (UTF-16 units, O(1)) rather than codePointLength,
+ * which allocates an array over the whole input and would itself be the
+ * amplification this bound exists to prevent. UTF-16 length is >= the code-point
+ * count, so this never admits a document longer than the stated limit.
+ *
+ * Sized from a local cold-process benchmark of the resolver's worst-case shape —
+ * a document made entirely of small elements whose selected subtree is the whole
+ * document, so parse, clone, walk and serialize are all maximal. 256k UTF-16 units
+ * stayed within a practical local cost while leaving ample headroom over authored
+ * Interactive scenes, which run to tens of KB. The exact runtime cost remains
+ * environment-dependent; this constant is the deterministic work boundary.
+ */
+export const INTERACTIVE_SOURCE_HTML_LIMIT = 256_000;
 const INTERACTIVE_SELECTOR_LIMIT = 128;
 const INTERACTIVE_TAG_NAME_LIMIT = 128;
 const INTERACTIVE_ATTRIBUTE_NAME_LIMIT = 128;
@@ -1129,15 +1149,26 @@ export function resolveInteractiveComponentReference(
   if (
     scene.type !== 'interactive' ||
     !isInteractiveContent(scene.content) ||
-    typeof scene.content.html !== 'string' ||
-    scene.content.html.trim().length === 0
+    typeof scene.content.html !== 'string'
   ) {
     throw new ElementReferenceValidationError(
       'interactive elementReference must resolve to a valid HTML-backed Interactive Scene',
     );
   }
 
-  const { document: parsedDocument } = parseHTML(scene.content.html);
+  const sourceHtml = scene.content.html;
+  if (sourceHtml.length > INTERACTIVE_SOURCE_HTML_LIMIT) {
+    throw new ElementReferenceValidationError(
+      `interactive elementReference source document exceeds the ${INTERACTIVE_SOURCE_HTML_LIMIT}-unit parse limit`,
+    );
+  }
+  if (sourceHtml.trim().length === 0) {
+    throw new ElementReferenceValidationError(
+      'interactive elementReference must resolve to a valid HTML-backed Interactive Scene',
+    );
+  }
+
+  const { document: parsedDocument } = parseHTML(sourceHtml);
   const document = parsedDocument as unknown as Document;
   const matches = Array.from(document.querySelectorAll(reference.selector));
   if (matches.length !== 1) {

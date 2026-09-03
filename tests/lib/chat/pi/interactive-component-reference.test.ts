@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import {
   ElementReferenceValidationError,
+  INTERACTIVE_SOURCE_HTML_LIMIT,
   buildInteractiveComponentContentHint,
   resolveElementReference,
   resolveInteractiveComponentReference,
@@ -143,6 +144,36 @@ describe('Interactive static component reference', () => {
     ['excluded script', '<script id="density-slider">bad()</script>', /excluded or invalid/],
   ])('fails closed for %s', (_name, html, error) => {
     expect(() => resolveElementReference(makeBody(html as string | undefined))).toThrow(error);
+  });
+
+  // The packet limit bounds only what reaches the model. Parsing, cloning, walking
+  // the text, and serializing the selected subtree all scale with the authored
+  // document, so an oversized Scene must be refused before parseHTML rather than
+  // truncated after the work is already done.
+  it('refuses an oversized source document before parsing, and still resolves at the limit', () => {
+    const component = '<div id="density-slider">ok</div>';
+    const padTo = (total: number) => component + 'x'.repeat(total - component.length);
+
+    const atLimit = padTo(INTERACTIVE_SOURCE_HTML_LIMIT);
+    expect(atLimit).toHaveLength(INTERACTIVE_SOURCE_HTML_LIMIT);
+    expect(resolve(atLimit).evidence.component).toMatchObject({
+      tagName: 'div',
+      id: 'density-slider',
+    });
+
+    // One unit over, with the same well-formed unique component still present:
+    // the bound must short-circuit instead of resolving it.
+    const overLimit = padTo(INTERACTIVE_SOURCE_HTML_LIMIT + 1);
+    expect(overLimit).toHaveLength(INTERACTIVE_SOURCE_HTML_LIMIT + 1);
+    expect(() => resolveElementReference(makeBody(overLimit))).toThrow(
+      ElementReferenceValidationError,
+    );
+    expect(() => resolveElementReference(makeBody(overLimit))).toThrow(/parse limit/);
+
+    // The O(1) length check must also win over the otherwise O(n) empty-content
+    // scan. This locks the resource guard ahead of trim(), not only parseHTML().
+    const oversizedWhitespace = ' '.repeat(INTERACTIVE_SOURCE_HTML_LIMIT + 1);
+    expect(() => resolveElementReference(makeBody(oversizedWhitespace))).toThrow(/parse limit/);
   });
 
   it('rejects non-Interactive scenes and every Browser-submitted content field', () => {
