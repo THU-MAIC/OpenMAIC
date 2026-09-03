@@ -206,6 +206,23 @@ describe('OpenAI provider defaults', () => {
     expect(openAiMock.responses).not.toHaveBeenCalled();
   });
 
+  it('routes OpenAI-compatible built-in providers through Chat Completions when enabled', () => {
+    vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'true');
+
+    getModel({
+      providerId: 'glm',
+      modelId: 'glm-5',
+      apiKey: 'sk-test',
+    });
+
+    const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+      | { fetch?: typeof fetch }
+      | undefined;
+    expect(options?.fetch).toBeTypeOf('function');
+    expect(openAiMock.chat).toHaveBeenCalledWith('glm-5');
+    expect(openAiMock.responses).not.toHaveBeenCalled();
+  });
+
   it.each([
     'https://api.openai.com/v1/',
     ' https://API.openai.com/v1 ',

@@ -1835,7 +1835,7 @@ function usesCustomOpenAIBaseUrl(baseUrl?: string): boolean {
 
 function shouldUseOpenAIStreamingChatCompat(providerId: ProviderId, baseUrl?: string): boolean {
   return (
-    providerId === 'openai' &&
+    PROVIDERS[providerId]?.type === 'openai' &&
     usesCustomOpenAIBaseUrl(baseUrl) &&
     process.env.OPENAI_COMPAT_USE_STREAMING_CHAT === 'true'
   );
