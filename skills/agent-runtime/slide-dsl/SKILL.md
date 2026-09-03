@@ -298,8 +298,8 @@ always the same: **write for the intersection.** The known divergences are
   playback (see [the HTML section](#the-rendering-truth-of-content-html));
 - **`paragraphSpace` on a text element** — honoured by the preview renderer, inert
   in playback;
-- **`vAlign` on a text element and `vAlign` / `padding` / `borders` on a table
-  cell** — honoured by the preview renderer, ignored in playback;
+- **`vAlign` on a text element and per-side `borders` on a table cell** — honoured
+  by the preview renderer, ignored in playback;
 - **a plain-text `content` with newlines** — the preview renderer sets
   `white-space: pre-line` when the string contains no markup at all, so the
   newlines become line breaks; playback does not, so they collapse to spaces;
@@ -568,9 +568,9 @@ white text; `rowFooter` does the same to the last row; `colHeader` / `colFooter`
 paint the first / last column in `theme.color` at 30 % alpha; every other even row
 gets it at 10 %. A cell's own `style.backcolor` and `style.color` beat all of it.
 
-**Fields playback ignores** (preview renderer honours them): `cell.vAlign` —
-playback always centres vertically; `cell.padding` — playback always uses 5 px;
-`cell.borders` — playback always draws the table-level `outline` on all four sides.
+**Field playback ignores** (preview renderer honours it): `cell.borders` — playback
+always draws the table-level `outline` on all four sides. Both renderers honour
+`cell.padding` and `cell.vAlign`.
 
 **Merged cells are fragile.** Both renderers expect `data[r]` to contain only the
 top-left cell of each merge, with the spanned positions absent, and playback's

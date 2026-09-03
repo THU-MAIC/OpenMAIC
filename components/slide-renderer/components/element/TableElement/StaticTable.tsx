@@ -95,47 +95,64 @@ export function StaticTable({ elementInfo }: StaticTableProps) {
         ))}
       </colgroup>
       <tbody>
-        {tableData.map((row, rowIdx) => (
-          <tr
-            key={rowIdx}
-            style={{
-              height: `${Number.isFinite(tableRowHeights[rowIdx]) ? tableRowHeights[rowIdx] : safeCellMinHeight}px`,
-            }}
-          >
-            {(Array.isArray(row) ? row : []).map((cell, colIdx) => {
-              if (hiddenCells.has(`${rowIdx}_${colIdx}`)) return null;
-              if (!cell) return null;
+        {tableData.map((row, rowIdx) => {
+          const rowHeight = Number.isFinite(tableRowHeights[rowIdx])
+            ? tableRowHeights[rowIdx]
+            : safeCellMinHeight;
 
-              const bgColor = getCellBg(rowIdx, colIdx, cell.style?.backcolor);
-              const headerColor = getHeaderTextColor(rowIdx);
-              const textStyle = getTextStyle(cell.style);
-              const colspan = Number.isFinite(cell.colspan) && cell.colspan > 0 ? cell.colspan : 1;
-              const rowspan = Number.isFinite(cell.rowspan) && cell.rowspan > 0 ? cell.rowspan : 1;
+          return (
+            <tr key={rowIdx} style={{ height: `${rowHeight}px` }}>
+              {(Array.isArray(row) ? row : []).map((cell, colIdx) => {
+                if (hiddenCells.has(`${rowIdx}_${colIdx}`)) return null;
+                if (!cell) return null;
 
-              // Header text color should be overridden only if cell doesn't have its own color
-              if (headerColor && !cell.style?.color) {
-                textStyle.color = headerColor;
-              }
+                const bgColor = getCellBg(rowIdx, colIdx, cell.style?.backcolor);
+                const headerColor = getHeaderTextColor(rowIdx);
+                const textStyle = getTextStyle(cell.style);
+                const colspan =
+                  Number.isFinite(cell.colspan) && cell.colspan > 0 ? cell.colspan : 1;
+                const rowspan =
+                  Number.isFinite(cell.rowspan) && cell.rowspan > 0 ? cell.rowspan : 1;
 
-              return (
-                <td
-                  key={cell.id || `${rowIdx}-${colIdx}`}
-                  colSpan={colspan > 1 ? colspan : undefined}
-                  rowSpan={rowspan > 1 ? rowspan : undefined}
-                  style={{
-                    border: borderStyle,
-                    backgroundColor: bgColor,
-                    padding: '5px',
-                    verticalAlign: 'middle',
-                    wordBreak: 'break-word',
-                    ...textStyle,
-                  }}
-                  dangerouslySetInnerHTML={{ __html: formatText(cell.text) }}
-                />
-              );
-            })}
-          </tr>
-        ))}
+                // Header text color should be overridden only if cell doesn't have its own color
+                if (headerColor && !cell.style?.color) {
+                  textStyle.color = headerColor;
+                }
+
+                return (
+                  <td
+                    key={cell.id || `${rowIdx}-${colIdx}`}
+                    colSpan={colspan > 1 ? colspan : undefined}
+                    rowSpan={rowspan > 1 ? rowspan : undefined}
+                    style={{
+                      border: borderStyle,
+                      backgroundColor: bgColor,
+                      wordBreak: 'break-word',
+                      ...textStyle,
+                    }}
+                  >
+                    <div
+                      style={{
+                        minHeight: `${rowHeight - 4}px`,
+                        padding: cell.padding,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        lineHeight: 1,
+                        justifyContent:
+                          cell.vAlign === 'top'
+                            ? 'flex-start'
+                            : cell.vAlign === 'bottom'
+                              ? 'flex-end'
+                              : 'center',
+                      }}
+                      dangerouslySetInnerHTML={{ __html: formatText(cell.text) }}
+                    />
+                  </td>
+                );
+              })}
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
