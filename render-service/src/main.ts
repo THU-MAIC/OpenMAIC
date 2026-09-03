@@ -50,10 +50,7 @@ import {
   type PreviewStageContext,
   type PreviewViewport,
 } from './preview-renderer.js';
-import {
-  invalidSlideCanvasElementError,
-  previewabilityError,
-} from './preview-validation.js';
+import { invalidSlideCanvasElementError, previewabilityError } from './preview-validation.js';
 import type { JobStore } from './job-store.js';
 import type { ArtifactStore } from './artifact-store.js';
 import { isTerminal, type RenderOptions } from './types.js';

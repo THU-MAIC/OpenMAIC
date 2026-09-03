@@ -275,9 +275,7 @@ describe('POST /preview', () => {
       limit: MAX_INTERACTIVE_HTML_ELEMENTS,
       fixtureSize: MAX_INTERACTIVE_HTML_ELEMENTS + 1,
       html:
-        '<!doctype html><body>' +
-        '<i></i>'.repeat(MAX_INTERACTIVE_HTML_ELEMENTS + 1) +
-        '</body>',
+        '<!doctype html><body>' + '<i></i>'.repeat(MAX_INTERACTIVE_HTML_ELEMENTS + 1) + '</body>',
     },
   ])('rejects interactive HTML beyond the $name ceiling with HTTP 422', async (testCase) => {
     expect(testCase.fixtureSize).toBeGreaterThan(testCase.limit);
