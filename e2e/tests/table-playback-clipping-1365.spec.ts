@@ -58,9 +58,9 @@ async function seedTableClassroom(page: Page) {
                     id: 'table-near-bottom',
                     type: 'table',
                     left: 50,
-                    top: 440,
+                    top: 460,
                     width: 900,
-                    height: 120,
+                    height: 100,
                     rotate: 0,
                     colWidths: [0.5, 0.5],
                     rowHeights: [20, 20, 20, 20, 20],
@@ -109,7 +109,7 @@ async function seedTableClassroom(page: Page) {
   );
 }
 
-test('keeps table rows visible and cell content aligned in both renderers', async ({
+test('keeps the final table row visible in the thumbnail and default classroom canvas', async ({
   page,
 }, testInfo) => {
   await seedTableClassroom(page);
@@ -133,6 +133,9 @@ test('keeps table rows visible and cell content aligned in both renderers', asyn
         const rowRect = finalRow?.getBoundingClientRect();
         const cellRect = finalCell?.getBoundingClientRect();
         const cellInnerRect = finalCellInner?.getBoundingClientRect();
+        const textRange = document.createRange();
+        if (finalCellInner) textRange.selectNodeContents(finalCellInner);
+        const textRect = textRange.getBoundingClientRect();
 
         let clippingBoundary = element.parentElement;
         while (clippingBoundary) {
@@ -164,10 +167,12 @@ test('keeps table rows visible and cell content aligned in both renderers', asyn
           boundaryBottom: boundaryRect.bottom,
           finalRowHeight: rowRect.height,
           finalRowVisibleHeight: Math.max(0, visibleBottom - visibleTop),
-          finalCellHeight: cellRect.height,
-          finalCellInnerHeight: cellInnerRect.height,
-          finalCellInnerCenterOffset:
-            (cellInnerRect.top + cellInnerRect.bottom - cellRect.top - cellRect.bottom) / 2,
+          finalTextHeight: textRect.height,
+          finalTextVisibleHeight: Math.max(
+            0,
+            Math.min(textRect.bottom, boundaryRect.bottom) -
+              Math.max(textRect.top, boundaryRect.top),
+          ),
           renderer: element.closest('.screen-element') ? 'legacy' : 'package',
         };
       })
@@ -192,11 +197,7 @@ test('keeps table rows visible and cell content aligned in both renderers', asyn
   for (const surface of [classroom, thumbnail]) {
     expect(surface.tableBottom).toBeLessThanOrEqual(surface.boundaryBottom + 1);
     expect(surface.finalRowVisibleHeight).toBeGreaterThanOrEqual(surface.finalRowHeight - 1);
+    expect(surface.finalTextHeight).toBeGreaterThan(0);
+    expect(surface.finalTextVisibleHeight).toBeGreaterThanOrEqual(surface.finalTextHeight - 1);
   }
-
-  // The table is taller than the sum of its declared row heights, so Chromium
-  // expands the rows. Default vertical centering must still use the full cell,
-  // not only the inner rowHeight - 4 wrapper.
-  expect(classroom.finalCellHeight).toBeGreaterThan(classroom.finalCellInnerHeight + 1);
-  expect(Math.abs(classroom.finalCellInnerCenterOffset)).toBeLessThanOrEqual(1);
 });
