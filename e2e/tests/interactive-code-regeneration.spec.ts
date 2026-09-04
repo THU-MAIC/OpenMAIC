@@ -100,24 +100,6 @@ for (const viewport of [
     page,
   }) => {
     test.setTimeout(180_000);
-    const consoleErrors: string[] = [];
-    const failedRequests: string[] = [];
-    const badResponses: string[] = [];
-    page.on('console', (message) => {
-      if (message.type() === 'error') consoleErrors.push(message.text());
-    });
-    page.on('requestfailed', (request) => {
-      const errorText = request.failure()?.errorText;
-      // Navigating from the IndexedDB seed page into the classroom can cancel
-      // still-streaming Next development chunks. Keep API/document failures
-      // strict while excluding that browser-controlled navigation cleanup.
-      if (errorText === 'net::ERR_ABORTED' && request.url().includes('/_next/static/')) return;
-      failedRequests.push(`${request.method()} ${request.url()}: ${errorText}`);
-    });
-    page.on('response', (response) => {
-      if (response.status() >= 400) badResponses.push(`${response.status()} ${response.url()}`);
-    });
-
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await seedCodeClassroom(page);
     // This fixture is deliberately local-only, so provide the viewer metadata
@@ -152,6 +134,19 @@ for (const viewport of [
     const classroom = new ClassroomPage(page);
     await classroom.goto(STAGE_ID);
     await classroom.waitForLoaded();
+
+    const consoleErrors: string[] = [];
+    const failedRequests: string[] = [];
+    const badResponses: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text());
+    });
+    page.on('requestfailed', (request) => {
+      failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText}`);
+    });
+    page.on('response', (response) => {
+      if (response.status() >= 400) badResponses.push(`${response.status()} ${response.url()}`);
+    });
 
     const frame = page.frameLocator(`iframe[title="${IFRAME_TITLE}"]`);
     await expect(frame.locator('#old-code')).toBeVisible();
