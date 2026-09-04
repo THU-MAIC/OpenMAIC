@@ -571,7 +571,9 @@ gets it at 10 %. A cell's own `style.backcolor` and `style.color` beat all of it
 
 **Field playback ignores** (preview renderer honours it): `cell.borders` — playback
 always draws the table-level `outline` on all four sides. Both renderers honour
-`cell.padding` and `cell.vAlign`.
+`cell.padding`. `cell.vAlign` only aligns text inside the declared row-height
+content box; if the browser stretches the row, that box remains centred in the
+full cell.
 
 `cell.padding` has no implicit default: omit it for no inset, or provide a CSS
 padding string such as `5px` or `3px 6px`. Both renderers use `line-height: 1`

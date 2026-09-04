@@ -145,22 +145,21 @@ async function readSurface(locator: Locator) {
     const finalRow = rows.at(-1);
     if (!finalRow) throw new Error('Could not resolve the final table row');
 
-    const wrappedRowCount = rows.filter((row) => {
-      const firstCell = row.querySelector('td');
-      if (!firstCell) return false;
-
-      const walker = document.createTreeWalker(firstCell, NodeFilter.SHOW_TEXT);
-      let fragments = 0;
-      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        if (!node.textContent?.trim()) continue;
-        const range = document.createRange();
-        range.selectNodeContents(node);
-        fragments += Array.from(range.getClientRects()).filter(
-          (rect) => rect.width > 0 && rect.height > 0,
-        ).length;
-      }
-      return fragments >= 2;
-    }).length;
+    const wrappedRowCount = rows.filter((row) =>
+      Array.from(row.querySelectorAll('td')).some((cell) => {
+        const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          if (!node.textContent?.trim()) continue;
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          const fragments = Array.from(range.getClientRects()).filter(
+            (rect) => rect.width > 0 && rect.height > 0,
+          );
+          if (fragments.length >= 2) return true;
+        }
+        return false;
+      }),
+    ).length;
 
     const elementRect = element.getBoundingClientRect();
     const tableRect = table.getBoundingClientRect();
