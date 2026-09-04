@@ -70,6 +70,31 @@ describe('scene generation primitives', () => {
     });
   });
 
+  it('maps quiz answer labels and formatting variants to option values', async () => {
+    const content = await generateSceneContent(quizOutline(), async () =>
+      JSON.stringify([
+        {
+          type: 'single',
+          question: 'Which value is correct?',
+          options: ['（６，２）', '(2, -4)'],
+          correctAnswer: '（ ６，２ ）',
+        },
+      ]),
+    );
+
+    expect(content).toMatchObject({
+      questions: [
+        expect.objectContaining({
+          options: [
+            { value: 'A', label: '（６，２）' },
+            { value: 'B', label: '(2, -4)' },
+          ],
+          answer: ['A'],
+        }),
+      ],
+    });
+  });
+
   it('runs one widget kind end-to-end through config extraction and actions', async () => {
     let calls = 0;
     const aiCall: AICallFn = async () => {

@@ -25,6 +25,53 @@ describe('gradeChoiceQuestions', () => {
     expect(results[0]).toMatchObject({ questionId: 'q1', correct: true, earned: 1 });
   });
 
+  it('grades legacy content answer keys against option values', () => {
+    const question = q({
+      options: [
+        { value: 'A', label: '(6, 2)' },
+        { value: 'B', label: '(2, -4)' },
+      ],
+      answer: ['（６，２）'],
+    });
+
+    const results = gradeChoiceQuestions([question], { q1: 'A' });
+    expect(results[0]).toMatchObject({ correct: true, earned: 1 });
+  });
+
+  it('normalizes prefixed and whitespace variants for multiple answers', () => {
+    const question = q({
+      id: 'm1',
+      type: 'multiple',
+      options: [
+        { value: 'A', label: 'First choice' },
+        { value: 'B', label: 'Second choice' },
+      ],
+      answer: ['A. First choice', ' Second   choice '],
+    });
+
+    const results = gradeChoiceQuestions([question], { m1: ['B', 'A'] });
+    expect(results[0].correct).toBe(true);
+  });
+
+  it('preserves an ambiguous legacy answer key instead of guessing', () => {
+    const question = q({
+      options: [
+        { value: 'A', label: 'Yes' },
+        { value: 'B', label: 'yes' },
+      ],
+      answer: ['YES'],
+    });
+
+    const results = gradeChoiceQuestions([question], { q1: 'A' });
+    expect(results[0].correct).toBe(false);
+  });
+
+  it('preserves an unknown legacy answer key instead of accepting a wrong choice', () => {
+    const question = q({ answer: ['not an option'] });
+    const results = gradeChoiceQuestions([question], { q1: 'a' });
+    expect(results[0].correct).toBe(false);
+  });
+
   it('scores an incorrect single-choice answer', () => {
     const results = gradeChoiceQuestions([q({})], { q1: 'b' });
     expect(results[0]).toMatchObject({ correct: false, earned: 0 });

@@ -11,6 +11,7 @@ import type {
   Action,
   PBLProject,
   PPTElement,
+  QuizOption,
   QuizQuestion,
   SlideBackground,
   WidgetType,
@@ -879,11 +880,14 @@ async function generateQuizContent(
   // Ensure each question has an ID and normalize options format
   const questions: QuizQuestion[] = generatedQuestions.map((q) => {
     const isText = q.type === 'short_answer';
+    const options = isText ? undefined : normalizeQuizOptions(q.options);
     return {
       ...q,
       id: q.id || `q_${nanoid(8)}`,
-      options: isText ? undefined : normalizeQuizOptions(q.options),
-      answer: isText ? undefined : normalizeQuizAnswer(q as unknown as Record<string, unknown>),
+      options,
+      answer: isText
+        ? undefined
+        : resolveQuizAnswer(getRawQuizAnswer(q as unknown as Record<string, unknown>), options),
       hasAnswer: isText ? false : true,
     };
   });
@@ -925,18 +929,52 @@ function normalizeQuizOptions(
  * AI may generate correctAnswer as string or string[], under various field names.
  * This normalizes to string[] format matching option values.
  */
-function normalizeQuizAnswer(question: Record<string, unknown>): string[] | undefined {
+function getRawQuizAnswer(question: Record<string, unknown>): unknown {
   // AI might use "correctAnswer", "answer", or "correct_answer"
-  const raw =
-    question.answer ??
-    question.correctAnswer ??
-    (question as Record<string, unknown>).correct_answer;
-  if (!raw) return undefined;
+  return question.answer ?? question.correctAnswer ?? question.correct_answer;
+}
 
-  if (Array.isArray(raw)) {
-    return raw.map(String);
-  }
-  return [String(raw)];
+/**
+ * Resolve an AI answer key to the option value used by the player.
+ *
+ * Models may return a value ("A"), a label ("Paris"), or a formatted label
+ * ("A. Paris"). Only an unambiguous match is rewritten; preserving unknown
+ * and ambiguous values keeps malformed data visible instead of guessing.
+ */
+export function resolveQuizAnswer(
+  raw: unknown,
+  options: QuizOption[] | undefined,
+): string[] | undefined {
+  if (raw == null || raw === '') return undefined;
+
+  const answers = Array.isArray(raw) ? raw.map(String) : [String(raw)];
+  if (!options?.length) return answers;
+
+  return answers.map((answer) => {
+    const answerVariants = quizAnswerVariants(answer);
+    const matches = options.filter((option) => {
+      const optionVariants = new Set([
+        ...quizAnswerVariants(option.value),
+        ...quizAnswerVariants(option.label),
+      ]);
+      return [...answerVariants].some((variant) => optionVariants.has(variant));
+    });
+
+    return matches.length === 1 ? matches[0].value : answer;
+  });
+}
+
+function quizAnswerVariants(value: string): Set<string> {
+  const normalized = value.normalize('NFKC').trim().toLocaleLowerCase();
+  const compact = normalized.replace(/\s+/gu, '');
+  const variants = new Set([compact]);
+
+  // Accept common model prefixes such as "A.", "A)" and "A:" while
+  // retaining the unprefixed form for normal option values.
+  const withoutPrefix = compact.replace(/^[a-z][.)\]:]/u, '');
+  if (withoutPrefix !== compact) variants.add(withoutPrefix);
+
+  return variants;
 }
 
 /**

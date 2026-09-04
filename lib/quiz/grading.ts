@@ -1,4 +1,5 @@
 import type { QuizQuestion } from '@/lib/types/stage';
+import { resolveQuizAnswer } from '@openmaic/generation';
 
 export interface QuestionResult {
   questionId: string;
@@ -40,7 +41,9 @@ export function gradeChoiceQuestions(
     .map((q) => {
       const pts = q.points ?? 1;
       const userAnswer = toArray(answers[q.id]);
-      const correctAnswer = toArray(q.answer);
+      // Resolve legacy answer keys that were persisted before generation
+      // canonicalized labels/content to the option values used by the UI.
+      const correctAnswer = resolveQuizAnswer(q.answer, q.options) ?? toArray(q.answer);
       const correct = arraysEqual(userAnswer, correctAnswer);
       return {
         questionId: q.id,

@@ -13,6 +13,7 @@ export {
   generateSceneContent,
   generateWidgetContent,
   PBLGenerationError,
+  resolveQuizAnswer,
   resolveImageIds,
 } from './scene-generator.js';
 export type { SceneActionsOptions, SceneContentOptions } from './scene-generator.js';
