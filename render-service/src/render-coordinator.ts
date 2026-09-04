@@ -13,6 +13,7 @@ import type { ArtifactStore } from './artifact-store.js';
 import { config } from './config.js';
 import type { JobStore } from './job-store.js';
 import type { RenderExecutor } from './render-executor.js';
+import { Semaphore } from './semaphore.js';
 import type {
   RenderCancelledFailure,
   RenderExecutionResult,
@@ -21,8 +22,27 @@ import type {
   RenderOptions,
 } from './types.js';
 
-/** Thrown when admission control rejects a submission (mapped to HTTP 429). */
-export class RenderRejectedError extends Error {}
+/**
+ * Machine-readable admission-rejection code, surfaced as `reason` on HTTP 429
+ * responses so clients can react to backpressure without parsing prose.
+ */
+export type RenderRejectionReason = 'queue_full' | 'per_identity_limit';
+
+/**
+ * Thrown when admission control rejects a submission (mapped to HTTP 429).
+ *
+ * `reason` is set when a rejection comes from an admission cap
+ * ({@link RenderRejectionReason}) and left undefined for internal invariants
+ * that have no client-facing remedy.
+ */
+export class RenderRejectedError extends Error {
+  constructor(
+    message: string,
+    readonly reason?: RenderRejectionReason,
+  ) {
+    super(message);
+  }
+}
 
 function planPathForProject(dir: string): string {
   return join(
@@ -60,6 +80,7 @@ export class RenderCoordinator {
   private readonly maxQueue: number;
   private readonly maxJobsPerUser: number;
   private readonly jobDeadlineMs: number;
+  private readonly executionGate: Semaphore;
 
   constructor(
     private readonly executor: RenderExecutor,
@@ -71,6 +92,27 @@ export class RenderCoordinator {
     this.maxQueue = options.maxQueue ?? config.maxQueue;
     this.maxJobsPerUser = options.maxJobsPerUser ?? config.maxJobsPerUser;
     this.jobDeadlineMs = options.jobDeadlineMs ?? config.jobDeadlineMs;
+    this.executionGate = new Semaphore(this.maxConcurrency);
+  }
+
+  /** Run Chromium-backed work within the service-wide execution budget. */
+  runWithExecutionSlot<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    return this.executionGate.run(task, signal);
+  }
+
+  /** Run work only when an execution slot is available now; never queue. */
+  tryRunWithExecutionSlot<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> | undefined {
+    signal?.throwIfAborted();
+    const release = this.executionGate.tryAcquire();
+    if (!release) return undefined;
+    return (async () => {
+      try {
+        signal?.throwIfAborted();
+        return await task();
+      } finally {
+        release();
+      }
+    })();
   }
 
   /** Total jobs occupying the system: reserved + queued + running. */
@@ -78,16 +120,33 @@ export class RenderCoordinator {
     return this.pending + this.queue.length + this.running;
   }
 
-  /** Claim an admission slot before buffering or extracting the archive. */
+  /**
+   * Whether the system currently has room for another job (queue below the
+   * global cap). Exposed for `/health` as a deliberate aggregate-only signal:
+   * no occupancy counts, and never per-identity state — identity keys are
+   * client IPs when the service runs behind a trusted proxy, so publishing
+   * them would leak the list of active users' addresses.
+   */
+  get accepting(): boolean {
+    return this.inSystem < this.maxQueue;
+  }
+
+  /**
+   * Claim an admission slot before buffering or extracting the archive.
+   * Throws {@link RenderRejectedError} with reason `queue_full` once the
+   * global cap is reached, or `per_identity_limit` when this identity already
+   * holds `maxJobsPerUser` active jobs.
+   */
   reserve(identity: string): Reservation {
     if (this.inSystem >= this.maxQueue) {
-      throw new RenderRejectedError('The render queue is full; try again shortly.');
+      throw new RenderRejectedError('The render queue is full; try again shortly.', 'queue_full');
     }
     if (this.maxJobsPerUser > 0) {
       const active = this.activeByIdentity.get(identity) ?? 0;
       if (active >= this.maxJobsPerUser) {
         throw new RenderRejectedError(
           `A render is already in progress (limit ${this.maxJobsPerUser}).`,
+          'per_identity_limit',
         );
       }
     }
@@ -203,25 +262,27 @@ export class RenderCoordinator {
     const { id, projectDir } = record;
     const outputPath = join(projectDir, 'output.mp4');
     try {
-      await this.jobs.update(id, { status: 'running', currentStage: 'preparing' });
-      const result = await this.executor.execute({
-        projectDir,
-        outputPath,
-        options,
-        signal: abort.signal,
-        deadlineMs: this.jobDeadlineMs,
-        onProgress: async (progress) => {
-          await this.jobs.update(id, {
-            status: 'running',
-            progress: progress.progress,
-            currentStage: progress.stage,
-            ...(progress.framesRendered !== undefined
-              ? { framesRendered: progress.framesRendered }
-              : {}),
-            ...(progress.totalFrames !== undefined ? { totalFrames: progress.totalFrames } : {}),
-          });
-        },
-      });
+      const result = await this.runWithExecutionSlot(async () => {
+        await this.jobs.update(id, { status: 'running', currentStage: 'preparing' });
+        return this.executor.execute({
+          projectDir,
+          outputPath,
+          options,
+          signal: abort.signal,
+          deadlineMs: this.jobDeadlineMs,
+          onProgress: async (progress) => {
+            await this.jobs.update(id, {
+              status: 'running',
+              progress: progress.progress,
+              currentStage: progress.stage,
+              ...(progress.framesRendered !== undefined
+                ? { framesRendered: progress.framesRendered }
+                : {}),
+              ...(progress.totalFrames !== undefined ? { totalFrames: progress.totalFrames } : {}),
+            });
+          },
+        });
+      }, abort.signal);
 
       if (result.status !== 'succeeded') {
         await this.finishNonSuccess(id, projectDir, result);
@@ -249,6 +310,13 @@ export class RenderCoordinator {
       });
     } catch (error) {
       await this.artifacts.remove(id).catch(() => {});
+      if (abort.signal.aborted) {
+        await this.finishNonSuccess(id, projectDir, {
+          status: 'cancelled',
+          failure: { code: 'cancelled', message: 'Render cancelled' },
+        });
+        return;
+      }
       const failure: RenderFailedFailure = {
         code: 'execution_failed',
         message: error instanceof Error ? error.message : String(error),

@@ -104,7 +104,7 @@ import {
 import type { WorkbenchCourseSummary } from '@/lib/workbench/panel-context';
 import { useWorkbenchStore, type WorkbenchMaterial } from '@/lib/workbench/session-store';
 import { renameWorkbenchSession } from '@/lib/workbench/session-store';
-import { commitSessionRename } from '@/lib/workbench/session-title';
+import { commitSessionRename, createSessionRenameQueue } from '@/lib/workbench/session-title';
 import type { ElementRef } from '@/lib/workbench/element-refs';
 import type { CourseRef } from '@/lib/workbench/course-refs';
 import { useStageFreshnessSync, useWorkbenchStream } from '@/lib/workbench/use-workbench-session';
@@ -128,6 +128,9 @@ const EMPTY_SESSIONS: ProHomeSessionItem[] = [];
  */
 const BOTH_PANES_MIN_PX = 1024;
 const SESSION_LIST_TIMEOUT_MS = 15_000;
+// A shell is replaceable navigation UI, not a persistence boundary. Keeping the
+// queue in this client module preserves one writer per session across remounts.
+const sessionRenameQueue = createSessionRenameQueue();
 
 async function fetchSessions(): Promise<ProHomeSessionItem[]> {
   const controller = new AbortController();
@@ -144,6 +147,12 @@ async function fetchSessions(): Promise<ProHomeSessionItem[]> {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function syncAttachedSessionTitle(sessionId: string, title: string | null): void {
+  const store = useWorkbenchStore.getState();
+  if (store.sessionId !== sessionId) return;
+  store.setSessionTitle(title);
 }
 
 /**
@@ -166,14 +175,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const courses = useHomeDiscovery({ mode: 'discover-only' });
   const [sessions, setSessions] = useState<ProHomeSessionItem[]>(EMPTY_SESSIONS);
   /**
-   * The latest list, readable from a callback without making that callback a
-   * new function on every poll (the rail would then see a changed prop every
-   * few seconds for no reason). Synced in an effect, never during render.
+   * The latest list, readable from queued callbacks without waiting for React
+   * to commit another render. The owner publisher updates it before setState.
    */
   const sessionsRef = useRef(sessions);
-  useEffect(() => {
-    sessionsRef.current = sessions;
-  }, [sessions]);
   const [sessionState, setSessionState] = useState<HomeDiscoveryState>('loading');
   const [composerReset, setComposerReset] = useState(0);
   /**
@@ -187,6 +192,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    */
   const [newConversationRequested, setNewConversationRequested] = useState(false);
   const ownerSessionClient = useRef<OwnerSessionClient | null>(null);
+  const shellGeneration = useRef(0);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const railWidth = useRailWidth(rootRef);
@@ -331,20 +337,40 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     ownerSessionClient.current?.requestFullFetch(showLoading);
   }, []);
 
+  const publishOwnerSessions = useCallback(
+    (next: readonly ProHomeSessionItem[], source?: 'incremental' | 'snapshot') => {
+      const snapshot = [...next];
+      sessionsRef.current = snapshot;
+      setSessions(snapshot);
+      // Sparse owner events carry only their own field. A status publication
+      // therefore has no authority over the title it happens to copy from the
+      // client's current row; only a complete list snapshot may repair the
+      // attached header here. Local renames and title events use their explicit
+      // paths below.
+      if (source !== 'snapshot') return;
+      const attachedId = useWorkbenchStore.getState().sessionId;
+      const attached = snapshot.find((session) => session.id === attachedId);
+      if (attached) syncAttachedSessionTitle(attached.id, attached.title ?? null);
+    },
+    [],
+  );
+
   useEffect(() => {
     const client = new OwnerSessionClient({
       fetchSessions,
       createEventSource: (url) => new EventSource(url),
-      onSessions: (next) => setSessions([...next]),
+      onSessions: publishOwnerSessions,
+      onSessionTitle: syncAttachedSessionTitle,
       onState: setSessionState,
     });
     ownerSessionClient.current = client;
     client.start();
     return () => {
+      shellGeneration.current += 1;
       ownerSessionClient.current = null;
       client.stop();
     };
-  }, []);
+  }, [publishOwnerSessions]);
 
   useEffect(() => {
     if (
@@ -528,14 +554,15 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * rail row and — when this is the attached conversation — the pane header,
    * which reads its own copy out of the session store.
    */
-  const applySessionTitle = useCallback((sessionId: string, title: string | null) => {
-    setSessions((current) =>
-      current.map((session) => (session.id === sessionId ? { ...session, title } : session)),
-    );
-    if (useWorkbenchStore.getState().sessionId === sessionId) {
-      useWorkbenchStore.getState().setSessionTitle(title);
-    }
-  }, []);
+  const applySessionTitle = useCallback(
+    (sessionId: string, title: string | null, settled: boolean) => {
+      syncAttachedSessionTitle(sessionId, title);
+      const client = ownerSessionClient.current;
+      const revision = client?.updateSessionTitle(sessionId, title, settled) ?? null;
+      return { client, revision };
+    },
+    [],
+  );
 
   /**
    * Rename a conversation. ONE writer for both surfaces that offer it — the
@@ -550,23 +577,50 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * renames use.
    */
   const renameSession = useCallback(
-    async (sessionId: string, raw: string): Promise<string | null> => {
-      const row = sessionsRef.current.find((session) => session.id === sessionId);
-      const store = useWorkbenchStore.getState();
-      const attached = store.sessionId === sessionId;
-      const outcome = await commitSessionRename({
-        current: {
-          title: row?.title ?? (attached ? store.sessionTitle : null),
-          prompt: row?.prompt ?? (attached ? store.sessionPrompt : null),
-        },
-        raw,
-        apply: (title) => applySessionTitle(sessionId, title),
-        save: (title) => renameWorkbenchSession(sessionId, title),
+    (sessionId: string, raw: string): Promise<string | null> => {
+      const generation = shellGeneration.current;
+      const isOriginCurrent = () => shellGeneration.current === generation;
+      return sessionRenameQueue.run(sessionId, async (queued) => {
+        const row = sessionsRef.current.find((session) => session.id === sessionId);
+        const store = useWorkbenchStore.getState();
+        const attached = store.sessionId === sessionId;
+        let decision: ReturnType<typeof applySessionTitle> | null = null;
+        const outcome = await commitSessionRename({
+          current: {
+            title: row?.title ?? (attached ? store.sessionTitle : null),
+            prompt: row?.prompt ?? (attached ? store.sessionPrompt : null),
+          },
+          raw,
+          apply: (title, settled) => {
+            if (!isOriginCurrent()) return;
+            decision = applySessionTitle(sessionId, title, settled);
+          },
+          save: (title) => renameWorkbenchSession(sessionId, title),
+          isCurrent: () => {
+            if (!isOriginCurrent() || !decision?.client || decision.revision === null) {
+              return false;
+            }
+            return (
+              ownerSessionClient.current === decision.client &&
+              decision.client.isSessionTitleRevisionCurrent(sessionId, decision.revision)
+            );
+          },
+          // A queued value that looks unchanged may be the user's explicit
+          // attempt to undo the still-ambiguous write ahead of it.
+          forceSave: queued,
+        });
+        // A failed write is still ambiguous at the transport boundary: the
+        // database may have committed before the response was lost, and an
+        // optimistic mutation may have hidden a newer snapshot while it was in
+        // flight. Reconcile every attempted change; unchanged input did no IO.
+        if (isOriginCurrent() && outcome !== 'unchanged') {
+          ownerSessionClient.current?.requestFullFetch();
+        }
+        if (outcome !== 'failed') return null;
+        const message = t('workspace.renameSessionFailed');
+        if (isOriginCurrent()) toast.error(message);
+        return message;
       });
-      if (outcome !== 'failed') return null;
-      const message = t('workspace.renameSessionFailed');
-      toast.error(message);
-      return message;
     },
     [applySessionTitle, t],
   );
@@ -716,6 +770,21 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     // the meta fetch otherwise — a `?session=` deep link has neither yet, and
     // the chat needs neither.
     attach(panes.sessionId, paneSessionStageId);
+    // A rename can still be awaiting its PATCH (or the confirming list read)
+    // when the user leaves this chat and comes back. The detail GET started by
+    // the new attachment may overtake that PATCH, so preserve the client's
+    // unconfirmed decision even when the owner row has not reached the list.
+    // The object wrapper distinguishes a real clear (`title: null`) from no
+    // decision. Otherwise the owner row is the title bootstrap authority.
+    const mutation = ownerSessionClient.current?.getUnconfirmedSessionTitle(panes.sessionId);
+    const attached = sessionsRef.current.find((session) => session.id === panes.sessionId);
+    if (mutation) {
+      syncAttachedSessionTitle(panes.sessionId, mutation.title);
+    } else if (attached) {
+      // Apply even an equal null: the revision records that an owner title
+      // source exists, so an older detail response cannot fill it back in.
+      syncAttachedSessionTitle(attached.id, attached.title ?? null);
+    }
   }, [panes.sessionId, paneSessionStageId, attach, detach]);
 
   // Attachment is workspace-scoped view state. Clear it when the shell leaves

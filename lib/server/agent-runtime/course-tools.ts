@@ -250,7 +250,8 @@ export const DSL_TOOLS_PROMPT = [
   'Use duplicate_scene to copy a layout, edit_deck for retitle/insert/delete/reorder, and generate_tts after narration edits. Page-list writers keep the saved outline numbering aligned with the real pages.',
   'To fill an uploaded .pptx into an existing stage as appended pages with its original slides kept, read the `pptx-import` skill first (it carries the import-and-repair sequence) and use `import_pptx` after `create_stage` — never extract_material + generate_scene for a layout-preserving import. The stage keeps its own title; the PPT is content, not the classroom identity.',
   'When the page needs a new visual rather than an existing URL, call `generate_image` first, then apply its returned `src` with `patch_stage` set or add an image element; generate_image never edits the page.',
-  'When a NEW page needs visuals, obtain every real src first by reusing material or calling generate_image / generate_video, then pass each image src with its description and dimensions in `generate_scene.media` so the content model sees the media while composing the page; media generation tools never edit the page.',
+  'When a NEW page needs visuals, obtain every real src first by reusing material or calling generate_image, then pass each image src with its description and dimensions in `generate_scene.media` so the content model sees the media while composing the page; media generation tools never edit the page.',
+  'generate_video is asynchronous: it returns a `gen_vid_...` placeholder immediately and the video completes in the background. Patch the placeholder onto a video element with patch_stage right away; the page updates itself when the video is ready.',
   'Use use_material_media before placing session image, video, or audio bytes into a page. Use render_scene_preview selectively to inspect a persisted page when the render capability is available.',
 ].join(' ');
 

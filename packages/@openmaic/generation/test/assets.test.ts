@@ -77,6 +77,23 @@ describe('packaged prompt assets', () => {
     expect(actualFiles).toEqual(expectedFiles);
   });
 
+  test('instructs Pyodide widgets to load micropip before importing it', () => {
+    const source = readFileSync(
+      join(PACKAGE_ROOT, 'templates', 'code-content', 'system.md'),
+      'utf8',
+    );
+    const loadIndex = source.search(
+      /await pyodide\.loadPackage\(\s*(?:['"]micropip['"]|\[[^\]]*['"]micropip['"][^\]]*\])\s*\)/,
+    );
+    const firstImportIndex = source.indexOf('import micropip');
+    const orderedExample =
+      /await pyodide\.loadPackage\(\s*(?:['"]micropip['"]|\[[^\]]*['"]micropip['"][^\]]*\])\s*\);\s*await pyodide\.runPythonAsync\(`\s*import micropip\b/;
+
+    expect(loadIndex).toBeGreaterThanOrEqual(0);
+    expect(firstImportIndex).toBeGreaterThan(loadIndex);
+    expect(source).toMatch(orderedExample);
+  });
+
   test.each(PBL_PROMPT_FILES)('ships prompts-pbl/%s', (filename) => {
     expect(
       readFileSync(join(PACKAGE_ROOT, 'prompts-pbl', filename), 'utf8').length,

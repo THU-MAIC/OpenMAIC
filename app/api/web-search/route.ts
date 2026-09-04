@@ -195,6 +195,8 @@ function getMissingBaseUrlMessage(providerId: WebSearchProviderId, providerName:
 
 function getWebSearchEnvKey(providerId: WebSearchProviderId): string {
   switch (providerId) {
+    case 'exa':
+      return 'EXA_API_KEY';
     case 'baidu':
       return 'BAIDU_API_KEY';
     case 'bocha':

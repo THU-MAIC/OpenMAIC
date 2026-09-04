@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { Value } from 'typebox/value';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 
 import type { CourseDocument, CourseStore } from '@/lib/server/agent-runtime/course-tools';
@@ -177,6 +178,85 @@ describe('generation and deck tools', () => {
     ]);
   });
 
+  it.each([
+    ['slide', 'SLIDE_RAW_SENTINEL', undefined],
+    ['quiz', 'QUIZ_RAW_SENTINEL', undefined],
+    ['interactive', 'INTERACTIVE_RAW_SENTINEL', { widgetType: 'diagram' }],
+  ] as const)(
+    'preserves malformed %s generation failures without writing raw model output',
+    async (type, rawResponse, interactive) => {
+      const existing = slide('existing', 1, 'Existing');
+      const current = state(document([existing]));
+      const onCheckpoint = vi.fn();
+      const generateActions = vi.fn();
+      const generate = find(
+        buildGenerationTools(
+          deps(current.store, {
+            onCheckpoint,
+            generateActions,
+            aiCall: vi.fn(async () => rawResponse),
+          }),
+        ),
+        'generate_scene',
+      );
+      const before = structuredClone(current.get());
+      const originalLogFormat = process.env.LOG_FORMAT;
+      const originalLogLevel = process.env.LOG_LEVEL;
+      process.env.LOG_FORMAT = 'json';
+      process.env.LOG_LEVEL = 'warn';
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      try {
+        const response = await generate.execute('call', {
+          stageId: 'stage-test',
+          order: 1,
+          title: '  Replacement  ',
+          type,
+          brief: 'A replacement page',
+          ...(interactive ?? {}),
+        } as never);
+
+        const toolResult = response as { isError?: boolean; details: Record<string, unknown> };
+        expect(toolResult.isError).toBe(true);
+        expect((response.content[0] as { text: string }).text).toBe(
+          'The model response could not be parsed into page content; nothing was written.',
+        );
+        expect(toolResult.details).toEqual({
+          error: 'invalid-model-output',
+          order: 1,
+          title: 'Replacement',
+          type,
+          sceneId: 'existing',
+        });
+        expect(JSON.stringify(response)).not.toContain(rawResponse);
+        expect(current.get()).toEqual(before);
+        expect(current.store.putScene).not.toHaveBeenCalled();
+        expect(current.store.saveDocument).not.toHaveBeenCalled();
+        expect(generateActions).not.toHaveBeenCalled();
+        expect(onCheckpoint).not.toHaveBeenCalled();
+
+        expect(warn).toHaveBeenCalledTimes(1);
+        const warning = JSON.parse(String(warn.mock.calls[0][0]));
+        expect(warning).toMatchObject({ level: 'WARN', tag: 'AgentGenerationTools' });
+        expect(JSON.parse(warning.message)).toEqual({
+          error: 'invalid-model-output',
+          stageId: 'stage-test',
+          order: 1,
+          title: 'Replacement',
+          type,
+          sceneId: 'existing',
+        });
+        expect(JSON.stringify(warn.mock.calls)).not.toContain(rawResponse);
+      } finally {
+        warn.mockRestore();
+        if (originalLogFormat === undefined) delete process.env.LOG_FORMAT;
+        else process.env.LOG_FORMAT = originalLogFormat;
+        if (originalLogLevel === undefined) delete process.env.LOG_LEVEL;
+        else process.env.LOG_LEVEL = originalLogLevel;
+      }
+    },
+  );
+
   it('refuses destructive PBL type changes and unresolved generation media', async () => {
     const pbl = slide('project', 1, 'Project') as Scene;
     pbl.type = 'pbl';
@@ -201,6 +281,170 @@ describe('generation and deck tools', () => {
     } as never);
     expect(badMedia).toMatchObject({ isError: true, details: { error: 'media-placeholder-src' } });
     expect(current.get()?.scenes).toHaveLength(1);
+  });
+
+  it('passes widgetType and widgetOutline through to interactive generation', async () => {
+    const current = state(document([]));
+    const prompts: string[] = [];
+    let calls = 0;
+    const aiCall = vi.fn(async (_system: string, user: string) => {
+      calls += 1;
+      prompts.push(user);
+      return calls === 1
+        ? '<!DOCTYPE html><html><body><div id="water-cycle"></div></body></html>'
+        : '[]';
+    });
+    const generate = find(buildGenerationTools(deps(current.store, { aiCall })), 'generate_scene');
+    const response = await generate.execute('call', {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Water Cycle',
+      type: 'interactive',
+      brief: 'Show how the water cycle works',
+      widgetType: 'diagram',
+      widgetOutline: { concept: 'Water cycle', diagramType: 'mindmap' },
+    } as never);
+    expect(response).not.toMatchObject({ isError: true });
+    const scene = current.get()?.scenes[0];
+    expect(scene).toMatchObject({ type: 'interactive' });
+    expect(scene?.content).toMatchObject({ widgetType: 'diagram' });
+    expect(prompts[0]).toContain('mindmap');
+  });
+
+  it('falls back to a simulation widget when interactive generation omits widgetType', async () => {
+    const current = state(document([]));
+    let calls = 0;
+    const aiCall = vi.fn(async () => {
+      calls += 1;
+      return calls === 1
+        ? '<!DOCTYPE html><html><body><div id="energy-slider"></div></body></html>'
+        : '[]';
+    });
+    const generate = find(buildGenerationTools(deps(current.store, { aiCall })), 'generate_scene');
+    const response = await generate.execute('call', {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Energy',
+      type: 'interactive',
+      brief: 'Explore energy transfer',
+    } as never);
+    expect(response).not.toMatchObject({ isError: true });
+    expect(current.get()?.scenes[0]?.content).toMatchObject({ widgetType: 'simulation' });
+  });
+
+  it('rejects widgetType on non-interactive pages without writing anything', async () => {
+    const current = state(document([]));
+    const generate = find(buildGenerationTools(deps(current.store)), 'generate_scene');
+    const response = await generate.execute('call', {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Slide',
+      type: 'slide',
+      brief: 'A plain slide',
+      widgetType: 'diagram',
+    } as never);
+    expect(response).toMatchObject({
+      isError: true,
+      details: { error: 'widget-requires-interactive' },
+    });
+    expect(current.get()?.scenes).toHaveLength(0);
+  });
+
+  it('rejects malformed widgetOutline values without writing anything', async () => {
+    const current = state(document([]));
+    const generate = find(buildGenerationTools(deps(current.store)), 'generate_scene');
+    const base = {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Slide',
+      brief: 'A plain slide',
+    };
+    const nullOutline = await generate.execute('null-outline', {
+      ...base,
+      type: 'interactive',
+      widgetType: 'diagram',
+      widgetOutline: null,
+    } as never);
+    expect(nullOutline).toMatchObject({
+      isError: true,
+      details: { error: 'invalid-widget-outline' },
+    });
+    const stringOutline = await generate.execute('string-outline', {
+      ...base,
+      type: 'interactive',
+      widgetOutline: 'mindmap',
+    } as never);
+    expect(stringOutline).toMatchObject({
+      isError: true,
+      details: { error: 'invalid-widget-outline' },
+    });
+    const wrongType = await generate.execute('wrong-type', {
+      ...base,
+      type: 'slide',
+      widgetOutline: null,
+    } as never);
+    expect(wrongType).toMatchObject({
+      isError: true,
+      details: { error: 'widget-requires-interactive' },
+    });
+    expect(current.get()?.scenes).toHaveLength(0);
+  });
+
+  it('mirrors the generator defaults when only one widget field is provided', async () => {
+    const current = state(document([]));
+    const prompts: string[] = [];
+    let calls = 0;
+    const aiCall = vi.fn(async (_system: string, user: string) => {
+      calls += 1;
+      prompts.push(user);
+      return calls % 2 === 1
+        ? '<!DOCTYPE html><html><body><div id="widget"></div></body></html>'
+        : '[]';
+    });
+    const generate = find(buildGenerationTools(deps(current.store, { aiCall })), 'generate_scene');
+    // Bare widgetType: the handler must supply widgetOutline { concept: title },
+    // otherwise generateWidgetContent returns null.
+    const typeOnly = await generate.execute('type-only', {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Gravity Playground',
+      type: 'interactive',
+      brief: 'Play with gravity',
+      widgetType: 'simulation',
+    } as never);
+    expect(typeOnly).not.toMatchObject({ isError: true });
+    expect(current.get()?.scenes[0]?.content).toMatchObject({ widgetType: 'simulation' });
+    expect(prompts[0]).toContain('Gravity Playground');
+    // Bare widgetOutline: widgetType defaults to simulation and keeps the outline.
+    const outlineOnly = await generate.execute('outline-only', {
+      stageId: 'stage-test',
+      order: 2,
+      title: 'Entropy',
+      type: 'interactive',
+      brief: 'Explore entropy',
+      widgetOutline: { concept: 'Entropy of mixing' },
+    } as never);
+    expect(outlineOnly).not.toMatchObject({ isError: true });
+    expect(current.get()?.scenes[1]?.content).toMatchObject({ widgetType: 'simulation' });
+    expect(prompts[2]).toContain('Entropy of mixing');
+  });
+
+  it('validates widget params through the tool schema', () => {
+    const generate = find(buildGenerationTools(deps(state(document([])).store)), 'generate_scene');
+    const base = {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Title',
+      type: 'interactive',
+      brief: 'Brief',
+    };
+    expect(Value.Check(generate.parameters, { ...base, widgetType: 'diagram' })).toBe(true);
+    // procedural-skill stays gated behind task-engine mode: the tool schema
+    // must keep rejecting it until a vocational signal reaches this layer.
+    expect(Value.Check(generate.parameters, { ...base, widgetType: 'procedural-skill' })).toBe(
+      false,
+    );
+    expect(Value.Check(generate.parameters, { ...base, widgetType: 'hologram' })).toBe(false);
   });
 
   it('detects slide media placeholders without returning page bodies', () => {

@@ -164,11 +164,14 @@ AliDocMind 的文档解析支持 PDF、DOCX、PPTX、XLSX，以及 PNG、JPG/JPE
 
 ## 联网搜索
 
-配置 Tavily、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
+配置 Tavily、Exa、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
 
 ```bash
 TAVILY_API_KEY=
 TAVILY_BASE_URL=           # 可选覆盖
+
+EXA_API_KEY=
+EXA_BASE_URL=https://api.exa.ai  # 可选覆盖
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # 可选覆盖
@@ -291,8 +294,10 @@ video:
 web-search:
   tavily:
     apiKey: tvly-...
+  exa:
+    apiKey: ...
   searxng:
     baseUrl: http://localhost:8080
 ```
 
-环境变量会逐字段覆盖 YAML 中的同名 provider 配置。键名必须使用代码中已注册的 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`tavily` 或 `searxng`；未知 ID 不能在这里注册为自定义 LLM provider。
+环境变量会逐字段覆盖 YAML 中的同名 provider 配置。键名必须使用代码中已注册的 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily` 或 `searxng`；未知 ID 不能在这里注册为自定义 LLM provider。

@@ -86,6 +86,14 @@ export const config = {
    * marked failed so a hung job can't hold a concurrency slot + scratch forever.
    */
   jobDeadlineMs: intEnv('RENDER_JOB_DEADLINE_MS', 45 * 60 * 1000),
+  /** Independent wall-clock deadline for synchronous single-page previews. */
+  previewDeadlineMs: intEnv('RENDER_PREVIEW_TIMEOUT_MS', 20 * 1000),
+  /** Total previews admitted at once (buffering + executing); excess requests fast-fail. */
+  previewMaxInFlight: intEnv('RENDER_PREVIEW_MAX_IN_FLIGHT', 8),
+  /** Per-owner concurrent preview cap; 0 disables the per-owner check. */
+  previewMaxPerUser: intEnvAllowZero('RENDER_PREVIEW_MAX_PER_USER', 2),
+  /** Max JSON request size for a synchronous preview (bytes). */
+  previewMaxJsonBytes: intEnv('RENDER_PREVIEW_MAX_JSON_BYTES', 32 * MB),
   /** Root dir for unzipped projects and rendered outputs. */
   tmpDir: process.env.PRODUCER_TMP_PROJECT_DIR || '/tmp/openmaic-renders',
 

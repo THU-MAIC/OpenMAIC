@@ -53,6 +53,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'VIDEO_SORA',
   'VIDEO_MINIMAX',
   'VIDEO_GROK',
+  'EXA',
   'BOCHA',
   'WEB_SEARCH_MINIMAX',
   'WEB_SEARCH_CLAUDE',
@@ -407,6 +408,17 @@ providers:
       expect(getServerWebSearchProviders().bocha).toEqual({});
     });
 
+    it('resolves Exa API key and base URL from env vars', async () => {
+      vi.stubEnv('EXA_API_KEY', 'exa-env-key');
+      vi.stubEnv('EXA_BASE_URL', 'https://proxy.example.com/exa');
+      const { getServerWebSearchProviders, resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchApiKey('exa', undefined)).toBe('exa-env-key');
+      expect(resolveWebSearchBaseUrl('exa')).toBe('https://proxy.example.com/exa');
+      expect(getServerWebSearchProviders().exa).toEqual({});
+    });
+
     it('ignores client key and base URL for a server-managed Bocha provider', async () => {
       vi.stubEnv('BOCHA_API_KEY', 'bocha-env-key');
       vi.stubEnv('BOCHA_BASE_URL', 'https://proxy.example.com/bocha');
@@ -555,6 +567,28 @@ pdf:
       const providers = getServerVideoProviders();
       expect(providers['grok-video']).toEqual({});
       expect(resolveVideoBaseUrl('grok-video')).toBe('https://proxy.example.com/video');
+    });
+
+    it('exposes server-pinned image models in getServerImageProviders', async () => {
+      vi.stubEnv('IMAGE_SEEDREAM_API_KEY', 'sk-seedream');
+      vi.stubEnv('IMAGE_SEEDREAM_MODELS', 'doubao-seedream-5.0-lite,doubao-seedream-5.0-pro');
+      const { getServerImageProviders } = await import('@/lib/server/provider-config');
+
+      const providers = getServerImageProviders();
+      expect(providers.seedream).toEqual({
+        models: ['doubao-seedream-5.0-lite', 'doubao-seedream-5.0-pro'],
+      });
+    });
+
+    it('exposes server-pinned video models in getServerVideoProviders', async () => {
+      vi.stubEnv('VIDEO_SEEDANCE_API_KEY', 'sk-seedance');
+      vi.stubEnv('VIDEO_SEEDANCE_MODELS', 'doubao-seedance-2-0,doubao-seedance-3-0');
+      const { getServerVideoProviders } = await import('@/lib/server/provider-config');
+
+      const providers = getServerVideoProviders();
+      expect(providers.seedance).toEqual({
+        models: ['doubao-seedance-2-0', 'doubao-seedance-3-0'],
+      });
     });
 
     it('activates keyless image providers (lemonade) from a base URL alone', async () => {
@@ -834,6 +868,13 @@ video:
       vi.stubEnv('TAVILY_ENABLED', 'false');
       const { getServerWebSearchProviders } = await import('@/lib/server/provider-config');
       expect(getServerWebSearchProviders()['tavily']).toEqual({ disabled: true });
+    });
+
+    it('web-search: force-disables Exa through EXA_ENABLED=false', async () => {
+      vi.stubEnv('EXA_API_KEY', 'exa-key');
+      vi.stubEnv('EXA_ENABLED', 'false');
+      const { getServerWebSearchProviders } = await import('@/lib/server/provider-config');
+      expect(getServerWebSearchProviders().exa).toEqual({ disabled: true });
     });
 
     it('web-search: force-disables the keyless SearXNG provider via env', async () => {
