@@ -127,6 +127,7 @@ export function StaticTable({ elementInfo }: StaticTableProps) {
                     style={{
                       border: borderStyle,
                       backgroundColor: bgColor,
+                      verticalAlign: cell.vAlign ?? 'middle',
                       wordBreak: 'break-word',
                       ...textStyle,
                     }}

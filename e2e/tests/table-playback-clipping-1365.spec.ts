@@ -58,9 +58,9 @@ async function seedTableClassroom(page: Page) {
                     id: 'table-near-bottom',
                     type: 'table',
                     left: 50,
-                    top: 460,
+                    top: 440,
                     width: 900,
-                    height: 100,
+                    height: 120,
                     rotate: 0,
                     colWidths: [0.5, 0.5],
                     rowHeights: [20, 20, 20, 20, 20],
@@ -109,7 +109,7 @@ async function seedTableClassroom(page: Page) {
   );
 }
 
-test('keeps every table row visible in the thumbnail and default classroom canvas', async ({
+test('keeps table rows visible and cell content aligned in both renderers', async ({
   page,
 }, testInfo) => {
   await seedTableClassroom(page);
@@ -127,8 +127,12 @@ test('keeps every table row visible in the thumbnail and default classroom canva
 
         const rows = Array.from(table.querySelectorAll('tr'));
         const finalRow = rows.at(-1);
+        const finalCell = finalRow?.querySelector('td');
+        const finalCellInner = finalCell?.firstElementChild;
         const tableRect = table.getBoundingClientRect();
         const rowRect = finalRow?.getBoundingClientRect();
+        const cellRect = finalCell?.getBoundingClientRect();
+        const cellInnerRect = finalCellInner?.getBoundingClientRect();
 
         let clippingBoundary = element.parentElement;
         while (clippingBoundary) {
@@ -143,8 +147,10 @@ test('keeps every table row visible in the thumbnail and default classroom canva
           clippingBoundary = clippingBoundary.parentElement;
         }
 
-        if (!rowRect || !clippingBoundary) {
-          throw new Error('Could not resolve the rendered table row and slide clipping boundary');
+        if (!rowRect || !cellRect || !cellInnerRect || !clippingBoundary) {
+          throw new Error(
+            'Could not resolve the rendered table row, cell, inner content, and slide clipping boundary',
+          );
         }
 
         const boundaryRect = clippingBoundary.getBoundingClientRect();
@@ -158,6 +164,11 @@ test('keeps every table row visible in the thumbnail and default classroom canva
           boundaryBottom: boundaryRect.bottom,
           finalRowHeight: rowRect.height,
           finalRowVisibleHeight: Math.max(0, visibleBottom - visibleTop),
+          finalCellHeight: cellRect.height,
+          finalCellInnerHeight: cellInnerRect.height,
+          finalCellInnerCenterOffset:
+            (cellInnerRect.top + cellInnerRect.bottom - cellRect.top - cellRect.bottom) / 2,
+          renderer: element.closest('.screen-element') ? 'legacy' : 'package',
         };
       })
       .sort((left, right) => right.width - left.width),
@@ -173,6 +184,8 @@ test('keeps every table row visible in the thumbnail and default classroom canva
   });
 
   const [classroom, thumbnail] = metrics;
+  expect(classroom.renderer).toBe('legacy');
+  expect(thumbnail.renderer).toBe('package');
   expect(classroom.rowCount).toBe(5);
   expect(thumbnail.rowCount).toBe(classroom.rowCount);
 
@@ -180,4 +193,10 @@ test('keeps every table row visible in the thumbnail and default classroom canva
     expect(surface.tableBottom).toBeLessThanOrEqual(surface.boundaryBottom + 1);
     expect(surface.finalRowVisibleHeight).toBeGreaterThanOrEqual(surface.finalRowHeight - 1);
   }
+
+  // The table is taller than the sum of its declared row heights, so Chromium
+  // expands the rows. Default vertical centering must still use the full cell,
+  // not only the inner rowHeight - 4 wrapper.
+  expect(classroom.finalCellHeight).toBeGreaterThan(classroom.finalCellInnerHeight + 1);
+  expect(Math.abs(classroom.finalCellInnerCenterOffset)).toBeLessThanOrEqual(1);
 });

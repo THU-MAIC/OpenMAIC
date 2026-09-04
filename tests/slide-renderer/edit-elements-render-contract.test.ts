@@ -136,6 +136,8 @@ describe('edit_elements renderer contracts', () => {
     expect(markup).toContain('padding:2px 4px');
     expect(markup).toContain('line-height:1');
     expect(markup).toContain('justify-content:flex-end');
+    expect(markup).toContain('vertical-align:bottom');
+    expect(markup).toContain('vertical-align:middle');
     expect(markup).not.toContain('padding:5px');
   });
 
