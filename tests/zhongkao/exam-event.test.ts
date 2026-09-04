@@ -8,6 +8,8 @@ import {
   EXAM_MAX_DOCUMENT_ARTIFACT_BYTES,
   EXAM_MAX_EXTRACTED_PAGES,
   EXAM_MAX_HUMAN_REVIEW_ARTIFACT_BYTES,
+  EXAM_MAX_KNOWLEDGE_SUGGESTION_ARTIFACT_BYTES,
+  EXAM_MAX_KNOWLEDGE_SUGGESTIONS_PER_QUESTION,
   EXAM_MAX_MATCH_ARTIFACT_BYTES,
   EXAM_OBJECTIVE_GRADING_ALGORITHM_VERSION,
   EXAM_MAX_QUESTION_CANDIDATES,
@@ -74,6 +76,20 @@ const GRADING_PLAN = {
   sourceAnswerKeyArtifactFingerprint: '9'.repeat(64),
   gradingRef: 'exam-grading-v1',
   assessmentArtifactRef: 'exam-assessment-artifact-v1',
+} as const;
+const KNOWLEDGE_SUGGESTIONS_PLAN = {
+  generationVersion: 1,
+  subjectId: 'math',
+  generatorVersion: 'exam-knowledge-suggestions-generator:v1',
+  candidateSchemaVersion: 1,
+  reviewVersion: HUMAN_REVIEW_PLAN.reviewVersion,
+  reviewArtifactRef: HUMAN_REVIEW_PLAN.reviewArtifactRef,
+  sourceReviewArtifactFingerprint: '7'.repeat(64),
+  sourceReviewSemanticFingerprint: HUMAN_REVIEW_PLAN.decisionSemanticFingerprint,
+  candidatePoolMode: 'label_only',
+  candidatePoolFingerprint: '8'.repeat(64),
+  generationRef: 'exam-knowledge-suggestions-v1',
+  suggestionArtifactRef: 'exam-knowledge-suggestions-artifact-v1',
 } as const;
 const KNOWLEDGE_MAPPING_PLAN = {
   mappingVersion: 1,
@@ -302,6 +318,21 @@ function event(eventType: ExamEvent['eventType']): ExamEvent {
         correctCount: 1,
         incorrectCount: 1,
         unassessedCount: 1,
+      };
+    case 'exam_knowledge_suggestions_started':
+      return { ...base, eventType, ...KNOWLEDGE_SUGGESTIONS_PLAN };
+    case 'exam_knowledge_suggestions_completed':
+      return {
+        ...base,
+        eventType,
+        ...KNOWLEDGE_SUGGESTIONS_PLAN,
+        artifactByteLength: 320,
+        artifactSha256: '8'.repeat(64),
+        questionCount: 3,
+        generatedQuestionCount: 2,
+        noSuggestionQuestionCount: 1,
+        inputTooLargeQuestionCount: 0,
+        suggestionCount: 3,
       };
     case 'exam_knowledge_mapping_started':
       return { ...base, eventType, ...KNOWLEDGE_MAPPING_PLAN };
@@ -662,6 +693,84 @@ describe('Exam event schema', () => {
       expect(validateExamEvent({ ...event('exam_grading_completed'), ...privateField }).valid).toBe(
         false,
       );
+    }
+  });
+
+  it('validates closed knowledge-suggestion plans, artifact bounds and complete counts', () => {
+    for (const invalid of [
+      { subjectId: '' },
+      { generatorVersion: '' },
+      { candidateSchemaVersion: 0 },
+      { sourceReviewSemanticFingerprint: 'bad' },
+      { candidatePoolMode: 'all_taxonomy_ids' },
+      { candidatePoolFingerprint: 'bad' },
+      { suggestionArtifactRef: KNOWLEDGE_SUGGESTIONS_PLAN.generationRef },
+    ]) {
+      expect(
+        validateExamEvent({ ...event('exam_knowledge_suggestions_started'), ...invalid }).valid,
+      ).toBe(false);
+    }
+    expect(
+      validateExamEvent({
+        ...event('exam_knowledge_suggestions_completed'),
+        artifactByteLength: EXAM_MAX_KNOWLEDGE_SUGGESTION_ARTIFACT_BYTES + 1,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_knowledge_suggestions_completed'),
+        generatedQuestionCount: 1,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_knowledge_suggestions_completed'),
+        generatedQuestionCount: 0,
+        noSuggestionQuestionCount: 3,
+        suggestionCount: 1,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_knowledge_suggestions_completed'),
+        generatedQuestionCount: 3,
+        noSuggestionQuestionCount: 0,
+        suggestionCount: 2,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_knowledge_suggestions_completed'),
+        generatedQuestionCount: 1,
+        noSuggestionQuestionCount: 2,
+        suggestionCount: EXAM_MAX_KNOWLEDGE_SUGGESTIONS_PER_QUESTION + 1,
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateExamEvent({
+        ...event('exam_knowledge_suggestions_completed'),
+        suggestionCount:
+          EXAM_MAX_QUESTION_CANDIDATES * EXAM_MAX_KNOWLEDGE_SUGGESTIONS_PER_QUESTION + 1,
+      }).valid,
+    ).toBe(false);
+  });
+
+  it('keeps question text, candidate details and storage locators out of suggestion events', () => {
+    for (const privateField of [
+      { questionText: 'PRIVATE QUESTION' },
+      { knowledgePointIds: ['private-kp'] },
+      { proposedLabel: 'private label' },
+      { evidencePhrases: ['private evidence'] },
+      { suggestions: [{ proposedLabel: 'private label' }] },
+      { objectKey: 'materials/private/exam_knowledge_suggestions_v1.json' },
+      { outcome: 'incorrect' },
+    ]) {
+      expect(
+        validateExamEvent({
+          ...event('exam_knowledge_suggestions_completed'),
+          ...privateField,
+        }).valid,
+      ).toBe(false);
     }
   });
 

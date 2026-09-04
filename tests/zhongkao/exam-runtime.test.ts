@@ -40,6 +40,10 @@ import {
   deriveExamKnowledgeMappingConfirmedOperationId,
   deriveExamKnowledgeMappingRef,
   deriveExamKnowledgeMappingStartedOperationId,
+  deriveExamKnowledgeSuggestionsArtifactRef,
+  deriveExamKnowledgeSuggestionsCompletedOperationId,
+  deriveExamKnowledgeSuggestionsGenerationRef,
+  deriveExamKnowledgeSuggestionsStartedOperationId,
   deriveExamObservationArtifactRef,
   deriveExamObservationProjectionRef,
   deriveExamObservationProjectionStartedOperationId,
@@ -78,6 +82,8 @@ import type {
   ExamIntakeCompletedEvent,
   ExamKnowledgeMappingConfirmedEvent,
   ExamKnowledgeMappingStartedEvent,
+  ExamKnowledgeSuggestionsCompletedEvent,
+  ExamKnowledgeSuggestionsStartedEvent,
   ExamObservationProjectionStartedEvent,
   ExamObservationsProjectedEvent,
   ExamQuestionCandidatesExtractedEvent,
@@ -682,6 +688,87 @@ function answerKeyEvents(
   return [started, completed];
 }
 
+function knowledgeSuggestionEvents(
+  created: ExamCreatedEvent,
+  review: ExamHumanReviewCompletedEvent,
+): [ExamKnowledgeSuggestionsStartedEvent, ExamKnowledgeSuggestionsCompletedEvent] {
+  const sourceFacts = {
+    generationVersion: 1,
+    subjectId: created.subjectId,
+    generatorVersion: 'exam-knowledge-suggestions-generator:v1',
+    candidateSchemaVersion: 1,
+    reviewVersion: review.reviewVersion,
+    reviewArtifactRef: review.reviewArtifactRef,
+    sourceReviewArtifactFingerprint: review.artifactSha256,
+    sourceReviewSemanticFingerprint: review.decisionSemanticFingerprint,
+    candidatePoolMode: 'label_only' as const,
+    candidatePoolFingerprint: 'a'.repeat(64),
+  };
+  const generationRef = deriveExamKnowledgeSuggestionsGenerationRef({
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    ...sourceFacts,
+  });
+  const plan = {
+    ...sourceFacts,
+    generationRef,
+    suggestionArtifactRef: deriveExamKnowledgeSuggestionsArtifactRef(generationRef),
+  };
+  const startedOperationId = deriveExamKnowledgeSuggestionsStartedOperationId(
+    created.examSessionId,
+    plan.generationVersion,
+  );
+  const started: ExamKnowledgeSuggestionsStartedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(startedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_knowledge_suggestions_started',
+    createdAt: '2026-08-31T08:00:12.000Z',
+    operationId: startedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_knowledge_suggestions_started',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...plan,
+    }),
+    ...plan,
+  };
+  const completedFacts = {
+    ...plan,
+    artifactByteLength: 320,
+    artifactSha256: 'b'.repeat(64),
+    questionCount: 3,
+    generatedQuestionCount: 2,
+    noSuggestionQuestionCount: 1,
+    inputTooLargeQuestionCount: 0,
+    suggestionCount: 3,
+  };
+  const completedOperationId = deriveExamKnowledgeSuggestionsCompletedOperationId(
+    created.examSessionId,
+    plan.generationVersion,
+  );
+  const completed: ExamKnowledgeSuggestionsCompletedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(completedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_knowledge_suggestions_completed',
+    createdAt: '2026-08-31T08:00:13.000Z',
+    operationId: completedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_knowledge_suggestions_completed',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...completedFacts,
+    }),
+    ...completedFacts,
+  };
+  return [started, completed];
+}
+
 function gradingEvents(
   created: ExamCreatedEvent,
   review: ExamHumanReviewCompletedEvent,
@@ -1040,6 +1127,33 @@ describe('Exam RuntimeStore adapter', () => {
     );
     expect(deriveExamGradingStartedOperationId(first, 1)).not.toBe(
       deriveExamGradingCompletedOperationId(first, 1),
+    );
+
+    const suggestionInput = {
+      examSessionId: first,
+      profileId: PROFILE_ID,
+      generationVersion: 1,
+      subjectId: 'math',
+      generatorVersion: 'exam-knowledge-suggestions-generator:v1',
+      candidateSchemaVersion: 1,
+      reviewVersion: 1,
+      reviewArtifactRef: answerKeyInput.reviewArtifactRef,
+      sourceReviewArtifactFingerprint: 'd'.repeat(64),
+      sourceReviewSemanticFingerprint: '1'.repeat(64),
+      candidatePoolMode: 'label_only' as const,
+      candidatePoolFingerprint: '2'.repeat(64),
+    };
+    const suggestionRef = deriveExamKnowledgeSuggestionsGenerationRef(suggestionInput);
+    expect(suggestionRef).toBe(deriveExamKnowledgeSuggestionsGenerationRef(suggestionInput));
+    expect(suggestionRef).not.toBe(
+      deriveExamKnowledgeSuggestionsGenerationRef({
+        ...suggestionInput,
+        candidatePoolFingerprint: '3'.repeat(64),
+      }),
+    );
+    expect(deriveExamKnowledgeSuggestionsArtifactRef(suggestionRef)).not.toBe(suggestionRef);
+    expect(deriveExamKnowledgeSuggestionsStartedOperationId(first, 1)).not.toBe(
+      deriveExamKnowledgeSuggestionsCompletedOperationId(first, 1),
     );
 
     const mappingInput = {
@@ -1627,6 +1741,81 @@ describe('Exam RuntimeStore adapter', () => {
       grading: {
         status: 'completed',
         assessmentArtifact: { assessmentCount: 3, correctCount: 1, incorrectCount: 1 },
+      },
+    });
+  });
+
+  it('derives, appends and replays source-bound knowledge suggestions', async () => {
+    const backing = store();
+    const created = createdEvent();
+    await ensureExamRuntimeCreated({ store: backing, ownerId: OWNER_ID }, created);
+    const review = humanReviewEvents(created);
+    const baseChain = [
+      snapshotEvent(created),
+      completedEvent(created),
+      ...extractionEvents(created),
+      ...responseEvents(created),
+      ...review,
+    ];
+    for (const [index, event] of baseChain.entries()) {
+      await appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event, expectedRevision: index },
+      );
+    }
+
+    const suggestions = knowledgeSuggestionEvents(created, review[1]);
+    const forged = { ...suggestions[0], generationRef: 'forged-generation-ref' };
+    forged.operationFingerprint = createExamOperationFingerprint({
+      action: forged.eventType,
+      schemaVersion: forged.schemaVersion,
+      examSessionId: forged.examSessionId,
+      profileId: forged.profileId,
+      generationVersion: forged.generationVersion,
+      subjectId: forged.subjectId,
+      generatorVersion: forged.generatorVersion,
+      candidateSchemaVersion: forged.candidateSchemaVersion,
+      reviewVersion: forged.reviewVersion,
+      reviewArtifactRef: forged.reviewArtifactRef,
+      sourceReviewArtifactFingerprint: forged.sourceReviewArtifactFingerprint,
+      sourceReviewSemanticFingerprint: forged.sourceReviewSemanticFingerprint,
+      candidatePoolMode: forged.candidatePoolMode,
+      candidatePoolFingerprint: forged.candidatePoolFingerprint,
+      generationRef: forged.generationRef,
+      suggestionArtifactRef: forged.suggestionArtifactRef,
+    });
+    await expect(
+      appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event: forged, expectedRevision: 11 },
+      ),
+    ).rejects.toThrow('EXAM_EVENT_CONFLICT');
+
+    for (const [index, event] of suggestions.entries()) {
+      const expectedRevision = index + 11;
+      await expect(
+        appendExamRuntimeEvent({ store: backing, ownerId: OWNER_ID }, { event, expectedRevision }),
+      ).resolves.toMatchObject({ replayed: false, eventAppended: true });
+      await expect(
+        appendExamRuntimeEvent({ store: backing, ownerId: OWNER_ID }, { event, expectedRevision }),
+      ).resolves.toMatchObject({ replayed: true, eventAppended: false });
+    }
+
+    const snapshot = await loadExamRuntime(
+      { store: backing, ownerId: OWNER_ID },
+      created.examSessionId,
+    );
+    expect(snapshot.state).toMatchObject({
+      revision: 13,
+      knowledgeSuggestions: {
+        status: 'completed',
+        subjectId: 'math',
+        candidatePoolMode: 'label_only',
+        suggestionArtifact: {
+          questionCount: 3,
+          generatedQuestionCount: 2,
+          suggestionCount: 3,
+        },
       },
     });
   });

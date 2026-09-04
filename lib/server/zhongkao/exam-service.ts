@@ -42,6 +42,7 @@ import {
   examDocumentArtifactObjectKey,
   examHumanReviewObjectKey,
   examKnowledgeMappingObjectKey,
+  examKnowledgeSuggestionsObjectKey,
   examObservationsObjectKey,
   examQuestionCandidatesObjectKey,
   examQuestionAssessmentsObjectKey,
@@ -625,6 +626,15 @@ function examDerivativeObjectKeys(snapshot: ExamRuntimeSnapshot): string[] {
   if (grading) {
     keys.push(
       examQuestionAssessmentsObjectKey(snapshot.state.examSessionId, grading.gradingVersion),
+    );
+  }
+  const knowledgeSuggestions = snapshot.state.knowledgeSuggestions;
+  if (knowledgeSuggestions) {
+    keys.push(
+      examKnowledgeSuggestionsObjectKey(
+        snapshot.state.examSessionId,
+        knowledgeSuggestions.generationVersion,
+      ),
     );
   }
   const knowledgeMapping = snapshot.state.knowledgeMapping;

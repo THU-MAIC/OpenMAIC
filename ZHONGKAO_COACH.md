@@ -1715,6 +1715,108 @@ artifact locations, digests, event or operation references, owner and learner
 partitions, raw student responses, grading specifications, and answer-key facts
 remain private. M3B-2A adds no automatic knowledge mapping, error diagnosis,
 LLM, provider, embedding, OCR, vision, score, StudyAttempt write, Coach change,
-UI, production dependency, or database migration. A future M3B-2B may generate
-candidate mappings or error diagnoses, but no candidate can become trusted
-without a separate explicit human confirmation boundary.
+UI, production dependency, or database migration.
+
+## Milestone 3B-2B review-only AI knowledge suggestions
+
+M3B-2B adds AI-generated knowledge-point suggestions as candidate-only review
+material. A suggestion is neither a knowledge mapping nor a taxonomy fact. It
+does not confirm that a question belongs to a knowledge point, and it never
+becomes authoritative because of confidence, repetition, model output, or a
+successful generation request. The M3B-2A closed full-set
+`owner_confirmed_manual_mapping` request remains the only knowledge-mapping
+authority.
+
+### Grounded input and taxonomy boundary
+
+The model receives only each confirmed leaf question's `questionText` and, when
+present in the confirmed review, its bounded parent `questionText`. Both come
+from `resolveConfirmedExamReviewFactsFromRuntime`; extraction candidates and
+unconfirmed text are not generation authority. The model does not receive the
+student response, correctness, assessment outcome, answer key, grading facts,
+score, mastery, KnowledgeProgress, StudyAttempt independence, help exposure, or
+error-type facts.
+
+The repository still has no complete official Zhongkao taxonomy. The bounded
+candidate pool therefore contains only application-local knowledge-point ids
+already observed in the same owner's profile and subject evidence. When that
+pool is non-empty its mode is `observed_existing_ids`; when no such ids exist,
+the mode is `label_only`. The pool does not imply official, regional,
+publisher, textbook, chapter, syllabus, or exam-scope coverage. A
+`proposed_label` is neutral review text, not a trusted id, and cannot be written
+to M3B-2A as though the system had created or verified a taxonomy entry. A
+`confidenceBand` is only an uncalibrated qualitative label (`high`, `medium`,
+or `low`), never a probability or an authority signal.
+
+Every returned evidence phrase must be an exact substring of the confirmed
+leaf question or its confirmed parent context. Evidence grounding does not
+upgrade a candidate to a fact. The generator requests one closed structured
+JSON result for every opaque request key. It accepts only the complete trimmed
+provider response through native `JSON.parse`: prose or reasoning prefixes,
+Markdown fences, partial extraction, and JSON repair are rejected. The closed
+TypeBox schema then rejects unknown fields, missing or duplicate keys, ids
+outside the observed pool, unsupported labels, and ungrounded evidence. The
+pipeline never requests or stores chain-of-thought. Question and parent-context
+text are explicitly treated as untrusted data rather than instructions, so
+embedded prompt-injection text cannot change the schema, authority boundary,
+source set, or accepted identifiers.
+
+Provider and model selection stay behind the existing server-only model-route
+boundary. Each provider call requests at most 32,768 output tokens, further
+bounded by a smaller configured model output window. The completed raw response
+also has a 256 KiB post-response validation limit. Provider ids, model ids,
+credentials, prompts, raw model responses, usage details, and diagnostics are
+not stored in the suggestion artifact or Exam events and are not returned by
+the API. The dedicated owner-scoped suggestion route uses `private, no-store`;
+ordinary Exam detail exposes only `not_started`, `processing`, `completed`, or
+`superseded` plus completed aggregate question and suggestion counts.
+
+### Persistence, replay, concurrency, and deletion
+
+Generation first appends `exam_knowledge_suggestions_started` under the
+existing per-Exam mutation lock. The provider call then runs outside that lock.
+Finalization reacquires the lock, validates the unchanged Exam, review, pool,
+generator, and deterministic references, writes the canonical immutable
+`exam_knowledge_suggestions_v1.json` artifact, verifies its exact read-back
+bytes, length, SHA-256, closed schema, source lineage, coverage, and counts, and
+only then appends `exam_knowledge_suggestions_completed`. Runtime events contain
+only bounded versions, subject and pool mode, opaque references, source and
+pool fingerprints, integrity facts, and aggregate counts; they contain no
+question text, evidence phrases, candidate ids or labels, responses, answers,
+outcomes, or storage keys. The private artifact likewise does not duplicate
+question or parent-context text. Its question ids and evidence are bound to the
+immutable confirmed-review source and fingerprints; the dedicated owner GET
+resolves that review and joins its exact question and parent-context text into
+the review DTO.
+
+Model generation may be non-deterministic before any artifact is committed. A
+started operation with no artifact may call the model again, but the first
+valid artifact accepted under the same immutable plan becomes the durable
+result. Retries with committed bytes revalidate and complete that artifact
+without another model choice; completed requests replay the same source-bound
+bytes. Plan drift, conflicting bytes, forged references, corrupt artifacts,
+CAS loss, and committed-response loss fail closed or recover only after exact
+read-back proves the same operation won.
+
+Concurrent identical calls share one in-process generation flight, while the
+existing cross-request Exam mutation fence serializes started, artifact,
+completion, mapping, and deletion transitions. Manual mapping remains available
+when suggestion generation is in progress: its authoritative mapping event
+marks the unfinished suggestion state `superseded`, and any late model
+finalization is rejected. This prevents provider failure from turning optional
+AI assistance into an authority gate. Delete removes the deterministic
+suggestion key as soon as a started fact exists, including bytes left before
+completion. A deleting or deleted Exam rejects late finalization, so an unlocked
+provider call cannot resurrect either the artifact or the Exam.
+
+The production POST propagates `req.signal` to the model call. If the client
+aborts before commit, generation stops without a false artifact or completed
+event; the durable started reservation remains and a later POST can retry it.
+
+Suggestions are not consumed by the knowledge-mapping reducer, observation
+projection, or Progress evidence collector. M3B-2B performs no automatic
+knowledge mapping, automatic owner confirmation, ExamObservation creation,
+KnowledgeProgress update, StudyAttempt write, Coach behavior change, correctness
+change, or error diagnosis. Any future error-diagnosis work remains reserved
+for M3B-2C and requires its own explicit evidence and authority contract; no
+M3B-2C behavior is introduced here.

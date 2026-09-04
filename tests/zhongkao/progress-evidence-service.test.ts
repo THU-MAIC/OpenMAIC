@@ -12,6 +12,8 @@ import type { ExamCreatedDocument, ExamCreatedEvent } from '@/lib/zhongkao/exam-
 import { deriveKnowledgeProgressFromEvidence } from '@/lib/zhongkao/progress';
 import { resolveZhongkaoLearnerKeyFromOwnerId } from '@/lib/server/zhongkao/learner-identity';
 
+import { studyAttempt } from './fixtures';
+
 const mocks = vi.hoisted(() => ({
   loadStudentProfile: vi.fn(),
   loadStudyAttempts: vi.fn(),
@@ -152,6 +154,71 @@ describe('profile-wide KnowledgeProgress evidence collection', () => {
       'study_attempt',
       'exam_observation',
     ]);
+  });
+
+  it('ignores corrupt non-authoritative knowledge suggestions while preserving evidence semantics', async () => {
+    const attempt = studyAttempt({
+      id: 'attempt-before-suggestions',
+      profileId: PROFILE_ID,
+      createdAt: '2026-08-31T08:00:00.000Z',
+    });
+    const confirmedObservation = observation();
+    const suggestionStateRead = vi.fn();
+    const active = snapshot(EXAM_ID);
+    Object.assign(active.state, {
+      knowledgeSuggestions: new Proxy(
+        {
+          status: 'completed',
+          suggestionArtifact: { sha256: 'corrupt', byteLength: -1 },
+        },
+        {
+          get(target, property, receiver) {
+            suggestionStateRead(property);
+            return Reflect.get(target, property, receiver);
+          },
+        },
+      ),
+    });
+    const suggestionArtifactRead = vi.fn().mockResolvedValue(Buffer.from('{not-json', 'utf8'));
+    const trustedDeps = {
+      ownerId: 'fictional-progress-owner',
+      store: { marker: 'store' },
+      byteStore: { get: suggestionArtifactRead },
+      withExamMutationLock: async <T>(_key: string, work: () => Promise<T>) => work(),
+    } as never;
+    mocks.loadStudyAttempts.mockResolvedValueOnce([attempt]);
+    mocks.listProfileExamRuntimeSnapshots.mockResolvedValueOnce([active]);
+    mocks.loadExamRuntime.mockResolvedValueOnce(active);
+    mocks.resolveConfirmedExamObservationsFromRuntime.mockResolvedValueOnce({
+      observations: [confirmedObservation],
+    });
+
+    const result = await collectKnowledgeProgressEvidence(trustedDeps, PROFILE_ID);
+    const progressInput = {
+      profileId: PROFILE_ID,
+      subjectId: 'math',
+      knowledgePointId: 'linear-equations',
+    };
+    const authoritativeOnly = deriveKnowledgeProgressFromEvidence({
+      ...progressInput,
+      evidence: [
+        { sourceKind: 'study_attempt', attempt },
+        { sourceKind: 'exam_observation', observation: confirmedObservation },
+      ],
+    });
+
+    expect(suggestionStateRead).not.toHaveBeenCalled();
+    expect(suggestionArtifactRead).not.toHaveBeenCalled();
+    expect(
+      deriveKnowledgeProgressFromEvidence({ ...progressInput, evidence: result.evidence }),
+    ).toEqual(authoritativeOnly);
+    expect(authoritativeOnly).toMatchObject({
+      state: 'weak',
+      attempts: 1,
+      incorrectObservationCount: 2,
+      examObservationCount: 1,
+      examOccasionCount: 1,
+    });
   });
 
   it('excludes deleting, deleted, incomplete, and foreign-profile Exam evidence', async () => {

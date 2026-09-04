@@ -13,7 +13,15 @@ export function sceneContentStage(type?: string): LlmStage {
 /** Bind the generation package's neutral callback seam to server stage routing. */
 export function createGenerationAiCallFactory(options?: {
   abortSignal?: AbortSignal;
+  maxOutputTokens?: number;
 }): (stage: LlmStage) => AICallFn {
+  const configuredMaxOutputTokens = options?.maxOutputTokens;
+  if (
+    configuredMaxOutputTokens !== undefined &&
+    (!Number.isSafeInteger(configuredMaxOutputTokens) || configuredMaxOutputTokens < 1)
+  ) {
+    throw new RangeError('maxOutputTokens must be a positive safe integer');
+  }
   const calls = new Map<LlmStage, AICallFn>();
   return (stage) => {
     const cached = calls.get(stage);
@@ -21,12 +29,21 @@ export function createGenerationAiCallFactory(options?: {
     let resolved: Awaited<ReturnType<typeof resolveModel>> | undefined;
     const call: AICallFn = async (systemPrompt, userPrompt) => {
       resolved ??= await resolveModel({ stage });
+      const modelMaxOutputTokens = resolved.modelInfo?.outputWindow;
+      const maxOutputTokens =
+        configuredMaxOutputTokens === undefined
+          ? modelMaxOutputTokens
+          : typeof modelMaxOutputTokens === 'number' &&
+              Number.isSafeInteger(modelMaxOutputTokens) &&
+              modelMaxOutputTokens >= 1
+            ? Math.min(configuredMaxOutputTokens, modelMaxOutputTokens)
+            : configuredMaxOutputTokens;
       const result = await callLLM(
         {
           model: resolved.model,
           system: systemPrompt,
           prompt: userPrompt,
-          maxOutputTokens: resolved.modelInfo?.outputWindow,
+          maxOutputTokens,
           maxRetries: 0,
           abortSignal: options?.abortSignal,
         },

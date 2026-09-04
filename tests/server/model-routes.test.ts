@@ -374,6 +374,7 @@ describe('model-routes', () => {
         'chat-adapter',
         'generate-classroom',
         'web-search-query-rewrite',
+        'exam-knowledge-suggestions',
         'maic-agent',
         'maic-agent-driver',
       ]),

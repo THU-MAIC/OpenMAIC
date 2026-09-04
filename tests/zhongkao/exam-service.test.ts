@@ -569,6 +569,45 @@ function expectedOperationFingerprint(event: ExamEvent): string {
         incorrectCount: event.incorrectCount,
         unassessedCount: event.unassessedCount,
       });
+    case 'exam_knowledge_suggestions_started':
+      return createExamOperationFingerprint({
+        ...common,
+        generationVersion: event.generationVersion,
+        subjectId: event.subjectId,
+        generatorVersion: event.generatorVersion,
+        candidateSchemaVersion: event.candidateSchemaVersion,
+        reviewVersion: event.reviewVersion,
+        reviewArtifactRef: event.reviewArtifactRef,
+        sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+        sourceReviewSemanticFingerprint: event.sourceReviewSemanticFingerprint,
+        candidatePoolMode: event.candidatePoolMode,
+        candidatePoolFingerprint: event.candidatePoolFingerprint,
+        generationRef: event.generationRef,
+        suggestionArtifactRef: event.suggestionArtifactRef,
+      });
+    case 'exam_knowledge_suggestions_completed':
+      return createExamOperationFingerprint({
+        ...common,
+        generationVersion: event.generationVersion,
+        subjectId: event.subjectId,
+        generatorVersion: event.generatorVersion,
+        candidateSchemaVersion: event.candidateSchemaVersion,
+        reviewVersion: event.reviewVersion,
+        reviewArtifactRef: event.reviewArtifactRef,
+        sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+        sourceReviewSemanticFingerprint: event.sourceReviewSemanticFingerprint,
+        candidatePoolMode: event.candidatePoolMode,
+        candidatePoolFingerprint: event.candidatePoolFingerprint,
+        generationRef: event.generationRef,
+        suggestionArtifactRef: event.suggestionArtifactRef,
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        questionCount: event.questionCount,
+        generatedQuestionCount: event.generatedQuestionCount,
+        noSuggestionQuestionCount: event.noSuggestionQuestionCount,
+        inputTooLargeQuestionCount: event.inputTooLargeQuestionCount,
+        suggestionCount: event.suggestionCount,
+      });
     case 'exam_knowledge_mapping_started':
       return createExamOperationFingerprint({
         ...common,

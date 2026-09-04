@@ -17,6 +17,8 @@ import type {
   ExamIntakeCompletedEvent,
   ExamKnowledgeMappingConfirmedEvent,
   ExamKnowledgeMappingStartedEvent,
+  ExamKnowledgeSuggestionsCompletedEvent,
+  ExamKnowledgeSuggestionsStartedEvent,
   ExamObservationProjectionStartedEvent,
   ExamObservationsProjectedEvent,
   ExamQuestionCandidatesExtractedEvent,
@@ -78,6 +80,20 @@ const GRADING_PLAN = {
   sourceAnswerKeyArtifactFingerprint: '9'.repeat(64),
   gradingRef: 'exam-grading-v1',
   assessmentArtifactRef: 'exam-assessment-artifact-v1',
+} as const;
+const KNOWLEDGE_SUGGESTIONS_PLAN = {
+  generationVersion: 1,
+  subjectId: 'math',
+  generatorVersion: 'exam-knowledge-suggestions-generator:v1',
+  candidateSchemaVersion: 1,
+  reviewVersion: HUMAN_REVIEW_PLAN.reviewVersion,
+  reviewArtifactRef: HUMAN_REVIEW_PLAN.reviewArtifactRef,
+  sourceReviewArtifactFingerprint: '7'.repeat(64),
+  sourceReviewSemanticFingerprint: HUMAN_REVIEW_PLAN.decisionSemanticFingerprint,
+  candidatePoolMode: 'label_only',
+  candidatePoolFingerprint: '8'.repeat(64),
+  generationRef: 'exam-knowledge-suggestions-v1',
+  suggestionArtifactRef: 'exam-knowledge-suggestions-artifact-v1',
 } as const;
 const KNOWLEDGE_MAPPING_PLAN = {
   mappingVersion: 1,
@@ -408,6 +424,37 @@ function gradingCompleted(
   };
 }
 
+function knowledgeSuggestionsStarted(
+  seq: number,
+  overrides: Partial<ExamKnowledgeSuggestionsStartedEvent> = {},
+): ExamKnowledgeSuggestionsStartedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_knowledge_suggestions_started',
+    ...KNOWLEDGE_SUGGESTIONS_PLAN,
+    ...overrides,
+  };
+}
+
+function knowledgeSuggestionsCompleted(
+  seq: number,
+  overrides: Partial<ExamKnowledgeSuggestionsCompletedEvent> = {},
+): ExamKnowledgeSuggestionsCompletedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_knowledge_suggestions_completed',
+    ...KNOWLEDGE_SUGGESTIONS_PLAN,
+    artifactByteLength: 320,
+    artifactSha256: '8'.repeat(64),
+    questionCount: 3,
+    generatedQuestionCount: 2,
+    noSuggestionQuestionCount: 1,
+    inputTooLargeQuestionCount: 0,
+    suggestionCount: 3,
+    ...overrides,
+  };
+}
+
 function knowledgeMappingStarted(
   seq: number,
   overrides: Partial<ExamKnowledgeMappingStartedEvent> = {},
@@ -532,6 +579,14 @@ function answerKeyEvents(): ExamEvent[] {
 
 function gradingEvents(): ExamEvent[] {
   return [...answerKeyEvents(), gradingStarted(16), gradingCompleted(17)];
+}
+
+function knowledgeSuggestionEvents(startSeq = 14): ExamEvent[] {
+  return [
+    ...reviewEvents(),
+    knowledgeSuggestionsStarted(startSeq),
+    knowledgeSuggestionsCompleted(startSeq + 1),
+  ];
 }
 
 function mappingEvents(): ExamEvent[] {
@@ -717,6 +772,124 @@ describe('Exam event fold', () => {
         unassessedCount: 1,
       },
     });
+  });
+
+  it('folds review-only knowledge suggestions with immutable source and count facts', () => {
+    const generating = foldExamEvents(
+      records([...reviewEvents(), knowledgeSuggestionsStarted(14)]),
+    );
+    expect(generating.knowledgeSuggestions).toEqual({
+      status: 'generating',
+      startedEventId: 'exam-event-14',
+      startedAt: knowledgeSuggestionsStarted(14).createdAt,
+      ...KNOWLEDGE_SUGGESTIONS_PLAN,
+    });
+
+    const completed = foldExamEvents(records(knowledgeSuggestionEvents()));
+    expect(completed.knowledgeSuggestions).toEqual({
+      status: 'completed',
+      startedEventId: 'exam-event-14',
+      startedAt: knowledgeSuggestionsStarted(14).createdAt,
+      ...KNOWLEDGE_SUGGESTIONS_PLAN,
+      suggestionArtifact: {
+        eventId: 'exam-event-15',
+        createdAt: knowledgeSuggestionsCompleted(15).createdAt,
+        byteLength: 320,
+        sha256: '8'.repeat(64),
+        questionCount: 3,
+        generatedQuestionCount: 2,
+        noSuggestionQuestionCount: 1,
+        inputTooLargeQuestionCount: 0,
+        suggestionCount: 3,
+      },
+    });
+  });
+
+  it('requires confirmed review and an exact immutable knowledge-suggestion plan', () => {
+    expect(() =>
+      foldExamEvents(records([...responseEvents(), knowledgeSuggestionsStarted(12)])),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([...reviewEvents(), knowledgeSuggestionsStarted(14, { subjectId: 'physics' })]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...reviewEvents(),
+          knowledgeSuggestionsStarted(14, {
+            sourceReviewArtifactFingerprint: '0'.repeat(64),
+          }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...reviewEvents(),
+          knowledgeSuggestionsStarted(14),
+          knowledgeSuggestionsStarted(15),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(records([...reviewEvents(), knowledgeSuggestionsCompleted(14)])),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...reviewEvents(),
+          knowledgeSuggestionsStarted(14),
+          knowledgeSuggestionsCompleted(15, { candidatePoolFingerprint: '9'.repeat(64) }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...reviewEvents(),
+          knowledgeSuggestionsStarted(14),
+          knowledgeSuggestionsCompleted(15, {
+            generatedQuestionCount: 1,
+            noSuggestionQuestionCount: 1,
+          }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+  });
+
+  it('lets manual authority supersede an unfinished suggestion generation', () => {
+    const superseded = foldExamEvents(
+      records([...gradingEvents(), knowledgeSuggestionsStarted(18), knowledgeMappingStarted(19)]),
+    );
+    expect(superseded.knowledgeSuggestions?.status).toBe('superseded');
+    expect(superseded.knowledgeMapping?.status).toBe('mapping');
+    expect(toPublicExamSession(superseded).knowledgeSuggestions).toEqual({
+      status: 'superseded',
+    });
+
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...gradingEvents(),
+          knowledgeSuggestionsStarted(18),
+          knowledgeMappingStarted(19),
+          knowledgeSuggestionsCompleted(20),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+
+    const state = foldExamEvents(
+      records([
+        ...gradingEvents(),
+        knowledgeSuggestionsStarted(18),
+        knowledgeSuggestionsCompleted(19),
+        knowledgeMappingStarted(20),
+      ]),
+    );
+    expect(state.knowledgeSuggestions?.status).toBe('completed');
+    expect(state.knowledgeMapping?.status).toBe('mapping');
   });
 
   it('folds confirmed knowledge mapping and source-bound observation projection', () => {
@@ -1241,6 +1414,17 @@ describe('Exam event fold', () => {
     }
   });
 
+  it('supports deletion during partial and completed suggestion generation', () => {
+    for (const history of [
+      [...reviewEvents(), knowledgeSuggestionsStarted(14)],
+      knowledgeSuggestionEvents(),
+    ]) {
+      const state = foldExamEvents(records([...history, deleteRequested(history.length)]));
+      expect(state.status).toBe('deleting');
+      expect(state.knowledgeSuggestions).toBeDefined();
+    }
+  });
+
   it('requires the exact delete request before the deleted terminal', () => {
     const request = deleteRequested(1);
     expect(foldExamEvents(records([created(), request, deleted(2, request.eventId)])).status).toBe(
@@ -1428,6 +1612,32 @@ describe('public Exam projection', () => {
     });
     expect(JSON.stringify(summary)).not.toMatch(
       /answer|artifact|digest|sha256|fingerprint|event|operation|ref|objectKey|path|gradingSpec/u,
+    );
+  });
+
+  it('exposes only aggregate knowledge-suggestion lifecycle facts', () => {
+    expect(
+      toPublicExamSession(foldExamEvents(records(reviewEvents()))).knowledgeSuggestions,
+    ).toEqual({ status: 'not_started' });
+    expect(
+      toPublicExamSession(
+        foldExamEvents(records([...reviewEvents(), knowledgeSuggestionsStarted(14)])),
+      ).knowledgeSuggestions,
+    ).toEqual({ status: 'processing' });
+
+    const summary = toPublicExamSession(
+      foldExamEvents(records(knowledgeSuggestionEvents())),
+    ).knowledgeSuggestions;
+    expect(summary).toEqual({
+      status: 'completed',
+      questionCount: 3,
+      generatedQuestionCount: 2,
+      noSuggestionQuestionCount: 1,
+      inputTooLargeQuestionCount: 0,
+      suggestionCount: 3,
+    });
+    expect(JSON.stringify(summary)).not.toMatch(
+      /knowledgePoint|questionText|suggestions|artifact|digest|sha256|fingerprint|event|operation|ref|objectKey|path/u,
     );
   });
 

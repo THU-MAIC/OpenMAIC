@@ -18,6 +18,7 @@ import {
   type ExamGradingPlanFacts,
   type ExamHumanReviewPlanFacts,
   type ExamKnowledgeMappingPlanFacts,
+  type ExamKnowledgeSuggestionsPlanFacts,
   type ExamObservationProjectionPlanFacts,
 } from '@/lib/zhongkao/exam-event';
 import { foldExamEvents, type ExamSessionState } from '@/lib/zhongkao/exam-state';
@@ -188,6 +189,27 @@ export function deriveExamAssessmentArtifactRef(gradingRef: string): string {
   return `exam-question-assessments:v${EXAM_ID_VERSION}:${digest(
     'openmaic:zhongkao-exam-question-assessments:v1',
     { gradingRef },
+  )}`;
+}
+
+export type ExamKnowledgeSuggestionsGenerationRefInput = {
+  examSessionId: string;
+  profileId: string;
+} & Omit<ExamKnowledgeSuggestionsPlanFacts, 'generationRef' | 'suggestionArtifactRef'>;
+
+export function deriveExamKnowledgeSuggestionsGenerationRef(
+  input: ExamKnowledgeSuggestionsGenerationRefInput,
+): string {
+  return `exam-knowledge-suggestions:v${input.generationVersion}:${digest(
+    'openmaic:zhongkao-exam-knowledge-suggestions:v1',
+    input,
+  )}`;
+}
+
+export function deriveExamKnowledgeSuggestionsArtifactRef(generationRef: string): string {
+  return `exam-knowledge-suggestions-artifact:v${EXAM_ID_VERSION}:${digest(
+    'openmaic:zhongkao-exam-knowledge-suggestions-artifact:v1',
+    { generationRef },
   )}`;
 }
 
@@ -424,6 +446,20 @@ export function deriveExamGradingCompletedOperationId(
   return operationId('grading-completed', { examSessionId, gradingVersion });
 }
 
+export function deriveExamKnowledgeSuggestionsStartedOperationId(
+  examSessionId: string,
+  generationVersion: number,
+): string {
+  return operationId('knowledge-suggestions-started', { examSessionId, generationVersion });
+}
+
+export function deriveExamKnowledgeSuggestionsCompletedOperationId(
+  examSessionId: string,
+  generationVersion: number,
+): string {
+  return operationId('knowledge-suggestions-completed', { examSessionId, generationVersion });
+}
+
 export function deriveExamKnowledgeMappingStartedOperationId(
   examSessionId: string,
   mappingVersion: number,
@@ -637,6 +673,55 @@ function assertDerivedGradingPlan(event: ExamGradingPlanEvent): void {
   if (
     event.gradingRef !== gradingRef ||
     event.assessmentArtifactRef !== deriveExamAssessmentArtifactRef(gradingRef)
+  ) {
+    throw new ExamError('EXAM_EVENT_CONFLICT');
+  }
+}
+
+type ExamKnowledgeSuggestionsPlanEvent = Extract<
+  ExamEvent,
+  {
+    eventType: 'exam_knowledge_suggestions_started' | 'exam_knowledge_suggestions_completed';
+  }
+>;
+
+function knowledgeSuggestionsPlanFacts(
+  event: ExamKnowledgeSuggestionsPlanEvent,
+): ExamKnowledgeSuggestionsPlanFacts {
+  return {
+    generationVersion: event.generationVersion,
+    subjectId: event.subjectId,
+    generatorVersion: event.generatorVersion,
+    candidateSchemaVersion: event.candidateSchemaVersion,
+    reviewVersion: event.reviewVersion,
+    reviewArtifactRef: event.reviewArtifactRef,
+    sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+    sourceReviewSemanticFingerprint: event.sourceReviewSemanticFingerprint,
+    candidatePoolMode: event.candidatePoolMode,
+    candidatePoolFingerprint: event.candidatePoolFingerprint,
+    generationRef: event.generationRef,
+    suggestionArtifactRef: event.suggestionArtifactRef,
+  };
+}
+
+function assertDerivedKnowledgeSuggestionsPlan(event: ExamKnowledgeSuggestionsPlanEvent): void {
+  const generationRef = deriveExamKnowledgeSuggestionsGenerationRef({
+    generationVersion: event.generationVersion,
+    generatorVersion: event.generatorVersion,
+    candidateSchemaVersion: event.candidateSchemaVersion,
+    examSessionId: event.examSessionId,
+    profileId: event.profileId,
+    subjectId: event.subjectId,
+    reviewVersion: event.reviewVersion,
+    reviewArtifactRef: event.reviewArtifactRef,
+    sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+    sourceReviewSemanticFingerprint: event.sourceReviewSemanticFingerprint,
+    candidatePoolMode: event.candidatePoolMode,
+    candidatePoolFingerprint: event.candidatePoolFingerprint,
+  });
+  if (
+    event.generationRef !== generationRef ||
+    event.suggestionArtifactRef !== deriveExamKnowledgeSuggestionsArtifactRef(generationRef)
   ) {
     throw new ExamError('EXAM_EVENT_CONFLICT');
   }
@@ -1108,6 +1193,41 @@ function assertDerivedExamEvent(event: ExamEvent): void {
         correctCount: event.correctCount,
         incorrectCount: event.incorrectCount,
         unassessedCount: event.unassessedCount,
+      });
+      break;
+    case 'exam_knowledge_suggestions_started':
+      assertDerivedKnowledgeSuggestionsPlan(event);
+      expectedOperationId = deriveExamKnowledgeSuggestionsStartedOperationId(
+        event.examSessionId,
+        event.generationVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_knowledge_suggestions_started',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...knowledgeSuggestionsPlanFacts(event),
+      });
+      break;
+    case 'exam_knowledge_suggestions_completed':
+      assertDerivedKnowledgeSuggestionsPlan(event);
+      expectedOperationId = deriveExamKnowledgeSuggestionsCompletedOperationId(
+        event.examSessionId,
+        event.generationVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_knowledge_suggestions_completed',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...knowledgeSuggestionsPlanFacts(event),
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        questionCount: event.questionCount,
+        generatedQuestionCount: event.generatedQuestionCount,
+        noSuggestionQuestionCount: event.noSuggestionQuestionCount,
+        inputTooLargeQuestionCount: event.inputTooLargeQuestionCount,
+        suggestionCount: event.suggestionCount,
       });
       break;
     case 'exam_knowledge_mapping_started':
