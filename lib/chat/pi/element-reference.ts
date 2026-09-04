@@ -1,5 +1,4 @@
 import {
-  isInteractiveContent,
   isPPTElementType,
   isWidgetType,
   type ChartType,
@@ -12,6 +11,14 @@ import {
   type WidgetType,
 } from '@openmaic/dsl';
 import { parseHTML } from 'linkedom/worker';
+import {
+  defaultTreeAdapter,
+  html as parse5Html,
+  parse as parseSourceHtml,
+  serialize as serializeSourceHtml,
+  type DefaultTreeAdapterMap,
+  type TreeAdapter,
+} from 'parse5';
 import type {
   ElementReference,
   InteractiveComponentReference,
@@ -36,24 +43,24 @@ const CHART_SERIES_LIMIT = 20;
 const CHART_POINT_LIMIT = 100;
 
 /**
- * Ceiling on the source document handed to the HTML parser. INTERACTIVE_PACKET_LIMIT
- * bounds only what reaches the model; parsing, deep-cloning, walking the text, and
- * serializing the selected subtree all scale with the authored document, so the work
- * is bounded here — before parseHTML — instead of only at the output.
+ * Host-side work envelope for source-authored Interactive HTML.
  *
- * Measured with String#length (UTF-16 units, O(1)) rather than codePointLength,
- * which allocates an array over the whole input and would itself be the
- * amplification this bound exists to prevent. UTF-16 length is >= the code-point
- * count, so this never admits a document longer than the stated limit.
+ * Canonical classroom exports inline runtime dependencies into excluded script/link
+ * nodes, so their raw HTML can reach roughly 2.5M UTF-16 units while retaining only a
+ * few hundred DOM nodes. A raw-size-only 256k ceiling rejected those valid scenes.
+ * The absolute source ceiling still bounds the parser's linear scan, while the
+ * inline Base64 attributes and excluded payloads are removed during the first pass;
+ * retained node/attribute/content/depth ceilings reject structurally dense inputs
+ * before linkedom, subtree cloning, text walking, or serialization can amplify them.
  *
- * Sized from a local cold-process benchmark of the resolver's worst-case shape —
- * a document made entirely of small elements whose selected subtree is the whole
- * document, so parse, clone, walk and serialize are all maximal. 256k UTF-16 units
- * stayed within a practical local cost while leaving ample headroom over authored
- * Interactive scenes, which run to tens of KB. The exact runtime cost remains
- * environment-dependent; this constant is the deterministic work boundary.
+ * String#length is intentionally O(1); codePointLength allocates over the untrusted
+ * input and would itself defeat the pre-parse guard.
  */
-export const INTERACTIVE_SOURCE_HTML_LIMIT = 256_000;
+export const INTERACTIVE_SOURCE_HTML_LIMIT = 4_000_000;
+export const INTERACTIVE_SOURCE_NODE_LIMIT = 10_000;
+export const INTERACTIVE_SOURCE_DEPTH_LIMIT = 256;
+const INTERACTIVE_SOURCE_ATTRIBUTE_LIMIT = 20_000;
+const INTERACTIVE_SOURCE_RETAINED_UNITS_LIMIT = 512_000;
 const INTERACTIVE_SELECTOR_LIMIT = 128;
 const INTERACTIVE_TAG_NAME_LIMIT = 128;
 const INTERACTIVE_ATTRIBUTE_NAME_LIMIT = 128;
@@ -77,6 +84,10 @@ const EXCLUDED_INTERACTIVE_TAGS = new Set([
   'template',
   'iframe',
   'canvas',
+  'noembed',
+  'noframes',
+  'plaintext',
+  'xmp',
 ]);
 const SANITIZED_SUBTREE_TAGS = new Set(['script', 'style', 'noscript', 'template', 'iframe']);
 const TEXT_SEPARATOR_TAGS = new Set([
@@ -278,6 +289,186 @@ export class ElementReferenceValidationError extends Error {
     super(message);
     this.name = 'ElementReferenceValidationError';
   }
+}
+
+function compactInteractiveSourceHtml(sourceHtml: string): string {
+  let retainedNodes = 0;
+  let sourceAttributes = 0;
+  let inspectedAttributeUnits = 0;
+  let retainedUnits = 0;
+
+  const isExcludedParent = (node: DefaultTreeAdapterMap['parentNode']): boolean =>
+    defaultTreeAdapter.isElementNode(node) &&
+    EXCLUDED_INTERACTIVE_TAGS.has(defaultTreeAdapter.getTagName(node).toLowerCase());
+
+  const accountNode = (): void => {
+    retainedNodes += 1;
+    if (retainedNodes > INTERACTIVE_SOURCE_NODE_LIMIT) {
+      throw new ElementReferenceValidationError(
+        `interactive elementReference source document exceeds the ${INTERACTIVE_SOURCE_NODE_LIMIT}-node structural limit`,
+      );
+    }
+  };
+
+  const accountRetainedUnits = (units: number): void => {
+    retainedUnits += units;
+    if (retainedUnits > INTERACTIVE_SOURCE_RETAINED_UNITS_LIMIT) {
+      throw new ElementReferenceValidationError(
+        `interactive elementReference source document exceeds the ${INTERACTIVE_SOURCE_RETAINED_UNITS_LIMIT}-unit retained-content limit`,
+      );
+    }
+  };
+
+  const accountSourceAttributes = (count: number): void => {
+    sourceAttributes += count;
+    if (sourceAttributes > INTERACTIVE_SOURCE_ATTRIBUTE_LIMIT) {
+      throw new ElementReferenceValidationError(
+        `interactive elementReference source document exceeds the ${INTERACTIVE_SOURCE_ATTRIBUTE_LIMIT}-attribute structural limit`,
+      );
+    }
+  };
+
+  const accountInspectedAttributeUnits = (
+    attrs: DefaultTreeAdapterMap['element']['attrs'],
+  ): void => {
+    for (const attribute of attrs) {
+      inspectedAttributeUnits += attribute.name.length + attribute.value.length;
+      if (inspectedAttributeUnits > INTERACTIVE_SOURCE_HTML_LIMIT) {
+        throw new ElementReferenceValidationError(
+          `interactive elementReference source document exceeds the ${INTERACTIVE_SOURCE_HTML_LIMIT}-unit attribute-work limit`,
+        );
+      }
+    }
+  };
+
+  const accountRetainedAttributes = (attrs: DefaultTreeAdapterMap['element']['attrs']): void => {
+    for (const attribute of attrs) {
+      accountRetainedUnits(attribute.name.length + attribute.value.length);
+    }
+  };
+
+  const containsInlineBase64 = (value: string): boolean => {
+    if (value.length < 13) return false;
+
+    const matchesAsciiToken = (start: number, token: string): boolean => {
+      if (start < 0 || start + token.length > value.length) return false;
+      for (let index = 0; index < token.length; index += 1) {
+        const code = value.charCodeAt(start + index);
+        const foldedCode = code >= 65 && code <= 90 ? code + 32 : code;
+        if (foldedCode !== token.charCodeAt(index)) return false;
+      }
+      return true;
+    };
+
+    let searchFrom = 0;
+    while (searchFrom <= value.length - 5) {
+      let dataStart = searchFrom;
+      while (dataStart <= value.length - 5 && !matchesAsciiToken(dataStart, 'data:')) {
+        dataStart += 1;
+      }
+      if (dataStart > value.length - 5) return false;
+
+      let parameterStart = -1;
+      let cursor = dataStart + 5;
+      for (; cursor < value.length && value.charCodeAt(cursor) !== 44; cursor += 1) {
+        if (value.charCodeAt(cursor) === 59) parameterStart = cursor + 1;
+      }
+      if (cursor === value.length) return false;
+      if (cursor - parameterStart === 6 && matchesAsciiToken(parameterStart, 'base64')) return true;
+      searchFrom = cursor + 1;
+    }
+    return false;
+  };
+
+  const retainedAttributesFor = (
+    tagName: string,
+    attrs: DefaultTreeAdapterMap['element']['attrs'],
+  ): DefaultTreeAdapterMap['element']['attrs'] => {
+    const retained = EXCLUDED_INTERACTIVE_TAGS.has(tagName.toLowerCase())
+      ? attrs.filter((attribute) => attribute.name.toLowerCase() === 'id')
+      : attrs;
+    return retained.filter((attribute) => !containsInlineBase64(attribute.value));
+  };
+
+  const treeAdapter: TreeAdapter<DefaultTreeAdapterMap> = {
+    ...defaultTreeAdapter,
+    createElement(tagName, namespaceURI, attrs) {
+      accountNode();
+      accountSourceAttributes(attrs.length);
+      accountInspectedAttributeUnits(attrs);
+      const retainedAttributes = retainedAttributesFor(tagName, attrs);
+      accountRetainedUnits(tagName.length);
+      accountRetainedAttributes(retainedAttributes);
+      return defaultTreeAdapter.createElement(tagName, namespaceURI, retainedAttributes);
+    },
+    adoptAttributes(recipient, attrs) {
+      accountSourceAttributes(attrs.length);
+      accountInspectedAttributeUnits(attrs);
+      const retainedAttributes = retainedAttributesFor(
+        defaultTreeAdapter.getTagName(recipient),
+        attrs,
+      );
+      accountRetainedAttributes(retainedAttributes);
+      defaultTreeAdapter.adoptAttributes(recipient, retainedAttributes);
+    },
+    createCommentNode() {
+      accountNode();
+      return defaultTreeAdapter.createCommentNode('');
+    },
+    setDocumentType() {
+      // Document metadata cannot identify or describe a referenced component.
+      // Discard it in the compaction pass instead of retaining it for linkedom.
+    },
+    insertText(parentNode, text) {
+      if (isExcludedParent(parentNode)) return;
+      accountRetainedUnits(text.length);
+      defaultTreeAdapter.insertText(parentNode, text);
+    },
+    insertTextBefore(parentNode, text, referenceNode) {
+      if (isExcludedParent(parentNode)) return;
+      accountRetainedUnits(text.length);
+      defaultTreeAdapter.insertTextBefore(parentNode, text, referenceNode);
+    },
+  };
+
+  const compactDocument = parseSourceHtml(sourceHtml, { treeAdapter });
+  const pendingNodes: Array<{ node: DefaultTreeAdapterMap['node']; depth: number }> = [
+    { node: compactDocument, depth: 0 },
+  ];
+  while (pendingNodes.length > 0) {
+    const current = pendingNodes.pop()!;
+    if (current.depth > INTERACTIVE_SOURCE_DEPTH_LIMIT) {
+      throw new ElementReferenceValidationError(
+        `interactive elementReference source document exceeds the ${INTERACTIVE_SOURCE_DEPTH_LIMIT}-level structural depth limit`,
+      );
+    }
+    if (
+      defaultTreeAdapter.isElementNode(current.node) &&
+      defaultTreeAdapter.getTagName(current.node).toLowerCase() === 'template'
+    ) {
+      // HTML templates store descendants in a detached DocumentFragment; foreign
+      // namespace elements named `template` keep ordinary childNodes. Both are
+      // excluded evidence, so remove the correct payload before recursive
+      // serialization and the downstream linkedom parser.
+      const templatePayloadParent =
+        defaultTreeAdapter.getNamespaceURI(current.node) === parse5Html.NS.HTML
+          ? defaultTreeAdapter.getTemplateContent(current.node as DefaultTreeAdapterMap['template'])
+          : current.node;
+      for (const child of [...defaultTreeAdapter.getChildNodes(templatePayloadParent)]) {
+        defaultTreeAdapter.detachNode(child);
+      }
+      continue;
+    }
+    if (defaultTreeAdapter.isCommentNode(current.node)) {
+      defaultTreeAdapter.detachNode(current.node);
+      continue;
+    }
+    if (!('childNodes' in current.node)) continue;
+    for (const child of defaultTreeAdapter.getChildNodes(current.node)) {
+      pendingNodes.push({ node: child, depth: current.depth + 1 });
+    }
+  }
+  return serializeSourceHtml(compactDocument, { treeAdapter });
 }
 
 function codePointLength(value: string): number {
@@ -807,6 +998,20 @@ function validateInteractiveReference(value: unknown): InteractiveComponentRefer
   };
 }
 
+function isHtmlBackedInteractiveContent(
+  value: unknown,
+): value is { type: 'interactive'; html: string; widgetType?: WidgetType } {
+  // Validate only fields this resolver consumes. Imported legacy widgetConfig is
+  // app-owned opaque data and may predate the DSL's current `{ type }` contract.
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const content = value as Record<string, unknown>;
+  return (
+    content.type === 'interactive' &&
+    typeof content.html === 'string' &&
+    (content.widgetType === undefined || isWidgetType(content.widgetType))
+  );
+}
+
 function markTruncated(truncatedFields: string[], path: string): void {
   if (!truncatedFields.includes(path)) truncatedFields.push(path);
 }
@@ -1146,11 +1351,7 @@ export function resolveInteractiveComponentReference(
     );
   }
   const scene = matchingScenes[0];
-  if (
-    scene.type !== 'interactive' ||
-    !isInteractiveContent(scene.content) ||
-    typeof scene.content.html !== 'string'
-  ) {
+  if (scene.type !== 'interactive' || !isHtmlBackedInteractiveContent(scene.content)) {
     throw new ElementReferenceValidationError(
       'interactive elementReference must resolve to a valid HTML-backed Interactive Scene',
     );
@@ -1168,7 +1369,8 @@ export function resolveInteractiveComponentReference(
     );
   }
 
-  const { document: parsedDocument } = parseHTML(sourceHtml);
+  const compactSourceHtml = compactInteractiveSourceHtml(sourceHtml);
+  const { document: parsedDocument } = parseHTML(compactSourceHtml);
   const document = parsedDocument as unknown as Document;
   const matches = Array.from(document.querySelectorAll(reference.selector));
   if (matches.length !== 1) {

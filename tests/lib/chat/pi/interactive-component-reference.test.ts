@@ -1,13 +1,31 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import {
   ElementReferenceValidationError,
+  INTERACTIVE_SOURCE_DEPTH_LIMIT,
   INTERACTIVE_SOURCE_HTML_LIMIT,
+  INTERACTIVE_SOURCE_NODE_LIMIT,
   buildInteractiveComponentContentHint,
   resolveElementReference,
   resolveInteractiveComponentReference,
 } from '@/lib/chat/pi/element-reference';
 import { parseHTML } from 'linkedom/worker';
+
+const linkedomCapture = vi.hoisted(() => ({ inputs: [] as string[] }));
+
+vi.mock('linkedom/worker', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('linkedom/worker')>();
+  return {
+    ...actual,
+    parseHTML(
+      html: string,
+      ...args: Parameters<typeof actual.parseHTML> extends [string, ...infer R] ? R : never
+    ) {
+      linkedomCapture.inputs.push(html);
+      return actual.parseHTML(html, ...args);
+    },
+  };
+});
 
 function makeBody(
   html: string | undefined,
@@ -142,27 +160,40 @@ describe('Interactive static component reference', () => {
     ['URL-only scene', undefined, /HTML-backed Interactive Scene/],
     ['excluded canvas', '<canvas id="density-slider"></canvas>', /excluded or invalid/],
     ['excluded script', '<script id="density-slider">bad()</script>', /excluded or invalid/],
+    [
+      'duplicate id on an excluded node',
+      '<div id="density-slider"></div><script id="density-slider">bad()</script>',
+      /exactly one source node/,
+    ],
   ])('fails closed for %s', (_name, html, error) => {
     expect(() => resolveElementReference(makeBody(html as string | undefined))).toThrow(error);
   });
 
-  // The packet limit bounds only what reaches the model. Parsing, cloning, walking
-  // the text, and serializing the selected subtree all scale with the authored
-  // document, so an oversized Scene must be refused before parseHTML rather than
-  // truncated after the work is already done.
-  it('refuses an oversized source document before parsing, and still resolves at the limit', () => {
+  // Canonical exports inline runtime dependencies into excluded script nodes. Those
+  // bytes must stay inside a raw scan ceiling without forcing the evidence resolver
+  // to retain them or rejecting an otherwise small source-authored component.
+  it('resolves an export-shaped large source while bounding raw input before parsing', () => {
     const component = '<div id="density-slider">ok</div>';
-    const padTo = (total: number) => component + 'x'.repeat(total - component.length);
+    const scriptStart = '<script src="data:text/javascript;base64,';
+    const scriptEnd = '"></script>';
+    const padTo = (total: number) =>
+      component +
+      scriptStart +
+      'A'.repeat(total - component.length - scriptStart.length - scriptEnd.length) +
+      scriptEnd;
 
     const atLimit = padTo(INTERACTIVE_SOURCE_HTML_LIMIT);
     expect(atLimit).toHaveLength(INTERACTIVE_SOURCE_HTML_LIMIT);
-    expect(resolve(atLimit).evidence.component).toMatchObject({
+    const resolved = resolve(atLimit);
+    expect(resolved.evidence.component).toMatchObject({
       tagName: 'div',
       id: 'density-slider',
+      sourceText: 'ok',
     });
+    expect(resolved.childEvidence).not.toContain('data:text/javascript');
 
     // One unit over, with the same well-formed unique component still present:
-    // the bound must short-circuit instead of resolving it.
+    // the O(1) raw bound must short-circuit instead of scanning it.
     const overLimit = padTo(INTERACTIVE_SOURCE_HTML_LIMIT + 1);
     expect(overLimit).toHaveLength(INTERACTIVE_SOURCE_HTML_LIMIT + 1);
     expect(() => resolveElementReference(makeBody(overLimit))).toThrow(
@@ -174,6 +205,197 @@ describe('Interactive static component reference', () => {
     // scan. This locks the resource guard ahead of trim(), not only parseHTML().
     const oversizedWhitespace = ' '.repeat(INTERACTIVE_SOURCE_HTML_LIMIT + 1);
     expect(() => resolveElementReference(makeBody(oversizedWhitespace))).toThrow(/parse limit/);
+  });
+
+  it('drops inline Base64 attributes before linkedom while retaining ordinary metadata', () => {
+    const embeddedImage = `data:image/png;base64,${'A'.repeat(100_000)}`;
+    const embeddedImageWithLongMetadata = `DATA:image/png;${'x'.repeat(2_000)};BASE64,AAAA`;
+    const result = resolve(
+      `<div id="density-slider"><img src="${embeddedImage}" data-preview="${embeddedImageWithLongMetadata}" alt="Density chart"></div>`,
+    );
+    const compactSource = linkedomCapture.inputs.at(-1);
+
+    expect(compactSource).toContain('<img alt="Density chart">');
+    expect(compactSource).not.toContain('data:image/png;base64');
+    expect(compactSource).not.toContain(';BASE64,');
+    expect(result.evidence.component.sourceMarkup).toContain('alt="Density chart"');
+    expect(result.evidence.component.sourceMarkup).not.toContain('data:image/png;base64');
+  });
+
+  it('retains long non-Base64 metadata without repeated suffix scanning', () => {
+    const ordinaryMetadata = `${'data:x;'.repeat(20_000)}plain,metadata`;
+    const result = resolve(
+      `<div id="density-slider" data-description="${ordinaryMetadata}">ok</div>`,
+    );
+
+    expect(result.evidence.component.sourceText).toBe('ok');
+    expect(linkedomCapture.inputs.at(-1)).toContain(`data-description="${ordinaryMetadata}"`);
+  });
+
+  it('drops document type metadata before linkedom', () => {
+    const documentMetadata = 'x'.repeat(100_000);
+    const result = resolve(
+      `<!DOCTYPE html PUBLIC "${documentMetadata}"><div id="density-slider">ok</div>`,
+    );
+
+    expect(result.evidence.component.sourceText).toBe('ok');
+    expect(linkedomCapture.inputs.at(-1)).not.toContain('<!DOCTYPE');
+    expect(linkedomCapture.inputs.at(-1)).not.toContain(documentMetadata);
+  });
+
+  it('counts attribute values copied by parse5 formatting reconstruction', () => {
+    const repeatedAttribute = 'A'.repeat(10_000);
+    const html =
+      '<div id="density-slider">ok</div>' +
+      `<p><b data-x="${repeatedAttribute}">one` +
+      '<p>two'.repeat(1_000);
+    const linkedomInputsBefore = linkedomCapture.inputs.length;
+
+    expect(html.length).toBeLessThan(INTERACTIVE_SOURCE_HTML_LIMIT);
+    expect(() => resolveElementReference(makeBody(html))).toThrow(ElementReferenceValidationError);
+    expect(() => resolveElementReference(makeBody(html))).toThrow(/retained-content limit/);
+    expect(linkedomCapture.inputs).toHaveLength(linkedomInputsBefore);
+  });
+
+  it('bounds repeated inspection of Base64 attributes during formatting reconstruction', () => {
+    const embeddedImage = `data:image/png;base64,${'A'.repeat(100_000)}`;
+    const html =
+      '<div id="density-slider">ok</div>' +
+      `<p><b data-preview="${embeddedImage}">one` +
+      '<p>two'.repeat(100);
+    const linkedomInputsBefore = linkedomCapture.inputs.length;
+
+    expect(html.length).toBeLessThan(INTERACTIVE_SOURCE_HTML_LIMIT);
+    expect(() => resolveElementReference(makeBody(html))).toThrow(/attribute-work limit/);
+    expect(linkedomCapture.inputs).toHaveLength(linkedomInputsBefore);
+  });
+
+  it('rejects a structurally dense source before linkedom and subtree projection', () => {
+    const html =
+      '<div id="density-slider">ok</div>' + '<i></i>'.repeat(INTERACTIVE_SOURCE_NODE_LIMIT + 1);
+
+    expect(html.length).toBeLessThan(INTERACTIVE_SOURCE_HTML_LIMIT);
+    expect(() => resolveElementReference(makeBody(html))).toThrow(ElementReferenceValidationError);
+    expect(() => resolveElementReference(makeBody(html))).toThrow(/node structural limit/);
+  });
+
+  it('removes comments before linkedom and counts them in the node budget', () => {
+    const result = resolve('<div id="density-slider">ok<!--comment-secret--></div>');
+    expect(result.evidence.component.sourceText).toBe('ok');
+    expect(linkedomCapture.inputs.at(-1)).not.toContain('comment-secret');
+
+    const commentDenseHtml =
+      '<div id="density-slider">ok</div>' + '<!---->'.repeat(INTERACTIVE_SOURCE_NODE_LIMIT + 1);
+    const linkedomInputsBefore = linkedomCapture.inputs.length;
+    expect(commentDenseHtml.length).toBeLessThan(INTERACTIVE_SOURCE_HTML_LIMIT);
+    expect(() => resolveElementReference(makeBody(commentDenseHtml))).toThrow(
+      /node structural limit/,
+    );
+    expect(linkedomCapture.inputs).toHaveLength(linkedomInputsBefore);
+  });
+
+  it('bounds retained DOM depth before recursive serialization', () => {
+    const nestedSource = (wrapperCount: number) =>
+      '<div>'.repeat(wrapperCount) +
+      '<span id="density-slider">ok</span>' +
+      '</div>'.repeat(wrapperCount);
+
+    const atLimit = nestedSource(INTERACTIVE_SOURCE_DEPTH_LIMIT - 4);
+    expect(resolve(atLimit).evidence.component.sourceText).toBe('ok');
+
+    const overLimit = nestedSource(INTERACTIVE_SOURCE_DEPTH_LIMIT - 3);
+    expect(overLimit.length).toBeLessThan(INTERACTIVE_SOURCE_HTML_LIMIT);
+    expect(() => resolveElementReference(makeBody(overLimit))).toThrow(
+      ElementReferenceValidationError,
+    );
+    expect(() => resolveElementReference(makeBody(overLimit))).toThrow(/structural depth limit/);
+  });
+
+  it('drops excluded template fragments before depth checking and recursive serialization', () => {
+    const nestedTemplatePayload =
+      '<template>' +
+      '<div>'.repeat(2_000) +
+      '<span>template-secret</span>' +
+      '</div>'.repeat(2_000) +
+      '</template>';
+    const result = resolve(`<div id="density-slider">ok</div>${nestedTemplatePayload}`);
+
+    expect(result.evidence.component.sourceText).toBe('ok');
+    expect(linkedomCapture.inputs.at(-1)).toContain('<template></template>');
+    expect(linkedomCapture.inputs.at(-1)).not.toContain('template-secret');
+  });
+
+  it.each(['noembed', 'noframes', 'plaintext', 'xmp'] as const)(
+    'drops %s raw-text payload before linkedom can reinterpret it as structure',
+    (tagName) => {
+      const rawPayload = '<i>raw-text-secret</i>'.repeat(3);
+      const html = `<div id="density-slider">ok</div><${tagName}>${rawPayload}</${tagName}>`;
+      const result = resolve(html);
+      const compactSource = linkedomCapture.inputs.at(-1);
+
+      expect(result.evidence.component.sourceText).toBe('ok');
+      expect(compactSource).not.toContain('raw-text-secret');
+      expect(compactSource).not.toContain('<i>');
+    },
+  );
+
+  it('drops foreign-namespace template children without treating them as HTML fragments', () => {
+    const result = resolve(
+      '<div id="density-slider">ok</div>' +
+        '<svg><template>' +
+        '<g>'.repeat(2_000) +
+        '<text>foreign-template-secret</text>' +
+        '</g>'.repeat(2_000) +
+        '</template></svg>',
+    );
+
+    expect(result.evidence.component.sourceText).toBe('ok');
+    expect(linkedomCapture.inputs.at(-1)).toContain('<svg><template></template></svg>');
+    expect(linkedomCapture.inputs.at(-1)).not.toContain('foreign-template-secret');
+  });
+
+  it('strips attributes adopted onto excluded roots before linkedom', () => {
+    linkedomCapture.inputs.length = 0;
+    const excludedPayload = 'root-secret-payload';
+    resolve(
+      `<div id="density-slider">ok</div><body id="source-body" data-secret="${excludedPayload}">`,
+    );
+    expect(linkedomCapture.inputs).toHaveLength(1);
+    expect(linkedomCapture.inputs[0]).toContain('<body id="source-body">');
+    expect(linkedomCapture.inputs[0]).not.toContain(excludedPayload);
+  });
+
+  it('bounds retained source text and aggregate attributes independently of raw size', () => {
+    const tooMuchText = `<div id="density-slider">${'x'.repeat(512_001)}</div>`;
+    expect(tooMuchText.length).toBeLessThan(INTERACTIVE_SOURCE_HTML_LIMIT);
+    expect(() => resolveElementReference(makeBody(tooMuchText))).toThrow(/retained-content limit/);
+
+    const attributesPerElement = Array.from(
+      { length: 200 },
+      (_, index) => `data-item-${index}="x"`,
+    ).join(' ');
+    const tooManyAttributes =
+      '<div id="density-slider"></div>' +
+      Array.from({ length: 101 }, () => `<i ${attributesPerElement}></i>`).join('');
+    expect(tooManyAttributes.length).toBeLessThan(INTERACTIVE_SOURCE_HTML_LIMIT);
+    expect(() => resolveElementReference(makeBody(tooManyAttributes))).toThrow(
+      /attribute structural limit/,
+    );
+  });
+
+  it('counts source attributes before excluded and Base64 attributes are removed', () => {
+    const excludedAttributes = Array.from(
+      { length: 200 },
+      (_, index) => `data-item-${index}="x"`,
+    ).join(' ');
+    const html =
+      '<div id="density-slider">ok</div>' +
+      Array.from({ length: 101 }, () => `<script ${excludedAttributes}></script>`).join('');
+    const linkedomInputsBefore = linkedomCapture.inputs.length;
+
+    expect(html.length).toBeLessThan(INTERACTIVE_SOURCE_HTML_LIMIT);
+    expect(() => resolveElementReference(makeBody(html))).toThrow(/attribute structural limit/);
+    expect(linkedomCapture.inputs).toHaveLength(linkedomInputsBefore);
   });
 
   it('rejects non-Interactive scenes and every Browser-submitted content field', () => {
@@ -220,6 +442,23 @@ describe('Interactive static component reference', () => {
       longAttributeName,
     );
     expect(result.evidence.omittedItems['component.attributes']).toBe(1);
+  });
+
+  it('accepts legacy imported widgetConfig when the resolver-owned HTML fields are valid', () => {
+    const body = makeBody('<div id="density-slider">Legacy diagram node</div>');
+    (body.storeState.scenes[0].content as Record<string, unknown>).widgetType = 'diagram';
+    (body.storeState.scenes[0].content as Record<string, unknown>).widgetConfig = {
+      nodes: [{ id: 'density-slider' }],
+    };
+
+    expect(resolveInteractiveComponentReference(body)?.evidence).toMatchObject({
+      widgetType: 'diagram',
+      selector: '#density-slider',
+      component: {
+        id: 'density-slider',
+        sourceText: 'Legacy diagram node',
+      },
+    });
   });
 
   it('uses explicit label, then wrapping label, then aria-label without reading siblings', () => {

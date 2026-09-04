@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
+import {
+  INTERACTIVE_SOURCE_DEPTH_LIMIT,
+  INTERACTIVE_SOURCE_NODE_LIMIT,
+} from '@/lib/chat/pi/element-reference';
 
 const PI_CHAT_FLAG = 'NEXT_PUBLIC_PI_CHAT_ENABLED';
 const COURSEWARE_REFERENCE_FLAG = 'NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED';
@@ -341,6 +345,60 @@ describe('POST /api/chat/pi model and thinking resolution', () => {
     );
   });
 
+  it.each([
+    [
+      'HTML',
+      '<template>' +
+        '<div>'.repeat(2_000) +
+        '<span>template-secret</span>' +
+        '</div>'.repeat(2_000) +
+        '</template>',
+    ],
+    ['SVG', '<svg><template><g>template-secret</g></template></svg>'],
+  ])(
+    'accepts an Interactive identity without serializing excluded %s template content',
+    async (_namespace, templateMarkup) => {
+      const body = makeBody();
+      body.storeState.scenes = [
+        {
+          id: 'scene-interactive',
+          stageId: 'stage-1',
+          title: 'Static control',
+          order: 0,
+          type: 'interactive',
+          content: {
+            type: 'interactive',
+            widgetType: 'simulation',
+            html: '<div id="control">ok</div>' + templateMarkup,
+          },
+        } as never,
+      ];
+      body.storeState.currentSceneId = 'scene-interactive';
+      Object.assign(body, {
+        elementReference: {
+          kind: 'interactive_component',
+          sceneId: 'scene-interactive',
+          selector: '#control',
+        },
+      });
+
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(body));
+      await response.text();
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBe('1');
+      expect(mocks.resolveModel).toHaveBeenCalledOnce();
+      expect(mocks.runPiDirectorLoop).toHaveBeenCalledWith(
+        expect.objectContaining({
+          elementReference: expect.objectContaining({
+            childEvidence: expect.not.stringContaining('template-secret'),
+          }),
+        }),
+      );
+    },
+  );
+
   it('rejects unresolved Interactive identities before resolving a model', async () => {
     const body = makeBody();
     body.storeState.scenes = [
@@ -366,6 +424,129 @@ describe('POST /api/chat/pi model and thinking resolution', () => {
     const response = await POST(makeRequest(body));
 
     expect(response.status).toBe(400);
+    expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBeNull();
+    expect(mocks.resolveModel).not.toHaveBeenCalled();
+    expect(mocks.runPiDirectorLoop).not.toHaveBeenCalled();
+  });
+
+  it('rejects a target hidden in parse5 raw-text without reparsing it into deep structure', async () => {
+    const body = makeBody();
+    const rawPayload =
+      '<label>'.repeat(8_000) +
+      '<span id="control">raw-text-secret</span>' +
+      '</label>'.repeat(8_000);
+    body.storeState.scenes = [
+      {
+        id: 'scene-interactive',
+        stageId: 'stage-1',
+        title: 'Static control',
+        order: 0,
+        type: 'interactive',
+        content: {
+          type: 'interactive',
+          widgetType: 'simulation',
+          html: `<noembed>${rawPayload}</noembed>`,
+        },
+      } as never,
+    ];
+    body.storeState.currentSceneId = 'scene-interactive';
+    Object.assign(body, {
+      elementReference: {
+        kind: 'interactive_component',
+        sceneId: 'scene-interactive',
+        selector: '#control',
+      },
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+      error: expect.stringContaining('exactly one source node; found 0'),
+    });
+    expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBeNull();
+    expect(mocks.resolveModel).not.toHaveBeenCalled();
+    expect(mocks.runPiDirectorLoop).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'excessive retained DOM depth',
+      '<div>'.repeat(INTERACTIVE_SOURCE_DEPTH_LIMIT) +
+        '<span id="control">ok</span>' +
+        '</div>'.repeat(INTERACTIVE_SOURCE_DEPTH_LIMIT),
+      'structural depth limit',
+    ],
+    [
+      'comment-node structural work',
+      '<div id="control">ok</div>' + '<!---->'.repeat(INTERACTIVE_SOURCE_NODE_LIMIT + 1),
+      'node structural limit',
+    ],
+    [
+      'excessive retained content',
+      `<div id="control">${'x'.repeat(512_001)}</div>`,
+      'retained-content limit',
+    ],
+    [
+      'excessive aggregate attributes',
+      '<div id="control"></div>' +
+        Array.from(
+          { length: 101 },
+          () =>
+            `<i ${Array.from({ length: 200 }, (_, index) => `data-item-${index}="x"`).join(' ')}></i>`,
+        ).join(''),
+      'attribute structural limit',
+    ],
+    [
+      'excessive attributes on excluded nodes',
+      '<div id="control">ok</div>' +
+        Array.from(
+          { length: 101 },
+          () =>
+            `<script ${Array.from({ length: 200 }, (_, index) => `data-item-${index}="x"`).join(' ')}></script>`,
+        ).join(''),
+      'attribute structural limit',
+    ],
+    [
+      'formatting reconstruction attribute work',
+      '<div id="control">ok</div>' +
+        `<p><b data-preview="data:image/png;base64,${'A'.repeat(100_000)}">one` +
+        '<p>two'.repeat(100),
+      'attribute-work limit',
+    ],
+  ])('rejects Interactive source with %s before model resolution', async (_name, html, error) => {
+    const body = makeBody();
+    body.storeState.scenes = [
+      {
+        id: 'scene-interactive',
+        stageId: 'stage-1',
+        title: 'Static control',
+        order: 0,
+        type: 'interactive',
+        content: { type: 'interactive', widgetType: 'simulation', html },
+      } as never,
+    ];
+    body.storeState.currentSceneId = 'scene-interactive';
+    Object.assign(body, {
+      elementReference: {
+        kind: 'interactive_component',
+        sceneId: 'scene-interactive',
+        selector: '#control',
+      },
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+      error: expect.stringContaining(error),
+    });
     expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBeNull();
     expect(mocks.resolveModel).not.toHaveBeenCalled();
     expect(mocks.runPiDirectorLoop).not.toHaveBeenCalled();
