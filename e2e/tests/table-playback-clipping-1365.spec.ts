@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { test, expect } from '../fixtures/base';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
 import { defaultTheme } from '../fixtures/test-data/scene-content';
@@ -6,6 +6,20 @@ import { defaultTheme } from '../fixtures/test-data/scene-content';
 const STAGE_ID = 'e2e-table-clipping-1365';
 const FINAL_ROW_TEXT = 'Issue1365FinalRow';
 const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
+
+// At this width every first-column cell wraps to two lines. The element height
+// sits between the old legacy table (~266px) and both aligned renderers (~146px).
+const TABLE_WIDTH = 600;
+const TABLE_HEIGHT = 180;
+const TABLE_TOP = 370;
+const TABLE_ROTATE = 0;
+const ROW_TEXTS = [
+  '课堂播放渲染链与缩略图渲染链必须在同一份幻灯片数据上给出一致的表格高度',
+  '当单元格文本折行时旧实现的内边距与行高会把整张表格撑出元素盒子之外',
+  '本行用于验证表格底部内容在教室视图中不会被幻灯片视口裁掉的回归场景',
+  '两个渲染实现的行高都应由该行最高的单元格决定而不是由声明高度决定',
+  '最后一行是报告者截图里丢失的那一行必须在两条渲染链中完整可见',
+];
 
 async function seedTableClassroom(page: Page) {
   await page.addInitScript(
@@ -19,7 +33,7 @@ async function seedTableClassroom(page: Page) {
   await page.goto('/', { waitUntil: 'networkidle' });
 
   await page.evaluate(
-    ({ stageId, finalRowText, theme }) =>
+    ({ stageId, finalRowText, rowTexts, theme, geometry }) =>
       new Promise<void>((resolve, reject) => {
         const request = indexedDB.open('MAIC-Database');
 
@@ -27,13 +41,12 @@ async function seedTableClassroom(page: Page) {
           const db = (event.target as IDBOpenDBRequest).result;
           const tx = db.transaction(['stages', 'scenes', 'stageOutlines'], 'readwrite');
           const now = Date.now();
-          const labels = ['Header', 'Route', 'Hypothesis', 'Evidence', finalRowText];
 
           tx.objectStore('stages').put({
             id: stageId,
             name: 'Table clipping regression',
             description: '',
-            language: 'en-US',
+            language: 'zh-CN',
             style: 'professional',
             createdAt: now,
             updatedAt: now,
@@ -58,27 +71,28 @@ async function seedTableClassroom(page: Page) {
                     id: 'table-near-bottom',
                     type: 'table',
                     left: 50,
-                    top: 460,
-                    width: 900,
-                    height: 100,
-                    rotate: 0,
+                    top: geometry.top,
+                    width: geometry.width,
+                    height: geometry.height,
+                    rotate: geometry.rotate,
                     colWidths: [0.5, 0.5],
                     rowHeights: [20, 20, 20, 20, 20],
                     cellMinHeight: 20,
                     outline: { width: 1, color: '#334155', style: 'solid' },
-                    data: labels.map((label, rowIndex) => [
+                    data: rowTexts.map((text, rowIndex) => [
                       {
                         id: `label-${rowIndex}`,
                         colspan: 1,
                         rowspan: 1,
-                        text: label,
+                        text,
                         style: { fontsize: '14px' },
                       },
                       {
                         id: `value-${rowIndex}`,
                         colspan: 1,
                         rowspan: 1,
-                        text: `Value${rowIndex + 1}`,
+                        text:
+                          rowIndex === rowTexts.length - 1 ? finalRowText : `Value${rowIndex + 1}`,
                         style: { fontsize: '14px' },
                       },
                     ]),
@@ -105,82 +119,87 @@ async function seedTableClassroom(page: Page) {
         };
         request.onerror = () => reject(request.error);
       }),
-    { stageId: STAGE_ID, finalRowText: FINAL_ROW_TEXT, theme: defaultTheme },
+    {
+      stageId: STAGE_ID,
+      finalRowText: FINAL_ROW_TEXT,
+      rowTexts: ROW_TEXTS,
+      theme: defaultTheme,
+      geometry: {
+        top: TABLE_TOP,
+        width: TABLE_WIDTH,
+        height: TABLE_HEIGHT,
+        rotate: TABLE_ROTATE,
+      },
+    },
   );
 }
 
-test('keeps the final table row visible in the thumbnail and default classroom canvas', async ({
+async function readSurface(locator: Locator) {
+  await expect(locator).toHaveCount(1);
+
+  return locator.evaluate((element) => {
+    const table = element.querySelector('table');
+    if (!table) throw new Error('Could not resolve the rendered HTML table');
+
+    const rows = Array.from(table.querySelectorAll('tr'));
+    const finalRow = rows.at(-1);
+    if (!finalRow) throw new Error('Could not resolve the final table row');
+
+    const wrappedRowCount = rows.filter((row) => {
+      const firstCell = row.querySelector('td');
+      if (!firstCell) return false;
+
+      const walker = document.createTreeWalker(firstCell, NodeFilter.SHOW_TEXT);
+      let fragments = 0;
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.textContent?.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        fragments += Array.from(range.getClientRects()).filter(
+          (rect) => rect.width > 0 && rect.height > 0,
+        ).length;
+      }
+      return fragments >= 2;
+    }).length;
+
+    const elementRect = element.getBoundingClientRect();
+    const tableRect = table.getBoundingClientRect();
+    const finalRowRect = finalRow.getBoundingClientRect();
+    const overflowRatio = (bottom: number) =>
+      Math.max(0, bottom - elementRect.bottom) / elementRect.height;
+
+    return {
+      rowCount: rows.length,
+      wrappedRowCount,
+      finalRowHeight: finalRowRect.height,
+      tableOverflowRatio: overflowRatio(tableRect.bottom),
+      finalRowOverflowRatio: overflowRatio(finalRowRect.bottom),
+    };
+  });
+}
+
+test('keeps wrapped table rows visible in the thumbnail and default classroom canvas', async ({
   page,
 }, testInfo) => {
+  expect(TABLE_ROTATE, 'bounding-box assertions require an unrotated fixture').toBe(0);
+
   await seedTableClassroom(page);
   await page.goto(`/classroom/${STAGE_ID}`);
   await page.getByText('Loading classroom...').waitFor({ state: 'hidden', timeout: 15_000 });
 
-  const renderedTables = page.locator('.base-element-table').filter({ hasText: FINAL_ROW_TEXT });
-  await expect(renderedTables).toHaveCount(2);
-
-  const metrics = await renderedTables.evaluateAll((tables) =>
-    tables
-      .map((element) => {
-        const table = element.querySelector('table');
-        if (!table) throw new Error('Could not resolve the rendered HTML table');
-
-        const rows = Array.from(table.querySelectorAll('tr'));
-        const finalRow = rows.at(-1);
-        const finalCell = finalRow?.querySelector('td');
-        const finalCellInner = finalCell?.firstElementChild;
-        const tableRect = table.getBoundingClientRect();
-        const rowRect = finalRow?.getBoundingClientRect();
-        const cellRect = finalCell?.getBoundingClientRect();
-        const cellInnerRect = finalCellInner?.getBoundingClientRect();
-        const textRange = document.createRange();
-        if (finalCellInner) textRange.selectNodeContents(finalCellInner);
-        const textRect = textRange.getBoundingClientRect();
-
-        let clippingBoundary = element.parentElement;
-        while (clippingBoundary) {
-          const style = getComputedStyle(clippingBoundary);
-          if (
-            style.overflow === 'hidden' ||
-            style.overflowX === 'hidden' ||
-            style.overflowY === 'hidden'
-          ) {
-            break;
-          }
-          clippingBoundary = clippingBoundary.parentElement;
-        }
-
-        if (!rowRect || !cellRect || !cellInnerRect || !clippingBoundary) {
-          throw new Error(
-            'Could not resolve the rendered table row, cell, inner content, and slide clipping boundary',
-          );
-        }
-
-        const boundaryRect = clippingBoundary.getBoundingClientRect();
-        const visibleTop = Math.max(rowRect.top, boundaryRect.top);
-        const visibleBottom = Math.min(rowRect.bottom, boundaryRect.bottom);
-
-        return {
-          width: tableRect.width,
-          rowCount: rows.length,
-          tableBottom: tableRect.bottom,
-          boundaryBottom: boundaryRect.bottom,
-          finalRowHeight: rowRect.height,
-          finalRowVisibleHeight: Math.max(0, visibleBottom - visibleTop),
-          finalTextHeight: textRect.height,
-          finalTextVisibleHeight: Math.max(
-            0,
-            Math.min(textRect.bottom, boundaryRect.bottom) -
-              Math.max(textRect.top, boundaryRect.top),
-          ),
-          renderer: element.closest('.screen-element') ? 'legacy' : 'package',
-        };
-      })
-      .sort((left, right) => right.width - left.width),
-  );
+  const legacyTable = page
+    .locator('.screen-element .base-element-table')
+    .filter({ hasText: FINAL_ROW_TEXT });
+  const thumbnailTable = page
+    .locator('.thumbnail-slide .base-element-table')
+    .filter({ hasText: FINAL_ROW_TEXT });
+  const surfaces = {
+    legacy: await readSurface(legacyTable),
+    package: await readSurface(thumbnailTable),
+  };
 
   await testInfo.attach('table clipping metrics', {
-    body: JSON.stringify(metrics, null, 2),
+    body: JSON.stringify(surfaces, null, 2),
     contentType: 'application/json',
   });
   await testInfo.attach('table clipping classroom', {
@@ -188,16 +207,18 @@ test('keeps the final table row visible in the thumbnail and default classroom c
     contentType: 'image/png',
   });
 
-  const [classroom, thumbnail] = metrics;
-  expect(classroom.renderer).toBe('legacy');
-  expect(thumbnail.renderer).toBe('package');
-  expect(classroom.rowCount).toBe(5);
-  expect(thumbnail.rowCount).toBe(classroom.rowCount);
-
-  for (const surface of [classroom, thumbnail]) {
-    expect(surface.tableBottom).toBeLessThanOrEqual(surface.boundaryBottom + 1);
-    expect(surface.finalRowVisibleHeight).toBeGreaterThanOrEqual(surface.finalRowHeight - 1);
-    expect(surface.finalTextHeight).toBeGreaterThan(0);
-    expect(surface.finalTextVisibleHeight).toBeGreaterThanOrEqual(surface.finalTextHeight - 1);
+  for (const [name, surface] of Object.entries(surfaces)) {
+    expect(surface.rowCount, `${name}: row count`).toBe(ROW_TEXTS.length);
+    expect(surface.wrappedRowCount, `${name}: wrapped row count`).toBe(ROW_TEXTS.length);
+    expect(surface.finalRowHeight, `${name}: final row has visible geometry`).toBeGreaterThan(0);
+    expect(surface.tableOverflowRatio, `${name}: table escapes its element`).toBeLessThanOrEqual(
+      0.01,
+    );
+    expect(
+      surface.finalRowOverflowRatio,
+      `${name}: final row escapes its element`,
+    ).toBeLessThanOrEqual(0.01);
   }
+
+  expect(surfaces.package.rowCount).toBe(surfaces.legacy.rowCount);
 });
